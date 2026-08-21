@@ -18,13 +18,13 @@ describe('full-app factory automation composition', () => {
     const provider = (entry.options as {
       seedProvider: (context: {
         findExistingSeedKeys: (keys: readonly string[]) => Promise<readonly string[]>
-        removeSeededAutomationIfIdle: (key: string) => Promise<'removed'>
+        removeSeededAutomationIfIdle: (key: string) => Promise<boolean>
         warn: (message: string) => void
       }) => Promise<readonly { key: string }[]>
     }).seedProvider
     const seeds = await provider({
       findExistingSeedKeys: async () => [],
-      removeSeededAutomationIfIdle: async () => 'removed',
+      removeSeededAutomationIfIdle: async () => true,
       warn: vi.fn(),
     })
 

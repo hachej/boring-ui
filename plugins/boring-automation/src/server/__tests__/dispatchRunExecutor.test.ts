@@ -10,7 +10,7 @@ import { automationSessionTitle, classifyFailure, DispatchRunExecutor, finalStat
 import { AutomationSessionUnaddressableError } from "../dispatchIdentity"
 import { AutomationRunDurationCapExceededError } from "../runTimers"
 import type { AutomationRunEventPublisher } from "../runEventBus"
-import { AutomationStoreError, type AutomationStore, automationNotFound, runAlreadyActive, runLeaseLost, runNotFound } from "../store"
+import { AutomationStoreError, type AutomationSeed, type AutomationStore, automationNotFound, runAlreadyActive, runLeaseLost, runNotFound } from "../store"
 
 afterEach(() => vi.useRealTimers())
 
@@ -822,6 +822,11 @@ class MemoryAutomationStore implements AutomationStore {
   async createAutomation(input: AutomationCreate): Promise<Automation> {
     return this.seedAutomation({ model: input.model, prompt: input.prompt ?? "", agentTypeId: input.agentTypeId })
   }
+
+  async readSeedManifest(): Promise<string | null> { return null }
+  async ensureSeededAutomation(_input: AutomationSeed): Promise<Automation | null> { return null }
+  async findExistingSeedKeys(_keys: readonly string[]): Promise<readonly string[]> { return [] }
+  async removeSeededAutomationIfIdle(_key: string): Promise<boolean> { return true }
 
   async updateAutomation(id: string, patch: AutomationPatch): Promise<Automation> {
     const automation = this.automations.get(id)

@@ -7,7 +7,7 @@ import type { FollowUpPayload, PiChatEvent, PromptPayload } from "@hachej/boring
 import { createBoringAutomationTool } from "../automationTool"
 import { DispatchRunExecutor, type VerifiedAutomationActor } from "../dispatchRunExecutor"
 import { createAutomationOperations } from "../operations"
-import type { AutomationStore } from "../store"
+import type { AutomationSeed, AutomationStore } from "../store"
 import type { Automation, AutomationCreate, AutomationPatch, AutomationRun, AutomationRunBegin, AutomationRunLifecyclePatch } from "../../shared"
 
 const ACTOR: VerifiedAutomationActor = { workspaceId: "workspace-a", userId: "user-a" }
@@ -303,6 +303,10 @@ class NestedAutomationStore implements AutomationStore {
   async listAutomations() { return [this.automation] }
   async getAutomation(id: string) { return id === this.automation.id ? this.automation : null }
   async createAutomation(_input: AutomationCreate) { return this.automation }
+  async readSeedManifest() { return null }
+  async ensureSeededAutomation(_input: AutomationSeed) { return null }
+  async findExistingSeedKeys(_keys: readonly string[]) { return [] }
+  async removeSeededAutomationIfIdle(_key: string) { return true }
   async updateAutomation(_id: string, _patch: AutomationPatch) { return this.automation }
   async deleteAutomation(_id: string) {}
   async getPrompt() { return "automation prompt" }

@@ -20,7 +20,7 @@ import { resolveAutomationOperationsForActor, type AutomationStoreMode } from ".
 import { createAutomationSessionController } from "./automationSessionController"
 import { InMemoryAutomationRunEventBus, PostgresAutomationRunEventBus, type AutomationRunEventBus } from "./runEventBus"
 import { automationRoutes } from "./routes"
-import type { AutomationStore } from "./store"
+import type { AutomationSeed, AutomationStore } from "./store"
 import { seedStandingAutomations, type AutomationSeedProvider } from "./standingAutomations"
 
 export interface BoringAutomationServerPluginOptions {
@@ -44,8 +44,8 @@ export interface BoringAutomationServerPluginOptions {
   eventBusOwner?: "plugin" | "caller"
   /** Defaults to true when hosted due execution is composed. Disable when an external scheduler owns wake-ups. */
   hostedSchedulerEnabled?: boolean
-  /** Optional host-owned seeds, validated by the same schema as workspace manifest seeds. */
-  additionalSeeds?: readonly unknown[]
+  /** Optional trusted host-owned seeds. Workspace manifests remain schema-validated at the file boundary. */
+  additionalSeeds?: readonly AutomationSeed[]
   /** Optional dynamic host seed source; the generic plugin does not interpret host policy. */
   seedProvider?: AutomationSeedProvider
   seedWarning?: (message: string) => void

@@ -18,8 +18,8 @@ export interface FactoryAutomationSeed {
 }
 
 export interface FactoryAutomationSeedContext {
-  readonly findExistingSeedKeys: (keys: readonly string[]) => Promise<readonly string[] | 'unsupported'>
-  readonly removeSeededAutomationIfIdle: (key: string) => Promise<'removed' | 'active' | 'unsupported'>
+  readonly findExistingSeedKeys: (keys: readonly string[]) => Promise<readonly string[]>
+  readonly removeSeededAutomationIfIdle: (key: string) => Promise<boolean>
   readonly warn: (message: string) => void
 }
 
@@ -93,21 +93,13 @@ async function pruneSurplusWorkerSlots(
     { length: MAX_FACTORY_WORKER_CAP - workerCap },
     (_, offset) => `${WORKER_SLOT_PREFIX}${workerCap + offset + 1}`,
   )
-  const existingKeys = await context.findExistingSeedKeys(candidateKeys)
-  if (existingKeys === 'unsupported') {
-    warn('[boring-automation] retaining surplus worker slots because the store cannot resolve immutable seed keys')
-    return
-  }
-  const surplus = existingKeys
+  const surplus = (await context.findExistingSeedKeys(candidateKeys))
     .map((key) => ({ key, index: workerSlotIndex(key) }))
     .filter((entry): entry is { key: string; index: number } => entry.index !== null && entry.index > workerCap)
     .sort((left, right) => left.index - right.index)
   for (const { key } of surplus) {
-    const result = await context.removeSeededAutomationIfIdle(key)
-    if (result === 'active') {
+    if (!await context.removeSeededAutomationIfIdle(key)) {
       warn(`[boring-automation] retaining ${key} after worker_cap decrease because it has an active run`)
-    } else if (result === 'unsupported') {
-      warn(`[boring-automation] retaining ${key} after worker_cap decrease because the store cannot remove seeded automations atomically`)
     }
   }
 }

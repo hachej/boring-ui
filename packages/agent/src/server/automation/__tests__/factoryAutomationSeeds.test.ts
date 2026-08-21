@@ -15,7 +15,7 @@ async function workspace(policy?: string): Promise<string> {
 
 function context(
   existingSeedKeys: string[] = [],
-  remove: (key: string) => Promise<'removed' | 'active' | 'unsupported'> = async () => 'removed',
+  remove: (key: string) => Promise<boolean> = async () => true,
 ) {
   return {
     findExistingSeedKeys: vi.fn(async (keys: readonly string[]) => keys.filter((key) => existingSeedKeys.includes(key))),
@@ -50,7 +50,7 @@ describe('factory automation seed host composition', () => {
 
   it('retains and warns for an active surplus slot when worker_cap decreases', async () => {
     const warn = vi.fn()
-    const remove = vi.fn(async () => 'active' as const)
+    const remove = vi.fn(async () => false)
     const provider = createFactoryAutomationSeedProvider({
       policyRoot: await workspace('beadle:\n  worker_cap: 3\n'),
       warn,
@@ -61,7 +61,7 @@ describe('factory automation seed host composition', () => {
   })
 
   it('prunes by immutable seed key rather than mutable title or automation id', async () => {
-    const remove = vi.fn(async () => 'removed' as const)
+    const remove = vi.fn(async () => true)
     const provider = createFactoryAutomationSeedProvider({
       policyRoot: await workspace('beadle:\n  worker_cap: 3\n'),
     })

@@ -275,6 +275,17 @@ describe("standing factory automation seeding", () => {
     ])
   }
 
+  it("schema-validates the untrusted workspace manifest", async () => {
+    const { seedStandingAutomations } = await import("../standingAutomations")
+    await writeSeedFiles()
+    const manifestPath = join(dir, ".agents", "automation", "manifest.json")
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"))
+    manifest.automations[0].timezone = "not/a-zone"
+    await writeFile(manifestPath, JSON.stringify(manifest), "utf8")
+
+    await expect(seedStandingAutomations(createStore())).rejects.toThrow()
+  })
+
   it("merges exactly the generic injected seeds with the manifest and remains idempotent", async () => {
     const { seedStandingAutomations } = await import("../standingAutomations")
     await writeSeedFiles()
@@ -316,14 +327,6 @@ describe("standing factory automation seeding", () => {
     ])
   })
 
-  it("validates injected seeds with the manifest seed schema", async () => {
-    const { seedStandingAutomations } = await import("../standingAutomations")
-    await writeSeedFiles()
-    await expect(seedStandingAutomations(createStore(), {
-      additionalSeeds: [{ ...triageSeed, timezone: "not/a-zone" }],
-    })).rejects.toThrow()
-  })
-
   it("keeps a surplus seeded slot when its run is active", async () => {
     const { seedStandingAutomations } = await import("../standingAutomations")
     await writeSeedFiles()
@@ -342,33 +345,6 @@ describe("standing factory automation seeding", () => {
     })
     expect((await store.listAutomations()).map(({ id }) => id).sort()).toContain("worker-slot-3")
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("active run"))
-  })
-
-  it("retains surplus seeds without the atomic immutable-key store contract", async () => {
-    const { seedStandingAutomations } = await import("../standingAutomations")
-    await writeSeedFiles()
-    const store = createStore()
-    await seedStandingAutomations(store, { additionalSeeds: [
-      ...workerSeeds,
-      { ...workerSeeds[2]!, key: "worker-slot-4", title: "worker-slot-4" },
-      triageSeed,
-    ] })
-    Object.defineProperties(store, {
-      findExistingSeedKeys: { value: undefined },
-      removeSeededAutomationIfIdle: { value: undefined },
-    })
-    const deleteAutomation = vi.spyOn(store, "deleteAutomation")
-    await mkdir(join(dir, ".agents", "factory"), { recursive: true })
-    await writeFile(join(dir, ".agents", "factory", "policy.yaml"), "beadle:\n  worker_cap: 3\n", "utf8")
-    const warn = vi.fn()
-
-    await seedStandingAutomations(store, {
-      seedProvider: createFactoryAutomationSeedProvider({ policyRoot: dir, warn }),
-    })
-
-    expect(deleteAutomation).not.toHaveBeenCalled()
-    expect((await store.listAutomations()).map(({ id }) => id)).toContain("worker-slot-4")
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("immutable seed keys"))
   })
 
   it("does not prune an unrelated automation whose mutable title collides with a surplus slot key", async () => {
