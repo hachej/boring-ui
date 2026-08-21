@@ -393,7 +393,13 @@ export function CliWorkspaceShell() {
 
 
   if (!metaLoaded) {
-    return <div className="h-screen w-screen bg-background" />
+    return (
+      <WorkspaceSingleton.WorkspaceLoadingState
+        title="Loading CLI workspace…"
+        description="Preparing the workspace shell."
+        status="Loading workspace metadata"
+      />
+    )
   }
 
   if (workspacesMode) {
@@ -404,14 +410,11 @@ export function CliWorkspaceShell() {
       // show a loading state while the poll above resolves it instead of an error screen.
       if (activeWorkspaceId) {
         return (
-          <div className="flex h-screen w-screen items-center justify-center bg-background text-foreground">
-            <div className="max-w-md rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
-              <h1 className="text-lg font-semibold">Loading workspace…</h1>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Preparing <code>{activeWorkspaceId}</code>. This can take a moment on first load.
-              </p>
-            </div>
-          </div>
+          <WorkspaceSingleton.WorkspaceLoadingState
+            title="Loading workspace…"
+            description={`Preparing ${activeWorkspaceId}. This can take a moment on first load.`}
+            status="Waiting for the workspace runtime"
+          />
         )
       }
       // The workspace registry list hasn't successfully loaded yet (first fetch
@@ -421,11 +424,11 @@ export function CliWorkspaceShell() {
       // though the API does return workspaces.
       if (!workspacesLoaded && workspaces.length === 0) {
         return (
-          <div className="flex h-screen w-screen items-center justify-center bg-background text-foreground">
-            <div className="max-w-md rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
-              <h1 className="text-lg font-semibold">Loading workspaces…</h1>
-            </div>
-          </div>
+          <WorkspaceSingleton.WorkspaceLoadingState
+            title="Loading workspaces…"
+            description="Reading the local workspace registry."
+            status="Finding workspaces"
+          />
         )
       }
       const hasUnavailableWorkspaces = workspaces.length > 0
@@ -455,6 +458,7 @@ export function CliWorkspaceShell() {
         workspaceLabel={activeWorkspace.name}
         workspaceSectionTitle="Projects"
         workspaceLayout="plugin-tabs"
+        addressedAgentSelection
         appLeftHeaderMode="workspace"
         appLeftProjects={appLeftProjects}
         appLeftActiveProjectId={activeWorkspace.id}
@@ -511,6 +515,7 @@ export function CliWorkspaceShell() {
       workspaceLabel={projectName}
       workspaceSectionTitle="Project"
       workspaceLayout="plugin-tabs"
+      addressedAgentSelection
       defaultSessionTitle={projectName}
       activeSessionId={initialSessionId ?? undefined}
       chatParams={{ thinkingControl: true }}

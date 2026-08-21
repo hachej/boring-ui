@@ -6,8 +6,24 @@ import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 
 import { LEGACY_DEFAULT_AGENT_FLEET, resolveDefaultAgentFleet } from '../resolveDefaultAgentFleet'
+import type { DiscoveredAgentPackageDescriptor } from '../loadConfiguredAgentFleet'
 
 const REPOSITORY_ROOT = resolve(import.meta.dirname, '../../../../../..')
+const FACTORY_PACKAGES: readonly DiscoveredAgentPackageDescriptor[] = [
+  // Ratified roster (gh-1187 S0) plus a discovered-but-deferred seat
+  // (concierge) that holds no fleet.yaml entry and must not compose.
+  ['concierge', 'boring-concierge', ['feedback', 'triage', 'owner-gate', 'handoff']],
+  ['triage', 'boring-triage', ['triage', 'owner-gate', 'handoff']],
+  ['orchestrator', 'boring-orchestrator', ['plan', 'feedback', 'owner-gate', 'handoff']],
+  ['worker', 'boring-worker', ['exec', 'fresh-eyes', 'owner-gate', 'handoff']],
+].map(([seat, definitionId, skills]) => ({
+  rootDir: resolve(REPOSITORY_ROOT, '.agents', 'personas', seat as string),
+  manifest: {
+    boring: { agent: { definitionId: definitionId as string, version: '2026.08.04', instructionsRef: 'instructions.md' } },
+    pi: { skills: skills as string[] },
+  },
+  preflight: { ok: true },
+}))
 
 const loggerMocks = vi.hoisted(() => ({ warn: vi.fn(), error: vi.fn() }))
 vi.mock('@hachej/boring-bash/server', async (importOriginal) => {
@@ -30,19 +46,31 @@ describe('resolveDefaultAgentFleet (BORING_AGENT_FLEET gate, gh-1106 slice 3)', 
     expect(Object.isFrozen(agents)).toBe(true)
   })
 
+  test('flag absent does not access injected discovery descriptors', async () => {
+    const options = new Proxy({ repositoryRoot: REPOSITORY_ROOT, workspaceRoot: REPOSITORY_ROOT, env: {} }, {
+      get(target, property, receiver) {
+        if (property === 'discoveredPackages') throw new Error('flag-off must not inspect discovery')
+        return Reflect.get(target, property, receiver)
+      },
+    })
+    await expect(resolveDefaultAgentFleet(options)).resolves.toBe(LEGACY_DEFAULT_AGENT_FLEET)
+  })
+
   test('flag=1: composes the default agent plus the repository factory seats', async () => {
     const agents = await resolveDefaultAgentFleet({
       repositoryRoot: REPOSITORY_ROOT,
+      discoveredPackages: FACTORY_PACKAGES,
       workspaceRoot: REPOSITORY_ROOT,
       env: { BORING_AGENT_FLEET: '1', ANTHROPIC_API_KEY: 'test-key' },
     })
     expect(agents[0]).toEqual({ agentTypeId: 'default', legacyDefault: true })
+    // The ratified 3-seat roster (gh-1187 S0). Deferred grow-on-demand seats
+    // (concierge, reviewer, ...) may still be discovered as packages but hold
+    // no fleet.yaml entry, so they must NOT compose.
     expect(agents.slice(1).map((agent) => agent.agentTypeId)).toEqual([
-      'boring-concierge',
       'boring-triage',
-      'boring-steward',
+      'boring-orchestrator',
       'boring-worker',
-      'boring-reviewer',
     ])
   })
 
@@ -50,13 +78,14 @@ describe('resolveDefaultAgentFleet (BORING_AGENT_FLEET gate, gh-1106 slice 3)', 
     const env = { BORING_AGENT_FLEET: '1', ANTHROPIC_API_KEY: 'test-key' }
     const sameRoot = await resolveDefaultAgentFleet({
       repositoryRoot: REPOSITORY_ROOT,
+      discoveredPackages: FACTORY_PACKAGES,
       workspaceRoot: REPOSITORY_ROOT,
       env,
     })
-    const concierge = sameRoot.find((agent) => agent.agentTypeId === 'boring-concierge')
-    if (!concierge || 'legacyDefault' in concierge) throw new Error('expected the concierge seat')
-    expect(concierge.instructionFiles).toEqual([
-      { filesystem: 'user', path: '.agents/personas/concierge/instructions.md', role: 'persona' },
+    const orchestrator = sameRoot.find((agent) => agent.agentTypeId === 'boring-orchestrator')
+    if (!orchestrator || 'legacyDefault' in orchestrator) throw new Error('expected the orchestrator seat')
+    expect(orchestrator.instructionFiles).toEqual([
+      { filesystem: 'user', path: '.agents/personas/orchestrator/instructions.md', role: 'persona' },
     ])
 
     // The multi-workspace shape: personas come from the repository, the
@@ -65,11 +94,12 @@ describe('resolveDefaultAgentFleet (BORING_AGENT_FLEET gate, gh-1106 slice 3)', 
     // opens nothing, so nothing is published.
     const otherRoot = await resolveDefaultAgentFleet({
       repositoryRoot: REPOSITORY_ROOT,
+      discoveredPackages: FACTORY_PACKAGES,
       workspaceRoot: tmpdir(),
       env,
     })
-    const detached = otherRoot.find((agent) => agent.agentTypeId === 'boring-concierge')
-    if (!detached || 'legacyDefault' in detached) throw new Error('expected the concierge seat')
+    const detached = otherRoot.find((agent) => agent.agentTypeId === 'boring-orchestrator')
+    if (!detached || 'legacyDefault' in detached) throw new Error('expected the orchestrator seat')
     expect(detached.instructionFiles).toBeUndefined()
     // Reported as a missing LINK, not an excluded seat: the seat is right
     // there in the fleet above.
@@ -91,6 +121,7 @@ describe('resolveDefaultAgentFleet (BORING_AGENT_FLEET gate, gh-1106 slice 3)', 
       // No .agents/ tree at all under this root.
       const agents = await resolveDefaultAgentFleet({
         repositoryRoot: root,
+        discoveredPackages: [],
         workspaceRoot: root,
         env: { BORING_AGENT_FLEET: '1' },
       })
@@ -105,6 +136,7 @@ describe('resolveDefaultAgentFleet (BORING_AGENT_FLEET gate, gh-1106 slice 3)', 
       await writeFile(join(root, '.agents', 'factory', 'fleet.yaml'), 'not: [valid, seats, shape')
       const agents = await resolveDefaultAgentFleet({
         repositoryRoot: root,
+        discoveredPackages: [],
         workspaceRoot: root,
         env: { BORING_AGENT_FLEET: '1' },
       })

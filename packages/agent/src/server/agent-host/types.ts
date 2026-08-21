@@ -161,6 +161,20 @@ export interface ConfiguredAgentHostAgentSpec {
     readonly instructions: string
     readonly label: string
     readonly version?: string
+    /**
+     * Computed identity of the compiled definition (instructions + knowledge
+     * bytes). The digest, not the version string, is the definition identity.
+     */
+    readonly digest?: string
+  }
+  /**
+   * Optional agent-carried knowledge shipped inside the definition package.
+   * Composition mounts it as a readonly, agent-scoped filesystem binding;
+   * absent = no binding.
+   */
+  readonly knowledge?: {
+    /** Host path of the package's `knowledge/` folder. */
+    readonly rootDir: string
   }
   /** Authored instruction sources behind `definition.instructions`. */
   readonly instructionFiles?: readonly AgentInstructionFileRef[]
@@ -315,6 +329,8 @@ export interface AgentHostDescription {
   readonly agents: readonly {
     readonly agentTypeId: string
     readonly label: string
+    /** Computed definition identity digest (instructions + knowledge bytes), when the spec carries one. */
+    readonly definitionDigest?: string
   }[]
   readonly draining: boolean
 }

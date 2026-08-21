@@ -44,6 +44,7 @@ export type {
 } from './workspaceAgentDispatcher'
 export type { WorkspaceRuntimeContext } from './runtime'
 export {
+  AGENT_KNOWLEDGE_FILESYSTEM_ID,
   AGENT_RESOURCES_FILESYSTEM_ID,
 } from './skill-resource'
 export type { AgentSkillResource } from './skill-resource'

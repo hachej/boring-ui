@@ -1,3 +1,4 @@
+import { ErrorCode } from '../../shared/error-codes'
 import type {
   Entry,
   Stat,
@@ -12,6 +13,8 @@ import {
   encodeBytesForWorker,
   type RemoteWorkerClient,
 } from '../sandbox/remote-worker/workerClient'
+
+const EEXIST_CODE = 'EEXIST'
 
 function expectContent(result: RemoteWorkerWorkspaceResult): string {
   if ('content' in result && typeof result.content === 'string') return result.content
@@ -100,7 +103,10 @@ function createRemoteWatcher(client: RemoteWorkerClient): WorkspaceWatcher {
   }
 }
 
-export function createRemoteWorkerWorkspace(client: RemoteWorkerClient): Workspace {
+export function createRemoteWorkerWorkspace(
+  client: RemoteWorkerClient,
+  supportsExclusiveBinaryCreate = false,
+): Workspace {
   let watcher: WorkspaceWatcher | null = null
   return {
     root: REMOTE_WORKER_RUNTIME_CWD,
@@ -122,6 +128,18 @@ export function createRemoteWorkerWorkspace(client: RemoteWorkerClient): Workspa
     async writeBinaryFile(path, data) {
       await client.workspace({ op: 'writeBinaryFile', path, dataBase64: encodeBytesForWorker(data) })
     },
+    ...(supportsExclusiveBinaryCreate ? {
+      async createBinaryFile(path: string, data: Uint8Array) {
+        try {
+          await client.workspace({ op: 'createBinaryFile', path, dataBase64: encodeBytesForWorker(data) })
+        } catch (error) {
+          if ((error as { code?: unknown })?.code === ErrorCode.enum.REMOTE_WORKER_ALREADY_EXISTS) {
+            throw Object.assign(new Error('EEXIST: file already exists'), { code: EEXIST_CODE })
+          }
+          throw error
+        }
+      },
+    } : {}),
     async readFileWithStat(path) {
       const result = await client.workspace({ op: 'readFileWithStat', path })
       if ('content' in result && 'stat' in result) return { content: result.content, stat: result.stat }

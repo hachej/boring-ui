@@ -41,7 +41,7 @@ export interface AgentDescription {
  */
 export type SourceResult<T> =
   | { status: "loaded"; value: T }
-  | { status: "error" }
+  | { status: "error"; error: string }
 
 export interface AgentCapabilities {
   status: "loading" | "ready"
@@ -64,10 +64,10 @@ export const INITIAL_CAPABILITIES: AgentCapabilities = {
 
 export const UNAVAILABLE_CAPABILITIES: AgentCapabilities = {
   status: "ready",
-  description: { status: "error" },
-  skills: { status: "error" },
-  tools: { status: "error" },
-  modelLabel: { status: "error" },
+  description: { status: "error", error: "This agent's details are unavailable." },
+  skills: { status: "error", error: "Failed to load this agent's skills." },
+  tools: { status: "error", error: "Failed to load this agent's tools." },
+  modelLabel: { status: "error", error: "Models are unavailable." },
 }
 
 export function parseSkills(payload: unknown): AgentSkillSummary[] {
@@ -188,6 +188,47 @@ export interface AgentCapabilitiesClient {
   getJson(path: string, options?: { missingMessage?: string }): Promise<unknown>
 }
 
+export interface LoadAgentCapabilitySectionsOptions {
+  refresh?: boolean
+  includeNonInvocableSkills?: boolean
+}
+
+function sourceError(reason: unknown, fallback: string): SourceResult<never> {
+  return {
+    status: "error",
+    error: reason instanceof Error ? reason.message : fallback,
+  }
+}
+
+/** Load only the two capability sections shared by both Agent surfaces. */
+export async function loadAgentCapabilitySections(
+  client: AgentCapabilitiesClient,
+  agentTypeId: string,
+  options: LoadAgentCapabilitySectionsOptions = {},
+): Promise<Pick<AgentCapabilities, "skills" | "tools">> {
+  const id = encodeURIComponent(agentTypeId)
+  const query = options.refresh ? "?refresh=1" : ""
+  const [skills, tools] = await Promise.allSettled([
+    client.getJson(`/api/v1/agents/${id}/skills${query}`, {
+      missingMessage: "Failed to load this agent's skills.",
+    }),
+    client.getJson(`/api/v1/agents/${id}/tools${query}`, {
+      missingMessage: "Failed to load this agent's tools.",
+    }),
+  ])
+  return {
+    skills: skills.status === "fulfilled"
+      ? {
+        status: "loaded",
+        value: parseSkills(skills.value).filter((skill) => options.includeNonInvocableSkills || skill.invocable !== false),
+      }
+      : sourceError(skills.reason, "Failed to load this agent's skills."),
+    tools: tools.status === "fulfilled"
+      ? { status: "loaded", value: parseTools(tools.value) }
+      : sourceError(tools.reason, "Failed to load this agent's tools."),
+  }
+}
+
 /**
  * Reads everything the panel shows in ONE fan-out. Per-agent instruction
  * sources come from `/describe` — the Host owns that mapping — and only the
@@ -200,34 +241,27 @@ export async function loadAgentCapabilities(
   // Each route is spelled in full: the #1029 matrix checker classifies literal
   // Agent routes, and a shared base prefix would hide them from it.
   const id = encodeURIComponent(agentTypeId)
-  const [describe, skills, tools, models] = await Promise.allSettled([
-    client.getJson(`/api/v1/agents/${id}/describe`, { missingMessage: "This agent's details are unavailable." }),
-    client.getJson(`/api/v1/agents/${id}/skills`, { missingMessage: "This agent's skills are unavailable." }),
-    client.getJson(`/api/v1/agents/${id}/tools`, { missingMessage: "This agent's tools are unavailable." }),
-    client.getJson(`/api/v1/agents/${id}/models`, { missingMessage: "Models are unavailable." }),
+  const [[describe, models], sections] = await Promise.all([
+    Promise.allSettled([
+      client.getJson(`/api/v1/agents/${id}/describe`, { missingMessage: "This agent's details are unavailable." }),
+      client.getJson(`/api/v1/agents/${id}/models`, { missingMessage: "Models are unavailable." }),
+    ]),
+    loadAgentCapabilitySections(client, agentTypeId),
   ])
   const description = describe.status === "fulfilled" ? parseDescription(describe.value) : undefined
   return {
     status: "ready",
     description: description
       ? { status: "loaded", value: description }
-      : { status: "error" },
-    skills: skills.status === "fulfilled"
-      ? {
-        status: "loaded",
-      // The panel lists what the agent can be ASKED to do, so policy-hidden
-      // (non-invocable) skills are excluded here — the Skills page keeps them.
-        value: parseSkills(skills.value).filter((skill) => skill.invocable !== false),
-      }
-      : { status: "error" },
-    tools: tools.status === "fulfilled"
-      ? { status: "loaded", value: parseTools(tools.value) }
-      : { status: "error" },
+      : sourceError(describe.status === "rejected" ? describe.reason : undefined, "This agent's details are unavailable."),
+    // The details panel lists what the agent can be ASKED to do, so the shared
+    // section loader's default excludes policy-hidden (non-invocable) skills.
+    ...sections,
     modelLabel: models.status === "fulfilled"
       ? { status: "loaded", value: resolveModelLabel(models.value, description?.model ?? null) }
       : description?.model
         ? { status: "loaded", value: description.model }
-        : { status: "error" },
+        : sourceError(models.status === "rejected" ? models.reason : undefined, "Models are unavailable."),
   }
 }
 

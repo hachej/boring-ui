@@ -1,7 +1,12 @@
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
+import {
+  isRetryableBombadilStartupFailure,
+  resetBombadilOutputDirectory,
+  runWithBombadilStartupRetry,
+} from "../core/bombadilProcess"
 import {
   createUiReviewStagingPolicy,
   parseBombadilTrace,
@@ -13,7 +18,12 @@ import {
   validateReproduceOwnership as validateOwnershipForSpec,
   verifyReproducedFinalState,
 } from "../core/replay"
-import { isSafeCommandPaletteControl } from "../review-specs/workspace-command-palette/scenarioActions"
+import { workspaceCommandPaletteSpec } from "../review-specs/workspace-command-palette/spec"
+import {
+  createSafeCommandPaletteActions,
+  isCommandPaletteDialogName,
+  isSafeCommandPaletteControl,
+} from "../review-specs/workspace-command-palette/scenarioActions"
 import { testSpec, testStagingPolicy } from "./fixtures"
 
 const UI_REVIEW_STAGING_POLICY = testStagingPolicy
@@ -24,6 +34,66 @@ const validateReproduceOwnership = (input: Omit<Parameters<typeof validateOwners
 const viewport = { name: "mobile", width: 390, height: 844, deviceScaleFactor: 1 } as const
 
 describe("Bombadil exploration staging", () => {
+  it("retries a Chromium websocket startup timeout exactly once", async () => {
+    const runAttempt = vi.fn()
+      .mockResolvedValueOnce({ code: 1, stderr: 'Timeout while resolving websocket URL from browser process, stderr: BrowserStderr("")' })
+      .mockResolvedValueOnce({ code: 0, stderr: "" })
+    const resetOutput = vi.fn(async () => {})
+    const waitBeforeRetry = vi.fn(async () => {})
+    await expect(runWithBombadilStartupRetry({ runAttempt, resetOutput, waitBeforeRetry })).resolves.toBeUndefined()
+    expect(runAttempt).toHaveBeenCalledTimes(2)
+    expect(resetOutput).toHaveBeenCalledOnce()
+    expect(waitBeforeRetry).toHaveBeenCalledOnce()
+  })
+
+  it("does not retry arbitrary Bombadil failures", async () => {
+    for (const stderr of ["UI_REVIEW_EXPLORATION_STABLE_ACTION_STATE_MISSING:mobile", "property violation"]) {
+      const runAttempt = vi.fn(async () => ({ code: 1, stderr }))
+      const resetOutput = vi.fn(async () => {})
+      await expect(runWithBombadilStartupRetry({ runAttempt, resetOutput, waitBeforeRetry: async () => {} }))
+        .rejects.toThrow("UI_REVIEW_BOMBADIL_FAILED:1")
+      expect(runAttempt).toHaveBeenCalledOnce()
+      expect(resetOutput).not.toHaveBeenCalled()
+    }
+  })
+
+  it("fails after one retried startup timeout and propagates spawn errors", async () => {
+    const timeout = { code: 1, stderr: "Timeout while resolving websocket URL from browser process" }
+    const runAttempt = vi.fn(async () => timeout)
+    const resetOutput = vi.fn(async () => {})
+    await expect(runWithBombadilStartupRetry({ runAttempt, resetOutput, waitBeforeRetry: async () => {} }))
+      .rejects.toThrow("UI_REVIEW_BOMBADIL_FAILED:1")
+    expect(runAttempt).toHaveBeenCalledTimes(2)
+    expect(resetOutput).toHaveBeenCalledOnce()
+
+    const spawnError = new Error("spawn ENOENT")
+    await expect(runWithBombadilStartupRetry({
+      runAttempt: async () => { throw spawnError },
+      resetOutput: async () => { throw new Error("unexpected reset") },
+      waitBeforeRetry: async () => {},
+    })).rejects.toBe(spawnError)
+  })
+
+  it("recreates a clean Bombadil output directory before retry", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ui-review-bombadil-reset-"))
+    try {
+      const outputPath = join(root, "raw")
+      await mkdir(outputPath)
+      const stale = join(outputPath, "partial-trace.jsonl")
+      await writeFile(stale, "partial")
+      await resetBombadilOutputDirectory(root, "raw")
+      await expect(readFile(stale)).rejects.toMatchObject({ code: "ENOENT" })
+      await expect(writeFile(join(outputPath, "retry-trace.jsonl"), "fresh")).resolves.toBeUndefined()
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it("recognizes only the Chromium websocket startup signature", () => {
+    expect(isRetryableBombadilStartupFailure("Timeout while resolving websocket URL from browser process")).toBe(true)
+    expect(isRetryableBombadilStartupFailure("Timeout while replaying browser actions")).toBe(false)
+  })
+
   it("reserves final files for candidate and paired baseline checkpoints", () => {
     const policy = createUiReviewStagingPolicy(testSpec)
     expect(policy.reservedFinalFiles).toBe(8 + (2 * testSpec.checkpoints.length * testSpec.viewports.length))
@@ -127,7 +197,7 @@ describe("Bombadil exploration staging", () => {
 
   it("verifies replay final normalized state and screenshot, not exit alone", async () => {
     const raw = await fixture([entry(1, { screenshot: "expected", palette: { dialogVisible: true } })])
-    const [expected] = await parseBombadilTrace(raw)
+    const [expected] = await parseBombadilTrace(raw, testSpec.exploration?.normalizeReplayState)
     await expect(verifyReproducedFinalState(raw, {
       schemaVersion: 1,
       stateId: "state",
@@ -145,7 +215,7 @@ describe("Bombadil exploration staging", () => {
       sourceScreenshotName: "1.png",
       actionCount: 1,
       hashCurrent: 1,
-    })).resolves.toBeUndefined()
+    }, testSpec)).resolves.toBeUndefined()
     await expect(verifyReproducedFinalState(raw, {
       schemaVersion: 1,
       stateId: "state",
@@ -163,15 +233,119 @@ describe("Bombadil exploration staging", () => {
       sourceScreenshotName: "1.png",
       actionCount: 1,
       hashCurrent: 1,
-    })).rejects.toThrow("UI_REVIEW_REPRODUCE_STATE_MISMATCH")
+    }, testSpec)).rejects.toThrow("UI_REVIEW_REPRODUCE_STATE_MISMATCH")
+  })
+
+  it("replays transient command-palette metadata changes but rejects durable changes", async () => {
+    const transient = {
+      dialogVisible: true,
+      mode: "Commands",
+      query: "",
+      workspaceReady: false,
+      lastActionWasPaletteOpen: true,
+      lastActionWasInitial: false,
+      controls: [{ name: "palette-mode-commands", point: { x: 10.25, y: 20.5 } }],
+    }
+    const expectedRoot = await fixture([entry(1, { screenshot: "stable", palette: transient })])
+    const normalize = workspaceCommandPaletteSpec.exploration!.normalizeReplayState
+    const [expected] = await parseBombadilTrace(expectedRoot, normalize)
+    const manifest = {
+      schemaVersion: 1 as const,
+      stateId: "state",
+      scenarioId: workspaceCommandPaletteSpec.id,
+      scenarioSpecRevision: workspaceCommandPaletteSpec.specRevision,
+      fixtureResetId: workspaceCommandPaletteSpec.fixtureResetId,
+      origin: "http://localhost:5380",
+      targetUrl: "http://localhost:5380/?fresh=1",
+      viewport,
+      expectedNormalizedStateSignature: expected!.normalizedStateSignature,
+      expectedScreenshotDigest: expected!.screenshotDigest,
+      expectedScreenshotPHash: expected!.screenshotPHash,
+      maximumScreenshotPHashDistance: 8,
+      traceDigest: "a".repeat(64),
+      sourceScreenshotName: "1.png",
+      actionCount: 1,
+      hashCurrent: 1,
+    }
+    const replayRoot = await fixture([entry(1, {
+      screenshot: "stable",
+      palette: {
+        ...transient,
+        workspaceReady: true,
+        lastActionWasPaletteOpen: false,
+        lastActionWasInitial: true,
+        controls: [{ name: "palette-mode-commands", point: { x: 11.75, y: 20.5 } }],
+      },
+    })])
+    await expect(verifyReproducedFinalState(
+      replayRoot,
+      manifest,
+      workspaceCommandPaletteSpec,
+    )).resolves.toBeUndefined()
+
+    const durableMismatchRoot = await fixture([entry(1, {
+      screenshot: "stable",
+      palette: { ...transient, mode: "Files" },
+    })])
+    await expect(verifyReproducedFinalState(
+      durableMismatchRoot,
+      manifest,
+      workspaceCommandPaletteSpec,
+    )).rejects.toThrow("UI_REVIEW_REPRODUCE_STATE_MISMATCH")
   })
 })
 
 describe("command palette action safety", () => {
+  it("opens an exact fingerprinted root control without Resource Timing readiness", () => {
+    const fingerprint = {
+      testId: null,
+      id: null,
+      role: null,
+      accessibleName: "Search catalogs and commands",
+      tag: "button",
+      href: null,
+      nameAttr: null,
+      placeholder: null,
+      inputType: "button",
+      textContent: "Search",
+      structuralPath: null,
+    }
+    const trigger = {
+      name: "open-command-palette",
+      fingerprint,
+      point: { x: 24, y: 24 },
+    }
+    expect(createSafeCommandPaletteActions({
+      dialogVisible: false,
+      inputFocused: false,
+      lastActionWasPaletteOpen: false,
+      lastActionWasInitial: false,
+      controls: [trigger],
+    })).toEqual(["Wait", { Click: { fingerprint, point: trigger.point } }])
+    expect(createSafeCommandPaletteActions({
+      dialogVisible: false,
+      inputFocused: false,
+      lastActionWasPaletteOpen: false,
+      lastActionWasInitial: true,
+      controls: [trigger],
+    })).toEqual(["Wait"])
+  })
+
+  it("distinguishes the palette from the mobile navigation dialog", () => {
+    expect(isCommandPaletteDialogName("Command Palette")).toBe(true)
+    expect(isCommandPaletteDialogName("App navigation")).toBe(false)
+  })
+
   it("allows only named non-submitting local palette controls", () => {
     expect(isSafeCommandPaletteControl({ tagName: "button", label: "Search catalogs and commands", insideDialog: false })).toBe(true)
-    expect(isSafeCommandPaletteControl({ tagName: "button", label: "Search", insideDialog: false })).toBe(true)
-    expect(isSafeCommandPaletteControl({ tagName: "button", label: "Search⌘K", insideDialog: false })).toBe(true)
+    expect(isSafeCommandPaletteControl({ tagName: "button", label: "Search", insideDialog: false })).toBe(false)
+    expect(isSafeCommandPaletteControl({ tagName: "button", label: "Search⌘K", insideDialog: false })).toBe(false)
+    expect(isSafeCommandPaletteControl({
+      tagName: "button",
+      label: "Search⌘K",
+      insideDialog: false,
+      identity: "command-palette-trigger",
+    })).toBe(true)
     expect(isSafeCommandPaletteControl({ tagName: "button", label: "Open app navigation", insideDialog: false })).toBe(true)
     expect(isSafeCommandPaletteControl({ tagName: "button", label: "Commands", insideDialog: true })).toBe(true)
     expect(isSafeCommandPaletteControl({ tagName: "button", label: "Files", insideDialog: true })).toBe(true)

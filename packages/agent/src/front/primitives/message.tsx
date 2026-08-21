@@ -326,7 +326,12 @@ export const MessageBranchPage = ({
 
 export type MessageResponseProps = ComponentProps<typeof Streamdown>;
 
-const streamdownPlugins = { cjk, code, math, mermaid };
+// Streamdown and @streamdown/code can resolve different Shiki minors, whose
+// generated BundledLanguage unions are structurally compatible at runtime but
+// not assignable across package instances.
+const streamdownPlugins = { cjk, code, math, mermaid } as unknown as NonNullable<
+  ComponentProps<typeof Streamdown>["plugins"]
+>;
 
 // Default Shiki theme pair — [light, dark]. Streamdown auto-selects based on
 // prefers-color-scheme. Consumers can override via the shikiTheme prop.

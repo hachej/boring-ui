@@ -26,6 +26,7 @@ All API failures must use the response envelope:
 | `INVALID_API_KEY` | Provider rejects API key as malformed/invalid | 401 | re-auth | warn | stable (public API) |
 | `OIDC_REFRESH_FAILED` | OIDC refresh token exchange fails | 401 | re-auth | warn | stable (public API) |
 | `VERCEL_AUTH_FAILED` | Vercel sandbox auth/token request fails | 401 | re-auth | warn | stable (public API) |
+| `BLAXEL_AUTH_FAILED` | Blaxel sandbox auth/workspace request fails | 401 | re-auth | warn | stable (public API) |
 | `CONFIG_INVALID` | Runtime config fails schema validation | 500 | report-bug | error | stable (public API) |
 | `PATH_ESCAPE` | Relative path escapes workspace root | 403 | user-fix | warn | stable (public API) |
 | `PATH_ABSOLUTE` | Absolute path rejected where relative path is required | 400 | user-fix | warn | stable (public API) |
@@ -45,7 +46,9 @@ All API failures must use the response envelope:
 | `AGENT_FLEET_SEAT_PERSONA_INVALID` | `loadConfiguredAgentFleet` excluded a fleet.yaml seat because its persona package failed to materialize or compose | 500 | fix persona package/spec | error | stable (trusted API) |
 | `AGENT_FLEET_SEAT_SKILL_DIGEST_MISMATCH` | `loadConfiguredAgentFleet` excluded a fleet.yaml seat because a pinned skill's canonical content was unavailable or its digest drifted | 500 | run `pnpm write:skill-digests` or fix the skill file | error | stable (trusted API) |
 | `AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE` | `loadConfiguredAgentFleet` composed a fleet.yaml seat but withheld the link to its persona `instructions.md`. Usually because the host serves a workspace root that does not contain the personas tree (multi-workspace hosts resolve a root per request and pass `workspaceRoot: null`); rarely because the seat name is not a safe path segment | 500 | expected on multi-workspace hosts — the seat runs normally, only the Agent-details instruction link is withheld. On a single-root host, check that `workspaceRoot` is the root the `user` filesystem serves and contains `personasDir`. If the message names the seat, rename it to `[A-Za-z0-9][A-Za-z0-9._-]*` | warn | stable (trusted API) |
-| `AGENT_FLEET_CONFIG_FILE_INVALID` | `loadConfiguredAgentFleet`'s fleet.yaml could not be read or parsed (whole-fleet failure, not per-seat) | 500 | fix `.agents/factory/fleet.yaml` | error | stable (trusted API) |
+| `AGENT_FLEET_CONFIG_FILE_INVALID` | `loadConfiguredAgentFleet`'s fleet.yaml could not be read, parsed, or validated (whole-fleet failure, not per-seat) | 500 | fix `.agents/factory/fleet.yaml` | error | stable (trusted API) |
+| `AGENT_DEFINITION_ID_CONFLICT` | Multiple discovered plugin packages claim the same agent definition id, so every claimant is excluded | 500 | remove or rename conflicting definitions | error | stable (trusted API) |
+| `AGENT_DEFINITION_UNSEATED` | A discovered agent package is not named by the fleet roster and remains inert | 200 | seat it in class-B fleet config if activation is intended | info | stable (trusted API) |
 | `RUNTIME_PROVISIONING_FAILED` | Agent runtime dependency provisioning failed before Level 3 runtime dependencies became ready | 503 | retry/report | error | stable (public API) |
 | `RUNTIME_PROVISIONING_LOCKED` | Agent runtime provisioning is locked by another reconciler | 423 | retry | warn | stable (public API) |
 | `BWRAP_UNAVAILABLE` | `bwrap` binary not found | 500 | report-bug | error | stable (public API) |
@@ -54,6 +57,10 @@ All API failures must use the response envelope:
 | `SANDBOX_NOT_READY` | Remote sandbox cold start / provisioning | 503 | retry | warn | stable (public API) |
 | `SANDBOX_EXPIRED` | Remote sandbox TTL elapsed | 410 | retry | warn | stable (public API) |
 | `VERCEL_API_ERROR` | Generic upstream Vercel SDK/API failure | 502 | retry | error | stable (public API) |
+| `BLAXEL_API_ERROR` | Generic upstream Blaxel SDK/API failure | 502 | retry | error | stable (public API) |
+| `BLAXEL_CONFIG_DRIFT` | Existing Blaxel sandbox or Volume differs from requested immutable configuration | 409 | operator action | error | stable (public API) |
+| `BLAXEL_RUNTIME_UNQUALIFIED` | Blaxel runtime image lacks required workspace tools | 503 | replace image | error | stable (public API) |
+| `BLAXEL_VOLUME_BUSY` | Durable Blaxel Volume remains attached to another sandbox | 409 | retry | warn | stable (public API) |
 | `REMOTE_WORKER_CONFIG_INVALID` | Static remote-worker fleet configuration is invalid or incomplete | 500 | report-bug | error | stable (trusted API) |
 | `REMOTE_WORKER_PROTOCOL_MISMATCH` | Worker protocol or provider-contract version differs from the configured V1 cohort | 502 | operator-fix | error | stable (trusted API) |
 | `REMOTE_WORKER_UNAUTHENTICATED` | Worker rejected the per-box capability or authenticated receipt | 401 | operator-fix | warn | stable (trusted API) |
@@ -62,6 +69,8 @@ All API failures must use the response envelope:
 | `REMOTE_WORKER_REQUEST_INVALID` | A strict remote-worker request schema rejected the request | 400 | report-bug | warn | stable (trusted API) |
 | `REMOTE_WORKER_RESPONSE_INVALID` | A strict remote-worker response schema rejected the worker response | 502 | operator-fix | error | stable (trusted API) |
 | `REMOTE_WORKER_CAPABILITY_EXPIRED` | A short-lived worker capability expired or exceeded its maximum lifetime | 401 | retry | warn | stable (trusted API) |
+| `REMOTE_WORKER_CAPABILITY_REPLAY` | A single-use worker capability nonce was presented more than once | 409 | report-security | warn | stable (trusted API) |
+| `REMOTE_WORKER_CAPABILITY_NONCE_STORE_EXHAUSTED` | Worker cannot accept another capability without violating its bounded nonce history | 503 | retry | warn | stable (trusted API) |
 | `REMOTE_WORKER_AUTHORIZED_WORKSPACE_REQUIRED` | Remote provider creation lacked an authenticated workspace identity | 403 | report-bug | warn | stable (trusted API) |
 | `REMOTE_WORKER_BINDING_RECEIPT_INVALID` | Create returned an unauthenticated or mismatched sandbox/workspace binding receipt | 502 | operator-fix | error | stable (trusted API) |
 | `REMOTE_WORKER_SANDBOX_WORKSPACE_MISMATCH` | Authorized workspace capability does not match the immutable sandbox lease binding | 404 | report-security | warn | stable (trusted API) |
@@ -73,6 +82,13 @@ All API failures must use the response envelope:
 | `REMOTE_WORKER_IDEMPOTENCY_CONFLICT` | Reused lease/invocation id has a different request digest | 409 | report-bug | warn | stable (trusted API) |
 | `REMOTE_WORKER_EXEC_IN_PROGRESS` | Duplicate invocation is still executing | 409 | retry | warn | stable (trusted API) |
 | `REMOTE_WORKER_SECRET_INVOCATION_NOT_REPLAYABLE` | Completed secret-bearing invocation cannot replay cached output | 409 | start-new-request | warn | stable (trusted API) |
+| `REMOTE_WORKER_SECRET_REFERENCE_REJECTED` | Invocation secret metadata is invalid, cross-workspace, or classified as a model credential | 403 | report-bug | warn | stable (trusted API) |
+| `REMOTE_WORKER_EXEC_ABORTED` | Invocation was aborted after bounded in-sandbox cleanup | 499 | retry | warn | stable (trusted API) |
+| `REMOTE_WORKER_OUTPUT_LIMIT` | Invocation output exceeded its configured combined byte ceiling | 413 | reduce-output | warn | stable (trusted API) |
+| `REMOTE_WORKER_PATH_UNSAFE` | Workspace operation failed dirfd-relative path confinement | 400 | report-bug | warn | stable (trusted API) |
+| `REMOTE_WORKER_ALREADY_EXISTS` | An atomic exclusive-create workspace operation found an existing path | 409 | choose-replace-or-skip | info | stable (trusted API) |
+| `REMOTE_WORKER_PATH_PRIMITIVE_UNAVAILABLE` | Required dirfd/openat2 containment primitive is unavailable | 503 | operator-fix | error | stable (trusted API) |
+| `REMOTE_WORKER_QUOTA_EXCEEDED` | Fixed workspace byte or inode quota was exceeded | 507 | free-space | warn | stable (trusted API) |
 | `REMOTE_WORKER_OUTCOME_UNKNOWN` | Worker loss left an effectful invocation outcome unknown; no automatic replay is safe | 502 | inspect-before-retry | error | stable (public API) |
 | `REMOTE_WORKER_INCOMPLETE_CLEANUP` | Provider could not prove remote lease teardown after bounded retries | 502 | operator-fix | error | stable (trusted API) |
 | `REMOTE_WORKER_DOCKER_COMMAND_FAILED` | Worker runtime command failed without exposing infrastructure stderr | 502 | operator-fix | error | stable (trusted API) |

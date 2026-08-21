@@ -29,7 +29,7 @@ export interface SpawnBackendOptions {
   repoRoot: string
   port?: number
   timeoutMs?: number
-  mode?: 'direct' | 'local' | 'vercel-sandbox'
+  mode?: 'direct' | 'local' | 'blaxel' | 'vercel-sandbox'
   env?: Record<string, string>
 }
 

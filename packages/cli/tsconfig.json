@@ -85,6 +85,9 @@
       "@hachej/boring-sandbox/providers/vercel-sandbox": [
         "../boring-sandbox/src/providers/vercel-sandbox/index.ts"
       ],
+      "@hachej/boring-sandbox/providers/blaxel": [
+        "../boring-sandbox/src/providers/blaxel/index.ts"
+      ],
       "@hachej/boring-workspace": [
         "../workspace/src/index.ts"
       ],

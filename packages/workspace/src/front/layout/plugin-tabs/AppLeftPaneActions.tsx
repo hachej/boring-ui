@@ -7,6 +7,7 @@ import { cn } from "../../lib/utils"
 import { ControlTooltip } from "../../components/ControlTooltip"
 
 export function PrimaryAction({
+  entryKey,
   icon,
   label,
   onClick,
@@ -14,6 +15,7 @@ export function PrimaryAction({
   active = false,
   trailing,
 }: {
+  entryKey?: string
   icon: ReactNode
   label: string
   onClick: () => void
@@ -25,6 +27,7 @@ export function PrimaryAction({
     <button
       type="button"
       onClick={onClick}
+      data-boring-app-left-nav-key={entryKey}
       data-boring-mobile-dismiss="true"
       data-active={active ? "true" : undefined}
       aria-current={active ? "page" : undefined}
@@ -46,12 +49,14 @@ export function PrimaryAction({
 }
 
 export function RailAction({
+  entryKey,
   icon,
   label,
   onClick,
   active = false,
   trailing,
 }: {
+  entryKey?: string
   icon: ReactNode
   label: string
   onClick: () => void
@@ -63,6 +68,7 @@ export function RailAction({
       <button
         type="button"
         aria-label={label}
+        data-boring-app-left-nav-key={entryKey}
         data-active={active ? "true" : undefined}
         aria-current={active ? "page" : undefined}
         onClick={onClick}

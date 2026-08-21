@@ -71,6 +71,7 @@ export function createRemoteWorkspaceV1(options: {
   client: RemoteWorkerLeaseClientV1;
   leaseExpiresAtMs: () => number;
   now: () => number;
+  supportsExclusiveBinaryCreate: boolean;
 }): { workspace: Workspace; closeWatcher(): void } {
   let watcher: WorkspaceWatcher | undefined;
   let stream: RemoteWorkerEventStreamV1 | undefined;
@@ -218,6 +219,29 @@ export function createRemoteWorkspaceV1(options: {
         dataBase64: Buffer.from(data).toString("base64"),
       });
     },
+    ...(options.supportsExclusiveBinaryCreate
+      ? {
+          async createBinaryFile(path: string, data: Uint8Array) {
+            try {
+              await workspaceRequest({
+                op: "createBinaryFile",
+                path,
+                dataBase64: Buffer.from(data).toString("base64"),
+              });
+            } catch (error) {
+              if (
+                (error as { code?: unknown })?.code ===
+                REMOTE_WORKER_ERROR_CODES_V1.alreadyExists
+              ) {
+                throw Object.assign(new Error("EEXIST: file already exists"), {
+                  code: "EEXIST",
+                });
+              }
+              throw error;
+            }
+          },
+        }
+      : {}),
     async readFileWithStat(path) {
       const result = await workspaceRequest({ op: "readFileWithStat", path });
       if ("content" in result && "stat" in result) return result;
@@ -273,13 +297,18 @@ export function createRemoteSandboxV1(options: {
       command: string,
       execOptions: ExecOptions = {},
     ): Promise<ExecResult> {
+      if (execOptions.env && Object.keys(execOptions.env).length > 0) {
+        throw new SandboxProviderError(
+          REMOTE_WORKER_ERROR_CODES_V1.secretReferenceRejected,
+          "remote-worker exec env requires trusted credential delivery",
+        );
+      }
       const body = parseRemoteWorkerRequestV1(
         RemoteWorkerExecRequestSchemaV1,
         {
           invocationId: options.idFactory(),
           command,
           cwd: execOptions.cwd,
-          env: execOptions.env,
           timeoutMs: execOptions.timeoutMs ?? options.execTimeoutMs,
           maxOutputBytes: execOptions.maxOutputBytes ?? options.maxOutputBytes,
         },

@@ -512,6 +512,10 @@ export function createDataBridgeServerPlugin(options: CreateDataBridgeServerPlug
     agentTools: options.agentTool === false ? [] : [createDataBridgeQueryAgentTool(pluginOptions)],
     workspaceBridgeHandlers: [queryRun as unknown as WorkspaceBridgeHandlerContribution, queryBatch as unknown as WorkspaceBridgeHandlerContribution],
     routes,
+    packageResources: [{
+      packageName: "@hachej/boring-data-bridge",
+      packageRoot: new URL("../../", import.meta.url),
+    }],
     systemPrompt: "Use query_data for dashboard/reporting data. Supported query languages are bsl and sql. Use data.v1.query.run for individual requests and data.v1.query.batch when loading multiple queries; set format=arrow for BI/Perspective snapshot viewers.",
   })
 }

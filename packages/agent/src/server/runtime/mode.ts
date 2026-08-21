@@ -14,7 +14,7 @@ import type { CapabilityReadinessDetail, ReadyStatusTracker } from './readyStatu
 import type { AgentRuntimeHostOperations } from './runtimeHost'
 import type { WorkspaceProvisioningAdapter } from '../workspace/provisioning'
 
-export type BuiltinRuntimeModeId = 'direct' | 'local' | 'vercel-sandbox'
+export type BuiltinRuntimeModeId = 'direct' | 'local' | 'blaxel' | 'vercel-sandbox'
 export type RuntimeModeId = BuiltinRuntimeModeId | (string & {})
 
 export interface RuntimeModeReadinessHooks {
@@ -89,6 +89,7 @@ export interface RuntimeFilesystemBindingOperations {
   stat(descriptor: { filesystem: string; path: string }): Promise<{ isDirectory: boolean; metadata?: unknown }>
   write?(descriptor: { filesystem: string; path: string; content: string; expectedMtimeMs?: number }): Promise<{ mtimeMs?: number; metadata?: unknown }>
   writeBinary?(descriptor: { filesystem: string; path: string; content: Uint8Array }): Promise<{ mtimeMs?: number; metadata?: unknown }>
+  createBinary?(descriptor: { filesystem: string; path: string; content: Uint8Array }): Promise<{ mtimeMs?: number; metadata?: unknown }>
   delete?(descriptor: { filesystem: string; path: string }): Promise<{ metadata?: unknown }>
   move?(descriptor: { filesystem: string; from: string; to: string }): Promise<{ metadata?: unknown }>
   mkdir?(descriptor: { filesystem: string; path: string; recursive?: boolean }): Promise<{ metadata?: unknown }>

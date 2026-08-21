@@ -13,7 +13,16 @@ export { BiDashboardRenderProvider, useBiDashboardRenderContext } from "./render
 export type { BiDashboardRenderState } from "./renderContext"
 export { sampleBiDashboardSpec } from "./sampleSpec"
 export { BI_DASHBOARD_LEFT_TAB_ID, BI_DASHBOARD_PANEL_ID } from "./constants"
-export { DashboardFilesPane } from "./DashboardFilesPane"
+export { DashboardFilesPane, createDashboardFilesAdapter } from "./DashboardFilesPane"
+export { DashboardCatalogPane, dashboardPanelForRow } from "./DashboardCatalogPane"
+export type {
+  DashboardCatalogAdapter,
+  DashboardCatalogBadge,
+  DashboardCatalogPaneProps,
+  DashboardCatalogRow,
+  DashboardCatalogSearchArgs,
+  DashboardCatalogSearchResult,
+} from "./DashboardCatalogPane"
 export { biDashboardSurfaceResolver } from "./surfaceResolver"
 export type {
   BslDashboardSpec,

@@ -25,7 +25,11 @@ export {
   type RemoteWorkerAuthorizedEventStreamV1,
   type RemoteWorkerSandboxBindingRegistryOptionsV1,
 } from "./bindingRegistry";
-export { remoteWorkerRequestDigestV1 } from "./requestDigest";
+export { canonicalJson, remoteWorkerRequestDigestV1 } from "./requestDigest";
+export {
+  SingleUseNonceStoreV1,
+  type SingleUseNonceResultV1,
+} from "./singleUseNonceStore";
 export {
   type RemoteWorkerEventStreamV1,
   type RemoteWorkerOpenEventStreamInputV1,

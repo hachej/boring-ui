@@ -73,6 +73,79 @@ describe("Beads task source", () => {
     expect(ops.runRead).toHaveBeenNthCalledWith(3, listArgs, expect.any(Object))
   })
 
+  test("hydrates parent/epic edges with a batched show call when list carries only dependency_count", async () => {
+    // Recorded br 0.2.16 behavior: `br list --json` ships dependency_count but
+    // never the dependency edges; `br show --json` ships them with
+    // dependency_type. See gh-1208.
+    const ops = withVersion((args) => {
+      if (args[0] === "list") {
+        return JSON.stringify({
+          issues: [
+            { id: "epic-1", title: "Epic bead", status: "open", issue_type: "epic", dependency_count: 0, dependent_count: 2 },
+            { id: "child-1", title: "Child with parent", status: "open", dependency_count: 1, dependent_count: 0 },
+            { id: "child-2", title: "Child with blocker only", status: "open", dependency_count: 1, dependent_count: 0 },
+            { id: "loner", title: "No edges", status: "open", dependency_count: 0, dependent_count: 0 },
+          ],
+        })
+      }
+      expect(args).toEqual([...showArgs("child-1").slice(0, -1), "child-1", "child-2"])
+      return JSON.stringify([
+        {
+          id: "child-1",
+          title: "Child with parent",
+          status: "open",
+          dependencies: [{ id: "epic-1", title: "Epic bead", status: "open", dependency_type: "parent-child" }],
+        },
+        {
+          id: "child-2",
+          title: "Child with blocker only",
+          status: "open",
+          dependencies: [{ id: "loner", title: "No edges", status: "open", dependency_type: "blocks" }],
+        },
+      ])
+    })
+    const source = createBeadsTaskSource({ operations: ops })
+
+    const cards = await source.listTasks({})
+
+    expect(cards.map((card) => [card.id, card.epic])).toEqual([
+      ["epic-1", undefined],
+      ["child-1", { id: "epic-1", title: "Epic bead" }],
+      ["child-2", undefined],
+      ["loner", undefined],
+    ])
+    // One list call plus exactly one batched show call.
+    expect(ops.runRead.mock.calls.filter(([args]) => args[0] === "show")).toHaveLength(1)
+  })
+
+  test("chunks parent-edge hydration and tolerates missing show entries", async () => {
+    const ids = Array.from({ length: 150 }, (_, index) => `bead-${index}`)
+    const showCalls: number[] = []
+    const ops = withVersion((args) => {
+      if (args[0] === "list") {
+        return JSON.stringify({
+          issues: ids.map((id) => ({ id, title: id, status: "open", dependency_count: 1 })),
+        })
+      }
+      const requested = args.slice(showArgs("x").length - 1)
+      showCalls.push(requested.length)
+      // First requested bead of each chunk is missing from the show output.
+      return JSON.stringify(requested.slice(1).map((id) => ({
+        id,
+        title: String(id),
+        status: "open",
+        dependencies: [{ id: "epic-1", title: "Epic bead", dependency_type: "parent-child" }],
+      })))
+    })
+    const source = createBeadsTaskSource({ operations: ops })
+
+    const cards = await source.listTasks({})
+
+    expect(showCalls).toEqual([100, 50])
+    expect(cards.filter((card) => card.epic).length).toBe(148)
+    expect(cards[0]?.epic).toBeUndefined()
+  })
+
   test("maps bounded detail, safe metadata, and native relations", async () => {
     const id = "root.4"
     const ops = withVersion((args) => {
@@ -217,7 +290,11 @@ describe("Beads read authority and config", () => {
     expect(isAllowedBeadsReadArgs(showArgs("root.1"))).toBe(true)
     expect(isAllowedBeadsReadArgs(["close", "root.1"])).toBe(false)
     expect(isAllowedBeadsReadArgs(["show", "--json", "--", "--db=x"])).toBe(false)
-    expect(isAllowedBeadsReadArgs([...showArgs("root.1"), "extra"])).toBe(false)
+    expect(isAllowedBeadsReadArgs([...showArgs("root.1"), "root.2"])).toBe(true)
+    expect(isAllowedBeadsReadArgs([...showArgs("root.1"), ...Array.from({ length: 99 }, (_, index) => `root.${index + 2}`)])).toBe(true)
+    expect(isAllowedBeadsReadArgs([...showArgs("root.1"), ...Array.from({ length: 100 }, (_, index) => `root.${index + 2}`)])).toBe(false)
+    expect(isAllowedBeadsReadArgs([...showArgs("root.1"), "--db=x"])).toBe(false)
+    expect(isAllowedBeadsReadArgs(showArgs("root.1").slice(0, -1))).toBe(false)
   })
 
   test("rejects an uninitialized Workspace without creating store files", async () => {

@@ -18,6 +18,7 @@ import {
 import { createPostSignupHook } from './postSignupHook.js'
 import { isCoreEmailVerificationEnabled } from '../../shared/authPolicy.js'
 import { safeCapture, noopTelemetry, type TelemetrySink } from '../../shared/telemetry.js'
+import type { ValidatedSignupAgentDefaults } from '../signupAgentDefaults.js'
 
 const MIN_ZXCVBN_SCORE = 2
 
@@ -56,8 +57,66 @@ function buildMailTransport(config: CoreConfig): MailTransport | null {
   return createMailTransport(config.auth.mail.transportUrl, config.auth.mail.from, env)
 }
 
+export interface CoreDynamicAuthBaseURL {
+  /** Exact host or host:port values allowed to originate auth callbacks. */
+  allowedHosts: string[]
+  /** Explicit protocol used for callback URLs on every allowed host. */
+  protocol: 'http' | 'https'
+  /** Unlisted hosts always fail closed; Better Auth's fallback is deliberately forbidden. */
+  fallback?: never
+}
+
+const EXACT_AUTH_HOST_RE = /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*(?::\d{1,5})?|\[[0-9a-fA-F:]+\](?::\d{1,5})?)$/
+const EXACT_AUTH_HOST_MESSAGE = 'authBaseURL.allowedHosts must be a non-empty list of exact host[:port] values'
+
+export function assertCoreDynamicAuthBaseURL(baseURL: unknown): asserts baseURL is CoreDynamicAuthBaseURL {
+  if (typeof baseURL !== 'object' || baseURL === null) {
+    throw new Error('authBaseURL must be an object')
+  }
+  const candidate = baseURL as Record<string, unknown>
+  if (!Array.isArray(candidate.allowedHosts) || candidate.allowedHosts.length === 0) {
+    throw new Error(EXACT_AUTH_HOST_MESSAGE)
+  }
+  if (candidate.protocol !== 'http' && candidate.protocol !== 'https') {
+    throw new Error('authBaseURL.protocol must be "http" or "https"')
+  }
+  if ('fallback' in candidate) {
+    throw new Error('authBaseURL.fallback is not supported; unlisted hosts must be rejected')
+  }
+
+  for (const host of candidate.allowedHosts) {
+    if (typeof host !== 'string' || host.trim() !== host || !EXACT_AUTH_HOST_RE.test(host)) {
+      throw new Error(`${EXACT_AUTH_HOST_MESSAGE}: ${String(host)}`)
+    }
+    const port = (host.startsWith('[') ? /\]:(\d+)$/.exec(host) : /:(\d+)$/.exec(host))?.[1]
+    if (port && (Number(port) < 1 || Number(port) > 65_535)) {
+      throw new Error(`${EXACT_AUTH_HOST_MESSAGE}: ${host}`)
+    }
+    try {
+      // The URL parser validates domain, IPv4, and bracketed IPv6 syntax.
+      new URL(`${candidate.protocol}://${host}`)
+    } catch {
+      throw new Error(`${EXACT_AUTH_HOST_MESSAGE}: ${host}`)
+    }
+  }
+}
+
+function snapshotCoreDynamicAuthBaseURL(baseURL: unknown): CoreDynamicAuthBaseURL {
+  assertCoreDynamicAuthBaseURL(baseURL)
+  const snapshot: CoreDynamicAuthBaseURL = {
+    allowedHosts: [...baseURL.allowedHosts],
+    protocol: baseURL.protocol,
+  }
+  Object.freeze(snapshot.allowedHosts)
+  return Object.freeze(snapshot)
+}
+
 export interface CreateAuthOptions {
+  /** Dynamic request-host base URL; absent preserves config.auth.url as the static base URL. */
+  baseURL?: CoreDynamicAuthBaseURL
   workspaceStore?: WorkspaceStore
+  /** Boot-compiled, fleet-validated signup map from the full server composer. */
+  signupAgentDefaults?: ValidatedSignupAgentDefaults
   logger?: { warn: (obj: Record<string, unknown>, msg: string) => void }
   /** Telemetry sink for auth.signed_up / auth.session_started (defaults to noop). */
   telemetry?: TelemetrySink
@@ -91,6 +150,10 @@ async function createReplayableRequest(request: Request): Promise<Request> {
 }
 
 export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOptions): Auth<any> {
+  const dynamicBaseURL = opts?.baseURL === undefined
+    ? undefined
+    : snapshotCoreDynamicAuthBaseURL(opts.baseURL)
+
   const transport = buildMailTransport(config)
   const telemetry = opts?.telemetry ?? noopTelemetry
   const emailVerificationEnabled = isCoreEmailVerificationEnabled(config)
@@ -139,8 +202,9 @@ export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOp
     : []
 
   const postSignupHook = opts?.workspaceStore
-    ? createPostSignupHook({
+      ? createPostSignupHook({
         config,
+        signupAgentDefaults: opts.signupAgentDefaults,
         workspaceStore: opts.workspaceStore,
         transport,
         logger: opts.logger,
@@ -170,7 +234,7 @@ export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOp
   const auth = betterAuth({
     database: drizzleAdapter(db, { provider: 'pg', schema }),
     secret: config.auth.secret,
-    baseURL: config.auth.url,
+    baseURL: dynamicBaseURL ?? config.auth.url,
     basePath: '/auth',
     trustedOrigins: config.cors.origins,
     databaseHooks: {
@@ -208,6 +272,7 @@ export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOp
       },
       cookiePrefix: config.appId,
       useSecureCookies: config.auth.sessionCookieSecure,
+      ...(dynamicBaseURL ? { trustedProxyHeaders: false } : {}),
     },
     user: {
       modelName: 'users',

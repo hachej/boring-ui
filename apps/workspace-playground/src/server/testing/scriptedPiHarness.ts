@@ -254,9 +254,6 @@ class ScriptedSessionStore implements SessionStore {
       cwd: '',
       boringSessionCtx: {
         ...(ctx.workspaceId ? { workspaceId: ctx.workspaceId } : {}),
-        ...((ctx as SessionCtx & { runtimeScopeIdentity?: string }).runtimeScopeIdentity
-          ? { runtimeScopeIdentity: (ctx as SessionCtx & { runtimeScopeIdentity: string }).runtimeScopeIdentity }
-          : {}),
       },
     }
     const info = this.sessionInfo(record, now)

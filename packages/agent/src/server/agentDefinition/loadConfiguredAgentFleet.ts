@@ -1,5 +1,5 @@
 import { lstat, readFile, realpath } from 'node:fs/promises'
-import { basename, isAbsolute, dirname, relative, resolve, sep } from 'node:path'
+import { basename, isAbsolute, relative, resolve, sep } from 'node:path'
 
 import { parse as parseYaml } from 'yaml'
 
@@ -11,29 +11,13 @@ import { AGENT_USER_FILESYSTEM_ID } from '../agent-host/types'
 import type { AgentInstructionFileRef, ConfiguredAgentHostAgentSpec } from '../agent-host/types'
 import type { Sha256Digest } from '../../shared/digest'
 
-/**
- * Tier → seat-eligible-model priority. Hand-maintained per
- * docs/procedures/MODEL-CARD.md's priority-ordered tier table — deliberately
- * NOT parsed from the markdown (the card is prose/rationale, this is the
- * compiled fact). Keep the two in sync by hand when the card changes.
- *
- * Only models that can hold a pi-native AgentHost seat are listed. The card's
- * Sol (codex-exec cross-model pass) and Terra/Luna (codex bulk/mechanical)
- * are explicitly out — the card states they "cannot hold a seat" / "cannot
- * hold a pi session".
- */
 export interface ModelTierCandidate {
   readonly provider: string
   readonly id: string
   readonly envVar: string
 }
 
-export const MODEL_TIER_CANDIDATES: Readonly<Record<string, readonly ModelTierCandidate[]>> = Object.freeze({
-  T1: [{ provider: 'anthropic', id: 'claude-fable-5', envVar: 'ANTHROPIC_API_KEY' }],
-  T2: [{ provider: 'anthropic', id: 'claude-opus-4-8', envVar: 'ANTHROPIC_API_KEY' }],
-  T3: [{ provider: 'anthropic', id: 'claude-sonnet-4-6', envVar: 'ANTHROPIC_API_KEY' }],
-  T4: [{ provider: 'anthropic', id: 'claude-haiku-4-5-20251001', envVar: 'ANTHROPIC_API_KEY' }],
-})
+type ModelTierCandidates = Readonly<Record<string, readonly ModelTierCandidate[]>>
 
 export interface FleetSkillBinding {
   readonly name: string
@@ -46,37 +30,54 @@ export interface FleetSeatBinding {
   readonly skills: readonly FleetSkillBinding[]
 }
 
+export interface DiscoveredAgentPackageDescriptor {
+  readonly rootDir: string
+  readonly manifest: {
+    readonly boring: {
+      readonly agent: {
+        readonly definitionId: string
+        readonly version: string
+        readonly label?: string
+        readonly description?: string
+        readonly instructionsRef: string
+      }
+    }
+    readonly pi?: { readonly skills?: readonly string[] }
+  }
+  readonly preflight: {
+    readonly ok: boolean
+    readonly errors?: readonly { readonly code: string; readonly message: string }[]
+  }
+}
+
 export interface LoadConfiguredAgentFleetOptions {
+  /** Plugin-manager scan descriptors injected by the workspace/CLI boot layer. */
+  readonly discoveredPackages: readonly DiscoveredAgentPackageDescriptor[]
   /**
    * Root of the workspace the `user` filesystem serves, or `null` when the
    * host resolves a DIFFERENT root per request (core, the CLI hub) and so has
    * no single one at fleet-composition time.
    *
    * Required, because published `instructionFiles` are addressed relative to
-   * it and only the caller knows it. It is NOT derivable from `personasDir`:
-   * a fleet can be composed from a repository root that is not the workspace
-   * root, and guessing "the last two segments" produced well-formed paths
-   * that resolved to nothing.
+   * it and only the caller knows it. It is NOT derivable from the discovered
+   * package roots: a fleet can be composed from packages that live outside
+   * the workspace root, and guessing produced well-formed paths that
+   * resolved to nothing.
    *
    * `null` is not a soft option — it makes the host structurally unable to
    * publish a ref it cannot guarantee, which is the honest answer for
    * per-workspace roots.
    */
   readonly workspaceRoot: string | null
-  /** Directory containing `<seat>/package.json` persona packages. */
-  readonly personasDir: string
   /** Path to `.agents/factory/fleet.yaml`. */
   readonly fleetConfigPath: string
   /** Path to `.agents/factory/policy.yaml` (read for `models.seats` tiers). */
   readonly policyPath: string
   /**
    * Directory containing `<skill>/SKILL.md` canonical skill sources.
-   * Defaults to the `skills` directory sibling of `personasDir` (i.e.
-   * `.agents/skills` next to `.agents/personas`) — override when that
-   * sibling-directory layout assumption doesn't hold (e.g. isolated fixture
-   * trees that don't mirror the full `.agents/` shape).
+   * This root is host-owned because shared skill names are not package paths.
    */
-  readonly skillsRoot?: string
+  readonly skillsRoot: string
   /** Overridable for tests; defaults to `process.env`. */
   readonly env?: NodeJS.ProcessEnv
 }
@@ -107,11 +108,14 @@ export type FleetLoaderDiagnosticCode = Extract<
   AgentErrorCode,
   | 'AGENT_FLEET_SEAT_PERSONA_INVALID'
   | 'AGENT_FLEET_SEAT_SKILL_DIGEST_MISMATCH'
+  | 'AGENT_DEFINITION_ID_CONFLICT'
+  | 'AGENT_DEFINITION_UNSEATED'
   | 'AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE'
 >
 
 export interface FleetLoaderDiagnostic {
-  readonly seat: string
+  readonly seat?: string
+  readonly agentTypeId: string
   readonly code: FleetLoaderDiagnosticCode
   readonly message: string
 }
@@ -141,17 +145,12 @@ function isCanonicalPathInside(root: string, target: string): boolean {
   return fromRoot === '' || (fromRoot !== '..' && !fromRoot.startsWith(`..${sep}`) && !isAbsolute(fromRoot))
 }
 
-async function admitPersonaSource(personasDir: string, seat: string): Promise<string> {
-  const canonicalRoot = await realpath(resolve(personasDir))
-  const canonicalSource = await realpath(resolve(personasDir, seat))
-  if (!isCanonicalPathInside(canonicalRoot, canonicalSource)) {
-    throw new Error(`seat "${seat}" persona source resolves outside the configured personas directory`)
-  }
-  return canonicalSource
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isNonBlankString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0
 }
 
 const SHA256_RE = /^sha256:[0-9a-f]{64}$/
@@ -186,6 +185,45 @@ function parseFleetConfig(raw: unknown, path: string): readonly FleetSeatBinding
   })
 }
 
+const ENV_VAR_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
+
+export function parseModelTierCandidates(raw: unknown, path: string): ModelTierCandidates {
+  const name = basename(path)
+  const models = isRecord(raw) ? raw.models : undefined
+  const tiers = isRecord(models) ? models.tiers : undefined
+  if (!isRecord(tiers) || Object.keys(tiers).length === 0) {
+    throw new FleetConfigError({
+      field: 'models.tiers',
+      message: `${name} must declare a non-empty "models.tiers" mapping`,
+    })
+  }
+
+  const result: Record<string, readonly ModelTierCandidate[]> = {}
+  for (const [tier, entries] of Object.entries(tiers)) {
+    if (!Array.isArray(entries) || entries.length === 0) {
+      throw new FleetConfigError({
+        field: `models.tiers.${tier}`,
+        message: `${name} models.tiers.${tier} must be a non-empty candidate array`,
+      })
+    }
+    result[tier] = Object.freeze(entries.map((entry, index) => {
+      if (
+        !isRecord(entry) ||
+        !isNonBlankString(entry.provider) ||
+        !isNonBlankString(entry.id) ||
+        typeof entry.envVar !== 'string' || !ENV_VAR_RE.test(entry.envVar)
+      ) {
+        throw new FleetConfigError({
+          field: `models.tiers.${tier}[${index}]`,
+          message: `${name} models.tiers.${tier}[${index}] must have non-empty provider and id strings plus a valid envVar`,
+        })
+      }
+      return Object.freeze({ provider: entry.provider, id: entry.id, envVar: entry.envVar })
+    }))
+  }
+  return Object.freeze(result)
+}
+
 function parseSeatTiers(raw: unknown): Readonly<Record<string, string>> {
   if (!isRecord(raw)) return Object.freeze({})
   const models = raw.models
@@ -197,6 +235,22 @@ function parseSeatTiers(raw: unknown): Readonly<Record<string, string>> {
     if (typeof tier === 'string') result[seat] = tier
   }
   return Object.freeze(result)
+}
+
+function validateSeatTierCandidates(
+  seatTiers: Readonly<Record<string, string>>,
+  modelTierCandidates: ModelTierCandidates,
+  fleetConfigPath: string,
+  policyPath: string,
+): void {
+  for (const [seat, tier] of Object.entries(seatTiers)) {
+    if (modelTierCandidates[tier] === undefined) {
+      throw new FleetConfigError({
+        field: `models.tiers.${tier}`,
+        message: `${basename(policyPath)} models.seats.${seat} references tier ${JSON.stringify(tier)}, which is missing from ${basename(fleetConfigPath)} models.tiers`,
+      })
+    }
+  }
 }
 
 async function readYamlFile(path: string, field: string): Promise<unknown> {
@@ -217,10 +271,14 @@ async function readYamlFile(path: string, field: string): Promise<unknown> {
   }
 }
 
-/** First available model in `tier`, or undefined if no candidate's API key is present. */
-function resolveSeatModel(tier: string | undefined, env: NodeJS.ProcessEnv): string | undefined {
+/** First configured model in `tier` whose API key is present, otherwise undefined. */
+export function resolveSeatModel(
+  tier: string | undefined,
+  env: NodeJS.ProcessEnv,
+  modelTierCandidates: ModelTierCandidates,
+): string | undefined {
   if (tier === undefined) return undefined
-  const candidates = MODEL_TIER_CANDIDATES[tier]
+  const candidates = modelTierCandidates[tier]
   if (!candidates) return undefined
   for (const candidate of candidates) {
     if (env[candidate.envVar]) return `${candidate.provider}:${candidate.id}`
@@ -228,37 +286,45 @@ function resolveSeatModel(tier: string | undefined, env: NodeJS.ProcessEnv): str
   return undefined
 }
 
+async function readVerifiedSkillContent(
+  root: string,
+  reference: string,
+  skill: FleetSkillBinding,
+): Promise<string> {
+  const rootTarget = await realpath(root)
+  let candidate = resolve(rootTarget, reference)
+  const candidateStat = await lstat(candidate)
+  if (candidateStat.isDirectory()) candidate = resolve(candidate, 'SKILL.md')
+  const fileStat = await lstat(candidate)
+  if (!fileStat.isFile() || fileStat.isSymbolicLink()) throw new Error('skill source is not a regular file')
+  const target = await realpath(candidate)
+  if (!isCanonicalPathInside(rootTarget, target)) throw new Error('skill source resolves outside its admitted root')
+  const content = await readFile(target, 'utf8')
+  if (await sha256(content) !== skill.digest) throw new Error('skill digest mismatch')
+  return content
+}
+
 async function canonicalSkillContent(skillsRoot: string, skill: FleetSkillBinding): Promise<string> {
-  const candidate = resolve(skillsRoot, skill.name, 'SKILL.md')
   try {
-    const fileStat = await lstat(candidate)
-    if (!fileStat.isFile() || fileStat.isSymbolicLink()) {
-      throw new Error(`canonical skill "${skill.name}" must be a regular non-symlink file`)
-    }
-    const [canonicalSkillsRoot, target] = await Promise.all([
-      realpath(resolve(skillsRoot)),
-      realpath(candidate),
-    ])
-    if (!isCanonicalPathInside(canonicalSkillsRoot, target)) {
-      throw new Error(`canonical skill "${skill.name}" resolves outside the admitted skills root`)
-    }
-    const content = await readFile(target, 'utf8')
-    const digest = await sha256(content)
-    if (digest !== skill.digest) {
-      throw new Error(`canonical skill "${skill.name}" digest mismatch`)
-    }
-    return content
+    return await readVerifiedSkillContent(skillsRoot, `${skill.name}/SKILL.md`, skill)
   } catch {
-    // Redact filesystem paths/causes from the diagnostic surface.
     throw new Error(`canonical skill "${skill.name}" is unavailable`)
+  }
+}
+
+async function packageSkillContent(packageRoot: string, skill: FleetSkillBinding): Promise<string> {
+  try {
+    return await readVerifiedSkillContent(packageRoot, skill.name, skill)
+  } catch {
+    throw new Error(`package skill "${skill.name}" is unavailable`)
   }
 }
 
 /**
  * Loads the config-driven production/CLI agent fleet: `.agents/factory/fleet.yaml`
- * seat → skill-digest bindings, `.agents/personas/<seat>` plugin-shaped persona
- * packages, and `.agents/factory/policy.yaml` `models.seats` tiers resolved via
- * the hardcoded MODEL-CARD priority map above.
+ * seat → skill-digest bindings, boot-injected plugin-shaped persona package
+ * descriptors, `.agents/factory/policy.yaml` `models.seats` tiers, and the
+ * priority-ordered `models.tiers` candidates declared in fleet.yaml.
  *
  * Fails closed per seat: a persona that fails materialization, digest
  * verification, or spec composition is excluded with a stable diagnostic —
@@ -272,6 +338,7 @@ export async function loadConfiguredAgentFleet(
   const env = options.env ?? process.env
   const fleetRaw = await readYamlFile(options.fleetConfigPath, 'fleetConfigPath')
   const seats = parseFleetConfig(fleetRaw, options.fleetConfigPath)
+  const modelTierCandidates = parseModelTierCandidates(fleetRaw, options.fleetConfigPath)
 
   let seatTiers: Readonly<Record<string, string>> = Object.freeze({})
   try {
@@ -281,8 +348,8 @@ export async function loadConfiguredAgentFleet(
     // file omits preferred models for every seat rather than failing boot.
     seatTiers = Object.freeze({})
   }
+  validateSeatTierCandidates(seatTiers, modelTierCandidates, options.fleetConfigPath, options.policyPath)
 
-  const skillsRoot = options.skillsRoot ?? resolve(dirname(options.personasDir), 'skills')
   // Resolve the served root once, but keep failure per-seat and fail-closed:
   // composition can still proceed while publication reports the existing
   // stable unpublishable diagnostic.
@@ -292,39 +359,100 @@ export async function loadConfiguredAgentFleet(
 
   const agents: ConfiguredAgentHostAgentSpec[] = []
   const diagnostics: FleetLoaderDiagnostic[] = []
+  const packagesByDefinitionId = new Map<string, DiscoveredAgentPackageDescriptor[]>()
+  for (const descriptor of options.discoveredPackages) {
+    const definitionId = descriptor.manifest.boring.agent.definitionId
+    const existing = packagesByDefinitionId.get(definitionId) ?? []
+    existing.push(descriptor)
+    packagesByDefinitionId.set(definitionId, existing)
+  }
+  const seatedDefinitionIds = new Set(seats.map((seat) => seat.agentTypeId))
+  const conflictedDefinitionIds = new Set<string>()
+  for (const [definitionId, descriptors] of packagesByDefinitionId) {
+    if (descriptors.length > 1) {
+      conflictedDefinitionIds.add(definitionId)
+      for (const _descriptor of descriptors) {
+        diagnostics.push({
+          agentTypeId: definitionId,
+          code: ErrorCode.enum.AGENT_DEFINITION_ID_CONFLICT,
+          message: `agent definition "${definitionId}" is claimed by multiple discovered packages`,
+        })
+      }
+    } else if (!seatedDefinitionIds.has(definitionId)) {
+      const descriptor = descriptors[0]!
+      diagnostics.push(descriptor.preflight.ok ? {
+        agentTypeId: definitionId,
+        code: ErrorCode.enum.AGENT_DEFINITION_UNSEATED,
+        message: `discovered agent definition "${definitionId}" is not seated and remains inert`,
+      } : {
+        agentTypeId: definitionId,
+        code: ErrorCode.enum.AGENT_FLEET_SEAT_PERSONA_INVALID,
+        message: `discovered agent definition "${definitionId}" failed plugin preflight and is excluded`,
+      })
+    }
+  }
 
   for (const binding of seats) {
     let recorded = false
     try {
-      // This is the filesystem-adapter boundary for configured personas. The
-      // raw seat is used only to locate a candidate; everything after this
-      // point consumes the admitted canonical directory. That prevents both
-      // `..` and directory-symlink escapes from becoming composition roots.
-      const personaSource = await admitPersonaSource(options.personasDir, binding.seat)
+      const descriptors = packagesByDefinitionId.get(binding.agentTypeId) ?? []
+      if (conflictedDefinitionIds.has(binding.agentTypeId)) continue
+      const descriptor = descriptors[0]
+      if (!descriptor || !descriptor.preflight.ok) throw new Error(`seat "${binding.seat}" has no valid discovered agent package`)
+      // Canonicalize the discovered package root once: everything after this
+      // point (composition, skill reads, publication path algebra) consumes
+      // the admitted canonical directory, so directory symlinks cannot make a
+      // published ref point somewhere the served root does not cover.
+      const personaSource = await realpath(resolve(descriptor.rootDir))
       const source = await materializeAgentDirectory({
         directory: personaSource,
         expectedAgentTypeId: binding.agentTypeId,
         manifest: 'package.json',
       })
 
+      const declaredSkills = descriptor.manifest.pi?.skills ?? []
+      const declaredSet = new Set(declaredSkills)
+      const pinnedSet = new Set(binding.skills.map((skill) => skill.name))
+      if (
+        declaredSet.size !== declaredSkills.length ||
+        pinnedSet.size !== binding.skills.length ||
+        declaredSet.size !== pinnedSet.size ||
+        [...declaredSet].some((name) => !pinnedSet.has(name))
+      ) {
+        recorded = true
+        diagnostics.push({
+          seat: binding.seat,
+          agentTypeId: binding.agentTypeId,
+          code: ErrorCode.enum.AGENT_FLEET_SEAT_SKILL_DIGEST_MISMATCH,
+          message: `seat "${binding.seat}" skill pins do not exactly match its package pi.skills declarations`,
+        })
+        continue
+      }
+
       const instructionAppendices: { name: string; digest: Sha256Digest; content: string }[] = []
       for (const skill of binding.skills) {
         let content: string
         try {
-          content = await canonicalSkillContent(skillsRoot, skill)
+          content = skill.name.includes('/')
+            ? await packageSkillContent(personaSource, skill)
+            : await canonicalSkillContent(options.skillsRoot, skill)
         } catch (error) {
           recorded = true
           diagnostics.push({
             seat: binding.seat,
+            agentTypeId: binding.agentTypeId,
             code: ErrorCode.enum.AGENT_FLEET_SEAT_SKILL_DIGEST_MISMATCH,
             message: error instanceof Error ? error.message : `skill "${skill.name}" is unavailable`,
           })
           throw error
         }
-        instructionAppendices.push({ name: skill.name, digest: skill.digest, content })
+        const appendixName = skill.name.includes('/')
+          ? `package-${instructionAppendices.length + 1}-${skill.digest.slice('sha256:'.length, 'sha256:'.length + 12)}`
+          : skill.name
+        instructionAppendices.push({ name: appendixName, digest: skill.digest, content })
       }
 
-      const preferredModel = resolveSeatModel(seatTiers[binding.seat], env)
+      const preferredModel = resolveSeatModel(seatTiers[binding.seat], env, modelTierCandidates)
       // The loader is the only place that knows seat -> persona directory;
       // publishing it here keeps clients from inverting the mapping.
       let instructionFiles: AgentInstructionFileRef[] | undefined
@@ -358,6 +486,7 @@ export async function loadConfiguredAgentFleet(
         // gets no instruction row and the operator gets a stable code.
         diagnostics.push({
           seat: binding.seat,
+          agentTypeId: binding.agentTypeId,
           code: ErrorCode.enum.AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE,
           message: `${unpublishableReason}; its persona instructions will not be linkable`,
         })
@@ -381,6 +510,7 @@ export async function loadConfiguredAgentFleet(
       if (!recorded) {
         diagnostics.push({
           seat: binding.seat,
+          agentTypeId: binding.agentTypeId,
           code: ErrorCode.enum.AGENT_FLEET_SEAT_PERSONA_INVALID,
           message: error instanceof Error ? error.message : `seat "${binding.seat}" persona is invalid`,
         })

@@ -22,6 +22,7 @@
       "@hachej/boring-sandbox/providers/bwrap": ["../../packages/boring-sandbox/src/providers/bwrap/index.ts"],
       "@hachej/boring-sandbox/providers/direct": ["../../packages/boring-sandbox/src/providers/direct/index.ts"],
       "@hachej/boring-sandbox/providers/node-workspace": ["../../packages/boring-sandbox/src/providers/node-workspace/index.ts"],
+      "@hachej/boring-sandbox/providers/blaxel": ["../../packages/boring-sandbox/src/providers/blaxel/index.ts"],
       "@hachej/boring-sandbox/providers/vercel-sandbox": ["../../packages/boring-sandbox/src/providers/vercel-sandbox/index.ts"],
       "@hachej/boring-ui-kit": ["../../packages/ui/src/index.ts"],
       "@hachej/boring-workspace": ["../../packages/workspace/src/index.ts"],

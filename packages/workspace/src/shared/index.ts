@@ -40,7 +40,6 @@ export type {
   UiFileResourceInput,
 } from "./types/filesystem"
 export {
-  COMPANY_CONTEXT_FILESYSTEM_ID,
   USER_FILESYSTEM_ID,
   normalizeUiFileResource,
   normalizeUiFilesystem,
@@ -55,6 +54,16 @@ export type {
 } from "./types/surface"
 export { WORKSPACE_OPEN_PATH_SURFACE_KIND } from "./types/surface"
 export { definePanel } from "./types/panel"
+export type { UrlPanePolicy, UrlPanePaneParams, UrlPaneResolution, UrlPaneRejectionReason } from "./urlPane"
+export {
+  DEFAULT_URL_PANE_ORIGINS,
+  URL_PANE_PANEL_ID,
+  URL_PANE_PLUGIN_ID,
+  defaultUrlPanePolicy,
+  originMatchesPattern,
+  parseUrlPaneOrigins,
+  resolveUrlPaneTarget,
+} from "./urlPane"
 export type { AgentTool, JSONSchema, ToolExecContext, ToolResult } from "./types/agent-tool"
 export type { TelemetryEvent, TelemetrySink } from "./telemetry"
 export { noopTelemetry, safeCapture } from "./telemetry"

@@ -17,8 +17,11 @@ const expectedSkills = [
   "fresh-eyes",
   "grill-for-unknowns",
   "handoff",
+  "owner-gate",
   "plan",
+  "present-pr",
   "skill-management",
+  "show-me",
   "teach",
   "triage",
   "ui",
@@ -129,6 +132,36 @@ for (const [fileName, pattern] of skillManagementHashes) {
   } else {
     checkHash(resolve(skillManagementRoot, fileName), expectedHash)
   }
+}
+
+const showMeRoot = resolve(repoRoot, ".agents/skill-references/show-me/humanlayer-show-me")
+const showMeSource = readFileSync(resolve(showMeRoot, "SOURCE.md"), "utf8")
+const showMeHashes = [
+  [resolve(showMeRoot, "SKILL.md"), /- Upstream `SKILL\.md` SHA-256: `([0-9a-f]{64})`/],
+  [resolve(showMeRoot, "LICENSE.txt"), /- `LICENSE\.txt` SHA-256: `([0-9a-f]{64})`/],
+  [resolve(activeRoot, "show-me/SKILL.md"), /- Active `SKILL\.md` SHA-256: `([0-9a-f]{64})`/],
+]
+for (const [file, pattern] of showMeHashes) {
+  const expectedHash = showMeSource.match(pattern)?.[1]
+  if (!expectedHash) {
+    fail(`show-me SOURCE.md must declare the ${basename(file)} SHA-256 for ${relative(repoRoot, file)}`)
+  } else {
+    checkHash(file, expectedHash)
+  }
+}
+if (!/- Pinned commit: `[0-9a-f]{40}`/.test(showMeSource)) {
+  fail("show-me SOURCE.md must declare a pinned 40-character commit")
+}
+const showMeSkill = resolve(activeRoot, "show-me/SKILL.md")
+const showMeSkillSource = readFileSync(showMeSkill, "utf8")
+if (!/^disable-model-invocation: true$/m.test(showMeSkillSource)) {
+  fail("show-me must remain explicit-only with disable-model-invocation: true")
+}
+const showMeReferencePointer = "../../skill-references/show-me/humanlayer-show-me/"
+if (!showMeSkillSource.includes(showMeReferencePointer)) {
+  fail(`show-me SKILL.md must reference ${showMeReferencePointer}`)
+} else if (!existsSync(resolve(dirname(showMeSkill), showMeReferencePointer))) {
+  fail(`missing show-me reference target ${showMeReferencePointer}`)
 }
 
 for (const path of [".agents/skill-references", ".agents/skill-library"]) {

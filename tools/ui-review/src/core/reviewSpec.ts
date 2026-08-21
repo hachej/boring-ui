@@ -76,6 +76,8 @@ export type UiReviewSpec = {
   exploration?: {
     bombadilSpecPath: string
     ready?(page: Page, timeoutMs: number): Promise<void>
+    /** Removes scenario-owned orchestration metadata from replay identity. */
+    normalizeReplayState?(state: Record<string, unknown>): Record<string, unknown>
     selectReplayState(states: readonly UiReviewExplorationState[]): UiReviewExplorationState | undefined
   }
 }

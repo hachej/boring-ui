@@ -118,6 +118,42 @@ describe('loadConfig', () => {
     expect(config.encryption.workspaceSettingsKey).toBe('b'.repeat(64))
   })
 
+  it('loads the trusted exact-host signup mapping only from static host config', async () => {
+    const config = await loadConfig({
+      tomlPath: TOML_PATH,
+      env: {
+        ...VALID_ENV,
+        BORING_SIGNUP_AGENT_DEFAULTS_JSON: JSON.stringify({
+          'legal.example': 'legal',
+          'app.example': 'boring-v2',
+        }),
+      },
+    })
+
+    expect(config.signupAgentDefaults).toEqual({
+      'legal.example': 'legal',
+      'app.example': 'boring-v2',
+    })
+    expect(Object.isFrozen(config.signupAgentDefaults)).toBe(true)
+    expect(buildRuntimeConfigPayload(config)).not.toHaveProperty('signupAgentDefaults')
+  })
+
+  it.each([
+    ['invalid JSON', '{'],
+    ['non-object JSON', '[]'],
+    ['non-exact hostname', JSON.stringify({ '*.example': 'legal' })],
+    ['malformed fleet id', JSON.stringify({ 'legal.example': 'Legal' })],
+  ])('fails config loading for %s in the trusted signup mapping', async (_label, value) => {
+    await expect(loadConfig({
+      tomlPath: TOML_PATH,
+      env: { ...VALID_ENV, BORING_SIGNUP_AGENT_DEFAULTS_JSON: value },
+    })).rejects.toMatchObject({
+      name: 'ConfigValidationError',
+      code: 'config_validation_failed',
+      issues: [expect.objectContaining({ path: ['signupAgentDefaults'] })],
+    })
+  })
+
   it('loads only a paired, bounded CIDR proxy policy', async () => {
     const config = await loadConfig({ tomlPath: TOML_PATH, env: {
       ...VALID_ENV,
