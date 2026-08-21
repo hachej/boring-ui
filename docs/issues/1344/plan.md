@@ -128,12 +128,15 @@ The existing footer remains the home for word count and gains a compact, `aria-l
 pnpm --filter @hachej/boring-workspace exec vitest run \
   src/plugins/filesystemPlugin/front/data/__tests__/useFileEventStream.test.tsx \
   src/plugins/filesystemPlugin/front/data/__tests__/hooks.test.tsx \
+  src/plugins/filesystemPlugin/front/data/__tests__/useFileEventInvalidation.test.tsx \
   src/plugins/filesystemPlugin/front/__tests__/useFilePane.test.tsx \
   src/front/hooks/__tests__/useEditorLifecycle.test.ts \
   src/plugins/filesystemPlugin/front/markdown-editor/__tests__/MarkdownEditor.test.tsx
 
 pnpm --filter @hachej/boring-workspace typecheck
+pnpm --filter workspace-playground build:deps
 
+# playwright.config.ts must explicitly forward this variable through its env -i webServer.
 BORING_MAX_WATCHED_ENTRIES=10 \
   pnpm --filter workspace-playground exec playwright test \
   e2e/markdown-external-edit.spec.ts --grep '@watch-unsupported'
@@ -156,6 +159,8 @@ Run the workspace surface from this worktree with `BORING_MAX_WATCHED_ENTRIES` s
 5. Make a local unsaved edit, perform a second external write, assert local text remains, conflict copy is visible, and disk bytes do not change again until an explicit action.
 6. Save screenshot and trace.
 
+Focused event tests additionally prove agent attribution matches both filesystem and path, expires, ignores late unrelated metadata, and is not downgraded by the duplicate watcher event. The process-write E2E intentionally proves only the honest `Updated from disk` path.
+
 ### Folder-mode proof
 
 Repeat against a small fixture where SSE is live; assert no fallback polling, then perform the same open-file external write and observe `Updated from disk`/agent-attributed copy.
@@ -176,12 +181,12 @@ Keep the worktree demo on the allowed `:5301` origin. Open the proof Markdown do
 - `packages/workspace/src/plugins/filesystemPlugin/front/{useFilePane.ts,FilePaneShell.tsx,ConflictBanner.tsx}` and focused tests
 - `packages/workspace/src/front/hooks/useEditorLifecycle.ts` and focused tests
 - `packages/workspace/src/plugins/filesystemPlugin/front/markdown-editor/{MarkdownEditor.tsx,MarkdownEditorPane.tsx}` and focused tests
-- `apps/workspace-playground/{playwright.config.ts,e2e/markdown-external-edit.spec.ts}`; the spec creates/removes only its runtime fixture under the existing ignored E2E workspace
+- `apps/workspace-playground/{playwright.config.ts,e2e/markdown-external-edit.spec.ts}`; config forwards `BORING_MAX_WATCHED_ENTRIES` through its `env -i` web server, and the spec creates/removes only its runtime fixture under the existing ignored E2E workspace
 
 **Blocked by:** Gate 1 owner approval only.  
 **Proof:** exact commands and two-mode scenario above.  
 **Fits one session:** Yes; one package-local state flow plus focused route/provider fixtures, no schema/server authority/dependency migration.  
-**Review budget:** T1 Sol fresh-eyes plan review before Gate 1; final-SHA Sol fresh-eyes + T1 thermo due product-critical conflict semantics.
+**Review budget:** T1 Sol fresh-eyes plan review before Gate 1; final-SHA Sol fresh-eyes + T1 thermo due product-critical conflict semantics. The repository Model Card normally follows Sol with human-gated Fable falsification, but the owner's explicit request-level model policy forbids every non-Sol subagent. That Fable step is waived rather than silently substituted; Gate 1 is the owner's direct decision on this reviewed plan.
 
 ## Risks
 
@@ -197,7 +202,7 @@ Keep the worktree demo on the allowed `:5301` origin. Open the proof Markdown do
 
 ## Adversarial plan review
 
-**Reviewer provenance:** `openai-codex/gpt-5.6-sol`, fresh context, refutation mandate, target `84482748b4f4732b58a01d9c74a13a9438d570b5`, run `7d1e7c2b`. Model policy forbids another model, so independence came from a fresh session and explicit falsification rather than a different provider.
+**Reviewer provenance:** first pass `openai-codex/gpt-5.6-sol`, fresh context, refutation mandate, target `84482748b4f4732b58a01d9c74a13a9438d570b5`, run `7d1e7c2b`; second pass target `e701fe05b7434ed7668c9052ae2e9faa18e53b84`, run `8e6efb86`. The repository Model Card normally requires subsequent Fable falsification, but the owner's explicit request-level policy allows only Sol, including every subagent. Fable is recorded as an explicit waiver, not treated as completed; fresh-session refutation supplies independence within the allowed model.
 
 | Finding | Disposition |
 | --- | --- |
@@ -205,7 +210,9 @@ Keep the worktree demo on the allowed `:5301` origin. Open the proof Markdown do
 | High: exact mtime is not identity; missing/colliding mtimes remain stale. | **Fix in plan.** Track confirmed disk content (or digest), use mtime only as supplementary evidence, and test missing/same mtime plus changed content. |
 | High: agent attribution had no producer/consumer path in scope. | **Fix in plan.** Add `useFileEventInvalidation.ts` and a matching filesystem/path, expiring pane-local source correlation; polling remains honestly “disk.” |
 | High: bead absent from the review worktree's stale JSONL snapshot. | **Rejected as non-issue.** Canonical authority is the explicitly required Beads DB, not committed JSONL. `br --db /home/ubuntu/projects/boring-ui-v2/.beads/beads.db show wt-391-forward-z2qt --json` proves P0, in-progress, claimed, issue #1344, and the ready fields. |
-| Medium: nonexistent fs-events test path and no exact E2E command/fixture. | **Fix in plan.** Remove the nonexistent test command; name `e2e/markdown-external-edit.spec.ts`, its runtime-created ignored fixture, exact unsupported/live commands, and the Playwright env handoff. |
+| Medium: nonexistent fs-events test path and no exact E2E command/fixture. | **Fix in plan.** Remove the nonexistent test command; name `e2e/markdown-external-edit.spec.ts`, its runtime-created ignored fixture, `build:deps`, exact unsupported/live commands, and explicit forwarding through Playwright's `env -i`. |
+| Second-pass high: review language omitted mandatory Fable. | **Waived by owner policy, made explicit.** The Model Card requirement is acknowledged; no non-Sol subagent may run under the request-level policy. Gate 1 is still raised once for the owner's direct decision. |
+| Second-pass medium: attribution and stale proof language lacked exact coverage. | **Fix in plan.** Add `useFileEventInvalidation.test.tsx` to focused proof and require filesystem/path match, expiry, unrelated metadata, and duplicate-event precedence tests; process-write E2E proves only “disk.” |
 
 Graph checks before handoff: `br ... dep cycles --json` returned zero cycles; `bv --robot-insights` completed. This one bead has no dependency edges.
 
