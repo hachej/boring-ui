@@ -1,5 +1,5 @@
 import type postgres from "postgres"
-import { AUTOMATION_RUN_OCCUPYING_STATUSES_SQL } from "../shared/runStatus"
+import { AUTOMATION_RUN_OCCUPYING_STATUSES_SQL, AUTOMATION_RUN_STATUSES_SQL } from "../shared/runStatus"
 import { MAX_AUTOMATION_RUN_DURATION_CAP_MS } from "../shared/schedule"
 
 /** Deployment-owned hosted schema registration for the automation plugin. */
@@ -101,7 +101,7 @@ export async function runBoringAutomationMigrations(sql: postgres.Sql): Promise<
   await sql.unsafe(`
     ALTER TABLE boring_automation_runs
       ADD CONSTRAINT boring_automation_runs_status_check
-      CHECK (status IN ('queued', 'dispatching', 'running', 'succeeded', 'failed', 'cancelled', 'outcome-unknown'))
+      CHECK (status IN (${AUTOMATION_RUN_STATUSES_SQL}))
   `)
   await sql.unsafe(`
     CREATE INDEX IF NOT EXISTS boring_automation_runs_automation_idx

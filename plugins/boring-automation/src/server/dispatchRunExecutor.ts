@@ -6,6 +6,7 @@ import type { WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/serv
 import { BORING_AUTOMATION_ERROR_CODES } from "../shared/error-codes"
 import { parseAutomationModelRef } from "../shared/model"
 import { clampAutomationPersistedDurationMs, resolveAutomationRunDurationCapMs } from "../shared/schedule"
+import { isAutomationRunSettled } from "../shared/runStatus"
 import type { AutomationRun, AutomationRunTrigger } from "../shared/types"
 import type { AutomationRunEventPublisher } from "./runEventBus"
 import type { AutomationStore } from "./store"
@@ -122,7 +123,7 @@ export class DispatchRunExecutor {
     // beginRun is the durable invocation-to-run receipt. A retry of a terminal
     // invocation returns that receipt verbatim and must never enter dispatch or
     // republish a lifecycle transition that did not occur.
-    if (isTerminalRunStatus(run.status)) {
+    if (isAutomationRunSettled(run.status)) {
       await input.onStarted?.(run)
       return run
     }
@@ -134,6 +135,7 @@ export class DispatchRunExecutor {
     let terminalError: string | null = null
     let dispatchAccepted = false
     let dispatchIdentityPersistenceFailed = false
+    let sessionAddressabilityVerified = false
     const claimed = await store.claimRunForDispatch(run.id)
     if (!claimed) {
       const durable = await this.readDurableRun(store, automation.id, run.id, run)
@@ -232,6 +234,7 @@ export class DispatchRunExecutor {
           }
           try {
             await authorizeSession.call(this.options.dispatcherResolver, actor, ref)
+            sessionAddressabilityVerified = true
           } catch (error) {
             throw new AutomationSessionUnaddressableError(
               `recorded session ${ref.sessionId} could not be resolved through the workspace session lookup: ${safeErrorMessage(error)}`,
@@ -263,7 +266,10 @@ export class DispatchRunExecutor {
       await stopHeartbeat()
       if (isRunLeaseLost(error)) return await this.readDurableRun(store, automation.id, run.id, current)
       const durationCapExceeded = error instanceof AutomationRunDurationCapExceededError
-      const sessionUnaddressable = error instanceof AutomationSessionUnaddressableError
+      const scheduledSuccessUnverified = trigger === "scheduled"
+        && terminalStatus === "succeeded"
+        && !sessionAddressabilityVerified
+      const sessionUnaddressable = error instanceof AutomationSessionUnaddressableError || scheduledSuccessUnverified
       const durationCapStop = durationCapExceeded ? await error.stopCompletion : null
       const completedAt = this.nowIso()
       const cancelled = isCancellationError(error)
@@ -282,7 +288,9 @@ export class DispatchRunExecutor {
           status,
           error: durationCapExceeded
             ? durationCapErrorMessage(error, durationCapStop!)
-            : status === "failed" || status === "outcome-unknown" ? (terminalError ?? safeErrorMessage(error)) : null,
+            : scheduledSuccessUnverified
+              ? `scheduled session addressability could not be verified: ${safeErrorMessage(error)}`
+              : status === "failed" || status === "outcome-unknown" ? (terminalError ?? safeErrorMessage(error)) : null,
           usage,
         })
       } catch (finalizeError) {
@@ -520,12 +528,6 @@ function terminalOutcomeFromEvent(event: unknown): { status: "succeeded" | "fail
   return null
 }
 
-function isTerminalRunStatus(status: AutomationRun["status"]): boolean {
-  return status === "succeeded"
-    || status === "failed"
-    || status === "cancelled"
-    || status === "outcome-unknown"
-}
 
 function isRunLeaseLost(error: unknown): boolean {
   return error instanceof AutomationStoreError && error.code === BORING_AUTOMATION_ERROR_CODES.RUN_LEASE_LOST
