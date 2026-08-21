@@ -4,7 +4,7 @@ import { isValidFiveFieldCron, isValidIanaTimeZone } from "./schedule"
 export const SCHEDULE_COMMAND_USAGE = [
   "Usage: /schedule [flags] <cadence> <prompt...>",
   "Cadence examples: 'daily 8am', 'every 10m', 'weekdays 9:00', or '0 8 * * *'.",
-  "Flags (before cadence): --timezone <IANA>, --model <provider:model>, --agent <agentTypeId>, --title <title>.",
+  "Flags may appear before or after the prompt: --timezone <IANA>, --model <provider:model>, --agent <agentTypeId>, --title <title>.",
 ].join("\n")
 
 export interface ParsedScheduleCommand {
@@ -44,15 +44,15 @@ export function parseScheduleCadence(input: string): string | null {
 }
 
 export function parseScheduleCommandArgs(args: string): ParsedScheduleCommand {
-  const leading = parseLeadingFlags(args)
-  const cadence = parseCadence(leading.remainder)
+  const extracted = extractFlags(args)
+  const cadence = parseCadence(extracted.remainder)
   if (!cadence) throw new Error("could not parse cadence — try 'daily 8am' or '0 8 * * *'")
-  const parsed = parsePromptFlags(leading.remainder.slice(cadence.consumed), leading.flags)
-  if (parsed.flags.timezone && !isValidIanaTimeZone(parsed.flags.timezone)) {
+  const prompt = extracted.remainder.slice(cadence.consumed).trim()
+  if (extracted.flags.timezone && !isValidIanaTimeZone(extracted.flags.timezone)) {
     throw new Error("invalid timezone — use an IANA timezone such as Europe/Zurich")
   }
-  if (!parsed.prompt) throw new Error("prompt is required after the cadence")
-  return { cron: cadence.cron, prompt: parsed.prompt, ...parsed.flags }
+  if (!prompt) throw new Error("prompt is required after the cadence")
+  return { cron: cadence.cron, prompt, ...extracted.flags }
 }
 
 export function nextScheduleFire(cron: string, timezone: string, after = new Date()): string {
@@ -72,38 +72,12 @@ function parseCadence(input: string): { cron: string; consumed: number } | null 
   return cron ? { cron, consumed: humanMatch[0].length } : null
 }
 
-function parseLeadingFlags(input: string): {
+function extractFlags(input: string): {
   flags: Partial<Record<"timezone" | "model" | "agentTypeId" | "title", string>>
   remainder: string
 } {
   const flags: Partial<Record<"timezone" | "model" | "agentTypeId" | "title", string>> = {}
-  let cursor = skipSpace(input, 0)
-  while (input.startsWith("--", cursor)) {
-    const flag = readToken(input, cursor)
-    const separator = flag.value.indexOf("=")
-    const rawName = (separator >= 0 ? flag.value.slice(2, separator) : flag.value.slice(2))
-    const name = rawName === "agent" ? "agentTypeId" : rawName
-    if (name !== "timezone" && name !== "model" && name !== "agentTypeId" && name !== "title") {
-      throw new Error(`unknown flag --${rawName}`)
-    }
-    let value = separator >= 0 ? flag.value.slice(separator + 1) : ""
-    cursor = skipSpace(input, flag.end)
-    if (separator < 0) {
-      const valueToken = readToken(input, cursor)
-      value = valueToken.value
-      cursor = skipSpace(input, valueToken.end)
-    }
-    if (!value) throw new Error(`--${rawName} requires a value`)
-    flags[name] = value
-  }
-  return { flags, remainder: input.slice(cursor) }
-}
-
-function parsePromptFlags(
-  input: string,
-  flags: Partial<Record<"timezone" | "model" | "agentTypeId" | "title", string>>,
-): { prompt: string; flags: Partial<Record<"timezone" | "model" | "agentTypeId" | "title", string>> } {
-  const prompt: string[] = []
+  const text: string[] = []
   let cursor = 0
   let textStart = 0
   while (cursor < input.length) {
@@ -116,7 +90,7 @@ function parsePromptFlags(
       cursor = token.end
       continue
     }
-    prompt.push(input.slice(textStart, tokenStart).trim())
+    text.push(input.slice(textStart, tokenStart).trim())
     const separator = token.value.indexOf("=")
     const rawName = separator >= 0 ? token.value.slice(2, separator) : token.value.slice(2)
     const name = rawName === "agent" ? "agentTypeId" : rawName
@@ -124,16 +98,16 @@ function parsePromptFlags(
     let value = separator >= 0 ? token.value.slice(separator + 1) : ""
     cursor = skipSpace(input, token.end)
     if (separator < 0) {
-      const valueToken = readToken(input, cursor)
-      value = valueToken.value
-      cursor = valueToken.end
+      const next = readToken(input, cursor)
+      value = next.value
+      cursor = next.end
     }
     if (!value) throw new Error(`--${rawName} requires a value`)
     flags[name] = value
     textStart = cursor
   }
-  prompt.push(input.slice(textStart).trim())
-  return { prompt: prompt.filter(Boolean).join(" "), flags }
+  text.push(input.slice(textStart).trim())
+  return { flags, remainder: text.filter(Boolean).join(" ") }
 }
 
 function readToken(input: string, start: number): { value: string; end: number } {

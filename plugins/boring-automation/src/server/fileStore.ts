@@ -428,6 +428,7 @@ function reconcileOrphanedRuns(
 ): void {
   for (const run of Object.values(state.runs)) {
     if (run.automationId !== automationId || !isAutomationRunOccupying(run.status) || activeRunIds.has(run.id)) continue
+    if (run.status === "outcome-unknown" && run.dispatchReceipt) continue
     const reconciled = reconcileAbandonedRun(run.status, "host-restart")
     run.status = reconciled.status
     run.completedAt = completedAt

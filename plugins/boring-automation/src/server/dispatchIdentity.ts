@@ -53,7 +53,6 @@ export class DispatchIdentity {
       this.dispatchReceipt = { ref, ...receipt }
     }
     if (this.isAlreadyPersisted(ref, receipt)) return
-    await this.verifyAddressability(ref)
     try {
       this.options.current = await this.options.store.updateRunLifecycle(this.options.runId, {
         status: "dispatching",
@@ -66,6 +65,7 @@ export class DispatchIdentity {
     }
     this.durableSessionId = ref.sessionId
     await this.options.publish(this.options.current)
+    await this.verifyAddressability(ref)
   }
 
   private async verifyAddressability(ref: { agentTypeId: string; sessionId: string }): Promise<void> {

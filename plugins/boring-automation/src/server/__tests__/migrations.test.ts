@@ -101,25 +101,16 @@ describe("runBoringAutomationMigrations", () => {
       })
       await sql`UPDATE boring_automation_runs SET updated_at = '2026-07-10T00:00:00.000Z' WHERE id = ${run.id}`
       const released = await reconcileStaleHostedAutomationRuns(sql, 60_000)
-      expect(released).toEqual(expect.arrayContaining([
-        expect.objectContaining({
-          actor,
-          run: expect.objectContaining({
-            id: run.id,
-            status: "failed",
-            error: "Automation outcome remained unknown after its worker lease expired; releasing the occupied slot",
-          }),
-        }),
-      ]))
+      expect(released).toEqual([])
 
       const replacements = await Promise.allSettled([
         store.beginRun({ automationId, trigger: "manual", promptSnapshot: "replacement-1", modelSnapshot: "test:model" }),
         store.beginRun({ automationId, trigger: "manual", promptSnapshot: "replacement-2", modelSnapshot: "test:model" }),
       ])
-      expect(replacements.filter((replacement) => replacement.status === "fulfilled")).toHaveLength(1)
-      expect(replacements.filter((replacement) => replacement.status === "rejected")).toHaveLength(1)
-      const rejected = replacements.find((replacement) => replacement.status === "rejected")
-      if (rejected?.status === "rejected") expect(rejected.reason).toMatchObject({ code: "BORING_AUTOMATION_RUN_ALREADY_ACTIVE" })
+      expect(replacements.every((replacement) => replacement.status === "rejected")).toBe(true)
+      for (const replacement of replacements) {
+        if (replacement.status === "rejected") expect(replacement.reason).toMatchObject({ code: "BORING_AUTOMATION_RUN_ALREADY_ACTIVE" })
+      }
     } finally {
       await sql`DELETE FROM boring_automation_automations WHERE id = ${automationId}`.catch(() => undefined)
       await sql.end()

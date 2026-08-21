@@ -224,6 +224,7 @@ export class PostgresAutomationStore implements AutomationStore {
           updated_at = ${this.clock().toISOString()}
       WHERE automation_id = ${automationId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId}
         AND status = ANY(${this.sql.array([...AUTOMATION_RUN_OCCUPYING_STATUSES])})
+        AND NOT (status = 'outcome-unknown' AND dispatch_receipt IS NOT NULL)
     `
   }
 
@@ -411,6 +412,7 @@ export async function reconcileStaleHostedAutomationRuns(
           ELSE ${inFlight.error} END,
         updated_at = NOW()
     WHERE status = ANY(${sql.array([...AUTOMATION_RUN_OCCUPYING_STATUSES])})
+      AND NOT (status = 'outcome-unknown' AND dispatch_receipt IS NOT NULL)
       AND updated_at < NOW() - (${staleAfterMs} * INTERVAL '1 millisecond')
     RETURNING *
   `

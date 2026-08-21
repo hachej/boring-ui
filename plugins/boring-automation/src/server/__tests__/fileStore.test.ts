@@ -168,6 +168,26 @@ describe("FileAutomationStore persistence", () => {
     ]))
   })
 
+  it("never auto-releases accepted outcome ambiguity after restart", async () => {
+    const first = createStore()
+    const automation = await first.createAutomation({ title: "Accepted", cron: "0 9 * * *", timezone: "UTC", model: "test:model" })
+    const run = await first.beginRun({ automationId: automation.id, trigger: "manual", promptSnapshot: "p", modelSnapshot: "test:model" })
+    await first.claimRunForDispatch(run.id)
+    await first.updateRunLifecycle(run.id, {
+      status: "outcome-unknown",
+      sessionId: "session-1",
+      dispatchReceipt: { ref: { agentTypeId: "default", sessionId: "session-1" }, accepted: true, cursor: 1, disposition: "prompt", clientNonce: run.id },
+    })
+
+    const restarted = createStore()
+    await restarted.reconcileOrphanedRuns(automation.id)
+    await expect(restarted.listRuns(automation.id)).resolves.toEqual([
+      expect.objectContaining({ id: run.id, status: "outcome-unknown", dispatchReceipt: expect.objectContaining({ accepted: true }) }),
+    ])
+    await expect(restarted.beginRun({ automationId: automation.id, trigger: "manual", promptSnapshot: "again", modelSnapshot: "test:model" }))
+      .rejects.toMatchObject({ code: "BORING_AUTOMATION_RUN_ALREADY_ACTIVE" })
+  })
+
   it("allows only one dispatcher to claim a queued run", async () => {
     const store = createStore()
     const automation = await store.createAutomation({

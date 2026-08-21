@@ -158,6 +158,7 @@ describe("DispatchRunExecutor", () => {
       status: "outcome-unknown",
       trigger: "scheduled",
       sessionId: "session-1",
+      dispatchReceipt: expect.objectContaining({ accepted: true, ref: { agentTypeId: "default", sessionId: "session-1" } }),
       error: "recorded session session-1 could not be resolved through the workspace session lookup: session was not found",
     })
     expect(resolver.authorizeSession).toHaveBeenCalledWith(
