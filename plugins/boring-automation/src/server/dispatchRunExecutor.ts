@@ -220,25 +220,22 @@ export class DispatchRunExecutor {
           })
           if (!dispatchReceipt) await persistDispatchIdentity(dispatched.ref, dispatched.receipt)
         })
-        const ref = dispatchReceipt?.ref
-        if (!ref) {
-          throw new AutomationSessionUnaddressableError("automation dispatch completed without a durable session reference")
-        }
-        const authorizeSession = this.options.dispatcherResolver.authorizeSession
-        if (!authorizeSession) {
-          throw new AutomationSessionUnaddressableError("workspace session lookup is unavailable")
-        }
-        try {
-          await authorizeSession.call(
-            this.options.dispatcherResolver,
-            actor,
-            ref,
-            input.request ? { request: input.request } : undefined,
-          )
-        } catch (error) {
-          throw new AutomationSessionUnaddressableError(
-            `recorded session ${ref.sessionId} could not be resolved through the workspace session lookup: ${safeErrorMessage(error)}`,
-          )
+        if (trigger === "scheduled") {
+          const ref = dispatchReceipt?.ref
+          if (!ref) {
+            throw new AutomationSessionUnaddressableError("automation dispatch completed without a durable session reference")
+          }
+          const authorizeSession = this.options.dispatcherResolver.authorizeSession
+          if (!authorizeSession) {
+            throw new AutomationSessionUnaddressableError("workspace session lookup is unavailable")
+          }
+          try {
+            await authorizeSession.call(this.options.dispatcherResolver, actor, ref)
+          } catch (error) {
+            throw new AutomationSessionUnaddressableError(
+              `recorded session ${ref.sessionId} could not be resolved through the workspace session lookup: ${safeErrorMessage(error)}`,
+            )
+          }
         }
       })
       current = await store.updateRunLifecycle(run.id, {

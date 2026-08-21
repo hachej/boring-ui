@@ -57,11 +57,7 @@ describe("ManualRunExecutor", () => {
       actor: { id: harness.actor.userId },
       originSurface: "boring-automation",
     }))
-    expect(harness.resolver.authorizeSession).toHaveBeenCalledWith(
-      harness.actor,
-      { agentTypeId: "default", sessionId: "session-1" },
-      { request },
-    )
+    expect(harness.resolver.authorizeSession).not.toHaveBeenCalled()
   })
 
   it("uses the host default for a legacy automation in a multi-Agent registry", async () => {
@@ -137,7 +133,6 @@ describe("ManualRunExecutor", () => {
     expect(resolver.authorizeSession).toHaveBeenCalledWith(
       harness.actor,
       { agentTypeId: "default", sessionId: "session-1" },
-      undefined,
     )
   })
 

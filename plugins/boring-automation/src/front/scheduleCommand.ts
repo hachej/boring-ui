@@ -11,6 +11,7 @@ import type { AutomationClient } from "./client"
 export function createScheduleSlashCommand(options: {
   client: AutomationClient
   workspaceTimezone: string
+  validateModel: (input: { agentTypeId: string; provider: string; id: string }) => Promise<void>
   now?: () => Date
 }): SlashCommand {
   return {
@@ -26,8 +27,10 @@ export function createScheduleSlashCommand(options: {
         const model = parsed.model ?? modelId(context.model)
         const agentTypeId = parsed.agentTypeId ?? context.agentTypeId
         if (!model) throw new Error("no current model is selected — pass --model provider:model-id")
-        if (!isExplicitModel(model)) throw new Error("model must use provider:model-id syntax")
+        const parsedModel = parseExplicitModel(model)
+        if (!parsedModel) throw new Error("model must use provider:model-id syntax")
         if (!agentTypeId.trim()) throw new Error("no current Agent is selected — pass --agent <agentTypeId>")
+        await options.validateModel({ agentTypeId, ...parsedModel })
         const input: AutomationCreate = {
           title: parsed.title?.trim() || defaultTitle(parsed.prompt),
           enabled: true,
@@ -35,6 +38,7 @@ export function createScheduleSlashCommand(options: {
           timezone,
           model,
           agentTypeId,
+          thinkingLevel: "medium",
           prompt: parsed.prompt,
         }
         const automation = await options.client.createAutomation(input)
@@ -80,9 +84,10 @@ function modelId(model: ModelSelection | null): string | undefined {
   return model ? `${model.provider}:${model.id}` : undefined
 }
 
-function isExplicitModel(value: string): boolean {
+function parseExplicitModel(value: string): { provider: string; id: string } | null {
   const separator = value.indexOf(":")
-  return separator > 0 && separator < value.length - 1
+  if (separator <= 0 || separator >= value.length - 1) return null
+  return { provider: value.slice(0, separator), id: value.slice(separator + 1) }
 }
 
 function defaultTitle(prompt: string): string {
