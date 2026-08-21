@@ -289,11 +289,15 @@ export function SurfaceShell({
   // illegal combinations like "hidden but source-open" and lets full-block
   // collapse restore the same active source (Files, Macro, …) on uncollapse.
   const [leftState, setLeftState] = useState<WorkbenchLeftState>(() => initialWorkbenchLeftState(storageKey, defaultLeftTab))
+  // Mobile workspace takeover (hideLevelOneHeader) is a full-bleed single pane:
+  // no level-one header, activity rail, or source pane should consume viewport
+  // width that belongs to the artifact surface.
+  const fullBleed = hideLevelOneHeader
   // The far-right activity rail is structural and never disappears on desktop.
   // Legacy "hidden" state now means rail-only; hostRailOnly additionally hides
   // the editor and source content while preserving that same rail.
   const leftBlockCollapsed = false
-  const sourcePaneOpen = !hostRailOnly && leftState.mode === "source"
+  const sourcePaneOpen = !hostRailOnly && !fullBleed && leftState.mode === "source"
   const activeLeftTab = leftState.activeTab
   const setActiveLeftTab = useCallback((tab: string) => {
     setLeftState((state) => setWorkbenchActiveTab(state, tab))
@@ -930,7 +934,6 @@ export function SurfaceShell({
   const workbenchRailWidth = 44
   const workbenchHeaderHeight = 44
   const workbenchSidebarWidth = sourcePaneOpen ? sidebarWidth : workbenchRailWidth
-
   return (
     <div
       ref={containerRef}
@@ -997,7 +1000,7 @@ export function SurfaceShell({
               allowedPanels={allowedPanels}
             />
           </div>
-          <EmptyWorkbenchOverlay api={api} />
+          <EmptyWorkbenchOverlay api={api} showFallbackBar={!hideLevelOneHeader} />
         </div>
 
         {sourcePaneOpen ? (
@@ -1029,14 +1032,17 @@ export function SurfaceShell({
           className={cn(
             "relative z-10 flex min-h-0 shrink-0 flex-col overflow-hidden border-l border-border",
             !hideLevelOneHeader && "mt-11",
+            fullBleed && "hidden",
           )}
           style={{
-            width: workbenchSidebarWidth,
-            minWidth: workbenchSidebarWidth,
-            maxWidth: workbenchSidebarWidth,
+            width: fullBleed ? 0 : workbenchSidebarWidth,
+            minWidth: fullBleed ? 0 : workbenchSidebarWidth,
+            maxWidth: fullBleed ? 0 : workbenchSidebarWidth,
             height: hideLevelOneHeader ? "100%" : `calc(100% - ${workbenchHeaderHeight}px)`,
           }}
           aria-label={hostRailOnly ? "Workbench activity rail" : "Workbench sources and activity rail"}
+          aria-hidden={fullBleed ? true : undefined}
+          inert={fullBleed ? true : undefined}
         >
           <WorkbenchLeftPane
             rootDir={rootDir}
@@ -1059,7 +1065,16 @@ export function SurfaceShell({
   )
 }
 
-function EmptyWorkbenchOverlay({ api }: { api: DockviewApi | null }) {
+function EmptyWorkbenchOverlay({
+  api,
+  showFallbackBar = true,
+}: {
+  api: DockviewApi | null
+  /** Desktop keeps an empty header-height strip so the top edge reads as chrome
+   * even with no tabs; on mobile takeover there is no header above, so the bar
+   * is pure dead space and the empty state can center without offset. */
+  showFallbackBar?: boolean
+}) {
   const [empty, setEmpty] = useState(true)
   useEffect(() => {
     if (!api) return
@@ -1076,11 +1091,13 @@ function EmptyWorkbenchOverlay({ api }: { api: DockviewApi | null }) {
   return (
     <>
       {/* Fallback top bar so icons are always visible even with no tabs */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-0.5 border-b border-[color:oklch(from_var(--border)_l_c_h/0.4)] bg-background px-1" style={{ height: 44 }}>
-        <div className="flex-1" />
-      </div>
+      {showFallbackBar ? (
+        <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-0.5 border-b border-[color:oklch(from_var(--border)_l_c_h/0.4)] bg-background px-1" style={{ height: 44 }}>
+          <div className="flex-1" />
+        </div>
+      ) : null}
 
-      <div className="pointer-events-none absolute inset-0 flex flex-col items-start justify-center gap-2 px-6 pt-12 pb-10">
+      <div className={cn("pointer-events-none absolute inset-0 flex flex-col items-start justify-center gap-2 px-6 pb-10", showFallbackBar && "pt-12")}>
         <div className="flex items-center gap-2 text-[11px] font-medium tracking-tight text-muted-foreground/75">
           <span className="inline-block h-px w-3 bg-[color:var(--accent)]" aria-hidden="true" />
           Workbench

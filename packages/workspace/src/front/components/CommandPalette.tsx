@@ -153,9 +153,12 @@ export function CommandPalette({ sessionSearch }: CommandPaletteProps = {}) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
+      {/* Fit the dialog to its content (capped) instead of a fixed 520px: on
+          phones a half-empty fixed-height dialog reads as a broken screen.
+          Desktop keeps the same 520px ceiling. */}
       <DialogContent
         className="cmdk-shell flex flex-col gap-0 overflow-hidden border-border/60 bg-background p-0 shadow-none backdrop-blur-0 [&>button.dialog-close]:hidden"
-        style={{ height: "min(520px, calc(100dvh - 2rem))", width: "min(640px, calc(100vw - 2rem))", maxWidth: 640 }}
+        style={{ maxHeight: "min(520px, calc(100dvh - 2rem))", width: "min(640px, calc(100vw - 2rem))", maxWidth: 640 }}
         showCloseButton={false}
         onPointerDownOutside={() => setOpen(false)}
         onEscapeKeyDown={() => setOpen(false)}
