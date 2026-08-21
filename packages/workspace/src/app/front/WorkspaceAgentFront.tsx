@@ -338,8 +338,8 @@ export interface WorkspaceAgentFrontProps<
    * Opt in/out of server-backed pi-chat sessions independently of workspace
    * provisioning. When omitted, remote sessions follow `provisionWorkspace`
    * (enabled unless `provisionWorkspace={false}`). Apps that disable
-   * provisioning but still talk to `/api/v1/agent/pi-chat/*` should pass
-   * `true` so chat uses real server session ids instead of local-only ones.
+   * provisioning but still reach the agent pi-chat routes should pass `true`
+   * so chat uses real server session ids instead of local-only ones.
    */
   remoteSessionsEnabled?: boolean
   bootPreloadPaths?: string[]
@@ -921,10 +921,11 @@ export function WorkspaceAgentFront<
   useEffect(() => {
     if (remoteSessionsDisabledWarnedRef.current) return
     if (!shouldUseRemoteSessions || remoteSessionsResolved || provisionWorkspace !== false) return
+    if (remoteSessionsEnabled !== undefined) return
     remoteSessionsDisabledWarnedRef.current = true
     if (typeof import.meta !== 'undefined' && import.meta.env?.DEV) {
       console.warn(
-        "[boring-ui] WorkspaceAgentFront: provisionWorkspace={false} also disabled server-backed chat sessions, so the chat panel will use local-only session ids while still calling /api/v1/agent/pi-chat/*. Pass remoteSessionsEnabled={true} to keep remote sessions.",
+        "[boring-ui] WorkspaceAgentFront: provisionWorkspace={false} also disabled server-backed chat sessions, so the chat panel will use local-only session ids while still reaching the agent pi-chat routes. Pass remoteSessionsEnabled={true} to keep remote sessions.",
       )
     }
   }, [provisionWorkspace, remoteSessionsResolved, shouldUseRemoteSessions])
