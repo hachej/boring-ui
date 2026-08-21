@@ -1,11 +1,9 @@
-import { randomUUID } from "node:crypto"
 import type { WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/server"
 import type { FastifyRequest } from "fastify"
 import type postgres from "postgres"
 import type { WorkspaceAgentServerPluginContext } from "@hachej/boring-workspace/app/server"
 import { defineServerPlugin, type WorkspaceServerPlugin } from "@hachej/boring-workspace/server"
 import {
-  BORING_AUTOMATION_ERROR_CODES,
   BORING_AUTOMATION_PLUGIN_ID,
   BORING_AUTOMATION_PLUGIN_LABEL,
 } from "../shared"
@@ -18,10 +16,11 @@ import { PostgresAutomationStore } from "./postgresStore"
 import { createLeaseBoundHostedAutomationStore } from "./hostedStore"
 import { createBoringAutomationTool } from "./automationTool"
 import { DispatchRunExecutor, type VerifiedAutomationActor } from "./dispatchRunExecutor"
-import { resolveAutomationOperationsForActor, type AutomationSessionController, type AutomationStoreMode } from "./operations"
+import { resolveAutomationOperationsForActor, type AutomationStoreMode } from "./operations"
+import { createAutomationSessionController } from "./automationSessionController"
 import { InMemoryAutomationRunEventBus, PostgresAutomationRunEventBus, type AutomationRunEventBus } from "./runEventBus"
 import { automationRoutes } from "./routes"
-import { AutomationStoreError, type AutomationStore } from "./store"
+import type { AutomationStore } from "./store"
 import { seedStandingAutomations, type AutomationSeedProvider } from "./standingAutomations"
 
 export interface BoringAutomationServerPluginOptions {
@@ -140,50 +139,6 @@ export function createBoringAutomationServerPlugin(options: BoringAutomationServ
 }
 
 
-export function createAutomationSessionController(
-  resolver: WorkspaceAgentDispatcherResolver,
-  actorContext: { workspaceId?: string; userId?: string },
-): AutomationSessionController {
-  const context = {
-    workspaceId: actorContext.workspaceId?.trim() ?? "",
-    userId: actorContext.userId?.trim() ?? "",
-  }
-  const withBinding = async <T>(
-    agentTypeId: string,
-    requestId: string,
-    operation: (binding: Parameters<Parameters<WorkspaceAgentDispatcherResolver["runWithWorkspaceAgent"]>[1]>[0]) => Promise<T>,
-  ): Promise<T> => {
-    let outcome: { value: T } | undefined
-    await resolver.runWithWorkspaceAgent({ agentTypeId, context, requestId }, async (binding) => {
-      outcome = { value: await operation(binding) }
-    })
-    if (!outcome) {
-      throw new AutomationStoreError(
-        BORING_AUTOMATION_ERROR_CODES.TOOL_CONTEXT_UNAVAILABLE,
-        "workspace agent resolver returned without binding an automation session controller",
-      )
-    }
-    return outcome.value
-  }
-  return {
-    async list(agentTypeId) {
-      const page = await withBinding(agentTypeId, `list:${randomUUID()}`, async (binding) => await binding.listSessions(100))
-      return page.sessions
-    },
-    async nudge(agentTypeId, sessionId, message, requestId) {
-      await withBinding(agentTypeId, requestId, async (binding) => {
-        await binding.sendIfIdle(sessionId, message, requestId)
-      })
-    },
-    async cancel(agentTypeId, sessionId, requestId) {
-      await withBinding(agentTypeId, requestId, async (binding) => {
-        await binding.stop(sessionId, requestId)
-      })
-    },
-  }
-}
-
-
 function seedOptions(
   options: Pick<BoringAutomationServerPluginOptions, "additionalSeeds" | "seedProvider" | "seedWarning">,
   fallbackWarning: (message: string) => void = () => undefined,
@@ -267,6 +222,7 @@ export default function defaultBoringAutomationServerPlugin(
   })
 }
 
+export * from "./automationSessionController"
 export * from "./automationTool"
 export * from "./dueRunService"
 export * from "./fileStore"

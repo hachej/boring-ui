@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import type { AgentSessionSummary } from "@hachej/boring-agent/shared"
+import type { AgentSendIfIdleReceipt, AgentSessionSummary } from "@hachej/boring-agent/shared"
 import { BORING_AUTOMATION_ERROR_CODES } from "../shared/error-codes"
 import type {
   Automation,
@@ -62,7 +62,7 @@ export interface DispatchRunFleetSummary extends SafeAutomationRunSummary {
 
 export interface AutomationSessionController {
   list(agentTypeId: string): Promise<readonly AgentSessionSummary[]>
-  nudge(agentTypeId: string, sessionId: string, message: string, requestId: string): Promise<void>
+  nudge(agentTypeId: string, sessionId: string, message: string, requestId: string): Promise<AgentSendIfIdleReceipt>
   cancel(agentTypeId: string, sessionId: string, requestId: string): Promise<void>
 }
 
@@ -198,13 +198,10 @@ export function createAutomationOperations({
     async nudge(sessionId, message) {
       if (!sessionController) throw contextUnavailable()
       const target = await requireSessionTarget(store, sessionId, defaultAgentTypeId)
-      try {
-        await sessionController.nudge(target.agentTypeId, sessionId, message, `nudge:${randomUUID()}`)
-      } catch (error) {
-        if (isSessionBusyInvalidState(error)) return { sessionId, skipped: "session-busy" }
-        throw error
-      }
-      return { sessionId, accepted: true }
+      const receipt = await sessionController.nudge(target.agentTypeId, sessionId, message, `nudge:${randomUUID()}`)
+      return receipt.status === "not-idle"
+        ? { sessionId, skipped: "session-busy" }
+        : { sessionId, accepted: true }
     },
     async cancel(sessionId) {
       if (!sessionController) throw contextUnavailable()
@@ -332,14 +329,6 @@ function sanitizeRunError(error: string | null): string | null {
   return firstLine.slice(0, AUTOMATION_TOOL_ERROR_CHARACTER_LIMIT)
 }
 
-function isSessionBusyInvalidState(error: unknown): boolean {
-  if (!error || typeof error !== "object") return false
-  const candidate = error as { code?: unknown; details?: unknown }
-  if (candidate.code !== "AGENT_COMMAND_INVALID_STATE") return false
-  if (!candidate.details || typeof candidate.details !== "object") return false
-  const status = (candidate.details as { status?: unknown }).status
-  return status === "running" || status === "aborting"
-}
 
 function contextUnavailable(): AutomationStoreError {
   return new AutomationStoreError(

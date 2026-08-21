@@ -123,7 +123,7 @@ describe("AutomationOperations", () => {
     const store = storeMock({ listRuns: vi.fn(async () => [run({ status: "running", trigger: "manual" })]) })
     const sessionController = {
       list: vi.fn(async () => [{ ref: { agentTypeId: "default", sessionId: "session-1" }, title: "[br-1276] worker", status: "running" as const, createdAt: Date.now() - 20_000, updatedAt: Date.now() - 5_000 }]),
-      nudge: vi.fn(async () => {}),
+      nudge: vi.fn(async () => ({ status: "accepted" as const, receipt: {} as never })),
       cancel: vi.fn(async () => {}),
     }
     const operations = createAutomationOperations({ store, actor: { workspaceId: "w", userId: "u" }, defaultAgentTypeId: "default", sessionController })
@@ -150,15 +150,10 @@ describe("AutomationOperations", () => {
     expect(listed).toMatchObject({ truncated: true, items: [{ id: "run-2" }] })
   })
 
-  it.each(["running", "aborting"] as const)("returns an observable skip when nudging a %s session", async (status) => {
-    const busy = Object.assign(new Error("session is not idle"), {
-      code: "AGENT_COMMAND_INVALID_STATE",
-      statusCode: 409,
-      details: { status },
-    })
+  it("returns an observable skip when idle admission reports a busy session", async () => {
     const sessionController = {
       list: vi.fn(async () => []),
-      nudge: vi.fn(async () => { throw busy }),
+      nudge: vi.fn(async () => ({ status: "not-idle" as const })),
       cancel: vi.fn(async () => {}),
     }
     const operations = createAutomationOperations({ store: storeMock(), actor: { workspaceId: "w", userId: "u" }, defaultAgentTypeId: "default", sessionController })
@@ -193,7 +188,7 @@ describe("AutomationOperations", () => {
   it("delivers a nudge to an idle session", async () => {
     const sessionController = {
       list: vi.fn(async () => []),
-      nudge: vi.fn(async () => {}),
+      nudge: vi.fn(async () => ({ status: "accepted" as const, receipt: {} as never })),
       cancel: vi.fn(async () => {}),
     }
     const operations = createAutomationOperations({ store: storeMock(), actor: { workspaceId: "w", userId: "u" }, defaultAgentTypeId: "default", sessionController })

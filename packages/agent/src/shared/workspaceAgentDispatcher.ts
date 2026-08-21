@@ -40,6 +40,10 @@ export interface WorkspaceAgentDispatch {
  * Callback-scoped direct Agent capability. The Workspace and operations are
  * lease guarded by the Host and must not be retained after the callback.
  */
+export type AgentSendIfIdleReceipt =
+  | { status: 'accepted'; receipt: AgentSendReceipt }
+  | { status: 'not-idle' }
+
 export interface LeaseBoundWorkspaceAgent {
   readonly workspace: Workspace
   readonly signal: AbortSignal
@@ -54,7 +58,7 @@ export interface LeaseBoundWorkspaceAgent {
   /** Transcript-redacted sessions for this exact Agent and authorized scope. */
   listSessions(limit?: number): Promise<AgentSessionPage>
   /** Atomically prompt an idle session and return after host acceptance. */
-  sendIfIdle(sessionId: string, message: string, requestId: string): Promise<AgentSendReceipt>
+  sendIfIdle(sessionId: string, message: string, requestId: string): Promise<AgentSendIfIdleReceipt>
   interrupt(sessionId: string, requestId: string): Promise<InterruptReceipt>
   stop(sessionId: string, requestId: string): Promise<StopReceipt>
 }

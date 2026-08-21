@@ -49,9 +49,9 @@ export function parseScheduleCommandArgs(args: string): ParsedScheduleCommand {
     throw new Error("invalid timezone — use an IANA timezone such as Europe/Zurich")
   }
 
-  const cadence = consumeCadence(remainder)
+  const cadence = parseCadence(remainder)
   if (!cadence) throw new Error("could not parse cadence — try 'daily 8am' or '0 8 * * *'")
-  const prompt = remainder.slice(cadence.length).trim()
+  const prompt = remainder.slice(cadence.consumed).trim()
   if (!prompt) throw new Error("prompt is required after the cadence")
   return { cron: cadence.cron, prompt, ...flags }
 }
@@ -62,15 +62,15 @@ export function nextScheduleFire(cron: string, timezone: string, after = new Dat
   return next.toISOString()
 }
 
-function consumeCadence(input: string): { cron: string; length: number } | null {
+function parseCadence(input: string): { cron: string; consumed: number } | null {
   const cronMatch = /^(\S+\s+\S+\s+\S+\s+\S+\s+\S+)(?=\s|$)/.exec(input)
   if (cronMatch && isValidFiveFieldCron(cronMatch[1]!)) {
-    return { cron: cronMatch[1]!.replace(/\s+/g, " "), length: cronMatch[0].length }
+    return { cron: cronMatch[1]!.replace(/\s+/g, " "), consumed: cronMatch[0].length }
   }
   const humanMatch = /^(daily|weekdays|every)\s+(\S+)(?=\s|$)/i.exec(input)
   if (!humanMatch) return null
   const cron = parseScheduleCadence(`${humanMatch[1]} ${humanMatch[2]}`)
-  return cron ? { cron, length: humanMatch[0].length } : null
+  return cron ? { cron, consumed: humanMatch[0].length } : null
 }
 
 function parseLeadingFlags(input: string): {

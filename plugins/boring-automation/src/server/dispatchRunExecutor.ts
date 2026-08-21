@@ -30,6 +30,7 @@ export interface DispatchRunExecutorOptions {
   actorResolver: (request: FastifyRequest) => Promise<VerifiedAutomationActor> | VerifiedAutomationActor
   eventPublisher?: AutomationRunEventPublisher
   clock?: () => Date
+  logger?: Pick<Console, "error">
 }
 
 export interface DispatchRunInput {
@@ -65,16 +66,17 @@ export class DispatchRunExecutor {
         },
       }).catch((error: unknown) => {
         if (!admitted) reject(error)
-        // After admission, run() persists its own terminal failure whenever the
-        // durable run lease remains available. Detached callers read that record.
+        else (this.options.logger ?? console).error("Automation run failed after durable admission", error)
       })
     })
   }
 
   async run(input: DispatchRunInput): Promise<AutomationRun> {
-    const actor = input.actor ?? (input.request
-      ? await this.options.actorResolver(input.request)
-      : (() => { throw new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.RUN_EXECUTOR_UNAVAILABLE, "automation actor is required") })())
+    let actor = input.actor
+    if (!actor) {
+      if (!input.request) throw new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.RUN_EXECUTOR_UNAVAILABLE, "automation actor is required")
+      actor = await this.options.actorResolver(input.request)
+    }
     const store = input.request
       ? await this.options.storeForRequest?.(input.request, actor) ?? this.options.store
       : this.options.store

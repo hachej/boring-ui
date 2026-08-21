@@ -257,13 +257,27 @@ export async function runWithWorkspaceAgentLease(input: {
       return await trackOperation((async () => {
         const connection = await gateway.connectSession({ scope: request.authorizedScope, ref: refFor(sessionId) })
         try {
-          return await connection.send({
-            kind: 'prompt',
-            requestId: controlRequestId,
-            clientNonce: controlRequestId,
-            content: message,
-            requireIdle: true,
-          })
+          try {
+            const receipt = await connection.send({
+              kind: 'prompt',
+              requestId: controlRequestId,
+              clientNonce: controlRequestId,
+              content: message,
+              requireIdle: true,
+            })
+            return { status: 'accepted' as const, receipt }
+          } catch (error) {
+            const details = error instanceof AgentGatewayError ? error.details : undefined
+            const sessionStatus = details && typeof details === 'object' && !Array.isArray(details) && 'status' in details
+              ? details.status
+              : undefined
+            if (
+              error instanceof AgentGatewayError
+              && error.code === AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE
+              && (sessionStatus === 'running' || sessionStatus === 'aborting')
+            ) return { status: 'not-idle' as const }
+            throw error
+          }
         } finally {
           await connection.close()
         }
