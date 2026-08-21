@@ -21,9 +21,9 @@ Cross-link: builds on [`issue-audit-2026-08-19.md`](issue-audit-2026-08-19.md) a
 ## Reconciled counts
 
 - Systems: GitHub **68** + Beads **263** = **331** rows.
-- Type buckets: `bug` 44, `feature` 109, `epic` 38, `chore-ops` 16, `docs` 3, `research-idea` 103, `spike` 18.
+- Type buckets: `bug` 43, `feature` 109, `epic` 38, `chore-ops` 16, `docs` 3, `research-idea` 104, `spike` 18.
 - Home: GH-public **107**, beads-only **101**, parked **123**.
-- Verdict: `defer-protected` 12, `keep` 256, `keep-public` 16, `purge-bead` 7, `purge-gh-internal` 23, `purge-gh-park` 17.
+- Verdict: `defer-protected` 35, `keep` 256, `keep-public` 16, `purge-bead` 7, `purge-gh-internal` 10, `purge-gh-park` 7.
 
 ## Every open GitHub issue
 
@@ -32,25 +32,25 @@ Cross-link: builds on [`issue-audit-2026-08-19.md`](issue-audit-2026-08-19.md) a
 | #371 | 2026-06-23 | bug | beads-only | purge-gh-internal | bug, ready-for-agent | Handle Codex context_length_exceeded during compaction/continue |
 | #391 | 2026-06-25 | epic | GH-public | keep-public | enhancement, ready-for-agent | Domain-routed agent workspaces, then multi-agent and runtime expansion |
 | #601 | 2026-07-10 | bug | beads-only | purge-gh-internal | bug | WorkspaceAgentFront: provisionWorkspace=false disables remote chat sessions |
-| #790 | 2026-07-16 | feature | parked | purge-gh-park | enhancement | Associate workspace layout state with chat sessions |
+| #790 | 2026-07-16 | feature | parked | defer-protected | enhancement | Associate workspace layout state with chat sessions |
 | #819 | 2026-07-18 | feature | parked | purge-gh-park | — | #391 Observability and usage metering for agent workspaces |
-| #848 | 2026-07-20 | chore-ops | parked | purge-gh-park | enhancement, needs-info | Merge plugin-authoring resources into plugin CLI and retire boring-pi |
-| #857 | 2026-07-20 | bug | parked | purge-gh-park | bug | Playground dev servers cannot be started concurrently — shared-package clean-rebuild races corrupt dist/ |
+| #848 | 2026-07-20 | chore-ops | parked | defer-protected | enhancement, needs-info | Merge plugin-authoring resources into plugin CLI and retire boring-pi |
+| #857 | 2026-07-20 | bug | parked | defer-protected | bug | Playground dev servers cannot be started concurrently — shared-package clean-rebuild races corrupt dist/ |
 | #873 | 2026-07-20 | bug | beads-only | defer-protected | bug, package:cli, plugin:ask-user, ready-for-agent | CLI ask_user flow should not require refresh / disable refresh while awaiting input |
-| #877 | 2026-07-20 | chore-ops | beads-only | purge-gh-internal | enhancement, ready-for-human | Decommission legacy Fly.io and Neon hosting safely |
-| #882 | 2026-07-21 | feature | parked | purge-gh-park | enhancement, package:ui, ready-for-agent | Diagram plugin: support tldraw as an alternative to Excalidraw |
+| #877 | 2026-07-20 | chore-ops | beads-only | defer-protected | enhancement, ready-for-human | Decommission legacy Fly.io and Neon hosting safely |
+| #882 | 2026-07-21 | feature | parked | defer-protected | enhancement, package:ui, ready-for-agent | Diagram plugin: support tldraw as an alternative to Excalidraw |
 | #883 | 2026-07-21 | bug | beads-only | purge-gh-internal | bug, ready-for-human | fix(workspace): clear stale app-left action indicator |
 | #900 | 2026-07-22 | feature | beads-only | defer-protected | enhancement, ready-for-agent | Add a thin full-catalog Composio mode to boring-mcp |
 | #905 | 2026-07-22 | feature | GH-public | keep-public | enhancement, ready-for-human | Extract multi-Agent Host and Gateway boundary |
 | #1009 | 2026-07-31 | feature | beads-only | purge-gh-internal | — | Lane: chat streaming durability (Level B → Level D) |
 | #1011 | 2026-07-31 | feature | beads-only | purge-gh-internal | — | Lane: external MCP — user-registered servers |
-| #1028 | 2026-07-31 | chore-ops | beads-only | purge-gh-internal | — | Remove unused MessageTimeline renderer |
-| #1060 | 2026-08-04 | feature | beads-only | purge-gh-internal | enhancement, ready-for-human | Complete addressed multi-Agent UI and remaining post-AgentHost Wave 1 guarantees |
+| #1028 | 2026-07-31 | chore-ops | beads-only | defer-protected | — | Remove unused MessageTimeline renderer |
+| #1060 | 2026-08-04 | feature | beads-only | defer-protected | enhancement, ready-for-human | Complete addressed multi-Agent UI and remaining post-AgentHost Wave 1 guarantees |
 | #1081 | 2026-08-05 | epic | GH-public | keep-public | — | Epic: sandbox worker runtime — salvage SBX1.3 (Docker+runsc session-lifetime) |
 | #1082 | 2026-08-05 | epic | GH-public | keep-public | — | Epic: BYOK tenant keys — salvage 16f.2 vault storage (KMS backend) |
-| #1083 | 2026-08-05 | feature | parked | purge-gh-park | — | Workspace pane: open a running playground on a worktree (Environment lease per pane) |
-| #1084 | 2026-08-05 | bug | parked | purge-gh-park | — | Outreach links for anonymous leads (idea, from stale PR #352) |
-| #1094 | 2026-08-05 | feature | parked | purge-gh-park | enhancement | Adopt conditional Questionnaire UX for ask_user |
+| #1083 | 2026-08-05 | feature | parked | defer-protected | — | Workspace pane: open a running playground on a worktree (Environment lease per pane) |
+| #1084 | 2026-08-05 | research-idea | parked | defer-protected | — | Outreach links for anonymous leads (idea, from stale PR #352) |
+| #1094 | 2026-08-05 | feature | parked | defer-protected | enhancement | Adopt conditional Questionnaire UX for ask_user |
 | #1106 | 2026-08-06 | epic | GH-public | keep-public | — | Epic: production fleet loader + factory seams (multi-agent activation) |
 | #1107 | 2026-08-06 | epic | GH-public | keep-public | — | Epic: agent definition as plugin package (agent = installable, versioned, trusted) |
 | #1110 | 2026-08-06 | epic | GH-public | keep-public | — | Epic: UI surface optimization loop (factory-run) |
@@ -58,13 +58,13 @@ Cross-link: builds on [`issue-audit-2026-08-19.md`](issue-audit-2026-08-19.md) a
 | #1125 | 2026-08-07 | epic | GH-public | keep-public | — | Epic: automation run leases — reclaim orphaned hosted runs safely (multi-replica) |
 | #1127 | 2026-08-07 | epic | GH-public | keep-public | — | Epic: external channels — consume agents from WhatsApp/email/SMS (channel adapters over durable streams) |
 | #1129 | 2026-08-07 | epic | GH-public | keep-public | — | Epic: MCP ingress — external agents consume a boring-ui workspace (un-dark /mcp/managed-agent) |
-| #1167 | 2026-08-08 | spike | parked | purge-gh-park | — | [epic #1081] remote-worker nonce store: per-tenant sub-budget (cross-tenant DoS, LOW) + SBX1.4/1.5 audit hand-offs |
-| #1171 | 2026-08-08 | feature | beads-only | purge-gh-internal | — | Agent details: Reload agent affordance after editing persona instructions |
+| #1167 | 2026-08-08 | spike | parked | defer-protected | — | [epic #1081] remote-worker nonce store: per-tenant sub-budget (cross-tenant DoS, LOW) + SBX1.4/1.5 audit hand-offs |
+| #1171 | 2026-08-08 | feature | beads-only | defer-protected | — | Agent details: Reload agent affordance after editing persona instructions |
 | #1177 | 2026-08-09 | epic | GH-public | keep-public | — | Epic: visual project documentation — structure, connectors, flows at a glance |
-| #1185 | 2026-08-09 | feature | beads-only | purge-gh-internal | — | Remove runtime-identity v1 migration seam once all deployments have migrated (transitional code, D10) |
+| #1185 | 2026-08-09 | feature | beads-only | defer-protected | — | Remove runtime-identity v1 migration seam once all deployments have migrated (transitional code, D10) |
 | #1187 | 2026-08-10 | epic | GH-public | keep-public | — | Epic: migrate the Boring Factory onto the boring-ui CLI workspace (dogfood the product) |
-| #1189 | 2026-08-10 | feature | beads-only | purge-gh-internal | — | Resolve Agent instruction refs per request so CLI hub mode gets working links |
-| #1190 | 2026-08-10 | feature | beads-only | purge-gh-internal | — | [epic #1110] Surface: unify pane-resizer UX across all split surfaces |
+| #1189 | 2026-08-10 | feature | beads-only | defer-protected | — | Resolve Agent instruction refs per request so CLI hub mode gets working links |
+| #1190 | 2026-08-10 | feature | beads-only | defer-protected | — | [epic #1110] Surface: unify pane-resizer UX across all split surfaces |
 | #1196 | 2026-08-10 | feature | beads-only | purge-gh-internal | — | [epic #1187] One symlink in ~/.pi/agent/skills 500s every agent-scoped route (PATH_SYMLINK_ESCAPE) |
 | #1210 | 2026-08-10 | epic | parked | purge-gh-park | — | Epic: CH trades agent — WhatsApp + email-drafting vertical (fiduciaries, craftsmen, storage, garden) |
 | #1213 | 2026-08-10 | research-idea | parked | purge-gh-park | — | Idea: Swiss admin agent — per-canton administrative-procedure knowledge corpus (skill + product + SEO) |
@@ -72,16 +72,16 @@ Cross-link: builds on [`issue-audit-2026-08-19.md`](issue-audit-2026-08-19.md) a
 | #1215 | 2026-08-10 | research-idea | parked | purge-gh-park | — | Idea: health-insurance broker agent (LAMal/VVG) — comparison, switching season, lead machine |
 | #1216 | 2026-08-10 | research-idea | parked | purge-gh-park | — | Idea: commercial-register handling agent (registre du commerce / Zefix) |
 | #1217 | 2026-08-10 | research-idea | parked | purge-gh-park | — | Idea: Swiss case-law research agent (ATF + cantonal jurisprudence) |
-| #1223 | 2026-08-11 | chore-ops | beads-only | purge-gh-internal | — | Retire BORING_AGENT_FLEET flag → config-presence-driven composition + document local-vs-hosted split |
-| #1224 | 2026-08-11 | epic | parked | purge-gh-park | — | Epic: ad-hoc audio transcription — batch mode for the transcription service (streaming exists) |
-| #1226 | 2026-08-11 | epic | parked | purge-gh-park | enhancement, architecture, story | Epic (REWRITE NEEDED): bounded tool catalog — grant-scoped residency, lexical search, child-call dispatch |
-| #1233 | 2026-08-12 | docs | beads-only | purge-gh-internal | documentation, enhancement | DX: reduce onboarding from 6 required concepts to 2 (plus one verified scaffold defect) |
+| #1223 | 2026-08-11 | chore-ops | beads-only | defer-protected | — | Retire BORING_AGENT_FLEET flag → config-presence-driven composition + document local-vs-hosted split |
+| #1224 | 2026-08-11 | epic | parked | defer-protected | — | Epic: ad-hoc audio transcription — batch mode for the transcription service (streaming exists) |
+| #1226 | 2026-08-11 | epic | parked | defer-protected | enhancement, architecture, story | Epic (REWRITE NEEDED): bounded tool catalog — grant-scoped residency, lexical search, child-call dispatch |
+| #1233 | 2026-08-12 | docs | beads-only | defer-protected | documentation, enhancement | DX: reduce onboarding from 6 required concepts to 2 (plus one verified scaffold defect) |
 | #1240 | 2026-08-12 | feature | parked | defer-protected | — | Provider registry: adding a sandbox provider should touch boring-sandbox (+agent) only |
 | #1253 | 2026-08-13 | bug | beads-only | purge-gh-internal | — | ui-review tooling leaks a mktemp -d per run (thousands of /tmp dirs, exhausts tmpfs inodes) |
 | #1254 | 2026-08-13 | feature | beads-only | defer-protected | — | Dev VM: /tmp needs an aging rule + pnpm store must never live on tmpfs |
 | #1261 | 2026-08-13 | epic | GH-public | keep-public | enhancement, architecture, story | Epic: hosted external plugins — user-authored UI + agent, safely (Seneca) |
-| #1274 | 2026-08-14 | feature | beads-only | purge-gh-internal | — | Hosted delegation: trusted AgentHost-native delegate_task plugin |
-| #1275 | 2026-08-14 | feature | beads-only | purge-gh-internal | — | Hosted web access: governed request-scoped search and fetch plugin |
+| #1274 | 2026-08-14 | feature | beads-only | defer-protected | — | Hosted delegation: trusted AgentHost-native delegate_task plugin |
+| #1275 | 2026-08-14 | feature | beads-only | defer-protected | — | Hosted web access: governed request-scoped search and fetch plugin |
 | #1276 | 2026-08-14 | feature | beads-only | defer-protected | — | Orchestrator agent plugin: dispatch trigger + fleet tool over automation primitives |
 | #1290 | 2026-08-14 | bug | beads-only | defer-protected | — | Composer shows a stale local model selection, not the model the session is actually using |
 | #1295 | 2026-08-14 | bug | beads-only | defer-protected | — | Stop deletes queued messages: user-typed content is lost with no recovery |
@@ -90,10 +90,10 @@ Cross-link: builds on [`issue-audit-2026-08-19.md`](issue-audit-2026-08-19.md) a
 | #1298 | 2026-08-14 | feature | beads-only | defer-protected | — | Add session context menu with Archive session |
 | #1300 | 2026-08-14 | bug | beads-only | purge-gh-internal | bug | Automation-created session is absent from inventory and cannot open |
 | #1303 | 2026-08-15 | bug | GH-public | keep-public | — | App is very slow on mobile: 4.3 MB eager entry bundle blocks first interaction |
-| #1306 | 2026-08-15 | bug | beads-only | purge-gh-internal | bug, needs-triage | ask_user: supersede or withdraw stale intentions when re-raising gates |
+| #1306 | 2026-08-15 | bug | beads-only | defer-protected | bug, needs-triage | ask_user: supersede or withdraw stale intentions when re-raising gates |
 | #1307 | 2026-08-15 | bug | beads-only | defer-protected | — | Session rename does not stick: title reverts to auto-derived name |
 | #1314 | 2026-08-17 | feature | beads-only | purge-gh-internal | — | Store the request ledger outside the user workspace |
-| #1323 | 2026-08-17 | feature | beads-only | purge-gh-internal | — | Sending a message is not smooth: no optimistic echo, chat visibly reloads before the message appears |
+| #1323 | 2026-08-17 | feature | beads-only | defer-protected | — | Sending a message is not smooth: no optimistic echo, chat visibly reloads before the message appears |
 | #1337 | 2026-08-19 | bug | beads-only | defer-protected | — | Inbox shows placeholder titles and drops pending questions (3 of 6 shown) |
 | #1338 | 2026-08-19 | bug | beads-only | purge-gh-internal | — | Session inventory scans and parses the whole transcript store per request (16s list, 'Preparing workspace' hang) |
 | #1344 | 2026-08-21 | bug | GH-public | keep-public | bug, ready-for-agent | Agent edits are invisible in an open Markdown editor |
@@ -386,32 +386,32 @@ Deleting individual items (`gh project item-delete 7 --owner hachej --id <item-i
 
 ## Purge manifest — commands listed, not executed before owner approval
 
-### Eligible GitHub closes (40)
+### Mandatory execution-time preflight
+
+Approval applies only to the exact target SHA and captured rows. Immediately before mutation, re-run the three live inventories below. **Abort the whole purge** if any target issue has gained an open PR, any matching bead has entered `in_progress`/`ready_for_human`, a target issue is no longer open, or the deliverable SHA changed. This closes the capture-to-execution race; no partial execution on drift.
+
+```bash
+test -n "$APPROVED_SHA"
+test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+gh issue list --state open --limit 200 --json number,title,labels,createdAt > /tmp/issue-buckets-preflight-gh.json
+gh pr list --state open --limit 200 --json number,title,body,closingIssuesReferences > /tmp/issue-buckets-preflight-prs.json
+br --db /home/ubuntu/projects/boring-ui-v2/.beads/beads.db list --json > /tmp/issue-buckets-preflight-beads.json
+# Reconcile every approved target against these files; abort on any protection/state drift.
+```
+
+Rows lacking a durable Bead counterpart are protected rather than closed. That preserves r4's “every GH issue maps to Beads” prerequisite; creating those missing epics/tasks is a separate migration, not silently bundled into this purge.
+
+### Eligible GitHub closes (17)
 
 These rows have neither an open PR reference nor an `in_progress`/`ready_for_human` bead. Their work/idea remains in Beads.
 
 ```bash
 gh issue close 371 -c "Issue-bucket cleanup 2026-08-21: tracked in Beads; internal implementation detail removed from the public issue window."
 gh issue close 601 -c "Issue-bucket cleanup 2026-08-21: tracked in Beads; internal implementation detail removed from the public issue window."
-gh issue close 790 -c "Issue-bucket cleanup 2026-08-21: parked in deferred Beads; no longer part of the public product window."
 gh issue close 819 -c "Issue-bucket cleanup 2026-08-21: parked in deferred Beads; no longer part of the public product window."
-gh issue close 848 -c "Issue-bucket cleanup 2026-08-21: parked in deferred Beads; no longer part of the public product window."
-gh issue close 857 -c "Issue-bucket cleanup 2026-08-21: parked in deferred Beads; no longer part of the public product window."
-gh issue close 877 -c "Issue-bucket cleanup 2026-08-21: tracked in Beads; internal implementation detail removed from the public issue window."
-gh issue close 882 -c "Issue-bucket cleanup 2026-08-21: parked in deferred Beads; no longer part of the public product window."
 gh issue close 883 -c "Issue-bucket cleanup 2026-08-21: tracked in Beads; internal implementation detail removed from the public issue window."
 gh issue close 1009 -c "Issue-bucket cleanup 2026-08-21: tracked in Beads; internal implementation detail removed from the public issue window."
 gh issue close 1011 -c "Issue-bucket cleanup 2026-08-21: tracked in Beads; internal implementation detail removed from the public issue window."
-gh issue close 1028 -c "Issue-bucket cleanup 2026-08-21: tracked in Beads; internal implementation detail removed from the public issue window."
-gh issue close 1060 -c "Issue-bucket cleanup 2026-08-21: tracked in Beads; internal implementation detail removed from the public issue window."
-gh issue close 1083 -c "Issue-bucket cleanup 2026-08-21: parked in deferred Beads; no longer part of the public product window."
-gh issue close 1084 -c "Issue-bucket cleanup 2026-08-21: parked in deferred Beads; no longer part of the public product window."
-gh issue close 1094 -c "Issue-bucket cleanup 2026-08-21: parked in deferred Beads; no longer part of the public product window."
-gh issue close 1167 -c "Issue-bucket cleanup 2026-08-21: parked in deferred Beads; no longer part of the public product window."
-gh issue close 1171 -c "Issue-bucket cleanup 2026-08-21: tracked in Beads; internal implementation detail removed from the public issue window."
-gh issue close 1185 -c "Issue-bucket cleanup 2026-08-21: tracked in Beads; internal implementation detail removed from the public issue window."
-gh issue close 1189 -c "Issue-bucket cleanup 2026-08-21: tracked in Beads; internal implementation detail removed from the public issue window."
-gh issue close 1190 -c "Issue-bucket cleanup 2026-08-21: tracked in Beads; internal implementation detail removed from the public issue window."
 gh issue close 1196 -c "Issue-bucket cleanup 2026-08-21: tracked in Beads; internal implementation detail removed from the public issue window."
 gh issue close 1210 -c "Issue-bucket cleanup 2026-08-21: parked in deferred Beads; no longer part of the public product window."
 gh issue close 1213 -c "Issue-bucket cleanup 2026-08-21: parked in deferred Beads; no longer part of the public product window."
@@ -419,35 +419,50 @@ gh issue close 1214 -c "Issue-bucket cleanup 2026-08-21: parked in deferred Bead
 gh issue close 1215 -c "Issue-bucket cleanup 2026-08-21: parked in deferred Beads; no longer part of the public product window."
 gh issue close 1216 -c "Issue-bucket cleanup 2026-08-21: parked in deferred Beads; no longer part of the public product window."
 gh issue close 1217 -c "Issue-bucket cleanup 2026-08-21: parked in deferred Beads; no longer part of the public product window."
-gh issue close 1223 -c "Issue-bucket cleanup 2026-08-21: tracked in Beads; internal implementation detail removed from the public issue window."
-gh issue close 1224 -c "Issue-bucket cleanup 2026-08-21: parked in deferred Beads; no longer part of the public product window."
-gh issue close 1226 -c "Issue-bucket cleanup 2026-08-21: parked in deferred Beads; no longer part of the public product window."
-gh issue close 1233 -c "Issue-bucket cleanup 2026-08-21: tracked in Beads; internal implementation detail removed from the public issue window."
 gh issue close 1253 -c "Issue-bucket cleanup 2026-08-21: tracked in Beads; internal implementation detail removed from the public issue window."
-gh issue close 1274 -c "Issue-bucket cleanup 2026-08-21: tracked in Beads; internal implementation detail removed from the public issue window."
-gh issue close 1275 -c "Issue-bucket cleanup 2026-08-21: tracked in Beads; internal implementation detail removed from the public issue window."
 gh issue close 1300 -c "Issue-bucket cleanup 2026-08-21: tracked in Beads; internal implementation detail removed from the public issue window."
-gh issue close 1306 -c "Issue-bucket cleanup 2026-08-21: tracked in Beads; internal implementation detail removed from the public issue window."
 gh issue close 1314 -c "Issue-bucket cleanup 2026-08-21: tracked in Beads; internal implementation detail removed from the public issue window."
-gh issue close 1323 -c "Issue-bucket cleanup 2026-08-21: tracked in Beads; internal implementation detail removed from the public issue window."
 gh issue close 1338 -c "Issue-bucket cleanup 2026-08-21: tracked in Beads; internal implementation detail removed from the public issue window."
 ```
 
-### Protected GitHub rows (12) — **not in the executable manifest**
+### Protected GitHub rows (35) — **not in the executable manifest**
 
 | Issue | Intended home | Why deferred |
 |---|---|---|
+| #790 | parked | Do not close while no identifiable durable Bead counterpart yet (r4 prerequisite). |
+| #848 | parked | Do not close while no identifiable durable Bead counterpart yet (r4 prerequisite). |
+| #857 | parked | Do not close while no identifiable durable Bead counterpart yet (r4 prerequisite). |
 | #873 | beads-only | Do not close while open PR #1325. |
+| #877 | beads-only | Do not close while no identifiable durable Bead counterpart yet (r4 prerequisite). |
+| #882 | parked | Do not close while no identifiable durable Bead counterpart yet (r4 prerequisite). |
 | #900 | beads-only | Do not close while open PR #1309 and active bead wt-391-forward-rjkl.2. |
-| #1240 | parked | Do not close while open PR #1256. |
+| #1028 | beads-only | Do not close while no identifiable durable Bead counterpart yet (r4 prerequisite). |
+| #1060 | beads-only | Do not close while no identifiable durable Bead counterpart yet (r4 prerequisite). |
+| #1083 | parked | Do not close while no identifiable durable Bead counterpart yet (r4 prerequisite). |
+| #1084 | parked | Do not close while no identifiable durable Bead counterpart yet (r4 prerequisite). |
+| #1094 | parked | Do not close while no identifiable durable Bead counterpart yet (r4 prerequisite). |
+| #1167 | parked | Do not close while no identifiable durable Bead counterpart yet (r4 prerequisite). |
+| #1171 | beads-only | Do not close while no identifiable durable Bead counterpart yet (r4 prerequisite). |
+| #1185 | beads-only | Do not close while no identifiable durable Bead counterpart yet (r4 prerequisite). |
+| #1189 | beads-only | Do not close while no identifiable durable Bead counterpart yet (r4 prerequisite). |
+| #1190 | beads-only | Do not close while no identifiable durable Bead counterpart yet (r4 prerequisite). |
+| #1223 | beads-only | Do not close while no identifiable durable Bead counterpart yet (r4 prerequisite). |
+| #1224 | parked | Do not close while no identifiable durable Bead counterpart yet (r4 prerequisite). |
+| #1226 | parked | Do not close while no identifiable durable Bead counterpart yet (r4 prerequisite). |
+| #1233 | beads-only | Do not close while no identifiable durable Bead counterpart yet (r4 prerequisite). |
+| #1240 | parked | Do not close while open PR #1256 and no identifiable durable Bead counterpart yet (r4 prerequisite). |
 | #1254 | beads-only | Do not close while PR #1320 closed unmerged; r3 prerequisite not met. |
+| #1274 | beads-only | Do not close while no identifiable durable Bead counterpart yet (r4 prerequisite). |
+| #1275 | beads-only | Do not close while no identifiable durable Bead counterpart yet (r4 prerequisite). |
 | #1276 | beads-only | Do not close while open PR #1288 and active bead wt-391-forward-rctz. |
 | #1290 | beads-only | Do not close while open PR #1319 and active bead wt-391-forward-9jxj. |
 | #1295 | beads-only | Do not close while open PR #1301. |
 | #1296 | beads-only | Do not close while open PR #1301. |
 | #1297 | beads-only | Do not close while open PR #1301 and active bead wt-391-forward-n9bd. |
 | #1298 | beads-only | Do not close while open PR #1301. |
+| #1306 | beads-only | Do not close while no identifiable durable Bead counterpart yet (r4 prerequisite). |
 | #1307 | beads-only | Do not close while open PR #1316 and active bead wt-391-forward-4yi6. |
+| #1323 | beads-only | Do not close while no identifiable durable Bead counterpart yet (r4 prerequisite). |
 | #1337 | beads-only | Do not close while open PR #1343 and active bead wt-391-forward-p820. |
 
 Re-evaluate each only after every named PR closes and every named bead leaves `in_progress`/`ready_for_human`; do not infer that approval of this manifest covers those future closes.
@@ -474,8 +489,8 @@ br --db /home/ubuntu/projects/boring-ui-v2/.beads/beads.db close wt-391-forward-
 
 ### Execution totals if approved exactly
 
-- Close **40** GitHub issues.
+- Close **17** GitHub issues.
 - Close/archive **1** GitHub Project (preserving all 74 rows/history).
 - Close **7** beads.
-- Keep **28** GitHub issues open now, including **12** temporarily protected internal/parked rows.
+- Keep **51** GitHub issues open now, including **35** temporarily protected internal/parked rows.
 - No item with an open PR or an active (`in_progress`/`ready_for_human`) bead is in the executable close set.
