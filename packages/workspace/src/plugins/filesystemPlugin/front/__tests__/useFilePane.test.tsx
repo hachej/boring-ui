@@ -120,10 +120,15 @@ describe("useFilePane", () => {
       await act(async () => {})
       act(() => result.current.setContent("overwrite snapshot"))
 
+      let firstOverwrite: Promise<void> | undefined
+      let secondOverwrite: Promise<void> | undefined
       await act(async () => {
-        void result.current.onOverwrite()
+        firstOverwrite = result.current.onOverwrite()
+        secondOverwrite = result.current.onOverwrite()
         await Promise.resolve()
       })
+      expect(secondOverwrite).toBe(firstOverwrite)
+      expect(mockWriteFile).toHaveBeenCalledTimes(1)
       act(() => result.current.setContent("overwrite snapshot plus newer edits"))
       await act(async () => {
         resolveOverwrite?.({ mtimeMs: 4000 })
@@ -147,17 +152,26 @@ describe("useFilePane", () => {
     // (`if (saveGenRef.current !== myGen) return`) and self-contained;
     // covered by code review (see pi review notes in commit message).
 
-    it("onOverwrite leaves conflict in place when writeFile rejects", async () => {
-      mockWriteFile.mockRejectedValueOnce(new Error("network down"))
+    it("keeps a rejected Overwrite dirty and conflicted, then allows retry", async () => {
+      mockWriteFile
+        .mockRejectedValueOnce(new FileConflictError("doc.md", 3000, 1000))
+        .mockRejectedValueOnce(new Error("network down"))
+        .mockResolvedValueOnce({ mtimeMs: 4000 })
       const { result } = renderHook(() => useFilePane({ path: "doc.md" }), { wrapper })
       await act(async () => {})
       act(() => result.current.setContent("retry-me"))
+      await act(async () => { await result.current.flushSave() })
+      expect(result.current.conflict).toBeInstanceOf(FileConflictError)
+      expect(result.current.isDirty).toBe(true)
+
       await act(async () => { await result.current.onOverwrite() })
-      // Error path is swallowed; main contract is the hook doesn't crash and
-      // contentRef still holds the user's latest edits for the next attempt.
-      expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.objectContaining({ content: "retry-me" }),
-      )
+      expect(result.current.conflict).toBeInstanceOf(FileConflictError)
+      expect(result.current.isDirty).toBe(true)
+      expect(result.current.content).toBe("retry-me")
+
+      await act(async () => { await result.current.onOverwrite() })
+      expect(result.current.conflict).toBeNull()
+      expect(result.current.isDirty).toBe(false)
     })
   })
 
@@ -234,6 +248,44 @@ describe("useFilePane", () => {
 
       expect(result.current.content).toBe("content B")
       expect(result.current.conflict).toBeNull()
+    })
+
+    it("lets Overwrite retire a pending Reload without blocking later reconciliation", async () => {
+      let fileData = { content: "initial", mtimeMs: 1000 }
+      let resolveReload: ((value: { status: "success"; data: { content: string; mtimeMs: number } }) => void) | undefined
+      const refetch = vi.fn(() => new Promise<{ status: "success"; data: { content: string; mtimeMs: number } }>((resolve) => {
+        resolveReload = resolve
+      }))
+      mockFileContent.mockImplementation(() => ({
+        data: fileData,
+        isLoading: false,
+        isFetching: false,
+        error: undefined,
+        refetch,
+      }))
+      const { result, rerender } = renderHook(
+        ({ tick }) => {
+          void tick
+          return useFilePane({ path: "doc.md" })
+        },
+        { wrapper, initialProps: { tick: 0 } },
+      )
+      await act(async () => {})
+      await act(async () => {
+        void result.current.onReloadFromServer()
+        await Promise.resolve()
+      })
+      act(() => result.current.setContent("local overwrite"))
+      await act(async () => { await result.current.onOverwrite() })
+
+      fileData = { content: "later external", mtimeMs: 3000 }
+      rerender({ tick: 1 })
+      await waitFor(() => expect(result.current.content).toBe("later external"))
+      await act(async () => {
+        resolveReload?.({ status: "success", data: { content: "stale reload", mtimeMs: 2000 } })
+        await Promise.resolve()
+      })
+      expect(result.current.content).toBe("later external")
     })
 
     it("preserves keystrokes entered while Reload is in flight", async () => {

@@ -80,8 +80,6 @@ beforeEach(() => {
     markDirty: vi.fn(),
     markClean: vi.fn(),
     flushSave: vi.fn(),
-    shouldSync: false,
-    ackSync: vi.fn(),
   })
 })
 
@@ -156,11 +154,6 @@ describe("CodeEditorPane", () => {
       markDirty,
       markClean: vi.fn(),
       flushSave: vi.fn(),
-      shouldSync: false,
-      ackSync: vi.fn(),
-      externalChangeWhileDirty: false,
-      ackExternalChange: vi.fn(),
-      notifySaved: vi.fn(),
     })
     const props = createMockPaneProps({
       params: { path: "/company/hr/policy.ts", filesystem: "company_context", access: "readwrite" },
@@ -243,8 +236,6 @@ describe("CodeEditorPane", () => {
       markDirty: vi.fn(),
       markClean: vi.fn(),
       flushSave: vi.fn(),
-      shouldSync: false,
-      ackSync: vi.fn(),
     })
 
     const setTitle = vi.fn()
@@ -292,8 +283,6 @@ describe("CodeEditorPane", () => {
       markDirty,
       markClean: vi.fn(),
       flushSave: vi.fn(),
-      shouldSync: false,
-      ackSync: vi.fn(),
     })
     render(<CodeEditorPane {...paneProps("src/index.ts")} />, { wrapper })
     await waitFor(() => {
@@ -317,8 +306,6 @@ describe("CodeEditorPane", () => {
       markDirty: vi.fn(),
       markClean: vi.fn(),
       flushSave: vi.fn(),
-      shouldSync: false,
-      ackSync: vi.fn(),
     })
     render(<CodeEditorPane {...paneProps("src/sync.ts")} />, { wrapper })
     await waitFor(() => {

@@ -41,9 +41,7 @@ vi.mock("../MarkdownEditor", () => ({
 }))
 
 const mockMarkDirty = vi.fn()
-const mockAckSync = vi.fn()
 let mockIsDirty = false
-let mockShouldSync = false
 vi.mock("../../../../../front/hooks", () => ({
   useEditorLifecycle: () => ({
     isDirty: mockIsDirty,
@@ -52,8 +50,6 @@ vi.mock("../../../../../front/hooks", () => ({
     markDirty: mockMarkDirty,
     markClean: vi.fn(),
     flushSave: vi.fn(),
-    shouldSync: mockShouldSync,
-    ackSync: mockAckSync,
   }),
 }))
 
@@ -72,7 +68,6 @@ function wrapper({ children }: { children: React.ReactNode }) {
 beforeEach(() => {
   vi.clearAllMocks()
   mockIsDirty = false
-  mockShouldSync = false
   mockFileContent.mockReturnValue({
     data: { content: "# Hello\n\nWorld" },
     isLoading: false,

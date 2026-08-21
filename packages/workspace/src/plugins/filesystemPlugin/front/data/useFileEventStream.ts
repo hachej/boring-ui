@@ -25,13 +25,10 @@ import { FILES_QUERY_KEY_SEGMENT } from "../../shared/constants"
  *     on next read. No need to re-subscribe — EventSource keeps going,
  *     and the server starts feeding live events again immediately.
  *
- * Self-echo handling stays at the data layer: the bus subscriber
- * invalidates queries, and `useEditorLifecycle`'s monotonic mtime
- * check inside `MarkdownEditorPane` means re-fetched-but-identical
- * content is a no-op for the editor. Step 3b adds eventId dedup but
- * intentionally does NOT add per-client UX suppression — that's a
- * future concern (toasts, badges) once we have actual UX surfaces
- * that fire on file changes.
+ * Self-echo handling stays at the file-pane data boundary: the bus
+ * invalidates exact queries, and `useFilePane` compares confirmed disk
+ * content before applying an update. Mtime remains OCC metadata, not
+ * document identity. Event IDs dedupe replay/live overlap.
  */
 const ignoreStatusChange = (_status: FileEventStatus): void => {}
 
@@ -119,8 +116,8 @@ export function useFileEventStream(
       // Server's ring buffer can't fill the gap from our last-seen
       // event. Wipe the local dedup memory and invalidate every key
       // the bus subscriber would touch — consumers refetch on next
-      // mount/focus, the editor's serverMtime check handles the
-      // overlap.
+      // mount/focus; file panes reconcile fetched content against their
+      // confirmed disk baseline.
       seenEventIds.clear()
       seenOrder.length = 0
       qc.invalidateQueries({ predicate: (q) => isFileQueryKey(q.queryKey) })

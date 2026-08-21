@@ -139,6 +139,7 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
   const pendingExternalSourceRef = useRef<{ source: "agent" | "disk"; expiresAt: number } | null>(null)
   const resolutionInFlightRef = useRef(false)
   const resolutionGenRef = useRef(0)
+  const overwriteInFlightRef = useRef<Promise<void> | null>(null)
 
   const showTransientDocumentStatus = useCallback((status: FilePaneDocumentStatus) => {
     clearTimeout(statusClearTimerRef.current)
@@ -168,6 +169,7 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
       pendingExternalSourceRef.current = null
       resolutionGenRef.current += 1
       resolutionInFlightRef.current = false
+      overwriteInFlightRef.current = null
       setConflict(null)
       setConflictSource("disk")
       setTransientDocumentStatus(null)
@@ -377,41 +379,44 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
     }
   }, [activePath, lifecycle, refetchFileData, setContentState, showTransientDocumentStatus])
 
-  const onOverwrite = useCallback(async () => {
-    if (isReadonly) return
-    // Bump the save generation so any pending autosave (e.g., one that the
-    // watchdog already abandoned) cannot later resolve and undo our state
-    // mutations below.
+  const onOverwrite = useCallback((): Promise<void> => {
+    if (isReadonly || !activePath) return Promise.resolve()
+    if (overwriteInFlightRef.current) return overwriteInFlightRef.current
+
+    // Overwrite supersedes any pending Reload and is single-flight. Generation
+    // fencing alone cannot undo out-of-order writes that already reached disk.
+    resolutionGenRef.current += 1
+    resolutionInFlightRef.current = false
     const myGen = ++saveGenRef.current
-    // Explicit resolution owns the write; cancel any pending debounced
-    // autosave so it cannot race the force-overwrite request.
-    lifecycle.markClean()
-    try {
-      // Use contentRef.current — it is updated SYNCHRONOUSLY by setContent
-      // (see line above) so it always carries the latest keystrokes the
-      // user typed, including any keystrokes between conflict detection
-      // and clicking Overwrite. The React `content` state is one render
-      // behind during fast typing, so reading it first would save stale
-      // content. (Earlier comment claimed the opposite — it was wrong.)
-      if (!activePath) return
-      const contentToSave = contentRef.current
-      const result = await writeFile({ filesystem, path: activePath, content: contentToSave })
-      if (saveGenRef.current !== myGen) return
-      if (typeof result.mtimeMs === "number") {
-        baselineMtimeRef.current = result.mtimeMs
+    const contentToSave = contentRef.current
+    const operation = (async () => {
+      try {
+        const result = await writeFile({ filesystem, path: activePath, content: contentToSave })
+        if (saveGenRef.current !== myGen) return
+        baselineMtimeRef.current = result.mtimeMs ?? null
+        diskContentRef.current = contentToSave
+        const newerEditsRemain = contentRef.current !== contentToSave
+        dirtyRef.current = newerEditsRemain
+        conflictRef.current = null
+        pendingExternalSourceRef.current = null
+        setConflict(null)
+        showTransientDocumentStatus({ kind: "resolved", action: "overwritten" })
+        if (newerEditsRemain) lifecycle.markDirty()
+        else lifecycle.markClean()
+      } catch {
+        // A failed explicit resolution is still dirty and conflicted. The
+        // synchronous conflict gate keeps autosave frozen until retry.
+        if (saveGenRef.current === myGen && conflictRef.current) {
+          dirtyRef.current = true
+          lifecycle.markDirty()
+        }
       }
-      diskContentRef.current = contentToSave
-      const newerEditsRemain = contentRef.current !== contentToSave
-      dirtyRef.current = newerEditsRemain
-      conflictRef.current = null
-      pendingExternalSourceRef.current = null
-      setConflict(null)
-      showTransientDocumentStatus({ kind: "resolved", action: "overwritten" })
-      if (newerEditsRemain) lifecycle.markDirty()
-      else lifecycle.markClean()
-    } catch {
-      // Leave conflict UI up so user can retry
-    }
+    })()
+    overwriteInFlightRef.current = operation
+    void operation.finally(() => {
+      if (overwriteInFlightRef.current === operation) overwriteInFlightRef.current = null
+    })
+    return operation
   }, [activePath, filesystem, isReadonly, lifecycle, showTransientDocumentStatus, writeFile])
 
   const save = useCallback(async () => {

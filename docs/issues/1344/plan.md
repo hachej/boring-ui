@@ -173,8 +173,8 @@ Keep the worktree demo on the allowed `:5301` origin. Open the proof Markdown do
 
 ### Slice: Restore open-file coherence when filesystem watch is unavailable
 
-**Bead:** `wt-391-forward-z2qt` (P0, claimed; no dependencies)  
-**Delivers:** event-capability state; active-file fallback polling; clean reload; dirty autosave freeze and explicit resolution; bottom-right document status; hosted/folder regression proof and live demo.  
+**Bead:** `wt-391-forward-z2qt` (P0, claimed; no dependencies)
+**Delivers:** event-capability state; active-file fallback polling; clean reload; dirty autosave freeze and explicit resolution; bottom-right document status; hosted/folder regression proof and live demo.
 **File scope:**
 
 - `packages/workspace/src/plugins/filesystemPlugin/front/data/{DataProvider.tsx,useFileEventStream.ts,useFileEventInvalidation.ts,hooks.ts}` and focused tests
@@ -183,9 +183,9 @@ Keep the worktree demo on the allowed `:5301` origin. Open the proof Markdown do
 - `packages/workspace/src/plugins/filesystemPlugin/front/markdown-editor/{MarkdownEditor.tsx,MarkdownEditorPane.tsx}` and focused tests
 - `apps/workspace-playground/{playwright.config.ts,e2e/markdown-external-edit.spec.ts}`; config forwards `BORING_MAX_WATCHED_ENTRIES` through its `env -i` web server, and the spec creates/removes only its runtime fixture under the existing ignored E2E workspace
 
-**Blocked by:** Gate 1 owner approval only.  
-**Proof:** exact commands and two-mode scenario above.  
-**Fits one session:** Yes; one package-local state flow plus focused route/provider fixtures, no schema/server authority/dependency migration.  
+**Blocked by:** Gate 1 owner approval only.
+**Proof:** exact commands and two-mode scenario above.
+**Fits one session:** Yes; one package-local state flow plus focused route/provider fixtures, no schema/server authority/dependency migration.
 **Review budget:** T1 Sol fresh-eyes plan review before Gate 1; final-SHA Sol fresh-eyes + T1 thermo due product-critical conflict semantics. The repository Model Card normally follows Sol with human-gated Fable falsification, but the owner's explicit request-level model policy forbids every non-Sol subagent. That Fable step is waived rather than silently substituted; Gate 1 is the owner's direct decision on this reviewed plan.
 
 ## Risks
