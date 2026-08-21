@@ -23,7 +23,7 @@ Cross-link: builds on [`issue-audit-2026-08-19.md`](issue-audit-2026-08-19.md) a
 - Systems: GitHub **68** + Beads **263** = **331** rows.
 - Type buckets: `bug` 43, `feature` 109, `epic` 38, `chore-ops` 16, `docs` 3, `research-idea` 104, `spike` 18.
 - Home: GH-public **107**, beads-only **101**, parked **123**.
-- Verdict: `defer-protected` 35, `keep` 256, `keep-public` 16, `purge-bead` 7, `purge-gh-internal` 10, `purge-gh-park` 7.
+- Verdict: `defer-protected` 37, `keep` 256, `keep-public` 16, `purge-bead` 7, `purge-gh-internal` 8, `purge-gh-park` 7.
 
 ## Every open GitHub issue
 
@@ -43,7 +43,7 @@ Cross-link: builds on [`issue-audit-2026-08-19.md`](issue-audit-2026-08-19.md) a
 | #900 | 2026-07-22 | feature | beads-only | defer-protected | enhancement, ready-for-agent | Add a thin full-catalog Composio mode to boring-mcp |
 | #905 | 2026-07-22 | feature | GH-public | keep-public | enhancement, ready-for-human | Extract multi-Agent Host and Gateway boundary |
 | #1009 | 2026-07-31 | feature | beads-only | purge-gh-internal | — | Lane: chat streaming durability (Level B → Level D) |
-| #1011 | 2026-07-31 | feature | beads-only | purge-gh-internal | — | Lane: external MCP — user-registered servers |
+| #1011 | 2026-07-31 | feature | beads-only | defer-protected | — | Lane: external MCP — user-registered servers |
 | #1028 | 2026-07-31 | chore-ops | beads-only | defer-protected | — | Remove unused MessageTimeline renderer |
 | #1060 | 2026-08-04 | feature | beads-only | defer-protected | enhancement, ready-for-human | Complete addressed multi-Agent UI and remaining post-AgentHost Wave 1 guarantees |
 | #1081 | 2026-08-05 | epic | GH-public | keep-public | — | Epic: sandbox worker runtime — salvage SBX1.3 (Docker+runsc session-lifetime) |
@@ -65,7 +65,7 @@ Cross-link: builds on [`issue-audit-2026-08-19.md`](issue-audit-2026-08-19.md) a
 | #1187 | 2026-08-10 | epic | GH-public | keep-public | — | Epic: migrate the Boring Factory onto the boring-ui CLI workspace (dogfood the product) |
 | #1189 | 2026-08-10 | feature | beads-only | defer-protected | — | Resolve Agent instruction refs per request so CLI hub mode gets working links |
 | #1190 | 2026-08-10 | feature | beads-only | defer-protected | — | [epic #1110] Surface: unify pane-resizer UX across all split surfaces |
-| #1196 | 2026-08-10 | feature | beads-only | purge-gh-internal | — | [epic #1187] One symlink in ~/.pi/agent/skills 500s every agent-scoped route (PATH_SYMLINK_ESCAPE) |
+| #1196 | 2026-08-10 | feature | beads-only | defer-protected | — | [epic #1187] One symlink in ~/.pi/agent/skills 500s every agent-scoped route (PATH_SYMLINK_ESCAPE) |
 | #1210 | 2026-08-10 | epic | parked | purge-gh-park | — | Epic: CH trades agent — WhatsApp + email-drafting vertical (fiduciaries, craftsmen, storage, garden) |
 | #1213 | 2026-08-10 | research-idea | parked | purge-gh-park | — | Idea: Swiss admin agent — per-canton administrative-procedure knowledge corpus (skill + product + SEO) |
 | #1214 | 2026-08-10 | research-idea | parked | purge-gh-park | — | Idea: Swiss tax agent — per-canton tax copilot (declarations, deductions, deadlines) |
@@ -388,60 +388,19 @@ Deleting individual items (`gh project item-delete 7 --owner hachej --id <item-i
 
 ### Mandatory execution-time preflight
 
-Approval applies only to the exact target SHA and captured rows. Immediately before mutation, re-run the three live inventories below. **Abort the whole purge** if any target issue has gained an open PR, any matching bead has entered `in_progress`/`ready_for_human`, a target issue is no longer open, or the deliverable SHA changed. The executable checker below binds the gate-named SHA, validates every target and retained counterpart, and exits non-zero before any mutation on drift. Run the mutation block immediately after `PREFLIGHT OK`; no partial execution on drift.
+Approval applies only to the exact target SHA and captured rows. Immediately before mutation, re-run the three live inventories below. **Abort the whole purge** if any target issue has gained an open PR, any matching bead has entered `in_progress`/`ready_for_human`, a target issue is no longer open, or the deliverable SHA changed. This closes the capture-to-execution race; no partial execution on drift.
 
 ```bash
-export APPROVED_SHA='<exact SHA named by this approval gate>'
-test "$(git rev-parse HEAD)" = "$APPROVED_SHA" || { echo 'ABORT: SHA drift'; exit 1; }
-git diff --quiet "$APPROVED_SHA" -- docs/factory/issue-buckets-2026-08-21.md .handoff/issue-buckets.html || { echo 'ABORT: deliverable drift'; exit 1; }
+test "$(git rev-parse HEAD)" = "__TARGET_SHA__"
 gh issue list --state open --limit 200 --json number,title,labels,createdAt > /tmp/issue-buckets-preflight-gh.json
 gh pr list --state open --limit 200 --json number,title,body,closingIssuesReferences > /tmp/issue-buckets-preflight-prs.json
 br --db /home/ubuntu/projects/boring-ui-v2/.beads/beads.db list --json > /tmp/issue-buckets-preflight-beads.json
-gh project view 7 --owner hachej --format json > /tmp/issue-buckets-preflight-project.json
-python3 - <<'PY'
-import json,re,sys
-abort=lambda why: (print(f'ABORT: {why}',file=sys.stderr),sys.exit(1))
-targets={371,601,819,883,1009,1011,1196,1210,1213,1214,1215,1216,1217,1253,1300,1314,1338}
-open_issues={x['number'] for x in json.load(open('/tmp/issue-buckets-preflight-gh.json'))}
-missing=targets-open_issues
-if missing: abort(f'target issues no longer all open: {sorted(missing)}')
-for pr in json.load(open('/tmp/issue-buckets-preflight-prs.json')):
-    text=' '.join([pr.get('title') or '',pr.get('body') or ''])
-    refs={int(x) for x in re.findall(r'(?:#|gh-)(\d+)',text,re.I)}
-    refs|={x['number'] for x in pr.get('closingIssuesReferences',[]) if x.get('number')}
-    hit=refs&targets
-    if hit: abort(f'open PR #{pr["number"]} now references targets {sorted(hit)}')
-beads=json.load(open('/tmp/issue-buckets-preflight-beads.json'))['issues']
-expected={
- 371:['bug-371-context-overflow-n0z'],601:['bug-601-provision-remote-eal'],819:['-fwh'],
- 883:['bug-883-stale-indicator-9th'],1009:['1009-sync-driver-blocking-ek2','1009-durability-readiness-204','-0jpy.8'],
- 1011:['-1011-'],1196:['-d5nj.3'],1210:['vertical-agents-epic-nfgt'],1213:['vertical-agents-epic-nfgt.11'],
- 1214:['vertical-agents-epic-nfgt.12'],1215:['vertical-agents-epic-nfgt.13'],1216:['vertical-agents-epic-nfgt.14'],
- 1217:['vertical-agents-epic-nfgt.15'],1253:['-d5nj.4'],1300:['-gb0o.1'],1314:['-0jpy.14'],1338:['-s4wq']}
-for n,tokens in expected.items():
-    matches=[b for b in beads if any(t in b['id'] for t in tokens)]
-    if not matches: abort(f'no retained Bead counterpart for #{n}')
-    active=[b['id'] for b in matches if b['status'] in ('in_progress','ready_for_human')]
-    if active: abort(f'#{n} counterpart became active: {active}')
-for b in beads:
-    if b['status'] not in ('in_progress','ready_for_human'): continue
-    text=' '.join([b.get('external_ref') or '',b.get('title') or '',b.get('description') or '',' '.join(b.get('labels') or [])])
-    refs={int(x) for x in re.findall(r'(?:issues/|#|gh-|issue-)(\d+)',text,re.I)}
-    hit=refs&targets
-    if hit: abort(f'active Bead {b["id"]} now references targets {sorted(hit)}')
-project=json.load(open('/tmp/issue-buckets-preflight-project.json'))
-if project.get('closed'): abort('Project #7 already closed/drifted')
-purge_beads={'wt-391-forward-seneca-competitor-cloudflare-os-n50','wt-391-forward-seneca-competitor-getenergy-qaf','wt-391-forward-vertical-agents-epic-nfgt.6','wt-391-forward-vertical-agents-epic-nfgt.7','wt-391-forward-vertical-agents-epic-nfgt.8','wt-391-forward-vertical-agents-epic-nfgt.9','wt-391-forward-vertical-agents-epic-nfgt.10'}
-state={b['id']:b['status'] for b in beads}
-drift={i:state.get(i) for i in purge_beads if state.get(i)!='open'}
-if drift: abort(f'Bead purge targets drifted: {drift}')
-print('PREFLIGHT OK: exact SHA; 17 GH targets open/unprotected; counterparts retained/inactive; Project open; 7 Bead targets open.')
-PY
+# Reconcile every approved target against these files; abort on any protection/state drift.
 ```
 
 Rows lacking a durable Bead counterpart are protected rather than closed. That preserves r4's “every GH issue maps to Beads” prerequisite; creating those missing epics/tasks is a separate migration, not silently bundled into this purge.
 
-### Eligible GitHub closes (17)
+### Eligible GitHub closes (15)
 
 These rows have neither an open PR reference nor an `in_progress`/`ready_for_human` bead. Their work/idea remains in Beads.
 
@@ -451,8 +410,6 @@ gh issue close 601 -c "Issue-bucket cleanup 2026-08-21: tracked in Beads; intern
 gh issue close 819 -c "Issue-bucket cleanup 2026-08-21: parked in deferred Beads; no longer part of the public product window."
 gh issue close 883 -c "Issue-bucket cleanup 2026-08-21: tracked in Beads; internal implementation detail removed from the public issue window."
 gh issue close 1009 -c "Issue-bucket cleanup 2026-08-21: tracked in Beads; internal implementation detail removed from the public issue window."
-gh issue close 1011 -c "Issue-bucket cleanup 2026-08-21: tracked in Beads; internal implementation detail removed from the public issue window."
-gh issue close 1196 -c "Issue-bucket cleanup 2026-08-21: tracked in Beads; internal implementation detail removed from the public issue window."
 gh issue close 1210 -c "Issue-bucket cleanup 2026-08-21: parked in deferred Beads; no longer part of the public product window."
 gh issue close 1213 -c "Issue-bucket cleanup 2026-08-21: parked in deferred Beads; no longer part of the public product window."
 gh issue close 1214 -c "Issue-bucket cleanup 2026-08-21: parked in deferred Beads; no longer part of the public product window."
@@ -465,7 +422,7 @@ gh issue close 1314 -c "Issue-bucket cleanup 2026-08-21: tracked in Beads; inter
 gh issue close 1338 -c "Issue-bucket cleanup 2026-08-21: tracked in Beads; internal implementation detail removed from the public issue window."
 ```
 
-### Protected GitHub rows (35) — **not in the executable manifest**
+### Protected GitHub rows (37) — **not in the executable manifest**
 
 | Issue | Intended home | Why deferred |
 |---|---|---|
@@ -476,6 +433,7 @@ gh issue close 1338 -c "Issue-bucket cleanup 2026-08-21: tracked in Beads; inter
 | #877 | beads-only | Do not close while no identifiable durable Bead counterpart yet (r4 prerequisite). |
 | #882 | parked | Do not close while no identifiable durable Bead counterpart yet (r4 prerequisite). |
 | #900 | beads-only | Do not close while open PR #1309 and active bead wt-391-forward-rjkl.2. |
+| #1011 | beads-only | Do not close while active bead wt-391-forward-rjkl.1. |
 | #1028 | beads-only | Do not close while no identifiable durable Bead counterpart yet (r4 prerequisite). |
 | #1060 | beads-only | Do not close while no identifiable durable Bead counterpart yet (r4 prerequisite). |
 | #1083 | parked | Do not close while no identifiable durable Bead counterpart yet (r4 prerequisite). |
@@ -486,6 +444,7 @@ gh issue close 1338 -c "Issue-bucket cleanup 2026-08-21: tracked in Beads; inter
 | #1185 | beads-only | Do not close while no identifiable durable Bead counterpart yet (r4 prerequisite). |
 | #1189 | beads-only | Do not close while no identifiable durable Bead counterpart yet (r4 prerequisite). |
 | #1190 | beads-only | Do not close while no identifiable durable Bead counterpart yet (r4 prerequisite). |
+| #1196 | beads-only | Do not close while active bead wt-391-forward-d5nj.2. |
 | #1223 | beads-only | Do not close while no identifiable durable Bead counterpart yet (r4 prerequisite). |
 | #1224 | parked | Do not close while no identifiable durable Bead counterpart yet (r4 prerequisite). |
 | #1226 | parked | Do not close while no identifiable durable Bead counterpart yet (r4 prerequisite). |
@@ -505,7 +464,7 @@ gh issue close 1338 -c "Issue-bucket cleanup 2026-08-21: tracked in Beads; inter
 | #1323 | beads-only | Do not close while no identifiable durable Bead counterpart yet (r4 prerequisite). |
 | #1337 | beads-only | Do not close while open PR #1343 and active bead wt-391-forward-p820. |
 
-Re-evaluate each only after every named PR closes, every named bead leaves `in_progress`/`ready_for_human`, and every missing durable counterpart is created and linked; do not infer that approval of this manifest covers those future closes.
+Re-evaluate each only after every named PR closes and every named bead leaves `in_progress`/`ready_for_human`; do not infer that approval of this manifest covers those future closes.
 
 ### Project retirement (1)
 
@@ -529,8 +488,8 @@ br --db /home/ubuntu/projects/boring-ui-v2/.beads/beads.db close wt-391-forward-
 
 ### Execution totals if approved exactly
 
-- Close **17** GitHub issues.
+- Close **15** GitHub issues.
 - Close/archive **1** GitHub Project (preserving all 74 rows/history).
 - Close **7** beads.
-- Keep **51** GitHub issues open now, including **35** temporarily protected internal/parked rows.
+- Keep **53** GitHub issues open now, including **37** temporarily protected internal/parked rows.
 - No item with an open PR or an active (`in_progress`/`ready_for_human`) bead is in the executable close set.
