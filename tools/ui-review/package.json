@@ -15,10 +15,10 @@
     "ui:review:automation:update": "UI_REVIEW_UPDATE_SNAPSHOTS=1 UI_REVIEW_RUN_ID=automation-update UI_REVIEW_CRITIC=fixture UI_REVIEW_VITE_PORT=5680 pnpm run ui:review -- review automation-pane-popover"
   },
   "devDependencies": {
-    "@antithesishq/bombadil": "0.6.1",
+    "@antithesishq/bombadil": "0.7.0",
     "@playwright/test": "^1.62.1",
     "@types/node": "^22.0.0",
-    "axe-core": "^4.12.1",
+    "axe-core": "^4.13.0",
     "jpeg-js": "0.4.4",
     "tsx": "^4.23.6",
     "typescript": "^6.0.3",

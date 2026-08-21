@@ -1,7 +1,7 @@
 {
   "private": true,
   "name": "boring-ui-v2",
-  "version": "0.1.101",
+  "version": "0.1.102",
   "type": "module",
   "scripts": {
     "build": "pnpm -r --workspace-concurrency=4 run build",
@@ -75,7 +75,7 @@
       "@perspective-dev/viewer": "4.4.1",
       "@perspective-dev/viewer-datagrid": "4.4.1",
       "@perspective-dev/viewer-d3fc": "4.4.1",
-      "better-auth": "1.6.22"
+      "better-auth": "1.6.27"
     }
   }
 }

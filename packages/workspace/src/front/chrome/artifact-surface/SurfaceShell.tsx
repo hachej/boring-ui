@@ -81,7 +81,7 @@ export interface SurfaceShellApi {
   /** Hide the workbench's left sources/files pane while leaving the workbench open. */
   closeWorkbenchLeftPane: () => void
   /** Reveal/select a file-tree resource without opening an editor pane. */
-  expandToFile: (path: string, options?: { filesystem?: FilesystemId; kind?: "file" | "dir" }) => void
+  expandToFile: (path: string, options?: { filesystem?: FilesystemId }) => void
   /** Current snapshot of open tabs + active tab. */
   getSnapshot: () => SurfaceShellSnapshot
 }
@@ -668,14 +668,12 @@ export function SurfaceShell({
     return true
   }, [])
 
-  const expandToFileSync = useCallback((path: string, options?: { filesystem?: FilesystemId; kind?: "file" | "dir" }) => {
+  const expandToFileSync = useCallback((path: string, options?: { filesystem?: FilesystemId }) => {
     const normalizedPath = path.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+/g, "/")
     const filesystem = options?.filesystem
-    const kind = options?.kind
     const request = {
       path: normalizedPath,
       ...(filesystem ? { filesystem } : {}),
-      ...(kind ? { kind } : {}),
     }
     pendingTreeExpandRef.current = request
     setFileTreeRevealRequest({

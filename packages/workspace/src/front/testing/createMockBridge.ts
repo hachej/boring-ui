@@ -184,11 +184,7 @@ export function createMockBridge(options: CreateMockBridgeOptions = {}): MockWor
     }),
 
     expandToFile: spy(async (path, opts) => {
-      emit("tree:expand", {
-        path,
-        ...(opts?.filesystem ? { filesystem: opts.filesystem } : {}),
-        ...(opts?.kind ? { kind: opts.kind } : {}),
-      })
+      emit("tree:expand", { path, ...(opts?.filesystem ? { filesystem: opts.filesystem } : {}) })
       return nextResult()
     }),
 
