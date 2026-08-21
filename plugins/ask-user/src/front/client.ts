@@ -2,7 +2,7 @@ import { HumanArtifactListSchema } from "@hachej/boring-workspace"
 import { ASK_USER_BRIDGE_OPS } from "../shared/bridge"
 import { ASK_USER_UI_STATE_SLOTS } from "../shared/constants"
 import { ASK_USER_ERROR_CODES } from "../shared/error-codes"
-import type { AskUserAnswerValue, AskUserFormSchema, AskUserQuestion } from "../shared/types"
+import type { AskUserAnswerValue, AskUserFormSchema, AskUserKind, AskUserQuestion } from "../shared/types"
 import { validateQuestionValues, type QuestionFormValues, type QuestionValidationResult } from "./primitives"
 
 export type QuestionsClientResult = { ok: true; status: string }
@@ -141,6 +141,8 @@ export function createQuestionsClient(options: QuestionsClientOptions = {}) {
   }
 }
 
+const ASK_USER_KINDS = new Set<AskUserKind>(["merge", "plan", "question", "escalation"])
+
 export function normalizeQuestion(value: unknown): AskUserQuestion | null {
   if (!value || typeof value !== "object") return null
   const raw = value as Record<string, unknown>
@@ -154,6 +156,8 @@ export function normalizeQuestion(value: unknown): AskUserQuestion | null {
     ownerPrincipalId: typeof raw.ownerPrincipalId === "string" ? raw.ownerPrincipalId : "anonymous",
     status: normalizeQuestionStatus(raw.status),
     title: typeof raw.title === "string" ? raw.title : undefined,
+    correlationId: typeof raw.correlationId === "string" ? raw.correlationId : undefined,
+    kind: typeof raw.kind === "string" && ASK_USER_KINDS.has(raw.kind as AskUserKind) ? raw.kind as AskUserKind : undefined,
     context: typeof raw.context === "string" ? raw.context : undefined,
     schema,
     artifacts: artifactsResult.success ? artifactsResult.data : [],

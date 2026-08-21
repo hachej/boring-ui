@@ -234,7 +234,7 @@ export class AskUserRuntime {
     this.coordinator.resolveCancelled(questionId, "abandoned")
   }
 
-  private createQuestion(request: Pick<AskUserRequest, "sessionId" | "title" | "context" | "artifacts" | "toolCallId" | "ownerPrincipalId">): AskUserQuestion {
+  private createQuestion(request: Pick<AskUserRequest, "sessionId" | "title" | "correlationId" | "kind" | "context" | "artifacts" | "toolCallId" | "ownerPrincipalId">): AskUserQuestion {
     const at = this.isoNow()
     return {
       questionId: randomUUID(),
@@ -243,6 +243,8 @@ export class AskUserRuntime {
       ownerPrincipalId: request.ownerPrincipalId ?? this.ownerPrincipalId,
       status: "ready",
       title: request.title,
+      correlationId: request.correlationId,
+      kind: request.kind,
       context: request.context,
       artifacts: request.artifacts ?? [],
       answerToken: randomBytes(32).toString("base64url"),

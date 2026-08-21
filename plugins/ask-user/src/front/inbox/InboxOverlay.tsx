@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Inbox, MailOpen, X } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
-import { HumanArtifactList, useWorkspaceAttention, useAppLeftOverlayChrome, cn } from "@hachej/boring-workspace"
+import { useWorkspaceAttention, useAppLeftOverlayChrome, cn } from "@hachej/boring-workspace"
 import { attentionBlockerToInboxItem, isInboxAttentionBlocker } from "./attentionBlockerAdapter"
 import { InboxFilterBar } from "./InboxFilterBar"
 import { InboxSection } from "./InboxSection"
@@ -19,6 +19,7 @@ import { useRelatedTasks } from "./taskProvenanceClient"
 import { useQuestionsRuntime } from "../runtime"
 import { useInboxSessionTitles } from "./sessionTitleClient"
 import { RelatedTaskList } from "./RelatedTaskList"
+import { AskUserContext } from "../QuestionContext"
 
 export interface InboxOverlayProps {
   onClose: () => void
@@ -111,9 +112,13 @@ export function InboxOverlay({ onClose, pinStorageKey, initialItemId }: InboxOve
   const renderExpandedItem = useCallback((item: WorkspaceInboxItemViewModel) => {
     const tasks = item.sessionId ? relatedTasks.get(item.sessionId) ?? [] : []
     return (
-      <div className="px-4 py-3">
-        <HumanArtifactList artifacts={item.artifacts} onOpen={(artifact) => handleShellResult(shell.openInboxArtifact(item, artifact))} />
-        <RelatedTaskList tasks={tasks} className="mt-3" />
+      <div className="px-4 py-4">
+        <AskUserContext
+          context={item.context}
+          artifacts={item.artifacts}
+          onOpenArtifact={(artifact) => handleShellResult(shell.openInboxArtifact(item, artifact))}
+        />
+        <RelatedTaskList tasks={tasks} className="mt-4" />
       </div>
     )
   }, [handleShellResult, relatedTasks, shell])
@@ -134,7 +139,7 @@ export function InboxOverlay({ onClose, pinStorageKey, initialItemId }: InboxOve
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-0.5">
-          <IconButton type="button" variant="ghost" size="icon-xs" onClick={onClose} aria-label="Close inbox" title="Close" className="text-muted-foreground hover:text-foreground">
+          <IconButton type="button" variant="ghost" size="icon-xs" onClick={onClose} aria-label="Close inbox" title="Close" className="size-11 text-muted-foreground hover:text-foreground">
             <X className="size-3" strokeWidth={1.75} />
           </IconButton>
         </div>

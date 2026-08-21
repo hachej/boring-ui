@@ -58,6 +58,7 @@
   "dependencies": {
     "@hachej/boring-ui-kit": "workspace:*",
     "lucide-react": "^1.27.0",
+    "react-markdown": "^10.1.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {

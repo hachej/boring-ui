@@ -7,7 +7,7 @@ import {
 import type { UiReviewBrowserErrors } from "../../core/reviewSpec"
 
 export const ASK_USER_INLINE_HARD_GATE_CONTRACT = {
-  contractVersion: "ask-user-inline-v1",
+  contractVersion: "ask-user-inline-v2",
   minimumTouchWidth: 44,
   minimumTouchHeight: 44,
 } as const
@@ -24,6 +24,7 @@ const REQUIRED_GATES = [
   "single-presentation",
   "checkpoint-state",
   "raw-json-hidden",
+  "structured-context",
   "submit-theme-tokens",
   "focused-control-visible",
   "mobile-touch-targets",
@@ -49,6 +50,13 @@ export type AskUserInlineHardGateSnapshot = UiReviewBrowserErrors & {
     submitLabel: string | null
     submitColors: { color: string; background: string; expectedColor: string; expectedBackground: string } | null
     rawSchemaVisible: boolean
+    metadataText: string | null
+    contextHeadings: string[]
+    artifactCount: number
+    inboxCount: number
+    inboxExpanded: boolean
+    inboxTitleVisible: boolean
+    inboxCorrelationVisible: boolean
   }
   focusedControl: { label: string; bounds: Bounds; occluded: boolean } | null
   undersizedTouchTargets: Array<{ label: string; bounds: Bounds }>
@@ -67,18 +75,32 @@ export function evaluateAskUserInlineHardGates(snapshot: AskUserInlineHardGateSn
   add("axe-serious-critical", seriousAxe.length === 0, seriousAxe.map((violation) => `${violation.impact}:${violation.id}:${violation.nodes}`).join("\n") || "none")
   add("horizontal-overflow", snapshot.documentWidth.scrollWidth <= snapshot.documentWidth.clientWidth, `${snapshot.documentWidth.scrollWidth}/${snapshot.documentWidth.clientWidth}`)
   add("surface-bounds", snapshot.question.bounds !== null && insideViewport(snapshot.question.bounds, snapshot.viewport), JSON.stringify(snapshot.question.bounds))
-  add("single-presentation", snapshot.question.paneCount === 0 && snapshot.question.inlineCount <= 1 && snapshot.question.resolvedCount <= 1, `pane=${snapshot.question.paneCount};inline=${snapshot.question.inlineCount};resolved=${snapshot.question.resolvedCount}`)
+  const presentationCount = snapshot.question.inlineCount + snapshot.question.resolvedCount + snapshot.question.inboxCount
+  add("single-presentation", snapshot.question.paneCount === 0 && presentationCount === 1, `pane=${snapshot.question.paneCount};inline=${snapshot.question.inlineCount};resolved=${snapshot.question.resolvedCount};inbox=${snapshot.question.inboxCount}`)
 
   const expected = snapshot.checkpoint === "resolved"
     ? snapshot.question.inlineCount === 0 && snapshot.question.resolvedCount === 1 && snapshot.question.openIconCount === 0
-    : snapshot.question.inlineCount === 1
-      && snapshot.question.openIconCount === 1
-      && snapshot.question.resolvedCount === 0
-      && snapshot.question.submitLabel === "Continue"
-      && (snapshot.checkpoint !== "selected" || snapshot.question.selectedValue?.startsWith("Request changes") === true)
+    : snapshot.checkpoint === "inbox-list"
+      ? snapshot.question.inboxCount === 1 && !snapshot.question.inboxExpanded && snapshot.question.inboxTitleVisible && snapshot.question.inboxCorrelationVisible
+      : snapshot.checkpoint === "inbox-expanded"
+        ? snapshot.question.inboxCount === 1 && snapshot.question.inboxExpanded && snapshot.question.inboxTitleVisible && snapshot.question.inboxCorrelationVisible
+        : snapshot.question.inlineCount === 1
+          && snapshot.question.openIconCount === 1
+          && snapshot.question.resolvedCount === 0
+          && snapshot.question.submitLabel === "Continue"
+          && (snapshot.checkpoint !== "selected" || snapshot.question.selectedValue?.startsWith("Request changes") === true)
   add("checkpoint-state", expected, `checkpoint=${snapshot.checkpoint};selected=${snapshot.question.selectedValue ?? "none"};submit=${snapshot.question.submitLabel ?? "none"}`)
   add("raw-json-hidden", !snapshot.question.rawSchemaVisible, `visible=${snapshot.question.rawSchemaVisible}`)
-  const submitTokensMatch = snapshot.checkpoint === "resolved" || Boolean(
+  const hasContextHierarchy = ["What changed", "Proof", "Risk and rollback"].every((heading) => snapshot.question.contextHeadings.includes(heading))
+  const structuredContext = snapshot.checkpoint === "resolved"
+    || (snapshot.checkpoint === "inbox-list" && snapshot.question.inboxTitleVisible && snapshot.question.inboxCorrelationVisible)
+    || (snapshot.checkpoint === "inbox-expanded" && snapshot.question.inboxCorrelationVisible && hasContextHierarchy && snapshot.question.artifactCount === 2)
+    || (snapshot.question.metadataText?.includes("merge") === true
+      && snapshot.question.metadataText.includes("br-123 · PR #456")
+      && hasContextHierarchy
+      && snapshot.question.artifactCount === 1)
+  add("structured-context", structuredContext, `metadata=${snapshot.question.metadataText ?? "none"};headings=${snapshot.question.contextHeadings.join("|")};artifacts=${snapshot.question.artifactCount}`)
+  const submitTokensMatch = snapshot.checkpoint === "resolved" || snapshot.checkpoint.startsWith("inbox-") || Boolean(
     snapshot.question.submitColors
       && snapshot.question.submitColors.color === snapshot.question.submitColors.expectedColor
       && snapshot.question.submitColors.background === snapshot.question.submitColors.expectedBackground,

@@ -13,8 +13,8 @@ const AXE_SCRIPT_PATH = createRequire(import.meta.url).resolve("axe-core/axe.min
 
 export const askUserInlineSpec: UiReviewSpec = {
   id: "ask-user-inline",
-  specRevision: "ask-user-inline-v1",
-  fixtureResetId: "ask-user-inline-fixture-v1",
+  specRevision: "ask-user-inline-v2",
+  fixtureResetId: "ask-user-inline-fixture-v2",
   rubricVersion: "impeccable-v1",
   target: {
     root: "tools/ui-review/fixtures/workspace-components",
@@ -50,14 +50,26 @@ export const askUserInlineSpec: UiReviewSpec = {
       await openFixture(page, "resolved")
       await expect(page.locator('[data-boring-ask-user-resolved-question="true"]')).toBeVisible()
     } },
+    { id: "inbox-list", colorScheme: "dark", reach: async (page) => {
+      await openFixture(page, "inbox-list")
+      await expect(page.locator('[data-boring-workspace-part="inbox-overlay"]')).toBeVisible()
+      await expect(page.getByText("Merge: inline artifacts in chat")).toBeVisible()
+    } },
+    { id: "inbox-expanded", colorScheme: "dark", reach: async (page) => {
+      await openFixture(page, "inbox-expanded")
+      await page.getByText("Merge: inline artifacts in chat").click()
+      await expect(page.getByRole("heading", { name: "What changed" })).toBeVisible()
+    } },
   ],
-  criticPrompt: "Review the supplied inline ask_user pending, selected, and resolved screenshots against the design context. Prioritize hierarchy, legibility, action contrast, density, responsive behavior, state continuity, and whether the question remains the primary interaction. Return only UiCriticReportV1 JSON. Scores are advisory and every finding must cite supplied state ids.",
+  criticPrompt: "Review the supplied inline ask_user pending, selected, resolved, Inbox list, and expanded-card screenshots against the design context. Prioritize three-second scanability, human-first subject hierarchy, metadata restraint, Markdown legibility, artifact prominence, action contrast, density, responsive behavior, and state continuity. Return only UiCriticReportV1 JSON. Scores are advisory and every finding must cite supplied state ids.",
   criticContextPaths: [".impeccable.md", "plugins/ask-user/README.md"],
   ownerSpotChecks: [
     "Compare light and dark pending states plus selected and resolved states at desktop and mobile widths.",
     "Confirm the primary action label is readable in dark mode and choices have clear selected state.",
     "Confirm no duplicate Questions pane or raw ask_user JSON appears in any checkpoint.",
     "Confirm progress from pending to resolved preserves the conversation-first hierarchy.",
+    "Confirm Inbox rows lead with a plain-language subject and keep correlation in a compact chip.",
+    "Confirm the expanded Inbox card exposes Markdown hierarchy and review material without a dense text blob.",
   ],
   hardGates: {
     contractVersion: ASK_USER_INLINE_HARD_GATE_CONTRACT.contractVersion,
@@ -75,7 +87,7 @@ export const askUserInlineSpec: UiReviewSpec = {
             const style = getComputedStyle(element)
             return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none"
           }
-          const target = document.querySelector('[data-boring-ask-user-inline-question="true"], [data-boring-ask-user-resolved-question="true"]')
+          const target = document.querySelector('[data-boring-ask-user-inline-question="true"], [data-boring-ask-user-resolved-question="true"], [data-boring-workspace-part="inbox-overlay"]')
           const rect = target?.getBoundingClientRect()
           const selected = document.querySelector<HTMLInputElement>('input[name="direction"]:checked')
           const submit = [...document.querySelectorAll("button")].find((button) => visible(button) && button.textContent?.trim() === "Continue")
@@ -105,6 +117,13 @@ export const askUserInlineSpec: UiReviewSpec = {
             submitLabel: submit?.textContent?.trim() ?? null,
             submitColors,
             rawSchemaVisible: document.body.innerText.includes('"wireVersion"'),
+            metadataText: target?.querySelector('[aria-label="Question metadata"]')?.textContent?.replace(/\s+/g, " ").trim() ?? null,
+            contextHeadings: [...(target?.querySelectorAll('[data-testid="ask-user-markdown"] h1, [data-testid="ask-user-markdown"] h2, [data-testid="ask-user-markdown"] h3, [data-testid="ask-user-markdown"] h4') ?? [])].map((heading) => heading.textContent?.trim() ?? ""),
+            artifactCount: Number(target?.querySelector('[data-ask-user-artifact-count]')?.getAttribute('data-ask-user-artifact-count') ?? 0),
+            inboxCount: document.querySelectorAll('[data-boring-workspace-part="inbox-overlay"]').length,
+            inboxExpanded: document.querySelector('[data-boring-workspace-part="inbox-overlay"] [aria-expanded="true"]') !== null,
+            inboxTitleVisible: document.body.innerText.includes("Merge: inline artifacts in chat"),
+            inboxCorrelationVisible: document.body.innerText.includes("br-123 · PR #456"),
           }
         }),
         page.evaluate(async () => {
@@ -131,7 +150,7 @@ export const askUserInlineSpec: UiReviewSpec = {
   },
 }
 
-async function openFixture(page: Parameters<UiReviewSpec["checkpoints"][number]["reach"]>[0], state: "pending" | "resolved") {
+async function openFixture(page: Parameters<UiReviewSpec["checkpoints"][number]["reach"]>[0], state: "pending" | "resolved" | "inbox-list" | "inbox-expanded") {
   await page.goto(`/?ui-review-fixture=ask-user-inline&state=${state}`)
   await expect(page.locator('[data-ui-review-fixture="ask-user-inline"]')).toBeVisible()
 }

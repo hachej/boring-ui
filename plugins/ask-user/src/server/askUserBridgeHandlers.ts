@@ -132,6 +132,8 @@ function requestHandler({ runtime }: AskUserBridgeHandlersOptions) {
       return await runtime.ask({
         sessionId: input.sessionId,
         title: input.title,
+        correlationId: input.correlationId,
+        kind: input.kind,
         context: input.context,
         schema: input.schema,
         artifacts: input.artifacts,
@@ -227,6 +229,8 @@ function assertRequestInput(input: AskUserBridgeRequestInput): void {
   if (typeof input.sessionId !== "string" || input.sessionId.length === 0) throw invalid("ask-user request requires sessionId")
   if (!input.schema || typeof input.schema !== "object") throw invalid("ask-user request requires schema")
   if (input.title !== undefined && typeof input.title !== "string") throw invalid("ask-user request title must be a string")
+  if (input.correlationId !== undefined && typeof input.correlationId !== "string") throw invalid("ask-user request correlationId must be a string")
+  if (input.kind !== undefined && !["merge", "plan", "question", "escalation"].includes(input.kind)) throw invalid("ask-user request kind is invalid")
   if (input.context !== undefined && typeof input.context !== "string") throw invalid("ask-user request context must be a string")
   if (input.timeoutMs !== undefined && (!Number.isFinite(input.timeoutMs) || input.timeoutMs <= 0)) throw invalid("ask-user request timeoutMs must be positive")
 }

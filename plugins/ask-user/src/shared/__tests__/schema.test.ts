@@ -32,6 +32,21 @@ describe("ask-user shared schema", () => {
     ).toBe(true)
   })
 
+  it("accepts structured Inbox metadata and enforces a human-scannable title", () => {
+    expect(AskUserToolInputSchema.safeParse({
+      title: "Merge: inline artifacts in chat",
+      correlationId: "wt-391-forward-gb0o.2 · PR #1301",
+      kind: "merge",
+      context: "## Proof\n- UI review green",
+      schema: validSchema,
+    }).success).toBe(true)
+    expect(AskUserToolInputSchema.safeParse({
+      title: "x".repeat(ASK_USER_SCHEMA_LIMITS.maxHumanTitleLength + 1),
+      schema: validSchema,
+    }).success).toBe(false)
+    expect(AskUserToolInputSchema.safeParse({ title: "Choose", kind: "unknown", schema: validSchema }).success).toBe(false)
+  })
+
   it("accepts only the plural bounded HumanArtifact contract", () => {
     const artifact = { id: "plan", surfaceKind: "workspace.open.path", target: "docs/plan.md", title: "Plan" }
     expect(AskUserToolInputSchema.safeParse({ title: "Review", schema: validSchema, artifacts: [artifact] }).success).toBe(true)

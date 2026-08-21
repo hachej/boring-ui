@@ -26,6 +26,9 @@ export interface WorkspaceInboxItem {
   status: InboxItemStatus
   title: string
   description: string
+  context?: string
+  intentKind?: string
+  correlationId?: string
   source: WorkspaceInboxItemSource
   sessionId: string | null
   agentTypeId?: string | null
@@ -70,6 +73,19 @@ export function formatInboxTime(item: WorkspaceInboxItem, now = Date.now()): str
 
 export function inboxItemSender(item: WorkspaceInboxItem): string {
   return item.source.label || item.source.type
+}
+
+const LEGACY_CORRELATION_PREFIX = /^\[((?:(?:br|wt|gh|pr)-[A-Za-z0-9.-]+|PR\s+#\d+))\]\s*/i
+
+export function inboxTitlePresentation(
+  title: string,
+  explicitCorrelationId?: string,
+): { subject: string; correlationId?: string } {
+  if (explicitCorrelationId) return { subject: title, correlationId: explicitCorrelationId }
+  const match = LEGACY_CORRELATION_PREFIX.exec(title)
+  if (!match) return { subject: title }
+  const subject = title.slice(match[0].length).trim()
+  return { subject: subject || title, correlationId: match[1] }
 }
 
 export function filterInboxItems(items: readonly WorkspaceInboxItem[], filter: InboxFilter): WorkspaceInboxItem[] {

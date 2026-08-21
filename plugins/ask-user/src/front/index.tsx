@@ -20,6 +20,7 @@ import { createQuestionsClient, QuestionsClientError } from "./client"
 import { createQuestionsStore, pendingQuestionSnapshot, QuestionsRuntimeContext, isSessionOpen, useQuestionsRuntime, type QuestionsRuntime } from "./runtime"
 import { useAskUserAttentionActions, useAskUserAttentionBlockers, useAskUserComposerStopCancel, useAskUserPendingRefresh } from "./providerHooks"
 import { QuestionCancelButton, QuestionFields, QuestionForm, QuestionFormProvider, QuestionSubmitButton } from "./primitives"
+import { AskUserContext, AskUserMetadata } from "./QuestionContext"
 import { InboxOverlay } from "./inbox/InboxOverlay"
 import { isInboxAttentionBlocker } from "./inbox/attentionBlockerAdapter"
 
@@ -111,8 +112,14 @@ function PendingQuestionBody({ question, onResolved, onOpen, compact = false }: 
         <section className="relative rounded-md border border-border/60 bg-muted/30 p-4 pr-12">
           {onOpen ? <Button type="button" variant="ghost" size="icon-sm" className="absolute right-3 top-3" style={{ width: 44, height: 44 }} onClick={onOpen} aria-label="Open Questions" title="Open Questions"><SquareArrowOutUpRight className="h-4 w-4" /></Button> : null}
           <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Waiting for answer</div>
-          <h2 className="mt-2 text-balance text-sm font-semibold leading-5 text-foreground">{question.title ?? "Question"}</h2>
-          {question.context ? <p className="mt-2 max-w-prose text-sm leading-6 text-muted-foreground">{question.context}</p> : null}
+          <AskUserMetadata className="mt-3" kind={question.kind} correlationId={question.correlationId} />
+          <h2 className="mt-2 text-balance text-base font-semibold leading-6 text-foreground">{question.title ?? "Question"}</h2>
+          <AskUserContext
+            className="mt-4"
+            context={question.context}
+            artifacts={question.artifacts}
+            onOpenArtifact={(artifact) => postUiCommand({ kind: "openSurface", params: { kind: artifact.surfaceKind, target: artifact.target } })}
+          />
         </section>
         <div className="mt-4 space-y-4"><QuestionFields /></div>
         {error ? <Notice className="mt-4" tone="destructive" role="alert">{error}</Notice> : null}

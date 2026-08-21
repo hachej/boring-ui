@@ -16,7 +16,11 @@ export const ASK_USER_SCHEMA_LIMITS = {
   maxFields: 8,
   maxOptionsPerField: 50,
   maxFieldNameLength: 64,
+  /** Persisted/bridge compatibility limit for legacy titles. */
   maxTitleLength: 200,
+  /** New tool calls use a human-first subject that stays scannable in Inbox rows. */
+  maxHumanTitleLength: 60,
+  maxCorrelationIdLength: 120,
   maxLabelLength: 160,
   maxHelpTextLength: 500,
   maxContextLength: 4000,

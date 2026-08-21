@@ -51,6 +51,19 @@ describe("ask-user front client", () => {
     expect(readPendingQuestionHintFromState(state)).toEqual({ questionId: "legacy", sessionId: "s-legacy", status: "ready" })
   })
 
+  it("hydrates optional correlation metadata while keeping legacy questions readable", () => {
+    expect(normalizeQuestion({ ...question, title: "Merge: better cards", correlationId: "br-123 · PR #456", kind: "merge" })).toMatchObject({
+      title: "Merge: better cards",
+      correlationId: "br-123 · PR #456",
+      kind: "merge",
+    })
+    expect(normalizeQuestion({ ...question, title: "[br-123] Legacy title", kind: "invalid" })).toMatchObject({
+      title: "[br-123] Legacy title",
+      correlationId: undefined,
+      kind: undefined,
+    })
+  })
+
   it("hydrates plural associated artifacts atomically without accepting malformed values", () => {
     const artifact = { id: "plan", surfaceKind: "file", target: "docs/plan.md", title: "Plan" }
     const base = { ...question, artifacts: [artifact] }

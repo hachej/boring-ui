@@ -1,11 +1,15 @@
 # Owner review card
 
 After proof/reviews, create an Inbox Human Intention tied to the exact bead,
-task, artifact, and revision — subject carries the bead ID
-(`[br-###]`, per the factory's thread=bead correlation rule). That durable
+task, artifact, and revision. Keep the subject human-first (WHAT + WHY, at most
+60 characters) and carry the exact bead/PR key in `correlationId`; set `kind`
+to `plan` or `merge`. This preserves the factory's thread=bead correlation rule
+without making the identifier the first thing a human must parse. That durable
 record — not chat — is the decision source of truth. Use `ask_user` for the
-decision transport when available (GitHub comment fallback). The intention
-links a **PR review doc** — self-contained visual HTML per
+decision transport when available (GitHub comment fallback). Format `context`
+as Markdown sections (`What changed`, `Proof`, `Risk and rollback`, `Test
+steps`) rather than one dense paragraph. The intention links a **PR review doc**
+— self-contained visual HTML per
 [`visual-review-doc.md`](visual-review-doc.md):
 
 ```md

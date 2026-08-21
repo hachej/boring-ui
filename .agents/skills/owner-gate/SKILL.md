@@ -26,12 +26,15 @@ A gate that did not become an inbox item did not happen.
 
 ## The call
 
-`ask_user` takes `title`, `context`, `artifacts`, and a form `schema`:
+`ask_user` takes a human-first `title`, structured `correlationId` and `kind`
+metadata, Markdown `context`, `artifacts`, and a form `schema`:
 
 ```json
 {
-  "title": "[br-123] Merge approval: epics-first Tasks view",
-  "context": "PR #1234 · head abc1234 · target main\nProof: 41 tests green, thermo clean.\nRisk: read-only view, revert = revert the commit.\nPlease test: open Tasks -> Epics, expand br-1100, toggle 'Show closed'.",
+  "title": "Merge: epics-first Tasks view",
+  "correlationId": "br-123 · PR #1234",
+  "kind": "merge",
+  "context": "## What changed\nTasks now opens epics first so active work is visible immediately.\n\n## Proof\n- Head `abc1234` against `main`\n- 41 tests green\n- Thermo and fresh-eyes reviews clean\n\n## Risk and rollback\nRead-only presentation change. Roll back by reverting `abc1234`.\n\n## Test steps\n1. Open **Tasks → Epics**.\n2. Expand `br-1100`.\n3. Toggle **Show closed**.",
   "artifacts": [
     {
       "id": "present-pr",
@@ -65,17 +68,28 @@ A gate that did not become an inbox item did not happen.
 
 Rules that make the item usable rather than merely present:
 
-- **`title` starts with `[br-###]`.** The bead ID is the correlation key
-  everywhere; an intention without it cannot be tied back to work.
+- **`title` is WHAT + WHY in plain language, at most 60 characters.** Start
+  with the decision verb (`Merge:`, `Plan:`, `Choose:`, `Escalation:`). Never
+  prefix the title with an opaque bead, task, issue, PR, branch, or SHA.
+- **`correlationId` carries the durable correlation key.** Include the exact
+  bead ID and, when useful, the PR/issue number. This metadata renders as a
+  compact chip without consuming the subject line.
+- **`kind` is required for factory gates.** Use `plan` for Gate 1 and `merge`
+  for Gate 2. `question` and `escalation` are available for non-gate decisions.
+- **`context` is concise Markdown with a stable hierarchy.** For owner review,
+  use `## What changed`, `## Proof`, `## Risk and rollback`, and
+  `## Test steps` in that order. Prefer bullets and numbered steps over a
+  punctuation-heavy paragraph. Plain strings remain compatible but are not the
+  factory convention.
 - **`artifacts[].surfaceKind` must be a surface kind the workspace can open.**
   `workspace.open.path` with a workspace-relative `target` opens a file in a
   pane — that is how the present-pr page and any proof file reach the owner.
   A surface kind nothing resolves is a dead row in the Inbox.
 - **URLs are not artifacts.** There is no external-URL surface. PR links, CI
-  links, and SHAs go in `context` as plain text.
+  links, and SHAs go under the relevant Markdown heading in `context`.
 - **Everything the owner needs to decide is in `context`.** They should not
-  have to open a session transcript. State what changed, the risk and rollback,
-  the proof, and the exact test steps.
+  have to open a session transcript. The artifact list is supporting material,
+  not a substitute for the four-section summary.
 - **Ask a decision, not an essay.** A `radio`/`select` decision field plus an
   optional notes textarea. Max 8 fields.
 

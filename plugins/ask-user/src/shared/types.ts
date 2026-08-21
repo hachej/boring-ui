@@ -87,9 +87,15 @@ export type AskUserFormSchema = {
   submitLabel?: string
 }
 
+export type AskUserKind = "merge" | "plan" | "question" | "escalation"
+
 export type AskUserRequest = {
   sessionId: string
   title?: string
+  /** Stable task, bead, issue, or PR reference shown separately from the human title. */
+  correlationId?: string
+  /** Intent category used for the Inbox badge and filters. */
+  kind?: AskUserKind
   context?: string
   schema?: AskUserFormSchema
   artifacts?: HumanArtifact[]
@@ -102,6 +108,8 @@ export type AskUserRequest = {
 
 export type AskUserToolInput = {
   title: string
+  correlationId?: string
+  kind?: AskUserKind
   context?: string
   schema: AskUserFormSchema
   artifacts?: HumanArtifact[]
@@ -118,6 +126,8 @@ export type AskUserQuestion = {
   ownerPrincipalId: string
   status: AskUserQuestionStatus
   title?: string
+  correlationId?: string
+  kind?: AskUserKind
   context?: string
   schema?: AskUserFormSchema
   artifacts: HumanArtifact[]

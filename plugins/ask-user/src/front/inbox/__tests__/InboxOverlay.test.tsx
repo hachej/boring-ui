@@ -1,11 +1,12 @@
 import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import type { WorkspaceAttentionBlocker } from "@hachej/boring-workspace"
 import { InboxOverlay } from "../InboxOverlay"
 
 const openArtifact = vi.hoisted(() => vi.fn(() => ({ success: true as const })))
 const openInboxArtifact = vi.hoisted(() => vi.fn(() => ({ success: true as const })))
-const blocker = {
+const blocker: WorkspaceAttentionBlocker = {
   id: "ask-user:s1:q1",
   reason: "ask-user.question",
   surfaceKind: "questions",
@@ -17,7 +18,7 @@ const blocker = {
   sessionBadge: { kind: "question", label: "question", priority: 10 },
   inbox: { kind: "question" as const, sourceLabel: "question", artifacts: [] },
 }
-const blockers = [blocker]
+const blockers: WorkspaceAttentionBlocker[] = [blocker]
 
 vi.mock("@hachej/boring-workspace", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@hachej/boring-workspace")>()
@@ -74,6 +75,56 @@ describe("InboxOverlay", () => {
     await user.click(row!)
     expect(row).toHaveAttribute("aria-expanded", "false")
     expect(screen.queryByRole("button", { name: "Open Need input" })).not.toBeInTheDocument()
+  })
+
+  it("separates human-first titles from correlation chips and renders Markdown context", async () => {
+    const user = userEvent.setup()
+    blockers.splice(0, blockers.length, {
+      ...blocker,
+      label: "Merge: inline artifacts in chat",
+      inbox: {
+        kind: "approval",
+        sourceLabel: "merge",
+        intentKind: "merge",
+        correlationId: "wt-391-forward-gb0o.2 · PR #1301",
+        context: "## What changed\nArtifacts now stay **inline**.\n\n## Test steps\n1. Open Inbox.\n2. Expand this row.",
+        artifacts: [],
+      },
+    })
+    render(<InboxOverlay onClose={() => undefined} />)
+
+    expect(screen.getByText("Merge: inline artifacts in chat")).toBeInTheDocument()
+    expect(screen.getByText("wt-391-forward-gb0o.2 · PR #1301")).toBeInTheDocument()
+    expect(screen.getByText("merge")).toBeInTheDocument()
+    await user.click(screen.getByText("Merge: inline artifacts in chat").closest<HTMLElement>("[role=button]")!)
+    expect(screen.getByRole("heading", { name: "What changed" })).toBeInTheDocument()
+    expect(screen.getByText("inline").tagName).toBe("STRONG")
+    expect(screen.getByText("inline")).toHaveClass("font-semibold")
+    expect(screen.getByRole("heading", { name: "Test steps" })).toBeInTheDocument()
+    expect(screen.getByText("Expand this row.")).toBeInTheDocument()
+  })
+
+  it("turns a legacy bead-prefixed title into a readable subject plus chip", async () => {
+    blockers.splice(0, blockers.length, { ...blocker, label: "[br-123] Merge approval: legacy card" })
+    render(<InboxOverlay onClose={() => undefined} />)
+
+    expect(screen.getByText("Merge approval: legacy card")).toBeInTheDocument()
+    expect(screen.getByText("br-123")).toBeInTheDocument()
+    expect(screen.queryByText("[br-123] Merge approval: legacy card")).not.toBeInTheDocument()
+  })
+
+  it("keeps legacy plain-text context line breaks readable", async () => {
+    const user = userEvent.setup()
+    blockers.splice(0, blockers.length, {
+      ...blocker,
+      inbox: { kind: "question", sourceLabel: "question", ...blocker.inbox, context: "Proof: 41 tests green.\nRisk: revert the commit." },
+    })
+    render(<InboxOverlay onClose={() => undefined} />)
+
+    await user.click(screen.getByText("Need input").closest<HTMLElement>("[role=button]")!)
+    const context = screen.getByTestId("ask-user-markdown")
+    expect(context).toHaveTextContent("Proof: 41 tests green. Risk: revert the commit.")
+    expect(context.querySelector("p")).toHaveClass("whitespace-pre-wrap")
   })
 
   it("keeps multiple waiting questions independently discoverable", async () => {

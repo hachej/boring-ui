@@ -1,6 +1,7 @@
 import type {
   AskUserAnswerValue,
   AskUserFormSchema,
+  AskUserKind,
   AskUserQuestion,
   AskUserRequest,
   AskUserToolResult,
@@ -26,6 +27,8 @@ export const ASK_USER_BRIDGE_CAPABILITIES = {
 export type AskUserBridgeRequestInput = {
   sessionId: string
   title?: string
+  correlationId?: string
+  kind?: AskUserKind
   context?: string
   schema: AskUserFormSchema
   artifacts?: AskUserRequest["artifacts"]

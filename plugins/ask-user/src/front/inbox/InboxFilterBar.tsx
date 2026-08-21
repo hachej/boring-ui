@@ -24,9 +24,9 @@ export function InboxFilterBar({
           type="button"
           onClick={() => onFilterChange(id)}
           className={cn(
-            "rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+            "min-h-11 rounded-full px-3 py-1 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
             filter === id
-              ? "bg-[color:oklch(from_var(--accent)_l_c_h/0.14)] text-[color:var(--accent)]"
+              ? "bg-[color:oklch(from_var(--accent)_l_c_h/0.14)] text-foreground"
               : "bg-transparent text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground",
           )}
         >

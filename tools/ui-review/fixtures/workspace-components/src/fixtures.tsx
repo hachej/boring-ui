@@ -1,5 +1,5 @@
 import { useLayoutEffect, useMemo, useState, type ReactNode } from "react"
-import { askUserPlugin } from "@hachej/boring-ask-user/front"
+import { askUserPlugin, createAskUserPlugin } from "@hachej/boring-ask-user/front"
 import type { AskUserQuestion } from "@hachej/boring-ask-user/shared"
 import type { Automation, AutomationRun } from "@hachej/boring-automation/shared"
 import { AutomationClientProvider, AutomationPanel, type AutomationClient } from "@hachej/boring-automation/testing"
@@ -154,15 +154,18 @@ function renderFixture(name: string): ReactNode {
 const askUserRegistrations = captureFrontPlugin(askUserPlugin).registrations
 const AskUserProvider = askUserRegistrations.providers[0]!.component
 const askUserRenderer = askUserRegistrations.toolRenderers.find((renderer) => renderer.id === "ask_user")!
+const AskUserInboxOverlay = captureFrontPlugin(createAskUserPlugin({ appLeftInbox: true })).registrations.appLeftActions[0]!.overlay!
 const ASK_USER_FIXTURE_QUESTION: AskUserQuestion = {
   questionId: "ui-review-question",
   sessionId: "ui-review-session",
   toolCallId: "ui-review-tool-call",
   ownerPrincipalId: "anonymous",
   status: "ready",
-  title: "Choose a review direction",
-  context: "Select the next step for this implementation review.",
-  artifacts: [],
+  title: "Merge: inline artifacts in chat",
+  correlationId: "br-123 · PR #456",
+  kind: "merge",
+  context: "## What changed\nArtifacts now stay beside the decision.\n\n## Proof\n- Focused tests green\n\n## Risk and rollback\nLow risk; revert the UI commit.",
+  artifacts: [{ id: "present-pr", surfaceKind: "workspace.open.path", target: ".handoff/pr-456-presentation.html", title: "PR review doc", description: "Visual change summary and proof" }],
   schema: {
     wireVersion: 1,
     submitLabel: "Continue",
@@ -206,6 +209,17 @@ function AskUserInlineFixture() {
     return () => { globalThis.fetch = originalFetch }
   }, [state])
   if (!ready) return null
+  if (state.startsWith("inbox")) {
+    return <div className="h-[720px] w-full max-w-[860px] overflow-hidden rounded-lg border border-border/70" data-boring-agent data-ui-review-ask-user-state={state}>
+      <MockWorkspaceApiProvider>
+        <WorkspaceProvider agentTypeId="default" persistenceEnabled={false} frontPluginHotReload={false} attentionSessions={[{ sessionId: ASK_USER_FIXTURE_QUESTION.sessionId, agentTypeId: "default" }]}>
+          <AskUserProvider agentTypeId="default" apiBaseUrl="" activeSessionId={ASK_USER_FIXTURE_QUESTION.sessionId} openSessionIds={[ASK_USER_FIXTURE_QUESTION.sessionId]}>
+            <AskUserInboxOverlay onClose={() => {}} />
+          </AskUserProvider>
+        </WorkspaceProvider>
+      </MockWorkspaceApiProvider>
+    </div>
+  }
   const part = state === "resolved"
     ? { type: "tool-call", toolName: "ask_user", toolCallId: ASK_USER_FIXTURE_QUESTION.toolCallId, state: "output-available", input: { title: ASK_USER_FIXTURE_QUESTION.title } }
     : { type: "tool-call", toolName: "ask_user", toolCallId: ASK_USER_FIXTURE_QUESTION.toolCallId, state: "input-available", input: { title: ASK_USER_FIXTURE_QUESTION.title } }
@@ -369,6 +383,8 @@ function makeMockFetch(originalFetch: typeof fetch): typeof fetch {
         ? jsonResponse({ error: "Not found" }, 404)
         : jsonResponse({ size: content.length, mtimeMs: 0, kind: "file" })
     }
+    if (url.pathname === "/api/boring-tasks/sessions/tasks" && method === "POST") return jsonResponse({ matches: [], omittedSessionIds: [] })
+    if (url.pathname === "/api/v1/agents/default/sessions/summaries" && method === "POST") return jsonResponse({ summaries: [{ ref: { sessionId: ASK_USER_FIXTURE_QUESTION.sessionId }, title: "Factory finishing UX" }] })
     if ((url.pathname === "/api/v1/files" && (method === "POST" || method === "DELETE"))
       || (url.pathname === "/api/v1/files/move" && method === "POST")
       || (url.pathname === "/api/v1/dirs" && method === "POST")) return jsonResponse({})

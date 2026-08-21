@@ -222,9 +222,13 @@ export const AskUserFormSchemaSchema = z
     }
   })
 
+const askUserKindSchema = z.enum(["merge", "plan", "question", "escalation"])
+
 export const AskUserToolInputSchema = z
   .object({
-    title: boundedString(ASK_USER_SCHEMA_LIMITS.maxTitleLength).min(1),
+    title: boundedString(ASK_USER_SCHEMA_LIMITS.maxHumanTitleLength).min(1),
+    correlationId: boundedString(ASK_USER_SCHEMA_LIMITS.maxCorrelationIdLength).min(1).optional(),
+    kind: askUserKindSchema.optional(),
     context: optionalBoundedString(ASK_USER_SCHEMA_LIMITS.maxContextLength),
     schema: AskUserFormSchemaSchema,
     artifacts: HumanArtifactListSchema.optional(),
@@ -241,6 +245,8 @@ export const AskUserRequestSchema = z
   .object({
     sessionId: z.string().min(1),
     title: boundedString(ASK_USER_SCHEMA_LIMITS.maxTitleLength).optional(),
+    correlationId: boundedString(ASK_USER_SCHEMA_LIMITS.maxCorrelationIdLength).min(1).optional(),
+    kind: askUserKindSchema.optional(),
     context: optionalBoundedString(ASK_USER_SCHEMA_LIMITS.maxContextLength),
     schema: AskUserFormSchemaSchema.optional(),
     artifacts: HumanArtifactListSchema.optional(),

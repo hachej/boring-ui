@@ -29,6 +29,12 @@ export type WorkspaceAttentionSessionBadge = {
 export type WorkspaceAttentionInboxMetadata = {
   kind: "question" | "review" | "approval" | "notice"
   sourceLabel: string
+  /** Human-readable intent category supplied by the owning plugin (for example merge or plan). */
+  intentKind?: string
+  /** Stable task/issue/PR reference rendered separately from the title. */
+  correlationId?: string
+  /** Rich, display-only context projected into an expanded Inbox item. */
+  context?: string
   createdAt?: string | number | Date
   updatedAt?: string | number | Date
   priority?: number

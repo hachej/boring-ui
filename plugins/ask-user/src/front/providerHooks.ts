@@ -15,6 +15,13 @@ import { ASK_USER_PLUGIN_ID, ASK_USER_SURFACE_KIND, ASK_USER_UI_STATE_SLOTS } fr
 import { createQuestionsClient, readPendingQuestionHintsFromState, type PendingQuestionHint } from "./client"
 import { isSessionOpen, type QuestionsRuntime } from "./runtime"
 
+function inboxKindForQuestion(kind: "merge" | "plan" | "question" | "escalation" | undefined): "question" | "review" | "approval" | "notice" {
+  if (kind === "merge") return "approval"
+  if (kind === "plan") return "review"
+  if (kind === "escalation") return "notice"
+  return "question"
+}
+
 export function useAskUserAttentionBlockers(runtime: QuestionsRuntime, pendingSnapshot: string): void {
   const { addBlocker, removeBlocker } = useWorkspaceAttention()
   useEffect(() => {
@@ -38,13 +45,16 @@ export function useAskUserAttentionBlockers(runtime: QuestionsRuntime, pendingSn
         label: hydrated?.title ?? "Answer the question in Questions to continue",
         sessionId: hint.sessionId,
         agentTypeId: runtime.agentTypeId,
-        sessionBadge: { kind: "question", label: "question", tone: "attention", priority: 10 },
+        sessionBadge: { kind: hydrated?.kind ?? "question", label: hydrated?.kind ?? "question", tone: "attention", priority: 10 },
         pruneWhenSessionMissing: true,
         focus: { closeWorkbenchLeftPane: true },
         composer: { visible: false },
         inbox: {
-          kind: "question",
-          sourceLabel: "question",
+          kind: inboxKindForQuestion(hydrated?.kind),
+          sourceLabel: hydrated?.kind ?? "question",
+          intentKind: hydrated?.kind,
+          correlationId: hydrated?.correlationId,
+          context: hydrated?.context,
           createdAt: hydrated?.createdAt,
           updatedAt: hydrated?.updatedAt ?? hydrated?.createdAt,
           priority: 10,

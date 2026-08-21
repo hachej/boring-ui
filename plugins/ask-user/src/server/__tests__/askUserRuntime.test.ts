@@ -140,9 +140,10 @@ describe("AskUserRuntime", () => {
     const store = await makeStore()
     const runtime = new AskUserRuntime({ store })
     const artifact = { id: "plan", surfaceKind: "file", target: "docs/plan.md", title: "Plan" }
-    const first = runtime.ask({ sessionId: "s1", title: "A", schema, artifacts: [artifact] })
+    const first = runtime.ask({ sessionId: "s1", title: "Merge: better cards", correlationId: "br-123 · PR #456", kind: "merge", schema, artifacts: [artifact] })
     const q1 = await pendingQuestion(store, "s1")
     expect(q1.ownerPrincipalId).toBe("anonymous")
+    expect(q1).toMatchObject({ title: "Merge: better cards", correlationId: "br-123 · PR #456", kind: "merge" })
     expect(q1.artifacts).toEqual([artifact])
     expect(q1.status).toBe("ready")
     expect(q1.answerToken.length).toBeGreaterThanOrEqual(22)

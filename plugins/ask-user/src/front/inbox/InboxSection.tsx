@@ -27,7 +27,7 @@ export function InboxSection({
   if (items.length === 0) return null
   return (
     <section className="py-1">
-      <div className="flex items-center gap-1 px-4 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
+      <div className="flex items-center gap-1 px-4 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
         {title === "Pinned" ? <Pin className="size-3" strokeWidth={1.75} /> : null}
         {title}
       </div>

@@ -1029,6 +1029,9 @@ importers:
       lucide-react:
         specifier: ^1.27.0
         version: 1.28.0(react@19.2.8)
+      react-markdown:
+        specifier: ^10.1.0
+        version: 10.1.0(@types/react@19.2.18)(react@19.2.8)
       zod:
         specifier: ^3.23.0
         version: 3.25.76
