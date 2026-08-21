@@ -50,7 +50,7 @@ Implement the classic editor contract with a bounded fallback:
 - expose filesystem event-stream capability (`connecting | live | unsupported`) inside the filesystem data provider;
 - when capability is `unsupported`, poll only actively observed file-content queries at a conservative interval (target 2s; pause in background through React Query defaults), not the whole tree/search cache;
 - feed any changed content/mtime through the existing clean-sync vs dirty-conflict state machine;
-- replace the lifecycle's time-only three-second “save echo” suppression with correlation to the exact mtime returned by our save: today any genuine agent write in that window is discarded as an echo (`packages/workspace/src/front/hooks/useEditorLifecycle.ts:39,177-187`);
+- stop using mtime as document identity: keep a last-confirmed disk-content baseline (content equality or digest) so missing/colliding mtimes still reconcile; use the exact mtime returned by our save only as supplementary own-save evidence, and remove the lifecycle's time-only three-second suppression that currently discards any genuine agent write in that window (`packages/workspace/src/front/hooks/useEditorLifecycle.ts:39,177-187`);
 - make dirty conflict an actual freeze: stop autosaves until the user explicitly chooses **Reload from disk** or **Overwrite disk**; continued typing must not silently overwrite the agent's version;
 - add a quiet bottom-right document state alongside word count, without changing the agent's tools or mental model.
 
@@ -77,7 +77,7 @@ The existing footer remains the home for word count and gains a compact, `aria-l
 | Normal / live | no extra copy | Word count only; no persistent “all good” noise. |
 | Fallback active | `Watching for file changes` | Quiet neutral indicator only after SSE declares unsupported; tooltip explains active-document polling. |
 | External refetch | `Checking for updates…` | Brief spinner while a watcher/agent event or fallback tick refetches this file. |
-| Clean update applied, attributed agent event | `Updated by agent` | Success dot; auto-clears after ~4s. |
+| Clean update applied, attributed agent event | `Updated by agent` | Success dot; auto-clears after ~4s. Attribution is accepted only from a matching filesystem/path agent event and expires; a duplicate watcher event cannot downgrade it. |
 | Clean update applied, unattributed watcher/poll | `Updated from disk` | Success dot; auto-clears after ~4s. |
 | Dirty conflict | `Agent update conflicts with your edits` when attributed, otherwise `Disk update conflicts with your edits` | Persistent warning; editor content remains local and autosave is frozen until the banner action resolves it. |
 | Resolution | `Reloaded from disk` or `Overwrote disk version` | Brief success; auto-clears after ~4s. |
@@ -92,7 +92,7 @@ The existing footer remains the home for word count and gains a compact, `aria-l
 | Large-workspace fallback | Poll active file-content queries only | Repairs the exact missing link without watching/refetching a >50k tree. |
 | Clean external update | Apply automatically | No local work can be lost; existing TipTap suppression prevents save echo. |
 | Dirty external update | Preserve local buffer and freeze autosave | No implicit data loss; user chooses disk or local version. |
-| Attribution | Use agent event metadata when available; otherwise say “disk” | Honest across watcher and polling paths. |
+| Attribution | Correlate matching filesystem/path agent events in an expiring pane-local source marker; otherwise say “disk” | Honest across watcher and polling paths; no global or durable attribution claim. |
 | Yjs/CRDT | Out of scope | Requires a separate document-authority architecture and dependency stack. |
 | Flag | None | Bounded correctness fix; rollback is one PR revert. |
 
@@ -111,10 +111,10 @@ The existing footer remains the home for word count and gains a compact, `aria-l
 ## Acceptance
 
 1. When `/api/v1/fs/events` reports `workspace_too_large` or `watch_not_implemented`, an already-open Markdown file observes an ordinary external file write within the fallback interval without refresh/remount.
-2. A clean pane applies the new Markdown through `MarkdownEditor` without firing `onChange`, creating a write echo, or reopening the autosave/conflict storm.
-3. A dirty pane preserves local content, shows the existing choice banner plus bottom-right conflict status, and performs no automatic write until explicit Reload or Overwrite.
+2. A clean pane applies changed disk content through `MarkdownEditor` even when mtime is missing or unchanged, without firing `onChange`, creating a write echo, or reopening the autosave/conflict storm.
+3. Once an external change is observed while dirty, the pane preserves local content, shows the existing choice banner plus bottom-right conflict status, and performs no further automatic write until explicit Reload or Overwrite.
 4. Reload adopts the latest disk version; Overwrite writes the latest local buffer; both clear conflict and report a brief resolved status.
-5. A genuine agent/external mtime arriving within three seconds of a local save is reconciled; only the exact mtime returned by the editor's own save is treated as its echo.
+5. A genuine agent/external content change arriving within three seconds of a local save is reconciled; an own-save is recognized by the confirmed disk-content baseline, with returned mtime as supplementary evidence rather than identity.
 6. SSE-capable folder mode keeps event-driven invalidation and does not poll active files.
 7. Agent tools remain ordinary read/write/edit operations on `.md`; no editor-facing tool or CRDT dependency is introduced.
 8. Hosted-mode proof forces the watcher-unsupported path; folder-mode proof exercises live SSE. Both reproduce “open Markdown → external/agent-style edit same file → pane behavior.”
@@ -132,9 +132,16 @@ pnpm --filter @hachej/boring-workspace exec vitest run \
   src/front/hooks/__tests__/useEditorLifecycle.test.ts \
   src/plugins/filesystemPlugin/front/markdown-editor/__tests__/MarkdownEditor.test.tsx
 
-pnpm --filter @hachej/boring-bash exec vitest run src/server/routes/__tests__/fsEvents.test.ts
-pnpm --filter @hachej/boring-sandbox exec vitest run src/providers/node-workspace/__tests__/createNodeWorkspace.watch.test.ts
 pnpm --filter @hachej/boring-workspace typecheck
+
+BORING_MAX_WATCHED_ENTRIES=10 \
+  pnpm --filter workspace-playground exec playwright test \
+  e2e/markdown-external-edit.spec.ts --grep '@watch-unsupported'
+
+BORING_MAX_WATCHED_ENTRIES=1000000 \
+  pnpm --filter workspace-playground exec playwright test \
+  e2e/markdown-external-edit.spec.ts --grep '@watch-live'
+
 git diff --check
 ```
 
@@ -142,7 +149,7 @@ git diff --check
 
 Run the workspace surface from this worktree with `BORING_MAX_WATCHED_ENTRIES` set below a fixture tree's entry count. In Playwright:
 
-1. Open `proof/open-agent-edit.md` in the Markdown pane.
+1. The Playwright spec creates its own Markdown fixture under `apps/workspace-playground/e2e/fixtures/workspace/.e2e-tmp/` and opens it in the Markdown pane.
 2. Assert `/api/v1/fs/events` emits `unsupported: workspace_too_large` and the footer shows fallback watching.
 3. Use an ordinary process/plain-file edit (the same filesystem contract as agent `edit`) to replace a unique sentence.
 4. Assert the already-open clean pane shows the replacement and `Updated from disk` without browser refresh.
@@ -165,11 +172,11 @@ Keep the worktree demo on the allowed `:5301` origin. Open the proof Markdown do
 **Delivers:** event-capability state; active-file fallback polling; clean reload; dirty autosave freeze and explicit resolution; bottom-right document status; hosted/folder regression proof and live demo.  
 **File scope:**
 
-- `packages/workspace/src/plugins/filesystemPlugin/front/data/{DataProvider.tsx,useFileEventStream.ts,hooks.ts}` and focused tests
+- `packages/workspace/src/plugins/filesystemPlugin/front/data/{DataProvider.tsx,useFileEventStream.ts,useFileEventInvalidation.ts,hooks.ts}` and focused tests
 - `packages/workspace/src/plugins/filesystemPlugin/front/{useFilePane.ts,FilePaneShell.tsx,ConflictBanner.tsx}` and focused tests
 - `packages/workspace/src/front/hooks/useEditorLifecycle.ts` and focused tests
 - `packages/workspace/src/plugins/filesystemPlugin/front/markdown-editor/{MarkdownEditor.tsx,MarkdownEditorPane.tsx}` and focused tests
-- one existing workspace playground/E2E fixture only as needed for hosted-vs-folder proof
+- `apps/workspace-playground/{playwright.config.ts,e2e/markdown-external-edit.spec.ts}`; the spec creates/removes only its runtime fixture under the existing ignored E2E workspace
 
 **Blocked by:** Gate 1 owner approval only.  
 **Proof:** exact commands and two-mode scenario above.  
@@ -182,10 +189,25 @@ Keep the worktree demo on the allowed `:5301` origin. Open the proof Markdown do
 | --- | --- | --- | --- |
 | Polling large workspaces creates load | Medium | High | Poll only observed file-content queries; conservative interval; no tree/search polling; stop immediately when unmounted. |
 | Poll response races a local keystroke | Medium | High | Keep synchronous `dirtyRef` guard; freeze on conflict; tests interleave refetch and edit. |
-| Own-save echo looks external—or genuine agent write is suppressed as an echo | Medium | High | Correlate the exact returned save mtime via `notifySaved`; remove time-only suppression; preserve `lastEmittedRef`; test both directions. |
+| Own-save echo looks external—or genuine agent write is suppressed as an echo | Medium | High | Track confirmed disk content, use returned mtime only as supplementary evidence, remove time-only suppression, preserve `lastEmittedRef`, and test missing/colliding mtime. |
 | Agent attribution is unavailable on polling | High | Low | Use honest “disk” copy; never claim agent attribution without metadata. |
-| Existing continued-typing behavior overwrites agent changes | High (once conflict occurs) | High | Remove implicit baseline bump/overwrite and block autosave until explicit resolution. |
+| Existing continued-typing behavior overwrites agent changes | High (once conflict occurs) | High | Remove implicit baseline bump/overwrite and block autosave after observed conflict until explicit resolution. |
+| A write races inside the server's current stat-then-write OCC window | Low | High | Explicit v1 residual risk: client freeze cannot make separate server operations atomic. Add deterministic client in-flight interleaving proof; a shared atomic write authority across all agent/editor providers is a follow-up architecture, not silently claimed here. |
 | Fallback never recovers if capability later becomes live | Low | Medium | Capability is tied to provider mount; EventSource reconnect remains for errors, while `unsupported` is terminal for that mount. |
+
+## Adversarial plan review
+
+**Reviewer provenance:** `openai-codex/gpt-5.6-sol`, fresh context, refutation mandate, target `84482748b4f4732b58a01d9c74a13a9438d570b5`, run `7d1e7c2b`. Model policy forbids another model, so independence came from a fresh session and explicit falsification rather than a different provider.
+
+| Finding | Disposition |
+| --- | --- |
+| Blocker: client-only conflict handling cannot make the server's separate stat-then-write OCC atomic. | **Accepted residual risk, guarantee narrowed.** V1 freezes only after an external change is observed and never claims atomic exclusion of a write racing inside the server TOCTOU window. A true fix requires a shared write authority across agent and editor providers and is out of this defect slice; Gate 1 context calls this out. |
+| High: exact mtime is not identity; missing/colliding mtimes remain stale. | **Fix in plan.** Track confirmed disk content (or digest), use mtime only as supplementary evidence, and test missing/same mtime plus changed content. |
+| High: agent attribution had no producer/consumer path in scope. | **Fix in plan.** Add `useFileEventInvalidation.ts` and a matching filesystem/path, expiring pane-local source correlation; polling remains honestly “disk.” |
+| High: bead absent from the review worktree's stale JSONL snapshot. | **Rejected as non-issue.** Canonical authority is the explicitly required Beads DB, not committed JSONL. `br --db /home/ubuntu/projects/boring-ui-v2/.beads/beads.db show wt-391-forward-z2qt --json` proves P0, in-progress, claimed, issue #1344, and the ready fields. |
+| Medium: nonexistent fs-events test path and no exact E2E command/fixture. | **Fix in plan.** Remove the nonexistent test command; name `e2e/markdown-external-edit.spec.ts`, its runtime-created ignored fixture, exact unsupported/live commands, and the Playwright env handoff. |
+
+Graph checks before handoff: `br ... dep cycles --json` returned zero cycles; `bv --robot-insights` completed. This one bead has no dependency edges.
 
 ## Out of scope
 
