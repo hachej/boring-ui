@@ -114,6 +114,13 @@ describe("FileTree", () => {
     expect(onActivateFile).toHaveBeenCalledWith("package.json")
   })
 
+  it("retains the legacy onSelect activation callback for rolling host upgrades", () => {
+    const onSelect = vi.fn()
+    render(<FileTree files={sampleFiles} onSelect={onSelect} height={200} />)
+    fireEvent.click(screen.getByText("package.json"))
+    expect(onSelect).toHaveBeenCalledWith("package.json")
+  })
+
   it("does NOT crash the panel when a listing entry has no path (react-arborist idAccessor)", () => {
     // The exact prod scenario: one malformed backend entry with no `path`. Before the
     // fix react-arborist threw "Data must contain an 'id' property…" on render, killing
