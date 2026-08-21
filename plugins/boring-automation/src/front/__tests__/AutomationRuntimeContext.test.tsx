@@ -1,3 +1,4 @@
+import { useComposerContributions } from "@hachej/boring-agent/front"
 import { Component, useEffect, type ErrorInfo, type ReactNode } from "react"
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -11,6 +12,12 @@ afterEach(() => {
   vi.restoreAllMocks()
   cleanup()
 })
+
+function ComposerProbe() {
+  const contributions = useComposerContributions()
+  const names = contributions.flatMap((contribution) => contribution.commands?.map((command) => command.name) ?? [])
+  return <div>{names.join(",")}</div>
+}
 
 function ClientProbe({ onError }: { onError?: (error: unknown) => void }) {
   const client = useAutomationClient()
@@ -35,6 +42,16 @@ class ErrorBoundary extends Component<{ children: ReactNode; onError: (error: Er
 }
 
 describe("AutomationRuntimeProvider", () => {
+  it("contributes the /schedule command to the existing composer registry", () => {
+    render(
+      <AutomationRuntimeProvider agentTypeId="default" apiBaseUrl="" workspaceTimezone="Europe/Zurich">
+        <ComposerProbe />
+      </AutomationRuntimeProvider>,
+    )
+
+    expect(screen.getByText("schedule")).toBeInTheDocument()
+  })
+
   it("threads provider api base URL, auth headers, and auth error callback into the client", async () => {
     const onAuthError = vi.fn()
     const onError = vi.fn()

@@ -178,7 +178,7 @@ export interface PiChatPanelProps<
   onSessionReset?: () => void | Promise<void>
   onBeforeSubmit?: (draft: string, context: ChatSubmitContext) => false | void | boolean | Promise<false | void | boolean>
   onReloadAgentPlugins?: () => Promise<AgentPluginReloadResult | string>
-  onCommandResult?: (message: string) => void
+  onCommandResult?: (message: string, tone?: 'info' | 'error') => void
   onComposerWarning?: (message: string) => void
   onMentionedFilesConsumed?: () => void
   onPromptSubmitStarted?: (context: { sessionId: string; clientNonce: string }) => void
@@ -764,6 +764,8 @@ export function PiChatPanel<
       registry,
       slashContext: {
         sessionId: activeChatSessionId,
+        agentTypeId,
+        model: selectedModel,
         clearMessages: () => addLocalNotice({
           id: 'clear-not-supported',
           level: 'info',
@@ -797,9 +799,9 @@ export function PiChatPanel<
             return result !== false
           }
         : undefined,
-      onCommandResult: (message) => {
-        onCommandResult?.(message)
-        addLocalNotice({ id: `command:${Date.now()}`, level: 'info', text: message, dismissible: true })
+      onCommandResult: (message, tone) => {
+        onCommandResult?.(message, tone)
+        addLocalNotice({ id: `command:${Date.now()}`, level: tone ?? 'info', text: message, dismissible: true })
       },
       onWarning: (message) => {
         if (suppressPreSubmitCancelledWarning && message === 'Submit was cancelled before sending.') return
@@ -811,7 +813,7 @@ export function PiChatPanel<
         onMentionedFilesConsumed?.()
       },
     })
-  }, [activeChatSessionId, addLocalNotice, allowPromptDuringInitialHydration, clearMentionedFiles, composerBlocked, composerBlockerLabel, effectiveMentionedFiles, markLocalSubmitted, onBeforeSubmit, onCommandResult, onComposerWarning, onMentionedFilesConsumed, onPromptSubmitStarted, openModelPicker, openThinkingPicker, registry, reloadAgentPlugins, resetSession, runPluginUpdate, selectComposerModel, selectComposerThinking, selectedModel, selectedPiSession, selectedThinking, serverModelSelectionReady, setComposerDraft, submitThinkingControl, suppressPreSubmitCancelledWarning])
+  }, [activeChatSessionId, addLocalNotice, agentTypeId, allowPromptDuringInitialHydration, clearMentionedFiles, composerBlocked, composerBlockerLabel, effectiveMentionedFiles, markLocalSubmitted, onBeforeSubmit, onCommandResult, onComposerWarning, onMentionedFilesConsumed, onPromptSubmitStarted, openModelPicker, openThinkingPicker, registry, reloadAgentPlugins, resetSession, runPluginUpdate, selectComposerModel, selectComposerThinking, selectedModel, selectedPiSession, selectedThinking, serverModelSelectionReady, setComposerDraft, submitThinkingControl, suppressPreSubmitCancelledWarning])
 
   // Turn a rejected send (prompt/follow-up/auto-submit) into the single run-rejected
   // notice, carrying the stable server error code so a host can attach a recovery

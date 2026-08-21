@@ -6,6 +6,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
+      "@hachej/boring-agent/front": resolve(import.meta.dirname, "../../packages/agent/src/front/index.ts"),
       "@hachej/boring-agent/server": resolve(import.meta.dirname, "../../packages/agent/src/server/index.ts"),
       "@hachej/boring-agent/shared": resolve(import.meta.dirname, "../../packages/agent/src/shared/index.ts"),
       "@hachej/boring-agent/core": resolve(import.meta.dirname, "../../packages/agent/src/core/index.ts"),

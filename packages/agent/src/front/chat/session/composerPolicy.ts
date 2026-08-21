@@ -47,7 +47,7 @@ export interface PiComposerPolicyOptions extends PiQueueControllerOptions {
   blockerMessage?: string
   isActiveSession?: () => boolean
   onBeforeSubmit?: (draft: string, context: { files: PromptInputFilePart[]; source: PiComposerSubmitInput['source'] }) => boolean | Promise<boolean>
-  onCommandResult?: (message: string) => void
+  onCommandResult?: (message: string, tone?: "info" | "error") => void
   onMentionedFilesConsumed?: () => void
   allowPromptDuringInitialHydration?: boolean
 }
@@ -157,7 +157,8 @@ export class PiComposerPolicyController {
         ? result.message
         : undefined
     const preserveDraft = Boolean(result && typeof result === 'object' && result.preserveDraft === true)
-    if (message) this.options.onCommandResult?.(message)
+    const tone = result && typeof result === 'object' ? result.tone : undefined
+    if (message) this.options.onCommandResult?.(message, tone)
     return { type: 'command', command: commandName, ...(message ? { result: message } : {}), preserveDraft }
   }
 
