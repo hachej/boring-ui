@@ -114,19 +114,26 @@ export class AskUserRuntime {
     this.perPrincipalPerHour = options.limits?.perPrincipalPerHour ?? 30
   }
 
-  async abandonOrphanedPending(sessionIds: string[]): Promise<void> {
-    for (const sessionId of sessionIds) {
-      const pending = await this.store.getPending(sessionId)
-      if (pending && !this.coordinator.hasWaiter(pending.questionId)) {
-        await this.abandon(pending.questionId, pending.sessionId)
-      }
+  /**
+   * Supersede a session's pending question when that same session asks a new one.
+   * Only ever called from `ask()`: the store allows a single pending question per
+   * session, and the previous one is explicitly replaced by the new ask.
+   *
+   * This must never be run as a sweep over all sessions (e.g. at hub boot): waiter
+   * presence is in-process state, so every persisted question looks orphaned after
+   * a restart and the owner's whole review queue would be abandoned (#1348).
+   */
+  async supersedeSessionPending(sessionId: string): Promise<void> {
+    const pending = await this.store.getPending(sessionId)
+    if (pending && !this.coordinator.hasWaiter(pending.questionId)) {
+      await this.abandon(pending.questionId, pending.sessionId)
     }
   }
 
 
   async ask(request: AskUserRequest, signal?: AbortSignal): Promise<AskUserToolResult> {
     const ownerPrincipalId = request.ownerPrincipalId ?? this.ownerPrincipalId
-    await this.abandonOrphanedPending([request.sessionId])
+    await this.supersedeSessionPending(request.sessionId)
     this.assertAllowed(request.sessionId, ownerPrincipalId)
     const parsedArtifacts = HumanArtifactListSchema.safeParse(request.artifacts ?? [])
     if (!parsedArtifacts.success) throw new AskUserRuntimeError(ASK_USER_ERROR_CODES.SCHEMA_INVALID, parsedArtifacts.error.message)
@@ -137,9 +144,9 @@ export class AskUserRuntime {
 
     // Register the waiter before publishing/persisting the question. The UI
     // state publisher can make a question answerable as soon as createPending
-    // mutates the store; if the browser answers in that small window before the
-    // waiter exists, submitAnswer correctly treats it as abandoned. Cancellation
-    // is armed only after persistence so abort/timeout cannot leave a visible
+    // mutates the store; answering in that small window still persists, but the
+    // waiter must exist for this call to observe the result. Cancellation is
+    // armed only after persistence so abort/timeout cannot leave a visible
     // question with no waiter.
     const pendingAnswer = this.coordinator.registerWaiter(question.questionId, question.sessionId)
     try {
@@ -157,13 +164,15 @@ export class AskUserRuntime {
     }
   }
 
-  async submitAnswer(questionId: string, sessionId: string, values: AskUserAnswer["values"]): Promise<"answered" | "abandoned"> {
+  /**
+   * Record an answer. The decision is persisted whether or not a live waiter is
+   * still blocked on it: after a hub restart the asking session is gone, but the
+   * owner's answer is still the durable outcome and must not become an
+   * abandonment (#1348). Resolving the waiter is then a best-effort no-op.
+   */
+  async submitAnswer(questionId: string, sessionId: string, values: AskUserAnswer["values"]): Promise<"answered"> {
     const question = await this.store.getByQuestionId(questionId)
     if (!question || question.sessionId !== sessionId) throw new AskUserRuntimeError(ASK_USER_ERROR_CODES.QUESTION_NOT_FOUND, "question not found")
-    if (!this.coordinator.hasWaiter(questionId)) {
-      await this.abandon(questionId, sessionId)
-      return "abandoned"
-    }
     const answer: AskUserAnswer = { questionId, sessionId, values, submittedAt: this.isoNow() }
     let answerPersisted = false
     try {
