@@ -45,3 +45,33 @@ export function isAutomationRunOccupying(status: AutomationRunStatus): boolean {
 export function isAutomationRunSettled(status: AutomationRunStatus): boolean {
   return AUTOMATION_RUN_SETTLED_STATUS_SET.has(status)
 }
+
+export type AutomationRunAbandonmentReason = "host-restart" | "lease-expired"
+
+export function reconcileAbandonedRun(
+  status: AutomationRunStatus,
+  reason: AutomationRunAbandonmentReason,
+): { status: AutomationRunStatus; error: string } {
+  if (status === "queued") {
+    return {
+      status: "failed",
+      error: reason === "host-restart"
+        ? "Automation host restarted before the run completed"
+        : "Automation worker lease expired before dispatch",
+    }
+  }
+  if (status === "outcome-unknown") {
+    return {
+      status: "failed",
+      error: reason === "host-restart"
+        ? "Automation outcome remained unknown after host restart; releasing the occupied slot"
+        : "Automation outcome remained unknown after its worker lease expired; releasing the occupied slot",
+    }
+  }
+  return {
+    status: "outcome-unknown",
+    error: reason === "host-restart"
+      ? "Automation dispatch outcome is unknown after host restart; the slot remains occupied"
+      : "Automation dispatch outcome is unknown after its worker lease expired; the slot remains occupied",
+  }
+}

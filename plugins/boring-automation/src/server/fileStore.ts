@@ -10,7 +10,7 @@ import type {
   AutomationRunLifecyclePatch,
 } from "../shared/types"
 import { automationPromptPath } from "../shared/prompt"
-import { isAutomationRunOccupying } from "../shared/runStatus"
+import { isAutomationRunOccupying, reconcileAbandonedRun } from "../shared/runStatus"
 import type { AutomationSeed, AutomationStore } from "./store"
 import { automationNotFound, runAlreadyActive, runAlreadyRecorded, runLeaseLost, runNotFound } from "./store"
 
@@ -426,16 +426,11 @@ function reconcileOrphanedRuns(
 ): void {
   for (const run of Object.values(state.runs)) {
     if (run.automationId !== automationId || !isAutomationRunOccupying(run.status) || activeRunIds.has(run.id)) continue
-    const outcomeWasAlreadyUnknown = run.status === "outcome-unknown"
-    const dispatchMayStillBeLive = run.status !== "queued" && !outcomeWasAlreadyUnknown
-    run.status = dispatchMayStillBeLive ? "outcome-unknown" : "failed"
+    const reconciled = reconcileAbandonedRun(run.status, "host-restart")
+    run.status = reconciled.status
     run.completedAt = completedAt
     run.durationMs = Math.max(0, new Date(completedAt).getTime() - new Date(run.startedAt ?? run.createdAt).getTime())
-    run.error = outcomeWasAlreadyUnknown
-      ? "Automation outcome remained unknown after host restart; releasing the occupied slot"
-      : dispatchMayStillBeLive
-        ? "Automation dispatch outcome is unknown after host restart; the slot remains occupied"
-        : "Automation host restarted before the run completed"
+    run.error = reconciled.error
     run.updatedAt = completedAt
   }
 }
