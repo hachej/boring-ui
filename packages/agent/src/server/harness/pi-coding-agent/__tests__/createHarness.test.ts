@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { writeFileSync } from "node:fs";
-import { appendFile, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile, utimes } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile, utimes } from "node:fs/promises";
 import { CURRENT_SESSION_VERSION, DefaultResourceLoader, formatSkillsForPrompt, SessionManager } from "@mariozechner/pi-coding-agent";
 import { basename, join } from "node:path";
 import { homedir, tmpdir } from "node:os";
@@ -161,6 +161,65 @@ describe("createPiCodingAgentHarness", () => {
     } finally {
       await rm(cwd, { recursive: true, force: true });
       await rm(agentDir, { recursive: true, force: true });
+    }
+  });
+
+  // gh-1196: ~/.agents/skills is normally a tree of symlinks, so one entry the
+  // digest cannot admit must degrade to a recorded skip instead of failing the
+  // whole digest closed and 403/500-ing every agent-scoped route.
+  it("skips an unadmittable ambient skill symlink instead of failing the digest closed", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "pi-symlink-digest-cwd-"));
+    const agentDir = await mkdtemp(join(tmpdir(), "pi-symlink-digest-agent-"));
+    const userHome = await mkdtemp(join(tmpdir(), "pi-symlink-digest-home-"));
+    const outside = await mkdtemp(join(tmpdir(), "pi-symlink-digest-outside-"));
+    const ambientSkills = join(userHome, ".agents", "skills");
+    const originalHome = process.env.HOME;
+    process.env.HOME = userHome;
+    const input = () => createPiResourceDigestInput({
+      piCwd: cwd,
+      piAgentDir: agentDir,
+      piUserHome: userHome,
+      noSkills: false,
+      resourceSets: [],
+      authorizedRoots: [cwd, agentDir],
+    });
+
+    try {
+      await mkdir(join(ambientSkills, "good-skill"), { recursive: true });
+      await writeFile(
+        join(ambientSkills, "good-skill", "SKILL.md"),
+        "---\nname: good-skill\ndescription: Admissible.\n---\n",
+        "utf8",
+      );
+      await mkdir(join(outside, "linked-skill"), { recursive: true });
+      await writeFile(
+        join(outside, "linked-skill", "SKILL.md"),
+        "---\nname: linked-skill\ndescription: Linked out.\n---\n",
+        "utf8",
+      );
+      await symlink(join(outside, "linked-skill"), join(ambientSkills, "linked-skill"));
+
+      const before = await digestPiResourceInputs(input());
+      expect(before).toMatch(/^sha256:/);
+
+      // The skip is recorded, so the digest still moves when the link goes away.
+      await rm(join(ambientSkills, "linked-skill"));
+      expect(await digestPiResourceInputs(input())).not.toBe(before);
+
+      // Invariant: a symlink the host declared itself is still rejected outright,
+      // and the escaping link is never followed either way.
+      await symlink(join(outside, "linked-skill"), join(ambientSkills, "linked-skill"));
+      await expect(digestPiResourceInputs({
+        ...input(),
+        additionalSkillPaths: [join(ambientSkills, "linked-skill")],
+        authorizedRoots: [cwd, agentDir, ambientSkills],
+      })).rejects.toMatchObject({ code: ErrorCode.enum.PATH_SYMLINK_ESCAPE });
+    } finally {
+      process.env.HOME = originalHome;
+      await rm(cwd, { recursive: true, force: true });
+      await rm(agentDir, { recursive: true, force: true });
+      await rm(userHome, { recursive: true, force: true });
+      await rm(outside, { recursive: true, force: true });
     }
   });
 

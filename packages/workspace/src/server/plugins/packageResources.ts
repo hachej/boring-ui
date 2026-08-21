@@ -495,8 +495,27 @@ export async function resolveWorkspacePackageResourceSnapshot<TBinding = never>(
       })
     }
   }
+  // gh-1196: ~/.pi/agent/skills is normally a tree of symlinks into other
+  // roots, so one stale entry (a dangling link, or one whose target the host
+  // will not admit) is routine. Admit shared skills per entry the same way
+  // scanned packages are admitted above: an unadmittable entry is skipped with
+  // a diagnostic and is never resolved or exposed, and the rest still load.
+  // Failing the whole scan closed here used to 500 every agent-scoped route.
+  const acceptedSharedSkillPaths: { readonly id: string; readonly skillFile: string }[] = []
+  for (const shared of input.sharedSkillPaths ?? []) {
+    try {
+      await resolveWorkspacePackageResources([], { sharedSkillPaths: [shared] })
+      acceptedSharedSkillPaths.push(shared)
+    } catch {
+      diagnostics.push({
+        source: 'shared-skill-scan',
+        message: `shared skill "${shared.id}" was not admissible and was skipped`,
+        pluginId: 'shared/pi-agent',
+      })
+    }
+  }
   const registry = await resolveWorkspacePackageResources([...input.declared, ...accepted], {
-    sharedSkillPaths: input.sharedSkillPaths,
+    sharedSkillPaths: acceptedSharedSkillPaths,
   })
   const binding = registry.readonlyMounts.length > 0 && input.createBinding
     ? await input.createBinding(registry.readonlyMounts)
