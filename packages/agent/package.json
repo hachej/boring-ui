@@ -114,14 +114,14 @@
     "@streamdown/math": "^1.0.2",
     "@streamdown/mermaid": "^1.0.2",
     "@tanstack/react-query": "^5.101.4",
-    "ai": "^7.0.40",
+    "ai": "^7.0.62",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "diff": "^9.0.0",
-    "fastify": "^5.11.2",
-    "lucide-react": "^1.27.0",
-    "motion": "^13.0.0",
+    "fastify": "^5.11.3",
+    "lucide-react": "^1.31.0",
+    "motion": "^13.1.0",
     "nanoid": "^6.0.0",
     "shiki": "^4.4.2",
     "streamdown": "^2.5.0",
@@ -131,7 +131,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@vercel/sandbox": "2.9.2",
+    "@vercel/sandbox": "3.0.0",
     "@antithesishq/bombadil": "0.7.0",
     "@opentelemetry/api": "^1.9.1",
     "@tailwindcss/postcss": "^4.3.3",
@@ -147,7 +147,7 @@
     "tsup": "^8.4.0",
     "tsx": "^4.23.6",
     "typescript": "^6.0.3",
-    "vite": "^8.2.0",
+    "vite": "^8.2.1",
     "vitest": "^4.1.9"
   },
   "peerDependencies": {
