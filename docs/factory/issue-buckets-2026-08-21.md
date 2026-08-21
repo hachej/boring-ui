@@ -465,7 +465,7 @@ gh issue close 1338 -c "Issue-bucket cleanup 2026-08-21: tracked in Beads; inter
 | #1323 | beads-only | Do not close while no identifiable durable Bead counterpart yet (r4 prerequisite). |
 | #1337 | beads-only | Do not close while open PR #1343 and active bead wt-391-forward-p820. |
 
-Re-evaluate each only after every named PR closes and every named bead leaves `in_progress`/`ready_for_human`; do not infer that approval of this manifest covers those future closes.
+Re-evaluate each only after every named PR closes, every named bead leaves `in_progress`/`ready_for_human`, and every missing durable counterpart is created and linked; do not infer that approval of this manifest covers those future closes.
 
 ### Project retirement (1)
 
