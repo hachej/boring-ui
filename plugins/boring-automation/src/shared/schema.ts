@@ -1,13 +1,13 @@
 import { z } from "zod"
 import { AUTOMATION_RUN_STATUSES } from "./runStatus"
-import { AUTOMATION_SCHEDULE_ERRORS, isValidFiveFieldCron, isValidIanaTimeZone, MAX_AUTOMATION_PERSISTED_DURATION_MS, MAX_AUTOMATION_RUN_DURATION_CAP_MS } from "./schedule"
+import { AUTOMATION_SCHEDULE_ERRORS, isValidFiveFieldCron, isValidIanaTimeZone, MAX_AUTOMATION_DURATION_MS } from "./schedule"
 
 const nonEmptyString = z.string().trim().min(1)
 const isoString = z.string().datetime({ offset: true })
 const nonNegativeInteger = z.number().int().nonnegative()
-const persistedDuration = nonNegativeInteger.max(MAX_AUTOMATION_PERSISTED_DURATION_MS)
+const persistedDuration = nonNegativeInteger.max(MAX_AUTOMATION_DURATION_MS)
 const positiveInteger = z.number().int().positive()
-const runDurationCap = positiveInteger.max(MAX_AUTOMATION_RUN_DURATION_CAP_MS)
+const runDurationCap = positiveInteger.max(MAX_AUTOMATION_DURATION_MS)
 
 export const AutomationRunStatusSchema = z.enum(AUTOMATION_RUN_STATUSES)
 export const AutomationRunTriggerSchema = z.enum(["manual", "scheduled"])

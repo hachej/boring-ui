@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { Automation, AutomationRun } from "../types"
 import {
   DEFAULT_AUTOMATION_RUN_DURATION_CAP_MS,
-  MAX_AUTOMATION_RUN_DURATION_CAP_MS,
+  MAX_AUTOMATION_DURATION_MS,
   evaluateAutomationSchedule,
   resolveAutomationRunDurationCapMs,
   validateAutomationSchedule,
@@ -82,8 +82,6 @@ describe("automation run duration cap", () => {
     const reference = new Date("2026-01-01T09:00:00.000Z")
     expect(resolveAutomationRunDurationCapMs(automation({ cron: "*/10 * * * *" }), reference)).toBe(30 * 60_000)
     expect(resolveAutomationRunDurationCapMs(automation({ cron: "*/10 * * * *", runDurationCapMs: 42_000 }), reference)).toBe(42_000)
-    expect(resolveAutomationRunDurationCapMs(automation({ runDurationCapMs: MAX_AUTOMATION_RUN_DURATION_CAP_MS + 1 }), reference))
-      .toBe(MAX_AUTOMATION_RUN_DURATION_CAP_MS)
   })
 
   it("uses the absolute default for dispatch-only automations", () => {
@@ -95,7 +93,7 @@ describe("automation run duration cap", () => {
     expect(resolveAutomationRunDurationCapMs(
       automation({ cron: "0 0 1 * *" }),
       new Date("2026-01-02T00:00:00.000Z"),
-    )).toBe(MAX_AUTOMATION_RUN_DURATION_CAP_MS)
+    )).toBe(MAX_AUTOMATION_DURATION_MS)
   })
 })
 

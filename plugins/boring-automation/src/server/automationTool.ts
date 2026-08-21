@@ -4,7 +4,7 @@ import {
   AutomationCreateSchema,
   AutomationPatchSchema,
   BORING_AUTOMATION_ERROR_CODES,
-  MAX_AUTOMATION_RUN_DURATION_CAP_MS,
+  MAX_AUTOMATION_DURATION_MS,
   type BoringAutomationErrorCode,
 } from "../shared"
 import { parseAutomationModel } from "./dispatchRunExecutor"
@@ -16,7 +16,7 @@ export const BORING_AUTOMATION_TOOL_NAME = "boring_automation"
 const nonEmpty = z.string().trim().min(1)
 const limit = z.number().int().min(1).max(100).optional()
 const thinkingLevel = z.enum(["off", "low", "medium", "high"])
-const runDurationCap = z.number().int().positive().max(MAX_AUTOMATION_RUN_DURATION_CAP_MS)
+const runDurationCap = z.number().int().positive().max(MAX_AUTOMATION_DURATION_MS)
 
 const listInput = z.object({ operation: z.literal("list"), limit }).strict()
 const getInput = z.object({ operation: z.literal("get"), automationId: nonEmpty }).strict()
@@ -262,7 +262,7 @@ function result(details: object, isError: boolean): ToolResult {
 function automationToolJsonSchema(): Record<string, unknown> {
   const id = { type: "string", minLength: 1 }
   const limitSchema = { type: "integer", minimum: 1, maximum: 100 }
-  const durationCapSchema = { anyOf: [{ type: "integer", minimum: 1, maximum: MAX_AUTOMATION_RUN_DURATION_CAP_MS }, { type: "null" }] }
+  const durationCapSchema = { anyOf: [{ type: "integer", minimum: 1, maximum: MAX_AUTOMATION_DURATION_MS }, { type: "null" }] }
   const operationOnly = (operation: string, extra: Record<string, unknown> = {}, required: string[] = []) => ({
     type: "object",
     properties: { operation: { const: operation }, ...extra },

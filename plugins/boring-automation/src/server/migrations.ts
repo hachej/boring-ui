@@ -1,6 +1,6 @@
 import type postgres from "postgres"
 import { AUTOMATION_RUN_OCCUPYING_STATUSES_SQL, AUTOMATION_RUN_STATUSES_SQL } from "../shared/runStatus"
-import { MAX_AUTOMATION_RUN_DURATION_CAP_MS } from "../shared/schedule"
+import { MAX_AUTOMATION_DURATION_MS } from "../shared/schedule"
 
 /** Deployment-owned hosted schema registration for the automation plugin. */
 export async function runBoringAutomationMigrations(sql: postgres.Sql): Promise<void> {
@@ -34,7 +34,7 @@ export async function runBoringAutomationMigrations(sql: postgres.Sql): Promise<
     DO $$ BEGIN
       ALTER TABLE boring_automation_automations
         ADD CONSTRAINT boring_automation_run_duration_cap_range_check
-        CHECK (run_duration_cap_ms IS NULL OR run_duration_cap_ms BETWEEN 1 AND ${MAX_AUTOMATION_RUN_DURATION_CAP_MS});
+        CHECK (run_duration_cap_ms IS NULL OR run_duration_cap_ms BETWEEN 1 AND ${MAX_AUTOMATION_DURATION_MS});
     EXCEPTION
       WHEN duplicate_object THEN NULL;
     END $$

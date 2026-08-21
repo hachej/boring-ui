@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { MAX_AUTOMATION_PERSISTED_DURATION_MS, MAX_AUTOMATION_RUN_DURATION_CAP_MS } from "../schedule"
+import { MAX_AUTOMATION_DURATION_MS } from "../schedule"
 import { AutomationCreateSchema, AutomationPatchSchema, AutomationRunBeginSchema, AutomationRunLifecyclePatchSchema, AutomationRunStatusSchema } from "../schema"
 
 describe("automation schemas", () => {
@@ -20,10 +20,10 @@ describe("automation schemas", () => {
     expect(AutomationCreateSchema.parse({ title: "Daily", cron: "0 9 * * *", timezone: "UTC", model: "model-a", agentTypeId: "researcher" })).toMatchObject({ agentTypeId: "researcher" })
     expect(AutomationPatchSchema.parse({ agentTypeId: " reviewer " })).toEqual({ agentTypeId: "reviewer" })
     expect(AutomationPatchSchema.parse({ runDurationCapMs: 42_000 })).toEqual({ runDurationCapMs: 42_000 })
-    expect(AutomationPatchSchema.parse({ runDurationCapMs: MAX_AUTOMATION_RUN_DURATION_CAP_MS })).toEqual({ runDurationCapMs: MAX_AUTOMATION_RUN_DURATION_CAP_MS })
+    expect(AutomationPatchSchema.parse({ runDurationCapMs: MAX_AUTOMATION_DURATION_MS })).toEqual({ runDurationCapMs: MAX_AUTOMATION_DURATION_MS })
     expect(AutomationPatchSchema.parse({ runDurationCapMs: null })).toEqual({ runDurationCapMs: null })
     expect(() => AutomationPatchSchema.parse({ runDurationCapMs: 0 })).toThrow()
-    expect(() => AutomationPatchSchema.parse({ runDurationCapMs: MAX_AUTOMATION_RUN_DURATION_CAP_MS + 1 })).toThrow()
+    expect(() => AutomationPatchSchema.parse({ runDurationCapMs: MAX_AUTOMATION_DURATION_MS + 1 })).toThrow()
     expect(() => AutomationCreateSchema.parse({ title: "Bad", cron: "0 0 9 * * *", timezone: "UTC", model: "model-a" })).toThrow("Invalid cron schedule")
     expect(() => AutomationCreateSchema.parse({ title: "Bad", cron: "0 9 * * *", timezone: "Mars/Base", model: "model-a" })).toThrow("Invalid timezone")
   })
@@ -56,7 +56,7 @@ describe("automation schemas", () => {
     expect(() => AutomationRunLifecyclePatchSchema.parse({})).toThrow()
     expect(() => AutomationRunLifecyclePatchSchema.parse({ scheduledFor: null })).toThrow()
     expect(AutomationRunLifecyclePatchSchema.parse({ status: "succeeded", totalTokens: null })).toEqual({ status: "succeeded", totalTokens: null })
-    expect(AutomationRunLifecyclePatchSchema.parse({ durationMs: MAX_AUTOMATION_PERSISTED_DURATION_MS })).toEqual({ durationMs: MAX_AUTOMATION_PERSISTED_DURATION_MS })
-    expect(() => AutomationRunLifecyclePatchSchema.parse({ durationMs: MAX_AUTOMATION_PERSISTED_DURATION_MS + 1 })).toThrow()
+    expect(AutomationRunLifecyclePatchSchema.parse({ durationMs: MAX_AUTOMATION_DURATION_MS })).toEqual({ durationMs: MAX_AUTOMATION_DURATION_MS })
+    expect(() => AutomationRunLifecyclePatchSchema.parse({ durationMs: MAX_AUTOMATION_DURATION_MS + 1 })).toThrow()
   })
 })

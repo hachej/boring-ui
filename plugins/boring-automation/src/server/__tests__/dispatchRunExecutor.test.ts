@@ -4,7 +4,7 @@ import type { WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/serv
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { BORING_AUTOMATION_ERROR_CODES } from "../../shared/error-codes"
 import { isAutomationRunOccupying } from "../../shared/runStatus"
-import { MAX_AUTOMATION_PERSISTED_DURATION_MS } from "../../shared/schedule"
+import { MAX_AUTOMATION_DURATION_MS } from "../../shared/schedule"
 import type { Automation, AutomationCreate, AutomationPatch, AutomationRun, AutomationRunBegin, AutomationRunLifecyclePatch } from "../../shared/types"
 import { automationSessionTitle, DispatchRunExecutor, parseAutomationModel, type VerifiedAutomationActor } from "../dispatchRunExecutor"
 import type { AutomationRunEventPublisher } from "../runEventBus"
@@ -289,7 +289,7 @@ describe("DispatchRunExecutor", () => {
   it("clamps persisted duration at the max-cap boundary while preserving terminal status and event", async () => {
     vi.useFakeTimers()
     const startedAt = "2026-07-10T00:00:00.000Z"
-    const completedAt = new Date(new Date(startedAt).getTime() + MAX_AUTOMATION_PERSISTED_DURATION_MS + 5_000).toISOString()
+    const completedAt = new Date(new Date(startedAt).getTime() + MAX_AUTOMATION_DURATION_MS + 5_000).toISOString()
     const release = deferred<void>()
     const dispatch = vi.fn(async (input: { requestId: string }) => ({
       ref: { agentTypeId: "default", sessionId: "session-timeout" },
@@ -302,7 +302,7 @@ describe("DispatchRunExecutor", () => {
     })
     const publish = vi.fn(async () => undefined)
     const harness = createHarness({
-      runDurationCapMs: MAX_AUTOMATION_PERSISTED_DURATION_MS,
+      runDurationCapMs: MAX_AUTOMATION_DURATION_MS,
       clockDates: [startedAt, startedAt, completedAt],
       eventPublisher: { publish },
       resolver: createDirectResolver({ dispatch, send: vi.fn(), interrupt: vi.fn(), stop }),
@@ -311,14 +311,14 @@ describe("DispatchRunExecutor", () => {
 
     const execution = harness.executor.run({ automationId: harness.automation.id, request: harness.request })
     await vi.waitFor(() => expect(dispatch).toHaveBeenCalledOnce())
-    await vi.advanceTimersByTimeAsync(MAX_AUTOMATION_PERSISTED_DURATION_MS)
+    await vi.advanceTimersByTimeAsync(MAX_AUTOMATION_DURATION_MS)
     const timedOut = await execution
 
     expect(stop).toHaveBeenCalledWith("session-timeout")
     expect(timedOut).toMatchObject({
       status: "cancelled",
-      error: `Automation run exceeded its ${MAX_AUTOMATION_PERSISTED_DURATION_MS}ms duration cap`,
-      durationMs: MAX_AUTOMATION_PERSISTED_DURATION_MS,
+      error: `Automation run exceeded its ${MAX_AUTOMATION_DURATION_MS}ms duration cap`,
+      durationMs: MAX_AUTOMATION_DURATION_MS,
     })
     expect(isAutomationRunOccupying(timedOut.status)).toBe(false)
     await expect(harness.store.beginRun({ automationId: harness.automation.id, trigger: "manual", promptSnapshot: "next", modelSnapshot: "test:gpt-5.5" }))

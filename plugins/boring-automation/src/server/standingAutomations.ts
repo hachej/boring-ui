@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { isValidFiveFieldCron, isValidIanaTimeZone, MAX_AUTOMATION_RUN_DURATION_CAP_MS } from "../shared/schedule"
+import { isValidFiveFieldCron, isValidIanaTimeZone, MAX_AUTOMATION_DURATION_MS } from "../shared/schedule"
 import type { Automation, AutomationSeed, AutomationStore } from "./store"
 
 export const AutomationSeedSchema = z.object({
@@ -10,7 +10,7 @@ export const AutomationSeedSchema = z.object({
   timezone: z.string().trim().min(1),
   model: z.string().trim().regex(/^[^:]+:.+$/),
   agentTypeId: z.string().trim().min(1),
-  runDurationCapMs: z.number().int().positive().max(MAX_AUTOMATION_RUN_DURATION_CAP_MS).nullable().optional(),
+  runDurationCapMs: z.number().int().positive().max(MAX_AUTOMATION_DURATION_MS).nullable().optional(),
   promptRef: z.string().regex(/^\.agents\/automation\/[a-zA-Z0-9_-]+\.md$/),
 }).superRefine((seed, context) => {
   if (seed.cron !== null && !isValidFiveFieldCron(seed.cron)) {

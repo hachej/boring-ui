@@ -3,8 +3,7 @@ import { isAutomationRunOccupying } from "./runStatus"
 import type { Automation, AutomationRun } from "./types"
 
 /** PostgreSQL signed-integer ceiling shared by persisted durations and Node timers. */
-export const MAX_AUTOMATION_PERSISTED_DURATION_MS = 2_147_483_647
-export const MAX_AUTOMATION_RUN_DURATION_CAP_MS = MAX_AUTOMATION_PERSISTED_DURATION_MS
+export const MAX_AUTOMATION_DURATION_MS = 2_147_483_647
 export const DEFAULT_AUTOMATION_RUN_DURATION_CAP_MS = 4 * 60 * 60_000
 export const AUTOMATION_RUN_DURATION_CAP_INTERVALS = 3
 
@@ -90,15 +89,11 @@ export function isValidIanaTimeZone(timezone: string): boolean {
 
 export function clampAutomationPersistedDurationMs(durationMs: number): number {
   if (!Number.isFinite(durationMs)) return 0
-  return Math.min(MAX_AUTOMATION_PERSISTED_DURATION_MS, Math.max(0, Math.trunc(durationMs)))
+  return Math.min(MAX_AUTOMATION_DURATION_MS, Math.max(0, Math.trunc(durationMs)))
 }
 
 export function resolveAutomationRunDurationCapMs(automation: Automation, reference: Date): number {
-  if (automation.runDurationCapMs !== undefined && automation.runDurationCapMs !== null) {
-    return Number.isSafeInteger(automation.runDurationCapMs) && automation.runDurationCapMs > 0
-      ? Math.min(automation.runDurationCapMs, MAX_AUTOMATION_RUN_DURATION_CAP_MS)
-      : DEFAULT_AUTOMATION_RUN_DURATION_CAP_MS
-  }
+  if (automation.runDurationCapMs != null) return automation.runDurationCapMs
   if (automation.cron === null || !isValidFiveFieldCron(automation.cron) || !isValidIanaTimeZone(automation.timezone)) {
     return DEFAULT_AUTOMATION_RUN_DURATION_CAP_MS
   }
@@ -108,7 +103,7 @@ export function resolveAutomationRunDurationCapMs(automation: Automation, refere
     ? occurrences[1].getTime() - occurrences[0].getTime()
     : 0
   return cadenceMs > 0
-    ? Math.min(cadenceMs * AUTOMATION_RUN_DURATION_CAP_INTERVALS, MAX_AUTOMATION_RUN_DURATION_CAP_MS)
+    ? Math.min(cadenceMs * AUTOMATION_RUN_DURATION_CAP_INTERVALS, MAX_AUTOMATION_DURATION_MS)
     : DEFAULT_AUTOMATION_RUN_DURATION_CAP_MS
 }
 
