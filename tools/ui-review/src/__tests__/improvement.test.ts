@@ -1,5 +1,4 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
+import { mkdir, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import { sha256Hex, type UiCriticReport, type UiHardGateReport, type UiReviewManifest } from "../core/contracts"
@@ -11,6 +10,7 @@ import {
   validateExecutionPacket as validatePacketForSpec,
   validateExecutionPacketEvidence,
 } from "../core/improvement"
+import { createUiReviewTempDir } from "../core/tempRoot"
 import { testSpec } from "./fixtures"
 
 const createExecutionPacket = (input: Omit<Parameters<typeof createPacketForSpec>[0], "spec">) => createPacketForSpec({ ...input, spec: testSpec })
@@ -105,7 +105,7 @@ function calibrationRecord() {
 }
 
 async function artifactRoot() {
-  const root = await mkdtemp(join(tmpdir(), "ui-improvement."))
+  const root = await createUiReviewTempDir("ui-improvement.")
   await mkdir(join(root, "selected", "desktop"), { recursive: true })
   const review = critic()
   const calibration = calibrationRecord()
