@@ -9,10 +9,12 @@ const mockUseEditorLifecycle = vi.fn()
 const mockGetRawFile = vi.fn()
 
 vi.mock("../../data", () => ({
+  fileContentQueryKey: (...parts: unknown[]) => parts,
+  useWorkspaceRequestId: () => null,
   useFileContent: (path: string, options?: unknown) => mockFileContent(path, options),
   useFileWrite: () => ({ mutateAsync: mockFileWrite }),
   useFileEventStatus: () => "live",
-  useDataClient: () => ({ getRawFile: mockGetRawFile }),
+  useDataClient: () => ({ getRawFile: mockGetRawFile, getFile: vi.fn() }),
   useApiBaseUrl: () => "/api",
 }))
 

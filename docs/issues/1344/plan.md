@@ -134,13 +134,16 @@ pnpm --filter @hachej/boring-workspace exec vitest run \
   src/plugins/filesystemPlugin/front/markdown-editor/__tests__/MarkdownEditor.test.tsx
 
 pnpm --filter @hachej/boring-workspace typecheck
-pnpm --filter workspace-playground build:deps
+pnpm --filter @hachej/boring-workspace build
 
-# playwright.config.ts must explicitly forward this variable through its env -i webServer.
+# Keep the E2E workspace inside this worktree; playwright.config.ts forwards
+# the watcher cap through its env -i web server.
+BORING_AGENT_WORKSPACE_ROOT="$PWD/apps/workspace-playground/e2e/fixtures/workspace" \
 BORING_MAX_WATCHED_ENTRIES=10 \
   pnpm --filter workspace-playground exec playwright test \
   e2e/markdown-external-edit.spec.ts --grep '@watch-unsupported'
 
+BORING_AGENT_WORKSPACE_ROOT="$PWD/apps/workspace-playground/e2e/fixtures/workspace" \
 BORING_MAX_WATCHED_ENTRIES=1000000 \
   pnpm --filter workspace-playground exec playwright test \
   e2e/markdown-external-edit.spec.ts --grep '@watch-live'

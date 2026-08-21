@@ -7,8 +7,11 @@ const mockFileContent = vi.fn()
 const mockFileWrite = vi.fn()
 
 vi.mock("../../data", () => ({
+  fileContentQueryKey: (...parts: unknown[]) => parts,
+  useWorkspaceRequestId: () => null,
   useFileContent: (path: string, options?: unknown) => mockFileContent(path, options),
   useFileWrite: () => ({ mutateAsync: mockFileWrite }),
+  useDataClient: () => ({ getFile: vi.fn() }),
   useFileEventStatus: () => "live",
   useApiBaseUrl: () => "/api",
 }))

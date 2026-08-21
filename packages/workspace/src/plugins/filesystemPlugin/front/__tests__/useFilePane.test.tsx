@@ -13,13 +13,20 @@ import { FileConflictError } from "../data/fetchClient"
 
 // Mock the data layer — we exercise the hook's state machine, not React Query.
 const mockWriteFile = vi.fn()
+const mockGetFile = vi.fn()
 const mockFileContent = vi.fn()
 
 vi.mock("../data", () => ({
+  fileContentQueryKey: (base: string, workspaceId: string | null, filesystem: string, path: string | null, createIfMissing?: string) => (
+    [base, workspaceId, "files", filesystem, path, createIfMissing ?? null]
+  ),
+  useApiBaseUrl: () => "",
+  useWorkspaceRequestId: () => null,
   useFileContent: (path: string | null, options?: { createIfMissing?: string; filesystem?: string }) => (
     options === undefined ? mockFileContent(path) : mockFileContent(path, options)
   ),
   useFileWrite: () => ({ mutateAsync: mockWriteFile }),
+  useDataClient: () => ({ getFile: mockGetFile }),
   useFileEventStatus: () => "live",
 }))
 
@@ -38,6 +45,7 @@ beforeEach(() => {
     refetch: vi.fn(async () => ({ data: { content: "initial", mtimeMs: 1000 } })),
   })
   mockWriteFile.mockResolvedValue({ mtimeMs: 2000 })
+  mockGetFile.mockResolvedValue({ content: "initial", mtimeMs: 1000 })
 })
 
 describe("useFilePane", () => {
@@ -176,20 +184,18 @@ describe("useFilePane", () => {
   })
 
   describe("onReloadFromServer", () => {
-    it("clears conflict + dirty state only after a successful refetch", async () => {
+    it("clears conflict + dirty state only after a successful reload read", async () => {
       let currentData = { content: "cached stale", mtimeMs: 1000 }
-      const refetch = vi.fn(async () => {
-        currentData = { content: "server latest", mtimeMs: 3000 }
-        return { status: "success" as const, data: currentData }
-      })
       mockFileContent.mockImplementation(() => ({
         data: currentData,
         isLoading: false,
         isFetching: false,
         error: undefined,
-        refetch,
       }))
-
+      mockGetFile.mockImplementationOnce(async () => {
+        currentData = { content: "server latest", mtimeMs: 3000 }
+        return currentData
+      })
       mockWriteFile.mockRejectedValueOnce(new FileConflictError("doc.md", 3000, 1000))
 
       const { result } = renderHook(() => useFilePane({ path: "doc.md" }), { wrapper })
@@ -208,7 +214,7 @@ describe("useFilePane", () => {
         await result.current.onReloadFromServer()
       })
 
-      expect(refetch).toHaveBeenCalledTimes(1)
+      expect(mockGetFile).toHaveBeenCalledWith("doc.md", undefined, "user")
       await waitFor(() => {
         expect(result.current.conflict).toBeNull()
         expect(result.current.isDirty).toBe(false)
@@ -217,8 +223,8 @@ describe("useFilePane", () => {
     })
 
     it("ignores a delayed Reload response after the pane switches paths", async () => {
-      let resolveReload: ((value: { status: "success"; data: { content: string; mtimeMs: number } }) => void) | undefined
-      const reloadA = vi.fn(() => new Promise<{ status: "success"; data: { content: string; mtimeMs: number } }>((resolve) => {
+      let resolveReload: ((value: { content: string; mtimeMs: number }) => void) | undefined
+      mockGetFile.mockImplementationOnce(() => new Promise<{ content: string; mtimeMs: number }>((resolve) => {
         resolveReload = resolve
       }))
       mockFileContent.mockImplementation((path: string | null) => ({
@@ -226,7 +232,7 @@ describe("useFilePane", () => {
         isLoading: false,
         isFetching: false,
         error: undefined,
-        refetch: path === "a.md" ? reloadA : vi.fn(),
+        refetch: vi.fn(),
       }))
       const { result, rerender } = renderHook(
         ({ path }) => useFilePane({ path }),
@@ -242,7 +248,7 @@ describe("useFilePane", () => {
       rerender({ path: "b.md" })
       await waitFor(() => expect(result.current.content).toBe("content B"))
       await act(async () => {
-        resolveReload?.({ status: "success", data: { content: "late A", mtimeMs: 3000 } })
+        resolveReload?.({ content: "late A", mtimeMs: 3000 })
         await Promise.resolve()
       })
 
@@ -252,8 +258,8 @@ describe("useFilePane", () => {
 
     it("lets Overwrite retire a pending Reload without blocking later reconciliation", async () => {
       let fileData = { content: "initial", mtimeMs: 1000 }
-      let resolveReload: ((value: { status: "success"; data: { content: string; mtimeMs: number } }) => void) | undefined
-      const refetch = vi.fn(() => new Promise<{ status: "success"; data: { content: string; mtimeMs: number } }>((resolve) => {
+      let resolveReload: ((value: { content: string; mtimeMs: number }) => void) | undefined
+      mockGetFile.mockImplementationOnce(() => new Promise<{ content: string; mtimeMs: number }>((resolve) => {
         resolveReload = resolve
       }))
       mockFileContent.mockImplementation(() => ({
@@ -261,7 +267,7 @@ describe("useFilePane", () => {
         isLoading: false,
         isFetching: false,
         error: undefined,
-        refetch,
+        refetch: vi.fn(),
       }))
       const { result, rerender } = renderHook(
         ({ tick }) => {
@@ -282,15 +288,15 @@ describe("useFilePane", () => {
       rerender({ tick: 1 })
       await waitFor(() => expect(result.current.content).toBe("later external"))
       await act(async () => {
-        resolveReload?.({ status: "success", data: { content: "stale reload", mtimeMs: 2000 } })
+        resolveReload?.({ content: "stale reload", mtimeMs: 2000 })
         await Promise.resolve()
       })
       expect(result.current.content).toBe("later external")
     })
 
     it("preserves keystrokes entered while Reload is in flight", async () => {
-      let resolveReload: ((value: { status: "success"; data: { content: string; mtimeMs: number } }) => void) | undefined
-      const refetch = vi.fn(() => new Promise<{ status: "success"; data: { content: string; mtimeMs: number } }>((resolve) => {
+      let resolveReload: ((value: { content: string; mtimeMs: number }) => void) | undefined
+      mockGetFile.mockImplementationOnce(() => new Promise<{ content: string; mtimeMs: number }>((resolve) => {
         resolveReload = resolve
       }))
       mockFileContent.mockReturnValue({
@@ -298,7 +304,6 @@ describe("useFilePane", () => {
         isLoading: false,
         isFetching: false,
         error: undefined,
-        refetch,
       })
       const { result } = renderHook(() => useFilePane({ path: "doc.md" }), { wrapper })
       await act(async () => {})
@@ -308,7 +313,7 @@ describe("useFilePane", () => {
       })
       act(() => result.current.setContent("typed after reload click"))
       await act(async () => {
-        resolveReload?.({ status: "success", data: { content: "server latest", mtimeMs: 3000 } })
+        resolveReload?.({ content: "server latest", mtimeMs: 3000 })
         await Promise.resolve()
       })
 
@@ -318,18 +323,12 @@ describe("useFilePane", () => {
       expect(result.current.documentStatus).toEqual({ kind: "conflict", source: "disk" })
     })
 
-    it("keeps local conflict state when the refetch does not return fresh server data", async () => {
-      const refetchError = new Error("reload failed")
-      const refetch = vi.fn(async () => ({
-        status: "error" as const,
-        data: { content: "cached stale", mtimeMs: 1000 },
-        error: refetchError,
-      }))
+    it("keeps local conflict state when the reload read fails", async () => {
+      mockGetFile.mockRejectedValueOnce(new Error("reload failed"))
       mockFileContent.mockReturnValue({
         data: { content: "cached stale", mtimeMs: 1000 },
         isLoading: false,
         error: undefined,
-        refetch,
       })
 
       mockWriteFile.mockRejectedValueOnce(new FileConflictError("doc.md", 3000, 1000))
@@ -348,7 +347,7 @@ describe("useFilePane", () => {
         await result.current.onReloadFromServer()
       })
 
-      expect(refetch).toHaveBeenCalledTimes(1)
+      expect(mockGetFile).toHaveBeenCalledTimes(1)
       expect(result.current.content).toBe("local edits")
       expect(result.current.conflict).toBeInstanceOf(FileConflictError)
 

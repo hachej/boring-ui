@@ -10,6 +10,7 @@ export type { FileEventStatus } from "./DataProvider"
 export { FetchClient, FetchError } from "./fetchClient"
 export { readFileRecords } from "./fileRecords"
 export {
+  fileContentQueryKey,
   useFileContent,
   useFileContent as useFileData,
   useFileList,

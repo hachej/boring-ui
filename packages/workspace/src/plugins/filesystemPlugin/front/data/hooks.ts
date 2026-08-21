@@ -30,6 +30,16 @@ export interface UseFileContentOptions {
 
 export const FILE_CONTENT_FALLBACK_POLL_MS = 2_000
 
+export function fileContentQueryKey(
+  base: string,
+  workspaceId: string | null,
+  filesystem: FilesystemId,
+  path: string | null,
+  createIfMissing?: string,
+) {
+  return [base, workspaceId, FILES_QUERY_KEY_SEGMENT, filesystem, path, createIfMissing ?? null] as const
+}
+
 export function useFileContent(
   path: string | null,
   options: UseFileContentOptions = {},
@@ -41,7 +51,7 @@ export function useFileContent(
   const createIfMissing = options.createIfMissing
   const filesystem = normalizeUiFilesystem(options.filesystem)
   return useQuery({
-    queryKey: [base, workspaceId, FILES_QUERY_KEY_SEGMENT, filesystem, path, createIfMissing ?? null],
+    queryKey: fileContentQueryKey(base, workspaceId, filesystem, path, createIfMissing),
     queryFn: async ({ signal }) => {
       const activePath = path!
       try {

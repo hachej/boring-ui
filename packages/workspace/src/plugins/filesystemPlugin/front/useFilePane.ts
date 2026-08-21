@@ -1,10 +1,19 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import { normalizeUiFilesystem, uiFileResourceKey, type FilesystemId } from "../../../shared/types/filesystem"
 import { events } from "../../../front/events"
 import { filesystemEvents } from "../shared/events"
-import { useFileContent, useFileEventStatus, useFileWrite } from "./data"
+import {
+  fileContentQueryKey,
+  useApiBaseUrl,
+  useDataClient,
+  useFileContent,
+  useFileEventStatus,
+  useFileWrite,
+  useWorkspaceRequestId,
+} from "./data"
 import type { FilePaneDocumentStatus } from "./fileDocumentStatus"
 import { FileConflictError } from "./data/fetchClient"
 import { useEditorLifecycle, type EditorLifecycleAdapter } from "../../../front/hooks"
@@ -103,8 +112,11 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
     isLoading,
     isFetching,
     error,
-    refetch: refetchFileData,
   } = useFileContent(activePath, fileContentOptions)
+  const dataClient = useDataClient()
+  const queryClient = useQueryClient()
+  const apiBaseUrl = useApiBaseUrl()
+  const workspaceRequestId = useWorkspaceRequestId()
   const fileEventStatus = useFileEventStatus()
   const isReadonly = fileData?.access === "readonly"
   const { mutateAsync: writeFile } = useFileWrite()
@@ -338,15 +350,19 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
     const localContentAtStart = contentRef.current
     resolutionInFlightRef.current = true
     try {
-      const refreshed = await refetchFileData()
+      // Read directly instead of `refetchFileData()`: React Query publishes a
+      // refetch result before the returned promise resolves, so a Reload later
+      // superseded by Overwrite could otherwise inject stale pre-write bytes
+      // through the ordinary reconciliation effect.
+      const next = await dataClient.getFile(activePath, undefined, filesystem)
       if (
         resolutionGenRef.current !== myResolutionGen ||
-        saveGenRef.current !== mySaveGen ||
-        refreshed.status !== "success" ||
-        refreshed.data == null
+        saveGenRef.current !== mySaveGen
       ) return
-
-      const next = refreshed.data
+      queryClient.setQueryData(
+        fileContentQueryKey(apiBaseUrl, workspaceRequestId, filesystem, activePath, createIfMissing),
+        next,
+      )
       const previousBaselineMtime = baselineMtimeRef.current
       diskContentRef.current = next.content
       baselineMtimeRef.current = next.mtimeMs ?? null
@@ -372,12 +388,25 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
       lifecycle.markClean()
       setConflict(null)
       showTransientDocumentStatus({ kind: "resolved", action: "reloaded" })
+    } catch {
+      // Keep the existing conflict/local buffer when reload fails.
     } finally {
       if (resolutionGenRef.current === myResolutionGen) {
         resolutionInFlightRef.current = false
       }
     }
-  }, [activePath, lifecycle, refetchFileData, setContentState, showTransientDocumentStatus])
+  }, [
+    activePath,
+    apiBaseUrl,
+    createIfMissing,
+    dataClient,
+    filesystem,
+    lifecycle,
+    queryClient,
+    setContentState,
+    showTransientDocumentStatus,
+    workspaceRequestId,
+  ])
 
   const onOverwrite = useCallback((): Promise<void> => {
     if (isReadonly || !activePath) return Promise.resolve()
