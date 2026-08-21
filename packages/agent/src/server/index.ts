@@ -166,6 +166,8 @@ export type { AgentHostEnvironmentHttpProjectionOptions } from './agent-host/env
 export { createAuthMiddleware as createAgentAuthMiddleware } from './http/middleware'
 export { createAgentHost } from './agent-host/createAgentHost'
 export { SqliteAgentRequestLedger } from './agent-host/sqliteRequestLedger'
+export { resolveRequestLedgerPath } from './agent-host/requestLedgerPath'
+export type { ResolveRequestLedgerPathInput } from './agent-host/requestLedgerPath'
 export {
   AgentFleetCompilationError,
   AgentFleetCompilationErrorCode,
