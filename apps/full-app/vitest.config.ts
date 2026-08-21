@@ -1,6 +1,7 @@
 import path from 'node:path'
 import { defineConfig } from 'vitest/config'
 import { createBoringAppViteAliases } from '../../packages/core/src/app/vite/index.ts'
+import { sandboxSourceAlias } from '../../scripts/vite-sandbox-alias.ts'
 
 const appRoot = import.meta.dirname
 const boringAliases = createBoringAppViteAliases({ appRoot })
@@ -17,12 +18,7 @@ export default defineConfig({
       { find: /^@hachej\/boring-bash\/server$/, replacement: path.resolve(repoRoot, 'packages/boring-bash/src/server/index.ts') },
       { find: /^@hachej\/boring-agent\/shared$/, replacement: path.resolve(repoRoot, 'packages/agent/src/shared/index.ts') },
       { find: /^@hachej\/boring-agent\/server$/, replacement: path.resolve(repoRoot, 'packages/agent/src/server/index.ts') },
-      { find: /^@hachej\/boring-sandbox\/shared$/, replacement: path.resolve(repoRoot, 'packages/boring-sandbox/src/shared/index.ts') },
-      { find: /^@hachej\/boring-sandbox\/providers\/direct$/, replacement: path.resolve(repoRoot, 'packages/boring-sandbox/src/providers/direct/index.ts') },
-      { find: /^@hachej\/boring-sandbox\/providers\/bwrap$/, replacement: path.resolve(repoRoot, 'packages/boring-sandbox/src/providers/bwrap/index.ts') },
-      { find: /^@hachej\/boring-sandbox\/providers\/node-workspace$/, replacement: path.resolve(repoRoot, 'packages/boring-sandbox/src/providers/node-workspace/index.ts') },
-      { find: /^@hachej\/boring-sandbox\/providers\/vercel-sandbox$/, replacement: path.resolve(repoRoot, 'packages/boring-sandbox/src/providers/vercel-sandbox/index.ts') },
-      { find: /^@hachej\/boring-sandbox\/providers\/blaxel$/, replacement: path.resolve(repoRoot, 'packages/boring-sandbox/src/providers/blaxel/index.ts') },
+      sandboxSourceAlias,
       { find: /^@hachej\/boring-core\/app\/server$/, replacement: path.resolve(repoRoot, 'packages/core/src/app/server/index.ts') },
       { find: /^@hachej\/boring-core\/server$/, replacement: path.resolve(repoRoot, 'packages/core/src/server/index.ts') },
       { find: /^@hachej\/boring-workspace\/app\/server$/, replacement: path.resolve(repoRoot, 'packages/workspace/src/app/server/index.ts') },
