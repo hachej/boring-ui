@@ -123,6 +123,7 @@
     "lucide-react": "^1.31.0",
     "motion": "^13.1.0",
     "nanoid": "^6.0.0",
+    "postgres": "^3.4.9",
     "shiki": "^4.4.2",
     "streamdown": "^2.5.0",
     "tailwind-merge": "^3.5.0",

@@ -296,6 +296,15 @@ export {
   createFakeAuthorityVerifierV1,
   createHostSideCredentialResolverV1,
   createInMemoryCredentialBackendV1,
+  createInMemoryCredentialVaultPersistenceV1,
+  createInMemoryCredentialVersionAnchorV1,
+  createLocalCredentialVersionAnchorFromEnvV1,
+  createLocalFileCredentialVersionAnchorV1,
+  createLocalKekWorkspaceKekProviderFromEnvV1,
+  createPostgresCredentialVaultPersistenceV1,
+  createVaultCredentialStoreBackendV1,
+  initializeLocalFileCredentialVersionAnchorV1,
+  runCredentialVaultPostgresMigrationsV1,
   withResolvedCredential,
 } from './credentials'
 export type {
@@ -303,4 +312,11 @@ export type {
   FakeAuthorityVerifierGrantV1,
   HostSideCredentialResolverOptionsV1,
   InMemoryCredentialBackendEntryV1,
+  CredentialVaultPersistenceV1,
+  LocalCredentialVersionAnchorOptionsV1,
+  StoredCredentialRecordV1,
+  VaultCredentialStoreBackendV1,
+  VaultCredentialStoreOptionsV1,
+  WorkspaceCredentialVersionAnchorV1,
+  WorkspaceCredentialVersionStateV1,
 } from './credentials'
