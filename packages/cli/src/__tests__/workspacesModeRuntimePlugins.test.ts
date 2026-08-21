@@ -157,7 +157,7 @@ describe("workspaces mode runtime plugin wiring", () => {
           if (!store) throw new Error("unknown test workspace")
           return store
         },
-        resolveExecutor: async () => ({ run: executorRun as any }),
+        resolveExecutor: async () => ({ run: executorRun as any, start: executorRun as any }),
         localUserId: "local",
       }, actorContext),
     })

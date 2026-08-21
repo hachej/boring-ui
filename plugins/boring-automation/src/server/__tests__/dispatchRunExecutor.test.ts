@@ -136,6 +136,26 @@ describe("DispatchRunExecutor", () => {
     )
   })
 
+  it("fails a scheduled success when the dispatcher rejects before session lookup", async () => {
+    const harness = createHarness({
+      events: [event(0, { type: "agent-end", seq: 1, turnId: "turn-1", status: "ok" })],
+      streamError: new Error("stream closed after terminal event"),
+    })
+
+    const run = await harness.executor.run({
+      automationId: harness.automation.id,
+      actor: harness.actor,
+      trigger: "scheduled",
+      scheduledFor: "2026-07-10T09:00:00.000Z",
+    })
+
+    expect(run).toMatchObject({
+      status: "failed",
+      error: "scheduled session addressability could not be verified: stream closed after terminal event",
+    })
+    expect(harness.resolver.authorizeSession).not.toHaveBeenCalled()
+  })
+
   it("preserves a scheduled worker failure without replacing it with lookup diagnostics", async () => {
     const harness = createHarness({
       events: [event(0, { type: "error", seq: 1, error: { code: "INTERNAL_ERROR", message: "worker failed" } })],

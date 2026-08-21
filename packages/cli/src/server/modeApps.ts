@@ -746,7 +746,7 @@ export async function createWorkspacesModeApp(opts: {
         // Workspaces mode has one explicit CLI-owned Agent address. Pass it to
         // trusted plugins rather than letting plugins invent a fallback.
         agentTypeId: "default",
-        availableAgentTypeIds: ["default"],
+        availableAgentTypeIds,
         defaultPluginPackages: pluginDiscovery.resolveCliDefaultPluginPackagePaths(),
         installPluginAuthoring: false,
         excludeDefaults: ["boring-ui-plugin-cli-package"],
@@ -814,6 +814,7 @@ export async function createWorkspacesModeApp(opts: {
     if (!workspaceAgentDispatcher) throw httpError("workspace agent dispatcher is unavailable", 503)
     return new DispatchRunExecutor({
       agentTypeId: "default",
+      availableAgentTypeIds,
       store: await seededAutomationStore(workspace),
       dispatcherResolver: workspaceAgentDispatcher,
       actorResolver: () => ({ workspaceId: workspace.id, userId: "local" }),
@@ -830,6 +831,7 @@ export async function createWorkspacesModeApp(opts: {
           if (!workspaceAgentDispatcher) throw httpError("workspace agent dispatcher is unavailable", 503)
           return new DispatchRunExecutor({
             agentTypeId: "default",
+            availableAgentTypeIds,
             store,
             dispatcherResolver: workspaceAgentDispatcher,
             actorResolver: () => actor,
@@ -1036,14 +1038,16 @@ export async function createWorkspacesModeApp(opts: {
     // would let one workspace seat an agent (and its knowledge) for all others.
     discoveredAgentPackages = await workspaceServer.discoverRepositoryAgentPackages(fleetRepositoryRoot)
   }
+  const resolvedAgents = await agentServer.resolveDefaultAgentFleet({
+    repositoryRoot: fleetRepositoryRoot,
+    workspaceRoot: null,
+    ...(discoveredAgentPackages ? { discoveredPackages: discoveredAgentPackages } : {}),
+  })
+  const availableAgentTypeIds = resolvedAgents.map((agent) => agent.agentTypeId)
   const agentHost = await agentServer.createAgentHost({
     // The hub serves a DIFFERENT root per registered workspace, so there is no
     // single one persona instruction refs could be addressed against.
-    agents: await agentServer.resolveDefaultAgentFleet({
-      repositoryRoot: fleetRepositoryRoot,
-      workspaceRoot: null,
-      ...(discoveredAgentPackages ? { discoveredPackages: discoveredAgentPackages } : {}),
-    }),
+    agents: resolvedAgents,
     fleetCompiler: { async compile({ agents }) { return agents } },
     hostId: "cli-trusted-local",
     scopeVerifier: trustedLocalScope.scopeVerifier,
