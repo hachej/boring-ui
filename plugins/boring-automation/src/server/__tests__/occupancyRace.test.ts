@@ -77,6 +77,7 @@ it("keeps the slot occupied when accepted dispatch identity persistence loses th
   expect(ambiguous).toMatchObject({
     status: "outcome-unknown",
     sessionId: "accepted-worker",
+    dispatchReceipt: expect.objectContaining({ accepted: true, ref: { agentTypeId: "boring-worker", sessionId: "accepted-worker" } }),
     error: "injected identity persistence failure after acceptance",
   })
 
@@ -92,6 +93,15 @@ it("keeps the slot occupied when accepted dispatch identity persistence loses th
     }
   }
   await expect(store.listRuns(automation.id)).resolves.toEqual([
-    expect.objectContaining({ id: ambiguous.id, status: "outcome-unknown", sessionId: "accepted-worker" }),
+    expect.objectContaining({ id: ambiguous.id, status: "outcome-unknown", sessionId: "accepted-worker", dispatchReceipt: expect.objectContaining({ accepted: true }) }),
   ])
+
+  const restarted = new FileAutomationStore(root)
+  await restarted.reconcileOrphanedRuns(automation.id)
+  await expect(restarted.beginRun({
+    automationId: automation.id,
+    trigger: "manual",
+    promptSnapshot: "replacement-after-restart",
+    modelSnapshot: automation.model,
+  })).rejects.toMatchObject({ code: BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_ACTIVE })
 })

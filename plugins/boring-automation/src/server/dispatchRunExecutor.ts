@@ -211,6 +211,7 @@ export class DispatchRunExecutor {
       const finalized = await this.finalizeRun(store, run.id, {
         current,
         sessionId: identity.sessionId,
+        dispatchReceipt: identity.dispatchReceipt,
         startedAt,
         completedAt,
         status: terminalStatus ?? "succeeded",
@@ -231,6 +232,7 @@ export class DispatchRunExecutor {
         finalized = await this.finalizeRun(store, run.id, {
           current,
           sessionId: identity?.sessionId ?? null,
+          dispatchReceipt: identity?.dispatchReceipt ?? null,
           startedAt,
           completedAt,
           status,
@@ -272,6 +274,7 @@ export class DispatchRunExecutor {
   private async finalizeRun(store: AutomationStore, runId: string, input: {
     current: AutomationRun
     sessionId: string | null
+    dispatchReceipt: AutomationRun["dispatchReceipt"] | null
     startedAt: string | null
     completedAt: string
     status: "succeeded" | "failed" | "cancelled" | "outcome-unknown"
@@ -283,6 +286,7 @@ export class DispatchRunExecutor {
       completedAt: input.completedAt,
       durationMs: durationMs(input.startedAt ?? input.current.createdAt, input.completedAt),
       sessionId: input.sessionId,
+      dispatchReceipt: input.dispatchReceipt,
       ...finalizeUsage(input.usage),
       error: input.error,
     })
