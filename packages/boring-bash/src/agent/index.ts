@@ -24,6 +24,7 @@ export type {
 } from './tools/harness'
 export { ReadonlyFilesystemMutationError } from './runtime/types'
 export type {
+  BwrapArgsOptions,
   RuntimeBashStrategy,
   RuntimeFilesystemCapability,
   RuntimeBundle,
@@ -35,14 +36,10 @@ export type {
   RuntimeRemoteWorkspacePathOptions,
 } from './runtime/types'
 
-export {
-  BWRAP_TIMEOUT_SECONDS,
-  KILL_GRACE_SECONDS,
-  RO_BIND_DIRS,
-  RO_BIND_TRY_DIRS,
-  buildBwrapArgs,
-} from './runtime/buildBwrapArgs'
-export type { BwrapArgsOptions } from './runtime/buildBwrapArgs'
+// The bwrap args builder implementation is owned by
+// `@hachej/boring-sandbox/providers/bwrap` (gh-1123 dedupe). boring-bash kept a
+// byte-identical second copy with no importers; it was deleted. Hosts inject
+// the canonical builder via `RuntimeHostOperations.buildBwrapArgs`.
 
 export { mergeRuntimeProvisioningEnv } from './runtime/env'
 export type {
