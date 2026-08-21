@@ -264,6 +264,9 @@ export function useAddressedFleetSessions<TSession extends WorkspaceAgentSession
       refresh: async (options) => {
         await Promise.all(agents.map((agent) => controllerFor(agent.agentTypeId)?.refresh?.(options)))
       },
+      refreshAgent: async (agentTypeId, options) => {
+        await controllerFor(agentTypeId)?.refresh?.(options)
+      },
     }
   }, [agents, discoveryError, discoveryLoading, fleetSourceIdentity, selectAgentTypeId, selectedAgentTypeId, snapshots, sourceIdentityForAgent, workspaceId])
 

@@ -220,6 +220,26 @@ export class DispatchRunExecutor {
           })
           if (!dispatchReceipt) await persistDispatchIdentity(dispatched.ref, dispatched.receipt)
         })
+        const ref = dispatchReceipt?.ref
+        if (!ref) {
+          throw new AutomationSessionUnaddressableError("automation dispatch completed without a durable session reference")
+        }
+        const authorizeSession = this.options.dispatcherResolver.authorizeSession
+        if (!authorizeSession) {
+          throw new AutomationSessionUnaddressableError("workspace session lookup is unavailable")
+        }
+        try {
+          await authorizeSession.call(
+            this.options.dispatcherResolver,
+            actor,
+            ref,
+            input.request ? { request: input.request } : undefined,
+          )
+        } catch (error) {
+          throw new AutomationSessionUnaddressableError(
+            `recorded session ${ref.sessionId} could not be resolved through the workspace session lookup: ${safeErrorMessage(error)}`,
+          )
+        }
       })
       current = await store.updateRunLifecycle(run.id, {
         status: "running",
@@ -245,12 +265,15 @@ export class DispatchRunExecutor {
       await stopHeartbeat()
       if (isRunLeaseLost(error)) return await this.readDurableRun(store, automation.id, run.id, current)
       const durationCapExceeded = error instanceof AutomationRunDurationCapExceededError
+      const sessionUnaddressable = error instanceof AutomationSessionUnaddressableError
       const durationCapStop = durationCapExceeded ? await error.stopCompletion : null
       const completedAt = this.nowIso()
       const cancelled = isCancellationError(error)
-      const status = durationCapExceeded
-        ? (durationCapStop?.confirmed ? "cancelled" : "outcome-unknown")
-        : terminalStatus ?? (cancelled ? "cancelled" : (dispatchAccepted || dispatchIdentityPersistenceFailed ? "outcome-unknown" : "failed"))
+      const status = sessionUnaddressable
+        ? "failed"
+        : durationCapExceeded
+          ? (durationCapStop?.confirmed ? "cancelled" : "outcome-unknown")
+          : terminalStatus ?? (cancelled ? "cancelled" : (dispatchAccepted || dispatchIdentityPersistenceFailed ? "outcome-unknown" : "failed"))
       let finalized: AutomationRun
       try {
         finalized = await this.finalizeRun(store, run.id, {
@@ -321,6 +344,13 @@ export class DispatchRunExecutor {
 type DurationCapStopOutcome =
   | { confirmed: true }
   | { confirmed: false; reason: "session id was unavailable" | "session stop was rejected" | "session stop timed out" | "session stop was not confirmed" }
+
+class AutomationSessionUnaddressableError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "AutomationSessionUnaddressableError"
+  }
+}
 
 class AutomationRunDurationCapExceededError extends Error {
   constructor(durationCapMs: number, readonly stopCompletion: Promise<DurationCapStopOutcome>) {

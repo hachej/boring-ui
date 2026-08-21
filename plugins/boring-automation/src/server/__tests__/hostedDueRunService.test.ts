@@ -68,7 +68,10 @@ function directResolver(
     events: AsyncIterable<AgentEvent>
   }>,
   workspace: object,
-): WorkspaceAgentDispatcherResolver & { runWithWorkspaceAgent: ReturnType<typeof vi.fn> } {
+): WorkspaceAgentDispatcherResolver & {
+  runWithWorkspaceAgent: ReturnType<typeof vi.fn>
+  authorizeSession: ReturnType<typeof vi.fn>
+} {
   return {
     runWithWorkspaceAgent: vi.fn(async (_input, run) => {
       await run({
@@ -88,6 +91,7 @@ function directResolver(
         async stop() { return { accepted: true, cursor: 0, stopped: true, clearedQueue: [] } },
       })
     }),
+    authorizeSession: vi.fn(async () => undefined),
     async resolve() { throw new Error("legacy resolver must not be used") },
   }
 }
@@ -206,6 +210,11 @@ describe("HostedDueRunService", () => {
     }), expect.any(Function))
     expect(dispatch).toHaveBeenCalledOnce()
     expect(workspace.readFile).toHaveBeenCalledOnce()
+    expect(resolver.authorizeSession).toHaveBeenCalledWith(
+      actor,
+      { agentTypeId: "researcher", sessionId: "session-1" },
+      undefined,
+    )
     expect(result.outcomes).toEqual([expect.objectContaining({
       kind: "started",
       automationId: "automation-a",

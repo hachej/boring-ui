@@ -46,6 +46,9 @@ describe("boring_automation nested dispatch", () => {
           async stop(sessionId) { return await dispatcher.stop(sessionId) },
         })
       },
+      async authorizeSession(ctx, ref) {
+        await sessions.load(ctx, ref.sessionId)
+      },
       async resolve(ctx) {
         return createLegacyNestedDispatcher(agent, ctx)
       },

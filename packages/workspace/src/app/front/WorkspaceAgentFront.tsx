@@ -138,6 +138,8 @@ export interface WorkspaceAgentSessionsApi<
   delete: (id: string, agentTypeId?: string) => void | Promise<unknown>
   loadMore?: () => void | Promise<unknown>
   refresh?: (options?: { background?: boolean; throwOnError?: boolean }) => void | Promise<unknown>
+  /** Fleet-only addressed refresh used by out-of-band activity reconciliation. */
+  refreshAgent?: (agentTypeId: string, options?: { background?: boolean; throwOnError?: boolean }) => void | Promise<unknown>
 }
 
 export type UseWorkspaceAgentSessions<
@@ -984,11 +986,13 @@ export function WorkspaceAgentFront<
   const remoteSessionsActivityRef = useRef({
     sessions: remoteSessionApi.sessions,
     refresh: remoteSessionApi.refresh,
+    refreshAgent: remoteSessionApi.refreshAgent,
     selectedAgentTypeId,
   })
   remoteSessionsActivityRef.current = {
     sessions: remoteSessionApi.sessions,
     refresh: remoteSessionApi.refresh,
+    refreshAgent: remoteSessionApi.refreshAgent,
     selectedAgentTypeId,
   }
   useEffect(() => {
@@ -1011,9 +1015,18 @@ export function WorkspaceAgentFront<
         // a manual refresh or remount (gh-778).
         if (status !== "running" && status !== "aborting") return
         const current = remoteSessionsActivityRef.current
-        if (ref.agentTypeId !== current.selectedAgentTypeId) return
-        const known = current.sessions.some((session) => session.id === ref.sessionId)
-        if (!known) void current.refresh?.({ background: true })
+        const known = current.sessions.some((session) => (
+          session.id === ref.sessionId
+          && (session.agentTypeId ?? current.selectedAgentTypeId) === ref.agentTypeId
+        ))
+        if (known) return
+        if (current.refreshAgent) {
+          void current.refreshAgent(ref.agentTypeId, { background: true })
+          return
+        }
+        // Single-Agent sources remain owner-scoped and must never refresh for
+        // activity addressed to another Agent.
+        if (ref.agentTypeId === current.selectedAgentTypeId) void current.refresh?.({ background: true })
       },
     })
   }, [apiBaseUrl, remoteSessionsAvailable, sessionSourceIdentity, workspaceId])

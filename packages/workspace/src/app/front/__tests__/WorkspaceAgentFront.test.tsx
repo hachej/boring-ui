@@ -340,6 +340,66 @@ describe("WorkspaceAgentFront", () => {
     expect(refresh).not.toHaveBeenCalled()
   })
 
+  it("refreshes the addressed Agent when fleet activity reports an unknown scheduled session", async () => {
+    MockEventSource.instances = []
+    vi.stubGlobal("EventSource", MockEventSource)
+    const alphaRefresh = vi.fn()
+    const betaRefresh = vi.fn()
+    const useAgentSelection = () => ({
+      agents: [
+        { agentTypeId: "alpha", label: "Alpha" },
+        { agentTypeId: "beta", label: "Beta" },
+      ],
+      selectedAgentTypeId: "alpha",
+      loading: false,
+      error: undefined,
+      selectAgentTypeId: vi.fn(),
+    })
+    const useFleetSessions: UseWorkspaceAgentSessions = (options) => {
+      const session = {
+        id: `${options.agentTypeId}-known`,
+        agentTypeId: options.agentTypeId,
+        title: `${options.agentTypeId} known`,
+        status: "idle" as const,
+      }
+      return {
+        sourceIdentity: options.sourceIdentity,
+        sessions: [session],
+        activeSession: options.agentTypeId === "alpha" ? session : undefined,
+        activeSessionId: options.agentTypeId === "alpha" ? session.id : undefined,
+        activeSessionAgentTypeId: options.agentTypeId === "alpha" ? "alpha" : undefined,
+        loading: false,
+        error: undefined,
+        create: vi.fn(async () => session),
+        switch: vi.fn(),
+        delete: vi.fn(),
+        refresh: options.agentTypeId === "alpha" ? alphaRefresh : betaRefresh,
+      }
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="fleet-scheduled-session-stream"
+        agentTypeId="alpha"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        addressedAgentSelection
+        useAddressedAgentSelection={useAgentSelection}
+        useSessions={useFleetSessions}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await waitFor(() => expect(MockEventSource.instances.some((instance) => instance.url.includes("/api/v1/agents/session-activity/events"))).toBe(true))
+    const stream = MockEventSource.instances.find((instance) => instance.url.includes("/api/v1/agents/session-activity/events"))
+    act(() => {
+      stream?.emit("activity", { ref: { agentTypeId: "beta", sessionId: "scheduled-beta" }, status: "running" })
+    })
+
+    expect(betaRefresh).toHaveBeenCalledWith({ background: true })
+    expect(alphaRefresh).not.toHaveBeenCalled()
+  })
+
   it("renders a known active session while remote sessions are still loading", () => {
     const PendingChatPanel = (props: WorkspaceChatPanelProps) => (
       <div data-testid="chat-panel">Chat {props.sessionId} hydrate={String(props.hydrateMessages)}</div>

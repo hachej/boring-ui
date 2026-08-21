@@ -57,6 +57,11 @@ describe("ManualRunExecutor", () => {
       actor: { id: harness.actor.userId },
       originSurface: "boring-automation",
     }))
+    expect(harness.resolver.authorizeSession).toHaveBeenCalledWith(
+      harness.actor,
+      { agentTypeId: "default", sessionId: "session-1" },
+      { request },
+    )
   })
 
   it("uses the host default for a legacy automation in a multi-Agent registry", async () => {
@@ -109,6 +114,31 @@ describe("ManualRunExecutor", () => {
     await harness.executor.run({ automationId: harness.automation.id, request: harness.request })
     await harness.executor.run({ automationId: harness.automation.id, request: harness.request })
     expect(harness.dispatcher.dispatch).toHaveBeenNthCalledWith(2, expect.not.objectContaining({ sessionId: expect.anything() }))
+  })
+
+  it("fails a recorded run when the workspace UI lookup cannot resolve its session", async () => {
+    const resolver = createDirectResolver(createDispatcher([], undefined))
+    resolver.authorizeSession.mockRejectedValueOnce(new Error("session was not found"))
+    const harness = createHarness({ resolver })
+
+    const run = await harness.executor.run({
+      automationId: harness.automation.id,
+      actor: harness.actor,
+      trigger: "scheduled",
+      scheduledFor: "2026-07-10T09:00:00.000Z",
+    })
+
+    expect(run).toMatchObject({
+      status: "failed",
+      trigger: "scheduled",
+      sessionId: "session-1",
+      error: "recorded session session-1 could not be resolved through the workspace session lookup: session was not found",
+    })
+    expect(resolver.authorizeSession).toHaveBeenCalledWith(
+      harness.actor,
+      { agentTypeId: "default", sessionId: "session-1" },
+      undefined,
+    )
   })
 
   it("uses canonical prompt and model snapshots from the store", async () => {
@@ -631,7 +661,10 @@ function createDispatcher(events: AgentEvent[], streamError: unknown): Workspace
 function createDirectResolver(
   dispatcher: WorkspaceAgentDispatcher & { dispatch: ReturnType<typeof vi.fn> },
   runError?: Error,
-): WorkspaceAgentDispatcherResolver & { runWithWorkspaceAgent: ReturnType<typeof vi.fn> } {
+): WorkspaceAgentDispatcherResolver & {
+  runWithWorkspaceAgent: ReturnType<typeof vi.fn>
+  authorizeSession: ReturnType<typeof vi.fn>
+} {
   return {
     runWithWorkspaceAgent: vi.fn(async (_input, run) => {
       if (runError) throw runError
@@ -648,6 +681,7 @@ function createDirectResolver(
         async stop(sessionId: string, _requestId: string) { return await dispatcher.stop(sessionId) },
       })
     }),
+    authorizeSession: vi.fn(async () => undefined),
     async resolve() { throw new Error("legacy resolver must not be used") },
   }
 }
