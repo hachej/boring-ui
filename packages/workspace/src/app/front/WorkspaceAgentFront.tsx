@@ -2554,6 +2554,15 @@ export function WorkspaceAgentFront<
     <AgentDetailsOverlay
       agent={activeAgentOverlayOption}
       onClose={() => setLeftOverlay(null)}
+      // Persona instructions only recompile through the `agent.reload` host
+      // effect, so the page that shows them also offers the reload. Targets the
+      // agent this overlay describes, NOT the addressed chat agent.
+      // Resolves with no message so the overlay tells the AGENT story (runtime
+      // pin semantics) rather than the extension-reload wording this shared
+      // helper writes for the Plugins surface.
+      onReloadAgent={async (agentTypeId) => {
+        await reloadAgentPluginsForSession({ agentTypeId, sessionId: providerActiveSessionRef.sessionId })
+      }}
       headerInsetStart={mobileShellActive}
       headerInsetEnd={!surfaceOpen}
     />
