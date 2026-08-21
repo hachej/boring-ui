@@ -23,11 +23,7 @@ export interface AutomationRoutesOptions {
   store: AutomationStore
   storeForRequest?: (request: FastifyRequest) => Promise<AutomationStore> | AutomationStore
   dispatchRunExecutor?: Pick<DispatchRunExecutor, "run">
-  /** @deprecated Use dispatchRunExecutor. */
-  manualRunExecutor?: Pick<DispatchRunExecutor, "run">
   dispatchRunExecutorForRequest?: (request: FastifyRequest) => Promise<Pick<DispatchRunExecutor, "run">> | Pick<DispatchRunExecutor, "run">
-  /** @deprecated Use dispatchRunExecutorForRequest. */
-  manualRunExecutorForRequest?: (request: FastifyRequest) => Promise<Pick<DispatchRunExecutor, "run">> | Pick<DispatchRunExecutor, "run">
   dueRunService?: Pick<DueRunService, "runDue">
   dueRunServiceForRequest?: (request: FastifyRequest) => Promise<Pick<DueRunService, "runDue">> | Pick<DueRunService, "runDue">
   hostedDueRunService?: Pick<HostedDueRunService, "runDue">
@@ -184,7 +180,7 @@ export async function automationRoutes(app: FastifyInstance, opts: AutomationRou
   app.post(`${BORING_AUTOMATION_ROUTE_PREFIX}/automations/:id/run`, async (request, reply) => {
     try {
       const { id } = parseParams(IdParamsSchema, request.params)
-      const dispatchRunExecutor = await (opts.dispatchRunExecutorForRequest ?? opts.manualRunExecutorForRequest)?.(request) ?? opts.dispatchRunExecutor ?? opts.manualRunExecutor
+      const dispatchRunExecutor = await opts.dispatchRunExecutorForRequest?.(request) ?? opts.dispatchRunExecutor
       if (!dispatchRunExecutor) {
         throw new AutomationStoreError(
           BORING_AUTOMATION_ERROR_CODES.RUN_EXECUTOR_UNAVAILABLE,

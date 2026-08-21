@@ -10,13 +10,13 @@ import { InMemoryAutomationRunEventBus } from "../runEventBus"
 
 function appWithStore(
   store = new FileAutomationStore(`${tmpdir()}/boring-automation-unused`),
-  manualRunExecutor?: Parameters<typeof automationRoutes>[1]["manualRunExecutor"],
+  dispatchRunExecutor?: Parameters<typeof automationRoutes>[1]["dispatchRunExecutor"],
   dueRunService?: Parameters<typeof automationRoutes>[1]["dueRunService"],
   hostedDueRunService?: Parameters<typeof automationRoutes>[1]["hostedDueRunService"],
   hostedTriggerToken?: string,
 ) {
   const app = Fastify()
-  app.register(async (instance) => automationRoutes(instance, { store, manualRunExecutor, dueRunService, hostedDueRunService, hostedTriggerToken }))
+  app.register(async (instance) => automationRoutes(instance, { store, dispatchRunExecutor, dueRunService, hostedDueRunService, hostedTriggerToken }))
   return app
 }
 

@@ -5,7 +5,7 @@ import "../../../../../packages/agent/src/server/http/middleware"
 import type { Agent, AgentEvent, AgentTool, SessionCtx, SessionDetail, SessionStore, SessionSummary, WorkspaceAgentDispatcher, WorkspaceAgentDispatcherDispatchInput } from "@hachej/boring-agent/shared"
 import type { FollowUpPayload, PiChatEvent, PromptPayload } from "@hachej/boring-agent/shared"
 import { createBoringAutomationTool } from "../automationTool"
-import { ManualRunExecutor, type VerifiedAutomationActor } from "../manualRunExecutor"
+import { DispatchRunExecutor, type VerifiedAutomationActor } from "../dispatchRunExecutor"
 import { createAutomationOperations } from "../operations"
 import type { AutomationStore } from "../store"
 import type { Automation, AutomationCreate, AutomationPatch, AutomationRun, AutomationRunBegin, AutomationRunLifecyclePatch } from "../../shared"
@@ -54,7 +54,7 @@ describe("boring_automation nested dispatch", () => {
       },
     }
     const automationStore = new NestedAutomationStore()
-    const executor = new ManualRunExecutor({
+    const executor = new DispatchRunExecutor({
       agentTypeId: "default",
       store: automationStore,
       dispatcherResolver: resolver,

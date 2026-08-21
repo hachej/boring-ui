@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { describe, expect, it, vi } from "vitest"
 
 import { FileAutomationStore } from "../fileStore"
-import { ManualRunExecutor } from "../manualRunExecutor"
+import { DispatchRunExecutor } from "../dispatchRunExecutor"
 
 async function createStoreRoot(): Promise<string> {
   return await mkdtemp(join(tmpdir(), "boring-automation-mig-del-"))
@@ -21,7 +21,7 @@ async function seed(store: FileAutomationStore) {
   })
 }
 
-describe("ManualRunExecutor durable restart saga", () => {
+describe("DispatchRunExecutor durable restart saga", () => {
   it("preserves an accepted addressed receipt and session across restart reconciliation", async () => {
     const root = await createStoreRoot()
     const firstProcess = new FileAutomationStore(root, {
@@ -110,7 +110,7 @@ describe("ManualRunExecutor durable restart saga", () => {
       interrupt: vi.fn(),
       stop: vi.fn(),
     }))
-    const restartedExecutor = new ManualRunExecutor({
+    const restartedExecutor = new DispatchRunExecutor({
       agentTypeId: "default",
       store: restarted,
       dispatcherResolver: {

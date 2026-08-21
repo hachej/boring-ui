@@ -6,7 +6,7 @@ import { BORING_AUTOMATION_ERROR_CODES } from "../../shared/error-codes"
 import { isAutomationRunOccupying } from "../../shared/runStatus"
 import { MAX_AUTOMATION_PERSISTED_DURATION_MS } from "../../shared/schedule"
 import type { Automation, AutomationCreate, AutomationPatch, AutomationRun, AutomationRunBegin, AutomationRunLifecyclePatch } from "../../shared/types"
-import { automationSessionTitle, ManualRunExecutor, parseAutomationModel, type VerifiedAutomationActor } from "../manualRunExecutor"
+import { automationSessionTitle, DispatchRunExecutor, parseAutomationModel, type VerifiedAutomationActor } from "../dispatchRunExecutor"
 import type { AutomationRunEventPublisher } from "../runEventBus"
 import { AutomationStoreError, type AutomationStore, automationNotFound, runAlreadyActive, runLeaseLost, runNotFound } from "../store"
 
@@ -40,7 +40,7 @@ describe("parseAutomationModel", () => {
   })
 })
 
-describe("ManualRunExecutor", () => {
+describe("DispatchRunExecutor", () => {
   it("forwards the verified actor and Fastify request to the dispatcher resolver and sends the actor id", async () => {
     const request = fakeRequest({ requestId: "req-1" })
     const harness = createHarness({ request })
@@ -646,7 +646,7 @@ function createHarness(options: HarnessOptions = {}) {
   const dispatcher = createDispatcher(options.events ?? defaultEvents, options.streamError)
   const resolver = options.resolver ?? createDirectResolver(dispatcher)
   const clock = clockFrom(options.clockDates)
-  const executor = new ManualRunExecutor({ agentTypeId: "default", availableAgentTypeIds: options.availableAgentTypeIds, store, dispatcherResolver: resolver, actorResolver, eventPublisher: options.eventPublisher, clock })
+  const executor = new DispatchRunExecutor({ agentTypeId: "default", availableAgentTypeIds: options.availableAgentTypeIds, store, dispatcherResolver: resolver, actorResolver, eventPublisher: options.eventPublisher, clock })
   return { store, automation, actor, actorResolver, request, dispatcher, resolver, executor }
 }
 
