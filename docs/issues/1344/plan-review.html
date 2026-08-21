@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>gh-1344 · Open Markdown external-edit coherence plan</title>
+<style>
+:root{color-scheme:light dark;--bg:#f5f6f8;--card:#fff;--ink:#172033;--muted:#657083;--line:#dce1e8;--blue:#3157d5;--green:#147a55;--amber:#976b00;--red:#b42318}@media(prefers-color-scheme:dark){:root{--bg:#10131a;--card:#191e28;--ink:#eef2f7;--muted:#aab4c3;--line:#303849;--blue:#91adff;--green:#66d6a6;--amber:#f3c969;--red:#ff9189}}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif}.wrap{max-width:1050px;margin:auto;padding:20px}.hero,.card{background:var(--card);border:1px solid var(--line);border-radius:15px;box-shadow:0 8px 28px #0000000d}.hero{padding:24px;border-top:5px solid var(--blue)}.eyebrow{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.09em}.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}h1{font-size:clamp(25px,4vw,40px);line-height:1.12;margin:6px 0}.pill{padding:4px 10px;border-radius:999px;background:#fff0c2;color:#6c4c00;font-weight:750;font-size:12px}.meta,.small{color:var(--muted)}.tldr{font-size:18px;max-width:850px}.card{padding:21px 23px;margin-top:16px}h2{margin:0 0 12px;font-size:21px}table{border-collapse:collapse;width:100%;display:block;overflow:auto}th,td{border:1px solid var(--line);padding:10px 12px;text-align:left;vertical-align:top}th{background:color-mix(in srgb,var(--blue) 8%,var(--card))}.two td{width:50%}ul{margin:5px 0;padding-left:20px}code{background:color-mix(in srgb,var(--muted) 13%,transparent);padding:2px 5px;border-radius:5px}.mermaid{white-space:pre-wrap;background:color-mix(in srgb,var(--blue) 5%,var(--card));border:1px solid var(--line);border-radius:10px;padding:16px;overflow:auto;font:13px/1.45 ui-monospace,SFMono-Regular,monospace}.low{background:color-mix(in srgb,var(--green) 14%,var(--card))}.med{background:color-mix(in srgb,var(--amber) 14%,var(--card))}.high{background:color-mix(in srgb,var(--red) 12%,var(--card))}.status{border-left:4px solid var(--green);padding-left:13px}.review{border-left:4px solid var(--amber);padding-left:13px}a{color:var(--blue)}
+</style></head><body><main class="wrap">
+<header class="hero"><div class="eyebrow">Gate 1 · Plan approval</div><div class="row"><h1>Open Markdown stays coherent with agent file edits</h1><span class="pill">READY FOR OWNER</span></div><p class="tldr">Choose classic file-editor reconciliation: when whole-tree watch is unavailable, poll only open files; reload clean documents, freeze dirty conflicts, and keep agents using ordinary Markdown file tools.</p><div class="meta">Worker/Steward · 21 Aug 2026 · gh-1344 · wt-391-forward-z2qt · product-critical</div></header>
+<section class="card"><h2>Proposed architecture</h2><pre class="mermaid">flowchart LR
+  Agent[Agent plain-file read/write/edit] --> Disk[Canonical .md file]
+  Disk --> Watch{Workspace watch available?}
+  Watch -->|yes| SSE[/api/v1/fs/events SSE]
+  Watch -->|no: workspace_too_large| Unsupported[event: unsupported]
+  Unsupported --> Poll[Poll active file query only]
+  SSE --> Invalidate[Invalidate exact file query]
+  Poll --> Fetch[Refetch open file]
+  Invalidate --> Fetch
+  Fetch --> Dirty{Local buffer dirty?}
+  Dirty -->|no| Apply[Apply TipTap content with onChange suppressed]
+  Dirty -->|yes| Freeze[Freeze autosave + explicit conflict]
+  Apply --> Status[Bottom-right: Updated by agent / from disk]
+  Freeze --> Choice[Reload disk or Overwrite disk]
+  classDef changed fill:#dbe7ff,stroke:#3157d5,color:#172033;
+  class Poll,Apply,Freeze,Status changed;</pre><p class="small">The Markdown file remains the only document authority. No agent-facing editor API and no CRDT server.</p></section>
+<section class="card"><h2>Goals / Non-goals</h2><table class="two"><tr><th>Goals</th><th>Non-goals</th></tr><tr><td><ul><li>Repair the hosted >50k-entry watcher fallback</li><li>Keep clean open panes live</li><li>Never silently overwrite dirty local or agent edits</li><li>Preserve autosave ping-pong suppression</li><li>Show quiet, honest bottom-right state</li></ul></td><td><ul><li>No Yjs/CRDT authority</li><li>No pre-write agent presence claim</li><li>No whole-tree polling</li><li>No agent tool or prompt changes</li><li>No general multi-user collaboration</li></ul></td></tr></table></section>
+<section class="card"><h2>Today → Delta: exact broken link</h2><table><tr><th>Today</th><th>Observed break</th><th>Delta</th></tr><tr><td>The server protects large roots by refusing chokidar above 50,000 entries. Clean/dirty reconciliation and TipTap external-content suppression already exist.</td><td>The reported hosted workspace returns <code>event: unsupported</code> / <code>workspace_too_large</code>. The client logs and closes EventSource. <code>useFileContent</code> has no fallback, so the mounted pane never receives new content.</td><td>Expose stream capability; poll only active file-content queries when unsupported; preserve SSE where live; harden own-save correlation and conflict freeze.</td></tr></table></section>
+<section class="card"><h2>Key interaction</h2><pre class="mermaid">sequenceDiagram
+  actor Agent
+  participant File as .md file
+  participant Events as FS events / fallback
+  participant Query as Active file query
+  participant Pane as useFilePane
+  participant TipTap
+  Agent->>File: ordinary edit(path, markdown)
+  alt watcher live
+    File-->>Events: SSE change
+  else watcher unsupported
+    Events-->>Query: active-file poll tick
+  end
+  Events->>Query: refetch exact path
+  Query->>Pane: content + mtime
+  alt pane clean
+    Pane->>TipTap: setContent under suppressChangeRef
+    TipTap-->>Pane: no onChange / no autosave echo
+  else pane dirty
+    Pane->>Pane: freeze autosave, retain local buffer
+    Pane-->>TipTap: conflict status + Reload / Overwrite
+  end</pre></section>
+<section class="card"><h2>Design decision</h2><table><tr><th>Option</th><th>Decision</th><th>Reason</th></tr><tr><td>Freeze every agent edit</td><td>Reject as general behavior; adopt conflict-only freeze</td><td>No reliable pre-write path lease exists. Freezing after a clean write adds friction; freezing dirty conflict prevents loss.</td></tr><tr><td>Classic reload-if-clean / conflict-if-dirty</td><td><strong>Choose</strong></td><td>Fits the existing state machine, repairs the exact unsupported gap, and preserves plain-file agents.</td></tr><tr><td>TipTap + Yjs collaboration</td><td>Defer</td><td>No Yjs stack exists. It requires server document authority, CRDT persistence/compaction, awareness, and Markdown↔CRDT reconciliation behind ordinary file writes.</td></tr></table></section>
+<section class="card"><h2>Bottom-right document states</h2><table><tr><th>State</th><th>Copy</th><th>Lifetime</th></tr><tr><td>Normal</td><td>Word count only</td><td>Persistent</td></tr><tr><td>Fallback</td><td>Watching for file changes</td><td>While SSE unsupported</td></tr><tr><td>Refetch</td><td>Checking for updates…</td><td>During active-file fetch</td></tr><tr><td>Applied, attributed</td><td>Updated by agent</td><td>~4 seconds</td></tr><tr><td>Applied, unattributed</td><td>Updated from disk</td><td>~4 seconds</td></tr><tr><td>Conflict</td><td>Agent/Disk update conflicts with your edits</td><td>Until explicit resolution</td></tr><tr><td>Resolved</td><td>Reloaded from disk / Overwrote disk version</td><td>~4 seconds</td></tr></table><p class="small">No fake “Agent is editing…” before a durable signal exists.</p></section>
+<section class="card"><h2>One ready slice</h2><div class="status"><strong>wt-391-forward-z2qt · P0 · no dependencies</strong><p>Event-capability state, active-file fallback polling, exact own-save mtime correlation, dirty autosave freeze, explicit resolution, footer state, focused tests, and hosted/folder live proof. Files stay within Workspace filesystem front/hooks plus one existing E2E fixture. Fits one worker session; no dependency or schema migration.</p></div></section>
+<section class="card"><h2>Risks</h2><table><tr><th>Risk</th><th>Likelihood</th><th>Impact</th><th>Mitigation</th></tr><tr><td>Fallback polling loads a large workspace</td><td class="med">Medium</td><td class="high">High</td><td>Poll active file queries only at ~2s; never tree/search; stop on unmount.</td></tr><tr><td>Refetch races local keystrokes</td><td class="med">Medium</td><td class="high">High</td><td>Synchronous dirty guard; freeze on conflict; interleaving tests.</td></tr><tr><td>Own save and agent write are confused</td><td class="med">Medium</td><td class="high">High</td><td>Correlate exact returned save mtime; remove time-only three-second suppression.</td></tr><tr><td>Polling cannot prove agent attribution</td><td class="high">High</td><td class="low">Low</td><td>Say “disk” unless agent event metadata exists.</td></tr></table></section>
+<section class="card"><h2>Proof path</h2><table><tr><th>Layer</th><th>Proof</th></tr><tr><td>Focused tests</td><td>File-event stream unsupported state; file hook fallback interval; lifecycle exact-mtime echo vs genuine write; clean/dirty pane; TipTap no-onChange external apply.</td></tr><tr><td>Hosted reproduction</td><td>Force <code>BORING_MAX_WATCHED_ENTRIES</code> below fixture size; open Markdown; ordinary process/agent-style edit; assert same pane updates. Dirty variant must freeze and preserve both versions.</td></tr><tr><td>Folder mode</td><td>Small root with live SSE; same open-file edit; assert no fallback polling and in-place update.</td></tr><tr><td>Owner demo</td><td>Allowed <code>:5301</code> live pane, exact automated click/write path and screenshot first, then ordinary agent <code>edit</code> of the open proof document.</td></tr><tr><td>Canonical plan</td><td><code>docs/issues/1344/plan.md</code></td></tr><tr><td>Issue</td><td>https://github.com/hachej/boring-ui/issues/1344</td></tr></table></section>
+<section class="card"><h2>Adversarial review</h2><div class="review"><strong>Pending final plan SHA review.</strong><p>The independent Sol diagnosis already confirmed the unsupported-without-fallback blocker and additionally identified time-only save-echo suppression plus implicit dirty overwrite; both are incorporated. The mandatory fresh-eyes verdict and dispositions will be recorded here before Gate 1.</p></div></section>
+<section class="card"><h2>Open questions</h2><p><strong>Owner Gate 1:</strong> approve Option B—classic reconciliation with targeted fallback polling and conflict-only freeze—while deferring CRDT collaboration and pre-write agent presence.</p></section>
+</main></body></html>
