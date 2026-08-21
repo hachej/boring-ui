@@ -11,7 +11,10 @@ function recordingSql(rows: unknown[] = []) {
     queries.push({ text: strings.join("?"), values })
     return Promise.resolve(rows)
   }) as unknown as postgres.Sql
-  Object.assign(sql, { array: (value: unknown[]) => value })
+  Object.assign(sql, {
+    array: (value: unknown[]) => value,
+    begin: async (run: (transaction: postgres.TransactionSql) => unknown) => await run(sql as unknown as postgres.TransactionSql),
+  })
   return { sql, queries }
 }
 
@@ -166,6 +169,52 @@ describe("PostgresAutomationStore actor isolation", () => {
     expect(queries[1]!.text).toContain("SET updated_at = ?")
     expect(queries[1]!.text).not.toMatch(/\bprompt\b/)
     expect(queries[1]!.values).not.toContain("workspace-only prompt")
+  })
+
+  it("locks the seeded automation row before checking for occupying runs", async () => {
+    const queries: RecordedQuery[] = []
+    const sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = strings.join("?")
+      queries.push({ text, values })
+      if (text.includes("SELECT id") && text.includes("FOR UPDATE")) return Promise.resolve([{ id: values[0] }])
+      return Promise.resolve(Object.assign([], { count: 0 }))
+    }) as unknown as postgres.Sql
+    Object.assign(sql, {
+      array: (value: unknown[]) => value,
+      begin: async (run: (transaction: postgres.TransactionSql) => unknown) => await run(sql as unknown as postgres.TransactionSql),
+    })
+    const store = new PostgresAutomationStore(sql, { workspaceId: "workspace-a", userId: "user-a" })
+
+    await expect(store.removeSeededAutomationIfIdle("worker-slot-id")).resolves.toBe(false)
+
+    expect(queries).toHaveLength(2)
+    expect(queries[0]!.text).toContain("FOR UPDATE")
+    expect(queries[1]!.text).toContain("NOT EXISTS")
+    expect(queries[1]!.text).toContain("run.status = ANY(?)")
+    expect(queries[1]!.values).toEqual(expect.arrayContaining([
+      expect.stringMatching(/^[0-9a-f-]{36}$/),
+      "workspace-a",
+      "user-a",
+      ["queued", "dispatching", "running", "outcome-unknown"],
+    ]))
+    expect(queries[1]!.values).not.toContain("worker-slot-id")
+  })
+
+  it("resolves existing seeded automations from immutable deterministic seed ids", async () => {
+    const queries: RecordedQuery[] = []
+    const sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+      queries.push({ text: strings.join("?"), values })
+      const ids = values.find(Array.isArray) as string[]
+      return Promise.resolve([{ id: ids[1] }])
+    }) as unknown as postgres.Sql
+    Object.assign(sql, { array: (value: unknown[]) => value })
+    const store = new PostgresAutomationStore(sql, { workspaceId: "workspace-a", userId: "user-a" })
+
+    await expect(store.findExistingSeedKeys(["worker-slot-4", "worker-slot-5"])).resolves.toEqual(["worker-slot-5"])
+
+    expect(queries).toHaveLength(1)
+    expect(queries[0]!.text).toContain("id = ANY(?)")
+    expect(queries[0]!.values).not.toEqual(expect.arrayContaining(["worker-slot-4", "worker-slot-5"]))
   })
 
   it("soft-deletes actor-scoped metadata without deleting prompt or run rows", async () => {

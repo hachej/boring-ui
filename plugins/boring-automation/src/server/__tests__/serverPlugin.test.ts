@@ -57,6 +57,38 @@ describe("boring automation server plugin", () => {
     await rm(workspaceRoot, { recursive: true, force: true })
   })
 
+  it("seeds exactly the host-injected generic records during workspace boot", async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), "boring-automation-injected-seed-plugin-"))
+    const promptRoot = join(workspaceRoot, ".agents", "automation")
+    await mkdir(promptRoot, { recursive: true })
+    await writeFile(join(promptRoot, "triage-slot.md"), "triage prompt", "utf8")
+
+    const app = Fastify()
+    await app.register(createBoringAutomationServerPlugin({
+      agentTypeId: "selected-agent",
+      workspaceRoot,
+      additionalSeeds: [{
+        key: "triage",
+        title: "triage",
+        enabled: true,
+        cron: null,
+        timezone: "UTC",
+        model: "openai-codex:gpt-5.6-sol",
+        agentTypeId: "boring-worker",
+        promptRef: ".agents/automation/triage-slot.md",
+      }],
+    }).routes!)
+    const response = await app.inject({ method: "GET", url: `${BORING_AUTOMATION_ROUTE_PREFIX}/automations` })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json().automations).toEqual([
+      expect.objectContaining({ id: "triage", agentTypeId: "boring-worker", cron: null }),
+    ])
+
+    await app.close()
+    await rm(workspaceRoot, { recursive: true, force: true })
+  })
+
   it("contributes the tool through trusted boot-time server composition", async () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), "boring-automation-tool-"))
     const plugin = createBoringAutomationServerPlugin({ agentTypeId: "selected-agent", workspaceRoot })

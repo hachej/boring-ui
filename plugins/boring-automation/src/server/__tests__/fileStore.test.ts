@@ -1,7 +1,8 @@
 import { mkdir, mkdtemp, readFile, readdir, rm, unlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { createFactoryAutomationSeedProvider } from "@hachej/boring-agent/server"
 import { FileAutomationStore, type FileAutomationStoreOptions } from "../fileStore"
 import { runFileAutomationStoreBehaviorTests } from "./automationStoreConformance"
 
@@ -210,26 +211,30 @@ describe("FileAutomationStore persistence", () => {
 })
 
 describe("standing factory automation seeding", () => {
-  it("is idempotent and links all five records to their checked-in prompt files", async () => {
-    const { seedStandingAutomations } = await import("../standingAutomations")
+  const workerSeeds = [1, 2, 3].map((slot) => ({ key: `worker-slot-${slot}`, title: `worker-slot-${slot}`, enabled: true, cron: null, timezone: "UTC", model: "openai-codex:gpt-5.6-sol", agentTypeId: "boring-worker", promptRef: ".agents/automation/worker-slot.md" }))
+  const triageSeed = { key: "triage", title: "triage", enabled: true, cron: null, timezone: "UTC", model: "openai-codex:gpt-5.6-sol", agentTypeId: "boring-worker", promptRef: ".agents/automation/triage-slot.md" }
+
+  async function writeSeedFiles() {
     await mkdir(join(dir, ".agents", "automation"), { recursive: true })
     await writeFile(join(dir, ".agents", "automation", "manifest.json"), JSON.stringify({ automations: [
       { key: "orchestrator-tick", title: "orchestrator-tick", enabled: true, cron: "*/10 * * * *", timezone: "UTC", model: "openai-codex:gpt-5.6-sol", agentTypeId: "boring-orchestrator", promptRef: ".agents/automation/orchestrator-tick.md" },
-      ...[1, 2, 3].map((slot) => ({ key: `worker-slot-${slot}`, title: `worker-slot-${slot}`, enabled: true, cron: null, timezone: "UTC", model: "openai-codex:gpt-5.6-sol", agentTypeId: "boring-worker", promptRef: ".agents/automation/worker-slot.md" })),
-      { key: "triage", title: "triage", enabled: true, cron: null, timezone: "UTC", model: "openai-codex:gpt-5.6-sol", agentTypeId: "boring-worker", promptRef: ".agents/automation/triage-slot.md" },
     ] }), "utf8")
     await Promise.all([
       writeFile(join(dir, ".agents", "automation", "orchestrator-tick.md"), "orchestrator prompt", "utf8"),
       writeFile(join(dir, ".agents", "automation", "worker-slot.md"), "worker prompt", "utf8"),
       writeFile(join(dir, ".agents", "automation", "triage-slot.md"), "triage prompt", "utf8"),
     ])
+  }
 
-    await seedStandingAutomations(createStore())
-    await seedStandingAutomations(createStore())
+  it("merges exactly the generic injected seeds with the manifest and remains idempotent", async () => {
+    const { seedStandingAutomations } = await import("../standingAutomations")
+    await writeSeedFiles()
+    const additionalSeeds = [...workerSeeds, triageSeed]
+    await seedStandingAutomations(createStore(), { additionalSeeds })
+    await seedStandingAutomations(createStore(), { additionalSeeds })
 
     const store = createStore()
     const automations = await store.listAutomations()
-    expect(automations).toHaveLength(5)
     expect(automations.map(({ id }) => id).sort()).toEqual([
       "orchestrator-tick", "triage", "worker-slot-1", "worker-slot-2", "worker-slot-3",
     ])
@@ -242,10 +247,98 @@ describe("standing factory automation seeding", () => {
       })
       await expect(store.getPrompt(id)).resolves.toBe("worker prompt")
     }
-    expect(automations.find(({ id }) => id === "triage")).toMatchObject({
-      cron: null, promptRef: ".agents/automation/triage-slot.md", agentTypeId: "boring-worker",
-    })
-    await expect(store.getPrompt("orchestrator-tick")).resolves.toBe("orchestrator prompt")
     await expect(store.getPrompt("triage")).resolves.toBe("triage prompt")
+  })
+
+  it("persists policy growth from 3 to 5 with manifest, worker slots, and triage end to end", async () => {
+    const { seedStandingAutomations } = await import("../standingAutomations")
+    await writeSeedFiles()
+    await mkdir(join(dir, ".agents", "factory"), { recursive: true })
+    await writeFile(join(dir, ".agents", "factory", "policy.yaml"), "beadle:\n  worker_cap: 3\n", "utf8")
+    await seedStandingAutomations(createStore(), {
+      seedProvider: createFactoryAutomationSeedProvider({ policyRoot: dir }),
+    })
+    await writeFile(join(dir, ".agents", "factory", "policy.yaml"), "beadle:\n  worker_cap: 5\n", "utf8")
+    await seedStandingAutomations(createStore(), {
+      seedProvider: createFactoryAutomationSeedProvider({ policyRoot: dir }),
+    })
+    expect((await createStore().listAutomations()).map(({ id }) => id).sort()).toEqual([
+      "orchestrator-tick", "triage", "worker-slot-1", "worker-slot-2", "worker-slot-3", "worker-slot-4", "worker-slot-5",
+    ])
+  })
+
+  it("validates injected seeds with the manifest seed schema", async () => {
+    const { seedStandingAutomations } = await import("../standingAutomations")
+    await writeSeedFiles()
+    await expect(seedStandingAutomations(createStore(), {
+      additionalSeeds: [{ ...triageSeed, timezone: "not/a-zone" }],
+    })).rejects.toThrow()
+  })
+
+  it("keeps a surplus seeded slot when its run is active", async () => {
+    const { seedStandingAutomations } = await import("../standingAutomations")
+    await writeSeedFiles()
+    const store = createStore()
+    await seedStandingAutomations(store, { additionalSeeds: [...workerSeeds, triageSeed] })
+    await store.updateAutomation("worker-slot-3", { title: "renamed-active-worker" })
+    await store.beginRun({
+      automationId: "worker-slot-3", trigger: "manual", scheduledFor: null,
+      promptSnapshot: "worker", modelSnapshot: "openai-codex:gpt-5.6-sol",
+    })
+    await mkdir(join(dir, ".agents", "factory"), { recursive: true })
+    await writeFile(join(dir, ".agents", "factory", "policy.yaml"), "beadle:\n  worker_cap: 2\n", "utf8")
+    const warn = vi.fn()
+    await seedStandingAutomations(store, {
+      seedProvider: createFactoryAutomationSeedProvider({ policyRoot: dir, warn }),
+    })
+    expect((await store.listAutomations()).map(({ id }) => id).sort()).toContain("worker-slot-3")
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("active run"))
+  })
+
+  it("retains surplus seeds without the atomic immutable-key store contract", async () => {
+    const { seedStandingAutomations } = await import("../standingAutomations")
+    await writeSeedFiles()
+    const store = createStore()
+    await seedStandingAutomations(store, { additionalSeeds: [
+      ...workerSeeds,
+      { ...workerSeeds[2]!, key: "worker-slot-4", title: "worker-slot-4" },
+      triageSeed,
+    ] })
+    Object.defineProperties(store, {
+      findExistingSeedKeys: { value: undefined },
+      removeSeededAutomationIfIdle: { value: undefined },
+    })
+    const deleteAutomation = vi.spyOn(store, "deleteAutomation")
+    await mkdir(join(dir, ".agents", "factory"), { recursive: true })
+    await writeFile(join(dir, ".agents", "factory", "policy.yaml"), "beadle:\n  worker_cap: 3\n", "utf8")
+    const warn = vi.fn()
+
+    await seedStandingAutomations(store, {
+      seedProvider: createFactoryAutomationSeedProvider({ policyRoot: dir, warn }),
+    })
+
+    expect(deleteAutomation).not.toHaveBeenCalled()
+    expect((await store.listAutomations()).map(({ id }) => id)).toContain("worker-slot-4")
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("immutable seed keys"))
+  })
+
+  it("does not prune an unrelated automation whose mutable title collides with a surplus slot key", async () => {
+    const { seedStandingAutomations } = await import("../standingAutomations")
+    await writeSeedFiles()
+    const store = createStore()
+    const unrelated = await store.createAutomation({
+      title: "worker-slot-4",
+      timezone: "UTC",
+      model: "openai-codex:gpt-5.6-sol",
+      agentTypeId: "boring-worker",
+    })
+    await mkdir(join(dir, ".agents", "factory"), { recursive: true })
+    await writeFile(join(dir, ".agents", "factory", "policy.yaml"), "beadle:\n  worker_cap: 3\n", "utf8")
+
+    await seedStandingAutomations(store, {
+      seedProvider: createFactoryAutomationSeedProvider({ policyRoot: dir }),
+    })
+
+    await expect(store.getAutomation(unrelated.id)).resolves.toMatchObject({ title: "worker-slot-4" })
   })
 })

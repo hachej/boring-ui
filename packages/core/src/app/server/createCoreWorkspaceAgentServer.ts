@@ -1099,10 +1099,18 @@ export async function createCoreWorkspaceAgentServer(
   const defaultPluginDirEntries: CoreWorkspacePluginEntry[] = defaultPluginPackagePaths
     .map((dir) => ({ dir, hotReload: false as const, trust: 'internal' as const }))
     .filter((entry) => hasDirServerPlugin(entry))
-  const pluginEntries: CoreWorkspacePluginEntry[] = [
-    ...defaultPluginDirEntries,
-    ...(options.plugins ?? []),
-  ]
+  const pluginEntries: CoreWorkspacePluginEntry[] = []
+  const seenPluginDirs = new Set<string>()
+  // Explicit host entries take precedence so hosts can configure a bundled
+  // package without activating its unconfigured default entry a second time.
+  for (const entry of [...(options.plugins ?? []), ...defaultPluginDirEntries]) {
+    if ('dir' in entry) {
+      const key = path.resolve(entry.dir)
+      if (seenPluginDirs.has(key)) continue
+      seenPluginDirs.add(key)
+    }
+    pluginEntries.push(entry)
+  }
   let workspaceAgentDispatcherResolver: WorkspaceAgentDispatcherResolver | undefined
   const trustedDispatcherProxy: WorkspaceAgentDispatcherResolver = {
     async runWithWorkspaceAgent(input, run) {

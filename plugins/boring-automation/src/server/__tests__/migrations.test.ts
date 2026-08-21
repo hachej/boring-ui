@@ -193,6 +193,86 @@ describe("runBoringAutomationMigrations", () => {
 
 
 describe("Postgres standing automation seeding", () => {
+  it("serializes seeded pruning with concurrent hosted run admission", async () => {
+    const sql = postgres(TEST_DB_URL, { max: 4 })
+    const blockerSql = postgres(TEST_DB_URL, { max: 1 })
+    const actor = { workspaceId: `seed-race-workspace-${randomUUID()}`, userId: `seed-race-user-${randomUUID()}` }
+    const workspace = {
+      root: "/workspace",
+      runtimeContext: {},
+      async readFile(path: string) {
+        if (path === ".agents/automation/worker-slot.md") return "worker prompt"
+        throw Object.assign(new Error("missing"), { code: "ENOENT" })
+      },
+    } as never
+    const seed = {
+      key: "worker-slot-4", title: "worker-slot-4", enabled: true, cron: null, timezone: "UTC",
+      model: "openai-codex:gpt-5.6-sol", agentTypeId: "boring-worker",
+      promptRef: ".agents/automation/worker-slot.md",
+    }
+    const suffix = randomUUID().replaceAll("-", "")
+    const functionName = `boring_automation_run_gate_${suffix}`
+    const triggerName = `boring_automation_run_gate_${suffix}`
+    const advisoryKey = Number.parseInt(suffix.slice(0, 7), 16)
+    let automationId: string | undefined
+    try {
+      await runBoringAutomationMigrations(sql)
+      const store = new PostgresAutomationStore(sql, actor, undefined, workspace)
+      automationId = (await store.ensureSeededAutomation(seed))!.id
+      await sql.unsafe(`
+        CREATE FUNCTION "${functionName}"() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          IF NEW.automation_id = '${automationId}' THEN
+            PERFORM pg_advisory_xact_lock(${advisoryKey});
+          END IF;
+          RETURN NEW;
+        END
+        $$
+      `)
+      await sql.unsafe(`
+        CREATE TRIGGER "${triggerName}"
+        BEFORE INSERT ON boring_automation_runs
+        FOR EACH ROW EXECUTE FUNCTION "${functionName}"()
+      `)
+      await blockerSql`SELECT pg_advisory_lock(${advisoryKey})`
+
+      const runPromise = store.beginRun({
+        automationId,
+        invocationId: `manual:${randomUUID()}`,
+        trigger: "manual",
+        promptSnapshot: "race",
+        modelSnapshot: seed.model,
+      })
+      await waitFor(async () => {
+        const rows = await sql<{ waiting: boolean }[]>`
+          SELECT EXISTS (
+            SELECT 1 FROM pg_locks
+            WHERE locktype = 'advisory' AND granted = false AND objid = ${advisoryKey}
+          ) AS waiting
+        `
+        return rows[0]?.waiting === true
+      })
+
+      const prunePromise = store.removeSeededAutomationIfIdle(seed.key)
+      await expect(Promise.race([
+        prunePromise.then(() => "settled" as const),
+        delay(100).then(() => "pending" as const),
+      ])).resolves.toBe("pending")
+
+      await blockerSql`SELECT pg_advisory_unlock(${advisoryKey})`
+      await expect(runPromise).resolves.toMatchObject({ automationId, status: "queued" })
+      await expect(prunePromise).resolves.toBe(false)
+      await expect(store.getAutomation(automationId)).resolves.toMatchObject({ id: automationId })
+    } finally {
+      await blockerSql`SELECT pg_advisory_unlock(${advisoryKey})`.catch(() => undefined)
+      await sql.unsafe(`DROP TRIGGER IF EXISTS "${triggerName}" ON boring_automation_runs`).catch(() => undefined)
+      await sql.unsafe(`DROP FUNCTION IF EXISTS "${functionName}"()`).catch(() => undefined)
+      if (automationId) await sql`DELETE FROM boring_automation_automations WHERE id = ${automationId}`.catch(() => undefined)
+      await blockerSql.end()
+      await sql.end()
+    }
+  }, 10_000)
+
   it("is concurrent-idempotent, prompt-linked, and reactivates its deterministic tombstone", async () => {
     const sql = postgres(TEST_DB_URL, { max: 4 })
     const actor = { workspaceId: `seed-workspace-${randomUUID()}`, userId: `seed-user-${randomUUID()}` }
@@ -227,3 +307,16 @@ describe("Postgres standing automation seeding", () => {
     }
   })
 })
+
+async function waitFor(predicate: () => Promise<boolean>, timeoutMs = 2_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (await predicate()) return
+    await delay(10)
+  }
+  throw new Error("timed out waiting for PostgreSQL concurrency gate")
+}
+
+async function delay(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms))
+}

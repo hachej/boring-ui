@@ -38,6 +38,10 @@ export interface AutomationStore {
   readSeedManifest?(): Promise<string | null>
   /** Idempotently provisions metadata for a checked-in prompt; returns null when the prompt is absent. */
   ensureSeededAutomation?(input: AutomationSeed): Promise<Automation | null>
+  /** Resolves immutable seed keys that currently exist without relying on mutable automation metadata. */
+  findExistingSeedKeys?(keys: readonly string[]): Promise<readonly string[]>
+  /** Atomically removes metadata for an immutable seed key only when no run occupies it. */
+  removeSeededAutomationIfIdle?(key: string): Promise<boolean>
   updateAutomation(id: string, patch: AutomationPatch): Promise<Automation>
   deleteAutomation(id: string): Promise<void>
 

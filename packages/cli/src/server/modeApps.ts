@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from "fastify"
+import { createFactoryAutomationSeedProvider } from "@hachej/boring-agent/server"
 import type {
   ProvisionWorkspaceRuntimeOptions,
   RuntimeModeAdapter,
@@ -485,6 +486,7 @@ export async function createFolderModeApp(opts: {
   const pluginDirs = pluginDiscovery.resolveCliBoringPluginDirs(workspaceRoot, { includeFolderModeAutomation: true })
   const defaultPluginPackagePaths = pluginDiscovery.resolveCliDefaultPluginPackagePaths({ includeFolderModeAutomation: true })
   const tasksPluginPackage = defaultPluginPackagePaths.find((packageRoot) => packageNameAtRoot(packageRoot) === "@hachej/boring-tasks")
+  const automationPluginPackage = defaultPluginPackagePaths.find((packageRoot) => packageNameAtRoot(packageRoot) === "@hachej/boring-automation")
   const taskProviders = await detectFolderModeTaskProviders(workspaceRoot)
   const beadsOperations = taskProviders.some((provider) => provider.provider === "beads")
     ? (await import("@hachej/boring-tasks/server")).createWorkspaceBeadsOperations(createNodeWorkspace(workspaceRoot))
@@ -529,6 +531,18 @@ export async function createFolderModeApp(opts: {
       // leaving arbitrary/workspace-local plugins on the explicit binding path.
       workspaceScopedDefaultPluginAgentContributions: true,
       plugins: [
+        ...(automationPluginPackage
+          ? [{
+              dir: automationPluginPackage,
+              options: {
+                seedProvider: createFactoryAutomationSeedProvider({
+                  policyRoot: workspaceRoot,
+                  warn: (message) => console.warn(message),
+                }),
+              },
+              trust: "internal" as const,
+            }]
+          : []),
         ...(tasksPluginPackage
           ? [{
               dir: tasksPluginPackage,
@@ -623,7 +637,7 @@ export async function createWorkspacesModeApp(opts: {
   if (process.env.BORING_LIVE_TRANSCRIPTS_ENABLED === "1") {
     throw new Error("live_transcript_local_only: live transcripts are supported only by boring-ui [folder]")
   }
-  const [workspaceAppServer, workspaceServer, agentServer, agentShared, boringBashServer, fastifyModule, { createPluginFrontRuntimeHost }, { automationRoutes, createAutomationSessionController, createBoringAutomationTool, DispatchRunExecutor, DueRunService, FileAutomationStore, InMemoryAutomationRunEventBus, resolveAutomationOperationsForActor }, pluginDiscovery] = await Promise.all([
+  const [workspaceAppServer, workspaceServer, agentServer, agentShared, boringBashServer, fastifyModule, { createPluginFrontRuntimeHost }, { automationRoutes, createAutomationSessionController, createBoringAutomationTool, DispatchRunExecutor, DueRunService, FileAutomationStore, InMemoryAutomationRunEventBus, resolveAutomationOperationsForActor, seedStandingAutomations }, pluginDiscovery] = await Promise.all([
     import("@hachej/boring-workspace/app/server"),
     import("@hachej/boring-workspace/server"),
     import("@hachej/boring-agent/server"),
@@ -780,12 +794,23 @@ export async function createWorkspacesModeApp(opts: {
     return store
   }
 
+  async function seededAutomationStore(workspace: LocalWorkspace) {
+    const store = automationStore(workspace)
+    await seedStandingAutomations(store, {
+      seedProvider: createFactoryAutomationSeedProvider({
+        policyRoot: workspace.path,
+        warn: (message) => console.warn(message),
+      }),
+    })
+    return store
+  }
+
   async function automationExecutorForRequest(request: FastifyRequest) {
     const workspace = await workspaceFromRequest(request)
     if (!workspaceAgentDispatcher) throw httpError("workspace agent dispatcher is unavailable", 503)
     return new DispatchRunExecutor({
       agentTypeId: "default",
-      store: automationStore(workspace),
+      store: await seededAutomationStore(workspace),
       dispatcherResolver: workspaceAgentDispatcher,
       actorResolver: () => ({ workspaceId: workspace.id, userId: "local" }),
       eventPublisher: automationEventBus,
@@ -796,7 +821,7 @@ export async function createWorkspacesModeApp(opts: {
     return createBoringAutomationTool({
       resolveOperationsForActor: async (actorContext) => resolveAutomationOperationsForActor({
         mode: "local",
-        resolveStore: async (actor) => automationStore(await requireWorkspace(actor.workspaceId)),
+        resolveStore: async (actor) => await seededAutomationStore(await requireWorkspace(actor.workspaceId)),
         resolveExecutor: async (actor, store) => {
           if (!workspaceAgentDispatcher) throw httpError("workspace agent dispatcher is unavailable", 503)
           return new DispatchRunExecutor({
@@ -1240,12 +1265,12 @@ export async function createWorkspacesModeApp(opts: {
   try {
     await automationRoutes(app, {
       store: new FileAutomationStore(join(process.cwd(), ".pi", "automation-unused")),
-      storeForRequest: async (request) => automationStore(await workspaceFromRequest(request)),
+      storeForRequest: async (request) => await seededAutomationStore(await workspaceFromRequest(request)),
       dispatchRunExecutorForRequest: automationExecutorForRequest,
       dueRunServiceForRequest: async (request) => {
         const workspace = await workspaceFromRequest(request)
         return new DueRunService({
-          store: automationStore(workspace),
+          store: await seededAutomationStore(workspace),
           executor: await automationExecutorForRequest(request),
         })
       },

@@ -22,7 +22,7 @@ import { resolveAutomationOperationsForActor, type AutomationSessionController, 
 import { InMemoryAutomationRunEventBus, PostgresAutomationRunEventBus, type AutomationRunEventBus } from "./runEventBus"
 import { automationRoutes } from "./routes"
 import { AutomationStoreError, type AutomationStore } from "./store"
-import { seedStandingAutomations } from "./standingAutomations"
+import { seedStandingAutomations, type AutomationSeedProvider } from "./standingAutomations"
 
 export interface BoringAutomationServerPluginOptions {
   agentTypeId: string
@@ -45,6 +45,11 @@ export interface BoringAutomationServerPluginOptions {
   eventBusOwner?: "plugin" | "caller"
   /** Defaults to true when hosted due execution is composed. Disable when an external scheduler owns wake-ups. */
   hostedSchedulerEnabled?: boolean
+  /** Optional host-owned seeds, validated by the same schema as workspace manifest seeds. */
+  additionalSeeds?: readonly unknown[]
+  /** Optional dynamic host seed source; the generic plugin does not interpret host policy. */
+  seedProvider?: AutomationSeedProvider
+  seedWarning?: (message: string) => void
 }
 
 export function createBoringAutomationServerPlugin(options: BoringAutomationServerPluginOptions): WorkspaceServerPlugin {
@@ -116,7 +121,7 @@ export function createBoringAutomationServerPlugin(options: BoringAutomationServ
     })
 
     app.addHook("onReady", async () => {
-      if (!options.storeForRequest) await seedStandingAutomations(store)
+      if (!options.storeForRequest) await seedStandingAutomations(store, seedOptions(options, (message) => app.log.warn(message)))
       if (hostedDueCoordinator && hostedSchedulerEnabled) {
         scheduler = new HostedAutomationScheduler({
           runDue: async () => await hostedDueCoordinator.runDue(),
@@ -184,6 +189,17 @@ function requireLeaseMethod<T extends (...args: never[]) => unknown>(method: T |
   return method
 }
 
+function seedOptions(
+  options: Pick<BoringAutomationServerPluginOptions, "additionalSeeds" | "seedProvider" | "seedWarning">,
+  fallbackWarning: (message: string) => void = () => undefined,
+) {
+  return {
+    ...(options.additionalSeeds ? { additionalSeeds: options.additionalSeeds } : {}),
+    ...(options.seedProvider ? { seedProvider: options.seedProvider } : {}),
+    warn: options.seedWarning ?? fallbackWarning,
+  }
+}
+
 function createDefaultStore(workspaceRoot: string | undefined): AutomationStore {
   if (!workspaceRoot) throw new Error("createBoringAutomationServerPlugin requires workspaceRoot when store is not provided")
   return new FileAutomationStore(workspaceRoot)
@@ -226,12 +242,12 @@ export default function defaultBoringAutomationServerPlugin(
       eventBusOwner,
       storeForRequest: async (request, actor) => {
         const actorStore = await createHostedStore(sql, actor, dispatcherResolver, agentTypeId, request)
-        await seedStandingAutomations(actorStore)
+        await seedStandingAutomations(actorStore, seedOptions(resolvedOptions))
         return actorStore
       },
       storeForActor: async (actor) => {
         const actorStore = await createHostedStore(sql, actor, dispatcherResolver, agentTypeId)
-        await seedStandingAutomations(actorStore)
+        await seedStandingAutomations(actorStore, seedOptions(resolvedOptions))
         return actorStore
       },
       dispatcherResolver,

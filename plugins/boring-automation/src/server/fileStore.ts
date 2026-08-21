@@ -139,6 +139,26 @@ export class FileAutomationStore implements AutomationStore {
     return clone(requireValue(seeded))
   }
 
+  async findExistingSeedKeys(keys: readonly string[]): Promise<readonly string[]> {
+    const state = await this.load()
+    return keys.filter((key) => state.automations[key]?.id === key)
+  }
+
+  async removeSeededAutomationIfIdle(key: string): Promise<boolean> {
+    let removed = false
+    await this.mutate((state) => {
+      const automation = state.automations[key]
+      if (!automation || automation.id !== key) return
+      const occupied = Object.values(state.runs).some((run) => (
+        run.automationId === key && isAutomationRunOccupying(run.status)
+      ))
+      if (occupied) return
+      delete state.automations[key]
+      removed = true
+    })
+    return removed
+  }
+
   async updateAutomation(id: string, patch: AutomationPatch): Promise<Automation> {
     let updated: Automation | undefined
     await this.mutate((state) => {

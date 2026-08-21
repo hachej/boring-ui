@@ -46,7 +46,7 @@ type MutableRunRow = Omit<typeof RUN_ROW, "session_id" | "started_at" | "complet
 }
 
 function uniqueRaceSql(constraintName: string): postgres.Sql {
-  return Object.assign((async (strings: TemplateStringsArray) => {
+  const sql = Object.assign((async (strings: TemplateStringsArray) => {
     const text = strings.join("?")
     if (text.includes("INSERT INTO boring_automation_runs")) {
       throw Object.assign(new Error("unique violation"), { code: "23505", constraint_name: constraintName })
@@ -54,7 +54,11 @@ function uniqueRaceSql(constraintName: string): postgres.Sql {
     if (text.includes("SELECT prompt")) return [{ prompt: "Run" }]
     if (text.includes("FROM boring_automation_automations")) return [AUTOMATION_ROW]
     return []
-  }), { array: (value: unknown[]) => value }) as unknown as postgres.Sql
+  }), {
+    array: (value: unknown[]) => value,
+    begin: async (run: (transaction: postgres.TransactionSql) => unknown) => await run(sql as unknown as postgres.TransactionSql),
+  }) as unknown as postgres.Sql
+  return sql
 }
 
 function directResolver(
@@ -169,7 +173,11 @@ describe("HostedDueRunService", () => {
       }
       if (text.includes("FROM boring_automation_automations")) return [{ ...AUTOMATION_ROW, agent_type_id: "researcher" }]
       return []
-    }), { array: (value: unknown[]) => value, json: (value: unknown) => value }) as unknown as postgres.Sql
+    }), {
+      array: (value: unknown[]) => value,
+      json: (value: unknown) => value,
+      begin: async (run: (transaction: postgres.TransactionSql) => unknown) => await run(sql as unknown as postgres.TransactionSql),
+    }) as unknown as postgres.Sql
     const dispatch = vi.fn(async (input: { requestId: string }) => ({
       ref: { agentTypeId: "researcher", sessionId: "session-1" },
       receipt: { accepted: true as const, cursor: 0, disposition: "prompt" as const, clientNonce: input.requestId },

@@ -117,6 +117,56 @@ export class PostgresAutomationStore implements AutomationStore {
     return rows[0] ? toAutomation(rows[0]) : null
   }
 
+  async findExistingSeedKeys(keys: readonly string[]): Promise<readonly string[]> {
+    if (keys.length === 0) return []
+    const byId = new Map(keys.map((key) => [deterministicSeedId(this.actor, key), key]))
+    const rows = await this.sql<{ id: string }[]>`
+      SELECT id
+      FROM boring_automation_automations
+      WHERE workspace_id = ${this.actor.workspaceId}
+        AND owner_user_id = ${this.actor.userId}
+        AND deleted_at IS NULL
+        AND id = ANY(${this.sql.array([...byId.keys()])})
+    `
+    return rows.flatMap(({ id }) => {
+      const key = byId.get(id)
+      return key ? [key] : []
+    })
+  }
+
+  async removeSeededAutomationIfIdle(key: string): Promise<boolean> {
+    const id = deterministicSeedId(this.actor, key)
+    const deletedAt = this.clock().toISOString()
+    return await this.sql.begin(async (sql) => {
+      const locked = await sql<{ id: string }[]>`
+        SELECT id
+        FROM boring_automation_automations
+        WHERE id = ${id}
+          AND workspace_id = ${this.actor.workspaceId}
+          AND owner_user_id = ${this.actor.userId}
+          AND deleted_at IS NULL
+        FOR UPDATE
+      `
+      if (!locked[0]) return false
+      const result = await sql`
+        UPDATE boring_automation_automations AS automation
+        SET enabled = false, deleted_at = ${deletedAt}, updated_at = ${deletedAt}
+        WHERE automation.id = ${id}
+          AND automation.workspace_id = ${this.actor.workspaceId}
+          AND automation.owner_user_id = ${this.actor.userId}
+          AND automation.deleted_at IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM boring_automation_runs AS run
+            WHERE run.automation_id = automation.id
+              AND run.workspace_id = automation.workspace_id
+              AND run.owner_user_id = automation.owner_user_id
+              AND run.status = ANY(${sql.array([...AUTOMATION_RUN_OCCUPYING_STATUSES])})
+          )
+      `
+      return result.count > 0
+    })
+  }
+
   async updateAutomation(id: string, patch: AutomationPatch): Promise<Automation> {
     const current = await this.getAutomation(id)
     if (!current) throw automationNotFound(id)
@@ -175,34 +225,44 @@ export class PostgresAutomationStore implements AutomationStore {
   }
 
   async beginRun(input: AutomationRunBegin): Promise<AutomationRun> {
-    const automation = await this.getAutomation(input.automationId)
-    if (!automation) throw automationNotFound(input.automationId)
-    if (input.invocationId) {
-      const existing = await this.sql<RunRow[]>`
-        SELECT * FROM boring_automation_runs
-        WHERE automation_id = ${input.automationId} AND invocation_id = ${input.invocationId}
-          AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId}
-        LIMIT 1
-      `
-      if (existing[0]) return toRun(existing[0])
-    }
-    const active = await this.sql<{ id: string }[]>`
-      SELECT id FROM boring_automation_runs
-      WHERE automation_id = ${input.automationId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId}
-        AND status = ANY(${this.sql.array([...AUTOMATION_RUN_OCCUPYING_STATUSES])})
-      LIMIT 1
-    `
-    if (active[0]) throw runAlreadyActive(input.automationId)
     try {
-      const now = input.createdAt ?? this.clock().toISOString()
-      const id = randomUUID()
-      const invocationId = input.invocationId ?? `store:${randomUUID()}`
-      const rows = await this.sql<RunRow[]>`
-        INSERT INTO boring_automation_runs (id, automation_id, workspace_id, owner_user_id, invocation_id, dispatch_request_id, dispatch_receipt, session_id, status, trigger, scheduled_for, started_at, completed_at, duration_ms, input_tokens, output_tokens, total_tokens, prompt_snapshot, model_snapshot, error, created_at, updated_at)
-        VALUES (${id}, ${input.automationId}, ${this.actor.workspaceId}, ${this.actor.userId}, ${invocationId}, ${id}, NULL, NULL, 'queued', ${input.trigger}, ${input.scheduledFor ?? null}, NULL, NULL, NULL, NULL, NULL, NULL, ${input.promptSnapshot}, ${input.modelSnapshot}, NULL, ${now}, ${now})
-        RETURNING *
-      `
-      return toRun(rows[0]!)
+      return await this.sql.begin(async (sql) => {
+        const automation = await sql<{ id: string }[]>`
+          SELECT id
+          FROM boring_automation_automations
+          WHERE id = ${input.automationId}
+            AND workspace_id = ${this.actor.workspaceId}
+            AND owner_user_id = ${this.actor.userId}
+            AND deleted_at IS NULL
+          FOR UPDATE
+        `
+        if (!automation[0]) throw automationNotFound(input.automationId)
+        if (input.invocationId) {
+          const existing = await sql<RunRow[]>`
+            SELECT * FROM boring_automation_runs
+            WHERE automation_id = ${input.automationId} AND invocation_id = ${input.invocationId}
+              AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId}
+            LIMIT 1
+          `
+          if (existing[0]) return toRun(existing[0])
+        }
+        const active = await sql<{ id: string }[]>`
+          SELECT id FROM boring_automation_runs
+          WHERE automation_id = ${input.automationId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId}
+            AND status = ANY(${sql.array([...AUTOMATION_RUN_OCCUPYING_STATUSES])})
+          LIMIT 1
+        `
+        if (active[0]) throw runAlreadyActive(input.automationId)
+        const now = input.createdAt ?? this.clock().toISOString()
+        const id = randomUUID()
+        const invocationId = input.invocationId ?? `store:${randomUUID()}`
+        const rows = await sql<RunRow[]>`
+          INSERT INTO boring_automation_runs (id, automation_id, workspace_id, owner_user_id, invocation_id, dispatch_request_id, dispatch_receipt, session_id, status, trigger, scheduled_for, started_at, completed_at, duration_ms, input_tokens, output_tokens, total_tokens, prompt_snapshot, model_snapshot, error, created_at, updated_at)
+          VALUES (${id}, ${input.automationId}, ${this.actor.workspaceId}, ${this.actor.userId}, ${invocationId}, ${id}, NULL, NULL, 'queued', ${input.trigger}, ${input.scheduledFor ?? null}, NULL, NULL, NULL, NULL, NULL, NULL, ${input.promptSnapshot}, ${input.modelSnapshot}, NULL, ${now}, ${now})
+          RETURNING *
+        `
+        return toRun(rows[0]!)
+      })
     } catch (error) {
       if (isUniqueViolation(error)) {
         if (input.invocationId) {
