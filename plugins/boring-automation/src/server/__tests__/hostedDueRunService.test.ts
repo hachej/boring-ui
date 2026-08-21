@@ -213,6 +213,7 @@ describe("HostedDueRunService", () => {
     expect(resolver.authorizeSession).toHaveBeenCalledWith(
       actor,
       { agentTypeId: "researcher", sessionId: "session-1" },
+      undefined,
     )
     expect(result.outcomes).toEqual([expect.objectContaining({
       kind: "started",
