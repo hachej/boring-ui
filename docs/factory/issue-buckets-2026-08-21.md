@@ -388,14 +388,55 @@ Deleting individual items (`gh project item-delete 7 --owner hachej --id <item-i
 
 ### Mandatory execution-time preflight
 
-Approval applies only to the exact target SHA and captured rows. Immediately before mutation, re-run the three live inventories below. **Abort the whole purge** if any target issue has gained an open PR, any matching bead has entered `in_progress`/`ready_for_human`, a target issue is no longer open, or the deliverable SHA changed. This closes the capture-to-execution race; no partial execution on drift.
+Approval applies only to the exact target SHA and captured rows. Immediately before mutation, re-run the three live inventories below. **Abort the whole purge** if any target issue has gained an open PR, any matching bead has entered `in_progress`/`ready_for_human`, a target issue is no longer open, or the deliverable SHA changed. The executable checker below binds the gate-named SHA, validates every target and retained counterpart, and exits non-zero before any mutation on drift. Run the mutation block immediately after `PREFLIGHT OK`; no partial execution on drift.
 
 ```bash
-test "$(git rev-parse HEAD)" = "__TARGET_SHA__"
+export APPROVED_SHA='<exact SHA named by this approval gate>'
+test "$(git rev-parse HEAD)" = "$APPROVED_SHA" || { echo 'ABORT: SHA drift'; exit 1; }
+git diff --quiet "$APPROVED_SHA" -- docs/factory/issue-buckets-2026-08-21.md .handoff/issue-buckets.html || { echo 'ABORT: deliverable drift'; exit 1; }
 gh issue list --state open --limit 200 --json number,title,labels,createdAt > /tmp/issue-buckets-preflight-gh.json
 gh pr list --state open --limit 200 --json number,title,body,closingIssuesReferences > /tmp/issue-buckets-preflight-prs.json
 br --db /home/ubuntu/projects/boring-ui-v2/.beads/beads.db list --json > /tmp/issue-buckets-preflight-beads.json
-# Reconcile every approved target against these files; abort on any protection/state drift.
+gh project view 7 --owner hachej --format json > /tmp/issue-buckets-preflight-project.json
+python3 - <<'PY'
+import json,re,sys
+abort=lambda why: (print(f'ABORT: {why}',file=sys.stderr),sys.exit(1))
+targets={371,601,819,883,1009,1210,1213,1214,1215,1216,1217,1253,1300,1314,1338}
+open_issues={x['number'] for x in json.load(open('/tmp/issue-buckets-preflight-gh.json'))}
+missing=targets-open_issues
+if missing: abort(f'target issues no longer all open: {sorted(missing)}')
+for pr in json.load(open('/tmp/issue-buckets-preflight-prs.json')):
+    text=' '.join([pr.get('title') or '',pr.get('body') or ''])
+    refs={int(x) for x in re.findall(r'(?:#|gh-)(\d+)',text,re.I)}
+    refs|={x['number'] for x in pr.get('closingIssuesReferences',[]) if x.get('number')}
+    hit=refs&targets
+    if hit: abort(f'open PR #{pr["number"]} now references targets {sorted(hit)}')
+beads=json.load(open('/tmp/issue-buckets-preflight-beads.json'))['issues']
+expected={
+ 371:['bug-371-context-overflow-n0z'],601:['bug-601-provision-remote-eal'],819:['-fwh'],
+ 883:['bug-883-stale-indicator-9th'],1009:['1009-sync-driver-blocking-ek2','1009-durability-readiness-204','-0jpy.8'],
+ 1210:['vertical-agents-epic-nfgt'],1213:['vertical-agents-epic-nfgt.11'],
+ 1214:['vertical-agents-epic-nfgt.12'],1215:['vertical-agents-epic-nfgt.13'],1216:['vertical-agents-epic-nfgt.14'],
+ 1217:['vertical-agents-epic-nfgt.15'],1253:['-d5nj.4'],1300:['-gb0o.1'],1314:['-0jpy.14'],1338:['-s4wq']}
+for n,tokens in expected.items():
+    matches=[b for b in beads if any(t in b['id'] for t in tokens)]
+    if not matches: abort(f'no retained Bead counterpart for #{n}')
+    active=[b['id'] for b in matches if b['status'] in ('in_progress','ready_for_human')]
+    if active: abort(f'#{n} counterpart became active: {active}')
+for b in beads:
+    if b['status'] not in ('in_progress','ready_for_human'): continue
+    text=' '.join([b.get('external_ref') or '',b.get('title') or '',b.get('description') or '',' '.join(b.get('labels') or [])])
+    refs={int(x) for x in re.findall(r'(?:issues/|#|gh-|issue-)(\d+)',text,re.I)}
+    hit=refs&targets
+    if hit: abort(f'active Bead {b["id"]} now references targets {sorted(hit)}')
+project=json.load(open('/tmp/issue-buckets-preflight-project.json'))
+if project.get('closed'): abort('Project #7 already closed/drifted')
+purge_beads={'wt-391-forward-seneca-competitor-cloudflare-os-n50','wt-391-forward-seneca-competitor-getenergy-qaf','wt-391-forward-vertical-agents-epic-nfgt.6','wt-391-forward-vertical-agents-epic-nfgt.7','wt-391-forward-vertical-agents-epic-nfgt.8','wt-391-forward-vertical-agents-epic-nfgt.9','wt-391-forward-vertical-agents-epic-nfgt.10'}
+state={b['id']:b['status'] for b in beads}
+drift={i:state.get(i) for i in purge_beads if state.get(i)!='open'}
+if drift: abort(f'Bead purge targets drifted: {drift}')
+print('PREFLIGHT OK: exact SHA; 17 GH targets open/unprotected; counterparts retained/inactive; Project open; 7 Bead targets open.')
+PY
 ```
 
 Rows lacking a durable Bead counterpart are protected rather than closed. That preserves r4's “every GH issue maps to Beads” prerequisite; creating those missing epics/tasks is a separate migration, not silently bundled into this purge.
