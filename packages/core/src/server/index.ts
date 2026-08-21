@@ -73,6 +73,7 @@ export {
 } from './auth/index.js'
 export type {
   BetterAuthInstance,
+  CoreDynamicAuthBaseURL,
   CreateAuthOptions,
   AuthHookOptions,
   PostSignupHookDeps,

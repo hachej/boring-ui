@@ -51,6 +51,21 @@ describe('createCoreWorkspaceAgentServer', () => {
     })).rejects.toThrow(/directory plugin entries must omit hotReload or set hotReload: false/)
   })
 
+  it('fails fast when dynamic auth config is null', async () => {
+    await expect(createCoreWorkspaceAgentServer({
+      authBaseURL: null as never,
+    })).rejects.toThrow(/authBaseURL must be an object/)
+  })
+
+  it('fails fast when dynamic auth is configured with a wildcard host', async () => {
+    await expect(createCoreWorkspaceAgentServer({
+      authBaseURL: {
+        allowedHosts: ['*.example.test'],
+        protocol: 'https',
+      },
+    })).rejects.toThrow(/authBaseURL\.allowedHosts/)
+  })
+
   it('preserves root SPA bytes when the optional root handler is absent or declines', async () => {
     const appRoot = await mkdtemp(`${tmpdir()}/boring-core-root-`)
     await mkdir(resolve(appRoot, 'dist/front'), { recursive: true })
