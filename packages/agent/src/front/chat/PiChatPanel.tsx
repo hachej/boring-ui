@@ -800,7 +800,8 @@ export function PiChatPanel<
           }
         : undefined,
       onCommandResult: (message, tone) => {
-        onCommandResult?.(message, tone)
+        if (tone === undefined) onCommandResult?.(message)
+        else onCommandResult?.(message, tone)
         addLocalNotice({ id: `command:${Date.now()}`, level: tone ?? 'info', text: message, dismissible: true })
       },
       onWarning: (message) => {
