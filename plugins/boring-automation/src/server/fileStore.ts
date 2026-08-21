@@ -299,6 +299,33 @@ export class FileAutomationStore implements AutomationStore {
     return renewed
   }
 
+  async preserveAcceptedDispatch(
+    runId: string,
+    receipt: NonNullable<AutomationRun["dispatchReceipt"]>,
+    completedAt: string,
+    error: string,
+  ): Promise<AutomationRun | null> {
+    let preserved: AutomationRun | undefined
+    await this.mutate((state) => {
+      const run = state.runs[runId]
+      if (!run) return
+      if (run.dispatchReceipt) {
+        preserved = run
+        return
+      }
+      preserved = applyRunPatch(run, {
+        status: "outcome-unknown",
+        sessionId: receipt.ref.sessionId,
+        dispatchReceipt: receipt,
+        completedAt,
+        error,
+      }, this.nowIso())
+      state.runs[runId] = preserved
+    })
+    if (preserved) this.activeRunIds.add(runId)
+    return preserved ? clone(preserved) : null
+  }
+
   async updateRunLifecycle(runId: string, patch: AutomationRunLifecyclePatch): Promise<AutomationRun> {
     let updated: AutomationRun | undefined
     await this.mutate((state) => {

@@ -56,8 +56,10 @@ describe("run failure classification", () => {
     expect(finalStatus(unaddressable, "succeeded")).toBe("outcome-unknown")
 
     const cancelled = await classifyFailure(Object.assign(new Error("stopped"), { name: "AbortError" }), { dispatchInFlight: false })
-    expect(cancelled).toEqual({ kind: "cancelled", message: "stopped" })
+    expect(cancelled).toEqual({ kind: "cancelled", dispatchInFlight: false, message: "stopped" })
     expect(finalStatus(cancelled, null)).toBe("cancelled")
+    const acceptedCancellation = await classifyFailure(Object.assign(new Error("stopped"), { name: "AbortError" }), { dispatchInFlight: true })
+    expect(finalStatus(acceptedCancellation, null)).toBe("outcome-unknown")
   })
 
   it("uses observed outcomes before unknown dispatch ambiguity", async () => {
@@ -489,14 +491,18 @@ describe("DispatchRunExecutor", () => {
     ]))
   })
 
-  it("treats stream exhaustion without a terminal event as success", async () => {
+  it("keeps accepted occupancy when the stream exhausts without a terminal event", async () => {
     const harness = createHarness({
       events: [event(0, { type: "message-delta", seq: 1, messageId: "m1", partId: "p1", kind: "text", delta: "done" })],
     })
 
     const run = await harness.executor.run({ automationId: harness.automation.id, request: harness.request })
 
-    expect(run).toMatchObject({ status: "succeeded", error: null })
+    expect(run).toMatchObject({
+      status: "outcome-unknown",
+      dispatchReceipt: expect.objectContaining({ accepted: true }),
+      error: "Automation dispatch stream ended without a terminal outcome",
+    })
   })
 
   it("aggregates multiple Pi usage events without losing cache token fields", async () => {
@@ -608,7 +614,7 @@ describe("DispatchRunExecutor", () => {
     expect(run).toMatchObject({ status: "cancelled", error: null })
   })
 
-  it("maps cancellation errors to cancelled runs", async () => {
+  it("keeps accepted occupancy when infrastructure cancellation has no terminal event", async () => {
     const error = new Error("operation aborted") as Error & { code: string }
     error.name = "AbortError"
     error.code = "ABORT_ERR"
@@ -616,7 +622,11 @@ describe("DispatchRunExecutor", () => {
 
     const run = await harness.executor.run({ automationId: harness.automation.id, request: harness.request })
 
-    expect(run).toMatchObject({ status: "cancelled", error: null })
+    expect(run).toMatchObject({
+      status: "outcome-unknown",
+      dispatchReceipt: expect.objectContaining({ accepted: true }),
+      error: "operation aborted",
+    })
   })
 
   it("maps error terminal events to failed runs with the terminal message", async () => {
@@ -897,6 +907,19 @@ class MemoryAutomationStore implements AutomationStore {
     if (!run) throw runNotFound(runId)
     this.heartbeatCount += 1
     return true
+  }
+
+  async preserveAcceptedDispatch(
+    runId: string,
+    receipt: NonNullable<AutomationRun["dispatchReceipt"]>,
+    completedAt: string,
+    error: string,
+  ): Promise<AutomationRun | null> {
+    const current = this.runs.get(runId)
+    if (!current) return null
+    const preserved = { ...current, status: "outcome-unknown" as const, sessionId: receipt.ref.sessionId, dispatchReceipt: receipt, completedAt, error }
+    this.runs.set(runId, clone(preserved))
+    return clone(preserved)
   }
 
   async updateRunLifecycle(runId: string, patch: AutomationRunLifecyclePatch): Promise<AutomationRun> {

@@ -340,6 +340,11 @@ class NestedAutomationStore implements AutomationStore {
     return await this.updateRunLifecycle(this.run.id, { status: "dispatching" })
   }
   async heartbeatRun(_runId: string) { return true }
+  async preserveAcceptedDispatch(_runId: string, receipt: NonNullable<AutomationRun["dispatchReceipt"]>, completedAt: string, error: string) {
+    if (!this.run) return null
+    this.run = { ...this.run, status: "outcome-unknown", sessionId: receipt.ref.sessionId, dispatchReceipt: receipt, completedAt, error }
+    return this.run
+  }
   async updateRunLifecycle(_runId: string, patch: AutomationRunLifecyclePatch) {
     if (!this.run) throw new Error("run missing")
     this.run = { ...this.run, ...patch, updatedAt: patch.completedAt ?? this.run.updatedAt }

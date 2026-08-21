@@ -54,6 +54,13 @@ export interface AutomationStore {
   beginRun(input: AutomationRunBegin): Promise<AutomationRun>
   claimRunForDispatch(runId: string): Promise<AutomationRun | null>
   heartbeatRun(runId: string): Promise<boolean>
+  /** Preserve host acceptance after lease reconciliation; accepted ambiguity remains occupying. */
+  preserveAcceptedDispatch(
+    runId: string,
+    receipt: NonNullable<AutomationRun["dispatchReceipt"]>,
+    completedAt: string,
+    error: string,
+  ): Promise<AutomationRun | null>
   updateRunLifecycle(runId: string, patch: AutomationRunLifecyclePatch): Promise<AutomationRun>
   listRuns(automationId: string, limit?: number): Promise<AutomationRun[]>
   /** Direct actor-scoped lookup for one automation-owned run. */

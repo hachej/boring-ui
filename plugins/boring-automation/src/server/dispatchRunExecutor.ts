@@ -214,15 +214,31 @@ export class DispatchRunExecutor {
         dispatchReceipt: identity.dispatchReceipt,
         startedAt,
         completedAt,
-        status: terminalStatus ?? "succeeded",
-        error: terminalStatus === "failed" ? (terminalError ?? "Automation run failed") : null,
+        status: terminalStatus ?? "outcome-unknown",
+        error: terminalStatus === "failed"
+          ? (terminalError ?? "Automation run failed")
+          : terminalStatus === null ? "Automation dispatch stream ended without a terminal outcome" : null,
         usage,
       })
       await this.publishRunChange(actor, finalized)
       return finalized
     } catch (error) {
       await stopHeartbeat()
-      if (isRunLeaseLost(error)) return await this.readDurableRun(store, automation.id, run.id, current)
+      if (isRunLeaseLost(error)) {
+        if (identity?.dispatchReceipt) {
+          const preserved = await store.preserveAcceptedDispatch(
+            run.id,
+            identity.dispatchReceipt,
+            this.nowIso(),
+            "Automation dispatch was accepted before its worker lease was lost; the outcome remains unknown",
+          )
+          if (preserved) {
+            await this.publishRunChange(actor, preserved)
+            return preserved
+          }
+        }
+        return await this.readDurableRun(store, automation.id, run.id, current)
+      }
       if (identity) current = identity.current
       const failure = await classifyFailure(error, identity ?? { dispatchInFlight: false })
       const completedAt = this.nowIso()
@@ -330,7 +346,7 @@ export function parseAutomationModel(value: string): { provider: string; id: str
 export type RunFailure =
   | { kind: "duration-cap"; stop: DurationCapStopOutcome; error: AutomationRunDurationCapExceededError; message: string }
   | { kind: "unaddressable"; message: string }
-  | { kind: "cancelled"; message: string }
+  | { kind: "cancelled"; dispatchInFlight: boolean; message: string }
   | { kind: "unknown"; dispatchInFlight: boolean; message: string }
 
 export async function classifyFailure(error: unknown, identity: { dispatchInFlight: boolean }): Promise<RunFailure> {
@@ -339,7 +355,7 @@ export async function classifyFailure(error: unknown, identity: { dispatchInFlig
     return { kind: "duration-cap", stop: await error.stopCompletion, error, message }
   }
   if (error instanceof AutomationSessionUnaddressableError) return { kind: "unaddressable", message }
-  if (isCancellationError(error)) return { kind: "cancelled", message }
+  if (isCancellationError(error)) return { kind: "cancelled", dispatchInFlight: identity.dispatchInFlight, message }
   return { kind: "unknown", dispatchInFlight: identity.dispatchInFlight, message }
 }
 
@@ -350,7 +366,7 @@ export function finalStatus(
   if (failure.kind === "unaddressable") return "outcome-unknown"
   if (failure.kind === "duration-cap") return failure.stop.confirmed ? "cancelled" : "outcome-unknown"
   if (observed) return observed
-  if (failure.kind === "cancelled") return "cancelled"
+  if (failure.kind === "cancelled") return failure.dispatchInFlight ? "outcome-unknown" : "cancelled"
   return failure.dispatchInFlight ? "outcome-unknown" : "failed"
 }
 

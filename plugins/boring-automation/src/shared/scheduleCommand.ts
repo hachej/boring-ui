@@ -4,7 +4,7 @@ import { isValidFiveFieldCron, isValidIanaTimeZone } from "./schedule"
 export const SCHEDULE_COMMAND_USAGE = [
   "Usage: /schedule [flags] <cadence> <prompt...>",
   "Cadence examples: 'daily 8am', 'every 10m', 'weekdays 9:00', or '0 8 * * *'.",
-  "Flags may appear before or after the prompt: --timezone <IANA>, --model <provider:model>, --agent <agentTypeId>, --title <title>.",
+  "Flags appear before cadence: --timezone <IANA>, --model <provider:model>, --agent <agentTypeId>, --title <title>.",
 ].join("\n")
 
 export interface ParsedScheduleCommand {
@@ -77,20 +77,14 @@ function extractFlags(input: string): {
   remainder: string
 } {
   const flags: Partial<Record<"timezone" | "model" | "agentTypeId" | "title", string>> = {}
-  const text: string[] = []
   let cursor = 0
-  let textStart = 0
   while (cursor < input.length) {
     cursor = skipSpace(input, cursor)
     if (cursor >= input.length) break
     const tokenStart = cursor
     const token = readToken(input, cursor)
     const quoted = input[tokenStart] === "'" || input[tokenStart] === '"'
-    if (quoted || !token.value.startsWith("--")) {
-      cursor = token.end
-      continue
-    }
-    text.push(input.slice(textStart, tokenStart).trim())
+    if (quoted || !token.value.startsWith("--")) break
     const separator = token.value.indexOf("=")
     const rawName = separator >= 0 ? token.value.slice(2, separator) : token.value.slice(2)
     const name = rawName === "agent" ? "agentTypeId" : rawName
@@ -104,10 +98,8 @@ function extractFlags(input: string): {
     }
     if (!value) throw new Error(`--${rawName} requires a value`)
     flags[name] = value
-    textStart = cursor
   }
-  text.push(input.slice(textStart).trim())
-  return { flags, remainder: text.filter(Boolean).join(" ") }
+  return { flags, remainder: input.slice(cursor).trimStart() }
 }
 
 function readToken(input: string, start: number): { value: string; end: number } {

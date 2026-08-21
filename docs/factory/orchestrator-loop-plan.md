@@ -84,7 +84,7 @@ cron */10 → orchestrator run
   │       for each active worker: alive, and progressing?
   │         lease fresh          → leave alone
   │         idle past heartbeat  → nudge, and unblock if the blocker is mechanical
-  │         still stuck          → cancel, reclaim the bead, free the slot
+  │         still idle           → raise one intention; preserve lease + occupied run
   │
   ├─ 2. JANITOR — stale leases, proof hygiene, epic-branch drift
   │
@@ -105,7 +105,7 @@ exactly like any other. This is already how automation runs behave, so it costs
 nothing.
 
 *Consequence, and it is load-bearing:* the ladder's memory cannot live in the
-orchestrator's head. "Nudged last tick, so cancel this tick" only works because
+orchestrator's head. "Nudged last tick, so escalate this tick" only works because
 the nudge was written to the bead. **A nudge that is not recorded did not
 happen** — an unrecorded nudge makes the next tick nudge again, forever.
 
@@ -204,7 +204,7 @@ get green; a behaviour change must be argued, not absorbed.
 
 ```yaml
 beadle:
-  nudges_per_attempt: 1        # nudges before the ladder escalates to cancel
+  nudges_per_attempt: 1        # nudges before the ladder escalates to an intention
   nudge_cooldown_minutes: 15   # one full lease heartbeat before a repeat nudge
 ```
 
@@ -259,20 +259,20 @@ wakes.
 | State | Action |
 | --- | --- |
 | lease fresh | leave alone, however slow. A slow bead is not a stuck bead. |
-| lease stale, session **streaming** | leave alone — presumed working. Only the 90-min `stale_lease_minutes` backstop may reclaim from a live-but-silent worker. |
+| lease stale, session **running/aborting** | leave alone — presumed working. Only the 90-min `stale_lease_minutes` backstop may reclaim from a live-but-silent worker. |
 | lease stale, session **idle** | **nudge once**, recorded on the bead with evidence |
-| still idle next tick | cancel the run, break the lease, bead → ready, attempt +1 |
+| still idle next tick | record `idle-after-nudge` and raise one non-blocking owner intention; preserve the lease and occupying run because idle stop returns `stopped:false`. |
 | `worker_attempts_per_bead` exhausted | Steward as spec defect **and** an owner intention (`wait: false`) |
 | live slots < `worker_cap` for 2 ticks | owner intention (`wait: false`) — silent capacity drain |
 
 **Two reclaim clocks, disjoint jurisdictions:** the ladder owns sessions the
 orchestrator can observe *and prompt* (idle ones). `stale_lease_minutes` is the
-backstop for everything it cannot — streaming, unreachable, or on a dead host.
-The ladder never cancels a `running` or `aborting` session.
+backstop for everything it cannot — running, unreachable, or on a dead host.
+The ladder never claims an idle session was stopped and never cancels a `running` or `aborting` session.
 
 **Every ladder action writes a structured bead comment *before* acting** —
 `nudge #1 <ts>`, `intention-raised <condition> <id> <ts>`,
-`cancelled <ts> attempt=N`. Fresh-session ticks have no memory; the bead is the
+`idle-after-nudge <ts> attempt=N`. Fresh-session ticks have no memory; the bead is the
 ladder's state machine, and an action without its comment is a bug (proof 1).
 This is also what enforces "one intention per bead per condition".
 
@@ -315,21 +315,21 @@ intention is unanswered — never consent.
 ## Proof path
 
 1. Unit: trigger vocabulary; occupied-slot rejection; exact-address nudge/cancel
-   outcomes; ladder transitions.
+   receipts; idle-escalation ladder transitions.
 2. `boring-automation` suite green — paste the counts.
 3. Live tick against the real ready queue: workers start, **survive the tick
    that started them**, claim their own beads, and still appear running in
    `list` after the orchestrator is idle.
-4. Kill a worker mid-bead → next tick nudges; the one after cancels and
-   reclaims. Graduation criterion 3 under its real failure mode.
+4. Kill a worker mid-bead → next tick nudges; a still-idle worker raises one
+   intention without false cancellation or lease release.
 5. Zombie: hang a worker without killing it → slot reclaimed, drain intention
    raised.
 6. Unblock: stall a worker on a never-waking wait → nudged to completion with
-   **no** reclaim. This is what earns the nudge its place ahead of cancel.
+   **no** reclaim. This is what earns the nudge its place ahead of escalation.
 7. Non-blocking escalation: a tick that raises an intention **completes its run
    within minutes**, the next cron tick fires normally, and a decision recorded
    on the intention is read and acted on by a later tick.
-8. Ladder state on the bead: every nudge/intention/cancel is preceded by its
+8. Ladder state on the bead: every nudge/intention/control is preceded by its
    structured comment; a second tick never re-raises the same condition.
 
 ## Not in scope
@@ -357,13 +357,13 @@ intention is unanswered — never consent.
 | The rename touches a working scheduler | existing suite is the gate; no weakened assertions |
 | Idle ticks cost tokens | orchestrator must exit fast on an empty queue |
 | Claim races between simultaneous starts | `br` leasing is atomic; stagger starts within the tick |
-| Nudging becomes babysitting | bounded by `nudges_per_attempt`, then reclaim |
+| Nudging becomes babysitting | bounded by `nudges_per_attempt`, then one durable intention |
 | Prompt drift as the loop is tuned | behaviour lives in one prompt, versioned in git |
 
 ## Owner rulings already recorded
 
 - `worker_cap: 3`
-- `nudges_per_attempt: 1`, then cancel and reclaim; two attempts then Steward
+- `nudges_per_attempt: 1`, then a durable intention without false reclaim; two attempts then Steward
   **and** an owner intention
 - Triage runs automatically from the first tick, including issue comments — the
   plan gate is the safety net

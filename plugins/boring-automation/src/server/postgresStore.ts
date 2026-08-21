@@ -97,13 +97,32 @@ export class PostgresAutomationStore implements AutomationStore {
     const id = deterministicSeedId(this.actor, input.key)
     const now = this.clock().toISOString()
     const rows = await this.sql<AutomationRow[]>`
-      INSERT INTO boring_automation_automations (id, workspace_id, owner_user_id, title, enabled, cron, timezone, model, agent_type_id, run_duration_cap_ms, prompt_ref, created_at, updated_at)
-      VALUES (${id}, ${this.actor.workspaceId}, ${this.actor.userId}, ${input.title}, ${input.enabled}, ${input.cron}, ${input.timezone}, ${input.model}, ${input.agentTypeId}, ${input.runDurationCapMs ?? null}, ${input.promptRef}, ${now}, ${now})
-      ON CONFLICT (id) DO UPDATE SET
-        deleted_at = NULL
-      WHERE boring_automation_automations.workspace_id = EXCLUDED.workspace_id
-        AND boring_automation_automations.owner_user_id = EXCLUDED.owner_user_id
-      RETURNING id, title, enabled, cron, timezone, model, agent_type_id, run_duration_cap_ms, prompt_ref, created_at, updated_at
+      WITH upserted AS (
+        INSERT INTO boring_automation_automations (id, workspace_id, owner_user_id, title, enabled, cron, timezone, model, agent_type_id, run_duration_cap_ms, prompt_ref, created_at, updated_at)
+        VALUES (${id}, ${this.actor.workspaceId}, ${this.actor.userId}, ${input.title}, ${input.enabled}, ${input.cron}, ${input.timezone}, ${input.model}, ${input.agentTypeId}, ${input.runDurationCapMs ?? null}, ${input.promptRef}, ${now}, ${now})
+        ON CONFLICT (id) DO UPDATE SET
+          title = EXCLUDED.title,
+          enabled = EXCLUDED.enabled,
+          cron = EXCLUDED.cron,
+          timezone = EXCLUDED.timezone,
+          model = EXCLUDED.model,
+          agent_type_id = EXCLUDED.agent_type_id,
+          run_duration_cap_ms = EXCLUDED.run_duration_cap_ms,
+          prompt_ref = EXCLUDED.prompt_ref,
+          deleted_at = NULL,
+          updated_at = EXCLUDED.updated_at
+        WHERE boring_automation_automations.workspace_id = EXCLUDED.workspace_id
+          AND boring_automation_automations.owner_user_id = EXCLUDED.owner_user_id
+          AND boring_automation_automations.deleted_at IS NOT NULL
+        RETURNING id, title, enabled, cron, timezone, model, agent_type_id, run_duration_cap_ms, prompt_ref, created_at, updated_at
+      )
+      SELECT * FROM upserted
+      UNION ALL
+      SELECT id, title, enabled, cron, timezone, model, agent_type_id, run_duration_cap_ms, prompt_ref, created_at, updated_at
+      FROM boring_automation_automations
+      WHERE id = ${id} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId}
+        AND deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM upserted)
+      LIMIT 1
     `
     return rows[0] ? toAutomation(rows[0]) : null
   }
@@ -294,6 +313,25 @@ export class PostgresAutomationStore implements AutomationStore {
         AND status IN ('queued', 'dispatching', 'running')
     `
     return result.count > 0
+  }
+
+  async preserveAcceptedDispatch(
+    runId: string,
+    receipt: NonNullable<AutomationRun["dispatchReceipt"]>,
+    completedAt: string,
+    error: string,
+  ): Promise<AutomationRun | null> {
+    const serialized = JSON.stringify(receipt)
+    const rows = await this.sql<RunRow[]>`
+      UPDATE boring_automation_runs
+      SET session_id = ${receipt.ref.sessionId}, dispatch_receipt = ${serialized}::text::jsonb,
+        status = 'outcome-unknown', completed_at = ${completedAt}, error = ${error}, updated_at = NOW()
+      WHERE id = ${runId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId}
+        AND dispatch_receipt IS NULL
+      RETURNING *
+    `
+    if (rows[0]) return toRun(rows[0])
+    return await this.findRun(runId)
   }
 
   async updateRunLifecycle(runId: string, patch: AutomationRunLifecyclePatch): Promise<AutomationRun> {

@@ -187,9 +187,10 @@ describe("PostgresAutomationStore actor isolation", () => {
       model: "manifest:model", agentTypeId: "boring-worker", promptRef: ".agents/automation/worker-slot.md",
     })).resolves.toMatchObject({ title: "operator title", enabled: false, timezone: "Europe/Zurich", model: "operator:model" })
 
-    expect(recorded.queries[0]!.text).toContain("ON CONFLICT (id) DO UPDATE SET\n        deleted_at = NULL")
-    expect(recorded.queries[0]!.text).not.toContain("title = EXCLUDED.title")
-    expect(recorded.queries[0]!.text).not.toContain("updated_at = EXCLUDED.updated_at")
+    expect(recorded.queries[0]!.text).toContain("AND boring_automation_automations.deleted_at IS NOT NULL")
+    expect(recorded.queries[0]!.text).toContain("title = EXCLUDED.title")
+    expect(recorded.queries[0]!.text).toContain("updated_at = EXCLUDED.updated_at")
+    expect(recorded.queries[0]!.text).toContain("AND deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM upserted)")
   })
 
   it("locks the seeded automation row before checking for occupying runs", async () => {

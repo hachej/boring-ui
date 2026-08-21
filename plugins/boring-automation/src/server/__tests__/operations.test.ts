@@ -71,6 +71,7 @@ function storeMock(overrides: Partial<AutomationStore> = {}) {
     beginRun: vi.fn(async () => run()),
     claimRunForDispatch: vi.fn(async () => run({ status: "dispatching" })),
     heartbeatRun: vi.fn(async () => true),
+    preserveAcceptedDispatch: vi.fn(async () => run({ status: "outcome-unknown" })),
     updateRunLifecycle: vi.fn(async () => run()),
     listRuns: vi.fn(async () => [run()]),
     listRecentRuns: vi.fn(async () => [run()]),

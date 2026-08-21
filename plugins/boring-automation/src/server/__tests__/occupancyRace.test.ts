@@ -7,6 +7,7 @@ import type { AutomationRunLifecyclePatch } from "../../shared/types"
 import { DispatchRunExecutor } from "../dispatchRunExecutor"
 import { FileAutomationStore } from "../fileStore"
 import { BORING_AUTOMATION_ERROR_CODES } from "../../shared/error-codes"
+import { runLeaseLost } from "../store"
 
 const roots: string[] = []
 afterEach(async () => {
@@ -30,7 +31,12 @@ it("keeps the slot occupied when accepted dispatch identity persistence loses th
   store.updateRunLifecycle = async (runId: string, patch: AutomationRunLifecyclePatch) => {
     if (injectIdentityWriteFailure && patch.dispatchReceipt) {
       injectIdentityWriteFailure = false
-      throw new Error("injected identity persistence failure after acceptance")
+      await update(runId, {
+        status: "failed",
+        completedAt: "2026-07-10T00:05:00.000Z",
+        error: "Automation worker lease expired before receipt persistence",
+      })
+      throw runLeaseLost(runId)
     }
     return await update(runId, patch)
   }
@@ -78,7 +84,7 @@ it("keeps the slot occupied when accepted dispatch identity persistence loses th
     status: "outcome-unknown",
     sessionId: "accepted-worker",
     dispatchReceipt: expect.objectContaining({ accepted: true, ref: { agentTypeId: "boring-worker", sessionId: "accepted-worker" } }),
-    error: "injected identity persistence failure after acceptance",
+    error: "Automation dispatch was accepted before its worker lease was lost; the outcome remains unknown",
   })
 
   const replacements = await Promise.allSettled([

@@ -30,11 +30,14 @@ describe("/schedule cadence parsing", () => {
       })
   })
 
-  it("accepts flags after the prompt without moving them into prompt text", () => {
+  it("preserves prompt flags after cadence instead of interpreting them as schedule flags", () => {
+    expect(parseScheduleCommandArgs("daily 8am run pnpm test -- --runInBand")).toMatchObject({
+      cron: "0 8 * * *",
+      prompt: "run pnpm test -- --runInBand",
+    })
     expect(parseScheduleCommandArgs("daily 8am send report --timezone Europe/Zurich")).toMatchObject({
       cron: "0 8 * * *",
-      prompt: "send report",
-      timezone: "Europe/Zurich",
+      prompt: "send report --timezone Europe/Zurich",
     })
   })
 

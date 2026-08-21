@@ -288,9 +288,16 @@ describe("Postgres standing automation seeding", () => {
       await expect(store.getPrompt(first!.id)).resolves.toBe("worker prompt")
       await expect(store.listAutomations()).resolves.toHaveLength(1)
 
+      const edited = await store.updateAutomation(first!.id, { title: "operator title", enabled: false })
+      await expect(store.ensureSeededAutomation(seed)).resolves.toMatchObject({
+        title: "operator title", enabled: false, updatedAt: edited.updatedAt,
+      })
+
       await store.deleteAutomation(first!.id)
       await expect(store.listAutomations()).resolves.toEqual([])
-      await expect(store.ensureSeededAutomation(seed)).resolves.toMatchObject({ id: first!.id, promptRef: seed.promptRef })
+      await expect(store.ensureSeededAutomation(seed)).resolves.toMatchObject({
+        id: first!.id, title: seed.title, enabled: true, promptRef: seed.promptRef,
+      })
       await expect(store.listAutomations()).resolves.toHaveLength(1)
     } finally {
       await sql`DELETE FROM boring_automation_automations WHERE workspace_id = ${actor.workspaceId} AND owner_user_id = ${actor.userId}`.catch(() => undefined)
