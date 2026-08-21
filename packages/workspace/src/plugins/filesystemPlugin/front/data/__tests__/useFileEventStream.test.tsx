@@ -97,6 +97,15 @@ describe("useFileEventStream", () => {
     delete (globalThis as any).EventSource
   })
 
+  it("reports connecting then live when EventSource opens", () => {
+    const onStatus = vi.fn()
+    renderHook(() => useFileEventStream(onStatus), { wrapper: Wrapper })
+
+    expect(onStatus).toHaveBeenCalledWith("connecting")
+    MockEventSource.lastInstance().dispatch("open", "")
+    expect(onStatus).toHaveBeenLastCalledWith("live")
+  })
+
   it("opens an EventSource against /api/v1/fs/events", () => {
     renderHook(() => useFileEventStream(), { wrapper: Wrapper })
     expect(MockEventSource.instances).toHaveLength(1)
@@ -216,12 +225,14 @@ describe("useFileEventStream", () => {
     expect(MockEventSource.lastInstance().closed).toBe(false)
   })
 
-  it("closes the EventSource on `unsupported` event", () => {
-    renderHook(() => useFileEventStream(), { wrapper: Wrapper })
+  it("reports unsupported and closes EventSource on `unsupported` event", () => {
+    const onStatus = vi.fn()
+    renderHook(() => useFileEventStream(onStatus), { wrapper: Wrapper })
     MockEventSource.lastInstance().dispatch(
       "unsupported",
       JSON.stringify({ reason: "watch_not_implemented" }),
     )
+    expect(onStatus).toHaveBeenLastCalledWith("unsupported")
     expect(MockEventSource.lastInstance().closed).toBe(true)
   })
 

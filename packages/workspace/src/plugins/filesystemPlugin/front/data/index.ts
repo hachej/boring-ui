@@ -4,7 +4,9 @@ export {
   useHasDataClient,
   useApiBaseUrl,
   useWorkspaceRequestId,
+  useFileEventStatus,
 } from "./DataProvider"
+export type { FileEventStatus } from "./DataProvider"
 export { FetchClient, FetchError } from "./fetchClient"
 export { readFileRecords } from "./fileRecords"
 export {

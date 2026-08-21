@@ -56,6 +56,7 @@ export default defineConfig({
       `BORING_AGENT_WORKSPACE_ROOT=${shell(E2E_WORKSPACE_ROOT)}`,
       `BORING_WORKSPACE_PLAYGROUND_COMPANY_CONTEXT_ROOT=${shell(E2E_COMPANY_CONTEXT_ROOT)}`,
       `BORING_AGENT_SESSION_ROOT=${shell(E2E_SESSION_ROOT)}`,
+      `BORING_MAX_WATCHED_ENTRIES=${shell(process.env.BORING_MAX_WATCHED_ENTRIES || "")}`,
       `BORING_PLAYGROUND_DIST_ONLY=${shell(process.env.BORING_PLAYGROUND_DIST_ONLY || "")}`,
       "BORING_WORKSPACE_PLAYGROUND_MULTI_FS=1",
       "BORING_AGENT_E2E_SCRIPTED_PI=1",
@@ -69,7 +70,10 @@ export default defineConfig({
       "pnpm exec vite",
     ].join(" ")}`,
     port: VITE_PORT,
-    reuseExistingServer: !process.env.CI && !process.env.BORING_PLAYGROUND_DIST_ONLY,
+    reuseExistingServer:
+      !process.env.CI &&
+      !process.env.BORING_PLAYGROUND_DIST_ONLY &&
+      !process.env.BORING_MAX_WATCHED_ENTRIES,
     timeout: 300_000,
   },
 })

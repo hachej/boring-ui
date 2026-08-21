@@ -7,7 +7,7 @@ import {
   type UseMutationResult,
 } from "@tanstack/react-query"
 import { useRef, useState, useEffect } from "react"
-import { useDataClient, useApiBaseUrl, useWorkspaceRequestId } from "./DataProvider"
+import { useDataClient, useApiBaseUrl, useWorkspaceRequestId, useFileEventStatus } from "./DataProvider"
 import { FetchError } from "./fetchClient"
 import { getPreloadedTreeEntries } from "./treePreloadCache"
 import { events, userMeta } from "../../../../front/events"
@@ -28,6 +28,8 @@ export interface UseFileContentOptions {
   createIfMissing?: string
 }
 
+export const FILE_CONTENT_FALLBACK_POLL_MS = 2_000
+
 export function useFileContent(
   path: string | null,
   options: UseFileContentOptions = {},
@@ -35,6 +37,7 @@ export function useFileContent(
   const client = useDataClient()
   const base = useApiBaseUrl()
   const workspaceId = useWorkspaceRequestId()
+  const fileEventStatus = useFileEventStatus()
   const createIfMissing = options.createIfMissing
   const filesystem = normalizeUiFilesystem(options.filesystem)
   return useQuery({
@@ -53,6 +56,11 @@ export function useFileContent(
     },
     enabled: path != null,
     staleTime: 0,
+    // The server deliberately refuses whole-tree watching for oversized or
+    // watch-less workspaces. Keep only mounted file queries coherent in that
+    // case; inactive queries have no observer and therefore no interval.
+    refetchInterval: fileEventStatus === "unsupported" ? FILE_CONTENT_FALLBACK_POLL_MS : false,
+    refetchIntervalInBackground: false,
     retry: createIfMissing === undefined ? noRetryOn404 : false,
   })
 }

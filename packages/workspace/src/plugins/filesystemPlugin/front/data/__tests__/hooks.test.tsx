@@ -23,8 +23,10 @@ vi.mock("../DataProvider", () => ({
   useDataClient: () => mockClient,
   useApiBaseUrl: () => TEST_BASE,
   useWorkspaceRequestId: () => TEST_WORKSPACE_ID,
+  useFileEventStatus: () => mockFileEventStatus,
 }))
 
+let mockFileEventStatus: "connecting" | "live" | "unsupported"
 let mockClient: {
   getFile: ReturnType<typeof vi.fn>
   getTree: ReturnType<typeof vi.fn>
@@ -47,6 +49,7 @@ beforeEach(() => {
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
   events._reset()
+  mockFileEventStatus = "live"
   mockClient = {
     getFile: vi.fn(),
     getTree: vi.fn(),
@@ -66,6 +69,29 @@ describe("useFileContent", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(result.current.data).toEqual({ content: "hello" })
     expect(mockClient.getFile).toHaveBeenCalledWith("/a.ts", expect.any(AbortSignal), "user")
+  })
+
+  it("polls mounted file content only when live events are unsupported", async () => {
+    mockClient.getFile.mockResolvedValue({ content: "hello" })
+    mockFileEventStatus = "unsupported"
+    const { result } = renderHook(() => useFileContent("/fallback.md"), { wrapper })
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+    const query = queryClient.getQueryCache().find({
+      queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "files", "user", "/fallback.md", null],
+    })
+    expect((query?.options as { refetchInterval?: unknown } | undefined)?.refetchInterval).toBe(2_000)
+  })
+
+  it("does not poll file content while the live event stream is available", async () => {
+    mockClient.getFile.mockResolvedValue({ content: "hello" })
+    const { result } = renderHook(() => useFileContent("/live.md"), { wrapper })
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+    const query = queryClient.getQueryCache().find({
+      queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "files", "user", "/live.md", null],
+    })
+    expect((query?.options as { refetchInterval?: unknown } | undefined)?.refetchInterval).toBe(false)
   })
 
   it("is disabled when path is null", () => {

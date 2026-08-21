@@ -25,6 +25,32 @@ describe("MarkdownEditor", () => {
     })
   })
 
+  it("applies external content props without emitting a user change", async () => {
+    const onChange = vi.fn()
+    const { rerender } = render(<MarkdownEditor content="Before" onChange={onChange} />)
+    await waitFor(() => expect(screen.getByText("Before")).toBeInTheDocument())
+    onChange.mockClear()
+
+    rerender(<MarkdownEditor content="Agent revision" onChange={onChange} />)
+    await waitFor(() => expect(screen.getByText("Agent revision")).toBeInTheDocument())
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it("shows the external-update state beside the bottom-right word count", async () => {
+    render(
+      <MarkdownEditor
+        content="Hello world"
+        documentStatus={{ kind: "conflict", source: "agent" }}
+      />,
+    )
+    await waitFor(() => expect(screen.getByText("Hello world")).toBeInTheDocument())
+
+    expect(screen.getByTestId("markdown-document-status")).toHaveTextContent(
+      "Agent update conflicts with your edits",
+    )
+    expect(screen.getByTestId("markdown-word-count")).toHaveTextContent("2 words")
+  })
+
   it("keeps the editor full-height with an internally-scrolling content region", async () => {
     // Regression: without min-h-0 on the flex root + scroll region, long
     // markdown stretches the whole dockview chain (observed ~16k px) instead

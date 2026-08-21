@@ -20,6 +20,7 @@ import { ResizableImage } from "./ResizableImage"
 import { useApiBaseUrl, useWorkspaceRequestId } from "../data/DataProvider"
 import { normalizeUiFilesystem, type FilesystemId } from "../../../../shared/types/filesystem"
 import { useFileUpload } from "../data/useFileUpload"
+import type { FilePaneDocumentStatus } from "../useFilePane"
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight"
 import { common, createLowlight } from "lowlight"
 import { Markdown } from "@tiptap/markdown"
@@ -44,6 +45,10 @@ import {
   AlignCenterIcon,
   AlignRightIcon,
   Loader2Icon,
+  CheckCircle2Icon,
+  AlertTriangleIcon,
+  RefreshCwIcon,
+  RadioIcon,
 } from "lucide-react"
 import { Input, Toolbar as UiToolbar, ToolbarButton as UiToolbarButton, ToolbarSeparator as UiToolbarSeparator } from "@hachej/boring-ui-kit"
 import { postUiCommand } from "../../../../front/bridge/uiCommandBus"
@@ -78,6 +83,8 @@ export interface MarkdownEditorProps {
   documentPath?: string
   /** Filesystem identity for relative markdown links/assets. Defaults to user. */
   filesystem?: FilesystemId
+  /** Coherence state for external/agent file updates. */
+  documentStatus?: FilePaneDocumentStatus | null
 }
 
 export interface MarkdownFrontmatterEntry {
@@ -181,6 +188,39 @@ export function countMarkdownWords(content: string): number {
 
 function formatWordCountLabel(count: number): string {
   return `${count} word${count === 1 ? "" : "s"}`
+}
+
+function documentStatusPresentation(status: FilePaneDocumentStatus): {
+  label: string
+  tone: string
+  icon: typeof CheckCircle2Icon
+} {
+  switch (status.kind) {
+    case "fallback":
+      return { label: "Watching for file changes", tone: "text-muted-foreground", icon: RadioIcon }
+    case "checking":
+      return { label: "Checking for updates…", tone: "text-muted-foreground", icon: RefreshCwIcon }
+    case "updated":
+      return {
+        label: status.source === "agent" ? "Updated by agent" : "Updated from disk",
+        tone: "text-emerald-600 dark:text-emerald-400",
+        icon: CheckCircle2Icon,
+      }
+    case "conflict":
+      return {
+        label: status.source === "agent"
+          ? "Agent update conflicts with your edits"
+          : "Disk update conflicts with your edits",
+        tone: "text-amber-700 dark:text-amber-400",
+        icon: AlertTriangleIcon,
+      }
+    case "resolved":
+      return {
+        label: status.action === "reloaded" ? "Reloaded from disk" : "Overwrote disk version",
+        tone: "text-emerald-600 dark:text-emerald-400",
+        icon: CheckCircle2Icon,
+      }
+  }
 }
 
 function isExternalImageSrc(src: string): boolean {
@@ -617,6 +657,7 @@ export function MarkdownEditor({
   className,
   documentPath,
   filesystem: rawFilesystem,
+  documentStatus,
 }: MarkdownEditorProps) {
   const filesystem = normalizeUiFilesystem(rawFilesystem)
   const apiBaseUrl = useApiBaseUrl()
@@ -837,8 +878,29 @@ export function MarkdownEditor({
           </>
         )}
       </div>
-      <div className="border-t border-border/60 px-4 py-2 text-right text-xs text-muted-foreground" data-testid="markdown-word-count">
-        {formatWordCountLabel(wordCount)}
+      <div className="flex items-center justify-end gap-3 border-t border-border/60 px-4 py-2 text-xs text-muted-foreground">
+        {documentStatus && (() => {
+          const presentation = documentStatusPresentation(documentStatus)
+          const StatusIcon = presentation.icon
+          return (
+            <span
+              role="status"
+              aria-live="polite"
+              data-testid="markdown-document-status"
+              className={cn("flex min-w-0 items-center gap-1.5", presentation.tone)}
+              title={presentation.label}
+            >
+              <StatusIcon
+                className={cn("size-3 shrink-0", documentStatus.kind === "checking" && "animate-spin")}
+                aria-hidden
+              />
+              <span className="truncate">{presentation.label}</span>
+            </span>
+          )
+        })()}
+        <span className="shrink-0" data-testid="markdown-word-count">
+          {formatWordCountLabel(wordCount)}
+        </span>
       </div>
     </div>
   )

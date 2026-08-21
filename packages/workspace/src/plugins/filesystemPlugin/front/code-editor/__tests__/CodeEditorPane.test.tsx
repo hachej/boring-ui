@@ -11,6 +11,7 @@ const mockGetRawFile = vi.fn()
 vi.mock("../../data", () => ({
   useFileContent: (path: string, options?: unknown) => mockFileContent(path, options),
   useFileWrite: () => ({ mutateAsync: mockFileWrite }),
+  useFileEventStatus: () => "live",
   useDataClient: () => ({ getRawFile: mockGetRawFile }),
   useApiBaseUrl: () => "/api",
 }))
@@ -302,8 +303,7 @@ describe("CodeEditorPane", () => {
     expect(markDirty).toHaveBeenCalled()
   })
 
-  it("syncs content when shouldSync becomes true", async () => {
-    const ackSync = vi.fn()
+  it("renders content reconciled from the file query", async () => {
     mockFileContent.mockReturnValue({
       data: { content: "updated from server" },
       isLoading: false,
@@ -317,12 +317,12 @@ describe("CodeEditorPane", () => {
       markDirty: vi.fn(),
       markClean: vi.fn(),
       flushSave: vi.fn(),
-      shouldSync: true,
-      ackSync,
+      shouldSync: false,
+      ackSync: vi.fn(),
     })
     render(<CodeEditorPane {...paneProps("src/sync.ts")} />, { wrapper })
     await waitFor(() => {
-      expect(ackSync).toHaveBeenCalled()
+      expect(screen.getByTestId("code-editor")).toHaveTextContent("updated from server")
     })
   })
 

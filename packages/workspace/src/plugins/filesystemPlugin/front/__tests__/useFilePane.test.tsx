@@ -6,7 +6,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import { act, renderHook, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { ReactNode } from "react"
-import { events, workspaceEvents } from "../../../../front/events"
+import { agentMeta, events, remoteMeta, workspaceEvents } from "../../../../front/events"
+import { filesystemEvents } from "../../shared/events"
 import { useFilePane } from "../useFilePane"
 import { FileConflictError } from "../data/fetchClient"
 
@@ -19,6 +20,7 @@ vi.mock("../data", () => ({
     options === undefined ? mockFileContent(path) : mockFileContent(path, options)
   ),
   useFileWrite: () => ({ mutateAsync: mockWriteFile }),
+  useFileEventStatus: () => "live",
 }))
 
 function wrapper({ children }: { children: ReactNode }) {
@@ -182,9 +184,7 @@ describe("useFilePane", () => {
         refetch,
       })
 
-      mockWriteFile
-        .mockRejectedValueOnce(new FileConflictError("doc.md", 3000, 1000))
-        .mockResolvedValueOnce({ mtimeMs: 4000 })
+      mockWriteFile.mockRejectedValueOnce(new FileConflictError("doc.md", 3000, 1000))
 
       const { result } = renderHook(() => useFilePane({ path: "doc.md" }), { wrapper })
       await act(async () => {})
@@ -207,10 +207,175 @@ describe("useFilePane", () => {
       await act(async () => {
         await result.current.flushSave()
       })
-      expect(mockWriteFile).toHaveBeenCalledTimes(2)
-      expect(mockWriteFile).toHaveBeenLastCalledWith(
-        expect.objectContaining({ path: "doc.md", content: "local edits" }),
+      // A failed reload does not count as consent to overwrite. Automatic
+      // flushes stay frozen until the explicit Overwrite action is used.
+      expect(mockWriteFile).toHaveBeenCalledTimes(1)
+      expect(result.current.conflict).toBeInstanceOf(FileConflictError)
+      expect(result.current.content).toBe("local edits")
+    })
+  })
+
+  describe("external disk reconciliation", () => {
+    it("applies changed disk content while clean even when mtime is unchanged", async () => {
+      let fileData = { content: "initial", mtimeMs: 1000 }
+      mockFileContent.mockImplementation(() => ({
+        data: fileData,
+        isLoading: false,
+        isFetching: false,
+        error: undefined,
+        refetch: vi.fn(),
+      }))
+      const { result, rerender } = renderHook(
+        ({ tick }) => {
+          void tick
+          return useFilePane({ path: "doc.md" })
+        },
+        { wrapper, initialProps: { tick: 0 } },
       )
+      await act(async () => {})
+
+      fileData = { content: "agent revision", mtimeMs: 1000 }
+      rerender({ tick: 1 })
+      await waitFor(() => expect(result.current.content).toBe("agent revision"))
+      expect(result.current.documentStatus).toEqual({ kind: "updated", source: "disk" })
+      expect(mockWriteFile).not.toHaveBeenCalled()
+    })
+
+    it("applies changed disk content while clean when mtime is missing", async () => {
+      let fileData: { content: string; mtimeMs?: number } = { content: "initial" }
+      mockFileContent.mockImplementation(() => ({
+        data: fileData,
+        isLoading: false,
+        isFetching: false,
+        error: undefined,
+        refetch: vi.fn(),
+      }))
+      const { result, rerender } = renderHook(
+        ({ tick }) => {
+          void tick
+          return useFilePane({ path: "doc.md" })
+        },
+        { wrapper, initialProps: { tick: 0 } },
+      )
+      await act(async () => {})
+
+      fileData = { content: "new bytes" }
+      rerender({ tick: 1 })
+      await waitFor(() => expect(result.current.content).toBe("new bytes"))
+    })
+
+    it("freezes autosave and preserves local content after an attributed Agent conflict", async () => {
+      let fileData = { content: "initial", mtimeMs: 1000 }
+      mockFileContent.mockImplementation(() => ({
+        data: fileData,
+        isLoading: false,
+        isFetching: false,
+        error: undefined,
+        refetch: vi.fn(),
+      }))
+      const { result, rerender } = renderHook(
+        ({ tick }) => {
+          void tick
+          return useFilePane({ path: "doc.md" })
+        },
+        { wrapper, initialProps: { tick: 0 } },
+      )
+      await act(async () => {})
+      act(() => result.current.setContent("local draft"))
+      act(() => events.emit(filesystemEvents.changed, { ...agentMeta("tool-1"), path: "doc.md" }))
+
+      fileData = { content: "agent revision", mtimeMs: 2000 }
+      rerender({ tick: 1 })
+      await waitFor(() => expect(result.current.conflict).toBeInstanceOf(FileConflictError))
+      expect(result.current.content).toBe("local draft")
+      expect(result.current.documentStatus).toEqual({ kind: "conflict", source: "agent" })
+
+      await new Promise((resolve) => setTimeout(resolve, 350))
+      expect(mockWriteFile).not.toHaveBeenCalled()
+    })
+
+    it("does not let a duplicate watcher event downgrade live Agent attribution", async () => {
+      let fileData = { content: "initial", mtimeMs: 1000 }
+      mockFileContent.mockImplementation(() => ({
+        data: fileData,
+        isLoading: false,
+        isFetching: false,
+        error: undefined,
+        refetch: vi.fn(),
+      }))
+      const { result, rerender } = renderHook(
+        ({ tick }) => {
+          void tick
+          return useFilePane({ path: "doc.md", filesystem: "project_alpha" })
+        },
+        { wrapper, initialProps: { tick: 0 } },
+      )
+      await act(async () => {})
+      act(() => {
+        events.emit(filesystemEvents.changed, { ...agentMeta("tool-1"), filesystem: "project_alpha", path: "doc.md" })
+        events.emit(filesystemEvents.changed, { ...remoteMeta(), filesystem: "project_alpha", path: "doc.md" })
+      })
+
+      fileData = { content: "agent revision", mtimeMs: 2000 }
+      rerender({ tick: 1 })
+      await waitFor(() => expect(result.current.content).toBe("agent revision"))
+      expect(result.current.documentStatus).toEqual({ kind: "updated", source: "agent" })
+    })
+
+    it("expires Agent attribution before a later unrelated disk update", async () => {
+      const now = vi.spyOn(Date, "now").mockReturnValue(1_000)
+      let fileData = { content: "initial", mtimeMs: 1000 }
+      mockFileContent.mockImplementation(() => ({
+        data: fileData,
+        isLoading: false,
+        isFetching: false,
+        error: undefined,
+        refetch: vi.fn(),
+      }))
+      const { result, rerender } = renderHook(
+        ({ tick }) => {
+          void tick
+          return useFilePane({ path: "doc.md" })
+        },
+        { wrapper, initialProps: { tick: 0 } },
+      )
+      await act(async () => {})
+      act(() => events.emit(filesystemEvents.changed, { ...agentMeta("old-tool"), path: "doc.md" }))
+      now.mockReturnValue(7_000)
+
+      fileData = { content: "later disk revision", mtimeMs: 2000 }
+      rerender({ tick: 1 })
+      await waitFor(() => expect(result.current.content).toBe("later disk revision"))
+      expect(result.current.documentStatus).toEqual({ kind: "updated", source: "disk" })
+      now.mockRestore()
+    })
+
+    it("ignores Agent attribution for another path or filesystem", async () => {
+      let fileData = { content: "initial", mtimeMs: 1000 }
+      mockFileContent.mockImplementation(() => ({
+        data: fileData,
+        isLoading: false,
+        isFetching: false,
+        error: undefined,
+        refetch: vi.fn(),
+      }))
+      const { result, rerender } = renderHook(
+        ({ tick }) => {
+          void tick
+          return useFilePane({ path: "doc.md" })
+        },
+        { wrapper, initialProps: { tick: 0 } },
+      )
+      await act(async () => {})
+      act(() => {
+        events.emit(filesystemEvents.changed, { ...agentMeta("wrong-path"), path: "other.md" })
+        events.emit(filesystemEvents.changed, { ...agentMeta("wrong-fs"), filesystem: "project_alpha", path: "doc.md" })
+      })
+
+      fileData = { content: "external revision", mtimeMs: 2000 }
+      rerender({ tick: 1 })
+      await waitFor(() => expect(result.current.content).toBe("external revision"))
+      expect(result.current.documentStatus).toEqual({ kind: "updated", source: "disk" })
     })
   })
 

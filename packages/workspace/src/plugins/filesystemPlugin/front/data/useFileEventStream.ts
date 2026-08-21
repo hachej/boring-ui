@@ -3,7 +3,7 @@
 import { useEffect } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { events, remoteMeta } from "../../../../front/events"
-import { useApiBaseUrl, useWorkspaceRequestId } from "./DataProvider"
+import { useApiBaseUrl, useWorkspaceRequestId, type FileEventStatus } from "./DataProvider"
 import { filesystemEvents } from "../../shared/events"
 import { FILES_QUERY_KEY_SEGMENT } from "../../shared/constants"
 
@@ -33,14 +33,25 @@ import { FILES_QUERY_KEY_SEGMENT } from "../../shared/constants"
  * future concern (toasts, badges) once we have actual UX surfaces
  * that fire on file changes.
  */
-export function useFileEventStream(): void {
+const ignoreStatusChange = (_status: FileEventStatus): void => {}
+
+export function useFileEventStream(
+  onStatusChange: (status: FileEventStatus) => void = ignoreStatusChange,
+): void {
   const base = useApiBaseUrl()
   const workspaceId = useWorkspaceRequestId()
   const qc = useQueryClient()
 
   useEffect(() => {
-    if (import.meta.env.VITE_DISABLE_FILE_EVENTS === "1") return
-    if (typeof window === "undefined" || typeof EventSource === "undefined") return
+    onStatusChange("connecting")
+    if (
+      import.meta.env.VITE_DISABLE_FILE_EVENTS === "1" ||
+      typeof window === "undefined" ||
+      typeof EventSource === "undefined"
+    ) {
+      onStatusChange("unsupported")
+      return
+    }
 
     const url = withWorkspaceId(joinUrl(base, "/api/v1/fs/events"), workspaceId)
     let es: EventSource | null
@@ -52,7 +63,13 @@ export function useFileEventStream(): void {
     try {
       es = new EventSource(url, { withCredentials: true })
     } catch {
+      onStatusChange("unsupported")
       return
+    }
+
+    const onOpen = () => onStatusChange("live")
+    const onError = () => {
+      if (!unsupported) onStatusChange("connecting")
     }
 
     const recordSeen = (id: string): boolean => {
@@ -86,6 +103,7 @@ export function useFileEventStream(): void {
 
     const onUnsupported = (ev: MessageEvent) => {
       unsupported = true
+      onStatusChange("unsupported")
       try {
         const data = JSON.parse(ev.data as string) as { reason?: string; message?: string }
         console.warn(
@@ -108,19 +126,23 @@ export function useFileEventStream(): void {
       qc.invalidateQueries({ predicate: (q) => isFileQueryKey(q.queryKey) })
     }
 
+    es.addEventListener("open", onOpen as EventListener)
+    es.addEventListener("error", onError as EventListener)
     es.addEventListener("change", onChange as EventListener)
     es.addEventListener("unsupported", onUnsupported as EventListener)
     es.addEventListener("resync-required", onResyncRequired as EventListener)
 
     return () => {
       if (!es) return
+      es.removeEventListener("open", onOpen as EventListener)
+      es.removeEventListener("error", onError as EventListener)
       es.removeEventListener("change", onChange as EventListener)
       es.removeEventListener("unsupported", onUnsupported as EventListener)
       es.removeEventListener("resync-required", onResyncRequired as EventListener)
       if (!unsupported) es.close()
       es = null
     }
-  }, [base, workspaceId, qc])
+  }, [base, workspaceId, qc, onStatusChange])
 }
 
 interface ChangeEnvelope {

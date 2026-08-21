@@ -25,6 +25,7 @@ export function MarkdownEditorPane({ params, api, className }: MarkdownEditorPan
     isLoading,
     error,
     conflict,
+    documentStatus,
     setContent,
     onReloadFromServer,
     onOverwrite,
@@ -50,7 +51,7 @@ export function MarkdownEditorPane({ params, api, className }: MarkdownEditorPan
       onReload={onReloadFromServer}
       onOverwrite={onOverwrite}
       editorComponent={MarkdownEditor}
-      editorProps={{ className, documentPath: path, readOnly: readOnly || isReadonly, filesystem }}
+      editorProps={{ className, documentPath: path, readOnly: readOnly || isReadonly, filesystem, documentStatus }}
     />
   )
 }

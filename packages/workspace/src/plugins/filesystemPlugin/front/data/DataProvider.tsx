@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useMemo, useRef, type ReactNode } from "react"
+import { createContext, useContext, useMemo, useRef, useState, type ReactNode } from "react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { FetchClient } from "./fetchClient"
 import { useFileEventInvalidation } from "./useFileEventInvalidation"
@@ -19,6 +19,10 @@ const FetchClientContext = createContext<FetchClient | null>(null)
 const ApiBaseUrlContext = createContext<string>("")
 const WorkspaceRequestIdContext = createContext<string | null>(null)
 
+export type FileEventStatus = "connecting" | "live" | "unsupported"
+
+const FileEventStatusContext = createContext<FileEventStatus>("connecting")
+
 export function useDataClient(): FetchClient {
   const ctx = useContext(FetchClientContext)
   if (!ctx) throw new Error("useDataClient must be used within a DataProvider")
@@ -35,6 +39,10 @@ export function useApiBaseUrl(): string {
 
 export function useWorkspaceRequestId(): string | null {
   return useContext(WorkspaceRequestIdContext)
+}
+
+export function useFileEventStatus(): FileEventStatus {
+  return useContext(FileEventStatusContext)
 }
 
 export function DataProvider({
@@ -65,15 +73,18 @@ export function DataProvider({
     authHeaders?.["x-boring-workspace-id"] ??
     authHeaders?.["X-Boring-Workspace-Id"] ??
     null
+  const [fileEventStatus, setFileEventStatus] = useState<FileEventStatus>("connecting")
 
   return (
     <QueryClientProvider client={queryClientRef.current}>
       <ApiBaseUrlContext.Provider value={apiBaseUrl}>
         <WorkspaceRequestIdContext.Provider value={workspaceRequestId}>
-          <FetchClientContext.Provider value={client}>
-            <FileEventInvalidationMount />
-            {children}
-          </FetchClientContext.Provider>
+          <FileEventStatusContext.Provider value={fileEventStatus}>
+            <FetchClientContext.Provider value={client}>
+              <FileEventInvalidationMount onFileEventStatusChange={setFileEventStatus} />
+              {children}
+            </FetchClientContext.Provider>
+          </FileEventStatusContext.Provider>
         </WorkspaceRequestIdContext.Provider>
       </ApiBaseUrlContext.Provider>
     </QueryClientProvider>
@@ -90,8 +101,12 @@ export function DataProvider({
  * Mounted as a sibling of `children` so the subscriptions run whether
  * or not consumers render any file-aware UI.
  */
-function FileEventInvalidationMount() {
+function FileEventInvalidationMount({
+  onFileEventStatusChange,
+}: {
+  onFileEventStatusChange: (status: FileEventStatus) => void
+}) {
   useFileEventInvalidation()
-  useFileEventStream()
+  useFileEventStream(onFileEventStatusChange)
   return null
 }

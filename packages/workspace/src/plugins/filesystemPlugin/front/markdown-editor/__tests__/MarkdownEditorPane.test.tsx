@@ -9,6 +9,7 @@ const mockFileWrite = vi.fn()
 vi.mock("../../data", () => ({
   useFileContent: (path: string, options?: unknown) => mockFileContent(path, options),
   useFileWrite: () => ({ mutateAsync: mockFileWrite }),
+  useFileEventStatus: () => "live",
   useApiBaseUrl: () => "/api",
 }))
 
