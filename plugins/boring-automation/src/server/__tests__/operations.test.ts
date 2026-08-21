@@ -148,8 +148,12 @@ describe("AutomationOperations", () => {
     expect(listed).toMatchObject({ truncated: true, items: [{ id: "run-2" }] })
   })
 
-  it("surfaces the dispatcher busy state when nudging a non-idle session", async () => {
-    const busy = Object.assign(new Error("busy"), { code: "AGENT_COMMAND_INVALID_STATE", statusCode: 409 })
+  it.each(["running", "aborting"] as const)("returns an observable skip when nudging a %s session", async (status) => {
+    const busy = Object.assign(new Error("session is not idle"), {
+      code: "AGENT_COMMAND_INVALID_STATE",
+      statusCode: 409,
+      details: { status },
+    })
     const sessionController = {
       list: vi.fn(async () => []),
       nudge: vi.fn(async () => { throw busy }),
@@ -157,9 +161,46 @@ describe("AutomationOperations", () => {
     }
     const operations = createAutomationOperations({ store: storeMock(), actor: { workspaceId: "w", userId: "u" }, defaultAgentTypeId: "default", sessionController })
 
-    await expect(operations.nudge!("session-1", "Continue")).rejects.toMatchObject({
-      code: BORING_AUTOMATION_ERROR_CODES.SESSION_NOT_IDLE,
+    await expect(operations.nudge!("session-1", "Continue")).resolves.toEqual({
+      sessionId: "session-1",
+      skipped: "session-busy",
     })
+  })
+
+  it.each([
+    Object.assign(new Error("session is not idle"), {
+      code: "AGENT_COMMAND_INVALID_STATE",
+      statusCode: 409,
+      details: { status: "error" },
+    }),
+    Object.assign(new Error("session runtime binding is not currently published"), {
+      code: "AGENT_COMMAND_INVALID_STATE",
+      statusCode: 409,
+    }),
+  ])("preserves non-busy invalid-state failures from automation nudges", async (invalidState) => {
+    const sessionController = {
+      list: vi.fn(async () => []),
+      nudge: vi.fn(async () => { throw invalidState }),
+      cancel: vi.fn(async () => {}),
+    }
+    const operations = createAutomationOperations({ store: storeMock(), actor: { workspaceId: "w", userId: "u" }, defaultAgentTypeId: "default", sessionController })
+
+    await expect(operations.nudge!("session-1", "Continue")).rejects.toBe(invalidState)
+  })
+
+  it("delivers a nudge to an idle session", async () => {
+    const sessionController = {
+      list: vi.fn(async () => []),
+      nudge: vi.fn(async () => {}),
+      cancel: vi.fn(async () => {}),
+    }
+    const operations = createAutomationOperations({ store: storeMock(), actor: { workspaceId: "w", userId: "u" }, defaultAgentTypeId: "default", sessionController })
+
+    await expect(operations.nudge!("session-1", "Continue")).resolves.toEqual({
+      sessionId: "session-1",
+      accepted: true,
+    })
+    expect(sessionController.nudge).toHaveBeenCalledWith("default", "session-1", "Continue", expect.stringMatching(/^nudge:/))
   })
 
   it("caps prompt results and reports the original character count", async () => {

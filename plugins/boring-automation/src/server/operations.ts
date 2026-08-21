@@ -87,7 +87,10 @@ export interface AutomationUpdateInput extends AutomationPatch {
 export interface AutomationOperations {
   list(limit?: number): Promise<BoundedAutomationList<AutomationSummary>>
   listDispatchRuns?(limit?: number): Promise<BoundedAutomationList<DispatchRunFleetSummary>>
-  nudge?(sessionId: string, message: string): Promise<{ sessionId: string; accepted: true }>
+  nudge?(sessionId: string, message: string): Promise<
+    | { sessionId: string; accepted: true }
+    | { sessionId: string; skipped: "session-busy" }
+  >
   cancel?(sessionId: string): Promise<{ sessionId: string; cancelled: true }>
   get(automationId: string): Promise<AutomationWithPrompt>
   create(input: AutomationCreate): Promise<AutomationSummary>
@@ -202,9 +205,7 @@ export function createAutomationOperations({
       try {
         await sessionController.nudge(target.agentTypeId, sessionId, message, `nudge:${randomUUID()}`)
       } catch (error) {
-        if ((error as { code?: unknown })?.code === "AGENT_COMMAND_INVALID_STATE") {
-          throw new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.SESSION_NOT_IDLE, `session ${sessionId} is not idle`)
-        }
+        if (isSessionBusyInvalidState(error)) return { sessionId, skipped: "session-busy" }
         throw error
       }
       return { sessionId, accepted: true }
@@ -333,6 +334,15 @@ function sanitizeRunError(error: string | null): string | null {
   if (!error) return null
   const firstLine = error.split(/\r?\n/, 1)[0]!.trim()
   return firstLine.slice(0, AUTOMATION_TOOL_ERROR_CHARACTER_LIMIT)
+}
+
+function isSessionBusyInvalidState(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false
+  const candidate = error as { code?: unknown; details?: unknown }
+  if (candidate.code !== "AGENT_COMMAND_INVALID_STATE") return false
+  if (!candidate.details || typeof candidate.details !== "object") return false
+  const status = (candidate.details as { status?: unknown }).status
+  return status === "running" || status === "aborting"
 }
 
 function contextUnavailable(): AutomationStoreError {

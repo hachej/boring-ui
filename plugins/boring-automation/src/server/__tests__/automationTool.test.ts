@@ -122,12 +122,12 @@ describe("boring_automation agent tool", () => {
     expect(h.ops.cancel).toHaveBeenCalledWith("session-1")
   })
 
-  it("fails loudly when nudge targets a non-idle session", async () => {
+  it("exposes a busy-session nudge skip in the successful tool result", async () => {
     const ops = operations()
-    vi.mocked(ops.nudge!).mockRejectedValue(new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.SESSION_NOT_IDLE, "busy"))
+    vi.mocked(ops.nudge!).mockResolvedValue({ sessionId: "session-1", skipped: "session-busy" })
     const result = await harness(ops).tool.execute({ operation: "nudge", sessionId: "session-1", message: "Continue" }, context())
-    expect(result.isError).toBe(true)
-    expect(details(result)).toMatchObject({ code: BORING_AUTOMATION_ERROR_CODES.SESSION_NOT_IDLE })
+    expect(result.isError).toBe(false)
+    expect(details(result)).toEqual({ ok: true, operation: "nudge", sessionId: "session-1", skipped: "session-busy" })
   })
 
   it("supports bounded safe run history", async () => {

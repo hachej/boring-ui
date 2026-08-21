@@ -5,8 +5,8 @@ Run one bounded factory tick, report, and exit. Durable state lives in beads, ru
 1. **Fleet health first.** Use `boring_automation` `list` to join dispatch runs with session status/title/age. Read policy values from `.agents/factory/policy.yaml`; do not invent limits. For each active worker, compare its bead lease with the session state.
    - Fresh lease: leave it alone.
    - Stale lease plus streaming session: leave it alone; only the stale-lease backstop may reclaim it.
-   - Stale lease plus idle session: before acting, write the structured bead comment required by the ladder. If no nudge for this attempt is recorded and the policy cooldown permits, call `nudge` once with evidence-based mechanical guidance.
-   - Still idle after the recorded nudge and cooldown: write `cancelled <ts> attempt=N`, call `cancel`, break the lease, and return the bead to ready.
+   - Stale lease plus idle session: if no delivered nudge for this attempt is recorded and the policy cooldown permits, write `nudge-attempt <ts> attempt=N`, then call `nudge` once with evidence-based mechanical guidance. On `accepted: true`, record `nudge-delivered <ts> attempt=N`. On `skipped: session-busy`, record that exact reason instead and re-evaluate on the next tick; a skip never counts as delivery and never advances the ladder toward cancellation.
+   - Still idle after a recorded `nudge-delivered` marker and cooldown: write `cancelled <ts> attempt=N`, call `cancel`, break the lease, and return the bead to ready.
    - When the configured attempt limit is exhausted, route to Steward as a spec defect and file one owner intention with `ask_user wait:false`; record `intention-raised <condition> <id> <ts>` on the bead.
    - Never cancel a streaming session. Never repeat an action whose structured bead comment already records it.
    - Poll previously recorded intention ids with `read_intention` and act only on explicit answered values.
