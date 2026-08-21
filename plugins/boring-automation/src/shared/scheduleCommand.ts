@@ -44,16 +44,15 @@ export function parseScheduleCadence(input: string): string | null {
 }
 
 export function parseScheduleCommandArgs(args: string): ParsedScheduleCommand {
-  const { flags, remainder } = parseLeadingFlags(args)
-  if (flags.timezone && !isValidIanaTimeZone(flags.timezone)) {
+  const leading = parseLeadingFlags(args)
+  const cadence = parseCadence(leading.remainder)
+  if (!cadence) throw new Error("could not parse cadence — try 'daily 8am' or '0 8 * * *'")
+  const parsed = parsePromptFlags(leading.remainder.slice(cadence.consumed), leading.flags)
+  if (parsed.flags.timezone && !isValidIanaTimeZone(parsed.flags.timezone)) {
     throw new Error("invalid timezone — use an IANA timezone such as Europe/Zurich")
   }
-
-  const cadence = parseCadence(remainder)
-  if (!cadence) throw new Error("could not parse cadence — try 'daily 8am' or '0 8 * * *'")
-  const prompt = remainder.slice(cadence.consumed).trim()
-  if (!prompt) throw new Error("prompt is required after the cadence")
-  return { cron: cadence.cron, prompt, ...flags }
+  if (!parsed.prompt) throw new Error("prompt is required after the cadence")
+  return { cron: cadence.cron, prompt: parsed.prompt, ...parsed.flags }
 }
 
 export function nextScheduleFire(cron: string, timezone: string, after = new Date()): string {
@@ -98,6 +97,43 @@ function parseLeadingFlags(input: string): {
     flags[name] = value
   }
   return { flags, remainder: input.slice(cursor) }
+}
+
+function parsePromptFlags(
+  input: string,
+  flags: Partial<Record<"timezone" | "model" | "agentTypeId" | "title", string>>,
+): { prompt: string; flags: Partial<Record<"timezone" | "model" | "agentTypeId" | "title", string>> } {
+  const prompt: string[] = []
+  let cursor = 0
+  let textStart = 0
+  while (cursor < input.length) {
+    cursor = skipSpace(input, cursor)
+    if (cursor >= input.length) break
+    const tokenStart = cursor
+    const token = readToken(input, cursor)
+    const quoted = input[tokenStart] === "'" || input[tokenStart] === '"'
+    if (quoted || !token.value.startsWith("--")) {
+      cursor = token.end
+      continue
+    }
+    prompt.push(input.slice(textStart, tokenStart).trim())
+    const separator = token.value.indexOf("=")
+    const rawName = separator >= 0 ? token.value.slice(2, separator) : token.value.slice(2)
+    const name = rawName === "agent" ? "agentTypeId" : rawName
+    if (name !== "timezone" && name !== "model" && name !== "agentTypeId" && name !== "title") throw new Error(`unknown flag --${rawName}`)
+    let value = separator >= 0 ? token.value.slice(separator + 1) : ""
+    cursor = skipSpace(input, token.end)
+    if (separator < 0) {
+      const valueToken = readToken(input, cursor)
+      value = valueToken.value
+      cursor = valueToken.end
+    }
+    if (!value) throw new Error(`--${rawName} requires a value`)
+    flags[name] = value
+    textStart = cursor
+  }
+  prompt.push(input.slice(textStart).trim())
+  return { prompt: prompt.filter(Boolean).join(" "), flags }
 }
 
 function readToken(input: string, start: number): { value: string; end: number } {

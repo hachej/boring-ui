@@ -79,6 +79,8 @@ export interface PluginProviderProps {
   authScopeKey?: string
   onAuthError?: (statusCode: number) => void
   apiTimeout?: number
+  /** Host-selected IANA timezone for workspace-local scheduling defaults. */
+  workspaceTimezone?: string
   activeSessionId?: string | null
   openSessionIds?: readonly string[]
   children: ReactNode

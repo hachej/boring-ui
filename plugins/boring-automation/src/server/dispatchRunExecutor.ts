@@ -66,7 +66,7 @@ export class DispatchRunExecutor {
         },
       }).catch((error: unknown) => {
         if (!admitted) reject(error)
-        else (this.options.logger ?? console).error("Automation run failed after durable admission", error)
+        else (this.options.logger ?? console).error(`Automation run failed after durable admission: ${safeErrorMessage(error)}`)
       })
     })
   }
@@ -150,6 +150,7 @@ export class DispatchRunExecutor {
         current,
         actor,
         requireAddressability: trigger === "scheduled",
+        ...(input.request ? { request: input.request } : {}),
         dispatcherResolver: this.options.dispatcherResolver,
         publish: async (changed) => await this.publishRunChange(actor, changed),
       })
@@ -342,7 +343,7 @@ export function finalStatus(
   failure: RunFailure,
   observed: "succeeded" | "failed" | "cancelled" | null,
 ): "succeeded" | "failed" | "cancelled" | "outcome-unknown" {
-  if (failure.kind === "unaddressable") return "failed"
+  if (failure.kind === "unaddressable") return "outcome-unknown"
   if (failure.kind === "duration-cap") return failure.stop.confirmed ? "cancelled" : "outcome-unknown"
   if (observed) return observed
   if (failure.kind === "cancelled") return "cancelled"

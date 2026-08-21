@@ -94,6 +94,35 @@ describe("FileAutomationStore persistence", () => {
     expect(raw.runs).toHaveProperty(run.id)
   })
 
+  it("rejects an invalid persisted duration cap instead of silently changing timer behavior", async () => {
+    const store = createStore()
+    const automation = await store.createAutomation({
+      title: "Invalid cap", cron: "0 9 * * *", timezone: "UTC", model: "test:model",
+    })
+    const raw = JSON.parse(await readFile(metadataPath("store.json"), "utf8"))
+    raw.automations[automation.id].runDurationCapMs = Number.MAX_SAFE_INTEGER
+    await writeFile(metadataPath("store.json"), JSON.stringify(raw), "utf8")
+
+    await expect(createStore().getAutomation(automation.id)).rejects.toThrow(
+      `automation ${automation.id} has an invalid persisted run duration cap`,
+    )
+  })
+
+  it("clamps orphan reconciliation duration to the persisted integer ceiling", async () => {
+    const first = createStore({ clock: () => new Date("2026-01-01T00:00:00.000Z") })
+    const automation = await first.createAutomation({
+      title: "Long orphan", cron: "0 9 * * *", timezone: "UTC", model: "test:model",
+    })
+    const run = await first.beginRun({ automationId: automation.id, trigger: "manual", promptSnapshot: "p", modelSnapshot: "test:model" })
+    await first.updateRunLifecycle(run.id, { status: "running", startedAt: "2026-01-01T00:00:00.000Z" })
+
+    const restarted = createStore({ clock: () => new Date("2099-01-01T00:00:00.000Z") })
+    await restarted.reconcileOrphanedRuns(automation.id)
+    await expect(restarted.listRuns(automation.id)).resolves.toEqual([
+      expect.objectContaining({ id: run.id, durationMs: 2_147_483_647 }),
+    ])
+  })
+
   it("reconciles persisted active runs after host restart before admitting a new run", async () => {
     const firstStore = createStore({ clock: () => new Date("2026-07-10T00:00:00.000Z") })
     const automation = await firstStore.createAutomation({

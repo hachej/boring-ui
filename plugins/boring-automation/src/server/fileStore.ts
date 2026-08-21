@@ -10,6 +10,7 @@ import type {
   AutomationRunLifecyclePatch,
 } from "../shared/types"
 import { automationPromptPath } from "../shared/prompt"
+import { clampAutomationPersistedDurationMs, MAX_AUTOMATION_DURATION_MS } from "../shared/schedule"
 import { isAutomationRunOccupying, reconcileAbandonedRun } from "../shared/runStatus"
 import type { AutomationSeed, AutomationStore } from "./store"
 import { automationNotFound, runAlreadyActive, runAlreadyRecorded, runLeaseLost, runNotFound } from "./store"
@@ -405,6 +406,7 @@ export class FileAutomationStore implements AutomationStore {
                 }))
               : {},
           }
+          for (const automation of Object.values(this.state.automations)) assertPersistedDurationCap(automation)
         } catch (error) {
           if ((error as { code?: string }).code !== "ENOENT") throw error
           this.state = clone(EMPTY_STATE)
@@ -429,9 +431,17 @@ function reconcileOrphanedRuns(
     const reconciled = reconcileAbandonedRun(run.status, "host-restart")
     run.status = reconciled.status
     run.completedAt = completedAt
-    run.durationMs = Math.max(0, new Date(completedAt).getTime() - new Date(run.startedAt ?? run.createdAt).getTime())
+    run.durationMs = clampAutomationPersistedDurationMs(new Date(completedAt).getTime() - new Date(run.startedAt ?? run.createdAt).getTime())
     run.error = reconciled.error
     run.updatedAt = completedAt
+  }
+}
+
+function assertPersistedDurationCap(automation: Automation): void {
+  const cap = automation.runDurationCapMs
+  if (cap == null) return
+  if (!Number.isSafeInteger(cap) || cap < 1 || cap > MAX_AUTOMATION_DURATION_MS) {
+    throw new Error(`automation ${automation.id} has an invalid persisted run duration cap`)
   }
 }
 

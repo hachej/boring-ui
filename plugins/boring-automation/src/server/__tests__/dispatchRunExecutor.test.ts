@@ -53,7 +53,7 @@ describe("run failure classification", () => {
 
     const unaddressable = await classifyFailure(new AutomationSessionUnaddressableError("session missing"), { dispatchInFlight: true })
     expect(unaddressable).toEqual({ kind: "unaddressable", message: "session missing" })
-    expect(finalStatus(unaddressable, "succeeded")).toBe("failed")
+    expect(finalStatus(unaddressable, "succeeded")).toBe("outcome-unknown")
 
     const cancelled = await classifyFailure(Object.assign(new Error("stopped"), { name: "AbortError" }), { dispatchInFlight: false })
     expect(cancelled).toEqual({ kind: "cancelled", message: "stopped" })
@@ -149,13 +149,13 @@ describe("DispatchRunExecutor", () => {
 
     const run = await harness.executor.run({
       automationId: harness.automation.id,
-      actor: harness.actor,
+      request: harness.request,
       trigger: "scheduled",
       scheduledFor: "2026-07-10T09:00:00.000Z",
     })
 
     expect(run).toMatchObject({
-      status: "failed",
+      status: "outcome-unknown",
       trigger: "scheduled",
       sessionId: "session-1",
       error: "recorded session session-1 could not be resolved through the workspace session lookup: session was not found",
@@ -163,7 +163,15 @@ describe("DispatchRunExecutor", () => {
     expect(resolver.authorizeSession).toHaveBeenCalledWith(
       harness.actor,
       { agentTypeId: "default", sessionId: "session-1" },
+      { request: harness.request },
     )
+    expect(isAutomationRunOccupying(run.status)).toBe(true)
+    await expect(harness.store.beginRun({
+      automationId: harness.automation.id,
+      trigger: "manual",
+      promptSnapshot: "replacement",
+      modelSnapshot: harness.automation.model,
+    })).rejects.toMatchObject({ code: BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_ACTIVE })
   })
 
   it("verifies scheduled session addressability on the first event before a later stream rejection", async () => {
@@ -183,6 +191,7 @@ describe("DispatchRunExecutor", () => {
     expect(harness.resolver.authorizeSession).toHaveBeenCalledWith(
       harness.actor,
       { agentTypeId: "default", sessionId: "session-1" },
+      undefined,
     )
   })
 
@@ -202,6 +211,7 @@ describe("DispatchRunExecutor", () => {
     expect(harness.resolver.authorizeSession).toHaveBeenCalledWith(
       harness.actor,
       { agentTypeId: "default", sessionId: "session-1" },
+      undefined,
     )
   })
 

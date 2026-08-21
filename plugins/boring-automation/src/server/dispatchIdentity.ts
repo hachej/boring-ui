@@ -1,3 +1,4 @@
+import type { FastifyRequest } from "fastify"
 import type { WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/server"
 import type { AutomationRun } from "../shared/types"
 import type { VerifiedAutomationActor } from "./dispatchRunExecutor"
@@ -25,6 +26,7 @@ export class DispatchIdentity {
     current: AutomationRun
     actor: VerifiedAutomationActor
     requireAddressability: boolean
+    request?: FastifyRequest
     dispatcherResolver: WorkspaceAgentDispatcherResolver
     publish(run: AutomationRun): Promise<void>
   }) {}
@@ -71,7 +73,7 @@ export class DispatchIdentity {
     const authorizeSession = this.options.dispatcherResolver.authorizeSession
     if (!authorizeSession) throw new AutomationSessionUnaddressableError("workspace session lookup is unavailable")
     try {
-      await authorizeSession.call(this.options.dispatcherResolver, this.options.actor, ref)
+      await authorizeSession.call(this.options.dispatcherResolver, this.options.actor, ref, this.options.request ? { request: this.options.request } : undefined)
       this.addressabilityVerified = true
     } catch (error) {
       throw new AutomationSessionUnaddressableError(

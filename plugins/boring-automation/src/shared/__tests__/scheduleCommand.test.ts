@@ -30,6 +30,14 @@ describe("/schedule cadence parsing", () => {
       })
   })
 
+  it("accepts flags after the prompt without moving them into prompt text", () => {
+    expect(parseScheduleCommandArgs("daily 8am send report --timezone Europe/Zurich")).toMatchObject({
+      cron: "0 8 * * *",
+      prompt: "send report",
+      timezone: "Europe/Zurich",
+    })
+  })
+
   it("passes through cron while preserving arbitrary prompt quoting and backslashes", () => {
     expect(parseScheduleCommandArgs("0 8 * * * summarize 'yesterday' from C:\\\\reports"))
       .toMatchObject({ cron: "0 8 * * *", prompt: "summarize 'yesterday' from C:\\\\reports" })
