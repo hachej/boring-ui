@@ -4,6 +4,15 @@ One cron wakes one orchestrator. It checks the fleet, janitors the graph, starts
 work, and exits. Workers pull their own beads and outlive the tick that started
 them.
 
+## Implementation record
+
+PR #1288 accumulated four owner-reviewed slices in one branch rather than stacked
+PRs: fleet controls, durable run occupancy/seeding, non-blocking intentions, and
+`/schedule`. That is an explicit exception to the normal review-size preference,
+not a claim that these are one feature. The final runtime contract below removes
+superseded intermediate vocabulary; the PR presentation and body keep the
+slice-by-slice provenance and rollback history visible.
+
 ## Goal
 
 Make the factory run unattended without a human dispatching work, without an
@@ -61,7 +70,7 @@ Verified by inspection, not assumed:
 | Automation runs are host-owned and outlive their trigger | `startRunHeartbeat`, `reconcileOrphanedRuns` |
 | The scheduler refuses to start an already-active run | `RUN_ALREADY_ACTIVE` skip in `dueRunService` |
 | An agent inside a run can trigger another run | `probe-nest` → `probe-noop`, both succeeded, 16.7s |
-| Nudging a **streaming** session is rejected | `409 AGENT_COMMAND_INVALID_STATE`; only idle sessions accept a prompt |
+| Nudging a **running/aborting** session is an observable skip | `sendIfIdle` returns `not-idle`; only idle sessions accept a prompt |
 | Two packages claiming one `definitionId` both fail closed | `agentPackageDiscoveryConflict` test |
 | `WorkspaceAgentDispatcher` is the sanctioned in-process primitive | `packages/agent/docs/API.md`; automation already uses it |
 | `ask_user` blocks its session until the owner answers | gate session observed holding at `input-available` for hours |
@@ -87,9 +96,7 @@ cron */10 → orchestrator run
         blocks on a human.
 ```
 
-**Session continuity is an automation field, not a hardcoded rule** — see
-Change 1. The orchestrator ships with `sessionMode: "new"`: each tick is a fresh
-session and the cron never resumes the previous tick's session. A standing supervisor session would accumulate every tick's chatter,
+**Each dispatch run creates a fresh session.** The orchestrator cron never resumes the previous tick's session. A standing supervisor session would accumulate every tick's chatter,
 compact mid-tick, and re-send a growing prompt forever. A fresh session forces
 the persona's own rule — *durable state lives in beads and notes, never in
 accumulated context* — and makes every tick idempotent: it re-derives leases,
@@ -165,40 +172,29 @@ prompt holds what this particular tick does.
 
 Stays generic. No factory concept enters it: no slots, no beads, no ladder.
 
-- Add `"dispatch"` to the run trigger union (`"manual" | "scheduled"` today). A
-  dispatched worker session and a cron run are the same object with a different
-  origin.
+- Keep the persisted trigger vocabulary at `"manual" | "scheduled"`; a manual
+  slot dispatch and a scheduled cron run share the same dispatch-run lifecycle.
 - Add three operations to the `boring_automation` tool:
   - `list` — join what already exists: runs, `sessionId`, session status and
     age, and the `[br-###]` session-title convention. This is the fleet view;
     without it the orchestrator supervises blind.
-  - `nudge(sessionId, message)` — `dispatcher.send()` on an existing session.
-    Must surface `409 AGENT_COMMAND_INVALID_STATE` rather than swallow it:
-    steering a **busy** session requires interrupt-then-prompt, and pretending
-    otherwise hides a stuck worker.
-  - `cancel(sessionId)` — `interrupt()` / `stop()`.
-    (For `nudge`, the invariant is *fail loudly on a non-idle session*; verify
-    the dispatcher-level equivalent of the HTTP 409 during implementation —
-    the in-process error shape may differ.)
+  - `nudge(agentTypeId, sessionId, message)` — atomically prompt an existing
+    idle session by its full Agent address. A running/aborting session returns
+    the explicit successful skip `session-busy`; the ladder records the skip
+    and does not advance.
+  - `cancel(agentTypeId, sessionId)` — stop the exactly addressed session.
+    `cancelled: true` is returned only when the Agent confirms `stopped: true`;
+    an already-idle session returns `session-not-running` and does not advance
+    the ladder.
 - Starting a run in an **occupied slot is rejected by the tool**, reusing the
   existing active-run check. `worker_cap` becomes structural rather than the
   orchestrator's judgment — the defect from the first tick made impossible
   instead of merely forbidden.
-- Rename the internal concept *automation run* → **dispatch run**. Cron becomes
-  one trigger among three, not the identity of the thing.
-- Add a `sessionMode` field to an automation: `"new" | "continue"`.
-  - `"new"` (default, and today's behaviour) — every run gets a fresh session.
-    Idempotent, bounded context, safe for anything mechanical.
-  - `"continue"` — every run prompts the **same** session, preserving continuity
-    across runs. Safe by construction: `RUN_ALREADY_ACTIVE` guarantees the
-    previous run has finished, so the session is idle when the next run prompts
-    it — precisely the state a prompt requires (a streaming session returns
-    409). If the stored session is gone or unusable, fall back to `"new"` and
-    say so in the run record rather than failing the tick.
-  - Default `"new"`, because `"continue"` grows context without bound (a
-    10-minute tick is ~4,300 turns a month in one session, so it *will* compact)
-    and carries a confused state forward instead of recovering from it.
-    Continuity is worth choosing deliberately, per automation.
+- Rename the internal concept *automation run* → **dispatch run**. Cron is one
+  origin of the same lifecycle, not the identity of the thing.
+- Preserve fresh-session behavior for every run. A `continue` mode was rejected
+  during implementation because it would grow context without bound and would
+  turn session recovery into hidden fallback policy.
 
 **The existing suite must stay green.** It is the blast radius of the rename and
 the highest-probability regression in this work. No assertion may be weakened to
@@ -272,7 +268,7 @@ wakes.
 **Two reclaim clocks, disjoint jurisdictions:** the ladder owns sessions the
 orchestrator can observe *and prompt* (idle ones). `stale_lease_minutes` is the
 backstop for everything it cannot — streaming, unreachable, or on a dead host.
-The ladder never cancels a streaming session.
+The ladder never cancels a `running` or `aborting` session.
 
 **Every ladder action writes a structured bead comment *before* acting** —
 `nudge #1 <ts>`, `intention-raised <condition> <id> <ts>`,
@@ -318,8 +314,8 @@ intention is unanswered — never consent.
 
 ## Proof path
 
-1. Unit: trigger union; occupied-slot rejection; `nudge` surfacing 409; ladder
-   transitions.
+1. Unit: trigger vocabulary; occupied-slot rejection; exact-address nudge/cancel
+   outcomes; ladder transitions.
 2. `boring-automation` suite green — paste the counts.
 3. Live tick against the real ready queue: workers start, **survive the tick
    that started them**, claim their own beads, and still appear running in

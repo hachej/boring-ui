@@ -171,6 +171,27 @@ describe("PostgresAutomationStore actor isolation", () => {
     expect(queries[1]!.values).not.toContain("workspace-only prompt")
   })
 
+  it("reactivates a seeded row without overwriting operator-edited metadata", async () => {
+    const existing = {
+      id: "seed-id", title: "operator title", enabled: false, cron: null, timezone: "Europe/Zurich",
+      model: "operator:model", agent_type_id: "operator-agent", run_duration_cap_ms: null,
+      prompt_ref: ".agents/automation/worker-slot.md",
+      created_at: "2026-07-19T08:00:00.000Z", updated_at: "2026-07-19T08:00:00.000Z",
+    }
+    const recorded = recordingSql([existing])
+    const workspace = { root: "/workspace", runtimeContext: {}, async readFile() { return "prompt" } } as unknown as Workspace
+    const store = new PostgresAutomationStore(recorded.sql, { workspaceId: "workspace-a", userId: "user-a" }, undefined, workspace)
+
+    await expect(store.ensureSeededAutomation({
+      key: "worker-slot-1", title: "manifest title", enabled: true, cron: null, timezone: "UTC",
+      model: "manifest:model", agentTypeId: "boring-worker", promptRef: ".agents/automation/worker-slot.md",
+    })).resolves.toMatchObject({ title: "operator title", enabled: false, timezone: "Europe/Zurich", model: "operator:model" })
+
+    expect(recorded.queries[0]!.text).toContain("ON CONFLICT (id) DO UPDATE SET\n        deleted_at = NULL")
+    expect(recorded.queries[0]!.text).not.toContain("title = EXCLUDED.title")
+    expect(recorded.queries[0]!.text).not.toContain("updated_at = EXCLUDED.updated_at")
+  })
+
   it("locks the seeded automation row before checking for occupying runs", async () => {
     const queries: RecordedQuery[] = []
     const sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {

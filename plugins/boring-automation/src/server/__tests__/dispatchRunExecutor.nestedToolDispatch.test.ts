@@ -350,7 +350,7 @@ class NestedAutomationStore implements AutomationStore {
   }
   async listRuns() { return this.run ? [this.run] : [] }
   async listRecentRuns(limit: number) { return this.run && limit > 0 ? [this.run] : [] }
-  async findRunBySessionId(sessionId: string) { return this.run?.sessionId === sessionId ? this.run : null }
+  async findRunBySessionRef(ref: { agentTypeId: string; sessionId: string }) { return this.run?.sessionId === ref.sessionId ? this.run : null }
 }
 
 function summary(id: string): SessionSummary {

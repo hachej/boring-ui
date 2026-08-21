@@ -20,8 +20,8 @@ function operations(): AutomationOperations {
   return {
     list: vi.fn(async () => ({ items: [summary], truncated: false })),
     listDispatchRuns: vi.fn(async () => ({ items: [], truncated: false })),
-    nudge: vi.fn(async (sessionId: string) => ({ sessionId, accepted: true as const })),
-    cancel: vi.fn(async (sessionId: string) => ({ sessionId, cancelled: true as const })),
+    nudge: vi.fn(async (ref) => ({ ...ref, accepted: true as const })),
+    cancel: vi.fn(async (ref) => ({ ...ref, cancelled: true as const })),
     get: vi.fn(async () => ({ automation: summary, prompt: { text: "prompt", characterCount: 6, truncated: false } })),
     create: vi.fn(async () => summary),
     update: vi.fn(async () => summary),
@@ -116,18 +116,18 @@ describe("boring_automation agent tool", () => {
 
   it("supports nudge and cancel session controls", async () => {
     const h = harness()
-    await h.tool.execute({ operation: "nudge", sessionId: "session-1", message: "Continue" }, context())
-    await h.tool.execute({ operation: "cancel", sessionId: "session-1" }, context())
-    expect(h.ops.nudge).toHaveBeenCalledWith("session-1", "Continue")
-    expect(h.ops.cancel).toHaveBeenCalledWith("session-1")
+    await h.tool.execute({ operation: "nudge", agentTypeId: "worker", sessionId: "session-1", message: "Continue" }, context())
+    await h.tool.execute({ operation: "cancel", agentTypeId: "worker", sessionId: "session-1" }, context())
+    expect(h.ops.nudge).toHaveBeenCalledWith({ agentTypeId: "worker", sessionId: "session-1" }, "Continue")
+    expect(h.ops.cancel).toHaveBeenCalledWith({ agentTypeId: "worker", sessionId: "session-1" })
   })
 
   it("exposes a busy-session nudge skip in the successful tool result", async () => {
     const ops = operations()
-    vi.mocked(ops.nudge!).mockResolvedValue({ sessionId: "session-1", skipped: "session-busy" })
-    const result = await harness(ops).tool.execute({ operation: "nudge", sessionId: "session-1", message: "Continue" }, context())
+    vi.mocked(ops.nudge!).mockResolvedValue({ agentTypeId: "worker", sessionId: "session-1", skipped: "session-busy" })
+    const result = await harness(ops).tool.execute({ operation: "nudge", agentTypeId: "worker", sessionId: "session-1", message: "Continue" }, context())
     expect(result.isError).toBe(false)
-    expect(details(result)).toEqual({ ok: true, operation: "nudge", sessionId: "session-1", skipped: "session-busy" })
+    expect(details(result)).toEqual({ ok: true, operation: "nudge", agentTypeId: "worker", sessionId: "session-1", skipped: "session-busy" })
   })
 
   it("supports bounded safe run history", async () => {

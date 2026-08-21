@@ -49,8 +49,8 @@ const idInput = (operation: "pause" | "resume" | "run" | "delete") => z.object({
   operation: z.literal(operation),
   automationId: nonEmpty,
 }).strict()
-const nudgeInput = z.object({ operation: z.literal("nudge"), sessionId: nonEmpty, message: nonEmpty }).strict()
-const cancelInput = z.object({ operation: z.literal("cancel"), sessionId: nonEmpty }).strict()
+const nudgeInput = z.object({ operation: z.literal("nudge"), agentTypeId: nonEmpty, sessionId: nonEmpty, message: nonEmpty }).strict()
+const cancelInput = z.object({ operation: z.literal("cancel"), agentTypeId: nonEmpty, sessionId: nonEmpty }).strict()
 const listRunsInput = z.object({ operation: z.literal("list_runs"), automationId: nonEmpty, limit }).strict()
 
 const AutomationToolInputSchema = z.discriminatedUnion("operation", [
@@ -147,11 +147,11 @@ async function executeOperation(operations: AutomationOperations, input: Automat
     }
     case "nudge": {
       assertNotAborted(ctx)
-      return { ok: true as const, operation: input.operation, ...(await requireOperation(operations.nudge, "nudge")(input.sessionId, input.message)) }
+      return { ok: true as const, operation: input.operation, ...(await requireOperation(operations.nudge, "nudge")({ agentTypeId: input.agentTypeId, sessionId: input.sessionId }, input.message)) }
     }
     case "cancel": {
       assertNotAborted(ctx)
-      return { ok: true as const, operation: input.operation, ...(await requireOperation(operations.cancel, "cancel")(input.sessionId)) }
+      return { ok: true as const, operation: input.operation, ...(await requireOperation(operations.cancel, "cancel")({ agentTypeId: input.agentTypeId, sessionId: input.sessionId })) }
     }
     case "list_runs": {
       const listed = await operations.listRuns(input.automationId, input.limit)
@@ -287,8 +287,8 @@ function automationToolJsonSchema(): Record<string, unknown> {
       operationOnly("pause", { automationId: id }, ["automationId"]),
       operationOnly("resume", { automationId: id }, ["automationId"]),
       operationOnly("run", { automationId: id }, ["automationId"]),
-      operationOnly("nudge", { sessionId: id, message: id }, ["sessionId", "message"]),
-      operationOnly("cancel", { sessionId: id }, ["sessionId"]),
+      operationOnly("nudge", { agentTypeId: id, sessionId: id, message: id }, ["agentTypeId", "sessionId", "message"]),
+      operationOnly("cancel", { agentTypeId: id, sessionId: id }, ["agentTypeId", "sessionId"]),
       operationOnly("list_runs", { automationId: id, limit: limitSchema }, ["automationId"]),
       operationOnly("delete", { automationId: id }, ["automationId"]),
     ],

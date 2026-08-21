@@ -56,7 +56,7 @@ export interface LeaseBoundWorkspaceAgent {
     readonly receipt: AgentSendReceipt
   }>
   /** Transcript-redacted sessions for this exact Agent and authorized scope. */
-  listSessions(limit?: number): Promise<AgentSessionPage>
+  listSessions(limit?: number, cursor?: string): Promise<AgentSessionPage>
   /** Atomically prompt an idle session and return after host acceptance. */
   sendIfIdle(sessionId: string, message: string, requestId: string): Promise<AgentSendIfIdleReceipt>
   interrupt(sessionId: string, requestId: string): Promise<InterruptReceipt>

@@ -211,6 +211,22 @@ describe("boring automation server plugin", () => {
     expect(sendIfIdle).toHaveBeenCalledWith("session-1", "Continue", "request-1")
   })
 
+  it("paginates the complete Agent session inventory", async () => {
+    const listSessions = vi.fn(async (_limit: number, cursor?: string) => cursor
+      ? { sessions: [{ ref: { agentTypeId: "boring-worker", sessionId: "session-2" } }], nextCursor: undefined }
+      : { sessions: [{ ref: { agentTypeId: "boring-worker", sessionId: "session-1" } }], nextCursor: "next" })
+    const controller = createAutomationSessionController({
+      runWithWorkspaceAgent: vi.fn(async (_input, run) => await run({ listSessions } as never)),
+    } as never, { workspaceId: "workspace-1", userId: "user-1" })
+
+    await expect(controller.list("boring-worker")).resolves.toEqual([
+      expect.objectContaining({ ref: { agentTypeId: "boring-worker", sessionId: "session-1" } }),
+      expect.objectContaining({ ref: { agentTypeId: "boring-worker", sessionId: "session-2" } }),
+    ])
+    expect(listSessions).toHaveBeenNthCalledWith(1, 100, undefined)
+    expect(listSessions).toHaveBeenNthCalledWith(2, 100, "next")
+  })
+
   it("starts hosted due evaluation internally when Fastify becomes ready", async () => {
     const runDue = vi.fn(async () => ({ now: "2026-07-23T09:00:00.000Z", outcomes: [] }))
     const plugin = createBoringAutomationServerPlugin({

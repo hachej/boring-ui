@@ -100,16 +100,7 @@ export class PostgresAutomationStore implements AutomationStore {
       INSERT INTO boring_automation_automations (id, workspace_id, owner_user_id, title, enabled, cron, timezone, model, agent_type_id, run_duration_cap_ms, prompt_ref, created_at, updated_at)
       VALUES (${id}, ${this.actor.workspaceId}, ${this.actor.userId}, ${input.title}, ${input.enabled}, ${input.cron}, ${input.timezone}, ${input.model}, ${input.agentTypeId}, ${input.runDurationCapMs ?? null}, ${input.promptRef}, ${now}, ${now})
       ON CONFLICT (id) DO UPDATE SET
-        title = EXCLUDED.title,
-        enabled = EXCLUDED.enabled,
-        cron = EXCLUDED.cron,
-        timezone = EXCLUDED.timezone,
-        model = EXCLUDED.model,
-        agent_type_id = EXCLUDED.agent_type_id,
-        run_duration_cap_ms = EXCLUDED.run_duration_cap_ms,
-        prompt_ref = EXCLUDED.prompt_ref,
-        deleted_at = NULL,
-        updated_at = EXCLUDED.updated_at
+        deleted_at = NULL
       WHERE boring_automation_automations.workspace_id = EXCLUDED.workspace_id
         AND boring_automation_automations.owner_user_id = EXCLUDED.owner_user_id
       RETURNING id, title, enabled, cron, timezone, model, agent_type_id, run_duration_cap_ms, prompt_ref, created_at, updated_at
@@ -360,7 +351,7 @@ export class PostgresAutomationStore implements AutomationStore {
     return rows.map(toRun)
   }
 
-  async findRunBySessionId(sessionId: string): Promise<AutomationRun | null> {
+  async findRunBySessionRef(ref: { agentTypeId: string; sessionId: string }): Promise<AutomationRun | null> {
     const rows = await this.sql<RunRow[]>`
       SELECT runs.* FROM boring_automation_runs AS runs
       INNER JOIN boring_automation_automations AS automations
@@ -368,7 +359,10 @@ export class PostgresAutomationStore implements AutomationStore {
         AND automations.workspace_id = runs.workspace_id
         AND automations.owner_user_id = runs.owner_user_id
       WHERE runs.workspace_id = ${this.actor.workspaceId} AND runs.owner_user_id = ${this.actor.userId}
-        AND runs.session_id = ${sessionId} AND automations.deleted_at IS NULL
+        AND runs.session_id = ${ref.sessionId}
+        AND runs.dispatch_receipt->'ref'->>'agentTypeId' = ${ref.agentTypeId}
+        AND runs.dispatch_receipt->'ref'->>'sessionId' = ${ref.sessionId}
+        AND automations.deleted_at IS NULL
       ORDER BY runs.updated_at DESC, runs.id DESC
       LIMIT 1
     `

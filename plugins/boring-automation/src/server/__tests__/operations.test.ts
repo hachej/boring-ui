@@ -74,7 +74,7 @@ function storeMock(overrides: Partial<AutomationStore> = {}) {
     updateRunLifecycle: vi.fn(async () => run()),
     listRuns: vi.fn(async () => [run()]),
     listRecentRuns: vi.fn(async () => [run()]),
-    findRunBySessionId: vi.fn(async (sessionId) => sessionId === "session-1" ? run() : null),
+    findRunBySessionRef: vi.fn(async (ref) => ref.agentTypeId === "worker" && ref.sessionId === "session-1" ? run() : null),
     ...overrides,
     getRun: overrides.getRun ?? vi.fn(async (_automationId, runId) => runId === "run-1" ? run() : null),
   }
@@ -126,9 +126,9 @@ describe("AutomationOperations", () => {
   it("joins dispatch runs with transcript-redacted session health", async () => {
     const store = storeMock({ listRuns: vi.fn(async () => [run({ status: "running", trigger: "manual" })]) })
     const sessionController = {
-      list: vi.fn(async () => [{ ref: { agentTypeId: "default", sessionId: "session-1" }, title: "[br-1276] worker", status: "running" as const, createdAt: Date.now() - 20_000, updatedAt: Date.now() - 5_000 }]),
+      list: vi.fn(async () => [{ ref: { agentTypeId: "worker", sessionId: "session-1" }, title: "[br-1276] worker", status: "running" as const, createdAt: Date.now() - 20_000, updatedAt: Date.now() - 5_000 }]),
       nudge: vi.fn(async () => ({ status: "accepted" as const, receipt: {} as never })),
-      cancel: vi.fn(async () => {}),
+      cancel: vi.fn(async () => ({ accepted: true as const, cursor: 1, stopped: true, clearedQueue: [] })),
     }
     const operations = createAutomationOperations({ store, actor: { workspaceId: "w", userId: "u" }, defaultAgentTypeId: "default", sessionController })
 
@@ -137,6 +137,7 @@ describe("AutomationOperations", () => {
     expect(listed.items).toEqual([expect.objectContaining({
       trigger: "manual",
       sessionId: "session-1",
+      agentTypeId: "worker",
       sessionTitle: "[br-1276] worker",
       sessionStatus: "running",
       sessionAgeMs: expect.any(Number),
@@ -158,11 +159,12 @@ describe("AutomationOperations", () => {
     const sessionController = {
       list: vi.fn(async () => []),
       nudge: vi.fn(async () => ({ status: "not-idle" as const })),
-      cancel: vi.fn(async () => {}),
+      cancel: vi.fn(async () => ({ accepted: true as const, cursor: 1, stopped: true, clearedQueue: [] })),
     }
     const operations = createAutomationOperations({ store: storeMock(), actor: { workspaceId: "w", userId: "u" }, defaultAgentTypeId: "default", sessionController })
 
-    await expect(operations.nudge!("session-1", "Continue")).resolves.toEqual({
+    await expect(operations.nudge!({ agentTypeId: "worker", sessionId: "session-1" }, "Continue")).resolves.toEqual({
+      agentTypeId: "worker",
       sessionId: "session-1",
       skipped: "session-busy",
     })
@@ -182,26 +184,57 @@ describe("AutomationOperations", () => {
     const sessionController = {
       list: vi.fn(async () => []),
       nudge: vi.fn(async () => { throw invalidState }),
-      cancel: vi.fn(async () => {}),
+      cancel: vi.fn(async () => ({ accepted: true as const, cursor: 1, stopped: true, clearedQueue: [] })),
     }
     const operations = createAutomationOperations({ store: storeMock(), actor: { workspaceId: "w", userId: "u" }, defaultAgentTypeId: "default", sessionController })
 
-    await expect(operations.nudge!("session-1", "Continue")).rejects.toBe(invalidState)
+    await expect(operations.nudge!({ agentTypeId: "worker", sessionId: "session-1" }, "Continue")).rejects.toBe(invalidState)
   })
 
   it("delivers a nudge to an idle session", async () => {
     const sessionController = {
       list: vi.fn(async () => []),
       nudge: vi.fn(async () => ({ status: "accepted" as const, receipt: {} as never })),
-      cancel: vi.fn(async () => {}),
+      cancel: vi.fn(async () => ({ accepted: true as const, cursor: 1, stopped: true, clearedQueue: [] })),
     }
     const operations = createAutomationOperations({ store: storeMock(), actor: { workspaceId: "w", userId: "u" }, defaultAgentTypeId: "default", sessionController })
 
-    await expect(operations.nudge!("session-1", "Continue")).resolves.toEqual({
+    await expect(operations.nudge!({ agentTypeId: "worker", sessionId: "session-1" }, "Continue")).resolves.toEqual({
+      agentTypeId: "worker",
       sessionId: "session-1",
       accepted: true,
     })
-    expect(sessionController.nudge).toHaveBeenCalledWith("default", "session-1", "Continue", expect.stringMatching(/^nudge:/))
+    expect(sessionController.nudge).toHaveBeenCalledWith("worker", "session-1", "Continue", expect.stringMatching(/^nudge:/))
+  })
+
+  it("reports cancel as skipped when the Agent confirms no session was stopped", async () => {
+    const sessionController = {
+      list: vi.fn(async () => []),
+      nudge: vi.fn(async () => ({ status: "accepted" as const, receipt: {} as never })),
+      cancel: vi.fn(async () => ({ accepted: true as const, cursor: 1, stopped: false, clearedQueue: [] })),
+    }
+    const operations = createAutomationOperations({ store: storeMock(), actor: { workspaceId: "w", userId: "u" }, sessionController })
+
+    await expect(operations.cancel!({ agentTypeId: "worker", sessionId: "session-1" })).resolves.toEqual({
+      agentTypeId: "worker",
+      sessionId: "session-1",
+      skipped: "session-not-running",
+    })
+  })
+
+  it("rejects a colliding session id addressed to the wrong Agent", async () => {
+    const operations = createAutomationOperations({
+      store: storeMock(),
+      actor: { workspaceId: "w", userId: "u" },
+      sessionController: {
+        list: vi.fn(async () => []),
+        nudge: vi.fn(async () => ({ status: "accepted" as const, receipt: {} as never })),
+        cancel: vi.fn(async () => ({ accepted: true as const, cursor: 1, stopped: true, clearedQueue: [] })),
+      },
+    })
+
+    await expect(operations.cancel!({ agentTypeId: "other", sessionId: "session-1" }))
+      .rejects.toMatchObject({ code: BORING_AUTOMATION_ERROR_CODES.SESSION_NOT_FOUND })
   })
 
   it("caps prompt results and reports the original character count", async () => {

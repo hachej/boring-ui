@@ -15,9 +15,6 @@ export class AutomationSessionUnaddressableError extends Error {
 export class DispatchIdentity {
   sessionId: string | null = null
   dispatchReceipt: AutomationRun["dispatchReceipt"] | null = null
-  durableSessionId: string | null = null
-  accepted = false
-  persistenceFailed = false
   private addressabilityVerified = false
 
   constructor(private readonly options: {
@@ -36,11 +33,11 @@ export class DispatchIdentity {
   }
 
   get dispatchInFlight(): boolean {
-    return this.accepted || this.persistenceFailed
+    return this.dispatchReceipt !== null || this.options.current.dispatchReceipt !== null
   }
 
   isAlreadyPersisted(ref: { sessionId: string }, receipt?: object): boolean {
-    return this.durableSessionId === ref.sessionId && (!receipt || Boolean(this.options.current.dispatchReceipt))
+    return this.options.current.sessionId === ref.sessionId && (!receipt || Boolean(this.options.current.dispatchReceipt))
   }
 
   async persist(
@@ -48,22 +45,13 @@ export class DispatchIdentity {
     receipt?: Omit<NonNullable<AutomationRun["dispatchReceipt"]>, "ref">,
   ): Promise<void> {
     this.sessionId = ref.sessionId
-    if (receipt) {
-      this.accepted = true
-      this.dispatchReceipt = { ref, ...receipt }
-    }
+    if (receipt) this.dispatchReceipt = { ref, ...receipt }
     if (this.isAlreadyPersisted(ref, receipt)) return
-    try {
-      this.options.current = await this.options.store.updateRunLifecycle(this.options.runId, {
-        status: "dispatching",
-        sessionId: ref.sessionId,
-        ...(this.dispatchReceipt ? { dispatchReceipt: this.dispatchReceipt } : {}),
-      })
-    } catch (error) {
-      this.persistenceFailed = true
-      throw error
-    }
-    this.durableSessionId = ref.sessionId
+    this.options.current = await this.options.store.updateRunLifecycle(this.options.runId, {
+      status: "dispatching",
+      sessionId: ref.sessionId,
+      ...(this.dispatchReceipt ? { dispatchReceipt: this.dispatchReceipt } : {}),
+    })
     await this.options.publish(this.options.current)
     await this.verifyAddressability(ref)
   }

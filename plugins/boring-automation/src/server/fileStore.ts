@@ -338,10 +338,14 @@ export class FileAutomationStore implements AutomationStore {
       .map(clone)
   }
 
-  async findRunBySessionId(sessionId: string): Promise<AutomationRun | null> {
+  async findRunBySessionRef(ref: { agentTypeId: string; sessionId: string }): Promise<AutomationRun | null> {
     const state = await this.load()
     const run = Object.values(state.runs)
-      .filter((candidate) => candidate.sessionId === sessionId && state.automations[candidate.automationId] !== undefined)
+      .filter((candidate) => (
+        candidate.dispatchReceipt?.ref.agentTypeId === ref.agentTypeId
+        && candidate.dispatchReceipt.ref.sessionId === ref.sessionId
+        && state.automations[candidate.automationId] !== undefined
+      ))
       .sort((a, b) => runSortTimestamp(b).localeCompare(runSortTimestamp(a)))[0]
     return run ? clone(run) : null
   }

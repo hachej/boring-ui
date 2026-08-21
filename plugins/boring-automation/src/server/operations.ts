@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import type { AgentSendIfIdleReceipt, AgentSessionSummary } from "@hachej/boring-agent/shared"
+import type { AgentSendIfIdleReceipt, AgentSessionRef, AgentSessionSummary, StopReceipt } from "@hachej/boring-agent/shared"
 import { BORING_AUTOMATION_ERROR_CODES } from "../shared/error-codes"
 import type {
   Automation,
@@ -63,7 +63,7 @@ export interface DispatchRunFleetSummary extends SafeAutomationRunSummary {
 export interface AutomationSessionController {
   list(agentTypeId: string): Promise<readonly AgentSessionSummary[]>
   nudge(agentTypeId: string, sessionId: string, message: string, requestId: string): Promise<AgentSendIfIdleReceipt>
-  cancel(agentTypeId: string, sessionId: string, requestId: string): Promise<void>
+  cancel(agentTypeId: string, sessionId: string, requestId: string): Promise<StopReceipt>
 }
 
 export interface BoundedAutomationList<T> {
@@ -87,11 +87,14 @@ export interface AutomationUpdateInput extends AutomationPatch {
 export interface AutomationOperations {
   list(limit?: number): Promise<BoundedAutomationList<AutomationSummary>>
   listDispatchRuns?(limit?: number): Promise<BoundedAutomationList<DispatchRunFleetSummary>>
-  nudge?(sessionId: string, message: string): Promise<
-    | { sessionId: string; accepted: true }
-    | { sessionId: string; skipped: "session-busy" }
+  nudge?(ref: AgentSessionRef, message: string): Promise<
+    | { agentTypeId: string; sessionId: string; accepted: true }
+    | { agentTypeId: string; sessionId: string; skipped: "session-busy" }
   >
-  cancel?(sessionId: string): Promise<{ sessionId: string; cancelled: true }>
+  cancel?(ref: AgentSessionRef): Promise<
+    | { agentTypeId: string; sessionId: string; cancelled: true }
+    | { agentTypeId: string; sessionId: string; skipped: "session-not-running" }
+  >
   get(automationId: string): Promise<AutomationWithPrompt>
   create(input: AutomationCreate): Promise<AutomationSummary>
   update(automationId: string, input: AutomationUpdateInput): Promise<AutomationSummary>
@@ -169,7 +172,7 @@ export function createAutomationOperations({
       const recentRuns = await store.listRecentRuns(rowLimit + 1)
       const agentTypeIds = [...new Set(recentRuns.flatMap((run) => {
         const automation = automationById.get(run.automationId)
-        return automation ? [automation.agentTypeId ?? defaultAgentTypeId] : []
+        return automation ? [sessionRefForRun(run, automation, defaultAgentTypeId).agentTypeId] : []
       }))]
       const sessionsByAgent = new Map(await Promise.all(agentTypeIds.map(async (agentTypeId) => [
         agentTypeId,
@@ -179,35 +182,38 @@ export function createAutomationOperations({
       for (const run of recentRuns) {
         const automation = automationById.get(run.automationId)
         if (!automation) continue
-        const agentTypeId = automation.agentTypeId ?? defaultAgentTypeId
-        const session = run.sessionId
-          ? sessionsByAgent.get(agentTypeId)?.find((candidate) => candidate.ref.sessionId === run.sessionId)
+        const ref = sessionRefForRun(run, automation, defaultAgentTypeId)
+        const agentTypeId = ref.agentTypeId
+        const session = ref.sessionId
+          ? sessionsByAgent.get(agentTypeId)?.find((candidate) => candidate.ref.sessionId === ref.sessionId)
           : undefined
         rows.push({
           ...safeRunSummary(run),
           automationTitle: automation.title,
           agentTypeId,
           sessionTitle: session?.title ?? null,
-          sessionStatus: run.sessionId ? session?.status ?? "gone" : null,
+          sessionStatus: ref.sessionId ? session?.status ?? "gone" : null,
           sessionAgeMs: session ? Math.max(0, Date.now() - session.updatedAt) : null,
         })
       }
       rows.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       return bounded(rows, rowLimit, (row) => row)
     },
-    async nudge(sessionId, message) {
+    async nudge(ref, message) {
       if (!sessionController) throw contextUnavailable()
-      const target = await requireSessionTarget(store, sessionId, defaultAgentTypeId)
-      const receipt = await sessionController.nudge(target.agentTypeId, sessionId, message, `nudge:${randomUUID()}`)
+      await requireSessionTarget(store, ref)
+      const receipt = await sessionController.nudge(ref.agentTypeId, ref.sessionId, message, `nudge:${randomUUID()}`)
       return receipt.status === "not-idle"
-        ? { sessionId, skipped: "session-busy" }
-        : { sessionId, accepted: true }
+        ? { ...ref, skipped: "session-busy" }
+        : { ...ref, accepted: true }
     },
-    async cancel(sessionId) {
+    async cancel(ref) {
       if (!sessionController) throw contextUnavailable()
-      const target = await requireSessionTarget(store, sessionId, defaultAgentTypeId)
-      await sessionController.cancel(target.agentTypeId, sessionId, `cancel:${randomUUID()}`)
-      return { sessionId, cancelled: true }
+      await requireSessionTarget(store, ref)
+      const receipt = await sessionController.cancel(ref.agentTypeId, ref.sessionId, `cancel:${randomUUID()}`)
+      return receipt.stopped
+        ? { ...ref, cancelled: true }
+        : { ...ref, skipped: "session-not-running" }
     },
     async get(automationId) {
       const automation = await requireAutomation(store, automationId)
@@ -337,9 +343,17 @@ function contextUnavailable(): AutomationStoreError {
   )
 }
 
-async function requireSessionTarget(store: AutomationStore, sessionId: string, defaultAgentTypeId: string): Promise<{ agentTypeId: string }> {
-  const run = await store.findRunBySessionId(sessionId)
-  const automation = run ? await store.getAutomation(run.automationId) : null
-  if (automation) return { agentTypeId: automation.agentTypeId ?? defaultAgentTypeId }
-  throw new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.SESSION_NOT_FOUND, `session ${sessionId} is not owned by an automation run`)
+function sessionRefForRun(run: AutomationRun, automation: Automation, defaultAgentTypeId: string): AgentSessionRef {
+  return run.dispatchReceipt?.ref ?? {
+    agentTypeId: automation.agentTypeId ?? defaultAgentTypeId,
+    sessionId: run.sessionId ?? "",
+  }
+}
+
+async function requireSessionTarget(store: AutomationStore, ref: AgentSessionRef): Promise<void> {
+  if (await store.findRunBySessionRef(ref)) return
+  throw new AutomationStoreError(
+    BORING_AUTOMATION_ERROR_CODES.SESSION_NOT_FOUND,
+    `session ${ref.agentTypeId}/${ref.sessionId} is not owned by an automation run`,
+  )
 }

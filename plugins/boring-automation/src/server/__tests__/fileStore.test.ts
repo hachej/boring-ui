@@ -327,6 +327,20 @@ describe("standing factory automation seeding", () => {
     ])
   })
 
+  it("preserves operator-edited seed metadata when the manifest is applied again", async () => {
+    const { seedStandingAutomations } = await import("../standingAutomations")
+    await writeSeedFiles()
+    const store = createStore()
+    await seedStandingAutomations(store, { additionalSeeds: [triageSeed] })
+    await store.updateAutomation("triage", { title: "operator title", enabled: false, timezone: "Europe/Zurich", model: "operator:model" })
+
+    await seedStandingAutomations(store, { additionalSeeds: [triageSeed] })
+
+    await expect(store.getAutomation("triage")).resolves.toMatchObject({
+      title: "operator title", enabled: false, timezone: "Europe/Zurich", model: "operator:model",
+    })
+  })
+
   it("keeps a surplus seeded slot when its run is active", async () => {
     const { seedStandingAutomations } = await import("../standingAutomations")
     await writeSeedFiles()

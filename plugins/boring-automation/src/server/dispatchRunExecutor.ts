@@ -182,7 +182,7 @@ export class DispatchRunExecutor {
             originSurface: "boring-automation",
           }, async (event) => {
             const eventSessionId = sessionIdFromEvent(event)
-            if (!identity!.durableSessionId && eventSessionId) {
+            if (!identity!.sessionId && eventSessionId) {
               await identity!.persist({ agentTypeId, sessionId: eventSessionId })
             }
             aggregateUsage(usage, event)

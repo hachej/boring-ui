@@ -1,3 +1,4 @@
+import type { AgentSessionRef } from "@hachej/boring-agent/shared"
 import { BORING_AUTOMATION_ERROR_CODES, type BoringAutomationErrorCode } from "../shared/error-codes"
 import type {
   Automation,
@@ -59,8 +60,8 @@ export interface AutomationStore {
   getRun(automationId: string, runId: string): Promise<AutomationRun | null>
   /** Globally newest runs for fleet inspection, bounded at storage. */
   listRecentRuns(limit: number): Promise<AutomationRun[]>
-  /** Direct ownership lookup for session controls. */
-  findRunBySessionId(sessionId: string): Promise<AutomationRun | null>
+  /** Exact durable Agent-address lookup for session controls. */
+  findRunBySessionRef(ref: AgentSessionRef): Promise<AutomationRun | null>
 }
 
 export class AutomationStoreError extends Error {

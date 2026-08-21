@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto"
 import type { WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/server"
+import type { AgentSessionSummary } from "@hachej/boring-agent/shared"
 import { BORING_AUTOMATION_ERROR_CODES } from "../shared/error-codes"
 import type { AutomationSessionController } from "./operations"
 import { AutomationStoreError } from "./store"
@@ -31,16 +32,22 @@ export function createAutomationSessionController(
   }
   return {
     async list(agentTypeId) {
-      const page = await withBinding(agentTypeId, `list:${randomUUID()}`, async (binding) => await binding.listSessions(100))
-      return page.sessions
+      return await withBinding(agentTypeId, `list:${randomUUID()}`, async (binding) => {
+        const sessions: AgentSessionSummary[] = []
+        let cursor: string | undefined
+        do {
+          const page = await binding.listSessions(100, cursor)
+          sessions.push(...page.sessions)
+          cursor = page.nextCursor
+        } while (cursor)
+        return sessions
+      })
     },
     async nudge(agentTypeId, sessionId, message, requestId) {
       return await withBinding(agentTypeId, requestId, async (binding) => await binding.sendIfIdle(sessionId, message, requestId))
     },
     async cancel(agentTypeId, sessionId, requestId) {
-      await withBinding(agentTypeId, requestId, async (binding) => {
-        await binding.stop(sessionId, requestId)
-      })
+      return await withBinding(agentTypeId, requestId, async (binding) => await binding.stop(sessionId, requestId))
     },
   }
 }

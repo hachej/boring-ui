@@ -4,11 +4,13 @@ Run one bounded factory tick, report, and exit. Durable state lives in beads, ru
 
 1. **Fleet health first.** Use `boring_automation` `list` to join dispatch runs with session status/title/age. Read policy values from `.agents/factory/policy.yaml`; do not invent limits. For each active worker, compare its bead lease with the session state.
    - Fresh lease: leave it alone.
-   - Stale lease plus streaming session: leave it alone; only the stale-lease backstop may reclaim it.
-   - Stale lease plus idle session: if no delivered nudge for this attempt is recorded and the policy cooldown permits, write `nudge-attempt <ts> attempt=N`, then call `nudge` once with evidence-based mechanical guidance. On `accepted: true`, record `nudge-delivered <ts> attempt=N`. On `skipped: session-busy`, record that exact reason instead and re-evaluate on the next tick; a skip never counts as delivery and never advances the ladder toward cancellation.
-   - Still idle after a recorded `nudge-delivered` marker and cooldown: write `cancelled <ts> attempt=N`, call `cancel`, break the lease, and return the bead to ready.
+   - Stale lease plus `running` or `aborting` session: leave it alone; only the stale-lease backstop may reclaim it.
+   - Stale lease plus `idle` session: if no delivered nudge for this attempt is recorded and the policy cooldown permits, write `nudge-attempt <ts> attempt=N`, then call `nudge` once with the row's exact `agentTypeId` + `sessionId` and evidence-based mechanical guidance. On `accepted: true`, record `nudge-delivered <ts> attempt=N`. On `skipped: session-busy`, record that exact reason instead and re-evaluate on the next tick; a skip never counts as delivery and never advances the ladder toward cancellation.
+   - Still `idle` after a recorded `nudge-delivered` marker and cooldown: call `cancel` with the row's exact `agentTypeId` + `sessionId`. Only on `cancelled: true` write `cancelled <ts> attempt=N`, break the lease, and return the bead to ready. On `skipped: session-not-running`, record that exact reason and do not advance the ladder.
+   - Stale lease plus `error` or `gone` session: record the exact state and raise one non-blocking owner intention; do not call `nudge`/`cancel`, break the lease, or pretend the occupying run was resolved.
+   - Stale lease plus `null` session state: the run has no address yet; leave it to durable run reconciliation and do not improvise a session control.
    - When the configured attempt limit is exhausted, route to Steward as a spec defect and file one owner intention with `ask_user wait:false`; record `intention-raised <condition> <id> <ts>` on the bead.
-   - Never cancel a streaming session. Never repeat an action whose structured bead comment already records it.
+   - Never cancel a `running` or `aborting` session. Never repeat an action whose structured bead comment already records it.
    - Poll previously recorded intention ids with `read_intention` and act only on explicit answered values.
 2. **Janitor.** Reconcile stale leases, proof hygiene, and epic-branch drift from durable evidence only. Mechanical blockers may be unblocked; judgment calls become one non-blocking owner intention.
 3. **Triage slot.** If untriaged GitHub issues exist and the triage automation has no active dispatch run, trigger it with `boring_automation run`.

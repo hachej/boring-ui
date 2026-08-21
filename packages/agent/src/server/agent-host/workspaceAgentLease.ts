@@ -244,12 +244,13 @@ export async function runWithWorkspaceAgentLease(input: {
         return { ref: dispatched.ref, receipt: dispatched.receipt }
       })())
     },
-    async listSessions(limit?: number) {
+    async listSessions(limit?: number, cursor?: string) {
       assertActive()
       return await trackOperation(gateway.listSessions({
         scope: request.authorizedScope,
         agentTypeId: request.agentTypeId,
         ...(limit === undefined ? {} : { limit }),
+        ...(cursor === undefined ? {} : { cursor }),
       }))
     },
     async sendIfIdle(sessionId: string, message: string, controlRequestId: string) {

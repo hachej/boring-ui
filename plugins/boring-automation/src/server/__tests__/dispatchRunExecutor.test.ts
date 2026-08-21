@@ -925,8 +925,8 @@ class MemoryAutomationStore implements AutomationStore {
     return [...this.runs.values()].slice(0, limit).map(clone)
   }
 
-  async findRunBySessionId(sessionId: string): Promise<AutomationRun | null> {
-    const run = [...this.runs.values()].find((candidate) => candidate.sessionId === sessionId)
+  async findRunBySessionRef(ref: { agentTypeId: string; sessionId: string }): Promise<AutomationRun | null> {
+    const run = [...this.runs.values()].find((candidate) => candidate.sessionId === ref.sessionId)
     return run ? clone(run) : null
   }
 }
