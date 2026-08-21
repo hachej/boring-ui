@@ -851,6 +851,15 @@ class MemoryAutomationStore implements AutomationStore {
   async listRuns(automationId: string): Promise<AutomationRun[]> {
     return [...this.runs.values()].filter((run) => run.automationId === automationId).map(clone)
   }
+
+  async listRecentRuns(limit: number): Promise<AutomationRun[]> {
+    return [...this.runs.values()].slice(0, limit).map(clone)
+  }
+
+  async findRunBySessionId(sessionId: string): Promise<AutomationRun | null> {
+    const run = [...this.runs.values()].find((candidate) => candidate.sessionId === sessionId)
+    return run ? clone(run) : null
+  }
 }
 
 function clone<T>(value: T): T {

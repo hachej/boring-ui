@@ -42,6 +42,8 @@ describe("boring_automation nested dispatch", () => {
             for await (const event of dispatched.events) await onEvent(event)
             return { ref: dispatched.ref, receipt: dispatched.receipt }
           },
+          async listSessions() { return { sessions: [] } },
+          async sendIfIdle() { throw new Error("sendIfIdle is not used by nested dispatch") },
           async interrupt(sessionId) { return await dispatcher.interrupt(sessionId) },
           async stop(sessionId) { return await dispatcher.stop(sessionId) },
         })
@@ -343,6 +345,8 @@ class NestedAutomationStore implements AutomationStore {
     return this.run?.automationId === automationId && this.run.id === runId ? this.run : null
   }
   async listRuns() { return this.run ? [this.run] : [] }
+  async listRecentRuns(limit: number) { return this.run && limit > 0 ? [this.run] : [] }
+  async findRunBySessionId(sessionId: string) { return this.run?.sessionId === sessionId ? this.run : null }
 }
 
 function summary(id: string): SessionSummary {

@@ -69,6 +69,8 @@ function storeMock(overrides: Partial<AutomationStore> = {}) {
     heartbeatRun: vi.fn(async () => true),
     updateRunLifecycle: vi.fn(async () => run()),
     listRuns: vi.fn(async () => [run()]),
+    listRecentRuns: vi.fn(async () => [run()]),
+    findRunBySessionId: vi.fn(async (sessionId) => sessionId === "session-1" ? run() : null),
     ...overrides,
     getRun: overrides.getRun ?? vi.fn(async (_automationId, runId) => runId === "run-1" ? run() : null),
   }
@@ -248,14 +250,13 @@ describe("AutomationOperations", () => {
 
   it("durably admits a detached dispatch as the bound actor without awaiting its worker", async () => {
     const queued = run({ status: "dispatching", trigger: "manual", sessionId: null, startedAt: null, completedAt: null })
-    const executor = { run: vi.fn(async () => { throw new Error("detached tool must not await run") }), start: vi.fn(async () => queued) }
+    const executor = { start: vi.fn(async () => queued) }
     const actor = { workspaceId: "workspace-1", userId: "user-1" }
     const operations = createAutomationOperations({ store: storeMock(), actor, executor })
 
     const result = await operations.run("automation-1")
 
     expect(executor.start).toHaveBeenCalledWith({ automationId: "automation-1", actor, trigger: "manual" })
-    expect(executor.run).not.toHaveBeenCalled()
     expect(result).toMatchObject({ status: "dispatching", trigger: "manual", sessionId: null })
     expect(result).not.toHaveProperty("promptSnapshot")
     expect(result).not.toHaveProperty("modelSnapshot")

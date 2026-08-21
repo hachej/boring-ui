@@ -103,8 +103,7 @@ export interface AutomationOperations {
 }
 
 export interface DispatchRunStarter {
-  run(input: DispatchRunInput): Promise<AutomationRun>
-  start?(input: DispatchRunInput): Promise<AutomationRun>
+  start(input: DispatchRunInput): Promise<AutomationRun>
 }
 
 export interface AutomationOperationsResolverOptions {
@@ -167,10 +166,7 @@ export function createAutomationOperations({
       const rowLimit = normalizeLimit(limit)
       const automations = await store.listAutomations()
       const automationById = new Map(automations.map((automation) => [automation.id, automation]))
-      const recentRuns = store.listRecentRuns
-        ? await store.listRecentRuns(rowLimit + 1)
-        : (await Promise.all(automations.map((automation) => store.listRuns(automation.id, rowLimit + 1))))
-          .flat().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, rowLimit + 1)
+      const recentRuns = await store.listRecentRuns(rowLimit + 1)
       const agentTypeIds = [...new Set(recentRuns.flatMap((run) => {
         const automation = automationById.get(run.automationId)
         return automation ? [automation.agentTypeId ?? defaultAgentTypeId] : []
@@ -264,7 +260,7 @@ export function createAutomationOperations({
         )
       }
       const input = { automationId, actor, trigger: "manual" as const }
-      return safeRunSummary(await (executor.start ? executor.start(input) : executor.run(input)))
+      return safeRunSummary(await executor.start(input))
     },
     async listRuns(automationId, limit) {
       return bounded(await store.listRuns(automationId), limit, safeRunSummary)
@@ -353,16 +349,8 @@ function contextUnavailable(): AutomationStoreError {
 }
 
 async function requireSessionTarget(store: AutomationStore, sessionId: string, defaultAgentTypeId: string): Promise<{ agentTypeId: string }> {
-  if (store.findRunBySessionId) {
-    const run = await store.findRunBySessionId(sessionId)
-    const automation = run ? await store.getAutomation(run.automationId) : null
-    if (automation) return { agentTypeId: automation.agentTypeId ?? defaultAgentTypeId }
-  } else {
-    for (const automation of await store.listAutomations()) {
-      if ((await store.listRuns(automation.id)).some((run) => run.sessionId === sessionId)) {
-        return { agentTypeId: automation.agentTypeId ?? defaultAgentTypeId }
-      }
-    }
-  }
+  const run = await store.findRunBySessionId(sessionId)
+  const automation = run ? await store.getAutomation(run.automationId) : null
+  if (automation) return { agentTypeId: automation.agentTypeId ?? defaultAgentTypeId }
   throw new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.SESSION_NOT_FOUND, `session ${sessionId} is not owned by an automation run`)
 }

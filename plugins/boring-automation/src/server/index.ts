@@ -167,12 +167,12 @@ export function createAutomationSessionController(
   }
   return {
     async list(agentTypeId) {
-      const page = await withBinding(agentTypeId, `list:${randomUUID()}`, async (binding) => await requireLeaseMethod(binding.listSessions, "listSessions").call(binding, 100))
+      const page = await withBinding(agentTypeId, `list:${randomUUID()}`, async (binding) => await binding.listSessions(100))
       return page.sessions
     },
     async nudge(agentTypeId, sessionId, message, requestId) {
       await withBinding(agentTypeId, requestId, async (binding) => {
-        await requireLeaseMethod(binding.sendIfIdle, "sendIfIdle").call(binding, sessionId, message, requestId)
+        await binding.sendIfIdle(sessionId, message, requestId)
       })
     },
     async cancel(agentTypeId, sessionId, requestId) {
@@ -183,11 +183,6 @@ export function createAutomationSessionController(
   }
 }
 
-
-function requireLeaseMethod<T extends (...args: never[]) => unknown>(method: T | undefined, name: string): T {
-  if (!method) throw new Error(`workspace agent lease does not support ${name}`)
-  return method
-}
 
 function seedOptions(
   options: Pick<BoringAutomationServerPluginOptions, "additionalSeeds" | "seedProvider" | "seedWarning">,

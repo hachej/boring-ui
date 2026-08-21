@@ -58,9 +58,9 @@ export interface AutomationStore {
   /** Direct actor-scoped lookup for one automation-owned run. */
   getRun(automationId: string, runId: string): Promise<AutomationRun | null>
   /** Globally newest runs for fleet inspection, bounded at storage. */
-  listRecentRuns?(limit: number): Promise<AutomationRun[]>
+  listRecentRuns(limit: number): Promise<AutomationRun[]>
   /** Direct ownership lookup for session controls. */
-  findRunBySessionId?(sessionId: string): Promise<AutomationRun | null>
+  findRunBySessionId(sessionId: string): Promise<AutomationRun | null>
 }
 
 export class AutomationStoreError extends Error {

@@ -53,6 +53,8 @@ it("keeps the slot occupied when accepted dispatch identity persistence loses th
           await onAccepted?.({ ref, receipt })
           throw new Error("dispatch callback unexpectedly returned")
         },
+        async listSessions() { return { sessions: [] } },
+        async sendIfIdle() { throw new Error("sendIfIdle is not used by occupancy race") },
         async interrupt() { return { accepted: true, cursor: 0 } },
         async stop() { return { accepted: true, cursor: 0, stopped: true, clearedQueue: [] } },
       })
