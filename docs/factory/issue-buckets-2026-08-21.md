@@ -407,7 +407,7 @@ missing=targets-open_issues
 if missing: abort(f'target issues no longer all open: {sorted(missing)}')
 for pr in json.load(open('/tmp/issue-buckets-preflight-prs.json')):
     text=' '.join([pr.get('title') or '',pr.get('body') or ''])
-    refs={int(x) for x in re.findall(r'(?:#|gh-)(\d+)',text,re.I)}
+    refs={int(x) for x in re.findall(r'(?:issues/|#|gh-)(\d+)',text,re.I)}
     refs|={x['number'] for x in pr.get('closingIssuesReferences',[]) if x.get('number')}
     hit=refs&targets
     if hit: abort(f'open PR #{pr["number"]} now references targets {sorted(hit)}')
