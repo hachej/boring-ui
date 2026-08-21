@@ -1,5 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { describe, expect, it, vi } from "vitest"
 import {
@@ -13,6 +12,7 @@ import {
   stageBombadilSelection as stageForSpec,
 } from "../core/exploration"
 import { hexadecimalHammingDistance } from "../core/imageHash"
+import { createUiReviewTempDir } from "../core/tempRoot"
 import {
   readReproduceManifest as readManifestForSpec,
   validateReproduceOwnership as validateOwnershipForSpec,
@@ -75,7 +75,7 @@ describe("Bombadil exploration staging", () => {
   })
 
   it("recreates a clean Bombadil output directory before retry", async () => {
-    const root = await mkdtemp(join(tmpdir(), "ui-review-bombadil-reset-"))
+    const root = await createUiReviewTempDir("ui-review-bombadil-reset-")
     try {
       const outputPath = join(root, "raw")
       await mkdir(outputPath)
@@ -110,7 +110,7 @@ describe("Bombadil exploration staging", () => {
     expect(parsed[0]).toMatchObject({ ordinal: 1, action: null, state: { hashCurrent: 10 }, violations: [] })
     expect(parsed[0]!.normalizedStateSignature).toHaveLength(64)
 
-    const outputRoot = await mkdtemp(join(tmpdir(), "ui-review-stage."))
+    const outputRoot = await createUiReviewTempDir("ui-review-stage.")
     const staged = await stageBombadilSelection({ rawRoot: raw, outputRoot, runId: "run", origin: "http://localhost:5380/?fresh=1", viewport })
     expect(staged.selected).toHaveLength(2)
     expect(staged.overflow).toMatchObject({ "duplicate-visual-state": 1 })
@@ -167,7 +167,7 @@ describe("Bombadil exploration staging", () => {
       entry(5, { screenshot: "empty", palette: { empty: true } }),
       entry(6, { screenshot: "violation", violations: [{ property: "noConsoleErrors" }] }),
     ])
-    const outputRoot = await mkdtemp(join(tmpdir(), "ui-review-priority."))
+    const outputRoot = await createUiReviewTempDir("ui-review-priority.")
     const staged = await stageBombadilSelection({ rawRoot: raw, outputRoot, runId: "run", origin: "http://localhost:5380/?fresh=1", viewport })
     expect(staged.selected[0]!.ordinal).toBe(6)
     expect(new Set(staged.selected.flatMap((state) => state.categories))).toEqual(new Set([
@@ -181,16 +181,16 @@ describe("Bombadil exploration staging", () => {
       palette: { dialogVisible: index % 2 === 0, query: String(index) },
     }))
     const raw = await fixture(many)
-    const outputRoot = await mkdtemp(join(tmpdir(), "ui-review-bounds."))
+    const outputRoot = await createUiReviewTempDir("ui-review-bounds.")
     const capped = await stageBombadilSelection({ rawRoot: raw, outputRoot, runId: "run", origin: "http://localhost:5380", viewport })
     expect(capped.selected).toHaveLength(UI_REVIEW_STAGING_POLICY.maxStatesPerViewport)
     expect(capped.overflow["state-limit"]).toBe(14 - UI_REVIEW_STAGING_POLICY.maxStatesPerViewport)
 
-    const files = await stageBombadilSelection({ rawRoot: raw, outputRoot: await mkdtemp(join(tmpdir(), "ui-review-files.")), runId: "run", origin: "http://localhost:5380", viewport, existingFiles: UI_REVIEW_STAGING_POLICY.maxFiles })
+    const files = await stageBombadilSelection({ rawRoot: raw, outputRoot: await createUiReviewTempDir("ui-review-files."), runId: "run", origin: "http://localhost:5380", viewport, existingFiles: UI_REVIEW_STAGING_POLICY.maxFiles })
     expect(files.selected).toHaveLength(0)
     expect(files.overflow["file-limit"]).toBe(14)
 
-    const bytes = await stageBombadilSelection({ rawRoot: raw, outputRoot: await mkdtemp(join(tmpdir(), "ui-review-bytes.")), runId: "run", origin: "http://localhost:5380", viewport, existingBytes: UI_REVIEW_STAGING_POLICY.maxBytes })
+    const bytes = await stageBombadilSelection({ rawRoot: raw, outputRoot: await createUiReviewTempDir("ui-review-bytes."), runId: "run", origin: "http://localhost:5380", viewport, existingBytes: UI_REVIEW_STAGING_POLICY.maxBytes })
     expect(bytes.selected).toHaveLength(0)
     expect(bytes.overflow["byte-limit"]).toBe(14)
   })
@@ -369,7 +369,7 @@ function entry(ordinal: number, options: EntryOptions) {
 }
 
 async function fixture(entries: Array<ReturnType<typeof entry>>): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "ui-review-trace."))
+  const root = await createUiReviewTempDir("ui-review-trace.")
   await mkdir(join(root, "screenshots"), { recursive: true })
   const lines: string[] = []
   for (const item of entries) {

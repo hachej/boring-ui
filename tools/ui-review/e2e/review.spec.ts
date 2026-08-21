@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto"
-import { copyFile, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
+import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
 import { expect, test, type Page } from "@playwright/test"
 import {
@@ -29,6 +28,7 @@ import {
 import { createCalibrationRecord, createExecutionPacket } from "../src/core/improvement"
 import { pairWithLocalBaseline } from "../src/core/pairing"
 import { renderUiReviewHtml, renderUiReviewMarkdown } from "../src/core/report"
+import { createUiReviewTempDir } from "../src/core/tempRoot"
 import {
   checkpointAppliesToViewport,
   type UiReviewBrowserErrors,
@@ -266,8 +266,8 @@ async function resolveCritic(manifest: UiReviewManifest) {
   }
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) throw new Error("UI_REVIEW_CRITIC_CREDENTIAL_MISSING")
-  const tempHome = await mkdtemp(resolve(tmpdir(), "ui-review-home."))
-  const tempConfig = await mkdtemp(resolve(tmpdir(), "ui-review-config."))
+  const tempHome = await createUiReviewTempDir("ui-review-home.")
+  const tempConfig = await createUiReviewTempDir("ui-review-config.")
   const criticPromptPath = resolve(outputRoot, "critic-prompt.md")
   await writeFile(criticPromptPath, spec.criticPrompt, "utf8")
   const invocation = buildPiCriticInvocation({
