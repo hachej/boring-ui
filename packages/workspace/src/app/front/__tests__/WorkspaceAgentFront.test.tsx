@@ -2286,6 +2286,33 @@ describe("WorkspaceAgentFront", () => {
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agents/default/ready-status"))).toBe(false)
   })
 
+  it("keeps remote sessions when provisioning is disabled but remoteSessionsEnabled is set", async () => {
+    const onWarmup = vi.fn()
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      if (url.includes("/api/v1/agents/default/models")) return new Response(JSON.stringify({ models: [] }), { status: 200 })
+      if (url.includes("/api/v1/agents/default/skills")) return new Response(JSON.stringify({ skills: [] }), { status: 200 })
+      if (isDefaultSessionsCollectionUrl(url)) return new Response(JSON.stringify({ sessions: [] }), { status: 200 })
+      return new Response(null, { status: 204 })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="no-provision-remote-sessions"
+        provisionWorkspace={false}
+        remoteSessionsEnabled
+        persistenceEnabled={false}
+        onWorkspaceWarmupStatusChange={onWarmup}
+      />,
+    )
+
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([input]) => isDefaultSessionsCollectionUrl(String(input)))).toBe(true),
+    )
+  })
+
   it("creates a fresh remote session for auth-return auto-submit instead of reusing the old active session", async () => {
     let capturedChatProps: unknown
     const getCapturedChatProps = () => capturedChatProps as CapturedChatPanelProps | undefined
