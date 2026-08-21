@@ -435,7 +435,7 @@ purge_beads={'wt-391-forward-seneca-competitor-cloudflare-os-n50','wt-391-forwar
 state={b['id']:b['status'] for b in beads}
 drift={i:state.get(i) for i in purge_beads if state.get(i)!='open'}
 if drift: abort(f'Bead purge targets drifted: {drift}')
-print('PREFLIGHT OK: exact SHA; 17 GH targets open/unprotected; counterparts retained/inactive; Project open; 7 Bead targets open.')
+print('PREFLIGHT OK: exact SHA; 15 GH targets open/unprotected; counterparts retained/inactive; Project open; 7 Bead targets open.')
 PY
 ```
 

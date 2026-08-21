@@ -50,7 +50,7 @@ purge_beads={&#x27;wt-391-forward-seneca-competitor-cloudflare-os-n50&#x27;,&#x2
 state={b[&#x27;id&#x27;]:b[&#x27;status&#x27;] for b in beads}
 drift={i:state.get(i) for i in purge_beads if state.get(i)!=&#x27;open&#x27;}
 if drift: abort(f&#x27;Bead purge targets drifted: {drift}&#x27;)
-print(&#x27;PREFLIGHT OK: exact SHA; 17 GH targets open/unprotected; counterparts retained/inactive; Project open; 7 Bead targets open.&#x27;)
+print(&#x27;PREFLIGHT OK: exact SHA; 15 GH targets open/unprotected; counterparts retained/inactive; Project open; 7 Bead targets open.&#x27;)
 PY</pre><h3>Mutation commands — only after PREFLIGHT OK</h3><pre>gh issue close 371 -c &quot;Issue-bucket cleanup 2026-08-21: tracked in Beads; internal implementation detail removed from the public issue window.&quot;
 gh issue close 601 -c &quot;Issue-bucket cleanup 2026-08-21: tracked in Beads; internal implementation detail removed from the public issue window.&quot;
 gh issue close 819 -c &quot;Issue-bucket cleanup 2026-08-21: parked in deferred Beads; no longer part of the public product window.&quot;
