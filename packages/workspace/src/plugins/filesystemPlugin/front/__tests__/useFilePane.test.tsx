@@ -96,17 +96,46 @@ describe("useFilePane", () => {
       expect(call?.expectedMtimeMs).toBeUndefined()
     })
 
-    it("onOverwrite clears the conflict banner on success", async () => {
-      // Seed a conflict by making the initial save throw with a fake conflict.
+    it("onOverwrite clears a real conflict and reports its resolution", async () => {
+      mockWriteFile
+        .mockRejectedValueOnce(new FileConflictError("doc.md", 3000, 1000))
+        .mockResolvedValueOnce({ mtimeMs: 4000 })
       const { result } = renderHook(() => useFilePane({ path: "doc.md" }), { wrapper })
       await act(async () => {})
-      // Conflict isn't directly settable from outside; instead verify the
-      // happy-path conflict cleared after onOverwrite succeeds. (The conflict
-      // re-raise scenario is covered in useEditorLifecycle's tests.)
-      expect(result.current.conflict).toBeNull()
-      act(() => result.current.setContent("x"))
+      act(() => result.current.setContent("local version"))
+      await act(async () => { await result.current.flushSave() })
+      expect(result.current.conflict).toBeInstanceOf(FileConflictError)
+
       await act(async () => { await result.current.onOverwrite() })
       expect(result.current.conflict).toBeNull()
+      expect(result.current.documentStatus).toEqual({ kind: "resolved", action: "overwritten" })
+    })
+
+    it("keeps edits typed during Overwrite dirty and serializes a follow-up save", async () => {
+      let resolveOverwrite: ((value: { mtimeMs: number }) => void) | undefined
+      mockWriteFile
+        .mockImplementationOnce(() => new Promise((resolve) => { resolveOverwrite = resolve }))
+        .mockResolvedValueOnce({ mtimeMs: 5000 })
+      const { result } = renderHook(() => useFilePane({ path: "doc.md" }), { wrapper })
+      await act(async () => {})
+      act(() => result.current.setContent("overwrite snapshot"))
+
+      await act(async () => {
+        void result.current.onOverwrite()
+        await Promise.resolve()
+      })
+      act(() => result.current.setContent("overwrite snapshot plus newer edits"))
+      await act(async () => {
+        resolveOverwrite?.({ mtimeMs: 4000 })
+        await Promise.resolve()
+      })
+      expect(result.current.isDirty).toBe(true)
+
+      await waitFor(() => expect(mockWriteFile).toHaveBeenCalledTimes(2), { timeout: 1000 })
+      expect(mockWriteFile).toHaveBeenLastCalledWith(expect.objectContaining({
+        content: "overwrite snapshot plus newer edits",
+        expectedMtimeMs: 4000,
+      }))
     })
 
     // NOTE: the watchdog-stale-resolver race (where a hung save resolves
@@ -134,16 +163,18 @@ describe("useFilePane", () => {
 
   describe("onReloadFromServer", () => {
     it("clears conflict + dirty state only after a successful refetch", async () => {
-      const refetch = vi.fn(async () => ({
-        status: "success" as const,
-        data: { content: "server latest", mtimeMs: 3000 },
-      }))
-      mockFileContent.mockReturnValue({
-        data: { content: "cached stale", mtimeMs: 1000 },
+      let currentData = { content: "cached stale", mtimeMs: 1000 }
+      const refetch = vi.fn(async () => {
+        currentData = { content: "server latest", mtimeMs: 3000 }
+        return { status: "success" as const, data: currentData }
+      })
+      mockFileContent.mockImplementation(() => ({
+        data: currentData,
         isLoading: false,
+        isFetching: false,
         error: undefined,
         refetch,
-      })
+      }))
 
       mockWriteFile.mockRejectedValueOnce(new FileConflictError("doc.md", 3000, 1000))
 
@@ -168,6 +199,7 @@ describe("useFilePane", () => {
         expect(result.current.conflict).toBeNull()
         expect(result.current.isDirty).toBe(false)
       })
+      expect(result.current.documentStatus).toEqual({ kind: "resolved", action: "reloaded" })
     })
 
     it("keeps local conflict state when the refetch does not return fresh server data", async () => {
@@ -216,6 +248,36 @@ describe("useFilePane", () => {
   })
 
   describe("external disk reconciliation", () => {
+    it("refreshes OCC metadata after a same-content rewrite", async () => {
+      let fileData = { content: "initial", mtimeMs: 1000 }
+      mockFileContent.mockImplementation(() => ({
+        data: fileData,
+        isLoading: false,
+        isFetching: false,
+        error: undefined,
+        refetch: vi.fn(),
+      }))
+      const { result, rerender } = renderHook(
+        ({ tick }) => {
+          void tick
+          return useFilePane({ path: "doc.md" })
+        },
+        { wrapper, initialProps: { tick: 0 } },
+      )
+      await act(async () => {})
+
+      fileData = { content: "initial", mtimeMs: 2000 }
+      rerender({ tick: 1 })
+      await act(async () => {})
+      act(() => result.current.setContent("local edit"))
+      await act(async () => { await result.current.flushSave() })
+
+      expect(mockWriteFile).toHaveBeenCalledWith(expect.objectContaining({
+        content: "local edit",
+        expectedMtimeMs: 2000,
+      }))
+    })
+
     it("applies changed disk content while clean even when mtime is unchanged", async () => {
       let fileData = { content: "initial", mtimeMs: 1000 }
       mockFileContent.mockImplementation(() => ({
@@ -290,6 +352,7 @@ describe("useFilePane", () => {
       expect(result.current.content).toBe("local draft")
       expect(result.current.documentStatus).toEqual({ kind: "conflict", source: "agent" })
 
+      act(() => result.current.setContent("local draft after conflict"))
       await new Promise((resolve) => setTimeout(resolve, 350))
       expect(mockWriteFile).not.toHaveBeenCalled()
     })

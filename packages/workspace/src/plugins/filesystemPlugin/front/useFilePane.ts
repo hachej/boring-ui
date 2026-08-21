@@ -5,6 +5,7 @@ import { normalizeUiFilesystem, uiFileResourceKey, type FilesystemId } from "../
 import { events } from "../../../front/events"
 import { filesystemEvents } from "../shared/events"
 import { useFileContent, useFileEventStatus, useFileWrite } from "./data"
+import type { FilePaneDocumentStatus } from "./fileDocumentStatus"
 import { FileConflictError } from "./data/fetchClient"
 import { useEditorLifecycle, type EditorLifecycleAdapter } from "../../../front/hooks"
 
@@ -26,12 +27,7 @@ export interface UseFilePaneOptions {
   createIfMissing?: string
 }
 
-export type FilePaneDocumentStatus =
-  | { kind: "fallback" }
-  | { kind: "checking" }
-  | { kind: "updated"; source: "agent" | "disk" }
-  | { kind: "conflict"; source: "agent" | "disk" }
-  | { kind: "resolved"; action: "reloaded" | "overwritten" }
+export type { FilePaneDocumentStatus } from "./fileDocumentStatus"
 
 export interface UseFilePaneReturn {
   // Loading/error state
@@ -123,7 +119,6 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
   // Content, not mtime, is the document identity. Some providers omit mtimes
   // or expose only second precision, so changed bytes can share one mtime.
   const diskContentRef = useRef<string | null>(null)
-  const markLifecycleDirtyRef = useRef<(() => void) | null>(null)
   // Monotonic save token. Each adapter.save() call bumps this and captures
   // its own gen; before mutating shared refs (baseline, dirty, conflict) it
   // re-checks the current value. If a watchdog in useEditorLifecycle has
@@ -142,6 +137,7 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
   const [transientDocumentStatus, setTransientDocumentStatus] = useState<FilePaneDocumentStatus | null>(null)
   const statusClearTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const pendingExternalSourceRef = useRef<{ source: "agent" | "disk"; expiresAt: number } | null>(null)
+  const resolutionInFlightRef = useRef(false)
 
   const showTransientDocumentStatus = useCallback((status: FilePaneDocumentStatus) => {
     clearTimeout(statusClearTimerRef.current)
@@ -214,15 +210,11 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
               }
               diskContentRef.current = contentToSave
               // Do not mark keystrokes typed during the request as persisted.
-              // Schedule a follow-up save after the current in-flight promise
-              // clears; throwing keeps useEditorLifecycle's dirty state true.
+              // useEditorLifecycle re-checks adapter.isDirty() after this
+              // resolves and serializes a follow-up save when needed.
               dirtyRef.current = contentRef.current !== contentToSave
               conflictRef.current = null
               setConflict(null)
-              if (dirtyRef.current) {
-                markLifecycleDirtyRef.current?.()
-                throw new Error("new editor changes remain after save")
-              }
             } catch (err) {
               // Late-resolved errors get the same guard — a stale FileConflictError
               // (about a baseline two saves ago) should not raise the banner.
@@ -240,7 +232,6 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
               throw err
             }
           },
-          getContent: () => contentRef.current,
         }
       : null
 
@@ -248,7 +239,6 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
     adapter,
     panelId: lifecyclePanelId,
   })
-  markLifecycleDirtyRef.current = lifecycle.markDirty
 
   // Preserve high-confidence Agent attribution just long enough to correlate
   // the bus invalidation with the resulting file query. A later chokidar echo
@@ -280,13 +270,19 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
   // with missing or second-resolution mtimes and removes the old 3-second
   // window that could suppress a genuine Agent write as an editor-save echo.
   useEffect(() => {
-    if (fileData?.content == null || content === null) return
+    if (resolutionInFlightRef.current || fileData?.content == null || content === null) return
     if (diskContentRef.current === null) {
       diskContentRef.current = fileData.content
       baselineMtimeRef.current = fileData.mtimeMs ?? null
       return
     }
-    if (fileData.content === diskContentRef.current) return
+    if (fileData.content === diskContentRef.current) {
+      // Content determines whether the document changed; mtime remains OCC
+      // metadata and must track every successful read, including same-byte
+      // rewrites and providers that omit it.
+      baselineMtimeRef.current = fileData.mtimeMs ?? null
+      return
+    }
 
     const source = consumeExternalSource()
     diskContentRef.current = fileData.content
@@ -332,8 +328,12 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
   const onReloadFromServer = useCallback(async () => {
     if (!activePath) return
 
+    resolutionInFlightRef.current = true
     const refreshed = await refetchFileData()
-    if (refreshed.status !== "success" || refreshed.data == null) return
+    if (refreshed.status !== "success" || refreshed.data == null) {
+      resolutionInFlightRef.current = false
+      return
+    }
 
     const next = refreshed.data
     setContentState(next.content)
@@ -346,6 +346,7 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
     lifecycle.markClean()
     setConflict(null)
     showTransientDocumentStatus({ kind: "resolved", action: "reloaded" })
+    resolutionInFlightRef.current = false
   }, [activePath, lifecycle, refetchFileData, setContentState, showTransientDocumentStatus])
 
   const onOverwrite = useCallback(async () => {
@@ -354,6 +355,9 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
     // watchdog already abandoned) cannot later resolve and undo our state
     // mutations below.
     const myGen = ++saveGenRef.current
+    // Explicit resolution owns the write; cancel any pending debounced
+    // autosave so it cannot race the force-overwrite request.
+    lifecycle.markClean()
     try {
       // Use contentRef.current — it is updated SYNCHRONOUSLY by setContent
       // (see line above) so it always carries the latest keystrokes the
@@ -369,21 +373,23 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
         baselineMtimeRef.current = result.mtimeMs
       }
       diskContentRef.current = contentToSave
-      dirtyRef.current = false
+      const newerEditsRemain = contentRef.current !== contentToSave
+      dirtyRef.current = newerEditsRemain
       conflictRef.current = null
       pendingExternalSourceRef.current = null
-      lifecycle.markClean()
       setConflict(null)
       showTransientDocumentStatus({ kind: "resolved", action: "overwritten" })
+      if (newerEditsRemain) lifecycle.markDirty()
+      else lifecycle.markClean()
     } catch {
       // Leave conflict UI up so user can retry
     }
   }, [activePath, filesystem, isReadonly, lifecycle, showTransientDocumentStatus, writeFile])
 
   const save = useCallback(async () => {
-    if (isReadonly || !adapter || !dirtyRef.current) return
-    await adapter.save()
-  }, [adapter, isReadonly])
+    if (isReadonly) return
+    await lifecycle.flushSave()
+  }, [isReadonly, lifecycle])
 
   const flushSave = useCallback(async () => {
     if (isReadonly) return

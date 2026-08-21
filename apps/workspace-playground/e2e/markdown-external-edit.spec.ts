@@ -10,6 +10,8 @@ const WORKSPACE_ROOT = resolve(
 const TEST_DIR = resolve(WORKSPACE_ROOT, ".e2e-tmp/markdown-external-edit")
 const RELATIVE_PATH = ".e2e-tmp/markdown-external-edit/open-agent-edit.md"
 const ABSOLUTE_PATH = resolve(WORKSPACE_ROOT, RELATIVE_PATH)
+const WATCH_CAP = Number(process.env.BORING_MAX_WATCHED_ENTRIES)
+const HAS_EXPLICIT_WATCH_CAP = Number.isFinite(WATCH_CAP) && WATCH_CAP > 0
 
 test.describe.configure({ timeout: 90_000 })
 
@@ -65,7 +67,7 @@ test.afterEach(async () => {
 })
 
 test("@watch-unsupported open Markdown reconciles a plain-file edit via active-file fallback", async ({ page }, testInfo) => {
-  test.skip(Number(process.env.BORING_MAX_WATCHED_ENTRIES) > 10, "requires forced watcher refusal")
+  test.skip(!HAS_EXPLICIT_WATCH_CAP || WATCH_CAP > 10, "requires an explicit low watcher cap")
   await prepareFixture(true)
   await openProofDocument(page)
   await expect(page.getByTestId("markdown-document-status")).toHaveText("Watching for file changes")
@@ -90,11 +92,46 @@ test("@watch-unsupported open Markdown reconciles a plain-file edit via active-f
   )
   await expect(editor).toContainText("Local draft")
   expect(await readFile(ABSOLUTE_PATH, "utf8")).toContain("Agent conflict version.")
+
+  // Continued typing after conflict must not turn into implicit overwrite once
+  // the transport works again.
+  await page.unroute("**/api/v1/files")
+  await editor.click()
+  await page.keyboard.press("End")
+  await page.keyboard.type(" after conflict")
+  await page.waitForTimeout(600)
+  expect(await readFile(ABSOLUTE_PATH, "utf8")).toContain("Agent conflict version.")
+
+  await page.getByRole("button", { name: "Reload" }).click()
+  await expect(editor).toContainText("Agent conflict version.")
+  await expect(editor).not.toContainText("Local draft")
+  await expect(page.getByTestId("markdown-document-status")).toHaveText("Reloaded from disk")
+
+  // Exercise the other explicit resolution with edits that continue after the
+  // conflict: Overwrite must persist the latest local buffer, not its snapshot.
+  await page.route("**/api/v1/files", async (route) => {
+    if (route.request().method() === "POST") return route.abort("failed")
+    return route.continue()
+  })
+  await editor.click()
+  await page.keyboard.press("End")
+  await page.keyboard.type(" Local overwrite candidate")
+  await page.waitForTimeout(400)
+  await writeFile(ABSOLUTE_PATH, "# External edit proof\n\nSecond agent conflict.\n", "utf8")
+  await expect(page.getByText(/This file has been modified outside the editor/)).toBeVisible({ timeout: 10_000 })
+  await page.unroute("**/api/v1/files")
+  await editor.click()
+  await page.keyboard.press("End")
+  await page.keyboard.type(" latest")
+  await page.getByRole("button", { name: "Overwrite" }).click()
+
+  await expect(page.getByTestId("markdown-document-status")).toHaveText("Overwrote disk version")
+  expect(await readFile(ABSOLUTE_PATH, "utf8")).toContain("Local overwrite candidate latest")
   await page.screenshot({ path: testInfo.outputPath("markdown-conflict.png"), fullPage: true })
 })
 
 test("@watch-live open Markdown reconciles a plain-file edit via filesystem SSE", async ({ page }, testInfo) => {
-  test.skip(Number(process.env.BORING_MAX_WATCHED_ENTRIES) <= 10, "requires live watcher")
+  test.skip(!HAS_EXPLICIT_WATCH_CAP || WATCH_CAP <= 10, "requires an explicit live watcher cap")
   await prepareFixture(false)
   await openProofDocument(page)
   await expect(page.getByText("Watching for file changes")).toHaveCount(0)

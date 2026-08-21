@@ -6,7 +6,6 @@ import { events, workspaceEvents } from "../events"
 export interface EditorLifecycleAdapter {
   isDirty: () => boolean
   save: () => Promise<void>
-  getContent: () => string
 }
 
 export interface UseEditorLifecycleOptions {
@@ -47,6 +46,7 @@ export function useEditorLifecycle(
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const saveInFlightRef = useRef<Promise<void> | null>(null)
+  const scheduleSaveRef = useRef<() => void>(() => {})
   const lifecycleGenRef = useRef(0)
   const previousPathRef = useRef<string | null | undefined>(undefined)
   const onDirtyChangeRef = useRef(onDirtyChange)
@@ -82,8 +82,17 @@ export function useEditorLifecycle(
         if (lifecycleGenRef.current !== saveGen) return
         if (winner === "saved") {
           setLastSavedAt(Date.now())
-          setIsDirty(false)
-          onDirtyChangeRef.current?.(path, false)
+          if (a.isDirty()) {
+            // More edits arrived while the request was in flight. Keep the
+            // lifecycle dirty and schedule the next serialized save after the
+            // current promise leaves `saveInFlightRef`.
+            setIsDirty(true)
+            onDirtyChangeRef.current?.(path, true)
+            scheduleSaveRef.current()
+          } else {
+            setIsDirty(false)
+            onDirtyChangeRef.current?.(path, false)
+          }
         }
         // winner === "timeout": leave dirty=true so the next keystroke or
         // flushSave retries. The original save promise may still resolve
@@ -116,6 +125,7 @@ export function useEditorLifecycle(
     clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(doSave, AUTO_SAVE_DELAY)
   }, [doSave])
+  scheduleSaveRef.current = scheduleSave
 
   const markDirty = useCallback(() => {
     if (!path) return

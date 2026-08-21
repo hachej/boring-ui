@@ -4,11 +4,14 @@ import { useEditorLifecycle, type EditorLifecycleAdapter } from "../useEditorLif
 import { events, workspaceEvents } from "../../events"
 
 function createAdapter(overrides: Partial<EditorLifecycleAdapter> = {}): EditorLifecycleAdapter {
+  let dirty = true
+  const saveOverride = overrides.save
   return {
-    isDirty: vi.fn(() => true),
-    save: vi.fn(async () => {}),
-    getContent: vi.fn(() => "content"),
-    ...overrides,
+    isDirty: overrides.isDirty ?? vi.fn(() => dirty),
+    save: vi.fn(async () => {
+      await saveOverride?.()
+      dirty = false
+    }),
   }
 }
 
@@ -202,6 +205,29 @@ describe("flushSave", () => {
       await Promise.all([result.current.flushSave(), result.current.flushSave()])
     })
     expect(adapter.save).toHaveBeenCalledOnce()
+  })
+
+  it("serializes a follow-up save when edits remain after an in-flight save", async () => {
+    let dirty = true
+    let saves = 0
+    const adapter: EditorLifecycleAdapter = {
+      isDirty: vi.fn(() => dirty),
+      save: vi.fn(async () => {
+        saves += 1
+        if (saves === 2) dirty = false
+      }),
+    }
+    const { result } = renderHook(() =>
+      useEditorLifecycle("/a.ts", { adapter, panelId: "p1" }),
+    )
+    act(() => result.current.markDirty())
+
+    await act(async () => { await result.current.flushSave() })
+    expect(result.current.isDirty).toBe(true)
+    await act(async () => { await vi.advanceTimersByTimeAsync(250) })
+
+    expect(adapter.save).toHaveBeenCalledTimes(2)
+    expect(result.current.isDirty).toBe(false)
   })
 })
 
