@@ -22,7 +22,7 @@ export interface BridgeEventMap {
   "file:saved": { path: string }
   "file:dirty": { path: string; dirty: boolean }
   "sidebar:toggled": { collapsed: boolean }
-  "tree:expand": { path: string; filesystem?: FilesystemId; kind?: "file" | "dir" }
+  "tree:expand": { path: string; filesystem?: FilesystemId }
   "notification:shown": { message: string; level: "info" | "warn" | "error" }
   "pane:error": { panelId: string; error: string; stack?: string }
 }
@@ -55,7 +55,7 @@ export interface WorkspaceBridge {
     level?: "info" | "warn" | "error",
   ): Promise<CommandResult>
   navigateToLine(file: string, line: number): Promise<CommandResult>
-  expandToFile(path: string, opts?: { filesystem?: FilesystemId; kind?: "file" | "dir" }): Promise<CommandResult>
+  expandToFile(path: string, opts?: { filesystem?: FilesystemId }): Promise<CommandResult>
   markDirty(path: string): void
   markClean(path: string): void
 

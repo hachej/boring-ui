@@ -1,7 +1,7 @@
 import { createRef } from "react"
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import type { FetchClient } from "../../data/fetchClient"
+import { FetchError, type FetchClient } from "../../data/fetchClient"
 import { FileTreeUploadManager, type FileTreeUploadManagerHandle } from "../upload/FileTreeUploadManager"
 
 function file(name: string, content = "x") {
@@ -108,6 +108,14 @@ describe("FileTreeUploadManager", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry retry.txt" }))
     expect(await screen.findByRole("button", { name: "Cancel remaining" })).toBeInTheDocument()
     expect(write.mock.calls[1]?.[2]).toMatchObject({ ifExists: "error" })
+  })
+
+  it.each([400, 403, 404, 501])("does not offer retry for deterministic HTTP %s failures", async (status) => {
+    const write = vi.fn().mockRejectedValue(new FetchError(status, `HTTP ${status}`))
+    const { choose } = setup(write)
+    choose(file("blocked.txt"))
+    fireEvent.click(await screen.findByRole("button", { name: "1 failed" }))
+    expect(screen.queryByRole("button", { name: "Retry blocked.txt" })).not.toBeInTheDocument()
   })
 
   it("aborts an active transport when unmounted", async () => {

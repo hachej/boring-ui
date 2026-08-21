@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { ExactBinaryWritePolicy } from "@hachej/boring-bash/shared"
-import type { FetchClient } from "../../data/fetchClient"
+import { FetchError, type FetchClient } from "../../data/fetchClient"
 import { joinPath } from "../treeModel"
 import {
   MAX_CONCURRENT_FILE_UPLOADS,
@@ -78,18 +78,18 @@ export function useBatchFileUpload({ client, onWritten }: UseBatchFileUploadOpti
             if (outcome.status === "written") {
               writtenDestinations.add(row.destination)
               update(row.id, { status: "done", message: undefined })
-            } else if (outcome.status === "conflict") {
+            } else {
               conflicts.push(row)
               update(row.id, { status: "queued", message: "Waiting for conflict decision." })
-            } else {
-              update(row.id, { status: "skipped", message: "A file with this name already exists." })
             }
           } catch (error) {
             if (signal.aborted) return
+            const deterministic = error instanceof FetchError
+              && ((error.status >= 400 && error.status < 500) || error.status === 501)
             update(row.id, {
               status: "failed",
               message: error instanceof Error ? error.message : "Upload failed.",
-              retryable: true,
+              retryable: !deterministic,
             })
           }
         }

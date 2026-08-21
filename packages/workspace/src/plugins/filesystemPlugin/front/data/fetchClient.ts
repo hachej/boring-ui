@@ -250,28 +250,18 @@ export class FetchClient {
     options: { ifExists: ExactBinaryWritePolicy; signal?: AbortSignal },
   ): Promise<ExactBinaryWriteOutcome> {
     const contentBase64 = await blobToBase64(file, options.signal)
-    try {
-      return await this.request<ExactBinaryWriteOutcome>(
-        "POST",
-        "/api/v1/files/binary",
-        { path, contentBase64, ifExists: options.ifExists },
-        undefined,
-        options.signal,
-        async (response) => parseExactBinaryWriteOutcome(await response.json()),
-        "include",
-        0,
-      )
-    } catch (error) {
-      if (error instanceof FetchError && error.status === 409) {
-        try {
-          const outcome = parseExactBinaryWriteOutcome(error.body)
-          if (outcome.status === "conflict" && outcome.path === path) return outcome
-        } catch {
-          // Malformed conflict responses remain transport errors.
-        }
-      }
-      throw error
-    }
+    const outcome = await this.request<ExactBinaryWriteOutcome>(
+      "POST",
+      "/api/v1/files/binary",
+      { path, contentBase64, ifExists: options.ifExists },
+      undefined,
+      options.signal,
+      async (response) => parseExactBinaryWriteOutcome(await response.json()),
+      "include",
+      0,
+    )
+    if (outcome.path !== path) throw new TypeError("exact binary write outcome path mismatch")
+    return outcome
   }
 
   async deleteFile(path: string, options?: { filesystem?: string }): Promise<void> {
