@@ -1037,7 +1037,7 @@ describe("AppLeftPane", () => {
       })
 
       const sessionRow = screen.getByText("First session").closest('[data-boring-workspace-part="app-session-row"]')
-      fireEvent(sessionRow as Node, new MouseEvent("contextmenu", { bubbles: true, cancelable: true }))
+      await userEvent.click(within(sessionRow as HTMLElement).getByRole("button", { name: "Chat actions for First session" }))
       await userEvent.click(screen.getByText("Archive session"))
 
       expect(onSetSessionArchived).toHaveBeenCalledWith("s1", true, "alpha")

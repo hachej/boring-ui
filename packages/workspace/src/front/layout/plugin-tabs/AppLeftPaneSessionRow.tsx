@@ -207,14 +207,6 @@ export function AppSessionRow({
       data-boring-session-id={session.id}
       data-boring-agent-type-id={session.agentTypeId}
       data-boring-session-state={state}
-      // Right-click opens the row's OWN actions menu — the same items, the
-      // same anchor, no second menu idiom to learn. Without a menu to open the
-      // browser's native context menu is left alone.
-      onContextMenu={showMenu && !rename.editing ? (event) => {
-        event.preventDefault()
-        event.stopPropagation()
-        setMenuOpen(true)
-      } : undefined}
       draggable={actionsAvailable && canSplit && !rename.editing && !menuOpen}
       onDragStart={actionsAvailable && canSplit ? (event) => {
         if (rename.editing || menuOpen) { event.preventDefault(); return }
@@ -298,9 +290,6 @@ export function AppSessionRow({
             // .app-left-session-actions in globals.css.
             "app-left-session-actions absolute inset-y-0 right-1 z-10 flex items-center justify-end opacity-0",
             "group-hover:opacity-100 group-focus-within:opacity-100",
-            // A menu opened by right-click must not hang off an invisible
-            // anchor once the pointer leaves the row.
-            menuOpen && "opacity-100",
           )}
         >
           {splitAvailable ? (
@@ -332,7 +321,6 @@ export function AppSessionRow({
             onRename={rename.begin}
             {...(archiveAvailable ? { onToggleArchived } : {})}
             onDelete={onDelete}
-            open={menuOpen}
             onOpenChange={setMenuOpen}
           />
           ) : null}

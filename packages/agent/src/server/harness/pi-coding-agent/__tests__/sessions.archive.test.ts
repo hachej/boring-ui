@@ -129,6 +129,32 @@ describe("PiSessionStore archive state", () => {
     expect(index.archived[sessionId]).toBeUndefined();
   });
 
+  it("keeps both entries when two store instances archive concurrently on one directory", async () => {
+    // Production runs several PiSessionStore instances over one shared
+    // session root; each instance only serializes through its own writer
+    // queue, so the sidecar itself must serialize cross-instance writes.
+    const first = await seedTranscript("Concurrent A");
+    const second = await seedTranscript("Concurrent B");
+    const other = new PiSessionStore("/workspace", { sessionDir });
+
+    const [receiptA, receiptB] = await Promise.all([
+      store.setArchived(ctx, first, true),
+      other.setArchived(ctx, second, true),
+    ]);
+    expect(receiptA.archived).toBe(true);
+    expect(receiptB.archived).toBe(true);
+
+    const index = JSON.parse(
+      await readFile(join(sessionDir, SESSION_ARCHIVE_INDEX_FILENAME), "utf-8"),
+    ) as { archived: Record<string, string> };
+    expect(typeof index.archived[first]).toBe("string");
+    expect(typeof index.archived[second]).toBe("string");
+
+    // Both rows survive from either instance's point of view.
+    const archivedList = await other.list(ctx, { archived: "archived" });
+    expect(archivedList.map((session) => session.id).sort()).toEqual([first, second].sort());
+  });
+
   it("still resolves an archived session asked for by id", async () => {
     const sessionId = await seedTranscript("Included");
     await store.setArchived(ctx, sessionId, true);

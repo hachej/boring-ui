@@ -166,18 +166,14 @@ describe("AppSessionRow native actions", () => {
     expect(onToggleArchived).toHaveBeenCalledWith("native-1", false)
   })
 
-  it("opens the same actions menu on right-click instead of the browser menu", () => {
+  it("leaves the native context menu alone on a row with actions", () => {
+    // Archive lives in the kebab menu only; right-click stays the browser's.
     const onToggleArchived = vi.fn()
     row({ onToggleArchived })
     const sessionRow = screen.getByText("Native chat").closest('[data-boring-workspace-part="app-session-row"]')
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument()
-
     const contextMenu = new MouseEvent("contextmenu", { bubbles: true, cancelable: true })
     fireEvent(sessionRow as Node, contextMenu)
-
-    expect(contextMenu.defaultPrevented).toBe(true)
-    expect(screen.getByRole("menu")).toBeInTheDocument()
-    expect(screen.getByText("Archive session")).toBeInTheDocument()
+    expect(contextMenu.defaultPrevented).toBe(false)
   })
 
   it("leaves the native context menu alone on a row with no actions", () => {

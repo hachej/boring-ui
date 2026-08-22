@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef } from "react"
+import { useRef, useState } from "react"
 import { Archive, ArchiveRestore, Copy, MoreHorizontal, Pencil, Pin, PinOff, Trash2 } from "lucide-react"
 import {
   DropdownMenu,
@@ -23,7 +23,6 @@ export function AppSessionActionsMenu({
   onRename,
   onToggleArchived,
   onDelete,
-  open,
   onOpenChange,
 }: {
   sessionId: string
@@ -38,11 +37,11 @@ export function AppSessionActionsMenu({
   /** Visibility only — the transcript is kept, so this is never destructive. */
   onToggleArchived?: (id: string, archived: boolean) => unknown
   onDelete?: (id: string) => unknown
-  /** The row owns the open state so a right-click on it opens this same menu. */
-  open: boolean
   onOpenChange: (open: boolean) => void
 }) {
+  const [open, setOpen] = useState(false)
   const suppressCloseAutoFocus = useRef(false)
+  const setMenuOpen = (next: boolean) => { setOpen(next); onOpenChange(next) }
   const copy = async () => {
     if (await copyText(sessionId)) {
       toast.success({ title: "Session ID copied", description: sessionId })
@@ -51,7 +50,7 @@ export function AppSessionActionsMenu({
     toast.error({ title: "Could not copy session ID", description: "Allow clipboard access and try again." })
   }
   return (
-    <DropdownMenu open={open} onOpenChange={onOpenChange}>
+    <DropdownMenu open={open} onOpenChange={setMenuOpen}>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
@@ -97,7 +96,7 @@ export function AppSessionActionsMenu({
         ) : null}
         {canCopy && (canRename || onToggleArchived || onDelete) ? <DropdownMenuSeparator /> : null}
         {canRename ? (
-          <DropdownMenuItem onSelect={() => { onOpenChange(false); onRename() }} className="gap-2 text-[13px]">
+          <DropdownMenuItem onSelect={() => { setMenuOpen(false); onRename() }} className="gap-2 text-[13px]">
             <Pencil className="h-3.5 w-3.5" /> Rename
           </DropdownMenuItem>
         ) : null}

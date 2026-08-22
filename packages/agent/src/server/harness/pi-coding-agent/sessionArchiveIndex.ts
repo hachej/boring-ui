@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 /**
  * Archiving is a VISIBILITY state, never a deletion. Transcripts are host app
@@ -49,6 +49,29 @@ function parseArchiveIndex(raw: string): Record<string, string> {
   return entries;
 }
 
+/**
+ * Production creates several PiSessionStore instances over one shared session
+ * directory, and each store serializes writers only through its OWN instance
+ * queue — so caller-side serialization cannot protect the shared sidecar. All
+ * read-modify-write mutations below therefore serialize HERE, keyed by the
+ * canonical directory, which makes concurrent archives from any number of
+ * store instances (or bare callers) accumulate instead of overwrite.
+ */
+const dirLocks = new Map<string, Promise<unknown>>();
+
+async function withDirectoryLock<T>(sessionDir: string, action: () => Promise<T>): Promise<T> {
+  const key = resolve(sessionDir);
+  const previous = dirLocks.get(key) ?? Promise.resolve();
+  const gate = previous.then(() => {}, () => {});
+  const result = gate.then(action);
+  const tail = result.then(() => {}, () => {});
+  dirLocks.set(key, tail);
+  void tail.then(() => {
+    if (dirLocks.get(key) === tail) dirLocks.delete(key);
+  });
+  return result;
+}
+
 /** Every archived session id in this directory. Absent/corrupt index = none. */
 export async function readSessionArchiveIndex(sessionDir: string): Promise<Record<string, string>> {
   let raw: string;
@@ -71,8 +94,8 @@ export async function readArchivedSessionIds(sessionDir: string): Promise<Set<st
 
 /**
  * Read-modify-write the sidecar atomically (temp file + rename inside the same
- * directory, so the swap is never half-written). Callers serialize concurrent
- * writers; this function owns durability, not mutual exclusion.
+ * directory, so the swap is never half-written) and serialized across ALL
+ * store instances sharing the directory via the per-directory lock above.
  *
  * Returns true when the index changed.
  */
@@ -82,21 +105,25 @@ export async function writeSessionArchived(
   archived: boolean,
   now = new Date(),
 ): Promise<boolean> {
-  const entries = await readSessionArchiveIndex(sessionDir);
-  const wasArchived = entries[sessionId] !== undefined;
-  if (wasArchived === archived) return false;
-  if (archived) entries[sessionId] = now.toISOString();
-  else delete entries[sessionId];
-  await persist(sessionDir, entries);
-  return true;
+  return await withDirectoryLock(sessionDir, async () => {
+    const entries = await readSessionArchiveIndex(sessionDir);
+    const wasArchived = entries[sessionId] !== undefined;
+    if (wasArchived === archived) return false;
+    if (archived) entries[sessionId] = now.toISOString();
+    else delete entries[sessionId];
+    await persist(sessionDir, entries);
+    return true;
+  });
 }
 
 /** Housekeeping for a genuinely deleted session; never called by archiving. */
 export async function forgetArchivedSession(sessionDir: string, sessionId: string): Promise<void> {
-  const entries = await readSessionArchiveIndex(sessionDir);
-  if (entries[sessionId] === undefined) return;
-  delete entries[sessionId];
-  await persist(sessionDir, entries);
+  await withDirectoryLock(sessionDir, async () => {
+    const entries = await readSessionArchiveIndex(sessionDir);
+    if (entries[sessionId] === undefined) return;
+    delete entries[sessionId];
+    await persist(sessionDir, entries);
+  });
 }
 
 async function persist(sessionDir: string, entries: Record<string, string>): Promise<void> {
