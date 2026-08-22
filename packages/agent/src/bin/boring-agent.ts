@@ -39,7 +39,7 @@ function parseArgs(argv: string[]): { port: number; mode: RuntimeModeId; workspa
     if ((arg === '--port' || arg === '-p') && argv[i + 1]) {
       port = Number(argv[++i])
     } else if (arg === '--mode' && argv[i + 1]) {
-      mode = argv[++i] as RuntimeModeId
+      mode = argv[++i]!
     } else if ((arg === '--workspace' || arg === '-w') && argv[i + 1]) {
       workspaceRoot = argv[++i]!
     } else if (arg === '--dev' || arg === '--no-open' || arg === '--no-gitignore') {

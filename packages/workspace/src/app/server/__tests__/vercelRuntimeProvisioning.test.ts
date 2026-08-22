@@ -22,7 +22,7 @@ import { defineServerPlugin } from "../../../server/plugins/defineServerPlugin"
 const tempDirs: string[] = []
 
 test("sandbox runtime host rejects unknown modes with the stable resolver error", () => {
-  expect(() => createSandboxRuntimeModeAdapter("custom-sandbox" as "direct"))
+  expect(() => createSandboxRuntimeModeAdapter("custom-sandbox"))
     .toThrow('Runtime mode "custom-sandbox" has no built-in adapter')
 })
 
@@ -207,7 +207,7 @@ test("startup uses one scoped pair, reload reuses the live pair, and custom host
   // The direct Host remains lazy until the first route needs a live binding.
   expect(state.acquisitions).toBe(0)
   expect(state.disposals).toBe(0)
-  expect(getRuntimePaths).toHaveBeenCalledWith("/workspace")
+  expect(getRuntimePaths).toHaveBeenCalledWith(hostWorkspaceRoot)
 
   expect((await app.inject({ method: "GET", url: "/api/v1/agents/default/ready-status" })).statusCode).toBe(200)
   const reload = await app.inject({ method: "POST", url: "/api/v1/agents/default/reload", payload: { requestId: "vercel-runtime-provisioning" } })

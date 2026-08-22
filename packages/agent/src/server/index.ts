@@ -11,8 +11,6 @@ export type {
   DeploymentSnapshotStatus,
 } from './sandbox/snapshots/deploymentSnapshot'
 export { resolveWorkspaceRoot } from './config/workspaceRoot'
-export { createRemoteWorkerModeAdapter } from './runtime/modes/remote-worker'
-export type { RemoteWorkerModeAdapterOptions } from './runtime/modes/remote-worker'
 export { createRemoteWorkerWorkspace } from './workspace/createRemoteWorkerWorkspace'
 export { createRemoteWorkerSandbox } from './sandbox/remote-worker/createRemoteWorkerSandbox'
 export {
@@ -59,17 +57,23 @@ export type {
   WorkspaceProvisioningResult,
 } from './workspace/provisioning'
 export { autoDetectMode, hasBwrap, resolveMode } from './runtime/resolveMode'
-export { createDirectModeAdapter } from './runtime/modes/direct'
-export { createLocalModeAdapter } from './runtime/modes/local'
-export { createVercelSandboxModeAdapter } from './runtime/modes/vercel-sandbox'
-export { createBlaxelSandboxModeAdapter } from './runtime/modes/blaxel'
-export { createProviderRuntimeModeAdapter } from './runtime/modes/providerAdapter'
 export {
+  createDescriptorRuntimeModeAdapter,
+  createProviderRuntimeModeAdapter,
+} from './runtime/modes/providerAdapter'
+export {
+  createRemoteWorkerModeAdapter,
+  createSandboxRuntimeDescriptorAdapter,
   createSandboxRuntimeModeAdapter,
+  findSandboxRuntimeModeDescriptor,
+  getSandboxRuntimeModeDescriptor,
   resolveBuiltinRuntimeLayoutRoot,
   sandboxRuntimeHostOperations,
 } from './runtime/sandboxRuntimeHost'
-export type { SandboxRuntimeModeOptions } from './runtime/sandboxRuntimeHost'
+export type {
+  RemoteWorkerModeAdapterOptions,
+  SandboxRuntimeModeOptions,
+} from './runtime/sandboxRuntimeHost'
 export type { AgentRuntimeHostOperations } from './runtime/runtimeHost'
 export {
   AgentDirectoryCompilerError,
@@ -276,6 +280,7 @@ export type {
   RuntimeFilesystemBindingOperations,
   RuntimeFilesystemCapability,
   RuntimeModeAdapter,
+  SandboxRuntimeHostPolicyV1,
   RuntimeModeId,
 } from './runtime/mode'
 export {

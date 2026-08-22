@@ -9,13 +9,13 @@ import { ErrorCode } from '../src/shared/error-codes'
 import { mergeTools } from '../src/server/catalog/mergeTools'
 import { createStandaloneAgentHostApp } from '../src/server/createStandaloneAgentHostApp'
 import {
-  createVercelSandboxProvider,
+  createVercelSandboxRuntimeDescriptor,
   FileHandleStore,
-  VERCEL_SANDBOX_REMOTE_ROOT,
-  VERCEL_SANDBOX_WORKSPACE_ROOT,
 } from '@hachej/boring-sandbox/providers/vercel-sandbox'
-import { createVercelSandboxModeAdapter } from '../src/server/runtime/modes/vercel-sandbox'
-import { agentSandboxRuntimeHostOperations } from '../host/sandbox'
+import {
+  agentSandboxRuntimeHostOperations,
+  createSandboxRuntimeDescriptorAdapter,
+} from '../host/sandbox'
 import { provisionWorkspaceRuntime, type WorkspaceProvisioningResult } from '../src/server/workspace/provisioning'
 
 const SAFE_TIMEOUT_MS = 10 * 60_000
@@ -183,12 +183,9 @@ async function main(): Promise<void> {
   const startedAt = Date.now()
   const tempDir = await mkdtemp(join(tmpdir(), 'boring-vercel-capability-readiness-'))
   const store = new FileHandleStore({ storePath: join(tempDir, 'sandboxes.json') })
-  const runtimeModeAdapter = createVercelSandboxModeAdapter({
-    provider: createVercelSandboxProvider({ store, orphanGuardMaxIdleMs: null }),
-    runtimeHost: agentSandboxRuntimeHostOperations,
-    remoteRoot: VERCEL_SANDBOX_REMOTE_ROOT,
-    workspaceRoot: VERCEL_SANDBOX_WORKSPACE_ROOT,
-  })
+  const runtimeModeAdapter = createSandboxRuntimeDescriptorAdapter(
+    createVercelSandboxRuntimeDescriptor({ store, orphanGuardMaxIdleMs: null }),
+  )
   const workspaceId = `readiness-${Date.now()}-${Math.random().toString(36).slice(2)}`
   let app: Awaited<ReturnType<typeof createStandaloneAgentHostApp>> | undefined
   let capturedTools: AgentTool[] = []

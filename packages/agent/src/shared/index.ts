@@ -96,7 +96,15 @@ export {
   EnvSchema,
   validateConfig,
 } from './config-schema'
-export type { RuntimeModeId, AgentConfig, AgentEnv } from './config-schema'
+export type { AgentConfig, AgentEnv } from './config-schema'
+export {
+  BUILTIN_RUNTIME_MODE_IDS,
+  isBuiltinRuntimeModeId,
+} from './runtime-mode'
+export type {
+  BuiltinRuntimeModeId,
+  BuiltinRuntimeModeId as RuntimeModeId,
+} from './runtime-mode'
 export {
   AgentConsumptionErrorCode,
   AgentDefinitionErrorCode,

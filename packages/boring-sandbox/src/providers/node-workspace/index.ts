@@ -25,3 +25,5 @@ export type {
 } from './runtimeLayout'
 export { withWorkspacePythonEnv } from './workspacePythonEnv'
 export type { WorkspacePythonEnvOptions } from './workspacePythonEnv'
+export { directRuntimeDescriptor as nodeWorkspaceDirectRuntimeDescriptor } from '../direct/runtimeDescriptor'
+export { localRuntimeDescriptor as nodeWorkspaceLocalRuntimeDescriptor } from '../bwrap/runtimeDescriptor'

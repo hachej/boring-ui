@@ -178,7 +178,7 @@ export async function provisionCliWorkspaceRuntime(opts: {
   provisionWorkspace?: boolean
   plugins?: ProvisionWorkspaceRuntimeOptions["plugins"]
   adapter?: WorkspaceProvisioningAdapter
-  modeAdapter?: Pick<RuntimeModeAdapter, "create" | "runtimeHost">
+  modeAdapter?: Pick<RuntimeModeAdapter, "create" | "runtimeHost" | "workspaceFsCapability">
   runtimeLayout?: BoringAgentRuntimePaths
 }): Promise<WorkspaceProvisioningResult | undefined> {
   if (opts.provisionWorkspace === false) return undefined
@@ -188,9 +188,12 @@ export async function provisionCliWorkspaceRuntime(opts: {
   let operationError: unknown
   try {
     let adapter = opts.adapter
+    const modeAdapter = opts.modeAdapter
+      ?? (adapter ? undefined : agent.createSandboxRuntimeModeAdapter(opts.mode))
+    const workspaceFsCapability = modeAdapter?.workspaceFsCapability
+      ?? agent.findSandboxRuntimeModeDescriptor(opts.mode)?.adapter.workspaceFsCapability
     if (!adapter) {
-      const modeAdapter = opts.modeAdapter
-        ?? agent.createSandboxRuntimeModeAdapter(opts.mode as 'direct' | 'local' | 'blaxel' | 'vercel-sandbox')
+      if (!modeAdapter) throw new Error(`runtime mode ${opts.mode} has no mode adapter`)
       scopedRuntime = await modeAdapter.create({
         workspaceRoot: opts.workspaceRoot,
         workspaceId: opts.workspaceRoot,
@@ -211,7 +214,7 @@ export async function provisionCliWorkspaceRuntime(opts: {
       ...result,
       env: {
         ...result.env,
-        BORING_AGENT_WORKSPACE_LOCAL_PLUGIN_ROOTS: opts.mode === "direct" || opts.mode === "local" ? "1" : "0",
+        BORING_AGENT_WORKSPACE_LOCAL_PLUGIN_ROOTS: workspaceFsCapability === "strong" ? "1" : "0",
       },
     }
   } catch (error) {

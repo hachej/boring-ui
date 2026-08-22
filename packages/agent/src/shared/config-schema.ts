@@ -1,7 +1,7 @@
 import { z } from "zod"
+import { BUILTIN_RUNTIME_MODE_IDS } from './runtime-mode'
 
-export const RuntimeModeSchema = z.enum(["direct", "local", "blaxel", "vercel-sandbox"])
-export type RuntimeModeId = z.infer<typeof RuntimeModeSchema>
+export const RuntimeModeSchema = z.enum(BUILTIN_RUNTIME_MODE_IDS)
 
 export const ConfigSchema = z.object({
   workspaceRoot: z.string(),

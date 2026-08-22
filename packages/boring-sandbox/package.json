@@ -18,38 +18,57 @@
       "import": "./dist/index.js"
     },
     "./shared": {
+      "boring-source": "./src/shared/index.ts",
       "types": "./dist/shared/index.d.ts",
       "import": "./dist/shared/index.js"
     },
+    "./runtime-modes": {
+      "boring-source": "./src/runtime-modes/index.ts",
+      "types": "./dist/runtime-modes/index.d.ts",
+      "import": "./dist/runtime-modes/index.js"
+    },
     "./providers": {
+      "boring-source": "./src/providers/index.ts",
       "types": "./dist/providers/index.d.ts",
       "import": "./dist/providers/index.js"
     },
+    "./providers/registry": {
+      "boring-source": "./src/providers/registry/index.ts",
+      "types": "./dist/providers/registry.d.ts",
+      "import": "./dist/providers/registry.js"
+    },
     "./providers/direct": {
+      "boring-source": "./src/providers/direct/index.ts",
       "types": "./dist/providers/direct/index.d.ts",
       "import": "./dist/providers/direct/index.js"
     },
     "./providers/bwrap": {
+      "boring-source": "./src/providers/bwrap/index.ts",
       "types": "./dist/providers/bwrap/index.d.ts",
       "import": "./dist/providers/bwrap/index.js"
     },
     "./providers/node-workspace": {
+      "boring-source": "./src/providers/node-workspace/index.ts",
       "types": "./dist/providers/node-workspace/index.d.ts",
       "import": "./dist/providers/node-workspace/index.js"
     },
     "./providers/blaxel": {
+      "boring-source": "./src/providers/blaxel/index.ts",
       "types": "./dist/providers/blaxel/index.d.ts",
       "import": "./dist/providers/blaxel/index.js"
     },
     "./providers/vercel-sandbox": {
+      "boring-source": "./src/providers/vercel-sandbox/index.ts",
       "types": "./dist/providers/vercel-sandbox/index.d.ts",
       "import": "./dist/providers/vercel-sandbox/index.js"
     },
     "./providers/runsc": {
+      "boring-source": "./src/providers/runsc/index.ts",
       "types": "./dist/providers/runsc/index.d.ts",
       "import": "./dist/providers/runsc/index.js"
     },
     "./providers/remote-worker": {
+      "boring-source": "./src/providers/remote-worker/index.ts",
       "types": "./dist/providers/remote-worker/index.d.ts",
       "import": "./dist/providers/remote-worker/index.js"
     }

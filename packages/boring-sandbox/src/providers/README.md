@@ -4,6 +4,13 @@ Concrete sandbox providers live behind this subpath as they move out of
 `@hachej/boring-agent`. The authoritative provider capability facts live in
 `@hachej/boring-sandbox/shared`; provider code must not define a second matrix.
 
+Every selectable runtime exports a `SandboxRuntimeModeDescriptorV1`. A
+descriptor is self-contained: it declares its id, provider-pair identities,
+capabilities, error-code namespace, adapter/host policies, runtime root, and a
+lazy factory for the complete `WorkspaceSandboxPairV1`. Consumers resolve
+descriptors through `@hachej/boring-sandbox/providers/registry`; they must not
+select Workspace and Sandbox implementations independently.
+
 | Runtime mode | Sandbox provider | Notes |
 | --- | --- | --- |
 | `direct` | `direct` | Trusted host mode; no isolation. |
@@ -14,5 +21,6 @@ Concrete sandbox providers live behind this subpath as they move out of
 | pure/headless | `none` | No boring-bash environment. |
 | readonly files | `readonly` facade | File UI/search/watch without exec. |
 
-`resolveMode()` itself is owned by `@hachej/boring-bash/modes`. It resolves a
-mode id to one of these provider values; providers do not resolve modes.
+The registry imports only lightweight descriptors. Concrete provider factories
+are dynamically loaded on first runtime creation, so choosing one mode does not
+eagerly initialize every provider SDK.

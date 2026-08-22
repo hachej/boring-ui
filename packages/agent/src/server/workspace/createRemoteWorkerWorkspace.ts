@@ -106,7 +106,7 @@ function createRemoteWatcher(client: RemoteWorkerClient): WorkspaceWatcher {
 export function createRemoteWorkerWorkspace(
   client: RemoteWorkerClient,
   supportsExclusiveBinaryCreate = false,
-): Workspace {
+): Workspace & { closeWatcher(): void } {
   let watcher: WorkspaceWatcher | null = null
   return {
     root: REMOTE_WORKER_RUNTIME_CWD,
@@ -165,6 +165,10 @@ export function createRemoteWorkerWorkspace(
     },
     async rename(from, to) {
       await client.workspace({ op: 'rename', from, to })
+    },
+    closeWatcher() {
+      watcher?.close()
+      watcher = null
     },
   }
 }

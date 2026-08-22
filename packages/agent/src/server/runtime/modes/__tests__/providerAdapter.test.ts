@@ -1,19 +1,27 @@
 import { expect, test, vi } from 'vitest'
 
-import type { SandboxProviderV1 } from '@hachej/boring-sandbox/shared'
+import {
+  type SandboxProviderV1,
+  type SandboxRuntimeModeDescriptorV1,
+} from '@hachej/boring-sandbox/shared'
 import type { Sandbox, Workspace } from '../../../../shared'
+import { ErrorCode } from '../../../../shared/error-codes'
 import type { RuntimeBundle } from '../../mode'
 import { createProviderRuntimeModeAdapter } from '../providerAdapter'
 import {
+  createRemoteWorkerModeAdapter,
+  createSandboxRuntimeDescriptorAdapter,
   createSandboxRuntimeModeAdapter,
   sandboxRuntimeHostOperations,
 } from '../../sandboxRuntimeHost'
+import { createAgentSandboxRuntimeModeAdapter } from '../../../../../host/sandbox'
 import { testRuntimeHostOperations } from '@agent-test-host'
 
 function createPairProvider(options: {
   checkHealth?: () => Promise<{ state: 'ok' } | { state: 'recreate'; message?: string }>
   dispose: () => Promise<void>
   invalidate?: (ctx: { workspaceId: string }) => Promise<void>
+  providerId?: string
 }): SandboxProviderV1 {
   const runtimeContext = { runtimeCwd: '/workspace' }
   const workspace: Workspace = {
@@ -31,7 +39,7 @@ function createPairProvider(options: {
   const sandbox: Sandbox = {
     id: 'provider-adapter-test',
     placement: 'server',
-    provider: 'direct',
+    provider: options.providerId ?? 'direct',
     capabilities: ['exec'],
     runtimeContext,
     async exec() {
@@ -47,7 +55,7 @@ function createPairProvider(options: {
 
   return {
     contractVersion: 'boring-sandbox.provider.v1',
-    providerId: 'direct',
+    providerId: options.providerId ?? 'direct',
     capabilities: {
       exec: true,
       fs: 'readwrite',
@@ -101,6 +109,49 @@ test('health and disposal stay bound to the pair after RuntimeBundle decoration'
   expect(dispose).toHaveBeenCalledOnce()
 })
 
+test('the generic descriptor adapter composes a provider pair without a provider-specific Agent branch', async () => {
+  const dispose = vi.fn(async () => {})
+  const provider = createPairProvider({ dispose, providerId: 'fixture-provider' })
+  const descriptor: SandboxRuntimeModeDescriptorV1 = {
+    id: 'fixture-provider',
+    providerId: 'fixture-provider',
+    pair: {
+      workspaceProviderId: 'fixture-provider',
+      sandboxProviderId: 'fixture-provider',
+    },
+    capabilities: provider.capabilities,
+    errorCodeNamespace: 'FIXTURE_PROVIDER',
+    adapter: {
+      workspaceFsCapability: 'strong',
+      bash: { kind: 'host' },
+      filesystem: { kind: 'host' },
+      storageRoot: 'workspace-root',
+      provisioning: 'pair',
+    },
+    host: {
+      productionSafe: false,
+      inferSiblingSessionRoot: false,
+      allowPiExtensions: false,
+      loadWorkspacePiResources: false,
+      includePluginAuthoringProvisioning: false,
+      resolveCompanyContextFromHostWorkspace: false,
+      httpWorkspaceScope: 'default',
+    },
+    resolveRuntimeRoot: () => '/workspace',
+    createPairFactory: () => provider,
+  }
+  const adapter = createSandboxRuntimeDescriptorAdapter(descriptor)
+
+  const bundle = await adapter.create({ workspaceRoot: '/workspace', sessionId: 'session' })
+
+  expect(adapter.runtimeHostPolicy).toBe(descriptor.host)
+  expect(adapter.runtimeHost).toBe(sandboxRuntimeHostOperations)
+  expect(bundle.workspace.runtimeContext).toBe(bundle.sandbox.runtimeContext)
+  expect(bundle.sandbox.provider).toBe('fixture-provider')
+  await bundle.disposeRuntime?.()
+  expect(dispose).toHaveBeenCalledOnce()
+})
+
 test('bundle construction preserves its first error when pair cleanup also fails', async () => {
   const constructionError = new Error('bundle construction failed')
   const dispose = vi.fn(async () => { throw new Error('pair cleanup failed') })
@@ -124,7 +175,89 @@ test('Agent owns built-in sandbox adapter selection and host operations', async 
   expect(adapter.id).toBe('direct')
   expect(adapter.runtimeHost).toBe(sandboxRuntimeHostOperations)
   await adapter.dispose?.()
-  expect(() => createSandboxRuntimeModeAdapter('custom' as 'direct')).toThrow('no built-in adapter')
+  expect(() => createSandboxRuntimeModeAdapter('custom')).toThrow('no built-in adapter')
+})
+
+
+test('the explicit remote-worker V0 seam owns host composition without borrowing the V1 descriptor', () => {
+  const adapter = createRemoteWorkerModeAdapter({
+    baseUrl: 'http://worker.test',
+    token: 'test-token',
+  })
+  const selectedAdapter = createAgentSandboxRuntimeModeAdapter('remote-worker')
+
+  expect(adapter.getRuntimeLayoutRoot?.({ workspaceRoot: '/host/workspace', sessionId: 'session' })).toBe('/workspace')
+  expect(adapter.runtimeHost).toBe(sandboxRuntimeHostOperations)
+  expect(adapter.runtimeHostPolicy).toEqual({
+    productionSafe: false,
+    inferSiblingSessionRoot: false,
+    allowPiExtensions: true,
+    loadWorkspacePiResources: false,
+    includePluginAuthoringProvisioning: true,
+    resolveCompanyContextFromHostWorkspace: true,
+    httpWorkspaceScope: 'session',
+  })
+  expect(selectedAdapter.runtimeHostPolicy).toEqual(adapter.runtimeHostPolicy)
+})
+
+test('the explicit remote-worker V0 seam forwards timeout options', async () => {
+  vi.useFakeTimers()
+  try {
+    const fetchImpl = vi.fn((_url: string | URL | Request, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new Error('aborted')))
+    }))
+    const adapter = createRemoteWorkerModeAdapter({
+      baseUrl: 'http://worker.test',
+      token: 'test-token',
+      requestTimeoutMs: 25,
+      fetchImpl: fetchImpl as typeof fetch,
+    })
+
+    const pending = expect(adapter.create({ workspaceRoot: '/host/workspace', sessionId: 'session' }))
+      .rejects.toMatchObject({
+        code: ErrorCode.enum.REMOTE_WORKER_TIMEOUT,
+        details: { timeoutMs: 25, retryable: true },
+      })
+    await vi.advanceTimersByTimeAsync(25)
+    await pending
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+test('the explicit remote-worker V0 bundle exposes host operations and runtime disposal', async () => {
+  const adapter = createRemoteWorkerModeAdapter({
+    baseUrl: 'http://worker.test',
+    token: 'test-token',
+    fetchImpl: vi.fn(async () => new Response(null, { status: 200 })) as typeof fetch,
+  })
+
+  const bundle = await adapter.create({ workspaceRoot: '/host/workspace', sessionId: 'session' })
+  expect(bundle.runtimeHost).toBe(sandboxRuntimeHostOperations)
+  expect(bundle.disposeRuntime).toEqual(expect.any(Function))
+  await bundle.disposeRuntime?.()
+})
+
+test('retries provider creation and tolerates disposal after a factory rejection', async () => {
+  const provider = createPairProvider({ dispose: vi.fn(async () => {}) })
+  const providerFactory = vi.fn()
+    .mockRejectedValueOnce(new Error('provider unavailable'))
+    .mockResolvedValue(provider)
+  const adapter = createProviderRuntimeModeAdapter({
+    id: 'direct',
+    providerFactory,
+    runtimeHost: testRuntimeHostOperations,
+    workspaceFsCapability: 'strong',
+    bash: { kind: 'host' },
+    filesystem: { kind: 'host' },
+  })
+
+  await expect(adapter.create({ workspaceRoot: '/tmp/workspace', sessionId: 'session' }))
+    .rejects.toThrow('provider unavailable')
+  await expect(adapter.dispose?.()).resolves.toBeUndefined()
+  await expect(adapter.create({ workspaceRoot: '/tmp/workspace', sessionId: 'session' }))
+    .resolves.toMatchObject({ workspace: { root: '/workspace' } })
+  expect(providerFactory).toHaveBeenCalledTimes(2)
 })
 
 test('cached runtime eviction awaits asynchronous provider invalidation', async () => {
@@ -147,4 +280,32 @@ test('cached runtime eviction awaits asynchronous provider invalidation', async 
   releaseInvalidation()
   await eviction
   expect(invalidate).toHaveBeenCalledWith({ workspaceId: 'workspace' })
+})
+
+test('rejects and disposes a provider pair whose runtime roots diverge', async () => {
+  const dispose = vi.fn(async () => {})
+  const provider = createPairProvider({ dispose })
+  const originalCreate = provider.create
+  provider.create = async (context) => {
+    const pair = await originalCreate(context)
+    return {
+      ...pair,
+      sandbox: {
+        ...pair.sandbox,
+        runtimeContext: { runtimeCwd: '/different-root' },
+      },
+    }
+  }
+  const adapter = createProviderRuntimeModeAdapter({
+    id: 'direct',
+    provider,
+    runtimeHost: testRuntimeHostOperations,
+    workspaceFsCapability: 'strong',
+    bash: { kind: 'host' },
+    filesystem: { kind: 'host' },
+  })
+
+  await expect(adapter.create({ workspaceRoot: '/tmp/workspace', sessionId: 'session' }))
+    .rejects.toThrow('mismatched Workspace + Sandbox pair')
+  expect(dispose).toHaveBeenCalledOnce()
 })

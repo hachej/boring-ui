@@ -66,7 +66,7 @@ export async function startPlaygroundServer(): Promise<void> {
     const beadsOperations = remoteWorkerModeAdapter
       ? undefined
       : createWorkspaceBeadsOperations(createNodeWorkspace(workspaceRoot))
-    const localRuntimeMode = process.env.BORING_AGENT_MODE?.trim() === "direct" ? "direct" : "local"
+    const localRuntimeMode = process.env.BORING_AGENT_MODE?.trim() || "local"
     const agentMode = resolvePlaygroundAgentMode(process.env)
     // Same `workspaceRoot` value that is handed to createWorkspaceAgentServer
     // below: the fleet's instruction refs are addressed against the filesystem
@@ -82,7 +82,7 @@ export async function startPlaygroundServer(): Promise<void> {
     const companyContextRoot = resolve(process.env.BORING_WORKSPACE_PLAYGROUND_COMPANY_CONTEXT_ROOT || workspaceRoot)
     if (multiFilesystemPlayground) mkdirSync(companyContextRoot, { recursive: true })
     console.log(`[workspace-playground] workspace root: ${workspaceRoot}`)
-    console.log(`[workspace-playground] runtime mode: ${remoteWorkerModeAdapter ? "remote-worker" : localRuntimeMode}`)
+    console.log(`[workspace-playground] runtime mode: ${remoteWorkerModeAdapter?.id ?? localRuntimeMode}`)
     if (remoteWorkerWorkspaceId) {
       console.log(`[workspace-playground] remote worker workspace id: ${remoteWorkerWorkspaceId}`)
     }

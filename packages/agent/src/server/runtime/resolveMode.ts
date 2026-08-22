@@ -1,10 +1,15 @@
 import { spawnSync } from 'node:child_process'
 
 import { getEnv } from '../config/env'
+import {
+  BUILTIN_RUNTIME_MODE_IDS,
+  isBuiltinRuntimeModeId,
+} from '../../shared/runtime-mode'
 import type { BuiltinRuntimeModeId, RuntimeModeAdapter, RuntimeModeId } from './mode'
 
-function isBuiltinRuntimeModeId(value: string): value is BuiltinRuntimeModeId {
-  return value === 'direct' || value === 'local' || value === 'blaxel' || value === 'vercel-sandbox'
+function describeBuiltinRuntimeModeIds(): string {
+  const initialIds = BUILTIN_RUNTIME_MODE_IDS.slice(0, -1)
+  return `${initialIds.join(', ')}, or ${BUILTIN_RUNTIME_MODE_IDS.at(-1)}`
 }
 
 export function hasBwrap(): boolean {
@@ -12,12 +17,12 @@ export function hasBwrap(): boolean {
   return !result.error && result.status === 0
 }
 
-export function autoDetectMode(): RuntimeModeId {
+export function autoDetectMode(): BuiltinRuntimeModeId {
   const explicitMode = getEnv('BORING_AGENT_MODE')
   if (explicitMode) {
     if (!isBuiltinRuntimeModeId(explicitMode)) {
       throw new Error(
-        `Invalid BORING_AGENT_MODE "${explicitMode}". Expected direct, local, blaxel, or vercel-sandbox.`,
+        `Invalid BORING_AGENT_MODE "${explicitMode}". Expected ${describeBuiltinRuntimeModeIds()}.`,
       )
     }
     return explicitMode
@@ -30,11 +35,11 @@ export function autoDetectMode(): RuntimeModeId {
 }
 
 export interface ResolveModeOptions {
-  adapters?: Readonly<Record<BuiltinRuntimeModeId, RuntimeModeAdapter>>
+  adapters?: Readonly<Record<string, RuntimeModeAdapter>>
 }
 
 export function resolveMode(mode: RuntimeModeId = autoDetectMode(), opts: ResolveModeOptions = {}): RuntimeModeAdapter {
-  if (isBuiltinRuntimeModeId(mode) && opts.adapters) return opts.adapters[mode]
+  if (isBuiltinRuntimeModeId(mode) && opts.adapters?.[mode]) return opts.adapters[mode]
   if (isBuiltinRuntimeModeId(mode)) {
     throw new Error(`Runtime mode "${mode}" requires a host-injected runtimeModeAdapter.`)
   }

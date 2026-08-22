@@ -8,6 +8,7 @@ import {
   autoDetectMode,
   createAgentHost,
   createEnvironmentProvisioningFingerprint,
+  findSandboxRuntimeModeDescriptor,
   createPiResourceDigestFence,
   createPiResourceDigestInput,
   createRemoteWorkerModeAdapter,
@@ -32,6 +33,7 @@ import {
   type RuntimeEnvContributionContext,
   type RuntimeFilesystemBinding,
   type RuntimeModeAdapter,
+  type SandboxRuntimeHostPolicyV1,
   type RuntimeModeId,
   type RuntimeProvisioningContribution,
   type VerifiedAgentScopeClaim,
@@ -396,8 +398,11 @@ function createCoreAgentScopeAuthority(input: {
   }
 }
 
-function inferSessionRootForWorkspaceRoot(workspaceRoot: string, runtimeMode: string | undefined): string | undefined {
-  if (runtimeMode !== 'vercel-sandbox' && runtimeMode !== 'blaxel') return undefined
+function inferSessionRootForWorkspaceRoot(
+  workspaceRoot: string,
+  runtimeHostPolicy: SandboxRuntimeHostPolicyV1 | undefined,
+): string | undefined {
+  if (!runtimeHostPolicy?.inferSiblingSessionRoot) return undefined
   const resolvedRoot = path.resolve(workspaceRoot)
   if (path.basename(resolvedRoot) !== 'workspaces') return undefined
   return path.join(path.dirname(resolvedRoot), 'pi-sessions')
@@ -1075,10 +1080,6 @@ export async function createCoreWorkspaceAgentServer(
     options.serveFrontend ?? (process.env.NODE_ENV !== 'development' && Boolean(appRoot))
   const pluginWorkspaceRoot = process.cwd()
   const workspaceRoot = options.workspaceRoot ?? process.env.BORING_AGENT_WORKSPACE_ROOT ?? process.cwd()
-  const agentRuntimeMode = options.runtimeModeAdapter?.id ?? options.mode ?? process.env.BORING_AGENT_MODE
-  const sessionRoot = normalizeOptionalPath(options.sessionRoot)
-    ?? normalizeOptionalPath(process.env.BORING_AGENT_SESSION_ROOT)
-    ?? inferSessionRootForWorkspaceRoot(workspaceRoot, agentRuntimeMode)
   registerTelemetryHooks(app, telemetry)
 
   await registerCoreRoutes({ app, sql, db, userStore, workspaceStore })
@@ -1249,20 +1250,29 @@ export async function createCoreWorkspaceAgentServer(
 
   const workerBaseUrl = process.env.BORING_WORKER_BASE_URL?.trim()
   const selectedMode = options.mode ?? process.env.BORING_AGENT_MODE ?? autoDetectMode()
-  const handleProvider = selectedMode === 'blaxel'
-    ? 'blaxel'
-    : selectedMode === 'vercel-sandbox' ? 'vercel' : undefined
+  const selectedDescriptor = findSandboxRuntimeModeDescriptor(selectedMode)
+  const handle = selectedDescriptor?.host.sandboxHandle
   const sandboxHandleStore = options.sandboxHandleStore
-    ?? (handleProvider ? new WorkspaceRuntimeSandboxHandleStore(workspaceStore, handleProvider) : undefined)
+    ?? (handle
+      ? new WorkspaceRuntimeSandboxHandleStore(
+          workspaceStore,
+          handle.provider,
+          handle.defaultPersistenceMode,
+        )
+      : undefined)
   const remoteWorkerModeAdapter = workerBaseUrl
     ? createRemoteWorkerModeAdapter({ baseUrl: workerBaseUrl })
     : undefined
   const runtimeModeAdapter = options.runtimeModeAdapter
     ?? remoteWorkerModeAdapter
     ?? createSandboxRuntimeModeAdapter(
-      selectedMode as 'direct' | 'local' | 'blaxel' | 'vercel-sandbox',
+      selectedMode,
       { sandboxHandleStore },
     )
+  const runtimeHostPolicy = runtimeModeAdapter.runtimeHostPolicy
+  const sessionRoot = normalizeOptionalPath(options.sessionRoot)
+    ?? normalizeOptionalPath(process.env.BORING_AGENT_SESSION_ROOT)
+    ?? inferSessionRootForWorkspaceRoot(workspaceRoot, runtimeHostPolicy)
   const runtimeHost = options.runtimeHost ?? runtimeModeAdapter.runtimeHost ?? sandboxRuntimeHostOperations
   const piOptionsByRoot = new Map<string, AgentPiOptions>()
   const getPluginPiOptions = (root: string): AgentPiOptions => {
@@ -1289,7 +1299,7 @@ export async function createCoreWorkspaceAgentServer(
     // not scan per-workspace Pi skills/plugins from the public host path — it
     // can be stale after volume cutover and would reintroduce split-brain. Keep
     // only static app/plugin Pi config plus explicit caller overrides.
-    const pluginOptions = remoteWorkerModeAdapter
+    const pluginOptions = runtimeHostPolicy?.loadWorkspacePiResources === false
       ? pluginCollection.agentOptions.pi
       : getPluginPiOptions(ctx.workspaceRoot)
     const bridgePiOptions = options.getWorkspaceBridgePi
@@ -1382,7 +1392,7 @@ export async function createCoreWorkspaceAgentServer(
       ? await options.getTemplatePath({ workspaceId, workspaceRoot: root, request })
       : options.templatePath ?? normalizeOptionalPath(process.env.BORING_AGENT_TEMPLATE_PATH)
     const resolvedPi = await resolvePiOptions({ workspaceId, workspaceRoot: root, request }) ?? {}
-    const pi: PiHarnessOptions = runtimeModeAdapter.id === 'blaxel' || runtimeModeAdapter.id === 'vercel-sandbox'
+    const pi: PiHarnessOptions = runtimeHostPolicy?.allowPiExtensions === false
       ? { ...resolvedPi, noExtensions: true }
       : resolvedPi
     const sessionNamespace = await resolveSessionNamespace({
@@ -1534,7 +1544,7 @@ export async function createCoreWorkspaceAgentServer(
               }) ?? root,
             )
             const result = await provisionWorkspaceRuntime({
-              plugins: runtimeModeAdapter.id === 'direct'
+              plugins: runtimeHostPolicy?.includePluginAuthoringProvisioning === false
                 ? omitPluginAuthoringProvisioning(runtimePlugins)
                 : runtimePlugins,
               adapter: runtimeBundle.provisioningAdapter,

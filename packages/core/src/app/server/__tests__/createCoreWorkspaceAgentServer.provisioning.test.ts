@@ -717,7 +717,7 @@ test('core/full-app can enable plugin CLI provisioning for remote plugin editing
   }
 })
 
-test('core/full-app composition honors BORING_AGENT_WORKSPACE_ROOT for workspace provisioning while keeping plugin collection rooted at cwd', async () => {
+test('custom adapters do not infer host policy from a matching built-in id', async () => {
   mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
     runtimePlugins: [],
     provisioningContributions: [],
@@ -746,7 +746,7 @@ test('core/full-app composition honors BORING_AGENT_WORKSPACE_ROOT for workspace
 
     try {
       const hostOptions = (mocks.createAgentHost as any).mock.calls.at(-1)?.[0] as Record<string, unknown>
-      expect(hostOptions.sessionRoot).toBe('/tmp/pi-sessions')
+      expect(hostOptions.sessionRoot).toBeUndefined()
       const projection = (mocks.hostRegisterDirectRoutes as any).mock.calls.at(-1)?.[0]
       const scope = await projection.authorizeAgentRequest(fakeRequest('workspace-a', 'user-a'))
       await expect((hostOptions.resolveAuthorizedEnvironmentScope as Function)({ authorizedScope: scope }))

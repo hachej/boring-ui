@@ -160,6 +160,7 @@ async function analyzeFastifyClosure(entryPoint) {
   const result = await esbuild({
     absWorkingDir: packageRoot,
     bundle: true,
+    conditions: ['boring-source'],
     entryPoints: [entryPoint],
     format: 'esm',
     logLevel: 'silent',

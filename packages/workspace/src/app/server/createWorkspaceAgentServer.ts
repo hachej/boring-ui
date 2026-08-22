@@ -22,7 +22,6 @@ import {
   provisionWorkspaceRuntime,
   projectAuthorizedSessionRunDetails,
   registerAgentHostEnvironmentRoutes,
-  resolveBuiltinRuntimeLayoutRoot,
   sandboxRuntimeHostOperations,
   withRuntimeEnvContributions,
   type AgentFleetCompiler,
@@ -1286,8 +1285,9 @@ export async function createWorkspaceAgentServer(
   const bridge = createInMemoryBridge()
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
   const modeAdapter = opts.runtimeModeAdapter ?? createSandboxRuntimeModeAdapter(
-    resolvedMode as 'direct' | 'local' | 'blaxel' | 'vercel-sandbox',
+    resolvedMode,
   )
+  const runtimeHostPolicy = modeAdapter.runtimeHostPolicy
   const runtimeHost = opts.runtimeHost ?? modeAdapter.runtimeHost ?? sandboxRuntimeHostOperations
   const workspaceFsCapability = modeAdapter.workspaceFsCapability ?? "best-effort"
   const validateUiPaths = opts.validateUiPaths ?? workspaceFsCapability === "strong"
@@ -1420,7 +1420,9 @@ export async function createWorkspaceAgentServer(
       ...pluginCollection.runtimePlugins,
       ...scanned,
     ])
-    if (resolvedMode === "direct") return omitPluginAuthoringProvisioning(inputs)
+    if (runtimeHostPolicy?.includePluginAuthoringProvisioning === false) {
+      return omitPluginAuthoringProvisioning(inputs)
+    }
     return inputs
   }
   let currentRuntimeProvisioning = opts.runtimeProvisioning
@@ -1428,10 +1430,7 @@ export async function createWorkspaceAgentServer(
     workspaceRoot,
     sessionId: opts.sessionId ?? DEFAULT_WORKSPACE_SCOPE_ID,
     workspaceId: opts.sessionId ?? DEFAULT_WORKSPACE_SCOPE_ID,
-  }) ?? resolveBuiltinRuntimeLayoutRoot(
-    resolvedMode as "direct" | "local" | "blaxel" | "vercel-sandbox",
-    workspaceRoot,
-  )
+  }) ?? workspaceRoot
   const runtimeLayout = runtimeHost.getBoringAgentRuntimePaths(runtimeWorkspaceRoot)
   type RuntimeProvisionerContext = Parameters<NonNullable<WorkspaceAgentCreateOptions["runtimeProvisioner"]>>[0]
   const runRuntimeProvisioning = async (runtimeBundle: RuntimeProvisionerContext["runtimeBundle"]) => {

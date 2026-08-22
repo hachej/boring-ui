@@ -1,4 +1,5 @@
 {
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
@@ -69,24 +70,6 @@
       ],
       "@hachej/boring-tasks/server": [
         "../../plugins/tasks/src/server/index.ts"
-      ],
-      "@hachej/boring-sandbox/shared": [
-        "../boring-sandbox/src/shared/index.ts"
-      ],
-      "@hachej/boring-sandbox/providers/direct": [
-        "../boring-sandbox/src/providers/direct/index.ts"
-      ],
-      "@hachej/boring-sandbox/providers/bwrap": [
-        "../boring-sandbox/src/providers/bwrap/index.ts"
-      ],
-      "@hachej/boring-sandbox/providers/node-workspace": [
-        "../boring-sandbox/src/providers/node-workspace/index.ts"
-      ],
-      "@hachej/boring-sandbox/providers/vercel-sandbox": [
-        "../boring-sandbox/src/providers/vercel-sandbox/index.ts"
-      ],
-      "@hachej/boring-sandbox/providers/blaxel": [
-        "../boring-sandbox/src/providers/blaxel/index.ts"
       ],
       "@hachej/boring-workspace": [
         "../workspace/src/index.ts"
