@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from "vitest"
 import { dispatchUiCommand, WORKSPACE_SURFACE_OPEN_SKIPPED_EVENT, type DispatchContext } from "../uiCommandDispatcher"
 import type { SurfaceShellApi, SurfaceShellSnapshot } from "../../chrome/artifact-surface/SurfaceShell"
+import { events, workspaceEvents } from "../../events"
+import { UI_STATE_INVALIDATION_COMMAND } from "../../../shared/ui-bridge"
 
 function fakeSurface(): SurfaceShellApi & {
   __opened: string[]
@@ -397,6 +399,28 @@ describe("dispatchUiCommand", () => {
     ).not.toThrow()
     expect(c.__surface.__opened).toEqual([])
     expect(c.__surface.__panels).toEqual([])
+  })
+
+  it("translates UI-state invalidations from the active command dispatcher", () => {
+    const listener = vi.fn()
+    const off = events.on(workspaceEvents.uiStateInvalidated, listener)
+    try {
+      dispatchUiCommand({
+        kind: UI_STATE_INVALIDATION_COMMAND,
+        params: { keys: ["questions.pending"] },
+      }, ctx())
+      expect(listener).toHaveBeenCalledWith(expect.objectContaining({
+        cause: "remote",
+        keys: ["questions.pending"],
+      }))
+
+      listener.mockClear()
+      dispatchUiCommand({ kind: UI_STATE_INVALIDATION_COMMAND, params: { keys: [] } }, ctx())
+      dispatchUiCommand({ kind: UI_STATE_INVALIDATION_COMMAND, params: { keys: [42] } }, ctx())
+      expect(listener).not.toHaveBeenCalled()
+    } finally {
+      off()
+    }
   })
 
   it("known kinds without a handler (navigateToLine, showNotification) are accepted-but-no-op", () => {

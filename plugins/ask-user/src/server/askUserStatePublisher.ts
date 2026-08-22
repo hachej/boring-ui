@@ -1,6 +1,6 @@
 import { ASK_USER_UI_STATE_SLOTS } from "../shared/constants"
 import type { AskUserQuestion } from "../shared/types"
-import type { UiBridge, UiState } from "@hachej/boring-workspace/server"
+import { UI_STATE_INVALIDATION_COMMAND, type UiBridge, type UiState } from "@hachej/boring-workspace/server"
 import type { AskUserStore, AskUserStoreChange } from "./askUserStore"
 
 export type AskUserPendingHint = {
@@ -24,6 +24,7 @@ export class AskUserStatePublisher {
   private unsubscribe?: () => void
   private publishChain = Promise.resolve()
   private readonly hintsBySession = new Map<string, AskUserPendingHint>()
+  private notifiedPendingSnapshot: string | undefined
 
   constructor(
     private readonly store: AskUserStore,
@@ -44,6 +45,7 @@ export class AskUserStatePublisher {
     this.unsubscribe = undefined
     this.publishChain = Promise.resolve()
     this.hintsBySession.clear()
+    this.notifiedPendingSnapshot = undefined
   }
 
   async publishSession(sessionId: string): Promise<void> {
@@ -51,11 +53,8 @@ export class AskUserStatePublisher {
     const current = (await this.bridge.getState()) ?? {}
     if (hint) this.hintsBySession.set(sessionId, hint)
     else this.hintsBySession.delete(sessionId)
-    const next: UiState = {
-      ...current,
-      [ASK_USER_UI_STATE_SLOTS.PENDING]: this.currentPendingState(hint),
-    }
-    await this.bridge.setState(next)
+    const nextPending = this.currentPendingState(hint)
+    await this.publishPendingState(current, nextPending)
   }
 
   private currentPendingState(preferredHint?: AskUserPendingHint | null): AskUserPendingState {
@@ -90,11 +89,29 @@ export class AskUserStatePublisher {
     }
     const current = (await this.bridge.getState()) ?? {}
     const nextPending = this.currentPendingState()
-    if (JSON.stringify(current[ASK_USER_UI_STATE_SLOTS.PENDING]) === JSON.stringify(nextPending)) return
-    await this.bridge.setState({
-      ...current,
-      [ASK_USER_UI_STATE_SLOTS.PENDING]: nextPending,
+    await this.publishPendingState(current, nextPending)
+  }
+
+  private async publishPendingState(current: UiState, nextPending: AskUserPendingState): Promise<void> {
+    const nextSnapshot = JSON.stringify(nextPending)
+    const stateChanged = JSON.stringify(current[ASK_USER_UI_STATE_SLOTS.PENDING]) !== nextSnapshot
+    if (stateChanged) {
+      await this.bridge.setState({
+        ...current,
+        [ASK_USER_UI_STATE_SLOTS.PENDING]: nextPending,
+      })
+    }
+    if (!stateChanged && this.notifiedPendingSnapshot === nextSnapshot) return
+    await this.notifyPendingChanged()
+    this.notifiedPendingSnapshot = nextSnapshot
+  }
+
+  private async notifyPendingChanged(): Promise<void> {
+    const result = await this.bridge.postCommand({
+      kind: UI_STATE_INVALIDATION_COMMAND,
+      params: { keys: [ASK_USER_UI_STATE_SLOTS.PENDING] },
     })
+    if (result.status !== "ok") throw new Error(result.error?.message ?? "UI state invalidation was not delivered")
   }
 }
 

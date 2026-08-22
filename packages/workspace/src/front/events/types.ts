@@ -14,6 +14,7 @@ import type { UiCommand } from "../bridge/types"
 
 export const WORKSPACE_PLUGIN_ID = "workspace"
 export const WORKSPACE_UI_COMMAND_EVENT = "workspace:ui.command"
+export const WORKSPACE_UI_STATE_INVALIDATED_EVENT = "workspace:ui.state.invalidated"
 export const WORKSPACE_EDITOR_SAVE_START_EVENT = "workspace:editor.save.start"
 export const WORKSPACE_EDITOR_SAVE_END_EVENT = "workspace:editor.save.end"
 export const WORKSPACE_PANEL_UPDATE_EVENT = "workspace:panel.update"
@@ -22,6 +23,7 @@ export const WORKSPACE_AGENT_DATA_EVENT = "workspace:agent.data"
 
 export const workspaceEvents = {
   uiCommand: WORKSPACE_UI_COMMAND_EVENT,
+  uiStateInvalidated: WORKSPACE_UI_STATE_INVALIDATED_EVENT,
   editorSaveStart: WORKSPACE_EDITOR_SAVE_START_EVENT,
   editorSaveEnd: WORKSPACE_EDITOR_SAVE_END_EVENT,
   panelUpdate: WORKSPACE_PANEL_UPDATE_EVENT,
@@ -77,6 +79,7 @@ export function remoteMeta(
 export interface WorkspaceHostEventMap {
   /** Shared UI manipulation contract used by the agent stream and plugin bindings. */
   [WORKSPACE_UI_COMMAND_EVENT]: EventMeta & { command: UiCommand }
+  [WORKSPACE_UI_STATE_INVALIDATED_EVENT]: EventMeta & { keys: string[] }
 
   // Editor save lifecycle. Keyed by panelId, NOT path: a rename
   // mid-save would orphan a path-keyed badge. Subscribers map

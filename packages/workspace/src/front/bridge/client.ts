@@ -1,6 +1,8 @@
 import type { WorkspaceBridge, CausedBy } from "./types"
 import type { WorkspaceStore, PanelState } from "../store/types"
 import type { FilesystemId, UiFileOpenMode } from "../../shared/types/filesystem"
+import { UI_STATE_INVALIDATION_COMMAND } from "../../shared/ui-bridge"
+import { dispatchUiStateInvalidation } from "./uiStateInvalidation"
 
 export interface UIStatePut {
   v: 1
@@ -51,6 +53,7 @@ type CommandKind =
   | "expandToFile"
   | "markDirty"
   | "markClean"
+  | typeof UI_STATE_INVALIDATION_COMMAND
 
 const DEBOUNCE_MS = 100
 const DEFAULT_POLL_INTERVAL = 3000
@@ -128,6 +131,9 @@ async function dispatchCommand(
       break
     case "markClean":
       bridge.markClean(params.path as string)
+      break
+    case UI_STATE_INVALIDATION_COMMAND:
+      dispatchUiStateInvalidation(params)
       break
   }
 }
@@ -212,6 +218,7 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
           onVersionMismatch?.(parsed.v)
           return
         }
+        if (!parsed.params || typeof parsed.params !== "object" || Array.isArray(parsed.params)) return
         agentCommandDepth++
         dispatchCommand(bridge, parsed.kind, parsed.params).finally(() => {
           agentCommandDepth--
@@ -283,6 +290,7 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
           onVersionMismatch?.(cmd.v)
           continue
         }
+        if (!cmd.params || typeof cmd.params !== "object" || Array.isArray(cmd.params)) continue
         agentCommandDepth++
         try {
           await dispatchCommand(bridge, cmd.kind, cmd.params)

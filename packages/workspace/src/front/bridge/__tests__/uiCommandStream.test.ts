@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { startUiCommandStream, type DispatchContext } from "../uiCommandStream"
 import type { SurfaceShellApi, SurfaceShellSnapshot } from "../../chrome/artifact-surface/SurfaceShell"
+import { events, workspaceEvents } from "../../events"
+import { UI_STATE_INVALIDATION_COMMAND } from "../../../shared/ui-bridge"
 
 function fakeSurface(): SurfaceShellApi & {
   __opened: string[]
@@ -132,6 +134,30 @@ describe("startUiCommandStream — SSE path", () => {
     expect(() => es.__emit("command", "not-json")).not.toThrow()
     expect(ctx.__surface.__opened).toEqual([])
     stop()
+  })
+
+  it("ignores malformed invalidation params and continues with a valid invalidation", () => {
+    const { ctor, instances } = makeEventSourceCtor()
+    const stop = startUiCommandStream({ ctx: dispatchCtx(), eventSourceCtor: ctor })
+    const listener = vi.fn()
+    const off = events.on(workspaceEvents.uiStateInvalidated, listener)
+    try {
+      const es = instances[0]!
+      expect(() => es.__emit("command", JSON.stringify({
+        kind: UI_STATE_INVALIDATION_COMMAND,
+        params: null,
+      }))).not.toThrow()
+      expect(listener).not.toHaveBeenCalled()
+
+      es.__emit("command", JSON.stringify({
+        kind: UI_STATE_INVALIDATION_COMMAND,
+        params: { keys: ["questions.pending"] },
+      }))
+      expect(listener).toHaveBeenCalledWith(expect.objectContaining({ keys: ["questions.pending"] }))
+    } finally {
+      off()
+      stop()
+    }
   })
 
   it("ignores command events with no data or non-string data (no JSON.parse on '')", () => {

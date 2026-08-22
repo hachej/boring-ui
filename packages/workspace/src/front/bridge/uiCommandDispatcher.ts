@@ -9,7 +9,9 @@ import type { SurfaceShellApi, OpenPanelConfig } from "../chrome/artifact-surfac
 import type { UiCommand } from "./types"
 import { normalizeUiFilesystem, parseFileOpenMode } from "../../shared/types/filesystem"
 import type { SurfaceOpenRequest } from "../../shared/types/surface"
+import { UI_STATE_INVALIDATION_COMMAND } from "../../shared/ui-bridge"
 import { expandToFileSchema } from "./validation"
+import { dispatchUiStateInvalidation } from "./uiStateInvalidation"
 
 /**
  * Browser CustomEvent name dispatched on `window` when a `showNotification`
@@ -54,6 +56,7 @@ const KNOWN_KINDS = new Set([
   "showNotification",
   "closePanel",
   "closeWorkbenchLeftPane",
+  UI_STATE_INVALIDATION_COMMAND,
 ])
 
 function strParam(params: Record<string, unknown>, key: string): string | null {
@@ -125,6 +128,9 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
   if (!KNOWN_KINDS.has(cmd.kind)) return
 
   switch (cmd.kind) {
+    case UI_STATE_INVALIDATION_COMMAND:
+      dispatchUiStateInvalidation(cmd.params)
+      return
     case "openFile": {
       const path = strParam(cmd.params, "path")
       if (!path) return

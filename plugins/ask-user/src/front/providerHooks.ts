@@ -138,6 +138,14 @@ export function useAskUserPendingRefresh(
     }
     const onVisibility = () => { if (document.visibilityState === "visible") void refreshPending() }
     const onUiCommand = () => { void refreshPending() }
+    let invalidationTimer: ReturnType<typeof setTimeout> | null = null
+    const onUiStateInvalidated = ({ keys }: { keys: string[] }) => {
+      if (!keys.includes(ASK_USER_UI_STATE_SLOTS.PENDING) || invalidationTimer) return
+      invalidationTimer = setTimeout(() => {
+        invalidationTimer = null
+        void refreshPending()
+      }, 0)
+    }
     const onSurfaceOpenSkipped = (event: Event) => {
       const detail = (event as CustomEvent<{ kind?: unknown }>).detail
       if (detail?.kind === ASK_USER_SURFACE_KIND) void refreshPending()
@@ -156,6 +164,7 @@ export function useAskUserPendingRefresh(
     }
     const offAgentData = events.on(workspaceEvents.agentData, onAgentData)
     const offUiCommand = events.on(workspaceEvents.uiCommand, onUiCommand)
+    const offUiStateInvalidated = events.on(workspaceEvents.uiStateInvalidated, onUiStateInvalidated)
     void refreshPending()
     window.addEventListener("focus", refreshPending)
     document.addEventListener("visibilitychange", onVisibility)
@@ -164,8 +173,10 @@ export function useAskUserPendingRefresh(
     return () => {
       stopped = true
       if (agentDataTimer) clearTimeout(agentDataTimer)
+      if (invalidationTimer) clearTimeout(invalidationTimer)
       offAgentData()
       offUiCommand()
+      offUiStateInvalidated()
       window.removeEventListener("focus", refreshPending)
       document.removeEventListener("visibilitychange", onVisibility)
       window.removeEventListener(UI_COMMAND_EVENT, onUiCommand)
