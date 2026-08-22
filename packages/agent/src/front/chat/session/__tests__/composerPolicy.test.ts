@@ -337,6 +337,56 @@ describe('PiComposerPolicyController submit policy', () => {
     expect(skillCommandText('review', 'src/app.ts')).toBe('skill: review\n\nsrc/app.ts')
   })
 
+  it('sends a local command result the agent must see into the transcript', async () => {
+    const session = new FakeComposerSession('idle')
+    const registry = createCommandRegistry(builtinCommands)
+    const onCommandResult = vi.fn()
+    const run = vi.fn(async () => 'Extensions reloaded.')
+    const policy = createPiComposerPolicyController({
+      session,
+      registry,
+      slashContext: context({ pluginUpdate: { run } }),
+      createClientNonce: nonceFactory(),
+      onCommandResult,
+    })
+
+    await expect(policy.submit({ text: '/reload' })).resolves.toMatchObject({ type: 'command', command: 'reload' })
+    // The browser notice still fires, and the same outcome now reaches the model.
+    expect(onCommandResult).toHaveBeenCalledWith('Extensions reloaded.')
+    expect(session.prompts).toHaveLength(1)
+    expect(session.prompts[0]?.message).toBe('/reload result:\nExtensions reloaded.')
+  })
+
+  it('makes a failed reload the message the agent receives', async () => {
+    const session = new FakeComposerSession('idle')
+    const registry = createCommandRegistry(builtinCommands)
+    const policy = createPiComposerPolicyController({
+      session,
+      registry,
+      slashContext: context({ pluginUpdate: { run: vi.fn(async () => 'Extension update failed: worker unreachable') } }),
+      createClientNonce: nonceFactory(),
+    })
+
+    await policy.submit({ text: '/reload' })
+    expect(session.prompts[0]?.message).toBe('/reload result:\nExtension update failed: worker unreachable')
+  })
+
+  it('leaves commands without a model-facing result out of the transcript', async () => {
+    const session = new FakeComposerSession('idle')
+    const registry = createCommandRegistry(builtinCommands)
+    registry.register({ name: 'note', description: 'UI only', handler: () => 'noted' })
+    const policy = createPiComposerPolicyController({
+      session,
+      registry,
+      slashContext: context({ listCommands: () => registry.list() }),
+      createClientNonce: nonceFactory(),
+    })
+
+    await expect(policy.submit({ text: '/note' })).resolves.toMatchObject({ type: 'command', result: 'noted' })
+    expect(session.prompts).toHaveLength(0)
+    expect(session.followUps).toHaveLength(0)
+  })
+
   it('blocks busy attachments before attachment enrichment work starts', async () => {
     const session = new FakeComposerSession('streaming')
     const policy = createPiComposerPolicyController({

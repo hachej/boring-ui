@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from "vitest"
-import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react"
+import { render, screen, fireEvent, createEvent, waitFor, act, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type React from "react"
@@ -1094,6 +1094,112 @@ describe("FileTreePane", () => {
     const tree = screen.getByTestId("file-tree")
     fireEvent.contextMenu(tree.parentElement!)
     expect(screen.getByRole("menuitem", { name: "Upload files" })).toBeInTheDocument()
+  })
+
+  describe("Drag-and-drop upload", () => {
+    beforeEach(() => clearToasts())
+
+    /** Shape of a real OS file drag: `types` carries "Files", items expose entries. */
+    function osFileDrag(files: File[], directories: string[] = []) {
+      return {
+        types: ["Files"],
+        files,
+        dropEffect: "",
+        items: [
+          ...files.map((file) => ({
+            kind: "file",
+            getAsFile: () => file,
+            webkitGetAsEntry: () => ({ isDirectory: false, name: file.name }),
+          })),
+          ...directories.map((name) => ({
+            kind: "file",
+            getAsFile: () => null,
+            webkitGetAsEntry: () => ({ isDirectory: true, name }),
+          })),
+        ],
+      }
+    }
+
+    async function dropSurface() {
+      return (await screen.findByTestId("file-tree")).parentElement!
+    }
+
+    it("uploads dropped files through the picker's queue and conflict path", async () => {
+      render(<FileTreePane />, { wrapper })
+      const surface = await dropSurface()
+      fireEvent.dragEnter(surface, { dataTransfer: osFileDrag([]) })
+      fireEvent.drop(surface, { dataTransfer: osFileDrag([new File(["x"], "dropped.txt")]) })
+      await waitFor(() => expect(mockWriteBinaryFile).toHaveBeenCalledWith(
+        "dropped.txt",
+        expect.any(File),
+        expect.objectContaining({ ifExists: "error" }),
+      ))
+      expect(await screen.findByRole("button", { name: "1 uploaded" })).toBeInTheDocument()
+    })
+
+    it("shows the drop affordance while an OS file drag hovers the tree", async () => {
+      render(<FileTreePane />, { wrapper })
+      const surface = await dropSurface()
+      expect(screen.queryByTestId("file-tree-drop-overlay")).not.toBeInTheDocument()
+      fireEvent.dragEnter(surface, { dataTransfer: osFileDrag([]) })
+      expect(await screen.findByTestId("file-tree-drop-overlay")).toBeInTheDocument()
+      fireEvent.dragLeave(surface, { dataTransfer: osFileDrag([]) })
+      await waitFor(() => expect(screen.queryByTestId("file-tree-drop-overlay")).not.toBeInTheDocument())
+    })
+
+    it("prevents the browser's navigate-on-drop default over the tree and the window", async () => {
+      render(<FileTreePane />, { wrapper })
+      const surface = await dropSurface()
+      const over = createEvent.dragOver(surface, { dataTransfer: osFileDrag([]) })
+      fireEvent(surface, over)
+      expect(over.defaultPrevented).toBe(true)
+
+      const strayOver = createEvent.dragOver(document.body, { dataTransfer: osFileDrag([]) })
+      fireEvent(document.body, strayOver)
+      expect(strayOver.defaultPrevented).toBe(true)
+      const strayDrop = createEvent.drop(document.body, { dataTransfer: osFileDrag([new File(["x"], "stray.txt")]) })
+      fireEvent(document.body, strayDrop)
+      expect(strayDrop.defaultPrevented).toBe(true)
+      expect(mockWriteBinaryFile).not.toHaveBeenCalled()
+    })
+
+    it("reports dropped folders instead of silently ignoring them", async () => {
+      render(<><FileTreePane /><Toaster /></>, { wrapper })
+      const surface = await dropSurface()
+      fireEvent.drop(surface, {
+        dataTransfer: osFileDrag([new File(["x"], "keep.txt")], ["assets"]),
+      })
+      expect(await screen.findByText("Folders can't be uploaded")).toBeInTheDocument()
+      expect(screen.getByText("assets — drop the files inside instead.")).toBeInTheDocument()
+      await waitFor(() => expect(mockWriteBinaryFile).toHaveBeenCalledWith(
+        "keep.txt",
+        expect.any(File),
+        expect.objectContaining({ ifExists: "error" }),
+      ))
+      expect(mockWriteBinaryFile).toHaveBeenCalledTimes(1)
+    })
+
+    it("refuses drops on roots the picker cannot upload to", async () => {
+      render(<FileTreePane access="readonly" />, { wrapper })
+      const surface = await dropSurface()
+      fireEvent.dragEnter(surface, { dataTransfer: osFileDrag([]) })
+      expect(screen.queryByTestId("file-tree-drop-overlay")).not.toBeInTheDocument()
+      const over = createEvent.dragOver(surface, { dataTransfer: osFileDrag([]) })
+      fireEvent(surface, over)
+      expect(over.defaultPrevented).toBe(true)
+      fireEvent.drop(surface, { dataTransfer: osFileDrag([new File(["x"], "blocked.txt")]) })
+      await waitFor(() => expect(screen.getByTestId("file-tree")).toBeInTheDocument())
+      expect(mockWriteBinaryFile).not.toHaveBeenCalled()
+    })
+
+    it("ignores non-file drags so in-tree moves keep working", async () => {
+      render(<FileTreePane />, { wrapper })
+      const surface = await dropSurface()
+      fireEvent.dragEnter(surface, { dataTransfer: { types: ["text/plain"], items: [], files: [] } })
+      expect(screen.queryByTestId("file-tree-drop-overlay")).not.toBeInTheDocument()
+      fireEvent.drop(surface, { dataTransfer: { types: ["text/plain"], items: [], files: [] } })
+      expect(mockWriteBinaryFile).not.toHaveBeenCalled()
+    })
   })
 
   it("refreshes an expanded folder when an agent/remote change lands inside it", async () => {
