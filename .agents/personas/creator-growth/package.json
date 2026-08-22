@@ -1,0 +1,15 @@
+{
+  "name": "@hachej/boring-persona-creator-growth",
+  "version": "2026.08.22",
+  "private": true,
+  "description": "K7 vertical skeleton: grows one creator's audience and revenue. Objective pending Monday's commercial-loop ruling.",
+  "boring": {
+    "agent": {
+      "definitionId": "boring-creator-growth",
+      "version": "2026.08.22",
+      "label": "Creator Growth",
+      "description": "K7 vertical skeleton: grows one creator's audience and revenue. Objective pending Monday's commercial-loop ruling.",
+      "instructionsRef": "instructions.md"
+    }
+  }
+}
