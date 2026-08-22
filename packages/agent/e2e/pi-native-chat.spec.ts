@@ -59,7 +59,10 @@ test.describe('Pi-native chat browser matrix', () => {
 
     await composer.fill('/reload')
     await page.locator('[data-boring-agent-part="composer-submit"]').click()
-    await expect(page.getByText('Agent plugins reloaded.')).toBeVisible({ timeout: 10_000 })
+    // The result now appears twice: the UI notice and the `/reload result:` transcript
+    // prompt that reaches the model. Assert visibility without strict-mode ambiguity;
+    // the model-facing copy is proven by the `prompts` assertion below.
+    await expect(page.getByText('Agent plugins reloaded.').first()).toBeVisible({ timeout: 10_000 })
 
     const state = await page.evaluate(() => (window as unknown as { __piNativeE2EState: () => unknown }).__piNativeE2EState())
     await testInfo.attach('pi-native-redacted-state.json', {

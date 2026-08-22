@@ -338,7 +338,7 @@ describe('PiComposerPolicyController submit policy', () => {
   })
 
   it('sends a local command result the agent must see into the transcript', async () => {
-    const session = new FakeComposerSession('ready')
+    const session = new FakeComposerSession('idle')
     const registry = createCommandRegistry(builtinCommands)
     const onCommandResult = vi.fn()
     const run = vi.fn(async () => 'Extensions reloaded.')
@@ -358,7 +358,7 @@ describe('PiComposerPolicyController submit policy', () => {
   })
 
   it('makes a failed reload the message the agent receives', async () => {
-    const session = new FakeComposerSession('ready')
+    const session = new FakeComposerSession('idle')
     const registry = createCommandRegistry(builtinCommands)
     const policy = createPiComposerPolicyController({
       session,
@@ -372,7 +372,7 @@ describe('PiComposerPolicyController submit policy', () => {
   })
 
   it('leaves commands without a model-facing result out of the transcript', async () => {
-    const session = new FakeComposerSession('ready')
+    const session = new FakeComposerSession('idle')
     const registry = createCommandRegistry(builtinCommands)
     registry.register({ name: 'note', description: 'UI only', handler: () => 'noted' })
     const policy = createPiComposerPolicyController({
