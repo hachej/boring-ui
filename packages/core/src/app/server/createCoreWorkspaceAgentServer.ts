@@ -80,9 +80,11 @@ import type { CoreConfig } from '../../shared/types.js'
 import { ERROR_CODES, HttpError } from '../../shared/errors.js'
 import { safeCapture, type TelemetrySink } from '../../shared/telemetry.js'
 import {
+  assertCoreDynamicAuthBaseURL,
   authHook,
   createAuth,
   type BetterAuthInstance,
+  type CoreDynamicAuthBaseURL,
 } from '../../server/auth/index.js'
 import { REQUEST_SCOPE_WORKSPACE_HEADER } from '../../server/auth/requestWorkspaceScope.js'
 import {
@@ -259,6 +261,8 @@ export interface CreateCoreWorkspaceAgentServerOptions {
   /** Compatibility only for Core's workspace-bridge admission; Host effects use effectAdmission. */
   admitEffect?: (ctx: { workspaceId: string; requestId: string }) => Promise<void>
   appRoot?: string
+  /** Opt into host-local auth callback URLs for an exact host allowlist. */
+  authBaseURL?: CoreDynamicAuthBaseURL
   config?: CoreConfig
   loadConfigOptions?: LoadConfigOptions
   plugins?: CoreWorkspacePluginEntry[]
@@ -944,6 +948,7 @@ async function createCoreRuntime(
   signupAgentDefaults: ValidatedSignupAgentDefaults,
   customTelemetry?: TelemetrySink,
   requestScopeResolver?: CoreRequestScopeResolver,
+  authBaseURL?: CoreDynamicAuthBaseURL,
 ): Promise<{
   app: CoreWorkspaceAgentServer
   sql: postgres.Sql
@@ -974,6 +979,7 @@ async function createCoreRuntime(
       : 'noop-env'
   app.log.debug({ telemetry: { source: telemetrySource } }, 'resolved telemetry sink')
   const auth = createAuth(config, db, {
+    baseURL: authBaseURL,
     workspaceStore,
     signupAgentDefaults,
     logger: app.log,
@@ -1030,6 +1036,7 @@ export async function createCoreWorkspaceAgentServer(
     )
   }
   assertCoreStaticPluginEntries(options.plugins)
+  if (options.authBaseURL !== undefined) assertCoreDynamicAuthBaseURL(options.authBaseURL)
 
   const rawConfig = options.config ?? (await loadConfig(resolveCoreLoadConfigOptions(options)))
   // BORING_AGENT_FLEET=1 composes the config-driven production fleet
@@ -1066,6 +1073,7 @@ export async function createCoreWorkspaceAgentServer(
     signupAgentDefaults,
     options.telemetry,
     options.requestScopeResolver,
+    options.authBaseURL,
   )
   const appRoot = options.appRoot
   const serveFrontend =
@@ -1466,6 +1474,7 @@ export async function createCoreWorkspaceAgentServer(
       return createPiResourceDigestInput({
         piCwd: root,
         noSkills: pi.noSkills,
+        noContextFiles: pi.noContextFiles,
         resourceSets: [{
           promptParts: [
             pluginCollection.agentOptions.systemPromptAppend,

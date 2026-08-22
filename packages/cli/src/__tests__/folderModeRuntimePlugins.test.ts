@@ -317,7 +317,21 @@ describe("folder mode runtime plugin wiring", () => {
       // entry URL must use that path and the file must serve a 200.
       expect(askUser?.frontTarget?.entryUrl).toMatch(/\/dist\/front\/index\.[mc]?js$/)
       const runtime = await app.inject({ method: "GET", url: askUser!.frontTarget!.entryUrl! })
-      expect(runtime.statusCode).toBe(200)
+      expect(runtime.statusCode, runtime.body).toBe(200)
+      // The renderer imports the dependency-neutral Agent artifact adapter,
+      // not the full Agent front graph. Follow the transformed import so this
+      // integration test proves the published subpath is runtime-servable.
+      const artifactAdapterUrl = runtime.body.match(/from "([^"\n]*packages%2Fagent%2Fdist%2Ffront%2Fartifacts\.js[^"\n]*)"/)?.[1]
+      expect(artifactAdapterUrl).toBeDefined()
+      const artifactAdapter = await app.inject({ method: "GET", url: artifactAdapterUrl! })
+      expect(artifactAdapter.statusCode, artifactAdapter.body).toBe(200)
+      const artifactChunkUrls = [...artifactAdapter.body.matchAll(/from "([^"\n]*packages%2Fagent%2Fdist%2Fchunk-[^"\n]+\.js[^"\n]*)"/g)]
+        .map((match) => match[1]!)
+      expect(artifactChunkUrls.length).toBeGreaterThan(0)
+      for (const artifactChunkUrl of artifactChunkUrls) {
+        const artifactChunk = await app.inject({ method: "GET", url: artifactChunkUrl })
+        expect(artifactChunk.statusCode, artifactChunk.body).toBe(200)
+      }
       // ask-user is sourced as an `internal` package; the CLI should
       // not advertise it via the legacy `frontUrl` field.
       expect((askUser as Record<string, unknown>).frontUrl).toBeUndefined()

@@ -796,6 +796,7 @@ export function WorkspaceAgentFront<
     [authHeaders, requestHeaders, workspaceId],
   )
   const fleetModeEnabled = addressedAgentSelection && isPluginTabsLayout
+  const singleAgentSkillsActionEnabled = skillsActionEnabled && !fleetModeEnabled
   const useAgentSelection = useAddressedAgentSelectionProp ?? useDefaultAddressedAgentSelection
   const addressedAgents = useAgentSelection({
     apiBaseUrl,
@@ -1226,10 +1227,10 @@ export function WorkspaceAgentFront<
     const attempt = { workspaceId, agentTypeId: selectedAgentTypeId }
     autoSubmitSessionCreateRef.current = attempt
     setAutoSubmitSessionAgentTypeId(attempt.agentTypeId)
-    void Promise.resolve(remoteSessionApi.create({
-      ...automaticSessionCreateInput(defaultSessionTitle),
-      agentTypeId: attempt.agentTypeId,
-    }))
+    const createInput = automaticSessionCreateInput(defaultSessionTitle)
+    void Promise.resolve(remoteSessionApi.create(
+      fleetModeEnabled ? { ...createInput, agentTypeId: attempt.agentTypeId } : createInput,
+    ))
       .then((session) => {
         if (autoSubmitSessionCreateRef.current !== attempt || autoSubmitSessionWorkspaceRef.current !== attempt.workspaceId) return
         if (typeof (session as { id?: unknown } | null | undefined)?.id !== "string") {
@@ -1244,7 +1245,7 @@ export function WorkspaceAgentFront<
         setAutoSubmitSessionAgentTypeId(undefined)
         setAutoSubmitSessionId(undefined)
       })
-  }, [autoSubmitSessionId, defaultSessionTitle, remoteSessionApi.create, selectedAgentTypeId, sessionApi, workspaceId])
+  }, [autoSubmitSessionId, defaultSessionTitle, fleetModeEnabled, remoteSessionApi.create, selectedAgentTypeId, sessionApi, workspaceId])
   const effectiveActiveSessionId = autoSubmitSessionId !== undefined ? autoSubmitSessionId ?? null : resolvedActiveId
   const effectiveActiveSessionAgentTypeId = autoSubmitSessionId !== undefined
     ? autoSubmitSessionAgentTypeId ?? selectedAgentTypeId
@@ -1271,7 +1272,7 @@ export function WorkspaceAgentFront<
       sessionCreation.cancel((task) => task.phase === "queued" && task.dedupeKey === "initial-auto")
       return coordinateRemoteCreate(
         dedupeKey,
-        ownerAgentTypeId ? { agentTypeId: ownerAgentTypeId } : undefined,
+        fleetModeEnabled && ownerAgentTypeId ? { agentTypeId: ownerAgentTypeId } : undefined,
       ).catch((error) => {
         // A canceled queued boot create resolves without running its own error
         // path. Re-arm boot creation if the user-owned request failed.
@@ -1284,7 +1285,7 @@ export function WorkspaceAgentFront<
     }
     const created = onCreateSession ? onCreateSession() : localSessionStore.create()
     return Promise.resolve(created).then((session) => validateCreatedSession<TSession>(session))
-  }, [coordinateRemoteCreate, localSessionStore, onCreateSession, remoteSessionsPending, selectedAgentTypeId, sessionApi, sessionCreation, workspaceId])
+  }, [coordinateRemoteCreate, fleetModeEnabled, localSessionStore, onCreateSession, remoteSessionsPending, selectedAgentTypeId, sessionApi, sessionCreation, workspaceId])
   const resolvedRename = useCallback((id: string, title: string, sessionAgentTypeId?: string) => {
     if (!sessionSourceIsCurrent() || remoteSessionsPending || !sessionApi?.rename) return undefined
     return sessionApi.rename(id, title, sessionAgentTypeId)
@@ -1394,7 +1395,7 @@ export function WorkspaceAgentFront<
       && !addressedAgents.loading
       && !addressedAgents.agents.some((agent) => agent.agentTypeId === parsedAgentOverlay.agentTypeId))
     if (
-      (leftOverlay === "skills" && !skillsActionEnabled)
+      (leftOverlay === "skills" && !singleAgentSkillsActionEnabled)
       || (leftOverlay === "plugins" && !pluginsActionEnabled)
       || agentOverlayMissing
       || (leftOverlay !== null
@@ -1406,7 +1407,7 @@ export function WorkspaceAgentFront<
     ) {
       setLeftOverlay(null)
     }
-  }, [addressedAgents.agents, addressedAgents.loading, appLeftOverlayActions, leftOverlay, pluginOverlayActionIds, pluginsActionEnabled, skillsActionEnabled])
+  }, [addressedAgents.agents, addressedAgents.loading, appLeftOverlayActions, leftOverlay, pluginOverlayActionIds, pluginsActionEnabled, singleAgentSkillsActionEnabled])
   const effectiveNavOpen = navEnabled && navOpen
   const [surfaceOpen, setSurfaceOpen] = useStoredBooleanState(
     // Key must NOT match resolvedSurfaceStorageKey (which stores the dockview
@@ -1918,7 +1919,13 @@ export function WorkspaceAgentFront<
     const createReason = placementDirection
       ? `split:${afterId}:${placementDirection}`
       : "manual"
-    const created = resolvedCreate(createReason, ownerAgentTypeId)
+    let created: ReturnType<typeof resolvedCreate>
+    try {
+      created = resolvedCreate(createReason, ownerAgentTypeId)
+    } catch (error) {
+      settleIfOwner()
+      throw error
+    }
     void Promise.resolve(created).then((session) => {
       const id = createdSessionId(session)
       // Some session providers signal creation through a later sessions update.
@@ -2477,7 +2484,7 @@ export function WorkspaceAgentFront<
         onClick: () => setLeftOverlay((cur) => cur === action.id ? null : action.id),
       })
     }
-    if (skillsActionEnabled) {
+    if (singleAgentSkillsActionEnabled) {
       actions.push({
         id: "skills",
         label: "Agent",
@@ -2488,7 +2495,7 @@ export function WorkspaceAgentFront<
     }
     assertUniqueAppLeftActionIds(actions)
     return actions
-  }, [appLeftActions, appLeftOverlayActions, leftOverlay, pluginAppLeftActions, skillsActionEnabled])
+  }, [appLeftActions, appLeftOverlayActions, leftOverlay, pluginAppLeftActions, singleAgentSkillsActionEnabled])
   const openAppLeftChats = useCallback(() => {
     setLeftOverlay(null)
   }, [])
@@ -2528,7 +2535,7 @@ export function WorkspaceAgentFront<
       headerInsetEnd={!surfaceOpen}
     />
   ) : null
-  const leftOverlayNode = pluginLeftOverlayNode ?? customLeftOverlayNode ?? agentLeftOverlayNode ?? (leftOverlay === "skills" && skillsActionEnabled ? (
+  const leftOverlayNode = pluginLeftOverlayNode ?? customLeftOverlayNode ?? agentLeftOverlayNode ?? (leftOverlay === "skills" && singleAgentSkillsActionEnabled ? (
     <AgentPage
       onClose={() => setLeftOverlay(null)}
       headerInsetStart={mobileShellActive}

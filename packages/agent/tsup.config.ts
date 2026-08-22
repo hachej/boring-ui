@@ -13,6 +13,7 @@ export default defineConfig({
     "server/agent-host/testing/compositionRouteProof": "src/server/agent-host/testing/compositionRouteProof.ts",
     "server/worker/index": "src/server/worker/index.ts",
     "front/index": "src/front/index.ts",
+    "front/artifacts": "src/front/artifacts.ts",
     "eval/index": "src/eval/index.ts",
   },
   format: ["esm"],

@@ -10,11 +10,8 @@ import { useDataClient, useFileList } from "./data"
 import { DataProvider } from "./data/DataProvider"
 import { FilesystemRootsBinding } from "./FilesystemRootsBinding"
 import { useCatalogRegistry } from "../../../front/registry"
-import {
-  FileTreePane,
-  preloadFileTreeComponent,
-  type FileTreePaneParams,
-} from "./file-tree/FileTreeView"
+import { preloadFileTreeComponent } from "./file-tree/FileTreeView"
+import { FileTreePane, type FileTreePaneParams } from "./file-tree/FileTreePane"
 import { useFileTreeRoots } from "./file-tree/FileTreeRootsProvider"
 import type { WorkspaceSourceProps } from "../../../shared/types/panel"
 import { FilesystemFilePanelBinding } from "./filePanelBinding"

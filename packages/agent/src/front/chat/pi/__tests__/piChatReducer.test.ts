@@ -80,6 +80,20 @@ describe('piChatReducer', () => {
     expect(state.notices).toContainEqual(expect.objectContaining({ id: 'stale-outbox-cleared', level: 'warning' }))
   })
 
+  it('refreshes the authoritative current model from each addressed state snapshot', () => {
+    const first = piChatReducer(initial(), {
+      type: 'hydrate',
+      snapshot: snapshot({ currentModel: { provider: 'openai-codex', id: 'gpt-5.6-sol' } }),
+    })
+    expect(first.currentModel).toEqual({ provider: 'openai-codex', id: 'gpt-5.6-sol' })
+
+    const refreshed = piChatReducer(first, {
+      type: 'hydrate',
+      snapshot: snapshot({ seq: 11, currentModel: { provider: 'openai', id: 'gpt-5.7' } }),
+    })
+    expect(refreshed.currentModel).toEqual({ provider: 'openai', id: 'gpt-5.7' })
+  })
+
   it('preserves a first prompt submitted while the empty session snapshot is hydrating', () => {
     let state = initial()
     state = piChatReducer(state, { type: 'optimistic-user-message', message: optimistic('nonce-first', 'first message') })

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ErrorCode } from '../../../../shared/error-codes'
+import { AgentGatewayErrorCode } from '../../../../shared/gateway/errors'
 import type { PiChatEvent, PiChatSnapshot } from '../../../../shared/chat'
 import { PI_CHAT_CURSOR_AHEAD_CODE, PI_CHAT_REPLAY_GAP_CODE } from '../piChatStream'
 import { RemotePiSession, piChatErrorCode } from '../remotePiSession'
@@ -209,6 +210,32 @@ describe('RemotePiSession', () => {
     expect(session.getState().notices.some((notice) => notice.id === 'protocol-error')).toBe(false)
     expect(session.getState().error).toBeUndefined()
 
+    session.dispose()
+  })
+
+  it('allows command admission more time than state hydration', async () => {
+    vi.useFakeTimers()
+    const events = openNdjsonStream()
+    const promptResponse = deferred<Response>()
+    const fetchMock = vi.fn((url: string) => {
+      if (url.endsWith('/events?cursor=0')) return Promise.resolve(new Response(events.stream))
+      if (url.endsWith('/prompt')) return promptResponse.promise
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock, {
+      autoStart: false,
+      requestTimeoutMs: 20,
+      commandTimeoutMs: 40,
+    })
+
+    const prompt = session.prompt({ message: 'hello', clientNonce: 'nonce-1' })
+    await flushPromises()
+    vi.advanceTimersByTime(25)
+    await flushPromises()
+    expect(fetchMock.mock.calls.some(([url]) => url.endsWith('/prompt'))).toBe(true)
+
+    promptResponse.resolve(jsonResponse({ accepted: true, cursor: 1, clientNonce: 'nonce-1' }))
+    await expect(prompt).resolves.toMatchObject({ accepted: true, clientNonce: 'nonce-1' })
     session.dispose()
   })
 
@@ -669,6 +696,48 @@ describe('RemotePiSession', () => {
     session.dispose()
   })
 
+  it('updates an already-connected viewer from an external model-change event', async () => {
+    const events = openNdjsonStream()
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/state')) return jsonResponse(snapshot({
+        seq: 5,
+        status: 'idle',
+        activeTurnId: undefined,
+        currentModel: { provider: 'openai', id: 'gpt-old' },
+      }))
+      if (url.endsWith('/events?cursor=5')) return new Response(events.stream)
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock)
+    await waitUntil(() => session.getState().connection.state === 'connected')
+
+    events.write({
+      type: 'model-changed',
+      seq: 6,
+      currentModel: { provider: 'openai-codex', id: 'gpt-5.6-sol' },
+    } satisfies PiChatEvent)
+
+    await waitUntil(() => session.getState().currentModel?.id === 'gpt-5.6-sol')
+    expect(session.getState().currentModel).toEqual({ provider: 'openai-codex', id: 'gpt-5.6-sol' })
+    session.dispose()
+  })
+
+  it('confirms an accepted next-message override as the session current model', async () => {
+    const events = openNdjsonStream()
+    const model = { provider: 'openai', id: 'gpt-5.7' }
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/events?cursor=0')) return new Response(events.stream)
+      if (url.endsWith('/prompt')) return jsonResponse({ accepted: true, cursor: 0, clientNonce: 'nonce-model' })
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock, { autoStart: false })
+
+    await session.prompt({ message: 'switch model', clientNonce: 'nonce-model', model })
+
+    expect(session.getState().currentModel).toEqual(model)
+    session.dispose()
+  })
+
   it('opens events from the current cursor before the first command when autoStart is false', async () => {
     const events = openNdjsonStream()
     const promptResponse = deferred<Response>()
@@ -741,12 +810,15 @@ describe('RemotePiSession', () => {
     session.dispose()
   })
 
-  it('piChatErrorCode ignores non-canonical/missing codes and reads a plain canonical errorCode', () => {
+  it('piChatErrorCode ignores unknown codes and reads shared or gateway errorCode values', () => {
     expect(piChatErrorCode(new Error('boom'))).toBeUndefined()
     expect(piChatErrorCode(undefined)).toBeUndefined()
     // A non-canonical code must NOT be surfaced as a host action key.
     expect(piChatErrorCode(Object.assign(new Error('x'), { errorCode: 'NOT_A_REAL_CODE' }))).toBeUndefined()
     expect(piChatErrorCode(Object.assign(new Error('x'), { errorCode: ErrorCode.enum.SESSION_LOCKED }))).toBe(ErrorCode.enum.SESSION_LOCKED)
+    expect(piChatErrorCode(Object.assign(new Error('x'), {
+      errorCode: AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
+    }))).toBe(AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE)
   })
 
   it('clears optimistic queued follow-ups from the stop receipt before a queue echo arrives', async () => {

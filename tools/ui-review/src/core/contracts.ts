@@ -32,6 +32,8 @@ export type UiReviewState = {
   screenshotPath: string
   screenshotDigest: string
   screenshotBytes: number
+  /** Perceptual image hash for exploration/replay stability checks. */
+  screenshotPHash?: string
   source?: "known" | "bombadil"
   normalizedStateSignature?: string
   reproducePath?: string

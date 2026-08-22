@@ -65,6 +65,26 @@ test('supports all 7 workspace methods on happy paths', async () => {
   await expect(workspace.readFile('dst/moved.txt')).rejects.toThrow()
 })
 
+test('exclusive binary create never changes an existing file', async () => {
+  const { workspace } = await setupWorkspace()
+  await workspace.writeFile('existing.bin', 'old')
+  await expect(workspace.createBinaryFile?.('existing.bin', new TextEncoder().encode('new')))
+    .rejects.toMatchObject({ code: 'EEXIST' })
+  expect(await workspace.readFile('existing.bin')).toBe('old')
+})
+
+test('two concurrent exclusive creates produce one success and one EEXIST', async () => {
+  const { workspace } = await setupWorkspace()
+  const settled = await Promise.allSettled([
+    workspace.createBinaryFile!('race.bin', new TextEncoder().encode('first')),
+    workspace.createBinaryFile!('race.bin', new TextEncoder().encode('second')),
+  ])
+  expect(settled.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
+  const rejected = settled.find((result): result is PromiseRejectedResult => result.status === 'rejected')
+  expect(rejected?.reason).toMatchObject({ code: 'EEXIST' })
+  expect(['first', 'second']).toContain(await workspace.readFile('race.bin'))
+})
+
 test('optimized read/write with stat helpers return content and metadata', async () => {
   const { workspace } = await setupWorkspace()
 

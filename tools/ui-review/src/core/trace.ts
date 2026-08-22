@@ -23,7 +23,10 @@ export type BombadilTraceEntry = {
   categories: string[]
 }
 
-export async function parseBombadilTrace(rawRoot: string): Promise<BombadilTraceEntry[]> {
+export async function parseBombadilTrace(
+  rawRoot: string,
+  normalizeReplayState: (state: Record<string, unknown>) => Record<string, unknown> = (state) => state,
+): Promise<BombadilTraceEntry[]> {
   const contents = await readFile(resolve(rawRoot, "trace.jsonl"), "utf8")
   const lines = contents.split(/\r?\n/).filter((line) => line.trim())
   const entries: BombadilTraceEntry[] = []
@@ -53,7 +56,7 @@ export async function parseBombadilTrace(rawRoot: string): Promise<BombadilTrace
       return { name: snapshot.name, value: snapshot.value }
     })
     const violations = parsed.violations
-    const normalizedState = normalizeManifestState(parsed.state.url, snapshots)
+    const normalizedState = normalizeReplayState(normalizeManifestState(parsed.state.url, snapshots))
     entries.push({
       ordinal: index + 1,
       rawLine,

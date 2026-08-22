@@ -1,10 +1,13 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -157,6 +160,31 @@ func TestWorkspaceComponentsFaultMatrix(t *testing.T) {
 	}
 }
 
+func TestCreateBinaryFileIsExclusive(t *testing.T) {
+	root := t.TempDir()
+	rootFD, err := syscall.Open(root, oPath|syscall.O_DIRECTORY|syscall.O_CLOEXEC|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer syscall.Close(rootFD)
+
+	first := workspaceOperation{Op: "createBinaryFile", Path: "race.bin", DataBase64: base64.StdEncoding.EncodeToString([]byte("first"))}
+	if _, err := executeWorkspaceOperation(rootFD, first); err != nil {
+		t.Fatalf("first exclusive create failed: %v", err)
+	}
+	second := workspaceOperation{Op: "createBinaryFile", Path: "race.bin", DataBase64: base64.StdEncoding.EncodeToString([]byte("second"))}
+	if _, err := executeWorkspaceOperation(rootFD, second); err != syscall.EEXIST {
+		t.Fatalf("second exclusive create returned %v, want EEXIST", err)
+	}
+	content, err := os.ReadFile(root + "/race.bin")
+	if err != nil || string(content) != "first" {
+		t.Fatalf("exclusive collision changed bytes: %q, %v", content, err)
+	}
+	if workspaceErrorCode(syscall.EEXIST) != codeAlreadyExists {
+		t.Fatal("EEXIST did not map to stable remote-worker code")
+	}
+}
+
 func TestDecodeStrictJSONRejectsUnknownAndTrailingInput(t *testing.T) {
 	var envelope invocationEnvelope
 	if err := decodeStrictJSON([]byte(`{"version":1,"unknown":true}`), &envelope); err == nil {
@@ -176,10 +204,54 @@ func TestBoundedOutputCapsCombinedStreams(t *testing.T) {
 	}
 }
 
-func TestBinaryTransferLimitFitsTheV1Base64Field(t *testing.T) {
+func TestBinaryTransferBoundaryIsTenMiB(t *testing.T) {
+	root := t.TempDir()
+	rootFD, err := syscall.Open(root, oPath|syscall.O_DIRECTORY|syscall.O_CLOEXEC|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer syscall.Close(rootFD)
+
+	accepted := workspaceOperation{
+		Op:         "createBinaryFile",
+		Path:       "limit.bin",
+		DataBase64: base64.StdEncoding.EncodeToString(make([]byte, 10*1024*1024)),
+	}
+	if _, err := executeWorkspaceOperation(rootFD, accepted); err != nil {
+		t.Fatalf("10 MiB binary was rejected: %v", err)
+	}
+	tooLarge := workspaceOperation{
+		Op:         "createBinaryFile",
+		Path:       "too-large.bin",
+		DataBase64: base64.StdEncoding.EncodeToString(make([]byte, 10*1024*1024+1)),
+	}
+	if _, err := executeWorkspaceOperation(rootFD, tooLarge); err != syscall.EFBIG {
+		t.Fatalf("10 MiB plus one byte returned %v, want EFBIG", err)
+	}
+}
+
+func TestBinaryTransferLimitFitsTheWorkspaceEnvelope(t *testing.T) {
 	base64Characters := (maxBinaryTransferBytes + 2) / 3 * 4
-	if base64Characters > maxTextTransferBytes {
-		t.Fatalf("base64 length %d exceeds V1 field bound", base64Characters)
+	if base64Characters+maxPathBytes+1024 > maxWorkspaceEnvelopeBytes {
+		t.Fatalf("base64 length %d exceeds workspace envelope bound", base64Characters)
+	}
+}
+
+func TestWorkspaceEnvelopeLimitMatchesSharedTypeScriptContract(t *testing.T) {
+	contract, err := os.ReadFile("../../../../../../shared/remoteWorkerProtocolV1.ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	match := regexp.MustCompile(`REMOTE_WORKER_MAX_WORKSPACE_ENVELOPE_BYTES_V1 = (\d+) \* 1024 \* 1024`).FindSubmatch(contract)
+	if len(match) != 2 {
+		t.Fatal("shared TypeScript workspace envelope limit was not found")
+	}
+	megabytes, err := strconv.Atoi(string(match[1]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if maxWorkspaceEnvelopeBytes != megabytes*1024*1024 {
+		t.Fatalf("Go workspace envelope limit %d diverges from shared TypeScript limit %d", maxWorkspaceEnvelopeBytes, megabytes*1024*1024)
 	}
 }
 
