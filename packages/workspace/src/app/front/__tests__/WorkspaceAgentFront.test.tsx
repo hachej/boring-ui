@@ -287,8 +287,16 @@ describe("WorkspaceAgentFront", () => {
       stream?.emit("snapshot", { sessions: [] })
     })
 
-    expect(statuses).toContainEqual({ workspaceId: "working-session-stream", sessionId: "session-1", agentTypeId: "default", working: true })
-    expect(statuses.at(-1)).toEqual({ workspaceId: "working-session-stream", sessionId: "session-1", agentTypeId: "default", working: false })
+    expect(statuses).toContainEqual({ workspaceId: "working-session-stream", sessionId: "session-1", agentTypeId: "default", working: true, status: "running" })
+    expect(statuses.at(-1)).toEqual({ workspaceId: "working-session-stream", sessionId: "session-1", agentTypeId: "default", working: false, status: "idle" })
+
+    // The terminal status rides the same frame so the session list can show
+    // `failed` without waiting for the next list fetch.
+    act(() => {
+      stream?.emit("activity", { ref: { agentTypeId: "default", sessionId: "session-1" }, status: "error" })
+    })
+    expect(statuses.at(-1)).toEqual({ workspaceId: "working-session-stream", sessionId: "session-1", agentTypeId: "default", working: false, status: "error" })
+
     unmount()
     expect(stream?.close).toHaveBeenCalledTimes(1)
     window.removeEventListener("boring:chat-session-status", onStatus)
