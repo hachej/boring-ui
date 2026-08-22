@@ -335,11 +335,39 @@ describe('resolveWorkspacePackageResources', () => {
       source: 'shared-skill-scan',
       message: 'shared skill "dangling" was not admissible and was skipped',
       pluginId: 'shared/pi-agent',
+      code: PACKAGE_RESOURCE_INVALID_CODE,
     }])
     // The escaping/dangling entry is skipped, never resolved into a mount.
     expect(snapshot.registry.locateSkill(danglingFile)).toBeUndefined()
     expect(snapshot.registry.readonlyMounts.map((mount) => mount.sourceRoot))
       .not.toContain(await realpath(danglingRoot))
+  })
+
+  // gh-1196 follow-up: the per-entry probe degrades admission verdicts only.
+  // A resolver defect must not be laundered into "was not admissible".
+  test('propagates a non-admission error from the shared-skill probe', async () => {
+    const root = await tempRoot()
+    const packageRoot = await packageFixture(root)
+    const sharedRoot = join(root, 'global-skills', 'shared-authoring')
+    await mkdir(sharedRoot, { recursive: true })
+    const sharedFile = join(sharedRoot, 'SKILL.md')
+    await writeFile(sharedFile, '---\nname: shared-authoring\ndescription: Shared.\n---\n', 'utf8')
+
+    const defect = Object.assign(new Error('resolver blew up'), { code: 'EACCES' })
+    const shared = {
+      id: 'shared-authoring',
+      // A getter is the least invasive way to make the probe's own read throw
+      // with a non-admission error code.
+      get skillFile(): string {
+        throw defect
+      },
+    }
+
+    await expect(resolveWorkspacePackageResourceSnapshot({
+      declared: [{ pluginId: 'direct', packageName: '@example/plugin', packageRoot }],
+      scanned: [],
+      sharedSkillPaths: [shared, { id: 'other', skillFile: sharedFile }],
+    })).rejects.toBe(defect)
   })
 
   test("rejects the host-shared reserved package name", async () => {

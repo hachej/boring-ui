@@ -235,7 +235,13 @@ function packageDescriptor(source: PiPackageSource): string {
  */
 type UnadmittedEntryPolicy = 'reject' | 'skip'
 
-const SKIPPABLE_RESOURCE_CODES = new Set<string>([
+/**
+ * The error codes that mean "this entry is not admissible", as opposed to "the
+ * resolver is broken". Only these may be degraded to a skip; every other error
+ * class must propagate. Exported so the workspace layer's shared-skill probe
+ * degrades on exactly the same verdicts instead of keeping its own copy.
+ */
+export const SKIPPABLE_RESOURCE_CODES: ReadonlySet<string> = new Set<string>([
   ErrorCode.enum.PATH_ESCAPE,
   ErrorCode.enum.PATH_SYMLINK_ESCAPE,
 ])
