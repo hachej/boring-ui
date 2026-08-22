@@ -1,0 +1,15 @@
+{
+  "name": "@hachej/boring-persona-factory-smoke",
+  "version": "2026.08.22",
+  "private": true,
+  "description": "Minimal persona used to verify agent-package discovery and compilation.",
+  "boring": {
+    "agent": {
+      "definitionId": "boring-factory-smoke",
+      "version": "2026.08.22",
+      "label": "Factory Smoke",
+      "description": "Minimal persona used to verify agent-package discovery and compilation.",
+      "instructionsRef": "instructions.md"
+    }
+  }
+}
