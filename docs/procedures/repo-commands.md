@@ -34,6 +34,13 @@ Root `pnpm dev` is safe: it runs `build:app-deps` once (all shared packages,
 topological order, `--workspace-concurrency=1`) and only then starts every app
 in parallel via `dev:app`, which never rebuilds shared packages.
 
+`build:app-deps` selects its package set from pnpm's own dependency graph —
+`--filter '{./apps/*}...'` (every app plus everything it depends on) minus
+`--filter '!{./apps/*}'` (the apps themselves) — so it can never drift out of
+sync with what the apps actually import. Note the braces: `'./apps/*...'`
+without them is parsed as a literal path pattern and silently selects only the
+apps.
+
 To start apps in separate terminals, do the same by hand:
 
 ```bash
