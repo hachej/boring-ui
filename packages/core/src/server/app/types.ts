@@ -13,6 +13,9 @@ import type {
   MemberRole,
 } from '../../shared/types.js'
 import type { ERROR_CODES } from '../../shared/errors.js'
+import type { WorkspaceDefaultAgentTypeInventoryItem } from '../defaultAgentType.js'
+
+export type { WorkspaceDefaultAgentTypeInventoryItem } from '../defaultAgentType.js'
 import type { WorkspaceProvisioner } from '../provisioner/types.js'
 
 export interface UserStore {
@@ -53,6 +56,10 @@ export interface WorkspaceStoreCreateOptions {
 export interface WorkspaceStore {
   create(userId: string, name: string, appId: string, opts?: WorkspaceStoreCreateOptions): Promise<Workspace>
   list(userId: string, appId: string): Promise<Workspace[]>
+  /** Inventory persisted default-Agent cohorts without interpreting fleet membership. */
+  inventoryDefaultAgentTypeIds(appId: string): Promise<WorkspaceDefaultAgentTypeInventoryItem[]>
+  /** Idempotent compare-and-set backfill: only rows still NULL may change. */
+  compareAndSetNullDefaultAgentTypeId(appId: string, defaultAgentTypeId: string): Promise<number>
   get(id: string): Promise<Workspace | null>
   getIncludingDeleted(id: string): Promise<Workspace | null>
   restore(id: string): Promise<Workspace | null>
