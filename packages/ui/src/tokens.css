@@ -8,8 +8,15 @@
  *   @import '@hachej/boring-ui-kit/tokens.css';
  *   :root { --boring-accent: oklch(0.55 0.18 250); }
  *
- * Values mirror @hachej/boring-workspace/src/globals.css (the canonical
- * theme). This file is plain CSS — no Tailwind required; the utility-name
+ * This file is the palette source of truth. Two other places restate these
+ * values and must be kept in step:
+ *   - packages/workspace/src/globals.css (the workspace :root palette)
+ *   - packages/agent/src/front/styles/globals.css (var() fallbacks that keep
+ *     standalone agent panes themed with no workspace CSS loaded)
+ * Both are enforced against this file by
+ * packages/agent/src/__tests__/theme-token-parity.test.ts.
+ *
+ * This file is plain CSS — no Tailwind required; the utility-name
  * mapping lives in styles.css (@theme inline → --boring-*).
  */
 
