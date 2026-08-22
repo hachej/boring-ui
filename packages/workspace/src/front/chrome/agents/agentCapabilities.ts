@@ -270,12 +270,13 @@ export async function loadAgentCapabilities(
  *
  * A SAFETY NET, not the mechanism that catches a mis-rooted host. Publication
  * is deterministic upstream: the fleet loader composes a seat by reading its
- * `instructions.md`, so the file provably exists on the server, and it only
- * publishes a ref when that file is also inside the root the `user` filesystem
- * serves (`AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE` otherwise). A
- * boot seam that passes the wrong root therefore renders NO row — it can no
- * longer render a row that 404s, and this probe must never be relied on to
- * paper over one.
+ * `instructions.md`, so the file provably exists on the server, and `describe`
+ * only publishes a ref when that file also canonically resolves inside the
+ * root the `user` filesystem serves FOR THAT REQUEST
+ * (`AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE` otherwise). A request
+ * served from a workspace the personas are outside of therefore renders NO
+ * row — it can no longer render a row that 404s, and this probe must never be
+ * relied on to paper over one.
  *
  * What remains is genuine drift: a file deleted, renamed or moved AFTER the
  * fleet composed. Opening such a ref used to 404 inside the viewer with no

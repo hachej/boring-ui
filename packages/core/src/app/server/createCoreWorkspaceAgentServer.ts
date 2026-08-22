@@ -1052,7 +1052,6 @@ export async function createCoreWorkspaceAgentServer(
     : undefined
   const agents = options.agents ?? await resolveDefaultAgentFleet({
     repositoryRoot: fleetRepositoryRoot,
-    workspaceRoot: null,
     ...(discoveredPackages ? { discoveredPackages } : {}),
   })
   const signupAgentDefaults = compileSignupAgentDefaults(
