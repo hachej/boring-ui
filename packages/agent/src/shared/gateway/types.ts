@@ -77,7 +77,11 @@ export interface AuthorizedAgentSessionQuery {
   readonly agentTypeId?: string
   readonly cursor?: string
   readonly limit?: number
+  /** Defaults to `all`; archiving is a visibility flag, not a listing default. */
+  readonly archived?: AgentSessionArchiveFilter
 }
+
+export type AgentSessionArchiveFilter = 'active' | 'archived' | 'all'
 
 export type AgentSessionActivity = 'idle' | 'running' | 'aborting' | 'error'
 
@@ -92,6 +96,8 @@ export interface AgentSessionSummary {
   readonly nativeSessionId?: string
   /** Native transcript metadata used to gate rename until a reply exists. */
   readonly hasAssistantReply?: boolean
+  /** Visibility only: present (true) exactly while the session is archived. */
+  readonly archived?: boolean
 }
 
 export interface AgentSessionPage {
@@ -124,6 +130,18 @@ export interface RenameAgentSessionInput {
   readonly ref: AgentSessionRef
   readonly requestId: string
   readonly title: string
+}
+
+/**
+ * Archive is NOT delete: it hides the session from a default listing and
+ * nothing else. The transcript stays exactly where it was, and `archived:
+ * false` puts the row back.
+ */
+export interface SetAgentSessionArchivedInput {
+  readonly scope: AuthorizedAgentScope
+  readonly ref: AgentSessionRef
+  readonly requestId: string
+  readonly archived: boolean
 }
 
 export interface DeleteAgentSessionInput {
@@ -210,6 +228,7 @@ export interface AgentGateway {
   connectSession(input: ConnectAgentSessionInput): Promise<AgentSessionConnection>
   readSessionState(input: ReadAgentSessionStateInput): Promise<AgentSessionStateSnapshot>
   renameSession(input: RenameAgentSessionInput): Promise<AgentSessionSummary>
+  setSessionArchived(input: SetAgentSessionArchivedInput): Promise<AgentSessionSummary>
   deleteSession(input: DeleteAgentSessionInput): Promise<void>
   close(): Promise<void>
 }

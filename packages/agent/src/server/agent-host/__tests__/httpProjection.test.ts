@@ -79,6 +79,11 @@ class FakeGateway implements AgentGateway {
     return { ...summary, title: input.title }
   }
 
+  async setSessionArchived(input: Parameters<AgentGateway['setSessionArchived']>[0]) {
+    this.calls.push({ method: 'setSessionArchived', input })
+    return input.archived ? { ...summary, archived: true } : summary
+  }
+
   async deleteSession(input: Parameters<AgentGateway['deleteSession']>[0]) {
     this.calls.push({ method: 'deleteSession', input })
   }
@@ -287,6 +292,21 @@ describe('addressed Agent Host HTTP projection', () => {
       url: '/api/v1/agents/alpha/sessions/session-1/rename',
       payload: { requestId: 'rename-1', title: 'Renamed' },
     })).json()).toMatchObject({ title: 'Renamed' })
+
+    expect((await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/alpha/sessions/session-1/archive',
+      payload: { requestId: 'archive-1', archived: true },
+    })).json()).toMatchObject({ archived: true })
+    expect((await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/alpha/sessions/session-1/archive',
+      payload: { requestId: 'archive-2', archived: false },
+    })).json().archived).toBeUndefined()
+    expect((await app.inject({
+      method: 'GET',
+      url: '/api/v1/agents/alpha/sessions?archived=active',
+    })).statusCode).toBe(200)
 
     const prompt = await app.inject({
       method: 'POST',

@@ -608,6 +608,7 @@ function toAddressedSessionSummary(value: unknown): SessionSummary {
     ...(typeof record.nativeSessionId === 'string' ? { nativeSessionId: record.nativeSessionId } : {}),
     ...(typeof record.hasAssistantReply === 'boolean' ? { hasAssistantReply: record.hasAssistantReply } : {}),
     ...(addressedStatus ? { status: addressedStatus } : {}),
+    ...(record.archived === true ? { archived: true } : {}),
   }
 }
 
