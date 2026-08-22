@@ -4,6 +4,7 @@ import { join } from 'node:path'
 
 import Fastify from 'fastify'
 import { beforeAll, describe, expect, test } from 'vitest'
+import { ErrorCode } from '../../../shared/error-codes'
 import { AgentGatewayError, AgentGatewayErrorCode } from '../../../shared/index'
 import {
   createAgentHostRuntimeCapabilityProjection,
@@ -144,7 +145,7 @@ describe('describeAgent', () => {
     expect(description.instructionFiles).toEqual([])
     expect(warnings).toEqual([expect.objectContaining({
       agentTypeId: 'concierge',
-      code: 'AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE',
+      code: ErrorCode.enum.AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE,
     })])
   })
 
