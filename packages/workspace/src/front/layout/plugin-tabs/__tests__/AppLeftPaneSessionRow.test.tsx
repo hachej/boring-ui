@@ -145,4 +145,51 @@ describe("AppSessionRow native actions", () => {
     openMenu()
     expect(screen.queryByText("Rename")).not.toBeInTheDocument()
   })
+
+  it("archives from the actions menu without offering a destructive affordance", () => {
+    const onToggleArchived = vi.fn()
+    row({ onToggleArchived })
+    openMenu()
+    fireEvent.click(screen.getByText("Archive session"))
+    expect(onToggleArchived).toHaveBeenCalledWith("native-1", true)
+  })
+
+  it("offers the way back on an archived row", () => {
+    const onToggleArchived = vi.fn()
+    row({
+      session: { id: "native-1", title: "Native chat", nativeSessionId: "native-1", hasAssistantReply: true, archived: true },
+      onToggleArchived,
+    })
+    openMenu()
+    expect(screen.queryByText("Archive session")).not.toBeInTheDocument()
+    fireEvent.click(screen.getByText("Unarchive session"))
+    expect(onToggleArchived).toHaveBeenCalledWith("native-1", false)
+  })
+
+  it("opens the same actions menu on right-click instead of the browser menu", () => {
+    const onToggleArchived = vi.fn()
+    row({ onToggleArchived })
+    const sessionRow = screen.getByText("Native chat").closest('[data-boring-workspace-part="app-session-row"]')
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument()
+
+    const contextMenu = new MouseEvent("contextmenu", { bubbles: true, cancelable: true })
+    fireEvent(sessionRow as Node, contextMenu)
+
+    expect(contextMenu.defaultPrevented).toBe(true)
+    expect(screen.getByRole("menu")).toBeInTheDocument()
+    expect(screen.getByText("Archive session")).toBeInTheDocument()
+  })
+
+  it("leaves the native context menu alone on a row with no actions", () => {
+    row({
+      session: { id: "local-1", title: "Local draft", ephemeral: true },
+      canSplit: false,
+      canPin: false,
+      onTogglePinned: undefined,
+    })
+    const sessionRow = screen.getByText("Local draft").closest('[data-boring-workspace-part="app-session-row"]')
+    const contextMenu = new MouseEvent("contextmenu", { bubbles: true, cancelable: true })
+    fireEvent(sessionRow as Node, contextMenu)
+    expect(contextMenu.defaultPrevented).toBe(false)
+  })
 })

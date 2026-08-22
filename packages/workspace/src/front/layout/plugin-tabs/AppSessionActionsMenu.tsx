@@ -1,7 +1,7 @@
 "use client"
 
-import { useRef, useState } from "react"
-import { Copy, MoreHorizontal, Pencil, Pin, PinOff, Trash2 } from "lucide-react"
+import { useRef } from "react"
+import { Archive, ArchiveRestore, Copy, MoreHorizontal, Pencil, Pin, PinOff, Trash2 } from "lucide-react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,9 +18,12 @@ export function AppSessionActionsMenu({
   canRename,
   canPin = false,
   pinned = false,
+  archived = false,
   onTogglePinned,
   onRename,
+  onToggleArchived,
   onDelete,
+  open,
   onOpenChange,
 }: {
   sessionId: string
@@ -29,14 +32,17 @@ export function AppSessionActionsMenu({
   canRename: boolean
   canPin?: boolean
   pinned?: boolean
+  archived?: boolean
   onTogglePinned?: (id: string) => void
   onRename: () => void
+  /** Visibility only — the transcript is kept, so this is never destructive. */
+  onToggleArchived?: (id: string, archived: boolean) => unknown
   onDelete?: (id: string) => unknown
+  /** The row owns the open state so a right-click on it opens this same menu. */
+  open: boolean
   onOpenChange: (open: boolean) => void
 }) {
-  const [open, setOpen] = useState(false)
   const suppressCloseAutoFocus = useRef(false)
-  const setMenuOpen = (next: boolean) => { setOpen(next); onOpenChange(next) }
   const copy = async () => {
     if (await copyText(sessionId)) {
       toast.success({ title: "Session ID copied", description: sessionId })
@@ -45,7 +51,7 @@ export function AppSessionActionsMenu({
     toast.error({ title: "Could not copy session ID", description: "Allow clipboard access and try again." })
   }
   return (
-    <DropdownMenu open={open} onOpenChange={setMenuOpen}>
+    <DropdownMenu open={open} onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
@@ -81,7 +87,7 @@ export function AppSessionActionsMenu({
             {pinned ? "Unpin chat" : "Pin chat"}
           </DropdownMenuItem>
         ) : null}
-        {canPin && onTogglePinned && (canCopy || canRename || onDelete)
+        {canPin && onTogglePinned && (canCopy || canRename || onToggleArchived || onDelete)
           ? <DropdownMenuSeparator />
           : null}
         {canCopy ? (
@@ -89,13 +95,20 @@ export function AppSessionActionsMenu({
             <Copy className="h-3.5 w-3.5" /> Copy session ID
           </DropdownMenuItem>
         ) : null}
-        {canCopy && (canRename || onDelete) ? <DropdownMenuSeparator /> : null}
+        {canCopy && (canRename || onToggleArchived || onDelete) ? <DropdownMenuSeparator /> : null}
         {canRename ? (
-          <DropdownMenuItem onSelect={() => { setMenuOpen(false); onRename() }} className="gap-2 text-[13px]">
+          <DropdownMenuItem onSelect={() => { onOpenChange(false); onRename() }} className="gap-2 text-[13px]">
             <Pencil className="h-3.5 w-3.5" /> Rename
           </DropdownMenuItem>
         ) : null}
-        {canRename && onDelete ? <DropdownMenuSeparator /> : null}
+        {canRename && (onToggleArchived || onDelete) ? <DropdownMenuSeparator /> : null}
+        {onToggleArchived ? (
+          <DropdownMenuItem onSelect={() => void onToggleArchived(sessionId, !archived)} className="gap-2 text-[13px]">
+            {archived ? <ArchiveRestore className="h-3.5 w-3.5" /> : <Archive className="h-3.5 w-3.5" />}
+            {archived ? "Unarchive session" : "Archive session"}
+          </DropdownMenuItem>
+        ) : null}
+        {onToggleArchived && onDelete ? <DropdownMenuSeparator /> : null}
         {onDelete ? (
           <DropdownMenuItem onSelect={() => void onDelete(sessionId)} variant="destructive" className="gap-2 text-[13px]">
             <Trash2 className="h-3.5 w-3.5" /> Delete

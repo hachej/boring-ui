@@ -114,6 +114,7 @@ export function AppSessionRow({
   onOpenDetached,
   onTogglePinned,
   onRename,
+  onToggleArchived,
   onDelete,
 }: {
   session: AppLeftPaneSession
@@ -132,6 +133,8 @@ export function AppSessionRow({
   onOpenDetached?: (id: string) => void
   onTogglePinned?: (id: string) => void
   onRename?: (id: string, title: string) => void | Promise<unknown>
+  /** Visibility only: the chat leaves the list, never the session volume. */
+  onToggleArchived?: (id: string, archived: boolean) => unknown
   onDelete?: (id: string) => unknown
 }) {
   const title = session.title || "Untitled"
@@ -141,9 +144,10 @@ export function AppSessionRow({
   const canCopy = session.ephemeral !== true
   const splitAvailable = state === "normal" && actionsAvailable && canSplit && Boolean(onOpenAsPane)
   const pinAvailable = canPin && Boolean(onTogglePinned)
+  const archiveAvailable = Boolean(onToggleArchived) && session.ephemeral !== true
   // Split left the menu for its own hover shortcut, so it no longer justifies
   // opening one — a menu with only that entry would render empty.
-  const showMenu = pinAvailable || canCopy || renameAvailable || Boolean(onDelete)
+  const showMenu = pinAvailable || canCopy || renameAvailable || archiveAvailable || Boolean(onDelete)
   // A chat already on stage has nothing to gain from the quick overlay —
   // placement shortcuts only apply to chats that are not open yet.
   const detachAvailable = state === "normal" && actionsAvailable && Boolean(onOpenDetached)
@@ -203,6 +207,14 @@ export function AppSessionRow({
       data-boring-session-id={session.id}
       data-boring-agent-type-id={session.agentTypeId}
       data-boring-session-state={state}
+      // Right-click opens the row's OWN actions menu — the same items, the
+      // same anchor, no second menu idiom to learn. Without a menu to open the
+      // browser's native context menu is left alone.
+      onContextMenu={showMenu && !rename.editing ? (event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        setMenuOpen(true)
+      } : undefined}
       draggable={actionsAvailable && canSplit && !rename.editing && !menuOpen}
       onDragStart={actionsAvailable && canSplit ? (event) => {
         if (rename.editing || menuOpen) { event.preventDefault(); return }
@@ -286,6 +298,9 @@ export function AppSessionRow({
             // .app-left-session-actions in globals.css.
             "app-left-session-actions absolute inset-y-0 right-1 z-10 flex items-center justify-end opacity-0",
             "group-hover:opacity-100 group-focus-within:opacity-100",
+            // A menu opened by right-click must not hang off an invisible
+            // anchor once the pointer leaves the row.
+            menuOpen && "opacity-100",
           )}
         >
           {splitAvailable ? (
@@ -312,9 +327,12 @@ export function AppSessionRow({
             canRename={renameAvailable}
             canPin={pinAvailable}
             pinned={pinned}
+            archived={session.archived === true}
             onTogglePinned={onTogglePinned}
             onRename={rename.begin}
+            {...(archiveAvailable ? { onToggleArchived } : {})}
             onDelete={onDelete}
+            open={menuOpen}
             onOpenChange={setMenuOpen}
           />
           ) : null}

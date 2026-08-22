@@ -110,6 +110,8 @@ export interface WorkspaceAgentSession {
   hasAssistantReply?: boolean
   ephemeral?: boolean
   status?: "idle" | "running" | "aborting" | "error"
+  /** Visibility only: archived chats leave the main list, never the volume. */
+  archived?: boolean
 }
 
 export interface WorkspaceAgentSessionsApi<
@@ -2127,6 +2129,22 @@ export function WorkspaceAgentFront<
     await sessionApi?.refresh?.({ background: true })
   }, [apiBaseUrl, onRenameSession, resolvedRequestHeaders, selectedAgentTypeId, sessionApi])
 
+  // Archiving is the rename mutation's twin: one addressed POST, then the
+  // authoritative inventory refresh. It is deliberately NOT the delete path —
+  // the server keeps the transcript and only flips a visibility flag.
+  const setChatSessionArchived = useCallback(async (sessionId: string, archived: boolean, sessionAgentTypeId?: string) => {
+    const owner = sessionAgentTypeId ?? selectedAgentTypeId
+    const endpoint = `${apiBaseUrl?.replace(/\/$/, "") ?? ""}/api/v1/agents/${encodeURIComponent(owner)}/sessions/${encodeURIComponent(sessionId)}/archive`
+    const requestId = `session-archive:${globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`}`
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { ...resolvedRequestHeaders, "content-type": "application/json" },
+      body: JSON.stringify({ requestId, archived }),
+    })
+    if (!response.ok) throw new Error(`${archived ? "archive" : "unarchive"} failed (${response.status})`)
+    await sessionApi?.refresh?.({ background: true })
+  }, [apiBaseUrl, resolvedRequestHeaders, selectedAgentTypeId, sessionApi])
+
   const reloadAgentPluginsForSession = useCallback(async (ref: { agentTypeId: string; sessionId: string }) => {
     const endpoint = `${apiBaseUrl?.replace(/\/$/, "") ?? ""}/api/v1/agents/${encodeURIComponent(ref.agentTypeId)}/reload`
     const requestId = `reload:${globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`}`
@@ -2700,6 +2718,7 @@ export function WorkspaceAgentFront<
           onToggleSessionPinned={toggleSessionPinned}
           onDeleteSession={canDeleteSessions ? deleteSessionAndPane : undefined}
           onRenameSession={sessionApi?.rename ? resolvedRename : undefined}
+          onSetSessionArchived={sessionApi ? setChatSessionArchived : undefined}
         />
       )}
     >
