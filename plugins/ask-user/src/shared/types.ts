@@ -1,5 +1,6 @@
 import type { HumanArtifact } from "@hachej/boring-workspace/shared"
 import type { ASK_USER_COMMAND_KINDS } from "./constants"
+import type { AskUserRiskTier } from "./constants"
 
 export type AskUserOption = {
   value: string
@@ -98,6 +99,8 @@ export type AskUserRequest = {
   toolCallId?: string
   /** Trusted server/runtime attribution. Not accepted from browser bridge inputs. */
   ownerPrincipalId?: string
+  /** Declared decision risk tier for this question, if any (#1348 follow-up decision record). */
+  riskTier?: AskUserRiskTier
 }
 
 export type AskUserToolInput = {
@@ -106,6 +109,8 @@ export type AskUserToolInput = {
   schema: AskUserFormSchema
   artifacts?: HumanArtifact[]
   timeoutMs?: number
+  /** Declared decision risk tier for this question, if any. */
+  riskTier?: AskUserRiskTier
 }
 
 export type AskUserQuestionStatus = "ready" | "answered" | "cancelled" | "abandoned"
@@ -124,6 +129,8 @@ export type AskUserQuestion = {
   answerToken: string
   createdAt: string
   updatedAt: string
+  /** Declared decision risk tier; optional for pre-decision-record questions. */
+  riskTier?: AskUserRiskTier
 }
 
 export type AskUserAnswerValue = string | string[] | boolean | number | null
@@ -133,6 +140,26 @@ export type AskUserAnswer = {
   sessionId: string
   values: Record<string, AskUserAnswerValue>
   submittedAt: string
+  /** Snapshot of the question's declared risk tier, if any. Optional so persisted pre-decision-record answers still parse. */
+  riskTier?: AskUserRiskTier
+  /** Principal that resolved the question (e.g. the browser owner), when known. */
+  resolvedBy?: string
+}
+
+/**
+ * Thin durable decision record for a resolved question (#1348 follow-up).
+ * Purely additive over stored answers — old records without the optional
+ * fields still parse and yield a record with those fields absent.
+ */
+export type AskUserDecisionRecord = {
+  questionId: string
+  sessionId: string
+  title?: string
+  /** Exact answered payload as submitted. */
+  values: Record<string, AskUserAnswerValue>
+  riskTier?: AskUserRiskTier
+  resolvedAt: string
+  resolvedBy?: string
 }
 
 export type AskUserCancelReason =

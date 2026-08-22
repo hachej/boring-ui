@@ -5,9 +5,11 @@ import {
   ASK_USER_RESERVED_FIELD_NAMES,
   ASK_USER_SCHEMA_LIMITS,
   ASK_USER_COMMAND_KINDS,
+  ASK_USER_RISK_TIERS,
 } from "./constants"
 
 const isoStringSchema = z.string().min(1)
+const askUserRiskTierSchema = z.enum(ASK_USER_RISK_TIERS).optional()
 const fieldNameSchema = z
   .string()
   .regex(ASK_USER_FIELD_NAME_PATTERN, "field name must match ^[A-Za-z][A-Za-z0-9_-]{0,63}$")
@@ -234,6 +236,7 @@ export const AskUserToolInputSchema = z
       .min(ASK_USER_SCHEMA_LIMITS.minTimeoutMs)
       .max(ASK_USER_SCHEMA_LIMITS.maxTimeoutMs)
       .optional(),
+    riskTier: askUserRiskTierSchema,
   })
   .strict()
 
@@ -250,6 +253,7 @@ export const AskUserRequestSchema = z
       .min(ASK_USER_SCHEMA_LIMITS.minTimeoutMs)
       .max(ASK_USER_SCHEMA_LIMITS.maxTimeoutMs)
       .optional(),
+    riskTier: askUserRiskTierSchema,
   })
   .strict()
 
@@ -267,6 +271,8 @@ export const AskUserAnswerSchema = z
     sessionId: z.string().min(1),
     values: z.record(fieldNameSchema, AskUserAnswerValueSchema),
     submittedAt: isoStringSchema,
+    riskTier: askUserRiskTierSchema,
+    resolvedBy: z.string().min(1).optional(),
   })
   .strict()
 

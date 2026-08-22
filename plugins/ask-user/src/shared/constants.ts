@@ -27,6 +27,10 @@ export const ASK_USER_SCHEMA_LIMITS = {
   defaultTimeoutMs: 10 * 60_000,
 } as const
 
+export const ASK_USER_RISK_TIERS = ["observe", "reversible", "consequential", "sensitive"] as const
+
+export type AskUserRiskTier = (typeof ASK_USER_RISK_TIERS)[number]
+
 export const ASK_USER_FIELD_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/
 
 export const ASK_USER_RESERVED_FIELD_NAMES = new Set([
