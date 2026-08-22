@@ -23,6 +23,7 @@ import {
 import { AgentSessionEventQueue } from './agentSessionEventQueue'
 import { agentSessionKey } from './agentSessionKey'
 import { canonicalDigest } from './canonical'
+import { fleetHasConfiguredAgents, legacyDefaultPresentation } from './fleetPresentation'
 import { stableServiceActionFailure } from './stableServiceError'
 import type { AgentHostRuntime } from './createAgentHost'
 import type {
@@ -239,9 +240,14 @@ export class EmbeddedAgentGateway implements AgentGateway {
 
   async listAgents(input: { readonly scope: AuthorizedAgentScope }) {
     await this.verify(input.scope)
+    // The legacy `default` entry stays listed so its sessions remain
+    // addressable; it is marked and labelled as the fallback it is (gh-1296).
+    const configuredFleet = fleetHasConfiguredAgents(this.runtime.compiledAgents)
     return this.runtime.compiledAgents.map((agent) => ({
       agentTypeId: agent.agentTypeId,
-      label: 'legacyDefault' in agent ? 'Agent' : agent.definition.label,
+      ...('legacyDefault' in agent
+        ? legacyDefaultPresentation(configuredFleet)
+        : { label: agent.definition.label }),
       ...('legacyDefault' in agent || !agent.plugins?.length
         ? {}
         : { pluginIds: agent.plugins.map((plugin) => plugin.name) }),

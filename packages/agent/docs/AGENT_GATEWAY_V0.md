@@ -72,11 +72,20 @@ Note `listAgents` takes `ListAgentsInput`, not a bare `AuthorizedAgentScope`.
 
 ### Output DTOs
 
-`AgentSummary` (`agentTypeId`, `label`, `description?`, `definition?{version,digest}`),
-`AgentSessionSummary` (`ref`, `title`, `status`, `createdAt`, `updatedAt`),
-`AgentSessionPage` (`sessions`, `nextCursor?`), and the receipts
-(`CommandReceipt`, `AgentSendReceipt`, `QueueClearReceipt`, `StopReceipt`) are
-unchanged from §6, field for field.
+`AgentSummary` (`agentTypeId`, `label`, `description?`, `legacy?`,
+`definition?{version,digest}`), `AgentSessionSummary` (`ref`, `title`,
+`status`, `createdAt`, `updatedAt`), `AgentSessionPage` (`sessions`,
+`nextCursor?`), and the receipts (`CommandReceipt`, `AgentSendReceipt`,
+`QueueClearReceipt`, `StopReceipt`) are unchanged from §6, field for field,
+apart from `AgentSummary.legacy`.
+
+`legacy: true` marks the `default` fallback identity, listed beside a
+configured fleet only so the sessions bound to it stay addressable (gh-1296).
+It is not an authored seat: with configured Agents in the fleet it is labelled
+`default` rather than `Agent`, and clients keep listing and routing its
+sessions while leaving it out of seat chrome unless it owns chats. A fleet that
+is nothing but the fallback is the legacy single-agent boot and is unchanged —
+label `Agent`, no `legacy` flag.
 
 Session activity is the extracted alias `AgentSessionActivity`:
 `'idle' | 'running' | 'aborting' | 'error'`.

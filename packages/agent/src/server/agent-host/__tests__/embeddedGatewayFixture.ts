@@ -186,7 +186,9 @@ class FakeService implements PiChatSessionService {
   })
 }
 
-export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFixture> {
+export async function createEmbeddedGatewayFixture(
+  options: { readonly agents?: readonly AgentHostAgentSpec[] } = {},
+): Promise<EmbeddedGatewayFixture> {
   const issued = new WeakSet<object>()
   const revoked = new WeakSet<object>()
   const services = new Map<string, FakeService>()
@@ -195,7 +197,7 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
     wait: Promise<void>
   }
   const admission = new Map<AgentGatewayEffect, AdmissionDisposition[]>()
-  const agents: readonly AgentHostAgentSpec[] = [
+  const agents: readonly AgentHostAgentSpec[] = options.agents ?? [
     { agentTypeId: 'alpha', definition: { instructions: 'alpha', label: 'Alpha' } },
     { agentTypeId: 'beta', definition: { instructions: 'beta', label: 'Beta' } },
   ]
