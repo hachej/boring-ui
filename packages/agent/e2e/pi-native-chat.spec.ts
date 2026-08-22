@@ -73,7 +73,9 @@ test.describe('Pi-native chat browser matrix', () => {
       reloads: 1,
       uiCommandDispatches: 0,
     })
-    expect((state as { prompts: unknown[] }).prompts).toHaveLength(1)
+    // Two prompts reach the backend: the original submit and the model-facing
+    // `/reload result:` report introduced when slash results gained context.
+    expect((state as { prompts: unknown[] }).prompts).toHaveLength(2)
     expect((state as { followups: unknown[] }).followups).toHaveLength(3)
     expect((state as { stops: number }).stops).toBeGreaterThanOrEqual(1)
   })
