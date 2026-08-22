@@ -143,6 +143,38 @@ describe('RemotePiSession commands and idempotency', () => {
     session.dispose()
   })
 
+  // gh-1295: Stop is wired to a holding interrupt precisely because that path
+  // never returns a clearedQueue and therefore never drops the user's typed,
+  // still-unsent content out of the optimistic outbox.
+  it('keeps optimistic queued follow-ups when a holding interrupt stops the active turn', async () => {
+    const events = openNdjsonStream()
+    const interruptBodies: unknown[] = []
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      const body = init?.body ? JSON.parse(String(init.body)) : undefined
+      if (url.endsWith('/events?cursor=0')) return new Response(events.stream)
+      if (url.endsWith('/followup')) return jsonResponse({ accepted: true, cursor: 1, clientNonce: body.clientNonce, clientSeq: body.clientSeq, queued: true })
+      if (url.endsWith('/interrupt')) {
+        interruptBodies.push(body)
+        return jsonResponse({ accepted: true, cursor: 2 })
+      }
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock, { autoStart: false })
+
+    await expect(session.followUp({ message: 'keep me queued', clientNonce: 'nonce-q', clientSeq: 1 })).resolves.toMatchObject({ queued: true })
+    expect(session.getState().optimisticOutbox['nonce-q']).toMatchObject({ status: 'pending', clientSeq: 1 })
+
+    await expect(session.interrupt({ queueAction: 'hold' })).resolves.toEqual({ accepted: true, cursor: 2 })
+
+    expect(interruptBodies).toEqual([{ queueAction: 'hold' }])
+    // The typed content is still in hand and recoverable — nothing was dropped.
+    expect(session.getState().optimisticOutbox['nonce-q']).toMatchObject({ status: 'pending', clientSeq: 1 })
+    expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/stop'))).toBe(false)
+    expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/queue/clear'))).toBe(false)
+
+    session.dispose()
+  })
+
   it('posts commands through the remote session seam and keeps command receipts out of canonical transcript', async () => {
     const events = openNdjsonStream()
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {

@@ -340,6 +340,9 @@ describe('PiChatPanel sandbox shell', () => {
     expect(remote.clearQueue).not.toHaveBeenCalled()
     await waitFor(() => expect(screen.queryByTestId('chat-working')).toBeNull())
     await screen.findByRole('button', { name: 'Submit' })
+    // gh-1295: the user's typed, queued content must survive Stop.
+    expect(screen.getByText('keep me queued')).toBeTruthy()
+    expect(remote.getState().queue.followUps).toHaveLength(1)
   })
 
   test('does not hold submitted state when stream events catch up before prompt receipt resolves', async () => {
