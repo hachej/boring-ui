@@ -314,8 +314,9 @@ describe('PiChatPanel sandbox shell', () => {
     })
   })
 
-  test('stop clears local submitted state when no stream events arrived yet', async () => {
-    const remote = new FakeRemotePiSession(remoteState({ status: 'idle', lastSeq: 7 }))
+  test('stop interrupts instead of clearing queued follow-ups and clears local submitted state', async () => {
+    const queued = [{ id: 'queued-1', kind: 'followup' as const, displayText: 'keep me queued' }]
+    const remote = new FakeRemotePiSession(remoteState({ status: 'idle', lastSeq: 7, queue: { followUps: queued } }))
     const promptReceipt = deferred<{ accepted: true; cursor: number; clientNonce: string }>()
     remote.prompt.mockImplementationOnce(async () => promptReceipt.promise)
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
@@ -334,9 +335,14 @@ describe('PiChatPanel sandbox shell', () => {
     await screen.findByTestId('chat-working')
     fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
 
-    await waitFor(() => expect(remote.stop).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(remote.interrupt).toHaveBeenCalledWith({ queueAction: 'hold' }))
+    expect(remote.stop).not.toHaveBeenCalled()
+    expect(remote.clearQueue).not.toHaveBeenCalled()
     await waitFor(() => expect(screen.queryByTestId('chat-working')).toBeNull())
     await screen.findByRole('button', { name: 'Submit' })
+    // gh-1295: the user's typed, queued content must survive Stop.
+    expect(screen.getByText('keep me queued')).toBeTruthy()
+    expect(remote.getState().queue.followUps).toHaveLength(1)
   })
 
   test('does not hold submitted state when stream events catch up before prompt receipt resolves', async () => {
@@ -837,8 +843,10 @@ describe('PiChatPanel sandbox shell', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
     fireEvent.keyDown(textarea, { key: 'Escape' })
-    await waitFor(() => expect(remote.stop).toHaveBeenCalledTimes(1))
-    expect(remote.interrupt).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(remote.interrupt).toHaveBeenCalledTimes(2))
+    expect(remote.interrupt).toHaveBeenNthCalledWith(1, { queueAction: 'hold' })
+    expect(remote.interrupt).toHaveBeenNthCalledWith(2, {})
+    expect(remote.stop).not.toHaveBeenCalled()
   })
 
   test('dismisses composer pickers with Escape before interrupting a streaming turn', async () => {
@@ -926,8 +934,97 @@ describe('PiChatPanel sandbox shell', () => {
 
     await screen.findByText('queued from server')
     expect(screen.getByText('1 queued follow-up').closest('[data-boring-agent-part="composer-queue-preview"]')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Resume queued follow-ups' })).toBeNull()
+    act(() => { remote.setState({ ...remote.state, status: 'idle' }) })
+    const resumeRequest = deferred<{ accepted: true; cursor: number }>()
+    remote.interrupt.mockImplementationOnce(() => resumeRequest.promise)
+    const resume = await screen.findByRole('button', { name: 'Resume queued follow-ups' })
+    fireEvent.click(resume)
+    fireEvent.click(resume)
+    await waitFor(() => expect(remote.interrupt).toHaveBeenCalledTimes(1))
+    expect(remote.interrupt).toHaveBeenCalledWith({ queueAction: 'resume' })
+    expect((resume as HTMLButtonElement).disabled).toBe(true)
+    expect(resume.getAttribute('aria-busy')).toBe('true')
+    resumeRequest.resolve({ accepted: true, cursor: 1 })
+    await waitFor(() => expect((resume as HTMLButtonElement).disabled).toBe(false))
     expect(document.querySelector('[data-boring-agent-message-id^="queue:"]')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Delete queued message' })).toBeNull()
+  })
+
+  test('keys Resume pending and late errors to the session that started the request', async () => {
+    const remoteA = new FakeRemotePiSession(remoteState({
+      sessionId: 'pi-a',
+      status: 'idle',
+      queue: { followUps: [{ id: 'qa', kind: 'followup', displayText: 'queued in A', clientNonce: 'nonce-a', clientSeq: 1 }] },
+    }))
+    const remoteB = new FakeRemotePiSession(remoteState({
+      sessionId: 'pi-b',
+      status: 'idle',
+      queue: { followUps: [{ id: 'qb', kind: 'followup', displayText: 'queued in B', clientNonce: 'nonce-b', clientSeq: 1 }] },
+    }))
+    const resumeA = deferred<{ accepted: true; cursor: number }>()
+    remoteA.interrupt.mockImplementationOnce(() => resumeA.promise)
+    const createRemoteSession = vi.fn((options: RemotePiSessionOptions) => {
+      const remote = options.sessionId === 'pi-a' ? remoteA : remoteB
+      remote.onEvent = options.onEvent as ((event: unknown) => void) | undefined
+      return remote as unknown as RemotePiSession
+    })
+    const props = { serverResourcesEnabled: false, storageScope: 'scope-a', createRemoteSession }
+    const { rerender } = render(<PiChatPanel {...props} sessionId="pi-a" />)
+
+    await screen.findByText('queued in A')
+    fireEvent.click(screen.getByRole('button', { name: 'Resume queued follow-ups' }))
+    await waitFor(() => expect(remoteA.interrupt).toHaveBeenCalledWith({ queueAction: 'resume' }))
+    expect((screen.getByRole('button', { name: 'Resume queued follow-ups' }) as HTMLButtonElement).disabled).toBe(true)
+
+    rerender(<PiChatPanel {...props} sessionId="pi-b" />)
+    await screen.findByText('queued in B')
+    expect((screen.getByRole('button', { name: 'Resume queued follow-ups' }) as HTMLButtonElement).disabled).toBe(false)
+
+    await act(async () => { resumeA.reject(new Error('Resume A failed')) })
+    await waitFor(() => expect(screen.queryByText('Resume A failed')).toBeNull())
+    expect((screen.getByRole('button', { name: 'Resume queued follow-ups' }) as HTMLButtonElement).disabled).toBe(false)
+
+    rerender(<PiChatPanel {...props} sessionId="pi-a" />)
+    await screen.findByText('Resume A failed')
+    expect((screen.getByRole('button', { name: 'Resume queued follow-ups' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  test('re-arms dismissed Resume errors on retry without resurrecting them after a session switch', async () => {
+    const remoteA = new FakeRemotePiSession(remoteState({
+      sessionId: 'pi-a',
+      status: 'idle',
+      queue: { followUps: [{ id: 'qa', kind: 'followup', displayText: 'queued in A', clientNonce: 'nonce-a', clientSeq: 1 }] },
+    }))
+    const remoteB = new FakeRemotePiSession(remoteState({ sessionId: 'pi-b', status: 'idle' }))
+    const firstResume = deferred<{ accepted: true; cursor: number }>()
+    const secondResume = deferred<{ accepted: true; cursor: number }>()
+    remoteA.interrupt.mockImplementationOnce(() => firstResume.promise).mockImplementationOnce(() => secondResume.promise)
+    const createRemoteSession = vi.fn((options: RemotePiSessionOptions) => {
+      const remote = options.sessionId === 'pi-a' ? remoteA : remoteB
+      remote.onEvent = options.onEvent as ((event: unknown) => void) | undefined
+      return remote as unknown as RemotePiSession
+    })
+    const props = { serverResourcesEnabled: false, storageScope: 'scope-a', createRemoteSession }
+    const { rerender } = render(<PiChatPanel {...props} sessionId="pi-a" />)
+
+    await screen.findByText('queued in A')
+    fireEvent.click(screen.getByRole('button', { name: 'Resume queued follow-ups' }))
+    await act(async () => { firstResume.reject(new Error('First Resume failed')) })
+    const firstError = await screen.findByText('First Resume failed')
+    fireEvent.click(within(firstError.closest('[data-boring-agent-part="runtime-notice"]') as HTMLElement).getByRole('button', { name: 'Dismiss notice' }))
+    expect(screen.queryByText('First Resume failed')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Resume queued follow-ups' }))
+    await act(async () => { secondResume.reject(new Error('Second Resume failed')) })
+    const secondError = await screen.findByText('Second Resume failed')
+    fireEvent.click(within(secondError.closest('[data-boring-agent-part="runtime-notice"]') as HTMLElement).getByRole('button', { name: 'Dismiss notice' }))
+    expect(screen.queryByText('Second Resume failed')).toBeNull()
+
+    rerender(<PiChatPanel {...props} sessionId="pi-b" />)
+    rerender(<PiChatPanel {...props} sessionId="pi-a" />)
+    await screen.findByText('queued in A')
+    expect(screen.queryByText('Second Resume failed')).toBeNull()
   })
 
   test('renders optimistic queued follow-ups in the composer banner before server queue metadata arrives', async () => {
