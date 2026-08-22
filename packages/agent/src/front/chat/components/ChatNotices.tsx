@@ -1,6 +1,6 @@
 "use client"
 
-import { AlertCircleIcon, ExternalLinkIcon, ListRestartIcon, Loader2, XIcon } from 'lucide-react'
+import { AlertCircleIcon, ExternalLinkIcon, ListRestartIcon, Loader2, PlayIcon, XIcon } from 'lucide-react'
 import { IconButton } from '@hachej/boring-ui-kit'
 import type { QueuedUserMessage } from '../../../shared/chat'
 import { ErrorCode } from '../../../shared/error-codes'
@@ -155,7 +155,17 @@ function composerBlockerActionIcon(actionId: string): ReactNode | null {
   return null
 }
 
-export function QueuedComposerNotice({ followUps, onEdit }: { followUps: QueuedUserMessage[]; onEdit: () => void }) {
+export function QueuedComposerNotice({
+  followUps,
+  onEdit,
+  onResume,
+  resumePending = false,
+}: {
+  followUps: QueuedUserMessage[]
+  onEdit: () => void
+  onResume?: () => void
+  resumePending?: boolean
+}) {
   return (
     <div
       data-boring-agent-part="composer-queue-preview"
@@ -170,17 +180,35 @@ export function QueuedComposerNotice({ followUps, onEdit }: { followUps: QueuedU
           {followUps.map((followUp) => followUp.displayText).join(' - ')}
         </div>
       </div>
-      <IconButton
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        onClick={onEdit}
-        className="shrink-0 text-[color:var(--muted-foreground)] hover:bg-[color:var(--muted)] hover:text-[color:var(--foreground)]"
-        aria-label="Edit queued follow-ups"
-        title="Edit queued follow-ups"
-      >
-        <ListRestartIcon className="size-3.5" aria-hidden="true" />
-      </IconButton>
+      <div className="flex shrink-0 items-center gap-1">
+        {onResume ? (
+          <IconButton
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            onClick={onResume}
+            disabled={resumePending}
+            aria-busy={resumePending}
+            data-boring-agent-part="composer-queue-resume"
+            className="text-[color:var(--muted-foreground)] hover:bg-[color:var(--muted)] hover:text-[color:var(--foreground)]"
+            aria-label="Resume queued follow-ups"
+            title="Resume queued follow-ups"
+          >
+            <PlayIcon className="size-3.5" aria-hidden="true" />
+          </IconButton>
+        ) : null}
+        <IconButton
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          onClick={onEdit}
+          className="text-[color:var(--muted-foreground)] hover:bg-[color:var(--muted)] hover:text-[color:var(--foreground)]"
+          aria-label="Edit queued follow-ups"
+          title="Edit queued follow-ups"
+        >
+          <ListRestartIcon className="size-3.5" aria-hidden="true" />
+        </IconButton>
+      </div>
     </div>
   )
 }

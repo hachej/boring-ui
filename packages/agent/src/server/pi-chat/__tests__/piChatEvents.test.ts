@@ -437,6 +437,36 @@ describe('PiChatEventMapper', () => {
     ])
   })
 
+  it('hides recoverable Codex overflow JSON and normalizes a terminal retry failure', () => {
+    const mapper = new PiChatEventMapper({ sessionId: 'sess-1' })
+    const rawError = '{"type":"error","error":{"type":"invalid_request_error","code":"context_length_exceeded","message":"Your input exceeds the context window of this model.","param":"input"},"sequence_number":2}'
+    mapper.map({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
+
+    expect(mapper.map({
+      type: 'message_update',
+      assistantMessageEvent: { type: 'error', reason: 'error', error: { errorMessage: rawError } },
+    } as unknown as AgentSessionEvent)).toEqual([])
+
+    const end = mapper.map({
+      type: 'agent_end',
+      willRetry: false,
+      messages: [assistantMessage({ stopReason: 'error', content: [], errorMessage: rawError })],
+    } as unknown as AgentSessionEvent)
+
+    expect(end).toMatchObject([
+      {
+        type: 'error',
+        retryable: true,
+        error: {
+          code: ErrorCode.enum.MODEL_CONTEXT_WINDOW_EXCEEDED,
+          message: expect.not.stringContaining('context_length_exceeded'),
+          retryable: true,
+        },
+      },
+      { type: 'agent-end', status: 'error' },
+    ])
+  })
+
   it('surfaces an agent_end turn failure as an error event when no assistant error event was streamed', () => {
     const mapper = new PiChatEventMapper({ sessionId: 'sess-1' })
     mapper.map({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)

@@ -106,7 +106,7 @@ test.describe('M3c: interrupt + message queue (requires real key)', () => {
     await expect(browserPage.locator('text=Follow-up')).not.toBeVisible({ timeout: 5_000 })
   })
 
-  test('stop clears the queued follow-up — it does not auto-send', async ({ browserPage }) => {
+  test('stop aborts the active turn and holds the queued follow-up until resume', async ({ browserPage }) => {
     await composer(browserPage).fill(
       'Run this exact bash command and nothing else: sleep 10 && echo done',
     )
@@ -114,19 +114,17 @@ test.describe('M3c: interrupt + message queue (requires real key)', () => {
 
     await waitForStreaming(browserPage)
 
-    // Queue a follow-up
-    await composer(browserPage).fill('this should not send')
+    await composer(browserPage).fill('this should send next')
     await composer(browserPage).press('Enter')
-    await expect(browserPage.locator('text=Follow-up')).toBeVisible({ timeout: 5_000 })
+    await expect(browserPage.locator('[data-boring-agent-part="composer-queue-preview-text"]')).toContainText('this should send next', { timeout: 5_000 })
 
-    // Stop — clears both stream and pending message
     await stopBtn(browserPage).click()
     await waitForIdle(browserPage)
 
-    // Follow-up bubble must be gone
-    await expect(browserPage.locator('text=Follow-up')).not.toBeVisible({ timeout: 5_000 })
+    await expect(browserPage.locator('[data-boring-agent-part="composer-queue-preview-text"]')).toContainText('this should send next', { timeout: 5_000 })
+    await expect(browserPage.getByLabel('Agent conversation').getByText('this should send next')).toHaveCount(0)
 
-    // "this should not send" must not appear anywhere on the page
-    await expect(browserPage.locator('body')).not.toContainText('this should not send')
+    await browserPage.getByRole('button', { name: 'Resume queued follow-ups', exact: true }).click()
+    await expect(browserPage.getByLabel('Agent conversation').getByText('this should send next')).toBeVisible({ timeout: 60_000 })
   })
 })

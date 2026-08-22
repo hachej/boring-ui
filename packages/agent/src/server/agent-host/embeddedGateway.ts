@@ -23,6 +23,7 @@ import {
 import { AgentSessionEventQueue } from './agentSessionEventQueue'
 import { agentSessionKey } from './agentSessionKey'
 import { canonicalDigest } from './canonical'
+import { presentedAgentFleet } from './fleetPresentation'
 import { stableServiceActionFailure } from './stableServiceError'
 import type { AgentHostRuntime } from './createAgentHost'
 import type {
@@ -239,7 +240,8 @@ export class EmbeddedAgentGateway implements AgentGateway {
 
   async listAgents(input: { readonly scope: AuthorizedAgentScope }) {
     await this.verify(input.scope)
-    return this.runtime.compiledAgents.map((agent) => ({
+    const presentedAgents = presentedAgentFleet(this.runtime.compiledAgents)
+    return presentedAgents.map((agent) => ({
       agentTypeId: agent.agentTypeId,
       label: 'legacyDefault' in agent ? 'Agent' : agent.definition.label,
       ...('legacyDefault' in agent || !agent.plugins?.length
@@ -416,14 +418,15 @@ export class EmbeddedAgentGateway implements AgentGateway {
         const current = await reverify()
         return await this.send(input.ref, input.scope, current, command) as Awaited<ReturnType<AgentSessionConnection['send']>>
       },
-      interrupt: async ({ requestId }) => {
+      interrupt: async ({ requestId, queueAction }) => {
         const current = await reverify()
         const currentBinding = await this.bindingForSession(input.scope, current, input.ref)
-        return await this.sessionEffect(input.ref, current, 'session.interrupt', requestId, {}, async () => {
+        const payload: Record<string, never> | { queueAction: 'hold' | 'resume' } = queueAction === undefined ? {} : { queueAction }
+        return await this.sessionEffect(input.ref, current, 'session.interrupt', requestId, payload, async () => {
           const receipt = await currentBinding.composition.service.interrupt(
-            context(current, requestId), input.ref.sessionId, {},
+            context(current, requestId), input.ref.sessionId, payload,
           )
-          if (this.runtime.activity.get(current.workspaceScopeId, input.ref) === 'running') {
+          if (queueAction !== 'resume' && this.runtime.activity.get(current.workspaceScopeId, input.ref) === 'running') {
             this.runtime.activity.set(current.workspaceScopeId, input.ref, 'aborting')
           }
           return receipt

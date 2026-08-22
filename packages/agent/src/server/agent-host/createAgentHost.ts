@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path'
 import { AgentGatewayError, AgentGatewayErrorCode, type AuthorizedAgentScope, type VerifiedAgentScopeClaim } from '../../shared/index'
 import { buildAgentComposition, type BuiltAgentComposition } from './buildAgentComposition'
 import { EmbeddedAgentGateway } from './embeddedGateway'
+import { presentedAgentFleet } from './fleetPresentation'
 import { EnvironmentLeaseManager, type EnvironmentLease } from './environmentLease'
 import { getOptionalRuntimeBundleStorageRoot } from '../runtime/mode'
 import { mergeRuntimeFilesystemBindings } from '../runtime/filesystemBindings'
@@ -680,6 +681,7 @@ export async function createAgentHost(
     )
   }
   const gateway = new EmbeddedAgentGateway(runtime)
+  const presentedAgents = presentedAgentFleet(compiledAgents)
   const assertStrongLedger = () => {
     if (
       runtime.ledger.durability !== 'durable-transactional'
@@ -698,7 +700,7 @@ export async function createAgentHost(
     async describe() {
       return {
         hostId,
-        agents: compiledAgents.map((agent) => ({
+        agents: presentedAgents.map((agent) => ({
           agentTypeId: agent.agentTypeId,
           label: 'legacyDefault' in agent ? 'Agent' : agent.definition.label,
           ...('legacyDefault' in agent || agent.definition.digest === undefined

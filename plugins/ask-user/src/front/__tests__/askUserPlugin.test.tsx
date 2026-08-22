@@ -373,6 +373,42 @@ describe("askUserPlugin front shell", () => {
     expect(screen.queryByText("First stale question")).not.toBeInTheDocument()
   })
 
+  it("surfaces a newly-arrived question when an agent data event fires, without a manual refresh (gh-873)", async () => {
+    // Regression: a question created mid-run by the ask_user tool has no focus/
+    // ui-command transition to piggyback on. Before the fix, the Questions pane
+    // stayed on "No pending questions" until the user manually refreshed
+    // (re-focused the tab, switched surfaces, etc). The throttled agentData
+    // listener in useAskUserPendingRefresh must pick up newly-hinted questions
+    // reactively so the pane/badge updates on its own.
+    const freshQuestion = { ...question, questionId: "agent-data-q1", sessionId: "agent-data-session", title: "Freshly arrived question" }
+    let current: AskUserQuestion | null = null
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) {
+        return Response.json({ ok: true, output: { pending: current } })
+      }
+      if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateFor(current))
+      return Response.json({})
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const Provider = getProvider()
+    const Panel = getPanel()
+
+    render(<Provider apiBaseUrl="" activeSessionId="agent-data-session" openSessionIds={["agent-data-session"]}><Panel params={{}} api={{ close: vi.fn() }} className="h-full" /></Provider>)
+    expect(await screen.findByText("No pending questions")).toBeInTheDocument()
+
+    // The question now exists server-side (as if the ask_user tool just ran),
+    // but nothing has told the client to refetch yet except the agent stream
+    // itself. No focus/visibility/ui-command event fires — only the throttled
+    // agentData listener should pick this up.
+    current = freshQuestion
+    act(() => {
+      events.emit(workspaceEvents.agentData, { ts: Date.now(), part: { type: "tool-input-start", toolCallId: "call-agent-data-q1", toolName: "ask_user" } })
+    })
+
+    expect(await screen.findByText("Freshly arrived question", {}, { timeout: 2000 })).toBeInTheDocument()
+    expect(screen.queryByText("No pending questions")).not.toBeInTheDocument()
+  })
+
   it("rehydrates question from ask-user pending when opened from surface metadata", async () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) {

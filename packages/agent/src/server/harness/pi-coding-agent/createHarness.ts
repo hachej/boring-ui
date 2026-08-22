@@ -258,6 +258,31 @@ function meteredExtensionCommandContext(ctx: ExtensionCommandContext, command: s
   return guarded
 }
 
+const CODEX_CONTEXT_HEADROOM_MIN_TOKENS = 16_384;
+const CODEX_CONTEXT_HEADROOM_RATIO = 0.1;
+
+type ContextWindowModel = {
+  provider: string;
+  contextWindow: number;
+};
+
+/**
+ * Codex enforces its input limit before generation. Keep additional headroom
+ * beyond Pi's normal compaction reserve so continuation prompts and tool
+ * schemas cannot push an otherwise compacted request over the provider limit.
+ */
+export function withCodexContextBudget<T extends ContextWindowModel>(model: T): T {
+  if (model.provider !== "openai-codex") return model;
+  const headroom = Math.max(
+    CODEX_CONTEXT_HEADROOM_MIN_TOKENS,
+    Math.ceil(model.contextWindow * CODEX_CONTEXT_HEADROOM_RATIO),
+  );
+  return {
+    ...model,
+    contextWindow: Math.max(1, model.contextWindow - headroom),
+  };
+}
+
 function resolveRequestedModel(
   modelRegistry: ModelRegistry,
   input: AgentSendInput,
@@ -274,7 +299,7 @@ function resolveRequestedModel(
     if (options.strict) throw modelUnavailableError(input)
     return undefined
   }
-  return model;
+  return withCodexContextBudget(model);
 }
 
 function resolveDefaultModel(
@@ -288,7 +313,7 @@ function resolveDefaultModel(
   const configured = readConfiguredDefaultModel();
   if (configured) {
     const model = modelRegistry.find(configured.provider, configured.id);
-    if (model) return model;
+    if (model) return withCodexContextBudget(model);
   }
   return undefined;
 }
@@ -708,6 +733,12 @@ export function createPiCodingAgentHarness(opts: {
       modelRegistry,
       ...(resourceLoader ? { resourceLoader } : {}),
     });
+
+    // Pi may select a saved/default model when the caller did not provide one.
+    // Apply the same Codex budget to that fallback before the first request.
+    if (!model && piSession.model?.provider === "openai-codex") {
+      await piSession.setModel(withCodexContextBudget(piSession.model));
+    }
 
     const restoreFollowUpContextWrapper = rememberQueuedFollowUpRunContexts(piSession, runContextState, () => runContextStorage.getStore());
     const unsubscribePiRunContextListener = piSession.subscribe((event) => updateRunContextStateFromPiEvent(runContextState, event, (ctx) => runContextStorage.enterWith(ctx)));

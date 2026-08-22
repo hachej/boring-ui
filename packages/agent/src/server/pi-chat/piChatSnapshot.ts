@@ -1,5 +1,4 @@
-import { ErrorCode } from '../../shared/error-codes'
-import type { ChatError, PiChatSnapshot, PiChatStatus, QueuedUserMessage } from '../../shared/chat'
+import { chatErrorFromUnknown, type ChatError, type PiChatSnapshot, type PiChatStatus, type QueuedUserMessage } from '../../shared/chat'
 import type { PiAgentSessionAdapter, PiAgentSessionSnapshot } from './PiAgentSessionAdapter'
 import { buildPiChatHistory, type BuildPiChatHistoryOptions } from './piChatHistory'
 
@@ -48,11 +47,7 @@ function errorFromSnapshot(snapshot: PiAgentSessionSnapshot): ChatError | undefi
   if (typeof state !== 'object' || state === null || !('errorMessage' in state)) return undefined
   const message = (state as { errorMessage?: unknown }).errorMessage
   if (typeof message !== 'string' || message.length === 0) return undefined
-  return {
-    code: ErrorCode.enum.INTERNAL_ERROR,
-    message,
-    retryable: false,
-  }
+  return chatErrorFromUnknown(message, 'Agent turn failed.')
 }
 
 export function buildPiChatSnapshot(adapter: PiAgentSessionAdapter, options: BuildPiChatSnapshotOptions): PiChatSnapshot {

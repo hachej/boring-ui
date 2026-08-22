@@ -614,6 +614,41 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.queryByRole("button", { name: "Start new chat with Alpha" })).not.toBeInTheDocument()
   })
 
+  it("shows the Agent nav action for an actual single-agent catalog", () => {
+    const useAgentSelection = () => ({
+      agents: [{ agentTypeId: "default", label: "Agent" }],
+      selectedAgentTypeId: "default",
+      loading: false,
+      error: undefined,
+      selectAgentTypeId: vi.fn(),
+    })
+    const useSingleAgentSessions: AttestedWorkspaceAgentFrontProps<WorkspaceAgentSession>["useSessions"] = (options) => ({
+      sessions: [],
+      loading: false,
+      activeSessionId: undefined,
+      activeSessionAgentTypeId: options.agentTypeId,
+      activeSession: undefined,
+      workspaceId: options.workspaceId,
+      switch: vi.fn(),
+      create: vi.fn(),
+      delete: vi.fn(),
+    })
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="legacy-single-agent"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        addressedAgentSelection
+        useAddressedAgentSelection={useAgentSelection}
+        useSessions={useSingleAgentSessions}
+        persistenceEnabled={false}
+      />,
+    )
+
+    expect(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Agent" })).toBeInTheDocument()
+  })
+
   it("discovers an addressed fleet, groups its chats, and creates through the chosen owner", async () => {
     const user = userEvent.setup()
     const createdBy = vi.fn()
@@ -2254,7 +2289,7 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.getByRole("button", { name: "Open workbench" })).toBeInTheDocument()
   })
 
-  it("does not start default remote session warmup when provisioning is disabled", async () => {
+  it("does not start workspace provisioning warmup when provisioning is disabled, but keeps remote sessions enabled (gh-601)", async () => {
     const onWarmup = vi.fn()
     const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input)
@@ -2282,7 +2317,9 @@ describe("WorkspaceAgentFront", () => {
       expect(call[1]?.headers).toMatchObject({ "x-boring-workspace-id": "no-provision" })
       expect(call[1]?.headers).not.toHaveProperty("X-BORING-WORKSPACE-ID")
     }
-    expect(fetchMock.mock.calls.some(([input]) => isDefaultSessionsCollectionUrl(String(input)))).toBe(false)
+    // gh-601: provisionWorkspace=false must not disable the default remote pi-chat
+    // session hook, since the default chat panel still talks to addressed agent session routes.
+    expect(fetchMock.mock.calls.some(([input]) => isDefaultSessionsCollectionUrl(String(input)))).toBe(true)
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agents/default/ready-status"))).toBe(false)
   })
 

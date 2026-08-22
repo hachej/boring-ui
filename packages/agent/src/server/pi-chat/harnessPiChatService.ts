@@ -1,7 +1,7 @@
 import type { AgentHarness, RunContext, AgentSendInput } from '../../shared/harness'
 import type { SessionCtx, SessionListOptions, SessionStore } from '../../shared/session'
 import type { Workspace } from '../../shared/workspace'
-import type { BoringChatMessage, BoringChatPart, ChatError, ChatModelSelection, FollowUpPayload, FollowUpReceipt, InterruptPayload, PiChatEvent, PiChatSnapshot, PromptPayload, PromptReceipt, QueuedUserMessage, QueueClearPayload, QueueClearReceipt, StopPayload, StopReceipt } from '../../shared/chat'
+import { chatErrorFromUnknown, type BoringChatMessage, type BoringChatPart, type ChatError, type ChatModelSelection, type FollowUpPayload, type FollowUpReceipt, type InterruptPayload, type PiChatEvent, type PiChatSnapshot, type PromptPayload, type PromptReceipt, type QueuedUserMessage, type QueueClearPayload, type QueueClearReceipt, type StopPayload, type StopReceipt } from '../../shared/chat'
 import { sessionStreamPath, type AgentEvent } from '../../shared/events'
 import { ErrorCode } from '../../shared/error-codes'
 import { formatOffset, parseOffset, MAX_READ_LIMIT, type EventStreamStore } from '../events/eventStreamStore'
@@ -107,6 +107,7 @@ export class HarnessPiChatService implements PiChatSessionService {
   private readonly sessionGenerations = new Map<string, number>()
   private readonly messageMetadata = new PiChatMessageMetadataReconciler()
   private readonly activePromptRuns = new Map<string, Promise<void>>()
+  private readonly queueResumeAdmissions = new Set<string>()
   private readonly syntheticPromptFailures = new Map<string, SyntheticPromptFailure[]>()
   private readonly activeSyntheticPromptErrors = new Map<string, ChatError>()
   private readonly liveAttachments = new Map<string, {
@@ -194,6 +195,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     this.channelCreations.clear()
     this.sessionGenerations.clear()
     this.activePromptRuns.clear()
+    this.queueResumeAdmissions.clear()
     this.syntheticPromptFailures.clear()
     this.activeSyntheticPromptErrors.clear()
     this.liveAttachments.clear()
@@ -536,28 +538,42 @@ export class HarnessPiChatService implements PiChatSessionService {
     return { accepted: true, cursor: this.channels.get(sessionKey)?.buffer.latestSeq ?? 0, cleared: clearedQueue.length }
   }
 
-  async interrupt(ctx: PiSessionRequestContext, sessionId: string, _payload: InterruptPayload): Promise<{ accepted: true; cursor: number }> {
-    return this.lifecycle.run(() => this.interruptBeforeDispose(ctx, sessionId))
+  async interrupt(ctx: PiSessionRequestContext, sessionId: string, payload: InterruptPayload): Promise<{ accepted: true; cursor: number }> {
+    return this.lifecycle.run(() => this.interruptBeforeDispose(ctx, sessionId, payload))
   }
 
-  private async interruptBeforeDispose(ctx: PiSessionRequestContext, sessionId: string): Promise<{ accepted: true; cursor: number }> {
+  private async interruptBeforeDispose(ctx: PiSessionRequestContext, sessionId: string, payload: InterruptPayload): Promise<{ accepted: true; cursor: number }> {
     const sessionKey = this.sessionKey(ctx, sessionId)
     const adapter = await this.getAdapter(ctx, sessionId, '')
     const snapshot = adapter.readSnapshot()
     const wasActive = snapshot.isStreaming || snapshot.isRetrying
-    const nextFollowUp = wasActive ? this.nextFollowUpForInterrupt(sessionId, sessionKey, adapter) : undefined
-    const activeRun = this.activePromptRuns.get(sessionKey)
-    adapter.abortRetry?.()
-    if (wasActive) await adapter.abort()
-    await this.drainPublishQueue(this.channels.get(sessionKey))
-    await activeRun?.catch(() => {})
-    // Release prompt reservations stranded before agent-start.
-    this.metering?.releasePending(sessionKey)
-    if (nextFollowUp) {
-      this.lifecycle.assertOpen()
-      await this.autoPostInterruptedFollowUp(sessionId, sessionKey, adapter, nextFollowUp)
+    const isResume = payload.queueAction === 'resume'
+    // Resume is an idle-only admission. A stale or double Resume must never
+    // mutate (especially abort) a turn that a prior Resume has already started.
+    if (isResume && (wasActive || this.queueResumeAdmissions.has(sessionKey) || this.activePromptRuns.has(sessionKey))) {
+      return { accepted: true, cursor: this.channels.get(sessionKey)?.buffer.latestSeq ?? 0 }
     }
-    return { accepted: true, cursor: this.channels.get(sessionKey)?.buffer.latestSeq ?? 0 }
+    if (isResume) this.queueResumeAdmissions.add(sessionKey)
+    try {
+      const shouldPromoteFollowUp = isResume || (wasActive && payload.queueAction !== 'hold')
+      const nextFollowUp = shouldPromoteFollowUp
+        ? this.nextFollowUpForInterrupt(sessionId, sessionKey, adapter)
+        : undefined
+      const activeRun = this.activePromptRuns.get(sessionKey)
+      adapter.abortRetry?.()
+      if (wasActive) await adapter.abort()
+      await this.drainPublishQueue(this.channels.get(sessionKey))
+      await activeRun?.catch(() => {})
+      // Release prompt reservations stranded before agent-start.
+      this.metering?.releasePending(sessionKey)
+      if (nextFollowUp) {
+        this.lifecycle.assertOpen()
+        await this.autoPostInterruptedFollowUp(sessionId, sessionKey, adapter, nextFollowUp)
+      }
+      return { accepted: true, cursor: this.channels.get(sessionKey)?.buffer.latestSeq ?? 0 }
+    } finally {
+      if (isResume) this.queueResumeAdmissions.delete(sessionKey)
+    }
   }
 
   async stop(ctx: PiSessionRequestContext, sessionId: string, _payload: StopPayload): Promise<StopReceipt> {
@@ -728,13 +744,10 @@ export class HarnessPiChatService implements PiChatSessionService {
     error: unknown,
   ): void {
     if (!channel) return
-    const followUpError: ChatError = {
-      code: ErrorCode.enum.INTERNAL_ERROR,
-      message: error instanceof Error && error.message
-        ? error.message
-        : 'Queued follow-up failed before the agent run started.',
-      retryable: false,
-    }
+    const followUpError = chatErrorFromUnknown(
+      error,
+      'Queued follow-up failed before the agent run started.',
+    )
     const errorEvent = channel.mapper.mapSynthetic({
       type: 'error',
       turnId: channel.activeTurnId,
@@ -817,11 +830,10 @@ export class HarnessPiChatService implements PiChatSessionService {
       files: promptPayloadFileParts(payload, messageId),
       createdAt,
     })
-    const promptError: ChatError = {
-      code: ErrorCode.enum.INTERNAL_ERROR,
-      message: error instanceof Error && error.message ? error.message : 'Prompt failed before the agent run completed.',
-      retryable: false,
-    }
+    const promptError = chatErrorFromUnknown(
+      error,
+      'Prompt failed before the agent run completed.',
+    )
     const errorEvent = channel.mapper.mapSynthetic({
       type: 'error',
       turnId: channel.activeTurnId,

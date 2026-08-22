@@ -796,7 +796,6 @@ export function WorkspaceAgentFront<
     [authHeaders, requestHeaders, workspaceId],
   )
   const fleetModeEnabled = addressedAgentSelection && isPluginTabsLayout
-  const singleAgentSkillsActionEnabled = skillsActionEnabled && !fleetModeEnabled
   const useAgentSelection = useAddressedAgentSelectionProp ?? useDefaultAddressedAgentSelection
   const addressedAgents = useAgentSelection({
     apiBaseUrl,
@@ -804,6 +803,9 @@ export function WorkspaceAgentFront<
     storageScope: workspaceId,
     enabled: fleetModeEnabled,
   })
+  const singleAgentSkillsActionEnabled = skillsActionEnabled && (
+    !fleetModeEnabled || (!addressedAgents.loading && addressedAgents.agents.length === 1)
+  )
   const effectiveAgentTypeId = addressedAgents.selectedAgentTypeId ?? defaultAgentTypeId
   const selectedAgentTypeId = effectiveAgentTypeId
   // The New chat picker chooses who the *next* chat belongs to. It is
@@ -904,7 +906,10 @@ export function WorkspaceAgentFront<
   const chatPanel = (chatPanelProp ?? DefaultPiChatPanel) as ComponentType<WorkspaceChatPanelProps>
   const useSessions = (useSessionsProp ?? useDefaultWorkspacePiSessions) as UseWorkspaceAgentSessions<TSession>
   const shouldUseRemoteSessions = !chatPanelProp || Boolean(useSessionsProp)
-  const remoteSessionHookEnabled = shouldUseRemoteSessions && provisionWorkspace !== false
+  // provisionWorkspace only controls workspace runtime provisioning; it must not
+  // disable remote pi-chat sessions when the default remote-backed chat panel is
+  // still active (gh-601).
+  const remoteSessionHookEnabled = shouldUseRemoteSessions
   const fleetAgentIdentity = addressedAgents.agents.map((agent) => agent.agentTypeId).sort().join(",")
   const sessionSourceIdentity = useMemo(() => sessionDataSourceIdentity({
     workspaceId,
