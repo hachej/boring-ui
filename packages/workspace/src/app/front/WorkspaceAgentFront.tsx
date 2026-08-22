@@ -928,7 +928,7 @@ export function WorkspaceAgentFront<
         "[boring-ui] WorkspaceAgentFront: provisionWorkspace={false} also disabled server-backed chat sessions, so the chat panel will use local-only session ids while still reaching the agent pi-chat routes. Pass remoteSessionsEnabled={true} to keep remote sessions.",
       )
     }
-  }, [provisionWorkspace, remoteSessionsResolved, shouldUseRemoteSessions])
+  }, [provisionWorkspace, remoteSessionsEnabled, remoteSessionsResolved, shouldUseRemoteSessions])
   const fleetAgentIdentity = addressedAgents.agents.map((agent) => agent.agentTypeId).sort().join(",")
   const sessionSourceIdentity = useMemo(() => sessionDataSourceIdentity({
     workspaceId,

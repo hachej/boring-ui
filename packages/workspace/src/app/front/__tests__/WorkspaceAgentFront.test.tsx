@@ -2288,12 +2288,14 @@ describe("WorkspaceAgentFront", () => {
 
   it("keeps remote sessions when provisioning is disabled but remoteSessionsEnabled is set", async () => {
     const onWarmup = vi.fn()
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
       if (url.includes("/api/v1/agents/default/models")) return new Response(JSON.stringify({ models: [] }), { status: 200 })
       if (url.includes("/api/v1/agents/default/skills")) return new Response(JSON.stringify({ skills: [] }), { status: 200 })
-      if (isDefaultSessionsCollectionUrl(url)) return new Response(JSON.stringify({ sessions: [] }), { status: 200 })
+      if (isDefaultSessionsCollectionUrl(url)) {
+        return new Response(JSON.stringify({ sessions: [{ id: "sess-remote-known", title: "Known remote" }] }), { status: 200 })
+      }
       return new Response(null, { status: 204 })
     })
     vi.stubGlobal("fetch", fetchMock)
@@ -2311,6 +2313,15 @@ describe("WorkspaceAgentFront", () => {
     await waitFor(() =>
       expect(fetchMock.mock.calls.some(([input]) => isDefaultSessionsCollectionUrl(String(input)))).toBe(true),
     )
+    // The known server session must be consumed as an existing remote session, not treated as an
+    // empty list: the front must not create a replacement local session behind the user's back.
+    // (Deeper chat-props/state-route adoption evidence is warmup-gated here — with provisioning
+    // disabled the panel never mounts in jsdom — so hydration-on-adopt is pinned instead by the
+    // injected-hook tests above.)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(fetchMock.mock.calls.some(([input, init]) =>
+      String(input).includes("/agents/default/sessions") && (init?.method === "POST" || init?.method === "DELETE"),
+    )).toBe(false)
   })
 
   it("creates a fresh remote session for auth-return auto-submit instead of reusing the old active session", async () => {

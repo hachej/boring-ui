@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessByStdio } from "node:child_process"
-import { existsSync, rmSync } from "node:fs"
+import { existsSync, mkdtempSync, rmSync } from "node:fs"
 import { mkdtemp, readdir, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
@@ -8,6 +8,7 @@ import type { Readable } from "node:stream"
 import { afterEach, describe, expect, it } from "vitest"
 import {
   UI_REVIEW_TEMP_PREFIX,
+  UI_REVIEW_TEMP_ROOT_ENV,
   assertRemovableUiReviewTempRoot,
   assertWithinUiReviewTempRoot,
   cleanupUiReviewTempRootSync,
@@ -93,13 +94,35 @@ describe("ui review run-scoped temp root", () => {
     }
   }, 60_000)
 
-  it("arms no signal handler on its own, so a worker that merely imports it keeps its own shutdown", async () => {
-    const child = spawnTempRootChild("bare")
+  it("runs the beforeCleanup hook before removing the root on SIGTERM", async () => {
+    const child = spawnTempRootChild("armed+hook")
+    try {
+      const { root } = await readChildHandshake(child)
+      const events: string[] = []
+      const exitCode = await new Promise<number | null>((resolveExit) => {
+        child.stdout.on("data", (chunk: string) => { if (chunk.includes("UI_REVIEW_TEMP_BEFORE_CLEANUP")) events.push("beforeCleanup") })
+        child.once("exit", (code) => resolveExit(code))
+        child.kill("SIGTERM")
+      })
+      expect(exitCode).toBe(143)
+      await sleep(50)
+      // The hook fires while removal is still pending — an orchestrator kills its children there.
+      expect(events).toEqual(["beforeCleanup"])
+      expect(existsSync(root)).toBe(false)
+    } finally {
+      if (child.exitCode === null) child.kill("SIGKILL")
+    }
+  }, 60_000)
+
+  it("a default-terminated real worker leaks its own run root, which is why roots must be inherited", async () => {
+    // Spawn through `node --import tsx`, not the tsx CLI shim: Node does not run `exit` handlers
+    // after a default SIGTERM, so a worker-owned root survives. The orchestrator avoids this by
+    // handing every child one parent-owned root via UI_REVIEW_TEMP_ROOT.
+    const child = spawnTempRootChild("bare", true)
     let leaked: string | undefined
     try {
       const { root, listeners } = await readChildHandshake(child)
       leaked = root
-      // Creating the run root must never install a `process.exit()`-ing signal handler.
       expect(listeners).toEqual({ SIGINT: 0, SIGTERM: 0, SIGHUP: 0 })
       expect(existsSync(root)).toBe(true)
 
@@ -108,11 +131,46 @@ describe("ui review run-scoped temp root", () => {
         child.kill("SIGTERM")
       })
       await sleep(50)
-      // Cleanup still happens — it just rides the `exit` listener rather than a signal handler.
-      expect(existsSync(root)).toBe(false)
+      // Documented leak: no exit handler ran, so nothing removed the root.
+      expect(existsSync(root)).toBe(true)
     } finally {
       if (child.exitCode === null) child.kill("SIGKILL")
       if (leaked && existsSync(leaked)) rmSync(assertRemovableUiReviewTempRoot(leaked), { recursive: true, force: true })
+    }
+  }, 60_000)
+
+  it("adopts an inherited root via the environment and never removes it, even when armed for signals", async () => {
+    const parentRoot = mkdtempSync(join(tmpdir(), UI_REVIEW_TEMP_PREFIX))
+    try {
+      const child = spawnTempRootChild("armed", false, parentRoot)
+      const { root, listeners } = await readChildHandshake(child)
+      // The child reuses the creator's root verbatim and takes no signal/exit cleanup duty.
+      expect(root).toBe(parentRoot)
+      expect(listeners).toEqual({ SIGINT: 0, SIGTERM: 0, SIGHUP: 0 })
+      expect((await readdir(parentRoot)).some((name) => name.startsWith("child."))).toBe(true)
+
+      await new Promise<void>((resolveExit) => {
+        child.once("exit", () => resolveExit())
+        child.kill("SIGKILL")
+      })
+      await sleep(50)
+      // The worker died hard; the shared root and everything in it belong to the still-running parent.
+      expect(existsSync(parentRoot)).toBe(true)
+      expect((await readdir(parentRoot)).length).toBeGreaterThan(0)
+    } finally {
+      rmSync(parentRoot, { recursive: true, force: true })
+    }
+  }, 60_000)
+
+  it("fails closed on a malformed inherited root instead of adopting it", async () => {
+    const outside = mkdtempSync(join(tmpdir(), "not-a-ui-review-root."))
+    let child: TempRootChild | undefined
+    try {
+      child = spawnTempRootChild("armed", false, outside)
+      await expect(readChildHandshake(child)).rejects.toThrow(/child exited early/)
+    } finally {
+      if (child && child.exitCode === null) child.kill("SIGKILL")
+      rmSync(outside, { recursive: true, force: true })
     }
   }, 60_000)
 
@@ -123,8 +181,15 @@ describe("ui review run-scoped temp root", () => {
   })
 })
 
-function spawnTempRootChild(mode: "armed" | "bare"): TempRootChild {
-  return spawn("node_modules/.bin/tsx", ["src/__tests__/temp-root-child.ts", mode], { cwd: toolRoot, stdio: ["ignore", "pipe", "inherit"] })
+function spawnTempRootChild(mode: string, directNode = false, inheritedRoot?: string): TempRootChild {
+  const file = "src/__tests__/temp-root-child.ts"
+  const command = directNode ? process.execPath : "node_modules/.bin/tsx"
+  const args = directNode ? ["--import", "tsx", file, mode] : [file, mode]
+  return spawn(command, args, {
+    cwd: toolRoot,
+    stdio: ["ignore", "pipe", "inherit"],
+    ...(inheritedRoot === undefined ? {} : { env: { ...process.env, [UI_REVIEW_TEMP_ROOT_ENV]: inheritedRoot } }),
+  })
 }
 
 /** Resolve once the child has reported both its listener counts and its run root. */
