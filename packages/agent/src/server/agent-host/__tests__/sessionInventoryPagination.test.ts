@@ -2,6 +2,23 @@ import { mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+
+// Deterministic worst-case directory order (reverse-alphabetical): a store
+// that breaks recency ties by readdir order instead of session id truncates
+// away exactly the sessions the merge order ranks first. Without this mock
+// the regression below depends on the host filesystem's hash order.
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  return {
+    ...actual,
+    readdir: ((path: Parameters<typeof actual.readdir>[0], options?: Parameters<typeof actual.readdir>[1]) =>
+      Promise.resolve(actual.readdir(path, options as never)).then((entries: unknown) =>
+        Array.isArray(entries)
+          ? (entries as string[]).slice().sort().reverse()
+          : entries,
+      )) as typeof actual.readdir,
+  }
+})
 import { createTestRuntimeModeAdapter } from '@agent-test-host'
 import type { AuthorizedAgentScope } from '../../../shared/index'
 import type { SessionListOptions } from '../../../shared/session'
@@ -199,5 +216,94 @@ describe('seat session listing pagination', () => {
     } finally {
       await host.host.close()
     }
+  })
+})
+
+describe('equal-updatedAt tiebreak (sessions must never disappear)', () => {
+  // The gateway's bounded merge only sees each store's top prefix, so the
+  // store MUST break recency ties by session id — exactly like the gateway's
+  // total order. These transcripts all share one latest-message timestamp and
+  // are CREATED in reverse id order, so readdir order among the ties is the
+  // opposite of the required order: a store that truncates before breaking
+  // ties drops low-id sessions from every page, forever.
+  const SHARED_MS = Date.UTC(2026, 6, 20, 12, 0, 0)
+  const IDS = ['zeta', 'yankee', 'xray', 'beta', 'alpha']
+
+  async function plantNativeTie(dir: string, id: string, workspaceScopeId: string): Promise<void> {
+    await mkdir(dir, { recursive: true })
+    const iso = new Date(SHARED_MS).toISOString()
+    const lines = [
+      JSON.stringify({
+        type: 'session',
+        version: 1,
+        id,
+        timestamp: iso,
+        cwd: '/workspace',
+        boringSessionCtx: { workspaceId: workspaceScopeId },
+      }),
+      JSON.stringify({
+        type: 'message',
+        id: `message-${id}`,
+        parentId: null,
+        timestamp: iso,
+        message: { role: 'user', content: [{ type: 'text', text: `hello ${id}` }], timestamp: 1 },
+      }),
+    ]
+    await writeFile(join(dir, `${iso.replace(/[:.]/g, '-')}_${id}.jsonl`), `${lines.join('\n')}\n`)
+  }
+
+  it('pages every equal-timestamp native session exactly once through the gateway', async () => {
+    const sessionRoot = await temporaryRoot()
+    const workspaceRoot = join(sessionRoot, 'workspace')
+    const workspaceScopeId = 'workspace-a:storage-a'
+    const scope = { workspaceScopeId, authSubjectId: 'subject-a' } as AuthorizedAgentScope
+    const dir = join(sessionRoot, pathDerivedDirName(workspaceRoot))
+    for (const id of IDS) {
+      await plantNativeTie(dir, id, workspaceScopeId)
+    }
+
+    const host = await startHost({
+      agents: [legacyDefaultAgent],
+      sessionRoot,
+      workspaceRoot,
+      sessionNamespace: '',
+    })
+    try {
+      const seen: string[] = []
+      let cursor: string | undefined
+      let pages = 0
+      do {
+        const page = await host.gateway.listSessions({ scope, agentTypeId: 'default', limit: 2, cursor })
+        pages += 1
+        seen.push(...page.sessions.map((summary) => summary.ref.sessionId))
+        cursor = page.nextCursor
+      } while (cursor && pages < 10)
+
+      expect(seen).toEqual(['alpha', 'beta', 'xray', 'yankee', 'zeta'])
+      expect(new Set(seen).size).toBe(IDS.length)
+    } finally {
+      await host.host.close()
+    }
+  })
+
+  it('orders tied sessions by id inside the store itself, before any truncation', async () => {
+    const { PiSessionStore: Store } = await import('../../harness/pi-coding-agent/sessions')
+    const sessionRoot = await temporaryRoot()
+    const cwd = join(sessionRoot, 'workspace')
+    const dir = join(sessionRoot, pathDerivedDirName(cwd))
+    for (const id of IDS) {
+      await plantNativeTie(dir, id, 'tie-workspace')
+    }
+    const store = new Store(cwd, { sessionRoot, storageCwd: cwd })
+    const ctx = { workspaceId: 'tie-workspace' }
+
+    // The first page of a bounded listing must already be the total-order
+    // prefix; deeper offsets must complete it with zero gaps or repeats.
+    const paged: string[] = []
+    for (let offset = 0; offset < IDS.length; offset += 2) {
+      paged.push(...(await store.list(ctx, { limit: 2, offset })).map((summary) => summary.id))
+    }
+    expect(paged).toEqual(['alpha', 'beta', 'xray', 'yankee', 'zeta'])
+    expect(new Set(paged).size).toBe(IDS.length)
   })
 })

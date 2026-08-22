@@ -245,7 +245,18 @@ export class PiSessionStore implements SessionStore {
         ...file,
         sortMtimeMs: await this.sessionSortMtimeMs(file),
       })));
-    visibleFiles.sort((a, b) => b.sortMtimeMs - a.sortMtimeMs);
+    // The gateway merge (embeddedGateway.listSessions) orders rows by the
+    // total order `updatedAt desc, then session id asc`, and its bounded
+    // fan-out assumes every store truncates under that SAME order: a row at
+    // merged rank r must sit at rank <= r inside its own store's listing.
+    // Sorting on recency alone left equal-updatedAt sessions in readdir
+    // order, so one could fall outside the requested prefix and then fail
+    // the gateway's cursor filter forever — a session that never appears.
+    visibleFiles.sort((a, b) =>
+      b.sortMtimeMs - a.sortMtimeMs
+      || sessionIdFromFilename(basename(a.filepath)).localeCompare(
+        sessionIdFromFilename(basename(b.filepath)),
+      ));
 
     const { offset, limit } = options;
     const includeId = options.includeId;
@@ -1210,6 +1221,20 @@ function extractSessionHeaderId(entries: (SessionHeader | SessionEntry)[]): stri
  */
 function nativeSessionFilename(sessionId: string, isoTimestamp: string): string {
   return `${isoTimestamp.replace(/[:.]/g, "-")}_${sessionId}.jsonl`;
+}
+
+/**
+ * Cheap session-id extraction for sort tiebreaks. Session files are either
+ * wrapper-named `${sessionId}.jsonl` or pi-native `${timestamp}_${id}.jsonl`
+ * (timestamps use `-` separators, ids are UUIDs — neither contains `_`), so
+ * the text after the last underscore is the id in both forms. Matches what
+ * `resolveSessionFile` accepts and, for timestamp-named native files,
+ * `isTimestampNamedPiSessionFile` enforces about the header id.
+ */
+function sessionIdFromFilename(filename: string): string {
+  const base = filename.endsWith(".jsonl") ? filename.slice(0, -".jsonl".length) : filename;
+  const underscore = base.lastIndexOf("_");
+  return underscore === -1 ? base : base.slice(underscore + 1);
 }
 
 function isTimestampNamedPiSessionFile(filepath: string, sessionId: string): boolean {
