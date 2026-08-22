@@ -10,7 +10,7 @@ import { useWorkspaceAttention, workspaceAttentionSessionBadgeForBlocker, type W
 import { CHAT_SESSION_DRAG_TYPE } from "../../layout/ChatPaneStage"
 import type { SessionItem } from "../../components/SessionList"
 import { encodeWorkspaceSessionDrag, workspaceSessionKey, workspaceSessionKeyFor, type WorkspaceSessionRef } from "../../sessionIdentity"
-import { useWorkingSessionIds } from "../../sessionActivity"
+import { useTerminalSessionStates, useWorkingSessionIds, type SessionTerminalState } from "../../sessionActivity"
 
 export interface SessionBrowserProps {
   sessions: SessionItem[]
@@ -185,6 +185,7 @@ export function SessionBrowser({
     () => normalizedOpenIds.length > 0 || normalizedPinnedIds.length > 0,
   )
   const workingSessionIds = useWorkingSessionIds(sessions)
+  const terminalSessionStates = useTerminalSessionStates(sessions, workingSessionIds)
   const { blockers } = useWorkspaceAttention()
   const sessionBadges = useMemo(() => {
     const badges = new Map<string, WorkspaceAttentionSessionBadge>()
@@ -261,6 +262,7 @@ export function SessionBrowser({
                     open={openSet.has(workspaceSessionKeyFor(session))}
                     pinned
                     working={workingSessionIds.has(workspaceSessionKeyFor(session))}
+                    terminal={terminalSessionStates.get(workspaceSessionKeyFor(session))}
                     attentionBadge={sessionBadges.get(workspaceSessionKeyFor(session))}
                     onSwitch={onSwitch}
                     onOpenAsTab={onOpenAsTab}
@@ -292,6 +294,7 @@ export function SessionBrowser({
                     open
                     pinned={pinnedSet.has(workspaceSessionKeyFor(session))}
                     working={workingSessionIds.has(workspaceSessionKeyFor(session))}
+                    terminal={terminalSessionStates.get(workspaceSessionKeyFor(session))}
                     attentionBadge={sessionBadges.get(workspaceSessionKeyFor(session))}
                     onSwitch={onSwitch}
                     onOpenAsTab={onOpenAsTab}
@@ -333,6 +336,7 @@ export function SessionBrowser({
                           open={false}
                           pinned={pinnedSet.has(workspaceSessionKeyFor(session))}
                           working={workingSessionIds.has(workspaceSessionKeyFor(session))}
+                          terminal={terminalSessionStates.get(workspaceSessionKeyFor(session))}
                           attentionBadge={sessionBadges.get(workspaceSessionKeyFor(session))}
                           onSwitch={onSwitch}
                           onOpenAsTab={onOpenAsTab}
@@ -419,6 +423,7 @@ function SessionRow({
   open,
   pinned,
   working,
+  terminal,
   attentionBadge,
   onSwitch,
   onOpenAsTab,
@@ -430,6 +435,8 @@ function SessionRow({
   open: boolean
   pinned: boolean
   working: boolean
+  /** Settled outcome of the last run; never set while the session is working. */
+  terminal?: SessionTerminalState
   attentionBadge?: WorkspaceAttentionSessionBadge
   onSwitch?: (id: string, agentTypeId?: string) => void
   onOpenAsTab?: (id: string, agentTypeId?: string) => void
@@ -437,7 +444,7 @@ function SessionRow({
   onDelete?: (id: string, agentTypeId?: string) => void
 }) {
   const time = formatRelativeAge(toDate(session.updatedAt)) ?? ""
-  const hasSessionStatus = Boolean(attentionBadge || working || time)
+  const hasSessionStatus = Boolean(attentionBadge || working || terminal || time)
   return (
     <li
       role="listitem"
@@ -502,6 +509,27 @@ function SessionRow({
           >
             <span aria-hidden="true" className="h-1.5 w-1.5 animate-pulse rounded-full bg-[color:var(--accent)]" />
             working
+          </span>
+        ) : terminal ? (
+          // Settled outcomes reuse the attention chip shape and tones, with a
+          // static dot instead of the live pulse: `failed` is the quiet
+          // destructive tint (12%), `completed` the same neutral as `working`.
+          <span
+            data-boring-workspace-part="session-badge"
+            data-boring-badge={terminal}
+            className={cn(
+              "inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none",
+              sessionBadgeToneClassName(terminal === "failed" ? "danger" : "neutral"),
+            )}
+          >
+            <span
+              aria-hidden="true"
+              className={cn(
+                "h-1.5 w-1.5 shrink-0 rounded-full",
+                sessionBadgeDotClassName(terminal === "failed" ? "danger" : "neutral"),
+              )}
+            />
+            {terminal === "failed" ? "failed" : "done"}
           </span>
         ) : time ? (
           <span
