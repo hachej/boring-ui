@@ -114,6 +114,12 @@ export class AskUserRuntime {
     this.perPrincipalPerHour = options.limits?.perPrincipalPerHour ?? 30
   }
 
+  /**
+   * Abandons a session's stale pending question when the same session asks
+   * again without a live waiter. This is explicit supersession by the asking
+   * session — the only path left that may transition a question to
+   * `abandoned` (#1348: process restarts must not).
+   */
   async abandonOrphanedPending(sessionIds: string[]): Promise<void> {
     for (const sessionId of sessionIds) {
       const pending = await this.store.getPending(sessionId)
@@ -123,6 +129,18 @@ export class AskUserRuntime {
     }
   }
 
+
+  /**
+   * Re-raises an abandoned question as `ready` (#1348 recovery for records
+   * wiped by pre-fix restarts). The owner or an operator picks these up; a
+   * restored question is answerable regardless of session liveness.
+   */
+  async restoreAbandoned(questionId: string): Promise<void> {
+    const question = await this.store.getByQuestionId(questionId)
+    if (!question) throw new AskUserRuntimeError(ASK_USER_ERROR_CODES.QUESTION_NOT_FOUND, "question not found")
+    await this.store.restoreAbandoned(questionId)
+    await this.store.appendTranscriptEvent({ type: "restored", questionId, sessionId: question.sessionId, at: this.isoNow() })
+  }
 
   async ask(request: AskUserRequest, signal?: AbortSignal): Promise<AskUserToolResult> {
     const ownerPrincipalId = request.ownerPrincipalId ?? this.ownerPrincipalId
@@ -157,13 +175,12 @@ export class AskUserRuntime {
     }
   }
 
-  async submitAnswer(questionId: string, sessionId: string, values: AskUserAnswer["values"]): Promise<"answered" | "abandoned"> {
+  async submitAnswer(questionId: string, sessionId: string, values: AskUserAnswer["values"]): Promise<"answered"> {
     const question = await this.store.getByQuestionId(questionId)
     if (!question || question.sessionId !== sessionId) throw new AskUserRuntimeError(ASK_USER_ERROR_CODES.QUESTION_NOT_FOUND, "question not found")
-    if (!this.coordinator.hasWaiter(questionId)) {
-      await this.abandon(questionId, sessionId)
-      return "abandoned"
-    }
+    // #1348: a missing waiter means the asking session is gone (e.g. hub
+    // restart), not that the question is void. The decision is still recorded
+    // durably; resolving the coordinator below is a no-op without a waiter.
     const answer: AskUserAnswer = { questionId, sessionId, values, submittedAt: this.isoNow() }
     let answerPersisted = false
     try {
@@ -179,10 +196,9 @@ export class AskUserRuntime {
   async cancelQuestion(questionId: string, sessionId: string, reason: AskUserCancelReason = "user_cancelled"): Promise<void> {
     const question = await this.store.getByQuestionId(questionId)
     if (!question || question.sessionId !== sessionId) throw new AskUserRuntimeError(ASK_USER_ERROR_CODES.QUESTION_NOT_FOUND, "question not found")
-    if (!this.coordinator.hasWaiter(questionId)) {
-      await this.abandon(questionId, sessionId)
-      return
-    }
+    // #1348: like submitAnswer, cancellation persists even when the asking
+    // session's waiter is gone — an owner dismissal after a restart is a real
+    // decision, never downgraded to `abandoned`.
     let cancelPersisted = false
     try {
       await this.store.cancel(questionId)

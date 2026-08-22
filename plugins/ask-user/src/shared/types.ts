@@ -206,3 +206,9 @@ export type AskUserTranscriptEvent =
       sessionId: string
       at: string
     }
+  | {
+      type: "restored"
+      questionId: string
+      sessionId: string
+      at: string
+    }

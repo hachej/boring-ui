@@ -262,14 +262,16 @@ describe("AskUserRuntime", () => {
     await expect(first).resolves.toMatchObject({ status: "cancelled", reason: "aborted" })
   })
 
-  it("abandons persisted startup orphans", async () => {
+  it("keeps an unanswered session's stale pending question abandoned only on explicit supersession", async () => {
     const store = await makeStore()
-    const question = makeQuestion({ questionId: "orphan-q", sessionId: "s1" })
-    await store.createPending(question)
+    const orphan = makeQuestion({ questionId: "orphan-q", sessionId: "s1" })
+    await store.createPending(orphan)
 
     const restarted = new AskUserRuntime({ store })
     await restarted.abandonOrphanedPending(["s1"])
-    await expect(store.getByQuestionId(question.questionId)).resolves.toMatchObject({ status: "abandoned" })
+    await expect(store.getByQuestionId(orphan.questionId)).resolves.toMatchObject({ status: "abandoned" })
+    await restarted.restoreAbandoned(orphan.questionId)
+    await expect(store.getPending("s1")).resolves.toMatchObject({ questionId: "orphan-q", status: "ready" })
   })
 
   it("abandons an orphaned pending question before creating a new one for the same session", async () => {
@@ -291,14 +293,38 @@ describe("AskUserRuntime", () => {
     await expect(next).resolves.toMatchObject({ status: "cancelled" })
   })
 
-  it("abandons if submit/cancel discovers a missing waiter", async () => {
+  it("answers and cancels persisted questions after a restart even though no waiter exists", async () => {
     const store = await makeStore()
-    const question = makeQuestion()
+    const question = makeQuestion({ questionId: "durable-q", sessionId: "s1" })
     await store.createPending(question)
 
+    // Fresh process: the in-memory coordinator has no waiter for this question.
     const restarted = new AskUserRuntime({ store })
-    await restarted.submitAnswer(question.questionId, "s1", {})
-    await expect(store.getByQuestionId(question.questionId)).resolves.toMatchObject({ status: "abandoned" })
+    await expect(restarted.submitAnswer(question.questionId, "s1", { answer: "approved" })).resolves.toBe("answered")
+    await expect(store.getByQuestionId(question.questionId)).resolves.toMatchObject({ status: "answered" })
+    const answeredEvents = await store.getTranscriptEventsForQuestion(question.questionId)
+    expect(answeredEvents.filter((event) => event.type === "answered")).toHaveLength(1)
+
+    const cancelled = makeQuestion({ questionId: "durable-q2", sessionId: "s2" })
+    await store.createPending(cancelled)
+    await restarted.cancelQuestion(cancelled.questionId, "s2", "user_cancelled")
+    await expect(store.getByQuestionId(cancelled.questionId)).resolves.toMatchObject({ status: "cancelled" })
+  })
+
+  it("restores abandoned questions to ready (#1348 recovery)", async () => {
+    const store = await makeStore()
+    const question = makeQuestion({ questionId: "legacy-q", sessionId: "s1" })
+    await store.createPending(question)
+    await store.markAbandoned("legacy-q")
+
+    const runtime = new AskUserRuntime({ store })
+    await runtime.restoreAbandoned("legacy-q")
+    await expect(store.getByQuestionId("legacy-q")).resolves.toMatchObject({ status: "ready" })
+    await expect(store.getPending("s1")).resolves.toMatchObject({ questionId: "legacy-q" })
+    const events = await store.getTranscriptEventsForQuestion("legacy-q")
+    expect(events.filter((event) => event.type === "restored")).toHaveLength(1)
+
+    await expect(runtime.restoreAbandoned("missing-q")).rejects.toMatchObject({ code: ASK_USER_ERROR_CODES.QUESTION_NOT_FOUND })
   })
 
   it("reports runtime unavailable", () => {

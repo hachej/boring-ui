@@ -85,6 +85,20 @@ export class MemoryAskUserStore implements AskUserStore {
     this.emit({ sessionId: question.sessionId, questionId, reason: "abandon" })
   }
 
+  async restoreAbandoned(questionId: string): Promise<void> {
+    const question = this.requireQuestion(questionId)
+    if (question.status === "ready") return
+    if (question.status !== "abandoned") throw new AskUserStoreError(ASK_USER_ERROR_CODES.ANSWER_INVALID, `question ${questionId} is not abandoned`)
+    const existing = this.pendingBySession.get(question.sessionId)
+    if (existing && existing !== questionId) {
+      throw new AskUserStoreError(ASK_USER_ERROR_CODES.PENDING_EXISTS, "a pending question already exists for this session")
+    }
+    question.status = "ready"
+    question.updatedAt = new Date().toISOString()
+    this.pendingBySession.set(question.sessionId, questionId)
+    this.emit({ sessionId: question.sessionId, questionId, reason: "restore" })
+  }
+
   async clearPending(sessionId: string): Promise<void> {
     const questionId = this.pendingBySession.get(sessionId)
     this.pendingBySession.delete(sessionId)

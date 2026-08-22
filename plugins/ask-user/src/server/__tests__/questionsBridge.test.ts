@@ -68,11 +68,14 @@ describe("QuestionsBridge", () => {
     await expect(bridge.handle({ kind: "questions.cancel", params: { questionId: question.questionId, sessionId: "s1", answerToken: question.answerToken } })).rejects.toMatchObject({ code: ASK_USER_ERROR_CODES.ALREADY_ANSWERED })
   })
 
-  it("rejects submit when the runtime waiter is gone", async () => {
-    const { store, question } = await fixture()
+  it("records the decision durably when submitting after the runtime waiter is gone (#1348)", async () => {
+    const { store, question, result } = await fixture()
     const orphanRuntime = new AskUserRuntime({ store, ownerPrincipalId: "p1" })
     const bridge = new QuestionsBridge({ store, runtime: orphanRuntime, getAuthContext: () => ({ sessionId: "s1", principalId: "p1" }) })
-    await expect(bridge.handle({ kind: "questions.submit", params: { questionId: question.questionId, sessionId: "s1", answerToken: question.answerToken, values: { answer: "ok" } } })).rejects.toMatchObject({ statusCode: 409 })
+    await expect(bridge.handle({ kind: "questions.submit", params: { questionId: question.questionId, sessionId: "s1", answerToken: question.answerToken, values: { answer: "ok" } } })).resolves.toEqual({ ok: true, status: "answered" })
+    await expect(store.getByQuestionId(question.questionId)).resolves.toMatchObject({ status: "answered" })
+    // The original blocking ask call died with the old process; settle it.
+    result.catch(() => undefined)
   }, 15_000)
 
   it("rejects submit after cancel", async () => {

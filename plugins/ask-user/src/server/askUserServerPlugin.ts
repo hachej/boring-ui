@@ -34,8 +34,10 @@ export function createAskUserServerPlugin(options: AskUserServerPluginOptions): 
     if (bridge) stopPublisher = new AskUserStatePublisher(store, bridge).start()
   }
   const lifecycle: FastifyPluginAsync = async (app) => {
-    const pending = await store.listPending()
-    await runtime.abandonOrphanedPending(pending.map((question) => question.sessionId))
+    // #1348: pending questions are durable decision requests, not properties of
+    // a live session. They stay `ready` across a hub restart and are rehydrated
+    // into UI state by the publisher below; a missing in-process waiter must
+    // never flip them to `abandoned`.
     ensurePublisher()
     app.addHook("onClose", async () => {
       stopPublisher?.()

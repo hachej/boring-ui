@@ -103,6 +103,32 @@ describe("FileAskUserStore", () => {
     await expect(store.getByQuestionId("q3")).resolves.toMatchObject({ status: "abandoned" })
   })
 
+  it("restores abandoned questions to ready and persists the restore", async () => {
+    await store.createPending(question())
+    await store.markAbandoned("q1")
+    await store.restoreAbandoned("q1")
+    await expect(store.getPending("s1")).resolves.toMatchObject({ questionId: "q1", status: "ready" })
+
+    const reloaded = new FileAskUserStore(join(dir, "ask-user.json"))
+    await expect(reloaded.getPending("s1")).resolves.toMatchObject({ questionId: "q1", status: "ready" })
+
+    // Restoring a live pending question is a no-op; restoring an answered or
+    // cancelled question is rejected.
+    await store.restoreAbandoned("q1")
+    await store.answer("q1", { questionId: "q1", sessionId: "s1", values: { a: "ok" }, submittedAt: new Date().toISOString() })
+    await expect(store.restoreAbandoned("q1")).rejects.toMatchObject({ code: ASK_USER_ERROR_CODES.ANSWER_INVALID })
+
+    await store.createPending(question({ questionId: "q4" }))
+    await store.cancel("q4")
+    await expect(store.restoreAbandoned("q4")).rejects.toMatchObject({ code: ASK_USER_ERROR_CODES.ANSWER_INVALID })
+
+    // One pending question per session is preserved across restores.
+    await store.createPending(question({ questionId: "q5", sessionId: "s2" }))
+    await store.markAbandoned("q5")
+    await store.createPending(question({ questionId: "q6", sessionId: "s2" }))
+    await expect(store.restoreAbandoned("q5")).rejects.toMatchObject({ code: ASK_USER_ERROR_CODES.PENDING_EXISTS })
+  })
+
   it("emits changes for mutations", async () => {
     const listener = vi.fn()
     store.subscribe(listener)

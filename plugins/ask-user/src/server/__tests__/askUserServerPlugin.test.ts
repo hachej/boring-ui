@@ -180,10 +180,12 @@ describe("createAskUserServerPlugin", () => {
     }
   })
 
-  it("abandons persisted questions whose blocking waiter was lost on restart", async () => {
+  it("keeps persisted gates ready and answerable across a hub restart (#1348)", async () => {
     const { store, runtime: previousRuntime } = await fixture()
-    const pendingResult = previousRuntime.ask({ sessionId: "orphan-session", title: "Orphaned question", schema })
+    const pendingResult = previousRuntime.ask({ sessionId: "orphan-session", title: "Durable gate", schema })
     const pending = await waitForPendingQuestion(store, "orphan-session")
+    // Hub restarts: fresh runtime (no in-memory waiters) and a fresh plugin
+    // lifecycle attaching to the same durable store.
     const restartedRuntime = new AskUserRuntime({ store })
     const plugin = createAskUserServerPlugin({ store, runtime: restartedRuntime })
     const liveBridge = bridge()
@@ -192,10 +194,20 @@ describe("createAskUserServerPlugin", () => {
     try {
       await app.register(plugin.routes!)
       await app.ready()
-      await expect(store.getPending("orphan-session")).resolves.toBeNull()
-      await vi.waitFor(async () => expect((await liveBridge.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ hint: null, hintsBySession: {} }))
+
+      // The question stays `ready` and is rehydrated into UI state.
+      await expect(store.getPending("orphan-session")).resolves.toMatchObject({ questionId: pending.questionId, status: "ready" })
+      await vi.waitFor(async () => expect((await liveBridge.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toMatchObject({
+        hint: { questionId: pending.questionId, sessionId: "orphan-session", status: "ready" },
+      }))
+
+      // Answering after the restart records the decision durably.
+      await expect(restartedRuntime.submitAnswer(pending.questionId, "orphan-session", { answer: "approved" })).resolves.toBe("answered")
+      await expect(store.getByQuestionId(pending.questionId)).resolves.toMatchObject({ status: "answered", title: "Durable gate" })
+
+      // The old process's blocking tool call never comes back; settle it.
       previousRuntime.coordinator.resolveCancelled(pending.questionId, "abandoned")
-      await pendingResult
+      await expect(pendingResult).resolves.toMatchObject({ status: "cancelled" })
     } finally {
       await app.close()
       bridgeSpy.mockRestore()

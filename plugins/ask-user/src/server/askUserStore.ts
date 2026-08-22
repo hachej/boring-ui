@@ -20,7 +20,7 @@ export class AskUserStoreError extends Error {
 export type AskUserStoreChange = {
   sessionId: string
   questionId?: string
-  reason: "create" | "answer" | "cancel" | "abandon" | "clear" | "transcript"
+  reason: "create" | "answer" | "cancel" | "abandon" | "clear" | "transcript" | "restore"
 }
 
 export type AskUserStoreListener = (change: AskUserStoreChange) => void
@@ -33,6 +33,8 @@ export interface AskUserStore {
   answer(questionId: string, answer: AskUserAnswer): Promise<void>
   cancel(questionId: string): Promise<void>
   markAbandoned(questionId: string): Promise<void>
+  /** Flips an abandoned question back to `ready` (#1348 recovery). */
+  restoreAbandoned(questionId: string): Promise<void>
   clearPending(sessionId: string): Promise<void>
   appendTranscriptEvent(event: AskUserTranscriptEvent): Promise<void>
   listTranscriptEvents(sessionId: string): Promise<AskUserTranscriptEvent[]>
@@ -134,6 +136,24 @@ export class FileAskUserStore implements AskUserStore {
       question.updatedAt = nowIso()
       delete state.pendingBySession[question.sessionId]
       this.emit({ sessionId: question.sessionId, questionId, reason: "abandon" })
+    })
+  }
+
+  async restoreAbandoned(questionId: string): Promise<void> {
+    await this.mutate(async (state) => {
+      const question = requireQuestion(state, questionId)
+      if (question.status === "ready") return
+      if (question.status !== "abandoned") {
+        throw new AskUserStoreError(ASK_USER_ERROR_CODES.ANSWER_INVALID, `question ${questionId} is not abandoned`)
+      }
+      const existing = state.pendingBySession[question.sessionId]
+      if (existing && existing !== questionId && isPending(state.questions[existing])) {
+        throw new AskUserStoreError(ASK_USER_ERROR_CODES.PENDING_EXISTS, "a pending question already exists for this session")
+      }
+      question.status = "ready"
+      question.updatedAt = nowIso()
+      state.pendingBySession[question.sessionId] = questionId
+      this.emit({ sessionId: question.sessionId, questionId, reason: "restore" })
     })
   }
 
