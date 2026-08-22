@@ -2,6 +2,8 @@ import { createReadStream } from "node:fs";
 import { open } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { textFromPiContent } from "./piSessionMessages.js";
+import { userSessionTitleFromSequence } from "./sessionTitleAuthority.js";
+import type { SessionEntry } from "@mariozechner/pi-coding-agent";
 
 const NATIVE_TAIL_CHUNK_BYTES = 64 * 1024;
 export const NATIVE_TAIL_MAX_RECORD_BYTES = 256 * 1024;
@@ -87,22 +89,30 @@ export function nativeMessageTimestampFromBoundedPrefix(prefix: Buffer): number 
 
 export async function summarizeNativeTranscript(filepath: string): Promise<{
   title?: string;
+  userTitle?: string;
   firstUserTitle?: string;
   turnCount: number;
   hasAssistantReply: boolean;
   latestMessageAtMs?: number;
 }> {
   let title: string | undefined;
+  let userTitle: string | undefined;
   let firstUserTitle: string | undefined;
   let turnCount = 0;
   let hasAssistantReply = false;
   let latestMessageAtMs: number | undefined;
+  let parentEntry: SessionEntry | undefined;
+  let previousEntry: SessionEntry | undefined;
   const input = createReadStream(filepath, { encoding: "utf-8" });
   const lines = createInterface({ input, crlfDelay: Infinity });
   for await (const line of lines) {
     if (!line.trim()) continue;
     try {
-      const entry = JSON.parse(line) as { type?: unknown; name?: unknown; timestamp?: unknown; message?: { role?: unknown; content?: unknown } };
+      const entry = JSON.parse(line) as SessionEntry;
+      const persistedUserTitle = userSessionTitleFromSequence(parentEntry, previousEntry, entry);
+      parentEntry = previousEntry;
+      previousEntry = entry;
+      if (persistedUserTitle) userTitle = persistedUserTitle;
       if (entry.type === "session_info" && typeof entry.name === "string") {
         title = entry.name;
         continue;
@@ -117,8 +127,10 @@ export async function summarizeNativeTranscript(filepath: string): Promise<{
         hasAssistantReply = true;
       }
     } catch {
-      // A malformed transcript record must not hide later valid records.
+      // Malformed physical records break authority adjacency but do not hide later records.
+      parentEntry = undefined;
+      previousEntry = undefined;
     }
   }
-  return { title, firstUserTitle, turnCount, hasAssistantReply, latestMessageAtMs };
+  return { title, userTitle, firstUserTitle, turnCount, hasAssistantReply, latestMessageAtMs };
 }

@@ -33,6 +33,7 @@ import {
   type SessionListOptions,
 } from "../../../shared/session.js";
 import { appendVerifiedNativeRename } from "./nativeSessionRename.js";
+import { USER_SESSION_TITLE_CUSTOM_TYPE, summarizeUserSessionTitle, userSessionTitleData } from "./sessionTitleAuthority.js";
 import {
   latestNativeMessageTimestamp,
   summarizeNativeTranscript,
@@ -304,7 +305,11 @@ export class PiSessionStore implements SessionStore {
     const nativeSummary = resolved.directNative
       ? await summarizeNativeTranscript(resolved.filepath)
       : null;
-    const title = newestDurableTitle(resolved.sessionEntries, resolved.linkedEntries)
+    const userTitle = resolved.directNative
+      ? nativeSummary?.userTitle
+      : await summarizeUserSessionTitle(resolved.filepath);
+    const title = userTitle
+      ?? newestDurableTitle(resolved.sessionEntries, resolved.linkedEntries)
       ?? nativeSummary?.title
       ?? nativeSummary?.firstUserTitle
       ?? "New session";
@@ -470,18 +475,29 @@ export class PiSessionStore implements SessionStore {
         }
         return await this.load(ctx, sessionId);
       }
-      const entry: SessionInfoEntry = {
-        type: "session_info",
-        id: randomUUID(),
-        parentId: null,
-        timestamp: new Date().toISOString(),
-        name: trimmed,
-      };
-      const line = `${JSON.stringify(entry)}\n`;
       const targets = [resolved.filepath, resolved.linkedFilepath]
         .filter((path): path is string => Boolean(path));
       for (const filepath of targets) {
-        await appendFile(filepath, line);
+        const entries = safeParseEntries(await readFile(filepath, "utf-8"))
+          .filter((item): item is SessionEntry => item.type !== "session");
+        const timestamp = new Date().toISOString();
+        const authorityEntry: SessionEntry = {
+          type: "custom",
+          id: randomUUID(),
+          parentId: entries.at(-1)?.id ?? null,
+          timestamp,
+          customType: USER_SESSION_TITLE_CUSTOM_TYPE,
+          data: userSessionTitleData(trimmed),
+        };
+        const entry: SessionInfoEntry = {
+          type: "session_info",
+          id: randomUUID(),
+          parentId: authorityEntry.id,
+          timestamp,
+          name: trimmed,
+        };
+        const lines = `${JSON.stringify(authorityEntry)}\n${JSON.stringify(entry)}\n`;
+        await appendFile(filepath, lines);
         this.prefixCache.delete(filepath);
       }
       return await this.load(ctx, sessionId);
@@ -761,11 +777,13 @@ export class PiSessionStore implements SessionStore {
       const linkedEntries = linked?.entries.filter(
         (e): e is SessionEntry => e.type !== "session",
       ) ?? [];
-      const nativeSummary = directNative
-        ? await summarizeNativeTranscript(filepath)
-        : null;
+      const nativeSummary = directNative ? await summarizeNativeTranscript(filepath) : null;
+      const userTitle = directNative
+        ? nativeSummary?.userTitle
+        : await summarizeUserSessionTitle(filepath);
 
       const title =
+        userTitle ??
         newestDurableTitle(sessionEntries, linkedEntries) ??
         nativeSummary?.title ??
         nativeSummary?.firstUserTitle ??
