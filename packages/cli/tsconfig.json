@@ -108,6 +108,9 @@
       ],
       "@hachej/boring-ui-plugin-cli": [
         "../plugin-cli/src/index.ts"
+      ],
+      "@hachej/boring-workspace/loading": [
+        "../workspace/src/loading.ts"
       ]
     },
     "ignoreDeprecations": "6.0"

@@ -43,6 +43,10 @@
       "import": "./dist/app-front.js",
       "default": "./dist/app-front.js"
     },
+    "./loading": {
+      "types": "./dist/loading.d.ts",
+      "import": "./dist/loading.js"
+    },
     "./app/server": {
       "types": "./dist/app-server.d.ts",
       "import": "./dist/app-server.js",

@@ -14,6 +14,7 @@ export default defineConfig({
       ...baseResolve.alias,
       { find: "@hachej/boring-workspace/globals.css", replacement: resolve(__dirname, "../workspace/src/globals.css") },
       { find: "@hachej/boring-agent/front/styles.css", replacement: resolve(__dirname, "../agent/src/front/styles/globals.css") },
+      { find: "@hachej/boring-workspace/loading", replacement: resolve(__dirname, "../workspace/src/loading.ts") },
       { find: /^@hachej\/boring-workspace$/, replacement: resolve(__dirname, "../workspace/src/index.ts") },
       { find: /^@hachej\/boring-workspace\/events$/, replacement: resolve(__dirname, "../workspace/src/front/events/index.ts") },
       { find: /^@hachej\/boring-workspace\/plugin$/, replacement: resolve(__dirname, "../workspace/src/plugin.ts") },
@@ -35,5 +36,23 @@ export default defineConfig({
   build: {
     outDir: "public",
     emptyOutDir: true,
+    manifest: true,
+    modulePreload: {
+      // The entry discovers its direct imports in one parse. Preload only the
+      // framework/runtime chunks needed to execute that first paint; optional
+      // surfaces remain behind their dynamic import boundaries.
+      resolveDependencies(_filename, dependencies, context) {
+        if (context.hostType !== "html") return dependencies
+        return dependencies.filter((dependency) => /(?:rolldown-runtime|jsx-runtime|jsx-dev-runtime)-/.test(dependency))
+      },
+    },
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("/react-dom/") || id.includes("/react/")) return "vendor-react"
+          if (id.includes("dockview")) return "vendor-dockview"
+        },
+      },
+    },
   },
 })
