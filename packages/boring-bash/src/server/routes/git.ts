@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { Workspace } from '@hachej/boring-agent/shared'
+import { resolveGitBranch } from '../git/gitBranch'
 import { isWorkspaceRelativeGitPath, resolveGitFileUrl } from '../git/gitFileUrl'
 import {
   ERROR_CODE_INTERNAL,
@@ -83,6 +84,25 @@ export function gitRoutes(
       request.log.warn({ err: error }, 'failed to build git file url')
       return reply.code(500).send({
         error: { code: ERROR_CODE_INTERNAL, message: 'failed to build git file url' },
+      })
+    }
+  })
+
+  app.get('/api/v1/git/branch', async (request, reply) => {
+    const workspaceRoot = await resolveWorkspaceRoot(request)
+    if (!workspaceRoot) {
+      return {
+        enabled: false,
+        reason: 'Git branch is unavailable for this runtime.',
+      }
+    }
+
+    try {
+      return await resolveGitBranch(workspaceRoot)
+    } catch (error) {
+      request.log.warn({ err: error }, 'failed to resolve git branch')
+      return reply.code(500).send({
+        error: { code: ERROR_CODE_INTERNAL, message: 'failed to resolve git branch' },
       })
     }
   })

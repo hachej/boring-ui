@@ -292,6 +292,52 @@ describe("WorkspaceAgentFront", () => {
     window.removeEventListener("boring:chat-session-status", onStatus)
   })
 
+  it("applies activity to the listed row without refetching the session inventory", () => {
+    MockEventSource.instances = []
+    vi.stubGlobal("EventSource", MockEventSource)
+    const applyActivity = vi.fn()
+    const refresh = vi.fn()
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="row-status-stream"
+        chatPanel={SessionIdChatPanel}
+        useSessions={() => ({
+          sessions: [{ id: "session-1", title: "Session one", status: "idle" }],
+          activeSession: { id: "session-1", title: "Session one", status: "idle" },
+          activeSessionId: "session-1",
+          loading: false,
+          error: undefined,
+          create: vi.fn(),
+          switch: vi.fn(),
+          delete: vi.fn(),
+          refresh,
+          applyActivity,
+        })}
+      />,
+    )
+    const stream = MockEventSource.instances.find((instance) => instance.url.includes("/api/v1/agents/session-activity/events"))
+
+    act(() => {
+      stream?.emit("activity", { ref: { agentTypeId: "default", sessionId: "session-1" }, status: "running" })
+      stream?.emit("activity", { ref: { agentTypeId: "default", sessionId: "session-1" }, status: "idle" })
+    })
+
+    expect(applyActivity).toHaveBeenNthCalledWith(1, "session-1", "running", "default")
+    expect(applyActivity).toHaveBeenNthCalledWith(2, "session-1", "idle", "default")
+    // The whole point: an honest row status must never cost an inventory
+    // request (gh-1338).
+    expect(refresh).not.toHaveBeenCalled()
+
+    // A fleet list carries rows from every addressed agent, so status must be
+    // addressed by owner rather than dropped for the unselected ones.
+    applyActivity.mockClear()
+    act(() => {
+      stream?.emit("activity", { ref: { agentTypeId: "other", sessionId: "session-9" }, status: "running" })
+    })
+    expect(applyActivity).toHaveBeenCalledWith("session-9", "running", "other")
+  })
+
   it("reconciles the session list when activity reports a session created out-of-band (gh-778)", () => {
     MockEventSource.instances = []
     vi.stubGlobal("EventSource", MockEventSource)

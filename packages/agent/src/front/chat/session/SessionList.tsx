@@ -24,6 +24,23 @@ type Group = { key: string; label: string; items: SessionSummary[] }
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
+// Session activity is a four-value model owned by the server's in-memory
+// activity index: idle | running | aborting | error. `idle` is the resting
+// state of nearly every row, so it renders nothing at all — a list of dots
+// would carry no information and cost the row its quiet. The dot colors
+// deliberately reuse the tool-call group's state vocabulary (amber working,
+// muted stopping, destructive failed) so one status language runs through chat.
+const SESSION_STATUS_PRESENTATION = {
+  running: { label: 'Running', dotClassName: 'bg-amber-500/70' },
+  aborting: { label: 'Stopping', dotClassName: 'bg-muted-foreground/55' },
+  error: { label: 'Failed', dotClassName: 'bg-destructive ring-2 ring-destructive/20' },
+} satisfies Partial<Record<NonNullable<SessionSummary['status']>, { label: string; dotClassName: string }>>
+
+function statusPresentation(status: SessionSummary['status']) {
+  if (!status || status === 'idle') return undefined
+  return SESSION_STATUS_PRESENTATION[status]
+}
+
 export function SessionList({
   sessions,
   activeId,
@@ -112,6 +129,7 @@ export const SessionBrowser = SessionList
 
 function SessionRow({ session, active, onSwitch, onDelete }: { session: SessionSummary; active: boolean; onSwitch?: (id: string) => void; onDelete?: (id: string) => void }) {
   const time = relativeTime(session.updatedAt)
+  const status = statusPresentation(session.status)
   return (
     <li
       role="listitem"
@@ -128,6 +146,17 @@ function SessionRow({ session, active, onSwitch, onDelete }: { session: SessionS
         <span className={cn(active ? 'font-medium text-foreground' : 'text-foreground/90')}>{session.title || 'Untitled'}</span>
         {time ? <span className={cn('ml-1.5 tabular-nums text-[11px]', active ? 'text-[color:var(--accent)]' : 'text-muted-foreground/60')}>{time}</span> : null}
       </span>
+      {status ? (
+        <span
+          data-boring-agent-part="session-row-status"
+          data-boring-state={session.status}
+          className="flex size-4 shrink-0 items-center justify-center"
+          title={status.label}
+        >
+          <span aria-hidden="true" className={cn('size-1.5 rounded-full', status.dotClassName)} />
+          <span className="sr-only">{status.label}</span>
+        </span>
+      ) : null}
       {onDelete ? (
         <IconButton
           type="button"

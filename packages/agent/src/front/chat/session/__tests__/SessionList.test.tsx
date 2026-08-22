@@ -55,6 +55,35 @@ describe('SessionList', () => {
     expect(rows[1]?.getAttribute('data-boring-state')).toBe('selected')
   })
 
+  test('conveys live session status on the row, and stays silent when idle', () => {
+    const base = { createdAt: now.toISOString(), updatedAt: now.toISOString(), turnCount: 1 }
+    const withStatus: SessionSummary[] = [
+      { id: 'run', title: 'Running one', ...base, status: 'running' },
+      { id: 'stop', title: 'Stopping one', ...base, status: 'aborting' },
+      { id: 'bad', title: 'Failed one', ...base, status: 'error' },
+      { id: 'calm', title: 'Idle one', ...base, status: 'idle' },
+      { id: 'none', title: 'Unknown one', ...base },
+    ]
+
+    render(<SessionList sessions={withStatus} />)
+
+    const statusFor = (title: string) => screen
+      .getByText(title)
+      .closest('[data-boring-agent-part="session-row"]')
+      ?.querySelector('[data-boring-agent-part="session-row-status"]')
+
+    expect(statusFor('Running one')?.getAttribute('data-boring-state')).toBe('running')
+    expect(statusFor('Running one')?.textContent).toBe('Running')
+    expect(statusFor('Stopping one')?.getAttribute('data-boring-state')).toBe('aborting')
+    expect(statusFor('Stopping one')?.textContent).toBe('Stopping')
+    expect(statusFor('Failed one')?.getAttribute('data-boring-state')).toBe('error')
+    expect(statusFor('Failed one')?.textContent).toBe('Failed')
+
+    // Idle is the resting state of nearly every row: it must add no chrome.
+    expect(statusFor('Idle one')).toBeNull()
+    expect(statusFor('Unknown one')).toBeNull()
+  })
+
   test('renders empty/loading states', () => {
     const { rerender } = render(<SessionList sessions={[]} />)
     expect(screen.getByText(/No sessions yet/)).toBeTruthy()

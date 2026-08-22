@@ -68,7 +68,7 @@ import {
   workspaceSessionRefFromPersisted,
   type WorkspaceSessionRef,
 } from "../../front/sessionIdentity"
-import { startSessionActivityStream } from "../../front/sessionActivity"
+import { startSessionActivityStream, type SessionActivity } from "../../front/sessionActivity"
 
 const AGENT_OVERLAY_PREFIX = "agent-details:"
 const NATIVE_SESSION_UUID_PATTERN = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
@@ -138,6 +138,15 @@ export interface WorkspaceAgentSessionsApi<
   delete: (id: string, agentTypeId?: string) => void | Promise<unknown>
   loadMore?: () => void | Promise<unknown>
   refresh?: (options?: { background?: boolean; throwOnError?: boolean }) => void | Promise<unknown>
+  /**
+   * Apply a live session-activity status to an already-listed row.
+   *
+   * Local state only: the status arrives on the session-activity SSE stream,
+   * so a provider must never fetch here — session inventory has to stay free
+   * of per-row work (gh-1338). Optional, so a host that does not implement it
+   * simply shows the status each row carried at list time.
+   */
+  applyActivity?: (id: string, status: SessionActivity, agentTypeId?: string) => void
 }
 
 export type UseWorkspaceAgentSessions<
@@ -541,6 +550,10 @@ function useDefaultWorkspacePiSessions(options: Parameters<UseWorkspaceAgentSess
     switch: (id, owner) => {
       if (owner && owner !== options.agentTypeId) return
       piSessions.switch(id)
+    },
+    applyActivity: (id, status, owner) => {
+      if (owner && owner !== options.agentTypeId) return
+      piSessions.applyActivity(id, status)
     },
     delete: async (id, owner) => {
       if (!owner || owner === options.agentTypeId) return await piSessions.delete(id)
@@ -984,11 +997,13 @@ export function WorkspaceAgentFront<
   const remoteSessionsActivityRef = useRef({
     sessions: remoteSessionApi.sessions,
     refresh: remoteSessionApi.refresh,
+    applyActivity: remoteSessionApi.applyActivity,
     selectedAgentTypeId,
   })
   remoteSessionsActivityRef.current = {
     sessions: remoteSessionApi.sessions,
     refresh: remoteSessionApi.refresh,
+    applyActivity: remoteSessionApi.applyActivity,
     selectedAgentTypeId,
   }
   useEffect(() => {
@@ -1005,13 +1020,19 @@ export function WorkspaceAgentFront<
             working: status === "running" || status === "aborting",
           },
         }))
+        const current = remoteSessionsActivityRef.current
+        // Keep the listed row's status honest as the turn moves. Pure local
+        // state — no request and no transcript read, so this stays free even
+        // while session inventory is slow (gh-1338). Addressed by owner rather
+        // than gated on the selected agent: a fleet list shows rows from every
+        // agent, and all of them deserve an honest status.
+        current.applyActivity?.(ref.sessionId, status, ref.agentTypeId)
+        if (ref.agentTypeId !== current.selectedAgentTypeId) return
         // A session created out-of-band (e.g. an external chat entrypoint)
         // surfaces here as activity before this hook's own list has ever
         // fetched it. Reconcile the list immediately instead of waiting on
         // a manual refresh or remount (gh-778).
         if (status !== "running" && status !== "aborting") return
-        const current = remoteSessionsActivityRef.current
-        if (ref.agentTypeId !== current.selectedAgentTypeId) return
         const known = current.sessions.some((session) => session.id === ref.sessionId)
         if (!known) void current.refresh?.({ background: true })
       },

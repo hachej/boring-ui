@@ -54,6 +54,43 @@ describe('gitRoutes', () => {
   })
 })
 
+describe('GET /api/v1/git/branch', () => {
+  it('reports the branch for a workspace with a host root', async () => {
+    vi.spyOn(__gitTestUtils, 'runGit').mockImplementation(async (args: string[]) => {
+      if (args[0] === 'rev-parse' && args[1] === '--show-toplevel') return '/repo'
+      if (args[0] === 'symbolic-ref') return 'main'
+      throw new Error(`unexpected git ${args.join(' ')}`)
+    })
+    const app = Fastify()
+    await app.register(gitRoutes, {
+      getWorkspace: async () => ({} as Workspace),
+      getWorkspaceHostRoot: () => '/repo',
+    })
+
+    const response = await app.inject({ method: 'GET', url: '/api/v1/git/branch' })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({ enabled: true, branch: 'main' })
+    await app.close()
+  })
+
+  it('disables without invoking git when the runtime has no host root', async () => {
+    const runGit = vi.spyOn(__gitTestUtils, 'runGit')
+    const app = Fastify()
+    await app.register(gitRoutes, { getWorkspace: async () => ({} as Workspace) })
+
+    const response = await app.inject({ method: 'GET', url: '/api/v1/git/branch' })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({
+      enabled: false,
+      reason: 'Git branch is unavailable for this runtime.',
+    })
+    expect(runGit).not.toHaveBeenCalled()
+    await app.close()
+  })
+})
+
 describe('resolveGitFileUrl path containment', () => {
   it('rejects traversal without invoking Git', async () => {
     const runGit = vi.spyOn(__gitTestUtils, 'runGit')
