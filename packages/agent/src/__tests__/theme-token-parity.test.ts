@@ -37,13 +37,53 @@ const read = (path: string) => readFileSync(path, 'utf8')
 
 /**
  * Tokens excluded from parity, each with the reason it legitimately differs.
+ *
+ * Scope: these exemptions apply ONLY to the two agent-dark comparisons.
+ * The workspace palettes and the agent light palette must match the
+ * canonical values exactly — a divergence there is always drift.
  * An entry here must still actually diverge — see the "stays honest" test — so
  * a drift that later gets fixed cannot hide behind a stale exemption.
  */
-const INTENTIONAL_DIVERGENCES: Record<string, string> = {
+const AGENT_DARK_INTENTIONAL_DIVERGENCES: Record<string, string> = {
   popover:
     "agent popovers sit lifted off the pane background (agent dark --popover matches its own --surface-chat). Authored alongside the workspace value in 3d81367ca9, not drifted from it.",
 }
+
+/**
+ * Agent-local tokens with no canonical counterpart are always drift — there
+ * are none today, and any new one must join the canonical palette or be
+ * explicitly justified here. (Named empty set so call sites read clearly.)
+ */
+const AGENT_EXTRA_TOKENS = new Set<string>([])
+
+/**
+ * Canonical tokens each agent surface deliberately does NOT restate (the
+ * embedding host or unused semantic slots own them). Anything else missing
+ * from an agent palette is drift — this is what catches deletions/renames.
+ */
+const AGENT_LIGHT_ALLOWED_MISSING = new Set([
+  'success',
+  'success-foreground',
+  'success-soft',
+  'surface-workbench',
+  'surface-workbench-left',
+])
+
+const AGENT_DARK_ALLOWED_MISSING = new Set([
+  'destructive',
+  'destructive-foreground',
+  'success',
+  'success-foreground',
+  'success-soft',
+  'surface-workbench',
+  'surface-workbench-left',
+])
+
+// The standalone literal block additionally omits --surface-chat.
+const AGENT_DARK_LITERAL_ALLOWED_MISSING = new Set([
+  ...AGENT_DARK_ALLOWED_MISSING,
+  'surface-chat',
+])
 
 /** Non-color tokens whose values are structural, not palette. */
 const IGNORED_PREFIXES = /^(radius|font|boring-agent-)/
@@ -94,39 +134,79 @@ function parseLiteralTokens(body: string): Map<string, string> {
   return tokens
 }
 
+type DriftEntry =
+  | { kind: 'missing'; token: string; canonical: string }
+  | { kind: 'unexpected'; token: string; canonical: null; actual: string }
+  | { kind: 'mismatch'; token: string; canonical: string; actual: string }
+
+interface DriftOptions {
+  /** Canonical tokens this target may omit (none by default). */
+  allowedMissing?: ReadonlySet<string>
+  /** Actual tokens permitted despite having no canonical counterpart. */
+  allowUnexpected?: ReadonlySet<string>
+  /** Canonical tokens whose values may differ at this target. */
+  intentional?: ReadonlySet<string>
+}
+
 /**
- * Compare the tokens the two palettes have in common. The agent intentionally
- * carries a subset (no --success*, no --surface-workbench*), so missing tokens
- * are not drift; differing values are.
+ * Exact-set parity check. A token counts as drift when it is missing from the
+ * actual palette (deletion/rename), present without a canonical counterpart
+ * (unless explicitly allowed), or its value differs (unless the divergence is
+ * intentional AT THIS TARGET — see AGENT_DARK_INTENTIONAL_DIVERGENCES).
  */
-function findDrift(canonical: Map<string, string>, actual: Map<string, string>) {
-  const drift: { token: string; canonical: string; actual: string }[] = []
+function findDrift(
+  canonical: Map<string, string>,
+  actual: Map<string, string>,
+  options: DriftOptions = {},
+): DriftEntry[] {
+  const { allowedMissing, allowUnexpected, intentional } = options
+  const drift: DriftEntry[] = []
   for (const [token, canonicalValue] of canonical) {
-    if (token in INTENTIONAL_DIVERGENCES) continue
     const actualValue = actual.get(token)
-    if (actualValue === undefined) continue
-    if (actualValue !== canonicalValue) {
-      drift.push({ token, canonical: canonicalValue, actual: actualValue })
+    if (actualValue === undefined) {
+      if (!allowedMissing?.has(token)) {
+        drift.push({ kind: 'missing', token, canonical: canonicalValue })
+      }
+      continue
+    }
+    if (actualValue !== canonicalValue && !intentional?.has(token)) {
+      drift.push({ kind: 'mismatch', token, canonical: canonicalValue, actual: actualValue })
+    }
+  }
+  for (const [token, actualValue] of actual) {
+    if (!canonical.has(token) && !allowUnexpected?.has(token)) {
+      drift.push({ kind: 'unexpected', token, canonical: null, actual: actualValue })
     }
   }
   return drift
 }
 
-function formatDrift(
-  label: string,
-  drift: { token: string; canonical: string; actual: string }[],
-) {
+function formatDrift(label: string, drift: DriftEntry[]) {
   return [
     `${drift.length} token(s) drifted from the canonical ui-kit palette in ${label}:`,
-    ...drift.map(
-      (d) =>
+    ...drift.map((d) => {
+      if (d.kind === 'missing') {
+        return (
+          `  --${d.token} MISSING\n` +
+          `    expected (packages/ui/src/tokens.css): ${d.canonical}`
+        )
+      }
+      if (d.kind === 'unexpected') {
+        return (
+          `  --${d.token} UNEXPECTED (no canonical counterpart)\n` +
+          `    actual (${label}): ${d.actual}`
+        )
+      }
+      return (
         `  --${d.token}\n` +
         `    canonical (packages/ui/src/tokens.css): ${d.canonical}\n` +
-        `    actual    (${label}):                   ${d.actual}`,
-    ),
+        `    actual    (${label}):                   ${d.actual}`
+      )
+    }),
     '',
-    'Update the agent value to match packages/ui/src/tokens.css, or — if the',
-    'divergence is deliberate — add the token to INTENTIONAL_DIVERGENCES in',
+    'Update the value to match packages/ui/src/tokens.css, restore the missing',
+    'token, remove the stray one, or — if the divergence is deliberate — add',
+    'it to AGENT_DARK_INTENTIONAL_DIVERGENCES / the *_ALLOWED_MISSING sets in',
     'this file with the reason.',
   ].join('\n')
 }
@@ -146,13 +226,15 @@ describe('theme palette parity with ui-kit tokens.css', () => {
     expect(canonicalDark.get('accent')).toBe('oklch(0.72 0.13 65)')
   })
 
-  test('workspace globals.css matches ui-kit tokens.css', () => {
+  test('workspace globals.css matches ui-kit tokens.css exactly', () => {
     const workspace = read(WORKSPACE_GLOBALS)
     for (const [selector, canonical] of [
       [':root', canonicalLight],
       ['[data-theme="dark"]', canonicalDark],
     ] as const) {
       const actual = parseCanonicalTokens(ruleBody(workspace, selector))
+      // Strict: same keys AND same values — no exemptions apply here, so a
+      // deleted, renamed, added, or re-valued workspace token fails.
       const drift = findDrift(canonical, actual)
       expect(drift, formatDrift(`workspace globals.css ${selector}`, drift)).toEqual([])
     }
@@ -161,7 +243,12 @@ describe('theme palette parity with ui-kit tokens.css', () => {
   test('agent light fallbacks match the canonical light palette', () => {
     const actual = parseFallbackTokens(ruleBody(agent, '[data-boring-agent]'))
     expect(actual.size).toBeGreaterThan(15)
-    const drift = findDrift(canonicalLight, actual)
+    // Light carries NO intentional divergences: every restated token must
+    // equal the canon; omissions are limited to AGENT_LIGHT_ALLOWED_MISSING.
+    const drift = findDrift(canonicalLight, actual, {
+      allowedMissing: AGENT_LIGHT_ALLOWED_MISSING,
+      allowUnexpected: AGENT_EXTRA_TOKENS,
+    })
     expect(drift, formatDrift('agent [data-boring-agent]', drift)).toEqual([])
   })
 
@@ -170,7 +257,11 @@ describe('theme palette parity with ui-kit tokens.css', () => {
       ruleBody(agent, '[data-theme="dark"] [data-boring-agent]'),
     )
     expect(actual.size).toBeGreaterThan(15)
-    const drift = findDrift(canonicalDark, actual)
+    const drift = findDrift(canonicalDark, actual, {
+      intentional: new Set(Object.keys(AGENT_DARK_INTENTIONAL_DIVERGENCES)),
+      allowedMissing: AGENT_DARK_ALLOWED_MISSING,
+      allowUnexpected: AGENT_EXTRA_TOKENS,
+    })
     expect(
       drift,
       formatDrift('agent [data-theme="dark"] [data-boring-agent]', drift),
@@ -180,15 +271,93 @@ describe('theme palette parity with ui-kit tokens.css', () => {
   test('agent standalone dark literals match the canonical dark palette', () => {
     const actual = parseLiteralTokens(ruleBody(agent, '[data-theme="dark"]'))
     expect(actual.size).toBeGreaterThan(15)
-    const drift = findDrift(canonicalDark, actual)
+    const drift = findDrift(canonicalDark, actual, {
+      intentional: new Set(Object.keys(AGENT_DARK_INTENTIONAL_DIVERGENCES)),
+      allowedMissing: AGENT_DARK_LITERAL_ALLOWED_MISSING,
+      allowUnexpected: AGENT_EXTRA_TOKENS,
+    })
     expect(drift, formatDrift('agent [data-theme="dark"]', drift)).toEqual([])
   })
 
-  test('the INTENTIONAL_DIVERGENCES allowlist stays honest', () => {
+  describe('guard self-checks (negative cases)', () => {
+    // These pin the guard's own behavior: each mutation below MUST produce a
+    // finding, so a future weakening of findDrift cannot silently reintroduce
+    // the ~3-month undetected accent drift this file exists to prevent.
+    const darkExemptions = new Set(Object.keys(AGENT_DARK_INTENTIONAL_DIVERGENCES))
+
+    test('a deleted agent token is reported, not silently skipped', () => {
+      const actual = parseFallbackTokens(
+        ruleBody(agent, '[data-theme="dark"] [data-boring-agent]'),
+      )
+      actual.delete('accent')
+      const drift = findDrift(canonicalDark, actual, {
+        intentional: darkExemptions,
+        allowedMissing: AGENT_DARK_ALLOWED_MISSING,
+        allowUnexpected: AGENT_EXTRA_TOKENS,
+      })
+      expect(drift).toContainEqual({
+        kind: 'missing',
+        token: 'accent',
+        canonical: canonicalDark.get('accent'),
+      })
+    })
+
+    test('a renamed agent token surfaces as missing + unexpected', () => {
+      const actual = parseLiteralTokens(ruleBody(agent, '[data-theme="dark"]'))
+      const value = actual.get('accent-foreground')!
+      actual.delete('accent-foreground')
+      actual.set('accent-foreground-renamed', value)
+      const drift = findDrift(canonicalDark, actual, {
+        intentional: darkExemptions,
+        allowedMissing: AGENT_DARK_LITERAL_ALLOWED_MISSING,
+        allowUnexpected: AGENT_EXTRA_TOKENS,
+      })
+      expect(drift).toContainEqual({
+        kind: 'missing',
+        token: 'accent-foreground',
+        canonical: canonicalDark.get('accent-foreground'),
+      })
+      expect(drift).toContainEqual({
+        kind: 'unexpected',
+        token: 'accent-foreground-renamed',
+        canonical: null,
+        actual: value,
+      })
+    })
+
+    test('a workspace popover drift is NOT exempt (exemption is dark-agent-scoped)', () => {
+      const workspace = read(WORKSPACE_GLOBALS)
+      const actual = parseCanonicalTokens(ruleBody(workspace, '[data-theme="dark"]'))
+      actual.set('popover', 'oklch(0.99 0.004 285.823)')
+      const drift = findDrift(canonicalDark, actual)
+      expect(drift).toContainEqual({
+        kind: 'mismatch',
+        token: 'popover',
+        canonical: canonicalDark.get('popover'),
+        actual: 'oklch(0.99 0.004 285.823)',
+      })
+    })
+
+    test('an agent-light popover drift is NOT exempt either', () => {
+      const actual = parseFallbackTokens(ruleBody(agent, '[data-boring-agent]'))
+      actual.set('popover', 'oklch(0.5 0.1 65)')
+      const drift = findDrift(canonicalLight, actual, {
+        allowUnexpected: AGENT_EXTRA_TOKENS,
+      })
+      expect(drift).toContainEqual({
+        kind: 'mismatch',
+        token: 'popover',
+        canonical: canonicalLight.get('popover'),
+        actual: 'oklch(0.5 0.1 65)',
+      })
+    })
+  })
+
+  test('the AGENT_DARK_INTENTIONAL_DIVERGENCES allowlist stays honest', () => {
     const darkFallbacks = parseFallbackTokens(
       ruleBody(agent, '[data-theme="dark"] [data-boring-agent]'),
     )
-    for (const token of Object.keys(INTENTIONAL_DIVERGENCES)) {
+    for (const token of Object.keys(AGENT_DARK_INTENTIONAL_DIVERGENCES)) {
       const canonical = canonicalDark.get(token)
       const actual = darkFallbacks.get(token)
       expect(
