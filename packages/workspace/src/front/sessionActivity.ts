@@ -6,7 +6,7 @@ import { workspaceSessionKey, workspaceSessionKeyFor } from "./sessionIdentity"
 const CHAT_SESSION_STATUS_EVENT = "boring:chat-session-status"
 const CHAT_SESSION_STATUS_REQUEST_EVENT = "boring:chat-session-status-request"
 
-type SessionActivity = "idle" | "running" | "aborting" | "error"
+type SessionActivity = "idle" | "running" | "aborting" | "aborted" | "error"
 
 export interface SessionActivityItem {
   id: string
@@ -26,7 +26,7 @@ function parseActivity(value: unknown): AddressedSessionActivity | undefined {
   if (!ref || typeof ref !== "object") return undefined
   const { agentTypeId, sessionId } = ref as { agentTypeId?: unknown; sessionId?: unknown }
   if (typeof agentTypeId !== "string" || typeof sessionId !== "string") return undefined
-  if (status !== "idle" && status !== "running" && status !== "aborting" && status !== "error") return undefined
+  if (status !== "idle" && status !== "running" && status !== "aborting" && status !== "aborted" && status !== "error") return undefined
   return { ref: { agentTypeId, sessionId }, status }
 }
 
@@ -123,7 +123,11 @@ export function useWorkingSessionIds(sessions: readonly SessionActivityItem[]): 
   return working
 }
 
-/** Settled outcome of the last run, shown once a session is no longer working. */
+/**
+ * Terminal states of the last run, shown once a session is no longer working.
+ * `completed` means the run finished successfully; a cancelled (`aborted`) run
+ * earns no chip at all.
+ */
 export type SessionTerminalState = "completed" | "failed"
 
 /**
@@ -134,30 +138,61 @@ export type SessionTerminalState = "completed" | "failed"
 export const COMPLETED_VISIBLE_MS = 60_000
 
 /**
- * Terminal states derived only from activity the list already holds: `failed`
- * is the AgentHost `error` status already projected onto each row and streamed
- * on the existing status event, and `completed` is the working -> not-working
- * transition of the set this component already computes. Neither reads a
- * transcript nor adds a per-row request, so session inventory cost is unchanged
- * (gh-1338).
+ * Terminal states derived from activity the list already holds: `failed`
+ * comes from the AgentHost `error`/`aborted-outcome` statuses projected onto
+ * each row and streamed on the existing status event, and `completed` is the
+ * working -> not-working transition of the set this component already
+ * computes — but only when the row's settled status is not `aborted`, so a
+ * cancelled run is never presented as done. Neither path reads a transcript
+ * nor adds a per-row request, so session inventory cost is unchanged (gh-1338).
+ *
+ * `scopeKey` (the workspace id) scopes the terminal caches: switching to a
+ * different workspace/source resets them, so state computed under one source
+ * can never tint a colliding session id under another.
  */
 export function useTerminalSessionStates(
   sessions: readonly SessionActivityItem[],
   working: ReadonlySet<string>,
-  options: { completedVisibleMs?: number } = {},
+  options: { completedVisibleMs?: number; scopeKey?: string } = {},
 ): ReadonlyMap<string, SessionTerminalState> {
   const completedVisibleMs = options.completedVisibleMs ?? COMPLETED_VISIBLE_MS
+  const scopeKey = options.scopeKey
   const [failedKeys, setFailedKeys] = useState<ReadonlySet<string>>(() => new Set())
   const [completedKeys, setCompletedKeys] = useState<ReadonlySet<string>>(() => new Set())
   const previousWorkingRef = useRef<ReadonlySet<string> | undefined>(undefined)
+  const previousScopeRef = useRef<string | undefined>(scopeKey)
   const expiryTimersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>())
 
-  // Live failure news. The panel-only emitter carries no status field; it
+  // A workspace/source switch invalidates every cached outcome: chips earned
+  // under the previous source must never survive onto a colliding id.
+  useEffect(() => {
+    if (previousScopeRef.current === scopeKey) return
+    previousScopeRef.current = scopeKey
+    previousWorkingRef.current = undefined
+    setFailedKeys((current) => current.size === 0 ? current : new Set())
+    setCompletedKeys((current) => {
+      if (current.size > 0) {
+        for (const key of current) {
+          const timer = expiryTimersRef.current.get(key)
+          if (timer) {
+            clearTimeout(timer)
+            expiryTimersRef.current.delete(key)
+          }
+        }
+      }
+      return current.size === 0 ? current : new Set()
+    })
+  }, [scopeKey])
+
+  // Live failure news. The panel-only emitter carries no outcome field; it
   // reports streaming, never an outcome, so those events are left alone.
+  // Events tagged with a foreign workspace are ignored so one workspace's
+  // failure news cannot land on a colliding row in another.
   useEffect(() => {
     const onStatus = (event: Event) => {
-      const detail = (event as CustomEvent).detail as { sessionId?: unknown; agentTypeId?: unknown; status?: unknown } | undefined
+      const detail = (event as CustomEvent).detail as { sessionId?: unknown; agentTypeId?: unknown; status?: unknown; workspaceId?: unknown } | undefined
       if (typeof detail?.sessionId !== "string" || typeof detail.status !== "string") return
+      if (typeof detail.workspaceId === "string" && scopeKey !== undefined && detail.workspaceId !== scopeKey) return
       const key = workspaceSessionKey(detail.sessionId, typeof detail.agentTypeId === "string" ? detail.agentTypeId : undefined)
       const isFailed = detail.status === "error"
       setFailedKeys((current) => {
@@ -171,7 +206,7 @@ export function useTerminalSessionStates(
     window.addEventListener(CHAT_SESSION_STATUS_EVENT, onStatus)
     window.dispatchEvent(new Event(CHAT_SESSION_STATUS_REQUEST_EVENT))
     return () => window.removeEventListener(CHAT_SESSION_STATUS_EVENT, onStatus)
-  }, [])
+  }, [scopeKey])
 
   useEffect(() => () => {
     const timers = expiryTimersRef.current
@@ -186,14 +221,22 @@ export function useTerminalSessionStates(
     const finished = [...previous].filter((key) => !working.has(key))
     const restarted = [...working].filter((key) => !previous.has(key))
     if (finished.length === 0 && restarted.length === 0) return
+    // A finish whose settled outcome is `aborted` is a cancellation, not a
+    // completion. The list may not carry the terminal status yet (event/list
+    // ordering), so this is a best-effort filter with a self-heal below.
+    const statusByKey = new Map(sessions.map((session) => [workspaceSessionKeyFor(session), session.status]))
     setCompletedKeys((current) => {
       const next = new Set(current)
-      finished.forEach((key) => next.add(key))
+      finished.forEach((key) => {
+        if (statusByKey.get(key) === "aborted") return
+        next.add(key)
+      })
       restarted.forEach((key) => next.delete(key))
       if (next.size === current.size && [...next].every((key) => current.has(key))) return current
       return next
     })
-    for (const key of finished) {
+    const completedNow = finished.filter((key) => statusByKey.get(key) !== "aborted")
+    for (const key of completedNow) {
       const timers = expiryTimersRef.current
       const running = timers.get(key)
       if (running) clearTimeout(running)
@@ -207,7 +250,7 @@ export function useTerminalSessionStates(
         })
       }, completedVisibleMs))
     }
-  }, [working, completedVisibleMs])
+  }, [working, completedVisibleMs, sessions])
 
   return useMemo(() => {
     const states = new Map<string, SessionTerminalState>()
@@ -215,6 +258,9 @@ export function useTerminalSessionStates(
       const key = workspaceSessionKeyFor(session)
       // A session that is working again has no settled outcome to report.
       if (working.has(key)) continue
+      // An aborted run is cancelled work, not done work: no chip, even if the
+      // working-set transition already optimistically marked it completed.
+      if (session.status === "aborted") continue
       if (session.status === "error" || failedKeys.has(key)) states.set(key, "failed")
       else if (completedKeys.has(key)) states.set(key, "completed")
     }

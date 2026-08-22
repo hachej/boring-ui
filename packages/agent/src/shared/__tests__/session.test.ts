@@ -42,7 +42,7 @@ test('Session shapes', () => {
     agentTypeId?: string
     nativeSessionId?: string
     hasAssistantReply?: boolean
-    status?: 'idle' | 'running' | 'aborting' | 'error'
+    status?: 'idle' | 'running' | 'aborting' | 'aborted' | 'error'
   }>()
 
   expectTypeOf<SessionDetail>().toEqualTypeOf<SessionSummary>()

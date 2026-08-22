@@ -20,7 +20,7 @@ export interface SessionItem {
   agentTypeId?: string
   title: string
   updatedAt?: string | number
-  status?: "idle" | "running" | "aborting" | "error"
+  status?: "idle" | "running" | "aborting" | "aborted" | "error"
 }
 
 export interface SessionListProps {

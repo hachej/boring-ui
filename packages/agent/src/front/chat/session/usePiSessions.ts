@@ -595,7 +595,7 @@ function toAddressedSessionSummary(value: unknown): SessionSummary {
   const updatedAt = typeof record.updatedAt === 'number' ? new Date(record.updatedAt).toISOString() : createdAt
   const agentTypeId = (ref as { agentTypeId?: unknown }).agentTypeId
   const status = record.status
-  const addressedStatus = status === 'idle' || status === 'running' || status === 'aborting' || status === 'error'
+  const addressedStatus = status === 'idle' || status === 'running' || status === 'aborting' || status === 'aborted' || status === 'error'
     ? status
     : undefined
   return {

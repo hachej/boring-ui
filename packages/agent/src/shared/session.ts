@@ -36,7 +36,7 @@ export interface SessionSummary {
   /** Native transcript metadata used to gate rename until a reply exists. */
   hasAssistantReply?: boolean
   /** Addressed AgentHost live activity; absent on storage-only summaries. */
-  status?: 'idle' | 'running' | 'aborting' | 'error'
+  status?: 'idle' | 'running' | 'aborting' | 'aborted' | 'error'
 }
 
 export type SessionDetail = SessionSummary

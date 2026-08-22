@@ -361,6 +361,82 @@ describe("SessionBrowser", () => {
     expect(document.querySelector('[data-boring-badge="completed"]')).toBeNull()
   })
 
+  it("never shows done for an aborted run, and retires the chip when the abort lands late", () => {
+    vi.useFakeTimers()
+    try {
+      const aborted: SessionItem[] = sample.map((s) => s.id === "s2" ? { ...s, status: "aborted" as const } : s)
+      const view = render(<SessionBrowser sessions={sample} activeId="s1" />)
+
+      // Outcome known at finish time: working -> not-working with the list
+      // already carrying the cancelled outcome. No done badge, ever.
+      act(() => {
+        window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+          detail: { sessionId: "s2", working: true },
+        }))
+      })
+      act(() => {
+        view.rerender(<SessionBrowser sessions={aborted} activeId="s1" />)
+      })
+      act(() => {
+        window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+          detail: { sessionId: "s2", working: false },
+        }))
+      })
+      expect(document.querySelector('[data-boring-badge="completed"]')).toBeNull()
+
+      // Outcome arrives late (event/list ordering): a bare finish shows the
+      // chip optimistically, but the aborted status must retire it.
+      act(() => {
+        view.rerender(<SessionBrowser sessions={sample} activeId="s1" />)
+      })
+      act(() => {
+        window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+          detail: { sessionId: "s2", working: true },
+        }))
+      })
+      act(() => {
+        window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+          detail: { sessionId: "s2", working: false },
+        }))
+      })
+      expect(document.querySelector('[data-boring-badge="completed"]')).toBeInTheDocument()
+      act(() => {
+        view.rerender(<SessionBrowser sessions={aborted} activeId="s1" />)
+      })
+      expect(document.querySelector('[data-boring-badge="completed"]')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("resets terminal badges when the workspace source switches onto a colliding id", () => {
+    const { rerender } = render(<SessionBrowser sessions={sample} activeId="s1" activityWorkspaceId="ws-a" />)
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+        detail: { workspaceId: "ws-a", sessionId: "s2", working: false, status: "error" },
+      }))
+    })
+    expect(document.querySelector('[data-boring-badge="failed"]')).toBeInTheDocument()
+
+    // Same session id under another workspace must start clean: cached state
+    // from the previous source may not survive a source switch.
+    rerender(<SessionBrowser sessions={sample} activeId="s1" activityWorkspaceId="ws-b" />)
+    expect(document.querySelector('[data-boring-badge="failed"]')).toBeNull()
+    expect(document.querySelector('[data-boring-badge="completed"]')).toBeNull()
+  })
+
+  it("ignores live terminal events tagged with a foreign workspace", () => {
+    render(<SessionBrowser sessions={sample} activeId="s1" activityWorkspaceId="ws-b" />)
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+        detail: { workspaceId: "ws-a", sessionId: "s2", working: false, status: "error" },
+      }))
+    })
+    expect(document.querySelector('[data-boring-badge="failed"]')).toBeNull()
+  })
+
   it("shows a failed badge for a session the server reports as errored", () => {
     const withError: SessionItem[] = [
       sample[0]!,

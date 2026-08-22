@@ -697,7 +697,11 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
           ? 'streaming'
           : session.activity === 'aborting'
             ? 'aborting'
-            : session.activity,
+            : session.activity === 'error'
+              ? 'error'
+              // 'aborted' is a session-list outcome, not a chat-protocol
+              // status; the fake never produces it, but stay type-honest.
+              : 'idle',
         messages: [],
         queue: { followUps: session.queue.map((queued) => ({ ...queued })) },
         followUpMode: 'one-at-a-time',

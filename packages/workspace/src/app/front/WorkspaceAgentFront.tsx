@@ -111,7 +111,7 @@ export interface WorkspaceAgentSession {
   nativeSessionId?: string
   hasAssistantReply?: boolean
   ephemeral?: boolean
-  status?: "idle" | "running" | "aborting" | "error"
+  status?: "idle" | "running" | "aborting" | "aborted" | "error"
 }
 
 export interface WorkspaceAgentSessionsApi<
@@ -2403,6 +2403,9 @@ export function WorkspaceAgentFront<
     hasMore: sessionApi?.hasMore,
     loadingMore: sessionApi?.loadingMore,
     onClose: () => setNavOpen(false),
+    // Scopes terminal completed/failed chips to this workspace's source so a
+    // workspace switch can never tint a colliding session id (review of gh-1364).
+    activityWorkspaceId: workspaceId,
   }
   const canDeleteSessions = Boolean(sessionApi || onDeleteSession || !hasExplicitSessionProps)
   const canRenameSessions = Boolean(sessionApi || onRenameSession || !hasExplicitSessionProps)

@@ -79,7 +79,7 @@ export interface AuthorizedAgentSessionQuery {
   readonly limit?: number
 }
 
-export type AgentSessionActivity = 'idle' | 'running' | 'aborting' | 'error'
+export type AgentSessionActivity = 'idle' | 'running' | 'aborting' | 'aborted' | 'error'
 
 export interface AgentSessionSummary {
   readonly ref: AgentSessionRef

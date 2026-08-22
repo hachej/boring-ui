@@ -23,7 +23,7 @@ export interface AppLeftPaneSession {
   nativeSessionId?: string
   hasAssistantReply?: boolean
   ephemeral?: boolean
-  status?: "idle" | "running" | "aborting" | "error"
+  status?: "idle" | "running" | "aborting" | "aborted" | "error"
 }
 
 export interface AppLeftPaneAgent {

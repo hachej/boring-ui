@@ -75,7 +75,12 @@ class FakeService implements PiChatSessionService {
       protocolVersion: 1,
       sessionId,
       seq: record.seq,
-      status: record.status === 'running' ? 'streaming' : record.status,
+      status: record.status === 'running'
+        ? 'streaming'
+        : record.status === 'aborted'
+          // 'aborted' is a session-list outcome, not a chat-protocol status.
+          ? 'idle'
+          : record.status,
       messages: [],
       queue: { followUps: [...record.queue] },
       followUpMode: 'one-at-a-time',

@@ -36,6 +36,12 @@ export interface SessionBrowserProps {
   loadingMore?: boolean
   onClose?: () => void
   className?: string
+  /**
+   * Workspace id scoping the terminal-state caches. Switching workspaces
+   * resets cached completed/failed chips so a colliding session id in another
+   * workspace can never inherit them.
+   */
+  activityWorkspaceId?: string
 }
 
 type Group = { key: string; label: string; items: SessionItem[] }
@@ -131,6 +137,7 @@ export function SessionBrowser({
   loadingMore = false,
   onClose,
   className,
+  activityWorkspaceId,
 }: SessionBrowserProps) {
   // Pinned sessions sit in their own section on top, in pin order. Open
   // panes surface in "Active" (in pane order); everything else is history
@@ -185,7 +192,7 @@ export function SessionBrowser({
     () => normalizedOpenIds.length > 0 || normalizedPinnedIds.length > 0,
   )
   const workingSessionIds = useWorkingSessionIds(sessions)
-  const terminalSessionStates = useTerminalSessionStates(sessions, workingSessionIds)
+  const terminalSessionStates = useTerminalSessionStates(sessions, workingSessionIds, { scopeKey: activityWorkspaceId })
   const { blockers } = useWorkspaceAttention()
   const sessionBadges = useMemo(() => {
     const badges = new Map<string, WorkspaceAttentionSessionBadge>()

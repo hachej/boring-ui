@@ -166,7 +166,12 @@ export class AgentSessionActivityIndex {
 
   observe(workspaceScopeId: string, ref: AgentSessionRef, event: PiChatEvent): void {
     if (event.type === 'agent-start') this.set(workspaceScopeId, ref, 'running')
-    if (event.type === 'agent-end') this.set(workspaceScopeId, ref, event.status === 'error' ? 'error' : 'idle')
+    // An aborted run is not a completed one: carry the outcome so the session
+    // list never renders a cancelled run as "done".
+    if (event.type === 'agent-end') {
+      const status = event.status === 'error' ? 'error' : event.status === 'aborted' ? 'aborted' : 'idle'
+      this.set(workspaceScopeId, ref, status)
+    }
     if (event.type === 'error') this.set(workspaceScopeId, ref, 'error')
   }
 }
