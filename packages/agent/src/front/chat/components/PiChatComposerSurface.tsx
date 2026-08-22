@@ -39,7 +39,7 @@ import {
 import { noticeSurfaceClass } from './noticeStyles'
 
 const MAX_PROMPT_ATTACHMENTS = 2
-const MAX_PROMPT_ATTACHMENT_BYTES = 4 * 1024 * 1024
+const MAX_PROMPT_ATTACHMENT_BYTES = 10 * 1024 * 1024
 const COMPOSER_INPUT_GROUP_MIN_HEIGHT = 56
 const COMPOSER_TEXTAREA_MAX_HEIGHT = 160
 const COMPOSER_MULTILINE_EXTRA_HEIGHT = 8
@@ -105,6 +105,8 @@ export interface PiChatComposerSurfaceProps<
   onDismissSlash: () => void
   modelPickerOpen: boolean
   selectedModel: ModelSelection | null
+  sessionModel?: ModelSelection
+  modelOverride: boolean
   modelOptions: AvailableModel[]
   modelControlled: boolean
   hideDefaultModelOption?: boolean
@@ -170,6 +172,8 @@ export function PiChatComposerSurface<
   onDismissSlash,
   modelPickerOpen,
   selectedModel,
+  sessionModel,
+  modelOverride,
   modelOptions,
   modelControlled,
   hideDefaultModelOption = false,
@@ -387,7 +391,7 @@ export function PiChatComposerSurface<
           maxFileSize={MAX_PROMPT_ATTACHMENT_BYTES}
           onError={(err) => {
             if (err.code === 'max_files') onAttachmentNotice(`Up to ${MAX_PROMPT_ATTACHMENTS} attachments per message.`)
-            else if (err.code === 'max_file_size') onAttachmentNotice('Files must be under 4 MB each.')
+            else if (err.code === 'max_file_size') onAttachmentNotice('Files must be 10 MB or smaller.')
             else if (err.code === 'accept') onAttachmentNotice("That file type isn't supported here.")
             else onAttachmentNotice(err.message || 'Attachment rejected.')
           }}
@@ -476,6 +480,8 @@ export function PiChatComposerSurface<
         <div className="flex min-w-0 items-center justify-center gap-1">
         <ModelSelectTrigger
           value={selectedModel}
+          sessionModel={sessionModel}
+          isOverride={modelOverride}
           options={modelOptions}
           disabled={isStreaming || modelControlled}
           trigger="slash"

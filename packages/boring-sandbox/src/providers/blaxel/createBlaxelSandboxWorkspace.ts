@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import type {
   Entry,
   Stat,
@@ -7,7 +8,8 @@ import type {
 
 import type { BlaxelRemoteSandbox, BlaxelWatchEvent } from './client'
 import { BLAXEL_WORKSPACE_ROOT } from './config'
-import { isBlaxelNotFound, normalizeBlaxelError, normalizeBlaxelFilesystemError } from './errors'
+import { isBlaxelAlreadyExists, isBlaxelNotFound, normalizeBlaxelError, normalizeBlaxelFilesystemError } from './errors'
+import { createLogger } from '../runtimeSupport'
 import { shellQuote, toBlaxelPath } from './runtimeHelpers'
 
 type WorkspaceWatcher = ReturnType<NonNullable<Workspace['watch']>>
@@ -87,7 +89,10 @@ export interface BlaxelSandboxWorkspace extends Workspace {
 
 export function createBlaxelSandboxWorkspace(
   remote: BlaxelRemoteSandbox,
-  options: { onMutation?: () => void } = {},
+  options: {
+    onMutation?: () => void
+    logger?: { warn?(message: string, metadata?: Record<string, unknown>): void }
+  } = {},
 ): BlaxelSandboxWorkspace {
   const statCache = createTimedLruCache<Stat>()
   const readdirCache = createTimedLruCache<Entry[]>()
@@ -100,6 +105,7 @@ export function createBlaxelSandboxWorkspace(
   let reconnectAttempt = 0
   const recentLocalEvents = new Map<string, number>()
   const recentLocalRenames = new Map<string, number>()
+  const logger = options.logger ?? createLogger('blaxel:workspace')
 
   function eventKey(event: Pick<WorkspaceChangeEvent, 'op' | 'path'>): string {
     return `${event.op}:${event.path}`
@@ -315,6 +321,23 @@ export function createBlaxelSandboxWorkspace(
     },
   }
 
+  const cleanupTempFile = async (tempPath: string): Promise<void> => {
+    const attempts: Array<() => Promise<unknown>> = [
+      () => remote.fs.rm(tempPath, false),
+      () => helper(`rm -f -- ${shellQuote(tempPath)}`),
+      () => remote.fs.rm(tempPath, false),
+    ]
+    for (const attempt of attempts) {
+      try {
+        await attempt()
+        return
+      } catch {
+        // Try the independent guest/SDK cleanup path next.
+      }
+    }
+    throw new Error('Blaxel upload temporary file cleanup was incomplete')
+  }
+
   const workspace: BlaxelSandboxWorkspace = {
     root: BLAXEL_WORKSPACE_ROOT,
     runtimeContext: { runtimeCwd: BLAXEL_WORKSPACE_ROOT },
@@ -343,6 +366,34 @@ export function createBlaxelSandboxWorkspace(
       try { await remote.fs.writeBinary(path, data) }
       catch (error) { throw normalizeBlaxelFilesystemError(error) }
       invalidateMetadataCache(); options.onMutation?.(); emit({ op: 'write', path: relPath })
+    },
+    async createBinaryFile(relPath, data) {
+      const path = toBlaxelPath(relPath)
+      await assertMutationTargetWithinRoot(path)
+      const tempPath = `${path}.boring-upload-${randomUUID()}`
+      try {
+        await remote.fs.writeBinary(tempPath, data)
+        await helper(`node -e ${shellQuote(`const fs=require('fs'); fs.copyFileSync(process.argv[1],process.argv[2],fs.constants.COPYFILE_EXCL)`)} ${shellQuote(tempPath)} ${shellQuote(path)}`)
+        invalidateMetadataCache(); options.onMutation?.(); emit({ op: 'write', path: relPath })
+      } catch (error) {
+        if (isBlaxelAlreadyExists(error)) {
+          throw Object.assign(new Error('EEXIST: file already exists'), { code: 'EEXIST' })
+        }
+        throw normalizeBlaxelFilesystemError(error)
+      } finally {
+        try {
+          await cleanupTempFile(tempPath)
+        } catch (error) {
+          try {
+            logger.warn?.('exclusive create temporary-file cleanup failed', {
+              path: relPath,
+              error: error instanceof Error ? error.message : String(error),
+            })
+          } catch {
+            // Warning sinks must not replace the authoritative create outcome.
+          }
+        }
+      }
     },
     async readFileWithStat(relPath) {
       const path = toBlaxelPath(relPath)

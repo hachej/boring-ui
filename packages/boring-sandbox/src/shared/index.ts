@@ -107,10 +107,13 @@ export type {
 } from "./remoteWorkerProtocolV1";
 export {
   REMOTE_WORKER_ERROR_CODES_V1,
+  REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1,
   REMOTE_WORKER_HEADERS_V1,
   REMOTE_WORKER_MAX_CAPABILITY_LIFETIME_MS,
+  REMOTE_WORKER_MAX_WORKSPACE_ENVELOPE_BYTES_V1,
   REMOTE_WORKER_PROTOCOL_VERSION,
   REMOTE_WORKER_RUNTIME_CWD,
+  negotiateRemoteWorkerHealthCapabilitiesV1,
   RemoteWorkerBindingReceiptPayloadSchemaV1,
   RemoteWorkerBindingReceiptSchemaV1,
   RemoteWorkerCapabilityClaimsSchemaV1,

@@ -2,7 +2,9 @@ import { PROVIDER_CONTRACT_VERSION } from "../../shared/providerMatrix";
 import {
   REMOTE_WORKER_ERROR_CODES_V1,
   REMOTE_WORKER_HEADERS_V1,
+  REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1,
   REMOTE_WORKER_MAX_CAPABILITY_LIFETIME_MS,
+  REMOTE_WORKER_MAX_WORKSPACE_ENVELOPE_BYTES_V1,
   REMOTE_WORKER_PROTOCOL_VERSION,
   RemoteWorkerCapabilityClaimsSchemaV1,
   RemoteWorkerCreateResponseSchemaV1,
@@ -33,8 +35,6 @@ import type {
   RemoteWorkerTransportV1,
 } from "./transport";
 
-const MAX_PROTOCOL_BODY_BYTES = 8 * 1024 * 1024;
-
 interface StrictParser<T> {
   parse(value: unknown): T;
 }
@@ -46,6 +46,7 @@ interface ClientRequestBase<T> {
   schema: StrictParser<T>;
   timeoutMs?: number;
   signal?: AbortSignal;
+  headers?: Readonly<Record<string, string>>;
 }
 
 type ClientRequestInput<T> = ClientRequestBase<T> &
@@ -206,7 +207,7 @@ export class RemoteWorkerProtocolClientV1 {
     const requestBody = input.body ?? {};
     if (
       new TextEncoder().encode(canonicalJson(requestBody)).byteLength >
-      MAX_PROTOCOL_BODY_BYTES
+      REMOTE_WORKER_MAX_WORKSPACE_ENVELOPE_BYTES_V1
     ) {
       throw new SandboxProviderError(
         REMOTE_WORKER_ERROR_CODES_V1.requestInvalid,
@@ -246,6 +247,7 @@ export class RemoteWorkerProtocolClientV1 {
             [REMOTE_WORKER_HEADERS_V1.requestId]: this.options.requestId,
             [REMOTE_WORKER_HEADERS_V1.protocolVersion]:
               REMOTE_WORKER_PROTOCOL_VERSION,
+            ...input.headers,
           },
           body: input.body,
           signal: controller.signal,
@@ -294,6 +296,10 @@ export class RemoteWorkerProtocolClientV1 {
       operation: "health",
       method: "GET",
       path: "/internal/v1/health",
+      headers: {
+        [REMOTE_WORKER_HEADERS_V1.requestedCapabilities]:
+          REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1,
+      },
       schema: RemoteWorkerHealthResponseSchemaV1,
     });
   }

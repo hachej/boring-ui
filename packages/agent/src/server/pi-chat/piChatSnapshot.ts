@@ -62,6 +62,7 @@ export function buildPiChatSnapshot(adapter: PiAgentSessionAdapter, options: Bui
     seq: options.seq,
     status,
     activeTurnId: options.activeTurnId,
+    currentModel: adapter.currentModel?.(),
     messages: buildPiChatHistory(piSnapshot.messages, {
       sessionId,
       messageTurnIds: options.messageTurnIds,

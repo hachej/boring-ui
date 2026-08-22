@@ -2,9 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ErrorCode } from '../../../../shared/error-codes'
 import { AgentGatewayErrorCode } from '../../../../shared/gateway/errors'
 import type { PiChatEvent, PiChatSnapshot } from '../../../../shared/chat'
-import { RUNTIME_SCOPE_MISMATCH_MESSAGE } from '../../gatewayResponseError'
 import { PI_CHAT_CURSOR_AHEAD_CODE, PI_CHAT_REPLAY_GAP_CODE } from '../piChatStream'
-import { RemotePiSession } from '../remotePiSession'
+import { RemotePiSession, piChatErrorCode } from '../remotePiSession'
 
 const encoder = new TextEncoder()
 
@@ -566,35 +565,6 @@ describe('RemotePiSession', () => {
     session.dispose()
   })
 
-  it('suspends without reconnecting when an existing session belongs to another runtime scope', async () => {
-    const fetchMock = vi.fn(async (url: string) => {
-      if (url.endsWith('/state')) {
-        return jsonResponse({
-          error: {
-            code: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
-            message: 'session is pinned to a different runtime scope',
-          },
-        }, 409)
-      }
-      throw new Error(`unexpected URL ${url}`)
-    }) as unknown as MockFetch
-    const session = createSession(fetchMock)
-
-    await waitUntil(() => session.getState().connection.state === 'suspended')
-    await new Promise((resolve) => setTimeout(resolve, 25))
-
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(session.getState()).toMatchObject({ hydrated: true, status: 'error' })
-    expect(session.getDebugState().suspended).toBe(true)
-    expect(session.getState().notices).toContainEqual(expect.objectContaining({
-      id: 'terminal-session-error',
-      errorCode: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
-      text: RUNTIME_SCOPE_MISMATCH_MESSAGE,
-    }))
-
-    session.dispose()
-  })
-
   it('shows a protocol runtime notice and does not open events for unsupported /state protocol versions', async () => {
     const fetchMock = vi.fn(async (url: string) => {
       if (url.endsWith('/state')) return jsonResponse({ ...snapshot(), protocolVersion: 2 })
@@ -726,6 +696,48 @@ describe('RemotePiSession', () => {
     session.dispose()
   })
 
+  it('updates an already-connected viewer from an external model-change event', async () => {
+    const events = openNdjsonStream()
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/state')) return jsonResponse(snapshot({
+        seq: 5,
+        status: 'idle',
+        activeTurnId: undefined,
+        currentModel: { provider: 'openai', id: 'gpt-old' },
+      }))
+      if (url.endsWith('/events?cursor=5')) return new Response(events.stream)
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock)
+    await waitUntil(() => session.getState().connection.state === 'connected')
+
+    events.write({
+      type: 'model-changed',
+      seq: 6,
+      currentModel: { provider: 'openai-codex', id: 'gpt-5.6-sol' },
+    } satisfies PiChatEvent)
+
+    await waitUntil(() => session.getState().currentModel?.id === 'gpt-5.6-sol')
+    expect(session.getState().currentModel).toEqual({ provider: 'openai-codex', id: 'gpt-5.6-sol' })
+    session.dispose()
+  })
+
+  it('confirms an accepted next-message override as the session current model', async () => {
+    const events = openNdjsonStream()
+    const model = { provider: 'openai', id: 'gpt-5.7' }
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/events?cursor=0')) return new Response(events.stream)
+      if (url.endsWith('/prompt')) return jsonResponse({ accepted: true, cursor: 0, clientNonce: 'nonce-model' })
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock, { autoStart: false })
+
+    await session.prompt({ message: 'switch model', clientNonce: 'nonce-model', model })
+
+    expect(session.getState().currentModel).toEqual(model)
+    session.dispose()
+  })
+
   it('opens events from the current cursor before the first command when autoStart is false', async () => {
     const events = openNdjsonStream()
     const promptResponse = deferred<Response>()
@@ -756,6 +768,94 @@ describe('RemotePiSession', () => {
     expect(session.getState().status).toBe('streaming')
     promptResponse.resolve(jsonResponse({ accepted: true, cursor: 1, clientNonce: 'nonce-1' }))
     await expect(receipt).resolves.toEqual({ accepted: true, cursor: 1, clientNonce: 'nonce-1' })
+
+    session.dispose()
+  })
+
+  it('rolls back optimistic follow-ups when the follow-up command fails', async () => {
+    const events = openNdjsonStream()
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/events?cursor=0')) return new Response(events.stream)
+      if (url.endsWith('/followup')) return jsonResponse({ error: { message: 'queue failed' } }, 500)
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock, { autoStart: false })
+
+    await expect(session.followUp({ message: 'queued', clientNonce: 'nonce-q', clientSeq: 1 })).rejects.toThrow('queue failed')
+
+    expect(session.getState().optimisticOutbox).toEqual({})
+
+    session.dispose()
+  })
+
+  it('surfaces the stable, canonical server error code from a rejected command via piChatErrorCode', async () => {
+    const events = openNdjsonStream()
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/events?cursor=0')) return new Response(events.stream)
+      if (url.endsWith('/prompt')) {
+        return jsonResponse({ error: { code: ErrorCode.enum.SESSION_LOCKED, message: 'locked' } }, 423)
+      }
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock, { autoStart: false })
+
+    const error = await session.prompt({ message: 'hello', clientNonce: 'nonce-1' }).then(
+      () => { throw new Error('prompt should have rejected') },
+      (err: unknown) => err,
+    )
+    expect(piChatErrorCode(error)).toBe(ErrorCode.enum.SESSION_LOCKED)
+    // The rejection also rolls back the optimistic message so the composer recovers.
+    expect(session.getState().optimisticOutbox).toEqual({})
+
+    session.dispose()
+  })
+
+  it('piChatErrorCode ignores unknown codes and reads shared or gateway errorCode values', () => {
+    expect(piChatErrorCode(new Error('boom'))).toBeUndefined()
+    expect(piChatErrorCode(undefined)).toBeUndefined()
+    // A non-canonical code must NOT be surfaced as a host action key.
+    expect(piChatErrorCode(Object.assign(new Error('x'), { errorCode: 'NOT_A_REAL_CODE' }))).toBeUndefined()
+    expect(piChatErrorCode(Object.assign(new Error('x'), { errorCode: ErrorCode.enum.SESSION_LOCKED }))).toBe(ErrorCode.enum.SESSION_LOCKED)
+    expect(piChatErrorCode(Object.assign(new Error('x'), {
+      errorCode: AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
+    }))).toBe(AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE)
+  })
+
+  it('clears optimistic queued follow-ups from the stop receipt before a queue echo arrives', async () => {
+    const events = openNdjsonStream()
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      const body = init?.body ? JSON.parse(String(init.body)) : undefined
+      if (url.endsWith('/events?cursor=0')) return new Response(events.stream)
+      if (url.endsWith('/followup')) return jsonResponse({ accepted: true, cursor: 1, clientNonce: body.clientNonce, clientSeq: body.clientSeq, queued: true })
+      if (url.endsWith('/stop')) {
+        return jsonResponse({
+          accepted: true,
+          cursor: 2,
+          stopped: true,
+          clearedQueue: [{ id: 'q1', kind: 'followup', clientNonce: 'nonce-q', clientSeq: 1, displayText: 'queued' }],
+        })
+      }
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock, { autoStart: false })
+
+    await expect(session.followUp({ message: 'queued', clientNonce: 'nonce-q', clientSeq: 1 })).resolves.toEqual({
+      accepted: true,
+      cursor: 1,
+      clientNonce: 'nonce-q',
+      clientSeq: 1,
+      queued: true,
+    })
+    expect(session.getState().optimisticOutbox['nonce-q']).toMatchObject({ status: 'pending', clientSeq: 1 })
+
+    await expect(session.stop()).resolves.toEqual({
+      accepted: true,
+      cursor: 2,
+      stopped: true,
+      clearedQueue: [{ id: 'q1', kind: 'followup', clientNonce: 'nonce-q', clientSeq: 1, displayText: 'queued' }],
+    })
+
+    expect(session.getState().optimisticOutbox).toEqual({})
 
     session.dispose()
   })

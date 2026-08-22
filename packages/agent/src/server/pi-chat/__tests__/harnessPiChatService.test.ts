@@ -19,7 +19,7 @@ const ctx: PiSessionRequestContext = {
 }
 
 type PersistedSessionStore = SessionStore & {
-  loadEntries?: (ctx: { workspaceId?: string; userId?: string }, sessionId: string) => Promise<{ id: string; messages: unknown[] }>
+  loadEntries?: (ctx: { workspaceId?: string; userId?: string }, sessionId: string) => Promise<{ id: string; messages: unknown[]; currentModel?: { provider: string; id: string } }>
 }
 
 const sessionStore: SessionStore = {
@@ -164,6 +164,38 @@ describe('HarnessPiChatService', () => {
       filename: 'live.png',
     })
     subscription.type === 'ok' && subscription.unsubscribe()
+    await service.dispose()
+  })
+
+  it('publishes only real addressed model transitions for externally submitted turns', async () => {
+    const adapter = createAdapter()
+    let currentModel = { provider: 'openai', id: 'gpt-old' }
+    adapter.currentModel = () => currentModel
+    const harness = createHarness(adapter)
+    vi.mocked(harness.getPiSessionAdapter).mockImplementation(async (input: AgentSendInput) => {
+      if (input.model) currentModel = input.model
+      return adapter
+    })
+    const service = new HarnessPiChatService({ harness, sessionStore, workdir: '/workspace' })
+    const events: PiChatEvent[] = []
+    const subscription = await service.subscribe(ctx, 's1', 0, (event) => events.push(event))
+    if (subscription.type !== 'ok') throw new Error('expected live subscription')
+
+    const nextModel = { provider: 'openai-codex', id: 'gpt-5.6-sol' }
+    await service.prompt(ctx, 's1', {
+      message: 'automation prompt',
+      clientNonce: 'automation-model',
+      model: nextModel,
+    })
+    await service.prompt(ctx, 's1', {
+      message: 'same model again',
+      clientNonce: 'automation-model-2',
+    })
+    await vi.waitFor(() => expect(events.filter((event) => event.type === 'model-changed')).toEqual([
+      expect.objectContaining({ type: 'model-changed', currentModel: nextModel }),
+    ]))
+
+    subscription.unsubscribe()
     await service.dispose()
   })
 
@@ -1103,6 +1135,7 @@ describe('HarnessPiChatService', () => {
       ...sessionStore,
       loadEntries: vi.fn(async () => ({
         id: 's-history',
+        currentModel: { provider: 'openai-codex', id: 'gpt-5.6-sol' },
         messages: [
           {
             id: 'u1',
@@ -1112,6 +1145,8 @@ describe('HarnessPiChatService', () => {
           {
             id: 'a1',
             role: 'assistant',
+            provider: 'openai-codex',
+            model: 'gpt-5.6-sol',
             content: [
               { type: 'thinking', thinking: 'thought' },
               {
@@ -1147,6 +1182,7 @@ describe('HarnessPiChatService', () => {
     expect(state).toMatchObject({
       sessionId: 's-history',
       status: 'idle',
+      currentModel: { provider: 'openai-codex', id: 'gpt-5.6-sol' },
       messages: [
         expect.objectContaining({
           id: 'u1',

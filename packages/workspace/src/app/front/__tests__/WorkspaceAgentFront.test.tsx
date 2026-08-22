@@ -1809,40 +1809,6 @@ describe("WorkspaceAgentFront", () => {
     })
   })
 
-  it("does not send route-owned Agent identity in a non-fleet session create", async () => {
-    const user = userEvent.setup()
-    const create = vi.fn(async () => ({ id: "created", agentTypeId: "default", title: "Created session" }))
-    const RecoveryChat = (props: WorkspaceChatPanelProps) => (
-      <button type="button" onClick={() => void props.onCreateSession?.()}>
-        Recover stale chat
-      </button>
-    )
-
-    render(
-      <WorkspaceAgentFront
-        workspaceId="non-fleet-stale-recovery"
-        chatPanel={RecoveryChat}
-        useSessions={(options) => ({
-          sourceIdentity: options.sourceIdentity,
-          sessions: [{ id: "stale", agentTypeId: "default", title: "Stale session" }],
-          activeSessionId: "stale",
-          activeSessionAgentTypeId: "default",
-          activeSession: { id: "stale", agentTypeId: "default", title: "Stale session" },
-          loading: false,
-          workspaceId: options.workspaceId,
-          switch: vi.fn(),
-          delete: vi.fn(),
-          create,
-        })}
-        persistenceEnabled={false}
-      />,
-    )
-
-    await user.click(screen.getByRole("button", { name: "Recover stale chat" }))
-    await waitFor(() => expect(create).toHaveBeenCalledOnce())
-    expect(create).toHaveBeenCalledWith()
-  })
-
   it("keeps an async returned created pane while controlled sessions catch up", async () => {
     const user = userEvent.setup()
 

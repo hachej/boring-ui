@@ -12,7 +12,7 @@ import type {
   AuthorizedAgentScope,
   VerifiedAgentScopeClaim,
 } from "@hachej/boring-agent/shared"
-import { getBoringAgentRuntimePaths, type BoringAgentRuntimePaths } from "@hachej/boring-sandbox/providers/node-workspace"
+import { createNodeWorkspace, getBoringAgentRuntimePaths, type BoringAgentRuntimePaths } from "@hachej/boring-sandbox/providers/node-workspace"
 import { existsSync, readFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import { homedir } from "node:os"
@@ -27,6 +27,7 @@ import type {
 } from "../shared/runtimePluginDiagnostics.js"
 import { resolveBoringUiCliPackageRoot } from "./pluginDiscovery.js"
 import type { readCliPluginPiSnapshot as readCliPluginPiSnapshotFn } from "./pluginDiscovery.js"
+import { detectFolderModeTaskProviders } from "./folderModeTaskProviders.js"
 
 type CliPluginPiSnapshot = ReturnType<typeof readCliPluginPiSnapshotFn>
 
@@ -130,6 +131,15 @@ function toCoreWorkspace(workspace: LocalWorkspace) {
     path: workspace.path,
   }
 }
+function packageNameAtRoot(packageRoot: string): string | undefined {
+  try {
+    const pkg = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")) as { name?: unknown }
+    return typeof pkg.name === "string" ? pkg.name : undefined
+  } catch {
+    return undefined
+  }
+}
+
 function isUsableBoringUiPluginCliPackageRoot(candidate: string): boolean {
   try {
     const pkg = JSON.parse(readFileSync(join(candidate, "package.json"), "utf8")) as { name?: string }
@@ -414,6 +424,7 @@ export async function createFolderModeApp(opts: {
   provisionWorkspace?: boolean
   allowInsecureLocalBridgeAuth?: boolean
   loadAmbientSkills?: boolean
+  loadAmbientContext?: boolean
   liveTranscripts?: {
     enabled: boolean
     listenerHost: string
@@ -471,11 +482,17 @@ export async function createFolderModeApp(opts: {
         reviewIntervalMs: opts.liveTranscripts.reviewIntervalMs,
       })
     : undefined
+  const pluginDirs = pluginDiscovery.resolveCliBoringPluginDirs(workspaceRoot, { includeFolderModeAutomation: true })
+  const defaultPluginPackagePaths = pluginDiscovery.resolveCliDefaultPluginPackagePaths({ includeFolderModeAutomation: true })
+  const tasksPluginPackage = defaultPluginPackagePaths.find((packageRoot) => packageNameAtRoot(packageRoot) === "@hachej/boring-tasks")
+  const taskProviders = await detectFolderModeTaskProviders(workspaceRoot)
+  const beadsOperations = taskProviders.some((provider) => provider.provider === "beads")
+    ? (await import("@hachej/boring-tasks/server")).createWorkspaceBeadsOperations(createNodeWorkspace(workspaceRoot))
+    : undefined
   const diagnosticsStore = createRuntimePluginDiagnosticsStore()
   const runtimeHost = await createPluginFrontRuntimeHost({
     onDiagnostic: (diagnostic) => diagnosticsStore.record(diagnostic),
   })
-  const pluginDirs = pluginDiscovery.resolveCliBoringPluginDirs(workspaceRoot, { includeFolderModeAutomation: true })
   let app: FastifyInstance | undefined
   try {
     const runtimeProvisioning = await provisionCliWorkspaceRuntime({
@@ -494,20 +511,33 @@ export async function createFolderModeApp(opts: {
       // by them. Stated explicitly here so the CLI does not silently inherit a
       // future change to the library default.
       readonlyWorkspacePaths: ['.agents'],
-      // The standalone CLI runs on the user's own machine, so ambient skill
-      // discovery (workspace + user-global ~/.pi skills) is on. The library
-      // default is off (withPiHarnessDefaults) to keep hosted agents isolated.
-      pi: { noSkills: opts.loadAmbientSkills === false },
+      // The standalone CLI runs on the user's own machine, so Pi's ambient
+      // skills and AGENTS.md/CLAUDE.md discovery are on. The workspace-server
+      // library (and therefore the playground unless it explicitly opts in)
+      // keeps both defaults sealed for hosted/embedded trust boundaries.
+      pi: {
+        noSkills: opts.loadAmbientSkills === false,
+        noContextFiles: opts.loadAmbientContext === false,
+      },
       // CLI-bundled internal plugins, resolved to absolute package dirs. This
       // drives the server-side install array (boot-time routes/agentTools);
       // additionalBoringPluginDirs only feeds the asset-manager scan.
-      defaultPluginPackages: pluginDiscovery.resolveCliDefaultPluginPackagePaths({ includeFolderModeAutomation: true }),
+      defaultPluginPackages: defaultPluginPackagePaths,
       // CLI-bundled internal plugins are workspace capabilities (ask_user,
       // manage_tasks, boring_automation), not persona grants. Share their
       // complete Agent contribution across repository-owned fleet seats while
       // leaving arbitrary/workspace-local plugins on the explicit binding path.
       workspaceScopedDefaultPluginAgentContributions: true,
-      plugins: liveTranscriptPlugin ? [liveTranscriptPlugin] : undefined,
+      plugins: [
+        ...(tasksPluginPackage
+          ? [{
+              dir: tasksPluginPackage,
+              options: { config: { providers: taskProviders }, beadsOperations },
+              trust: "internal" as const,
+            }]
+          : []),
+        ...(liveTranscriptPlugin ? [liveTranscriptPlugin] : []),
+      ],
       additionalBoringPluginDirs: pluginDirs,
       workspaceBridge: { allowInsecureLocalCliBrowserAuth: opts.allowInsecureLocalBridgeAuth === true },
       boringPluginFrontTargetResolver: runtimeHost.createFrontTargetResolver(FOLDER_RUNTIME_PLUGIN_WORKSPACE_ID),
@@ -521,6 +551,7 @@ export async function createFolderModeApp(opts: {
       try { await app.close() } catch {}
     }
     try { await runtimeHost.close() } catch {}
+    try { await beadsOperations?.dispose?.() } catch {}
     throw error
   }
   const folderAssetManager = (app as FastifyInstance & {
@@ -587,6 +618,7 @@ export async function createWorkspacesModeApp(opts: {
   registryPath?: string
   provisionWorkspace?: boolean
   loadAmbientSkills?: boolean
+  loadAmbientContext?: boolean
 }): Promise<FastifyInstance> {
   if (process.env.BORING_LIVE_TRANSCRIPTS_ENABLED === "1") {
     throw new Error("live_transcript_local_only: live transcripts are supported only by boring-ui [folder]")
@@ -1032,6 +1064,7 @@ export async function createWorkspacesModeApp(opts: {
           return agentServer.createPiResourceDigestInput({
             piCwd: workspace.path,
             noSkills: opts.loadAmbientSkills === false,
+            noContextFiles: opts.loadAmbientContext === false,
             resourceSets: [{
               promptParts: [workspaceAppServer.buildWorkspaceContextPrompt(), hotResources.systemPromptAppend],
               additionalSkillPaths,
@@ -1106,8 +1139,12 @@ export async function createWorkspacesModeApp(opts: {
           ],
         }),
       ]
+      // This hub is still a trusted local CLI host even though it serves many
+      // folders. Match folder mode: ambient context is on unless explicitly
+      // disabled. Hosted/embedded composition never passes this local switch.
       const pi = {
         noSkills: opts.loadAmbientSkills === false,
+        noContextFiles: opts.loadAmbientContext === false,
         additionalSkillPaths: [join(workspace.path, ".agents", "skills")],
         packages: [],
         extensionPaths: [],
@@ -1120,6 +1157,7 @@ export async function createWorkspacesModeApp(opts: {
           agentServer.createPiResourceDigestInput({
             piCwd: workspace.path,
             noSkills: opts.loadAmbientSkills === false,
+            noContextFiles: opts.loadAmbientContext === false,
             resourceSets: [{
               promptParts: [workspaceAppServer.buildWorkspaceContextPrompt(), hotResources.systemPromptAppend],
               additionalSkillPaths: [

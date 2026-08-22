@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { agentResourceUrl, withStorageScope } from '../agentHttp'
 import {
   parseModelSelection,
@@ -11,10 +11,32 @@ import {
   writePiComposerModelSelection,
 } from '../chat/session/composerPolicy'
 
+interface SessionModelSelection {
+  sessionId?: string
+  storage?: ActiveSessionStorageLike
+  storageScope?: string
+  localDefault: ModelSelection | null
+  pendingOverride?: ModelSelection
+}
+
+function sameModel(left: ModelSelection | null | undefined, right: ModelSelection | null | undefined): boolean {
+  return left?.provider === right?.provider && left?.id === right?.id
+}
+
+function availableModel(models: AvailableModel[], model: ModelSelection | null | undefined): boolean {
+  return Boolean(model && models.some((candidate) => (
+    candidate.available && candidate.provider === model.provider && candidate.id === model.id
+  )))
+}
+
 export function useChatModelSelection({
   agentTypeId,
   apiBaseUrl,
   defaultModel,
+  sessionId,
+  sessionHydrated = sessionId === undefined,
+  sessionIsNew = sessionId === undefined,
+  sessionModel,
   fetch: fetchImpl,
   requestHeaders,
   storage,
@@ -24,32 +46,58 @@ export function useChatModelSelection({
   agentTypeId: string
   apiBaseUrl?: string
   defaultModel?: ModelSelection
+  sessionId?: string
+  sessionHydrated?: boolean
+  sessionIsNew?: boolean
+  sessionModel?: ModelSelection
   fetch?: typeof globalThis.fetch
   requestHeaders?: Record<string, string>
   storage?: ActiveSessionStorageLike
   storageScope?: string
   enabled?: boolean
 }) {
-  const initialModelState = useMemo(() => readPiComposerSettings({ storageScope, storage }), [])
-  const [model, setModelState] = useState<ModelSelection | null>(
-    () => initialModelState.model ?? defaultModel ?? null,
-  )
-  const [userSelectedModel, setUserSelectedModel] = useState<boolean>(
-    () => initialModelState.userSelectedModel,
-  )
-  const userSelectedModelRef = useRef(userSelectedModel)
-  const loadedSettingsSourceRef = useRef({ storage, storageScope })
+  const initialSettings = useMemo(() => readPiComposerSettings({ storageScope, storage }), [])
+  const [selection, setSelection] = useState<SessionModelSelection>(() => ({
+    sessionId,
+    storage,
+    storageScope,
+    localDefault: initialSettings.model ?? defaultModel ?? null,
+  }))
+
   useEffect(() => {
-    userSelectedModelRef.current = userSelectedModel
-  }, [userSelectedModel])
+    const settings = readPiComposerSettings({ storageScope, storage })
+    setSelection((current) => {
+      const sameSession = current.sessionId === sessionId
+      const pendingOverride = sameSession
+        && current.pendingOverride
+        && sessionModel
+        && !sameModel(current.pendingOverride, sessionModel)
+        ? current.pendingOverride
+        : sessionIsNew && sessionModel && settings.model && !sameModel(settings.model, sessionModel)
+          ? settings.model
+          : undefined
+      return {
+        sessionId,
+        storage,
+        storageScope,
+        localDefault: settings.model ?? defaultModel ?? null,
+        ...(pendingOverride ? { pendingOverride } : {}),
+      }
+    })
+  }, [defaultModel, sessionId, sessionIsNew, sessionModel?.id, sessionModel?.provider, storage, storageScope])
 
   const setModel = useCallback((next: ModelSelection | null) => {
     const normalized = next === null ? null : parseModelSelection(next)
-    userSelectedModelRef.current = normalized !== null
-    setUserSelectedModel(normalized !== null)
-    setModelState(normalized)
+    setSelection((current) => {
+      if (sessionModel) {
+        const pendingOverride = normalized && !sameModel(normalized, sessionModel) ? normalized : undefined
+        return { ...current, sessionId, ...(pendingOverride ? { pendingOverride } : { pendingOverride: undefined }) }
+      }
+      if (sessionId && !sessionIsNew) return current
+      return { ...current, sessionId, localDefault: normalized, pendingOverride: undefined }
+    })
     writePiComposerModelSelection(normalized, { storageScope, storage })
-  }, [storage, storageScope])
+  }, [sessionId, sessionIsNew, sessionModel, storage, storageScope])
 
   const discoveryKey = useMemo(
     () => JSON.stringify({
@@ -65,27 +113,6 @@ export function useChatModelSelection({
   const [loadedDiscoveryKey, setLoadedDiscoveryKey] = useState<string | null>(enabled ? null : discoveryKey)
 
   useEffect(() => {
-    if (loadedSettingsSourceRef.current.storage !== storage || loadedSettingsSourceRef.current.storageScope !== storageScope) return
-    if (!userSelectedModel || !model) return
-    writePiComposerModelSelection(model, { storageScope, storage })
-  }, [model, storage, storageScope, userSelectedModel])
-
-  useEffect(() => {
-    const settings = readPiComposerSettings({ storageScope, storage })
-    loadedSettingsSourceRef.current = { storage, storageScope }
-    userSelectedModelRef.current = settings.userSelectedModel
-    setUserSelectedModel(settings.userSelectedModel)
-    setModelState(settings.model ?? defaultModel ?? null)
-  }, [storage, storageScope])
-
-  useEffect(() => {
-    if (userSelectedModelRef.current || !defaultModel) return
-    setModelState(defaultModel)
-  }, [defaultModel])
-
-  // Fetch the live list from pi's ModelRegistry so the dropdown reflects
-  // what the server actually has auth for, not a hardcoded alias set.
-  useEffect(() => {
     if (!enabled) {
       setLoaded(true)
       setLoadedDiscoveryKey(discoveryKey)
@@ -97,55 +124,47 @@ export function useChatModelSelection({
     nextFetch(agentResourceUrl(apiBaseUrl, `/api/v1/agents/${encodeURIComponent(agentTypeId)}/models`), {
       headers: withStorageScope(requestHeaders, storageScope),
     })
-      .then((res) => (res.ok ? res.json() : null))
+      .then((response) => (response.ok ? response.json() : null))
       .then((payload: { models?: AvailableModel[]; defaultModel?: ModelSelection } | null) => {
         if (aborted) return
-        if (!payload?.models) {
-          userSelectedModelRef.current = false
-          setUserSelectedModel(false)
+        const models = payload?.models
+        if (!models) {
           setAvailableModels([])
-          setModelState(null)
-          writePiComposerModelSelection(null, { storageScope, storage })
+          setSelection((current) => ({ ...current, pendingOverride: undefined, localDefault: sessionModel ?? null }))
+          if (!sessionModel) writePiComposerModelSelection(null, { storageScope, storage })
           setLoadedDiscoveryKey(discoveryKey)
           setLoaded(true)
           return
         }
-        setAvailableModels(payload.models)
+
+        setAvailableModels(models)
+        setSelection((current) => {
+          const selected = current.pendingOverride ?? sessionModel ?? current.localDefault
+          if (availableModel(models, selected)) return current
+          if (sessionModel) return { ...current, pendingOverride: undefined }
+          if (sessionId && !sessionIsNew) return { ...current, pendingOverride: undefined, localDefault: null }
+          const firstAvailable = models.find((candidate) => candidate.available)
+          return {
+            ...current,
+            pendingOverride: undefined,
+            localDefault: payload.defaultModel
+              ?? (firstAvailable ? { provider: firstAvailable.provider, id: firstAvailable.id } : null),
+          }
+        })
         setLoadedDiscoveryKey(discoveryKey)
         setLoaded(true)
-        const available = payload.models.filter((m) => m.available)
-        setModelState((current) => {
-          const currentAvailable = current
-            ? available.some((m) => m.provider === current.provider && m.id === current.id)
-            : false
-          if (currentAvailable) return current
-
-          userSelectedModelRef.current = false
-          setUserSelectedModel(false)
-          writePiComposerModelSelection(null, { storageScope, storage })
-
-          if (payload.defaultModel) return { provider: payload.defaultModel.provider, id: payload.defaultModel.id }
-          const firstAvailable = available[0]
-          return firstAvailable ? { provider: firstAvailable.provider, id: firstAvailable.id } : null
-        })
       })
       .catch(() => {
         if (aborted) return
-        userSelectedModelRef.current = false
-        setUserSelectedModel(false)
         setAvailableModels([])
-        setModelState(null)
-        writePiComposerModelSelection(null, { storageScope, storage })
+        setSelection((current) => ({ ...current, pendingOverride: undefined, localDefault: sessionModel ?? null }))
+        if (!sessionModel) writePiComposerModelSelection(null, { storageScope, storage })
         setLoadedDiscoveryKey(discoveryKey)
         setLoaded(true)
       })
     return () => { aborted = true }
-  }, [agentTypeId, apiBaseUrl, discoveryKey, enabled, fetchImpl, requestHeaders, storage, storageScope])
+  }, [agentTypeId, apiBaseUrl, discoveryKey, enabled, fetchImpl, requestHeaders, sessionId, sessionIsNew, sessionModel, storage, storageScope])
 
-  // Optional integration hook for host slash commands. Accepts explicit
-  // provider-qualified selections only ({ provider, id } or "provider:id");
-  // unqualified legacy aliases are intentionally ignored so Boring never
-  // guesses a model provider on Pi's behalf.
   useEffect(() => {
     const onChange = (event: Event) => {
       const next = parseModelSelection((event as CustomEvent).detail)
@@ -156,8 +175,22 @@ export function useChatModelSelection({
   }, [setModel])
 
   const currentDiscoveryLoaded = !enabled || (loaded && loadedDiscoveryKey === discoveryKey)
-  const currentAvailableModels = currentDiscoveryLoaded ? availableModels : []
-  const currentModel = currentDiscoveryLoaded ? model : null
+  const selectionBelongsToSession = selection.sessionId === sessionId
+    && selection.storage === storage
+    && selection.storageScope === storageScope
+  const pendingOverride = selectionBelongsToSession ? selection.pendingOverride : undefined
+  const isOverride = Boolean(pendingOverride && sessionModel && !sameModel(pendingOverride, sessionModel))
+  const sessionAuthorityReady = !sessionId || (sessionHydrated && (sessionModel !== undefined || sessionIsNew))
+  const model = currentDiscoveryLoaded && sessionAuthorityReady
+    ? pendingOverride ?? sessionModel ?? selection.localDefault
+    : null
 
-  return { availableModels: currentAvailableModels, loaded: currentDiscoveryLoaded, model: currentModel, setModel }
+  return {
+    availableModels: currentDiscoveryLoaded ? availableModels : [],
+    loaded: currentDiscoveryLoaded,
+    model,
+    sessionModel,
+    isOverride,
+    setModel,
+  }
 }

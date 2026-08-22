@@ -5,7 +5,6 @@ import {
   errorResponseCode,
   GatewayResponseError,
   gatewayResponseErrorFromBody,
-  isRuntimeScopeMismatchError,
 } from '../gatewayResponseError'
 import type {
   CommandReceipt,
@@ -243,6 +242,9 @@ export class RemotePiSession {
     else if (!this.suspended) this.ensureReconnectScheduled()
     try {
       const receipt = await this.postCommand('/prompt', payload, PromptReceiptSchema)
+      if (!this.disposed && payload.model) {
+        this.store.dispatch({ type: 'model-confirmed', model: payload.model }, { flush: true })
+      }
       return receipt
     } catch (error) {
       this.rollbackOptimisticMessage(payload.clientNonce)
@@ -368,10 +370,6 @@ export class RemotePiSession {
       this.connectEvents(snapshot.seq, generation)
     } catch (error) {
       if (!this.isHydrationActive(generation, hydrationRunId) || isAbortError(error)) return
-      if (isRuntimeScopeMismatchError(error)) {
-        this.dispatchTerminalSessionError(error)
-        return
-      }
       this.dispatchProtocolError(errorMessage(error, 'Failed to hydrate Pi chat session state.'))
       this.scheduleReconnect(generation)
     }
@@ -458,12 +456,8 @@ export class RemotePiSession {
           `Pi chat event stream failed with HTTP ${response.status}.`,
           'events',
         )
-        if (isRuntimeScopeMismatchError(responseError)) {
-          this.dispatchTerminalSessionError(responseError)
-        } else {
-          this.dispatchProtocolError(responseError.message)
-          this.scheduleReconnect(generation)
-        }
+        this.dispatchProtocolError(responseError.message)
+        this.scheduleReconnect(generation)
         markOpen()
         return
       }
@@ -683,21 +677,6 @@ export class RemotePiSession {
     if (this.disposed) return
     const error: ChatError = { code: ErrorCode.enum.INTERNAL_ERROR, message, retryable: true }
     this.store.dispatch({ type: 'protocol-error', error }, { flush: true })
-  }
-
-  private dispatchTerminalSessionError(error: unknown): void {
-    if (this.disposed) return
-    const errorCode = errorResponseCode(error)
-    if (!errorCode) {
-      this.dispatchProtocolError(errorMessage(error, 'Chat session is unavailable.'))
-      return
-    }
-    this.suspendStream()
-    this.store.dispatch({
-      type: 'terminal-session-error',
-      message: errorMessage(error, 'Chat session is unavailable.'),
-      errorCode,
-    }, { flush: true })
   }
 
   private recordEventType(type: string): void {

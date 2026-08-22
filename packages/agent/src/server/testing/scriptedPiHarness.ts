@@ -1,3 +1,6 @@
+import { randomUUID } from 'node:crypto'
+import { appendFile, readFile, readdir } from 'node:fs/promises'
+import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import type { AgentSessionEvent } from '@mariozechner/pi-coding-agent'
 import type { AgentHarness, AgentHarnessFactoryInput, RunContext, AgentSendInput } from '../../shared/harness.js'
@@ -17,6 +20,7 @@ interface ScriptedFollowUp {
 
 interface ScriptedRun {
   cancelled: boolean
+  assistantMessage?: ScriptedMessage
 }
 
 type ScriptedSessionRecord = SessionSummary
@@ -28,15 +32,81 @@ const DEFAULT_TICK_MS = 5
 export function createPersistedScriptedPiHarness(input: AgentHarnessFactoryInput): AgentHarness & {
   getPiSessionAdapter(input: AgentSendInput, ctx: RunContext): Promise<PiAgentSessionAdapter>
 } {
+  const scripted = createScriptedPiHarness(input)
+  const sessions = new PiSessionStore(input.cwd, {
+    sessionDir: input.sessionDir,
+    sessionRoot: input.sessionRoot,
+    sessionNamespace: input.sessionNamespace,
+    storageCwd: input.cwd,
+  })
+  const wrapped = new Map<string, PiAgentSessionAdapter>()
+  const persistedMessageIds = new Map<string, Set<string>>()
+
   return {
-    ...createScriptedPiHarness(input),
-    sessions: new PiSessionStore(input.cwd, {
-      sessionDir: input.sessionDir,
-      sessionRoot: input.sessionRoot,
-      sessionNamespace: input.sessionNamespace,
-      storageCwd: input.cwd,
-    }),
+    ...scripted,
+    sessions,
+    async getPiSessionAdapter(sendInput, ctx) {
+      const sessionId = sendInput.sessionId
+      const adapter = await scripted.getPiSessionAdapter(sendInput, ctx)
+      if (!sessionId) return adapter
+      const existing = wrapped.get(sessionId)
+      if (existing) return existing
+      const proxy = new Proxy(adapter, {
+        get(target, property) {
+          if (property === 'prompt') {
+            return async (promptInput: PiAgentPromptInput) => {
+              await target.prompt(promptInput)
+              await persistScriptedSnapshot(sessions, target, sessionId, persistedMessageIds)
+            }
+          }
+          const value = Reflect.get(target, property, target)
+          return typeof value === 'function' ? value.bind(target) : value
+        },
+      })
+      wrapped.set(sessionId, proxy)
+      return proxy
+    },
   }
+}
+
+async function persistScriptedSnapshot(
+  sessions: PiSessionStore,
+  adapter: PiAgentSessionAdapter,
+  sessionId: string,
+  persistedBySession: Map<string, Set<string>>,
+): Promise<void> {
+  const files = await readdir(sessions.getSessionDir())
+  const filename = files.find((candidate) => candidate === `${sessionId}.jsonl` || candidate.endsWith(`_${sessionId}.jsonl`))
+  if (!filename) throw new Error(`Scripted session transcript not found: ${sessionId}`)
+  const filepath = join(sessions.getSessionDir(), filename)
+  const transcript = (await readFile(filepath, 'utf8'))
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as Record<string, unknown>)
+  const persisted = persistedBySession.get(sessionId) ?? new Set<string>()
+  const messages = adapter.readSnapshot().messages as Array<Record<string, unknown>>
+  const entries: Array<Record<string, unknown>> = []
+  let parentId = [...transcript].reverse().find((entry) => entry.type === 'message' && typeof entry.id === 'string')?.id as string | undefined
+    ?? null
+  for (const [index, message] of messages.entries()) {
+    const sourceId = typeof message.id === 'string' && message.id
+      ? message.id
+      : `${index}:${String(message.role ?? 'unknown')}`
+    if (persisted.has(sourceId)) continue
+    persisted.add(sourceId)
+    const id = randomUUID()
+    entries.push({
+      type: 'message',
+      id,
+      parentId,
+      timestamp: new Date(typeof message.timestamp === 'number' ? message.timestamp : Date.now()).toISOString(),
+      message: { ...message, id: undefined },
+    })
+    parentId = id
+  }
+  persistedBySession.set(sessionId, persisted)
+  if (entries.length === 0) return
+  await appendFile(filepath, `${entries.map((entry) => JSON.stringify(entry)).join('\n')}\n`, 'utf8')
 }
 
 export function createScriptedPiHarness(input: AgentHarnessFactoryInput): AgentHarness & {
@@ -61,10 +131,12 @@ export function createScriptedPiHarness(input: AgentHarnessFactoryInput): AgentH
     id: 'scripted-pi-e2e',
     placement: 'server',
     sessions,
-    async getPiSessionAdapter({ sessionId }: AgentSendInput) {
+    async getPiSessionAdapter({ sessionId, model }: AgentSendInput) {
       if (!sessionId) throw new Error('sessionId is required')
       await sessions.ensure(sessionId)
-      return getAdapter(sessionId)
+      const adapter = getAdapter(sessionId)
+      if (model) adapter.setCurrentModel(model)
+      return adapter
     },
     async reloadSession() {
       return true
@@ -131,6 +203,7 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
   private streaming = false
   private turn = 0
   private activeRun: ScriptedRun | undefined
+  private model: { provider: string; id: string } | undefined
 
   constructor(
     private readonly sessionId: string,
@@ -138,6 +211,14 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
     private readonly toolDelayTicks: number,
     private readonly reasoningPartCount: number,
   ) {}
+
+  setCurrentModel(model: { provider: string; id: string }): void {
+    this.model = model
+  }
+
+  currentModel(): { provider: string; id: string } | undefined {
+    return this.model
+  }
 
   readSnapshot(): PiAgentSessionSnapshot {
     return {
@@ -204,13 +285,15 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
 
   async abort(): Promise<void> {
     if (!this.streaming) return
+    const activeAssistant = this.activeRun?.assistantMessage
     if (this.activeRun) this.activeRun.cancelled = true
+    if (activeAssistant) abortAssistantMessage(activeAssistant)
     this.activeRun = undefined
     this.streaming = false
     this.emit({
       type: 'agent_end',
       status: 'aborted',
-      messages: [{ role: 'assistant', stopReason: 'aborted' }],
+      messages: [activeAssistant ?? { role: 'assistant', stopReason: 'aborted' }],
       willRetry: false,
     })
   }
@@ -267,6 +350,7 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
     if (followUp) this.emit({ type: 'queue_update', followUp: this.followUpTexts() })
     if (!(await this.tick(run))) return
     this.messages.push(assistantMessage)
+    run.assistantMessage = assistantMessage
     this.emit({ type: 'message_start', message: assistantMessage })
     if (!(await this.tick(run))) return
     for (const [index, reasoningText] of reasoningTexts.entries()) {
@@ -348,6 +432,17 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
     for (const subscriber of this.subscribers) {
       subscriber(event as AgentSessionEvent)
     }
+  }
+}
+
+function abortAssistantMessage(message: ScriptedMessage): void {
+  message.stopReason = 'aborted'
+  if (!Array.isArray(message.content)) return
+
+  for (const part of message.content) {
+    if (typeof part !== 'object' || part === null || Array.isArray(part) || part.type !== 'toolCall') continue
+    if (part.state === 'output-available' || part.state === 'output-error' || part.state === 'aborted') continue
+    part.state = 'aborted'
   }
 }
 

@@ -87,9 +87,11 @@ export class RunscWorkspaceHelperClientV1 {
       const code =
         response.code === REMOTE_WORKER_ERROR_CODES_V1.quotaExceeded
           ? REMOTE_WORKER_ERROR_CODES_V1.quotaExceeded
-          : response.code === REMOTE_WORKER_ERROR_CODES_V1.pathPrimitiveUnavailable
-            ? REMOTE_WORKER_ERROR_CODES_V1.pathPrimitiveUnavailable
-            : REMOTE_WORKER_ERROR_CODES_V1.pathUnsafe;
+          : response.code === REMOTE_WORKER_ERROR_CODES_V1.alreadyExists
+            ? REMOTE_WORKER_ERROR_CODES_V1.alreadyExists
+            : response.code === REMOTE_WORKER_ERROR_CODES_V1.pathPrimitiveUnavailable
+              ? REMOTE_WORKER_ERROR_CODES_V1.pathPrimitiveUnavailable
+              : REMOTE_WORKER_ERROR_CODES_V1.pathUnsafe;
       throw runscRuntimeError(code, "remote-worker workspace operation failed");
     }
     try {

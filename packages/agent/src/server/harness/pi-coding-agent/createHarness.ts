@@ -142,11 +142,14 @@ export type ResolvedPiHarnessOptions = PiHarnessOptions & {
  * flag literals; hosts override per-field through their `pi` config.
  *
  * - `noContextFiles: true` — boring composes its own workspace context
- *   prompt; pi's ambient AGENTS.md/CLAUDE.md discovery stays off.
+ *   prompt; pi's ambient AGENTS.md/CLAUDE.md discovery stays off. The
+ *   standalone local CLI opts back in, while hosted/embedded hosts and the
+ *   workspace-server/playground library default remain sealed.
  * - `noSkills: true` — ambient skill discovery (workspace + user-global
  *   ~/.pi skills) stays off so user-global skills don't leak into hosted
  *   agents. Hosts that run on the user's own machine (the standalone CLI)
- *   opt in with `pi: { noSkills: false }`.
+ *   opt in with `pi: { noSkills: false }`. Local context discovery follows
+ *   the same explicit opt-in with `pi: { noContextFiles: false }`.
  */
 export function withPiHarnessDefaults(pi?: PiHarnessOptions): ResolvedPiHarnessOptions {
   const { noContextFiles = true, noSkills = true, ...rest } = pi ?? {};
@@ -328,15 +331,12 @@ function sessionCtxFromRunContext(ctx: RunContext): SessionCtx {
 }
 
 function normalizeSessionCtx(ctx: SessionCtx | undefined): SessionCtx | undefined {
-  if (!ctx?.workspaceId && !ctx?.runtimeScopeIdentity) return undefined;
-  return {
-    ...(ctx.workspaceId ? { workspaceId: ctx.workspaceId } : {}),
-    ...(ctx.runtimeScopeIdentity ? { runtimeScopeIdentity: ctx.runtimeScopeIdentity } : {}),
-  };
+  if (!ctx?.workspaceId) return undefined;
+  return { workspaceId: ctx.workspaceId };
 }
 
 function sessionCacheKey(sessionId: string, ctx: SessionCtx): string {
-  return JSON.stringify([sessionId, ctx.workspaceId ?? "", ctx.runtimeScopeIdentity ?? ""]);
+  return JSON.stringify([sessionId, ctx.workspaceId ?? ""]);
 }
 
 async function applyRequestedSessionOptions(

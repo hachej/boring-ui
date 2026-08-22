@@ -486,6 +486,16 @@ describe("SurfaceShell", () => {
     })
     await waitFor(() => expect(capturedRevealRequest).toBeNull())
 
+    act(() => {
+      surface?.expandToFile("/workspace/reports ", { filesystem: "user" })
+    })
+    expect(capturedRevealRequests).toContainEqual({
+      path: "/workspace/reports ",
+      seq: 3,
+      filesystem: "user",
+    })
+    await waitFor(() => expect(capturedRevealRequest).toBeNull())
+
     const deliveredRequestCount = capturedRevealRequests.length
     act(() => surface?.closeWorkbenchLeftPane())
     act(() => capturedWorkbenchProps.onExpand?.("files"))

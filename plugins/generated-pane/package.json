@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-generated-pane",
-  "version": "0.1.100",
+  "version": "0.1.103",
   "type": "module",
   "private": false,
   "license": "MIT",
@@ -68,7 +68,7 @@
     "@hachej/boring-ui-kit": "workspace:*",
     "@json-render/core": "^0.19.0",
     "@json-render/react": "^0.19.0",
-    "lucide-react": "^1.27.0",
+    "lucide-react": "^1.31.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {

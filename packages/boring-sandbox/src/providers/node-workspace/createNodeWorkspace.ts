@@ -59,6 +59,10 @@ export function createNodeWorkspace(root: string, opts: CreateNodeWorkspaceOptio
       const absPath = await ensureWritableWorkspacePath(root, relPath)
       await writeFile(absPath, data)
     },
+    async createBinaryFile(relPath, data) {
+      const absPath = await ensureWritableWorkspacePath(root, relPath)
+      await writeFile(absPath, data, { flag: 'wx' })
+    },
     async readFileWithStat(relPath) {
       const absPath = await ensureExistingWorkspacePath(root, relPath)
       const [content, fileStat] = await Promise.all([
