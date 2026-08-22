@@ -6,7 +6,7 @@ import { workspaceSessionKey, workspaceSessionKeyFor } from "./sessionIdentity"
 const CHAT_SESSION_STATUS_EVENT = "boring:chat-session-status"
 const CHAT_SESSION_STATUS_REQUEST_EVENT = "boring:chat-session-status-request"
 
-type SessionActivity = "idle" | "running" | "aborting" | "error"
+export type SessionActivity = "idle" | "running" | "aborting" | "error"
 
 export interface SessionActivityItem {
   id: string

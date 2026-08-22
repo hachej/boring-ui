@@ -264,6 +264,12 @@ export function useAddressedFleetSessions<TSession extends WorkspaceAgentSession
       refresh: async (options) => {
         await Promise.all(agents.map((agent) => controllerFor(agent.agentTypeId)?.refresh?.(options)))
       },
+      applyActivity(id, status, requestedOwner) {
+        // Routed to the one owning controller, never broadcast: ids can collide
+        // across addressed agents, and this must stay a single local update.
+        const owner = ownerFor(id, requestedOwner)
+        controllerFor(owner)?.applyActivity?.(id, status, owner)
+      },
     }
   }, [agents, discoveryError, discoveryLoading, fleetSourceIdentity, selectAgentTypeId, selectedAgentTypeId, snapshots, sourceIdentityForAgent, workspaceId])
 
