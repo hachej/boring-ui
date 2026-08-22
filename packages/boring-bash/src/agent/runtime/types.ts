@@ -3,8 +3,45 @@ import type {
   Sandbox,
   Workspace,
 } from '@hachej/boring-agent/shared'
-import type { BwrapArgsOptions } from './buildBwrapArgs'
 import type { WorkspacePythonEnvOptions } from './workspacePythonEnv'
+
+/**
+ * Environment mount shape accepted by the injected bwrap args builder
+ * (gh-1123). Structural mirror of boring-sandbox's
+ * `SandboxEnvironmentMountV1`; kept local because the canonical builder
+ * implementation lives in `@hachej/boring-sandbox/providers/bwrap` and is
+ * injected through `RuntimeHostOperations` — boring-bash never imports the
+ * provider package.
+ */
+export interface RuntimeEnvironmentMount {
+  readonly sourceRoot: string
+  readonly logicalPath: string
+  readonly access: 'ro' | 'rw'
+}
+
+/**
+ * Options contract for the injected bwrap args builder. The canonical
+ * implementation (and its validation rules) is
+ * `@hachej/boring-sandbox/providers/bwrap#buildBwrapArgs`; the byte-identical
+ * local copy was removed in gh-1123 slice 1.
+ */
+export interface BwrapArgsOptions {
+  extraArgs?: string[]
+  postWorkspaceArgs?: string[]
+  network?: 'shared' | 'isolated'
+  newSession?: boolean
+  dropAllCapabilities?: boolean
+  /** Sandbox-visible home/primary root; defaults to `/workspace`. */
+  sandboxHome?: string
+  /** Already-resolved environment mounts (gh-1123). */
+  mounts?: readonly RuntimeEnvironmentMount[]
+  /**
+   * Workspace-relative prefixes re-bound readonly on top of the writable
+   * workspace mount, so spawned shells cannot mutate protected paths that the
+   * Operations layer already refuses to mutate.
+   */
+  readonlyPaths?: readonly string[]
+}
 
 export type RuntimeBashStrategy =
   | { kind: 'host'; preserveHostHome?: boolean }
@@ -58,10 +95,29 @@ export interface RuntimeFilesystemBindingOperations {
   rejectMutation(operation: string, descriptor: { filesystem: string; path: string }): never
 }
 
+/**
+ * How a binding may be realized as an environment mount (gh-1123):
+ * - `direct`: a static real host directory; requires
+ *   `materialization.sourceRoot` (zero-cost bind).
+ * - `view`: a live Operations→FUSE bridge over the binding's vtable
+ *   (later slice); requires only the operations vtable.
+ * Absent means the binding is file-tools-only (today's default).
+ */
+export type RuntimeFilesystemMountKind = 'direct' | 'view'
+
 export interface RuntimeFilesystemBinding {
   readonly filesystem: string
   readonly access: 'readonly' | 'readwrite'
   readonly operations: RuntimeFilesystemBindingOperations
+  /** gh-1123: declared mountability; never inferred from probing. */
+  readonly mountKind?: RuntimeFilesystemMountKind
+  /**
+   * Server-private materialization for `mountKind: 'direct'` bindings: the
+   * real host directory a mount binds. Never wired to the browser catalog.
+   * A binding never mounts wider than its file-ops access; readonly
+   * bindings mount `ro`.
+   */
+  readonly materialization?: { readonly sourceRoot: string }
 }
 
 export interface RuntimeHostOperations {

@@ -37,7 +37,7 @@ describe('filesystemsRoutes', () => {
         label: 'Workspace',
         rootDir: '.',
         access: 'readwrite',
-        capabilities: { read: true, list: true, search: true, write: true, upload: true, delete: true, move: true, mkdir: true },
+        capabilities: { read: true, list: true, search: true, write: true, upload: true, delete: true, move: true, mkdir: true, execute: true },
       }],
     })
     await app.close()
@@ -66,14 +66,14 @@ describe('filesystemsRoutes', () => {
       label: 'readonly_docs',
       rootDir: '/',
       access: 'readonly',
-      capabilities: { read: true, list: true, search: true, write: false, upload: false, delete: false, move: false, mkdir: false },
+      capabilities: { read: true, list: true, search: true, write: false, upload: false, delete: false, move: false, mkdir: false, execute: false },
     })
     expect(partial).toEqual({
       filesystem: 'partial',
       label: 'partial',
       rootDir: '/',
       access: 'readwrite',
-      capabilities: { read: true, list: true, search: true, write: true, upload: false, delete: false, move: true, mkdir: false },
+      capabilities: { read: true, list: true, search: true, write: true, upload: false, delete: false, move: true, mkdir: false, execute: false },
     })
     await app.close()
   })

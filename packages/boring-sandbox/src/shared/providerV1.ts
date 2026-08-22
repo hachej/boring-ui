@@ -27,8 +27,17 @@ export type SandboxProvisioningRuntimeModeIdV1 = Exclude<
   "remote-worker"
 >;
 
+import type { SandboxEnvironmentMountV1 } from "./mounts";
+
 export interface SandboxProviderCreateContextV1 {
   workspaceRoot: string;
+  /**
+   * Environment mounts to realize inside the sandbox (gh-1123). Optional and
+   * flag-gated (`BORING_ENV_MOUNTS`); providers without
+   * `ProviderCapabilities.mounts` must reject a non-empty effective list with
+   * `SANDBOX_PROVIDER_MOUNTS_UNSUPPORTED` (fail closed).
+   */
+  mounts?: readonly SandboxEnvironmentMountV1[];
   sessionId: string;
   workspaceId?: string;
   templatePath?: string;

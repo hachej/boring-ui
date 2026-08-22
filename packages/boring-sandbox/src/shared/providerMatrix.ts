@@ -24,6 +24,7 @@ export const PROVIDER_CAPABILITIES = {
   none: {
     fs: "none",
     exec: false,
+    mounts: false,
     realBash: false,
     realBinaries: false,
     watch: false,
@@ -38,6 +39,7 @@ export const PROVIDER_CAPABILITIES = {
   readonly: {
     fs: "readonly",
     exec: false,
+    mounts: false,
     realBash: false,
     realBinaries: false,
     watch: true,
@@ -52,6 +54,7 @@ export const PROVIDER_CAPABILITIES = {
   direct: {
     fs: "readwrite",
     exec: true,
+    mounts: false,
     realBash: "unknown",
     realBinaries: "unknown",
     networkIsolation: "none",
@@ -67,6 +70,7 @@ export const PROVIDER_CAPABILITIES = {
   bwrap: {
     fs: "readwrite",
     exec: true,
+    mounts: true,
     realBash: "unknown",
     realBinaries: "unknown",
     networkIsolation: "none",
@@ -82,6 +86,7 @@ export const PROVIDER_CAPABILITIES = {
   blaxel: {
     fs: "readwrite",
     exec: true,
+    mounts: false,
     realBash: "unknown",
     realBinaries: true,
     networkIsolation: "provider",
@@ -97,6 +102,7 @@ export const PROVIDER_CAPABILITIES = {
   "vercel-sandbox": {
     fs: "readwrite",
     exec: true,
+    mounts: false,
     realBash: true,
     realBinaries: true,
     networkIsolation: "provider",
@@ -112,6 +118,7 @@ export const PROVIDER_CAPABILITIES = {
   "remote-worker": {
     fs: "readwrite",
     exec: true,
+    mounts: false,
     realBash: "unknown",
     realBinaries: "unknown",
     networkIsolation: "unknown",

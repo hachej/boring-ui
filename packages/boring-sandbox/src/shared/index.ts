@@ -88,6 +88,18 @@ export type {
 } from "./providerV1";
 export { SandboxProviderError } from "./providerV1";
 export type {
+  EnvironmentMountErrorCode,
+  SandboxEnvironmentMountV1,
+} from "./mounts";
+export {
+  ENVIRONMENT_MOUNT_ERROR_CODES,
+  ENVIRONMENT_MOUNT_NAMESPACE,
+  ENVIRONMENT_MOUNTS_FLAG,
+  assertNoEnvironmentMounts,
+  isEnvironmentMountsEnabled,
+  resolveContextMounts,
+} from "./mounts";
+export type {
   RemoteWorkerBindingReceiptPayloadV1,
   RemoteWorkerBindingReceiptV1,
   RemoteWorkerCapabilityClaimsV1,

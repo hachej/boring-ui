@@ -22,6 +22,12 @@ export interface ProviderCapabilities {
   realBash?: ReportedProviderCapability<boolean>;
   realBinaries?: ReportedProviderCapability<boolean>;
   networkIsolation?: ReportedProviderCapability<ProviderNetworkIsolation>;
+  /**
+   * Whether `SandboxProviderCreateContextV1.mounts` is realized inside the
+   * sandbox. Absent means `false`; providers without it reject non-empty
+   * mount lists at create time (gh-1123).
+   */
+  mounts?: boolean;
   watch: boolean;
   search: boolean;
   sourceOfTruth: ProviderSourceOfTruth;

@@ -166,6 +166,65 @@ test('uses optional read-only binds only for resolver runtime dirs', () => {
   }
 })
 
+// --- environment mounts (gh-1123 slice 1) ---
+
+const RO_MOUNT = { sourceRoot: '/srv/knowledge', logicalPath: '/mnt/knowledge', access: 'ro' as const }
+const RW_MOUNT = { sourceRoot: '/srv/scratch', logicalPath: '/mnt/scratch', access: 'rw' as const }
+
+test('snapshot: mounts emit stable ro/rw binds after the workspace bind', () => {
+  expect(buildBwrapArgs('/tmp/workspace-root', { mounts: [RO_MOUNT, RW_MOUNT] })).toMatchSnapshot()
+})
+
+test('omitting mounts is byte-identical to the pre-mount contract', () => {
+  expect(buildBwrapArgs('/tmp/workspace-root', { mounts: [] }))
+    .toEqual(buildBwrapArgs('/tmp/workspace-root'))
+})
+
+test('ro mounts use --ro-bind and rw mounts use --bind, after the workspace bind', () => {
+  const args = buildBwrapArgs('/tmp/workspace', { mounts: [RO_MOUNT, RW_MOUNT] })
+  const workspaceBind = findTupleIndex(args, ['--bind', '/tmp/workspace', '/workspace'])
+  const roIndex = findTupleIndex(args, ['--ro-bind', RO_MOUNT.sourceRoot, RO_MOUNT.logicalPath])
+  const rwIndex = findTupleIndex(args, ['--bind', RW_MOUNT.sourceRoot, RW_MOUNT.logicalPath])
+
+  expect(workspaceBind).toBeGreaterThanOrEqual(0)
+  expect(roIndex).toBeGreaterThan(workspaceBind)
+  expect(rwIndex).toBeGreaterThan(workspaceBind)
+})
+
+test('rejects mount logical paths outside the /mnt namespace', () => {
+  expect(() => buildBwrapArgs('/tmp/workspace', {
+    mounts: [{ ...RO_MOUNT, logicalPath: '/opt/knowledge' }],
+  })).toThrow(/must live under \/mnt\//)
+})
+
+test('rejects mount logical paths under the workspace root', () => {
+  expect(() => buildBwrapArgs('/tmp/workspace', {
+    mounts: [{ ...RO_MOUNT, logicalPath: '/workspace/knowledge' }],
+  })).toThrow(/must live under \/mnt\//)
+})
+
+test('rejects duplicate mount logical paths', () => {
+  expect(() => buildBwrapArgs('/tmp/workspace', {
+    mounts: [RO_MOUNT, { ...RW_MOUNT, logicalPath: RO_MOUNT.logicalPath }],
+  })).toThrow(/duplicate mount logicalPath/)
+})
+
+test('rejects traversal and relative mount paths', () => {
+  expect(() => buildBwrapArgs('/tmp/workspace', {
+    mounts: [{ ...RO_MOUNT, logicalPath: '/mnt/../etc' }],
+  })).toThrow()
+  expect(() => buildBwrapArgs('/tmp/workspace', {
+    mounts: [{ ...RO_MOUNT, sourceRoot: 'relative/dir' }],
+  })).toThrow(/absolute/)
+})
+
+test('honors sandboxHome for bind target, chdir, and HOME', () => {
+  const args = buildBwrapArgs('/tmp/workspace', { sandboxHome: '/sandbox' })
+  expect(findTupleIndex(args, ['--bind', '/tmp/workspace', '/sandbox'])).toBeGreaterThanOrEqual(0)
+  expect(findTupleIndex(args, ['--chdir', '/sandbox'])).toBeGreaterThanOrEqual(0)
+  expect(findTupleIndex(args, ['--setenv', 'HOME', '/sandbox'])).toBeGreaterThanOrEqual(0)
+})
+
 test('emits readonly binds for protected paths after the writable workspace bind', () => {
   const args = buildBwrapArgs('/tmp/workspace', { readonlyPaths: ['.agents'] })
   const workspaceBind = findTupleIndex(args, ['--bind', '/tmp/workspace', '/workspace'])
@@ -181,4 +240,13 @@ test('normalizes protected paths and rejects traversal', () => {
   )).toBeGreaterThanOrEqual(0)
   expect(() => buildBwrapArgs('/tmp/workspace', { readonlyPaths: ['../escape'] })).toThrow('traversal')
   expect(() => buildBwrapArgs('/tmp/workspace', { readonlyPaths: ['/abs'] })).toThrow('workspace-relative')
+})
+
+test('readonly binds target the configured sandboxHome', () => {
+  const args = buildBwrapArgs('/tmp/workspace', {
+    sandboxHome: '/sandbox',
+    readonlyPaths: ['.agents'],
+  })
+  expect(findTupleIndex(args, ['--ro-bind-try', '/tmp/workspace/.agents', '/sandbox/.agents']))
+    .toBeGreaterThanOrEqual(0)
 })

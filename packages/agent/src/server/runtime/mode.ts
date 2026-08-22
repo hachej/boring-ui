@@ -97,10 +97,27 @@ export interface RuntimeFilesystemBindingOperations {
   rejectMutation(operation: string, descriptor: { filesystem: string; path: string }): never
 }
 
+/**
+ * How a binding may be realized as an environment mount (gh-1123):
+ * `direct` binds a static real host directory (requires
+ * `materialization.sourceRoot`); `view` mounts a live Operations bridge over
+ * the binding's vtable (later slice). Absent means file-tools-only.
+ * Structural duplicate of `@hachej/boring-bash/agent`'s shape — keep in sync.
+ */
+export type RuntimeFilesystemMountKind = 'direct' | 'view'
+
 export interface RuntimeFilesystemBinding {
   readonly filesystem: string
   readonly access: 'readonly' | 'readwrite'
   readonly operations: RuntimeFilesystemBindingOperations
+  /** gh-1123: declared mountability; never inferred from probing. */
+  readonly mountKind?: RuntimeFilesystemMountKind
+  /**
+   * Server-private materialization for `mountKind: 'direct'` bindings.
+   * Never wired to the browser catalog; a binding never mounts wider than
+   * its file-ops access.
+   */
+  readonly materialization?: { readonly sourceRoot: string }
 }
 
 

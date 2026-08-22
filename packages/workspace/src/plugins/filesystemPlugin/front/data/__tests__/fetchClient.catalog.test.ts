@@ -27,7 +27,8 @@ describe("FetchClient filesystem catalog", () => {
     const client = new FetchClient({ apiBaseUrl: "https://example.test", authHeaders: { Authorization: "Bearer token" } })
 
     await expect(client.getFilesystems(controller.signal)).resolves.toEqual(expect.arrayContaining([
-      expect.objectContaining({ filesystem: "project_alpha", access: "readonly", capabilities }),
+      // Payloads predating gh-1123 omit `execute`; the parser defaults it off.
+      expect.objectContaining({ filesystem: "project_alpha", access: "readonly", capabilities: { ...capabilities, execute: false } }),
     ]))
     expect(fetchMock).toHaveBeenCalledWith(
       "https://example.test/api/v1/filesystems",
@@ -57,6 +58,6 @@ describe("FetchClient filesystem catalog", () => {
 
     const result = await new FetchClient({ apiBaseUrl: "" }).getFilesystems()
 
-    expect(result).toEqual([{ filesystem: "generic", label: "First", rootDir: "/", access: "readwrite", capabilities }])
+    expect(result).toEqual([{ filesystem: "generic", label: "First", rootDir: "/", access: "readwrite", capabilities: { ...capabilities, execute: false } }])
   })
 })
