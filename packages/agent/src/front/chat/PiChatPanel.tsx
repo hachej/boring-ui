@@ -477,6 +477,17 @@ export function PiChatPanel<
   const activeChatSessionId = selectedChatState?.sessionId
   const resumeQueuedPending = Boolean(activeChatSessionId && resumeQueuedPendingSessionIds.has(activeChatSessionId))
   const resumeQueuedError = activeChatSessionId ? resumeQueuedErrorsBySessionId.get(activeChatSessionId) : undefined
+  // Resume-queued pending/error/in-flight state and queue-recovery coordination
+  // are keyed by bare session id. When the same id reappears under a different
+  // agent/storage scope (compound session identity), that state must not leak
+  // across, so reset it whenever the owning scope changes.
+  const chatScopeKey = `${externalSessionId ? 'external' : 'managed'}\u0000${agentTypeId}\u0000${storageScope ?? ''}`
+  useEffect(() => {
+    setResumeQueuedPendingSessionIds(new Set())
+    setResumeQueuedErrorsBySessionId(new Map())
+    resumeQueuedInFlightRef.current.clear()
+    queueCoordinationKeysRef.current.clear()
+  }, [chatScopeKey])
   const warmupNotice = composerNoticeForWarmup(workspaceWarmupStatus)
   const runtimeDependenciesNotice = composerNoticeForRuntimeDependencies(workspaceWarmupStatus)
   const workspaceWarmupBlocked = Boolean(warmupNotice)

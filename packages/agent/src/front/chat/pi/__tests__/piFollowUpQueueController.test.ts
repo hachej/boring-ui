@@ -17,7 +17,8 @@ class FakeQueueSession implements PiQueueSessionLike {
     const after = before.filter((followUp) => {
       if (payload.clientNonce && followUp.clientNonce !== payload.clientNonce) return true
       if (payload.clientSeq !== undefined && followUp.clientSeq !== payload.clientSeq) return true
-      return payload.clientNonce === undefined && payload.clientSeq === undefined
+      // A selector-less payload is a full clear: nothing survives.
+      return false
     })
     this.state = { ...this.state, queue: { followUps: after } }
     return { accepted: true as const, cursor: 1, cleared: before.length - after.length }
@@ -268,27 +269,43 @@ describe('PiFollowUpQueueController', () => {
     expect(session.state.queue.followUps).toEqual([])
   })
 
-  it('refuses to clear metadata-free queue items that cannot be restored exactly', async () => {
+  it('falls back to copy-all + full clear when the queue contains metadata-free items', async () => {
     const warnings: string[] = []
     const session = new FakeQueueSession('streaming', [
       { id: 'legacy', kind: 'followup', displayText: 'legacy queued' },
     ])
     const drafts: string[] = []
     const controller = createPiFollowUpQueueController(session, {
-      getDraft: () => '  existing draft  ',
+      getDraft: () => 'existing draft',
       onDraftChange: (draft) => drafts.push(draft),
       onWarning: (message) => warnings.push(message),
     })
 
-    await expect(controller.editQueued()).resolves.toMatchObject({
-      type: 'clear-failed',
-      draft: '  existing draft  ',
-      message: 'Queued messages were not cleared, so the composer was left unchanged. Retry Edit queued.',
+    await expect(controller.editQueued()).resolves.toEqual({
+      type: 'cleared',
+      draft: 'legacy queued\n\nexisting draft',
     })
-    expect(session.clearQueue).not.toHaveBeenCalled()
-    expect(drafts).toEqual([])
-    expect(session.state.queue.followUps).toHaveLength(1)
-    expect(warnings).toEqual(['Queued messages were not cleared, so the composer was left unchanged. Retry Edit queued.'])
+    expect(session.clearQueue).toHaveBeenCalledTimes(1)
+    expect(session.clearQueue).toHaveBeenCalledWith()
+    expect(drafts).toEqual(['legacy queued\n\nexisting draft'])
+    expect(session.state.queue.followUps).toEqual([])
+    expect(warnings).toEqual([])
+  })
+
+  it('uses the legacy full clear when only some queue items are metadata-free', async () => {
+    const session = new FakeQueueSession('streaming', [
+      { id: 'q1', kind: 'followup', displayText: 'selectable queued', clientSeq: 1 },
+      { id: 'legacy', kind: 'followup', displayText: 'legacy queued' },
+    ])
+    const controller = createPiFollowUpQueueController(session, {})
+
+    await expect(controller.editQueued()).resolves.toEqual({
+      type: 'cleared',
+      draft: 'selectable queued\n\nlegacy queued',
+    })
+    // One full clear, not a selector clear that would strand the legacy item.
+    expect(session.clearQueue).toHaveBeenCalledTimes(1)
+    expect(session.state.queue.followUps).toEqual([])
   })
 
   it('does not clear the queue for empty edit or interrupt; stop remains the queue-clearing command', async () => {

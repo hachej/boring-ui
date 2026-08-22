@@ -1535,6 +1535,48 @@ describe('HarnessPiChatService', () => {
     })
   })
 
+  // The UI Stop button takes the hold-interrupt path (queueAction: 'hold'), so
+  // the active metering run must be marked user-stopped exactly like
+  // service.stop() does — otherwise pi's documented no-usage-success abort can
+  // fallback-charge a voluntary cancellation.
+  it('marks a hold-interrupted active run user-stopped so a no-usage success releases instead of fallback-charging', async () => {
+    const adapter = createAdapter()
+    const settled = vi.fn(async () => {})
+    const released = vi.fn(async () => {})
+    const service = new HarnessPiChatService({
+      harness: createHarness(adapter),
+      sessionStore,
+      workdir: '/workspace',
+      metering: {
+        reserveRun: vi.fn(async () => ({})),
+        recordUsage: vi.fn(async () => ({ billedMicros: 0 })),
+        settleRun: settled,
+        releaseRun: released,
+      },
+      meteringLogger: () => {},
+    })
+    const subscription = await service.subscribe(ctx, 's1', 0, () => {})
+    expect(subscription.type).toBe('ok')
+
+    await expect(service.prompt(ctx, 's1', { message: 'voluntary stop', clientNonce: 'nonce-stop' })).resolves.toMatchObject({ accepted: true })
+    adapter.emit({ type: 'agent_start', turnId: 'turn-stop' } as unknown as AgentSessionEvent)
+
+    await expect(service.interrupt(ctx, 's1', { queueAction: 'hold' })).resolves.toMatchObject({ accepted: true })
+
+    // pi reports the aborted run as a plain no-usage completion (status ok).
+    adapter.emit({
+      type: 'agent_end',
+      messages: [{ role: 'assistant', content: [{ type: 'text', text: 'done' }], stopReason: 'stop' }],
+      willRetry: false,
+    } as unknown as AgentSessionEvent)
+    await service.flushMetering()
+
+    expect(settled).not.toHaveBeenCalled()
+    expect(released).toHaveBeenCalledWith(expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-stop', reason: 'cancelled' }))
+
+    if (subscription.type === 'ok') subscription.unsubscribe()
+  })
+
   it('acknowledges interrupt while the auto-posted replacement remains stoppable', async () => {
     const adapter = createAdapter()
     const replacement = deferred<void>()

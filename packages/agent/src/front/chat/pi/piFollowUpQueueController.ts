@@ -139,14 +139,11 @@ export class PiFollowUpQueueController {
     }
 
     const selected = followUps.map((followUp) => ({ followUp, selector: queueClearSelector(followUp) }))
-    const unselectable = selected.find((item) => !item.selector)
-    if (unselectable) {
-      const error = new Error('Queued message lacks a stable clear selector.')
-      const draft = this.options.getDraft?.() ?? ''
-      const message = 'Queued messages were not cleared, so the composer was left unchanged. Retry Edit queued.'
-      this.options.onWarning?.(message)
-      return { type: 'clear-failed', draft, error, message }
-    }
+    // Metadata-free queue entries have no stable per-item clear selector, so
+    // selector-scoped recovery cannot address them. Fall back to the legacy
+    // behavior: copy every queued message into the draft and full-clear the
+    // queue in one request, instead of refusing to edit at all.
+    if (selected.some((item) => !item.selector)) return this.editQueuedFallback(followUps)
 
     // Recover each selector exactly once before its first destructive request.
     // The coordination key survives policy/controller recreation for a session,
@@ -191,6 +188,22 @@ export class PiFollowUpQueueController {
     const message = 'Queued messages were copied into the composer, but some may remain queued. Review the queue and composer before sending.'
     this.options.onWarning?.(message)
     return { type: 'clear-failed', draft, error: clearError, message }
+  }
+
+  // Legacy path for queues that contain metadata-free entries: copy all queued
+  // messages into the draft and issue a single full clear. No recovery
+  // coordination is needed because the clear is all-or-nothing.
+  private async editQueuedFallback(followUps: readonly QueuedUserMessage[]): Promise<PiQueueEditQueuedResult> {
+    const draft = buildEditedQueuedDraft(followUps, this.options.getDraft?.() ?? '')
+    this.options.onDraftChange?.(draft)
+    try {
+      await this.session.clearQueue()
+      return { type: 'cleared', draft }
+    } catch (error) {
+      const message = 'Queued messages were copied into the composer, but the server queue was not cleared. They may still send unless you retry Edit queued or Stop.'
+      this.options.onWarning?.(message)
+      return { type: 'clear-failed', draft, error, message }
+    }
   }
 
   interrupt(payload: InterruptPayload = {}): Promise<CommandReceipt> {

@@ -560,6 +560,12 @@ export class HarnessPiChatService implements PiChatSessionService {
         ? this.nextFollowUpForInterrupt(sessionId, sessionKey, adapter)
         : undefined
       const activeRun = this.activePromptRuns.get(sessionKey)
+      // A hold-interrupt is the UI Stop path: the active turn is voluntarily
+      // cancelled while queued follow-ups are kept. Mark the active metering
+      // run user-stopped BEFORE the abort so its terminal accounting releases
+      // the hold instead of fallback-charging an aborted no-usage success —
+      // exactly what service.stop() has always done for this button.
+      if (payload.queueAction === 'hold') this.metering?.markActiveStopped(sessionKey)
       adapter.abortRetry?.()
       if (wasActive) await adapter.abort()
       await this.drainPublishQueue(this.channels.get(sessionKey))
