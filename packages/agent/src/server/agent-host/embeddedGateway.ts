@@ -25,6 +25,7 @@ import { agentSessionKey } from './agentSessionKey'
 import { canonicalDigest } from './canonical'
 import { stableServiceActionFailure } from './stableServiceError'
 import type { AgentHostRuntime } from './createAgentHost'
+import { rejectRetryablePreflightFailure } from './retryablePreflightFailure'
 import type {
   AgentGatewayEffect,
   AgentRequestFailure,
@@ -245,9 +246,9 @@ export class EmbeddedAgentGateway implements AgentGateway {
       ...('legacyDefault' in agent || !agent.plugins?.length
         ? {}
         : { pluginIds: agent.plugins.map((plugin) => plugin.name) }),
-      ...('legacyDefault' in agent || !agent.definition.version
+      ...('legacyDefault' in agent || !agent.definition.version || !agent.definition.digest
         ? {}
-        : { definition: { version: agent.definition.version, digest: canonicalDigest(agent.definition as unknown as JsonValue) } }),
+        : { definition: { version: agent.definition.version, digest: agent.definition.digest } }),
     }))
   }
 
@@ -724,13 +725,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
                 await this.runtime.ledger.reject(key, { kind: 'gateway', error: error.toJSON() }).catch(() => {})
                 throw error
               }
-              const unknown = new AgentGatewayError(
-                AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
-                'effect outcome could not be safely replayed',
-              )
-              await this.runtime.ledger.beginEffect(key).catch(() => {})
-              await this.runtime.ledger.markOutcomeUnknown(key, unknown.toJSON()).catch(() => {})
-              throw unknown
+              await rejectRetryablePreflightFailure(this.runtime.ledger, key)
             }
           }
           await this.runtime.ledger.beginEffect(key)

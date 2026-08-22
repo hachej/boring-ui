@@ -406,9 +406,11 @@ describe.sequential("CLI Agent Host composition", () => {
         "  - seat: repository-worker",
         "    agentTypeId: fixture-cli-repository-worker",
         "    skills: []",
-        "  - seat: local-worker",
-        "    agentTypeId: fixture-cli-local-worker",
-        "    skills: []",
+        // fixture-cli-local-worker is deliberately NOT seated here. The global
+        // roster only names globally discoverable packages; seating a
+        // workspace-local one is an invalid configured seat and now aborts host
+        // boot by contract. What this test proves is that the workspace-local
+        // package does not leak into the global fleet through discovery.
         "",
       ].join("\n"),
       "utf8",

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { loadConfiguredAgentFleet } from "@hachej/boring-agent/server"
+import { ErrorCode } from "@hachej/boring-agent/shared"
 import { afterEach, describe, expect, test } from "vitest"
 
 import { discoverRepositoryAgentPackages } from "../discoverAgentPackages"
@@ -49,7 +50,7 @@ async function writeFactory(seats: { seat: string; agentTypeId: string }[]): Pro
 
 async function loadFleet() {
   const discoveredPackages = await discoverRepositoryAgentPackages(root)
-  const result = await loadConfiguredAgentFleet({
+  const result = loadConfiguredAgentFleet({
     discoveredPackages,
     workspaceRoot: root,
     fleetConfigPath: join(root, ".agents", "factory", "fleet.yaml"),
@@ -57,7 +58,7 @@ async function loadFleet() {
     skillsRoot: join(root, ".agents", "skills"),
     env: {},
   })
-  return { discoveredPackages, ...result }
+  return { discoveredPackages, result }
 }
 
 describe("agent package discovery → fleet loader conflict detection", () => {
@@ -77,15 +78,19 @@ describe("agent package discovery → fleet loader conflict detection", () => {
     })
     await writeFactory([{ seat: "dup-seat", agentTypeId: "boring-dup" }])
 
-    const { discoveredPackages, agents, diagnostics } = await loadFleet()
+    const { discoveredPackages, result } = await loadFleet()
 
     expect(discoveredPackages.map((pkg) => pkg.manifest.boring.agent.definitionId).sort()).toEqual([
       "boring-dup",
       "boring-dup",
     ])
     expect(discoveredPackages.some((pkg) => !pkg.preflight.ok)).toBe(true)
-    expect(agents).toEqual([])
-    expect(diagnostics.filter((d) => d.code === "AGENT_DEFINITION_ID_CONFLICT")).toHaveLength(2)
+    await expect(result).rejects.toMatchObject({
+      name: "ConfiguredFleetSeatError",
+      code: ErrorCode.enum.AGENT_DEFINITION_ID_CONFLICT,
+      seat: "dup-seat",
+      agentTypeId: "boring-dup",
+    })
   })
 
   test("a malformed pi.skills duplicate claimant also conflicts", async () => {
@@ -102,10 +107,14 @@ describe("agent package discovery → fleet loader conflict detection", () => {
     )
     await writeFactory([{ seat: "dup-seat", agentTypeId: "boring-dup" }])
 
-    const { agents, diagnostics } = await loadFleet()
+    const { result } = await loadFleet()
 
-    expect(agents).toEqual([])
-    expect(diagnostics.filter((d) => d.code === "AGENT_DEFINITION_ID_CONFLICT")).toHaveLength(2)
+    await expect(result).rejects.toMatchObject({
+      name: "ConfiguredFleetSeatError",
+      code: ErrorCode.enum.AGENT_DEFINITION_ID_CONFLICT,
+      seat: "dup-seat",
+      agentTypeId: "boring-dup",
+    })
   })
 
   test("a single valid claimant still seats normally", async () => {
@@ -117,7 +126,8 @@ describe("agent package discovery → fleet loader conflict detection", () => {
     })
     await writeFactory([{ seat: "solo-seat", agentTypeId: "boring-solo" }])
 
-    const { agents, diagnostics } = await loadFleet()
+    const { result } = await loadFleet()
+    const { agents, diagnostics } = await result
 
     expect(diagnostics).toEqual([])
     expect(agents.map((agent) => agent.agentTypeId)).toEqual(["boring-solo"])

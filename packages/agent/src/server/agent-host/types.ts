@@ -329,6 +329,8 @@ export interface AgentHostDescription {
   readonly agents: readonly {
     readonly agentTypeId: string
     readonly label: string
+    /** Exact package-declared version, when this is a configured Agent. */
+    readonly definitionVersion?: string
     /** Computed definition identity digest (instructions + knowledge bytes), when the spec carries one. */
     readonly definitionDigest?: string
   }[]

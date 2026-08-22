@@ -42,17 +42,10 @@ export interface ResolveDefaultAgentFleetOptions {
  * `createWorkspaceAgentServer`, `createCoreWorkspaceAgentServer`, and the CLI
  * hub — one composition path for every production/CLI entry point.
  *
- * Fails closed at two levels:
- *  - Per seat: `loadConfiguredAgentFleet` excludes an individual invalid
- *    persona/skill with a stable diagnostic; the remaining seats still boot
- *    (see its own docstring).
- *  - Whole fleet: a missing/malformed `fleet.yaml` or `policy.yaml` would
- *    otherwise throw `FleetConfigError` out of the boot path. That throw is
- *    preserved for direct/programmatic callers of `loadConfiguredAgentFleet`
- *    (e.g. the playground, tests), but this boot-seam wrapper catches it and
- *    degrades to the legacy default-agent-only fleet plus a logged
- *    diagnostic — a container with the flag on and no `.agents/` tree must
- *    still boot.
+ * Invalid unseated discovery is diagnostic-only. Any invalid configured seat,
+ * configured digest, conflict, or fleet file rejects boot: silently degrading
+ * a flag-enabled host would publish a fleet different from its declared
+ * roster. Flag-off behavior remains the legacy single-agent path.
  */
 export async function resolveDefaultAgentFleet(
   options: ResolveDefaultAgentFleetOptions,
@@ -60,34 +53,26 @@ export async function resolveDefaultAgentFleet(
   const env = options.env ?? process.env
   if (env.BORING_AGENT_FLEET !== '1') return LEGACY_DEFAULT_AGENT_FLEET
   const root = options.repositoryRoot ?? process.cwd()
-  try {
-    if (!options.discoveredPackages) throw new Error('agent package discovery descriptors were not injected by the boot layer')
-    const { agents: configuredAgents, diagnostics } = await loadConfiguredAgentFleet({
-      discoveredPackages: options.discoveredPackages,
-      workspaceRoot: options.workspaceRoot,
-      fleetConfigPath: resolve(root, '.agents', 'factory', 'fleet.yaml'),
-      policyPath: resolve(root, '.agents', 'factory', 'policy.yaml'),
-      skillsRoot: resolve(root, '.agents', 'skills'),
-      env,
+  if (!options.discoveredPackages) throw new Error('agent package discovery descriptors were not injected by the boot layer')
+  const { agents: configuredAgents, diagnostics } = await loadConfiguredAgentFleet({
+    discoveredPackages: options.discoveredPackages,
+    workspaceRoot: options.workspaceRoot,
+    fleetConfigPath: resolve(root, '.agents', 'factory', 'fleet.yaml'),
+    policyPath: resolve(root, '.agents', 'factory', 'policy.yaml'),
+    skillsRoot: resolve(root, '.agents', 'skills'),
+    env,
+  })
+  for (const diagnostic of diagnostics) {
+    // Not every diagnostic excludes a seat: an unpublishable instructions
+    // path withholds one link while the seat boots and chats normally, and
+    // an unseated discovered definition is merely inert.
+    const excluded = diagnostic.code !== ErrorCode.enum.AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE
+    logger.warn(excluded ? 'fleet package excluded or inert' : 'fleet seat instructions not linkable', {
+      seat: diagnostic.seat,
+      agentTypeId: diagnostic.agentTypeId,
+      code: diagnostic.code,
+      message: diagnostic.message,
     })
-    for (const diagnostic of diagnostics) {
-      // Not every diagnostic excludes a seat: an unpublishable instructions
-      // path withholds one link while the seat boots and chats normally, and
-      // an unseated discovered definition is merely inert.
-      const excluded = diagnostic.code !== ErrorCode.enum.AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE
-      logger.warn(excluded ? 'fleet package excluded or inert' : 'fleet seat instructions not linkable', {
-        seat: diagnostic.seat,
-        agentTypeId: diagnostic.agentTypeId,
-        code: diagnostic.code,
-        message: diagnostic.message,
-      })
-    }
-    return Object.freeze([...LEGACY_DEFAULT_AGENT_FLEET, ...configuredAgents])
-  } catch (error) {
-    logger.error('fleet composition failed at boot; degrading to the legacy default agent', {
-      error: error instanceof Error ? error.message : String(error),
-      code: (error as { code?: unknown })?.code,
-    })
-    return LEGACY_DEFAULT_AGENT_FLEET
   }
+  return Object.freeze([...LEGACY_DEFAULT_AGENT_FLEET, ...configuredAgents])
 }
