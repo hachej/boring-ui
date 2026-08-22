@@ -32,6 +32,7 @@ export {
   sessionStreamPath,
 } from './events'
 export type {
+  AgentSendIfIdleReceipt,
   LeaseBoundWorkspaceAgent,
   WorkspaceAgentDirectRunCallback,
   WorkspaceAgentDirectRunInput,

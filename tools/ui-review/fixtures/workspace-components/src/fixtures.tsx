@@ -247,6 +247,10 @@ const AUTOMATION_RUNS: AutomationRun[] = []
 
 function AutomationPaneFixture() {
   const client = useMemo<AutomationClient>(() => ({
+    listAgentModels: async () => [
+      { available: true, provider: "openai", id: "gpt-5.5" },
+      { available: true, provider: "google", id: "gemini-3.1-pro-preview" },
+    ],
     subscribeRunEvents: async (_onEvent, options = {}) => await new Promise<void>((resolve) => {
       options.signal?.addEventListener("abort", () => resolve(), { once: true })
     }),

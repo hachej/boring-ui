@@ -11,6 +11,10 @@ function recordingSql(rows: unknown[] = []) {
     queries.push({ text: strings.join("?"), values })
     return Promise.resolve(rows)
   }) as unknown as postgres.Sql
+  Object.assign(sql, {
+    array: (value: unknown[]) => value,
+    begin: async (run: (transaction: postgres.TransactionSql) => unknown) => await run(sql as unknown as postgres.TransactionSql),
+  })
   return { sql, queries }
 }
 
@@ -119,19 +123,21 @@ describe("PostgresAutomationStore actor isolation", () => {
       if (!text.includes("INSERT INTO boring_automation_automations")) return Promise.resolve([])
       return Promise.resolve([{
         id: values[0], title: values[3], enabled: values[4], cron: values[5], timezone: values[6], model: values[7],
-        agent_type_id: values[8], created_at: values[9], updated_at: values[10],
+        agent_type_id: values[8], run_duration_cap_ms: values[9], prompt_ref: values[10], created_at: values[11], updated_at: values[12],
       }])
     }) as unknown as postgres.Sql
     const store = new PostgresAutomationStore(sql, { workspaceId: "workspace-a", userId: "user-a" }, undefined, workspace)
 
     const automation = await store.createAutomation({
-      title: "Daily", cron: "0 9 * * *", timezone: "UTC", model: "test:model", agentTypeId: "researcher", prompt: "canonical prompt",
+      title: "Daily", cron: "0 9 * * *", timezone: "UTC", model: "test:model", agentTypeId: "researcher", runDurationCapMs: 42_000, prompt: "canonical prompt",
     })
 
     expect(automation.agentTypeId).toBe("researcher")
+    expect(automation.runDurationCapMs).toBe(42_000)
     expect(automation.promptRef).toBe(`.agents/automation/${automation.id}.md`)
     expect(files.get(automation.promptRef)).toBe("canonical prompt")
-    expect(queries[0]!.text).toContain("model, agent_type_id, created_at")
+    expect(queries[0]!.text).toContain("model, agent_type_id, run_duration_cap_ms, prompt_ref, created_at")
+    expect(queries[0]!.text).toContain("RETURNING id, title, enabled, cron, timezone, model, agent_type_id, run_duration_cap_ms, prompt_ref")
     expect(queries[0]!.text).not.toMatch(/\bprompt\b/)
     expect(queries[0]!.values).not.toContain("canonical prompt")
   })
@@ -165,6 +171,74 @@ describe("PostgresAutomationStore actor isolation", () => {
     expect(queries[1]!.values).not.toContain("workspace-only prompt")
   })
 
+  it("reactivates a seeded row without overwriting operator-edited metadata", async () => {
+    const existing = {
+      id: "seed-id", title: "operator title", enabled: false, cron: null, timezone: "Europe/Zurich",
+      model: "operator:model", agent_type_id: "operator-agent", run_duration_cap_ms: null,
+      prompt_ref: ".agents/automation/worker-slot.md",
+      created_at: "2026-07-19T08:00:00.000Z", updated_at: "2026-07-19T08:00:00.000Z",
+    }
+    const recorded = recordingSql([existing])
+    const workspace = { root: "/workspace", runtimeContext: {}, async readFile() { return "prompt" } } as unknown as Workspace
+    const store = new PostgresAutomationStore(recorded.sql, { workspaceId: "workspace-a", userId: "user-a" }, undefined, workspace)
+
+    await expect(store.ensureSeededAutomation({
+      key: "worker-slot-1", title: "manifest title", enabled: true, cron: null, timezone: "UTC",
+      model: "manifest:model", agentTypeId: "boring-worker", promptRef: ".agents/automation/worker-slot.md",
+    })).resolves.toMatchObject({ title: "operator title", enabled: false, timezone: "Europe/Zurich", model: "operator:model" })
+
+    expect(recorded.queries[0]!.text).toContain("AND boring_automation_automations.deleted_at IS NOT NULL")
+    expect(recorded.queries[0]!.text).toContain("title = EXCLUDED.title")
+    expect(recorded.queries[0]!.text).toContain("updated_at = EXCLUDED.updated_at")
+    expect(recorded.queries[0]!.text).toContain("AND deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM upserted)")
+  })
+
+  it("locks the seeded automation row before checking for occupying runs", async () => {
+    const queries: RecordedQuery[] = []
+    const sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = strings.join("?")
+      queries.push({ text, values })
+      if (text.includes("SELECT id") && text.includes("FOR UPDATE")) return Promise.resolve([{ id: values[0] }])
+      return Promise.resolve(Object.assign([], { count: 0 }))
+    }) as unknown as postgres.Sql
+    Object.assign(sql, {
+      array: (value: unknown[]) => value,
+      begin: async (run: (transaction: postgres.TransactionSql) => unknown) => await run(sql as unknown as postgres.TransactionSql),
+    })
+    const store = new PostgresAutomationStore(sql, { workspaceId: "workspace-a", userId: "user-a" })
+
+    await expect(store.removeSeededAutomationIfIdle("worker-slot-id")).resolves.toBe(false)
+
+    expect(queries).toHaveLength(2)
+    expect(queries[0]!.text).toContain("FOR UPDATE")
+    expect(queries[1]!.text).toContain("NOT EXISTS")
+    expect(queries[1]!.text).toContain("run.status = ANY(?)")
+    expect(queries[1]!.values).toEqual(expect.arrayContaining([
+      expect.stringMatching(/^[0-9a-f-]{36}$/),
+      "workspace-a",
+      "user-a",
+      ["queued", "dispatching", "running", "outcome-unknown"],
+    ]))
+    expect(queries[1]!.values).not.toContain("worker-slot-id")
+  })
+
+  it("resolves existing seeded automations from immutable deterministic seed ids", async () => {
+    const queries: RecordedQuery[] = []
+    const sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+      queries.push({ text: strings.join("?"), values })
+      const ids = values.find(Array.isArray) as string[]
+      return Promise.resolve([{ id: ids[1] }])
+    }) as unknown as postgres.Sql
+    Object.assign(sql, { array: (value: unknown[]) => value })
+    const store = new PostgresAutomationStore(sql, { workspaceId: "workspace-a", userId: "user-a" })
+
+    await expect(store.findExistingSeedKeys(["worker-slot-4", "worker-slot-5"])).resolves.toEqual(["worker-slot-5"])
+
+    expect(queries).toHaveLength(1)
+    expect(queries[0]!.text).toContain("id = ANY(?)")
+    expect(queries[0]!.values).not.toEqual(expect.arrayContaining(["worker-slot-4", "worker-slot-5"]))
+  })
+
   it("soft-deletes actor-scoped metadata without deleting prompt or run rows", async () => {
     const queries: RecordedQuery[] = []
     const sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
@@ -193,10 +267,13 @@ describe("PostgresAutomationStore actor isolation", () => {
 
     expect(recorded.queries[0]!.text).toContain("FROM boring_automation_automations")
     expect(recorded.queries[0]!.text).toContain("WHERE deleted_at IS NULL")
-    expect(recorded.queries[0]!.text).not.toContain("prompt")
-    expect(recorded.queries[1]!.text).toContain("runs.status IN ('queued', 'dispatching', 'running')")
+    expect(recorded.queries[0]!.text).toContain("prompt_ref")
+    expect(recorded.queries[1]!.text).toContain("runs.status = ANY(?)")
     expect(recorded.queries[1]!.text).toContain("runs.scheduled_for = ?")
     expect(recorded.queries[1]!.text).not.toContain("SELECT *")
-    expect(recorded.queries[1]!.values).toContain("2026-07-23T09:00:00.000Z")
+    expect(recorded.queries[1]!.values).toEqual(expect.arrayContaining([
+      ["queued", "dispatching", "running", "outcome-unknown"],
+      "2026-07-23T09:00:00.000Z",
+    ]))
   })
 })

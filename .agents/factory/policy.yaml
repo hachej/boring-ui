@@ -3,10 +3,12 @@
 # class-A merge. Parsed by the Beadle automation and merge gates.
 
 beadle:
-  tick_minutes: 10
   worker_cap: 3 # concurrent /exec workers, fleet-wide; max 1 UI-surface worker at a time (file-collision lane rule)
   stale_lease_minutes: 90
   lease_heartbeat_minutes: 15 # a working session must touch its bead at least this often
+  nudges_per_attempt: 1
+  nudge_cooldown_minutes: 15
+  orchestrator_completion_alarm_intervals: 3 # one owner intention per missed-completion episode
   bugfix_reserved_slots: 0 # worker slots held for the bugfix lane
 
 bounce:
@@ -52,8 +54,9 @@ trust_ladder:
 
 models:
   # Tiers resolve via docs/procedures/MODEL-CARD.md (priority-ordered).
-  # Seats, owner-ratified 2026-08-10 (gh-1187 S0): triage / orchestrator /
-  # worker. `worker`'s tier is only its DEFAULT — model routing lives at
+  # Current fleet seats: orchestrator / worker. Triage runs as a worker
+  # automation slot rather than an independently composed seat. `worker`'s
+  # tier is only its DEFAULT — model routing lives at
   # dispatch (per-session, or per-automation via #1143), so a taste-heavy UI
   # bead opens a worker session on a higher tier without a roster change.
   # Deferred grow-on-demand seats (concierge, reviewer, auditor, beadle) get
@@ -61,5 +64,4 @@ models:
   seats:
     orchestrator: T1
     worker: T3
-    triage: T3
     automation: T4

@@ -31,6 +31,10 @@ function run(overrides: Partial<AutomationRun> = {}): AutomationRun {
     id: "run-1",
     automationId: "automation-1",
     sessionId: "session-1",
+    dispatchReceipt: {
+      ref: { agentTypeId: "worker", sessionId: "session-1" }, accepted: true, cursor: 1,
+      disposition: "prompt", clientNonce: "run-1",
+    },
     status: "succeeded",
     trigger: "manual",
     scheduledFor: null,
@@ -55,6 +59,10 @@ function storeMock(overrides: Partial<AutomationStore> = {}) {
     listAutomations: vi.fn(async () => [current]),
     getAutomation: vi.fn(async (id) => id === current.id ? current : null),
     createAutomation: vi.fn(async (input) => automation({ title: input.title, enabled: input.enabled ?? true, cron: input.cron, timezone: input.timezone, model: input.model, thinkingLevel: input.thinkingLevel })),
+    readSeedManifest: vi.fn(async () => null),
+    ensureSeededAutomation: vi.fn(async () => null),
+    findExistingSeedKeys: vi.fn(async () => []),
+    removeSeededAutomationIfIdle: vi.fn(async () => true),
     updateAutomation: vi.fn(async (_id, patch) => automation(patch)),
     deleteAutomation: vi.fn(async () => {}),
     getPrompt: vi.fn(async () => "prompt"),
@@ -63,9 +71,13 @@ function storeMock(overrides: Partial<AutomationStore> = {}) {
     beginRun: vi.fn(async () => run()),
     claimRunForDispatch: vi.fn(async () => run({ status: "dispatching" })),
     heartbeatRun: vi.fn(async () => true),
+    preserveAcceptedDispatch: vi.fn(async () => run({ status: "outcome-unknown" })),
     updateRunLifecycle: vi.fn(async () => run()),
     listRuns: vi.fn(async () => [run()]),
+    listRecentRuns: vi.fn(async () => [run()]),
+    findRunBySessionRef: vi.fn(async (ref) => ref.agentTypeId === "worker" && ref.sessionId === "session-1" ? run() : null),
     ...overrides,
+    getRun: overrides.getRun ?? vi.fn(async (_automationId, runId) => runId === "run-1" ? run() : null),
   }
   return store
 }
@@ -112,6 +124,120 @@ describe("AutomationOperations", () => {
     await expect(operations.list(101)).rejects.toMatchObject({ code: BORING_AUTOMATION_ERROR_CODES.INVALID_BODY })
   })
 
+  it("joins dispatch runs with transcript-redacted session health", async () => {
+    const store = storeMock({ listRuns: vi.fn(async () => [run({ status: "running", trigger: "manual" })]) })
+    const sessionController = {
+      list: vi.fn(async () => [{ ref: { agentTypeId: "worker", sessionId: "session-1" }, title: "[br-1276] worker", status: "running" as const, createdAt: Date.now() - 20_000, updatedAt: Date.now() - 5_000 }]),
+      nudge: vi.fn(async () => ({ status: "accepted" as const, receipt: {} as never })),
+      cancel: vi.fn(async () => ({ accepted: true as const, cursor: 1, stopped: true, clearedQueue: [] })),
+    }
+    const operations = createAutomationOperations({ store, actor: { workspaceId: "w", userId: "u" }, defaultAgentTypeId: "default", sessionController })
+
+    const listed = await operations.listDispatchRuns!(10)
+
+    expect(listed.items).toEqual([expect.objectContaining({
+      trigger: "manual",
+      sessionId: "session-1",
+      agentTypeId: "worker",
+      sessionTitle: "[br-1276] worker",
+      sessionStatus: "running",
+      sessionAgeMs: expect.any(Number),
+    })])
+  })
+
+  it("reports truncation when the storage-bounded fleet query has more rows", async () => {
+    const recent = vi.fn(async () => [run({ id: "run-2" }), run({ id: "run-1" })])
+    const store = storeMock({ listRecentRuns: recent })
+    const operations = createAutomationOperations({ store, actor: { workspaceId: "w", userId: "u" } })
+
+    const listed = await operations.listDispatchRuns!(1)
+
+    expect(recent).toHaveBeenCalledWith(2)
+    expect(listed).toMatchObject({ truncated: true, items: [{ id: "run-2" }] })
+  })
+
+  it("returns an observable skip when idle admission reports a busy session", async () => {
+    const sessionController = {
+      list: vi.fn(async () => []),
+      nudge: vi.fn(async () => ({ status: "not-idle" as const })),
+      cancel: vi.fn(async () => ({ accepted: true as const, cursor: 1, stopped: true, clearedQueue: [] })),
+    }
+    const operations = createAutomationOperations({ store: storeMock(), actor: { workspaceId: "w", userId: "u" }, defaultAgentTypeId: "default", sessionController })
+
+    await expect(operations.nudge!({ agentTypeId: "worker", sessionId: "session-1" }, "Continue")).resolves.toEqual({
+      agentTypeId: "worker",
+      sessionId: "session-1",
+      skipped: "session-busy",
+    })
+  })
+
+  it.each([
+    Object.assign(new Error("session is not idle"), {
+      code: "AGENT_COMMAND_INVALID_STATE",
+      statusCode: 409,
+      details: { status: "error" },
+    }),
+    Object.assign(new Error("session runtime binding is not currently published"), {
+      code: "AGENT_COMMAND_INVALID_STATE",
+      statusCode: 409,
+    }),
+  ])("preserves non-busy invalid-state failures from automation nudges", async (invalidState) => {
+    const sessionController = {
+      list: vi.fn(async () => []),
+      nudge: vi.fn(async () => { throw invalidState }),
+      cancel: vi.fn(async () => ({ accepted: true as const, cursor: 1, stopped: true, clearedQueue: [] })),
+    }
+    const operations = createAutomationOperations({ store: storeMock(), actor: { workspaceId: "w", userId: "u" }, defaultAgentTypeId: "default", sessionController })
+
+    await expect(operations.nudge!({ agentTypeId: "worker", sessionId: "session-1" }, "Continue")).rejects.toBe(invalidState)
+  })
+
+  it("delivers a nudge to an idle session", async () => {
+    const sessionController = {
+      list: vi.fn(async () => []),
+      nudge: vi.fn(async () => ({ status: "accepted" as const, receipt: {} as never })),
+      cancel: vi.fn(async () => ({ accepted: true as const, cursor: 1, stopped: true, clearedQueue: [] })),
+    }
+    const operations = createAutomationOperations({ store: storeMock(), actor: { workspaceId: "w", userId: "u" }, defaultAgentTypeId: "default", sessionController })
+
+    await expect(operations.nudge!({ agentTypeId: "worker", sessionId: "session-1" }, "Continue")).resolves.toEqual({
+      agentTypeId: "worker",
+      sessionId: "session-1",
+      accepted: true,
+    })
+    expect(sessionController.nudge).toHaveBeenCalledWith("worker", "session-1", "Continue", expect.stringMatching(/^nudge:/))
+  })
+
+  it("reports cancel as skipped when the Agent confirms no session was stopped", async () => {
+    const sessionController = {
+      list: vi.fn(async () => []),
+      nudge: vi.fn(async () => ({ status: "accepted" as const, receipt: {} as never })),
+      cancel: vi.fn(async () => ({ accepted: true as const, cursor: 1, stopped: false, clearedQueue: [] })),
+    }
+    const operations = createAutomationOperations({ store: storeMock(), actor: { workspaceId: "w", userId: "u" }, sessionController })
+
+    await expect(operations.cancel!({ agentTypeId: "worker", sessionId: "session-1" })).resolves.toEqual({
+      agentTypeId: "worker",
+      sessionId: "session-1",
+      skipped: "session-not-running",
+    })
+  })
+
+  it("rejects a colliding session id addressed to the wrong Agent", async () => {
+    const operations = createAutomationOperations({
+      store: storeMock(),
+      actor: { workspaceId: "w", userId: "u" },
+      sessionController: {
+        list: vi.fn(async () => []),
+        nudge: vi.fn(async () => ({ status: "accepted" as const, receipt: {} as never })),
+        cancel: vi.fn(async () => ({ accepted: true as const, cursor: 1, stopped: true, clearedQueue: [] })),
+      },
+    })
+
+    await expect(operations.cancel!({ agentTypeId: "other", sessionId: "session-1" }))
+      .rejects.toMatchObject({ code: BORING_AUTOMATION_ERROR_CODES.SESSION_NOT_FOUND })
+  })
+
   it("caps prompt results and reports the original character count", async () => {
     const prompt = "x".repeat(AUTOMATION_TOOL_PROMPT_CHARACTER_LIMIT + 17)
     const operations = createAutomationOperations({ store: storeMock({ getPrompt: vi.fn(async () => prompt) }), actor: { workspaceId: "w", userId: "u" } })
@@ -155,17 +281,16 @@ describe("AutomationOperations", () => {
     expect(store.updatePrompt).not.toHaveBeenCalled()
   })
 
-  it("runs as the bound actor and returns a safe finalized run, including failed outcomes", async () => {
-    const failed = run({ status: "failed", error: `provider failed ${"x".repeat(500)}\nsecret second line` })
-    const executor = { run: vi.fn(async () => failed) }
+  it("durably admits a detached dispatch as the bound actor without awaiting its worker", async () => {
+    const queued = run({ status: "dispatching", trigger: "manual", sessionId: null, startedAt: null, completedAt: null })
+    const executor = { start: vi.fn(async () => queued) }
     const actor = { workspaceId: "workspace-1", userId: "user-1" }
     const operations = createAutomationOperations({ store: storeMock(), actor, executor })
 
     const result = await operations.run("automation-1")
 
-    expect(executor.run).toHaveBeenCalledWith({ automationId: "automation-1", actor })
-    expect(result.status).toBe("failed")
-    expect(result.error).toHaveLength(AUTOMATION_TOOL_ERROR_CHARACTER_LIMIT)
+    expect(executor.start).toHaveBeenCalledWith({ automationId: "automation-1", actor, trigger: "manual" })
+    expect(result).toMatchObject({ status: "dispatching", trigger: "manual", sessionId: null })
     expect(result).not.toHaveProperty("promptSnapshot")
     expect(result).not.toHaveProperty("modelSnapshot")
   })

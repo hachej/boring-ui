@@ -10,6 +10,7 @@ import { FileAskUserStore } from "../askUserStore"
 import { AskUserRuntime } from "../askUserRuntime"
 import { AskUserStatePublisher } from "../askUserStatePublisher"
 import { createAskUserTool } from "../createAskUserTool"
+import { createReadIntentionTool } from "../createReadIntentionTool"
 import { createAskUserBridgeHandlers } from "../askUserBridgeHandlers"
 import { createWorkspaceBridgeRegistry, type UiBridge, type UiCommand, type UiState, type WorkspaceBridgeCallContext } from "@hachej/boring-workspace/server"
 
@@ -99,4 +100,38 @@ describe("ask-user full workflow", () => {
       expect.objectContaining({ type: "answered" }),
     ])
   })
+
+  it("runs wait:false tool -> immediate id -> durable bridge answer", async () => {
+    const store = await makeStore()
+    const runtime = new AskUserRuntime({ store, ownerPrincipalId: "p1" })
+    const registry = createWorkspaceBridgeRegistry()
+    for (const entry of createAskUserBridgeHandlers({ store, runtime })) registry.registerHandler(entry.definition, entry.handler)
+    const tool = createAskUserTool({ runtime, sessionId: "s1" })
+
+    const result = await tool.execute("call-async", {
+      title: "Factory escalation",
+      wait: false,
+      schema: { wireVersion: 1, fields: [{ type: "radio", name: "decision", label: "Decision", options: [{ value: "approve", label: "Approve" }, { value: "reject", label: "Reject" }] }] },
+    })
+    expect(result).toMatchObject({ details: { status: "filed", questionId: expect.any(String) } })
+    const pending = (await store.getByQuestionId((result.details as any).questionId))!
+
+    const answered = await registry.call({
+      op: ASK_USER_BRIDGE_OPS.answer,
+      input: { questionId: pending.questionId, sessionId: "s1", answerToken: pending.answerToken, values: { decision: "approve" } },
+    }, {
+      callerClass: "browser",
+      workspaceId: "workspace-1",
+      sessionId: "s1",
+      capabilities: [ASK_USER_BRIDGE_CAPABILITIES.answer],
+      actor: { actorKind: "human", performedBy: { id: "p1", label: "user:p1" } },
+    })
+    expect(answered).toMatchObject({ ok: true, output: { status: "answered" } })
+    await expect(store.getByQuestionId(pending.questionId)).resolves.toMatchObject({ status: "answered", wait: false })
+    const reader = createReadIntentionTool(store)
+    await expect(reader.execute({ questionId: pending.questionId }, "p2")).resolves.toMatchObject({ isError: true })
+    const polled = await reader.execute({ questionId: pending.questionId }, "p1")
+    expect(polled).toMatchObject({ details: { questionId: pending.questionId, status: "answered", values: { decision: "approve" } } })
+  })
+
 })

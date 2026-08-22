@@ -1,21 +1,47 @@
 "use client"
 
+import { ComposerContributionProvider, type ComposerContribution } from "@hachej/boring-agent/front"
 import { createContext, useContext, useMemo, type ReactNode } from "react"
 import type { PluginProviderProps } from "@hachej/boring-workspace"
 import { createAutomationClient, type AutomationClient } from "./client"
+import { createScheduleSlashCommand } from "./scheduleCommand"
 
 type AutomationRuntime = { client: AutomationClient; agentTypeId: string; apiBaseUrl: string; authHeaders?: Record<string, string> }
 
 const AutomationClientContext = createContext<AutomationRuntime | null>(null)
 
-export function AutomationRuntimeProvider({ agentTypeId, apiBaseUrl, authHeaders, onAuthError, apiTimeout, children }: PluginProviderProps) {
+export function AutomationRuntimeProvider({ agentTypeId, apiBaseUrl, authHeaders, onAuthError, apiTimeout, workspaceTimezone = "UTC", children }: PluginProviderProps) {
   const client = useMemo(
     () => createAutomationClient({ apiBaseUrl, headers: authHeaders, onAuthError, apiTimeout }),
     [apiBaseUrl, authHeaders, onAuthError, apiTimeout],
   )
   const runtime = useMemo(() => ({ client, agentTypeId, apiBaseUrl, authHeaders }), [agentTypeId, apiBaseUrl, authHeaders, client])
-  return <AutomationClientContext.Provider value={runtime}>{children}</AutomationClientContext.Provider>
+  const composerContribution = useMemo<ComposerContribution>(() => ({
+    id: "boring-automation.schedule",
+    commands: [createScheduleSlashCommand({
+      client,
+      workspaceTimezone,
+      validateModel: async (selection) => await validateAutomationModel(client, selection),
+    })],
+  }), [client, workspaceTimezone])
+  return (
+    <AutomationClientContext.Provider value={runtime}>
+      <ComposerContributionProvider contribution={composerContribution}>
+        {children}
+      </ComposerContributionProvider>
+    </AutomationClientContext.Provider>
+  )
 }
+
+async function validateAutomationModel(
+  client: AutomationClient,
+  selection: { agentTypeId: string; provider: string; id: string },
+): Promise<void> {
+  const models = await client.listAgentModels(selection.agentTypeId)
+  const allowed = models.some((model) => model.available && model.provider === selection.provider && model.id === selection.id)
+  if (!allowed) throw new Error("the selected model is not available to that Agent")
+}
+
 
 export function useAutomationRuntime(): AutomationRuntime {
   const runtime = useContext(AutomationClientContext)

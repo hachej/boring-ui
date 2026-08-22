@@ -151,7 +151,7 @@ export function createBrowserBridgeAuthPolicy(
 /**
  * Dev/local CLI only. This policy performs no user authentication and grants
  * the configured capabilities (defaulting to the op's own) to a fixed
- * local-cli principal. Do not use it for exposed or production servers; pass a
+ * trusted local user principal. Do not use it for exposed or production servers; pass a
  * host-owned createBrowserBridgeAuthPolicy-style policy instead.
  */
 export function createLocalCliBridgeAuthPolicy(
@@ -182,12 +182,12 @@ export function createLocalCliBridgeAuthPolicy(
         sessionId: input.sessionId,
         pluginId: input.pluginId,
         capabilities,
-        actor: { actorKind: "human", performedBy: { label: "local-cli:user" } },
+        actor: { actorKind: "human", performedBy: { id: "local", label: "local-cli:user" } },
       })
       return {
         context,
         effectiveCapabilities: capabilities,
-        principal: { userId: "local-cli" },
+        principal: { userId: "local" },
         resourceScope: { workspaceId, sessionId: input.sessionId },
       }
     },

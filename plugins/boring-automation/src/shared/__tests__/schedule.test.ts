@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { Automation, AutomationRun } from "../types"
-import { evaluateAutomationSchedule, validateAutomationSchedule } from "../schedule"
+import {
+  DEFAULT_AUTOMATION_RUN_DURATION_CAP_MS,
+  MAX_AUTOMATION_DURATION_MS,
+  evaluateAutomationSchedule,
+  resolveAutomationRunDurationCapMs,
+  validateAutomationSchedule,
+} from "../schedule"
 
 function automation(overrides: Partial<Automation> = {}): Automation {
   return {
@@ -68,6 +74,26 @@ describe("automation schedule validation", () => {
       ok: false,
       errors: { timezone: "Invalid timezone. Use a valid IANA timezone, for example UTC or America/New_York." },
     })
+  })
+})
+
+describe("automation run duration cap", () => {
+  it("derives three cadence intervals and honors an explicit override", () => {
+    const reference = new Date("2026-01-01T09:00:00.000Z")
+    expect(resolveAutomationRunDurationCapMs(automation({ cron: "*/10 * * * *" }), reference)).toBe(30 * 60_000)
+    expect(resolveAutomationRunDurationCapMs(automation({ cron: "*/10 * * * *", runDurationCapMs: 42_000 }), reference)).toBe(42_000)
+  })
+
+  it("uses the absolute default for dispatch-only automations", () => {
+    expect(resolveAutomationRunDurationCapMs(automation({ cron: null }), new Date("2026-01-01T09:00:00.000Z")))
+      .toBe(DEFAULT_AUTOMATION_RUN_DURATION_CAP_MS)
+  })
+
+  it("clamps sparse monthly cadence derivation to the shared timer/database maximum", () => {
+    expect(resolveAutomationRunDurationCapMs(
+      automation({ cron: "0 0 1 * *" }),
+      new Date("2026-01-02T00:00:00.000Z"),
+    )).toBe(MAX_AUTOMATION_DURATION_MS)
   })
 })
 

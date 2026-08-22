@@ -117,7 +117,7 @@ export class AskUserRuntime {
   async abandonOrphanedPending(sessionIds: string[]): Promise<void> {
     for (const sessionId of sessionIds) {
       const pending = await this.store.getPending(sessionId)
-      if (pending && !this.coordinator.hasWaiter(pending.questionId)) {
+      if (pending && pending.wait !== false && !this.coordinator.hasWaiter(pending.questionId)) {
         await this.abandon(pending.questionId, pending.sessionId)
       }
     }
@@ -134,6 +134,18 @@ export class AskUserRuntime {
     const parsed = AskUserFormSchemaSchema.safeParse(request.schema)
     if (!parsed.success) throw new AskUserRuntimeError(ASK_USER_ERROR_CODES.SCHEMA_INVALID, parsed.error.message)
     question.schema = parsed.data
+
+    if (request.wait === false) {
+      await this.store.createPending(question)
+      try {
+        await this.store.appendTranscriptEvent({ type: "created", question, at: this.isoNow() })
+        await this.store.appendTranscriptEvent({ type: "ready", questionId: question.questionId, sessionId: question.sessionId, schema: parsed.data, at: this.isoNow() })
+      } catch {
+        // Durable question admission is authoritative. Transcript projection is
+        // recoverable and must not hide the polling id from the caller.
+      }
+      return { status: "filed", questionId: question.questionId, sessionId: question.sessionId }
+    }
 
     // Register the waiter before publishing/persisting the question. The UI
     // state publisher can make a question answerable as soon as createPending
@@ -160,7 +172,7 @@ export class AskUserRuntime {
   async submitAnswer(questionId: string, sessionId: string, values: AskUserAnswer["values"]): Promise<"answered" | "abandoned"> {
     const question = await this.store.getByQuestionId(questionId)
     if (!question || question.sessionId !== sessionId) throw new AskUserRuntimeError(ASK_USER_ERROR_CODES.QUESTION_NOT_FOUND, "question not found")
-    if (!this.coordinator.hasWaiter(questionId)) {
+    if (question.wait !== false && !this.coordinator.hasWaiter(questionId)) {
       await this.abandon(questionId, sessionId)
       return "abandoned"
     }
@@ -171,7 +183,7 @@ export class AskUserRuntime {
       answerPersisted = true
       await this.store.appendTranscriptEvent({ type: "answered", answer, at: this.isoNow() })
     } finally {
-      if (answerPersisted) this.coordinator.resolveAnswered(questionId, answer)
+      if (answerPersisted) if (question.wait !== false) this.coordinator.resolveAnswered(questionId, answer)
     }
     return "answered"
   }
@@ -179,7 +191,7 @@ export class AskUserRuntime {
   async cancelQuestion(questionId: string, sessionId: string, reason: AskUserCancelReason = "user_cancelled"): Promise<void> {
     const question = await this.store.getByQuestionId(questionId)
     if (!question || question.sessionId !== sessionId) throw new AskUserRuntimeError(ASK_USER_ERROR_CODES.QUESTION_NOT_FOUND, "question not found")
-    if (!this.coordinator.hasWaiter(questionId)) {
+    if (question.wait !== false && !this.coordinator.hasWaiter(questionId)) {
       await this.abandon(questionId, sessionId)
       return
     }
@@ -192,7 +204,7 @@ export class AskUserRuntime {
       if (!cancelPersisted) await this.resolveCancelledUnlessAnswered(questionId, reason)
       throw error
     } finally {
-      if (cancelPersisted) this.coordinator.resolveCancelled(questionId, reason)
+      if (cancelPersisted && question.wait !== false) this.coordinator.resolveCancelled(questionId, reason)
     }
   }
 
@@ -234,7 +246,7 @@ export class AskUserRuntime {
     this.coordinator.resolveCancelled(questionId, "abandoned")
   }
 
-  private createQuestion(request: Pick<AskUserRequest, "sessionId" | "title" | "context" | "artifacts" | "toolCallId" | "ownerPrincipalId">): AskUserQuestion {
+  private createQuestion(request: Pick<AskUserRequest, "sessionId" | "title" | "context" | "artifacts" | "toolCallId" | "ownerPrincipalId" | "wait">): AskUserQuestion {
     const at = this.isoNow()
     return {
       questionId: randomUUID(),
@@ -242,6 +254,7 @@ export class AskUserRuntime {
       toolCallId: request.toolCallId,
       ownerPrincipalId: request.ownerPrincipalId ?? this.ownerPrincipalId,
       status: "ready",
+      wait: request.wait ?? true,
       title: request.title,
       context: request.context,
       artifacts: request.artifacts ?? [],

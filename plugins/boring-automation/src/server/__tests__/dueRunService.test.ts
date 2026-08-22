@@ -127,10 +127,10 @@ describe("DueRunService", () => {
       const service = new DueRunService({ store: restartedStore, executor: { run: execute } as never, clock: () => NOW })
       const result = await service.runDue(request())
 
-      expect(execute).toHaveBeenCalledOnce()
-      expect(result.outcomes).toEqual([expect.objectContaining({ kind: "started", automationId: saved.id })])
+      expect(execute).not.toHaveBeenCalled()
+      expect(result.outcomes).toEqual([expect.objectContaining({ kind: "skipped", automationId: saved.id, reason: "active-run" })])
       await expect(restartedStore.listRuns(saved.id)).resolves.toEqual(expect.arrayContaining([
-        expect.objectContaining({ id: orphan.id, status: "failed", error: "Automation host restarted before the run completed" }),
+        expect.objectContaining({ id: orphan.id, status: "outcome-unknown", error: "Automation dispatch outcome is unknown after host restart; the slot remains occupied" }),
       ]))
     } finally {
       await rm(dir, { recursive: true, force: true })

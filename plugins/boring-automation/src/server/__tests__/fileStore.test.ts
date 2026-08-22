@@ -1,7 +1,8 @@
 import { mkdir, mkdtemp, readFile, readdir, rm, unlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { createFactoryAutomationSeedProvider } from "@hachej/boring-agent/server"
 import { FileAutomationStore, type FileAutomationStoreOptions } from "../fileStore"
 import { runFileAutomationStoreBehaviorTests } from "./automationStoreConformance"
 
@@ -93,6 +94,35 @@ describe("FileAutomationStore persistence", () => {
     expect(raw.runs).toHaveProperty(run.id)
   })
 
+  it("rejects an invalid persisted duration cap instead of silently changing timer behavior", async () => {
+    const store = createStore()
+    const automation = await store.createAutomation({
+      title: "Invalid cap", cron: "0 9 * * *", timezone: "UTC", model: "test:model",
+    })
+    const raw = JSON.parse(await readFile(metadataPath("store.json"), "utf8"))
+    raw.automations[automation.id].runDurationCapMs = Number.MAX_SAFE_INTEGER
+    await writeFile(metadataPath("store.json"), JSON.stringify(raw), "utf8")
+
+    await expect(createStore().getAutomation(automation.id)).rejects.toThrow(
+      `automation ${automation.id} has an invalid persisted run duration cap`,
+    )
+  })
+
+  it("clamps orphan reconciliation duration to the persisted integer ceiling", async () => {
+    const first = createStore({ clock: () => new Date("2026-01-01T00:00:00.000Z") })
+    const automation = await first.createAutomation({
+      title: "Long orphan", cron: "0 9 * * *", timezone: "UTC", model: "test:model",
+    })
+    const run = await first.beginRun({ automationId: automation.id, trigger: "manual", promptSnapshot: "p", modelSnapshot: "test:model" })
+    await first.updateRunLifecycle(run.id, { status: "running", startedAt: "2026-01-01T00:00:00.000Z" })
+
+    const restarted = createStore({ clock: () => new Date("2099-01-01T00:00:00.000Z") })
+    await restarted.reconcileOrphanedRuns(automation.id)
+    await expect(restarted.listRuns(automation.id)).resolves.toEqual([
+      expect.objectContaining({ id: run.id, durationMs: 2_147_483_647 }),
+    ])
+  })
+
   it("reconciles persisted active runs after host restart before admitting a new run", async () => {
     const firstStore = createStore({ clock: () => new Date("2026-07-10T00:00:00.000Z") })
     const automation = await firstStore.createAutomation({
@@ -110,20 +140,52 @@ describe("FileAutomationStore persistence", () => {
     await firstStore.updateRunLifecycle(orphan.id, { status: "running", startedAt: "2026-07-10T00:00:01.000Z" })
 
     const restartedStore = createStore({ clock: () => new Date("2026-07-10T00:10:00.000Z") })
-    const replacement = await restartedStore.beginRun({
+    await expect(restartedStore.beginRun({
       automationId: automation.id,
       trigger: "manual",
       promptSnapshot: "prompt",
       modelSnapshot: "test:gpt-5.5",
-    })
+    })).rejects.toMatchObject({ code: "BORING_AUTOMATION_RUN_ALREADY_ACTIVE" })
     const runs = await restartedStore.listRuns(automation.id)
 
-    expect(replacement.status).toBe("queued")
     expect(runs).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: orphan.id, status: "failed", completedAt: "2026-07-10T00:10:00.000Z", durationMs: 599_000, error: "Automation host restarted before the run completed" }),
-      expect.objectContaining({ id: replacement.id, status: "queued" }),
+      expect.objectContaining({ id: orphan.id, status: "outcome-unknown", completedAt: "2026-07-10T00:10:00.000Z", durationMs: 599_000, error: "Automation dispatch outcome is unknown after host restart; the slot remains occupied" }),
     ]))
-    await expect(restartedStore.listRuns(automation.id, 1)).resolves.toHaveLength(1)
+
+    await restartedStore.reconcileOrphanedRuns(automation.id)
+    await expect(restartedStore.beginRun({
+      automationId: automation.id,
+      trigger: "manual",
+      promptSnapshot: "replacement",
+      modelSnapshot: "test:gpt-5.5",
+    })).resolves.toMatchObject({ status: "queued" })
+    await expect(restartedStore.listRuns(automation.id)).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: orphan.id,
+        status: "failed",
+        error: "Automation outcome remained unknown after host restart; releasing the occupied slot",
+      }),
+    ]))
+  })
+
+  it("never auto-releases accepted outcome ambiguity after restart", async () => {
+    const first = createStore()
+    const automation = await first.createAutomation({ title: "Accepted", cron: "0 9 * * *", timezone: "UTC", model: "test:model" })
+    const run = await first.beginRun({ automationId: automation.id, trigger: "manual", promptSnapshot: "p", modelSnapshot: "test:model" })
+    await first.claimRunForDispatch(run.id)
+    await first.updateRunLifecycle(run.id, {
+      status: "outcome-unknown",
+      sessionId: "session-1",
+      dispatchReceipt: { ref: { agentTypeId: "default", sessionId: "session-1" }, accepted: true, cursor: 1, disposition: "prompt", clientNonce: run.id },
+    })
+
+    const restarted = createStore()
+    await restarted.reconcileOrphanedRuns(automation.id)
+    await expect(restarted.listRuns(automation.id)).resolves.toEqual([
+      expect.objectContaining({ id: run.id, status: "outcome-unknown", dispatchReceipt: expect.objectContaining({ accepted: true }) }),
+    ])
+    await expect(restarted.beginRun({ automationId: automation.id, trigger: "manual", promptSnapshot: "again", modelSnapshot: "test:model" }))
+      .rejects.toMatchObject({ code: "BORING_AUTOMATION_RUN_ALREADY_ACTIVE" })
   })
 
   it("allows only one dispatcher to claim a queued run", async () => {
@@ -176,6 +238,29 @@ describe("FileAutomationStore persistence", () => {
     await expect(createStore().listAutomations()).resolves.toEqual([])
   })
 
+  it("promotes a heartbeating older run above newer terminal history in fleet pagination", async () => {
+    let now = "2026-07-10T00:00:00.000Z"
+    const store = createStore({ clock: () => new Date(now) })
+    const activeAutomation = await store.createAutomation({ title: "active", timezone: "UTC", model: "test:model" })
+    const terminalAutomation = await store.createAutomation({ title: "terminal", timezone: "UTC", model: "test:model" })
+    const active = await store.beginRun({
+      automationId: activeAutomation.id, trigger: "manual", createdAt: "2026-07-10T00:00:00.000Z",
+      promptSnapshot: "active", modelSnapshot: "test:model",
+    })
+    await store.claimRunForDispatch(active.id)
+    now = "2026-07-10T01:00:00.000Z"
+    const terminal = await store.beginRun({
+      automationId: terminalAutomation.id, trigger: "manual", createdAt: now,
+      promptSnapshot: "terminal", modelSnapshot: "test:model",
+    })
+    await store.claimRunForDispatch(terminal.id)
+    await store.updateRunLifecycle(terminal.id, { status: "succeeded", completedAt: now })
+    now = "2026-07-10T02:00:00.000Z"
+    await store.heartbeatRun(active.id)
+
+    await expect(store.listRecentRuns(1)).resolves.toEqual([expect.objectContaining({ id: active.id })])
+  })
+
   it("loads a missing prompt as empty and repairs it through updatePrompt", async () => {
     const store = createStore()
     const automation = await store.createAutomation({
@@ -195,4 +280,127 @@ describe("FileAutomationStore persistence", () => {
     await expect(readFile(path, "utf8")).resolves.toBe("repaired")
   })
 
+})
+
+describe("standing factory automation seeding", () => {
+  const workerSeeds = [1, 2, 3].map((slot) => ({ key: `worker-slot-${slot}`, title: `worker-slot-${slot}`, enabled: true, cron: null, timezone: "UTC", model: "openai-codex:gpt-5.6-sol", agentTypeId: "boring-worker", promptRef: ".agents/automation/worker-slot.md" }))
+  const triageSeed = { key: "triage", title: "triage", enabled: true, cron: null, timezone: "UTC", model: "openai-codex:gpt-5.6-sol", agentTypeId: "boring-worker", promptRef: ".agents/automation/triage-slot.md" }
+
+  async function writeSeedFiles() {
+    await mkdir(join(dir, ".agents", "automation"), { recursive: true })
+    await writeFile(join(dir, ".agents", "automation", "manifest.json"), JSON.stringify({ automations: [
+      { key: "orchestrator-tick", title: "orchestrator-tick", enabled: true, cron: "*/10 * * * *", timezone: "UTC", model: "openai-codex:gpt-5.6-sol", agentTypeId: "boring-orchestrator", promptRef: ".agents/automation/orchestrator-tick.md" },
+    ] }), "utf8")
+    await Promise.all([
+      writeFile(join(dir, ".agents", "automation", "orchestrator-tick.md"), "orchestrator prompt", "utf8"),
+      writeFile(join(dir, ".agents", "automation", "worker-slot.md"), "worker prompt", "utf8"),
+      writeFile(join(dir, ".agents", "automation", "triage-slot.md"), "triage prompt", "utf8"),
+    ])
+  }
+
+  it("schema-validates the untrusted workspace manifest", async () => {
+    const { seedStandingAutomations } = await import("../standingAutomations")
+    await writeSeedFiles()
+    const manifestPath = join(dir, ".agents", "automation", "manifest.json")
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"))
+    manifest.automations[0].timezone = "not/a-zone"
+    await writeFile(manifestPath, JSON.stringify(manifest), "utf8")
+
+    await expect(seedStandingAutomations(createStore())).rejects.toThrow()
+  })
+
+  it("merges exactly the generic injected seeds with the manifest and remains idempotent", async () => {
+    const { seedStandingAutomations } = await import("../standingAutomations")
+    await writeSeedFiles()
+    const additionalSeeds = [...workerSeeds, triageSeed]
+    await seedStandingAutomations(createStore(), { additionalSeeds })
+    await seedStandingAutomations(createStore(), { additionalSeeds })
+
+    const store = createStore()
+    const automations = await store.listAutomations()
+    expect(automations.map(({ id }) => id).sort()).toEqual([
+      "orchestrator-tick", "triage", "worker-slot-1", "worker-slot-2", "worker-slot-3",
+    ])
+    expect(automations.find(({ id }) => id === "orchestrator-tick")).toMatchObject({
+      cron: "*/10 * * * *", promptRef: ".agents/automation/orchestrator-tick.md", agentTypeId: "boring-orchestrator",
+    })
+    for (const id of ["worker-slot-1", "worker-slot-2", "worker-slot-3"]) {
+      expect(automations.find((automation) => automation.id === id)).toMatchObject({
+        cron: null, promptRef: ".agents/automation/worker-slot.md", agentTypeId: "boring-worker",
+      })
+      await expect(store.getPrompt(id)).resolves.toBe("worker prompt")
+    }
+    await expect(store.getPrompt("triage")).resolves.toBe("triage prompt")
+  })
+
+  it("persists policy growth from 3 to 5 with manifest, worker slots, and triage end to end", async () => {
+    const { seedStandingAutomations } = await import("../standingAutomations")
+    await writeSeedFiles()
+    await mkdir(join(dir, ".agents", "factory"), { recursive: true })
+    await writeFile(join(dir, ".agents", "factory", "policy.yaml"), "beadle:\n  worker_cap: 3\n", "utf8")
+    await seedStandingAutomations(createStore(), {
+      seedProvider: createFactoryAutomationSeedProvider({ policyRoot: dir }),
+    })
+    await writeFile(join(dir, ".agents", "factory", "policy.yaml"), "beadle:\n  worker_cap: 5\n", "utf8")
+    await seedStandingAutomations(createStore(), {
+      seedProvider: createFactoryAutomationSeedProvider({ policyRoot: dir }),
+    })
+    expect((await createStore().listAutomations()).map(({ id }) => id).sort()).toEqual([
+      "orchestrator-tick", "triage", "worker-slot-1", "worker-slot-2", "worker-slot-3", "worker-slot-4", "worker-slot-5",
+    ])
+  })
+
+  it("preserves operator-edited seed metadata when the manifest is applied again", async () => {
+    const { seedStandingAutomations } = await import("../standingAutomations")
+    await writeSeedFiles()
+    const store = createStore()
+    await seedStandingAutomations(store, { additionalSeeds: [triageSeed] })
+    await store.updateAutomation("triage", { title: "operator title", enabled: false, timezone: "Europe/Zurich", model: "operator:model" })
+
+    await seedStandingAutomations(store, { additionalSeeds: [triageSeed] })
+
+    await expect(store.getAutomation("triage")).resolves.toMatchObject({
+      title: "operator title", enabled: false, timezone: "Europe/Zurich", model: "operator:model",
+    })
+  })
+
+  it("keeps a surplus seeded slot when its run is active", async () => {
+    const { seedStandingAutomations } = await import("../standingAutomations")
+    await writeSeedFiles()
+    const store = createStore()
+    await seedStandingAutomations(store, { additionalSeeds: [...workerSeeds, triageSeed] })
+    await store.updateAutomation("worker-slot-3", { title: "renamed-active-worker" })
+    await store.beginRun({
+      automationId: "worker-slot-3", trigger: "manual", scheduledFor: null,
+      promptSnapshot: "worker", modelSnapshot: "openai-codex:gpt-5.6-sol",
+    })
+    await mkdir(join(dir, ".agents", "factory"), { recursive: true })
+    await writeFile(join(dir, ".agents", "factory", "policy.yaml"), "beadle:\n  worker_cap: 2\n", "utf8")
+    const warn = vi.fn()
+    await seedStandingAutomations(store, {
+      seedProvider: createFactoryAutomationSeedProvider({ policyRoot: dir, warn }),
+    })
+    expect((await store.listAutomations()).map(({ id }) => id).sort()).toContain("worker-slot-3")
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("active run"))
+  })
+
+  it("does not prune an unrelated automation whose mutable title collides with a surplus slot key", async () => {
+    const { seedStandingAutomations } = await import("../standingAutomations")
+    await writeSeedFiles()
+    const store = createStore()
+    const unrelated = await store.createAutomation({
+      title: "worker-slot-4",
+      timezone: "UTC",
+      model: "openai-codex:gpt-5.6-sol",
+      agentTypeId: "boring-worker",
+    })
+    await mkdir(join(dir, ".agents", "factory"), { recursive: true })
+    await writeFile(join(dir, ".agents", "factory", "policy.yaml"), "beadle:\n  worker_cap: 3\n", "utf8")
+
+    await seedStandingAutomations(store, {
+      seedProvider: createFactoryAutomationSeedProvider({ policyRoot: dir }),
+    })
+
+    await expect(store.getAutomation(unrelated.id)).resolves.toMatchObject({ title: "worker-slot-4" })
+  })
 })

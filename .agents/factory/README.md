@@ -26,19 +26,17 @@ Build order: `docs/factory/TODO.md`.
 One line per stage. The gate column is what must be true before work leaves it.
 
 **Seat column vs. the booted roster.** The booted fleet
-(`.agents/factory/fleet.yaml`) is three seats — `triage`, `orchestrator`,
-`worker` — owner-ratified 2026-08-10 (gh-1187 S0). The stage names below are
-still the pre-migration five: `concierge` and `steward` stages are held by
-`orchestrator`, and `reviewer` is not a seat at all — review is a rule, run as
-fresh-context subagents the worker spawns at gate time. This table is rewritten
-per activity in gh-1187 S8, once the workspace path has done each job for real;
-until then nothing is retired.
+(`.agents/factory/fleet.yaml`) is two seats — `orchestrator` and `worker`.
+`concierge` and `steward` stages are held by `orchestrator`; triage is work
+performed by a worker automation slot, not an independently composed seat; and
+`reviewer` is not a seat at all — review is a rule, run as fresh-context
+subagents the worker spawns at gate time.
 
 | Stage | Seat | Skill | Procedure | In → Out | Gate |
 | --- | --- | --- | --- | --- | --- |
 | intake | — | `feedback` | boring-loop | raw report → canonical GH issue | deduplicated, redacted |
 | refine | concierge | `ask-boring` routing | boring-loop | idea/issue → agreed epic scope | owner says go (conversational) |
-| triage | triage | `triage` | boring-loop | GH issue → category, state, first blocker, route | exactly one state, one next action |
+| triage | worker (automation slot) | `triage` | boring-loop | GH issue → category, state, first blocker, route | exactly one state, one next action |
 | plan | steward | `plan` | `issue-plans.md` | epic → bead graph + proof path | **human gate 1**: plan-approval intention |
 | dispatch | worker (pull) + beadle (supervisor) | — | `worktree-agent.md` | ready beads → claimed bead + worker session | pull-based: worker runs `br ready`, leases one bead, stamps its session id on the bead at claim; Beadle only spawns workers while ready > active (cap and lease rules in policy.yaml) — it never picks beads |
 | exec | worker | `exec` | `worktree-agent.md`, `proof-of-work.md` | one bead → commits + proof + handoff | focused proof green; handoff written |
@@ -95,8 +93,9 @@ budgets and per-bead spend caps (the worker cap bounds total concurrency).
 
 ## Session rules
 
-These rules apply to every seat including the Concierge — its durable state
-lives in beads/notes, never in accumulated session context.
+These rules apply to every seat and to the Concierge role held by the
+orchestrator — durable state lives in beads/notes, never in accumulated session
+context.
 
 - One bead = one durable session. Identity lives in the seat, not the session.
 - The **worker writes the binding at claim**: leasing a bead and stamping the

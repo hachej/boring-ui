@@ -23,9 +23,9 @@ import { loadBoringFactoryAgents, type BoringFactoryRole } from './factoryAgents
 import { resolvePlaygroundDefaultAgentTypeId } from '../shared/playgroundAgents'
 
 const REPOSITORY_ROOT = resolve(import.meta.dirname, '../../../..')
-// The ratified 3-seat roster (gh-1187 S0), in fleet.yaml order.
+// The current two-seat roster, in fleet.yaml order. Triage runs in a worker
+// automation slot and therefore has no independently composed fleet seat.
 const EXPECTED = [
-  { role: 'triage', id: 'boring-triage', skills: ['triage', 'owner-gate', 'handoff'] },
   { role: 'orchestrator', id: 'boring-orchestrator', skills: ['plan', 'feedback', 'owner-gate', 'handoff'] },
   { role: 'worker', id: 'boring-worker', skills: ['exec', 'fresh-eyes', 'owner-gate', 'handoff'] },
 ] as const
@@ -129,13 +129,13 @@ describe('loadBoringFactoryAgents (loader against the real .agents/ tree)', () =
   })
 
   test('fails boot with a stable, redacted diagnostic when a canonical skill is unavailable', async () => {
-    fsFailure.skill = 'triage'
+    fsFailure.skill = 'plan'
     try {
       const error = await loadBoringFactoryAgents({ workspaceRoot: REPOSITORY_ROOT }).catch((cause: unknown) => cause)
       expect(error).toMatchObject({
         name: 'TrustedAgentCompositionError',
         diagnostics: [
-          { seat: 'triage', code: ErrorCode.enum.AGENT_FLEET_SEAT_SKILL_DIGEST_MISMATCH },
+          { seat: 'orchestrator', code: ErrorCode.enum.AGENT_FLEET_SEAT_SKILL_DIGEST_MISMATCH },
         ],
       })
       expect(String(error)).not.toMatch(/private\/root|SKILL\.md missing/)

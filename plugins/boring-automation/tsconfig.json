@@ -13,6 +13,7 @@
     "noEmit": true,
     "types": ["vitest/globals", "@testing-library/jest-dom"],
     "paths": {
+      "@hachej/boring-agent/front": ["../../packages/agent/src/front/index.ts"],
       "@hachej/boring-agent/server": ["../../packages/agent/src/server/index.ts"],
       "@hachej/boring-agent/shared": ["../../packages/agent/src/shared/index.ts"],
       "@hachej/boring-agent/core": ["../../packages/agent/src/core/index.ts"],

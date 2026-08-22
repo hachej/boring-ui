@@ -234,6 +234,7 @@ export const AskUserToolInputSchema = z
       .min(ASK_USER_SCHEMA_LIMITS.minTimeoutMs)
       .max(ASK_USER_SCHEMA_LIMITS.maxTimeoutMs)
       .optional(),
+    wait: z.boolean().optional(),
   })
   .strict()
 
@@ -250,6 +251,7 @@ export const AskUserRequestSchema = z
       .min(ASK_USER_SCHEMA_LIMITS.minTimeoutMs)
       .max(ASK_USER_SCHEMA_LIMITS.maxTimeoutMs)
       .optional(),
+    wait: z.boolean().optional(),
   })
   .strict()
 
