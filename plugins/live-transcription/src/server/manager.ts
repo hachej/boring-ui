@@ -588,7 +588,7 @@ function createLeaseReviewTarget(
           if (accepted) return
           const code = (error as { code?: unknown })?.code
           if (code === "AGENT_COMMAND_INVALID_STATE") return resolve({ status: "busy" })
-          if (code === "AGENT_SESSION_NOT_FOUND" || code === "AGENT_SCOPE_DENIED" || code === "AGENT_SESSION_RUNTIME_SCOPE_MISMATCH") {
+          if (code === "AGENT_SESSION_NOT_FOUND" || code === "AGENT_SCOPE_DENIED") {
             return resolve({ status: "gone" })
           }
           reject(error)

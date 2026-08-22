@@ -57,7 +57,6 @@ export const navigateToLineSchema = z.object({
 })
 
 const filesystemId = z.string().min(1)
-
 /** A tree reveal names either a path or one explicit filesystem root. */
 export const expandToFileSchema = z.union([
   z.object({

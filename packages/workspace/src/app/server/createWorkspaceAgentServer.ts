@@ -135,7 +135,6 @@ interface WorkspacePiSessionRequestContext {
   authEmail?: string
   authEmailVerified?: boolean
   sessionAuthority?: "workspace-scope"
-  runtimeScopeIdentity?: string
   requestId: string
 }
 
@@ -492,13 +491,9 @@ function resolveBoringPiPackageRoot(): string | null {
   }
 }
 
-function requireBoringPiPackageRoot(): string {
-  const source = resolveBoringPiPackageRoot()
-  if (source) return source
-  throw new Error(
-    "BORING_PI_RUNTIME_NOT_FOUND: @hachej/boring-pi is missing or incomplete in the host installation",
-  )
-}
+// 0.1.101 interim (see #848): boring-pi is OPTIONAL again — it has never been
+// published to npm, so a hard requirement would crash every published install.
+// 0.1.102 retires the package entirely (content moves to the plugin CLI).
 
 function isUsableBoringUiPluginCliPackageRoot(candidate: string): boolean {
   try {
@@ -552,13 +547,16 @@ function createBoringUiPluginCliPackageProvisioningContribution(): WorkspaceProv
   }
 }
 
-function createBoringPiPackageSource(): WorkspacePiPackageSource {
+function createBoringPiPackageSource(): WorkspacePiPackageSource | undefined {
   // The Pi runtime is part of the host's trusted computing base. Resolving it
   // from the opened workspace would let that workspace substitute executable
   // host code and, in pnpm projects, selects a symlink rejected by the resource
-  // containment guard. Always require the runtime installed with this package.
+  // containment guard. Only the host installation is consulted; absence is
+  // tolerated (published installs never carried this package — see #848).
+  const source = resolveBoringPiPackageRoot()
+  if (!source) return undefined
   return {
-    source: requireBoringPiPackageRoot(),
+    source,
     skills: ["skills/boring-plugin-authoring"],
   }
 }
@@ -578,7 +576,9 @@ function createBoringPiPackageSource(): WorkspacePiPackageSource {
  * plugin-authoring skill.
  */
 export function resolveBoringPiSkillPaths(_workspaceRoot?: string): string[] {
-  return [join(requireBoringPiPackageRoot(), "skills", "boring-plugin-authoring", "SKILL.md")]
+  const root = resolveBoringPiPackageRoot()
+  if (!root) return []
+  return [join(root, "skills", "boring-plugin-authoring", "SKILL.md")]
 }
 
 
@@ -612,8 +612,8 @@ interface NormalizedAgentRuntimeContribution {
   readonly runtimePlugins: readonly WorkspaceRuntimeProvisioningInput[]
   readonly agentOptions: AgentSpecPluginArtifactProjection["agentOptions"]
   readonly includeAllDiscoveredPluginResources: boolean
-  /** Preserves persisted runtime pins from the pre-normalization standalone host. */
-  readonly standaloneIdentityV1: boolean
+  /** Preserves legacy standalone plugin/tool ordering for the default Agent composition. */
+  readonly legacyStandaloneComposition: boolean
 }
 
 export const AGENT_RUNTIME_IDENTITY_ERROR_CODE = "BORING_AGENT_RUNTIME_IDENTITY_INCOMPLETE"
@@ -1282,7 +1282,7 @@ export async function createWorkspaceAgentServer(
     workspaceRoot,
     ...(discoveredPackages ? { discoveredPackages } : {}),
   })
-  const standaloneDefaultIdentityV1 = agents.length === 1 && "legacyDefault" in agents[0]!
+  const legacyStandaloneDefaultComposition = agents.length === 1 && "legacyDefault" in agents[0]!
   const bridge = createInMemoryBridge()
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
   const modeAdapter = opts.runtimeModeAdapter ?? createSandboxRuntimeModeAdapter(
@@ -1530,7 +1530,7 @@ export async function createWorkspaceAgentServer(
           pluginIds,
         }
         const includeAllDiscoveredPluginResources = legacyDefault
-        const identityProjection = standaloneDefaultIdentityV1 && legacyDefault
+        const identityProjection = legacyStandaloneDefaultComposition && legacyDefault
           ? { artifacts: projection.artifacts, runtimePlugins: [], agentOptions: { extraTools: [], pi: {} } }
           : projection
         normalizedRuntimeContributions.set(agent.agentTypeId, {
@@ -1538,12 +1538,12 @@ export async function createWorkspaceAgentServer(
             agent,
             resolvedPolicy,
             projection: identityProjection,
-            includeAllDiscoveredPluginResources: standaloneDefaultIdentityV1 ? false : includeAllDiscoveredPluginResources,
+            includeAllDiscoveredPluginResources: legacyStandaloneDefaultComposition ? false : includeAllDiscoveredPluginResources,
           }),
           runtimePlugins: projection.runtimePlugins,
           agentOptions: projection.agentOptions,
           includeAllDiscoveredPluginResources,
-          standaloneIdentityV1: standaloneDefaultIdentityV1 && legacyDefault,
+          legacyStandaloneComposition: legacyStandaloneDefaultComposition && legacyDefault,
         })
         return { ...agent, resolvedPolicy }
       })
@@ -1586,7 +1586,7 @@ export async function createWorkspaceAgentServer(
     ...appSystemPromptParts,
     opts.systemPromptAppend,
   ].filter(Boolean).join("\n\n") || undefined
-  const standaloneIdentityV1SystemPromptAppend = [
+  const legacyStandaloneCompositionSystemPromptAppend = [
     ...appSystemPromptParts,
     pluginCollection.agentOptions.systemPromptAppend,
   ].filter(Boolean).join("\n\n") || undefined
@@ -1737,7 +1737,7 @@ export async function createWorkspaceAgentServer(
             requestId,
           }) ?? []
           const packageRegistry = currentPackageResourceSnapshot?.registry
-          const packageBinding = standaloneDefaultIdentityV1 && packageRegistry?.readonlyMounts.length
+          const packageBinding = legacyStandaloneDefaultComposition && packageRegistry?.readonlyMounts.length
             ? await runtimeHost.createAgentResourceFilesystemBinding(
                 AGENT_RESOURCES_FILESYSTEM_ID,
                 packageRegistry.readonlyMounts,
@@ -1791,7 +1791,7 @@ export async function createWorkspaceAgentServer(
       const locateAgentPackageSkill = (filePath: string) => getAgentPackageResourceView()?.locateSkill(filePath)
       const resolvedBasePi = basePi
       const selectedPi = contribution.agentOptions.pi
-      const staticPiResources = contribution.standaloneIdentityV1
+      const staticPiResources = contribution.legacyStandaloneComposition
         ? {
             packages: compactPiPackages([
               workspacePackagePiPackage,
@@ -1813,12 +1813,12 @@ export async function createWorkspaceAgentServer(
               ...(selectedPi?.extensionPaths ?? []),
             ]),
           }
-      const identityBaseExtraTools = contribution.standaloneIdentityV1
+      const identityBaseExtraTools = contribution.legacyStandaloneComposition
         ? [...baseExtraTools, ...(pluginCollection.agentOptions.extraTools ?? [])]
         : baseExtraTools
       const baseBindingInputs = jsonIdentityValue({
-        systemPromptAppend: contribution.standaloneIdentityV1
-          ? standaloneIdentityV1SystemPromptAppend ?? null
+        systemPromptAppend: contribution.legacyStandaloneComposition
+          ? legacyStandaloneCompositionSystemPromptAppend ?? null
           : baseSystemPromptAppend ?? null,
         piHarnessPolicy: {
           noContextFiles: resolvedBasePi.noContextFiles ?? null,
@@ -1921,6 +1921,7 @@ export async function createWorkspaceAgentServer(
         return createPiResourceDigestInput({
           piCwd: workspaceRoot,
           noSkills: selectedPi?.noSkills ?? resolvedBasePi.noSkills,
+          noContextFiles: selectedPi?.noContextFiles ?? resolvedBasePi.noContextFiles,
           resourceSets: [{
             promptParts: [staticSystemPromptAppend, dynamicSystemPromptAppend],
             additionalSkillPaths,

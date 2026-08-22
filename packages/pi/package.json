@@ -15,5 +15,10 @@
     "skills": [
       "./skills"
     ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hachej/boring-ui.git",
+    "directory": "packages/pi"
   }
 }

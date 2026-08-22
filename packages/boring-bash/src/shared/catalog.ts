@@ -25,6 +25,7 @@ export const FILESYSTEM_CATALOG_CAPABILITIES = [
   "list",
   "search",
   "write",
+  "upload",
   "delete",
   "move",
   "mkdir",
@@ -54,6 +55,20 @@ export function isFilesystemCatalogCapabilities(value: unknown): value is Filesy
   return FILESYSTEM_CATALOG_CAPABILITIES.every((capability) => typeof capabilities[capability] === "boolean");
 }
 
+type FilesystemCatalogWireCapabilities = Omit<FilesystemCatalogCapabilities, "upload"> & {
+  upload?: boolean;
+};
+
+function isFilesystemCatalogWireCapabilities(value: unknown): value is FilesystemCatalogWireCapabilities {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const capabilities = value as Record<string, unknown>;
+  return FILESYSTEM_CATALOG_CAPABILITIES.every((capability) => (
+    capability === "upload"
+      ? capabilities[capability] === undefined || typeof capabilities[capability] === "boolean"
+      : typeof capabilities[capability] === "boolean"
+  ));
+}
+
 /** Parses and validates an untrusted `{ filesystems: [...] }` payload into
  * catalog entries, dropping any entry that fails the contract rather than
  * throwing — callers treat the catalog as best-effort. */
@@ -70,7 +85,7 @@ export function parseFilesystemCatalog(value: unknown): FilesystemCatalogEntry[]
     if (!isValidCatalogString(entry.label, CATALOG_STRING_MAX_LENGTH)) continue;
     if (!isValidCatalogString(entry.rootDir, CATALOG_ROOT_DIR_MAX_LENGTH)) continue;
     if (entry.access !== "readonly" && entry.access !== "readwrite") continue;
-    if (!isFilesystemCatalogCapabilities(entry.capabilities)) continue;
+    if (!isFilesystemCatalogWireCapabilities(entry.capabilities)) continue;
     const capabilities = entry.capabilities;
     seen.add(entry.filesystem);
     entries.push({
@@ -79,7 +94,7 @@ export function parseFilesystemCatalog(value: unknown): FilesystemCatalogEntry[]
       rootDir: entry.rootDir as LogicalFilesystemRoot,
       access: entry.access,
       capabilities: Object.fromEntries(
-        FILESYSTEM_CATALOG_CAPABILITIES.map((capability) => [capability, capabilities[capability]]),
+        FILESYSTEM_CATALOG_CAPABILITIES.map((capability) => [capability, capabilities[capability] ?? false]),
       ) as unknown as FilesystemCatalogCapabilities,
     });
   }

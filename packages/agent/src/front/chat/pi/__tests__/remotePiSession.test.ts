@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ErrorCode } from '../../../../shared/error-codes'
 import { AgentGatewayErrorCode } from '../../../../shared/gateway/errors'
 import type { PiChatEvent, PiChatSnapshot } from '../../../../shared/chat'
-import { RUNTIME_SCOPE_MISMATCH_MESSAGE } from '../../gatewayResponseError'
 import { PI_CHAT_CURSOR_AHEAD_CODE, PI_CHAT_REPLAY_GAP_CODE } from '../piChatStream'
 import { RemotePiSession, piChatErrorCode } from '../remotePiSession'
 
@@ -566,35 +565,6 @@ describe('RemotePiSession', () => {
     session.dispose()
   })
 
-  it('suspends without reconnecting when an existing session belongs to another runtime scope', async () => {
-    const fetchMock = vi.fn(async (url: string) => {
-      if (url.endsWith('/state')) {
-        return jsonResponse({
-          error: {
-            code: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
-            message: 'session is pinned to a different runtime scope',
-          },
-        }, 409)
-      }
-      throw new Error(`unexpected URL ${url}`)
-    }) as unknown as MockFetch
-    const session = createSession(fetchMock)
-
-    await waitUntil(() => session.getState().connection.state === 'suspended')
-    await new Promise((resolve) => setTimeout(resolve, 25))
-
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(session.getState()).toMatchObject({ hydrated: true, status: 'error' })
-    expect(session.getDebugState().suspended).toBe(true)
-    expect(session.getState().notices).toContainEqual(expect.objectContaining({
-      id: 'terminal-session-error',
-      errorCode: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
-      text: RUNTIME_SCOPE_MISMATCH_MESSAGE,
-    }))
-
-    session.dispose()
-  })
-
   it('shows a protocol runtime notice and does not open events for unsupported /state protocol versions', async () => {
     const fetchMock = vi.fn(async (url: string) => {
       if (url.endsWith('/state')) return jsonResponse({ ...snapshot(), protocolVersion: 2 })
@@ -726,6 +696,48 @@ describe('RemotePiSession', () => {
     session.dispose()
   })
 
+  it('updates an already-connected viewer from an external model-change event', async () => {
+    const events = openNdjsonStream()
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/state')) return jsonResponse(snapshot({
+        seq: 5,
+        status: 'idle',
+        activeTurnId: undefined,
+        currentModel: { provider: 'openai', id: 'gpt-old' },
+      }))
+      if (url.endsWith('/events?cursor=5')) return new Response(events.stream)
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock)
+    await waitUntil(() => session.getState().connection.state === 'connected')
+
+    events.write({
+      type: 'model-changed',
+      seq: 6,
+      currentModel: { provider: 'openai-codex', id: 'gpt-5.6-sol' },
+    } satisfies PiChatEvent)
+
+    await waitUntil(() => session.getState().currentModel?.id === 'gpt-5.6-sol')
+    expect(session.getState().currentModel).toEqual({ provider: 'openai-codex', id: 'gpt-5.6-sol' })
+    session.dispose()
+  })
+
+  it('confirms an accepted next-message override as the session current model', async () => {
+    const events = openNdjsonStream()
+    const model = { provider: 'openai', id: 'gpt-5.7' }
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/events?cursor=0')) return new Response(events.stream)
+      if (url.endsWith('/prompt')) return jsonResponse({ accepted: true, cursor: 0, clientNonce: 'nonce-model' })
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock, { autoStart: false })
+
+    await session.prompt({ message: 'switch model', clientNonce: 'nonce-model', model })
+
+    expect(session.getState().currentModel).toEqual(model)
+    session.dispose()
+  })
+
   it('opens events from the current cursor before the first command when autoStart is false', async () => {
     const events = openNdjsonStream()
     const promptResponse = deferred<Response>()
@@ -805,8 +817,8 @@ describe('RemotePiSession', () => {
     expect(piChatErrorCode(Object.assign(new Error('x'), { errorCode: 'NOT_A_REAL_CODE' }))).toBeUndefined()
     expect(piChatErrorCode(Object.assign(new Error('x'), { errorCode: ErrorCode.enum.SESSION_LOCKED }))).toBe(ErrorCode.enum.SESSION_LOCKED)
     expect(piChatErrorCode(Object.assign(new Error('x'), {
-      errorCode: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
-    }))).toBe(AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH)
+      errorCode: AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
+    }))).toBe(AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE)
   })
 
   it('clears optimistic queued follow-ups from the stop receipt before a queue echo arrives', async () => {

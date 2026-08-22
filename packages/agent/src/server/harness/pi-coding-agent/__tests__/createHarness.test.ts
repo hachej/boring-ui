@@ -9,6 +9,7 @@ import {
   createPiCodingAgentHarness,
   mergePiPackageSources,
   projectSkillResourceLocations,
+  withPiHarnessDefaults,
 } from "../createHarness.js";
 import { adaptToolsForPi } from "../tool-adapter.js";
 import {
@@ -19,6 +20,7 @@ import {
 import { sessionFilePath } from "./fixtures/sessionFiles.js";
 import { ErrorCode } from "../../../../shared/error-codes.js";
 import type { AgentTool } from "../../../../shared/tool.js";
+import { createPiResourceDigestInput, digestPiResourceInputs } from "../../../piResourceDigest.js";
 
 const fsHooks = vi.hoisted(() => ({
   onRename: undefined as (() => Promise<void>) | undefined,
@@ -95,6 +97,71 @@ describe("createPiCodingAgentHarness", () => {
     expect(harness.sessions).toBeInstanceOf(PiSessionStore);
     expect(typeof harness.getPiSessionAdapter).toBe("function");
     expect(typeof harness.reloadSession).toBe("function");
+  });
+
+  it("keeps ambient context files sealed by default and loads them only after explicit local opt-in", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "pi-ambient-context-cwd-"));
+    const agentDir = await mkdtemp(join(tmpdir(), "pi-ambient-context-agent-"));
+    const marker = "AMBIENT_CONTEXT_FIXTURE_FROM_AGENTS_MD";
+    await writeFile(join(cwd, "AGENTS.md"), `${marker}\n`, "utf8");
+
+    const loadResolvedContext = async (noContextFiles: boolean) => {
+      const loader = new DefaultResourceLoader({
+        cwd,
+        agentDir,
+        noContextFiles,
+        noSkills: true,
+        noExtensions: true,
+        noPromptTemplates: true,
+        noThemes: true,
+      });
+      await loader.reload();
+      return loader.getAgentsFiles().agentsFiles;
+    };
+
+    try {
+      const hosted = withPiHarnessDefaults();
+      expect(hosted.noContextFiles).toBe(true);
+      expect(await loadResolvedContext(hosted.noContextFiles)).toEqual([]);
+
+      const local = withPiHarnessDefaults({ noContextFiles: false });
+      expect(local.noContextFiles).toBe(false);
+      expect(await loadResolvedContext(local.noContextFiles)).toEqual([
+        expect.objectContaining({ path: join(cwd, "AGENTS.md"), content: `${marker}\n` }),
+      ]);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+      await rm(agentDir, { recursive: true, force: true });
+    }
+  });
+
+  it("includes ambient context content in reload identity while sealed hosts ignore it", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "pi-context-digest-cwd-"));
+    const agentDir = await mkdtemp(join(tmpdir(), "pi-context-digest-agent-"));
+    const contextPath = join(cwd, "AGENTS.md");
+    const input = (noContextFiles: boolean) => createPiResourceDigestInput({
+      piCwd: cwd,
+      piAgentDir: agentDir,
+      noSkills: true,
+      noContextFiles,
+      resourceSets: [],
+      authorizedRoots: [cwd, agentDir],
+    });
+
+    try {
+      await writeFile(contextPath, "context-before\n", "utf8");
+      const ambientBefore = await digestPiResourceInputs(input(false));
+      const sealedBefore = await digestPiResourceInputs(input(true));
+      await writeFile(contextPath, "context-after\n", "utf8");
+      const ambientAfter = await digestPiResourceInputs(input(false));
+      const sealedAfter = await digestPiResourceInputs(input(true));
+
+      expect(ambientAfter).not.toBe(ambientBefore);
+      expect(sealedAfter).toBe(sealedBefore);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+      await rm(agentDir, { recursive: true, force: true });
+    }
   });
 
   it("rejects unavailable requested models when strict model resolution is enabled", async () => {
@@ -461,13 +528,12 @@ describe("adaptToolsForPi", () => {
 
 describe("PiSessionStore", () => {
   const ctx = { workspaceId: "test-ws" };
-  const trustedNativeRuntimeScopeIdentity = "runtime-direct-local";
-  const directCtx = { workspaceId: "direct-local", runtimeScopeIdentity: trustedNativeRuntimeScopeIdentity };
+  const directCtx = { workspaceId: "direct-local" };
   let tmpDir: string;
 
   const trustedNativeStore = () => new PiSessionStore("/tmp", {
     sessionDir: tmpDir,
-    trustedNativeRuntimeScopeIdentity,
+    allowUnscopedNativeAccess: true,
   });
 
   beforeEach(async () => {
@@ -853,7 +919,7 @@ describe("PiSessionStore", () => {
     expect(list).toHaveLength(0);
   });
 
-  it("lists bare native transcripts only with the explicit capability and preserves order across rename", async () => {
+  it("lists bare native transcripts only with the explicit local capability and preserves order across rename", async () => {
     const olderId = "native-older";
     const newerId = "native-newer";
     const olderPath = join(tmpDir, `2026-06-04_${olderId}.jsonl`);

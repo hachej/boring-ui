@@ -16,10 +16,7 @@ describe('scripted Pi browser harness persistence', () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), 'scripted-pi-workspace-'))
     const sessionRoot = await mkdtemp(join(tmpdir(), 'scripted-pi-sessions-'))
     const input = { cwd: workspaceRoot, sessionRoot }
-    const sessionCtx = {
-      workspaceId: 'workspace-a',
-      runtimeScopeIdentity: 'runtime-a',
-    } as { workspaceId: string; runtimeScopeIdentity: string }
+    const sessionCtx = { workspaceId: 'workspace-a' }
 
     const first = createScriptedPiHarness(input)
     const created = await first.sessions!.create(sessionCtx)
@@ -34,7 +31,7 @@ describe('scripted Pi browser harness persistence', () => {
     const sessionName = (await readdir(sessionDir)).find((name) => name.endsWith(`_${created.id}.jsonl`))
     expect(sessionName).toBeTruthy()
     const sessionFile = join(sessionDir, sessionName!)
-    expect(await readFile(sessionFile, 'utf8')).toContain('"runtimeScopeIdentity":"runtime-a"')
+    expect(await readFile(sessionFile, 'utf8')).toContain('"workspaceId":"workspace-a"')
 
     const restarted = createScriptedPiHarness(input)
     await expect(restarted.sessions!.list(sessionCtx)).resolves.toEqual([
@@ -61,9 +58,9 @@ describe('scripted Pi browser harness persistence', () => {
       type: 'session',
       id: largeId,
       timestamp: '2026-06-04T12:00:00.000Z',
-      boringSessionCtx: { workspaceId: 'workspace-a', runtimeScopeIdentity: 'runtime-a' },
+      boringSessionCtx: { workspaceId: 'workspace-a' },
     })}\n`, 'utf8')
-    const ctx = { workspaceId: 'workspace-a', runtimeScopeIdentity: 'runtime-a' }
+    const ctx = { workspaceId: 'workspace-a' }
     const first = createScriptedPiHarness({ cwd: workspaceRoot, sessionRoot })
     const createdA = await first.sessions!.create(ctx)
     const createdB = await first.sessions!.create(ctx)
@@ -80,8 +77,8 @@ describe('scripted Pi browser harness persistence', () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), 'scripted-pi-scope-workspace-'))
     const sessionRoot = await mkdtemp(join(tmpdir(), 'scripted-pi-scope-sessions-'))
     const input = { cwd: workspaceRoot, sessionRoot }
-    const workspaceA = { workspaceId: 'workspace-a', runtimeScopeIdentity: 'runtime-a' }
-    const workspaceB = { workspaceId: 'workspace-b', runtimeScopeIdentity: 'runtime-b' }
+    const workspaceA = { workspaceId: 'workspace-a' }
+    const workspaceB = { workspaceId: 'workspace-b' }
     const first = createScriptedPiHarness(input)
     const created = await first.sessions!.create(workspaceA)
 

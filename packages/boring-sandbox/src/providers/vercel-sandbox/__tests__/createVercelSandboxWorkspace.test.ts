@@ -1,3 +1,7 @@
+import { randomUUID } from 'node:crypto'
+import { access, symlink } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { expect, test, vi } from 'vitest'
 
 import type { Workspace } from '@hachej/boring-agent/shared'
@@ -57,6 +61,96 @@ test('writeFile delegates UTF-8 bytes via sandbox.writeFiles', async () => {
         content: new Uint8Array(Buffer.from('snowman ☃', 'utf-8')),
       },
     ])
+  } finally {
+    await harness.cleanup()
+  }
+})
+
+test('exclusive binary create is atomic and cleans temporary files', async () => {
+  const harness = await createMockVercelSandboxHarness()
+  const workspace = createVercelSandboxWorkspace(harness.sandbox)
+  try {
+    await workspace.writeFile('existing.bin', 'old')
+    await expect(workspace.createBinaryFile?.('existing.bin', new TextEncoder().encode('new')))
+      .rejects.toMatchObject({ code: 'EEXIST' })
+    expect(await workspace.readFile('existing.bin')).toBe('old')
+    await workspace.createBinaryFile?.('fresh.bin', new TextEncoder().encode('fresh'))
+    expect(await workspace.readFile('fresh.bin')).toBe('fresh')
+    const raced = await Promise.allSettled([
+      workspace.createBinaryFile!('race.bin', new TextEncoder().encode('first')),
+      workspace.createBinaryFile!('race.bin', new TextEncoder().encode('second')),
+    ])
+    expect(raced.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
+    expect(raced.find((result) => result.status === 'rejected')).toMatchObject({ reason: { code: 'EEXIST' } })
+    expect(['first', 'second']).toContain(await workspace.readFile('race.bin'))
+    expect((await workspace.readdir('.')).some((entry) => entry.name.includes('.boring-upload-'))).toBe(false)
+  } finally {
+    await harness.cleanup()
+  }
+})
+
+test('exclusive binary create falls back to guest cleanup when SDK cleanup fails', async () => {
+  const harness = await createMockVercelSandboxHarness()
+  vi.spyOn((harness.sandbox as any).fs, 'rm')
+    .mockRejectedValue(new Error('injected SDK cleanup failure'))
+  const workspace = createVercelSandboxWorkspace(harness.sandbox)
+  try {
+    await workspace.createBinaryFile?.('fallback.bin', new TextEncoder().encode('fresh'))
+    expect(await workspace.readFile('fallback.bin')).toBe('fresh')
+    expect((await workspace.readdir('.')).some((entry) => entry.name.includes('.boring-upload-'))).toBe(false)
+  } finally {
+    await harness.cleanup()
+  }
+})
+
+test.each([
+  ['successful destination create', 'cleanup-success.bin', false],
+  ['destination collision', 'cleanup-collision.bin', true],
+])('reports incomplete temp cleanup without replacing the %s outcome', async (_label, path, collision) => {
+  const harness = await createMockVercelSandboxHarness()
+  const logger = { warn: vi.fn() }
+  const workspace = createVercelSandboxWorkspace(harness.sandbox, { logger })
+  if (collision) await workspace.writeFile(path, 'old')
+  vi.spyOn((harness.sandbox as any).fs, 'rm').mockRejectedValue(new Error('injected SDK cleanup failure'))
+  const originalRunCommand = (harness.sandbox as any).runCommand.bind(harness.sandbox)
+  vi.spyOn(harness.sandbox as any, 'runCommand').mockImplementation(async (...args: unknown[]) => {
+    const command = args[0] as { cmd?: string; args?: string[] }
+    if (command.cmd === 'sh' && command.args?.[1]?.startsWith('rm -f --')) {
+      return { exitCode: 1, stdout: async () => '', stderr: async () => 'injected guest cleanup failure' }
+    }
+    return await originalRunCommand(command)
+  })
+  try {
+    const create = workspace.createBinaryFile!(path, new TextEncoder().encode('new'))
+    if (collision) await expect(create).rejects.toMatchObject({ code: 'EEXIST' })
+    else await expect(create).resolves.toBeUndefined()
+    expect(await workspace.readFile(path)).toBe(collision ? 'old' : 'new')
+    expect(logger.warn).toHaveBeenCalledWith(
+      'exclusive create temporary-file cleanup failed',
+      expect.objectContaining({ path }),
+    )
+    expect((await workspace.readdir('.')).some((entry) => entry.name.includes('.boring-upload-'))).toBe(true)
+  } finally {
+    await harness.cleanup()
+  }
+})
+
+test('exclusive binary create rejects symlink destinations and symlink-parent escapes before staging', async () => {
+  const harness = await createMockVercelSandboxHarness()
+  const workspace = createVercelSandboxWorkspace(harness.sandbox)
+  const outsideName = `boring-vercel-escape-${randomUUID()}`
+  const outsidePath = join(tmpdir(), outsideName)
+  try {
+    await symlink(tmpdir(), join(harness.hostRoot, 'outside-parent'))
+    await expect(workspace.createBinaryFile?.(`outside-parent/${outsideName}`, new Uint8Array([1])))
+      .rejects.toMatchObject({ code: EPERM_CODE })
+    await expect(access(outsidePath)).rejects.toMatchObject({ code: 'ENOENT' })
+
+    await symlink(outsidePath, join(harness.hostRoot, 'destination-link'))
+    await expect(workspace.createBinaryFile?.('destination-link', new Uint8Array([2])))
+      .rejects.toMatchObject({ code: EPERM_CODE })
+    await expect(access(outsidePath)).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(harness.lastWriteFiles).toEqual([])
   } finally {
     await harness.cleanup()
   }
