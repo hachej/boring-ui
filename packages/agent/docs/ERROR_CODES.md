@@ -86,6 +86,7 @@ All API failures must use the response envelope:
 | `REMOTE_WORKER_EXEC_ABORTED` | Invocation was aborted after bounded in-sandbox cleanup | 499 | retry | warn | stable (trusted API) |
 | `REMOTE_WORKER_OUTPUT_LIMIT` | Invocation output exceeded its configured combined byte ceiling | 413 | reduce-output | warn | stable (trusted API) |
 | `REMOTE_WORKER_PATH_UNSAFE` | Workspace operation failed dirfd-relative path confinement | 400 | report-bug | warn | stable (trusted API) |
+| `REMOTE_WORKER_ALREADY_EXISTS` | An atomic exclusive-create workspace operation found an existing path | 409 | choose-replace-or-skip | info | stable (trusted API) |
 | `REMOTE_WORKER_PATH_PRIMITIVE_UNAVAILABLE` | Required dirfd/openat2 containment primitive is unavailable | 503 | operator-fix | error | stable (trusted API) |
 | `REMOTE_WORKER_QUOTA_EXCEEDED` | Fixed workspace byte or inode quota was exceeded | 507 | free-space | warn | stable (trusted API) |
 | `REMOTE_WORKER_OUTCOME_UNKNOWN` | Worker loss left an effectful invocation outcome unknown; no automatic replay is safe | 502 | inspect-before-retry | error | stable (public API) |

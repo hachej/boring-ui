@@ -1,4 +1,7 @@
-import { REMOTE_WORKER_ERROR_CODES_V1 } from "../../../shared/remoteWorkerProtocolV1";
+import {
+  REMOTE_WORKER_ERROR_CODES_V1,
+  REMOTE_WORKER_MAX_WORKSPACE_ENVELOPE_BYTES_V1,
+} from "../../../shared/remoteWorkerProtocolV1";
 
 import { runscRuntimeError } from "./errors";
 
@@ -7,7 +10,7 @@ export const RUNSC_RUNTIME_LIMITS_V1 = Object.freeze({
   maxInvocationTimeoutMs: 15 * 60 * 1000,
   maxCombinedOutputBytes: 4 * 1024 * 1024,
   maxEnvelopeBytes: 512 * 1024,
-  maxWorkspaceEnvelopeBytes: 8 * 1024 * 1024,
+  maxWorkspaceEnvelopeBytes: REMOTE_WORKER_MAX_WORKSPACE_ENVELOPE_BYTES_V1,
   maxCommandBytes: 64 * 1024,
   maxPathBytes: 4 * 1024,
   maxEnvEntries: 128,

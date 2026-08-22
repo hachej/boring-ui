@@ -135,7 +135,6 @@ export interface BuiltAgentComposition {
   readonly tools: readonly AgentTool[]
   readonly runtimeBundle: RuntimeBundle
   readonly readyTracker: ReadyStatusTracker
-  readonly runtimeScopeIdentity: string
   dispose(): Promise<void>
 }
 
@@ -300,7 +299,6 @@ export async function buildAgentComposition(
     tools,
     runtimeBundle,
     readyTracker,
-    runtimeScopeIdentity: runtimeScope.identity,
     dispose() {
       disposed ??= service.dispose().finally(() => durableEventStore?.close())
       return disposed

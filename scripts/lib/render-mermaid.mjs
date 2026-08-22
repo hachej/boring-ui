@@ -29,22 +29,85 @@ export const mermaidThemeVariables = {
   fontFamily: 'Aptos, Segoe UI, sans-serif',
 }
 
-export async function renderMermaidSvg(source) {
-  const browser = await chromium.launch({ headless: true })
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+export function namespaceMermaidSvgIds(svg, namespace) {
+  const ids = [...svg.matchAll(/\sid="([^"]+)"/g)].map((match) => match[1])
+  const replacements = new Map(ids.map((id) => [id, id === namespace || id.startsWith(`${namespace}-`) ? id : `${namespace}-${id}`]))
+  let output = svg
+  for (const [id, namespaced] of [...replacements].sort((a, b) => b[0].length - a[0].length)) {
+    const escaped = escapeRegExp(id)
+    output = output
+      .replace(new RegExp(`(\\sid=")${escaped}(")`, 'g'), `$1${namespaced}$2`)
+      .replace(new RegExp(`#${escaped}(?![A-Za-z0-9_.:-])`, 'g'), `#${namespaced}`)
+  }
+  return output.replace(/\s(aria-labelledby|aria-describedby)="([^"]*)"/g, (_match, name, value) => {
+    const rewritten = value.split(/\s+/).map((token) => replacements.get(token) ?? token).join(' ')
+    return ` ${name}="${rewritten}"`
+  })
+}
+
+export async function renderMermaidSvg(source, renderId = 'pr-context-diagram') {
+  let browser
+  try {
+    browser = await chromium.launch({ headless: true })
+  } catch (error) {
+    throw new Error('Mermaid pre-render requires Playwright Chromium. From the lane worktree run: pnpm exec playwright install chromium', { cause: error })
+  }
   try {
     const page = await browser.newPage()
+    await page.route('**/*', (route) => route.abort('blockedbyclient'))
     await page.setContent('<main id="diagram"></main>')
     await page.addScriptTag({ path: mermaidScriptPath })
-    return await page.evaluate(async ({ diagram, variables }) => {
+    const svg = await page.evaluate(async ({ diagram, variables, id }) => {
       mermaid.initialize({
         startOnLoad: false,
         securityLevel: 'strict',
         theme: 'base',
         themeVariables: variables,
+        htmlLabels: false,
       })
-      const { svg } = await mermaid.render('pr-context-diagram', diagram)
-      return svg
-    }, { diagram: source, variables: mermaidThemeVariables })
+      const { svg } = await mermaid.render(id, diagram)
+      const template = document.createElement('template')
+      template.innerHTML = svg.trim()
+      const root = template.content.querySelector('svg')
+      if (!root) throw new Error('Mermaid did not return an SVG root')
+
+      const normalizeCss = (css) => css
+        .replace(/\\([0-9a-f]{1,6})\s?/gi, (_match, hex) => String.fromCodePoint(Number.parseInt(hex, 16)))
+        .replace(/\\([^\n\r\f])/g, '$1')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+      const hasUnsafeCss = (css) => {
+        const normalized = normalizeCss(css)
+        if (/(?:@import|@font-face|expression\s*\(|(?:-webkit-)?image-set\s*\(|(?:^|[;{])\s*src\s*:)/i.test(normalized)) return true
+        return [...normalized.matchAll(/url\(\s*(["']?)(.*?)\1\s*\)/gi)]
+          .some((match) => !match[2].trim().startsWith('#'))
+      }
+      root.querySelectorAll('script, foreignObject, form, input, button, select, textarea, img, image, iframe, object, embed, link, meta, audio, video, source').forEach((node) => node.remove())
+      root.querySelectorAll('*').forEach((node) => {
+        for (const attribute of [...node.attributes]) {
+          const name = attribute.name.toLowerCase()
+          const value = attribute.value.trim()
+          if (name.startsWith('on') || name === 'src' || name === 'srcset' || name === 'srcdoc' || name === 'action' || name === 'formaction') {
+            node.removeAttribute(attribute.name)
+            continue
+          }
+          if ((name === 'href' || name === 'xlink:href') && !value.startsWith('#')) {
+            node.removeAttribute(attribute.name)
+            continue
+          }
+          if (name === 'style' && hasUnsafeCss(value)) {
+            node.removeAttribute(attribute.name)
+          }
+        }
+      })
+      root.querySelectorAll('style').forEach((style) => {
+        const css = style.textContent || ''
+        if (hasUnsafeCss(css)) style.remove()
+      })
+      return root.outerHTML
+    }, { diagram: source, variables: mermaidThemeVariables, id: renderId })
+    return namespaceMermaidSvgIds(svg, renderId)
   } finally {
     await browser.close()
   }

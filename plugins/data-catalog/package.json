@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-data-catalog",
-  "version": "0.1.100",
+  "version": "0.1.103",
   "type": "module",
   "private": false,
   "license": "MIT",
@@ -47,11 +47,11 @@
   },
   "dependencies": {
     "@hachej/boring-data-explorer": "workspace:*",
-    "lucide-react": "^1.27.0"
+    "lucide-react": "^1.31.0"
   },
   "devDependencies": {
     "@hachej/boring-workspace": "workspace:*",
-    "@testing-library/jest-dom": "^7.0.0",
+    "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^22.20.0",
     "@types/react": "^19.2.18",

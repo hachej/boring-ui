@@ -25,7 +25,7 @@ test('AgentSendInput contract', () => {
     }
     attachments?: MessageAttachment[]
     actor?: { id?: string; name?: string }
-    ctx?: { workspaceId?: string; userId?: string; runtimeScopeIdentity?: string }
+    ctx?: { workspaceId?: string; userId?: string }
     originSurface?: string
   }>()
 
@@ -53,7 +53,7 @@ test('RunContext contract', () => {
     userId?: string
     userEmail?: string
     userEmailVerified?: boolean
-    sessionCtx?: { workspaceId?: string; userId?: string; runtimeScopeIdentity?: string }
+    sessionCtx?: { workspaceId?: string; userId?: string }
     allowPromptDispatch?: boolean
   }>()
 
@@ -68,7 +68,6 @@ test('RunContext contract', () => {
   expectTypeOf<RunContext['sessionCtx']>().toEqualTypeOf<{
     workspaceId?: string
     userId?: string
-    runtimeScopeIdentity?: string
   } | undefined>()
   expectTypeOf<RunContext['allowPromptDispatch']>().toEqualTypeOf<boolean | undefined>()
 })

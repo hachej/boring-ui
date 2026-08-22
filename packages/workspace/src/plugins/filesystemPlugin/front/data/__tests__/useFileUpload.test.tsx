@@ -1,3 +1,4 @@
+import { StrictMode, type ReactNode } from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
 import { useFileUpload } from '../useFileUpload'
@@ -104,6 +105,26 @@ describe('useFileUpload', () => {
       await uploadPromise
     })
 
+    expect(result.current.uploading).toBe(false)
+  })
+
+  it('tracks uploading after StrictMode effect replay', async () => {
+    let resolveUpload!: (value: { url: string; path: string }) => void
+    mockUploadFile.mockReturnValue(new Promise((resolve) => { resolveUpload = resolve }))
+    const strictWrapper = ({ children }: { children: ReactNode }) => (
+      <StrictMode>{children}</StrictMode>
+    )
+    const { result } = renderHook(() => useFileUpload(), { wrapper: strictWrapper })
+    const file = new File(['x'], 'strict.png', { type: 'image/png' })
+
+    let uploadPromise!: Promise<unknown>
+    act(() => { uploadPromise = result.current.upload(file) })
+    await waitFor(() => expect(result.current.uploading).toBe(true))
+
+    await act(async () => {
+      resolveUpload({ url: 'strict.png', path: 'strict.png' })
+      await uploadPromise
+    })
     expect(result.current.uploading).toBe(false)
   })
 

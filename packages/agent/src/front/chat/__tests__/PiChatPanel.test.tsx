@@ -519,137 +519,6 @@ describe('PiChatPanel sandbox shell', () => {
     expect(onTurnComplete).not.toHaveBeenCalled()
   })
 
-  test('transparently forks a frozen transcript and retries the message in the live continuation', async () => {
-    const remote = new FakeRemotePiSession(remoteState({ status: 'idle' }))
-    remote.prompt.mockRejectedValueOnce(Object.assign(new Error('scope mismatch'), {
-      errorCode: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
-    }))
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      const method = init?.method ?? 'GET'
-      if (url.includes('/api/v1/agents/default/sessions?') && method === 'GET') return jsonResponse([session('pi-1')])
-      if (url.endsWith('/api/v1/agents/default/sessions') && method === 'POST') return jsonResponse(session('pi-current', 'Current runtime chat'), 201)
-      throw new Error(`unexpected fetch ${url}`)
-    })
-    render(
-      <PiChatPanel
-        serverResourcesEnabled={false}
-        storageScope="scope-a"
-        fetch={fetchMock as unknown as typeof fetch}
-        createRemoteSession={remoteFactory(remote)}
-      />,
-    )
-
-    const textarea = await screen.findByLabelText('Agent prompt') as HTMLTextAreaElement
-    fireEvent.change(textarea, { target: { value: 'continue old chat' } })
-    fireEvent.keyDown(textarea, { key: 'Enter' })
-
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
-      '/api/v1/agents/default/sessions',
-      expect.objectContaining({
-        method: 'POST',
-        body: expect.any(String),
-      }),
-    ))
-    const forkCall = fetchMock.mock.calls.find((call) => String(call[0]).endsWith('/sessions') && call[1]?.method === 'POST')
-    expect(JSON.parse(String(forkCall?.[1]?.body))).toMatchObject({
-      requestId: expect.stringMatching(/^fork:/),
-      forkSessionId: 'pi-1',
-      forkPrompt: { message: 'continue old chat' },
-    })
-    expect(remote.prompt).toHaveBeenCalledTimes(1)
-    expect(document.querySelector('[data-pi-chat-session-id="pi-current"]')).toBeTruthy()
-    expect(document.querySelector('[data-runtime-notice-id="run-rejected"]')).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Start new chat' })).toBeNull()
-  })
-
-  test('binds a delayed mismatch to its original prompt across a session switch', async () => {
-    const remote = new FakeRemotePiSession(remoteState({ status: 'idle' }))
-    const firstPrompt = deferred<{ accepted: true; cursor: number; clientNonce: string }>()
-    remote.prompt.mockImplementationOnce(async () => firstPrompt.promise)
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      const method = init?.method ?? 'GET'
-      if (url.includes('/api/v1/agents/default/sessions?') && method === 'GET') {
-        return jsonResponse([session('pi-1', 'Frozen A'), session('pi-2', 'Live B')])
-      }
-      if (url.endsWith('/api/v1/agents/default/sessions') && method === 'POST') {
-        return jsonResponse(session('pi-fork', 'Forked A'), 201)
-      }
-      throw new Error(`unexpected fetch ${url}`)
-    })
-    render(<PiChatPanel showSessions serverResourcesEnabled={false} storageScope="scope-a" fetch={fetchMock as unknown as typeof fetch} createRemoteSession={remoteFactory(remote)} />)
-
-    const textarea = await screen.findByLabelText('Agent prompt')
-    fireEvent.change(textarea, { target: { value: 'message for A' } })
-    fireEvent.keyDown(textarea, { key: 'Enter' })
-    await waitFor(() => expect(remote.prompt).toHaveBeenCalledTimes(1))
-
-    fireEvent.click(screen.getByText('Live B').closest('[data-boring-agent-part="session-row"]') as HTMLElement)
-    await waitFor(() => expect(document.querySelector('[data-pi-chat-session-id="pi-2"]')).toBeTruthy())
-    fireEvent.change(screen.getByLabelText('Agent prompt'), { target: { value: 'message for B' } })
-    fireEvent.keyDown(screen.getByLabelText('Agent prompt'), { key: 'Enter' })
-    await waitFor(() => expect(remote.prompt).toHaveBeenCalledTimes(2))
-
-    await act(async () => {
-      firstPrompt.reject(Object.assign(new Error('scope mismatch'), {
-        errorCode: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
-      }))
-      await firstPrompt.promise.catch(() => undefined)
-    })
-    await waitFor(() => expect(fetchMock.mock.calls.some((call) => call[1]?.method === 'POST')).toBe(true))
-    const forkCall = fetchMock.mock.calls.find((call) => call[1]?.method === 'POST')
-    expect(JSON.parse(String(forkCall?.[1]?.body))).toMatchObject({
-      forkSessionId: 'pi-1',
-      forkPrompt: { message: 'message for A' },
-    })
-  })
-
-  test('uses the controlled host fork and hides the scope mismatch transport notice', async () => {
-    const remote = new FakeRemotePiSession(remoteState({
-      status: 'error',
-      notices: [{
-        id: 'terminal-session-error',
-        level: 'error',
-        text: 'scope mismatch',
-        errorCode: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
-      }],
-    }))
-    remote.prompt.mockRejectedValueOnce(Object.assign(new Error('scope mismatch'), {
-      errorCode: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
-    }))
-    const onForkSession = vi.fn()
-    function ControlledForkPanel() {
-      const [controlledSessionId, setControlledSessionId] = useState('pi-1')
-      return (
-        <PiChatPanel
-          sessionId={controlledSessionId}
-          showSessions={false}
-          serverResourcesEnabled={false}
-          storageScope="scope-a"
-          createRemoteSession={remoteFactory(remote)}
-          onForkSession={async (sourceSessionId, forkPrompt) => {
-            onForkSession(sourceSessionId, forkPrompt)
-            setControlledSessionId('pi-current')
-          }}
-        />
-      )
-    }
-    render(<ControlledForkPanel />)
-
-    expect(document.querySelector('[data-runtime-notice-id="terminal-session-error"]')).toBeNull()
-    const textarea = screen.getByLabelText('Agent prompt')
-    fireEvent.change(textarea, { target: { value: 'continue controlled chat' } })
-    fireEvent.keyDown(textarea, { key: 'Enter' })
-
-    await waitFor(() => expect(onForkSession).toHaveBeenCalledWith(
-      'pi-1',
-      expect.objectContaining({ message: 'continue controlled chat' }),
-    ))
-    expect(remote.prompt).toHaveBeenCalledTimes(1)
-    expect(document.querySelector('[data-pi-chat-session-id="pi-current"]')).toBeTruthy()
-  })
-
   test('fires onTurnComplete per turn-settle event, including back-to-back queued turns', async () => {
     const remote = new FakeRemotePiSession(remoteState({ status: 'idle' }))
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
@@ -995,14 +864,14 @@ describe('PiChatPanel sandbox shell', () => {
     render(<PiChatPanel serverResourcesEnabled={false} storageScope="scope-a" fetch={fetchMock as unknown as typeof fetch} createRemoteSession={remoteFactory(remote)} />)
 
     const textarea = await screen.findByLabelText('Agent prompt')
-    const oversizedFile = new File([new Uint8Array((4 * 1024 * 1024) + 1)], 'large.txt', { type: 'text/plain' })
+    const oversizedFile = new File([new Uint8Array((10 * 1024 * 1024) + 1)], 'large.txt', { type: 'text/plain' })
     fireEvent.paste(textarea, {
       clipboardData: {
         items: [{ kind: 'file', getAsFile: () => oversizedFile }],
       },
     })
 
-    await screen.findByText('Files must be under 4 MB each.')
+    await screen.findByText('Files must be 10 MB or smaller.')
     expect(remote.prompt).not.toHaveBeenCalled()
   })
 
@@ -1242,7 +1111,7 @@ describe('PiChatPanel sandbox shell', () => {
       [scopedComposerStorageKey('workspace-a', 'thinking')]: 'high',
       [scopedComposerStorageKey('workspace-a', 'show-thoughts')]: '1',
     })
-    const remote = new FakeRemotePiSession(remoteState())
+    const remote = new FakeRemotePiSession(remoteState({ committedMessages: [], history: { mode: 'full', messageCount: 0 } }))
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
 
     render(
@@ -1269,8 +1138,131 @@ describe('PiChatPanel sandbox shell', () => {
     })))
   })
 
+  test('does not treat an optimistic addressed session as genuinely new', async () => {
+    const sessionModel = { provider: 'openai-codex', id: 'gpt-5.6-sol' } as const
+    const staleLocalModel = { provider: 'infomaniak', id: 'Kimi-K2.6' } as const
+    const persisted = storage({
+      [scopedComposerStorageKey('workspace-a', 'model')]: JSON.stringify(staleLocalModel),
+      [scopedComposerStorageKey('workspace-a', 'model:user-selected')]: '1',
+    })
+    const remote = new FakeRemotePiSession(remoteState({
+      currentModel: sessionModel,
+      committedMessages: [],
+      history: { mode: 'full', messageCount: 0 },
+      optimisticOutbox: {
+        pending: {
+          id: 'optimistic:pending',
+          role: 'user',
+          status: 'pending',
+          clientNonce: 'pending',
+          parts: [{ type: 'text', id: 'optimistic:pending:text', text: 'pending prompt' }],
+        },
+      },
+    }))
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
+
+    render(
+      <PiChatPanel
+        serverResourcesEnabled={false}
+        storageScope="workspace-a"
+        storage={persisted}
+        availableModels={[
+          { ...sessionModel, label: 'GPT 5.6 Sol', available: true },
+          { ...staleLocalModel, label: 'Kimi K2.6', available: true },
+        ]}
+        fetch={fetchMock as unknown as typeof fetch}
+        createRemoteSession={remoteFactory(remote)}
+      />,
+    )
+
+    const control = await screen.findByRole('button', { name: /Current model: GPT 5.6 Sol/ })
+    expect(control.textContent).not.toContain('Next override')
+    expect(control.textContent).not.toContain('Kimi K2.6')
+  })
+
+  test('does not treat a queued addressed session as genuinely new', async () => {
+    const sessionModel = { provider: 'openai-codex', id: 'gpt-5.6-sol' } as const
+    const staleLocalModel = { provider: 'infomaniak', id: 'Kimi-K2.6' } as const
+    const persisted = storage({
+      [scopedComposerStorageKey('workspace-a', 'model')]: JSON.stringify(staleLocalModel),
+      [scopedComposerStorageKey('workspace-a', 'model:user-selected')]: '1',
+    })
+    const remote = new FakeRemotePiSession(remoteState({
+      currentModel: sessionModel,
+      committedMessages: [],
+      history: { mode: 'full', messageCount: 0 },
+      queue: { followUps: [{ id: 'queued', kind: 'followup', displayText: 'already queued' }] },
+    }))
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
+
+    render(
+      <PiChatPanel
+        serverResourcesEnabled={false}
+        storageScope="workspace-a"
+        storage={persisted}
+        availableModels={[
+          { ...sessionModel, label: 'GPT 5.6 Sol', available: true },
+          { ...staleLocalModel, label: 'Kimi K2.6', available: true },
+        ]}
+        fetch={fetchMock as unknown as typeof fetch}
+        createRemoteSession={remoteFactory(remote)}
+      />,
+    )
+
+    const control = await screen.findByRole('button', { name: /Current model: GPT 5.6 Sol/ })
+    expect(control.textContent).not.toContain('Next override')
+    expect(control.textContent).not.toContain('Kimi K2.6')
+  })
+
+  test('shows the addressed session model and labels an explicit next-message override', async () => {
+    const sessionModel = { provider: 'openai-codex', id: 'gpt-5.6-sol' } as const
+    const staleLocalModel = { provider: 'infomaniak', id: 'Kimi-K2.6' } as const
+    const nextModel = { provider: 'openai', id: 'gpt-5.7' } as const
+    const persisted = storage({
+      [scopedComposerStorageKey('workspace-a', 'model')]: JSON.stringify(staleLocalModel),
+      [scopedComposerStorageKey('workspace-a', 'model:user-selected')]: '1',
+    })
+    const remote = new FakeRemotePiSession(remoteState({ currentModel: sessionModel }))
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
+
+    render(
+      <PiChatPanel
+        serverResourcesEnabled={false}
+        storageScope="workspace-a"
+        storage={persisted}
+        availableModels={[
+          { ...sessionModel, label: 'GPT 5.6 Sol', available: true },
+          { ...nextModel, label: 'GPT 5.7', available: true },
+          { ...staleLocalModel, label: 'Kimi K2.6', available: true },
+        ]}
+        fetch={fetchMock as unknown as typeof fetch}
+        createRemoteSession={remoteFactory(remote)}
+      />,
+    )
+
+    const modelControl = await screen.findByRole('button', { name: /Current model: GPT 5.6 Sol/ })
+    expect(modelControl.textContent).toContain('GPT 5.6 Sol')
+    expect(modelControl.textContent).not.toContain('Kimi K2.6')
+
+    fireEvent.click(modelControl)
+    fireEvent.click(await screen.findByText('GPT 5.7'))
+
+    const overrideControl = screen.getByRole('button', { name: /Next-message override: GPT 5.7/ })
+    expect(overrideControl.textContent).toContain('GPT 5.6 Sol')
+    expect(overrideControl.textContent).toContain('Next override: GPT 5.7')
+    expect(overrideControl.getAttribute('data-boring-model-override')).toBe('true')
+
+    const textarea = screen.getByLabelText('Agent prompt')
+    fireEvent.change(textarea, { target: { value: 'use override once' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
+    await waitFor(() => expect(remote.prompt).toHaveBeenCalledWith(expect.objectContaining({
+      message: 'use override once',
+      model: nextModel,
+    })))
+  })
+
   test('opens model and thinking pickers from slash commands', async () => {
-    const remote = new FakeRemotePiSession(remoteState())
+    const remote = new FakeRemotePiSession(remoteState({ committedMessages: [], history: { mode: 'full', messageCount: 0 } }))
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
     render(
       <PiChatPanel

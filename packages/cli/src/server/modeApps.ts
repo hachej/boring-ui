@@ -424,6 +424,7 @@ export async function createFolderModeApp(opts: {
   provisionWorkspace?: boolean
   allowInsecureLocalBridgeAuth?: boolean
   loadAmbientSkills?: boolean
+  loadAmbientContext?: boolean
   liveTranscripts?: {
     enabled: boolean
     listenerHost: string
@@ -510,10 +511,14 @@ export async function createFolderModeApp(opts: {
       // by them. Stated explicitly here so the CLI does not silently inherit a
       // future change to the library default.
       readonlyWorkspacePaths: ['.agents'],
-      // The standalone CLI runs on the user's own machine, so ambient skill
-      // discovery (workspace + user-global ~/.pi skills) is on. The library
-      // default is off (withPiHarnessDefaults) to keep hosted agents isolated.
-      pi: { noSkills: opts.loadAmbientSkills === false },
+      // The standalone CLI runs on the user's own machine, so Pi's ambient
+      // skills and AGENTS.md/CLAUDE.md discovery are on. The workspace-server
+      // library (and therefore the playground unless it explicitly opts in)
+      // keeps both defaults sealed for hosted/embedded trust boundaries.
+      pi: {
+        noSkills: opts.loadAmbientSkills === false,
+        noContextFiles: opts.loadAmbientContext === false,
+      },
       // CLI-bundled internal plugins, resolved to absolute package dirs. This
       // drives the server-side install array (boot-time routes/agentTools);
       // additionalBoringPluginDirs only feeds the asset-manager scan.
@@ -613,6 +618,7 @@ export async function createWorkspacesModeApp(opts: {
   registryPath?: string
   provisionWorkspace?: boolean
   loadAmbientSkills?: boolean
+  loadAmbientContext?: boolean
 }): Promise<FastifyInstance> {
   if (process.env.BORING_LIVE_TRANSCRIPTS_ENABLED === "1") {
     throw new Error("live_transcript_local_only: live transcripts are supported only by boring-ui [folder]")
@@ -1058,6 +1064,7 @@ export async function createWorkspacesModeApp(opts: {
           return agentServer.createPiResourceDigestInput({
             piCwd: workspace.path,
             noSkills: opts.loadAmbientSkills === false,
+            noContextFiles: opts.loadAmbientContext === false,
             resourceSets: [{
               promptParts: [workspaceAppServer.buildWorkspaceContextPrompt(), hotResources.systemPromptAppend],
               additionalSkillPaths,
@@ -1132,8 +1139,12 @@ export async function createWorkspacesModeApp(opts: {
           ],
         }),
       ]
+      // This hub is still a trusted local CLI host even though it serves many
+      // folders. Match folder mode: ambient context is on unless explicitly
+      // disabled. Hosted/embedded composition never passes this local switch.
       const pi = {
         noSkills: opts.loadAmbientSkills === false,
+        noContextFiles: opts.loadAmbientContext === false,
         additionalSkillPaths: [join(workspace.path, ".agents", "skills")],
         packages: [],
         extensionPaths: [],
@@ -1146,6 +1157,7 @@ export async function createWorkspacesModeApp(opts: {
           agentServer.createPiResourceDigestInput({
             piCwd: workspace.path,
             noSkills: opts.loadAmbientSkills === false,
+            noContextFiles: opts.loadAmbientContext === false,
             resourceSets: [{
               promptParts: [workspaceAppServer.buildWorkspaceContextPrompt(), hotResources.systemPromptAppend],
               additionalSkillPaths: [
