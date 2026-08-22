@@ -69,6 +69,16 @@ with `SIGINT`/`SIGTERM`/`SIGHUP`, so interrupted runs cannot leak inodes.
 Cleanup never follows symlinks and refuses to remove any path outside that
 parent.
 
+Creating the run root arms its removal on normal process `exit`, which is safe in
+any host. Signal handling is opt-in, because cleaning up on a signal means
+re-exiting the process with that signal's conventional code — a decision only an
+entrypoint that owns its process may take. The CLI entrypoints
+(`scripts/run-ui-review.mjs`, `scripts/explore-review-spec.ts`) call
+`installUiReviewTempCleanupHandlers()`; importing the helper into a Playwright or
+vitest worker never does, so the runner keeps its own shutdown semantics. Those
+workers are signal-killed by their runner, so their suites remove the run root
+explicitly in an `afterAll` instead.
+
 Set `UI_REVIEW_KEEP_TMP=1` to retain the run directory for debugging.
 `UI_REVIEW_ISOLATION_ROOT` still points the isolation tree at a caller-owned
 path, which the tooling never removes. When `UI_REVIEW_OUTPUT_DIR` is unset the

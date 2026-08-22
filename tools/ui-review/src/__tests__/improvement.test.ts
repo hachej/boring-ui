@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises"
 import { join } from "node:path"
-import { describe, expect, it } from "vitest"
+import { afterAll, describe, expect, it } from "vitest"
 import { sha256Hex, type UiCriticReport, type UiHardGateReport, type UiReviewManifest } from "../core/contracts"
 import {
   createCalibrationRecord as createCalibrationForSpec,
@@ -10,8 +10,12 @@ import {
   validateExecutionPacket as validatePacketForSpec,
   validateExecutionPacketEvidence,
 } from "../core/improvement"
-import { createUiReviewTempDir } from "../core/tempRoot"
+import { cleanupUiReviewTempRootSync, createUiReviewTempDir } from "../core/tempRoot"
 import { testSpec } from "./fixtures"
+
+// The run-scoped temp root belongs to this worker process; remove it here rather than relying on
+// how the runner terminates workers (vitest and Playwright both signal-kill them).
+afterAll(() => { cleanupUiReviewTempRootSync() })
 
 const createExecutionPacket = (input: Omit<Parameters<typeof createPacketForSpec>[0], "spec">) => createPacketForSpec({ ...input, spec: testSpec })
 const createCalibrationRecord = (input: Omit<Parameters<typeof createCalibrationForSpec>[0], "spec">) => createCalibrationForSpec({ ...input, spec: testSpec })

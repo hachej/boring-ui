@@ -28,7 +28,7 @@ import {
 import { createCalibrationRecord, createExecutionPacket } from "../src/core/improvement"
 import { pairWithLocalBaseline } from "../src/core/pairing"
 import { renderUiReviewHtml, renderUiReviewMarkdown } from "../src/core/report"
-import { createUiReviewTempDir } from "../src/core/tempRoot"
+import { cleanupUiReviewTempRootSync, createUiReviewTempDir } from "../src/core/tempRoot"
 import {
   checkpointAppliesToViewport,
   type UiReviewBrowserErrors,
@@ -36,6 +36,10 @@ import {
   type UiReviewVisualBaselineResult,
 } from "../src/core/reviewSpec"
 import { getUiReviewSpec } from "../src/registry"
+
+// The run-scoped temp root belongs to this worker process; remove it here rather than relying on
+// how the runner terminates workers (vitest and Playwright both signal-kill them).
+test.afterAll(() => { cleanupUiReviewTempRootSync() })
 
 const TOOL_ROOT = resolve(import.meta.dirname, "..")
 const REPO_ROOT = resolve(TOOL_ROOT, "../..")

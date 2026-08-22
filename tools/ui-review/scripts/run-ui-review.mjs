@@ -4,8 +4,9 @@ import { isAbsolute, join, resolve, sep } from "node:path"
 import { parseUiReviewArgs } from "./ui-review-args.mjs"
 import { readUiReviewWorktreeIdentity } from "./ui-review-worktree.mjs"
 import { getUiReviewSpec } from "../src/registry.ts"
-import { cleanupUiReviewTempRoot, uiReviewTempRoot } from "../src/core/tempRoot.ts"
+import { cleanupUiReviewTempRootSync, installUiReviewTempCleanupHandlers, uiReviewTempRoot } from "../src/core/tempRoot.ts"
 
+installUiReviewTempCleanupHandlers()
 let command
 try { command = parseUiReviewArgs(process.argv.slice(2)) } catch (error) { console.error(error instanceof Error ? error.message : String(error)); process.exit(2) }
 let spec
@@ -61,7 +62,7 @@ try {
     exitCode = await run("pnpm", ["exec", "playwright", "test", "--config", "playwright.config.ts"], testEnv, toolRoot)
   }
 } finally {
-  const removed = await cleanupUiReviewTempRoot()
+  const removed = cleanupUiReviewTempRootSync()
   if (removed && (outputDir === removed || outputDir.startsWith(`${removed}${sep}`))) {
     console.warn(`UI_REVIEW_OUTPUT_DISCARDED:${outputDir} (set UI_REVIEW_OUTPUT_DIR to keep artifacts, or UI_REVIEW_KEEP_TMP=1 to keep the run directory)`)
   }

@@ -6,10 +6,11 @@ import { setTimeout as sleep } from "node:timers/promises"
 import { chromium } from "@playwright/test"
 import { resetBombadilOutputDirectory, runWithBombadilStartupRetry } from "../src/core/bombadilProcess"
 import { createUiReviewStagingPolicy, assertStagingBounds, stageBombadilSelection, writeSelection, type UiReviewSelection } from "../src/core/exploration"
-import { cleanupUiReviewTempRoot, createUiReviewTempDir } from "../src/core/tempRoot"
+import { cleanupUiReviewTempRootSync, createUiReviewTempDir, installUiReviewTempCleanupHandlers } from "../src/core/tempRoot"
 import { readReproduceManifest, validateReproduceOwnership, verifyReproducedFinalState } from "../src/core/replay"
 import { getUiReviewSpec } from "../src/registry"
 
+installUiReviewTempCleanupHandlers()
 const spec = getUiReviewSpec(requiredEnv("UI_REVIEW_SPEC"))
 if (!spec.exploration) process.exit(0)
 const repoRoot = resolve(import.meta.dirname, "../../..")
@@ -60,7 +61,7 @@ try {
   }
 } finally {
   await stop(server)
-  await cleanupUiReviewTempRoot()
+  cleanupUiReviewTempRootSync()
 }
 
 function startTarget(): ChildProcess {

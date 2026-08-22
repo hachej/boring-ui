@@ -7,8 +7,15 @@ import { basename, resolve, sep } from "node:path"
  * Run-scoped temporary storage for the UI review tooling.
  *
  * Every temp directory the tooling needs is created *inside* one parent directory per process.
- * That parent is removed when the process finishes normally (`finally` / `exit`) and when it is
- * terminated by `SIGINT`/`SIGTERM`/`SIGHUP`, so an interrupted review run cannot leak inodes.
+ *
+ * The run root is removed when the process finishes normally: creating it registers a `process.on
+ * ("exit")` listener that removes nothing but this module's own directory, which is safe in any
+ * host — a CLI, a Playwright worker, a vitest worker.
+ *
+ * Signal handling is *not* automatic. Cleaning up on `SIGINT`/`SIGTERM`/`SIGHUP` means re-exiting
+ * the process with the signal's conventional code, which only an entrypoint that owns its process
+ * may decide. Those entrypoints opt in with {@link installUiReviewTempCleanupHandlers}; importing
+ * this module elsewhere never takes over a worker's shutdown behind its back.
  *
  * Set `UI_REVIEW_KEEP_TMP=1` to retain the run directory for debugging.
  */
@@ -19,7 +26,8 @@ const CLEANUP_SIGNALS = { SIGINT: 130, SIGTERM: 143, SIGHUP: 129 } as const
 
 let runRoot: string | undefined
 let runRootPromise: Promise<string> | undefined
-let handlersInstalled = false
+let exitHandlerInstalled = false
+let signalHandlersInstalled = false
 
 export function shouldKeepUiReviewTemp(env: NodeJS.ProcessEnv = process.env): boolean {
   return env[UI_REVIEW_KEEP_TMP_ENV] === "1"
@@ -42,12 +50,12 @@ export function assertWithinUiReviewTempRoot(root: string, candidate: string): s
   return path
 }
 
-/** Create (once per process) the run-scoped parent directory and arm its cleanup handlers. */
+/** Create (once per process) the run-scoped parent directory and arm its removal on normal exit. */
 export async function uiReviewTempRoot(): Promise<string> {
   if (runRoot) return runRoot
   runRootPromise ??= mkdtemp(resolve(tmpdir(), UI_REVIEW_TEMP_PREFIX)).then((created) => {
     runRoot = created
-    installCleanupHandlers()
+    installExitCleanup()
     return created
   })
   return runRootPromise
@@ -71,18 +79,28 @@ export function cleanupUiReviewTempRootSync(): string | undefined {
   return current
 }
 
-export async function cleanupUiReviewTempRoot(): Promise<string | undefined> {
-  return cleanupUiReviewTempRootSync()
-}
-
-function installCleanupHandlers(): void {
-  if (handlersInstalled) return
-  handlersInstalled = true
-  process.on("exit", () => { cleanupUiReviewTempRootSync() })
+/**
+ * CLI entrypoints only: also remove the run root on `SIGINT`/`SIGTERM`/`SIGHUP`, then re-exit with
+ * that signal's conventional code. Idempotent, and safe to call before the run root exists.
+ *
+ * Call this from a script that owns its process. A Playwright or vitest worker must not — it would
+ * hand this module the decision to `process.exit()` out from under the runner. Those hosts keep the
+ * automatic `exit` cleanup, which is enough: they are torn down by their own runner.
+ */
+export function installUiReviewTempCleanupHandlers(): void {
+  installExitCleanup()
+  if (signalHandlersInstalled) return
+  signalHandlersInstalled = true
   for (const [signal, exitCode] of Object.entries(CLEANUP_SIGNALS)) {
     process.on(signal as NodeJS.Signals, () => {
       cleanupUiReviewTempRootSync()
       process.exit(exitCode)
     })
   }
+}
+
+function installExitCleanup(): void {
+  if (exitHandlerInstalled) return
+  exitHandlerInstalled = true
+  process.on("exit", () => { cleanupUiReviewTempRootSync() })
 }

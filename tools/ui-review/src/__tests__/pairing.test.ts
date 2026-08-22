@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises"
 import { join } from "node:path"
-import { describe, expect, it } from "vitest"
+import { afterAll, describe, expect, it } from "vitest"
 import {
   createUiReviewReproducePath,
   createUiReviewStateId,
@@ -11,8 +11,12 @@ import {
   type UiReviewViewport,
 } from "../core/contracts"
 import { pairWithLocalBaseline as pairWithSpec } from "../core/pairing"
-import { createUiReviewTempDir } from "../core/tempRoot"
+import { cleanupUiReviewTempRootSync, createUiReviewTempDir } from "../core/tempRoot"
 import { testSpec } from "./fixtures"
+
+// The run-scoped temp root belongs to this worker process; remove it here rather than relying on
+// how the runner terminates workers (vitest and Playwright both signal-kill them).
+afterAll(() => { cleanupUiReviewTempRootSync() })
 
 const pairWithLocalBaseline = (input: Omit<Parameters<typeof pairWithSpec>[0], "spec">) => pairWithSpec({ ...input, spec: testSpec })
 
