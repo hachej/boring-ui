@@ -182,7 +182,6 @@ function statusForGatewayError(code: string): number {
     || code === AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN
     || code === AgentGatewayErrorCode.AGENT_RUNTIME_RESTART_REQUIRED
     || code === AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE
-    || code === AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH
     || code.includes('CURSOR')
     || code.includes('REPLAY')
   ) return 409
@@ -358,8 +357,8 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
     const query = parseWithSchema(EmptyQuerySchema, request.query, reply, 'query')
     if (!query) return
     try {
-      // The service comes from the exact pin-checked existing-session binding;
-      // never re-resolve a candidate/current binding after authorization.
+      // The service comes from the authorized existing-session binding;
+      // never re-resolve another binding after authorization.
       const { scope, service } = await input.resolveAddressedPiChatService(
         request,
         params.agentTypeId,

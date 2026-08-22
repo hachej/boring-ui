@@ -37,12 +37,13 @@ async function makeContext() {
   return { workspaceRoot, sessionId: 'session-1' as const }
 }
 
-function resolveTestMode(mode: 'direct' | 'local' | 'vercel-sandbox') {
+function resolveTestMode(mode: 'direct' | 'local' | 'blaxel' | 'vercel-sandbox') {
   const adapter = createTestRuntimeModeAdapter(mode)
   return resolveMode(mode, {
     adapters: {
       direct: mode === 'direct' ? adapter : createTestRuntimeModeAdapter('direct'),
       local: mode === 'local' ? adapter : createTestRuntimeModeAdapter('local'),
+      blaxel: mode === 'blaxel' ? adapter : createTestRuntimeModeAdapter('blaxel'),
       'vercel-sandbox': mode === 'vercel-sandbox' ? adapter : createTestRuntimeModeAdapter('vercel-sandbox'),
     },
   })
@@ -104,6 +105,9 @@ test('autoDetectMode honors BORING_AGENT_MODE override', () => {
 
   setEnvForTest('BORING_AGENT_MODE', 'local')
   expect(autoDetectMode()).toBe('local')
+
+  setEnvForTest('BORING_AGENT_MODE', 'blaxel')
+  expect(autoDetectMode()).toBe('blaxel')
 })
 
 test('autoDetectMode rejects invalid BORING_AGENT_MODE values', () => {

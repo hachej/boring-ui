@@ -19,7 +19,7 @@ import type { ReadyStatusTracker } from '../runtime/readyStatus'
 import { canonicalDigest } from './canonical'
 import type { AgentHostRuntime, RuntimeBinding } from './createAgentHost'
 import type { EmbeddedAgentGateway } from './embeddedGateway'
-import type { AgentHostDirectProjectionOptions } from './types'
+import type { AgentHostDirectProjectionOptions, AgentInstructionFileRef } from './types'
 import { projectStableServiceError } from './stableServiceError'
 import {
   resolveAgentMcpGrants,
@@ -82,6 +82,39 @@ export interface AgentHostRuntimeCapabilityBinding {
   readonly mcpGrantDiagnostics?: readonly McpGrantDiagnostic[]
 }
 
+/**
+ * User-facing "what can this agent do?" description. Authorized at the same
+ * per-agent bar as every sibling route, but served without materializing a
+ * runtime binding: everything here comes from the compiled fleet spec plus
+ * the MCP grant seam.
+ *
+ * Deliberately NARROW: only what needs the compiled spec or the grant seam.
+ * Identity (`label`) and `pluginIds` already come from the fleet list route,
+ * and duplicating them here forced the client to reconcile two shapes for the
+ * same fact.
+ *
+ * The composed `systemPrompt` used to ship here too. Its ONLY consumer was the
+ * Agent details "System prompt" section, which the owner removed as unhelpful:
+ * a wall of composed text nobody could act on. Serving a whole agent's
+ * instructions to every details open with no reader left is pure payload, so
+ * the field went with the section. `instructionFiles` is what survives — the
+ * authored sources, which the operator can actually open and edit.
+ */
+export interface AgentHostAgentDescription {
+  readonly agentTypeId: string
+  /** Preferred model id from the agent definition, when pinned. */
+  readonly model: string | null
+  /**
+   * Authored instruction sources behind this agent's instructions. The Host is the only
+   * component that knows these locations (seat and agentTypeId are unrelated
+   * fleet.yaml fields), so clients render what they are given rather than
+   * guessing a persona directory.
+   */
+  readonly instructionFiles: readonly AgentInstructionFileRef[]
+  /** MCP connectors this agent is actually granted (default-deny). */
+  readonly mcpServers: readonly { readonly id: string; readonly tools: readonly string[] }[]
+}
+
 export interface AgentHostRuntimeCapabilityProjection {
   readonly filterModels?: ModelsRoutesOptions['filterModels']
   readonly sessionChangesTracker?: SessionChangesTracker
@@ -96,6 +129,10 @@ export interface AgentHostRuntimeCapabilityProjection {
     readonly agentTypeId: string
     readonly sessionId?: string
   }): Promise<AgentHostRuntimeCapabilityBinding>
+  describeAgent(input: {
+    readonly request: FastifyRequest
+    readonly agentTypeId: string
+  }): Promise<AgentHostAgentDescription>
   reload(input: {
     readonly request: FastifyRequest
     readonly agentTypeId: string
@@ -139,12 +176,17 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
     }
     return result
   }
-  const resolve = async (request: FastifyRequest, agentTypeId: string, sessionId?: string) => {
+  /**
+   * The per-agent authorization decision, shared by every per-agent route.
+   * `runtime.resolveAgentRuntimeScope` invokes the host's
+   * `resolveAuthorizedAgentRuntimeScope` hook, which is the ONLY seam where a
+   * host can deny THIS subject access to THIS agentTypeId — workspace-scope
+   * authorization alone does not answer that question. Read-only projections
+   * stop here; routes that actually drive the harness continue into
+   * `resolveBinding`.
+   */
+  const authorizeAgentAccess = async (request: FastifyRequest, agentTypeId: string) => {
     const { scope, claim } = await authorize(request)
-    if (sessionId) {
-      const pinned = await gateway.resolveHostSessionBinding(scope, { agentTypeId, sessionId })
-      return { scope, claim: pinned.claim, binding: pinned.binding }
-    }
     const resolved = await runtime.resolveAgentRuntimeScope(
       agentTypeId,
       scope,
@@ -152,6 +194,15 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
       'new-binding',
       request.id,
     )
+    return { scope, claim, resolved }
+  }
+  const resolve = async (request: FastifyRequest, agentTypeId: string, sessionId?: string) => {
+    if (sessionId) {
+      const { scope } = await authorize(request)
+      const pinned = await gateway.resolveHostSessionBinding(scope, { agentTypeId, sessionId })
+      return { scope, claim: pinned.claim, binding: pinned.binding }
+    }
+    const { scope, claim, resolved } = await authorizeAgentAccess(request, agentTypeId)
     const binding = await runtime.resolveBinding(agentTypeId, scope, claim, resolved)
     return { scope, claim, binding }
   }
@@ -236,13 +287,48 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
           userId: claim.authSubjectId,
           sessionCtx: {
             workspaceId: claim.workspaceScopeId,
-            runtimeScopeIdentity: binding.scope.identity,
           },
           ...(typeof user?.email === 'string' && user.email.trim()
             ? { userEmail: user.email.trim() }
             : {}),
           userEmailVerified: user?.emailVerified === true,
         },
+      }
+    },
+    async describeAgent({ request, agentTypeId }) {
+      // Authorize BEFORE looking the agent up, matching `resolve()` and every
+      // sibling route. Checking existence first turns an unauthorized request
+      // into an agent-existence oracle: unknown vs denied are distinguishable
+      // without any right to ask.
+      const { claim } = await authorizeAgentAccess(request, agentTypeId)
+      const spec = runtime.compiledById.get(agentTypeId)
+      if (!spec) {
+        throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN, 'agent type is not available')
+      }
+      const legacy = 'legacyDefault' in spec
+      let mcpServers: AgentHostAgentDescription['mcpServers'] = []
+      if (mcpGrants) {
+        const refs = mcpGrants.getMcpServerRefs(agentTypeId) ?? []
+        if (refs.length > 0) {
+          const listed = await mcpGrants.store.listGrants(claim.workspaceScopeId)
+          const resolved = resolveAgentMcpGrants({
+            workspaceId: claim.workspaceScopeId,
+            agentTypeId,
+            mcpServerRefs: refs,
+            grants: listed.grants,
+            catalog: mcpGrants.catalog,
+          })
+          mcpServers = resolved.connectors.map((connector) => ({
+            id: connector.connectorId,
+            tools: connector.allowedTools,
+          }))
+        }
+      }
+      return {
+        agentTypeId,
+        model: legacy ? null : spec.model?.preferred ?? null,
+        instructionFiles: legacy ? [] : spec.instructionFiles ?? [],
+        mcpServers,
       }
     },
     async executeCommand({ request, agentTypeId, requestId, sessionId, name, args }) {
@@ -269,8 +355,7 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
             userId: scope.authSubjectId,
             sessionCtx: {
               workspaceId: scope.workspaceScopeId,
-              runtimeScopeIdentity: binding.scope.identity,
-            },
+              },
           })
           return { ok: true, sessionId, name }
         }),
@@ -448,7 +533,6 @@ function statusFor(error: AgentGatewayError): number {
     || error.code === AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN
     || error.code === AgentGatewayErrorCode.AGENT_RUNTIME_RESTART_REQUIRED
     || error.code === AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE
-    || error.code === AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH
   ) return 409
   if (error.code === AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED) return 503
   return 400
@@ -551,6 +635,19 @@ export function createAgentHostRuntimeCapabilityRoutes(
       authorizeRequest: async (request) => { await resolve(request, agentId(request)) },
       getTracker: async (request) => (await resolve(request, agentId(request))).readyTracker,
       registerStreamClose: projection.registerSubscription,
+    })
+
+    app.get('/api/v1/agents/:agentTypeId/describe', async (request, reply) => {
+      const value = params(AgentParams, request, reply)
+      if (!value) return
+      try {
+        return reply.code(200).send(await projection.describeAgent({
+          request,
+          agentTypeId: value.agentTypeId,
+        }))
+      } catch (error) {
+        return sendError(reply, error)
+      }
     })
 
     app.get('/api/v1/agents/:agentTypeId/commands', async (request, reply) => {

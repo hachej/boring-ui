@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-sandbox",
-  "version": "0.1.95",
+  "version": "0.1.103",
   "type": "module",
   "license": "MIT",
   "description": "Sandbox provider contracts and implementations for Boring runtimes.",
@@ -37,6 +37,10 @@
       "types": "./dist/providers/node-workspace/index.d.ts",
       "import": "./dist/providers/node-workspace/index.js"
     },
+    "./providers/blaxel": {
+      "types": "./dist/providers/blaxel/index.d.ts",
+      "import": "./dist/providers/blaxel/index.js"
+    },
     "./providers/vercel-sandbox": {
       "types": "./dist/providers/vercel-sandbox/index.d.ts",
       "import": "./dist/providers/vercel-sandbox/index.js"
@@ -60,13 +64,16 @@
     "qualify:runsc:v3:reference": "node ./scripts/qualify-runsc-v3-reference.mjs",
     "qualify:bundle:build": "node ./scripts/build-qualification-bundle.mjs",
     "qualify:fleet:verify": "node ./scripts/verify-fleet-admission-evidence.mjs",
+    "test:runsc:integration": "node ./scripts/integrate-docker-runsc-runtime.mjs",
     "measure:coldstart:latency": "node ./scripts/measure-cold-start-latency.mjs",
     "test": "vitest run --passWithNoTests",
+    "test:blaxel:live": "node ../../scripts/blaxel-adapter-smoke.mjs",
     "clean": "rm -rf dist .tsbuildinfo"
   },
   "dependencies": {
-    "@vercel/blob": "^2.5.0",
-    "@vercel/sandbox": "2.9.2",
+    "@blaxel/core": "0.3.11",
+    "@vercel/blob": "^2.8.0",
+    "@vercel/sandbox": "3.0.0",
     "chokidar": "^5.0.0",
     "zod": "^3.25.76"
   },

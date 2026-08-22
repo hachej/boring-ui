@@ -19,7 +19,9 @@ import { CornerChromeButton } from "./cornerChrome"
 import { MobileChatBar, MobileSingleChatPane, MobileWorkspaceBar } from "./mobileShell"
 import { WorkbenchOverlayFrame } from "./WorkbenchOverlayFrame"
 import { useViewportWidth } from "./useViewportWidth"
+import { isCompactViewport } from "./breakpoints"
 import { workspaceSessionRef, workspaceSessionRefFromKey, workspaceSessionRefsEqual } from "../sessionIdentity"
+import { useModalDrawer, useModalDrawerScrollLock } from "./useModalDrawer"
 
 export function buildChatLayout(props: ChatLayoutProps = {}): LayoutConfig {
   const {
@@ -82,6 +84,12 @@ export function buildChatLayout(props: ChatLayoutProps = {}): LayoutConfig {
   return { version: "2.0", groups }
 }
 
+/**
+ * Not a shell breakpoint tier (see ./breakpoints.ts): below this width an
+ * open workbench takes over one pane instead of squeezing chat beside it.
+ */
+const CHAT_AUTOCOLLAPSE_MAX_WIDTH = 1180
+
 export function ChatLayout(props: ChatLayoutProps) {
   const navOpen = props.nav !== null
   const surfaceConfigured = props.surface !== undefined
@@ -130,7 +138,7 @@ export function ChatLayout(props: ChatLayoutProps) {
     [blockers],
   )
   const commandRegistry = useCommandRegistry()
-  const mobileShell = props.mobileShellEnabled === true && viewport < 640
+  const mobileShell = props.mobileShellEnabled === true && isCompactViewport(viewport)
   const effectiveNavWidth = mobileShell ? Math.min(Math.max(280, Math.floor(viewport * 0.86)), 360) : clamp(navWidth, 200, 360)
   const effectiveSidebarWidth = mobileShell ? viewport : clamp(sidebarWidth, 200, Math.max(240, Math.floor(viewport * 0.5)))
   const surfaceMax = mobileShell ? viewport : Math.max(480, Math.floor(viewport * 0.72))
@@ -151,6 +159,18 @@ export function ChatLayout(props: ChatLayoutProps) {
     ? chatPanes.find((pane) => pane.id === props.activeChatPaneId) ?? chatPanes[0]
     : undefined
   const sidebarOpen = Boolean(props.sidebar)
+  const shellRef = useRef<HTMLDivElement | null>(null)
+  const navDrawerRef = useRef<HTMLElement | null>(null)
+  const sidebarDrawerRef = useRef<HTMLElement | null>(null)
+  const scheduleLocalComposerFocus = useCallback(() => {
+    const shell = shellRef.current
+    if (shell) scheduleComposerFocus(shell)
+  }, [])
+  const navIsTopDrawer = navOpen && (mobileShell || !sidebarOpen)
+  const sidebarIsTopDrawer = sidebarOpen && !navIsTopDrawer
+  useModalDrawer({ active: navIsTopDrawer, containerRef: navDrawerRef, onDismiss: closeNav, focusFallback: scheduleLocalComposerFocus, lifecycleKey: sidebarOpen })
+  useModalDrawer({ active: sidebarIsTopDrawer, containerRef: sidebarDrawerRef, onDismiss: closeSidebar, focusFallback: scheduleLocalComposerFocus, lifecycleKey: navOpen })
+  useModalDrawerScrollLock(navOpen || sidebarOpen)
   const canControlNav = navOpen ? Boolean(closeNav) : Boolean(props.onOpenNav)
   const canControlSurface = surfaceOpen ? Boolean(closeSurface) : Boolean(props.onOpenSurface)
   const canControlSidebar = sidebarOpen ? Boolean(closeSidebar) : Boolean(props.onOpenSidebar)
@@ -187,10 +207,9 @@ export function ChatLayout(props: ChatLayoutProps) {
     if (chatCollapsed) setChatCollapsed(false)
     if (navOpen) closeNav?.()
     if (surfaceOpen) closeSurface?.()
-    focusAgentComposer()
-    scheduleComposerFocus()
-  }, [chatCollapsed, closeNav, closeSurface, navOpen, setChatCollapsed, surfaceOpen])
-
+    focusAgentComposer(shellRef.current)
+    scheduleLocalComposerFocus()
+  }, [chatCollapsed, closeNav, closeSurface, navOpen, scheduleLocalComposerFocus, setChatCollapsed, surfaceOpen])
   const suppressOverlayAutoExpandRef = useRef(false)
   const toggleChatCollapsed = useCallback(() => {
     const collapsing = !chatCollapsed
@@ -220,12 +239,14 @@ export function ChatLayout(props: ChatLayoutProps) {
       if (canControlSidebar) {
         shortcuts.push({ key: "3", mod: true, allowInEditable: true, handler: toggleSidebar })
       }
-      if (centerId === "chat") {
+      if (!sidebarOpen && !navOpen && centerId === "chat") {
         shortcuts.push({ key: "Escape", allowInEditable: true, handler: focusChat })
+      }
+      if (centerId === "chat") {
         shortcuts.push({ key: "\\", mod: true, allowInEditable: true, handler: toggleChatCollapsed })
       }
       return shortcuts
-    }, [canControlNav, canControlSidebar, canControlSurface, centerId, focusChat, toggleChatCollapsed, toggleNav, toggleSidebar, toggleSurface]),
+    }, [canControlNav, canControlSidebar, canControlSurface, centerId, focusChat, navOpen, sidebarOpen, toggleChatCollapsed, toggleNav, toggleSidebar, toggleSurface]),
   })
 
   useEffect(() => {
@@ -343,9 +364,9 @@ export function ChatLayout(props: ChatLayoutProps) {
     if (activeBlockers.length > 0) {
       setChatCollapsed(false)
       setChatRailPulse(false)
-      scheduleComposerFocus()
+      scheduleLocalComposerFocus()
     }
-  }, [activeBlockers.length, chatCollapsed, setChatCollapsed])
+  }, [activeBlockers.length, chatCollapsed, scheduleLocalComposerFocus, setChatCollapsed])
 
   // Switching to a different session re-opens the chat if it was collapsed, so
   // the newly selected conversation is visible. Skips the initial mount (only
@@ -362,7 +383,7 @@ export function ChatLayout(props: ChatLayoutProps) {
   // On compact widths, prefer a one-pane workbench takeover instead of squeezing chat.
   useEffect(() => {
     if (mobileShell || !surfaceOpen || chatCollapsed || props.chatOverlay) return
-    if (viewport < 1180) setChatCollapsed(true)
+    if (viewport < CHAT_AUTOCOLLAPSE_MAX_WIDTH) setChatCollapsed(true)
   }, [chatCollapsed, mobileShell, props.chatOverlay, setChatCollapsed, surfaceOpen, viewport])
 
   // Chat-hosted overlays (Skills/Plugins) must remain visible while workbench
@@ -394,6 +415,7 @@ export function ChatLayout(props: ChatLayoutProps) {
 
   return (
     <div
+      ref={shellRef}
       data-boring-workspace=""
       data-boring-workspace-part="shell"
       data-boring-mobile-shell={props.mobileShellEnabled === true ? "" : undefined}
@@ -417,10 +439,14 @@ export function ChatLayout(props: ChatLayoutProps) {
         />
       ) : null}
       <aside
+        ref={navDrawerRef}
         data-boring-workspace-part="session-drawer"
         data-boring-state={navOpen ? "expanded" : "collapsed"}
         aria-label="Session browser"
         aria-hidden={!navOpen}
+        role="dialog"
+        aria-modal={navIsTopDrawer}
+        tabIndex={-1}
         className={cn(
           mobileShell ? "absolute inset-y-0 left-0 z-50 h-full shadow-2xl" : "relative h-full shrink-0",
           "min-h-0 overflow-hidden bg-background",
@@ -455,10 +481,14 @@ export function ChatLayout(props: ChatLayoutProps) {
       </aside>
 
       <aside
+        ref={sidebarDrawerRef}
         data-boring-workspace-part="workbench-left-shell"
         data-boring-state={sidebarOpen ? "expanded" : "collapsed"}
         aria-label={sidebarOpen ? "Workbench left panel" : undefined}
         aria-hidden={!sidebarOpen}
+        role="dialog"
+        aria-modal={sidebarIsTopDrawer}
+        tabIndex={-1}
         className={cn(
           mobileShell ? "absolute inset-0 z-40 h-full" : "relative h-full shrink-0",
           "min-h-0 overflow-hidden bg-background",
@@ -497,7 +527,10 @@ export function ChatLayout(props: ChatLayoutProps) {
           aria-label={chatHidden ? "Collapsed chat" : "Chat"}
           aria-hidden={chatHidden}
           className={cn(
-            "relative h-full min-h-0 min-w-0 overflow-hidden bg-background",
+            // `isolate` scopes children's z-indices (dockview sashes are
+            // z-index 999) so the chat-left overlay can stack above them
+            // without escaping into page-level chrome.
+            "relative isolate h-full min-h-0 min-w-0 overflow-hidden bg-background",
             mobileShell && !chatHidden && "flex flex-col",
             // Animate flex-grow (not just width) so the chat slides open/closed
             // like the fixed-width nav/workbench panes instead of snapping.
@@ -576,7 +609,7 @@ export function ChatLayout(props: ChatLayoutProps) {
               // Collapsed/mobile workbench fills available width; otherwise it is a side panel.
               (chatCollapsed || mobileWorkspaceOpen) && surfaceOpen ? "min-w-0 flex-1" : "shrink-0",
               "transition-[flex-grow,flex-basis,width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
-              !mobileShell && "border-l border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
+              !mobileShell && surfaceOpen && "border-l border-border",
             )}
             style={
               (chatCollapsed || mobileWorkspaceOpen) && surfaceOpen
@@ -823,23 +856,28 @@ function getCallback(params: Record<string, unknown> | undefined, key: string): 
   return getFunction<() => void>(params, key)
 }
 
-function focusAgentComposer(): void {
+function focusAgentComposer(
+  root: HTMLElement | null = null,
+  options: { onlyFromBody?: boolean } = {},
+): void {
   if (typeof document === "undefined") return
-  const activePane = document.querySelector<HTMLElement>(
+  if (options.onlyFromBody && document.activeElement !== document.body) return
+  const queryRoot: Document | HTMLElement = root ?? document
+  const activePane = queryRoot.querySelector<HTMLElement>(
     '[data-boring-workspace-part="chat-pane"][data-boring-state="active"]',
   )
-  const root: Document | HTMLElement = activePane ?? document
-  const textarea = root.querySelector<HTMLTextAreaElement>(
+  const composerRoot: Document | HTMLElement = activePane ?? queryRoot
+  const textarea = composerRoot.querySelector<HTMLTextAreaElement>(
     '[data-boring-agent] textarea[name="message"], textarea[name="message"]',
   )
   textarea?.focus()
 }
 
-function scheduleComposerFocus(): void {
+function scheduleComposerFocus(root: HTMLElement | null = null): void {
   if (typeof window === "undefined") return
   window.requestAnimationFrame(() => {
-    focusAgentComposer()
-    window.setTimeout(focusAgentComposer, 320)
+    focusAgentComposer(root, { onlyFromBody: true })
+    window.setTimeout(() => focusAgentComposer(root, { onlyFromBody: true }), 320)
   })
 }
 

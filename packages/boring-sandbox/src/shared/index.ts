@@ -58,6 +58,13 @@ export type {
   QualificationBundleManifest,
   QualificationBundleVerification,
 } from "./qualificationBundle";
+export type {
+  ProviderCredentialRefWireV1,
+} from "./invocationSecretsV1";
+export {
+  PROVIDER_CREDENTIAL_REF_VERSION_V1,
+  ProviderCredentialRefSchemaV1,
+} from "./invocationSecretsV1";
 export {
   FLEET_ADMISSION_ERROR_CODES,
   QUALIFICATION_BUNDLE_DOMAIN,
@@ -104,6 +111,7 @@ export type {
   RemoteWorkerFsEventEnvelopeV1,
   RemoteWorkerHealthResponseV1,
   RemoteWorkerOperationV1,
+  RemoteWorkerCredentialReferenceV1,
   RemoteWorkerRenewRequestV1,
   RemoteWorkerRenewResponseV1,
   RemoteWorkerWorkspaceOperationV1,
@@ -111,10 +119,13 @@ export type {
 } from "./remoteWorkerProtocolV1";
 export {
   REMOTE_WORKER_ERROR_CODES_V1,
+  REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1,
   REMOTE_WORKER_HEADERS_V1,
   REMOTE_WORKER_MAX_CAPABILITY_LIFETIME_MS,
+  REMOTE_WORKER_MAX_WORKSPACE_ENVELOPE_BYTES_V1,
   REMOTE_WORKER_PROTOCOL_VERSION,
   REMOTE_WORKER_RUNTIME_CWD,
+  negotiateRemoteWorkerHealthCapabilitiesV1,
   RemoteWorkerBindingReceiptPayloadSchemaV1,
   RemoteWorkerBindingReceiptSchemaV1,
   RemoteWorkerCapabilityClaimsSchemaV1,
@@ -127,6 +138,7 @@ export {
   RemoteWorkerFsEventEnvelopeSchemaV1,
   RemoteWorkerHealthResponseSchemaV1,
   RemoteWorkerOpaqueIdSchemaV1,
+  RemoteWorkerCredentialReferenceSchemaV1,
   RemoteWorkerOperationSchemaV1,
   RemoteWorkerRenewRequestSchemaV1,
   RemoteWorkerRenewResponseSchemaV1,

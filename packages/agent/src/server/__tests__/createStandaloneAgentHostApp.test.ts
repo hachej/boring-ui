@@ -629,6 +629,7 @@ test('createStandaloneAgentHostApp exposes static filesystem bindings on files a
           list: true,
           search: true,
           write: false,
+          upload: false,
           delete: false,
           move: false,
           mkdir: false,

@@ -97,7 +97,11 @@ function composeSystemPromptAppend(hostAppend: string | undefined): string {
 
 export interface PiHarnessOptions {
   noContextFiles?: boolean;
+  /** Projects server-internal skill files to model-visible resource locators. */
+  locateSkillResource?: (filePath: string) => { filesystem: string; path: string } | undefined;
   noSkills?: boolean;
+  /** Disable ambient Pi extensions (required when tools execute in a remote runtime). */
+  noExtensions?: boolean;
   additionalSkillPaths?: string[];
   defaultModel?: { provider: string; id: string };
   /**
@@ -138,11 +142,14 @@ export type ResolvedPiHarnessOptions = PiHarnessOptions & {
  * flag literals; hosts override per-field through their `pi` config.
  *
  * - `noContextFiles: true` — boring composes its own workspace context
- *   prompt; pi's ambient AGENTS.md/CLAUDE.md discovery stays off.
+ *   prompt; pi's ambient AGENTS.md/CLAUDE.md discovery stays off. The
+ *   standalone local CLI opts back in, while hosted/embedded hosts and the
+ *   workspace-server/playground library default remain sealed.
  * - `noSkills: true` — ambient skill discovery (workspace + user-global
  *   ~/.pi skills) stays off so user-global skills don't leak into hosted
  *   agents. Hosts that run on the user's own machine (the standalone CLI)
- *   opt in with `pi: { noSkills: false }`.
+ *   opt in with `pi: { noSkills: false }`. Local context discovery follows
+ *   the same explicit opt-in with `pi: { noContextFiles: false }`.
  */
 export function withPiHarnessDefaults(pi?: PiHarnessOptions): ResolvedPiHarnessOptions {
   const { noContextFiles = true, noSkills = true, ...rest } = pi ?? {};
@@ -166,6 +173,47 @@ function buildDynamicPromptExtension(
       if (!extra) return
       return { systemPrompt: `${event.systemPrompt}\n\n${extra}` }
     })
+  }
+}
+
+const PI_RELATIVE_SKILL_PATH_GUIDANCE = "When a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands."
+const RESOURCE_RELATIVE_SKILL_PATH_GUIDANCE = "When a skill location is a JSON resource locator, pass its filesystem and path fields to the read tool. Resolve referenced relative paths against the locator's directory in the same filesystem; never convert a resource locator to a host path."
+
+function unescapeXmlText(value: string): string {
+  return value
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&gt;/g, '>')
+    .replace(/&lt;/g, '<')
+    .replace(/&amp;/g, '&')
+}
+
+function escapeXmlText(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+export function projectSkillResourceLocations(
+  systemPrompt: string,
+  locate: (filePath: string) => { filesystem: string; path: string } | undefined,
+): string {
+  let projected = false
+  const output = systemPrompt.replace(/<location>([^<]*)<\/location>/g, (match, encodedPath: string) => {
+    const resource = locate(unescapeXmlText(encodedPath))
+    if (!resource) return match
+    projected = true
+    return `<location>${escapeXmlText(JSON.stringify(resource))}</location>`
+  })
+  if (!projected) return systemPrompt
+  return output.replace(PI_RELATIVE_SKILL_PATH_GUIDANCE, RESOURCE_RELATIVE_SKILL_PATH_GUIDANCE)
+}
+
+function buildSkillResourceProjectionExtension(
+  locate: (filePath: string) => { filesystem: string; path: string } | undefined,
+): ExtensionFactory {
+  return (pi) => {
+    pi.on("before_agent_start", async (event) => ({
+      systemPrompt: projectSkillResourceLocations(event.systemPrompt, locate),
+    }))
   }
 }
 
@@ -258,15 +306,12 @@ function sessionCtxFromRunContext(ctx: RunContext): SessionCtx {
 }
 
 function normalizeSessionCtx(ctx: SessionCtx | undefined): SessionCtx | undefined {
-  if (!ctx?.workspaceId && !ctx?.runtimeScopeIdentity) return undefined;
-  return {
-    ...(ctx.workspaceId ? { workspaceId: ctx.workspaceId } : {}),
-    ...(ctx.runtimeScopeIdentity ? { runtimeScopeIdentity: ctx.runtimeScopeIdentity } : {}),
-  };
+  if (!ctx?.workspaceId) return undefined;
+  return { workspaceId: ctx.workspaceId };
 }
 
 function sessionCacheKey(sessionId: string, ctx: SessionCtx): string {
-  return JSON.stringify([sessionId, ctx.workspaceId ?? "", ctx.runtimeScopeIdentity ?? ""]);
+  return JSON.stringify([sessionId, ctx.workspaceId ?? ""]);
 }
 
 async function applyRequestedSessionOptions(
@@ -601,10 +646,14 @@ export function createPiCodingAgentHarness(opts: {
       : undefined
     const agentDir = getAgentDir()
     const toolErrorResultExtension = buildToolErrorResultExtension()
+    const skillResourceProjectionExtension = pi.locateSkillResource
+      ? buildSkillResourceProjectionExtension(pi.locateSkillResource)
+      : undefined
     const extensionFactories = [
       toolErrorResultExtension,
       ...(dynamicPromptExtension ? [dynamicPromptExtension] : []),
       ...(pi.extensionFactories ?? []),
+      ...(skillResourceProjectionExtension ? [skillResourceProjectionExtension] : []),
     ]
     const settingsManager = createResourceSettingsManager(
       opts.cwd,
@@ -620,6 +669,7 @@ export function createPiCodingAgentHarness(opts: {
       ...(extensionFactories.length ? { extensionFactories } : {}),
       ...(pi.noContextFiles ? { noContextFiles: true } : {}),
       ...(pi.noSkills ? { noSkills: true } : {}),
+      ...(pi.noExtensions ? { noExtensions: true } : {}),
       ...(effectiveSkillPaths.length ? { additionalSkillPaths: effectiveSkillPaths } : {}),
       // skillsOverride REPLACES Pi's resolved skill set, which includes
       // skills contributed by host-declared pi packages (e.g.

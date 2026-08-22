@@ -143,7 +143,7 @@ export function WorkbenchLeftPane({
     <nav
       data-boring-workspace-part="workbench-activity-rail"
       data-boring-side={railSide}
-      className="flex w-11 shrink-0 flex-col items-center gap-1 bg-muted/35 px-1.5 py-2"
+      className="flex w-11 shrink-0 flex-col items-center gap-1 bg-[color:oklch(from_var(--background)_calc(l-0.012)_c_h)] px-1.5 py-2"
       aria-label="Workspace categories"
     >
       {railSide === "left" ? (

@@ -10,15 +10,69 @@
       href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
+    <script>
+      try {
+        const saved = JSON.parse(localStorage.getItem("boring-ui-v2:preferences") || "null")?.state?.theme
+        document.documentElement.dataset.theme = saved === "light" || saved === "dark"
+          ? saved
+          : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
+      } catch {
+        document.documentElement.dataset.theme = "dark"
+      }
+    </script>
+    <style>
+      :root { color-scheme: dark; --boot-bg: #0f1115; --boot-sidebar: #0d0f13; --boot-fg: #eef1f7; --boot-border: #252932; --boot-skeleton: #20242c; --boot-muted: #9aa3b2; background: var(--boot-bg); }
+      :root[data-theme="light"] { color-scheme: light; --boot-bg: #fbfaf8; --boot-sidebar: #f7f6f3; --boot-fg: #25231f; --boot-border: #e7e4de; --boot-skeleton: #efede9; --boot-muted: #77716a; }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--boot-bg); color: var(--boot-fg); font-family: Geist, system-ui, sans-serif; }
+      .boot-shell { display: flex; min-height: 100vh; overflow: hidden; background: var(--boot-bg); }
+      .boot-sidebar { width: 268px; flex: none; padding: 16px; border-right: 1px solid var(--boot-border); background: var(--boot-sidebar); }
+      .boot-brand, .boot-row { display: flex; align-items: center; gap: 12px; }
+      .boot-brand { height: 32px; padding-left: 32px; }
+      .boot-list { display: grid; gap: 8px; margin-top: 16px; }
+      .boot-main { display: flex; min-width: 0; flex: 1; flex-direction: column; }
+      .boot-header { display: flex; height: 44px; flex: none; align-items: center; justify-content: space-between; padding: 0 16px; border-bottom: 1px solid var(--boot-border); }
+      .boot-transcript { display: grid; width: 100%; max-width: 680px; flex: 1; align-content: start; gap: 28px; margin: 0 auto; padding: 32px 16px; }
+      .boot-message { display: flex; gap: 12px; }
+      .boot-copy { display: grid; min-width: 0; flex: 1; gap: 10px; }
+      .boot-user { width: min(72%, 30rem); height: 44px; justify-self: end; border-radius: 12px; }
+      .boot-composer { width: calc(100% - 24px); max-width: 656px; height: 56px; flex: none; margin: 0 auto 44px; border-radius: 12px; }
+      .boot-skeleton { background: var(--boot-skeleton); animation: boot-pulse 1.8s ease-in-out infinite; }
+      .boot-icon { width: 28px; height: 28px; flex: none; border-radius: 8px; }
+      .boot-line { height: 12px; border-radius: 4px; }
+      .boot-help { position: fixed; right: 16px; bottom: 16px; max-width: 30rem; color: var(--boot-muted); font-size: 14px; opacity: 0; animation: boot-help 0s 12s forwards; }
+      .boot-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+      @keyframes boot-pulse { 50% { opacity: .55; } }
+      @keyframes boot-help { to { opacity: 1; } }
+      @media (max-width: 700px) { .boot-sidebar { display: none; } }
+      @media (prefers-reduced-motion: reduce) { .boot-skeleton { animation: none; } }
+    </style>
   </head>
   <body>
     <div id="root">
-      <div style="min-height:100vh;display:grid;place-items:center;background:#0f1115;color:#eef1f7;font-family:Geist,system-ui,sans-serif">
-        <div style="text-align:center;max-width:30rem;padding:2rem">
-          <div style="font-weight:600;margin-bottom:.5rem">Loading CLI workspace…</div>
-          <div style="font-size:.875rem;color:#9aa3b2">If this stays here, the browser did not load the app bundle. Hard-refresh or open the workspace URL directly.</div>
-        </div>
-      </div>
+      <section class="boot-shell" role="status" aria-live="polite" aria-busy="true" aria-label="Loading CLI workspace">
+        <span class="boot-sr">Loading CLI workspace…</span>
+        <aside class="boot-sidebar" aria-hidden="true">
+          <div class="boot-brand"><span class="boot-skeleton boot-icon"></span><span class="boot-skeleton boot-line" style="width:96px"></span></div>
+          <div class="boot-list">
+            <span class="boot-skeleton boot-line" style="width:64px"></span>
+            <span class="boot-skeleton" style="height:32px;border-radius:6px"></span>
+            <span class="boot-skeleton" style="width:84%;height:32px;border-radius:6px"></span>
+            <span class="boot-skeleton" style="width:92%;height:32px;border-radius:6px"></span>
+          </div>
+        </aside>
+        <main class="boot-main" aria-hidden="true">
+          <header class="boot-header"><span class="boot-skeleton boot-line" style="width:128px"></span><span class="boot-skeleton" style="width:28px;height:28px;border-radius:6px"></span></header>
+          <div class="boot-transcript">
+            <div class="boot-message"><span class="boot-skeleton boot-icon"></span><span class="boot-copy"><span class="boot-skeleton boot-line" style="width:96px"></span><span class="boot-skeleton boot-line"></span><span class="boot-skeleton boot-line" style="width:80%"></span></span></div>
+            <span class="boot-skeleton boot-user"></span>
+            <div class="boot-message"><span class="boot-skeleton boot-icon"></span><span class="boot-copy"><span class="boot-skeleton boot-line" style="width:80px"></span><span class="boot-skeleton" style="height:80px;border-radius:8px"></span><span class="boot-skeleton boot-line" style="width:60%"></span></span></div>
+          </div>
+          <div class="boot-skeleton boot-composer"></div>
+        </main>
+        <div class="boot-help">If loading does not finish, hard-refresh or open the workspace URL directly.</div>
+      </section>
+      <noscript>This workspace requires JavaScript.</noscript>
     </div>
     <script type="module" src="/src/front/main.tsx"></script>
   </body>

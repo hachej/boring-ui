@@ -62,6 +62,10 @@ export function createQuestionsClient(options: QuestionsClientOptions = {}) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        // Core's browser bridge policy requires a non-empty non-simple header as
+        // CSRF proof. Its stock policy checks presence, not a secret value; hosts
+        // that validate signed values can override this default in options.headers.
+        "x-csrf-token": "browser",
         ...(options.headers ?? {}),
         ...(sessionId ? { "x-boring-session-id": sessionId } : {}),
       },

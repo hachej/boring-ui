@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process"
 import { appendFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
@@ -13,6 +14,8 @@ import { createFolderModeApp, createWorkspacesModeApp } from "../modeApps.js"
 
 const automationFailure = vi.hoisted(() => ({ enabled: false }))
 const pluginFrontFailure = vi.hoisted(() => ({ enabled: false, closeCalls: 0 }))
+const cliDefaultPluginPackages = vi.hoisted(() => ({ paths: [] as string[] }))
+const MODEL_TIERS_YAML = "models:\n  tiers:\n    T3:\n      - provider: anthropic\n        id: claude-sonnet-4-6\n        envVar: ANTHROPIC_API_KEY\n"
 
 vi.mock("../pluginFrontRuntime.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../pluginFrontRuntime.js")>()
@@ -48,7 +51,7 @@ vi.mock("../pluginDiscovery.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../pluginDiscovery.js")>()
   return {
     ...actual,
-    resolveCliDefaultPluginPackagePaths: () => [],
+    resolveCliDefaultPluginPackagePaths: () => [...cliDefaultPluginPackages.paths],
     resolveCliBoringPluginDirs: () => [],
   }
 })
@@ -72,11 +75,40 @@ afterEach(async () => {
   automationFailure.enabled = false
   pluginFrontFailure.enabled = false
   pluginFrontFailure.closeCalls = 0
+  cliDefaultPluginPackages.paths = []
   restoreEnv("HOME", originalHome)
   restoreEnv("BORING_AGENT_SESSION_ROOT", originalSessionRoot)
   vi.restoreAllMocks()
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
+
+async function resolvedSystemPrompt(
+  app: FastifyInstance,
+  requestId: string,
+  headers?: Record<string, string>,
+): Promise<string> {
+  const created = await app.inject({
+    method: "POST",
+    url: "/api/v1/agents/default/sessions",
+    payload: { requestId },
+    ...(headers ? { headers } : {}),
+  })
+  expect(created.statusCode, created.body).toBe(201)
+  const sessionId = (created.json() as { sessionId: string }).sessionId
+  const commands = await app.inject({
+    method: "GET",
+    url: `/api/v1/agents/default/commands?sessionId=${encodeURIComponent(sessionId)}`,
+    ...(headers ? { headers } : {}),
+  })
+  expect(commands.statusCode, commands.body).toBe(200)
+  const response = await app.inject({
+    method: "GET",
+    url: `/api/v1/agents/default/sessions/${encodeURIComponent(sessionId)}/system-prompt`,
+    ...(headers ? { headers } : {}),
+  })
+  expect(response.statusCode, response.body).toBe(200)
+  return (response.json() as { systemPrompt: string }).systemPrompt
+}
 
 async function fixtureApp(useConfiguredSessionRoot: boolean) {
   const home = await temporaryRoot("boring-cli-agent-host-home-")
@@ -138,11 +170,307 @@ async function fixtureApp(useConfiguredSessionRoot: boolean) {
     mode: "direct",
     registryPath,
     provisionWorkspace: false,
+    // This fixture proves transcript routing, not ambient skill admission. Keep
+    // it hermetic from whatever ~/.pi skills exist on the test machine.
+    loadAmbientSkills: false,
   })
   return { app, workspace, sessionId, compatibleSessionIds, transcript, transcriptPath, skillPath, createAgentHost, rollbackReader }
 }
 
 describe.sequential("CLI Agent Host composition", () => {
+  it("folder mode resolves workspace AGENTS.md into Pi context by default", async () => {
+    const home = await temporaryRoot("boring-cli-folder-context-home-")
+    const workspaceRoot = await temporaryRoot("boring-cli-folder-context-workspace-")
+    const marker = "FOLDER_MODE_AMBIENT_CONTEXT_FIXTURE"
+    process.env.HOME = home
+    await writeFile(join(workspaceRoot, "AGENTS.md"), `${marker}\n`, "utf8")
+
+    const app = await createFolderModeApp({
+      workspaceRoot,
+      mode: "direct",
+      provisionWorkspace: false,
+      loadAmbientSkills: false,
+    })
+    try {
+      expect(await resolvedSystemPrompt(app, "folder-ambient-context")).toContain(marker)
+    } finally {
+      await app.close()
+    }
+  }, 30_000)
+
+  it("workspaces mode resolves each workspace AGENTS.md into Pi context by default", async () => {
+    const home = await temporaryRoot("boring-cli-workspaces-context-home-")
+    const workspaceRoot = await temporaryRoot("boring-cli-workspaces-context-workspace-")
+    const registryRoot = await temporaryRoot("boring-cli-workspaces-context-registry-")
+    const marker = "WORKSPACES_MODE_AMBIENT_CONTEXT_FIXTURE"
+    const registryPath = join(registryRoot, "workspaces.yaml")
+    process.env.HOME = home
+    await writeFile(join(workspaceRoot, "AGENTS.md"), `${marker}\n`, "utf8")
+    const workspace = await createLocalWorkspaceRegistry(registryPath).add(workspaceRoot)
+
+    const app = await createWorkspacesModeApp({
+      mode: "direct",
+      registryPath,
+      provisionWorkspace: false,
+      loadAmbientSkills: false,
+    })
+    try {
+      const headers = { "x-boring-workspace-id": workspace.id }
+      expect(await resolvedSystemPrompt(app, "workspaces-ambient-context", headers)).toContain(marker)
+    } finally {
+      await app.close()
+    }
+  }, 30_000)
+
+  it("both local CLI modes honor an explicit ambient-context opt-out", async () => {
+    const home = await temporaryRoot("boring-cli-context-off-home-")
+    const folderRoot = await temporaryRoot("boring-cli-folder-context-off-")
+    const workspaceRoot = await temporaryRoot("boring-cli-workspaces-context-off-")
+    const registryRoot = await temporaryRoot("boring-cli-context-off-registry-")
+    const marker = "AMBIENT_CONTEXT_MUST_STAY_ABSENT"
+    const registryPath = join(registryRoot, "workspaces.yaml")
+    process.env.HOME = home
+    await writeFile(join(folderRoot, "AGENTS.md"), `${marker}\n`, "utf8")
+    await writeFile(join(workspaceRoot, "AGENTS.md"), `${marker}\n`, "utf8")
+    const workspace = await createLocalWorkspaceRegistry(registryPath).add(workspaceRoot)
+
+    const folderApp = await createFolderModeApp({
+      workspaceRoot: folderRoot,
+      mode: "direct",
+      provisionWorkspace: false,
+      loadAmbientSkills: false,
+      loadAmbientContext: false,
+    })
+    try {
+      expect(await resolvedSystemPrompt(folderApp, "folder-context-off")).not.toContain(marker)
+    } finally {
+      await folderApp.close()
+    }
+
+    const workspacesApp = await createWorkspacesModeApp({
+      mode: "direct",
+      registryPath,
+      provisionWorkspace: false,
+      loadAmbientSkills: false,
+      loadAmbientContext: false,
+    })
+    try {
+      const headers = { "x-boring-workspace-id": workspace.id }
+      expect(await resolvedSystemPrompt(workspacesApp, "workspaces-context-off", headers)).not.toContain(marker)
+    } finally {
+      await workspacesApp.close()
+    }
+  }, 45_000)
+
+  it("folder-mode fleet seats receive workspace plugin agent tools", async () => {
+    const fleetRoot = await temporaryRoot("boring-cli-seat-tools-fleet-")
+    const workspaceRoot = await temporaryRoot("boring-cli-seat-tools-workspace-")
+    const pluginRoot = await temporaryRoot("boring-cli-seat-tools-plugin-")
+    const personaRoot = join(fleetRoot, ".agents", "personas", "worker")
+    await mkdir(personaRoot, { recursive: true })
+    await mkdir(join(fleetRoot, ".agents", "factory"), { recursive: true })
+    await writeFile(join(personaRoot, "instructions.md"), "You are the fixture worker.\n", "utf8")
+    await writeFile(join(personaRoot, "package.json"), JSON.stringify({
+      name: "@fixture/boring-worker",
+      version: "1.0.0",
+      private: true,
+      boring: {
+        agent: {
+          definitionId: "boring-worker",
+          version: "1.0.0",
+          label: "Boring Worker",
+          instructionsRef: "instructions.md",
+        },
+      },
+    }), "utf8")
+    await writeFile(
+      join(fleetRoot, ".agents", "factory", "fleet.yaml"),
+      `${MODEL_TIERS_YAML}seats:\n  - seat: worker\n    agentTypeId: boring-worker\n    skills: []\n`,
+      "utf8",
+    )
+    await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
+      name: "@fixture/workspace-seat-tools",
+      version: "1.0.0",
+      type: "module",
+      private: true,
+      boring: { id: "workspace-seat-tools", server: "server.mjs" },
+    }), "utf8")
+    await writeFile(join(pluginRoot, "server.mjs"), `
+      export default {
+        id: "workspace-seat-tools",
+        agentTools: [{
+          name: "workspace_seat_tool",
+          description: "Fixture workspace plugin tool.",
+          parameters: { type: "object", properties: {} },
+          async execute() { return { content: [] } },
+        }],
+      }
+    `, "utf8")
+
+    cliDefaultPluginPackages.paths = [pluginRoot]
+    const previousCwd = process.cwd()
+    const previousFlag = process.env.BORING_AGENT_FLEET
+    process.chdir(fleetRoot)
+    process.env.BORING_AGENT_FLEET = "1"
+    let app: FastifyInstance | undefined
+    try {
+      app = await createFolderModeApp({
+        workspaceRoot,
+        mode: "direct",
+        provisionWorkspace: false,
+      })
+      const defaultTools = await app.inject({ method: "GET", url: "/api/v1/agents/default/tools" })
+      const workerTools = await app.inject({ method: "GET", url: "/api/v1/agents/boring-worker/tools" })
+      expect(defaultTools.statusCode, defaultTools.body).toBe(200)
+      expect(workerTools.statusCode, workerTools.body).toBe(200)
+      expect(defaultTools.json().tools.map((tool: { name: string }) => tool.name)).toContain("workspace_seat_tool")
+      expect(workerTools.json().tools.map((tool: { name: string }) => tool.name)).toContain("workspace_seat_tool")
+    } finally {
+      if (app) await app.close()
+      process.chdir(previousCwd)
+      if (previousFlag === undefined) delete process.env.BORING_AGENT_FLEET
+      else process.env.BORING_AGENT_FLEET = previousFlag
+    }
+  }, 30_000)
+
+  it("workspaces hub excludes workspace-local packages from its global fleet", async () => {
+    const fleetRoot = await temporaryRoot("boring-cli-local-agent-fleet-")
+    const workspaceARoot = await temporaryRoot("boring-cli-local-agent-workspace-a-")
+    const workspaceBRoot = await temporaryRoot("boring-cli-local-agent-workspace-b-")
+    const registryRoot = await temporaryRoot("boring-cli-local-agent-registry-")
+    const localPackageRoot = join(workspaceARoot, "agents", "local-worker")
+    const duplicatePackageRoot = join(workspaceARoot, "agents", "duplicate-repository-worker")
+    const repositoryPackageRoot = join(fleetRoot, ".agents", "personas", "repository-worker")
+    const registryPath = join(registryRoot, "workspaces.yaml")
+    const registry = createLocalWorkspaceRegistry(registryPath)
+    await registry.add(workspaceARoot)
+    const workspaceB = await registry.add(workspaceBRoot)
+    await mkdir(localPackageRoot, { recursive: true })
+    await mkdir(join(duplicatePackageRoot, "knowledge"), { recursive: true })
+    await mkdir(join(repositoryPackageRoot, "knowledge"), { recursive: true })
+    await mkdir(join(workspaceARoot, ".pi"), { recursive: true })
+    await mkdir(join(fleetRoot, ".agents", "factory"), { recursive: true })
+    await writeFile(join(localPackageRoot, "instructions.md"), "CLI local worker.\n", "utf8")
+    await writeFile(join(localPackageRoot, "package.json"), JSON.stringify({
+      name: "@fixture/cli-local-worker",
+      version: "1.0.0",
+      boring: {
+        agent: {
+          definitionId: "fixture-cli-local-worker",
+          version: "1.0.0",
+          label: "CLI Local Worker",
+          instructionsRef: "instructions.md",
+        },
+      },
+      pi: { skills: [] },
+    }), "utf8")
+    await writeFile(join(duplicatePackageRoot, "instructions.md"), "Workspace A duplicate worker.\n", "utf8")
+    await writeFile(join(duplicatePackageRoot, "knowledge", "scope.md"), "Workspace A only.\n", "utf8")
+    await writeFile(join(duplicatePackageRoot, "package.json"), JSON.stringify({
+      name: "@fixture/cli-duplicate-repository-worker",
+      version: "1.0.0",
+      boring: {
+        agent: {
+          definitionId: "fixture-cli-repository-worker",
+          version: "1.0.0",
+          label: "Workspace A Duplicate Worker",
+          instructionsRef: "instructions.md",
+        },
+      },
+      pi: { skills: [] },
+    }), "utf8")
+    await writeFile(join(repositoryPackageRoot, "instructions.md"), "CLI repository worker.\n", "utf8")
+    await writeFile(join(repositoryPackageRoot, "knowledge", "scope.md"), "Repository owned.\n", "utf8")
+    await writeFile(join(repositoryPackageRoot, "package.json"), JSON.stringify({
+      name: "@fixture/cli-repository-worker",
+      version: "1.0.0",
+      boring: {
+        agent: {
+          definitionId: "fixture-cli-repository-worker",
+          version: "1.0.0",
+          label: "CLI Repository Worker",
+          instructionsRef: "instructions.md",
+        },
+      },
+      pi: { skills: [] },
+    }), "utf8")
+    await writeFile(
+      join(workspaceARoot, ".pi", "settings.json"),
+      JSON.stringify({ packages: ["../agents/local-worker", "../agents/duplicate-repository-worker"] }),
+      "utf8",
+    )
+    await writeFile(
+      join(fleetRoot, ".agents", "factory", "fleet.yaml"),
+      MODEL_TIERS_YAML + [
+        "seats:",
+        "  - seat: repository-worker",
+        "    agentTypeId: fixture-cli-repository-worker",
+        "    skills: []",
+        "  - seat: local-worker",
+        "    agentTypeId: fixture-cli-local-worker",
+        "    skills: []",
+        "",
+      ].join("\n"),
+      "utf8",
+    )
+
+    const previousCwd = process.cwd()
+    const previousFlag = process.env.BORING_AGENT_FLEET
+    process.chdir(fleetRoot)
+    process.env.BORING_AGENT_FLEET = "1"
+    const createAgentHost = vi.spyOn(agentServer, "createAgentHost")
+    let app: FastifyInstance | undefined
+    try {
+      app = await createWorkspacesModeApp({
+        mode: "direct",
+        registryPath,
+        provisionWorkspace: false,
+      })
+      expect(createAgentHost).toHaveBeenCalledWith(expect.objectContaining({
+        agents: expect.arrayContaining([
+          expect.objectContaining({ agentTypeId: "default" }),
+          expect.objectContaining({ agentTypeId: "fixture-cli-repository-worker" }),
+        ]),
+      }))
+      const agents = createAgentHost.mock.calls[0]?.[0].agents ?? []
+      expect(agents).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({ agentTypeId: "fixture-cli-local-worker" }),
+      ]))
+      expect(agents).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          agentTypeId: "fixture-cli-repository-worker",
+          definition: expect.objectContaining({
+            instructions: "CLI repository worker.\n",
+            digest: expect.stringMatching(/^sha256:/),
+          }),
+          knowledge: { rootDir: join(repositoryPackageRoot, "knowledge") },
+        }),
+      ]))
+
+      const workspaceBAgents = await app.inject({
+        method: "GET",
+        url: "/api/v1/agents",
+        headers: { "x-boring-workspace-id": workspaceB.id },
+      })
+      expect(workspaceBAgents.statusCode, workspaceBAgents.body).toBe(200)
+      expect(workspaceBAgents.json()).toEqual(expect.arrayContaining([
+        expect.objectContaining({ agentTypeId: "default" }),
+        expect.objectContaining({
+          agentTypeId: "fixture-cli-repository-worker",
+          label: "CLI Repository Worker",
+        }),
+      ]))
+      expect(workspaceBAgents.json()).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({ agentTypeId: "fixture-cli-local-worker" }),
+      ]))
+    } finally {
+      if (app) await app.close()
+      process.chdir(previousCwd)
+      if (previousFlag === undefined) delete process.env.BORING_AGENT_FLEET
+      else process.env.BORING_AGENT_FLEET = previousFlag
+    }
+  }, 30_000)
+
   it("closes folder-mode Host and front runtime when post-mount runtime route init fails", async () => {
     const workspaceRoot = await temporaryRoot("boring-cli-folder-post-mount-cleanup-")
     pluginFrontFailure.enabled = true
@@ -152,6 +480,52 @@ describe.sequential("CLI Agent Host composition", () => {
       provisionWorkspace: false,
     })).rejects.toThrow("injected folder runtime route failure")
     expect(pluginFrontFailure.closeCalls).toBe(1)
+  })
+
+  it("registers detected task providers in folder mode", async () => {
+    const workspaceRoot = await temporaryRoot("boring-cli-folder-task-providers-")
+    const tasksPluginRoot = await temporaryRoot("boring-cli-folder-tasks-plugin-")
+    await mkdir(join(workspaceRoot, ".beads"), { recursive: true })
+    await writeFile(join(workspaceRoot, ".beads", "beads.db"), "fixture", "utf8")
+    execFileSync("git", ["init", "--quiet", workspaceRoot])
+    execFileSync("git", ["-C", workspaceRoot, "remote", "add", "origin", "https://github.com/hachej/boring-ui.git"])
+    await writeFile(join(tasksPluginRoot, "package.json"), JSON.stringify({
+      name: "@hachej/boring-tasks",
+      version: "1.0.0",
+      boring: { id: "tasks", server: "server.mjs" },
+    }), "utf8")
+    await writeFile(join(tasksPluginRoot, "server.mjs"), `
+      export default function tasksPlugin(options) {
+        return {
+          id: "tasks",
+          routes: async (app) => {
+            app.get("/fixture-task-config", async () => ({
+              config: options.config,
+              hasBeadsOperations: typeof options.beadsOperations?.runRead === "function",
+            }))
+          },
+        }
+      }
+    `, "utf8")
+    cliDefaultPluginPackages.paths = [tasksPluginRoot]
+
+    const app = await createFolderModeApp({
+      workspaceRoot,
+      mode: "direct",
+      provisionWorkspace: false,
+    })
+    try {
+      const response = await app.inject({ method: "GET", url: "/fixture-task-config" })
+      expect(response.statusCode, response.body).toBe(200)
+      expect(response.json()).toEqual({
+        config: {
+          providers: [{ provider: "github", repo: "auto" }, { provider: "beads" }],
+        },
+        hasBeadsOperations: true,
+      })
+    } finally {
+      await app.close()
+    }
   })
 
   it("closes the CLI Host exactly once when awaited post-mount initialization fails", async () => {

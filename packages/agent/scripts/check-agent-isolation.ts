@@ -2,7 +2,10 @@ import { readdir, readFile } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 
 const AGENT_DIST = join(import.meta.dirname!, '..', 'dist')
-const FORBIDDEN_PREFIX = '@hachej/boring-core'
+// Runtime-import guard over emitted JS. Type-only imports are erased by tsc and
+// therefore invisible here — the source-level guard for the agent→workspace
+// invariant lives in src/__tests__/agentWorkspaceIsolation.test.ts.
+const FORBIDDEN_PREFIXES = ['@hachej/boring-core', '@hachej/boring-workspace']
 
 const SPECIFIER_RE =
   /(?:from\s+|import\s*\(|require\s*\()["']([^"']+)["']/g
@@ -43,8 +46,9 @@ async function main() {
       while ((match = SPECIFIER_RE.exec(lines[i])) !== null) {
         const specifier = match[1]
         if (
-          specifier === FORBIDDEN_PREFIX ||
-          specifier.startsWith(FORBIDDEN_PREFIX + '/')
+          FORBIDDEN_PREFIXES.some(
+            (prefix) => specifier === prefix || specifier.startsWith(prefix + '/'),
+          )
         ) {
           violations.push({
             file: relative(join(AGENT_DIST, '..'), file),
@@ -62,7 +66,7 @@ async function main() {
       process.stderr.write(`  ${v.file}:${v.line}  →  ${v.specifier}\n`)
     }
     process.stderr.write(
-      `\n  @hachej/boring-agent must have ZERO runtime imports from @hachej/boring-core.\n` +
+      `\n  @hachej/boring-agent must have ZERO runtime imports from ${FORBIDDEN_PREFIXES.join(' or ')}.\n` +
         '  Type-only imports are allowed (erased by tsc).\n',
     )
     process.exitCode = 1

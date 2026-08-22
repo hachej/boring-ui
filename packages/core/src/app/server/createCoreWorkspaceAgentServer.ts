@@ -1,5 +1,6 @@
 import { access, mkdir, readFile, stat } from 'node:fs/promises'
 import { createReadStream } from 'node:fs'
+import { createHash } from 'node:crypto'
 import path from 'node:path'
 
 import {
@@ -59,6 +60,7 @@ import {
 } from '@hachej/boring-workspace/app/server'
 import {
   createWorkspaceUiTools,
+  discoverRepositoryAgentPackages,
   uiRoutes,
   type WorkspaceBridge,
   type WorkspaceBridgeCallRequest,
@@ -76,9 +78,11 @@ import type { CoreConfig } from '../../shared/types.js'
 import { ERROR_CODES, HttpError } from '../../shared/errors.js'
 import { safeCapture, type TelemetrySink } from '../../shared/telemetry.js'
 import {
+  assertCoreDynamicAuthBaseURL,
   authHook,
   createAuth,
   type BetterAuthInstance,
+  type CoreDynamicAuthBaseURL,
 } from '../../server/auth/index.js'
 import { REQUEST_SCOPE_WORKSPACE_HEADER } from '../../server/auth/requestWorkspaceScope.js'
 import {
@@ -101,6 +105,12 @@ import {
   type Database,
 } from '../../server/db/index.js'
 import { loadConfig, type LoadConfigOptions } from '../../server/config/index.js'
+import {
+  compileSignupAgentDefaults,
+  TRUSTED_SIGNUP_HOSTNAME_HEADER,
+  type ValidatedSignupAgentDefaults,
+} from '../../server/signupAgentDefaults.js'
+import { resolveWorkspaceDefaultAgentTypeId } from '../../server/defaultAgentType.js'
 import { WorkspaceRuntimeSandboxHandleStore } from '../../server/runtime/index.js'
 import { createDatabaseTelemetryFromEnv } from '../../server/telemetry/db.js'
 
@@ -249,6 +259,8 @@ export interface CreateCoreWorkspaceAgentServerOptions {
   /** Compatibility only for Core's workspace-bridge admission; Host effects use effectAdmission. */
   admitEffect?: (ctx: { workspaceId: string; requestId: string }) => Promise<void>
   appRoot?: string
+  /** Opt into host-local auth callback URLs for an exact host allowlist. */
+  authBaseURL?: CoreDynamicAuthBaseURL
   config?: CoreConfig
   loadConfigOptions?: LoadConfigOptions
   plugins?: CoreWorkspacePluginEntry[]
@@ -385,7 +397,7 @@ function createCoreAgentScopeAuthority(input: {
 }
 
 function inferSessionRootForWorkspaceRoot(workspaceRoot: string, runtimeMode: string | undefined): string | undefined {
-  if (runtimeMode !== 'vercel-sandbox') return undefined
+  if (runtimeMode !== 'vercel-sandbox' && runtimeMode !== 'blaxel') return undefined
   const resolvedRoot = path.resolve(workspaceRoot)
   if (path.basename(resolvedRoot) !== 'workspaces') return undefined
   return path.join(path.dirname(resolvedRoot), 'pi-sessions')
@@ -799,6 +811,9 @@ async function registerAuthProxy(
 
     const authHeaders = toHeaders(request.headers)
     authHeaders.delete(REQUEST_SCOPE_WORKSPACE_HEADER)
+    // This is a private in-process handoff, not caller-controlled config. Always
+    // replace any presented value with Fastify's trust-proxy-aware hostname.
+    authHeaders.set(TRUSTED_SIGNUP_HOSTNAME_HEADER, request.hostname)
     if (request.requestScope) {
       authHeaders.set(REQUEST_SCOPE_WORKSPACE_HEADER, encodeURIComponent(request.requestScope.workspaceId))
     }
@@ -923,7 +938,13 @@ export async function registerFrontendFallback(
   })
 }
 
-async function createCoreRuntime(config: CoreConfig, customTelemetry?: TelemetrySink, requestScopeResolver?: CoreRequestScopeResolver): Promise<{
+async function createCoreRuntime(
+  config: CoreConfig,
+  signupAgentDefaults: ValidatedSignupAgentDefaults,
+  customTelemetry?: TelemetrySink,
+  requestScopeResolver?: CoreRequestScopeResolver,
+  authBaseURL?: CoreDynamicAuthBaseURL,
+): Promise<{
   app: CoreWorkspaceAgentServer
   sql: postgres.Sql
   db: Database
@@ -953,7 +974,9 @@ async function createCoreRuntime(config: CoreConfig, customTelemetry?: Telemetry
       : 'noop-env'
   app.log.debug({ telemetry: { source: telemetrySource } }, 'resolved telemetry sink')
   const auth = createAuth(config, db, {
+    baseURL: authBaseURL,
     workspaceStore,
+    signupAgentDefaults,
     logger: app.log,
     telemetry,
     disableDefaultWorkspaceCreation: requestScopeResolver !== undefined,
@@ -1008,9 +1031,45 @@ export async function createCoreWorkspaceAgentServer(
     )
   }
   assertCoreStaticPluginEntries(options.plugins)
+  if (options.authBaseURL !== undefined) assertCoreDynamicAuthBaseURL(options.authBaseURL)
 
-  const config = options.config ?? (await loadConfig(resolveCoreLoadConfigOptions(options)))
-  const { app, sql, db, userStore, workspaceStore, telemetry } = await createCoreRuntime(config, options.telemetry, options.requestScopeResolver)
+  const rawConfig = options.config ?? (await loadConfig(resolveCoreLoadConfigOptions(options)))
+  // BORING_AGENT_FLEET=1 composes the config-driven production fleet
+  // (gh-1106 slice 3, B2 fix round 1) from discovered agent packages plus
+  // .agents/factory for the deployed core app host (apps/full-app), same
+  // helper as createWorkspaceAgentServer and the CLI hub; flag absent
+  // preserves the legacy single-default-agent boot byte-identically.
+  //
+  // workspaceRoot is `null`, not the base root: core serves
+  // `<workspaceRoot>/<workspaceId>` and NEVER the base itself
+  // (resolveWorkspaceRoot rejects it), so no single root exists at
+  // composition time. Passing the base would let a persona tree that happens
+  // to sit inside it publish a path relative to the wrong root — a live
+  // "Open" button that opens nothing.
+  const fleetRepositoryRoot = options.fleetRepositoryRoot ?? process.cwd()
+  const discoveredPackages = !options.agents && process.env.BORING_AGENT_FLEET === '1'
+    ? await discoverRepositoryAgentPackages(fleetRepositoryRoot)
+    : undefined
+  const agents = options.agents ?? await resolveDefaultAgentFleet({
+    repositoryRoot: fleetRepositoryRoot,
+    workspaceRoot: null,
+    ...(discoveredPackages ? { discoveredPackages } : {}),
+  })
+  const signupAgentDefaults = compileSignupAgentDefaults(
+    rawConfig.signupAgentDefaults,
+    agents.map((agent) => agent.agentTypeId),
+    rawConfig.security?.trustedProxy,
+  )
+  // Decision 28 hook: validate all trusted signup config before allocating DB
+  // or HTTP resources. Unknown seats and malformed server options fail boot.
+  const config: CoreConfig = { ...rawConfig, signupAgentDefaults }
+  const { app, sql, db, userStore, workspaceStore, telemetry } = await createCoreRuntime(
+    config,
+    signupAgentDefaults,
+    options.telemetry,
+    options.requestScopeResolver,
+    options.authBaseURL,
+  )
   const appRoot = options.appRoot
   const serveFrontend =
     options.serveFrontend ?? (process.env.NODE_ENV !== 'development' && Boolean(appRoot))
@@ -1020,7 +1079,6 @@ export async function createCoreWorkspaceAgentServer(
   const sessionRoot = normalizeOptionalPath(options.sessionRoot)
     ?? normalizeOptionalPath(process.env.BORING_AGENT_SESSION_ROOT)
     ?? inferSessionRootForWorkspaceRoot(workspaceRoot, agentRuntimeMode)
-  const agents = options.agents ?? await resolveDefaultAgentFleet({ repositoryRoot: options.fleetRepositoryRoot })
   registerTelemetryHooks(app, telemetry)
 
   await registerCoreRoutes({ app, sql, db, userStore, workspaceStore })
@@ -1190,14 +1248,19 @@ export async function createCoreWorkspaceAgentServer(
   })
 
   const workerBaseUrl = process.env.BORING_WORKER_BASE_URL?.trim()
-  const sandboxHandleStore = options.sandboxHandleStore ?? new WorkspaceRuntimeSandboxHandleStore(workspaceStore)
+  const selectedMode = options.mode ?? process.env.BORING_AGENT_MODE ?? autoDetectMode()
+  const handleProvider = selectedMode === 'blaxel'
+    ? 'blaxel'
+    : selectedMode === 'vercel-sandbox' ? 'vercel' : undefined
+  const sandboxHandleStore = options.sandboxHandleStore
+    ?? (handleProvider ? new WorkspaceRuntimeSandboxHandleStore(workspaceStore, handleProvider) : undefined)
   const remoteWorkerModeAdapter = workerBaseUrl
     ? createRemoteWorkerModeAdapter({ baseUrl: workerBaseUrl })
     : undefined
   const runtimeModeAdapter = options.runtimeModeAdapter
     ?? remoteWorkerModeAdapter
     ?? createSandboxRuntimeModeAdapter(
-      (options.mode ?? process.env.BORING_AGENT_MODE ?? autoDetectMode()) as 'direct' | 'local' | 'vercel-sandbox',
+      selectedMode as 'direct' | 'local' | 'blaxel' | 'vercel-sandbox',
       { sandboxHandleStore },
     )
   const runtimeHost = options.runtimeHost ?? runtimeModeAdapter.runtimeHost ?? sandboxRuntimeHostOperations
@@ -1249,11 +1312,6 @@ export async function createCoreWorkspaceAgentServer(
     return authorizeStorageScope(ctx.request, ctx.workspaceId, canonicalScope ?? ctx.workspaceId)
   }
 
-  // BORING_AGENT_FLEET=1 composes the config-driven production fleet
-  // (gh-1106 slice 3, B2 fix round 1) from .agents/{personas,factory} for
-  // the deployed core app host (apps/full-app), same helper as
-  // createWorkspaceAgentServer and the CLI hub; flag absent preserves the
-  // legacy single-default-agent boot byte-identically.
   const scopeAuthority = createCoreAgentScopeAuthority({
     appId: config.appId,
     workspaceStore,
@@ -1323,7 +1381,10 @@ export async function createCoreWorkspaceAgentServer(
     const templatePath = options.getTemplatePath
       ? await options.getTemplatePath({ workspaceId, workspaceRoot: root, request })
       : options.templatePath ?? normalizeOptionalPath(process.env.BORING_AGENT_TEMPLATE_PATH)
-    const pi = await resolvePiOptions({ workspaceId, workspaceRoot: root, request }) ?? {}
+    const resolvedPi = await resolvePiOptions({ workspaceId, workspaceRoot: root, request }) ?? {}
+    const pi: PiHarnessOptions = runtimeModeAdapter.id === 'blaxel' || runtimeModeAdapter.id === 'vercel-sandbox'
+      ? { ...resolvedPi, noExtensions: true }
+      : resolvedPi
     const sessionNamespace = await resolveSessionNamespace({
       workspaceId,
       workspaceRoot: root,
@@ -1377,21 +1438,33 @@ export async function createCoreWorkspaceAgentServer(
       provisioningGeneration: JSON.stringify([root, templatePath ?? null]),
     })
     const piIdentity = JSON.stringify(pi, (_key, value) => typeof value === 'function' ? '[function]' : value)
+    const semanticProvisioningIdentity = createHash('sha256').update(JSON.stringify({
+      runtimeMode: runtimeModeAdapter.id,
+      runtimeContributionIds: runtimeEnvContributions.map((entry) => entry.id).sort(),
+      runtimePluginIds: runtimePlugins.map((plugin) => plugin.id).sort(),
+      provisionWorkspace: options.provisionWorkspace !== false,
+    })).digest('hex')
     const identity = createResolvedRuntimeScopeIdentity({
       artifacts: pluginArtifacts,
       validatedConfig: piIdentity,
       grants: options.getExtraTools ? [userId] : [],
-      placementIdentity,
+      placementClassIdentity: runtimeModeAdapter.id,
       isolationMode: runtimeModeAdapter.id,
       toolContractDigests: extraTools.map((tool) => tool.name),
-      provisioningGeneration: provisioningFingerprint,
+      provisioningIdentity: semanticProvisioningIdentity,
       bindingInputs: [sessionNamespace, contribution?.identity ?? null],
     })
+    const physicalBindingIdentity = createHash('sha256').update(JSON.stringify({
+      identity,
+      placementIdentity,
+      provisioningFingerprint,
+    })).digest('hex')
     const buildResourceDigestInput = async () => {
       const hotResources = pi.getHotReloadableResources?.()
       return createPiResourceDigestInput({
         piCwd: root,
         noSkills: pi.noSkills,
+        noContextFiles: pi.noContextFiles,
         resourceSets: [{
           promptParts: [
             pluginCollection.agentOptions.systemPromptAppend,
@@ -1439,6 +1512,7 @@ export async function createCoreWorkspaceAgentServer(
     const environment: AgentHostEnvironmentScope = {
       placementIdentity,
       provisioningFingerprint,
+      runtimeWorkspaceId: workspaceId,
       workspaceRoot: root,
       templatePath,
       resolveFilesystemBindings: resolveFilesystemBindings
@@ -1479,7 +1553,7 @@ export async function createCoreWorkspaceAgentServer(
     }
     const agentRuntime: Omit<ResolvedAgentRuntimeScope, 'environment'> = {
       identity,
-      physicalBindingIdentity: identity,
+      physicalBindingIdentity,
       resourceInputDigest,
       revalidateResourceInputs,
       sessionNamespace,
@@ -1550,6 +1624,20 @@ export async function createCoreWorkspaceAgentServer(
           workspaceId,
           workspaceRoot: workspaceRootForRequest,
           projectName: workspace?.name ?? 'Workspace',
+          // Decision 28: prefer the workspace's persisted default seat when it
+          // names a validated fleet member; fail closed to the boot option,
+          // then the legacy default, with a stable diagnostic code.
+          defaultAgentTypeId: resolveWorkspaceDefaultAgentTypeId({
+            persistedDefaultAgentTypeId: workspace?.defaultAgentTypeId,
+            bootDefaultAgentTypeId: options.defaultAgentTypeId,
+            availableAgentTypeIds: agents.map((agent) => agent.agentTypeId),
+            onUnknownPersistedSeat: (diagnostic) => {
+              request.log.warn(
+                { workspaceId, ...diagnostic },
+                'workspace default agent seat is not in the validated fleet; falling back',
+              )
+            },
+          }),
         }
       } catch (error) {
         if (

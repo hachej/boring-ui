@@ -6,12 +6,6 @@ import { PiSessionStore } from '../harness/pi-coding-agent/sessions'
 import { agentSessionKey } from './agentSessionKey'
 import type { CompiledAgentHostAgentSpec, ResolvedAgentRuntimeScope } from './types'
 
-export interface AgentSessionRuntimeAuthority {
-  readonly runtimeScope: ResolvedAgentRuntimeScope
-  /** Absent only for a pre-AH0 transcript created before runtime pins existed. */
-  readonly runtimeScopeIdentity?: string
-}
-
 function safeScopeSegment(scope: string): string {
   return createHash('sha256').update(scope).digest('hex').slice(0, 20)
 }
@@ -60,21 +54,12 @@ export class AgentSessionInventory {
     scope: AuthorizedAgentScope,
     claim: VerifiedAgentScopeClaim,
     sessionId: string,
-  ): Promise<AgentSessionRuntimeAuthority | undefined> {
+  ): Promise<ResolvedAgentRuntimeScope | undefined> {
     const resolved = await this.resolveStore(agentTypeId, scope, claim)
     if (!resolved) return undefined
-    try {
-      return {
-        runtimeScope: resolved.runtimeScope,
-        runtimeScopeIdentity: await resolved.store.readRuntimeScopeIdentity(
-          { workspaceId: claim.workspaceScopeId },
-          sessionId,
-        ),
-      }
-    } catch (error) {
-      if (error instanceof Error && error.message === `Session not found: ${sessionId}`) return undefined
-      throw error
-    }
+    return await resolved.store.has({ workspaceId: claim.workspaceScopeId }, sessionId)
+      ? resolved.runtimeScope
+      : undefined
   }
 
   private async resolveStore(

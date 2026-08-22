@@ -17,6 +17,12 @@
       "name": "@fastify/static",
       "version": "10.1.2",
       "reason": "PR #930 owner-approved security update for GHSA-83w8-p2f5-377r and GHSA-8pvw-jcv7-9cmj"
+    },
+    {
+      "file": "packages/boring-sandbox/package.json",
+      "name": "@blaxel/core",
+      "version": "0.3.11",
+      "reason": "Issue #1081 production-blocking Blaxel adapter requires the plan-qualified SDK version for EU-sovereign sandbox compute"
     }
   ]
 }

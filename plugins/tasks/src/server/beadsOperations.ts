@@ -41,6 +41,8 @@ export interface BeadsWorkspaceAuthority {
 const LIST_ARGS = ["list", "--all", "--json", "--no-auto-flush", "--no-auto-import", "--no-db"] as const
 const SHOW_PREFIX = ["show", "--json", "--no-auto-flush", "--no-auto-import", "--no-db", "--"] as const
 const BEAD_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/
+/** Maximum bead IDs accepted by one pinned `br show` invocation. */
+export const BEADS_SHOW_BATCH_LIMIT = 100
 const REQUIRED_STORE_FILES = ["issues.jsonl", "metadata.json", "config.yaml"] as const
 
 export function isValidBeadId(value: string): boolean {
@@ -50,10 +52,13 @@ export function isValidBeadId(value: string): boolean {
 export function isAllowedBeadsReadArgs(args: readonly string[]): boolean {
   if (args.length === 1 && args[0] === "--version") return true
   if (args.length === LIST_ARGS.length && LIST_ARGS.every((value, index) => args[index] === value)) return true
-  return args.length === SHOW_PREFIX.length + 1
+  // `show` accepts a bounded batch of IDs so the list view can hydrate
+  // parent/epic edges without one process spawn per bead.
+  const ids = args.slice(SHOW_PREFIX.length)
+  return ids.length >= 1
+    && ids.length <= BEADS_SHOW_BATCH_LIMIT
     && SHOW_PREFIX.every((value, index) => args[index] === value)
-    && typeof args[SHOW_PREFIX.length] === "string"
-    && isValidBeadId(args[SHOW_PREFIX.length]!)
+    && ids.every((id) => typeof id === "string" && isValidBeadId(id))
 }
 
 function isInside(root: string, target: string): boolean {

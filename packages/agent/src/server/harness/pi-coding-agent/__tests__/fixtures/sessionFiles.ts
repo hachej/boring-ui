@@ -20,7 +20,7 @@ export async function seedNativeSession(
   sessionDir: string,
   cwd: string,
   sessionId: string,
-  ctx: SessionCtx & { runtimeScopeIdentity?: string },
+  ctx: SessionCtx,
   options?: { timestamp?: string },
 ): Promise<string> {
   await mkdir(sessionDir, { recursive: true });
@@ -56,12 +56,8 @@ export async function sessionFilePath(sessionDir: string, sessionId: string): Pr
  */
 export function pinSessionCtxOnHeaderForTest(header: object | null | undefined, ctx: SessionCtx): void {
   if (!header || typeof header !== "object") throw new Error("pi session header is unavailable")
-  const runtimeScopeIdentity = typeof (ctx as { runtimeScopeIdentity?: unknown }).runtimeScopeIdentity === "string"
-    ? (ctx as { runtimeScopeIdentity?: string }).runtimeScopeIdentity
-    : undefined
   ;(header as { boringSessionCtx?: Record<string, string> }).boringSessionCtx = {
     ...(ctx.workspaceId ? { workspaceId: ctx.workspaceId } : {}),
     ...(ctx.userId ? { userId: ctx.userId } : {}),
-    ...(runtimeScopeIdentity ? { runtimeScopeIdentity } : {}),
   }
 }

@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react"
 import { useDataClient } from "./data"
 import { FileTreeRootsProvider } from "./file-tree/FileTreeRootsProvider"
-import type { FileTreeRootConfig } from "./file-tree/FileTreeView"
+import type { FileTreeRootConfig } from "./file-tree/FileTreePane"
 
 const PRIMARY_ROOT: FileTreeRootConfig = {
   filesystem: "user",
@@ -15,6 +15,7 @@ const PRIMARY_ROOT: FileTreeRootConfig = {
     list: true,
     search: true,
     write: true,
+    upload: false,
     delete: true,
     move: true,
     mkdir: true,

@@ -4,7 +4,7 @@ import { getEnv } from '../config/env'
 import type { BuiltinRuntimeModeId, RuntimeModeAdapter, RuntimeModeId } from './mode'
 
 function isBuiltinRuntimeModeId(value: string): value is BuiltinRuntimeModeId {
-  return value === 'direct' || value === 'local' || value === 'vercel-sandbox'
+  return value === 'direct' || value === 'local' || value === 'blaxel' || value === 'vercel-sandbox'
 }
 
 export function hasBwrap(): boolean {
@@ -17,7 +17,7 @@ export function autoDetectMode(): RuntimeModeId {
   if (explicitMode) {
     if (!isBuiltinRuntimeModeId(explicitMode)) {
       throw new Error(
-        `Invalid BORING_AGENT_MODE "${explicitMode}". Expected direct, local, or vercel-sandbox.`,
+        `Invalid BORING_AGENT_MODE "${explicitMode}". Expected direct, local, blaxel, or vercel-sandbox.`,
       )
     }
     return explicitMode

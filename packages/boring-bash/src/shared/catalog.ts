@@ -25,6 +25,7 @@ export const FILESYSTEM_CATALOG_CAPABILITIES = [
   "list",
   "search",
   "write",
+  "upload",
   "delete",
   "move",
   "mkdir",
@@ -63,6 +64,26 @@ export function isFilesystemCatalogCapabilities(value: unknown): value is Filesy
   });
 }
 
+/** Capabilities added after the catalog wire format shipped: servers that
+ * predate them omit the key entirely, so absent means false rather than a
+ * malformed entry. `upload` landed on main, `execute` in gh-1123. */
+const OPTIONAL_WIRE_CAPABILITIES = new Set<FilesystemCatalogCapabilityKey>(["upload", "execute"]);
+
+type FilesystemCatalogWireCapabilities = Omit<FilesystemCatalogCapabilities, "upload" | "execute"> & {
+  upload?: boolean;
+  execute?: boolean;
+};
+
+function isFilesystemCatalogWireCapabilities(value: unknown): value is FilesystemCatalogWireCapabilities {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const capabilities = value as Record<string, unknown>;
+  return FILESYSTEM_CATALOG_CAPABILITIES.every((capability) => (
+    OPTIONAL_WIRE_CAPABILITIES.has(capability)
+      ? capabilities[capability] === undefined || typeof capabilities[capability] === "boolean"
+      : typeof capabilities[capability] === "boolean"
+  ));
+}
+
 /** Parses and validates an untrusted `{ filesystems: [...] }` payload into
  * catalog entries, dropping any entry that fails the contract rather than
  * throwing — callers treat the catalog as best-effort. */
@@ -79,7 +100,7 @@ export function parseFilesystemCatalog(value: unknown): FilesystemCatalogEntry[]
     if (!isValidCatalogString(entry.label, CATALOG_STRING_MAX_LENGTH)) continue;
     if (!isValidCatalogString(entry.rootDir, CATALOG_ROOT_DIR_MAX_LENGTH)) continue;
     if (entry.access !== "readonly" && entry.access !== "readwrite") continue;
-    if (!isFilesystemCatalogCapabilities(entry.capabilities)) continue;
+    if (!isFilesystemCatalogWireCapabilities(entry.capabilities)) continue;
     const capabilities = entry.capabilities;
     seen.add(entry.filesystem);
     entries.push({

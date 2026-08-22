@@ -23,6 +23,7 @@ export default defineConfig({
       "@hachej/boring-sandbox/providers/bwrap": resolve(PACKAGES, "boring-sandbox/src/providers/bwrap/index.ts"),
       "@hachej/boring-sandbox/providers/node-workspace": resolve(PACKAGES, "boring-sandbox/src/providers/node-workspace/index.ts"),
       "@hachej/boring-sandbox/providers/vercel-sandbox": resolve(PACKAGES, "boring-sandbox/src/providers/vercel-sandbox/index.ts"),
+      "@hachej/boring-sandbox/providers/blaxel": resolve(PACKAGES, "boring-sandbox/src/providers/blaxel/index.ts"),
       "@": resolve(import.meta.dirname, "src"),
       "@hachej/boring-workspace/runtime-server": resolve(import.meta.dirname, "src/server/runtimeBackend/defineRuntimeServerPlugin.ts"),
       "@hachej/boring-workspace/server": resolve(import.meta.dirname, "src/server/index.ts"),

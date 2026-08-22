@@ -20,14 +20,14 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 import { ErrorCode } from '@hachej/boring-agent/shared'
 
 import { loadBoringFactoryAgents, type BoringFactoryRole } from './factoryAgents'
+import { resolvePlaygroundDefaultAgentTypeId } from '../shared/playgroundAgents'
 
 const REPOSITORY_ROOT = resolve(import.meta.dirname, '../../../..')
+// The ratified 3-seat roster (gh-1187 S0), in fleet.yaml order.
 const EXPECTED = [
-  { role: 'concierge', id: 'boring-concierge', skills: ['feedback', 'triage', 'handoff'] },
-  { role: 'triage', id: 'boring-triage', skills: ['triage', 'handoff'] },
-  { role: 'steward', id: 'boring-steward', skills: ['plan', 'handoff'] },
-  { role: 'worker', id: 'boring-worker', skills: ['exec', 'handoff'] },
-  { role: 'reviewer', id: 'boring-reviewer', skills: ['fresh-eyes', 'handoff'] },
+  { role: 'triage', id: 'boring-triage', skills: ['triage', 'owner-gate', 'handoff'] },
+  { role: 'orchestrator', id: 'boring-orchestrator', skills: ['plan', 'feedback', 'owner-gate', 'handoff'] },
+  { role: 'worker', id: 'boring-worker', skills: ['exec', 'fresh-eyes', 'owner-gate', 'handoff'] },
 ] as const
 
 async function expectedInstructions(role: string, skills: readonly string[]): Promise<string> {
@@ -52,9 +52,12 @@ async function expectedInstructions(role: string, skills: readonly string[]): Pr
 // instead of the deleted bespoke composition.
 describe('loadBoringFactoryAgents (loader against the real .agents/ tree)', () => {
   test('composes exactly the independently expected canonical skills in deterministic order', async () => {
-    const agents = await loadBoringFactoryAgents()
+    const agents = await loadBoringFactoryAgents({ workspaceRoot: REPOSITORY_ROOT })
+    const defaultAgentTypeId = resolvePlaygroundDefaultAgentTypeId(agents)
 
     expect(agents.map((agent) => agent.agentTypeId)).toEqual(EXPECTED.map(({ id }) => id))
+    expect(defaultAgentTypeId).toBe(EXPECTED[0].id)
+    expect(agents.some((agent) => agent.agentTypeId === defaultAgentTypeId)).toBe(true)
     for (const [index, expected] of EXPECTED.entries()) {
       const agent = agents[index]
       if (!agent || 'legacyDefault' in agent) throw new Error('factory agent must be configured')
@@ -64,17 +67,62 @@ describe('loadBoringFactoryAgents (loader against the real .agents/ tree)', () =
     }
   })
 
+  // The defect this guards: the playground composed the fleet from the
+  // repository root but served `apps/workspace-playground/workspace` as the
+  // `user` filesystem, and published `.agents/personas/<seat>/instructions.md`
+  // against the WRONG root. Every ref was well-formed and every ref 404'd.
+  describe('instruction refs are addressed against the served workspace root', () => {
+    test('publishes a ref that actually resolves when the personas are inside the served root', async () => {
+      const agents = await loadBoringFactoryAgents({ workspaceRoot: REPOSITORY_ROOT, env: {} })
+
+      for (const agent of agents) {
+        if ('legacyDefault' in agent) throw new Error('factory agent must be configured')
+        const refs = agent.instructionFiles ?? []
+        expect(refs).toHaveLength(1)
+        const ref = refs[0]!
+        expect(ref).toMatchObject({ filesystem: 'user', role: 'persona' })
+        // The whole point: read it back through the same root the client would.
+        await expect(readFile(resolve(REPOSITORY_ROOT, ref.path), 'utf8')).resolves.toMatch(/\S/)
+      }
+    })
+
+    test('publishes NO ref and fires the stable diagnostic when they are outside it', async () => {
+      // What `dev.ts` serves by default: a workspace directory that does not
+      // contain this repository's `.agents/` tree.
+      const servedRoot = resolve(REPOSITORY_ROOT, 'apps/workspace-playground/workspace')
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        const agents = await loadBoringFactoryAgents({ workspaceRoot: servedRoot, env: {} })
+
+        expect(agents.length).toBe(EXPECTED.length)
+        for (const agent of agents) {
+          if ('legacyDefault' in agent) throw new Error('factory agent must be configured')
+          // A missing row, never a dead link.
+          expect(agent.instructionFiles).toBeUndefined()
+        }
+        const reported = warn.mock.calls.map((call) => String(call[0]))
+        for (const { role } of EXPECTED) {
+          expect(reported.some((line) =>
+            line.includes(`${role}: ${ErrorCode.enum.AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE}`),
+          )).toBe(true)
+        }
+      } finally {
+        warn.mockRestore()
+      }
+    })
+  })
+
   test('applies preferred models only from trusted role policy', async () => {
     const preferredModels: Partial<Record<BoringFactoryRole, string>> = {
-      steward: 'test-provider:planning-model',
+      orchestrator: 'test-provider:planning-model',
     }
     // m5 (fix round 1): inject an empty env so this doesn't read ambient
     // ANTHROPIC_API_KEY — on a keyed dev machine, tier-based model
     // resolution would otherwise give `worker` a real preferred model too,
     // breaking the "not.toHaveProperty('model')" assertion below.
-    const agents = await loadBoringFactoryAgents({ preferredModels, env: {} })
+    const agents = await loadBoringFactoryAgents({ workspaceRoot: REPOSITORY_ROOT, preferredModels, env: {} })
 
-    expect(agents.find((agent) => agent.agentTypeId === 'boring-steward')).toMatchObject({
+    expect(agents.find((agent) => agent.agentTypeId === 'boring-orchestrator')).toMatchObject({
       model: { preferred: 'test-provider:planning-model' },
     })
     expect(agents.find((agent) => agent.agentTypeId === 'boring-worker')).not.toHaveProperty('model')
@@ -83,11 +131,10 @@ describe('loadBoringFactoryAgents (loader against the real .agents/ tree)', () =
   test('fails boot with a stable, redacted diagnostic when a canonical skill is unavailable', async () => {
     fsFailure.skill = 'triage'
     try {
-      const error = await loadBoringFactoryAgents().catch((cause: unknown) => cause)
+      const error = await loadBoringFactoryAgents({ workspaceRoot: REPOSITORY_ROOT }).catch((cause: unknown) => cause)
       expect(error).toMatchObject({
         name: 'TrustedAgentCompositionError',
         diagnostics: [
-          { seat: 'concierge', code: ErrorCode.enum.AGENT_FLEET_SEAT_SKILL_DIGEST_MISMATCH },
           { seat: 'triage', code: ErrorCode.enum.AGENT_FLEET_SEAT_SKILL_DIGEST_MISMATCH },
         ],
       })

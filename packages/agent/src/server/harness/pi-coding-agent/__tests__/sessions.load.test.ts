@@ -116,6 +116,36 @@ describe("PiSessionStore.loadEntries transcript reconstruction", () => {
     await expect(store.list(ctx)).resolves.toEqual([]);
   });
 
+  it("returns the latest persisted model change even when no later assistant message exists", async () => {
+    const sessionId = "sess-model-change";
+    const filepath = join(tmpDir, `${sessionId}.jsonl`);
+    const lines = [
+      { type: "session", version: 1, id: sessionId, timestamp: "2026-05-01T00:00:00.000Z", cwd: "/workspace" },
+      {
+        type: "message",
+        id: "a1",
+        parentId: null,
+        timestamp: "2026-05-01T00:00:01.000Z",
+        message: { role: "assistant", provider: "openai", model: "gpt-old", content: [{ type: "text", text: "old" }] },
+      },
+      {
+        type: "model_change",
+        id: "model-2",
+        parentId: "a1",
+        timestamp: "2026-05-01T00:00:02.000Z",
+        provider: "openai-codex",
+        modelId: "gpt-5.6-sol",
+      },
+    ];
+    await writeFile(filepath, `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`, "utf-8");
+
+    const store = new PiSessionStore("/workspace", tmpDir);
+    const entries = await store.loadEntries(ctx, sessionId);
+
+    expect(entries.currentModel).toEqual({ provider: "openai-codex", id: "gpt-5.6-sol" });
+    expect(entries.messages).toHaveLength(1);
+  });
+
   it("serves historical image attachment bytes from the raw transcript without requiring /state to inline them", async () => {
     const sessionId = "sess-image-history";
     const filepath = join(tmpDir, `${sessionId}.jsonl`);

@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-data-bridge",
-  "version": "0.1.95",
+  "version": "0.1.103",
   "type": "module",
   "private": false,
   "license": "MIT",
@@ -16,9 +16,16 @@
     "front": "dist/front/index.js",
     "server": "dist/server/index.js"
   },
+  "pi": {
+    "skills": [
+      "skills/bsl-querying"
+    ],
+    "systemPrompt": "Use the bsl-querying skill for semantic queries. Validate models and fields against the configured semantic model before querying, and use query_data for data retrieval."
+  },
   "files": [
     "dist",
     "python",
+    "skills",
     "README.md"
   ],
   "exports": {
@@ -51,7 +58,7 @@
   "peerDependencies": {
     "@clickhouse/client": "^1.23.0",
     "@hachej/boring-workspace": "workspace:*",
-    "@perspective-dev/client": "5.0.0"
+    "@perspective-dev/client": "5.1.0"
   },
   "peerDependenciesMeta": {
     "@clickhouse/client": {
@@ -65,7 +72,7 @@
     "@clickhouse/client": "^1.23.0",
     "@duckdb/node-api": "1.5.2-r.2",
     "@hachej/boring-workspace": "workspace:*",
-    "@perspective-dev/client": "5.0.0",
+    "@perspective-dev/client": "5.1.0",
     "tsup": "^8.4.0",
     "typescript": "~6.0.3",
     "vitest": "^4.1.9"

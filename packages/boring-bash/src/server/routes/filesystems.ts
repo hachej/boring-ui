@@ -35,6 +35,7 @@ const PRIMARY_FILESYSTEM: FilesystemCatalogEntry = {
     list: true,
     search: true,
     write: true,
+    upload: true,
     delete: true,
     move: true,
     mkdir: true,
@@ -56,6 +57,10 @@ function capabilitiesFor(binding: RuntimeFilesystemBinding): FilesystemCatalogCa
     list: typeof operations.list === 'function' && typeof operations.stat === 'function',
     search: typeof operations.find === 'function',
     write: mutable && typeof operations.write === 'function',
+    upload: mutable
+      && binding.filesystem === USER_FILESYSTEM_ID
+      && typeof operations.createBinary === 'function'
+      && typeof operations.writeBinary === 'function',
     delete: mutable && typeof operations.delete === 'function',
     move: mutable && typeof operations.move === 'function',
     mkdir: mutable && typeof operations.mkdir === 'function',
@@ -87,7 +92,11 @@ export function filesystemsRoutes(
         ? await opts.getFilesystemBindings(request) ?? []
         : opts.filesystemBindings ?? []
       const seen = new Set<string>([USER_FILESYSTEM_ID])
-      const filesystems: FilesystemCatalogEntry[] = [{ ...PRIMARY_FILESYSTEM }]
+      const primaryBinding = bindings.find((binding) => binding.filesystem === USER_FILESYSTEM_ID)
+      const filesystems: FilesystemCatalogEntry[] = [{
+        ...PRIMARY_FILESYSTEM,
+        ...(primaryBinding ? { capabilities: capabilitiesFor(primaryBinding) } : {}),
+      }]
       for (const binding of bindings) {
         if (seen.has(binding.filesystem)) continue
         const entry = catalogEntry(binding)

@@ -11,5 +11,8 @@
       "description": "Executes one claimed Bead in one assigned worktree.",
       "instructionsRef": "instructions.md"
     }
+  },
+  "pi": {
+    "skills": ["exec", "fresh-eyes", "owner-gate", "handoff"]
   }
 }

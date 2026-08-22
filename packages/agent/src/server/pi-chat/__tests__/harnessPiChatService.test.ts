@@ -19,7 +19,7 @@ const ctx: PiSessionRequestContext = {
 }
 
 type PersistedSessionStore = SessionStore & {
-  loadEntries?: (ctx: { workspaceId?: string; userId?: string }, sessionId: string) => Promise<{ id: string; messages: unknown[] }>
+  loadEntries?: (ctx: { workspaceId?: string; userId?: string }, sessionId: string) => Promise<{ id: string; messages: unknown[]; currentModel?: { provider: string; id: string } }>
 }
 
 const sessionStore: SessionStore = {
@@ -164,6 +164,38 @@ describe('HarnessPiChatService', () => {
       filename: 'live.png',
     })
     subscription.type === 'ok' && subscription.unsubscribe()
+    await service.dispose()
+  })
+
+  it('publishes only real addressed model transitions for externally submitted turns', async () => {
+    const adapter = createAdapter()
+    let currentModel = { provider: 'openai', id: 'gpt-old' }
+    adapter.currentModel = () => currentModel
+    const harness = createHarness(adapter)
+    vi.mocked(harness.getPiSessionAdapter).mockImplementation(async (input: AgentSendInput) => {
+      if (input.model) currentModel = input.model
+      return adapter
+    })
+    const service = new HarnessPiChatService({ harness, sessionStore, workdir: '/workspace' })
+    const events: PiChatEvent[] = []
+    const subscription = await service.subscribe(ctx, 's1', 0, (event) => events.push(event))
+    if (subscription.type !== 'ok') throw new Error('expected live subscription')
+
+    const nextModel = { provider: 'openai-codex', id: 'gpt-5.6-sol' }
+    await service.prompt(ctx, 's1', {
+      message: 'automation prompt',
+      clientNonce: 'automation-model',
+      model: nextModel,
+    })
+    await service.prompt(ctx, 's1', {
+      message: 'same model again',
+      clientNonce: 'automation-model-2',
+    })
+    await vi.waitFor(() => expect(events.filter((event) => event.type === 'model-changed')).toEqual([
+      expect.objectContaining({ type: 'model-changed', currentModel: nextModel }),
+    ]))
+
+    subscription.unsubscribe()
     await service.dispose()
   })
 
@@ -1078,6 +1110,7 @@ describe('HarnessPiChatService', () => {
       ...sessionStore,
       loadEntries: vi.fn(async () => ({
         id: 's-history',
+        currentModel: { provider: 'openai-codex', id: 'gpt-5.6-sol' },
         messages: [
           {
             id: 'u1',
@@ -1087,6 +1120,8 @@ describe('HarnessPiChatService', () => {
           {
             id: 'a1',
             role: 'assistant',
+            provider: 'openai-codex',
+            model: 'gpt-5.6-sol',
             content: [
               { type: 'thinking', thinking: 'thought' },
               {
@@ -1122,6 +1157,7 @@ describe('HarnessPiChatService', () => {
     expect(state).toMatchObject({
       sessionId: 's-history',
       status: 'idle',
+      currentModel: { provider: 'openai-codex', id: 'gpt-5.6-sol' },
       messages: [
         expect.objectContaining({
           id: 'u1',
@@ -1218,6 +1254,37 @@ describe('HarnessPiChatService', () => {
         parts: [expect.objectContaining({ type: 'text', text: 'added from pi CLI' })],
       }),
     ])
+  })
+
+  it('keeps live state when the persisted transcript lags behind the live adapter', async () => {
+    // An active-reload hydration race (gh-1159): the run settles, the adapter
+    // holds the full transcript, but the persisted store has not caught up
+    // (or, like the scripted e2e harness, never persists transcripts). The
+    // lagging persisted snapshot would fence the durable seq while dropping
+    // the rendered turns, permanently hiding them from a hydrating client.
+    const adapter = createAdapter()
+    adapter.readSnapshot().isStreaming = false
+    adapter.readSnapshot().messages = [
+      { id: 'live-user', message: { role: 'user', content: [{ type: 'text', text: 'live prompt' }] } },
+    ]
+    const persistedStore: PersistedSessionStore = {
+      ...sessionStore,
+      loadEntries: vi.fn(async () => ({ id: 's1', messages: [] })),
+    }
+    const service = new HarnessPiChatService({
+      harness: createHarness(adapter),
+      sessionStore: persistedStore,
+      workdir: '/workspace',
+    })
+    // Open the channel first so readState takes the previously-opened path.
+    const subscription = await service.subscribe(ctx, 's1', 0, () => {})
+    expect(subscription.type).toBe('ok')
+    if (subscription.type === 'ok') subscription.unsubscribe()
+
+    const state = await service.readState(ctx, 's1')
+
+    expect(state.status).toBe('idle')
+    expect(state.messages).toEqual([expect.objectContaining({ id: 'live-user' })])
   })
 
   it('fences in-memory event replay behind an idle persisted snapshot cursor', async () => {

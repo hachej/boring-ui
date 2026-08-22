@@ -24,6 +24,7 @@ export {
 } from './sandbox/remote-worker/workerClient'
 export type { RemoteWorkerClientOptions } from './sandbox/remote-worker/workerClient'
 export {
+  REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY,
   REMOTE_WORKER_PROVIDER,
   REMOTE_WORKER_RUNTIME_CWD,
   WORKER_INTERNAL_TOKEN_HEADER,
@@ -61,6 +62,7 @@ export { autoDetectMode, hasBwrap, resolveMode } from './runtime/resolveMode'
 export { createDirectModeAdapter } from './runtime/modes/direct'
 export { createLocalModeAdapter } from './runtime/modes/local'
 export { createVercelSandboxModeAdapter } from './runtime/modes/vercel-sandbox'
+export { createBlaxelSandboxModeAdapter } from './runtime/modes/blaxel'
 export { createProviderRuntimeModeAdapter } from './runtime/modes/providerAdapter'
 export {
   createSandboxRuntimeModeAdapter,
@@ -99,9 +101,9 @@ export type {
 export {
   FleetConfigError,
   loadConfiguredAgentFleet,
-  MODEL_TIER_CANDIDATES,
 } from './agentDefinition/loadConfiguredAgentFleet'
 export type {
+  DiscoveredAgentPackageDescriptor,
   FleetConfigErrorCode,
   FleetLoaderDiagnostic,
   FleetLoaderDiagnosticCode,
@@ -194,6 +196,7 @@ export type {
   AgentRequestLedger,
   AgentRequestLedgerPrepareResult,
   AgentRequestLedgerRecord,
+  AgentInstructionFileRef,
   CompiledAgentHostAgentSpec,
   ConfiguredAgentHostAgentSpec,
   CreateAgentHostOptions,

@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import {
+  REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY,
   type RemoteWorkerExecRequest,
   type RemoteWorkerExecResponse,
   type RemoteWorkerWorkspaceOp,
@@ -78,7 +79,10 @@ export async function registerWorkerRoutes(
   })
 
   app.get('/health', async () => ({ ok: true }))
-  app.get('/internal/health', async () => ({ ok: true }))
+  app.get('/internal/health', async () => ({
+    ok: true,
+    capabilities: [REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY],
+  }))
 
   app.addHook('preHandler', async (request, reply) => {
     if (request.method === 'GET' && request.url === '/health') return

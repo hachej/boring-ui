@@ -15,6 +15,7 @@ export default defineConfig({
       "@hachej/boring-sandbox/providers/bwrap": resolve(import.meta.dirname, "../../packages/boring-sandbox/src/providers/bwrap/index.ts"),
       "@hachej/boring-sandbox/providers/direct": resolve(import.meta.dirname, "../../packages/boring-sandbox/src/providers/direct/index.ts"),
       "@hachej/boring-sandbox/providers/node-workspace": resolve(import.meta.dirname, "../../packages/boring-sandbox/src/providers/node-workspace/index.ts"),
+      "@hachej/boring-sandbox/providers/blaxel": resolve(import.meta.dirname, "../../packages/boring-sandbox/src/providers/blaxel/index.ts"),
       "@hachej/boring-sandbox/providers/vercel-sandbox": resolve(import.meta.dirname, "../../packages/boring-sandbox/src/providers/vercel-sandbox/index.ts"),
       "@hachej/boring-ui-kit": resolve(import.meta.dirname, "../../packages/ui/src/index.ts"),
       "@hachej/boring-workspace/plugin": resolve(import.meta.dirname, "../../packages/workspace/src/plugin.ts"),

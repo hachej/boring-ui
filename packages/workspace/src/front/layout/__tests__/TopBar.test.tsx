@@ -22,6 +22,32 @@ describe("TopBar", () => {
     expect(screen.queryByText("Boring UI")).not.toBeInTheDocument()
   })
 
+  it("names the owning Agent beside the chat title", () => {
+    render(<TopBar appTitle="Boring UI" sessionTitle="Planning" sessionAgentLabel="Coder" />)
+
+    const label = document.querySelector('[data-boring-workspace-part="topbar-agent"]')
+    expect(label).toHaveTextContent("Coder")
+    // Quiet secondary treatment that truncates rather than pushing the search
+    // and avatar controls out of the bar.
+    expect(label?.className).toContain("text-[11px]")
+    expect(label?.className).toContain("text-muted-foreground")
+    expect(label?.className).toContain("truncate")
+    expect(label?.className).toContain("min-w-0")
+    // The title stays primary and gives up its width first.
+    expect(screen.getByText("Planning").className).toContain("shrink-[2]")
+    expect(screen.getByText("Planning").getAttribute("title")).toBe("Planning — Coder")
+  })
+
+  it("omits the Agent in a single-Agent workspace and beside a bare app title", () => {
+    const { rerender } = render(<TopBar appTitle="Boring UI" sessionTitle="Planning" />)
+    expect(document.querySelector('[data-boring-workspace-part="topbar-agent"]')).toBeNull()
+
+    // No session means the bar is showing the app name; attributing the
+    // workspace itself to one persona would be wrong.
+    rerender(<TopBar appTitle="Boring UI" sessionAgentLabel="Coder" />)
+    expect(document.querySelector('[data-boring-workspace-part="topbar-agent"]')).toBeNull()
+  })
+
   it("pads the bar for the status-bar and notch insets", () => {
     render(<TopBar />)
 

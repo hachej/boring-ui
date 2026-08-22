@@ -1,13 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { writeFileSync } from "node:fs";
 import { appendFile, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile, utimes } from "node:fs/promises";
-import { CURRENT_SESSION_VERSION, DefaultResourceLoader, SessionManager } from "@mariozechner/pi-coding-agent";
+import { CURRENT_SESSION_VERSION, DefaultResourceLoader, formatSkillsForPrompt, SessionManager } from "@mariozechner/pi-coding-agent";
 import { basename, join } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import {
   createResourceSettingsManager,
   createPiCodingAgentHarness,
   mergePiPackageSources,
+  projectSkillResourceLocations,
+  withPiHarnessDefaults,
 } from "../createHarness.js";
 import { adaptToolsForPi } from "../tool-adapter.js";
 import {
@@ -18,6 +20,7 @@ import {
 import { sessionFilePath } from "./fixtures/sessionFiles.js";
 import { ErrorCode } from "../../../../shared/error-codes.js";
 import type { AgentTool } from "../../../../shared/tool.js";
+import { createPiResourceDigestInput, digestPiResourceInputs } from "../../../piResourceDigest.js";
 
 const fsHooks = vi.hoisted(() => ({
   onRename: undefined as (() => Promise<void>) | undefined,
@@ -94,6 +97,71 @@ describe("createPiCodingAgentHarness", () => {
     expect(harness.sessions).toBeInstanceOf(PiSessionStore);
     expect(typeof harness.getPiSessionAdapter).toBe("function");
     expect(typeof harness.reloadSession).toBe("function");
+  });
+
+  it("keeps ambient context files sealed by default and loads them only after explicit local opt-in", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "pi-ambient-context-cwd-"));
+    const agentDir = await mkdtemp(join(tmpdir(), "pi-ambient-context-agent-"));
+    const marker = "AMBIENT_CONTEXT_FIXTURE_FROM_AGENTS_MD";
+    await writeFile(join(cwd, "AGENTS.md"), `${marker}\n`, "utf8");
+
+    const loadResolvedContext = async (noContextFiles: boolean) => {
+      const loader = new DefaultResourceLoader({
+        cwd,
+        agentDir,
+        noContextFiles,
+        noSkills: true,
+        noExtensions: true,
+        noPromptTemplates: true,
+        noThemes: true,
+      });
+      await loader.reload();
+      return loader.getAgentsFiles().agentsFiles;
+    };
+
+    try {
+      const hosted = withPiHarnessDefaults();
+      expect(hosted.noContextFiles).toBe(true);
+      expect(await loadResolvedContext(hosted.noContextFiles)).toEqual([]);
+
+      const local = withPiHarnessDefaults({ noContextFiles: false });
+      expect(local.noContextFiles).toBe(false);
+      expect(await loadResolvedContext(local.noContextFiles)).toEqual([
+        expect.objectContaining({ path: join(cwd, "AGENTS.md"), content: `${marker}\n` }),
+      ]);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+      await rm(agentDir, { recursive: true, force: true });
+    }
+  });
+
+  it("includes ambient context content in reload identity while sealed hosts ignore it", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "pi-context-digest-cwd-"));
+    const agentDir = await mkdtemp(join(tmpdir(), "pi-context-digest-agent-"));
+    const contextPath = join(cwd, "AGENTS.md");
+    const input = (noContextFiles: boolean) => createPiResourceDigestInput({
+      piCwd: cwd,
+      piAgentDir: agentDir,
+      noSkills: true,
+      noContextFiles,
+      resourceSets: [],
+      authorizedRoots: [cwd, agentDir],
+    });
+
+    try {
+      await writeFile(contextPath, "context-before\n", "utf8");
+      const ambientBefore = await digestPiResourceInputs(input(false));
+      const sealedBefore = await digestPiResourceInputs(input(true));
+      await writeFile(contextPath, "context-after\n", "utf8");
+      const ambientAfter = await digestPiResourceInputs(input(false));
+      const sealedAfter = await digestPiResourceInputs(input(true));
+
+      expect(ambientAfter).not.toBe(ambientBefore);
+      expect(sealedAfter).toBe(sealedBefore);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+      await rm(agentDir, { recursive: true, force: true });
+    }
   });
 
   it("rejects unavailable requested models when strict model resolution is enabled", async () => {
@@ -341,6 +409,47 @@ describe("pi extension path hot reload", () => {
   });
 });
 
+describe("projectSkillResourceLocations", () => {
+  it("projects located package skills without changing workspace skills", () => {
+    const packagePath = "/srv/node_modules/@example/plugin/skills/reporting/SKILL.md";
+    const workspacePath = "/workspace/.agents/skills/local/SKILL.md";
+    const prompt = formatSkillsForPrompt([packagePath, workspacePath].map((filePath, index) => ({
+      name: `skill-${index}`,
+      description: `Skill ${index}`,
+      filePath,
+      baseDir: filePath.slice(0, -"/SKILL.md".length),
+      sourceInfo: { path: filePath, source: "test", scope: "project", origin: "top-level" },
+      disableModelInvocation: false,
+    })));
+
+    const projected = projectSkillResourceLocations(prompt, (filePath) =>
+      filePath === packagePath
+        ? { filesystem: "agent_resources", path: "packages/@example/plugin/skills/reporting/SKILL.md" }
+        : undefined,
+    );
+
+    expect(projected).toContain('<location>{"filesystem":"agent_resources","path":"packages/@example/plugin/skills/reporting/SKILL.md"}</location>');
+    expect(projected).toContain(`<location>${workspacePath}</location>`);
+    expect(projected).not.toContain(`<location>${packagePath}</location>`);
+    expect(projected).toContain("pass its filesystem and path fields to the read tool");
+    expect(projected).not.toContain("use that absolute path in tool commands");
+  });
+
+  it("leaves prompts unchanged without a binding-backed locator", () => {
+    const prompt = "<available_skills><location>/workspace/.agents/skills/local/SKILL.md</location></available_skills>";
+    expect(projectSkillResourceLocations(prompt, () => undefined)).toBe(prompt);
+  });
+
+  it("decodes and re-escapes XML entities", () => {
+    const prompt = "<location>/srv/@scope/a&amp;b/SKILL.md</location>";
+    const projected = projectSkillResourceLocations(prompt, (filePath) => {
+      expect(filePath).toBe("/srv/@scope/a&b/SKILL.md");
+      return { filesystem: "agent_resources", path: "packages/@scope/a&b/SKILL.md" };
+    });
+    expect(projected).toContain('{"filesystem":"agent_resources","path":"packages/@scope/a&amp;b/SKILL.md"}');
+  });
+});
+
 describe("adaptToolsForPi", () => {
   it("adapts AgentTool[] to ToolDefinition[] without pi built-ins", () => {
     const adapted = adaptToolsForPi([noopTool]);
@@ -419,13 +528,12 @@ describe("adaptToolsForPi", () => {
 
 describe("PiSessionStore", () => {
   const ctx = { workspaceId: "test-ws" };
-  const trustedNativeRuntimeScopeIdentity = "runtime-direct-local";
-  const directCtx = { workspaceId: "direct-local", runtimeScopeIdentity: trustedNativeRuntimeScopeIdentity };
+  const directCtx = { workspaceId: "direct-local" };
   let tmpDir: string;
 
   const trustedNativeStore = () => new PiSessionStore("/tmp", {
     sessionDir: tmpDir,
-    trustedNativeRuntimeScopeIdentity,
+    allowUnscopedNativeAccess: true,
   });
 
   beforeEach(async () => {
@@ -811,7 +919,7 @@ describe("PiSessionStore", () => {
     expect(list).toHaveLength(0);
   });
 
-  it("lists bare native transcripts only with the explicit capability and preserves order across rename", async () => {
+  it("lists bare native transcripts only with the explicit local capability and preserves order across rename", async () => {
     const olderId = "native-older";
     const newerId = "native-newer";
     const olderPath = join(tmpDir, `2026-06-04_${olderId}.jsonl`);

@@ -23,6 +23,7 @@ describe('Pi chat shared schemas', () => {
       seq: 42,
       status: 'streaming',
       activeTurnId: 'turn-1',
+      currentModel: { provider: 'openai-codex', id: 'gpt-5.6-sol' },
       messages: [
         {
           id: 'entry-user-1',
@@ -55,6 +56,7 @@ describe('Pi chat shared schemas', () => {
       seq: 42,
       status: 'streaming',
       activeTurnId: 'turn-1',
+      currentModel: { provider: 'openai-codex', id: 'gpt-5.6-sol' },
       queue: { followUps: [{ displayText: 'next question' }] },
     })
   })

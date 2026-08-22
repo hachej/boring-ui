@@ -101,6 +101,16 @@ describe('buildPiChatSnapshot', () => {
     ])
   })
 
+  it('projects the adapter current model into addressed session state', () => {
+    const adapter = createAdapter({ sessionId: 'pi-model' })
+    adapter.currentModel = () => ({ provider: 'openai-codex', id: 'gpt-5.6-sol' })
+
+    expect(buildPiChatSnapshot(adapter, { seq: 8 })).toMatchObject({
+      sessionId: 'pi-model',
+      currentModel: { provider: 'openai-codex', id: 'gpt-5.6-sol' },
+    })
+  })
+
   it('pins followUpMode to one-at-a-time and derives stable queue preview ids', () => {
     const snapshot = buildPiChatSnapshot(
       createAdapter({

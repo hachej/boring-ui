@@ -16,6 +16,7 @@
       "@hachej/boring-sandbox/providers/direct": ["../boring-sandbox/src/providers/direct/index.ts"],
       "@hachej/boring-sandbox/providers/node-workspace": ["../boring-sandbox/src/providers/node-workspace/index.ts"],
       "@hachej/boring-sandbox/providers/vercel-sandbox": ["../boring-sandbox/src/providers/vercel-sandbox/index.ts"],
+      "@hachej/boring-sandbox/providers/blaxel": ["../boring-sandbox/src/providers/blaxel/index.ts"],
       "@hachej/boring-ui-plugin-cli/plugin-sources": ["../plugin-cli/src/server/pluginSources.ts"],
       "@hachej/boring-workspace/runtime-server": ["./src/server/runtimeBackend/defineRuntimeServerPlugin.ts"],
       "@hachej/boring-workspace/server": ["./src/server/index.ts"]

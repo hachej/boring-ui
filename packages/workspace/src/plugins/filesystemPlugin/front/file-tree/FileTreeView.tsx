@@ -54,22 +54,18 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  IconButton,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
 } from "@hachej/boring-ui-kit"
-import { RefreshCwIcon } from "lucide-react"
 import { cn } from "../../../../front/lib/utils"
 import { toast } from "../../../../front/toast"
 import { events, userMeta } from "../../../../front/events"
 import { filesystemEvents } from "../../shared/events"
 import { normalizeUiFilesystem, type FilesystemId } from "../../../../shared/types/filesystem"
-import type { PaneProps } from "../../../../shared/types/panel"
-import type { FileTreeRevealRequest, LeftTabParams } from "../../../../shared/plugins/types"
+import type { FileTreeRevealRequest } from "../../../../shared/plugins/types"
 import { copyToClipboard } from "./clipboard"
+import {
+  FileTreeUploadManager,
+  type FileTreeUploadManagerHandle,
+} from "./upload/FileTreeUploadManager"
 
 export { copyToClipboard } from "./clipboard"
 
@@ -91,7 +87,6 @@ interface ContextMenuState {
 
 const CONTEXT_MENU_MARGIN = 8
 const SETTLED_REMOTE_TREE_REFRESH_MS = 250
-
 function clampContextMenuPosition(
   x: number,
   y: number,
@@ -117,6 +112,8 @@ export interface FileTreeViewProps {
   searchQuery?: string
   bridge?: FileTreeBridge
   revealFileTreeRequest?: FileTreeRevealRequest | null
+  /** @internal Notifies pane wrappers after a one-shot reveal has been consumed. */
+  onRevealRequestHandled?: (request: FileTreeRevealRequest) => void
   /** @internal Pane wrappers disable direct events and translate them into one-shot reveal props. */
   subscribeToTreeExpand?: boolean
   filesystem?: FilesystemId
@@ -140,10 +137,12 @@ export interface FileTreeViewHandle {
   /** Re-fetch this root's top-level listing plus every currently-expanded
    * subfolder. Resolves once all of it has settled. */
   refetch: () => Promise<void>
+  /** Open the native multi-file picker for the current selection. */
+  openUpload: () => void
 }
 
 function normalizeRevealPath(path: string): string {
-  const normalized = path.trim().replace(/\\/g, "/").replace(/^\.\/+/, "").replace(/^\/+/, "").replace(/\/+/g, "/")
+  const normalized = path.replace(/\\/g, "/").replace(/^\.\/+/, "").replace(/^\/+/, "").replace(/\/+/g, "/")
   const withoutTrailingSlash = normalized.replace(/\/+$/, "")
   return withoutTrailingSlash || "."
 }
@@ -184,6 +183,7 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
   searchQuery,
   bridge,
   revealFileTreeRequest,
+  onRevealRequestHandled,
   subscribeToTreeExpand = true,
   filesystem = "user",
   access = "readwrite",
@@ -199,6 +199,9 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
   const canDelete = capabilities?.delete ?? canMutateByAccess
   const canCreate = canWrite || canCreateDir
   const activeFilesystem = normalizeUiFilesystem(filesystem)
+  const canUpload = activeFilesystem === "user"
+    && canMutateByAccess
+    && capabilities?.upload === true
   const requestFilesystem = activeFilesystem === "user" ? undefined : activeFilesystem
   const getTreeEntries = useCallback(
     (path: string) => requestFilesystem ? dataClient.getTree(path, undefined, requestFilesystem) : dataClient.getTree(path),
@@ -254,9 +257,12 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
   const { data: gitUrlMetadata } = useGitUrlMetadata(gitUrlPath)
   const [deleteTarget, setDeleteTarget] = useState<FileTreeNode | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
-  const [selectedPath, setSelectedPath] = useState<string | null>(
-    bridge?.getActiveFile?.() ?? null,
-  )
+  const initialActiveFile = bridge?.getActiveFile?.() ?? null
+  const [selection, setSelection] = useState<FileTreeNode | null>(initialActiveFile
+    ? { name: initialActiveFile.split("/").pop() ?? initialActiveFile, path: initialActiveFile, kind: "file" }
+    : null)
+  const uploadManagerRef = useRef<FileTreeUploadManagerHandle>(null)
+  const mountedRef = useRef(true)
 
   // Inline edit state. `path` identifies which row renders an <input>; for
   // drafts (new file/folder), `parentDir` says where to place the result, and
@@ -328,13 +334,16 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
   // appear in the regular browse view.
   const treeData = injectDraftIntoTree(baseTreeData, editing, rootDir)
 
-  const handleSelect = useCallback(
+  const handleActivateFile = useCallback(
     (path: string) => {
-      setSelectedPath(path)
       bridge?.openFile(path, { mode: "edit", ...(requestFilesystem ? { filesystem: requestFilesystem } : {}) })
     },
     [bridge, requestFilesystem],
   )
+
+  const handleSelectionChange = useCallback((node: FileTreeNode | null) => {
+    setSelection(node)
+  }, [])
 
   const handleExpand = useCallback(
     async (dirPath: string) => {
@@ -378,6 +387,7 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
           }
         }),
       )
+      if (!mountedRef.current) return
       setExpandedChildren((prev) => {
         const next = new Map(prev)
         for (const result of results) {
@@ -404,6 +414,32 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
     expandedDirsRef.current = new Set(expandedChildren.keys())
   }, [expandedChildren])
 
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
+
+  const refreshUploadDestinations = useCallback(async (destinations: string[]) => {
+    await Promise.all(destinations.map(async (destination) => {
+      if (destination === "." || destination === rootDir || dirKey(destination) === rootDirKey) {
+        await refetchFileList()
+      } else {
+        await refreshDirs([destination], { force: true })
+      }
+    }))
+  }, [refetchFileList, refreshDirs, rootDir, rootDirKey])
+
+  const openUploadTo = useCallback((destination: string) => {
+    uploadManagerRef.current?.open(destination)
+  }, [])
+
+  const openUploadForSelection = useCallback(() => {
+    const destination = selection
+      ? selection.kind === "dir" ? selection.path : parentDir(selection.path)
+      : rootDir
+    openUploadTo(destination)
+  }, [openUploadTo, rootDir, selection])
+
   // Manual refresh (the Files-pane "Refresh" button): re-fetch this root's
   // own listing plus every subfolder currently expanded, so a stale tree
   // (e.g. changes made outside any signal this pane already listens for)
@@ -417,8 +453,9 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
           refreshDirs(Array.from(expandedDirsRef.current), { force: true }),
         ])
       },
+      openUpload: openUploadForSelection,
     }),
-    [refetchFileList, refreshDirs],
+    [openUploadForSelection, refetchFileList, refreshDirs],
   )
 
   useEffect(() => {
@@ -457,11 +494,51 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
   }, [activeFilesystem, refreshDirs])
 
   const revealTreePath = useCallback(
-    async (path: string | null, options?: { refreshTargetDir?: boolean }) => {
-      if (!path) return
+    async (
+      path: string | null,
+      options?: {
+        refreshTargetDir?: boolean
+        expectedKind?: FileTreeNode["kind"]
+      },
+    ) => {
+      if (path === null || path === undefined) return
       const normalizedPath = normalizeRevealPath(path)
       const revealSeq = ++revealSeqRef.current
-      setSelectedPath(normalizedPath)
+      if (normalizedPath === ".") {
+        // "Reveal this filesystem" carries a filesystem and no path. An empty
+        // path used to fall out of the `!path` guard above and do nothing at
+        // all, so such a reveal produced no visible change whatsoever. It stays
+        // handled for bridge callers (`expandToFile` accepts an empty path by
+        // contract): a root listing is a valid destination. There is no root NODE to
+        // select, so the honest visible answer is this root's own listing,
+        // freshly fetched, with any selection carried over from the previous
+        // root cleared rather than left pointing somewhere that no longer is.
+        setSelection(null)
+        setRevealPath(null)
+        await refetchFileList()
+        return
+      }
+      let kind = options?.expectedKind
+      if (!kind) {
+        try {
+          const stat = requestFilesystem
+            ? await dataClient.stat(normalizedPath, undefined, requestFilesystem)
+            : await dataClient.stat(normalizedPath)
+          kind = stat.kind === "dir" ? "dir" : "file"
+        } catch {
+          // Untyped reveals cannot safely change upload selection on failed stat.
+          return
+        }
+      }
+      if (revealSeqRef.current !== revealSeq) return
+      setSelection((current) => {
+        if (current?.path === normalizedPath && current.kind === kind) return current
+        return {
+          path: normalizedPath,
+          name: normalizedPath.split("/").pop() ?? normalizedPath,
+          kind,
+        }
+      })
       const dirsToRefresh = options?.refreshTargetDir
         ? [...parentDirsForReveal(normalizedPath), normalizedPath]
         : parentDirsForReveal(normalizedPath)
@@ -469,7 +546,7 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
       if (revealSeqRef.current !== revealSeq) return
       setRevealPath(normalizedPath)
     },
-    [refreshDirs],
+    [dataClient, refetchFileList, refreshDirs, requestFilesystem],
   )
 
   const handleRevealHandled = useCallback((path: string) => {
@@ -477,10 +554,10 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
   }, [])
 
   const revealExplicitTreePath = useCallback(
-    async (path: string) => {
+    async (path: string, expectedKind?: FileTreeNode["kind"]) => {
       const seq = ++explicitRevealSeqRef.current
       try {
-        await revealTreePath(path, { refreshTargetDir: true })
+        await revealTreePath(path, { refreshTargetDir: true, expectedKind })
       } finally {
         if (explicitRevealSeqRef.current === seq) explicitRevealSeqRef.current = 0
       }
@@ -495,19 +572,24 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
     if (handledRevealRequestKeyRef.current === requestKey) return
     handledRevealRequestKeyRef.current = requestKey
     void revealExplicitTreePath(revealFileTreeRequest.path)
-  }, [revealFileTreeRequest, revealExplicitTreePath])
+      .then(() => onRevealRequestHandled?.(revealFileTreeRequest))
+  }, [onRevealRequestHandled, revealFileTreeRequest, revealExplicitTreePath])
 
   useEffect(() => {
     const activeFile = revealFileTreeRequest ? null : bridge?.getActiveFile?.() ?? null
-    if (activeFile && explicitRevealSeqRef.current === 0) void revealTreePath(activeFile)
+    if (activeFile && explicitRevealSeqRef.current === 0) {
+      void revealTreePath(activeFile, { expectedKind: "file" })
+    }
     const unsubscribers: Array<() => void> = []
     if (bridge?.select) {
       unsubscribers.push(
         bridge.select((state) => state.activeFile, (path) => {
           if (path) {
-            if (!revealFileTreeRequest && explicitRevealSeqRef.current === 0) void revealTreePath(path)
+            if (!revealFileTreeRequest && explicitRevealSeqRef.current === 0) {
+              void revealTreePath(path, { expectedKind: "file" })
+            }
           } else {
-            setSelectedPath(null)
+            setSelection(null)
           }
         }),
       )
@@ -697,6 +779,11 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
 
   const handleNewFile = () => startCreate("create-file")
   const handleNewFolder = () => startCreate("create-folder")
+  const handleUploadFiles = () => {
+    const target = ctxMenu?.node.kind === "dir" ? ctxMenu.node.path : rootDir
+    setCtxMenu(null)
+    openUploadTo(target)
+  }
 
   const handleRename = () => {
     const node = ctxMenu?.node
@@ -749,7 +836,8 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
               filesystem: requestFilesystem,
               kind: "file",
             })
-            handleSelect(newPath)
+            setSelection({ name: trimmed, path: newPath, kind: "file" })
+            handleActivateFile(newPath)
             toast.success({ title: "File created", description: newPath })
           } else {
             await createDir({ path: newPath, ...(requestFilesystem ? { filesystem: requestFilesystem } : {}) })
@@ -788,7 +876,7 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
       clearPending,
       addOptimisticEntry,
       removeOptimisticEntry,
-      handleSelect,
+      handleActivateFile,
     ],
   )
 
@@ -859,7 +947,7 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
   // has at least "Copy path". Used as a belt-and-suspenders guard so an
   // empty item set never renders as a blank menu shell, even if a future
   // change to the rules above misses a trigger-side check.
-  const ctxMenuHasItems = ctxMenu ? canCreate || !ctxMenu.isBackground : false
+  const ctxMenuHasItems = ctxMenu ? canCreate || canUpload || !ctxMenu.isBackground : false
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -897,7 +985,7 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
           >
             <FileTree
               files={treeData}
-              selectedPath={selectedPath}
+              selectedPath={selection?.path ?? null}
               searchQuery={effectiveQuery}
               editing={
                 editing
@@ -914,7 +1002,8 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
               revealPath={revealPath}
               onRevealHandled={handleRevealHandled}
               pendingPaths={pendingPaths}
-              onSelect={handleSelect}
+              onSelectionChange={handleSelectionChange}
+              onSelect={handleActivateFile}
               onExpand={handleExpand}
               onContextMenu={handleContextMenu}
               onSubmitEdit={handleSubmitEdit}
@@ -942,6 +1031,11 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
           {canCreateDir && (
             <Button type="button" role="menuitem" variant="ghost" size="sm" className="w-full justify-start" onClick={handleNewFolder}>
               New folder
+            </Button>
+          )}
+          {canUpload && ctxMenu.node.kind === "dir" && (
+            <Button type="button" role="menuitem" variant="ghost" size="sm" className="w-full justify-start" onClick={handleUploadFiles}>
+              Upload files
             </Button>
           )}
           {!ctxMenu.isBackground && (
@@ -988,6 +1082,13 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
         document.body,
       )}
 
+      <FileTreeUploadManager
+        ref={uploadManagerRef}
+        client={dataClient}
+        enabled={canUpload}
+        onWritten={refreshUploadDestinations}
+      />
+
       <AlertDialog
         open={deleteTarget !== null}
         onOpenChange={(open) => {
@@ -1015,252 +1116,3 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
 FileTreeView.displayName = "FileTreeView"
 
 export { clampContextMenuPosition }
-
-export interface FileTreeRootConfig {
-  filesystem: FilesystemId
-  label: string
-  rootDir?: string
-  access?: "readonly" | "readwrite"
-  capabilities?: FilesystemCatalogCapabilities
-}
-
-export interface FileTreePaneParams extends LeftTabParams {
-  rootDir?: string
-  searchQuery?: string
-  query?: string
-  bridge?: unknown
-  filesystem?: FilesystemId
-  access?: "readonly" | "readwrite"
-  roots?: FileTreeRootConfig[]
-  revealFileTreeRequest?: FileTreeRevealRequest | null
-}
-
-export interface FileTreePaneProps extends Partial<PaneProps<FileTreePaneParams>> {
-  rootDir?: string
-  searchQuery?: string
-  bridge?: FileTreeBridge
-  filesystem?: FilesystemId
-  access?: "readonly" | "readwrite"
-  roots?: FileTreeRootConfig[]
-  className?: string
-}
-
-/**
- * Default Files panel. Search is owned by the shell's unified catalog;
- * `searchQuery` remains available for controlled embedding and tests.
- */
-export function FileTreePane({
-  params,
-  rootDir = ".",
-  searchQuery: controlledSearchQuery,
-  bridge,
-  filesystem = "user",
-  access = "readwrite",
-  roots,
-  className,
-}: FileTreePaneProps) {
-  const effectiveRootDir = params?.rootDir ?? rootDir
-  const effectiveBridge = (params?.bridge as FileTreeBridge | undefined) ?? bridge
-  const effectiveFilesystem = params?.filesystem ?? filesystem
-  const effectiveAccess = params?.access ?? access
-  const effectiveRoots = params?.roots ?? roots
-  const authoritativeRevealRequest = params?.revealFileTreeRequest ?? null
-  const [bridgeRevealRequest, setBridgeRevealRequest] = useState<FileTreeRevealRequest | null>(null)
-  const bridgeRevealSeqRef = useRef(0)
-  useEffect(() => {
-    if (authoritativeRevealRequest) setBridgeRevealRequest(null)
-  }, [authoritativeRevealRequest])
-  const effectiveRevealRequest = authoritativeRevealRequest ?? bridgeRevealRequest
-  const externalSearchQuery =
-    params?.searchQuery ?? params?.query ?? controlledSearchQuery
-  const rootOptions = useMemo<FileTreeRootConfig[]>(() => {
-    if (effectiveRoots?.length) return effectiveRoots
-    return [{
-      filesystem: effectiveFilesystem,
-      label: effectiveFilesystem === "user" ? "Workspace" : effectiveFilesystem,
-      rootDir: effectiveFilesystem === "user" ? effectiveRootDir : "/",
-      access: effectiveAccess,
-    }]
-  }, [effectiveAccess, effectiveFilesystem, effectiveRootDir, effectiveRoots])
-  const [selectedFilesystem, setSelectedFilesystem] = useState<FilesystemId>(() => (
-    rootOptions.some((root) => root.filesystem === effectiveFilesystem)
-      ? effectiveFilesystem
-      : rootOptions[0]?.filesystem ?? "user"
-  ))
-  useEffect(() => {
-    setSelectedFilesystem((current) => {
-      if (rootOptions.some((root) => root.filesystem === current)) return current
-      return rootOptions.some((root) => root.filesystem === effectiveFilesystem)
-        ? effectiveFilesystem
-        : rootOptions[0]?.filesystem ?? "user"
-    })
-  }, [effectiveFilesystem, rootOptions])
-  const handledRevealRequestRef = useRef<string | null>(null)
-  useEffect(() => {
-    const requestedFilesystem = effectiveRevealRequest?.filesystem
-    if (!requestedFilesystem) return
-    const requestKey = `${effectiveRevealRequest.seq}:${requestedFilesystem}:${effectiveRevealRequest.path}`
-    if (handledRevealRequestRef.current === requestKey) return
-    if (!rootOptions.some((root) => root.filesystem === requestedFilesystem)) return
-    handledRevealRequestRef.current = requestKey
-    setSelectedFilesystem(requestedFilesystem)
-  }, [effectiveRevealRequest, rootOptions])
-  const handledActiveResourceRef = useRef<string | null>(null)
-  useEffect(() => {
-    const activeResource = effectiveBridge?.getActiveFileResource?.()
-    if (!activeResource) return
-    const resourceKey = `${activeResource.filesystem}:${activeResource.path}`
-    if (handledActiveResourceRef.current === resourceKey) return
-    if (!rootOptions.some((root) => root.filesystem === activeResource.filesystem)) return
-    handledActiveResourceRef.current = resourceKey
-    setSelectedFilesystem(activeResource.filesystem)
-  }, [effectiveBridge, rootOptions])
-  useEffect(() => {
-    if (!effectiveBridge?.subscribe) return
-    const selectConfiguredFilesystem = (nextFilesystem: FilesystemId | undefined) => {
-      if (nextFilesystem && rootOptions.some((root) => root.filesystem === nextFilesystem)) {
-        setSelectedFilesystem(nextFilesystem)
-      }
-    }
-    const unsubscribeOpened = effectiveBridge.subscribe("file:opened", ({ filesystem: openedFilesystem }) => {
-      selectConfiguredFilesystem(openedFilesystem)
-    })
-    const unsubscribeExpanded = effectiveBridge.subscribe("tree:expand", ({ path, filesystem: revealedFilesystem }) => {
-      selectConfiguredFilesystem(revealedFilesystem)
-      // SurfaceShell sends an authoritative prop request alongside its bridge
-      // event. The pane owns root synchronization, but must not retain a second
-      // reveal. Bridge-only callers get a temporary one-shot prop instead.
-      if (authoritativeRevealRequest) return
-      setBridgeRevealRequest({
-        path,
-        ...(revealedFilesystem ? { filesystem: revealedFilesystem } : {}),
-        seq: ++bridgeRevealSeqRef.current,
-      })
-    })
-    return () => {
-      unsubscribeOpened()
-      unsubscribeExpanded()
-    }
-  }, [authoritativeRevealRequest, effectiveBridge, rootOptions])
-  const activeRoot = rootOptions.find((root) => root.filesystem === selectedFilesystem) ?? rootOptions[0]
-  const activeFilesystem = activeRoot?.filesystem ?? "user"
-  const activeRootDir = activeRoot?.rootDir ?? (activeFilesystem === "user" ? effectiveRootDir : "/")
-  const activeAccess = activeRoot?.access ?? effectiveAccess
-  const activeCapabilities = activeRoot?.capabilities
-  const activeRevealRequest = !effectiveRevealRequest?.filesystem || effectiveRevealRequest.filesystem === activeFilesystem
-    ? effectiveRevealRequest
-    : null
-  useEffect(() => {
-    if (!bridgeRevealRequest || activeRevealRequest !== bridgeRevealRequest) return
-    // Consume bridge-only requests after the matching tree has rendered them.
-    // Requests for catalog roots that have not arrived yet remain pending.
-    setBridgeRevealRequest((current) => current?.seq === bridgeRevealRequest.seq ? null : current)
-  }, [activeRevealRequest, bridgeRevealRequest])
-
-  // `FileTreeView` remounts (via the `key` below) whenever the active root
-  // changes, so this ref always targets whichever root is currently
-  // selected in the dropdown — the refresh button never needs to know
-  // which root it's pointed at.
-  const treeRef = useRef<FileTreeViewHandle>(null)
-  const [isRefreshing, setIsRefreshing] = useState(false)
-  const handleRefresh = useCallback(async () => {
-    setIsRefreshing(true)
-    try {
-      await treeRef.current?.refetch()
-    } finally {
-      setIsRefreshing(false)
-    }
-  }, [])
-  const refreshButton = (
-    <IconButton
-      type="button"
-      variant="ghost"
-      size="icon-xs"
-      aria-label="Refresh files"
-      disabled={isRefreshing}
-      onClick={() => void handleRefresh()}
-      className="shrink-0 text-muted-foreground hover:text-foreground"
-    >
-      <RefreshCwIcon className={cn("h-3.5 w-3.5", isRefreshing && "animate-spin")} strokeWidth={2} />
-    </IconButton>
-  )
-
-  const effectiveSearchQuery = externalSearchQuery || undefined
-
-  // Single-root hosts put refresh in the shell's existing header
-    // action slot when one is available, avoiding a toolbar row whose only
-    // content is one icon. Standalone hosts without that slot retain the local
-    // fallback. Multi-root hosts keep refresh beside the root selector so the
-    // action's active-filesystem scope remains visually explicit. The shell's
-    // search box continues to drive `effectiveSearchQuery` for either shape.
-    if (rootOptions.length <= 1) {
-      const chromeActionsElement = params?.chromeActionsElement
-      return (
-        <div className="flex h-full min-h-0 flex-col">
-          {chromeActionsElement
-            ? createPortal(refreshButton, chromeActionsElement)
-            : (
-                <div className="flex shrink-0 items-center justify-end px-1 pt-1">
-                  {refreshButton}
-                </div>
-              )}
-          <div className="min-h-0 flex-1">
-            <FileTreeView
-              ref={treeRef}
-              key={`${activeFilesystem}:${activeRootDir}`}
-              rootDir={activeRootDir}
-              searchQuery={effectiveSearchQuery}
-              bridge={effectiveBridge}
-              subscribeToTreeExpand={false}
-              filesystem={activeFilesystem}
-              access={activeAccess}
-              capabilities={activeCapabilities}
-              revealFileTreeRequest={activeRevealRequest}
-              className={cn("px-1 [&_[role=treeitem]]:!indent-0", className)}
-            />
-          </div>
-        </div>
-      )
-    }
-    return (
-      <div className="flex h-full min-h-0 flex-col">
-        <div className="flex shrink-0 items-center gap-1 px-1 pt-1">
-          <Select
-            value={activeFilesystem}
-            onValueChange={(value) => setSelectedFilesystem(value as FilesystemId)}
-          >
-            <SelectTrigger
-              size="sm"
-              className="h-7 w-full text-xs"
-              aria-label="File root"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {rootOptions.map((root) => (
-                <SelectItem key={root.filesystem} value={root.filesystem} className="text-xs">
-                  {root.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {refreshButton}
-        </div>
-        <div className="min-h-0 flex-1">
-          <FileTreeView
-            ref={treeRef}
-            key={`${activeFilesystem}:${activeRootDir}`}
-            rootDir={activeRootDir}
-            searchQuery={effectiveSearchQuery}
-            bridge={effectiveBridge}
-            subscribeToTreeExpand={false}
-            filesystem={activeFilesystem}
-            access={activeAccess}
-            capabilities={activeCapabilities}
-            revealFileTreeRequest={activeRevealRequest}
-            className={cn("px-1 pt-1 [&_[role=treeitem]]:!indent-0", className)}
-          />
-        </div>
-      </div>
-    )
-}

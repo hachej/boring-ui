@@ -89,9 +89,38 @@ function isPluginConfig(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value)
 }
 
-async function createWorkspaceTaskService(workspace: LocalWorkspace) {
+type TasksServerModule = typeof import("@hachej/boring-tasks/server")
+type BeadsOperations = import("@hachej/boring-tasks/server").BeadsOperations
+
+/**
+ * Per-workspace-root Beads read operations. Cached because each instance pins
+ * runtime file descriptors; disposed together when the hub shuts down.
+ */
+function createBeadsOperationsCache() {
+  const byRoot = new Map<string, BeadsOperations>()
+  return {
+    async get(tasks: TasksServerModule, workspaceRoot: string): Promise<BeadsOperations> {
+      const cached = byRoot.get(workspaceRoot)
+      if (cached) return cached
+      const { createNodeWorkspace } = await import("@hachej/boring-sandbox/providers/node-workspace")
+      const operations = tasks.createWorkspaceBeadsOperations(createNodeWorkspace(workspaceRoot))
+      byRoot.set(workspaceRoot, operations)
+      return operations
+    },
+    async dispose(): Promise<void> {
+      const operations = [...byRoot.values()]
+      byRoot.clear()
+      await Promise.allSettled(operations.map((entry) => entry.dispose?.()))
+    },
+  }
+}
+
+async function createWorkspaceTaskService(workspace: LocalWorkspace, beadsCache: ReturnType<typeof createBeadsOperationsCache>) {
   const tasks = await import("@hachej/boring-tasks/server")
-  const registry = tasks.createTaskSourceRegistryFromConfig(workspace.plugins?.tasks, { workspaceRoot: workspace.path })
+  const registry = tasks.createTaskSourceRegistryFromConfig(workspace.plugins?.tasks, {
+    workspaceRoot: workspace.path,
+    beadsOperations: await beadsCache.get(tasks, workspace.path),
+  })
   return tasks.createTaskSourceService(registry)
 }
 
@@ -125,11 +154,13 @@ export async function registerWorkspaceTaskRoutes(app: FastifyInstance, registry
   const workspaceFromRequest = async (request: { headers?: Record<string, unknown>; query?: unknown }) => {
     return await requireWorkspace(registry, resolveWorkspaceIdFromRequest(request))
   }
+  const beadsCache = createBeadsOperationsCache()
+  app.addHook("onClose", async () => beadsCache.dispose())
 
   app.get("/api/boring-tasks/sources", async (request, reply) => {
     try {
       const workspace = await workspaceFromRequest(request)
-      const service = await createWorkspaceTaskService(workspace)
+      const service = await createWorkspaceTaskService(workspace, beadsCache)
       return { ok: true, sources: service.listSources() }
     } catch (cause) {
       return reply.status(taskStatusFor(cause)).send(taskResponseError(cause))
@@ -140,7 +171,7 @@ export async function registerWorkspaceTaskRoutes(app: FastifyInstance, registry
     try {
       const workspace = await workspaceFromRequest(request)
       const body = request.body === undefined ? {} : taskBodyObject(request.body)
-      const service = await createWorkspaceTaskService(workspace)
+      const service = await createWorkspaceTaskService(workspace, beadsCache)
       return { ok: true, ...(await service.listTasks({ workspaceId: workspace.id, workspaceRoot: workspace.path }, { sourceIds: taskStringArray(body.sourceIds) })) }
     } catch (cause) {
       return reply.status(taskStatusFor(cause)).send(taskResponseError(cause))
@@ -151,7 +182,7 @@ export async function registerWorkspaceTaskRoutes(app: FastifyInstance, registry
     try {
       const workspace = await workspaceFromRequest(request)
       const body = taskBodyObject(request.body)
-      const service = await createWorkspaceTaskService(workspace)
+      const service = await createWorkspaceTaskService(workspace, beadsCache)
       const task = await service.moveTask({ workspaceId: workspace.id, workspaceRoot: workspace.path }, {
         sourceId: taskRequiredString(body, "sourceId"),
         taskId: taskRequiredString(body, "taskId"),

@@ -1,6 +1,12 @@
 "use client"
 
-import { ChevronRight, Columns2, ListFilter, Plus, Settings, Zap } from "lucide-react"
+import { ChevronRight, Columns2, ListFilter, MoreHorizontal, Plus, Settings, Zap } from "lucide-react"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 
 /** Agent labels are workspace-branded upstream; the pane shows the short form. */
@@ -8,11 +14,20 @@ export function shortAgentLabel(label: string): string {
   return label.replace(/^Boring\s+/i, "") || label
 }
 
+/** One pass over the pane's chats, not three scalars scanned three times. */
+export interface AppLeftPaneAgentStats {
+  sessions: number
+  /** Chats currently working (streaming/executing) for this Agent. */
+  working: number
+  /** Chats waiting on the user (question/review/approval badges). */
+  attention: number
+}
+
 export interface AppLeftPaneAgentCardProps {
   agentTypeId: string
   label: string
   description?: string
-  sessionCount: number
+  stats: AppLeftPaneAgentStats
   sessionsStatus?: "loading" | "loaded" | "error"
   /** The Chats lens is an optional filter (multi-project tree only). */
   filtered: boolean
@@ -34,13 +49,16 @@ export interface AppLeftPaneAgentCardProps {
 
 // Coarse pointers get the 44px touch target from main; desktop keeps the
 // compact 24px action of the nested design.
-const cardActionClassName = "app-left-secondary-action grid size-11 shrink-0 place-items-center sm:size-6 rounded-md text-muted-foreground transition-colors motion-reduce:transition-none hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+// No Tailwind size utility: `.app-left-secondary-action` (globals.css) owns
+// the size, keyed to the pointer, so it cannot disagree with the pointer-keyed
+// 44px touch rule the way a width-keyed `size-11 sm:size-6` pair did.
+const cardActionClassName = "app-left-secondary-action grid shrink-0 place-items-center rounded-md text-muted-foreground transition-colors motion-reduce:transition-none hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 
 export function AppLeftPaneAgentCard({
   agentTypeId,
   label,
   description,
-  sessionCount,
+  stats,
   sessionsStatus,
   filtered,
   expandable = false,
@@ -58,7 +76,15 @@ export function AppLeftPaneAgentCard({
   const subtitle = description?.trim() || undefined
   const countLabel = sessionsStatus === "error"
     ? "chats unavailable"
-    : `${sessionCount} ${sessionCount === 1 ? "chat" : "chats"}`
+    : `${stats.sessions} ${stats.sessions === 1 ? "chat" : "chats"}`
+  // The working/attention pills carry `sr-only` text, but they sit INSIDE a
+  // button with an explicit aria-label, which replaces its content for
+  // assistive tech — so screen-reader users heard the chat count and nothing
+  // about liveliness. The accessible name states all three.
+  const livelinessLabel = [
+    stats.working > 0 ? `${stats.working} working` : undefined,
+    stats.attention > 0 ? `${stats.attention} ${stats.attention === 1 ? "needs" : "need"} you` : undefined,
+  ].filter(Boolean).join("; ")
 
   return (
     <div
@@ -78,11 +104,11 @@ export function AppLeftPaneAgentCard({
       <button
         type="button"
         aria-expanded={expandable ? expanded : undefined}
-        aria-label={`${expandable ? `${expanded ? "Collapse" : "Expand"} ` : ""}${label}; ${countLabel}`}
+        aria-label={`${expandable ? `${expanded ? "Collapse" : "Expand"} ` : ""}${label}; ${countLabel}${livelinessLabel ? `; ${livelinessLabel}` : ""}`}
         title={subtitle ? `${label} — ${subtitle}` : label}
         onClick={onToggle}
         disabled={!onToggle}
-        className="flex min-h-11 sm:min-h-0 sm:h-6 min-w-0 flex-1 items-center gap-1 rounded-md px-0.5 text-left focus-visible:outline-none disabled:cursor-default"
+        className="flex min-w-0 flex-1 self-stretch items-center gap-1 rounded-md px-0.5 text-left focus-visible:outline-none disabled:cursor-default"
       >
         {expandable ? (
           <ChevronRight
@@ -91,15 +117,39 @@ export function AppLeftPaneAgentCard({
             aria-hidden="true"
           />
         ) : null}
-        <span className={cn("min-w-0 truncate text-[13px] font-semibold leading-4", expandable && expanded ? "text-foreground" : "text-foreground/85")}>
+        <span className={cn("min-w-0 truncate text-[13px] leading-4", expandable && expanded ? "font-semibold text-foreground" : "font-medium text-foreground/80")}>
           {short}
         </span>
         <span
           data-boring-agent-session-count="true"
           className="min-w-0 flex-1 shrink-0 pl-0.5 text-[11px] font-normal leading-4 tabular-nums text-muted-foreground/80"
         >
-          {sessionsStatus === "error" ? "!" : sessionCount}
+          {sessionsStatus === "error" ? "!" : stats.sessions}
         </span>
+        {/* Aggregate liveliness: quiet dot+count pairs so a collapsed Agent
+            still tells you something is running or waiting on you. */}
+        {stats.working > 0 ? (
+          <span
+            data-boring-workspace-part="agent-card-working-count"
+            title={`${stats.working} ${stats.working === 1 ? "chat is" : "chats are"} working`}
+            className="flex shrink-0 items-center gap-0.5 pl-1 text-[10px] tabular-nums leading-4 text-[color:var(--accent)]"
+          >
+            <span className="size-1.5 animate-pulse rounded-full bg-[color:var(--accent)] motion-reduce:animate-none" aria-hidden="true" />
+            {stats.working}
+            <span className="sr-only">working</span>
+          </span>
+        ) : null}
+        {stats.attention > 0 ? (
+          <span
+            data-boring-workspace-part="agent-card-attention-count"
+            title={`${stats.attention} ${stats.attention === 1 ? "chat needs" : "chats need"} your input`}
+            className="flex shrink-0 items-center gap-0.5 pl-1 text-[10px] tabular-nums leading-4 text-amber-700 dark:text-amber-300"
+          >
+            <span className="size-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+            {stats.attention}
+            <span className="sr-only">waiting for you</span>
+          </span>
+        ) : null}
       </button>
       {/*
         Secondary actions collapse to zero width off-hover so the Agent label
@@ -123,30 +173,7 @@ export function AppLeftPaneAgentCard({
           <ListFilter className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
         </button>
         ) : null}
-        {onCreateSplitSession ? (
-          <button
-            type="button"
-            aria-label={`New chat with ${label} in split pane`}
-            title="New chat in split pane"
-            data-boring-mobile-dismiss="true"
-            onClick={onCreateSplitSession}
-            className={cn(cardActionClassName, "app-left-agent-card-optional")}
-          >
-            <Columns2 className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
-          </button>
-        ) : null}
-        {onCreatePopoverSession ? (
-          <button
-            type="button"
-            aria-label={`Quick chat with ${label}`}
-            title="Quick chat"
-            data-boring-mobile-dismiss="true"
-            onClick={onCreatePopoverSession}
-            className={cn(cardActionClassName, "app-left-agent-card-optional")}
-          >
-            <Zap className="size-3.5" strokeWidth={1.85} aria-hidden="true" />
-          </button>
-        ) : null}
+
         {onOpenSettings ? (
           <button
             type="button"
@@ -158,6 +185,42 @@ export function AppLeftPaneAgentCard({
           >
             <Settings className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
           </button>
+        ) : null}
+        {onCreateSplitSession || onCreatePopoverSession ? (
+          // One "+" creates the default chat; this caret is the single place
+          // for the placement variants (owner: three placement icons were too
+          // many — compact into one affordance, keep the options).
+          // Non-modal: a modal layer aria-hides the whole pane behind it while
+          // leaving its controls tabbable (axe: aria-hidden-focus, serious),
+          // and nothing about a three-item options menu in a sidebar needs the
+          // rest of the app inert.
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                aria-label={`New chat options for ${label}`}
+                title="More ways to start a chat"
+                className={cardActionClassName}
+              >
+                <MoreHorizontal className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent data-boring-workspace-part="app-left-menu" align="end" className="min-w-44">
+              <DropdownMenuItem onSelect={() => onCreateSession()}>
+                <Plus className="h-3.5 w-3.5" /> New chat
+              </DropdownMenuItem>
+              {onCreateSplitSession ? (
+                <DropdownMenuItem onSelect={() => onCreateSplitSession()}>
+                  <Columns2 className="h-3.5 w-3.5" /> New chat in split pane
+                </DropdownMenuItem>
+              ) : null}
+              {onCreatePopoverSession ? (
+                <DropdownMenuItem onSelect={() => onCreatePopoverSession()}>
+                  <Zap className="h-3.5 w-3.5" /> Quick chat
+                </DropdownMenuItem>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
         ) : null}
       </span>
       {/* The "+" is the card's primary affordance, so it never hides. */}

@@ -11,6 +11,7 @@ const BASE_CAPABILITIES = {
   list: true,
   search: true,
   write: false,
+  upload: false,
   delete: false,
   move: false,
   mkdir: false,

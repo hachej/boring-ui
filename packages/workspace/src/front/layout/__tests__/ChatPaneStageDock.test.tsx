@@ -328,6 +328,46 @@ describe("ChatPaneStageDock", () => {
     expect(onRename).toHaveBeenCalledWith("a", "Renamed chat")
   })
 
+  it("names the owning Agent in each pane header when the host supplies one", () => {
+    render(
+      <ChatPaneStageDock
+        panes={[
+          { id: "a", title: "A", agentLabel: "Coder" },
+          { id: "b", title: "B", agentLabel: "Researcher" },
+        ]}
+        activePaneId="a"
+        renderPane={(pane) => <div>{pane.id}</div>}
+      />,
+    )
+
+    const labels = document.querySelectorAll('[data-boring-workspace-part="chat-pane-agent"]')
+    expect([...labels].map((node) => node.textContent)).toEqual(["Coder", "Researcher"])
+    // Quiet secondary treatment, and it truncates instead of pushing the
+    // split/close controls out of the header.
+    expect(labels[0]?.className).toContain("text-[11px]")
+    expect(labels[0]?.className).toContain("text-muted-foreground")
+    expect(labels[0]?.className).toContain("text-ellipsis")
+    expect(labels[0]?.className).toContain("min-w-0")
+    // The full pair still reads out on hover when either half is truncated.
+    const header = labels[0]?.closest('[data-boring-workspace-part="chat-pane-title"]')
+    expect(header?.getAttribute("title")).toBe("A — Coder")
+  })
+
+  it("omits the Agent label when the host supplies none (single-Agent workspace)", () => {
+    render(
+      <ChatPaneStageDock
+        panes={[{ id: "a", title: "A" }]}
+        activePaneId="a"
+        renderPane={(pane) => <div>{pane.id}</div>}
+      />,
+    )
+
+    expect(document.querySelector('[data-boring-workspace-part="chat-pane-agent"]')).toBeNull()
+    expect(
+      document.querySelector('[data-boring-workspace-part="chat-pane-title"]')?.getAttribute("title"),
+    ).toBe("A")
+  })
+
   it("replaces machine session identifiers with a readable title", () => {
     const id = "agent::123e4567-e89b-12d3-a456-426614174000"
     expect(readablePaneTitle(id, id)).toBe("New chat")
