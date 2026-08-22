@@ -1,0 +1,8 @@
+export const OBJECTIVE_ERROR_CODES = {
+  NOT_FOUND: "OBJECTIVE_NOT_FOUND",
+  VALIDATION_INVALID: "OBJECTIVE_VALIDATION_INVALID",
+} as const
+
+export type ObjectiveErrorCode = (typeof OBJECTIVE_ERROR_CODES)[keyof typeof OBJECTIVE_ERROR_CODES]
+
+export const OBJECTIVE_ERROR_CODE_VALUES = Object.values(OBJECTIVE_ERROR_CODES) as ObjectiveErrorCode[]

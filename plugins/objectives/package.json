@@ -1,0 +1,78 @@
+{
+  "name": "@hachej/boring-objectives",
+  "version": "0.1.103",
+  "type": "module",
+  "private": false,
+  "license": "MIT",
+  "description": "Objectives workspace plugin — a thin Goal primitive (Objective: statement, metric, baseline/target/current, status, constraints, evidence).",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hachej/boring-ui"
+  },
+  "homepage": "https://github.com/hachej/boring-ui",
+  "boring": {
+    "id": "objectives",
+    "label": "Objectives",
+    "front": "dist/front/index.js",
+    "server": "dist/server/index.js"
+  },
+  "pi": {
+    "systemPrompt": "Objectives plugin: use list_objectives/get_objective/create_objective/update_objective to manage Objectives (the thin Goal primitive). Open one for the user with exec_ui openSurface using kind 'objective' and target = objective id."
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/front/index.d.ts",
+      "import": "./dist/front/index.js"
+    },
+    "./front": {
+      "types": "./dist/front/index.d.ts",
+      "import": "./dist/front/index.js"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js"
+    },
+    "./shared": {
+      "types": "./dist/shared/index.d.ts",
+      "import": "./dist/shared/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "lint": "pnpm run typecheck",
+    "clean": "rm -rf dist .tsbuildinfo"
+  },
+  "peerDependencies": {
+    "@hachej/boring-workspace": "workspace:*",
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0"
+  },
+  "dependencies": {
+    "@hachej/boring-ui-kit": "workspace:*",
+    "lucide-react": "^1.31.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@hachej/boring-workspace": "workspace:*",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^22.20.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^4.0.0",
+    "jsdom": "^30.0.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "tsup": "^8.4.0",
+    "typescript": "~5.9.3",
+    "vitest": "^4.1.9"
+  }
+}
