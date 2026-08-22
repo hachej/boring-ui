@@ -29,6 +29,8 @@ import type {
   WorkspaceAgentDispatcherContext,
 } from '../../shared/workspaceAgentDispatcher'
 import type { AgentSkillResourceSnapshot } from '../http/routes/skills'
+import type { WorkspaceCredentialAuthorityVerifierV1 } from '../../shared/credentials'
+import type { CredentialVaultPersistenceV1 } from '../credentials/vault'
 
 export type { LeaseBoundWorkspaceAgent } from '../../shared/workspaceAgentDispatcher'
 
@@ -377,6 +379,25 @@ export interface CreateAgentHostOptions {
   readonly effectAdmission?: AgentEffectAdmission
   readonly shutdownGraceMs?: number
   readonly harnessFactory?: AgentHarnessFactory
+  /**
+   * [1082 slice B] BYOK credential-vault composition inputs. Enablement is
+   * env-driven (`BORING_CREDENTIAL_KMS_BACKEND`); when enabled the host embeds
+   * durable persistence (#1145) and the Core-owned authority verifier here.
+   * The composition is resolved exactly once, at `createAgentHost` startup:
+   * misconfigured env fails host creation with a stable `CREDENTIAL_*` error,
+   * and all runtime bindings share the single host-scope vault composition.
+   * Absent env → composition absent, behavior identical to env-key-only auth.
+   */
+  readonly credentials?: AgentHostCredentialOptionsV1
+}
+
+export interface AgentHostCredentialOptionsV1 {
+  /** Env-shaped record override; defaults to `process.env`. */
+  readonly env?: Readonly<Record<string, string | undefined>>
+  /** Durable vault persistence (#1145 Postgres in production). */
+  readonly vaultPersistence?: CredentialVaultPersistenceV1
+  /** Core-owned authority verifier; pre-binds the credential resolver. */
+  readonly authorityVerifier?: WorkspaceCredentialAuthorityVerifierV1
 }
 
 export interface CreatedAgentHost {
