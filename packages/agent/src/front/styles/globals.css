@@ -11,6 +11,17 @@
  * pane and the shell it embeds into share one visual language — same warm
  * near-neutral surface ramp, same amber accent, same radius scale.
  * (See .impeccable.md in the repo root for design context and principles.)
+ *
+ * PALETTE SOURCE OF TRUTH: packages/ui/src/tokens.css.
+ * The literals in the blocks below are var() fallbacks, not an independent
+ * palette. They exist so a standalone agent pane (CLI front, agent playground)
+ * stays themed with no workspace/ui-kit :root palette loaded; the agent
+ * deliberately never writes :root itself, so hosts keep ownership of
+ * --boring-* regardless of CSS import order. Because they are a copy by
+ * construction, they are guarded rather than deduped — any value changed here
+ * must also change in tokens.css, and vice versa. Enforced by
+ * src/__tests__/theme-token-parity.test.ts, which compares parsed token sets
+ * and names the offending token on failure.
  */
 
 @layer theme, base, components, utilities;
