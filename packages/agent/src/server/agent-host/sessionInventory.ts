@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { PiChatEvent } from '../../shared/chat'
 import type { AgentSessionActivity, AgentSessionRef, AuthorizedAgentScope, VerifiedAgentScopeClaim } from '../../shared/index'
-import type { SessionSummary } from '../../shared/session'
+import type { SessionListOptions, SessionSummary } from '../../shared/session'
 import { PiSessionStore } from '../harness/pi-coding-agent/sessions'
 import { agentSessionKey } from './agentSessionKey'
 import type { CompiledAgentHostAgentSpec, ResolvedAgentRuntimeScope } from './types'
@@ -10,6 +10,27 @@ function safeScopeSegment(scope: string): string {
   return createHash('sha256').update(scope).digest('hex').slice(0, 20)
 }
 
+/**
+ * Storage namespace for a seat, or `undefined` to keep the store's cwd-derived
+ * default directory.
+ *
+ * `undefined` is a DELIBERATE result, not a gap. It happens for the
+ * `legacyDefault` seat on hosts that resolve an empty runtime
+ * `sessionNamespace` (the CLI hub and the workspace app both pass `""`), and it
+ * routes that seat to {@link PiSessionStore}'s path-derived directory
+ * (`<sessionRoot>/--<workspaceRoot with separators flattened>--`). That
+ * directory is the trusted-local store terminal `pi` writes for the same cwd,
+ * and `PiSessionStore.pathDerivedLegacyAccess` exists precisely so the local
+ * app and terminal `pi` can read each other's unpinned transcripts there.
+ *
+ * Naming that seat would relocate its lookup and orphan every session a user
+ * already has, so this function MUST stay the single source of truth for both
+ * sides: `buildAgentComposition` uses it to place the writing harness and
+ * `AgentSessionInventory` uses it to place the reading store. Read and write
+ * therefore always resolve the same directory. Hosts that do want an isolated
+ * per-workspace store (core passes `ctx.workspaceId`) get one from the same
+ * branch, because a non-empty namespace is honoured as-is.
+ */
 export function sessionNamespaceForAgent(
   agent: CompiledAgentHostAgentSpec,
   workspaceScopeId: string,
@@ -39,14 +60,22 @@ export class AgentSessionInventory {
     ) => Promise<ResolvedAgentRuntimeScope>,
   ) {}
 
+  /**
+   * Lists a seat's sessions. `options` is threaded straight into the store so a
+   * bounded page reads a bounded number of transcripts: an unbounded call makes
+   * the store stream and parse EVERY native transcript it holds (see
+   * `summarizeNativeTranscript`, whose result is intentionally never cached),
+   * which is what made a per-seat boot listing cost tens of seconds (#1338).
+   */
   async list(
     agentTypeId: string,
     scope: AuthorizedAgentScope,
     claim: VerifiedAgentScopeClaim,
+    options?: SessionListOptions,
   ): Promise<SessionSummary[]> {
     const resolved = await this.resolveStore(agentTypeId, scope, claim)
     if (!resolved) return []
-    return await resolved.store.list({ workspaceId: claim.workspaceScopeId })
+    return await resolved.store.list({ workspaceId: claim.workspaceScopeId }, options)
   }
 
   async resolveSessionRuntime(

@@ -110,6 +110,15 @@ interface PrefixCacheEntry {
   mtimeMs: number;
   size: number;
   referencedPiFile: string | null;
+  /** Header id of this transcript, so listing never re-reads a prefix to learn it. */
+  headerId?: string | null;
+  /**
+   * Recency key of a native transcript, derived from its own bytes by
+   * {@link latestNativeMessageTimestamp}. Cached because it is a pure function
+   * of this file at this (mtime, size), and recomputing it for every file on
+   * every listing was a per-request full-store tail scan (#1338).
+   */
+  nativeSortMtimeMs?: number;
   sessionCtx?: StoredSessionCtx;
   linkedMtimeMs?: number;
   linkedSize?: number;
@@ -699,17 +708,24 @@ export class PiSessionStore implements SessionStore {
   private async sessionSortMtimeMs({ filepath, stat }: SessionFileStat): Promise<number> {
     let sortMtimeMs = stat.mtime.getTime();
     try {
-      const linkedPiFile = (await this.readPrefixCache(filepath, stat)).referencedPiFile;
+      // One prefix read per file per listing: `referencedPiFiles` already
+      // populated this cache entry, and the header id it carries is all the
+      // native-file test needs. Re-reading and re-parsing the prefix here was a
+      // second full-store pass on every request (#1338).
+      const cached = await this.readPrefixCache(filepath, stat);
+      const linkedPiFile = cached.referencedPiFile;
       if (linkedPiFile && resolve(linkedPiFile) !== resolve(filepath)) {
         const linkedStat = await fsStat(linkedPiFile);
         sortMtimeMs = Math.max(sortMtimeMs, linkedStat.mtime.getTime());
       }
-      const header = parseJsonlPrefixEntries(await readJsonlPrefix(filepath))
-        .find((entry): entry is SessionHeader => entry.type === "session");
-      if (header && isTimestampNamedPiSessionFile(filepath, header.id)) {
-        sortMtimeMs = await latestNativeMessageTimestamp(filepath, Number(stat.size))
-          ?? sortMtimeMs;
-      }
+      if (!cached.headerId || !isTimestampNamedPiSessionFile(filepath, cached.headerId)) return sortMtimeMs;
+      if (cached.nativeSortMtimeMs !== undefined) return cached.nativeSortMtimeMs;
+      const latest = await latestNativeMessageTimestamp(filepath, Number(stat.size));
+      if (latest === undefined) return sortMtimeMs;
+      // Only a value derived purely from this file's own bytes is cacheable:
+      // the (mtime, size) key does not invalidate on a linked file's change.
+      this.prefixCache.set(filepath, { ...cached, nativeSortMtimeMs: latest });
+      return latest;
     } catch {
       // Fall back to the wrapper/native file mtime for unreadable links.
     }
@@ -798,6 +814,10 @@ export class PiSessionStore implements SessionStore {
         mtimeMs: fileStat.mtime.getTime(),
         size: Number(fileStat.size),
         referencedPiFile: linkedPiFile,
+        // Carried so a later `sessionSortMtimeMs` on this same entry still
+        // recognises a native transcript instead of falling back to mtime.
+        headerId: header.id,
+        ...(cached?.nativeSortMtimeMs !== undefined ? { nativeSortMtimeMs: cached.nativeSortMtimeMs } : {}),
         sessionCtx,
         ...(linked ? { linkedMtimeMs: linked.mtime.getTime(), linkedSize: linked.size } : {}),
         ...(!nativeSummary ? { summary } : {}),
@@ -838,11 +858,13 @@ export class PiSessionStore implements SessionStore {
 
     const content = await readJsonlPrefix(filepath);
     const entries = parseJsonlPrefixEntries(content);
+    const header = entries.find((item): item is SessionHeader => item.type === "session");
     const entry: PrefixCacheEntry = {
       mtimeMs: fileStat.mtime.getTime(),
       size: Number(fileStat.size),
       referencedPiFile: extractPiSessionFilePath(entries),
-      sessionCtx: readHeaderSessionCtx(entries.find((item): item is SessionHeader => item.type === "session")),
+      headerId: header?.id ?? null,
+      sessionCtx: readHeaderSessionCtx(header),
     };
     this.prefixCache.set(filepath, entry);
     return entry;
