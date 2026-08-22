@@ -1004,11 +1004,11 @@ export async function createWorkspacesModeApp(opts: {
     discoveredAgentPackages = await workspaceServer.discoverRepositoryAgentPackages(fleetRepositoryRoot)
   }
   const agentHost = await agentServer.createAgentHost({
-    // The hub serves a DIFFERENT root per registered workspace, so there is no
-    // single one persona instruction refs could be addressed against.
+    // The hub serves a DIFFERENT root per registered workspace; persona
+    // instruction refs are therefore addressed per request against the root
+    // that request is served from, not once here (gh-1189).
     agents: await agentServer.resolveDefaultAgentFleet({
       repositoryRoot: fleetRepositoryRoot,
-      workspaceRoot: null,
       ...(discoveredAgentPackages ? { discoveredPackages: discoveredAgentPackages } : {}),
     }),
     fleetCompiler: { async compile({ agents }) { return agents } },

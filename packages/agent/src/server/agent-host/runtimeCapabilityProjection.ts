@@ -16,6 +16,7 @@ import { systemPromptRoutes } from '../http/routes/systemPrompt'
 import type { SessionChangesTracker } from '../http/sessionChangesTracker'
 import type { AgentMeteringSink } from '../pi-chat/metering'
 import type { ReadyStatusTracker } from '../runtime/readyStatus'
+import { resolveAgentInstructionFileRefs } from '../agentDefinition/instructionFileRefs'
 import { canonicalDigest } from './canonical'
 import type { AgentHostRuntime, RuntimeBinding } from './createAgentHost'
 import type { EmbeddedAgentGateway } from './embeddedGateway'
@@ -300,7 +301,7 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
       // sibling route. Checking existence first turns an unauthorized request
       // into an agent-existence oracle: unknown vs denied are distinguishable
       // without any right to ask.
-      const { claim } = await authorizeAgentAccess(request, agentTypeId)
+      const { claim, resolved } = await authorizeAgentAccess(request, agentTypeId)
       const spec = runtime.compiledById.get(agentTypeId)
       if (!spec) {
         throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN, 'agent type is not available')
@@ -324,10 +325,31 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
           }))
         }
       }
+      // Address the authored sources against the root THIS request is served
+      // from. Composition cannot do it: the CLI hub and core serve a different
+      // workspace per request off one shared fleet, so a ref fixed at boot is
+      // withheld for every seat there (gh-1189). `authorizeAgentAccess` already
+      // resolved the request's environment scope, so this costs no extra
+      // resolution — only the confinement check itself.
+      const { refs: instructionFiles, withheld } = legacy
+        ? { refs: [] as readonly AgentInstructionFileRef[], withheld: [] }
+        : await resolveAgentInstructionFileRefs({
+            sources: spec.instructionSources,
+            workspaceRoot: resolved.environment.workspaceRoot,
+          })
+      for (const entry of withheld) {
+        // Fails loud, not silent: the overlay gets no instruction row and the
+        // operator gets the stable code — now per request rather than per boot.
+        request.log?.warn?.({
+          agentTypeId,
+          code: entry.code,
+          workspaceScopeId: claim.workspaceScopeId,
+        }, `${entry.message}; its persona instructions are not linkable here`)
+      }
       return {
         agentTypeId,
         model: legacy ? null : spec.model?.preferred ?? null,
-        instructionFiles: legacy ? [] : spec.instructionFiles ?? [],
+        instructionFiles,
         mcpServers,
       }
     },
