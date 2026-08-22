@@ -78,6 +78,14 @@ describe("QuestionsBridge", () => {
     result.catch(() => undefined)
   }, 15_000)
 
+  it("records the authenticated principal as resolvedBy on the decision record", async () => {
+    const { store, runtime, question, result } = await fixture()
+    const bridge = new QuestionsBridge({ store, runtime, getAuthContext: () => ({ sessionId: "s1", principalId: "p1" }) })
+    await expect(bridge.handle({ kind: "questions.submit", params: { questionId: question.questionId, sessionId: "s1", answerToken: question.answerToken, values: { answer: "ok" } } })).resolves.toEqual({ ok: true, status: "answered" })
+    await expect(result).resolves.toMatchObject({ status: "answered" })
+    await expect(store.getDecisionRecord(question.questionId)).resolves.toMatchObject({ resolvedBy: "p1", values: { answer: "ok" } })
+  })
+
   it("rejects submit after cancel", async () => {
     const { store, runtime, question } = await fixture()
     const bridge = new QuestionsBridge({ store, runtime, getAuthContext: () => ({ sessionId: "s1", principalId: "p1" }) })

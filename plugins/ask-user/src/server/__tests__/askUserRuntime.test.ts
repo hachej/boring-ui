@@ -311,6 +311,41 @@ describe("AskUserRuntime", () => {
     await expect(store.getByQuestionId(cancelled.questionId)).resolves.toMatchObject({ status: "cancelled" })
   })
 
+  it("snapshots riskTier and resolvedBy onto the answer as a thin decision record", async () => {
+    const store = await makeStore()
+    const question = makeQuestion({ questionId: "decision-q", sessionId: "s1", riskTier: "consequential" })
+    await store.createPending(question)
+
+    const runtime = new AskUserRuntime({ store })
+    await expect(runtime.submitAnswer(question.questionId, "s1", { answer: "approved" }, "user:owner")).resolves.toBe("answered")
+
+    const answer = await store.getAnswer(question.questionId)
+    expect(answer).toMatchObject({ riskTier: "consequential", resolvedBy: "user:owner" })
+
+    const record = await store.getDecisionRecord(question.questionId)
+    expect(record).toMatchObject({
+      questionId: question.questionId,
+      sessionId: "s1",
+      values: { answer: "approved" },
+      riskTier: "consequential",
+      resolvedBy: "user:owner",
+    })
+    expect(record?.resolvedAt).toBeTruthy()
+  })
+
+  it("resolvedBy is undefined when the resolving principal is unknown, and old-shape answers still work", async () => {
+    const store = await makeStore()
+    const question = makeQuestion({ questionId: "anon-q", sessionId: "s1" })
+    await store.createPending(question)
+
+    const runtime = new AskUserRuntime({ store })
+    await expect(runtime.submitAnswer(question.questionId, "s1", { answer: "ok" })).resolves.toBe("answered")
+
+    const answer = await store.getAnswer(question.questionId)
+    expect(answer?.resolvedBy).toBeUndefined()
+    expect(answer?.riskTier).toBeUndefined()
+  })
+
   it("restores abandoned questions to ready (#1348 recovery)", async () => {
     const store = await makeStore()
     const question = makeQuestion({ questionId: "legacy-q", sessionId: "s1" })

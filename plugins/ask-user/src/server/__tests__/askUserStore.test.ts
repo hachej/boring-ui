@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { mkdtemp, readFile, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -127,6 +127,89 @@ describe("FileAskUserStore", () => {
     await store.markAbandoned("q5")
     await store.createPending(question({ questionId: "q6", sessionId: "s2" }))
     await expect(store.restoreAbandoned("q5")).rejects.toMatchObject({ code: ASK_USER_ERROR_CODES.PENDING_EXISTS })
+  })
+
+  it("builds a decision record from question + answer, snapshotting riskTier and resolvedBy", async () => {
+    await store.createPending(question({ riskTier: "consequential" }))
+    await expect(store.getAnswer("q1")).resolves.toBeNull()
+    await expect(store.getDecisionRecord("q1")).resolves.toBeNull()
+
+    const submittedAt = new Date("2026-08-22T00:00:00.000Z").toISOString()
+    await store.answer("q1", {
+      questionId: "q1",
+      sessionId: "s1",
+      values: { a: "approved" },
+      submittedAt,
+      riskTier: "consequential",
+      resolvedBy: "user:owner",
+    })
+
+    await expect(store.getAnswer("q1")).resolves.toMatchObject({
+      questionId: "q1",
+      values: { a: "approved" },
+      riskTier: "consequential",
+      resolvedBy: "user:owner",
+    })
+    await expect(store.getDecisionRecord("q1")).resolves.toEqual({
+      questionId: "q1",
+      sessionId: "s1",
+      title: "Question",
+      values: { a: "approved" },
+      riskTier: "consequential",
+      resolvedAt: submittedAt,
+      resolvedBy: "user:owner",
+    })
+  })
+
+  it("still parses and serves pre-decision-record answers persisted before #1348 follow-up", async () => {
+    // Simulate a store file written by an older version: no riskTier/resolvedBy
+    // on the question or the answer.
+    const filePath = join(dir, "ask-user.json")
+    await mkdir(dir, { recursive: true })
+    const legacyState = {
+      questions: {
+        q1: {
+          questionId: "q1",
+          sessionId: "s1",
+          ownerPrincipalId: "anonymous",
+          status: "answered",
+          title: "Legacy question",
+          artifacts: [],
+          answerToken: "token",
+          createdAt: new Date(0).toISOString(),
+          updatedAt: new Date(0).toISOString(),
+        },
+      },
+      pendingBySession: {},
+      answers: {
+        q1: {
+          questionId: "q1",
+          sessionId: "s1",
+          values: { a: "ok" },
+          submittedAt: new Date(0).toISOString(),
+        },
+      },
+      transcriptsBySession: {},
+    }
+    await writeFile(filePath, JSON.stringify(legacyState, null, 2), "utf8")
+
+    const legacyStore = new FileAskUserStore(filePath)
+    const legacyQuestion = await legacyStore.getByQuestionId("q1")
+    expect(legacyQuestion).toMatchObject({ questionId: "q1", status: "answered" })
+    expect(legacyQuestion?.riskTier).toBeUndefined()
+    const legacyAnswer = await legacyStore.getAnswer("q1")
+    expect(legacyAnswer).toMatchObject({ questionId: "q1", values: { a: "ok" } })
+    expect(legacyAnswer?.riskTier).toBeUndefined()
+    expect(legacyAnswer?.resolvedBy).toBeUndefined()
+    await expect(legacyStore.getDecisionRecord("q1")).resolves.toEqual({
+      questionId: "q1",
+      sessionId: "s1",
+      title: "Legacy question",
+      values: { a: "ok" },
+      riskTier: undefined,
+      resolvedAt: new Date(0).toISOString(),
+      resolvedBy: undefined,
+    })
   })
 
   it("emits changes for mutations", async () => {
