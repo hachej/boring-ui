@@ -140,6 +140,23 @@ describe("SurfaceShell", () => {
     expect(screen.getByRole("button", { name: "Close workbench" })).toBeInTheDocument()
   })
 
+  it("hides the pinned activity rail and empty header strip on mobile full-bleed takeover", () => {
+    renderSurface("workspace-a", { hideLevelOneHeader: true })
+
+    const shell = screen.getByTestId("surface-shell")
+    const header = shell.querySelector('[data-boring-workspace-part="workbench-level-one-header"]')
+    const rail = shell.querySelector<HTMLElement>('[data-boring-workspace-part="surface-sidebar"]')
+
+    // No level-one header is rendered at all.
+    expect(header).toBeNull()
+    // The collapsed rail collapses to nothing so the workbench content spans
+    // the full viewport width instead of leaving a dead icon sliver.
+    expect(rail).not.toBeNull()
+    expect(rail).toHaveStyle({ width: "0px" })
+    expect(rail).toHaveClass("hidden")
+    expect(rail).toHaveAttribute("aria-hidden", "true")
+  })
+
   it("lets the collapsed activity rail fill the host and reopen the Workbench", () => {
     const onHostExpand = vi.fn()
     renderSurface("workspace-a", { hostRailOnly: true, onHostExpand })
@@ -153,6 +170,10 @@ describe("SurfaceShell", () => {
     expect(body).toHaveStyle({ height: "100%" })
     expect(rail).toHaveStyle({ height: "calc(100% - 44px)" })
     expect(rail).toHaveAttribute("data-boring-state", "host-collapsed")
+    // The desktop rail remains an interactive source/page launcher even while
+    // the editor body is collapsed; only the mobile full-bleed takeover is inert.
+    expect(rail).not.toHaveAttribute("aria-hidden")
+    expect(rail).not.toHaveAttribute("inert")
     expect(rail).toHaveClass("border-border")
     expect(rail?.parentElement).toBe(body)
     expect(header).toHaveClass("border-border")
