@@ -122,3 +122,102 @@ export function useWorkingSessionIds(sessions: readonly SessionActivityItem[]): 
 
   return working
 }
+
+/** Settled outcome of the last run, shown once a session is no longer working. */
+export type SessionTerminalState = "completed" | "failed"
+
+/**
+ * How long a just-finished run stays marked `completed` before the row falls
+ * back to its timestamp. A permanent chip would mark every idle session and
+ * carry no information; the useful signal is "the run you were watching ended".
+ */
+export const COMPLETED_VISIBLE_MS = 60_000
+
+/**
+ * Terminal states derived only from activity the list already holds: `failed`
+ * is the AgentHost `error` status already projected onto each row and streamed
+ * on the existing status event, and `completed` is the working -> not-working
+ * transition of the set this component already computes. Neither reads a
+ * transcript nor adds a per-row request, so session inventory cost is unchanged
+ * (gh-1338).
+ */
+export function useTerminalSessionStates(
+  sessions: readonly SessionActivityItem[],
+  working: ReadonlySet<string>,
+  options: { completedVisibleMs?: number } = {},
+): ReadonlyMap<string, SessionTerminalState> {
+  const completedVisibleMs = options.completedVisibleMs ?? COMPLETED_VISIBLE_MS
+  const [failedKeys, setFailedKeys] = useState<ReadonlySet<string>>(() => new Set())
+  const [completedKeys, setCompletedKeys] = useState<ReadonlySet<string>>(() => new Set())
+  const previousWorkingRef = useRef<ReadonlySet<string> | undefined>(undefined)
+  const expiryTimersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>())
+
+  // Live failure news. The panel-only emitter carries no status field; it
+  // reports streaming, never an outcome, so those events are left alone.
+  useEffect(() => {
+    const onStatus = (event: Event) => {
+      const detail = (event as CustomEvent).detail as { sessionId?: unknown; agentTypeId?: unknown; status?: unknown } | undefined
+      if (typeof detail?.sessionId !== "string" || typeof detail.status !== "string") return
+      const key = workspaceSessionKey(detail.sessionId, typeof detail.agentTypeId === "string" ? detail.agentTypeId : undefined)
+      const isFailed = detail.status === "error"
+      setFailedKeys((current) => {
+        if (current.has(key) === isFailed) return current
+        const next = new Set(current)
+        if (isFailed) next.add(key)
+        else next.delete(key)
+        return next
+      })
+    }
+    window.addEventListener(CHAT_SESSION_STATUS_EVENT, onStatus)
+    window.dispatchEvent(new Event(CHAT_SESSION_STATUS_REQUEST_EVENT))
+    return () => window.removeEventListener(CHAT_SESSION_STATUS_EVENT, onStatus)
+  }, [])
+
+  useEffect(() => () => {
+    const timers = expiryTimersRef.current
+    timers.forEach((timer) => clearTimeout(timer))
+    timers.clear()
+  }, [])
+
+  useEffect(() => {
+    const previous = previousWorkingRef.current
+    previousWorkingRef.current = working
+    if (!previous) return
+    const finished = [...previous].filter((key) => !working.has(key))
+    const restarted = [...working].filter((key) => !previous.has(key))
+    if (finished.length === 0 && restarted.length === 0) return
+    setCompletedKeys((current) => {
+      const next = new Set(current)
+      finished.forEach((key) => next.add(key))
+      restarted.forEach((key) => next.delete(key))
+      if (next.size === current.size && [...next].every((key) => current.has(key))) return current
+      return next
+    })
+    for (const key of finished) {
+      const timers = expiryTimersRef.current
+      const running = timers.get(key)
+      if (running) clearTimeout(running)
+      timers.set(key, setTimeout(() => {
+        timers.delete(key)
+        setCompletedKeys((current) => {
+          if (!current.has(key)) return current
+          const next = new Set(current)
+          next.delete(key)
+          return next
+        })
+      }, completedVisibleMs))
+    }
+  }, [working, completedVisibleMs])
+
+  return useMemo(() => {
+    const states = new Map<string, SessionTerminalState>()
+    for (const session of sessions) {
+      const key = workspaceSessionKeyFor(session)
+      // A session that is working again has no settled outcome to report.
+      if (working.has(key)) continue
+      if (session.status === "error" || failedKeys.has(key)) states.set(key, "failed")
+      else if (completedKeys.has(key)) states.set(key, "completed")
+    }
+    return states
+  }, [sessions, working, failedKeys, completedKeys])
+}
