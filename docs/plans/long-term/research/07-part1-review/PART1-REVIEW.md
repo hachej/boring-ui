@@ -267,3 +267,27 @@ One upstream adoption in return: the plan's `compute/simulate` effect class
 (pure deterministic calculation, distinct from observe) is a genuine
 improvement over the four-class taxonomy in our engineering spec — the
 engineering side should adopt the five-class version.
+
+---
+
+## Application record
+
+Applied to `docs/plans/long-term/inbox/2026-08-17-part1-final.md` on 2026-08-22
+(branch `docs/long-term-plan-rescue`), verbatim from the diffs above, at these
+anchors:
+
+| Enhancement | Anchor(s) |
+|---|---|
+| E1 | §5.16 after "Those facts are not invoices." · §12.2 after "usage facts are distinct from entitlement…" |
+| E2 | §12.2 after "one durable execution identity joins cost…" |
+| E3 | §5.14 after "Sovereignty means more than data location." · §12.2 bullet after "cross-boundary movement is explicit and auditable" (period → semicolon, list continues) |
+| E4 | §5.2 after "preserve the same approval semantics across products and channels." |
+| E5 | §5.5 after "…rather than the full catalog in every prompt." (before "Effect taxonomy") |
+| E6 | §3.5 after "automated review gates are versioned evaluators…" |
+| E7 | §5.13 after "namespaced contributions;" (Multi-application list only; §4 business-option list untouched) |
+| E8 | §5.3 after "…is a demo, not software." · new §7.9b between §7.9 and §7.10 |
+| E9 | §11 after "Which outcome signals are robust enough for automated or policy-based promotion?" |
+
+No other text was modified. The one upstream adoption noted above
+(five-class effect taxonomy on the engineering side) is tracked as R-33
+engineering-spec follow-up, not applied here.
