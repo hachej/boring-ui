@@ -15,6 +15,8 @@ export type QuestionsRoutesOptions = {
 }
 
 export function questionsRoutes(app: FastifyInstance, opts: QuestionsRoutesOptions, done: (err?: Error) => void): void {
+  registerQuestionsReadRoutes(app, opts)
+
   app.post("/api/v1/questions/commands", async (request, reply) => {
     if (!passesOrigin(request, opts.allowedOrigins)) return reply.code(403).send({ error: "forbidden", message: "invalid origin" })
     if (!(await passesCsrf(request, opts))) return reply.code(403).send({ error: "forbidden", message: "invalid csrf token" })
@@ -38,6 +40,42 @@ export function questionsRoutes(app: FastifyInstance, opts: QuestionsRoutesOptio
   })
 
   done()
+}
+
+export function registerQuestionsReadRoutes(
+  app: FastifyInstance,
+  opts: Pick<QuestionsRoutesOptions, "store" | "getAuthContext" | "allowedOrigins">,
+): void {
+  app.get("/api/v1/questions", async (request, reply) => {
+    if (!passesOrigin(request, opts.allowedOrigins)) return reply.code(403).send({ error: "forbidden", message: "invalid origin" })
+    const query = request.query as { status?: unknown }
+    if (query.status !== "ready") return reply.code(400).send({ error: "validation_error", message: "status must be ready" })
+    if (!opts.getAuthContext) return reply.code(401).send({ error: "unauthorized", message: "question list authorization is required" })
+    const auth = await opts.getAuthContext(request)
+    reply.header("Cache-Control", "no-store")
+    const questions = (await opts.store.listPending()).filter((question) => (
+      question.status === "ready"
+      && (question.ownerPrincipalId === "anonymous" || question.ownerPrincipalId === auth.principalId)
+    ))
+    return { questions }
+  })
+
+  app.get("/api/v1/questions/events", async (request, reply) => {
+    if (!passesOrigin(request, opts.allowedOrigins)) return reply.code(403).send({ error: "forbidden", message: "invalid origin" })
+    if (!opts.getAuthContext) return reply.code(401).send({ error: "unauthorized", message: "question event authorization is required" })
+    await opts.getAuthContext(request)
+    reply.hijack()
+    reply.raw.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    })
+    reply.raw.write("event: ready\ndata: {}\n\n")
+    const unsubscribe = opts.store.subscribe(() => {
+      if (!reply.raw.destroyed) reply.raw.write("event: questions-changed\ndata: {}\n\n")
+    })
+    request.raw.once("close", unsubscribe)
+  })
 }
 
 function passesOrigin(request: FastifyRequest, allowedOrigins?: string[]): boolean {

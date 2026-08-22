@@ -12,7 +12,8 @@ import {
   type WorkspaceAttentionActionDetail,
 } from "@hachej/boring-workspace"
 import { ASK_USER_PLUGIN_ID, ASK_USER_SURFACE_KIND, ASK_USER_UI_STATE_SLOTS } from "../shared/constants"
-import { createQuestionsClient, readPendingQuestionHintsFromState, type PendingQuestionHint } from "./client"
+import type { AskUserQuestion } from "../shared/types"
+import { createQuestionsClient, QuestionsClientError, readPendingQuestionHintsFromState, type PendingQuestionHint } from "./client"
 import { isSessionOpen, type QuestionsRuntime } from "./runtime"
 
 export function useAskUserAttentionBlockers(runtime: QuestionsRuntime, pendingSnapshot: string): void {
@@ -39,7 +40,9 @@ export function useAskUserAttentionBlockers(runtime: QuestionsRuntime, pendingSn
         sessionId: hint.sessionId,
         agentTypeId: runtime.agentTypeId,
         sessionBadge: { kind: "question", label: "question", tone: "attention", priority: 10 },
-        pruneWhenSessionMissing: true,
+        // Durable-list questions are authoritative even when the session list
+        // is paginated or the headless chat was never opened.
+        pruneWhenSessionMissing: !hydrated,
         focus: { closeWorkbenchLeftPane: true },
         composer: { visible: false },
         inbox: {
@@ -57,6 +60,18 @@ export function useAskUserAttentionBlockers(runtime: QuestionsRuntime, pendingSn
   }, [addBlocker, removeBlocker, runtime, pendingSnapshot])
 }
 
+async function cancelQuestion(runtime: QuestionsRuntime, pending: AskUserQuestion): Promise<void> {
+  if (!runtime.beginQuestionAction(pending)) return
+  try {
+    await createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders }).cancel(pending)
+    runtime.setPending(null, pending.sessionId)
+  } catch {
+    // Keep a still-ready durable question visible after a failed mutation.
+  } finally {
+    runtime.finishQuestionAction(pending)
+  }
+}
+
 export function useAskUserAttentionActions(runtime: QuestionsRuntime): void {
   useEffect(() => {
     const onAction = (event: Event) => {
@@ -66,11 +81,7 @@ export function useAskUserAttentionActions(runtime: QuestionsRuntime): void {
       if (!sessionId) return
       const pending = runtime.getPending(sessionId)
       if (!pending || (detail.blocker.target && pending.questionId !== detail.blocker.target)) return
-      if (!runtime.beginQuestionAction(pending)) return
-      runtime.setPending(null, pending.sessionId)
-      void createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders }).cancel(pending)
-        .catch(() => undefined)
-        .finally(() => runtime.finishQuestionAction(pending))
+      void cancelQuestion(runtime, pending)
     }
     window.addEventListener(WORKSPACE_ATTENTION_ACTION_EVENT, onAction)
     return () => window.removeEventListener(WORKSPACE_ATTENTION_ACTION_EVENT, onAction)
@@ -86,11 +97,7 @@ export function useAskUserComposerStopCancel(runtime: QuestionsRuntime): void {
       if (!pending || !workspaceComposerStopAppliesToSession(detail, pending.sessionId, {
         fallbackSessionId: runtime.activeSessionId,
       })) return
-      if (!runtime.beginQuestionAction(pending)) return
-      runtime.setPending(null, pending.sessionId)
-      void createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders }).cancel(pending)
-        .catch(() => undefined)
-        .finally(() => runtime.finishQuestionAction(pending))
+      void cancelQuestion(runtime, pending)
     }
     window.addEventListener(WORKSPACE_COMPOSER_STOP_EVENT, onStop)
     return () => window.removeEventListener(WORKSPACE_COMPOSER_STOP_EVENT, onStop)
@@ -103,36 +110,45 @@ export function useAskUserPendingRefresh(
     apiBaseUrl: string
     authHeaders?: Record<string, string>
     activeSessionId?: string | null
+    workspaceId?: string
   },
 ): void {
-  const { activeSessionId, apiBaseUrl, authHeaders } = options
+  const { activeSessionId, apiBaseUrl, authHeaders, workspaceId } = options
   useEffect(() => {
     let stopped = false
+    let refreshSequence = 0
     async function refreshPending() {
+      const sequence = ++refreshSequence
+      try {
+        const questions = await createQuestionsClient({ apiBaseUrl, headers: authHeaders }).listReady()
+        if (!stopped && sequence === refreshSequence) runtime.replacePending(questions)
+        return
+      } catch (error) {
+        const legacyEndpoint = error instanceof QuestionsClientError && error.statusCode === 404
+        if (!legacyEndpoint) return
+        // Only an explicitly absent/legacy endpoint may fall back to the old
+        // hint projection. Transient durable-list failures preserve the last
+        // authoritative snapshot instead of dropping rows.
+      }
       let hints: PendingQuestionHint[] = []
       try {
         const response = await fetch(`${apiBaseUrl}/api/v1/ui/state`, { headers: authHeaders })
         const state = await response.json().catch(() => null) as Record<string, unknown> | null
         hints = readPendingQuestionHintsFromState(state)
-        if (!stopped && hasPendingStateSlot(state)) runtime.setPendingHints(hints)
+        if (!stopped && sequence === refreshSequence && hasPendingStateSlot(state)) runtime.setPendingHints(hints)
       } catch {
         // UI state is a hint channel only; keep already-hydrated pending payloads.
       }
       const sessionsToHydrate = new Set<string>()
       if (activeSessionId) sessionsToHydrate.add(activeSessionId)
-      for (const hint of hints) {
-        // A pending question can belong to a session that is no longer mounted
-        // in the current chat layout (for example a fresh/demo URL opened while
-        // an ask_user form is still blocking an older session). Hydrate every
-        // server-published hint so the Questions pane can still render the
-        // blocking form instead of an empty state.
-        sessionsToHydrate.add(hint.sessionId)
-      }
+      for (const hint of hints) sessionsToHydrate.add(hint.sessionId)
       await Promise.all([...sessionsToHydrate].map(async (sessionId) => {
         try {
-          await runtime.refreshPending(sessionId)
+          const pending = await runtime.refreshPending(sessionId)
+          if (stopped || sequence !== refreshSequence) return
+          runtime.setPending(pending, sessionId)
         } catch {
-          if (!stopped) runtime.setPending(null, sessionId)
+          if (!stopped && sequence === refreshSequence) runtime.setPending(null, sessionId)
         }
       }))
     }
@@ -156,6 +172,16 @@ export function useAskUserPendingRefresh(
     }
     const offAgentData = events.on(workspaceEvents.agentData, onAgentData)
     const offUiCommand = events.on(workspaceEvents.uiCommand, onUiCommand)
+    const EventSourceCtor = globalThis.EventSource
+    const eventQuery = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : ""
+    const eventUrl = `${apiBaseUrl}/api/v1/questions/events${eventQuery}`
+    const questionEvents = EventSourceCtor ? new EventSourceCtor(eventUrl, { withCredentials: true }) : null
+    questionEvents?.addEventListener("ready", refreshPending)
+    questionEvents?.addEventListener("questions-changed", refreshPending)
+    // Folder-mode hosts expose the canonical WorkspaceBridge list but not the
+    // workspace-mode SSE route. Polling is also a loss-recovery path if an SSE
+    // invalidation is missed during reconnect.
+    const durablePoll = setInterval(() => { void refreshPending() }, 1_500)
     void refreshPending()
     window.addEventListener("focus", refreshPending)
     document.addEventListener("visibilitychange", onVisibility)
@@ -164,6 +190,8 @@ export function useAskUserPendingRefresh(
     return () => {
       stopped = true
       if (agentDataTimer) clearTimeout(agentDataTimer)
+      clearInterval(durablePoll)
+      questionEvents?.close()
       offAgentData()
       offUiCommand()
       window.removeEventListener("focus", refreshPending)
@@ -171,7 +199,7 @@ export function useAskUserPendingRefresh(
       window.removeEventListener(UI_COMMAND_EVENT, onUiCommand)
       window.removeEventListener(WORKSPACE_SURFACE_OPEN_SKIPPED_EVENT, onSurfaceOpenSkipped)
     }
-  }, [activeSessionId, apiBaseUrl, authHeaders, runtime])
+  }, [activeSessionId, apiBaseUrl, authHeaders, runtime, workspaceId])
 }
 
 function hasPendingStateSlot(state: Record<string, unknown> | null): boolean {

@@ -12,6 +12,7 @@ export const ASK_USER_BRIDGE_OPS = {
   answer: "ask-user.v1.answer",
   cancel: "ask-user.v1.cancel",
   pending: "ask-user.v1.pending",
+  list: "ask-user.v1.list",
   transcript: "ask-user.v1.transcript",
 } as const
 
@@ -20,6 +21,7 @@ export const ASK_USER_BRIDGE_CAPABILITIES = {
   answer: "ask-user:answer",
   cancel: "ask-user:cancel",
   pending: "ask-user:pending",
+  list: "ask-user:list",
   transcriptRead: "ask-user:transcript.read",
 } as const
 
@@ -64,6 +66,12 @@ export type AskUserBridgeAnswerOutput = AskUserBridgeMutationOutput
 
 export type AskUserBridgePendingOutput = {
   pending: AskUserQuestion | null
+}
+
+export type AskUserBridgeListInput = { status: "ready" }
+
+export type AskUserBridgeListOutput = {
+  questions: AskUserQuestion[]
 }
 
 export type AskUserBridgeTranscriptOutput = {

@@ -91,6 +91,28 @@ export function createQuestionsClient(options: QuestionsClientOptions = {}) {
   }
 
   return {
+    async listReady(): Promise<AskUserQuestion[]> {
+      const response = await fetch(`${options.apiBaseUrl ?? ""}/api/v1/questions?status=ready`, {
+        headers: options.headers,
+        credentials: "include",
+        cache: "no-store",
+      })
+      const payload = await response.json().catch(() => null) as { questions?: unknown } | null
+      if (response.status === 404) {
+        const output = await callBridge<{ questions: unknown }>(ASK_USER_BRIDGE_OPS.list, { status: "ready" })
+        // Preserve the bridge transport's successful status. A malformed
+        // bridge payload is not evidence that both list transports are absent.
+        return normalizeReadyQuestions(output.questions, 200)
+      }
+      if (!response.ok) {
+        throw new QuestionsClientError(
+          typeof payload === "object" && payload && "error" in payload && typeof payload.error === "string" ? payload.error : ASK_USER_ERROR_CODES.UI_UNAVAILABLE,
+          "Unable to list pending questions",
+          response.status,
+        )
+      }
+      return normalizeReadyQuestions(payload?.questions, response.status)
+    },
     async pending(sessionId: string): Promise<AskUserQuestion | null> {
       const output = await callBridge<{ pending: AskUserQuestion | null }>(
         ASK_USER_BRIDGE_OPS.pending,
@@ -139,6 +161,17 @@ export function createQuestionsClient(options: QuestionsClientOptions = {}) {
       )
     },
   }
+}
+
+function normalizeReadyQuestions(value: unknown, statusCode: number): AskUserQuestion[] {
+  if (!Array.isArray(value)) {
+    throw new QuestionsClientError(ASK_USER_ERROR_CODES.UI_UNAVAILABLE, "Invalid pending questions response", statusCode)
+  }
+  const questions = value.map(normalizeQuestion)
+  if (questions.some((question) => question === null)) {
+    throw new QuestionsClientError(ASK_USER_ERROR_CODES.UI_UNAVAILABLE, "Invalid pending question payload", statusCode)
+  }
+  return questions.filter((question): question is AskUserQuestion => question?.status === "ready")
 }
 
 export function normalizeQuestion(value: unknown): AskUserQuestion | null {

@@ -191,6 +191,63 @@ describe("workspaces mode runtime plugin wiring", () => {
       .resolves.toBe("Updated prompt")
   })
 
+  test("durable question list is request-scoped and includes never-opened sessions", async () => {
+    const registryPath = join(await makeTempDir("boring-cli-questions-registry-"), "workspaces.yaml")
+    const workspaceA = await makeTempDir("boring-cli-questions-a-")
+    const workspaceB = await makeTempDir("boring-cli-questions-b-")
+    const [registeredA, registeredB] = await setupRegistry([workspaceA, workspaceB], registryPath)
+    const question = (questionId: string, sessionId: string, title: string) => ({
+      questionId,
+      sessionId,
+      ownerPrincipalId: "anonymous",
+      status: "ready",
+      title,
+      schema: { wireVersion: 1, fields: [{ type: "text", name: "answer", label: "Answer" }] },
+      artifacts: [],
+      answerToken: `token-${questionId}`,
+      createdAt: "2026-08-19T00:00:00.000Z",
+      updatedAt: "2026-08-19T00:00:00.000Z",
+    })
+    const writeQuestions = async (root: string, questions: Array<ReturnType<typeof question>>) => {
+      await mkdir(join(root, ".boring"), { recursive: true })
+      await writeFile(join(root, ".boring", "ask-user.json"), JSON.stringify({
+        questions: Object.fromEntries(questions.map((entry) => [entry.questionId, entry])),
+        pendingBySession: Object.fromEntries(questions.map((entry) => [entry.sessionId, entry.questionId])),
+        answers: {},
+        transcriptsBySession: {},
+      }))
+    }
+    await writeQuestions(workspaceA, [question("q-a1", "never-opened-a1", "Headless A one"), question("q-a2", "never-opened-a2", "Headless A two")])
+    await writeQuestions(workspaceB, [question("q-b1", "never-opened-b1", "Headless B")])
+    const app = await createWorkspacesModeApp({ mode: "direct", registryPath, provisionWorkspace: false })
+    try {
+      const responseA = await app.inject({ method: "GET", url: `/api/v1/questions?status=ready&workspaceId=${encodeURIComponent(registeredA.id)}` })
+      expect(responseA.statusCode, responseA.body).toBe(200)
+      expect(responseA.headers["cache-control"]).toBe("no-store")
+      expect(responseA.json().questions.map((entry: { title: string }) => entry.title).sort()).toEqual(["Headless A one", "Headless A two"])
+
+      const responseB = await app.inject({ method: "GET", url: "/api/v1/questions?status=ready", headers: { "x-boring-workspace-id": registeredB.id } })
+      expect(responseB.statusCode, responseB.body).toBe(200)
+      expect(responseB.json().questions.map((entry: { title: string }) => entry.title)).toEqual(["Headless B"])
+
+      const address = await app.listen({ port: 0, host: "127.0.0.1" })
+      const events = await openSse(`${address}/api/v1/questions/events?workspaceId=${encodeURIComponent(registeredA.id)}`)
+      try {
+        await expect(events.nextEvent((message) => message.event === "ready")).resolves.toMatchObject({ event: "ready" })
+        await writeQuestions(workspaceA, [
+          question("q-a1", "never-opened-a1", "Headless A one"),
+          question("q-a2", "never-opened-a2", "Headless A two"),
+          question("q-a3", "never-opened-a3", "Headless A three"),
+        ])
+        await expect(events.nextEvent((message) => message.event === "questions-changed")).resolves.toMatchObject({ event: "questions-changed" })
+      } finally {
+        await events.close()
+      }
+    } finally {
+      await app.close()
+    }
+  }, 20_000)
+
   test("first SSE connect replays the active workspace scope without a prior GET", async () => {
     const homeRoot = await makeTempDir("boring-cli-workspaces-home-")
     const registryPath = join(await makeTempDir("boring-cli-workspaces-registry-"), "workspaces.yaml")

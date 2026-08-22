@@ -16,6 +16,8 @@ import {
   type AskUserBridgeCancelInput,
   type AskUserBridgePendingInput,
   type AskUserBridgePendingOutput,
+  type AskUserBridgeListInput,
+  type AskUserBridgeListOutput,
   type AskUserBridgeRequestInput,
   type AskUserBridgeRequestOutput,
   type AskUserBridgeTranscriptInput,
@@ -97,6 +99,20 @@ export function createAskUserBridgeHandlers(
       maxOutputBytes: MAX_QUESTION_BYTES,
       idempotencyPolicy: "none",
       handler: pendingHandler(options),
+    })),
+    contribution(defineTrustedDomainBridgeHandler<AskUserBridgeListInput, AskUserBridgeListOutput>({
+      op: ASK_USER_BRIDGE_OPS.list,
+      version: 1,
+      owner: ASK_USER_PLUGIN_ID,
+      callerClassesAllowed: ["browser", "server"],
+      requiredCapabilities: [ASK_USER_BRIDGE_CAPABILITIES.list],
+      inputSchema: { type: "object", properties: { status: { type: "string", const: "ready" } }, required: ["status"], additionalProperties: false },
+      outputSchema: { type: "object" },
+      timeoutMs: READ_TIMEOUT_MS,
+      maxInputBytes: 1024,
+      maxOutputBytes: MAX_QUESTION_BYTES * 100,
+      idempotencyPolicy: "none",
+      handler: listHandler(options),
     })),
     contribution(defineTrustedDomainBridgeHandler<AskUserBridgeTranscriptInput, AskUserBridgeTranscriptOutput>({
       op: ASK_USER_BRIDGE_OPS.transcript,
@@ -187,6 +203,18 @@ function pendingHandler({ store }: AskUserBridgeHandlersOptions) {
       return { pending }
     } catch (error) {
       throw mapAskUserError(error)
+    }
+  }
+}
+
+function listHandler({ store }: AskUserBridgeHandlersOptions) {
+  return async ({ input, context }: { input: AskUserBridgeListInput; context: WorkspaceBridgeCallContext }): Promise<AskUserBridgeListOutput> => {
+    if (input?.status !== "ready") throw invalid("ask-user list status must be ready")
+    const questions = await store.listPending()
+    if (context.callerClass !== "browser") return { questions }
+    const principalId = principalIdFromContext(context)
+    return {
+      questions: questions.filter((question) => question.ownerPrincipalId === "anonymous" || question.ownerPrincipalId === principalId),
     }
   }
 }
