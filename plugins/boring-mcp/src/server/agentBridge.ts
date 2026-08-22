@@ -66,6 +66,8 @@ const TOOL_SEARCH_INPUT_SCHEMA = {
   properties: {
     sourceId: { type: "string", description: "Optional source id to search within." },
     query: { type: "string", description: "Optional text query for tool name, summary, provider, or description." },
+    limit: { type: "integer", minimum: 1, maximum: 20, description: "Maximum managed-catalog results." },
+    offset: { type: "integer", minimum: 0, maximum: 80, description: "Bounded managed-catalog result offset." },
     refresh: { type: "boolean", description: "Refresh provider tool metadata before searching." },
   },
   additionalProperties: false,
@@ -138,6 +140,13 @@ function optionalStringField(record: Record<string, unknown>, key: string): stri
   return value
 }
 
+function optionalIntegerField(record: Record<string, unknown>, key: string): number | undefined {
+  const value = record[key]
+  if (value === undefined) return undefined
+  if (!Number.isInteger(value)) throw new McpError(MCP_ERROR_CODES.INPUT_INVALID, `MCP bridge ${key} must be an integer`)
+  return value as number
+}
+
 function optionalBooleanField(record: Record<string, unknown>, key: string): boolean | undefined {
   const value = record[key]
   if (value === undefined) return undefined
@@ -169,6 +178,8 @@ function parseSearchInput(input: unknown): McpToolsSearchInput {
   return {
     sourceId: sourceId === undefined ? undefined : parseBridgeSourceId(sourceId),
     query: optionalStringField(record, "query"),
+    limit: optionalIntegerField(record, "limit"),
+    offset: optionalIntegerField(record, "offset"),
     refresh: optionalBooleanField(record, "refresh"),
   }
 }

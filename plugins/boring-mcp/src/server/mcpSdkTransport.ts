@@ -39,6 +39,8 @@ export interface McpSdkTransportOptions {
   endpoint: McpSdkEndpoint | ((input: McpSdkEndpointResolverInput) => McpSdkEndpoint | Promise<McpSdkEndpoint>)
   clientName?: string
   clientVersion?: string
+  /** Optional server-owned fetch policy for fixed provider endpoints. */
+  fetch?: (input: string | URL, init?: RequestInit) => Promise<Response>
   /** Test/embedding seam; production defaults to node:dns lookup with all records. */
   dnsResolver?: McpSdkDnsResolver
 }
@@ -141,7 +143,7 @@ async function withClient<T>(options: McpSdkTransportOptions, source: McpSource,
     const endpoint = await resolveEndpoint(options, source)
     const url = snapshotMcpEndpointUrl(endpoint.url)
     const requestInit: RequestInit = { headers: normalizeHeaders(endpoint.headers) }
-    let fetch: ((input: string | URL, init?: RequestInit) => Promise<Response>) | undefined
+    let fetch = options.fetch
 
     if (source.provider === USER_REGISTERED_MCP_PROVIDER_ID && !isUserRegisteredMcpSource(source)) {
       throw new McpError(
@@ -151,6 +153,12 @@ async function withClient<T>(options: McpSdkTransportOptions, source: McpSource,
       )
     }
     if (isUserRegisteredMcpSource(source)) {
+      if (options.fetch) {
+        throw new McpError(
+          MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID,
+          "User-registered MCP sources cannot use a provider-owned fetch policy",
+        )
+      }
       const registeredUrl = validateUserRegisteredMcpEndpoint(source.userRegistration.endpoint, source.userRegistration.transport)
       if (url.toString() !== registeredUrl.toString()) {
         throw new McpError(

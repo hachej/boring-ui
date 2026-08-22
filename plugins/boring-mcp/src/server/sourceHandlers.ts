@@ -20,7 +20,7 @@ import {
 import { createHardenedMcpTransport, verifyMcpDisconnectResult, type McpProviderHardeningOptions } from "./hardening"
 import { assertMcpPublicPayloadSecretFree, createMcpSourceStatusPayload, requireActorOwnedMcpSource, validateMcpSourceId } from "./sourceAccess"
 import { createBoringMcpReadonlyCaller, type McpReadonlyCallAuditSink } from "./readonlyCall"
-import { InMemoryMcpToolCatalogCache, createBoringMcpToolCatalog, type McpToolDescribeInput, type McpToolsSearchInput } from "./toolCatalog"
+import { InMemoryMcpToolCatalogCache, createBoringMcpToolCatalog, type McpManagedCatalogBackend, type McpToolDescribeInput, type McpToolsSearchInput } from "./toolCatalog"
 
 export interface BoringMcpSourceHandlersOptions {
   registry: McpSourceRegistry
@@ -29,6 +29,7 @@ export interface BoringMcpSourceHandlersOptions {
   maxReadonlyInputBytes?: number
   audit?: McpReadonlyCallAuditSink
   hardening?: McpProviderHardeningOptions
+  managedCatalog?: McpManagedCatalogBackend
 }
 
 export interface BoringMcpSourceHandlers {
@@ -85,14 +86,20 @@ export function createBoringMcpSourceHandlers(options: BoringMcpSourceHandlersOp
 
     async doctorSource(actor, sourceId) {
       const source = await requireActorOwnedMcpSource(options.registry, actor, sourceId)
-      const result = doctorMcpSource(source, options.templates)
+      const result = options.managedCatalog?.supports(source)
+        ? { ok: source.status === "connected", sourceId: source.id, issues: source.status === "connected" ? [] : [{ level: "error" as const, code: MCP_ERROR_CODES.SOURCE_UNAVAILABLE, message: "MCP source is not connected" }] }
+        : doctorMcpSource(source, options.templates)
       assertMcpPublicPayloadSecretFree(result)
       return result
     },
 
     async probeSource(actor, sourceId) {
       const normalizedSourceId = validateMcpSourceId(sourceId)
-      const result = await facadeFor(actor).probeSource(actor, normalizedSourceId)
+      const source = await requireActorOwnedMcpSource(options.registry, actor, normalizedSourceId)
+      if (source.status !== "connected") throw new McpError(MCP_ERROR_CODES.SOURCE_UNAVAILABLE, "MCP source is not connected")
+      const result = options.managedCatalog?.supports(source)
+        ? { sourceId: source.id, provider: source.provider, tools: [], resources: [] }
+        : await facadeFor(actor).probeSource(actor, normalizedSourceId)
       assertMcpPublicPayloadSecretFree(result)
       return result
     },

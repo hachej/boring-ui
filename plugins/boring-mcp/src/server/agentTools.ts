@@ -3,6 +3,7 @@ import type { McpActor, McpProviderTemplate, McpSourceRegistry, McpTransportClie
 import { createBoringMcpAgentBridgeRegistry, listBoringMcpAgentBridgeTools } from "./agentBridge"
 import type { McpProviderHardeningOptions } from "./hardening"
 import type { McpReadonlyCallAuditSink } from "./readonlyCall"
+import type { McpManagedCatalogBackend } from "./toolCatalog"
 import { createBoringMcpSourceHandlers } from "./sourceHandlers"
 
 export type BoringMcpAgentToolActorResolver = (
@@ -18,6 +19,7 @@ export interface CreateBoringMcpAgentToolsOptions {
   maxReadonlyInputBytes?: number
   audit?: McpReadonlyCallAuditSink
   hardening?: McpProviderHardeningOptions
+  managedCatalog?: McpManagedCatalogBackend
 }
 
 function toolResult(value: unknown): ToolResult {

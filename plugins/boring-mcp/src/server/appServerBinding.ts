@@ -41,6 +41,7 @@ import {
 import { createComposioManagedConnectorProvider, createComposioMcpTransport } from './composioManagedConnector'
 import { createMcpSourceStatusPayload } from './sourceAccess'
 import { createBoringMcpSourceHandlers } from './sourceHandlers'
+import type { McpManagedCatalogBackend } from './toolCatalog'
 import { createBoringMcpAgentTools } from './agentTools'
 import { createBoringMcpServerPlugin } from './serverPlugin'
 
@@ -438,6 +439,7 @@ export interface CreateBoringMcpAppAgentToolsOptions {
   config: BoringMcpBindingConfig
   env?: NodeJS.ProcessEnv
   transport?: McpTransportClient
+  managedCatalog?: McpManagedCatalogBackend
 }
 
 function createComposioMcpTransportFor(config: BoringMcpBindingConfig, env?: NodeJS.ProcessEnv): McpTransportClient {
@@ -463,6 +465,7 @@ export function createBoringMcpAppAgentTools(
     transport,
     resolveActor: () => actor,
     templates: DEFAULT_MCP_PROVIDER_TEMPLATES,
+    managedCatalog: options.managedCatalog,
     hardening: { gate: new InMemoryMcpRateBudgetGate({ maxCalls: 100, maxToolCalls: 10, windowMs: 60_000 }), timeoutMs: 30_000 },
     maxReadonlyInputBytes: runtimeConfig.maxReadonlyInputBytes,
   })
@@ -553,6 +556,7 @@ export interface RegisterBoringMcpRoutesOptions {
   provider?: ManagedConnectorProvider
   env?: NodeJS.ProcessEnv
   transport?: McpTransportClient
+  managedCatalog?: McpManagedCatalogBackend
   resolveTrustedWorkspaceId?: (request: FastifyRequest) => string | undefined
   /**
    * Behavior when boring-mcp is disabled for this deployment.
@@ -610,6 +614,7 @@ export function registerBoringMcpRoutes(app: BoringMcpAppServer, options: Regist
       registry: createUserSettingsMcpSourceRegistry(app, actor),
       transport: routeTransport,
       templates: DEFAULT_MCP_PROVIDER_TEMPLATES,
+      managedCatalog: options.managedCatalog,
       hardening: { gate: routeGate, timeoutMs: 30_000 },
     })
   }
@@ -669,6 +674,9 @@ export function registerBoringMcpRoutes(app: BoringMcpAppServer, options: Regist
     const body = asRecord(request.body)
     const result = await withMcpHttpErrors(request.id, () => handlersFor(actor).searchTools(actor, {
       sourceId: sourceIdFromBody(request.body, request.id),
+      query: parseString(body.query),
+      limit: typeof body.limit === 'number' ? body.limit : undefined,
+      offset: typeof body.offset === 'number' ? body.offset : undefined,
       refresh: body.refresh === true,
     }))
     return { tools: result.tools }
@@ -699,12 +707,14 @@ export interface BoringMcpAppBindingsConfig extends BoringMcpBindingConfig {
 export interface BoringMcpAppBindingsAgentToolsOptions {
   env?: NodeJS.ProcessEnv
   transport?: McpTransportClient
+  managedCatalog?: McpManagedCatalogBackend
 }
 
 export interface BoringMcpAppBindingsRoutesOptions {
   provider?: ManagedConnectorProvider
   env?: NodeJS.ProcessEnv
   transport?: McpTransportClient
+  managedCatalog?: McpManagedCatalogBackend
   resolveTrustedWorkspaceId?: (request: FastifyRequest) => string | undefined
 }
 
@@ -755,9 +765,9 @@ export function createBoringMcpAppBindings(config: BoringMcpAppBindingsConfig): 
     agentSessionNamespace: boringMcpAgentSessionNamespace,
     createMcpSourceRegistry: createUserSettingsMcpSourceRegistry,
     createAgentTools: (app, actor, options = {}) =>
-      createBoringMcpAppAgentTools(app, actor, { config, env: options.env, transport: options.transport }),
+      createBoringMcpAppAgentTools(app, actor, { config, env: options.env, transport: options.transport, managedCatalog: options.managedCatalog }),
     createAgentToolsForRequest: (app, ctx, options = {}) =>
-      createBoringMcpAppAgentToolsForRequest(app, ctx, { config, env: options.env, transport: options.transport }),
+      createBoringMcpAppAgentToolsForRequest(app, ctx, { config, env: options.env, transport: options.transport, managedCatalog: options.managedCatalog }),
     registerRoutes: (app, options = {}) =>
       registerBoringMcpRoutes(app, {
         config,
@@ -765,6 +775,7 @@ export function createBoringMcpAppBindings(config: BoringMcpAppBindingsConfig): 
         provider: options.provider,
         env: options.env,
         transport: options.transport,
+        managedCatalog: options.managedCatalog,
         resolveTrustedWorkspaceId: options.resolveTrustedWorkspaceId ?? config.resolveTrustedWorkspaceId,
       }),
     createServerPlugins: (env = process.env) => {

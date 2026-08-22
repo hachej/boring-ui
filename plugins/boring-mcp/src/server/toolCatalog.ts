@@ -9,6 +9,7 @@ import {
   type McpDiscoveredTool,
   type McpProviderId,
   type McpProviderTemplate,
+  type McpSource,
   type McpSourceRegistry,
   type McpToolCatalogEntry,
   type McpToolDescribeResult,
@@ -29,16 +30,31 @@ export interface McpToolCatalogCache {
   set(actor: McpActor, sourceId: string, result: McpToolCatalogSnapshot): Promise<void>
 }
 
+export interface McpManagedCatalogTool extends McpDiscoveredTool {
+  toolkit?: string
+  outputSchema?: unknown
+  version?: string
+}
+
+export interface McpManagedCatalogBackend {
+  supports(source: Pick<McpSource, "provider" | "credentialProvider">): boolean
+  searchTools(source: McpSource, input: { query: string; limit: number; offset: number; forceProviderRefresh: boolean }): Promise<McpManagedCatalogTool[]>
+  describeTool(source: McpSource, toolName: string, input: { forceProviderRefresh: boolean }): Promise<McpManagedCatalogTool | undefined>
+}
+
 export interface BoringMcpToolCatalogOptions {
   registry: McpSourceRegistry
   transport: McpTransportClient
   templates?: readonly McpProviderTemplate[]
   cache?: McpToolCatalogCache
+  managedCatalog?: McpManagedCatalogBackend
 }
 
 export interface McpToolsSearchInput {
   sourceId?: string
   query?: string
+  limit?: number
+  offset?: number
   refresh?: boolean
   providerRefresh?: boolean
 }
@@ -82,10 +98,12 @@ function displayName(toolName: string): string {
   return toolName.replace(/[_:.-]+/g, " ").replace(/\b\w/g, (char) => char.toUpperCase())
 }
 
-function sourceCatalogRevision(source: { status: string; updatedAt?: string; connectorRef?: { sessionId?: string; connectedAccountId?: string; externalSourceId?: string } }): string {
+export function createMcpSourceRevision(source: { status: string; updatedAt?: string; connectorRef?: { provider?: string; toolkitId?: string; sessionId?: string; connectedAccountId?: string; externalSourceId?: string } }): string {
   return createHash("sha256").update(JSON.stringify({
     status: source.status,
     updatedAt: source.updatedAt,
+    provider: source.connectorRef?.provider,
+    toolkitId: source.connectorRef?.toolkitId,
     sessionId: source.connectorRef?.sessionId,
     connectedAccountId: source.connectorRef?.connectedAccountId,
     externalSourceId: source.connectorRef?.externalSourceId,
@@ -97,12 +115,14 @@ export function normalizeMcpCatalogTool(
   provider: McpProviderId,
   tool: McpDiscoveredTool,
   templates?: readonly McpProviderTemplate[],
+  sourceRevision?: string,
 ): McpToolCatalogEntry {
   const template = getMcpProviderTemplate(provider, templates)
   const decision = template
     ? classifyMcpTool(template, tool.name)
     : { allowed: false, risk: "unknown" as const, reason: "Tool provider has no read-only allowlist" }
   const inputSchema = tool.inputSchema ?? {}
+  const managedTool = tool as McpManagedCatalogTool
   return {
     sourceId,
     provider,
@@ -111,11 +131,15 @@ export function normalizeMcpCatalogTool(
     summary: tool.description ?? displayName(tool.name),
     description: tool.description,
     inputSchema,
+    outputSchema: managedTool.outputSchema,
+    sourceRevision,
+    toolVersion: managedTool.version,
+    providerSupplied: true,
     risk: decision.risk,
     enabled: decision.allowed,
     blockedReasons: decision.allowed ? [] : [decision.reason],
     schemaHash: createMcpSchemaHash(inputSchema),
-    nativeRef: { provider, action: tool.name },
+    nativeRef: { provider, toolkit: managedTool.toolkit, action: tool.name },
   }
 }
 
@@ -136,20 +160,29 @@ function assertConnectedSource(sourceId: string, status: string): void {
 export function createBoringMcpToolCatalog(options: BoringMcpToolCatalogOptions): BoringMcpToolCatalog {
   const cache = options.cache ?? new InMemoryMcpToolCatalogCache()
 
-  async function loadSourceCatalog(actor: McpActor, sourceId: string, refresh?: boolean, providerRefresh?: boolean): Promise<McpToolCatalogSnapshot> {
+  async function resolveConnectedSource(actor: McpActor, sourceId: string) {
     const requestedSourceId = validateMcpSourceId(sourceId)
     const source = await requireActorOwnedMcpSource(options.registry, actor, requestedSourceId)
     const resolvedSourceId = validateMcpSourceId(source.id)
     assertConnectedSource(resolvedSourceId, source.status)
+    return { source, resolvedSourceId }
+  }
 
-    const sourceRevision = sourceCatalogRevision(source)
+  function normalizeManagedTools(sourceId: string, provider: McpProviderId, sourceRevision: string, tools: McpManagedCatalogTool[]): McpToolCatalogEntry[] {
+    return tools.map((tool) => normalizeMcpCatalogTool(sourceId, provider, tool, options.templates, sourceRevision))
+  }
+
+  async function loadSourceCatalog(actor: McpActor, sourceId: string, refresh?: boolean, providerRefresh?: boolean): Promise<McpToolCatalogSnapshot> {
+    const { source, resolvedSourceId } = await resolveConnectedSource(actor, sourceId)
+
+    const sourceRevision = createMcpSourceRevision(source)
     if (!refresh && !providerRefresh) {
       const cached = await cache.get(actor, resolvedSourceId)
       if (cached && cached.provider === source.provider && cached.sourceRevision === sourceRevision) return cached
     }
 
     const discoveredTools = await options.transport.listTools(source, { forceProviderRefresh: providerRefresh ?? refresh })
-    const tools = discoveredTools.map((tool) => normalizeMcpCatalogTool(resolvedSourceId, source.provider, tool, options.templates))
+    const tools = discoveredTools.map((tool) => normalizeMcpCatalogTool(resolvedSourceId, source.provider, tool, options.templates, sourceRevision))
     const snapshot = { sourceId: resolvedSourceId, provider: source.provider, sourceRevision, tools }
     assertMcpPublicPayloadSecretFree(snapshot)
     await cache.set(actor, resolvedSourceId, snapshot)
@@ -162,22 +195,56 @@ export function createBoringMcpToolCatalog(options: BoringMcpToolCatalogOptions)
         ? [{ id: validateMcpSourceId(input.sourceId) }]
         : (await options.registry.listSources(actor)).filter((source) => source.status === "connected")
       const catalog: McpToolCatalogEntry[] = []
-      for (const source of sources) {
-        const result = await loadSourceCatalog(actor, source.id, input.refresh, input.providerRefresh)
+      const managedResults: McpToolCatalogEntry[] = []
+      for (const candidate of sources) {
+        const { source, resolvedSourceId } = await resolveConnectedSource(actor, candidate.id)
+        if (options.managedCatalog?.supports(source)) {
+          const query = input.query?.trim() ?? ""
+          if (!query && !input.sourceId) continue
+          if (!query) throw new McpError(MCP_ERROR_CODES.INPUT_INVALID, "Managed MCP catalog search requires a query")
+          const limit = input.limit ?? 20
+          if (!Number.isInteger(limit) || limit < 1 || limit > 20) {
+            throw new McpError(MCP_ERROR_CODES.INPUT_INVALID, "Managed MCP catalog search limit must be between 1 and 20")
+          }
+          const offset = input.offset ?? 0
+          if (!Number.isInteger(offset) || offset < 0 || offset > 80) {
+            throw new McpError(MCP_ERROR_CODES.INPUT_INVALID, "Managed MCP catalog search offset must be between 0 and 80")
+          }
+          const tools = await options.managedCatalog.searchTools(source, {
+            query,
+            limit,
+            offset,
+            forceProviderRefresh: input.providerRefresh ?? input.refresh ?? false,
+          })
+          managedResults.push(...normalizeManagedTools(resolvedSourceId, source.provider, createMcpSourceRevision(source), tools).slice(0, limit))
+          continue
+        }
+        const result = await loadSourceCatalog(actor, resolvedSourceId, input.refresh, input.providerRefresh)
         catalog.push(...result.tools)
       }
-      const response = { tools: catalog.filter((entry) => matchesQuery(entry, input.query ?? "")) }
+      const response = { tools: [...managedResults, ...catalog.filter((entry) => matchesQuery(entry, input.query ?? ""))] }
       assertMcpPublicPayloadSecretFree(response)
       return response
     },
 
     async describeTool(actor, input) {
-      const result = await loadSourceCatalog(actor, input.sourceId, input.refresh, input.providerRefresh)
-      const tool = result.tools.find((candidate) => candidate.toolName === input.toolName)
-      if (!tool) throw new McpError(MCP_ERROR_CODES.TOOL_NOT_FOUND, "MCP tool not found")
-      const schemaDrifted = Boolean(input.expectedSchemaHash && input.expectedSchemaHash !== tool.schemaHash)
-      if (containsMcpSecret(tool)) throw new McpError(MCP_ERROR_CODES.SECRET_LEAK_GUARD, "MCP tool metadata looked like it contained a secret")
-      const response = { tool, schemaDrifted }
+      const { source, resolvedSourceId } = await resolveConnectedSource(actor, input.sourceId)
+      let resolvedTool: McpToolCatalogEntry | undefined
+      if (options.managedCatalog?.supports(source)) {
+        const managedTool = await options.managedCatalog.describeTool(source, input.toolName, {
+          forceProviderRefresh: input.providerRefresh ?? input.refresh ?? false,
+        })
+        resolvedTool = managedTool
+          ? normalizeMcpCatalogTool(resolvedSourceId, source.provider, managedTool, options.templates, createMcpSourceRevision(source))
+          : undefined
+      } else {
+        const result = await loadSourceCatalog(actor, resolvedSourceId, input.refresh, input.providerRefresh)
+        resolvedTool = result.tools.find((candidate) => candidate.toolName === input.toolName)
+      }
+      if (!resolvedTool) throw new McpError(MCP_ERROR_CODES.TOOL_NOT_FOUND, "MCP tool not found")
+      const schemaDrifted = Boolean(input.expectedSchemaHash && input.expectedSchemaHash !== resolvedTool.schemaHash)
+      if (containsMcpSecret(resolvedTool)) throw new McpError(MCP_ERROR_CODES.SECRET_LEAK_GUARD, "MCP tool metadata looked like it contained a secret")
+      const response = { tool: resolvedTool, schemaDrifted }
       assertMcpPublicPayloadSecretFree(response)
       return response
     },
