@@ -984,11 +984,13 @@ export function WorkspaceAgentFront<
   const remoteSessionsActivityRef = useRef({
     sessions: remoteSessionApi.sessions,
     refresh: remoteSessionApi.refresh,
+    applyActivity: remoteSessionApi.applyActivity,
     selectedAgentTypeId,
   })
   remoteSessionsActivityRef.current = {
     sessions: remoteSessionApi.sessions,
     refresh: remoteSessionApi.refresh,
+    applyActivity: remoteSessionApi.applyActivity,
     selectedAgentTypeId,
   }
   useEffect(() => {
@@ -1005,13 +1007,17 @@ export function WorkspaceAgentFront<
             working: status === "running" || status === "aborting",
           },
         }))
+        const current = remoteSessionsActivityRef.current
+        if (ref.agentTypeId !== current.selectedAgentTypeId) return
+        // Keep the listed row's status honest as the turn moves. Pure local
+        // state — no request and no transcript read, so this stays free even
+        // while session inventory is slow (gh-1338).
+        current.applyActivity?.(ref.sessionId, status)
         // A session created out-of-band (e.g. an external chat entrypoint)
         // surfaces here as activity before this hook's own list has ever
         // fetched it. Reconcile the list immediately instead of waiting on
         // a manual refresh or remount (gh-778).
         if (status !== "running" && status !== "aborting") return
-        const current = remoteSessionsActivityRef.current
-        if (ref.agentTypeId !== current.selectedAgentTypeId) return
         const known = current.sessions.some((session) => session.id === ref.sessionId)
         if (!known) void current.refresh?.({ background: true })
       },

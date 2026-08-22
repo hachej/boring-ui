@@ -61,6 +61,8 @@ export interface UsePiSessionsOptions {
   }
 }
 
+export type SessionActivityStatus = NonNullable<SessionSummary['status']>
+
 export interface UsePiSessionsResult {
   sessions: SessionSummary[]
   activeSession: SessionSummary | undefined
@@ -76,6 +78,15 @@ export interface UsePiSessionsResult {
   hasMore: boolean
   error: Error | undefined
   refresh: (options?: PiSessionRefreshOptions) => Promise<void>
+  /**
+   * Apply a live session-activity status to an already-listed session.
+   *
+   * Local state only — no request, no refetch. The server tracks activity in
+   * an in-memory index and already streams it over the session-activity SSE
+   * channel, so keeping a row's status honest costs nothing per row and never
+   * touches the transcript store (gh-1338).
+   */
+  applyActivity: (id: string, status: SessionActivityStatus) => void
   create: (init?: PiSessionCreateInit) => Promise<SessionSummary>
   rename: (id: string, title: string) => Promise<SessionSummary>
   switch: (id: string) => void
@@ -473,6 +484,20 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
     return renamed
   }, [enabled, ensurePendingScope, fetchImpl, requestHeaders, requestScopeKey, sessionsUrl, sourceIsCurrent])
 
+  const applyActivity = useCallback((id: string, status: SessionActivityStatus): void => {
+    setSessions((current) => {
+      let changed = false
+      const next = current.map((session) => {
+        if (session.id !== id || session.status === status) return session
+        changed = true
+        return { ...session, status }
+      })
+      // Identity-stable when nothing moved, so an idle heartbeat can't churn
+      // every consumer of the list.
+      return changed ? next : current
+    })
+  }, [])
+
   const deleteSession = useCallback(async (id: string): Promise<void> => {
     const scope = requestScopeKey
     if (!sourceIsCurrent(scope)) throw new StaleSessionsSourceError()
@@ -551,6 +576,7 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
     hasMore: enabled ? hasMore : false,
     error,
     refresh,
+    applyActivity,
     create,
     rename,
     switch: switchSession,

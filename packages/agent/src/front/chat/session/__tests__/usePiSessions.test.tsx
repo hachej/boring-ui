@@ -218,6 +218,45 @@ describe('usePiSessions', () => {
     })
   })
 
+  test('applies live activity to a listed session without refetching', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({
+      sessions: [{
+        ref: { agentTypeId: 'alpha', sessionId: 'native-1' },
+        title: 'Native',
+        status: 'idle',
+        createdAt: 1,
+        updatedAt: 2,
+        turnCount: 4,
+      }],
+    }))
+
+    const { result } = renderHook(() => usePiSessions({
+      agentTypeId: 'alpha',
+      fetch: fetchMock as unknown as typeof fetch,
+      connectActiveSession: false,
+      storageScope: 'default',
+      retry: { maxRetries: 0 },
+    }))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.sessions[0]?.status).toBe('idle')
+    const callsAfterLoad = fetchMock.mock.calls.length
+
+    act(() => { result.current.applyActivity('native-1', 'running') })
+    expect(result.current.sessions[0]?.status).toBe('running')
+
+    act(() => { result.current.applyActivity('native-1', 'idle') })
+    expect(result.current.sessions[0]?.status).toBe('idle')
+
+    // The whole point: status stays honest off the SSE stream, so it must never
+    // cost a session-inventory request (gh-1338).
+    expect(fetchMock.mock.calls.length).toBe(callsAfterLoad)
+
+    const before = result.current.sessions
+    act(() => { result.current.applyActivity('unknown-session', 'running') })
+    expect(result.current.sessions).toBe(before)
+  })
+
   test('attests rows only after the requested source has loaded', async () => {
     const sourceB = deferred<Response>()
     fetchMock
