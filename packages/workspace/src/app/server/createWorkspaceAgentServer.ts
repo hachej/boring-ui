@@ -1676,7 +1676,8 @@ export async function createWorkspaceAgentServer(
     requestLedgerPath: resolveRequestLedgerPath({
       requestLedgerPath: opts.requestLedgerPath,
       sessionRoot: opts.sessionRoot,
-      workspaceRoot,
+      acceptSessionRootEnv: true,
+      legacy: { layout: "workspace-boring-dir", workspaceRoot },
     }),
     telemetry: opts.telemetry,
     metering: opts.metering,

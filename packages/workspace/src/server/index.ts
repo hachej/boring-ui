@@ -173,7 +173,10 @@ export type {
   PackageResourceScanSource,
   ResolvedAgentManagedSkill,
   ResolvedAgentPackageSkill,
+  ResolveWorkspacePackageResourcesOptions,
   ResolvedWorkspacePackageResourceRegistry,
+  SharedSkillPath,
+  SkippedWorkspacePackageResource,
 } from "./plugins/packageResources"
 // Boring plugin asset manager + reload-pluggability helpers.
 export { buildBoringSystemPrompt } from "./boringSystemPrompt"
