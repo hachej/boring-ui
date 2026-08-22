@@ -1,9 +1,10 @@
 import type {
   AskUserAnswer,
+  AskUserDecisionRecord,
   AskUserQuestion,
   AskUserTranscriptEvent,
 } from "../../shared/types"
-import { AskUserStoreError, type AskUserStore, type AskUserStoreChange, type AskUserStoreListener } from "../askUserStore"
+import { AskUserStoreError, buildDecisionRecord, type AskUserStore, type AskUserStoreChange, type AskUserStoreListener } from "../askUserStore"
 import { ASK_USER_ERROR_CODES } from "../../shared/error-codes"
 
 function clone<T>(value: T): T {
@@ -50,6 +51,18 @@ export class MemoryAskUserStore implements AskUserStore {
   async getByQuestionId(questionId: string): Promise<AskUserQuestion | null> {
     const question = this.questions.get(questionId)
     return question ? clone(question) : null
+  }
+
+  async getAnswer(questionId: string): Promise<AskUserAnswer | null> {
+    const answer = this.answers.get(questionId)
+    return answer ? clone(answer) : null
+  }
+
+  async getDecisionRecord(questionId: string): Promise<AskUserDecisionRecord | null> {
+    const question = this.questions.get(questionId)
+    const answer = this.answers.get(questionId)
+    if (!question || !answer) return null
+    return buildDecisionRecord(question, answer)
   }
 
   async createPending(question: AskUserQuestion): Promise<void> {

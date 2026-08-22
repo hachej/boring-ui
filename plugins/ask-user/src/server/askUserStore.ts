@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto"
 import { ASK_USER_ERROR_CODES } from "../shared/error-codes"
 import type {
   AskUserAnswer,
+  AskUserDecisionRecord,
   AskUserQuestion,
   AskUserTranscriptEvent,
 } from "../shared/types"
@@ -31,6 +32,14 @@ export interface AskUserStore {
   getByQuestionId(questionId: string): Promise<AskUserQuestion | null>
   createPending(question: AskUserQuestion): Promise<void>
   answer(questionId: string, answer: AskUserAnswer): Promise<void>
+  /** The persisted answer for a resolved question, if any. */
+  getAnswer(questionId: string): Promise<AskUserAnswer | null>
+  /**
+   * Thin durable decision record (#1348 follow-up): question + answer merged
+   * into the {riskTier, decision snapshot, resolvedAt, resolvedBy} shape.
+   * Returns null until the question is answered.
+   */
+  getDecisionRecord(questionId: string): Promise<AskUserDecisionRecord | null>
   cancel(questionId: string): Promise<void>
   markAbandoned(questionId: string): Promise<void>
   /** Flips an abandoned question back to `ready` (#1348 recovery). */
@@ -84,6 +93,19 @@ export class FileAskUserStore implements AskUserStore {
   async getByQuestionId(questionId: string): Promise<AskUserQuestion | null> {
     const state = await this.load()
     return state.questions[questionId] ? clone(state.questions[questionId]) : null
+  }
+
+  async getAnswer(questionId: string): Promise<AskUserAnswer | null> {
+    const state = await this.load()
+    return state.answers[questionId] ? clone(state.answers[questionId]) : null
+  }
+
+  async getDecisionRecord(questionId: string): Promise<AskUserDecisionRecord | null> {
+    const state = await this.load()
+    const question = state.questions[questionId]
+    const answer = state.answers[questionId]
+    if (!question || !answer) return null
+    return buildDecisionRecord(question, answer)
   }
 
   async createPending(question: AskUserQuestion): Promise<void> {
@@ -240,6 +262,18 @@ export class FileAskUserStore implements AskUserStore {
 
 function isPromiseLike(value: unknown): value is Promise<unknown> {
   return !!value && typeof value === "object" && "catch" in value && typeof value.catch === "function"
+}
+
+export function buildDecisionRecord(question: AskUserQuestion, answer: AskUserAnswer): AskUserDecisionRecord {
+  return {
+    questionId: question.questionId,
+    sessionId: question.sessionId,
+    title: question.title,
+    values: clone(answer.values),
+    riskTier: answer.riskTier ?? question.riskTier,
+    resolvedAt: answer.submittedAt,
+    resolvedBy: answer.resolvedBy,
+  }
 }
 
 function isPending(question: AskUserQuestion | undefined): question is AskUserQuestion {
