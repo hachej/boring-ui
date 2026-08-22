@@ -5,28 +5,6 @@ import type {
 } from '@hachej/boring-agent/shared'
 import type { WorkspacePythonEnvOptions } from './workspacePythonEnv'
 
-/**
- * Options contract for the injected bwrap args builder. The canonical
- * implementation (and its validation rules) is
- * `@hachej/boring-sandbox/providers/bwrap#buildBwrapArgs`; boring-bash never
- * imports the provider package, so hosts inject the builder through
- * {@link RuntimeHostOperations}. This interface is the structural mirror of
- * that builder's options and must stay in sync with it.
- */
-export interface BwrapArgsOptions {
-  extraArgs?: string[]
-  postWorkspaceArgs?: string[]
-  network?: 'shared' | 'isolated'
-  newSession?: boolean
-  dropAllCapabilities?: boolean
-  /**
-   * Workspace-relative prefixes re-bound readonly on top of the writable
-   * workspace mount, so spawned shells cannot mutate protected paths that the
-   * Operations layer already refuses to mutate.
-   */
-  readonlyPaths?: readonly string[]
-}
-
 export type RuntimeBashStrategy =
   | { kind: 'host'; preserveHostHome?: boolean }
   | { kind: 'local-sandbox'; sandboxRoot: string }
@@ -86,7 +64,16 @@ export interface RuntimeFilesystemBinding {
 }
 
 export interface RuntimeHostOperations {
-  buildBwrapArgs(workspaceRoot: string, options?: BwrapArgsOptions): string[]
+  /**
+   * Injected bwrap args builder, owned by
+   * `@hachej/boring-sandbox/providers/bwrap#buildBwrapArgs`. Declares only the
+   * option slice boring-bash supplies, so there is no mirrored interface to keep
+   * in sync; hosts narrow this member with the canonical `BwrapArgsOptions`.
+   */
+  buildBwrapArgs(
+    workspaceRoot: string,
+    options?: { readonly readonlyPaths?: readonly string[] },
+  ): string[]
   withWorkspacePythonEnv(input: WorkspacePythonEnvOptions): Record<string, string | undefined>
 }
 
