@@ -1,7 +1,25 @@
+import { lazy, Suspense } from "react"
 import type { ReactNode } from "react"
 import { cn } from "../lib/utils"
 import { decodeWorkspaceSessionDrag, type WorkspaceSessionRef } from "../sessionIdentity"
-import { ChatPaneStageDock } from "./ChatPaneStageDock"
+
+/**
+ * The dockview stage is code-split: the compact mobile shell never renders it
+ * (it renders `MobileSingleChatPane` instead), so a phone should not parse or
+ * download dockview-react at all. Desktop pays one extra chunk hop on mount.
+ */
+const ChatPaneStageDock = lazy(() => import("./ChatPaneStageDock").then((m) => ({ default: m.ChatPaneStageDock })))
+
+/**
+ * Synchronous fallback for the chunk hop: renders just the active pane body,
+ * so the transcript is present and readable on first paint instead of a
+ * spinner. Dock chrome (headers, splits) appears once the chunk lands.
+ */
+function ActivePaneFallback({ panes, activePaneId, renderPane }: Pick<ChatPaneStageProps, "panes" | "activePaneId" | "renderPane">) {
+  const active = panes.find((pane) => pane.id === activePaneId) ?? panes[0]
+  if (!active) return null
+  return <div className="relative h-full min-h-0">{renderPane(active)}</div>
+}
 
 export interface ChatPaneDescriptor {
   id: string
@@ -75,7 +93,20 @@ export interface ChatPaneStageProps {
  * workspace.
  */
 export function ChatPaneStage(props: ChatPaneStageProps) {
-  return <ChatPaneStageDock {...props} />
+  return (
+    <Suspense fallback={
+      <ActivePaneFallback panes={props.panes} activePaneId={props.activePaneId} renderPane={props.renderPane} />
+    }>
+      <ChatPaneStageDock {...props} />
+    </Suspense>
+  )
+}
+
+export function readablePaneTitle(title: string | undefined, id: string | undefined): string {
+  const trimmed = title?.trim()
+  const isMachineId = trimmed === id
+    || Boolean(trimmed && /(?:^|::)[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(trimmed))
+  return trimmed && !isMachineId ? trimmed : "New chat"
 }
 
 export function paneTitle(pane: { title?: string | null }): string {

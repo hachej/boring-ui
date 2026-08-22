@@ -155,10 +155,21 @@ export function CommandPalette({ sessionSearch }: CommandPaletteProps = {}) {
     <Dialog open={open} onOpenChange={setOpen}>
       {/* Fit the dialog to its content (capped) instead of a fixed 520px: on
           phones a half-empty fixed-height dialog reads as a broken screen.
-          Desktop keeps the same 520px ceiling. */}
+          Desktop keeps the same 520px ceiling.
+
+          The height budget subtracts the safe-area top and the software
+          keyboard: `100dvh` tracks browser chrome but NOT the keyboard, so a
+          keyboard-aware cap is the only way the footer stays reachable while
+          the user is typing. `--keyboard-inset` is published on <html> by the
+          host app and defaults to 0px, so this is inert where it is unset. */}
       <DialogContent
         className="cmdk-shell flex flex-col gap-0 overflow-hidden border-border/60 bg-background p-0 shadow-none backdrop-blur-0 [&>button.dialog-close]:hidden"
-        style={{ maxHeight: "min(520px, calc(100dvh - 2rem))", width: "min(640px, calc(100vw - 2rem))", maxWidth: 640 }}
+        style={{
+          maxHeight:
+            "min(520px, calc(100dvh - 2rem - var(--sa-top, env(safe-area-inset-top, 0px)) - var(--keyboard-inset, 0px)))",
+          width: "min(640px, calc(100vw - 2rem))",
+          maxWidth: 640,
+        }}
         showCloseButton={false}
         onPointerDownOutside={() => setOpen(false)}
         onEscapeKeyDown={() => setOpen(false)}
@@ -181,8 +192,12 @@ export function CommandPalette({ sessionSearch }: CommandPaletteProps = {}) {
             loading={isCatalogMode && catalogGroups.some((group) => group.loading)}
           />
 
+          {/* The compact floor keeps the shell from collapsing between
+              keystrokes. The dialog is content-sized, so a query that cuts
+              eight rows down to one would otherwise shrink the palette
+              mid-typing and drag the input out from under the user's finger. */}
           <CommandList
-            className="min-h-0 flex-1 overflow-y-auto py-1"
+            className="min-h-[12rem] flex-1 overflow-y-auto py-1 sm:min-h-0"
             style={{ maxHeight: "none" }}
           >
             <CommandEmpty className="py-10 text-center text-sm text-muted-foreground">
@@ -255,13 +270,18 @@ function PaletteSearchHeader({
        * reported as a "strange border".
        *
        * Mode switcher sits inline ahead of the input on wide viewports.
-       * The input wraps to its own full-width row when space is narrow.
+       *
+       * Below `sm:` the two controls cannot share a 358px row, and letting
+       * flex-wrap decide demoted the SEARCH FIELD to the second row — the
+       * palette opened on a row of tabs. So compact ordering is explicit
+       * instead of emergent: the input takes the first full-width row and the
+       * mode switcher becomes a full-width segmented strip underneath it.
        */}
-      <div className="command-palette-search-layout relative flex flex-wrap items-stretch [&>[data-slot=command-input-wrapper]]:h-auto [&>[data-slot=command-input-wrapper]]:min-w-[15rem] [&>[data-slot=command-input-wrapper]]:flex-1">
+      <div className="command-palette-search-layout relative flex flex-wrap items-stretch max-sm:border-b max-sm:border-border/60 [&>[data-slot=command-input-wrapper]]:order-first [&>[data-slot=command-input-wrapper]]:h-auto [&>[data-slot=command-input-wrapper]]:basis-full sm:[&>[data-slot=command-input-wrapper]]:order-none sm:[&>[data-slot=command-input-wrapper]]:min-w-[15rem] sm:[&>[data-slot=command-input-wrapper]]:flex-1 sm:[&>[data-slot=command-input-wrapper]]:basis-auto">
         <div
           role="group"
           aria-label="Palette mode"
-          className="my-2 ml-3 inline-flex shrink-0 self-center rounded-md border border-border/60 bg-muted/40 p-0.5"
+          className="mx-3 mt-2 mb-2 inline-flex basis-full justify-center self-center rounded-md border border-border/60 bg-muted/40 p-0.5 sm:my-2 sm:mr-0 sm:mb-0 sm:ml-3 sm:basis-auto sm:shrink-0 sm:justify-start"
         >
           {hasChatMode ? (
             <ModeButton
@@ -583,14 +603,17 @@ function ModeButton({
       aria-pressed={active}
       onClick={onClick}
       className={[
-        "command-palette-mode-button h-7 gap-1.5 px-2 text-xs font-medium",
+        "command-palette-mode-button h-7 gap-1.5 px-2 text-xs font-medium max-sm:flex-1",
         active
           ? "bg-background text-foreground shadow-sm"
           : "text-muted-foreground hover:text-foreground",
       ].join(" ")}
     >
       {icon}
-      {label}
+      {/* Icon-only below `sm:` so three buttons plus the 44px coarse-pointer
+          minimum still fit one row. `sr-only` (not `hidden`) keeps the
+          accessible name — an icon-only control still has to announce. */}
+      <span className="sr-only sm:not-sr-only">{label}</span>
     </Button>
   )
 }
