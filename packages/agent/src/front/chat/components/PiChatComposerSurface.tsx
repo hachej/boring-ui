@@ -103,6 +103,8 @@ export interface PiChatComposerSurfaceProps<
   onDismissSlash: () => void
   modelPickerOpen: boolean
   selectedModel: ModelSelection | null
+  sessionModel?: ModelSelection
+  modelOverride: boolean
   modelOptions: AvailableModel[]
   modelControlled: boolean
   hideDefaultModelOption?: boolean
@@ -166,6 +168,8 @@ export function PiChatComposerSurface<
   onDismissSlash,
   modelPickerOpen,
   selectedModel,
+  sessionModel,
+  modelOverride,
   modelOptions,
   modelControlled,
   hideDefaultModelOption = false,
@@ -467,6 +471,8 @@ export function PiChatComposerSurface<
         <div className="flex min-w-0 items-center justify-center gap-1">
         <ModelSelectTrigger
           value={selectedModel}
+          sessionModel={sessionModel}
+          isOverride={modelOverride}
           options={modelOptions}
           disabled={isStreaming || modelControlled}
           trigger="slash"

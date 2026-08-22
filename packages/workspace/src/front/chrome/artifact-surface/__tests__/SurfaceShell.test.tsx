@@ -487,13 +487,12 @@ describe("SurfaceShell", () => {
     await waitFor(() => expect(capturedRevealRequest).toBeNull())
 
     act(() => {
-      surface?.expandToFile("/workspace/reports ", { filesystem: "user", kind: "dir" })
+      surface?.expandToFile("/workspace/reports ", { filesystem: "user" })
     })
     expect(capturedRevealRequests).toContainEqual({
       path: "/workspace/reports ",
       seq: 3,
       filesystem: "user",
-      kind: "dir",
     })
     await waitFor(() => expect(capturedRevealRequest).toBeNull())
 

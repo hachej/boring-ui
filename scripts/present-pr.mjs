@@ -26,6 +26,10 @@ import {
   parseContextMarkdown,
   renderIntroVisuals,
 } from './lib/present-pr-context.mjs'
+import { CATEGORIES, categorize, createSankeyRows, isDefaultSankeyCategory, sankeyRowIsVisible } from './lib/present-pr-files.mjs'
+import { serializeInlineJson } from './lib/present-pr-html.mjs'
+import { extractBeadIds, extractLinkedIssueReference, resolveLinkedIssueReference } from './lib/present-pr-links.mjs'
+import { DARK_BADGE_THEME, DARK_CODE_THEME, DARK_TEXT_THEME, LIGHT_BADGE_THEME, LIGHT_CODE_THEME, LIGHT_TEXT_THEME, renderBadgeThemeVariables, renderCodeThemeVariables, renderTextThemeVariables } from './lib/present-pr-theme.mjs'
 import { renderMermaidSvg } from './lib/render-mermaid.mjs'
 
 /* ------------------------------------------------------------------ args */
@@ -51,14 +55,23 @@ function gh(cliArgs) {
   return execFileSync('gh', cliArgs, { encoding: 'utf8', maxBuffer: 128 * 1024 * 1024 })
 }
 const repoArgs = args.repo ? ['--repo', args.repo] : []
+const currentRepo = args.repo || JSON.parse(gh(['repo', 'view', '--json', 'nameWithOwner'])).nameWithOwner
 
 /* ------------------------------------------------------------- gh fetch */
 
 const pr = JSON.parse(
   gh([
     'pr', 'view', prNumber, ...repoArgs, '--json',
-    'number,title,url,author,state,isDraft,baseRefName,headRefName,additions,deletions,changedFiles,createdAt,updatedAt,labels,reviewDecision,mergeStateStatus',
+    'number,title,body,url,author,state,isDraft,baseRefName,headRefName,additions,deletions,changedFiles,createdAt,updatedAt,labels,reviewDecision,mergeStateStatus',
   ]),
+)
+
+const beadIds = extractBeadIds(pr.title, pr.body)
+const linkedIssueReference = extractLinkedIssueReference(pr.body)
+const { issue: linkedIssue, notice: linkedIssueNotice } = resolveLinkedIssueReference(
+  linkedIssueReference,
+  currentRepo,
+  (repo, number) => JSON.parse(gh(['api', `repos/${repo}/issues/${number}`])),
 )
 
 let checks = []
@@ -86,33 +99,9 @@ context.keyFiles = Array.isArray(context.keyFiles) ? context.keyFiles : []
 context.reviewHistory = Array.isArray(context.reviewHistory) ? context.reviewHistory : []
 context.why = Array.isArray(context.why) ? context.why : []
 if (typeof args.audit === 'string') context.audit = args.audit
-const renderedMermaid = await Promise.all(context.visuals.map((visual) => (
-  visual.language === 'mermaid' ? renderMermaidSvg(visual.content) : ''
+const renderedMermaid = await Promise.all(context.visuals.map((visual, index) => (
+  visual.language === 'mermaid' ? renderMermaidSvg(visual.content, `pr-context-diagram-${index + 1}`) : ''
 )))
-
-/* -------------------------------------------------------- categorization */
-
-const CATEGORIES = [
-  { id: 'generated', label: 'Generated / lockfiles', color: 'var(--cat-generated)' },
-  { id: 'config', label: 'Config / CI', color: 'var(--cat-config)' },
-  { id: 'docs', label: 'Docs', color: 'var(--cat-docs)' },
-  { id: 'test', label: 'Tests', color: 'var(--cat-test)' },
-  { id: 'prod', label: 'Production code', color: 'var(--cat-prod)' },
-]
-
-/** Order matters: first match wins, most-specific first. */
-export function categorize(file) {
-  const p = file.toLowerCase()
-  if (/(^|\/)(pnpm-lock\.yaml|package-lock\.json|yarn\.lock|cargo\.lock|poetry\.lock|go\.sum)$/.test(p)) return 'generated'
-  if (/(^|\/)(dist|build|coverage|__snapshots__|\.beads)(\/|$)/.test(p) || /\.(snap|lock)$/.test(p)) return 'generated'
-  if (/(^|\/)(__tests__|__mocks__|__fixtures__|tests?|e2e|spec|fixtures)(\/|$)/.test(p)) return 'test'
-  if (/\.(test|spec|e2e)\.[a-z0-9]+$/.test(p)) return 'test'
-  if (/(^|\/)(docs?|documentation)(\/|$)/.test(p)) return 'docs'
-  if (/\.(md|mdx|rst|adoc|txt)$/.test(p)) return 'docs'
-  if (/(^|\/)\.github\//.test(p)) return 'config'
-  if (/(^|\/)(\.[a-z0-9_.-]+rc(\.[a-z]+)?|[a-z0-9.-]*\.config\.[a-z]+|tsconfig[a-z0-9.-]*\.json|package\.json|dockerfile|.*\.ya?ml|.*\.toml|.*\.ini)$/.test(p)) return 'config'
-  return 'prod'
-}
 
 /* -------------------------------------------------------- diff parsing */
 
@@ -505,6 +494,17 @@ function paragraphs(text) {
   return String(text).split(/\n{2,}/).map((p) => `<p>${esc(p.trim()).replace(/\n/g, ' ').replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')}</p>`).join('\n')
 }
 
+const defaultSankeyFiles = files.filter((file) => isDefaultSankeyCategory(file.cat))
+const supplementalSankeyFiles = files.filter((file) => !isDefaultSankeyCategory(file.cat))
+const supplementalSankeyCounts = supplementalSankeyFiles.reduce((counts, file) => {
+  counts[file.cat] += 1
+  return counts
+}, { test: 0, docs: 0 })
+const supplementalSankeyLabel = [
+  supplementalSankeyCounts.test ? `${supplementalSankeyCounts.test} test${supplementalSankeyCounts.test === 1 ? '' : 's'}` : '',
+  supplementalSankeyCounts.docs ? `${supplementalSankeyCounts.docs} doc${supplementalSankeyCounts.docs === 1 ? '' : 's'}` : '',
+].filter(Boolean).join(' + ')
+
 const orderedCats = CATEGORIES.slice().reverse() // prod first
 const filterChips = orderedCats.map((c) => {
   const t = totals[c.id]
@@ -515,34 +515,35 @@ const filterChips = orderedCats.map((c) => {
   </label>`
 }).join('\n')
 
-const html = `<title>PR #${pr.number} — ${esc(pr.title)}</title>
+const html = `<meta charset="utf-8">
+<title>PR #${pr.number} — ${esc(pr.title)}</title>
 <style>
 :root {
   color-scheme: light dark;
   --bg: #ffffff; --panel: #f7f8fa; --panel-2: #eef0f4; --fg: #14161a; --muted: #5b6270;
-  --border: #dfe3ea; --accent: #3b5bdb;
-  --add-bg: #e6ffec; --add-fg: #0a6b2e; --del-bg: #ffebe9; --del-fg: #9b1c1c; --hunk-bg: #eef1f7;
-  --t-kw: #8250df; --t-str: #0a6b2e; --t-num: #0550ae; --t-com: #6e7781;
-  --cat-prod: #3b5bdb; --cat-test: #2f9e44; --cat-docs: #f08c00; --cat-config: #7048e8; --cat-generated: #868e96;
-  --good: #2f9e44; --warn: #f08c00; --bad: #e03131;
+  --border: #dfe3ea;
+  ${renderBadgeThemeVariables(LIGHT_BADGE_THEME)}
+  ${renderTextThemeVariables(LIGHT_TEXT_THEME)}
+  ${renderCodeThemeVariables(LIGHT_CODE_THEME)}
+  --add-fg: #0a6b2e; --del-fg: #9b1c1c; --hunk-bg: #eef1f7;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #0d1117; --panel: #12161d; --panel-2: #1b212b; --fg: #e6edf3; --muted: #9aa4b2;
-    --border: #262d38; --accent: #7d94ff;
-    --add-bg: #0f2f1c; --add-fg: #6fdc8c; --del-bg: #3a1417; --del-fg: #ff8f8f; --hunk-bg: #182029;
-    --t-kw: #d2a8ff; --t-str: #7ee787; --t-num: #79c0ff; --t-com: #8b949e;
-    --cat-prod: #7d94ff; --cat-test: #6fdc8c; --cat-docs: #ffc078; --cat-config: #d2a8ff; --cat-generated: #8b949e;
-    --good: #6fdc8c; --warn: #ffc078; --bad: #ff8f8f;
+    --border: #262d38;
+    ${renderBadgeThemeVariables(DARK_BADGE_THEME)}
+    ${renderTextThemeVariables(DARK_TEXT_THEME)}
+    ${renderCodeThemeVariables(DARK_CODE_THEME)}
+    --add-fg: #6fdc8c; --del-fg: #ff8f8f; --hunk-bg: #182029;
   }
 }
 :root[data-theme="dark"] {
   --bg: #0d1117; --panel: #12161d; --panel-2: #1b212b; --fg: #e6edf3; --muted: #9aa4b2;
-  --border: #262d38; --accent: #7d94ff;
-  --add-bg: #0f2f1c; --add-fg: #6fdc8c; --del-bg: #3a1417; --del-fg: #ff8f8f; --hunk-bg: #182029;
-  --t-kw: #d2a8ff; --t-str: #7ee787; --t-num: #79c0ff; --t-com: #8b949e;
-  --cat-prod: #7d94ff; --cat-test: #6fdc8c; --cat-docs: #ffc078; --cat-config: #d2a8ff; --cat-generated: #8b949e;
-  --good: #6fdc8c; --warn: #ffc078; --bad: #ff8f8f;
+  --border: #262d38;
+  ${renderBadgeThemeVariables(DARK_BADGE_THEME)}
+  ${renderTextThemeVariables(DARK_TEXT_THEME)}
+  ${renderCodeThemeVariables(DARK_CODE_THEME)}
+  --add-fg: #6fdc8c; --del-fg: #ff8f8f; --hunk-bg: #182029;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; overflow-x: hidden; }
@@ -554,6 +555,10 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 .muted { color: var(--muted); }
 
 .head { border: 1px solid var(--border); border-radius: 12px; padding: 20px 22px; background: var(--panel); }
+.problem { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 14px; margin: -2px 0 14px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.problem-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 600; }
+.problem a { font-weight: 650; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.problem .bead { margin-left: auto; color: var(--muted); font-size: 12px; }
 .meta { display: flex; flex-wrap: wrap; gap: 8px 18px; color: var(--muted); font-size: 13px; margin-top: 8px; }
 .badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .badge { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--border); background: var(--bg); border-radius: 999px; padding: 4px 12px; font-size: 12.5px; }
@@ -565,7 +570,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 .diagram .context-visual { margin: 0; }
 .diagram .context-visual + .context-visual { border-top: 1px solid var(--border); margin-top: 18px; padding-top: 18px; }
 .diagram pre.mermaid { background: transparent; text-align: center; }
-.diagram .mermaid-svg { display: flex; justify-content: center; }
+.diagram .mermaid-svg { display: flex; justify-content: center; padding: 14px; border-radius: 9px; background: #11151c; color: #eef2ff; }
 .diagram .mermaid-svg svg { width: 100%; height: auto; }
 .diagram > pre.shape { white-space: pre; font-size: 12px; color: var(--muted); }
 
@@ -589,17 +594,17 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 .chev { color: var(--muted); transition: transform 0.12s ease; display: inline-block; }
 .file[open] > summary .chev { transform: rotate(90deg); }
 .fpath { font-size: 12.5px; word-break: break-all; }
-.pill { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; padding: 2px 8px; border-radius: 999px; color: var(--bg); font-weight: 600; }
-.pill-prod { background: var(--cat-prod); } .pill-test { background: var(--cat-test); } .pill-docs { background: var(--cat-docs); }
-.pill-config { background: var(--cat-config); } .pill-generated { background: var(--cat-generated); }
+.pill { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; padding: 2px 8px; border-radius: 999px; font-weight: 600; }
+.pill-prod { background: var(--cat-prod); color: var(--on-cat-prod); } .pill-test { background: var(--cat-test); color: var(--on-cat-test); } .pill-docs { background: var(--cat-docs); color: var(--on-cat-docs); }
+.pill-config { background: var(--cat-config); color: var(--on-cat-config); } .pill-generated { background: var(--cat-generated); color: var(--on-cat-generated); }
 .status { font-size: 11.5px; color: var(--muted); }
 .rank { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 18px; text-align: right; opacity: 0.75; }
-.starthere { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.07em; font-weight: 600; color: var(--bg); background: var(--accent); border-radius: 999px; padding: 2px 9px; }
+.starthere { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.07em; font-weight: 600; color: var(--on-accent); background: var(--accent); border-radius: 999px; padding: 2px 9px; }
 .pinned { font-size: 10.5px; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 1px 8px; }
 .counts { margin-left: auto; font-variant-numeric: tabular-nums; font-size: 12.5px; }
 .add { color: var(--add-fg); } .del { color: var(--del-fg); }
 
-.diffwrap { overflow-x: auto; background: var(--bg); }
+.diffwrap { overflow-x: auto; background: var(--code-bg); }
 table.diff { border-collapse: collapse; width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.55; }
 table.diff td { padding: 0 6px; vertical-align: top; white-space: pre; }
 td.ln { width: 1%; min-width: 44px; text-align: right; color: var(--muted); user-select: none; opacity: 0.7; }
@@ -638,7 +643,7 @@ tr.hunk td { background: var(--hunk-bg); color: var(--muted); padding: 4px 10px;
 
 /* --- review history --- */
 .norecord { border-color: var(--bad); }
-.norecord strong { color: var(--bad); }
+.norecord strong { color: var(--bad-ink); }
 .norecord p { margin: 6px 0 0; color: var(--muted); font-size: 13.5px; }
 .evhead { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; font-size: 12.5px; }
 .evhead .muted { margin-left: auto; }
@@ -651,14 +656,14 @@ tr.hunk td { background: var(--hunk-bg); color: var(--muted); padding: 4px 10px;
 .ev-verify .evdot { background: var(--good); } .ev-ui .evdot { background: var(--cat-docs); }
 .ev-merge .evdot { background: var(--accent); }
 .evline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.evtype { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; padding: 2px 9px; border-radius: 999px; color: var(--bg); background: var(--muted); }
-.evtype-thermo { background: var(--cat-config); } .evtype-audit { background: var(--cat-prod); }
-.evtype-security { background: var(--bad); } .evtype-fix { background: var(--warn); }
-.evtype-verify { background: var(--good); } .evtype-ui { background: var(--cat-docs); }
-.evtype-review { background: var(--cat-test); } .evtype-merge { background: var(--accent); }
+.evtype { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; padding: 2px 9px; border-radius: 999px; color: var(--on-muted); background: var(--muted); }
+.evtype-thermo { background: var(--cat-config); color: var(--on-cat-config); } .evtype-audit { background: var(--cat-prod); color: var(--on-cat-prod); }
+.evtype-security { background: var(--bad); color: var(--on-bad); } .evtype-fix { background: var(--warn); color: var(--on-warn); }
+.evtype-verify { background: var(--good); color: var(--on-good); } .evtype-ui { background: var(--cat-docs); color: var(--on-cat-docs); }
+.evtype-review { background: var(--cat-test); color: var(--on-cat-test); } .evtype-merge { background: var(--accent); color: var(--on-accent); }
 .evverdict { font-size: 11.5px; font-weight: 600; padding: 1px 9px; border-radius: 999px; border: 1px solid currentColor; }
-.v-good { color: var(--good); } .v-warn { color: var(--warn); } .v-bad { color: var(--bad); }
-.v-fixed { color: var(--good); } .v-neutral { color: var(--muted); }
+.v-good, .v-fixed { color: var(--on-good); background: var(--good); } .v-warn { color: var(--on-warn); background: var(--warn); } .v-bad { color: var(--on-bad); background: var(--bad); }
+.v-neutral { color: var(--on-muted); background: var(--muted); }
 .evactor { font-size: 12px; color: var(--muted); }
 .evwhen { font-size: 12px; color: var(--muted); margin-left: auto; font-variant-numeric: tabular-nums; }
 .evsummary { margin: 5px 0 0; font-size: 13.5px; }
@@ -674,7 +679,7 @@ tr.hunk td { background: var(--hunk-bg); color: var(--muted); padding: 4px 10px;
 .btn.seg { border-radius: 0; margin-left: -1px; }
 .sortwrap .btn.seg:first-of-type { border-radius: 8px 0 0 8px; margin-left: 0; }
 .sortwrap .btn.seg:last-of-type { border-radius: 0 8px 8px 0; }
-.btn.seg.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn.seg.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 .sankeyscroll { overflow-x: auto; }
 .sankeyscroll svg { display: block; }
 .sk-el { transition: opacity 0.12s ease; }
@@ -691,6 +696,13 @@ tr.hunk td { background: var(--hunk-bg); color: var(--muted); padding: 4px 10px;
 
 <div class="wrap">
   <header class="head">
+    <div class="problem">
+      <span class="problem-label">Issue being solved</span>
+      ${linkedIssue
+        ? `<a href="${esc(linkedIssue.url)}">#${linkedIssue.number} — ${esc(linkedIssue.title)}</a>`
+        : `<strong>${esc(linkedIssueNotice)}</strong>`}
+      <span class="bead">${beadIds.length === 1 ? 'Bead' : 'Beads'} <code>${esc(beadIds.length ? beadIds.join(', ') : 'unknown')}</code></span>
+    </div>
     <h1>PR #${pr.number} — ${esc(pr.title)}</h1>
     <div class="meta">
       <span>${esc(pr.author?.login ?? 'unknown')}</span>
@@ -725,8 +737,9 @@ tr.hunk td { background: var(--hunk-bg); color: var(--muted); padding: 4px 10px;
   </div>
   ${files.length >= 4 ? `<div class="card sankey" id="sankey">
     <div class="sankeyhead">
-      <p class="hint">What is touched — area → package → file. Ribbon width is changed lines, colour is the file category. Click any node to jump to its diff.</p>
-      <button class="btn" id="toggle-files" data-on="${files.length <= 24 ? '1' : '0'}">${files.length <= 24 ? 'Hide file level' : 'Show file level'}</button>
+      <p class="hint">What code is touched — area → package → file. Tests and docs are excluded by default; the complete diff list remains below.</p>
+      ${supplementalSankeyFiles.length ? `<button class="btn" id="toggle-supplemental" aria-pressed="false">Show tests + docs (${supplementalSankeyLabel})</button>` : ''}
+      <button class="btn" id="toggle-files" data-on="${defaultSankeyFiles.length <= 24 ? '1' : '0'}">${defaultSankeyFiles.length <= 24 ? 'Hide file level' : 'Show file level'}</button>
     </div>
     <div class="sankeyscroll"><svg id="sankey-svg" role="img" aria-label="Diff flow from area to package to file"></svg></div>
   </div>` : ''}
@@ -753,12 +766,11 @@ ${files.map(renderFile).join('\n')}
 </div>
 
 <script>
-var SANKEY_DATA = ${JSON.stringify(files.map((f, i) => ({
-  id: `f${i}`, path: f.path, name: f.path.split('/').pop(), cat: f.cat, area: f.area, pkg: f.pkg,
-  add: f.additions, del: f.deletions, rank: f.rank,
-})))};
+var SANKEY_DATA = ${serializeInlineJson(createSankeyRows(files))};
 </script>
 <script>
+${sankeyRowIsVisible.toString()}
+
 (function () {
   var fileEls = Array.prototype.slice.call(document.querySelectorAll('.file'));
   var boxes = Array.prototype.slice.call(document.querySelectorAll('.chip input'));
@@ -767,7 +779,8 @@ var SANKEY_DATA = ${JSON.stringify(files.map((f, i) => ({
   var NS = 'http://www.w3.org/2000/svg';
 
   var BAR = 10, GAP = 7, TOP = 30, BOT = 12, MAX_FILE_NODES = 26;
-  var showFiles = SANKEY_DATA.length <= 24;
+  var showFiles = SANKEY_DATA.filter(function (row) { return !row.supplemental; }).length <= 24;
+  var showSupplemental = false;
 
   function el(name, attrs) {
     var node = document.createElementNS(NS, name);
@@ -856,7 +869,7 @@ var SANKEY_DATA = ${JSON.stringify(files.map((f, i) => ({
     if (!svg) return;
     var on = {};
     boxes.forEach(function (b) { on[b.dataset.cat] = b.checked; });
-    var rows = SANKEY_DATA.filter(function (r) { return on[r.cat]; });
+    var rows = SANKEY_DATA.filter(function (row) { return sankeyRowIsVisible(row, on, showSupplemental); });
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     if (rows.length === 0) { svg.setAttribute('height', 0); return; }
 
@@ -921,26 +934,19 @@ var SANKEY_DATA = ${JSON.stringify(files.map((f, i) => ({
         var act = n.kind === 'file' ? n.id : (n.best ? n.best.id : '');
         var bar = n.kind === 'pkg' ? BAR + 5 : BAR;
         var group = el('g', { class: 'sk-el sk-node', 'data-chain': n.chain, 'data-kind': n.kind, 'data-cat': n.cat, 'data-act': act });
-        if (n.kind === 'area') {
-          var solid = el('rect', { x: n.x, y: n.y, width: bar, height: n.h, rx: 2 });
-          solid.style.fill = 'var(--cat-' + n.cat + ')';
-          group.appendChild(solid);
-        } else {
-          // Split the bar add/green over del/red, in proportion — the same
-          // encoding the diff rows use, so the two read as one language.
-          var w = weight(n);
-          var addH = n.add > 0 ? Math.max(1.5, n.add / w * n.h) : 0;
-          var delH = Math.max(0, n.h - addH);
-          if (addH > 0) {
-            var a = el('rect', { x: n.x, y: n.y, width: bar, height: addH, rx: 2 });
-            a.style.fill = 'var(--add-fg)';
-            group.appendChild(a);
-          }
-          if (delH > 0.5) {
-            var dRect = el('rect', { x: n.x, y: n.y + addH, width: bar, height: delH, rx: 2 });
-            dRect.style.fill = 'var(--del-fg)';
-            group.appendChild(dRect);
-          }
+        // Every level uses the same add/green over del/red split as the diff.
+        var w = weight(n);
+        var addH = n.add > 0 ? Math.max(1.5, n.add / w * n.h) : 0;
+        var delH = Math.max(0, n.h - addH);
+        if (addH > 0) {
+          var a = el('rect', { x: n.x, y: n.y, width: bar, height: addH, rx: 2 });
+          a.style.fill = 'var(--add-fg)';
+          group.appendChild(a);
+        }
+        if (delH > 0.5) {
+          var dRect = el('rect', { x: n.x, y: n.y + addH, width: bar, height: delH, rx: 2 });
+          dRect.style.fill = 'var(--del-fg)';
+          group.appendChild(dRect);
         }
         // Packages carry a second line with their own ±counts: the scope check
         // ("why is this PR in that package at all?") is read here, not in the diff.
@@ -1044,6 +1050,18 @@ var SANKEY_DATA = ${JSON.stringify(files.map((f, i) => ({
       if (act) openFile(act);
     });
     window.addEventListener('resize', function () { render(); });
+  }
+
+  var supplementalToggle = document.getElementById('toggle-supplemental');
+  if (supplementalToggle) {
+    supplementalToggle.addEventListener('click', function () {
+      showSupplemental = !showSupplemental;
+      supplementalToggle.textContent = showSupplemental
+        ? 'Hide tests + docs'
+        : 'Show tests + docs (${supplementalSankeyLabel})';
+      supplementalToggle.setAttribute('aria-pressed', showSupplemental ? 'true' : 'false');
+      render();
+    });
   }
 
   var filesToggle = document.getElementById('toggle-files');

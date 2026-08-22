@@ -7,7 +7,7 @@ export type WorkspaceLinkTarget =
   | { kind: "openFile"; path: string; mode?: UiFileOpenMode; filesystem?: FilesystemId }
   | { kind: "openSurface"; surfaceKind: string; target: string; filesystem?: FilesystemId; meta?: Record<string, unknown> }
   | { kind: "openPanel"; id: string; component: string; title?: string; params?: Record<string, unknown> }
-  | { kind: "expandToFile"; path: string; filesystem?: FilesystemId; resourceKind?: "file" | "dir" }
+  | { kind: "expandToFile"; path: string; filesystem?: FilesystemId }
 
 export interface WorkspaceLinkProps {
   to: WorkspaceLinkTarget
@@ -35,14 +35,7 @@ export function workspaceLinkCommand(to: WorkspaceLinkTarget): UiCommand {
         },
       }
     case "expandToFile":
-      return {
-        kind: "expandToFile",
-        params: {
-          path: to.path,
-          ...(to.filesystem ? { filesystem: to.filesystem } : {}),
-          ...(to.resourceKind ? { kind: to.resourceKind } : {}),
-        },
-      }
+      return { kind: "expandToFile", params: { path: to.path, ...(to.filesystem ? { filesystem: to.filesystem } : {}) } }
   }
 }
 

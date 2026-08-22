@@ -164,6 +164,8 @@ function groupModelOptions(options: AvailableModel[]): Map<string, AvailableMode
 type ModelSelectTriggerProps = Omit<ComponentPropsWithoutRef<'button'>, 'value'> & {
   value: ModelSelection | null
   options: AvailableModel[]
+  sessionModel?: ModelSelection
+  isOverride?: boolean
   disabled?: boolean
   trigger?: SelectorTrigger
   open?: boolean
@@ -173,6 +175,8 @@ type ModelSelectTriggerProps = Omit<ComponentPropsWithoutRef<'button'>, 'value'>
 export const ModelSelectTrigger = forwardRef<HTMLButtonElement, ModelSelectTriggerProps>(function ModelSelectTrigger({
   value,
   options,
+  sessionModel,
+  isOverride = false,
   disabled,
   trigger = 'button',
   open = false,
@@ -182,19 +186,27 @@ export const ModelSelectTrigger = forwardRef<HTMLButtonElement, ModelSelectTrigg
   ...props
 }, ref) {
   const triggerLabel = modelTriggerLabel(value, options, emptyLabel)
+  const sessionTriggerLabel = sessionModel ? modelTriggerLabel(sessionModel, options) : undefined
   // Show the provider alongside the model so the same model name across
   // providers stays unambiguous. The default automatic selection has no
   // provider to show.
   const triggerDisplay = value ? `${triggerLabel} (${displayProviderLabel(value.provider)})` : triggerLabel
+  const sessionDisplay = sessionModel && sessionTriggerLabel
+    ? `${sessionTriggerLabel} (${displayProviderLabel(sessionModel.provider)})`
+    : triggerDisplay
+  const accessibleDisplay = isOverride && value
+    ? `Current model: ${sessionDisplay}. Next-message override: ${triggerDisplay}`
+    : `Current model: ${sessionDisplay}`
   return (
     <button
       ref={ref}
       type="button"
       data-boring-agent-part="model-select"
       data-boring-state={disabled ? "disabled" : undefined}
+      data-boring-model-override={isOverride ? "true" : undefined}
       disabled={disabled}
-      aria-label={trigger === 'slash' ? `Open model picker. Current model: ${triggerDisplay}` : 'Model'}
-      title={trigger === 'slash' ? `Open model picker. Current model: ${triggerDisplay}` : undefined}
+      aria-label={trigger === 'slash' ? `Open model picker. ${accessibleDisplay}` : 'Model'}
+      title={trigger === 'slash' ? accessibleDisplay : undefined}
       onClick={onClick}
       className={cn(
         trigger === 'slash'
@@ -209,8 +221,15 @@ export const ModelSelectTrigger = forwardRef<HTMLButtonElement, ModelSelectTrigg
       {trigger === 'slash' ? (
         <>
           <span className="text-muted-foreground">Model · </span>
-          <span className="min-w-0 truncate text-foreground">{triggerLabel}</span>
-          {value ? <span className="shrink-0 text-muted-foreground"> · {displayProviderLabel(value.provider)}</span> : null}
+          <span className="min-w-0 truncate text-foreground">{sessionTriggerLabel ?? triggerLabel}</span>
+          {sessionModel ? (
+            <span className="shrink-0 text-muted-foreground"> · {displayProviderLabel(sessionModel.provider)}</span>
+          ) : value ? (
+            <span className="shrink-0 text-muted-foreground"> · {displayProviderLabel(value.provider)}</span>
+          ) : null}
+          {isOverride && value ? (
+            <span className="shrink-0 text-amber-600 dark:text-amber-400"> · Next override: {triggerLabel} · {displayProviderLabel(value.provider)}</span>
+          ) : null}
         </>
       ) : (
         <>

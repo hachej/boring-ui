@@ -682,7 +682,7 @@ export function fileRoutes(
     if (contentBase64 === null) return
     if (!isExactBinaryWritePolicy(body.ifExists)) {
       return reply.code(400).send({
-        error: { code: ERROR_CODE_VALIDATION_ERROR, message: 'ifExists must be error, replace, or skip', field: 'ifExists' },
+        error: { code: ERROR_CODE_VALIDATION_ERROR, message: 'ifExists must be error or replace', field: 'ifExists' },
       })
     }
     if (contentBase64.length > Math.ceil(MAX_UPLOAD_BYTES / 3) * 4) {
@@ -732,14 +732,11 @@ export function fileRoutes(
         return { status: 'written', path } satisfies ExactBinaryWriteOutcome
       } catch (error) {
         if ((error as NodeJS.ErrnoException)?.code !== 'EEXIST') throw error
-        const outcome = {
-          status: body.ifExists === 'skip' ? 'skipped' : 'conflict',
+        return {
+          status: 'conflict',
           path,
           reason: 'already-exists',
-        } as const
-        return body.ifExists === 'skip'
-          ? outcome satisfies ExactBinaryWriteOutcome
-          : reply.code(409).send(outcome satisfies ExactBinaryWriteOutcome)
+        } satisfies ExactBinaryWriteOutcome
       }
     } catch (err) {
       return classifyError(err, reply, 'file')

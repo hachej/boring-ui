@@ -39,6 +39,12 @@ Detailed coding practices, workflow, architecture, and package docs live under `
 10. **Default communication style:** concise, direct, high-signal. Honor user
    requests for `stop caveman`, `normal mode`, or any other explicit tone
    change.
+11. **Reconcile architecture proposals with the ratified long-term plan:** before
+   proposing cross-package architecture, ontology changes, or new durable
+   primitives, read the ratified long-term vision, architecture plan, and owner
+   rulings linked below. State how the proposal aligns and name every conflict.
+   Never silently supersede a frozen ruling; a conflict requires an explicit
+   owner decision and an update to the ratified plan.
 
 ## Start here
 
@@ -52,6 +58,7 @@ Detailed coding practices, workflow, architecture, and package docs live under `
 | Model Card & delegation model | [`docs/procedures/MODEL-CARD.md`](docs/procedures/MODEL-CARD.md) |
 | Worktree agent coordination | [`docs/procedures/worktree-agent.md`](docs/procedures/worktree-agent.md) |
 | Architecture decisions | [`docs/DECISIONS.md`](docs/DECISIONS.md) |
+| Architecture proposals and durable primitives | [`VISION.md`](docs/plans/long-term/ratified/VISION.md), [`ARCHITECTURE-PLAN.md`](docs/plans/long-term/ratified/ARCHITECTURE-PLAN.md), and [`RECONCILIATION.md`](docs/plans/long-term/ratified/RECONCILIATION.md) |
 | Agent ↔ workspace contract | [`docs/WORKSPACE_CONTRACT.md`](docs/WORKSPACE_CONTRACT.md) |
 | Proof-of-work comments | [`docs/procedures/proof-of-work.md`](docs/procedures/proof-of-work.md) |
 | Troubleshooting map | [`docs/web/reference/troubleshooting.md`](docs/web/reference/troubleshooting.md) |

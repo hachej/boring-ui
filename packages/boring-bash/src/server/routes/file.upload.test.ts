@@ -74,13 +74,13 @@ describe('exact binary write route', () => {
     await app.close()
   })
 
-  it.each(['skip', 'error'] as const)('never overwrites an existing file for %s', async (ifExists) => {
+  it('returns a typed conflict without overwriting an existing file', async () => {
     const state = createWorkspace({ 'src/report.txt': 'old' })
     const app = await appFor(state.workspace)
-    const response = await app.inject({ method: 'POST', url: '/api/v1/files/binary', payload: binaryPayload({ ifExists }) })
-    expect(response.statusCode).toBe(ifExists === 'skip' ? 200 : 409)
+    const response = await app.inject({ method: 'POST', url: '/api/v1/files/binary', payload: binaryPayload() })
+    expect(response.statusCode).toBe(200)
     expect(response.json()).toEqual({
-      status: ifExists === 'skip' ? 'skipped' : 'conflict',
+      status: 'conflict',
       path: 'src/report.txt',
       reason: 'already-exists',
     })
@@ -99,7 +99,7 @@ describe('exact binary write route', () => {
     await app.close()
   })
 
-  it.each([undefined, '', 'overwrite', true])('strictly rejects malformed policy %j', async (ifExists) => {
+  it.each([undefined, '', 'overwrite', 'skip', true])('strictly rejects malformed policy %j', async (ifExists) => {
     const state = createWorkspace()
     const app = await appFor(state.workspace)
     const response = await app.inject({ method: 'POST', url: '/api/v1/files/binary', payload: binaryPayload({ ifExists }) })
@@ -133,13 +133,13 @@ describe('exact binary write route', () => {
     const state = createWorkspace({ [path]: 'old' })
     const app = await appFor(state.workspace)
     const response = await app.inject({ method: 'POST', url: '/api/v1/files/binary', payload: binaryPayload({ path }) })
-    expect(response.statusCode).toBe(409)
+    expect(response.statusCode).toBe(200)
     expect(response.json()).toEqual({ status: 'conflict', path, reason: 'already-exists' })
     expect(state.files.get(path)).toBe('old')
     await app.close()
   })
 
-  it('returns 501 rather than weakening error/skip when exclusive create is unavailable', async () => {
+  it('returns 501 rather than weakening exclusive create when unavailable', async () => {
     const state = createWorkspace({}, false)
     const app = await appFor(state.workspace)
     const response = await app.inject({ method: 'POST', url: '/api/v1/files/binary', payload: binaryPayload() })
@@ -156,7 +156,8 @@ describe('exact binary write route', () => {
       payload: binaryPayload({ contentBase64: encoded(value) }),
     })
     const responses = await Promise.all([request(firstApp, 'first'), request(secondApp, 'second')])
-    expect(responses.map((response) => response.statusCode).sort()).toEqual([200, 409])
+    expect(responses.map((response) => response.statusCode)).toEqual([200, 200])
+    expect(responses.map((response) => response.json().status).sort()).toEqual(['conflict', 'written'])
     expect(state.writes).toHaveLength(1)
     expect(['first', 'second']).toContain(state.files.get('src/report.txt'))
     await Promise.all([firstApp.close(), secondApp.close()])
