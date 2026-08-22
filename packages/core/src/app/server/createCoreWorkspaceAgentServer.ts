@@ -16,6 +16,7 @@ import {
   provisionWorkspaceRuntime,
   projectAuthorizedSessionRunDetails,
   resolveDefaultAgentFleet,
+  resolveRequestLedgerPath,
   withRuntimeEnvContributions,
   type AgentEffectAdmission,
   type AgentFleetCompiler,
@@ -1587,7 +1588,12 @@ export async function createCoreWorkspaceAgentServer(
       requireCompilerForModelPolicy: true,
     }),
     sessionRoot,
-    requestLedgerPath: path.join(sessionRoot ?? workspaceRoot, '.agent-request-ledger.sqlite'),
+    requestLedgerPath: resolveRequestLedgerPath({
+      // `sessionRoot` above already folds in BORING_AGENT_SESSION_ROOT and the
+      // per-mode inference, so the canonical chain must not re-read the env.
+      sessionRoot,
+      legacy: { layout: 'workspace-host-file', workspaceRoot },
+    }),
     hostId: options.agentHostId ?? (sessionRoot ? undefined : 'core-workspace-agent'),
     scopeVerifier: scopeAuthority.verifier,
     runtimeModeAdapter: hostRuntimeModeAdapter,

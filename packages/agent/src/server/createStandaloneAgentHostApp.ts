@@ -210,7 +210,8 @@ export async function createStandaloneAgentHostApp(
       requestLedgerPath: resolveRequestLedgerPath({
         requestLedgerPath: options.requestLedgerPath,
         sessionRoot: options.sessionRoot,
-        workspaceRoot,
+        acceptSessionRootEnv: true,
+        legacy: { layout: 'workspace-boring-dir', workspaceRoot },
       }),
       telemetry: options.telemetry,
       metering: options.metering,
