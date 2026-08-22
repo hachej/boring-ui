@@ -1032,6 +1032,10 @@ export function WorkspaceAgentFront<
             sessionId: ref.sessionId,
             agentTypeId: ref.agentTypeId,
             working: status === "running" || status === "aborting",
+            // Terminal outcomes ride the same frame so the session list can
+            // show `failed` immediately instead of waiting for the next list
+            // fetch to carry the row's status.
+            status,
           },
         }))
         // A session created out-of-band (e.g. an external chat entrypoint)

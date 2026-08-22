@@ -5,6 +5,7 @@ import { SessionBrowser } from "../SessionBrowser"
 import { WorkspaceAttentionProvider, useWorkspaceAttention } from "../../../attention/WorkspaceAttentionProvider"
 import type { SessionItem } from "../../../components/SessionList"
 import { decodeWorkspaceSessionDrag, workspaceSessionKey } from "../../../sessionIdentity"
+import { COMPLETED_VISIBLE_MS } from "../../../sessionActivity"
 
 const now = Date.now()
 const sample: SessionItem[] = [
@@ -322,6 +323,95 @@ describe("SessionBrowser", () => {
     } finally {
       window.removeEventListener("boring:chat-session-status-request", onRequest)
     }
+  })
+
+  it("shows a done badge when a working session finishes, and retires it", () => {
+    vi.useFakeTimers()
+    try {
+      render(<SessionBrowser sessions={sample} activeId="s1" />)
+
+      act(() => {
+        window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+          detail: { sessionId: "s2", working: true },
+        }))
+      })
+      expect(document.querySelector('[data-boring-badge="completed"]')).toBeNull()
+
+      act(() => {
+        window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+          detail: { sessionId: "s2", working: false },
+        }))
+      })
+      const badge = document.querySelector('[data-boring-badge="completed"]')
+      expect(badge).toHaveTextContent("done")
+      expect(badge?.closest("li")?.textContent).toContain("Second session")
+      // Quiet by construction: no pulse, and the neutral tone the working chip uses.
+      expect(badge?.className).toContain("bg-foreground/[0.07]")
+      expect(badge?.innerHTML).not.toContain("animate-pulse")
+
+      act(() => { vi.advanceTimersByTime(COMPLETED_VISIBLE_MS + 1) })
+      expect(document.querySelector('[data-boring-badge="completed"]')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("does not mark idle sessions that never ran as done", () => {
+    render(<SessionBrowser sessions={sample} activeId="s1" />)
+    expect(document.querySelector('[data-boring-badge="completed"]')).toBeNull()
+  })
+
+  it("shows a failed badge for a session the server reports as errored", () => {
+    const withError: SessionItem[] = [
+      sample[0]!,
+      { ...sample[1]!, status: "error" },
+      sample[2]!,
+    ]
+    render(<SessionBrowser sessions={withError} activeId="s1" />)
+
+    const badge = document.querySelector('[data-boring-badge="failed"]')
+    expect(badge).toHaveTextContent("failed")
+    expect(badge?.closest("li")?.textContent).toContain("Second session")
+    expect(badge?.className).toContain("text-destructive")
+    // Only the errored row is tinted; the list does not become a wall of red.
+    expect(document.querySelectorAll('[data-boring-badge="failed"]')).toHaveLength(1)
+  })
+
+  it("shows a failed badge from live activity before the list refetches", () => {
+    render(<SessionBrowser sessions={sample} activeId="s1" />)
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+        detail: { sessionId: "s3", working: true, status: "running" },
+      }))
+    })
+    act(() => {
+      window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+        detail: { sessionId: "s3", working: false, status: "error" },
+      }))
+    })
+
+    expect(document.querySelector('[data-boring-badge="failed"]')?.closest("li")?.textContent)
+      .toContain("Third session")
+    // A failure is not also reported as done.
+    expect(document.querySelector('[data-boring-badge="completed"]')).toBeNull()
+  })
+
+  it("keeps the working badge while a session that previously failed runs again", () => {
+    const withError: SessionItem[] = [sample[0]!, { ...sample[1]!, status: "error" }, sample[2]!]
+    const { rerender } = render(<SessionBrowser sessions={withError} activeId="s1" />)
+    expect(document.querySelector('[data-boring-badge="failed"]')).toBeInTheDocument()
+
+    rerender(<SessionBrowser sessions={sample} activeId="s1" />)
+    act(() => {
+      window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+        detail: { sessionId: "s2", working: true, status: "running" },
+      }))
+    })
+
+    expect(document.querySelector('[data-boring-badge="working"]')?.closest("li")?.textContent)
+      .toContain("Second session")
+    expect(document.querySelector('[data-boring-badge="failed"]')).toBeNull()
   })
 
   it("shows a needs-input badge for older waiting-for-input blockers", () => {
