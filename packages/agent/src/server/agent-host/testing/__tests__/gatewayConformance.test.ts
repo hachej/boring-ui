@@ -325,6 +325,7 @@ interface FakeSession {
   readonly workspaceScopeId: string
   readonly ref: AgentSessionRef
   title: string
+  archived: boolean
   activity: AgentSessionActivity
   readonly createdAt: number
   updatedAt: number
@@ -389,6 +390,7 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
           workspaceScopeId: claim.workspaceScopeId,
           ref,
           title: input.title ?? 'Untitled',
+          archived: false,
           activity: 'idle',
           createdAt: timestamp,
           updatedAt: timestamp,
@@ -430,6 +432,21 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
         this.applyAdmission('session.rename', key, digest)
         session.title = input.title
         session.updatedAt = this.tick()
+        const summary = this.summary(session)
+        this.requests.set(key, { digest, receipt: summary })
+        return summary
+      },
+      setSessionArchived: async (input) => {
+        this.assertOpen()
+        const claim = this.verify(input.scope)
+        const target = this.targetIdentity(input.ref)
+        const key = this.requestIdentity(claim, 'session.archive', target, input.requestId)
+        const digest = JSON.stringify({ archived: input.archived })
+        const replay = this.replayRequest<AgentSessionSummary>(key, digest)
+        if (replay !== undefined) return replay
+        const session = this.requireSession(claim, input.ref)
+        this.applyAdmission('session.archive', key, digest)
+        session.archived = input.archived
         const summary = this.summary(session)
         this.requests.set(key, { digest, receipt: summary })
         return summary
@@ -712,6 +729,7 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
       status: session.activity,
       createdAt: session.createdAt,
       updatedAt: session.updatedAt,
+      ...(session.archived ? { archived: true as const } : {}),
     }
   }
 

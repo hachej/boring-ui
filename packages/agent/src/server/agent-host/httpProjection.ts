@@ -88,6 +88,7 @@ const ListSessionsQuerySchema = z.object({
     (value) => typeof value === 'string' && value.length > 0 ? Number(value) : value,
     z.number().int().min(1).max(100).optional(),
   ),
+  archived: z.enum(['active', 'archived', 'all']).optional(),
 }).strict()
 const ActivityEventsQuerySchema = z.object({ workspaceId: NonEmptyString.max(256).optional() }).strict()
 const EventsQuerySchema = z.object({
@@ -104,6 +105,10 @@ const CreateSessionBodySchema = z.preprocess((value) => value === undefined ? {}
 const RenameSessionBodySchema = z.object({
   requestId: RequestIdSchema,
   title: NonEmptyString.max(200),
+}).strict()
+const ArchiveSessionBodySchema = z.object({
+  requestId: RequestIdSchema,
+  archived: z.boolean(),
 }).strict()
 const DeleteSessionQuerySchema = z.object({ requestId: RequestIdSchema.optional() }).strict()
 const ChatModelSelectionSchema = z.object({
@@ -278,6 +283,7 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
         agentTypeId: params.agentTypeId,
         cursor: query.cursor,
         limit: query.limit,
+        ...(query.archived ? { archived: query.archived } : {}),
       })
     } catch (error) {
       return sendError(reply, error)
@@ -486,6 +492,23 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
         ref: params,
         requestId: body.requestId,
         title: body.title,
+      })
+    } catch (error) {
+      return sendError(reply, error)
+    }
+  })
+
+  app.post('/api/v1/agents/:agentTypeId/sessions/:sessionId/archive', async (request, reply) => {
+    const params = parseWithSchema(SessionParamsSchema, request.params, reply, 'params')
+    if (!params) return
+    const body = parseWithSchema(ArchiveSessionBodySchema, request.body, reply, 'body')
+    if (!body) return
+    try {
+      return await input.gateway.setSessionArchived({
+        scope: await input.options.authorizeAgentRequest(request),
+        ref: params,
+        requestId: body.requestId,
+        archived: body.archived,
       })
     } catch (error) {
       return sendError(reply, error)

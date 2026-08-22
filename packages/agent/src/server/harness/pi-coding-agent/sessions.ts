@@ -31,8 +31,14 @@ import {
   type SessionSummary,
   type SessionDetail,
   type SessionListOptions,
+  type SessionArchiveFilter,
 } from "../../../shared/session.js";
 import { appendVerifiedNativeRename } from "./nativeSessionRename.js";
+import {
+  forgetArchivedSession,
+  readArchivedSessionIds,
+  writeSessionArchived,
+} from "./sessionArchiveIndex.js";
 import {
   latestNativeMessageTimestamp,
   summarizeNativeTranscript,
@@ -121,6 +127,17 @@ interface NormalizedListOptions {
   offset: number;
   includeId: string | undefined;
   includeEmpty: boolean;
+  archived: SessionArchiveFilter;
+}
+
+/** `archived` is present (true) only while archived, so the wire stays quiet. */
+function withArchivedFlag(summary: SessionSummary, archivedIds: ReadonlySet<string>): SessionSummary {
+  return archivedIds.has(summary.id) ? { ...summary, archived: true } : summary;
+}
+
+function matchesArchiveFilter(summary: SessionSummary, filter: SessionArchiveFilter): boolean {
+  if (filter === "all") return true;
+  return filter === "archived" ? summary.archived === true : summary.archived !== true;
 }
 
 function sessionDirForNamespace(namespace: string, explicitRoot?: string): string {
@@ -137,6 +154,7 @@ function normalizeListOptions(options: SessionListOptions | undefined): Normaliz
     offset: Math.max(0, options?.offset ?? 0),
     includeId: options?.includeId,
     includeEmpty: options?.includeEmpty === true,
+    archived: options?.archived ?? "all",
   };
 }
 
@@ -203,6 +221,7 @@ export class PiSessionStore implements SessionStore {
       normalizedOptions.offset,
       normalizedOptions.includeId ?? null,
       normalizedOptions.includeEmpty,
+      normalizedOptions.archived,
     ]);
     const inFlight = this.listInFlight.get(inFlightKey);
     if (inFlight) return inFlight;
@@ -240,13 +259,18 @@ export class PiSessionStore implements SessionStore {
 
     const { offset, limit } = options;
     const includeId = options.includeId;
+    // One index read per listing: the flag is stamped on every summary and the
+    // filter is applied inside the same page loop that skips turn-less rows,
+    // so offset/limit keep counting the rows the caller can actually see.
+    const archivedIds = await readArchivedSessionIds(this.sessionDir);
     const pageSummaries = await this.summarizeVisiblePage(visibleFiles, {
       ctx, offset, limit, includeId, includeEmpty: options.includeEmpty,
+      archivedIds, archivedFilter: options.archived,
     });
     if (!includeId || pageSummaries.some((summary) => summary.id === includeId)) return pageSummaries;
 
     const includeSummary = await this.summarizeIncludedSession(ctx, includeId, referencedPiFiles);
-    return includeSummary ? [...pageSummaries, includeSummary] : pageSummaries;
+    return includeSummary ? [...pageSummaries, withArchivedFlag(includeSummary, archivedIds)] : pageSummaries;
   }
 
   async create(
@@ -299,6 +323,20 @@ export class PiSessionStore implements SessionStore {
     };
   }
 
+  /**
+   * Visibility only: the transcript is not opened, appended to, rewritten, or
+   * even stat-ed here. The session id is resolved (which is what enforces
+   * tenancy) and then a single sidecar entry is added or removed, so
+   * archive → unarchive is a true round trip.
+   */
+  async setArchived(ctx: SessionCtx, sessionId: string, archived: boolean): Promise<SessionSummary> {
+    const resolvedId = (await this.load(ctx, sessionId)).id;
+    await this.withWriter(`archive:${this.sessionDir}`, async () => {
+      await writeSessionArchived(this.sessionDir, resolvedId, archived);
+    });
+    return await this.load(ctx, sessionId);
+  }
+
   async load(ctx: SessionCtx, sessionId: string): Promise<SessionDetail> {
     const resolved = await this.resolveSessionTranscript(ctx, sessionId);
     const nativeSummary = resolved.directNative
@@ -312,7 +350,7 @@ export class PiSessionStore implements SessionStore {
     const updatedAtMs = nativeSummary?.latestMessageAtMs
       ?? Math.max(resolved.fileStat.mtime.getTime(), resolved.linkedMtimeMs ?? 0);
 
-    return {
+    return withArchivedFlag({
       id: resolved.resolvedSessionId,
       title,
       createdAt: resolved.header?.timestamp ?? resolved.fileStat.birthtime.toISOString(),
@@ -324,7 +362,7 @@ export class PiSessionStore implements SessionStore {
             hasAssistantReply: hasAssistantReply(resolved.transcriptEntries),
           }
         : {}),
-    };
+    }, await readArchivedSessionIds(this.sessionDir));
   }
 
   /**
@@ -614,6 +652,11 @@ export class PiSessionStore implements SessionStore {
       await rm(linkedPiFile, { force: true });
       this.prefixCache.delete(linkedPiFile);
     }
+    // A real delete removed the transcript, so the archive sidecar must not
+    // keep pointing at an id that no longer exists.
+    await this.withWriter(`archive:${this.sessionDir}`, async () => {
+      await forgetArchivedSession(this.sessionDir, fileSessionId ?? sessionId);
+    });
   }
 
   private async resolveSessionFile(sessionId: string, ctx?: SessionCtx): Promise<string> {
@@ -856,6 +899,8 @@ export class PiSessionStore implements SessionStore {
       limit: number | undefined;
       includeId: string | undefined;
       includeEmpty: boolean;
+      archivedIds: ReadonlySet<string>;
+      archivedFilter: SessionArchiveFilter;
     },
   ): Promise<SessionSummary[]> {
     if (options.limit === 0) return [];
@@ -874,8 +919,17 @@ export class PiSessionStore implements SessionStore {
         batch.map(({ filepath, stat }) => this.summarizeFile(options.ctx, filepath, stat)),
       );
 
-      for (const summary of summaries) {
-        if (!summary) continue;
+      for (const rawSummary of summaries) {
+        if (!rawSummary) continue;
+        const summary = withArchivedFlag(rawSummary, options.archivedIds);
+        // Archiving hides a row; it never removes one. An explicit include-by-id
+        // (the just-created / boot-resumed session) still resolves either way.
+        if (
+          !matchesArchiveFilter(summary, options.archivedFilter)
+          && summary.id !== options.includeId
+        ) {
+          continue;
+        }
         // A session is written eagerly at create, so a New chat the user never
         // sent leaves a real transcript with no turns. It is not user content
         // yet, so keep it out of every listing — except when the client asks

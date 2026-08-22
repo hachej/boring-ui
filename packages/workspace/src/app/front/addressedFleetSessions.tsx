@@ -55,6 +55,7 @@ function sessionStateEqual(
     && current.hasAssistantReply === next.hasAssistantReply
     && current.ephemeral === next.ephemeral
     && current.status === next.status
+    && current.archived === next.archived
 }
 
 function controllerStateEqual<TSession extends WorkspaceAgentSession>(

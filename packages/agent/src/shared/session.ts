@@ -6,9 +6,22 @@ export interface SessionStore {
   create(ctx: SessionCtx, init?: { title?: string }): Promise<SessionSummary>
   /** Native Pi transcripts can append a session_info title without a wrapper. */
   rename?(ctx: SessionCtx, sessionId: string, title: string): Promise<SessionSummary>
+  /**
+   * Visibility only. Archiving never touches the transcript: it records the
+   * session id in a sidecar index beside the transcripts, so unarchiving
+   * restores the row byte-for-byte.
+   */
+  setArchived?(ctx: SessionCtx, sessionId: string, archived: boolean): Promise<SessionSummary>
   load(ctx: SessionCtx, sessionId: string): Promise<SessionDetail>
   delete(ctx: SessionCtx, sessionId: string): Promise<void>
 }
+
+/**
+ * Which side of the archive line a listing wants. `all` is the default so
+ * every existing caller keeps seeing exactly what it saw before archiving
+ * existed; the flag on each summary is what lets a client partition.
+ */
+export type SessionArchiveFilter = 'active' | 'archived' | 'all'
 
 export interface SessionCtx {
   workspaceId?: string
@@ -21,6 +34,8 @@ export interface SessionListOptions {
   includeId?: string
   /** Server-internal authority lookup for turn-less sessions; never exposed as an HTTP query. */
   includeEmpty?: boolean
+  /** Defaults to `all`: archiving is a visibility flag, not a listing default. */
+  archived?: SessionArchiveFilter
 }
 
 export interface SessionSummary {
@@ -37,6 +52,8 @@ export interface SessionSummary {
   hasAssistantReply?: boolean
   /** Addressed AgentHost live activity; absent on storage-only summaries. */
   status?: 'idle' | 'running' | 'aborting' | 'error'
+  /** Visibility flag only. Present (true) exactly while the session is archived. */
+  archived?: boolean
 }
 
 export type SessionDetail = SessionSummary

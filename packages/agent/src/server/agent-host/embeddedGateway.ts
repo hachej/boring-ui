@@ -91,6 +91,7 @@ function summaryFromLegacy(
     turnCount?: number
     nativeSessionId?: string
     hasAssistantReply?: boolean
+    archived?: boolean
   },
   status: AgentSessionActivity,
 ): AgentSessionSummary {
@@ -103,6 +104,7 @@ function summaryFromLegacy(
     ...(typeof summary.turnCount === 'number' ? { turnCount: summary.turnCount } : {}),
     ...(typeof summary.nativeSessionId === 'string' ? { nativeSessionId: summary.nativeSessionId } : {}),
     ...(typeof summary.hasAssistantReply === 'boolean' ? { hasAssistantReply: summary.hasAssistantReply } : {}),
+    ...(summary.archived === true ? { archived: true } : {}),
   }
 }
 
@@ -272,7 +274,12 @@ export class EmbeddedAgentGateway implements AgentGateway {
       }
     }
     rows.sort(compareSessions)
-    const eligible = cursor ? rows.filter((row) => isAfterCursor(row, cursor)) : rows
+    // Archiving narrows the page AFTER the runtime listed every owned session,
+    // so a hidden row never silently consumes a slot in the caller's page.
+    const visible = input.archived && input.archived !== 'all'
+      ? rows.filter((row) => (row.archived === true) === (input.archived === 'archived'))
+      : rows
+    const eligible = cursor ? visible.filter((row) => isAfterCursor(row, cursor)) : visible
     const sessions = eligible.slice(0, normalizedLimit)
     const nextCursor = eligible.length > sessions.length && sessions.length > 0
       ? this.encodeCursor(claim.workspaceScopeId, input.agentTypeId, normalizedLimit, sessions.at(-1)!)
@@ -531,6 +538,30 @@ export class EmbeddedAgentGateway implements AgentGateway {
         { workspaceId: claim.workspaceScopeId }, input.ref.sessionId, input.title,
       )
       return summaryFromLegacy(input.ref, renamed, this.runtime.activity.get(claim.workspaceScopeId, input.ref))
+    }, { bindingKey: binding.key }) as AgentSessionSummary
+  }
+
+  /**
+   * Visibility only. This never reaches the delete path: the session
+   * repository records the flag beside the transcript and hands back the same
+   * summary, so `archived: false` restores the row untouched.
+   */
+  async setSessionArchived(input: Parameters<AgentGateway['setSessionArchived']>[0]) {
+    const claim = await this.verify(input.scope)
+    const binding = await this.bindingForSession(input.scope, claim, input.ref)
+    return await this.sessionEffect(input.ref, claim, 'session.archive', input.requestId, { archived: input.archived }, async () => {
+      const repository = binding.composition.sessionStore as typeof binding.composition.sessionStore & {
+        setArchived?: (ctx: { workspaceId?: string }, sessionId: string, archived: boolean) => Promise<{
+          title: string; createdAt: string; updatedAt: string; archived?: boolean
+        }>
+      }
+      if (!repository.setArchived) {
+        throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE, 'session repository does not support archiving')
+      }
+      const updated = await repository.setArchived!(
+        { workspaceId: claim.workspaceScopeId }, input.ref.sessionId, input.archived,
+      )
+      return summaryFromLegacy(input.ref, updated, this.runtime.activity.get(claim.workspaceScopeId, input.ref))
     }, { bindingKey: binding.key }) as AgentSessionSummary
   }
 
