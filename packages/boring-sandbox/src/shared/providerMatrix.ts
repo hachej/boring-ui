@@ -86,6 +86,7 @@ export const PROVIDER_CAPABILITIES = {
   blaxel: {
     fs: "readwrite",
     exec: true,
+    mounts: false,
     realBash: "unknown",
     realBinaries: true,
     networkIsolation: "provider",
