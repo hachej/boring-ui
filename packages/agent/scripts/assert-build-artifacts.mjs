@@ -21,6 +21,8 @@ const requiredFiles = [
   'dist/server/worker/index.d.ts',
   'dist/front/index.js',
   'dist/front/index.d.ts',
+  'dist/front/artifacts.js',
+  'dist/front/artifacts.d.ts',
   'dist/front/styles.css',
   'dist/eval/index.js',
   'dist/eval/index.d.ts',
@@ -202,12 +204,14 @@ async function main() {
   assertNodeParsable(coreEntry.displayPath)
   assertNodeParsable(serverEntry.displayPath)
   assertNodeParsable('dist/front/index.js')
+  assertNodeParsable('dist/front/artifacts.js')
   assertNodeParsable('dist/eval/index.js')
 
   assertTsParsable('dist/shared/index.d.ts')
   assertTsParsable('dist/core/index.d.ts')
   assertTsParsable('dist/server/index.d.ts')
   assertTsParsable('dist/front/index.d.ts')
+  assertTsParsable('dist/front/artifacts.d.ts')
   assertTsParsable('dist/eval/index.d.ts')
   assertConsumerSafeCss('dist/front/styles.css')
   assertFastifyDetectorFixture()

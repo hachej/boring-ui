@@ -2,6 +2,8 @@ import { always } from "@antithesishq/bombadil"
 import {
   actions,
   extract,
+  getFingerprint,
+  type Fingerprint,
   type Point,
 } from "@antithesishq/bombadil/browser"
 import {
@@ -37,7 +39,7 @@ type SafePaletteState = {
   undersizedTouchTargets: string[]
   lastActionWasPaletteOpen: boolean
   lastActionWasInitial: boolean
-  controls: Array<{ name: string; point: Point }>
+  controls: Array<{ name: string; fingerprint: Fingerprint; point: Point }>
 }
 
 const palette = extract((state): SafePaletteState => {
@@ -72,7 +74,7 @@ const palette = extract((state): SafePaletteState => {
   const rootControls = Array.from(state.document.querySelectorAll(
     'button[aria-label="Search catalogs and commands"], button[data-boring-app-left-nav-key="search"], button[aria-label="Open app navigation"]',
   ))
-  const allowed: Array<{ name: string; point: Point }> = []
+  const allowed: Array<{ name: string; fingerprint: Fingerprint; point: Point }> = []
   const maybeAdd = (
     element: Element,
     insideDialog: boolean,
@@ -88,12 +90,20 @@ const palette = extract((state): SafePaletteState => {
       insideDialog,
       identity,
     })) return
+    const fingerprint = getFingerprint(element)
     allowed.push({
       name: insideDialog
         ? `palette-mode-${label.toLowerCase()}`
         : label === "Open app navigation"
           ? "open-app-navigation"
           : "open-command-palette",
+      fingerprint: {
+        ...fingerprint,
+        // Bombadil 0.7 matches buttons by accessible name, but its helper only
+        // reads explicit ARIA/title attributes. Preserve the computed text name
+        // for otherwise unnamed buttons so generated traces remain replayable.
+        accessibleName: fingerprint.accessibleName ?? label,
+      },
       point: center(element),
     })
   }
@@ -138,7 +148,9 @@ const palette = extract((state): SafePaletteState => {
   const lastActionWasPaletteOpen = typeof state.lastAction === "object"
     && state.lastAction !== null
     && "Click" in state.lastAction
-    && state.lastAction.Click.name === "open-command-palette"
+    && ["Search", "Search⌘K", "Search catalogs and commands"].includes(
+      state.lastAction.Click.fingerprint.accessibleName ?? "",
+    )
   const lastActionWasInitial = state.lastAction === null || state.lastAction === undefined
   const input = dialog?.querySelector("input") as HTMLInputElement | null
   const text = dialog?.textContent?.replace(/\s+/g, " ").trim() ?? ""

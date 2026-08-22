@@ -1,5 +1,11 @@
 import { describe, expect, test } from "vitest";
 
+import {
+  negotiateRemoteWorkerHealthCapabilitiesV1,
+  REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1,
+  REMOTE_WORKER_HEADERS_V1,
+  REMOTE_WORKER_MAX_WORKSPACE_ENVELOPE_BYTES_V1,
+} from "../index";
 import { PROVIDER_CONTRACT_VERSION } from "../providerMatrix";
 import {
   REMOTE_WORKER_PROTOCOL_VERSION,
@@ -8,6 +14,8 @@ import {
   RemoteWorkerCreateResponseSchemaV1,
   RemoteWorkerErrorPayloadSchemaV1,
   RemoteWorkerExecRequestSchemaV1,
+  RemoteWorkerHealthResponseSchemaV1,
+  RemoteWorkerWorkspaceOperationSchemaV1,
 } from "../remoteWorkerProtocolV1";
 
 const digest = `sha256:${"a".repeat(64)}`;
@@ -136,6 +144,81 @@ describe("remote-worker V1 shared protocol", () => {
         maxOutputBytes: 1024,
       }),
     ).toThrow();
+  });
+
+  test("accepts old-worker health and explicitly negotiated new-worker health", () => {
+    const legacyHealth = {
+      protocolVersion: REMOTE_WORKER_PROTOCOL_VERSION,
+      providerContractVersion: PROVIDER_CONTRACT_VERSION,
+      workerId: "worker-a",
+      evidenceDigest: digest,
+      qualificationBundleDigest: digest,
+      providerCohortDigest: digest,
+      imageDigest: digest,
+      qualificationRunId: "run-a",
+      isolation: "docker-runsc-systrap",
+      qualifiedAtMs: 1,
+      capabilities: ["fs", "events", "exec", "renew", "delete"],
+    }
+    expect(RemoteWorkerHealthResponseSchemaV1.parse(legacyHealth).negotiatedCapabilities)
+      .toBeUndefined()
+    expect(RemoteWorkerHealthResponseSchemaV1.parse({
+      ...legacyHealth,
+      negotiatedCapabilities: [REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1],
+    }).negotiatedCapabilities).toEqual([
+      REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1,
+    ])
+    expect(REMOTE_WORKER_MAX_WORKSPACE_ENVELOPE_BYTES_V1).toBe(15 * 1024 * 1024)
+  });
+
+  test("new workers omit negotiated capabilities for old health requests", () => {
+    const oldStrictHealthSchema = RemoteWorkerHealthResponseSchemaV1
+      .omit({ negotiatedCapabilities: true })
+      .strict();
+    const healthBase = {
+      protocolVersion: REMOTE_WORKER_PROTOCOL_VERSION,
+      providerContractVersion: PROVIDER_CONTRACT_VERSION,
+      workerId: "worker-a",
+      evidenceDigest: digest,
+      qualificationBundleDigest: digest,
+      providerCohortDigest: digest,
+      imageDigest: digest,
+      qualificationRunId: "run-a",
+      isolation: "docker-runsc-systrap" as const,
+      qualifiedAtMs: 1,
+      capabilities: ["fs", "events", "exec", "renew", "delete"] as const,
+    };
+    const respondAsNewWorker = (headers: Record<string, string>) => ({
+      ...healthBase,
+      ...negotiateRemoteWorkerHealthCapabilitiesV1(
+        headers[REMOTE_WORKER_HEADERS_V1.requestedCapabilities],
+      ),
+    });
+
+    const responseToOldClient = respondAsNewWorker({});
+    expect(responseToOldClient).not.toHaveProperty("negotiatedCapabilities");
+    expect(oldStrictHealthSchema.parse(responseToOldClient).workerId).toBe("worker-a");
+
+    const responseToNewClient = respondAsNewWorker({
+      [REMOTE_WORKER_HEADERS_V1.requestedCapabilities]:
+        REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1,
+    });
+    expect(RemoteWorkerHealthResponseSchemaV1.parse(responseToNewClient).negotiatedCapabilities)
+      .toEqual([REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1]);
+  });
+
+  test("validates exclusive binary creates on the workspace wire", () => {
+    expect(RemoteWorkerWorkspaceOperationSchemaV1.parse({
+      op: "createBinaryFile",
+      path: "nested/file.bin",
+      dataBase64: "eA==",
+    })).toEqual({ op: "createBinaryFile", path: "nested/file.bin", dataBase64: "eA==" });
+    expect(() => RemoteWorkerWorkspaceOperationSchemaV1.parse({
+      op: "createBinaryFile",
+      path: "nested/file.bin",
+      dataBase64: "eA==",
+      overwrite: true,
+    })).toThrow();
   });
 
   test("restricts wire errors to the stable remote-worker code union", () => {

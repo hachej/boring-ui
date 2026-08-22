@@ -55,6 +55,11 @@ export interface Workspace {
    */
   writeBinaryFile?(relPath: string, data: Uint8Array): Promise<void>
   /**
+   * Atomically creates a binary file without overwriting an existing path.
+   * Implementations must throw an error with code EEXIST on collision.
+   */
+  createBinaryFile?(relPath: string, data: Uint8Array): Promise<void>
+  /**
    * Optional optimized read+metadata operation. Remote workspaces should
    * implement this as one round trip when possible.
    */

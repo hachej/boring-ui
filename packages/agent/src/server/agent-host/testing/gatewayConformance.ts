@@ -118,7 +118,6 @@ export function gatewayConformance(options: GatewayConformanceOptions): void {
         'AGENT_REQUEST_OUTCOME_UNKNOWN',
         'AGENT_RUNTIME_RESTART_REQUIRED',
         'AGENT_COMMAND_INVALID_STATE',
-        'AGENT_SESSION_RUNTIME_SCOPE_MISMATCH',
         'AGENT_SHARED_ENVIRONMENT_UNAVAILABLE',
         'AGENT_GATEWAY_CLOSED',
       ])

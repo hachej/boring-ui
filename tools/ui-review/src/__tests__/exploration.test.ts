@@ -296,15 +296,32 @@ describe("Bombadil exploration staging", () => {
 })
 
 describe("command palette action safety", () => {
-  it("opens an exact root control without Resource Timing readiness", () => {
-    const trigger = { name: "open-command-palette", point: { x: 24, y: 24 } }
+  it("opens an exact fingerprinted root control without Resource Timing readiness", () => {
+    const fingerprint = {
+      testId: null,
+      id: null,
+      role: null,
+      accessibleName: "Search catalogs and commands",
+      tag: "button",
+      href: null,
+      nameAttr: null,
+      placeholder: null,
+      inputType: "button",
+      textContent: "Search",
+      structuralPath: null,
+    }
+    const trigger = {
+      name: "open-command-palette",
+      fingerprint,
+      point: { x: 24, y: 24 },
+    }
     expect(createSafeCommandPaletteActions({
       dialogVisible: false,
       inputFocused: false,
       lastActionWasPaletteOpen: false,
       lastActionWasInitial: false,
       controls: [trigger],
-    })).toEqual(["Wait", { Click: trigger }])
+    })).toEqual(["Wait", { Click: { fingerprint, point: trigger.point } }])
     expect(createSafeCommandPaletteActions({
       dialogVisible: false,
       inputFocused: false,

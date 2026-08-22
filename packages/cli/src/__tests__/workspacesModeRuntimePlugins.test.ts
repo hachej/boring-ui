@@ -274,7 +274,7 @@ describe("workspaces mode runtime plugin wiring", () => {
       for (const plugin of pluginsA) {
         expect(plugin.frontTarget?.entryUrl).toBeTruthy()
         const runtime = await app.inject({ method: "GET", url: plugin.frontTarget!.entryUrl! })
-        expect(runtime.statusCode).toBe(200)
+        expect(runtime.statusCode, runtime.body).toBe(200)
       }
 
       const listB = await app.inject({ method: "GET", url: `/api/v1/agent-plugins?workspaceId=${registeredB.id}` })

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { PromptPayload } from '../../../shared/chat'
 import type { SessionSummary } from '../../../shared/session'
 import { createRequestId, withStorageScope } from '../../agentHttp'
 import { createRemotePiSession, type RemotePiSession, type RemotePiSessionOptions } from '../pi/remotePiSession'
@@ -25,10 +24,6 @@ export interface PiSessionCreateInit {
   title?: string
   /** Boot-only intent to resume this exact tab-owned empty session. */
   resumeSessionId?: string
-  /** Existing transcript to fork natively into the current runtime scope. */
-  forkSessionId?: string
-  /** First prompt delivered by the server to the newly created fork. */
-  forkPrompt?: PromptPayload
 }
 
 export interface PiSessionRefreshOptions {
@@ -431,9 +426,7 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
     const response = await fetchImpl(sessionsUrl(), {
       method: 'POST',
       headers: { ...requestHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify(init?.forkPrompt
-        ? { ...init, requestId: `fork:${init.forkPrompt.clientNonce}` }
-        : init ?? {}),
+      body: JSON.stringify(init ?? {}),
     })
     if (!response.ok) {
       const err = new Error(`Failed to create session: ${response.status}`)
