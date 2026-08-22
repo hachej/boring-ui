@@ -100,8 +100,8 @@ describe('RemotePiSession commands and idempotency', () => {
     expect(piChatErrorCode(Object.assign(new Error('x'), { errorCode: 'NOT_A_REAL_CODE' }))).toBeUndefined()
     expect(piChatErrorCode(Object.assign(new Error('x'), { errorCode: ErrorCode.enum.SESSION_LOCKED }))).toBe(ErrorCode.enum.SESSION_LOCKED)
     expect(piChatErrorCode(Object.assign(new Error('x'), {
-      errorCode: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
-    }))).toBe(AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH)
+      errorCode: AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
+    }))).toBe(AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE)
   })
 
   it('clears optimistic queued follow-ups from the stop receipt before a queue echo arrives', async () => {
