@@ -1,4 +1,5 @@
 import { validateAskUserToolInput } from "../shared/schema"
+import { ASK_USER_RISK_TIERS } from "../shared/constants"
 import type { AskUserToolInput, AskUserToolResult } from "../shared/types"
 import type { AskUserRuntime } from "./askUserRuntime"
 
@@ -78,6 +79,11 @@ export function createAskUserTool(options: AskUserToolOptions): AskUserToolDefin
           additionalProperties: true,
         },
         timeoutMs: { type: "number", description: "Optional timeout in milliseconds." },
+        riskTier: {
+          type: "string",
+          enum: [...ASK_USER_RISK_TIERS],
+          description: "Optional declared decision risk tier for this question, snapshotted onto the answer when resolved.",
+        },
       },
       required: ["title", "schema"],
       additionalProperties: false,

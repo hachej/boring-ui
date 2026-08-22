@@ -175,13 +175,22 @@ export class AskUserRuntime {
     }
   }
 
-  async submitAnswer(questionId: string, sessionId: string, values: AskUserAnswer["values"]): Promise<"answered"> {
+  async submitAnswer(questionId: string, sessionId: string, values: AskUserAnswer["values"], resolvedBy?: string): Promise<"answered"> {
     const question = await this.store.getByQuestionId(questionId)
     if (!question || question.sessionId !== sessionId) throw new AskUserRuntimeError(ASK_USER_ERROR_CODES.QUESTION_NOT_FOUND, "question not found")
     // #1348: a missing waiter means the asking session is gone (e.g. hub
     // restart), not that the question is void. The decision is still recorded
     // durably; resolving the coordinator below is a no-op without a waiter.
-    const answer: AskUserAnswer = { questionId, sessionId, values, submittedAt: this.isoNow() }
+    // Decision-record fields (#1348 follow-up): snapshot the question's
+    // declared risk tier and, when known, the resolving principal.
+    const answer: AskUserAnswer = {
+      questionId,
+      sessionId,
+      values,
+      submittedAt: this.isoNow(),
+      riskTier: question.riskTier,
+      resolvedBy,
+    }
     let answerPersisted = false
     try {
       await this.store.answer(questionId, answer)
@@ -250,7 +259,7 @@ export class AskUserRuntime {
     this.coordinator.resolveCancelled(questionId, "abandoned")
   }
 
-  private createQuestion(request: Pick<AskUserRequest, "sessionId" | "title" | "context" | "artifacts" | "toolCallId" | "ownerPrincipalId">): AskUserQuestion {
+  private createQuestion(request: Pick<AskUserRequest, "sessionId" | "title" | "context" | "artifacts" | "toolCallId" | "ownerPrincipalId" | "riskTier">): AskUserQuestion {
     const at = this.isoNow()
     return {
       questionId: randomUUID(),
@@ -264,6 +273,7 @@ export class AskUserRuntime {
       answerToken: randomBytes(32).toString("base64url"),
       createdAt: at,
       updatedAt: at,
+      riskTier: request.riskTier,
     }
   }
 
