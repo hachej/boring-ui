@@ -162,7 +162,14 @@ export class PiComposerPolicyController {
     // transcript, so the agent sees the outcome instead of having to probe for
     // it. Same expanded-text path skill commands use.
     const modelMessage = result && typeof result === 'object' ? result.modelMessage?.trim() : undefined
-    if (modelMessage) await this.submitExpandedText(modelMessage, source, false)
+    if (modelMessage) {
+      // That admitted run must return its real receipt (prompt/follow-up with
+      // clientNonce/cursor) so callers run full send bookkeeping —
+      // onPromptSubmitStarted, stale-rejection dismissal, local-submitted
+      // cursor cleanup — exactly as they would for a plain prompt. The
+      // human-facing notice above stays a side effect.
+      return await this.submitExpandedText(modelMessage, source, false)
+    }
     return { type: 'command', command: commandName, ...(message ? { result: message } : {}), preserveDraft }
   }
 

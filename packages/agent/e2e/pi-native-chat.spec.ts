@@ -59,10 +59,13 @@ test.describe('Pi-native chat browser matrix', () => {
 
     await composer.fill('/reload')
     await page.locator('[data-boring-agent-part="composer-submit"]').click()
-    // The result now appears twice: the UI notice and the `/reload result:` transcript
-    // prompt that reaches the model. Assert visibility without strict-mode ambiguity;
-    // the model-facing copy is proven by the `prompts` assertion below.
-    await expect(page.getByText('Agent plugins reloaded.').first()).toBeVisible({ timeout: 10_000 })
+    // The result appears twice with different surfaces: the scoped UI notice
+    // (runtime-notice row carrying a `command:` id) and the `/reload result:`
+    // transcript prompt that reaches the model. Assert each explicitly.
+    const commandNotice = page.locator(
+      '[data-boring-agent-part="runtime-notice"][data-runtime-notice-id^="command:"]',
+    )
+    await expect(commandNotice).toContainText('Agent plugins reloaded.', { timeout: 10_000 })
 
     const state = await page.evaluate(() => (window as unknown as { __piNativeE2EState: () => unknown }).__piNativeE2EState())
     await testInfo.attach('pi-native-redacted-state.json', {
@@ -75,7 +78,10 @@ test.describe('Pi-native chat browser matrix', () => {
     })
     // Two prompts reach the backend: the original submit and the model-facing
     // `/reload result:` report introduced when slash results gained context.
+    // The mock redacts prompt bodies, so prove the report through its visible
+    // transcript label instead.
     expect((state as { prompts: unknown[] }).prompts).toHaveLength(2)
+    await expect(conversation.getByText('/reload result:')).toBeVisible()
     expect((state as { followups: unknown[] }).followups).toHaveLength(3)
     expect((state as { stops: number }).stops).toBeGreaterThanOrEqual(1)
   })

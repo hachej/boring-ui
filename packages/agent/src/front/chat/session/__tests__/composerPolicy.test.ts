@@ -337,7 +337,7 @@ describe('PiComposerPolicyController submit policy', () => {
     expect(skillCommandText('review', 'src/app.ts')).toBe('skill: review\n\nsrc/app.ts')
   })
 
-  it('sends a local command result the agent must see into the transcript', async () => {
+  it('sends a local command result the agent must see into the transcript with full prompt bookkeeping', async () => {
     const session = new FakeComposerSession('idle')
     const registry = createCommandRegistry(builtinCommands)
     const onCommandResult = vi.fn()
@@ -350,8 +350,16 @@ describe('PiComposerPolicyController submit policy', () => {
       onCommandResult,
     })
 
-    await expect(policy.submit({ text: '/reload' })).resolves.toMatchObject({ type: 'command', command: 'reload' })
-    // The browser notice still fires, and the same outcome now reaches the model.
+    // The admitted model-facing run returns its real receipt so callers can do
+    // prompt bookkeeping (clientNonce/cursor), exactly like a plain prompt.
+    await expect(policy.submit({ text: '/reload' })).resolves.toEqual({
+      type: 'prompt',
+      clientNonce: 'nonce-1',
+      cursor: expect.any(Number),
+      preserveDraft: false,
+    })
+    // The browser notice still fires as a side effect, and the same outcome
+    // reaches the model.
     expect(onCommandResult).toHaveBeenCalledWith('Extensions reloaded.')
     expect(session.prompts).toHaveLength(1)
     expect(session.prompts[0]?.message).toBe('/reload result:\nExtensions reloaded.')

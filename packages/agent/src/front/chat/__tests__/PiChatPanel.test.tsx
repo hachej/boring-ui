@@ -2035,6 +2035,40 @@ describe('PiChatPanel sandbox shell', () => {
     expect((textarea as HTMLTextAreaElement).value).toBe('preserve this draft')
   })
 
+  test('keeps full send bookkeeping when /reload reports its result into the transcript', async () => {
+    const remote = new FakeRemotePiSession(remoteState())
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/v1/agents/default/sessions?')) return jsonResponse([session('pi-1')])
+      throw new Error(`unexpected fetch ${url}`)
+    })
+    const onReloadAgentPlugins = vi.fn(async () => ({ message: 'Extensions reloaded.', reloaded: true }))
+    const onPromptSubmitStarted = vi.fn()
+
+    render(
+      <PiChatPanel
+        storageScope="workspace-a"
+        serverResourcesEnabled={false}
+        fetch={fetchMock as unknown as typeof fetch}
+        createRemoteSession={remoteFactory(remote)}
+        onReloadAgentPlugins={onReloadAgentPlugins}
+        onPromptSubmitStarted={onPromptSubmitStarted}
+      />,
+    )
+
+    const textarea = await screen.findByLabelText('Agent prompt')
+    fireEvent.change(textarea, { target: { value: '/reload' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
+
+    // The model-facing report reaches the transcript as an admitted run…
+    await waitFor(() => expect(remote.prompt).toHaveBeenCalledWith(expect.objectContaining({
+      message: '/reload result:\nExtensions reloaded.',
+    })))
+    // …so it gets the same submit-started bookkeeping a plain prompt gets.
+    expect(onPromptSubmitStarted).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'pi-1' }))
+    expect((textarea as HTMLTextAreaElement).value).toBe('')
+  })
+
   test('registers slash commands contributed by a composer plugin', async () => {
     const remote = new FakeRemotePiSession(remoteState())
     const handler = vi.fn(() => 'Contributed command ran.')
