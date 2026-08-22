@@ -1,5 +1,9 @@
-export { createAuth, validatePasswordStrength } from './createAuth.js'
-export type { BetterAuthInstance, CreateAuthOptions } from './createAuth.js'
+export { assertCoreDynamicAuthBaseURL, createAuth, validatePasswordStrength } from './createAuth.js'
+export type {
+  BetterAuthInstance,
+  CoreDynamicAuthBaseURL,
+  CreateAuthOptions,
+} from './createAuth.js'
 export { createPostSignupHook } from './postSignupHook.js'
 export type { PostSignupHookDeps } from './postSignupHook.js'
 export { authHook } from './authHook.js'
