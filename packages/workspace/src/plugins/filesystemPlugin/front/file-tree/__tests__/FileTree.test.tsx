@@ -105,11 +105,12 @@ describe("FileTree", () => {
     expect(container.querySelector(".custom-tree")).toBeTruthy()
   })
 
-  it("calls onSelect when file is activated", () => {
+  it("reports selection and activates a clicked file through distinct callbacks", () => {
+    const onSelectionChange = vi.fn()
     const onSelect = vi.fn()
-    render(<FileTree files={sampleFiles} onSelect={onSelect} height={200} />)
-    const pkg = screen.getByText("package.json")
-    fireEvent.click(pkg)
+    render(<FileTree files={sampleFiles} onSelectionChange={onSelectionChange} onSelect={onSelect} height={200} />)
+    fireEvent.click(screen.getByText("package.json"))
+    expect(onSelectionChange).toHaveBeenCalledWith(expect.objectContaining({ path: "package.json", kind: "file" }))
     expect(onSelect).toHaveBeenCalledWith("package.json")
   })
 
@@ -150,21 +151,38 @@ describe("FileTree", () => {
     expect(node.kind).toBe("file")
   })
 
-  it("context menu does not trigger onSelect", () => {
-    const onSelect = vi.fn()
+  it("context menu does not trigger selection", () => {
+    const onSelectionChange = vi.fn()
     const onContextMenu = vi.fn()
     render(
       <FileTree
         files={sampleFiles}
-        onSelect={onSelect}
+        onSelectionChange={onSelectionChange}
         onContextMenu={onContextMenu}
         height={200}
       />,
     )
     const pkg = screen.getByText("package.json")
+    onSelectionChange.mockClear()
     fireEvent.contextMenu(pkg)
     expect(onContextMenu).toHaveBeenCalled()
-    expect(onSelect).not.toHaveBeenCalled()
+    expect(onSelectionChange).not.toHaveBeenCalled()
+  })
+
+  it("reports directory selection through the canonical tree callback", () => {
+    const onSelectionChange = vi.fn()
+    render(<FileTree files={sampleFiles} onSelectionChange={onSelectionChange} height={300} />)
+    fireEvent.click(screen.getByText("src"))
+    expect(onSelectionChange).toHaveBeenCalledWith(expect.objectContaining({ path: "src", kind: "dir" }))
+  })
+
+  it("reports keyboard selection through the same canonical tree callback", async () => {
+    const onSelectionChange = vi.fn()
+    render(<FileTree files={sampleFiles} onSelectionChange={onSelectionChange} height={300} />)
+    const tree = screen.getByRole("tree")
+    tree.focus()
+    fireEvent.keyDown(tree, { key: "Home" })
+    await waitFor(() => expect(onSelectionChange).toHaveBeenCalledWith(expect.objectContaining({ path: "src", kind: "dir" })))
   })
 
   it("toggles directory on click", () => {

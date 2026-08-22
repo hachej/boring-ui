@@ -1,12 +1,12 @@
 ---
 name: present-pr
-description: Present a PR to the owner for validation as one self-contained artifact — a context diagram, a review-history audit trail, an area→package→file sankey, a file tree, and importance-ordered diffs each carrying a one-line rationale. Use as the final step of every implementation PR, before requesting owner validation.
+description: Present a PR to the owner for validation as one self-contained artifact — composed context visuals, a review-history audit trail, an area→package→file sankey, a file tree, and importance-ordered diffs each carrying a one-line rationale. Use as the final step of every implementation PR, before requesting owner validation.
 ---
 
 # Present PR
 
 **This is the standard final step of every implementation PR: before requesting owner
-validation, generate the presentation (context diagram + summary + sankey +
+validation, generate the presentation (composed context visuals + summary + sankey +
 importance-ordered diffs) and publish/hand the artifact to the owner.**
 
 The review flow it encodes, in the owner's own order:
@@ -33,8 +33,9 @@ already reviewed, and state the open questions.
 
 ## Steps
 
-1. **Understand the seam.** Read the production files first. Identify the flow the PR
-   changes: entry point → policy/decision → effect.
+1. **Understand the seam.** Read the production files first and
+   `../show-me/SKILL.md`. Identify the flow the PR changes—entry point →
+   policy/decision → effect—and compose the views that make that seam easiest to review.
 
 2. **Write the context sidecar** — one markdown file, per PR, at
    `<scratchpad>/pr-<n>-context.md`:
@@ -42,14 +43,26 @@ already reviewed, and state the open questions.
    ~~~markdown
    # PR <n> context
 
-   ```mermaid
-   flowchart TB
-     ...one diagram of the seam: which components, which direction data flows,
-     which nodes are new (use `classDef new stroke-dasharray: 4 3`)
+   ```text
+   submitForm
+     createSession
+   +   expandSkillMention
+       launchAgent
+     navigateToSession
    ```
 
-   3–6 sentences of context. What problem, which two or three mechanisms changed,
-   what the PR explicitly does **not** do, and what to look at first.
+   ```ts
+   type SubmitResult =
+   + | { status: 'expanded'; skill: string }
+     | { status: 'started'; sessionId: string }
+   ```
+
+   Fenced blocks compose the context explanation in sidecar order. Follow the visual
+   selection and composition rules in `../show-me/SKILL.md`; every view must explain
+   the review seam and correspond to changed code.
+
+   Follow with 3–6 sentences of context: the problem, which two or three mechanisms
+   changed, what the PR explicitly does **not** do, and what to look at first.
 
    ## Key files
 
@@ -57,9 +70,9 @@ already reviewed, and state the open questions.
    - path/to/the/second/one.ts
    ~~~
 
-   Diagram rules: one diagram, not three. Show the *mechanism*, not the file tree. Mark
-   new/changed nodes distinctly. Under ~12 nodes — if it needs more, the PR is the
-   problem, not the diagram.
+   PR-specific rendering contract: Mermaid blocks become inline SVG; other fenced
+   views become escaped preformatted shapes. Keep focused HTML mockups as companion
+   artifacts—never inject arbitrary HTML into the presentation itself.
 
    `## Key files` is optional and pins the reading order explicitly, overriding the
    importance heuristic. Use it whenever you know which two or three diffs decide the
@@ -137,7 +150,10 @@ already reviewed, and state the open questions.
    Omitting the block entirely does not hide the gap: the artifact renders a red
    "No review history recorded — treat as unreviewed" panel in its place.
 
-5. **Generate the page — into the lane worktree, not a scratchpad:**
+5. **Generate the page — into the lane worktree, not a scratchpad.** Mermaid pre-render
+   uses Playwright Chromium. If the lane has no browser binary yet, provision it from that
+   lane (never the canonical checkout or live hub) with
+   `pnpm exec playwright install chromium`.
 
    ```bash
    mkdir -p .handoff
@@ -155,7 +171,11 @@ already reviewed, and state the open questions.
 
    The script pulls metadata, checks, and the combined diff via `gh` and renders one HTML
    file with no external requests — safe for the artifact viewer's strict CSP. Mermaid is
-   emitted as `<pre class="mermaid">`, which artifacts render natively.
+   pre-rendered at generation time to inline SVG on a fixed dark diagram surface. This
+   deliberately avoids runtime Mermaid, external scripts, and CDN requests because the
+   workspace HTML viewer does not execute or fetch them reliably; the resulting single file
+   also renders in a plain browser. `pnpm test:present-pr-mermaid` exercises the browser-backed
+   multi-diagram ID isolation separately from the browser-free lint suite.
 
 6. **Hand it over as two panes — the standard handoff.** Working inside a
    workspace session, the artifact is not a link, it is a pane:
@@ -179,8 +199,8 @@ already reviewed, and state the open questions.
 
 ## What the page gives the reviewer
 
-- **Header** — title, author, branch pair, churn, live CI check tally, audit status.
-- **Section 1 — what this touches.** The intro diagram and the context summary.
+- **Header** — the linked issue number, exact title, and clickable URL plus the bead ID appear first; when the PR body has no semantic issue reference, the header says **no linked issue** explicitly. PR title, author, branch pair, churn, live CI check tally, and audit status follow.
+- **Section 1 — what this touches.** The composed context visuals and summary.
 - **Section 2 — review history.** A chronological audit trail with type badges, per-event
   verdict, who ran it, and a 1-line finding summary with resolution state. A headline badge
   answers "thermo review: recorded / NOT recorded" at a glance. Absent history renders as an
@@ -194,9 +214,11 @@ already reviewed, and state the open questions.
   - **Sankey navigation** (inline SVG, hand-rolled, no libraries): area → package → file.
     Ribbon width is changed lines, colour is the dominant file category, node bars split
     green/red by additions/deletions. Package nodes carry their own ±counts. Hovering
-    isolates a branch; clicking any node jumps to the most important diff beneath it. The
-    file level is optional and defaults off above 24 files. Below 4 changed files the
-    sankey is skipped entirely.
+    isolates a branch; clicking any node jumps to the most important diff beneath it. Tests
+    and docs are excluded from the default diagram and available through an explicit
+    **Show tests + docs** control; every file still remains in the diff list. The file level
+    is optional and defaults off above 24 files. Below 4 changed files the sankey is skipped
+    entirely.
   - **Category chips** toggle production / test / docs / config / generated, with
     per-category counts. Generated files start off.
   - **Diffs in importance order.** The top file is marked `start here` and the top two are

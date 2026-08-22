@@ -64,7 +64,11 @@ identity match, then the workspace/agent surfaces warm in the background (see
   `CoreWorkspaceAgentFront` (in `app/front`) is the full composed shell used by child apps
   (e.g. `apps/full-app/src/front/main.tsx`). There is no `BoringApp` component.
 - **Auth** — `createAuth` wraps better-auth; `authHook` populates `req.user`;
-  `requireWorkspaceMember(role)` is a preHandler for membership/role checks.
+  `requireWorkspaceMember(role)` is a preHandler for membership/role checks. Child apps that
+  serve auth from multiple hosts may pass `createCoreWorkspaceAgentServer({ authBaseURL: {
+  allowedHosts, protocol } })`; entries must be exact `host[:port]` values (no wildcards,
+  schemes, or paths). This changes only Better Auth callback resolution: `config.auth.url`
+  remains canonical, forwarded host/protocol headers are not trusted, and unlisted hosts fail closed.
 - **Stores** — `UserStore` / `WorkspaceStore` / `AuthProvider` interfaces with Postgres
   implementations; `CORE_STORES=local` selects in-memory dev stores for the base app
   factory (note: `createCoreWorkspaceAgentServer` requires `CORE_STORES=postgres`).

@@ -38,6 +38,10 @@ function binding(): RuntimeFilesystemBinding {
       },
       async write({ path, content }) { files.set(path, content); return { mtimeMs: 2 } },
       async writeBinary({ path, content }) { files.set(path, new TextDecoder().decode(content)); return { mtimeMs: 2 } },
+      async createBinary({ path, content }) {
+        if (files.has(path)) throw Object.assign(new Error('EEXIST'), { code: 'EEXIST' })
+        files.set(path, new TextDecoder().decode(content)); return { mtimeMs: 2 }
+      },
       async delete({ path }) { files.delete(path); return {} },
       async move({ from, to }) { files.set(to, files.get(from) ?? ''); files.delete(from); return {} },
       async mkdir({ path }) { dirs.add(path); return {} },
@@ -130,6 +134,34 @@ describe('primary filesystem access projection', () => {
     const allowed = await app.inject({ method: 'POST', url: '/api/v1/files', payload: { path: 'open.txt', content: 'changed' } })
     expect(allowed.statusCode).toBe(200)
     expect(write).toHaveBeenCalledOnce()
+    await app.close()
+  })
+
+  test('denies exact binary writes to protected binding paths', async () => {
+    const { app, user } = await appWithBinding()
+    const writeBinary = vi.spyOn(user.operations, 'writeBinary')
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/files/binary',
+      payload: { path: 'protected/new.txt', ifExists: 'replace', contentBase64: 'eA==' },
+    })
+    expect(response.statusCode).toBe(403)
+    expect(response.json()).toEqual({ error: { code: 'readonly', message: 'user binding is readonly' } })
+    expect(writeBinary).not.toHaveBeenCalled()
+    await app.close()
+  })
+
+  test('atomically creates exact binary paths through a binding', async () => {
+    const { app, user } = await appWithBinding()
+    const createBinary = vi.spyOn(user.operations, 'createBinary')
+    const request = () => app.inject({
+      method: 'POST',
+      url: '/api/v1/files/binary',
+      payload: { path: 'a/raced.txt', ifExists: 'error', contentBase64: 'eA==' },
+    })
+    const responses = await Promise.all([request(), request()])
+    expect(createBinary).toHaveBeenCalledTimes(2)
+    expect(responses.map((response) => response.json().status).sort()).toEqual(['conflict', 'written'])
     await app.close()
   })
 

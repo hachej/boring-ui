@@ -1,3 +1,5 @@
+import type { ActionTemplate, Fingerprint, Point } from "@antithesishq/bombadil/browser"
+
 export type ScenarioControl = {
   tagName: string
   label: string
@@ -8,12 +10,12 @@ export type ScenarioControl = {
   identity?: "command-palette-trigger"
 }
 
-type ScenarioActionControl = { name: string; point: { x: number; y: number } }
-export type ScenarioAction =
-  | "Wait"
-  | { Click: ScenarioActionControl }
-  | { PressKey: { code: number } }
-  | { TypeText: { text: string; delayMillis: number } }
+type ScenarioActionControl = {
+  name: string
+  fingerprint: Fingerprint
+  point: Point
+}
+export type ScenarioAction = ActionTemplate
 
 export type ScenarioActionState = {
   dialogVisible: boolean
@@ -42,20 +44,24 @@ export function isSafeCommandPaletteControl(control: ScenarioControl): boolean {
 }
 
 export function createSafeCommandPaletteActions(state: ScenarioActionState): ScenarioAction[] {
+  const click = ({ fingerprint, point }: ScenarioActionControl): ScenarioAction => ({
+    Click: { fingerprint, point },
+  })
+
   if (state.lastActionWasInitial) return ["Wait"]
   const openPalette = state.controls.find((control) => control.name === "open-command-palette")
-  if (!state.dialogVisible && openPalette) return ["Wait", { Click: openPalette }]
+  if (!state.dialogVisible && openPalette) return ["Wait", click(openPalette)]
   const openNavigation = state.controls.find((control) => control.name === "open-app-navigation")
-  if (!state.dialogVisible && openNavigation) return ["Wait", { Click: openNavigation }]
+  if (!state.dialogVisible && openNavigation) return ["Wait", click(openNavigation)]
   if (state.dialogVisible && state.lastActionWasPaletteOpen) return ["Wait"]
 
   const generated: ScenarioAction[] = ["Wait"]
-  for (const control of state.controls) generated.push({ Click: control })
+  for (const control of state.controls) generated.push(click(control))
   if (state.dialogVisible) generated.push({ PressKey: { code: 27 } })
   if (state.inputFocused) {
     generated.push(
-      { TypeText: { text: ">", delayMillis: 0 } },
-      { TypeText: { text: "no-matching-fixture-command", delayMillis: 0 } },
+      { TypeText: { text: { Regexp: ">" }, delayMillis: 0 } },
+      { TypeText: { text: { Regexp: "no-matching-fixture-command" }, delayMillis: 0 } },
     )
   }
   return generated

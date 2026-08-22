@@ -35,6 +35,7 @@ function assertUniqueRuntimeFilesystemBindings<T extends RuntimeFilesystemBindin
 const MUTATION_CAPABILITY: Record<string, RuntimeFilesystemCapability> = {
   write: 'write',
   writeBinary: 'write',
+  createBinary: 'write',
   delete: 'delete',
   mkdir: 'create-child',
 }
@@ -74,6 +75,7 @@ function intersectRuntimeFilesystemBinding(
       ...request.operations,
       write: guarded(request.operations.write?.bind(request.operations), MUTATION_CAPABILITY.write!),
       writeBinary: guarded(request.operations.writeBinary?.bind(request.operations), MUTATION_CAPABILITY.writeBinary!),
+      createBinary: guarded(request.operations.createBinary?.bind(request.operations), MUTATION_CAPABILITY.createBinary!),
       delete: guarded(request.operations.delete?.bind(request.operations), MUTATION_CAPABILITY.delete!),
       mkdir: guarded(request.operations.mkdir?.bind(request.operations), MUTATION_CAPABILITY.mkdir!),
       move: request.operations.move

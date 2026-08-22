@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-sandbox",
-  "version": "0.1.100",
+  "version": "0.1.103",
   "type": "module",
   "license": "MIT",
   "description": "Sandbox provider contracts and implementations for Boring runtimes.",
@@ -72,8 +72,8 @@
   },
   "dependencies": {
     "@blaxel/core": "0.3.11",
-    "@vercel/blob": "^2.5.0",
-    "@vercel/sandbox": "2.9.2",
+    "@vercel/blob": "^2.8.0",
+    "@vercel/sandbox": "3.0.0",
     "chokidar": "^5.0.0",
     "zod": "^3.25.76"
   },

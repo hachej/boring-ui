@@ -99,7 +99,7 @@ shorthand. Prompts add `displayContent?`, `model?`, `thinkingLevel?`,
 
 ## Error codes
 
-Fifteen, exhaustive, order-stable, exported as both a const map and
+Fourteen, exhaustive, order-stable, exported as both a const map and
 `AGENT_GATEWAY_ERROR_CODES`:
 
 `AGENT_TYPE_UNKNOWN` · `AGENT_SESSION_NOT_FOUND` · `AGENT_SCOPE_DENIED` ·
@@ -107,12 +107,11 @@ Fifteen, exhaustive, order-stable, exported as both a const map and
 `AGENT_SESSION_CURSOR_EXPIRED` · `AGENT_SESSION_CURSOR_INVALID` ·
 `AGENT_REQUEST_CONFLICT` · `AGENT_REQUEST_IN_PROGRESS` ·
 `AGENT_REQUEST_OUTCOME_UNKNOWN` · `AGENT_RUNTIME_RESTART_REQUIRED` ·
-`AGENT_COMMAND_INVALID_STATE` · `AGENT_SESSION_RUNTIME_SCOPE_MISMATCH` ·
+`AGENT_COMMAND_INVALID_STATE` ·
 `AGENT_SHARED_ENVIRONMENT_UNAVAILABLE` · `AGENT_GATEWAY_CLOSED`
 
 HTTP mapping lives in `server/agent-host/httpProjection.ts`
-(`statusForGatewayError`). Note `AGENT_SESSION_RUNTIME_SCOPE_MISMATCH`,
-`AGENT_REQUEST_CONFLICT`, `AGENT_REQUEST_IN_PROGRESS`,
+(`statusForGatewayError`). Note `AGENT_REQUEST_CONFLICT`, `AGENT_REQUEST_IN_PROGRESS`,
 `AGENT_RUNTIME_RESTART_REQUIRED`, and `AGENT_COMMAND_INVALID_STATE` project to
 **409**.
 

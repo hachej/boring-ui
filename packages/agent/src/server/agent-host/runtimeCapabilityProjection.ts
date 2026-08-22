@@ -289,7 +289,6 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
           userId: claim.authSubjectId,
           sessionCtx: {
             workspaceId: claim.workspaceScopeId,
-            runtimeScopeIdentity: binding.scope.identity,
           },
           ...(typeof user?.email === 'string' && user.email.trim()
             ? { userEmail: user.email.trim() }
@@ -361,8 +360,7 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
             userId: scope.authSubjectId,
             sessionCtx: {
               workspaceId: scope.workspaceScopeId,
-              runtimeScopeIdentity: binding.scope.identity,
-            },
+              },
           })
           return { ok: true, sessionId, name }
         }),
@@ -540,7 +538,6 @@ function statusFor(error: AgentGatewayError): number {
     || error.code === AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN
     || error.code === AgentGatewayErrorCode.AGENT_RUNTIME_RESTART_REQUIRED
     || error.code === AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE
-    || error.code === AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH
   ) return 409
   if (error.code === AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED) return 503
   return 400

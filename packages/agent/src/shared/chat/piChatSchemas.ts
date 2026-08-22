@@ -117,12 +117,18 @@ export const QueuedUserMessageSchema = z.object({
 
 export const PiChatStatusSchema = z.enum(['idle', 'hydrating', 'submitted', 'streaming', 'aborting', 'error'])
 
+export const ChatModelSelectionSchema = z.object({
+  provider: nonEmptyString,
+  id: nonEmptyString,
+}) satisfies z.ZodType<ChatModelSelection>
+
 export const PiChatSnapshotSchema = z.object({
   protocolVersion: z.literal(1),
   sessionId: nonEmptyString,
   seq: seqNumber,
   status: PiChatStatusSchema,
   activeTurnId: z.string().optional(),
+  currentModel: ChatModelSelectionSchema.optional(),
   messages: z.array(BoringChatMessageSchema),
   queue: z.object({ followUps: z.array(QueuedUserMessageSchema) }),
   followUpMode: z.literal('one-at-a-time'),
@@ -133,6 +139,7 @@ const baseEvent = z.object({ seq: seqNumber })
 
 export const PiChatEventSchema = z.discriminatedUnion('type', [
   baseEvent.extend({ type: z.literal('agent-start'), turnId: nonEmptyString }),
+  baseEvent.extend({ type: z.literal('model-changed'), currentModel: ChatModelSelectionSchema }),
   baseEvent.extend({ type: z.literal('agent-end'), turnId: nonEmptyString, status: z.enum(['ok', 'aborted', 'error']), willRetry: z.boolean().optional() }),
   baseEvent.extend({
     type: z.literal('message-start'),
@@ -205,11 +212,6 @@ export const PiChatEventSchema = z.discriminatedUnion('type', [
 export const PiChatHeartbeatFrameSchema = z.object({ type: z.literal('heartbeat'), now: z.string() })
 
 export const PiChatStreamFrameSchema = z.union([PiChatEventSchema, PiChatHeartbeatFrameSchema]) satisfies z.ZodType<PiChatStreamFrame, z.ZodTypeDef, unknown>
-
-export const ChatModelSelectionSchema = z.object({
-  provider: nonEmptyString,
-  id: nonEmptyString,
-}) satisfies z.ZodType<ChatModelSelection>
 
 export const ThinkingLevelSchema = z.enum(['off', 'low', 'medium', 'high'])
 

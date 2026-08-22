@@ -24,6 +24,7 @@ export {
 } from './sandbox/remote-worker/workerClient'
 export type { RemoteWorkerClientOptions } from './sandbox/remote-worker/workerClient'
 export {
+  REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY,
   REMOTE_WORKER_PROVIDER,
   REMOTE_WORKER_RUNTIME_CWD,
   WORKER_INTERNAL_TOKEN_HEADER,

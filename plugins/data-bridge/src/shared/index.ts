@@ -5,6 +5,7 @@ export const DATA_BRIDGE_BSL_ERROR_CODES = {
   invalidSyntax: "DATA_BRIDGE_BSL_INVALID_SYNTAX",
   deferredResult: "DATA_BRIDGE_BSL_DEFERRED_RESULT",
   nonTabularResult: "DATA_BRIDGE_BSL_NON_TABULAR_RESULT",
+  invalidArguments: "DATA_BRIDGE_BSL_INVALID_ARGUMENTS",
   executionFailed: "DATA_BRIDGE_BSL_EXECUTION_FAILED",
 } as const
 

@@ -125,6 +125,16 @@ export function createUserFilesystemBinding(
         const stat = await workspace.stat(target)
         return { mtimeMs: stat.kind === 'file' ? stat.mtimeMs : undefined }
       },
+      ...(workspace.createBinaryFile
+        ? {
+            async createBinary({ path, content }) {
+              await requireCapability(path, 'write')
+              const target = workspacePath(workspace, path)
+              await workspace.createBinaryFile!(target, content)
+              return {}
+            },
+          }
+        : {}),
       async delete({ path }) {
         await requireCapability(path, 'delete')
         await workspace.unlink(workspacePath(workspace, path))
