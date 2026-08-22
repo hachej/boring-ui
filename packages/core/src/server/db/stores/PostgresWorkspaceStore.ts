@@ -20,6 +20,7 @@ import {
   assertWorkspaceTypeIdNotMutable,
   parseTrustedWorkspaceTypeId,
 } from '../../workspaceType.js'
+import { parseTrustedDefaultAgentTypeId } from '../../defaultAgentType.js'
 import {
   userSettings,
   users,
@@ -142,6 +143,7 @@ function toWorkspace(row: typeof workspaces.$inferSelect): Workspace {
     deletedAt: row.deletedAt?.toISOString() ?? null,
     isDefault: row.isDefault,
     managedBy: row.managedBy,
+    defaultAgentTypeId: row.defaultAgentTypeId,
   }
 }
 
@@ -171,6 +173,7 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
 
   async create(userId: string, name: string, appId: string, opts?: WorkspaceStoreCreateOptions): Promise<Workspace> {
     const workspaceTypeId = parseTrustedWorkspaceTypeId(opts?.workspaceTypeId)
+    const defaultAgentTypeId = parseTrustedDefaultAgentTypeId(opts?.defaultAgentTypeId)
     return this.db.transaction(async (tx) => {
       const insert = tx
         .insert(workspaces)
@@ -182,6 +185,7 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
           createdBy: userId,
           isDefault: opts?.isDefault ?? false,
           managedBy: opts?.managedBy ?? null,
+          defaultAgentTypeId,
         })
 
       const insertedRows = opts?.id

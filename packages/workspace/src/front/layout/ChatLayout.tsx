@@ -21,6 +21,7 @@ import { WorkbenchOverlayFrame } from "./WorkbenchOverlayFrame"
 import { useViewportWidth } from "./useViewportWidth"
 import { isCompactViewport } from "./breakpoints"
 import { workspaceSessionRef, workspaceSessionRefFromKey, workspaceSessionRefsEqual } from "../sessionIdentity"
+import { useModalDrawer, useModalDrawerScrollLock } from "./useModalDrawer"
 
 export function buildChatLayout(props: ChatLayoutProps = {}): LayoutConfig {
   const {
@@ -158,11 +159,18 @@ export function ChatLayout(props: ChatLayoutProps) {
     ? chatPanes.find((pane) => pane.id === props.activeChatPaneId) ?? chatPanes[0]
     : undefined
   const sidebarOpen = Boolean(props.sidebar)
+  const shellRef = useRef<HTMLDivElement | null>(null)
   const navDrawerRef = useRef<HTMLElement | null>(null)
   const sidebarDrawerRef = useRef<HTMLElement | null>(null)
-  useDrawerFocusTrap(navOpen, navDrawerRef)
-  useDrawerFocusTrap(sidebarOpen, sidebarDrawerRef)
-  useBodyScrollLock(navOpen || sidebarOpen)
+  const scheduleLocalComposerFocus = useCallback(() => {
+    const shell = shellRef.current
+    if (shell) scheduleComposerFocus(shell)
+  }, [])
+  const navIsTopDrawer = navOpen && (mobileShell || !sidebarOpen)
+  const sidebarIsTopDrawer = sidebarOpen && !navIsTopDrawer
+  useModalDrawer({ active: navIsTopDrawer, containerRef: navDrawerRef, onDismiss: closeNav, focusFallback: scheduleLocalComposerFocus, lifecycleKey: sidebarOpen })
+  useModalDrawer({ active: sidebarIsTopDrawer, containerRef: sidebarDrawerRef, onDismiss: closeSidebar, focusFallback: scheduleLocalComposerFocus, lifecycleKey: navOpen })
+  useModalDrawerScrollLock(navOpen || sidebarOpen)
   const canControlNav = navOpen ? Boolean(closeNav) : Boolean(props.onOpenNav)
   const canControlSurface = surfaceOpen ? Boolean(closeSurface) : Boolean(props.onOpenSurface)
   const canControlSidebar = sidebarOpen ? Boolean(closeSidebar) : Boolean(props.onOpenSidebar)
@@ -199,10 +207,9 @@ export function ChatLayout(props: ChatLayoutProps) {
     if (chatCollapsed) setChatCollapsed(false)
     if (navOpen) closeNav?.()
     if (surfaceOpen) closeSurface?.()
-    focusAgentComposer()
-    scheduleComposerFocus()
-  }, [chatCollapsed, closeNav, closeSurface, navOpen, setChatCollapsed, surfaceOpen])
-
+    focusAgentComposer(shellRef.current)
+    scheduleLocalComposerFocus()
+  }, [chatCollapsed, closeNav, closeSurface, navOpen, scheduleLocalComposerFocus, setChatCollapsed, surfaceOpen])
   const suppressOverlayAutoExpandRef = useRef(false)
   const toggleChatCollapsed = useCallback(() => {
     const collapsing = !chatCollapsed
@@ -232,15 +239,14 @@ export function ChatLayout(props: ChatLayoutProps) {
       if (canControlSidebar) {
         shortcuts.push({ key: "3", mod: true, allowInEditable: true, handler: toggleSidebar })
       }
-      if (sidebarOpen && closeSidebar) {
-        shortcuts.push({ key: "Escape", allowInEditable: true, handler: () => closeSidebar() })
+      if (!sidebarOpen && !navOpen && centerId === "chat") {
+        shortcuts.push({ key: "Escape", allowInEditable: true, handler: focusChat })
       }
       if (centerId === "chat") {
-        shortcuts.push({ key: "Escape", allowInEditable: true, handler: focusChat })
         shortcuts.push({ key: "\\", mod: true, allowInEditable: true, handler: toggleChatCollapsed })
       }
       return shortcuts
-    }, [canControlNav, canControlSidebar, canControlSurface, centerId, closeSidebar, focusChat, sidebarOpen, toggleChatCollapsed, toggleNav, toggleSidebar, toggleSurface]),
+    }, [canControlNav, canControlSidebar, canControlSurface, centerId, focusChat, navOpen, sidebarOpen, toggleChatCollapsed, toggleNav, toggleSidebar, toggleSurface]),
   })
 
   useEffect(() => {
@@ -358,9 +364,9 @@ export function ChatLayout(props: ChatLayoutProps) {
     if (activeBlockers.length > 0) {
       setChatCollapsed(false)
       setChatRailPulse(false)
-      scheduleComposerFocus()
+      scheduleLocalComposerFocus()
     }
-  }, [activeBlockers.length, chatCollapsed, setChatCollapsed])
+  }, [activeBlockers.length, chatCollapsed, scheduleLocalComposerFocus, setChatCollapsed])
 
   // Switching to a different session re-opens the chat if it was collapsed, so
   // the newly selected conversation is visible. Skips the initial mount (only
@@ -409,6 +415,7 @@ export function ChatLayout(props: ChatLayoutProps) {
 
   return (
     <div
+      ref={shellRef}
       data-boring-workspace=""
       data-boring-workspace-part="shell"
       data-boring-mobile-shell={props.mobileShellEnabled === true ? "" : undefined}
@@ -438,7 +445,7 @@ export function ChatLayout(props: ChatLayoutProps) {
         aria-label="Session browser"
         aria-hidden={!navOpen}
         role="dialog"
-        aria-modal={navOpen}
+        aria-modal={navIsTopDrawer}
         tabIndex={-1}
         className={cn(
           mobileShell ? "absolute inset-y-0 left-0 z-50 h-full shadow-2xl" : "relative h-full shrink-0",
@@ -480,7 +487,7 @@ export function ChatLayout(props: ChatLayoutProps) {
         aria-label={sidebarOpen ? "Workbench left panel" : undefined}
         aria-hidden={!sidebarOpen}
         role="dialog"
-        aria-modal={sidebarOpen}
+        aria-modal={sidebarIsTopDrawer}
         tabIndex={-1}
         className={cn(
           mobileShell ? "absolute inset-0 z-40 h-full" : "relative h-full shrink-0",
@@ -602,7 +609,7 @@ export function ChatLayout(props: ChatLayoutProps) {
               // Collapsed/mobile workbench fills available width; otherwise it is a side panel.
               (chatCollapsed || mobileWorkspaceOpen) && surfaceOpen ? "min-w-0 flex-1" : "shrink-0",
               "transition-[flex-grow,flex-basis,width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
-              !mobileShell && "border-l border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
+              !mobileShell && surfaceOpen && "border-l border-border",
             )}
             style={
               (chatCollapsed || mobileWorkspaceOpen) && surfaceOpen
@@ -713,78 +720,6 @@ export function ChatLayout(props: ChatLayoutProps) {
 
 function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n))
-}
-
-const FOCUSABLE_SELECTOR =
-  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
-
-/**
- * Lightweight Radix-free dialog behavior for a persistently-mounted drawer
- * `<aside>` that toggles open/closed via CSS width (see the session/workbench
- * drawers below). On open: moves focus into the drawer and traps Tab/Shift+Tab
- * within it. On close: restores focus to whatever was focused before opening.
- * Escape is left to the caller (drawers here are closed via the shell's
- * existing Escape shortcut wiring so focus-trap scope and shortcut precedence
- * stay centralized in one place).
- */
-function useDrawerFocusTrap(open: boolean, containerRef: { current: HTMLElement | null }): void {
-  const previouslyFocusedRef = useRef<HTMLElement | null>(null)
-
-  useEffect(() => {
-    if (!open) return
-    previouslyFocusedRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    const container = containerRef.current
-    const firstFocusable = container?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)
-    ;(firstFocusable ?? container)?.focus({ preventScroll: true })
-
-    return () => {
-      const target = previouslyFocusedRef.current
-      if (target && document.contains(target)) target.focus({ preventScroll: true })
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open])
-
-  useEffect(() => {
-    if (!open) return
-    const container = containerRef.current
-    if (!container) return
-
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key !== "Tab") return
-      const focusables = Array.from(container!.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
-        (el) => el.offsetParent !== null,
-      )
-      if (focusables.length === 0) {
-        e.preventDefault()
-        container!.focus({ preventScroll: true })
-        return
-      }
-      const first = focusables[0]
-      const last = focusables[focusables.length - 1]
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault()
-        last.focus({ preventScroll: true })
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault()
-        first.focus({ preventScroll: true })
-      }
-    }
-
-    container.addEventListener("keydown", handleKeyDown)
-    return () => container.removeEventListener("keydown", handleKeyDown)
-  }, [open])
-}
-
-/** Locks document body scroll while any of the given drawers is open. */
-function useBodyScrollLock(locked: boolean): void {
-  useEffect(() => {
-    if (!locked) return
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = "hidden"
-    return () => {
-      document.body.style.overflow = previousOverflow
-    }
-  }, [locked])
 }
 
 type StoredNumberUpdate = number | ((previous: number) => number)
@@ -921,23 +856,28 @@ function getCallback(params: Record<string, unknown> | undefined, key: string): 
   return getFunction<() => void>(params, key)
 }
 
-function focusAgentComposer(): void {
+function focusAgentComposer(
+  root: HTMLElement | null = null,
+  options: { onlyFromBody?: boolean } = {},
+): void {
   if (typeof document === "undefined") return
-  const activePane = document.querySelector<HTMLElement>(
+  if (options.onlyFromBody && document.activeElement !== document.body) return
+  const queryRoot: Document | HTMLElement = root ?? document
+  const activePane = queryRoot.querySelector<HTMLElement>(
     '[data-boring-workspace-part="chat-pane"][data-boring-state="active"]',
   )
-  const root: Document | HTMLElement = activePane ?? document
-  const textarea = root.querySelector<HTMLTextAreaElement>(
+  const composerRoot: Document | HTMLElement = activePane ?? queryRoot
+  const textarea = composerRoot.querySelector<HTMLTextAreaElement>(
     '[data-boring-agent] textarea[name="message"], textarea[name="message"]',
   )
   textarea?.focus()
 }
 
-function scheduleComposerFocus(): void {
+function scheduleComposerFocus(root: HTMLElement | null = null): void {
   if (typeof window === "undefined") return
   window.requestAnimationFrame(() => {
-    focusAgentComposer()
-    window.setTimeout(focusAgentComposer, 320)
+    focusAgentComposer(root, { onlyFromBody: true })
+    window.setTimeout(() => focusAgentComposer(root, { onlyFromBody: true }), 320)
   })
 }
 

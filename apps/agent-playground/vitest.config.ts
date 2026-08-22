@@ -16,6 +16,7 @@ export default defineConfig({
       { find: /^@hachej\/boring-sandbox\/providers\/direct$/, replacement: resolve(repositoryRoot, 'packages/boring-sandbox/src/providers/direct/index.ts') },
       { find: /^@hachej\/boring-sandbox\/providers\/bwrap$/, replacement: resolve(repositoryRoot, 'packages/boring-sandbox/src/providers/bwrap/index.ts') },
       { find: /^@hachej\/boring-sandbox\/providers\/node-workspace$/, replacement: resolve(repositoryRoot, 'packages/boring-sandbox/src/providers/node-workspace/index.ts') },
+      { find: /^@hachej\/boring-sandbox\/providers\/blaxel$/, replacement: resolve(repositoryRoot, 'packages/boring-sandbox/src/providers/blaxel/index.ts') },
       { find: /^@hachej\/boring-sandbox\/providers\/vercel-sandbox$/, replacement: resolve(repositoryRoot, 'packages/boring-sandbox/src/providers/vercel-sandbox/index.ts') },
     ],
   },

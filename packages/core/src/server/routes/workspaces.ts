@@ -46,7 +46,12 @@ const workspaceRoutesPlugin: FastifyPluginAsync = async (app) => {
   }
 
   async function createWorkspaceForUser(userId: string, name: string, isDefault: boolean, request: FastifyRequest) {
-    const workspace = await store.create(userId, name, app.config.appId, { isDefault })
+    const workspace = await store.create(userId, name, app.config.appId, {
+      isDefault,
+      // Decision 28: stamp the host default seat at initialization only;
+      // existing workspaces are never rewritten.
+      ...(app.config.defaultAgentTypeId ? { defaultAgentTypeId: app.config.defaultAgentTypeId } : {}),
+    })
     await provisionWorkspace(workspace, userId, request)
     return workspace
   }

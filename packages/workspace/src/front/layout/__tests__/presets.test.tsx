@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from "vitest"
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { useEffect, useState } from "react"
 import userEvent from "@testing-library/user-event"
+import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@hachej/boring-ui-kit"
 import { buildIdeLayout } from "../IdeLayout"
 import { buildChatLayout } from "../ChatLayout"
 import { RegistryProvider } from "../../registry"
@@ -28,6 +29,33 @@ import {
 
 function DummyPanel() {
   return <div data-testid="dummy-panel">panel</div>
+}
+
+function DrawerFocusPanel({ params }: { params?: Record<string, unknown> }) {
+  const drawer = String(params?.drawer)
+  return (
+    <div>
+      <button type="button">{drawer} first action</button>
+      <button type="button">{drawer} last action</button>
+    </div>
+  )
+}
+
+function NestedDialogPanel() {
+  return (
+    <Dialog>
+      <DialogTrigger>Open nested dialog</DialogTrigger>
+      <DialogContent>
+        <DialogTitle>Nested confirmation</DialogTitle>
+        <DialogDescription>Confirm without closing the drawer.</DialogDescription>
+        <button type="button">Nested action</button>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function ComposerPanel() {
+  return <textarea name="message" aria-label="Chat composer" />
 }
 
 function WorkbenchHostControlProbe({ params }: { params?: Record<string, unknown> }) {
@@ -418,6 +446,13 @@ describe("IdeLayout responsive behavior", () => {
 
 describe("ChatLayout component", () => {
   beforeEach(() => { vi.restoreAllMocks() })
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+    setViewport(1280)
+    document.body.removeAttribute("style")
+    document.body.removeAttribute("data-scroll-locked")
+  })
 
   it("renders main-style flex chrome", () => {
     const { container } = renderWithRegistry(
@@ -583,10 +618,10 @@ describe("ChatLayout component", () => {
 
     fireShortcut("1", { metaKey: true })
     fireShortcut("2", { metaKey: true })
-    fireShortcut("Escape")
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Session browser" }), { key: "Escape" })
 
     expect(closeNav).toHaveBeenCalledTimes(2)
-    expect(closeSurface).toHaveBeenCalledTimes(2)
+    expect(closeSurface).toHaveBeenCalledOnce()
   })
 
   it("lets active chat Escape stop streaming before shell close shortcuts run", () => {
@@ -1142,11 +1177,281 @@ describe("ChatLayout component", () => {
 
     const sessionBrowser = screen.getByLabelText("Session browser")
     expect(sessionBrowser).toHaveAttribute("role", "dialog")
-    expect(sessionBrowser).toHaveAttribute("aria-modal", "true")
+    expect(sessionBrowser).toHaveAttribute("aria-modal", "false")
 
     const workbenchLeft = screen.getByLabelText("Workbench left panel")
     expect(workbenchLeft).toHaveAttribute("role", "dialog")
     expect(workbenchLeft).toHaveAttribute("aria-modal", "true")
     expect(container.querySelectorAll('[role="dialog"]')).toHaveLength(2)
+    expect(container.querySelectorAll('[aria-modal="true"]')).toHaveLength(1)
+  })
+
+  it("closes the topmost workbench drawer first when both drawers are open", () => {
+    const closeNav = vi.fn()
+    const closeSidebar = vi.fn()
+    renderWithRegistry(
+      <ChatLayout
+        nav="session-list"
+        navParams={{ onClose: closeNav }}
+        center="chat"
+        sidebar="workbench-left"
+        sidebarParams={{ onClose: closeSidebar }}
+      />,
+      ["session-list", "chat", "workbench-left"],
+    )
+
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Workbench left panel" }), { key: "Escape" })
+
+    expect(closeSidebar).toHaveBeenCalledOnce()
+    expect(closeNav).not.toHaveBeenCalled()
+  })
+
+  it("treats the visually topmost session drawer as active on mobile", () => {
+    setViewport(375)
+    const closeNav = vi.fn()
+    const closeSidebar = vi.fn()
+    renderWithRegistry(
+      <ChatLayout
+        mobileShellEnabled
+        nav="session-list"
+        navParams={{ onClose: closeNav }}
+        center="chat"
+        sidebar="workbench-left"
+        sidebarParams={{ onClose: closeSidebar }}
+      />,
+      ["session-list", "chat", "workbench-left"],
+    )
+
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Session browser" }), { key: "Escape" })
+
+    expect(closeNav).toHaveBeenCalledOnce()
+    expect(closeSidebar).not.toHaveBeenCalled()
+    setViewport(1280)
+  })
+
+  it("keeps focus in the topmost workbench drawer when the session drawer closes", async () => {
+    const user = userEvent.setup()
+    const panelRegistry = new PanelRegistry()
+    panelRegistry.register("drawer-focus", { title: "drawer-focus", lazy: false, component: DrawerFocusPanel })
+    panelRegistry.register("workbench-focus", { title: "workbench-focus", lazy: false, component: DrawerFocusPanel })
+    const commandRegistry = new CommandRegistry()
+
+    function Host() {
+      const [navOpen, setNavOpen] = useState(true)
+      return (
+        <ChatLayout
+          center="chat"
+          nav={navOpen ? "drawer-focus" : null}
+          navParams={{ drawer: "session", onClose: () => setNavOpen(false) }}
+          sidebar="workbench-focus"
+          sidebarParams={{ drawer: "workbench", onClose: vi.fn() }}
+        />
+      )
+    }
+
+    render(
+      <WorkspaceProvider agentTypeId="default" persistenceEnabled={false}>
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry}>
+          <Host />
+        </RegistryProvider>
+      </WorkspaceProvider>,
+    )
+
+    const workbenchFirst = screen.getByRole("button", { name: "workbench first action" })
+    expect(workbenchFirst).toHaveFocus()
+    screen.getByRole("button", { name: "session first action" }).focus()
+    await user.keyboard("{Meta>}1{/Meta}")
+    expect(screen.getByLabelText("Session browser")).toHaveAttribute("data-boring-state", "collapsed")
+    await waitFor(() => expect(screen.getByRole("dialog", { name: "Workbench left panel" })).toContainElement(document.activeElement as HTMLElement))
+  })
+
+  it.each([
+    {
+      drawer: "session",
+      dialogName: "Session browser",
+      openButtonName: "Open session drawer",
+    },
+    {
+      drawer: "workbench",
+      dialogName: "Workbench left panel",
+      openButtonName: "Open workbench drawer",
+    },
+  ])("traps focus, closes with Escape, and restores the $drawer drawer trigger", async ({ drawer, dialogName, openButtonName }) => {
+    const user = userEvent.setup()
+    const closeSurface = vi.fn()
+    const panelRegistry = new PanelRegistry()
+    panelRegistry.register("chat", { title: "chat", lazy: false, component: DummyPanel })
+    panelRegistry.register("artifact-surface", { title: "artifact-surface", lazy: false, component: DummyPanel })
+    panelRegistry.register("drawer-focus", { title: "drawer-focus", lazy: false, component: DrawerFocusPanel })
+    const commandRegistry = new CommandRegistry()
+
+    function Host() {
+      const [open, setOpen] = useState(false)
+      const isSession = drawer === "session"
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>{openButtonName}</button>
+          <ChatLayout
+            center="chat"
+            surface="artifact-surface"
+            surfaceParams={{ onClose: closeSurface }}
+            nav={isSession && open ? "drawer-focus" : null}
+            onOpenNav={isSession ? () => setOpen(true) : undefined}
+            navParams={isSession ? { drawer, onClose: () => setOpen(false) } : undefined}
+            sidebar={!isSession && open ? "drawer-focus" : null}
+            onOpenSidebar={!isSession ? () => setOpen(true) : undefined}
+            sidebarParams={!isSession ? { drawer, onClose: () => setOpen(false) } : undefined}
+          />
+        </>
+      )
+    }
+
+    render(
+      <WorkspaceProvider agentTypeId="default" persistenceEnabled={false}>
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry}>
+          <Host />
+        </RegistryProvider>
+      </WorkspaceProvider>,
+    )
+
+    const trigger = screen.getByRole("button", { name: openButtonName })
+    await user.click(trigger)
+
+    const dialog = screen.getByRole("dialog", { name: dialogName })
+    expect(dialog).toHaveAttribute("aria-modal", "true")
+    const first = screen.getByRole("button", { name: `${drawer} first action` })
+    const last = screen.getByRole("button", { name: `${drawer} last action` })
+    Object.defineProperty(first, "offsetParent", { configurable: true, value: dialog })
+    Object.defineProperty(last, "offsetParent", { configurable: true, value: dialog })
+    expect(first).toHaveFocus()
+
+    fireEvent.keyDown(first, { key: "Tab", shiftKey: true })
+    expect(last).toHaveFocus()
+    fireEvent.keyDown(last, { key: "Tab" })
+    expect(first).toHaveFocus()
+
+    fireEvent.keyDown(first, { key: "Escape" })
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: dialogName })).not.toBeInTheDocument())
+    expect(closeSurface).not.toHaveBeenCalled()
+    expect(trigger).toHaveFocus()
+  })
+
+  it("keeps focus in a nested portaled dialog and lets Escape close it before the drawer", async () => {
+    const user = userEvent.setup()
+    const closeNav = vi.fn()
+    const { panelRegistry } = renderWithPanelRegistry(
+      <ChatLayout center="empty" nav="nested-dialog" navParams={{ onClose: closeNav }} />,
+      ["empty"],
+    )
+    act(() => {
+      panelRegistry.register("nested-dialog", { title: "nested-dialog", lazy: false, component: NestedDialogPanel })
+    })
+
+    await user.click(await screen.findByRole("button", { name: "Open nested dialog" }))
+    const nestedDialog = screen.getByRole("dialog", { name: "Nested confirmation" })
+    const nestedAction = screen.getByRole("button", { name: "Nested action" })
+    nestedAction.focus()
+    await act(async () => {
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
+    })
+
+    expect(nestedDialog).toContainElement(document.activeElement as HTMLElement)
+    await user.keyboard("{Escape}")
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Nested confirmation" })).not.toBeInTheDocument())
+    expect(screen.getByRole("dialog", { name: "Session browser" })).toBeInTheDocument()
+    expect(closeNav).not.toHaveBeenCalled()
+  })
+
+  it("does not schedule focus ping-pong when two ChatLayout shells are open", async () => {
+    const requestFrame = vi.spyOn(window, "requestAnimationFrame")
+    renderWithRegistry(<ChatLayout center="empty" nav="drawer-focus" />, ["drawer-focus", "empty"])
+    renderWithRegistry(<ChatLayout center="empty" nav="drawer-focus" />, ["drawer-focus", "empty"])
+    requestFrame.mockClear()
+    const secondDrawer = screen.getAllByRole("dialog", { name: "Session browser" })[1]
+
+    secondDrawer.focus()
+    await act(async () => { await Promise.resolve() })
+
+    expect(secondDrawer).toHaveFocus()
+    expect(requestFrame).not.toHaveBeenCalled()
+  })
+
+  it("falls back to the local composer when the drawer opener unmounts without delayed focus theft", async () => {
+    vi.useFakeTimers()
+    const panelRegistry = new PanelRegistry()
+    panelRegistry.register("chat", { title: "chat", lazy: false, component: ComposerPanel })
+    panelRegistry.register("drawer-focus", { title: "drawer-focus", lazy: false, component: DrawerFocusPanel })
+    const commandRegistry = new CommandRegistry()
+
+    function Host() {
+      const [open, setOpen] = useState(false)
+      return (
+        <>
+          {open ? null : <button type="button" onClick={() => setOpen(true)}>Open transient drawer</button>}
+          <button type="button">Later interaction</button>
+          <ChatLayout
+            center="chat"
+            nav={open ? "drawer-focus" : null}
+            navParams={{ drawer: "session", onClose: () => setOpen(false) }}
+          />
+        </>
+      )
+    }
+
+    render(
+      <WorkspaceProvider agentTypeId="default" persistenceEnabled={false}>
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry}>
+          <Host />
+        </RegistryProvider>
+      </WorkspaceProvider>,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Open transient drawer" }))
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Session browser" }), { key: "Escape" })
+    await act(async () => { await vi.advanceTimersByTimeAsync(20) })
+    expect(screen.getByRole("textbox", { name: "Chat composer" })).toHaveFocus()
+
+    const laterInteraction = screen.getByRole("button", { name: "Later interaction" })
+    laterInteraction.focus()
+    await act(async () => { await vi.advanceTimersByTimeAsync(400) })
+    expect(laterInteraction).toHaveFocus()
+  })
+
+  it("keeps body scrolling locked until both modal drawers close", async () => {
+    const user = userEvent.setup()
+    const previousOverflow = "clip"
+    document.body.style.overflow = previousOverflow
+
+    function Host() {
+      const [navOpen, setNavOpen] = useState(false)
+      const [sidebarOpen, setSidebarOpen] = useState(false)
+      return (
+        <>
+          <button type="button" onClick={() => setNavOpen(true)}>Open sessions</button>
+          <button type="button" onClick={() => setSidebarOpen(true)}>Open workbench left</button>
+          <button type="button" onClick={() => setNavOpen(false)}>Close sessions</button>
+          <button type="button" onClick={() => setSidebarOpen(false)}>Close workbench left</button>
+          <ChatLayout
+            center="empty"
+            nav={navOpen ? "session-list" : null}
+            navParams={{ onClose: () => setNavOpen(false) }}
+            sidebar={sidebarOpen ? "workbench-left" : null}
+            sidebarParams={{ onClose: () => setSidebarOpen(false) }}
+          />
+        </>
+      )
+    }
+
+    const result = renderWithRegistry(<Host />, ["session-list", "empty", "workbench-left"])
+    await user.click(screen.getByRole("button", { name: "Open sessions" }))
+    expect(document.body.style.overflow).toBe("hidden")
+    await user.click(screen.getByRole("button", { name: "Open workbench left" }))
+    expect(document.body.style.overflow).toBe("hidden")
+    await user.click(screen.getByRole("button", { name: "Close sessions" }))
+    expect(document.body.style.overflow).toBe("hidden")
+    await user.click(screen.getByRole("button", { name: "Close workbench left" }))
+    expect(document.body.style.overflow).toBe(previousOverflow)
+
+    result.unmount()
   })
 })

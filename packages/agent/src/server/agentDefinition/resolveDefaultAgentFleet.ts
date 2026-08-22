@@ -2,7 +2,7 @@ import { resolve } from 'node:path'
 
 import { createLogger } from '@hachej/boring-bash/server'
 
-import { loadConfiguredAgentFleet } from './loadConfiguredAgentFleet'
+import { loadConfiguredAgentFleet, type DiscoveredAgentPackageDescriptor } from './loadConfiguredAgentFleet'
 import { ErrorCode } from '../../shared/error-codes'
 import type { AgentHostAgentSpec } from '../agent-host/types'
 
@@ -14,10 +14,12 @@ export const LEGACY_DEFAULT_AGENT_FLEET: readonly AgentHostAgentSpec[] = Object.
 
 export interface ResolveDefaultAgentFleetOptions {
   /**
-   * Repository root used to resolve `.agents/{personas,factory}` when
+   * Repository root used to resolve `.agents/{factory,skills}` when
    * `BORING_AGENT_FLEET=1` composes the fleet. Defaults to `process.cwd()`.
    */
   readonly repositoryRoot?: string
+  /** Asset-manager scan results supplied by the workspace/CLI boot layer. */
+  readonly discoveredPackages?: readonly DiscoveredAgentPackageDescriptor[]
   /**
    * Root of the workspace the `user` filesystem serves, or `null` when the
    * host resolves one per request. Explicit rather than defaulted, because it
@@ -34,7 +36,7 @@ export interface ResolveDefaultAgentFleetOptions {
 
 /**
  * `BORING_AGENT_FLEET=1` composes the config-driven production fleet
- * (gh-1106 slice 3) from `.agents/{personas,factory}` under `repositoryRoot`
+ * from boot-injected plugin scan descriptors plus `.agents/factory` under `repositoryRoot`
  * alongside the default agent; flag absent preserves the legacy
  * single-default-agent boot byte-identically. Shared by
  * `createWorkspaceAgentServer`, `createCoreWorkspaceAgentServer`, and the CLI
@@ -59,19 +61,23 @@ export async function resolveDefaultAgentFleet(
   if (env.BORING_AGENT_FLEET !== '1') return LEGACY_DEFAULT_AGENT_FLEET
   const root = options.repositoryRoot ?? process.cwd()
   try {
+    if (!options.discoveredPackages) throw new Error('agent package discovery descriptors were not injected by the boot layer')
     const { agents: configuredAgents, diagnostics } = await loadConfiguredAgentFleet({
+      discoveredPackages: options.discoveredPackages,
       workspaceRoot: options.workspaceRoot,
-      personasDir: resolve(root, '.agents', 'personas'),
       fleetConfigPath: resolve(root, '.agents', 'factory', 'fleet.yaml'),
       policyPath: resolve(root, '.agents', 'factory', 'policy.yaml'),
+      skillsRoot: resolve(root, '.agents', 'skills'),
       env,
     })
     for (const diagnostic of diagnostics) {
       // Not every diagnostic excludes a seat: an unpublishable instructions
-      // path withholds one link while the seat boots and chats normally.
+      // path withholds one link while the seat boots and chats normally, and
+      // an unseated discovered definition is merely inert.
       const excluded = diagnostic.code !== ErrorCode.enum.AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE
-      logger.warn(excluded ? 'fleet seat excluded' : 'fleet seat instructions not linkable', {
+      logger.warn(excluded ? 'fleet package excluded or inert' : 'fleet seat instructions not linkable', {
         seat: diagnostic.seat,
+        agentTypeId: diagnostic.agentTypeId,
         code: diagnostic.code,
         message: diagnostic.message,
       })

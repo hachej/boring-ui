@@ -83,7 +83,6 @@ function isGoneSessionError(error: unknown): boolean {
   const code = (error as { code?: unknown })?.code
   return code === AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND
     || code === AgentGatewayErrorCode.AGENT_SCOPE_DENIED
-    || code === AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH
     || code === ErrorCode.enum.SESSION_NOT_FOUND
     || code === ErrorCode.enum.UNAUTHORIZED
 }

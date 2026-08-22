@@ -6,6 +6,7 @@ import type { CoreConfig, RuntimeConfig } from '../../shared/types.js'
 import { ConfigValidationError } from '../../shared/errors.js'
 import { resolveConfigFileSecrets } from './fileSecrets.js'
 import { coreConfigSchema } from './schema.js'
+import { parseSignupAgentDefaults } from '../signupAgentDefaults.js'
 
 const THIRTY_DAYS_SECONDS = 60 * 60 * 24 * 30
 const SIXTEEN_MB = 16 * 1024 * 1024
@@ -101,6 +102,22 @@ function parseRateLimitOverrides(
       },
     ])
   }
+}
+
+function parseSignupAgentDefaultsEnv(raw: string): unknown {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new ConfigValidationError([
+      {
+        message:
+          'BORING_SIGNUP_AGENT_DEFAULTS_JSON must be a valid JSON object: {"<exact-hostname>":"<agentTypeId>"}',
+        path: ['signupAgentDefaults'],
+      },
+    ])
+  }
+  return parsed
 }
 
 function parseTrustedProxyPolicy(
@@ -268,6 +285,14 @@ export async function loadConfig(
     databaseUrl,
     stores,
 
+    ...(env.BORING_DEFAULT_AGENT_TYPE_ID
+      ? { defaultAgentTypeId: env.BORING_DEFAULT_AGENT_TYPE_ID }
+      : {}),
+
+    ...(env.BORING_SIGNUP_AGENT_DEFAULTS_JSON
+      ? { signupAgentDefaults: parseSignupAgentDefaultsEnv(env.BORING_SIGNUP_AGENT_DEFAULTS_JSON) }
+      : {}),
+
     cors: {
       origins: securityConfig.corsOrigins,
       credentials: true as const,
@@ -336,7 +361,21 @@ export function validateConfig(raw: unknown): CoreConfig {
       })),
     )
   }
-  return result.data as CoreConfig
+  const config = result.data as CoreConfig
+  if (config.signupAgentDefaults === undefined) return config
+  try {
+    return {
+      ...config,
+      signupAgentDefaults: parseSignupAgentDefaults(config.signupAgentDefaults),
+    }
+  } catch (error) {
+    throw new ConfigValidationError([
+      {
+        message: error instanceof Error ? error.message : 'invalid signupAgentDefaults',
+        path: ['signupAgentDefaults'],
+      },
+    ])
+  }
 }
 
 export function isGoogleOauthUsable(config: Pick<CoreConfig, 'features' | 'auth'>): boolean {

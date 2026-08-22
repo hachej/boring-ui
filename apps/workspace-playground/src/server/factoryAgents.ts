@@ -1,11 +1,21 @@
 import { resolve } from 'node:path'
 
 import { loadConfiguredAgentFleet, type AgentHostAgentSpec } from '@hachej/boring-agent/server'
+import { discoverRepositoryAgentPackages } from '@hachej/boring-workspace/server'
 
-export type BoringFactoryRole = 'concierge' | 'triage' | 'steward' | 'worker' | 'reviewer'
+/**
+ * A seat name as it appears in `.agents/factory/fleet.yaml` — the composed
+ * `agentTypeId` minus its `boring-` prefix.
+ *
+ * Deliberately NOT a union of seat literals. The roster is configuration,
+ * composed at boot by `loadConfiguredAgentFleet` from `.agents/personas` +
+ * `fleet.yaml`; a hand-maintained union here would be a second copy of it that
+ * silently drifts every time a seat is added or renamed. This file must never
+ * be able to disagree with the config about who the seats are (gh-1187 S0).
+ */
+export type BoringFactoryRole = string
 
 const REPOSITORY_ROOT = resolve(import.meta.dirname, '../../../..')
-const PERSONAS_DIR = resolve(REPOSITORY_ROOT, '.agents', 'personas')
 const FLEET_CONFIG_PATH = resolve(REPOSITORY_ROOT, '.agents', 'factory', 'fleet.yaml')
 const POLICY_PATH = resolve(REPOSITORY_ROOT, '.agents', 'factory', 'policy.yaml')
 
@@ -38,6 +48,7 @@ export async function loadBoringFactoryAgents(
   options: LoadBoringFactoryAgentsOptions,
 ): Promise<readonly AgentHostAgentSpec[]> {
   const { agents, diagnostics } = await loadConfiguredAgentFleet({
+    discoveredPackages: await discoverRepositoryAgentPackages(REPOSITORY_ROOT),
     // The SERVED root, not `REPOSITORY_ROOT`. The playground composes the
     // fleet from this repository's `.agents/` tree but serves
     // `apps/workspace-playground/workspace` (or
@@ -47,15 +58,18 @@ export async function loadBoringFactoryAgents(
     // `BORING_AGENT_WORKSPACE_ROOT=<repo root>` to make persona instructions
     // genuinely reachable and their links appear.
     workspaceRoot: options.workspaceRoot,
-    personasDir: PERSONAS_DIR,
     fleetConfigPath: FLEET_CONFIG_PATH,
     policyPath: POLICY_PATH,
+    skillsRoot: resolve(REPOSITORY_ROOT, '.agents', 'skills'),
     ...(options.env ? { env: options.env } : {}),
   })
   // Only diagnostics that actually EXCLUDE a seat are fatal here. An
-  // unpublishable instructions path withholds one link; failing boot over it
-  // would be a worse outcome than the missing row it reports.
-  const excluding = diagnostics.filter((d) => d.code !== 'AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE')
+  // unpublishable instructions path withholds one link, and an unseated
+  // discovered definition is merely inert; failing boot over either would be
+  // a worse outcome than the missing row it reports.
+  const excluding = diagnostics.filter(
+    (d) => d.code !== 'AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE' && d.code !== 'AGENT_DEFINITION_UNSEATED',
+  )
   for (const diagnostic of diagnostics) {
     if (excluding.includes(diagnostic)) continue
     // Withholding a link is correct but must never be silent: without this the
@@ -73,7 +87,7 @@ export async function loadBoringFactoryAgents(
   if (!options.preferredModels) return agents
   return agents.map((agent) => {
     if ('legacyDefault' in agent) return agent
-    const role = agent.agentTypeId.replace(/^boring-/, '') as BoringFactoryRole
+    const role = agent.agentTypeId.replace(/^boring-/, '')
     const preferred = options.preferredModels?.[role]
     return preferred ? { ...agent, model: { ...agent.model, preferred } } : agent
   })

@@ -115,7 +115,6 @@ async function resolveModel(
   const harness = resolved.binding.composition.harness as AgentCoreHarness
   const sessionCtx = {
     workspaceId: scope.workspaceScopeId,
-    runtimeScopeIdentity: resolved.binding.scope.identity,
   }
   const adapter = await harness.getPiSessionAdapter(
     { sessionId: ref.sessionId, message: 'hello', model, ctx: sessionCtx },

@@ -12,6 +12,8 @@ import {
 } from "@hachej/boring-agent/server"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 
+const MODEL_TIERS_YAML = "models:\n  tiers:\n    T3:\n      - provider: anthropic\n        id: claude-sonnet-4-6\n        envVar: ANTHROPIC_API_KEY\n"
+
 const agentServerMock = vi.hoisted(() => {
   const captureResolvedRuntimeScope = vi.fn(async (_resolved?: unknown) => undefined)
   const hostClose = vi.fn(async () => {})
@@ -122,6 +124,7 @@ import {
   digestWorkspacePiResourceInputs,
   projectAgentSpecPluginArtifacts,
   readWorkspacePluginPackagePiSnapshot,
+  resolveBoringPiSkillPaths,
   resolveWorkspaceAgentServerPluginCollection,
 } from "../createWorkspaceAgentServer"
 import { resolveDefaultWorkspacePluginPackagePaths } from "../defaultPluginPackages"
@@ -153,6 +156,25 @@ async function makeTempDir(prefix: string): Promise<string> {
   tempDirs.push(dir)
   return dir
 }
+
+describe("bundled boring-pi runtime resolution", () => {
+  test("ignores a symlinked workspace package in favor of the host install", async () => {
+    const workspaceRoot = await makeTempDir("boring-pi-workspace-symlink-")
+    const substitutedPackage = await makeTempDir("boring-pi-workspace-substitute-")
+    await mkdir(join(substitutedPackage, "skills", "boring-plugin-authoring"), { recursive: true })
+    await writeFile(join(substitutedPackage, "package.json"), JSON.stringify({ name: "@hachej/boring-pi" }), "utf8")
+    await writeFile(join(substitutedPackage, "skills", "boring-plugin-authoring", "SKILL.md"), "# substituted\n", "utf8")
+    await mkdir(join(workspaceRoot, "node_modules", "@hachej"), { recursive: true })
+    const workspacePackage = join(workspaceRoot, "node_modules", "@hachej", "boring-pi")
+    await symlink(substitutedPackage, workspacePackage, "dir")
+
+    const skillPaths = resolveBoringPiSkillPaths(workspaceRoot)
+
+    expect(skillPaths).toHaveLength(1)
+    expect(skillPaths[0]).not.toContain(workspacePackage)
+    expect(skillPaths[0]).toContain(join("packages", "pi", "skills", "boring-plugin-authoring", "SKILL.md"))
+  })
+})
 
 async function writeHotPlugin(root: string, extension: string): Promise<void> {
   const pluginRoot = join(root, ".pi", "extensions", "hot-plugin")
@@ -692,7 +714,7 @@ describe("workspace app-server plugin package helpers", () => {
     await mkdir(join(explicitPluginRoot, "agent"), { recursive: true })
     await writeFile(join(manifestPluginRoot, "package.json"), JSON.stringify({
       name: "manifest-plugin",
-      pi: { skills: ["skills"], packages: ["npm:manifest-pi"] },
+      pi: { skills: ["./skills"], packages: ["npm:manifest-pi"] },
     }), "utf8")
     await writeFile(join(explicitPluginRoot, "package.json"), JSON.stringify({
       name: "explicit-plugin",
@@ -738,7 +760,7 @@ describe("workspace app-server plugin package helpers", () => {
       name: "valid-snapshot-plugin",
       pi: {
         systemPrompt: "VALID_SNAPSHOT_PROMPT",
-        skills: ["skills"],
+        skills: ["./skills"],
         extensions: ["agent/index.ts"],
         packages: ["npm:valid-snapshot-pi"],
       },
@@ -1092,20 +1114,118 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     })
 
     expect(agentServerMock.captureResolvedRuntimeScope).toHaveBeenCalledTimes(1)
-    const [agentOptions] = agentServerMock.captureResolvedRuntimeScope.mock
-      .calls[0] as unknown as [
-      { pi?: { packages?: unknown[] } },
-    ]
-    // Static set: bundled @hachej/boring-pi skill (when resolvable) +
-    // factory-plugin contributions + host-supplied entries.
-    expect(agentOptions.pi?.packages).toContainEqual(
+    const [routeOptions] = agentServerMock.captureResolvedRuntimeScope.mock.calls[0] as unknown as [{
+      authorizedScope: object
+      pi?: { packages?: unknown[] }
+    }]
+    const [hostOptions] = agentServerMock.createAgentHost.mock.calls.at(-1) as unknown as [{
+      resolveDirectRuntimeScopeForTest(input: { agentTypeId: string; scope: object }): Promise<{
+        identity: string
+        pi?: { packages?: unknown[] }
+      }>
+    }]
+    // Host entries remain global; plugin entries are projected through the
+    // default Agent's normalized contribution rather than the route options.
+    expect(routeOptions.pi?.packages).toContainEqual(
       expect.objectContaining({ skills: ["skills/boring-plugin-authoring"] }),
     )
-    expect(agentOptions.pi?.packages).toContainEqual({
-      source: "npm:plugin-pi",
-      extensions: ["./a.ts", "./b.ts"],
+    expect(routeOptions.pi?.packages).toContain("npm:host-pi")
+    const runtime = await hostOptions.resolveDirectRuntimeScopeForTest({
+      agentTypeId: "default",
+      scope: routeOptions.authorizedScope,
     })
-    expect(agentOptions.pi?.packages).toContain("npm:host-pi")
+    expect(runtime.pi?.packages).toEqual([
+      expect.objectContaining({ skills: ["skills/boring-plugin-authoring"] }),
+      { source: "npm:plugin-pi", extensions: ["./a.ts", "./b.ts"] },
+      "npm:host-pi",
+    ])
+    // In the v1 standalone composition Pi package inventory lived in the
+    // global base and was not part of contribution binding identity. Compare
+    // against that portable reference shape instead of pinning an
+    // environment-sensitive digest.
+    await createWorkspaceAgentServer({
+      workspaceRoot: "/tmp/workspace-pi-forwarding",
+      logger: false,
+      provisionWorkspace: false,
+      pi: {
+        packages: [
+          "npm:host-pi",
+          { source: "npm:plugin-pi", extensions: ["./b.ts", "./a.ts"] },
+        ],
+      },
+      plugins: [{ id: "plugin-pi", contentDigest: "plugin-pi-content-v1" }],
+    })
+    const [referenceRoute] = agentServerMock.captureResolvedRuntimeScope.mock.calls.at(-1) as unknown as [{
+      authorizedScope: object
+    }]
+    const [referenceHost] = agentServerMock.createAgentHost.mock.calls.at(-1) as unknown as [{
+      resolveDirectRuntimeScopeForTest(input: { agentTypeId: string; scope: object }): Promise<{ identity: string }>
+    }]
+    const legacyReference = await referenceHost.resolveDirectRuntimeScopeForTest({
+      agentTypeId: "default",
+      scope: referenceRoute.authorizedScope,
+    })
+    expect(runtime.identity).toBe(legacyReference.identity)
+  })
+
+  test("projects defaults through the standalone Agent composition and honors exclusions", async () => {
+    const defaultTool = {
+      name: "default_tool",
+      description: "default tool",
+      parameters: { type: "object", properties: {} },
+      async execute() { return { content: [] } },
+    }
+    const defaultPlugin = {
+      id: "default-agent-plugin",
+      systemPrompt: "DEFAULT_AGENT_PROMPT",
+      agentTools: [defaultTool],
+      piPackages: ["npm:default-agent"],
+      extensionPaths: ["/plugins/default-agent.ts"],
+      skills: [{ name: "default-skill", source: "/plugins/default-skill" }],
+    }
+    const resolve = async (excludeDefaults: string[] = []) => {
+      await createWorkspaceAgentServer({
+        workspaceRoot: await makeTempDir("boring-default-agent-projection-"),
+        logger: false,
+        provisionWorkspace: false,
+        externalPlugins: false,
+        defaults: [defaultPlugin],
+        excludeDefaults,
+        piResourceAuthorizedRoots: ["/plugins"],
+      })
+      const [routeOptions] = agentServerMock.captureResolvedRuntimeScope.mock.calls.at(-1) as unknown as [{
+        authorizedScope: object
+      }]
+      const [hostOptions] = agentServerMock.createAgentHost.mock.calls.at(-1) as unknown as [{
+        resolveDirectRuntimeScopeForTest(input: { agentTypeId: string; scope: object }): Promise<{
+          extraTools?: Array<{ name: string }>
+          systemPromptAppend?: string
+          pi?: {
+            packages?: unknown[]
+            extensionPaths?: string[]
+            getHotReloadableResources?(): { additionalSkillPaths?: string[] }
+          }
+        }>
+      }]
+      return await hostOptions.resolveDirectRuntimeScopeForTest({
+        agentTypeId: "default",
+        scope: routeOptions.authorizedScope,
+      })
+    }
+
+    const included = await resolve()
+    expect(included.extraTools?.map((tool) => tool.name)).toContain("default_tool")
+    expect(included.systemPromptAppend).toContain("DEFAULT_AGENT_PROMPT")
+    expect(included.pi?.packages).toContain("npm:default-agent")
+    expect(included.pi?.extensionPaths).toContain("/plugins/default-agent.ts")
+    expect(included.pi?.getHotReloadableResources?.().additionalSkillPaths
+      ?.some((path) => path.includes("default-agent-plugin/default-skill"))).toBe(true)
+
+    const excluded = await resolve(["default-agent-plugin"])
+    expect(excluded.extraTools?.map((tool) => tool.name) ?? []).not.toContain("default_tool")
+    expect(excluded.systemPromptAppend ?? "").not.toContain("DEFAULT_AGENT_PROMPT")
+    expect(excluded.pi?.packages ?? []).not.toContain("npm:default-agent")
+    expect(excluded.pi?.extensionPaths ?? []).not.toContain("/plugins/default-agent.ts")
   })
 
   test("getHotReloadableResources reflects package.json#pi changes between calls", async () => {
@@ -1175,7 +1295,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       name: "foo",
       version: "1.0.0",
       boring: { front: "front/index.tsx" },
-      pi: { systemPrompt: "FOO_PLUGIN_PROMPT", skills: ["skills"] },
+      pi: { systemPrompt: "FOO_PLUGIN_PROMPT", skills: ["./skills"] },
     }), "utf8")
     agentServerMock.captureResolvedRuntimeScope.mockImplementationOnce(async () => Fastify({ logger: false }) as never)
     const app = await createWorkspaceAgentServer({
@@ -1402,7 +1522,15 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
             packages?: unknown[]
             extensionPaths?: string[]
             getHotReloadableResources?: () => { additionalSkillPaths?: string[] }
+            locateSkillResource?: (filePath: string) => { filesystem: string; path: string } | undefined
           }
+          getFilesystemBindings?: (ctx: { scope: { workspaceScopeId: string; authSubjectId: string }; requestId: string }) => Promise<Array<{
+            filesystem: string
+            operations: { read(input: { filesystem: string; path: string }): Promise<{ content: string }> }
+          }>>
+          getSkillResourceSnapshot?: () => Promise<{
+            managedSkills: Array<{ name: string; resource: { filesystem: string; path: string } }>
+          } | undefined>
         }>
       }]
       const scope = routeOptions.authorizedScope
@@ -1424,6 +1552,24 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       expect(alpha.pi?.getHotReloadableResources?.().additionalSkillPaths).not.toContain(join(betaPackageRoot, "skills", "beta"))
       expect(await alpha.loadSystemPromptAppend?.()).toContain("ALPHA_MANIFEST_PROMPT")
       expect(await alpha.loadSystemPromptAppend?.()).not.toContain("BETA_MANIFEST_PROMPT")
+      const alphaSkillFile = join(alphaPackageRoot, "skills", "alpha", "SKILL.md")
+      expect(alpha.pi?.locateSkillResource?.(alphaSkillFile)).toEqual({
+        filesystem: "agent_resources",
+        path: "packages/@example/alpha/skills/alpha/SKILL.md",
+      })
+      expect(alpha.pi?.locateSkillResource?.(join(betaPackageRoot, "skills", "beta", "SKILL.md"))).toBeUndefined()
+      expect((await alpha.getSkillResourceSnapshot?.())?.managedSkills.map((skill) => skill.name)).toEqual(["alpha-skill"])
+      const agentCtx = { scope: { workspaceScopeId: "default", authSubjectId: "local" }, requestId: "agent-resource-scope" }
+      const alphaResources = (await alpha.getFilesystemBindings?.(agentCtx))?.find((binding) => binding.filesystem === "agent_resources")
+      expect(alphaResources).toBeDefined()
+      await expect(alphaResources!.operations.read({
+        filesystem: "agent_resources",
+        path: "packages/@example/alpha/skills/alpha/SKILL.md",
+      })).resolves.toMatchObject({ content: expect.stringContaining("alpha-skill") })
+      await expect(alphaResources!.operations.read({
+        filesystem: "agent_resources",
+        path: "packages/@example/beta/skills/beta/SKILL.md",
+      })).rejects.toBeDefined()
       expect(alpha.identity).toMatch(/^[a-f0-9]{64}$/)
 
       expect(beta.extraTools?.map((tool) => tool.name)).toContain("beta_tool")
@@ -1436,6 +1582,12 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       expect(beta.pi?.getHotReloadableResources?.().additionalSkillPaths).not.toContain(join(alphaPackageRoot, "skills", "alpha"))
       expect(await beta.loadSystemPromptAppend?.()).toContain("BETA_MANIFEST_PROMPT")
       expect(await beta.loadSystemPromptAppend?.()).not.toContain("ALPHA_MANIFEST_PROMPT")
+      expect(beta.pi?.locateSkillResource?.(join(betaPackageRoot, "skills", "beta", "SKILL.md"))).toEqual({
+        filesystem: "agent_resources",
+        path: "packages/@example/beta/skills/beta/SKILL.md",
+      })
+      expect(beta.pi?.locateSkillResource?.(join(alphaPackageRoot, "skills", "alpha", "SKILL.md"))).toBeUndefined()
+      expect((await beta.getSkillResourceSnapshot?.())?.managedSkills.map((skill) => skill.name)).toEqual(["beta-skill"])
       expect(beta.identity).toMatch(/^[a-f0-9]{64}$/)
       expect(beta.identity).not.toBe(alpha.identity)
 
@@ -1448,6 +1600,40 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     }
   })
 
+  test("workspace-scoped Agent plugin artifacts stay canonical and dedupe explicit bindings", () => {
+    const tool = {
+      name: "workspace_tool",
+      description: "workspace scoped",
+      parameters: { type: "object", properties: {} },
+      async execute() { return { content: [] } },
+    }
+    const plugin = {
+      id: "workspace-plugin",
+      contentDigest: "workspace-plugin-v1",
+      agentTools: [tool],
+    }
+    const artifact = {
+      id: plugin.id,
+      contentDigest: plugin.contentDigest,
+      plugin,
+      entry: plugin,
+    }
+    const agent = {
+      agentTypeId: "worker",
+      definition: { label: "Worker", instructions: "work" },
+      plugins: [{ name: plugin.id }],
+    }
+
+    const projection = projectAgentSpecPluginArtifacts(agent, [artifact], [artifact])
+    expect(projection.artifacts).toEqual([artifact])
+    expect(projection.agentOptions.extraTools?.map((candidate) => candidate.name)).toEqual([tool.name])
+
+    const unpreflighted = { ...artifact, id: "unpreflighted-plugin" }
+    expect(() => projectAgentSpecPluginArtifacts(agent, [artifact], [unpreflighted])).toThrow(
+      'receives workspace-scoped plugin "unpreflighted-plugin" without a preflighted artifact',
+    )
+  })
+
   // M3 fix round 1 (gh-1106 slice 3): `legacyGlobalPluginAgentContributions`
   // used to key off `opts.agents === undefined`. With BORING_AGENT_FLEET=1
   // and no explicit `opts.agents`, the RESOLVED fleet has more than the
@@ -1457,6 +1643,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
   test("BORING_AGENT_FLEET=1 with no explicit opts.agents scopes plugin contributions per Agent, not the legacy global fleet", async () => {
     const workspaceRoot = await makeTempDir("boring-agent-fleet-flag-")
     const fleetRoot = await makeTempDir("boring-agent-fleet-flag-repo-")
+    const workspacePluginRoot = join(workspaceRoot, "workspace-plugin")
     await mkdir(join(fleetRoot, ".agents", "personas", "one"), { recursive: true })
     await mkdir(join(fleetRoot, ".agents", "factory"), { recursive: true })
     await writeFile(
@@ -1480,9 +1667,29 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     await writeFile(join(fleetRoot, ".agents", "personas", "one", "instructions.md"), "You are One.\n", "utf8")
     await writeFile(
       join(fleetRoot, ".agents", "factory", "fleet.yaml"),
-      "seats:\n  - seat: one\n    agentTypeId: fixture-one\n    skills: []\n",
+      `${MODEL_TIERS_YAML}seats:\n  - seat: one\n    agentTypeId: fixture-one\n    skills: []\n`,
       "utf8",
     )
+    await mkdir(workspacePluginRoot, { recursive: true })
+    await writeFile(join(workspacePluginRoot, "package.json"), JSON.stringify({
+      name: "@fixture/workspace-plugin",
+      version: "1.0.0",
+      type: "module",
+      private: true,
+      boring: { id: "workspace-plugin", server: "server.mjs" },
+    }), "utf8")
+    await writeFile(join(workspacePluginRoot, "server.mjs"), `
+      export default {
+        id: "workspace-plugin",
+        systemPrompt: "WORKSPACE_PLUGIN_PROMPT",
+        agentTools: [{
+          name: "workspace_tool",
+          description: "workspace-scoped default plugin tool",
+          parameters: { type: "object", properties: {} },
+          async execute() { return { content: [] } },
+        }],
+      }
+    `, "utf8")
 
     const globalTool = {
       name: "global_tool",
@@ -1501,6 +1708,11 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
         provisionWorkspace: false,
         externalPlugins: false,
         piResourceAuthorizedRoots: ["/plugins"],
+        // Exercise canonical path matching as well as the policy boundary:
+        // default packages are workspace-scoped, while arbitrary `plugins`
+        // remain explicit persona grants.
+        defaultPluginPackages: [`${workspaceRoot}/nested/../workspace-plugin`],
+        workspaceScopedDefaultPluginAgentContributions: true,
         plugins: [{
           id: "global-plugin",
           contentDigest: "global-plugin-content-v1",
@@ -1542,8 +1754,249 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       // used to wrongly apply server-wide whenever `opts.agents` was
       // undefined, flag or no flag.
       const seatScope = await hostOptions.resolveDirectRuntimeScopeForTest({ agentTypeId: "fixture-one", scope })
+      expect(seatScope.extraTools?.map((tool) => tool.name) ?? []).toContain("workspace_tool")
+      expect(seatScope.systemPromptAppend ?? "").toContain("WORKSPACE_PLUGIN_PROMPT")
       expect(seatScope.extraTools?.map((tool) => tool.name) ?? []).not.toContain("global_tool")
       expect(seatScope.systemPromptAppend ?? "").not.toContain("GLOBAL_PLUGIN_PROMPT")
+    } finally {
+      if (previousFlag === undefined) delete process.env.BORING_AGENT_FLEET
+      else process.env.BORING_AGENT_FLEET = previousFlag
+      if (app) await app.close()
+    }
+  })
+
+  test("BORING_AGENT_FLEET boot excludes both valid and preflight-invalid packages that claim one definitionId", async () => {
+    const workspaceRoot = await makeTempDir("boring-agent-fleet-conflict-")
+    const fleetRoot = await makeTempDir("boring-agent-fleet-conflict-repo-")
+    const personasRoot = join(fleetRoot, ".agents", "personas")
+    await mkdir(join(personasRoot, "valid"), { recursive: true })
+    await mkdir(join(personasRoot, "invalid"), { recursive: true })
+    await mkdir(join(fleetRoot, ".agents", "factory"), { recursive: true })
+    const packageJson = (name: string) => JSON.stringify({
+      name,
+      version: "1.0.0",
+      boring: {
+        agent: {
+          definitionId: "fixture-conflict",
+          version: "1.0.0",
+          instructionsRef: "instructions.md",
+        },
+      },
+      pi: { skills: [] },
+    })
+    await writeFile(join(personasRoot, "valid", "package.json"), packageJson("@fixture/valid"), "utf8")
+    await writeFile(join(personasRoot, "valid", "instructions.md"), "Valid claimant.\n", "utf8")
+    await writeFile(join(personasRoot, "invalid", "package.json"), packageJson("@fixture/invalid"), "utf8")
+    await writeFile(
+      join(fleetRoot, ".agents", "factory", "fleet.yaml"),
+      `${MODEL_TIERS_YAML}seats:\n  - seat: conflict\n    agentTypeId: fixture-conflict\n    skills: []\n`,
+      "utf8",
+    )
+
+    const previousFlag = process.env.BORING_AGENT_FLEET
+    process.env.BORING_AGENT_FLEET = "1"
+    let app: Awaited<ReturnType<typeof createWorkspaceAgentServer>> | undefined
+    try {
+      app = await createWorkspaceAgentServer({
+        workspaceRoot,
+        fleetRepositoryRoot: fleetRoot,
+        logger: false,
+        provisionWorkspace: false,
+        externalPlugins: false,
+        fleetCompiler: { async compile({ agents }) { return agents } },
+      })
+      const hostOptions = agentServerMock.createAgentHost.mock.calls.at(-1)![0] as {
+        agents: readonly { agentTypeId: string }[]
+      }
+      expect(hostOptions.agents.map((agent) => agent.agentTypeId)).toEqual(["default"])
+    } finally {
+      if (previousFlag === undefined) delete process.env.BORING_AGENT_FLEET
+      else process.env.BORING_AGENT_FLEET = previousFlag
+      if (app) await app.close()
+    }
+  })
+
+  test("workspace-local agent package boot covers install, seat, update, unseat, mismatch, and removal", async () => {
+    const workspaceRoot = await makeTempDir("boring-agent-local-install-")
+    const fleetRoot = await makeTempDir("boring-agent-local-install-repo-")
+    const packageRoot = join(workspaceRoot, "agents", "local-worker")
+    const settingsPath = join(workspaceRoot, ".pi", "settings.json")
+    const fleetPath = join(fleetRoot, ".agents", "factory", "fleet.yaml")
+    await mkdir(packageRoot, { recursive: true })
+    await mkdir(join(workspaceRoot, ".pi"), { recursive: true })
+    await mkdir(join(fleetRoot, ".agents", "factory"), { recursive: true })
+    await writeFile(join(packageRoot, "instructions.md"), "Local worker instructions.\n", "utf8")
+
+    const writeManifest = async (version: string, skills: string[] = []) => {
+      await writeFile(join(packageRoot, "package.json"), JSON.stringify({
+        name: "@fixture/local-worker",
+        version,
+        boring: {
+          agent: {
+            definitionId: "fixture-local-worker",
+            version,
+            label: "Local Worker",
+            instructionsRef: "instructions.md",
+          },
+        },
+        pi: { skills },
+      }), "utf8")
+    }
+    const writeFleet = async (seats: string) => {
+      await writeFile(fleetPath, `${MODEL_TIERS_YAML}${seats ? `seats:\n${seats}` : "seats: []\n"}`, "utf8")
+    }
+    const bootAgentIds = async () => {
+      const app = await createWorkspaceAgentServer({
+        workspaceRoot,
+        fleetRepositoryRoot: fleetRoot,
+        logger: false,
+        provisionWorkspace: false,
+        fleetCompiler: { async compile({ agents }) { return agents } },
+      })
+      try {
+        const hostOptions = agentServerMock.createAgentHost.mock.calls.at(-1)![0] as {
+          agents: readonly { agentTypeId: string; definition?: { version?: string } }[]
+        }
+        return hostOptions.agents.map((agent) => ({
+          agentTypeId: agent.agentTypeId,
+          version: agent.definition?.version,
+        }))
+      } finally {
+        await app.close()
+      }
+    }
+
+    const previousFlag = process.env.BORING_AGENT_FLEET
+    process.env.BORING_AGENT_FLEET = "1"
+    try {
+      await writeManifest("1.0.0")
+      await writeFile(settingsPath, JSON.stringify({ packages: ["../agents/local-worker"] }), "utf8")
+
+      // Installed means discoverable, not active: an empty roster keeps it inert.
+      await writeFleet("")
+      expect(await bootAgentIds()).toEqual([{ agentTypeId: "default", version: undefined }])
+
+      // Seating the definition activates the same local package on the next boot.
+      await writeFleet("  - seat: local-worker\n    agentTypeId: fixture-local-worker\n    skills: []\n")
+      expect(await bootAgentIds()).toEqual([
+        { agentTypeId: "default", version: undefined },
+        { agentTypeId: "fixture-local-worker", version: "1.0.0" },
+      ])
+
+      // A package bump is observed only after reboot; no copied cache is involved.
+      await writeManifest("1.1.0")
+      expect(await bootAgentIds()).toEqual([
+        { agentTypeId: "default", version: undefined },
+        { agentTypeId: "fixture-local-worker", version: "1.1.0" },
+      ])
+
+      // A stale seat-scoped digest excludes this agent while the rest boots.
+      await mkdir(join(packageRoot, "skills", "local"), { recursive: true })
+      await writeFile(join(packageRoot, "skills", "local", "SKILL.md"), "# Local skill\n", "utf8")
+      await writeManifest("1.2.0", ["skills/local/SKILL.md"])
+      await writeFleet(
+        "  - seat: local-worker\n" +
+        "    agentTypeId: fixture-local-worker\n" +
+        "    skills:\n" +
+        `      - name: skills/local/SKILL.md\n        digest: sha256:${"0".repeat(64)}\n`,
+      )
+      expect(await bootAgentIds()).toEqual([{ agentTypeId: "default", version: undefined }])
+
+      // Unseating and removing the settings registration are both inert on boot.
+      await writeFleet("")
+      expect(await bootAgentIds()).toEqual([{ agentTypeId: "default", version: undefined }])
+      await writeFleet("  - seat: local-worker\n    agentTypeId: fixture-local-worker\n    skills: []\n")
+      await writeFile(settingsPath, JSON.stringify({ packages: [] }), "utf8")
+      expect(await bootAgentIds()).toEqual([{ agentTypeId: "default", version: undefined }])
+    } finally {
+      if (previousFlag === undefined) delete process.env.BORING_AGENT_FLEET
+      else process.env.BORING_AGENT_FLEET = previousFlag
+    }
+  }, 15_000)
+
+  test("remote git/npm package roots cannot contribute agents before their distribution gate", async () => {
+    const workspaceRoot = await makeTempDir("boring-agent-remote-gate-")
+    const fleetRoot = await makeTempDir("boring-agent-remote-gate-repo-")
+    const remotePackageRoot = join(workspaceRoot, ".pi", "npm", "remote-worker")
+    await mkdir(remotePackageRoot, { recursive: true })
+    await mkdir(join(workspaceRoot, "agents"), { recursive: true })
+    await symlink(remotePackageRoot, join(workspaceRoot, "agents", "remote-alias"))
+    await mkdir(join(fleetRoot, ".agents", "factory"), { recursive: true })
+    await writeFile(join(remotePackageRoot, "instructions.md"), "Remote worker instructions.\n", "utf8")
+    await writeFile(join(remotePackageRoot, "package.json"), JSON.stringify({
+      name: "@fixture/remote-worker",
+      version: "1.0.0",
+      boring: {
+        agent: {
+          definitionId: "fixture-remote-worker",
+          version: "1.0.0",
+          instructionsRef: "instructions.md",
+        },
+      },
+      pi: { skills: [] },
+    }), "utf8")
+    await mkdir(join(workspaceRoot, ".pi"), { recursive: true })
+    await writeFile(
+      join(workspaceRoot, ".pi", "settings.json"),
+      JSON.stringify({
+        packages: [
+          "./npm/remote-worker",
+          "../agents/remote-alias",
+          "git:https://example.test/remote-worker.git",
+        ],
+      }),
+      "utf8",
+    )
+    await writeFile(
+      join(fleetRoot, ".agents", "factory", "fleet.yaml"),
+      `${MODEL_TIERS_YAML}seats:\n  - seat: remote-worker\n    agentTypeId: fixture-remote-worker\n    skills: []\n`,
+      "utf8",
+    )
+
+    const previousFlag = process.env.BORING_AGENT_FLEET
+    process.env.BORING_AGENT_FLEET = "1"
+    let app: Awaited<ReturnType<typeof createWorkspaceAgentServer>> | undefined
+    try {
+      app = await createWorkspaceAgentServer({
+        workspaceRoot,
+        fleetRepositoryRoot: fleetRoot,
+        logger: false,
+        provisionWorkspace: false,
+        fleetCompiler: { async compile({ agents }) { return agents } },
+      })
+      const hostOptions = agentServerMock.createAgentHost.mock.calls.at(-1)![0] as {
+        agents: readonly { agentTypeId: string }[]
+      }
+      expect(hostOptions.agents.map((agent) => agent.agentTypeId)).toEqual(["default"])
+    } finally {
+      if (previousFlag === undefined) delete process.env.BORING_AGENT_FLEET
+      else process.env.BORING_AGENT_FLEET = previousFlag
+      if (app) await app.close()
+    }
+  })
+
+  test("BORING_AGENT_FLEET off: workspace host seam stays on the legacy single default agent and never probes the fleet root", async () => {
+    const workspaceRoot = await makeTempDir("boring-agent-fleet-off-")
+    const previousFlag = process.env.BORING_AGENT_FLEET
+    delete process.env.BORING_AGENT_FLEET
+    let app: Awaited<ReturnType<typeof createWorkspaceAgentServer>> | undefined
+    try {
+      // A fleetRepositoryRoot that does not exist: with the flag off the seam
+      // must not evaluate it (no eager fleet discovery / cwd fallback) — boot
+      // still yields the single legacy default agent (gh-1107 slice 1 fix
+      // round: flag-off purity extended to the workspace host seam).
+      app = await createWorkspaceAgentServer({
+        workspaceRoot,
+        fleetRepositoryRoot: "/does/not/exist/flag-off",
+        logger: false,
+        provisionWorkspace: false,
+        externalPlugins: false,
+      })
+      const hostOptions = agentServerMock.createAgentHost.mock.calls.at(-1)![0] as {
+        agents: readonly { agentTypeId: string; legacyDefault?: boolean }[]
+      }
+      expect(hostOptions.agents.map((agent) => agent.agentTypeId)).toEqual(["default"])
+      expect(hostOptions.agents[0]?.legacyDefault).toBe(true)
     } finally {
       if (previousFlag === undefined) delete process.env.BORING_AGENT_FLEET
       else process.env.BORING_AGENT_FLEET = previousFlag
@@ -2224,13 +2677,18 @@ describe("beforeReload triggers directory-source re-resolve", () => {
 
     try {
       const [runtime] = agentServerMock.captureResolvedRuntimeScope.mock.calls.at(-1) as unknown as [{
-        getFilesystemBindings?(ctx: { scope: { workspaceScopeId: string; authSubjectId: string }; requestId: string }): Promise<Array<{ filesystem: string }> | undefined>
+        applyReload?(): Promise<void>
+        getFilesystemBindings?(ctx: { scope: { workspaceScopeId: string; authSubjectId: string }; requestId: string }): Promise<Array<{
+          filesystem: string
+          operations: { read(input: { filesystem: string; path: string }): Promise<{ content: string }> }
+        }> | undefined>
         getSkillResourceSnapshot?(ctx: { scope: { workspaceScopeId: string; authSubjectId: string }; requestId: string }): Promise<{
           generation: string
           managedSkills: Array<{ name: string; resource: { filesystem: string; path: string } }>
         } | undefined>
         pi?: {
           getHotReloadableResources?(): { additionalSkillPaths: string[] }
+          locateSkillResource?(filePath: string): { filesystem: string; path: string } | undefined
         }
         systemPromptAppend?: string
         loadSystemPromptAppend?(): string | undefined | Promise<string | undefined>
@@ -2249,6 +2707,10 @@ describe("beforeReload triggers directory-source re-resolve", () => {
       expect((await runtime.getFilesystemBindings?.(ctx))?.map((binding) => binding.filesystem)).toEqual(["agent_resources"])
       expect(runtime.pi?.getHotReloadableResources?.().additionalSkillPaths)
         .toContain(join(packageRoot, "skills", "authoring"))
+      expect(runtime.pi?.locateSkillResource?.(join(packageRoot, "skills", "authoring", "SKILL.md"))).toEqual({
+        filesystem: "agent_resources",
+        path: "packages/@example/direct-resource/skills/authoring/SKILL.md",
+      })
       const prompt = [runtime.systemPromptAppend, await runtime.loadSystemPromptAppend?.()]
         .filter(Boolean)
         .join("\n\n")

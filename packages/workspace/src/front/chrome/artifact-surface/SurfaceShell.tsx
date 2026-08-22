@@ -333,7 +333,7 @@ export function SurfaceShell({
   onCloseRef.current = onClose
   const bridgeSelectorsRef = useRef(new Set<(state: WorkspaceState) => void>())
   const fileBackedPanelIdsRef = useRef(new Set<string>())
-  const pendingTreeExpandRef = useRef<{ path: string; filesystem?: FilesystemId } | null>(null)
+  const pendingTreeExpandRef = useRef<BridgeEventMap["tree:expand"] | null>(null)
   const bridgeEventHandlersRef = useRef(
     new Map<keyof BridgeEventMap, Set<(data: BridgeEventMap[keyof BridgeEventMap]) => void>>(),
   )
@@ -669,11 +669,17 @@ export function SurfaceShell({
   }, [])
 
   const expandToFileSync = useCallback((path: string, options?: { filesystem?: FilesystemId }) => {
-    const normalizedPath = normalizeWorkbenchPath(path)
+    const normalizedPath = path.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+/g, "/")
     const filesystem = options?.filesystem
-    const request = { path: normalizedPath, ...(filesystem ? { filesystem } : {}) }
+    const request = {
+      path: normalizedPath,
+      ...(filesystem ? { filesystem } : {}),
+    }
     pendingTreeExpandRef.current = request
-    setFileTreeRevealRequest({ ...request, seq: ++fileTreeRevealSeqRef.current })
+    setFileTreeRevealRequest({
+      ...request,
+      seq: ++fileTreeRevealSeqRef.current,
+    })
     openSourcePane(FILES_WORKSPACE_SOURCE_ID)
     if (emitBridgeEvent("tree:expand", request)) {
       pendingTreeExpandRef.current = null
@@ -938,7 +944,9 @@ export function SurfaceShell({
         data-boring-state={hostRailOnly ? "collapsed" : "expanded"}
         className={cn(
           "pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center",
-          hostRailOnly ? "justify-center border-b border-border/60 bg-background" : "justify-end px-3",
+          hostRailOnly
+            ? "justify-center border-b border-border bg-[color:oklch(from_var(--background)_calc(l-0.012)_c_h)]"
+            : "justify-end px-3",
         )}
         style={{ height: workbenchHeaderHeight }}
       >
@@ -946,13 +954,13 @@ export function SurfaceShell({
           <IconButton
             type="button"
             variant="ghost"
-            size="icon-xs"
+            size="icon-sm"
             className="workbench-open-button pointer-events-auto"
             onClick={toggleHostWorkbench}
             aria-label="Open workbench"
             title="Open workbench (⌘2)"
           >
-            <PanelRightOpen className="h-4 w-4" strokeWidth={1.75} />
+            <PanelRightOpen className="size-4" strokeWidth={1.75} />
           </IconButton>
         ) : (
           <WorkbenchHeaderActions
@@ -1019,7 +1027,7 @@ export function SurfaceShell({
           data-boring-workspace-part="surface-sidebar"
           data-boring-state={hostRailOnly ? "host-collapsed" : sourcePaneOpen ? "expanded" : "rail"}
           className={cn(
-            "relative z-10 flex min-h-0 shrink-0 flex-col overflow-hidden border-l border-border/60",
+            "relative z-10 flex min-h-0 shrink-0 flex-col overflow-hidden border-l border-border",
             !hideLevelOneHeader && "mt-11",
           )}
           style={{

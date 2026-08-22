@@ -11,6 +11,9 @@ export const ERROR_CODES = {
   LAST_OWNER: 'last_owner',
   INVALID_WORKSPACE_TYPE_ID: 'invalid_workspace_type_id',
   WORKSPACE_TYPE_IMMUTABLE: 'workspace_type_immutable',
+  INVALID_DEFAULT_AGENT_TYPE_ID: 'invalid_default_agent_type_id',
+  DEFAULT_AGENT_TYPE_UNKNOWN_SEAT: 'default_agent_type_unknown_seat',
+  INVALID_SIGNUP_AGENT_DEFAULTS: 'invalid_signup_agent_defaults',
 
   // Invites
   INVITE_NOT_FOUND: 'invite_not_found',
@@ -81,6 +84,7 @@ export class ConfigFetchError extends Error {
 }
 
 export class ConfigValidationError extends Error {
+  readonly code = ERROR_CODES.CONFIG_VALIDATION_FAILED
   readonly issues: Array<{ message: string; path: Array<string | number> }>
 
   constructor(

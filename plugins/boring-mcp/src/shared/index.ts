@@ -24,13 +24,18 @@ export const MCP_ERROR_CODES = {
 } as const
 
 export type McpErrorCode = (typeof MCP_ERROR_CODES)[keyof typeof MCP_ERROR_CODES]
+export const USER_REGISTERED_MCP_PROVIDER_ID = "user-registered" as const
+const USER_REGISTERED_SOURCE_BRAND: unique symbol = Symbol("boring-mcp.user-registered-source")
+const userRegisteredSources = new WeakSet<object>()
+const userRegisteredTemplates = new WeakSet<object>()
 /**
  * "user-registered" is an explicit discriminator for caller-supplied MCP
  * endpoints (see {@link McpUserRegisteredSourceConfig}), distinct from the
  * untyped `(string & {})` escape hatch used for forward-compatible provider
- * ids. It never appears in {@link DEFAULT_MCP_PROVIDER_TEMPLATES}.
+ * ids. Runtime trust never comes from this forgeable string alone: sources
+ * and templates must cross the constructors backed by the private WeakSets.
  */
-export type McpProviderId = "notion" | "airtable" | "user-registered" | (string & {})
+export type McpProviderId = "notion" | "airtable" | typeof USER_REGISTERED_MCP_PROVIDER_ID | (string & {})
 export type McpTransport = "streamable-http"
 export type McpSourceStatus = "connected" | "expired" | "revoked" | "error" | "unconfigured"
 export type McpToolRisk = "read" | "write" | "admin" | "unknown"
@@ -77,6 +82,41 @@ export interface McpSource {
   lastVerifiedAt?: string
   createdAt?: string
   updatedAt?: string
+}
+
+/** Source admitted by the authoritative user-registration constructor. */
+export interface McpUserRegisteredSource extends McpSource {
+  provider: typeof USER_REGISTERED_MCP_PROVIDER_ID
+  userRegistration: {
+    endpoint: string
+    transport: "streamable-http"
+  }
+  readonly [USER_REGISTERED_SOURCE_BRAND]: true
+}
+
+export type McpUserRegisteredSourceInput = Omit<McpSource, "provider" | "userRegistration">
+
+/**
+ * The only supported boundary for creating or rehydrating a user endpoint.
+ * It durably links the source to its validated endpoint; persistence stores
+ * that link and re-runs this constructor on read.
+ */
+export function createUserRegisteredMcpSource(
+  input: McpUserRegisteredSourceInput,
+  config: McpUserRegisteredSourceConfig,
+): McpUserRegisteredSource {
+  const template = createUserRegisteredMcpProviderTemplate(config)
+  const source = {
+    ...input,
+    provider: USER_REGISTERED_MCP_PROVIDER_ID,
+    userRegistration: { endpoint: template.endpoint!, transport: "streamable-http" as const },
+  } as McpUserRegisteredSource
+  userRegisteredSources.add(source)
+  return source
+}
+
+export function isUserRegisteredMcpSource(source: McpSource): source is McpUserRegisteredSource {
+  return userRegisteredSources.has(source)
 }
 
 export type McpSourceDto = Pick<
@@ -303,61 +343,87 @@ function ipv4OctetsFromHostname(hostname: string): number[] | undefined {
 }
 
 function isBlockedIpv4(octets: number[]): boolean {
-  const [a, b] = octets
-  if (a === 127) return true // loopback
-  if (a === 10) return true // private
-  if (a === 0) return true // "this network"
-  if (a === 169 && b === 254) return true // link-local + cloud metadata service (169.254.169.254)
-  if (a === 172 && b >= 16 && b <= 31) return true // private
-  if (a === 192 && b === 168) return true // private
+  const [a, b, c, d] = octets
+  // Treat admission as public-unicast-only rather than trying to enumerate
+  // just the best-known SSRF targets.
+  if (a === 0 || a === 10 || a === 127) return true
   if (a === 100 && b >= 64 && b <= 127) return true // carrier-grade NAT
+  if (a === 169 && b === 254) return true // link-local + cloud metadata service
+  if (a === 172 && b >= 16 && b <= 31) return true
+  if (a === 192 && b === 0 && c === 0) return true // IETF protocol assignments
+  if (a === 192 && b === 0 && c === 2) return true // TEST-NET-1
+  if (a === 192 && b === 88 && c === 99) return true // deprecated 6to4 relay anycast
+  if (a === 192 && b === 168) return true
+  if (a === 198 && (b === 18 || b === 19)) return true // benchmarking
+  if (a === 198 && b === 51 && c === 100) return true // TEST-NET-2
+  if (a === 203 && b === 0 && c === 113) return true // TEST-NET-3
+  if (a >= 224) return true // multicast, reserved, and limited broadcast
+  if (a === 255 && b === 255 && c === 255 && d === 255) return true
   return false
 }
 
-/** Converts two IPv6 hex words (e.g. "7f00", "1") into the 4 embedded IPv4 octets. */
-function hexWordsToIpv4Octets(high: string, low: string): number[] {
-  const hi = Number.parseInt(high, 16)
-  const lo = Number.parseInt(low, 16)
-  return [(hi >> 8) & 0xff, hi & 0xff, (lo >> 8) & 0xff, lo & 0xff]
+function ipv4OctetsFromHexWords(high: number, low: number): number[] {
+  return [(high >> 8) & 0xff, high & 0xff, (low >> 8) & 0xff, low & 0xff]
 }
 
-/**
- * Extracts the embedded IPv4 address from an IPv4-mapped IPv6 literal
- * (`::ffff:a.b.c.d` or the WHATWG-URL-normalized hex-word form
- * `::ffff:7f00:1`). The URL parser rewrites the former to the latter, so both
- * spellings must be recognized or the mapped-address block below is a no-op
- * for anything that has gone through `new URL(...)`.
- */
-function ipv4MappedTail(normalizedHostname: string): number[] | undefined {
-  if (!normalizedHostname.startsWith("::ffff:")) return undefined
-  const tail = normalizedHostname.slice("::ffff:".length)
-  const dotted = ipv4OctetsFromHostname(tail)
-  if (dotted) return dotted
-  const hexWords = /^([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(tail)
-  if (hexWords) return hexWordsToIpv4Octets(hexWords[1], hexWords[2])
-  return undefined
-}
+/** Expands every valid IPv6 spelling, including dotted IPv4 tails, into eight 16-bit words. */
+function ipv6Words(hostname: string): number[] | undefined {
+  let normalized = hostname.replace(/^\[|\]$/g, "").toLowerCase().split("%")[0]
+  const dottedTail = normalized.match(/(?:^|:)(\d{1,3}(?:\.\d{1,3}){3})$/)?.[1]
+  if (dottedTail) {
+    const octets = ipv4OctetsFromHostname(dottedTail)
+    if (!octets) return undefined
+    const high = ((octets[0] << 8) | octets[1]).toString(16)
+    const low = ((octets[2] << 8) | octets[3]).toString(16)
+    normalized = `${normalized.slice(0, -dottedTail.length)}${high}:${low}`
+  }
 
-/** True if the hostname's first hextet falls in [lo, hi] (inclusive), covering a CIDR-style /N range. */
-function firstHextetInRange(normalizedHostname: string, lo: number, hi: number): boolean {
-  const first = normalizedHostname.split(":")[0]
-  if (!/^[0-9a-f]{1,4}$/.test(first)) return false
-  const value = Number.parseInt(first, 16)
-  return value >= lo && value <= hi
+  const halves = normalized.split("::")
+  if (halves.length > 2) return undefined
+  const left = halves[0] ? halves[0].split(":") : []
+  const right = halves.length === 2 && halves[1] ? halves[1].split(":") : []
+  if ([...left, ...right].some((word) => !/^[0-9a-f]{1,4}$/.test(word))) return undefined
+  const missing = 8 - left.length - right.length
+  if ((halves.length === 1 && missing !== 0) || (halves.length === 2 && missing < 1)) return undefined
+  return [...left, ...Array(missing).fill("0"), ...right].map((word) => Number.parseInt(word, 16))
 }
 
 function isBlockedIpv6(hostname: string): boolean {
-  const normalized = hostname.replace(/^\[|\]$/g, "").toLowerCase()
-  if (normalized === "::1") return true // loopback
-  if (normalized === "::") return true
-  if (firstHextetInRange(normalized, 0xfe80, 0xfebf)) return true // link-local fe80::/10
-  if (firstHextetInRange(normalized, 0xfec0, 0xfeff)) return true // deprecated site-local fec0::/10
-  if (normalized.startsWith("fc") || normalized.startsWith("fd")) return true // unique local
-  if (normalized.startsWith("64:ff9b::")) return true // NAT64 well-known prefix (embeds an IPv4 address)
-  if (normalized.startsWith("2002:7f00:1:") || normalized === "2002:7f00:1::") return true // 6to4-encoded loopback
-  const mappedTail = ipv4MappedTail(normalized)
-  if (mappedTail && isBlockedIpv4(mappedTail)) return true
+  const words = ipv6Words(hostname)
+  if (!words) return false
+  if (words.slice(0, 7).every((word) => word === 0) && words[7] <= 1) return true // unspecified + loopback
+  if ((words[0] & 0xffc0) === 0xfe80) return true // link-local fe80::/10
+  if ((words[0] & 0xffc0) === 0xfec0) return true // deprecated site-local fec0::/10
+  if ((words[0] & 0xfe00) === 0xfc00) return true // unique-local fc00::/7
+  if ((words[0] & 0xff00) === 0xff00) return true // multicast ff00::/8
+  if (words[0] === 0x2001 && words[1] === 0) return true // Teredo 2001::/32
+  if (words[0] === 0x100 && words.slice(1, 4).every((word) => word === 0)) return true // discard-only 100::/64
+  if (words[0] === 0x2001 && words[1] === 2) return true // benchmarking 2001:2::/48
+  if (words[0] === 0x2001 && ((words[1] & 0xfff0) === 0x10 || (words[1] & 0xfff0) === 0x20)) return true // ORCHID / ORCHIDv2
+  if (words[0] === 0x2001 && words[1] === 0x0db8) return true // documentation 2001:db8::/32
+  if (words[0] === 0x3fff && (words[1] & 0xf000) === 0) return true // documentation 3fff::/20
+  if (words[0] === 0x5f00) return true // segment-routing SIDs 5f00::/16
+
+  const mapped = words.slice(0, 5).every((word) => word === 0) && words[5] === 0xffff
+  const compatible = words.slice(0, 6).every((word) => word === 0)
+  if ((mapped || compatible) && isBlockedIpv4(ipv4OctetsFromHexWords(words[6], words[7]))) return true
+
+  const wellKnownNat64 = words[0] === 0x64 && words[1] === 0xff9b && words.slice(2, 6).every((word) => word === 0)
+  if (wellKnownNat64 && isBlockedIpv4(ipv4OctetsFromHexWords(words[6], words[7]))) return true
+  if (words[0] === 0x64 && words[1] === 0xff9b && words[2] === 1) return true // RFC 8215 local-use 64:ff9b:1::/48
+  // RFC 6052 also permits operator-specific translation prefixes. They are
+  // not syntactically distinguishable from ordinary global IPv6 addresses;
+  // deployments needing that coverage must enforce it at an egress proxy.
+  if (words[0] === 0x2002 && isBlockedIpv4(ipv4OctetsFromHexWords(words[1], words[2]))) return true // 6to4
   return false
+}
+
+/** Applies the MCP private/metadata/loopback/link-local blocklist to an IP address returned by DNS. */
+export function isBlockedMcpEndpointIpAddress(address: string): boolean {
+  const normalized = address.toLowerCase().replace(/^\[|\]$/g, "")
+  const ipv4 = ipv4OctetsFromHostname(normalized)
+  if (ipv4) return isBlockedIpv4(ipv4)
+  return normalized.includes(":") && isBlockedIpv6(normalized)
 }
 
 function isBlockedHostname(hostname: string): boolean {
@@ -366,10 +432,7 @@ function isBlockedHostname(hostname: string): boolean {
   const lower = hostname.toLowerCase().replace(/\.$/, "")
   if (BLOCKED_HOSTNAME_EXACT.has(lower)) return true
   if (BLOCKED_HOSTNAME_SUFFIXES.some((suffix) => lower.endsWith(suffix))) return true
-  const ipv4 = ipv4OctetsFromHostname(lower)
-  if (ipv4) return isBlockedIpv4(ipv4)
-  if (lower.includes(":")) return isBlockedIpv6(lower)
-  return false
+  return isBlockedMcpEndpointIpAddress(lower)
 }
 
 /**
@@ -382,12 +445,11 @@ function isBlockedHostname(hostname: string): boolean {
  * unchanged, and nothing here prevents a validated `https://` endpoint from
  * later issuing an HTTP redirect to a private address at connect time.
  *
- * Real SSRF protection for this feature requires connect-time enforcement
- * (resolve-then-pin the IP before connecting, or route through an egress
- * allowlist/proxy) plus redirect handling at the transport layer — see
- * gh-1011-ssrf (bead wt-391-forward-1011-connect-time-ssrf-x35). This validator MUST NOT be treated as sufficient to admit a
- * user-registered source into any environment that can reach production
- * networks or a cloud metadata service.
+ * This validator MUST NOT be treated as sufficient by itself. The server-side
+ * SDK transport adds connect-time resolve-then-pin enforcement and refuses
+ * redirects when the source carries typed user-registered provenance. Other
+ * transports must provide equivalent enforcement or route through a trusted
+ * egress allowlist/proxy.
  *
  * Throws {@link McpError} with a stable code per rejection reason.
  */
@@ -434,18 +496,11 @@ export function validateUserRegisteredMcpEndpoint(endpoint: string, transport?: 
  * returning a template, regardless of caller. It never mutates
  * {@link DEFAULT_MCP_PROVIDER_TEMPLATES}.
  *
- * `McpProviderTemplate` is a plain structural type, so nothing stops a caller
- * from hand-constructing a `{ id: "user-registered", endpoint: ... }` object
- * and bypassing this factory entirely. {@link getMcpProviderTemplate} — the
- * shared lookup used by every consumption point — re-runs the same
- * validation on any template whose id is `"user-registered"` and silently
- * drops it (returns `undefined`) if the endpoint doesn't pass, so a
- * hand-crafted bypass template is rejected as "unknown provider" rather than
- * being trusted. This is a runtime guard, not type-level branding: it was
- * chosen over branding the interface because branding `McpProviderTemplate`
- * would ripple across every call site that constructs or clones a template.
- * It does not close the connect-time SSRF gap described above — see
- * gh-1011-ssrf (bead wt-391-forward-1011-connect-time-ssrf-x35).
+ * The returned template is recorded in a private WeakSet. Structural objects
+ * carrying the same id are rejected by {@link getMcpProviderTemplate}, even
+ * when their endpoint is otherwise valid. The server-side SDK transport
+ * closes the connect-time DNS/TOCTOU gap for sources created by the matching
+ * source constructor; other transports must do the same before accepting it.
  */
 export function createUserRegisteredMcpProviderTemplate(config: McpUserRegisteredSourceConfig): McpProviderTemplate {
   if (!config.enabled) {
@@ -455,8 +510,8 @@ export function createUserRegisteredMcpProviderTemplate(config: McpUserRegistere
     )
   }
   const url = validateUserRegisteredMcpEndpoint(config.endpoint, config.transport)
-  return {
-    id: "user-registered",
+  const template: McpProviderTemplate = {
+    id: USER_REGISTERED_MCP_PROVIDER_ID,
     displayName: config.displayName,
     endpoint: url.toString(),
     transport: "streamable-http",
@@ -465,11 +520,12 @@ export function createUserRegisteredMcpProviderTemplate(config: McpUserRegistere
     deniedTools: config.deniedTools ?? ["create_*", "update_*", "delete_*", "publish_*", "admin_*"],
     allowedResourceUriPrefixes: config.allowedResourceUriPrefixes,
   }
+  userRegisteredTemplates.add(template)
+  return template
 }
 
-/** Re-validates a "user-registered" template's endpoint at lookup time, guarding against hand-constructed bypass templates (see doc comment on {@link createUserRegisteredMcpProviderTemplate}). */
 function isValidUserRegisteredTemplate(template: McpProviderTemplate): boolean {
-  if (!template.endpoint) return false
+  if (!userRegisteredTemplates.has(template) || !template.endpoint) return false
   try {
     validateUserRegisteredMcpEndpoint(template.endpoint, template.transport)
     return true
@@ -483,7 +539,8 @@ export function getMcpProviderTemplate(
   templates: readonly McpProviderTemplate[] = DEFAULT_MCP_PROVIDER_TEMPLATES,
 ): McpProviderTemplate | undefined {
   const template = templates.find((template) => template.id === provider)
-  if (template && template.id === "user-registered" && !isValidUserRegisteredTemplate(template)) return undefined
+  if (template?.endpoint && template.id !== USER_REGISTERED_MCP_PROVIDER_ID) return undefined
+  if (template && template.id === USER_REGISTERED_MCP_PROVIDER_ID && !isValidUserRegisteredTemplate(template)) return undefined
   return template
 }
 

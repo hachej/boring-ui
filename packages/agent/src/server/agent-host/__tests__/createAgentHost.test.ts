@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -370,6 +370,99 @@ describe('createAgentHost', () => {
         'nutritionist',
         'legal',
       ])
+    } finally {
+      await app.close()
+      await created.host.close()
+    }
+  })
+
+  it('mounts an agent definition knowledge/ folder as a readonly agent-scoped agent_knowledge binding invisible to sibling agents', async () => {
+    const workspaceRoot = await root()
+    const knowledgeRoot = await root()
+    await writeFile(join(knowledgeRoot, 'facts.md'), 'knowledge facts', 'utf8')
+    const toolsByAgent = new Map<string, Parameters<AgentHarnessFactory>[0]['tools']>()
+    const harnessFactory: AgentHarnessFactory = async (input) => {
+      toolsByAgent.set(input.systemPromptAppend!, input.tools)
+      return createScriptedPiHarness(input)
+    }
+    const created = await createAgentHost({
+      ...options(workspaceRoot),
+      agents: [
+        {
+          agentTypeId: 'scholar',
+          definition: { instructions: 'scholar', label: 'Scholar', digest: `sha256:${'a'.repeat(64)}` },
+          knowledge: { rootDir: knowledgeRoot },
+        },
+        { agentTypeId: 'plain', definition: { instructions: 'plain', label: 'Plain' } },
+      ],
+      harnessFactory,
+      resolveAuthorizedEnvironmentScope: async () => ({
+        placementIdentity: 'knowledge-environment',
+        workspaceRoot,
+        provisioningFingerprint: 'knowledge-environment-v1',
+      }),
+      resolveAuthorizedAgentRuntimeScope: async ({ agentTypeId }) => ({
+        identity: `knowledge-runtime:${agentTypeId}`,
+        physicalBindingIdentity: `knowledge-runtime:${agentTypeId}`,
+        resourceInputDigest: `knowledge-resources:${agentTypeId}:v1`,
+        sessionNamespace: `knowledge:${agentTypeId}`,
+      }),
+    })
+    const app = Fastify({ logger: false })
+    await registerAgentHostEnvironmentRoutes(app, {
+      created,
+      authorizeAgentRequest: async () => scope,
+    })
+
+    try {
+      // The computed definition digest is surfaced as identity on describe().
+      expect((await created.host.describe()).agents).toContainEqual({
+        agentTypeId: 'scholar',
+        label: 'Scholar',
+        definitionDigest: `sha256:${'a'.repeat(64)}`,
+      })
+
+      // Knowledge is agent-scoped: it never appears in the shared
+      // Environment-level filesystem catalog.
+      const catalog = await app.inject({ method: 'GET', url: '/api/v1/filesystems' })
+      expect(catalog.statusCode).toBe(200)
+      expect(catalog.json().filesystems.map((entry: { filesystem: string }) => entry.filesystem))
+        .not.toContain('agent_knowledge')
+
+      await created.gateway.createSession({ scope, agentTypeId: 'scholar', requestId: 'scholar-knowledge-session' })
+      await created.gateway.createSession({ scope, agentTypeId: 'plain', requestId: 'plain-knowledge-session' })
+      const toolContext = (requestId: string) => ({
+        abortSignal: new AbortController().signal,
+        toolCallId: requestId,
+        userId: 'subject-a',
+        workspaceId: 'workspace-a',
+        requestId,
+      })
+
+      const scholarRead = toolsByAgent.get('scholar')!.find((tool) => tool.name === 'read')!
+      const ownRead = await scholarRead.execute(
+        { filesystem: 'agent_knowledge', path: 'facts.md' },
+        toolContext('scholar-knowledge-read'),
+      )
+      expect(ownRead.isError).not.toBe(true)
+      expect(JSON.stringify(ownRead)).toContain('knowledge facts')
+
+      // Readonly no-leak conformance: mutations are rejected and bytes stay intact.
+      const scholarWrite = toolsByAgent.get('scholar')!.find((tool) => tool.name === 'write')
+      if (scholarWrite) {
+        await expect(scholarWrite.execute(
+          { filesystem: 'agent_knowledge', path: 'facts.md', content: 'overwritten' },
+          toolContext('scholar-knowledge-write'),
+        )).rejects.toThrow()
+      }
+      expect(await readFile(join(knowledgeRoot, 'facts.md'), 'utf8')).toBe('knowledge facts')
+
+      // Sibling agents never see another definition's knowledge.
+      const plainRead = toolsByAgent.get('plain')!.find((tool) => tool.name === 'read')!
+      await expect(plainRead.execute(
+        { filesystem: 'agent_knowledge', path: 'facts.md' },
+        toolContext('plain-knowledge-read'),
+      )).rejects.toThrow('No filesystem binding is available for agent_knowledge')
     } finally {
       await app.close()
       await created.host.close()
@@ -936,6 +1029,9 @@ describe('createAgentHost', () => {
     })
     const created = await createAgentHost({
       ...options(workspaceRoot),
+      // Metering rejects this request before harness execution. Keep the test on
+      // that causal seam instead of paying unrelated real-provider discovery.
+      harnessFactory: createScriptedPiHarness,
       metering: {
         isEnabled: () => true,
         reserveRun,

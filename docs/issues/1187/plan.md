@@ -310,6 +310,16 @@ orchestrator acts on a half-finished steering exchange it partially observed.
 
 ### Cross-repo lanes: the factory-wide workspace (owner-ratified 2026-08-10)
 
+> **Owner amendment 2026-08-10 (supersedes this whole section):** the
+> projects-root interim is **rescinded**. The factory workspace is
+> **boring-ui-only** — one hub workspace rooted at a `boring-ui-v2` worktree,
+> and no `/home/ubuntu/projects/`-rooted workspace is registered. Cross-repo
+> lanes (seneca, boring-content, constellation) **remain in Claude Code as the
+> escape hatch, full stop** — escape-hatch item 2 widens from "per-repo
+> authority work" to all cross-repo work. The deferred true-multi-repo trigger
+> below stands unchanged. The text that follows is retained as the rescinded
+> proposal, not as policy.
+
 Interim shape, owner's own proposal: **register one additional hub workspace
 rooted at `/home/ubuntu/projects/`.** Cross-repo lanes — seneca, boring-content,
 constellation — run there, and agents `cd` into the target repo. Nothing about
@@ -359,9 +369,10 @@ Explicit, so nobody quietly re-migrates them and nobody quietly keeps everything
    `.agents/factory/**`, `AGENTS.md`, `.github/workflows/**` (permanently
    trust-class B). A workspace editing its own authority files is the exact
    failure the trust ladder exists to prevent.
-2. **True multi-repo work with per-repo authority** — see G2. Cross-repo
-   *lanes* move into the factory-wide workspace; what stays out is anything
-   needing per-repo policy or multi-root bindings.
+2. **All cross-repo work** — amended 2026-08-10. The projects-root workspace
+   is rescinded, so cross-repo lanes (seneca, boring-content, constellation)
+   stay in Claude Code entirely, alongside anything needing per-repo policy or
+   multi-root bindings.
 3. **Ad-hoc exploration and grilling** — `grill-me`, `grill-for-unknowns`,
    conversational thermo passes.
 4. **Anything while the product is broken.** The migration must never make the
@@ -380,7 +391,7 @@ decision).
 | # | Gap | Detail (verified against `main`) | Disposition |
 | --- | --- | --- | --- |
 | **G1** | **Ad-hoc worktree worker spawning** | The unit of work is "create `.worktrees/<lane>`, run a session with that cwd". Verified: no worktree-creation capability exists in any package — it is a bash procedure only; the bash tool is a synchronous `exec` fenced to one `workspaceRoot` with no background/detach; a session's fs root is fixed at composition. The Beadle's core job (spawn workers while ready > active) is unbuildable as specified. | **pull** — the largest gap. Interim **adopt-now**: a **fixed lane pool** — pre-create N lane worktrees, register each as a workspace in the hub registry (`workspaces add`), and have the Beadle *wake* an idle lane rather than spawn one. `worker_cap: 3` plus the bugfix lane means the pool is ~4; bounded concurrency was already policy, so this is not a real loss at this stage. |
-| **G2** | **Cross-repo lanes** | Procedures assume one repo. Each agent turn is fenced to one `workspaceRoot` — there is no cross-workspace turn — and `fleet.yaml`/`policy.yaml`/`.beads/` are repo-local by design. | **adopt-now** (owner-ratified 2026-08-10) — register **one additional hub workspace rooted at `/home/ubuntu/projects/`**, the "factory-wide" workspace. Cross-repo lanes (seneca, boring-content, constellation) run there and agents `cd` into the target repo. True multi-repo workspaces are **deferred** — see "Cross-repo lanes" below. |
+| **G2** | **Cross-repo lanes** | Procedures assume one repo. Each agent turn is fenced to one `workspaceRoot` — there is no cross-workspace turn — and `fleet.yaml`/`policy.yaml`/`.beads/` are repo-local by design. | **external** (owner amendment 2026-08-10, superseding the earlier adopt-now) — the projects-root "factory-wide" workspace is **rescinded**. The factory workspace is boring-ui-only; cross-repo lanes stay in Claude Code as the escape hatch. True multi-repo workspaces remain **deferred** — see "Cross-repo lanes" below. |
 | **G3** | **GitHub PR orchestration** | `gh` is a CLI a session shells out to; the tasks plugin already does exactly this (`createGhCliGitHubIssueExecutor`). No first-party PR surface. | **adopt-now** — seats keep shelling `gh`. It works, it is auditable, GitHub is already the declared authority for human intake. Not on this epic's path. |
 | **G4** | **Long CI polls** | Automation triggers are `manual \| scheduled` only — no event/webhook trigger. A session waiting on CI stops heartbeating and gets its lease broken (the documented stall failure). | **pull (small)** — a cron automation polling `gh pr checks` for open factory PRs and raising results, so no session ever blocks on CI. Sessions keep the standing rule: poll synchronously, never end a turn on a wait you did not schedule. Webhook triggers: **external**. |
 | **G5** | **Live demo as a workspace pane** | Half of the ratified two-artifact handover. Verified: the filesystem plugin's HTML viewer renders sanitized HTML via sandboxed-iframe `srcDoc` — so a **self-contained present-pr page opens as a pane today, no product change** (this downgrades the present-pr half of the gap to adopt-now). But there is **no URL/preview pane**: `generated-pane` is a declarative element-spec renderer, not a URL embed, and no pane type points an iframe at a running dev server. | **pull**, built in **S3** (owner-ratified 2026-08-10) — a bounded local-URL preview pane (localhost + port allowlist) so a worker can expose its running demo. UI-loop-sized. This is the one new UI surface the epic needs. |
@@ -522,6 +533,24 @@ adding a deferred seat is installing a package.
 overlay reflects it without a repo edit.
 **Review budget:** inside — but **entirely dependent on an external chain**. If
 #1107 stalls, this slice waits; nothing downstream depends on it.
+
+> **Owner amendment 2026-08-10 — S6 is sequenced, not deferred.** S0's roster is
+> **interim: config-composed**, read out of `.agents/personas` + `fleet.yaml` by
+> `loadConfiguredAgentFleet` under `BORING_AGENT_FLEET=1`. That is accepted as
+> the interim host, and it is explicitly *not* the target: the roster converts to
+> **discovered persona packages** the moment the #1107 chain
+> (#1150 discovery / #1168 `knowledge/` fs / #1175 workspace install via
+> `.pi/settings.json#packages`) merges. **S6 therefore runs immediately after
+> that chain lands, ahead of whatever slice is otherwise next — it is not
+> deferred to the end of the queue.** The reason is that every slice between
+> here and there accrues seats and skill pins against a repo-edit roster, and the
+> longer that runs the more there is to convert. The earlier "nothing downstream
+> depends on it" line describes correctness, not cost.
+>
+> Corollary, ratified with it: **no seat roster may be hardcoded in source.**
+> A seat list written as a TypeScript literal is a second copy of the config that
+> drifts on the next seat change. Seats come from configuration now and from
+> discovery after S6 — never from a union type or an array in a server file.
 
 ### S7: the Beadle, as automations, over the fixed lane pool
 **Delivers:** G7's pull (the automation agent picker) plus the supervisor as

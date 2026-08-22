@@ -178,6 +178,10 @@ export type {
 // Boring plugin asset manager + reload-pluggability helpers.
 export { buildBoringSystemPrompt } from "./boringSystemPrompt"
 export { BoringPluginAssetManager } from "./agentPlugins/manager"
+export type { DiscoveredBoringAgentPackage } from "./agentPlugins/types"
+export { discoverRepositoryAgentPackages } from "./agentPlugins/discoverAgentPackages"
+export type { DiscoverRepositoryAgentPackagesOptions } from "./agentPlugins/discoverAgentPackages"
+export { isRemoteMaterializedPiPackageRoot } from "./agentPlugins/settingsSources"
 export { boringPluginRoutes, collectRestartWarnings } from "./agentPlugins/routes"
 export type { PluginRestartWarning } from "./agentPlugins/routes"
 export { aggregatePluginPrompts } from "./agentPlugins/aggregatePluginPrompts"

@@ -199,7 +199,8 @@ test.describe('Pi-native baseline composer controls', () => {
     expect(await readModelLabels(page)).toEqual([...MODEL_LABEL_ORDER])
 
     await page.getByText('Claude Opus').click()
-    await expect(modelSelect).toContainText('Claude Opus')
+    await expect(modelSelect).toContainText('Claude Sonnet')
+    await expect(modelSelect).toContainText('Next override: Claude Opus')
     await expect(messages).toHaveCount(0)
 
     await modelSelect.click()
@@ -214,7 +215,8 @@ test.describe('Pi-native baseline composer controls', () => {
 
     await page.reload({ waitUntil: 'domcontentloaded' })
     await expect(chat).toHaveAttribute('data-pi-chat-connection', /connected|connecting/, { timeout: 10_000 })
-    await expect(modelSelect).toContainText('Claude Opus', { timeout: 10_000 })
+    await expect(modelSelect).toContainText('Claude Sonnet', { timeout: 10_000 })
+    await expect(modelSelect).toContainText('Next override: Claude Opus', { timeout: 10_000 })
     await expect(thinkingSelect).toHaveAttribute('aria-label', 'Thinking level: Med')
     await expect(messages).toHaveCount(0)
 
@@ -287,7 +289,8 @@ test.describe('Pi-native baseline composer controls', () => {
     await composer.press('ArrowDown')
     await composer.press('Enter')
     await expect(modelMenu).toHaveCount(0)
-    await expect(modelSelect).toContainText('Claude Opus')
+    await expect(modelSelect).toContainText('Claude Sonnet')
+    await expect(modelSelect).toContainText('Next override: Claude Opus')
 
     await composer.fill('/thinking')
     await slashMenu.getByText('/thinking', { exact: true }).click()
@@ -441,7 +444,7 @@ test.describe('Pi-native baseline composer controls', () => {
 
     await expect(chat).toHaveAttribute('data-pi-chat-session-id', 'pi-e2e', { timeout: 10_000 })
     await expect(conversation.getByText('ACTIVE_CONTROL_STREAM')).toBeVisible({ timeout: 10_000 })
-    await expect(modelSelect).toContainText('Claude Opus', { timeout: 10_000 })
+    await expect(modelSelect).toContainText('Claude Sonnet', { timeout: 10_000 })
     await expect(modelSelect).toBeDisabled()
     await expect(modelSelect).toHaveAttribute('data-boring-state', 'disabled')
     await expect(thinkingSelect).toHaveAttribute('aria-label', 'Thinking level: Med')
@@ -454,7 +457,7 @@ test.describe('Pi-native baseline composer controls', () => {
     await expect(chat).toHaveAttribute('data-pi-chat-session-id', 'controls-idle', { timeout: 10_000 })
     await expect(conversation.getByText('IDLE_CONTROL_SESSION')).toBeVisible({ timeout: 10_000 })
     await expect(conversation.getByText('ACTIVE_CONTROL_STREAM')).toHaveCount(0)
-    await expect(modelSelect).toContainText('Claude Opus')
+    await expect(modelSelect).toContainText('Claude Sonnet')
     await expect(modelSelect).not.toBeDisabled()
     await expect(modelSelect).not.toHaveAttribute('data-boring-state', 'disabled')
     await expect(thinkingSelect).toHaveAttribute('aria-label', 'Thinking level: Med')
@@ -467,7 +470,7 @@ test.describe('Pi-native baseline composer controls', () => {
     await expect(chat).toHaveAttribute('data-pi-chat-session-id', 'pi-e2e', { timeout: 10_000 })
     await expect(conversation.getByText('ACTIVE_CONTROL_STREAM')).toBeVisible({ timeout: 10_000 })
     await expect(conversation.getByText('IDLE_CONTROL_SESSION')).toHaveCount(0)
-    await expect(modelSelect).toContainText('Claude Opus')
+    await expect(modelSelect).toContainText('Claude Sonnet')
     await expect(modelSelect).toBeDisabled()
     await expect(modelSelect).toHaveAttribute('data-boring-state', 'disabled')
     await expect(thinkingSelect).toHaveAttribute('aria-label', 'Thinking level: Med')

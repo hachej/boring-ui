@@ -12,7 +12,8 @@ import { parseEncodedModelSelection } from '../models/modelConfig'
 import { HarnessPiChatService } from '../pi-chat/harnessPiChatService'
 import type { ReadyStatusTracker } from '../runtime/readyStatus'
 import { createRuntimeReadyStatusTracker } from '../runtime/modeReadiness'
-import { getOptionalRuntimeBundleStorageRoot, type RuntimeBundle } from '../runtime/mode'
+import { getOptionalRuntimeBundleStorageRoot, type RuntimeBundle, type RuntimeFilesystemBinding } from '../runtime/mode'
+import { AGENT_KNOWLEDGE_FILESYSTEM_ID } from '../../shared/skill-resource'
 import { mergeRuntimeFilesystemBindings } from '../runtime/filesystemBindings'
 import { openDatabase, type OpenDatabaseResult } from '../events/sqlStorage'
 import { SqliteEventStreamStore, type EventStreamStore } from '../events/eventStreamStore'
@@ -146,7 +147,6 @@ export interface BuiltAgentComposition {
   readonly tools: readonly AgentTool[]
   readonly runtimeBundle: RuntimeBundle
   readonly readyTracker: ReadyStatusTracker
-  readonly runtimeScopeIdentity: string
   /**
    * [1082 slice B] Narrowed per-binding credential view (registries + the
    * pre-bound resolver). Present only when `BORING_CREDENTIAL_KMS_BACKEND`
@@ -172,6 +172,54 @@ export async function buildAgentComposition(
     ...runtimeBundle,
     storageRoot: getOptionalRuntimeBundleStorageRoot(runtimeBundle),
   }
+  // Agent-carried knowledge (`knowledge/` inside the definition package)
+  // becomes a readonly, agent-scoped filesystem binding. Built here — the
+  // one Agent-owned assembly funnel — so every host (workspace, core, CLI hub)
+  // gets it without per-host wiring, and sibling agents never see it. A
+  // declared-but-unmountable knowledge folder fails this agent's composition
+  // closed.
+  const knowledgeRootDir = 'legacyDefault' in input.agent
+    ? undefined
+    : input.agent.knowledge?.rootDir
+  let knowledgeBinding: RuntimeFilesystemBinding | undefined
+  if (knowledgeRootDir !== undefined) {
+    const runtimeHostOperations = options.runtimeHost ?? runtimeBundle.runtimeHost
+    if (!runtimeHostOperations) {
+      throw Object.assign(
+        new Error('agent knowledge requires runtime host filesystem-binding operations'),
+        { code: ErrorCode.enum.CONFIG_INVALID },
+      )
+    }
+    knowledgeBinding = Object.freeze({
+      ...await runtimeHostOperations.createAgentResourceFilesystemBinding(
+        AGENT_KNOWLEDGE_FILESYSTEM_ID,
+        [{ logicalRoot: '/', sourceRoot: knowledgeRootDir }],
+      ),
+    })
+  }
+  const scopedKnowledgeBinding = knowledgeBinding
+  // Request-scoped bindings REPLACE the bundle defaults at the tool layer, so
+  // the bundle's own bindings must be merged back in (host policy intersecting
+  // any same-id request binding) before appending the agent-scoped knowledge
+  // filesystem — same merge seam as origin/feat/1107-s1-discovery.
+  const getFilesystemBindings = runtimeScope.getFilesystemBindings || scopedKnowledgeBinding
+    ? async (ctx: { sessionId?: string; userId?: string; requestId?: string }) => [
+        ...mergeRuntimeFilesystemBindings(
+          runtimeBundle.filesystemBindings,
+          [
+            ...await runtimeScope.getFilesystemBindings?.({
+              scope: {
+                workspaceScopeId: input.workspaceScopeId,
+                authSubjectId: ctx.userId ?? '',
+              },
+              sessionId: ctx.sessionId,
+              requestId: ctx.requestId ?? '',
+            }) ?? [],
+            ...(scopedKnowledgeBinding ? [scopedKnowledgeBinding] : []),
+          ],
+        ) ?? [],
+      ]
+    : undefined
   const standardTools: AgentTool[] = [
     ...buildHarnessAgentTools(bashRuntimeBundle, input.environmentProvisioning
       ? {
@@ -182,19 +230,7 @@ export async function buildAgentComposition(
         }
       : undefined),
     ...(runtimeScope.includeFilesystemTools === false ? [] : buildFilesystemAgentTools(bashRuntimeBundle, {
-      getFilesystemBindings: runtimeScope.getFilesystemBindings
-          ? async (ctx) => [...mergeRuntimeFilesystemBindings(
-              runtimeBundle.filesystemBindings,
-              await runtimeScope.getFilesystemBindings!({
-                scope: {
-                  workspaceScopeId: input.workspaceScopeId,
-                  authSubjectId: ctx.userId ?? '',
-                },
-                sessionId: ctx.sessionId,
-                requestId: ctx.requestId ?? '',
-              }),
-            ) ?? []]
-          : undefined,
+      getFilesystemBindings,
     })),
     ...(runtimeScope.includeUploadTools ? buildUploadAgentTools(bashRuntimeBundle) : []),
   ]
@@ -283,7 +319,6 @@ export async function buildAgentComposition(
     tools,
     runtimeBundle,
     readyTracker,
-    runtimeScopeIdentity: runtimeScope.identity,
     credentials: input.credentialComposition?.runtimeView,
     dispose() {
       disposed ??= service.dispose().finally(() => durableEventStore?.close())
