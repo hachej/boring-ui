@@ -9,7 +9,7 @@ import { navigateBrowserToBackend } from './helpers/browser'
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 
 test.describe('Pi-native harness-backed queue stop reload', () => {
-  test('preserves queued follow-ups across reload, clears them on Stop, and auto-posts them on Escape', async ({ page, workspace }, testInfo) => {
+  test('holds queued follow-ups across reload on Stop and resumes them explicitly while Escape auto-posts', async ({ page, workspace }, testInfo) => {
     const backend = await spawnBackend({
       workspaceRoot: workspace.root,
       repoRoot,
@@ -44,9 +44,19 @@ test.describe('Pi-native harness-backed queue stop reload', () => {
       await expect(chat).toHaveAttribute('data-pi-chat-connection', /connected|connecting/, { timeout: 10_000 })
       await expect(queuePreviewText).toContainText('harness queued survives reload then stop', { timeout: 10_000 })
 
-      await page.getByRole('button', { name: 'Stop' }).click()
-      await expect(queuePreview).toHaveCount(0, { timeout: 10_000 })
+      await page.getByRole('button', { name: 'Stop', exact: true }).click()
+      await expect(page.getByTestId('chat-working')).toHaveCount(0, { timeout: 10_000 })
+      await expect(queuePreviewText).toContainText('harness queued survives reload then stop', { timeout: 10_000 })
       await expect(conversation.getByText('harness queued survives reload then stop')).toHaveCount(0)
+      await testInfo.attach('stop-holds-queue.png', {
+        body: await page.screenshot(),
+        contentType: 'image/png',
+      })
+
+      await page.getByRole('button', { name: 'Resume queued follow-ups', exact: true }).click()
+      await expect(conversation.getByText('harness queued survives reload then stop')).toBeVisible({ timeout: 10_000 })
+      await expect(queuePreview).toHaveCount(0, { timeout: 10_000 })
+      await expectQueuedFollowUpTurn(page, 'harness queued survives reload then stop')
 
       await composer.fill('harness queue escape initial prompt')
       await submit.click()
@@ -95,7 +105,7 @@ test.describe('Pi-native harness-backed queue stop reload', () => {
     }
   })
 
-  test('keeps aborted assistant turns ordered when Escape auto-post is followed by Stop', async ({ page, workspace }, testInfo) => {
+  test('keeps aborted turns ordered while Stop holds a newly queued follow-up', async ({ page, workspace }, testInfo) => {
     const backend = await spawnBackend({
       workspaceRoot: workspace.root,
       repoRoot,
@@ -147,14 +157,21 @@ test.describe('Pi-native harness-backed queue stop reload', () => {
         timeout: 10_000,
       }).toEqual(['user:done', 'assistant:aborted', 'user:done', 'assistant:streaming'])
 
-      await page.getByRole('button', { name: 'Stop' }).click()
+      const heldPrompt = 'harness held after exact stop'
+      await queueFollowUp(composer, heldPrompt)
+      await expect(queuePreviewText).toContainText(heldPrompt, { timeout: 10_000 })
+
+      await page.getByRole('button', { name: 'Stop', exact: true }).click()
       await expect.poll(async () => {
         const state = await readChatDomState(page)
         return state.messages.map((message) => `${message.role}:${message.status}`)
       }, {
-        message: 'expected Stop to abort the auto-posted queued turn without reordering messages',
+        message: 'expected exact Stop to abort the active replacement without promoting the held queue',
         timeout: 10_000,
       }).toEqual(['user:done', 'assistant:aborted', 'user:done', 'assistant:aborted'])
+      await expect(queuePreviewText).toContainText(heldPrompt, { timeout: 10_000 })
+      await expect(conversation.getByText(heldPrompt)).toHaveCount(0)
+      await expect(page.getByRole('button', { name: 'Resume queued follow-ups', exact: true })).toBeVisible()
 
       const state = await readChatDomState(page)
       assertChatDomInvariants(state)
@@ -213,7 +230,7 @@ async function expectQueuedFollowUpTurn(page: Page, userText: string): Promise<v
       && message.text.includes('PI_NATIVE_ASSISTANT_DONE')
     ))
   }, {
-    message: `expected queued follow-up "${userText}" to auto-post as the next user turn after Escape`,
+    message: `expected queued follow-up "${userText}" to auto-post as the next user turn after interrupt`,
     timeout: 15_000,
   }).toBe(true)
 }
