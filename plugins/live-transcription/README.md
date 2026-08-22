@@ -1,11 +1,22 @@
 # Live transcription (experimental V0)
 
+> **Relationship to pi-transcribe:** the official
+> [`pi-transcribe`](https://github.com/earendil-works/pi-transcribe) Pi
+> extension is the Pi-native path for mic dictation in terminal contexts and
+> agent-invoked audio/video file transcription (`transcribe_file`, fully
+> local). This plugin covers what it cannot: browser-composer capture and
+> streaming `/live` transcripts (with optional diarization), because
+> pi-transcribe is batch-only. See
+> `docs/issues/912/spikes/pi-transcribe/README.md` for the capability matrix.
+
 Default-off, local-development-only integration for `boring-ui [folder]`.
 Enable it with `BORING_LIVE_TRANSCRIPTS_ENABLED=1` and run the pinned loopback
 WhisperLiveKit CPU `tiny` service documented in
 `docs/issues/912/spikes/whisperlivekit/README.md`.
 
-V0 provides a microphone button in the composer for short in-memory dictation;
+V0 provides a microphone button in the composer for short in-memory dictation
+(web-composer capture only; terminal and file-transcription needs are served by
+pi-transcribe, not this plugin);
 stopping inserts the returned French text into the editable draft. The same
 short-dictation control becomes a stop button with an elapsed-time counter while
 capturing. Live mode streams microphone PCM to the
