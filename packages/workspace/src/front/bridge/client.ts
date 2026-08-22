@@ -119,8 +119,7 @@ async function dispatchCommand(
       break
     case "expandToFile": {
       const filesystem = params.filesystem as FilesystemId | undefined
-      const kind = params.kind as "file" | "dir" | undefined
-      if (filesystem || kind) await bridge.expandToFile(params.path as string, { ...(filesystem ? { filesystem } : {}), ...(kind ? { kind } : {}) })
+      if (filesystem) await bridge.expandToFile(params.path as string, { filesystem })
       else await bridge.expandToFile(params.path as string)
       break
     }

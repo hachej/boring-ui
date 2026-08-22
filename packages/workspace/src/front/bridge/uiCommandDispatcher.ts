@@ -221,7 +221,7 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
       // disagree about the empty-path root representation.
       const parsed = expandToFileSchema.safeParse(cmd.params)
       if (!parsed.success) return
-      const { path, filesystem, kind } = parsed.data
+      const { path, filesystem } = parsed.data
       // Deliberately NOT normalized, unlike openFile: revealing has somewhere
       // to fall back to and openFile does not. `openFile` must resolve to a
       // concrete filesystem or it cannot open anything, so an omitted one
@@ -235,7 +235,7 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
       ctx.openWorkbenchSources?.()
       const run = (surface: SurfaceShellApi) => {
         try {
-          if (filesystem || kind) surface.expandToFile(path, { ...(filesystem ? { filesystem } : {}), ...(kind ? { kind } : {}) })
+          if (filesystem) surface.expandToFile(path, { filesystem })
           else surface.expandToFile(path)
         } catch (err) {
           // eslint-disable-next-line no-console -- intentional dev signal

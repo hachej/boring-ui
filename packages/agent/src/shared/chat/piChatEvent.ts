@@ -1,10 +1,11 @@
 import type { BoringChatMessage, BoringChatPart } from './boringChatMessage'
-import type { QueuedUserMessage } from './piChatSnapshot'
+import type { PiChatSnapshot, QueuedUserMessage } from './piChatSnapshot'
 import type { ChatError } from './chatError'
 import type { ToolUiMetadata } from '../tool-ui'
 
 export type PiChatEvent =
   | { type: 'agent-start'; seq: number; turnId: string }
+  | { type: 'model-changed'; seq: number; currentModel: NonNullable<PiChatSnapshot['currentModel']> }
   // willRetry=true marks a NON-terminal end (pi will auto-retry this turn). Consumers
   // that act once-per-settle (e.g. a host's onTurnComplete) must ignore those.
   | { type: 'agent-end'; seq: number; turnId: string; status: 'ok' | 'aborted' | 'error'; willRetry?: boolean }

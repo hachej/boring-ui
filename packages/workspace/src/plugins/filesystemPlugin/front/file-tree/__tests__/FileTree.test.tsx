@@ -107,11 +107,11 @@ describe("FileTree", () => {
 
   it("reports selection and activates a clicked file through distinct callbacks", () => {
     const onSelectionChange = vi.fn()
-    const onActivateFile = vi.fn()
-    render(<FileTree files={sampleFiles} onSelectionChange={onSelectionChange} onActivateFile={onActivateFile} height={200} />)
+    const onSelect = vi.fn()
+    render(<FileTree files={sampleFiles} onSelectionChange={onSelectionChange} onSelect={onSelect} height={200} />)
     fireEvent.click(screen.getByText("package.json"))
     expect(onSelectionChange).toHaveBeenCalledWith(expect.objectContaining({ path: "package.json", kind: "file" }))
-    expect(onActivateFile).toHaveBeenCalledWith("package.json")
+    expect(onSelect).toHaveBeenCalledWith("package.json")
   })
 
   it("does NOT crash the panel when a listing entry has no path (react-arborist idAccessor)", () => {

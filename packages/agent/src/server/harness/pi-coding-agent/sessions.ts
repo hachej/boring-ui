@@ -23,6 +23,7 @@ import {
   CURRENT_SESSION_VERSION,
 } from "@mariozechner/pi-coding-agent";
 import { ErrorCode } from "../../../shared/error-codes.js";
+import type { ChatModelSelection } from "../../../shared/chat/chatSubmitPayload.js";
 import {
   SAFE_NATIVE_SESSION_ID,
   type SessionStore,
@@ -48,6 +49,33 @@ export {
 export interface PiSessionEntries {
   id: string;
   messages: unknown[];
+  currentModel?: ChatModelSelection;
+}
+
+function legacyAssistantModel(entry: SessionMessageEntry): ChatModelSelection | undefined {
+  const message = entry.message as unknown as Record<string, unknown>;
+  if (message.role !== "assistant") return undefined;
+  if (typeof message.provider === "string" && typeof message.model === "string") {
+    return { provider: message.provider, id: message.model };
+  }
+  if (typeof message.model !== "object" || message.model === null) return undefined;
+  const model = message.model as Record<string, unknown>;
+  return typeof model.provider === "string" && typeof model.id === "string"
+    ? { provider: model.provider, id: model.id }
+    : undefined;
+}
+
+function currentModelFromTranscript(entries: readonly SessionEntry[]): ChatModelSelection | undefined {
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    if (!entry) continue;
+    if (entry.type === "model_change") return { provider: entry.provider, id: entry.modelId };
+    if (entry.type === "message") {
+      const model = legacyAssistantModel(entry);
+      if (model) return model;
+    }
+  }
+  return undefined;
 }
 
 export interface PiSessionAttachment {
@@ -309,7 +337,11 @@ export class PiSessionStore implements SessionStore {
     const messages = resolved.transcriptEntries
       .filter((entry): entry is SessionMessageEntry => entry.type === "message")
       .map((entry) => withStableMessageId(entry.message, entry.id));
-    return { id: resolved.resolvedSessionId, messages };
+    return {
+      id: resolved.resolvedSessionId,
+      messages,
+      currentModel: currentModelFromTranscript(resolved.transcriptEntries),
+    };
   }
 
   async loadAttachment(ctx: SessionCtx, sessionId: string, messageId: string, index: number): Promise<PiSessionAttachment> {

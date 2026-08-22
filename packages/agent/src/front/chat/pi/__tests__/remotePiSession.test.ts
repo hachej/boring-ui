@@ -696,6 +696,48 @@ describe('RemotePiSession', () => {
     session.dispose()
   })
 
+  it('updates an already-connected viewer from an external model-change event', async () => {
+    const events = openNdjsonStream()
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/state')) return jsonResponse(snapshot({
+        seq: 5,
+        status: 'idle',
+        activeTurnId: undefined,
+        currentModel: { provider: 'openai', id: 'gpt-old' },
+      }))
+      if (url.endsWith('/events?cursor=5')) return new Response(events.stream)
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock)
+    await waitUntil(() => session.getState().connection.state === 'connected')
+
+    events.write({
+      type: 'model-changed',
+      seq: 6,
+      currentModel: { provider: 'openai-codex', id: 'gpt-5.6-sol' },
+    } satisfies PiChatEvent)
+
+    await waitUntil(() => session.getState().currentModel?.id === 'gpt-5.6-sol')
+    expect(session.getState().currentModel).toEqual({ provider: 'openai-codex', id: 'gpt-5.6-sol' })
+    session.dispose()
+  })
+
+  it('confirms an accepted next-message override as the session current model', async () => {
+    const events = openNdjsonStream()
+    const model = { provider: 'openai', id: 'gpt-5.7' }
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/events?cursor=0')) return new Response(events.stream)
+      if (url.endsWith('/prompt')) return jsonResponse({ accepted: true, cursor: 0, clientNonce: 'nonce-model' })
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock, { autoStart: false })
+
+    await session.prompt({ message: 'switch model', clientNonce: 'nonce-model', model })
+
+    expect(session.getState().currentModel).toEqual(model)
+    session.dispose()
+  })
+
   it('opens events from the current cursor before the first command when autoStart is false', async () => {
     const events = openNdjsonStream()
     const promptResponse = deferred<Response>()

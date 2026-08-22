@@ -53,8 +53,10 @@ export interface FileTreeProps {
   revealPath?: string | null
   /** Paths currently being mutated — render a small spinner on those rows. */
   pendingPaths?: ReadonlySet<string>
+  /** Called when a file is activated (double-click/Enter). */
+  onSelect?: (path: string) => void
+  /** Called whenever the typed tree selection changes. */
   onSelectionChange?: (node: FileTreeNode | null) => void
-  onActivateFile?: (path: string) => void
   onExpand?: (path: string) => void
   onCollapse?: (path: string) => void
   onContextMenu?: (event: React.MouseEvent, node: FileTreeNode) => void
@@ -312,8 +314,8 @@ export function FileTree({
   editing,
   revealPath,
   pendingPaths,
+  onSelect,
   onSelectionChange,
-  onActivateFile,
   onExpand,
   onCollapse,
   onContextMenu,
@@ -379,9 +381,9 @@ export function FileTree({
 
   const handleActivate = useCallback(
     (node: { data: FileTreeNode }) => {
-      if (node.data.kind === "file") onActivateFile?.(node.data.path)
+      if (node.data.kind === "file") onSelect?.(node.data.path)
     },
-    [onActivateFile],
+    [onSelect],
   )
 
   const handleSelect = useCallback((nodes: Array<{ data: FileTreeNode }>) => {

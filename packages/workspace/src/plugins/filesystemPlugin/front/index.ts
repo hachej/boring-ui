@@ -10,7 +10,7 @@ import { useDataClient, useFileList } from "./data"
 import { DataProvider } from "./data/DataProvider"
 import { FilesystemRootsBinding } from "./FilesystemRootsBinding"
 import { useCatalogRegistry } from "../../../front/registry"
-import type { FileTreePaneParams } from "./file-tree/FileTreeView"
+import type { FileTreePaneParams } from "./file-tree/FileTreePane"
 import { useFileTreeRoots } from "./file-tree/FileTreeRootsProvider"
 import type { WorkspaceSourceProps } from "../../../shared/types/panel"
 import { FilesystemFilePanelBinding } from "./filePanelBinding"
@@ -33,7 +33,7 @@ import {
 } from "../shared/constants"
 import { createFilesCatalog } from "./catalogs"
 
-const LazyFileTreePane = lazy(() => import("./file-tree/FileTreeView").then((module) => ({ default: module.FileTreePane })))
+const LazyFileTreePane = lazy(() => import("./file-tree/FileTreePane").then((module) => ({ default: module.FileTreePane })))
 const LazyCodeEditorPane = lazy(() => import("./code-editor/CodeEditorPane").then((module) => ({ default: module.CodeEditorPane })))
 const LazyMarkdownEditorPane = lazy(() => import("./markdown-editor/MarkdownEditorPane").then((module) => ({ default: module.MarkdownEditorPane })))
 const LazyMediaViewerPane = lazy(() => import("./media-viewer/MediaViewerPane").then((module) => ({ default: module.MediaViewerPane })))

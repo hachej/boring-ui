@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-automation",
-  "version": "0.1.101",
+  "version": "0.1.103",
   "type": "module",
   "private": false,
   "license": "MIT",
@@ -52,7 +52,7 @@
   },
   "peerDependencies": {
     "@hachej/boring-workspace": "workspace:*",
-    "fastify": "^5.11.2",
+    "fastify": "^5.11.3",
     "react": "^18.0.0 || ^19.0.0",
     "react-dom": "^18.0.0 || ^19.0.0"
   },
@@ -60,7 +60,7 @@
     "@hachej/boring-agent": "workspace:*",
     "@hachej/boring-ui-kit": "workspace:*",
     "croner": "^10.0.1",
-    "lucide-react": "^1.27.0",
+    "lucide-react": "^1.31.0",
     "postgres": "^3.4.7",
     "zod": "^3.23.0"
   },
@@ -72,7 +72,7 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^4.0.0",
-    "fastify": "^5.11.2",
+    "fastify": "^5.11.3",
     "jsdom": "^30.0.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
