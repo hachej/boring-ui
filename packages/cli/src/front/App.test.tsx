@@ -83,10 +83,19 @@ describe("CliWorkspaceShell", () => {
     expect(container.querySelector('[data-boring-workspace-part="workspace-loading-shell"]')).toBeNull()
   })
 
-  function mockWorkspacesMode(workspacesByCall: Array<Array<{ id: string; name: string; path: string; available: boolean }>>) {
+  function mockWorkspacesMode(
+    workspacesByCall: Array<Array<{ id: string; name: string; path: string; available: boolean }>>,
+    gitBranch: unknown = { enabled: false, reason: "Workspace is not inside a Git repository." },
+  ) {
     let call = 0
     globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
+      if (url.endsWith("/api/v1/git/branch")) {
+        return new Response(JSON.stringify(gitBranch), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
       if (url.endsWith("/api/v1/workspace/meta")) {
         return new Response(JSON.stringify({ projectName: "Folder Workspace", workspacesMode: true }), {
           status: 200,
@@ -175,6 +184,41 @@ describe("CliWorkspaceShell", () => {
 
     await waitFor(() => expect(workspaceAgentFrontSpy).toHaveBeenCalled())
     expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0]).toMatchObject({ workspaceId: "target" })
+  })
+
+  test("shows the checked-out branch in the top bar for a Git-backed workspace", async () => {
+    window.history.replaceState(null, "", "/workspace/target")
+    mockWorkspacesMode(
+      [[{ id: "target", name: "Target", path: "/target", available: true }]],
+      { enabled: true, branch: "feat/git-branch-and-session-status" },
+    )
+
+    const { container } = render(<CliWorkspaceShell />)
+
+    await waitFor(() => expect(workspaceAgentFrontSpy).toHaveBeenCalled())
+    const badge = await waitFor(() => {
+      const found = container.querySelector('[data-testid="top-bar-right"] [data-boring-cli-part="git-branch"]')
+      expect(found).not.toBeNull()
+      return found!
+    })
+    expect(badge.textContent).toBe("feat/git-branch-and-session-status")
+    expect(badge.getAttribute("aria-label")).toBe("Git branch feat/git-branch-and-session-status")
+  })
+
+  test("renders no branch chrome for a workspace that is not Git-backed", async () => {
+    window.history.replaceState(null, "", "/workspace/target")
+    mockWorkspacesMode([[{ id: "target", name: "Target", path: "/target", available: true }]])
+
+    const { container } = render(<CliWorkspaceShell />)
+
+    await waitFor(() => expect(workspaceAgentFrontSpy).toHaveBeenCalled())
+    // Wait for the branch probe to have resolved before asserting absence.
+    await waitFor(() => expect(
+      (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls
+        .some(([input]) => String(input).endsWith("/api/v1/git/branch")),
+    ).toBe(true))
+    expect(container.querySelector('[data-boring-cli-part="git-branch"]')).toBeNull()
+    expect(container.textContent).not.toContain("not inside a Git repository")
   })
 
   test("statically composes live transcription without knowing its commands", async () => {

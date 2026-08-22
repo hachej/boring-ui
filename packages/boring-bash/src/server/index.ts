@@ -106,6 +106,8 @@ export type {
 } from './routes/fsEventBroadcaster'
 
 export { buildGitFileUrl } from './git/buildGitFileUrl'
+export { resolveGitBranch } from './git/gitBranch'
+export type { GitBranchResult } from './git/gitBranch'
 export { __gitTestUtils, resolveGitFileUrl } from './git/gitFileUrl'
 export type { GitFileUrlResult } from './git/gitFileUrl'
 

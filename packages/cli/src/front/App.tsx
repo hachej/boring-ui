@@ -4,6 +4,7 @@ import * as ReactDomClient from "react-dom/client"
 import * as ReactJsxDevRuntime from "react/jsx-dev-runtime"
 import * as ReactJsxRuntime from "react/jsx-runtime"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { GitBranch } from "lucide-react"
 import { createAskUserPlugin } from "@hachej/boring-ask-user/front"
 import { boringAutomationPlugin } from "@hachej/boring-automation/front"
 import { diagramPlugin } from "@hachej/boring-diagram/front"
@@ -158,6 +159,60 @@ export function CliVersionBadge({ version }: { version?: string | null }) {
       className="rounded-full border border-border/60 bg-muted/40 px-2 py-0.5 text-[10px] font-medium leading-none tracking-tight text-muted-foreground"
     >
       v{label}
+    </span>
+  )
+}
+
+interface GitBranchMeta {
+  enabled?: boolean
+  branch?: string
+  detached?: boolean
+}
+
+/**
+ * Shows the checked-out branch for Git-backed workspaces, and nothing at all
+ * otherwise — no error, no empty chrome slot.
+ *
+ * Refresh strategy: fetch on mount, on workspace switch, and on window focus.
+ * A branch only changes through work done outside this tab (a terminal, an
+ * agent run), so regaining focus is the moment the value can be stale. That
+ * mirrors the existing refreshWorkspaces() focus listener below and costs one
+ * cheap `git symbolic-ref` instead of a poll.
+ */
+export function CliGitBranchBadge({ workspaceId }: { workspaceId?: string | null }) {
+  const [meta, setMeta] = useState<GitBranchMeta | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    const load = () => {
+      void fetch("/api/v1/git/branch", workspaceId ? { headers: { "x-boring-workspace-id": workspaceId } } : undefined)
+        .then(async (res) => res.ok ? await res.json() as GitBranchMeta : null)
+        .then((next) => { if (!cancelled) setMeta(next) })
+        .catch(() => { if (!cancelled) setMeta(null) })
+    }
+    // Drop the previous workspace's branch immediately so we never show it
+    // against the newly selected workspace.
+    setMeta(null)
+    load()
+    window.addEventListener("focus", load)
+    return () => {
+      cancelled = true
+      window.removeEventListener("focus", load)
+    }
+  }, [workspaceId])
+
+  const label = meta?.enabled ? meta.branch?.trim() : undefined
+  if (!label) return null
+  const description = meta?.detached ? `Detached HEAD at ${label}` : `Git branch ${label}`
+  return (
+    <span
+      data-boring-cli-part="git-branch"
+      aria-label={description}
+      title={description}
+      className="inline-flex max-w-40 items-center gap-1 rounded-full border border-border/60 bg-muted/40 px-2 py-0.5 text-[10px] font-medium leading-none tracking-tight text-muted-foreground"
+    >
+      <GitBranch className="size-3 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+      <span className="truncate">{label}</span>
     </span>
   )
 }
@@ -483,7 +538,12 @@ export function CliWorkspaceShell() {
         }
         chatParams={{ thinkingControl: true }}
         frontPluginHotReload={runtimePluginFrontLoadingEnabled ? "vite" : false}
-        topBarRight={<CliVersionBadge version={cliVersion} />}
+        topBarRight={
+          <span className="flex items-center gap-1.5">
+            <CliGitBranchBadge workspaceId={activeWorkspace.id} />
+            <CliVersionBadge version={cliVersion} />
+          </span>
+        }
         topBarLeft={
           <WorkspaceSwitcherControl
             displayMode="workspace"
@@ -520,7 +580,12 @@ export function CliWorkspaceShell() {
       activeSessionId={initialSessionId ?? undefined}
       chatParams={{ thinkingControl: true }}
       frontPluginHotReload={runtimePluginFrontLoadingEnabled ? "vite" : false}
-      topBarRight={<CliVersionBadge version={cliVersion} />}
+      topBarRight={
+        <span className="flex items-center gap-1.5">
+          <CliGitBranchBadge />
+          <CliVersionBadge version={cliVersion} />
+        </span>
+      }
     />
   )
 }
