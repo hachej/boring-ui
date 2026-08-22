@@ -1,26 +1,9 @@
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import { afterEach, describe, expect, test } from 'vitest'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-// The resolver used to be run once per candidate as a probe and then again over
-// the survivors, so every admitted entry was resolved twice. Counting the reads
-// it performs is the only way to keep that from creeping back.
-const reads = vi.hoisted(() => ({ paths: [] as string[] }))
-
-vi.mock('node:fs/promises', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('node:fs/promises')>()
-  return {
-    ...actual,
-    default: actual,
-    readFile: (path: Parameters<typeof actual.readFile>[0], ...rest: unknown[]) => {
-      reads.paths.push(String(path))
-      return (actual.readFile as (...args: unknown[]) => unknown)(path, ...rest)
-    },
-  }
-})
-
-const { resolveWorkspacePackageResourceSnapshot } = await import('../packageResources')
+import { resolveWorkspacePackageResourceSnapshot } from '../packageResources'
 
 const roots: string[] = []
 
@@ -31,7 +14,8 @@ async function tempRoot() {
 }
 
 async function packageFixture(root: string, name: string) {
-  const packageRoot = join(root, name.replace(/[^a-z0-9]+/gi, '-'))
+  const dir = name.replace(/[^a-z0-9]+/gi, '-')
+  const packageRoot = join(root, dir)
   await mkdir(join(packageRoot, 'skills', 'authoring'), { recursive: true })
   await writeFile(join(packageRoot, 'package.json'), JSON.stringify({
     name,
@@ -39,66 +23,117 @@ async function packageFixture(root: string, name: string) {
   }), 'utf8')
   await writeFile(
     join(packageRoot, 'skills', 'authoring', 'SKILL.md'),
-    `---\nname: ${name.replace(/[^a-z0-9]+/gi, '-')}\ndescription: Example.\n---\n`,
+    `---\nname: ${dir}\ndescription: Example.\n---\n`,
     'utf8',
   )
   return packageRoot
 }
 
-beforeEach(() => { reads.paths.length = 0 })
+/**
+ * The resolver reads `packageRoot` exactly once per contribution it processes,
+ * so a counting getter is a direct measurement of how many times an entry was
+ * put through the resolver. Before this refactor the snapshot ran the whole
+ * resolver once per scanned candidate as a probe and then again over the
+ * survivors, so every scanned entry read 2.
+ */
+function countedContribution(pluginId: string, packageName: string, packageRoot: string) {
+  const counter = { reads: 0 }
+  return {
+    counter,
+    record: {
+      pluginId,
+      packageName,
+      get packageRoot() {
+        counter.reads += 1
+        return packageRoot
+      },
+    },
+  }
+}
+
+function countedSharedSkill(id: string, skillFile: string) {
+  const counter = { reads: 0 }
+  return {
+    counter,
+    record: {
+      id,
+      get skillFile() {
+        counter.reads += 1
+        return skillFile
+      },
+    },
+  }
+}
+
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
 describe('resolveWorkspacePackageResourceSnapshot', () => {
-  test('resolves every entry exactly once, with no probe pass', async () => {
+  test('puts every entry through the resolver exactly once, with no probe pass', async () => {
     const root = await tempRoot()
-    const declared = await packageFixture(root, '@example/declared')
-    const scannedGood = await packageFixture(root, '@example/scanned-good')
-    const scannedBad = join(root, 'scanned-bad')
-    await mkdir(scannedBad, { recursive: true })
-    await writeFile(join(scannedBad, 'package.json'), JSON.stringify({
+    const declared = countedContribution(
+      'direct',
+      '@example/declared',
+      await packageFixture(root, '@example/declared'),
+    )
+    const scannedGood = countedContribution(
+      'scan:good',
+      '@example/scanned-good',
+      await packageFixture(root, '@example/scanned-good'),
+    )
+
+    const badRoot = join(root, 'scanned-bad')
+    await mkdir(badRoot, { recursive: true })
+    await writeFile(join(badRoot, 'package.json'), JSON.stringify({
       name: '@example/scanned-bad',
       pi: { skills: ['skills/missing'] },
     }), 'utf8')
+    const scannedBad = countedContribution('scan:bad', '@example/scanned-bad', badRoot)
 
     const sharedRoot = join(root, 'shared', 'shared-authoring')
     await mkdir(sharedRoot, { recursive: true })
     const sharedFile = join(sharedRoot, 'SKILL.md')
     await writeFile(sharedFile, '---\nname: shared-authoring\ndescription: Shared.\n---\n', 'utf8')
+    const shared = countedSharedSkill('shared-authoring', sharedFile)
+
+    const danglingRoot = join(root, 'shared', 'dangling')
+    await mkdir(danglingRoot, { recursive: true })
+    const danglingFile = join(danglingRoot, 'SKILL.md')
+    const dangling = countedSharedSkill('dangling', danglingFile)
 
     const snapshot = await resolveWorkspacePackageResourceSnapshot({
-      declared: [{ pluginId: 'direct', packageName: '@example/declared', packageRoot: declared }],
-      scanned: [
-        { pluginId: 'scan:good', packageName: '@example/scanned-good', packageRoot: scannedGood },
-        { pluginId: 'scan:bad', packageName: '@example/scanned-bad', packageRoot: scannedBad },
-      ],
-      sharedSkillPaths: [{ id: 'shared-authoring', skillFile: sharedFile }],
+      declared: [declared.record],
+      scanned: [scannedGood.record, scannedBad.record],
+      sharedSkillPaths: [shared.record, dangling.record],
     })
 
-    // Behavior first: the good entries load, the bad one is skipped, not fatal.
+    // Behavior first: the good entries load, the bad ones are skipped, not fatal.
     expect(snapshot.registry.skills.map((skill) => skill.resource.path)).toEqual([
       'packages/@example/declared/skills/authoring/SKILL.md',
       'packages/@example/scanned-good/skills/authoring/SKILL.md',
       'shared/pi-agent/shared-authoring/SKILL.md',
     ])
-    expect(snapshot.diagnostics).toEqual([{
-      source: 'package-resource-scan',
-      message: 'scanned package skill resources were invalid',
-      pluginId: '@example/scanned-bad',
-    }])
+    expect(snapshot.diagnostics).toEqual([
+      {
+        source: 'package-resource-scan',
+        message: 'scanned package skill resources were invalid',
+        pluginId: '@example/scanned-bad',
+      },
+      {
+        source: 'shared-skill-scan',
+        message: 'shared skill "dangling" was not admissible and was skipped',
+        pluginId: 'shared/pi-agent',
+        code: 'PACKAGE_RESOURCE_INVALID',
+      },
+    ])
 
-    const countOf = (path: string) => reads.paths.filter((value) => value === path).length
-    for (const manifest of [declared, scannedGood, scannedBad]) {
-      expect({ manifest, reads: countOf(join(manifest, 'package.json')) })
-        .toEqual({ manifest, reads: 1 })
-    }
-    for (const skillFile of [
-      join(declared, 'skills', 'authoring', 'SKILL.md'),
-      join(scannedGood, 'skills', 'authoring', 'SKILL.md'),
-      sharedFile,
-    ]) {
-      expect({ skillFile, reads: countOf(skillFile) }).toEqual({ skillFile, reads: 1 })
-    }
+    expect({
+      declared: declared.counter.reads,
+      scannedGood: scannedGood.counter.reads,
+      scannedBad: scannedBad.counter.reads,
+      shared: shared.counter.reads,
+      dangling: dangling.counter.reads,
+    }).toEqual({ declared: 1, scannedGood: 1, scannedBad: 1, shared: 1, dangling: 1 })
   })
 })
