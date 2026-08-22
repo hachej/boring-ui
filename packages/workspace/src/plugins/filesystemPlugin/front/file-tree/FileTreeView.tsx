@@ -66,6 +66,7 @@ import {
   FileTreeUploadManager,
   type FileTreeUploadManagerHandle,
 } from "./upload/FileTreeUploadManager"
+import { useFileDropTarget, type DroppedEntries } from "./upload/useFileDropTarget"
 
 export { copyToClipboard } from "./clipboard"
 
@@ -432,6 +433,21 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
   const openUploadTo = useCallback((destination: string) => {
     uploadManagerRef.current?.open(destination)
   }, [])
+
+  // An OS drop lands on the pane background, so it targets this root the way
+  // the background context-menu upload does — never the row selection, which
+  // the user is not pointing at while dragging.
+  const handleDropEntries = useCallback(({ files, directories }: DroppedEntries) => {
+    if (directories.length > 0) {
+      toast.error({
+        title: directories.length === 1 ? "Folders can't be uploaded" : "Folders were not uploaded",
+        description: `${directories.join(", ")} — drop the files inside instead.`,
+      })
+    }
+    if (files.length > 0) uploadManagerRef.current?.addFiles(files, rootDir)
+  }, [rootDir])
+
+  const fileDrop = useFileDropTarget({ enabled: canUpload, onDropEntries: handleDropEntries })
 
   const openUploadForSelection = useCallback(() => {
     const destination = selection
@@ -961,9 +977,21 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
 
       <div
         ref={containerRef}
-        className="min-h-0 flex-1 overflow-hidden"
+        className="relative min-h-0 flex-1 overflow-hidden"
         onContextMenu={handleBackgroundContextMenu}
+        {...fileDrop.handlers}
       >
+        {fileDrop.active && (
+          <div
+            data-testid="file-tree-drop-overlay"
+            className="pointer-events-none absolute inset-1 z-10 grid place-items-center rounded-md border-2 border-dashed border-primary/70 bg-primary/5"
+            aria-hidden="true"
+          >
+            <span className="rounded-md bg-background/90 px-2 py-1 text-xs font-medium text-foreground">
+              Drop files to upload to {rootDir === "." ? "the workspace root" : rootDir}
+            </span>
+          </div>
+        )}
         {isLoading ? (
           <div className="space-y-1 p-2" data-testid="tree-skeleton">
             {Array.from({ length: 8 }).map((_, i) => (
