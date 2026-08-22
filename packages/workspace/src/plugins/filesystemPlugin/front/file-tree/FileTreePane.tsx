@@ -85,6 +85,11 @@ export function FileTreePane({
         delete: effectiveAccess !== "readonly",
         move: effectiveAccess !== "readonly",
         mkdir: effectiveAccess !== "readonly",
+        // gh-1123: display vocabulary only (enforcement is server-side). The
+        // synthesized local workspace root is executable, matching
+        // FilesystemRootsBinding; a synthesized root for any other filesystem
+        // must not claim an execute grant the catalog never advertised.
+        execute: effectiveFilesystem === "user",
       },
     }]
   }, [effectiveAccess, effectiveFilesystem, effectiveRootDir, effectiveRoots])

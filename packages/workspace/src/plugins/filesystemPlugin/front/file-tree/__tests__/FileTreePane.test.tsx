@@ -1059,7 +1059,7 @@ describe("FileTreePane", () => {
         access: "readwrite",
         capabilities: {
           read: true, list: true, search: true, write: true, upload: false,
-          delete: true, move: true, mkdir: true,
+          delete: true, move: true, mkdir: true, execute: false,
         },
       }]}
     />, { wrapper })
