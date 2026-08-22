@@ -11,6 +11,13 @@ export interface WorkspaceAddressedAgentOption {
   label: string
   description?: string
   pluginIds?: readonly string[]
+  /**
+   * The host's legacy `default` fallback, listed beside a configured fleet only
+   * so the sessions bound to it stay reachable (gh-1296). Seat CHROME hides an
+   * empty one; session sourcing below deliberately does not, so its chats keep
+   * loading, listing and routing exactly as before.
+   */
+  legacy?: boolean
 }
 
 interface FleetSnapshot<TSession extends WorkspaceAgentSession> {
@@ -164,6 +171,9 @@ export function useAddressedFleetSessions<TSession extends WorkspaceAgentSession
     })
   }, [])
 
+  // Every listed agent gets a session source, `legacy` fallback included: the
+  // pane may hide an empty fallback seat, but its inventory must never stop
+  // loading or a chat bound to `default` would drop out of the sidebar.
   const sources = enabled ? agents.map((agent) => {
     const expectedSourceIdentity = sourceIdentityForAgent(agent.agentTypeId)
     return (

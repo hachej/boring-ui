@@ -451,6 +451,47 @@ describe("AppLeftPane", () => {
     expect(screen.queryByRole("heading", { name: "Chats" })).not.toBeInTheDocument()
   })
 
+  // gh-1296: the host lists its legacy `default` fallback next to the authored
+  // seats so chats bound to it stay addressable. It is not an authored seat,
+  // so an empty one is not fleet chrome — but the moment it owns a chat its
+  // card comes back, because in the nested tree that card IS the route to it.
+  it("hides an empty legacy fallback from the seat list", () => {
+    renderFleetPane({
+      agents: [
+        { agentTypeId: "default", label: "default", legacy: true, sessionsStatus: "loaded" },
+        { agentTypeId: "alpha", label: "Boring Alpha", sessionsStatus: "loaded" },
+        { agentTypeId: "beta", label: "Boring Beta", sessionsStatus: "loaded" },
+      ],
+    })
+
+    expect(document.querySelector('[data-boring-workspace-part="app-left-agents-count"]')).toHaveTextContent("2 seats")
+    expect(document.querySelector('[data-boring-agent-type-id="default"]')).toBeNull()
+    expect(screen.queryByRole("button", { name: /^default;/ })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Boring Alpha;/ })).toBeInTheDocument()
+  })
+
+  it("keeps a legacy fallback that owns chats listed, so those chats stay reachable", () => {
+    renderFleetPane({
+      agents: [
+        { agentTypeId: "default", label: "default", legacy: true, sessionsStatus: "loaded" },
+        { agentTypeId: "alpha", label: "Boring Alpha", sessionsStatus: "loaded" },
+        { agentTypeId: "beta", label: "Boring Beta", sessionsStatus: "loaded" },
+      ],
+      addressedAgentTypeId: "default",
+      sessions: [
+        { id: "legacy-one", agentTypeId: "default", title: "Chat from before the fleet" },
+        { id: "alpha-one", agentTypeId: "alpha", title: "Alpha session" },
+      ],
+      pinnedSessionRefs: [],
+    })
+
+    expect(document.querySelector('[data-boring-workspace-part="app-left-agents-count"]')).toHaveTextContent("3 seats")
+    expect(document.querySelector('[data-boring-agent-type-id="default"]')).not.toBeNull()
+    expect(screen.getByRole("region", { name: "default sessions" })).toContainElement(
+      screen.getByText("Chat from before the fleet"),
+    )
+  })
+
   it("unifies the multi-project fleet: labeled project rows, a lens that filters them, and a global new chat", async () => {
     const user = userEvent.setup()
     const onCreateSession = vi.fn()

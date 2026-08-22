@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { useEffect, useState } from "react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -612,6 +612,99 @@ describe("WorkspaceAgentFront", () => {
       expect(screen.getByRole("button", { name: "Start new chat with Beta" })).toBeInTheDocument()
     })
     expect(screen.queryByRole("button", { name: "Start new chat with Alpha" })).not.toBeInTheDocument()
+  })
+
+  // gh-1296. The host keeps listing its legacy `default` fallback beside a
+  // configured fleet, flagged `legacy`, so chats bound to it stay addressable.
+  // Two guarantees, one test: the fleet ALWAYS mounts a session source for it
+  // (never filtered — that is the continuity guarantee), while the seat chrome
+  // shows its card only while it owns chats.
+  it("keeps loading the legacy fallback's sessions while hiding an empty fallback seat", async () => {
+    const user = userEvent.setup()
+    const sessionScopes = new Map<string, string | undefined>()
+    const agents = [
+      { agentTypeId: "default", label: "default", legacy: true },
+      { agentTypeId: "alpha", label: "Alpha" },
+      { agentTypeId: "beta", label: "Beta" },
+    ]
+    const useAgentSelection = () => ({
+      agents,
+      selectedAgentTypeId: "alpha",
+      loading: false,
+      error: undefined,
+      selectAgentTypeId: vi.fn(),
+    })
+    const legacyChats = new Map<string, { id: string; agentTypeId: string; title: string; updatedAt: number }[]>([
+      ["default", [{ id: "legacy-one", agentTypeId: "default", title: "Chat from before the fleet", updatedAt: 5 }]],
+      ["alpha", [{ id: "alpha-one", agentTypeId: "alpha", title: "Alpha one", updatedAt: 2 }]],
+      ["beta", []],
+    ])
+    const useFleetSessions: AttestedWorkspaceAgentFrontProps<WorkspaceAgentSession>["useSessions"] = (options) => {
+      const owner = options.agentTypeId
+      if (options.enabled !== false) sessionScopes.set(owner ?? "", options.sessionStorageScope)
+      return {
+        sessions: legacyChats.get(owner ?? "") ?? [],
+        loading: false,
+        activeSessionId: undefined,
+        activeSessionAgentTypeId: owner,
+        activeSession: undefined,
+        workspaceId: options.workspaceId,
+        switch: vi.fn(),
+        create: vi.fn(),
+        delete: vi.fn(),
+      }
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="fleet-legacy"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        addressedAgentSelection
+        useAddressedAgentSelection={useAgentSelection}
+        useSessions={useFleetSessions}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "New chat with Alpha" })).toBeInTheDocument()
+    })
+    // Continuity: the legacy identity keeps its own session source, on its own
+    // storage scope, exactly like an authored seat.
+    expect(sessionScopes.get("default")).toBe("fleet-legacy:default")
+    // …and because it owns a chat, it keeps a card, and that chat opens. The
+    // card starts expanded (the pane opens seats that own chats), so collapse
+    // and re-expand to prove the disclosure actually drives the region.
+    await user.click(screen.getByRole("button", { name: "Collapse default; 1 chat" }))
+    expect(screen.queryByRole("region", { name: "default sessions" })).not.toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Expand default; 1 chat" }))
+    const defaultRegion = screen.getByRole("region", { name: "default sessions" })
+    expect(within(defaultRegion).getByText("Chat from before the fleet")).toBeInTheDocument()
+    // Beta owns nothing and is still a seat; only the legacy fallback is
+    // presentation-gated, and only while empty.
+    expect(screen.getByRole("button", { name: /Beta;/ })).toBeInTheDocument()
+
+    // Same fleet, nothing bound to the fallback: three listed agents, two seats.
+    legacyChats.set("default", [])
+    cleanup()
+    render(
+      <WorkspaceAgentFront
+        workspaceId="fleet-legacy-empty"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        addressedAgentSelection
+        useAddressedAgentSelection={useAgentSelection}
+        useSessions={useFleetSessions}
+        persistenceEnabled={false}
+      />,
+    )
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "New chat with Alpha" })).toBeInTheDocument()
+    })
+    expect(sessionScopes.get("default")).toBe("fleet-legacy-empty:default")
+    expect(document.querySelector('[data-boring-agent-type-id="default"]')).toBeNull()
+    expect(document.querySelector('[data-boring-workspace-part="app-left-agents-count"]')).toHaveTextContent("2 seats")
   })
 
   it("discovers an addressed fleet, groups its chats, and creates through the chosen owner", async () => {

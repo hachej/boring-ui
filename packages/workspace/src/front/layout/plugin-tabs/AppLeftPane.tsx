@@ -31,6 +31,12 @@ export interface AppLeftPaneAgent {
   label: string
   description?: string
   sessionsStatus?: "loading" | "loaded" | "error"
+  /**
+   * The host's legacy `default` fallback rather than an authored seat. It is
+   * not fleet chrome material — but it keeps its card for as long as it owns
+   * chats, because that card is how those chats are reached (gh-1296).
+   */
+  legacy?: boolean
 }
 
 export interface AppLeftPaneProjectSession {
@@ -242,7 +248,7 @@ export function AppLeftPane({
   bottomSlot,
   headerMode = "full",
   sessions,
-  agents = [],
+  agents: listedAgents = [],
   selectedAgentTypeId,
   addressedAgentTypeId: addressedAgentTypeIdProp,
   onSelectAgent,
@@ -287,6 +293,24 @@ export function AppLeftPane({
   const openSet = useMemo(() => new Set(normalizedOpenSessionIds), [normalizedOpenSessionIds])
   const pinnedSet = useMemo(() => new Set(normalizedPinnedSessionIds), [normalizedPinnedSessionIds])
   const workingSessionIds = useWorkingSessionIds(sessions)
+  // gh-1296: the host lists its legacy `default` fallback beside the authored
+  // seats so chats bound to it stay addressable. It is not a seat someone
+  // wrote, so it earns a card only while it actually owns chats — otherwise a
+  // factory fleet of three would read as four, the extra one unnamed. The scan
+  // is skipped entirely for the usual fleet, which has no legacy entry.
+  const legacyAgentsWithChats = useMemo(() => {
+    const owned = new Set<string>()
+    const legacyIds = new Set(listedAgents.filter((agent) => agent.legacy).map((agent) => agent.agentTypeId))
+    if (legacyIds.size === 0) return owned
+    for (const session of sessions) {
+      if (session.agentTypeId && legacyIds.has(session.agentTypeId)) owned.add(session.agentTypeId)
+    }
+    return owned
+  }, [listedAgents, sessions])
+  const agents = useMemo(
+    () => listedAgents.filter((agent) => !agent.legacy || legacyAgentsWithChats.has(agent.agentTypeId)),
+    [legacyAgentsWithChats, listedAgents],
+  )
   // Fleet row idiom (accent dot, compact rows, owner labels): any addressed
   // fleet gets it, including a fleet of one, so chat cards look identical in
   // both cardinalities. Hosts wanting the plain shell omit `agents` entirely.

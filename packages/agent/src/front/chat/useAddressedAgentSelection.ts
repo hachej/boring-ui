@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { AgentSummary } from '../../shared/gateway/types'
 import { gatewayResponseError } from './gatewayResponseError'
 
-export type AddressedAgentOption = Pick<AgentSummary, 'agentTypeId' | 'label' | 'description' | 'pluginIds'>
+export type AddressedAgentOption = Pick<AgentSummary, 'agentTypeId' | 'label' | 'description' | 'pluginIds' | 'legacy'>
 
 export interface UseAddressedAgentSelectionOptions {
   apiBaseUrl?: string
@@ -87,7 +87,7 @@ export function useAddressedAgentSelection({
         agents,
         selectedAgentTypeId: agents.some((agent) => agent.agentTypeId === previous.selectedAgentTypeId)
           ? previous.selectedAgentTypeId
-          : agents[0]?.agentTypeId,
+          : defaultSelection(agents),
         loading: false,
         error: undefined,
       }))
@@ -152,6 +152,15 @@ function discoverAgents(
   return request
 }
 
+/**
+ * Nothing picked yet addresses an authored seat, never the `legacy` fallback
+ * the host lists only to keep its existing sessions addressable (gh-1296).
+ * A fleet that is nothing but the fallback still selects it.
+ */
+function defaultSelection(agents: readonly AddressedAgentOption[]): string | undefined {
+  return (agents.find((agent) => !agent.legacy) ?? agents[0])?.agentTypeId
+}
+
 function parseAgentOptions(value: unknown): AddressedAgentOption[] {
   if (!Array.isArray(value)) throw new Error('Failed to load agents: invalid response')
   return value.map((item) => {
@@ -167,6 +176,7 @@ function parseAgentOptions(value: unknown): AddressedAgentOption[] {
       ...(Array.isArray(record.pluginIds)
         ? { pluginIds: record.pluginIds.filter((pluginId): pluginId is string => typeof pluginId === 'string' && pluginId.length > 0) }
         : {}),
+      ...(record.legacy === true ? { legacy: true } : {}),
     }
   })
 }
