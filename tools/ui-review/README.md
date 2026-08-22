@@ -58,3 +58,19 @@ pnpm --filter @hachej/boring-ui-review-tools ui:improve:validate -- <run-directo
 
 Live vision remains explicit credential-gated opt-in. Required CI uses the
 fixture critic after complete passing hard gates.
+
+## Temporary files
+
+Every temp directory the tooling creates (isolation home/config/cache, Bombadil
+raw output, replay bundles, test fixtures) lives inside one run-scoped parent
+under the OS temp directory named `boring-ui-review-run.*`. That parent is
+removed when the run finishes, when it throws, and when the process is killed
+with `SIGINT`/`SIGTERM`/`SIGHUP`, so interrupted runs cannot leak inodes.
+Cleanup never follows symlinks and refuses to remove any path outside that
+parent.
+
+Set `UI_REVIEW_KEEP_TMP=1` to retain the run directory for debugging.
+`UI_REVIEW_ISOLATION_ROOT` still points the isolation tree at a caller-owned
+path, which the tooling never removes. When `UI_REVIEW_OUTPUT_DIR` is unset the
+report lands inside the run directory and is discarded with it; set it to keep
+artifacts.

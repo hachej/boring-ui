@@ -10,7 +10,7 @@ import {
   ErrorCode,
   type AgentSkillResource,
 } from '@hachej/boring-agent/shared'
-import { parseSkillMetadataFrontmatter } from '@hachej/boring-agent/server'
+import { SKIPPABLE_RESOURCE_CODES, parseSkillMetadataFrontmatter } from '@hachej/boring-agent/server'
 
 import type { WorkspacePackageResourceRecord } from './bootstrapServer'
 
@@ -404,6 +404,27 @@ export interface PackageResourceDiagnostic {
   readonly source: string
   readonly message: string
   readonly pluginId?: string
+  /** The admission verdict that caused the entry to be skipped, when there was one. */
+  readonly code?: string
+}
+
+/**
+ * gh-1196: the shared-skill probe may only degrade an entry that the host
+ * declined to *admit*. `SKIPPABLE_RESOURCE_CODES` carries the path-admission
+ * verdicts shared with the digest layer; `PACKAGE_RESOURCE_INVALID_CODE` is
+ * this layer's own "the entry is not a usable skill" verdict. Anything else —
+ * a conflict from a single-entry probe, a TypeError, an EACCES from a broken
+ * resolver — is a defect and must propagate rather than be reported as a
+ * routine skip.
+ */
+const SHARED_SKILL_ADMISSION_CODES: ReadonlySet<string> = new Set<string>([
+  ...SKIPPABLE_RESOURCE_CODES,
+  PACKAGE_RESOURCE_INVALID_CODE,
+])
+
+function sharedSkillAdmissionCode(error: unknown): string | undefined {
+  const code = (error as { code?: unknown })?.code
+  return typeof code === 'string' && SHARED_SKILL_ADMISSION_CODES.has(code) ? code : undefined
 }
 
 export function packageResourceHandlesPath(
@@ -495,8 +516,32 @@ export async function resolveWorkspacePackageResourceSnapshot<TBinding = never>(
       })
     }
   }
+  // gh-1196: ~/.pi/agent/skills is normally a tree of symlinks into other
+  // roots, so one stale entry (a dangling link, or one whose target the host
+  // will not admit) is routine. Admit shared skills per entry the same way
+  // scanned packages are admitted above: an unadmittable entry is skipped with
+  // a diagnostic and is never resolved or exposed, and the rest still load.
+  // Failing the whole scan closed here used to 500 every agent-scoped route.
+  const acceptedSharedSkillPaths: { readonly id: string; readonly skillFile: string }[] = []
+  for (const shared of input.sharedSkillPaths ?? []) {
+    try {
+      await resolveWorkspacePackageResources([], { sharedSkillPaths: [shared] })
+      acceptedSharedSkillPaths.push(shared)
+    } catch (error) {
+      // Only an admission verdict is routine. A resolver defect must surface,
+      // not masquerade as a stale symlink.
+      const code = sharedSkillAdmissionCode(error)
+      if (!code) throw error
+      diagnostics.push({
+        source: 'shared-skill-scan',
+        message: `shared skill "${shared.id}" was not admissible and was skipped`,
+        pluginId: 'shared/pi-agent',
+        code,
+      })
+    }
+  }
   const registry = await resolveWorkspacePackageResources([...input.declared, ...accepted], {
-    sharedSkillPaths: input.sharedSkillPaths,
+    sharedSkillPaths: acceptedSharedSkillPaths,
   })
   const binding = registry.readonlyMounts.length > 0 && input.createBinding
     ? await input.createBinding(registry.readonlyMounts)

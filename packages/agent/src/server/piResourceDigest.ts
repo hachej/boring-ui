@@ -97,7 +97,7 @@ interface WalkState {
   bytes: number
 }
 
-const FORMAT_VERSION = 'boring-pi-resource-digest-v5'
+const FORMAT_VERSION = 'boring-pi-resource-digest-v6'
 const EXCLUDED_DIRECTORIES = new Set(['.git', 'node_modules'])
 // Host-written observation metadata is not a Pi input. Including it makes the
 // act of loading a newly discovered Boring plugin invalidate its own reload.
@@ -226,16 +226,49 @@ function packageDescriptor(source: PiPackageSource): string {
   })
 }
 
+/**
+ * gh-1196: entries Pi itself discovered in the user's ambient resource tree are
+ * routinely symlinks (`~/.pi/agent/skills/<id>` links into `~/.agents/skills`),
+ * so a single unadmittable entry must not fail the whole digest closed and take
+ * every agent-scoped route with it. Such an entry is framed as skipped and is
+ * never followed or read; host-declared inputs keep rejecting outright.
+ */
+type UnadmittedEntryPolicy = 'reject' | 'skip'
+
+/**
+ * The error codes that mean "this entry is not admissible", as opposed to "the
+ * resolver is broken". Only these may be degraded to a skip; every other error
+ * class must propagate. Exported so the workspace layer's shared-skill probe
+ * degrades on exactly the same verdicts instead of keeping its own copy.
+ */
+export const SKIPPABLE_RESOURCE_CODES: ReadonlySet<string> = new Set<string>([
+  ErrorCode.enum.PATH_ESCAPE,
+  ErrorCode.enum.PATH_SYMLINK_ESCAPE,
+])
+
+function skippableResourceCode(error: unknown): string | undefined {
+  const code = (error as { code?: unknown })?.code
+  return typeof code === 'string' && SKIPPABLE_RESOURCE_CODES.has(code) ? code : undefined
+}
+
 async function hashResourceCollection(
   state: WalkState,
   baseDir: string,
   kind: string,
   paths: readonly string[],
   digestContainingArtifact: boolean,
+  unadmittedEntries: UnadmittedEntryPolicy = 'reject',
 ): Promise<void> {
   for (const path of [...new Set(paths)].sort()) {
     const absolutePath = resolvePiPath(path, baseDir)
-    await assertContainedWithoutSymlinks(absolutePath, state.authorizedRoots)
+    try {
+      await assertContainedWithoutSymlinks(absolutePath, state.authorizedRoots)
+    } catch (error) {
+      const code = unadmittedEntries === 'skip' ? skippableResourceCode(error) : undefined
+      if (!code) throw error
+      frameString(state.hash, `${kind}-skipped`, `${code}:${absolutePath}`)
+      continue
+    }
     try {
       await lstat(absolutePath)
     } catch (error) {
@@ -250,7 +283,7 @@ async function hashResourceCollection(
       ? await findContainingArtifactRoot(absolutePath, state.authorizedRoots)
       : absolutePath
     frameString(state.hash, `${kind}-artifact-root`, relative(artifactRoot, absolutePath))
-    await hashLocalResource(state, artifactRoot, '.', 0)
+    await hashLocalResource(state, artifactRoot, '.', 0, unadmittedEntries)
   }
 }
 
@@ -294,8 +327,10 @@ async function hashResolvedPiInventory(
     }
     resources.add(resource.path)
   }
-  await hashResourceCollection(state, state.authorizedRoots[0]!, 'resolved-package-manifest', [...packageManifests], false)
-  await hashResourceCollection(state, state.authorizedRoots[0]!, 'resolved-resource', [...resources], false)
+  // Pi discovered these itself in the user's ambient tree; one symlinked entry
+  // there is normal and must degrade, not fail the digest closed (gh-1196).
+  await hashResourceCollection(state, state.authorizedRoots[0]!, 'resolved-package-manifest', [...packageManifests], false, 'skip')
+  await hashResourceCollection(state, state.authorizedRoots[0]!, 'resolved-resource', [...resources], false, 'skip')
 }
 
 /** Mirrors Pi's cwd-relative path normalization for configured resources. */
@@ -335,9 +370,20 @@ async function hashLocalResource(
   path: string,
   logicalPath: string,
   depth: number,
+  unadmittedEntries: UnadmittedEntryPolicy = 'reject',
 ): Promise<void> {
   const absolutePath = resolve(path)
-  await assertContainedWithoutSymlinks(absolutePath, state.authorizedRoots)
+  const skip = (code: string): void => {
+    frameString(state.hash, 'unadmitted-skipped', `${code}:${logicalPath}`)
+  }
+  try {
+    await assertContainedWithoutSymlinks(absolutePath, state.authorizedRoots)
+  } catch (error) {
+    const code = unadmittedEntries === 'skip' ? skippableResourceCode(error) : undefined
+    if (!code) throw error
+    skip(code)
+    return
+  }
   if (depth > state.limits.maxDepth) {
     throw limitError(`Pi resource tree exceeds maximum depth ${state.limits.maxDepth}`)
   }
@@ -356,12 +402,16 @@ async function hashLocalResource(
     throw limitError(`Pi resource tree exceeds maximum node count ${state.limits.maxFiles}`)
   }
   if (stat.isSymbolicLink()) {
+    // Never resolved, never read — only recorded, so the digest still moves
+    // when the link appears or disappears.
+    if (unadmittedEntries === 'skip') return skip(ErrorCode.enum.PATH_SYMLINK_ESCAPE)
     throw stableError(ErrorCode.enum.PATH_SYMLINK_ESCAPE, 403, `Pi resource symlinks are not allowed: ${absolutePath}`)
   }
   if (stat.isDirectory()) {
     frameString(state.hash, 'directory', logicalPath)
     const openedTarget = await realpath(absolutePath)
     if (!mostSpecificContainingRoot(openedTarget, state.authorizedRoots)) {
+      if (unadmittedEntries === 'skip') return skip(ErrorCode.enum.PATH_SYMLINK_ESCAPE)
       throw stableError(ErrorCode.enum.PATH_SYMLINK_ESCAPE, 403, `Pi resource resolves outside authorized roots: ${absolutePath}`)
     }
     assertSameFile(stat, await statPath(openedTarget), absolutePath)
@@ -382,6 +432,7 @@ async function hashLocalResource(
         resolve(openedTarget, entry.name),
         logicalPath === '.' ? entry.name : `${logicalPath}/${entry.name}`,
         depth + 1,
+        unadmittedEntries,
       )
     }
     const afterTarget = await realpath(absolutePath)
