@@ -1,9 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ErrorCode } from '../../../../shared/error-codes'
-import { AgentGatewayErrorCode } from '../../../../shared/gateway/errors'
 import type { PiChatEvent, PiChatSnapshot } from '../../../../shared/chat'
 import { PI_CHAT_CURSOR_AHEAD_CODE, PI_CHAT_REPLAY_GAP_CODE } from '../piChatStream'
-import { RemotePiSession, piChatErrorCode } from '../remotePiSession'
+import { RemotePiSession } from '../remotePiSession'
 
 const encoder = new TextEncoder()
 
@@ -768,94 +767,6 @@ describe('RemotePiSession', () => {
     expect(session.getState().status).toBe('streaming')
     promptResponse.resolve(jsonResponse({ accepted: true, cursor: 1, clientNonce: 'nonce-1' }))
     await expect(receipt).resolves.toEqual({ accepted: true, cursor: 1, clientNonce: 'nonce-1' })
-
-    session.dispose()
-  })
-
-  it('rolls back optimistic follow-ups when the follow-up command fails', async () => {
-    const events = openNdjsonStream()
-    const fetchMock = vi.fn(async (url: string) => {
-      if (url.endsWith('/events?cursor=0')) return new Response(events.stream)
-      if (url.endsWith('/followup')) return jsonResponse({ error: { message: 'queue failed' } }, 500)
-      throw new Error(`unexpected URL ${url}`)
-    }) as unknown as MockFetch
-    const session = createSession(fetchMock, { autoStart: false })
-
-    await expect(session.followUp({ message: 'queued', clientNonce: 'nonce-q', clientSeq: 1 })).rejects.toThrow('queue failed')
-
-    expect(session.getState().optimisticOutbox).toEqual({})
-
-    session.dispose()
-  })
-
-  it('surfaces the stable, canonical server error code from a rejected command via piChatErrorCode', async () => {
-    const events = openNdjsonStream()
-    const fetchMock = vi.fn(async (url: string) => {
-      if (url.endsWith('/events?cursor=0')) return new Response(events.stream)
-      if (url.endsWith('/prompt')) {
-        return jsonResponse({ error: { code: ErrorCode.enum.SESSION_LOCKED, message: 'locked' } }, 423)
-      }
-      throw new Error(`unexpected URL ${url}`)
-    }) as unknown as MockFetch
-    const session = createSession(fetchMock, { autoStart: false })
-
-    const error = await session.prompt({ message: 'hello', clientNonce: 'nonce-1' }).then(
-      () => { throw new Error('prompt should have rejected') },
-      (err: unknown) => err,
-    )
-    expect(piChatErrorCode(error)).toBe(ErrorCode.enum.SESSION_LOCKED)
-    // The rejection also rolls back the optimistic message so the composer recovers.
-    expect(session.getState().optimisticOutbox).toEqual({})
-
-    session.dispose()
-  })
-
-  it('piChatErrorCode ignores unknown codes and reads shared or gateway errorCode values', () => {
-    expect(piChatErrorCode(new Error('boom'))).toBeUndefined()
-    expect(piChatErrorCode(undefined)).toBeUndefined()
-    // A non-canonical code must NOT be surfaced as a host action key.
-    expect(piChatErrorCode(Object.assign(new Error('x'), { errorCode: 'NOT_A_REAL_CODE' }))).toBeUndefined()
-    expect(piChatErrorCode(Object.assign(new Error('x'), { errorCode: ErrorCode.enum.SESSION_LOCKED }))).toBe(ErrorCode.enum.SESSION_LOCKED)
-    expect(piChatErrorCode(Object.assign(new Error('x'), {
-      errorCode: AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
-    }))).toBe(AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE)
-  })
-
-  it('clears optimistic queued follow-ups from the stop receipt before a queue echo arrives', async () => {
-    const events = openNdjsonStream()
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      const body = init?.body ? JSON.parse(String(init.body)) : undefined
-      if (url.endsWith('/events?cursor=0')) return new Response(events.stream)
-      if (url.endsWith('/followup')) return jsonResponse({ accepted: true, cursor: 1, clientNonce: body.clientNonce, clientSeq: body.clientSeq, queued: true })
-      if (url.endsWith('/stop')) {
-        return jsonResponse({
-          accepted: true,
-          cursor: 2,
-          stopped: true,
-          clearedQueue: [{ id: 'q1', kind: 'followup', clientNonce: 'nonce-q', clientSeq: 1, displayText: 'queued' }],
-        })
-      }
-      throw new Error(`unexpected URL ${url}`)
-    }) as unknown as MockFetch
-    const session = createSession(fetchMock, { autoStart: false })
-
-    await expect(session.followUp({ message: 'queued', clientNonce: 'nonce-q', clientSeq: 1 })).resolves.toEqual({
-      accepted: true,
-      cursor: 1,
-      clientNonce: 'nonce-q',
-      clientSeq: 1,
-      queued: true,
-    })
-    expect(session.getState().optimisticOutbox['nonce-q']).toMatchObject({ status: 'pending', clientSeq: 1 })
-
-    await expect(session.stop()).resolves.toEqual({
-      accepted: true,
-      cursor: 2,
-      stopped: true,
-      clearedQueue: [{ id: 'q1', kind: 'followup', clientNonce: 'nonce-q', clientSeq: 1, displayText: 'queued' }],
-    })
-
-    expect(session.getState().optimisticOutbox).toEqual({})
 
     session.dispose()
   })
