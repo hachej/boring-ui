@@ -45,7 +45,7 @@ import {
   writePiComposerThinking,
   type ActiveSessionStorageLike,
 } from './session'
-import { SessionList, usePiSessions, type UsePiSessionsOptions } from './session'
+import { SessionList, usePiSessions, useSessionListActivity, type UsePiSessionsOptions } from './session'
 import {
   type ComposerBlocker,
   type ComposerBlockerAction,
@@ -307,6 +307,14 @@ export function PiChatPanel<
       if (sessionListRefreshRef.current === refreshSessionList) sessionListRefreshRef.current = undefined
     }
   }, [externalSessionId, sessions.refresh])
+  // Live-activity ownership sits beside the rendered list: a visible
+  // SessionList must see status transitions (running → idle → error), not a
+  // hidden one. Local state only — no request, no transcript read (gh-1338).
+  useSessionListActivity({
+    apiBaseUrl,
+    enabled: showSessionSidebar,
+    onActivity: (sessionId, status) => sessions.applyActivity(sessionId, status),
+  })
   const externalPiSession = useExternalRemotePiSession({
     sessionId: externalSessionId,
     agentTypeId,

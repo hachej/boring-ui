@@ -220,6 +220,54 @@ describe('PiChatPanel sandbox shell', () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/v1/agents/default/sessions', expect.objectContaining({ method: 'POST' })))
   })
 
+  test('live session-activity transitions reach the rendered SessionList rows', async () => {
+    class FakeEventSource {
+      static last: FakeEventSource | undefined
+      closed = false
+      listeners = new Map<string, Array<(event: MessageEvent) => void>>()
+      constructor(public url: string) { FakeEventSource.last = this }
+      addEventListener(type: string, listener: (event: MessageEvent) => void) {
+        const list = this.listeners.get(type) ?? []
+        list.push(listener)
+        this.listeners.set(type, list)
+      }
+      removeEventListener() {}
+      close() { this.closed = true }
+      emit(type: string, data: unknown) {
+        for (const listener of this.listeners.get(type) ?? []) listener({ data: JSON.stringify(data) } as MessageEvent)
+      }
+    }
+    const previousEventSource = (globalThis as { EventSource?: unknown }).EventSource
+    ;(globalThis as { EventSource?: unknown }).EventSource = FakeEventSource
+
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
+    try {
+      const view = render(<PiChatPanel showSessions serverResourcesEnabled={false} storageScope="scope-a" fetch={fetchMock as unknown as typeof fetch} createRemoteSession={remoteFactory(new FakeRemotePiSession(remoteState()))} />)
+      const row = await screen.findByText('Session pi-1')
+      expect(row.closest('[data-boring-agent-part="session-row"]')).toBeTruthy()
+
+      const source = FakeEventSource.last!
+      expect(source.url).toBe('/api/v1/agents/session-activity/events')
+      const statusDot = () => row.closest('[data-boring-agent-part="session-row"]')?.querySelector('[data-boring-agent-part="session-row-status"]')
+
+      // Snapshot marks the row running; a live edge then settles it idle and
+      // flags a failure — all without any refetch.
+      source.emit('snapshot', { sessions: [{ ref: { agentTypeId: 'default', sessionId: 'pi-1' }, status: 'running' }] })
+      await waitFor(() => expect(statusDot()?.getAttribute('data-boring-state')).toBe('running'))
+      source.emit('activity', { ref: { agentTypeId: 'default', sessionId: 'pi-1' }, status: 'idle' })
+      await waitFor(() => expect(statusDot()).toBeNull())
+      source.emit('activity', { ref: { agentTypeId: 'default', sessionId: 'pi-1' }, status: 'error' })
+      await waitFor(() => expect(statusDot()?.getAttribute('data-boring-state')).toBe('error'))
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+
+      view.unmount()
+      expect(source.closed).toBe(true)
+    } finally {
+      if (previousEventSource === undefined) delete (globalThis as { EventSource?: unknown }).EventSource
+      else (globalThis as { EventSource?: unknown }).EventSource = previousEventSource
+    }
+  })
+
   test('clears the composer immediately after local prompt acceptance', async () => {
     const remote = new FakeRemotePiSession(remoteState())
     const promptReceipt = deferred<{ accepted: true; cursor: number; clientNonce: string }>()

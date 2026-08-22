@@ -184,11 +184,15 @@ export function CliGitBranchBadge({ workspaceId }: { workspaceId?: string | null
 
   useEffect(() => {
     let cancelled = false
+    // Sequence commits: a slow mount/fetch can resolve after a newer focus
+    // fetch and otherwise pin a stale branch until the next event.
+    let latestLoad = 0
     const load = () => {
+      const loadSeq = ++latestLoad
       void fetch("/api/v1/git/branch", workspaceId ? { headers: { "x-boring-workspace-id": workspaceId } } : undefined)
         .then(async (res) => res.ok ? await res.json() as GitBranchMeta : null)
-        .then((next) => { if (!cancelled) setMeta(next) })
-        .catch(() => { if (!cancelled) setMeta(null) })
+        .then((next) => { if (!cancelled && loadSeq === latestLoad) setMeta(next) })
+        .catch(() => { if (!cancelled && loadSeq === latestLoad) setMeta(null) })
     }
     // Drop the previous workspace's branch immediately so we never show it
     // against the newly selected workspace.

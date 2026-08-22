@@ -485,6 +485,10 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
   }, [enabled, ensurePendingScope, fetchImpl, requestHeaders, requestScopeKey, sessionsUrl, sourceIsCurrent])
 
   const applyActivity = useCallback((id: string, status: SessionActivityStatus): void => {
+    // Fail closed like every other mutation: a callback retained by an activity
+    // stream from a previous source (workspace/storage scope) must never mutate
+    // this list, even when session ids collide across sources.
+    if (!sourceIsCurrent(requestScopeKey)) return
     setSessions((current) => {
       let changed = false
       const next = current.map((session) => {
@@ -496,7 +500,7 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
       // every consumer of the list.
       return changed ? next : current
     })
-  }, [])
+  }, [requestScopeKey, sourceIsCurrent])
 
   const deleteSession = useCallback(async (id: string): Promise<void> => {
     const scope = requestScopeKey

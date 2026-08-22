@@ -205,6 +205,47 @@ describe("CliWorkspaceShell", () => {
     expect(badge.getAttribute("aria-label")).toBe("Git branch feat/git-branch-and-session-status")
   })
 
+  test("branch badge ignores a stale mount fetch that resolves after a newer focus fetch", async () => {
+    window.history.replaceState(null, "", "/workspace/target")
+    mockWorkspacesMode([[{ id: "target", name: "Target", path: "/target", available: true }]])
+
+    // Two deferred branch probes: the mount fetch (slow) and the focus fetch (fast).
+    const branchFetches: Array<(response: Response) => void> = []
+    const previousFetch = globalThis.fetch
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith("/api/v1/git/branch")) {
+        return new Promise<Response>((resolve) => branchFetches.push(resolve))
+      }
+      return await previousFetch(input)
+    }) as typeof fetch
+
+    try {
+      const { container, unmount } = render(<CliWorkspaceShell />)
+      await waitFor(() => expect(workspaceAgentFrontSpy).toHaveBeenCalled())
+      await waitFor(() => expect(branchFetches.length).toBe(1))
+
+      const mountFetch = branchFetches[0]
+      window.dispatchEvent(new Event("focus"))
+      await waitFor(() => expect(branchFetches.length).toBe(2))
+
+      // The focus fetch resolves first with the fresh branch…
+      branchFetches[1](new Response(JSON.stringify({ enabled: true, branch: "fresh-branch" }), { headers: { "Content-Type": "application/json" } }))
+      await waitFor(() => expect(
+        container.querySelector('[data-boring-cli-part="git-branch"]')?.textContent,
+      ).toBe("fresh-branch"))
+
+      // …then the older mount fetch lands late and must not overwrite it.
+      mountFetch(new Response(JSON.stringify({ enabled: true, branch: "stale-branch" }), { headers: { "Content-Type": "application/json" } }))
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(container.querySelector('[data-boring-cli-part="git-branch"]')?.textContent).toBe("fresh-branch")
+
+      unmount()
+    } finally {
+      globalThis.fetch = previousFetch
+    }
+  })
+
   test("renders no branch chrome for a workspace that is not Git-backed", async () => {
     window.history.replaceState(null, "", "/workspace/target")
     mockWorkspacesMode([[{ id: "target", name: "Target", path: "/target", available: true }]])

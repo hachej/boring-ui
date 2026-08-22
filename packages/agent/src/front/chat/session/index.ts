@@ -5,7 +5,8 @@ export {
   type ActiveSessionStorageLike,
   type ActiveSessionStorageOptions,
 } from './sessionSelectionStorage'
-export { usePiSessions, type UsePiSessionsOptions, type UsePiSessionsResult, type PiSessionCreateInit, type PiSessionRefreshOptions } from './usePiSessions'
+export { usePiSessions, type UsePiSessionsOptions, type UsePiSessionsResult, type PiSessionCreateInit, type PiSessionRefreshOptions, type SessionActivityStatus } from './usePiSessions'
+export { useSessionListActivity } from './useSessionListActivity'
 export { SessionList, SessionBrowser, type SessionListProps } from './SessionList'
 export {
   searchPiSessions,

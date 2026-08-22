@@ -310,6 +310,11 @@ describe('usePiSessions', () => {
     await expect(saved.delete('source-a')).rejects.toMatchObject({ name: 'StaleSessionsSourceError' })
     await expect(saved.rename('source-a', 'Renamed')).rejects.toMatchObject({ name: 'StaleSessionsSourceError' })
     await expect(saved.refresh()).rejects.toMatchObject({ name: 'StaleSessionsSourceError' })
+    // applyActivity is synchronous (no rejection path), so it must fail closed
+    // by ignoring the mutation instead of corrupting the new source's list.
+    act(() => saved.applyActivity('source-a', 'running'))
+    // Still the committed source-A row, untouched by the stale mutation.
+    expect(result.current.sessions.map((item) => item.status)).toEqual(['idle'])
     saved.switch('source-a')
     saved.reset()
     expect(fetchMock).toHaveBeenCalledTimes(2)
