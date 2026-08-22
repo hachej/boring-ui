@@ -96,6 +96,9 @@ runRg(
     "!docs/issues/809/runtime-refactor/**",
     "!docs/DECISIONS.md",
     "!docs/plans/archive/**",
+    // W33 research archive: raw worker logs quote superseded DECISIONS/architecture
+    // prose verbatim; archival fidelity beats rescanning quoted history.
+    "!docs/plans/long-term/research/10-raw-worker-reports/**",
     "!packages/**/docs/plans/archive/**",
     "!**/node_modules/**",
     "!**/dist/**",
