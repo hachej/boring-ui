@@ -1,17 +1,37 @@
 "use client"
 
-import { useState, type CSSProperties, type ReactNode } from "react"
-import { Columns2, MessageSquare, Pin, Zap } from "lucide-react"
+import { useRef, useState, type CSSProperties, type ReactNode } from "react"
+import { Columns2, MessageSquare, Pin, PinOff, Zap } from "lucide-react"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 import { CHAT_SESSION_DRAG_TYPE } from "../ChatPaneStage"
 import type { WorkspaceAttentionSessionBadge } from "../../attention/WorkspaceAttentionProvider"
 import type { AppLeftPaneSession } from "./AppLeftPane"
-import { AppSessionActionsMenu } from "./AppSessionActionsMenu"
+import { AppSessionActionItems, AppSessionActionsMenu, AppSessionContextMenu, hasAppSessionActions } from "./AppSessionActionsMenu"
 import { InlineSessionRename, useInlineSessionRename } from "./InlineSessionRename"
 import { encodeWorkspaceSessionDrag } from "../../sessionIdentity"
 import { resolveSessionTrailingSlot, type SessionTrailingBadge, type SessionTrailingMarker } from "./appSessionRowTrailing"
 
 export type AppSessionRowState = "normal" | "open" | "active"
+
+/**
+ * A row verb can live in two places: directly on the row (revealed on hover /
+ * focus-within) or inside the menu. Which of the two a surface picks is a
+ * frequency judgement, not a capability one — so the row takes both lists and
+ * never decides for its host.
+ */
+export type AppSessionRowShortcut = "pin" | "split" | "quick"
+
+const DEFAULT_HOVER_SHORTCUTS: readonly AppSessionRowShortcut[] = ["split", "quick"]
 
 /**
  * The split / detach hover shortcuts differ only by icon, words and handler.
@@ -109,6 +129,9 @@ export function AppSessionRow({
   activeDotActive = state === "active",
   compact = false,
   showPlacementShortcuts = true,
+  hoverShortcuts = DEFAULT_HOVER_SHORTCUTS,
+  menuShortcuts,
+  confirmDelete = false,
   ownerLabel,
   leadingBadge,
   metaTag,
@@ -131,6 +154,12 @@ export function AppSessionRow({
   compact?: boolean
   /** Keep quick/split hover actions out of deeply nested or touch-constrained rows. */
   showPlacementShortcuts?: boolean
+  /** Verbs that get their own hover-revealed icon. Default: the two placements. */
+  hoverShortcuts?: readonly AppSessionRowShortcut[]
+  /** Placement verbs the menu repeats. Default: none — the row icons carry them. */
+  menuShortcuts?: readonly AppSessionRowShortcut[]
+  /** Route Delete through a confirmation instead of firing it straight off the menu. */
+  confirmDelete?: boolean
   ownerLabel?: string
   /**
    * Takes over the leading slot (normally the chat glyph / working dot) when a
@@ -156,22 +185,43 @@ export function AppSessionRow({
 }) {
   const title = session.title || "Untitled"
   const [menuOpen, setMenuOpen] = useState(false)
+  const [contextPoint, setContextPoint] = useState<{ x: number; y: number } | null>(null)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const rowRef = useRef<HTMLDivElement | null>(null)
   const actionsAvailable = Boolean(onSwitch)
   const renameAvailable = Boolean(onRename) && session.nativeSessionId === session.id && session.hasAssistantReply === true
   const canCopy = session.ephemeral !== true
-  const splitAvailable = showPlacementShortcuts && state === "normal" && actionsAvailable && canSplit && Boolean(onOpenAsPane)
+  // Placement is only meaningful for a chat that is not already on stage, and
+  // only inside the loaded workspace — one rule, read by the row icon and the
+  // menu entry alike so the two can never disagree about what is possible.
+  const splitPossible = state === "normal" && actionsAvailable && canSplit && Boolean(onOpenAsPane)
+  const detachPossible = state === "normal" && actionsAvailable && Boolean(onOpenDetached)
   const pinAvailable = canPin && Boolean(onTogglePinned)
-  // Split left the menu for its own hover shortcut, so it no longer justifies
-  // opening one — a menu with only that entry would render empty.
-  const showMenu = pinAvailable || canCopy || renameAvailable || Boolean(onDelete)
-  // A chat already on stage has nothing to gain from the quick overlay —
-  // placement shortcuts only apply to chats that are not open yet.
-  const detachAvailable = showPlacementShortcuts && state === "normal" && actionsAvailable && Boolean(onOpenDetached)
-  // Placement shortcuts surface directly on hover (owner spec); the menu keeps
-  // the rest. One slot per visible action; the pixel size of a slot lives in
-  // CSS (one number per breakpoint) instead of a hardcoded width ladder that
-  // desktop and mobile had already computed differently.
-  const hoverActionCount = (showMenu ? 1 : 0) + (splitAvailable ? 1 : 0) + (detachAvailable ? 1 : 0)
+  const wants = (list: readonly AppSessionRowShortcut[] | undefined, shortcut: AppSessionRowShortcut) =>
+    Boolean(list?.includes(shortcut))
+  const splitAvailable = showPlacementShortcuts && splitPossible && wants(hoverShortcuts, "split")
+  const detachAvailable = showPlacementShortcuts && detachPossible && wants(hoverShortcuts, "quick")
+  const pinShortcutAvailable = pinAvailable && wants(hoverShortcuts, "pin")
+  // Whatever a hover icon does not carry stays reachable in the menu.
+  const menuSplitAvailable = splitPossible && wants(menuShortcuts, "split")
+  const menuDetachAvailable = detachPossible && wants(menuShortcuts, "quick")
+  const menuProps = {
+    canCopy,
+    canRename: renameAvailable,
+    canPin: pinAvailable,
+    canOpenAsPane: menuSplitAvailable,
+    canOpenDetached: menuDetachAvailable,
+    onDelete,
+    onTogglePinned,
+  }
+  const showMenu = hasAppSessionActions(menuProps)
+  // One slot per visible action; the pixel size of a slot lives in CSS (one
+  // number per breakpoint) instead of a hardcoded width ladder that desktop and
+  // mobile had already computed differently.
+  const hoverActionCount = (showMenu ? 1 : 0)
+    + (pinShortcutAvailable ? 1 : 0)
+    + (splitAvailable ? 1 : 0)
+    + (detachAvailable ? 1 : 0)
   const actionSlotStyle = { "--app-session-action-slots": hoverActionCount } as CSSProperties
   // The dot is painted only under all three conditions; the resolver needs
   // that computed fact, not the `activeDot` prop that merely allows it.
@@ -204,6 +254,27 @@ export function AppSessionRow({
     onRename,
   })
   const activate = () => onSwitch?.(session.id)
+  // Closing a menu that was opened at the pointer has nowhere to hand focus
+  // back to, so the row takes it: the keyboard stays where the operator was.
+  const focusRow = () => rowRef.current?.querySelector<HTMLElement>("button")?.focus()
+  const requestDelete = onDelete
+    ? confirmDelete
+      ? () => setDeleteConfirmOpen(true)
+      : (id: string) => onDelete(id)
+    : undefined
+  const actionItems = (closeMenu: () => void) => (
+    <AppSessionActionItems
+      sessionId={session.id}
+      title={title}
+      {...menuProps}
+      pinned={pinned}
+      onRename={rename.begin}
+      {...(onOpenAsPane ? { onOpenAsPane: () => onOpenAsPane(session.id) } : {})}
+      {...(onOpenDetached ? { onOpenDetached: () => onOpenDetached(session.id) } : {})}
+      {...(requestDelete ? { onDelete: requestDelete } : {})}
+      onCloseMenu={closeMenu}
+    />
+  )
   const rowClassName = cn(
     "flex h-full w-full items-center rounded-md text-left transition-colors motion-reduce:transition-none",
     compact ? "gap-1.5 px-1.5" : "gap-2 px-2",
@@ -225,6 +296,7 @@ export function AppSessionRow({
 
   return (
     <div
+      ref={rowRef}
       data-boring-workspace-part="app-session-row"
       data-boring-session-id={session.id}
       data-boring-agent-type-id={session.agentTypeId}
@@ -238,6 +310,21 @@ export function AppSessionRow({
         }))
         event.dataTransfer.setData("text/plain", title)
         event.dataTransfer.effectAllowed = "copyMove"
+      } : undefined}
+      // Right-click is the second door onto the SAME panel the "..." opens.
+      // Suppressed while renaming, where the native menu (cut/paste/undo) is
+      // the useful one.
+      onContextMenu={showMenu && !rename.editing ? (event) => {
+        event.preventDefault()
+        setContextPoint({ x: event.clientX, y: event.clientY })
+      } : undefined}
+      // F2 is the platform's rename key, and every list that supports rename
+      // is expected to answer it. It stays gated by the same eligibility rule
+      // as the menu entry, so the two never disagree.
+      onKeyDown={renameAvailable && !rename.editing ? (event) => {
+        if (event.key !== "F2") return
+        event.preventDefault()
+        rename.begin()
       } : undefined}
       className={cn("app-left-session-row group relative w-full", compact ? "h-[29px]" : "h-[30px]")}
     >
@@ -321,6 +408,16 @@ export function AppSessionRow({
             "group-hover:opacity-100 group-focus-within:opacity-100",
           )}
         >
+          {pinShortcutAvailable ? (
+            <SessionHoverAction
+              icon={pinned
+                ? <PinOff className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+                : <Pin className="size-3.5" strokeWidth={1.75} aria-hidden="true" />}
+              label={`${pinned ? "Unpin" : "Pin"} ${title}`}
+              title={pinned ? "Unpin chat" : "Pin chat"}
+              onClick={() => onTogglePinned?.(session.id)}
+            />
+          ) : null}
           {splitAvailable ? (
             <SessionHoverAction
               icon={<Columns2 className="size-3.5" strokeWidth={1.75} aria-hidden="true" />}
@@ -338,20 +435,48 @@ export function AppSessionRow({
             />
           ) : null}
           {showMenu ? (
-          <AppSessionActionsMenu
-            sessionId={session.id}
-            title={title}
-            canCopy={canCopy}
-            canRename={renameAvailable}
-            canPin={pinAvailable}
-            pinned={pinned}
-            onTogglePinned={onTogglePinned}
-            onRename={rename.begin}
-            onDelete={onDelete}
-            onOpenChange={setMenuOpen}
-          />
+            <AppSessionActionsMenu title={title} onOpenChange={setMenuOpen}>
+              {actionItems(() => setMenuOpen(false))}
+            </AppSessionActionsMenu>
           ) : null}
         </span>
+      ) : null}
+
+      {showMenu ? (
+        <AppSessionContextMenu
+          title={title}
+          point={contextPoint}
+          onPointChange={setContextPoint}
+          onOpenChange={(open) => {
+            setMenuOpen(open)
+            if (!open) focusRow()
+          }}
+        >
+          {actionItems(() => setContextPoint(null))}
+        </AppSessionContextMenu>
+      ) : null}
+
+      {confirmDelete && onDelete ? (
+        <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete this chat?</AlertDialogTitle>
+              <AlertDialogDescription>
+                “{title}” and its transcript are removed for good. This cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={focusRow}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                data-boring-workspace-part="app-session-delete-confirm"
+                variant="destructive"
+                onClick={() => { void onDelete(session.id) }}
+              >
+                Delete chat
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       ) : null}
     </div>
   )

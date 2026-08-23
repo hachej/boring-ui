@@ -230,6 +230,17 @@ export function AppLeftRail({
 /** Shared zero-stats object: an Agent with no chats allocates nothing. */
 const EMPTY_AGENT_STATS: AppLeftPaneAgentStats = { sessions: 0, working: 0, attention: 0 }
 
+/**
+ * The #1355 console's row layout, hoisted to module scope so every row shares
+ * one array identity instead of allocating two per render.
+ * Pin and split are the two verbs an operator repeats; quick chat is real but
+ * occasional, so it earns a menu entry rather than a permanent slot on every
+ * row. Both placements stay in the menu as well, because the menu is also the
+ * touch and keyboard path.
+ */
+const CONSOLE_HOVER_SHORTCUTS = ["pin", "split"] as const
+const CONSOLE_MENU_SHORTCUTS = ["split", "quick"] as const
+
 export function AppLeftPane({
   width = 276,
   appTitle,
@@ -466,6 +477,13 @@ export function AppLeftPane({
     showPlacementShortcuts = true,
     /** Surface-specific row extras (the console spike's Agent chip / Project tag). */
     slots?: ConsoleSpikeRowSlots,
+    /**
+     * The #1355 console's researched row layout: pin + split as the two
+     * hover icons (the highest-frequency verbs), every other verb in a menu
+     * that right-click also opens, and a confirmed Delete. The unflagged
+     * hosts keep the shipped split/quick pair and the immediate Delete.
+     */
+    consoleRow = false,
   ) => {
     const isActiveProjectSession = !projectId || projectId === activeProjectId
     const sessionKey = workspaceSessionKeyFor(session)
@@ -493,6 +511,11 @@ export function AppLeftPane({
         activeDotActive={working || state === "active"}
         compact={agentRowsEnabled && (nested || !pinned)}
         showPlacementShortcuts={showPlacementShortcuts}
+        {...(consoleRow ? {
+          hoverShortcuts: CONSOLE_HOVER_SHORTCUTS,
+          menuShortcuts: CONSOLE_MENU_SHORTCUTS,
+          confirmDelete: true,
+        } : {})}
         ownerLabel={ownerLabelOverride ?? (showOwnerLabel && session.agentTypeId ? agentLabelById.get(session.agentTypeId) : undefined)}
         {...(slots?.leadingBadge ? { leadingBadge: slots.leadingBadge } : {})}
         {...(slots?.metaTag ? { metaTag: slots.metaTag } : {})}
@@ -815,8 +838,11 @@ export function AppLeftPane({
               // trailing owner label — that slot keeps the relative age.
               undefined,
               false,
-              false,
+              // Placement IS offered here — as the researched pin+split pair
+              // on the row and both placements in the menu below.
+              true,
               slots,
+              true,
             )}
           />
         ) : null}

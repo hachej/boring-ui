@@ -750,7 +750,13 @@
   }
 }
 
-@media (hover: none) {
+/* `(pointer: coarse)` joins the condition because the row's "..." trigger is
+   the ONLY way into rename / pin / copy / delete, and hiding it behind hover on
+   a finger-driven device hides those verbs outright. A coarse pointer is the
+   honest signal for "no precise hover to reveal it with", and it is the same
+   condition that already grows every one of these targets to 44px above — the
+   two halves of one decision, declared together. */
+@media (hover: none), (pointer: coarse) {
   /*
    * `hover: none` means the primary input cannot hover — a touch device. It
    * does not prove there is no keyboard (a tablet may have one attached), but
