@@ -730,10 +730,18 @@ export class PiSessionStore implements SessionStore {
         const linkedStat = await fsStat(linkedPiFile);
         sortMtimeMs = Math.max(sortMtimeMs, linkedStat.mtime.getTime());
       }
-      if (!cached.headerId || !isTimestampNamedPiSessionFile(filepath, cached.headerId)) {
-        // Wrapper transcript (or headerless native file): the stem is the id
-        // `resolveSessionFile` accepts — never a last-underscore truncation.
+      if (!cached.headerId) {
+        // Headerless file: the stem is the id `resolveSessionFile` accepts —
+        // never a last-underscore truncation.
         return { sortMtimeMs, sortId: wrapperSessionId(filepath) };
+      }
+      if (!isTimestampNamedPiSessionFile(filepath, cached.headerId)) {
+        // Readable header in a non-timestamp-named (wrapper) transcript: the
+        // header id is canonical — it is exactly what `summary.id` emits — so
+        // the gateway's full-id total order and this store's prefix agree.
+        // Sorting by the filename here would order by a different key than
+        // the id we report for the row (#1338 review round 2).
+        return { sortMtimeMs, sortId: cached.headerId };
       }
       if (cached.nativeSortMtimeMs !== undefined) {
         return { sortMtimeMs: cached.nativeSortMtimeMs, sortId: cached.headerId };

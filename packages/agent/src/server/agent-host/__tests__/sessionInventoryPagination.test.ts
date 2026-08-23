@@ -351,4 +351,77 @@ describe('equal-updatedAt tiebreak (sessions must never disappear)', () => {
       await host.host.close()
     }
   })
+
+  it('sorts readable wrapper transcripts by header id, not filename (limit-1)', async () => {
+    // A wrapper transcript is not timestamp-named, so its FILENAME stem is
+    // free to disagree with the canonical summary id in its readable header.
+    // With filenames mapped REVERSE to header ids and limit 1, an ordering
+    // keyed on stems leads its bounded prefix with the WRONG row: the
+    // gateway emits it, advances the cursor past ids that sort earlier, and
+    // every smaller-header-id session vanishes from all later pages.
+    const sessionRoot = await temporaryRoot()
+    const workspaceRoot = join(sessionRoot, 'workspace')
+    const workspaceScopeId = 'workspace-w:storage-w'
+    const scope = { workspaceScopeId, authSubjectId: 'subject-a' } as AuthorizedAgentScope
+    const dir = join(sessionRoot, pathDerivedDirName(workspaceRoot))
+    await mkdir(dir, { recursive: true })
+    const wrappers = [
+      { file: 'a.jsonl', headerId: 'wrap-c' },
+      { file: 'b.jsonl', headerId: 'wrap-b' },
+      { file: 'c.jsonl', headerId: 'wrap-a' },
+    ]
+    for (const { file, headerId } of wrappers) {
+      const iso = new Date(SHARED_MS).toISOString()
+      const lines = [
+        JSON.stringify({
+          type: 'session',
+          version: 1,
+          id: headerId,
+          timestamp: iso,
+          cwd: '/workspace',
+          boringSessionCtx: { workspaceId: workspaceScopeId },
+        }),
+        JSON.stringify({
+          type: 'message',
+          id: `message-${headerId}`,
+          parentId: null,
+          timestamp: iso,
+          message: { role: 'user', content: [{ type: 'text', text: `hello ${headerId}` }], timestamp: 1 },
+        }),
+      ]
+      await writeFile(join(dir, file), `${lines.join('\n')}\n`)
+    }
+    // Equalize file mtimes so recency ties and the id tiebreak decides —
+    // that tiebreak is the whole point of this regression.
+    const sharedTime = new Date(SHARED_MS)
+    for (const { file } of wrappers) {
+      await utimes(join(dir, file), sharedTime, sharedTime)
+    }
+
+    const host = await startHost({
+      agents: [legacyDefaultAgent],
+      sessionRoot,
+      workspaceRoot,
+      sessionNamespace: '',
+    })
+    try {
+      const seen: string[] = []
+      let cursor: string | undefined
+      let pages = 0
+      do {
+        const page = await host.gateway.listSessions({ scope, agentTypeId: 'default', limit: 1, cursor })
+        pages += 1
+        seen.push(...page.sessions.map((summary) => summary.ref.sessionId))
+        cursor = page.nextCursor
+        expect(page.sessions.length).toBeLessThanOrEqual(1)
+      } while (cursor && pages < 10)
+
+      // Exact gateway total order over header ids. Under filename-stem
+      // ordering the store's prefix led with a.jsonl (wrap-c), so wrap-a and
+      // wrap-b fell outside the bounded prefix and vanished.
+      expect(seen).toEqual(['wrap-a', 'wrap-b', 'wrap-c'])
+    } finally {
+      await host.host.close()
+    }
+  })
 })
