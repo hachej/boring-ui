@@ -110,6 +110,8 @@ export function AppSessionRow({
   compact = false,
   showPlacementShortcuts = true,
   ownerLabel,
+  leadingBadge,
+  metaTag,
   onSwitch,
   onOpenAsPane,
   onOpenDetached,
@@ -130,6 +132,21 @@ export function AppSessionRow({
   /** Keep quick/split hover actions out of deeply nested or touch-constrained rows. */
   showPlacementShortcuts?: boolean
   ownerLabel?: string
+  /**
+   * Takes over the leading slot (normally the chat glyph / working dot) when a
+   * surface identifies its rows by something stronger than "this is a chat" —
+   * the console spike puts the owning Agent's colour chip here. Opt-in: rows
+   * that pass nothing keep the glyph.
+   */
+  leadingBadge?: ReactNode
+  /**
+   * A quiet inline tag between the title and the trailing slot (the spike's
+   * project tag). It lives OUTSIDE the trailing slot on purpose: that slot's
+   * width ladder in globals.css is keyed to one badge + one marker, and the
+   * tag answers a third question ("where does this chat live") that must not
+   * cost the age or the attention badge their place.
+   */
+  metaTag?: ReactNode
   onSwitch?: (id: string) => void
   onOpenAsPane?: (id: string) => void
   onOpenDetached?: (id: string) => void
@@ -158,7 +175,9 @@ export function AppSessionRow({
   const actionSlotStyle = { "--app-session-action-slots": hoverActionCount } as CSSProperties
   // The dot is painted only under all three conditions; the resolver needs
   // that computed fact, not the `activeDot` prop that merely allows it.
-  const workingDotShown = activeDot && activeDotActive && working
+  // A leading badge has taken the slot the dot would paint into, so the dot is
+  // not shown and the trailing "working" badge must carry that state instead.
+  const workingDotShown = !leadingBadge && activeDot && activeDotActive && working
   const trailing = resolveSessionTrailingSlot({
     ...(attentionBadge ? { attentionBadge } : {}),
     working,
@@ -198,7 +217,11 @@ export function AppSessionRow({
         ? "bg-foreground/[0.05] text-foreground/90 hover:bg-foreground/[0.08]"
         : "text-foreground/78 hover:bg-foreground/[0.055] hover:text-foreground",
   )
-  const leadingSlotClassName = compact ? "relative grid h-5 w-3 shrink-0 place-items-center" : "relative grid size-5 shrink-0 place-items-center"
+  // A compact row narrows the leading slot to a 12px spacer because it usually
+  // holds nothing but the working dot. A leading badge needs the full slot.
+  const leadingSlotClassName = compact && !leadingBadge
+    ? "relative grid h-5 w-3 shrink-0 place-items-center"
+    : "relative grid size-5 shrink-0 place-items-center"
 
   return (
     <div
@@ -244,8 +267,8 @@ export function AppSessionRow({
               className="absolute left-0 top-1/2 h-4 w-[2px] -translate-y-1/2 rounded-full bg-[color:var(--accent)]"
             />
           ) : null}
-          <span className={leadingSlotClassName} aria-hidden={activeDot ? undefined : "true"}>
-            {activeDot ? (
+          <span className={leadingSlotClassName} aria-hidden={activeDot || leadingBadge ? undefined : "true"}>
+            {leadingBadge ? leadingBadge : activeDot ? (
               workingDotShown ? (
                 // Pulsing accent dot = working. Under reduced motion the
                 // pulse stops and the dot dims instead.
@@ -266,6 +289,13 @@ export function AppSessionRow({
           <span className={cn("min-w-0 flex-1 truncate text-[13px] leading-5", state === "active" ? "font-semibold" : "font-medium")}>
             {title}
           </span>
+          {metaTag ? (
+            // Fades with the trailing slot so the hover actions get the whole
+            // right edge rather than sharing it with a tag.
+            <span className="flex min-w-0 shrink items-center pl-1 group-hover:opacity-0 group-focus-within:opacity-0">
+              {metaTag}
+            </span>
+          ) : null}
           <span
             style={actionSlotStyle}
             data-trailing={trailingVariant}

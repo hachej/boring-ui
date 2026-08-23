@@ -9,7 +9,7 @@ import { AppLeftPaneAgentCard, shortAgentLabel, type AppLeftPaneAgentStats } fro
 import { ProjectOverview, usePinnedProjectIds } from "./AppLeftPaneProjects"
 import { AppSessionRow, type AppSessionRowState } from "./AppLeftPaneSessionRow"
 import { SessionSubSection } from "./AppLeftPaneSections"
-import { AppLeftPaneConsoleSpike } from "./AppLeftPaneConsoleSpike"
+import { AppLeftPaneConsoleSpike, type ConsoleSpikeRowSlots } from "./AppLeftPaneConsoleSpike"
 import { useWorkspaceAttention, workspaceAttentionSessionBadgeForBlocker, type WorkspaceAttentionSessionBadge } from "../../attention/WorkspaceAttentionProvider"
 import { workspaceSessionKey, workspaceSessionKeyFor, type WorkspaceSessionRef } from "../../sessionIdentity"
 import { useWorkingSessionIds } from "../../sessionActivity"
@@ -464,6 +464,8 @@ export function AppLeftPane({
     ownerLabelOverride?: string,
     activeDotOverride?: boolean,
     showPlacementShortcuts = true,
+    /** Surface-specific row extras (the console spike's Agent chip / Project tag). */
+    slots?: ConsoleSpikeRowSlots,
   ) => {
     const isActiveProjectSession = !projectId || projectId === activeProjectId
     const sessionKey = workspaceSessionKeyFor(session)
@@ -492,6 +494,8 @@ export function AppLeftPane({
         compact={agentRowsEnabled && (nested || !pinned)}
         showPlacementShortcuts={showPlacementShortcuts}
         ownerLabel={ownerLabelOverride ?? (showOwnerLabel && session.agentTypeId ? agentLabelById.get(session.agentTypeId) : undefined)}
+        {...(slots?.leadingBadge ? { leadingBadge: slots.leadingBadge } : {})}
+        {...(slots?.metaTag ? { metaTag: slots.metaTag } : {})}
         onSwitch={isActiveProjectSession
           ? session.agentTypeId
             ? () => onSwitchSession(session.id, session.agentTypeId)
@@ -799,8 +803,7 @@ export function AppLeftPane({
               else onCreateSession(agentTypeId)
             }}
             onRenameProject={consoleSpikeRenameProject}
-            isSessionPinned={(session) => pinnedSet.has(workspaceSessionKeyFor(session))}
-            renderSession={(session, contextLabel) => renderSession(
+            renderSession={(session, slots) => renderSession(
               session,
               pinnedSet.has(workspaceSessionKeyFor(session)),
               // Collection labels are organization only in the spike. Every
@@ -808,9 +811,12 @@ export function AppLeftPane({
               undefined,
               false,
               true,
-              contextLabel,
+              // The spike states the Agent as a leading colour chip, not as the
+              // trailing owner label — that slot keeps the relative age.
+              undefined,
               false,
               false,
+              slots,
             )}
           />
         ) : null}

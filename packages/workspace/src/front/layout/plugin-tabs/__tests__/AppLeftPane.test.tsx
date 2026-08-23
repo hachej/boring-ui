@@ -1,7 +1,7 @@
-import { useEffect } from "react"
+import { useEffect, type ReactNode } from "react"
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 import { WorkspaceAttentionProvider, useWorkspaceAttention } from "../../../attention/WorkspaceAttentionProvider"
 import { workspaceSessionKey } from "../../../sessionIdentity"
 import { AppLeftPane, AppLeftRail, createAppLeftNavigationEntries, type AppLeftPaneAction } from "../AppLeftPane"
@@ -21,6 +21,91 @@ function testNavigationEntries(
     onOpenChats: callbacks.onOpenChats ?? vi.fn(),
     onOpenCommandPalette: callbacks.onOpenCommandPalette ?? vi.fn(),
   })
+}
+
+const CONSOLE_SPIKE_VIEW_KEY = "boring-workspace:console-spike-view"
+const SPIKE_CHIP = '[data-boring-workspace-part="console-spike-agent-chip"]'
+const SPIKE_TAG = '[data-boring-workspace-part="console-spike-project-tag"]'
+const spikeNow = Date.now()
+
+const spikeProjects = [
+  {
+    id: "launch",
+    name: "Launch",
+    sessions: [
+      { id: "alpha-one", agentTypeId: "alpha", title: "Alpha launch", updatedAt: spikeNow - 60_000 },
+      { id: "beta-one", agentTypeId: "beta", title: "Beta review", updatedAt: spikeNow - 600_000 },
+    ],
+  },
+  {
+    id: "console",
+    name: "Agent Console",
+    sessions: [{ id: "alpha-two", agentTypeId: "alpha", title: "Console nav", updatedAt: spikeNow - 300_000 }],
+  },
+]
+const spikeSessions = [
+  { id: "alpha-one", agentTypeId: "alpha", title: "Alpha launch", updatedAt: spikeNow - 60_000 },
+  { id: "beta-one", agentTypeId: "beta", title: "Beta review", updatedAt: spikeNow - 600_000 },
+  { id: "alpha-two", agentTypeId: "alpha", title: "Console nav", updatedAt: spikeNow - 300_000 },
+]
+const spikeAgents = [
+  { agentTypeId: "alpha", label: "Boring Alpha", sessionsStatus: "loaded" as const },
+  { agentTypeId: "beta", label: "Boring Beta", sessionsStatus: "loaded" as const },
+]
+
+function renderSpikeConsole(overrides: Partial<Parameters<typeof AppLeftPane>[0]> = {}, extra?: ReactNode) {
+  return render(
+    <WorkspaceAttentionProvider>
+      {extra}
+      <AppLeftPane
+        appTitle="Test"
+        consoleSpike
+        layoutMode="multi-project"
+        projects={spikeProjects}
+        agents={spikeAgents}
+        sessions={spikeSessions}
+        onCreateSession={vi.fn()}
+        navigationEntries={testNavigationEntries()}
+        onSwitchSession={vi.fn()}
+        onOpenSessionAsPane={vi.fn()}
+        onToggleSessionPinned={vi.fn()}
+        {...overrides}
+      />
+    </WorkspaceAttentionProvider>,
+  )
+}
+
+function spikeRoot(): HTMLElement {
+  const root = document.querySelector('[data-boring-workspace-part="app-left-console-spike"]')
+  if (!root) throw new Error("console spike pane not rendered")
+  return root as HTMLElement
+}
+
+function spikeList(): HTMLElement {
+  const list = spikeRoot().querySelector('[data-boring-workspace-part="console-spike-list"]')
+  if (!list) throw new Error("console spike list not rendered")
+  return list as HTMLElement
+}
+
+function spikeNeedsYou(): HTMLElement | null {
+  return spikeRoot().querySelector('[data-boring-workspace-part="console-spike-needs-you"]')
+}
+
+/** Document order of the main list's chat rows, by session id. */
+function spikeRowIds(scope: HTMLElement = spikeList()): string[] {
+  return [...scope.querySelectorAll('[data-boring-workspace-part="app-session-row"]')]
+    .map((row) => row.getAttribute("data-boring-session-id") ?? "")
+}
+
+function spikeRow(title: string, scope: HTMLElement = spikeList()): HTMLElement {
+  const row = within(scope).getByText(title).closest('[data-boring-workspace-part="app-session-row"]')
+  if (!row) throw new Error(`no chat row for ${title}`)
+  return row as HTMLElement
+}
+
+async function chooseSpikeView(user: ReturnType<typeof userEvent.setup>, label: string) {
+  await user.click(screen.getByRole("button", { name: "Display" }))
+  fireEvent.click(screen.getByRole("menuitemradio", { name: label }))
 }
 
 function renderPane() {
@@ -60,92 +145,190 @@ describe("AppLeftPane", () => {
     expect(newChat).toContainElement(screen.getByRole("button", { name: "New chat" }))
   })
 
-  it("switches the #1355 spike between Project, Agent, and flat Chat organization", async () => {
-    const user = userEvent.setup()
-    const onCreateSession = vi.fn()
-    const onScopedCreateSession = vi.fn()
-    render(
-      <WorkspaceAttentionProvider>
-        <AppLeftPane
-          appTitle="Test"
-          consoleSpike
-          layoutMode="multi-project"
-          projects={[
-            {
-              id: "launch",
-              name: "Launch",
-              sessions: [
-                { id: "alpha-one", agentTypeId: "alpha", title: "Alpha launch" },
-                { id: "beta-one", agentTypeId: "beta", title: "Beta review" },
-              ],
-            },
-            {
-              id: "console",
-              name: "Agent Console",
-              sessions: [{ id: "alpha-two", agentTypeId: "alpha", title: "Console nav" }],
-            },
-          ]}
-          activeProjectId="workspace"
-          activeSessionRef={{ agentTypeId: "alpha", sessionId: "alpha-one" }}
-          agents={[
-            { agentTypeId: "alpha", label: "Boring Alpha", sessionsStatus: "loaded" },
-            { agentTypeId: "beta", label: "Boring Beta", sessionsStatus: "loaded" },
-          ]}
-          selectedAgentTypeId="beta"
-          sessions={[
-            { id: "alpha-one", agentTypeId: "alpha", title: "Alpha launch" },
-            { id: "beta-one", agentTypeId: "beta", title: "Beta review" },
-            { id: "alpha-two", agentTypeId: "alpha", title: "Console nav" },
-          ]}
-          onCreateSession={onCreateSession}
-          consoleSpikeCreateSession={onScopedCreateSession}
-          navigationEntries={testNavigationEntries()}
-          onSwitchSession={vi.fn()}
-          onOpenSessionAsPane={vi.fn()}
-          onToggleSessionPinned={vi.fn()}
-        />
-      </WorkspaceAttentionProvider>,
-    )
+  describe("#1355 console spike", () => {
+    beforeEach(() => {
+      try {
+        globalThis.localStorage?.removeItem(CONSOLE_SPIKE_VIEW_KEY)
+      } catch {
+        // a storage-less environment is a supported case, not a test failure
+      }
+    })
 
-    const switcher = screen.getByRole("group", { name: "Organize chats by" })
-    expect(within(switcher).getAllByRole("button").map((button) => button.textContent)).toEqual(["projects", "agents", "chats"])
-    expect(within(switcher).queryByRole("button", { name: "Tasks" })).not.toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Collapse Launch" })).toHaveAttribute("aria-current", "page")
-    expect(screen.getByRole("button", { name: /Collapse Boring Alpha/ })).toBeInTheDocument()
-    expect(document.querySelector('[data-boring-agent-type-id="alpha"]')).toHaveAttribute("data-active", "true")
-    expect(screen.getByText("Alpha launch")).toBeInTheDocument()
-    expect(screen.queryByText("Beta review")).not.toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Choose placement, Project, and Agent for new chat" })).toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Choose target for new chat in Launch" })).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "New chat with Alpha in Launch" })).not.toBeInTheDocument()
-    await user.click(screen.getByRole("button", { name: /Expand Boring Beta/ }))
-    expect(screen.getByText("Beta review")).toBeInTheDocument()
-    await user.click(screen.getByRole("button", { name: "Collapse Launch" }))
-    expect(screen.queryByText("Alpha launch")).not.toBeInTheDocument()
+    it("defaults to one recency-sorted list across every Project, with the Agent and Project as row metadata", () => {
+      renderSpikeConsole()
 
-    await user.click(within(switcher).getByRole("button", { name: "agents" }))
-    expect(screen.getByRole("button", { name: /Collapse Boring Alpha/ })).toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Choose target for new chat with Alpha" })).not.toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Collapse Launch" })).toBeInTheDocument()
-    expect(screen.getByText("Alpha launch")).toBeInTheDocument()
-    await user.click(screen.getByRole("button", { name: /Expand Boring Beta/ }))
-    await user.click(screen.getByRole("button", { name: "Expand Launch" }))
-    expect(screen.getByText("Beta review")).toBeInTheDocument()
+      expect(screen.getByText("Recent")).toBeInTheDocument()
+      // Newest first, and the Project boundary does not interrupt the order.
+      expect(spikeRowIds()).toEqual(["alpha-one", "alpha-two", "beta-one"])
+      // Flat means flat: neither dimension gets a collapsible header.
+      expect(screen.queryByRole("button", { name: /^(Collapse|Expand) Launch$/ })).not.toBeInTheDocument()
+      expect(screen.queryByRole("button", { name: /Boring Alpha/ })).not.toBeInTheDocument()
 
-    await user.click(within(switcher).getByRole("button", { name: "chats" }))
-    expect(screen.getByText("Console nav").closest('[data-boring-workspace-part="app-session-row"]')).toHaveTextContent("Agent Console · Alpha")
+      const row = spikeRow("Console nav")
+      expect(row.querySelector(SPIKE_CHIP)).toHaveAttribute("data-boring-agent-type-id", "alpha")
+      expect(row.querySelector(SPIKE_CHIP)).toHaveAttribute("title", "Alpha")
+      expect(row.querySelector(SPIKE_TAG)).toHaveTextContent("Agent Console")
 
-    await user.click(screen.getByRole("button", { name: "Choose placement, Project, and Agent for new chat" }))
-    fireEvent.click(screen.getByRole("menuitem", { name: "New chat" }))
-    fireEvent.click(screen.getByRole("menuitem", { name: "Agent Console" }))
-    fireEvent.click(screen.getByRole("menuitem", { name: "Agent Console · Beta" }))
-    expect(onScopedCreateSession.mock.calls.at(-1)).toEqual(["beta", "console", "default"])
-    expect(onCreateSession).not.toHaveBeenCalled()
-    expect(document.querySelector('[data-boring-workspace-part="app-left-fleet-new-chat"]')).toBeNull()
+      // Colour is derived from the Agent id, so it is stable across rows and
+      // distinct between Agents.
+      const alphaChips = [...spikeRoot().querySelectorAll(`${SPIKE_CHIP}[data-boring-agent-type-id="alpha"]`)]
+      const betaChip = spikeRoot().querySelector(`${SPIKE_CHIP}[data-boring-agent-type-id="beta"]`)
+      expect(alphaChips).toHaveLength(2)
+      expect(alphaChips[0]?.className).toBe(alphaChips[1]?.className)
+      expect(betaChip?.className).not.toBe(alphaChips[0]?.className)
+    })
+
+    it("groups by Project with a single collapse level and rolls attention up onto a collapsed header", async () => {
+      const user = userEvent.setup()
+      function BlockBetaReview() {
+        const { addBlocker } = useWorkspaceAttention()
+        useEffect(() => {
+          addBlocker({
+            id: "ask:beta-one",
+            reason: "ask-user.question",
+            sessionId: "beta-one",
+            agentTypeId: "beta",
+            sessionBadge: { kind: "question", label: "question", tone: "attention", priority: 10 },
+          })
+        }, [addBlocker])
+        return null
+      }
+      renderSpikeConsole({}, <BlockBetaReview />)
+      await chooseSpikeView(user, "By project")
+
+      expect(screen.getByText("By project")).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: "Collapse Launch" })).toBeInTheDocument()
+      // The Agent is metadata here, never a second collapse level.
+      expect(screen.queryByRole("button", { name: /Boring Alpha/ })).not.toBeInTheDocument()
+      // Only the first Project starts open; each group keeps the pane's one
+      // recency order rather than re-sorting by Agent.
+      expect(spikeRowIds()).toEqual(["alpha-one", "beta-one"])
+      await user.click(screen.getByRole("button", { name: "Expand Agent Console" }))
+      expect(spikeRowIds()).toEqual(["alpha-one", "beta-one", "alpha-two"])
+
+      const row = spikeRow("Alpha launch")
+      expect(row.querySelector(SPIKE_CHIP)).toHaveAttribute("data-boring-agent-type-id", "alpha")
+      // The header already says which Project this is.
+      expect(row.querySelector(SPIKE_TAG)).toBeNull()
+
+      // Expanded, the row carries the badge, so the header stays quiet.
+      expect(screen.queryByTitle("1 session waiting")).not.toBeInTheDocument()
+      await user.click(screen.getByRole("button", { name: "Collapse Launch" }))
+      expect(screen.queryByText("Alpha launch")).not.toBeInTheDocument()
+      expect(screen.getByTitle("1 session waiting")).toHaveTextContent("1")
+    })
+
+    it("groups by Agent with a single collapse level, dropping the chip and keeping the Project tag", async () => {
+      const user = userEvent.setup()
+      renderSpikeConsole()
+      await chooseSpikeView(user, "By agent")
+
+      expect(screen.getByText("By agent")).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: /Collapse Boring Alpha/ })).toBeInTheDocument()
+      // The Project is metadata here, never a second collapse level.
+      expect(screen.queryByRole("button", { name: /^(Collapse|Expand) Launch$/ })).not.toBeInTheDocument()
+
+      const row = spikeRow("Alpha launch")
+      expect(row.querySelector(SPIKE_CHIP)).toBeNull()
+      expect(row.querySelector(SPIKE_TAG)).toHaveTextContent("Launch")
+
+      expect(spikeRowIds()).toEqual(["alpha-one", "alpha-two"])
+      expect(screen.queryByText("Beta review")).not.toBeInTheDocument()
+      await user.click(screen.getByRole("button", { name: /Expand Boring Beta/ }))
+      expect(spikeRow("Beta review").querySelector(SPIKE_TAG)).toHaveTextContent("Launch")
+    })
+
+    it("persists the chosen view and falls back to Recent when storage holds nothing usable", async () => {
+      const user = userEvent.setup()
+      const chosen = renderSpikeConsole()
+      await chooseSpikeView(user, "By project")
+      expect(globalThis.localStorage.getItem(CONSOLE_SPIKE_VIEW_KEY)).toBe("project")
+      chosen.unmount()
+
+      const restored = renderSpikeConsole()
+      expect(screen.getByText("By project")).toBeInTheDocument()
+      restored.unmount()
+
+      globalThis.localStorage.setItem(CONSOLE_SPIKE_VIEW_KEY, "by-vibes")
+      renderSpikeConsole()
+      expect(screen.getByText("Recent")).toBeInTheDocument()
+    })
+
+    it("falls back to Recent when a stored by-Agent view is not offered for a one-Agent spike", async () => {
+      const user = userEvent.setup()
+      globalThis.localStorage.setItem(CONSOLE_SPIKE_VIEW_KEY, "agent")
+      renderSpikeConsole({ agents: [{ agentTypeId: "alpha", label: "Boring Alpha" }] })
+
+      expect(screen.getByText("Recent")).toBeInTheDocument()
+      await user.click(screen.getByRole("button", { name: "Display" }))
+      expect(screen.getAllByRole("menuitemradio").map((item) => item.textContent)).toEqual(["Recent", "By project"])
+    })
+
+    it("pins a capped Needs you section above the list, whatever the view", async () => {
+      const user = userEvent.setup()
+      const blockedSessions = Array.from({ length: 6 }, (_, index) => ({
+        id: `blocked-${index}`,
+        agentTypeId: "alpha",
+        title: `Blocked ${index}`,
+        updatedAt: spikeNow - index * 1_000,
+      }))
+      function BlockEverySession() {
+        const { addBlocker } = useWorkspaceAttention()
+        useEffect(() => {
+          for (const session of blockedSessions) {
+            addBlocker({
+              id: `ask:${session.id}`,
+              reason: "ask-user.question",
+              sessionId: session.id,
+              agentTypeId: "alpha",
+              sessionBadge: { kind: "question", label: "question", tone: "attention", priority: 10 },
+            })
+          }
+        }, [addBlocker])
+        return null
+      }
+      renderSpikeConsole(
+        {
+          projects: [{ id: "launch", name: "Launch", sessions: blockedSessions }],
+          sessions: blockedSessions,
+        },
+        <BlockEverySession />,
+      )
+
+      const capped = spikeNeedsYou()
+      expect(capped).not.toBeNull()
+      expect(spikeRowIds(capped as HTMLElement)).toEqual([
+        "blocked-0", "blocked-1", "blocked-2", "blocked-3", "blocked-4",
+      ])
+
+      await user.click(within(capped as HTMLElement).getByRole("button", { name: "+1 more" }))
+      expect(spikeRowIds(spikeNeedsYou() as HTMLElement)).toHaveLength(6)
+
+      // Grouping changes the list below it; the section keeps its contents and
+      // its place above that list.
+      await chooseSpikeView(user, "By project")
+      const grouped = spikeNeedsYou() as HTMLElement
+      expect(spikeRowIds(grouped)).toHaveLength(6)
+      expect(grouped.compareDocumentPosition(spikeList()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    })
+
+    it("creates a chat through the placement, Project, and Agent picker", async () => {
+      const user = userEvent.setup()
+      const onCreateSession = vi.fn()
+      const onScopedCreateSession = vi.fn()
+      renderSpikeConsole({ onCreateSession, consoleSpikeCreateSession: onScopedCreateSession })
+
+      await user.click(screen.getByRole("button", { name: "Choose placement, Project, and Agent for new chat" }))
+      fireEvent.click(screen.getByRole("menuitem", { name: "New chat" }))
+      fireEvent.click(screen.getByRole("menuitem", { name: "Agent Console" }))
+      fireEvent.click(screen.getByRole("menuitem", { name: "Agent Console · Beta" }))
+      expect(onScopedCreateSession.mock.calls.at(-1)).toEqual(["beta", "console", "default"])
+      expect(onCreateSession).not.toHaveBeenCalled()
+      expect(document.querySelector('[data-boring-workspace-part="app-left-fleet-new-chat"]')).toBeNull()
+    })
   })
 
-  it("keeps colliding ownerless session ids unassigned instead of duplicating or misattributing them", async () => {
-    const user = userEvent.setup()
+  it("keeps colliding ownerless session ids unassigned instead of duplicating or misattributing them", () => {
     render(
       <WorkspaceAttentionProvider>
         <AppLeftPane
@@ -169,10 +352,13 @@ describe("AppLeftPane", () => {
       </WorkspaceAttentionProvider>,
     )
 
-    await user.click(within(screen.getByRole("group", { name: "Organize chats by" })).getByRole("button", { name: "chats" }))
     expect(screen.getAllByText(/Shared (alpha|beta)/)).toHaveLength(2)
-    expect(screen.getByText("Shared alpha").closest('[data-boring-workspace-part="app-session-row"]')).toHaveTextContent("Unassigned · Alpha")
-    expect(screen.getByText("Shared beta").closest('[data-boring-workspace-part="app-session-row"]')).toHaveTextContent("Unassigned · Beta")
+    const alphaRow = spikeRow("Shared alpha")
+    const betaRow = spikeRow("Shared beta")
+    expect(alphaRow.querySelector(SPIKE_TAG)).toHaveTextContent("Unassigned")
+    expect(alphaRow.querySelector(SPIKE_CHIP)).toHaveAttribute("title", "Alpha")
+    expect(betaRow.querySelector(SPIKE_TAG)).toHaveTextContent("Unassigned")
+    expect(betaRow.querySelector(SPIKE_CHIP)).toHaveAttribute("title", "Beta")
   })
 
   it("keeps invalid Project rename input visible and restores disclosure focus after a valid rename", async () => {
@@ -196,6 +382,7 @@ describe("AppLeftPane", () => {
       </WorkspaceAttentionProvider>,
     )
 
+    await chooseSpikeView(user, "By project")
     await user.click(screen.getByRole("button", { name: "Launch options" }))
     await user.click(screen.getByRole("menuitem", { name: "Rename project" }))
     const input = screen.getByRole("textbox", { name: "Rename Launch" })
@@ -207,29 +394,6 @@ describe("AppLeftPane", () => {
     await user.type(input, "Roadmap{Enter}")
     expect(onRenameProject).toHaveBeenCalledWith("launch", "Roadmap")
     await waitFor(() => expect(screen.getByRole("button", { name: "Collapse Launch" })).toHaveFocus())
-  })
-
-  it("omits the Agents grouping choice for a one-Agent spike", () => {
-    render(
-      <WorkspaceAttentionProvider>
-        <AppLeftPane
-          appTitle="Test"
-          consoleSpike
-          projects={[]}
-          agents={[{ agentTypeId: "solo", label: "Boring Solo" }]}
-          selectedAgentTypeId="solo"
-          sessions={[]}
-          onCreateSession={vi.fn()}
-          navigationEntries={testNavigationEntries()}
-          onSwitchSession={vi.fn()}
-          onOpenSessionAsPane={vi.fn()}
-          onToggleSessionPinned={vi.fn()}
-        />
-      </WorkspaceAttentionProvider>,
-    )
-
-    const switcher = screen.getByRole("group", { name: "Organize chats by" })
-    expect(within(switcher).getAllByRole("button").map((button) => button.textContent)).toEqual(["projects", "chats"])
   })
 
   function renderFleetPane(overrides: Partial<Parameters<typeof AppLeftPane>[0]> = {}) {
