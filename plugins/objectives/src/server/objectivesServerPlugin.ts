@@ -28,5 +28,5 @@ export function createObjectivesServerPlugin(options: ObjectivesServerPluginOpti
 
 function createDefaultStore(workspaceRoot: string | undefined): ObjectiveStore {
   if (!workspaceRoot) throw new Error("createObjectivesServerPlugin requires workspaceRoot when store is not provided")
-  return new FileObjectiveStore(join(workspaceRoot, ".boring", "objectives.json"))
+  return new FileObjectiveStore(join(workspaceRoot, ".boring", "objectives.json"), { workspaceRoot })
 }

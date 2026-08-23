@@ -22,6 +22,8 @@ export interface Objective {
   outcome?: string
   createdAt: string
   updatedAt: string
+  /** Idempotency key from the create call that produced this record, if any. */
+  clientRequestId?: string
 }
 
 export type CreateObjectiveInput = {
@@ -35,6 +37,8 @@ export type CreateObjectiveInput = {
   constraints?: string[]
   evidenceRefs?: string[]
   outcome?: string
+  /** Optional client-supplied idempotency key. A retried create with the same key returns the original objective instead of duplicating it. */
+  clientRequestId?: string
 }
 
 export type UpdateObjectiveInput = {
