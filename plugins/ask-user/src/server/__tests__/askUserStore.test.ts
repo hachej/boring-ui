@@ -368,6 +368,165 @@ describe("FileAskUserStore", () => {
     expect(raw.questions.q1.status).toBe("answered")
   })
 
+  it("a paused lock holder that resumes after stale-lock reclamation fails safely without destroying the reclaimer's write (finding: stale-lock reclamation)", async () => {
+    const filePath = join(dir, "ask-user.json")
+    let clock = new Date("2026-08-22T00:00:00.000Z")
+    const storeA = new FileAskUserStore(filePath, { now: () => clock, lockStaleMs: 1_000 })
+    const storeB = new FileAskUserStore(filePath, { now: () => clock, lockStaleMs: 1_000 })
+    const lockPath = `${filePath}.lock`
+
+    await storeA.createPending(question({ questionId: "qa", sessionId: "sa" }))
+
+    // storeA "acquires" the write lock (as tryPersist would, right before
+    // its critical section) and then pauses -- GC, slow disk, a suspended
+    // process -- for longer than lockStaleMs.
+    const tokenA: string | null = await (storeA as unknown as { acquireOrReclaimLock(p: string): Promise<string | null> }).acquireOrReclaimLock(lockPath)
+    expect(tokenA).toBeTruthy()
+    clock = new Date(clock.getTime() + 2_000)
+
+    // storeB (e.g. a fresh process after a restart) reclaims the now-stale
+    // lock through the real public write path and commits its own mutation.
+    await storeB.createPending(question({ questionId: "qb", sessionId: "sb" }))
+    await expect(storeB.getByQuestionId("qb")).resolves.toMatchObject({ status: "ready" })
+
+    // storeA resumes. Its token no longer matches what's on disk (storeB
+    // reclaimed and already released it back to "no lock file"), so it must
+    // detect the mismatch instead of blindly deleting whatever is there.
+    const ownsLock = (storeA as unknown as { ownsLock(p: string, t: string): Promise<boolean> }).ownsLock.bind(storeA)
+    await expect(ownsLock(lockPath, tokenA as string)).resolves.toBe(false)
+    const releaseLockIfOwned = (storeA as unknown as { releaseLockIfOwned(p: string, t: string): Promise<void> }).releaseLockIfOwned.bind(storeA)
+    await expect(releaseLockIfOwned(lockPath, tokenA as string)).resolves.toBeUndefined()
+
+    // No data loss: storeB's committed write and storeA's own earlier write
+    // both survive on disk.
+    const raw = JSON.parse(await readFile(filePath, "utf8"))
+    expect(raw.questions.qa).toBeTruthy()
+    expect(raw.questions.qb).toBeTruthy()
+
+    // storeA can still make further progress -- it is not permanently wedged
+    // by having lost its paused lock; it simply rereads fresh state.
+    await expect(storeA.cancel("qa")).resolves.toBeUndefined()
+    await expect(storeA.getByQuestionId("qa")).resolves.toMatchObject({ status: "cancelled" })
+  })
+
+  it("reclaiming a stale lock never leaves a window with no lock file for a real committing writer to race past both mutations", async () => {
+    const filePath = join(dir, "ask-user.json")
+    let clock = new Date("2026-08-22T00:00:00.000Z")
+    const store = new FileAskUserStore(filePath, { now: () => clock, lockStaleMs: 10 })
+    await store.createPending(question({ questionId: "q1" }))
+
+    // Seed a dead lock (simulating a crashed writer) that is already stale.
+    const lockPath = `${filePath}.lock`
+    await writeFile(lockPath, JSON.stringify({ token: "dead", pid: 999_999, acquiredAtMs: clock.getTime() - 1_000 }), "utf8")
+
+    // A real mutation must still succeed by reclaiming the dead lock.
+    await expect(store.answer("q1", { questionId: "q1", sessionId: "s1", values: { a: "ok" }, submittedAt: new Date().toISOString() })).resolves.toBeUndefined()
+    await expect(store.getByQuestionId("q1")).resolves.toMatchObject({ status: "answered" })
+  })
+
+  it("notifies listeners only after a successful commit, using the committed state (finding: notify-after-commit)", async () => {
+    const filePath = join(dir, "ask-user.json")
+    const observing = new FileAskUserStore(filePath)
+    const listener = vi.fn(async () => {
+      // At the moment the listener fires, the mutation must already be
+      // durable on disk -- not merely queued in an in-memory draft.
+      const raw = JSON.parse(await readFile(filePath, "utf8"))
+      expect(raw.questions.q1?.status).toBe("ready")
+    })
+    observing.subscribe(listener)
+
+    await observing.createPending(question({ questionId: "q1" }))
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(listener).toHaveBeenCalledWith(expect.objectContaining({ reason: "create", questionId: "q1" }))
+  })
+
+  it("does not notify listeners for a mutation attempt that failed to persist (finding: notify-after-commit)", async () => {
+    const filePath = join(dir, "ask-user.json")
+    const store = new FileAskUserStore(filePath)
+    await store.createPending(question({ questionId: "q1" }))
+
+    const listener = vi.fn()
+    store.subscribe(listener)
+
+    // A write attempt that raises a business-rule error (not a CAS
+    // conflict) never reaches tryPersist and must not notify.
+    await expect(store.createPending(question({ questionId: "q2" }))).rejects.toMatchObject({
+      code: ASK_USER_ERROR_CODES.PENDING_EXISTS,
+    })
+    expect(listener).not.toHaveBeenCalled()
+
+    // Force every persist attempt to fail (simulating an injected write
+    // failure) and confirm the retry loop's exhaustion never emits either.
+    const alwaysFailingStore = new FileAskUserStore(filePath)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const spy = vi.spyOn(alwaysFailingStore as any, "tryPersist").mockResolvedValue(false)
+    alwaysFailingStore.subscribe(listener)
+
+    await expect(alwaysFailingStore.cancel("q1")).rejects.toMatchObject({ code: ASK_USER_ERROR_CODES.WRITE_CONFLICT })
+    expect(listener).not.toHaveBeenCalled()
+
+    spy.mockRestore()
+  })
+
+  it("honors the envelope version: refuses to load (and therefore rewrite) a file from a newer version (finding: envelope version)", async () => {
+    const filePath = join(dir, "ask-user.json")
+    await mkdir(dir, { recursive: true })
+    await writeFile(filePath, JSON.stringify({ version: 2, revision: 5, questions: {}, pendingBySession: {}, answers: {}, transcriptsBySession: {} }, null, 2), "utf8")
+
+    const diagnostics: Array<{ type: string; issues?: string }> = []
+    const store = new FileAskUserStore(filePath, { onDiagnostic: (event) => diagnostics.push(event) })
+
+    await expect(store.getByQuestionId("anything")).rejects.toMatchObject({ code: ASK_USER_ERROR_CODES.UNSUPPORTED_STORE_VERSION })
+    expect(diagnostics).toContainEqual(expect.objectContaining({ type: "invalid-state" }))
+
+    // The refusal is read-only: the file on disk is untouched (never
+    // downgraded/rewritten as version 1).
+    const raw = JSON.parse(await readFile(filePath, "utf8"))
+    expect(raw.version).toBe(2)
+  })
+
+  it("recovers a question with an invalid persisted expiresAt as already-expired instead of dropping the record (finding: expiry validation)", async () => {
+    const filePath = join(dir, "ask-user.json")
+    const state = {
+      version: 1,
+      revision: 1,
+      questions: {
+        q1: { ...question({ questionId: "q1" }), expiresAt: "not-a-real-date" },
+      },
+      pendingBySession: { s1: "q1" },
+      answers: {},
+      transcriptsBySession: {},
+    }
+    await mkdir(dir, { recursive: true })
+    await writeFile(filePath, JSON.stringify(state, null, 2), "utf8")
+
+    const diagnostics: Array<{ type: string; kind?: string; id?: string; issues?: string }> = []
+    const store = new FileAskUserStore(filePath, { onDiagnostic: (event) => diagnostics.push(event) })
+
+    // The record is not dropped: it still loads.
+    const loaded = await store.getByQuestionId("q1")
+    expect(loaded).toMatchObject({ questionId: "q1", status: "ready" })
+    expect(loaded?.expiresAt).toBeTruthy()
+    expect(new Date(loaded!.expiresAt!).getTime()).toBeLessThan(Date.now())
+    expect(diagnostics).toContainEqual(expect.objectContaining({ type: "invalid-record", kind: "question", id: "q1" }))
+
+    // Fail closed: answering it is rejected as expired.
+    await expect(store.answer("q1", { questionId: "q1", sessionId: "s1", values: {}, submittedAt: new Date().toISOString() })).rejects.toMatchObject({
+      code: ASK_USER_ERROR_CODES.QUESTION_EXPIRED,
+    })
+  })
+
+  it("listResolved returns only terminal-state questions, for startup transcript reconciliation", async () => {
+    await store.createPending(question({ questionId: "q1" }))
+    await store.createPending(question({ questionId: "q2", sessionId: "s2" }))
+    await store.answer("q1", { questionId: "q1", sessionId: "s1", values: {}, submittedAt: new Date().toISOString() })
+    await store.cancel("q2")
+    await store.createPending(question({ questionId: "q3", sessionId: "s3" }))
+
+    const resolved = await store.listResolved()
+    expect(resolved.map((q) => q.questionId).sort()).toEqual(["q1", "q2"])
+  })
+
   it("appends, lists, filters, and persists transcript events", async () => {
     await store.createPending(question())
     await store.appendTranscriptEvent({ type: "created", question: question(), at: new Date(0).toISOString() })
