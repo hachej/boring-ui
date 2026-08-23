@@ -1,4 +1,5 @@
 import { HumanArtifactListSchema } from "@hachej/boring-workspace"
+import { WorkspaceBridgeErrorCode } from "@hachej/boring-workspace/shared"
 import { ASK_USER_BRIDGE_OPS } from "../shared/bridge"
 import { ASK_USER_UI_STATE_SLOTS } from "../shared/constants"
 import { ASK_USER_ERROR_CODES } from "../shared/error-codes"
@@ -51,6 +52,26 @@ function readHint(value: unknown): PendingQuestionHint | null {
   }
 }
 
+// Keyed by apiBaseUrl (a fresh client is created per call/poll site, so the
+// per-call closure can't remember whether a host lacks the bridge list op).
+// `true` = this host answered OpNotFound and must use the REST fallback;
+// `false` = the bridge op is confirmed present. Absent = unknown, probe once.
+const restOnlyBaseUrls = new Map<string, boolean>()
+
+/** Test-only: clears the per-host bridge/REST transport memory between test cases. */
+export function __resetQuestionsClientTransportCacheForTests(): void {
+  restOnlyBaseUrls.clear()
+}
+
+function isBridgeOpNotFound(error: unknown): boolean {
+  if (!(error instanceof QuestionsClientError)) return false
+  if (error.code === WorkspaceBridgeErrorCode.OpNotFound) return true
+  // The bridge maps OpNotFound to HTTP 404 (httpRoutes.ts), which is not
+  // otherwise used by any other bridge error code — a reliable signal even
+  // if a proxy or older server strips the JSON error body.
+  return error.statusCode === 404
+}
+
 export function createQuestionsClient(options: QuestionsClientOptions = {}) {
   async function callBridge<T>(
     op: string,
@@ -92,18 +113,29 @@ export function createQuestionsClient(options: QuestionsClientOptions = {}) {
 
   return {
     async listReady(): Promise<AskUserQuestion[]> {
-      const response = await fetch(`${options.apiBaseUrl ?? ""}/api/v1/questions?status=ready`, {
+      const baseUrl = options.apiBaseUrl ?? ""
+      // The bridge op is the canonical transport (askUserServerPlugin.ts no
+      // longer registers the legacy REST route by default). Probe it first;
+      // only fall back to REST when the bridge answers "op not found", and
+      // remember that per base URL so we stop re-probing the bridge on every
+      // poll once a host is known to be REST-only (legacy/manual wiring).
+      const knownRestOnly = restOnlyBaseUrls.get(baseUrl)
+      if (knownRestOnly !== true) {
+        try {
+          const output = await callBridge<{ questions: unknown }>(ASK_USER_BRIDGE_OPS.list, { status: "ready" })
+          if (knownRestOnly === undefined) restOnlyBaseUrls.set(baseUrl, false)
+          return normalizeReadyQuestions(output.questions, 200)
+        } catch (error) {
+          if (!isBridgeOpNotFound(error)) throw error
+          restOnlyBaseUrls.set(baseUrl, true)
+        }
+      }
+      const response = await fetch(`${baseUrl}/api/v1/questions?status=ready`, {
         headers: options.headers,
         credentials: "include",
         cache: "no-store",
       })
       const payload = await response.json().catch(() => null) as { questions?: unknown } | null
-      if (response.status === 404) {
-        const output = await callBridge<{ questions: unknown }>(ASK_USER_BRIDGE_OPS.list, { status: "ready" })
-        // Preserve the bridge transport's successful status. A malformed
-        // bridge payload is not evidence that both list transports are absent.
-        return normalizeReadyQuestions(output.questions, 200)
-      }
       if (!response.ok) {
         throw new QuestionsClientError(
           typeof payload === "object" && payload && "error" in payload && typeof payload.error === "string" ? payload.error : ASK_USER_ERROR_CODES.UI_UNAVAILABLE,

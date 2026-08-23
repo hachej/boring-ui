@@ -6,6 +6,7 @@ import { captureFrontPlugin } from "@hachej/boring-workspace/plugin"
 import { AskUserToolInputSchema } from "../../shared/schema"
 import type { AskUserQuestion } from "../../shared/types"
 import { askUserPlugin } from "../index"
+import { __resetQuestionsClientTransportCacheForTests } from "../client"
 import { sharedQuestionsStore } from "../runtime"
 
 const capturedPlugin = captureFrontPlugin(askUserPlugin)
@@ -30,6 +31,15 @@ const nextQuestion: AskUserQuestion = {
   questionId: "q2",
   title: "Choose again",
   answerToken: "secret-2",
+}
+
+/** Matches a bridge call to op `ask-user.v1.list` (the canonical, bridge-first list transport). */
+function isBridgeListCall(url: string, init?: RequestInit) {
+  return String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.list")
+}
+
+function bridgeListResponse(questions: AskUserQuestion[]) {
+  return Response.json({ ok: true, output: { questions } })
 }
 
 function pendingStateFor(q: AskUserQuestion | null) {
@@ -64,6 +74,7 @@ function getPanel() {
 afterEach(() => {
   sharedQuestionsStore.setPending(null)
   vi.unstubAllGlobals()
+  __resetQuestionsClientTransportCacheForTests()
 })
 
 describe("askUserPlugin front shell", () => {
@@ -351,7 +362,7 @@ describe("askUserPlugin front shell", () => {
     const staleNextQuestion = { ...nextQuestion, questionId: "stale-q2", sessionId: "stale-session", title: "Second stale question" }
     let current: AskUserQuestion | null = staleQuestion
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      if (String(url).includes("/api/v1/questions?status=ready")) return Response.json({ questions: current ? [current] : [] })
+      if (isBridgeListCall(url, init)) return bridgeListResponse(current ? [current] : [])
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) {
         return Response.json({ ok: true, output: { pending: current } })
       }
@@ -396,7 +407,7 @@ describe("askUserPlugin front shell", () => {
     const s2Question = { ...nextQuestion, questionId: "switch-q2", sessionId: "s2", title: "Question for s2" }
     const pendingBySession = new Map<string, AskUserQuestion>([["s1", s1Question], ["s2", s2Question]])
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      if (String(url).includes("/api/v1/questions?status=ready")) return Response.json({ questions: [...pendingBySession.values()] })
+      if (isBridgeListCall(url, init)) return bridgeListResponse([...pendingBySession.values()])
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) {
         const body = JSON.parse(String(init?.body)) as { input?: { sessionId?: string } }
         return Response.json({ ok: true, output: { pending: pendingBySession.get(body.input?.sessionId ?? "") ?? null } })
@@ -409,7 +420,7 @@ describe("askUserPlugin front shell", () => {
     const Provider = getProvider()
 
     render(<Provider apiBaseUrl="" activeSessionId="s1" openSessionIds={["s1"]}><div>child</div></Provider>)
-    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/v1/questions?status=ready"))).toBe(true))
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => isBridgeListCall(url, init))).toBe(true))
 
     window.dispatchEvent(new CustomEvent(WORKSPACE_COMPOSER_STOP_EVENT, { detail: { sessionId: "s1", reason: WORKSPACE_COMPOSER_STOP_REASONS.sessionSwitch } }))
 
@@ -422,7 +433,7 @@ describe("askUserPlugin front shell", () => {
     const s2Question = { ...nextQuestion, questionId: "open-cancel-q2", sessionId: "open-cancel-s2", title: "Inactive open question", answerToken: "open-cancel-token-2" }
     const pendingBySession = new Map<string, AskUserQuestion>([[s1Question.sessionId, s1Question], [s2Question.sessionId, s2Question]])
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      if (String(url).includes("/api/v1/questions?status=ready")) return Response.json({ questions: [...pendingBySession.values()] })
+      if (isBridgeListCall(url, init)) return bridgeListResponse([...pendingBySession.values()])
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) {
         const body = JSON.parse(String(init?.body)) as { input?: { sessionId?: string } }
         return Response.json({ ok: true, output: { pending: pendingBySession.get(body.input?.sessionId ?? "") ?? null } })
@@ -439,7 +450,7 @@ describe("askUserPlugin front shell", () => {
     const Provider = getProvider()
 
     render(<Provider apiBaseUrl="" activeSessionId={s1Question.sessionId} openSessionIds={[s1Question.sessionId, s2Question.sessionId]}><div>child</div></Provider>)
-    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/v1/questions?status=ready"))).toBe(true))
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => isBridgeListCall(url, init))).toBe(true))
 
     window.dispatchEvent(new CustomEvent(WORKSPACE_COMPOSER_STOP_EVENT, { detail: { sessionId: s2Question.sessionId, reason: WORKSPACE_COMPOSER_STOP_REASONS.userStop } }))
 
@@ -454,7 +465,7 @@ describe("askUserPlugin front shell", () => {
     const onCommand = (event: Event) => commands.push((event as CustomEvent).detail)
     window.addEventListener(UI_COMMAND_EVENT, onCommand)
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      if (String(url).includes("/api/v1/questions?status=ready")) return Response.json({ questions: [pendingQuestion] })
+      if (isBridgeListCall(url, init)) return bridgeListResponse([pendingQuestion])
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) return Response.json({ ok: true, output: { pending: pendingQuestion } })
       if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateFor(pendingQuestion))
       return Response.json({})
@@ -464,7 +475,7 @@ describe("askUserPlugin front shell", () => {
 
     try {
       render(<Provider apiBaseUrl="" activeSessionId={pendingQuestion.sessionId} openSessionIds={[pendingQuestion.sessionId]}><div>child</div></Provider>)
-      await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/v1/questions?status=ready"))).toBe(true))
+      await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => isBridgeListCall(url, init))).toBe(true))
       await new Promise((resolve) => setTimeout(resolve, 20))
       expect(commands).not.toContainEqual(expect.objectContaining({ kind: "openSurface" }))
     } finally {
@@ -478,7 +489,7 @@ describe("askUserPlugin front shell", () => {
     const onCommand = (event: Event) => commands.push((event as CustomEvent).detail)
     window.addEventListener(UI_COMMAND_EVENT, onCommand)
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      if (String(url).includes("/api/v1/questions?status=ready")) return Response.json({ questions: [closedQuestion] })
+      if (isBridgeListCall(url, init)) return bridgeListResponse([closedQuestion])
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) return Response.json({ ok: true, output: { pending: closedQuestion } })
       if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateFor(closedQuestion))
       return Response.json({})
@@ -488,7 +499,7 @@ describe("askUserPlugin front shell", () => {
 
     try {
       render(<Provider apiBaseUrl="" activeSessionId="closed-session" openSessionIds={["other-session"]}><div>child</div></Provider>)
-      await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/v1/questions?status=ready"))).toBe(true))
+      await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => isBridgeListCall(url, init))).toBe(true))
       await new Promise((resolve) => setTimeout(resolve, 20))
       expect(commands).not.toContainEqual(expect.objectContaining({ kind: "openSurface" }))
     } finally {
@@ -523,11 +534,11 @@ describe("askUserPlugin front shell", () => {
       close() {}
     }
     vi.stubGlobal("EventSource", FakeEventSource)
-    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
-      if (String(url).includes("/api/v1/questions?status=ready")) {
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      if (isBridgeListCall(url, init)) {
         return listFails
-          ? Response.json({ error: "temporary" }, { status: 503 })
-          : Response.json({ questions: readyQuestions })
+          ? Response.json({ ok: false, error: { code: "temporary", message: "try again" } }, { status: 503 })
+          : bridgeListResponse(readyQuestions)
       }
       return Response.json({})
     }))
@@ -589,10 +600,8 @@ describe("askUserPlugin front shell", () => {
       close() {}
     }
     vi.stubGlobal("EventSource", SilentEventSource)
-    vi.stubGlobal("fetch", vi.fn(async (url: string) => (
-      String(url).includes("/api/v1/questions?status=ready")
-        ? Response.json({ questions: readyQuestions })
-        : Response.json({})
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => (
+      isBridgeListCall(url, init) ? bridgeListResponse(readyQuestions) : Response.json({})
     )))
     const Provider = getProvider()
     render(
@@ -618,7 +627,7 @@ describe("askUserPlugin front shell", () => {
       return null
     }
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      if (String(url).includes("/api/v1/questions?status=ready")) return Response.json({ questions: [question] })
+      if (isBridgeListCall(url, init)) return bridgeListResponse([question])
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) return Response.json({ ok: true, output: { pending: question } })
       if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateFor(question))
       return Response.json({})
@@ -646,7 +655,7 @@ describe("askUserPlugin front shell", () => {
 
   it("generic attention cancel action cancels the matching ask-user question", async () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      if (String(url).includes("/api/v1/questions?status=ready")) return Response.json({ questions: [question] })
+      if (isBridgeListCall(url, init)) return bridgeListResponse([question])
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) return Response.json({ ok: true, output: { pending: question } })
       if (String(url).endsWith("/api/v1/workspace-bridge/call")) return Response.json({ ok: true, output: { ok: true, status: "cancelled" } })
       if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateFor(question))
@@ -655,7 +664,7 @@ describe("askUserPlugin front shell", () => {
     vi.stubGlobal("fetch", fetchMock)
     const Provider = getProvider()
     render(<Provider apiBaseUrl="" activeSessionId="default"><div>child</div></Provider>)
-    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/v1/questions?status=ready"))).toBe(true))
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => isBridgeListCall(url, init))).toBe(true))
 
     window.dispatchEvent(new CustomEvent(WORKSPACE_ATTENTION_ACTION_EVENT, {
       detail: {
@@ -677,7 +686,7 @@ describe("askUserPlugin front shell", () => {
       return null
     }
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      if (String(url).includes("/api/v1/questions?status=ready")) return Response.json({ questions: [question] })
+      if (isBridgeListCall(url, init)) return bridgeListResponse([question])
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.cancel")) {
         return Response.json({ ok: false, error: { code: "temporary", message: "try again" } }, { status: 503 })
       }
@@ -717,7 +726,7 @@ describe("askUserPlugin front shell", () => {
 
   it("composer stop cancels pending question even when pane is closed", async () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      if (String(url).includes("/api/v1/questions?status=ready")) return Response.json({ questions: [question] })
+      if (isBridgeListCall(url, init)) return bridgeListResponse([question])
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) return Response.json({ ok: true, output: { pending: question } })
       if (String(url).endsWith("/api/v1/workspace-bridge/call")) return Response.json({ ok: true, output: { ok: true, status: "cancelled" } })
       if (String(url).endsWith("/api/v1/ui/state")) return Response.json({})
@@ -726,7 +735,7 @@ describe("askUserPlugin front shell", () => {
     vi.stubGlobal("fetch", fetchMock)
     const Provider = getProvider()
     render(<Provider apiBaseUrl="" activeSessionId="default"><div>child</div></Provider>)
-    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/v1/questions?status=ready"))).toBe(true))
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => isBridgeListCall(url, init))).toBe(true))
     window.dispatchEvent(new CustomEvent(WORKSPACE_COMPOSER_STOP_EVENT, { detail: { sessionId: "default", reason: WORKSPACE_COMPOSER_STOP_REASONS.userStop } }))
     await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.cancel"))).toBe(true))
   })
@@ -741,7 +750,7 @@ describe("askUserPlugin front shell", () => {
 
   it("renders only the pending question that matches an inline tool call", async () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      if (String(url).includes("/api/v1/questions?status=ready")) return Response.json({ questions: [question] })
+      if (isBridgeListCall(url, init)) return bridgeListResponse([question])
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) return Response.json({ ok: true, output: { pending: question } })
       if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateFor(question))
       return Response.json({})
@@ -773,7 +782,7 @@ describe("askUserPlugin front shell", () => {
     ]
     const pendingQuestion = { ...question, artifacts }
     vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
-      if (String(url).includes("/api/v1/questions?status=ready")) return Response.json({ questions: [pendingQuestion] })
+      if (isBridgeListCall(url, init)) return bridgeListResponse([pendingQuestion])
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) return Response.json({ ok: true, output: { pending: pendingQuestion } })
       if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateFor(pendingQuestion))
       return Response.json({})

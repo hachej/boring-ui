@@ -1,11 +1,22 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { createQuestionsClient, deriveIdempotencyKey, normalizeQuestion, readPendingQuestionHintFromState, readPendingQuestionHintsFromState } from "../client"
+import { __resetQuestionsClientTransportCacheForTests, createQuestionsClient, deriveIdempotencyKey, normalizeQuestion, readPendingQuestionHintFromState, readPendingQuestionHintsFromState } from "../client"
 import { ASK_USER_UI_STATE_SLOTS } from "../../shared/constants"
 import type { AskUserQuestion } from "../../shared/types"
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  __resetQuestionsClientTransportCacheForTests()
 })
+
+/** Bridge-shaped success envelope for `ask-user.v1.list`. */
+function bridgeListResponse(questions: AskUserQuestion[]) {
+  return Response.json({ ok: true, output: { questions } })
+}
+
+/** Bridge-shaped `OpNotFound` failure, as `httpRoutes.ts` maps it to HTTP 404. */
+function bridgeOpNotFoundResponse() {
+  return Response.json({ ok: false, error: { code: "BRIDGE_OP_NOT_FOUND", message: "unknown op" } }, { status: 404 })
+}
 
 const question: AskUserQuestion = {
   questionId: "q1",
@@ -59,25 +70,37 @@ describe("ask-user front client", () => {
     expect(normalizeQuestion({ ...question, artifact })?.artifacts).toEqual([])
   })
 
-  it("lists and normalizes every ready question from the durable endpoint", async () => {
+  it("lists and normalizes every ready question through the bridge, the canonical transport", async () => {
     const second = { ...question, questionId: "q2", sessionId: "headless", title: "Headless approval" }
-    const fetchMock = vi.fn(async () => Response.json({ questions: [question, second] }))
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      expect(String(url)).toBe("/hub/api/v1/workspace-bridge/call")
+      expect(JSON.parse(String(init?.body))).toMatchObject({ op: "ask-user.v1.list", input: { status: "ready" } })
+      return bridgeListResponse([question, second])
+    })
     vi.stubGlobal("fetch", fetchMock)
 
     await expect(createQuestionsClient({ apiBaseUrl: "/hub", headers: { "x-boring-workspace-id": "w1" } }).listReady())
       .resolves.toEqual([question, second])
-    expect(fetchMock).toHaveBeenCalledWith("/hub/api/v1/questions?status=ready", {
-      headers: { "x-boring-workspace-id": "w1" },
-      credentials: "include",
-      cache: "no-store",
-    })
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/v1/questions?status=ready"))).toBe(false)
   })
 
-  it("does not label a malformed successful bridge list as a legacy 404", async () => {
+  it("falls back to the legacy REST endpoint only when the bridge answers OpNotFound", async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => (
+      String(url).endsWith("/api/v1/workspace-bridge/call")
+        ? bridgeOpNotFoundResponse()
+        : Response.json({ questions: [question] })
+    ))
+    vi.stubGlobal("fetch", fetchMock)
+
+    await expect(createQuestionsClient({ apiBaseUrl: "/legacy-host" }).listReady()).resolves.toEqual([question])
+    const restCall = fetchMock.mock.calls.find(([url]) => String(url).includes("/api/v1/questions?status=ready"))
+    expect(restCall).toBeDefined()
+    expect(restCall![1]).toMatchObject({ credentials: "include", cache: "no-store" })
+  })
+
+  it("does not label a malformed successful bridge list as OpNotFound", async () => {
     const fetchMock = vi.fn(async (url: string) => (
-      String(url).includes("/api/v1/questions?status=ready")
-        ? Response.json({ error: "not_found" }, { status: 404 })
-        : Response.json({ ok: true, output: {} })
+      String(url).endsWith("/api/v1/workspace-bridge/call") ? Response.json({ ok: true, output: {} }) : Response.json({})
     ))
     vi.stubGlobal("fetch", fetchMock)
 
@@ -85,6 +108,7 @@ describe("ask-user front client", () => {
       message: "Invalid pending questions response",
       statusCode: 200,
     })
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/v1/questions?status=ready"))).toBe(false)
   })
 
   it("allows hosts to override the stock browser CSRF proof", async () => {
