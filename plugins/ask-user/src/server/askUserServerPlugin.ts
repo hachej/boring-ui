@@ -43,6 +43,11 @@ export function createAskUserServerPlugin(options: AskUserServerPluginOptions): 
     // timer while `ask()` is in flight. On attach, expire anything already
     // overdue and rearm timers for anything still pending.
     await runtime.reconcileExpiries()
+    // Finding (transition+transcript separate writes): a crash can land the
+    // state-transition write without its paired audit-event write. On
+    // attach, synthesize a `reconciled` transcript event for any terminal
+    // question missing one, so the audit trail reflects the true outcome.
+    await runtime.reconcileTranscripts()
     app.addHook("onClose", async () => {
       stopPublisher?.()
       runtime.disposeExpiryTimers()

@@ -6,10 +6,15 @@ import type {
   AskUserAnswer,
   AskUserCancelReason,
   AskUserQuestion,
+  AskUserQuestionStatus,
   AskUserRequest,
   AskUserToolResult,
 } from "../shared/types"
 import type { AskUserStore } from "./askUserStore"
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
 
 export class AskUserRuntimeError extends Error {
   constructor(
@@ -93,7 +98,34 @@ export type AskUserRuntimeOptions = {
     perSessionPerMinute?: number
     perPrincipalPerHour?: number
   }
+  /**
+   * Finding 2: startup expiry reconciliation can race a store whose lock is
+   * held by a crashed writer that has not yet aged past the store's
+   * stale-lock reclamation window (e.g. `FileAskUserStore`'s default
+   * 15s). A single unretried attempt can permanently miss expiring an
+   * overdue question. `retryDelaysMs` backs off across attempts whose total
+   * duration is expected to exceed that window; if every attempt still
+   * fails, the failure is reported via `onPersistentFailure` (never
+   * swallowed) and a timer is rearmed after `rearmDelayMs` to try the whole
+   * sequence again, rather than giving up.
+   */
+  expiryReconcile?: {
+    retryDelaysMs?: number[]
+    rearmDelayMs?: number
+    onPersistentFailure?: (info: { questionId: string; sessionId: string; error: unknown }) => void
+  }
 }
+
+/**
+ * Default backoff schedule for retrying a failed expiry cancellation.
+ * Total ~15.75s, chosen to comfortably exceed `FileAskUserStore`'s default
+ * 15s lock-staleness window so a cancellation blocked only by a crashed
+ * writer's not-yet-reclaimable lock has a good chance of succeeding once
+ * that lock becomes reclaimable, without a dedicated cross-module coupling
+ * to the store's internal staleness constant.
+ */
+const DEFAULT_EXPIRY_RETRY_DELAYS_MS = [250, 500, 1_000, 2_000, 4_000, 8_000]
+const DEFAULT_EXPIRY_REARM_DELAY_MS = 30_000
 
 export class AskUserRuntime {
   readonly coordinator: AskUserCoordinator
@@ -111,6 +143,9 @@ export class AskUserRuntime {
    * resolves through any path so a stale timer cannot double-cancel.
    */
   private readonly expiryTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  private readonly expiryRetryDelaysMs: number[]
+  private readonly expiryRearmDelayMs: number
+  private readonly onExpiryPersistentFailure: (info: { questionId: string; sessionId: string; error: unknown }) => void
 
   constructor(options: AskUserRuntimeOptions) {
     this.store = options.store
@@ -119,6 +154,15 @@ export class AskUserRuntime {
     this.now = options.now ?? (() => new Date())
     this.perSessionPerMinute = options.limits?.perSessionPerMinute ?? 6
     this.perPrincipalPerHour = options.limits?.perPrincipalPerHour ?? 30
+    this.expiryRetryDelaysMs = options.expiryReconcile?.retryDelaysMs ?? DEFAULT_EXPIRY_RETRY_DELAYS_MS
+    this.expiryRearmDelayMs = options.expiryReconcile?.rearmDelayMs ?? DEFAULT_EXPIRY_REARM_DELAY_MS
+    this.onExpiryPersistentFailure = options.expiryReconcile?.onPersistentFailure ?? (({ questionId, sessionId, error }) => {
+      // eslint-disable-next-line no-console
+      console.error(
+        `[ask-user] failed to expire overdue question ${questionId} (session ${sessionId}) after retrying; rearming a retry timer`,
+        error,
+      )
+    })
   }
 
   /**
@@ -138,15 +182,80 @@ export class AskUserRuntime {
       if (!question.expiresAt) continue
       const expiresAtMs = new Date(question.expiresAt).getTime()
       if (Number.isNaN(expiresAtMs)) continue
-      if (expiresAtMs <= nowMs) {
+      // Finding 5: an unparseable expiresAt is fail-closed, not skipped --
+      // treat it as already expired rather than leaving it perpetually
+      // enforceable-but-never-reconciled.
+      if (Number.isNaN(expiresAtMs) || expiresAtMs <= nowMs) {
         expired.push(question.questionId)
-        await this.cancelQuestion(question.questionId, question.sessionId, "timeout").catch(() => undefined)
+        await this.cancelQuestion(question.questionId, question.sessionId, "timeout").catch((error) => {
+          // Finding 2: do not swallow. Retry with backoff past a typical
+          // stale-lock reclamation window in the background so reconciliation
+          // itself does not block startup on every retry.
+          void this.cancelExpiredWithRetry(question.questionId, question.sessionId, error)
+        })
       } else {
         rearmed.push(question.questionId)
         this.armExpiryTimer(question.questionId, question.sessionId, expiresAtMs - nowMs)
       }
     }
     return { expired, rearmed }
+  }
+
+  /**
+   * Finding 2: crash-lock vs startup expiry. A single failed cancellation
+   * attempt at startup does not mean the question can never be expired --
+   * it may simply mean another process's crashed writer still holds a lock
+   * that has not yet aged into the store's reclamation window. Retries with
+   * backoff across `expiryRetryDelaysMs`; if every attempt in this pass
+   * still fails, reports the failure (never silently) and rearms a timer to
+   * run the whole sequence again after `expiryRearmDelayMs`, indefinitely,
+   * rather than permanently abandoning the overdue question.
+   */
+  private async cancelExpiredWithRetry(questionId: string, sessionId: string, lastError: unknown): Promise<void> {
+    let error = lastError
+    for (const delayMs of this.expiryRetryDelaysMs) {
+      await delay(delayMs)
+      try {
+        await this.cancelQuestion(questionId, sessionId, "timeout")
+        return
+      } catch (retryError) {
+        error = retryError
+      }
+    }
+    this.onExpiryPersistentFailure({ questionId, sessionId, error })
+    const timer = setTimeout(() => {
+      this.expiryTimers.delete(questionId)
+      void this.cancelExpiredWithRetry(questionId, sessionId, error)
+    }, this.expiryRearmDelayMs)
+    if (typeof timer.unref === "function") timer.unref()
+    this.expiryTimers.set(questionId, timer)
+  }
+
+  /**
+   * Finding: transition+transcript are separate durable writes. On startup
+   * (or whenever an operator wants to audit for drift), find every
+   * terminal-state question whose transcript has no event matching its
+   * current status -- the signature of a crash landing the state-transition
+   * write but not the paired audit-event write -- and append a synthetic
+   * `reconciled` event so the audit trail still reflects the true outcome.
+   */
+  async reconcileTranscripts(): Promise<{ synthesized: string[] }> {
+    const synthesized: string[] = []
+    const resolved = await this.store.listResolved()
+    for (const question of resolved) {
+      const events = await this.store.getTranscriptEventsForQuestion(question.questionId)
+      if (events.some((event) => transcriptEventMatchesStatus(event.type, question.status))) continue
+      await this.store.appendTranscriptEvent({
+        type: "reconciled",
+        questionId: question.questionId,
+        sessionId: question.sessionId,
+        status: question.status,
+        synthetic: true,
+        at: this.isoNow(),
+      })
+      synthesized.push(question.questionId)
+    }
+    return { synthesized }
   }
 
   /** Stops all reconciliation timers; call on process/plugin shutdown. */
@@ -377,4 +486,14 @@ export class AskUserRuntime {
 export function requireAskUserRuntime(runtime: AskUserRuntime | null | undefined): AskUserRuntime {
   if (!runtime) throw new AskUserRuntimeError(ASK_USER_ERROR_CODES.RUNTIME_UNAVAILABLE, "ask_user runtime unavailable")
   return runtime
+}
+
+/** Whether a transcript event type is the "real" audit record for a terminal question status. */
+function transcriptEventMatchesStatus(eventType: string, status: AskUserQuestionStatus): boolean {
+  switch (status) {
+    case "answered": return eventType === "answered"
+    case "cancelled": return eventType === "cancelled"
+    case "abandoned": return eventType === "abandoned"
+    default: return true
+  }
 }
