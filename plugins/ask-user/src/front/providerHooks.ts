@@ -13,7 +13,7 @@ import {
 } from "@hachej/boring-workspace"
 import { ASK_USER_PLUGIN_ID, ASK_USER_SURFACE_KIND, ASK_USER_UI_STATE_SLOTS } from "../shared/constants"
 import type { AskUserQuestion } from "../shared/types"
-import { createQuestionsClient, QuestionsClientError, readPendingQuestionHintsFromState, type PendingQuestionHint } from "./client"
+import { createQuestionsClient, hasLegacyQuestionRoutes, QuestionsClientError, readPendingQuestionHintsFromState, type PendingQuestionHint } from "./client"
 import { isSessionOpen, type QuestionsRuntime } from "./runtime"
 
 export function useAskUserAttentionBlockers(runtime: QuestionsRuntime, pendingSnapshot: string): void {
@@ -175,14 +175,27 @@ export function useAskUserPendingRefresh(
     const EventSourceCtor = globalThis.EventSource
     const eventQuery = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : ""
     const eventUrl = `${apiBaseUrl}/api/v1/questions/events${eventQuery}`
-    const questionEvents = EventSourceCtor ? new EventSourceCtor(eventUrl, { withCredentials: true }) : null
-    questionEvents?.addEventListener("ready", refreshPending)
-    questionEvents?.addEventListener("questions-changed", refreshPending)
     // Folder-mode hosts expose the canonical WorkspaceBridge list but not the
     // workspace-mode SSE route. Polling is also a loss-recovery path if an SSE
     // invalidation is missed during reconnect.
     const durablePoll = setInterval(() => { void refreshPending() }, 1_500)
-    void refreshPending()
+
+    // The SSE route lives on the legacy REST surface, so subscribing before we
+    // know the host mounts it means a 404 the browser then retries on its own
+    // schedule — noise in every bridge-only host, and enough to fail the UI
+    // review console/network gates. The first list tells us which surface this
+    // host has (it prefers the bridge and only falls back to REST), so attach
+    // after it, and only where the route actually exists. Correctness does not
+    // depend on this: the poll above already covers invalidation.
+    let questionEvents: EventSource | null = null
+    const attachQuestionEvents = () => {
+      if (questionEvents || stopped || !EventSourceCtor) return
+      if (hasLegacyQuestionRoutes(apiBaseUrl) !== true) return
+      questionEvents = new EventSourceCtor(eventUrl, { withCredentials: true })
+      questionEvents.addEventListener("ready", refreshPending)
+      questionEvents.addEventListener("questions-changed", refreshPending)
+    }
+    void refreshPending().then(attachQuestionEvents, attachQuestionEvents)
     window.addEventListener("focus", refreshPending)
     document.addEventListener("visibilitychange", onVisibility)
     window.addEventListener(UI_COMMAND_EVENT, onUiCommand)

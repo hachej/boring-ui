@@ -51,6 +51,20 @@ function readHint(value: unknown): PendingQuestionHint | null {
   }
 }
 
+/** Which hosts expose the legacy REST question surface, keyed by API base.
+ *
+ * listReady() learns this for free: it calls the bridge first and only reaches
+ * REST when the bridge has no list op. Callers that would otherwise open a
+ * second legacy-only connection (the SSE invalidation stream) can then avoid
+ * requesting a route the host never mounted, instead of discovering it through
+ * a 404 that the browser retries. Undefined means "not yet known".
+ */
+const legacyQuestionRoutes = new Map<string, boolean>()
+
+export function hasLegacyQuestionRoutes(apiBaseUrl?: string): boolean | undefined {
+  return legacyQuestionRoutes.get(apiBaseUrl ?? "")
+}
+
 export function createQuestionsClient(options: QuestionsClientOptions = {}) {
   async function callBridge<T>(
     op: string,
@@ -107,7 +121,10 @@ export function createQuestionsClient(options: QuestionsClientOptions = {}) {
         // bridge payload is never mistaken for a missing op.
         if (!isMissingTransport(error)) throw error
       }
-      if (bridged) return normalizeReadyQuestions(bridged.questions, 200)
+      if (bridged) {
+        legacyQuestionRoutes.set(options.apiBaseUrl ?? "", false)
+        return normalizeReadyQuestions(bridged.questions, 200)
+      }
       const response = await fetch(`${options.apiBaseUrl ?? ""}/api/v1/questions?status=ready`, {
         headers: options.headers,
         credentials: "include",
@@ -121,6 +138,7 @@ export function createQuestionsClient(options: QuestionsClientOptions = {}) {
           response.status,
         )
       }
+      legacyQuestionRoutes.set(options.apiBaseUrl ?? "", true)
       return normalizeReadyQuestions(payload?.questions, response.status)
     },
     async pending(sessionId: string): Promise<AskUserQuestion | null> {

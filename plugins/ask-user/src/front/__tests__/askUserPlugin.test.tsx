@@ -519,6 +519,37 @@ describe("askUserPlugin front shell", () => {
     }
   })
 
+  it("never opens the legacy SSE route on a host that only exposes the bridge", async () => {
+    class RecordingEventSource {
+      static urls: string[] = []
+      constructor(public readonly url: string) { RecordingEventSource.urls.push(url) }
+      addEventListener() {}
+      removeEventListener() {}
+      close() {}
+    }
+    vi.stubGlobal("EventSource", RecordingEventSource)
+    const fetchMock = serveBothListTransports(async (url: string) => (
+      String(url).includes("/api/v1/questions?status=ready")
+        ? Response.json({ questions: [question] })
+        : Response.json({})
+    ))
+    vi.stubGlobal("fetch", fetchMock)
+    const Provider = getProvider()
+
+    render(
+      <WorkspaceProvider agentTypeId="alpha" apiBaseUrl="" plugins={[]} workspaceId="test-workspace">
+        <Provider apiBaseUrl="" activeSessionId="default" openSessionIds={["default"]}><div /></Provider>
+      </WorkspaceProvider>,
+    )
+
+    await waitFor(() => expect(fetchMock.mock.calls.some(isReadyListCall)).toBe(true))
+    // The SSE route lives on the legacy REST surface. Requesting it here would
+    // 404 and the browser would retry on its own schedule, which is what failed
+    // the UI review console/network hard gates.
+    expect(RecordingEventSource.urls.some((url) => url.includes("/api/v1/questions/events"))).toBe(false)
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/v1/questions/events"))).toBe(false)
+  })
+
   it("hydrates never-opened session questions from the durable list before reconciling SSE changes", async () => {
     const neverOpened = { ...question, questionId: "headless-q1", sessionId: "headless-session", title: "Headless worker approval", answerToken: "headless-token" }
     const later = { ...nextQuestion, questionId: "headless-q2", sessionId: "another-headless-session", title: "Later headless approval", answerToken: "later-token" }
@@ -546,7 +577,13 @@ describe("askUserPlugin front shell", () => {
       close() {}
     }
     vi.stubGlobal("EventSource", FakeEventSource)
-    vi.stubGlobal("fetch", serveBothListTransports(async (url: string) => {
+    // A legacy REST host: no ask-user.v1.list bridge op, so the client falls
+    // back to the REST list — and the SSE invalidation route this test drives
+    // exists only on that same legacy surface. Bridge-only hosts never open it.
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.list")) {
+        return Response.json({ ok: false, error: { code: "op_not_found" } }, { status: 404 })
+      }
       if (String(url).includes("/api/v1/questions?status=ready")) {
         return listFails
           ? Response.json({ error: "temporary" }, { status: 503 })
