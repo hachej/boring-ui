@@ -99,7 +99,13 @@ interface Objective {
   duplicating it, and both the create/update input schemas refuse a
   payload whose serialized size would exceed a 24 KiB aggregate cap —
   safely under the bridge's 32 KiB output envelope, so a schema-valid
-  Objective can never become unreadable through the bridge/pane.
+  Objective can never become unreadable through the bridge/pane. That
+  input-level cap only bounds what a single call sends, not the record it
+  merges into: `FileObjectiveStore.update` separately validates the
+  *merged* record against the same 24 KiB cap, so a sequence of
+  individually-small updates can't accumulate past it one field at a
+  time. A rejected update leaves the previously-committed record
+  untouched and readable.
 - **Agent tools** — `list_objectives`, `get_objective`, `create_objective`,
   `update_objective`. Zod-validated, calling the store directly (same
   pattern as `ask_user` calling its runtime directly rather than round-

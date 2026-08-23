@@ -1,6 +1,7 @@
 import { mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { basename, dirname, join } from "node:path"
 import { randomUUID } from "node:crypto"
+import { OBJECTIVE_MAX_AGGREGATE_BYTES } from "../shared/constants"
 import { OBJECTIVE_ERROR_CODES } from "../shared/error-codes"
 import { ObjectiveSchema, StoredObjectiveStateSchema } from "../shared/schema"
 import type { CreateObjectiveInput, Objective, ObjectiveStatus, UpdateObjectiveInput } from "../shared/types"
@@ -136,6 +137,21 @@ export class FileObjectiveStore implements ObjectiveStore {
         ...(input.evidenceRefs !== undefined ? { evidenceRefs: input.evidenceRefs } : {}),
         ...(input.outcome !== undefined ? { outcome: input.outcome } : {}),
         updatedAt: nowIso(),
+      }
+      // The input schema's aggregate-size cap only bounds the *update
+      // payload* — the fields the caller actually sent. It says nothing
+      // about the *merged* record: a sequence of individually-small
+      // updates (each valid on its own) can still push the stored
+      // Objective's total serialized size past the bridge-safe cap, one
+      // field at a time. Validated here, against the merged result, so a
+      // committed record can never end up larger than what the bridge/pane
+      // can read back.
+      const mergedBytes = Buffer.byteLength(JSON.stringify(next), "utf8")
+      if (mergedBytes > OBJECTIVE_MAX_AGGREGATE_BYTES) {
+        throw new ObjectiveStoreError(
+          OBJECTIVE_ERROR_CODES.TOO_LARGE,
+          `updating objective ${next.id} would produce a record of ${mergedBytes} bytes, exceeding the ${OBJECTIVE_MAX_AGGREGATE_BYTES}-byte aggregate size limit`,
+        )
       }
       objectives.set(next.id, next)
       updated = clone(next)

@@ -326,5 +326,28 @@ describe("FileObjectiveStore", () => {
       expect(first.id).not.toBe(second.id)
       await expect(store.list()).resolves.toHaveLength(2)
     })
+
+    it("rejects an update whose merge with the existing record would exceed the aggregate cap, leaving the record unchanged and readable", async () => {
+      const created = await store.create(input())
+
+      // Each update payload here is, on its own, comfortably under the
+      // 24 KiB aggregate cap (so UpdateObjectiveInputSchema's own
+      // aggregate check on the *input* passes both times) — but merging
+      // the second onto what the first already committed is not.
+      const constraints = Array.from({ length: 50 }, () => "c".repeat(400))
+      await store.update({ id: created.id, constraints })
+
+      const evidenceRefs = Array.from({ length: 15 }, () => "e".repeat(300))
+      await expect(store.update({ id: created.id, evidenceRefs })).rejects.toMatchObject({
+        code: OBJECTIVE_ERROR_CODES.TOO_LARGE,
+      })
+
+      // The record stays exactly as the last successful update left it —
+      // not partially written, not corrupted, still readable via get/list.
+      const reread = await store.get(created.id)
+      expect(reread?.constraints).toHaveLength(50)
+      expect(reread?.evidenceRefs).toEqual([])
+      await expect(store.list()).resolves.toHaveLength(1)
+    })
   })
 })
