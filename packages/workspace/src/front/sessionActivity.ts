@@ -83,7 +83,7 @@ export function startSessionActivityStream(options: {
  */
 export function useWorkingSessionIds(
   sessions: readonly SessionActivityItem[],
-  options: { scopeKey?: string } = {},
+  options: { scopeKey: string },
 ): ReadonlySet<string> {
   const [working, setWorking] = useState<ReadonlySet<string>>(() => new Set())
   const scopeKey = options.scopeKey
@@ -108,7 +108,7 @@ export function useWorkingSessionIds(
       if (typeof detail?.sessionId !== "string") return
       // Events tagged with a foreign workspace are ignored so one
       // workspace's start/finish news cannot flip a colliding row here.
-      if (typeof detail.workspaceId === "string" && scopeKey !== undefined && detail.workspaceId !== scopeKey) return
+      if (typeof detail.workspaceId === "string" && detail.workspaceId !== scopeKey) return
       const key = workspaceSessionKey(detail.sessionId, typeof detail.agentTypeId === "string" ? detail.agentTypeId : undefined)
       const isWorking = detail.working === true
       setWorking((current) => {
@@ -213,7 +213,7 @@ export function useTerminalSessionStates(
     const onStatus = (event: Event) => {
       const detail = (event as CustomEvent).detail as { sessionId?: unknown; agentTypeId?: unknown; status?: unknown; workspaceId?: unknown } | undefined
       if (typeof detail?.sessionId !== "string" || typeof detail.status !== "string") return
-      if (typeof detail.workspaceId === "string" && scopeKey !== undefined && detail.workspaceId !== scopeKey) return
+      if (typeof detail.workspaceId === "string" && detail.workspaceId !== scopeKey) return
       const key = workspaceSessionKey(detail.sessionId, typeof detail.agentTypeId === "string" ? detail.agentTypeId : undefined)
       const isFailed = detail.status === "error"
       setFailedKeys((current) => {

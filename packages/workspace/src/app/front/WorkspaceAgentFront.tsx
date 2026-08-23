@@ -2724,6 +2724,7 @@ export function WorkspaceAgentFront<
           width={effectiveAppLeftPaneWidth}
           appTitle={appTitle}
           workspaceLabel={workspaceLabel}
+          workspaceId={workspaceId}
           workspaceSectionTitle={workspaceSectionTitle}
           layoutMode={appLeftLayoutMode}
           headerMode={appLeftHeaderMode}

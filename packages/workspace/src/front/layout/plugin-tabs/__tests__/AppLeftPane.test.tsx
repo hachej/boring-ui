@@ -28,6 +28,7 @@ function renderPane() {
     <WorkspaceAttentionProvider>
       <AppLeftPane
         appTitle="Test"
+        workspaceId="ws-test"
         sessions={sessions}
         activeSessionId="s1"
         openSessionIds={["s1"]}
@@ -72,6 +73,7 @@ describe("AppLeftPane", () => {
       <WorkspaceAttentionProvider>
         <AppLeftPane
           appTitle="Test"
+          workspaceId={overrides.workspaceId ?? "ws-test"}
           agents={[
             { agentTypeId: "alpha", label: "Boring Alpha", description: "Ships code", sessionsStatus: "loaded" },
             { agentTypeId: "beta", label: "Boring Beta", sessionsStatus: "loaded" },
@@ -403,6 +405,7 @@ describe("AppLeftPane", () => {
       <WorkspaceAttentionProvider>
         <AppLeftPane
           appTitle="Test"
+          workspaceId="ws-test"
           agents={[{ agentTypeId: "solo", label: "Boring Solo", sessionsStatus: "loaded" }]}
           selectedAgentTypeId="solo"
           sessions={[{ id: "s1", agentTypeId: "solo", title: "Solo session" }]}
@@ -983,5 +986,56 @@ describe("AppLeftPane", () => {
     expect(badge).toBeInTheDocument()
     expect(badge?.closest('[data-boring-workspace-part="app-session-row"]')).toHaveTextContent("Second session")
     expect(screen.getByText("question")).toBeInTheDocument()
+  })
+
+  it("a foreign workspace finish cannot flip or clear a colliding working session", () => {
+    vi.useFakeTimers()
+    try {
+      render(
+        <WorkspaceAttentionProvider>
+          <AppLeftPane
+            appTitle="Test"
+            workspaceId="ws-b"
+            sessions={sessions}
+            activeSessionId="s1"
+            openSessionIds={["s1"]}
+            pinnedSessionIds={[]}
+            onCreateSession={vi.fn()}
+            navigationEntries={testNavigationEntries()}
+            onSwitchSession={vi.fn()}
+            onOpenSessionAsPane={vi.fn()}
+            onToggleSessionPinned={vi.fn()}
+          />
+        </WorkspaceAttentionProvider>,
+      )
+
+      // The local colliding id starts streaming under ws-b.
+      act(() => {
+        window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+          detail: { workspaceId: "ws-b", sessionId: "s2", working: true },
+        }))
+      })
+      expect(document.querySelector('[data-boring-badge="working"]')).not.toBeNull()
+
+      // A finish tagged with a foreign workspace targets a colliding id in
+      // another source; it must not clear this pane's optimistic working set.
+      act(() => {
+        window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+          detail: { workspaceId: "ws-a", sessionId: "s2", working: false },
+        }))
+      })
+      expect(document.querySelector('[data-boring-badge="working"]')).not.toBeNull()
+
+      // A foreign START cannot mark a colliding row working either.
+      act(() => {
+        window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+          detail: { workspaceId: "ws-a", sessionId: "s1", working: true },
+        }))
+      })
+      const badges = document.querySelectorAll('[data-boring-badge="working"]')
+      expect(badges.length).toBeLessThanOrEqual(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
