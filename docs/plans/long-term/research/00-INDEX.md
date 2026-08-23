@@ -14,6 +14,8 @@ conclusions first, evidence chain behind.
 | 06-adversarial-reviews | Sol xhigh passes: adversarial (11 plan-breaking) → transcript recall (29 forgotten learnings) → pass2 (NOT CONVERGED + minimal edits) → pass3 (4 edits → converged) | sol-adversarial.md |
 | 07-part1-review | review of the 2026-08-17 Part-1 plan: 9 enhancements with diffs, 1 upstream adoption (5-class effect taxonomy) | PART1-REVIEW.md |
 | 08-session-log | the full session narrative: 7 phases, the reversals kept on record, how each conclusion was forced | SESSION-THREAD.md |
+| 09-research-cycle-skill | the productionized research workflow (SKILL/AGENT/report+spike templates/prompts/state) for the scheduled fleet agent | SKILL.md |
+| 10-raw-worker-reports | **not merged into main** — the raw ~1M-line worker corpus stays verbatim on branch `docs/long-term-plan-pack` (commit `9dfd82aa9`); P-1 re-extraction input. Retrieve: `git fetch origin docs/long-term-plan-pack && git show 9dfd82aa9:docs/plans/long-term/research/10-raw-worker-reports/<file>` | — |
 
 Caveats carried honestly: file:line grounding is dated at main@1ed49b7e2
 (re-verify before executing); the ~250-candidate register re-extraction (P-1)
