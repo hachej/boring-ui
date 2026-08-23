@@ -381,6 +381,43 @@ test('unknown persisted default denies execution but preserves session and histo
   } finally { await app.close() }
 }, 60_000)
 
+test('workspace meta resolves a legacy NULL default from the configured application default, not the first fleet seat', async () => {
+  mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
+    runtimePlugins: [], agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
+    preservedUiStateKeys: [], routeContributions: [],
+  })
+  // Simulates a rollback-compatible NULL read racing ahead of the startup
+  // backfill: workspace meta must still resolve through the same validated
+  // application default — options.defaultAgentTypeId ?? rawConfig.defaultAgentTypeId
+  // — as everywhere else, not silently fall through to agents[0].
+  const config = createTestCoreConfig({
+    stores: 'postgres',
+    databaseUrl: 'postgres://test',
+    defaultAgentTypeId: 'reviewer',
+  })
+  mocks.getWorkspace.mockImplementation(async (id: string) => ({
+    id, appId: config.appId, defaultAgentTypeId: null as unknown as string,
+  }))
+  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
+  const app = await createCoreWorkspaceAgentServer({
+    config,
+    agents: [
+      { agentTypeId: 'default', legacyDefault: true },
+      { agentTypeId: 'reviewer', definition: { label: 'Reviewer', instructions: 'Review.' } },
+    ],
+    workspaceRoot: '/tmp/full-app-workspaces',
+    serveFrontend: false,
+    // No boot defaultAgentTypeId option: the resolved default must come
+    // from config, not the first fleet seat ('default').
+  })
+  try {
+    const meta = await app.inject({ method: 'GET', url: '/api/v1/workspace/meta?workspaceId=workspace-a',
+      headers: { 'x-test-user-id': 'user-a' } })
+    expect(meta.statusCode).toBe(200)
+    expect(meta.json()).toMatchObject({ defaultAgentTypeId: 'reviewer' })
+  } finally { await app.close() }
+}, 30_000)
+
 test('core environment routes acquire one Host lease and release it after a finite response', async () => {
   mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
     runtimePlugins: [],
