@@ -18,12 +18,18 @@ const POLICY_PATH = resolve(REPOSITORY_ROOT, '.agents', 'factory', 'policy.yaml'
 const SKILLS_ROOT = resolve(REPOSITORY_ROOT, '.agents', 'skills')
 
 // K7 vertical-agent packages (gh: weekend/k7-agent-packages). factory-smoke
-// exists for CI/factory verification; creator-growth is the first vertical
-// skeleton and stays unseated until the owner defines its commercial loop.
+// exists for CI/factory verification and is seated in the real fleet.yaml
+// (owner ruling 2026-08-22); creator-growth is the first vertical skeleton
+// and stays unseated until the owner defines its commercial loop.
 const NEW_PACKAGES = [
   { dir: 'factory-smoke', definitionId: 'boring-factory-smoke', marker: 'Factory Smoke persona' },
   { dir: 'creator-growth', definitionId: 'boring-creator-growth', marker: 'grow that creator' },
 ] as const
+
+// Packages among NEW_PACKAGES that the real fleet.yaml already seats — the
+// throwaway extension below must not seat them a second time (that would
+// compose a duplicate agent for the same definitionId).
+const ALREADY_SEATED_DIRS = new Set(['factory-smoke'])
 
 const RATIFIED_SEATS = ['boring-triage', 'boring-orchestrator', 'boring-worker'] as const
 
@@ -96,11 +102,15 @@ describe('loadConfiguredAgentFleet against the real .agents tree', () => {
     const factoryDir = join(root, 'factory')
     await mkdir(factoryDir, { recursive: true })
     const extendedFleetPath = join(factoryDir, 'fleet.yaml')
+    const packagesToSeat = NEW_PACKAGES.filter((pkg) => !ALREADY_SEATED_DIRS.has(pkg.dir))
     await writeFile(extendedFleetPath, [
       fleetYaml.trimEnd(),
       '',
-      '  # Test-only extension: seat the K7 packages (no skills declared, none pinned).',
-      ...NEW_PACKAGES.map((pkg) => [
+      '  # Test-only extension: seat the remaining K7 packages (no skills declared, none pinned).',
+      // factory-smoke is already seated by the real fleet.yaml this copy
+      // starts from (owner ruling 2026-08-22) — only append the packages
+      // that aren't, to avoid composing a duplicate agent.
+      ...packagesToSeat.map((pkg) => [
         `  - seat: ${pkg.dir}`,
         `    agentTypeId: ${pkg.definitionId}`,
         '    skills: []',
@@ -141,7 +151,7 @@ describe('loadConfiguredAgentFleet against the real .agents tree', () => {
     }
   })
 
-  test('against the real fleet.yaml the K7 packages stay discovered-but-inert (AGENT_DEFINITION_UNSEATED)', async () => {
+  test('against the real fleet.yaml factory-smoke composes and creator-growth stays discovered-but-inert (AGENT_DEFINITION_UNSEATED)', async () => {
     const result = await loadConfiguredAgentFleet({
       discoveredPackages: await discoverRepositoryPersonas(),
       workspaceRoot: null,
@@ -151,10 +161,16 @@ describe('loadConfiguredAgentFleet against the real .agents tree', () => {
       env: {},
     })
 
-    // Only the ratified three-seat roster composes (gh-1187 S0).
-    expect(result.agents.map((agent) => agent.agentTypeId)).toEqual([...RATIFIED_SEATS])
-    // The new packages are visible as inert, never silently dropped.
-    for (const pkg of NEW_PACKAGES) {
+    // The ratified three-seat roster (gh-1187 S0) plus the seated
+    // factory-smoke CI seat (owner ruling 2026-08-22) compose.
+    expect(result.agents.map((agent) => agent.agentTypeId)).toEqual([
+      ...RATIFIED_SEATS,
+      'boring-factory-smoke',
+    ])
+    // creator-growth is the only K7 package still visible as inert, never
+    // silently dropped.
+    const stillUnseated = NEW_PACKAGES.filter((pkg) => pkg.dir !== 'factory-smoke')
+    for (const pkg of stillUnseated) {
       expect(result.diagnostics).toContainEqual(expect.objectContaining({
         agentTypeId: pkg.definitionId,
         code: ErrorCode.enum.AGENT_DEFINITION_UNSEATED,

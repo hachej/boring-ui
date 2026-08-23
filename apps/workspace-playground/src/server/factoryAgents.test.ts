@@ -23,11 +23,13 @@ import { loadBoringFactoryAgents, type BoringFactoryRole } from './factoryAgents
 import { resolvePlaygroundDefaultAgentTypeId } from '../shared/playgroundAgents'
 
 const REPOSITORY_ROOT = resolve(import.meta.dirname, '../../../..')
-// The ratified 3-seat roster (gh-1187 S0), in fleet.yaml order.
+// The ratified 3-seat roster (gh-1187 S0) plus the factory-smoke CI seat
+// (owner ruling 2026-08-22), in fleet.yaml order.
 const EXPECTED = [
   { role: 'triage', id: 'boring-triage', skills: ['triage', 'owner-gate', 'handoff'] },
   { role: 'orchestrator', id: 'boring-orchestrator', skills: ['plan', 'feedback', 'owner-gate', 'handoff'] },
   { role: 'worker', id: 'boring-worker', skills: ['exec', 'fresh-eyes', 'owner-gate', 'handoff'] },
+  { role: 'factory-smoke', id: 'boring-factory-smoke', skills: [] },
 ] as const
 
 async function expectedInstructions(role: string, skills: readonly string[]): Promise<string> {
@@ -62,8 +64,11 @@ describe('loadBoringFactoryAgents (loader against the real .agents/ tree)', () =
       const agent = agents[index]
       if (!agent || 'legacyDefault' in agent) throw new Error('factory agent must be configured')
       expect(agent.definition.instructions).toBe(await expectedInstructions(expected.role, expected.skills))
-      expect(agent.definition.instructions.match(/boring-skill:start/g)).toHaveLength(expected.skills.length)
-      expect(agent.definition.instructions.match(/boring-skill:end/g)).toHaveLength(expected.skills.length)
+      // A zero-skill seat (factory-smoke) appends no skill blocks at all, so
+      // `.match()` returns null rather than an empty array — assert absence
+      // directly instead of feeding null into `.toHaveLength()`.
+      expect(agent.definition.instructions.match(/boring-skill:start/g) ?? []).toHaveLength(expected.skills.length)
+      expect(agent.definition.instructions.match(/boring-skill:end/g) ?? []).toHaveLength(expected.skills.length)
     }
   })
 

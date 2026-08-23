@@ -15,7 +15,9 @@
 # policy.yaml; update provider/model availability here. Per-session and
 # per-automation model choice happens at dispatch (#1143), never here.
 #
-# Roster: THREE seats, owner-ratified 2026-08-10 (gh-1187 S0). A seat is
+# Roster: THREE core seats (triage, orchestrator, worker), owner-ratified
+# 2026-08-10 (gh-1187 S0), plus a CI smoke seat (factory-smoke) added
+# 2026-08-22 to prove the persona-package pipeline end-to-end. A seat is
 # justified by capability posture, never by model choice. Deferred,
 # grow-on-demand seats (`concierge`, `reviewer`, `auditor`, `beadle`, any
 # `worker-*` variant) hold no seat and no live persona package; their persona
@@ -106,3 +108,13 @@ seats:
         digest: sha256:a001dc51b8890f979358bffcf9ebe2d478002b2136a9630b638f77567b82678f
       - name: handoff
         digest: sha256:46ac3304704a615057579f1b5cfd456d32c38af39611bf553ca0245f18ba9524
+
+  # CI smoke seat: proves the persona-package discovery/compilation pipeline
+  # end-to-end (loadConfiguredAgentFleet -> ConfiguredAgentHostAgentSpec).
+  # Owner ruling 2026-08-22: seat boring-factory-smoke for CI. Its persona
+  # package (.agents/personas/factory-smoke) declares no pi.skills, so this
+  # seat pins zero skills — any addition here must land in lockstep with a
+  # matching pi.skills entry in that package's manifest.
+  - seat: factory-smoke
+    agentTypeId: boring-factory-smoke
+    skills: []
