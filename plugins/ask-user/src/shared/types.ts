@@ -246,3 +246,19 @@ export type AskUserTranscriptEvent =
       sessionId: string
       at: string
     }
+  | {
+      /**
+       * Synthesized on startup (finding: transition+transcript are separate
+       * durable writes) when a question's persisted status has no matching
+       * transcript event -- e.g. a crash landed the state-transition write
+       * but not the audit-event write. Never produced by a live request
+       * path; `synthetic: true` marks it as a recovery record, not an
+       * original decision event.
+       */
+      type: "reconciled"
+      questionId: string
+      sessionId: string
+      status: AskUserQuestionStatus
+      synthetic: true
+      at: string
+    }

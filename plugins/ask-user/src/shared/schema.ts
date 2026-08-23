@@ -11,6 +11,11 @@ import {
 } from "./constants"
 
 const isoStringSchema = z.string().min(1)
+// Finding: expiry validation. `expiresAt` gates whether a decision can still
+// be answered/expired safely, so it gets a strict ISO-8601 datetime check
+// (not just "nonempty string") -- a malformed value here must never silently
+// parse to `NaN` and be skipped by expiry enforcement.
+const isoDateTimeSchema = z.string().datetime({ offset: true })
 const askUserRiskTierSchema = z.enum(ASK_USER_RISK_TIERS).optional()
 const fieldNameSchema = z
   .string()
@@ -302,7 +307,7 @@ export const AskUserQuestionSchema = z
     createdAt: isoStringSchema,
     updatedAt: isoStringSchema,
     riskTier: askUserRiskTierSchema,
-    expiresAt: isoStringSchema.optional(),
+    expiresAt: isoDateTimeSchema.optional(),
   })
   .strict()
 
@@ -321,6 +326,16 @@ export const AskUserTranscriptEventSchema = z.discriminatedUnion("type", [
     .strict(),
   z.object({ type: z.literal("abandoned"), questionId: z.string().min(1), sessionId: z.string().min(1), at: isoStringSchema }).strict(),
   z.object({ type: z.literal("restored"), questionId: z.string().min(1), sessionId: z.string().min(1), at: isoStringSchema }).strict(),
+  z
+    .object({
+      type: z.literal("reconciled"),
+      questionId: z.string().min(1),
+      sessionId: z.string().min(1),
+      status: AskUserQuestionStatusSchema,
+      synthetic: z.literal(true),
+      at: isoStringSchema,
+    })
+    .strict(),
 ])
 
 const commandParamsBase = {
