@@ -718,6 +718,14 @@ export class PiSessionStore implements SessionStore {
     { filepath, stat }: SessionFileStat,
   ): Promise<{ sortMtimeMs: number; sortId: string }> {
     let sortMtimeMs = stat.mtime.getTime();
+    // Once a readable header supplies an id, it stays canonical even if a
+    // later step (linked-file stat, native timestamp scan) throws — the
+    // filename stem is only for files with no readable header at all.
+    let headerId: string | undefined = undefined;
+    const stemFallback = (): { sortMtimeMs: number; sortId: string } => ({
+      sortMtimeMs,
+      sortId: wrapperSessionId(filepath),
+    });
     try {
       // One prefix read per file per listing: `referencedPiFiles` already
       // populated this cache entry. Its header id supplies BOTH the native-
@@ -725,37 +733,40 @@ export class PiSessionStore implements SessionStore {
       // re-reading and re-parsing the prefix here was a second full-store
       // pass on every request (#1338).
       const cached = await this.readPrefixCache(filepath, stat);
+      headerId = cached.headerId ?? undefined;
       const linkedPiFile = cached.referencedPiFile;
       if (linkedPiFile && resolve(linkedPiFile) !== resolve(filepath)) {
         const linkedStat = await fsStat(linkedPiFile);
         sortMtimeMs = Math.max(sortMtimeMs, linkedStat.mtime.getTime());
       }
-      if (!cached.headerId) {
+      if (!headerId) {
         // Headerless file: the stem is the id `resolveSessionFile` accepts —
         // never a last-underscore truncation.
-        return { sortMtimeMs, sortId: wrapperSessionId(filepath) };
+        return stemFallback();
       }
-      if (!isTimestampNamedPiSessionFile(filepath, cached.headerId)) {
+      if (!isTimestampNamedPiSessionFile(filepath, headerId)) {
         // Readable header in a non-timestamp-named (wrapper) transcript: the
         // header id is canonical — it is exactly what `summary.id` emits — so
         // the gateway's full-id total order and this store's prefix agree.
         // Sorting by the filename here would order by a different key than
         // the id we report for the row (#1338 review round 2).
-        return { sortMtimeMs, sortId: cached.headerId };
+        return { sortMtimeMs, sortId: headerId };
       }
       if (cached.nativeSortMtimeMs !== undefined) {
-        return { sortMtimeMs: cached.nativeSortMtimeMs, sortId: cached.headerId };
+        return { sortMtimeMs: cached.nativeSortMtimeMs, sortId: headerId };
       }
       const latest = await latestNativeMessageTimestamp(filepath, Number(stat.size));
-      if (latest === undefined) return { sortMtimeMs, sortId: cached.headerId };
+      if (latest === undefined) return { sortMtimeMs, sortId: headerId };
       // Only a value derived purely from this file's own bytes is cacheable:
       // the (mtime, size) key does not invalidate on a linked file's change.
       this.prefixCache.set(filepath, { ...cached, nativeSortMtimeMs: latest });
-      return { sortMtimeMs: latest, sortId: cached.headerId };
+      return { sortMtimeMs: latest, sortId: headerId };
     } catch {
-      // Fall back to the wrapper/native file mtime for unreadable links.
+      // Unreadable linked file / failed timestamp scan: keep the file's own
+      // mtime. If a header was already read, its id remains the tiebreak key;
+      // only a file with no readable header falls back to the stem.
+      return headerId ? { sortMtimeMs, sortId: headerId } : stemFallback();
     }
-    return { sortMtimeMs, sortId: wrapperSessionId(filepath) };
   }
 
   private async summarizeFile(
@@ -1244,15 +1255,16 @@ function nativeSessionFilename(sessionId: string, isoTimestamp: string): string 
  */
 interface SessionSortKey {
   sortMtimeMs: number;
-  /** Canonical session id: header id for timestamp-named natives, stem for wrappers. */
+  /** Canonical session id: header id whenever a readable header exists (wrapper or native); stem only for headerless files. */
   sortId: string;
 }
 
 /**
- * Session id of a WRAPPER-named transcript: `resolveSessionFile` looks these up
- * as `${sessionId}.jsonl`, so the stem is authoritative. Never split on `_`:
- * SAFE_NATIVE_SESSION_ID allows it (`a_z.jsonl` wraps the id `a_z`).
- * Timestamp-named pi-native files take their id from the transcript header
+ * Session id of a HEADERLESS transcript: `resolveSessionFile` looks wrapper
+ * files up as `${sessionId}.jsonl`, so for those the stem is the only id
+ * available. Never split on `_`: SAFE_NATIVE_SESSION_ID allows it
+ * (`a_z.jsonl` wraps the id `a_z`). Used ONLY as a last resort — any file
+ * with a readable header takes its id (and sort key) from that header
  * instead (see {@link PiSessionStore.sessionSortKey}).
  */
 function wrapperSessionId(filepath: string): string {
