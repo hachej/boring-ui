@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it, vi } from "vitest"
@@ -509,5 +509,158 @@ describe("AskUserRuntime expiry (finding 1)", () => {
     await store.createPending(question)
     await expect(store.answer("expired-q", { questionId: "expired-q", sessionId: "s1", values: {}, submittedAt: new Date().toISOString() }))
       .rejects.toMatchObject({ code: ASK_USER_ERROR_CODES.QUESTION_EXPIRED })
+  })
+})
+
+describe("AskUserRuntime crash-lock vs startup expiry (finding 2)", () => {
+  it("retries a failed expiry cancellation and succeeds once a pre-seeded stale lock becomes reclaimable", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "ask-user-crash-lock-"))
+    const filePath = join(dir, "ask-user.json")
+    try {
+      let clock = new Date("2026-08-22T00:00:00.000Z")
+      const store = new FileAskUserStore(filePath, { now: () => clock, lockStaleMs: 50 })
+      await store.createPending(makeQuestion({ questionId: "overdue-q", sessionId: "s1", expiresAt: new Date(clock.getTime() - 1_000).toISOString() }))
+
+      // Simulate a writer that crashed mid-write, holding a lock the store
+      // does not yet consider stale (per its injected clock).
+      await writeFile(`${filePath}.lock`, JSON.stringify({ token: "dead", pid: 999_999, acquiredAtMs: clock.getTime() }), "utf8")
+
+      const runtime = new AskUserRuntime({
+        store,
+        now: () => clock,
+        expiryReconcile: { retryDelaysMs: [5, 5, 5], rearmDelayMs: 20 },
+      })
+
+      const { expired } = await runtime.reconcileExpiries()
+      expect(expired).toEqual(["overdue-q"])
+      // The first attempt could not reclaim the not-yet-stale lock.
+      await expect(store.getByQuestionId("overdue-q")).resolves.toMatchObject({ status: "ready" })
+
+      // Time passes past lockStaleMs; the background retry loop's next
+      // attempt reclaims the now-stale lock and completes the cancellation.
+      clock = new Date(clock.getTime() + 1_000)
+      await vi.waitFor(async () => {
+        await expect(store.getByQuestionId("overdue-q")).resolves.toMatchObject({ status: "cancelled" })
+      }, { timeout: 5_000 })
+
+      runtime.disposeExpiryTimers()
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("reports (never swallows) a persistent expiry-cancellation failure and rearms a retry that eventually succeeds", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "ask-user-crash-lock-rearm-"))
+    const filePath = join(dir, "ask-user.json")
+    try {
+      let clock = new Date("2026-08-22T00:00:00.000Z")
+      // A lock-staleness window long enough that every retry in the first
+      // pass still fails.
+      const store = new FileAskUserStore(filePath, { now: () => clock, lockStaleMs: 10_000 })
+      await store.createPending(makeQuestion({ questionId: "overdue-q", sessionId: "s1", expiresAt: new Date(clock.getTime() - 1_000).toISOString() }))
+      await writeFile(`${filePath}.lock`, JSON.stringify({ token: "dead", pid: 999_999, acquiredAtMs: clock.getTime() }), "utf8")
+
+      const failures: Array<{ questionId: string; sessionId: string }> = []
+      const runtime = new AskUserRuntime({
+        store,
+        now: () => clock,
+        expiryReconcile: {
+          retryDelaysMs: [2, 2],
+          rearmDelayMs: 5,
+          onPersistentFailure: (info) => failures.push(info),
+        },
+      })
+
+      await runtime.reconcileExpiries()
+      // The failure must be reported, not silently dropped.
+      await vi.waitFor(() => expect(failures).toContainEqual(expect.objectContaining({ questionId: "overdue-q", sessionId: "s1" })), { timeout: 3_000 })
+      await expect(store.getByQuestionId("overdue-q")).resolves.toMatchObject({ status: "ready" })
+
+      // Advance time past the lock-staleness window; the rearmed timer's
+      // next pass reclaims the lock and finishes the job.
+      clock = new Date(clock.getTime() + 11_000)
+      await vi.waitFor(async () => {
+        await expect(store.getByQuestionId("overdue-q")).resolves.toMatchObject({ status: "cancelled" })
+      }, { timeout: 5_000 })
+
+      runtime.disposeExpiryTimers()
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe("AskUserRuntime transcript reconciliation (finding: transition+transcript separate writes)", () => {
+  it("synthesizes a reconciled event for an answered question with no matching transcript event", async () => {
+    const store = await makeStore()
+    // Directly persisted as already `answered`, with no "answered"
+    // transcript event -- simulating a crash between the state-transition
+    // write and the paired audit-event write.
+    const question = makeQuestion({ questionId: "q1", sessionId: "s1", status: "answered" })
+    await store.createPending(question)
+
+    await expect(store.getTranscriptEventsForQuestion("q1")).resolves.toEqual([])
+
+    const runtime = new AskUserRuntime({ store })
+    const { synthesized } = await runtime.reconcileTranscripts()
+    expect(synthesized).toEqual(["q1"])
+
+    const events = await store.getTranscriptEventsForQuestion("q1")
+    expect(events).toEqual([
+      expect.objectContaining({ type: "reconciled", questionId: "q1", sessionId: "s1", status: "answered", synthetic: true }),
+    ])
+
+    // Idempotent: reconciling again does not duplicate the synthetic event.
+    await expect(runtime.reconcileTranscripts()).resolves.toEqual({ synthesized: [] })
+    await expect(store.getTranscriptEventsForQuestion("q1")).resolves.toHaveLength(1)
+  })
+
+  it("does not synthesize an event for a question whose real transcript event is already present", async () => {
+    const store = await makeStore()
+    await store.createPending(makeQuestion({ questionId: "q1", sessionId: "s1" }))
+    await store.answer("q1", { questionId: "q1", sessionId: "s1", values: { a: "ok" }, submittedAt: new Date().toISOString() })
+    await store.appendTranscriptEvent({ type: "answered", answer: { questionId: "q1", sessionId: "s1", values: { a: "ok" }, submittedAt: new Date().toISOString() }, at: new Date().toISOString() })
+
+    const runtime = new AskUserRuntime({ store })
+    await expect(runtime.reconcileTranscripts()).resolves.toEqual({ synthesized: [] })
+  })
+
+  it("leaves a still-pending (ready) question alone", async () => {
+    const store = await makeStore()
+    await store.createPending(makeQuestion({ questionId: "q1", sessionId: "s1" }))
+
+    const runtime = new AskUserRuntime({ store })
+    await expect(runtime.reconcileTranscripts()).resolves.toEqual({ synthesized: [] })
+  })
+
+  it("appends a synthetic reconciled event when starting from a durable file with answered state but no answered event", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "ask-user-reconcile-"))
+    const filePath = join(dir, "ask-user.json")
+    try {
+      const answeredQuestion = makeQuestion({ questionId: "q1", sessionId: "s1", status: "answered" })
+      const state = {
+        version: 1,
+        revision: 1,
+        questions: { q1: answeredQuestion },
+        pendingBySession: {},
+        answers: {
+          q1: { questionId: "q1", sessionId: "s1", values: { a: "ok" }, submittedAt: new Date().toISOString() },
+        },
+        transcriptsBySession: {},
+      }
+      await writeFile(filePath, JSON.stringify(state, null, 2), "utf8")
+
+      const store = new FileAskUserStore(filePath)
+      const runtime = new AskUserRuntime({ store })
+      const { synthesized } = await runtime.reconcileTranscripts()
+      expect(synthesized).toEqual(["q1"])
+
+      const events = await store.getTranscriptEventsForQuestion("q1")
+      expect(events).toEqual([
+        expect.objectContaining({ type: "reconciled", questionId: "q1", sessionId: "s1", status: "answered", synthetic: true }),
+      ])
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 })

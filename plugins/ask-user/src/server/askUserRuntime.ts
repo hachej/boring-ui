@@ -244,7 +244,11 @@ export class AskUserRuntime {
     const resolved = await this.store.listResolved()
     for (const question of resolved) {
       const events = await this.store.getTranscriptEventsForQuestion(question.questionId)
-      if (events.some((event) => transcriptEventMatchesStatus(event.type, question.status))) continue
+      // A terminal status never changes again (answer()/cancel() reject once
+      // a question has left `ready`), so a previously synthesized
+      // `reconciled` event for this question is itself sufficient proof of
+      // reconciliation -- this keeps the pass idempotent.
+      if (events.some((event) => event.type === "reconciled" || transcriptEventMatchesStatus(event.type, question.status))) continue
       await this.store.appendTranscriptEvent({
         type: "reconciled",
         questionId: question.questionId,
