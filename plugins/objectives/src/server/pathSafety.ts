@@ -1,4 +1,4 @@
-import { mkdir, realpath } from "node:fs/promises"
+import { lstat, mkdir, realpath } from "node:fs/promises"
 import { isAbsolute, relative, resolve } from "node:path"
 
 export class WorkspacePathEscapeError extends Error {
@@ -38,5 +38,32 @@ function assertContained(realRoot: string, realCandidate: string, requestedPath:
     throw new WorkspacePathEscapeError(
       `Resolved path escapes workspace root: ${requestedPath} -> ${realCandidate} (root ${realRoot})`,
     )
+  }
+}
+
+/**
+ * Reject `filePath` if it exists and is itself a symlink.
+ *
+ * `ensureContainedDir` verifies the *directory* is contained, but the store
+ * file (`objectives.json`) is one path segment deeper: an attacker who can
+ * write inside an otherwise-contained directory could replace the file
+ * itself with a symlink pointing outside the workspace, redirecting reads
+ * and (via the tmp+rename commit) writes to an arbitrary host path even
+ * though the directory containment check passed. `lstat` (not `stat`) is
+ * required here — `stat` follows the symlink and would report the resolved
+ * target's metadata instead of detecting the link itself.
+ *
+ * A missing file is fine (ENOENT) — nothing to reject yet.
+ */
+export async function assertFileNotSymlink(filePath: string): Promise<void> {
+  let stats
+  try {
+    stats = await lstat(filePath)
+  } catch (error) {
+    if ((error as { code?: string }).code === "ENOENT") return
+    throw error
+  }
+  if (stats.isSymbolicLink()) {
+    throw new WorkspacePathEscapeError(`Refusing to operate on a symlinked objective store file: ${filePath}`)
   }
 }

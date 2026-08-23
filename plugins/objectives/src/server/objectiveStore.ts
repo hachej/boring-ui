@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto"
 import { OBJECTIVE_ERROR_CODES } from "../shared/error-codes"
 import { ObjectiveSchema, StoredObjectiveStateSchema } from "../shared/schema"
 import type { CreateObjectiveInput, Objective, ObjectiveStatus, UpdateObjectiveInput } from "../shared/types"
-import { ensureContainedDir } from "./pathSafety"
+import { assertFileNotSymlink, ensureContainedDir } from "./pathSafety"
 
 export class ObjectiveStoreError extends Error {
   constructor(
@@ -185,7 +185,13 @@ export class FileObjectiveStore implements ObjectiveStore {
     const dir = this.options.workspaceRoot
       ? await ensureContainedDir(this.options.workspaceRoot, this.dir)
       : await this.ensurePlainDir()
-    return join(dir, this.fileName)
+    const filePath = join(dir, this.fileName)
+    // ensureContainedDir only verifies the directory; the store file itself
+    // is one path segment deeper and could independently be replaced with a
+    // symlink escaping the workspace. Checked unconditionally (not gated on
+    // workspaceRoot) as defense in depth for the plain-dir case too.
+    await assertFileNotSymlink(filePath)
+    return filePath
   }
 
   private async ensurePlainDir(): Promise<string> {

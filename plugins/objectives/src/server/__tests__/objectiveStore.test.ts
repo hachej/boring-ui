@@ -186,6 +186,20 @@ describe("FileObjectiveStore", () => {
       await expect(contained.create(input())).resolves.toMatchObject({ title: "Ship v2" })
       await rm(workspaceRoot, { recursive: true, force: true })
     })
+
+    it("rejects objectives.json itself being a symlink, even when its directory is contained", async () => {
+      const workspaceRoot = await mkdtemp(join(tmpdir(), "objectives-workspace-"))
+      const outsideFile = join(await mkdtemp(join(tmpdir(), "objectives-outside-")), "secret.json")
+      await writeFile(outsideFile, JSON.stringify({ version: 1, revision: 0, objectives: [] }), "utf8")
+      await mkdir(join(workspaceRoot, ".boring"), { recursive: true })
+      await symlink(outsideFile, join(workspaceRoot, ".boring", "objectives.json"))
+
+      const escapee = new FileObjectiveStore(join(workspaceRoot, ".boring", "objectives.json"), { workspaceRoot })
+      await expect(escapee.create(input())).rejects.toBeInstanceOf(WorkspacePathEscapeError)
+      await expect(escapee.list()).rejects.toBeInstanceOf(WorkspacePathEscapeError)
+
+      await rm(workspaceRoot, { recursive: true, force: true })
+    })
   })
 
   describe("load validation and migration", () => {
