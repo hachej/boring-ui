@@ -189,6 +189,8 @@ describe("FileObjectiveStore", () => {
   })
 
   describe("load validation and migration", () => {
+    const canonicalId = "obj-11111111-1111-4111-8111-111111111111"
+
     it("skips a corrupt record and reports it via diagnostics instead of crashing", async () => {
       await mkdir(dir, { recursive: true })
       await writeFile(
@@ -197,14 +199,14 @@ describe("FileObjectiveStore", () => {
           version: 1,
           revision: 1,
           objectives: [
-            { id: "obj-good", title: "Good", objective: "Do a thing", metric: "m", baseline: 0, target: 1, current: 0, status: "active", constraints: [], evidenceRefs: [], createdAt: "x", updatedAt: "x" },
+            { id: canonicalId, title: "Good", objective: "Do a thing", metric: "m", baseline: 0, target: 1, current: 0, status: "active", constraints: [], evidenceRefs: [], createdAt: "x", updatedAt: "x" },
             { id: "obj-bad", title: "Bad" },
           ],
         }),
         "utf8",
       )
       const objectives = await store.list()
-      expect(objectives.map((o) => o.id)).toEqual(["obj-good"])
+      expect(objectives.map((o) => o.id)).toEqual([canonicalId])
       const diagnostics = store.getLoadDiagnostics()
       expect(diagnostics).toHaveLength(1)
       expect(diagnostics[0]).toMatchObject({ index: 1 })
@@ -229,7 +231,11 @@ describe("FileObjectiveStore", () => {
       expect(({} as Record<string, unknown>).title).toBeUndefined()
     })
 
-    it("migrates a legacy unversioned { objectives: Record } file", async () => {
+    it("migrates a legacy unversioned { objectives: Record } file, skipping records with a pre-canonical id", async () => {
+      // There are no production objectives.json files yet, so a legacy
+      // record whose id predates the obj-<uuid> format has no data-loss
+      // consequence today: it is skipped with a load diagnostic rather than
+      // trusted, exactly like any other schema-invalid record.
       await mkdir(dir, { recursive: true })
       await writeFile(
         join(dir, "objectives.json"),
@@ -240,13 +246,21 @@ describe("FileObjectiveStore", () => {
         }),
         "utf8",
       )
-      await expect(store.list()).resolves.toMatchObject([{ id: "obj-legacy", title: "Legacy" }])
-      expect(store.getLoadDiagnostics()).toEqual([expect.objectContaining({ index: -1 })])
+      await expect(store.list()).resolves.toEqual([])
+      const diagnostics = store.getLoadDiagnostics()
+      expect(diagnostics).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ index: -1, reason: expect.stringContaining("migrated legacy") }),
+          expect.objectContaining({ index: 0 }),
+        ]),
+      )
 
-      // The next write upgrades the on-disk file to the versioned shape.
-      await store.update({ id: "obj-legacy", current: 1 })
+      // The next write upgrades the on-disk file to the versioned shape,
+      // even though the legacy record itself was dropped.
+      await store.create(input({ title: "Fresh" }))
       const raw = JSON.parse(await readFile(join(dir, "objectives.json"), "utf8"))
       expect(raw).toMatchObject({ version: 1, revision: 1 })
+      expect(raw.objectives).toHaveLength(1)
     })
   })
 

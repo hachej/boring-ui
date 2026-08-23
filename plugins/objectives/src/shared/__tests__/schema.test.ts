@@ -86,9 +86,11 @@ describe("objectives schema", () => {
 })
 
 describe("ObjectiveIdSchema", () => {
-  it("matches OBJECTIVE_ID_PATTERN", () => {
-    expect(ObjectiveIdSchema.safeParse("obj-123-abc").success).toBe(true)
-    expect(OBJECTIVE_ID_PATTERN.test("obj-123-abc")).toBe(true)
+  const canonicalId = "obj-11111111-1111-4111-8111-111111111111"
+
+  it("matches OBJECTIVE_ID_PATTERN and accepts a canonical obj-<uuid> id", () => {
+    expect(ObjectiveIdSchema.safeParse(canonicalId).success).toBe(true)
+    expect(OBJECTIVE_ID_PATTERN.test(canonicalId)).toBe(true)
   })
 
   it("rejects ids with underscores, uppercase, or an empty string", () => {
@@ -97,15 +99,22 @@ describe("ObjectiveIdSchema", () => {
     expect(ObjectiveIdSchema.safeParse("").success).toBe(false)
   })
 
-  it("rejects __proto__ and other dangerous keys as ids", () => {
+  it("rejects __proto__, constructor, and other dangerous or non-canonical ids", () => {
     expect(ObjectiveIdSchema.safeParse("__proto__").success).toBe(false)
-    expect(ObjectiveIdSchema.safeParse("constructor").success).toBe(true) // plain word — safe as a Map key, not a special property here
+    // "constructor" is a plain word (no prototype-pollution risk as a Map
+    // key), but it still isn't an obj-<uuid> and must be rejected on that
+    // basis alone — the canonical-format enforcement is unconditional.
+    expect(ObjectiveIdSchema.safeParse("constructor").success).toBe(false)
+  })
+
+  it("rejects a legacy short-form id that predates the canonical obj-<uuid> format", () => {
+    expect(ObjectiveIdSchema.safeParse("obj-123-abc").success).toBe(false)
   })
 })
 
 describe("ObjectiveSchema", () => {
   const base = {
-    id: "obj-1",
+    id: "obj-11111111-1111-4111-8111-111111111111",
     title: "Ship v2",
     objective: "Ship the v2 rewrite to production",
     metric: "weekly active users",

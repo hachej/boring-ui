@@ -5,8 +5,14 @@ export const OBJECTIVE_SURFACE_KIND = "objective" as const
 
 export const OBJECTIVE_STATUSES = ["active", "paused", "achieved", "abandoned"] as const
 
-/** Canonical, server-generated Objective id shape. No underscores — hyphen-safe. */
-export const OBJECTIVE_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/
+/**
+ * Canonical, server-generated Objective id shape: `obj-<uuid>`, matching
+ * `generateObjectiveId()`'s `` `obj-${randomUUID()}` `` output exactly.
+ * Enforced on load (`ObjectiveSchema`), not just on generation — a stored
+ * record whose id predates this format (or was hand-crafted) is skipped
+ * rather than trusted as a Map key.
+ */
+export const OBJECTIVE_ID_PATTERN = /^obj-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 export const OBJECTIVE_SCHEMA_LIMITS = {
   maxTitleLength: 200,
