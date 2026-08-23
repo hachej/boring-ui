@@ -241,22 +241,20 @@ export class PiSessionStore implements SessionStore {
     const referencedPiFiles = await this.referencedPiFiles(existingFiles);
     const visibleFiles = await Promise.all(existingFiles
       .filter(({ filepath }) => !referencedPiFiles.has(resolve(filepath)))
-      .map(async (file) => ({
-        ...file,
-        sortMtimeMs: await this.sessionSortMtimeMs(file),
-      })));
+      .map(async (file) => ({ ...file, ...(await this.sessionSortKey(file)) })));
     // The gateway merge (embeddedGateway.listSessions) orders rows by the
     // total order `updatedAt desc, then session id asc`, and its bounded
     // fan-out assumes every store truncates under that SAME order: a row at
     // merged rank r must sit at rank <= r inside its own store's listing.
+    // The tiebreak must therefore use each row's CANONICAL id — the header id
+    // already parsed into the prefix cache — not a filename-derived guess:
+    // ids may legally contain `_`, which a last-underscore split truncates.
     // Sorting on recency alone left equal-updatedAt sessions in readdir
     // order, so one could fall outside the requested prefix and then fail
     // the gateway's cursor filter forever — a session that never appears.
     visibleFiles.sort((a, b) =>
       b.sortMtimeMs - a.sortMtimeMs
-      || sessionIdFromFilename(basename(a.filepath)).localeCompare(
-        sessionIdFromFilename(basename(b.filepath)),
-      ));
+      || a.sortId.localeCompare(b.sortId));
 
     const { offset, limit } = options;
     const includeId = options.includeId;
@@ -716,31 +714,40 @@ export class PiSessionStore implements SessionStore {
     return referenced;
   }
 
-  private async sessionSortMtimeMs({ filepath, stat }: SessionFileStat): Promise<number> {
+  private async sessionSortKey(
+    { filepath, stat }: SessionFileStat,
+  ): Promise<{ sortMtimeMs: number; sortId: string }> {
     let sortMtimeMs = stat.mtime.getTime();
     try {
       // One prefix read per file per listing: `referencedPiFiles` already
-      // populated this cache entry, and the header id it carries is all the
-      // native-file test needs. Re-reading and re-parsing the prefix here was a
-      // second full-store pass on every request (#1338).
+      // populated this cache entry. Its header id supplies BOTH the native-
+      // file test and the canonical tiebreak id (the row's `summary.id`);
+      // re-reading and re-parsing the prefix here was a second full-store
+      // pass on every request (#1338).
       const cached = await this.readPrefixCache(filepath, stat);
       const linkedPiFile = cached.referencedPiFile;
       if (linkedPiFile && resolve(linkedPiFile) !== resolve(filepath)) {
         const linkedStat = await fsStat(linkedPiFile);
         sortMtimeMs = Math.max(sortMtimeMs, linkedStat.mtime.getTime());
       }
-      if (!cached.headerId || !isTimestampNamedPiSessionFile(filepath, cached.headerId)) return sortMtimeMs;
-      if (cached.nativeSortMtimeMs !== undefined) return cached.nativeSortMtimeMs;
+      if (!cached.headerId || !isTimestampNamedPiSessionFile(filepath, cached.headerId)) {
+        // Wrapper transcript (or headerless native file): the stem is the id
+        // `resolveSessionFile` accepts — never a last-underscore truncation.
+        return { sortMtimeMs, sortId: wrapperSessionId(filepath) };
+      }
+      if (cached.nativeSortMtimeMs !== undefined) {
+        return { sortMtimeMs: cached.nativeSortMtimeMs, sortId: cached.headerId };
+      }
       const latest = await latestNativeMessageTimestamp(filepath, Number(stat.size));
-      if (latest === undefined) return sortMtimeMs;
+      if (latest === undefined) return { sortMtimeMs, sortId: cached.headerId };
       // Only a value derived purely from this file's own bytes is cacheable:
       // the (mtime, size) key does not invalidate on a linked file's change.
       this.prefixCache.set(filepath, { ...cached, nativeSortMtimeMs: latest });
-      return latest;
+      return { sortMtimeMs: latest, sortId: cached.headerId };
     } catch {
       // Fall back to the wrapper/native file mtime for unreadable links.
     }
-    return sortMtimeMs;
+    return { sortMtimeMs, sortId: wrapperSessionId(filepath) };
   }
 
   private async summarizeFile(
@@ -1224,17 +1231,25 @@ function nativeSessionFilename(sessionId: string, isoTimestamp: string): string 
 }
 
 /**
- * Cheap session-id extraction for sort tiebreaks. Session files are either
- * wrapper-named `${sessionId}.jsonl` or pi-native `${timestamp}_${id}.jsonl`
- * (timestamps use `-` separators, ids are UUIDs — neither contains `_`), so
- * the text after the last underscore is the id in both forms. Matches what
- * `resolveSessionFile` accepts and, for timestamp-named native files,
- * `isTimestampNamedPiSessionFile` enforces about the header id.
+ * Recency-plus-tiebreak key implementing the gateway's store-side order.
+ * See {@link PiSessionStore.sessionSortKey} for how `sortId` is derived.
  */
-function sessionIdFromFilename(filename: string): string {
-  const base = filename.endsWith(".jsonl") ? filename.slice(0, -".jsonl".length) : filename;
-  const underscore = base.lastIndexOf("_");
-  return underscore === -1 ? base : base.slice(underscore + 1);
+interface SessionSortKey {
+  sortMtimeMs: number;
+  /** Canonical session id: header id for timestamp-named natives, stem for wrappers. */
+  sortId: string;
+}
+
+/**
+ * Session id of a WRAPPER-named transcript: `resolveSessionFile` looks these up
+ * as `${sessionId}.jsonl`, so the stem is authoritative. Never split on `_`:
+ * SAFE_NATIVE_SESSION_ID allows it (`a_z.jsonl` wraps the id `a_z`).
+ * Timestamp-named pi-native files take their id from the transcript header
+ * instead (see {@link PiSessionStore.sessionSortKey}).
+ */
+function wrapperSessionId(filepath: string): string {
+  const base = basename(filepath);
+  return base.endsWith(".jsonl") ? base.slice(0, -".jsonl".length) : base;
 }
 
 function isTimestampNamedPiSessionFile(filepath: string, sessionId: string): boolean {

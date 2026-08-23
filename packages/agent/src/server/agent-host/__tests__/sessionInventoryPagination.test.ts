@@ -306,4 +306,49 @@ describe('equal-updatedAt tiebreak (sessions must never disappear)', () => {
     expect(paged).toEqual(['alpha', 'beta', 'xray', 'yankee', 'zeta'])
     expect(new Set(paged).size).toBe(IDS.length)
   })
+
+  it('tiebreaks on the FULL header id even when it contains underscores (limit-1)', async () => {
+    // SAFE_NATIVE_SESSION_ID allows `_`, but splitting a timestamp-named
+    // filename at its LAST underscore truncates 'a_z' to 'z' and 'b_a' to
+    // 'a'. A store tiebreak on those truncated keys disagrees with the
+    // gateway's total order over full ids, so equal-timestamp sessions can
+    // fall outside a bounded prefix and vanish from every page. With limit 1
+    // every page is a single row, so any prefix/order disagreement surfaces
+    // immediately as a gap, a repeat, or a wrong first row.
+    const UNDERSCORE_IDS = ['b_a', 'a_z', 'aa', 'zz_9']
+    // localeCompare over full ids: 'a_z' < 'aa' ('_' < 'a'), then 'b_a', 'zz_9'.
+    const EXPECTED = ['a_z', 'aa', 'b_a', 'zz_9']
+
+    const sessionRoot = await temporaryRoot()
+    const workspaceRoot = join(sessionRoot, 'workspace')
+    const workspaceScopeId = 'workspace-u:storage-u'
+    const scope = { workspaceScopeId, authSubjectId: 'subject-a' } as AuthorizedAgentScope
+    const dir = join(sessionRoot, pathDerivedDirName(workspaceRoot))
+    for (const id of UNDERSCORE_IDS) {
+      await plantNativeTie(dir, id, workspaceScopeId)
+    }
+
+    const host = await startHost({
+      agents: [legacyDefaultAgent],
+      sessionRoot,
+      workspaceRoot,
+      sessionNamespace: '',
+    })
+    try {
+      const seen: string[] = []
+      let cursor: string | undefined
+      let pages = 0
+      do {
+        const page = await host.gateway.listSessions({ scope, agentTypeId: 'default', limit: 1, cursor })
+        pages += 1
+        seen.push(...page.sessions.map((summary) => summary.ref.sessionId))
+        cursor = page.nextCursor
+        expect(page.sessions.length).toBeLessThanOrEqual(1)
+      } while (cursor && pages < 10)
+
+      expect(seen).toEqual(EXPECTED)
+    } finally {
+      await host.host.close()
+    }
+  })
 })
