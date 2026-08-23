@@ -1,11 +1,11 @@
-import { mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises"
+import { lstat, mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { basename, dirname, join } from "node:path"
 import { randomUUID } from "node:crypto"
 import { OBJECTIVE_MAX_AGGREGATE_BYTES } from "../shared/constants"
 import { OBJECTIVE_ERROR_CODES } from "../shared/error-codes"
 import { ObjectiveSchema, StoredObjectiveStateSchema } from "../shared/schema"
 import type { CreateObjectiveInput, Objective, ObjectiveStatus, UpdateObjectiveInput } from "../shared/types"
-import { assertFileNotSymlink, ensureContainedDir } from "./pathSafety"
+import { assertFileNotSymlink, ensureContainedDir, WorkspacePathEscapeError } from "./pathSafety"
 
 export class ObjectiveStoreError extends Error {
   constructor(
@@ -252,6 +252,12 @@ export class FileObjectiveStore implements ObjectiveStore {
   private async acquireLock(lockPath: string, token: string): Promise<boolean> {
     const deadline = Date.now() + LOCK_ACQUIRE_TIMEOUT_MS
     for (;;) {
+      // Checked at the top of every iteration — including ones that are
+      // about to attempt a reclaim — so a lock that gets repeatedly
+      // recreated as "stale" (e.g. by a thief or a pathological retry
+      // loop) still bounds total wait time to LOCK_ACQUIRE_TIMEOUT_MS
+      // instead of spinning past it.
+      if (Date.now() >= deadline) return false
       try {
         const handle = await open(lockPath, "wx")
         try {
@@ -262,10 +268,41 @@ export class FileObjectiveStore implements ObjectiveStore {
         return true
       } catch (error) {
         if ((error as { code?: string }).code !== "EEXIST") throw error
-        if (await this.reclaimIfStale(lockPath)) continue
+        if (await this.reclaimIfStale(lockPath, token)) return true
         if (Date.now() >= deadline) return false
         await delay(LOCK_POLL_INTERVAL_MS)
       }
+    }
+  }
+
+  /**
+   * lstat + read the lock file, rejecting a symlinked lock path outright
+   * (the same containment concern as the store file itself: a
+   * workspace-controlled symlink at the lock path could redirect a
+   * trusted read to an arbitrary host path) and tolerating a missing or
+   * unparseable file by falling back to the lock *file's* mtime rather
+   * than the metadata it failed to produce.
+   *
+   * Returns `null` when there is nothing to read (lock gone — the next
+   * `open(..., "wx")` attempt re-checks from scratch).
+   */
+  private async readLockMeta(lockPath: string): Promise<{ raw: string; mtimeMs: number } | null> {
+    let stats
+    try {
+      stats = await lstat(lockPath)
+    } catch (error) {
+      if ((error as { code?: string }).code === "ENOENT") return null
+      throw error
+    }
+    if (stats.isSymbolicLink()) {
+      throw new WorkspacePathEscapeError(`Refusing to operate on a symlinked objective store lock file: ${lockPath}`)
+    }
+    try {
+      const raw = await readFile(lockPath, "utf8")
+      return { raw, mtimeMs: stats.mtimeMs }
+    } catch (error) {
+      if ((error as { code?: string }).code === "ENOENT") return null
+      throw error
     }
   }
 
@@ -275,32 +312,70 @@ export class FileObjectiveStore implements ObjectiveStore {
    * a holder that crashed without releasing its lock, not a general
    * fairness mechanism. A live holder never legitimately holds this long
    * for a local JSON-file write.
+   *
+   * Staleness is normally judged by the lock's own recorded `timestamp`.
+   * A crash mid-write can leave an empty or truncated lock file whose
+   * metadata never parses — that must not mean "never reclaimable"
+   * (permanent deadlock), so an unparseable lock instead falls back to
+   * the lock *file's* mtime: still gated by `LOCK_STALE_MS`, so a lock
+   * that is merely empty because a live writer is mid-`writeFile` right
+   * now (fresh mtime) is still waited on, not stolen.
+   *
+   * Reclamation itself never unlinks. It writes the replacement to a
+   * temp file and `rename`s it over the lock path — one atomic content
+   * swap, not a delete-then-create gap. A resumed "stale" holder that
+   * wakes up and re-reads the lock to check its own token (see
+   * `releaseLock`) then sees our token, not an absence, and aborts
+   * instead of ever calling `rm` on our replacement lock.
    */
-  private async reclaimIfStale(lockPath: string): Promise<boolean> {
+  private async reclaimIfStale(lockPath: string, token: string): Promise<boolean> {
+    const meta = await this.readLockMeta(lockPath)
+    if (!meta) return false
+
+    let isStale: boolean
     try {
-      const raw = await readFile(lockPath, "utf8")
-      const info = JSON.parse(raw) as Partial<{ timestamp: number }>
-      if (typeof info.timestamp === "number" && Date.now() - info.timestamp > LOCK_STALE_MS) {
-        await rm(lockPath, { force: true })
-        return true
-      }
+      const info = JSON.parse(meta.raw) as Partial<{ timestamp: number }>
+      isStale = typeof info.timestamp === "number"
+        ? Date.now() - info.timestamp > LOCK_STALE_MS
+        : Date.now() - meta.mtimeMs > LOCK_STALE_MS
     } catch {
-      // Lock file disappeared or is unreadable mid-race; the next
-      // acquire attempt re-checks from scratch rather than assuming
-      // either outcome.
+      isStale = Date.now() - meta.mtimeMs > LOCK_STALE_MS
     }
-    return false
+    if (!isStale) return false
+
+    const dir = dirname(lockPath)
+    const tmp = join(dir, `.${randomUUID()}.lock.tmp`)
+    await writeFile(tmp, JSON.stringify({ pid: process.pid, token, timestamp: Date.now() }), "utf8")
+    await rename(tmp, lockPath)
+    return true
   }
 
-  /** Delete the lock file only if it still holds our own token. */
+  /**
+   * Delete the lock file only if it still holds our own token.
+   *
+   * Read-then-unlink here is not perfectly atomic: another actor could in
+   * principle replace the lock at this exact path between our read and
+   * our `rm`. This residual window is accepted, not fixed, because
+   * nothing can legitimately race it — a live holder never releases a
+   * lock it doesn't own, and the only actor that ever touches *our* live
+   * lock is a reclaimer, which only acts once the lock has aged past
+   * `LOCK_STALE_MS` (far longer than this read-unlink gap) and, when it
+   * does act, replaces via atomic rename rather than unlink+create.
+   * Reclamation is held to the stricter no-unlink standard precisely
+   * because it operates on a lock it doesn't own and can't prove is
+   * truly abandoned; release operates on a lock this call already
+   * confirmed carries our own token.
+   */
   private async releaseLock(lockPath: string, token: string): Promise<void> {
     try {
-      const raw = await readFile(lockPath, "utf8")
-      const info = JSON.parse(raw) as Partial<{ token: string }>
+      const meta = await this.readLockMeta(lockPath)
+      if (!meta) return
+      const info = JSON.parse(meta.raw) as Partial<{ token: string }>
       if (info.token !== token) return
       await rm(lockPath, { force: true })
-    } catch {
-      // Already gone.
+    } catch (error) {
+      if (error instanceof WorkspacePathEscapeError) throw error
+      // Already gone or unreadable — nothing safe to release.
     }
   }
 

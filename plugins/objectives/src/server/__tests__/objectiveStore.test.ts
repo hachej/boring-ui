@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, symlink, utimes, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -199,6 +199,128 @@ describe("FileObjectiveStore", () => {
 
       await rm(lockPath, { force: true })
     }, 10_000)
+  })
+
+  describe("stale lock reclamation: malformed metadata, atomic replace, and containment", () => {
+    it("reclaims an empty lock file once it has aged past the stale threshold (finding: malformed lock never stale)", async () => {
+      const path = join(dir, "objectives.json")
+      const s = new FileObjectiveStore(path)
+      const created = await s.create(input({ title: "Seed" }))
+      const lockPath = `${path}.lock`
+
+      // Simulates a crash mid-write: the lock file exists but its content
+      // never made it past `open(..., "wx")` before the process died --
+      // empty, so its metadata is unparseable JSON.
+      await writeFile(lockPath, "", "utf8")
+      const old = new Date(Date.now() - 40_000)
+      await utimes(lockPath, old, old)
+
+      // Must not be permanently unreclaimable: falls back to the lock
+      // file's own mtime, which is well past LOCK_STALE_MS.
+      await expect(s.update({ id: created.id, current: 7 })).resolves.toMatchObject({ current: 7 })
+    })
+
+    it("waits on a fresh empty lock file rather than stealing it (finding: malformed lock never stale)", async () => {
+      const path = join(dir, "objectives.json")
+      const s = new FileObjectiveStore(path)
+      const seeded = await s.create(input({ title: "Seed" }))
+      const lockPath = `${path}.lock`
+
+      // Empty (unparseable) but freshly written -- e.g. another writer is
+      // mid-`writeFile` on its own lock right now. mtime is "now", well
+      // under the stale threshold, so this must be waited on, not treated
+      // as a crash-abandoned lock.
+      await writeFile(lockPath, "", "utf8")
+
+      await expect(s.update({ id: seeded.id, current: 1 })).rejects.toMatchObject({
+        code: OBJECTIVE_ERROR_CODES.LOCK_TIMEOUT,
+      })
+
+      await rm(lockPath, { force: true })
+    }, 10_000)
+
+    it("reclaims by atomically replacing lock content, so a resumed stale holder aborts instead of deleting the reclaimer's lock (finding: reclaim/release race)", async () => {
+      const path = join(dir, "objectives.json")
+      const s = new FileObjectiveStore(path)
+      await s.create(input({ title: "Seed" }))
+      const lockPath = `${path}.lock`
+
+      // A crashed holder's stale lock.
+      await writeFile(
+        lockPath,
+        JSON.stringify({ pid: 999_999, token: "dead-holder", timestamp: Date.now() - 60_000 }),
+        "utf8",
+      )
+
+      type PrivateLockOps = {
+        reclaimIfStale(lockPath: string, token: string): Promise<boolean>
+        releaseLock(lockPath: string, token: string): Promise<void>
+      }
+      const ops = s as unknown as PrivateLockOps
+
+      // A reclaimer takes over via atomic replace (temp file + rename),
+      // never unlink+create.
+      await expect(ops.reclaimIfStale(lockPath, "new-holder")).resolves.toBe(true)
+      const afterReclaim = JSON.parse(await readFile(lockPath, "utf8"))
+      expect(afterReclaim.token).toBe("new-holder")
+
+      // The old (crashed) holder now "wakes up" and tries to release the
+      // lock using its own stale token. It must fail its token re-verify
+      // and leave the reclaimer's lock intact -- never unlink it out from
+      // under the new holder.
+      await ops.releaseLock(lockPath, "dead-holder")
+      const stillIntact = JSON.parse(await readFile(lockPath, "utf8"))
+      expect(stillIntact.token).toBe("new-holder")
+
+      await rm(lockPath, { force: true })
+    })
+
+    it("rejects a symlinked lock path instead of following it (finding: lock path never symlink-checked)", async () => {
+      const path = join(dir, "objectives.json")
+      const s = new FileObjectiveStore(path)
+      const created = await s.create(input({ title: "Seed" }))
+      const lockPath = `${path}.lock`
+      const outsideDir = await mkdtemp(join(tmpdir(), "objectives-lock-outside-"))
+      const outsideFile = join(outsideDir, "hostile-lock.json")
+      await writeFile(outsideFile, JSON.stringify({ pid: 1, token: "x", timestamp: Date.now() - 60_000 }), "utf8")
+      await symlink(outsideFile, lockPath)
+
+      await expect(s.update({ id: created.id, current: 5 })).rejects.toBeInstanceOf(WorkspacePathEscapeError)
+
+      await rm(lockPath, { force: true })
+      await rm(outsideDir, { recursive: true, force: true })
+    })
+
+    it("still honors the acquisition deadline even when the lock is stale and reclaimable (finding: reclamation bypasses deadline)", async () => {
+      const path = join(dir, "objectives.json")
+      const s = new FileObjectiveStore(path)
+      const created = await s.create(input({ title: "Seed" }))
+      const lockPath = `${path}.lock`
+      await writeFile(
+        lockPath,
+        JSON.stringify({ pid: 999_999, token: "ancient", timestamp: Date.now() - 60_000 }),
+        "utf8",
+      )
+
+      // The lock is genuinely stale and reclaimable, but the deadline has
+      // already elapsed by the time acquireLock's loop re-checks it: the
+      // first Date.now() call computes the real deadline, every call
+      // after that reports far beyond it. Reclamation must not get a free
+      // pass around the acquisition timeout.
+      const realNow = Date.now.bind(Date)
+      let calls = 0
+      const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => {
+        calls += 1
+        return calls === 1 ? realNow() : realNow() + 60_000
+      })
+
+      await expect(s.update({ id: created.id, current: 1 })).rejects.toMatchObject({
+        code: OBJECTIVE_ERROR_CODES.LOCK_TIMEOUT,
+      })
+
+      nowSpy.mockRestore()
+      await rm(lockPath, { force: true })
+    })
   })
 
   describe("path containment", () => {
