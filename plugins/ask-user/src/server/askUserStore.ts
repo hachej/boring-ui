@@ -1,4 +1,4 @@
-import { mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises"
+import { mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { randomUUID } from "node:crypto"
 import type { ZodError } from "zod"
@@ -54,6 +54,14 @@ export interface AskUserStore {
    * Returns null until the question is answered.
    */
   getDecisionRecord(questionId: string): Promise<AskUserDecisionRecord | null>
+  /**
+   * All questions in a terminal state (answered/cancelled/abandoned), used
+   * for startup reconciliation against the transcript audit log (finding:
+   * state transition and transcript-event writes are separate durable
+   * writes, so a crash between them can leave a question resolved with no
+   * matching audit event).
+   */
+  listResolved(): Promise<AskUserQuestion[]>
   cancel(questionId: string): Promise<void>
   /**
    * Compare-and-set transition: abandons a `ready` question and returns
@@ -110,11 +118,16 @@ function emptyState(): StoredAskUserState {
 }
 
 const MAX_WRITE_ATTEMPTS = 25
-const LOCK_STALE_MS = 15_000
+const DEFAULT_LOCK_STALE_MS = 15_000
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
+
+/** The outcome of one in-memory mutation attempt, before it is known to have persisted. */
+type MutationOutcome<T> = { result: T; change?: AskUserStoreChange }
+
+type LockOwner = { token: string; acquiredAtMs: number }
 
 export class FileAskUserStore implements AskUserStore {
   private state: StoredAskUserState | null = null
@@ -123,13 +136,15 @@ export class FileAskUserStore implements AskUserStore {
   private readonly listeners = new Set<AskUserStoreListener>()
   private readonly now: () => Date
   private readonly onDiagnostic?: AskUserStoreDiagnosticListener
+  private readonly lockStaleMs: number
 
   constructor(
     private readonly filePath: string,
-    options: { now?: () => Date; onDiagnostic?: AskUserStoreDiagnosticListener } = {},
+    options: { now?: () => Date; onDiagnostic?: AskUserStoreDiagnosticListener; lockStaleMs?: number } = {},
   ) {
     this.now = options.now ?? (() => new Date())
     this.onDiagnostic = options.onDiagnostic
+    this.lockStaleMs = options.lockStaleMs ?? DEFAULT_LOCK_STALE_MS
   }
 
   async getPending(sessionId: string): Promise<AskUserQuestion | null> {
@@ -167,6 +182,13 @@ export class FileAskUserStore implements AskUserStore {
     return buildDecisionRecord(question, answer)
   }
 
+  async listResolved(): Promise<AskUserQuestion[]> {
+    const state = await this.load()
+    return Object.values(state.questions)
+      .filter((question) => question.status !== "ready")
+      .map((question) => clone(question))
+  }
+
   async createPending(question: AskUserQuestion): Promise<void> {
     await this.mutate(async (state) => {
       const existing = state.pendingBySession[question.sessionId]
@@ -175,7 +197,7 @@ export class FileAskUserStore implements AskUserStore {
       }
       state.questions[question.questionId] = clone(question)
       if (isPending(question)) state.pendingBySession[question.sessionId] = question.questionId
-      this.emit({ sessionId: question.sessionId, questionId: question.questionId, reason: "create" })
+      return { result: undefined, change: { sessionId: question.sessionId, questionId: question.questionId, reason: "create" } }
     })
   }
 
@@ -195,7 +217,7 @@ export class FileAskUserStore implements AskUserStore {
       question.updatedAt = nowIso()
       state.answers[questionId] = clone(answer)
       delete state.pendingBySession[question.sessionId]
-      this.emit({ sessionId: question.sessionId, questionId, reason: "answer" })
+      return { result: undefined, change: { sessionId: question.sessionId, questionId, reason: "answer" } }
     })
   }
 
@@ -208,26 +230,25 @@ export class FileAskUserStore implements AskUserStore {
       question.status = "cancelled"
       question.updatedAt = nowIso()
       delete state.pendingBySession[question.sessionId]
-      this.emit({ sessionId: question.sessionId, questionId, reason: "cancel" })
+      return { result: undefined, change: { sessionId: question.sessionId, questionId, reason: "cancel" } }
     })
   }
 
   async markAbandoned(questionId: string): Promise<boolean> {
     return this.mutate(async (state) => {
       const question = requireQuestion(state, questionId)
-      if (!isPending(question)) return false
+      if (!isPending(question)) return { result: false }
       question.status = "abandoned"
       question.updatedAt = nowIso()
       delete state.pendingBySession[question.sessionId]
-      this.emit({ sessionId: question.sessionId, questionId, reason: "abandon" })
-      return true
+      return { result: true, change: { sessionId: question.sessionId, questionId, reason: "abandon" } }
     })
   }
 
   async restoreAbandoned(questionId: string): Promise<boolean> {
     return this.mutate(async (state) => {
       const question = requireQuestion(state, questionId)
-      if (question.status === "ready") return false
+      if (question.status === "ready") return { result: false }
       if (question.status !== "abandoned") {
         throw new AskUserStoreError(ASK_USER_ERROR_CODES.ANSWER_INVALID, `question ${questionId} is not abandoned`)
       }
@@ -238,17 +259,16 @@ export class FileAskUserStore implements AskUserStore {
       question.status = "ready"
       question.updatedAt = nowIso()
       state.pendingBySession[question.sessionId] = questionId
-      this.emit({ sessionId: question.sessionId, questionId, reason: "restore" })
-      return true
+      return { result: true, change: { sessionId: question.sessionId, questionId, reason: "restore" } }
     })
   }
 
   async clearPending(sessionId: string): Promise<void> {
     await this.mutate(async (state) => {
       const questionId = state.pendingBySession[sessionId]
-      if (!questionId) return
+      if (!questionId) return { result: undefined }
       delete state.pendingBySession[sessionId]
-      this.emit({ sessionId, questionId, reason: "clear" })
+      return { result: undefined, change: { sessionId, questionId, reason: "clear" } }
     })
   }
 
@@ -256,7 +276,7 @@ export class FileAskUserStore implements AskUserStore {
     await this.mutate(async (state) => {
       const sessionId = transcriptSessionId(event)
       state.transcriptsBySession[sessionId] = [...(state.transcriptsBySession[sessionId] ?? []), clone(event)]
-      this.emit({ sessionId, questionId: transcriptQuestionId(event), reason: "transcript" })
+      return { result: undefined, change: { sessionId, questionId: transcriptQuestionId(event), reason: "transcript" } }
     })
   }
 
@@ -276,6 +296,12 @@ export class FileAskUserStore implements AskUserStore {
     return () => this.listeners.delete(listener)
   }
 
+  private async mutate<T>(fn: (state: StoredAskUserState) => Promise<MutationOutcome<T>> | MutationOutcome<T>): Promise<T> {
+    const run = this.writeChain.then(() => this.mutateWithRetry(fn))
+    this.writeChain = run.then(() => undefined, () => undefined)
+    return run
+  }
+
   /**
    * All mutations are serialized within this instance via `writeChain`
    * (unchanged), but that alone does not protect against a second
@@ -286,28 +312,32 @@ export class FileAskUserStore implements AskUserStore {
    * process already committed and its own guard clauses (already
    * answered/cancelled/etc.) reject the mutation, rather than clobbering a
    * record based on stale cached state (finding 3).
+   *
+   * Change notifications are emitted here, exactly once, only for the
+   * attempt that actually persisted (finding: notify-after-commit). `fn`
+   * returns its change descriptor instead of calling `emit` itself, so a
+   * failed CAS attempt -- including one whose `fn` ran to completion before
+   * losing the race -- can never produce a listener notification, and a
+   * listener is never told about state that only exists in an in-memory
+   * draft that was thrown away.
    */
-  private async mutate<T>(fn: (state: StoredAskUserState) => Promise<T> | T): Promise<T> {
-    const run = this.writeChain.then(() => this.mutateWithRetry(fn))
-    this.writeChain = run.then(() => undefined, () => undefined)
-    return run
-  }
-
-  private async mutateWithRetry<T>(fn: (state: StoredAskUserState) => Promise<T> | T): Promise<T> {
+  private async mutateWithRetry<T>(fn: (state: StoredAskUserState) => Promise<MutationOutcome<T>> | MutationOutcome<T>): Promise<T> {
     for (let attempt = 0; attempt < MAX_WRITE_ATTEMPTS; attempt++) {
       const onDisk = await this.readFresh()
       const draft = clone(onDisk)
-      const result = await fn(draft)
+      const outcome = await fn(draft)
       draft.revision = onDisk.revision + 1
       const persisted = await this.tryPersist(draft, onDisk.revision)
       if (persisted) {
         this.state = draft
-        return result
+        if (outcome.change) this.emit(outcome.change)
+        return outcome.result
       }
       // Another writer (a second FileAskUserStore instance backed by the
       // same file, e.g. a stale process) committed between our read and our
       // write attempt, or is currently holding the write lock. Back off
-      // briefly and retry against the now-current on-disk state.
+      // briefly and retry against the now-current on-disk state. Nothing
+      // was emitted for this attempt.
       await delay(Math.min(2 ** attempt, 20))
     }
     throw new AskUserStoreError(
@@ -365,13 +395,49 @@ export class FileAskUserStore implements AskUserStore {
       return emptyState()
     }
 
+    // Finding 4: honor the envelope version. A file written by a newer
+    // process may contain fields/shapes this (older) process does not
+    // understand; loading it anyway and later persisting our incomplete view
+    // back as version 1 would silently downgrade/drop that newer data. Refuse
+    // outright -- this process cannot load, and therefore cannot ever
+    // rewrite, a file whose declared version it does not support.
+    if (typeof raw.version === "number" && raw.version > STORED_ASK_USER_STATE_VERSION) {
+      this.reportDiagnostic({
+        type: "invalid-state",
+        issues: `store file version ${raw.version} is newer than the version this process supports (${STORED_ASK_USER_STATE_VERSION}); refusing to load or rewrite it`,
+      })
+      throw new AskUserStoreError(
+        ASK_USER_ERROR_CODES.UNSUPPORTED_STORE_VERSION,
+        `${this.filePath} has version ${raw.version}, which is newer than the ${STORED_ASK_USER_STATE_VERSION} this process supports; refusing to read it to avoid rewriting it as an older version`,
+      )
+    }
+
     const revision = typeof raw.revision === "number" && Number.isInteger(raw.revision) ? raw.revision : 0
 
     const questions: StoredAskUserState["questions"] = {}
     for (const [id, value] of Object.entries(isRecord(raw.questions) ? raw.questions : {})) {
       const parsed = AskUserQuestionSchema.safeParse(value)
-      if (parsed.success) questions[id] = parsed.data as AskUserQuestion
-      else this.reportDiagnostic({ type: "invalid-record", kind: "question", id, issues: summarizeIssues(parsed.error) })
+      if (parsed.success) {
+        questions[id] = parsed.data as AskUserQuestion
+        continue
+      }
+      // Finding 5: a malformed `expiresAt` is the one field we recover from
+      // rather than dropping the whole record. Fail closed instead of
+      // losing the question: force it to an already-past sentinel so
+      // startup/answer-time expiry enforcement treats it as expired, and
+      // surface a diagnostic either way.
+      const recovered = recoverQuestionWithInvalidExpiry(value, parsed.error)
+      if (recovered) {
+        questions[id] = recovered
+        this.reportDiagnostic({
+          type: "invalid-record",
+          kind: "question",
+          id,
+          issues: `expiresAt invalid, question forced to already-expired: ${summarizeIssues(parsed.error)}`,
+        })
+      } else {
+        this.reportDiagnostic({ type: "invalid-record", kind: "question", id, issues: summarizeIssues(parsed.error) })
+      }
     }
 
     const answers: StoredAskUserState["answers"] = {}
@@ -414,44 +480,100 @@ export class FileAskUserStore implements AskUserStore {
     }
   }
 
+  /**
+   * Finding 1: stale-lock reclamation must not destroy mutual exclusion.
+   * The lock file carries an owner token; `acquireOrReclaimLock` reclaims a
+   * stale lock by replacing its content with a fresh token rather than
+   * deleting it, and the caller re-verifies token ownership immediately
+   * before the atomic rename (`ownsLock`) and again in `releaseLockIfOwned`
+   * (read-verify-delete). A holder that merely paused past the staleness
+   * window -- GC, slow disk, a suspended process, not necessarily a crash --
+   * therefore detects on resume that another writer reclaimed the lock and
+   * aborts this attempt (falling through to the caller's CAS retry loop)
+   * instead of blindly deleting the reclaimer's lock or racing it to rename.
+   */
   private async tryPersist(candidate: StoredAskUserState, expectedRevision: number): Promise<boolean> {
     await mkdir(dirname(this.filePath), { recursive: true })
     const lockPath = `${this.filePath}.lock`
-    // A plain "reread then rename" has a TOCTOU gap: two writers can both
-    // observe a matching revision before either renames, and the second
-    // rename silently discards the first writer's update without either
-    // side detecting a conflict. An exclusive-create lock file closes that
-    // gap by serializing the read-check-rename sequence across instances.
-    if (!(await this.acquireLock(lockPath))) return false
+    const token = await this.acquireOrReclaimLock(lockPath)
+    if (!token) return false
     try {
       const current = await this.readFromDisk()
       if (current.revision !== expectedRevision) return false
       const tmp = join(dirname(this.filePath), `.${randomUUID()}.tmp`)
       await writeFile(tmp, JSON.stringify(candidate, null, 2), "utf8")
+      // Re-verify immediately before the irreversible commit: this is the
+      // window a paused holder can lose the lock to a stale-lock reclaim.
+      if (!(await this.ownsLock(lockPath, token))) {
+        await rm(tmp, { force: true }).catch(() => undefined)
+        return false
+      }
       await rename(tmp, this.filePath)
       return true
     } finally {
-      await rm(lockPath, { force: true }).catch(() => undefined)
+      await this.releaseLockIfOwned(lockPath, token)
     }
   }
 
-  private async acquireLock(lockPath: string): Promise<boolean> {
+  /**
+   * Exclusive-create acquire; on EEXIST, reclaims a lock whose recorded
+   * `acquiredAtMs` (per this store's injectable clock, not wall-clock file
+   * mtime, so staleness is deterministically testable) is older than
+   * `lockStaleMs`. Reclaiming replaces the lock file's content with a new
+   * token via a tmp-file + rename rather than deleting-then-recreating, so
+   * there is never a window with no lock file at all for a third writer to
+   * slip through. Residual window: two reclaimers can race the replace
+   * itself; both then re-verify via `ownsLock` before committing, so at
+   * most one of them proceeds and the other safely aborts and retries.
+   */
+  private async acquireOrReclaimLock(lockPath: string): Promise<string | null> {
+    const token = randomUUID()
+    const payload = JSON.stringify({ token, pid: process.pid, acquiredAtMs: this.now().getTime() } satisfies LockOwner & { pid: number })
     try {
       const handle = await open(lockPath, "wx")
-      await handle.close()
-      return true
+      try {
+        await handle.writeFile(payload, "utf8")
+      } finally {
+        await handle.close()
+      }
+      return token
     } catch (error) {
       if ((error as { code?: string }).code !== "EEXIST") throw error
-      // A holder that crashed mid-write would otherwise wedge every future
-      // writer forever; reclaim a lock that has clearly outlived any real
-      // write.
+      const existing = await this.readLockOwner(lockPath)
+      if (!existing || this.now().getTime() - existing.acquiredAtMs <= this.lockStaleMs) return null
       try {
-        const info = await stat(lockPath)
-        if (Date.now() - info.mtimeMs > LOCK_STALE_MS) await rm(lockPath, { force: true })
+        const tmp = `${lockPath}.${randomUUID()}.reclaim`
+        await writeFile(tmp, payload, "utf8")
+        await rename(tmp, lockPath)
+        return token
       } catch {
-        // Lock disappeared or stat raced; the next attempt will re-check.
+        return null
       }
-      return false
+    }
+  }
+
+  private async readLockOwner(lockPath: string): Promise<LockOwner | null> {
+    try {
+      const raw = await readFile(lockPath, "utf8")
+      const parsed = JSON.parse(raw) as { token?: unknown; acquiredAtMs?: unknown }
+      if (typeof parsed.token === "string" && typeof parsed.acquiredAtMs === "number") {
+        return { token: parsed.token, acquiredAtMs: parsed.acquiredAtMs }
+      }
+      return null
+    } catch {
+      return null
+    }
+  }
+
+  private async ownsLock(lockPath: string, token: string): Promise<boolean> {
+    const owner = await this.readLockOwner(lockPath)
+    return owner?.token === token
+  }
+
+  /** Read-verify-delete: only removes the lock file if it still carries our token. */
+  private async releaseLockIfOwned(lockPath: string, token: string): Promise<void> {
+    if (await this.ownsLock(lockPath, token)) {
+      await rm(lockPath, { force: true }).catch(() => undefined)
     }
   }
 
@@ -507,6 +629,24 @@ function transcriptQuestionId(event: AskUserTranscriptEvent): string {
     case "answered": return event.answer.questionId
     default: return event.questionId
   }
+}
+
+/** A fixed, always-in-the-past timestamp used to force an unparseable persisted `expiresAt` into "already expired" rather than dropping the whole question. */
+const EXPIRED_SENTINEL_ISO = "1970-01-01T00:00:00.000Z"
+
+/**
+ * Finding 5 recovery path: if a question record fails schema validation
+ * *solely* because of its `expiresAt` field, retry validation with
+ * `expiresAt` forced to a sentinel that is unconditionally in the past. This
+ * keeps the rest of the record (and the gate it represents) instead of
+ * silently dropping it, while guaranteeing downstream expiry enforcement
+ * treats it as expired (fail-closed) rather than serving a corrupt deadline.
+ */
+function recoverQuestionWithInvalidExpiry(value: unknown, error: ZodError): AskUserQuestion | null {
+  if (!isRecord(value)) return null
+  if (!error.issues.every((issue) => issue.path.length === 1 && issue.path[0] === "expiresAt")) return null
+  const retried = AskUserQuestionSchema.safeParse({ ...value, expiresAt: EXPIRED_SENTINEL_ISO })
+  return retried.success ? (retried.data as AskUserQuestion) : null
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
