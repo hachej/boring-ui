@@ -66,11 +66,17 @@ export function createObjectiveBridgeHandlers(
       idempotencyPolicy: "none",
       handler: getHandler(options),
     })),
+    // create/update are mutations. The shipped pane only ever calls
+    // list/get (ObjectivePane.tsx); there is no browser UI that creates or
+    // edits an Objective. Core's browser bridge policy grants each
+    // workspace member every declared capability, so a capability name
+    // alone is not a role boundary — restricting the caller class is what
+    // actually keeps these agent/server-domain mutations off the browser.
     contribution(defineTrustedDomainBridgeHandler<ObjectiveBridgeCreateInput, ObjectiveBridgeCreateOutput>({
       op: OBJECTIVE_BRIDGE_OPS.create,
       version: 1,
       owner: OBJECTIVES_PLUGIN_ID,
-      callerClassesAllowed: ["browser", "runtime", "server"],
+      callerClassesAllowed: ["runtime", "server"],
       requiredCapabilities: [OBJECTIVE_BRIDGE_CAPABILITIES.create],
       inputSchema: { type: "object" },
       outputSchema: { type: "object" },
@@ -84,7 +90,7 @@ export function createObjectiveBridgeHandlers(
       op: OBJECTIVE_BRIDGE_OPS.update,
       version: 1,
       owner: OBJECTIVES_PLUGIN_ID,
-      callerClassesAllowed: ["browser", "runtime", "server"],
+      callerClassesAllowed: ["runtime", "server"],
       requiredCapabilities: [OBJECTIVE_BRIDGE_CAPABILITIES.update],
       inputSchema: { type: "object" },
       outputSchema: { type: "object" },

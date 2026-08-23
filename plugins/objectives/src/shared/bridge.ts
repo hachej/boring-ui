@@ -20,6 +20,7 @@ export type ObjectiveBridgeListOutput = { objectives: Objective[] }
 export type ObjectiveBridgeGetInput = { id: string }
 export type ObjectiveBridgeGetOutput = { objective: Objective | null }
 
+/** Create and update are agent/server-domain mutations — never allowed from the browser caller class (see `objectiveBridgeHandlers.ts`). */
 export type ObjectiveBridgeCreateInput = CreateObjectiveInput
 export type ObjectiveBridgeCreateOutput = { objective: Objective }
 
