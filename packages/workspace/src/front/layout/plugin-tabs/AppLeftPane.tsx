@@ -819,8 +819,17 @@ export function AppLeftPane({
             agents={agents}
             activeSessionId={activeSessionRef?.sessionId ?? activeSessionId}
             activeSessionAgentTypeId={activeSessionRef?.agentTypeId ?? sessions.find((session) => session.id === activeSessionId)?.agentTypeId}
+            {...(addressedAgentTypeId ? { defaultAgentTypeId: addressedAgentTypeId } : {})}
+            pinnedSessionKeys={pinnedSet}
+            pinnedProjectIds={pinnedProjectSet}
+            onTogglePinnedProject={togglePinnedProject}
+            sessionsLoading={sessionsLoading}
+            renderLoading={renderChatsLoading}
             onCreateSession={(agentTypeId, projectId, placement = "default") => {
               if (agentTypeId && projectId && consoleSpikeCreateSession) consoleSpikeCreateSession(agentTypeId, projectId, placement)
+              // A Project header's "+" names a place; without the scoped seam
+              // the host's own in-project create is the honest fallback.
+              else if (projectId) onCreateProjectSession?.(projectId)
               else if (placement === "split") onCreateSplitSession?.(agentTypeId)
               else if (placement === "quick") onCreatePopoverSession?.(agentTypeId)
               else onCreateSession(agentTypeId)

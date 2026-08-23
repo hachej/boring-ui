@@ -540,8 +540,16 @@
     height: 44px;
   }
 
-  .app-left-console-view-action {
+  .app-left-console-view-action,
+  /* The Console's New chat split button is the pane's primary create path on
+     touch too, so both halves clear the 44px minimum — including the chevron,
+     which is the only way to a split or quick chat from here. */
+  .app-left-console-create {
     min-height: 44px;
+  }
+
+  .app-left-console-create {
+    min-width: 44px;
   }
 
 }

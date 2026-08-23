@@ -1,7 +1,7 @@
 import { useEffect, type ReactNode } from "react"
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { WorkspaceAttentionProvider, useWorkspaceAttention } from "../../../attention/WorkspaceAttentionProvider"
 import { workspaceSessionKey } from "../../../sessionIdentity"
 import { AppLeftPane, AppLeftRail, createAppLeftNavigationEntries, type AppLeftPaneAction } from "../AppLeftPane"
@@ -146,13 +146,17 @@ describe("AppLeftPane", () => {
   })
 
   describe("#1355 console spike", () => {
-    beforeEach(() => {
+    const forgetStoredView = () => {
       try {
         globalThis.localStorage?.removeItem(CONSOLE_SPIKE_VIEW_KEY)
       } catch {
         // a storage-less environment is a supported case, not a test failure
       }
-    })
+    }
+    beforeEach(forgetStoredView)
+    // The view is persisted on purpose, so a test that switches it leaks into
+    // every later render — including the ones outside this block.
+    afterEach(forgetStoredView)
 
     it("defaults to one recency-sorted list across every Project, with the Agent and Project as row metadata", () => {
       renderSpikeConsole()
@@ -312,19 +316,80 @@ describe("AppLeftPane", () => {
       expect(grouped.compareDocumentPosition(spikeList()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     })
 
-    it("creates a chat through the placement, Project, and Agent picker", async () => {
+    it("starts the default chat from the split button's primary half, no menu step", async () => {
       const user = userEvent.setup()
       const onCreateSession = vi.fn()
-      const onScopedCreateSession = vi.fn()
-      renderSpikeConsole({ onCreateSession, consoleSpikeCreateSession: onScopedCreateSession })
+      const onCreateSplitSession = vi.fn()
+      const onCreatePopoverSession = vi.fn()
+      renderSpikeConsole({ onCreateSession, onCreateSplitSession, onCreatePopoverSession })
 
-      await user.click(screen.getByRole("button", { name: "Choose placement, Project, and Agent for new chat" }))
-      fireEvent.click(screen.getByRole("menuitem", { name: "New chat" }))
-      fireEvent.click(screen.getByRole("menuitem", { name: "Agent Console" }))
-      fireEvent.click(screen.getByRole("menuitem", { name: "Agent Console · Beta" }))
-      expect(onScopedCreateSession.mock.calls.at(-1)).toEqual(["beta", "console", "default"])
-      expect(onCreateSession).not.toHaveBeenCalled()
+      await user.click(screen.getByRole("button", { name: "New chat" }))
+      // Default placement, no Agent forced: the host keeps its own targeting.
+      expect(onCreateSession).toHaveBeenCalledWith(undefined)
+      expect(onCreateSplitSession).not.toHaveBeenCalled()
+      expect(onCreatePopoverSession).not.toHaveBeenCalled()
       expect(document.querySelector('[data-boring-workspace-part="app-left-fleet-new-chat"]')).toBeNull()
+    })
+
+    it("puts every placement behind the chevron and routes each to its own host callback", async () => {
+      const user = userEvent.setup()
+      const onCreateSession = vi.fn()
+      const onCreateSplitSession = vi.fn()
+      const onCreatePopoverSession = vi.fn()
+      renderSpikeConsole({ onCreateSession, onCreateSplitSession, onCreatePopoverSession })
+
+      const openPlacements = async () => {
+        await user.click(screen.getByRole("button", { name: "Choose where the new chat opens" }))
+        return screen.getByRole("menu")
+      }
+
+      const menu = await openPlacements()
+      expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent))
+        .toEqual(["New chat", "New in split view", "New quick chat", "Alpha\u203a", "Beta\u203a"])
+
+      fireEvent.click(within(menu).getByRole("menuitem", { name: "New in split view" }))
+      expect(onCreateSplitSession).toHaveBeenCalledWith(undefined)
+
+      fireEvent.click(within(await openPlacements()).getByRole("menuitem", { name: "New quick chat" }))
+      expect(onCreatePopoverSession).toHaveBeenCalledWith(undefined)
+
+      fireEvent.click(within(await openPlacements()).getByRole("menuitem", { name: "New chat" }))
+      expect(onCreateSession).toHaveBeenCalledWith(undefined)
+    })
+
+    it("targets one Agent through its placement submenu once the fleet has more than one", async () => {
+      const user = userEvent.setup()
+      const onCreateSplitSession = vi.fn()
+      renderSpikeConsole({ onCreateSplitSession })
+
+      await user.click(screen.getByRole("button", { name: "Choose where the new chat opens" }))
+      await user.click(screen.getByRole("menuitem", { name: /^Beta/ }))
+      const submenu = await screen.findByRole("menu", { name: /^Beta/ })
+      fireEvent.click(within(submenu).getByRole("menuitem", { name: "New in split view" }))
+
+      expect(onCreateSplitSession).toHaveBeenCalledWith("beta")
+    })
+
+    it("drops the Agent submenu for a one-Agent fleet, where it would choose nothing", async () => {
+      const user = userEvent.setup()
+      renderSpikeConsole({ agents: [{ agentTypeId: "alpha", label: "Boring Alpha" }] })
+
+      await user.click(screen.getByRole("button", { name: "Choose where the new chat opens" }))
+      expect(screen.getAllByRole("menuitem").map((item) => item.textContent))
+        .toEqual(["New chat", "New in split view", "New quick chat"])
+    })
+
+    it("keeps in-Project create on the Project header, the only place that names a Project", async () => {
+      const user = userEvent.setup()
+      const onScopedCreateSession = vi.fn()
+      renderSpikeConsole({
+        consoleSpikeCreateSession: onScopedCreateSession,
+        addressedAgentTypeId: "beta",
+      })
+      await chooseSpikeView(user, "By project")
+
+      await user.click(screen.getByRole("button", { name: "New chat in Agent Console" }))
+      expect(onScopedCreateSession).toHaveBeenCalledWith("beta", "console", "default")
     })
   })
 
