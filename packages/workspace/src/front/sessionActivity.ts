@@ -81,12 +81,28 @@ export function startSessionActivityStream(options: {
  * the set, so one workspace's streaming state can never start or finish a
  * colliding session id in another.
  */
+const EMPTY_WORKING_SET: ReadonlySet<string> = new Set()
+
 export function useWorkingSessionIds(
   sessions: readonly SessionActivityItem[],
   options: { scopeKey: string },
 ): ReadonlySet<string> {
-  const [working, setWorking] = useState<ReadonlySet<string>>(() => new Set())
+  // Optimistic working state is tagged with the scope that produced it. A
+  // render under a different scope synchronously reports an empty set —
+  // stale streaming state from the previous workspace must never bleed onto
+  // a colliding session id there.
+  const [workingState, setWorkingState] = useState<{ scopeKey: string; ids: ReadonlySet<string> }>(() => ({
+    scopeKey: options.scopeKey,
+    ids: new Set(),
+  }))
   const scopeKey = options.scopeKey
+  const working = workingState.scopeKey === scopeKey ? workingState.ids : EMPTY_WORKING_SET
+  const setWorking = (updater: (current: ReadonlySet<string>) => ReadonlySet<string>) => {
+    setWorkingState((state) => {
+      if (state.scopeKey !== scopeKey) return state
+      return { scopeKey, ids: updater(state.ids) }
+    })
+  }
   const activitySnapshot = useMemo(() => JSON.stringify(sessions.map((session) => [
     session.agentTypeId,
     session.id,
@@ -97,9 +113,13 @@ export function useWorkingSessionIds(
 
   // A workspace/source switch invalidates the optimistic set: streaming
   // state observed under the previous source may not survive onto a
-  // colliding id under the next one.
+  // colliding id under the next one. The activity-snapshot ref must reset
+  // too, or an identical new-workspace snapshot would be treated as
+  // already-processed and a genuinely running colliding session would stay
+  // idle.
   useEffect(() => {
-    setWorking((current) => current.size === 0 ? current : new Set())
+    setWorkingState({ scopeKey, ids: new Set() })
+    previousActivitySnapshotRef.current = undefined
   }, [scopeKey])
 
   useEffect(() => {
@@ -139,7 +159,7 @@ export function useWorkingSessionIds(
       if (next.size === current.size && [...next].every((key) => current.has(key))) return current
       return next
     })
-  }, [activitySnapshot, sessions])
+  }, [activitySnapshot, sessions, scopeKey])
 
   return working
 }
