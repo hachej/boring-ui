@@ -171,7 +171,6 @@ function assertFastifyDetectorFixture() {
       },
     },
   }
-  // The sandbox specifier must not leak into the Fastify result.
   const actual = findFastifyClosureViolations(fixture)
   const expected = {
     externalSpecifiers: ['@fastify/static', 'fastify'],
