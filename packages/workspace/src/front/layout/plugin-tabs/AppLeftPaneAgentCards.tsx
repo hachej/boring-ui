@@ -1,5 +1,6 @@
 "use client"
 
+import type { ReactNode } from "react"
 import { ChevronRight, Columns2, ListFilter, MoreHorizontal, Plus, Settings, Zap } from "lucide-react"
 import {
   DropdownMenu,
@@ -27,10 +28,13 @@ export interface AppLeftPaneAgentCardProps {
   agentTypeId: string
   label: string
   description?: string
+  leadingIcon?: ReactNode
   stats: AppLeftPaneAgentStats
   sessionsStatus?: "loading" | "loaded" | "error"
   /** The Chats lens is an optional filter (multi-project tree only). */
   filtered: boolean
+  /** Quiet ancestry state for the Agent that owns the active chat. */
+  active?: boolean
   /**
    * When the pane nests each Agent's chats under its card, the card is a
    * disclosure row: default click means exactly one thing — toggle its nested
@@ -42,6 +46,8 @@ export interface AppLeftPaneAgentCardProps {
   /** Omitted in nested mode: the disclosure replaces the per-Agent lens. */
   onToggleFilter?: () => void
   onCreateSession: () => void
+  showCreate?: boolean
+  createControl?: ReactNode
   onCreateSplitSession?: () => void
   onCreatePopoverSession?: () => void
   onOpenSettings?: () => void
@@ -58,14 +64,18 @@ export function AppLeftPaneAgentCard({
   agentTypeId,
   label,
   description,
+  leadingIcon,
   stats,
   sessionsStatus,
   filtered,
+  active = false,
   expandable = false,
   expanded = false,
   onToggle,
   onToggleFilter,
   onCreateSession,
+  showCreate = true,
+  createControl,
   onCreateSplitSession,
   onCreatePopoverSession,
   onOpenSettings,
@@ -91,6 +101,7 @@ export function AppLeftPaneAgentCard({
       data-boring-workspace-part="app-left-agent-card"
       data-boring-agent-type-id={agentTypeId}
       data-filtered={filtered ? "true" : "false"}
+      data-active={active ? "true" : "false"}
       data-expanded={expandable ? (expanded ? "true" : "false") : undefined}
       className={cn(
         // Owner-ratified look: flat compact rows (no card borders/boxes),
@@ -117,14 +128,15 @@ export function AppLeftPaneAgentCard({
             aria-hidden="true"
           />
         ) : null}
-        <span className={cn("min-w-0 truncate text-[13px] leading-4", expandable && expanded ? "font-semibold text-foreground" : "font-medium text-foreground/80")}>
+        {leadingIcon ? <span className="grid size-4 shrink-0 place-items-center text-muted-foreground/70" aria-hidden="true">{leadingIcon}</span> : null}
+        <span className={cn("min-w-0 truncate text-[13px] leading-4", (active || (expandable && expanded)) ? "font-semibold text-foreground" : "font-medium text-foreground/80")}>
           {short}
         </span>
         <span
           data-boring-agent-session-count="true"
           className="min-w-0 flex-1 shrink-0 pl-0.5 text-[11px] font-normal leading-4 tabular-nums text-muted-foreground/80"
         >
-          {sessionsStatus === "error" ? "!" : stats.sessions}
+          {sessionsStatus === "error" ? "!" : expandable && expanded ? null : stats.sessions}
         </span>
         {/* Aggregate liveliness: quiet dot+count pairs so a collapsed Agent
             still tells you something is running or waiting on you. */}
@@ -188,12 +200,7 @@ export function AppLeftPaneAgentCard({
         ) : null}
         {onCreateSplitSession || onCreatePopoverSession ? (
           // One "+" creates the default chat; this caret is the single place
-          // for the placement variants (owner: three placement icons were too
-          // many — compact into one affordance, keep the options).
-          // Non-modal: a modal layer aria-hides the whole pane behind it while
-          // leaving its controls tabbable (axe: aria-hidden-focus, serious),
-          // and nothing about a three-item options menu in a sidebar needs the
-          // rest of the app inert.
+          // for the placement variants in the normal current-app Agent row.
           <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
               <button
@@ -223,17 +230,19 @@ export function AppLeftPaneAgentCard({
           </DropdownMenu>
         ) : null}
       </span>
-      {/* The "+" is the card's primary affordance, so it never hides. */}
-      <button
-        type="button"
-        aria-label={`New chat with ${label}`}
-        title={`New chat with ${short}`}
-        data-boring-mobile-dismiss="true"
-        onClick={onCreateSession}
-        className={cn(cardActionClassName, "app-left-agent-card-create text-foreground/80 hover:bg-[color:oklch(from_var(--accent)_l_c_h/0.16)] hover:text-[color:var(--accent)]")}
-      >
-        <Plus className="size-4" strokeWidth={2} aria-hidden="true" />
-      </button>
+      {/* The "+" is the card's primary affordance when its context is complete. */}
+      {createControl ?? (showCreate ? (
+        <button
+          type="button"
+          aria-label={`New chat with ${label}`}
+          title={`New chat with ${short}`}
+          data-boring-mobile-dismiss="true"
+          onClick={onCreateSession}
+          className={cn(cardActionClassName, "app-left-agent-card-create text-foreground/80 hover:bg-[color:oklch(from_var(--accent)_l_c_h/0.16)] hover:text-[color:var(--accent)]")}
+        >
+          <Plus className="size-4" strokeWidth={2} aria-hidden="true" />
+        </button>
+      ) : null)}
     </div>
   )
 }

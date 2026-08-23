@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, type ReactNode } from "react"
-import { ChevronRight, ExternalLink, MessageSquarePlus, MoreHorizontal, Pin, PinOff, Plus, Settings } from "lucide-react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
+import { ChevronRight, ExternalLink, MessageSquarePlus, MoreHorizontal, Pencil, Pin, PinOff, Plus, Settings } from "lucide-react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -61,7 +61,12 @@ export function ProjectOverview({
   onCreateProjectSession,
   onOpenProjectSettings,
   onOpenProjectInNewTab,
+  onRenameProject,
   renderProjectSession,
+  leadingIcon,
+  renderCreateControl,
+  allowPinning = true,
+  compactTree = false,
 }: {
   projects: AppLeftPaneProject[]
   activeProjectId?: string | null
@@ -75,7 +80,12 @@ export function ProjectOverview({
   onCreateProjectSession?: (projectId: string) => void
   onOpenProjectSettings?: (projectId: string) => void
   onOpenProjectInNewTab?: (projectId: string) => void
+  onRenameProject?: (projectId: string, name: string) => void
   renderProjectSession?: (project: AppLeftPaneProject, session: AppLeftPaneProjectSession) => ReactNode
+  leadingIcon?: (project: AppLeftPaneProject) => ReactNode
+  renderCreateControl?: (project: AppLeftPaneProject) => ReactNode
+  allowPinning?: boolean
+  compactTree?: boolean
 }) {
   const activeId = activeProjectId ?? projects[0]?.id ?? null
 
@@ -104,7 +114,12 @@ export function ProjectOverview({
           onCreateSession={onCreateProjectSession}
           onOpenSettings={onOpenProjectSettings}
           onOpenInNewTab={onOpenProjectInNewTab}
+          onRename={onRenameProject}
           renderProjectSession={renderProjectSession}
+          leadingIcon={leadingIcon?.(project)}
+          createControl={renderCreateControl?.(project)}
+          allowPinning={allowPinning}
+          compactTree={compactTree}
         />
       ))}
     </div>
@@ -125,7 +140,12 @@ function ProjectRow({
   onCreateSession,
   onOpenSettings,
   onOpenInNewTab,
+  onRename,
   renderProjectSession,
+  leadingIcon,
+  createControl,
+  allowPinning,
+  compactTree,
 }: {
   project: AppLeftPaneProject
   fallbackName: string
@@ -140,20 +160,53 @@ function ProjectRow({
   onCreateSession?: (projectId: string) => void
   onOpenSettings?: (projectId: string) => void
   onOpenInNewTab?: (projectId: string) => void
+  onRename?: (projectId: string, name: string) => void
   renderProjectSession?: (project: AppLeftPaneProject, session: AppLeftPaneProjectSession) => ReactNode
+  leadingIcon?: ReactNode
+  createControl?: ReactNode
+  allowPinning: boolean
+  compactTree: boolean
 }) {
   // Keep the hover actions visible while the "•••" menu is open, even if the
   // pointer has moved into the (portaled) menu.
   const [menuOpen, setMenuOpen] = useState(false)
+  const [renaming, setRenaming] = useState(false)
+  const [renameDraft, setRenameDraft] = useState("")
+  const [renameError, setRenameError] = useState(false)
+  const renameInputRef = useRef<HTMLInputElement>(null)
+  const disclosureRef = useRef<HTMLButtonElement>(null)
   const sessions = project.sessions ?? []
   // Badge shows sessions that NEED ATTENTION (blocked / awaiting input), not the
   // total session count — a quiet list with a loud "you have N waiting" signal.
   const blocked = project.blockedCount ?? 0
   const unavailable = project.available === false
   const name = project.name || fallbackName
-  // Pinning is always available; settings/new-tab are host-provided.
-  const moreItems = true
-  const hasActions = Boolean(onCreateSession || moreItems)
+  const moreItems = Boolean(allowPinning || onRename || onCreateSession || onOpenSettings || onOpenInNewTab)
+  const hasActions = moreItems
+  useEffect(() => {
+    if (!renaming) return
+    const frame = requestAnimationFrame(() => {
+      renameInputRef.current?.focus()
+      renameInputRef.current?.select()
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [renaming])
+  const finishRename = (restoreFocus: boolean) => {
+    setRenaming(false)
+    setRenameDraft("")
+    setRenameError(false)
+    if (restoreFocus) requestAnimationFrame(() => disclosureRef.current?.focus())
+  }
+  const commitRename = (restoreFocus: boolean) => {
+    const nextName = renameDraft.trim()
+    if (!nextName) {
+      if (restoreFocus) setRenameError(true)
+      else finishRename(false)
+      return
+    }
+    if (nextName !== name) onRename?.(project.id, nextName)
+    finishRename(restoreFocus)
+  }
 
   return (
     <div className="space-y-0.5">
@@ -165,40 +218,67 @@ function ProjectRow({
         className={cn(
           "app-left-project-row group relative flex min-h-8 w-full items-center gap-2 rounded-md py-1 pl-2 pr-2 transition-colors",
           active
-            // Background-only active state: the accent color is reserved for the
-            // deepest selected item (the active session), so the parent project
-            // and its open chat don't fight for attention.
-            ? "bg-foreground/[0.07] text-foreground"
+            ? compactTree ? "text-foreground" : "bg-foreground/[0.07] text-foreground"
             : unavailable
               ? "text-muted-foreground/45"
               : "text-foreground/82 hover:bg-foreground/[0.05] hover:text-foreground",
         )}
       >
-        {/* Chevron toggles expansion ONLY (decoupled from switching). */}
-        <button
-          type="button"
-          aria-label={expanded ? `Collapse ${name}` : `Expand ${name}`}
-          aria-expanded={expanded}
-          onClick={onToggleExpanded}
-          className="grid size-5 shrink-0 place-items-center rounded text-muted-foreground/55 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-        >
-          <ChevronRight className={cn("h-3.5 w-3.5 transition-transform duration-150", expanded && "rotate-90")} strokeWidth={2} aria-hidden="true" />
-        </button>
-        {/* Name activates / switches to the project. */}
-        <button
-          type="button"
-          aria-current={active ? "page" : undefined}
-          data-boring-mobile-dismiss="true"
-          disabled={unavailable}
-          onClick={() => { if (!unavailable) onActivate() }}
-          className="min-w-0 flex-1 truncate rounded text-left text-[13px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-default"
-        >
-          {name}
-        </button>
+        {renaming ? (
+          <>
+            <button
+              type="button"
+              aria-label={expanded ? `Collapse ${name}` : `Expand ${name}`}
+              aria-expanded={expanded}
+              onClick={onToggleExpanded}
+              className="app-left-project-disclosure-action grid h-5 w-5 shrink-0 place-items-center self-stretch rounded text-muted-foreground/55 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            >
+              <ChevronRight className={cn("h-3.5 w-3.5 transition-transform duration-150", expanded && "rotate-90")} strokeWidth={2} aria-hidden="true" />
+            </button>
+            {leadingIcon ? <span className="grid size-4 shrink-0 place-items-center text-muted-foreground/70" aria-hidden="true">{leadingIcon}</span> : null}
+            <input
+              ref={renameInputRef}
+              aria-label={`Rename ${name}`}
+              aria-invalid={renameError || undefined}
+              title={renameError ? "Project name cannot be empty" : undefined}
+              value={renameDraft}
+              onChange={(event) => {
+                setRenameDraft(event.target.value)
+                if (renameError) setRenameError(false)
+              }}
+              onBlur={() => commitRename(false)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") { event.preventDefault(); commitRename(true) }
+                if (event.key === "Escape") { event.preventDefault(); finishRename(true) }
+              }}
+              className={cn(
+                "h-6 min-w-0 flex-1 rounded border bg-background px-1.5 text-[13px] font-medium text-foreground outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring/50",
+                renameError ? "border-destructive" : "border-border/70",
+              )}
+            />
+            {renameError ? <span className="sr-only" role="alert">Project name cannot be empty.</span> : null}
+          </>
+        ) : (
+          <button
+            ref={disclosureRef}
+            type="button"
+            aria-label={expanded ? `Collapse ${name}` : `Expand ${name}`}
+            aria-expanded={expanded}
+            aria-current={active ? "page" : undefined}
+            data-boring-mobile-dismiss="true"
+            disabled={unavailable}
+            onClick={() => { if (!unavailable) onActivate() }}
+            className="flex min-w-0 flex-1 self-stretch items-center gap-2 rounded text-left text-[13px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-default"
+          >
+            <ChevronRight className={cn("h-3.5 w-3.5 shrink-0 text-muted-foreground/55 transition-transform duration-150", expanded && "rotate-90")} strokeWidth={2} aria-hidden="true" />
+            {leadingIcon ? <span className="grid size-4 shrink-0 place-items-center text-muted-foreground/70" aria-hidden="true">{leadingIcon}</span> : null}
+            <span className="min-w-0 flex-1 truncate">{name}</span>
+          </button>
+        )}
         {/* Right slot: session count at rest, swapped for actions on hover/focus
             (or while the menu is open). Reserves width so the name truncates and
             never sits under the icons. */}
-        <span className="app-left-project-status-slot relative flex h-6 w-[3.25rem] shrink-0 items-center justify-end">
+        <span className={cn("app-left-project-status-slot relative flex h-6 shrink-0 items-center justify-end", compactTree || createControl ? "w-6" : "w-[3.25rem]")}>
           {blocked > 0 ? (
             <span className={cn(
               "app-left-project-status pointer-events-none absolute inset-0 flex items-center justify-end transition-opacity",
@@ -249,10 +329,23 @@ function ProjectRow({
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent data-boring-workspace-part="app-left-menu" align="end" sideOffset={6} className="w-48 border-border/50 shadow-[0_12px_28px_-6px_rgba(0,0,0,0.55)]">
-                    <DropdownMenuItem onSelect={onTogglePinned} className="gap-2 text-[13px]">
-                      {pinned ? <PinOff className="h-3.5 w-3.5" aria-hidden="true" /> : <Pin className="h-3.5 w-3.5" aria-hidden="true" />}
-                      {pinned ? "Unpin project" : "Pin project"}
-                    </DropdownMenuItem>
+                    {onRename ? (
+                      <DropdownMenuItem
+                        onSelect={() => {
+                          setRenameDraft(name)
+                          setRenaming(true)
+                        }}
+                        className="gap-2 text-[13px]"
+                      >
+                        <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+                        Rename project
+                      </DropdownMenuItem>
+                    ) : allowPinning ? (
+                      <DropdownMenuItem onSelect={onTogglePinned} className="gap-2 text-[13px]">
+                        {pinned ? <PinOff className="h-3.5 w-3.5" aria-hidden="true" /> : <Pin className="h-3.5 w-3.5" aria-hidden="true" />}
+                        {pinned ? "Unpin project" : "Pin project"}
+                      </DropdownMenuItem>
+                    ) : null}
                     {onCreateSession ? (
                       <DropdownMenuItem onSelect={() => onCreateSession(project.id)} className="gap-2 text-[13px]">
                         <MessageSquarePlus className="h-3.5 w-3.5" aria-hidden="true" />
@@ -280,9 +373,10 @@ function ProjectRow({
             </span>
           ) : null}
         </span>
+        {createControl}
       </div>
       {expanded ? (
-        <div className="space-y-0.5 pl-6">
+        <div className={cn("space-y-0.5", compactTree ? "pl-3" : "pl-6")}>
           {project.loadingSessions && sessions.length === 0 ? (
             <div className="space-y-1 px-1 py-1.5" role="status" aria-live="polite" aria-label={`Loading chats in ${name}`}>
               <div className="space-y-1" aria-hidden="true">

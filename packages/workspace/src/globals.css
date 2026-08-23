@@ -438,6 +438,17 @@
   height: 24px;
 }
 
+/* The Console organizer uses fewer controls and slightly calmer row spacing
+   than the dense default fleet tree. Touch sizing below still wins at 44px. */
+[data-boring-workspace-part="app-left-console-spike"] .app-left-project-row,
+[data-boring-workspace-part="app-left-console-spike"] .app-left-agent-row {
+  min-height: 34px;
+}
+
+[data-boring-workspace-part="app-left-console-spike"] .app-left-session-row {
+  height: 32px;
+}
+
 .app-left-session-actions {
   width: calc(var(--app-session-action-slots, 0) * var(--app-session-action-slot, 28px));
   /* The strip is WIDER than its icons (it reserves whole slots and aligns them
@@ -529,6 +540,10 @@
     height: 44px;
   }
 
+  .app-left-console-view-action {
+    min-height: 44px;
+  }
+
 }
 
 /* ONE condition sizes a session row and the actions inside it.
@@ -549,7 +564,8 @@
    `.app-left-empty-start` below is width-gated as well as pointer-gated for
    exactly this reason. */
 @media (max-width: 767px), (hover: none), (pointer: coarse) {
-  .app-left-session-row {
+  .app-left-session-row,
+  [data-boring-workspace-part="app-left-console-spike"] .app-left-session-row {
     height: 44px;
     --app-session-action-slot: 44px;
   }
@@ -563,7 +579,8 @@
 
      Same condition, same 44px, same "the badge sits BESIDE the actions once
      both are permanently visible" rule the session row uses. */
-  .app-left-project-row {
+  .app-left-project-row,
+  [data-boring-workspace-part="app-left-console-spike"] .app-left-project-row {
     min-height: 44px;
   }
 
@@ -571,7 +588,8 @@
     opacity: 1;
   }
 
-  .app-left-project-actions > button {
+  .app-left-project-actions > button,
+  .app-left-project-disclosure-action {
     width: 44px;
     height: 44px;
   }
@@ -704,7 +722,8 @@
    * Agent cards carry three hover-revealed actions on a mouse. Touch has no
    * hover, so every card action is always visible and grows to 44px.
    */
-  .app-left-agent-card {
+  .app-left-agent-card,
+  [data-boring-workspace-part="app-left-console-spike"] .app-left-agent-row {
     min-height: 44px;
   }
 

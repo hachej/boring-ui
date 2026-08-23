@@ -70,6 +70,10 @@ const fsAllow = [
 // the standard helper doesn't cover. Add those alongside the shared
 // aliases.
 const playgroundOnlyAliases = [
+  // The #1355 current-app spike runs from this worktree's freshly built deck
+  // bundle even when the shared dependency install belongs to another lane.
+  { find: "@hachej/boring-deck/front", replacement: resolve(__dirname, "../../plugins/deck/dist/front/index.js") },
+  { find: "@hachej/boring-deck/shared", replacement: resolve(__dirname, "../../plugins/deck/dist/shared/index.js") },
   // Keep app code importing the public package CSS subpaths, but point the
   // playground's local monorepo dev server at source CSS so a bare tsup build
   // (clean:true) cannot wipe a live demo's generated styles.

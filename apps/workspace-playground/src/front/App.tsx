@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createDeckPlugin } from "@hachej/boring-deck/front"
 import type { DeckWidgetDefinition } from "@hachej/boring-deck/shared"
-import { WorkspaceProvider } from "@hachej/boring-workspace"
-import { WorkspaceAgentFront, WorkspaceFullPagePanel, parseFullPagePanelLocation } from "@hachej/boring-workspace/app/front"
+import { WorkspaceProvider, type WorkspaceChatPanelProps } from "@hachej/boring-workspace"
+import { WorkspaceAgentFront, WorkspaceFullPagePanel, parseFullPagePanelLocation, type WorkspaceAgentSession } from "@hachej/boring-workspace/app/front"
 import { createAskUserPlugin } from "@hachej/boring-ask-user/front"
 import { diagramPlugin } from "@hachej/boring-diagram/front"
 import { createTasksPlugin } from "@hachej/boring-tasks/front"
 import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
 import { LoadingStatesShowcase, type LoadingStateMode } from "./LoadingStatesShowcase"
+import { isConsoleSpikeRoute } from "./consoleSpikeRoute"
 
 function isShowcaseRoute(): boolean {
   if (typeof window === "undefined") return false
@@ -84,6 +85,38 @@ interface WorkspaceMeta {
   projectName?: string
   workspaceId?: string
   defaultAgentTypeId?: string
+}
+
+interface ConsoleSpikeSession extends WorkspaceAgentSession {
+  projectId: string
+}
+
+const consoleSpikeAgents = [
+  { agentTypeId: "builder", label: "Boring Builder", description: "Implementation Agent" },
+  { agentTypeId: "reviewer", label: "Boring Reviewer", description: "Review Agent" },
+  { agentTypeId: "researcher", label: "Boring Researcher", description: "Research Agent" },
+]
+
+const initialConsoleSpikeSessions: ConsoleSpikeSession[] = [
+  { id: "launch-plan", agentTypeId: "builder", projectId: "launch", title: "Plan launch checklist", updatedAt: Date.now() - 4 * 60_000 },
+  { id: "launch-review", agentTypeId: "reviewer", projectId: "launch", title: "Review release risks", updatedAt: Date.now() - 18 * 60_000 },
+  { id: "console-nav", agentTypeId: "builder", projectId: "console", title: "Implement console navigation", updatedAt: Date.now() - 35 * 60_000 },
+  { id: "console-research", agentTypeId: "researcher", projectId: "console", title: "Compare session groupings", updatedAt: Date.now() - 62 * 60_000 },
+  { id: "console-copy", agentTypeId: "reviewer", projectId: "console", title: "Check Project semantics", updatedAt: Date.now() - 95 * 60_000 },
+]
+
+function ConsoleSpikeChatPanel({ sessionId, agentTypeId, sessions }: WorkspaceChatPanelProps & { sessions: readonly ConsoleSpikeSession[] }) {
+  const session = sessions.find((item) => item.id === sessionId && item.agentTypeId === agentTypeId)
+  return (
+    <div className="flex h-full min-h-0 items-center justify-center bg-background p-6" data-boring-workspace-part="console-spike-chat-panel">
+      <div className="max-w-md text-center">
+        <div className="text-sm font-medium text-foreground">{session?.title ?? "New chat"}</div>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Project organizes chats only. Workspace and Agent remain the active context.
+        </p>
+      </div>
+    </div>
+  )
 }
 
 const playgroundDeckWidgets: DeckWidgetDefinition[] = [
@@ -164,16 +197,21 @@ function WorkspaceFullPageShell({ agentTypeId }: { agentTypeId: string }) {
 export function WorkspaceShell() {
   resetPlaygroundStorageIfRequested()
   const showcase = useMemo(isShowcaseRoute, [])
+  const consoleSpike = useMemo(isConsoleSpikeRoute, [])
   const loadingShowcase = useMemo(loadingStateMode, [])
   const fullPage = useMemo(isFullPageRoute, [])
   const multiFilesystem = useMemo(isMultiFilesystemPlaygroundRoute, [])
-  const [defaultAgentTypeId, setDefaultAgentTypeId] = useState("")
-  const [projectName, setProjectName] = useState("Workspace")
-  const [workspaceId, setWorkspaceId] = useState("Workspace")
-  const [metaLoaded, setMetaLoaded] = useState(Boolean(loadingShowcase))
+  const [defaultAgentTypeId, setDefaultAgentTypeId] = useState(consoleSpike ? "builder" : "")
+  const [projectName, setProjectName] = useState(consoleSpike ? "Boring" : "Workspace")
+  const [workspaceId, setWorkspaceId] = useState(consoleSpike ? "console-spike-workspace" : "Workspace")
+  const [metaLoaded, setMetaLoaded] = useState(Boolean(loadingShowcase || consoleSpike))
   const [metaError, setMetaError] = useState<string | null>(null)
   const [showcaseActiveSessionId, setShowcaseActiveSessionId] = useState(SHOWCASE_SESSION_ID)
   const [showcaseSessions, setShowcaseSessions] = useState(createInitialShowcaseSessions)
+  const [consoleSpikeAgentTypeId, setConsoleSpikeAgentTypeId] = useState("builder")
+  const [consoleSpikeActiveSession, setConsoleSpikeActiveSession] = useState<{ id: string; agentTypeId: string }>({ id: "launch-plan", agentTypeId: "builder" })
+  const [consoleSpikeSessions, setConsoleSpikeSessions] = useState(initialConsoleSpikeSessions)
+  const [consoleSpikeProjectNames, setConsoleSpikeProjectNames] = useState<Record<string, string>>({ launch: "Launch", console: "Agent Console" })
   const sessions = showcase ? showcaseSessions : undefined
   const liveShowcaseSessionIds = useRef(new Set<string>())
   const createShowcaseSession = useCallback(async () => {
@@ -214,8 +252,40 @@ export function WorkspaceShell() {
     [showcase],
   )
 
+  const consoleSpikeProjects = useMemo(() => [
+    { id: "launch", name: consoleSpikeProjectNames.launch ?? "Launch", sessions: consoleSpikeSessions.filter((session) => session.projectId === "launch") },
+    { id: "console", name: consoleSpikeProjectNames.console ?? "Agent Console", sessions: consoleSpikeSessions.filter((session) => session.projectId === "console") },
+  ], [consoleSpikeProjectNames, consoleSpikeSessions])
+  const renameConsoleSpikeProject = useCallback((projectId: string, name: string) => {
+    setConsoleSpikeProjectNames((current) => ({ ...current, [projectId]: name }))
+  }, [])
+  const useConsoleSpikeAgentSelection = useCallback(() => ({
+    agents: consoleSpikeAgents,
+    selectedAgentTypeId: consoleSpikeAgentTypeId,
+    loading: false,
+    error: undefined,
+    selectAgentTypeId: setConsoleSpikeAgentTypeId,
+  }), [consoleSpikeAgentTypeId])
+  const createConsoleSpikeSession = useCallback((agentTypeId = consoleSpikeAgentTypeId, projectId = "console", placement: "default" | "split" | "quick" = "default") => {
+    const created: ConsoleSpikeSession = {
+      id: `console-spike-${Date.now()}`,
+      agentTypeId,
+      projectId,
+      title: placement === "split" ? "New split chat" : placement === "quick" ? "Quick chat" : "New chat",
+      updatedAt: Date.now(),
+    }
+    setConsoleSpikeSessions((current) => [created, ...current])
+    setConsoleSpikeAgentTypeId(agentTypeId)
+    setConsoleSpikeActiveSession({ id: created.id, agentTypeId })
+    return created
+  }, [consoleSpikeAgentTypeId])
+  const consoleSpikeChatPanel = useCallback(
+    (props: WorkspaceChatPanelProps) => <ConsoleSpikeChatPanel {...props} sessions={consoleSpikeSessions} />,
+    [consoleSpikeSessions],
+  )
+
   useEffect(() => {
-    if (loadingShowcase) return
+    if (loadingShowcase || consoleSpike) return
     let cancelled = false
     void fetch("/api/v1/workspace/meta")
       .then(async (res) => {
@@ -241,7 +311,7 @@ export function WorkspaceShell() {
         if (!cancelled) setMetaError("The playground could not load its agent roster. Reload to try again.")
       })
     return () => { cancelled = true }
-  }, [showcase, loadingShowcase])
+  }, [showcase, loadingShowcase, consoleSpike])
 
   if (showcase) seedShowcase(SHOWCASE_SESSION_ID)
 
@@ -262,6 +332,46 @@ export function WorkspaceShell() {
 
   if (fullPage) {
     return <WorkspaceFullPageShell agentTypeId={defaultAgentTypeId} />
+  }
+
+  if (consoleSpike) {
+    return (
+      <WorkspaceAgentFront<ConsoleSpikeSession>
+        workspaceId="console-spike-workspace"
+        agentTypeId="builder"
+        addressedAgentSelection
+        useAddressedAgentSelection={useConsoleSpikeAgentSelection}
+        apiBaseUrl=""
+        persistenceEnabled={false}
+        providerStorageKey="boring-ui-v2:layout:console-spike"
+        appTitle="Boring"
+        workspaceLabel="Workspace playground"
+        workspaceLayout="plugin-tabs"
+        appLeftLayoutMode="multi-project"
+        appLeftHeaderMode="full"
+        workspaceSectionTitle="Projects"
+        appLeftProjects={consoleSpikeProjects}
+        appLeftActiveProjectId="console-spike-workspace"
+        appLeftConsoleSpikeCreateSession={createConsoleSpikeSession}
+        appLeftConsoleSpikeRenameProject={renameConsoleSpikeProject}
+        defaultSessionTitle="New chat"
+        provisionWorkspace={false}
+        bootPreloadPaths={[]}
+        sessions={consoleSpikeSessions}
+        activeSessionId={consoleSpikeActiveSession.id}
+        activeSessionAgentTypeId={consoleSpikeActiveSession.agentTypeId}
+        onSwitchSession={(id, agentTypeId) => {
+          const owner = agentTypeId ?? consoleSpikeSessions.find((session) => session.id === id)?.agentTypeId ?? consoleSpikeAgentTypeId
+          setConsoleSpikeAgentTypeId(owner)
+          setConsoleSpikeActiveSession({ id, agentTypeId: owner })
+        }}
+        onCreateSession={createConsoleSpikeSession}
+        chatPanel={consoleSpikeChatPanel}
+        externalPlugins={false}
+        hotReloadEnabled={false}
+        plugins={workspacePlugins}
+      />
+    )
   }
 
   return (
