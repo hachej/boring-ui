@@ -549,6 +549,11 @@ export function AppLeftPane({
         // The per-Agent lens only exists where a shared list remains to
         // filter (the multi-project tree); nesting replaces it elsewhere.
         onToggleFilter={nestedAgentChats ? undefined : () => toggleChatsAgentLens(agent.agentTypeId)}
+        // gh-1296 review fix: the legacy fallback card exists only so its old
+        // chats stay reachable — it is read-only chrome, never a creation
+        // surface, or clicking around history would manufacture more
+        // fallback-bound sessions.
+        readOnly={agent.legacy === true}
         onCreateSession={createForAgent(onCreateSession)}
         onCreateSplitSession={onCreateSplitSession ? createForAgent(onCreateSplitSession) : undefined}
         onCreatePopoverSession={onCreatePopoverSession ? createForAgent(onCreatePopoverSession) : undefined}
@@ -678,10 +683,17 @@ export function AppLeftPane({
   // Item 6: one global new-chat entry point for both layouts, targeting the
   // Agent the pane is currently addressing (the host resolves that to the
   // default Agent until one is explicitly picked).
+  // gh-1296 review fix: the legacy fallback is not a seat someone wrote — the
+  // picker never offers it as a creation target. If nothing authored exists,
+  // the fallback stays selectable (it is then the only home for new chats).
+  const creatableAgents = useMemo(() => {
+    const authored = agents.filter((agent) => !agent.legacy)
+    return authored.length > 0 ? authored : agents
+  }, [agents])
   const renderFleetNewChat = () => (
     <div className="px-0">
       <FleetNewChatAction
-        agents={agents}
+        agents={creatableAgents}
         selectedAgentTypeId={selectedAgentTypeId}
         onSelectAgent={onSelectAgent}
         onCreateSession={(agentTypeId) => {

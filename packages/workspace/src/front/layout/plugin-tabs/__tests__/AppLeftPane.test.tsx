@@ -492,6 +492,41 @@ describe("AppLeftPane", () => {
     )
   })
 
+  // gh-1296 review fix: the fallback card is reachability chrome, not a seat.
+  // It must expose no creation affordance, and the New chat picker must never
+  // offer the fallback — browsing old chats must not manufacture more
+  // fallback-bound sessions.
+  it("keeps the legacy fallback card read-only and out of the new-chat picker", async () => {
+    const user = userEvent.setup()
+    renderFleetPane({
+      agents: [
+        { agentTypeId: "default", label: "default", legacy: true, sessionsStatus: "loaded" },
+        { agentTypeId: "alpha", label: "Boring Alpha", sessionsStatus: "loaded" },
+        { agentTypeId: "beta", label: "Boring Beta", sessionsStatus: "loaded" },
+      ],
+      addressedAgentTypeId: "default",
+      sessions: [
+        { id: "legacy-one", agentTypeId: "default", title: "Chat from before the fleet" },
+        { id: "alpha-one", agentTypeId: "alpha", title: "Alpha session" },
+      ],
+      pinnedSessionRefs: [],
+    })
+
+    // The card exists (its chat is listed beneath it), but it has no "+" and
+    // no placement-variants menu.
+    expect(screen.getByText("Chat from before the fleet")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "New chat with default" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "New chat options for default" })).not.toBeInTheDocument()
+    // The picker's primary target derives from authored seats — never the
+    // fallback — regardless of which owner the pane is addressing.
+    expect(screen.getByRole("button", { name: "Start new chat with Boring Alpha" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Start new chat with default" })).not.toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Choose Agent for new chat" }))
+    const menu = screen.getByRole("menu")
+    expect(within(menu).getByText("Alpha")).toBeInTheDocument()
+    expect(within(menu).queryByText("default")).not.toBeInTheDocument()
+  })
+
   it("unifies the multi-project fleet: labeled project rows, a lens that filters them, and a global new chat", async () => {
     const user = userEvent.setup()
     const onCreateSession = vi.fn()

@@ -41,6 +41,12 @@ export interface AppLeftPaneAgentCardProps {
   onToggle?: () => void
   /** Omitted in nested mode: the disclosure replaces the per-Agent lens. */
   onToggleFilter?: () => void
+  /**
+   * gh-1296: the legacy fallback card is reachability chrome, not a seat —
+   * read-only hides every creation affordance so browsing old chats cannot
+   * manufacture more fallback-bound sessions.
+   */
+  readOnly?: boolean
   onCreateSession: () => void
   onCreateSplitSession?: () => void
   onCreatePopoverSession?: () => void
@@ -65,6 +71,7 @@ export function AppLeftPaneAgentCard({
   expanded = false,
   onToggle,
   onToggleFilter,
+  readOnly = false,
   onCreateSession,
   onCreateSplitSession,
   onCreatePopoverSession,
@@ -186,7 +193,7 @@ export function AppLeftPaneAgentCard({
             <Settings className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
           </button>
         ) : null}
-        {onCreateSplitSession || onCreatePopoverSession ? (
+        {onCreateSplitSession || onCreatePopoverSession ? !readOnly && (
           // One "+" creates the default chat; this caret is the single place
           // for the placement variants (owner: three placement icons were too
           // many — compact into one affordance, keep the options).
@@ -223,7 +230,10 @@ export function AppLeftPaneAgentCard({
           </DropdownMenu>
         ) : null}
       </span>
-      {/* The "+" is the card's primary affordance, so it never hides. */}
+      {/* The "+" is the card's primary affordance, so it never hides —
+          except on a read-only legacy fallback, whose only job is reaching
+          its existing chats. */}
+      {!readOnly && (
       <button
         type="button"
         aria-label={`New chat with ${label}`}
@@ -234,6 +244,7 @@ export function AppLeftPaneAgentCard({
       >
         <Plus className="size-4" strokeWidth={2} aria-hidden="true" />
       </button>
+      )}
     </div>
   )
 }

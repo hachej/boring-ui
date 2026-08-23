@@ -707,6 +707,93 @@ describe("WorkspaceAgentFront", () => {
     expect(document.querySelector('[data-boring-workspace-part="app-left-agents-count"]')).toHaveTextContent("2 seats")
   })
 
+  // gh-1296 review fix: opening a default-bound chat switches the addressed
+  // owner to the legacy fallback, but creation must never follow it there —
+  // otherwise reading history retargets New chat at `default` and manufactures
+  // more fallback-bound sessions.
+  it("does not retarget new chats at the legacy fallback after opening a legacy chat", async () => {
+    const user = userEvent.setup()
+    const createdBy = vi.fn()
+    const agents = [
+      { agentTypeId: "default", label: "default", legacy: true },
+      { agentTypeId: "alpha", label: "Alpha" },
+      { agentTypeId: "beta", label: "Beta" },
+    ]
+    const useAgentSelection = () => {
+      const [selectedAgentTypeId, setSelectedAgentTypeId] = useState("alpha")
+      return {
+        agents,
+        selectedAgentTypeId,
+        loading: false,
+        error: undefined,
+        selectAgentTypeId: (agentTypeId: string) => setSelectedAgentTypeId(agentTypeId),
+      }
+    }
+    const legacyChats = new Map<string, { id: string; agentTypeId: string; title: string; updatedAt: number }[]>([
+      ["default", [{ id: "legacy-one", agentTypeId: "default", title: "Chat from before the fleet", updatedAt: 5 }]],
+      ["alpha", [{ id: "alpha-one", agentTypeId: "alpha", title: "Alpha one", updatedAt: 2 }]],
+      ["beta", []],
+    ])
+    const useFleetSessions: AttestedWorkspaceAgentFrontProps<WorkspaceAgentSession>["useSessions"] = (options) => {
+      const owner = options.agentTypeId
+      return {
+        sessions: legacyChats.get(owner ?? []) ?? [],
+        loading: false,
+        activeSessionId: undefined,
+        activeSessionAgentTypeId: owner,
+        activeSession: undefined,
+        workspaceId: options.workspaceId,
+        switch: vi.fn(),
+        create: async () => {
+          createdBy(owner)
+          return { id: `${owner}-new`, agentTypeId: owner, title: `${owner} new`, updatedAt: 9 }
+        },
+        delete: vi.fn(),
+      }
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="fleet-legacy-retarget"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        addressedAgentSelection
+        useAddressedAgentSelection={useAgentSelection}
+        useSessions={useFleetSessions}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getAllByText("Chat from before the fleet").length).toBeGreaterThan(0)
+    })
+
+    // Open the old default-bound chat: this legitimately switches the
+    // addressed owner to the legacy fallback.
+    const defaultRegion = screen.getByRole("region", { name: "default sessions" })
+    await user.click(within(defaultRegion).getByText("Chat from before the fleet").closest("button")!)
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-session-id", "legacy-one")
+    })
+
+    // Creation does NOT follow: the primary picker target derives from an
+    // authored seat and the menu never offers `default`.
+    const primary = screen.getByRole("button", { name: /^Start new chat with / })
+    expect(primary).not.toHaveAttribute("aria-label", "Start new chat with default")
+    await user.click(screen.getByRole("button", { name: "Choose Agent for new chat" }))
+    const menu = screen.getByRole("menu")
+    expect(within(menu).queryByText("default")).not.toBeInTheDocument()
+
+    // Retarget through the picker's authored seats, then create — landing must
+    // be Alpha even though the addressed owner is still the legacy fallback.
+    await user.click(within(menu).getByText("Alpha"))
+    await user.click(await screen.findByRole("button", { name: "Start new chat with Alpha" }))
+    await waitFor(() => {
+      expect(createdBy).toHaveBeenCalledWith("alpha")
+    })
+    expect(createdBy).not.toHaveBeenCalledWith("default")
+  })
+
   it("discovers an addressed fleet, groups its chats, and creates through the chosen owner", async () => {
     const user = userEvent.setup()
     const createdBy = vi.fn()
