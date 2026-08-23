@@ -73,9 +73,20 @@ export function startSessionActivityStream(options: {
   return () => source.close()
 }
 
-/** Optimistic panel events reconciled by changed AgentHost activity snapshots. */
-export function useWorkingSessionIds(sessions: readonly SessionActivityItem[]): ReadonlySet<string> {
+/**
+ * Optimistic panel events reconciled by changed AgentHost activity snapshots.
+ *
+ * `scopeKey` (the workspace id) scopes the optimistic set: live events tagged
+ * with a foreign workspace are ignored, and a workspace/source switch resets
+ * the set, so one workspace's streaming state can never start or finish a
+ * colliding session id in another.
+ */
+export function useWorkingSessionIds(
+  sessions: readonly SessionActivityItem[],
+  options: { scopeKey?: string } = {},
+): ReadonlySet<string> {
   const [working, setWorking] = useState<ReadonlySet<string>>(() => new Set())
+  const scopeKey = options.scopeKey
   const activitySnapshot = useMemo(() => JSON.stringify(sessions.map((session) => [
     session.agentTypeId,
     session.id,
@@ -84,10 +95,20 @@ export function useWorkingSessionIds(sessions: readonly SessionActivityItem[]): 
   ])), [sessions])
   const previousActivitySnapshotRef = useRef<string | undefined>(undefined)
 
+  // A workspace/source switch invalidates the optimistic set: streaming
+  // state observed under the previous source may not survive onto a
+  // colliding id under the next one.
+  useEffect(() => {
+    setWorking((current) => current.size === 0 ? current : new Set())
+  }, [scopeKey])
+
   useEffect(() => {
     const onStatus = (event: Event) => {
-      const detail = (event as CustomEvent).detail as { sessionId?: unknown; agentTypeId?: unknown; working?: unknown } | undefined
+      const detail = (event as CustomEvent).detail as { sessionId?: unknown; agentTypeId?: unknown; working?: unknown; workspaceId?: unknown } | undefined
       if (typeof detail?.sessionId !== "string") return
+      // Events tagged with a foreign workspace are ignored so one
+      // workspace's start/finish news cannot flip a colliding row here.
+      if (typeof detail.workspaceId === "string" && scopeKey !== undefined && detail.workspaceId !== scopeKey) return
       const key = workspaceSessionKey(detail.sessionId, typeof detail.agentTypeId === "string" ? detail.agentTypeId : undefined)
       const isWorking = detail.working === true
       setWorking((current) => {
@@ -101,7 +122,7 @@ export function useWorkingSessionIds(sessions: readonly SessionActivityItem[]): 
     window.addEventListener(CHAT_SESSION_STATUS_EVENT, onStatus)
     window.dispatchEvent(new Event(CHAT_SESSION_STATUS_REQUEST_EVENT))
     return () => window.removeEventListener(CHAT_SESSION_STATUS_EVENT, onStatus)
-  }, [])
+  }, [scopeKey])
 
   useEffect(() => {
     const previousSnapshot = previousActivitySnapshotRef.current

@@ -437,6 +437,37 @@ describe("SessionBrowser", () => {
     expect(document.querySelector('[data-boring-badge="failed"]')).toBeNull()
   })
 
+  it("a foreign finish cannot complete a colliding working session", () => {
+    vi.useFakeTimers()
+    try {
+      const { rerender } = render(<SessionBrowser sessions={sample} activeId="s1" activityWorkspaceId="ws-b" />)
+
+      // The local colliding id starts streaming under ws-b.
+      act(() => {
+        window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+          detail: { workspaceId: "ws-b", sessionId: "s2", working: true },
+        }))
+      })
+      expect(document.querySelector('[data-boring-badge="completed"]')).toBeNull()
+
+      // A finish tagged with a foreign workspace targets a colliding id in
+      // another source; it must not flip this row's working set and must not
+      // manufacture a completed state here.
+      act(() => {
+        window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+          detail: { workspaceId: "ws-a", sessionId: "s2", working: false },
+        }))
+      })
+      expect(document.querySelector('[data-boring-badge="completed"]')).toBeNull()
+
+      // The row is still honestly working under its own scope.
+      rerender(<SessionBrowser sessions={sample} activeId="s1" activityWorkspaceId="ws-b" />)
+      expect(document.querySelector('[data-boring-badge="completed"]')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it("shows a failed badge for a session the server reports as errored", () => {
     const withError: SessionItem[] = [
       sample[0]!,
