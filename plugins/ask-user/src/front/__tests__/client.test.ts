@@ -59,13 +59,38 @@ describe("ask-user front client", () => {
     expect(normalizeQuestion({ ...question, artifact })?.artifacts).toEqual([])
   })
 
-  it("lists and normalizes every ready question from the durable endpoint", async () => {
+  it("lists and normalizes every ready question over the bridge, without touching the legacy route", async () => {
     const second = { ...question, questionId: "q2", sessionId: "headless", title: "Headless approval" }
-    const fetchMock = vi.fn(async () => Response.json({ questions: [question, second] }))
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      void init
+      return String(url).endsWith("/api/v1/workspace-bridge/call")
+        ? Response.json({ ok: true, output: { questions: [question, second] } })
+        : Response.json({ error: "not_found" }, { status: 404 })
+    })
     vi.stubGlobal("fetch", fetchMock)
 
     await expect(createQuestionsClient({ apiBaseUrl: "/hub", headers: { "x-boring-workspace-id": "w1" } }).listReady())
       .resolves.toEqual([question, second])
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe("/hub/api/v1/workspace-bridge/call")
+    expect(String(init?.body)).toContain("ask-user.v1.list")
+    // Hosts that mount the bridge must never see a request for the legacy
+    // route: it 404s there, and a guaranteed-404 poll trips the UI review
+    // console/network hard gates.
+    expect(fetchMock.mock.calls.some(([called]) => String(called).includes("/api/v1/questions?status=ready"))).toBe(false)
+  })
+
+  it("falls back to the legacy route only when the bridge has no list op", async () => {
+    const fetchMock = vi.fn(async (url: string) => (
+      String(url).endsWith("/api/v1/workspace-bridge/call")
+        // WorkspaceBridgeErrorCode.OpNotFound maps to 404 in httpRoutes.
+        ? Response.json({ ok: false, error: { code: "op_not_found" } }, { status: 404 })
+        : Response.json({ questions: [question] })
+    ))
+    vi.stubGlobal("fetch", fetchMock)
+
+    await expect(createQuestionsClient({ apiBaseUrl: "/hub", headers: { "x-boring-workspace-id": "w1" } }).listReady())
+      .resolves.toEqual([question])
     expect(fetchMock).toHaveBeenCalledWith("/hub/api/v1/questions?status=ready", {
       headers: { "x-boring-workspace-id": "w1" },
       credentials: "include",
@@ -73,7 +98,19 @@ describe("ask-user front client", () => {
     })
   })
 
-  it("does not label a malformed successful bridge list as a legacy 404", async () => {
+  it("surfaces a real bridge failure instead of retrying it on the legacy route", async () => {
+    const fetchMock = vi.fn(async (url: string) => (
+      String(url).endsWith("/api/v1/workspace-bridge/call")
+        ? Response.json({ ok: false, error: { code: "boom", message: "bridge exploded" } }, { status: 500 })
+        : Response.json({ questions: [question] })
+    ))
+    vi.stubGlobal("fetch", fetchMock)
+
+    await expect(createQuestionsClient().listReady()).rejects.toMatchObject({ code: "boom", statusCode: 500 })
+    expect(fetchMock.mock.calls.some(([called]) => String(called).includes("/api/v1/questions?status=ready"))).toBe(false)
+  })
+
+  it("does not label a malformed successful bridge list as a missing transport", async () => {
     const fetchMock = vi.fn(async (url: string) => (
       String(url).includes("/api/v1/questions?status=ready")
         ? Response.json({ error: "not_found" }, { status: 404 })

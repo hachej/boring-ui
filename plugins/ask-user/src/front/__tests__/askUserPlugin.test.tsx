@@ -8,6 +8,29 @@ import type { AskUserQuestion } from "../../shared/types"
 import { askUserPlugin } from "../index"
 import { sharedQuestionsStore } from "../runtime"
 
+/** The durable list travels over the workspace bridge (`ask-user.v1.list`);
+ * REST is only the legacy fallback for hosts with no such bridge op. These
+ * fixtures were written against the REST route, so serve whatever the fixture
+ * answers there on the bridge too — including its failures, so a 503 stays a
+ * 503 rather than becoming an empty list. */
+function serveBothListTransports(handler: (url: string, init?: RequestInit) => Promise<Response>) {
+  return vi.fn(async (url: string, init?: RequestInit) => {
+    if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.list")) {
+      const rest = await handler("/api/v1/questions?status=ready")
+      const payload = await rest.clone().json().catch(() => null) as Record<string, unknown> | null
+      if (!rest.ok) return Response.json({ ok: false, error: { code: "temporary" } }, { status: rest.status })
+      return Response.json({ ok: true, output: payload ?? {} })
+    }
+    return handler(url, init)
+  })
+}
+
+/** Matches the client's durable-list call on whichever transport it used. */
+const isReadyListCall = ([url, init]: [string, RequestInit?]) => (
+  String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.list")
+)
+
+
 const capturedPlugin = captureFrontPlugin(askUserPlugin)
 
 const question: AskUserQuestion = {
@@ -68,7 +91,7 @@ afterEach(() => {
 
 describe("askUserPlugin front shell", () => {
   it("reads pending question, submits with token/session, and closes ephemeral pane", async () => {
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const fetchMock = serveBothListTransports(async (url: string, init?: RequestInit) => {
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) return Response.json({ ok: true, output: { pending: question } })
       if (String(url).endsWith("/api/v1/workspace-bridge/call")) return Response.json({ ok: true, output: { ok: true, status: "answered" } })
       if (String(url).endsWith("/api/v1/ui/state")) return Response.json({})
@@ -99,7 +122,7 @@ describe("askUserPlugin front shell", () => {
   })
 
   it("rehydrates the same session pending question after provider remount", async () => {
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const fetchMock = serveBothListTransports(async (url: string, init?: RequestInit) => {
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) {
         return Response.json({ ok: true, output: { pending: question } })
       }
@@ -121,7 +144,7 @@ describe("askUserPlugin front shell", () => {
 
   it("does not carry a colliding session question across Workspace identities", async () => {
     let currentQuestion: AskUserQuestion | null = question
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const fetchMock = serveBothListTransports(async (url: string, init?: RequestInit) => {
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) {
         return Response.json({ ok: true, output: { pending: currentQuestion } })
       }
@@ -154,7 +177,7 @@ describe("askUserPlugin front shell", () => {
     const blockedQuestion = { ...question, questionId: "fresh-hidden-q1", sessionId: "blocked-session", title: "Question from blocked session", answerToken: "fresh-hidden-token-1" }
     const pendingBySession = new Map<string, AskUserQuestion>([[blockedQuestion.sessionId, blockedQuestion]])
     const requestedPendingSessions: string[] = []
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const fetchMock = serveBothListTransports(async (url: string, init?: RequestInit) => {
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) {
         const body = JSON.parse(String(init?.body)) as { input?: { sessionId?: string } }
         const sessionId = body.input?.sessionId ?? ""
@@ -180,7 +203,7 @@ describe("askUserPlugin front shell", () => {
   it("keeps a hidden-session pending question visible when it is still blocking", async () => {
     const s1Question = { ...question, questionId: "hidden-pane-q1", sessionId: "hidden-pane-s1", title: "Question for hidden session", answerToken: "hidden-pane-token-1" }
     const pendingBySession = new Map<string, AskUserQuestion>([[s1Question.sessionId, s1Question]])
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const fetchMock = serveBothListTransports(async (url: string, init?: RequestInit) => {
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) {
         const body = JSON.parse(String(init?.body)) as { input?: { sessionId?: string } }
         return Response.json({ ok: true, output: { pending: pendingBySession.get(body.input?.sessionId ?? "") ?? null } })
@@ -206,7 +229,7 @@ describe("askUserPlugin front shell", () => {
     const hiddenQuestion = { ...question, questionId: "multi-hide-q1", sessionId: "multi-hide-s1", title: "Hidden session question", answerToken: "multi-hide-token-1" }
     const visibleQuestion = { ...nextQuestion, questionId: "multi-hide-q2", sessionId: "multi-hide-s2", title: "Visible session question", answerToken: "multi-hide-token-2" }
     const pendingBySession = new Map<string, AskUserQuestion>([[hiddenQuestion.sessionId, hiddenQuestion], [visibleQuestion.sessionId, visibleQuestion]])
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const fetchMock = serveBothListTransports(async (url: string, init?: RequestInit) => {
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) {
         const body = JSON.parse(String(init?.body)) as { input?: { sessionId?: string } }
         return Response.json({ ok: true, output: { pending: pendingBySession.get(body.input?.sessionId ?? "") ?? null } })
@@ -233,7 +256,7 @@ describe("askUserPlugin front shell", () => {
     const s1Question = { ...question, questionId: "multi-switch-q1", sessionId: "multi-switch-s1", title: "Question for session one", answerToken: "multi-token-1" }
     const s2Question = { ...nextQuestion, questionId: "multi-switch-q2", sessionId: "multi-switch-s2", title: "Question for session two", answerToken: "multi-token-2" }
     const pendingBySession = new Map<string, AskUserQuestion>([[s1Question.sessionId, s1Question], [s2Question.sessionId, s2Question]])
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const fetchMock = serveBothListTransports(async (url: string, init?: RequestInit) => {
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) {
         const body = JSON.parse(String(init?.body)) as { input?: { sessionId?: string } }
         return Response.json({ ok: true, output: { pending: pendingBySession.get(body.input?.sessionId ?? "") ?? null } })
@@ -262,7 +285,7 @@ describe("askUserPlugin front shell", () => {
     const s1Question = { ...question, questionId: "exact-q1", sessionId: "exact-s1", title: "Active session question", answerToken: "exact-token-1" }
     const s2Question = { ...nextQuestion, questionId: "exact-q2", sessionId: "exact-s2", title: "Clicked artifact question", answerToken: "exact-token-2" }
     const pendingBySession = new Map<string, AskUserQuestion>([[s1Question.sessionId, s1Question], [s2Question.sessionId, s2Question]])
-    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+    vi.stubGlobal("fetch", serveBothListTransports(async (url: string, init?: RequestInit) => {
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) {
         const body = JSON.parse(String(init?.body)) as { input?: { sessionId?: string } }
         return Response.json({ ok: true, output: { pending: pendingBySession.get(body.input?.sessionId ?? "") ?? null } })
@@ -285,7 +308,7 @@ describe("askUserPlugin front shell", () => {
     const s1Question = { ...question, questionId: "multi-answer-q1", sessionId: "multi-answer-s1", title: "Question remains", answerToken: "multi-answer-token-1" }
     const s2Question = { ...nextQuestion, questionId: "multi-answer-q2", sessionId: "multi-answer-s2", title: "Question to answer", answerToken: "multi-answer-token-2" }
     const pendingBySession = new Map<string, AskUserQuestion>([[s1Question.sessionId, s1Question], [s2Question.sessionId, s2Question]])
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const fetchMock = serveBothListTransports(async (url: string, init?: RequestInit) => {
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) {
         const body = JSON.parse(String(init?.body)) as { input?: { sessionId?: string } }
         return Response.json({ ok: true, output: { pending: pendingBySession.get(body.input?.sessionId ?? "") ?? null } })
@@ -324,7 +347,7 @@ describe("askUserPlugin front shell", () => {
     const first = { ...question, questionId: "retarget-q1", sessionId: "retarget-session", title: "Retarget first" }
     const second = { ...nextQuestion, questionId: "retarget-q2", sessionId: "retarget-session", title: "Retarget second" }
     let current: AskUserQuestion | null = first
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const fetchMock = serveBothListTransports(async (url: string, init?: RequestInit) => {
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) {
         return Response.json({ ok: true, output: { pending: current } })
       }
@@ -350,7 +373,7 @@ describe("askUserPlugin front shell", () => {
     const staleQuestion = { ...question, questionId: "stale-q1", sessionId: "stale-session", title: "First stale question" }
     const staleNextQuestion = { ...nextQuestion, questionId: "stale-q2", sessionId: "stale-session", title: "Second stale question" }
     let current: AskUserQuestion | null = staleQuestion
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const fetchMock = serveBothListTransports(async (url: string, init?: RequestInit) => {
       if (String(url).includes("/api/v1/questions?status=ready")) return Response.json({ questions: current ? [current] : [] })
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) {
         return Response.json({ ok: true, output: { pending: current } })
@@ -375,7 +398,7 @@ describe("askUserPlugin front shell", () => {
   })
 
   it("rehydrates question from ask-user pending when opened from surface metadata", async () => {
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const fetchMock = serveBothListTransports(async (url: string, init?: RequestInit) => {
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) {
         return Response.json({ ok: true, output: { pending: question } })
       }
@@ -395,7 +418,7 @@ describe("askUserPlugin front shell", () => {
     const s1Question = { ...question, questionId: "switch-q1", sessionId: "s1", title: "Question for s1" }
     const s2Question = { ...nextQuestion, questionId: "switch-q2", sessionId: "s2", title: "Question for s2" }
     const pendingBySession = new Map<string, AskUserQuestion>([["s1", s1Question], ["s2", s2Question]])
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const fetchMock = serveBothListTransports(async (url: string, init?: RequestInit) => {
       if (String(url).includes("/api/v1/questions?status=ready")) return Response.json({ questions: [...pendingBySession.values()] })
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) {
         const body = JSON.parse(String(init?.body)) as { input?: { sessionId?: string } }
@@ -409,7 +432,7 @@ describe("askUserPlugin front shell", () => {
     const Provider = getProvider()
 
     render(<Provider apiBaseUrl="" activeSessionId="s1" openSessionIds={["s1"]}><div>child</div></Provider>)
-    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/v1/questions?status=ready"))).toBe(true))
+    await waitFor(() => expect(fetchMock.mock.calls.some(isReadyListCall)).toBe(true))
 
     window.dispatchEvent(new CustomEvent(WORKSPACE_COMPOSER_STOP_EVENT, { detail: { sessionId: "s1", reason: WORKSPACE_COMPOSER_STOP_REASONS.sessionSwitch } }))
 
@@ -421,7 +444,7 @@ describe("askUserPlugin front shell", () => {
     const s1Question = { ...question, questionId: "open-cancel-q1", sessionId: "open-cancel-s1", title: "Active open question", answerToken: "open-cancel-token-1" }
     const s2Question = { ...nextQuestion, questionId: "open-cancel-q2", sessionId: "open-cancel-s2", title: "Inactive open question", answerToken: "open-cancel-token-2" }
     const pendingBySession = new Map<string, AskUserQuestion>([[s1Question.sessionId, s1Question], [s2Question.sessionId, s2Question]])
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const fetchMock = serveBothListTransports(async (url: string, init?: RequestInit) => {
       if (String(url).includes("/api/v1/questions?status=ready")) return Response.json({ questions: [...pendingBySession.values()] })
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) {
         const body = JSON.parse(String(init?.body)) as { input?: { sessionId?: string } }
@@ -439,7 +462,7 @@ describe("askUserPlugin front shell", () => {
     const Provider = getProvider()
 
     render(<Provider apiBaseUrl="" activeSessionId={s1Question.sessionId} openSessionIds={[s1Question.sessionId, s2Question.sessionId]}><div>child</div></Provider>)
-    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/v1/questions?status=ready"))).toBe(true))
+    await waitFor(() => expect(fetchMock.mock.calls.some(isReadyListCall)).toBe(true))
 
     window.dispatchEvent(new CustomEvent(WORKSPACE_COMPOSER_STOP_EVENT, { detail: { sessionId: s2Question.sessionId, reason: WORKSPACE_COMPOSER_STOP_REASONS.userStop } }))
 
@@ -453,7 +476,7 @@ describe("askUserPlugin front shell", () => {
     const commands: unknown[] = []
     const onCommand = (event: Event) => commands.push((event as CustomEvent).detail)
     window.addEventListener(UI_COMMAND_EVENT, onCommand)
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const fetchMock = serveBothListTransports(async (url: string, init?: RequestInit) => {
       if (String(url).includes("/api/v1/questions?status=ready")) return Response.json({ questions: [pendingQuestion] })
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) return Response.json({ ok: true, output: { pending: pendingQuestion } })
       if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateFor(pendingQuestion))
@@ -464,7 +487,7 @@ describe("askUserPlugin front shell", () => {
 
     try {
       render(<Provider apiBaseUrl="" activeSessionId={pendingQuestion.sessionId} openSessionIds={[pendingQuestion.sessionId]}><div>child</div></Provider>)
-      await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/v1/questions?status=ready"))).toBe(true))
+      await waitFor(() => expect(fetchMock.mock.calls.some(isReadyListCall)).toBe(true))
       await new Promise((resolve) => setTimeout(resolve, 20))
       expect(commands).not.toContainEqual(expect.objectContaining({ kind: "openSurface" }))
     } finally {
@@ -477,7 +500,7 @@ describe("askUserPlugin front shell", () => {
     const commands: unknown[] = []
     const onCommand = (event: Event) => commands.push((event as CustomEvent).detail)
     window.addEventListener(UI_COMMAND_EVENT, onCommand)
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const fetchMock = serveBothListTransports(async (url: string, init?: RequestInit) => {
       if (String(url).includes("/api/v1/questions?status=ready")) return Response.json({ questions: [closedQuestion] })
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) return Response.json({ ok: true, output: { pending: closedQuestion } })
       if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateFor(closedQuestion))
@@ -488,7 +511,7 @@ describe("askUserPlugin front shell", () => {
 
     try {
       render(<Provider apiBaseUrl="" activeSessionId="closed-session" openSessionIds={["other-session"]}><div>child</div></Provider>)
-      await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/v1/questions?status=ready"))).toBe(true))
+      await waitFor(() => expect(fetchMock.mock.calls.some(isReadyListCall)).toBe(true))
       await new Promise((resolve) => setTimeout(resolve, 20))
       expect(commands).not.toContainEqual(expect.objectContaining({ kind: "openSurface" }))
     } finally {
@@ -523,7 +546,7 @@ describe("askUserPlugin front shell", () => {
       close() {}
     }
     vi.stubGlobal("EventSource", FakeEventSource)
-    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    vi.stubGlobal("fetch", serveBothListTransports(async (url: string) => {
       if (String(url).includes("/api/v1/questions?status=ready")) {
         return listFails
           ? Response.json({ error: "temporary" }, { status: 503 })
@@ -589,7 +612,7 @@ describe("askUserPlugin front shell", () => {
       close() {}
     }
     vi.stubGlobal("EventSource", SilentEventSource)
-    vi.stubGlobal("fetch", vi.fn(async (url: string) => (
+    vi.stubGlobal("fetch", serveBothListTransports(async (url: string) => (
       String(url).includes("/api/v1/questions?status=ready")
         ? Response.json({ questions: readyQuestions })
         : Response.json({})
@@ -617,7 +640,7 @@ describe("askUserPlugin front shell", () => {
       seen.splice(0, seen.length, ...blockers)
       return null
     }
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const fetchMock = serveBothListTransports(async (url: string, init?: RequestInit) => {
       if (String(url).includes("/api/v1/questions?status=ready")) return Response.json({ questions: [question] })
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) return Response.json({ ok: true, output: { pending: question } })
       if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateFor(question))
@@ -645,7 +668,7 @@ describe("askUserPlugin front shell", () => {
   })
 
   it("generic attention cancel action cancels the matching ask-user question", async () => {
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const fetchMock = serveBothListTransports(async (url: string, init?: RequestInit) => {
       if (String(url).includes("/api/v1/questions?status=ready")) return Response.json({ questions: [question] })
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) return Response.json({ ok: true, output: { pending: question } })
       if (String(url).endsWith("/api/v1/workspace-bridge/call")) return Response.json({ ok: true, output: { ok: true, status: "cancelled" } })
@@ -655,7 +678,7 @@ describe("askUserPlugin front shell", () => {
     vi.stubGlobal("fetch", fetchMock)
     const Provider = getProvider()
     render(<Provider apiBaseUrl="" activeSessionId="default"><div>child</div></Provider>)
-    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/v1/questions?status=ready"))).toBe(true))
+    await waitFor(() => expect(fetchMock.mock.calls.some(isReadyListCall)).toBe(true))
 
     window.dispatchEvent(new CustomEvent(WORKSPACE_ATTENTION_ACTION_EVENT, {
       detail: {
@@ -676,7 +699,7 @@ describe("askUserPlugin front shell", () => {
       seen.splice(0, seen.length, ...blockers)
       return null
     }
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const fetchMock = serveBothListTransports(async (url: string, init?: RequestInit) => {
       if (String(url).includes("/api/v1/questions?status=ready")) return Response.json({ questions: [question] })
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.cancel")) {
         return Response.json({ ok: false, error: { code: "temporary", message: "try again" } }, { status: 503 })
@@ -716,7 +739,7 @@ describe("askUserPlugin front shell", () => {
   })
 
   it("composer stop cancels pending question even when pane is closed", async () => {
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const fetchMock = serveBothListTransports(async (url: string, init?: RequestInit) => {
       if (String(url).includes("/api/v1/questions?status=ready")) return Response.json({ questions: [question] })
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) return Response.json({ ok: true, output: { pending: question } })
       if (String(url).endsWith("/api/v1/workspace-bridge/call")) return Response.json({ ok: true, output: { ok: true, status: "cancelled" } })
@@ -726,7 +749,7 @@ describe("askUserPlugin front shell", () => {
     vi.stubGlobal("fetch", fetchMock)
     const Provider = getProvider()
     render(<Provider apiBaseUrl="" activeSessionId="default"><div>child</div></Provider>)
-    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/v1/questions?status=ready"))).toBe(true))
+    await waitFor(() => expect(fetchMock.mock.calls.some(isReadyListCall)).toBe(true))
     window.dispatchEvent(new CustomEvent(WORKSPACE_COMPOSER_STOP_EVENT, { detail: { sessionId: "default", reason: WORKSPACE_COMPOSER_STOP_REASONS.userStop } }))
     await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.cancel"))).toBe(true))
   })
@@ -740,7 +763,7 @@ describe("askUserPlugin front shell", () => {
   })
 
   it("renders only the pending question that matches an inline tool call", async () => {
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const fetchMock = serveBothListTransports(async (url: string, init?: RequestInit) => {
       if (String(url).includes("/api/v1/questions?status=ready")) return Response.json({ questions: [question] })
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) return Response.json({ ok: true, output: { pending: question } })
       if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateFor(question))
@@ -772,7 +795,7 @@ describe("askUserPlugin front shell", () => {
       { id: "catalog", surfaceKind: "catalog.open-row", target: "orders_daily", title: "Orders table", description: "Open the registered catalog surface." },
     ]
     const pendingQuestion = { ...question, artifacts }
-    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+    vi.stubGlobal("fetch", serveBothListTransports(async (url: string, init?: RequestInit) => {
       if (String(url).includes("/api/v1/questions?status=ready")) return Response.json({ questions: [pendingQuestion] })
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) return Response.json({ ok: true, output: { pending: pendingQuestion } })
       if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateFor(pendingQuestion))

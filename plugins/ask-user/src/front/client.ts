@@ -92,18 +92,28 @@ export function createQuestionsClient(options: QuestionsClientOptions = {}) {
 
   return {
     async listReady(): Promise<AskUserQuestion[]> {
+      // Bridge first, like every other op on this client. Probing the REST
+      // route first meant a 404 on every poll in hosts that do not mount it
+      // (the UI-review harness among them), which is both wasted work and a
+      // stream of console/network errors for anything watching the page.
+      let bridged: { questions: unknown } | undefined
+      try {
+        bridged = await callBridge<{ questions: unknown }>(ASK_USER_BRIDGE_OPS.list, { status: "ready" })
+      } catch (error) {
+        // Only an absent transport falls through to REST: the bridge answers
+        // 404 for an op it does not know. Any other bridge failure is real and
+        // must surface rather than be retried over a second transport. The
+        // normalize step stays outside this catch so a malformed-but-successful
+        // bridge payload is never mistaken for a missing op.
+        if (!isMissingTransport(error)) throw error
+      }
+      if (bridged) return normalizeReadyQuestions(bridged.questions, 200)
       const response = await fetch(`${options.apiBaseUrl ?? ""}/api/v1/questions?status=ready`, {
         headers: options.headers,
         credentials: "include",
         cache: "no-store",
       })
       const payload = await response.json().catch(() => null) as { questions?: unknown } | null
-      if (response.status === 404) {
-        const output = await callBridge<{ questions: unknown }>(ASK_USER_BRIDGE_OPS.list, { status: "ready" })
-        // Preserve the bridge transport's successful status. A malformed
-        // bridge payload is not evidence that both list transports are absent.
-        return normalizeReadyQuestions(output.questions, 200)
-      }
       if (!response.ok) {
         throw new QuestionsClientError(
           typeof payload === "object" && payload && "error" in payload && typeof payload.error === "string" ? payload.error : ASK_USER_ERROR_CODES.UI_UNAVAILABLE,
@@ -161,6 +171,13 @@ export function createQuestionsClient(options: QuestionsClientOptions = {}) {
       )
     },
   }
+}
+
+/** A transport is absent when the host never mounted it: the workspace bridge
+ * answers 404 (WorkspaceBridgeErrorCode.OpNotFound) for an op it does not
+ * know, as does a host with no bridge route at all. */
+function isMissingTransport(error: unknown): boolean {
+  return error instanceof QuestionsClientError && error.statusCode === 404
 }
 
 function normalizeReadyQuestions(value: unknown, statusCode: number): AskUserQuestion[] {
