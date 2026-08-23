@@ -3,6 +3,7 @@ import { LoadingState } from "@hachej/boring-ui-kit"
 import type { ReactNode } from "react"
 import { cn } from "../lib/utils"
 import { decodeWorkspaceSessionDrag, type WorkspaceSessionRef } from "../sessionIdentity"
+import { COMPACT_MAX_WIDTH } from "./breakpoints"
 
 /**
  * The dockview stage is code-split: the compact mobile shell never renders it
@@ -10,6 +11,13 @@ import { decodeWorkspaceSessionDrag, type WorkspaceSessionRef } from "../session
  * download dockview-react at all. Desktop pays one extra chunk hop on mount.
  */
 const ChatPaneStageDock = lazy(() => import("./ChatPaneStageDock").then((m) => ({ default: m.ChatPaneStageDock })))
+
+// Warm the chunk at boot on desktop-sized viewports so the Suspense window is
+// effectively closed before first paint; compact viewports never fetch it —
+// that is the entire point of the split.
+if (typeof window !== "undefined" && window.innerWidth >= COMPACT_MAX_WIDTH) {
+  void import("./ChatPaneStageDock")
+}
 
 /**
  * Synchronous fallback for the chunk hop. Deliberately does NOT render the

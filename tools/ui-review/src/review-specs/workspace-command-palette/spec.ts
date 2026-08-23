@@ -38,6 +38,9 @@ export const workspaceCommandPaletteSpec: UiReviewSpec = {
     }),
     ready: async (page, timeoutMs) => {
       await expect(page.getByRole("main", { name: "Chat" })).toBeVisible({ timeout: timeoutMs })
+      // The dock stage is code-split; wait for either it or the compact single
+      // pane so no checkpoint ever captures the chunk's Suspense fallback.
+      await expect(page.locator('.dv-chat-stage, [data-boring-workspace-part="mobile-chat-pane"]').first()).toBeVisible({ timeout: timeoutMs })
     },
   },
   viewports,
