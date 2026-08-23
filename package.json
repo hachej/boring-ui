@@ -16,6 +16,7 @@
     "lint:alignment-invariants": "node scripts/check-alignment-invariants.mjs",
     "lint:workspace-plugin-invariants": "pnpm --filter @hachej/boring-workspace run lint:plugin-invariants",
     "golden-path:timing": "pnpm --filter @hachej/boring-agent exec tsx ../../scripts/golden-path-timing.mjs",
+    "factory:check": "pnpm --filter @hachej/boring-agent exec tsx ../../scripts/factory-check.mjs",
     "smoke:a1-declarative-pack": "node scripts/a1-declarative-pack-smoke.mjs",
     "smoke:gh912-short-dictation": "python3 docs/issues/912/spikes/whisperlivekit/gh912-wlk-short-dictation-probe.py",
     "smoke:gh912-live-transcription": "python3 docs/issues/912/spikes/whisperlivekit/gh912-live-transcript-deployment-probe.py",
