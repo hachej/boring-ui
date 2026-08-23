@@ -67,6 +67,7 @@ export function ProjectOverview({
   renderCreateControl,
   allowPinning = true,
   compactTree = false,
+  attentionTone = "accent",
 }: {
   projects: AppLeftPaneProject[]
   activeProjectId?: string | null
@@ -86,6 +87,12 @@ export function ProjectOverview({
   renderCreateControl?: (project: AppLeftPaneProject) => ReactNode
   allowPinning?: boolean
   compactTree?: boolean
+  /**
+   * Colour of the collapsed-header "waiting" rollup. Amber is the pane-wide
+   * language for "a human is blocking" (the Needs you band, the Agent card
+   * rollup, the row badge); accent is the shipped project-tree look.
+   */
+  attentionTone?: "accent" | "amber"
 }) {
   const activeId = activeProjectId ?? projects[0]?.id ?? null
 
@@ -120,6 +127,7 @@ export function ProjectOverview({
           createControl={renderCreateControl?.(project)}
           allowPinning={allowPinning}
           compactTree={compactTree}
+          attentionTone={attentionTone}
         />
       ))}
     </div>
@@ -146,6 +154,7 @@ function ProjectRow({
   createControl,
   allowPinning,
   compactTree,
+  attentionTone,
 }: {
   project: AppLeftPaneProject
   fallbackName: string
@@ -166,6 +175,7 @@ function ProjectRow({
   createControl?: ReactNode
   allowPinning: boolean
   compactTree: boolean
+  attentionTone: "accent" | "amber"
 }) {
   // Keep the hover actions visible while the "•••" menu is open, even if the
   // pointer has moved into the (portaled) menu.
@@ -287,7 +297,12 @@ function ProjectRow({
             )}>
               <span
                 title={`${blocked} session${blocked === 1 ? "" : "s"} waiting`}
-                className="grid min-w-5 place-items-center rounded-full bg-[color:oklch(from_var(--accent)_l_c_h/0.18)] px-1.5 py-0.5 text-[11px] font-semibold text-[color:var(--accent)]"
+                className={cn(
+                  "grid min-w-5 place-items-center rounded-full px-1.5 py-0.5 text-[11px] font-semibold",
+                  attentionTone === "amber"
+                    ? "bg-amber-500/18 text-amber-700 dark:text-amber-300"
+                    : "bg-[color:oklch(from_var(--accent)_l_c_h/0.18)] text-[color:var(--accent)]",
+                )}
               >
                 {blocked > 99 ? "99+" : blocked}
               </span>

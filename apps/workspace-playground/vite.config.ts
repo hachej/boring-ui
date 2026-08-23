@@ -9,6 +9,9 @@ import { assertReleaseCandidateDistModule } from "./src/release-candidate-dist"
 const baseResolve = createBoringAppViteAliases({ appRoot: __dirname })
 const repoRoot = resolve(__dirname, "../..")
 const releaseCandidateDistOnly = process.env.BORING_PLAYGROUND_DIST_ONLY === "1"
+/** An explicitly pinned HMR client port, or nothing — never a guessed default. */
+const hmrClientPortEnv = process.env.VITE_HMR_CLIENT_PORT ?? process.env.PORT
+const hmrClientPort = hmrClientPortEnv ? Number(hmrClientPortEnv) : undefined
 
 if (releaseCandidateDistOnly) {
   console.log("[workspace-playground] release-candidate dist-only package resolution enabled")
@@ -182,11 +185,19 @@ export default defineConfig({
     // browser caching there so an old immutable entry module cannot import a
     // freshly rebuilt graph and produce multiple React dispatchers.
     headers: process.env.BORING_VITE_HMR === "0" ? { "Cache-Control": "no-store" } : undefined,
+    // `clientPort` is pinned ONLY when something actually pinned it. It used to
+    // fall back to `VITE_PORT`, which reads `PORT` and otherwise hardcodes
+    // 5200 — so `vite --port 5201` (a CLI flag, which `server.port` honours but
+    // this constant knows nothing about) served the page on 5201 while telling
+    // the browser to open its HMR socket on 5200. That handshake 400s, and the
+    // client then reports "WebSocket closed without opened" on every page load.
+    // With the field omitted, Vite derives the client port from the port it
+    // actually resolved, so the two cannot drift again.
     hmr: process.env.BORING_VITE_HMR === "0"
       ? false
       : {
           host: process.env.VITE_HMR_HOST ?? "100.68.199.114",
-          clientPort: Number(process.env.VITE_HMR_CLIENT_PORT ?? VITE_PORT),
+          ...(hmrClientPort ? { clientPort: hmrClientPort } : {}),
         },
     fs: {
       allow: fsAllow,

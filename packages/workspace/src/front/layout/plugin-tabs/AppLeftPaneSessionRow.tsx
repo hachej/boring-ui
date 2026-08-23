@@ -131,6 +131,7 @@ export function AppSessionRow({
   showPlacementShortcuts = true,
   hoverShortcuts = DEFAULT_HOVER_SHORTCUTS,
   menuShortcuts,
+  placementScope = "unopened",
   confirmDelete = false,
   ownerLabel,
   leadingBadge,
@@ -158,6 +159,8 @@ export function AppSessionRow({
   hoverShortcuts?: readonly AppSessionRowShortcut[]
   /** Placement verbs the menu repeats. Default: none — the row icons carry them. */
   menuShortcuts?: readonly AppSessionRowShortcut[]
+  /** Whether a chat already on stage still offers the placement verbs. */
+  placementScope?: "unopened" | "always"
   /** Route Delete through a confirmation instead of firing it straight off the menu. */
   confirmDelete?: boolean
   ownerLabel?: string
@@ -191,11 +194,20 @@ export function AppSessionRow({
   const actionsAvailable = Boolean(onSwitch)
   const renameAvailable = Boolean(onRename) && session.nativeSessionId === session.id && session.hasAssistantReply === true
   const canCopy = session.ephemeral !== true
-  // Placement is only meaningful for a chat that is not already on stage, and
-  // only inside the loaded workspace — one rule, read by the row icon and the
-  // menu entry alike so the two can never disagree about what is possible.
-  const splitPossible = state === "normal" && actionsAvailable && canSplit && Boolean(onOpenAsPane)
-  const detachPossible = state === "normal" && actionsAvailable && Boolean(onOpenDetached)
+  // One rule, read by the row icon and the menu entry alike so the two can
+  // never disagree about what is possible.
+  //
+  // `placementScope` decides whether the ACTIVE chat still offers them.
+  // "unopened" is what the shipped hosts do: a chat already on stage gains
+  // nothing from a second door onto itself. It has one bad consequence the
+  // Console cannot live with — the menu silently loses two entries on exactly
+  // one row, so the operator learns that right-click and "..." are unreliable
+  // rather than that this chat is open. "always" keeps the verb list constant
+  // per row-set and lets the active chat be pulled into a split view beside
+  // another one, which is a real thing to want.
+  const placementInScope = placementScope === "always" || state === "normal"
+  const splitPossible = placementInScope && actionsAvailable && canSplit && Boolean(onOpenAsPane)
+  const detachPossible = placementInScope && actionsAvailable && Boolean(onOpenDetached)
   const pinAvailable = canPin && Boolean(onTogglePinned)
   const wants = (list: readonly AppSessionRowShortcut[] | undefined, shortcut: AppSessionRowShortcut) =>
     Boolean(list?.includes(shortcut))

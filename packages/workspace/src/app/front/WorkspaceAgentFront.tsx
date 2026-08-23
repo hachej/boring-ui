@@ -2706,7 +2706,13 @@ export function WorkspaceAgentFront<
           }}
           onToggleSessionPinned={toggleSessionPinned}
           onDeleteSession={canDeleteSessions ? deleteSessionAndPane : undefined}
-          onRenameSession={sessionApi?.rename ? resolvedRename : undefined}
+          // A host that supplies `onRenameSession` IS a rename-capable host —
+          // that is exactly what `canRenameSessions` above already concludes,
+          // and what the chat-pane actions already honour. Gating the LEFT
+          // PANE on `sessionApi.rename` alone silently dropped Rename for every
+          // host that drives sessions from props (the console spike among
+          // them), so the two surfaces disagreed about the same capability.
+          onRenameSession={onRenameSession ?? (sessionApi?.rename ? resolvedRename : undefined)}
         />
       )}
     >

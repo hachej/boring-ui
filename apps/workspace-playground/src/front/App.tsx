@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createDeckPlugin } from "@hachej/boring-deck/front"
 import type { DeckWidgetDefinition } from "@hachej/boring-deck/shared"
-import { WorkspaceProvider, type WorkspaceChatPanelProps } from "@hachej/boring-workspace"
+import { WorkspaceProvider, useWorkspaceAttention, type WorkspaceChatPanelProps } from "@hachej/boring-workspace"
 import { WorkspaceAgentFront, WorkspaceFullPagePanel, parseFullPagePanelLocation, type WorkspaceAgentSession } from "@hachej/boring-workspace/app/front"
 import { createAskUserPlugin } from "@hachej/boring-ask-user/front"
 import { diagramPlugin } from "@hachej/boring-diagram/front"
@@ -97,18 +97,58 @@ const consoleSpikeAgents = [
   { agentTypeId: "researcher", label: "Boring Researcher", description: "Research Agent" },
 ]
 
+/**
+ * Every fixture is a DURABLE, replied-to chat: `nativeSessionId === id` plus
+ * `hasAssistantReply` is the exact rule the pane gates Rename on, and a fixture
+ * set that misses it makes Rename look unimplemented rather than ineligible.
+ */
 const initialConsoleSpikeSessions: ConsoleSpikeSession[] = [
   { id: "launch-plan", agentTypeId: "builder", projectId: "launch", title: "Plan launch checklist", updatedAt: Date.now() - 4 * 60_000 },
   { id: "launch-review", agentTypeId: "reviewer", projectId: "launch", title: "Review release risks", updatedAt: Date.now() - 18 * 60_000 },
   { id: "console-nav", agentTypeId: "builder", projectId: "console", title: "Implement console navigation", updatedAt: Date.now() - 35 * 60_000 },
   { id: "console-research", agentTypeId: "researcher", projectId: "console", title: "Compare session groupings", updatedAt: Date.now() - 62 * 60_000 },
   { id: "console-copy", agentTypeId: "reviewer", projectId: "console", title: "Check Project semantics", updatedAt: Date.now() - 95 * 60_000 },
-]
+].map((session) => ({ ...session, nativeSessionId: session.id, hasAssistantReply: true }))
+
+/**
+ * FIXTURE-DERIVED demo attention. The spike route has no Agent runtime, so
+ * nothing would ever block on a human and the Needs you band — the one section
+ * the whole layout is arranged around — could not be seen at all. These two
+ * blockers stand in for the real ask-user plugin's output; they are seeded once
+ * and are not driven by anything the operator does.
+ */
+const consoleSpikeDemoBlockers = [
+  {
+    id: "console-spike-demo:launch-review",
+    reason: "ask-user.question",
+    sessionId: "launch-review",
+    agentTypeId: "reviewer",
+    sessionBadge: { kind: "question", label: "question", tone: "attention", priority: 10 },
+  },
+  {
+    id: "console-spike-demo:console-research",
+    reason: "ask-user.approval",
+    sessionId: "console-research",
+    agentTypeId: "researcher",
+    sessionBadge: { kind: "approval", label: "approve", tone: "warning", priority: 20 },
+  },
+] as const
+
+function ConsoleSpikeAttentionSeed() {
+  const { addBlocker } = useWorkspaceAttention()
+  useEffect(() => {
+    for (const blocker of consoleSpikeDemoBlockers) addBlocker({ ...blocker })
+  }, [addBlocker])
+  return null
+}
 
 function ConsoleSpikeChatPanel({ sessionId, agentTypeId, sessions }: WorkspaceChatPanelProps & { sessions: readonly ConsoleSpikeSession[] }) {
   const session = sessions.find((item) => item.id === sessionId && item.agentTypeId === agentTypeId)
   return (
     <div className="flex h-full min-h-0 items-center justify-center bg-background p-6" data-boring-workspace-part="console-spike-chat-panel">
+      {/* The panel is the spike's only component INSIDE the attention provider,
+          so it is where the demo blockers are seeded from. */}
+      <ConsoleSpikeAttentionSeed />
       <div className="max-w-md text-center">
         <div className="text-sm font-medium text-foreground">{session?.title ?? "New chat"}</div>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -267,18 +307,35 @@ export function WorkspaceShell() {
     selectAgentTypeId: setConsoleSpikeAgentTypeId,
   }), [consoleSpikeAgentTypeId])
   const createConsoleSpikeSession = useCallback((agentTypeId = consoleSpikeAgentTypeId, projectId = "console", placement: "default" | "split" | "quick" = "default") => {
+    const id = `console-spike-${Date.now()}`
     const created: ConsoleSpikeSession = {
-      id: `console-spike-${Date.now()}`,
+      id,
       agentTypeId,
       projectId,
       title: placement === "split" ? "New split chat" : placement === "quick" ? "Quick chat" : "New chat",
       updatedAt: Date.now(),
+      nativeSessionId: id,
+      // A freshly created chat has no reply yet, so it is correctly NOT
+      // renamable until one arrives — the same rule the real host applies.
+      hasAssistantReply: false,
     }
     setConsoleSpikeSessions((current) => [created, ...current])
     setConsoleSpikeAgentTypeId(agentTypeId)
     setConsoleSpikeActiveSession({ id: created.id, agentTypeId })
     return created
   }, [consoleSpikeAgentTypeId])
+  const deleteConsoleSpikeSession = useCallback((id: string, agentTypeId?: string) => {
+    setConsoleSpikeSessions((current) => current.filter((session) => (
+      session.id !== id || (agentTypeId !== undefined && session.agentTypeId !== agentTypeId)
+    )))
+  }, [])
+  const renameConsoleSpikeSession = useCallback((id: string, title: string, agentTypeId?: string) => {
+    setConsoleSpikeSessions((current) => current.map((session) => (
+      session.id === id && (agentTypeId === undefined || session.agentTypeId === agentTypeId)
+        ? { ...session, title }
+        : session
+    )))
+  }, [])
   const consoleSpikeChatPanel = useCallback(
     (props: WorkspaceChatPanelProps) => <ConsoleSpikeChatPanel {...props} sessions={consoleSpikeSessions} />,
     [consoleSpikeSessions],
@@ -366,6 +423,8 @@ export function WorkspaceShell() {
           setConsoleSpikeActiveSession({ id, agentTypeId: owner })
         }}
         onCreateSession={createConsoleSpikeSession}
+        onDeleteSession={deleteConsoleSpikeSession}
+        onRenameSession={renameConsoleSpikeSession}
         chatPanel={consoleSpikeChatPanel}
         externalPlugins={false}
         hotReloadEnabled={false}

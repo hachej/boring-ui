@@ -514,6 +514,9 @@ export function AppLeftPane({
         {...(consoleRow ? {
           hoverShortcuts: CONSOLE_HOVER_SHORTCUTS,
           menuShortcuts: CONSOLE_MENU_SHORTCUTS,
+          // The verb list must not change shape on the one row that happens to
+          // be open — that reads as an unreliable menu, not as "this is open".
+          placementScope: "always" as const,
           confirmDelete: true,
         } : {})}
         ownerLabel={ownerLabelOverride ?? (showOwnerLabel && session.agentTypeId ? agentLabelById.get(session.agentTypeId) : undefined)}

@@ -420,6 +420,38 @@ describe("AppLeftPane", () => {
       expect(menuLabels()).toEqual(fromKebab)
     })
 
+    it("keeps the verb list identical on the ACTIVE row, where both menus used to lose the placements", async () => {
+      // The live page seeds an active chat, and the first parity test did not:
+      // every row it looked at was `state="normal"`, so a rule that dropped the
+      // placements on `state !== "normal"` passed the test and shipped a pane
+      // whose menu lost two entries on exactly one row. Mount what the host
+      // actually mounts — an active session — and assert against THAT row.
+      const user = userEvent.setup()
+      renderSpikeRowConsole({
+        activeSessionRef: { sessionId: "alpha-one", agentTypeId: "alpha" },
+        openSessionRefs: [{ sessionId: "alpha-one", agentTypeId: "alpha" }],
+        onOpenSessionDetached: vi.fn(),
+        onDeleteSession: vi.fn(),
+        onRenameSession: vi.fn(),
+      })
+
+      const row = spikeRow("Alpha launch")
+      expect(row).toHaveAttribute("data-boring-session-state", "active")
+
+      await user.click(screen.getByLabelText("Chat actions for Alpha launch"))
+      const fromKebab = menuLabels()
+      expect(fromKebab).toContain("Open in split view")
+      expect(fromKebab).toContain("Open as quick chat")
+      await user.keyboard("{Escape}")
+      await waitFor(() => expect(screen.queryByRole("menu")).not.toBeInTheDocument())
+
+      fireEvent.contextMenu(spikeRow("Alpha launch"), { clientX: 40, clientY: 80 })
+      expect(menuLabels()).toEqual(fromKebab)
+      // The row shortcut follows the same rule, so the strip does not silently
+      // lose an icon on the open chat either.
+      expect(screen.getByLabelText("Open Alpha launch in a split pane")).toBeInTheDocument()
+    })
+
     it("fires split and quick chat with the chat's own owner, from the row and from the menu", async () => {
       const user = userEvent.setup()
       const onOpenSessionAsPane = vi.fn()
@@ -504,6 +536,46 @@ describe("AppLeftPane", () => {
       const confirmed = await openDelete()
       await user.click(within(confirmed).getByRole("button", { name: "Delete chat" }))
       expect(onDeleteSession).toHaveBeenCalledWith("alpha-one", "alpha")
+    })
+
+    it("gives collapsed headers one badge language in every view: the amber waiting count, never a chat count", async () => {
+      const user = userEvent.setup()
+      function BlockBetaReview() {
+        const { addBlocker } = useWorkspaceAttention()
+        useEffect(() => {
+          addBlocker({
+            id: "ask:beta-one",
+            reason: "ask-user.question",
+            sessionId: "beta-one",
+            agentTypeId: "beta",
+            sessionBadge: { kind: "question", label: "question", tone: "attention", priority: 10 },
+          })
+        }, [addBlocker])
+        return null
+      }
+      renderSpikeConsole({}, <BlockBetaReview />)
+      await chooseSpikeView(user, "By agent")
+
+      // Collapsed Beta: the waiting count, and nothing about inventory.
+      const betaHeader = screen.getByRole("button", { name: /Expand Boring Beta/ })
+      expect(betaHeader).toHaveAccessibleName("Expand Boring Beta; 1 needs you")
+      expect(betaHeader.querySelector('[data-boring-agent-session-count="true"]')).toBeEmptyDOMElement()
+      // Collapsed Alpha has nothing waiting, so it says nothing at all — where
+      // it used to say "2".
+      const alphaHeader = screen.getByRole("button", { name: /Boring Alpha/ })
+      expect(alphaHeader.querySelector('[data-boring-agent-session-count="true"]')).toBeEmptyDOMElement()
+
+      // Expanded, the rows carry their own state and the header goes quiet.
+      await user.click(betaHeader)
+      expect(screen.queryByRole("button", { name: /needs you/ })).not.toBeInTheDocument()
+
+      // The Project view's rollup is the SAME amber, not the shipped accent.
+      await chooseSpikeView(user, "By project")
+      await user.click(screen.getByRole("button", { name: "Collapse Launch" }))
+      const projectRollup = screen.getByTitle("1 session waiting")
+      expect(projectRollup).toHaveTextContent("1")
+      expect(projectRollup.className).toContain("amber")
+      expect(projectRollup.className).not.toContain("var(--accent)")
     })
 
     it("reveals the row's actions without hover on a pointer-coarse device", async () => {

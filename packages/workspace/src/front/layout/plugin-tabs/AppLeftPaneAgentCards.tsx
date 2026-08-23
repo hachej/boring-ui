@@ -30,6 +30,12 @@ export interface AppLeftPaneAgentCardProps {
   description?: string
   leadingIcon?: ReactNode
   stats: AppLeftPaneAgentStats
+  /**
+   * A raw chat count is inventory, not a call to action, and it competes for
+   * the eye with the amber "needs you" rollup right beside it. Surfaces that
+   * want the header to carry ONLY actionable signal turn it off.
+   */
+  showSessionCount?: boolean
   sessionsStatus?: "loading" | "loaded" | "error"
   /** The Chats lens is an optional filter (multi-project tree only). */
   filtered: boolean
@@ -66,6 +72,7 @@ export function AppLeftPaneAgentCard({
   description,
   leadingIcon,
   stats,
+  showSessionCount = true,
   sessionsStatus,
   filtered,
   active = false,
@@ -86,7 +93,9 @@ export function AppLeftPaneAgentCard({
   const subtitle = description?.trim() || undefined
   const countLabel = sessionsStatus === "error"
     ? "chats unavailable"
-    : `${stats.sessions} ${stats.sessions === 1 ? "chat" : "chats"}`
+    : showSessionCount
+      ? `${stats.sessions} ${stats.sessions === 1 ? "chat" : "chats"}`
+      : undefined
   // The working/attention pills carry `sr-only` text, but they sit INSIDE a
   // button with an explicit aria-label, which replaces its content for
   // assistive tech — so screen-reader users heard the chat count and nothing
@@ -115,7 +124,11 @@ export function AppLeftPaneAgentCard({
       <button
         type="button"
         aria-expanded={expandable ? expanded : undefined}
-        aria-label={`${expandable ? `${expanded ? "Collapse" : "Expand"} ` : ""}${label}; ${countLabel}${livelinessLabel ? `; ${livelinessLabel}` : ""}`}
+        aria-label={[
+          `${expandable ? `${expanded ? "Collapse" : "Expand"} ` : ""}${label}`,
+          countLabel,
+          livelinessLabel || undefined,
+        ].filter(Boolean).join("; ")}
         title={subtitle ? `${label} — ${subtitle}` : label}
         onClick={onToggle}
         disabled={!onToggle}
@@ -136,7 +149,7 @@ export function AppLeftPaneAgentCard({
           data-boring-agent-session-count="true"
           className="min-w-0 flex-1 shrink-0 pl-0.5 text-[11px] font-normal leading-4 tabular-nums text-muted-foreground/80"
         >
-          {sessionsStatus === "error" ? "!" : expandable && expanded ? null : stats.sessions}
+          {sessionsStatus === "error" ? "!" : !showSessionCount || (expandable && expanded) ? null : stats.sessions}
         </span>
         {/* Aggregate liveliness: quiet dot+count pairs so a collapsed Agent
             still tells you something is running or waiting on you. */}
