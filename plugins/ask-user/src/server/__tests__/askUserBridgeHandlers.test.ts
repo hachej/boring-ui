@@ -169,6 +169,43 @@ describe("plugin-owned ask-user WorkspaceBridge handlers", () => {
     })
   })
 
+  it("carries riskTier from a bridge-originated request onto the decision record (finding 6)", async () => {
+    const { store, registry } = fixture()
+    const controller = new AbortController()
+    controllers.push(controller)
+    const request = registry.call({
+      op: ASK_USER_BRIDGE_OPS.request,
+      input: { sessionId: "s1", title: "Risky", schema, timeoutMs: 60_000, riskTier: "consequential" },
+      requestId: "req-risk",
+    }, runtimeContext({ signal: controller.signal }))
+
+    const question = await vi.waitFor(async () => {
+      const pending = await store.getPending("s1")
+      expect(pending).not.toBeNull()
+      return pending!
+    }, { timeout: 10_000 })
+    expect(question.riskTier).toBe("consequential")
+
+    const answer = await registry.call({
+      op: ASK_USER_BRIDGE_OPS.answer,
+      input: { questionId: question.questionId, sessionId: "s1", answerToken: question.answerToken, values: { answer: "ok" } },
+    }, browserContext("user-1", [ASK_USER_BRIDGE_CAPABILITIES.answer]))
+    expect(answer).toMatchObject({ ok: true, output: { status: "answered" } })
+    await request
+
+    await expect(store.getDecisionRecord(question.questionId)).resolves.toMatchObject({ riskTier: "consequential" })
+  })
+
+  it("rejects a bridge request with an unknown riskTier", async () => {
+    const { registry } = fixture()
+    const rejected = await registry.call({
+      op: ASK_USER_BRIDGE_OPS.request,
+      input: { sessionId: "s1", title: "Bad tier", schema, riskTier: "not-a-real-tier" },
+      requestId: "req-bad-risk",
+    }, runtimeContext())
+    expect(rejected).toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.InvalidRequest } })
+  })
+
   it("keeps pending questions scoped by session", async () => {
     const { store, registry } = fixture()
     const c1 = new AbortController()

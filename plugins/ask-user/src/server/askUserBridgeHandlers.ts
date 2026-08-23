@@ -12,6 +12,7 @@ import {
   ASK_USER_PLUGIN_ID,
   ASK_USER_BRIDGE_CAPABILITIES,
   ASK_USER_BRIDGE_OPS,
+  ASK_USER_RISK_TIERS,
   type AskUserBridgeAnswerInput,
   type AskUserBridgeCancelInput,
   type AskUserBridgePendingInput,
@@ -136,6 +137,7 @@ function requestHandler({ runtime }: AskUserBridgeHandlersOptions) {
         schema: input.schema,
         artifacts: input.artifacts,
         timeoutMs: input.timeoutMs,
+        riskTier: input.riskTier,
         ownerPrincipalId: ownerPrincipalIdFromRuntimeContext(context),
       }, signal)
     } catch (error) {
@@ -229,6 +231,7 @@ function assertRequestInput(input: AskUserBridgeRequestInput): void {
   if (input.title !== undefined && typeof input.title !== "string") throw invalid("ask-user request title must be a string")
   if (input.context !== undefined && typeof input.context !== "string") throw invalid("ask-user request context must be a string")
   if (input.timeoutMs !== undefined && (!Number.isFinite(input.timeoutMs) || input.timeoutMs <= 0)) throw invalid("ask-user request timeoutMs must be positive")
+  if (input.riskTier !== undefined && !(ASK_USER_RISK_TIERS as readonly string[]).includes(input.riskTier)) throw invalid("ask-user request riskTier must be a known risk tier")
 }
 
 function assertAnswerInput(input: AskUserBridgeAnswerInput): void {

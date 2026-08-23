@@ -1,3 +1,4 @@
+import type { AskUserRiskTier } from "./constants"
 import type {
   AskUserAnswerValue,
   AskUserFormSchema,
@@ -30,6 +31,8 @@ export type AskUserBridgeRequestInput = {
   schema: AskUserFormSchema
   artifacts?: AskUserRequest["artifacts"]
   timeoutMs?: number
+  /** Declared decision risk tier for this question, if any (#1348 follow-up decision record). */
+  riskTier?: AskUserRiskTier
 }
 
 export type AskUserBridgeAnswerInput = {
