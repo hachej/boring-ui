@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import {
   EmptyState,
   Meter,
@@ -38,6 +38,8 @@ function progressPercent(objective: Objective): number {
   return Math.max(0, Math.min(100, fraction))
 }
 
+const REFRESH_INTERVAL_MS = 15_000
+
 export function ObjectivePane({ params }: PaneProps<ObjectivePaneParams>) {
   const objectiveId = params?.objectiveId
   const apiBaseUrl = useApiBaseUrl()
@@ -45,26 +47,37 @@ export function ObjectivePane({ params }: PaneProps<ObjectivePaneParams>) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const load = useCallback(async () => {
-    if (!objectiveId) {
-      setLoading(false)
-      setObjective(null)
-      setError(null)
-      return
-    }
-    setLoading(true)
-    setError(null)
-    try {
-      const result = await createObjectivesClient({ apiBaseUrl }).get(objectiveId)
-      setObjective(result)
-      if (!result) setError(`Objective ${objectiveId} not found.`)
-    } catch (err) {
-      setObjective(null)
-      setError(err instanceof ObjectivesClientError ? err.message : "Failed to load objective")
-    } finally {
-      setLoading(false)
-    }
-  }, [apiBaseUrl, objectiveId])
+  // Guards against a slow response for a previous objectiveId (or a
+  // previous poll tick) resolving after the target has since changed and
+  // overwriting the currently-displayed objective with stale data.
+  const requestGenerationRef = useRef(0)
+
+  const load = useCallback(
+    async (isBackgroundRefresh = false) => {
+      const generation = ++requestGenerationRef.current
+      if (!objectiveId) {
+        setLoading(false)
+        setObjective(null)
+        setError(null)
+        return
+      }
+      if (!isBackgroundRefresh) setLoading(true)
+      if (!isBackgroundRefresh) setError(null)
+      try {
+        const result = await createObjectivesClient({ apiBaseUrl }).get(objectiveId)
+        if (requestGenerationRef.current !== generation) return // a newer request/target superseded this one
+        setObjective(result)
+        setError(result ? null : `Objective ${objectiveId} not found.`)
+      } catch (err) {
+        if (requestGenerationRef.current !== generation) return
+        setObjective(null)
+        setError(err instanceof ObjectivesClientError ? err.message : "Failed to load objective")
+      } finally {
+        if (requestGenerationRef.current === generation) setLoading(false)
+      }
+    },
+    [apiBaseUrl, objectiveId],
+  )
 
   // Rehydration-on-boot: this panel is opened by the agent via exec_ui
   // openSurface (kind "objective", target = objective id). The durable
@@ -73,6 +86,25 @@ export function ObjectivePane({ params }: PaneProps<ObjectivePaneParams>) {
   useEffect(() => {
     void load()
   }, [load])
+
+  // The agent updates an Objective server-side (create_objective/
+  // update_objective) with no push channel to the browser, so this is the
+  // simplest honest way to keep an open pane current: poll on an interval,
+  // and refresh immediately whenever the tab becomes visible again. Each
+  // tick goes through the same request-generation guard as the initial
+  // load, so a stale in-flight poll response can never clobber a newer one.
+  useEffect(() => {
+    if (!objectiveId) return
+    const interval = setInterval(() => void load(true), REFRESH_INTERVAL_MS)
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") void load(true)
+    }
+    document.addEventListener("visibilitychange", onVisibilityChange)
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener("visibilitychange", onVisibilityChange)
+    }
+  }, [objectiveId, load])
 
   return (
     <Pane className="h-full min-h-0 border-0 rounded-none">
