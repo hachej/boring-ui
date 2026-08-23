@@ -1072,4 +1072,63 @@ describe("AppLeftPane", () => {
       vi.useRealTimers()
     }
   })
+
+  it("re-derives working state after a workspace switch with an identical session snapshot", () => {
+    vi.useFakeTimers()
+    try {
+      // Both workspaces report the IDENTICAL session list (s2 running).
+      const runningSessions = [
+        { id: "s1", title: "First session" },
+        { id: "s2", title: "Second session", status: "running" as const },
+      ]
+      const { rerender } = render(
+        <WorkspaceAttentionProvider>
+          <AppLeftPane
+            appTitle="Test"
+            workspaceId="ws-a"
+            sessions={runningSessions}
+            activeSessionId="s1"
+            openSessionIds={["s1"]}
+            pinnedSessionIds={[]}
+            onCreateSession={vi.fn()}
+            navigationEntries={testNavigationEntries()}
+            onSwitchSession={vi.fn()}
+            onOpenSessionAsPane={vi.fn()}
+            onToggleSessionPinned={vi.fn()}
+          />
+        </WorkspaceAttentionProvider>,
+      )
+      act(() => {
+        window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+          detail: { workspaceId: "ws-a", sessionId: "s2", working: true },
+        }))
+      })
+      expect(document.querySelector('[data-boring-badge="working"]')).not.toBeNull()
+
+      // Switch to ws-b whose session list is IDENTICAL to ws-a's (same ids,
+      // same statuses — s2 is genuinely running there too). The stale
+      // snapshot from ws-a must not cause the reconciliation to skip; the
+      // colliding row must be working again under the new scope.
+      rerender(
+        <WorkspaceAttentionProvider>
+          <AppLeftPane
+            appTitle="Test"
+            workspaceId="ws-b"
+            sessions={runningSessions}
+            activeSessionId="s1"
+            openSessionIds={["s1"]}
+            pinnedSessionIds={[]}
+            onCreateSession={vi.fn()}
+            navigationEntries={testNavigationEntries()}
+            onSwitchSession={vi.fn()}
+            onOpenSessionAsPane={vi.fn()}
+            onToggleSessionPinned={vi.fn()}
+          />
+        </WorkspaceAttentionProvider>,
+      )
+      expect(document.querySelector('[data-boring-badge="working"]')).not.toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
