@@ -64,10 +64,22 @@ async function checkLiveBoot(): Promise<EvalCheckResult> {
       agents: [smoke],
     })
 
+    // NOTE: @hachej/boring-agent/eval's capturePiChatSnapshot (evalPrompt.ts)
+    // concatenates text parts from EVERY message in the session, not just
+    // the assistant's — so `result.text` starts with this literal prompt
+    // string regardless of what the assistant said. Confirmed by direct
+    // debugging against the raw /state endpoint: a genuine assistant reply
+    // makes `result.text` LONGER than the prompt; an empty/failed assistant
+    // turn (which can still report `ok: true` with no tool calls) leaves
+    // `result.text` exactly equal to the prompt. Comparing against the
+    // prompt's own length is what actually distinguishes "the assistant
+    // said something" from "the assistant said nothing" here — a plain
+    // non-empty check would spuriously pass on the echoed prompt alone.
+    const prompt = "Reply with the single word: pong. No tool calls."
     const result = await evalAgentPrompt({
       app,
       agentTypeId: "boring-factory-smoke",
-      prompt: "Reply with the single word: pong. No tool calls.",
+      prompt,
       expectNoToolCall: true,
       model: LIVE_MODEL,
       timeoutMs: LIVE_TIMEOUT_MS,
@@ -75,8 +87,10 @@ async function checkLiveBoot(): Promise<EvalCheckResult> {
     })
 
     if (!result.ok) return { id, label, status: "fail", live: true, detail: result.reason ?? "no reason" }
-    if (!result.text.trim()) return { id, label, status: "fail", live: true, detail: "empty response text" }
-    return { id, label, status: "pass", live: true, detail: `text="${result.text.trim().slice(0, 60)}"` }
+    if (result.text.trim().length <= prompt.length) {
+      return { id, label, status: "fail", live: true, detail: `assistant produced no content beyond the echoed prompt; text="${result.text.trim()}"` }
+    }
+    return { id, label, status: "pass", live: true, detail: `assistant text="${result.text.trim().slice(prompt.length, prompt.length + 60)}"` }
   } catch (err) {
     return { id, label, status: "fail", live: true, detail: describeError(err) }
   } finally {
