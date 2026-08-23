@@ -156,6 +156,14 @@ export type AskUserAnswer = {
  * Thin durable decision record for a resolved question (#1348 follow-up).
  * Purely additive over stored answers — old records without the optional
  * fields still parse and yield a record with those fields absent.
+ *
+ * Interim, owner-approved capture only (owner ruling, 2026-08-22: no new
+ * Action entity, no RBAC here) — not a general-purpose durable decision
+ * primitive. It intentionally has no request identity, denial semantics, or
+ * approval-authority model of its own. The ratified C5 plan's
+ * tool-independent durable pause mechanism is the intended home for that
+ * responsibility, and `ask-user` is expected to be absorbed into it; do not
+ * extend this shape beyond the thin #1348 need before then.
  */
 export type AskUserDecisionRecord = {
   questionId: string

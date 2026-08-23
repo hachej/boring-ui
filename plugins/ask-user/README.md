@@ -111,6 +111,16 @@ one pending question per session (`PENDING_EXISTS` on a duplicate).
 - If the agent process restarts mid-question, the question stays pending in the
   file store; the front pane re-reads pending state on focus / agent stream
   activity.
+- `AskUserDecisionRecord` (#1348 follow-up) is an **interim, owner-approved**
+  capture of a resolved question's `{riskTier, decision snapshot, resolvedAt,
+  resolvedBy}` — not a general-purpose durable decision primitive. It has no
+  request identity, denial semantics, or approval-authority model of its own
+  by design (owner ruling, 2026-08-22: no new Action entity, no RBAC here).
+  The tool-independent durable pause mechanism in the ratified C5 plan
+  (`docs/plans/long-term/ratified/ARCHITECTURE-PLAN.md`) is the intended home
+  for that responsibility; `ask-user` is expected to be absorbed into it, and
+  this record's shape should not be extended beyond the thin #1348 need in
+  the meantime.
 
 ## Validation
 
