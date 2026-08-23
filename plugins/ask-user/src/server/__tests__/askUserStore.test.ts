@@ -1,12 +1,28 @@
 // @vitest-environment node
 
-import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rename, rm, utimes, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { ASK_USER_ERROR_CODES } from "../../shared/error-codes"
 import type { AskUserQuestion } from "../../shared/types"
 import { FileAskUserStore } from "../askUserStore"
+
+// Finding 6: a real write-failure injection point for the notify-after-commit
+// tests below, instead of mocking the store's own `tryPersist` method (which
+// proves nothing about the store's actual disk-write behavior). `rename` is
+// the seam every commit path (both the state-file commit and lock reclaim)
+// goes through, so failing it here is indistinguishable from a real OS-level
+// rename failure from the store's point of view. Every other fs/promises
+// export, and every call to `rename` not explicitly overridden per-test,
+// passes straight through to the real implementation.
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>()
+  return {
+    ...actual,
+    rename: vi.fn((...args: Parameters<typeof actual.rename>) => actual.rename(...args)),
+  }
+})
 
 let dir: string
 let store: FileAskUserStore
@@ -470,15 +486,26 @@ describe("FileAskUserStore", () => {
   it("notifies listeners only after a successful commit, using the committed state (finding: notify-after-commit)", async () => {
     const filePath = join(dir, "ask-user.json")
     const observing = new FileAskUserStore(filePath)
-    const listener = vi.fn(async () => {
-      // At the moment the listener fires, the mutation must already be
-      // durable on disk -- not merely queued in an in-memory draft.
-      const raw = JSON.parse(await readFile(filePath, "utf8"))
-      expect(raw.questions.q1?.status).toBe("ready")
+    // `FileAskUserStore.emit` deliberately swallows a listener's rejection
+    // (finding: an observer failure must never roll back a committed
+    // mutation) -- so a `vi.fn(async () => { expect(...) })` listener whose
+    // assertion fails inside `emit` fails silently and proves nothing. The
+    // fix: have the listener stash the promise it produces, and await that
+    // promise ourselves, outside of `emit`, so a failing assertion actually
+    // fails the test.
+    let assertion: Promise<void> = Promise.resolve()
+    const listener = vi.fn(() => {
+      assertion = (async () => {
+        // At the moment the listener fires, the mutation must already be
+        // durable on disk -- not merely queued in an in-memory draft.
+        const raw = JSON.parse(await readFile(filePath, "utf8"))
+        expect(raw.questions.q1?.status).toBe("ready")
+      })()
     })
     observing.subscribe(listener)
 
     await observing.createPending(question({ questionId: "q1" }))
+    await assertion
     expect(listener).toHaveBeenCalledTimes(1)
     expect(listener).toHaveBeenCalledWith(expect.objectContaining({ reason: "create", questionId: "q1" }))
   })
@@ -497,18 +524,37 @@ describe("FileAskUserStore", () => {
       code: ASK_USER_ERROR_CODES.PENDING_EXISTS,
     })
     expect(listener).not.toHaveBeenCalled()
+  })
 
-    // Force every persist attempt to fail (simulating an injected write
-    // failure) and confirm the retry loop's exhaustion never emits either.
-    const alwaysFailingStore = new FileAskUserStore(filePath)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const spy = vi.spyOn(alwaysFailingStore as any, "tryPersist").mockResolvedValue(false)
-    alwaysFailingStore.subscribe(listener)
+  it("does not notify listeners when the underlying commit write really fails (finding: notify-after-commit, real failure)", async () => {
+    const filePath = join(dir, "ask-user.json")
+    const store = new FileAskUserStore(filePath)
+    await store.createPending(question({ questionId: "q1" }))
 
-    await expect(alwaysFailingStore.cancel("q1")).rejects.toMatchObject({ code: ASK_USER_ERROR_CODES.WRITE_CONFLICT })
+    const listener = vi.fn()
+    store.subscribe(listener)
+
+    // Finding 6: inject a real failure at the `fs.rename` seam -- the atomic
+    // commit step every mutation goes through -- rather than mocking the
+    // store's own `tryPersist` method. This is indistinguishable, from the
+    // store's point of view, from a genuine OS-level rename failure (full
+    // disk, permissions, etc.), so it actually proves the notify-after-commit
+    // contract rather than assuming it.
+    const renameMock = vi.mocked(rename)
+    renameMock.mockRejectedValueOnce(new Error("simulated fs.rename failure"))
+
+    await expect(store.cancel("q1")).rejects.toThrow("simulated fs.rename failure")
     expect(listener).not.toHaveBeenCalled()
+    // The question must not appear cancelled -- the failed write never committed.
+    await expect(store.getByQuestionId("q1")).resolves.toMatchObject({ status: "ready" })
 
-    spy.mockRestore()
+    // The store is not permanently broken by the injected failure: the next
+    // real attempt (rename no longer rejecting) commits and notifies
+    // normally, proving the failure was injected at the fs seam and not
+    // baked into the store's state.
+    await expect(store.cancel("q1")).resolves.toBeUndefined()
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(listener).toHaveBeenCalledWith(expect.objectContaining({ reason: "cancel", questionId: "q1" }))
   })
 
   it("honors the envelope version: refuses to load (and therefore rewrite) a file from a newer version (finding: envelope version)", async () => {
