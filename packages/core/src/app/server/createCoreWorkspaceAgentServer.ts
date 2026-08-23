@@ -1835,8 +1835,8 @@ export async function createCoreWorkspaceAgentServer(
           // or fleet default.
           defaultAgentTypeId: resolveWorkspaceDefaultAgentTypeId({
             persistedDefaultAgentTypeId: workspace?.defaultAgentTypeId,
-            bootDefaultAgentTypeId: options.defaultAgentTypeId,
-            availableAgentTypeIds: agents.map((agent) => agent.agentTypeId),
+            bootDefaultAgentTypeId: applicationDefaultAgentTypeId,
+            availableAgentTypeIds,
             onUnknownPersistedSeat: (diagnostic) => {
               request.log.warn(
                 { workspaceId, ...diagnostic },
