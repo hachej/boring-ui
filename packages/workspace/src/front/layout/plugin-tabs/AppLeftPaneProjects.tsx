@@ -285,29 +285,38 @@ function ProjectRow({
             <span className="min-w-0 flex-1 truncate">{name}</span>
           </button>
         )}
-        {/* Right slot: session count at rest, swapped for actions on hover/focus
-            (or while the menu is open). Reserves width so the name truncates and
-            never sits under the icons. */}
+        {/*
+          The waiting rollup is the ONE thing this header exists to shout, so it
+          is NOT in the layer the hover actions replace. It used to be: an
+          absolutely-positioned overlay that faded to 0 on hover, so pointing at
+          a collapsed Project destroyed the only signal telling you it had a
+          chat waiting on you — at exactly the moment you were about to act on
+          it. It is a static sibling now, and the actions render BESIDE it.
+        */}
+        {blocked > 0 ? (
+          <span
+            data-boring-workspace-part="app-left-project-attention"
+            title={`${blocked} session${blocked === 1 ? "" : "s"} waiting`}
+            className={cn(
+              // Dot + number, the same mark the Agent card uses, so a rollup
+              // means one thing in this pane whatever is grouping the list.
+              "app-left-project-status pointer-events-none flex shrink-0 items-center gap-0.5 pl-1 text-[10px] font-medium tabular-nums leading-4",
+              attentionTone === "amber" ? "text-[color:var(--attention)]" : "text-[color:var(--accent)]",
+            )}
+          >
+            <span
+              aria-hidden="true"
+              className={cn(
+                "size-1.5 rounded-full",
+                attentionTone === "amber" ? "bg-[color:var(--attention)]" : "bg-[color:var(--accent)]",
+              )}
+            />
+            {blocked > 99 ? "99+" : blocked}
+          </span>
+        ) : null}
+        {/* Right slot: reserves width so the name truncates and never sits
+            under the icons. */}
         <span className={cn("app-left-project-status-slot relative flex h-6 shrink-0 items-center justify-end", compactTree || createControl ? "w-6" : "w-[3.25rem]")}>
-          {blocked > 0 ? (
-            <span className={cn(
-              "app-left-project-status pointer-events-none absolute inset-0 flex items-center justify-end transition-opacity",
-              hasActions && "group-hover:opacity-0 group-focus-within:opacity-0",
-              menuOpen && "opacity-0",
-            )}>
-              <span
-                title={`${blocked} session${blocked === 1 ? "" : "s"} waiting`}
-                className={cn(
-                  "grid min-w-5 place-items-center rounded-full px-1.5 py-0.5 text-[11px] font-semibold",
-                  attentionTone === "amber"
-                    ? "bg-amber-500/18 text-amber-700 dark:text-amber-300"
-                    : "bg-[color:oklch(from_var(--accent)_l_c_h/0.18)] text-[color:var(--accent)]",
-                )}
-              >
-                {blocked > 99 ? "99+" : blocked}
-              </span>
-            </span>
-          ) : null}
           {hasActions ? (
             <span className={cn(
               // The size and the touch behaviour of these two live in

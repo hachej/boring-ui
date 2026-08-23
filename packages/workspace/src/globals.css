@@ -62,8 +62,12 @@
   --boring-secondary-foreground: oklch(0.22 0.006 72);
   --boring-muted: oklch(0.965 0.003 72);
   --boring-muted-foreground: oklch(0.52 0.008 72);
-  --boring-destructive: oklch(0.577 0.245 27.325);
+  /* Kept in sync with packages/ui/src/tokens.css, which this file duplicates.
+     Destruction and attention are ONE token pair each: same hue, same chroma,
+     lightness the only thing a theme changes. See the tokens.css comment. */
+  --boring-destructive: oklch(0.52 0.208 27);
   --boring-destructive-foreground: oklch(0.985 0.002 72);
+  --boring-attention: oklch(0.55 0.11 75);
   --boring-border: oklch(0.915 0.004 72);
   --boring-input: oklch(0.915 0.004 72);
   --boring-accent: oklch(0.62 0.14 65);
@@ -99,6 +103,7 @@
   --muted: var(--boring-muted);
   --muted-foreground: var(--boring-muted-foreground);
   --destructive: var(--boring-destructive);
+  --attention: var(--boring-attention);
   --destructive-foreground: var(--boring-destructive-foreground);
   --border: var(--boring-border);
   --input: var(--boring-input);
@@ -123,7 +128,9 @@
   --boring-foreground: oklch(0.985 0 0);
   --boring-card: oklch(0.145 0.004 285.823);
   --boring-card-foreground: oklch(0.985 0 0);
-  --boring-popover: oklch(0.145 0.004 285.823);
+  /* A real elevation step: this was exactly --boring-background, so a menu had
+     no lift at all over the pane it covered. */
+  --boring-popover: oklch(0.205 0.006 285.885);
   --boring-popover-foreground: oklch(0.985 0 0);
   --boring-primary: oklch(0.985 0 0);
   --boring-primary-foreground: oklch(0.205 0.006 285.885);
@@ -137,8 +144,9 @@
   --boring-success: oklch(0.74 0.14 145);
   --boring-success-foreground: oklch(0.12 0.004 285.823);
   --boring-success-soft: oklch(0.22 0.04 145);
-  --boring-destructive: oklch(0.396 0.141 25.768);
+  --boring-destructive: oklch(0.62 0.208 27);
   --boring-destructive-foreground: oklch(0.985 0 0);
+  --boring-attention: oklch(0.8 0.11 75);
   --boring-border: oklch(0.269 0.006 285.885);
   --boring-input: oklch(0.269 0.006 285.885);
   --boring-ring: oklch(0.72 0.13 65);
@@ -160,6 +168,7 @@
   --muted: var(--boring-muted);
   --muted-foreground: var(--boring-muted-foreground);
   --destructive: var(--boring-destructive);
+  --attention: var(--boring-attention);
   --destructive-foreground: var(--boring-destructive-foreground);
   --border: var(--boring-border);
   --input: var(--boring-input);
@@ -449,6 +458,73 @@
   height: 32px;
 }
 
+/* Elevation for the pane's menus, all three of them (row actions, right-click,
+   New chat placements). The surface token does half the job; the other half is
+   a cast shadow, and Tailwind's `shadow-md` resolved to a fully TRANSPARENT
+   shadow here — measured `rgba(0, 0, 0, 0) 0px 0px 0px 0` in both themes — so
+   the panel was a flat rectangle separated from the pane by one hairline
+   border. In dark that border was the ONLY thing separating them, because the
+   popover token used to equal the background exactly.
+
+   Stated as one shadow per theme rather than a utility, so it cannot silently
+   resolve to nothing again. */
+[data-boring-workspace-part="app-left-menu"] {
+  box-shadow:
+    0 1px 2px oklch(0 0 0 / 0.06),
+    0 8px 24px -6px oklch(0 0 0 / 0.14);
+}
+
+[data-theme="dark"] [data-boring-workspace-part="app-left-menu"] {
+  /* A dark panel casts a darker, wider shadow to read as lifted at all, and
+     takes a lighter border because the ambient contrast is lower. */
+  border-color: oklch(1 0 0 / 0.12);
+  box-shadow:
+    0 1px 2px oklch(0 0 0 / 0.5),
+    0 10px 28px -6px oklch(0 0 0 / 0.6);
+}
+
+/* WHAT THE ROW SPENDS ITS WIDTH ON — one place, because it is one decision.
+   Measured before this block existed, in a 259px row: the chat title got 44px
+   and clipped to "Com…", while the project tag took 81px and the trailing slot
+   84px. The row was spending three quarters of itself on metadata about a chat
+   the operator could no longer identify.
+
+   The title is the last thing allowed to lose room, so it carries a real floor
+   rather than `min-width: 0` and a hope. Flexbox then has to take the deficit
+   out of the only other elastic item — the tag — which shrinks to nothing and
+   is removed outright once the row is too narrow to seat it at a readable
+   width. The status slot is never elastic: it is a fixed reservation (see
+   below), so the badge and the age keep their place at every width.
+
+   The container is the LINE, not the row: the row also hosts the
+   pointer-anchored context menu, and `container-type` would make the row a
+   containing block for that fixed-position anchor and pin every right-click
+   menu to the row instead of the cursor. */
+.app-left-session-line {
+  container-type: inline-size;
+  container-name: app-session-line;
+}
+
+.app-left-session-title {
+  /* ~14 characters at 13px — enough to tell two chats apart, which is the whole
+     job of the row. Below this the tag goes, not the name. */
+  min-width: 7rem;
+  flex: 1 1 auto;
+}
+
+.app-left-session-meta-tag {
+  flex: 0 1 auto;
+  max-width: 6.5rem;
+}
+
+/* Below this the tag cannot be seated at a width where it still reads, and a
+   two-character stub of a project name is worse than no project name. */
+@container app-session-line (max-width: 340px) {
+  .app-left-session-meta-tag {
+    display: none;
+  }
+}
+
 .app-left-session-actions {
   width: calc(var(--app-session-action-slots, 0) * var(--app-session-action-slot, 28px));
   /* The strip is WIDER than its icons (it reserves whole slots and aligns them
@@ -545,11 +621,8 @@
      touch too, so both halves clear the 44px minimum — including the chevron,
      which is the only way to a split or quick chat from here. */
   .app-left-console-create {
-    min-height: 44px;
-  }
-
-  .app-left-console-create {
-    min-width: 44px;
+    min-height: 48px;
+    min-width: 48px;
   }
 
 }
@@ -572,10 +645,17 @@
    `.app-left-empty-start` below is width-gated as well as pointer-gated for
    exactly this reason. */
 @media (max-width: 767px), (hover: none), (pointer: coarse) {
-  .app-left-session-row,
-  [data-boring-workspace-part="app-left-console-spike"] .app-left-session-row {
+  .app-left-session-row {
     height: 44px;
     --app-session-action-slot: 44px;
+  }
+
+  /* The console spike is held to the 48px gate. Declared in THIS block, beside
+     the 44px it replaces: a console override sitting in an earlier @media
+     block simply loses to this one, whatever it says. */
+  [data-boring-workspace-part="app-left-console-spike"] .app-left-session-row {
+    height: 48px;
+    --app-session-action-slot: 48px;
   }
 
   /* The multi-project tree rows carried the same defect a round earlier than
@@ -587,9 +667,17 @@
 
      Same condition, same 44px, same "the badge sits BESIDE the actions once
      both are permanently visible" rule the session row uses. */
-  .app-left-project-row,
-  [data-boring-workspace-part="app-left-console-spike"] .app-left-project-row {
+  .app-left-project-row {
     min-height: 44px;
+  }
+
+  [data-boring-workspace-part="app-left-console-spike"] .app-left-project-row,
+  [data-boring-workspace-part="app-left-console-spike"] .app-left-agent-row {
+    min-height: 48px;
+  }
+
+  [data-boring-workspace-part="app-left-console-spike"] [data-boring-workspace-part="app-left-menu"] [role="menuitem"] {
+    min-height: 48px;
   }
 
   .app-left-project-actions {
@@ -608,13 +696,6 @@
     gap: 0.25rem;
   }
 
-  .app-left-project-status {
-    position: static;
-    /* It stops being a full-slot overlay, so it stops claiming the actions'
-       width and stops fading — there is no hover here to fade it back. */
-    inset: auto;
-    opacity: 1;
-  }
 }
 
 @media (max-width: 639px) {

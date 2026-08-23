@@ -168,9 +168,9 @@ export function AppLeftPaneAgentCard({
           <span
             data-boring-workspace-part="agent-card-attention-count"
             title={`${stats.attention} ${stats.attention === 1 ? "chat needs" : "chats need"} your input`}
-            className="flex shrink-0 items-center gap-0.5 pl-1 text-[10px] tabular-nums leading-4 text-amber-700 dark:text-amber-300"
+            className="flex shrink-0 items-center gap-0.5 pl-1 text-[10px] tabular-nums leading-4 text-[color:var(--attention)]"
           >
-            <span className="size-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+            <span className="size-1.5 rounded-full bg-[color:var(--attention)]" aria-hidden="true" />
             {stats.attention}
             <span className="sr-only">waiting for you</span>
           </span>

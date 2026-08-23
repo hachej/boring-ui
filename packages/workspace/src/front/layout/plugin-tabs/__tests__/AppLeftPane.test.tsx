@@ -207,18 +207,21 @@ describe("AppLeftPane", () => {
       // The Agent is metadata here, never a second collapse level.
       expect(screen.queryByRole("button", { name: /Boring Alpha/ })).not.toBeInTheDocument()
       // Only the first Project starts open; each group keeps the pane's one
-      // recency order rather than re-sorting by Agent.
-      expect(spikeRowIds()).toEqual(["alpha-one", "beta-one"])
+      // recency order rather than re-sorting by Agent. "beta-one" is waiting on
+      // a human, so it has been PROMOTED into Needs you and is not repeated
+      // here — the whole point of a promotion.
+      expect(spikeRowIds()).toEqual(["alpha-one"])
+      expect(spikeRowIds(spikeNeedsYou() as HTMLElement)).toEqual(["beta-one"])
       await user.click(screen.getByRole("button", { name: "Expand Agent Console" }))
-      expect(spikeRowIds()).toEqual(["alpha-one", "beta-one", "alpha-two"])
+      expect(spikeRowIds()).toEqual(["alpha-one", "alpha-two"])
 
       const row = spikeRow("Alpha launch")
       expect(row.querySelector(SPIKE_CHIP)).toHaveAttribute("data-boring-agent-type-id", "alpha")
       // The header already says which Project this is.
       expect(row.querySelector(SPIKE_TAG)).toBeNull()
 
-      // Expanded, the row carries the badge, so the header stays quiet.
-      expect(screen.queryByTitle("1 session waiting")).not.toBeInTheDocument()
+      // Collapsed, the header still counts the promoted chat: it is Launch's
+      // chat wherever its row currently sits.
       await user.click(screen.getByRole("button", { name: "Collapse Launch" }))
       expect(screen.queryByText("Alpha launch")).not.toBeInTheDocument()
       expect(screen.getByTitle("1 session waiting")).toHaveTextContent("1")
@@ -307,8 +310,12 @@ describe("AppLeftPane", () => {
         "blocked-0", "blocked-1", "blocked-2", "blocked-3", "blocked-4",
       ])
 
+      // Truncating is the one state where the rows can no longer tell you how
+      // many there are, so the count comes back — as a fraction, not a total.
+      expect(within(capped as HTMLElement).getByText("5 of 6")).toBeInTheDocument()
       await user.click(within(capped as HTMLElement).getByRole("button", { name: "+1 more" }))
       expect(spikeRowIds(spikeNeedsYou() as HTMLElement)).toHaveLength(6)
+      expect(within(spikeNeedsYou() as HTMLElement).queryByText(/ of /)).not.toBeInTheDocument()
 
       // Grouping changes the list below it; the section keeps its contents and
       // its place above that list.
@@ -468,7 +475,7 @@ describe("AppLeftPane", () => {
       expect(onOpenSessionDetached).toHaveBeenCalledWith("alpha-one", "alpha")
     })
 
-    it("toggles the pin from the row icon and sorts a pinned chat to the top of the one list", async () => {
+    it("toggles the pin from the menu — never a third row icon — and sorts a pinned chat to the top", async () => {
       const user = userEvent.setup()
       const onToggleSessionPinned = vi.fn()
       const unpinned = { id: "beta-one", agentTypeId: "beta", title: "Beta review", updatedAt: spikeNow - 1_000 }
@@ -480,7 +487,18 @@ describe("AppLeftPane", () => {
 
       // Newest first while nothing is pinned.
       expect(spikeRowIds()).toEqual(["beta-one", "alpha-one"])
-      await user.click(screen.getByLabelText("Pin Alpha launch"))
+      // The row carries exactly two affordances: split, and the menu. Pin is
+      // not one of them — three icons cost 40% of a touch row.
+      expect(screen.queryByLabelText("Pin Alpha launch")).not.toBeInTheDocument()
+      expect([...spikeRow("Alpha launch")
+        .querySelectorAll('[data-boring-workspace-part="app-session-actions"] button')]
+        .map((button) => button.getAttribute("aria-label"))).toEqual([
+        "Open Alpha launch in a split pane",
+        "Chat actions for Alpha launch",
+      ])
+
+      fireEvent.contextMenu(spikeRow("Alpha launch"), { clientX: 40, clientY: 80 })
+      fireEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Pin chat" }))
       expect(onToggleSessionPinned).toHaveBeenCalledWith("alpha-one", "alpha")
 
       rendered.unmount()
@@ -490,9 +508,10 @@ describe("AppLeftPane", () => {
         pinnedSessionRefs: [{ sessionId: "alpha-one", agentTypeId: "alpha" }],
         onToggleSessionPinned,
       })
-      // The older chat now leads the list, and the row offers the inverse verb.
+      // The older chat now leads the list, and the menu offers the inverse verb.
       expect(spikeRowIds()).toEqual(["alpha-one", "beta-one"])
-      expect(screen.getByLabelText("Unpin Alpha launch")).toBeInTheDocument()
+      fireEvent.contextMenu(spikeRow("Alpha launch"), { clientX: 40, clientY: 80 })
+      expect(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Unpin chat" })).toBeInTheDocument()
     })
 
     it("renames from F2 and from the menu, commits on Enter and reverts on Escape", async () => {
@@ -574,8 +593,90 @@ describe("AppLeftPane", () => {
       await user.click(screen.getByRole("button", { name: "Collapse Launch" }))
       const projectRollup = screen.getByTitle("1 session waiting")
       expect(projectRollup).toHaveTextContent("1")
-      expect(projectRollup.className).toContain("amber")
+      // One token, one mark: the same --attention colour the Agent card and the
+      // Needs you band use, and a dot + number rather than a filled pill.
+      expect(projectRollup.className).toContain("var(--attention)")
       expect(projectRollup.className).not.toContain("var(--accent)")
+      expect(projectRollup.className).not.toContain("rounded-full px")
+      expect(projectRollup.querySelector("span.rounded-full")).not.toBeNull()
+    })
+
+    it("spends the row's width on the chat's name first, and drops the tag before the title", async () => {
+      // jsdom lays nothing out, so the DOM cannot prove pixel widths. What it
+      // CAN prove is the contract the widths come from: the title carries a
+      // floor and grows, the tag only shrinks, and the drop rule that removes
+      // the tag is expressed against the row rather than guessed per surface.
+      renderSpikeConsole()
+      const row = spikeRow("Console nav")
+      const title = row.querySelector('[data-boring-workspace-part="app-session-title"]')
+      const tag = row.querySelector('[data-boring-workspace-part="app-session-meta-tag"]')
+      expect(title).toHaveTextContent("Console nav")
+      expect(title?.className).toContain("app-left-session-title")
+      expect(title?.className).toContain("flex-1")
+      expect(tag?.className).toContain("app-left-session-meta-tag")
+      // The tag must never grow, or it takes room from the name.
+      expect(tag?.className).not.toContain("flex-1")
+      // The title comes FIRST, so a shrink-to-fit pass reaches the tag first.
+      expect(title?.compareDocumentPosition(tag as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+      const css = await readFile(resolve(process.cwd(), "src/globals.css"), "utf8")
+      expect(css).toContain(".app-left-session-title {\n  /* ~14 characters at 13px")
+      expect(css).toMatch(/\.app-left-session-title \{[^}]*min-width: 7rem/)
+      expect(css).toMatch(/\.app-left-session-meta-tag \{[^}]*flex: 0 1 auto/)
+      expect(css).toMatch(/@container app-session-line \(max-width: 340px\) \{\s*\.app-left-session-meta-tag \{\s*display: none/)
+      // The container must sit on the LINE: putting it on the row would make
+      // the row a containing block and pin every right-click menu to the row.
+      expect(css).toMatch(/\.app-left-session-line \{[^}]*container-type: inline-size/)
+      expect(css).not.toMatch(/\.app-left-session-row \{[^}]*container-type/)
+    })
+
+    it("confirms Delete in a real alert dialog that names and describes itself", async () => {
+      const user = userEvent.setup()
+      const onDeleteSession = vi.fn()
+      renderSpikeRowConsole({ onDeleteSession })
+
+      fireEvent.contextMenu(spikeRow("Alpha launch"), { clientX: 40, clientY: 80 })
+      fireEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Delete" }))
+      const dialog = await screen.findByRole("alertdialog")
+
+      expect(dialog).toHaveAccessibleName("Delete this chat?")
+      expect(dialog).toHaveAccessibleDescription("“Alpha launch” and its transcript are removed for good.")
+      // The second sentence was cut: "removed for good" already says it.
+      expect(dialog).not.toHaveTextContent("cannot be undone")
+      // Portaled out of the pane, so the scrim can cover the whole viewport.
+      expect(dialog.closest('[data-boring-workspace-part="app-left-pane"]')).toBeNull()
+      expect(document.querySelector('[data-slot="alert-dialog-overlay"]')).not.toBeNull()
+      // The trap opens on the non-destructive choice.
+      await waitFor(() => expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveFocus())
+
+      await user.keyboard("{Escape}")
+      await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument())
+      expect(onDeleteSession).not.toHaveBeenCalled()
+    })
+
+    it("promotes a waiting chat into Needs you instead of listing it twice", async () => {
+      function BlockBetaReview() {
+        const { addBlocker } = useWorkspaceAttention()
+        useEffect(() => {
+          addBlocker({
+            id: "ask:beta-one",
+            reason: "ask-user.question",
+            sessionId: "beta-one",
+            agentTypeId: "beta",
+            sessionBadge: { kind: "question", label: "question", tone: "attention", priority: 10 },
+          })
+        }, [addBlocker])
+        return null
+      }
+      renderSpikeConsole({}, <BlockBetaReview />)
+
+      expect(spikeRowIds(spikeNeedsYou() as HTMLElement)).toEqual(["beta-one"])
+      // Exactly once on the whole surface, not once per section.
+      expect(screen.getAllByText("Beta review")).toHaveLength(1)
+      expect(spikeRowIds()).toEqual(["alpha-one", "alpha-two"])
+      // Uncapped, the rows are the count, so no number beside the heading.
+      expect(within(spikeNeedsYou() as HTMLElement).queryByText("1")).not.toBeInTheDocument()
+      expect(within(spikeNeedsYou() as HTMLElement).queryByText(/of/)).not.toBeInTheDocument()
     })
 
     it("reveals the row's actions without hover on a pointer-coarse device", async () => {
@@ -587,7 +688,7 @@ describe("AppLeftPane", () => {
       expect(touchBlock).toContain(".app-left-session-actions {\n    opacity: 1;\n  }")
     })
 
-    it("keeps in-Project create on the Project header, the only place that names a Project", async () => {
+    it("drops the in-Project \"+\", which duplicated New chat and sat in the rollup's slot", async () => {
       const user = userEvent.setup()
       const onScopedCreateSession = vi.fn()
       renderSpikeConsole({
@@ -596,8 +697,9 @@ describe("AppLeftPane", () => {
       })
       await chooseSpikeView(user, "By project")
 
-      await user.click(screen.getByRole("button", { name: "New chat in Agent Console" }))
-      expect(onScopedCreateSession).toHaveBeenCalledWith("beta", "console", "default")
+      expect(screen.queryByRole("button", { name: "New chat in Agent Console" })).not.toBeInTheDocument()
+      // Creating a chat is still one click away, from the control that owns it.
+      expect(screen.getByRole("button", { name: "New chat" })).toBeInTheDocument()
     })
   })
 

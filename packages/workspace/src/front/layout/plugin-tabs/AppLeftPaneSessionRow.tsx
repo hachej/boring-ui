@@ -1,7 +1,7 @@
 "use client"
 
 import { useRef, useState, type CSSProperties, type ReactNode } from "react"
-import { Columns2, MessageSquare, Pin, PinOff, Zap } from "lucide-react"
+import { Columns2, MessageSquare, Pin, Zap } from "lucide-react"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,7 +29,7 @@ export type AppSessionRowState = "normal" | "open" | "active"
  * frequency judgement, not a capability one — so the row takes both lists and
  * never decides for its host.
  */
-export type AppSessionRowShortcut = "pin" | "split" | "quick"
+export type AppSessionRowShortcut = "split" | "quick"
 
 const DEFAULT_HOVER_SHORTCUTS: readonly AppSessionRowShortcut[] = ["split", "quick"]
 
@@ -63,7 +63,7 @@ function SessionHoverAction({ icon, label, title, onClick }: {
 function sessionBadgeToneClassName(tone: WorkspaceAttentionSessionBadge["tone"]): string {
   switch (tone) {
     case "danger": return "bg-destructive/12 text-destructive"
-    case "warning": return "bg-amber-500/12 text-amber-700 dark:text-amber-300"
+    case "warning": return "bg-[color:oklch(from_var(--attention)_l_c_h/0.14)] text-[color:var(--attention)]"
     case "neutral": return "bg-foreground/[0.07] text-muted-foreground"
     default: return "bg-[color:var(--accent)]/12 text-[color:var(--accent)]"
   }
@@ -130,6 +130,7 @@ export function AppSessionRow({
   compact = false,
   showPlacementShortcuts = true,
   hoverShortcuts = DEFAULT_HOVER_SHORTCUTS,
+  leadingGlyph = "chat",
   menuShortcuts,
   placementScope = "unopened",
   confirmDelete = false,
@@ -159,6 +160,14 @@ export function AppSessionRow({
   hoverShortcuts?: readonly AppSessionRowShortcut[]
   /** Placement verbs the menu repeats. Default: none — the row icons carry them. */
   menuShortcuts?: readonly AppSessionRowShortcut[]
+  /**
+   * The fallback mark in the leading slot when nothing else claims it. "none"
+   * keeps the slot (alignment is shared with rows that DO carry a chip) and
+   * draws nothing: a chat glyph on every row of a list of chats states the
+   * obvious, and it appeared on exactly the rows the Agent chip skips, so it
+   * read as a distinction rather than as a default.
+   */
+  leadingGlyph?: "chat" | "none"
   /** Whether a chat already on stage still offers the placement verbs. */
   placementScope?: "unopened" | "always"
   /** Route Delete through a confirmation instead of firing it straight off the menu. */
@@ -213,7 +222,6 @@ export function AppSessionRow({
     Boolean(list?.includes(shortcut))
   const splitAvailable = showPlacementShortcuts && splitPossible && wants(hoverShortcuts, "split")
   const detachAvailable = showPlacementShortcuts && detachPossible && wants(hoverShortcuts, "quick")
-  const pinShortcutAvailable = pinAvailable && wants(hoverShortcuts, "pin")
   // Whatever a hover icon does not carry stays reachable in the menu.
   const menuSplitAvailable = splitPossible && wants(menuShortcuts, "split")
   const menuDetachAvailable = detachPossible && wants(menuShortcuts, "quick")
@@ -231,7 +239,6 @@ export function AppSessionRow({
   // number per breakpoint) instead of a hardcoded width ladder that desktop and
   // mobile had already computed differently.
   const hoverActionCount = (showMenu ? 1 : 0)
-    + (pinShortcutAvailable ? 1 : 0)
     + (splitAvailable ? 1 : 0)
     + (detachAvailable ? 1 : 0)
   const actionSlotStyle = { "--app-session-action-slots": hoverActionCount } as CSSProperties
@@ -269,9 +276,14 @@ export function AppSessionRow({
   // Closing a menu that was opened at the pointer has nowhere to hand focus
   // back to, so the row takes it: the keyboard stays where the operator was.
   const focusRow = () => rowRef.current?.querySelector<HTMLElement>("button")?.focus()
+  // Closing the menu normally hands focus back to the row. When the menu is
+  // closing BECAUSE a dialog is opening, that same courtesy is a focus steal:
+  // the row wins the race and the alert dialog opens with focus outside itself,
+  // so its trap is never entered and Escape/Tab land on the list behind it.
+  const openingDialogRef = useRef(false)
   const requestDelete = onDelete
     ? confirmDelete
-      ? () => setDeleteConfirmOpen(true)
+      ? () => { openingDialogRef.current = true; setDeleteConfirmOpen(true) }
       : (id: string) => onDelete(id)
     : undefined
   const actionItems = (closeMenu: () => void) => (
@@ -288,7 +300,7 @@ export function AppSessionRow({
     />
   )
   const rowClassName = cn(
-    "flex h-full w-full items-center rounded-md text-left transition-colors motion-reduce:transition-none",
+    "app-left-session-line flex h-full w-full items-center rounded-md text-left transition-colors motion-reduce:transition-none",
     compact ? "gap-1.5 px-1.5" : "gap-2 px-2",
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
     !actionsAvailable && "opacity-60",
@@ -343,7 +355,9 @@ export function AppSessionRow({
       {rename.field ? (
         <div className={rowClassName}>
           <span className={leadingSlotClassName} aria-hidden="true">
-            <MessageSquare className="h-4 w-4 text-[color:var(--accent)]" strokeWidth={1.75} />
+            {leadingBadge ?? (leadingGlyph === "chat"
+              ? <MessageSquare className="h-4 w-4 text-[color:var(--accent)]" strokeWidth={1.75} />
+              : null)}
           </span>
           <InlineSessionRename field={rename.field} onCancel={rename.cancel} />
         </div>
@@ -378,20 +392,32 @@ export function AppSessionRow({
                   <span className="sr-only">Working</span>
                 </span>
               ) : null
-            ) : (
+            ) : leadingGlyph === "chat" ? (
               <MessageSquare
                 className={cn("h-4 w-4", state === "active" ? "text-[color:var(--accent)]" : "text-muted-foreground/65")}
                 strokeWidth={1.75}
               />
-            )}
+            ) : null}
           </span>
-          <span className={cn("min-w-0 flex-1 truncate text-[13px] leading-5", state === "active" ? "font-semibold" : "font-medium")}>
+          {/* The title is the LAST thing allowed to lose room. Its floor lives
+              in globals.css beside the tag's ceiling, because the two are one
+              decision: what the row spends its width on. Measured before that
+              rule existed, in a 259px row: title 44px, project tag 81px,
+              trailing slot 84px — the chat's NAME clipped to "Com…" while its
+              metadata got three times the space. */}
+          <span
+            data-boring-workspace-part="app-session-title"
+            className={cn("app-left-session-title min-w-0 flex-1 truncate text-[13px] leading-5", state === "active" ? "font-semibold" : "font-medium")}
+          >
             {title}
           </span>
           {metaTag ? (
             // Fades with the trailing slot so the hover actions get the whole
             // right edge rather than sharing it with a tag.
-            <span className="flex min-w-0 shrink items-center pl-1 group-hover:opacity-0 group-focus-within:opacity-0">
+            <span
+              data-boring-workspace-part="app-session-meta-tag"
+              className="app-left-session-meta-tag flex min-w-0 items-center overflow-hidden pl-1 group-hover:opacity-0 group-focus-within:opacity-0"
+            >
               {metaTag}
             </span>
           ) : null}
@@ -420,16 +446,6 @@ export function AppSessionRow({
             "group-hover:opacity-100 group-focus-within:opacity-100",
           )}
         >
-          {pinShortcutAvailable ? (
-            <SessionHoverAction
-              icon={pinned
-                ? <PinOff className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
-                : <Pin className="size-3.5" strokeWidth={1.75} aria-hidden="true" />}
-              label={`${pinned ? "Unpin" : "Pin"} ${title}`}
-              title={pinned ? "Unpin chat" : "Pin chat"}
-              onClick={() => onTogglePinned?.(session.id)}
-            />
-          ) : null}
           {splitAvailable ? (
             <SessionHoverAction
               icon={<Columns2 className="size-3.5" strokeWidth={1.75} aria-hidden="true" />}
@@ -461,7 +477,8 @@ export function AppSessionRow({
           onPointChange={setContextPoint}
           onOpenChange={(open) => {
             setMenuOpen(open)
-            if (!open) focusRow()
+            if (open || openingDialogRef.current) return
+            focusRow()
           }}
         >
           {actionItems(() => setContextPoint(null))}
@@ -469,16 +486,24 @@ export function AppSessionRow({
       ) : null}
 
       {confirmDelete && onDelete ? (
-        <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <AlertDialog
+          open={deleteConfirmOpen}
+          onOpenChange={(open) => {
+            setDeleteConfirmOpen(open)
+            if (!open) { openingDialogRef.current = false; focusRow() }
+          }}
+        >
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Delete this chat?</AlertDialogTitle>
               <AlertDialogDescription>
-                “{title}” and its transcript are removed for good. This cannot be undone.
+                “{title}” and its transcript are removed for good.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel onClick={focusRow}>Cancel</AlertDialogCancel>
+              {/* First focusable in the content, so the trap opens on the
+                  non-destructive choice. */}
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction
                 data-boring-workspace-part="app-session-delete-confirm"
                 variant="destructive"

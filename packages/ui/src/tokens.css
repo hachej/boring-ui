@@ -26,8 +26,19 @@
   --boring-secondary-foreground: oklch(0.22 0.006 72);
   --boring-muted: oklch(0.965 0.003 72);
   --boring-muted-foreground: oklch(0.52 0.008 72);
-  --boring-destructive: oklch(0.577 0.245 27.325);
+  /* Destruction and attention are ONE token pair each: identical hue and
+     chroma in both themes, lightness the only thing a theme changes. They used
+     to be two unrelated colours per role (light red 0.577/0.245/27.3 vs dark
+     red 0.396/0.141/25.8 — a different hue AND a third of the chroma), which is
+     why the same button read as a fire alarm in light and failed contrast in
+     dark. Chroma is pulled to ~85% of the old light value: still unmistakably
+     a destructive red, no longer the loudest thing on the screen. */
+  --boring-destructive: oklch(0.52 0.208 27);
   --boring-destructive-foreground: oklch(0.985 0.002 72);
+  /* "A human is blocking" — the Needs you band, the row badge, every collapsed
+     header rollup. Was Tailwind amber-700/amber-300, whose dark end is a
+     highlighter next to this palette. */
+  --boring-attention: oklch(0.55 0.11 75);
   --boring-border: oklch(0.915 0.004 72);
   --boring-input: oklch(0.915 0.004 72);
   --boring-accent: oklch(0.62 0.14 65);
@@ -64,6 +75,7 @@
   --muted-foreground: var(--boring-muted-foreground);
   --destructive: var(--boring-destructive);
   --destructive-foreground: var(--boring-destructive-foreground);
+  --attention: var(--boring-attention);
   --border: var(--boring-border);
   --input: var(--boring-input);
   --accent: var(--boring-accent);
@@ -87,7 +99,12 @@
   --boring-foreground: oklch(0.985 0 0);
   --boring-card: oklch(0.145 0.004 285.823);
   --boring-card-foreground: oklch(0.985 0 0);
-  --boring-popover: oklch(0.145 0.004 285.823);
+  /* A popover must READ as lifted off the surface it covers. This was exactly
+     --boring-background, so a menu over the app-left pane (itself a step DARKER
+     than the background) had no elevation at all — only its 1px border
+     separated it from the pane behind it. One step up the neutral ramp, the
+     same step the secondary/muted surfaces already use. */
+  --boring-popover: oklch(0.205 0.006 285.885);
   --boring-popover-foreground: oklch(0.985 0 0);
   --boring-primary: oklch(0.985 0 0);
   --boring-primary-foreground: oklch(0.205 0.006 285.885);
@@ -101,8 +118,10 @@
   --boring-success: oklch(0.74 0.14 145);
   --boring-success-foreground: oklch(0.12 0.004 285.823);
   --boring-success-soft: oklch(0.22 0.04 145);
-  --boring-destructive: oklch(0.396 0.141 25.768);
+  /* Same hue, same chroma, lighter — see the light block above. */
+  --boring-destructive: oklch(0.62 0.208 27);
   --boring-destructive-foreground: oklch(0.985 0 0);
+  --boring-attention: oklch(0.8 0.11 75);
   --boring-border: oklch(0.269 0.006 285.885);
   --boring-input: oklch(0.269 0.006 285.885);
   --boring-ring: oklch(0.72 0.13 65);
@@ -127,6 +146,7 @@
   --muted-foreground: var(--boring-muted-foreground);
   --destructive: var(--boring-destructive);
   --destructive-foreground: var(--boring-destructive-foreground);
+  --attention: var(--boring-attention);
   --border: var(--boring-border);
   --input: var(--boring-input);
   --accent: var(--boring-accent);

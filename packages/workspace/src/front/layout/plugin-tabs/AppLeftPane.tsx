@@ -233,12 +233,14 @@ const EMPTY_AGENT_STATS: AppLeftPaneAgentStats = { sessions: 0, working: 0, atte
 /**
  * The #1355 console's row layout, hoisted to module scope so every row shares
  * one array identity instead of allocating two per render.
- * Pin and split are the two verbs an operator repeats; quick chat is real but
- * occasional, so it earns a menu entry rather than a permanent slot on every
- * row. Both placements stay in the menu as well, because the menu is also the
- * touch and keyboard path.
+ *
+ * ONE hover verb, plus the menu. Three icons cost 40% of a mobile row and, at
+ * every width, took that space from the chat's own name; pin is a real verb but
+ * not a per-row-per-second one, so it lives in the two menus that already carry
+ * everything else. Split stays because dragging a chat beside another is the
+ * gesture this pane is arranged around.
  */
-const CONSOLE_HOVER_SHORTCUTS = ["pin", "split"] as const
+const CONSOLE_HOVER_SHORTCUTS = ["split"] as const
 const CONSOLE_MENU_SHORTCUTS = ["split", "quick"] as const
 
 export function AppLeftPane({
@@ -518,6 +520,10 @@ export function AppLeftPane({
           // be open — that reads as an unreliable menu, not as "this is open".
           placementScope: "always" as const,
           confirmDelete: true,
+          // The Agent chip is this pane's leading mark. Rows that deliberately
+          // drop it (the by-Agent view, where the header already says who) must
+          // not fall back to a chat glyph — that reads as a distinction.
+          leadingGlyph: "none" as const,
         } : {})}
         ownerLabel={ownerLabelOverride ?? (showOwnerLabel && session.agentTypeId ? agentLabelById.get(session.agentTypeId) : undefined)}
         {...(slots?.leadingBadge ? { leadingBadge: slots.leadingBadge } : {})}

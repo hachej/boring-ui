@@ -20,7 +20,17 @@ export function useInlineSessionRename({
   const [saving, setSaving] = useState(false)
   const inputRef = useRef<HTMLInputElement | null>(null)
 
-  useEffect(() => { if (value !== null) inputRef.current?.focus() }, [value])
+  // Select, not just focus. Renaming almost always replaces the title rather
+  // than appending to it, and a caret parked at the end makes the common case
+  // start with a select-all the user has to perform themselves.
+  const opened = useRef(false)
+  useEffect(() => {
+    if (value === null) { opened.current = false; return }
+    if (opened.current) return
+    opened.current = true
+    inputRef.current?.focus()
+    inputRef.current?.select()
+  }, [value])
   useEffect(() => { if (!available) setValue(null) }, [available])
 
   const cancel = () => { setValue(null); setError(null) }
@@ -67,7 +77,10 @@ export function InlineSessionRename({
         }}
         aria-label="Rename session"
         aria-invalid={field.error ? true : undefined}
-        className="h-6 w-full rounded border border-border bg-background px-1.5 text-[13px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        // The standard focus token, explicitly. Inside the Needs you band the
+        // inherited amber read as part of the attention state rather than as
+        // "this field has focus" — two different things wearing one colour.
+        className="h-6 w-full rounded border border-border bg-background px-1.5 text-[13px] text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-[color:var(--ring)]"
       />
       {field.error ? <p role="alert" className="mt-1 text-xs text-destructive">{field.error}</p> : null}
     </span>
