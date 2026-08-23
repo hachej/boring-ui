@@ -126,6 +126,11 @@ export const workspaceCommandPaletteSpec: UiReviewSpec = {
       // DOM visibility can precede paint. Prefer the latest replayable Wait
       // whose screenshot differs from a prior post-bootstrap closed state;
       // encoded PNG byte size is not a monotonic paint signal.
+      // The pHash threshold is viewport-aware: the whole-viewport hash is
+      // calibrated against desktop, where the palette covers a large share of
+      // the frame. At compact the dialog is deliberately small and top-anchored,
+      // so opening it legitimately moves the full-page pHash by only a few bits
+      // — a strict >4 would reject every genuinely painted mobile state.
       const painted = [...waits].reverse().find((state) => {
         const closed = ordered.filter((candidate) => {
           const palette = candidate.normalizedState.palette as Record<string, unknown> | undefined
@@ -133,11 +138,12 @@ export const workspaceCommandPaletteSpec: UiReviewSpec = {
             && candidate.ordinal < state.ordinal
             && palette?.dialogVisible === false
         }).at(-1)
+        const minimumPHashDistance = state.viewport.name === "mobile" ? 1 : 5
         return closed !== undefined
           && state.screenshotDigest !== closed.screenshotDigest
           && typeof state.screenshotPHash === "string"
           && typeof closed.screenshotPHash === "string"
-          && hexadecimalHammingDistance(state.screenshotPHash, closed.screenshotPHash) > 4
+          && hexadecimalHammingDistance(state.screenshotPHash, closed.screenshotPHash) >= minimumPHashDistance
       })
       return painted
     },
