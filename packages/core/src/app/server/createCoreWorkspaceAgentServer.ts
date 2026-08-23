@@ -1688,18 +1688,22 @@ export async function createCoreWorkspaceAgentServer(
   let hostMounted = false
   try {
     // Reference images intentionally prove the process can expose /health
-    // before schema deployment. Only an undefined workspaces relation on the
-    // initial inventory proves that state; after inventory succeeds, every CAS
-    // or convergence error remains fatal.
+    // before schema deployment. Only a pre-0024 schema state on the initial
+    // inventory proves that: either the workspaces relation itself is
+    // undefined (42P01), or the relation exists but the migration 0024
+    // column has not landed yet (42703, undefined_column). After inventory
+    // succeeds, every CAS or convergence error remains fatal.
     let inventoryBefore: Awaited<ReturnType<WorkspaceStore['inventoryDefaultAgentTypeIds']>> | undefined
     try {
       inventoryBefore = await workspaceStore.inventoryDefaultAgentTypeIds(config.appId)
     } catch (error) {
-      if (!hasErrorCode(error, '42P01')) throw error
+      const missingRelation = hasErrorCode(error, '42P01')
+      const missingColumn = hasErrorCode(error, '42703')
+      if (!missingRelation && !missingColumn) throw error
       app.log.warn({
         event: 'workspace.default_agent_type_id.backfill.skipped',
         appId: config.appId,
-        reason: 'workspaces_relation_absent',
+        reason: missingRelation ? 'workspaces_relation_absent' : 'workspaces_default_agent_type_id_column_absent',
       }, 'workspace default Agent reconciliation skipped before schema deployment')
     }
     if (inventoryBefore) {

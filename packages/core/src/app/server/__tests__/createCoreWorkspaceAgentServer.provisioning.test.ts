@@ -310,6 +310,29 @@ test('keeps the pre-schema reference health composition bootable without weakeni
   } finally { await app.close() }
 }, 30_000)
 
+test('keeps the pre-0024 reference health composition bootable when the default_agent_type_id column is absent', async () => {
+  mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
+    runtimePlugins: [], agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
+    preservedUiStateKeys: [], routeContributions: [],
+  })
+  // A workspaces table that exists but predates migration 0024 raises
+  // undefined_column (42703), not undefined_table (42P01) — the inventory
+  // query selects a column the schema does not yet have.
+  mocks.inventoryDefaultAgentTypeIds.mockRejectedValueOnce(Object.assign(
+    new Error('inventory query failed'),
+    { cause: Object.assign(new Error('column "default_agent_type_id" does not exist'), { code: '42703' }) },
+  ))
+  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
+  const app = await createCoreWorkspaceAgentServer({
+    config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+    workspaceRoot: '/tmp/full-app-workspaces', defaultAgentTypeId: 'default', serveFrontend: false,
+  })
+  try {
+    expect(mocks.compareAndSetNullDefaultAgentTypeId).not.toHaveBeenCalled()
+    expect(mocks.hostRegisterDirectRoutes).toHaveBeenCalledOnce()
+  } finally { await app.close() }
+}, 30_000)
+
 test('unknown persisted default denies execution but preserves session and history reads', async () => {
   mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
     runtimePlugins: [], agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
