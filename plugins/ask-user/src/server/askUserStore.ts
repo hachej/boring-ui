@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
+import { mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { randomUUID } from "node:crypto"
 import { ASK_USER_ERROR_CODES } from "../shared/error-codes"
@@ -65,18 +65,41 @@ export interface AskUserStore {
   subscribe(listener: AskUserStoreListener): () => void
 }
 
-type StoredAskUserState = {
+export const STORED_ASK_USER_STATE_VERSION = 1 as const
+
+/**
+ * On-disk envelope. `revision` is a monotonically increasing counter bumped
+ * on every successful write, used as an optimistic-concurrency token
+ * (finding 3): a writer rereads the file immediately before renaming its
+ * candidate into place and aborts (retrying against the fresh state) if the
+ * on-disk revision moved since it started, so a stale process can never
+ * blindly clobber a record another process already mutated.
+ */
+export type StoredAskUserState = {
+  version: number
+  revision: number
   questions: Record<string, AskUserQuestion>
   pendingBySession: Record<string, string>
   answers: Record<string, AskUserAnswer>
   transcriptsBySession: Record<string, AskUserTranscriptEvent[]>
 }
 
-const EMPTY_STATE: StoredAskUserState = {
-  questions: {},
-  pendingBySession: {},
-  answers: {},
-  transcriptsBySession: {},
+function emptyState(): StoredAskUserState {
+  return {
+    version: STORED_ASK_USER_STATE_VERSION,
+    revision: 0,
+    questions: {},
+    pendingBySession: {},
+    answers: {},
+    transcriptsBySession: {},
+  }
+}
+
+const MAX_WRITE_ATTEMPTS = 25
+const LOCK_STALE_MS = 15_000
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 export class FileAskUserStore implements AskUserStore {
@@ -234,41 +257,114 @@ export class FileAskUserStore implements AskUserStore {
     return () => this.listeners.delete(listener)
   }
 
+  /**
+   * All mutations are serialized within this instance via `writeChain`
+   * (unchanged), but that alone does not protect against a second
+   * `FileAskUserStore` instance backed by the same file — e.g. a stale
+   * process that has not yet noticed a restart. `mutateWithRetry` rereads
+   * the file fresh (never the in-memory cache) at the start of every
+   * attempt, so a stale writer immediately observes any transition another
+   * process already committed and its own guard clauses (already
+   * answered/cancelled/etc.) reject the mutation, rather than clobbering a
+   * record based on stale cached state (finding 3).
+   */
   private async mutate<T>(fn: (state: StoredAskUserState) => Promise<T> | T): Promise<T> {
-    const run = this.writeChain.then(async () => {
-      const state = await this.load()
-      const result = await fn(state)
-      await this.save(state)
-      return result
-    })
+    const run = this.writeChain.then(() => this.mutateWithRetry(fn))
     this.writeChain = run.then(() => undefined, () => undefined)
     return run
   }
 
+  private async mutateWithRetry<T>(fn: (state: StoredAskUserState) => Promise<T> | T): Promise<T> {
+    for (let attempt = 0; attempt < MAX_WRITE_ATTEMPTS; attempt++) {
+      const onDisk = await this.readFresh()
+      const draft = clone(onDisk)
+      const result = await fn(draft)
+      draft.revision = onDisk.revision + 1
+      const persisted = await this.tryPersist(draft, onDisk.revision)
+      if (persisted) {
+        this.state = draft
+        return result
+      }
+      // Another writer (a second FileAskUserStore instance backed by the
+      // same file, e.g. a stale process) committed between our read and our
+      // write attempt, or is currently holding the write lock. Back off
+      // briefly and retry against the now-current on-disk state.
+      await delay(Math.min(2 ** attempt, 20))
+    }
+    throw new AskUserStoreError(
+      ASK_USER_ERROR_CODES.WRITE_CONFLICT,
+      `gave up writing ${this.filePath} after ${MAX_WRITE_ATTEMPTS} conflicting concurrent writes`,
+    )
+  }
+
+  /** Reads for getters may serve the in-memory cache; the first read populates it. */
   private async load(): Promise<StoredAskUserState> {
     if (this.state) return this.state
     if (!this.loadInFlight) {
-      this.loadInFlight = (async () => {
-        try {
-          const raw = await readFile(this.filePath, "utf8")
-          this.state = { ...clone(EMPTY_STATE), ...JSON.parse(raw) }
-        } catch (error) {
-          if ((error as { code?: string }).code !== "ENOENT") throw error
-          this.state = clone(EMPTY_STATE)
-        }
-        return this.state as StoredAskUserState
-      })().finally(() => {
+      this.loadInFlight = this.readFresh().finally(() => {
         this.loadInFlight = null
       })
     }
     return this.loadInFlight
   }
 
-  private async save(state: StoredAskUserState): Promise<void> {
+  /** Always hits disk, bypassing the cache; used by mutations and CAS checks. */
+  private async readFresh(): Promise<StoredAskUserState> {
+    const state = await this.readFromDisk()
+    this.state = state
+    return state
+  }
+
+  private async readFromDisk(): Promise<StoredAskUserState> {
+    try {
+      const raw = await readFile(this.filePath, "utf8")
+      const parsed = JSON.parse(raw) as unknown
+      return normalizeStoredState(parsed)
+    } catch (error) {
+      if ((error as { code?: string }).code !== "ENOENT") throw error
+      return emptyState()
+    }
+  }
+
+  private async tryPersist(candidate: StoredAskUserState, expectedRevision: number): Promise<boolean> {
     await mkdir(dirname(this.filePath), { recursive: true })
-    const tmp = join(dirname(this.filePath), `.${randomUUID()}.tmp`)
-    await writeFile(tmp, JSON.stringify(state, null, 2), "utf8")
-    await rename(tmp, this.filePath)
+    const lockPath = `${this.filePath}.lock`
+    // A plain "reread then rename" has a TOCTOU gap: two writers can both
+    // observe a matching revision before either renames, and the second
+    // rename silently discards the first writer's update without either
+    // side detecting a conflict. An exclusive-create lock file closes that
+    // gap by serializing the read-check-rename sequence across instances.
+    if (!(await this.acquireLock(lockPath))) return false
+    try {
+      const current = await this.readFromDisk()
+      if (current.revision !== expectedRevision) return false
+      const tmp = join(dirname(this.filePath), `.${randomUUID()}.tmp`)
+      await writeFile(tmp, JSON.stringify(candidate, null, 2), "utf8")
+      await rename(tmp, this.filePath)
+      return true
+    } finally {
+      await rm(lockPath, { force: true }).catch(() => undefined)
+    }
+  }
+
+  private async acquireLock(lockPath: string): Promise<boolean> {
+    try {
+      const handle = await open(lockPath, "wx")
+      await handle.close()
+      return true
+    } catch (error) {
+      if ((error as { code?: string }).code !== "EEXIST") throw error
+      // A holder that crashed mid-write would otherwise wedge every future
+      // writer forever; reclaim a lock that has clearly outlived any real
+      // write.
+      try {
+        const info = await stat(lockPath)
+        if (Date.now() - info.mtimeMs > LOCK_STALE_MS) await rm(lockPath, { force: true })
+      } catch {
+        // Lock disappeared or stat raced; the next attempt will re-check.
+      }
+      return false
+    }
   }
 
   private emit(change: AskUserStoreChange): void {
@@ -323,6 +419,27 @@ function transcriptQuestionId(event: AskUserTranscriptEvent): string {
     case "answered": return event.answer.questionId
     default: return event.questionId
   }
+}
+
+/**
+ * Accepts both the current versioned envelope and pre-versioning legacy
+ * files (no `version`/`revision` fields), stamping sensible defaults so old
+ * stores keep loading. Record-level validation is layered on in finding 5.
+ */
+function normalizeStoredState(raw: unknown): StoredAskUserState {
+  const obj = raw && typeof raw === "object" ? (raw as Partial<StoredAskUserState>) : {}
+  return {
+    version: STORED_ASK_USER_STATE_VERSION,
+    revision: typeof obj.revision === "number" && Number.isInteger(obj.revision) ? obj.revision : 0,
+    questions: isRecord(obj.questions) ? (obj.questions as StoredAskUserState["questions"]) : {},
+    pendingBySession: isRecord(obj.pendingBySession) ? (obj.pendingBySession as StoredAskUserState["pendingBySession"]) : {},
+    answers: isRecord(obj.answers) ? (obj.answers as StoredAskUserState["answers"]) : {},
+    transcriptsBySession: isRecord(obj.transcriptsBySession) ? (obj.transcriptsBySession as StoredAskUserState["transcriptsBySession"]) : {},
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value)
 }
 
 function nowIso(): string {

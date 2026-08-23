@@ -247,6 +247,54 @@ describe("FileAskUserStore", () => {
     await expect(clockedStore.getByQuestionId("q1")).resolves.toMatchObject({ status: "ready" })
   })
 
+  it("a stale writer cannot overwrite an answered record with cancellation (finding 3)", async () => {
+    const filePath = join(dir, "ask-user.json")
+    const storeA = new FileAskUserStore(filePath)
+    const storeB = new FileAskUserStore(filePath)
+
+    await storeA.createPending(question())
+    // Both processes load the question as still `ready` before either mutates.
+    await expect(storeA.getByQuestionId("q1")).resolves.toMatchObject({ status: "ready" })
+    await expect(storeB.getByQuestionId("q1")).resolves.toMatchObject({ status: "ready" })
+
+    // storeB (e.g. the new process after a restart) answers first.
+    await storeB.answer("q1", { questionId: "q1", sessionId: "s1", values: { a: "final" }, submittedAt: new Date().toISOString() })
+
+    // storeA is the stale writer (e.g. a timeout firing in the old process).
+    // It must reread the current file, see "answered", and refuse to
+    // overwrite it with "cancelled" rather than blindly persisting its own
+    // stale in-memory view.
+    await expect(storeA.cancel("q1")).rejects.toMatchObject({ code: ASK_USER_ERROR_CODES.ALREADY_ANSWERED })
+
+    // The answer survives, from either store's point of view.
+    await expect(storeA.getByQuestionId("q1")).resolves.toMatchObject({ status: "answered" })
+    await expect(storeB.getByQuestionId("q1")).resolves.toMatchObject({ status: "answered" })
+    const reloaded = new FileAskUserStore(filePath)
+    await expect(reloaded.getByQuestionId("q1")).resolves.toMatchObject({ status: "answered" })
+    await expect(reloaded.getAnswer("q1")).resolves.toMatchObject({ values: { a: "final" } })
+  })
+
+  it("bumps the on-disk revision on every mutation and survives concurrent writers via CAS retry", async () => {
+    const filePath = join(dir, "ask-user.json")
+    const storeA = new FileAskUserStore(filePath)
+    const storeB = new FileAskUserStore(filePath)
+
+    await storeA.createPending(question({ questionId: "qa", sessionId: "sa" }))
+    // storeB's writeChain has never read this file; issuing a mutation forces
+    // a fresh read + CAS write rather than trusting any stale cache.
+    await storeB.createPending(question({ questionId: "qb", sessionId: "sb" }))
+
+    await Promise.all([
+      storeA.appendTranscriptEvent({ type: "abandoned", questionId: "qa", sessionId: "sa", at: new Date(1).toISOString() }),
+      storeB.appendTranscriptEvent({ type: "abandoned", questionId: "qb", sessionId: "sb", at: new Date(2).toISOString() }),
+    ])
+
+    const raw = JSON.parse(await readFile(filePath, "utf8"))
+    expect(raw.revision).toBeGreaterThanOrEqual(4)
+    expect(raw.transcriptsBySession.sa).toHaveLength(1)
+    expect(raw.transcriptsBySession.sb).toHaveLength(1)
+  })
+
   it("appends, lists, filters, and persists transcript events", async () => {
     await store.createPending(question())
     await store.appendTranscriptEvent({ type: "created", question: question(), at: new Date(0).toISOString() })
