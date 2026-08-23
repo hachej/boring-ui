@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises"
+import { resolve } from "node:path"
 import { useEffect, type ReactNode } from "react"
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
@@ -377,6 +379,140 @@ describe("AppLeftPane", () => {
       await user.click(screen.getByRole("button", { name: "Choose where the new chat opens" }))
       expect(screen.getAllByRole("menuitem").map((item) => item.textContent))
         .toEqual(["New chat", "New in split view", "New quick chat"])
+    })
+
+    /** A chat that satisfies every eligibility rule the row's verbs are gated on. */
+    const renamableSession = {
+      id: "alpha-one",
+      agentTypeId: "alpha",
+      title: "Alpha launch",
+      nativeSessionId: "alpha-one",
+      hasAssistantReply: true,
+      updatedAt: spikeNow - 60_000,
+    }
+    function renderSpikeRowConsole(overrides: Partial<Parameters<typeof AppLeftPane>[0]> = {}) {
+      return renderSpikeConsole({
+        projects: [{ id: "launch", name: "Launch", sessions: [renamableSession] }],
+        sessions: [renamableSession],
+        ...overrides,
+      })
+    }
+    const menuLabels = () =>
+      within(screen.getByRole("menu")).getAllByRole("menuitem").map((item) => item.textContent?.trim())
+
+    it("offers the same verbs from the kebab and from a right-click on the row", async () => {
+      const user = userEvent.setup()
+      renderSpikeRowConsole({
+        onRenameSession: vi.fn(),
+        onDeleteSession: vi.fn(),
+        onOpenSessionDetached: vi.fn(),
+      })
+
+      await user.click(screen.getByLabelText("Chat actions for Alpha launch"))
+      const fromKebab = menuLabels()
+      expect(fromKebab).toEqual([
+        "Rename", "Open in split view", "Open as quick chat", "Pin chat", "Copy session ID", "Delete",
+      ])
+      await user.keyboard("{Escape}")
+      await waitFor(() => expect(screen.queryByRole("menu")).not.toBeInTheDocument())
+
+      fireEvent.contextMenu(spikeRow("Alpha launch"), { clientX: 40, clientY: 80 })
+      expect(menuLabels()).toEqual(fromKebab)
+    })
+
+    it("fires split and quick chat with the chat's own owner, from the row and from the menu", async () => {
+      const user = userEvent.setup()
+      const onOpenSessionAsPane = vi.fn()
+      const onOpenSessionDetached = vi.fn()
+      renderSpikeRowConsole({ onOpenSessionAsPane, onOpenSessionDetached })
+
+      // Split is one of the two verbs that earned a place ON the row.
+      await user.click(screen.getByLabelText("Open Alpha launch in a split pane"))
+      expect(onOpenSessionAsPane).toHaveBeenCalledWith("alpha-one", "alpha")
+
+      // Quick chat is occasional, so it lives in the menu — and works there.
+      fireEvent.contextMenu(spikeRow("Alpha launch"), { clientX: 40, clientY: 80 })
+      fireEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Open as quick chat" }))
+      expect(onOpenSessionDetached).toHaveBeenCalledWith("alpha-one", "alpha")
+    })
+
+    it("toggles the pin from the row icon and sorts a pinned chat to the top of the one list", async () => {
+      const user = userEvent.setup()
+      const onToggleSessionPinned = vi.fn()
+      const unpinned = { id: "beta-one", agentTypeId: "beta", title: "Beta review", updatedAt: spikeNow - 1_000 }
+      const rendered = renderSpikeConsole({
+        projects: [{ id: "launch", name: "Launch", sessions: [renamableSession, unpinned] }],
+        sessions: [renamableSession, unpinned],
+        onToggleSessionPinned,
+      })
+
+      // Newest first while nothing is pinned.
+      expect(spikeRowIds()).toEqual(["beta-one", "alpha-one"])
+      await user.click(screen.getByLabelText("Pin Alpha launch"))
+      expect(onToggleSessionPinned).toHaveBeenCalledWith("alpha-one", "alpha")
+
+      rendered.unmount()
+      renderSpikeConsole({
+        projects: [{ id: "launch", name: "Launch", sessions: [renamableSession, unpinned] }],
+        sessions: [renamableSession, unpinned],
+        pinnedSessionRefs: [{ sessionId: "alpha-one", agentTypeId: "alpha" }],
+        onToggleSessionPinned,
+      })
+      // The older chat now leads the list, and the row offers the inverse verb.
+      expect(spikeRowIds()).toEqual(["alpha-one", "beta-one"])
+      expect(screen.getByLabelText("Unpin Alpha launch")).toBeInTheDocument()
+    })
+
+    it("renames from F2 and from the menu, commits on Enter and reverts on Escape", async () => {
+      const user = userEvent.setup()
+      const onRenameSession = vi.fn()
+      renderSpikeRowConsole({ onRenameSession })
+      const row = spikeRow("Alpha launch")
+
+      // Escape puts the original title back and calls nothing.
+      fireEvent.keyDown(row, { key: "F2" })
+      const cancelled = screen.getByRole("textbox", { name: "Rename session" })
+      await user.clear(cancelled)
+      await user.type(cancelled, "Discarded{Escape}")
+      expect(onRenameSession).not.toHaveBeenCalled()
+      expect(screen.getByText("Alpha launch")).toBeInTheDocument()
+
+      // The menu entry opens the same editor, and Enter commits it.
+      await user.click(screen.getByLabelText("Chat actions for Alpha launch"))
+      fireEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Rename" }))
+      const editing = await screen.findByRole("textbox", { name: "Rename session" })
+      await user.clear(editing)
+      await user.type(editing, "Launch retro{Enter}")
+      expect(onRenameSession).toHaveBeenCalledWith("alpha-one", "Launch retro", "alpha")
+    })
+
+    it("holds Delete behind a confirmation, and lets the confirmation be declined", async () => {
+      const user = userEvent.setup()
+      const onDeleteSession = vi.fn()
+      renderSpikeRowConsole({ onDeleteSession })
+
+      const openDelete = async () => {
+        fireEvent.contextMenu(spikeRow("Alpha launch"), { clientX: 40, clientY: 80 })
+        fireEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Delete" }))
+        return screen.findByRole("alertdialog")
+      }
+
+      const declined = await openDelete()
+      await user.click(within(declined).getByRole("button", { name: "Cancel" }))
+      expect(onDeleteSession).not.toHaveBeenCalled()
+
+      const confirmed = await openDelete()
+      await user.click(within(confirmed).getByRole("button", { name: "Delete chat" }))
+      expect(onDeleteSession).toHaveBeenCalledWith("alpha-one", "alpha")
+    })
+
+    it("reveals the row's actions without hover on a pointer-coarse device", async () => {
+      // jsdom resolves no media queries, so the guarantee is asserted where it
+      // actually lives: the stylesheet. The "..." trigger is the only path to
+      // rename / pin / copy / delete, so a finger must not need hover for it.
+      const css = await readFile(resolve(process.cwd(), "src/globals.css"), "utf8")
+      const touchBlock = css.slice(css.indexOf("@media (hover: none), (pointer: coarse)"))
+      expect(touchBlock).toContain(".app-left-session-actions {\n    opacity: 1;\n  }")
     })
 
     it("keeps in-Project create on the Project header, the only place that names a Project", async () => {
