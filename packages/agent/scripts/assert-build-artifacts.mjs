@@ -166,7 +166,6 @@ function assertFastifyDetectorFixture() {
         imports: [
           { external: true, kind: 'import-statement', path: '@fastify/static' },
           { external: true, kind: 'dynamic-import', path: 'fastify' },
-          { external: true, kind: 'import-statement', path: '@hachej/boring-sandbox/providers/blaxel' },
         ],
         inputs: {},
       },
