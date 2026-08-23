@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -422,6 +422,49 @@ describe("FileAskUserStore", () => {
     // A real mutation must still succeed by reclaiming the dead lock.
     await expect(store.answer("q1", { questionId: "q1", sessionId: "s1", values: { a: "ok" }, submittedAt: new Date().toISOString() })).resolves.toBeUndefined()
     await expect(store.getByQuestionId("q1")).resolves.toMatchObject({ status: "answered" })
+  })
+
+  it("reclaims an empty/malformed lock file that is stale by mtime instead of deadlocking forever (finding 1)", async () => {
+    const filePath = join(dir, "ask-user.json")
+    const store = new FileAskUserStore(filePath, { lockStaleMs: 50 })
+    await store.createPending(question({ questionId: "q1" }))
+
+    // Simulate a crash mid-write: the lock file exists but never finished
+    // writing its content (empty), so it carries no parseable acquiredAtMs
+    // for `readLockOwner` to compare against `lockStaleMs`.
+    const lockPath = `${filePath}.lock`
+    await writeFile(lockPath, "", "utf8")
+    // Backdate its mtime past lockStaleMs so the fallback staleness check
+    // (which cannot rely on a missing acquiredAtMs) judges it stale.
+    const old = new Date(Date.now() - 1_000)
+    await utimes(lockPath, old, old)
+
+    // A real mutation must reclaim the malformed-but-stale lock rather than
+    // being permanently blocked by a lock nobody will ever come back to
+    // release.
+    await expect(store.cancel("q1")).resolves.toBeUndefined()
+    await expect(store.getByQuestionId("q1")).resolves.toMatchObject({ status: "cancelled" })
+  })
+
+  it("does not reclaim a malformed lock file that is still fresh by mtime -- it waits/retries instead (finding 1)", async () => {
+    const filePath = join(dir, "ask-user.json")
+    const store = new FileAskUserStore(filePath, { lockStaleMs: 60_000 })
+    await store.createPending(question({ questionId: "q1" }))
+
+    const lockPath = `${filePath}.lock`
+    // A malformed lock with a fresh mtime (the default: "now") could still
+    // be an active writer mid-write; it must not be reclaimed.
+    await writeFile(lockPath, "", "utf8")
+
+    const attempt = store.cancel("q1")
+    // Give the CAS retry loop a chance to observe the fresh malformed lock
+    // and back off (never reclaiming it), then release it the way the real
+    // (slow) writer eventually would, letting the attempt complete normally.
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    await expect(store.getByQuestionId("q1")).resolves.toMatchObject({ status: "ready" })
+    await rm(lockPath, { force: true })
+    await expect(attempt).resolves.toBeUndefined()
+    await expect(store.getByQuestionId("q1")).resolves.toMatchObject({ status: "cancelled" })
   })
 
   it("notifies listeners only after a successful commit, using the committed state (finding: notify-after-commit)", async () => {

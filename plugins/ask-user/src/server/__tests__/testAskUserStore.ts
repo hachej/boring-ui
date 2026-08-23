@@ -142,6 +142,20 @@ export class MemoryAskUserStore implements AskUserStore {
     this.emit({ sessionId, questionId: transcriptQuestionId(event), reason: "transcript" })
   }
 
+  async appendTranscriptEventIfMissing(
+    questionId: string,
+    hasMatchingEvent: (events: AskUserTranscriptEvent[]) => boolean,
+    buildEvent: () => AskUserTranscriptEvent,
+  ): Promise<boolean> {
+    const events = [...this.transcriptsBySession.values()].flat().filter((event) => transcriptQuestionId(event) === questionId)
+    if (hasMatchingEvent(events)) return false
+    const event = buildEvent()
+    const sessionId = transcriptSessionId(event)
+    this.transcriptsBySession.set(sessionId, [...(this.transcriptsBySession.get(sessionId) ?? []), clone(event)])
+    this.emit({ sessionId, questionId: transcriptQuestionId(event), reason: "transcript" })
+    return true
+  }
+
   async listTranscriptEvents(sessionId: string): Promise<AskUserTranscriptEvent[]> {
     return clone(this.transcriptsBySession.get(sessionId) ?? [])
   }

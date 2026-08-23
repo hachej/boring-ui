@@ -1,4 +1,4 @@
-import { mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises"
+import { mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { randomUUID } from "node:crypto"
 import type { ZodError } from "zod"
@@ -82,6 +82,21 @@ export interface AskUserStore {
   restoreAbandoned(questionId: string): Promise<boolean>
   clearPending(sessionId: string): Promise<void>
   appendTranscriptEvent(event: AskUserTranscriptEvent): Promise<void>
+  /**
+   * Atomic check-and-append for reconciliation (finding: a caller doing its
+   * own read-then-append outside the store's lock races concurrent
+   * reconciliation runs into appending duplicate synthetic events). Runs
+   * `hasMatchingEvent` against this question's transcript events, and
+   * `buildEvent` (only if it returns `false`) to produce the event to
+   * append, all inside one mutation attempt under the store's write lock/CAS
+   * -- so two concurrent callers can never both observe "missing" and both
+   * append. Returns whether an event was appended.
+   */
+  appendTranscriptEventIfMissing(
+    questionId: string,
+    hasMatchingEvent: (events: AskUserTranscriptEvent[]) => boolean,
+    buildEvent: () => AskUserTranscriptEvent,
+  ): Promise<boolean>
   listTranscriptEvents(sessionId: string): Promise<AskUserTranscriptEvent[]>
   getTranscriptEventsForQuestion(questionId: string): Promise<AskUserTranscriptEvent[]>
   subscribe(listener: AskUserStoreListener): () => void
@@ -277,6 +292,23 @@ export class FileAskUserStore implements AskUserStore {
       const sessionId = transcriptSessionId(event)
       state.transcriptsBySession[sessionId] = [...(state.transcriptsBySession[sessionId] ?? []), clone(event)]
       return { result: undefined, change: { sessionId, questionId: transcriptQuestionId(event), reason: "transcript" } }
+    })
+  }
+
+  async appendTranscriptEventIfMissing(
+    questionId: string,
+    hasMatchingEvent: (events: AskUserTranscriptEvent[]) => boolean,
+    buildEvent: () => AskUserTranscriptEvent,
+  ): Promise<boolean> {
+    return this.mutate(async (state) => {
+      const events = Object.values(state.transcriptsBySession)
+        .flat()
+        .filter((event) => transcriptQuestionId(event) === questionId)
+      if (hasMatchingEvent(events)) return { result: false }
+      const event = buildEvent()
+      const sessionId = transcriptSessionId(event)
+      state.transcriptsBySession[sessionId] = [...(state.transcriptsBySession[sessionId] ?? []), clone(event)]
+      return { result: true, change: { sessionId, questionId: transcriptQuestionId(event), reason: "transcript" } }
     })
   }
 
@@ -540,7 +572,19 @@ export class FileAskUserStore implements AskUserStore {
     } catch (error) {
       if ((error as { code?: string }).code !== "EEXIST") throw error
       const existing = await this.readLockOwner(lockPath)
-      if (!existing || this.now().getTime() - existing.acquiredAtMs <= this.lockStaleMs) return null
+      // Finding: a lock file that is empty, truncated, or otherwise fails to
+      // parse (e.g. a crash mid-write left a partial file) has no
+      // `acquiredAtMs` for `readLockOwner` to return, so it comes back
+      // `null`. Treating "unparseable" as "not stale" would make such a lock
+      // permanently unreclaimable -- a deadlock forever, since no owner will
+      // ever return to release a lock it never finished writing. Fall back
+      // to the lock file's own mtime in that case: still-fresh (another
+      // writer plausibly mid-write) is left alone; older than `lockStaleMs`
+      // is reclaimed exactly like a parseable-but-stale lock.
+      const isStale = existing
+        ? this.now().getTime() - existing.acquiredAtMs > this.lockStaleMs
+        : await this.isLockFileStaleByMtime(lockPath)
+      if (!isStale) return null
       try {
         const tmp = `${lockPath}.${randomUUID()}.reclaim`
         await writeFile(tmp, payload, "utf8")
@@ -549,6 +593,25 @@ export class FileAskUserStore implements AskUserStore {
       } catch {
         return null
       }
+    }
+  }
+
+  /**
+   * Fallback staleness check for a lock file whose contents could not be
+   * parsed into a `LockOwner`. Uses the lock file's own mtime against the
+   * injectable clock instead of an `acquiredAtMs` field it does not have. If
+   * the file has vanished by the time we `stat` it (e.g. the holder released
+   * concurrently, or a racing reclaimer already replaced it), it is treated
+   * as not-stale here -- safe, since the caller then simply returns `null`
+   * and the outer CAS retry loop observes the current on-disk lock state on
+   * its next pass rather than this call racing a reclaim blindly.
+   */
+  private async isLockFileStaleByMtime(lockPath: string): Promise<boolean> {
+    try {
+      const info = await stat(lockPath)
+      return this.now().getTime() - info.mtimeMs > this.lockStaleMs
+    } catch {
+      return false
     }
   }
 

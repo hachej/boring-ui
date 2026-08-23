@@ -181,7 +181,6 @@ export class AskUserRuntime {
     for (const question of pending) {
       if (!question.expiresAt) continue
       const expiresAtMs = new Date(question.expiresAt).getTime()
-      if (Number.isNaN(expiresAtMs)) continue
       // Finding 5: an unparseable expiresAt is fail-closed, not skipped --
       // treat it as already expired rather than leaving it perpetually
       // enforceable-but-never-reconciled.
@@ -210,11 +209,22 @@ export class AskUserRuntime {
    * still fails, reports the failure (never silently) and rearms a timer to
    * run the whole sequence again after `expiryRearmDelayMs`, indefinitely,
    * rather than permanently abandoning the overdue question.
+   *
+   * Finding: a locked-out cancellation is not the only way this question can
+   * stop needing us. Another actor entirely (a live `answer()`/`cancel()`
+   * call, or another process's reconciliation pass) can resolve the same
+   * question while this retry loop is backing off. Retrying/rearming forever
+   * in that case is not just wasted work -- it is wrong, since nothing is
+   * actually broken. Before each retry attempt, and before reporting a
+   * persistent failure / rearming, re-read the question and stop silently
+   * (this counts as success, not failure) the moment it is no longer
+   * `ready`.
    */
   private async cancelExpiredWithRetry(questionId: string, sessionId: string, lastError: unknown): Promise<void> {
     let error = lastError
     for (const delayMs of this.expiryRetryDelaysMs) {
       await delay(delayMs)
+      if (await this.isAlreadyResolved(questionId)) return
       try {
         await this.cancelQuestion(questionId, sessionId, "timeout")
         return
@@ -222,6 +232,7 @@ export class AskUserRuntime {
         error = retryError
       }
     }
+    if (await this.isAlreadyResolved(questionId)) return
     this.onExpiryPersistentFailure({ questionId, sessionId, error })
     const timer = setTimeout(() => {
       this.expiryTimers.delete(questionId)
@@ -231,6 +242,12 @@ export class AskUserRuntime {
     this.expiryTimers.set(questionId, timer)
   }
 
+  /** Whether another actor already moved this question out of `ready` (answered/cancelled/abandoned) or it no longer exists. */
+  private async isAlreadyResolved(questionId: string): Promise<boolean> {
+    const question = await this.store.getByQuestionId(questionId)
+    return !question || question.status !== "ready"
+  }
+
   /**
    * Finding: transition+transcript are separate durable writes. On startup
    * (or whenever an operator wants to audit for drift), find every
@@ -238,26 +255,46 @@ export class AskUserRuntime {
    * current status -- the signature of a crash landing the state-transition
    * write but not the paired audit-event write -- and append a synthetic
    * `reconciled` event so the audit trail still reflects the true outcome.
+   *
+   * Two hardening fixes over the original pass:
+   *
+   * - A previously synthesized `reconciled` event only counts as proof of
+   *   reconciliation for the *same* status it recorded. A question can pass
+   *   through more than one terminal-shaped history (e.g. abandoned ->
+   *   restored -> answered): a `reconciled` event synthesized for the
+   *   earlier `abandoned` status must not suppress recovery of a later,
+   *   still-unrecorded `answered` transition.
+   * - The check (is an event already present?) and the append (write the
+   *   synthetic event) happen inside one call to the store's
+   *   `appendTranscriptEventIfMissing`, which performs both under the
+   *   store's write lock/CAS. Doing the read and the write as two separate
+   *   store calls here would leave a window for two concurrent
+   *   `reconcileTranscripts()` passes (e.g. one at startup, one from a live
+   *   reconciliation trigger) to both observe "missing" and both append,
+   *   duplicating the synthetic event.
    */
   async reconcileTranscripts(): Promise<{ synthesized: string[] }> {
     const synthesized: string[] = []
     const resolved = await this.store.listResolved()
     for (const question of resolved) {
-      const events = await this.store.getTranscriptEventsForQuestion(question.questionId)
-      // A terminal status never changes again (answer()/cancel() reject once
-      // a question has left `ready`), so a previously synthesized
-      // `reconciled` event for this question is itself sufficient proof of
-      // reconciliation -- this keeps the pass idempotent.
-      if (events.some((event) => event.type === "reconciled" || transcriptEventMatchesStatus(event.type, question.status))) continue
-      await this.store.appendTranscriptEvent({
-        type: "reconciled",
-        questionId: question.questionId,
-        sessionId: question.sessionId,
-        status: question.status,
-        synthetic: true,
-        at: this.isoNow(),
-      })
-      synthesized.push(question.questionId)
+      const appended = await this.store.appendTranscriptEventIfMissing(
+        question.questionId,
+        (events) =>
+          events.some(
+            (event) =>
+              (event.type === "reconciled" && event.status === question.status) ||
+              transcriptEventMatchesStatus(event.type, question.status),
+          ),
+        () => ({
+          type: "reconciled",
+          questionId: question.questionId,
+          sessionId: question.sessionId,
+          status: question.status,
+          synthetic: true,
+          at: this.isoNow(),
+        }),
+      )
+      if (appended) synthesized.push(question.questionId)
     }
     return { synthesized }
   }

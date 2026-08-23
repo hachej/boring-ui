@@ -503,6 +503,20 @@ describe("AskUserRuntime expiry (finding 1)", () => {
     restarted.disposeExpiryTimers()
   })
 
+  it("fail-closes (expires) a question with an unparseable persisted expiresAt (finding 3: NaN early-continue made the fail-closed branch unreachable)", async () => {
+    const store = await makeStore()
+    const question = makeQuestion({ questionId: "nan-q", sessionId: "s1", expiresAt: "not-a-real-date" })
+    await store.createPending(question)
+
+    const runtime = new AskUserRuntime({ store })
+    const { expired } = await runtime.reconcileExpiries()
+    expect(expired).toEqual(["nan-q"])
+
+    await expect(store.getByQuestionId("nan-q")).resolves.toMatchObject({ status: "cancelled" })
+    const events = await store.getTranscriptEventsForQuestion("nan-q")
+    expect(events).toContainEqual(expect.objectContaining({ type: "cancelled", reason: "timeout" }))
+  })
+
   it("rejects an answer submitted after the persisted expiry", async () => {
     const store = await makeStore()
     const question = makeQuestion({ questionId: "expired-q", sessionId: "s1", expiresAt: new Date(Date.now() - 1_000).toISOString() })
@@ -588,6 +602,50 @@ describe("AskUserRuntime crash-lock vs startup expiry (finding 2)", () => {
       await rm(dir, { recursive: true, force: true })
     }
   })
+
+  it("stops retrying and never reports a failure once another actor resolves the question during backoff (finding: retry vs concurrent resolution)", async () => {
+    class AlwaysFailingCancelStore extends MemoryAskUserStore {
+      cancelCalls = 0
+      override async cancel(): Promise<void> {
+        this.cancelCalls += 1
+        throw new Error("simulated transient cancel failure")
+      }
+    }
+    const store = new AlwaysFailingCancelStore()
+    await store.createPending(makeQuestion({ questionId: "q1", sessionId: "s1", expiresAt: new Date(Date.now() - 1_000).toISOString() }))
+
+    const failures: Array<{ questionId: string; sessionId: string }> = []
+    const runtime = new AskUserRuntime({
+      store,
+      expiryReconcile: {
+        retryDelaysMs: [10, 10, 10, 10, 10],
+        rearmDelayMs: 5,
+        onPersistentFailure: (info) => failures.push(info),
+      },
+    })
+
+    const { expired } = await runtime.reconcileExpiries()
+    expect(expired).toEqual(["q1"])
+
+    // Another actor entirely -- e.g. the asking session being abandoned via
+    // a different code path -- resolves the question while the retry loop
+    // is still backing off between attempts. (A real "answer" is not usable
+    // here: the store itself rejects answering an already-expired question,
+    // by design -- `markAbandoned` has no such guard and is a legitimate
+    // terminal transition a concurrent actor can perform.) `cancel` on this
+    // store always fails, so without the fix the retry loop would exhaust
+    // its schedule and report a persistent failure.
+    await new Promise((resolve) => setTimeout(resolve, 15))
+    await store.markAbandoned("q1")
+
+    // Give the retry loop enough time to have exhausted its full schedule
+    // (50ms) and rearmed at least once (5ms) if it were going to.
+    await new Promise((resolve) => setTimeout(resolve, 200))
+
+    expect(failures).toEqual([])
+    await expect(store.getByQuestionId("q1")).resolves.toMatchObject({ status: "abandoned" })
+    runtime.disposeExpiryTimers()
+  })
 })
 
 describe("AskUserRuntime transcript reconciliation (finding: transition+transcript separate writes)", () => {
@@ -659,6 +717,60 @@ describe("AskUserRuntime transcript reconciliation (finding: transition+transcri
       expect(events).toEqual([
         expect.objectContaining({ type: "reconciled", questionId: "q1", sessionId: "s1", status: "answered", synthetic: true }),
       ])
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("recovers a later terminal transition even when an earlier reconciled event exists for a different, prior status (finding 4)", async () => {
+    const store = await makeStore()
+    // abandoned -> restored -> answered, with only the "abandoned" audit
+    // event and a stale synthetic "reconciled" event from an earlier
+    // reconciliation pass (when the question really was abandoned). The
+    // paired "answered" audit-event write is missing -- a crash between the
+    // state transition and the transcript write.
+    await store.createPending(makeQuestion({ questionId: "q1", sessionId: "s1", status: "abandoned" }))
+    await store.appendTranscriptEvent({ type: "abandoned", questionId: "q1", sessionId: "s1", at: new Date(0).toISOString() })
+    await store.appendTranscriptEvent({ type: "reconciled", questionId: "q1", sessionId: "s1", status: "abandoned", synthetic: true, at: new Date(1).toISOString() })
+
+    await store.restoreAbandoned("q1")
+    await store.answer("q1", { questionId: "q1", sessionId: "s1", values: { a: "ok" }, submittedAt: new Date(2).toISOString() })
+
+    const runtime = new AskUserRuntime({ store })
+    const { synthesized } = await runtime.reconcileTranscripts()
+    expect(synthesized).toEqual(["q1"])
+
+    const events = await store.getTranscriptEventsForQuestion("q1")
+    // A fresh reconciled event for the current ("answered") status was
+    // synthesized -- the stale abandoned-status one did not suppress it.
+    expect(events).toContainEqual(expect.objectContaining({ type: "reconciled", status: "answered", synthetic: true }))
+    expect(events).toContainEqual(expect.objectContaining({ type: "reconciled", status: "abandoned", synthetic: true }))
+
+    // Idempotent: running again does not add a second "answered" reconciled event.
+    await expect(runtime.reconcileTranscripts()).resolves.toEqual({ synthesized: [] })
+    expect((await store.getTranscriptEventsForQuestion("q1")).filter((e) => e.type === "reconciled")).toHaveLength(2)
+  })
+
+  it("running reconcileTranscripts concurrently across two store instances sharing a file produces exactly one synthetic event (finding 5: atomic check-and-append)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "ask-user-reconcile-race-"))
+    const filePath = join(dir, "ask-user.json")
+    try {
+      const seeder = new FileAskUserStore(filePath)
+      await seeder.createPending(makeQuestion({ questionId: "q1", sessionId: "s1", status: "answered" }))
+
+      // Two independent store instances over the same file, as two racing
+      // processes/reconciliation triggers would use -- neither shares the
+      // other's in-memory cache or write-serialization queue, so only the
+      // store's on-disk lock/CAS can prevent a duplicate.
+      const runtimeA = new AskUserRuntime({ store: new FileAskUserStore(filePath) })
+      const runtimeB = new AskUserRuntime({ store: new FileAskUserStore(filePath) })
+
+      const [resultA, resultB] = await Promise.all([runtimeA.reconcileTranscripts(), runtimeB.reconcileTranscripts()])
+      expect(resultA.synthesized.length + resultB.synthesized.length).toBe(1)
+
+      const verifier = new FileAskUserStore(filePath)
+      const events = await verifier.getTranscriptEventsForQuestion("q1")
+      expect(events.filter((e) => e.type === "reconciled")).toHaveLength(1)
     } finally {
       await rm(dir, { recursive: true, force: true })
     }
