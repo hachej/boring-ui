@@ -1,13 +1,27 @@
 import { mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { randomUUID } from "node:crypto"
+import type { ZodError } from "zod"
 import { ASK_USER_ERROR_CODES } from "../shared/error-codes"
+import { AskUserAnswerSchema, AskUserQuestionSchema, AskUserTranscriptEventSchema } from "../shared/schema"
 import type {
   AskUserAnswer,
   AskUserDecisionRecord,
   AskUserQuestion,
   AskUserTranscriptEvent,
 } from "../shared/types"
+
+/**
+ * Emitted when `FileAskUserStore` skips a record on load instead of
+ * crashing (finding 5): a corrupt or hand-edited store file loses only the
+ * invalid record, and the caller is told so via `onDiagnostic` rather than
+ * the failure being silent.
+ */
+export type AskUserStoreDiagnosticEvent =
+  | { type: "invalid-record"; kind: "question" | "answer" | "transcriptEvent"; id: string; issues: string }
+  | { type: "invalid-state"; issues: string }
+
+export type AskUserStoreDiagnosticListener = (event: AskUserStoreDiagnosticEvent) => void
 
 export class AskUserStoreError extends Error {
   constructor(
@@ -108,9 +122,14 @@ export class FileAskUserStore implements AskUserStore {
   private writeChain = Promise.resolve()
   private readonly listeners = new Set<AskUserStoreListener>()
   private readonly now: () => Date
+  private readonly onDiagnostic?: AskUserStoreDiagnosticListener
 
-  constructor(private readonly filePath: string, options: { now?: () => Date } = {}) {
+  constructor(
+    private readonly filePath: string,
+    options: { now?: () => Date; onDiagnostic?: AskUserStoreDiagnosticListener } = {},
+  ) {
     this.now = options.now ?? (() => new Date())
+    this.onDiagnostic = options.onDiagnostic
   }
 
   async getPending(sessionId: string): Promise<AskUserQuestion | null> {
@@ -318,11 +337,80 @@ export class FileAskUserStore implements AskUserStore {
   private async readFromDisk(): Promise<StoredAskUserState> {
     try {
       const raw = await readFile(this.filePath, "utf8")
-      const parsed = JSON.parse(raw) as unknown
-      return normalizeStoredState(parsed)
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(raw)
+      } catch (error) {
+        this.reportDiagnostic({ type: "invalid-state", issues: `invalid JSON: ${(error as Error).message}` })
+        return emptyState()
+      }
+      return this.validateStoredState(parsed)
     } catch (error) {
       if ((error as { code?: string }).code !== "ENOENT") throw error
       return emptyState()
+    }
+  }
+
+  /**
+   * Validates the raw parsed file record-by-record with zod (finding 5)
+   * instead of casting it directly into internal state. Also migrates the
+   * pre-versioning legacy shape (no `version`/`revision` fields) by
+   * stamping defaults. An invalid individual question/answer/transcript
+   * event is skipped and reported via `onDiagnostic`; it never crashes the
+   * load or corrupts the rest of the state.
+   */
+  private validateStoredState(raw: unknown): StoredAskUserState {
+    if (!isRecord(raw)) {
+      this.reportDiagnostic({ type: "invalid-state", issues: "stored state is not an object" })
+      return emptyState()
+    }
+
+    const revision = typeof raw.revision === "number" && Number.isInteger(raw.revision) ? raw.revision : 0
+
+    const questions: StoredAskUserState["questions"] = {}
+    for (const [id, value] of Object.entries(isRecord(raw.questions) ? raw.questions : {})) {
+      const parsed = AskUserQuestionSchema.safeParse(value)
+      if (parsed.success) questions[id] = parsed.data as AskUserQuestion
+      else this.reportDiagnostic({ type: "invalid-record", kind: "question", id, issues: summarizeIssues(parsed.error) })
+    }
+
+    const answers: StoredAskUserState["answers"] = {}
+    for (const [id, value] of Object.entries(isRecord(raw.answers) ? raw.answers : {})) {
+      const parsed = AskUserAnswerSchema.safeParse(value)
+      if (parsed.success) answers[id] = parsed.data as AskUserAnswer
+      else this.reportDiagnostic({ type: "invalid-record", kind: "answer", id, issues: summarizeIssues(parsed.error) })
+    }
+
+    const transcriptsBySession: StoredAskUserState["transcriptsBySession"] = {}
+    for (const [sessionId, events] of Object.entries(isRecord(raw.transcriptsBySession) ? raw.transcriptsBySession : {})) {
+      if (!Array.isArray(events)) {
+        this.reportDiagnostic({ type: "invalid-record", kind: "transcriptEvent", id: sessionId, issues: "session transcript is not an array" })
+        continue
+      }
+      const valid: AskUserTranscriptEvent[] = []
+      events.forEach((event, index) => {
+        const parsed = AskUserTranscriptEventSchema.safeParse(event)
+        if (parsed.success) valid.push(parsed.data as AskUserTranscriptEvent)
+        else this.reportDiagnostic({ type: "invalid-record", kind: "transcriptEvent", id: `${sessionId}[${index}]`, issues: summarizeIssues(parsed.error) })
+      })
+      transcriptsBySession[sessionId] = valid
+    }
+
+    // Dangling pendingBySession entries (pointing at a skipped/missing
+    // question) are dropped rather than surfaced as pending.
+    const pendingBySession: StoredAskUserState["pendingBySession"] = {}
+    for (const [sessionId, questionId] of Object.entries(isRecord(raw.pendingBySession) ? raw.pendingBySession : {})) {
+      if (typeof questionId === "string" && questions[questionId]) pendingBySession[sessionId] = questionId
+    }
+
+    return { version: STORED_ASK_USER_STATE_VERSION, revision, questions, pendingBySession, answers, transcriptsBySession }
+  }
+
+  private reportDiagnostic(event: AskUserStoreDiagnosticEvent): void {
+    try {
+      this.onDiagnostic?.(event)
+    } catch {
+      // Diagnostics must never break loading.
     }
   }
 
@@ -421,25 +509,12 @@ function transcriptQuestionId(event: AskUserTranscriptEvent): string {
   }
 }
 
-/**
- * Accepts both the current versioned envelope and pre-versioning legacy
- * files (no `version`/`revision` fields), stamping sensible defaults so old
- * stores keep loading. Record-level validation is layered on in finding 5.
- */
-function normalizeStoredState(raw: unknown): StoredAskUserState {
-  const obj = raw && typeof raw === "object" ? (raw as Partial<StoredAskUserState>) : {}
-  return {
-    version: STORED_ASK_USER_STATE_VERSION,
-    revision: typeof obj.revision === "number" && Number.isInteger(obj.revision) ? obj.revision : 0,
-    questions: isRecord(obj.questions) ? (obj.questions as StoredAskUserState["questions"]) : {},
-    pendingBySession: isRecord(obj.pendingBySession) ? (obj.pendingBySession as StoredAskUserState["pendingBySession"]) : {},
-    answers: isRecord(obj.answers) ? (obj.answers as StoredAskUserState["answers"]) : {},
-    transcriptsBySession: isRecord(obj.transcriptsBySession) ? (obj.transcriptsBySession as StoredAskUserState["transcriptsBySession"]) : {},
-  }
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value)
+}
+
+function summarizeIssues(error: ZodError): string {
+  return error.issues.map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`).join("; ")
 }
 
 function nowIso(): string {

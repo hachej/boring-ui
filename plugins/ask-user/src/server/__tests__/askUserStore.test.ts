@@ -295,6 +295,79 @@ describe("FileAskUserStore", () => {
     expect(raw.transcriptsBySession.sb).toHaveLength(1)
   })
 
+  it("skips a corrupt record on load and surfaces it via diagnostics instead of crashing (finding 5)", async () => {
+    const filePath = join(dir, "ask-user.json")
+    const corruptState = {
+      version: 1,
+      revision: 3,
+      questions: {
+        q1: question({ questionId: "q1" }),
+        // Missing required fields entirely — corrupt/hand-edited record.
+        broken: { questionId: "broken" },
+      },
+      pendingBySession: { s1: "q1" },
+      answers: {},
+      transcriptsBySession: {},
+    }
+    await mkdir(dir, { recursive: true })
+    await writeFile(filePath, JSON.stringify(corruptState, null, 2), "utf8")
+
+    const diagnostics: Array<{ type: string; kind?: string; id?: string }> = []
+    const loaded = new FileAskUserStore(filePath, { onDiagnostic: (event) => diagnostics.push(event) })
+
+    // The valid record still loads and is usable.
+    await expect(loaded.getByQuestionId("q1")).resolves.toMatchObject({ status: "ready" })
+    await expect(loaded.getPending("s1")).resolves.toMatchObject({ questionId: "q1" })
+    // The corrupt record is skipped, not thrown.
+    await expect(loaded.getByQuestionId("broken")).resolves.toBeNull()
+
+    expect(diagnostics).toContainEqual(expect.objectContaining({ type: "invalid-record", kind: "question", id: "broken" }))
+  })
+
+  it("skips a legacy record with an invalid riskTier instead of crashing (finding 5)", async () => {
+    const filePath = join(dir, "ask-user.json")
+    const legacyState = {
+      // No version/revision: pre-versioning legacy shape.
+      questions: {
+        q1: question({ questionId: "q1" }),
+        q2: question({ questionId: "q2", sessionId: "s2", riskTier: "not-a-real-tier" as never }),
+      },
+      pendingBySession: { s1: "q1", s2: "q2" },
+      answers: {},
+      transcriptsBySession: {},
+    }
+    await mkdir(dir, { recursive: true })
+    await writeFile(filePath, JSON.stringify(legacyState, null, 2), "utf8")
+
+    const diagnostics: Array<{ type: string; kind?: string; id?: string }> = []
+    const loaded = new FileAskUserStore(filePath, { onDiagnostic: (event) => diagnostics.push(event) })
+
+    await expect(loaded.getByQuestionId("q1")).resolves.toMatchObject({ status: "ready" })
+    await expect(loaded.getByQuestionId("q2")).resolves.toBeNull()
+    await expect(loaded.getPending("s2")).resolves.toBeNull()
+    expect(diagnostics).toContainEqual(expect.objectContaining({ type: "invalid-record", kind: "question", id: "q2" }))
+  })
+
+  it("migrates a pre-versioning legacy file (no version/revision) and can still write to it", async () => {
+    const filePath = join(dir, "ask-user.json")
+    const legacyState = {
+      questions: { q1: question({ questionId: "q1" }) },
+      pendingBySession: { s1: "q1" },
+      answers: {},
+      transcriptsBySession: {},
+    }
+    await mkdir(dir, { recursive: true })
+    await writeFile(filePath, JSON.stringify(legacyState, null, 2), "utf8")
+
+    const migrated = new FileAskUserStore(filePath)
+    await migrated.answer("q1", { questionId: "q1", sessionId: "s1", values: { a: "ok" }, submittedAt: new Date().toISOString() })
+
+    const raw = JSON.parse(await readFile(filePath, "utf8"))
+    expect(raw.version).toBe(1)
+    expect(typeof raw.revision).toBe("number")
+    expect(raw.questions.q1.status).toBe("answered")
+  })
+
   it("appends, lists, filters, and persists transcript events", async () => {
     await store.createPending(question())
     await store.appendTranscriptEvent({ type: "created", question: question(), at: new Date(0).toISOString() })

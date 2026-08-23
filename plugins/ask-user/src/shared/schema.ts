@@ -1,7 +1,9 @@
 import { HumanArtifactListSchema } from "@hachej/boring-workspace/shared"
 import { z } from "zod"
 import {
+  ASK_USER_CANCEL_REASONS,
   ASK_USER_FIELD_NAME_PATTERN,
+  ASK_USER_QUESTION_STATUSES,
   ASK_USER_RESERVED_FIELD_NAMES,
   ASK_USER_SCHEMA_LIMITS,
   ASK_USER_COMMAND_KINDS,
@@ -275,6 +277,51 @@ export const AskUserAnswerSchema = z
     resolvedBy: z.string().min(1).optional(),
   })
   .strict()
+
+// --- Persisted-record schemas (finding 5: load-time validation) ---
+// These validate individual stored records (a question, an answer, a
+// transcript event) so a corrupt or hand-edited store file can be skipped
+// record-by-record on load instead of crashing the process or silently
+// serving malformed data through unchecked casts.
+
+export const AskUserQuestionStatusSchema = z.enum(ASK_USER_QUESTION_STATUSES)
+export const AskUserCancelReasonSchema = z.enum(ASK_USER_CANCEL_REASONS)
+
+export const AskUserQuestionSchema = z
+  .object({
+    questionId: z.string().min(1),
+    sessionId: z.string().min(1),
+    toolCallId: z.string().min(1).optional(),
+    ownerPrincipalId: z.string().min(1),
+    status: AskUserQuestionStatusSchema,
+    title: optionalBoundedString(ASK_USER_SCHEMA_LIMITS.maxTitleLength),
+    context: optionalBoundedString(ASK_USER_SCHEMA_LIMITS.maxContextLength),
+    schema: AskUserFormSchemaSchema.optional(),
+    artifacts: HumanArtifactListSchema,
+    answerToken: z.string().min(1),
+    createdAt: isoStringSchema,
+    updatedAt: isoStringSchema,
+    riskTier: askUserRiskTierSchema,
+    expiresAt: isoStringSchema.optional(),
+  })
+  .strict()
+
+export const AskUserTranscriptEventSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("created"), question: AskUserQuestionSchema, at: isoStringSchema }).strict(),
+  z.object({ type: z.literal("ready"), questionId: z.string().min(1), sessionId: z.string().min(1), schema: AskUserFormSchemaSchema, at: isoStringSchema }).strict(),
+  z.object({ type: z.literal("answered"), answer: AskUserAnswerSchema, at: isoStringSchema }).strict(),
+  z
+    .object({
+      type: z.literal("cancelled"),
+      questionId: z.string().min(1),
+      sessionId: z.string().min(1),
+      reason: AskUserCancelReasonSchema,
+      at: isoStringSchema,
+    })
+    .strict(),
+  z.object({ type: z.literal("abandoned"), questionId: z.string().min(1), sessionId: z.string().min(1), at: isoStringSchema }).strict(),
+  z.object({ type: z.literal("restored"), questionId: z.string().min(1), sessionId: z.string().min(1), at: isoStringSchema }).strict(),
+])
 
 const commandParamsBase = {
   questionId: z.string().min(1),
