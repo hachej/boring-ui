@@ -6,11 +6,11 @@ vi.mock("@boring/agent/server", () => ({}))
 
 import Fastify from "fastify"
 import { existsSync } from "node:fs"
-import { mkdtemp } from "node:fs/promises"
+import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import type { AskUserStore } from "../askUserStore"
+import { FileAskUserStore, type AskUserStore } from "../askUserStore"
 import { AskUserRuntime } from "../askUserRuntime"
 import { createAskUserTool } from "../createAskUserTool"
 import { createAskUserServerPlugin } from "../askUserServerPlugin"
@@ -211,6 +211,55 @@ describe("createAskUserServerPlugin", () => {
     } finally {
       await app.close()
       bridgeSpy.mockRestore()
+    }
+  })
+
+  it("keeps persisted gates ready and answerable across a real restart with separate FileAskUserStore instances (finding 4)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "ask-user-plugin-restart-"))
+    const filePath = join(dir, "ask-user.json")
+    try {
+      // Process A: creates the durable gate via its own store/runtime.
+      const storeA = new FileAskUserStore(filePath)
+      const runtimeA = new AskUserRuntime({ store: storeA })
+      const pendingResult = runtimeA.ask({ sessionId: "orphan-session", title: "Durable gate", schema })
+      const pending = await waitForPendingQuestion(storeA, "orphan-session")
+
+      // Process B: fresh store + runtime + plugin lifecycle attached to the
+      // same file, as after a hub restart.
+      const storeB = new FileAskUserStore(filePath)
+      const restartedRuntime = new AskUserRuntime({ store: storeB })
+      const plugin = createAskUserServerPlugin({ store: storeB, runtime: restartedRuntime })
+      const liveBridge = bridge()
+      const bridgeSpy = vi.spyOn(workspacePlugin, "getWorkspaceUiBridge").mockReturnValue(liveBridge)
+      const app = Fastify()
+      try {
+        await app.register(plugin.routes!)
+        await app.ready()
+
+        await expect(storeB.getPending("orphan-session")).resolves.toMatchObject({ questionId: pending.questionId, status: "ready" })
+        await vi.waitFor(async () => expect((await liveBridge.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toMatchObject({
+          hint: { questionId: pending.questionId, sessionId: "orphan-session", status: "ready" },
+        }))
+
+        await expect(restartedRuntime.submitAnswer(pending.questionId, "orphan-session", { answer: "approved" })).resolves.toBe("answered")
+
+        // Process C: a third independent instance reopening the file sees
+        // the durable truth, including the transcript.
+        const storeC = new FileAskUserStore(filePath)
+        await expect(storeC.getByQuestionId(pending.questionId)).resolves.toMatchObject({ status: "answered", title: "Durable gate" })
+        const events = await storeC.getTranscriptEventsForQuestion(pending.questionId)
+        expect(events.filter((event) => event.type === "answered")).toHaveLength(1)
+
+        // Process A's own blocking call never comes back; settle it so the
+        // test doesn't leak a pending promise.
+        runtimeA.coordinator.resolveCancelled(pending.questionId, "abandoned")
+        await expect(pendingResult).resolves.toMatchObject({ status: "cancelled" })
+      } finally {
+        await app.close()
+        bridgeSpy.mockRestore()
+      }
+    } finally {
+      await rm(dir, { recursive: true, force: true })
     }
   })
 

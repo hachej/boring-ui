@@ -1,9 +1,12 @@
 // @vitest-environment node
 
+import { mkdtemp, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { describe, expect, it, vi } from "vitest"
 import { ASK_USER_ERROR_CODES } from "../../shared/error-codes"
 import type { AskUserFormSchema, AskUserQuestion } from "../../shared/types"
-import type { AskUserStore } from "../askUserStore"
+import { FileAskUserStore, type AskUserStore } from "../askUserStore"
 import type { UiBridge, UiCommand, UiState } from "@hachej/boring-workspace/server"
 import { AskUserRuntime, InProcessAskUserCoordinator, requireAskUserRuntime } from "../askUserRuntime"
 import { MemoryAskUserStore } from "./testAskUserStore"
@@ -419,6 +422,49 @@ describe("AskUserRuntime", () => {
     await expect(store.getByQuestionId("race-q")).resolves.toMatchObject({ status: "answered" })
   })
 
+})
+
+describe("AskUserRuntime real restart path (finding 4)", () => {
+  it("store A creates, a fresh store B answers, and a fresh store C reopens and verifies durable state + transcript", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "ask-user-restart-"))
+    const filePath = join(dir, "ask-user.json")
+    try {
+      // Process A: creates the question and is blocked inside ask().
+      const storeA = new FileAskUserStore(filePath)
+      const runtimeA = new AskUserRuntime({ store: storeA })
+      const controller = new AbortController()
+      const pendingResult = runtimeA.ask({ sessionId: "s1", title: "Durable gate", schema, timeoutMs: 60_000 }, controller.signal)
+      const question = await pendingQuestion(storeA, "s1")
+      await waitForRuntimeWaiter(runtimeA, question.questionId)
+
+      // Process A "dies": storeA/runtimeA are never touched again. Its
+      // blocking ask() call never resolves in this test; that's realistic
+      // for a killed process and irrelevant to the durable truth on disk.
+      pendingResult.catch(() => undefined)
+
+      // Process B: a brand-new FileAskUserStore + AskUserRuntime instance
+      // backed by the same file, with no in-memory waiter for this question.
+      const storeB = new FileAskUserStore(filePath)
+      const runtimeB = new AskUserRuntime({ store: storeB })
+      await expect(runtimeB.submitAnswer(question.questionId, "s1", { answer: "approved" }, "user:owner")).resolves.toBe("answered")
+
+      // Process C: a third, independent instance reopening the same file
+      // must see the durable truth, not anything held in memory by A or B.
+      const storeC = new FileAskUserStore(filePath)
+      await expect(storeC.getByQuestionId(question.questionId)).resolves.toMatchObject({ status: "answered" })
+      await expect(storeC.getAnswer(question.questionId)).resolves.toMatchObject({
+        values: { answer: "approved" },
+        resolvedBy: "user:owner",
+      })
+      const events = await storeC.getTranscriptEventsForQuestion(question.questionId)
+      expect(events.map((event) => event.type)).toEqual(expect.arrayContaining(["created", "ready", "answered"]))
+      expect(events.filter((event) => event.type === "answered")).toHaveLength(1)
+
+      controller.abort()
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
 })
 
 describe("AskUserRuntime expiry (finding 1)", () => {

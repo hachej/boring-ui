@@ -20,7 +20,8 @@ afterEach(() => {
 
 async function fixture() {
   const dir = await mkdtemp(join(tmpdir(), "ask-user-routes-"))
-  const store = new FileAskUserStore(join(dir, "questions.json"))
+  const filePath = join(dir, "questions.json")
+  const store = new FileAskUserStore(filePath)
   const runtime = new AskUserRuntime({ store, ownerPrincipalId: "p1" })
   const controller = new AbortController()
   controllers.push(controller)
@@ -33,7 +34,7 @@ async function fixture() {
   await vi.waitFor(() => {
     expect(runtime.coordinator.hasWaiter(question.questionId)).toBe(true)
   }, { timeout: 15_000 })
-  return { store, runtime, question, result }
+  return { store, runtime, question, result, filePath }
 }
 
 describe("QuestionsBridge", () => {
@@ -76,6 +77,31 @@ describe("QuestionsBridge", () => {
     await expect(store.getByQuestionId(question.questionId)).resolves.toMatchObject({ status: "answered" })
     // The original blocking ask call died with the old process; settle it.
     result.catch(() => undefined)
+  }, 15_000)
+
+  it("answers through a real restart: fresh store B answers, fresh store C reopens and verifies (finding 4)", async () => {
+    const { question, result, filePath } = await fixture()
+    // The original store/runtime (process A) is never touched again; its
+    // blocking ask() call died with the old process.
+    result.catch(() => undefined)
+
+    // Process B: a brand-new FileAskUserStore + runtime + bridge backed by
+    // the same file, with no in-memory waiter for this question.
+    const storeB = new FileAskUserStore(filePath)
+    const runtimeB = new AskUserRuntime({ store: storeB, ownerPrincipalId: "p1" })
+    const bridgeB = new QuestionsBridge({ store: storeB, runtime: runtimeB, getAuthContext: () => ({ sessionId: "s1", principalId: "p1" }) })
+    await expect(bridgeB.handle({
+      kind: "questions.submit",
+      params: { questionId: question.questionId, sessionId: "s1", answerToken: question.answerToken, values: { answer: "restarted" } },
+    })).resolves.toEqual({ ok: true, status: "answered" })
+
+    // Process C: a third, independent instance reopening the file sees the
+    // durable truth: state and a real transcript, not anything in memory.
+    const storeC = new FileAskUserStore(filePath)
+    await expect(storeC.getByQuestionId(question.questionId)).resolves.toMatchObject({ status: "answered" })
+    await expect(storeC.getAnswer(question.questionId)).resolves.toMatchObject({ values: { answer: "restarted" } })
+    const events = await storeC.getTranscriptEventsForQuestion(question.questionId)
+    expect(events.filter((event) => event.type === "answered")).toHaveLength(1)
   }, 15_000)
 
   it("records the authenticated principal as resolvedBy on the decision record", async () => {
