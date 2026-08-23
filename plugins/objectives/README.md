@@ -41,25 +41,53 @@ interface Objective {
 - **Durable, single-writer-safe store** — `FileObjectiveStore` persists
   Objectives at `<workspaceRoot>/.boring/objectives.json` as a versioned,
   revisioned document (`{ version: 1, revision, objectives: [...] }`).
-  Every mutation rereads the file, applies the change to a draft, then
-  re-reads once more immediately before committing to confirm no other
-  writer advanced the revision in between; a mismatch fails the mutation
-  loudly instead of silently clobbering the newer write. Writes go through
-  a cloned draft written atomically (tmp + rename) — there is no in-memory
-  cache for `list`/`get` to observe ahead of a successful commit, so a
-  failed write leaves nothing observable. Records loaded from disk are
-  validated against `ObjectiveSchema` per-record; invalid records are
-  skipped and reported via `getLoadDiagnostics()` rather than crashing
-  consumers, and a legacy unversioned `{ objectives: Record<id, Objective> }`
-  file migrates to the versioned shape on first write. In-memory keying uses
-  a `Map`, and ids are restricted to a canonical server-generated pattern
-  (`/^[a-z0-9][a-z0-9-]{0,62}$/`), so a stored `__proto__`-keyed record can't
-  reach `Object.prototype`.
+
+  **Concurrency contract: single live writer + safe restart overlap, not
+  N-writer serializability.** This file is owned by exactly one workspace
+  server process at a time. The store still has to survive a *restart*
+  overlap — an old process still finishing a write while its replacement
+  starts up — and multiple `FileObjectiveStore` instances constructed
+  in-process. Both are handled by an owner-token lock file
+  (`<path>.lock`, holding `{ pid, token, timestamp }`), acquired via
+  exclusive-create (`open(path, "wx")`) before every mutation:
+  - The pre-commit revision recheck happens *inside* the held lock, so two
+    writers can never both observe a matching revision and both commit —
+    the second blocks on lock acquisition until the first's commit and
+    release complete, then re-reads the now-current revision.
+  - Release deletes the lock file only if it still contains the releasing
+    writer's own token, so a writer whose stale lock was reclaimed by
+    someone else can never delete the reclaimer's replacement lock.
+  - A lock is reclaimed only once clearly stale (30s, generous for a local
+    JSON-file write) — the safe-restart-overlap escape hatch for a holder
+    that crashed without releasing. Lock acquisition itself times out
+    (5s) rather than hanging forever behind a wedged lock.
+
+  Every mutation also rereads the file fresh (never a cached copy) and
+  writes through a cloned draft, atomically (tmp + rename) — there is no
+  in-memory cache for `list`/`get` to observe ahead of a successful
+  commit, so a failed write leaves nothing observable. Records loaded
+  from disk are validated against `ObjectiveSchema` per-record; invalid
+  records (including ids that predate the canonical format, see below)
+  are skipped and reported via `getLoadDiagnostics()` rather than
+  crashing consumers, and a legacy unversioned
+  `{ objectives: Record<id, Objective> }` file migrates to the versioned
+  shape on first write. In-memory keying uses a `Map`, and ids are
+  restricted to the canonical server-generated `obj-<uuid>` pattern
+  (enforced on load, not just on generation), so a stored `__proto__`-
+  keyed record can't reach `Object.prototype`.
 - **Workspace trust boundary** — every read/write re-resolves the `.boring`
   directory with a realpath containment check
-  (`src/server/pathSafety.ts#ensureContainedDir`) and rejects if the
-  resolved path escapes `workspaceRoot`, including a workspace-controlled
-  symlink swapped in after the store was constructed.
+  (`src/server/pathSafety.ts#ensureContainedDir`), and separately lstats the
+  resolved `objectives.json` path itself
+  (`src/server/pathSafety.ts#assertFileNotSymlink`) since the store file is
+  one path segment deeper than the directory check covers. Both checks
+  reject if the resolved path escapes `workspaceRoot`, including a
+  workspace-controlled symlink swapped in after the store was constructed.
+  For mutations, both checks are re-run a second time *after* the write
+  lock is acquired, narrowing (not eliminating) the gap between "path
+  verified safe" and "path actually read/written" to inside the lock; the
+  residual TOCTOU window — keying the lock file's own path off an earlier,
+  unlocked resolution — is documented in `objectiveStore.ts`'s `mutate()`.
 - **Bridge ops** — `objective.v1.{list,get,create,update}`, registered as
   trusted WorkspaceBridge handlers. `list`/`get` allow browser/runtime/server
   callers (the pane only ever calls `get`). `create`/`update` allow only

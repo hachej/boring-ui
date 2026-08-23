@@ -135,36 +135,70 @@ describe("FileObjectiveStore", () => {
     })
   })
 
-  describe("single-writer revision safety", () => {
-    it("refuses to clobber a newer revision committed by another store instance", async () => {
+  describe("single-writer lock: mutual exclusion and safe restart overlap", () => {
+    it("blocks a second writer while the first holds the lock, then commits exactly once after release", async () => {
       const path = join(dir, "objectives.json")
       const storeA = new FileObjectiveStore(path)
       const storeB = new FileObjectiveStore(path)
       const seeded = await storeA.create(input({ title: "Seed" }))
 
-      let readCount = 0
-      const mockedReadFile = vi.mocked(readFile)
-      const defaultImpl = mockedReadFile.getMockImplementation()!
-      mockedReadFile.mockImplementation(async (...args: Parameters<typeof readFile>) => {
-        readCount += 1
-        // storeB.update performs two reads: an initial load, then a
-        // pre-commit recheck. Let storeA fully commit a concurrent update
-        // in between those two reads, so storeB's recheck observes a
-        // revision it didn't start from.
-        if (readCount === 2) {
-          await storeA.update({ id: seeded.id, current: 500 })
-        }
-        return defaultImpl(...args)
-      })
+      const lockPath = `${path}.lock`
+      // Simulate a concurrent writer (e.g. the predecessor process during a
+      // restart-overlap window) holding the lock mid-commit.
+      await writeFile(lockPath, JSON.stringify({ pid: 999_999, token: "external-writer", timestamp: Date.now() }), "utf8")
 
-      await expect(storeB.update({ id: seeded.id, current: 1 })).rejects.toMatchObject({
-        code: OBJECTIVE_ERROR_CODES.REVISION_CONFLICT,
-      })
-      mockedReadFile.mockImplementation(defaultImpl)
+      const updatePromise = storeB.update({ id: seeded.id, current: 42 })
 
-      // storeA's concurrent update won; storeB's was correctly refused, not silently lost.
-      await expect(storeA.get(seeded.id)).resolves.toMatchObject({ current: 500 })
+      // storeB's entire read-check-write sequence is gated behind the
+      // lock, so while the external lock stands, it must not have
+      // reached the recheck/commit — the revision on disk stays put.
+      await new Promise((resolve) => setTimeout(resolve, 80))
+      const midRaw = JSON.parse(await readFile(path, "utf8"))
+      expect(midRaw.revision).toBe(1)
+
+      // Release the external lock ("writer A" finishes); storeB should now
+      // acquire it, recheck the (unchanged) revision inside the lock, and
+      // commit exactly once — not double-commit, not lose the update.
+      await rm(lockPath, { force: true })
+      await expect(updatePromise).resolves.toMatchObject({ current: 42 })
+
+      const finalRaw = JSON.parse(await readFile(path, "utf8"))
+      expect(finalRaw.revision).toBe(2)
     })
+
+    it("serializes two genuinely concurrent store instances so neither commit is lost", async () => {
+      const path = join(dir, "objectives.json")
+      const storeA = new FileObjectiveStore(path)
+      const storeB = new FileObjectiveStore(path)
+      const seeded = await storeA.create(input({ title: "Seed" }))
+
+      await Promise.all([
+        storeA.update({ id: seeded.id, current: 10 }),
+        storeB.update({ id: seeded.id, current: 20 }),
+      ])
+
+      // Both updates committed (in some order) — the lock serialized them
+      // instead of one instance's recheck racing the other's rename.
+      const raw = JSON.parse(await readFile(path, "utf8"))
+      expect(raw.revision).toBe(3) // 1 create + 2 serialized updates
+    })
+
+    it("times out with a clear error rather than hanging forever behind an unreleasable lock", async () => {
+      const path = join(dir, "objectives.json")
+      const store2 = new FileObjectiveStore(path)
+      const seeded = await store2.create(input({ title: "Seed" }))
+
+      const lockPath = `${path}.lock`
+      // A lock that is neither stale nor ever released (no crash to
+      // detect) must still bound how long a caller waits.
+      await writeFile(lockPath, JSON.stringify({ pid: 999_999, token: "wedged", timestamp: Date.now() }), "utf8")
+
+      await expect(store2.update({ id: seeded.id, current: 1 })).rejects.toMatchObject({
+        code: OBJECTIVE_ERROR_CODES.LOCK_TIMEOUT,
+      })
+
+      await rm(lockPath, { force: true })
+    }, 10_000)
   })
 
   describe("path containment", () => {

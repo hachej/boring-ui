@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
+import { mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { basename, dirname, join } from "node:path"
 import { randomUUID } from "node:crypto"
 import { OBJECTIVE_ERROR_CODES } from "../shared/error-codes"
@@ -32,6 +32,16 @@ export interface ObjectiveStore {
 
 type OnDiskState = { version: 1; revision: number; objectives: unknown[] }
 type LoadedState = { revision: number; objectives: Map<string, Objective> }
+
+/** How long to poll for the write lock before giving up (see `mutate()`). */
+const LOCK_ACQUIRE_TIMEOUT_MS = 5_000
+const LOCK_POLL_INTERVAL_MS = 25
+/** How old an unreleased lock must be before it's treated as crash-abandoned. */
+const LOCK_STALE_MS = 30_000
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
 
 export interface FileObjectiveStoreOptions {
   /**
@@ -139,41 +149,143 @@ export class FileObjectiveStore implements ObjectiveStore {
   }
 
   /**
-   * Reread-before-mutate + revision CAS: every mutation loads the current
-   * on-disk state fresh (never a cached copy), applies `fn` to a draft, and
-   * — immediately before committing — re-reads the file to confirm no other
-   * writer advanced the revision in the meantime. A mismatch means another
-   * writer committed first; this mutation refuses to clobber it and fails
-   * loudly instead (last-writer-loses with an error, not a silent
-   * overwrite). Persistence happens via a cloned draft written to disk
-   * first; there is no in-memory cache for `list`/`get` to observe ahead of
-   * a successful commit, so a failed write leaves nothing observable.
+   * Reread-before-mutate + revision CAS, serialized by an owner-token lock
+   * file. This store's concurrency contract is single live writer + safe
+   * restart overlap — one workspace server process owns this file — not
+   * N-writer serializability. `writeChain` alone only serializes mutations
+   * within *this* `FileObjectiveStore` instance; it does nothing for a
+   * second instance (a restarted process whose predecessor hasn't fully
+   * exited, or a second store constructed in-process) racing the same file.
+   * The lock file closes that gap: it is acquired before the read-check-
+   * write sequence begins, and the pre-commit revision recheck happens
+   * *inside* the held lock, so two writers can never both observe a
+   * matching revision and both commit — one blocks on lock acquisition
+   * until the other's commit (and release) completes, then re-reads the
+   * now-current revision.
+   *
+   * The lock file holds `{ pid, token, timestamp }`. `token` (not pid,
+   * which can be reused by an unrelated process, and not mere existence,
+   * which a reclaimer could recreate) is the source of truth for
+   * ownership: release only removes the lock file if it still contains our
+   * own token, so a holder that had its stale lock reclaimed by someone
+   * else never deletes the reclaimer's replacement lock out from under it.
+   * Reclamation itself is age-based (`LOCK_STALE_MS`, generous relative to
+   * a local JSON-file write) and exists only for the safe-restart-overlap
+   * case — a crashed process's lock must not wedge every future writer
+   * forever.
    */
   private async mutate(fn: (objectives: Map<string, Objective>) => boolean | void): Promise<void> {
     const run = this.writeChain.then(async () => {
-      const filePath = await this.resolveFilePath()
-      const before = await this.readOnDiskAt(filePath)
-      const draft = new Map(before.objectives)
-      const shouldWrite = fn(draft) !== false
-      if (!shouldWrite) return
+      // Resolved once, unlocked, purely to learn where the lock file lives.
+      // Re-resolved (see below) once the lock is held, so this pre-lock
+      // resolution is not relied on for the actual read/write. Residual
+      // TOCTOU: if the .boring directory is swapped by a symlink in the
+      // narrow gap between this resolve and acquireLock() below, two
+      // concurrent mutations could in principle key their locks off
+      // different resolved directories and fail to serialize against each
+      // other for that one race. Closing that fully would require locking
+      // on something that predates any possible swap (e.g. an already-open
+      // directory handle), which this plain JSON-file store does not
+      // attempt — documented here rather than silently assumed away.
+      const preLockPath = await this.resolveFilePath()
+      const lockPath = `${preLockPath}.lock`
+      const token = randomUUID()
 
-      const recheck = await this.readOnDiskAt(filePath)
-      if (recheck.revision !== before.revision) {
+      if (!(await this.acquireLock(lockPath, token))) {
         throw new ObjectiveStoreError(
-          OBJECTIVE_ERROR_CODES.REVISION_CONFLICT,
-          `objective store was modified concurrently (expected revision ${before.revision}, found ${recheck.revision}); retry`,
+          OBJECTIVE_ERROR_CODES.LOCK_TIMEOUT,
+          `timed out waiting for the objective store write lock at ${lockPath}`,
         )
       }
+      try {
+        // Re-resolve now that the lock is held: this re-runs both the
+        // directory containment check and the final-file symlink check
+        // against the current filesystem state, narrowing (not
+        // eliminating — see above) the gap between "path verified safe"
+        // and "path actually read/written" to the inside of the lock.
+        const filePath = await this.resolveFilePath()
+        const before = await this.readOnDiskAt(filePath)
+        const draft = new Map(before.objectives)
+        const shouldWrite = fn(draft) !== false
+        if (!shouldWrite) return
 
-      const nextState: OnDiskState = {
-        version: 1,
-        revision: before.revision + 1,
-        objectives: [...draft.values()],
+        // Recheck happens inside the lock: no other writer can advance the
+        // revision between this read and the commit below.
+        const recheck = await this.readOnDiskAt(filePath)
+        if (recheck.revision !== before.revision) {
+          throw new ObjectiveStoreError(
+            OBJECTIVE_ERROR_CODES.REVISION_CONFLICT,
+            `objective store was modified concurrently (expected revision ${before.revision}, found ${recheck.revision}); retry`,
+          )
+        }
+
+        const nextState: OnDiskState = {
+          version: 1,
+          revision: before.revision + 1,
+          objectives: [...draft.values()],
+        }
+        await this.commit(filePath, nextState)
+      } finally {
+        await this.releaseLock(lockPath, token)
       }
-      await this.commit(filePath, nextState)
     })
     this.writeChain = run.catch(() => undefined)
     return run
+  }
+
+  private async acquireLock(lockPath: string, token: string): Promise<boolean> {
+    const deadline = Date.now() + LOCK_ACQUIRE_TIMEOUT_MS
+    for (;;) {
+      try {
+        const handle = await open(lockPath, "wx")
+        try {
+          await handle.writeFile(JSON.stringify({ pid: process.pid, token, timestamp: Date.now() }), "utf8")
+        } finally {
+          await handle.close()
+        }
+        return true
+      } catch (error) {
+        if ((error as { code?: string }).code !== "EEXIST") throw error
+        if (await this.reclaimIfStale(lockPath)) continue
+        if (Date.now() >= deadline) return false
+        await delay(LOCK_POLL_INTERVAL_MS)
+      }
+    }
+  }
+
+  /**
+   * Reclaim a lock only if it has clearly outlived any real write
+   * (`LOCK_STALE_MS`) — this is the "safe restart overlap" escape hatch for
+   * a holder that crashed without releasing its lock, not a general
+   * fairness mechanism. A live holder never legitimately holds this long
+   * for a local JSON-file write.
+   */
+  private async reclaimIfStale(lockPath: string): Promise<boolean> {
+    try {
+      const raw = await readFile(lockPath, "utf8")
+      const info = JSON.parse(raw) as Partial<{ timestamp: number }>
+      if (typeof info.timestamp === "number" && Date.now() - info.timestamp > LOCK_STALE_MS) {
+        await rm(lockPath, { force: true })
+        return true
+      }
+    } catch {
+      // Lock file disappeared or is unreadable mid-race; the next
+      // acquire attempt re-checks from scratch rather than assuming
+      // either outcome.
+    }
+    return false
+  }
+
+  /** Delete the lock file only if it still holds our own token. */
+  private async releaseLock(lockPath: string, token: string): Promise<void> {
+    try {
+      const raw = await readFile(lockPath, "utf8")
+      const info = JSON.parse(raw) as Partial<{ token: string }>
+      if (info.token !== token) return
+      await rm(lockPath, { force: true })
+    } catch {
+      // Already gone.
+    }
   }
 
   private async readState(): Promise<LoadedState> {
