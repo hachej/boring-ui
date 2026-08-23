@@ -104,6 +104,13 @@ export class AskUserRuntime {
   private readonly perPrincipalPerHour: number
   private readonly sessionBuckets = new Map<string, RateLimitBucket>()
   private readonly principalBuckets = new Map<string, RateLimitBucket>()
+  /**
+   * Timers that enforce a persisted `expiresAt` after this process has no
+   * live `waitForAnswer` call for the question (e.g. rearmed at startup for
+   * questions that survived a restart). Cleared whenever the question
+   * resolves through any path so a stale timer cannot double-cancel.
+   */
+  private readonly expiryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
   constructor(options: AskUserRuntimeOptions) {
     this.store = options.store
@@ -112,6 +119,58 @@ export class AskUserRuntime {
     this.now = options.now ?? (() => new Date())
     this.perSessionPerMinute = options.limits?.perSessionPerMinute ?? 6
     this.perPrincipalPerHour = options.limits?.perPrincipalPerHour ?? 30
+  }
+
+  /**
+   * Startup reconciliation (finding 1): a question's `expiresAt` was only
+   * ever enforced by a process-local `setTimeout` tied to the in-flight
+   * `ask()` call, so a restart before the deadline dropped enforcement
+   * entirely. Called once when a process attaches to a durable store:
+   * overdue `ready` questions are cancelled immediately, and questions with
+   * a still-future `expiresAt` get a timer rearmed for the remaining delay.
+   */
+  async reconcileExpiries(): Promise<{ expired: string[]; rearmed: string[] }> {
+    const expired: string[] = []
+    const rearmed: string[] = []
+    const pending = await this.store.listPending()
+    const nowMs = this.now().getTime()
+    for (const question of pending) {
+      if (!question.expiresAt) continue
+      const expiresAtMs = new Date(question.expiresAt).getTime()
+      if (Number.isNaN(expiresAtMs)) continue
+      if (expiresAtMs <= nowMs) {
+        expired.push(question.questionId)
+        await this.cancelQuestion(question.questionId, question.sessionId, "timeout").catch(() => undefined)
+      } else {
+        rearmed.push(question.questionId)
+        this.armExpiryTimer(question.questionId, question.sessionId, expiresAtMs - nowMs)
+      }
+    }
+    return { expired, rearmed }
+  }
+
+  /** Stops all reconciliation timers; call on process/plugin shutdown. */
+  disposeExpiryTimers(): void {
+    for (const timer of this.expiryTimers.values()) clearTimeout(timer)
+    this.expiryTimers.clear()
+  }
+
+  private armExpiryTimer(questionId: string, sessionId: string, delayMs: number): void {
+    this.clearExpiryTimer(questionId)
+    const timer = setTimeout(() => {
+      this.expiryTimers.delete(questionId)
+      void this.cancelQuestion(questionId, sessionId, "timeout").catch(() => undefined)
+    }, delayMs)
+    if (typeof timer.unref === "function") timer.unref()
+    this.expiryTimers.set(questionId, timer)
+  }
+
+  private clearExpiryTimer(questionId: string): void {
+    const timer = this.expiryTimers.get(questionId)
+    if (timer) {
+      clearTimeout(timer)
+      this.expiryTimers.delete(questionId)
+    }
   }
 
   /**
@@ -138,7 +197,11 @@ export class AskUserRuntime {
   async restoreAbandoned(questionId: string): Promise<void> {
     const question = await this.store.getByQuestionId(questionId)
     if (!question) throw new AskUserRuntimeError(ASK_USER_ERROR_CODES.QUESTION_NOT_FOUND, "question not found")
-    await this.store.restoreAbandoned(questionId)
+    // Finding 8: the store transition is compare-and-set. Only append the
+    // "restored" audit event when this call actually flipped abandoned ->
+    // ready; a no-op restore (question was already ready) must emit nothing.
+    const won = await this.store.restoreAbandoned(questionId)
+    if (!won) return
     await this.store.appendTranscriptEvent({ type: "restored", questionId, sessionId: question.sessionId, at: this.isoNow() })
   }
 
@@ -178,6 +241,7 @@ export class AskUserRuntime {
   async submitAnswer(questionId: string, sessionId: string, values: AskUserAnswer["values"], resolvedBy?: string): Promise<"answered"> {
     const question = await this.store.getByQuestionId(questionId)
     if (!question || question.sessionId !== sessionId) throw new AskUserRuntimeError(ASK_USER_ERROR_CODES.QUESTION_NOT_FOUND, "question not found")
+    this.clearExpiryTimer(questionId)
     // #1348: a missing waiter means the asking session is gone (e.g. hub
     // restart), not that the question is void. The decision is still recorded
     // durably; resolving the coordinator below is a no-op without a waiter.
@@ -205,6 +269,7 @@ export class AskUserRuntime {
   async cancelQuestion(questionId: string, sessionId: string, reason: AskUserCancelReason = "user_cancelled"): Promise<void> {
     const question = await this.store.getByQuestionId(questionId)
     if (!question || question.sessionId !== sessionId) throw new AskUserRuntimeError(ASK_USER_ERROR_CODES.QUESTION_NOT_FOUND, "question not found")
+    this.clearExpiryTimer(questionId)
     // #1348: like submitAnswer, cancellation persists even when the asking
     // session's waiter is gone — an owner dismissal after a restart is a real
     // decision, never downgraded to `abandoned`.
@@ -254,12 +319,20 @@ export class AskUserRuntime {
   }
 
   private async abandon(questionId: string, sessionId: string): Promise<void> {
-    await this.store.markAbandoned(questionId)
+    // Finding 2: markAbandoned is compare-and-set. If a concurrent answer or
+    // cancel already resolved this question, the transition loses and we
+    // must not append a false "abandoned" audit event or resolve the
+    // coordinator with a stale cancellation.
+    const won = await this.store.markAbandoned(questionId)
+    if (!won) return
+    this.clearExpiryTimer(questionId)
     await this.store.appendTranscriptEvent({ type: "abandoned", questionId, sessionId, at: this.isoNow() })
     this.coordinator.resolveCancelled(questionId, "abandoned")
   }
 
-  private createQuestion(request: Pick<AskUserRequest, "sessionId" | "title" | "context" | "artifacts" | "toolCallId" | "ownerPrincipalId" | "riskTier">): AskUserQuestion {
+  private createQuestion(
+    request: Pick<AskUserRequest, "sessionId" | "title" | "context" | "artifacts" | "toolCallId" | "ownerPrincipalId" | "riskTier" | "timeoutMs">,
+  ): AskUserQuestion {
     const at = this.isoNow()
     return {
       questionId: randomUUID(),
@@ -274,6 +347,7 @@ export class AskUserRuntime {
       createdAt: at,
       updatedAt: at,
       riskTier: request.riskTier,
+      expiresAt: request.timeoutMs ? new Date(this.now().getTime() + request.timeoutMs).toISOString() : undefined,
     }
   }
 

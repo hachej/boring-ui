@@ -39,8 +39,13 @@ export function createAskUserServerPlugin(options: AskUserServerPluginOptions): 
     // into UI state by the publisher below; a missing in-process waiter must
     // never flip them to `abandoned`.
     ensurePublisher()
+    // Finding 1: a persisted `expiresAt` is only enforced by a process-local
+    // timer while `ask()` is in flight. On attach, expire anything already
+    // overdue and rearm timers for anything still pending.
+    await runtime.reconcileExpiries()
     app.addHook("onClose", async () => {
       stopPublisher?.()
+      runtime.disposeExpiryTimers()
       options.onClose?.()
     })
   }

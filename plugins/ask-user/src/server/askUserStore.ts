@@ -41,9 +41,23 @@ export interface AskUserStore {
    */
   getDecisionRecord(questionId: string): Promise<AskUserDecisionRecord | null>
   cancel(questionId: string): Promise<void>
-  markAbandoned(questionId: string): Promise<void>
-  /** Flips an abandoned question back to `ready` (#1348 recovery). */
-  restoreAbandoned(questionId: string): Promise<void>
+  /**
+   * Compare-and-set transition: abandons a `ready` question and returns
+   * whether this call performed the transition. Returns `false` (no-op,
+   * no error) when the question is no longer `ready` — e.g. it was
+   * concurrently answered or cancelled — so callers never append an
+   * "abandoned" audit event for a question that actually resolved another
+   * way.
+   */
+  markAbandoned(questionId: string): Promise<boolean>
+  /**
+   * Flips an abandoned question back to `ready` (#1348 recovery).
+   * Compare-and-set: returns whether this call performed the transition.
+   * Returns `false` when the question is already `ready` (no-op); throws
+   * for any other non-`abandoned` status, which is operator error rather
+   * than a benign race.
+   */
+  restoreAbandoned(questionId: string): Promise<boolean>
   clearPending(sessionId: string): Promise<void>
   appendTranscriptEvent(event: AskUserTranscriptEvent): Promise<void>
   listTranscriptEvents(sessionId: string): Promise<AskUserTranscriptEvent[]>
@@ -70,8 +84,11 @@ export class FileAskUserStore implements AskUserStore {
   private loadInFlight: Promise<StoredAskUserState> | null = null
   private writeChain = Promise.resolve()
   private readonly listeners = new Set<AskUserStoreListener>()
+  private readonly now: () => Date
 
-  constructor(private readonly filePath: string) {}
+  constructor(private readonly filePath: string, options: { now?: () => Date } = {}) {
+    this.now = options.now ?? (() => new Date())
+  }
 
   async getPending(sessionId: string): Promise<AskUserQuestion | null> {
     const state = await this.load()
@@ -129,6 +146,9 @@ export class FileAskUserStore implements AskUserStore {
       if (question.status === "cancelled") throw new AskUserStoreError(ASK_USER_ERROR_CODES.ALREADY_CANCELLED, "question already cancelled")
       if (question.status === "answered") throw new AskUserStoreError(ASK_USER_ERROR_CODES.ALREADY_ANSWERED, "question already answered")
       if (question.status !== "ready") throw new AskUserStoreError(ASK_USER_ERROR_CODES.ANSWER_INVALID, "question is not ready")
+      if (question.expiresAt && this.now().getTime() >= new Date(question.expiresAt).getTime()) {
+        throw new AskUserStoreError(ASK_USER_ERROR_CODES.QUESTION_EXPIRED, "question has expired")
+      }
       question.status = "answered"
       question.updatedAt = nowIso()
       state.answers[questionId] = clone(answer)
@@ -150,21 +170,22 @@ export class FileAskUserStore implements AskUserStore {
     })
   }
 
-  async markAbandoned(questionId: string): Promise<void> {
-    await this.mutate(async (state) => {
+  async markAbandoned(questionId: string): Promise<boolean> {
+    return this.mutate(async (state) => {
       const question = requireQuestion(state, questionId)
-      if (!isPending(question)) return
+      if (!isPending(question)) return false
       question.status = "abandoned"
       question.updatedAt = nowIso()
       delete state.pendingBySession[question.sessionId]
       this.emit({ sessionId: question.sessionId, questionId, reason: "abandon" })
+      return true
     })
   }
 
-  async restoreAbandoned(questionId: string): Promise<void> {
-    await this.mutate(async (state) => {
+  async restoreAbandoned(questionId: string): Promise<boolean> {
+    return this.mutate(async (state) => {
       const question = requireQuestion(state, questionId)
-      if (question.status === "ready") return
+      if (question.status === "ready") return false
       if (question.status !== "abandoned") {
         throw new AskUserStoreError(ASK_USER_ERROR_CODES.ANSWER_INVALID, `question ${questionId} is not abandoned`)
       }
@@ -176,6 +197,7 @@ export class FileAskUserStore implements AskUserStore {
       question.updatedAt = nowIso()
       state.pendingBySession[question.sessionId] = questionId
       this.emit({ sessionId: question.sessionId, questionId, reason: "restore" })
+      return true
     })
   }
 
@@ -212,13 +234,14 @@ export class FileAskUserStore implements AskUserStore {
     return () => this.listeners.delete(listener)
   }
 
-  private async mutate(fn: (state: StoredAskUserState) => Promise<void> | void): Promise<void> {
+  private async mutate<T>(fn: (state: StoredAskUserState) => Promise<T> | T): Promise<T> {
     const run = this.writeChain.then(async () => {
       const state = await this.load()
-      await fn(state)
+      const result = await fn(state)
       await this.save(state)
+      return result
     })
-    this.writeChain = run.catch(() => undefined)
+    this.writeChain = run.then(() => undefined, () => undefined)
     return run
   }
 

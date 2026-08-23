@@ -1,5 +1,5 @@
 import type { HumanArtifact } from "@hachej/boring-workspace/shared"
-import type { ASK_USER_COMMAND_KINDS } from "./constants"
+import type { ASK_USER_CANCEL_REASONS, ASK_USER_COMMAND_KINDS, ASK_USER_QUESTION_STATUSES } from "./constants"
 import type { AskUserRiskTier } from "./constants"
 
 export type AskUserOption = {
@@ -113,7 +113,7 @@ export type AskUserToolInput = {
   riskTier?: AskUserRiskTier
 }
 
-export type AskUserQuestionStatus = "ready" | "answered" | "cancelled" | "abandoned"
+export type AskUserQuestionStatus = (typeof ASK_USER_QUESTION_STATUSES)[number]
 
 export type AskUserQuestion = {
   questionId: string
@@ -131,6 +131,12 @@ export type AskUserQuestion = {
   updatedAt: string
   /** Declared decision risk tier; optional for pre-decision-record questions. */
   riskTier?: AskUserRiskTier
+  /**
+   * Absolute expiry persisted at creation time when the caller passed
+   * timeoutMs. Enforced on answer and reconciled on startup so a restart
+   * before the deadline cannot leave a question answerable indefinitely.
+   */
+  expiresAt?: string
 }
 
 export type AskUserAnswerValue = string | string[] | boolean | number | null
@@ -162,14 +168,7 @@ export type AskUserDecisionRecord = {
   resolvedBy?: string
 }
 
-export type AskUserCancelReason =
-  | "user_cancelled"
-  | "timeout"
-  | "aborted"
-  | "ui_unavailable"
-  | "abandoned"
-  | "rate_limited"
-  | "runtime_unavailable"
+export type AskUserCancelReason = (typeof ASK_USER_CANCEL_REASONS)[number]
 
 export type AskUserToolResult =
   | { status: "answered"; answer: AskUserAnswer }

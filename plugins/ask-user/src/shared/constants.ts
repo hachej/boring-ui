@@ -38,3 +38,15 @@ export const ASK_USER_RESERVED_FIELD_NAMES = new Set([
   "prototype",
   "constructor",
 ])
+
+export const ASK_USER_CANCEL_REASONS = [
+  "user_cancelled",
+  "timeout",
+  "aborted",
+  "ui_unavailable",
+  "abandoned",
+  "rate_limited",
+  "runtime_unavailable",
+] as const
+
+export const ASK_USER_QUESTION_STATUSES = ["ready", "answered", "cancelled", "abandoned"] as const

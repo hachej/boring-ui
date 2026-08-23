@@ -33,6 +33,11 @@ export class MemoryAskUserStore implements AskUserStore {
   private readonly answers = new Map<string, AskUserAnswer>()
   private readonly transcriptsBySession = new Map<string, AskUserTranscriptEvent[]>()
   private readonly listeners = new Set<AskUserStoreListener>()
+  private readonly now: () => Date
+
+  constructor(options: { now?: () => Date } = {}) {
+    this.now = options.now ?? (() => new Date())
+  }
 
   async getPending(sessionId: string): Promise<AskUserQuestion | null> {
     const questionId = this.pendingBySession.get(sessionId)
@@ -75,6 +80,12 @@ export class MemoryAskUserStore implements AskUserStore {
 
   async answer(questionId: string, answer: AskUserAnswer): Promise<void> {
     const question = this.requireQuestion(questionId)
+    if (question.status === "cancelled") throw new AskUserStoreError(ASK_USER_ERROR_CODES.ALREADY_CANCELLED, "question already cancelled")
+    if (question.status === "answered") throw new AskUserStoreError(ASK_USER_ERROR_CODES.ALREADY_ANSWERED, "question already answered")
+    if (question.status !== "ready") throw new AskUserStoreError(ASK_USER_ERROR_CODES.ANSWER_INVALID, "question is not ready")
+    if (question.expiresAt && this.now().getTime() >= new Date(question.expiresAt).getTime()) {
+      throw new AskUserStoreError(ASK_USER_ERROR_CODES.QUESTION_EXPIRED, "question has expired")
+    }
     question.status = "answered"
     question.updatedAt = new Date().toISOString()
     this.answers.set(questionId, clone(answer))
@@ -90,17 +101,19 @@ export class MemoryAskUserStore implements AskUserStore {
     this.emit({ sessionId: question.sessionId, questionId, reason: "cancel" })
   }
 
-  async markAbandoned(questionId: string): Promise<void> {
+  async markAbandoned(questionId: string): Promise<boolean> {
     const question = this.requireQuestion(questionId)
+    if (question.status !== "ready") return false
     question.status = "abandoned"
     question.updatedAt = new Date().toISOString()
     this.pendingBySession.delete(question.sessionId)
     this.emit({ sessionId: question.sessionId, questionId, reason: "abandon" })
+    return true
   }
 
-  async restoreAbandoned(questionId: string): Promise<void> {
+  async restoreAbandoned(questionId: string): Promise<boolean> {
     const question = this.requireQuestion(questionId)
-    if (question.status === "ready") return
+    if (question.status === "ready") return false
     if (question.status !== "abandoned") throw new AskUserStoreError(ASK_USER_ERROR_CODES.ANSWER_INVALID, `question ${questionId} is not abandoned`)
     const existing = this.pendingBySession.get(question.sessionId)
     if (existing && existing !== questionId) {
@@ -110,6 +123,7 @@ export class MemoryAskUserStore implements AskUserStore {
     question.updatedAt = new Date().toISOString()
     this.pendingBySession.set(question.sessionId, questionId)
     this.emit({ sessionId: question.sessionId, questionId, reason: "restore" })
+    return true
   }
 
   async clearPending(sessionId: string): Promise<void> {

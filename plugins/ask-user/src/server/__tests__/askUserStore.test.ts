@@ -228,6 +228,25 @@ describe("FileAskUserStore", () => {
     await expect(store.getPending("s1")).resolves.toMatchObject({ questionId: "q1" })
   })
 
+  it("rejects an answer submitted after the persisted expiresAt (finding 1)", async () => {
+    let clock = new Date("2026-08-22T00:00:00.000Z")
+    const clockedStore = new FileAskUserStore(join(dir, "ask-user.json"), { now: () => clock })
+    await clockedStore.createPending(question({ expiresAt: new Date("2026-08-22T00:10:00.000Z").toISOString() }))
+
+    // Still within the window: answer succeeds.
+    clock = new Date("2026-08-22T00:09:59.000Z")
+    const before = new FileAskUserStore(join(dir, "ask-user2.json"), { now: () => clock })
+    await before.createPending(question({ questionId: "q-ok", expiresAt: new Date("2026-08-22T00:10:00.000Z").toISOString() }))
+    await expect(before.answer("q-ok", { questionId: "q-ok", sessionId: "s1", values: {}, submittedAt: clock.toISOString() })).resolves.toBeUndefined()
+
+    // Past the window: answer is rejected, question stays ready.
+    clock = new Date("2026-08-22T00:10:01.000Z")
+    await expect(clockedStore.answer("q1", { questionId: "q1", sessionId: "s1", values: {}, submittedAt: clock.toISOString() })).rejects.toMatchObject({
+      code: ASK_USER_ERROR_CODES.QUESTION_EXPIRED,
+    })
+    await expect(clockedStore.getByQuestionId("q1")).resolves.toMatchObject({ status: "ready" })
+  })
+
   it("appends, lists, filters, and persists transcript events", async () => {
     await store.createPending(question())
     await store.appendTranscriptEvent({ type: "created", question: question(), at: new Date(0).toISOString() })

@@ -85,6 +85,25 @@ class DelayedCreateStore extends MemoryAskUserStore {
   }
 }
 
+class DelayedMarkAbandonedStore extends MemoryAskUserStore {
+  readonly markAbandonedStarted: Promise<void>
+  releaseMarkAbandoned!: () => void
+  private readonly release: Promise<void>
+  private startedResolve!: () => void
+
+  constructor() {
+    super()
+    this.markAbandonedStarted = new Promise<void>((resolve) => { this.startedResolve = resolve })
+    this.release = new Promise<void>((resolve) => { this.releaseMarkAbandoned = resolve })
+  }
+
+  override async markAbandoned(questionId: string): Promise<boolean> {
+    this.startedResolve()
+    await this.release
+    return super.markAbandoned(questionId)
+  }
+}
+
 async function pendingQuestion(store: AskUserStore, sessionId: string) {
   const started = Date.now()
   while (Date.now() - started < 10_000) {
@@ -362,8 +381,87 @@ describe("AskUserRuntime", () => {
     await expect(runtime.restoreAbandoned("missing-q")).rejects.toMatchObject({ code: ASK_USER_ERROR_CODES.QUESTION_NOT_FOUND })
   })
 
+  it("emits no restored event for a no-op restore of an already-ready question (finding 8)", async () => {
+    const store = await makeStore()
+    const question = makeQuestion({ questionId: "already-ready-q", sessionId: "s1" })
+    await store.createPending(question)
+
+    const runtime = new AskUserRuntime({ store })
+    // The question is already `ready`; restoreAbandoned must be a truthful no-op.
+    await runtime.restoreAbandoned("already-ready-q")
+    const events = await store.getTranscriptEventsForQuestion("already-ready-q")
+    expect(events.some((event) => event.type === "restored")).toBe(false)
+  })
+
   it("reports runtime unavailable", () => {
     expect(() => requireAskUserRuntime(undefined)).toThrow(expect.objectContaining({ code: ASK_USER_ERROR_CODES.RUNTIME_UNAVAILABLE }))
   })
 
+  it("does not record a false abandoned event when a concurrent answer wins the race (finding 2)", async () => {
+    const store = new DelayedMarkAbandonedStore()
+    const question = makeQuestion({ questionId: "race-q", sessionId: "s1" })
+    await store.createPending(question)
+
+    const runtime = new AskUserRuntime({ store })
+    // Simulates abandonOrphanedPending reading the question as pending, then
+    // racing a concurrent answer before its markAbandoned call executes.
+    const abandonPromise = runtime.abandonOrphanedPending(["s1"])
+    await store.markAbandonedStarted
+
+    await expect(runtime.submitAnswer("race-q", "s1", { answer: "yes" })).resolves.toBe("answered")
+
+    store.releaseMarkAbandoned()
+    await abandonPromise
+
+    const events = await store.getTranscriptEventsForQuestion("race-q")
+    expect(events.some((event) => event.type === "abandoned")).toBe(false)
+    expect(events.filter((event) => event.type === "answered")).toHaveLength(1)
+    await expect(store.getByQuestionId("race-q")).resolves.toMatchObject({ status: "answered" })
+  })
+
+})
+
+describe("AskUserRuntime expiry (finding 1)", () => {
+  it("persists expiresAt on questions created with a timeout", async () => {
+    const store = await makeStore()
+    const runtime = new AskUserRuntime({ store })
+    const controller = new AbortController()
+    const result = runtime.ask({ sessionId: "s1", title: "T", schema, timeoutMs: 60_000 }, controller.signal)
+    const question = await pendingQuestion(store, "s1")
+    expect(question.expiresAt).toBeTruthy()
+    expect(new Date(question.expiresAt!).getTime()).toBeGreaterThan(Date.now())
+    controller.abort()
+    await result
+  })
+
+  it("startup reconciliation expires overdue questions and rearms future ones", async () => {
+    const store = await makeStore()
+    const past = makeQuestion({ questionId: "overdue-q", sessionId: "s1", expiresAt: new Date(Date.now() - 1_000).toISOString() })
+    const future = makeQuestion({ questionId: "future-q", sessionId: "s2", expiresAt: new Date(Date.now() + 50).toISOString() })
+    await store.createPending(past)
+    await store.createPending(future)
+
+    const restarted = new AskUserRuntime({ store })
+    const { expired, rearmed } = await restarted.reconcileExpiries()
+    expect(expired).toEqual(["overdue-q"])
+    expect(rearmed).toEqual(["future-q"])
+
+    await expect(store.getByQuestionId("overdue-q")).resolves.toMatchObject({ status: "cancelled" })
+    const overdueEvents = await store.getTranscriptEventsForQuestion("overdue-q")
+    expect(overdueEvents).toContainEqual(expect.objectContaining({ type: "cancelled", reason: "timeout" }))
+
+    // The rearmed timer fires the still-future expiry without a live waiter.
+    await vi.waitFor(async () => {
+      await expect(store.getByQuestionId("future-q")).resolves.toMatchObject({ status: "cancelled" })
+    }, { timeout: 5_000 })
+    restarted.disposeExpiryTimers()
+  })
+
+  it("rejects an answer submitted after the persisted expiry", async () => {
+    const store = await makeStore()
+    const question = makeQuestion({ questionId: "expired-q", sessionId: "s1", expiresAt: new Date(Date.now() - 1_000).toISOString() })
+    await store.createPending(question)
+    await expect(store.answer("expired-q", { questionId: "expired-q", sessionId: "s1", values: {}, submittedAt: new Date().toISOString() }))
+      .rejects.toMatchObject({ code: ASK_USER_ERROR_CODES.QUESTION_EXPIRED })
+  })
 })
