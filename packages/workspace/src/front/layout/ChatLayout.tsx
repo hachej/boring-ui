@@ -477,8 +477,12 @@ export function ChatLayout(props: ChatLayoutProps) {
             // whole viewport every frame for 280ms.
             ? cn(
                 "absolute inset-y-0 left-0 z-50 h-full w-[min(86%,360px)] shadow-2xl",
-                "transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
-                navOpen ? "translate-x-0" : "-translate-x-full",
+                // `visibility` rides the same transition: painted while it
+                // slides out, properly hidden once off-screen — a translated-
+                // but-"visible" dialog violates the UI-review modal gates at
+                // the closed checkpoint.
+                "transition-[transform,visibility] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+                navOpen ? "translate-x-0 visible" : "-translate-x-full invisible",
               )
             : cn(
                 "relative h-full shrink-0",
@@ -532,8 +536,8 @@ export function ChatLayout(props: ChatLayoutProps) {
           mobileShell
             ? cn(
                 "absolute inset-0 z-40 h-full",
-                "transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
-                sidebarOpen ? "translate-x-0" : "-translate-x-full pointer-events-none",
+                "transition-[transform,visibility] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+                sidebarOpen ? "translate-x-0 visible" : "-translate-x-full pointer-events-none invisible",
               )
             : cn(
                 "relative h-full shrink-0",
@@ -657,8 +661,8 @@ export function ChatLayout(props: ChatLayoutProps) {
                 // for 280ms on every open/close.
                 ? cn(
                     "absolute inset-0 z-40",
-                    "transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
-                    surfaceOpen ? "translate-x-0" : "pointer-events-none translate-x-full",
+                    "transition-[transform,visibility] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+                    surfaceOpen ? "translate-x-0 visible" : "pointer-events-none invisible translate-x-full",
                   )
                 : cn(
                     "relative",

@@ -2335,18 +2335,20 @@ export function WorkspaceAgentFront<
   // ⌘K, so this button is its only entry point.
   const mobileChatBarActions = mobileShellActive && !showTopBar ? (
     <>
+      {/* 44px hit area: the UI-review mobile touch-target gate requires it and
+          the merged bar is a phone-only surface. */}
       <IconButton
         type="button"
         variant="ghost"
         size="icon-sm"
-        className="mobile-shell-bar-action"
+        className="mobile-shell-bar-action size-11"
         onClick={openCommandPalette}
         aria-label="Search catalogs and commands"
         title="Search"
       >
         <Search className="size-4" />
       </IconButton>
-      {showThemeToggle ? <ThemeToggle /> : null}
+      {showThemeToggle ? <ThemeToggle className="size-11" /> : null}
     </>
   ) : undefined
   const activeChatPaneRef = activeChatPaneId ? workspaceSessionRefFromKey(activeChatPaneId) : null

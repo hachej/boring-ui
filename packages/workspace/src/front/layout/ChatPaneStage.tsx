@@ -1,4 +1,5 @@
 import { lazy, Suspense } from "react"
+import { LoadingState } from "@hachej/boring-ui-kit"
 import type { ReactNode } from "react"
 import { cn } from "../lib/utils"
 import { decodeWorkspaceSessionDrag, type WorkspaceSessionRef } from "../sessionIdentity"
@@ -11,14 +12,14 @@ import { decodeWorkspaceSessionDrag, type WorkspaceSessionRef } from "../session
 const ChatPaneStageDock = lazy(() => import("./ChatPaneStageDock").then((m) => ({ default: m.ChatPaneStageDock })))
 
 /**
- * Synchronous fallback for the chunk hop: renders just the active pane body,
- * so the transcript is present and readable on first paint instead of a
- * spinner. Dock chrome (headers, splits) appears once the chunk lands.
+ * Synchronous fallback for the chunk hop. Deliberately does NOT render the
+ * pane content: mounting the pane here and again under the dock would remount
+ * it once the chunk lands, aborting and re-firing the chat session's event
+ * stream subscription. A phone never sees this fallback at all — the compact
+ * shell renders `MobileSingleChatPane` instead of this component.
  */
-function ActivePaneFallback({ panes, activePaneId, renderPane }: Pick<ChatPaneStageProps, "panes" | "activePaneId" | "renderPane">) {
-  const active = panes.find((pane) => pane.id === activePaneId) ?? panes[0]
-  if (!active) return null
-  return <div className="relative h-full min-h-0">{renderPane(active)}</div>
+function DockFallback() {
+  return <LoadingState centered />
 }
 
 export interface ChatPaneDescriptor {
@@ -94,9 +95,7 @@ export interface ChatPaneStageProps {
  */
 export function ChatPaneStage(props: ChatPaneStageProps) {
   return (
-    <Suspense fallback={
-      <ActivePaneFallback panes={props.panes} activePaneId={props.activePaneId} renderPane={props.renderPane} />
-    }>
+    <Suspense fallback={<DockFallback />}>
       <ChatPaneStageDock {...props} />
     </Suspense>
   )

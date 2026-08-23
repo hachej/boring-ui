@@ -180,7 +180,7 @@ describe("WorkspaceAgentFront", () => {
     expect(MockEventSource.instances.filter((instance) => instance.url.includes("/api/v1/agent-plugins/events"))).toHaveLength(0)
   })
 
-  it("externalPlugins=true preserves explicit front and chat plugin reload UX", () => {
+  it("externalPlugins=true preserves explicit front and chat plugin reload UX", async () => {
     MockEventSource.instances = []
     vi.stubGlobal("EventSource", MockEventSource)
     let captured: WorkspaceChatPanelProps | undefined
@@ -200,10 +200,12 @@ describe("WorkspaceAgentFront", () => {
     )
 
     expect(MockEventSource.instances.filter((instance) => instance.url.includes("/api/v1/agent-plugins/events"))).toHaveLength(1)
-    expect(captured?.hotReloadEnabled).toBe(true)
+    // The chat pane mounts under the code-split dock stage, so capture lands
+    // one microtask after render.
+    await waitFor(() => expect(captured?.hotReloadEnabled).toBe(true))
   })
 
-  it("externalPlugins=false disables front and chat plugin reload UX", () => {
+  it("externalPlugins=false disables front and chat plugin reload UX", async () => {
     MockEventSource.instances = []
     vi.stubGlobal("EventSource", MockEventSource)
     let captured: WorkspaceChatPanelProps | undefined
@@ -223,7 +225,7 @@ describe("WorkspaceAgentFront", () => {
     )
 
     expect(MockEventSource.instances.filter((instance) => instance.url.includes("/api/v1/agent-plugins/events"))).toHaveLength(0)
-    expect(captured?.hotReloadEnabled).toBe(false)
+    await waitFor(() => expect(captured?.hotReloadEnabled).toBe(false))
   })
 
   it("keeps the chat shell in transition while remote sessions are still loading without an active session", () => {
@@ -340,7 +342,7 @@ describe("WorkspaceAgentFront", () => {
     expect(refresh).not.toHaveBeenCalled()
   })
 
-  it("renders a known active session while remote sessions are still loading", () => {
+  it("renders a known active session while remote sessions are still loading", async () => {
     const PendingChatPanel = (props: WorkspaceChatPanelProps) => (
       <div data-testid="chat-panel">Chat {props.sessionId} hydrate={String(props.hydrateMessages)}</div>
     )
@@ -362,11 +364,11 @@ describe("WorkspaceAgentFront", () => {
       />,
     )
 
-    expect(screen.getByTestId("chat-panel")).toHaveTextContent("Chat known-active hydrate=true")
+    expect(await screen.findByTestId("chat-panel")).toHaveTextContent("Chat known-active hydrate=true")
     expect(screen.queryByText("Loading sessions…")).not.toBeInTheDocument()
   })
 
-  it("renders the chat shell when remote sessions fail instead of pinning loading", () => {
+  it("renders the chat shell when remote sessions fail instead of pinning loading", async () => {
     const FailedChatPanel = (props: WorkspaceChatPanelProps) => (
       <div data-testid="chat-panel">Chat {props.sessionId} hydrate={String(props.hydrateMessages)}</div>
     )
@@ -388,7 +390,7 @@ describe("WorkspaceAgentFront", () => {
       />,
     )
 
-    expect(screen.getByTestId("chat-panel")).toHaveTextContent("Chat default hydrate=false")
+    expect(await screen.findByTestId("chat-panel")).toHaveTextContent("Chat default hydrate=false")
   })
 
   it("keeps session history closed by default and opens it from the rail button", async () => {

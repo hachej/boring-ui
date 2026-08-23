@@ -1502,7 +1502,9 @@ describe("ChatLayout compact shell", () => {
     )
 
     const nav = screen.getByRole("dialog", { name: "Session browser" })
-    expect(nav.className).toContain("transition-transform")
+    // `visibility` rides the same transition so the drawer stays painted while
+    // it slides out and is hidden (not merely translated) once off-screen.
+    expect(nav.className).toContain("transition-[transform,visibility]")
     expect(nav.className).not.toContain("transition-[width,min-width,max-width]")
   })
 
