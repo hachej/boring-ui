@@ -381,6 +381,8 @@ describe("AppLeftPane", () => {
           onSwitchSession={vi.fn()}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}
+        
+          workspaceId="ws-test"
         />
       </WorkspaceAttentionProvider>,
     )
@@ -481,6 +483,8 @@ describe("AppLeftPane", () => {
           onSwitchSession={vi.fn()}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}
+        
+          workspaceId="ws-test"
         />
       </WorkspaceAttentionProvider>,
     )
@@ -574,7 +578,9 @@ describe("AppLeftPane", () => {
             onSwitchSession={vi.fn()}
             onOpenSessionAsPane={vi.fn()}
             onToggleSessionPinned={vi.fn()}
-          />
+          
+          workspaceId="ws-test"
+        />
         </div>
         <div data-testid="collapsed-navigation">
           <AppLeftRail
@@ -663,6 +669,8 @@ describe("AppLeftPane", () => {
           {...baseProps}
           sessions={[]}
           sessionsLoading
+        
+          workspaceId="ws-test"
         />
       </WorkspaceAttentionProvider>,
     )
@@ -672,7 +680,9 @@ describe("AppLeftPane", () => {
 
     rerender(
       <WorkspaceAttentionProvider>
-        <AppLeftPane {...baseProps} sessions={[]} sessionsLoading={false} />
+        <AppLeftPane {...baseProps} sessions={[]} sessionsLoading={false} 
+          workspaceId="ws-test"
+        />
       </WorkspaceAttentionProvider>,
     )
     expect(screen.getByText("No chats yet.")).toBeInTheDocument()
@@ -680,7 +690,9 @@ describe("AppLeftPane", () => {
 
     rerender(
       <WorkspaceAttentionProvider>
-        <AppLeftPane {...baseProps} sessions={[{ id: "loaded", title: "Loaded chat" }]} sessionsLoading={false} />
+        <AppLeftPane {...baseProps} sessions={[{ id: "loaded", title: "Loaded chat" }]} sessionsLoading={false} 
+          workspaceId="ws-test"
+        />
       </WorkspaceAttentionProvider>,
     )
     expect(screen.queryByText("No chats yet.")).not.toBeInTheDocument()
@@ -701,7 +713,9 @@ describe("AppLeftPane", () => {
     }
     const { rerender } = render(
       <WorkspaceAttentionProvider>
-        <AppLeftPane {...baseProps} sessions={[]} sessionsLoading />
+        <AppLeftPane {...baseProps} sessions={[]} sessionsLoading 
+          workspaceId="ws-test"
+        />
       </WorkspaceAttentionProvider>,
     )
 
@@ -710,14 +724,18 @@ describe("AppLeftPane", () => {
 
     rerender(
       <WorkspaceAttentionProvider>
-        <AppLeftPane {...baseProps} sessions={[]} sessionsLoading={false} />
+        <AppLeftPane {...baseProps} sessions={[]} sessionsLoading={false} 
+          workspaceId="ws-test"
+        />
       </WorkspaceAttentionProvider>,
     )
     expect(screen.getByText("No chats yet.")).toBeInTheDocument()
 
     rerender(
       <WorkspaceAttentionProvider>
-        <AppLeftPane {...baseProps} sessions={[{ id: "loaded-project", title: "Loaded project chat" }]} sessionsLoading={false} />
+        <AppLeftPane {...baseProps} sessions={[{ id: "loaded-project", title: "Loaded project chat" }]} sessionsLoading={false} 
+          workspaceId="ws-test"
+        />
       </WorkspaceAttentionProvider>,
     )
     expect(screen.queryByText("No chats yet.")).not.toBeInTheDocument()
@@ -768,7 +786,9 @@ describe("AppLeftPane", () => {
     }
     const { rerender } = render(
       <WorkspaceAttentionProvider>
-        <AppLeftPane {...props} sessions={sessions} />
+        <AppLeftPane {...props} sessions={sessions} 
+          workspaceId="ws-test"
+        />
       </WorkspaceAttentionProvider>,
     )
     act(() => window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
@@ -778,7 +798,7 @@ describe("AppLeftPane", () => {
 
     rerender(
       <WorkspaceAttentionProvider>
-        <AppLeftPane {...props} sessions={sessions.map((session) => ({ ...session, status: "idle" as const }))} />
+        <AppLeftPane {...props} workspaceId="ws-test" sessions={sessions.map((session) => ({ ...session, status: "idle" as const }))} />
       </WorkspaceAttentionProvider>,
     )
 
@@ -802,6 +822,8 @@ describe("AppLeftPane", () => {
           onSwitchSession={vi.fn()}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}
+        
+          workspaceId="ws-test"
         />
       </WorkspaceAttentionProvider>,
     )
@@ -829,6 +851,8 @@ describe("AppLeftPane", () => {
           onSwitchSession={vi.fn()}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}
+        
+          workspaceId="ws-test"
         />
       </WorkspaceAttentionProvider>,
     )
@@ -853,6 +877,8 @@ describe("AppLeftPane", () => {
           onSwitchSession={vi.fn()}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}
+        
+          workspaceId="ws-test"
         />
       </WorkspaceAttentionProvider>,
     )
@@ -875,6 +901,8 @@ describe("AppLeftPane", () => {
           onSwitchSession={onSwitchSession}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}
+        
+          workspaceId="ws-test"
         />
       </WorkspaceAttentionProvider>,
     )
@@ -898,6 +926,8 @@ describe("AppLeftPane", () => {
           onSwitchSession={onSwitchSession}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}
+        
+          workspaceId="ws-test"
         />
       </WorkspaceAttentionProvider>,
     )
@@ -935,6 +965,8 @@ describe("AppLeftPane", () => {
           onSwitchSession={onSwitchSession}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={onToggleSessionPinned}
+        
+          workspaceId="ws-test"
         />
       </WorkspaceAttentionProvider>,
     )
@@ -978,6 +1010,8 @@ describe("AppLeftPane", () => {
           onSwitchSession={vi.fn()}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}
+        
+          workspaceId="ws-test"
         />
       </WorkspaceAttentionProvider>,
     )

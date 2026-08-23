@@ -191,7 +191,7 @@ export function SessionBrowser({
   const [historyCollapsed, setHistoryCollapsed] = useState(
     () => normalizedOpenIds.length > 0 || normalizedPinnedIds.length > 0,
   )
-  const workingSessionIds = useWorkingSessionIds(sessions, { scopeKey: activityWorkspaceId })
+  const workingSessionIds = useWorkingSessionIds(sessions, { scopeKey: activityWorkspaceId ?? "" })
   const terminalSessionStates = useTerminalSessionStates(sessions, workingSessionIds, { scopeKey: activityWorkspaceId })
   const { blockers } = useWorkspaceAttention()
   const sessionBadges = useMemo(() => {
