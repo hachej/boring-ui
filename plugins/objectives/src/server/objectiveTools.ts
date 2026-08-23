@@ -86,6 +86,7 @@ export function createObjectiveTools(options: CreateObjectiveToolsOptions): Agen
           constraints: { type: "array", items: { type: "string" }, description: "Constraints bounding how this objective may be pursued." },
           evidenceRefs: { type: "array", items: { type: "string" }, description: "References (paths, URLs, artifact ids) supporting progress." },
           outcome: { type: "string", description: "Optional outcome note, typically set when the objective is achieved or abandoned." },
+          clientRequestId: { type: "string", description: "Optional idempotency key. Retrying create_objective with the same clientRequestId returns the original objective instead of creating a duplicate." },
         },
         required: ["title", "objective", "metric", "baseline", "target"],
         additionalProperties: false,
