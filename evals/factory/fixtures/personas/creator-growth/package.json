@@ -1,0 +1,15 @@
+{
+  "name": "@fixture/creator-growth",
+  "version": "1.0.0",
+  "private": true,
+  "boring": {
+    "agent": {
+      "definitionId": "boring-creator-growth",
+      "version": "1.0.0",
+      "label": "Creator Growth (temp fleet)",
+      "description": "Stand-in second-product persona for evals/factory/checks/08-product-isolation.ts. No 'creator-growth' plugin exists in this repository yet; this fixture stands in for a distinct, unrelated product package so isolation can be asserted structurally.",
+      "instructionsRef": "instructions.md"
+    }
+  },
+  "pi": { "skills": [] }
+}

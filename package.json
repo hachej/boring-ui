@@ -25,6 +25,7 @@
     "audit:publish-manifests": "node scripts/audit-publish-manifests.mjs",
     "audit:release-staging": "node scripts/check-release-staging.mjs",
     "check:generated-artifacts": "pnpm tsx scripts/check-generated-artifacts.ts",
+    "evals:factory": "pnpm tsx evals/factory/runner.ts",
     "check:agent-isolation": "pnpm --filter @hachej/boring-agent run check:isolation",
     "check:action-pins": "bash scripts/check-action-pins.sh",
     "check:skill-digests": "node scripts/refresh-skill-digests.mjs --check",
