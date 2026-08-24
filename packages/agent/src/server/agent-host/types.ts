@@ -156,6 +156,22 @@ export interface AgentInstructionFileRef {
   readonly role: 'persona'
 }
 
+/**
+ * An authored instruction file as the fleet composer knows it: a canonical
+ * HOST absolute path, not yet addressed against any workspace.
+ *
+ * The two shapes are deliberately distinct. A multi-workspace host (the CLI
+ * hub, core) serves a DIFFERENT root per request, so composition cannot know
+ * which root a ref should be relative to; only the request can. The spec
+ * therefore carries sources, and `describe` publishes the subset that is
+ * reachable through the root actually being served (gh-1189).
+ */
+export interface AgentInstructionSource {
+  /** Canonical absolute path on the host filesystem. */
+  readonly absolutePath: string
+  readonly role: 'persona'
+}
+
 export interface ConfiguredAgentHostAgentSpec {
   readonly agentTypeId: string
   readonly definition: {
@@ -177,8 +193,12 @@ export interface ConfiguredAgentHostAgentSpec {
     /** Host path of the package's `knowledge/` folder. */
     readonly rootDir: string
   }
-  /** Authored instruction sources behind `definition.instructions`. */
-  readonly instructionFiles?: readonly AgentInstructionFileRef[]
+  /**
+   * Authored instruction sources behind `definition.instructions`, as host
+   * absolute paths. Addressed against a served workspace root per request by
+   * `describe`, never at composition time.
+   */
+  readonly instructionSources?: readonly AgentInstructionSource[]
   readonly plugins?: readonly {
     /** Canonical app-preflighted plugin ID. */
     readonly name: string

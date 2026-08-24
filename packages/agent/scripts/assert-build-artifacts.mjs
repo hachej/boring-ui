@@ -110,6 +110,31 @@ function isFastifySpecifier(specifier) {
     || specifier.startsWith('@fastify/')
 }
 
+// `@hachej/boring-sandbox` cannot be bundled by the closure analysis below.
+//
+// `packages/agent` depends on `@hachej/boring-sandbox`, and
+// `packages/boring-sandbox` declares `@hachej/boring-agent` as a peer
+// dependency (its published `.d.ts` files reference agent types). That is a
+// genuine two-node workspace cycle, so pnpm cannot order sandbox's build ahead
+// of agent's -- not in `pnpm -r run build`, and not in any of the
+// `pnpm --filter <pkg>... run build` invocations CI uses. When this script
+// runs, `packages/boring-sandbox/dist` reliably does not exist yet.
+//
+// Until now these specifiers resolved anyway, but only by accident: esbuild
+// auto-discovers `packages/agent/tsconfig.json` and honours its `paths`, six of
+// which redirect `@hachej/boring-sandbox/*` at sandbox *source*. That made
+// developer-convenience aliases load-bearing build configuration (see #1361),
+// and it is what made PR #1360 red in CI while green on any machine with a
+// stale sandbox `dist` lying around.
+//
+// Sandbox is a real runtime dependency of the published agent server bundle --
+// it is never inlined into it -- so marking it external in the server analysis
+// is what the published shape already says. The core analysis stays fully
+// bundled: dist/core has no sandbox imports today, and a bare-specifier import
+// would fail resolution loudly because sandbox's dist does not exist yet at
+// assertion time (see #1361).
+const SANDBOX_EXTERNALS = ['@hachej/boring-sandbox', '@hachej/boring-sandbox/*']
+
 function findFastifyClosureViolations(metafile) {
   const inputPaths = Object.keys(metafile.inputs)
     .filter((inputPath) => {
@@ -156,11 +181,12 @@ function assertFastifyDetectorFixture() {
   }
 }
 
-async function analyzeFastifyClosure(entryPoint) {
+async function analyzeBundleClosure(entryPoint, { externalSandbox = false } = {}) {
   const result = await esbuild({
     absWorkingDir: packageRoot,
     bundle: true,
     entryPoints: [entryPoint],
+    ...(externalSandbox ? { external: SANDBOX_EXTERNALS } : {}),
     format: 'esm',
     logLevel: 'silent',
     metafile: true,
@@ -173,15 +199,15 @@ async function analyzeFastifyClosure(entryPoint) {
 }
 
 async function assertCoreFastifyFree(entryPoint) {
-  const violations = await analyzeFastifyClosure(entryPoint)
-  if (violations.inputPaths.length > 0 || violations.externalSpecifiers.length > 0) {
-    throw new Error(`dist/core Fastify closure violation: ${JSON.stringify(violations)}`)
+  const fastify = await analyzeBundleClosure(entryPoint)
+  if (fastify.inputPaths.length > 0 || fastify.externalSpecifiers.length > 0) {
+    throw new Error(`dist/core Fastify closure violation: ${JSON.stringify(fastify)}`)
   }
 }
 
 async function assertServerDetectsFastify(entryPoint) {
-  const violations = await analyzeFastifyClosure(entryPoint)
-  if (violations.inputPaths.length === 0 && violations.externalSpecifiers.length === 0) {
+  const fastify = await analyzeBundleClosure(entryPoint, { externalSandbox: true })
+  if (fastify.inputPaths.length === 0 && fastify.externalSpecifiers.length === 0) {
     throw new Error('Fastify closure negative proof did not detect the published server entry')
   }
 }

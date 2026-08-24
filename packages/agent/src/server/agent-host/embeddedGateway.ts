@@ -261,13 +261,21 @@ export class EmbeddedAgentGateway implements AgentGateway {
     }
     const cursor = input.cursor
       ? this.decodeCursor(input.cursor, claim.workspaceScopeId, input.agentTypeId, normalizedLimit)
-      : undefined
+      : { depth: 0, after: undefined }
     const agents = input.agentTypeId
       ? [input.agentTypeId]
       : [...this.runtime.compiledById.keys()]
+    // Bounded fan-out. Every seat's store orders by the same recency key this
+    // gateway sorts by, so a row that lands at merged rank `r` sits at rank
+    // <= r inside its own seat's listing. The page covers merged ranks
+    // [depth, depth + limit), and one extra row decides `nextCursor` — so
+    // `depth + limit + 1` rows per seat is exactly sufficient and never reads
+    // the rest of the store (#1338: an unbounded listing parsed every
+    // transcript on every request).
+    const perAgentLimit = cursor.depth + normalizedLimit + 1
     const rows: AgentSessionSummary[] = []
     for (const agentTypeId of agents) {
-      const listed = await this.runtime.listSessionSummaries(agentTypeId, input.scope, claim)
+      const listed = await this.runtime.listSessionSummaries(agentTypeId, input.scope, claim, { limit: perAgentLimit })
       for (const item of listed) {
         const ref = { agentTypeId, sessionId: item.id }
         rows.push(summaryFromLegacy(ref, item, this.runtime.activity.get(claim.workspaceScopeId, ref)))
@@ -279,10 +287,16 @@ export class EmbeddedAgentGateway implements AgentGateway {
     const visible = input.archived && input.archived !== 'all'
       ? rows.filter((row) => (row.archived === true) === (input.archived === 'archived'))
       : rows
-    const eligible = cursor ? visible.filter((row) => isAfterCursor(row, cursor)) : visible
+    const eligible = cursor.after ? visible.filter((row) => isAfterCursor(row, cursor.after!)) : visible
     const sessions = eligible.slice(0, normalizedLimit)
     const nextCursor = eligible.length > sessions.length && sessions.length > 0
-      ? this.encodeCursor(claim.workspaceScopeId, input.agentTypeId, normalizedLimit, sessions.at(-1)!)
+      ? this.encodeCursor(
+          claim.workspaceScopeId,
+          input.agentTypeId,
+          normalizedLimit,
+          cursor.depth + sessions.length,
+          sessions.at(-1)!,
+        )
       : undefined
     return { sessions, ...(nextCursor ? { nextCursor } : {}) }
   }
@@ -926,12 +940,14 @@ export class EmbeddedAgentGateway implements AgentGateway {
     workspaceScopeId: string,
     agentTypeId: string | undefined,
     limit: number,
+    depth: number,
     last: AgentSessionSummary,
   ): string {
     const payload = JSON.stringify({
       workspaceScopeId,
       agentTypeId: agentTypeId ?? null,
       limit,
+      depth,
       updatedAt: last.updatedAt,
       lastAgentTypeId: last.ref.agentTypeId,
       sessionId: last.ref.sessionId,
@@ -946,7 +962,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
     workspaceScopeId: string,
     agentTypeId: string | undefined,
     limit: number,
-  ): { updatedAt: number; agentTypeId: string; sessionId: string } {
+  ): { depth: number; after: { updatedAt: number; agentTypeId: string; sessionId: string } } {
     try {
       const [encoded, signature, extra] = cursor.split('.')
       if (!encoded || !signature || extra) throw new Error('malformed')
@@ -957,14 +973,20 @@ export class EmbeddedAgentGateway implements AgentGateway {
         decoded.workspaceScopeId !== workspaceScopeId
         || decoded.agentTypeId !== (agentTypeId ?? null)
         || decoded.limit !== limit
+        || typeof decoded.depth !== 'number'
+        || !Number.isInteger(decoded.depth)
+        || decoded.depth < 0
         || typeof decoded.updatedAt !== 'number'
         || typeof decoded.lastAgentTypeId !== 'string'
         || typeof decoded.sessionId !== 'string'
       ) throw new Error('binding')
       return {
-        updatedAt: decoded.updatedAt,
-        agentTypeId: decoded.lastAgentTypeId,
-        sessionId: decoded.sessionId,
+        depth: decoded.depth,
+        after: {
+          updatedAt: decoded.updatedAt,
+          agentTypeId: decoded.lastAgentTypeId,
+          sessionId: decoded.sessionId,
+        },
       }
     } catch {
       throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_SESSION_CURSOR_INVALID, 'session cursor is invalid')

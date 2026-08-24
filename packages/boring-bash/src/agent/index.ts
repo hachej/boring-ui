@@ -42,7 +42,7 @@ export {
   RO_BIND_TRY_DIRS,
   buildBwrapArgs,
 } from './runtime/buildBwrapArgs'
-export type { BwrapArgsOptions } from './runtime/buildBwrapArgs'
+export type { BwrapArgsOptions, BwrapNamespaceProfile } from './runtime/buildBwrapArgs'
 
 export { mergeRuntimeProvisioningEnv } from './runtime/env'
 export type {

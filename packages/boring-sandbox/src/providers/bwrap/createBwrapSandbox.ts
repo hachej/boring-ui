@@ -8,6 +8,7 @@ import {
   BWRAP_TIMEOUT_SECONDS,
   KILL_GRACE_SECONDS,
   buildBwrapArgs,
+  type BwrapNamespaceProfile,
 } from './buildBwrapArgs'
 import { getNodeWorkspaceHostRoot } from '../node-workspace/createNodeWorkspace'
 import { withWorkspacePythonEnv } from '../node-workspace/workspacePythonEnv'
@@ -196,6 +197,7 @@ export interface CreateBwrapSandboxOptions {
   runtimeContext?: WorkspaceRuntimeContext
   network?: 'shared' | 'isolated'
   dropAllCapabilities?: boolean
+  namespaceProfile?: BwrapNamespaceProfile
   resourceLimits?: BwrapResourceLimits
 }
 
@@ -275,6 +277,7 @@ export function createBwrapSandbox(opts: CreateBwrapSandboxOptions = {}): Sandbo
         postWorkspaceArgs,
         network: sandboxOptions.network,
         dropAllCapabilities: sandboxOptions.dropAllCapabilities,
+        namespaceProfile: sandboxOptions.namespaceProfile,
       })
       const args = [
         ...withSandboxCwd(baseArgs, sandboxCwd),
