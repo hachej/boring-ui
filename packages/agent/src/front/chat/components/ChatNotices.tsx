@@ -182,38 +182,35 @@ export function QueuedComposerNotice({
     >
       <div className="min-w-0 flex-1 text-[color:var(--muted-foreground)]">
         <div className="font-medium text-[color:var(--foreground)]">{followUps.length} queued follow-up{followUps.length === 1 ? '' : 's'}</div>
-        {onRemove ? (
-          // The list carries the flat-preview contract part so locators and
-          // screen readers still see every queued text without duplication.
-          <ul className="mt-1 space-y-1" data-boring-agent-part="composer-queue-items composer-queue-preview-text">
-            {followUps.map((followUp) => (
-              <li key={followUp.id} className="flex items-center gap-1" data-boring-agent-part="composer-queue-item">
-                <span className="min-w-0 truncate" data-boring-agent-part="composer-queue-item-text">
-                  {followUp.displayText}
-                </span>
-                <IconButton
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={() => onRemove(followUp)}
-                  disabled={removePendingId === followUp.id}
-                  aria-busy={removePendingId === followUp.id}
-                  className="ml-auto size-5 shrink-0 text-[color:var(--muted-foreground)] hover:bg-[color:var(--muted)] hover:text-[color:var(--foreground)]"
-                  aria-label={`Remove queued message: ${followUp.displayText}`}
-                  title="Remove queued message"
-                  data-boring-agent-part="composer-queue-remove"
-                >
-                  <XIcon className="size-3" aria-hidden="true" />
-                </IconButton>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <div className="truncate text-[color:var(--muted-foreground)]" data-boring-agent-part="composer-queue-preview-text">
-            {followUps.map((followUp) => followUp.displayText).join(' - ')}
-          </div>
-        )}
+        {/* One flat line carrying every queued text: e2e locators and screen
+            readers depend on this single element (strict mode + joined order). */}
+        <div className="truncate text-[color:var(--muted-foreground)]" data-boring-agent-part="composer-queue-preview-text">
+          {followUps.map((followUp) => followUp.displayText).join(' - ')}
+        </div>
       </div>
+      {onRemove ? (
+        // Per-message removal lives in its own column so the flat preview —
+        // a locator contract — stays exactly one element.
+        <div className="flex shrink-0 flex-col gap-0.5" data-boring-agent-part="composer-queue-remove-list">
+          {followUps.map((followUp, index) => (
+            <IconButton
+              key={followUp.id}
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => onRemove(followUp)}
+              disabled={removePendingId === followUp.id}
+              aria-busy={removePendingId === followUp.id}
+              className="size-5 text-[color:var(--muted-foreground)] hover:bg-[color:var(--muted)] hover:text-[color:var(--foreground)]"
+              aria-label={`Remove queued message ${index + 1} of ${followUps.length}: ${followUp.displayText}`}
+              title={`Remove: ${followUp.displayText}`}
+              data-boring-agent-part="composer-queue-remove"
+            >
+              <XIcon className="size-3" aria-hidden="true" />
+            </IconButton>
+          ))}
+        </div>
+      ) : null}
       <div className="flex shrink-0 items-center gap-1">
         {onResume ? (
           <IconButton

@@ -353,12 +353,12 @@ describe('PiChatPanel sandbox shell', () => {
     render(<PiChatPanel serverResourcesEnabled={false} storageScope="scope-a" fetch={fetchMock as unknown as typeof fetch} createRemoteSession={remoteFactory(remote)} />)
 
     await screen.findByText('2 queued follow-ups')
-    fireEvent.click(screen.getByRole('button', { name: 'Remove queued message: first held' }))
+    fireEvent.click(screen.getByRole('button', { name: /Remove queued message 1 of 2: first held/ }))
 
     await waitFor(() => expect(remote.clearQueue).toHaveBeenCalledWith({ clientNonce: 'remove-1' }))
     await waitFor(() => expect(screen.getByText('1 queued follow-up')).toBeTruthy())
-    expect(screen.queryByRole('button', { name: 'Remove queued message: first held' })).toBeNull()
-    expect(screen.getByRole('button', { name: 'Remove queued message: second held' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Remove queued message .*first held/ })).toBeNull()
+    expect(screen.getByRole('button', { name: /Remove queued message .*second held/ })).toBeTruthy()
   })
 
   test('stop interrupts instead of clearing queued follow-ups and clears local submitted state', async () => {
@@ -1203,8 +1203,14 @@ describe('PiChatPanel sandbox shell', () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
     render(<PiChatPanel serverResourcesEnabled={false} fetch={fetchMock as unknown as typeof fetch} createRemoteSession={remoteFactory(remote)} />)
 
-    await screen.findByText('first queued')
-    expect(screen.getByText('second queued')).toBeTruthy()
+    await screen.findByText(/first queued/)
+    const previewLine = await waitFor(() => {
+      const el = document.querySelector('[data-boring-agent-part="composer-queue-preview-text"]')
+      expect(el).toBeTruthy()
+      return el as Element
+    })
+    expect(previewLine.textContent).toContain('first queued')
+    expect(previewLine.textContent).toContain('second queued')
 
     act(() => {
       remote.setState({
