@@ -123,6 +123,10 @@ const consoleSpikeDemoBlockers = [
     reason: "ask-user.question",
     sessionId: "launch-review",
     agentTypeId: "reviewer",
+    // `inbox` is what makes a blocker an INBOX item, and the Inbox is the
+    // single triage surface — a demo blocker without it marks the row but
+    // never reaches the Inbox or its rail count.
+    inbox: { kind: "question", sourceLabel: "Boring Reviewer" },
     sessionBadge: { kind: "question", label: "question", tone: "attention", priority: 10 },
   },
   {
@@ -130,6 +134,7 @@ const consoleSpikeDemoBlockers = [
     reason: "ask-user.approval",
     sessionId: "console-research",
     agentTypeId: "researcher",
+    inbox: { kind: "approval", sourceLabel: "Boring Researcher" },
     sessionBadge: { kind: "approval", label: "approve", tone: "warning", priority: 20 },
   },
 ] as const

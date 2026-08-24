@@ -89,10 +89,6 @@ function spikeList(): HTMLElement {
   return list as HTMLElement
 }
 
-function spikeNeedsYou(): HTMLElement | null {
-  return spikeRoot().querySelector('[data-boring-workspace-part="console-spike-needs-you"]')
-}
-
 /** Document order of the main list's chat rows, by session id. */
 function spikeRowIds(scope: HTMLElement = spikeList()): string[] {
   return [...scope.querySelectorAll('[data-boring-workspace-part="app-session-row"]')]
@@ -207,13 +203,11 @@ describe("AppLeftPane", () => {
       // The Agent is metadata here, never a second collapse level.
       expect(screen.queryByRole("button", { name: /Boring Alpha/ })).not.toBeInTheDocument()
       // Only the first Project starts open; each group keeps the pane's one
-      // recency order rather than re-sorting by Agent. "beta-one" is waiting on
-      // a human, so it has been PROMOTED into Needs you and is not repeated
-      // here — the whole point of a promotion.
-      expect(spikeRowIds()).toEqual(["alpha-one"])
-      expect(spikeRowIds(spikeNeedsYou() as HTMLElement)).toEqual(["beta-one"])
+      // recency order rather than re-sorting by Agent. A chat waiting on a
+      // human stays in its group like any other; triage lives in the Inbox.
+      expect(spikeRowIds()).toEqual(["alpha-one", "beta-one"])
       await user.click(screen.getByRole("button", { name: "Expand Agent Console" }))
-      expect(spikeRowIds()).toEqual(["alpha-one", "alpha-two"])
+      expect(spikeRowIds()).toEqual(["alpha-one", "beta-one", "alpha-two"])
 
       const row = spikeRow("Alpha launch")
       expect(row.querySelector(SPIKE_CHIP)).toHaveAttribute("data-boring-agent-type-id", "alpha")
@@ -273,57 +267,6 @@ describe("AppLeftPane", () => {
       expect(screen.getAllByRole("menuitemradio").map((item) => item.textContent)).toEqual(["Recent", "By project"])
     })
 
-    it("pins a capped Needs you section above the list, whatever the view", async () => {
-      const user = userEvent.setup()
-      const blockedSessions = Array.from({ length: 6 }, (_, index) => ({
-        id: `blocked-${index}`,
-        agentTypeId: "alpha",
-        title: `Blocked ${index}`,
-        updatedAt: spikeNow - index * 1_000,
-      }))
-      function BlockEverySession() {
-        const { addBlocker } = useWorkspaceAttention()
-        useEffect(() => {
-          for (const session of blockedSessions) {
-            addBlocker({
-              id: `ask:${session.id}`,
-              reason: "ask-user.question",
-              sessionId: session.id,
-              agentTypeId: "alpha",
-              sessionBadge: { kind: "question", label: "question", tone: "attention", priority: 10 },
-            })
-          }
-        }, [addBlocker])
-        return null
-      }
-      renderSpikeConsole(
-        {
-          projects: [{ id: "launch", name: "Launch", sessions: blockedSessions }],
-          sessions: blockedSessions,
-        },
-        <BlockEverySession />,
-      )
-
-      const capped = spikeNeedsYou()
-      expect(capped).not.toBeNull()
-      expect(spikeRowIds(capped as HTMLElement)).toEqual([
-        "blocked-0", "blocked-1", "blocked-2", "blocked-3", "blocked-4",
-      ])
-
-      // Truncating is the one state where the rows can no longer tell you how
-      // many there are, so the count comes back — as a fraction, not a total.
-      expect(within(capped as HTMLElement).getByText("5 of 6")).toBeInTheDocument()
-      await user.click(within(capped as HTMLElement).getByRole("button", { name: "+1 more" }))
-      expect(spikeRowIds(spikeNeedsYou() as HTMLElement)).toHaveLength(6)
-      expect(within(spikeNeedsYou() as HTMLElement).queryByText(/ of /)).not.toBeInTheDocument()
-
-      // Grouping changes the list below it; the section keeps its contents and
-      // its place above that list.
-      await chooseSpikeView(user, "By project")
-      const grouped = spikeNeedsYou() as HTMLElement
-      expect(spikeRowIds(grouped)).toHaveLength(6)
-      expect(grouped.compareDocumentPosition(spikeList()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    })
 
     it("starts the default chat from the split button's primary half, no menu step", async () => {
       const user = userEvent.setup()
@@ -594,7 +537,7 @@ describe("AppLeftPane", () => {
       const projectRollup = screen.getByTitle("1 session waiting")
       expect(projectRollup).toHaveTextContent("1")
       // One token, one mark: the same --attention colour the Agent card and the
-      // Needs you band use, and a dot + number rather than a filled pill.
+      // Agent card uses, and a dot + number rather than a filled pill.
       expect(projectRollup.className).toContain("var(--attention)")
       expect(projectRollup.className).not.toContain("var(--accent)")
       expect(projectRollup.className).not.toContain("rounded-full px")
@@ -654,7 +597,11 @@ describe("AppLeftPane", () => {
       expect(onDeleteSession).not.toHaveBeenCalled()
     })
 
-    it("promotes a waiting chat into Needs you instead of listing it twice", async () => {
+
+    it("keeps a waiting chat in its own list — the pane has no second inbox", async () => {
+      // OWNER RULING: the Inbox tab is the single triage surface. A rail
+      // section that promoted waiting chats out of the list was a second
+      // inbox competing with it, so the pane now only MARKS them.
       function BlockBetaReview() {
         const { addBlocker } = useWorkspaceAttention()
         useEffect(() => {
@@ -670,115 +617,14 @@ describe("AppLeftPane", () => {
       }
       renderSpikeConsole({}, <BlockBetaReview />)
 
-      expect(spikeRowIds(spikeNeedsYou() as HTMLElement)).toEqual(["beta-one"])
-      // Exactly once on the whole surface, not once per section.
+      expect(spikeRoot().textContent).not.toMatch(/needs you/i)
+      expect(spikeRoot().querySelector('[data-boring-workspace-part="console-spike-needs-you"]')).toBeNull()
+      // Every chat is in the one list, in plain recency order.
+      expect(spikeRowIds()).toEqual(["alpha-one", "alpha-two", "beta-one"])
       expect(screen.getAllByText("Beta review")).toHaveLength(1)
-      expect(spikeRowIds()).toEqual(["alpha-one", "alpha-two"])
-      // Uncapped, the rows are the count, so no number beside the heading.
-      expect(within(spikeNeedsYou() as HTMLElement).queryByText("1")).not.toBeInTheDocument()
-      expect(within(spikeNeedsYou() as HTMLElement).queryByText(/of/)).not.toBeInTheDocument()
-    })
-
-    /** N waiting chats spread over two Projects, newest first, interleaved. */
-    function blockedAcrossProjects(count: number) {
-      const sessions = Array.from({ length: count }, (_, index) => ({
-        id: `blocked-${index}`,
-        agentTypeId: index % 2 === 0 ? "alpha" : "beta",
-        title: `Blocked ${index}`,
-        updatedAt: spikeNow - index * 1_000,
-      }))
-      // Alternating Projects, so a flat recency order NEVER seats two of the
-      // same Project together and clustering has something real to do.
-      const projects = [
-        { id: "launch", name: "Launch", sessions: sessions.filter((_, index) => index % 2 === 0) },
-        { id: "console", name: "Agent Console", sessions: sessions.filter((_, index) => index % 2 === 1) },
-      ]
-      function BlockEvery() {
-        const { addBlocker } = useWorkspaceAttention()
-        useEffect(() => {
-          for (const session of sessions) {
-            addBlocker({
-              id: `ask:${session.id}`,
-              reason: "ask-user.question",
-              sessionId: session.id,
-              agentTypeId: session.agentTypeId,
-              sessionBadge: { kind: "question", label: "question", tone: "attention", priority: 10 },
-            })
-          }
-        }, [addBlocker])
-        return null
-      }
-      return { sessions, projects, BlockEvery }
-    }
-
-    const clusterLabels = () => [...(spikeNeedsYou() as HTMLElement)
-      .querySelectorAll('[data-boring-workspace-part="console-spike-needs-you-cluster"]')]
-      .map((label) => label.textContent)
-
-    it("keeps Needs you flat at 7 waiting chats", async () => {
-      const user = userEvent.setup()
-      const { sessions, projects, BlockEvery } = blockedAcrossProjects(7)
-      renderSpikeConsole({ projects, sessions }, <BlockEvery />)
-      await user.click(within(spikeNeedsYou() as HTMLElement).getByRole("button", { name: "+2 more" }))
-
-      expect(clusterLabels()).toEqual([])
-      // Pure recency, Projects interleaved — the useful answer at this size.
-      expect(spikeRowIds(spikeNeedsYou() as HTMLElement))
-        .toEqual(["blocked-0", "blocked-1", "blocked-2", "blocked-3", "blocked-4", "blocked-5", "blocked-6"])
-    })
-
-    it("clusters Needs you by Project at 8, in one section in the same place", async () => {
-      const user = userEvent.setup()
-      const { sessions, projects, BlockEvery } = blockedAcrossProjects(8)
-      renderSpikeConsole({ projects, sessions }, <BlockEvery />)
-      const section = spikeNeedsYou() as HTMLElement
-      await user.click(within(section).getByRole("button", { name: "+3 more" }))
-
-      // One label per run, Projects ordered by their newest waiting chat.
-      expect(clusterLabels()).toEqual(["Launch", "Agent Console"])
-      // Re-seated, never re-ranked: recency holds inside each Project.
-      expect(spikeRowIds(spikeNeedsYou() as HTMLElement)).toEqual([
-        "blocked-0", "blocked-2", "blocked-4", "blocked-6",
-        "blocked-1", "blocked-3", "blocked-5", "blocked-7",
-      ])
-      // Still ONE section, still above the list.
-      expect(spikeRoot().querySelectorAll('[data-boring-workspace-part="console-spike-needs-you"]')).toHaveLength(1)
-      expect((spikeNeedsYou() as HTMLElement).compareDocumentPosition(spikeList()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-      // The label names the Project, so the rows under it stop repeating it.
-      expect(spikeRow("Blocked 0", spikeNeedsYou() as HTMLElement).querySelector(SPIKE_TAG)).toBeNull()
-    })
-
-    it("gives a Needs you row the same dimension tag the active grouping gives the list below", async () => {
-      const user = userEvent.setup()
-      function BlockBetaReview() {
-        const { addBlocker } = useWorkspaceAttention()
-        useEffect(() => {
-          addBlocker({
-            id: "ask:beta-one",
-            reason: "ask-user.question",
-            sessionId: "beta-one",
-            agentTypeId: "beta",
-            sessionBadge: { kind: "question", label: "question", tone: "attention", priority: 10 },
-          })
-        }, [addBlocker])
-        return null
-      }
-      renderSpikeConsole({}, <BlockBetaReview />)
-      const promoted = () => spikeRow("Beta review", spikeNeedsYou() as HTMLElement)
-
-      // Recent: nothing groups, so the row states both dimensions.
-      expect(promoted().querySelector(SPIKE_CHIP)).toHaveAttribute("data-boring-agent-type-id", "beta")
-      expect(promoted().querySelector(SPIKE_TAG)).toHaveTextContent("Launch")
-
-      // By project: the body groups on Project, so the tag would repeat it.
-      await chooseSpikeView(user, "By project")
-      expect(promoted().querySelector(SPIKE_CHIP)).toHaveAttribute("data-boring-agent-type-id", "beta")
-      expect(promoted().querySelector(SPIKE_TAG)).toBeNull()
-
-      // By agent: the chip is what the body already answers, so it goes.
-      await chooseSpikeView(user, "By agent")
-      expect(promoted().querySelector(SPIKE_CHIP)).toBeNull()
-      expect(promoted().querySelector(SPIKE_TAG)).toHaveTextContent("Launch")
+      // The row still carries its amber badge — marking stays, triage moved.
+      expect(spikeRow("Beta review").querySelector('[data-boring-workspace-part="app-session-badge"]'))
+        .toHaveAttribute("data-boring-badge", "question")
     })
 
     it("reveals the row's actions without hover on a pointer-coarse device", async () => {
