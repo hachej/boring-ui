@@ -1,8 +1,8 @@
 ---
 title: Job Thread v0 — 1 Thread = 1 job
-state: draft
+state: draft (round 2 — folds fresh-eyes + Sol adversarial review)
 issue: 1399
-review: pending cross-model review; no implementation before it
+review: verdict `revise` at 9e42e893a; this revision answers it. No implementation before owner sign-off.
 ---
 
 # Job Thread v0 — multi-seat Thread projection, K7 demo
@@ -10,291 +10,411 @@ review: pending cross-model review; no implementation before it
 **Concept** (owner, [#1399](https://github.com/hachej/boring-ui/issues/1399)): the Thread is the unit
 of WORK, not of agent. The human talks to the job; staffing collapses behind one merged timeline, and
 per-agent sessions demote to drill-down provenance — CI logs behind a PR check. Convergence:
-**1 Thread = 1 job = 1 Objective**, staffed by Seats.
+**1 Thread = 1 job = 1 Objective**.
 
-**Naming is ratified, not free**: *multi-seat Thread* / *Job Thread*, never "channel" — `channel` is
-reserved for transport/ingress (C5 "channel-answerable", Track C, Slack/CLI). See #1399's
-reconciliation comment and PR [#1401](https://github.com/hachej/boring-ui/pull/1401) (open), which
-appends to `RECONCILIATION.md` §7 and `VISION.md` R-c: *"A Thread may span multiple Seats, projected
-as one timeline; one Thread per job."*
+**Naming is ratified, not free**: the product concept is a *multi-seat Thread* / *Job Thread*, never
+"channel" (`channel` is reserved for transport/ingress: C5 "channel-answerable", Track C, Slack/CLI).
+PR [#1401](https://github.com/hachej/boring-ui/pull/1401) (open) appends to `RECONCILIATION.md` §7 and
+`VISION.md` R-c: *"A Thread may span multiple Seats, projected as one timeline; one Thread per job."*
 
-**Hard constraint (v0)**: no A2A loopback — agents never call agents. An **orchestrator seat**, an
-ordinary in-process gateway client and not an agent, relays between per-agent sessions; the Thread
-timeline is a **projection** merging per-session Runs. Decision 28 (`docs/DECISIONS.md:461`) defers
-A2A and v0 does not reopen it. Ordering and dependencies live only in §6; §§1–5 describe shape.
+**What v0 builds** is a *projection* over several per-agent Sessions, driven by a **relay** — a
+non-Seat, non-agent service. §1 asks the owner to rule on the noun before anything is built.
+Ordering and dependencies live only in §7; §§1–6 describe shape.
 
-## 1. Data — what a Job Thread record is, and where it lives
+> **Correction carried from review.** Round 1 claimed "no A2A loopback; agents never call agents" as
+> a ratified constraint. That misread the record. Decision 24 (`docs/DECISIONS.md:364`) ratifies **a
+> native in-process binding for internal agent-to-agent consumption** ("no MCP loopback, no
+> serialization; two-way chat via `input-required`") and states *"Adopting A2A internally is rejected
+> as unnecessary."* Decision 25 (`:413`) defers **A2A** — the external protocol binding — not
+> in-process collaboration. So relay-vs-native-binding is a **live product choice for v0, not a
+> compliance requirement**, and it is owner question Q2. v0 proposes the relay because it needs no
+> agent-facing capability and is deletable; it is not the only compliant shape.
+
+## 1. The noun — decide this first
 
 ### Today
 
-- **No Thread noun exists in code.** `ConversationRef|threadId|ThreadRef` and
-  `ConsoleCollection|ConsoleThreadRefV1|AutomationGroup` → 0 hits across `packages/ plugins/ apps/`.
-- The only shipped conversation address is `AgentSessionRef { agentTypeId, sessionId }`
-  (`packages/agent/src/shared/gateway/types.ts:54-57`), deliberately carrying no `hostId`
-  (Decision 29, `docs/DECISIONS.md:471`). Real identity is the triple
-  `(workspaceScopeId, agentTypeId, sessionId)` — `agent-host/agentSessionKey.ts:3`.
-- The 1355 Console plan (merged to main as `docs/issues/1355/plan.md`, PR #1356) proposes
-  `ConsoleThreadRefV1 { workspaceScopeId, agentTypeId, sessionId }` (`plan.md:74-78`), persisted in
-  `ConsoleCollectionThreadAssignment` under a unique key
-  `(appId, principalId, workspaceScopeId, agentTypeId, sessionId)` (`plan.md:102-104`).
-  **Single-seat by construction**: one Thread = one session tuple.
-- Run identity: the ratified `RunId := RequestKey` ships as `AgentRequestKey
-  { workspaceScopeId, authSubjectId, operation, target, requestId }` (`agent-host/types.ts:51-57`),
-  durably ledgered by `SqliteAgentRequestLedger` (`sqliteRequestLedger.ts:39`) at
-  `.agent-request-ledger.sqlite` (`createAgentHost.ts:291`).
-- **`seatId` does not exist anywhere in code**, and `trajectory` → 0 occurrences repo-wide. The
-  spine (`runId·agentId·digest·seatId·cost·outcome`, `VISION.md:37`, `RECONCILIATION.md:137`) and
-  `Seat { seatId; workspaceId; agentId; role?; budget?; permissions?; bindingState }`
-  (`V2-IMPLEMENTATION-SPEC.md:119`) are doc-only — 1355 says so itself: *"C7 SessionCatalog and
-  full Seat projection are target architecture, not current prior art"* (`plan.md:163-165`). The
-  `seat: string` in `loadConfiguredAgentFleet.ts:28` is an unrelated fleet.yaml field, explicitly
-  warned about at `agent-host/types.ts:148-149`.
-- Objectives (PR [#1382](https://github.com/hachej/boring-ui/pull/1382), **OPEN, not merged**)
-  persist `Objective { id, title, objective, metric, baseline, target, current, status,
-  constraints, evidenceRefs, outcome, ... }` (`plugins/objectives/src/shared/types.ts:10-27`) to
-  `.boring/objectives.json` via `FileObjectiveStore` (`objectiveStore.ts:58`) — versioned, lock
-  sidecar, atomic tmp-rename. **No session/thread/run ref field**; the only outbound seam is the
-  free-string `evidenceRefs: string[]`.
+`Thread` is frozen as one object with Session: *"a Thread is not a Pi session, transcript, or tab —
+it owns one record and many Runs"* (`VISION.md:112-115`), and the V2 spec's `Thread
+{ threadId; workspaceId; title; participants; workingSet }` (`V2-IMPLEMENTATION-SPEC.md:121`)
+**already carries a `participants` field**. `Seat { seatId; workspaceId; agentId; role?; budget?;
+permissions?; bindingState }` (`:119`) binds an *Agent* to a Workspace and "grants participation, not
+identity". No Thread, Seat, or participant noun exists in code (`ThreadRef|threadId|ConsoleCollection`
+→ 0 hits across `packages/ plugins/ apps/`); `seatId` and `trajectory` → 0 hits.
 
-### Delta
+### Delta — recommendation, and the cost of the alternative
 
-The smallest honest record — `objectiveId` and `seats` carry the whole concept:
+Round 1 minted `JobThreadV0` holding several session refs. That silently created a *second* Thread
+object against the frozen ruling, and called the relay an "orchestrator seat" against the frozen Seat
+definition. Both are withdrawn.
+
+**Recommended default (Q1-A): a projection descriptor with a distinct noun.**
 
 ```ts
-interface JobThreadV0 {
-  id: string                       // `jth-<uuid>`
+/** NOT a Thread. A saved description of how to project several Threads(=Sessions) as one job. */
+interface JobProjectionV0 {
+  id: string                        // `job-<uuid>`
   title: string
-  objectiveId?: string             // one-way ref into the objectives plugin; objectives unchanged
-  seats: JobThreadSeatV0[]         // v0: exactly 2 working seats (worker, reviewer) — see §5
+  objectiveId?: string              // one-way ref into the objectives plugin (§5)
+  participants: JobParticipantV0[]
   createdAt: string; updatedAt: string; revision: number
 }
-interface JobThreadSeatV0 {
-  seatId: string                   // FIRST real seatId in the codebase
-  role: "orchestrator" | "worker" | "reviewer"
-  conversation: ConsoleThreadRefV1 // { workspaceScopeId, agentTypeId, sessionId }
+interface JobParticipantV0 {
+  participantId: string             // TEMPORARY DISPLAY HANDLE — not a seatId, not audit identity
+  role: "worker" | "reviewer"
+  agentTypeId: string
+  conversation: { workspaceScopeId: string; agentTypeId: string; sessionId: string }
+  bindingState: "active" | "removed" // agent removal preserves history (cf. Seat.bindingState)
 }
 ```
 
-- **A Job Thread is a typed conversation *ref set* plus a role per ref.** It owns no transcript,
-  authority, or runtime, and each `conversation` is independently authorized on every read/write —
-  the 1355 rule that a collection "does not own a Thread record ... those domains expose
-  independently authorized references" (`plan.md:89-93`).
-- **Per-Run seat attribution**: the join is `seatId × AgentRequestKey`. The honest v0 move is *not*
-  to widen `AgentRequestKey` (P0 host work, `RECONCILIATION.md:153` "seatId in C7") but to **derive**
-  it: a `AgentRequestKey.target` of `{kind:'session', ref}` resolves to exactly one seat within a
-  Thread, so `runId → seatId` is a lookup over the ref set. v0 stores nothing extra. Promotion
-  trigger for a stored seatId: a second Thread sharing one session.
-- **Durable home**: a `plugins/job-threads/` file store cloned from `FileObjectiveStore` —
-  `.boring/job-threads.json`, same versioned + lock + atomic-rename pattern. Why not the 1355
-  Console store: its hosted persistence is `packages/core/src/server/db/stores/consoleCollectionStore`
-  (Postgres, `plan.md:512-519`) and is **gate-blocked** — Gate 1 (`plan.md:372-376`, *"No
-  implementation bead is ready before it"*) is unanswered, all 21 beads `status: open`. A plugin file
-  store needs no Core migration, no principal-ownership contract, and is deletable.
-- **The conflict to surface for 1355** (the hook PR #1401 names): `ConsoleThreadRefV1`'s unique key
-  is the session 5-tuple, so a Console collection cannot hold a multi-seat Thread as one row. Minimal
-  repair: an assignment's subject becomes `jobThreadId` *or* a session tuple. That is a **1355
-  amendment, not a v0 slice** — v0 ships without Console collection integration.
+Why `JobProjectionV0` rather than the reviewed suggestions `JobThreadProjectionV0` /
+`ThreadDescriptor`: both still lead with a Thread-noun and will be read as canonical Thread machinery
+in a year. The record's subject is the **job**; "Job Thread" stays the product concept per #1401,
+while the durable record never claims Thread-ness. The relay is named **relay** — a service, never a
+Seat — because a Seat contains `agentId` and binds an Agent, which the relay is not.
 
-## 2. Mechanism — the orchestrator relay
+This keeps frozen R-c intact and matches #1401's "no new machinery": nothing here is canonical
+identity, and deleting the record destroys no Runs, transcripts, or authority.
+
+**Alternative (Q1-B): JobProjection *is* the canonical Thread.** Cheaper than review assumed —
+frozen `Thread` already has `participants`, so the ontology has room. But the cost is real and must
+be paid up front: (i) an explicit R-c amendment, since Thread=Session becomes Thread⊇Sessions;
+(ii) C7/`SessionCatalog` becomes the owner of Thread identity, pulling ratified P0 "seatId in C7"
+(`RECONCILIATION.md:150-155`) into scope; (iii) #1355's `ConsoleThreadRefV1` and its
+`(appId, principalId, workspaceScopeId, agentTypeId, sessionId)` unique key
+(`docs/issues/1355/plan.md:74-78, 102-104`) must be reworked before #1355 implements, not after;
+(iv) a migration for any Thread ref already written. Q1-B is the better end state and the wrong v0.
+
+## 2. Mechanism — the relay
 
 ### Today
 
-- `EmbeddedAgentGateway` (`agent-host/embeddedGateway.ts:126`) is exported from
-  `packages/agent/src/server/index.ts:178`. Holding it plus one `AuthorizedAgentScope`, an in-process
-  caller can `connectSession` on **any** `(agentTypeId, sessionId)` it is authorized for and `send()`
-  on the returned `AgentSessionConnection` (`shared/gateway/types.ts:196-204`: `events`, `send`,
-  `interrupt`, `stop`, `clearQueue`, `close`). **Nothing forces one sender per session.** The
-  orchestrator seat needs no new machinery.
-- The two existing programmatic drivers are **unusable** for relay: `runWithWorkspaceAgentLease`
-  (`workspaceAgentLease.ts:87`) and `createBoundWorkspaceAgentDispatcher`
-  (`server/workspaceAgentDispatcher.ts:92`) are each bound to a single `agentTypeId`
-  (`WorkspaceAgentGatewayBinding {gateway, scope, agentTypeId}`, `shared/workspaceAgentDispatcher.ts:68-72`).
-- There is **no actor identity below the auth subject** — `AuthorizedAgentScope
-  { workspaceScopeId, authSubjectId }` (`shared/gateway/types.ts:44-48`) is all the model carries, so
-  the orchestrator acts *as the human's auth subject*. Correct: it is a client, not an agent, and
-  cannot mint authority (invariant 7, `VISION.md`).
-- Cost bounds are per-run and metering-local: reservations key on
-  `runId = pi-run:${sessionId}:prompt:${clientNonce}` (`pi-chat/metering.ts:197-202`). **No
-  per-Thread budget exists today.**
+- **Correction from review, verified.** Round 1 claimed the existing drivers are bound to one
+  `agentTypeId`. False for the one that matters: `runWithWorkspaceAgent(input, run)` takes
+  `agentTypeId` **per invocation** (`WorkspaceAgentDirectRunInput { agentTypeId, context, requestId }`,
+  `packages/agent/src/shared/workspaceAgentDispatcher.ts:57-71`). Only the long-lived
+  `WorkspaceAgentGatewayBinding {gateway, scope, agentTypeId}` (`:67-71`) is single-agent.
+- The trusted composition root already issues **per-request** scope and guards workspace selectors
+  (`createWorkspaceAgentServer.ts:2088-2101`): `scopeIssuer.issue({claim:{workspaceScopeId,
+  authSubjectId}})` then `agentHost.runWithWorkspaceAgent({...input, authorizedScope}, run)`.
+  Unbounded access was deliberately removed (`:2103-2104`).
+- The capability handed to the callback is **callback-scoped and non-retainable**:
+  `LeaseBoundWorkspaceAgent` is documented "lease guarded by the Host and must not be retained after
+  the callback" (`shared/workspaceAgentDispatcher.ts:40-42`). Its `dispatch(input, onEvent,
+  onAccepted)` returns `{ ref, receipt }` — an accepted Gateway receipt, persistable before events
+  are consumed (`:44-56`).
+- `EmbeddedAgentGateway` is exported at `packages/agent/src/server/index.ts:185`.
+- Turn events carry the anchors the relay needs: `agent-end { seq, turnId, status, willRetry? }` and
+  `message-end { seq, messageId, final: BoringChatMessage }` (`shared/chat/piChatEvent.ts:6-25`).
+  **`willRetry=true` marks a NON-terminal end** — the comment warns once-per-settle consumers to
+  ignore those.
 
 ### Delta
 
-An `OrchestratorRelay` in the job-threads plugin server: a plain class holding
-`{ gateway, scope, thread }`, no agent, no LLM.
+**Drop the gateway-holding plugin class from round 1.** It would have retained a lease-guarded
+capability across turns, which the contract forbids, and hard-coded the embedded tier. Instead the
+relay is a stateless function invoked once per seat turn, using the existing actor-aware callback
+seam — no new authority-bearing host seam, no long-lived scope, no D28 second composer:
 
-1. **Trigger**: a human message posted to the Thread, or a seat's Run reaching terminal state
-   (`agent-end` on that seat's `AgentSessionEvent` stream — the same signal
-   `AgentSessionActivityIndex` already consumes, `sessionInventory.ts:138-142`).
-2. **Fan-out of a human message**: addressing-gated (below). Unaddressed → the Thread's default
-   worker seat. Addressed → `connectSession` on that seat's ref and `send` the projected Thread
-   history since that seat's last turn, plus the new message.
-3. **Handoff**: when a seat's Run ends with an addressed handoff, the relay cross-posts that seat's
-   final message into the addressed seat's session as an attributed quote. **The relay is the only
-   writer**; neither seat has a tool that reaches the other.
-4. **Cost bounds**, enforced centrally in the relay and never in agent instructions:
-   `maxHandoffDepth` (default 3) and `maxSeatInvocations` per human turn, plus a per-Thread budget
-   hook in front of the existing reservation path (`metering.ts`). Exceeding a cap posts a terminal
-   system event on the Thread and stops — it does not silently truncate.
+```
+relayTurn(jobId, targetParticipant, payload):
+  runWithWorkspaceAgent({ agentTypeId: p.agentTypeId, context, requestId }, async (bound) => {
+    const { ref, receipt } = await bound.dispatch(..., onEvent, onAccepted)
+    // persist the relay receipt (§3) from `receipt` BEFORE consuming events
+  })
+```
 
-#### Turn policy — prior art: Buzz by Block
+**Structured handoff, not free-text parsing.** Round 1 parsed `@reviewer` out of prose. Withdrawn:
+quoted or incidental mentions branch the run and make acceptance untestable. v0 registers a
+**handoff tool** on each participant agent — `handoff({ to: <role enum>, message: string })` — so the
+target is typed, the payload is explicit, and the transition is a `tool-call` event the relay matches
+exactly. This is a workspace plugin tool the relay owns; it is *not* an agent-to-agent call (the tool
+returns immediately, the relay decides what happens next).
 
-[Buzz](https://block.xyz/) (Block, July 2026) is an @-mention-gated agent group chat on Nostr, and
-is the closest shipped prior art. What we adopt and what we fix:
+**Post-vs-Run boundary — only posts cross seats.** A seat's private reasoning, tool calls, and
+intermediate messages never enter another seat's context. Exactly two things cross: (a) the **final
+assistant message** of a settled turn (`message-end.final`, gated on an `agent-end` with
+`willRetry !== true`), and (b) **relay-authored system handoff markers**. Everything else stays in
+the originating session and is reachable only by drill-down.
 
-- **Addressing-gated turns.** A seat responds only when explicitly addressed — by the human, or by
-  another seat's relayed handoff. No ambient reactions, no router model in v0. Buzz's proven
-  anti-noise mechanism, and it maps one-to-one onto our per-`agentTypeId` session addressing
-  (`/api/v1/agents/:agentTypeId/sessions/...`, `httpProjection.ts:221-582`).
-- **Loop safety — Buzz's documented gap; do not repeat it.** Buzz leaves stopping conditions to
-  agent authors, and mention loops are a real failure mode. v0 enforces the §2.4 caps centrally.
-- **Transcript model.** One full shared timeline visible to all seats (Buzz-validated); each seat's
-  private session receives the projected history on its turn. **Attribution is free for us**: Buzz
-  needs signed per-agent Nostr identities, while per-Run `seatId` over the request ledger gives the
-  same audit story from the envelope rather than from cryptography.
-- **Human role.** Approver of terminal actions, not a participant in every turn — Buzz's "steer or
-  approve" is our Inbox Human Intentions surface. A convergence to cite, not a mode to invent.
-- **Modes.** Sequential handoff and parallel same-brief are distinct explicit modes (Buzz supports
-  both). **v0 ships handoff only**; parallel is v1 and its mechanism already has a name — 1355's
-  `AutomationGroup` fan-out (`plan.md:253-279`), each target getting its own Thread, Run, receipt.
-- **Posture.** Buzz (shared thread, mixed trust, signed identity) vs Grok Bot (single-owner private
-  fleet, internal handoffs): our product spans both, so we adopt Buzz's audit/identity posture even
-  while v0 runs a single-owner fleet.
+**Turn policy — addressing-gated, with prior art.** [Buzz](https://block.xyz/) (Block, July 2026) is
+an @-mention-gated agent group chat and the closest shipped prior art. Adopted: a participant acts
+only when explicitly addressed (here, by typed handoff or by the human), one shared timeline, human
+as approver rather than per-turn participant (our Inbox Human Intentions). Fixed: Buzz leaves
+stopping conditions to agent authors and mention loops are a known failure mode — v0 enforces caps
+centrally in the relay (§3), and replaces mention-parsing with the typed tool. Deferred: Buzz's
+parallel same-brief mode (v1; its mechanism is already named — #1355's `AutomationGroup` fan-out,
+`plan.md:253-279`). D24 already anticipated the caps as "consumption cycle/depth guards (A→B→A)"
+(`docs/DECISIONS.md:365`).
 
-#### ask-user gates on the Thread
+### Failure semantics
 
-Today: `AskUserQuestion { questionId, sessionId, ownerPrincipalId, status, schema, answerToken, ...}`
-(`plugins/ask-user/src/shared/types.ts:113-127`) is keyed by **`sessionId` only** — no `agentTypeId`,
-no thread — with one pending question per session (`getPending(sessionId)` is singular,
-`askUserStore.ts:28`). Pending state reaches the UI as
-`AskUserPendingState { hint, hintsBySession }` (`askUserStatePublisher.ts:6-21`); the Inbox left-pane
-action already exists (`plugins/ask-user/src/front/index.tsx:239-251`).
+Every abnormal end writes a terminal system event onto the projection; the relay never fails silent.
 
-Delta: **no ask-user change.** The Thread projection joins `hintsBySession` against the ref set
-(`sessionId ∈ thread.seats[].conversation.sessionId`) and renders the question inline with its seat's
-attribution; answering still routes through `ask-user.v1.answer` and its `answerToken` capability
-(`askUserRuntime.ts:160-177`). The relay treats a seat blocked on `ask_user` as *not* a terminal Run,
-and does not advance the handoff chain.
+| Case | Rule |
+| --- | --- |
+| Non-terminal end | `agent-end` with `willRetry === true` is ignored; the chain does not advance (`piChatEvent.ts:9-11`). |
+| Seat error run | `agent-end.status === 'error' \| 'aborted'` ends the chain, records `chainState: "failed"` with the source `turnId`, and posts a system event. No automatic retry in v0. |
+| Handoff to a removed participant | `bindingState === "removed"` → chain ends with `participant-unavailable`; history is preserved, never rewritten. |
+| Partial cross-post | The relay receipt is written from `onAccepted` *before* events are consumed, so a crash after dispatch is replayable: the destination `requestId` is the idempotency key and the send is never duplicated. |
+| Restart mid-chain | Durable `chainState` + per-ref processed cursors (§3) resume or terminate; a chain whose destination receipt exists but whose completion is unknown resolves to `outcome-unknown` and posts a system event rather than re-sending. |
+| Cap exceeded | Terminal system event naming the cap and the last `turnId`; no truncation, no silent stop. |
+| Blocked on `ask_user` | Not a terminal Run — the chain suspends, does not advance, and does not count against the hop cap until answered (§4). |
 
-## 3. Projection — the merged timeline
+## 3. Relay state — the durable receipt
 
 ### Today
 
-- The left-pane row model is `AppLeftPaneSession { id, agentTypeId?, title?, updatedAt?, turnCount?,
+Round 1's record explicitly owned no transcript or runtime, yet the relay needed "history since last
+turn", processed handoffs, per-turn depth, and terminal system events. Nothing owned that state.
+`AgentSessionEvent { ref, seq, event }` documents **"`seq` is the only replay cursor"**
+(`shared/gateway/events.ts:4-8`) — there is no wallclock, no thread id, no cross-stream correlation.
+Round 1's `(wallclock, seq)` merge key **is not implementable** and is withdrawn. The request ledger's
+target carries only the session ref, not a job or participant (`agent-host/types.ts:47-57`).
+
+The ratified home for this already has a name: **`Activity` — "what happened: runs, delegations,
+approvals, interventions (envelope projection — no second event system)"**
+(`V2-IMPLEMENTATION-SPEC.md:122-123`).
+
+### Delta
+
+A `JobRelayReceiptV0` append-only log beside the projection record in the same plugin store, written
+under the same `revision` CAS. It is an **envelope projection**, not a competing event system: every
+field is either relay-authored control state or copied from an existing receipt.
+
+```ts
+interface JobRelayReceiptV0 {
+  jobId: string
+  threadTurnId: string              // relay-assigned, monotonic — the ONLY total order across seats
+  sourceRef?: AgentSessionRef       // whose settled turn triggered this
+  sourceTurnId?: string             // from `agent-end.turnId`
+  destinationRef: AgentSessionRef
+  destinationRequestId: string      // from dispatch `onAccepted` receipt — the idempotency key
+  handoffEdge?: { fromRole: string; toRole: string }
+  processedCursors: Record<string, number>   // per-ref `seq` high-water mark
+  chainState: "running" | "suspended" | "completed" | "failed" | "capped" | "outcome-unknown"
+  capOutcome?: { cap: "hop" | "invocation"; limit: number; observed: number }
+  createdAt: string
+}
+```
+
+- **Ordering**: `threadTurnId` is the total order across seats; per-ref `seq` orders within a seat.
+  Merged rendering sorts by `(threadTurnId, seq)`. No wallclock anywhere.
+- **Idempotency / restart**: on boot the relay reads the last receipt per job. A receipt with a
+  `destinationRequestId` and no terminal state resolves per the §2 table — never a blind re-send.
+- **Caps**: `maxHopDepth` (default 3) and `maxInvocationsPerHumanTurn` are evaluated against the
+  receipt chain, so a restart cannot reset them.
+- **Context bound**: `processedCursors` is what "history since last turn" means concretely — a
+  participant receives posts (§2) after its own cursor, capped at `maxInjectedPosts` /
+  `maxInjectedBytes`; overflow drops **oldest-first** and inserts a relay-authored truncation marker.
+  No summarization in v0 (a summarizer would be an unreviewed model call inside the relay).
+
+**Per-Thread budget is dropped from v0 claims.** Round 1 promised a per-Thread budget hook. It cannot
+be built: `MeteringRunScope { workspaceId?, userId?, userEmail?, userEmailVerified?, sessionId,
+runId, source }` (`pi-chat/metering.ts:45-53`) has **no job, thread, or participant field**, and
+reservations key on `runId = pi-run:${sessionId}:prompt:${clientNonce}` (`:197-202`). v0 ships only
+the relay-enforced hop/invocation caps above, which bound *hops*, not spend. The named prerequisite
+for a real budget — a v1 slice, not a v0 claim — is adding a job dimension to `MeteringRunScope` and
+threading it through the reservation path.
+
+## 4. Projection — the merged timeline
+
+### Today
+
+- The left-pane row model `AppLeftPaneSession { id, agentTypeId?, title?, updatedAt?, turnCount?,
   nativeSessionId?, hasAssistantReply?, ephemeral?, status? }`
-  (`packages/workspace/src/front/layout/plugin-tabs/AppLeftPane.tsx:17-27`) — **session-shaped, with
-  no `kind` discriminator**, and PR [#1393](https://github.com/hachej/boring-ui/pull/1393) (OPEN)
-  leaves it byte-for-byte unchanged. Correcting the brief: the "conversation-kind-agnostic row model"
-  is **not yet built**. #1393 adds `AppLeftPaneConsoleSpike` with
-  `AppLeftPaneConsoleSpikeView = "recent" | "project" | "agent"`,
-  `ConsoleSpikeRowSlots { leadingBadge?, metaTag? }` and
-  `AppSessionRowAffordances = "default" | "console"` — the seams where it would land.
-- Per-session events are `AgentSessionEvent { ref, seq, event }` (`shared/gateway/events.ts:5-9`),
-  NDJSON at `GET /api/v1/agents/:agentTypeId/sessions/:sessionId/events` (`httpProjection.ts:402`),
-  cursor = `seq`. Transcripts are Pi JSONL under `sessionNamespaceForAgent()`
-  (`sessionInventory.ts:13-22`), rooted at `BORING_AGENT_SESSION_ROOT`.
-- **Durable replay is opt-in and off**: `BORING_CHAT_DURABLE_STREAM` / `.agent-event-stream.sqlite`
-  (`buildAgentComposition.ts:37-40`). Decision 29 shipped Conformance **Level B** and deferred Level
-  D because *"durable replay is only load-bearing once concurrent multi-agent streams exist"*
-  (`docs/DECISIONS.md:472`). **A Job Thread is exactly that condition arriving** — the single most
-  important Today/Delta finding in this plan.
+  (`packages/workspace/src/front/layout/plugin-tabs/AppLeftPane.tsx:17-27`) is session-shaped with no
+  `kind` discriminator, and PR [#1393](https://github.com/hachej/boring-ui/pull/1393) (OPEN) leaves it
+  unchanged. Correcting the brief: the "conversation-kind-agnostic row model" is **not yet built**.
+  #1393 adds `AppLeftPaneConsoleSpike`, `AppLeftPaneConsoleSpikeView = "recent" | "project" | "agent"`,
+  `ConsoleSpikeRowSlots { leadingBadge?, metaTag? }` and `AppSessionRowAffordances` — the seams.
+- Events stream as NDJSON at `GET /api/v1/agents/:agentTypeId/sessions/:sessionId/events`
+  (`agent-host/httpProjection.ts:402`), cursor = `seq`. `AgentSessionConnection` is a **server-side**
+  object (`shared/gateway/types.ts:196-204`) — round 1 wrongly implied a front-end client existed.
+- `AskUserQuestion` is keyed by `sessionId` alone (`plugins/ask-user/src/shared/types.ts:113-127`),
+  pending state published as `AskUserPendingState { hint, hintsBySession }`
+  (`askUserStatePublisher.ts:6-21`).
 
 ### Delta
 
-- **A Thread view is interleaved Runs with seat attribution.** New: a `useJobThreadTimeline` opening
-  one `AgentSessionConnection` per seat ref, merging frames on `(wallclock, seq)` per source and
-  tagging each with `seatId` + role. No new transport, no new store — a client-side merge over
-  streams that already exist. Cross-session ordering is best-effort and explicitly *not* a total
-  order; a system event marks each relayed handoff so the reader has an anchor.
-- **Drill-down**: each merged block links to its origin session's own view — the "CI logs behind a
-  PR check" affordance from #1399.
-- **Left-nav framing (owner direction, 2026-08-24)**: the primary list becomes **Threads (jobs)**;
-  **Agents becomes a DIRECTORY entry** (a roster of all agents); and Thread participation is an
-  **attribute on the Thread** — the 1..n participant chips rendered in #1393's
-  `ConsoleSpikeRowSlots.metaTag` slot. The **by-agent lens then reads as "Threads this agent
-  participates in"** (a directory view), *not* a grouping of private sessions. That is a semantic
-  change to #1393's `"agent"` view mode, whose `OrganizedSession` grouping assumes one `agentTypeId`
-  per row.
-- **Level D activation** is the honest prerequisite for a Thread surviving a reload with more than
-  one live stream. The v0 demo runs with `BORING_CHAT_DURABLE_STREAM` on; defaulting it is a
-  Decision-29 re-evaluation (`docs/DECISIONS.md:474`), out of scope here.
+- **Merged timeline** = posts (§2) ordered by `(threadTurnId, seq)` from §3, each tagged with its
+  participant's role and `agentTypeId`. Drill-down links each block to its origin session.
+- **ask-user join uses the full triple, not bare `sessionId`.** Round 1 joined on `sessionId` alone;
+  gateway session identity is scoped by `agentTypeId`, so equal ids under two agents could answer the
+  wrong participant's question. v0 matches
+  `(workspaceScopeId, agentTypeId, sessionId)` against `participants[].conversation` and ignores any
+  hint it cannot resolve to exactly one participant. **No ask-user change** is still required — the
+  answer routes through the existing `ask-user.v1.answer` bridge op and its `answerToken`
+  (`askUserRuntime.ts:160-177`).
 
-## 4. K7 demo — "grow audience X→Y"
+### Level D honesty
+
+Round 1 called enabling `BORING_CHAT_DURABLE_STREAM` "Level D activation". Withdrawn — **the flag is
+not conformance**. It installs a SQLite event store (`buildAgentComposition.ts:30-43`), while every
+Level D conformance test is `it.skip` and owner-annotated to the streaming lane
+(`agent-host/testing/gatewayConformance.ts:624-628`).
+
+What Level B *can* do: bounded in-process replay plus snapshot rehydrate; a cursor older than the
+window or from before a restart yields `REPLAY_GAP`/`CURSOR_AHEAD` and the client refetches — *"never
+a silent gap"* (`AGENT_GATEWAY_V0.md:116-124`). **v0 ships against Level B**, and that is sufficient
+because §3's receipts — not the event stream — own cross-seat causality and ordering; a refetch
+rebuilds seat content while `threadTurnId` preserves the merge.
+
+The one property Level B cannot reconstruct is **per-seat intra-turn event history across a host
+restart**: after a restart the timeline can show settled posts (from receipts + snapshot) but cannot
+replay the streaming detail of a turn that was in flight. v0 accepts that and renders such a turn
+from its snapshot. Whether to complete Level D is owner question Q7, not a claim this plan makes.
+
+## 5. K7 demo — "grow audience X→Y"
 
 ### Today
 
-The pieces exist but have never been composed. `Objective` (PR #1382, open) already has exactly the
-right shape for K7 — `metric`, `baseline`, `target`, `current`
-(`plugins/objectives/src/shared/types.ts:10-27`), created by the `create_objective` tool and
-navigable via the `objective` surface kind. There is no Thread, no second seat, no relay.
+`Objective { id, title, objective, metric, baseline, target, current, status, constraints,
+evidenceRefs, outcome, ... }` (PR [#1382](https://github.com/hachej/boring-ui/pull/1382), **OPEN**;
+`plugins/objectives/src/shared/types.ts:10-27`) already has the exact K7 shape, persisted to
+`.boring/objectives.json` by `FileObjectiveStore` (`objectiveStore.ts:58`) with versioned state, a
+lock sidecar, and atomic tmp-rename — the template §1's store clones. It has **no** session, thread,
+or run ref; the only outbound seam is the free-string `evidenceRefs: string[]`.
 
-### Delta — the scripted deterministic path
+### Delta — fixture-driven, with a labelled live smoke
 
-Fleet: two `agentTypeId`s in the demo `fleet.yaml` — `creator-growth-worker` and
-`creator-growth-reviewer` — plus the orchestrator seat (a client, not a fleet entry).
+**Acceptance is fixture-driven.** Round 1 called a live-model run "deterministic". It is not: nothing
+guarantees the worker emits the handoff, the reviewer replies, or `update_objective` is ever called.
+v0 acceptance runs a **scripted model adapter** emitting a fixed event script, asserting exact
+`threadTurnId` sequence, handoff edges, cap outcomes, and final Objective state. A **live-model
+walkthrough** is kept as an explicitly **non-deterministic smoke check**, never as a gate.
 
-1. Owner creates a Job Thread *"Grow audience 1,200 → 5,000"*. Creation calls `create_objective`
-   once (metric `followers`, baseline 1200, target 5000), stores the returned `obj-<uuid>` as
-   `objectiveId`, and `createSession`s one session per `agentTypeId` as the two seats.
-2. Owner posts one message to the **Thread**, not to an agent. Unaddressed → relay routes to worker.
-3. Worker drafts a growth plan, hands off `@reviewer`; relay cross-posts the draft. Depth = 1.
-4. Reviewer returns a critique addressed back to `@worker`. Depth = 2.
-5. Worker revises and calls `ask_user` to approve the terminal action (publish / move the
-   Objective's `current`). The gate appears **on the Thread** with worker attribution, and in Inbox.
-6. Owner approves; worker calls `update_objective`; relay stops. The depth cap (3) is never reached.
+Scripted path (two fleet agents, `creator-growth-worker` / `creator-growth-reviewer`, plus the relay):
 
-**What the owner sees**: one Thread row with two participant chips; one merged timeline where every
-block names its seat; one inline approval card; one Objective whose `current` moved. Sessions appear
-only on drill-down. No agent-to-agent call exists anywhere in the request ledger — every send
-carries `authSubjectId` = the owner. The demo is scripted (fixed prompts, fixed handoff points, caps
-never hit): a *demo path*, not a claim of general multi-agent competence.
+1. Owner creates the job *"Grow audience 1,200 → 5,000"* → `create_objective` (metric `followers`,
+   baseline 1200, target 5000), then one session per `agentTypeId`.
+2. Owner posts one message to the job. Unaddressed → the worker participant.
+3. Worker drafts, calls `handoff({to:"reviewer"})`. Relay cross-posts the final assistant message.
+   Hop 1.
+4. Reviewer critiques, calls `handoff({to:"worker"})`. Hop 2.
+5. Worker revises, calls `ask_user` to approve the terminal action. The gate renders on the job with
+   participant attribution and in the Inbox; the chain suspends.
+6. Owner approves → worker calls `update_objective` → `chainState: "completed"`. Cap (3) never hit.
 
-## 5. Non-goals for v0 (explicit)
+**Objective coupling is one-way and compensated.** The job points at `objectiveId`; `Objective` gains
+no `threadId`, so PR #1382 is untouched. Creation is two writes (Objective, then projection record),
+so it uses `clientRequestId` for the Objective (`types.ts:40`, "a retried create with the same key
+returns the original objective") and, if the projection write fails, retries against the same key
+rather than orphaning a second Objective. Whether an Objective is **mandatory** is owner question Q5.
 
-1. **No shared runtime transcript.** Seats keep private Pi JSONL sessions (`sessions.ts:154`); the
-   shared timeline is a projection only. No "room" object.
-2. **No A2A activation.** No agent-callable tool reaches another agent. Decision 28 defers A2A
-   (`docs/DECISIONS.md:461`); PR #1401's amendment states the non-change explicitly.
-3. **More than 2 working seats.** v0 is worker + reviewer + orchestrator; a third seat is a v1
-   routing question, not a mechanism question.
-4. **"Channels" in the transport sense.** No Slack/CLI/Nostr ingress binds to a Thread; `channel`
-   stays reserved for C5 channel-answerable / Track C.
-5. **Console collection integration** — no `ConsoleCollection`, Postgres store, or
-   `AutomationGroup`; gate-blocked (§1).
-6. **A durable `seatId` on the request ledger** — derived in v0 (§1).
-7. **Parallel same-brief mode.** Handoff only (§2).
-8. **Cross-Workspace Threads.** All seats share one `workspaceScopeId`, matching 1355's rule that
-   cross-Workspace transfer is a separate protocol (`plan.md:211-213`).
+**What the owner sees**: one job row with participant chips; one merged timeline where every block
+names its participant; one inline approval; one Objective whose `current` moved. Sessions appear only
+on drill-down.
 
-## 6. Slices
+## 6. Non-goals for v0 (explicit)
 
-Ordering lives here and nowhere else. **Gate G** = 1355 Gate 1 architecture approval
-(`docs/issues/1355/plan.md:372-376`, *"No implementation bead is ready before it"*), currently
-**unanswered** — all 21 `wt-391-forward-gh-1355-persistent-console-q9ba` beads are `status: open`.
-**Gate R** = owner merge of PR #1401 (the ratification of "one Thread per job").
+1. **No shared runtime transcript.** Participants keep private Pi sessions; the timeline is a
+   projection. No "room" object.
+2. **No native in-process agent-to-agent binding** — available and ratified (D24, `:364`), chosen
+   against for v0 (Q2), not forbidden. No external A2A either (D25, `:413`).
+3. **No canonical Thread or Seat identity minted.** `participantId` is a display handle (§8).
+4. **More than 2 working participants**; parallel same-brief mode; cross-Workspace jobs (all
+   participants share one `workspaceScopeId`, per `plan.md:211-213`).
+5. **"Channels" in the transport sense.** No Slack/CLI ingress binds to a job.
+6. **No Console collection integration** and no `AutomationGroup` (§7 gate note).
+7. **No per-Thread budget** (§3) and **no context summarization** — oldest-first truncation only.
+8. **No Level D claim** (§4).
 
-| # | Slice | Depends on | Gate |
-| --- | --- | --- | --- |
-| S1 | `plugins/job-threads` record + file store (`JobThreadV0`, `JobThreadSeatV0`, `.boring/job-threads.json`), cloned from `FileObjectiveStore`; bridge ops + schema; no UI | PR #1382 merged (for `objectiveId` to mean anything) | **Gate R** only — free of G |
-| S2 | `OrchestratorRelay`: multi-`agentTypeId` client over `EmbeddedAgentGateway`, addressing-gated turn policy, central depth/invocation caps, handoff cross-post. Server-only, driven by tests | S1 | free |
-| S3 | Thread timeline projection: multi-connection merge with `seatId` attribution, ask-user join over `hintsBySession`, drill-down links. Requires `BORING_CHAT_DURABLE_STREAM` on | S2 | free |
-| S4 | Left-nav reframe: Threads primary, Agents as directory, participant chips in `ConsoleSpikeRowSlots.metaTag`, by-agent lens = "Threads this agent participates in" | S3, PR #1393 | **Gate G** — touches the Console pane contract |
-| S5 | K7 demo composition: two-agent fleet, scripted path, owner-facing walkthrough | S3 (S4 optional for the demo) | free if run on the playground route; **Gate G** if it ships in the Console |
+## 7. Slices
 
-S1–S3 and S5 are deliverable without the 1355 decision — they add a plugin and a projection, touching
-no Console store and no Core migration. Only S4 negotiates the Console contract, carrying §1's
-`ConsoleThreadRefV1` repair: file that as a 1355 amendment before S4 starts.
+Ordering lives here and nowhere else. **The real critical path is open PRs**, not the #1355 gate:
+#1401 (naming ratification) and #1382 (objectives) block v0 content; #1393 blocks only the deferred
+Console item. **Gate G** = #1355 Gate 1 architecture approval (`docs/issues/1355/plan.md:372-376`,
+*"No implementation bead is ready before it"*), still unanswered — it binds **only** the deferred
+follow-on, because v0 touches no Console store. Each slice is one session and follows the #1355 bead
+idiom (`plan.md:378-417`).
 
-## Open questions for the owner
+**S1 — projection contract + store.** `JobProjectionV0`, `JobParticipantV0`, `JobRelayReceiptV0`
+schemas; file store with revision CAS, lock, atomic rename, load diagnostics. No relay, no UI, no
+agent tool.
+- *Blocked by:* owner ruling on Q1 (noun); PR #1401 merged.
+- *Scope:* `plugins/job-threads/src/shared/{types,schema}.ts`, `src/server/jobProjectionStore.ts` + tests.
+- *Proof:* `pnpm --filter @hachej/boring-job-threads test -- src/server/__tests__/jobProjectionStore.test.ts src/shared/__tests__/schema.test.ts`; `pnpm --filter @hachej/boring-job-threads typecheck`.
+- *Negative proof:* a record whose `participantId` collides, or whose CAS revision is stale, is
+  rejected rather than merged; `grep -r "seatId\|threadId" plugins/job-threads/src` returns nothing.
 
-1. **Derived vs stored `seatId`** (§1): accept the deferral, or pull "seatId in C7"
-   (`RECONCILIATION.md:153`) forward into v0?
-2. **Level D**: the Thread projection is the first genuine multi-stream consumer — the exact
-   re-evaluation trigger Decision 29 names (`docs/DECISIONS.md:474`). Flip
-   `BORING_CHAT_DURABLE_STREAM` default-on, or keep v0 behind the flag?
-3. **`ConsoleThreadRefV1` repair**: amend 1355 now (assignment subject becomes `jobThreadId` or a
-   session tuple), or ship v0 Console-less and amend later?
-4. **Objective coupling direction**: v0 points Thread → Objective one-way, leaving PR #1382
-   untouched. Acceptable, or should `Objective` gain a `threadId`?
-5. **Orchestrator identity**: the relay acts as the owner's `authSubjectId`, so every relayed send is
-   attributed to the human in the request ledger. Correct — it *is* the human's client — or does the
-   audit story need a distinct non-agent principal?
+**S2 — actor-scoped dispatch + handoff tool.** Relay turn function over `runWithWorkspaceAgent`
+(per-invocation `agentTypeId`); `handoff({to, message})` tool registration; receipt written from
+`onAccepted` before events are consumed. No chain logic yet.
+- *Blocked by:* S1.
+- *Scope:* `plugins/job-threads/src/server/{relayTurn,handoffTool}.ts` + tests.
+- *Proof:* `pnpm --filter @hachej/boring-job-threads test -- src/server/__tests__/relayTurn.test.ts`; `pnpm lint:invariants`.
+- *Negative proof:* the lease-bound capability is not retained past the callback (test asserts use
+  after return throws); no `new EmbeddedAgentGateway` anywhere in the plugin.
+
+**S3 — relay state machine.** Chain advance on settled turns, `willRetry` filtering, posts-only
+crossing, caps, context bound with truncation marker, and every row of §2's failure table including
+restart resume.
+- *Blocked by:* S2.
+- *Scope:* `plugins/job-threads/src/server/relayChain.ts` + tests (scripted adapter).
+- *Proof:* `pnpm --filter @hachej/boring-job-threads test -- src/server/__tests__/relayChain.test.ts`.
+- *Negative proof:* a restart mid-chain neither re-sends a dispatched turn nor resets the hop count;
+  `willRetry:true` does not advance the chain.
+
+**S4 — front projection.** Merged timeline by `(threadTurnId, seq)` with participant attribution,
+ask-user join on the full triple, drill-down links. Plugin panel only — no Console pane changes.
+- *Blocked by:* S3.
+- *Scope:* `plugins/job-threads/src/front/` + tests.
+- *Proof:* `pnpm --filter @hachej/boring-job-threads test -- src/front/__tests__/`.
+- *Negative proof:* an ask-user hint whose triple matches no participant renders nowhere and answers
+  nothing.
+
+**S5 — K7 demo fixture.** Two-agent fleet, scripted adapter acceptance asserting the §5 sequence,
+Objective compensation path, plus a separately-labelled live smoke.
+- *Blocked by:* S4; PR #1382 merged.
+- *Scope:* demo fleet config + `src/server/__tests__/k7Demo.test.ts`.
+- *Proof:* `pnpm --filter @hachej/boring-job-threads test -- src/server/__tests__/k7Demo.test.ts`.
+- *Negative proof:* the acceptance run performs zero live model calls; a failed projection write
+  after `create_objective` leaves exactly one Objective on retry.
+
+**Deferred follow-on (not v0) — Console nav reframe.** Jobs primary, Agents as a directory,
+participant chips in `ConsoleSpikeRowSlots.metaTag`, by-agent lens = "jobs this agent participates
+in". **Gate G blocked**, depends on #1393, and needs the `ConsoleThreadRefV1` repair below. It does
+not depend on S4.
+
+**Filed separately, not a v0 slice:** #1355's `ConsoleThreadRefV1` and its session-tuple unique key
+are single-seat by construction and cannot hold a multi-participant job as one row. Per #1401 this
+must be repaired **before #1355 implements**, independent of whether v0 ships.
+
+## 8. Audit honesty
+
+`participantId` values minted in this plugin are **temporary display handles**. They are not `seatId`,
+not envelope identity, and carry no audit weight: they live in a mutable record, and membership edits
+or deletion can change or destroy them retroactively. Round 1's claim that per-Run `seatId` gives
+"the same audit story from the envelope" is **withdrawn** — no seat attribution exists in the envelope
+(`agent-host/types.ts:47-57`), and ratified P0 puts `seatId` in C7 (`RECONCILIATION.md:150-155`).
+
+Two principals must not be conflated. The **authorization principal** for every relay send is the
+owner's `authSubjectId` — correct, and enforced: the lease rejects a mismatch between the verified
+claim and the request context (`workspaceAgentLease.ts:97-102`). The **causal initiator** may be the
+human (a posted message) or the relay (a handoff). v0 records the distinction in
+`JobRelayReceiptV0.sourceRef`/`handoffEdge` and renders it, matching D24's ratified audit model:
+*"the principal is the originating user/workspace, with the acting agent recorded as actor in
+provenance"* (`docs/DECISIONS.md:365`). Envelope-grade attribution arrives with C7, not with v0.
+
+## 9. Owner questions
+
+1. **The noun.** Q1-A projection descriptor with a distinct noun (`JobProjectionV0`, recommended,
+   R-c untouched) or Q1-B canonical multi-seat Thread (better end state; costs an R-c amendment, C7
+   Thread ownership, seatId-in-C7 pulled forward, and a #1355 ref rework)?
+2. **Relay vs native binding.** D24 (`:364`) ratifies a native in-process agent-to-agent binding with
+   `input-required`. v0 proposes the relay (no agent-facing capability, deletable, caps centrally
+   enforced). Confirm the relay for v0, or build the ratified binding instead?
+3. **Attribution grade.** Accept explicitly display-grade `participantId` for v0, or pull ratified
+   C7 `seatId` forward now so the demo's audit story is envelope-grade?
+4. **Post/Run boundary.** Confirm only settled final assistant posts + relay system markers cross
+   seats — no tool calls, no intermediate messages?
+5. **Objective coupling.** Is an Objective **mandatory** for a job? Confirm one-way ref with
+   `clientRequestId` compensation, or should `Objective` gain a `threadId`?
+6. **Context and budget.** Confirm oldest-first truncation with no summarization, and confirm that
+   per-Thread *spend* is out of v0 (it needs a job dimension on `MeteringRunScope`, §3)?
+7. **Level D.** v0 ships against Level B with the §4 limitation accepted. Complete Level D
+   conformance (streaming lane #1009) now, or defer?
+8. **Acceptance bar.** Confirm fixture-driven acceptance as the gate, with the live-model walkthrough
+   labelled a non-deterministic smoke check?
