@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react"
-import { Bot } from "lucide-react"
+import { Bot, Search } from "lucide-react"
+import { IconButton } from "@hachej/boring-ui-kit"
 import {
   PiChatPanel as DefaultPiChatPanel,
   usePiSessions as useDefaultPiSessions,
@@ -9,7 +10,7 @@ import {
   type ToolRendererOverrides,
 } from "@hachej/boring-agent/front"
 import { WorkspaceProvider, type WorkspaceProviderProps } from "../../front/provider/WorkspaceProvider"
-import { ChatLayout, TopBar, ThemeToggle, type ChatLayoutProps, type ChatPanePendingPlacement, type ChatPaneSplitDirection } from "../../front/layout"
+import { ChatLayout, TopBar, ThemeToggle, useKeyboardInset, type ChatLayoutProps, type ChatPanePendingPlacement, type ChatPaneSplitDirection } from "../../front/layout"
 import { WORKSPACE_COMPOSER_STOP_REASONS, emitWorkspaceComposerStop } from "../../front/chrome/chat/composerStop"
 import type { WorkspaceChatPanelProps } from "../../front/chrome/chat/types"
 import type {
@@ -775,6 +776,9 @@ export function WorkspaceAgentFront<
 }: WorkspaceAgentFrontProps<TSession>) {
   const viewport = useViewportWidth()
   const mobileShellActive = mobileShellEnabled && isCompactViewport(viewport)
+  // Publishes `--keyboard-inset` on <html> for every surface below. This is the
+  // outermost component that always mounts, so it is the one place it belongs.
+  useKeyboardInset()
   const externalPluginsEnabled = externalPlugins !== false
   const resolvedFrontPluginHotReload = externalPluginsEnabled ? frontPluginHotReload : false
   const resolvedHotReloadEnabled = externalPluginsEnabled ? hotReloadEnabled : false
@@ -2342,6 +2346,35 @@ export function WorkspaceAgentFront<
   const topBarLeftContent = topBarLeft ? (
     <div className="flex min-w-0 items-center gap-2">{topBarLeft}</div>
   ) : undefined
+  // At compact the mobile chat bar already carries the real session title, so a
+  // top bar above it is a second title row over the same chat — three stacked
+  // headers before the first pixel of transcript. It is dropped there, except
+  // when the host supplied opaque chrome of its own (brand + site nav, sign-in,
+  // version badge) that lives nowhere else; that bar then shows the app name
+  // rather than repeating the session title.
+  const hostSuppliedTopBarChrome = Boolean(topBarLeftContent) || topBarRight != null
+  const showTopBar = !mobileShellActive || hostSuppliedTopBarChrome
+  // The two actions the top bar owned that ARE relocatable follow it into the
+  // mobile bar when it is gone. The command palette especially: a phone has no
+  // ⌘K, so this button is its only entry point.
+  const mobileChatBarActions = mobileShellActive && !showTopBar ? (
+    <>
+      {/* 44px hit area: the UI-review mobile touch-target gate requires it and
+          the merged bar is a phone-only surface. */}
+      <IconButton
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        className="mobile-shell-bar-action size-11"
+        onClick={openCommandPalette}
+        aria-label="Search catalogs and commands"
+        title="Search"
+      >
+        <Search className="size-4" />
+      </IconButton>
+      {showThemeToggle ? <ThemeToggle className="size-11" /> : null}
+    </>
+  ) : undefined
   const activeChatPaneRef = activeChatPaneId ? workspaceSessionRefFromKey(activeChatPaneId) : null
   const openChatPaneRefs = useMemo(() => chatPaneIds.map((id) => workspaceSessionRefFromKey(id)), [chatPaneIds])
   const pinnedRefs = useMemo(() => pinnedIds.map((id) => workspaceSessionRefFromKey(id)), [pinnedIds])
@@ -2595,6 +2628,7 @@ export function WorkspaceAgentFront<
       chatPaneSplitPending={chatPaneSplitPending}
       pendingChatPanePlacement={pendingChatPanePlacement}
       onPendingChatPanePlacementConsumed={consumePendingChatPanePlacement}
+      chatTopActions={mobileChatBarActions}
       onDropChatSession={openChatPane}
       flashChatPaneId={flashChatPane?.workspaceId === workspaceId ? flashChatPane.id : null}
       surface={surfaceOpen ? "artifact-surface" : null}
@@ -2731,9 +2765,12 @@ export function WorkspaceAgentFront<
     </PluginTabsWorkspaceShell>
   ) : (
     <div className="flex h-full min-h-0 flex-col">
+      {showTopBar ? (
       <TopBar
         appTitle={appTitle}
-        sessionTitle={remoteSessionsTransitioning ? "Loading sessions…" : resolvedSessionTitle ?? defaultSessionTitle}
+        sessionTitle={mobileShellActive
+          ? undefined
+          : remoteSessionsTransitioning ? "Loading sessions…" : resolvedSessionTitle ?? defaultSessionTitle}
         // The non-plugin-tabs shell shows the active chat's title in its bar,
         // so it is a chat header too and names its Agent like the others.
         // Undefined below two Agents, which is when the map itself is null.
@@ -2742,6 +2779,7 @@ export function WorkspaceAgentFront<
         topBarLeft={topBarLeftContent}
         topBarRight={topBarRightContent}
       />
+      ) : null}
       {mainContent}
     </div>
   )

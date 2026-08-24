@@ -844,7 +844,7 @@ export function AppLeftPane({
         </div>
       </section>
 
-      {bottomSlot ? <footer data-boring-workspace-part="app-left-footer" className="shrink-0 border-t border-border/40 p-2">{bottomSlot}</footer> : null}
+      {bottomSlot ? <footer data-boring-workspace-part="app-left-footer" className="shrink-0 border-t border-border/40 p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))]">{bottomSlot}</footer> : null}
     </aside>
   )
 }
