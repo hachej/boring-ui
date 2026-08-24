@@ -56,7 +56,9 @@
   },
   "dependencies": {
     "@fastify/websocket": "^11.2.0",
+    "@picovoice/pvrecorder-node": "^1.2.9",
     "lucide-react": "^1.31.0",
+    "transcribe-cpp": "0.2.1",
     "ws": "^8.21.2"
   },
   "devDependencies": {

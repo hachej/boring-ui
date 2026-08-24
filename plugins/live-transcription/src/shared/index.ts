@@ -15,6 +15,9 @@ export const KYUTAI_PCM_FRAME_BYTES = KYUTAI_PCM_FRAME_SAMPLES * 2
 export const LIVE_SOCKET_HIGH_WATER_BYTES = 64 * 1024
 export const LIVE_NONCE_BYTES = 32
 export const SHORT_DICTATION_MAX_BYTES = 8 * 1024 * 1024
+export const HOST_DICTATION_SAMPLE_RATE = 16_000
+export const HOST_DICTATION_MAX_DURATION_MS = 120_000
+export const HOST_DICTATION_SETTINGS_PATH_ENV = "BORING_PI_TRANSCRIBE_SETTINGS"
 
 export const LIVE_TRANSCRIPT_ERROR_CODES = [
   "live_transcript_disabled",
@@ -31,6 +34,7 @@ export const LIVE_TRANSCRIPT_ERROR_CODES = [
   "live_transcript_upstream_failed",
   "live_transcript_revision_conflict",
   "live_transcript_not_active",
+  "live_dictation_unavailable",
 ] as const
 
 export type LiveTranscriptErrorCode = typeof LIVE_TRANSCRIPT_ERROR_CODES[number]
