@@ -16,7 +16,7 @@ import { cn } from "../../lib/utils"
 import { CHAT_SESSION_DRAG_TYPE } from "../ChatPaneStage"
 import type { WorkspaceAttentionSessionBadge } from "../../attention/WorkspaceAttentionProvider"
 import type { AppLeftPaneSession } from "./AppLeftPane"
-import { AppSessionActionItems, AppSessionActionsMenu, AppSessionContextMenu, hasAppSessionActions } from "./AppSessionActionsMenu"
+import { AppSessionActionItems, AppSessionActionsMenu, AppSessionContextMenu, hasAppSessionActions, type AppSessionActionOrder } from "./AppSessionActionsMenu"
 import { InlineSessionRename, useInlineSessionRename } from "./InlineSessionRename"
 import { encodeWorkspaceSessionDrag } from "../../sessionIdentity"
 import { resolveSessionTrailingSlot, type SessionTrailingBadge, type SessionTrailingMarker } from "./appSessionRowTrailing"
@@ -26,12 +26,74 @@ export type AppSessionRowState = "normal" | "open" | "active"
 /**
  * A row verb can live in two places: directly on the row (revealed on hover /
  * focus-within) or inside the menu. Which of the two a surface picks is a
- * frequency judgement, not a capability one — so the row takes both lists and
- * never decides for its host.
+ * frequency judgement, not a capability one.
  */
 export type AppSessionRowShortcut = "split" | "quick"
 
-const DEFAULT_HOVER_SHORTCUTS: readonly AppSessionRowShortcut[] = ["split", "quick"]
+/**
+ * The row's whole interaction personality, as ONE opt-in.
+ *
+ * These started as six independent props, which is six chances to change a
+ * shipped host by forgetting a default. As one named set there is exactly one:
+ * a surface is `default` — byte-for-byte what shipped — or it is `console`,
+ * and nothing in between exists to get wrong. The #1355 variant is the only
+ * caller of `console`; if the spike is dropped, this type and that row go with
+ * it in one delete.
+ */
+export type AppSessionRowAffordances = "default" | "console"
+
+interface AffordanceSet {
+  hover: readonly AppSessionRowShortcut[]
+  menu: readonly AppSessionRowShortcut[]
+  /** Whether a chat already on stage still offers the placement verbs. */
+  placementScope: "unopened" | "always"
+  confirmDelete: boolean
+  /** Right-click opens the same panel the "..." does. */
+  contextMenu: boolean
+  /** F2 on a focused row begins the inline rename. */
+  renameHotkey: boolean
+  /** Renaming selects the existing title instead of parking a caret after it. */
+  renameSelectsAll: boolean
+  /** Ordering of the action menu's bands. */
+  menuOrder: AppSessionActionOrder
+  /** Fallback mark in the leading slot when nothing else claims it. */
+  leadingGlyph: "chat" | "none"
+  /** Whether the user-set pin survives a system badge in the trailing slot. */
+  pinOutranksBadge: boolean
+}
+
+const AFFORDANCES: Record<AppSessionRowAffordances, AffordanceSet> = {
+  default: {
+    hover: ["split", "quick"],
+    menu: [],
+    placementScope: "unopened",
+    confirmDelete: false,
+    contextMenu: false,
+    renameHotkey: false,
+    renameSelectsAll: false,
+    menuOrder: "shipped",
+    leadingGlyph: "chat",
+    pinOutranksBadge: false,
+  },
+  console: {
+    // One hover verb plus the menu: three icons cost 40% of a touch row, and
+    // took that space from the chat's own name at every width.
+    hover: ["split"],
+    menu: ["split", "quick"],
+    // The verb list must not change shape on the one row that happens to be
+    // open — that reads as an unreliable menu, not as "this chat is open".
+    placementScope: "always",
+    confirmDelete: true,
+    contextMenu: true,
+    renameHotkey: true,
+    renameSelectsAll: true,
+    menuOrder: "console",
+    // The Agent chip is this pane's leading mark; a chat glyph on the rows
+    // that skip the chip reads as a distinction rather than as a default.
+    leadingGlyph: "none",
+    pinOutranksBadge: true,
+  },
+}
 
 /**
  * The split / detach hover shortcuts differ only by icon, words and handler.
@@ -129,11 +191,7 @@ export function AppSessionRow({
   activeDotActive = state === "active",
   compact = false,
   showPlacementShortcuts = true,
-  hoverShortcuts = DEFAULT_HOVER_SHORTCUTS,
-  leadingGlyph = "chat",
-  menuShortcuts,
-  placementScope = "unopened",
-  confirmDelete = false,
+  affordances = "default",
   ownerLabel,
   leadingBadge,
   metaTag,
@@ -156,22 +214,8 @@ export function AppSessionRow({
   compact?: boolean
   /** Keep quick/split hover actions out of deeply nested or touch-constrained rows. */
   showPlacementShortcuts?: boolean
-  /** Verbs that get their own hover-revealed icon. Default: the two placements. */
-  hoverShortcuts?: readonly AppSessionRowShortcut[]
-  /** Placement verbs the menu repeats. Default: none — the row icons carry them. */
-  menuShortcuts?: readonly AppSessionRowShortcut[]
-  /**
-   * The fallback mark in the leading slot when nothing else claims it. "none"
-   * keeps the slot (alignment is shared with rows that DO carry a chip) and
-   * draws nothing: a chat glyph on every row of a list of chats states the
-   * obvious, and it appeared on exactly the rows the Agent chip skips, so it
-   * read as a distinction rather than as a default.
-   */
-  leadingGlyph?: "chat" | "none"
-  /** Whether a chat already on stage still offers the placement verbs. */
-  placementScope?: "unopened" | "always"
-  /** Route Delete through a confirmation instead of firing it straight off the menu. */
-  confirmDelete?: boolean
+  /** The row's interaction personality. `default` is byte-stable shipped behavior. */
+  affordances?: AppSessionRowAffordances
   ownerLabel?: string
   /**
    * Takes over the leading slot (normally the chat glyph / working dot) when a
@@ -206,7 +250,7 @@ export function AppSessionRow({
   // One rule, read by the row icon and the menu entry alike so the two can
   // never disagree about what is possible.
   //
-  // `placementScope` decides whether the ACTIVE chat still offers them.
+  // `affordance.placementScope` decides whether the ACTIVE chat still offers them.
   // "unopened" is what the shipped hosts do: a chat already on stage gains
   // nothing from a second door onto itself. It has one bad consequence the
   // Console cannot live with — the menu silently loses two entries on exactly
@@ -214,17 +258,18 @@ export function AppSessionRow({
   // rather than that this chat is open. "always" keeps the verb list constant
   // per row-set and lets the active chat be pulled into a split view beside
   // another one, which is a real thing to want.
-  const placementInScope = placementScope === "always" || state === "normal"
+  const affordance = AFFORDANCES[affordances]
+  const placementInScope = affordance.placementScope === "always" || state === "normal"
   const splitPossible = placementInScope && actionsAvailable && canSplit && Boolean(onOpenAsPane)
   const detachPossible = placementInScope && actionsAvailable && Boolean(onOpenDetached)
   const pinAvailable = canPin && Boolean(onTogglePinned)
   const wants = (list: readonly AppSessionRowShortcut[] | undefined, shortcut: AppSessionRowShortcut) =>
     Boolean(list?.includes(shortcut))
-  const splitAvailable = showPlacementShortcuts && splitPossible && wants(hoverShortcuts, "split")
-  const detachAvailable = showPlacementShortcuts && detachPossible && wants(hoverShortcuts, "quick")
+  const splitAvailable = showPlacementShortcuts && splitPossible && wants(affordance.hover, "split")
+  const detachAvailable = showPlacementShortcuts && detachPossible && wants(affordance.hover, "quick")
   // Whatever a hover icon does not carry stays reachable in the menu.
-  const menuSplitAvailable = splitPossible && wants(menuShortcuts, "split")
-  const menuDetachAvailable = detachPossible && wants(menuShortcuts, "quick")
+  const menuSplitAvailable = splitPossible && wants(affordance.menu, "split")
+  const menuDetachAvailable = detachPossible && wants(affordance.menu, "quick")
   const menuProps = {
     canCopy,
     canRename: renameAvailable,
@@ -253,6 +298,7 @@ export function AppSessionRow({
     workingDotShown,
     ...(ownerLabel ? { ownerLabel } : {}),
     pinned,
+    pinOutranksBadge: affordance.pinOutranksBadge,
     ...(session.updatedAt !== undefined ? { updatedAt: session.updatedAt } : {}),
     now: Date.now(),
   })
@@ -270,6 +316,7 @@ export function AppSessionRow({
     sessionId: session.id,
     title,
     available: renameAvailable,
+    selectsAll: affordance.renameSelectsAll,
     onRename,
   })
   const activate = () => onSwitch?.(session.id)
@@ -282,7 +329,7 @@ export function AppSessionRow({
   // so its trap is never entered and Escape/Tab land on the list behind it.
   const openingDialogRef = useRef(false)
   const requestDelete = onDelete
-    ? confirmDelete
+    ? affordance.confirmDelete
       ? () => { openingDialogRef.current = true; setDeleteConfirmOpen(true) }
       : (id: string) => onDelete(id)
     : undefined
@@ -291,6 +338,7 @@ export function AppSessionRow({
       sessionId={session.id}
       title={title}
       {...menuProps}
+      order={affordance.menuOrder}
       pinned={pinned}
       onRename={rename.begin}
       {...(onOpenAsPane ? { onOpenAsPane: () => onOpenAsPane(session.id) } : {})}
@@ -338,14 +386,14 @@ export function AppSessionRow({
       // Right-click is the second door onto the SAME panel the "..." opens.
       // Suppressed while renaming, where the native menu (cut/paste/undo) is
       // the useful one.
-      onContextMenu={showMenu && !rename.editing ? (event) => {
+      onContextMenu={affordance.contextMenu && showMenu && !rename.editing ? (event) => {
         event.preventDefault()
         setContextPoint({ x: event.clientX, y: event.clientY })
       } : undefined}
       // F2 is the platform's rename key, and every list that supports rename
       // is expected to answer it. It stays gated by the same eligibility rule
       // as the menu entry, so the two never disagree.
-      onKeyDown={renameAvailable && !rename.editing ? (event) => {
+      onKeyDown={affordance.renameHotkey && renameAvailable && !rename.editing ? (event) => {
         if (event.key !== "F2") return
         event.preventDefault()
         rename.begin()
@@ -355,7 +403,7 @@ export function AppSessionRow({
       {rename.field ? (
         <div className={rowClassName}>
           <span className={leadingSlotClassName} aria-hidden="true">
-            {leadingBadge ?? (leadingGlyph === "chat"
+            {leadingBadge ?? (affordance.leadingGlyph === "chat"
               ? <MessageSquare className="h-4 w-4 text-[color:var(--accent)]" strokeWidth={1.75} />
               : null)}
           </span>
@@ -392,7 +440,7 @@ export function AppSessionRow({
                   <span className="sr-only">Working</span>
                 </span>
               ) : null
-            ) : leadingGlyph === "chat" ? (
+            ) : affordance.leadingGlyph === "chat" ? (
               <MessageSquare
                 className={cn("h-4 w-4", state === "active" ? "text-[color:var(--accent)]" : "text-muted-foreground/65")}
                 strokeWidth={1.75}
@@ -470,7 +518,7 @@ export function AppSessionRow({
         </span>
       ) : null}
 
-      {showMenu ? (
+      {affordance.contextMenu && showMenu ? (
         <AppSessionContextMenu
           title={title}
           point={contextPoint}
@@ -485,7 +533,7 @@ export function AppSessionRow({
         </AppSessionContextMenu>
       ) : null}
 
-      {confirmDelete && onDelete ? (
+      {affordance.confirmDelete && onDelete ? (
         <AlertDialog
           open={deleteConfirmOpen}
           onOpenChange={(open) => {

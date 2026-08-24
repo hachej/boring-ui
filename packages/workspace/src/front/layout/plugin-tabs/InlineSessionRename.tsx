@@ -8,11 +8,18 @@ export function useInlineSessionRename({
   sessionId,
   title,
   available,
+  selectsAll = false,
   onRename,
 }: {
   sessionId: string
   title: string
   available: boolean
+  /**
+   * Select the existing title on open instead of parking a caret after it.
+   * Off by default: the shipped hosts append as often as they replace, and
+   * silently changing what the first keystroke destroys is not a refactor.
+   */
+  selectsAll?: boolean
   onRename?: (id: string, title: string) => void | Promise<unknown>
 }) {
   const [value, setValue] = useState<string | null>(null)
@@ -20,17 +27,17 @@ export function useInlineSessionRename({
   const [saving, setSaving] = useState(false)
   const inputRef = useRef<HTMLInputElement | null>(null)
 
-  // Select, not just focus. Renaming almost always replaces the title rather
-  // than appending to it, and a caret parked at the end makes the common case
-  // start with a select-all the user has to perform themselves.
+  // Focus on open; select too where the surface asked for it, because there
+  // renaming almost always REPLACES the title and a caret at the end makes the
+  // common case start with a select-all the user performs by hand.
   const opened = useRef(false)
   useEffect(() => {
     if (value === null) { opened.current = false; return }
     if (opened.current) return
     opened.current = true
     inputRef.current?.focus()
-    inputRef.current?.select()
-  }, [value])
+    if (selectsAll) inputRef.current?.select()
+  }, [selectsAll, value])
   useEffect(() => { if (!available) setValue(null) }, [available])
 
   const cancel = () => { setValue(null); setError(null) }

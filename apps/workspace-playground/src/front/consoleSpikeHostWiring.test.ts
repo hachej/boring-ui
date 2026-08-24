@@ -30,7 +30,7 @@ const SPIKE_HOST_REQUIRED_PROPS = [
   "onCreateSession",
   "onDeleteSession",
   "onRenameSession",
-  "appLeftConsoleSpikeCreateSession",
+  "appLeftConsoleSpike",
   "appLeftConsoleSpikeRenameProject",
   "chatPanel",
 ] as const
@@ -47,7 +47,11 @@ beforeAll(async () => {
 
 describe("console spike demo host wiring", () => {
   it.each(SPIKE_HOST_REQUIRED_PROPS)("wires %s", (prop) => {
-    expect(spikeHostJsx).toContain(`${prop}=`)
+    // Matched as a JSX attribute at the start of a line — `prop={…}` or a bare
+    // boolean `prop` — so a mention inside a comment or a longer prop name
+    // (`appLeftConsoleSpikeRenameProject` satisfying `appLeftConsoleSpike`)
+    // cannot pass for a wire.
+    expect(spikeHostJsx).toMatch(new RegExp(`^\\s+${prop}(=|\\s*$)`, "m"))
   })
 
   it("leaves shell persistence on, so state the operator SET survives a reload", () => {

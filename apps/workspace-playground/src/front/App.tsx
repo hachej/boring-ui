@@ -112,10 +112,10 @@ const initialConsoleSpikeSessions: ConsoleSpikeSession[] = [
 
 /**
  * FIXTURE-DERIVED demo attention. The spike route has no Agent runtime, so
- * nothing would ever block on a human and the Needs you band — the one section
- * the whole layout is arranged around — could not be seen at all. These two
- * blockers stand in for the real ask-user plugin's output; they are seeded once
- * and are not driven by anything the operator does.
+ * nothing would ever block on a human, and the whole attention language — row
+ * badges, collapsed-header rollups, the Inbox count — would be invisible.
+ * These two stand in for the real ask-user plugin's output: they are seeded
+ * once and are not driven by anything the operator does.
  */
 const consoleSpikeDemoBlockers = [
   {
@@ -317,15 +317,13 @@ export function WorkspaceShell() {
     // owner-consistency guard delete every per-Agent chat right after creating
     // it, which read as "the Agent submenu does nothing".
     agentTypeId = consoleSpikeAgentTypeId,
-    projectId = "console",
-    placement: "default" | "split" | "quick" = "default",
   ) => {
     const id = `console-spike-${Date.now()}`
     const created: ConsoleSpikeSession = {
       id,
       agentTypeId,
-      projectId,
-      title: placement === "split" ? "New split chat" : placement === "quick" ? "Quick chat" : "New chat",
+      projectId: "console",
+      title: "New chat",
       updatedAt: Date.now(),
       nativeSessionId: id,
       // A freshly created chat has no reply yet, so it is correctly NOT
@@ -428,7 +426,9 @@ export function WorkspaceShell() {
         workspaceSectionTitle="Projects"
         appLeftProjects={consoleSpikeProjects}
         appLeftActiveProjectId="console-spike-workspace"
-        appLeftConsoleSpikeCreateSession={createConsoleSpikeSession}
+        // The playground owns its own route, so the playground is what turns
+        // the variant on.
+        appLeftConsoleSpike
         appLeftConsoleSpikeRenameProject={renameConsoleSpikeProject}
         defaultSessionTitle="New chat"
         provisionWorkspace={false}

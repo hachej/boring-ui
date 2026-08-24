@@ -177,9 +177,11 @@ export interface AppLeftPaneProps {
    * tree (PR2). Defaults to single-project.
    */
   layoutMode?: AppLeftPaneLayoutMode
-  /** Test override for the disposable #1355 route; hosts use ?consoleSpike=1. */
+  /**
+   * Render the disposable #1355 console variant instead of the shipped Chats
+   * list. Opt-in only: the host parses its own route and passes this down.
+   */
   consoleSpike?: boolean
-  consoleSpikeCreateSession?: (agentTypeId: string, projectId: string, placement: "default" | "split" | "quick") => void
   consoleSpikeRenameProject?: (projectId: string, name: string) => void
 }
 
@@ -230,18 +232,7 @@ export function AppLeftRail({
 /** Shared zero-stats object: an Agent with no chats allocates nothing. */
 const EMPTY_AGENT_STATS: AppLeftPaneAgentStats = { sessions: 0, working: 0, attention: 0 }
 
-/**
- * The #1355 console's row layout, hoisted to module scope so every row shares
- * one array identity instead of allocating two per render.
- *
- * ONE hover verb, plus the menu. Three icons cost 40% of a mobile row and, at
- * every width, took that space from the chat's own name; pin is a real verb but
- * not a per-row-per-second one, so it lives in the two menus that already carry
- * everything else. Split stays because dragging a chat beside another is the
- * gesture this pane is arranged around.
- */
-const CONSOLE_HOVER_SHORTCUTS = ["split"] as const
-const CONSOLE_MENU_SHORTCUTS = ["split", "quick"] as const
+
 
 export function AppLeftPane({
   width = 276,
@@ -285,13 +276,15 @@ export function AppLeftPane({
   onRenameSession,
   layoutMode = "single-project",
   consoleSpike: consoleSpikeProp = false,
-  consoleSpikeCreateSession,
   consoleSpikeRenameProject,
 }: AppLeftPaneProps) {
-  // Disposable #1355 frontend-only route. It reuses the real current-app
-  // component tree and leaves every unflagged host byte-for-byte unchanged.
-  const consoleSpike = consoleSpikeProp || (typeof window !== "undefined"
-    && new URLSearchParams(window.location.search).get("consoleSpike") === "1")
+  // Disposable #1355 variant. Shared code does NOT sniff the URL: it used to
+  // read `?consoleSpike=1` off window.location here, which meant ANY
+  // plugin-tabs host — the deployed app included — swapped its Chats pane for
+  // an unshipped spike the moment that string appeared in a link someone
+  // pasted. Route parsing belongs to the host that owns the route; this
+  // component is opted in by prop, or not at all.
+  const consoleSpike = consoleSpikeProp
   const primaryNavigationEntries = navigationEntries.filter((entry) => entry.kind === "primary")
   const chatsNavigationEntry = navigationEntries.find((entry) => entry.kind === "chats")
   const normalizedActiveSessionId = activeSessionRef
@@ -468,24 +461,38 @@ export function AppLeftPane({
   )
   const headerVisible = headerMode !== "hidden" && (layoutMode !== "multi-project" || headerMode === "workspace")
   const headerShowsBrand = headerMode === "full" && layoutMode !== "multi-project"
+  /**
+   * Ten positional arguments is a call site nobody can read and every caller
+   * can get wrong by counting. Named, optional, and defaulted instead.
+   */
+  interface RenderSessionOptions {
+    projectId?: string
+    showOwnerLabel?: boolean
+    nested?: boolean
+    ownerLabelOverride?: string
+    activeDotOverride?: boolean
+    showPlacementShortcuts?: boolean
+    /** Surface-specific row extras (the console variant's Agent chip / Project tag). */
+    slots?: ConsoleSpikeRowSlots
+    /**
+     * The #1355 console's row personality: pin and split hover verbs, a menu
+     * right-click also opens, a confirmed Delete. Default hosts are untouched.
+     */
+    consoleRow?: boolean
+  }
   const renderSession = (
     session: AppLeftPaneSession,
     pinned: boolean,
-    projectId = activeProjectId ?? undefined,
-    showOwnerLabel = pinned,
-    nested = false,
-    ownerLabelOverride?: string,
-    activeDotOverride?: boolean,
-    showPlacementShortcuts = true,
-    /** Surface-specific row extras (the console spike's Agent chip / Project tag). */
-    slots?: ConsoleSpikeRowSlots,
-    /**
-     * The #1355 console's researched row layout: pin + split as the two
-     * hover icons (the highest-frequency verbs), every other verb in a menu
-     * that right-click also opens, and a confirmed Delete. The unflagged
-     * hosts keep the shipped split/quick pair and the immediate Delete.
-     */
-    consoleRow = false,
+    {
+      projectId = activeProjectId ?? undefined,
+      showOwnerLabel = pinned,
+      nested = false,
+      ownerLabelOverride,
+      activeDotOverride,
+      showPlacementShortcuts = true,
+      slots,
+      consoleRow = false,
+    }: RenderSessionOptions = {},
   ) => {
     const isActiveProjectSession = !projectId || projectId === activeProjectId
     const sessionKey = workspaceSessionKeyFor(session)
@@ -513,18 +520,7 @@ export function AppLeftPane({
         activeDotActive={working || state === "active"}
         compact={agentRowsEnabled && (nested || !pinned)}
         showPlacementShortcuts={showPlacementShortcuts}
-        {...(consoleRow ? {
-          hoverShortcuts: CONSOLE_HOVER_SHORTCUTS,
-          menuShortcuts: CONSOLE_MENU_SHORTCUTS,
-          // The verb list must not change shape on the one row that happens to
-          // be open — that reads as an unreliable menu, not as "this is open".
-          placementScope: "always" as const,
-          confirmDelete: true,
-          // The Agent chip is this pane's leading mark. Rows that deliberately
-          // drop it (the by-Agent view, where the header already says who) must
-          // not fall back to a chat glyph — that reads as a distinction.
-          leadingGlyph: "none" as const,
-        } : {})}
+        affordances={consoleRow ? "console" : "default"}
         ownerLabel={ownerLabelOverride ?? (showOwnerLabel && session.agentTypeId ? agentLabelById.get(session.agentTypeId) : undefined)}
         {...(slots?.leadingBadge ? { leadingBadge: slots.leadingBadge } : {})}
         {...(slots?.metaTag ? { metaTag: slots.metaTag } : {})}
@@ -606,7 +602,7 @@ export function AppLeftPane({
             className="ml-3 space-y-px border-l border-border pl-0.5"
           >
             {agentSessions.length > 0
-              ? agentSessions.map((session) => renderSession(session, pinnedSet.has(workspaceSessionKeyFor(session)), activeProjectId ?? undefined, false, true))
+              ? agentSessions.map((session) => renderSession(session, pinnedSet.has(workspaceSessionKeyFor(session)), { showOwnerLabel: false, nested: true }))
               : (agent.sessionsStatus ?? "loading") === "loading"
                 ? renderChatsLoading()
                 : (
@@ -775,7 +771,7 @@ export function AppLeftPane({
         agentTypeId: session.agentTypeId,
         title: session.title,
         updatedAt: session.updatedAt,
-      }, pinnedSet.has(workspaceSessionKeyFor(session)), project.id, agentRowsEnabled)}
+      }, pinnedSet.has(workspaceSessionKeyFor(session)), { projectId: project.id, showOwnerLabel: agentRowsEnabled })}
     />
   )
 
@@ -834,40 +830,29 @@ export function AppLeftPane({
             onTogglePinnedProject={togglePinnedProject}
             sessionsLoading={sessionsLoading}
             renderLoading={renderChatsLoading}
-            onCreateSession={(agentTypeId, projectId, placement = "default") => {
+            onCreateSession={(agentTypeId, placement = "default") => {
               // Picking an Agent from the create menu also ADDRESSES it, the
-              // same thing the fleet cards' `createForAgent` does — otherwise
-              // the next chat silently reverts to the previous target. This
-              // retarget alone cannot carry the choice into the create call
-              // (setState does not land before the callback runs in the same
-              // tick); the Agent travels as the argument below.
+              // same thing the fleet cards' `createForAgent` does; the Agent
+              // itself travels as the argument below.
               if (agentTypeId) onSelectAgent?.(agentTypeId)
-              if (agentTypeId && projectId && consoleSpikeCreateSession) consoleSpikeCreateSession(agentTypeId, projectId, placement)
-              // A Project header's "+" names a place; without the scoped seam
-              // the host's own in-project create is the honest fallback.
-              else if (projectId) onCreateProjectSession?.(projectId)
-              else if (placement === "split") onCreateSplitSession?.(agentTypeId)
-              else if (placement === "quick") onCreatePopoverSession?.(agentTypeId)
+              if (placement === "split") onCreateSplitSession?.(agentTypeId)
               else onCreateSession(agentTypeId)
             }}
             onRenameProject={consoleSpikeRenameProject}
             renderSession={(session, slots) => renderSession(
               session,
               pinnedSet.has(workspaceSessionKeyFor(session)),
-              // Collection labels are organization only in the spike. Every
-              // row still opens in the already-authorized Workspace scope.
-              undefined,
-              false,
-              true,
-              // The spike states the Agent as a leading colour chip, not as the
-              // trailing owner label — that slot keeps the relative age.
-              undefined,
-              false,
-              // Placement IS offered here — as the researched pin+split pair
-              // on the row and both placements in the menu below.
-              true,
-              slots,
-              true,
+              {
+                // Collection labels are organization only in the console. Every
+                // row still opens in the already-authorized Workspace scope.
+                showOwnerLabel: false,
+                nested: true,
+                // The console states the Agent as a leading colour chip, not as
+                // the trailing owner label — that slot keeps the relative age.
+                activeDotOverride: false,
+                ...(slots ? { slots } : {}),
+                consoleRow: true,
+              },
             )}
           />
         ) : null}

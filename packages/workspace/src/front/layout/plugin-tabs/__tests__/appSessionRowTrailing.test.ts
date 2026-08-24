@@ -37,11 +37,17 @@ describe("resolveSessionTrailingSlot", () => {
     expect(slot.marker).toEqual({ kind: "pin" })
   })
 
-  it("yields the age to a badge, but never the pin", () => {
-    // The age is a derived fact the badge can speak over. The pin is state the
-    // USER set: a chat that is both waiting and pinned must show both, or
-    // pinning the rows that need you most produces no visible change at all.
-    const working = resolveSessionTrailingSlot({ ...base, pinned: true, working: true, updatedAt: NOW })
+  it("yields the age to a badge, and the pin only until a surface opts out", () => {
+    // DEFAULT precedence, unchanged: the pin yields the slot to a badge.
+    const shipped = resolveSessionTrailingSlot({ ...base, pinned: true, working: true, updatedAt: NOW })
+    expect(shipped.badge).toEqual({ kind: "working" })
+    expect(shipped.marker).toEqual({ kind: "none" })
+
+    // Opted in, the pin survives. The age is a derived fact the badge can
+    // speak over; the pin is state the USER set, and a chat that is both
+    // waiting and pinned must show both or pinning the rows that need you most
+    // produces no visible change at all.
+    const working = resolveSessionTrailingSlot({ ...base, pinned: true, pinOutranksBadge: true, working: true, updatedAt: NOW })
     expect(working.badge).toEqual({ kind: "working" })
     expect(working.marker).toEqual({ kind: "pin" })
 
@@ -51,7 +57,7 @@ describe("resolveSessionTrailingSlot", () => {
 
     // Provenance still outranks the pin — one marker, and "who owns this" is
     // the fact a fleet row cannot do without.
-    const owned = resolveSessionTrailingSlot({ ...base, pinned: true, ownerLabel: "Alpha", working: true })
+    const owned = resolveSessionTrailingSlot({ ...base, pinned: true, pinOutranksBadge: true, ownerLabel: "Alpha", working: true })
     expect(owned.marker).toEqual({ kind: "owner", label: "Alpha" })
   })
 

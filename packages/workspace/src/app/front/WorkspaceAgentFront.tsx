@@ -266,8 +266,12 @@ export interface WorkspaceAgentFrontProps<
   appLeftHeaderMode?: WorkspaceAgentAppLeftHeaderMode
   /** Optional cross-project overview rendered in the app-left workspace/project section. */
   appLeftProjects?: WorkspaceAgentAppLeftProject[]
-  /** Disposable #1355 mock creation seam; used only by ?consoleSpike=1. */
-  appLeftConsoleSpikeCreateSession?: (agentTypeId: string, projectId: string, placement: "default" | "split" | "quick") => void
+  /**
+   * Render the disposable #1355 console variant in the app-left pane. The HOST
+   * decides — this package never reads the URL, so a spike cannot appear in a
+   * deployed app because a query string travelled in a shared link.
+   */
+  appLeftConsoleSpike?: boolean
   appLeftConsoleSpikeRenameProject?: (projectId: string, name: string) => void
   appLeftActiveProjectId?: string | null
   onSwitchAppLeftProject?: (projectId: string) => void
@@ -321,6 +325,9 @@ export interface WorkspaceAgentFrontProps<
    * host must honour: the create path asserts the session came back owned by
    * the requested Agent and rolls it back when it did not, so a host that
    * always creates under its own default silently loses every per-Agent create.
+   *
+   * Additive for existing hosts — a `() => …` callback simply ignores the new
+   * argument — so no shipped behavior moves.
    */
   onCreateSession?: (agentTypeId?: string) => unknown | Promise<unknown>
   onDeleteSession?: (id: string, agentTypeId?: string) => void
@@ -734,7 +741,7 @@ export function WorkspaceAgentFront<
   appLeftLayoutMode = "single-project",
   appLeftHeaderMode = "full",
   appLeftProjects,
-  appLeftConsoleSpikeCreateSession,
+  appLeftConsoleSpike = false,
   appLeftConsoleSpikeRenameProject,
   appLeftActiveProjectId,
   onSwitchAppLeftProject,
@@ -2651,7 +2658,7 @@ export function WorkspaceAgentFront<
           layoutMode={appLeftLayoutMode}
           headerMode={appLeftHeaderMode}
           projects={appLeftProjects}
-          consoleSpikeCreateSession={appLeftConsoleSpikeCreateSession}
+          consoleSpike={appLeftConsoleSpike}
           consoleSpikeRenameProject={appLeftConsoleSpikeRenameProject}
           activeProjectId={appLeftActiveProjectId ?? workspaceId}
           onOpenProjectSession={onOpenAppLeftProjectSession}
@@ -2714,11 +2721,19 @@ export function WorkspaceAgentFront<
           onDeleteSession={canDeleteSessions ? deleteSessionAndPane : undefined}
           // A host that supplies `onRenameSession` IS a rename-capable host —
           // that is exactly what `canRenameSessions` above already concludes,
-          // and what the chat-pane actions already honour. Gating the LEFT
-          // PANE on `sessionApi.rename` alone silently dropped Rename for every
-          // host that drives sessions from props (the console spike among
-          // them), so the two surfaces disagreed about the same capability.
-          onRenameSession={onRenameSession ?? (sessionApi?.rename ? resolvedRename : undefined)}
+          // and what the chat-pane actions already honour. Gating the LEFT PANE
+          // on `sessionApi.rename` alone silently drops Rename for every host
+          // that drives sessions from props.
+          //
+          // That is a strict bugfix, and it is still gated to the console
+          // variant here ON PURPOSE: a spike PR does not get to change what a
+          // deployed host's left pane offers. FOLLOW-UP: lift this to
+          // `canRenameSessions` for all hosts in its own change, where the
+          // behavior delta is the subject of the review rather than a
+          // side effect of one.
+          onRenameSession={appLeftConsoleSpike
+            ? (onRenameSession ?? (sessionApi?.rename ? resolvedRename : undefined))
+            : (sessionApi?.rename ? resolvedRename : undefined)}
         />
       )}
     >

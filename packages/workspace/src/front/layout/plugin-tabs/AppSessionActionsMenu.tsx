@@ -20,6 +20,14 @@ import { toast } from "../../toast"
  * teaches its operator to distrust right-click. The items live here; the two
  * shells below only decide where the panel is anchored.
  */
+/**
+ * Band ordering. `shipped` is what the default hosts have always rendered;
+ * `console` leads with the verbs the #1355 research put first. Explicit,
+ * because reordering a menu under a host that did not ask is a behavior change
+ * wearing a refactor's clothes.
+ */
+export type AppSessionActionOrder = "shipped" | "console"
+
 export interface AppSessionActionItemsProps {
   sessionId: string
   title: string
@@ -35,6 +43,7 @@ export interface AppSessionActionItemsProps {
   onOpenAsPane?: (id: string) => void
   onOpenDetached?: (id: string) => void
   onDelete?: (id: string) => unknown
+  order?: AppSessionActionOrder
   /** Closes the shell that owns these items before a verb takes over the row. */
   onCloseMenu: () => void
 }
@@ -73,58 +82,55 @@ export function AppSessionActionItems({
   onOpenAsPane,
   onOpenDetached,
   onDelete,
+  order = "shipped",
   onCloseMenu,
 }: AppSessionActionItemsProps) {
-  const copy = async () => {
+  const copyItem = async () => {
     if (await copyText(sessionId)) {
       toast.success({ title: "Session ID copied", description: sessionId })
       return
     }
     toast.error({ title: "Could not copy session ID", description: "Allow clipboard access and try again." })
   }
-  // Three bands, ordered by what the operator reaches for: what this chat is
-  // called, where it opens, then how it is kept — and destruction alone at the
-  // bottom, one separator away from anything it could be mis-clicked for.
-  const bands: ReactNode[][] = [
-    [
-      canRename ? (
-        <DropdownMenuItem key="rename" onSelect={() => { onCloseMenu(); onRename() }} className={itemClassName}>
-          <Pencil className="h-3.5 w-3.5" /> Rename
-        </DropdownMenuItem>
-      ) : null,
-      canOpenAsPane && onOpenAsPane ? (
-        <DropdownMenuItem key="split" onSelect={() => onOpenAsPane(sessionId)} className={itemClassName}>
-          <Columns2 className="h-3.5 w-3.5" /> Open in split view
-        </DropdownMenuItem>
-      ) : null,
-      canOpenDetached && onOpenDetached ? (
-        <DropdownMenuItem key="quick" onSelect={() => onOpenDetached(sessionId)} className={itemClassName}>
-          <Zap className="h-3.5 w-3.5" /> Open as quick chat
-        </DropdownMenuItem>
-      ) : null,
-    ].filter(Boolean) as ReactNode[],
-    [
-      canPin && onTogglePinned ? (
-        <DropdownMenuItem key="pin" onSelect={() => onTogglePinned(sessionId)} className={itemClassName}>
-          {pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
-          {pinned ? "Unpin chat" : "Pin chat"}
-        </DropdownMenuItem>
-      ) : null,
-      canCopy ? (
-        <DropdownMenuItem key="copy" onSelect={() => void copy()} className={itemClassName}>
-          <Copy className="h-3.5 w-3.5" /> Copy session ID
-        </DropdownMenuItem>
-      ) : null,
-    ].filter(Boolean) as ReactNode[],
-    [
-      onDelete ? (
-        <DropdownMenuItem key="delete" onSelect={() => void onDelete(sessionId)} variant="destructive" className={itemClassName}>
-          <Trash2 className="h-3.5 w-3.5" /> Delete
-        </DropdownMenuItem>
-      ) : null,
-    ].filter(Boolean) as ReactNode[],
-  ]
+  const rename = canRename ? (
+    <DropdownMenuItem key="rename" onSelect={() => { onCloseMenu(); onRename() }} className={itemClassName}>
+      <Pencil className="h-3.5 w-3.5" /> Rename
+    </DropdownMenuItem>
+  ) : null
+  const pin = canPin && onTogglePinned ? (
+    <DropdownMenuItem key="pin" onSelect={() => onTogglePinned(sessionId)} className={itemClassName}>
+      {pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
+      {pinned ? "Unpin chat" : "Pin chat"}
+    </DropdownMenuItem>
+  ) : null
+  const copy = canCopy ? (
+    <DropdownMenuItem key="copy" onSelect={() => void copyItem()} className={itemClassName}>
+      <Copy className="h-3.5 w-3.5" /> Copy session ID
+    </DropdownMenuItem>
+  ) : null
+  const remove = onDelete ? (
+    <DropdownMenuItem key="delete" onSelect={() => void onDelete(sessionId)} variant="destructive" className={itemClassName}>
+      <Trash2 className="h-3.5 w-3.5" /> Delete
+    </DropdownMenuItem>
+  ) : null
+  const split = canOpenAsPane && onOpenAsPane ? (
+    <DropdownMenuItem key="split" onSelect={() => onOpenAsPane(sessionId)} className={itemClassName}>
+      <Columns2 className="h-3.5 w-3.5" /> Open in split view
+    </DropdownMenuItem>
+  ) : null
+  const quick = canOpenDetached && onOpenDetached ? (
+    <DropdownMenuItem key="quick" onSelect={() => onOpenDetached(sessionId)} className={itemClassName}>
+      <Zap className="h-3.5 w-3.5" /> Open as quick chat
+    </DropdownMenuItem>
+  ) : null
 
+  // console: what this chat is called and where it opens, then how it is kept.
+  // shipped: exactly the bands the default hosts have always drawn.
+  // Either way destruction sits alone at the bottom, one separator away from
+  // anything it could be mis-clicked for.
+  const bands: ReactNode[][] = order === "console"
+    ? [[rename, split, quick], [pin, copy], [remove]].map((band) => band.filter(Boolean) as ReactNode[])
+    : [[pin], [copy], [rename], [remove]].map((band) => band.filter(Boolean) as ReactNode[])
   const filled = bands.filter((band) => band.length > 0)
   return (
     <>

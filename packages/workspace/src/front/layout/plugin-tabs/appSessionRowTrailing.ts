@@ -52,6 +52,13 @@ export interface SessionTrailingInput {
   workingDotShown: boolean
   ownerLabel?: string
   pinned: boolean
+  /**
+   * Let the user-set pin survive a system badge in the marker slot. Off by
+   * default (the shipped precedence); the #1355 console turns it on because a
+   * chat that is both waiting and pinned showed the badge and nothing else, so
+   * pinning the rows that need you most produced no visible change at all.
+   */
+  pinOutranksBadge?: boolean
   updatedAt?: string | number
   now: number
 }
@@ -72,12 +79,13 @@ export function resolveSessionTrailingSlot(input: SessionTrailingInput): Session
 
   const marker: SessionTrailingMarker = ((): SessionTrailingMarker => {
     if (input.ownerLabel) return { kind: "owner", label: input.ownerLabel }
-    if (input.pinned) return { kind: "pin" }
+    if (input.pinned && input.pinOutranksBadge) return { kind: "pin" }
     // The age is the only marker quiet enough to yield to a badge. Note this
     // uses the SAME predicate the pin used to: gating the pin on raw `working`
     // while gating the age on the badge condition made a pinned, working,
     // dotted row show nothing at all.
     if (badge.kind !== "none") return { kind: "none" }
+    if (input.pinned) return { kind: "pin" }
     const label = formatRelativeAge(input.updatedAt, input.now)
     if (!label) return { kind: "none" }
     const title = exactTimestamp(input.updatedAt)

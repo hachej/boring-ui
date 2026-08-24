@@ -64,7 +64,6 @@ export function ProjectOverview({
   onRenameProject,
   renderProjectSession,
   leadingIcon,
-  renderCreateControl,
   allowPinning = true,
   compactTree = false,
   attentionTone = "accent",
@@ -84,7 +83,6 @@ export function ProjectOverview({
   onRenameProject?: (projectId: string, name: string) => void
   renderProjectSession?: (project: AppLeftPaneProject, session: AppLeftPaneProjectSession) => ReactNode
   leadingIcon?: (project: AppLeftPaneProject) => ReactNode
-  renderCreateControl?: (project: AppLeftPaneProject) => ReactNode
   allowPinning?: boolean
   compactTree?: boolean
   /**
@@ -124,7 +122,7 @@ export function ProjectOverview({
           onRename={onRenameProject}
           renderProjectSession={renderProjectSession}
           leadingIcon={leadingIcon?.(project)}
-          createControl={renderCreateControl?.(project)}
+          createControl={undefined}
           allowPinning={allowPinning}
           compactTree={compactTree}
           attentionTone={attentionTone}
