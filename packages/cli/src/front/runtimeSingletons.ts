@@ -30,10 +30,26 @@ export function installCliRuntimeSingletons(): void {
   }
 }
 
-export async function loadWorkspaceRuntimeSingleton(): Promise<void> {
-  const workspace = await import("@hachej/boring-workspace")
+interface WorkspaceRuntimeSingletonLoaders {
+  loadWorkspace: () => Promise<typeof import("@hachej/boring-workspace")>
+  loadReactJsxDevRuntime: () => Promise<typeof import("react/jsx-dev-runtime")>
+}
+
+const DEFAULT_WORKSPACE_RUNTIME_SINGLETON_LOADERS: WorkspaceRuntimeSingletonLoaders = {
+  loadWorkspace: () => import("@hachej/boring-workspace"),
+  loadReactJsxDevRuntime: () => import("react/jsx-dev-runtime"),
+}
+
+export async function loadWorkspaceRuntimeSingleton(
+  loaders: WorkspaceRuntimeSingletonLoaders = DEFAULT_WORKSPACE_RUNTIME_SINGLETON_LOADERS,
+): Promise<void> {
+  const [workspace, reactJsxDevRuntime] = await Promise.all([
+    loaders.loadWorkspace(),
+    loaders.loadReactJsxDevRuntime(),
+  ])
   globalThis.__BORING_RUNTIME_SINGLETONS__ = {
     ...globalThis.__BORING_RUNTIME_SINGLETONS__,
+    "react/jsx-dev-runtime": reactJsxDevRuntime,
     "@hachej/boring-workspace": workspace,
   }
 }

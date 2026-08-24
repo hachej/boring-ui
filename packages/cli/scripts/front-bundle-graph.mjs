@@ -1,13 +1,8 @@
 export function staticManifestImportKeys(chunk) {
-  const dynamicImports = new Set(chunk.dynamicImports ?? [])
-  return (chunk.imports ?? []).filter((key) => !dynamicImports.has(key))
+  return chunk.imports ?? []
 }
 
-/**
- * Collect generated files reached by genuine static manifest edges.
- * Vite 8 can repeat a dynamic target in `imports` as preload metadata; an edge
- * listed in both fields remains dynamic and must not become pre-chat work.
- */
+/** Collect generated files reached by every mandatory manifest import edge. */
 export function collectStaticImportFiles(manifest, rootKeys) {
   const files = new Set()
   const visitedKeys = new Set()

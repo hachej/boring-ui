@@ -35,9 +35,9 @@ const startupBytes = [...startupFiles].reduce((total, file) => total + statSync(
 // the descriptor entries as dynamic imports from the application entry.
 const defaultFrontSourceGroups = [
   ["plugins/ask-user/src/front/index"],
-  ["plugins/boring-automation/src/front/index"],
+  ["plugins/boring-automation/dist/front/descriptor", "plugins/boring-automation/src/front/descriptor"],
   ["plugins/diagram/src/front/index"],
-  ["plugins/tasks/dist/front/index", "plugins/tasks/src/front/index"],
+  ["plugins/tasks/dist/front/descriptor", "plugins/tasks/src/front/descriptor"],
   ["plugins/live-transcription/src/front/index"],
 ]
 const defaultFrontEntryKeys = defaultFrontSourceGroups.map((fragments) => {

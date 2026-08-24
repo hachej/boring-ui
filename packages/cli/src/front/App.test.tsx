@@ -41,7 +41,7 @@ vi.mock("@hachej/boring-diagram/front", () => ({
   diagramPlugin: { pluginId: "diagram", pluginLabel: "Diagram" },
 }))
 
-vi.mock("@hachej/boring-automation/front", () => ({
+vi.mock("@hachej/boring-automation/front/descriptor", () => ({
   boringAutomationPlugin: mockedPlugins.automation,
 }))
 
@@ -59,7 +59,7 @@ vi.mock("./runtimeSingletons", () => ({
   loadWorkspaceRuntimeSingleton: async () => undefined,
 }))
 
-vi.mock("@hachej/boring-tasks/front", () => {
+vi.mock("@hachej/boring-tasks/front/descriptor", () => {
   const createTasksPlugin = () => ({ pluginId: "tasks", pluginLabel: "Tasks" })
   return { createTasksPlugin, default: createTasksPlugin() }
 })

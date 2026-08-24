@@ -28,6 +28,10 @@
       "types": "./dist/front/index.d.ts",
       "import": "./dist/front/index.js"
     },
+    "./front/descriptor": {
+      "types": "./dist/front/descriptor.d.ts",
+      "import": "./dist/front/descriptor.js"
+    },
     "./shared": {
       "types": "./dist/shared/index.d.ts",
       "import": "./dist/shared/index.js"

@@ -40,9 +40,9 @@ const PROJECT_SESSION_PREVIEW_FETCH_LIMIT = 25
 /** Keep in sync with CLI_DEFAULT_PLUGIN_PACKAGES in server/pluginDiscovery.ts. */
 const CLI_DEFAULT_PLUGIN_LOADERS: ReadonlyArray<() => Promise<BoringFrontFactoryWithId>> = [
   () => import("@hachej/boring-ask-user/front").then((module) => module.createAskUserPlugin({ appLeftInbox: true })),
-  () => import("@hachej/boring-automation/front").then((module) => module.boringAutomationPlugin),
+  () => import("@hachej/boring-automation/front/descriptor").then((module) => module.boringAutomationPlugin),
   () => import("@hachej/boring-diagram/front").then((module) => module.diagramPlugin),
-  () => import("@hachej/boring-tasks/front").then((module) => module.createTasksPlugin()),
+  () => import("@hachej/boring-tasks/front/descriptor").then((module) => module.createTasksPlugin()),
   () => import("@hachej/boring-transcription/front").then((module) => module.liveTranscriptPlugin),
 ]
 

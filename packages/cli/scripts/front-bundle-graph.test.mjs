@@ -16,7 +16,7 @@ describe("CLI front bundle graph", () => {
     ])
   })
 
-  test("keeps a Vite preload-only overlap behind its dynamic boundary", () => {
+  test("counts imports that also appear in dynamicImports as mandatory", () => {
     const manifest = {
       descriptor: {
         file: "descriptor.js",
@@ -28,10 +28,12 @@ describe("CLI front bundle graph", () => {
       "lazy-panel-child": { file: "lazy-panel-child.js" },
     }
 
-    expect(staticManifestImportKeys(manifest.descriptor)).toEqual(["shared"])
+    expect(staticManifestImportKeys(manifest.descriptor)).toEqual(["shared", "lazy-panel"])
     expect([...collectStaticImportFiles(manifest, ["descriptor"])]).toEqual([
       "descriptor.js",
       "shared.js",
+      "lazy-panel.js",
+      "lazy-panel-child.js",
     ])
   })
 
