@@ -167,7 +167,10 @@ export { createAuthMiddleware as createAgentAuthMiddleware } from './http/middle
 export { createAgentHost } from './agent-host/createAgentHost'
 export { SqliteAgentRequestLedger } from './agent-host/sqliteRequestLedger'
 export { resolveRequestLedgerPath } from './agent-host/requestLedgerPath'
-export type { ResolveRequestLedgerPathInput } from './agent-host/requestLedgerPath'
+export type {
+  LegacyRequestLedgerLocation,
+  ResolveRequestLedgerPathInput,
+} from './agent-host/requestLedgerPath'
 export {
   AgentFleetCompilationError,
   AgentFleetCompilationErrorCode,
