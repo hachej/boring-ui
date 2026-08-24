@@ -8,6 +8,7 @@ import { LiveTranscriptError, liveTranscriptErrorPayload } from "./errors"
 import { LiveTranscriptManager, type LiveTranscriptManagerOptions } from "./manager"
 import { KyutaiComposerManager } from "./kyutaiComposer"
 import { transcribeShortDictation } from "./dictation"
+import { createHostDictationEngine, type HostDictationEngine } from "./hostDictation"
 import { ComputeLifecycleClient, ComputeLifecycleCoordinator, validateLifecycleUrl } from "./computeLifecycle"
 
 export interface LiveTranscriptServerPluginOptions {
@@ -34,6 +35,9 @@ export interface LiveTranscriptServerPluginOptions {
   reviewRetryMs?: number
   createUpstreamForTest?: LiveTranscriptManagerOptions["createUpstreamForTest"]
   dictationFetch?: typeof fetch
+  /** Enables server-host-microphone dictation (local folder mode only). Default off. */
+  hostDictationEnabled?: boolean
+  createHostDictationEngineForTest?: typeof createHostDictationEngine
 }
 
 export function createLiveTranscriptServerPlugin(options: LiveTranscriptServerPluginOptions): WorkspaceServerPlugin {
@@ -71,6 +75,9 @@ export function createLiveTranscriptServerPlugin(options: LiveTranscriptServerPl
       })
     : undefined
   lifecycle.setActiveChecker(() => Boolean(manager.getAgentReloadBlock()) || Boolean(composerManager?.isActive))
+  const hostDictation = options.hostDictationEnabled
+    ? (options.createHostDictationEngineForTest ?? createHostDictationEngine)()
+    : undefined
 
   return defineServerPlugin({
     id: "live-transcription",
@@ -102,6 +109,7 @@ export function createLiveTranscriptServerPlugin(options: LiveTranscriptServerPl
           throw new LiveTranscriptError("live_transcript_session_not_found", "A valid originating Pi session is required.", 400)
         }
         if (composerManager?.isActive) throw new LiveTranscriptError("live_transcript_already_active", "A composer microphone stream is already active.", 409)
+        if (hostDictation && hostDictation.getState() !== "idle") throw new LiveTranscriptError("live_transcript_already_active", "Host dictation is already active.", 409)
         const lease = lifecycle.take(requirePreparationId(body.preparationId, lifecycle.enabled), "live")
         try {
           const result = await manager.start(request, { sessionId: body.sessionId, title: body.title as string | undefined })
@@ -134,6 +142,7 @@ export function createLiveTranscriptServerPlugin(options: LiveTranscriptServerPl
         const body = strictRecord(request.body, ["preparationId"])
         if (!composerManager) throw new LiveTranscriptError("live_transcript_disabled", "Streaming composer dictation requires Kyutai.", 409)
         if (manager.getAgentReloadBlock()) throw new LiveTranscriptError("live_transcript_already_active", "A live transcript is already active.", 409)
+        if (hostDictation && hostDictation.getState() !== "idle") throw new LiveTranscriptError("live_transcript_already_active", "Host dictation is already active.", 409)
         const lease = lifecycle.take(requirePreparationId(body.preparationId, lifecycle.enabled), "composer")
         try {
           const result = composerManager.start()
@@ -210,7 +219,29 @@ export function createLiveTranscriptServerPlugin(options: LiveTranscriptServerPl
         manager.handleBrowserSocket((request.params as { id: string }).id, socket)
       })
 
+      app.post(`${LIVE_TRANSCRIPT_BASE_PATH}/host-dictation/start`, async (request, reply) => withControl(request, reply, options.authority, async () => {
+        strictEmptyBody(request.body)
+        if (!hostDictation) throw new LiveTranscriptError("live_transcript_disabled", "Host dictation is disabled on this deployment.", 409)
+        if (manager.getAgentReloadBlock()) throw new LiveTranscriptError("live_transcript_already_active", "A live transcript is already active.", 409)
+        if (composerManager?.isActive) throw new LiveTranscriptError("live_transcript_already_active", "A composer microphone stream is already active.", 409)
+        await hostDictation.start()
+        return { started: true }
+      }))
+      app.post(`${LIVE_TRANSCRIPT_BASE_PATH}/host-dictation/stop`, async (request, reply) => withControl(request, reply, options.authority, async () => {
+        strictEmptyBody(request.body)
+        if (!hostDictation) throw new LiveTranscriptError("live_transcript_disabled", "Host dictation is disabled on this deployment.", 409)
+        const text = await hostDictation.stop()
+        return { text }
+      }))
+      app.post(`${LIVE_TRANSCRIPT_BASE_PATH}/host-dictation/cancel`, async (request, reply) => withControl(request, reply, options.authority, async () => {
+        strictEmptyBody(request.body)
+        if (!hostDictation) throw new LiveTranscriptError("live_transcript_disabled", "Host dictation is disabled on this deployment.", 409)
+        hostDictation.cancel()
+        return { cancelled: true }
+      }))
+
       app.addHook("onClose", async () => {
+        hostDictation?.cancel()
         composerManager?.close()
         await manager.close()
         await lifecycle.close()

@@ -108,6 +108,68 @@ export function LiveTranscriptComposerAction({
   )
 }
 
+export function LiveTranscriptHostDictationAction({
+  updateDraft,
+}: ComposerActionContributionProps) {
+  const recording = useSyncExternalStore(
+    liveTranscriptBrowserState.subscribe,
+    liveTranscriptBrowserState.getSnapshot,
+    liveTranscriptBrowserState.getSnapshot,
+  )
+  const elapsedSeconds = useElapsedSeconds(recording.startedAt, recording.phase)
+  if (recording.recordingKind === "live" && isActiveRecordingPhase(recording.phase)) return null
+
+  const recordingThisMode = recording.phase === "recording" && recording.recordingKind === "host"
+  const otherModeRecording = recording.phase === "recording" && !recordingThisMode
+  const disabled = recording.phase === "transcribing" || recording.phase === "starting" || otherModeRecording
+  const label = disabled
+    ? "Transcribing host dictation"
+    : recordingThisMode
+      ? "Stop host recording"
+      : "Start host dictation (server microphone)"
+  const toggle = async () => {
+    if (disabled) return
+    if (recordingThisMode) {
+      const text = await liveTranscriptController.stopHost()
+      if (text) updateDraft((current) => appendTranscriptToDraft(current, text))
+      return
+    }
+    if (recording.phase === "error") liveTranscriptBrowserState.set({ phase: "idle" })
+    await liveTranscriptController.startHost()
+  }
+
+  return (
+    <button
+      type="button"
+      data-boring-agent-part="live-transcription-host-control"
+      aria-label={label}
+      title={recording.error ?? `${label}${recording.phase === "idle" ? "" : ` ${formatClock(elapsedSeconds)}`}`}
+      disabled={disabled}
+      onClick={() => { void toggle().catch(() => undefined) }}
+      className={`flex h-8 items-center gap-1.5 rounded-full px-2 text-[11px] font-medium transition-colors disabled:cursor-wait disabled:opacity-65 ${
+        recordingThisMode || recording.phase === "starting"
+          ? "bg-red-500/12 text-red-600 hover:bg-red-500/20 dark:text-red-400"
+          : recording.phase === "error"
+            ? "bg-destructive/10 text-destructive hover:bg-destructive/15"
+            : "text-muted-foreground hover:bg-muted hover:text-foreground"
+      }`}
+    >
+      {recording.phase === "starting" || recording.phase === "transcribing" ? (
+        <LoadingIcon />
+      ) : recordingThisMode ? (
+        <StopIcon />
+      ) : (
+        <MicIcon aria-hidden="true" className="size-4" strokeWidth={1.8} />
+      )}
+      {recording.phase === "starting" || recording.phase === "transcribing" ? (
+        <span>{recording.phase === "transcribing" ? "Transcribing" : "Starting"} {formatClock(elapsedSeconds)}</span>
+      ) : recordingThisMode ? (
+        <span aria-live="off" className="min-w-[3ch] tabular-nums">{formatClock(elapsedSeconds)}</span>
+      ) : null}
+    </button>
+  )
+}
+
 export function LiveTranscriptComposerDock() {
   const recording = useSyncExternalStore(
     liveTranscriptBrowserState.subscribe,

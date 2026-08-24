@@ -136,6 +136,47 @@ export class LiveTranscriptBrowserController {
     }
   }
 
+  async startHost(): Promise<void> {
+    const phase = liveTranscriptBrowserState.getSnapshot().phase
+    if (this.active || this.composerStreamId || this.shortRecorder || phase === "starting" || phase === "transcribing") {
+      throw new Error("Another microphone recording is already active.")
+    }
+    liveTranscriptBrowserState.set({ recordingKind: "host", phase: "starting" })
+    try {
+      await postJson(`${LIVE_TRANSCRIPT_BASE_PATH}/host-dictation/start`, {})
+      liveTranscriptBrowserState.set({ recordingKind: "host", phase: "recording", startedAt: Date.now() })
+    } catch (error) {
+      liveTranscriptBrowserState.set({ recordingKind: "host", phase: "error", error: formatError(error, "Host dictation failed to start.") })
+      throw error
+    }
+  }
+
+  async stopHost(): Promise<string | undefined> {
+    const snapshot = liveTranscriptBrowserState.getSnapshot()
+    if (snapshot.recordingKind !== "host" || (snapshot.phase !== "recording" && snapshot.phase !== "starting")) {
+      return undefined
+    }
+    liveTranscriptBrowserState.set({ recordingKind: "host", phase: "transcribing" })
+    try {
+      const result = await postJson<{ text: string }>(`${LIVE_TRANSCRIPT_BASE_PATH}/host-dictation/stop`, {})
+      liveTranscriptBrowserState.set({ phase: "idle" })
+      return result.text.trim() || undefined
+    } catch (error) {
+      liveTranscriptBrowserState.set({ recordingKind: "host", phase: "error", error: formatError(error) })
+      throw error
+    }
+  }
+
+  async cancelHost(): Promise<void> {
+    const snapshot = liveTranscriptBrowserState.getSnapshot()
+    if (snapshot.recordingKind !== "host") return
+    try {
+      await postJson(`${LIVE_TRANSCRIPT_BASE_PATH}/host-dictation/cancel`, {})
+    } finally {
+      liveTranscriptBrowserState.set({ phase: "idle" })
+    }
+  }
+
   async stopShort(): Promise<string | undefined> {
     const recorder = this.shortRecorder
     if (!recorder) return undefined
@@ -389,6 +430,9 @@ export class LiveTranscriptBrowserController {
 
   async dispose(): Promise<void> {
     const active = this.active
+    if (liveTranscriptBrowserState.getSnapshot().recordingKind === "host") {
+      try { await this.cancelHost() } catch {}
+    }
     if (this.shortRecorder && this.shortRecorder.state !== "inactive") this.shortRecorder.stop()
     for (const track of this.shortStream?.getTracks() ?? []) track.stop()
     this.shortRecorder = undefined

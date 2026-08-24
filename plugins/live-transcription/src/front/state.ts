@@ -4,7 +4,7 @@ export interface BrowserLiveTranscriptState {
   liveSessionId?: string
   transcriptPath?: string
   state?: LiveTranscriptState
-  recordingKind?: "short" | "live" | "composer"
+  recordingKind?: "short" | "live" | "composer" | "host"
   phase?: "idle" | "starting" | "recording" | "transcribing" | "error"
   startedAt?: number
   reviewIntervalMs?: number
