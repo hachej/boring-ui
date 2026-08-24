@@ -1,21 +1,21 @@
-import { createElement, lazy, Suspense } from "react"
+import { createElement } from "react"
 import type { PaneProps } from "../../registry/types"
 import type { SurfaceShellProps } from "./SurfaceShell"
 
-const LazySurfaceShell = lazy(() => import("./SurfaceShell").then((module) => ({ default: module.SurfaceShell })))
-
-function ArtifactSurfacePanel({ params }: PaneProps<SurfaceShellProps | undefined>) {
-  return createElement(
-    Suspense,
-    { fallback: createElement("div", { className: "flex h-full items-center justify-center text-sm text-muted-foreground" }, "Loading workbench…") },
-    createElement(LazySurfaceShell, params ?? {}),
-  )
+async function importArtifactSurfacePanel() {
+  const { SurfaceShell } = await import("./SurfaceShell")
+  return {
+    default({ params }: PaneProps<SurfaceShellProps | undefined>) {
+      return createElement(SurfaceShell, params ?? {})
+    },
+  }
 }
 
 export const artifactSurfacePanel = {
   id: "artifact-surface",
   title: "Surface",
-  component: ArtifactSurfacePanel,
+  component: importArtifactSurfacePanel,
+  lazy: true,
   placement: "right",
   source: "builtin",
 }

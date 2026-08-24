@@ -85,5 +85,13 @@ export function useStreamdownPlugins(
     return () => { cancelled = true }
   }, [names])
 
-  return Object.keys(plugins).length > 0 ? plugins as StreamdownPlugins : undefined
+  const selectedPlugins = useMemo(() => {
+    const selected: Partial<StreamdownPlugins> = {}
+    for (const name of names) {
+      if (plugins[name]) selected[name] = plugins[name] as never
+    }
+    return selected
+  }, [names, plugins])
+
+  return Object.keys(selectedPlugins).length > 0 ? selectedPlugins as StreamdownPlugins : undefined
 }

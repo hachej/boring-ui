@@ -1,5 +1,7 @@
+// @vitest-environment jsdom
+import { renderHook, waitFor } from "@testing-library/react"
 import { describe, expect, it } from "vitest"
-import { streamdownPluginNamesForSource } from "../useStreamdownPlugins"
+import { streamdownPluginNamesForSource, useStreamdownPlugins } from "../useStreamdownPlugins"
 
 describe("streamdownPluginNamesForSource", () => {
   it("keeps plain Latin markdown free of rich renderer chunks", () => {
@@ -30,5 +32,16 @@ describe("streamdownPluginNamesForSource", () => {
   it("re-evaluates complete syntax as streamed source changes", () => {
     expect(streamdownPluginNamesForSource("The result is $x + y")).toEqual([])
     expect(streamdownPluginNamesForSource("The result is $x + y$")).toEqual(["math"])
+  })
+
+  it("stops exposing a loaded plugin when the selected source no longer needs it", async () => {
+    const { result, rerender } = renderHook(
+      ({ source }) => useStreamdownPlugins(source),
+      { initialProps: { source: "The result is $x + y$." } },
+    )
+
+    await waitFor(() => expect(result.current?.math).toBeDefined())
+    rerender({ source: "Plain response." })
+    expect(result.current).toBeUndefined()
   })
 })

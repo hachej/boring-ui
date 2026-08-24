@@ -90,6 +90,11 @@ describe("live transcript front surface", () => {
       registerProvider: (value: unknown) => registrations.providers.push(value),
     } as never)
     const resolver = registrations.resolvers[0]
+    expect(registrations.panels[0]).toMatchObject({
+      id: "live-transcription.markdown",
+      lazy: true,
+      component: expect.any(Function),
+    })
 
     liveTranscriptBrowserState.set({ liveSessionId: "live-1", transcriptPath: "live-transcripts/a.md", state: "active" })
     expect(resolver.resolve({ kind: "workspace.open.path", target: "live-transcripts/a.md" })).toMatchObject({

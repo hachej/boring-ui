@@ -379,7 +379,10 @@ function LiveTranscriptLifecycleBinding() {
   return null
 }
 
-export function LiveTranscriptMarkdownPane(props: MarkdownEditorPaneProps) {
+function LiveTranscriptMarkdownPaneContent({
+  Editor,
+  ...props
+}: MarkdownEditorPaneProps & { Editor: ComponentType<MarkdownEditorPaneProps> }) {
   const active = useSyncExternalStore(
     liveTranscriptBrowserState.subscribe,
     liveTranscriptBrowserState.getSnapshot,
@@ -387,14 +390,24 @@ export function LiveTranscriptMarkdownPane(props: MarkdownEditorPaneProps) {
   )
   const path = typeof props.params?.path === "string" ? props.params.path : ""
   const locked = Boolean(path && active.transcriptPath === path && active.state !== "complete" && active.state !== "interrupted")
+  return <Editor {...props} params={{ ...props.params, mode: locked ? "view" : "edit" }} />
+}
+
+export function LiveTranscriptMarkdownPane(props: MarkdownEditorPaneProps) {
   return (
     <Suspense fallback={<div className="grid h-full place-items-center text-sm text-muted-foreground">Loading transcript…</div>}>
-      <LazyMarkdownEditorPane
-        {...props}
-        params={{ ...props.params, mode: locked ? "view" : "edit" }}
-      />
+      <LiveTranscriptMarkdownPaneContent Editor={LazyMarkdownEditorPane} {...props} />
     </Suspense>
   )
+}
+
+async function importLiveTranscriptMarkdownPane() {
+  const { MarkdownEditorPane } = await import("@hachej/boring-workspace")
+  return {
+    default(props: MarkdownEditorPaneProps) {
+      return <LiveTranscriptMarkdownPaneContent Editor={MarkdownEditorPane} {...props} />
+    },
+  }
 }
 
 export const liveTranscriptPlugin = definePlugin({
@@ -404,7 +417,8 @@ export const liveTranscriptPlugin = definePlugin({
   panels: [{
     id: LIVE_MARKDOWN_PANEL_ID,
     label: "Live transcript",
-    component: LiveTranscriptMarkdownPane as ComponentType<any>,
+    component: importLiveTranscriptMarkdownPane,
+    lazy: true,
     placement: "center",
     source: "app",
   }],

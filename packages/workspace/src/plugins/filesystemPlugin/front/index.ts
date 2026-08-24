@@ -34,25 +34,14 @@ import {
 import { createFilesCatalog } from "./catalogs"
 
 const LazyFileTreePane = lazy(() => import("./file-tree/FileTreePane").then((module) => ({ default: module.FileTreePane })))
-const LazyCodeEditorPane = lazy(() => import("./code-editor/CodeEditorPane").then((module) => ({ default: module.CodeEditorPane })))
-const LazyMarkdownEditorPane = lazy(() => import("./markdown-editor/MarkdownEditorPane").then((module) => ({ default: module.MarkdownEditorPane })))
-const LazyMediaViewerPane = lazy(() => import("./media-viewer/MediaViewerPane").then((module) => ({ default: module.MediaViewerPane })))
-const LazyHtmlViewerPane = lazy(() => import("./html-viewer/HtmlViewerPane").then((module) => ({ default: module.HtmlViewerPane })))
+const importCodeEditorPane = () => import("./code-editor/CodeEditorPane").then((module) => ({ default: module.CodeEditorPane }))
+const importMarkdownEditorPane = () => import("./markdown-editor/MarkdownEditorPane").then((module) => ({ default: module.MarkdownEditorPane }))
+const importMediaViewerPane = () => import("./media-viewer/MediaViewerPane").then((module) => ({ default: module.MediaViewerPane }))
+const importHtmlViewerPane = () => import("./html-viewer/HtmlViewerPane").then((module) => ({ default: module.HtmlViewerPane }))
 
 function panelFallback(label: string) {
   return createElement("div", { className: "flex h-full items-center justify-center text-sm text-muted-foreground" }, `Loading ${label}…`)
 }
-
-function lazyPane(component: typeof LazyCodeEditorPane, label: string) {
-  return function LazyFilesystemPane(props: Parameters<typeof component>[0]) {
-    return createElement(Suspense, { fallback: panelFallback(label) }, createElement(component, props))
-  }
-}
-
-const CodeEditorPane = lazyPane(LazyCodeEditorPane, "editor")
-const MarkdownEditorPane = lazyPane(LazyMarkdownEditorPane, "Markdown")
-const MediaViewerPane = lazyPane(LazyMediaViewerPane, "media")
-const HtmlViewerPane = lazyPane(LazyHtmlViewerPane, "HTML")
 
 // Re-export shared file pane utilities for external use
 export { useFilePane } from "./useFilePane"
@@ -164,7 +153,8 @@ const filesystemFront: BoringFrontSetup = (api) => {
   api.registerPanel({
     id: CODE_EDITOR_PANEL_ID,
     label: "Code",
-    component: CodeEditorPane,
+    component: importCodeEditorPane,
+    lazy: true,
     placement: "center",
     source: "builtin",
   })
@@ -173,35 +163,40 @@ const filesystemFront: BoringFrontSetup = (api) => {
     label: "CSV",
     // CSV currently uses the text editor shell; a tabular viewer can replace
     // this panel without changing the filesystem resolver contract.
-    component: CodeEditorPane,
+    component: importCodeEditorPane,
+    lazy: true,
     placement: "center",
     source: "builtin",
   })
   api.registerPanel({
     id: MARKDOWN_EDITOR_PANEL_ID,
     label: "Markdown",
-    component: MarkdownEditorPane,
+    component: importMarkdownEditorPane,
+    lazy: true,
     placement: "center",
     source: "builtin",
   })
   api.registerPanel({
     id: IMAGE_VIEWER_PANEL_ID,
     label: "Image",
-    component: MediaViewerPane,
+    component: importMediaViewerPane,
+    lazy: true,
     placement: "center",
     source: "builtin",
   })
   api.registerPanel({
     id: PDF_VIEWER_PANEL_ID,
     label: "PDF",
-    component: MediaViewerPane,
+    component: importMediaViewerPane,
+    lazy: true,
     placement: "center",
     source: "builtin",
   })
   api.registerPanel({
     id: HTML_VIEWER_PANEL_ID,
     label: "HTML",
-    component: HtmlViewerPane,
+    component: importHtmlViewerPane,
+    lazy: true,
     placement: "center",
     source: "builtin",
   })

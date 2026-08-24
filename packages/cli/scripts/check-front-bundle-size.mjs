@@ -1,5 +1,6 @@
 import { appendFileSync, readFileSync, readdirSync, statSync } from "node:fs"
-import { basename, join } from "node:path"
+import { basename } from "node:path"
+import { collectStaticImportFiles } from "./front-bundle-graph.mjs"
 
 const publicDir = new URL("../public/", import.meta.url)
 const budgetBytes = Number(process.env.CLI_ENTRY_BUDGET_BYTES ?? 1_000_000)
@@ -24,19 +25,9 @@ const eagerBytes = eagerFiles.reduce((total, file) => total + statSync(new URL(f
 // still statically import chunks that the browser discovers while parsing it.
 // Traverse Vite's manifest so the regression gate covers every static import.
 const manifest = JSON.parse(readFileSync(new URL(".vite/manifest.json", publicDir), "utf8"))
-const manifestEntry = Object.values(manifest).find((chunk) => chunk.isEntry && chunk.file === entry)
+const manifestEntry = Object.entries(manifest).find(([, chunk]) => chunk.isEntry && chunk.file === entry)
 if (!manifestEntry) throw new Error(`CLI bundle budget: manifest has no entry for ${entry}`)
-function collectStaticImports(chunk, files) {
-  if (files.has(chunk.file)) return
-  files.add(chunk.file)
-  for (const importedKey of chunk.imports ?? []) {
-    const imported = manifest[importedKey]
-    if (!imported) throw new Error(`CLI bundle budget: manifest import ${importedKey} is missing`)
-    collectStaticImports(imported, files)
-  }
-}
-const startupFiles = new Set()
-collectStaticImports(manifestEntry, startupFiles)
+const startupFiles = collectStaticImportFiles(manifest, [manifestEntry[0]])
 const startupBytes = [...startupFiles].reduce((total, file) => total + statSync(new URL(file, publicDir)).size, 0)
 
 // The CLI waits for these default front descriptors before mounting chat, so
@@ -49,15 +40,14 @@ const defaultFrontSourceGroups = [
   ["plugins/tasks/dist/front/index", "plugins/tasks/src/front/index"],
   ["plugins/live-transcription/src/front/index"],
 ]
-const defaultFrontEntries = defaultFrontSourceGroups.map((fragments) => {
-  const matches = Object.entries(manifest).filter(([key]) => fragments.some((fragment) => key.includes(fragment)))
+const defaultFrontEntryKeys = defaultFrontSourceGroups.map((fragments) => {
+  const matches = Object.keys(manifest).filter((key) => fragments.some((fragment) => key.includes(fragment)))
   if (matches.length !== 1) {
     throw new Error(`CLI bundle budget: expected one default front entry matching ${fragments.join(" or ")}, found ${matches.length}`)
   }
-  return matches[0][1]
+  return matches[0]
 })
-const preChatFiles = new Set(startupFiles)
-for (const chunk of defaultFrontEntries) collectStaticImports(chunk, preChatFiles)
+const preChatFiles = collectStaticImportFiles(manifest, [manifestEntry[0], ...defaultFrontEntryKeys])
 const preChatBytes = [...preChatFiles].reduce((total, file) => total + statSync(new URL(file, publicDir)).size, 0)
 
 const rows = [

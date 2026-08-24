@@ -1,18 +1,30 @@
 // @vitest-environment jsdom
 import React from "react"
-import { cleanup, render, screen, waitFor } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import { liveTranscriptPlugin } from "@hachej/boring-transcription/front"
-import { CliWorkspaceShell, loadCliDefaultPlugins } from "./App"
+import { CliWorkspaceShell, loadCliDefaultPlugins, type CliFrontLoaders } from "./App"
 
-const workspaceAgentFrontSpy = vi.fn((props: Record<string, unknown>) => (
-  <div>
-    <div data-testid="workspace-agent-front" data-mode={String(props.frontPluginHotReload)}>
-      {String(props.appTitle)}
+const mockedPlugins = vi.hoisted(() => ({
+  automation: Object.assign(() => undefined, { pluginId: "boring-automation" }),
+  liveTranscript: Object.assign(() => undefined, { pluginId: "live-transcription" }),
+}))
+
+let frontMounts = 0
+let frontUnmounts = 0
+const workspaceAgentFrontSpy = vi.fn((props: Record<string, unknown>) => {
+  React.useEffect(() => {
+    frontMounts += 1
+    return () => { frontUnmounts += 1 }
+  }, [])
+  return (
+    <div>
+      <div data-testid="workspace-agent-front" data-mode={String(props.frontPluginHotReload)}>
+        {String(props.appTitle)}
+      </div>
+      <div data-testid="top-bar-right">{props.topBarRight as React.ReactNode}</div>
     </div>
-    <div data-testid="top-bar-right">{props.topBarRight as React.ReactNode}</div>
-  </div>
-))
+  )
+})
 
 vi.mock("@hachej/boring-agent", () => ({
   ChatPanel: () => null,
@@ -27,6 +39,24 @@ vi.mock("@hachej/boring-ask-user/front", () => {
 
 vi.mock("@hachej/boring-diagram/front", () => ({
   diagramPlugin: { pluginId: "diagram", pluginLabel: "Diagram" },
+}))
+
+vi.mock("@hachej/boring-automation/front", () => ({
+  boringAutomationPlugin: mockedPlugins.automation,
+}))
+
+vi.mock("@hachej/boring-transcription/front", () => ({
+  liveTranscriptPlugin: mockedPlugins.liveTranscript,
+}))
+
+vi.mock("./runtimeSingletons", () => ({
+  installCliRuntimeSingletons: () => {
+    globalThis.__BORING_RUNTIME_SINGLETONS__ = {
+      "react/jsx-runtime": { jsx: () => undefined },
+      "react/jsx-dev-runtime": { jsxDEV: () => undefined },
+    }
+  },
+  loadWorkspaceRuntimeSingleton: async () => undefined,
 }))
 
 vi.mock("@hachej/boring-tasks/front", () => {
@@ -54,21 +84,18 @@ describe("CliWorkspaceShell", () => {
     })
   })
 
-  test("keeps successful default plugin fronts when one lazy chunk fails", async () => {
-    const error = vi.spyOn(console, "error").mockImplementation(() => undefined)
-    const plugins = await loadCliDefaultPlugins([
+  test("rejects the default provider topology atomically when one required front fails", async () => {
+    await expect(loadCliDefaultPlugins([
       async () => ({ pluginId: "first" }) as never,
-      async () => { throw new Error("stale optional chunk") },
+      async () => { throw new Error("required chunk failed") },
       async () => ({ pluginId: "third" }) as never,
-    ])
-
-    expect(plugins.map((plugin) => plugin.pluginId)).toEqual(["first", "third"])
-    expect(error).toHaveBeenCalledWith("Failed to load a CLI default plugin front", expect.any(Error))
-    error.mockRestore()
+    ])).rejects.toThrow("required chunk failed")
   })
 
   beforeEach(() => {
     workspaceAgentFrontSpy.mockClear()
+    frontMounts = 0
+    frontUnmounts = 0
   })
 
   afterEach(() => {
@@ -157,6 +184,78 @@ describe("CliWorkspaceShell", () => {
     expect(window.location.pathname).toBe("/workspace/target")
   })
 
+  test("loads required fronts before mounting a listed cold workspace and does not remount when it becomes available", async () => {
+    window.history.replaceState(null, "", "/workspace/target")
+    mockWorkspacesMode([
+      [{ id: "target", name: "Target", path: "/target", available: false }],
+      [{ id: "target", name: "Target", path: "/target", available: true }],
+    ])
+    let resolvePlugins: ((plugins: Awaited<ReturnType<CliFrontLoaders["loadDefaultPlugins"]>>) => void) | undefined
+    const frontLoaders: CliFrontLoaders = {
+      loadDefaultPlugins: () => new Promise((resolve) => { resolvePlugins = resolve }),
+      loadWorkspaceRuntimeSingleton: async () => undefined,
+    }
+
+    render(<CliWorkspaceShell frontLoaders={frontLoaders} />)
+
+    await screen.findByText("Loading workspace plugins")
+    expect(workspaceAgentFrontSpy).not.toHaveBeenCalled()
+    await waitFor(() => expect(resolvePlugins).toBeTypeOf("function"))
+
+    resolvePlugins?.([
+      { pluginId: "ask-user" },
+      mockedPlugins.automation,
+      { pluginId: "diagram" },
+      { pluginId: "tasks" },
+      mockedPlugins.liveTranscript,
+    ] as never)
+    await waitFor(() => expect(workspaceAgentFrontSpy).toHaveBeenCalled())
+    expect(workspaceAgentFrontSpy.mock.calls.every(([props]) => Array.isArray(props.plugins) && props.plugins.length === 5)).toBe(true)
+    expect(frontMounts).toBe(1)
+    expect(frontUnmounts).toBe(0)
+
+    fireEvent.focus(window)
+    await waitFor(() => expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0]).toMatchObject({
+      appLeftProjects: [expect.objectContaining({ id: "target", available: true })],
+    }))
+    expect(frontMounts).toBe(1)
+    expect(frontUnmounts).toBe(0)
+  })
+
+  test("blocks the first front mount on required-load failure and retries deterministically", async () => {
+    let attempt = 0
+    const frontLoaders: CliFrontLoaders = {
+      loadDefaultPlugins: async () => {
+        attempt += 1
+        if (attempt === 1) throw new Error("ask-user front unavailable")
+        return [
+          { pluginId: "ask-user" },
+          mockedPlugins.automation,
+          { pluginId: "diagram" },
+          { pluginId: "tasks" },
+          mockedPlugins.liveTranscript,
+        ] as never
+      },
+      loadWorkspaceRuntimeSingleton: async () => undefined,
+    }
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith("/api/v1/workspace/meta")) {
+        return new Response(JSON.stringify({ projectName: "Retry Workspace" }), { status: 200 })
+      }
+      throw new Error(`unexpected fetch: ${String(input)}`)
+    }) as typeof fetch
+
+    render(<CliWorkspaceShell frontLoaders={frontLoaders} />)
+
+    expect((await screen.findByRole("alert")).textContent).toContain("ask-user front unavailable")
+    expect(workspaceAgentFrontSpy).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }))
+    await waitFor(() => expect(workspaceAgentFrontSpy).toHaveBeenCalled())
+    expect(workspaceAgentFrontSpy.mock.calls.every(([props]) => Array.isArray(props.plugins) && props.plugins.length === 5)).toBe(true)
+    expect(frontMounts).toBe(1)
+    expect(frontUnmounts).toBe(0)
+  })
+
   test("waits for a URL workspace that is absent during cold start", async () => {
     window.history.replaceState(null, "", "/workspace/target")
     // First list lacks the URL-targeted workspace (still initializing); a fallback is available.
@@ -214,7 +313,7 @@ describe("CliWorkspaceShell", () => {
     render(<CliWorkspaceShell />)
 
     await waitFor(() => expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0]).toMatchObject({
-      plugins: expect.arrayContaining([liveTranscriptPlugin]),
+      plugins: expect.arrayContaining([mockedPlugins.liveTranscript]),
     }))
     expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0]).not.toHaveProperty("extraCommands")
   })
@@ -249,7 +348,7 @@ describe("CliWorkspaceShell", () => {
         expect.any(Function),
         expect.objectContaining({ pluginId: "diagram" }),
         expect.objectContaining({ pluginId: "tasks" }),
-        liveTranscriptPlugin,
+        mockedPlugins.liveTranscript,
       ],
     }), { timeout: 5_000 })
 

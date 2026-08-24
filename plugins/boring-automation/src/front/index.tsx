@@ -6,10 +6,15 @@ import { CalendarClock } from "lucide-react"
 import { BORING_AUTOMATION_PLUGIN_ID, BORING_AUTOMATION_PLUGIN_LABEL } from "../shared"
 import { AutomationRuntimeProvider } from "./AutomationRuntimeContext"
 
-const LazyAutomationPanel = lazy(async () => {
+const importAutomationPanel = async () => {
   const module = await import("./AutomationPanel")
   return { default: module.AutomationPanel }
-})
+}
+const importAutomationCenterPanel = async () => {
+  const module = await import("./AutomationPanel")
+  return { default: () => <module.AutomationPanel /> }
+}
+const LazyAutomationPanel = lazy(importAutomationPanel)
 
 function AutomationPanelFallback() {
   return <div className="grid h-full place-items-center text-sm text-muted-foreground">Loading Automations…</div>
@@ -21,10 +26,6 @@ function AutomationOverlay({ onClose }: BoringFrontAppLeftOverlayProps) {
       <Suspense fallback={<AutomationPanelFallback />}><LazyAutomationPanel onClose={onClose} /></Suspense>
     </div>
   )
-}
-
-function AutomationCenterPanel() {
-  return <Suspense fallback={<AutomationPanelFallback />}><LazyAutomationPanel /></Suspense>
 }
 
 export const boringAutomationPlugin: BoringFrontFactoryWithId = definePlugin({
@@ -50,7 +51,8 @@ export const boringAutomationPlugin: BoringFrontFactoryWithId = definePlugin({
       id: `${BORING_AUTOMATION_PLUGIN_ID}.panel`,
       label: BORING_AUTOMATION_PLUGIN_LABEL,
       icon: CalendarClock,
-      component: AutomationCenterPanel,
+      component: importAutomationCenterPanel,
+      lazy: true,
       placement: "center",
       source: "builtin",
     },
