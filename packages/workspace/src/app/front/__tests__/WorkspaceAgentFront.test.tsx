@@ -3431,6 +3431,34 @@ describe("WorkspaceAgentFront", () => {
     await act(async () => { releaseCreate() })
   })
 
+  it("does not send a synthetic Agent owner when creating a single-Agent quick chat", async () => {
+    const create = vi.fn(async () => ({ id: "quick", agentTypeId: "default", title: "Quick", updatedAt: Date.now(), turnCount: 0 }))
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="single-agent-quick-create"
+        workspaceLayout="plugin-tabs"
+        chatPanel={ChatPanel}
+        useSessions={() => ({
+          sessions: [{ id: "existing", title: "Existing", updatedAt: Date.now(), turnCount: 0 }],
+          activeSessionId: "existing",
+          activeSession: { id: "existing", title: "Existing", updatedAt: Date.now(), turnCount: 0 },
+          loading: false,
+          create,
+          switch: vi.fn(),
+          delete: vi.fn(),
+        })}
+        persistenceEnabled={false}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Quick chat" }))
+
+    await waitFor(() => expect(create).toHaveBeenCalledOnce())
+    expect(create).toHaveBeenCalledWith({ title: "New session" })
+    expect(await screen.findByRole("button", { name: "Dock panel" })).toBeInTheDocument()
+  })
+
   it("does not pass the New chat click event into remote session creation", async () => {
     const create = vi.fn(async () => ({ id: "manual", title: "Manual", updatedAt: Date.now(), turnCount: 0 }))
 

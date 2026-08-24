@@ -2441,7 +2441,15 @@ export function WorkspaceAgentFront<
     // became independent is no longer always the addressed one.
     const requestedAgentTypeId = options?.agentTypeId ?? selectedAgentTypeId
     try {
-      const session = await coordinateRemoteCreate(dedupeKey, options)
+      // `agentTypeId` addresses the fleet wrapper; it is not part of the
+      // canonical single-Agent create-session body. Forwarding the synthetic
+      // `default` owner made strict Agent hosts reject quick-chat creation.
+      const createInput = fleetModeEnabled
+        ? options
+        : options?.title
+          ? { title: options.title }
+          : undefined
+      const session = await coordinateRemoteCreate(dedupeKey, createInput)
       const sessionId = createdSessionId(session)
       if (!sessionId) return { success: false as const, reason: "create-failed" as const, message: "Chat session creation did not return a canonical session." }
       const returnedAgentTypeId = (session as { agentTypeId?: unknown }).agentTypeId
@@ -2475,7 +2483,7 @@ export function WorkspaceAgentFront<
     } catch (error) {
       return { success: false as const, reason: "create-failed" as const, message: error instanceof Error ? error.message : "Chat session creation failed." }
     }
-  }, [coordinateRemoteCreate, rawDelete, rawSwitch, selectedAgentTypeId])
+  }, [coordinateRemoteCreate, fleetModeEnabled, rawDelete, rawSwitch, selectedAgentTypeId])
   const createShellChatSession = useCallback(async (options?: { title?: string }) => {
     shellSessionCreateSequenceRef.current += 1
     return await createAddressedSessionWithoutActivating(`shell:${shellSessionCreateSequenceRef.current}`, {
