@@ -560,7 +560,7 @@ describe("AppLeftPane", () => {
       // The tag must never grow, or it takes room from the name.
       expect(tag?.className).not.toContain("flex-1")
       // The title comes FIRST, so a shrink-to-fit pass reaches the tag first.
-      expect(title?.compareDocumentPosition(tag as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect((title?.compareDocumentPosition(tag as Node) ?? 0) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 
       const css = await readFile(resolve(process.cwd(), "src/globals.css"), "utf8")
       expect(css).toContain(".app-left-session-title {\n  /* ~14 characters at 13px")
