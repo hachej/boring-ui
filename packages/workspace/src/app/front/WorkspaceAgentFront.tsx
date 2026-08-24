@@ -316,7 +316,13 @@ export interface WorkspaceAgentFrontProps<
   /** Explicit owner for controlled colliding ids; falls back to the active session object. */
   activeSessionAgentTypeId?: string | null
   onSwitchSession?: (id: string, agentTypeId?: string) => void
-  onCreateSession?: () => unknown | Promise<unknown>
+  /**
+   * Mint a session. Receives the Agent the pane ASKED for, which a prop-driven
+   * host must honour: the create path asserts the session came back owned by
+   * the requested Agent and rolls it back when it did not, so a host that
+   * always creates under its own default silently loses every per-Agent create.
+   */
+  onCreateSession?: (agentTypeId?: string) => unknown | Promise<unknown>
   onDeleteSession?: (id: string, agentTypeId?: string) => void
   onRenameSession?: (id: string, title: string, agentTypeId?: string) => void | Promise<void>
   onActiveSessionIdChange?: (sessionId: string | null) => void
@@ -1288,7 +1294,7 @@ export function WorkspaceAgentFront<
         suppressEmptyAutoCreateRef.current = false
       })
     }
-    const created = onCreateSession ? onCreateSession() : localSessionStore.create()
+    const created = onCreateSession ? onCreateSession(ownerAgentTypeId) : localSessionStore.create()
     return Promise.resolve(created).then((session) => validateCreatedSession<TSession>(session))
   }, [coordinateRemoteCreate, fleetModeEnabled, localSessionStore, onCreateSession, remoteSessionsPending, selectedAgentTypeId, sessionApi, sessionCreation, workspaceId])
   const resolvedRename = useCallback((id: string, title: string, sessionAgentTypeId?: string) => {

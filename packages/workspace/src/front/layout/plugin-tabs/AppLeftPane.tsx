@@ -835,6 +835,13 @@ export function AppLeftPane({
             sessionsLoading={sessionsLoading}
             renderLoading={renderChatsLoading}
             onCreateSession={(agentTypeId, projectId, placement = "default") => {
+              // Picking an Agent from the create menu also ADDRESSES it, the
+              // same thing the fleet cards' `createForAgent` does — otherwise
+              // the next chat silently reverts to the previous target. This
+              // retarget alone cannot carry the choice into the create call
+              // (setState does not land before the callback runs in the same
+              // tick); the Agent travels as the argument below.
+              if (agentTypeId) onSelectAgent?.(agentTypeId)
               if (agentTypeId && projectId && consoleSpikeCreateSession) consoleSpikeCreateSession(agentTypeId, projectId, placement)
               // A Project header's "+" names a place; without the scoped seam
               // the host's own in-project create is the honest fallback.

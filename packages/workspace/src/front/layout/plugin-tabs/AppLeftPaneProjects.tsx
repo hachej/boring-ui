@@ -364,7 +364,12 @@ function ProjectRow({
                         <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
                         Rename project
                       </DropdownMenuItem>
-                    ) : allowPinning ? (
+                    ) : null}
+                    {/* Independent capabilities, not alternatives. These were
+                        an else-if chain, so ANY project that could be renamed
+                        could never be pinned — the Pin item was unreachable on
+                        every surface that passes onRenameProject. */}
+                    {allowPinning ? (
                       <DropdownMenuItem onSelect={onTogglePinned} className="gap-2 text-[13px]">
                         {pinned ? <PinOff className="h-3.5 w-3.5" aria-hidden="true" /> : <Pin className="h-3.5 w-3.5" aria-hidden="true" />}
                         {pinned ? "Unpin project" : "Pin project"}

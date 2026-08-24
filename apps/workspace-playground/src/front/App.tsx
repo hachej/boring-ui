@@ -306,7 +306,15 @@ export function WorkspaceShell() {
     error: undefined,
     selectAgentTypeId: setConsoleSpikeAgentTypeId,
   }), [consoleSpikeAgentTypeId])
-  const createConsoleSpikeSession = useCallback((agentTypeId = consoleSpikeAgentTypeId, projectId = "console", placement: "default" | "split" | "quick" = "default") => {
+  const createConsoleSpikeSession = useCallback((
+    // The pane hands down the Agent it asked for; falling back to the current
+    // one only when it asked for nothing. Ignoring it made the host's own
+    // owner-consistency guard delete every per-Agent chat right after creating
+    // it, which read as "the Agent submenu does nothing".
+    agentTypeId = consoleSpikeAgentTypeId,
+    projectId = "console",
+    placement: "default" | "split" | "quick" = "default",
+  ) => {
     const id = `console-spike-${Date.now()}`
     const created: ConsoleSpikeSession = {
       id,
@@ -399,7 +407,13 @@ export function WorkspaceShell() {
         addressedAgentSelection
         useAddressedAgentSelection={useConsoleSpikeAgentSelection}
         apiBaseUrl=""
-        persistenceEnabled={false}
+        // Pins, the chosen view and the pane layout are settings the operator
+        // SET; a demo that forgets them on every reload reads as a demo where
+        // the controls do nothing. The host already owns this state behind
+        // guarded localStorage reads/writes, so switching it on is the whole
+        // fix — a second pinned-set in this file would be two stores fighting
+        // over one piece of state. Namespaced below, and ?fresh=1 clears it.
+        persistenceEnabled
         providerStorageKey="boring-ui-v2:layout:console-spike"
         appTitle="Boring"
         workspaceLabel="Workspace playground"

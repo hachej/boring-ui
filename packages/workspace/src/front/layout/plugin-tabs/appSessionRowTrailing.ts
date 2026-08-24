@@ -13,10 +13,14 @@ export type SessionTrailingBadge =
 /**
  * The marker half: provenance, pin, or the quiet age.
  *
- * Provenance is the exception that outranks the badge — an attention badge
- * and "which Agent owns this" answer different questions and legitimately
- * render side by side. The pin and the age are quiet enough to yield the slot
- * entirely once a badge claims it.
+ * Provenance and the PIN are the exceptions that outrank the badge — they
+ * answer a different question from "this chat needs you" and legitimately
+ * render beside it. The pin earned that after a measured failure: a chat that
+ * was both waiting and pinned showed the attention badge and nothing else, so
+ * pinning the top rows of the pane (which are the waiting ones) produced no
+ * visible change anywhere and read as a dead menu item. A badge is a state the
+ * SYSTEM reports; a pin is a state the USER set, and a system signal must never
+ * silently swallow the user's own. Only the age still yields the slot.
  */
 export type SessionTrailingMarker =
   | { kind: "none" }
@@ -68,12 +72,12 @@ export function resolveSessionTrailingSlot(input: SessionTrailingInput): Session
 
   const marker: SessionTrailingMarker = ((): SessionTrailingMarker => {
     if (input.ownerLabel) return { kind: "owner", label: input.ownerLabel }
-    // Everything below is quiet enough to yield to a badge. Note this uses the
-    // SAME predicate as the age below: gating the pin on raw `working` while
-    // gating the age on the badge condition made a pinned, working, dotted row
-    // show nothing at all.
-    if (badge.kind !== "none") return { kind: "none" }
     if (input.pinned) return { kind: "pin" }
+    // The age is the only marker quiet enough to yield to a badge. Note this
+    // uses the SAME predicate the pin used to: gating the pin on raw `working`
+    // while gating the age on the badge condition made a pinned, working,
+    // dotted row show nothing at all.
+    if (badge.kind !== "none") return { kind: "none" }
     const label = formatRelativeAge(input.updatedAt, input.now)
     if (!label) return { kind: "none" }
     const title = exactTimestamp(input.updatedAt)
