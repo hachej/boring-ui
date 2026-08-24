@@ -8,9 +8,10 @@ import { createAskUserPlugin } from "../index"
 
 /**
  * The Inbox is the ratified single triage surface, so its rail badge is THE
- * "a human is blocking" signal in the app-left — it has to count SESSIONS,
- * not the individual questions they asked, or it disagrees with every other
- * attention count on the surface.
+ * "a human is blocking" signal in the app-left — and it has to agree with the
+ * attention rollups the pane draws on its collapsed group headers, in both
+ * arithmetic (sessions, not items) and register (amber, not the accent that
+ * means "selected" everywhere else).
  */
 function inboxTrailing(): ReactNode {
   // Reached through the real plugin registration rather than by exporting the
@@ -69,6 +70,9 @@ describe("Inbox app-left count badge", () => {
     ])
     await waitFor(() => expect(badge()).toHaveTextContent("2"))
     expect(badge()).toHaveAttribute("aria-label", "2 chats waiting for you")
+    // Same mark and same token as the pane's collapsed-header rollups.
+    expect(badge()?.className).toContain("var(--attention)")
+    expect(badge()?.querySelector("span.rounded-full")).not.toBeNull()
   })
 
   it("drops back down as blockers clear, and disappears at zero", async () => {

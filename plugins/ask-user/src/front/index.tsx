@@ -221,11 +221,14 @@ function InlineQuestion({ part }: { part: unknown }) {
 
 /**
  * The Inbox is the single triage surface, so its badge is THE "a human is
- * blocking" signal in the app-left rail: a count of SESSIONS waiting on you,
- * not of the individual questions they asked.
+ * blocking" signal in the app-left rail — and it says the same thing, the same
+ * way, as the attention rollups on the pane's collapsed group headers: amber
+ * dot plus a count of SESSIONS, not of items.
  *
  * It counted raw blockers before, which double-counts a chat that asked two
- * questions and disagreed with every other attention count on the surface.
+ * questions and disagrees with every other attention count on the surface. It
+ * was also accent blue, which in this palette reads as "selected/active" —
+ * the wrong register for something waiting on you.
  */
 function InboxCountBadge() {
   const { blockers } = useWorkspaceAttention()
@@ -238,7 +241,16 @@ function InboxCountBadge() {
   }
   const count = sessions.size
   if (count === 0) return null
-  return <span data-boring-workspace-part="app-left-inbox-count" aria-label={`${count} chat${count === 1 ? "" : "s"} waiting for you`} className="inline-flex min-w-5 items-center justify-center rounded-full bg-[color:var(--accent)] px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white shadow-sm">{count > 99 ? "99+" : String(count)}</span>
+  return (
+    <span
+      data-boring-workspace-part="app-left-inbox-count"
+      aria-label={`${count} chat${count === 1 ? "" : "s"} waiting for you`}
+      className="inline-flex items-center gap-1 text-[10px] font-medium tabular-nums leading-4 text-[color:var(--attention)]"
+    >
+      <span aria-hidden="true" className="size-1.5 rounded-full bg-[color:var(--attention)]" />
+      {count > 99 ? "99+" : String(count)}
+    </span>
+  )
 }
 function AskUserInboxOverlay({ onClose, params }: BoringFrontAppLeftOverlayProps) {
   const { workspaceId } = useWorkspaceContext()
