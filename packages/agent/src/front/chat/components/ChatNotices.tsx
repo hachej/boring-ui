@@ -183,7 +183,9 @@ export function QueuedComposerNotice({
       <div className="min-w-0 flex-1 text-[color:var(--muted-foreground)]">
         <div className="font-medium text-[color:var(--foreground)]">{followUps.length} queued follow-up{followUps.length === 1 ? '' : 's'}</div>
         {onRemove ? (
-          <ul className="mt-1 space-y-1" data-boring-agent-part="composer-queue-items">
+          // The list carries the flat-preview contract part so locators and
+          // screen readers still see every queued text without duplication.
+          <ul className="mt-1 space-y-1" data-boring-agent-part="composer-queue-items composer-queue-preview-text">
             {followUps.map((followUp) => (
               <li key={followUp.id} className="flex items-center gap-1" data-boring-agent-part="composer-queue-item">
                 <span className="min-w-0 truncate" data-boring-agent-part="composer-queue-item-text">
