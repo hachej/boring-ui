@@ -17,24 +17,14 @@ const sharedOptions = {
   ],
 }
 
-export default defineConfig([
-  {
-    ...sharedOptions,
-    entry: {
-      "front/index": "src/front/index.tsx",
-      "server/index": "src/server/index.ts",
-      "shared/index": "src/shared/index.ts",
-      "testing/index": "src/testing/index.ts",
-    },
-    splitting: false,
-    clean: true,
+export default defineConfig({
+  ...sharedOptions,
+  entry: {
+    "front/index": "src/front/index.tsx",
+    "server/index": "src/server/index.ts",
+    "shared/index": "src/shared/index.ts",
+    "testing/index": "src/testing/index.ts",
   },
-  {
-    ...sharedOptions,
-    entry: {
-      "front/descriptor": "src/front/descriptor.tsx",
-    },
-    splitting: true,
-    clean: false,
-  },
-])
+  splitting: false,
+  clean: true,
+})

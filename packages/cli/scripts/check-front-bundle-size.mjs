@@ -1,12 +1,15 @@
 import { appendFileSync, readFileSync, readdirSync, statSync } from "node:fs"
 import { basename } from "node:path"
-import { collectStaticImportFiles } from "./front-bundle-graph.mjs"
+import { collectStaticImportFiles, collectStaticImportResources } from "./front-bundle-graph.mjs"
 
 const publicDir = new URL("../public/", import.meta.url)
 const budgetBytes = Number(process.env.CLI_ENTRY_BUDGET_BYTES ?? 1_000_000)
 const eagerBudgetBytes = Number(process.env.CLI_EAGER_BUDGET_BYTES ?? 1_000_000)
 const startupBudgetBytes = Number(process.env.CLI_STARTUP_BUDGET_BYTES ?? 2_500_000)
-const preChatBudgetBytes = Number(process.env.CLI_PRE_CHAT_BUDGET_BYTES ?? 4_000_000)
+const preChatJsBudgetBytes = Number(process.env.CLI_PRE_CHAT_JS_BUDGET_BYTES ?? process.env.CLI_PRE_CHAT_BUDGET_BYTES ?? 4_000_000)
+const preChatCssBudgetBytes = Number(process.env.CLI_PRE_CHAT_CSS_BUDGET_BYTES ?? 400_000)
+// The production artifact measured 4,018,167 B before this all-resource gate.
+const preChatResourceBudgetBytes = Number(process.env.CLI_PRE_CHAT_RESOURCE_BUDGET_BYTES ?? 4_100_000)
 const html = readFileSync(new URL("index.html", publicDir), "utf8")
 const entry = html.match(/<script[^>]+src="\/([^\"]+\.js)"/)?.[1]
 if (!entry) throw new Error("CLI bundle budget: index.html has no module entry")
@@ -47,38 +50,56 @@ const defaultFrontEntryKeys = defaultFrontSourceGroups.map((fragments) => {
   }
   return matches[0]
 })
-const preChatFiles = collectStaticImportFiles(manifest, [manifestEntry[0], ...defaultFrontEntryKeys])
+const preChatResources = collectStaticImportResources(manifest, [manifestEntry[0], ...defaultFrontEntryKeys])
+const preChatFiles = preChatResources.jsFiles
+const preChatCssFiles = preChatResources.cssFiles
 const preChatBytes = [...preChatFiles].reduce((total, file) => total + statSync(new URL(file, publicDir)).size, 0)
+const preChatCssBytes = [...preChatCssFiles].reduce((total, file) => total + statSync(new URL(file, publicDir)).size, 0)
+const preChatResourceBytes = preChatBytes + preChatCssBytes
 
 const rows = [
   "## CLI front bundle report",
   "",
-  `Entry: \`${entry}\` — **${entryBytes.toLocaleString()} B** / ${budgetBytes.toLocaleString()} B budget`,
-  `HTML entry + preload hints: **${eagerBytes.toLocaleString()} B** / ${eagerBudgetBytes.toLocaleString()} B budget across ${eagerFiles.length} files (${preloads.length} modulepreloads)`,
-  `Mandatory startup static-import closure: **${startupBytes.toLocaleString()} B** / ${startupBudgetBytes.toLocaleString()} B budget across ${startupFiles.size} files`,
-  `Mandatory pre-chat closure (entry + default front descriptors): **${preChatBytes.toLocaleString()} B** / ${preChatBudgetBytes.toLocaleString()} B budget across ${preChatFiles.size} files`,
+  `Entry JS: \`${entry}\` — **${entryBytes.toLocaleString()} B** / ${budgetBytes.toLocaleString()} B budget`,
+  `HTML entry + preload-hint JS: **${eagerBytes.toLocaleString()} B** / ${eagerBudgetBytes.toLocaleString()} B budget across ${eagerFiles.length} files (${preloads.length} modulepreloads)`,
+  `Mandatory startup static-import JS closure: **${startupBytes.toLocaleString()} B** / ${startupBudgetBytes.toLocaleString()} B budget across ${startupFiles.size} files`,
+  `Mandatory pre-chat JS closure (entry + default front descriptors): **${preChatBytes.toLocaleString()} B** / ${preChatJsBudgetBytes.toLocaleString()} B budget across ${preChatFiles.size} files`,
+  `Mandatory pre-chat CSS closure: **${preChatCssBytes.toLocaleString()} B** / ${preChatCssBudgetBytes.toLocaleString()} B budget across ${preChatCssFiles.size} files`,
+  `Mandatory pre-chat all-resource closure (JS + CSS): **${preChatResourceBytes.toLocaleString()} B** / ${preChatResourceBudgetBytes.toLocaleString()} B budget across ${preChatFiles.size + preChatCssFiles.size} files`,
   "",
-  "| Chunk | Bytes | HTML eager | Startup closure | Pre-chat closure |",
+  "| JS chunk | Bytes | HTML eager | Startup closure | Pre-chat closure |",
   "| --- | ---: | :---: | :---: | :---: |",
   ...chunks.map(({ file, bytes }) => `| \`${basename(file)}\` | ${bytes.toLocaleString()} | ${eagerFiles.includes(file) ? "yes" : ""} | ${startupFiles.has(file) ? "yes" : ""} | ${preChatFiles.has(file) ? "yes" : ""} |`),
+  "",
+  "| Pre-chat CSS | Bytes |",
+  "| --- | ---: |",
+  ...[...preChatCssFiles].map((file) => `| \`${basename(file)}\` | ${statSync(new URL(file, publicDir)).size.toLocaleString()} |`),
   "",
 ]
 const report = rows.join("\n")
 console.log(report)
 if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, report)
 if (entryBytes > budgetBytes) {
-  console.error(`CLI entry exceeds budget by ${(entryBytes - budgetBytes).toLocaleString()} B`)
+  console.error(`CLI entry JS exceeds budget by ${(entryBytes - budgetBytes).toLocaleString()} B`)
   process.exitCode = 1
 }
 if (eagerBytes > eagerBudgetBytes) {
-  console.error(`CLI HTML entry + preload hints exceed budget by ${(eagerBytes - eagerBudgetBytes).toLocaleString()} B`)
+  console.error(`CLI HTML entry + preload-hint JS exceeds budget by ${(eagerBytes - eagerBudgetBytes).toLocaleString()} B`)
   process.exitCode = 1
 }
 if (startupBytes > startupBudgetBytes) {
-  console.error(`CLI mandatory startup closure exceeds budget by ${(startupBytes - startupBudgetBytes).toLocaleString()} B`)
+  console.error(`CLI mandatory startup JS closure exceeds budget by ${(startupBytes - startupBudgetBytes).toLocaleString()} B`)
   process.exitCode = 1
 }
-if (preChatBytes > preChatBudgetBytes) {
-  console.error(`CLI mandatory pre-chat closure exceeds budget by ${(preChatBytes - preChatBudgetBytes).toLocaleString()} B`)
+if (preChatBytes > preChatJsBudgetBytes) {
+  console.error(`CLI mandatory pre-chat JS closure exceeds budget by ${(preChatBytes - preChatJsBudgetBytes).toLocaleString()} B`)
+  process.exitCode = 1
+}
+if (preChatCssBytes > preChatCssBudgetBytes) {
+  console.error(`CLI mandatory pre-chat CSS closure exceeds budget by ${(preChatCssBytes - preChatCssBudgetBytes).toLocaleString()} B`)
+  process.exitCode = 1
+}
+if (preChatResourceBytes > preChatResourceBudgetBytes) {
+  console.error(`CLI mandatory pre-chat all-resource closure exceeds budget by ${(preChatResourceBytes - preChatResourceBudgetBytes).toLocaleString()} B`)
   process.exitCode = 1
 }

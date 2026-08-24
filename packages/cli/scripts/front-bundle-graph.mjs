@@ -2,9 +2,10 @@ export function staticManifestImportKeys(chunk) {
   return chunk.imports ?? []
 }
 
-/** Collect generated files reached by every mandatory manifest import edge. */
-export function collectStaticImportFiles(manifest, rootKeys) {
-  const files = new Set()
+/** Collect generated JS and CSS reached by every mandatory manifest import edge. */
+export function collectStaticImportResources(manifest, rootKeys) {
+  const jsFiles = new Set()
+  const cssFiles = new Set()
   const visitedKeys = new Set()
 
   function visit(key) {
@@ -12,10 +13,15 @@ export function collectStaticImportFiles(manifest, rootKeys) {
     const chunk = manifest[key]
     if (!chunk) throw new Error(`CLI bundle budget: manifest import ${key} is missing`)
     visitedKeys.add(key)
-    files.add(chunk.file)
+    jsFiles.add(chunk.file)
+    for (const cssFile of chunk.css ?? []) cssFiles.add(cssFile)
     for (const importedKey of staticManifestImportKeys(chunk)) visit(importedKey)
   }
 
   for (const key of rootKeys) visit(key)
-  return files
+  return { jsFiles, cssFiles }
+}
+
+export function collectStaticImportFiles(manifest, rootKeys) {
+  return collectStaticImportResources(manifest, rootKeys).jsFiles
 }

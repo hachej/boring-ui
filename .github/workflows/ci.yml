@@ -205,7 +205,7 @@ jobs:
         run: pnpm ci:bundle-size
 
   cli-bundle-budget:
-    name: CLI Entry Bundle Budget
+    name: CLI Front Resource Budget
     needs: changes
     if: github.event_name == 'push' || needs.changes.outputs.cli_bundle == 'true' || contains(github.event.pull_request.labels.*.name, 'ci:full') || contains(github.event.pull_request.labels.*.name, 'release-candidate') || startsWith(github.head_ref, 'release/')
     runs-on: ubuntu-latest
@@ -225,10 +225,14 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Build CLI front, report chunks, and enforce the 1 MB entry budget
+      - name: Build CLI front, report resources, and enforce JS/CSS budgets
         env:
           CLI_ENTRY_BUDGET_BYTES: "1000000"
           CLI_EAGER_BUDGET_BYTES: "1000000"
+          CLI_STARTUP_BUDGET_BYTES: "2500000"
+          CLI_PRE_CHAT_JS_BUDGET_BYTES: "4000000"
+          CLI_PRE_CHAT_CSS_BUDGET_BYTES: "400000"
+          CLI_PRE_CHAT_RESOURCE_BUDGET_BYTES: "4100000"
         run: pnpm ci:cli-bundle-size
 
   core-bundle-budget:

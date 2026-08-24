@@ -44,7 +44,7 @@
   },
   "sideEffects": false,
   "scripts": {
-    "build": "tsup",
+    "build": "tsup --config tsup.config.ts && tsup --config tsup.descriptor.config.ts && node scripts/assert-declarations.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
     "proof:beads-readonly": "pnpm build && node scripts/prove-beads-readonly.mjs",

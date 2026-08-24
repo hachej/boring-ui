@@ -1,6 +1,7 @@
+import type { BoringFrontFactoryWithId } from "@hachej/boring-workspace/plugin"
 import { createTasksPlugin } from "./descriptor"
 
-const tasksPlugin = createTasksPlugin()
+const tasksPlugin: BoringFrontFactoryWithId = createTasksPlugin()
 
 export default tasksPlugin
 export { createTasksPlugin } from "./descriptor"

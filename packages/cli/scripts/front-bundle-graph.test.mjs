@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { collectStaticImportFiles, staticManifestImportKeys } from "./front-bundle-graph.mjs"
+import { collectStaticImportFiles, collectStaticImportResources, staticManifestImportKeys } from "./front-bundle-graph.mjs"
 
 describe("CLI front bundle graph", () => {
   test("preserves genuine eager edges and their static closure", () => {
@@ -37,8 +37,26 @@ describe("CLI front bundle graph", () => {
     ])
   })
 
-  test("fails visibly when a static manifest edge drifts out of the graph", () => {
-    expect(() => collectStaticImportFiles({ entry: { file: "entry.js", imports: ["missing"] } }, ["entry"]))
+  test("collects and deduplicates CSS across the complete static closure", () => {
+    const manifest = {
+      entry: {
+        file: "entry.js",
+        css: ["entry.css", "shared.css"],
+        imports: ["shared"],
+      },
+      shared: {
+        file: "shared.js",
+        css: ["shared.css", "shared-chunk.css"],
+      },
+    }
+
+    const resources = collectStaticImportResources(manifest, ["entry"])
+    expect([...resources.jsFiles]).toEqual(["entry.js", "shared.js"])
+    expect([...resources.cssFiles]).toEqual(["entry.css", "shared.css", "shared-chunk.css"])
+  })
+
+  test("fails visibly when a static manifest edge drifts out of the resource graph", () => {
+    expect(() => collectStaticImportResources({ entry: { file: "entry.js", imports: ["missing"] } }, ["entry"]))
       .toThrow("manifest import missing is missing")
   })
 })
