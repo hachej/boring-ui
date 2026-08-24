@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Job Thread v0 — owner gate</title>
+<style>
+:root{color-scheme:light dark;--bg:#f3f5f8;--card:#fff;--ink:#172033;--muted:#647084;--line:#d9dee8;--blue:#2456d6;--green:#137a52;--amber:#916500;--red:#b42318}
+@media(prefers-color-scheme:dark){:root{--bg:#0f131b;--card:#181e29;--ink:#eef3fa;--muted:#a9b4c5;--line:#303a4b;--blue:#8cadff;--green:#65d7a5;--amber:#efc75f;--red:#ff8c84}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif}
+.wrap{max-width:1080px;margin:auto;padding:20px}
+.hero,.card{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 8px 28px #0000000d}
+.hero{padding:22px 24px;border-top:5px solid var(--blue)}
+.eyebrow{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.09em}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+h1{font-size:clamp(23px,4vw,36px);line-height:1.12;margin:6px 0}
+.pill{padding:4px 9px;border-radius:999px;background:#fff0c7;color:#6b4900;font-weight:700;font-size:12px}
+.meta,.small{color:var(--muted)}
+.tldr{font-size:17px;max-width:900px}
+.card{padding:20px 22px;margin-top:16px}
+h2{margin:0 0 12px;font-size:20px}
+h3{margin:18px 0 8px;font-size:15.5px}
+table{border-collapse:collapse;width:100%;display:block;overflow:auto}
+th,td{border:1px solid var(--line);padding:9px 11px;text-align:left;vertical-align:top;font-size:14px}
+th{background:color-mix(in srgb,var(--blue) 8%,var(--card))}
+.two td{width:50%}
+ul{margin:5px 0;padding-left:20px}
+code{background:color-mix(in srgb,var(--muted) 13%,transparent);padding:1px 5px;border-radius:5px;font-size:.92em}
+.low{background:color-mix(in srgb,var(--green) 14%,var(--card))}
+.med{background:color-mix(in srgb,var(--amber) 15%,var(--card))}
+.high{background:color-mix(in srgb,var(--red) 14%,var(--card))}
+.callout{border-left:4px solid var(--blue);padding:4px 0 4px 14px;margin-top:10px}
+.warn{border-left:4px solid var(--amber);padding:4px 0 4px 14px;margin-top:10px}
+.review{border-left:4px solid var(--amber);padding-left:14px}
+a{color:var(--blue)}
+.qnum{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:8px;background:var(--blue);color:#fff;font-weight:800;font-size:13px;margin-right:8px;flex:none}
+.qhead{display:flex;align-items:center;gap:2px}
+.qtitle{font-size:16px;font-weight:700}
+.rec{border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:color-mix(in srgb,var(--green) 8%,var(--card));margin-top:10px}
+.rec b{color:var(--green)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:720px){.grid2{grid-template-columns:1fr}}
+.box{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:color-mix(in srgb,var(--muted) 5%,var(--card))}
+.box b{display:block;margin-bottom:4px;font-size:12.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.slices{display:flex;flex-wrap:wrap;gap:10px;align-items:stretch}
+.slice{border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-width:150px;flex:1;background:color-mix(in srgb,var(--blue) 5%,var(--card))}
+.slice h4{margin:0 0 4px;font-size:14px}
+.slice .b{font-size:12.5px;color:var(--muted)}
+.arrow{align-self:center;color:var(--muted);font-size:20px}
+.gate{border:1px dashed var(--amber);border-radius:10px;padding:8px 12px;background:color-mix(in srgb,var(--amber) 12%,var(--card));font-size:13px;margin-top:10px}
+footer{margin:24px 0 8px;color:var(--muted);font-size:12.5px;text-align:center}
+</style></head><body><main class="wrap">
+
+<header class="hero">
+  <div class="eyebrow">Gate 1 · Plan approval</div>
+  <div class="row"><h1>Job Thread v0 — 1 Thread = 1 job</h1><span class="pill">OWNER DECISION</span></div>
+  <p class="tldr">A <b>projection</b>, not a new Thread: several per-agent Pi sessions merged into one job
+  timeline via a stateless <b>relay</b>, with typed handoffs, centrally-enforced caps, and an honest
+  failure/restart contract. K7 demo — "grow audience 1,200 → 5,000" — proves it with two fleet agents
+  (worker/reviewer) and one Objective.</p>
+  <div class="meta">Round 2 (folds fresh-eyes + cross-model review) · PR
+  <a href="https://github.com/hachej/boring-ui/pull/1403">#1403</a> · Issue
+  <a href="https://github.com/hachej/boring-ui/issues/1399">#1399</a> · Branch
+  <code>weekend/jobthread-v0-plan</code> · No implementation before owner sign-off</div>
+</header>
+
+<section class="card">
+  <h2>Review provenance</h2>
+  <p>Round 1 went through a fresh-eyes pass and cross-model adversarial review; every accepted finding
+  is folded into this revision, not left as an open thread. Verdict on round 1 was
+  <code>revise</code> at commit <code>9e42e893a</code> — this document (<code>2e9d4ba41</code>) is the
+  answer to that verdict. Corrections carried in explicitly: the "no A2A loopback" framing was a
+  misread (Decision 24 ratifies a native in-process agent-to-agent binding; relay-vs-native is now
+  owner question 2, not a compliance requirement); the round-1 record silently minted a second Thread
+  object and called the relay an "orchestrator seat" against the frozen Seat definition — both
+  withdrawn; the per-Thread budget hook and the "deterministic live-model" acceptance claim were both
+  found unbuildable/false and dropped rather than fudged.</p>
+  <div class="callout"><strong>What v0 is not:</strong> no new canonical Thread or Seat identity, no
+  shared runtime transcript, no native agent-to-agent binding (available, ratified, deferred to a
+  question below), no per-Thread budget, no Level D conformance claim. Full list in §6 of the plan.</div>
+</section>
+
+<section class="card">
+  <h2>Owner questions — one decision per section</h2>
+  <p class="small">Each section: the question, the options on the table, the plan's recommendation with
+  its one-line reason, and what taking it unblocks or costs.</p>
+
+  <h3 class="qhead"><span class="qnum">1</span><span class="qtitle">The noun — new descriptor, or the canonical Thread?</span></h3>
+  <table class="two"><tr><th>Options</th><th>Unblocks / costs</th></tr>
+  <tr><td><b>Q1-A</b> — <code>JobProjectionV0</code>: a distinct, deletable record. Not a Thread. Leaves
+  frozen <code>Thread</code>/<code>Seat</code> untouched, R-c intact.<br><br>
+  <b>Q1-B</b> — <code>JobProjection</code> <i>is</i> the canonical Thread. Cheaper than round-1 review
+  assumed: frozen <code>Thread</code> already carries a <code>participants</code> field.</td>
+  <td><b>Q1-A unblocks</b>: S1 can start now; nothing to migrate later if v0 is killed.<br>
+  <b>Q1-B costs</b>: an explicit R-c amendment, pulls ratified P0 "<code>seatId</code> in C7" forward,
+  forces a rework of #1355's <code>ConsoleThreadRefV1</code> unique key <i>before</i> #1355
+  implements, and needs a migration for any Thread ref already written.</td></tr></table>
+  <div class="rec"><b>Recommended: Q1-A.</b> Better end state, wrong v0 — pay the ontology cost only
+  once the shape is proven.</div>
+
+  <h3 class="qhead"><span class="qnum">2</span><span class="qtitle">Relay vs. the ratified native agent-to-agent binding</span></h3>
+  <table class="two"><tr><th>Options</th><th>Unblocks / costs</th></tr>
+  <tr><td>Decision 24 already ratifies a native in-process binding (<code>input-required</code>,
+  two-way chat, no MCP loopback) for internal agent-to-agent consumption — it is available, not
+  forbidden.<br><br>
+  <b>Relay (proposed)</b> — a stateless, non-agent, non-Seat function over
+  <code>runWithWorkspaceAgent</code>; no new agent-facing capability.<br><br>
+  <b>Native binding</b> — build the ratified mechanism now instead.</td>
+  <td><b>Relay unblocks</b>: no new authority-bearing host seam, no long-lived scope, fully deletable,
+  caps enforced centrally outside agent code.<br>
+  <b>Native binding costs</b>: agents gain a direct calling capability that must then be scoped,
+  audited, and capped per-agent rather than in one place.</td></tr></table>
+  <div class="rec"><b>Recommended: relay.</b> This is a live product choice, not a compliance
+  requirement — v0 picks the cheaper, deletable shape.</div>
+
+  <h3 class="qhead"><span class="qnum">3</span><span class="qtitle">Attribution grade — display handle, or envelope-grade <code>seatId</code>?</span></h3>
+  <table class="two"><tr><th>Options</th><th>Unblocks / costs</th></tr>
+  <tr><td><b>Accept display-grade</b> — <code>participantId</code> is a temporary handle, no audit
+  weight, lives in a mutable record.<br><br>
+  <b>Pull C7 <code>seatId</code> forward</b> — envelope-grade attribution now, matching ratified P0.</td>
+  <td><b>Accept unblocks</b>: S1–S5 proceed against today's envelope shape (<code>agent-host/types.ts</code>
+  has no seat field yet).<br><b>Pulling C7 forward costs</b>: brings a ratified-but-not-yet-built C7
+  dependency into v0's critical path.</td></tr></table>
+  <div class="rec"><b>Recommended: accept display-grade for v0.</b> Envelope-grade attribution arrives
+  with C7, not with this demo.</div>
+
+  <h3 class="qhead"><span class="qnum">4</span><span class="qtitle">Post/Run boundary — what crosses seats?</span></h3>
+  <table class="two"><tr><th>Options</th><th>Unblocks / costs</th></tr>
+  <tr><td><b>Confirm narrow crossing</b> — only the settled final assistant message
+  (<code>message-end.final</code>, gated on non-<code>willRetry</code>) and relay-authored system
+  handoff markers cross seats. No tool calls, no intermediate messages, no private reasoning.</td>
+  <td><b>Confirms</b>: each seat's private reasoning/tool trace stays reachable only by drill-down —
+  the demo's privacy and noise story. A wider boundary would need re-litigating the handoff tool and
+  the merged-timeline renderer.</td></tr></table>
+  <div class="rec"><b>Recommended: confirm the narrow boundary.</b> This is the only shape in the plan;
+  no alternative is proposed.</div>
+
+  <h3 class="qhead"><span class="qnum">5</span><span class="qtitle">Objective coupling — mandatory, or optional one-way ref?</span></h3>
+  <table class="two"><tr><th>Options</th><th>Unblocks / costs</th></tr>
+  <tr><td><b>Optional one-way ref (proposed)</b> — job points at <code>objectiveId</code>;
+  <code>Objective</code> gains no <code>threadId</code>; PR <a href="https://github.com/hachej/boring-ui/pull/1382">#1382</a> stays untouched.
+  Compensated with <code>clientRequestId</code> if the projection write fails after Objective
+  creation.<br><br>
+  <b>Mandatory + back-ref</b> — <code>Objective</code> gains a <code>threadId</code>.</td>
+  <td><b>One-way ref unblocks</b>: #1382 (open) needs zero changes, S5 can build against it as-is.<br>
+  <b>Mandatory back-ref costs</b>: a schema change to an already-open PR, and a second write path to
+  keep consistent.</td></tr></table>
+  <div class="rec"><b>Recommended: optional one-way ref.</b> Keeps #1382 stable; the demo still works
+  end to end.</div>
+
+  <h3 class="qhead"><span class="qnum">6</span><span class="qtitle">Context truncation and budget — confirm both out-of-scope shapes</span></h3>
+  <table class="two"><tr><th>Options</th><th>Unblocks / costs</th></tr>
+  <tr><td><b>Confirm</b> — oldest-first truncation only, no summarization (a summarizer would be an
+  unreviewed model call inside the relay); per-Thread <i>spend</i> is out of v0 because
+  <code>MeteringRunScope</code> has no job/thread/participant dimension today.</td>
+  <td><b>Confirms</b>: v0 ships only relay-enforced hop/invocation caps, which bound hops, not money.
+  A real budget needs a job dimension threaded through the reservation path — named explicitly as v1
+  work, not a v0 claim.</td></tr></table>
+  <div class="rec"><b>Recommended: confirm both.</b> Building either now would be new unbudgeted scope
+  disguised as v0.</div>
+
+  <h3 class="qhead"><span class="qnum">7</span><span class="qtitle">Level D streaming conformance — complete now, or defer?</span></h3>
+  <table class="two"><tr><th>Options</th><th>Unblocks / costs</th></tr>
+  <tr><td><b>Ship against Level B (proposed)</b> — bounded in-process replay + snapshot rehydrate;
+  §3's receipts (not the event stream) own cross-seat causality, so a refetch rebuilds seat content
+  while ordering survives. Accepted gap: a turn in flight during a host restart cannot replay its
+  streaming detail, only its settled snapshot.<br><br>
+  <b>Complete Level D now</b> — every conformance test is currently <code>it.skip</code>, owner-annotated
+  to the streaming lane (<a href="https://github.com/hachej/boring-ui">#1009</a>).</td>
+  <td><b>Level B unblocks</b>: S3/S4 proceed with no new streaming-lane dependency.<br>
+  <b>Completing Level D costs</b>: pulls an entire deferred conformance lane into v0's critical
+  path for one edge case (in-flight-turn replay after restart).</td></tr></table>
+  <div class="rec"><b>Recommended: ship against Level B.</b> The one gap it accepts is narrow and named,
+  not hidden.</div>
+
+  <h3 class="qhead"><span class="qnum">8</span><span class="qtitle">Acceptance bar — fixture-driven gate, live-model as labelled smoke?</span></h3>
+  <table class="two"><tr><th>Options</th><th>Unblocks / costs</th></tr>
+  <tr><td><b>Confirm (proposed)</b> — S5 acceptance runs a scripted model adapter emitting a fixed
+  event script, asserting exact <code>threadTurnId</code> sequence, handoff edges, cap outcomes, and
+  final Objective state. A live-model walkthrough is kept but explicitly labelled non-deterministic —
+  never a gate.</td>
+  <td><b>Confirms</b>: nothing in CI depends on live-model determinism, which round 1 wrongly assumed.
+  Rejecting this would require inventing a determinism guarantee the underlying gateway does not
+  make.</td></tr></table>
+  <div class="rec"><b>Recommended: confirm.</b> The only honest gate available today.</div>
+</section>
+
+<section class="card">
+  <h2>Slices — S1 → S5, with gates and PR preconditions</h2>
+  <p class="small">Ordering lives only here. The real critical path is the two open PRs, not the
+  deferred #1355 gate.</p>
+  <div class="slices">
+    <div class="slice"><h4>S1</h4><div class="b">Projection contract + store.<br><code>JobProjectionV0</code>,
+    <code>JobParticipantV0</code>, <code>JobRelayReceiptV0</code> schemas; file store, revision CAS.</div></div>
+    <div class="arrow">→</div>
+    <div class="slice"><h4>S2</h4><div class="b">Relay dispatch + handoff tool.
+    <code>runWithWorkspaceAgent</code>-based relay turn; typed <code>handoff({to,message})</code> tool.</div></div>
+    <div class="arrow">→</div>
+    <div class="slice"><h4>S3</h4><div class="b">Relay state machine. Chain advance, caps, context
+    truncation, full failure-table + restart resume.</div></div>
+    <div class="arrow">→</div>
+    <div class="slice"><h4>S4</h4><div class="b">Front projection. Merged timeline by
+    <code>(threadTurnId, seq)</code>, ask-user join on the full triple.</div></div>
+    <div class="arrow">→</div>
+    <div class="slice"><h4>S5</h4><div class="b">K7 demo fixture. Scripted acceptance, Objective
+    compensation, labelled live smoke.</div></div>
+  </div>
+  <div class="grid2" style="margin-top:12px">
+    <div class="box"><b>PR preconditions</b>
+      S1 blocked by owner Q1 ruling + PR <a href="https://github.com/hachej/boring-ui/pull/1401">#1401</a>
+      merged (naming amendment). S5 additionally blocked by PR
+      <a href="https://github.com/hachej/boring-ui/pull/1382">#1382</a> merged (objectives).
+      <a href="https://github.com/hachej/boring-ui/pull/1393">#1393</a> blocks only the deferred
+      Console follow-on, not S1–S5.</div>
+    <div class="box"><b>Deferred, not a v0 slice</b>
+      Console nav reframe (jobs primary, agent directory, participant chips) — gate-blocked on
+      #1355 Gate 1 and #1393, needs a <code>ConsoleThreadRefV1</code> repair filed separately.
+      Does not depend on S4.</div>
+  </div>
+  <div class="gate">Gate G = #1355 Gate 1 architecture approval binds <b>only</b> the deferred
+  Console follow-on — v0 touches no Console store, so S1–S5 do not wait on it.</div>
+</section>
+
+<section class="card">
+  <h2>Honest risks</h2>
+  <table><tr><th>Risk</th><th>Likelihood</th><th>Impact</th><th>Mitigation</th></tr>
+  <tr><td>Receipt contract (<code>JobRelayReceiptV0</code>) is the newest, least-proven surface — it
+  carries the only total order across seats, idempotency, and cap enforcement in one record.</td>
+  <td class="med">Medium</td><td class="high">High</td>
+  <td>Scripted-adapter tests assert exact <code>threadTurnId</code> sequence and every row of the §2
+  failure table, including restart resume, before S4/S5 build on top of it.</td></tr>
+  <tr><td>Critical path runs through two <b>open</b> PRs, not this gate: #1401 (naming ratification)
+  blocks S1 directly; #1382 (objectives) blocks S5.</td>
+  <td class="high">High</td><td class="high">High</td>
+  <td>Both are named explicitly as blockers in §7 rather than assumed merged; S1–S4 can still proceed
+  on #1401 alone.</td></tr>
+  <tr><td>Per-Thread spend budget dropped from v0 — round 1 promised a budget hook that
+  <code>MeteringRunScope</code> cannot support today (no job/thread/participant field).</td>
+  <td class="low">Low (accepted)</td><td class="med">Medium</td>
+  <td>v0 ships hop/invocation caps only; a real budget is named as v1 work requiring a
+  <code>MeteringRunScope</code> schema change — not silently dropped, explicitly out.</td></tr>
+  <tr><td>Attribution is display-grade (<code>participantId</code>), not envelope-grade — round 1's
+  claim that per-Run <code>seatId</code> gives audit parity is withdrawn.</td>
+  <td class="med">Medium</td><td class="med">Medium</td>
+  <td>Recorded honestly in §8; causal initiator vs. authorization principal are distinguished in the
+  receipt (<code>sourceRef</code>/<code>handoffEdge</code>) even without seat identity.</td></tr>
+  </table>
+</section>
+
+<section class="card">
+  <h2>Owner action</h2>
+  <p>Rule on the 8 questions above (defaults shown are the plan's recommendation — silence is not
+  approval). Approval unlocks S1 only; it does not authorize skipping per-slice proof or merge gates.
+  Reject, request changes, or defer per question if needed.</p>
+</section>
+
+<footer>Job Thread v0 · round 2 · PR #1403 · built per <code>docs/procedures/visual-review-doc.md</code></footer>
+</main></body></html>
