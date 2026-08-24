@@ -202,9 +202,24 @@ describe("createPiCodingAgentHarness", () => {
       const before = await digestPiResourceInputs(input());
       expect(before).toMatch(/^sha256:/);
 
+      // Invariant: a skipped entry is never followed, opened or read, so its
+      // target's contents cannot reach the digest.
+      await writeFile(
+        join(outside, "linked-skill", "SKILL.md"),
+        "---\nname: linked-skill\ndescription: Rewritten out of band.\n---\nbody\n",
+        "utf8",
+      );
+      expect(await digestPiResourceInputs(input())).toBe(before);
+
       // The skip is recorded, so the digest still moves when the link goes away.
       await rm(join(ambientSkills, "linked-skill"));
-      expect(await digestPiResourceInputs(input())).not.toBe(before);
+      const withoutLink = await digestPiResourceInputs(input());
+      expect(withoutLink).not.toBe(before);
+
+      // ...and moves back when it reappears, so appearance is observable too.
+      await symlink(join(outside, "linked-skill"), join(ambientSkills, "linked-skill"));
+      expect(await digestPiResourceInputs(input())).not.toBe(withoutLink);
+      await rm(join(ambientSkills, "linked-skill"));
 
       // Invariant: a symlink the host declared itself is still rejected outright,
       // and the escaping link is never followed either way.
