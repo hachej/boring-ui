@@ -1,6 +1,6 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
-import { describe, expect, it, vi } from "vitest"
+import { afterAll, describe, expect, it, vi } from "vitest"
 import {
   isRetryableBombadilStartupFailure,
   resetBombadilOutputDirectory,
@@ -12,7 +12,7 @@ import {
   stageBombadilSelection as stageForSpec,
 } from "../core/exploration"
 import { hexadecimalHammingDistance } from "../core/imageHash"
-import { createUiReviewTempDir } from "../core/tempRoot"
+import { cleanupUiReviewTempRootSync, createUiReviewTempDir } from "../core/tempRoot"
 import {
   readReproduceManifest as readManifestForSpec,
   validateReproduceOwnership as validateOwnershipForSpec,
@@ -25,6 +25,10 @@ import {
   isSafeCommandPaletteControl,
 } from "../review-specs/workspace-command-palette/scenarioActions"
 import { testSpec, testStagingPolicy } from "./fixtures"
+
+// The run-scoped temp root belongs to this worker process; remove it here rather than relying on
+// how the runner terminates workers (vitest and Playwright both signal-kill them).
+afterAll(() => { cleanupUiReviewTempRootSync() })
 
 const UI_REVIEW_STAGING_POLICY = testStagingPolicy
 const stageBombadilSelection = (input: Omit<Parameters<typeof stageForSpec>[0], "spec">) => stageForSpec({ ...input, spec: testSpec })

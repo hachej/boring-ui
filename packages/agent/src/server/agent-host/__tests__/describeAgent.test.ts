@@ -1,5 +1,10 @@
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
 import Fastify from 'fastify'
-import { describe, expect, test } from 'vitest'
+import { beforeAll, describe, expect, test } from 'vitest'
+import { ErrorCode } from '../../../shared/error-codes'
 import { AgentGatewayError, AgentGatewayErrorCode } from '../../../shared/index'
 import {
   createAgentHostRuntimeCapabilityProjection,
@@ -7,11 +12,37 @@ import {
 } from '../runtimeCapabilityProjection'
 import type { McpGrant } from '../mcpGrants'
 
+/**
+ * One persona tree on disk, reachable from two DIFFERENT served roots. The
+ * fleet spec below is composed once and shared by both, which is exactly the
+ * CLI hub's shape (gh-1189).
+ */
+let hubRoot = ''
+/** The workspace that actually contains the persona package. */
+let workspaceWithPersona = ''
+/** A sibling workspace the same host also serves; the persona is outside it. */
+let workspaceWithoutPersona = ''
+let personaInstructionsPath = ''
+
+beforeAll(async () => {
+  hubRoot = await mkdtemp(join(tmpdir(), 'describe-agent-'))
+  workspaceWithPersona = join(hubRoot, 'project-a')
+  workspaceWithoutPersona = join(hubRoot, 'project-b')
+  const personaDir = join(workspaceWithPersona, '.agents', 'personas', 'concierge-seat')
+  await mkdir(personaDir, { recursive: true })
+  await mkdir(workspaceWithoutPersona, { recursive: true })
+  personaInstructionsPath = join(personaDir, 'instructions.md')
+  await writeFile(personaInstructionsPath, 'You are the concierge.\n')
+  return async () => { await rm(hubRoot, { recursive: true, force: true }) }
+})
+
 const agents = [
   {
     agentTypeId: 'concierge',
     definition: { instructions: 'You are the concierge.', label: 'Concierge' },
-    instructionFiles: [{ filesystem: 'user', path: '.agents/personas/concierge-seat/instructions.md', role: 'persona' }],
+    get instructionSources() {
+      return [{ absolutePath: personaInstructionsPath, role: 'persona' as const }]
+    },
     plugins: [{ name: 'ask-user' }, { name: 'pr-review', config: { mode: 'strict' } }],
     model: { preferred: 'pi-large' },
   },
@@ -25,6 +56,8 @@ function createProjection(options: {
   resolveAgentRuntimeScope?: (agentTypeId: string) => Promise<unknown>
   /** Mirrors createAgentHost: `verify` asserts the host is open first. */
   draining?: boolean
+  /** Root the `user` filesystem serves for the request under test. */
+  workspaceRoot?: string
 } = {}) {
   const runtime = {
     options: {},
@@ -40,7 +73,10 @@ function createProjection(options: {
     resolveAgentRuntimeScope: async (agentTypeId: string) => (
       options.resolveAgentRuntimeScope
         ? await options.resolveAgentRuntimeScope(agentTypeId)
-        : { identity: `scope:${agentTypeId}` }
+        : {
+            identity: `scope:${agentTypeId}`,
+            environment: { workspaceRoot: options.workspaceRoot ?? workspaceWithPersona },
+          }
     ),
   }
   return createAgentHostRuntimeCapabilityProjection({
@@ -61,7 +97,7 @@ function createProjection(options: {
 }
 
 describe('describeAgent', () => {
-  test('projects model and instruction refs from the compiled spec', async () => {
+  test('addresses instruction refs against the root serving THIS request', async () => {
     const projection = createProjection()
     const description = await projection.describeAgent({ request: {} as never, agentTypeId: 'concierge' })
     expect(description).toEqual({
@@ -72,6 +108,45 @@ describe('describeAgent', () => {
       // the only component that knows it.
       instructionFiles: [{ filesystem: 'user', path: '.agents/personas/concierge-seat/instructions.md', role: 'persona' }],
     })
+  })
+
+  test('the same spec serves a working ref to one workspace and withholds for another', async () => {
+    // gh-1189: the CLI hub composes ONE fleet and serves a different root per
+    // registered workspace. Fixing the ref at composition time made every hub
+    // seat linkless; resolving per request makes the link work wherever the
+    // persona is actually reachable, and withholds it where it is not.
+    const served = await createProjection({ workspaceRoot: workspaceWithPersona })
+      .describeAgent({ request: {} as never, agentTypeId: 'concierge' })
+    expect(served.instructionFiles).toEqual([
+      { filesystem: 'user', path: '.agents/personas/concierge-seat/instructions.md', role: 'persona' },
+    ])
+
+    // Same host, same compiled spec, a workspace the persona is outside of: a
+    // ref here would be well-formed and dead, so it is withheld.
+    const other = await createProjection({ workspaceRoot: workspaceWithoutPersona })
+      .describeAgent({ request: {} as never, agentTypeId: 'concierge' })
+    expect(other.instructionFiles).toEqual([])
+
+    // The hub root itself contains both workspaces, so the ref is relative to
+    // it instead — proof the path is a function of the request, not of boot.
+    const atHubRoot = await createProjection({ workspaceRoot: hubRoot })
+      .describeAgent({ request: {} as never, agentTypeId: 'concierge' })
+    expect(atHubRoot.instructionFiles).toEqual([
+      { filesystem: 'user', path: 'project-a/.agents/personas/concierge-seat/instructions.md', role: 'persona' },
+    ])
+  })
+
+  test('a withheld ref is logged with the stable diagnostic code', async () => {
+    const warnings: { code?: string }[] = []
+    const request = { log: { warn: (payload: { code?: string }) => { warnings.push(payload) } } }
+    const description = await createProjection({ workspaceRoot: workspaceWithoutPersona })
+      .describeAgent({ request: request as never, agentTypeId: 'concierge' })
+
+    expect(description.instructionFiles).toEqual([])
+    expect(warnings).toEqual([expect.objectContaining({
+      agentTypeId: 'concierge',
+      code: ErrorCode.enum.AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE,
+    })])
   })
 
   test('legacy default agent describes with no model or instruction refs', async () => {

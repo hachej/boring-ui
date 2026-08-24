@@ -1,7 +1,7 @@
 {
   "private": true,
   "name": "boring-ui-v2",
-  "version": "0.1.103",
+  "version": "0.1.105",
   "type": "module",
   "scripts": {
     "build": "pnpm -r --workspace-concurrency=4 run build",
@@ -51,7 +51,7 @@
     "release:minor": "bash scripts/cut-release.sh minor",
     "release:major": "bash scripts/cut-release.sh major",
     "build:packages": "pnpm -r --filter './packages/*' --filter './plugins/*' --workspace-concurrency=4 run build",
-    "build:app-deps": "pnpm -r --workspace-concurrency=1 --filter @hachej/boring-ui-kit --filter @hachej/boring-ui-plugin-cli --filter @hachej/boring-sandbox --filter @hachej/boring-bash --filter @hachej/boring-agent --filter @hachej/boring-pi --filter @hachej/boring-workspace --filter @hachej/boring-core --filter @hachej/boring-automation --filter @hachej/boring-mcp --filter @hachej/boring-governance --filter @hachej/boring-deck --filter @hachej/boring-ask-user --filter @hachej/boring-tasks --filter @hachej/boring-diagram --filter @hachej/boring-data-explorer --filter @hachej/boring-data-catalog run build",
+    "build:app-deps": "pnpm -r --workspace-concurrency=1 --filter '{./apps/*}...' --filter '!{./apps/*}' run build",
     "typecheck:changed": "node scripts/typecheck-changed-workspaces.mjs",
     "review:workspace-ui": "node scripts/review-workspace-playground-ui.mjs",
     "signoff:local": "bash scripts/signoff-local.sh",

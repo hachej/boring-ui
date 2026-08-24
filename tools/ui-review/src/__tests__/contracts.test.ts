@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises"
 import { join } from "node:path"
-import { describe, expect, it } from "vitest"
+import { afterAll, describe, expect, it } from "vitest"
 import {
   UI_REVIEW_RUBRIC_VERSION,
   UI_REVIEW_SCHEMA_VERSION,
@@ -15,8 +15,12 @@ import {
   type UiReviewState,
   type UiReviewViewport,
 } from "../core/contracts"
-import { createUiReviewTempDir } from "../core/tempRoot"
+import { cleanupUiReviewTempRootSync, createUiReviewTempDir } from "../core/tempRoot"
 import { testSpec } from "./fixtures"
+
+// The run-scoped temp root belongs to this worker process; remove it here rather than relying on
+// how the runner terminates workers (vitest and Playwright both signal-kill them).
+afterAll(() => { cleanupUiReviewTempRootSync() })
 
 const validateUiReviewManifest = (root: string, value: UiReviewManifest) => validateManifestAgainstSpec(root, value, testSpec)
 

@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from "vitest"
-import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react"
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from "vitest"
+import { render, screen, fireEvent, createEvent, waitFor, act, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type React from "react"
@@ -16,6 +16,7 @@ const mockFileSearch = vi.fn()
 const mockGetTree = vi.fn()
 const mockGetStat = vi.fn()
 const mockWriteBinaryFile = vi.fn()
+const mockGetRawFile = vi.fn()
 const mockGetGitUrlMetadata = vi.fn()
 
 vi.mock("../../data", () => ({
@@ -25,7 +26,12 @@ vi.mock("../../data", () => ({
   useMoveFile: () => ({ mutateAsync: mockMoveFile }),
   useDeleteFile: () => ({ mutateAsync: mockDeleteFile }),
   useFileSearch: (query: string, limit?: number) => mockFileSearch(query, limit),
-  useDataClient: () => ({ getTree: mockGetTree, stat: mockGetStat, writeBinaryFile: mockWriteBinaryFile }),
+  useDataClient: () => ({
+    getTree: mockGetTree,
+    stat: mockGetStat,
+    writeBinaryFile: mockWriteBinaryFile,
+    getRawFile: mockGetRawFile,
+  }),
   useGitUrlMetadata: (path: string | null) => mockGetGitUrlMetadata(path),
   useApiBaseUrl: () => "/api",
 }))
@@ -238,6 +244,7 @@ beforeEach(() => {
   mockFileSearch.mockReturnValue({ data: undefined })
   mockGetStat.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))
   mockWriteBinaryFile.mockImplementation(async (path: string) => ({ status: "written", path }))
+  mockGetRawFile.mockResolvedValue(new Blob(["file-bytes"]))
   mockFileList.mockReturnValue({
     data: sampleFiles,
     isLoading: false,
@@ -1094,6 +1101,112 @@ describe("FileTreePane", () => {
     const tree = screen.getByTestId("file-tree")
     fireEvent.contextMenu(tree.parentElement!)
     expect(screen.getByRole("menuitem", { name: "Upload files" })).toBeInTheDocument()
+  })
+
+  describe("Drag-and-drop upload", () => {
+    beforeEach(() => clearToasts())
+
+    /** Shape of a real OS file drag: `types` carries "Files", items expose entries. */
+    function osFileDrag(files: File[], directories: string[] = []) {
+      return {
+        types: ["Files"],
+        files,
+        dropEffect: "",
+        items: [
+          ...files.map((file) => ({
+            kind: "file",
+            getAsFile: () => file,
+            webkitGetAsEntry: () => ({ isDirectory: false, name: file.name }),
+          })),
+          ...directories.map((name) => ({
+            kind: "file",
+            getAsFile: () => null,
+            webkitGetAsEntry: () => ({ isDirectory: true, name }),
+          })),
+        ],
+      }
+    }
+
+    async function dropSurface() {
+      return (await screen.findByTestId("file-tree")).parentElement!
+    }
+
+    it("uploads dropped files through the picker's queue and conflict path", async () => {
+      render(<FileTreePane />, { wrapper })
+      const surface = await dropSurface()
+      fireEvent.dragEnter(surface, { dataTransfer: osFileDrag([]) })
+      fireEvent.drop(surface, { dataTransfer: osFileDrag([new File(["x"], "dropped.txt")]) })
+      await waitFor(() => expect(mockWriteBinaryFile).toHaveBeenCalledWith(
+        "dropped.txt",
+        expect.any(File),
+        expect.objectContaining({ ifExists: "error" }),
+      ))
+      expect(await screen.findByRole("button", { name: "1 uploaded" })).toBeInTheDocument()
+    })
+
+    it("shows the drop affordance while an OS file drag hovers the tree", async () => {
+      render(<FileTreePane />, { wrapper })
+      const surface = await dropSurface()
+      expect(screen.queryByTestId("file-tree-drop-overlay")).not.toBeInTheDocument()
+      fireEvent.dragEnter(surface, { dataTransfer: osFileDrag([]) })
+      expect(await screen.findByTestId("file-tree-drop-overlay")).toBeInTheDocument()
+      fireEvent.dragLeave(surface, { dataTransfer: osFileDrag([]) })
+      await waitFor(() => expect(screen.queryByTestId("file-tree-drop-overlay")).not.toBeInTheDocument())
+    })
+
+    it("prevents the browser's navigate-on-drop default over the tree and the window", async () => {
+      render(<FileTreePane />, { wrapper })
+      const surface = await dropSurface()
+      const over = createEvent.dragOver(surface, { dataTransfer: osFileDrag([]) })
+      fireEvent(surface, over)
+      expect(over.defaultPrevented).toBe(true)
+
+      const strayOver = createEvent.dragOver(document.body, { dataTransfer: osFileDrag([]) })
+      fireEvent(document.body, strayOver)
+      expect(strayOver.defaultPrevented).toBe(true)
+      const strayDrop = createEvent.drop(document.body, { dataTransfer: osFileDrag([new File(["x"], "stray.txt")]) })
+      fireEvent(document.body, strayDrop)
+      expect(strayDrop.defaultPrevented).toBe(true)
+      expect(mockWriteBinaryFile).not.toHaveBeenCalled()
+    })
+
+    it("reports dropped folders instead of silently ignoring them", async () => {
+      render(<><FileTreePane /><Toaster /></>, { wrapper })
+      const surface = await dropSurface()
+      fireEvent.drop(surface, {
+        dataTransfer: osFileDrag([new File(["x"], "keep.txt")], ["assets"]),
+      })
+      expect(await screen.findByText("Folders can't be uploaded")).toBeInTheDocument()
+      expect(screen.getByText("assets — drop the files inside instead.")).toBeInTheDocument()
+      await waitFor(() => expect(mockWriteBinaryFile).toHaveBeenCalledWith(
+        "keep.txt",
+        expect.any(File),
+        expect.objectContaining({ ifExists: "error" }),
+      ))
+      expect(mockWriteBinaryFile).toHaveBeenCalledTimes(1)
+    })
+
+    it("refuses drops on roots the picker cannot upload to", async () => {
+      render(<FileTreePane access="readonly" />, { wrapper })
+      const surface = await dropSurface()
+      fireEvent.dragEnter(surface, { dataTransfer: osFileDrag([]) })
+      expect(screen.queryByTestId("file-tree-drop-overlay")).not.toBeInTheDocument()
+      const over = createEvent.dragOver(surface, { dataTransfer: osFileDrag([]) })
+      fireEvent(surface, over)
+      expect(over.defaultPrevented).toBe(true)
+      fireEvent.drop(surface, { dataTransfer: osFileDrag([new File(["x"], "blocked.txt")]) })
+      await waitFor(() => expect(screen.getByTestId("file-tree")).toBeInTheDocument())
+      expect(mockWriteBinaryFile).not.toHaveBeenCalled()
+    })
+
+    it("ignores non-file drags so in-tree moves keep working", async () => {
+      render(<FileTreePane />, { wrapper })
+      const surface = await dropSurface()
+      fireEvent.dragEnter(surface, { dataTransfer: { types: ["text/plain"], items: [], files: [] } })
+      expect(screen.queryByTestId("file-tree-drop-overlay")).not.toBeInTheDocument()
+      fireEvent.drop(surface, { dataTransfer: { types: ["text/plain"], items: [], files: [] } })
+      expect(mockWriteBinaryFile).not.toHaveBeenCalled()
+    })
   })
 
   it("refreshes an expanded folder when an agent/remote change lands inside it", async () => {
@@ -1974,6 +2087,102 @@ describe("FileTreePane", () => {
       expect(screen.getByTestId("toast").getAttribute("data-variant")).toBe(
         "error",
       )
+    })
+  })
+
+  describe("Download", () => {
+    let anchors: HTMLAnchorElement[]
+    let createObjectURL: ReturnType<typeof vi.fn>
+    let revokeObjectURL: ReturnType<typeof vi.fn>
+    let restore: () => void
+
+    beforeEach(() => {
+      anchors = []
+      createObjectURL = vi.fn().mockReturnValue("blob:file-tree-download")
+      revokeObjectURL = vi.fn()
+      const originalCreateElement = document.createElement.bind(document)
+      const createElementSpy = vi
+        .spyOn(document, "createElement")
+        .mockImplementation(((tag: string, options?: ElementCreationOptions) => {
+          const el = originalCreateElement(tag, options)
+          if (tag === "a") {
+            // jsdom cannot navigate to a blob: URL — capture the anchor the
+            // handler builds instead of letting it try.
+            ;(el as HTMLAnchorElement).click = vi.fn()
+            anchors.push(el as HTMLAnchorElement)
+          }
+          return el
+        }) as typeof document.createElement)
+      const originalUrl = { createObjectURL: URL.createObjectURL, revokeObjectURL: URL.revokeObjectURL }
+      URL.createObjectURL = createObjectURL as unknown as typeof URL.createObjectURL
+      URL.revokeObjectURL = revokeObjectURL as unknown as typeof URL.revokeObjectURL
+      restore = () => {
+        createElementSpy.mockRestore()
+        URL.createObjectURL = originalUrl.createObjectURL
+        URL.revokeObjectURL = originalUrl.revokeObjectURL
+      }
+    })
+
+    afterEach(() => restore())
+
+    it("downloads a right-clicked file through the same raw filesystem read the editor uses", async () => {
+      render(<FileTreePane />, { wrapper })
+      await waitFor(() => expect(screen.getByText("index.ts")).toBeInTheDocument())
+
+      fireEvent.contextMenu(screen.getByText("index.ts"))
+      fireEvent.click(screen.getByRole("menuitem", { name: "Download" }))
+
+      await waitFor(() =>
+        expect(mockGetRawFile).toHaveBeenCalledWith("index.ts", undefined, undefined),
+      )
+      await waitFor(() => expect(anchors).toHaveLength(1))
+      expect(anchors[0]!.download).toBe("index.ts")
+      expect(anchors[0]!.getAttribute("href")).toBe("blob:file-tree-download")
+      expect(anchors[0]!.click).toHaveBeenCalled()
+      // the object URL must not be leaked once the click has been dispatched
+      expect(revokeObjectURL).toHaveBeenCalledWith("blob:file-tree-download")
+    })
+
+    it("keeps a named (read-only) root's download inside that filesystem", async () => {
+      mockFileList.mockImplementation((_dir: string, filesystem?: string) => ({
+        data: filesystem === "project_alpha"
+          ? [{ name: "handbook.md", kind: "file" as const, path: "handbook.md" }]
+          : sampleFiles,
+        isLoading: false,
+        error: undefined,
+        refetch: mockFileListRefetch,
+      }))
+
+      render(
+        <FileTreePane
+          roots={[
+            { filesystem: "user", label: "Workspace", rootDir: ".", access: "readwrite" },
+            { filesystem: "project_alpha", label: "Project", rootDir: "/", access: "readonly" },
+          ]}
+        />,
+        { wrapper },
+      )
+
+      expect(await screen.findByRole("combobox", { name: "File root" })).toBeInTheDocument()
+      await selectRoot("Project")
+      await waitFor(() => expect(screen.getByText("handbook.md")).toBeInTheDocument())
+
+      fireEvent.contextMenu(screen.getByText("handbook.md"))
+      fireEvent.click(screen.getByRole("menuitem", { name: "Download" }))
+
+      await waitFor(() =>
+        expect(mockGetRawFile).toHaveBeenCalledWith("handbook.md", undefined, "project_alpha"),
+      )
+    })
+
+    it("does not offer Download on a folder row", async () => {
+      render(<FileTreePane />, { wrapper })
+      await waitFor(() => expect(screen.getByText("src")).toBeInTheDocument())
+
+      fireEvent.contextMenu(screen.getByText("src"))
+
+      expect(await screen.findByRole("menuitem", { name: "Copy path" })).toBeInTheDocument()
+      expect(screen.queryByRole("menuitem", { name: "Download" })).not.toBeInTheDocument()
     })
   })
 

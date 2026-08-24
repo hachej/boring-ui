@@ -64,10 +64,27 @@ fixture critic after complete passing hard gates.
 Every temp directory the tooling creates (isolation home/config/cache, Bombadil
 raw output, replay bundles, test fixtures) lives inside one run-scoped parent
 under the OS temp directory named `boring-ui-review-run.*`. That parent is
-removed when the run finishes, when it throws, and when the process is killed
-with `SIGINT`/`SIGTERM`/`SIGHUP`, so interrupted runs cannot leak inodes.
-Cleanup never follows symlinks and refuses to remove any path outside that
-parent.
+owned by the process that created it — normally `scripts/run-ui-review.mjs` —
+and is removed when that process finishes, throws, or is killed with
+`SIGINT`/`SIGTERM`/`SIGHUP`, so interrupted runs cannot leak inodes. Before a
+signal-driven removal the orchestrator terminates its active child process
+group (`pnpm` → Playwright → workers), because default-terminated Node processes
+do not run `exit` handlers and could otherwise still write into the root during
+cleanup. Cleanup never follows symlinks and refuses to remove any path outside
+that parent.
+
+The creator passes its run root to every spawned child through
+`UI_REVIEW_TEMP_ROOT`. An inherited root is used as-is: children create their
+subdirectories inside it but never remove it — not on exit, not on signal — so a
+worker killed by its runner cannot leak anything and cannot race the owner's
+cleanup. A malformed inherited value fails closed instead of being adopted.
+When no root is inherited, creating one arms its removal on normal process
+`exit`, which is safe in any host. Signal handling is opt-in, because cleaning
+up on a signal means re-exiting the process with that signal's conventional code
+— a decision only an entrypoint that owns its process may take. The CLI
+entrypoints (`scripts/run-ui-review.mjs`, `scripts/explore-review-spec.ts`) call
+`installUiReviewTempCleanupHandlers()`; importing the helper into a Playwright or
+vitest worker never does.
 
 Set `UI_REVIEW_KEEP_TMP=1` to retain the run directory for debugging.
 `UI_REVIEW_ISOLATION_ROOT` still points the isolation tree at a caller-owned

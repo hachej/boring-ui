@@ -5,6 +5,8 @@ import {
 import {
   buildBwrapArgs,
   createBwrapSandboxProvider,
+  type BwrapArgsOptions,
+  type BwrapSandboxProviderOptions,
 } from '@hachej/boring-sandbox/providers/bwrap'
 import {
   createDirectSandboxProvider,
@@ -82,6 +84,39 @@ export const sandboxRuntimeHostOperations = agentSandboxRuntimeHostOperations
 
 export interface SandboxRuntimeModeOptions {
   readonly sandboxHandleStore?: SandboxHandleStore
+  readonly bwrap?: BwrapSandboxProviderOptions
+}
+
+type ResolvedBwrapPolicy = Required<Pick<
+  BwrapArgsOptions,
+  'namespaceProfile' | 'network' | 'dropAllCapabilities'
+>>
+
+function resolveBwrapPolicy(options: BwrapSandboxProviderOptions | undefined): ResolvedBwrapPolicy {
+  const sandbox = options?.sandbox
+  const namespaceProfile = sandbox?.namespaceProfile ?? 'full'
+  return {
+    namespaceProfile,
+    network: sandbox?.network ?? 'shared',
+    // Docker mode runs outside a nested user namespace. Never allow the outer
+    // container's SYS_ADMIN capability to reach any local execution path.
+    dropAllCapabilities: namespaceProfile === 'docker' || sandbox?.dropAllCapabilities === true,
+  }
+}
+
+function withBwrapPolicy(
+  runtimeHost: AgentRuntimeHostOperations,
+  policy: ResolvedBwrapPolicy,
+): AgentRuntimeHostOperations {
+  return {
+    ...runtimeHost,
+    buildBwrapArgs(workspaceRoot, executionOptions) {
+      return runtimeHost.buildBwrapArgs(workspaceRoot, {
+        ...executionOptions,
+        ...policy,
+      })
+    },
+  }
 }
 
 /** Built-in runtime layout root without exposing provider package constants to consumers. */
@@ -104,11 +139,20 @@ export function createSandboxRuntimeModeAdapter(
         provider: createDirectSandboxProvider(),
         runtimeHost: agentSandboxRuntimeHostOperations,
       })
-    case 'local':
+    case 'local': {
+      const policy = resolveBwrapPolicy(options.bwrap)
+      const runtimeHost = withBwrapPolicy(agentSandboxRuntimeHostOperations, policy)
       return createLocalModeAdapter({
-        provider: createBwrapSandboxProvider(),
-        runtimeHost: agentSandboxRuntimeHostOperations,
+        provider: createBwrapSandboxProvider({
+          ...options.bwrap,
+          sandbox: {
+            ...options.bwrap?.sandbox,
+            ...policy,
+          },
+        }),
+        runtimeHost,
       })
+    }
     case 'vercel-sandbox':
       return createVercelSandboxModeAdapter({
         provider: createVercelSandboxProvider({

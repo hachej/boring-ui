@@ -14,7 +14,7 @@ import { useTheme } from "../provider/WorkspaceProvider"
  * that class in sync with the active theme here. SSR-safe: the class sync runs
  * inside an effect guarded by a `document` check.
  */
-export function ThemeToggle() {
+export function ThemeToggle({ className }: { className?: string }) {
   const { theme, toggleTheme } = useTheme()
   const isDark = theme === "dark"
 
@@ -28,6 +28,7 @@ export function ThemeToggle() {
       type="button"
       variant="ghost"
       size="icon-sm"
+      className={className}
       onClick={toggleTheme}
       aria-label="Toggle theme"
       title={isDark ? "Switch to light theme" : "Switch to dark theme"}
