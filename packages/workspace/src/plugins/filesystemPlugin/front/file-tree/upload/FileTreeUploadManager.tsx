@@ -6,6 +6,11 @@ import { useBatchFileUpload } from "./useBatchFileUpload"
 
 export interface FileTreeUploadManagerHandle {
   open(destination: string): void
+  /**
+   * Queue files that arrived without the picker (an OS drag-and-drop). Same
+   * queue, conflict dialog and retry path as {@link FileTreeUploadManagerHandle.open}.
+   */
+  addFiles(files: File[], destination: string): void
 }
 
 export const FileTreeUploadManager = forwardRef<FileTreeUploadManagerHandle, {
@@ -23,7 +28,11 @@ export const FileTreeUploadManager = forwardRef<FileTreeUploadManagerHandle, {
       destinationRef.current = destination
       inputRef.current?.click()
     },
-  }), [enabled])
+    addFiles(files: File[], destination: string) {
+      if (!enabled || files.length === 0) return
+      upload.addFiles(files, destination)
+    },
+  }), [enabled, upload])
 
   const handleSelection = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? [])

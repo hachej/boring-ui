@@ -289,11 +289,27 @@ export function SurfaceShell({
   // illegal combinations like "hidden but source-open" and lets full-block
   // collapse restore the same active source (Files, Macro, …) on uncollapse.
   const [leftState, setLeftState] = useState<WorkbenchLeftState>(() => initialWorkbenchLeftState(storageKey, defaultLeftTab))
+  // Mobile workspace takeover (hideLevelOneHeader) is a full-bleed single pane:
+  // no level-one header, activity rail, or source pane should consume viewport
+  // width that belongs to the artifact surface.
+  const fullBleed = hideLevelOneHeader
+  // …but the sources are still reachable on demand. In full-bleed the source
+  // pane is an explicit, session-scoped overlay: never restored from the
+  // persisted desktop `leftState` (which would steal the whole phone viewport
+  // on load), only opened when the user taps for it in this session.
+  const [fullBleedSourceOpen, setFullBleedSourceOpen] = useState(false)
   // The far-right activity rail is structural and never disappears on desktop.
   // Legacy "hidden" state now means rail-only; hostRailOnly additionally hides
   // the editor and source content while preserving that same rail.
   const leftBlockCollapsed = false
-  const sourcePaneOpen = !hostRailOnly && leftState.mode === "source"
+  const sourcePaneOpen = !hostRailOnly && (fullBleed ? fullBleedSourceOpen : leftState.mode === "source")
+  // Full-bleed sources cover the artifact surface instead of splitting it —
+  // there is no room for a two-column split at phone widths.
+  const sourceOverlay = fullBleed && sourcePaneOpen
+  // Rail is only truly gone while the full-bleed source overlay is closed.
+  const railHidden = fullBleed && !sourcePaneOpen
+  const fullBleedRef = useRef(fullBleed)
+  fullBleedRef.current = fullBleed
   const activeLeftTab = leftState.activeTab
   const setActiveLeftTab = useCallback((tab: string) => {
     setLeftState((state) => setWorkbenchActiveTab(state, tab))
@@ -370,12 +386,17 @@ export function SurfaceShell({
   }, [])
 
   const openSourcePane = useCallback((tab?: string): void => {
-    setLeftState((state) => openWorkbenchSource(state, tab))
+    // In full-bleed the overlay is session-scoped truth: mirroring it into the
+    // persisted desktop `leftState` would leak mode:"source" to the next
+    // desktop load (the exact regression this split exists to prevent).
+    if (!fullBleedRef.current) setLeftState((state) => openWorkbenchSource(state, tab))
+    setFullBleedSourceOpen(true)
     onHostExpand?.()
   }, [onHostExpand])
 
   const closeSourcePane = useCallback((): void => {
-    setLeftState(showWorkbenchRail)
+    if (!fullBleedRef.current) setLeftState(showWorkbenchRail)
+    setFullBleedSourceOpen(false)
   }, [])
 
   const toggleHostWorkbench = useCallback((): void => {
@@ -398,6 +419,9 @@ export function SurfaceShell({
   const activateDockviewPanel = useCallback((config: OpenPanelConfig & { title: string }): boolean => {
     const api = apiRef.current
     if (!api) return false
+    // In full-bleed the source overlay covers the artifact surface, so opening
+    // anything from it must dismiss it — otherwise the tap looks like a no-op.
+    if (fullBleedRef.current) setFullBleedSourceOpen(false)
     const existing = api.getPanel(config.id)
     if (existing) {
       if (config.params) existing.api.updateParameters(config.params)
@@ -930,7 +954,6 @@ export function SurfaceShell({
   const workbenchRailWidth = 44
   const workbenchHeaderHeight = 44
   const workbenchSidebarWidth = sourcePaneOpen ? sidebarWidth : workbenchRailWidth
-
   return (
     <div
       ref={containerRef}
@@ -976,7 +999,7 @@ export function SurfaceShell({
 
       <div
         data-boring-workspace-part="workbench-body"
-        className="flex h-full min-h-0 w-full"
+        className={cn("flex h-full min-h-0 w-full", sourceOverlay && "relative")}
         style={{ height: "100%" }}
       >
         <div
@@ -990,6 +1013,9 @@ export function SurfaceShell({
             data-boring-state={sourcePaneOpen ? "expanded" : "rail"}
             className="workbench-dockview h-full"
             data-collapsed-sources={!sourcePaneOpen ? "true" : undefined}
+            // Full-bleed renders no WorkbenchHeaderActions, so the 72px gutter
+            // that reserves room for them is pure dead space on a phone.
+            data-full-bleed={fullBleed ? "true" : undefined}
           >
             <ArtifactSurfacePane
               storageKey={storageKey}
@@ -997,10 +1023,14 @@ export function SurfaceShell({
               allowedPanels={allowedPanels}
             />
           </div>
-          <EmptyWorkbenchOverlay api={api} />
+          <EmptyWorkbenchOverlay
+            api={api}
+            showFallbackBar={!hideLevelOneHeader}
+            onOpenSources={openSourcePane}
+          />
         </div>
 
-        {sourcePaneOpen ? (
+        {sourcePaneOpen && !sourceOverlay ? (
           <div
             data-boring-workspace-part="workbench-source-resize"
             role="separator"
@@ -1029,37 +1059,60 @@ export function SurfaceShell({
           className={cn(
             "relative z-10 flex min-h-0 shrink-0 flex-col overflow-hidden border-l border-border",
             !hideLevelOneHeader && "mt-11",
+            railHidden && "hidden",
+            sourceOverlay && "absolute inset-0 z-30 border-l-0 bg-background",
           )}
           style={{
-            width: workbenchSidebarWidth,
-            minWidth: workbenchSidebarWidth,
-            maxWidth: workbenchSidebarWidth,
+            width: railHidden ? 0 : sourceOverlay ? "100%" : workbenchSidebarWidth,
+            minWidth: railHidden ? 0 : sourceOverlay ? "100%" : workbenchSidebarWidth,
+            maxWidth: railHidden ? 0 : sourceOverlay ? "100%" : workbenchSidebarWidth,
             height: hideLevelOneHeader ? "100%" : `calc(100% - ${workbenchHeaderHeight}px)`,
           }}
           aria-label={hostRailOnly ? "Workbench activity rail" : "Workbench sources and activity rail"}
+          aria-hidden={railHidden ? true : undefined}
+          inert={railHidden ? true : undefined}
         >
-          <WorkbenchLeftPane
-            rootDir={rootDir}
-            bridge={bridge}
-            defaultTab={defaultLeftTab}
-            activeTab={activeLeftTab}
-            activePanelId={activeSurfacePanelId}
-            onActiveTabChange={setActiveLeftTab}
-            revealFileTreeRequest={fileTreeRevealRequest}
-            onOpenPanel={openPanelSync}
-            onReloadAgentPlugins={onReloadAgentPlugins}
-            onExpand={openSourcePane}
-            onCloseSourcePane={closeSourcePane}
-            railOnly={!sourcePaneOpen}
-            railSide="right"
-          />
+          {/* The hidden-rail state is display:none + inert; mounting the pane
+           * anyway would keep its registry subscription and debounce timer
+           * alive for zero visible pixels, so it unmounts instead. The aside
+           * shell stays so layout/a11y tests and the overlay CTA keep working. */}
+          {railHidden ? null : (
+            <WorkbenchLeftPane
+              rootDir={rootDir}
+              bridge={bridge}
+              defaultTab={defaultLeftTab}
+              activeTab={activeLeftTab}
+              activePanelId={activeSurfacePanelId}
+              onActiveTabChange={setActiveLeftTab}
+              revealFileTreeRequest={fileTreeRevealRequest}
+              onOpenPanel={openPanelSync}
+              onReloadAgentPlugins={onReloadAgentPlugins}
+              onExpand={openSourcePane}
+              onCloseSourcePane={closeSourcePane}
+              railOnly={!sourcePaneOpen}
+              railSide="right"
+            />
+          )}
         </aside>
       </div>
     </div>
   )
 }
 
-function EmptyWorkbenchOverlay({ api }: { api: DockviewApi | null }) {
+function EmptyWorkbenchOverlay({
+  api,
+  showFallbackBar = true,
+  onOpenSources,
+}: {
+  api: DockviewApi | null
+  /** Desktop keeps an empty header-height strip so the top edge reads as chrome
+   * even with no tabs; on mobile takeover there is no header above, so the bar
+   * is pure dead space and the empty state can center without offset. */
+  showFallbackBar?: boolean
+  /** Compact (mobile takeover) only: the empty state is the whole screen, so it
+   * owns the primary action instead of describing chrome that isn't rendered. */
+  onOpenSources?: () => void
+}) {
   const [empty, setEmpty] = useState(true)
   useEffect(() => {
     if (!api) return
@@ -1073,23 +1126,57 @@ function EmptyWorkbenchOverlay({ api }: { api: DockviewApi | null }) {
     }
   }, [api])
   if (!empty) return null
+  const compact = !showFallbackBar
   return (
     <>
       {/* Fallback top bar so icons are always visible even with no tabs */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-0.5 border-b border-[color:oklch(from_var(--border)_l_c_h/0.4)] bg-background px-1" style={{ height: 44 }}>
-        <div className="flex-1" />
-      </div>
+      {showFallbackBar ? (
+        <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-0.5 border-b border-[color:oklch(from_var(--border)_l_c_h/0.4)] bg-background px-1" style={{ height: 44 }}>
+          <div className="flex-1" />
+        </div>
+      ) : null}
 
-      <div className="pointer-events-none absolute inset-0 flex flex-col items-start justify-center gap-2 px-6 pt-12 pb-10">
-        <div className="flex items-center gap-2 text-[11px] font-medium tracking-tight text-muted-foreground/75">
+      <div
+        data-testid="empty-workbench"
+        className={cn(
+          "pointer-events-none absolute inset-0 flex flex-col justify-center gap-2",
+          // Compact: the block is the entire screen, so it centers and uses the
+          // same 16px gutter as the mobile bars/composer instead of the 24px
+          // desktop gutter, with no header above to counterweight.
+          compact ? "items-center px-4 text-center" : "items-start px-6 pb-10",
+          showFallbackBar && "pt-12",
+        )}
+      >
+        <div
+          className={cn(
+            "flex items-center gap-2 text-[11px] font-medium text-foreground/70",
+            compact ? "uppercase tracking-wide" : "tracking-tight",
+          )}
+        >
           <span className="inline-block h-px w-3 bg-[color:var(--accent)]" aria-hidden="true" />
           Workbench
         </div>
         <div className="text-[15px] font-medium tracking-tight text-foreground">Nothing open yet</div>
-        <p className="max-w-[280px] text-[12.5px] leading-relaxed text-muted-foreground/85">
-          Open a source item, or let the agent produce an artifact here.
-        </p>
-
+        {compact ? (
+          <>
+            <p className="max-w-[280px] text-sm leading-relaxed text-muted-foreground">
+              Browse the workspace sources to open a file, or ask the agent to produce an artifact here.
+            </p>
+            <button
+              type="button"
+              data-testid="empty-workbench-cta"
+              onClick={() => onOpenSources?.()}
+              className="pointer-events-auto mt-2 flex min-h-11 w-full max-w-[280px] items-center justify-center gap-2 rounded-lg border border-border bg-card px-4 text-sm font-medium text-foreground transition-colors active:bg-muted"
+            >
+              <PanelRightOpen className="size-4" strokeWidth={1.75} aria-hidden="true" />
+              Browse sources
+            </button>
+          </>
+        ) : (
+          <p className="max-w-[280px] text-[12.5px] leading-relaxed text-muted-foreground">
+            Open a source item, or let the agent produce an artifact here.
+          </p>
+        )}
       </div>
     </>
   )

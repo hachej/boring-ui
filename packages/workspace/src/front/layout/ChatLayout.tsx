@@ -139,8 +139,12 @@ export function ChatLayout(props: ChatLayoutProps) {
   )
   const commandRegistry = useCommandRegistry()
   const mobileShell = props.mobileShellEnabled === true && isCompactViewport(viewport)
-  const effectiveNavWidth = mobileShell ? Math.min(Math.max(280, Math.floor(viewport * 0.86)), 360) : clamp(navWidth, 200, 360)
-  const effectiveSidebarWidth = mobileShell ? viewport : clamp(sidebarWidth, 200, Math.max(240, Math.floor(viewport * 0.5)))
+  // Desktop-only widths. The mobile drawers are `absolute` boxes pinned by
+  // their insets, so they size themselves from the real containing block —
+  // measuring `window.innerWidth` in JS instead both fought the right inset and
+  // hard-floored the nav drawer at 280px, overflowing any narrower host.
+  const effectiveNavWidth = clamp(navWidth, 200, 360)
+  const effectiveSidebarWidth = clamp(sidebarWidth, 200, Math.max(240, Math.floor(viewport * 0.5)))
   const surfaceMax = mobileShell ? viewport : Math.max(480, Math.floor(viewport * 0.72))
   const effectiveSurfaceWidth = mobileShell ? viewport : clamp(surfaceWidth, 480, surfaceMax)
   const uiSurface = getFunction<() => SurfaceShellApi | null>(props.centerParams, "getSurface")
@@ -189,6 +193,11 @@ export function ChatLayout(props: ChatLayoutProps) {
     if (chatCollapsed) setChatCollapsed(false)
     closeSurface?.()
   }, [chatCollapsed, closeSurface, setChatCollapsed])
+  // Hoisted so ChatPaneStageDock's memoized StageContext value (which captures
+  // renderPane) stays stable across ChatLayout re-renders.
+  const renderChatPane = useCallback((pane: { panel?: string; params?: Record<string, unknown> }) => (
+    <PanelSlot id={pane.panel ?? centerId} params={pane.params ?? props.centerParams} />
+  ), [centerId, props.centerParams])
   const toggleSurface = useCallback(() => {
     if (surfaceOpen) {
       collapseWorkbench()
@@ -226,6 +235,19 @@ export function ChatLayout(props: ChatLayoutProps) {
     })
     setChatRailPulse(false)
   }, [chatCollapsed, props.chatOverlay, props.onOpenSurface, setChatCollapsed, surfaceOpen])
+
+  // Identity-stable workbench PanelSlot params: a fresh object literal here
+  // would re-render the whole surface pane on every ChatLayout render.
+  const fullBleedSurfaceParams = useMemo(() => ({ ...props.surfaceParams, hideLevelOneHeader: true }), [props.surfaceParams])
+  const railOnlySurfaceParams = useMemo(() => ({
+    ...props.surfaceParams,
+    hostRailOnly: !surfaceOpen,
+    showCloseAction: true,
+    onClose: collapseWorkbench,
+    onHostExpand: openWorkbenchSplit,
+    hostFullscreen: chatCollapsed,
+    onHostToggleFullscreen: toggleChatCollapsed,
+  }), [props.surfaceParams, surfaceOpen, collapseWorkbench, openWorkbenchSplit, chatCollapsed, toggleChatCollapsed])
 
   useKeyboardShortcuts({
     shortcuts: useMemo(() => {
@@ -448,14 +470,29 @@ export function ChatLayout(props: ChatLayoutProps) {
         aria-modal={navIsTopDrawer}
         tabIndex={-1}
         className={cn(
-          mobileShell ? "absolute inset-y-0 left-0 z-50 h-full shadow-2xl" : "relative h-full shrink-0",
           "min-h-0 overflow-hidden bg-background",
-          "transition-[width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+          mobileShell
+            // Compact: a sheet. `inset-y-0 left-0` + a CSS width places it, and
+            // it slides on `transform` — animating `width` here relaid out the
+            // whole viewport every frame for 280ms.
+            ? cn(
+                "absolute inset-y-0 left-0 z-50 h-full w-[min(86%,360px)] shadow-2xl",
+                // `visibility` rides the same transition: painted while it
+                // slides out, properly hidden once off-screen — a translated-
+                // but-"visible" dialog violates the UI-review modal gates at
+                // the closed checkpoint.
+                "transition-[transform,visibility] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+                navOpen ? "translate-x-0 visible" : "-translate-x-full invisible",
+              )
+            : cn(
+                "relative h-full shrink-0",
+                "transition-[width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+              ),
           navOpen
             ? "border-r border-[color:oklch(from_var(--border)_l_c_h/0.6)]"
             : "pointer-events-none z-0",
         )}
-        style={{
+        style={mobileShell ? undefined : {
           width: navOpen ? effectiveNavWidth : 0,
           minWidth: navOpen ? effectiveNavWidth : 0,
           maxWidth: navOpen ? effectiveNavWidth : 0,
@@ -465,6 +502,11 @@ export function ChatLayout(props: ChatLayoutProps) {
         <div
           className={cn(
             "h-full min-h-0 overflow-hidden",
+            // Full-bleed on a phone means the last session row would sit under
+            // the home indicator / rounded corners without these. The keyboard
+            // inset matters on iOS, where the layout viewport never shrinks:
+            // without it the drawer's bottom rows hide behind the keyboard.
+            mobileShell && "pb-[calc(var(--sa-bottom,0px)+var(--keyboard-inset,0px))] pl-[var(--sa-left,0px)]",
             "transition-opacity duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
             navOpen ? "opacity-100" : "invisible pointer-events-none opacity-0",
           )}
@@ -490,12 +532,20 @@ export function ChatLayout(props: ChatLayoutProps) {
         aria-modal={sidebarIsTopDrawer}
         tabIndex={-1}
         className={cn(
-          mobileShell ? "absolute inset-0 z-40 h-full" : "relative h-full shrink-0",
           "min-h-0 overflow-hidden bg-background",
-          "transition-[width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+          mobileShell
+            ? cn(
+                "absolute inset-0 z-40 h-full",
+                "transition-[transform,visibility] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+                sidebarOpen ? "translate-x-0 visible" : "-translate-x-full pointer-events-none invisible",
+              )
+            : cn(
+                "relative h-full shrink-0",
+                "transition-[width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+              ),
           sidebarOpen && "border-r border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
         )}
-        style={{
+        style={mobileShell ? undefined : {
           width: sidebarOpen ? effectiveSidebarWidth : 0,
           minWidth: sidebarOpen ? effectiveSidebarWidth : 0,
           maxWidth: sidebarOpen ? effectiveSidebarWidth : 0,
@@ -505,6 +555,7 @@ export function ChatLayout(props: ChatLayoutProps) {
         <div
           className={cn(
             "h-full min-h-0 overflow-hidden",
+            mobileShell && "pb-[calc(var(--sa-bottom,0px)+var(--keyboard-inset,0px))] pl-[var(--sa-left,0px)] pr-[var(--sa-right,0px)]",
             "transition-opacity duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
             sidebarOpen ? "opacity-100" : "opacity-0",
           )}
@@ -531,21 +582,32 @@ export function ChatLayout(props: ChatLayoutProps) {
             // z-index 999) so the chat-left overlay can stack above them
             // without escaping into page-level chrome.
             "relative isolate h-full min-h-0 min-w-0 overflow-hidden bg-background",
-            mobileShell && !chatHidden && "flex flex-col",
-            // Animate flex-grow (not just width) so the chat slides open/closed
-            // like the fixed-width nav/workbench panes instead of snapping.
-            "transition-[flex-grow,flex-basis,width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
-            chatHidden
-              ? "min-w-0 flex-[0_0_0px]"
-              : "flex-1 border-r border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
+            mobileShell
+              // Compact: the workbench takes over as an `inset-0` overlay above
+              // this stage, so there is nothing to resize — no layout-property
+              // animation of a full-viewport element.
+              ? "flex min-w-0 flex-1 flex-col"
+              : cn(
+                  // Animate flex-grow (not just width) so the chat slides
+                  // open/closed like the fixed-width nav/workbench panes
+                  // instead of snapping.
+                  "transition-[flex-grow,flex-basis,width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+                  chatHidden
+                    ? "min-w-0 flex-[0_0_0px]"
+                    : "flex-1 border-r border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
+                ),
           )}
         >
           {mobileShell && !chatHidden ? (
             <MobileChatBar
+              pane={activeMobileChatPane}
+              totalPanes={chatPanes.length}
               canOpenNav={Boolean(props.onOpenNav)}
               canOpenWorkspace={canControlSurface}
               onOpenNav={props.onOpenNav}
               onOpenWorkspace={toggleSurface}
+              actions={props.chatTopActions}
+              onClosePane={props.onCloseChatPane}
             />
           ) : null}
           <div
@@ -558,15 +620,7 @@ export function ChatLayout(props: ChatLayoutProps) {
             {hasChatPanes && mobileShell && activeMobileChatPane ? (
               <MobileSingleChatPane
                 pane={activeMobileChatPane}
-                totalPanes={chatPanes.length}
-                topActions={props.chatTopActions}
-                onClosePane={props.onCloseChatPane}
-                renderPane={(pane) => (
-                  <PanelSlot
-                    id={pane.panel ?? centerId}
-                    params={pane.params ?? props.centerParams}
-                  />
-                )}
+                renderPane={renderChatPane}
               />
             ) : hasChatPanes ? (
               <ChatPaneStage
@@ -583,12 +637,7 @@ export function ChatLayout(props: ChatLayoutProps) {
                 flashPaneId={props.flashChatPaneId}
                 storageKey={props.storageKey}
                 onDropSession={props.onDropChatSession}
-                renderPane={(pane) => (
-                  <PanelSlot
-                    id={pane.panel ?? centerId}
-                    params={pane.params ?? props.centerParams}
-                  />
-                )}
+                renderPane={renderChatPane}
               />
             ) : (
               <PanelSlot id={centerId} params={props.centerParams} />
@@ -604,22 +653,36 @@ export function ChatLayout(props: ChatLayoutProps) {
             aria-label={surfaceOpen ? "Workbench" : "Workbench activity rail"}
             aria-hidden={mobileShell && !surfaceOpen}
             className={cn(
-              mobileShell ? "absolute inset-0 z-40" : "relative",
               "h-full min-h-0 overflow-hidden bg-background",
-              // Collapsed/mobile workbench fills available width; otherwise it is a side panel.
-              (chatCollapsed || mobileWorkspaceOpen) && surfaceOpen ? "min-w-0 flex-1" : "shrink-0",
-              "transition-[flex-grow,flex-basis,width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
-              !mobileShell && surfaceOpen && "border-l border-border",
+              mobileShell
+                // Compact: an `inset-0` sheet that slides in on `transform`.
+                // It is the full viewport, so animating its width repainted and
+                // relaid out every pixel on screen — dockview grid included —
+                // for 280ms on every open/close.
+                ? cn(
+                    "absolute inset-0 z-40",
+                    "transition-[transform,visibility] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+                    surfaceOpen ? "translate-x-0 visible" : "pointer-events-none invisible translate-x-full",
+                  )
+                : cn(
+                    "relative",
+                    // Collapsed workbench fills available width; otherwise it is a side panel.
+                    chatCollapsed && surfaceOpen ? "min-w-0 flex-1" : "shrink-0",
+                    "transition-[flex-grow,flex-basis,width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+                    surfaceOpen && "border-l border-border",
+                  ),
             )}
             style={
-              (chatCollapsed || mobileWorkspaceOpen) && surfaceOpen
-                ? { width: "auto", minWidth: 0, maxWidth: "none", flex: "1 1 0%", willChange: "width" }
-                : {
-                    width: surfaceOpen ? effectiveSurfaceWidth : mobileShell ? 0 : 44,
-                    minWidth: surfaceOpen ? effectiveSurfaceWidth : mobileShell ? 0 : 44,
-                    maxWidth: surfaceOpen ? effectiveSurfaceWidth : mobileShell ? 0 : 44,
-                    willChange: "width",
-                  }
+              mobileShell
+                ? undefined
+                : chatCollapsed && surfaceOpen
+                  ? { width: "auto", minWidth: 0, maxWidth: "none", flex: "1 1 0%", willChange: "width" }
+                  : {
+                      width: surfaceOpen ? effectiveSurfaceWidth : 44,
+                      minWidth: surfaceOpen ? effectiveSurfaceWidth : 44,
+                      maxWidth: surfaceOpen ? effectiveSurfaceWidth : 44,
+                      willChange: "width",
+                    }
             }
           >
             <div
@@ -632,14 +695,21 @@ export function ChatLayout(props: ChatLayoutProps) {
               {mobileWorkspaceOpen ? (
                 <div className="flex h-full min-h-0 flex-col">
                   <MobileWorkspaceBar onBack={focusChat} />
-                  <div className="min-h-0 flex-1 overflow-hidden">
+                  {/* The takeover is full-bleed, which is exactly what puts the
+                      last row of a tree/diff under the home indicator and the
+                      edges under the rounded corners. Padding (not
+                      `scroll-padding-bottom`) because the scroll containers are
+                      nested inside arbitrary panels this level cannot reach,
+                      and `scroll-padding` only affects programmatic/snap
+                      scrolling — it would not clear a resting last row. */}
+                  <div className="min-h-0 flex-1 overflow-hidden pb-[calc(var(--sa-bottom,0px)+var(--keyboard-inset,0px))] pl-[var(--sa-left,0px)] pr-[var(--sa-right,0px)]">
                     {props.surfaceOverlay ? (
                       <div className="relative h-full min-h-0">
                         {props.surfaceOverlay}
                       </div>
                     ) : <PanelSlot
                       id={surfaceId}
-                      params={{ ...props.surfaceParams, hideLevelOneHeader: true }}
+                      params={fullBleedSurfaceParams}
                     />}
                   </div>
                 </div>
@@ -655,15 +725,7 @@ export function ChatLayout(props: ChatLayoutProps) {
                 </WorkbenchOverlayFrame>
               ) : <PanelSlot
                 id={surfaceId}
-                params={{
-                  ...props.surfaceParams,
-                  hostRailOnly: !surfaceOpen,
-                  showCloseAction: true,
-                  onClose: collapseWorkbench,
-                  onHostExpand: openWorkbenchSplit,
-                  hostFullscreen: chatCollapsed,
-                  onHostToggleFullscreen: toggleChatCollapsed,
-                }}
+                params={railOnlySurfaceParams}
               />}
             </div>
             {surfaceOpen && !chatCollapsed && !mobileShell ? (
@@ -892,11 +954,15 @@ function PanelSlot({ id, params }: { id: string; params?: Record<string, unknown
   const components = useMemo(() => registry.getComponents(), [registry, registrySnapshot])
   const Component = components[id] as ComponentType<PaneProps<Record<string, unknown> | undefined>> | undefined
   const api = useMemo(() => createPanelApi(id), [id])
+  // Stable merged params: a fresh object literal here would defeat every
+  // downstream React.memo/useMemo keyed on `params` and re-render the whole
+  // pane tree on each ChatLayout render (resize, streaming state, …).
+  const mergedParams = useMemo(() => ({ ...params, debug }), [params, debug])
   if (!Component) return null
   return (
     <Suspense fallback={<LoadingState centered />}>
       <Component
-        params={{ ...params, debug }}
+        params={mergedParams}
         api={api as PaneProps["api"]}
         containerApi={{} as PaneProps["containerApi"]}
       />
