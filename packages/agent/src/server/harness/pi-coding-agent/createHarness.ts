@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { extname, join } from "node:path";
+import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
   createAgentSession,
   type AgentSession,
@@ -53,6 +53,29 @@ interface PiSessionHandle {
 export { mergePiPackageSources } from "../../piPackages.js";
 export { createResourceSettingsManager } from "./resourceSettingsManager.js";
 export type { PiPackageSource } from "../../piPackages.js";
+
+/**
+ * Pi's resource loader runs in the host process, while provisioned resource
+ * paths are expressed in the runtime's guest coordinates (for example
+ * `/workspace/.agents/skills` in bwrap). Project guest paths back onto the
+ * host workspace so discovery and reload inspect the same files the tools see.
+ * Paths outside the runtime workspace (such as image-baked company skills)
+ * remain unchanged.
+ */
+export function projectRuntimePathToHost(
+  resourcePath: string,
+  hostWorkspaceRoot: string,
+  runtimeWorkspaceRoot?: string,
+): string {
+  if (!runtimeWorkspaceRoot || !isAbsolute(resourcePath)) return resourcePath;
+
+  const runtimeRoot = resolve(runtimeWorkspaceRoot);
+  const candidate = resolve(resourcePath);
+  const rel = relative(runtimeRoot, candidate);
+  if (rel === "") return resolve(hostWorkspaceRoot);
+  if (isAbsolute(rel) || rel === ".." || rel.startsWith(`..${sep}`)) return resourcePath;
+  return resolve(hostWorkspaceRoot, rel);
+}
 
 /**
  * Pi's base system prompt includes `Current working directory: <abs path>`.
@@ -487,13 +510,18 @@ export function createPiCodingAgentHarness(opts: {
   const effectiveSkillPaths: string[] = []
   const effectivePackages: PiPackageSource[] = []
   const effectiveExtensionPaths: string[] = []
+  const hostSkillPath = (skillPath: string): string => projectRuntimePathToHost(
+    skillPath,
+    opts.cwd,
+    opts.runtimeCwd,
+  )
   const refreshEffectiveResources = (): void => {
     const dynamic = pi.getHotReloadableResources?.() ?? {}
     effectiveSkillPaths.splice(
       0,
       effectiveSkillPaths.length,
-      ...(pi.additionalSkillPaths ?? []),
-      ...(dynamic.additionalSkillPaths ?? []),
+      ...(pi.additionalSkillPaths ?? []).map(hostSkillPath),
+      ...(dynamic.additionalSkillPaths ?? []).map(hostSkillPath),
     )
     effectivePackages.splice(
       0,

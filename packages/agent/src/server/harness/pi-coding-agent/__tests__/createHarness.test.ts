@@ -8,6 +8,7 @@ import {
   createResourceSettingsManager,
   createPiCodingAgentHarness,
   mergePiPackageSources,
+  projectRuntimePathToHost,
   projectSkillResourceLocations,
   withPiHarnessDefaults,
 } from "../createHarness.js";
@@ -406,6 +407,38 @@ describe("pi extension path hot reload", () => {
       await rm(cwd, { recursive: true, force: true });
       await rm(agentDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("projectRuntimePathToHost", () => {
+  it("maps sandbox workspace skill paths into the host workspace", () => {
+    expect(projectRuntimePathToHost(
+      "/workspace/.agents/skills",
+      "/data/workspaces/workspace-1",
+      "/workspace",
+    )).toBe("/data/workspaces/workspace-1/.agents/skills");
+    expect(projectRuntimePathToHost(
+      "/workspace/.boring-agent/skills",
+      "/data/workspaces/workspace-1",
+      "/workspace",
+    )).toBe("/data/workspaces/workspace-1/.boring-agent/skills");
+  });
+
+  it("preserves image-baked, relative, and direct-mode paths", () => {
+    expect(projectRuntimePathToHost(
+      "/app/knowledge-base/skills",
+      "/data/workspaces/workspace-1",
+      "/workspace",
+    )).toBe("/app/knowledge-base/skills");
+    expect(projectRuntimePathToHost(
+      ".agents/skills",
+      "/data/workspaces/workspace-1",
+      "/workspace",
+    )).toBe(".agents/skills");
+    expect(projectRuntimePathToHost(
+      "/data/workspaces/workspace-1/.agents/skills",
+      "/data/workspaces/workspace-1",
+    )).toBe("/data/workspaces/workspace-1/.agents/skills");
   });
 });
 
