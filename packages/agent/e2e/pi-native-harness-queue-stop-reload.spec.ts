@@ -53,7 +53,7 @@ test.describe('Pi-native harness-backed queue stop reload', () => {
         contentType: 'image/png',
       })
 
-      await page.getByRole('button', { name: 'Resume queued follow-ups', exact: true }).click()
+      await page.getByRole('button', { name: 'Nudge agent: stop the current run and send queued messages now', exact: true }).click()
       await expect(conversation.getByText('harness queued survives reload then stop')).toBeVisible({ timeout: 10_000 })
       await expect(queuePreview).toHaveCount(0, { timeout: 10_000 })
       await expectQueuedFollowUpTurn(page, 'harness queued survives reload then stop')
@@ -171,7 +171,7 @@ test.describe('Pi-native harness-backed queue stop reload', () => {
       }).toEqual(['user:done', 'assistant:aborted', 'user:done', 'assistant:aborted'])
       await expect(queuePreviewText).toContainText(heldPrompt, { timeout: 10_000 })
       await expect(conversation.getByText(heldPrompt)).toHaveCount(0)
-      await expect(page.getByRole('button', { name: 'Resume queued follow-ups', exact: true })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Nudge agent: stop the current run and send queued messages now', exact: true })).toBeVisible()
 
       const state = await readChatDomState(page)
       assertChatDomInvariants(state)
