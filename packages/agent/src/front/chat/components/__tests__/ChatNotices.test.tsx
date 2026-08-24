@@ -46,7 +46,7 @@ describe('QueuedComposerNotice', () => {
     const removeButtons = screen.getAllByRole('button', { name: /Remove queued message/ })
     expect(removeButtons).toHaveLength(2)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Remove queued message: first held' }))
+    fireEvent.click(screen.getByRole('button', { name: /Remove queued message 1 of 2: first held/ }))
     expect(onRemove).toHaveBeenCalledTimes(1)
     expect(onRemove).toHaveBeenCalledWith(followUps[0])
   })
