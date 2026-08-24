@@ -219,11 +219,26 @@ function InlineQuestion({ part }: { part: unknown }) {
   </section>
 }
 
+/**
+ * The Inbox is the single triage surface, so its badge is THE "a human is
+ * blocking" signal in the app-left rail: a count of SESSIONS waiting on you,
+ * not of the individual questions they asked.
+ *
+ * It counted raw blockers before, which double-counts a chat that asked two
+ * questions and disagreed with every other attention count on the surface.
+ */
 function InboxCountBadge() {
   const { blockers } = useWorkspaceAttention()
-  const count = blockers.filter(isInboxAttentionBlocker).length
+  const sessions = new Set<string>()
+  for (const blocker of blockers) {
+    if (!isInboxAttentionBlocker(blocker)) continue
+    // A blocker with no session still needs a human; key it by its own id so
+    // it counts once rather than collapsing every session-less item into one.
+    sessions.add(blocker.sessionId ? `session:${blocker.agentTypeId ?? ""}\u0000${blocker.sessionId}` : `blocker:${blocker.id}`)
+  }
+  const count = sessions.size
   if (count === 0) return null
-  return <span data-boring-workspace-part="app-left-inbox-count" aria-label={`${count} inbox item${count === 1 ? "" : "s"}`} className="inline-flex min-w-5 items-center justify-center rounded-full bg-[color:var(--accent)] px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white shadow-sm">{count > 99 ? "99+" : String(count)}</span>
+  return <span data-boring-workspace-part="app-left-inbox-count" aria-label={`${count} chat${count === 1 ? "" : "s"} waiting for you`} className="inline-flex min-w-5 items-center justify-center rounded-full bg-[color:var(--accent)] px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white shadow-sm">{count > 99 ? "99+" : String(count)}</span>
 }
 function AskUserInboxOverlay({ onClose, params }: BoringFrontAppLeftOverlayProps) {
   const { workspaceId } = useWorkspaceContext()
