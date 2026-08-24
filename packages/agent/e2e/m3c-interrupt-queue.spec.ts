@@ -124,7 +124,7 @@ test.describe('M3c: interrupt + message queue (requires real key)', () => {
     await expect(browserPage.locator('[data-boring-agent-part="composer-queue-preview-text"]')).toContainText('this should send next', { timeout: 5_000 })
     await expect(browserPage.getByLabel('Agent conversation').getByText('this should send next')).toHaveCount(0)
 
-    await browserPage.getByRole('button', { name: 'Resume queued follow-ups', exact: true }).click()
+    await browserPage.getByRole('button', { name: 'Nudge agent: stop the current run and send queued messages now', exact: true }).click()
     await expect(browserPage.getByLabel('Agent conversation').getByText('this should send next')).toBeVisible({ timeout: 60_000 })
   })
 })

@@ -91,7 +91,7 @@ test.describe('Pi-native property baseline', () => {
       await expect(conversation.getByText('property queued runs after stop')).toHaveCount(0)
       await assertAfter('stop holds queued follow-up')
 
-      await page.getByRole('button', { name: 'Resume queued follow-ups', exact: true }).click()
+      await page.getByRole('button', { name: 'Nudge agent: stop the current run and send queued messages now', exact: true }).click()
       await expect(queuePreview).toHaveCount(0, { timeout: 10_000 })
       await expect(conversation.getByText('property queued runs after stop')).toBeVisible({ timeout: 10_000 })
       await expectAssistantCompletionAfterUser(page, 'property queued runs after stop')
