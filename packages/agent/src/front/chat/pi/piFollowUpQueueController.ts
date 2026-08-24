@@ -130,6 +130,25 @@ export class PiFollowUpQueueController {
     return run
   }
 
+  // Remove a single queued message from the hold queue by its clear selector.
+  // Metadata-free entries have no selector and cannot be individually removed.
+  async removeQueued(followUp: QueuedUserMessage): Promise<{ ok: true } | { ok: false; message: string }> {
+    const selector = queueClearSelector(followUp)
+    if (!selector) {
+      const message = 'This queued message has no removal id. Use Edit queued to recover it instead.'
+      this.options.onWarning?.(message)
+      return { ok: false, message }
+    }
+    try {
+      await this.session.clearQueue(selector)
+      return { ok: true }
+    } catch {
+      const message = 'Could not remove the queued message. It may still send unless you retry or use Edit queued.'
+      this.options.onWarning?.(message)
+      return { ok: false, message }
+    }
+  }
+
   private async editQueuedOnce(coordination: QueueRecoveryCoordination): Promise<PiQueueEditQueuedResult> {
     const followUps = this.session.getState().queue.followUps
     if (followUps.length === 0) {

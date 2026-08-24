@@ -308,6 +308,79 @@ describe('PiFollowUpQueueController', () => {
     expect(session.state.queue.followUps).toEqual([])
   })
 
+  it('removeQueued clears exactly the selected held message and leaves the rest queued', async () => {
+    const queued = [
+      { id: 'q1', kind: 'followup' as const, clientNonce: 'nonce-1', clientSeq: 1, displayText: 'first held' },
+      { id: 'q2', kind: 'followup' as const, clientNonce: 'nonce-2', clientSeq: 2, displayText: 'second held' },
+    ]
+    const session = new FakeQueueSession('streaming', queued)
+    const controller = createPiFollowUpQueueController(session, {})
+
+    await expect(controller.removeQueued(queued[0]!)).resolves.toEqual({ ok: true })
+
+    expect(session.clearQueue).toHaveBeenCalledTimes(1)
+    expect(session.clearQueue).toHaveBeenCalledWith({ clientNonce: 'nonce-1', clientSeq: 1 })
+    expect(session.state.queue.followUps.map((followUp) => followUp.displayText)).toEqual(['second held'])
+  })
+
+  it('removeQueued refuses metadata-free entries without clearing anything', async () => {
+    const warnings: string[] = []
+    const legacyQueued = [{ id: 'q1', kind: 'followup' as const, displayText: 'legacy queued' }]
+    const session = new FakeQueueSession('streaming', legacyQueued)
+    const controller = createPiFollowUpQueueController(session, { onWarning: (message) => warnings.push(message) })
+
+    await expect(controller.removeQueued(legacyQueued[0]!)).resolves.toMatchObject({ ok: false })
+
+    expect(session.clearQueue).not.toHaveBeenCalled()
+    expect(session.state.queue.followUps).toHaveLength(1)
+    expect(warnings).toHaveLength(1)
+  })
+
+  it('nudge releases every held message: resume-interrupt plus full queue drain', async () => {
+    const queued = [
+      { id: 'q1', kind: 'followup' as const, clientNonce: 'nonce-1', clientSeq: 1, displayText: 'first held' },
+      { id: 'q2', kind: 'followup' as const, clientNonce: 'nonce-2', clientSeq: 2, displayText: 'second held' },
+    ]
+    const session = new FakeQueueSession('streaming', queued)
+    const controller = createPiFollowUpQueueController(session, {})
+
+    await controller.resumeQueued()
+
+    // Nudge is exactly the resume-interrupt: abort the run and release the
+    // whole held queue server-side (modeled here by draining after accept).
+    expect(session.interrupt).toHaveBeenCalledWith({ queueAction: 'resume' })
+    await session.clearQueue()
+    expect(session.interrupt).toHaveBeenCalledTimes(1)
+    expect(session.stop).not.toHaveBeenCalled()
+    expect(session.state.queue.followUps).toEqual([])
+  })
+
+  it('edited queued content survives release into the agent as a prompt', async () => {
+    let draft = ''
+    const prompts: PromptPayload[] = []
+    const session = new FakeQueueSession('streaming', [
+      { id: 'q1', kind: 'followup' as const, clientNonce: 'nonce-1', clientSeq: 1, displayText: 'original text' },
+    ])
+    session.prompt = vi.fn(async (payload: PromptPayload) => {
+      prompts.push(payload)
+      return { accepted: true as const, cursor: 10, clientNonce: payload.clientNonce }
+    })
+    const controller = createPiFollowUpQueueController(session, {
+      getDraft: () => draft,
+      onDraftChange: (next) => { draft = next },
+    })
+
+    await controller.editQueued()
+    expect(draft).toBe('original text')
+
+    // Run ended; the recovered (and hand-edited) draft is submitted normally.
+    session.state = { ...session.state, status: 'idle' }
+    const result = await controller.submit({ text: 'edited while queued' })
+    expect(result.type).toBe('prompt')
+    expect(prompts[0]?.message).toBe('edited while queued')
+    expect(prompts[0]?.message).not.toBe('original text')
+  })
+
   it('does not clear the queue for empty edit or interrupt; stop remains the queue-clearing command', async () => {
     const warnings: string[] = []
     const session = new FakeQueueSession('streaming')

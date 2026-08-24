@@ -89,7 +89,7 @@ class FakeRemotePiSession {
     for (const listener of this.listeners) listener()
     return { accepted: true, cursor: this.state.lastSeq + 1, clientNonce: payload.clientNonce, clientSeq: payload.clientSeq, queued: true }
   })
-  readonly clearQueue = vi.fn(async () => ({ accepted: true, cursor: this.state.lastSeq + 1, cleared: this.state.queue.followUps.length }))
+  readonly clearQueue = vi.fn(async (_payload?: { clientNonce?: string }) => ({ accepted: true, cursor: this.state.lastSeq + 1, cleared: this.state.queue.followUps.length }))
   readonly interrupt = vi.fn(async () => ({ accepted: true, cursor: this.state.lastSeq + 1 }))
   readonly stop = vi.fn(async () => ({ accepted: true, cursor: this.state.lastSeq + 1, stopped: true, clearedQueue: this.state.queue.followUps }))
   readonly dispose = vi.fn()
@@ -312,6 +312,53 @@ describe('PiChatPanel sandbox shell', () => {
       promptReceipt.resolve({ accepted: true, cursor: 8, clientNonce: 'nonce' })
       await promptReceipt.promise
     })
+  })
+
+  test('nudge interrupts the running agent and releases every held follow-up now', async () => {
+    const queued = [
+      { id: 'queued-1', kind: 'followup' as const, clientNonce: 'nudge-1', displayText: 'first held' },
+      { id: 'queued-2', kind: 'followup' as const, clientNonce: 'nudge-2', displayText: 'second held' },
+    ]
+    const remote = new FakeRemotePiSession(remoteState({ status: 'streaming', lastSeq: 9, queue: { followUps: queued } }))
+    // Server semantics for a resume-interrupt: abort the run, release the
+    // whole held queue into it.
+    remote.interrupt.mockImplementationOnce(async () => {
+      remote.setState({ ...remote.state, queue: { followUps: [] } })
+      return { accepted: true, cursor: remote.state.lastSeq + 1 }
+    })
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
+    render(<PiChatPanel serverResourcesEnabled={false} storageScope="scope-a" fetch={fetchMock as unknown as typeof fetch} createRemoteSession={remoteFactory(remote)} />)
+
+    await screen.findByText('2 queued follow-ups')
+    fireEvent.click(screen.getByRole('button', { name: /Nudge agent/ }))
+
+    await waitFor(() => expect(remote.interrupt).toHaveBeenCalledWith({ queueAction: 'resume' }))
+    expect(remote.stop).not.toHaveBeenCalled()
+    await waitFor(() => expect(remote.getState().queue.followUps).toHaveLength(0))
+    await waitFor(() => expect(screen.queryByText('2 queued follow-ups')).toBeNull())
+  })
+
+  test('removes exactly one held follow-up from the queue toolbar', async () => {
+    const queued = [
+      { id: 'queued-1', kind: 'followup' as const, clientNonce: 'remove-1', displayText: 'first held' },
+      { id: 'queued-2', kind: 'followup' as const, clientNonce: 'remove-2', displayText: 'second held' },
+    ]
+    const remote = new FakeRemotePiSession(remoteState({ status: 'idle', lastSeq: 7, queue: { followUps: queued } }))
+    remote.clearQueue.mockImplementationOnce(async (payload?: { clientNonce?: string }) => {
+      const after = remote.state.queue.followUps.filter((followUp) => followUp.clientNonce !== payload?.clientNonce)
+      remote.setState({ ...remote.state, queue: { followUps: after } })
+      return { accepted: true, cursor: remote.state.lastSeq + 1, cleared: queued.length - after.length }
+    })
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
+    render(<PiChatPanel serverResourcesEnabled={false} storageScope="scope-a" fetch={fetchMock as unknown as typeof fetch} createRemoteSession={remoteFactory(remote)} />)
+
+    await screen.findByText('2 queued follow-ups')
+    fireEvent.click(screen.getByRole('button', { name: 'Remove queued message: first held' }))
+
+    await waitFor(() => expect(remote.clearQueue).toHaveBeenCalledWith({ clientNonce: 'remove-1' }))
+    await waitFor(() => expect(screen.getByText('1 queued follow-up')).toBeTruthy())
+    expect(screen.queryByRole('button', { name: 'Remove queued message: first held' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Remove queued message: second held' })).toBeTruthy()
   })
 
   test('stop interrupts instead of clearing queued follow-ups and clears local submitted state', async () => {
@@ -934,11 +981,13 @@ describe('PiChatPanel sandbox shell', () => {
 
     await screen.findByText('queued from server')
     expect(screen.getByText('1 queued follow-up').closest('[data-boring-agent-part="composer-queue-preview"]')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'Resume queued follow-ups' })).toBeNull()
+    // Unlike the old resume button, the nudge stays available WHILE
+    // streaming: interrupting the run and releasing the hold is its purpose.
+    expect(screen.getByRole('button', { name: 'Nudge agent: stop the current run and send queued messages now' })).toBeTruthy()
     act(() => { remote.setState({ ...remote.state, status: 'idle' }) })
     const resumeRequest = deferred<{ accepted: true; cursor: number }>()
     remote.interrupt.mockImplementationOnce(() => resumeRequest.promise)
-    const resume = await screen.findByRole('button', { name: 'Resume queued follow-ups' })
+    const resume = await screen.findByRole('button', { name: 'Nudge agent: stop the current run and send queued messages now' })
     fireEvent.click(resume)
     fireEvent.click(resume)
     await waitFor(() => expect(remote.interrupt).toHaveBeenCalledTimes(1))
@@ -973,21 +1022,21 @@ describe('PiChatPanel sandbox shell', () => {
     const { rerender } = render(<PiChatPanel {...props} sessionId="pi-a" />)
 
     await screen.findByText('queued in A')
-    fireEvent.click(screen.getByRole('button', { name: 'Resume queued follow-ups' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Nudge agent: stop the current run and send queued messages now' }))
     await waitFor(() => expect(remoteA.interrupt).toHaveBeenCalledWith({ queueAction: 'resume' }))
-    expect((screen.getByRole('button', { name: 'Resume queued follow-ups' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: 'Nudge agent: stop the current run and send queued messages now' }) as HTMLButtonElement).disabled).toBe(true)
 
     rerender(<PiChatPanel {...props} sessionId="pi-b" />)
     await screen.findByText('queued in B')
-    expect((screen.getByRole('button', { name: 'Resume queued follow-ups' }) as HTMLButtonElement).disabled).toBe(false)
+    expect((screen.getByRole('button', { name: 'Nudge agent: stop the current run and send queued messages now' }) as HTMLButtonElement).disabled).toBe(false)
 
     await act(async () => { resumeA.reject(new Error('Resume A failed')) })
     await waitFor(() => expect(screen.queryByText('Resume A failed')).toBeNull())
-    expect((screen.getByRole('button', { name: 'Resume queued follow-ups' }) as HTMLButtonElement).disabled).toBe(false)
+    expect((screen.getByRole('button', { name: 'Nudge agent: stop the current run and send queued messages now' }) as HTMLButtonElement).disabled).toBe(false)
 
     rerender(<PiChatPanel {...props} sessionId="pi-a" />)
     await screen.findByText('Resume A failed')
-    expect((screen.getByRole('button', { name: 'Resume queued follow-ups' }) as HTMLButtonElement).disabled).toBe(false)
+    expect((screen.getByRole('button', { name: 'Nudge agent: stop the current run and send queued messages now' }) as HTMLButtonElement).disabled).toBe(false)
   })
 
   test('re-arms dismissed Resume errors on retry without resurrecting them after a session switch', async () => {
@@ -1009,13 +1058,13 @@ describe('PiChatPanel sandbox shell', () => {
     const { rerender } = render(<PiChatPanel {...props} sessionId="pi-a" />)
 
     await screen.findByText('queued in A')
-    fireEvent.click(screen.getByRole('button', { name: 'Resume queued follow-ups' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Nudge agent: stop the current run and send queued messages now' }))
     await act(async () => { firstResume.reject(new Error('First Resume failed')) })
     const firstError = await screen.findByText('First Resume failed')
     fireEvent.click(within(firstError.closest('[data-boring-agent-part="runtime-notice"]') as HTMLElement).getByRole('button', { name: 'Dismiss notice' }))
     expect(screen.queryByText('First Resume failed')).toBeNull()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Resume queued follow-ups' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Nudge agent: stop the current run and send queued messages now' }))
     await act(async () => { secondResume.reject(new Error('Second Resume failed')) })
     const secondError = await screen.findByText('Second Resume failed')
     fireEvent.click(within(secondError.closest('[data-boring-agent-part="runtime-notice"]') as HTMLElement).getByRole('button', { name: 'Dismiss notice' }))
@@ -1154,7 +1203,8 @@ describe('PiChatPanel sandbox shell', () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
     render(<PiChatPanel serverResourcesEnabled={false} fetch={fetchMock as unknown as typeof fetch} createRemoteSession={remoteFactory(remote)} />)
 
-    await screen.findByText(/first queued - second queued/)
+    await screen.findByText('first queued')
+    expect(screen.getByText('second queued')).toBeTruthy()
 
     act(() => {
       remote.setState({

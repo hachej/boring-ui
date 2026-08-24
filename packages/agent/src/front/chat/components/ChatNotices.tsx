@@ -1,6 +1,6 @@
 "use client"
 
-import { AlertCircleIcon, ExternalLinkIcon, ListRestartIcon, Loader2, PlayIcon, XIcon } from 'lucide-react'
+import { AlertCircleIcon, ExternalLinkIcon, FastForwardIcon, ListRestartIcon, Loader2, XIcon } from 'lucide-react'
 import { IconButton } from '@hachej/boring-ui-kit'
 import type { QueuedUserMessage } from '../../../shared/chat'
 import { ErrorCode } from '../../../shared/error-codes'
@@ -160,11 +160,17 @@ export function QueuedComposerNotice({
   onEdit,
   onResume,
   resumePending = false,
+  onRemove,
+  removePendingId,
 }: {
   followUps: QueuedUserMessage[]
   onEdit: () => void
   onResume?: () => void
   resumePending?: boolean
+  /** Remove one queued message from the hold queue. Omit when the surface cannot address single entries. */
+  onRemove?: (followUp: QueuedUserMessage) => void
+  /** Id of the queued message currently being removed (shows busy state). */
+  removePendingId?: string
 }) {
   return (
     <div
@@ -174,11 +180,37 @@ export function QueuedComposerNotice({
         'border border-dashed border-[color:var(--border)] bg-[color:oklch(from_var(--muted)_l_c_h/0.45)] px-3 py-2 text-xs text-[color:var(--foreground)]',
       )}
     >
-      <div className="min-w-0 text-[color:var(--muted-foreground)]">
+      <div className="min-w-0 flex-1 text-[color:var(--muted-foreground)]">
         <div className="font-medium text-[color:var(--foreground)]">{followUps.length} queued follow-up{followUps.length === 1 ? '' : 's'}</div>
-        <div className="truncate text-[color:var(--muted-foreground)]" data-boring-agent-part="composer-queue-preview-text">
-          {followUps.map((followUp) => followUp.displayText).join(' - ')}
-        </div>
+        {onRemove ? (
+          <ul className="mt-1 space-y-1" data-boring-agent-part="composer-queue-items">
+            {followUps.map((followUp) => (
+              <li key={followUp.id} className="flex items-center gap-1" data-boring-agent-part="composer-queue-item">
+                <span className="min-w-0 truncate" data-boring-agent-part="composer-queue-item-text">
+                  {followUp.displayText}
+                </span>
+                <IconButton
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => onRemove(followUp)}
+                  disabled={removePendingId === followUp.id}
+                  aria-busy={removePendingId === followUp.id}
+                  className="ml-auto size-5 shrink-0 text-[color:var(--muted-foreground)] hover:bg-[color:var(--muted)] hover:text-[color:var(--foreground)]"
+                  aria-label={`Remove queued message: ${followUp.displayText}`}
+                  title="Remove queued message"
+                  data-boring-agent-part="composer-queue-remove"
+                >
+                  <XIcon className="size-3" aria-hidden="true" />
+                </IconButton>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div className="truncate text-[color:var(--muted-foreground)]" data-boring-agent-part="composer-queue-preview-text">
+            {followUps.map((followUp) => followUp.displayText).join(' - ')}
+          </div>
+        )}
       </div>
       <div className="flex shrink-0 items-center gap-1">
         {onResume ? (
@@ -189,12 +221,12 @@ export function QueuedComposerNotice({
             onClick={onResume}
             disabled={resumePending}
             aria-busy={resumePending}
-            data-boring-agent-part="composer-queue-resume"
             className="text-[color:var(--muted-foreground)] hover:bg-[color:var(--muted)] hover:text-[color:var(--foreground)]"
-            aria-label="Resume queued follow-ups"
-            title="Resume queued follow-ups"
+            aria-label="Nudge agent: stop the current run and send queued messages now"
+            title="Nudge agent: stop the current run and send queued messages now"
+            data-boring-agent-part="composer-queue-nudge"
           >
-            <PlayIcon className="size-3.5" aria-hidden="true" />
+            <FastForwardIcon className="size-3.5" aria-hidden="true" />
           </IconButton>
         ) : null}
         <IconButton

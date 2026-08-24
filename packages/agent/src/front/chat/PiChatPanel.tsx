@@ -9,7 +9,7 @@ import {
   WORKSPACE_COMMAND_NOTIFY_EVENT,
   type CommandNotifyPayload,
 } from '../../shared/agentPluginEvents'
-import type { PiChatEvent, PiChatStatus } from '../../shared/chat'
+import type { PiChatEvent, PiChatStatus, QueuedUserMessage } from '../../shared/chat'
 import type { AvailableModel, ModelSelection, ThinkingLevel } from '../chatPanelSettings'
 import { DEFAULT_THINKING } from '../chatPanelSettings'
 import { cn } from '../lib'
@@ -986,6 +986,15 @@ export function PiChatPanel<
     })
   }, [addLocalNotice, policy])
 
+  const removeQueued = useCallback((followUp: QueuedUserMessage) => {
+    if (!policy) return
+    void policy.removeQueued(followUp).then((result) => {
+      if (!result.ok) {
+        addLocalNotice({ id: `remove-queued-${followUp.id}`, level: 'warning', text: result.message, dismissible: true })
+      }
+    })
+  }, [addLocalNotice, policy])
+
   const stop = useCallback(() => {
     onComposerStop?.()
     clearLocalSubmitted(activeChatSessionId)
@@ -1223,6 +1232,7 @@ export function PiChatPanel<
               onComposerBlockerAction={onComposerBlockerAction}
               queuePreview={queuePreview}
               onEditQueued={editQueued}
+              onRemoveQueued={removeQueued}
               onResumeQueued={resumeQueued}
               resumeQueuedPending={resumeQueuedPending}
               hotReloadEnabled={hotReloadEnabled}
