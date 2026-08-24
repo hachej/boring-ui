@@ -491,7 +491,9 @@ describe("adaptToolsForPi", () => {
       },
     };
 
-    const [adapted] = adaptToolsForPi([tool]);
+    const [adapted] = adaptToolsForPi([tool], undefined, undefined, () => ({
+      abortSignal: new AbortController().signal, workdir: "/workspace",
+    }));
     const result = await adapted.execute(
       "call-1",
       { x: 42 },

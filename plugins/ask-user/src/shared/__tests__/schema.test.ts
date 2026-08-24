@@ -191,4 +191,11 @@ describe("ask-user error codes", () => {
     expect(new Set(ASK_USER_ERROR_CODE_VALUES).size).toBe(ASK_USER_ERROR_CODE_VALUES.length)
     expect(ASK_USER_ERROR_CODE_VALUES).toContain("ASK_USER_RUNTIME_UNAVAILABLE")
   })
+
+  it("accepts wait:false and rejects non-boolean wait values", () => {
+    const input = { title: "Escalation", schema: { wireVersion: 1, fields: [{ type: "text", name: "answer", label: "Answer" }] }, wait: false }
+    expect(AskUserToolInputSchema.safeParse(input).success).toBe(true)
+    expect(AskUserToolInputSchema.safeParse({ ...input, wait: "no" }).success).toBe(false)
+  })
+
 })

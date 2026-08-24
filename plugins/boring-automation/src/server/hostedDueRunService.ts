@@ -5,7 +5,7 @@ import { BORING_AUTOMATION_ERROR_CODES } from "../shared/error-codes"
 import { evaluateAutomationSchedule } from "../shared/schedule"
 import type { AutomationRun } from "../shared/types"
 import { type DueRunOutcome, type DueRunSummary } from "./dueRunService"
-import { ManualRunExecutor } from "./manualRunExecutor"
+import { DispatchRunExecutor } from "./dispatchRunExecutor"
 import { createLeaseBoundHostedAutomationStore } from "./hostedStore"
 import { listHostedAutomationCandidates, PostgresAutomationStore, reconcileStaleHostedAutomationRuns, type HostedAutomationActor } from "./postgresStore"
 import type { AutomationRunEventPublisher } from "./runEventBus"
@@ -96,7 +96,7 @@ export class HostedDueRunService {
           this.options.agentTypeId,
           request,
         )
-        const executor = new ManualRunExecutor({
+        const executor = new DispatchRunExecutor({
           agentTypeId: this.options.agentTypeId,
           availableAgentTypeIds: this.options.availableAgentTypeIds,
           store,

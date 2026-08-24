@@ -1,4 +1,7 @@
-import type { CoreWorkspaceAgentServerPlugin } from '@hachej/boring-core/app/server'
+import { createRequire } from 'node:module'
+import { dirname } from 'node:path'
+import { createFactoryAutomationSeedProvider } from '@hachej/boring-agent/server'
+import type { CoreWorkspaceAgentServerPlugin, CoreWorkspacePluginEntry } from '@hachej/boring-core/app/server'
 import type { CoreConfig } from '@hachej/boring-core/shared'
 import { ErrorCode, type Sha256Digest } from '@hachej/boring-agent/shared'
 import { createGovernance } from '@hachej/boring-governance/server'
@@ -31,6 +34,7 @@ const FULL_APP_DEFAULT_PLUGIN_PACKAGE_COMPOSITION = Object.freeze([{
 }])
 
 const FULL_APP_DEFAULT_PLUGIN_PACKAGES = Object.freeze(FULL_APP_DEFAULT_PLUGIN_PACKAGE_COMPOSITION.map((entry) => entry.packageName))
+const require = createRequire(import.meta.url)
 export const FULL_APP_DEFAULT_PLUGIN_PACKAGE_DESCRIPTORS = Object.freeze(FULL_APP_DEFAULT_PLUGIN_PACKAGE_COMPOSITION.map((entry) => entry.descriptor))
 
 export const FULL_APP_GOVERNANCE_PLUGIN_DESCRIPTOR = Object.freeze({
@@ -86,15 +90,40 @@ export const serverPlugins: CoreWorkspaceAgentServerPlugin[] = [
 ]
 Object.freeze(serverPlugins)
 
+export function resolveFullAppFactoryPolicyRoot(
+  env: NodeJS.ProcessEnv = process.env,
+  cwd: string = process.cwd(),
+): string {
+  return env.BORING_FACTORY_POLICY_ROOT?.trim() || cwd
+}
+
+export function createFullAppAutomationPluginEntry(
+  policyRoot: string = resolveFullAppFactoryPolicyRoot(),
+): CoreWorkspacePluginEntry {
+  return {
+    dir: dirname(require.resolve('@hachej/boring-automation/package.json')),
+    hotReload: false,
+    trust: 'internal',
+    options: {
+      seedProvider: createFactoryAutomationSeedProvider({
+        policyRoot,
+        warn: (message) => console.warn(message),
+      }),
+    },
+  }
+}
+
 export async function createFullAppHostPluginComposition(config: CoreConfig) {
   const governance = await createGovernance(config)
   const composition = composeServerPlugins([
     ...createBoringMcpContributions(),
     issueContribution(governance.serverPlugin, FULL_APP_GOVERNANCE_PLUGIN_DESCRIPTOR),
   ])
+  const automationPlugin = createFullAppAutomationPluginEntry()
   return Object.freeze({
     governance,
     ...composition,
+    plugins: Object.freeze([...composition.plugins, automationPlugin]),
     defaultPluginPackages: FULL_APP_DEFAULT_PLUGIN_PACKAGES,
     defaultPluginPackageDescriptors: FULL_APP_DEFAULT_PLUGIN_PACKAGE_DESCRIPTORS,
   })

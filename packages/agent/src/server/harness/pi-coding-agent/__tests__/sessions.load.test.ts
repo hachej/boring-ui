@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtemp, rm, writeFile, readFile, stat } from "node:fs/promises";
+import { appendFile, mkdtemp, rm, writeFile, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { buildPiChatHistory } from "../../../pi-chat/piChatHistory";
@@ -388,4 +388,5 @@ describe("PiSessionStore.loadEntries transcript reconstruction", () => {
     const detail = await store.load(ctx, sessionId);
     expect(detail.title).toBe("Legacy session");
   });
+
 });

@@ -11,7 +11,7 @@ import {
 import type { HostedDueRunService } from "./hostedDueRunService"
 import type { DueRunService } from "./dueRunService"
 import { timingSafeEqual } from "node:crypto"
-import { ManualRunExecutor, type VerifiedAutomationActor } from "./manualRunExecutor"
+import { DispatchRunExecutor, type VerifiedAutomationActor } from "./dispatchRunExecutor"
 import type { AutomationRunEventBus } from "./runEventBus"
 import { AutomationStoreError, automationNotFound, type AutomationStore } from "./store"
 
@@ -22,8 +22,8 @@ const RunListQuerySchema = z.object({
 export interface AutomationRoutesOptions {
   store: AutomationStore
   storeForRequest?: (request: FastifyRequest) => Promise<AutomationStore> | AutomationStore
-  manualRunExecutor?: Pick<ManualRunExecutor, "run">
-  manualRunExecutorForRequest?: (request: FastifyRequest) => Promise<Pick<ManualRunExecutor, "run">> | Pick<ManualRunExecutor, "run">
+  dispatchRunExecutor?: Pick<DispatchRunExecutor, "run">
+  dispatchRunExecutorForRequest?: (request: FastifyRequest) => Promise<Pick<DispatchRunExecutor, "run">> | Pick<DispatchRunExecutor, "run">
   dueRunService?: Pick<DueRunService, "runDue">
   dueRunServiceForRequest?: (request: FastifyRequest) => Promise<Pick<DueRunService, "runDue">> | Pick<DueRunService, "runDue">
   hostedDueRunService?: Pick<HostedDueRunService, "runDue">
@@ -180,14 +180,14 @@ export async function automationRoutes(app: FastifyInstance, opts: AutomationRou
   app.post(`${BORING_AUTOMATION_ROUTE_PREFIX}/automations/:id/run`, async (request, reply) => {
     try {
       const { id } = parseParams(IdParamsSchema, request.params)
-      const manualRunExecutor = await opts.manualRunExecutorForRequest?.(request) ?? opts.manualRunExecutor
-      if (!manualRunExecutor) {
+      const dispatchRunExecutor = await opts.dispatchRunExecutorForRequest?.(request) ?? opts.dispatchRunExecutor
+      if (!dispatchRunExecutor) {
         throw new AutomationStoreError(
           BORING_AUTOMATION_ERROR_CODES.RUN_EXECUTOR_UNAVAILABLE,
           "automation run executor is unavailable",
         )
       }
-      const run = await manualRunExecutor.run({ automationId: id, request })
+      const run = await dispatchRunExecutor.run({ automationId: id, request })
       return reply.status(201).send({ ok: true, run })
     } catch (cause) {
       return sendError(reply, cause)
@@ -271,10 +271,12 @@ function httpStatusForStoreError(error: AutomationStoreError): number {
       return 400
     case BORING_AUTOMATION_ERROR_CODES.AUTOMATION_NOT_FOUND:
     case BORING_AUTOMATION_ERROR_CODES.RUN_NOT_FOUND:
+    case BORING_AUTOMATION_ERROR_CODES.SESSION_NOT_FOUND:
       return 404
     case BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_ACTIVE:
     case BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_RECORDED:
     case BORING_AUTOMATION_ERROR_CODES.RUN_LEASE_LOST:
+    case BORING_AUTOMATION_ERROR_CODES.SESSION_NOT_IDLE:
     case BORING_AUTOMATION_ERROR_CODES.TOOL_ABORTED:
       return 409
     case BORING_AUTOMATION_ERROR_CODES.TRIGGER_FORBIDDEN:

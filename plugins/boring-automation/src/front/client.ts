@@ -77,7 +77,7 @@ function composeRequestSignal(source: AbortSignal | undefined, timeoutMs: number
 }
 
 export function createAutomationClient(options: AutomationClientOptions = {}) {
-  async function request<T>(path: string, init: RequestInit = {}, timeoutMs = options.apiTimeout): Promise<T> {
+  async function requestPath<T>(path: string, init: RequestInit = {}, timeoutMs = options.apiTimeout): Promise<T> {
     const headers = {
       ...(init.body ? { "Content-Type": "application/json" } : {}),
       ...(options.headers ?? {}),
@@ -85,7 +85,7 @@ export function createAutomationClient(options: AutomationClientOptions = {}) {
     }
     const requestSignal = composeRequestSignal(init.signal ?? undefined, timeoutMs)
     try {
-      const response = await fetch(joinUrl(options.apiBaseUrl, `${BORING_AUTOMATION_ROUTE_PREFIX}${path}`), {
+      const response = await fetch(joinUrl(options.apiBaseUrl, path), {
         ...init,
         headers,
         signal: requestSignal.signal,
@@ -115,7 +115,18 @@ export function createAutomationClient(options: AutomationClientOptions = {}) {
     }
   }
 
+  async function request<T>(path: string, init: RequestInit = {}, timeoutMs = options.apiTimeout): Promise<T> {
+    return await requestPath(`${BORING_AUTOMATION_ROUTE_PREFIX}${path}`, init, timeoutMs)
+  }
+
   return {
+    async listAgentModels(agentTypeId: string): Promise<Array<{ available: boolean; provider: string; id: string }>> {
+      const payload = await requestPath<{ models?: Array<{ available: boolean; provider: string; id: string }> }>(
+        `/api/v1/agents/${encodeURIComponent(agentTypeId)}/models`,
+      )
+      return payload.models ?? []
+    },
+
     async subscribeRunEvents(onEvent: (event: AutomationRunStreamEvent) => void, requestOptions: AutomationClientRequestOptions = {}): Promise<void> {
       const response = await fetch(joinUrl(options.apiBaseUrl, `${BORING_AUTOMATION_ROUTE_PREFIX}/events`), {
         headers: { Accept: "text/event-stream", ...(options.headers ?? {}) },

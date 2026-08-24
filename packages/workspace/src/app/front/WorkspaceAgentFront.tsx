@@ -137,7 +137,7 @@ export interface WorkspaceAgentSessionsApi<
   rename?: (id: string, title: string, agentTypeId?: string) => void | Promise<unknown>
   delete: (id: string, agentTypeId?: string) => void | Promise<unknown>
   loadMore?: () => void | Promise<unknown>
-  refresh?: (options?: { background?: boolean; throwOnError?: boolean }) => void | Promise<unknown>
+  refresh?: (options?: { background?: boolean; throwOnError?: boolean; agentTypeId?: string }) => void | Promise<unknown>
 }
 
 export type UseWorkspaceAgentSessions<
@@ -1011,12 +1011,20 @@ export function WorkspaceAgentFront<
         // a manual refresh or remount (gh-778).
         if (status !== "running" && status !== "aborting") return
         const current = remoteSessionsActivityRef.current
-        if (ref.agentTypeId !== current.selectedAgentTypeId) return
-        const known = current.sessions.some((session) => session.id === ref.sessionId)
-        if (!known) void current.refresh?.({ background: true })
+        const known = current.sessions.some((session) => (
+          session.id === ref.sessionId
+          && (session.agentTypeId ?? current.selectedAgentTypeId) === ref.agentTypeId
+        ))
+        if (known) return
+        // Single-Agent sources remain owner-scoped. Fleet sources accept the
+        // addressed owner so only that controller refreshes.
+        if (!addressedAgentSelection && ref.agentTypeId !== current.selectedAgentTypeId) return
+        void current.refresh?.(addressedAgentSelection
+          ? { background: true, agentTypeId: ref.agentTypeId }
+          : { background: true })
       },
     })
-  }, [apiBaseUrl, remoteSessionsAvailable, sessionSourceIdentity, workspaceId])
+  }, [addressedAgentSelection, apiBaseUrl, remoteSessionsAvailable, sessionSourceIdentity, workspaceId])
   useEffect(() => {
     if (!remoteSessionsAvailable) return
     setRemoteSessionSnapshot((previous) => {

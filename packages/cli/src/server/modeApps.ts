@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from "fastify"
+import { createFactoryAutomationSeedProvider } from "@hachej/boring-agent/server"
 import type {
   ProvisionWorkspaceRuntimeOptions,
   RuntimeModeAdapter,
@@ -461,6 +462,10 @@ export async function createFolderModeApp(opts: {
       if (!liveTranscriptDispatcher) throw new Error("live_transcript_disabled: agent dispatcher is not ready")
       return await liveTranscriptDispatcher.resolve(ctx, options)
     },
+    async authorizeSession(ctx, ref, options) {
+      if (!liveTranscriptDispatcher?.authorizeSession) throw new Error("live_transcript_disabled: agent session lookup is not ready")
+      await liveTranscriptDispatcher.authorizeSession(ctx, ref, options)
+    },
   }
   const liveTranscriptPlugin = liveTranscriptEnabled && opts.liveTranscripts
     ? (await import("@hachej/boring-transcription/server")).createLiveTranscriptServerPlugin({
@@ -485,6 +490,7 @@ export async function createFolderModeApp(opts: {
   const pluginDirs = pluginDiscovery.resolveCliBoringPluginDirs(workspaceRoot, { includeFolderModeAutomation: true })
   const defaultPluginPackagePaths = pluginDiscovery.resolveCliDefaultPluginPackagePaths({ includeFolderModeAutomation: true })
   const tasksPluginPackage = defaultPluginPackagePaths.find((packageRoot) => packageNameAtRoot(packageRoot) === "@hachej/boring-tasks")
+  const automationPluginPackage = defaultPluginPackagePaths.find((packageRoot) => packageNameAtRoot(packageRoot) === "@hachej/boring-automation")
   const taskProviders = await detectFolderModeTaskProviders(workspaceRoot)
   const beadsOperations = taskProviders.some((provider) => provider.provider === "beads")
     ? (await import("@hachej/boring-tasks/server")).createWorkspaceBeadsOperations(createNodeWorkspace(workspaceRoot))
@@ -529,6 +535,18 @@ export async function createFolderModeApp(opts: {
       // leaving arbitrary/workspace-local plugins on the explicit binding path.
       workspaceScopedDefaultPluginAgentContributions: true,
       plugins: [
+        ...(automationPluginPackage
+          ? [{
+              dir: automationPluginPackage,
+              options: {
+                seedProvider: createFactoryAutomationSeedProvider({
+                  policyRoot: workspaceRoot,
+                  warn: (message) => console.warn(message),
+                }),
+              },
+              trust: "internal" as const,
+            }]
+          : []),
         ...(tasksPluginPackage
           ? [{
               dir: tasksPluginPackage,
@@ -623,7 +641,7 @@ export async function createWorkspacesModeApp(opts: {
   if (process.env.BORING_LIVE_TRANSCRIPTS_ENABLED === "1") {
     throw new Error("live_transcript_local_only: live transcripts are supported only by boring-ui [folder]")
   }
-  const [workspaceAppServer, workspaceServer, agentServer, agentShared, boringBashServer, fastifyModule, { createPluginFrontRuntimeHost }, { automationRoutes, createBoringAutomationTool, DueRunService, FileAutomationStore, InMemoryAutomationRunEventBus, ManualRunExecutor, resolveAutomationOperationsForActor }, pluginDiscovery] = await Promise.all([
+  const [workspaceAppServer, workspaceServer, agentServer, agentShared, boringBashServer, fastifyModule, { createPluginFrontRuntimeHost }, { automationRoutes, createAutomationSessionController, createBoringAutomationTool, DispatchRunExecutor, DueRunService, FileAutomationStore, InMemoryAutomationRunEventBus, resolveAutomationOperationsForActor, seedStandingAutomations }, pluginDiscovery] = await Promise.all([
     import("@hachej/boring-workspace/app/server"),
     import("@hachej/boring-workspace/server"),
     import("@hachej/boring-agent/server"),
@@ -728,7 +746,7 @@ export async function createWorkspacesModeApp(opts: {
         // Workspaces mode has one explicit CLI-owned Agent address. Pass it to
         // trusted plugins rather than letting plugins invent a fallback.
         agentTypeId: "default",
-        availableAgentTypeIds: ["default"],
+        availableAgentTypeIds,
         defaultPluginPackages: pluginDiscovery.resolveCliDefaultPluginPackagePaths(),
         installPluginAuthoring: false,
         excludeDefaults: ["boring-ui-plugin-cli-package"],
@@ -780,12 +798,24 @@ export async function createWorkspacesModeApp(opts: {
     return store
   }
 
+  async function seededAutomationStore(workspace: LocalWorkspace) {
+    const store = automationStore(workspace)
+    await seedStandingAutomations(store, {
+      seedProvider: createFactoryAutomationSeedProvider({
+        policyRoot: workspace.path,
+        warn: (message) => console.warn(message),
+      }),
+    })
+    return store
+  }
+
   async function automationExecutorForRequest(request: FastifyRequest) {
     const workspace = await workspaceFromRequest(request)
     if (!workspaceAgentDispatcher) throw httpError("workspace agent dispatcher is unavailable", 503)
-    return new ManualRunExecutor({
+    return new DispatchRunExecutor({
       agentTypeId: "default",
-      store: automationStore(workspace),
+      availableAgentTypeIds,
+      store: await seededAutomationStore(workspace),
       dispatcherResolver: workspaceAgentDispatcher,
       actorResolver: () => ({ workspaceId: workspace.id, userId: "local" }),
       eventPublisher: automationEventBus,
@@ -796,11 +826,12 @@ export async function createWorkspacesModeApp(opts: {
     return createBoringAutomationTool({
       resolveOperationsForActor: async (actorContext) => resolveAutomationOperationsForActor({
         mode: "local",
-        resolveStore: async (actor) => automationStore(await requireWorkspace(actor.workspaceId)),
+        resolveStore: async (actor) => await seededAutomationStore(await requireWorkspace(actor.workspaceId)),
         resolveExecutor: async (actor, store) => {
           if (!workspaceAgentDispatcher) throw httpError("workspace agent dispatcher is unavailable", 503)
-          return new ManualRunExecutor({
+          return new DispatchRunExecutor({
             agentTypeId: "default",
+            availableAgentTypeIds,
             store,
             dispatcherResolver: workspaceAgentDispatcher,
             actorResolver: () => actor,
@@ -808,6 +839,10 @@ export async function createWorkspacesModeApp(opts: {
           })
         },
         localUserId: "local",
+        defaultAgentTypeId: "default",
+        sessionController: workspaceAgentDispatcher
+          ? createAutomationSessionController(workspaceAgentDispatcher, actorContext)
+          : undefined,
       }, actorContext),
     })
   }
@@ -1003,14 +1038,16 @@ export async function createWorkspacesModeApp(opts: {
     // would let one workspace seat an agent (and its knowledge) for all others.
     discoveredAgentPackages = await workspaceServer.discoverRepositoryAgentPackages(fleetRepositoryRoot)
   }
+  const resolvedAgents = await agentServer.resolveDefaultAgentFleet({
+    repositoryRoot: fleetRepositoryRoot,
+    workspaceRoot: null,
+    ...(discoveredAgentPackages ? { discoveredPackages: discoveredAgentPackages } : {}),
+  })
+  const availableAgentTypeIds = resolvedAgents.map((agent) => agent.agentTypeId)
   const agentHost = await agentServer.createAgentHost({
     // The hub serves a DIFFERENT root per registered workspace, so there is no
     // single one persona instruction refs could be addressed against.
-    agents: await agentServer.resolveDefaultAgentFleet({
-      repositoryRoot: fleetRepositoryRoot,
-      workspaceRoot: null,
-      ...(discoveredAgentPackages ? { discoveredPackages: discoveredAgentPackages } : {}),
-    }),
+    agents: resolvedAgents,
     fleetCompiler: { async compile({ agents }) { return agents } },
     hostId: "cli-trusted-local",
     scopeVerifier: trustedLocalScope.scopeVerifier,
@@ -1208,6 +1245,13 @@ export async function createWorkspacesModeApp(opts: {
         agentTypeId: "default",
       }, context)
     },
+    async authorizeSession(context, ref) {
+      const workspace = await requireWorkspace(context.workspaceId)
+      await agentHost.gateway.readSessionState({
+        scope: trustedLocalScope.issueScope(workspace),
+        ref,
+      })
+    },
   }
 
   app.get("/health", async () => ({ status: "ok", version: CLI_VERSION }))
@@ -1236,12 +1280,12 @@ export async function createWorkspacesModeApp(opts: {
   try {
     await automationRoutes(app, {
       store: new FileAutomationStore(join(process.cwd(), ".pi", "automation-unused")),
-      storeForRequest: async (request) => automationStore(await workspaceFromRequest(request)),
-      manualRunExecutorForRequest: automationExecutorForRequest,
+      storeForRequest: async (request) => await seededAutomationStore(await workspaceFromRequest(request)),
+      dispatchRunExecutorForRequest: automationExecutorForRequest,
       dueRunServiceForRequest: async (request) => {
         const workspace = await workspaceFromRequest(request)
         return new DueRunService({
-          store: automationStore(workspace),
+          store: await seededAutomationStore(workspace),
           executor: await automationExecutorForRequest(request),
         })
       },

@@ -4,6 +4,7 @@ import type { Workspace } from './workspace'
 import type {
   AgentGateway,
   AgentSendReceipt,
+  AgentSessionPage,
   AgentSessionRef,
   AuthorizedAgentScope,
 } from './gateway/types'
@@ -39,6 +40,10 @@ export interface WorkspaceAgentDispatch {
  * Callback-scoped direct Agent capability. The Workspace and operations are
  * lease guarded by the Host and must not be retained after the callback.
  */
+export type AgentSendIfIdleReceipt =
+  | { status: 'accepted'; receipt: AgentSendReceipt }
+  | { status: 'not-idle' }
+
 export interface LeaseBoundWorkspaceAgent {
   readonly workspace: Workspace
   readonly signal: AbortSignal
@@ -50,6 +55,10 @@ export interface LeaseBoundWorkspaceAgent {
     readonly ref: AgentSessionRef
     readonly receipt: AgentSendReceipt
   }>
+  /** Transcript-redacted sessions for this exact Agent and authorized scope. */
+  listSessions(limit?: number, cursor?: string): Promise<AgentSessionPage>
+  /** Atomically prompt an idle session and return after host acceptance. */
+  sendIfIdle(sessionId: string, message: string, requestId: string): Promise<AgentSendIfIdleReceipt>
   interrupt(sessionId: string, requestId: string): Promise<InterruptReceipt>
   stop(sessionId: string, requestId: string): Promise<StopReceipt>
 }

@@ -1,0 +1,18 @@
+# Orchestrator tick
+
+Run one bounded factory tick, report, and exit. Durable state lives in beads, run records, and intention records; never rely on prior tick context. Never claim work, edit work product, supervise transcripts, or await a worker.
+
+1. **Fleet health first.** Use `boring_automation` `list` to join dispatch runs with session status/title/age. Read policy values from `.agents/factory/policy.yaml`; do not invent limits. For each active worker, compare its bead lease with the session state.
+   - Fresh lease: leave it alone.
+   - Stale lease plus `running` or `aborting` session: leave it alone; only the stale-lease backstop may reclaim it.
+   - Stale lease plus `idle` session: if no delivered nudge for this attempt is recorded and the policy cooldown permits, write `nudge-attempt <ts> attempt=N`, then call `nudge` once with the row's exact `agentTypeId` + `sessionId` and evidence-based mechanical guidance. On `accepted: true`, record `nudge-delivered <ts> attempt=N`. On `skipped: session-busy`, record that exact reason instead and re-evaluate on the next tick; a skip never counts as delivery and never advances the ladder toward cancellation.
+   - Still `idle` after a recorded `nudge-delivered` marker and cooldown: record `idle-after-nudge <ts> attempt=N` and raise one non-blocking owner intention. Do not call `cancel`, break the lease, or claim that the occupying run was resolved; an idle Agent reports `stopped: false`.
+   - Stale lease plus `error` or `gone` session: record the exact state and raise one non-blocking owner intention; do not call `nudge`/`cancel`, break the lease, or pretend the occupying run was resolved.
+   - Stale lease plus `null` session state: the run has no address yet; leave it to durable run reconciliation and do not improvise a session control.
+   - When the configured attempt limit is exhausted, route to Steward as a spec defect and file one owner intention with `ask_user wait:false`; record `intention-raised <condition> <id> <ts>` on the bead.
+   - Never cancel a `running` or `aborting` session. Never repeat an action whose structured bead comment already records it.
+   - Poll previously recorded intention ids with `read_intention` and act only on explicit answered values.
+2. **Janitor.** Reconcile stale leases, proof hygiene, and epic-branch drift from durable evidence only. Mechanical blockers may be unblocked; judgment calls become one non-blocking owner intention.
+3. **Triage slot.** If untriaged GitHub issues exist and the triage automation has no active dispatch run, trigger it with `boring_automation run`.
+4. **Worker slots.** Read `beadle.worker_cap`. While ready work exceeds active workers, trigger unoccupied worker-slot automations. Start slots, never beads; each worker claims atomically for itself. A `RUN_ALREADY_ACTIVE` result means occupied and must remain rejected.
+5. **Completion alarm, report, and exit.** As the last action of an otherwise successful tick, inspect `orchestrator-tick` run history. If the automation has existed for at least `beadle.orchestrator_completion_alarm_intervals` cadence intervals and no run has completed within that window, use the single durable health-ledger bead with external ref `factory:orchestrator-completion-alarm` (create it only when absent). For the current episode key (`last completed run id`, or `never`), file exactly one non-blocking owner intention and record `intention-raised orchestrator-no-completion episode=<key> <id> <ts>` on that ledger bead; an existing marker for the episode suppresses repeats. If live slots remain below policy capacity for two recorded ticks, file one non-blocking owner intention. Do not block on humans or workers.

@@ -19,6 +19,9 @@ const run = {
 function operations(): AutomationOperations {
   return {
     list: vi.fn(async () => ({ items: [summary], truncated: false })),
+    listDispatchRuns: vi.fn(async () => ({ items: [], truncated: false })),
+    nudge: vi.fn(async (ref) => ({ ...ref, accepted: true as const })),
+    cancel: vi.fn(async (ref) => ({ ...ref, cancelled: true as const })),
     get: vi.fn(async () => ({ automation: summary, prompt: { text: "prompt", characterCount: 6, truncated: false } })),
     create: vi.fn(async () => summary),
     update: vi.fn(async () => summary),
@@ -51,7 +54,7 @@ describe("boring_automation agent tool", () => {
     expect(tool.name).toBe(BORING_AUTOMATION_TOOL_NAME)
     expect(tool.name).toBe("boring_automation")
     expect(tool.parameters).toMatchObject({ oneOf: expect.any(Array) })
-    expect((tool.parameters.oneOf as any[])).toHaveLength(9)
+    expect((tool.parameters.oneOf as any[])).toHaveLength(11)
     expect((tool.parameters.oneOf as any[]).every((branch) => branch.additionalProperties === false)).toBe(true)
   })
 
@@ -61,7 +64,7 @@ describe("boring_automation agent tool", () => {
     expect(result.isError).toBe(false)
     expect(resolveOperationsForActor).toHaveBeenCalledWith({ workspaceId: "workspace-1", userId: "user-1" })
     expect(ops.list).toHaveBeenCalledWith(10)
-    expect(details(result)).toEqual({ ok: true, operation: "list", automations: [summary], truncated: false })
+    expect(details(result)).toEqual({ ok: true, operation: "list", automations: [summary], dispatchRuns: [], truncated: false })
   })
 
   it("supports get and bounded prompt details", async () => {
@@ -101,6 +104,30 @@ describe("boring_automation agent tool", () => {
     const result = await h.tool.execute({ operation, automationId: "automation-1" }, context())
     expect(h.ops[method]).toHaveBeenCalledWith("automation-1")
     expect(details(result)).toMatchObject({ ok: true, operation })
+  })
+
+  it("rejects a dispatch when its automation already has an active run", async () => {
+    const ops = operations()
+    vi.mocked(ops.run).mockRejectedValue(new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_ACTIVE, "occupied"))
+    const result = await harness(ops).tool.execute({ operation: "run", automationId: "automation-1" }, context())
+    expect(result.isError).toBe(true)
+    expect(details(result)).toMatchObject({ code: BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_ACTIVE })
+  })
+
+  it("supports nudge and cancel session controls", async () => {
+    const h = harness()
+    await h.tool.execute({ operation: "nudge", agentTypeId: "worker", sessionId: "session-1", message: "Continue" }, context())
+    await h.tool.execute({ operation: "cancel", agentTypeId: "worker", sessionId: "session-1" }, context())
+    expect(h.ops.nudge).toHaveBeenCalledWith({ agentTypeId: "worker", sessionId: "session-1" }, "Continue")
+    expect(h.ops.cancel).toHaveBeenCalledWith({ agentTypeId: "worker", sessionId: "session-1" })
+  })
+
+  it("exposes a busy-session nudge skip in the successful tool result", async () => {
+    const ops = operations()
+    vi.mocked(ops.nudge!).mockResolvedValue({ agentTypeId: "worker", sessionId: "session-1", skipped: "session-busy" })
+    const result = await harness(ops).tool.execute({ operation: "nudge", agentTypeId: "worker", sessionId: "session-1", message: "Continue" }, context())
+    expect(result.isError).toBe(false)
+    expect(details(result)).toEqual({ ok: true, operation: "nudge", agentTypeId: "worker", sessionId: "session-1", skipped: "session-busy" })
   })
 
   it("supports bounded safe run history", async () => {

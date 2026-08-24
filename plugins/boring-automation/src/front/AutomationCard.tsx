@@ -64,7 +64,7 @@ export function AutomationCard({
           <span className="min-w-0 flex-1">
             <span className="block truncate font-medium text-foreground">{automation.title}</span>
             <span className="block truncate text-xs text-muted-foreground">
-              {automation.enabled ? "Active" : "Paused"} · {automation.cron} · {automation.timezone} · {automation.model}
+              {automation.enabled ? "Active" : "Paused"} · {automation.cron ?? "Dispatch only"} · {automation.timezone} · {automation.model}
               <span className="ml-1.5">· Last run </span>
               {runsLoading ? (
                 <span>Loading…</span>

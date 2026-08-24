@@ -1,4 +1,10 @@
-export type SlashCommandHandlerResult = string | void | { message?: string; preserveDraft?: boolean }
+import type { ModelSelection } from "../chatPanelSettings"
+
+export type SlashCommandHandlerResult = string | void | {
+  message?: string
+  preserveDraft?: boolean
+  tone?: "info" | "error"
+}
 export type SlashCommandHandler = (args: string, ctx: SlashCommandContext) => SlashCommandHandlerResult | Promise<SlashCommandHandlerResult>
 export type SlashCommandClickBehavior = 'execute' | 'insert' | 'disabled'
 
@@ -33,6 +39,10 @@ export interface SlashCommand {
 
 export interface SlashCommandContext {
   sessionId: string
+  /** Invocation-local owner; avoids stale plugin-provider identity in multi-pane fleets. */
+  agentTypeId: string
+  /** Exact composer selection used by the active pane. */
+  model: ModelSelection | null
   clearMessages: () => void
   resetSession: () => void
   listCommands: () => SlashCommand[]

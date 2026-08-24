@@ -64,11 +64,10 @@ describe('resolveDefaultAgentFleet (BORING_AGENT_FLEET gate, gh-1106 slice 3)', 
       env: { BORING_AGENT_FLEET: '1', ANTHROPIC_API_KEY: 'test-key' },
     })
     expect(agents[0]).toEqual({ agentTypeId: 'default', legacyDefault: true })
-    // The ratified 3-seat roster (gh-1187 S0). Deferred grow-on-demand seats
-    // (concierge, reviewer, ...) may still be discovered as packages but hold
-    // no fleet.yaml entry, so they must NOT compose.
+    // The two-seat roster: triage is worker automation work, not a persona.
+    // Dormant persona packages may remain discoverable but must not compose
+    // without a fleet.yaml seat entry.
     expect(agents.slice(1).map((agent) => agent.agentTypeId)).toEqual([
-      'boring-triage',
       'boring-orchestrator',
       'boring-worker',
     ])

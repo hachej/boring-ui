@@ -5,6 +5,8 @@ import type { SlashCommandContext } from '../registry'
 function makeContext(overrides?: Partial<SlashCommandContext>): SlashCommandContext {
   return {
     sessionId: 'test-session',
+    agentTypeId: 'default',
+    model: { provider: 'test', id: 'model' },
     clearMessages: vi.fn(),
     resetSession: vi.fn(),
     listCommands: vi.fn().mockReturnValue(builtinCommands),

@@ -230,10 +230,23 @@ describe('createAgentHost', () => {
       expect(Object.keys(binding).sort()).toEqual([
         'dispatch',
         'interrupt',
+        'listSessions',
+        'sendIfIdle',
         'signal',
         'stop',
         'workspace',
       ])
+      const busy = new AgentGatewayError(AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE, 'session is not idle', { status: 'running' })
+      const send = vi.fn(async (command: unknown) => {
+        expect(command).toMatchObject({ kind: 'prompt', content: 'continue', requireIdle: true })
+        throw busy
+      })
+      const close = vi.fn(async () => {})
+      const connect = vi.spyOn(created.gateway, 'connectSession').mockResolvedValue({ send, close } as never)
+      await expect(binding.sendIfIdle('session-busy', 'continue', 'nudge-1')).resolves.toEqual({ status: 'not-idle' })
+      expect(connect).toHaveBeenCalledWith({ scope, ref: { agentTypeId: 'alpha', sessionId: 'session-busy' } })
+      expect(close).toHaveBeenCalledOnce()
+      connect.mockRestore()
       await binding.workspace.writeFile('dispatcher.txt', 'scoped')
     })
     expect(() => retained!.workspace.readFile('dispatcher.txt')).toThrow(expect.objectContaining({

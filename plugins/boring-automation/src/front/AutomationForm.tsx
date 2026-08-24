@@ -9,7 +9,7 @@ import { useAutomationRuntime } from "./AutomationRuntimeContext"
 export interface AutomationDraft {
   title: string
   enabled: boolean
-  cron: string
+  cron: string | null
   timezone: string
   model: string
   thinkingLevel: ThinkingLevel
@@ -47,9 +47,11 @@ export function emptyAutomationDraft(): AutomationDraft {
 export function validateAutomationDraft(draft: AutomationDraft): AutomationValidationErrors {
   const errors: AutomationValidationErrors = {}
   if (!draft.title.trim()) errors.title = "Title is required."
-  const schedule = validateAutomationSchedule(draft.cron, draft.timezone)
-  if (schedule.errors.cron) errors.cron = schedule.errors.cron
-  if (schedule.errors.timezone) errors.timezone = schedule.errors.timezone
+  if (draft.cron !== null) {
+    const schedule = validateAutomationSchedule(draft.cron, draft.timezone)
+    if (schedule.errors.cron) errors.cron = schedule.errors.cron
+    if (schedule.errors.timezone) errors.timezone = schedule.errors.timezone
+  }
   const model = draft.model.trim()
   if (!model) errors.model = "Model is required."
   else {
@@ -65,7 +67,7 @@ export function toAutomationCreate(draft: AutomationDraft): AutomationCreate {
   return {
     title: draft.title.trim(),
     enabled: draft.enabled,
-    cron: draft.cron.trim(),
+    ...(draft.cron === null ? {} : { cron: draft.cron.trim() }),
     timezone: draft.timezone.trim(),
     model: draft.model.trim(),
     thinkingLevel: draft.thinkingLevel,
@@ -77,7 +79,7 @@ export function toAutomationPatch(draft: AutomationDraft): AutomationPatch {
   return {
     title: draft.title.trim(),
     enabled: draft.enabled,
-    cron: draft.cron.trim(),
+    ...(draft.cron === null ? {} : { cron: draft.cron.trim() }),
     timezone: draft.timezone.trim(),
     model: draft.model.trim(),
     thinkingLevel: draft.thinkingLevel,
@@ -201,11 +203,12 @@ export function AutomationForm({
         </Field>
 
         <Field>
-          <FieldLabel htmlFor="automation-cron">Cron</FieldLabel>
+          <FieldLabel htmlFor="automation-cron">{draft.cron === null ? "Schedule" : "Cron"}</FieldLabel>
           <Input
             id="automation-cron"
             className="min-h-11"
-            value={draft.cron}
+            value={draft.cron ?? "Dispatch only"}
+            disabled={draft.cron === null}
             onChange={(event) => setDraft((current) => ({ ...current, cron: event.target.value }))}
             aria-invalid={submitted && !!errors.cron}
             aria-describedby={cronDescriptionIds}

@@ -60,6 +60,8 @@ function storage(initial: Record<string, string> = {}): ActiveSessionStorageLike
 function context(overrides: Partial<SlashCommandContext> = {}): SlashCommandContext {
   return {
     sessionId: 's1',
+    agentTypeId: 'default',
+    model: { provider: 'test', id: 'model' },
     clearMessages: vi.fn(),
     resetSession: vi.fn(),
     listCommands: vi.fn(() => builtinCommands),
@@ -310,6 +312,30 @@ describe('PiComposerPolicyController submit policy', () => {
     await expect(controlPolicy.submit({ text: '/live stop' })).resolves.toMatchObject({ type: 'command', result: 'controlled' })
     await expect(controlPolicy.submit({ text: '/live start' })).resolves.toMatchObject({ type: 'blocked', reason: 'busy-slash-command' })
     expect(control).toHaveBeenCalledTimes(1)
+  })
+
+  it('passes invocation-local Agent/model context and error tone to contributed commands', async () => {
+    const handler = vi.fn(() => ({ message: 'creation denied', tone: 'error' as const, preserveDraft: true }))
+    const onCommandResult = vi.fn()
+    const slashContext = context({
+      agentTypeId: 'worker',
+      model: { provider: 'openai', id: 'gpt-5' },
+    })
+    const policy = createPiComposerPolicyController({
+      session: new FakeComposerSession('idle'),
+      registry: createCommandRegistry([{ name: 'schedule', description: 'Schedule', handler }]),
+      slashContext,
+      onCommandResult,
+    })
+
+    await expect(policy.submit({ text: '/schedule daily 8am report' })).resolves.toMatchObject({
+      type: 'command',
+      command: 'schedule',
+      result: 'creation denied',
+      preserveDraft: true,
+    })
+    expect(handler).toHaveBeenCalledWith('daily 8am report', slashContext)
+    expect(onCommandResult).toHaveBeenCalledWith('creation denied', 'error')
   })
 
   it('expands skill slash commands to Pi text so streaming follow-up queueing is explicit and safe', async () => {

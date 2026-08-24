@@ -164,6 +164,27 @@ describe("AskUserStatePublisher", () => {
     await expect(s2).resolves.toMatchObject({ status: "cancelled" })
   }, 30_000)
 
+  it("serially publishes multiple wait:false intentions from one tick session", async () => {
+    const store = await makeStore()
+    const ui = bridge()
+    const publisher = new AskUserStatePublisher(store, ui)
+    publisher.start()
+    const runtime = new AskUserRuntime({ store })
+    const first = await runtime.ask({ sessionId: "tick-1", title: "First", schema, wait: false })
+    const second = await runtime.ask({ sessionId: "tick-1", title: "Second", schema, wait: false })
+    if (first.status !== "filed" || second.status !== "filed") throw new Error("expected filed intentions")
+
+    await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toMatchObject({
+      hintsBySession: { "tick-1": { questionId: second.questionId } },
+    }))
+    await runtime.submitAnswer(second.questionId, "tick-1", { answer: "second" })
+    await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toMatchObject({
+      hintsBySession: { "tick-1": { questionId: first.questionId } },
+    }))
+    await runtime.submitAnswer(first.questionId, "tick-1", { answer: "first" })
+    await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ hint: null, hintsBySession: {} }))
+  })
+
   it("publishes pending slot on create, answer, cancel, and abandon", async () => {
     const store = await makeStore()
     const ui = bridge()

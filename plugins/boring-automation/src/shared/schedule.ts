@@ -1,5 +1,11 @@
 import { Cron } from "croner"
+import { isAutomationRunOccupying } from "./runStatus"
 import type { Automation, AutomationRun } from "./types"
+
+/** PostgreSQL signed-integer ceiling shared by persisted durations and Node timers. */
+export const MAX_AUTOMATION_DURATION_MS = 2_147_483_647
+export const DEFAULT_AUTOMATION_RUN_DURATION_CAP_MS = 4 * 60 * 60_000
+export const AUTOMATION_RUN_DURATION_CAP_INTERVALS = 3
 
 export const AUTOMATION_SCHEDULE_ERRORS = {
   INVALID_CRON: "Invalid cron schedule. Use exactly five fields, for example 0 9 * * *.",
@@ -8,6 +14,7 @@ export const AUTOMATION_SCHEDULE_ERRORS = {
 
 export type AutomationScheduleSkipReason =
   | "disabled"
+  | "dispatch-only"
   | "invalid-cron"
   | "invalid-timezone"
   | "not-current-minute"
@@ -80,11 +87,32 @@ export function isValidIanaTimeZone(timezone: string): boolean {
   }
 }
 
+export function clampAutomationPersistedDurationMs(durationMs: number): number {
+  if (!Number.isFinite(durationMs)) return 0
+  return Math.min(MAX_AUTOMATION_DURATION_MS, Math.max(0, Math.trunc(durationMs)))
+}
+
+export function resolveAutomationRunDurationCapMs(automation: Automation, reference: Date): number {
+  if (automation.runDurationCapMs != null) return automation.runDurationCapMs
+  if (automation.cron === null || !isValidFiveFieldCron(automation.cron) || !isValidIanaTimeZone(automation.timezone)) {
+    return DEFAULT_AUTOMATION_RUN_DURATION_CAP_MS
+  }
+  const cron = new Cron(normalizeSpace(automation.cron), { timezone: automation.timezone.trim() })
+  const occurrences = cron.nextRuns(2, reference)
+  const cadenceMs = occurrences[0] && occurrences[1]
+    ? occurrences[1].getTime() - occurrences[0].getTime()
+    : 0
+  return cadenceMs > 0
+    ? Math.min(cadenceMs * AUTOMATION_RUN_DURATION_CAP_INTERVALS, MAX_AUTOMATION_DURATION_MS)
+    : DEFAULT_AUTOMATION_RUN_DURATION_CAP_MS
+}
+
 export function evaluateAutomationSchedule(input: EvaluateAutomationScheduleInput): EvaluateAutomationScheduleResult {
   const now = new Date(input.now)
   const scheduledFor = floorToMinute(now).toISOString()
   const runs = [...input.runs]
   const decisions = input.automations.map((automation): AutomationScheduleDecision => {
+    if (automation.cron === null) return skip(automation, null, "dispatch-only", "Automation is dispatch-only.")
     const validation = validateAutomationSchedule(automation.cron, automation.timezone)
     if (validation.errors.cron) return skip(automation, null, "invalid-cron", validation.errors.cron)
     if (validation.errors.timezone) return skip(automation, null, "invalid-timezone", validation.errors.timezone)
@@ -128,9 +156,7 @@ function hasDuplicateScheduledRun(runs: EvaluateAutomationScheduleInput["runs"],
 }
 
 function hasActiveRun(runs: EvaluateAutomationScheduleInput["runs"], automationId: string): boolean {
-  return runs.some((run) => run.automationId === automationId && (
-    run.status === "queued" || run.status === "dispatching" || run.status === "running"
-  ))
+  return runs.some((run) => run.automationId === automationId && isAutomationRunOccupying(run.status))
 }
 
 function floorToMinute(date: Date): Date {

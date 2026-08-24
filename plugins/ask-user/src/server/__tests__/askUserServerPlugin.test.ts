@@ -102,6 +102,25 @@ describe("ask-user Pi tool", () => {
     expect(runtime.ask).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "chat-session", toolCallId: "call" }), undefined)
   })
 
+  it("returns a durable intention id immediately for wait:false", async () => {
+    const { store, runtime } = await fixture()
+    const tool = createAskUserTool({ runtime, sessionId: "s1" })
+    const artifact = { id: "proof", surfaceKind: "workspace.open.path", target: "proof.md", title: "Proof" }
+
+    const result = await tool.execute("call", { title: "Escalation", schema, artifacts: [artifact], wait: false }, undefined)
+
+    expect(result).toMatchObject({
+      details: {
+        status: "filed",
+        questionId: expect.any(String),
+        handover: { kind: "boring.handover.operations", operations: [{ action: "upsert", artifact }] },
+      },
+    })
+    const question = await store.getByQuestionId((result.details as any).questionId)
+    expect(question).toMatchObject({ questionId: (result.details as any).questionId, wait: false, status: "ready" })
+    expect(runtime.coordinator.hasWaiter(question!.questionId)).toBe(false)
+  })
+
   it("valid input creates pending question and waits for runtime answer", async () => {
     const { store, runtime } = await fixture()
     const tool = createAskUserTool({ runtime, sessionId: "s1" })
@@ -124,7 +143,7 @@ describe("createAskUserServerPlugin", () => {
     const plugin = createAskUserServerPlugin({ store, runtime, sessionId: "s1" })
     expect(plugin.id).toBe("ask-user")
     expect(plugin.routes).toEqual(expect.any(Function))
-    expect(plugin.agentTools?.map((tool) => tool.name)).toEqual(["ask_user"])
+    expect(plugin.agentTools?.map((tool) => tool.name)).toEqual(["ask_user", "read_intention"])
     expect(plugin.workspaceBridgeHandlers?.map((entry) => entry.definition.op)).toEqual([
       "ask-user.v1.request",
       "ask-user.v1.answer",
@@ -230,7 +249,7 @@ describe("createAskUserServerPlugin", () => {
     const ui = bridge()
     const plugin = createAskUserServerPlugin({ workspaceRoot: dir, bridge: ui })
     expect(plugin.id).toBe("ask-user")
-    expect(plugin.agentTools?.map((tool) => tool.name)).toEqual(["ask_user"])
+    expect(plugin.agentTools?.map((tool) => tool.name)).toEqual(["ask_user", "read_intention"])
     expect(existsSync(join(dir, ".boring", "ask-user.json"))).toBe(false)
   })
 })

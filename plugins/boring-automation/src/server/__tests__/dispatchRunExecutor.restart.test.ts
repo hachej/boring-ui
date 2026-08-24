@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { describe, expect, it, vi } from "vitest"
 
 import { FileAutomationStore } from "../fileStore"
-import { ManualRunExecutor } from "../manualRunExecutor"
+import { DispatchRunExecutor } from "../dispatchRunExecutor"
 
 async function createStoreRoot(): Promise<string> {
   return await mkdtemp(join(tmpdir(), "boring-automation-mig-del-"))
@@ -21,7 +21,7 @@ async function seed(store: FileAutomationStore) {
   })
 }
 
-describe("ManualRunExecutor durable restart saga", () => {
+describe("DispatchRunExecutor durable restart saga", () => {
   it("preserves an accepted addressed receipt and session across restart reconciliation", async () => {
     const root = await createStoreRoot()
     const firstProcess = new FileAutomationStore(root, {
@@ -56,10 +56,10 @@ describe("ManualRunExecutor durable restart saga", () => {
     await expect(restarted.listRuns(automation.id)).resolves.toEqual([
       expect.objectContaining({
         id: admitted.id,
-        status: "failed",
+        status: "outcome-unknown",
         sessionId: "shared",
         dispatchReceipt: expect.objectContaining({ ref: { agentTypeId: "beta", sessionId: "shared" } }),
-        error: "Automation host restarted before the run completed",
+        error: "Automation dispatch outcome is unknown after host restart; the slot remains occupied",
       }),
     ])
   })
@@ -100,7 +100,7 @@ describe("ManualRunExecutor durable restart saga", () => {
       id: admitted.id,
       status: "outcome-unknown",
       dispatchReceipt: null,
-      error: "Automation dispatch outcome is unknown after host restart; it was not retried",
+      error: "Automation dispatch outcome is unknown after host restart; the slot remains occupied",
     })
 
     const dispatch = vi.fn()
@@ -110,7 +110,7 @@ describe("ManualRunExecutor durable restart saga", () => {
       interrupt: vi.fn(),
       stop: vi.fn(),
     }))
-    const restartedExecutor = new ManualRunExecutor({
+    const restartedExecutor = new DispatchRunExecutor({
       agentTypeId: "default",
       store: restarted,
       dispatcherResolver: {
@@ -125,19 +125,21 @@ describe("ManualRunExecutor durable restart saga", () => {
       actor: { workspaceId: "workspace-1", userId: "user-1" },
     })
     expect(sameInvocation.id).toBe(admitted.id)
-    expect(sameInvocation.status).toBe("outcome-unknown")
+    expect(sameInvocation).toMatchObject({
+      status: "failed",
+      error: "Automation outcome remained unknown after host restart; releasing the occupied slot",
+    })
     expect(resolve).not.toHaveBeenCalled()
     expect(dispatch).not.toHaveBeenCalled()
     await expect(restarted.listRuns(automation.id)).resolves.toHaveLength(1)
 
-    const explicitNewRun = await restarted.beginRun({
+    await expect(restarted.beginRun({
       automationId: automation.id,
       invocationId: "manual:invocation-2",
       trigger: "manual",
       promptSnapshot: "run again",
       modelSnapshot: "test:model",
-    })
-    expect(explicitNewRun.id).not.toBe(admitted.id)
+    })).resolves.toMatchObject({ status: "queued" })
   })
 
   it("returns one durable run receipt for concurrent retries of an invocation", async () => {

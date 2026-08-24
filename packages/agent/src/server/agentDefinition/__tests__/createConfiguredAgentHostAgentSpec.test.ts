@@ -11,10 +11,11 @@ import { materializeAgentDirectory } from '../materializeAgentDirectory'
 const REPO_ROOT = resolve(import.meta.dirname, '../../../../../..')
 const FACTORY_ROOT = resolve(REPO_ROOT, '.agents/personas')
 // Deferred grow-on-demand persona material lives as test fixtures, not live
-// personas (gh-1187 S0: the ratified roster is triage/orchestrator/worker).
+// personas. The retired triage persona remains authored material, but fleet.yaml
+// now composes only orchestrator and worker.
 const DEFERRED_ROOT = resolve(import.meta.dirname, 'fixtures/deferred-personas')
 // [root, directory, agentTypeId, label, persona package version]. Every
-// ratified persona package on disk is covered, plus the deferred
+// authored persona package on disk is covered, plus the deferred
 // grow-on-demand fixtures — an unbooted persona still has to be a valid,
 // materializable definition the moment a lane pulls it back into the roster.
 const ROLES = [

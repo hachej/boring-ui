@@ -24,7 +24,7 @@ Agent Mail — adopted selectively; deviations are deliberate and listed below.
 | --- | --- | --- |
 | L0 Chassis | AgentHost fleet spec, identity/authority split, plugin system, sandboxed tool admission | exists (#1075) |
 | L1 Work graph | Beads via plain `br` CLI; GH issues = human intake, 1 epic = 1 GH issue | br live; UI read-only provider in #1075 |
-| L2 Seats | concierge / triage / steward / worker / reviewer under `.agents/personas/` | authored in #1075; no production loader |
+| L2 Seats | orchestrator / worker in `.agents/factory/fleet.yaml`; triage is a worker automation slot | two-seat production loader live; historical persona material remains authored |
 | L3 Loops | /triage /plan /exec skills + Beadle supervisor automation (workers pull) | skills exist; Beadle missing |
 | L4 Human plane | Concierge front door, inbox intentions, (later) Swarm Console | intentions exist; edges landing (session↔task, artifact handover) |
 | L5 Comms | thread=bead convention only; Agent Mail/Buzz deferred | convention adoptable now |
@@ -119,8 +119,9 @@ Beads adapter contract and extension points: `.agents/factory/tools.md`.
   epic worktree; owner gate at the epic boundary. Review capacity is 1-2h/day,
   not 13 rotating accounts.
 - No 38-seat roster (Yegge): a seat exists only where a standing
-  responsibility must accumulate context across sessions. 5 seats now;
-  production-ops seats (Sheriff/Gargoyle) only when production traffic exists.
+  responsibility must accumulate context across sessions. Two seats now
+  (`orchestrator`, `worker`); triage is worker automation, and production-ops
+  seats (Sheriff/Gargoyle) wait until production traffic exists.
 - No Agent Mail / native comms now: every worker message type already has a
   home (claim→br, handoff→bead notes+artifact, escalate→intention,
   review→dispatcher transition).

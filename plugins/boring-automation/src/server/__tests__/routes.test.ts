@@ -10,13 +10,13 @@ import { InMemoryAutomationRunEventBus } from "../runEventBus"
 
 function appWithStore(
   store = new FileAutomationStore(`${tmpdir()}/boring-automation-unused`),
-  manualRunExecutor?: Parameters<typeof automationRoutes>[1]["manualRunExecutor"],
+  dispatchRunExecutor?: Parameters<typeof automationRoutes>[1]["dispatchRunExecutor"],
   dueRunService?: Parameters<typeof automationRoutes>[1]["dueRunService"],
   hostedDueRunService?: Parameters<typeof automationRoutes>[1]["hostedDueRunService"],
   hostedTriggerToken?: string,
 ) {
   const app = Fastify()
-  app.register(async (instance) => automationRoutes(instance, { store, manualRunExecutor, dueRunService, hostedDueRunService, hostedTriggerToken }))
+  app.register(async (instance) => automationRoutes(instance, { store, dispatchRunExecutor, dueRunService, hostedDueRunService, hostedTriggerToken }))
   return app
 }
 
@@ -309,6 +309,14 @@ describe("automationRoutes", () => {
   it("maps validation and domain error codes to HTTP status", async () => {
     const temp = await TempStore.create()
     const app = appWithStore(temp.store)
+
+    const dispatchOnly = await app.inject({
+      method: "POST",
+      url: `${BORING_AUTOMATION_ROUTE_PREFIX}/automations`,
+      payload: { title: "Dispatch only", timezone: "UTC", model: "model-a" },
+    })
+    expect(dispatchOnly.statusCode).toBe(201)
+    expect(dispatchOnly.json()).toMatchObject({ ok: true, automation: { title: "Dispatch only", cron: null } })
 
     const invalid = await app.inject({ method: "POST", url: `${BORING_AUTOMATION_ROUTE_PREFIX}/automations`, payload: { title: "" } })
     expect(invalid.statusCode).toBe(400)
