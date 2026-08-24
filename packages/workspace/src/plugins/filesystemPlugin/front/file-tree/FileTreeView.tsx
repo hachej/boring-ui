@@ -900,6 +900,27 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
     setEditing(null)
   }, [])
 
+  // Same transport the editor reads through (`GET /api/v1/files/raw`), so the
+  // download inherits the workspace-scope headers, the path validation and the
+  // per-filesystem access decision instead of introducing a second, weaker
+  // route. Handing the browser an object URL is how CodeEditorPane already
+  // downloads the open file.
+  const handleDownload = ctxAction(async () => {
+    const node = ctxMenu?.node
+    if (!node || node.kind !== "file") return
+    const objectUrl = URL.createObjectURL(
+      await dataClient.getRawFile(node.path, undefined, requestFilesystem),
+    )
+    try {
+      const anchor = document.createElement("a")
+      anchor.href = objectUrl
+      anchor.download = node.name
+      anchor.click()
+    } finally {
+      URL.revokeObjectURL(objectUrl)
+    }
+  })
+
   const handleCopyPath = ctxAction(async () => {
     if (!ctxMenu?.node) return
     await copyToClipboard(ctxMenu.node.path)
@@ -1086,6 +1107,11 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
                   }}
                 >
                   Delete
+                </Button>
+              )}
+              {ctxMenu.node.kind === "file" && (
+                <Button type="button" role="menuitem" variant="ghost" size="sm" className="w-full justify-start" onClick={handleDownload}>
+                  Download
                 </Button>
               )}
               <Button type="button" role="menuitem" variant="ghost" size="sm" className="w-full justify-start" onClick={handleCopyPath}>
