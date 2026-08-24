@@ -49,6 +49,12 @@ export function AppSessionActionsMenu({
     }
     toast.error({ title: "Could not copy session ID", description: "Allow clipboard access and try again." })
   }
+  // Owner decision (#1376 review): raw deletion is demoted to the Archived view.
+  // Active rows exit through Archive; Delete only appears once a session is
+  // already archived, so the destructive action is never one misclick from the
+  // main list.
+  const canDelete = archived === true && onDelete !== undefined
+
   return (
     <DropdownMenu open={open} onOpenChange={setMenuOpen}>
       <DropdownMenuTrigger asChild>
@@ -86,7 +92,7 @@ export function AppSessionActionsMenu({
             {pinned ? "Unpin chat" : "Pin chat"}
           </DropdownMenuItem>
         ) : null}
-        {canPin && onTogglePinned && (canCopy || canRename || onToggleArchived || onDelete)
+        {canPin && onTogglePinned && (canCopy || canRename || onToggleArchived || canDelete)
           ? <DropdownMenuSeparator />
           : null}
         {canCopy ? (
@@ -94,22 +100,22 @@ export function AppSessionActionsMenu({
             <Copy className="h-3.5 w-3.5" /> Copy session ID
           </DropdownMenuItem>
         ) : null}
-        {canCopy && (canRename || onToggleArchived || onDelete) ? <DropdownMenuSeparator /> : null}
+        {canCopy && (canRename || onToggleArchived || canDelete) ? <DropdownMenuSeparator /> : null}
         {canRename ? (
           <DropdownMenuItem onSelect={() => { setMenuOpen(false); onRename() }} className="gap-2 text-[13px]">
             <Pencil className="h-3.5 w-3.5" /> Rename
           </DropdownMenuItem>
         ) : null}
-        {canRename && (onToggleArchived || onDelete) ? <DropdownMenuSeparator /> : null}
+        {canRename && (onToggleArchived || canDelete) ? <DropdownMenuSeparator /> : null}
         {onToggleArchived ? (
           <DropdownMenuItem onSelect={() => void onToggleArchived(sessionId, !archived)} className="gap-2 text-[13px]">
             {archived ? <ArchiveRestore className="h-3.5 w-3.5" /> : <Archive className="h-3.5 w-3.5" />}
             {archived ? "Unarchive session" : "Archive session"}
           </DropdownMenuItem>
         ) : null}
-        {onToggleArchived && onDelete ? <DropdownMenuSeparator /> : null}
-        {onDelete ? (
-          <DropdownMenuItem onSelect={() => void onDelete(sessionId)} variant="destructive" className="gap-2 text-[13px]">
+        {canDelete ? <DropdownMenuSeparator /> : null}
+        {canDelete ? (
+          <DropdownMenuItem onSelect={() => void onDelete?.(sessionId)} variant="destructive" className="gap-2 text-[13px]">
             <Trash2 className="h-3.5 w-3.5" /> Delete
           </DropdownMenuItem>
         ) : null}
@@ -117,7 +123,6 @@ export function AppSessionActionsMenu({
     </DropdownMenu>
   )
 }
-
 async function copyText(text: string): Promise<boolean> {
   if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
     try {
