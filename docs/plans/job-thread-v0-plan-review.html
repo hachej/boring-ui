@@ -173,7 +173,7 @@ footer{margin:24px 0 8px;color:var(--muted);font-size:12.5px;text-align:center}
   <h3 class="qhead"><span class="qnum">8</span><span class="qtitle">Acceptance bar — fixture-driven gate, live-model as labelled smoke?</span></h3>
   <table class="two"><tr><th>Options</th><th>Unblocks / costs</th></tr>
   <tr><td><b>Confirm (proposed)</b> — S5 acceptance runs a scripted model adapter emitting a fixed
-  event script, asserting exact <code>threadTurnId</code> sequence, handoff edges, cap outcomes, and
+  event script, asserting exact <code>turnOrdinal</code> sequence, handoff edges, cap outcomes, and
   final Objective state. A live-model walkthrough is kept but explicitly labelled non-deterministic —
   never a gate.</td>
   <td><b>Confirms</b>: nothing in CI depends on live-model determinism, which round 1 wrongly assumed.
@@ -187,17 +187,18 @@ footer{margin:24px 0 8px;color:var(--muted);font-size:12.5px;text-align:center}
   <p class="small">Ordering lives only here. The real critical path is the two open PRs, not the
   deferred #1355 gate.</p>
   <div class="slices">
-    <div class="slice"><h4>S1</h4><div class="b">Projection contract + store.<br><code>JobProjectionV0</code>,
-    <code>JobParticipantV0</code>, <code>JobRelayReceiptV0</code> schemas; file store, revision CAS.</div></div>
+    <div class="slice"><h4>S1</h4><div class="b">Contract + store + edge allocator.<br><code>JobProjectionV0</code>,
+    <code>JobRelayEdgeV0</code>, <code>JobRelayTransitionV0</code> schemas; CAS store; <code>openEdge()</code>
+    allocates the ordinal, mints <code>requestId</code>, reserves caps.</div></div>
     <div class="arrow">→</div>
     <div class="slice"><h4>S2</h4><div class="b">Relay dispatch + handoff tool.
     <code>runWithWorkspaceAgent</code>-based relay turn; typed <code>handoff({to,message})</code> tool.</div></div>
     <div class="arrow">→</div>
-    <div class="slice"><h4>S3</h4><div class="b">Relay state machine. Chain advance, caps, context
-    truncation, full failure-table + restart resume.</div></div>
+    <div class="slice"><h4>S3</h4><div class="b">Relay state machine + recovery. Chain advance, split
+    cursors, caps per chain, full failure-table + 4-step recovery order.</div></div>
     <div class="arrow">→</div>
     <div class="slice"><h4>S4</h4><div class="b">Front projection. Merged timeline by
-    <code>(threadTurnId, seq)</code>, ask-user join on the full triple.</div></div>
+    <code>(turnOrdinal, seq, markerOrdinal)</code>, ask-user join on the full triple.</div></div>
     <div class="arrow">→</div>
     <div class="slice"><h4>S5</h4><div class="b">K7 demo fixture. Scripted acceptance, Objective
     compensation, labelled live smoke.</div></div>
@@ -221,11 +222,15 @@ footer{margin:24px 0 8px;color:var(--muted);font-size:12.5px;text-align:center}
 <section class="card">
   <h2>Honest risks</h2>
   <table><tr><th>Risk</th><th>Likelihood</th><th>Impact</th><th>Mitigation</th></tr>
-  <tr><td>Receipt contract (<code>JobRelayReceiptV0</code>) is the newest, least-proven surface — it
-  carries the only total order across seats, idempotency, and cap enforcement in one record.</td>
-  <td class="med">Medium</td><td class="high">High</td>
-  <td>Scripted-adapter tests assert exact <code>threadTurnId</code> sequence and every row of the §2
-  failure table, including restart resume, before S4/S5 build on top of it.</td></tr>
+  <tr><td>Relay edge/transition contract is the newest surface — it carries the total order across
+  seats, send idempotency, and cap enforcement. <b>Hardened after a targeted verify pass</b>: the
+  send&rarr;persist crash window, a restart skip-hole, string-ordinal sorting, and in-place mutation
+  of an &ldquo;append-only&rdquo; record were all found and fixed.</td>
+  <td class="low">Low&ndash;Medium</td><td class="high">High</td>
+  <td>Pending edge written pre-dispatch under one CAS lock with a relay-minted <code>requestId</code>
+  (re-dispatch returns <code>duplicate:true</code>); store-owned integer ordinals; append-only
+  transitions; 4-step recovery reconciles durable state before <code>outcome-unknown</code>. S1/S3
+  negative proofs assert each.</td></tr>
   <tr><td>Critical path runs through two <b>open</b> PRs, not this gate: #1401 (naming ratification)
   blocks S1 directly; #1382 (objectives) blocks S5.</td>
   <td class="high">High</td><td class="high">High</td>

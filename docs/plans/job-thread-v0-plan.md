@@ -102,8 +102,11 @@ be paid up front: (i) an explicit R-c amendment, since Thread=Session becomes Th
 - The capability handed to the callback is **callback-scoped and non-retainable**:
   `LeaseBoundWorkspaceAgent` is documented "lease guarded by the Host and must not be retained after
   the callback" (`shared/workspaceAgentDispatcher.ts:40-42`). Its `dispatch(input, onEvent,
-  onAccepted)` returns `{ ref, receipt }` — an accepted Gateway receipt, persistable before events
-  are consumed (`:44-56`).
+  onAccepted)` returns `{ ref, receipt }` (`:44-56`).
+- **Acceptance precedes any callback.** The lease awaits `dispatcher.dispatch(...)` and only then
+  runs `onAccepted` (`agent-host/workspaceAgentLease.ts:237-238`). So *any* persist-after-dispatch
+  design leaves a crash window in which a send has landed with nothing recorded — this is why §3
+  writes a pending edge **before** dispatching.
 - `EmbeddedAgentGateway` is exported at `packages/agent/src/server/index.ts:185`.
 - Turn events carry the anchors the relay needs: `agent-end { seq, turnId, status, willRetry? }` and
   `message-end { seq, messageId, final: BoringChatMessage }` (`shared/chat/piChatEvent.ts:6-25`).
@@ -119,11 +122,28 @@ seam — no new authority-bearing host seam, no long-lived scope, no D28 second 
 
 ```
 relayTurn(jobId, targetParticipant, payload):
-  runWithWorkspaceAgent({ agentTypeId: p.agentTypeId, context, requestId }, async (bound) => {
-    const { ref, receipt } = await bound.dispatch(..., onEvent, onAccepted)
-    // persist the relay receipt (§3) from `receipt` BEFORE consuming events
-  })
+  # 1. ONE locked CAS mutation, BEFORE any dispatch (§3): allocate turnOrdinal,
+  #    mint the caller-owned requestId, reserve hop/invocation counts,
+  #    append edge{phase:"pending"}.
+  edge = store.openEdge(jobId, chainId, targetParticipant, payload)
+  # 2. dispatch keyed by the id we already own — a retry cannot mint a new one
+  runWithWorkspaceAgent({ agentTypeId: p.agentTypeId, context, requestId: edge.requestId },
+    async (bound) => {
+      await bound.dispatch({ ...payload, requestId: edge.requestId }, onEvent, async (accepted) => {
+        store.appendTransition(edge.edgeId, "accepted", { cursor: accepted.receipt.cursor,
+                                                          duplicate: accepted.receipt.duplicate })
+      })
+    })
 ```
+
+**The `requestId` is ours, not the receipt's.** Round 1 said the idempotency key comes back "from the
+dispatch receipt". Wrong, and the correction is what makes the pre-dispatch edge work:
+`WorkspaceAgentDispatcherDispatchInput.requestId` is a **"durable caller-owned idempotency key"**
+(`shared/workspaceAgentDispatcher.ts:23`) and `AgentSendReceipt extends CommandReceipt
+{ accepted, cursor, disposition, clientNonce, duplicate?, clientSeq? }` (`shared/gateway/types.ts:168-177`)
+carries **no `requestId`**. Because the relay mints the key, a re-dispatch after a crash is safe by
+construction and returns `duplicate: true` rather than double-sending — that flag is the
+reconciliation primitive, and `receipt.cursor` is the durable accepted-position anchor.
 
 **Structured handoff, not free-text parsing.** Round 1 parsed `@reviewer` out of prose. Withdrawn:
 quoted or incidental mentions branch the run and make acceptance untestable. v0 registers a
@@ -155,11 +175,11 @@ Every abnormal end writes a terminal system event onto the projection; the relay
 | Case | Rule |
 | --- | --- |
 | Non-terminal end | `agent-end` with `willRetry === true` is ignored; the chain does not advance (`piChatEvent.ts:9-11`). |
-| Seat error run | `agent-end.status === 'error' \| 'aborted'` ends the chain, records `chainState: "failed"` with the source `turnId`, and posts a system event. No automatic retry in v0. |
-| Handoff to a removed participant | `bindingState === "removed"` → chain ends with `participant-unavailable`; history is preserved, never rewritten. |
-| Partial cross-post | The relay receipt is written from `onAccepted` *before* events are consumed, so a crash after dispatch is replayable: the destination `requestId` is the idempotency key and the send is never duplicated. |
-| Restart mid-chain | Durable `chainState` + per-ref processed cursors (§3) resume or terminate; a chain whose destination receipt exists but whose completion is unknown resolves to `outcome-unknown` and posts a system event rather than re-sending. |
-| Cap exceeded | Terminal system event naming the cap and the last `turnId`; no truncation, no silent stop. |
+| Seat error run | `agent-end.status === 'error' \| 'aborted'` appends `phase:"failed"`, `reason:"seat-error"` with the source `turnId`, and posts a system event. No automatic retry in v0. |
+| Handoff to a removed participant | `bindingState === "removed"` → `phase:"failed"`, `reason:"participant-unavailable"`; history is preserved, never rewritten. |
+| Crash between dispatch and persistence | Closed by the pre-dispatch pending edge (§2/§3). Acceptance happens inside `dispatch` *before* `onAccepted` runs (`workspaceAgentLease.ts:237-238`), so persistence-after-dispatch always leaves a window. Recovery re-dispatches the **same** `edge.requestId`; a send that already landed returns `duplicate: true` instead of a second post. |
+| Restart mid-chain | Recovery order below — the chain only resolves `outcome-unknown` after durable state has been consulted, never on the mere absence of a completion record. |
+| Cap exceeded | `phase:"capped"` naming the cap and the last `turnId`; no truncation, no silent stop. Counts were reserved pre-dispatch, so a crash cannot undercount them. |
 | Blocked on `ask_user` | Not a terminal Run — the chain suspends, does not advance, and does not count against the hop cap until answered (§4). |
 
 ## 3. Relay state — the durable receipt
@@ -179,34 +199,73 @@ approvals, interventions (envelope projection — no second event system)"**
 
 ### Delta
 
-A `JobRelayReceiptV0` append-only log beside the projection record in the same plugin store, written
-under the same `revision` CAS. It is an **envelope projection**, not a competing event system: every
-field is either relay-authored control state or copied from an existing receipt.
+Two append-only logs beside the projection record in the same plugin store, written under the same
+`revision` CAS. They are an **envelope projection**, not a competing event system: every field is
+either relay-authored control state or copied from an existing receipt. **Nothing is ever mutated** —
+round 1 declared receipts append-only while requiring `chainState` to change in place. Edges now have
+identity and state moves by appended transition records.
 
 ```ts
-interface JobRelayReceiptV0 {
+/** One attempted cross-post. Immutable once written. */
+interface JobRelayEdgeV0 {
+  edgeId: string                    // `edge-<uuid>`
   jobId: string
-  threadTurnId: string              // relay-assigned, monotonic — the ONLY total order across seats
+  chainId: string                   // the root human turn — cap scope (see Caps)
+  turnOrdinal: number               // store-owned monotonic INTEGER, allocated under the CAS lock
   sourceRef?: AgentSessionRef       // whose settled turn triggered this
   sourceTurnId?: string             // from `agent-end.turnId`
   destinationRef: AgentSessionRef
-  destinationRequestId: string      // from dispatch `onAccepted` receipt — the idempotency key
-  handoffEdge?: { fromRole: string; toRole: string }
-  processedCursors: Record<string, number>   // per-ref `seq` high-water mark
-  chainState: "running" | "suspended" | "completed" | "failed" | "capped" | "outcome-unknown"
-  capOutcome?: { cap: "hop" | "invocation"; limit: number; observed: number }
+  requestId: string                 // relay-minted caller-owned idempotency key (§2)
+  handoff?: { fromRole: string; toRole: string }
+  deliveredThroughOrdinal: number   // context watermark: what this send carried
   createdAt: string
 }
+
+/** Append-only state history for one edge. */
+interface JobRelayTransitionV0 {
+  edgeId: string
+  phase: "pending" | "accepted" | "settled" | "suspended" | "failed" | "capped" | "outcome-unknown"
+  reason?: "seat-error" | "participant-unavailable" | "hop-cap" | "invocation-cap"
+           | "ask-user" | "unreconcilable"
+  acceptedCursor?: number           // from `AgentSendReceipt.cursor`
+  duplicate?: boolean               // from `AgentSendReceipt.duplicate`
+  at: string
+}
+
+/** Per-chain counters, reserved pre-dispatch so a crash cannot undercount. */
+interface JobChainStateV0 { chainId: string; hops: number; invocations: number; ordinalHigh: number }
 ```
 
-- **Ordering**: `threadTurnId` is the total order across seats; per-ref `seq` orders within a seat.
-  Merged rendering sorts by `(threadTurnId, seq)`. No wallclock anywhere.
-- **Idempotency / restart**: on boot the relay reads the last receipt per job. A receipt with a
-  `destinationRequestId` and no terminal state resolves per the §2 table — never a blind re-send.
-- **Caps**: `maxHopDepth` (default 3) and `maxInvocationsPerHumanTurn` are evaluated against the
-  receipt chain, so a restart cannot reset them.
-- **Context bound**: `processedCursors` is what "history since last turn" means concretely — a
-  participant receives posts (§2) after its own cursor, capped at `maxInjectedPosts` /
+- **Ordering.** `turnOrdinal` is a store-owned monotonic **integer** allocated inside the same locked
+  CAS mutation that writes the pending edge — not an unconstrained string, so `1, 2, 10` cannot sort
+  as `1, 10, 2`. Within a destination, posts order by event `seq`; relay-authored system markers get a
+  durable `markerOrdinal` (an integer minted alongside the edge) as a deterministic tie-breaker, so
+  markers never float. Merged rendering sorts `(turnOrdinal, seq, markerOrdinal)`. No wallclock.
+- **Snapshot fallback, stated honestly.** `PiChatSnapshot` carries one session-level `seq` watermark
+  and `messages: BoringChatMessage[]` with **no per-message `seq`** (`shared/chat/piChatSnapshot.ts:16-23`).
+  So a turn rendered from a snapshot cannot reconstruct the original per-event tuple. Degraded rule:
+  such messages order by **array position** within their ref, anchored at the snapshot's `seq`
+  watermark, and the timeline marks the block as snapshot-derived. Cross-seat order is unaffected,
+  because that comes from `turnOrdinal`, which is relay-owned and durable.
+- **Split cursors.** Round 1's single `processedCursors` high-water map conflated two different
+  things and created a skip hole. v0 keeps both: a **consumed-source cursor** per source ref (how far
+  the relay has interpreted that seat's events) and a **delivered-context watermark** per destination
+  (`deliveredThroughOrdinal` — what a given send actually carried). A destination that completed and
+  emitted a handoff before a crash is therefore still discoverable after restart.
+- **Recovery order** (on boot, per job, for each edge lacking a terminal phase):
+  1. Re-read the destination session's durable state — the request ledger and, failing that, the
+     session snapshot — keyed by `requestId`.
+  2. If the send is found landed, append `accepted` (with `duplicate` if re-dispatched) and continue.
+  3. Advance the consumed-source cursor and process any handoff the destination emitted **before**
+     considering termination — this is the skip hole round 1 left open.
+  4. Only if steps 1–3 cannot resolve the edge, append `outcome-unknown` with
+     `reason:"unreconcilable"` and post a system event.
+- **Caps.** `maxHopDepth` (default 3) and `maxInvocationsPerChain` are counted on `JobChainStateV0`,
+  scoped to `chainId` = the **root human turn**. A new human message opens a new chain with fresh
+  counters; an interleaved message therefore neither inherits nor resets another chain's counts.
+  Counters are reserved in the pre-dispatch mutation, so an escaped invocation is impossible.
+- **Context bound.** `deliveredThroughOrdinal` is what "history since last turn" means concretely — a
+  participant receives posts (§2) after its own watermark, capped at `maxInjectedPosts` /
   `maxInjectedBytes`; overflow drops **oldest-first** and inserts a relay-authored truncation marker.
   No summarization in v0 (a summarizer would be an unreviewed model call inside the relay).
 
@@ -238,7 +297,7 @@ threading it through the reservation path.
 
 ### Delta
 
-- **Merged timeline** = posts (§2) ordered by `(threadTurnId, seq)` from §3, each tagged with its
+- **Merged timeline** = posts (§2) ordered by `(turnOrdinal, seq, markerOrdinal)` from §3, each tagged with its
   participant's role and `agentTypeId`. Drill-down links each block to its origin session.
 - **ask-user join uses the full triple, not bare `sessionId`.** Round 1 joined on `sessionId` alone;
   gateway session identity is scoped by `agentTypeId`, so equal ids under two agents could answer the
@@ -259,7 +318,7 @@ What Level B *can* do: bounded in-process replay plus snapshot rehydrate; a curs
 window or from before a restart yields `REPLAY_GAP`/`CURSOR_AHEAD` and the client refetches — *"never
 a silent gap"* (`AGENT_GATEWAY_V0.md:116-124`). **v0 ships against Level B**, and that is sufficient
 because §3's receipts — not the event stream — own cross-seat causality and ordering; a refetch
-rebuilds seat content while `threadTurnId` preserves the merge.
+rebuilds seat content while `turnOrdinal` preserves the merge.
 
 The one property Level B cannot reconstruct is **per-seat intra-turn event history across a host
 restart**: after a restart the timeline can show settled posts (from receipts + snapshot) but cannot
@@ -282,7 +341,7 @@ or run ref; the only outbound seam is the free-string `evidenceRefs: string[]`.
 **Acceptance is fixture-driven.** Round 1 called a live-model run "deterministic". It is not: nothing
 guarantees the worker emits the handoff, the reviewer replies, or `update_objective` is ever called.
 v0 acceptance runs a **scripted model adapter** emitting a fixed event script, asserting exact
-`threadTurnId` sequence, handoff edges, cap outcomes, and final Objective state. A **live-model
+`turnOrdinal` sequence, handoff edges, cap outcomes, and final Objective state. A **live-model
 walkthrough** is kept as an explicitly **non-deterministic smoke check**, never as a gate.
 
 Scripted path (two fleet agents, `creator-growth-worker` / `creator-growth-reviewer`, plus the relay):
@@ -295,7 +354,7 @@ Scripted path (two fleet agents, `creator-growth-worker` / `creator-growth-revie
 4. Reviewer critiques, calls `handoff({to:"worker"})`. Hop 2.
 5. Worker revises, calls `ask_user` to approve the terminal action. The gate renders on the job with
    participant attribution and in the Inbox; the chain suspends.
-6. Owner approves → worker calls `update_objective` → `chainState: "completed"`. Cap (3) never hit.
+6. Owner approves → worker calls `update_objective` → final edge appends `phase:"settled"`. Cap (3) never hit.
 
 **Objective coupling is one-way and compensated.** The job points at `objectiveId`; `Objective` gains
 no `threadId`, so PR #1382 is untouched. Creation is two writes (Objective, then projection record),
@@ -330,34 +389,41 @@ Console item. **Gate G** = #1355 Gate 1 architecture approval (`docs/issues/1355
 follow-on, because v0 touches no Console store. Each slice is one session and follows the #1355 bead
 idiom (`plan.md:378-417`).
 
-**S1 — projection contract + store.** `JobProjectionV0`, `JobParticipantV0`, `JobRelayReceiptV0`
-schemas; file store with revision CAS, lock, atomic rename, load diagnostics. No relay, no UI, no
-agent tool.
+**S1 — projection contract + store + edge allocator.** `JobProjectionV0`, `JobParticipantV0`,
+`JobRelayEdgeV0`, `JobRelayTransitionV0`, `JobChainStateV0` schemas; file store with revision CAS,
+lock, atomic rename, load diagnostics; and the **`openEdge()` allocator** — one locked mutation that
+allocates `turnOrdinal`/`markerOrdinal`, mints `requestId`, reserves chain counters, and appends the
+pending edge. Append-only enforced. No relay, no UI, no agent tool.
 - *Blocked by:* owner ruling on Q1 (noun); PR #1401 merged.
-- *Scope:* `plugins/job-threads/src/shared/{types,schema}.ts`, `src/server/jobProjectionStore.ts` + tests.
-- *Proof:* `pnpm --filter @hachej/boring-job-threads test -- src/server/__tests__/jobProjectionStore.test.ts src/shared/__tests__/schema.test.ts`; `pnpm --filter @hachej/boring-job-threads typecheck`.
-- *Negative proof:* a record whose `participantId` collides, or whose CAS revision is stale, is
-  rejected rather than merged; `grep -r "seatId\|threadId" plugins/job-threads/src` returns nothing.
+- *Scope:* `plugins/job-threads/src/shared/{types,schema}.ts`, `src/server/{jobProjectionStore,edgeLog}.ts` + tests.
+- *Proof:* `pnpm --filter @hachej/boring-job-threads test -- src/server/__tests__/jobProjectionStore.test.ts src/server/__tests__/edgeLog.test.ts src/shared/__tests__/schema.test.ts`; `pnpm --filter @hachej/boring-job-threads typecheck`.
+- *Negative proof:* concurrent `openEdge()` calls never allocate same `turnOrdinal` and never
+  double-reserve a cap; ordinals sort numerically (`1,2,10`, not `1,10,2`); any attempt to mutate a
+  written edge or transition is rejected; `grep -r "seatId\|threadId" plugins/job-threads/src` returns nothing.
 
 **S2 — actor-scoped dispatch + handoff tool.** Relay turn function over `runWithWorkspaceAgent`
-(per-invocation `agentTypeId`); `handoff({to, message})` tool registration; receipt written from
-`onAccepted` before events are consumed. No chain logic yet.
+(per-invocation `agentTypeId`); `handoff({to, message})` tool registration; dispatch keyed by the
+pre-allocated `edge.requestId`, with `onAccepted` appending the `accepted` transition. No chain logic yet.
 - *Blocked by:* S1.
 - *Scope:* `plugins/job-threads/src/server/{relayTurn,handoffTool}.ts` + tests.
 - *Proof:* `pnpm --filter @hachej/boring-job-threads test -- src/server/__tests__/relayTurn.test.ts`; `pnpm lint:invariants`.
 - *Negative proof:* the lease-bound capability is not retained past the callback (test asserts use
-  after return throws); no `new EmbeddedAgentGateway` anywhere in the plugin.
+  after return throws); no `new EmbeddedAgentGateway` anywhere in the plugin; a dispatch is never
+  issued without a pending edge already durable.
 
-**S3 — relay state machine.** Chain advance on settled turns, `willRetry` filtering, posts-only
-crossing, caps, context bound with truncation marker, and every row of §2's failure table including
-restart resume.
+**S3 — relay state machine + recovery.** Chain advance on settled turns, `willRetry` filtering,
+posts-only crossing, split cursors (consumed-source vs delivered-context), caps scoped to `chainId`,
+context bound with truncation marker, every row of §2's failure table, and the **4-step recovery
+order** from §3 (ledger/snapshot reconciliation before `outcome-unknown`).
 - *Blocked by:* S2.
-- *Scope:* `plugins/job-threads/src/server/relayChain.ts` + tests (scripted adapter).
-- *Proof:* `pnpm --filter @hachej/boring-job-threads test -- src/server/__tests__/relayChain.test.ts`.
-- *Negative proof:* a restart mid-chain neither re-sends a dispatched turn nor resets the hop count;
-  `willRetry:true` does not advance the chain.
+- *Scope:* `plugins/job-threads/src/server/{relayChain,recovery}.ts` + tests (scripted adapter).
+- *Proof:* `pnpm --filter @hachej/boring-job-threads test -- src/server/__tests__/relayChain.test.ts src/server/__tests__/recovery.test.ts`.
+- *Negative proof:* crash-after-accept re-dispatches the same `requestId` and yields `duplicate:true`
+  rather than a second post; a destination that settled and emitted a handoff before the crash is
+  **processed, not skipped**; `outcome-unknown` is never appended without steps 1-3 having run; a new
+  human turn opens a fresh `chainId` without inheriting or resetting the prior chain's counters.
 
-**S4 — front projection.** Merged timeline by `(threadTurnId, seq)` with participant attribution,
+**S4 — front projection.** Merged timeline by `(turnOrdinal, seq, markerOrdinal)` with participant attribution,
 ask-user join on the full triple, drill-down links. Plugin panel only — no Console pane changes.
 - *Blocked by:* S3.
 - *Scope:* `plugins/job-threads/src/front/` + tests.
@@ -394,7 +460,7 @@ Two principals must not be conflated. The **authorization principal** for every 
 owner's `authSubjectId` — correct, and enforced: the lease rejects a mismatch between the verified
 claim and the request context (`workspaceAgentLease.ts:97-102`). The **causal initiator** may be the
 human (a posted message) or the relay (a handoff). v0 records the distinction in
-`JobRelayReceiptV0.sourceRef`/`handoffEdge` and renders it, matching D24's ratified audit model:
+`JobRelayEdgeV0.sourceRef`/`handoff` and renders it, matching D24's ratified audit model:
 *"the principal is the originating user/workspace, with the acting agent recorded as actor in
 provenance"* (`docs/DECISIONS.md:365`). Envelope-grade attribution arrives with C7, not with v0.
 
