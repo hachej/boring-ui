@@ -187,6 +187,58 @@ describe("createAskUserServerPlugin", () => {
     }
   })
 
+  it("queues the invalidation for a question raised with no client attached, and delivers it on connect", async () => {
+    // The named gap in #873: a requestless ask_user fires from the CLI with no
+    // browser anywhere. The existing SSE test attaches its reader first, so it
+    // only proves live delivery. Here nothing is listening when the question is
+    // raised, and the invalidation must survive until a client shows up.
+    const { store, runtime } = await fixture()
+    const liveBridge = createInMemoryBridge()
+    const plugin = createAskUserServerPlugin({ store, runtime, bridge: liveBridge, sessionId: "fallback" })
+    const app = Fastify()
+    const controller = new AbortController()
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
+    try {
+      await app.register(plugin.routes!)
+      await app.register(uiRoutes, { bridge: liveBridge })
+      const address = await app.listen({ host: "127.0.0.1", port: 0 })
+
+      const tool = plugin.agentTools!.find((candidate) => candidate.name === "ask_user")!
+      const pendingResult = tool.execute({ title: "Raised while nobody watched", schema }, {
+        toolCallId: "call-headless",
+        sessionId: "session-headless",
+        abortSignal: new AbortController().signal,
+      })
+      const pending = await waitForPendingQuestion(store, "session-headless")
+      await vi.waitFor(async () => expect((await liveBridge.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toMatchObject({
+        hint: { questionId: pending.questionId, sessionId: "session-headless", status: "ready" },
+      }))
+
+      // Only now does a browser connect.
+      const response = await fetch(`${address}/api/v1/ui/commands/next`, { signal: controller.signal })
+      expect(response.status).toBe(200)
+      reader = response.body!.getReader()
+      const sse = createSseReader(reader)
+      await expect(sse.next("init")).resolves.toMatchObject({ event: "init" })
+      await expect(sse.next("command")).resolves.toMatchObject({
+        data: { kind: UI_STATE_INVALIDATION_COMMAND, params: { keys: [ASK_USER_UI_STATE_SLOTS.PENDING] } },
+      })
+
+      const state = await fetch(`${address}/api/v1/ui/state`).then((result) => result.json()) as Record<string, unknown>
+      expect(state[ASK_USER_UI_STATE_SLOTS.PENDING]).toMatchObject({
+        hint: { questionId: pending.questionId, sessionId: "session-headless", status: "ready" },
+      })
+      expect(JSON.stringify(state)).not.toContain("answerToken")
+
+      await runtime.cancelQuestion(pending.questionId, pending.sessionId)
+      await expect(pendingResult).resolves.toMatchObject({ details: { status: "cancelled" } })
+    } finally {
+      controller.abort()
+      await reader?.cancel().catch(() => undefined)
+      await app.close()
+    }
+  })
+
   it("pushes requestless ask_user lifecycle invalidations over the live UI SSE boundary", async () => {
     const { store, runtime } = await fixture()
     const liveBridge = createInMemoryBridge()

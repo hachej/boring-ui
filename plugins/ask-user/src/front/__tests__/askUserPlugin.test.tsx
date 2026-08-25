@@ -373,6 +373,50 @@ describe("askUserPlugin front shell", () => {
     expect(screen.queryByText("First stale question")).not.toBeInTheDocument()
   })
 
+  it("reruns once for an invalidation that lands mid-refresh, and not more", async () => {
+    // The in-flight pass may have read /ui/state before the change, so a signal
+    // arriving while it runs cannot be considered covered by it. Exactly one
+    // trailing rerun must follow — no more, or a burst becomes a refresh loop.
+    let current: AskUserQuestion | null = null
+    let releaseState: (() => void) | undefined
+    const gateFirstStateRead = { gated: true }
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) {
+        return Response.json({ ok: true, output: { pending: current } })
+      }
+      if (String(url).endsWith("/api/v1/ui/state")) {
+        if (gateFirstStateRead.gated) {
+          gateFirstStateRead.gated = false
+          await new Promise<void>((resolve) => { releaseState = resolve })
+        }
+        return Response.json(pendingStateFor(current))
+      }
+      return Response.json({})
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const Provider = getProvider()
+    const Panel = getPanel()
+
+    render(<Provider apiBaseUrl="" activeSessionId="gate-session" openSessionIds={["gate-session"]}><Panel params={{}} api={{ close: vi.fn() }} className="h-full" /></Provider>)
+    const stateFetchCount = () => fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/api/v1/ui/state")).length
+    await waitFor(() => expect(stateFetchCount()).toBe(1))
+    await waitFor(() => expect(releaseState).toBeTypeOf("function"))
+
+    // Three signals while the first pass is still blocked.
+    current = { ...question, questionId: "gate-q1", sessionId: "gate-session", title: "Arrived mid-refresh" }
+    act(() => {
+      for (let i = 0; i < 3; i++) {
+        events.emit(workspaceEvents.uiStateInvalidated, { cause: "remote", ts: Date.now(), keys: ["questions.pending"] })
+      }
+    })
+    expect(stateFetchCount()).toBe(1)
+
+    await act(async () => { releaseState?.(); await new Promise((resolve) => setTimeout(resolve, 20)) })
+
+    expect(await screen.findByText("Arrived mid-refresh")).toBeInTheDocument()
+    expect(stateFetchCount()).toBe(2)
+  })
+
   it("surfaces a requestless question when the server invalidates pending UI state", async () => {
     const pushedQuestion = { ...question, questionId: "sse-q1", sessionId: "sse-session", title: "Question delivered over UI SSE" }
     let current: AskUserQuestion | null = null

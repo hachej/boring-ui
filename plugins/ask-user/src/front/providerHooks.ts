@@ -108,7 +108,47 @@ export function useAskUserPendingRefresh(
   const { activeSessionId, apiBaseUrl, authHeaders } = options
   useEffect(() => {
     let stopped = false
-    async function refreshPending() {
+    let inFlight: Promise<void> | null = null
+    let queued = false
+    let startTimer: ReturnType<typeof setTimeout> | null = null
+
+    /**
+     * Every trigger below funnels through here instead of calling the refresh
+     * directly. One refresh runs at a time and any request that arrives while
+     * one is in flight collapses into a single trailing rerun, so the read of
+     * `/ui/state` and the per-session hydration that follows it can never
+     * interleave with a newer pass and commit stale pending state. It also
+     * means redundant triggers (the same command seen on two channels, a burst
+     * of agent-stream parts) cost one extra pass at most rather than one pass
+     * each.
+     */
+    function requestRefresh(): void {
+      if (stopped) return
+      // Already running: remember that something changed after this pass began
+      // and rerun once when it lands. The in-flight pass may have read
+      // `/ui/state` before the change, so it cannot be trusted to cover it.
+      if (inFlight) {
+        queued = true
+        return
+      }
+      // Not running: start on the next tick rather than synchronously, so a
+      // burst arriving in one tick (the same command seen on two channels, or
+      // a repeated invalidation) collapses into a single pass instead of one
+      // pass plus a trailing rerun.
+      if (startTimer) return
+      startTimer = setTimeout(() => {
+        startTimer = null
+        if (stopped) return
+        inFlight = runRefresh().finally(() => {
+          inFlight = null
+          if (stopped || !queued) return
+          queued = false
+          requestRefresh()
+        })
+      }, 0)
+    }
+
+    async function runRefresh() {
       let hints: PendingQuestionHint[] = []
       try {
         const response = await fetch(`${apiBaseUrl}/api/v1/ui/state`, { headers: authHeaders })
@@ -136,19 +176,14 @@ export function useAskUserPendingRefresh(
         }
       }))
     }
-    const onVisibility = () => { if (document.visibilityState === "visible") void refreshPending() }
-    const onUiCommand = () => { void refreshPending() }
-    let invalidationTimer: ReturnType<typeof setTimeout> | null = null
+    const onRefreshRequested = () => requestRefresh()
+    const onVisibility = () => { if (document.visibilityState === "visible") requestRefresh() }
     const onUiStateInvalidated = ({ keys }: { keys: string[] }) => {
-      if (!keys.includes(ASK_USER_UI_STATE_SLOTS.PENDING) || invalidationTimer) return
-      invalidationTimer = setTimeout(() => {
-        invalidationTimer = null
-        void refreshPending()
-      }, 0)
+      if (keys.includes(ASK_USER_UI_STATE_SLOTS.PENDING)) requestRefresh()
     }
     const onSurfaceOpenSkipped = (event: Event) => {
       const detail = (event as CustomEvent<{ kind?: unknown }>).detail
-      if (detail?.kind === ASK_USER_SURFACE_KIND) void refreshPending()
+      if (detail?.kind === ASK_USER_SURFACE_KIND) requestRefresh()
     }
     // Questions are created mid-run by the ask_user tool, with no focus or
     // UI-command transition to piggyback on. Throttle-refresh while agent
@@ -159,27 +194,28 @@ export function useAskUserPendingRefresh(
       if (agentDataTimer) return
       agentDataTimer = setTimeout(() => {
         agentDataTimer = null
-        void refreshPending()
+        requestRefresh()
       }, 1200)
     }
     const offAgentData = events.on(workspaceEvents.agentData, onAgentData)
-    const offUiCommand = events.on(workspaceEvents.uiCommand, onUiCommand)
+    // `postUiCommand` emits on the event bus AND dispatches UI_COMMAND_EVENT for
+    // the same command, so subscribing to both channels ran the refresh twice.
+    // The bus sees every command, so it is the single subscription.
+    const offUiCommand = events.on(workspaceEvents.uiCommand, onRefreshRequested)
     const offUiStateInvalidated = events.on(workspaceEvents.uiStateInvalidated, onUiStateInvalidated)
-    void refreshPending()
-    window.addEventListener("focus", refreshPending)
+    requestRefresh()
+    window.addEventListener("focus", onRefreshRequested)
     document.addEventListener("visibilitychange", onVisibility)
-    window.addEventListener(UI_COMMAND_EVENT, onUiCommand)
     window.addEventListener(WORKSPACE_SURFACE_OPEN_SKIPPED_EVENT, onSurfaceOpenSkipped)
     return () => {
       stopped = true
       if (agentDataTimer) clearTimeout(agentDataTimer)
-      if (invalidationTimer) clearTimeout(invalidationTimer)
+      if (startTimer) clearTimeout(startTimer)
       offAgentData()
       offUiCommand()
       offUiStateInvalidated()
-      window.removeEventListener("focus", refreshPending)
+      window.removeEventListener("focus", onRefreshRequested)
       document.removeEventListener("visibilitychange", onVisibility)
-      window.removeEventListener(UI_COMMAND_EVENT, onUiCommand)
       window.removeEventListener(WORKSPACE_SURFACE_OPEN_SKIPPED_EVENT, onSurfaceOpenSkipped)
     }
   }, [activeSessionId, apiBaseUrl, authHeaders, runtime])

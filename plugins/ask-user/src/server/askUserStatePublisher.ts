@@ -24,7 +24,10 @@ export class AskUserStatePublisher {
   private unsubscribe?: () => void
   private publishChain = Promise.resolve()
   private readonly hintsBySession = new Map<string, AskUserPendingHint>()
-  private notifiedPendingSnapshot: string | undefined
+  /** Snapshot of the last pending state whose invalidation the bridge accepted.
+   * Recorded only after a successful notify, which is what makes an unchanged
+   * republication retry a delivery that previously failed. */
+  private lastAcceptedInvalidationSnapshot: string | undefined
 
   constructor(
     private readonly store: AskUserStore,
@@ -34,9 +37,9 @@ export class AskUserStatePublisher {
   start(): () => void {
     if (this.unsubscribe) return this.unsubscribe
     this.unsubscribe = this.store.subscribe((change) => {
-      void this.enqueuePublishSession(change.sessionId)
+      this.enqueuePublishSession(change.sessionId)
     })
-    void this.enqueueInitializeFromStore().catch(() => undefined)
+    this.enqueueInitializeFromStore()
     return () => this.stop()
   }
 
@@ -45,7 +48,7 @@ export class AskUserStatePublisher {
     this.unsubscribe = undefined
     this.publishChain = Promise.resolve()
     this.hintsBySession.clear()
-    this.notifiedPendingSnapshot = undefined
+    this.lastAcceptedInvalidationSnapshot = undefined
   }
 
   async publishSession(sessionId: string): Promise<void> {
@@ -65,20 +68,23 @@ export class AskUserStatePublisher {
     }
   }
 
-  private enqueuePublishSession(sessionId: string): Promise<void> {
-    return this.enqueuePublish(() => this.publishSession(sessionId))
+  private enqueuePublishSession(sessionId: string): void {
+    this.enqueuePublish(() => this.publishSession(sessionId))
   }
 
-  private enqueueInitializeFromStore(): Promise<void> {
-    return this.enqueuePublish(() => this.initializeFromStore())
+  private enqueueInitializeFromStore(): void {
+    this.enqueuePublish(() => this.initializeFromStore())
   }
 
-  private enqueuePublish(run: () => Promise<void>): Promise<void> {
-    const next = this.publishChain
+  /** Serializes publications and absorbs their failures here, so no caller has
+   * to remember to attach a rejection handler. A failed notify is not lost: it
+   * leaves `lastAcceptedInvalidationSnapshot` unset, and the next publication
+   * retries it. */
+  private enqueuePublish(run: () => Promise<void>): void {
+    this.publishChain = this.publishChain
       .catch(() => undefined)
       .then(run)
-    this.publishChain = next.catch(() => undefined)
-    return next
+      .catch(() => undefined)
   }
 
   private async initializeFromStore(): Promise<void> {
@@ -101,9 +107,9 @@ export class AskUserStatePublisher {
         [ASK_USER_UI_STATE_SLOTS.PENDING]: nextPending,
       })
     }
-    if (!stateChanged && this.notifiedPendingSnapshot === nextSnapshot) return
+    if (!stateChanged && this.lastAcceptedInvalidationSnapshot === nextSnapshot) return
     await this.notifyPendingChanged()
-    this.notifiedPendingSnapshot = nextSnapshot
+    this.lastAcceptedInvalidationSnapshot = nextSnapshot
   }
 
   private async notifyPendingChanged(): Promise<void> {
