@@ -54,6 +54,30 @@ This proposal is derived from, and does not supersede, the ratified documents:
    read-only View composed by the owner's personal host across workspaces it is
    authorized to see; agents still act inside Seats. No agent gains cross-workspace
    authority from this plan.
+4. **Owner ruling (2026-08-23): human gate 2 is retained.** No Land Rush /
+   autonomous-merge evolution; external essays arguing agentic throughput makes
+   per-diff human review obsolete are context only, not license. Owner validation
+   continues via the present-pr artifact. Trust-ladder changes require a separate
+   explicit policy.yaml ruling.
+
+## Incident analysis: factory week 2026-08-16 → 08-23
+
+Evidence gathered from merged/open PRs, beads history, seat transcripts, and
+filesystem debris. Every failure below was detected by the owner, not by the
+system — which is the core deficit this plan fixes.
+
+| # | Problem | Evidence | Root cause |
+| --- | --- | --- | --- |
+| P1 | Factory not self-driving; owner still drives interactively | 8 beads closed all week, all from two owner-driven epics; 30 PRs merged but flow came from owner-steered sessions | #1288 dispatch loop and #896 scheduler unlanded — seats without heartbeat |
+| P2 | Merge-gate tooling broke under batch load | gh-1337: during a 24-PR batch review the Inbox showed 3 of 6 pending questions with placeholder titles | Inbox projection does not carry question titles; refresh family bug #873/#1325 |
+| P3 | Concurrent multi-agent state corruption | Two SQLite WAL corruption events 8 minutes apart on Aug 22 (`uiux-responsive-polish`, `boring-mail`); `.beads/.br_recovery` backups Jul 13 + Aug 14 | Multiple agents writing one embedded DB without serialization; no integrity watchdog |
+| P4 | Flakiness rising with parallelism | #1373 + #1379 flaky-test PRs filed within 48h; main CI broke twice (#1354 aborted snapshots, #1370 bundling) | Race conditions surface under N concurrent agents; no automatic flaky-vs-broken triage |
+| P5 | Silent session death | Long-running extraction session died mid-work; manual transcript-forensic resurrection required | Recovery-at-checkpoint exists (#1331) but nobody notices a death |
+| P6 | Hygiene debt compounds unwatched | ~75 worktrees (many dead: release clones, baselines); stray binaries on the anchor checkout | No cleanup automation |
+
+Inference: the Founder agent needs **senses before ranking** — a manager that
+cannot detect stuck/corrupt/dead work will manage noise. Hence F0 below now
+includes minimal detection roles.
 
 ## The delta: D1–D6
 
@@ -70,6 +94,7 @@ Six components are net-new.
 | D4 | Shipped-evidence ledger (Outcome/Evidence records) | K2 Outcome/Evidence stores | small |
 | D5 | Sales pipeline store + prospect-research specialist | CRM-as-View; Composio connectors | greenfield |
 | D6 | Customer-notes ingestion (boring-mail Slice 1 + LinkedIn #1346) | existing vertical plans | medium |
+| — | *(absorbed into F0b)* Beadle-lite watchdog + roomba crons | Yegge-role inspiration: Beadle / Gargoyle / roombas | small |
 
 Prerequisite landings this plan depends on (all already open as PRs/worktrees):
 
@@ -82,9 +107,33 @@ Prerequisite landings this plan depends on (all already open as PRs/worktrees):
 
 ## Slices
 
-### Slice F0: Attention spine landing (no new code)
+### Slice F0: Attention spine + senses
 
-Merge/ratify the prerequisite set above. Exit gate: Founder agent's I/O paths exist.
+Two parts:
+
+**F0a — land the prerequisite set** (no new code): merge/ratify #1343, #1288,
+file-and-land #896 as a PR, land the objectives plugin, ratify #1356.
+Exit gate: Founder agent's I/O paths exist.
+
+**F0b — Beadle-lite watchdog + roomba crons** (small, mostly cron + one persona):
+
+- *Beadle-lite* (scheduled check, posts ONE digest intention):
+  - PRs open > 48h without reviewDecision;
+  - beads claimed/in_progress with no commit touch > 24h;
+  - sessions whose runtime process died while bead claimed (lease vs liveness);
+  - main CI red > 30 min, with first-pass flaky-vs-broken classification
+    (rerun-on-green-isolation job).
+- *Roomba crons* (non-model, deterministic):
+  - nightly `PRAGMA integrity_check` over all workspace SQLite stores + beads DB,
+    alert via Inbox intention on failure (addresses P3 detection gap);
+  - worktree janitor: list stale worktrees (no commits > 14d, no open epic),
+    propose archive list — deletion still requires explicit owner approval
+    (hard rule 2);
+  - anchor-checkout cleanliness report (untracked debris).
+
+Exit gate: every incident class from the table above is detected by the system
+and surfaces as an Inbox intention within one cadence period. Owner detection
+of P1–P6 becomes redundant.
 
 ### Slice F1: Aggregator + evidence ledger (D1+D4)
 
