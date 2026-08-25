@@ -9,6 +9,8 @@ import { createTasksPlugin } from "@hachej/boring-tasks/front"
 import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
 import { LoadingStatesShowcase, type LoadingStateMode } from "./LoadingStatesShowcase"
 import { isConsoleSpikeRoute } from "./consoleSpikeRoute"
+import { isJobThreadRoute } from "./jobThreadRoute"
+import { JobThreadView } from "./JobThreadView"
 
 function isShowcaseRoute(): boolean {
   if (typeof window === "undefined") return false
@@ -98,6 +100,46 @@ const consoleSpikeAgents = [
 ]
 
 /**
+ * JOB THREAD SPIKE (`?jobThread=1`).
+ *
+ * The Job Thread reuses the console pane wholesale — the point of the spike is
+ * to see the merged timeline sitting in the SAME shell, not a second shell. So
+ * the route is the console route plus: two K7 seat Agents on the roster, one
+ * extra Recent row for the job, and the mocked thread as the centre panel.
+ */
+const JOB_THREAD_SESSION_ID = "job-grow-my-audience"
+const JOB_THREAD_WORKER = "creator-growth-worker"
+const JOB_THREAD_REVIEWER = "creator-growth-reviewer"
+
+const jobThreadAgents = [
+  ...consoleSpikeAgents,
+  { agentTypeId: JOB_THREAD_WORKER, label: "Growth Worker", description: "Creator-growth Agent" },
+  { agentTypeId: JOB_THREAD_REVIEWER, label: "Growth Reviewer", description: "Creator-growth Reviewer" },
+]
+
+/**
+ * HONEST LIMIT: the row shows ONE chip, not two.
+ *
+ * `ConsoleSpikeRowSlots.leadingBadge` is filled by the pane itself from
+ * `session.agentTypeId` (AppLeftPaneConsoleSpike `viewRowSlots`); the host
+ * cannot pass slots in, and `AppLeftPaneSession` has no participant list. A
+ * two-chip job row therefore needs the row model to gain a `kind`/participants
+ * discriminator — exactly the change §4 of the plan says is NOT yet built.
+ * Faking it here would have meant editing the shipped pane for a mock, so the
+ * row wears the worker's chip and the second seat is visible in the thread
+ * header instead.
+ */
+const jobThreadRow = {
+  id: JOB_THREAD_SESSION_ID,
+  agentTypeId: JOB_THREAD_WORKER,
+  projectId: "launch",
+  title: "Grow my audience",
+  updatedAt: Date.now() - 18 * 60_000,
+  nativeSessionId: JOB_THREAD_SESSION_ID,
+  hasAssistantReply: true,
+}
+
+/**
  * Every fixture is a DURABLE, replied-to chat: `nativeSessionId === id` plus
  * `hasAssistantReply` is the exact rule the pane gates Rename on, and a fixture
  * set that misses it makes Rename look unimplemented rather than ineligible.
@@ -143,6 +185,26 @@ function ConsoleSpikeAttentionSeed() {
   const { addBlocker } = useWorkspaceAttention()
   useEffect(() => {
     for (const blocker of consoleSpikeDemoBlockers) addBlocker({ ...blocker })
+  }, [addBlocker])
+  return null
+}
+
+/**
+ * FIXTURE attention for the job row, mirroring the inline gate in the thread:
+ * the same "Needs you" must be true in the pane and the Inbox, or the mock
+ * would show a gate that nothing outside the thread knows about.
+ */
+function JobThreadAttentionSeed() {
+  const { addBlocker } = useWorkspaceAttention()
+  useEffect(() => {
+    addBlocker({
+      id: "job-thread-spike:approve-outreach",
+      reason: "ask-user.approval",
+      sessionId: JOB_THREAD_SESSION_ID,
+      agentTypeId: JOB_THREAD_WORKER,
+      inbox: { kind: "approval", sourceLabel: "Growth Worker" },
+      sessionBadge: { kind: "approval", label: "approve", tone: "warning", priority: 20 },
+    })
   }, [addBlocker])
   return null
 }
@@ -242,7 +304,10 @@ function WorkspaceFullPageShell({ agentTypeId }: { agentTypeId: string }) {
 export function WorkspaceShell() {
   resetPlaygroundStorageIfRequested()
   const showcase = useMemo(isShowcaseRoute, [])
-  const consoleSpike = useMemo(isConsoleSpikeRoute, [])
+  const jobThread = useMemo(isJobThreadRoute, [])
+  // The Job Thread spike renders inside the console shell, so every
+  // `consoleSpike` branch below must also fire for it.
+  const consoleSpike = useMemo(() => isConsoleSpikeRoute() || isJobThreadRoute(), [])
   const loadingShowcase = useMemo(loadingStateMode, [])
   const fullPage = useMemo(isFullPageRoute, [])
   const multiFilesystem = useMemo(isMultiFilesystemPlaygroundRoute, [])
@@ -253,9 +318,15 @@ export function WorkspaceShell() {
   const [metaError, setMetaError] = useState<string | null>(null)
   const [showcaseActiveSessionId, setShowcaseActiveSessionId] = useState(SHOWCASE_SESSION_ID)
   const [showcaseSessions, setShowcaseSessions] = useState(createInitialShowcaseSessions)
-  const [consoleSpikeAgentTypeId, setConsoleSpikeAgentTypeId] = useState("builder")
-  const [consoleSpikeActiveSession, setConsoleSpikeActiveSession] = useState<{ id: string; agentTypeId: string }>({ id: "launch-plan", agentTypeId: "builder" })
-  const [consoleSpikeSessions, setConsoleSpikeSessions] = useState(initialConsoleSpikeSessions)
+  const [consoleSpikeAgentTypeId, setConsoleSpikeAgentTypeId] = useState(jobThread ? JOB_THREAD_WORKER : "builder")
+  const [consoleSpikeActiveSession, setConsoleSpikeActiveSession] = useState<{ id: string; agentTypeId: string }>(
+    jobThread
+      ? { id: JOB_THREAD_SESSION_ID, agentTypeId: JOB_THREAD_WORKER }
+      : { id: "launch-plan", agentTypeId: "builder" },
+  )
+  const [consoleSpikeSessions, setConsoleSpikeSessions] = useState<ConsoleSpikeSession[]>(
+    jobThread ? [jobThreadRow, ...initialConsoleSpikeSessions] : initialConsoleSpikeSessions,
+  )
   const [consoleSpikeProjectNames, setConsoleSpikeProjectNames] = useState<Record<string, string>>({ launch: "Launch", console: "Agent Console" })
   const sessions = showcase ? showcaseSessions : undefined
   const liveShowcaseSessionIds = useRef(new Set<string>())
@@ -305,12 +376,12 @@ export function WorkspaceShell() {
     setConsoleSpikeProjectNames((current) => ({ ...current, [projectId]: name }))
   }, [])
   const useConsoleSpikeAgentSelection = useCallback(() => ({
-    agents: consoleSpikeAgents,
+    agents: jobThread ? jobThreadAgents : consoleSpikeAgents,
     selectedAgentTypeId: consoleSpikeAgentTypeId,
     loading: false,
     error: undefined,
     selectAgentTypeId: setConsoleSpikeAgentTypeId,
-  }), [consoleSpikeAgentTypeId])
+  }), [consoleSpikeAgentTypeId, jobThread])
   const createConsoleSpikeSession = useCallback((
     // The pane hands down the Agent it asked for; falling back to the current
     // one only when it asked for nothing. Ignoring it made the host's own
@@ -348,8 +419,21 @@ export function WorkspaceShell() {
     )))
   }, [])
   const consoleSpikeChatPanel = useCallback(
-    (props: WorkspaceChatPanelProps) => <ConsoleSpikeChatPanel {...props} sessions={consoleSpikeSessions} />,
-    [consoleSpikeSessions],
+    (props: WorkspaceChatPanelProps) => {
+      // Only the job row opens the Job Thread; the other rows keep the plain
+      // console stand-in, so the contrast between "a chat" and "a job" is what
+      // the owner actually sees when clicking around.
+      if (jobThread && props.sessionId === JOB_THREAD_SESSION_ID) {
+        return (
+          <>
+            <JobThreadAttentionSeed />
+            <JobThreadView />
+          </>
+        )
+      }
+      return <ConsoleSpikeChatPanel {...props} sessions={consoleSpikeSessions} />
+    },
+    [consoleSpikeSessions, jobThread],
   )
 
   useEffect(() => {

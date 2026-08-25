@@ -1,3 +1,25 @@
+/* This file is the playground's Tailwind ROOT, not just a reset.
+ *
+ * `packages/workspace/src/globals.css` opens with `@import "tailwindcss"
+ * source(none)` and then declares exactly one source — its own `./**\/*.{ts,tsx}`.
+ * That is correct for the shipped package, but it means a class used ONLY in
+ * `apps/workspace-playground/src/front` is never generated: it renders as an
+ * unknown class and silently does nothing. (Found the hard way — the Job Thread
+ * header's `sm:w-56` was missing, so its two columns overlapped.)
+ *
+ * So the playground re-imports globals HERE and adds its own sources beside
+ * them. It has to be this file and not `main.tsx`, because
+ * `@hachej/boring-agent/front/styles.css` is a SECOND Tailwind root that also
+ * emits `w-full` and loads after workspace globals — whichever root comes last
+ * in document order wins a specificity tie. `app.css` is documented as the last
+ * import, so the playground's utilities are only reliably last from here.
+ *
+ * Cost, stated plainly: the workspace globals are emitted twice in the
+ * playground bundle. That is a dev-surface tradeoff, not a shipped one — the
+ * real fix is for `globals.css` to accept consumer sources. */
+@import "@hachej/boring-workspace/globals.css";
+@source "./**/*.{ts,tsx}";
+
 html,
 body,
 #root {
