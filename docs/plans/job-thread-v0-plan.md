@@ -30,6 +30,171 @@ Ordering and dependencies live only in §7; §§1–6 describe shape.
 > compliance requirement**, and it is owner question Q2. v0 proposes the relay because it needs no
 > agent-facing capability and is deletable; it is not the only compliant shape.
 
+## What this plan builds
+
+Twelve artifacts, nothing else. Product words first, code noun in `code`. "Built by" points at §7,
+which remains the only place ordering lives.
+
+| Artifact | What it is | Built by | Lives in |
+| --- | --- | --- | --- |
+| The saved job — `JobProjectionV0` | Title, its Objective, its staffed participants. A description of how to project several Sessions as one job. **Not a Thread.** | S1 | `src/shared/types.ts` |
+| One staffed participant — `JobParticipantV0` | Role (worker/reviewer), which agent, which session, and whether it is still active. | S1 | `src/shared/types.ts` |
+| One turn hop — `JobRelayEdgeV0` | One attempted cross-post: who sent, to whom, under which idempotency key, carrying context up to where. Immutable. | S1 | `src/shared/types.ts` |
+| What happened to a hop — `JobRelayTransitionV0` | Appended state history: pending → accepted → settled / failed / capped / unknown, with a structured reason. | S1 | `src/shared/types.ts` |
+| The cap ledger — `JobChainStateV0` | Per-human-turn counters (hops, invocations) so a restart cannot reset them and a new message cannot inherit them. | S1 | `src/shared/types.ts` |
+| How far we have read — `JobCursorV0` | Per source session, the last event the relay has interpreted. Survives across turns. | S1 | `src/shared/types.ts` |
+| The reservation write — `openEdge()` | The single locked write that reserves a turn *before* anything is sent: allocates the ordinal, mints the request id, reserves caps. The crash-safety keystone. | S1 | `src/server/edgeLog.ts` |
+| Sending one turn — relay turn function | Hands one message to one participant through the host's existing per-invocation seam. Holds no capability afterwards. | S2 | `src/server/relayTurn.ts` |
+| "Pass this to the reviewer" — handoff tool | The typed tool a participant calls to hand off. Typed target, explicit payload — never parsed from prose. | S2 | `src/server/handoffTool.ts` |
+| Deciding who goes next — relay chain | Advances on settled turns, enforces caps, applies every failure rule, bounds injected context. | S3 | `src/server/relayChain.ts` |
+| Picking up after a crash — recovery routine | The 4-step reconciliation that consults durable state before ever declaring an outcome unknown. | S3 | `src/server/recovery.ts` |
+| The one view the owner reads — merged timeline | Interleaved posts with participant attribution, ask-user gates inline, drill-down to the private session. | S4 | `src/front/` |
+| Proof it works — K7 demo fixture | Scripted-adapter acceptance asserting the whole path deterministically. | S5 | `src/server/__tests__/k7Demo.test.ts` |
+
+All paths are under `plugins/job-threads/`.
+
+### The data model
+
+```mermaid
+erDiagram
+    OBJECTIVE ||--o| JOB : "measures X to Y"
+    JOB ||--|{ PARTICIPANT : "staffs"
+    PARTICIPANT }o--|| SESSION : "addresses one"
+    JOB ||--o{ CHAIN : "one per human turn"
+    CHAIN ||--|{ EDGE : "scopes caps for"
+    EDGE ||--|{ TRANSITION : "state history"
+    JOB ||--o{ CURSOR : "one per source session"
+
+    OBJECTIVE {
+        string id PK "obj-uuid, owned by the objectives plugin"
+        string metric
+        number baseline
+        number target
+        number current
+    }
+    JOB {
+        string id PK "job-uuid"
+        string title
+        string objectiveId FK "one-way ref, optional"
+        number revision "CAS"
+    }
+    PARTICIPANT {
+        string participantId "DISPLAY HANDLE, not a seatId"
+        string role "worker or reviewer"
+        string agentTypeId
+        string bindingState "active or removed"
+    }
+    SESSION {
+        string workspaceScopeId "canonical identity, owned elsewhere"
+        string agentTypeId
+        string sessionId
+    }
+    CHAIN {
+        string chainId PK "the root human turn"
+        number hops
+        number invocations
+        number ordinalHigh
+    }
+    EDGE {
+        string edgeId PK
+        number turnOrdinal "store-owned integer, total order"
+        string requestId "relay-minted idempotency key"
+        string sourceRef "absent when human-originated"
+        string destinationRef
+        number deliveredThroughOrdinal "context watermark"
+    }
+    TRANSITION {
+        string edgeId FK
+        number markerOrdinal "append index within the edge"
+        string phase
+        string reason "structured terminal cause"
+        number acceptedCursor "from AgentSendReceipt.cursor"
+        boolean duplicate "from AgentSendReceipt.duplicate"
+    }
+    CURSOR {
+        string refKey PK "workspace + agent + session"
+        number consumedThroughSeq
+    }
+```
+
+### One handoff turn, end to end
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Owner
+    participant Relay as Relay — a service, not an agent
+    participant Store as Job store — CAS
+    participant A as Participant A — worker
+    participant B as Participant B — reviewer
+    participant View as Merged timeline
+
+    Owner->>Relay: post a message to the JOB
+    Relay->>Store: openEdge — new chainId, turnOrdinal 1,<br/>mint requestId, reserve caps, phase pending
+    Store-->>Relay: edge1
+    Relay->>A: dispatch keyed by edge1.requestId
+    A-->>Relay: accepted — cursor, duplicate?
+    Relay->>Store: append transition accepted
+    A-->>Relay: settles — agent-end, willRetry false
+    Relay->>Store: append transition settled, advance CURSOR
+    Relay->>View: final post, attributed to A
+    A->>Relay: handoff to reviewer — typed tool, not prose
+    Relay->>Store: openEdge — same chainId, turnOrdinal 2, hop 1
+    Store-->>Relay: edge2
+    Relay->>B: dispatch keyed by edge2.requestId,<br/>context after B's deliveredThroughOrdinal
+    B-->>Relay: accepted
+    Relay->>Store: append transition accepted
+    B-->>Relay: settles
+    Relay->>Store: append transition settled
+    Relay->>View: final post, attributed to B
+    View-->>Owner: one timeline, ordered by turnOrdinal, seq, markerOrdinal
+```
+
+Only the two **final posts** cross between participants. Everything else — reasoning, tool calls,
+intermediate messages — stays in the private session and is reachable only by drill-down.
+
+### Picking up after a crash
+
+```mermaid
+flowchart TD
+    Start["Restart: for each edge with no terminal phase"] --> St1
+    St1["1 — Re-read durable state by requestId:<br/>request ledger, else session snapshot"] --> Found{"Did the send land?"}
+    Found -- yes --> St2["2 — Append accepted"]
+    Found -- no --> Redo["Re-dispatch the SAME requestId<br/>a landed send returns duplicate true"]
+    Redo --> St2
+    St2 --> St3["3 — Advance the consumed-source cursor and<br/>process any handoff the destination already emitted"]
+    St3 --> Res{"Resolvable?"}
+    Res -- yes --> Go["Chain continues or settles normally"]
+    Res -- no --> St4["4 — Append outcome-unknown<br/>reason: unreconcilable"]
+    St4 --> Mark["Post a system marker on the timeline"]
+```
+
+Step 3 is the one round 2 was missing: a destination that settled and handed off *before* the crash
+is processed, not skipped.
+
+### The life of one turn hop
+
+```mermaid
+stateDiagram-v2
+    [*] --> pending: openEdge, under the CAS lock
+    pending --> accepted: dispatch acknowledged
+    pending --> failed: participant_unavailable
+    pending --> capped: hop or invocation cap
+    pending --> outcome_unknown: crash, unresolvable at recovery
+    accepted --> settled: agent_end, willRetry false
+    accepted --> suspended: ask_user gate opens
+    suspended --> settled: owner answers
+    accepted --> failed: seat_error
+    settled --> [*]
+    failed --> [*]
+    capped --> [*]
+    outcome_unknown --> [*]
+```
+
+The edge itself never changes. Each arrow is an **appended transition record**; the phase shown is
+the latest one. System markers on the timeline are *derived* from these transitions — there is no
+second event system.
+
 ## 1. The noun — decide this first
 
 ### Today
@@ -152,11 +317,43 @@ target is typed, the payload is explicit, and the transition is a `tool-call` ev
 exactly. This is a workspace plugin tool the relay owns; it is *not* an agent-to-agent call (the tool
 returns immediately, the relay decides what happens next).
 
-**Post-vs-Run boundary — only posts cross seats.** A seat's private reasoning, tool calls, and
-intermediate messages never enter another seat's context. Exactly two things cross: (a) the **final
-assistant message** of a settled turn (`message-end.final`, gated on an `agent-end` with
-`willRetry !== true`), and (b) **relay-authored system handoff markers**. Everything else stays in
-the originating session and is reachable only by drill-down.
+**Two boundaries — and only one of them is restrictive.** This is the single most misread part of
+the design, so state it plainly: *participants share the work, not each other's minds and keys.*
+
+- **The artifact boundary is OPEN.** Participants on a job **share one workspace and one canonical
+  filesystem**. Ratified, not invented: agents in a workspace "intentionally share
+  filesystem/process/runtime authority while retaining distinct route, prompt, tool, session,
+  readiness, receipt, log, and provenance identity" (D25, `docs/DECISIONS.md:410`), and same-workspace
+  agents share workspace data through the canonical Environment API, with narrower grants getting
+  "separately enforced execution views **without copying the authoritative filesystem**" (D28,
+  `:463`) — one API for tools, bash, UI and CLI precisely to prevent "filesystem split brain"
+  (`:462`). So the worker's files *are* the reviewer's files. The reviewer reads the branch the
+  worker wrote; nothing is copied, synced, or handed over as an attachment. Per-participant reach is
+  governed by mounts and tool authority, not by partition. This is the half of the shared-VM feel
+  people actually like, delivered natively and governed.
+- **The conversation boundary is CLOSED.** Posts-only governs one thing only: what enters a
+  participant's *prompt* from another participant's transcript. A seat's private reasoning, tool
+  calls, intermediate messages, and any credentials in them never cross. Exactly two things do:
+  (a) the **final assistant message** of a settled turn (`message-end.final`, gated on an `agent-end`
+  with `willRetry !== true`), and (b) **relay-authored system handoff markers**. Everything else stays
+  in the originating session, reachable only by drill-down.
+
+The pairing is the point. Sharing context windows is what makes multi-agent setups leak secrets and
+drown in each other's tool spew; sharing a filesystem is what makes them able to collaborate at all.
+v0 takes the second and refuses the first.
+
+```mermaid
+flowchart TB
+    subgraph conv["CONVERSATION — closed: only settled posts cross"]
+        direction LR
+        W["Worker<br/><i>private reasoning, tool calls, keys</i>"]
+        R["Reviewer<br/><i>private reasoning, tool calls, keys</i>"]
+        W -- "final post + handoff marker<br/>via the relay" --> R
+        R -- "final post + handoff marker" --> W
+    end
+    conv --> FS
+    FS["ARTIFACT — open: ONE canonical filesystem<br/>the worker's files ARE the reviewer's files<br/>governed by mounts + per-participant tool authority"]
+```
 
 **Turn policy — addressing-gated, with prior art.** [Buzz](https://block.xyz/) (Block, July 2026) is
 an @-mention-gated agent group chat and the closest shipped prior art. Adopted: a participant acts
@@ -199,11 +396,13 @@ approvals, interventions (envelope projection — no second event system)"**
 
 ### Delta
 
-Two append-only logs beside the projection record in the same plugin store, written under the same
-`revision` CAS. They are an **envelope projection**, not a competing event system: every field is
-either relay-authored control state or copied from an existing receipt. **Nothing is ever mutated** —
-round 1 declared receipts append-only while requiring `chainState` to change in place. Edges now have
-identity and state moves by appended transition records.
+Beside the projection record in the same plugin store, under the same `revision` CAS: **two
+append-only logs** (edges, transitions) plus **two CAS-updated counters** (chain state, cursors). The
+split matters — history is immutable, bookkeeping is not. Together they are an **envelope
+projection**, not a competing event system: every field is either relay-authored control state or
+copied from an existing receipt. **No edge or transition is ever mutated** — round 1 declared receipts
+append-only while requiring `chainState` to change in place. Edges now have identity, and their state
+moves only by appended transition records.
 
 ```ts
 /** One attempted cross-post. Immutable once written. */
@@ -234,13 +433,18 @@ interface JobRelayTransitionV0 {
 
 /** Per-chain counters, reserved pre-dispatch so a crash cannot undercount. */
 interface JobChainStateV0 { chainId: string; hops: number; invocations: number; ordinalHigh: number }
+
+/** How far the relay has interpreted one source session. Per job, not per chain. */
+interface JobCursorV0 { jobId: string; refKey: string; consumedThroughSeq: number }
 ```
 
 - **Ordering.** `turnOrdinal` is a store-owned monotonic **integer** allocated inside the same locked
   CAS mutation that writes the pending edge — not an unconstrained string, so `1, 2, 10` cannot sort
   as `1, 10, 2`. Within a destination, posts order by event `seq`; relay-authored system markers get a
-  durable `markerOrdinal` (an integer minted alongside the edge) as a deterministic tie-breaker, so
-  markers never float. Merged rendering sorts `(turnOrdinal, seq, markerOrdinal)`. No wallclock.
+  durable `markerOrdinal` — **the transition's append index within its edge** (the post itself is 0) —
+  as a deterministic tie-breaker, so markers never float. System markers are *derived from
+  transitions*, not stored as a separate kind of event, which is what keeps "no second event system"
+  true. Merged rendering sorts `(turnOrdinal, seq, markerOrdinal)`. No wallclock.
 - **Snapshot fallback, stated honestly.** `PiChatSnapshot` carries one session-level `seq` watermark
   and `messages: BoringChatMessage[]` with **no per-message `seq`** (`shared/chat/piChatSnapshot.ts:16-23`).
   So a turn rendered from a snapshot cannot reconstruct the original per-event tuple. Degraded rule:
@@ -248,8 +452,8 @@ interface JobChainStateV0 { chainId: string; hops: number; invocations: number; 
   watermark, and the timeline marks the block as snapshot-derived. Cross-seat order is unaffected,
   because that comes from `turnOrdinal`, which is relay-owned and durable.
 - **Split cursors.** Round 1's single `processedCursors` high-water map conflated two different
-  things and created a skip hole. v0 keeps both: a **consumed-source cursor** per source ref (how far
-  the relay has interpreted that seat's events) and a **delivered-context watermark** per destination
+  things and created a skip hole. v0 keeps both in separate records: a **consumed-source cursor** per
+  source ref, held in `JobCursorV0` (how far the relay has interpreted that seat's events) and a **delivered-context watermark** per destination
   (`deliveredThroughOrdinal` — what a given send actually carried). A destination that completed and
   emitted a handoff before a crash is therefore still discoverable after restart.
 - **Recovery order** (on boot, per job, for each edge lacking a terminal phase):
@@ -260,6 +464,9 @@ interface JobChainStateV0 { chainId: string; hops: number; invocations: number; 
      considering termination — this is the skip hole round 1 left open.
   4. Only if steps 1–3 cannot resolve the edge, append `outcome-unknown` with
      `reason:"unreconcilable"` and post a system event.
+- **Chains start with the human.** A human message posted to the job mints a new `chainId` and is
+  itself that chain's first edge, with `sourceRef` absent — which is why the field is optional. Every
+  later hop in the chain reuses the `chainId`.
 - **Caps.** `maxHopDepth` (default 3) and `maxInvocationsPerChain` are counted on `JobChainStateV0`,
   scoped to `chainId` = the **root human turn**. A new human message opens a new chain with fresh
   counters; an interleaved message therefore neither inherits nor resets another chain's counts.
@@ -390,10 +597,9 @@ follow-on, because v0 touches no Console store. Each slice is one session and fo
 idiom (`plan.md:378-417`).
 
 **S1 — projection contract + store + edge allocator.** `JobProjectionV0`, `JobParticipantV0`,
-`JobRelayEdgeV0`, `JobRelayTransitionV0`, `JobChainStateV0` schemas; file store with revision CAS,
+`JobRelayEdgeV0`, `JobRelayTransitionV0`, `JobChainStateV0`, `JobCursorV0` schemas; file store with revision CAS,
 lock, atomic rename, load diagnostics; and the **`openEdge()` allocator** — one locked mutation that
-allocates `turnOrdinal`/`markerOrdinal`, mints `requestId`, reserves chain counters, and appends the
-pending edge. Append-only enforced. No relay, no UI, no agent tool.
+allocates `turnOrdinal`, mints `requestId`, reserves chain counters, and appends the pending edge. Append-only enforced. No relay, no UI, no agent tool.
 - *Blocked by:* owner ruling on Q1 (noun); PR #1401 merged.
 - *Scope:* `plugins/job-threads/src/shared/{types,schema}.ts`, `src/server/{jobProjectionStore,edgeLog}.ts` + tests.
 - *Proof:* `pnpm --filter @hachej/boring-job-threads test -- src/server/__tests__/jobProjectionStore.test.ts src/server/__tests__/edgeLog.test.ts src/shared/__tests__/schema.test.ts`; `pnpm --filter @hachej/boring-job-threads typecheck`.
@@ -474,8 +680,12 @@ provenance"* (`docs/DECISIONS.md:365`). Envelope-grade attribution arrives with 
    enforced). Confirm the relay for v0, or build the ratified binding instead?
 3. **Attribution grade.** Accept explicitly display-grade `participantId` for v0, or pull ratified
    C7 `seatId` forward now so the demo's audit story is envelope-grade?
-4. **Post/Run boundary.** Confirm only settled final assistant posts + relay system markers cross
-   seats — no tool calls, no intermediate messages?
+4. **The two boundaries.** Confirm the pairing: the **artifact** boundary stays **open** — one shared
+   workspace and one canonical filesystem for all participants, per D25 (`:410`) / D28 (`:462-463`),
+   with reach governed by mounts and tool authority — while the **conversation** boundary stays
+   **closed**: only settled final assistant posts and relay system markers enter another
+   participant's prompt, never private reasoning, tool calls, or credentials. Agents share the work,
+   not each other's minds and keys.
 5. **Objective coupling.** Is an Objective **mandatory** for a job? Confirm one-way ref with
    `clientRequestId` compensation, or should `Objective` gain a `threadId`?
 6. **Context and budget.** Confirm oldest-first truncation with no summarization, and confirm that

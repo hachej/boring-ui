@@ -38,6 +38,20 @@ a{color:var(--blue)}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media(max-width:720px){.grid2{grid-template-columns:1fr}}
 .box{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:color-mix(in srgb,var(--muted) 5%,var(--card))}
+.dg{width:100%;height:auto;display:block;margin:8px 0 4px}
+.dg .bx{fill:color-mix(in srgb,var(--blue) 8%,var(--card));stroke:var(--line);stroke-width:1}
+.dg .bx2{fill:color-mix(in srgb,var(--green) 10%,var(--card));stroke:var(--line);stroke-width:1}
+.dg .bx3{fill:color-mix(in srgb,var(--amber) 13%,var(--card));stroke:var(--line);stroke-width:1}
+.dg .t{fill:var(--ink);font:600 12.5px ui-sans-serif,system-ui,sans-serif}
+.dg .c{fill:var(--muted);font:400 10px ui-monospace,SFMono-Regular,Menlo,monospace}
+.dg .lbl{fill:var(--muted);font:700 10.5px ui-sans-serif,system-ui,sans-serif;letter-spacing:.09em}
+.dg .ln{stroke:var(--line);stroke-width:1.4}
+.dg .ar{stroke:var(--blue);stroke-width:1.5;fill:none}
+.dg .arx{stroke:var(--muted);stroke-width:1.3;fill:none;stroke-dasharray:4 3}
+.dg .m{fill:var(--ink);font:400 11px ui-sans-serif,system-ui,sans-serif;stroke:var(--card);stroke-width:3.5;paint-order:stroke fill}
+.dg .gut{fill:var(--muted);font:700 9.5px ui-sans-serif,system-ui,sans-serif}
+.dg .n{fill:var(--blue);font:700 9.5px ui-sans-serif,system-ui,sans-serif}
+.dgcap{color:var(--muted);font-size:12.5px;margin:2px 0 0}
 .box b{display:block;margin-bottom:4px;font-size:12.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
 .slices{display:flex;flex-wrap:wrap;gap:10px;align-items:stretch}
 .slice{border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-width:150px;flex:1;background:color-mix(in srgb,var(--blue) 5%,var(--card))}
@@ -61,6 +75,47 @@ footer{margin:24px 0 8px;color:var(--muted);font-size:12.5px;text-align:center}
   <code>weekend/jobthread-v0-plan</code> · No implementation before owner sign-off</div>
 </header>
 
+<section class="card">
+  <h2>What this plan builds</h2>
+  <p class="tldr">Twelve artifacts, nothing else. Named in product words, with the code noun
+  underneath. Ordering lives in the Slices section &mdash; this is composition, not sequence.</p>
+<svg class="dg" viewBox="0 0 1050 500" role="img" aria-label="Component map: everything this plan builds, grouped by layer">
+<defs><marker id="ah" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="var(--muted)"/></marker>
+<marker id="ahb" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="var(--blue)"/></marker></defs>
+<text class="lbl" x="30" y="24">THE ONE VIEW THE OWNER READS &#183; S4</text>
+<rect class="bx" x="350" y="36" width="340" height="46" rx="8"/><text class="t" x="520.0" y="55.0" text-anchor="middle">Merged timeline</text><text class="c" x="520.0" y="71.0" text-anchor="middle">src/front/</text>
+<text class="lbl" x="30" y="132">WHAT DECIDES WHAT HAPPENS NEXT &#183; S2, S3</text>
+<rect class="bx2" x="30" y="148" width="225" height="52" rx="8"/><text class="t" x="142.5" y="170.0" text-anchor="middle">Sending one turn</text><text class="c" x="142.5" y="186.0" text-anchor="middle">relayTurn.ts</text><rect class="bx2" x="275" y="148" width="225" height="52" rx="8"/><text class="t" x="387.5" y="170.0" text-anchor="middle">&#8220;Pass this on&#8221;</text><text class="c" x="387.5" y="186.0" text-anchor="middle">handoffTool.ts</text><rect class="bx2" x="520" y="148" width="225" height="52" rx="8"/><text class="t" x="632.5" y="170.0" text-anchor="middle">Who goes next + caps</text><text class="c" x="632.5" y="186.0" text-anchor="middle">relayChain.ts</text><rect class="bx2" x="765" y="148" width="225" height="52" rx="8"/><text class="t" x="877.5" y="170.0" text-anchor="middle">Picking up after a crash</text><text class="c" x="877.5" y="186.0" text-anchor="middle">recovery.ts</text>
+<text class="lbl" x="30" y="240">THE ONE LOCKED WRITE THAT MAKES IT CRASH-SAFE &#183; S1</text>
+<rect class="bx" x="350" y="252" width="340" height="46" rx="8"/><text class="t" x="520.0" y="271.0" text-anchor="middle">Reserve the turn before sending</text><text class="c" x="520.0" y="287.0" text-anchor="middle">openEdge()  &#183;  src/server/edgeLog.ts</text>
+<text class="lbl" x="30" y="336">WHAT IS WRITTEN DOWN &#183; S1</text>
+<rect class="bx3" x="30" y="352" width="150" height="64" rx="8"/><text class="t" x="105.0" y="380.0" text-anchor="middle">The saved job</text><text class="c" x="105.0" y="396.0" text-anchor="middle">JobProjectionV0</text><rect class="bx3" x="196" y="352" width="150" height="64" rx="8"/><text class="t" x="271.0" y="380.0" text-anchor="middle">Its participants</text><text class="c" x="271.0" y="396.0" text-anchor="middle">JobParticipantV0</text><rect class="bx3" x="362" y="352" width="150" height="64" rx="8"/><text class="t" x="437.0" y="380.0" text-anchor="middle">One turn hop</text><text class="c" x="437.0" y="396.0" text-anchor="middle">JobRelayEdgeV0</text><rect class="bx3" x="528" y="352" width="150" height="64" rx="8"/><text class="t" x="603.0" y="380.0" text-anchor="middle">What happened to it</text><text class="c" x="603.0" y="396.0" text-anchor="middle">JobRelayTransitionV0</text><rect class="bx3" x="694" y="352" width="150" height="64" rx="8"/><text class="t" x="769.0" y="380.0" text-anchor="middle">The cap ledger</text><text class="c" x="769.0" y="396.0" text-anchor="middle">JobChainStateV0</text><rect class="bx3" x="860" y="352" width="150" height="64" rx="8"/><text class="t" x="935.0" y="380.0" text-anchor="middle">How far we&#8217;ve read</text><text class="c" x="935.0" y="396.0" text-anchor="middle">JobCursorV0</text>
+<path class="ar" d="M520,250 L520,206" marker-end="url(#ahb)"/>
+<path class="ar" d="M520,300 L520,346" marker-end="url(#ahb)"/>
+<path class="arx" d="M1010,384 L1032,384 L1032,59 L694,59" marker-end="url(#ah)"/>
+<text class="c" x="1044" y="222" text-anchor="middle" transform="rotate(-90 1044 222)">projected into the timeline</text>
+<rect class="bx" x="30" y="440" width="980" height="40" rx="8"/><text class="t" x="520.0" y="456.0" text-anchor="middle">Proof the whole path works &#8212; scripted, deterministic, zero live model calls</text><text class="c" x="520.0" y="472.0" text-anchor="middle">K7 demo fixture  &#183;  S5  &#183;  src/server/__tests__/k7Demo.test.ts</text>
+</svg>
+  <p class="dgcap">All paths are under <code>plugins/job-threads/</code>.</p>
+  <h3>One handoff turn &mdash; and what the participants share</h3>
+<svg class="dg" viewBox="0 0 1050 606" role="img" aria-label="One full handoff turn, and the shared workspace beneath both participants">
+<defs>
+<marker id="ah2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="var(--blue)"/></marker>
+<marker id="ah3" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="var(--muted)"/></marker>
+</defs>
+<rect class="bx" x="44" y="18" width="152" height="42" rx="8"/><text class="t" x="120" y="36" text-anchor="middle">Owner</text><text class="c" x="120" y="50" text-anchor="middle">the human</text><line class="ln" x1="120" y1="60" x2="120" y2="556"/><rect class="bx" x="244" y="18" width="152" height="42" rx="8"/><text class="t" x="320" y="36" text-anchor="middle">Relay</text><text class="c" x="320" y="50" text-anchor="middle">a service, not an agent</text><line class="ln" x1="320" y1="60" x2="320" y2="556"/><rect class="bx" x="444" y="18" width="152" height="42" rx="8"/><text class="t" x="520" y="36" text-anchor="middle">Store</text><text class="c" x="520" y="50" text-anchor="middle">job store, CAS</text><line class="ln" x1="520" y1="60" x2="520" y2="556"/><rect class="bx" x="654" y="18" width="152" height="42" rx="8"/><text class="t" x="730" y="36" text-anchor="middle">Worker</text><text class="c" x="730" y="50" text-anchor="middle">participant A</text><line class="ln" x1="730" y1="60" x2="730" y2="540"/><rect class="bx" x="854" y="18" width="152" height="42" rx="8"/><text class="t" x="930" y="36" text-anchor="middle">Reviewer</text><text class="c" x="930" y="50" text-anchor="middle">participant B</text><line class="ln" x1="930" y1="60" x2="930" y2="540"/><text class="gut" x="16" y="99">1</text><text class="m" x="220.0" y="90" text-anchor="middle">post a message to the JOB</text><path class="ar" d="M120,96 L320,96" marker-end="url(#ah2)"/><text class="gut" x="16" y="133">2</text><text class="m" x="420.0" y="124" text-anchor="middle">openEdge &#8212; new chain, ordinal 1, mint requestId, reserve caps, pending</text><path class="ar" d="M320,130 L520,130" marker-end="url(#ah2)"/><text class="gut" x="16" y="167">3</text><text class="m" x="420.0" y="158" text-anchor="middle">edge1</text><path class="arx" d="M520,164 L320,164" marker-end="url(#ah3)"/><text class="gut" x="16" y="201">4</text><text class="m" x="525.0" y="192" text-anchor="middle">dispatch keyed by edge1.requestId</text><path class="ar" d="M320,198 L730,198" marker-end="url(#ah2)"/><text class="gut" x="16" y="235">5</text><text class="m" x="525.0" y="226" text-anchor="middle">accepted &#8212; cursor, duplicate?</text><path class="arx" d="M730,232 L320,232" marker-end="url(#ah3)"/><text class="gut" x="16" y="269">6</text><text class="m" x="420.0" y="260" text-anchor="middle">append transition: accepted</text><path class="ar" d="M320,266 L520,266" marker-end="url(#ah2)"/><text class="gut" x="16" y="303">7</text><text class="m" x="525.0" y="294" text-anchor="middle">settles &#8212; agent-end, willRetry false, final post</text><path class="arx" d="M730,300 L320,300" marker-end="url(#ah3)"/><text class="gut" x="16" y="337">8</text><text class="m" x="420.0" y="328" text-anchor="middle">append transition: settled, advance cursor</text><path class="ar" d="M320,334 L520,334" marker-end="url(#ah2)"/><text class="gut" x="16" y="371">9</text><text class="m" x="525.0" y="362" text-anchor="middle">handoff to reviewer &#8212; typed tool, never parsed from prose</text><path class="arx" d="M730,368 L320,368" marker-end="url(#ah3)"/><text class="gut" x="16" y="405">10</text><text class="m" x="420.0" y="396" text-anchor="middle">openEdge &#8212; same chain, ordinal 2, hop 1</text><path class="ar" d="M320,402 L520,402" marker-end="url(#ah2)"/><text class="gut" x="16" y="439">11</text><text class="m" x="625.0" y="430" text-anchor="middle">dispatch keyed by edge2.requestId, context after B&#8217;s watermark</text><path class="ar" d="M320,436 L930,436" marker-end="url(#ah2)"/><text class="gut" x="16" y="473">12</text><text class="m" x="625.0" y="464" text-anchor="middle">settles &#8212; final post</text><path class="arx" d="M930,470 L320,470" marker-end="url(#ah3)"/><text class="gut" x="16" y="507">13</text><text class="m" x="220.0" y="498" text-anchor="middle">one timeline, ordered by (turnOrdinal, seq, markerOrdinal)</text><path class="ar" d="M320,504 L120,504" marker-end="url(#ah2)"/><rect class="bx2" x="620" y="548" width="420" height="46" rx="8"/><text class="t" x="830" y="566" text-anchor="middle">ONE shared workspace &#183; one canonical filesystem</text><text class="c" x="830" y="581" text-anchor="middle">the worker&#8217;s files ARE the reviewer&#8217;s files &#183; D25:410, D28:463</text><path class="arx" d="M730,540 L730,548"/><path class="arx" d="M930,540 L930,548"/></svg>
+  <p class="dgcap"><b>Two boundaries, only one restrictive.</b> Above the line, the
+  <b>conversation</b> boundary is closed: only the two settled <b>final posts</b> cross between
+  participants &mdash; private reasoning, tool calls and credentials never do. Below the line, the
+  <b>artifact</b> boundary is open: both participants share <b>one workspace and one canonical
+  filesystem</b> (D25 <code>:410</code>, D28 <code>:462-463</code>), so the reviewer reads the very
+  files the worker wrote &mdash; nothing is copied or synced. Participants share the work, not each
+  other&#8217;s minds and keys.</p>
+  <p class="dgcap">Steps 2 and 10 are the crash-safety keystone: a turn is reserved <b>before</b>
+  anything is sent, so a crash can never leave an unrecorded send or an escaped cap count. The plan
+  carries three further diagrams (data model, recovery order, edge lifecycle) as Mermaid in
+  <code>docs/plans/job-thread-v0-plan.md</code>.</p>
+</section>
 <section class="card">
   <h2>Review provenance</h2>
   <p>Round 1 went through a fresh-eyes pass and cross-model adversarial review; every accepted finding
@@ -121,16 +176,32 @@ footer{margin:24px 0 8px;color:var(--muted);font-size:12.5px;text-align:center}
   <div class="rec"><b>Recommended: accept display-grade for v0.</b> Envelope-grade attribution arrives
   with C7, not with this demo.</div>
 
-  <h3 class="qhead"><span class="qnum">4</span><span class="qtitle">Post/Run boundary — what crosses seats?</span></h3>
+  <h3 class="qhead"><span class="qnum">4</span><span class="qtitle">The two boundaries — what is shared, what is not?</span></h3>
+  <p>The plan has <b>two</b> boundaries and only one of them is restrictive. They are easy to
+  conflate, and conflating them makes the design read as agents walled off from each other, which is
+  the opposite of what it says.</p>
   <table class="two"><tr><th>Options</th><th>Unblocks / costs</th></tr>
-  <tr><td><b>Confirm narrow crossing</b> — only the settled final assistant message
+  <tr><td><b>Artifact boundary — OPEN.</b> Participants on a job share <b>one workspace and one
+  canonical filesystem</b>. Ratified, not invented: agents in a workspace &ldquo;intentionally share
+  filesystem/process/runtime authority while retaining distinct &hellip; session &hellip; and
+  provenance identity&rdquo; (D25 <code>:410</code>), and same-workspace agents get execution views
+  &ldquo;without copying the authoritative filesystem&rdquo; (D28 <code>:463</code>). Reach is
+  governed by mounts and per-participant tool authority, not by partition.</td>
+  <td><b>Confirms</b>: the reviewer reads the very files the worker wrote &mdash; nothing copied,
+  synced, or attached. This is the half of the shared-VM feel people actually like, delivered
+  natively and governed. Rejecting it would mean per-participant copies and a second authoritative
+  file tree, which D28 <code>:462</code> exists to prevent.</td></tr>
+  <tr><td><b>Conversation boundary — CLOSED.</b> Only the settled final assistant message
   (<code>message-end.final</code>, gated on non-<code>willRetry</code>) and relay-authored system
-  handoff markers cross seats. No tool calls, no intermediate messages, no private reasoning.</td>
-  <td><b>Confirms</b>: each seat's private reasoning/tool trace stays reachable only by drill-down —
-  the demo's privacy and noise story. A wider boundary would need re-litigating the handoff tool and
-  the merged-timeline renderer.</td></tr></table>
-  <div class="rec"><b>Recommended: confirm the narrow boundary.</b> This is the only shape in the plan;
-  no alternative is proposed.</div>
+  handoff markers enter another participant's <i>prompt</i>. No tool calls, no intermediate messages,
+  no private reasoning, no credentials.</td>
+  <td><b>Confirms</b>: each participant's private trace stays reachable only by drill-down — the
+  demo's privacy and noise story. A wider boundary would need re-litigating the handoff tool and the
+  merged-timeline renderer.</td></tr></table>
+  <div class="rec"><b>Recommended: confirm the pairing.</b> Participants share the work, not each
+  other's minds and keys. Sharing context windows is what makes multi-agent setups leak secrets and
+  drown in tool spew; sharing a filesystem is what lets them collaborate at all. v0 takes the second
+  and refuses the first.</div>
 
   <h3 class="qhead"><span class="qnum">5</span><span class="qtitle">Objective coupling — mandatory, or optional one-way ref?</span></h3>
   <table class="two"><tr><th>Options</th><th>Unblocks / costs</th></tr>
