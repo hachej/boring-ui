@@ -484,6 +484,39 @@ the relay-enforced hop/invocation caps above, which bound *hops*, not spend. The
 for a real budget — a v1 slice, not a v0 claim — is adding a job dimension to `MeteringRunScope` and
 threading it through the reservation path.
 
+### Staffing workflow — designed now, UI deferred
+
+**Today**: no add/remove flow exists anywhere in this plan — `participants` (§1) has been treated as
+set once at job creation, and §2–§3's mechanism never revisits membership.
+
+**Delta**: v0 decides staffing *mechanics* now, so S3's CAS/transition machinery does not need a
+later reshape, while the add/remove **UI** itself is pushed to a deferred slice (S6, §7).
+
+- **Entry points — both human-initiated.** A `+` on the thread-header participant chips opens a
+  picker sourced from the Agents directory; an `@mention` of an agent not yet in `participants`,
+  typed into the composer, surfaces an inline add-confirm rather than resolving to nothing. Staffing
+  is an explicit **human** act in v0 — no agent tool stages a new participant; agent-initiated
+  staffing is out of scope and would need a riskTier'd human approval gate before it could ship, not a
+  bare tool call.
+- **Mechanics.** Adding a seat is one CAS-append to `participants: JobParticipantV0[]` under the
+  projection's `revision` (§1), paired with creating that seat's session in the job's shared
+  `workspaceScopeId` (§6, "all participants share one `workspaceScopeId`") — the same
+  session-creation path S2 already uses, no new session machinery. The relay then posts a **`joined`
+  system marker**: transition-derived like every other marker, keeping §3's "no second event system"
+  true for staffing as well.
+- **Onboarding context is bounded by construction.** A newly-added seat starts with
+  `deliveredThroughOrdinal = 0` (§3) — nothing delivered yet — so its first turn reads job history
+  back to `turnOrdinal` 1. That is exactly the case §3's context bound already handles:
+  `maxInjectedPosts`/`maxInjectedBytes` cap it, oldest-first drop, truncation marker inserted. No new
+  cap and no new code path; a long-lived job's new-seat catch-up runs through the same door as
+  ordinary per-turn delivery.
+- **Departure preserves history, never rewrites it.** Removing a participant appends no deletions:
+  `bindingState` (§1) doubles as v0's "left" state — the existing `"removed"` value is what a
+  departure sets — and every edge/transition the seat produced stays exactly as written, consistent
+  with §2's rule for handoff to a removed participant (`phase:"failed",
+  reason:"participant-unavailable"`). The relay posts a **`left` system marker**, transition-derived
+  the same way `joined` is.
+
 ## 4. Projection — the merged timeline
 
 ### Today
@@ -644,6 +677,17 @@ Objective compensation path, plus a separately-labelled live smoke.
 - *Proof:* `pnpm --filter @hachej/boring-job-threads test -- src/server/__tests__/k7Demo.test.ts`.
 - *Negative proof:* the acceptance run performs zero live model calls; a failed projection write
   after `create_objective` leaves exactly one Objective on retry.
+
+**S6 — staffing UI (add/remove participants) — deferred, post-v0, small.** `+` picker on the
+thread-header participant chips sourced from the Agents directory; inline add-confirm on an unstaffed
+`@mention` in the composer; a remove affordance setting `bindingState:"removed"`. The mechanics this
+UI drives — CAS-append, seat session creation, `joined`/`left` markers (§3) — already ship in S3; this
+slice is UI only.
+- *Blocked by:* S3, S4.
+- *Scope:* `plugins/job-threads/src/front/{ParticipantPicker,AddParticipantConfirm}.tsx` + tests.
+- *Proof:* `pnpm --filter @hachej/boring-job-threads test -- src/front/__tests__/participantStaffing.test.tsx`.
+- *Negative proof:* removing a participant deletes or mutates no prior edge/transition of theirs; an
+  add for an agent already `active` in `participants` is a no-op, not a duplicate append.
 
 **Deferred follow-on (not v0) — Console nav reframe.** Jobs primary, Agents as a directory,
 participant chips in `ConsoleSpikeRowSlots.metaTag`, by-agent lens = "jobs this agent participates
