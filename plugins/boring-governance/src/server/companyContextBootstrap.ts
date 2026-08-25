@@ -119,6 +119,12 @@ export async function reconcileCompanyContextWorkspace(app: FastifyInstance, ser
       id: workspaceId,
       isDefault: false,
       managedBy: COMPANY_CONTEXT_WORKSPACE_MANAGED_BY,
+      // Decision 28: NULL is reserved for pre-migration rows. This hook runs
+      // after Core's one-shot NULL backfill, so omitting the default here would
+      // mint a brand-new legacy row that nothing will ever reconcile.
+      // `config.defaultAgentTypeId` is the same validated application default
+      // the backfill used.
+      defaultAgentTypeId: app.config.defaultAgentTypeId,
     })
     assertCompanyContextWorkspace(workspace, workspaceId)
     app.log.info({ workspaceId, ownerId: owner.id }, 'governance.company_context.created')

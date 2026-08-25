@@ -36,7 +36,7 @@ function createApp(options: {
     'user@example.com': { id: 'user-id', email: 'user@example.com', emailVerified: true },
   }
 
-  app.config = { appId: 'full-app' }
+  app.config = { appId: 'full-app', defaultAgentTypeId: 'general' }
   app.userStore = {
     getByEmail: vi.fn(async (email: string) => users[email] ?? null),
   }
@@ -95,10 +95,14 @@ describe('reconcileCompanyContextWorkspace', () => {
 
     await reconcileCompanyContextWorkspace(app, service())
 
+    // Decision 28: this bootstrap runs after Core's one-shot NULL backfill, so
+    // it must persist the application default rather than mint a new legacy
+    // NULL row that nothing will reconcile.
     expect(app.workspaceStore.create).toHaveBeenCalledWith('admin-id', 'Company Context', 'full-app', {
       id: WORKSPACE_ID,
       isDefault: false,
       managedBy: MANAGED_BY,
+      defaultAgentTypeId: 'general',
     })
     expect(await app.workspaceStore.getMemberRole(WORKSPACE_ID, 'admin-id')).toBe('owner')
     expect(await app.workspaceStore.getMemberRole(WORKSPACE_ID, 'user-id')).toBeNull()

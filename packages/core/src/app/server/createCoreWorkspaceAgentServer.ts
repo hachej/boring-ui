@@ -112,22 +112,12 @@ import {
   type ValidatedSignupAgentDefaults,
 } from '../../server/signupAgentDefaults.js'
 import {
-  classifyWorkspaceDefaultAgentTypeCohorts,
   resolveApplicationDefaultAgentTypeId,
   resolveWorkspaceDefaultAgentTypeId,
 } from '../../server/defaultAgentType.js'
+import { reconcileWorkspaceDefaultAgentTypes } from '../../server/reconcileWorkspaceDefaultAgentTypes.js'
 import { WorkspaceRuntimeSandboxHandleStore } from '../../server/runtime/index.js'
 import { createDatabaseTelemetryFromEnv } from '../../server/telemetry/db.js'
-
-function hasErrorCode(error: unknown, code: string): boolean {
-  let current: unknown = error
-  for (let depth = 0; depth < 4; depth += 1) {
-    if (!current || typeof current !== 'object') return false
-    if ((current as { code?: unknown }).code === code) return true
-    current = (current as { cause?: unknown }).cause
-  }
-  return false
-}
 
 const DEFAULT_AGENT_EXECUTION_EFFECTS = new Set([
   'session.create',
@@ -1687,58 +1677,13 @@ export async function createCoreWorkspaceAgentServer(
 
   let hostMounted = false
   try {
-    // Reference images intentionally prove the process can expose /health
-    // before schema deployment. Only a pre-0024 schema state on the initial
-    // inventory proves that: either the workspaces relation itself is
-    // undefined (42P01), or the relation exists but the migration 0024
-    // column has not landed yet (42703, undefined_column). After inventory
-    // succeeds, every CAS or convergence error remains fatal.
-    let inventoryBefore: Awaited<ReturnType<WorkspaceStore['inventoryDefaultAgentTypeIds']>> | undefined
-    try {
-      inventoryBefore = await workspaceStore.inventoryDefaultAgentTypeIds(config.appId)
-    } catch (error) {
-      const missingRelation = hasErrorCode(error, '42P01')
-      const missingColumn = hasErrorCode(error, '42703')
-      if (!missingRelation && !missingColumn) throw error
-      app.log.warn({
-        event: 'workspace.default_agent_type_id.backfill.skipped',
-        appId: config.appId,
-        reason: missingRelation ? 'workspaces_relation_absent' : 'workspaces_default_agent_type_id_column_absent',
-      }, 'workspace default Agent reconciliation skipped before schema deployment')
-    }
-    if (inventoryBefore) {
-      // Decision 28 migration phase: createAgentHost has now compiled and
-      // validated the static fleet. Compare-and-set only legacy NULL rows
-      // before any route can serve. Re-running is idempotent; concurrent
-      // non-NULL writers always win, and hostname never enters either store.
-      const cohortsBefore = classifyWorkspaceDefaultAgentTypeCohorts(
-        inventoryBefore,
-        availableAgentTypeIds,
-      )
-      const migratedDefaultAgentTypeIdCount = await workspaceStore.compareAndSetNullDefaultAgentTypeId(
-        config.appId,
-        applicationDefaultAgentTypeId,
-      )
-      const cohortsAfter = classifyWorkspaceDefaultAgentTypeCohorts(
-        await workspaceStore.inventoryDefaultAgentTypeIds(config.appId),
-        availableAgentTypeIds,
-      )
-      if (cohortsAfter.nullCount > 0) {
-        throw new HttpError({
-          status: 500,
-          code: ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT,
-          message: 'Workspace default Agent legacy reconciliation did not converge',
-        })
-      }
-      app.log.info({
-        event: 'workspace.default_agent_type_id.backfill',
-        appId: config.appId,
-        applicationDefaultAgentTypeId,
-        before: cohortsBefore,
-        migratedCount: migratedDefaultAgentTypeIdCount,
-        after: cohortsAfter,
-      }, 'workspace default Agent legacy cohorts reconciled')
-    }
+    await reconcileWorkspaceDefaultAgentTypes({
+      workspaceStore,
+      appId: config.appId,
+      applicationDefaultAgentTypeId,
+      availableAgentTypeIds,
+      log: app.log,
+    })
 
     app.get('/api/v1/workspace/meta', async (request, reply) => {
       try {
