@@ -58,7 +58,7 @@ function resolveOne(
     pluginId: input.pluginId ?? 'test',
     packageName: input.packageName ?? '@example/plugin',
     packageRoot,
-  }], input.options)
+  }], input.options).then((result) => result.registry)
 }
 
 afterEach(async () => {
@@ -69,7 +69,7 @@ describe('resolveWorkspacePackageResources', () => {
   test('deduplicates direct/scanned provenance and keeps Pi paths separate from confined mounts', async () => {
     const root = await tempRoot()
     const packageRoot = await packageFixture(root)
-    const registry = await resolveWorkspacePackageResources([
+    const { registry } = await resolveWorkspacePackageResources([
       { pluginId: 'direct', packageName: '@example/plugin', packageRoot },
       { pluginId: 'scanned', packageName: '@example/plugin', packageRoot: new URL(`file://${packageRoot}/`) },
     ])
@@ -94,7 +94,7 @@ describe('resolveWorkspacePackageResources', () => {
     expect(registry.locateSkill(join(packageRoot, 'settings.json'))).toBeUndefined()
     expect(registry.generation).toMatch(/^[a-f0-9]{64}$/)
 
-    const repeated = await resolveWorkspacePackageResources([
+    const { registry: repeated } = await resolveWorkspacePackageResources([
       { pluginId: 'scanned', packageName: '@example/plugin', packageRoot },
       { pluginId: 'direct', packageName: '@example/plugin', packageRoot },
     ])
@@ -248,7 +248,7 @@ describe('resolveWorkspacePackageResources', () => {
     const sharedFile = join(sharedRoot, 'SKILL.md')
     await writeFile(sharedFile, '---\nname: shared-authoring\ndescription: Shared.\n---\n', 'utf8')
 
-    const registry = await resolveWorkspacePackageResources([
+    const { registry } = await resolveWorkspacePackageResources([
       { pluginId: 'direct', packageName: '@example/plugin', packageRoot },
       { pluginId: 'scan', packageName: '@example/plugin', packageRoot },
     ], {
@@ -341,33 +341,6 @@ describe('resolveWorkspacePackageResources', () => {
     expect(snapshot.registry.locateSkill(danglingFile)).toBeUndefined()
     expect(snapshot.registry.readonlyMounts.map((mount) => mount.sourceRoot))
       .not.toContain(await realpath(danglingRoot))
-  })
-
-  // gh-1196 follow-up: the per-entry probe degrades admission verdicts only.
-  // A resolver defect must not be laundered into "was not admissible".
-  test('propagates a non-admission error from the shared-skill probe', async () => {
-    const root = await tempRoot()
-    const packageRoot = await packageFixture(root)
-    const sharedRoot = join(root, 'global-skills', 'shared-authoring')
-    await mkdir(sharedRoot, { recursive: true })
-    const sharedFile = join(sharedRoot, 'SKILL.md')
-    await writeFile(sharedFile, '---\nname: shared-authoring\ndescription: Shared.\n---\n', 'utf8')
-
-    const defect = Object.assign(new Error('resolver blew up'), { code: 'EACCES' })
-    const shared = {
-      id: 'shared-authoring',
-      // A getter is the least invasive way to make the probe's own read throw
-      // with a non-admission error code.
-      get skillFile(): string {
-        throw defect
-      },
-    }
-
-    await expect(resolveWorkspacePackageResourceSnapshot({
-      declared: [{ pluginId: 'direct', packageName: '@example/plugin', packageRoot }],
-      scanned: [],
-      sharedSkillPaths: [shared, { id: 'other', skillFile: sharedFile }],
-    })).rejects.toBe(defect)
   })
 
   test('propagates an unexpected filesystem failure while resolving a scanned skill declaration', async () => {

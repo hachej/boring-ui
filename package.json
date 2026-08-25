@@ -53,6 +53,7 @@
     "release:minor": "bash scripts/cut-release.sh minor",
     "release:major": "bash scripts/cut-release.sh major",
     "build:packages": "pnpm -r --filter './packages/*' --filter './plugins/*' --workspace-concurrency=4 run build",
+    "dev:packages": "pnpm -r --filter './packages/*' run dev",
     "build:app-deps": "pnpm -r --workspace-concurrency=1 --filter '{./apps/*}...' --filter '!{./apps/*}' run build",
     "typecheck:changed": "node scripts/typecheck-changed-workspaces.mjs",
     "review:workspace-ui": "node scripts/review-workspace-playground-ui.mjs",

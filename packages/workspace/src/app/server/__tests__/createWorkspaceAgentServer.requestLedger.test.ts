@@ -51,39 +51,11 @@ describe("workspace agent server request ledger placement", () => {
     }
   }, 120_000)
 
-  test("falls back to the host session root, option before env", async () => {
-    const workspaceRoot = await tempDir("boring-ws-ledger-root-")
-    const sessionRoot = await tempDir("boring-ws-ledger-sessions-")
-    const envRoot = await tempDir("boring-ws-ledger-env-")
-    process.env.BORING_AGENT_SESSION_ROOT = envRoot
 
-    const server = await createWorkspaceAgentServer({ ...baseOptions, workspaceRoot, sessionRoot })
-
-    try {
-      expect(existsSync(join(sessionRoot, ".agent-request-ledger.sqlite"))).toBe(true)
-      expect(existsSync(join(envRoot, ".agent-request-ledger.sqlite"))).toBe(false)
-      expect(existsSync(join(workspaceRoot, ".boring", "agent-request-ledger.sqlite"))).toBe(false)
-    } finally {
-      await server.close()
-    }
-  }, 120_000)
-
-  test("falls back to BORING_AGENT_SESSION_ROOT when no option is set", async () => {
-    const workspaceRoot = await tempDir("boring-ws-ledger-root-")
-    const envRoot = await tempDir("boring-ws-ledger-env-")
-    process.env.BORING_AGENT_SESSION_ROOT = envRoot
-
-    const server = await createWorkspaceAgentServer({ ...baseOptions, workspaceRoot })
-
-    try {
-      expect(existsSync(join(envRoot, ".agent-request-ledger.sqlite"))).toBe(true)
-      expect(existsSync(join(workspaceRoot, ".boring", "agent-request-ledger.sqlite"))).toBe(false)
-    } finally {
-      await server.close()
-    }
-  }, 120_000)
-
-  test("keeps the legacy workspace ledger when no host path is configured", async () => {
+  // The explicit-path case above proves the wiring; the full four-case
+  // precedence matrix is unit-owned by requestLedgerPath.test.ts. The one
+  // behavior unique to THIS host is its legacy tail (.boring/), kept below.
+  test("keeps the legacy .boring workspace ledger when no host path is configured", async () => {
     const workspaceRoot = await tempDir("boring-ws-ledger-root-")
     delete process.env.BORING_AGENT_SESSION_ROOT
 

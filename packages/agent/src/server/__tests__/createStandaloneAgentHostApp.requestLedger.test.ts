@@ -41,48 +41,7 @@ test('standalone host writes the request ledger to an explicit host-owned path',
     await app.close()
   }
 }, 120_000)
+// The full four-case precedence matrix is unit-owned by
+// requestLedgerPath.test.ts; this file proves only that the standalone host
+// wires its distinct legacy layout through the canonical resolver.
 
-test('standalone host falls back to the host session root, option before env', async () => {
-  const workspaceRoot = await makeTempDir('boring-standalone-ledger-ws-')
-  const sessionRoot = await makeTempDir('boring-standalone-ledger-sessions-')
-  const envRoot = await makeTempDir('boring-standalone-ledger-env-')
-  setEnvForTest('BORING_AGENT_SESSION_ROOT', envRoot)
-
-  const app = await createStandaloneAgentHostApp({ workspaceRoot, sessionRoot, logger: false })
-
-  try {
-    expect(existsSync(join(sessionRoot, '.agent-request-ledger.sqlite'))).toBe(true)
-    expect(existsSync(join(envRoot, '.agent-request-ledger.sqlite'))).toBe(false)
-    expect(existsSync(join(workspaceRoot, '.boring'))).toBe(false)
-  } finally {
-    await app.close()
-  }
-}, 120_000)
-
-test('standalone host falls back to BORING_AGENT_SESSION_ROOT when no option is set', async () => {
-  const workspaceRoot = await makeTempDir('boring-standalone-ledger-ws-')
-  const envRoot = await makeTempDir('boring-standalone-ledger-env-')
-  setEnvForTest('BORING_AGENT_SESSION_ROOT', envRoot)
-
-  const app = await createStandaloneAgentHostApp({ workspaceRoot, logger: false })
-
-  try {
-    expect(existsSync(join(envRoot, '.agent-request-ledger.sqlite'))).toBe(true)
-    expect(existsSync(join(workspaceRoot, '.boring'))).toBe(false)
-  } finally {
-    await app.close()
-  }
-}, 120_000)
-
-test('standalone host keeps the legacy workspace ledger when no host path is configured', async () => {
-  const workspaceRoot = await makeTempDir('boring-standalone-ledger-ws-')
-  setEnvForTest('BORING_AGENT_SESSION_ROOT', undefined)
-
-  const app = await createStandaloneAgentHostApp({ workspaceRoot, logger: false })
-
-  try {
-    expect(existsSync(join(workspaceRoot, '.boring', 'agent-request-ledger.sqlite'))).toBe(true)
-  } finally {
-    await app.close()
-  }
-}, 120_000)

@@ -243,7 +243,6 @@ export {
 } from './piPackages'
 export {
   DEFAULT_PI_RESOURCE_DIGEST_LIMITS,
-  SKIPPABLE_RESOURCE_CODES,
   createPiResourceDigestFence,
   createPiResourceDigestInput,
   digestPiResourceInputs,
