@@ -76,4 +76,6 @@ export type {
   BoringPluginManifestValidationResult,
   BoringPluginPackageJson,
 } from "./shared/plugins/manifest"
+export { postUiCommand } from "./front/bridge/uiCommandBus"
+export type { PluginProviderProps } from "./shared/plugins/types"
 export type { PaneProps, WorkspaceSourceProps, WorkspaceSourceOpenPanelConfig } from "./shared/types/panel"

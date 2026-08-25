@@ -1,9 +1,7 @@
-import { lazy, Suspense } from "react"
 import {
   definePlugin,
   WORKSPACE_OPEN_PATH_SURFACE_KIND,
   type BoringFrontFactoryWithId,
-  type PaneProps,
 } from "@hachej/boring-workspace/plugin"
 import {
   DIAGRAM_PANEL_ID,
@@ -12,29 +10,15 @@ import {
   titleForPath,
 } from "../shared"
 
-interface DiagramPaneParams {
-  path?: string
-  filesystem?: string
-  mode?: string
-}
-
-const LazyDiagramPane = lazy(async () => {
+const importDiagramPane = async () => {
   const module = await import("./DiagramPane")
   return { default: module.DiagramPane }
-})
-
-function DiagramPanel(props: PaneProps<DiagramPaneParams>) {
-  return (
-    <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading Diagram…</div>}>
-      <LazyDiagramPane {...props} />
-    </Suspense>
-  )
 }
 
 const diagramPlugin: BoringFrontFactoryWithId = definePlugin({
   id: DIAGRAM_PLUGIN_ID,
   label: "Diagram",
-  panels: [{ id: DIAGRAM_PANEL_ID, label: "Diagram", component: DiagramPanel }],
+  panels: [{ id: DIAGRAM_PANEL_ID, label: "Diagram", component: importDiagramPane, lazy: true }],
   commands: [{ id: "diagram.open", title: "Open Diagram", panelId: DIAGRAM_PANEL_ID }],
   surfaceResolvers: [
     {
