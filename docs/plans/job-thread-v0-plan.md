@@ -519,6 +519,28 @@ later reshape, while the add/remove **UI** itself is pushed to a deferred slice 
 
 ## 4. Projection — the merged timeline
 
+### Continuity principle (owner ruling, 2026-08-25)
+
+**The Job Thread renders as the existing chat surface, not a new timeline component.** A thread with
+one seat is indistinguishable from today's chat — same `PiChatPanel` (`packages/agent/src/front/chat/PiChatPanel.tsx:200`,
+props `PiChatPanelProps`, `:130`), same composer, same message list. Multi-agent only ever shows up as
+three additive marks on that existing surface: a per-message agent chip, quiet inline system lines for
+`joined`/handoff/`left` (§2, §3, §3's Staffing workflow subsection), and the ask-user block idiom already rendered today
+(`AskUserQuestion`, §4 Today below) — unchanged, just answering for whichever participant it is keyed
+to. There is one composer addressed to the thread; routing to the right seat is invisible plumbing
+(§2's handoff tool, or unaddressed-goes-to-worker per §5), and `@mention` stays optional, never
+required to route a message.
+
+**Today anchor**: `WorkspaceChatPanelProps` wraps `PiChatPanelProps<WorkspaceAttentionBlocker>`
+(`packages/workspace/src/front/chrome/chat/types.ts:9`) and the app shell — not workspace — "owns the
+actual chat implementation" (`:26-28`); that's the one surface a job thread must render through.
+
+**Delta shrinks accordingly.** §4's earlier framing implied a parallel merged-timeline view; it is not
+one. The projection is a **message-source adapter** feeding `PiChatPanel` a merged
+`(turnOrdinal, seq, markerOrdinal)` stream (below) instead of one session's events — no new
+timeline/list component, no new render tree. S4 (§7) shrinks to the adapter plus the three additive
+marks; it does not build a view.
+
 ### Today
 
 - The left-pane row model `AppLeftPaneSession { id, agentTypeId?, title?, updatedAt?, turnCount?,
@@ -662,13 +684,17 @@ order** from §3 (ledger/snapshot reconciliation before `outcome-unknown`).
   **processed, not skipped**; `outcome-unknown` is never appended without steps 1-3 having run; a new
   human turn opens a fresh `chainId` without inheriting or resetting the prior chain's counters.
 
-**S4 — front projection.** Merged timeline by `(turnOrdinal, seq, markerOrdinal)` with participant attribution,
-ask-user join on the full triple, drill-down links. Plugin panel only — no Console pane changes.
+**S4 — front projection.** Per §4's continuity principle, this is an adapter, not a new view: a
+message-source adapter feeding the existing `PiChatPanel` a merged `(turnOrdinal, seq,
+markerOrdinal)` stream (§3), plus the three additive marks — per-message agent chip, quiet inline
+`joined`/handoff/`left` system lines, ask-user join on the full triple against the existing block
+idiom. Drill-down links. No new timeline/list component, no Console pane changes.
 - *Blocked by:* S3.
-- *Scope:* `plugins/job-threads/src/front/` + tests.
+- *Scope:* `plugins/job-threads/src/front/{jobMessageSource,agentChip,systemLineMarkers}.ts` +
+  tests — smaller than a parallel view: no new render tree, no new list component.
 - *Proof:* `pnpm --filter @hachej/boring-job-threads test -- src/front/__tests__/`.
 - *Negative proof:* an ask-user hint whose triple matches no participant renders nowhere and answers
-  nothing.
+  nothing; a single-seat job renders byte-for-byte through the unmodified `PiChatPanel` path.
 
 **S5 — K7 demo fixture.** Two-agent fleet, scripted adapter acceptance asserting the §5 sequence,
 Objective compensation path, plus a separately-labelled live smoke.
