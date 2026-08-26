@@ -821,24 +821,10 @@ export function WorkspaceAgentFront<
       setNewChatAgentTypeIdOverride(undefined)
     }
   }, [addressedAgentOptions, newChatAgentTypeIdOverride])
-  // gh-1296 review fix: the legacy `default` fallback stays listable,
-  // switchable and readable, but it is never a CREATION target — opening a
-  // default-bound chat retargets the addressed selection at the fallback, and
-  // letting that flow into New chat would manufacture more fallback-bound
-  // sessions with every click. Creation derives from authored seats; a fleet
-  // that is nothing but the fallback still selects it (matches the discovery
-  // default in useAddressedAgentSelection).
-  const newChatAgentTypeId = useMemo(() => {
-    if (newChatAgentTypeIdOverride) return newChatAgentTypeIdOverride
-    if (!fleetModeEnabled) return effectiveAgentTypeId
-    const effectiveIsLegacy = addressedAgentOptions.find(
-      (agent) => agent.agentTypeId === effectiveAgentTypeId,
-    )?.legacy === true
-    // Only divert when creation would otherwise land on the fallback; a normal
-    // configured default keeps its role as the pre-selection target.
-    if (!effectiveIsLegacy) return effectiveAgentTypeId
-    return addressedAgentOptions.find((agent) => !agent.legacy)?.agentTypeId ?? effectiveAgentTypeId
-  }, [addressedAgentOptions, effectiveAgentTypeId, fleetModeEnabled, newChatAgentTypeIdOverride])
+  // Creation follows the explicit picker target or the currently addressed
+  // owner exactly. The `legacy` catalog marker is presentation-only and must
+  // not silently rewrite a persisted or explicitly selected `default` owner.
+  const newChatAgentTypeId = newChatAgentTypeIdOverride ?? effectiveAgentTypeId
   const localSessionStore = useMemo(
     () => createLocalStorageSessions({ storageKey: resolvedSessionStorageKey }),
     [resolvedSessionStorageKey],

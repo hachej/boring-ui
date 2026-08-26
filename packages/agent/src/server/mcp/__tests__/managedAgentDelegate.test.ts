@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net'
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   MANAGED_AGENT_MCP_DELIVERY_RULE,
@@ -89,6 +89,24 @@ describe('ManagedAgentMcpDelegateController', () => {
     expect(first).not.toHaveProperty('shareLink')
     expect(JSON.stringify(first)).not.toMatch(/\/share\//i)
     expect(progressMessages).toContain('Agent turn started.')
+  })
+
+  it('preserves an explicitly configured default owner at the MCP Gateway seam', async () => {
+    const agent = new FakeAgent()
+    const gateway = legacyAgentGateway(agent)
+    gateway.listAgents = async () => [
+      { agentTypeId: 'default', label: 'default', legacy: true },
+      { agentTypeId: 'alpha', label: 'Alpha' },
+    ]
+    const createSession = vi.spyOn(gateway, 'createSession')
+    const controller = createManagedAgentMcpDelegateController(options(agent, { gateway }))
+
+    await controller.delegateTask({ brief: 'keep the configured owner' })
+
+    expect(createSession).toHaveBeenCalledWith(expect.objectContaining({
+      agentTypeId: 'default',
+      title: 'keep the configured owner',
+    }))
   })
 
   it('accepts a Markdown artifact at exactly 256 KiB and reports byte digest metadata', async () => {

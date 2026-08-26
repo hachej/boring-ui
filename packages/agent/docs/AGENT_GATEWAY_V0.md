@@ -80,16 +80,16 @@ Note `listAgents` takes `ListAgentsInput`, not a bare `AuthorizedAgentScope`.
 apart from `AgentSummary.legacy`.
 
 `legacy: true` marks the `default` fallback identity, listed beside a
-configured fleet only so the sessions bound to it stay addressable (gh-1296).
-It is not an authored seat: with configured Agents in the fleet it is labelled
-`default` rather than `Agent`, and clients keep listing and routing its
-sessions while leaving it out of seat chrome unless it owns chats or its
-history source fails. Decision 28
-retains that history compatibility, while Decision 29 makes the Gateway the
-canonical enforcement point: `createSession` rejects this history-only target
-when an authored Agent shares the fleet. A fleet that is nothing but the
-fallback is the legacy single-agent boot and remains creation-capable — label
-`Agent`, no `legacy` flag.
+configured fleet so sessions bound to it stay addressable (gh-1296). It is not
+an authored seat: with configured Agents in the fleet it is labelled `default`
+rather than `Agent`, and clients keep listing and routing its sessions while
+leaving it out of authored-seat chrome unless it owns chats or its history
+source fails. The marker is presentation metadata, not a creation policy:
+`createSession` remains valid for `default` in mixed fleets, just as it is for
+the legacy single-agent boot. This keeps the same explicit or persisted owner
+consistent across Gateway, UI, CLI, MCP, and dispatcher callers under Decisions
+28 and 29. In a fallback-only fleet the entry keeps its original presentation —
+label `Agent`, no `legacy` flag.
 
 Session activity is the extracted alias `AgentSessionActivity`:
 `'idle' | 'running' | 'aborting' | 'error'`.

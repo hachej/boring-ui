@@ -455,7 +455,8 @@ describe("AppLeftPane", () => {
   // seats so chats bound to it stay addressable. It is not an authored seat,
   // so an empty one is not fleet chrome — but the moment it owns a chat its
   // card comes back, because in the nested tree that card IS the route to it.
-  it("hides an empty legacy fallback from the seat list", () => {
+  it("hides an empty legacy fallback only from the authored-seat list", async () => {
+    const user = userEvent.setup()
     renderFleetPane({
       agents: [
         { agentTypeId: "default", label: "default", legacy: true, sessionsStatus: "loaded" },
@@ -468,6 +469,8 @@ describe("AppLeftPane", () => {
     expect(document.querySelector('[data-boring-agent-type-id="default"]')).toBeNull()
     expect(screen.queryByRole("button", { name: /^default;/ })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: /Boring Alpha;/ })).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Choose Agent for new chat" }))
+    expect(within(screen.getByRole("menu")).getByText("default")).toBeInTheDocument()
   })
 
   it("keeps a legacy fallback that owns chats listed, so those chats stay reachable", () => {
@@ -509,13 +512,12 @@ describe("AppLeftPane", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Chats unavailable.")
   })
 
-  // gh-1296 review fix: the fallback card is reachability chrome, not a seat.
-  // It must expose no creation affordance, and the New chat picker must never
-  // offer the fallback — browsing old chats must not manufacture more
-  // fallback-bound sessions.
-  it("keeps the legacy fallback card read-only and out of the new-chat picker", async () => {
+  // Owner-ratified option B: the fallback is excluded from authored-seat
+  // counting, not from creation. Its visible history card and the complete
+  // catalog picker preserve an explicit `default` owner.
+  it("keeps default creation available without counting the fallback as a seat", async () => {
     const user = userEvent.setup()
-    renderFleetPane({
+    const handlers = renderFleetPane({
       agents: [
         { agentTypeId: "default", label: "default", legacy: true, sessionsStatus: "loaded" },
         { agentTypeId: "alpha", label: "Boring Alpha", sessionsStatus: "loaded" },
@@ -529,19 +531,18 @@ describe("AppLeftPane", () => {
       pinnedSessionRefs: [],
     })
 
-    // The card exists (its chat is listed beneath it), but it has no "+" and
-    // no placement-variants menu.
     expect(screen.getByText("Chat from before the fleet")).toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "New chat with default" })).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "New chat options for default" })).not.toBeInTheDocument()
-    // The picker's primary target derives from authored seats — never the
-    // fallback — regardless of which owner the pane is addressing.
-    expect(screen.getByRole("button", { name: "Start new chat with Boring Alpha" })).toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Start new chat with default" })).not.toBeInTheDocument()
+    expect(document.querySelector('[data-boring-workspace-part="app-left-agents-count"]')).toHaveTextContent("2 seats")
+    await user.click(screen.getByRole("button", { name: "New chat with default" }))
+    expect(handlers.onCreateSession).toHaveBeenCalledWith("default")
+    await user.click(screen.getByRole("button", { name: "New chat options for default" }))
+    await user.click(screen.getByText("New chat in split pane"))
+    expect(handlers.onCreateSplitSession).toHaveBeenCalledWith("default")
+
     await user.click(screen.getByRole("button", { name: "Choose Agent for new chat" }))
     const menu = screen.getByRole("menu")
+    expect(within(menu).getByText("default")).toBeInTheDocument()
     expect(within(menu).getByText("Alpha")).toBeInTheDocument()
-    expect(within(menu).queryByText("default")).not.toBeInTheDocument()
   })
 
   it("unifies the multi-project fleet: labeled project rows, a lens that filters them, and a global new chat", async () => {

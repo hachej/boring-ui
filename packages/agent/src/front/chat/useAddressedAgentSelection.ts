@@ -152,13 +152,9 @@ function discoverAgents(
   return request
 }
 
-/**
- * Nothing picked yet addresses an authored seat, never the `legacy` fallback
- * the host lists only to keep its existing sessions addressable (gh-1296).
- * A fleet that is nothing but the fallback still selects it.
- */
+/** Nothing picked yet addresses the host's first (default) fleet entry. */
 function defaultSelection(agents: readonly AddressedAgentOption[]): string | undefined {
-  return (agents.find((agent) => !agent.legacy) ?? agents[0])?.agentTypeId
+  return agents[0]?.agentTypeId
 }
 
 function parseAgentOptions(value: unknown): AddressedAgentOption[] {

@@ -2,16 +2,16 @@
  * How the legacy `default` runtime presents itself in agent listings.
  *
  * The `default` agentTypeId is never removed from a composed fleet: existing
- * sessions are bound to it and Decision 28 retains session/history
- * compatibility, so dropping it from the compiled fleet would strand chat
- * history. What gh-1296 fixes is the *presentation*: alongside a configured
+ * sessions are bound to it, so dropping it from the compiled fleet would strand
+ * chat history. What gh-1296 fixes is the *presentation*: alongside a configured
  * fleet the fallback used to advertise itself as an authored seat labelled
  * `Agent`, sitting above the real seats.
  *
- * So listings keep the entry — every caller can still address it, and clients
- * still enumerate its sessions — but mark it `legacy` and label it `default`,
- * which is what it is. Clients hide a legacy entry that owns no sessions from
- * seat chrome; one that owns sessions stays visible so its chats are reachable.
+ * So listings keep the entry — every caller can still address it for creation
+ * and history, and clients still enumerate its sessions — but mark it `legacy`
+ * and label it `default`, which is what it is. Clients hide a legacy entry that
+ * owns no sessions from authored-seat chrome; one that owns sessions stays
+ * visible so its chats are reachable.
  *
  * With no configured fleet (the legacy single-agent boot) nothing changes: the
  * lone default agent is the workspace's agent and keeps the `Agent` label.

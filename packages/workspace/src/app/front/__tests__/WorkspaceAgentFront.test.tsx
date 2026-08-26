@@ -705,7 +705,7 @@ describe("WorkspaceAgentFront", () => {
     expect(sessionScopes.get("default")).toBe("fleet-legacy-empty:default")
     expect(document.querySelector('[data-boring-agent-type-id="default"]')).toBeNull()
     expect(document.querySelector('[data-boring-workspace-part="app-left-agents-count"]')).toHaveTextContent("2 seats")
-  })
+  }, 10_000)
 
   it("keeps fallback history error chrome visible when authored session sources still load", async () => {
     const user = userEvent.setup()
@@ -755,14 +755,13 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.getByText("Chats unavailable.")).toHaveAttribute("role", "alert")
   })
 
-  // gh-1296 review fix: opening a default-bound chat switches the addressed
-  // owner to the legacy fallback, but creation must never follow it there —
-  // otherwise reading history retargets New chat at `default` and manufactures
-  // more fallback-bound sessions.
-  it("keeps implicit new chats authored and never retargets an explicit legacy split", async () => {
+  // Owner-ratified option B: `legacy` is presentation metadata. Persisted and
+  // explicit `default` owners remain creation-capable beside authored seats.
+  it("creates for the addressed default and preserves explicit split ownership", async () => {
     const user = userEvent.setup()
     const createAttempts = vi.fn()
     const createdBy = vi.fn()
+    let created = 0
     const agents = [
       { agentTypeId: "default", label: "default", legacy: true },
       { agentTypeId: "alpha", label: "Alpha" },
@@ -795,9 +794,9 @@ describe("WorkspaceAgentFront", () => {
         switch: vi.fn(),
         create: async () => {
           createAttempts(owner)
-          if (owner === "default") throw new Error("legacy default agent is available for history only")
           createdBy(owner)
-          return { id: `${owner}-new`, agentTypeId: owner, title: `${owner} new`, updatedAt: 9 }
+          created += 1
+          return { id: `${owner}-new-${created}`, agentTypeId: owner, title: `${owner} new`, updatedAt: 9 }
         },
         delete: vi.fn(),
       }
@@ -827,32 +826,27 @@ describe("WorkspaceAgentFront", () => {
       expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-session-id", "legacy-one")
     })
 
-    // A split is explicitly owned by the pane being split. Preserve that
-    // legacy owner through the session controller so the Gateway rejection is
-    // honest; never turn it into an Alpha session behind the user's back.
+    // A split is explicitly owned by the pane being split. Preserve `default`
+    // through the fleet controller rather than silently retargeting Alpha.
     await user.click(screen.getByRole("button", { name: /^Split .* chat vertically$/ }))
-    await waitFor(() => expect(createAttempts).toHaveBeenCalledWith("default"))
-    expect(createdBy).not.toHaveBeenCalled()
-    expect(screen.getAllByTestId("chat-pane")).toHaveLength(1)
+    await waitFor(() => expect(createdBy).toHaveBeenCalledWith("default"))
+    expect(screen.getAllByTestId("chat-pane")).toHaveLength(2)
 
-    // Implicit New chat does NOT follow history selection: the primary picker
-    // target derives from an authored seat and never offers `default`.
-    const primary = screen.getByRole("button", { name: /^Start new chat with / })
-    expect(primary).not.toHaveAttribute("aria-label", "Start new chat with default")
+    // Implicit New chat follows the currently addressed default, and the full
+    // catalog keeps default available as an explicit picker choice.
+    const primary = screen.getByRole("button", { name: "Start new chat with default" })
     await user.click(screen.getByRole("button", { name: "Choose Agent for new chat" }))
     const menu = screen.getByRole("menu")
-    expect(within(menu).queryByText("default")).not.toBeInTheDocument()
-
-    // Retarget through the picker's authored seats, then create — landing must
-    // be Alpha even though the addressed owner is still the legacy fallback.
-    await user.click(within(menu).getByText("Alpha"))
-    await user.click(await screen.findByRole("button", { name: "Start new chat with Alpha" }))
-    await waitFor(() => {
-      expect(createdBy).toHaveBeenCalledWith("alpha")
-    })
-    expect(createdBy).not.toHaveBeenCalledWith("default")
-    expect(createAttempts).toHaveBeenCalledWith("default")
-  })
+    expect(within(menu).getByText("default")).toBeInTheDocument()
+    expect(within(menu).getByText("Alpha")).toBeInTheDocument()
+    await user.keyboard("{Escape}")
+    fireEvent.click(primary)
+    await waitFor(() => expect(createdBy).toHaveBeenCalledTimes(2))
+    expect(createdBy).toHaveBeenNthCalledWith(1, "default")
+    expect(createdBy).toHaveBeenNthCalledWith(2, "default")
+    expect(createAttempts).toHaveBeenNthCalledWith(1, "default")
+    expect(createAttempts).toHaveBeenNthCalledWith(2, "default")
+  }, 10_000)
 
   it("discovers an addressed fleet, groups its chats, and creates through the chosen owner", async () => {
     const user = userEvent.setup()

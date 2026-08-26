@@ -64,10 +64,10 @@ export interface AgentSummary {
   readonly pluginIds?: readonly string[]
   /**
    * The legacy `default` fallback identity, listed alongside a configured
-   * fleet purely so the sessions bound to it stay addressable (Decision 28's
-   * session/history compatibility). It is NOT an authored seat: clients keep
-   * loading and routing its sessions, but must not present it as a peer of the seats
-   * someone actually wrote (gh-1296).
+   * fleet so sessions bound to it stay addressable. It is NOT an authored seat:
+   * clients keep loading and routing its sessions, but must not present it as a
+   * peer of the seats someone actually wrote (gh-1296). This presentation
+   * marker does not restrict explicit creation for that identity.
    */
   readonly legacy?: boolean
   readonly definition?: {

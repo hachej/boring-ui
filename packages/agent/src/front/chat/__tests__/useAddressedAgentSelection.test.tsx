@@ -45,10 +45,8 @@ describe('useAddressedAgentSelection', () => {
     expect(result.current.selectedAgentTypeId).toBe('review/agent')
   })
 
-  // gh-1296: the host lists its legacy `default` fallback so existing sessions
-  // stay addressable — it is still selectable and still owns its chats, but it
-  // is not what an unaddressed workspace should start talking to.
-  test('opens on an authored seat rather than the legacy fallback', async () => {
+  // gh-1296: `legacy` changes presentation, not the host's default owner.
+  test('keeps the first default entry selected beside an authored fleet', async () => {
     const fetchMock = vi.fn(async () => jsonResponse([
       { agentTypeId: 'default', label: 'default', legacy: true },
       { agentTypeId: 'alpha', label: 'Alpha' },
@@ -63,10 +61,9 @@ describe('useAddressedAgentSelection', () => {
       { agentTypeId: 'default', label: 'default', legacy: true },
       { agentTypeId: 'alpha', label: 'Alpha' },
     ])
-    expect(result.current.selectedAgentTypeId).toBe('alpha')
-    // Still addressable: a chat bound to `default` can be selected as before.
-    act(() => result.current.selectAgentTypeId('default'))
     expect(result.current.selectedAgentTypeId).toBe('default')
+    act(() => result.current.selectAgentTypeId('alpha'))
+    expect(result.current.selectedAgentTypeId).toBe('alpha')
   })
 
   test('selects the legacy fallback when it is the whole fleet', async () => {

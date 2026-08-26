@@ -251,9 +251,9 @@ export function useAddressedFleetSessions<TSession extends WorkspaceAgentSession
         controllerFor(owner)?.switch(id, owner)
       },
       create(input) {
-        // Preserve explicit ownership exactly. In particular, a split of a
-        // legacy history pane must reach the canonical Gateway as `default`
-        // and be rejected there, never silently become the first authored seat.
+        // Preserve explicit ownership exactly. In particular, a split or MCP-
+        // style caller addressed to `default` must never silently become the
+        // first authored seat merely because the catalog marks it `legacy`.
         const owner = input?.agentTypeId ?? selectedAgentTypeId
         const controller = controllerFor(owner)
         if (!owner || !controller) return Promise.reject(new Error("Agent sessions are not ready"))

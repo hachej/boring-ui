@@ -38,7 +38,12 @@ function createFakeGateway(): AgentGateway & {
     sends,
     createSession,
     connectSession,
-    async listAgents() { return [] },
+    async listAgents() {
+      return [
+        { agentTypeId: 'default', label: 'default', legacy: true },
+        { agentTypeId: 'alpha', label: 'Alpha' },
+      ]
+    },
     async listSessions() { return { sessions: [] } },
     async readSessionState() { throw new Error('not implemented') },
     async renameSession() { throw new Error('not implemented') },
@@ -48,7 +53,7 @@ function createFakeGateway(): AgentGateway & {
 }
 
 describe('workspace agent dispatcher', () => {
-  it('uses addressed Gateway operations and returns the durable dispatch receipt before events', async () => {
+  it('preserves default creation in a mixed fleet and returns the durable dispatch receipt before events', async () => {
     const gateway = createFakeGateway()
     const dispatcher = createBoundWorkspaceAgentDispatcher({ gateway, scope, agentTypeId: 'default' }, CTX)
 

@@ -325,6 +325,16 @@ describe.sequential("CLI Agent Host composition", () => {
       expect(workerTools.statusCode, workerTools.body).toBe(200)
       expect(defaultTools.json().tools.map((tool: { name: string }) => tool.name)).toContain("workspace_seat_tool")
       expect(workerTools.json().tools.map((tool: { name: string }) => tool.name)).toContain("workspace_seat_tool")
+
+      // The marked default and authored worker form a mixed fleet. CLI's HTTP
+      // edge must preserve direct default creation just like embedded callers.
+      const createdDefault = await app.inject({
+        method: "POST",
+        url: "/api/v1/agents/default/sessions",
+        payload: { requestId: "cli-mixed-fleet-default-create", title: "CLI default chat" },
+      })
+      expect(createdDefault.statusCode, createdDefault.body).toBe(201)
+      expect(createdDefault.json()).toMatchObject({ agentTypeId: "default" })
     } finally {
       if (app) await app.close()
       process.chdir(previousCwd)
