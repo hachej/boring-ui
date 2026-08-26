@@ -141,7 +141,8 @@ is the external ingress surface.
 Instance-per-tenant: one deployment dedicated to one customer. The deployable
 app repository owns its provider and operations configuration; this framework
 repository retains only the topology and sandbox analysis in
-[`docs/plans/remote-sandbox-self-host-analysis.md`](../../plans/remote-sandbox-self-host-analysis.md).
+[`docs/plans/archive/remote-sandbox-self-host-analysis.md`](../../plans/archive/remote-sandbox-self-host-analysis.md)
+(archived; superseded by the ratified SBX1 own-cloud/gVisor decision).
 The same future framework/schema version and sandbox contract—not an A1
 promise—would make this a second consumption tier of the same product, not a
 fork of the codebase.

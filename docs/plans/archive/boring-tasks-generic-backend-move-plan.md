@@ -1,3 +1,5 @@
+> Archived: shipped. Kept for history, not current truth.
+
 # Boring Tasks Generic Backend Move Plan
 
 ## Goal

@@ -1,6 +1,9 @@
+> Archived: the boring-tasks Kanban plugin shipped in #486. Kept for history,
+> not current truth.
+
 # Thermo review — boring-tasks Kanban plugin plan
 
-Source plan: [`../boring-tasks-kanban-plugin-plan.md`](../boring-tasks-kanban-plugin-plan.md)
+Source plan: [`boring-tasks-kanban-plugin-plan.md`](boring-tasks-kanban-plugin-plan.md)
 
 Reviewer: subagent `reviewer`
 

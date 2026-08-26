@@ -1,3 +1,7 @@
+> Archived: superseded by the ratified SBX1 own-cloud/gVisor decision
+> (see [`docs/issues/808/sbx1-own-cloud-provider-plan.md`](../../issues/808/sbx1-own-cloud-provider-plan.md)
+> and `docs/DECISIONS.md`). Kept for history, not current truth.
+
 # Remote sandbox self-hosting analysis for boring-ui
 
 Status: planning/research note. No implementation.

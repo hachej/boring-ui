@@ -1,3 +1,6 @@
+> Archived: shipped in #327 (`packages/core/src/app/front/chatFirst/chatFirstPublicShell.css`
+> exists). Kept for history, not current truth.
+
 # Plan: ship the chat-first public-shell styling from `packages/core`
 
 ## Problem

@@ -1,3 +1,6 @@
+> Archived: no open checkboxes, superseded by the shipped markdown/diagram
+> plugin work. Kept for history, not current truth.
+
 # Markdown plugin HTML nodes plan
 
 Tracking issue: [#567](https://github.com/hachej/boring-ui/issues/567)
