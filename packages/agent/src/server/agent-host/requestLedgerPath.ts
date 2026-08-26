@@ -55,7 +55,15 @@ export interface ResolveRequestLedgerPathInput {
 }
 
 /**
- * Resolve the durable request ledger file for an agent host.
+  * Resolve the durable request ledger file for an agent host.
+ *
+ * **Ledger cutover note:** adopting BORING_AGENT_SESSION_ROOT (or an
+ * explicit requestLedgerPath) after running with the legacy in-workspace
+ * location RELOCATES the sqlite ledger. Effect-idempotency keys recorded
+ * at the legacy path are stranded there; retries that span the upgrade
+ * may be re-admitted once against the new ledger. Copy or drain the
+ * legacy file as part of the cutover if exactly-once effects must
+ * survive it.
  *
  * The request ledger is host application state, not workspace content, so the
  * chain prefers host-owned storage: explicit option, then the caller's
