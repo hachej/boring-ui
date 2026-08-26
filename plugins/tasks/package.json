@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-tasks",
-  "version": "0.1.103",
+  "version": "0.1.105",
   "type": "module",
   "private": false,
   "license": "MIT",
@@ -28,6 +28,10 @@
       "types": "./dist/front/index.d.ts",
       "import": "./dist/front/index.js"
     },
+    "./front/descriptor": {
+      "types": "./dist/front/descriptor.d.ts",
+      "import": "./dist/front/descriptor.js"
+    },
     "./shared": {
       "types": "./dist/shared/index.d.ts",
       "import": "./dist/shared/index.js"
@@ -40,7 +44,7 @@
   },
   "sideEffects": false,
   "scripts": {
-    "build": "tsup",
+    "build": "tsup --config tsup.config.ts && tsup --config tsup.descriptor.config.ts && node scripts/assert-declarations.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
     "proof:beads-readonly": "pnpm build && node scripts/prove-beads-readonly.mjs",

@@ -175,3 +175,45 @@ AgentId ── DefinitionDigest (exact version)
 **FREEZE.** Ontology, security model, durability model, migration doctrine,
 product ladder, and DAG are settled. Next feedback comes from implementation
 and the first real Agent Product — not another abstraction pass.
+
+---
+
+## 7. OWNER RULING — 2026-08-24 (amendment; multi-seat Thread; tracked in #1399)
+
+Additive to §6, not a reopening: the frozen ontology and invariants above are
+unchanged. This closes the one item §6 left implicit — how a Thread relates to
+more than one Seat's Runs.
+
+**Ruling.** *A Thread may span multiple Seats, projected as one timeline; one
+Thread per job.* Mechanism: no new machinery. Per-Run seat attribution already
+exists — the ratified trajectory spine (Q3 above, `runId · agentId ·
+definitionDigest · seatId · workspaceId · input · trajectory · artifacts ·
+usage · cost · human intervention · evaluation · business outcome`) already
+carries `seatId` per Run. A multi-seat Thread is that same spine read across
+Runs from more than one Seat and rendered as one collapsed timeline; Thread
+still "owns one record and many Runs" per VISION R-c, now including Runs
+authored under different Seats.
+
+**Naming ruling.** This concept is named **multi-seat Thread** / **Job
+Thread**. It is never called a "channel": `channel` stays reserved for
+transport/ingress surfaces (C5 durable pause's "channel-answerable" delivery,
+Track C, Slack/CLI ingress). Thread is the collapse point on the product side;
+channel is how a message reaches or leaves the system. Do not conflate them.
+
+**Explicit non-change.** This ruling does **not** activate A2A loopback or a
+shared-runtime "room" where agents call agents. v0 realization stays
+projection-based: an orchestrator Seat relays between per-agent sessions as an
+ordinary client of each session's record — agents never invoke agents
+directly, and no shared-transcript runtime primitive is promoted by this
+ruling. Any future shared-transcript runtime primitive keeps its own
+promotion gate (Rule of Three / second runtime mode, per VISION R-e) and is
+out of scope here.
+
+**Console/#1355 hook.** Console conversation references must be typed to
+allow a Thread with more than one Seat from the start — contracts must not
+assume single-seat Threads. This is a naming/typing constraint on #1355's
+planning, not new scope for it.
+
+**Deferred (unchanged from RECONCILIATION §5 / VISION §10).** The human-facing
+multi-agent selector/switch UX remains a separate product decision; this
+amendment ratifies the data-model sentence only.

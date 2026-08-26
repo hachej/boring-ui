@@ -26,6 +26,7 @@ export function createRemoteWorkerModeAdapter(opts: RemoteWorkerModeAdapterOptio
   return {
     id: REMOTE_WORKER_PROVIDER,
     workspaceFsCapability: 'best-effort',
+    getRuntimeLayoutRoot: () => REMOTE_WORKER_RUNTIME_CWD,
     async create(ctx) {
       const workspaceId = requireOption(ctx.workspaceId ?? ctx.sessionId, 'workspaceId')
       const client = new RemoteWorkerClient({

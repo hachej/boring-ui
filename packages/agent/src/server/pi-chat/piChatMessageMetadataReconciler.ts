@@ -106,6 +106,20 @@ export class PiChatMessageMetadataReconciler {
       ?? entries.find((entry) => matchesMetadataText(entry, followUp.displayText))
   }
 
+  hasConsumingFollowUp(sessionId: string, followUp: QueuedUserMessage): boolean {
+    const entries = this.consumingFollowUpMetadata.get(sessionId) ?? []
+    return entries.some((entry) => matchesFollowUpSelector(entry, followUp))
+      || entries.some((entry) => matchesMetadataText(entry, followUp.displayText))
+  }
+
+  removeConsumingFollowUp(sessionId: string, followUp: QueuedUserMessage): void {
+    if (hasFollowUpSelector(followUp)) {
+      this.removeFollowUpFrom(this.consumingFollowUpMetadata, sessionId, followUp)
+      return
+    }
+    this.removeFirstFollowUpByTextFrom(this.consumingFollowUpMetadata, sessionId, followUp.displayText)
+  }
+
   enrichSnapshot(sessionId: string, snapshot: PiChatSnapshot): PiChatSnapshot {
     const messages = this.enrichSnapshotMessages(sessionId, snapshot.messages)
     const followUps = this.enrichQueuedFollowUps(sessionId, snapshot.queue.followUps)

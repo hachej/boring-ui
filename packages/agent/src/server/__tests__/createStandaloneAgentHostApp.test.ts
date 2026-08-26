@@ -118,6 +118,7 @@ test('createStandaloneAgentHostApp stamps the explicit caller runtime host over 
   const directAdapter = createTestRuntimeModeAdapter('direct')
   const runtimeModeAdapter: RuntimeModeAdapter = {
     id: 'runtime-host-precedence-test',
+    getRuntimeLayoutRoot: ({ workspaceRoot }) => workspaceRoot,
     runtimeHost: adapterHost,
     workspaceFsCapability: 'strong',
     async create(context) {
@@ -216,6 +217,7 @@ test('createStandaloneAgentHostApp retires Agent, pair, then host adapter exactl
   })
   const runtimeModeAdapter: RuntimeModeAdapter = {
     id: 'standalone-lifecycle-test',
+    getRuntimeLayoutRoot: ({ workspaceRoot }) => workspaceRoot,
     workspaceFsCapability: 'strong',
     dispose: disposeAdapter,
     async create(ctx) {
@@ -262,6 +264,7 @@ test('createStandaloneAgentHostApp preserves Agent disposal failure while attemp
   let resolver: WorkspaceAgentDispatcherResolver | undefined
   const runtimeModeAdapter: RuntimeModeAdapter = {
     id: 'standalone-cleanup-error-test',
+    getRuntimeLayoutRoot: ({ workspaceRoot }) => workspaceRoot,
     workspaceFsCapability: 'strong',
     dispose: disposeAdapter,
     async create(ctx) {
@@ -361,6 +364,7 @@ test('createStandaloneAgentHostApp disposes its runtime once when profile initia
   const disposeAdapter = vi.fn(async () => {})
   const runtimeModeAdapter: RuntimeModeAdapter = {
     id: 'init-failure-test',
+    getRuntimeLayoutRoot: ({ workspaceRoot }) => workspaceRoot,
     workspaceFsCapability: 'strong',
     async create(ctx) {
       const { createTestRuntimeModeAdapter } = await import('@agent-test-host')
@@ -553,6 +557,7 @@ test('createStandaloneAgentHostApp exposes static filesystem bindings on files a
   }
   const runtimeModeAdapter: RuntimeModeAdapter = {
     id: 'static-bindings-test',
+    getRuntimeLayoutRoot: ({ workspaceRoot }) => workspaceRoot,
     workspaceFsCapability: 'strong' as const,
     dispose: disposeRuntime,
     async create(ctx) {

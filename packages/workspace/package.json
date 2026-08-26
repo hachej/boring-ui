@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-workspace",
-  "version": "0.1.103",
+  "version": "0.1.105",
   "type": "module",
   "license": "MIT",
   "description": "Workspace UI, plugin, and bridge package for composing chat, files, catalogs, editors, and app-specific panes.",
@@ -42,6 +42,10 @@
       "types": "./dist/app-front.d.ts",
       "import": "./dist/app-front.js",
       "default": "./dist/app-front.js"
+    },
+    "./loading": {
+      "types": "./dist/loading.d.ts",
+      "import": "./dist/loading.js"
     },
     "./app/server": {
       "types": "./dist/app-server.d.ts",
@@ -145,7 +149,7 @@
     "cmdk": "^1.1.1",
     "dnd-core": "^16.0.1",
     "dockview-react": "^7.0.4",
-    "fastify": "^5.11.3",
+    "fastify": "^5.12.1",
     "jiti": "^2.7.0",
     "lowlight": "^3.3.0",
     "lucide-react": "^1.31.0",

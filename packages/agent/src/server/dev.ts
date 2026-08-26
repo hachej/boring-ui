@@ -33,6 +33,9 @@ async function startViteDevServer(apiPort: number) {
   const vite = await createViteServer({
     root: appRoot,
     plugins: [react()],
+    optimizeDeps: {
+      include: ["@streamdown/cjk", "@streamdown/code", "@streamdown/math", "@streamdown/mermaid", "shiki"],
+    },
     server: {
       port: DEFAULT_FRONTEND_PORT,
       host: true,

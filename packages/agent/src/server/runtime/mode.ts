@@ -60,7 +60,8 @@ export interface RuntimeModeAdapter {
   readonly readiness?: RuntimeModeReadinessHooks
   readonly cachedBindingHealthCheck?: RuntimeCachedBindingHealthCheck
   create(ctx: ModeContext): Promise<RuntimeBundle>
-  getRuntimeLayoutRoot?(ctx: ModeContext): string
+  /** Resolves the provider-owned workspace root in runtime coordinates. */
+  getRuntimeLayoutRoot(ctx: ModeContext): string
   evictCachedRuntime?(ctx: { workspaceId: string }): void | Promise<void>
   dispose?(): Promise<void>
 }
@@ -107,7 +108,9 @@ export interface RuntimeFilesystemBinding {
 export interface RuntimeBundle {
   runtimeContext?: WorkspaceRuntimeContext
   /**
-   * Server-private host/storage root for host-side filesystem work. Do not use
+   * Server-private host/storage root for host-side filesystem work. Required
+   * when runtime-coordinate workspace resources have an explicit host mirror;
+   * absence means composition must not infer or project a host path. Do not use
    * this as the agent-visible cwd; Workspace.root remains the public runtime
    * namespace shown to tools/model.
    */

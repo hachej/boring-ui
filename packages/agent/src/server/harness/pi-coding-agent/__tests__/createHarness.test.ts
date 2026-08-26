@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { appendFileSync, writeFileSync } from "node:fs";
-import { appendFile, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile, utimes } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile, utimes } from "node:fs/promises";
 import { CURRENT_SESSION_VERSION, DefaultResourceLoader, formatSkillsForPrompt, SessionManager } from "@mariozechner/pi-coding-agent";
 import { basename, join } from "node:path";
 import { homedir, tmpdir } from "node:os";
@@ -21,6 +21,7 @@ import { sessionFilePath } from "./fixtures/sessionFiles.js";
 import { ErrorCode } from "../../../../shared/error-codes.js";
 import type { AgentTool } from "../../../../shared/tool.js";
 import { createPiResourceDigestInput, digestPiResourceInputs } from "../../../piResourceDigest.js";
+import { locateHostWorkspaceSkill } from "../../../agent-host/skillPathProjection.js";
 
 const fsHooks = vi.hoisted(() => ({
   onRename: undefined as (() => Promise<void>) | undefined,
@@ -161,6 +162,80 @@ describe("createPiCodingAgentHarness", () => {
     } finally {
       await rm(cwd, { recursive: true, force: true });
       await rm(agentDir, { recursive: true, force: true });
+    }
+  });
+
+  // gh-1196: ~/.agents/skills is normally a tree of symlinks, so one entry the
+  // digest cannot admit must degrade to a recorded skip instead of failing the
+  // whole digest closed and 403/500-ing every agent-scoped route.
+  it("skips an unadmittable ambient skill symlink instead of failing the digest closed", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "pi-symlink-digest-cwd-"));
+    const agentDir = await mkdtemp(join(tmpdir(), "pi-symlink-digest-agent-"));
+    const userHome = await mkdtemp(join(tmpdir(), "pi-symlink-digest-home-"));
+    const outside = await mkdtemp(join(tmpdir(), "pi-symlink-digest-outside-"));
+    const ambientSkills = join(userHome, ".agents", "skills");
+    const originalHome = process.env.HOME;
+    process.env.HOME = userHome;
+    const input = () => createPiResourceDigestInput({
+      piCwd: cwd,
+      piAgentDir: agentDir,
+      piUserHome: userHome,
+      noSkills: false,
+      resourceSets: [],
+      authorizedRoots: [cwd, agentDir],
+    });
+
+    try {
+      await mkdir(join(ambientSkills, "good-skill"), { recursive: true });
+      await writeFile(
+        join(ambientSkills, "good-skill", "SKILL.md"),
+        "---\nname: good-skill\ndescription: Admissible.\n---\n",
+        "utf8",
+      );
+      await mkdir(join(outside, "linked-skill"), { recursive: true });
+      await writeFile(
+        join(outside, "linked-skill", "SKILL.md"),
+        "---\nname: linked-skill\ndescription: Linked out.\n---\n",
+        "utf8",
+      );
+      await symlink(join(outside, "linked-skill"), join(ambientSkills, "linked-skill"));
+
+      const before = await digestPiResourceInputs(input());
+      expect(before).toMatch(/^sha256:/);
+
+      // Invariant: a skipped entry is never followed, opened or read, so its
+      // target's contents cannot reach the digest.
+      await writeFile(
+        join(outside, "linked-skill", "SKILL.md"),
+        "---\nname: linked-skill\ndescription: Rewritten out of band.\n---\nbody\n",
+        "utf8",
+      );
+      expect(await digestPiResourceInputs(input())).toBe(before);
+
+      // The skip is recorded, so the digest still moves when the link goes away.
+      await rm(join(ambientSkills, "linked-skill"));
+      const withoutLink = await digestPiResourceInputs(input());
+      expect(withoutLink).not.toBe(before);
+
+      // ...and moves back when it reappears, so appearance is observable too.
+      await symlink(join(outside, "linked-skill"), join(ambientSkills, "linked-skill"));
+      expect(await digestPiResourceInputs(input())).not.toBe(withoutLink);
+      await rm(join(ambientSkills, "linked-skill"));
+
+      // Invariant: a symlink the host declared itself is still rejected outright,
+      // and the escaping link is never followed either way.
+      await symlink(join(outside, "linked-skill"), join(ambientSkills, "linked-skill"));
+      await expect(digestPiResourceInputs({
+        ...input(),
+        additionalSkillPaths: [join(ambientSkills, "linked-skill")],
+        authorizedRoots: [cwd, agentDir, ambientSkills],
+      })).rejects.toMatchObject({ code: ErrorCode.enum.PATH_SYMLINK_ESCAPE });
+    } finally {
+      process.env.HOME = originalHome;
+      await rm(cwd, { recursive: true, force: true });
+      await rm(agentDir, { recursive: true, force: true });
+      await rm(userHome, { recursive: true, force: true });
+      await rm(outside, { recursive: true, force: true });
     }
   });
 
@@ -409,10 +484,65 @@ describe("pi extension path hot reload", () => {
   });
 });
 
+describe("host-backed workspace skill reload", () => {
+  it("reloads a late skill into the same Constellation-shaped session and sanitizes its prompt location", async () => {
+    const hostParent = await mkdtemp(join(tmpdir(), "constellation-skill-reload-"));
+    const hostWorkspaceRoot = join(hostParent, "data", "workspaces", "workspace-1");
+    const hostSkillRoot = join(hostWorkspaceRoot, ".agents", "skills");
+    await mkdir(hostSkillRoot, { recursive: true });
+    const harness = createPiCodingAgentHarness({
+      tools: [{ ...noopTool, name: "read", description: "Read a workspace file" }],
+      cwd: hostWorkspaceRoot,
+      runtimeCwd: "/workspace",
+      pi: {
+        noSkills: true,
+        noExtensions: true,
+        additionalSkillPaths: [hostSkillRoot],
+        locateSkillResource: (filePath) => locateHostWorkspaceSkill({
+          filePath,
+          runtimeWorkspaceRoot: "/workspace",
+          hostStorageRoot: hostWorkspaceRoot,
+        }),
+      },
+    });
+
+    try {
+      const session = await harness.sessions.create({ workspaceId: "workspace-1" });
+      await harness.getPiSessionAdapter({ sessionId: session.id, message: "start" }, {
+        abortSignal: new AbortController().signal,
+        workdir: "/workspace",
+        workspaceId: "workspace-1",
+      });
+      expect(harness.getSystemPrompt?.(session.id)).not.toContain("late-skill");
+
+      const lateSkillDir = join(hostSkillRoot, "late-skill");
+      await mkdir(lateSkillDir, { recursive: true });
+      await writeFile(join(lateSkillDir, "SKILL.md"), [
+        "---",
+        "name: late-skill",
+        "description: Loaded after session start.",
+        "---",
+        "# Late skill",
+        "",
+      ].join("\n"), "utf8");
+
+      await expect(harness.reloadSession?.(session.id)).resolves.toBe(true);
+      expect(harness.hasPiSession(session.id)).toBe(true);
+      expect(harness.getResourceDiagnostics?.(session.id)).toEqual([]);
+      const prompt = harness.getSystemPrompt?.(session.id) ?? "";
+      expect(prompt).toContain("late-skill");
+      expect(prompt).toContain('{"filesystem":"user","path":".agents/skills/late-skill/SKILL.md"}');
+      expect(prompt).not.toContain(hostWorkspaceRoot);
+    } finally {
+      await rm(hostParent, { recursive: true, force: true });
+    }
+  }, 20_000);
+});
+
 describe("projectSkillResourceLocations", () => {
-  it("projects located package skills without changing workspace skills", () => {
+  it("projects package and host-loaded workspace skills to tool-readable locators", () => {
     const packagePath = "/srv/node_modules/@example/plugin/skills/reporting/SKILL.md";
-    const workspacePath = "/workspace/.agents/skills/local/SKILL.md";
+    const workspacePath = "/data/workspaces/workspace-1/.agents/skills/local/SKILL.md";
     const prompt = formatSkillsForPrompt([packagePath, workspacePath].map((filePath, index) => ({
       name: `skill-${index}`,
       description: `Skill ${index}`,
@@ -422,14 +552,19 @@ describe("projectSkillResourceLocations", () => {
       disableModelInvocation: false,
     })));
 
-    const projected = projectSkillResourceLocations(prompt, (filePath) =>
-      filePath === packagePath
-        ? { filesystem: "agent_resources", path: "packages/@example/plugin/skills/reporting/SKILL.md" }
-        : undefined,
-    );
+    const projected = projectSkillResourceLocations(prompt, (filePath) => {
+      if (filePath === packagePath) {
+        return { filesystem: "agent_resources", path: "packages/@example/plugin/skills/reporting/SKILL.md" };
+      }
+      if (filePath === workspacePath) {
+        return { filesystem: "user", path: ".agents/skills/local/SKILL.md" };
+      }
+      return undefined;
+    });
 
     expect(projected).toContain('<location>{"filesystem":"agent_resources","path":"packages/@example/plugin/skills/reporting/SKILL.md"}</location>');
-    expect(projected).toContain(`<location>${workspacePath}</location>`);
+    expect(projected).toContain('<location>{"filesystem":"user","path":".agents/skills/local/SKILL.md"}</location>');
+    expect(projected).not.toContain("/data/workspaces");
     expect(projected).not.toContain(`<location>${packagePath}</location>`);
     expect(projected).toContain("pass its filesystem and path fields to the read tool");
     expect(projected).not.toContain("use that absolute path in tool commands");

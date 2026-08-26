@@ -1,3 +1,6 @@
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { ExtensionAPI, ExtensionFactory, ToolDefinition } from '@mariozechner/pi-coding-agent'
 import Fastify from 'fastify'
 import { assertComposedAgentHostRouteTable } from '@hachej/boring-agent/server/agent-host/testing/compositionRouteProof'
@@ -5,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const agentServerMock = vi.hoisted(() => ({
   registerOpts: [] as Array<Record<string, unknown>>,
+  requestLedgerPaths: [] as Array<string | undefined>,
 }))
 
 const workspaceServerMock = vi.hoisted(() => ({
@@ -28,6 +32,7 @@ vi.mock('@hachej/boring-agent/server', async (importOriginal) => {
       async compile({ agents }: { agents: readonly unknown[] }) { return agents },
     },
     createAgentHost: vi.fn(async (options: Parameters<typeof actual.createAgentHost>[0]) => {
+      agentServerMock.requestLedgerPaths.push(options.requestLedgerPath)
       const created = await actual.createAgentHost({
         ...options,
         requestLedgerPath: undefined,
@@ -110,6 +115,7 @@ vi.mock('@hachej/boring-workspace/app/server', () => ({
   }),
   createSandboxRuntimeModeAdapter: () => ({
     id: 'direct',
+    getRuntimeLayoutRoot: ({ workspaceRoot }: { workspaceRoot: string }) => workspaceRoot,
     workspaceFsCapability: 'strong',
     create: async (ctx: { workspaceRoot: string }) => ({
       workspace: { root: ctx.workspaceRoot, fsCapability: 'strong' },
@@ -315,6 +321,7 @@ const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceA
 
 afterEach(() => {
   agentServerMock.registerOpts.length = 0
+  agentServerMock.requestLedgerPaths.length = 0
   workspaceServerMock.browserAuthPolicyOptions.length = 0
   workspaceServerMock.runtimeEnvCalls.length = 0
   workspaceServerMock.httpRouteOpts.length = 0
@@ -867,5 +874,39 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
       },
     })
     await app.close()
+  })
+
+  // The request-ledger path chain has a single canonical owner. This host's
+  // legacy tail has no `.boring/` segment, unlike the standalone/workspace
+  // hosts, so it is pinned here.
+  it('keeps its request ledger under the host session root, falling back to the workspace root', async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'core-ledger-ws-'))
+    const sessionRoot = await mkdtemp(join(tmpdir(), 'core-ledger-sessions-'))
+    const originalSessionRootEnv = process.env.BORING_AGENT_SESSION_ROOT
+    try {
+      delete process.env.BORING_AGENT_SESSION_ROOT
+
+      const withSessionRoot = await createCoreWorkspaceAgentServer({
+        serveFrontend: false,
+        workspaceRoot,
+        sessionRoot,
+      })
+      expect(agentServerMock.requestLedgerPaths.at(-1))
+        .toBe(join(sessionRoot, '.agent-request-ledger.sqlite'))
+      await withSessionRoot.close()
+
+      const withoutSessionRoot = await createCoreWorkspaceAgentServer({
+        serveFrontend: false,
+        workspaceRoot,
+      })
+      expect(agentServerMock.requestLedgerPaths.at(-1))
+        .toBe(join(workspaceRoot, '.agent-request-ledger.sqlite'))
+      await withoutSessionRoot.close()
+    } finally {
+      if (originalSessionRootEnv === undefined) delete process.env.BORING_AGENT_SESSION_ROOT
+      else process.env.BORING_AGENT_SESSION_ROOT = originalSessionRootEnv
+      await rm(workspaceRoot, { recursive: true, force: true })
+      await rm(sessionRoot, { recursive: true, force: true })
+    }
   })
 })
