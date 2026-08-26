@@ -83,7 +83,10 @@ function adaptPiTool(
   return {
     name: template.name,
     description: template.description,
-    promptSnippet: template.promptSnippet,
+    promptSnippet: [
+      'Run shell commands in the user runtime workspace.',
+      'Use first-class file tools for file listing, search, and reads; named filesystem bindings are not shell paths.',
+    ].join('\n'),
     parameters: template.parameters as unknown as Record<string, unknown>,
     readinessRequirements: ['sandbox-exec'],
     async execute(params, ctx) {
