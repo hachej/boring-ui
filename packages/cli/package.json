@@ -48,7 +48,7 @@
     "react-dom": "^19.2.8",
     "tailwindcss": "^4.3.3",
     "tsup": "^8.4.0",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.11"
   },
   "repository": {
     "type": "git",

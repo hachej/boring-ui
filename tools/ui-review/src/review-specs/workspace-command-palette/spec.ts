@@ -127,34 +127,48 @@ export const workspaceCommandPaletteSpec: UiReviewSpec = {
         .filter((state) => state.action === "Wait")
         .sort((left, right) => left.ordinal - right.ordinal)
       const replayableDialogActions = dialogStates
-        .filter((state) => state.action !== "Wait")
+        .filter((state) => state.action !== "Wait" && state.action !== null)
         .sort((left, right) => left.ordinal - right.ordinal)
-      // DOM visibility can precede paint. Prefer the latest replayable Wait
-      // whose screenshot differs from a prior post-bootstrap closed state;
-      // encoded PNG byte size is not a monotonic paint signal. If the following
-      // Wait was deduplicated after a faster paint, fall back to the latest
-      // genuinely painted replayable dialog action state.
+      // DOM visibility can precede paint. Desktop replay therefore prefers the
+      // earliest settled Wait over an action-frame screenshot that may still be
+      // hydrating. Compact replay prefers the earliest strongly painted action:
+      // waiting for its much smaller full-frame pHash change can cross unrelated
+      // async workspace hydration and session creation during replay.
+      // Encoded PNG byte size is not a monotonic paint signal.
       // The pHash threshold is viewport-aware: the whole-viewport hash is
       // calibrated against desktop, where the palette covers a large share of
       // the frame. At compact the dialog is deliberately small and top-anchored,
       // so opening it legitimately moves the full-page pHash by only a few bits
       // — a strict >4 would reject every genuinely painted mobile state.
-      const hasGenuinelyPaintedDialog = (state: UiReviewExplorationState): boolean => {
+      const paintedDialogDistance = (state: UiReviewExplorationState): number | null => {
         const closed = ordered.filter((candidate) => {
           const palette = candidate.normalizedState.palette as Record<string, unknown> | undefined
           return (candidate.ordinal > 2 || candidate.action === "Wait")
             && candidate.ordinal < state.ordinal
             && palette?.dialogVisible === false
         }).at(-1)
-        const minimumPHashDistance = state.viewport.name === "mobile" ? 1 : 5
         return closed !== undefined
           && state.screenshotDigest !== closed.screenshotDigest
           && typeof state.screenshotPHash === "string"
           && typeof closed.screenshotPHash === "string"
-          && hexadecimalHammingDistance(state.screenshotPHash, closed.screenshotPHash) >= minimumPHashDistance
+          ? hexadecimalHammingDistance(state.screenshotPHash, closed.screenshotPHash)
+          : null
       }
-      return [...waits].reverse().find(hasGenuinelyPaintedDialog)
-        ?? [...replayableDialogActions].reverse().find(hasGenuinelyPaintedDialog)
+      const hasGenuinelyPaintedDialog = (state: UiReviewExplorationState): boolean => (
+        (paintedDialogDistance(state) ?? -1) >= (state.viewport.name === "mobile" ? 1 : 5)
+      )
+      const earliestStrongWait = waits.find((state) => (paintedDialogDistance(state) ?? -1) >= 5)
+      const earliestStrongAction = replayableDialogActions.find((state) => (paintedDialogDistance(state) ?? -1) >= 5)
+      const isCompact = ordered[0]?.viewport.name === "mobile"
+      return isCompact
+        ? earliestStrongAction
+          ?? earliestStrongWait
+          ?? waits.find(hasGenuinelyPaintedDialog)
+          ?? replayableDialogActions.find(hasGenuinelyPaintedDialog)
+        : earliestStrongWait
+          ?? waits.find(hasGenuinelyPaintedDialog)
+          ?? earliestStrongAction
+          ?? replayableDialogActions.find(hasGenuinelyPaintedDialog)
     },
   },
 }
