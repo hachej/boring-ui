@@ -48,4 +48,3 @@ test('standalone host keeps its legacy .boring ledger without a host root', asyn
     await app.close()
   }
 }, 120_000)
-

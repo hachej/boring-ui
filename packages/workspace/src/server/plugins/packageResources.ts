@@ -292,19 +292,13 @@ interface SkippedPackageResource {
 export interface ResolveWorkspacePackageResourcesOptions {
   /** Host-declared shared skills. An inadmissible entry fails the resolve. */
   sharedSkillPaths?: readonly SharedSkillPath[]
-  /**
-   * Speculatively scanned contributions. An entry that is not independently
-   * admissible produces a diagnostic instead of failing the resolve, and is
-   * never mounted or exposed.
-   */
-  skippableContributions?: readonly WorkspacePackageResourceRecord[]
-  /**
-   * Ambient shared skills discovered in the user's tree (`~/.pi/agent/skills`
-   * is normally a tree of symlinks, so a stale entry is routine). Degrades the
-   * same way as `skippableContributions`, but only on an admission verdict —
-   * a resolver defect still propagates (gh-1196).
-   */
-  skippableSharedSkillPaths?: readonly SharedSkillPath[]
+}
+
+/** Snapshot-only inputs whose rejected entries are returned as diagnostics. */
+interface ResolveWorkspacePackageResourcesWithDiagnosticsOptions
+  extends ResolveWorkspacePackageResourcesOptions {
+  readonly skippableContributions?: readonly WorkspacePackageResourceRecord[]
+  readonly skippableSharedSkillPaths?: readonly SharedSkillPath[]
 }
 
 /** A contribution that passed independent admission: canonical root + manifest. */
@@ -417,7 +411,7 @@ export async function resolveWorkspacePackageResources(
 
 async function resolveWorkspacePackageResourcesWithDiagnostics(
   contributions: readonly WorkspacePackageResourceRecord[],
-  options: ResolveWorkspacePackageResourcesOptions = {},
+  options: ResolveWorkspacePackageResourcesWithDiagnosticsOptions = {},
 ): Promise<{
   readonly registry: ResolvedWorkspacePackageResourceRegistry
   readonly diagnostics: readonly PackageResourceDiagnostic[]

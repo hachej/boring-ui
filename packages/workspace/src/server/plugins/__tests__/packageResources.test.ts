@@ -387,6 +387,23 @@ describe('resolveWorkspacePackageResources', () => {
     })).rejects.toMatchObject({ code: 'ENAMETOOLONG' })
   })
 
+  test('propagates a malformed optional skill instead of laundering it into a diagnostic', async () => {
+    const root = await tempRoot()
+    const skillRoot = join(root, 'global-skills', 'malformed')
+    await mkdir(skillRoot, { recursive: true })
+    const skillFile = join(skillRoot, 'SKILL.md')
+    await writeFile(skillFile, '---\nname: [unterminated\n---\n', 'utf8')
+
+    const error = await resolveWorkspacePackageResourceSnapshot({
+      declared: [],
+      scanned: [],
+      sharedSkillPaths: [{ id: 'malformed', skillFile }],
+    }).then(() => undefined, (cause: unknown) => cause)
+
+    expect(error).toBeInstanceOf(Error)
+    expect(error).not.toMatchObject({ code: PACKAGE_RESOURCE_INVALID_CODE })
+  })
+
   test("rejects the host-shared reserved package name", async () => {
     const root = await tempRoot()
     const packageRoot = await packageFixture(root, { name: "shared/pi-agent" })
