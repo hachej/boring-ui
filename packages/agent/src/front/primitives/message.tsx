@@ -23,6 +23,7 @@ import {
 } from "react";
 import { Streamdown } from "streamdown";
 import { useStreamdownPlugins } from "./useStreamdownPlugins";
+import { MarkdownLink } from "./markdownLink"
 import {
   CodeBlock,
   CodeBlockCopyButton,
@@ -416,6 +417,9 @@ const MarkdownCode = ({
 const markdownComponents = {
   pre: MarkdownPre,
   code: MarkdownCode,
+  // Chat URLs get hover Copy/Open affordances (#1395); the href and text
+  // flow stay untouched.
+  a: MarkdownLink,
 } as unknown as ComponentProps<typeof Streamdown>["components"];
 
 export type BoringMessageResponseProps = MessageResponseProps & {
