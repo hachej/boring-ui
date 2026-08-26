@@ -15,7 +15,6 @@ import {
   type ExtensionCommandContext,
   type ExtensionFactory,
   type SlashCommandInfo,
-  type SettingsManager,
 } from "@mariozechner/pi-coding-agent";
 import type { AgentHarness, AgentSlashCommandSummary, AgentSendInput, RunContext } from "../../../shared/harness.js";
 import { ErrorCode } from "../../../shared/error-codes.js";
@@ -44,7 +43,6 @@ interface PiSessionHandle {
   piSession: AgentSession;
   modelRegistry: ModelRegistry;
   sessionManager: SessionManager;
-  settingsManager: SettingsManager;
   resourceLoader: DefaultResourceLoader;
   sessionId: string;
   sessionCtx: SessionCtx;
@@ -722,7 +720,6 @@ export function createPiCodingAgentHarness(opts: {
       piSession,
       modelRegistry,
       sessionManager,
-      settingsManager,
       resourceLoader,
       sessionId: sessionId,
       sessionCtx,
@@ -737,9 +734,7 @@ export function createPiCodingAgentHarness(opts: {
     const handles = piSessionHandlesFor(sessionId);
     if (handles.length === 0) return false;
     refreshEffectiveResources();
-    await Promise.all(handles.map(async (handle) => {
-      await handle.piSession.reload();
-    }));
+    await Promise.all(handles.map((handle) => handle.piSession.reload()));
     return true;
   }
 
