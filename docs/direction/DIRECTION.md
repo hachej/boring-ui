@@ -290,3 +290,164 @@ Sequencing consequences (ratified):
   continue; it never preempts landing, BYOK, or #1107.
 - **#1127 channels: deprioritized.**
 - **UI polish loop: standing low-effort background work** — keeps running.
+
+---
+
+## Amendment 2026-08-26 — the premises re-sequencing
+
+Everything above stands as written and is not rewritten. This section records
+what has landed since 2026-08-08 and **supersedes the wave sequencing** with a
+premises-first ordering. This file remains the **sole sequencing authority**:
+orchestrators dispatch from the waves named here, and where an issue plan, a
+bead priority, or a plan folder disagrees with this section, this section wins
+until the owner amends it.
+
+Companion analysis:
+[`state/2026-08-26.md`](state/2026-08-26.md) — full snapshot, verified against
+`origin/main` at `98619e9b8`. Canonical plan pack:
+[#1409](https://github.com/hachej/boring-ui/pull/1409)
+(`docs/plans/multiagent-shell/`, chapter 1 `premises.md` owns the program).
+Rulings ledger: [#1399](https://github.com/hachej/boring-ui/issues/1399).
+Ratifications: [#1401](https://github.com/hachej/boring-ui/pull/1401) (MERGED)
+and [#1416](https://github.com/hachej/boring-ui/pull/1416) (OPEN, owner gate).
+
+### Naming convention (applies from here down)
+
+Roadmap items carry **descriptive names**, not letter-number codes. Each name
+below shows its old code **once**, in parentheses, so existing beads and plan
+docs stay traceable; after that the name is the only handle. Bead IDs are
+unchanged — they are tracker handles, not prose.
+
+### Reconciling the old wave numbering — honest supersession
+
+The four waves above were correct for their moment and are **not renumbered**.
+Their disposition today:
+
+| Old wave | Disposition |
+|---|---|
+| Wave 1 — multi-agent console | **Complete and closed.** Its 08-08 residue merged: #1147, #1156, #1165. |
+| Wave 2 — streaming durability | **Complete at conformance Level B** (#1128, #1141, #1142). It **reopens at Level D** as [durable-streams] below — a new obligation, not a reopened defect. |
+| Wave 3 — BYOK / MCP / authored catalog | **Complete except BYOK.** MCP closed (#1135) and correctly paused. Authored catalog delivered (#1202 merged 08-11); epic #1107 closed as a duplicate surface, work lives in the `xp3s` beads. BYOK persistence (#1145) remains open since 08-07 and is now carried in the commercial wave's platform half. |
+| Wave 4 — v2 era | **Still frozen for implementation.** Its architecture is now documented and merged (#1220 / #1081, sovereign sandbox service). Documentation is not a gate opening. |
+| Landing lane (off-wave) | **Superseded 2026-08-10 by owner ruling** (Option B): per-agent landing pages are an app concern. #1154 closed; #1156/#1165 stayed platform-side and merged. |
+| Wave 1.5 (08-08 amendment) | **Partly overtaken.** Its landing half moved app-side per the ruling above; the "one named vertical agent end to end" objective moves to the commercial wave, tenant-repo side. |
+
+**Nothing above is retracted.** The multi-agent console remains the product
+thrust and the vertical-agent semantic standard (ratified 2026-08-08) is
+unchanged. What changes is the *order of what is built next*.
+
+### The two waves that run now, side by side
+
+Neither gates the other. That independence is the point of the
+premises-never-pricing split (ratified 2026-08-08): a commercial decision must
+never reorder the kernel, and kernel sequencing must never be justified by an
+unnamed offer.
+
+#### Wave A — Premises (platform, NOW)
+
+Kernel capabilities land and are **proven** before the surface built on them.
+Two rulings set the tone, both from the owner interview of 2026-08-26:
+**the engine does not ship on conformance Level B**, and **the thread storage
+model is not decided**. Full program:
+`docs/plans/multiagent-shell/premises.md` in #1409.
+
+1. **[durable-streams]** (bead `wt-391-forward-9p50`, formerly P1) — **the
+   keystone; start here.** Level D restart/ledger/activity conformance green,
+   `BORING_CHAT_DURABLE_STREAM` default-on, and a dated Decision 29
+   re-evaluation addendum in `DECISIONS.md` (owner merge = ratification). This
+   is D29's own named trigger arriving (`DECISIONS.md:472`/`:476`), not new
+   scope. ~2 sessions, splittable into implement / flip-and-ratify. Unblocks the
+   whole engine. **Its bead is currently P2 while three dependents are P1 —
+   re-prioritise it before dispatch.**
+2. **[thread-storage-spike]** (bead `wt-391-forward-shell-ngfs.13`, formerly
+   P2) — competitor study over six comparable facts, plus an in-stack technical
+   spike of the two candidate storage shapes. Decides the engine's storage, what
+   #1355's conversation references may point at, and whether one thread per job
+   is a record or a view. 1 research + 1 spike session; the spike half starts
+   after [durable-streams]' shape is known.
+3. **[seat-audit-attribution]** (bead `wt-391-forward-shell-ngfs.14`, formerly
+   P3 / seat storage C7) — `seatId` as real envelope identity, not a mutable
+   display handle. Sequencing, not new ontology: already ratified as required
+   (`docs/plans/long-term/ratified/RECONCILIATION.md:153`). Display-only
+   participant chips are **rejected**. ~2 sessions and genuinely uncertain.
+4. **[saved-views-kernel]** (formerly P4) — the first ratified View slice, the
+   contract as a set. **Unsized; needs its own planning pass before estimation.**
+   Does not block a view library over files and built-in views.
+5. **[merge-queue]** (formerly P5) — a standing obligation, not a bead: this
+   list gets a pass **before any premise bead is dispatched**. Current path
+   items: #1382 (and the eval suite stacked behind it), #1343, #1376, #1386,
+   #1409, #1416; kernel-adjacent but off-path: #1145, #1166, #1288. Also decide
+   the two orphaned weekend branches (`weekend/k7-agent-packages`,
+   `weekend/factory-check`).
+6. **[gate-re-ruling]** (formerly P6) — re-rule both owner gates after
+   [thread-storage-spike] reports, dropping what it answered. Minutes of owner
+   time; cannot happen early.
+
+**Runnable in parallel, substrate-free by construction** — a property that can
+be checked, not an exemption granted: **[shell-layout]** (formerly L1),
+**[shell-location]** (formerly L1.5), and **[shell-navigation]** (formerly L2a,
+nav chrome with counts **absent** as a valid state). Everything else in the
+shell waits.
+
+**Re-gated behind the premises.** The engine slices (formerly S1–S6) wait on
+[durable-streams] and consume [thread-storage-spike]'s findings; the interim
+Level-B receipt machinery is `descoped-pending-P1`. The thread-rendering shell
+slice **[thread-view]** (formerly L4) waits on all three of
+[durable-streams], [thread-storage-spike] and [seat-audit-attribution]. Saved
+views in the view library wait on [saved-views-kernel]. Relay-vs-blackboard is
+decided **after** [durable-streams], with both candidates live.
+
+**Done-bar, unchanged in spirit from Wave 1:** a premise is done when it is
+*proven*, not when it compiles. Note against that bar that the visual-review
+harness is broken on clean main ([#1390](https://github.com/hachej/boring-ui/issues/1390))
+— repair it before the shell slices need reviewer-agent proof.
+
+#### Wave B — Commercial (tenant repos, in parallel)
+
+**Sequencing for this wave lives in the Seneca tenant app repo's roadmap
+(`hachej/boring-ui-constellation`), not here.** Pricing topology, packaging,
+vertical-agent go-to-market order, landing-page content and outreach motions are
+deliberately absent from this file. The 2026-08-10 landing ruling is the
+precedent: per-agent landing pages are an app concern, and #1154 was closed on
+exactly that boundary.
+
+What stays platform-side, and is therefore dispatchable from here:
+
+- **BYOK durable credential persistence (#1145)** — open since 08-07 and the
+  oldest item in the queue. It is the credential substrate any per-client offer
+  needs; it is not on the premise path and must not preempt [durable-streams].
+- **Usage facts (#819)** — unchanged from 08-08: the platform emits facts only
+  when a usage-priced offer pulls it; apps own billing. Still not a blocker.
+- **Provenance-labeled provider rows** in the model picker — the neutral
+  substrate, no pricing semantics.
+
+**The boundary test, for future proposals:** if a change encodes what something
+costs, who is billed, or how an offer is packaged, it belongs in the tenant
+repo. If it encodes *what a workspace can be told about credentials, usage, or
+attribution*, it belongs here.
+
+### Lane priorities (amended 2026-08-26)
+
+Carried unchanged from 2026-08-08 unless noted: #1123 executable environments
+ACTIVE at LOW priority; #1127 channels deprioritized; UI polish a standing
+low-effort background loop. **New:** nothing in the shell or engine is
+dispatchable except the three substrate-free chrome slices until the premises
+they depend on have landed.
+
+### Decision log (owner, 2026-08-26)
+
+| Decision | Ruling |
+|---|---|
+| Sequencing | **Premises before surface.** Kernel capabilities land and are proven before the product surface built on them. Supersedes the wave ordering above without retracting it. |
+| Keystone | **[durable-streams] first.** Highest-leverage node; its bead must be re-prioritised to match its dependents. |
+| Engine substrate | **The engine does not ship on conformance Level B.** Interim receipt machinery `descoped-pending-P1`; relay-vs-blackboard decided after the substrate is real, both candidates live. |
+| Thread storage model | **NOT decided.** Routed to [thread-storage-spike]; the plan-level noun recommendation is withdrawn. Nothing in the ratified product surface presumes its outcome. |
+| Attribution | **Audit-grade from day one.** Display-only participant chips rejected; `seatId` in the seat catalogue pulled forward. |
+| Thread noun | **Settled** — a Thread may span multiple Seats, projected as one timeline; one Thread per job (#1401, MERGED 2026-08-26). "Channel" stays reserved for transport/ingress. |
+| Thread ↔ Objective | **Optional one-way link.** An Objective is not mandatory for a job. |
+| Saved views | **Wait for [saved-views-kernel].** A first view library is files + built-in views only; no lookalike descriptor minted in the product layer meanwhile. |
+| Nav extensibility | **Plugins CAN add top-level entries.** The closed-IA recommendation was ruled against; crowding risk noted and accepted. |
+| Deep links | **The shell owns the serializable location; the host owns URL translation.** |
+| Specification | **The design canvas and `weekend/saas-hybrid-spike` are ratified specification artifacts** — what implementation is checked against, not proposals awaiting a slot (#1416). Their chat column and thread transcript are explicitly visual fixtures; that is not an implementation claim. |
+| Commercial split | **Reaffirmed and extended.** Premises never pricing: commercial sequencing lives in the tenant repo; the platform ships credential, attribution and usage-fact substrate only. Precedent: the 2026-08-10 landing ruling. |
+| Merge discipline | **Zero autonomous merges holds** (verified: all 31 merges in the 08-22→08-26 window were owner-performed). **Review ladders did not happen** — nine weekend PRs produced zero formal review submissions. Restore the review gate before the premise burn, and never close a PR without a recorded reason (#1380 and #1381 were closed silently). |
