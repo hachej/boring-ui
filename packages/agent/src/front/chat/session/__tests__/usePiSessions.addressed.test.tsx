@@ -107,6 +107,68 @@ describe('usePiSessions addressed Agent transport', () => {
     expect(result.current.sessions).toEqual([])
   })
 
+  test('keeps refresh ownership of the archive pager until its prefix is applied', async () => {
+    const archivedRow = (id: string, updatedAt: number) => ({
+      ref: { agentTypeId: 'alpha', sessionId: id },
+      title: id,
+      status: 'idle',
+      createdAt: updatedAt,
+      updatedAt,
+      archived: true,
+    })
+    let archivedRequests = 0
+    let resolveRefreshArchive!: (response: Response) => void
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), 'http://local')
+      if (url.searchParams.get('archived') === 'active') {
+        return new Response(JSON.stringify({ sessions: [] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      archivedRequests += 1
+      if (url.searchParams.get('cursor') === 'archive-page-2') {
+        return new Response(JSON.stringify({ sessions: [archivedRow('a1', 1)] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      if (archivedRequests === 1) {
+        return new Response(JSON.stringify({
+          sessions: [archivedRow('a0', 2)],
+          nextCursor: 'archive-page-2',
+        }), { status: 200, headers: { 'content-type': 'application/json' } })
+      }
+      return await new Promise<Response>((resolve) => { resolveRefreshArchive = resolve })
+    })
+    const { result } = renderHook(() => usePiSessions({
+      agentTypeId: 'alpha', fetch: fetchMock as typeof fetch, connectActiveSession: false, retry: { maxRetries: 0 },
+    }))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await act(async () => { await result.current.loadArchived() })
+    const staleLoadArchived = result.current.loadArchived
+
+    let refresh!: Promise<void>
+    act(() => { refresh = result.current.refresh({ background: true }) })
+    await waitFor(() => expect(archivedRequests).toBe(2))
+
+    // This callback predates the refresh state update. The ref-backed request
+    // owner must still prevent it from starting a newer page request that the
+    // slower refresh prefix could overwrite.
+    await act(async () => { await staleLoadArchived() })
+    expect(archivedRequests).toBe(2)
+
+    await act(async () => {
+      resolveRefreshArchive(new Response(JSON.stringify({
+        sessions: [archivedRow('a0', 2)],
+        nextCursor: 'archive-page-2',
+      }), { status: 200, headers: { 'content-type': 'application/json' } }))
+      await refresh
+    })
+    await act(async () => { await result.current.loadArchived() })
+    expect(result.current.sessions.map((session) => session.id)).toEqual(['a0', 'a1'])
+  })
+
   test('fences older list responses against successful archive mutations', async () => {
     let resolveRefresh!: (response: Response) => void
     let activeGets = 0

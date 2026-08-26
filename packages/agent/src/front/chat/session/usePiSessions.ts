@@ -378,6 +378,7 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
     const isCurrent = () => sourceIsCurrent(scope) && version === refreshVersionRef.current
     clearRetryTimer(retryTimerRef)
     const background = refreshOptions.background === true
+    let archivedRequestSeq: number | undefined
 
     if (!enabled) {
       loadMoreRequestSeqRef.current += 1
@@ -421,8 +422,8 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
       if (!isCurrent() || !page) return
       let archivedPage: SessionPage | undefined
       if (filterPagersRef.current.archived.loaded) {
-        archiveRequestSeqRef.current += 1
-        archiveInFlightRef.current = false
+        archivedRequestSeq = ++archiveRequestSeqRef.current
+        archiveInFlightRef.current = true
         setArchivedLoading(true)
         archivedPage = await fetchSessionPrefix({
           fetchImpl,
@@ -432,25 +433,33 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
           minimumRows: filterPagersRef.current.archived.sessions.length,
         })
       }
-      if (!isCurrent()) return
+      if (
+        !isCurrent()
+        || (archivedRequestSeq !== undefined && archivedRequestSeq !== archiveRequestSeqRef.current)
+      ) return
       // A successful local archive POST owns the newer state. Never let a list
       // response that began before it move the row back across filter pages.
       if (mutationVersion !== archiveMutationVersionRef.current) {
         setLoading(false)
-        setArchivedLoading(false)
         return
       }
       applySessions(page.sessions, { background, nextCursor: page.nextCursor, archivedPage })
       setError(undefined)
       setLoading(false)
-      setArchivedLoading(false)
     } catch (err) {
-      if (!isCurrent()) return
+      if (
+        !isCurrent()
+        || (archivedRequestSeq !== undefined && archivedRequestSeq !== archiveRequestSeqRef.current)
+      ) return
       const error = err instanceof Error ? err : new Error(String(err))
       if (!background) setError(error)
       setLoading(false)
-      setArchivedLoading(false)
       if (refreshOptions.throwOnError) throw error
+    } finally {
+      if (archivedRequestSeq !== undefined && archivedRequestSeq === archiveRequestSeqRef.current) {
+        archiveInFlightRef.current = false
+        if (sourceIsCurrent(scope)) setArchivedLoading(false)
+      }
     }
   }, [applySessions, enabled, fetchImpl, persistActive, preferredSessionId, requestHeaders, requestScopeKey, resetArchivePager, retryBaseMs, retryMaxMs, retryMaxRetries, sessionsListUrl, sourceIsCurrent])
 
