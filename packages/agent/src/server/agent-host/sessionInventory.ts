@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import type { PiChatEvent } from '../../shared/chat'
-import type { AgentSessionActivity, AgentSessionRef, AuthorizedAgentScope, VerifiedAgentScopeClaim } from '../../shared/index'
+import { ErrorCode, type AgentSessionActivity, type AgentSessionRef, type AuthorizedAgentScope, type VerifiedAgentScopeClaim } from '../../shared/index'
 import type { SessionListOptions, SessionSummary } from '../../shared/session'
 import { PiSessionStore } from '../harness/pi-coding-agent/sessions'
 import { agentSessionKey } from './agentSessionKey'
@@ -123,6 +123,7 @@ export interface AgentSessionActivityUpdate {
 
 interface StoredAgentSessionActivity extends AgentSessionActivityUpdate {
   readonly workspaceScopeId: string
+  readonly activeTurnId?: string
 }
 
 /** Process-lifetime live-turn projection. Reads never create activity rows. */
@@ -135,10 +136,27 @@ export class AgentSessionActivityIndex {
   }
 
   set(workspaceScopeId: string, ref: AgentSessionRef, status: AgentSessionActivity): void {
+    const existing = this.activity.get(agentSessionKey(workspaceScopeId, ref))
+    const activeTurnId = status === 'running' || status === 'aborting'
+      ? existing?.activeTurnId
+      : undefined
+    this.setForTurn(workspaceScopeId, ref, status, activeTurnId)
+  }
+
+  private setForTurn(
+    workspaceScopeId: string,
+    ref: AgentSessionRef,
+    status: AgentSessionActivity,
+    activeTurnId: string | undefined,
+  ): void {
     const key = agentSessionKey(workspaceScopeId, ref)
-    if (this.activity.get(key)?.status === status) return
+    const existing = this.activity.get(key)
+    if (existing?.status === status && existing.activeTurnId === activeTurnId) return
     const update = { ref, status }
-    this.activity.set(key, { workspaceScopeId, ...update })
+    this.activity.set(key, { workspaceScopeId, ...update, activeTurnId })
+    // An agent-start can attach turn identity to an optimistic `running` row
+    // without publishing a duplicate status transition.
+    if (existing?.status === status) return
     for (const subscriber of this.subscribers.get(workspaceScopeId) ?? []) {
       try { subscriber(update) } catch { /* Activity observers cannot fail an Agent run. */ }
     }
@@ -165,13 +183,24 @@ export class AgentSessionActivityIndex {
   }
 
   observe(workspaceScopeId: string, ref: AgentSessionRef, event: PiChatEvent): void {
-    if (event.type === 'agent-start') this.set(workspaceScopeId, ref, 'running')
-    // An aborted run is not a completed one: carry the outcome so the session
-    // list never renders a cancelled run as "done".
-    if (event.type === 'agent-end') {
-      const status = event.status === 'error' ? 'error' : event.status === 'aborted' ? 'aborted' : 'idle'
-      this.set(workspaceScopeId, ref, status)
+    const key = agentSessionKey(workspaceScopeId, ref)
+    if (event.type === 'agent-start') {
+      this.setForTurn(workspaceScopeId, ref, 'running', event.turnId)
+      return
     }
-    if (event.type === 'error') this.set(workspaceScopeId, ref, 'error')
+    if (event.type === 'agent-end') {
+      if (event.willRetry === true || this.activity.get(key)?.activeTurnId !== event.turnId) return
+      const status = event.status === 'error' ? 'error' : event.status === 'aborted' ? 'aborted' : 'idle'
+      this.setForTurn(workspaceScopeId, ref, status, undefined)
+      return
+    }
+    if (event.type === 'error') {
+      const activeTurnId = this.activity.get(key)?.activeTurnId
+      if (!activeTurnId || (event.turnId && event.turnId !== activeTurnId)) return
+      // Pi emits an ABORTED error immediately before agent-end:aborted. Treat
+      // both frames as one cancellation so the list never flashes `failed`.
+      const status = event.error.code === ErrorCode.enum.ABORTED ? 'aborted' : 'error'
+      this.setForTurn(workspaceScopeId, ref, status, undefined)
+    }
   }
 }

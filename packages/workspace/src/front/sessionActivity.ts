@@ -124,11 +124,17 @@ function applyActivity(
   } else {
     working.delete(key)
     if (status === "error") terminal.set(key, { state: "failed" })
-    else if (status === "idle" && wasWorking) {
-      terminal.set(key, { state: "completed", expiresAt: Date.now() + completedVisibleMs })
+    else if (status === "idle") {
+      if (wasWorking) {
+        terminal.set(key, { state: "completed", expiresAt: Date.now() + completedVisibleMs })
+      } else if (terminal.get(key)?.state !== "completed") {
+        // Repeated live idle and confirming idle inventory are idempotent: an
+        // existing completion keeps its original expiry instead of vanishing
+        // early (or extending forever as duplicate frames arrive).
+        terminal.delete(key)
+      }
     } else {
-      // `aborted` is an explicit cancellation, not a completion. An idle
-      // event without a preceding run is also not evidence that a run ended.
+      // `aborted` is an explicit cancellation, not a completion.
       terminal.delete(key)
     }
   }

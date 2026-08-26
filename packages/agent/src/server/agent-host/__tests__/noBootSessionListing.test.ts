@@ -169,8 +169,10 @@ describe('process-lifetime session activity index', () => {
     index.observe('workspace-a', ref, { type: 'agent-end', seq: 2, turnId: 'turn-a', status: 'error' })
     expect(index.get('workspace-a', ref)).toBe('error')
 
+    // A terminal event from a turn that never became active cannot overwrite
+    // the settled outcome of turn-a.
     index.observe('workspace-a', ref, { type: 'agent-end', seq: 3, turnId: 'turn-b', status: 'ok' })
-    expect(index.get('workspace-a', ref)).toBe('idle')
+    expect(index.get('workspace-a', ref)).toBe('error')
   })
 
   it('publishes owner-addressed transitions only to the matching workspace', () => {

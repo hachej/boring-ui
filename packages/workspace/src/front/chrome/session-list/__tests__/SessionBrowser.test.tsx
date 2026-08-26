@@ -361,6 +361,58 @@ describe("SessionBrowser", () => {
     expect(document.querySelector('[data-boring-badge="completed"]')).toBeNull()
   })
 
+  it("keeps the original completed lifetime across duplicate idle events", () => {
+    vi.useFakeTimers()
+    try {
+      render(<SessionBrowser sessions={sample} activeId="s1" />)
+      act(() => {
+        window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+          detail: { sessionId: "s2", working: true, status: "running" },
+        }))
+        window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+          detail: { sessionId: "s2", working: false, status: "idle" },
+        }))
+      })
+      expect(document.querySelector('[data-boring-badge="completed"]')).toBeInTheDocument()
+
+      act(() => { vi.advanceTimersByTime(COMPLETED_VISIBLE_MS / 2) })
+      act(() => {
+        window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+          detail: { sessionId: "s2", working: false, status: "idle" },
+        }))
+      })
+      expect(document.querySelector('[data-boring-badge="completed"]')).toBeInTheDocument()
+
+      act(() => { vi.advanceTimersByTime(COMPLETED_VISIBLE_MS / 2 + 1) })
+      expect(document.querySelector('[data-boring-badge="completed"]')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("keeps completed when newer inventory confirms the idle outcome", () => {
+    const { rerender } = render(<SessionBrowser sessions={sample} activeId="s1" />)
+    act(() => {
+      window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+        detail: { sessionId: "s2", working: true, status: "running" },
+      }))
+      window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+        detail: { sessionId: "s2", working: false, status: "idle" },
+      }))
+    })
+    expect(document.querySelector('[data-boring-badge="completed"]')).toBeInTheDocument()
+
+    rerender(
+      <SessionBrowser
+        sessions={sample.map((session) => session.id === "s2"
+          ? { ...session, status: "idle", updatedAt: now + 1 }
+          : session)}
+        activeId="s1"
+      />,
+    )
+    expect(document.querySelector('[data-boring-badge="completed"]')).toBeInTheDocument()
+  })
+
   it("never transiently shows done when the live outcome is aborted before inventory catches up", () => {
     render(<SessionBrowser sessions={sample} activeId="s1" activityWorkspaceId="ws-test" />)
 
