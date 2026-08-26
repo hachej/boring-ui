@@ -192,7 +192,6 @@ export type {
   AgentHostDispatcherRunInput,
   AgentHostEnvironmentLease,
   AgentHostEnvironmentScope,
-  AgentHostGateway,
   AgentHostHandle,
   AgentRequestKey,
   AgentRequestLedger,
