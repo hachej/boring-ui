@@ -121,11 +121,15 @@ job flow inside a channel = orchestrator → workers → QA/reviewer. Owner
 leaning "Channel" as the product noun, which would require amending the
 transport-vocabulary reservation.
 
-**Status: content kept, noun superseded.** Every structural idea here
-survived into the shell plan (thread canvas, Library/explore, the job flow).
-The naming lean did **not** survive: the product noun stays **Thread**;
-"channel" remains reserved for transport/ingress (2026-08-24 reconciliation,
-upheld through ratification).
+**Status: content kept, noun superseded, fleet phrasing constrained.** Every
+structural idea here survived into the shell plan (thread canvas,
+Library/explore, the job flow). The naming lean did **not** survive: the
+product noun stays **Thread**; "channel" remains reserved for
+transport/ingress (2026-08-24 reconciliation, upheld through ratification).
+The "1 channel = 1 fleet declared at the workspace level" phrasing is
+constrained by D28/D29: staffing selects participants from the
+**deployment-static application fleet**; workspace-curated fleets would
+require an explicit D28 re-evaluation (2026-08-26 alignment audit).
 
 ## 2026-08-26 — product shell IA (owner rulings)
 

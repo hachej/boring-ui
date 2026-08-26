@@ -21,14 +21,17 @@ PR [#1401](https://github.com/hachej/boring-ui/pull/1401) (merged/ratified 2026-
 non-Seat, non-agent service. §1 asks the owner to rule on the noun before anything is built.
 Ordering and dependencies live only in §7; §§1–6 describe shape.
 
-> **Correction carried from review.** Round 1 claimed "no A2A loopback; agents never call agents" as
-> a ratified constraint. That misread the record. Decision 24 (`docs/DECISIONS.md:364`) ratifies **a
-> native in-process binding for internal agent-to-agent consumption** ("no MCP loopback, no
-> serialization; two-way chat via `input-required`") and states *"Adopting A2A internally is rejected
-> as unnecessary."* Decision 25 (`:413`) defers **A2A** — the external protocol binding — not
-> in-process collaboration. So relay-vs-native-binding is a **live product choice for v0, not a
-> compliance requirement**, and it is owner question Q2. v0 proposes the relay because it needs no
-> agent-facing capability and is deletable; it is not the only compliant shape.
+> **Correction carried from review (sharpened 2026-08-26 after alignment audit).** Round 1 claimed
+> "no A2A loopback; agents never call agents" as a ratified constraint. That misread the record.
+> Decision 22 (`docs/DECISIONS.md:354`, `:364`) ratifies **a native in-process binding for internal
+> agent-to-agent consumption** ("no MCP loopback, no serialization; two-way chat via
+> `input-required`") and states *"Adopting A2A internally is rejected as unnecessary."* Decision 25
+> (`:413`) defers D22's implementation *sequencing* — and deferral does **not** authorize a
+> replacement mechanism. The compliance position is therefore asymmetric: **the ratified default
+> for the shipped engine is D22's native binding (through the D29 AgentGateway funnel); adopting
+> the relay as the shipped mechanism instead requires an explicit D22/D28 amendment at the owner
+> gate.** v0 proposes the relay as a *candidate* because it needs no agent-facing capability and is
+> deletable; the choice is owner question Q2, deferred post-P1 with the default stated here.
 
 ## What this plan builds
 
@@ -200,7 +203,9 @@ second event system.
 ### Today
 
 `Thread` is frozen as one object with Session: *"a Thread is not a Pi session, transcript, or tab —
-it owns one record and many Runs"* (`VISION.md:113-116`), and the V2 spec's `Thread
+it owns one record and many Runs"* (`VISION.md:113-116`). *(Storage-shape note, 2026-08-26: the
+"owns one record" backing shape is suspended pending the thread-storage spike — RECONCILIATION §8;
+the ontology stands.)* The V2 spec's `Thread
 { threadId; workspaceId; title; participants; workingSet }` (`V2-IMPLEMENTATION-SPEC.md:122`)
 **already carries a `participants` field**. `Seat { seatId; workspaceId; agentId; role?; budget?;
 permissions?; bindingState }` (`:119`) binds an *Agent* to a Workspace and "grants participation, not
@@ -493,7 +498,8 @@ set once at job creation, and §2–§3's mechanism never revisits membership.
 later reshape, while the add/remove **UI** itself is pushed to a deferred slice (S6, §7).
 
 - **Entry points — both human-initiated.** A `+` on the thread-header participant chips opens a
-  picker sourced from the Agents directory; an `@mention` of an agent not yet in `participants`,
+  picker sourced from the Agents directory — which is the **deployment-static application fleet**
+  (D28/D29), not a workspace-curated roster; an `@mention` of an agent not yet in `participants`,
   typed into the composer, surfaces an inline add-confirm rather than resolving to nothing. Staffing
   is an explicit **human** act in v0 — no agent tool stages a new participant; agent-initiated
   staffing is out of scope and would need a riskTier'd human approval gate before it could ship, not a
@@ -632,8 +638,10 @@ on drill-down.
 
 1. **No shared runtime transcript.** Participants keep private Pi sessions; the timeline is a
    projection. No "room" object.
-2. **No native in-process agent-to-agent binding** — available and ratified (D24, `:364`), chosen
-   against for v0 (Q2), not forbidden. No external A2A either (D25, `:413`).
+2. **No native in-process agent-to-agent binding in v0** — available and ratified (D22, `:364`),
+   and the ratified *default* for the shipped engine (see the correction note); v0's relay is a
+   candidate whose adoption as the shipped mechanism needs a D22/D28 amendment (Q2). No external
+   A2A either (D25, `:413`).
 3. **No canonical Thread or Seat identity minted.** `participantId` is a display handle (§8).
 4. **More than 2 working participants**; parallel same-brief mode; cross-Workspace jobs (all
    participants share one `workspaceScopeId`, per `plan.md:211-213`).
@@ -794,7 +802,7 @@ provenance"* (`docs/DECISIONS.md:365`). Envelope-grade attribution arrives with 
 > | Q | Status |
 > |---|---|
 > | Q1 the noun | **SUPERSEDED by P2** — storage model goes to a spike + competitor study |
-> | Q2 relay vs native binding | **DEFERRED to post-P1** — both candidates live |
+> | Q2 relay vs native binding | **DEFERRED to post-P1** — both candidates live; the ratified default is D22's native binding, and shipping the relay instead requires an explicit D22/D28 amendment |
 > | Q3 attribution grade | **RULED: audit-grade from day one** — C7 pulled forward as P3; display-only chips rejected |
 > | Q4 the two boundaries | **RULED: confirmed unchanged** — artifacts shared, conversation posts-only |
 > | Q5 Objective coupling | **RULED: optional one-way link** — an Objective is not mandatory for a job |
@@ -806,11 +814,12 @@ provenance"* (`docs/DECISIONS.md:365`). Envelope-grade attribution arrives with 
 1. **RULED 2026-08-26 (see Re-sequencing ruling above)** — SUPERSEDED by P2. **The noun.** Q1-A projection descriptor with a distinct noun (`JobProjectionV0`, recommended,
    R-c untouched) or Q1-B canonical multi-seat Thread (better end state; costs an R-c amendment, C7
    Thread ownership, seatId-in-C7 pulled forward, and a #1355 ref rework)?
-2. **RULED 2026-08-26 (see Re-sequencing ruling above)** — DEFERRED to post-P1. **Relay vs native binding.** D24 (`:364`) ratifies a native in-process agent-to-agent binding with
+2. **RULED 2026-08-26 (see Re-sequencing ruling above)** — DEFERRED to post-P1. **Relay vs native binding.** D22 (`:364`) ratifies a native in-process agent-to-agent binding with
    `input-required`. v0 proposes the relay (no agent-facing capability, deletable, caps centrally
    enforced). Confirm the relay for v0, or build the ratified binding instead? The relay-vs-blackboard/
    native-binding choice is deferred to after durable streams land (post-P1), per the re-sequencing
-   ruling above; both candidates remain live until then.
+   ruling above; both candidates remain live until then. **Default if unamended: D22's native
+   binding** — shipping the relay instead requires an explicit D22/D28 amendment at this gate.
 3. **RULED 2026-08-26 (see Re-sequencing ruling above)** — audit-grade attribution. **Attribution grade.** Accept explicitly display-grade `participantId` for v0, or pull ratified
    C7 `seatId` forward now so the demo's audit story is envelope-grade?
 4. **The two boundaries.** Confirm the pairing: the **artifact** boundary stays **open** — one shared

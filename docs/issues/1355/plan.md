@@ -71,6 +71,10 @@ interface ConsoleCollection {
   updatedAt: string
 }
 
+// Storage-shape note (2026-08-26): the "Thread owns one record" backing shape is
+// suspended pending the thread-storage spike (RECONCILIATION §8). This single-session
+// ref shape is BLOCKED on that spike's finding — a multi-seat Thread may not map to
+// one (agentTypeId, sessionId) pair. Do not build on this shape before the spike rules.
 interface ConsoleThreadRefV1 {
   workspaceScopeId: string
   agentTypeId: string

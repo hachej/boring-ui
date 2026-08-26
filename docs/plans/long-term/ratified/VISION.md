@@ -30,7 +30,7 @@ is needed:
 | **Agent** (`agentId` + `definitionDigest`) | ratified AgentRef (RECONCILIATION Q — `agentId=agentTypeId` initially, `definition.digest` exists) | ratified, opportunistic P0 |
 | **Run** ("runId minted before accepted execution, stable across metering/artifacts/evals/outcomes") | **ratified verbatim: `RunId := RequestKey`**, minted at envelope admission (C6/D-c) | ratified; C6 scheduled |
 | **Workspace** (durable governed world) | workspace = composition + view + trusted plugin host (B7) | ratified |
-| **Thread** (resumable work, not chat) | **= Session** under A2a (per-session record shard). One noun, two names — Thread is the product name, Session the runtime name; do not create two objects | naming ruling below |
+| **Thread** (resumable work, not chat) | **= Session** under A2a (per-session record shard — shard *shape* suspended pending the thread-storage spike, RECONCILIATION §8). One noun, two names — Thread is the product name, Session the runtime name; do not create two objects | naming ruling below |
 | **Mount** (governed namespace) | multi-FS bindings (boring-bash), #1123 mount sets, environment leases — Mount is their semantic promotion | seam exists; extraction when pulled |
 | **Authority** (host-issued, non-forgeable, only narrows) | R1 + `AuthorizedAgentScope` + A7 issuer + A8 revocation + effective-capability ∩ rule | ratified; A7/A8 scheduled |
 | **Capability** (define once, project to surfaces, `effect` classified) | R1 authority/mechanism + the agent-native harvest; effect classes map to our admission model (`observe/propose` free; `mutate/external-effect` need authority — and `external-effect` is exactly where C6's `unknown-outcome` lives) | adopt; D-2/D31 text |

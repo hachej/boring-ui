@@ -115,10 +115,14 @@ agentic **Threads** in one shell. A user reading a collection can summon chat
 as a column without losing the view. This is the hybrid the spike branch was
 built to prove.
 
-**Apps as recipes, composing into a company OS.** A vertical (K7 creator
-growth, `VISION.md:174`) is a *recipe*: a fleet declared at workspace level, a
-set of saved views, a set of automations, an objectives shape. Several recipes
-over one workspace is the company OS.
+**Apps as recipes, composing into a company OS.** A vertical
+([creator-growth-vertical], formerly K7, `VISION.md:174`) is a *recipe*: a set
+of saved views, a set of automations, an objectives shape, and the participants
+it staffs — **selected from the deployment-static application fleet** (D28: the
+host application defines the fleet; a Workspace persists only its default; and
+D29 compiles it at startup). Workspace-*curated* fleets would need an explicit
+D28 re-evaluation, which no premise currently carries. Several recipes over one
+workspace is the company OS.
 
 ### Non-goals
 
