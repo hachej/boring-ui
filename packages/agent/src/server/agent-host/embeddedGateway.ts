@@ -538,15 +538,6 @@ export class EmbeddedAgentGateway implements AgentGateway {
     if (!this.runtime.compiledById.has(input.ref.agentTypeId)) {
       throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN, 'agent type is not available')
     }
-    const runtimeScope = await this.runtime.resolveSessionRuntime(
-      input.ref.agentTypeId,
-      input.scope,
-      claim,
-      input.ref.sessionId,
-    )
-    if (!runtimeScope) {
-      throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND, 'session does not exist')
-    }
     const setArchived = this.runtime.setSessionArchived
     return await this.sessionEffect(input.ref, claim, 'session.archive', input.requestId, { archived: input.archived }, async () => {
       if (!setArchived) throw new TypeError('session archive capability was not classified')
@@ -568,6 +559,17 @@ export class EmbeddedAgentGateway implements AgentGateway {
               'session repository does not support archive',
             ).toJSON(),
           },
+      preflight: async () => {
+        const runtimeScope = await this.runtime.resolveSessionRuntime(
+          input.ref.agentTypeId,
+          input.scope,
+          claim,
+          input.ref.sessionId,
+        )
+        if (!runtimeScope) {
+          throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND, 'session does not exist')
+        }
+      },
     }) as AgentSessionSummary
   }
 

@@ -347,6 +347,23 @@ export function gatewayConformance(options: GatewayConformanceOptions): void {
       await expect(fixture.gateway.deleteSession({ scope: scopeA, ref: second, requestId: 'delete-id' })).resolves.toBeUndefined()
     })
 
+    it('replays a completed archive receipt after the session is deleted', async () => {
+      const fixture = await options.createFixture()
+      const scope = fixture.issueScope()
+      const ref = await createSession(fixture, scope, 'archive-then-delete')
+      const archiveRequest = {
+        scope,
+        ref,
+        requestId: 'archive-before-delete',
+        archived: true,
+      } as const
+      const archived = await fixture.gateway.setSessionArchived(archiveRequest)
+
+      await fixture.gateway.deleteSession({ scope, ref, requestId: 'delete-after-archive' })
+
+      await expect(fixture.gateway.setSessionArchived(archiveRequest)).resolves.toEqual(archived)
+    })
+
     it('enforces command states, queue controls, typed receipts, and command idempotency', async () => {
       const fixture = await options.createFixture()
       const scope = fixture.issueScope()
