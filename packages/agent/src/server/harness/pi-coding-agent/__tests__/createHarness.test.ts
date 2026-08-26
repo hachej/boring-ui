@@ -123,6 +123,8 @@ describe("createPiCodingAgentHarness", () => {
     expect(settingsManager.getCompactionSettings()).toEqual(baseline);
     syncCodexCompactionBudget(settingsManager, baseline, model);
     expect(settingsManager.getCompactionReserveTokens()).toBe(32_768);
+    syncCodexCompactionBudget(settingsManager, baseline, undefined);
+    expect(settingsManager.getCompactionSettings()).toEqual(baseline);
   });
 
   it("returns an AgentHarness with correct shape", () => {
