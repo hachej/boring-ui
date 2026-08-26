@@ -241,14 +241,18 @@ describe("createExecUiTool — path validation", () => {
     ])
   })
 
-  test("exec_ui describes its single-surface boundary without optional workflow policy", () => {
+  test("exec_ui requires sequential auto-focused opens without optional workflow policy", () => {
     const tool = createExecUiTool(bridge, { workspaceRoot })
 
     expect(tool.description).toContain("single-slot focus action")
-    expect(tool.description).toContain("only the last remains visible")
-    expect(tool.description).toContain("exec_ui cannot present multiple files at once")
-    expect(tool.description).toContain("repeated openFile calls as a plural presentation mechanism")
-    expect(tool.description).toContain("do not claim that chat recognizes arbitrary @path text")
+    expect(tool.description).toContain("Every successful")
+    expect(tool.description).toContain("automatically focuses the requested file")
+    expect(tool.description).toContain("openFile once for EACH requested path")
+    expect(tool.description).toContain("only the final file remains visible")
+    expect(tool.description).toContain("do not refuse the request, shorten it to one call")
+    expect(tool.description).toContain("cannot keep multiple files visible at once")
+    expect(tool.description).toContain("chat does not")
+    expect(tool.description).toContain("recognize arbitrary @path text")
     expect(tool.description).not.toContain("HumanArtifact")
     expect(tool.description).not.toContain("ask_user")
     expect(tool.description).not.toContain("artifacts[]")
