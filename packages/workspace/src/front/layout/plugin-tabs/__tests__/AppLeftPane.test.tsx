@@ -309,7 +309,7 @@ describe("AppLeftPane", () => {
 
     expect(document.querySelector('[data-boring-workspace-part="agent-card-working-count"]')).toBeNull()
     act(() => window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
-      detail: { sessionId: "alpha-two", agentTypeId: "alpha", working: true },
+      detail: { workspaceId: "ws-test", sessionId: "alpha-two", agentTypeId: "alpha", working: true },
     })))
     await waitFor(() => {
       const workingCount = document.querySelector('[data-boring-workspace-part="agent-card-working-count"]')
@@ -339,7 +339,7 @@ describe("AppLeftPane", () => {
 
     expect(screen.queryByTitle("Working")).not.toBeInTheDocument()
     act(() => window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
-      detail: { sessionId: "alpha-one", agentTypeId: "alpha", working: true },
+      detail: { workspaceId: "ws-test", sessionId: "alpha-one", agentTypeId: "alpha", working: true },
     })))
     // The working (pulsing) dot appears on the pinned row and its nested twin.
     await waitFor(() => expect(screen.getAllByTitle("Working")).toHaveLength(2))
@@ -381,7 +381,7 @@ describe("AppLeftPane", () => {
           onSwitchSession={vi.fn()}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}
-        
+
           workspaceId="ws-test"
         />
       </WorkspaceAttentionProvider>,
@@ -483,7 +483,7 @@ describe("AppLeftPane", () => {
           onSwitchSession={vi.fn()}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}
-        
+
           workspaceId="ws-test"
         />
       </WorkspaceAttentionProvider>,
@@ -578,7 +578,7 @@ describe("AppLeftPane", () => {
             onSwitchSession={vi.fn()}
             onOpenSessionAsPane={vi.fn()}
             onToggleSessionPinned={vi.fn()}
-          
+
           workspaceId="ws-test"
         />
         </div>
@@ -669,7 +669,7 @@ describe("AppLeftPane", () => {
           {...baseProps}
           sessions={[]}
           sessionsLoading
-        
+
           workspaceId="ws-test"
         />
       </WorkspaceAttentionProvider>,
@@ -680,7 +680,7 @@ describe("AppLeftPane", () => {
 
     rerender(
       <WorkspaceAttentionProvider>
-        <AppLeftPane {...baseProps} sessions={[]} sessionsLoading={false} 
+        <AppLeftPane {...baseProps} sessions={[]} sessionsLoading={false}
           workspaceId="ws-test"
         />
       </WorkspaceAttentionProvider>,
@@ -690,7 +690,7 @@ describe("AppLeftPane", () => {
 
     rerender(
       <WorkspaceAttentionProvider>
-        <AppLeftPane {...baseProps} sessions={[{ id: "loaded", title: "Loaded chat" }]} sessionsLoading={false} 
+        <AppLeftPane {...baseProps} sessions={[{ id: "loaded", title: "Loaded chat" }]} sessionsLoading={false}
           workspaceId="ws-test"
         />
       </WorkspaceAttentionProvider>,
@@ -713,7 +713,7 @@ describe("AppLeftPane", () => {
     }
     const { rerender } = render(
       <WorkspaceAttentionProvider>
-        <AppLeftPane {...baseProps} sessions={[]} sessionsLoading 
+        <AppLeftPane {...baseProps} sessions={[]} sessionsLoading
           workspaceId="ws-test"
         />
       </WorkspaceAttentionProvider>,
@@ -724,7 +724,7 @@ describe("AppLeftPane", () => {
 
     rerender(
       <WorkspaceAttentionProvider>
-        <AppLeftPane {...baseProps} sessions={[]} sessionsLoading={false} 
+        <AppLeftPane {...baseProps} sessions={[]} sessionsLoading={false}
           workspaceId="ws-test"
         />
       </WorkspaceAttentionProvider>,
@@ -733,7 +733,7 @@ describe("AppLeftPane", () => {
 
     rerender(
       <WorkspaceAttentionProvider>
-        <AppLeftPane {...baseProps} sessions={[{ id: "loaded-project", title: "Loaded project chat" }]} sessionsLoading={false} 
+        <AppLeftPane {...baseProps} sessions={[{ id: "loaded-project", title: "Loaded project chat" }]} sessionsLoading={false}
           workspaceId="ws-test"
         />
       </WorkspaceAttentionProvider>,
@@ -747,7 +747,7 @@ describe("AppLeftPane", () => {
 
     act(() => {
       window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
-        detail: { sessionId: "s2", working: true },
+        detail: { workspaceId: "ws-test", sessionId: "s2", working: true },
       }))
     })
 
@@ -758,7 +758,7 @@ describe("AppLeftPane", () => {
 
   it("requests current working state when the session list mounts after the chat panel", async () => {
     const onRequest = () => window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
-      detail: { sessionId: "s2", working: true },
+      detail: { workspaceId: "ws-test", sessionId: "s2", working: true },
     }))
     window.addEventListener("boring:chat-session-status-request", onRequest)
 
@@ -786,13 +786,13 @@ describe("AppLeftPane", () => {
     }
     const { rerender } = render(
       <WorkspaceAttentionProvider>
-        <AppLeftPane {...props} sessions={sessions} 
+        <AppLeftPane {...props} sessions={sessions}
           workspaceId="ws-test"
         />
       </WorkspaceAttentionProvider>,
     )
     act(() => window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
-      detail: { sessionId: "s2", working: true },
+      detail: { workspaceId: "ws-test", sessionId: "s2", working: true },
     })))
     expect(document.querySelector('[data-boring-badge="working"]')).toBeInTheDocument()
 
@@ -822,7 +822,7 @@ describe("AppLeftPane", () => {
           onSwitchSession={vi.fn()}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}
-        
+
           workspaceId="ws-test"
         />
       </WorkspaceAttentionProvider>,
@@ -851,7 +851,7 @@ describe("AppLeftPane", () => {
           onSwitchSession={vi.fn()}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}
-        
+
           workspaceId="ws-test"
         />
       </WorkspaceAttentionProvider>,
@@ -877,7 +877,7 @@ describe("AppLeftPane", () => {
           onSwitchSession={vi.fn()}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}
-        
+
           workspaceId="ws-test"
         />
       </WorkspaceAttentionProvider>,
@@ -901,7 +901,7 @@ describe("AppLeftPane", () => {
           onSwitchSession={onSwitchSession}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}
-        
+
           workspaceId="ws-test"
         />
       </WorkspaceAttentionProvider>,
@@ -926,7 +926,7 @@ describe("AppLeftPane", () => {
           onSwitchSession={onSwitchSession}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}
-        
+
           workspaceId="ws-test"
         />
       </WorkspaceAttentionProvider>,
@@ -934,7 +934,7 @@ describe("AppLeftPane", () => {
 
     act(() => {
       window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
-        detail: { sessionId: "s2", working: true },
+        detail: { workspaceId: "ws-test", sessionId: "s2", working: true },
       }))
     })
 
@@ -965,7 +965,7 @@ describe("AppLeftPane", () => {
           onSwitchSession={onSwitchSession}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={onToggleSessionPinned}
-        
+
           workspaceId="ws-test"
         />
       </WorkspaceAttentionProvider>,
@@ -1010,7 +1010,7 @@ describe("AppLeftPane", () => {
           onSwitchSession={vi.fn()}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}
-        
+
           workspaceId="ws-test"
         />
       </WorkspaceAttentionProvider>,

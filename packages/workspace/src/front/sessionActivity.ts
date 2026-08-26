@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { workspaceSessionKey, workspaceSessionKeyFor } from "./sessionIdentity"
 
 const CHAT_SESSION_STATUS_EVENT = "boring:chat-session-status"
@@ -73,238 +73,263 @@ export function startSessionActivityStream(options: {
   return () => source.close()
 }
 
-/**
- * Optimistic panel events reconciled by changed AgentHost activity snapshots.
- *
- * `scopeKey` (the workspace id) scopes the optimistic set: live events tagged
- * with a foreign workspace are ignored, and a workspace/source switch resets
- * the set, so one workspace's streaming state can never start or finish a
- * colliding session id in another.
- */
-const EMPTY_WORKING_SET: ReadonlySet<string> = new Set()
+/** Terminal states of the last run, shown once a session is no longer working. */
+export type SessionTerminalState = "completed" | "failed"
 
-export function useWorkingSessionIds(
-  sessions: readonly SessionActivityItem[],
-  options: { scopeKey: string },
-): ReadonlySet<string> {
-  // Optimistic working state is tagged with the scope that produced it. A
-  // render under a different scope synchronously reports an empty set —
-  // stale streaming state from the previous workspace must never bleed onto
-  // a colliding session id there.
-  const [workingState, setWorkingState] = useState<{ scopeKey: string; ids: ReadonlySet<string> }>(() => ({
-    scopeKey: options.scopeKey,
-    ids: new Set(),
-  }))
-  const scopeKey = options.scopeKey
-  const working = workingState.scopeKey === scopeKey ? workingState.ids : EMPTY_WORKING_SET
-  const setWorking = (updater: (current: ReadonlySet<string>) => ReadonlySet<string>) => {
-    setWorkingState((state) => {
-      if (state.scopeKey !== scopeKey) return state
-      return { scopeKey, ids: updater(state.ids) }
-    })
-  }
-  const activitySnapshot = useMemo(() => JSON.stringify(sessions.map((session) => [
+/** How long a just-finished run stays marked `completed` before returning to its timestamp. */
+export const COMPLETED_VISIBLE_MS = 60_000
+
+interface TerminalEntry {
+  state: SessionTerminalState
+  expiresAt?: number
+}
+
+interface ScopedSessionActivityModel {
+  scopeKey: string
+  inventorySnapshot: string
+  inventoryFingerprints: ReadonlyMap<string, string>
+  /** Inventory fingerprint seen when the latest live event for this key arrived. */
+  liveInventoryFingerprints: ReadonlyMap<string, string | undefined>
+  working: ReadonlySet<string>
+  terminal: ReadonlyMap<string, TerminalEntry>
+}
+
+function inventoryFingerprint(session: SessionActivityItem): string {
+  return JSON.stringify([session.status, session.updatedAt])
+}
+
+function inventorySnapshotFor(sessions: readonly SessionActivityItem[]): string {
+  return JSON.stringify(sessions.map((session) => [
     session.agentTypeId,
     session.id,
     session.status,
     session.updatedAt,
-  ])), [sessions])
-  const previousActivitySnapshotRef = useRef<string | undefined>(undefined)
+  ]))
+}
 
-  // A workspace/source switch invalidates the optimistic set: streaming
-  // state observed under the previous source may not survive onto a
-  // colliding id under the next one. The activity-snapshot ref must reset
-  // too, or an identical new-workspace snapshot would be treated as
-  // already-processed and a genuinely running colliding session would stay
-  // idle.
-  useEffect(() => {
-    setWorkingState({ scopeKey, ids: new Set() })
-    previousActivitySnapshotRef.current = undefined
-  }, [scopeKey])
+function applyActivity(
+  model: ScopedSessionActivityModel,
+  key: string,
+  status: SessionActivity,
+  completedVisibleMs: number,
+): ScopedSessionActivityModel {
+  const wasWorking = model.working.has(key)
+  const isWorking = status === "running" || status === "aborting"
+  const working = new Set(model.working)
+  const terminal = new Map(model.terminal)
 
-  useEffect(() => {
-    const onStatus = (event: Event) => {
-      const detail = (event as CustomEvent).detail as { sessionId?: unknown; agentTypeId?: unknown; working?: unknown; workspaceId?: unknown } | undefined
-      if (typeof detail?.sessionId !== "string") return
-      // Events tagged with a foreign workspace are ignored so one
-      // workspace's start/finish news cannot flip a colliding row here.
-      if (typeof detail.workspaceId === "string" && detail.workspaceId !== scopeKey) return
-      const key = workspaceSessionKey(detail.sessionId, typeof detail.agentTypeId === "string" ? detail.agentTypeId : undefined)
-      const isWorking = detail.working === true
-      setWorking((current) => {
-        if (current.has(key) === isWorking) return current
-        const next = new Set(current)
-        if (isWorking) next.add(key)
-        else next.delete(key)
-        return next
-      })
+  if (isWorking) {
+    working.add(key)
+    terminal.delete(key)
+  } else {
+    working.delete(key)
+    if (status === "error") terminal.set(key, { state: "failed" })
+    else if (status === "idle" && wasWorking) {
+      terminal.set(key, { state: "completed", expiresAt: Date.now() + completedVisibleMs })
+    } else {
+      // `aborted` is an explicit cancellation, not a completion. An idle
+      // event without a preceding run is also not evidence that a run ended.
+      terminal.delete(key)
     }
-    window.addEventListener(CHAT_SESSION_STATUS_EVENT, onStatus)
-    window.dispatchEvent(new Event(CHAT_SESSION_STATUS_REQUEST_EVENT))
-    return () => window.removeEventListener(CHAT_SESSION_STATUS_EVENT, onStatus)
-  }, [scopeKey])
+  }
 
-  useEffect(() => {
-    const previousSnapshot = previousActivitySnapshotRef.current
-    if (previousSnapshot === activitySnapshot) return
-    previousActivitySnapshotRef.current = activitySnapshot
-    setWorking((current) => {
-      const next = new Set(current)
-      for (const session of sessions) {
-        if (!session.status) continue
-        const key = workspaceSessionKeyFor(session)
-        if (session.status === "running" || session.status === "aborting") next.add(key)
-        else if (previousSnapshot !== undefined) next.delete(key)
-      }
-      if (next.size === current.size && [...next].every((key) => current.has(key))) return current
-      return next
-    })
-  }, [activitySnapshot, sessions, scopeKey])
+  return { ...model, working, terminal }
+}
 
-  return working
+function createScopedModel(
+  scopeKey: string,
+  sessions: readonly SessionActivityItem[],
+  inventorySnapshot: string,
+): ScopedSessionActivityModel {
+  let model: ScopedSessionActivityModel = {
+    scopeKey,
+    inventorySnapshot,
+    inventoryFingerprints: new Map(),
+    liveInventoryFingerprints: new Map(),
+    working: new Set(),
+    terminal: new Map(),
+  }
+  const fingerprints = new Map<string, string>()
+  for (const session of sessions) {
+    const key = workspaceSessionKeyFor(session)
+    fingerprints.set(key, inventoryFingerprint(session))
+    if (session.status === "running" || session.status === "aborting" || session.status === "error") {
+      model = applyActivity(model, key, session.status, COMPLETED_VISIBLE_MS)
+    }
+  }
+  return { ...model, inventoryFingerprints: fingerprints }
+}
+
+function reconcileInventory(
+  model: ScopedSessionActivityModel,
+  sessions: readonly SessionActivityItem[],
+  inventorySnapshot: string,
+  completedVisibleMs: number,
+): ScopedSessionActivityModel {
+  let next = model
+  const fingerprints = new Map<string, string>()
+  const liveFingerprints = new Map(model.liveInventoryFingerprints)
+
+  for (const session of sessions) {
+    const key = workspaceSessionKeyFor(session)
+    const fingerprint = inventoryFingerprint(session)
+    fingerprints.set(key, fingerprint)
+    // A live frame that arrived after this exact inventory row remains newer,
+    // even when an unrelated row causes the inventory array to refresh.
+    if (liveFingerprints.has(key) && liveFingerprints.get(key) === fingerprint) continue
+    liveFingerprints.delete(key)
+    if (session.status) next = applyActivity(next, key, session.status, completedVisibleMs)
+  }
+
+  return {
+    ...next,
+    inventorySnapshot,
+    inventoryFingerprints: fingerprints,
+    liveInventoryFingerprints: liveFingerprints,
+  }
+}
+
+function modelForInputs(
+  current: ScopedSessionActivityModel,
+  scopeKey: string,
+  sessions: readonly SessionActivityItem[],
+  inventorySnapshot: string,
+  completedVisibleMs: number,
+): ScopedSessionActivityModel {
+  if (current.scopeKey !== scopeKey) return createScopedModel(scopeKey, sessions, inventorySnapshot)
+  if (current.inventorySnapshot !== inventorySnapshot) {
+    return reconcileInventory(current, sessions, inventorySnapshot, completedVisibleMs)
+  }
+  return current
+}
+
+function parseLiveStatus(detail: { status?: unknown; working?: unknown }): SessionActivity | undefined {
+  if (detail.status === "idle" || detail.status === "running" || detail.status === "aborting"
+    || detail.status === "aborted" || detail.status === "error") return detail.status
+  if (detail.working === true) return "running"
+  return undefined
+}
+
+function eventBelongsToScope(workspaceId: unknown, scopeKey: string): boolean {
+  if (scopeKey) return workspaceId === scopeKey
+  return typeof workspaceId !== "string"
 }
 
 /**
- * Terminal states of the last run, shown once a session is no longer working.
- * `completed` means the run finished successfully; a cancelled (`aborted`) run
- * earns no chip at all.
+ * One scoped model for optimistic panel state, authoritative live outcomes,
+ * and inventory reconciliation. Live frames are applied atomically so an
+ * explicit aborted outcome can never pass through `completed`; scope-tagged
+ * state also makes the first render after a workspace switch start clean.
  */
-export type SessionTerminalState = "completed" | "failed"
-
-/**
- * How long a just-finished run stays marked `completed` before the row falls
- * back to its timestamp. A permanent chip would mark every idle session and
- * carry no information; the useful signal is "the run you were watching ended".
- */
-export const COMPLETED_VISIBLE_MS = 60_000
-
-/**
- * Terminal states derived from activity the list already holds: `failed`
- * comes from the AgentHost `error`/`aborted-outcome` statuses projected onto
- * each row and streamed on the existing status event, and `completed` is the
- * working -> not-working transition of the set this component already
- * computes — but only when the row's settled status is not `aborted`, so a
- * cancelled run is never presented as done. Neither path reads a transcript
- * nor adds a per-row request, so session inventory cost is unchanged (gh-1338).
- *
- * `scopeKey` (the workspace id) scopes the terminal caches: switching to a
- * different workspace/source resets them, so state computed under one source
- * can never tint a colliding session id under another.
- */
-export function useTerminalSessionStates(
+export function useSessionActivityStates(
   sessions: readonly SessionActivityItem[],
-  working: ReadonlySet<string>,
-  options: { completedVisibleMs?: number; scopeKey?: string } = {},
-): ReadonlyMap<string, SessionTerminalState> {
-  const completedVisibleMs = options.completedVisibleMs ?? COMPLETED_VISIBLE_MS
+  options: { scopeKey: string; completedVisibleMs?: number },
+): {
+  workingSessionIds: ReadonlySet<string>
+  terminalSessionStates: ReadonlyMap<string, SessionTerminalState>
+} {
   const scopeKey = options.scopeKey
-  const [failedKeys, setFailedKeys] = useState<ReadonlySet<string>>(() => new Set())
-  const [completedKeys, setCompletedKeys] = useState<ReadonlySet<string>>(() => new Set())
-  const previousWorkingRef = useRef<ReadonlySet<string> | undefined>(undefined)
-  const previousScopeRef = useRef<string | undefined>(scopeKey)
-  const expiryTimersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>())
+  const completedVisibleMs = options.completedVisibleMs ?? COMPLETED_VISIBLE_MS
+  const inventorySnapshot = useMemo(() => inventorySnapshotFor(sessions), [sessions])
+  const [model, setModel] = useState<ScopedSessionActivityModel>(() => (
+    createScopedModel(scopeKey, sessions, inventorySnapshot)
+  ))
+  // Derive against the current scope and inventory during render. Waiting for
+  // an effect would expose one committed frame of the previous workspace (or
+  // superseded inventory) before the scoped model catches up.
+  const visibleModel = modelForInputs(model, scopeKey, sessions, inventorySnapshot, completedVisibleMs)
 
-  // A workspace/source switch invalidates every cached outcome: chips earned
-  // under the previous source must never survive onto a colliding id.
   useEffect(() => {
-    if (previousScopeRef.current === scopeKey) return
-    previousScopeRef.current = scopeKey
-    previousWorkingRef.current = undefined
-    setFailedKeys((current) => current.size === 0 ? current : new Set())
-    setCompletedKeys((current) => {
-      if (current.size > 0) {
-        for (const key of current) {
-          const timer = expiryTimersRef.current.get(key)
-          if (timer) {
-            clearTimeout(timer)
-            expiryTimersRef.current.delete(key)
-          }
-        }
-      }
-      return current.size === 0 ? current : new Set()
-    })
-  }, [scopeKey])
+    setModel((current) => modelForInputs(
+      current,
+      scopeKey,
+      sessions,
+      inventorySnapshot,
+      completedVisibleMs,
+    ))
+  }, [completedVisibleMs, inventorySnapshot, scopeKey, sessions])
 
-  // Live failure news. The panel-only emitter carries no outcome field; it
-  // reports streaming, never an outcome, so those events are left alone.
-  // Events tagged with a foreign workspace are ignored so one workspace's
-  // failure news cannot land on a colliding row in another.
   useEffect(() => {
     const onStatus = (event: Event) => {
-      const detail = (event as CustomEvent).detail as { sessionId?: unknown; agentTypeId?: unknown; status?: unknown; workspaceId?: unknown } | undefined
-      if (typeof detail?.sessionId !== "string" || typeof detail.status !== "string") return
-      if (typeof detail.workspaceId === "string" && detail.workspaceId !== scopeKey) return
-      const key = workspaceSessionKey(detail.sessionId, typeof detail.agentTypeId === "string" ? detail.agentTypeId : undefined)
-      const isFailed = detail.status === "error"
-      setFailedKeys((current) => {
-        if (current.has(key) === isFailed) return current
-        const next = new Set(current)
-        if (isFailed) next.add(key)
-        else next.delete(key)
-        return next
+      const detail = (event as CustomEvent).detail as {
+        sessionId?: unknown
+        agentTypeId?: unknown
+        workspaceId?: unknown
+        working?: unknown
+        status?: unknown
+      } | undefined
+      if (typeof detail?.sessionId !== "string" || !eventBelongsToScope(detail.workspaceId, scopeKey)) return
+      const status = parseLiveStatus(detail)
+      const key = workspaceSessionKey(
+        detail.sessionId,
+        typeof detail.agentTypeId === "string" ? detail.agentTypeId : undefined,
+      )
+      setModel((current) => {
+        const scoped = modelForInputs(
+          current,
+          scopeKey,
+          sessions,
+          inventorySnapshot,
+          completedVisibleMs,
+        )
+        const liveFingerprints = new Map(scoped.liveInventoryFingerprints)
+        liveFingerprints.set(key, scoped.inventoryFingerprints.get(key))
+        if (status) {
+          return {
+            ...applyActivity(scoped, key, status, completedVisibleMs),
+            liveInventoryFingerprints: liveFingerprints,
+          }
+        }
+        if (detail.working !== false || !scoped.working.has(key)) return scoped
+        // A panel can report that streaming stopped but cannot identify the
+        // outcome. Clear working atomically, but wait for an explicit live or
+        // inventory outcome before showing any terminal badge.
+        const working = new Set(scoped.working)
+        working.delete(key)
+        return { ...scoped, working, liveInventoryFingerprints: liveFingerprints }
       })
     }
     window.addEventListener(CHAT_SESSION_STATUS_EVENT, onStatus)
     window.dispatchEvent(new Event(CHAT_SESSION_STATUS_REQUEST_EVENT))
     return () => window.removeEventListener(CHAT_SESSION_STATUS_EVENT, onStatus)
-  }, [scopeKey])
-
-  useEffect(() => () => {
-    const timers = expiryTimersRef.current
-    timers.forEach((timer) => clearTimeout(timer))
-    timers.clear()
-  }, [])
+  }, [completedVisibleMs, inventorySnapshot, scopeKey, sessions])
 
   useEffect(() => {
-    const previous = previousWorkingRef.current
-    previousWorkingRef.current = working
-    if (!previous) return
-    const finished = [...previous].filter((key) => !working.has(key))
-    const restarted = [...working].filter((key) => !previous.has(key))
-    if (finished.length === 0 && restarted.length === 0) return
-    // A finish whose settled outcome is `aborted` is a cancellation, not a
-    // completion. The list may not carry the terminal status yet (event/list
-    // ordering), so this is a best-effort filter with a self-heal below.
-    const statusByKey = new Map(sessions.map((session) => [workspaceSessionKeyFor(session), session.status]))
-    setCompletedKeys((current) => {
-      const next = new Set(current)
-      finished.forEach((key) => {
-        if (statusByKey.get(key) === "aborted") return
-        next.add(key)
+    const expiries = [...visibleModel.terminal.values()]
+      .map((entry) => entry.expiresAt)
+      .filter((expiresAt): expiresAt is number => expiresAt !== undefined)
+    if (expiries.length === 0) return
+    const timer = setTimeout(() => {
+      const now = Date.now()
+      setModel((current) => {
+        if (current.scopeKey !== scopeKey) return current
+        const terminal = new Map(current.terminal)
+        let changed = false
+        for (const [key, entry] of terminal) {
+          if (entry.expiresAt !== undefined && entry.expiresAt <= now) {
+            terminal.delete(key)
+            changed = true
+          }
+        }
+        return changed ? { ...current, terminal } : current
       })
-      restarted.forEach((key) => next.delete(key))
-      if (next.size === current.size && [...next].every((key) => current.has(key))) return current
-      return next
-    })
-    const completedNow = finished.filter((key) => statusByKey.get(key) !== "aborted")
-    for (const key of completedNow) {
-      const timers = expiryTimersRef.current
-      const running = timers.get(key)
-      if (running) clearTimeout(running)
-      timers.set(key, setTimeout(() => {
-        timers.delete(key)
-        setCompletedKeys((current) => {
-          if (!current.has(key)) return current
-          const next = new Set(current)
-          next.delete(key)
-          return next
-        })
-      }, completedVisibleMs))
-    }
-  }, [working, completedVisibleMs, sessions])
+    }, Math.max(0, Math.min(...expiries) - Date.now()))
+    return () => clearTimeout(timer)
+  }, [scopeKey, visibleModel])
 
-  return useMemo(() => {
+  const terminalSessionStates = useMemo(() => {
     const states = new Map<string, SessionTerminalState>()
     for (const session of sessions) {
       const key = workspaceSessionKeyFor(session)
-      // A session that is working again has no settled outcome to report.
-      if (working.has(key)) continue
-      // An aborted run is cancelled work, not done work: no chip, even if the
-      // working-set transition already optimistically marked it completed.
-      if (session.status === "aborted") continue
-      if (session.status === "error" || failedKeys.has(key)) states.set(key, "failed")
-      else if (completedKeys.has(key)) states.set(key, "completed")
+      if (visibleModel.working.has(key)) continue
+      const terminal = visibleModel.terminal.get(key)
+      if (terminal) states.set(key, terminal.state)
     }
     return states
-  }, [sessions, working, failedKeys, completedKeys])
+  }, [sessions, visibleModel])
+
+  return {
+    workingSessionIds: visibleModel.working,
+    terminalSessionStates,
+  }
 }

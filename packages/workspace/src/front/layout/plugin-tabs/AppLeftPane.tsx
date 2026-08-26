@@ -11,7 +11,7 @@ import { AppSessionRow, type AppSessionRowState } from "./AppLeftPaneSessionRow"
 import { SessionSubSection } from "./AppLeftPaneSections"
 import { useWorkspaceAttention, workspaceAttentionSessionBadgeForBlocker, type WorkspaceAttentionSessionBadge } from "../../attention/WorkspaceAttentionProvider"
 import { workspaceSessionKey, workspaceSessionKeyFor, type WorkspaceSessionRef } from "../../sessionIdentity"
-import { useWorkingSessionIds } from "../../sessionActivity"
+import { useSessionActivityStates } from "../../sessionActivity"
 import { cn } from "../../lib/utils"
 
 export interface AppLeftPaneSession {
@@ -289,7 +289,7 @@ export function AppLeftPane({
   )
   const openSet = useMemo(() => new Set(normalizedOpenSessionIds), [normalizedOpenSessionIds])
   const pinnedSet = useMemo(() => new Set(normalizedPinnedSessionIds), [normalizedPinnedSessionIds])
-  const workingSessionIds = useWorkingSessionIds(sessions, { scopeKey: workspaceId })
+  const { workingSessionIds } = useSessionActivityStates(sessions, { scopeKey: workspaceId })
   // Fleet row idiom (accent dot, compact rows, owner labels): any addressed
   // fleet gets it, including a fleet of one, so chat cards look identical in
   // both cardinalities. Hosts wanting the plain shell omit `agents` entirely.

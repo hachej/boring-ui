@@ -10,7 +10,7 @@ import { useWorkspaceAttention, workspaceAttentionSessionBadgeForBlocker, type W
 import { CHAT_SESSION_DRAG_TYPE } from "../../layout/ChatPaneStage"
 import type { SessionItem } from "../../components/SessionList"
 import { encodeWorkspaceSessionDrag, workspaceSessionKey, workspaceSessionKeyFor, type WorkspaceSessionRef } from "../../sessionIdentity"
-import { useTerminalSessionStates, useWorkingSessionIds, type SessionTerminalState } from "../../sessionActivity"
+import { useSessionActivityStates, type SessionTerminalState } from "../../sessionActivity"
 
 export interface SessionBrowserProps {
   sessions: SessionItem[]
@@ -191,8 +191,9 @@ export function SessionBrowser({
   const [historyCollapsed, setHistoryCollapsed] = useState(
     () => normalizedOpenIds.length > 0 || normalizedPinnedIds.length > 0,
   )
-  const workingSessionIds = useWorkingSessionIds(sessions, { scopeKey: activityWorkspaceId ?? "" })
-  const terminalSessionStates = useTerminalSessionStates(sessions, workingSessionIds, { scopeKey: activityWorkspaceId })
+  const { workingSessionIds, terminalSessionStates } = useSessionActivityStates(sessions, {
+    scopeKey: activityWorkspaceId ?? "",
+  })
   const { blockers } = useWorkspaceAttention()
   const sessionBadges = useMemo(() => {
     const badges = new Map<string, WorkspaceAttentionSessionBadge>()
