@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Job Thread v0 — owner gate</title>
+<style>
+:root{color-scheme:light dark;--bg:#f3f5f8;--card:#fff;--ink:#172033;--muted:#647084;--line:#d9dee8;--blue:#2456d6;--green:#137a52;--amber:#916500;--red:#b42318}
+@media(prefers-color-scheme:dark){:root{--bg:#0f131b;--card:#181e29;--ink:#eef3fa;--muted:#a9b4c5;--line:#303a4b;--blue:#8cadff;--green:#65d7a5;--amber:#efc75f;--red:#ff8c84}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif}
+.wrap{max-width:1080px;margin:auto;padding:20px}
+.hero,.card{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 8px 28px #0000000d}
+.hero{padding:22px 24px;border-top:5px solid var(--blue)}
+.eyebrow{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.09em}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+h1{font-size:clamp(23px,4vw,36px);line-height:1.12;margin:6px 0}
+.pill{padding:4px 9px;border-radius:999px;background:#fff0c7;color:#6b4900;font-weight:700;font-size:12px}
+.meta,.small{color:var(--muted)}
+.tldr{font-size:17px;max-width:900px}
+.card{padding:20px 22px;margin-top:16px}
+h2{margin:0 0 12px;font-size:20px}
+h3{margin:18px 0 8px;font-size:15.5px}
+table{border-collapse:collapse;width:100%;display:block;overflow:auto}
+th,td{border:1px solid var(--line);padding:9px 11px;text-align:left;vertical-align:top;font-size:14px}
+th{background:color-mix(in srgb,var(--blue) 8%,var(--card))}
+.two td{width:50%}
+ul{margin:5px 0;padding-left:20px}
+code{background:color-mix(in srgb,var(--muted) 13%,transparent);padding:1px 5px;border-radius:5px;font-size:.92em}
+.low{background:color-mix(in srgb,var(--green) 14%,var(--card))}
+.med{background:color-mix(in srgb,var(--amber) 15%,var(--card))}
+.high{background:color-mix(in srgb,var(--red) 14%,var(--card))}
+.callout{border-left:4px solid var(--blue);padding:4px 0 4px 14px;margin-top:10px}
+.warn{border-left:4px solid var(--amber);padding:4px 0 4px 14px;margin-top:10px}
+.review{border-left:4px solid var(--amber);padding-left:14px}
+a{color:var(--blue)}
+.qnum{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:8px;background:var(--blue);color:#fff;font-weight:800;font-size:13px;margin-right:8px;flex:none}
+.qhead{display:flex;align-items:center;gap:2px}
+.qtitle{font-size:16px;font-weight:700}
+.rec{border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:color-mix(in srgb,var(--green) 8%,var(--card));margin-top:10px}
+.rec b{color:var(--green)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:720px){.grid2{grid-template-columns:1fr}}
+.box{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:color-mix(in srgb,var(--muted) 5%,var(--card))}
+.dg{width:100%;height:auto;display:block;margin:8px 0 4px}
+.dg .bx{fill:color-mix(in srgb,var(--blue) 8%,var(--card));stroke:var(--line);stroke-width:1}
+.dg .bx2{fill:color-mix(in srgb,var(--green) 10%,var(--card));stroke:var(--line);stroke-width:1}
+.dg .bx3{fill:color-mix(in srgb,var(--amber) 13%,var(--card));stroke:var(--line);stroke-width:1}
+.dg .t{fill:var(--ink);font:600 12.5px ui-sans-serif,system-ui,sans-serif}
+.dg .c{fill:var(--muted);font:400 10px ui-monospace,SFMono-Regular,Menlo,monospace}
+.dg .lbl{fill:var(--muted);font:700 10.5px ui-sans-serif,system-ui,sans-serif;letter-spacing:.09em}
+.dg .ln{stroke:var(--line);stroke-width:1.4}
+.dg .ar{stroke:var(--blue);stroke-width:1.5;fill:none}
+.dg .arx{stroke:var(--muted);stroke-width:1.3;fill:none;stroke-dasharray:4 3}
+.dg .m{fill:var(--ink);font:400 11px ui-sans-serif,system-ui,sans-serif;stroke:var(--card);stroke-width:3.5;paint-order:stroke fill}
+.dg .gut{fill:var(--muted);font:700 9.5px ui-sans-serif,system-ui,sans-serif}
+.dg .n{fill:var(--blue);font:700 9.5px ui-sans-serif,system-ui,sans-serif}
+.dgcap{color:var(--muted);font-size:12.5px;margin:2px 0 0}
+.box b{display:block;margin-bottom:4px;font-size:12.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.slices{display:flex;flex-wrap:wrap;gap:10px;align-items:stretch}
+.slice{border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-width:150px;flex:1;background:color-mix(in srgb,var(--blue) 5%,var(--card))}
+.slice h4{margin:0 0 4px;font-size:14px}
+.slice .b{font-size:12.5px;color:var(--muted)}
+.arrow{align-self:center;color:var(--muted);font-size:20px}
+.gate{border:1px dashed var(--amber);border-radius:10px;padding:8px 12px;background:color-mix(in srgb,var(--amber) 12%,var(--card));font-size:13px;margin-top:10px}
+footer{margin:24px 0 8px;color:var(--muted);font-size:12.5px;text-align:center}
+</style></head><body><main class="wrap">
+
+<header class="hero">
+  <div class="eyebrow">Gate 1 · Plan approval</div>
+  <div class="row"><h1>Job Thread v0 — 1 Thread = 1 job</h1><span class="pill">OWNER DECISION</span></div>
+  <p class="tldr">A <b>projection</b>, not a new Thread: several per-agent Pi sessions merged into one job
+  timeline via a stateless <b>relay</b>, with typed handoffs, centrally-enforced caps, and an honest
+  failure/restart contract. K7 demo — "grow audience 1,200 → 5,000" — proves it with two fleet agents
+  (worker/reviewer) and one Objective.</p>
+  <div class="meta">Round 2 (folds fresh-eyes + cross-model review) · PR
+  <a href="https://github.com/hachej/boring-ui/pull/1403">#1403</a> · Issue
+  <a href="https://github.com/hachej/boring-ui/issues/1399">#1399</a> · Branch
+  <code>weekend/jobthread-v0-plan</code> · No implementation before owner sign-off</div>
+</header>
+
+<section class="card">
+  <h2>What this plan builds</h2>
+  <p class="tldr">Twelve artifacts, nothing else. Named in product words, with the code noun
+  underneath. Ordering lives in the Slices section &mdash; this is composition, not sequence.</p>
+<svg class="dg" viewBox="0 0 1050 500" role="img" aria-label="Component map: everything this plan builds, grouped by layer">
+<defs><marker id="ah" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="var(--muted)"/></marker>
+<marker id="ahb" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="var(--blue)"/></marker></defs>
+<text class="lbl" x="30" y="24">THE ONE VIEW THE OWNER READS &#183; S4</text>
+<rect class="bx" x="350" y="36" width="340" height="46" rx="8"/><text class="t" x="520.0" y="55.0" text-anchor="middle">Merged timeline</text><text class="c" x="520.0" y="71.0" text-anchor="middle">src/front/</text>
+<text class="lbl" x="30" y="132">WHAT DECIDES WHAT HAPPENS NEXT &#183; S2, S3</text>
+<rect class="bx2" x="30" y="148" width="225" height="52" rx="8"/><text class="t" x="142.5" y="170.0" text-anchor="middle">Sending one turn</text><text class="c" x="142.5" y="186.0" text-anchor="middle">relayTurn.ts</text><rect class="bx2" x="275" y="148" width="225" height="52" rx="8"/><text class="t" x="387.5" y="170.0" text-anchor="middle">&#8220;Pass this on&#8221;</text><text class="c" x="387.5" y="186.0" text-anchor="middle">handoffTool.ts</text><rect class="bx2" x="520" y="148" width="225" height="52" rx="8"/><text class="t" x="632.5" y="170.0" text-anchor="middle">Who goes next + caps</text><text class="c" x="632.5" y="186.0" text-anchor="middle">relayChain.ts</text><rect class="bx2" x="765" y="148" width="225" height="52" rx="8"/><text class="t" x="877.5" y="170.0" text-anchor="middle">Picking up after a crash</text><text class="c" x="877.5" y="186.0" text-anchor="middle">recovery.ts</text>
+<text class="lbl" x="30" y="240">THE ONE LOCKED WRITE THAT MAKES IT CRASH-SAFE &#183; S1</text>
+<rect class="bx" x="350" y="252" width="340" height="46" rx="8"/><text class="t" x="520.0" y="271.0" text-anchor="middle">Reserve the turn before sending</text><text class="c" x="520.0" y="287.0" text-anchor="middle">openEdge()  &#183;  src/server/edgeLog.ts</text>
+<text class="lbl" x="30" y="336">WHAT IS WRITTEN DOWN &#183; S1</text>
+<rect class="bx3" x="30" y="352" width="150" height="64" rx="8"/><text class="t" x="105.0" y="380.0" text-anchor="middle">The saved job</text><text class="c" x="105.0" y="396.0" text-anchor="middle">JobProjectionV0</text><rect class="bx3" x="196" y="352" width="150" height="64" rx="8"/><text class="t" x="271.0" y="380.0" text-anchor="middle">Its participants</text><text class="c" x="271.0" y="396.0" text-anchor="middle">JobParticipantV0</text><rect class="bx3" x="362" y="352" width="150" height="64" rx="8"/><text class="t" x="437.0" y="380.0" text-anchor="middle">One turn hop</text><text class="c" x="437.0" y="396.0" text-anchor="middle">JobRelayEdgeV0</text><rect class="bx3" x="528" y="352" width="150" height="64" rx="8"/><text class="t" x="603.0" y="380.0" text-anchor="middle">What happened to it</text><text class="c" x="603.0" y="396.0" text-anchor="middle">JobRelayTransitionV0</text><rect class="bx3" x="694" y="352" width="150" height="64" rx="8"/><text class="t" x="769.0" y="380.0" text-anchor="middle">The cap ledger</text><text class="c" x="769.0" y="396.0" text-anchor="middle">JobChainStateV0</text><rect class="bx3" x="860" y="352" width="150" height="64" rx="8"/><text class="t" x="935.0" y="380.0" text-anchor="middle">How far we&#8217;ve read</text><text class="c" x="935.0" y="396.0" text-anchor="middle">JobCursorV0</text>
+<path class="ar" d="M520,250 L520,206" marker-end="url(#ahb)"/>
+<path class="ar" d="M520,300 L520,346" marker-end="url(#ahb)"/>
+<path class="arx" d="M1010,384 L1032,384 L1032,59 L694,59" marker-end="url(#ah)"/>
+<text class="c" x="1044" y="222" text-anchor="middle" transform="rotate(-90 1044 222)">projected into the timeline</text>
+<rect class="bx" x="30" y="440" width="980" height="40" rx="8"/><text class="t" x="520.0" y="456.0" text-anchor="middle">Proof the whole path works &#8212; scripted, deterministic, zero live model calls</text><text class="c" x="520.0" y="472.0" text-anchor="middle">K7 demo fixture  &#183;  S5  &#183;  src/server/__tests__/k7Demo.test.ts</text>
+</svg>
+  <p class="dgcap">All paths are under <code>plugins/job-threads/</code>.</p>
+  <h3>One handoff turn &mdash; and what the participants share</h3>
+<svg class="dg" viewBox="0 0 1050 606" role="img" aria-label="One full handoff turn, and the shared workspace beneath both participants">
+<defs>
+<marker id="ah2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="var(--blue)"/></marker>
+<marker id="ah3" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="var(--muted)"/></marker>
+</defs>
+<rect class="bx" x="44" y="18" width="152" height="42" rx="8"/><text class="t" x="120" y="36" text-anchor="middle">Owner</text><text class="c" x="120" y="50" text-anchor="middle">the human</text><line class="ln" x1="120" y1="60" x2="120" y2="556"/><rect class="bx" x="244" y="18" width="152" height="42" rx="8"/><text class="t" x="320" y="36" text-anchor="middle">Relay</text><text class="c" x="320" y="50" text-anchor="middle">a service, not an agent</text><line class="ln" x1="320" y1="60" x2="320" y2="556"/><rect class="bx" x="444" y="18" width="152" height="42" rx="8"/><text class="t" x="520" y="36" text-anchor="middle">Store</text><text class="c" x="520" y="50" text-anchor="middle">job store, CAS</text><line class="ln" x1="520" y1="60" x2="520" y2="556"/><rect class="bx" x="654" y="18" width="152" height="42" rx="8"/><text class="t" x="730" y="36" text-anchor="middle">Worker</text><text class="c" x="730" y="50" text-anchor="middle">participant A</text><line class="ln" x1="730" y1="60" x2="730" y2="540"/><rect class="bx" x="854" y="18" width="152" height="42" rx="8"/><text class="t" x="930" y="36" text-anchor="middle">Reviewer</text><text class="c" x="930" y="50" text-anchor="middle">participant B</text><line class="ln" x1="930" y1="60" x2="930" y2="540"/><text class="gut" x="16" y="99">1</text><text class="m" x="220.0" y="90" text-anchor="middle">post a message to the JOB</text><path class="ar" d="M120,96 L320,96" marker-end="url(#ah2)"/><text class="gut" x="16" y="133">2</text><text class="m" x="420.0" y="124" text-anchor="middle">openEdge &#8212; new chain, ordinal 1, mint requestId, reserve caps, pending</text><path class="ar" d="M320,130 L520,130" marker-end="url(#ah2)"/><text class="gut" x="16" y="167">3</text><text class="m" x="420.0" y="158" text-anchor="middle">edge1</text><path class="arx" d="M520,164 L320,164" marker-end="url(#ah3)"/><text class="gut" x="16" y="201">4</text><text class="m" x="525.0" y="192" text-anchor="middle">dispatch keyed by edge1.requestId</text><path class="ar" d="M320,198 L730,198" marker-end="url(#ah2)"/><text class="gut" x="16" y="235">5</text><text class="m" x="525.0" y="226" text-anchor="middle">accepted &#8212; cursor, duplicate?</text><path class="arx" d="M730,232 L320,232" marker-end="url(#ah3)"/><text class="gut" x="16" y="269">6</text><text class="m" x="420.0" y="260" text-anchor="middle">append transition: accepted</text><path class="ar" d="M320,266 L520,266" marker-end="url(#ah2)"/><text class="gut" x="16" y="303">7</text><text class="m" x="525.0" y="294" text-anchor="middle">settles &#8212; agent-end, willRetry false, final post</text><path class="arx" d="M730,300 L320,300" marker-end="url(#ah3)"/><text class="gut" x="16" y="337">8</text><text class="m" x="420.0" y="328" text-anchor="middle">append transition: settled, advance cursor</text><path class="ar" d="M320,334 L520,334" marker-end="url(#ah2)"/><text class="gut" x="16" y="371">9</text><text class="m" x="525.0" y="362" text-anchor="middle">handoff to reviewer &#8212; typed tool, never parsed from prose</text><path class="arx" d="M730,368 L320,368" marker-end="url(#ah3)"/><text class="gut" x="16" y="405">10</text><text class="m" x="420.0" y="396" text-anchor="middle">openEdge &#8212; same chain, ordinal 2, hop 1</text><path class="ar" d="M320,402 L520,402" marker-end="url(#ah2)"/><text class="gut" x="16" y="439">11</text><text class="m" x="625.0" y="430" text-anchor="middle">dispatch keyed by edge2.requestId, context after B&#8217;s watermark</text><path class="ar" d="M320,436 L930,436" marker-end="url(#ah2)"/><text class="gut" x="16" y="473">12</text><text class="m" x="625.0" y="464" text-anchor="middle">settles &#8212; final post</text><path class="arx" d="M930,470 L320,470" marker-end="url(#ah3)"/><text class="gut" x="16" y="507">13</text><text class="m" x="220.0" y="498" text-anchor="middle">one timeline, ordered by (turnOrdinal, seq, markerOrdinal)</text><path class="ar" d="M320,504 L120,504" marker-end="url(#ah2)"/><rect class="bx2" x="620" y="548" width="420" height="46" rx="8"/><text class="t" x="830" y="566" text-anchor="middle">ONE shared workspace &#183; one canonical filesystem</text><text class="c" x="830" y="581" text-anchor="middle">the worker&#8217;s files ARE the reviewer&#8217;s files &#183; D25:410, D28:463</text><path class="arx" d="M730,540 L730,548"/><path class="arx" d="M930,540 L930,548"/></svg>
+  <p class="dgcap"><b>Two boundaries, only one restrictive.</b> Above the line, the
+  <b>conversation</b> boundary is closed: only the two settled <b>final posts</b> cross between
+  participants &mdash; private reasoning, tool calls and credentials never do. Below the line, the
+  <b>artifact</b> boundary is open: both participants share <b>one workspace and one canonical
+  filesystem</b> (D25 <code>:410</code>, D28 <code>:462-463</code>), so the reviewer reads the very
+  files the worker wrote &mdash; nothing is copied or synced. Participants share the work, not each
+  other&#8217;s minds and keys.</p>
+  <p class="dgcap">Steps 2 and 10 are the crash-safety keystone: a turn is reserved <b>before</b>
+  anything is sent, so a crash can never leave an unrecorded send or an escaped cap count. The plan
+  carries three further diagrams (data model, recovery order, edge lifecycle) as Mermaid in
+  <code>docs/plans/job-thread-v0-plan.md</code>.</p>
+</section>
+<section class="card">
+  <h2>Review provenance</h2>
+  <p>Round 1 went through a fresh-eyes pass and cross-model adversarial review; every accepted finding
+  is folded into this revision, not left as an open thread. Verdict on round 1 was
+  <code>revise</code> at commit <code>9e42e893a</code> — this document (<code>2e9d4ba41</code>) is the
+  answer to that verdict. Corrections carried in explicitly: the "no A2A loopback" framing was a
+  misread (Decision 24 ratifies a native in-process agent-to-agent binding; relay-vs-native is now
+  owner question 2, not a compliance requirement); the round-1 record silently minted a second Thread
+  object and called the relay an "orchestrator seat" against the frozen Seat definition — both
+  withdrawn; the per-Thread budget hook and the "deterministic live-model" acceptance claim were both
+  found unbuildable/false and dropped rather than fudged.</p>
+  <div class="callout"><strong>What v0 is not:</strong> no new canonical Thread or Seat identity, no
+  shared runtime transcript, no native agent-to-agent binding (available, ratified, deferred to a
+  question below), no per-Thread budget, no Level D conformance claim. Full list in §6 of the plan.</div>
+</section>
+
+<section class="card">
+  <h2>Owner questions — one decision per section</h2>
+  <p class="small">Each section: the question, the options on the table, the plan's recommendation with
+  its one-line reason, and what taking it unblocks or costs.</p>
+
+  <h3 class="qhead"><span class="qnum">1</span><span class="qtitle">The noun — new descriptor, or the canonical Thread?</span></h3>
+  <table class="two"><tr><th>Options</th><th>Unblocks / costs</th></tr>
+  <tr><td><b>Q1-A</b> — <code>JobProjectionV0</code>: a distinct, deletable record. Not a Thread. Leaves
+  frozen <code>Thread</code>/<code>Seat</code> untouched, R-c intact.<br><br>
+  <b>Q1-B</b> — <code>JobProjection</code> <i>is</i> the canonical Thread. Cheaper than round-1 review
+  assumed: frozen <code>Thread</code> already carries a <code>participants</code> field.</td>
+  <td><b>Q1-A unblocks</b>: S1 can start now; nothing to migrate later if v0 is killed.<br>
+  <b>Q1-B costs</b>: an explicit R-c amendment, pulls ratified P0 "<code>seatId</code> in C7" forward,
+  forces a rework of #1355's <code>ConsoleThreadRefV1</code> unique key <i>before</i> #1355
+  implements, and needs a migration for any Thread ref already written.</td></tr></table>
+  <div class="rec"><b>Recommended: Q1-A.</b> Better end state, wrong v0 — pay the ontology cost only
+  once the shape is proven.</div>
+
+  <h3 class="qhead"><span class="qnum">2</span><span class="qtitle">Relay vs. the ratified native agent-to-agent binding</span></h3>
+  <table class="two"><tr><th>Options</th><th>Unblocks / costs</th></tr>
+  <tr><td>Decision 24 already ratifies a native in-process binding (<code>input-required</code>,
+  two-way chat, no MCP loopback) for internal agent-to-agent consumption — it is available, not
+  forbidden.<br><br>
+  <b>Relay (proposed)</b> — a stateless, non-agent, non-Seat function over
+  <code>runWithWorkspaceAgent</code>; no new agent-facing capability.<br><br>
+  <b>Native binding</b> — build the ratified mechanism now instead.</td>
+  <td><b>Relay unblocks</b>: no new authority-bearing host seam, no long-lived scope, fully deletable,
+  caps enforced centrally outside agent code.<br>
+  <b>Native binding costs</b>: agents gain a direct calling capability that must then be scoped,
+  audited, and capped per-agent rather than in one place.</td></tr></table>
+  <div class="rec"><b>Recommended: relay.</b> This is a live product choice, not a compliance
+  requirement — v0 picks the cheaper, deletable shape.</div>
+
+  <h3 class="qhead"><span class="qnum">3</span><span class="qtitle">Attribution grade — display handle, or envelope-grade <code>seatId</code>?</span></h3>
+  <table class="two"><tr><th>Options</th><th>Unblocks / costs</th></tr>
+  <tr><td><b>Accept display-grade</b> — <code>participantId</code> is a temporary handle, no audit
+  weight, lives in a mutable record.<br><br>
+  <b>Pull C7 <code>seatId</code> forward</b> — envelope-grade attribution now, matching ratified P0.</td>
+  <td><b>Accept unblocks</b>: S1–S5 proceed against today's envelope shape (<code>agent-host/types.ts</code>
+  has no seat field yet).<br><b>Pulling C7 forward costs</b>: brings a ratified-but-not-yet-built C7
+  dependency into v0's critical path.</td></tr></table>
+  <div class="rec"><b>Recommended: accept display-grade for v0.</b> Envelope-grade attribution arrives
+  with C7, not with this demo.</div>
+
+  <h3 class="qhead"><span class="qnum">4</span><span class="qtitle">The two boundaries — what is shared, what is not?</span></h3>
+  <p>The plan has <b>two</b> boundaries and only one of them is restrictive. They are easy to
+  conflate, and conflating them makes the design read as agents walled off from each other, which is
+  the opposite of what it says.</p>
+  <table class="two"><tr><th>Options</th><th>Unblocks / costs</th></tr>
+  <tr><td><b>Artifact boundary — OPEN.</b> Participants on a job share <b>one workspace and one
+  canonical filesystem</b>. Ratified, not invented: agents in a workspace &ldquo;intentionally share
+  filesystem/process/runtime authority while retaining distinct &hellip; session &hellip; and
+  provenance identity&rdquo; (D25 <code>:410</code>), and same-workspace agents get execution views
+  &ldquo;without copying the authoritative filesystem&rdquo; (D28 <code>:463</code>). Reach is
+  governed by mounts and per-participant tool authority, not by partition.</td>
+  <td><b>Confirms</b>: the reviewer reads the very files the worker wrote &mdash; nothing copied,
+  synced, or attached. This is the half of the shared-VM feel people actually like, delivered
+  natively and governed. Rejecting it would mean per-participant copies and a second authoritative
+  file tree, which D28 <code>:462</code> exists to prevent.</td></tr>
+  <tr><td><b>Conversation boundary — CLOSED.</b> Only the settled final assistant message
+  (<code>message-end.final</code>, gated on non-<code>willRetry</code>) and relay-authored system
+  handoff markers enter another participant's <i>prompt</i>. No tool calls, no intermediate messages,
+  no private reasoning, no credentials.</td>
+  <td><b>Confirms</b>: each participant's private trace stays reachable only by drill-down — the
+  demo's privacy and noise story. A wider boundary would need re-litigating the handoff tool and the
+  merged-timeline renderer.</td></tr></table>
+  <div class="rec"><b>Recommended: confirm the pairing.</b> Participants share the work, not each
+  other's minds and keys. Sharing context windows is what makes multi-agent setups leak secrets and
+  drown in tool spew; sharing a filesystem is what lets them collaborate at all. v0 takes the second
+  and refuses the first.</div>
+
+  <h3 class="qhead"><span class="qnum">5</span><span class="qtitle">Objective coupling — mandatory, or optional one-way ref?</span></h3>
+  <table class="two"><tr><th>Options</th><th>Unblocks / costs</th></tr>
+  <tr><td><b>Optional one-way ref (proposed)</b> — job points at <code>objectiveId</code>;
+  <code>Objective</code> gains no <code>threadId</code>; PR <a href="https://github.com/hachej/boring-ui/pull/1382">#1382</a> stays untouched.
+  Compensated with <code>clientRequestId</code> if the projection write fails after Objective
+  creation.<br><br>
+  <b>Mandatory + back-ref</b> — <code>Objective</code> gains a <code>threadId</code>.</td>
+  <td><b>One-way ref unblocks</b>: #1382 (open) needs zero changes, S5 can build against it as-is.<br>
+  <b>Mandatory back-ref costs</b>: a schema change to an already-open PR, and a second write path to
+  keep consistent.</td></tr></table>
+  <div class="rec"><b>Recommended: optional one-way ref.</b> Keeps #1382 stable; the demo still works
+  end to end.</div>
+
+  <h3 class="qhead"><span class="qnum">6</span><span class="qtitle">Context truncation and budget — confirm both out-of-scope shapes</span></h3>
+  <table class="two"><tr><th>Options</th><th>Unblocks / costs</th></tr>
+  <tr><td><b>Confirm</b> — oldest-first truncation only, no summarization (a summarizer would be an
+  unreviewed model call inside the relay); per-Thread <i>spend</i> is out of v0 because
+  <code>MeteringRunScope</code> has no job/thread/participant dimension today.</td>
+  <td><b>Confirms</b>: v0 ships only relay-enforced hop/invocation caps, which bound hops, not money.
+  A real budget needs a job dimension threaded through the reservation path — named explicitly as v1
+  work, not a v0 claim.</td></tr></table>
+  <div class="rec"><b>Recommended: confirm both.</b> Building either now would be new unbudgeted scope
+  disguised as v0.</div>
+
+  <h3 class="qhead"><span class="qnum">7</span><span class="qtitle">Level D streaming conformance — complete now, or defer?</span></h3>
+  <table class="two"><tr><th>Options</th><th>Unblocks / costs</th></tr>
+  <tr><td><b>Ship against Level B (proposed)</b> — bounded in-process replay + snapshot rehydrate;
+  §3's receipts (not the event stream) own cross-seat causality, so a refetch rebuilds seat content
+  while ordering survives. Accepted gap: a turn in flight during a host restart cannot replay its
+  streaming detail, only its settled snapshot.<br><br>
+  <b>Complete Level D now</b> — every conformance test is currently <code>it.skip</code>, owner-annotated
+  to the streaming lane (<a href="https://github.com/hachej/boring-ui">#1009</a>).</td>
+  <td><b>Level B unblocks</b>: S3/S4 proceed with no new streaming-lane dependency.<br>
+  <b>Completing Level D costs</b>: pulls an entire deferred conformance lane into v0's critical
+  path for one edge case (in-flight-turn replay after restart).</td></tr></table>
+  <div class="rec"><b>Recommended: ship against Level B.</b> The one gap it accepts is narrow and named,
+  not hidden.</div>
+
+  <h3 class="qhead"><span class="qnum">8</span><span class="qtitle">Acceptance bar — fixture-driven gate, live-model as labelled smoke?</span></h3>
+  <table class="two"><tr><th>Options</th><th>Unblocks / costs</th></tr>
+  <tr><td><b>Confirm (proposed)</b> — S5 acceptance runs a scripted model adapter emitting a fixed
+  event script, asserting exact <code>turnOrdinal</code> sequence, handoff edges, cap outcomes, and
+  final Objective state. A live-model walkthrough is kept but explicitly labelled non-deterministic —
+  never a gate.</td>
+  <td><b>Confirms</b>: nothing in CI depends on live-model determinism, which round 1 wrongly assumed.
+  Rejecting this would require inventing a determinism guarantee the underlying gateway does not
+  make.</td></tr></table>
+  <div class="rec"><b>Recommended: confirm.</b> The only honest gate available today.</div>
+</section>
+
+<section class="card">
+  <h2>Slices — S1 → S5, with gates and PR preconditions</h2>
+  <p class="small">Ordering lives only here. The real critical path is the two open PRs, not the
+  deferred #1355 gate.</p>
+  <div class="slices">
+    <div class="slice"><h4>S1</h4><div class="b">Contract + store + edge allocator.<br><code>JobProjectionV0</code>,
+    <code>JobRelayEdgeV0</code>, <code>JobRelayTransitionV0</code> schemas; CAS store; <code>openEdge()</code>
+    allocates the ordinal, mints <code>requestId</code>, reserves caps.</div></div>
+    <div class="arrow">→</div>
+    <div class="slice"><h4>S2</h4><div class="b">Relay dispatch + handoff tool.
+    <code>runWithWorkspaceAgent</code>-based relay turn; typed <code>handoff({to,message})</code> tool.</div></div>
+    <div class="arrow">→</div>
+    <div class="slice"><h4>S3</h4><div class="b">Relay state machine + recovery. Chain advance, split
+    cursors, caps per chain, full failure-table + 4-step recovery order.</div></div>
+    <div class="arrow">→</div>
+    <div class="slice"><h4>S4</h4><div class="b">Front projection. A message-source adapter feeding
+    the existing chat panel &mdash; not a new timeline view &mdash; merged by
+    <code>(turnOrdinal, seq, markerOrdinal)</code>, ask-user join on the full triple.</div></div>
+    <div class="arrow">→</div>
+    <div class="slice"><h4>S5</h4><div class="b">K7 demo fixture. Scripted acceptance, Objective
+    compensation, labelled live smoke.</div></div>
+    <div class="slice" style="opacity:.6;background:color-mix(in srgb,var(--muted) 8%,var(--card))">
+    <h4>S6 &mdash; deferred</h4><div class="b">Staffing UI (add/remove participants), small. Chip
+    &quot;+&quot; picker, @mention add-confirm, remove affordance. Mechanics ship in S3; blocked by
+    S3, S4; not on the v0 critical path.</div></div>
+  </div>
+  <div class="grid2" style="margin-top:12px">
+    <div class="box"><b>PR preconditions</b>
+      S1 blocked by owner Q1 ruling + PR <a href="https://github.com/hachej/boring-ui/pull/1401">#1401</a>
+      merged (naming amendment). S5 additionally blocked by PR
+      <a href="https://github.com/hachej/boring-ui/pull/1382">#1382</a> merged (objectives).
+      <a href="https://github.com/hachej/boring-ui/pull/1393">#1393</a> blocks only the deferred
+      Console follow-on, not S1–S5.</div>
+    <div class="box"><b>Deferred, not a v0 slice</b>
+      Console nav reframe (jobs primary, agent directory, participant chips) — gate-blocked on
+      #1355 Gate 1 and #1393, needs a <code>ConsoleThreadRefV1</code> repair filed separately.
+      Does not depend on S4.</div>
+  </div>
+  <div class="gate">Gate G = #1355 Gate 1 architecture approval binds <b>only</b> the deferred
+  Console follow-on — v0 touches no Console store, so S1–S5 do not wait on it.</div>
+</section>
+
+<section class="card">
+  <h2>Honest risks</h2>
+  <table><tr><th>Risk</th><th>Likelihood</th><th>Impact</th><th>Mitigation</th></tr>
+  <tr><td>Relay edge/transition contract is the newest surface — it carries the total order across
+  seats, send idempotency, and cap enforcement. <b>Hardened after a targeted verify pass</b>: the
+  send&rarr;persist crash window, a restart skip-hole, string-ordinal sorting, and in-place mutation
+  of an &ldquo;append-only&rdquo; record were all found and fixed.</td>
+  <td class="low">Low&ndash;Medium</td><td class="high">High</td>
+  <td>Pending edge written pre-dispatch under one CAS lock with a relay-minted <code>requestId</code>
+  (re-dispatch returns <code>duplicate:true</code>); store-owned integer ordinals; append-only
+  transitions; 4-step recovery reconciles durable state before <code>outcome-unknown</code>. S1/S3
+  negative proofs assert each.</td></tr>
+  <tr><td>Critical path runs through two <b>open</b> PRs, not this gate: #1401 (naming ratification)
+  blocks S1 directly; #1382 (objectives) blocks S5.</td>
+  <td class="high">High</td><td class="high">High</td>
+  <td>Both are named explicitly as blockers in §7 rather than assumed merged; S1–S4 can still proceed
+  on #1401 alone.</td></tr>
+  <tr><td>Per-Thread spend budget dropped from v0 — round 1 promised a budget hook that
+  <code>MeteringRunScope</code> cannot support today (no job/thread/participant field).</td>
+  <td class="low">Low (accepted)</td><td class="med">Medium</td>
+  <td>v0 ships hop/invocation caps only; a real budget is named as v1 work requiring a
+  <code>MeteringRunScope</code> schema change — not silently dropped, explicitly out.</td></tr>
+  <tr><td>Attribution is display-grade (<code>participantId</code>), not envelope-grade — round 1's
+  claim that per-Run <code>seatId</code> gives audit parity is withdrawn.</td>
+  <td class="med">Medium</td><td class="med">Medium</td>
+  <td>Recorded honestly in §8; causal initiator vs. authorization principal are distinguished in the
+  receipt (<code>sourceRef</code>/<code>handoffEdge</code>) even without seat identity.</td></tr>
+  </table>
+</section>
+
+<section class="card">
+  <h2>Owner action</h2>
+  <p>Rule on the 8 questions above (defaults shown are the plan's recommendation — silence is not
+  approval). Approval unlocks S1 only; it does not authorize skipping per-slice proof or merge gates.
+  Reject, request changes, or defer per question if needed.</p>
+</section>
+
+<footer>Job Thread v0 · round 2 · PR #1403 · built per <code>docs/procedures/visual-review-doc.md</code></footer>
+</main></body></html>
