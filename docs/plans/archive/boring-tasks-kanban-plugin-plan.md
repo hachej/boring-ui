@@ -1,3 +1,5 @@
+> Archived: shipped in #486. Kept for history, not current truth.
+
 # boring-tasks Kanban plugin plan
 
 ## Status
