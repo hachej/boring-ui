@@ -96,12 +96,11 @@ export function markdownLinkRehypePlugins(
     attributes: { ...schema.attributes, ...allowedTags },
   };
 
-  return [
-    defaultRehypePlugins.raw,
-    [sanitize[0], augmentedSchema],
-    defaultRehypePlugins.harden,
-    rehypeMarkdownLinkActions,
-  ];
+  const augmentedSanitize: RehypePlugins[number] = [sanitize[0], augmentedSchema];
+  const augmentedDefaults = Object.entries(defaultRehypePlugins).map<RehypePlugins[number]>(([name, plugin]) =>
+    name === "sanitize" ? augmentedSanitize : plugin,
+  );
+  return [...augmentedDefaults, rehypeMarkdownLinkActions];
 }
 
 type MarkdownLinkActionsProps = {

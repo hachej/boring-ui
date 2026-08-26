@@ -129,9 +129,16 @@ describe("MessageResponse link affordances (#1395)", () => {
     await waitFor(() => expect(transformerRuns).toBe(1));
   });
 
-  it("does not decorate incomplete streaming links", () => {
-    render(<MessageResponse>{"[unfinished](https://example.com"}</MessageResponse>);
+  it("does not decorate Streamdown's rendered incomplete-link sentinel", () => {
+    render(
+      <MessageResponse rehypePlugins={[]}>
+        {"[unfinished](https://example.com"}
+      </MessageResponse>,
+    );
 
+    const incompleteLink = screen.getByRole("button", { name: "unfinished" });
+    expect(incompleteLink.getAttribute("data-streamdown")).toBe("link");
+    expect(incompleteLink.getAttribute("data-incomplete")).toBe("true");
     expect(screen.queryByRole("button", { name: "Copy URL" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Open URL in new tab" })).toBeNull();
   });
@@ -142,13 +149,14 @@ describe("MessageResponse link affordances (#1395)", () => {
         allowedTags={{ mention: ["user_id"] }}
         linkSafety={{ enabled: false }}
       >
-        {'<mention user_id="123">@agent</mention>'}
+        {'<mention user_id="123">@agent</mention><script>alert(1)</script>'}
       </MessageResponse>,
     );
 
     const mention = document.querySelector("mention");
     expect(mention?.textContent).toBe("@agent");
     expect(mention?.getAttribute("user_id")).toBe("123");
+    expect(document.querySelector("script")).toBeNull();
   });
 
   it("leaves non-link content untouched", () => {
