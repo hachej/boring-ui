@@ -35,6 +35,7 @@
   --boring-muted-foreground: oklch(0.52 0.008 72);
   --boring-destructive: oklch(0.577 0.245 27.325);
   --boring-destructive-foreground: oklch(0.985 0.002 72);
+  /* Waiting-for-human attention, distinct from selected/active accent. */
   --boring-attention: oklch(0.55 0.11 75);
   --boring-border: oklch(0.915 0.004 72);
   --boring-input: oklch(0.915 0.004 72);
@@ -58,7 +59,6 @@
   --boring-surface-workbench-left: oklch(0.976 0.003 72);
 
   /* Internal shadcn-style bridge. */
-  --attention: var(--boring-attention);
   --background: var(--boring-background);
   --foreground: var(--boring-foreground);
   --card: var(--boring-card);
@@ -73,6 +73,7 @@
   --muted-foreground: var(--boring-muted-foreground);
   --destructive: var(--boring-destructive);
   --destructive-foreground: var(--boring-destructive-foreground);
+  --attention: var(--boring-attention);
   --border: var(--boring-border);
   --input: var(--boring-input);
   --accent: var(--boring-accent);
@@ -123,7 +124,6 @@
 
   /* Re-declare the bridge so dark works when data-theme sits on a nested wrapper
    * (custom properties resolve var() at the declaring element). */
-  --attention: var(--boring-attention);
   --background: var(--boring-background);
   --foreground: var(--boring-foreground);
   --card: var(--boring-card);
@@ -138,6 +138,7 @@
   --muted-foreground: var(--boring-muted-foreground);
   --destructive: var(--boring-destructive);
   --destructive-foreground: var(--boring-destructive-foreground);
+  --attention: var(--boring-attention);
   --border: var(--boring-border);
   --input: var(--boring-input);
   --accent: var(--boring-accent);

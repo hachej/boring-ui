@@ -3,7 +3,6 @@ import type {
   Sandbox,
   Workspace,
 } from '@hachej/boring-agent/shared'
-import type { BwrapArgsOptions } from './buildBwrapArgs'
 import type { WorkspacePythonEnvOptions } from './workspacePythonEnv'
 
 export type RuntimeBashStrategy =
@@ -65,7 +64,16 @@ export interface RuntimeFilesystemBinding {
 }
 
 export interface RuntimeHostOperations {
-  buildBwrapArgs(workspaceRoot: string, options?: BwrapArgsOptions): string[]
+  /**
+   * Injected bwrap args builder, owned by
+   * `@hachej/boring-sandbox/providers/bwrap#buildBwrapArgs`. Declares only the
+   * option slice boring-bash supplies, so there is no mirrored interface to keep
+   * in sync; hosts narrow this member with the canonical `BwrapArgsOptions`.
+   */
+  buildBwrapArgs(
+    workspaceRoot: string,
+    options?: { readonly readonlyPaths?: readonly string[] },
+  ): string[]
   withWorkspacePythonEnv(input: WorkspacePythonEnvOptions): Record<string, string | undefined>
 }
 
