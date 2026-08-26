@@ -56,7 +56,11 @@ vi.mock('@hachej/boring-agent/server', async (importOriginal) => {
 vi.mock('@hachej/boring-workspace/app/server', () => ({
   assertWorkspaceBridgeHandlersTrusted: () => {},
   collectWorkspaceAgentServerPlugins: mocks.collectWorkspaceAgentServerPlugins,
-  createSandboxRuntimeModeAdapter: () => ({ id: 'direct', runtimeHost: mocks.runtimeHost }),
+  createSandboxRuntimeModeAdapter: () => ({
+    id: 'direct',
+    getRuntimeLayoutRoot: ({ workspaceRoot }: { workspaceRoot: string }) => workspaceRoot,
+    runtimeHost: mocks.runtimeHost,
+  }),
   hasDirServerPlugin: () => false,
   omitPluginAuthoringProvisioning: (plugins: Array<{ id: string }>) => plugins.filter((plugin) => plugin.id !== 'boring-ui-plugin-cli-package'),
   readWorkspacePluginPackagePiSnapshot: () => ({
@@ -398,6 +402,7 @@ test('core/full-app rejects an invalid fleet before Host identity or Environment
     serveFrontend: false,
     runtimeModeAdapter: {
       id: 'direct',
+      getRuntimeLayoutRoot: ({ workspaceRoot }) => workspaceRoot,
       create: createEnvironment,
     },
     agents: [{
@@ -763,6 +768,7 @@ test('core/full-app can enable plugin CLI provisioning for remote plugin editing
     installPluginAuthoring: true,
     runtimeModeAdapter: {
       id: 'vercel-sandbox',
+      getRuntimeLayoutRoot: () => '/workspace',
       runtimeHost: mocks.runtimeHost as any,
       create: vi.fn(),
     },

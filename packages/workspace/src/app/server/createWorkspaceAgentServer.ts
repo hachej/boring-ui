@@ -22,7 +22,6 @@ import {
   provisionWorkspaceRuntime,
   projectAuthorizedSessionRunDetails,
   registerAgentHostEnvironmentRoutes,
-  resolveBuiltinRuntimeLayoutRoot,
   sandboxRuntimeHostOperations,
   withRuntimeEnvContributions,
   type AgentFleetCompiler,
@@ -1284,9 +1283,7 @@ export async function createWorkspaceAgentServer(
   const legacyStandaloneDefaultComposition = agents.length === 1 && "legacyDefault" in agents[0]!
   const bridge = createInMemoryBridge()
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
-  const modeAdapter = opts.runtimeModeAdapter ?? createSandboxRuntimeModeAdapter(
-    resolvedMode as 'direct' | 'local' | 'blaxel' | 'vercel-sandbox',
-  )
+  const modeAdapter = opts.runtimeModeAdapter ?? createSandboxRuntimeModeAdapter(resolvedMode)
   const runtimeHost = opts.runtimeHost ?? modeAdapter.runtimeHost ?? sandboxRuntimeHostOperations
   const workspaceFsCapability = modeAdapter.workspaceFsCapability ?? "best-effort"
   const validateUiPaths = opts.validateUiPaths ?? workspaceFsCapability === "strong"
@@ -1345,14 +1342,11 @@ export async function createWorkspaceAgentServer(
     ],
   })
 
-  const runtimeWorkspaceRoot = modeAdapter.getRuntimeLayoutRoot?.({
+  const runtimeWorkspaceRoot = modeAdapter.getRuntimeLayoutRoot({
     workspaceRoot,
     sessionId: opts.sessionId ?? DEFAULT_WORKSPACE_SCOPE_ID,
     workspaceId: opts.sessionId ?? DEFAULT_WORKSPACE_SCOPE_ID,
-  }) ?? resolveBuiltinRuntimeLayoutRoot(
-    resolvedMode as "direct" | "local" | "blaxel" | "vercel-sandbox",
-    workspaceRoot,
-  )
+  })
   const runtimeLayout = runtimeHost.getBoringAgentRuntimePaths(runtimeWorkspaceRoot)
   const runtimeUserSkillsPath = join(runtimeWorkspaceRoot, ".agents", "skills")
   const hostUserSkillsPath = join(workspaceRoot, ".agents", "skills")

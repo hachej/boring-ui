@@ -190,7 +190,7 @@ export async function provisionCliWorkspaceRuntime(opts: {
     let adapter = opts.adapter
     if (!adapter) {
       const modeAdapter = opts.modeAdapter
-        ?? agent.createSandboxRuntimeModeAdapter(opts.mode as 'direct' | 'local' | 'blaxel' | 'vercel-sandbox')
+        ?? agent.createSandboxRuntimeModeAdapter(opts.mode)
       scopedRuntime = await modeAdapter.create({
         workspaceRoot: opts.workspaceRoot,
         workspaceId: opts.workspaceRoot,
@@ -1019,11 +1019,11 @@ export async function createWorkspacesModeApp(opts: {
     requestLedgerPath: join(dirname(registry.path), "agent-request-ledger.sqlite"),
     async resolveAuthorizedEnvironmentScope({ authorizedScope }) {
       const workspace = trustedLocalScope.workspace(authorizedScope)
-      const runtimeLayoutRoot = sandboxRuntimeAdapter.getRuntimeLayoutRoot?.({
+      const runtimeLayoutRoot = sandboxRuntimeAdapter.getRuntimeLayoutRoot({
         workspaceRoot: workspace.path,
         workspaceId: workspace.id,
         sessionId: workspace.id,
-      }) ?? workspace.path
+      })
       return {
         placementIdentity: JSON.stringify([opts.mode, workspace.path]),
         workspaceRoot: workspace.path,

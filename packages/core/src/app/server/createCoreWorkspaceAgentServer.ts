@@ -1301,10 +1301,7 @@ export async function createCoreWorkspaceAgentServer(
     : undefined
   const runtimeModeAdapter = options.runtimeModeAdapter
     ?? remoteWorkerModeAdapter
-    ?? createSandboxRuntimeModeAdapter(
-      selectedMode as 'direct' | 'local' | 'blaxel' | 'vercel-sandbox',
-      { sandboxHandleStore },
-    )
+    ?? createSandboxRuntimeModeAdapter(selectedMode, { sandboxHandleStore })
   const runtimeHost = options.runtimeHost ?? runtimeModeAdapter.runtimeHost ?? sandboxRuntimeHostOperations
   const piOptionsByRoot = new Map<string, AgentPiOptions>()
   const getPluginPiOptions = (root: string): AgentPiOptions => {
@@ -1566,14 +1563,14 @@ export async function createCoreWorkspaceAgentServer(
             if (signal.aborted) throw new Error('runtime provisioning aborted')
             if (!runtimeBundle.provisioningAdapter) return undefined
             const runtimeLayout = runtimeHost.getBoringAgentRuntimePaths(
-              hostRuntimeModeAdapter.getRuntimeLayoutRoot?.({
+              hostRuntimeModeAdapter.getRuntimeLayoutRoot({
                 workspaceRoot: root,
                 sessionId: workspaceId,
                 workspaceId,
                 templatePath,
                 requestId: request?.id,
                 telemetry,
-              }) ?? root,
+              }),
             )
             const result = await provisionWorkspaceRuntime({
               plugins: runtimeModeAdapter.id === 'direct'

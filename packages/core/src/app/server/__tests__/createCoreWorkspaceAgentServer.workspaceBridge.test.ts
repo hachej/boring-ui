@@ -110,6 +110,7 @@ vi.mock('@hachej/boring-workspace/app/server', () => ({
   }),
   createSandboxRuntimeModeAdapter: () => ({
     id: 'direct',
+    getRuntimeLayoutRoot: ({ workspaceRoot }: { workspaceRoot: string }) => workspaceRoot,
     workspaceFsCapability: 'strong',
     create: async (ctx: { workspaceRoot: string }) => ({
       workspace: { root: ctx.workspaceRoot, fsCapability: 'strong' },

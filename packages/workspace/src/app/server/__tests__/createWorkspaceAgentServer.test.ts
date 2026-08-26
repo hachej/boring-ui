@@ -1381,6 +1381,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     }
     const modeAdapter = {
       id: "direct",
+      getRuntimeLayoutRoot: ({ workspaceRoot }: { workspaceRoot: string }) => workspaceRoot,
       workspaceFsCapability: "strong",
       async create() { throw new Error("runtime must stay lazy in this proof") },
     } as RuntimeModeAdapter
@@ -2047,6 +2048,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       logger: false,
       runtimeModeAdapter: {
         id: "direct",
+        getRuntimeLayoutRoot: ({ workspaceRoot }) => workspaceRoot,
         workspaceFsCapability: "strong",
         create: createRuntime,
       } as RuntimeModeAdapter,
@@ -2082,6 +2084,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       logger: false,
       runtimeModeAdapter: {
         id: "direct",
+        getRuntimeLayoutRoot: ({ workspaceRoot }: { workspaceRoot: string }) => workspaceRoot,
         workspaceFsCapability: "strong",
         create: createRuntime,
       } as unknown as RuntimeModeAdapter,
