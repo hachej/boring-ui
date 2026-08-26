@@ -783,7 +783,8 @@ idiom. Drill-down links. No new timeline/list component, no Console pane changes
 
 **S5 — [creator-growth-vertical] (formerly K7) demo fixture.** Two-agent fleet, scripted adapter acceptance asserting the §5 sequence,
 Objective compensation path, plus a separately-labelled live smoke.
-- *Blocked by:* S4; PR #1382 merged.
+- *Blocked by:* S4; PR #1382 remains an open external prerequisite. Add a real
+  Bead edge when the Architecture Steward identifies its canonical tracker node.
 - *Scope:* demo fleet config + `src/server/__tests__/k7Demo.test.ts`.
 - *Proof:* `pnpm --filter @hachej/boring-job-threads test -- src/server/__tests__/k7Demo.test.ts`.
 - *Negative proof:* the acceptance run performs zero live model calls; a failed projection write

@@ -382,7 +382,8 @@ model is not decided**. Full program:
 5. **[merge-queue]** (formerly P5) — a standing obligation, not a bead: this
    list gets a pass **before any premise bead is dispatched**. Current path
    items: #1382 (and the eval suite stacked behind it), #1343, #1376, #1386,
-   #1409, #1416; kernel-adjacent but off-path: #1145, #1166, #1288. Also decide
+   #1409; kernel-adjacent but off-path: #1145, #1166, #1288. #1416 is closed
+   and absorbed into #1409, so it is not a queue item. Also decide
    the two orphaned weekend branches (`weekend/k7-agent-packages`,
    `weekend/factory-check`).
 6. **[gate-re-ruling]** (formerly P6) — re-rule both owner gates after

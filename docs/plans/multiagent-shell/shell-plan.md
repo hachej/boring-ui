@@ -672,7 +672,7 @@ L1 → L1.5 → L2a → (L3a → L3b, L5, L6) → L7a → L7b
                      └─ arbitrary-surfaceKind evidence BLOCKED: needs a
                         read-only capability every resolver enforces (L5)
 
-#1409 owner gate (the 12 questions in §7, incl. Q13 nav supersession)
+#1409 owner gate (the 13 questions in §7, incl. Q13 nav supersession)
       → blocks every bead below EXCEPT the substrate-free trio
         (L1, L1.5, L2a chrome — ruled early-dispatchable, DIRECTION.md)
 
@@ -684,11 +684,10 @@ L1 → L1.5 → L2a → (L3a → L3b, L5, L6) → L7a → L7b
 ```
 
 **The honest unblocked tranche: L1, L1.5 and L2a chrome** — dispatchable now as
-the ruled substrate-free exception; **L3a and L6 in part** additionally wait on
-the owner gate. (the popover
-itself; its center-routing behavior depends on L3a). L1.5 is unblocked *as
-work* but wants Q1 answered first. Everything else waits on a gate owned by
-someone else. Round 1 claimed "L1, L2, L3, L5, L6 are unblocked today" — that
+the ruled substrate-free exception; L1.5 depends only on L1 because Q1 is
+already ruled. **L3a and L6 in part** additionally wait on the owner gate (the
+popover itself may proceed; its center-routing behavior depends on L3a).
+Everything else waits on its named gate. Round 1 claimed "L1, L2, L3, L5, L6 are unblocked today" — that
 was false, and both reviewers said so.
 
 ---

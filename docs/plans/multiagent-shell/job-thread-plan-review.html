@@ -255,19 +255,15 @@ footer{margin:24px 0 8px;color:var(--muted);font-size:12.5px;text-align:center}
   <div class="rec"><b>Recommended: confirm both.</b> Building either now would be new unbudgeted scope
   disguised as v0.</div>
 
-  <h3 class="qhead"><span class="qnum">7</span><span class="qtitle">Level D streaming conformance — complete now, or defer?</span></h3>
-  <table class="two"><tr><th>Options</th><th>Unblocks / costs</th></tr>
-  <tr><td><b>Ship against Level B (proposed)</b> — bounded in-process replay + snapshot rehydrate;
-  §3's receipts (not the event stream) own cross-seat causality, so a refetch rebuilds seat content
-  while ordering survives. Accepted gap: a turn in flight during a host restart cannot replay its
-  streaming detail, only its settled snapshot.<br><br>
-  <b>Complete Level D now</b> — every conformance test is currently <code>it.skip</code>, owner-annotated
-  to the streaming lane (<a href="https://github.com/hachej/boring-ui">#1009</a>).</td>
-  <td><b>Level B unblocks</b>: S3/S4 proceed with no new streaming-lane dependency.<br>
-  <b>Completing Level D costs</b>: pulls an entire deferred conformance lane into v0's critical
-  path for one edge case (in-flight-turn replay after restart).</td></tr></table>
-  <div class="rec"><b>Recommended: ship against Level B.</b> The one gap it accepts is narrow and named,
-  not hidden.</div>
+  <h3 class="qhead"><span class="qnum">7</span><span class="qtitle">Level D streaming conformance — RULED, not reopened</span></h3>
+  <table class="two"><tr><th>Owner ruling</th><th>Effect</th></tr>
+  <tr><td><b>Level D first.</b> The former recommendation to ship the engine on Level B is
+  superseded by the 2026-08-26 premises ruling.</td>
+  <td>Completion child <code>wt-391-forward-9p50.2</code> must be green before the post-evidence P6
+  gate or any engine slice. Level B remains only a rollout compatibility mode; it is not an engine
+  shipping position.</td></tr></table>
+  <div class="rec"><b>No owner choice remains here.</b> P6 decides the post-Level-D engine mechanism
+  and receipt survival, never whether to skip Level D.</div>
 
   <h3 class="qhead"><span class="qnum">8</span><span class="qtitle">Acceptance bar — fixture-driven gate, live-model as labelled smoke?</span></h3>
   <table class="two"><tr><th>Options</th><th>Unblocks / costs</th></tr>

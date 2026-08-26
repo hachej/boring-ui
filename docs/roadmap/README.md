@@ -9,15 +9,18 @@ reader who wants the map before the queue.
 ## The premises-first program (multi-agent surface)
 
 The product surface is built **on** kernel capabilities, not beside them
-(ratified 2026-08-26, RECONCILIATION §8). In dependency order — rationale in
+(ratified 2026-08-26, RECONCILIATION §8). These are parallel premise lanes with
+individual dependency edges, not one serial order — rationale in
 [`premises.md`](../plans/multiagent-shell/premises.md):
 
 1. **[durable-streams]** — conversations a client can always resume,
    default-on. The keystone: the engine does not ship without it. Tracked as
    bead `wt-391-forward-9p50`.
 2. **[thread-storage-spike]** — decide what a multi-seat Thread *is* in
-   storage, with a competitor study. Blocks the engine's first slice.
-3. **[seat-storage]** — audit-grade who-said-what; display-only attribution
+   storage, with a competitor study. Its research half may run in parallel; the
+   technical half consumes P1a's durable-stream shape and blocks the engine's
+   first slice.
+3. **[seat-audit-attribution]** — an independent P3a → P3b lane for audit-grade who-said-what; display-only attribution
    is rejected as a shipping position.
 4. **[kernel-views]** — the first ratified View slice; Library saved views
    wait for it.
@@ -33,7 +36,8 @@ storage, or attribution.
 | Program | Waits on | Detail |
 |---|---|---|
 | Multi-agent engine mechanics (Job Threads) | [durable-streams] + both [thread-storage-spike] outputs, then its post-evidence owner gate | [`job-thread-plan.md`](../plans/multiagent-shell/job-thread-plan.md) |
-| Audit-grade attribution and Thread rendering | [seat-storage] as well as the durable/storage premises | [`premises.md`](../plans/multiagent-shell/premises.md) P3 and [`shell-plan.md`](../plans/multiagent-shell/shell-plan.md) thread-view slice |
+| Audit-grade attribution substrate | independent P3a host catalogue/envelope → P3b provenance projection | [`premises.md`](../plans/multiagent-shell/premises.md) P3 |
+| Thread rendering | join of [durable-streams], [thread-storage-spike], and [seat-audit-attribution] | [`shell-plan.md`](../plans/multiagent-shell/shell-plan.md) thread-view slice |
 | Other shell surfaces beyond early chrome | their slice-specific owner-gate and Bead dependencies; no blanket “wait for the engine” rule | [`shell-plan.md`](../plans/multiagent-shell/shell-plan.md) |
 | Chief-of-staff consumer | the exact shell/engine surfaces each delta consumes | [`chief-of-staff-delta.md`](../plans/multiagent-shell/chief-of-staff-delta.md) |
 | Library saved views | [kernel-views] | premises P4 |
