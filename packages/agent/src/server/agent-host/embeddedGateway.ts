@@ -432,13 +432,12 @@ export class EmbeddedAgentGateway implements AgentGateway {
         const current = await reverify()
         return await this.send(input.ref, input.scope, current, command) as Awaited<ReturnType<AgentSessionConnection['send']>>
       },
-      interrupt: async ({ requestId, queueAction }) => {
+      interrupt: async ({ requestId }) => {
         const current = await reverify()
         const currentBinding = await this.bindingForSession(input.scope, current, input.ref)
-        const payload: Record<string, never> | { queueAction: 'hold' | 'resume' } = queueAction === undefined ? {} : { queueAction }
-        return await this.sessionEffect(input.ref, current, 'session.interrupt', requestId, payload, async () => {
+        return await this.sessionEffect(input.ref, current, 'session.interrupt', requestId, {}, async () => {
           const receipt = await currentBinding.composition.service.interrupt(
-            context(current, requestId), input.ref.sessionId, payload,
+            context(current, requestId), input.ref.sessionId, {},
           )
           if (this.runtime.activity.get(current.workspaceScopeId, input.ref) === 'running') {
             this.runtime.activity.set(current.workspaceScopeId, input.ref, 'aborting')

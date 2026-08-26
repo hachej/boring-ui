@@ -396,8 +396,6 @@ export function PiChatPanel<
   const draftRef = useRef(draft)
   draftRef.current = draft
   const queueCoordinationKeysRef = useRef(new Map<string, object>())
-  const [resumeQueuedPending, setResumeQueuedPending] = useState(false)
-  const resumeQueuedInFlightRef = useRef<Promise<unknown> | undefined>(undefined)
   const initialDraftGuard = useRef(new InitialDraftAutoSubmitGuard())
   const pendingAutoSubmitSettleRef = useRef<string | undefined>(undefined)
   const acceptedAutoSubmitSettleRef = useRef<string | undefined>(undefined)
@@ -965,8 +963,9 @@ export function PiChatPanel<
   const stop = useCallback(() => {
     onComposerStop?.()
     clearLocalSubmitted(activeChatSessionId)
-    // Stop aborts the active turn while explicitly holding queued follow-ups.
-    void policy?.interrupt({ queueAction: 'hold' }).catch((error) => {
+    // The composer Stop control interrupts instead of deleting queued follow-ups.
+    // The service retains its interrupt semantics, which may promote the next item.
+    void policy?.interrupt().catch((error) => {
       addLocalNotice({ id: 'stop-error', level: 'error', text: errorMessage(error, 'Could not stop the chat session.'), dismissible: true })
     })
   }, [activeChatSessionId, addLocalNotice, clearLocalSubmitted, onComposerStop, policy])
@@ -974,20 +973,6 @@ export function PiChatPanel<
   const interrupt = useCallback(() => {
     void policy?.interrupt().catch((error) => {
       addLocalNotice({ id: 'interrupt-error', level: 'error', text: errorMessage(error, 'Could not interrupt the chat session.'), dismissible: true })
-    })
-  }, [addLocalNotice, policy])
-
-  const resumeQueued = useCallback(() => {
-    if (!policy || resumeQueuedInFlightRef.current) return
-    setResumeQueuedPending(true)
-    const run = policy.resumeQueued()
-    resumeQueuedInFlightRef.current = run
-    void run.catch((error) => {
-      addLocalNotice({ id: 'resume-queued-error', level: 'error', text: errorMessage(error, 'Could not resume queued follow-ups.'), dismissible: true })
-    }).finally(() => {
-      if (resumeQueuedInFlightRef.current !== run) return
-      resumeQueuedInFlightRef.current = undefined
-      setResumeQueuedPending(false)
     })
   }, [addLocalNotice, policy])
 
@@ -1180,8 +1165,6 @@ export function PiChatPanel<
               onComposerBlockerAction={onComposerBlockerAction}
               queuePreview={queuePreview}
               onEditQueued={editQueued}
-              onResumeQueued={resumeQueued}
-              resumeQueuedPending={resumeQueuedPending}
               hotReloadEnabled={hotReloadEnabled}
               pluginUpdateState={pluginUpdateState}
               onDismissPluginUpdate={dismissPluginUpdate}

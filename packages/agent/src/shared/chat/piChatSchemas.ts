@@ -246,9 +246,7 @@ export const QueueClearPayloadSchema = z.preprocess(
   }).strict(),
 ) satisfies z.ZodType<QueueClearPayload, z.ZodTypeDef, unknown>
 
-export const InterruptPayloadSchema = z.object({
-  queueAction: z.enum(['hold', 'resume']).optional(),
-}).strict() satisfies z.ZodType<InterruptPayload>
+export const InterruptPayloadSchema = z.object({}).strict() satisfies z.ZodType<InterruptPayload>
 
 export const StopPayloadSchema = z.object({}).strict() satisfies z.ZodType<StopPayload>
 

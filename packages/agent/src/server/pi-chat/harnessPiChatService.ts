@@ -107,7 +107,6 @@ export class HarnessPiChatService implements PiChatSessionService {
   private readonly sessionGenerations = new Map<string, number>()
   private readonly messageMetadata = new PiChatMessageMetadataReconciler()
   private readonly activePromptRuns = new Map<string, Promise<void>>()
-  private readonly queueResumeAdmissions = new Set<string>()
   private readonly syntheticPromptFailures = new Map<string, SyntheticPromptFailure[]>()
   private readonly activeSyntheticPromptErrors = new Map<string, ChatError>()
   private readonly liveAttachments = new Map<string, {
@@ -195,7 +194,6 @@ export class HarnessPiChatService implements PiChatSessionService {
     this.channelCreations.clear()
     this.sessionGenerations.clear()
     this.activePromptRuns.clear()
-    this.queueResumeAdmissions.clear()
     this.syntheticPromptFailures.clear()
     this.activeSyntheticPromptErrors.clear()
     this.liveAttachments.clear()
@@ -538,42 +536,28 @@ export class HarnessPiChatService implements PiChatSessionService {
     return { accepted: true, cursor: this.channels.get(sessionKey)?.buffer.latestSeq ?? 0, cleared: clearedQueue.length }
   }
 
-  async interrupt(ctx: PiSessionRequestContext, sessionId: string, payload: InterruptPayload): Promise<{ accepted: true; cursor: number }> {
-    return this.lifecycle.run(() => this.interruptBeforeDispose(ctx, sessionId, payload))
+  async interrupt(ctx: PiSessionRequestContext, sessionId: string, _payload: InterruptPayload): Promise<{ accepted: true; cursor: number }> {
+    return this.lifecycle.run(() => this.interruptBeforeDispose(ctx, sessionId))
   }
 
-  private async interruptBeforeDispose(ctx: PiSessionRequestContext, sessionId: string, payload: InterruptPayload): Promise<{ accepted: true; cursor: number }> {
+  private async interruptBeforeDispose(ctx: PiSessionRequestContext, sessionId: string): Promise<{ accepted: true; cursor: number }> {
     const sessionKey = this.sessionKey(ctx, sessionId)
     const adapter = await this.getAdapter(ctx, sessionId, '')
     const snapshot = adapter.readSnapshot()
     const wasActive = snapshot.isStreaming || snapshot.isRetrying
-    const isResume = payload.queueAction === 'resume'
-    // Resume is an idle-only admission. A stale or double Resume must never
-    // mutate (especially abort) a turn that a prior Resume has already started.
-    if (isResume && (wasActive || this.queueResumeAdmissions.has(sessionKey) || this.activePromptRuns.has(sessionKey))) {
-      return { accepted: true, cursor: this.channels.get(sessionKey)?.buffer.latestSeq ?? 0 }
+    const nextFollowUp = wasActive ? this.nextFollowUpForInterrupt(sessionId, sessionKey, adapter) : undefined
+    const activeRun = this.activePromptRuns.get(sessionKey)
+    adapter.abortRetry?.()
+    if (wasActive) await adapter.abort()
+    await this.drainPublishQueue(this.channels.get(sessionKey))
+    await activeRun?.catch(() => {})
+    // Release prompt reservations stranded before agent-start.
+    this.metering?.releasePending(sessionKey)
+    if (nextFollowUp) {
+      this.lifecycle.assertOpen()
+      await this.autoPostInterruptedFollowUp(sessionId, sessionKey, adapter, nextFollowUp)
     }
-    if (isResume) this.queueResumeAdmissions.add(sessionKey)
-    try {
-      const shouldPromoteFollowUp = isResume || (wasActive && payload.queueAction !== 'hold')
-      const nextFollowUp = shouldPromoteFollowUp
-        ? this.nextFollowUpForInterrupt(sessionId, sessionKey, adapter)
-        : undefined
-      const activeRun = this.activePromptRuns.get(sessionKey)
-      adapter.abortRetry?.()
-      if (wasActive) await adapter.abort()
-      await this.drainPublishQueue(this.channels.get(sessionKey))
-      await activeRun?.catch(() => {})
-      // Release prompt reservations stranded before agent-start.
-      this.metering?.releasePending(sessionKey)
-      if (nextFollowUp) {
-        this.lifecycle.assertOpen()
-        await this.autoPostInterruptedFollowUp(sessionId, sessionKey, adapter, nextFollowUp)
-      }
-      return { accepted: true, cursor: this.channels.get(sessionKey)?.buffer.latestSeq ?? 0 }
-    } finally {
-      if (isResume) this.queueResumeAdmissions.delete(sessionKey)
-    }
+    return { accepted: true, cursor: this.channels.get(sessionKey)?.buffer.latestSeq ?? 0 }
   }
 
   async stop(ctx: PiSessionRequestContext, sessionId: string, _payload: StopPayload): Promise<StopReceipt> {
