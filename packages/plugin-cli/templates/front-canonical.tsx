@@ -21,7 +21,11 @@ import {
   ToolbarGroup,
 } from "@hachej/boring-ui-kit"
 
-const MAIN_PANEL_ID = "<kebab-name>.page"
+// Canonical panel id. `agent/index.ts` opens this exact id through the
+// workspace UI bridge, so the two templates must never drift apart —
+// see the "scaffolded agent template opens the panel id the front template
+// registers" test in src/__tests__/pluginCli.test.ts.
+const MAIN_PANEL_ID = "<kebab-name>.panel"
 
 function MainPane() {
   return (

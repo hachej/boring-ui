@@ -16,6 +16,7 @@ import {
   provisionWorkspaceRuntime,
   projectAuthorizedSessionRunDetails,
   resolveDefaultAgentFleet,
+  resolveRequestLedgerPath,
   withRuntimeEnvContributions,
   type AgentEffectAdmission,
   type AgentFleetCompiler,
@@ -1301,10 +1302,7 @@ export async function createCoreWorkspaceAgentServer(
     : undefined
   const runtimeModeAdapter = options.runtimeModeAdapter
     ?? remoteWorkerModeAdapter
-    ?? createSandboxRuntimeModeAdapter(
-      selectedMode as 'direct' | 'local' | 'blaxel' | 'vercel-sandbox',
-      { sandboxHandleStore },
-    )
+    ?? createSandboxRuntimeModeAdapter(selectedMode, { sandboxHandleStore })
   const runtimeHost = options.runtimeHost ?? runtimeModeAdapter.runtimeHost ?? sandboxRuntimeHostOperations
   const piOptionsByRoot = new Map<string, AgentPiOptions>()
   const getPluginPiOptions = (root: string): AgentPiOptions => {
@@ -1566,14 +1564,14 @@ export async function createCoreWorkspaceAgentServer(
             if (signal.aborted) throw new Error('runtime provisioning aborted')
             if (!runtimeBundle.provisioningAdapter) return undefined
             const runtimeLayout = runtimeHost.getBoringAgentRuntimePaths(
-              hostRuntimeModeAdapter.getRuntimeLayoutRoot?.({
+              hostRuntimeModeAdapter.getRuntimeLayoutRoot({
                 workspaceRoot: root,
                 sessionId: workspaceId,
                 workspaceId,
                 templatePath,
                 requestId: request?.id,
                 telemetry,
-              }) ?? root,
+              }),
             )
             const result = await provisionWorkspaceRuntime({
               plugins: runtimeModeAdapter.id === 'direct'
@@ -1629,7 +1627,12 @@ export async function createCoreWorkspaceAgentServer(
       requireCompilerForModelPolicy: true,
     }),
     sessionRoot,
-    requestLedgerPath: path.join(sessionRoot ?? workspaceRoot, '.agent-request-ledger.sqlite'),
+    requestLedgerPath: resolveRequestLedgerPath({
+      // `sessionRoot` above already folds in BORING_AGENT_SESSION_ROOT and the
+      // per-mode inference, so the canonical chain must not re-read the env.
+      sessionRoot,
+      legacy: { layout: 'workspace-host-file', workspaceRoot },
+    }),
     hostId: options.agentHostId ?? (sessionRoot ? undefined : 'core-workspace-agent'),
     scopeVerifier: scopeAuthority.verifier,
     runtimeModeAdapter: hostRuntimeModeAdapter,
@@ -1659,7 +1662,7 @@ export async function createCoreWorkspaceAgentServer(
 
       const agentTools = await options.getAgentExtraTools({
         agentTypeId,
-        workspaceId: verifiedClaim.workspaceScopeId,
+        workspaceId: environment.runtimeWorkspaceId ?? verifiedClaim.workspaceScopeId,
         workspaceRoot: environment.workspaceRoot,
         runtimeMode: runtimeModeAdapter.id,
         workspaceFsCapability: runtimeModeAdapter.workspaceFsCapability,

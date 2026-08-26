@@ -178,6 +178,7 @@ test('missing generated skill directory is success', async () => {
     skillPaths: ['/workspace/.boring-agent/skills', '/workspace/.agents/skills'],
   })
   expect(state.dirs.has('.boring-agent/skills')).toBe(true)
+  expect(state.dirs.has('.agents/skills')).toBe(true)
 })
 
 test('duplicate plugin skill namespace fails before runtime is ready', async () => {
