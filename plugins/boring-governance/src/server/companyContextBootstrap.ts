@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { ConfigValidationError } from '@hachej/boring-core/shared'
+import { parseTrustedDefaultAgentTypeId } from '@hachej/boring-core/server'
 import type { GovernanceService } from './governanceService.js'
 import type { GovernanceUserPolicy } from './policyTypes.js'
 
@@ -115,6 +116,13 @@ export async function reconcileCompanyContextWorkspace(app: FastifyInstance, ser
       return
     }
 
+    const defaultAgentTypeId = parseTrustedDefaultAgentTypeId(app.config.defaultAgentTypeId)
+    if (!defaultAgentTypeId) {
+      throw new ConfigValidationError([{
+        path: ['defaultAgentTypeId'],
+        message: 'A default Agent type ID is required to initialize Company Context',
+      }])
+    }
     workspace = await governanceApp.workspaceStore.create(owner.id, COMPANY_CONTEXT_WORKSPACE_NAME, app.config.appId, {
       id: workspaceId,
       isDefault: false,
@@ -124,7 +132,7 @@ export async function reconcileCompanyContextWorkspace(app: FastifyInstance, ser
       // mint a brand-new legacy row that nothing will ever reconcile.
       // `config.defaultAgentTypeId` is the same validated application default
       // the backfill used.
-      defaultAgentTypeId: app.config.defaultAgentTypeId,
+      defaultAgentTypeId,
     })
     assertCompanyContextWorkspace(workspace, workspaceId)
     app.log.info({ workspaceId, ownerId: owner.id }, 'governance.company_context.created')

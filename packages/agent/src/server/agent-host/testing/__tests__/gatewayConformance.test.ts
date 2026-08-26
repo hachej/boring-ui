@@ -721,7 +721,7 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
       if (pendingDigest !== digest) {
         throw this.error(AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT, 'request id reused with different payload')
       }
-      throw this.error(AgentGatewayErrorCode.AGENT_REQUEST_IN_PROGRESS, 'request is already in progress')
+      return undefined
     }
     const failure = this.requestFailures.get(key)
     if (failure !== undefined) {
@@ -746,6 +746,7 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
     const queue = this.admissionQueue.get(operation)
     const disposition = queue?.shift()
     if (disposition === 'strong-reject') {
+      this.pendingRequests.delete(key)
       const error = this.error(AgentGatewayErrorCode.AGENT_SCOPE_DENIED, 'effect denied by admission')
       this.requestFailures.set(key, { digest, error })
       throw error
@@ -754,6 +755,7 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
       this.pendingRequests.set(key, digest)
       throw this.error(AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED, 'admission temporarily unavailable')
     }
+    this.pendingRequests.delete(key)
   }
 
   private verify(scope: AuthorizedAgentScope): VerifiedAgentScopeClaim {

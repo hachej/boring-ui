@@ -24,7 +24,11 @@ import {
   assertWorkspaceTypeIdNotMutable,
   parseTrustedWorkspaceTypeId,
 } from '../../workspaceType.js'
-import { parseTrustedDefaultAgentTypeId } from '../../defaultAgentType.js'
+import {
+  LEGACY_DEFAULT_AGENT_TYPE_ID,
+  parseRequiredDefaultAgentTypeId,
+  parseTrustedDefaultAgentTypeId,
+} from '../../defaultAgentType.js'
 import {
   userSettings,
   users,
@@ -175,9 +179,11 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
   // Workspace CRUD (Sub-PR 1)
   // ---------------------------------------------------------------------------
 
-  async create(userId: string, name: string, appId: string, opts?: WorkspaceStoreCreateOptions): Promise<Workspace> {
+  async create(userId: string, name: string, appId: string, opts: WorkspaceStoreCreateOptions = {}): Promise<Workspace> {
     const workspaceTypeId = parseTrustedWorkspaceTypeId(opts?.workspaceTypeId)
-    const defaultAgentTypeId = parseTrustedDefaultAgentTypeId(opts?.defaultAgentTypeId)
+    const defaultAgentTypeId = parseRequiredDefaultAgentTypeId(
+      opts.defaultAgentTypeId === undefined ? LEGACY_DEFAULT_AGENT_TYPE_ID : opts.defaultAgentTypeId,
+    )
     return this.db.transaction(async (tx) => {
       const insert = tx
         .insert(workspaces)

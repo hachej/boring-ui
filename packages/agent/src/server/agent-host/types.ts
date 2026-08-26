@@ -4,8 +4,10 @@ import type {
   AgentGatewayErrorDTO,
   AgentScopeVerifier,
   AgentSessionRef,
+  AgentSendReceipt,
   AgentTool,
   AuthorizedAgentScope,
+  IdempotentAgentSend,
   JsonValue,
   VerifiedAgentScopeClaim,
 } from '../../shared/index'
@@ -31,6 +33,15 @@ import type {
 import type { AgentSkillResourceSnapshot } from '../http/routes/skills'
 
 export type { LeaseBoundWorkspaceAgent } from '../../shared/workspaceAgentDispatcher'
+
+/** Server-owned effect-first extension; the frozen public AgentGateway v0 stays unchanged. */
+export interface AgentHostGateway extends AgentGateway {
+  sendSession(input: {
+    readonly scope: AuthorizedAgentScope
+    readonly ref: AgentSessionRef
+    readonly command: IdempotentAgentSend
+  }): Promise<AgentSendReceipt>
+}
 
 export type AgentGatewayEffect =
   | 'session.create'
@@ -129,6 +140,17 @@ export interface AgentEffectAdmission {
     readonly operation: AgentGatewayEffect
     readonly target: AgentRequestTarget
   }): Promise<AgentEffectAdmissionResult>
+}
+
+/** Side-effect-free host policy evaluated before classification, admission, or binding resolution. */
+export interface AgentEffectPolicy {
+  evaluate(input: {
+    readonly key: AgentRequestKey
+    readonly digest: string
+    readonly scope: VerifiedAgentScopeClaim
+    readonly operation: AgentGatewayEffect
+    readonly target: AgentRequestTarget
+  }): Promise<AgentGatewayErrorDTO | undefined>
 }
 
 /**
@@ -374,6 +396,7 @@ export interface CreateAgentHostOptions {
   /** Explicit test/dev opt-in for an in-memory ledger. */
   readonly inMemoryRequestLedgerMode?: 'test' | 'development'
   readonly requestRetentionMs?: number
+  readonly effectPolicy?: AgentEffectPolicy
   readonly effectAdmission?: AgentEffectAdmission
   readonly shutdownGraceMs?: number
   readonly harnessFactory?: AgentHarnessFactory
@@ -381,7 +404,7 @@ export interface CreateAgentHostOptions {
 
 export interface CreatedAgentHost {
   readonly host: AgentHostHandle
-  readonly gateway: AgentGateway
+  readonly gateway: AgentHostGateway
   registerDirectRoutes(options: AgentHostDirectProjectionOptions): FastifyPluginAsync
   acquireEnvironment(input: {
     readonly authorizedScope: AuthorizedAgentScope

@@ -261,11 +261,16 @@ export function gatewayConformance(options: GatewayConformanceOptions): void {
         requestId: 'retryable',
       }), 'AGENT_GATEWAY_CLOSED')
       await expect(fixture.gateway.listSessions({ scope })).resolves.toEqual({ sessions: [] })
-      await expectCode(fixture.gateway.createSession({
+      const retried = await fixture.gateway.createSession({
         scope,
         agentTypeId: 'alpha',
         requestId: 'retryable',
-      }), 'AGENT_REQUEST_IN_PROGRESS')
+      })
+      await expect(fixture.gateway.createSession({
+        scope,
+        agentTypeId: 'alpha',
+        requestId: 'retryable',
+      })).resolves.toEqual(retried)
     })
 
     it('fails unknown agents and hidden cross-scope sessions with stable errors', async () => {

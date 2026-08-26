@@ -7,7 +7,9 @@ import type { AgentCoreHarnessFactory } from '../../../shared/harness'
 import { createTestRuntimeModeAdapter } from '@agent-test-host'
 import { createScriptedPiHarness } from '../../testing/scriptedPiHarness'
 import { createAgentHost } from '../createAgentHost'
+import { canonicalDigest } from '../canonical'
 import { InMemoryAgentRequestLedger } from '../requestLedger'
+import { SqliteAgentRequestLedger } from '../sqliteRequestLedger'
 import type {
   AgentRequestKey,
   AgentRequestLedger,
@@ -110,6 +112,273 @@ describe('Agent Host lifecycle', () => {
     await created.host.close()
     expect(Date.now() - before).toBeLessThan(250)
     expect(fixture.dispose).toHaveBeenCalledOnce()
+  })
+
+  it('tracks policy evaluation through drain and terminalizes its pending ledger claim', async () => {
+    const fixture = await options()
+    const ledger = new InMemoryAgentRequestLedger()
+    const policyStarted = deferred<void>()
+    const releasePolicy = deferred<void>()
+    const admission = vi.fn(async () => ({ type: 'accepted' as const, admissionReceipt: 'admitted' }))
+    const resolveEnvironment = vi.fn(async () => ({
+      placementIdentity: 'policy-drain-environment',
+      workspaceRoot: fixture.workspaceRoot,
+      provisioningFingerprint: 'policy-drain-environment-v1',
+    }))
+    const created = await createAgentHost({
+      ...fixture.value,
+      requestLedger: ledger,
+      inMemoryRequestLedgerMode: 'test',
+      effectAdmission: { admit: admission },
+      resolveAuthorizedEnvironmentScope: resolveEnvironment,
+      effectPolicy: {
+        async evaluate() {
+          policyStarted.resolve()
+          await releasePolicy.promise
+          return undefined
+        },
+      },
+    })
+    const request = created.gateway.createSession({
+      scope,
+      agentTypeId: 'alpha',
+      requestId: 'drain-during-policy',
+    })
+    request.catch(() => {})
+    await policyStarted.promise
+
+    await expectBounded(() => created.host.drain())
+    await expect(ledger.read(createRequestKey('drain-during-policy'))).resolves.toMatchObject({
+      state: 'rejected',
+      failure: { kind: 'gateway', error: { code: AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED } },
+    })
+    expect(admission).not.toHaveBeenCalled()
+    expect(resolveEnvironment).not.toHaveBeenCalled()
+
+    releasePolicy.resolve()
+    await expect(request).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED })
+    await created.host.close()
+  })
+
+  it('waits for an ordinary policy denial without making drain or close fail', async () => {
+    const fixture = await options({ shutdownGraceMs: 1_000 })
+    const policyStarted = deferred<void>()
+    const releasePolicy = deferred<void>()
+    const created = await createAgentHost({
+      ...fixture.value,
+      effectPolicy: {
+        async evaluate() {
+          policyStarted.resolve()
+          await releasePolicy.promise
+          return {
+            code: AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN,
+            message: 'Workspace default Agent is unavailable',
+          }
+        },
+      },
+    })
+    const request = created.gateway.createSession({
+      scope,
+      agentTypeId: 'alpha',
+      requestId: 'business-denial-during-drain',
+    })
+    request.catch(() => {})
+    await policyStarted.promise
+
+    const drain = created.host.drain()
+    releasePolicy.resolve()
+
+    await expect(request).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN })
+    await expect(drain).resolves.toBeUndefined()
+    await expect(created.host.close()).resolves.toBeUndefined()
+  })
+
+  it('replays concurrent policy denials instead of exposing the ledger CAS loser', async () => {
+    const fixture = await options()
+    const ledger = new InMemoryAgentRequestLedger()
+    const bothEvaluating = deferred<void>()
+    let evaluations = 0
+    const admission = vi.fn(async () => ({ type: 'accepted' as const, admissionReceipt: 'admitted' }))
+    const created = await createAgentHost({
+      ...fixture.value,
+      requestLedger: ledger,
+      inMemoryRequestLedgerMode: 'test',
+      effectAdmission: { admit: admission },
+      effectPolicy: {
+        async evaluate() {
+          evaluations += 1
+          if (evaluations === 2) bothEvaluating.resolve()
+          await bothEvaluating.promise
+          return {
+            code: AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN,
+            message: 'Workspace default Agent is unavailable',
+          }
+        },
+      },
+    })
+    const input = { scope, agentTypeId: 'alpha', requestId: 'concurrent-policy-denial' }
+
+    const results = await Promise.allSettled([
+      created.gateway.createSession(input),
+      created.gateway.createSession(input),
+    ])
+
+    expect(results).toHaveLength(2)
+    for (const result of results) {
+      expect(result.status).toBe('rejected')
+      if (result.status === 'rejected') {
+        expect(result.reason).toMatchObject({ code: AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN })
+      }
+    }
+    expect(admission).not.toHaveBeenCalled()
+    await expect(ledger.read(createRequestKey(input.requestId))).resolves.toMatchObject({
+      state: 'rejected',
+      failure: { kind: 'gateway', error: { code: AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN } },
+    })
+    await created.host.close()
+  })
+
+  it('terminalizes post-admission preparation failures without readmission on replay', async () => {
+    const fixture = await options()
+    const ledger = new InMemoryAgentRequestLedger()
+    const admission = vi.fn(async () => ({ type: 'accepted' as const, admissionReceipt: 'admitted' }))
+    const created = await createAgentHost({
+      ...fixture.value,
+      requestLedger: ledger,
+      inMemoryRequestLedgerMode: 'test',
+      effectAdmission: { admit: admission },
+      resolveAuthorizedEnvironmentScope: async () => {
+        throw new Error('environment lookup failed')
+      },
+    })
+    const input = { scope, agentTypeId: 'alpha', requestId: 'preparation-failed' }
+
+    await expect(created.gateway.createSession(input)).rejects.toMatchObject({
+      code: AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
+    })
+    await expect(created.gateway.createSession(input)).rejects.toMatchObject({
+      code: AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
+    })
+    expect(admission).toHaveBeenCalledOnce()
+    await expect(ledger.read(createRequestKey(input.requestId))).resolves.toMatchObject({
+      state: 'rejected',
+      failure: {
+        kind: 'gateway',
+        error: { code: AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE },
+      },
+    })
+    await created.host.close()
+  })
+
+  it('does not acquire Environment or binding resources for denied effects', async () => {
+    const fixture = await options()
+    const baseAdapter = createTestRuntimeModeAdapter('direct')
+    const createEnvironment = vi.fn(baseAdapter.create.bind(baseAdapter))
+    const resolveEnvironment = vi.fn(fixture.value.resolveAuthorizedEnvironmentScope!)
+    const resolveAgentRuntime = vi.fn(fixture.value.resolveAuthorizedAgentRuntimeScope!)
+    const harnessFactory = vi.fn(createScriptedPiHarness as AgentCoreHarnessFactory)
+    const created = await createAgentHost({
+      ...fixture.value,
+      runtimeModeAdapter: { ...baseAdapter, create: createEnvironment },
+      resolveAuthorizedEnvironmentScope: resolveEnvironment,
+      resolveAuthorizedAgentRuntimeScope: resolveAgentRuntime,
+      harnessFactory,
+      effectAdmission: {
+        async admit() {
+          return {
+            type: 'rejected',
+            error: {
+              code: AgentGatewayErrorCode.AGENT_SCOPE_DENIED,
+              message: 'effect denied',
+            },
+          }
+        },
+      },
+    })
+
+    await expect(created.gateway.createSession({
+      scope,
+      agentTypeId: 'alpha',
+      requestId: 'denied-before-resources',
+    })).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_SCOPE_DENIED })
+
+    expect(resolveEnvironment).not.toHaveBeenCalled()
+    expect(resolveAgentRuntime).not.toHaveBeenCalled()
+    expect(createEnvironment).not.toHaveBeenCalled()
+    expect(harnessFactory).not.toHaveBeenCalled()
+    await created.host.close()
+  })
+
+  it('resumes a durable accepted admission checkpoint after ledger reopen without readmission', async () => {
+    const fixture = await options()
+    const key = createRequestKey('resume-accepted')
+    const ledgerPath = join(fixture.value.sessionRoot!, 'accepted-recovery.sqlite')
+    const seed = new SqliteAgentRequestLedger(ledgerPath)
+    await seed.prepare(key, canonicalDigest({
+      agentTypeId: 'alpha',
+      title: null,
+      resumeSessionId: null,
+    }))
+    await seed.acceptAdmission(key, 'persisted-admission')
+    seed.close()
+
+    const ledger = new SqliteAgentRequestLedger(ledgerPath)
+    const admission = vi.fn(async () => ({ type: 'accepted' as const, admissionReceipt: 'unexpected' }))
+    const created = await createAgentHost({
+      ...fixture.value,
+      requestLedger: ledger,
+      effectAdmission: { admit: admission },
+    })
+
+    await expect(created.gateway.createSession({
+      scope,
+      agentTypeId: 'alpha',
+      requestId: 'resume-accepted',
+    })).resolves.toMatchObject({ agentTypeId: 'alpha' })
+    expect(admission).not.toHaveBeenCalled()
+    await expect(ledger.read(key)).resolves.toMatchObject({ state: 'completed' })
+    await created.host.close()
+  })
+
+  it('leaves accepted admission resumable when beginEffect fails before mutation', async () => {
+    const fixture = await options()
+    const base = new InMemoryAgentRequestLedger()
+    let failBegin = true
+    const admission = vi.fn(async () => ({ type: 'accepted' as const, admissionReceipt: 'persisted-admission' }))
+    const ledger: AgentRequestLedger = {
+      durability: 'in-memory',
+      prepare: (key, digest) => base.prepare(key, digest),
+      acceptAdmission: (key, receipt) => base.acceptAdmission(key, receipt),
+      async beginEffect(key) {
+        if (failBegin) {
+          failBegin = false
+          throw new Error('beginEffect temporarily unavailable')
+        }
+        await base.beginEffect(key)
+      },
+      reject: (key, failure) => base.reject(key, failure),
+      complete: (key, receipt) => base.complete(key, receipt),
+      markOutcomeUnknown: (key, error) => base.markOutcomeUnknown(key, error),
+      read: (key) => base.read(key),
+    }
+    const created = await createAgentHost({
+      ...fixture.value,
+      requestLedger: ledger,
+      inMemoryRequestLedgerMode: 'test',
+      effectAdmission: { admit: admission },
+    })
+    const input = { scope, agentTypeId: 'alpha', requestId: 'retry-failed-begin' }
+
+    await expect(created.gateway.createSession(input)).rejects.toThrow('beginEffect temporarily unavailable')
+    await expect(base.read(createRequestKey(input.requestId))).resolves.toMatchObject({ state: 'admission-accepted' })
+    const createdSession = await created.gateway.createSession(input)
+    await expect(created.gateway.createSession(input)).resolves.toEqual(createdSession)
+    expect(admission).toHaveBeenCalledOnce()
+    await expect(created.gateway.readSessionState({ scope, ref: createdSession })).resolves.toMatchObject({
+      ref: createdSession,
+    })
+    await expect(base.read(createRequestKey(input.requestId))).resolves.toMatchObject({ state: 'completed' })
+    await created.host.close()
   })
 
   it('terminalizes a created ledger claim without mutation when drain wins during prepare', async () => {

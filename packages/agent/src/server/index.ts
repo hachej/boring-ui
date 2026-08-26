@@ -183,6 +183,7 @@ export {
 } from './agent-host/runtimeScopeIdentity'
 export type {
   AgentEffectAdmission,
+  AgentEffectPolicy,
   AgentFleetCompiler,
   AgentGatewayEffect,
   AgentHostAgentSpec,
@@ -191,6 +192,7 @@ export type {
   AgentHostDispatcherRunInput,
   AgentHostEnvironmentLease,
   AgentHostEnvironmentScope,
+  AgentHostGateway,
   AgentHostHandle,
   AgentRequestKey,
   AgentRequestLedger,

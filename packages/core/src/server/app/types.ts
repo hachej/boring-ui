@@ -42,15 +42,12 @@ export interface UserStore {
 }
 
 export interface WorkspaceStoreCreateOptions {
+  /** Omission preserves the pre-D28 API and persists the legacy `default` seat. */
+  readonly defaultAgentTypeId?: string
   readonly workspaceTypeId?: string
   isDefault?: boolean
   id?: string
   managedBy?: string
-  /**
-   * Persisted default Agent seat (Decision 28). Applied only at workspace
-   * initialization; an existing workspace's value is never rewritten.
-   */
-  readonly defaultAgentTypeId?: string
 }
 
 export interface WorkspaceStore {

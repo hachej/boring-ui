@@ -56,6 +56,7 @@ export interface AgentHostRuntime {
   readonly compiledAgents: readonly CompiledAgentHostAgentSpec[]
   readonly compiledById: ReadonlyMap<string, CompiledAgentHostAgentSpec>
   readonly ledger: import('./types').AgentRequestLedger
+  readonly effectPolicy: import('./types').AgentEffectPolicy
   readonly effectAdmission: import('./types').AgentEffectAdmission
   readonly activity: AgentSessionActivityIndex
   readonly shutdownGraceMs: number
@@ -312,6 +313,9 @@ function createRuntime(
     compiledAgents,
     compiledById,
     ledger,
+    effectPolicy: options.effectPolicy ?? {
+      async evaluate() { return undefined },
+    },
     effectAdmission: options.effectAdmission ?? {
       async admit({ key }) {
         return { type: 'accepted', admissionReceipt: `trusted-local:${key.requestId}` }
@@ -512,7 +516,12 @@ function createRuntime(
     drainRuntime() {
       runtime.startDrain()
       drainPromise ??= (async () => {
-        const work = [...finiteEffects.keys(), ...pendingBindings, ...subscriptionClosures]
+        // Finite effect rejection is a caller/business outcome. Drain waits for
+        // those effects to settle, but only infrastructure/cleanup failures can
+        // make shutdown itself fail.
+        const settledEffects = [...finiteEffects.keys()].map((effect) =>
+          effect.then(() => undefined, () => undefined))
+        const work = [...settledEffects, ...pendingBindings, ...subscriptionClosures]
         if (work.length === 0) return
         const completed = await Promise.race([
           Promise.allSettled(work).then((results) => ({ completed: true as const, results })),

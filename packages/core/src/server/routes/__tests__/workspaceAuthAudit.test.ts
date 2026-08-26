@@ -71,12 +71,12 @@ function resetState() {
 
 function mockWorkspaceStore(): WorkspaceStore {
   return {
-    create: async (userId: string, name: string, appId: string, opts?: { isDefault?: boolean }) => {
+    create: async (userId: string, name: string, appId: string, opts?: { isDefault?: boolean; defaultAgentTypeId?: string }) => {
       const id = `ws-${nextWsId++}`
       const ws: Workspace = {
         id, appId, workspaceTypeId: 'default', name, createdBy: userId,
         createdAt: new Date().toISOString(), deletedAt: null,
-        isDefault: opts?.isDefault ?? false,
+        isDefault: opts?.isDefault ?? false, defaultAgentTypeId: opts?.defaultAgentTypeId,
       }
       workspaces.set(id, ws)
       const wsMembers = new Map<string, MemberRole>()
@@ -251,7 +251,7 @@ const capturedRoutes: Array<{ method: string; url: string; hasPreHandler: boolea
 
 beforeAll(async () => {
   app = Fastify({ logger: false })
-  app.decorate('config', { appId: APP_ID, auth: { url: 'http://localhost:3000' }, features: { inviteTtlDays: 7 } } as any)
+  app.decorate('config', { appId: APP_ID, defaultAgentTypeId: 'default', auth: { url: 'http://localhost:3000' }, features: { inviteTtlDays: 7 } } as any)
   app.decorate('workspaceStore', mockWorkspaceStore())
   registerErrorHandler(app)
 

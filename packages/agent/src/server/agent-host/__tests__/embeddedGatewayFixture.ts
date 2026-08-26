@@ -239,6 +239,9 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
         return { type: 'accepted' as const, admissionReceipt: 'accepted' }
       },
     },
+    effectPolicy: {
+      async evaluate() { return undefined },
+    },
     isDraining: () => false,
     assertOpen() {},
     async verify(scope: AuthorizedAgentScope) {

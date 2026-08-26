@@ -38,10 +38,11 @@ describe('Embedded Agent Gateway strong effect admission', () => {
     await expect(fixture.gateway.createSession(input)).rejects.toMatchObject({
       code: AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED,
     })
-    await expect(fixture.gateway.createSession(input)).rejects.toMatchObject({
-      code: AgentGatewayErrorCode.AGENT_REQUEST_IN_PROGRESS,
+    const accepted = await fixture.gateway.createSession(input)
+    await expect(fixture.gateway.createSession(input)).resolves.toEqual(accepted)
+    await expect(fixture.gateway.listSessions({ scope, agentTypeId: 'alpha' })).resolves.toMatchObject({
+      sessions: [expect.objectContaining({ ref: accepted })],
     })
-    await expect(fixture.gateway.listSessions({ scope, agentTypeId: 'alpha' })).resolves.toMatchObject({ sessions: [] })
   })
 
   it('admits rename and delete before either session mutation', async () => {

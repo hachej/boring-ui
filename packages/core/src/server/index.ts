@@ -13,8 +13,10 @@ export type {
 
 export {
   AGENT_TYPE_ID_PATTERN,
+  DefaultAgentTypeError,
   LEGACY_DEFAULT_AGENT_TYPE_ID,
   isAgentTypeId,
+  parseRequiredDefaultAgentTypeId,
   parseTrustedDefaultAgentTypeId,
   resolveWorkspaceDefaultAgentTypeId,
 } from './defaultAgentType.js'

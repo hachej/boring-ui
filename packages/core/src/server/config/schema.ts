@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import proxyAddr from '@fastify/proxy-addr'
 import { isIP } from 'node:net'
+import { AGENT_TYPE_ID_PATTERN } from '../defaultAgentType.js'
 
 const VALID_MAIL_SCHEMES = ['resend://', 'smtp://', 'smtps://', 'console://', 'console-capture://']
 
@@ -52,7 +53,7 @@ export const coreConfigSchema = z.object({
 
   // Decision 28: boot-time host default Agent seat, stamped onto workspaces
   // at initialization. Same slug grammar as workspace type ids.
-  defaultAgentTypeId: z.string().regex(/^[a-z][a-z0-9-]{0,62}$/).optional(),
+  defaultAgentTypeId: z.string().regex(AGENT_TYPE_ID_PATTERN).optional(),
 
   // Decision 28 hook: exact trusted signup hostname -> fleet agentTypeId.
   // Trusted host configuration only; consumed once at new-default-workspace

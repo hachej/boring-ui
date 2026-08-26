@@ -1,6 +1,9 @@
-import { ERROR_CODES, HttpError } from '../shared/errors.js'
+import { ERROR_CODES } from '../shared/errors.js'
 import type { WorkspaceStore } from './app/types.js'
-import { classifyWorkspaceDefaultAgentTypeCohorts } from './defaultAgentType.js'
+import {
+  DefaultAgentTypeError,
+  classifyWorkspaceDefaultAgentTypeCohorts,
+} from './defaultAgentType.js'
 
 /** Postgres `undefined_table` — the workspaces relation does not exist yet. */
 const UNDEFINED_TABLE = '42P01'
@@ -75,11 +78,10 @@ export async function reconcileWorkspaceDefaultAgentTypes(
     availableAgentTypeIds,
   )
   if (after.nullCount > 0) {
-    throw new HttpError({
-      status: 500,
-      code: ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT,
-      message: 'Workspace default Agent legacy reconciliation did not converge',
-    })
+    throw new DefaultAgentTypeError(
+      ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT,
+      'Workspace default Agent legacy reconciliation did not converge',
+    )
   }
   log.info({
     event: 'workspace.default_agent_type_id.backfill',

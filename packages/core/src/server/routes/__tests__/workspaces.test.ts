@@ -28,7 +28,7 @@ function resetState() {
 
 function mockWorkspaceStore(): WorkspaceStore {
   return {
-    create: async (userId: string, name: string, appId: string, opts?: { isDefault?: boolean; workspaceTypeId?: string }) => {
+    create: async (userId: string, name: string, appId: string, opts?: { isDefault?: boolean; workspaceTypeId?: string; defaultAgentTypeId?: string }) => {
       storeCalls.push('create')
       const id = `ws-${nextWsId++}`
       const ws: Workspace = {
@@ -40,6 +40,7 @@ function mockWorkspaceStore(): WorkspaceStore {
         createdAt: new Date().toISOString(),
         deletedAt: null,
         isDefault: opts?.isDefault ?? false,
+        defaultAgentTypeId: opts?.defaultAgentTypeId,
       }
       workspaces.set(id, ws)
       const wsMembers = members.get(id) ?? new Map()
@@ -87,6 +88,8 @@ let app: FastifyInstance
 beforeAll(async () => {
   app = Fastify({ logger: false })
 
+  // Public route registration remains bootable for legacy CoreConfig callers;
+  // the route stamps the compatibility `default` seat on every new row.
   app.decorate('config', { appId: APP_ID } as any)
   app.decorate('workspaceStore', mockWorkspaceStore())
   app.decorate('provisioner', null)
@@ -167,6 +170,7 @@ describe('POST /api/v1/workspaces', () => {
     expect(body.workspace.name).toBe('My WS')
     expect(body.workspace.createdBy).toBe(OWNER_ID)
     expect(body.workspace.workspaceTypeId).toBe('default')
+    expect(body.workspace.defaultAgentTypeId).toBe('default')
     expect(body.role).toBe('owner')
   })
 
@@ -585,7 +589,7 @@ describe('Provisioner integration', () => {
     }
 
     provApp = Fastify({ logger: false })
-    provApp.decorate('config', { appId: APP_ID } as any)
+    provApp.decorate('config', { appId: APP_ID, defaultAgentTypeId: 'default' } as any)
     provApp.decorate('workspaceStore', provMockWorkspaceStore())
     provApp.decorate('provisioner', mockProvisioner)
     registerErrorHandler(provApp)

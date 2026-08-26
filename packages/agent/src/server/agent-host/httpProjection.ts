@@ -5,7 +5,6 @@ import { z } from 'zod'
 import {
   AgentGatewayError,
   AgentGatewayErrorCode,
-  type AgentGateway,
   type AgentSessionConnection,
   type AgentSessionRef,
   type IdempotentAgentControl,
@@ -14,7 +13,7 @@ import {
 } from '../../shared/index'
 import type { PiChatSessionService } from '../../core/piChatSessionService'
 import { ErrorCode } from '../../shared/error-codes'
-import type { AgentHostDirectProjectionOptions, AgentHostHandle } from './types'
+import type { AgentHostDirectProjectionOptions, AgentHostGateway, AgentHostHandle } from './types'
 import type { AgentSessionActivityIndex, AgentSessionActivityUpdate } from './sessionInventory'
 import {
   createAgentHostRuntimeCapabilityRoutes,
@@ -27,10 +26,9 @@ const MAX_BATCH_SESSION_SUMMARY_SCAN_PAGES = 10
 const SAFE_AGENT_TYPE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
 
 type ProjectionOptions = AgentHostDirectProjectionOptions
-
 interface ProjectionInput {
   readonly host: AgentHostHandle
-  readonly gateway: AgentGateway
+  readonly gateway: AgentHostGateway
   readonly options: ProjectionOptions
   readonly resolveAddressedPiChatService: (
     request: FastifyRequest,
@@ -293,7 +291,7 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
       const scope = await input.options.authorizeAgentRequest(request)
       const requested = [...new Set(body.sessionIds)]
       const requestedSet = new Set(requested)
-      const summariesById = new Map<string, Awaited<ReturnType<AgentGateway['listSessions']>>['sessions'][number]>()
+      const summariesById = new Map<string, Awaited<ReturnType<AgentHostGateway['listSessions']>>['sessions'][number]>()
       let cursor: string | undefined
       let scannedPages = 0
       do {
@@ -518,7 +516,11 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
     if (!body) return
     try {
       const command: IdempotentAgentSend = { kind: 'prompt', ...body }
-      return reply.code(202).send(await withConnection(input, request, params, (connection) => connection.send(command)))
+      return reply.code(202).send(await input.gateway.sendSession({
+        scope: await input.options.authorizeAgentRequest(request),
+        ref: params,
+        command,
+      }))
     } catch (error) {
       return sendError(reply, error)
     }
@@ -531,7 +533,11 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
     if (!body) return
     try {
       const command: IdempotentAgentSend = { kind: 'followup', ...body }
-      return reply.code(202).send(await withConnection(input, request, params, (connection) => connection.send(command)))
+      return reply.code(202).send(await input.gateway.sendSession({
+        scope: await input.options.authorizeAgentRequest(request),
+        ref: params,
+        command,
+      }))
     } catch (error) {
       return sendError(reply, error)
     }
