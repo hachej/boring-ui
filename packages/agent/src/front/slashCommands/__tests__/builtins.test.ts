@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
-import { builtinCommands } from '../builtins'
+import { builtinCommands, reloadResultForModel } from '../builtins'
 import type { SlashCommandContext } from '../registry'
 
 function makeContext(overrides?: Partial<SlashCommandContext>): SlashCommandContext {
@@ -85,14 +85,39 @@ describe('/reload', () => {
     const result = await getBuiltin('reload').handler('', ctx)
     expect(run).toHaveBeenCalledTimes(1)
     expect(ctx.reloadAgentPlugins).not.toHaveBeenCalled()
-    expect(result).toBe('Plugins updated.')
+    expect(result).toMatchObject({ message: 'Plugins updated.' })
   })
 
   test('falls back to inline-text reload when pluginUpdate is absent', async () => {
     const ctx = makeContext({ pluginUpdate: undefined })
     const result = await getBuiltin('reload').handler('', ctx)
     expect(ctx.reloadAgentPlugins).toHaveBeenCalledOnce()
-    expect(result).toBe('Agent plugins reloaded.')
+    expect(result).toMatchObject({ message: 'Agent plugins reloaded.' })
+  })
+
+  test('reports the reload outcome to the model, not only to the UI', async () => {
+    const run = vi.fn().mockResolvedValue('Extensions reloaded.\n\nWarnings:\ntasks: skipped')
+    const ctx = makeContext({ pluginUpdate: { run } })
+    const result = await getBuiltin('reload').handler('', ctx)
+    expect(result).toEqual({
+      message: 'Extensions reloaded.\n\nWarnings:\ntasks: skipped',
+      modelMessage: '/reload result:\nExtensions reloaded.\n\nWarnings:\ntasks: skipped',
+    })
+  })
+
+  test('makes a failed reload the thing the model sees', async () => {
+    const run = vi.fn().mockResolvedValue('Extension update failed: worker unreachable')
+    const ctx = makeContext({ pluginUpdate: { run } })
+    const result = await getBuiltin('reload').handler('', ctx)
+    expect(result).toMatchObject({
+      modelMessage: '/reload result:\nExtension update failed: worker unreachable',
+    })
+  })
+
+  test('bounds a runaway reload report instead of dumping it', () => {
+    const report = reloadResultForModel(`Extensions reloaded.\n${'warning line\n'.repeat(500)}`)
+    expect(report.length).toBeLessThan(2_100)
+    expect(report.endsWith('… (truncated)')).toBe(true)
   })
 })
 

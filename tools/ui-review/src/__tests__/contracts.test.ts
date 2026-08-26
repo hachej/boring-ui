@@ -1,7 +1,6 @@
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
+import { mkdir, writeFile } from "node:fs/promises"
 import { join } from "node:path"
-import { describe, expect, it } from "vitest"
+import { afterAll, describe, expect, it } from "vitest"
 import {
   UI_REVIEW_RUBRIC_VERSION,
   UI_REVIEW_SCHEMA_VERSION,
@@ -16,7 +15,12 @@ import {
   type UiReviewState,
   type UiReviewViewport,
 } from "../core/contracts"
+import { cleanupUiReviewTempRootSync, createUiReviewTempDir } from "../core/tempRoot"
 import { testSpec } from "./fixtures"
+
+// The run-scoped temp root belongs to this worker process; remove it here rather than relying on
+// how the runner terminates workers (vitest and Playwright both signal-kill them).
+afterAll(() => { cleanupUiReviewTempRootSync() })
 
 const validateUiReviewManifest = (root: string, value: UiReviewManifest) => validateManifestAgainstSpec(root, value, testSpec)
 
@@ -27,7 +31,7 @@ const viewports: UiReviewViewport[] = [
 const checkpoints = ["closed", "open", "commands"]
 
 async function matrixFixture(roles: UiReviewRole[] = ["candidate"]) {
-  const root = await mkdtemp(join(tmpdir(), "ui-review-contracts."))
+  const root = await createUiReviewTempDir("ui-review-contracts.")
   const states: UiReviewState[] = []
   for (const role of roles) {
     for (const viewport of viewports) {

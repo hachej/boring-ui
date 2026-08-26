@@ -23,7 +23,7 @@ import { Button, Dialog, DialogContent, DialogDescription, DialogHeader, DialogT
 import { cn } from "../lib/utils"
 import { CornerChromeButton } from "./cornerChrome"
 import { WorkspaceTranscriptLoadingSurface } from "../components/WorkspaceLoadingState"
-import { CHAT_SESSION_DRAG_TYPE, dispatchChatSessionDragPayload, PaneFocusRing, paneTitle, type ChatPaneDescriptor, type ChatPaneStageProps } from "./ChatPaneStage"
+import { CHAT_SESSION_DRAG_TYPE, dispatchChatSessionDragPayload, PaneFocusRing, paneTitle, readablePaneTitle, type ChatPaneDescriptor, type ChatPaneStageProps } from "./ChatPaneStage"
 import { workspaceSessionKey } from "../sessionIdentity"
 
 type ChatPaneStageDockProps = ChatPaneStageProps
@@ -33,12 +33,9 @@ const PANE_MIN_WIDTH = 280
 const PERSIST_DEBOUNCE_MS = 300
 const SINGLE_PANE_LOADING_MIN_MS = 120
 
-export function readablePaneTitle(title: string | undefined, id: string | undefined): string {
-  const trimmed = title?.trim()
-  const isMachineId = trimmed === id
-    || Boolean(trimmed && /(?:^|::)[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(trimmed))
-  return trimmed && !isMachineId ? trimmed : "New chat"
-}
+// Lives in ChatPaneStage (the light module) so the compact shell can use it
+// without pulling this dockview chunk in.
+export { readablePaneTitle } from "./ChatPaneStage"
 
 interface StageContextValue {
   panes: ChatPaneDescriptor[]
