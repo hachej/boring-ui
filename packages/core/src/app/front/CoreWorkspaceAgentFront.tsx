@@ -366,6 +366,7 @@ function WorkspaceRoute<
       key={workspaceId}
       {...resolvedWorkspaceProps}
       workspaceId={workspaceId}
+      agentTypeId={currentWorkspace.defaultAgentTypeId ?? resolvedWorkspaceProps.agentTypeId}
       workspaceLabel={resolvedWorkspaceProps.workspaceLabel ?? currentWorkspace.name}
       requestHeaders={requestHeaders}
       authHeaders={authHeaders}

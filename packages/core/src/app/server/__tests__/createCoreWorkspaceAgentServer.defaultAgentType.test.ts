@@ -1,4 +1,4 @@
-import { mkdtemp } from 'node:fs/promises'
+import { access, mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test, vi } from 'vitest'
@@ -253,6 +253,31 @@ test('keeps the pre-0024 reference health composition bootable when the default_
   try {
     expect(mocks.compareAndSetNullDefaultAgentTypeId).not.toHaveBeenCalled()
     expect(mocks.hostRegisterDirectRoutes).toHaveBeenCalledOnce()
+  } finally { await app.close() }
+}, 30_000)
+
+test('workspace meta rejects a deleted workspace before recreating its root', async () => {
+  mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
+    runtimePlugins: [], agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
+    preservedUiStateKeys: [], routeContributions: [],
+  })
+  mocks.getWorkspace.mockResolvedValue(null)
+  const workspaceRoot = await mkdtemp(join(tmpdir(), 'core-deleted-default-workspace-'))
+  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
+  const app = await createCoreWorkspaceAgentServer({
+    config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+    agents: REGULAR_AGENTS,
+    workspaceRoot,
+    serveFrontend: false,
+  })
+  try {
+    const meta = await app.inject({
+      method: 'GET',
+      url: '/api/v1/workspace/meta?workspaceId=workspace-a',
+      headers: { 'x-test-user-id': 'user-a' },
+    })
+    expect(meta.statusCode).toBe(403)
+    await expect(access(join(workspaceRoot, 'workspace-a'))).rejects.toThrow()
   } finally { await app.close() }
 }, 30_000)
 

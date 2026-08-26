@@ -526,6 +526,7 @@ describe('addressed Agent Host HTTP projection', () => {
       [AgentGatewayErrorCode.AGENT_SESSION_REPLAY_GAP, 409],
       [AgentGatewayErrorCode.AGENT_SESSION_CURSOR_AHEAD, 409],
       [AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED, 503],
+      [AgentGatewayErrorCode.AGENT_SHARED_ENVIRONMENT_UNAVAILABLE, 503],
     ] as const) {
       const gateway = new FakeGateway()
       gateway.connectSession = vi.fn(async () => {
