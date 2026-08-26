@@ -87,6 +87,14 @@ describe("MessageResponse link affordances (#1395)", () => {
     await waitFor(() => expect(window.open).toHaveBeenCalledWith(TEST_URL, "_blank", "noreferrer"));
   });
 
+  it("retains Streamdown's malicious-URL hardening before decoration", () => {
+    renderMarkdown("[bad](javascript:alert(1))");
+
+    expect(screen.queryByRole("link", { name: "bad" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Copy URL" })).toBeNull();
+    expect(screen.getByText(/bad \[blocked\]/)).toBeTruthy();
+  });
+
   it("leaves non-link content untouched", () => {
     renderMarkdown("Just **bold** words, no links at all.");
     expect(screen.queryByRole("button", { name: "Copy URL" })).toBeNull();

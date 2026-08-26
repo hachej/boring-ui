@@ -21,7 +21,7 @@ import {
   useMemo,
   useState,
 } from "react";
-import { Streamdown } from "streamdown";
+import { defaultRehypePlugins, Streamdown } from "streamdown";
 import { useStreamdownPlugins } from "./useStreamdownPlugins";
 import {
   markdownLinkComponents,
@@ -430,6 +430,7 @@ export type BoringMessageResponseProps = MessageResponseProps & {
 export const MessageResponse = memo(
   ({ className, shikiTheme, components, codeFilename, rehypePlugins, ...props }: BoringMessageResponseProps) => {
     const streamdownPlugins = useStreamdownPlugins(props.children, { code: false });
+    const baseRehypePlugins = rehypePlugins ?? Object.values(defaultRehypePlugins);
     return (
       <Streamdown
         className={cn(
@@ -437,7 +438,7 @@ export const MessageResponse = memo(
           className
         )}
         plugins={streamdownPlugins}
-        rehypePlugins={[...(rehypePlugins ?? []), rehypeMarkdownLinkActions]}
+        rehypePlugins={[...baseRehypePlugins, rehypeMarkdownLinkActions]}
         shikiTheme={shikiTheme ?? DEFAULT_SHIKI_THEME}
         components={{
           ...markdownComponents,
