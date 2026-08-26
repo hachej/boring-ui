@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { ErrorCode } from '../../../shared/index'
 import { AgentSessionActivityIndex } from '../sessionInventory'
+import { createEmbeddedGatewayFixture } from './embeddedGatewayFixture'
 
 describe('AgentSessionActivityIndex terminal outcomes', () => {
   const ref = { agentTypeId: 'alpha', sessionId: 'session-1' }
@@ -107,6 +108,21 @@ describe('AgentSessionActivityIndex terminal outcomes', () => {
     expect(index.get('ws', ref)).toBe('running')
   })
 
+  it('preserves cancellation intent when Pi starts the accepted generation late', () => {
+    const index = new AgentSessionActivityIndex()
+    const statuses: string[] = []
+    index.subscribe('ws', ({ status }) => statuses.push(status))
+
+    const pendingRun = index.beginPendingRun('ws', ref)
+    index.commitPendingRun('ws', ref, pendingRun)
+    index.beginCancellation('ws', ref)
+    index.observe('ws', ref, { type: 'agent-start', seq: 1, turnId: 't1' })
+    index.observe('ws', ref, { type: 'agent-end', seq: 2, turnId: 't1', status: 'ok' })
+
+    expect(statuses).toEqual(['running', 'aborting', 'aborted'])
+    expect(index.get('ws', ref)).toBe('aborted')
+  })
+
   it('never publishes a failed transition for the error emitted while aborting', () => {
     const index = new AgentSessionActivityIndex()
     const statuses: string[] = []
@@ -163,5 +179,60 @@ describe('AgentSessionActivityIndex terminal outcomes', () => {
     index.observe('ws', ref, { type: 'agent-start', seq: 1, turnId: 't1' })
     index.observe('ws', ref, { type: 'agent-end', seq: 2, turnId: 't1', status: 'error' })
     expect(index.get('ws', ref)).toBe('error')
+  })
+})
+
+describe('EmbeddedAgentGateway cancellation outcomes', () => {
+  async function runningSession() {
+    const fixture = await createEmbeddedGatewayFixture()
+    const scope = fixture.issueScope()
+    const ref = await fixture.gateway.createSession({
+      scope,
+      agentTypeId: 'alpha',
+      requestId: 'create',
+    })
+    const connection = await fixture.gateway.connectSession({ scope, ref })
+    const statuses: string[] = []
+    const unsubscribe = fixture.subscribeActivity(scope, ({ status }) => statuses.push(status))
+    await connection.send({
+      kind: 'prompt',
+      requestId: 'prompt',
+      clientNonce: 'nonce',
+      content: 'run',
+      requireIdle: true,
+    })
+    return { fixture, scope, ref, connection, statuses, unsubscribe }
+  }
+
+  it('records interrupt intent before Pi synchronously reports agent-end ok', async () => {
+    const { fixture, scope, ref, connection, statuses, unsubscribe } = await runningSession()
+    try {
+      fixture.endOnNextControl(ref, 'interrupt', 'ok')
+      await connection.interrupt({ requestId: 'interrupt' })
+
+      expect(statuses).toEqual(['running', 'aborting', 'aborted'])
+      await expect(fixture.gateway.readSessionState({ scope, ref })).resolves.toMatchObject({
+        summary: { status: 'aborted' },
+      })
+    } finally {
+      unsubscribe()
+      await connection.close()
+    }
+  })
+
+  it('records stop intent before Pi synchronously reports agent-end ok without publishing idle', async () => {
+    const { fixture, scope, ref, connection, statuses, unsubscribe } = await runningSession()
+    try {
+      fixture.endOnNextControl(ref, 'stop', 'ok')
+      await connection.stop({ requestId: 'stop' })
+
+      expect(statuses).toEqual(['running', 'aborting', 'aborted'])
+      await expect(fixture.gateway.readSessionState({ scope, ref })).resolves.toMatchObject({
+        summary: { status: 'aborted' },
+      })
+    } finally {
+      unsubscribe()
+      await connection.close()
+    }
   })
 })

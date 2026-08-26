@@ -436,24 +436,32 @@ export class EmbeddedAgentGateway implements AgentGateway {
         const currentBinding = await this.bindingForSession(input.scope, current, input.ref)
         const payload: Record<string, never> | { queueAction: 'hold' | 'resume' } = queueAction === undefined ? {} : { queueAction }
         return await this.sessionEffect(input.ref, current, 'session.interrupt', requestId, payload, async () => {
-          const receipt = await currentBinding.composition.service.interrupt(
-            context(current, requestId), input.ref.sessionId, payload,
-          )
-          if (queueAction !== 'resume' && this.runtime.activity.get(current.workspaceScopeId, input.ref) === 'running') {
-            this.runtime.activity.set(current.workspaceScopeId, input.ref, 'aborting')
+          const cancellation = queueAction === 'resume'
+            ? undefined
+            : this.runtime.activity.beginCancellation(current.workspaceScopeId, input.ref)
+          try {
+            return await currentBinding.composition.service.interrupt(
+              context(current, requestId), input.ref.sessionId, payload,
+            )
+          } catch (error) {
+            this.runtime.activity.rollbackCancellation(current.workspaceScopeId, input.ref, cancellation)
+            throw error
           }
-          return receipt
         }, { bindingKey: currentBinding.key }) as Awaited<ReturnType<AgentSessionConnection['interrupt']>>
       },
       stop: async ({ requestId }) => {
         const current = await reverify()
         const currentBinding = await this.bindingForSession(input.scope, current, input.ref)
         return await this.sessionEffect(input.ref, current, 'session.stop', requestId, {}, async () => {
-          const receipt = await currentBinding.composition.service.stop(
-            context(current, requestId), input.ref.sessionId, {},
-          )
-          this.runtime.activity.set(current.workspaceScopeId, input.ref, 'idle')
-          return receipt
+          const cancellation = this.runtime.activity.beginCancellation(current.workspaceScopeId, input.ref)
+          try {
+            return await currentBinding.composition.service.stop(
+              context(current, requestId), input.ref.sessionId, {},
+            )
+          } catch (error) {
+            this.runtime.activity.rollbackCancellation(current.workspaceScopeId, input.ref, cancellation)
+            throw error
+          }
         }, { bindingKey: currentBinding.key }) as Awaited<ReturnType<AgentSessionConnection['stop']>>
       },
       clearQueue: async ({ requestId, clientNonce, clientSeq }) => {

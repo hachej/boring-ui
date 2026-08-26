@@ -125,12 +125,23 @@ interface StoredAgentSessionActivity extends AgentSessionActivityUpdate {
   readonly workspaceScopeId: string
   readonly activeTurnId?: string
   readonly pendingRun: boolean
+  readonly cancellationRequested: boolean
   readonly generation: number
 }
 
+type PreviousAgentSessionActivity = Pick<
+  StoredAgentSessionActivity,
+  'status' | 'activeTurnId' | 'pendingRun' | 'cancellationRequested'
+>
+
 interface PendingAgentSessionRun {
   readonly generation: number
-  readonly previous?: Pick<StoredAgentSessionActivity, 'status' | 'activeTurnId' | 'pendingRun'>
+  readonly previous?: PreviousAgentSessionActivity
+}
+
+interface PendingAgentSessionCancellation {
+  readonly generation: number
+  readonly previous: PreviousAgentSessionActivity
 }
 
 /** Process-lifetime live-turn projection. Reads never create activity rows. */
@@ -153,14 +164,12 @@ export class AgentSessionActivityIndex {
       : status === 'aborting'
         ? existing?.pendingRun ?? false
         : false
-    this.setForTurn(workspaceScopeId, ref, status, activeTurnId, pendingRun)
+    this.setForTurn(workspaceScopeId, ref, status, activeTurnId, pendingRun, false)
   }
 
   beginPendingRun(workspaceScopeId: string, ref: AgentSessionRef): PendingAgentSessionRun {
     const existing = this.activity.get(agentSessionKey(workspaceScopeId, ref))
-    const previous = existing
-      ? { status: existing.status, activeTurnId: existing.activeTurnId, pendingRun: existing.pendingRun }
-      : undefined
+    const previous = existing ? this.previous(existing) : undefined
     // Own this invocation before entering the service, but keep its optimistic
     // state private until the service acknowledges that a run was accepted.
     const generation = this.setForTurn(
@@ -169,6 +178,7 @@ export class AgentSessionActivityIndex {
       previous?.status ?? 'idle',
       previous?.activeTurnId,
       true,
+      false,
       true,
       false,
     )
@@ -179,7 +189,7 @@ export class AgentSessionActivityIndex {
     const existing = this.activity.get(agentSessionKey(workspaceScopeId, ref))
     // A native start or pre-start error may have already claimed the run.
     if (existing?.generation !== run.generation || !existing.pendingRun) return
-    this.setForTurn(workspaceScopeId, ref, 'running', undefined, true)
+    this.setForTurn(workspaceScopeId, ref, 'running', undefined, true, false)
   }
 
   rollbackPendingRun(workspaceScopeId: string, ref: AgentSessionRef, run: PendingAgentSessionRun): void {
@@ -197,9 +207,53 @@ export class AgentSessionActivityIndex {
       run.previous.status,
       run.previous.activeTurnId,
       run.previous.pendingRun,
+      run.previous.cancellationRequested,
       true,
       false,
     )
+  }
+
+  beginCancellation(workspaceScopeId: string, ref: AgentSessionRef): PendingAgentSessionCancellation | undefined {
+    const existing = this.activity.get(agentSessionKey(workspaceScopeId, ref))
+    if (!existing || (existing.status !== 'running' && existing.status !== 'aborting')) return undefined
+    const generation = this.setForTurn(
+      workspaceScopeId,
+      ref,
+      'aborting',
+      existing.activeTurnId,
+      existing.pendingRun,
+      true,
+    )
+    return { generation, previous: this.previous(existing) }
+  }
+
+  rollbackCancellation(
+    workspaceScopeId: string,
+    ref: AgentSessionRef,
+    cancellation: PendingAgentSessionCancellation | undefined,
+  ): void {
+    if (!cancellation) return
+    const existing = this.activity.get(agentSessionKey(workspaceScopeId, ref))
+    // A native terminal event or newer run owns any later generation.
+    if (existing?.generation !== cancellation.generation || !existing.cancellationRequested) return
+    this.setForTurn(
+      workspaceScopeId,
+      ref,
+      cancellation.previous.status,
+      cancellation.previous.activeTurnId,
+      cancellation.previous.pendingRun,
+      cancellation.previous.cancellationRequested,
+      true,
+    )
+  }
+
+  private previous(activity: StoredAgentSessionActivity): PreviousAgentSessionActivity {
+    return {
+      status: activity.status,
+      activeTurnId: activity.activeTurnId,
+      pendingRun: activity.pendingRun,
+      cancellationRequested: activity.cancellationRequested,
+    }
   }
 
   private setForTurn(
@@ -208,6 +262,7 @@ export class AgentSessionActivityIndex {
     status: AgentSessionActivity,
     activeTurnId: string | undefined,
     pendingRun: boolean,
+    cancellationRequested: boolean,
     replaceGeneration = false,
     publish = true,
   ): number {
@@ -218,10 +273,11 @@ export class AgentSessionActivityIndex {
       && existing?.status === status
       && existing.activeTurnId === activeTurnId
       && existing.pendingRun === pendingRun
+      && existing.cancellationRequested === cancellationRequested
     ) return existing.generation
     const update = { ref, status }
     const generation = ++this.nextGeneration
-    this.activity.set(key, { workspaceScopeId, ...update, activeTurnId, pendingRun, generation })
+    this.activity.set(key, { workspaceScopeId, ...update, activeTurnId, pendingRun, cancellationRequested, generation })
     // Internal pending ownership and same-status metadata changes do not emit
     // activity transitions.
     if (!publish || existing?.status === status) return generation
@@ -254,13 +310,28 @@ export class AgentSessionActivityIndex {
   observe(workspaceScopeId: string, ref: AgentSessionRef, event: PiChatEvent): void {
     const key = agentSessionKey(workspaceScopeId, ref)
     if (event.type === 'agent-start') {
-      this.setForTurn(workspaceScopeId, ref, 'running', event.turnId, false)
+      const existing = this.activity.get(key)
+      // A control can be accepted after prompt acceptance but before Pi emits
+      // its start frame. That start identifies the same pending generation and
+      // must not erase the already-recorded cancellation intent.
+      const cancellationRequested = existing?.pendingRun === true && existing.cancellationRequested
+      this.setForTurn(
+        workspaceScopeId,
+        ref,
+        cancellationRequested ? 'aborting' : 'running',
+        event.turnId,
+        false,
+        cancellationRequested,
+      )
       return
     }
     if (event.type === 'agent-end') {
-      if (event.willRetry === true || this.activity.get(key)?.activeTurnId !== event.turnId) return
-      const status = event.status === 'error' ? 'error' : event.status === 'aborted' ? 'aborted' : 'idle'
-      this.setForTurn(workspaceScopeId, ref, status, undefined, false)
+      const existing = this.activity.get(key)
+      if (event.willRetry === true || existing?.activeTurnId !== event.turnId) return
+      const status = existing.cancellationRequested || event.status === 'aborted'
+        ? 'aborted'
+        : event.status === 'error' ? 'error' : 'idle'
+      this.setForTurn(workspaceScopeId, ref, status, undefined, false, false)
       return
     }
     if (event.type === 'error') {
@@ -271,7 +342,7 @@ export class AgentSessionActivityIndex {
       // Pi emits an ABORTED error immediately before agent-end:aborted. Treat
       // both frames as one cancellation so the list never flashes `failed`.
       const status = event.error.code === ErrorCode.enum.ABORTED ? 'aborted' : 'error'
-      this.setForTurn(workspaceScopeId, ref, status, undefined, false)
+      this.setForTurn(workspaceScopeId, ref, status, undefined, false, false)
     }
   }
 }

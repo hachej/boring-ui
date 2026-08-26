@@ -5,7 +5,7 @@ import { SessionBrowser } from "../SessionBrowser"
 import { WorkspaceAttentionProvider, useWorkspaceAttention } from "../../../attention/WorkspaceAttentionProvider"
 import type { SessionItem } from "../../../components/SessionList"
 import { decodeWorkspaceSessionDrag, workspaceSessionKey } from "../../../sessionIdentity"
-import { COMPLETED_VISIBLE_MS } from "../../../sessionActivity"
+import { COMPLETED_VISIBLE_MS, startSessionActivityStream } from "../../../sessionActivity"
 
 const now = Date.now()
 const sample: SessionItem[] = [
@@ -13,6 +13,25 @@ const sample: SessionItem[] = [
   { id: "s2", title: "Second session", updatedAt: now - 60 * 60_000 },
   { id: "s3", title: "Third session", updatedAt: now - 26 * 60 * 60_000 },
 ]
+
+class ActivityEventSource {
+  static instance: ActivityEventSource | undefined
+  private readonly listeners = new Map<string, (event: MessageEvent) => void>()
+
+  constructor(_url: string | URL, _init?: EventSourceInit) {
+    ActivityEventSource.instance = this
+  }
+
+  addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
+    this.listeners.set(type, listener as (event: MessageEvent) => void)
+  }
+
+  emit(type: "snapshot" | "activity", data: unknown) {
+    this.listeners.get(type)?.({ data: JSON.stringify(data) } as MessageEvent)
+  }
+
+  close() {}
+}
 
 describe("SessionBrowser", () => {
   it("renders all sessions grouped by recency", () => {
@@ -411,6 +430,76 @@ describe("SessionBrowser", () => {
       />,
     )
     expect(document.querySelector('[data-boring-badge="completed"]')).toBeInTheDocument()
+  })
+
+  it.each(["interrupt", "stop"] as const)(
+    "keeps the gateway %s cancellation sequence out of completed",
+    (control) => {
+      const addressed = sample.map((session) => ({ ...session, agentTypeId: "alpha" }))
+      render(<SessionBrowser sessions={addressed} activeRef={{ sessionId: "s1", agentTypeId: "alpha" }} activityWorkspaceId="ws-gateway" />)
+
+      for (const status of ["running", "aborting", "aborted"] as const) {
+        act(() => {
+          window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+            detail: {
+              workspaceId: "ws-gateway",
+              sessionId: "s2",
+              agentTypeId: "alpha",
+              working: status === "running" || status === "aborting",
+              status,
+              control,
+            },
+          }))
+        })
+        if (status === "aborted") {
+          expect(document.querySelector('[data-boring-badge="working"]')).toBeNull()
+        } else {
+          expect(document.querySelector('[data-boring-badge="working"]')).toBeInTheDocument()
+        }
+        expect(document.querySelector('[data-boring-badge="completed"]')).toBeNull()
+      }
+
+      expect(document.querySelector('[data-boring-badge="completed"]')).toBeNull()
+      expect(document.querySelector('[data-boring-badge="failed"]')).toBeNull()
+    },
+  )
+
+  it("treats snapshot disappearance as outcome-unknown while clearing working", () => {
+    const addressed = sample.map((session) => ({ ...session, agentTypeId: "alpha" }))
+    render(<SessionBrowser sessions={addressed} activeRef={{ sessionId: "s1", agentTypeId: "alpha" }} activityWorkspaceId="ws-snapshot" />)
+    const stop = startSessionActivityStream({
+      workspaceId: "ws-snapshot",
+      eventSourceCtor: ActivityEventSource as unknown as typeof EventSource,
+      onActivity: ({ ref, status }) => {
+        window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+          detail: {
+            workspaceId: "ws-snapshot",
+            sessionId: ref.sessionId,
+            agentTypeId: ref.agentTypeId,
+            working: status === "running" || status === "aborting",
+            status,
+          },
+        }))
+      },
+    })
+
+    try {
+      act(() => {
+        ActivityEventSource.instance?.emit("snapshot", {
+          sessions: [{ ref: { agentTypeId: "alpha", sessionId: "s2" }, status: "running" }],
+        })
+      })
+      expect(document.querySelector('[data-boring-badge="working"]')).toBeInTheDocument()
+
+      act(() => {
+        ActivityEventSource.instance?.emit("snapshot", { sessions: [] })
+      })
+      expect(document.querySelector('[data-boring-badge="working"]')).toBeNull()
+      expect(document.querySelector('[data-boring-badge="completed"]')).toBeNull()
+      expect(document.querySelector('[data-boring-badge="failed"]')).toBeNull()
+    } finally {
+      stop()
+    }
   })
 
   it("never transiently shows done when the live outcome is aborted before inventory catches up", () => {

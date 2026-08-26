@@ -17,7 +17,8 @@ export interface SessionActivityItem {
 
 export interface AddressedSessionActivity {
   ref: { agentTypeId: string; sessionId: string }
-  status: SessionActivity
+  /** Absent when a replacement snapshot only proves the prior working row disappeared. */
+  status?: SessionActivity
 }
 
 function parseActivity(value: unknown): AddressedSessionActivity | undefined {
@@ -61,7 +62,9 @@ export function startSessionActivityStream(options: {
       const stale = [...workingRefs].filter(([key]) => !seen.has(key)).map(([, ref]) => ref)
       workingRefs = new Map()
       activities.forEach(publish)
-      stale.forEach((ref) => options.onActivity({ ref, status: "idle" }))
+      // Snapshot disappearance proves only that the prior working projection is
+      // gone. It does not identify completion, cancellation, or failure.
+      stale.forEach((ref) => options.onActivity({ ref }))
     } catch { /* Ignore malformed server frames. */ }
   })
   source.addEventListener("activity", (event) => {

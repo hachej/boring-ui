@@ -288,7 +288,8 @@ describe("WorkspaceAgentFront", () => {
     })
 
     expect(statuses).toContainEqual({ workspaceId: "working-session-stream", sessionId: "session-1", agentTypeId: "default", working: true, status: "running" })
-    expect(statuses.at(-1)).toEqual({ workspaceId: "working-session-stream", sessionId: "session-1", agentTypeId: "default", working: false, status: "idle" })
+    // Snapshot disappearance clears working but carries no invented outcome.
+    expect(statuses.at(-1)).toEqual({ workspaceId: "working-session-stream", sessionId: "session-1", agentTypeId: "default", working: false, status: undefined })
 
     // The terminal status rides the same frame so the session list can show
     // `failed` without waiting for the next list fetch.
@@ -1546,14 +1547,16 @@ describe("WorkspaceAgentFront", () => {
         activeRef: { kind: "addressed", sessionId: "beta-one", agentTypeId: "beta" },
       }),
     )
+    let settleAgentCatalog: (() => void) | undefined
+    const settleSessionInventory = new Map<string, () => void>()
     const useAsyncFleetSelection = () => {
       const [agents, setAgents] = useState<Array<{ agentTypeId: string; label: string }>>([])
       useEffect(() => {
-        const timer = setTimeout(() => setAgents([
+        settleAgentCatalog = () => setAgents([
           { agentTypeId: "alpha", label: "Alpha" },
           { agentTypeId: "beta", label: "Beta" },
-        ]), 10)
-        return () => clearTimeout(timer)
+        ])
+        return () => { settleAgentCatalog = undefined }
       }, [])
       return {
         agents,
@@ -1566,9 +1569,9 @@ describe("WorkspaceAgentFront", () => {
     const useFleetSessions: UseWorkspaceAgentSessions = (options) => {
       const [loading, setLoading] = useState(true)
       useEffect(() => {
-        const timer = setTimeout(() => setLoading(false), 10)
-        return () => clearTimeout(timer)
-      }, [])
+        settleSessionInventory.set(options.agentTypeId, () => setLoading(false))
+        return () => { settleSessionInventory.delete(options.agentTypeId) }
+      }, [options.agentTypeId])
       const session = { id: `${options.agentTypeId}-one`, agentTypeId: options.agentTypeId, title: options.agentTypeId }
       return {
         sourceIdentity: options.sourceIdentity,
@@ -1597,6 +1600,10 @@ describe("WorkspaceAgentFront", () => {
 
     expect(screen.getByRole("status", { name: "Loading chats" })).toBeInTheDocument()
     expect(screen.queryByText("No chats yet.")).not.toBeInTheDocument()
+
+    act(() => settleAgentCatalog?.())
+    await waitFor(() => expect(settleSessionInventory.size).toBe(2))
+    act(() => settleSessionInventory.forEach((settle) => settle()))
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "New chat with Alpha" })).toBeInTheDocument()

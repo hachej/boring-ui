@@ -20,6 +20,7 @@ interface EmbeddedGatewayFixture extends GatewayConformanceFixture {
     release(): void
   }
   rejectNextPrompt(error: Error): void
+  endOnNextControl(ref: AgentSessionRef, control: 'interrupt' | 'stop', status: 'ok' | 'aborted' | 'error'): void
   emitSessionEvent(ref: AgentSessionRef, event: PiChatEvent): void
   observeSessionEvent(ref: AgentSessionRef, event: PiChatEvent): void
   subscribeActivity(
@@ -45,6 +46,7 @@ let globalCreated = 0
 class FakeService implements PiChatSessionService {
   readonly records = new Map<string, RecordValue>()
   nextPromptError: Error | undefined
+  private readonly nextControlEnd = new Map<string, 'ok' | 'aborted' | 'error'>()
 
   constructor(private readonly onEvent: (sessionId: string, event: PiChatEvent) => void) {}
 
@@ -149,6 +151,7 @@ class FakeService implements PiChatSessionService {
   async interrupt(_ctx: PiSessionRequestContext, sessionId: string, payload: { queueAction?: 'hold' | 'resume' }) {
     const record = this.get(sessionId)
     if (payload.queueAction !== 'resume' && record.status === 'running') record.status = 'aborting'
+    this.publishControlEnd(record, 'interrupt')
     return { accepted: true as const, cursor: record.seq }
   }
 
@@ -156,9 +159,24 @@ class FakeService implements PiChatSessionService {
     const record = this.get(sessionId)
     const stopped = record.status === 'running' || record.status === 'aborting'
     const clearedQueue = [...record.queue]
+    this.publishControlEnd(record, 'stop')
     record.status = 'idle'
     record.queue = []
     return { accepted: true as const, cursor: record.seq, stopped, clearedQueue }
+  }
+
+  endOnNextControl(sessionId: string, control: 'interrupt' | 'stop', status: 'ok' | 'aborted' | 'error') {
+    this.nextControlEnd.set(`${control}:${sessionId}`, status)
+  }
+
+  private publishControlEnd(record: RecordValue, control: 'interrupt' | 'stop') {
+    const key = `${control}:${record.id}`
+    const status = this.nextControlEnd.get(key)
+    if (!status) return
+    this.nextControlEnd.delete(key)
+    const start = [...record.events].reverse().find((event) => event.type === 'agent-start')
+    if (start?.type !== 'agent-start') throw new Error('control terminal requested without an active turn')
+    this.publish(record, { type: 'agent-end', seq: 0, turnId: start.turnId, status })
   }
 
   async rename(sessionId: string, title: string) {
@@ -323,6 +341,11 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
     },
     rejectNextPrompt(error) {
       for (const service of services.values()) service.nextPromptError = error
+    },
+    endOnNextControl(ref, control, status) {
+      for (const service of services.values()) {
+        if (service.records.has(ref.sessionId)) service.endOnNextControl(ref.sessionId, control, status)
+      }
     },
     emitSessionEvent(ref, event) {
       for (const service of services.values()) {
