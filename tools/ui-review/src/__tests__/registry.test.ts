@@ -85,6 +85,18 @@ describe("UI review spec registry", () => {
       { ordinal: 16, viewport: { name: "mobile" }, action: "Wait", screenshotDigest: "jitter", screenshotBytes: 100, screenshotPHash: "0000000000000001", normalizedState: { palette: { dialogVisible: true, mode: null } } },
     ] as unknown as UiReviewExplorationState[]
     expect(select(mobileStates)).toBe(mobileStates[0])
+
+    const mobileClickOnlyPath = [
+      { ordinal: 14, viewport: { name: "mobile" }, action: "Wait", screenshotDigest: "closed", screenshotBytes: 100, screenshotPHash: "0000000000000000", normalizedState: { palette: { dialogVisible: false, mode: null } } },
+      { ordinal: 15, viewport: { name: "mobile" }, action: { Click: {} }, screenshotDigest: "painted", screenshotBytes: 80, screenshotPHash: "0000000000000001", normalizedState: { palette: { dialogVisible: true, mode: null } } },
+    ] as unknown as UiReviewExplorationState[]
+    expect(select(mobileClickOnlyPath)).toBe(mobileClickOnlyPath[1])
+
+    const mobileJitterClickOnlyPath = [
+      { ordinal: 14, viewport: { name: "mobile" }, action: "Wait", screenshotDigest: "closed", screenshotBytes: 100, screenshotPHash: "0000000000000000", normalizedState: { palette: { dialogVisible: false, mode: null } } },
+      { ordinal: 15, viewport: { name: "mobile" }, action: { Click: {} }, screenshotDigest: "closed", screenshotBytes: 100, screenshotPHash: "0000000000000001", normalizedState: { palette: { dialogVisible: true, mode: null } } },
+    ] as unknown as UiReviewExplorationState[]
+    expect(select(mobileJitterClickOnlyPath)).toBeUndefined()
   })
 
   it("normalizes transient command-palette orchestration out of replay identity", () => {

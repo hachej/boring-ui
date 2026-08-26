@@ -8,6 +8,8 @@ export interface UseAddressedAgentSelectionOptions {
   apiBaseUrl?: string
   requestHeaders?: Record<string, string | undefined>
   storageScope?: string
+  /** Initial regular Agent selection; never changes fleet membership or order. */
+  preferredAgentTypeId?: string
   fetch?: typeof globalThis.fetch
   enabled?: boolean
 }
@@ -37,6 +39,7 @@ export function useAddressedAgentSelection({
   apiBaseUrl,
   requestHeaders,
   storageScope,
+  preferredAgentTypeId,
   fetch,
   enabled = false,
 }: UseAddressedAgentSelectionOptions = {}): UseAddressedAgentSelectionResult {
@@ -87,7 +90,9 @@ export function useAddressedAgentSelection({
         agents,
         selectedAgentTypeId: agents.some((agent) => agent.agentTypeId === previous.selectedAgentTypeId)
           ? previous.selectedAgentTypeId
-          : agents[0]?.agentTypeId,
+          : agents.some((agent) => agent.agentTypeId === preferredAgentTypeId)
+            ? preferredAgentTypeId
+            : agents[0]?.agentTypeId,
         loading: false,
         error: undefined,
       }))
@@ -105,7 +110,7 @@ export function useAddressedAgentSelection({
     return () => {
       cancelled = true
     }
-  }, [discoveryKey, enabled, fetchImpl, normalizedBaseUrl])
+  }, [discoveryKey, enabled, fetchImpl, normalizedBaseUrl, preferredAgentTypeId])
 
   const current = state.discoveryKey === discoveryKey
   const agents = enabled && current ? state.agents : []

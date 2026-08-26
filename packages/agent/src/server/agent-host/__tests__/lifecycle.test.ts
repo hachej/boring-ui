@@ -193,6 +193,40 @@ describe('Agent Host lifecycle', () => {
     await expect(created.host.close()).resolves.toBeUndefined()
   })
 
+  it('keeps transient policy failures retryable on the same request id', async () => {
+    const fixture = await options()
+    const ledger = new InMemoryAgentRequestLedger()
+    const admission = vi.fn(async () => ({ type: 'accepted' as const, admissionReceipt: 'admitted' }))
+    let policyAvailable = false
+    const created = await createAgentHost({
+      ...fixture.value,
+      requestLedger: ledger,
+      inMemoryRequestLedgerMode: 'test',
+      effectAdmission: { admit: admission },
+      effectPolicy: {
+        async evaluate() {
+          if (!policyAvailable) throw new Error('workspace database unavailable')
+          return undefined
+        },
+      },
+    })
+    const input = { scope, agentTypeId: 'alpha', requestId: 'retry-policy-infrastructure' }
+
+    await expect(created.gateway.createSession(input)).rejects.toMatchObject({
+      code: AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
+    })
+    await expect(ledger.read(createRequestKey(input.requestId))).resolves.toMatchObject({
+      state: 'pending-admission',
+    })
+    expect(admission).not.toHaveBeenCalled()
+
+    policyAvailable = true
+    await expect(created.gateway.createSession(input)).resolves.toMatchObject({ agentTypeId: 'alpha' })
+    expect(admission).toHaveBeenCalledOnce()
+    await expect(ledger.read(createRequestKey(input.requestId))).resolves.toMatchObject({ state: 'completed' })
+    await created.host.close()
+  })
+
   it('replays concurrent policy denials instead of exposing the ledger CAS loser', async () => {
     const fixture = await options()
     const ledger = new InMemoryAgentRequestLedger()

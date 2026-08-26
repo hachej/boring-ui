@@ -4,6 +4,9 @@ export { TopBar } from "./TopBar"
 export { ThemeToggle } from "./ThemeToggle"
 /** Tier 2 entry: declarative LayoutConfig with stock responsive chrome. */
 export { ResponsiveDockviewShell } from "./ResponsiveDockviewShell"
+export { useViewportWidth, useViewportHeight, useIsCompactViewport } from "./useViewportWidth"
+/** Publishes the `--keyboard-inset` CSS contract; mount once per shell. */
+export { useKeyboardInset, KEYBOARD_INSET_PROPERTY } from "./useKeyboardInset"
 export {
   COMPACT_MAX_WIDTH,
   WIDE_MIN_WIDTH,

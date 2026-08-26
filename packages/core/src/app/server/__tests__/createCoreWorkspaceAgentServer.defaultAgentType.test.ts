@@ -8,6 +8,10 @@ import {
   pluginContexts,
 } from './createCoreWorkspaceAgentServer.testHarness.js'
 
+const REGULAR_AGENTS = [
+  { agentTypeId: 'general', definition: { label: 'General', instructions: 'Answer general questions.' } },
+] as const
+
 test.each([
   {
     label: 'invalid grammar',
@@ -55,17 +59,18 @@ test('core backfills through explicit CAS after fleet validation and before rout
   })
   mocks.inventoryDefaultAgentTypeIds
     .mockResolvedValueOnce([{ defaultAgentTypeId: null, count: 2 }])
-    .mockResolvedValueOnce([{ defaultAgentTypeId: 'default', count: 2 }])
+    .mockResolvedValueOnce([{ defaultAgentTypeId: 'general', count: 2 }])
   mocks.compareAndSetNullDefaultAgentTypeId.mockResolvedValueOnce(2)
   const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
   const app = await createCoreWorkspaceAgentServer({
     config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+    agents: REGULAR_AGENTS,
     workspaceRoot: '/tmp/full-app-workspaces',
     serveFrontend: false,
   })
   try {
     expect(mocks.inventoryDefaultAgentTypeIds).toHaveBeenNthCalledWith(1, 'boring-ui-v2-test')
-    expect(mocks.compareAndSetNullDefaultAgentTypeId).toHaveBeenCalledWith('boring-ui-v2-test', 'default')
+    expect(mocks.compareAndSetNullDefaultAgentTypeId).toHaveBeenCalledWith('boring-ui-v2-test', 'general')
     expect(mocks.inventoryDefaultAgentTypeIds).toHaveBeenCalledTimes(2)
     expect(mocks.createAgentHost.mock.invocationCallOrder[0])
       .toBeLessThan(mocks.compareAndSetNullDefaultAgentTypeId.mock.invocationCallOrder[0]!)
@@ -139,6 +144,31 @@ test('normalizes the deprecated option into the one application default', async 
   } finally { await app.close() }
 }, 30_000)
 
+test('rejects legacyDefault as a configured workspace default', async () => {
+  const config = createTestCoreConfig({
+    stores: 'postgres',
+    databaseUrl: 'postgres://test',
+    defaultAgentTypeId: 'default',
+  })
+  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
+
+  await expect(createCoreWorkspaceAgentServer({
+    config,
+    agents: [
+      { agentTypeId: 'default', legacyDefault: true },
+      { agentTypeId: 'general', definition: { label: 'General', instructions: 'Answer general questions.' } },
+    ],
+    workspaceRoot: '/tmp/full-app-workspaces',
+    serveFrontend: false,
+  })).rejects.toMatchObject({
+    name: 'DefaultAgentTypeError',
+    code: 'default_agent_type_unknown_seat',
+  })
+
+  expect(mocks.createDatabase).not.toHaveBeenCalled()
+  expect(mocks.createAgentHost).not.toHaveBeenCalled()
+}, 30_000)
+
 test('rejects conflicting config and deprecated option defaults before resource allocation', async () => {
   const config = createTestCoreConfig({
     stores: 'postgres',
@@ -200,6 +230,7 @@ test.each(['before-inventory', 'cas', 'cas-undefined-table', 'after-inventory', 
     const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
     await expect(createCoreWorkspaceAgentServer({
       config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+      agents: REGULAR_AGENTS,
       workspaceRoot: '/tmp/full-app-workspaces',
       serveFrontend: false,
     })).rejects.toThrow(stage === 'remaining-null'
@@ -223,6 +254,7 @@ test('keeps the pre-schema reference health composition bootable without weakeni
   const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
   const app = await createCoreWorkspaceAgentServer({
     config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+    agents: REGULAR_AGENTS,
     workspaceRoot: '/tmp/full-app-workspaces',
     serveFrontend: false,
   })
@@ -247,6 +279,7 @@ test('keeps the pre-0024 reference health composition bootable when the default_
   const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
   const app = await createCoreWorkspaceAgentServer({
     config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+    agents: REGULAR_AGENTS,
     workspaceRoot: '/tmp/full-app-workspaces',
     serveFrontend: false,
   })

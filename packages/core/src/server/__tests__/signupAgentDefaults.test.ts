@@ -252,7 +252,7 @@ describe('signup-domain default-agent initialization (Decision 28 hook)', () => 
     expect(create.mock.calls[0]![3]).toEqual({ isDefault: true, defaultAgentTypeId: 'boring-v2' })
   })
 
-  it('preserves the legacy default seat when no application default is configured', async () => {
+  it('preserves legacy compatibility when no regular application default is configured', async () => {
     const config = makeConfig({ defaultAgentTypeId: undefined, signupAgentDefaults: undefined })
     const { store, create } = makeFakeStore()
     const hook = createPostSignupHook({ config, workspaceStore: store, transport: null })
@@ -261,7 +261,7 @@ describe('signup-domain default-agent initialization (Decision 28 hook)', () => 
 
     expect(create).toHaveBeenCalledWith(user.id, 'Default workspace', config.appId, {
       isDefault: true,
-      defaultAgentTypeId: 'default',
+      defaultAgentTypeId: undefined,
     })
   })
 

@@ -1,4 +1,4 @@
-import { ErrorCode, type AuthorizedAgentScope } from '@hachej/boring-agent/shared'
+import { ErrorCode, type AgentTool, type AuthorizedAgentScope } from '@hachej/boring-agent/shared'
 import { randomUUID } from 'node:crypto'
 import { access, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -247,6 +247,7 @@ test('core/full-app rejects an invalid fleet before Host identity or Environment
     serveFrontend: false,
     runtimeModeAdapter: {
       id: 'direct',
+      getRuntimeLayoutRoot: ({ workspaceRoot }) => workspaceRoot,
       create: createEnvironment,
     },
     agents: [{
@@ -273,7 +274,7 @@ test('core/full-app scope authority rejects forgeries and cross-workspace route 
     routeContributions: [],
   })
   const config = createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' })
-  mocks.getWorkspace.mockImplementation(async (id: string) => ({ id, appId: config.appId, defaultAgentTypeId: 'default' }))
+  mocks.getWorkspace.mockImplementation(async (id: string) => ({ id, appId: config.appId, defaultAgentTypeId: null }))
   const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
   const app = await createCoreWorkspaceAgentServer({
     config,
@@ -370,6 +371,89 @@ test('core/full-app defaults an internal session namespace to workspace id', asy
     await app.close()
   }
 })
+
+test('core/full-app grants addressed tools only to the selected agent type', async () => {
+  mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
+    runtimePlugins: [],
+    provisioningContributions: [],
+    agentOptions: {
+      extraTools: [],
+      pi: { additionalSkillPaths: [], packages: [] },
+      systemPromptAppend: undefined,
+    },
+    preservedUiStateKeys: [],
+    routeContributions: [],
+  })
+  const tool = (name: string, description = name): AgentTool => ({
+    name,
+    description,
+    parameters: { type: 'object', properties: {} },
+    execute: vi.fn(async () => ({ content: [{ type: 'text' as const, text: 'ok' }] })),
+  })
+  const seenAgentTypes: string[] = []
+  const seenWorkspaceIds: string[] = []
+  let macroSearchDescription = 'macro search v1'
+
+  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
+  const app = await createCoreWorkspaceAgentServer({
+    config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+    workspaceRoot: '/tmp/full-app-workspaces',
+    getExtraTools: async () => [tool('shared_tool')],
+    getAgentExtraTools: async ({ agentTypeId, workspaceId }) => {
+      seenAgentTypes.push(agentTypeId)
+      seenWorkspaceIds.push(workspaceId)
+      return agentTypeId === 'macro'
+        ? [tool('macro_search', macroSearchDescription), tool('persist_derived_series')]
+        : []
+    },
+    serveFrontend: false,
+  })
+
+  try {
+    const hostOptions = (mocks.createAgentHost as any).mock.calls[0]?.[0]
+    const projection = (mocks.hostRegisterDirectRoutes as any).mock.calls[0]?.[0]
+    const scope = await projection.authorizeAgentRequest(fakeRequest('workspace-a', 'user-a'))
+    const verifiedClaim = { workspaceScopeId: 'workspace-a', authSubjectId: 'user-a' }
+    const environment = {
+      runtimeWorkspaceId: 'runtime-workspace-a',
+      workspaceRoot: '/tmp/full-app-workspaces/workspace-a',
+      placementIdentity: 'workspace-a',
+      provisioningFingerprint: 'test-provisioning',
+    }
+    const resolveFor = async (agentTypeId: string) => hostOptions.resolveAuthorizedAgentRuntimeScope({
+      authorizedScope: scope,
+      verifiedClaim,
+      agentTypeId,
+      environment,
+      intent: { kind: 'agent-binding', operation: 'new-binding', requestId: `request-${agentTypeId}` },
+    })
+
+    const macro = await resolveFor('macro')
+    const charlotte = await resolveFor('charlotteledoux')
+    macroSearchDescription = 'macro search v2'
+    const changedMacroContract = await resolveFor('macro')
+    expect(macro.extraTools.map((entry: { name: string }) => entry.name)).toEqual([
+      'shared_tool',
+      'macro_search',
+      'persist_derived_series',
+    ])
+    expect(charlotte.extraTools.map((entry: { name: string }) => entry.name)).toEqual(['shared_tool'])
+    expect(macro.identity).not.toBe(charlotte.identity)
+    expect(macro.physicalBindingIdentity).not.toBe(charlotte.physicalBindingIdentity)
+    expect(macro.resourceInputDigest).not.toBe(charlotte.resourceInputDigest)
+    expect(changedMacroContract.identity).not.toBe(macro.identity)
+    expect(changedMacroContract.physicalBindingIdentity).not.toBe(macro.physicalBindingIdentity)
+    expect(changedMacroContract.resourceInputDigest).not.toBe(macro.resourceInputDigest)
+    expect(seenAgentTypes).toEqual(['macro', 'charlotteledoux', 'macro'])
+    expect(seenWorkspaceIds).toEqual([
+      'runtime-workspace-a',
+      'runtime-workspace-a',
+      'runtime-workspace-a',
+    ])
+  } finally {
+    await app.close()
+  }
+}, 15_000)
 
 test('core/full-app keeps semantic identity stable across physical workspace roots', async () => {
   mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
@@ -537,6 +621,7 @@ test('core/full-app can enable plugin CLI provisioning for remote plugin editing
     installPluginAuthoring: true,
     runtimeModeAdapter: {
       id: 'vercel-sandbox',
+      getRuntimeLayoutRoot: () => '/workspace',
       runtimeHost: mocks.runtimeHost as any,
       create: vi.fn(),
     },

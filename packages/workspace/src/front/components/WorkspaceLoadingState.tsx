@@ -96,7 +96,9 @@ export function WorkspaceLoadingState({
       data-boring-workspace-part="workspace-loading-shell"
       className={cn(
         "flex h-full w-full flex-col bg-background text-foreground",
-        fullscreen ? "min-h-screen" : "min-h-[240px]",
+        // dvh rather than `min-h-screen` (100vh): on mobile the large viewport
+        // is taller than what is visible, so the skeleton overflows the fold.
+        fullscreen ? "min-h-[100dvh]" : "min-h-[240px]",
         className,
       )}
     >

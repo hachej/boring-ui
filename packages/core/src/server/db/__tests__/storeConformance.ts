@@ -357,7 +357,7 @@ export function describeWorkspaceStoreConformance(
     )
 
     it(
-      'persists explicit and compatibility-default Agent seats at initialization (D28)',
+      'persists explicit regular defaults and leaves compatibility mode NULL (D28)',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
         const seated = await createWorkspace(workspaceStore, users.owner.id, 'Seated WS', appId, {
@@ -378,8 +378,8 @@ export function describeWorkspaceStoreConformance(
           appId,
           {},
         )
-        expect(omittedOptions.defaultAgentTypeId).toBe('default')
-        expect(omittedIdentity.defaultAgentTypeId).toBe('default')
+        expect(omittedOptions.defaultAgentTypeId).toBeNull()
+        expect(omittedIdentity.defaultAgentTypeId).toBeNull()
         expect(await workspaceStore.list(users.owner.id, appId)).toHaveLength(3)
         assertionPassed('default-agent-type-persisted-at-init')
       }),
@@ -453,7 +453,7 @@ export function describeWorkspaceStoreConformance(
       'rejects invalid defaultAgentTypeId at the trusted create seam with a stable code',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
-        const invalidIds: unknown[] = [null, '', 'Default', '-seat', '0seat', 'seat_a', `a${'0'.repeat(63)}`]
+        const invalidIds: unknown[] = ['', 'Default', '-seat', '0seat', 'seat_a', `a${'0'.repeat(63)}`]
         for (const [index, defaultAgentTypeId] of invalidIds.entries()) {
           await expect(createWorkspace(
             workspaceStore,

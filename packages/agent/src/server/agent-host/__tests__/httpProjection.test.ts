@@ -10,6 +10,7 @@ import {
   type AuthorizedAgentScope,
   type IdempotentAgentControl,
   type IdempotentAgentSend,
+  type IdempotentInterruptControl,
   type IdempotentQueueClear,
 } from '../../../shared/index'
 import type { PiChatSessionService } from '../../../core/piChatSessionService'
@@ -120,7 +121,7 @@ class FakeGateway implements AgentHostGateway {
           ...(command.kind === 'followup' ? { clientSeq: command.clientSeq } : {}),
         }
       },
-      interrupt: async (control: IdempotentAgentControl) => {
+      interrupt: async (control: IdempotentInterruptControl) => {
         this.calls.push({ method: 'interrupt', input: control })
         return { accepted: true, cursor: 10 }
       },
@@ -330,7 +331,7 @@ describe('addressed Agent Host HTTP projection', () => {
     expect((await app.inject({
       method: 'POST',
       url: '/api/v1/agents/alpha/sessions/session-1/interrupt',
-      payload: { requestId: 'interrupt-1' },
+      payload: { requestId: 'interrupt-1', queueAction: 'hold' },
     })).statusCode).toBe(202)
     expect((await app.inject({
       method: 'POST',
@@ -378,7 +379,7 @@ describe('addressed Agent Host HTTP projection', () => {
           },
         },
       },
-      { method: 'interrupt', input: { requestId: 'interrupt-1' } },
+      { method: 'interrupt', input: { requestId: 'interrupt-1', queueAction: 'hold' } },
       { method: 'stop', input: { requestId: 'stop-1' } },
       { method: 'clearQueue', input: { requestId: 'clear-1', clientNonce: 'nonce-f', clientSeq: 3 } },
       { method: 'deleteSession', input: { scope, ref, requestId: 'delete-1' } },

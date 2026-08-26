@@ -203,7 +203,10 @@ export async function runAgentEffect<TContext, TReceipt>(
             target: input.target,
           })
         } catch (error) {
-          return await rejectAndReplay(runtime, key, preEffectFailure(error, 'effect policy evaluation failed'))
+          // Policy dependencies may fail transiently (for example, a Workspace
+          // lookup during a database outage). Keep the request pending so the
+          // same idempotency key can be retried after recovery.
+          throw failure(preEffectFailure(error, 'effect policy evaluation failed'))
         }
         if (policyError) {
           return await rejectAndReplay(runtime, key, { kind: 'gateway', error: policyError })
@@ -283,16 +286,9 @@ export async function runAgentEffect<TContext, TReceipt>(
           return await markOutcomeUnknown(runtime, key)
         }
 
-        // Drain is an explicit Host generation fence: a late provider result
-        // cannot publish, and the stable closure rejection is safe to replay.
-        try {
-          runtime.assertOpen()
-        } catch (error) {
-          if (error instanceof AgentGatewayError) {
-            return await rejectAndReplay(runtime, key, { kind: 'gateway', error: error.toJSON() })
-          }
-          throw error
-        }
+        // Once the provider mutation has completed, its receipt must win over
+        // a concurrent drain. Rejecting here would falsely advertise that the
+        // mutation never happened and could induce a duplicate retry.
         try {
           // Public receipt interfaces are JSON DTOs but intentionally do not
           // carry index signatures. Convert only at the durable ledger seam.

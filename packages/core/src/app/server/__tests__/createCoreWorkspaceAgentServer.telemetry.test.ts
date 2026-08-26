@@ -59,7 +59,10 @@ vi.mock('@hachej/boring-workspace/app/server', () => ({
     runtimePlugins: [],
     routeContributions: [],
   }),
-  createSandboxRuntimeModeAdapter: () => ({ id: 'direct' }),
+  createSandboxRuntimeModeAdapter: () => ({
+    id: 'direct',
+    getRuntimeLayoutRoot: ({ workspaceRoot }: { workspaceRoot: string }) => workspaceRoot,
+  }),
   hasDirServerPlugin: () => false,
   provisionWorkspaceAgentServer: vi.fn(),
   readWorkspacePluginPackagePiSnapshot: () => ({

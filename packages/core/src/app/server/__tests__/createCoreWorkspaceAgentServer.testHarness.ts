@@ -40,7 +40,11 @@ export const mocks = (() => {
     collectWorkspaceAgentServerPlugins: vi.fn(),
     createWorkspaceUiTools: vi.fn(() => []),
     isMember: vi.fn(async (_workspaceId: string, _userId: string) => true),
-    getWorkspace: vi.fn(async (id: string) => ({ id, appId: 'test-app', defaultAgentTypeId: 'default' })),
+    getWorkspace: vi.fn(async (id: string): Promise<{
+      id: string
+      appId: string
+      defaultAgentTypeId: string | null
+    }> => ({ id, appId: 'test-app', defaultAgentTypeId: null })),
     getUser: vi.fn(async (id: string) => ({ id })),
     inventoryDefaultAgentTypeIds: vi.fn(async (_appId: string): Promise<Array<{ defaultAgentTypeId: string | null; count: number }>> => []),
     compareAndSetNullDefaultAgentTypeId: vi.fn(async (_appId: string, _value: string) => 0),
@@ -72,7 +76,11 @@ vi.doMock('@hachej/boring-workspace/app/server', async (importOriginal) => {
   return {
     assertWorkspaceBridgeHandlersTrusted: () => {},
     collectWorkspaceAgentServerPlugins: mocks.collectWorkspaceAgentServerPlugins,
-    createSandboxRuntimeModeAdapter: () => ({ id: 'direct', runtimeHost: mocks.runtimeHost }),
+    createSandboxRuntimeModeAdapter: () => ({
+      id: 'direct',
+      getRuntimeLayoutRoot: ({ workspaceRoot }: { workspaceRoot: string }) => workspaceRoot,
+      runtimeHost: mocks.runtimeHost,
+    }),
     hasDirServerPlugin: () => false,
     omitPluginAuthoringProvisioning: (plugins: Array<{ id: string }>) => plugins.filter((plugin) => plugin.id !== 'boring-ui-plugin-cli-package'),
     readWorkspacePluginPackagePiSnapshot: () => ({
@@ -171,7 +179,7 @@ beforeEach(() => {
   mocks.hostRunWithWorkspaceAgent.mockClear()
   mocks.gatewayReadSessionState.mockClear()
   mocks.isMember.mockResolvedValue(true)
-  mocks.getWorkspace.mockImplementation(async (id: string) => ({ id, appId: 'test-app', defaultAgentTypeId: 'default' }))
+  mocks.getWorkspace.mockImplementation(async (id: string) => ({ id, appId: 'test-app', defaultAgentTypeId: null }))
   mocks.getUser.mockImplementation(async (id: string) => ({ id }))
   mocks.inventoryDefaultAgentTypeIds.mockResolvedValue([])
   mocks.compareAndSetNullDefaultAgentTypeId.mockResolvedValue(0)

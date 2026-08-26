@@ -214,6 +214,7 @@ export type {
   DeleteAgentSessionInput,
   IdempotentAgentControl,
   IdempotentAgentSend,
+  IdempotentInterruptControl,
   IdempotentQueueClear,
   JsonPrimitive,
   JsonSafe,

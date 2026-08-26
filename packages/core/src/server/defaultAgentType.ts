@@ -16,9 +16,10 @@ export class DefaultAgentTypeError extends Error {
 }
 
 /**
- * Decision 28: every initialized Workspace durably persists its
- * `defaultAgentTypeId`. This module owns trusted write validation, legacy
- * cohort classification, and fail-closed runtime resolution.
+ * Decision 28: configured-fleet Workspaces durably persist a regular Agent's
+ * `defaultAgentTypeId`. A NULL is reserved for legacy-compatibility mode. This
+ * module owns trusted write validation, cohort classification, and fail-closed
+ * runtime resolution.
  *
  * Agent type ids share the workspace-type slug grammar (lowercase slug,
  * <= 63 chars), matching the `workspaces_default_agent_type_id_check`
@@ -41,7 +42,7 @@ export function parseTrustedDefaultAgentTypeId(value: unknown): string | null {
   return value
 }
 
-/** Production workspace initialization must never manufacture a legacy NULL. */
+/** Validates call sites that require an explicit configured regular Agent. */
 export function parseRequiredDefaultAgentTypeId(value: unknown): string {
   const parsed = parseTrustedDefaultAgentTypeId(value)
   if (parsed === null) {
@@ -97,19 +98,24 @@ function validateApplicationAgentTypeIds(agentTypeIds: readonly string[]): void 
   }
 }
 
-/** Resolves and validates the application default used by the NULL-only backfill. */
+/**
+ * Resolves the Workspace default from regular configured Agents only.
+ * `null` means the application is running in legacy-compatibility mode; the
+ * `legacyDefault` runtime is never reclassified as a configured default.
+ */
 export function resolveApplicationDefaultAgentTypeId(input: {
   readonly configuredDefaultAgentTypeId: string | undefined
-  readonly availableAgentTypeIds: readonly string[]
-}): string {
-  validateApplicationAgentTypeIds(input.availableAgentTypeIds)
-  const candidate = input.configuredDefaultAgentTypeId === undefined
-    ? input.availableAgentTypeIds[0] ?? LEGACY_DEFAULT_AGENT_TYPE_ID
-    : parseRequiredDefaultAgentTypeId(input.configuredDefaultAgentTypeId)
-  if (!input.availableAgentTypeIds.includes(candidate)) {
+  readonly regularAgentTypeIds: readonly string[]
+}): string | null {
+  validateApplicationAgentTypeIds(input.regularAgentTypeIds)
+  if (input.configuredDefaultAgentTypeId === undefined) {
+    return input.regularAgentTypeIds[0] ?? null
+  }
+  const candidate = parseRequiredDefaultAgentTypeId(input.configuredDefaultAgentTypeId)
+  if (!input.regularAgentTypeIds.includes(candidate)) {
     throw new DefaultAgentTypeError(
       ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT,
-      'Configured application default Agent is unavailable',
+      'Configured application default Agent is not an available regular fleet member',
     )
   }
   return candidate
@@ -117,9 +123,9 @@ export function resolveApplicationDefaultAgentTypeId(input: {
 
 export interface ResolveWorkspaceDefaultAgentTypeIdInput {
   readonly persistedDefaultAgentTypeId: string | null | undefined
-  /** The application default already validated against the fleet at boot. */
-  readonly applicationDefaultAgentTypeId: string
-  readonly availableAgentTypeIds: readonly string[]
+  /** A configured regular Agent, or null in legacy-compatibility mode. */
+  readonly applicationDefaultAgentTypeId: string | null
+  readonly regularAgentTypeIds: readonly string[]
   readonly onUnknownPersistedSeat?: (diagnostic: {
     readonly code: typeof ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT
     readonly persistedDefaultAgentTypeId: string
@@ -128,14 +134,16 @@ export interface ResolveWorkspaceDefaultAgentTypeIdInput {
 
 /**
  * Resolves the persisted Workspace default after the explicit NULL backfill.
- * Legacy NULL remains readable for rollback/pre-migration cohorts, but a
- * configured non-NULL value is authoritative: an unavailable value fails
- * stably and is never reinterpreted as a boot or fleet default.
+ * NULL selects the configured regular default, or the compatibility runtime
+ * when no regular fleet exists. A non-NULL value is authoritative: an
+ * unavailable value fails stably and is never silently reinterpreted.
  */
 export function resolveWorkspaceDefaultAgentTypeId(input: ResolveWorkspaceDefaultAgentTypeIdInput): string {
   const persisted = input.persistedDefaultAgentTypeId ?? null
-  if (persisted === null) return input.applicationDefaultAgentTypeId
-  if (input.availableAgentTypeIds.includes(persisted)) return persisted
+  if (persisted === null) {
+    return input.applicationDefaultAgentTypeId ?? LEGACY_DEFAULT_AGENT_TYPE_ID
+  }
+  if (input.regularAgentTypeIds.includes(persisted)) return persisted
   input.onUnknownPersistedSeat?.({
     code: ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT,
     persistedDefaultAgentTypeId: persisted,

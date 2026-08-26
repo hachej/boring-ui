@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto'
 import type { CoreConfig } from '../../shared/types.js'
 import type { WorkspaceStore } from '../app/types.js'
-import { LEGACY_DEFAULT_AGENT_TYPE_ID, parseRequiredDefaultAgentTypeId } from '../defaultAgentType.js'
 import type { MailTransport } from '../mail/transport.js'
 import { renderWelcome } from '../mail/templates/index.js'
 import { REQUEST_SCOPE_WORKSPACE_HEADER } from './requestWorkspaceScope.js'
@@ -76,11 +75,7 @@ export function createPostSignupHook(deps: PostSignupHookDeps) {
   } = deps
   const applicationDefaultAgentTypeId = disableDefaultWorkspaceCreation
     ? undefined
-    : parseRequiredDefaultAgentTypeId(
-        config.defaultAgentTypeId === undefined
-          ? LEGACY_DEFAULT_AGENT_TYPE_ID
-          : config.defaultAgentTypeId,
-      )
+    : config.defaultAgentTypeId
 
   return async function postSignupHook(
     user: PostSignupUser & Record<string, unknown>,
@@ -128,10 +123,11 @@ export function createPostSignupHook(deps: PostSignupHookDeps) {
         readHeader(ctx, TRUSTED_SIGNUP_HOSTNAME_HEADER),
       )
       const signupSeat = resolveSignupDefaultAgentTypeId(signupAgentDefaults, signupHostname)
-      const initialSeat = signupSeat ?? parseRequiredDefaultAgentTypeId(applicationDefaultAgentTypeId)
+      const initialSeat = signupSeat ?? applicationDefaultAgentTypeId
       await workspaceStore.create(user.id, 'Default workspace', config.appId, {
         isDefault: true,
-        // Decision 28: stamp the initial default seat at initialization only.
+        // Decision 28: stamp a regular configured seat when available. An
+        // omitted value remains the explicit legacy-compatibility marker.
         defaultAgentTypeId: initialSeat,
       })
     }

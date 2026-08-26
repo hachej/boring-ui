@@ -44,13 +44,13 @@ describe('parseRequiredDefaultAgentTypeId', () => {
 })
 
 describe('resolveWorkspaceDefaultAgentTypeId', () => {
-  const fleet = ['default', 'boring-v2', 'reviewer']
+  const fleet = ['boring-v2', 'reviewer']
 
   it('prefers the persisted seat when it names a validated fleet member', () => {
     expect(resolveWorkspaceDefaultAgentTypeId({
       persistedDefaultAgentTypeId: 'reviewer',
       applicationDefaultAgentTypeId: 'boring-v2',
-      availableAgentTypeIds: fleet,
+      regularAgentTypeIds: fleet,
     })).toBe('reviewer')
   })
 
@@ -58,12 +58,12 @@ describe('resolveWorkspaceDefaultAgentTypeId', () => {
     expect(resolveWorkspaceDefaultAgentTypeId({
       persistedDefaultAgentTypeId: null,
       applicationDefaultAgentTypeId: 'boring-v2',
-      availableAgentTypeIds: fleet,
+      regularAgentTypeIds: fleet,
     })).toBe('boring-v2')
     expect(resolveWorkspaceDefaultAgentTypeId({
       persistedDefaultAgentTypeId: undefined,
       applicationDefaultAgentTypeId: 'boring-v2',
-      availableAgentTypeIds: fleet,
+      regularAgentTypeIds: fleet,
     })).toBe('boring-v2')
   })
 
@@ -71,7 +71,7 @@ describe('resolveWorkspaceDefaultAgentTypeId', () => {
     expect(resolveWorkspaceDefaultAgentTypeId({
       persistedDefaultAgentTypeId: null,
       applicationDefaultAgentTypeId: 'boring-v2',
-      availableAgentTypeIds: fleet,
+      regularAgentTypeIds: fleet,
     })).toBe('boring-v2')
   })
 
@@ -80,7 +80,7 @@ describe('resolveWorkspaceDefaultAgentTypeId', () => {
     expect(() => resolveWorkspaceDefaultAgentTypeId({
       persistedDefaultAgentTypeId: 'retired-seat',
       applicationDefaultAgentTypeId: 'boring-v2',
-      availableAgentTypeIds: fleet,
+      regularAgentTypeIds: fleet,
       onUnknownPersistedSeat,
     })).toThrowError(expect.objectContaining({
       code: ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT,
@@ -92,11 +92,16 @@ describe('resolveWorkspaceDefaultAgentTypeId', () => {
     })
   })
 
-  it('does not reinterpret an unknown persisted seat as the legacy default', () => {
+  it('uses the legacy runtime only for a NULL compatibility workspace', () => {
+    expect(resolveWorkspaceDefaultAgentTypeId({
+      persistedDefaultAgentTypeId: null,
+      applicationDefaultAgentTypeId: null,
+      regularAgentTypeIds: [],
+    })).toBe(LEGACY_DEFAULT_AGENT_TYPE_ID)
     expect(() => resolveWorkspaceDefaultAgentTypeId({
       persistedDefaultAgentTypeId: 'retired-seat',
-      applicationDefaultAgentTypeId: LEGACY_DEFAULT_AGENT_TYPE_ID,
-      availableAgentTypeIds: [LEGACY_DEFAULT_AGENT_TYPE_ID],
+      applicationDefaultAgentTypeId: null,
+      regularAgentTypeIds: [],
     })).toThrowError(expect.objectContaining({ code: ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT }))
   })
 })
@@ -107,30 +112,33 @@ describe('legacy default-Agent cohorts', () => {
       { defaultAgentTypeId: null, count: 3 },
       { defaultAgentTypeId: 'default', count: 4 },
       { defaultAgentTypeId: 'retired-seat', count: 2 },
-    ], ['default'])).toEqual({
+    ], ['boring-v2'])).toEqual({
       nullCount: 3,
-      knownCount: 4,
-      unknown: [{ defaultAgentTypeId: 'retired-seat', count: 2 }],
+      knownCount: 0,
+      unknown: [
+        { defaultAgentTypeId: 'default', count: 4 },
+        { defaultAgentTypeId: 'retired-seat', count: 2 },
+      ],
     })
   })
 
-  it('requires the application default to be a current fleet member', () => {
+  it('selects only regular fleet members and preserves legacy-only compatibility', () => {
     expect(resolveApplicationDefaultAgentTypeId({
       configuredDefaultAgentTypeId: undefined,
-      availableAgentTypeIds: ['default'],
-    })).toBe('default')
+      regularAgentTypeIds: ['general', 'reviewer'],
+    })).toBe('general')
     expect(() => resolveApplicationDefaultAgentTypeId({
       configuredDefaultAgentTypeId: 'retired-seat',
-      availableAgentTypeIds: ['default'],
+      regularAgentTypeIds: ['general'],
     })).toThrowError(expect.objectContaining({ code: ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT }))
-    expect(() => resolveApplicationDefaultAgentTypeId({
+    expect(resolveApplicationDefaultAgentTypeId({
       configuredDefaultAgentTypeId: undefined,
-      availableAgentTypeIds: [],
-    })).toThrowError(expect.objectContaining({ code: ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT }))
+      regularAgentTypeIds: [],
+    })).toBeNull()
   })
 
   it('validates canonical fleet identity grammar and uniqueness before resolution', () => {
-    for (const availableAgentTypeIds of [
+    for (const regularAgentTypeIds of [
       ['Default'],
       ['seat_name'],
       [`a${'0'.repeat(63)}`],
@@ -138,7 +146,7 @@ describe('legacy default-Agent cohorts', () => {
     ]) {
       expect(() => resolveApplicationDefaultAgentTypeId({
         configuredDefaultAgentTypeId: undefined,
-        availableAgentTypeIds,
+        regularAgentTypeIds,
       })).toThrowError(expect.objectContaining({
         name: 'DefaultAgentTypeError',
         code: ERROR_CODES.INVALID_DEFAULT_AGENT_TYPE_ID,
@@ -149,11 +157,11 @@ describe('legacy default-Agent cohorts', () => {
   it('distinguishes a malformed configured identity from a valid unavailable seat', () => {
     expect(() => resolveApplicationDefaultAgentTypeId({
       configuredDefaultAgentTypeId: 'Bad_Seat',
-      availableAgentTypeIds: ['default'],
+      regularAgentTypeIds: ['default'],
     })).toThrowError(expect.objectContaining({ code: ERROR_CODES.INVALID_DEFAULT_AGENT_TYPE_ID }))
     expect(() => resolveApplicationDefaultAgentTypeId({
       configuredDefaultAgentTypeId: 'retired-seat',
-      availableAgentTypeIds: ['default'],
+      regularAgentTypeIds: ['default'],
     })).toThrowError(expect.objectContaining({ code: ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT }))
   })
 
@@ -162,12 +170,12 @@ describe('legacy default-Agent cohorts', () => {
       () => parseTrustedDefaultAgentTypeId('Default'),
       () => resolveApplicationDefaultAgentTypeId({
         configuredDefaultAgentTypeId: 'retired-seat',
-        availableAgentTypeIds: ['default'],
+        regularAgentTypeIds: ['default'],
       }),
       () => resolveWorkspaceDefaultAgentTypeId({
         persistedDefaultAgentTypeId: 'retired-seat',
-        applicationDefaultAgentTypeId: 'default',
-        availableAgentTypeIds: ['default'],
+        applicationDefaultAgentTypeId: 'general',
+        regularAgentTypeIds: ['general'],
       }),
     ]
 

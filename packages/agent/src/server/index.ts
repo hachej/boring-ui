@@ -114,6 +114,13 @@ export type {
   ModelTierCandidate,
 } from './agentDefinition/loadConfiguredAgentFleet'
 export {
+  resolveAgentInstructionFileRefs,
+} from './agentDefinition/instructionFileRefs'
+export type {
+  ResolvedInstructionFileRefs,
+  WithheldInstructionRef,
+} from './agentDefinition/instructionFileRefs'
+export {
   LEGACY_DEFAULT_AGENT_FLEET,
   resolveDefaultAgentFleet,
 } from './agentDefinition/resolveDefaultAgentFleet'
@@ -166,6 +173,11 @@ export type { AgentHostEnvironmentHttpProjectionOptions } from './agent-host/env
 export { createAuthMiddleware as createAgentAuthMiddleware } from './http/middleware'
 export { createAgentHost } from './agent-host/createAgentHost'
 export { SqliteAgentRequestLedger } from './agent-host/sqliteRequestLedger'
+export { resolveRequestLedgerPath } from './agent-host/requestLedgerPath'
+export type {
+  LegacyRequestLedgerLocation,
+  ResolveRequestLedgerPathInput,
+} from './agent-host/requestLedgerPath'
 export {
   AgentFleetCompilationError,
   AgentFleetCompilationErrorCode,
@@ -198,6 +210,7 @@ export type {
   AgentRequestLedgerPrepareResult,
   AgentRequestLedgerRecord,
   AgentInstructionFileRef,
+  AgentInstructionSource,
   CompiledAgentHostAgentSpec,
   ConfiguredAgentHostAgentSpec,
   CreateAgentHostOptions,
@@ -231,6 +244,7 @@ export {
 } from './piPackages'
 export {
   DEFAULT_PI_RESOURCE_DIGEST_LIMITS,
+  SKIPPABLE_RESOURCE_CODES,
   createPiResourceDigestFence,
   createPiResourceDigestInput,
   digestPiResourceInputs,

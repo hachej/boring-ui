@@ -18,6 +18,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 })
 
 import { ErrorCode } from '@hachej/boring-agent/shared'
+import { resolveAgentInstructionFileRefs } from '@hachej/boring-agent/server'
 
 import { loadBoringFactoryAgents, type BoringFactoryRole } from './factoryAgents'
 import { resolvePlaygroundDefaultAgentTypeId } from '../shared/playgroundAgents'
@@ -52,7 +53,7 @@ async function expectedInstructions(role: string, skills: readonly string[]): Pr
 // instead of the deleted bespoke composition.
 describe('loadBoringFactoryAgents (loader against the real .agents/ tree)', () => {
   test('composes exactly the independently expected canonical skills in deterministic order', async () => {
-    const agents = await loadBoringFactoryAgents({ workspaceRoot: REPOSITORY_ROOT })
+    const agents = await loadBoringFactoryAgents({})
     const defaultAgentTypeId = resolvePlaygroundDefaultAgentTypeId(agents)
 
     expect(agents.map((agent) => agent.agentTypeId)).toEqual(EXPECTED.map(({ id }) => id))
@@ -71,13 +72,20 @@ describe('loadBoringFactoryAgents (loader against the real .agents/ tree)', () =
   // repository root but served `apps/workspace-playground/workspace` as the
   // `user` filesystem, and published `.agents/personas/<seat>/instructions.md`
   // against the WRONG root. Every ref was well-formed and every ref 404'd.
+  //
+  // gh-1189 moved that decision to request time, so the same composed fleet is
+  // checked here against BOTH roots a host can serve.
   describe('instruction refs are addressed against the served workspace root', () => {
-    test('publishes a ref that actually resolves when the personas are inside the served root', async () => {
-      const agents = await loadBoringFactoryAgents({ workspaceRoot: REPOSITORY_ROOT, env: {} })
+    test('resolves a ref that actually opens when the personas are inside the served root', async () => {
+      const agents = await loadBoringFactoryAgents({ env: {} })
 
       for (const agent of agents) {
         if ('legacyDefault' in agent) throw new Error('factory agent must be configured')
-        const refs = agent.instructionFiles ?? []
+        const { refs, withheld } = await resolveAgentInstructionFileRefs({
+          sources: agent.instructionSources,
+          workspaceRoot: REPOSITORY_ROOT,
+        })
+        expect(withheld).toEqual([])
         expect(refs).toHaveLength(1)
         const ref = refs[0]!
         expect(ref).toMatchObject({ filesystem: 'user', role: 'persona' })
@@ -86,28 +94,24 @@ describe('loadBoringFactoryAgents (loader against the real .agents/ tree)', () =
       }
     })
 
-    test('publishes NO ref and fires the stable diagnostic when they are outside it', async () => {
+    test('resolves NO ref and reports the stable diagnostic when they are outside it', async () => {
       // What `dev.ts` serves by default: a workspace directory that does not
       // contain this repository's `.agents/` tree.
       const servedRoot = resolve(REPOSITORY_ROOT, 'apps/workspace-playground/workspace')
-      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-      try {
-        const agents = await loadBoringFactoryAgents({ workspaceRoot: servedRoot, env: {} })
+      const agents = await loadBoringFactoryAgents({ env: {} })
 
-        expect(agents.length).toBe(EXPECTED.length)
-        for (const agent of agents) {
-          if ('legacyDefault' in agent) throw new Error('factory agent must be configured')
-          // A missing row, never a dead link.
-          expect(agent.instructionFiles).toBeUndefined()
-        }
-        const reported = warn.mock.calls.map((call) => String(call[0]))
-        for (const { role } of EXPECTED) {
-          expect(reported.some((line) =>
-            line.includes(`${role}: ${ErrorCode.enum.AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE}`),
-          )).toBe(true)
-        }
-      } finally {
-        warn.mockRestore()
+      expect(agents.length).toBe(EXPECTED.length)
+      for (const agent of agents) {
+        if ('legacyDefault' in agent) throw new Error('factory agent must be configured')
+        const { refs, withheld } = await resolveAgentInstructionFileRefs({
+          sources: agent.instructionSources,
+          workspaceRoot: servedRoot,
+        })
+        // A missing row, never a dead link.
+        expect(refs).toEqual([])
+        expect(withheld).toEqual([expect.objectContaining({
+          code: ErrorCode.enum.AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE,
+        })])
       }
     })
   })
@@ -120,7 +124,7 @@ describe('loadBoringFactoryAgents (loader against the real .agents/ tree)', () =
     // ANTHROPIC_API_KEY — on a keyed dev machine, tier-based model
     // resolution would otherwise give `worker` a real preferred model too,
     // breaking the "not.toHaveProperty('model')" assertion below.
-    const agents = await loadBoringFactoryAgents({ workspaceRoot: REPOSITORY_ROOT, preferredModels, env: {} })
+    const agents = await loadBoringFactoryAgents({ preferredModels, env: {} })
 
     expect(agents.find((agent) => agent.agentTypeId === 'boring-orchestrator')).toMatchObject({
       model: { preferred: 'test-provider:planning-model' },
@@ -131,7 +135,7 @@ describe('loadBoringFactoryAgents (loader against the real .agents/ tree)', () =
   test('fails boot with a stable, redacted diagnostic when a canonical skill is unavailable', async () => {
     fsFailure.skill = 'triage'
     try {
-      const error = await loadBoringFactoryAgents({ workspaceRoot: REPOSITORY_ROOT }).catch((cause: unknown) => cause)
+      const error = await loadBoringFactoryAgents({}).catch((cause: unknown) => cause)
       expect(error).toMatchObject({
         name: 'TrustedAgentCompositionError',
         diagnostics: [

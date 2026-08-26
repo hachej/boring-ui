@@ -25,8 +25,8 @@ export interface ReconcileWorkspaceDefaultAgentTypesInput {
   readonly appId: string
   /** The validated non-NULL application default the backfill writes. */
   readonly applicationDefaultAgentTypeId: string
-  /** Agent type ids of the compiled, validated fleet. */
-  readonly availableAgentTypeIds: readonly string[]
+  /** Regular configured Agent ids; compatibility runtimes are excluded. */
+  readonly regularAgentTypeIds: readonly string[]
   readonly log: {
     info(payload: Record<string, unknown>, message: string): void
     warn(payload: Record<string, unknown>, message: string): void
@@ -51,7 +51,7 @@ export interface ReconcileWorkspaceDefaultAgentTypesInput {
 export async function reconcileWorkspaceDefaultAgentTypes(
   input: ReconcileWorkspaceDefaultAgentTypesInput,
 ): Promise<void> {
-  const { appId, applicationDefaultAgentTypeId, availableAgentTypeIds, log, workspaceStore } = input
+  const { appId, applicationDefaultAgentTypeId, regularAgentTypeIds, log, workspaceStore } = input
 
   let inventoryBefore: Awaited<ReturnType<WorkspaceStore['inventoryDefaultAgentTypeIds']>>
   try {
@@ -68,14 +68,14 @@ export async function reconcileWorkspaceDefaultAgentTypes(
     return
   }
 
-  const before = classifyWorkspaceDefaultAgentTypeCohorts(inventoryBefore, availableAgentTypeIds)
+  const before = classifyWorkspaceDefaultAgentTypeCohorts(inventoryBefore, regularAgentTypeIds)
   const migratedCount = await workspaceStore.compareAndSetNullDefaultAgentTypeId(
     appId,
     applicationDefaultAgentTypeId,
   )
   const after = classifyWorkspaceDefaultAgentTypeCohorts(
     await workspaceStore.inventoryDefaultAgentTypeIds(appId),
-    availableAgentTypeIds,
+    regularAgentTypeIds,
   )
   if (after.nullCount > 0) {
     throw new DefaultAgentTypeError(

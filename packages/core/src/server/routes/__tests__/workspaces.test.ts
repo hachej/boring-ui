@@ -40,7 +40,7 @@ function mockWorkspaceStore(): WorkspaceStore {
         createdAt: new Date().toISOString(),
         deletedAt: null,
         isDefault: opts?.isDefault ?? false,
-        defaultAgentTypeId: opts?.defaultAgentTypeId,
+        defaultAgentTypeId: opts?.defaultAgentTypeId ?? null,
       }
       workspaces.set(id, ws)
       const wsMembers = members.get(id) ?? new Map()
@@ -170,7 +170,7 @@ describe('POST /api/v1/workspaces', () => {
     expect(body.workspace.name).toBe('My WS')
     expect(body.workspace.createdBy).toBe(OWNER_ID)
     expect(body.workspace.workspaceTypeId).toBe('default')
-    expect(body.workspace.defaultAgentTypeId).toBe('default')
+    expect(body.workspace.defaultAgentTypeId).toBeNull()
     expect(body.role).toBe('owner')
   })
 
