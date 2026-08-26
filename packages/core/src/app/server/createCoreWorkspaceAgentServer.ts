@@ -123,18 +123,13 @@ import { reconcileWorkspaceDefaultAgentTypes } from '../../server/reconcileWorks
 import { WorkspaceRuntimeSandboxHandleStore } from '../../server/runtime/index.js'
 import { createDatabaseTelemetryFromEnv } from '../../server/telemetry/db.js'
 
-const WORKSPACE_DEFAULT_AGENT_EFFECT_POLICY = {
-  'session.create': true,
-  'session.rename': false,
-  'session.delete': false,
-  'session.prompt': true,
-  'session.followup': true,
-  'session.interrupt': false,
-  'session.stop': false,
-  'session.queue.clear': false,
-  'agent.reload': true,
-  'session.command.execute': true,
-} as const satisfies Readonly<Record<AgentGatewayEffect, boolean>>
+const WORKSPACE_DEFAULT_AGENT_GATED_EFFECTS = new Set<AgentGatewayEffect>([
+  'session.create',
+  'session.prompt',
+  'session.followup',
+  'agent.reload',
+  'session.command.execute',
+])
 
 const MIME_TYPES: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
@@ -1112,8 +1107,8 @@ export async function createCoreWorkspaceAgentServer(
   // BORING_AGENT_FLEET=1 composes the config-driven production fleet
   // (gh-1106 slice 3, B2 fix round 1) from discovered agent packages plus
   // .agents/factory for the deployed core app host (apps/full-app), same
-  // helper as createWorkspaceAgentServer and the CLI hub; flag absent
-  // preserves the legacy single-default-agent boot byte-identically.
+  // helper as createWorkspaceAgentServer and the CLI hub; flag absence uses
+  // the regular built-in default Agent.
   //
   // workspaceRoot is `null`, not the base root: core serves
   // `<workspaceRoot>/<workspaceId>` and NEVER the base itself
@@ -1130,6 +1125,7 @@ export async function createCoreWorkspaceAgentServer(
     ...(discoveredPackages ? { discoveredPackages } : {}),
   })
   const availableAgentTypeIds = agents.map((agent) => agent.agentTypeId)
+  const regularAgentTypeIds = availableAgentTypeIds
   if (
     options.defaultAgentTypeId !== undefined
     && rawConfig.defaultAgentTypeId !== undefined
@@ -1142,16 +1138,17 @@ export async function createCoreWorkspaceAgentServer(
   }
   const applicationDefaultAgentTypeId = resolveApplicationDefaultAgentTypeId({
     configuredDefaultAgentTypeId: options.defaultAgentTypeId ?? rawConfig.defaultAgentTypeId,
-    availableAgentTypeIds,
+    regularAgentTypeIds,
   })
+  const executionDefaultAgentTypeId = applicationDefaultAgentTypeId
   const signupAgentDefaults = compileSignupAgentDefaults(
     rawConfig.signupAgentDefaults,
-    availableAgentTypeIds,
+    regularAgentTypeIds,
     rawConfig.security?.trustedProxy,
   )
   // Decision 28 hook: validate all trusted signup/default config before
-  // allocating DB or HTTP resources. Core creation writers receive this same
-  // resolved non-NULL application default used by the legacy backfill.
+  // allocating DB or HTTP resources. Every initialized Workspace persists a
+  // real regular Agent as its default.
   const config: CoreConfig = {
     ...rawConfig,
     defaultAgentTypeId: applicationDefaultAgentTypeId,
@@ -1233,7 +1230,7 @@ export async function createCoreWorkspaceAgentServer(
   const basePluginResolveContext: WorkspaceAgentServerPluginContext = {
     workspaceRoot: pluginWorkspaceRoot,
     bridge: createUnavailableCorePluginBridge(),
-    agentTypeId: applicationDefaultAgentTypeId,
+    agentTypeId: executionDefaultAgentTypeId,
     availableAgentTypeIds,
   }
   const defaultPluginActorResolver = async (request: FastifyRequest) => {
@@ -1677,7 +1674,7 @@ export async function createCoreWorkspaceAgentServer(
     resolveWorkspaceDefaultAgentTypeId({
       persistedDefaultAgentTypeId: workspace.defaultAgentTypeId,
       applicationDefaultAgentTypeId,
-      availableAgentTypeIds,
+      regularAgentTypeIds,
       onUnknownPersistedSeat: (diagnostic) => {
         app.log.warn(
           { workspaceId, ...diagnostic },
@@ -1688,7 +1685,7 @@ export async function createCoreWorkspaceAgentServer(
   }
   const coreEffectPolicy: AgentEffectPolicy = {
     async evaluate(input) {
-      if (WORKSPACE_DEFAULT_AGENT_EFFECT_POLICY[input.operation]) {
+      if (WORKSPACE_DEFAULT_AGENT_GATED_EFFECTS.has(input.operation)) {
         const workspaceId = scopeAuthority.resolveWorkspaceId(input.scope)
         try {
           await assertWorkspaceDefaultAgentExecutionAvailable(workspaceId)
@@ -1799,7 +1796,7 @@ export async function createCoreWorkspaceAgentServer(
       workspaceStore,
       appId: config.appId,
       applicationDefaultAgentTypeId,
-      availableAgentTypeIds,
+      regularAgentTypeIds,
       log: app.log,
     })
 
@@ -1820,7 +1817,7 @@ export async function createCoreWorkspaceAgentServer(
           defaultAgentTypeId: resolveWorkspaceDefaultAgentTypeId({
             persistedDefaultAgentTypeId: workspace.defaultAgentTypeId,
             applicationDefaultAgentTypeId,
-            availableAgentTypeIds,
+            regularAgentTypeIds,
             onUnknownPersistedSeat: (diagnostic) => {
               request.log.warn(
                 { workspaceId, ...diagnostic },

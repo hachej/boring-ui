@@ -68,7 +68,6 @@ export async function loadBoringFactoryAgents(
   }
   if (!options.preferredModels) return agents
   return agents.map((agent) => {
-    if ('legacyDefault' in agent) return agent
     const role = agent.agentTypeId.replace(/^boring-/, '')
     const preferred = options.preferredModels?.[role]
     return preferred ? { ...agent, model: { ...agent.model, preferred } } : agent

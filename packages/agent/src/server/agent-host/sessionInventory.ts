@@ -4,7 +4,11 @@ import type { AgentSessionActivity, AgentSessionRef, AuthorizedAgentScope, Verif
 import type { SessionListOptions, SessionSummary } from '../../shared/session'
 import { PiSessionStore } from '../harness/pi-coding-agent/sessions'
 import { agentSessionKey } from './agentSessionKey'
-import type { CompiledAgentHostAgentSpec, ResolvedAgentRuntimeScope } from './types'
+import {
+  DEFAULT_AGENT_TYPE_ID,
+  type CompiledAgentHostAgentSpec,
+  type ResolvedAgentRuntimeScope,
+} from './types'
 
 function safeScopeSegment(scope: string): string {
   return createHash('sha256').update(scope).digest('hex').slice(0, 20)
@@ -15,9 +19,9 @@ function safeScopeSegment(scope: string): string {
  * default directory.
  *
  * `undefined` is a DELIBERATE result, not a gap. It happens for the
- * `legacyDefault` seat on hosts that resolve an empty runtime
+ * built-in default Agent on hosts that resolve an empty runtime
  * `sessionNamespace` (the CLI hub and the workspace app both pass `""`), and it
- * routes that seat to {@link PiSessionStore}'s path-derived directory
+ * routes that explicitly configured seat to {@link PiSessionStore}'s path-derived directory
  * (`<sessionRoot>/--<workspaceRoot with separators flattened>--`). That
  * directory is the trusted-local store terminal `pi` writes for the same cwd,
  * and `PiSessionStore.pathDerivedLegacyAccess` exists precisely so the local
@@ -36,7 +40,7 @@ export function sessionNamespaceForAgent(
   workspaceScopeId: string,
   sessionNamespace: string,
 ): string | undefined {
-  if ('legacyDefault' in agent) return sessionNamespace || undefined
+  if (agent.agentTypeId === DEFAULT_AGENT_TYPE_ID) return sessionNamespace || undefined
   return [agent.agentTypeId, safeScopeSegment(workspaceScopeId), sessionNamespace]
     .filter(Boolean)
     .join('--')

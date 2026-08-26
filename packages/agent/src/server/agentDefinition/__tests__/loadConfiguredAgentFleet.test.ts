@@ -79,7 +79,7 @@ describe('loadConfiguredAgentFleet', () => {
 
     expect(result.agents).toHaveLength(1)
     const [alpha] = result.agents
-    if (!alpha || 'legacyDefault' in alpha) throw new Error('expected a configured agent')
+    if (!alpha) throw new Error('expected a configured agent')
     expect(alpha.agentTypeId).toBe('fixture-alpha')
     expect(alpha.definition.instructions).toContain('You are Alpha.')
     expect(alpha.definition.instructions).toContain('boring-skill:start name=greet')
@@ -109,7 +109,7 @@ describe('loadConfiguredAgentFleet', () => {
     const result = await loadConfiguredAgentFleet({ ...options(), env: {} })
 
     const [alpha] = result.agents
-    if (!alpha || 'legacyDefault' in alpha) throw new Error('expected a configured agent')
+    if (!alpha) throw new Error('expected a configured agent')
     // Nothing downstream can invert seat -> directory, which is why the loader
     // records it. It records an ABSOLUTE host path and NOT a workspace-relative
     // ref: which workspace root serves this seat is only known per request
@@ -150,7 +150,7 @@ describe('loadConfiguredAgentFleet', () => {
     // actually being served (see resolveAgentInstructionFileRefs).
     expect(result.agents).toHaveLength(1)
     const [linked] = result.agents
-    if (!linked || 'legacyDefault' in linked) throw new Error('expected a configured agent')
+    if (!linked) throw new Error('expected a configured agent')
     expect(linked.instructionSources).toEqual([
       { absolutePath: join(await realpath(outsidePersona), 'instructions.md'), role: 'persona' },
     ])
@@ -160,7 +160,7 @@ describe('loadConfiguredAgentFleet', () => {
     const result = await loadConfiguredAgentFleet({ ...options(), env: {} })
 
     const [alpha] = result.agents
-    if (!alpha || 'legacyDefault' in alpha) throw new Error('expected a configured agent')
+    if (!alpha) throw new Error('expected a configured agent')
     expect(alpha.model).toBeUndefined()
   })
 

@@ -19,10 +19,11 @@ import { openDatabase, type OpenDatabaseResult } from '../events/sqlStorage'
 import { SqliteEventStreamStore, type EventStreamStore } from '../events/eventStreamStore'
 import { safeCapture, type TelemetrySink } from '../../shared/telemetry'
 import { ErrorCode } from '../../shared/error-codes'
-import type {
-  CompiledAgentHostAgentSpec,
-  CreateAgentHostOptions,
-  ResolvedAgentRuntimeScope,
+import {
+  DEFAULT_AGENT_TYPE_ID,
+  type CompiledAgentHostAgentSpec,
+  type CreateAgentHostOptions,
+  type ResolvedAgentRuntimeScope,
 } from './types'
 import type { EnvironmentProvisioningSnapshot } from './environmentLease'
 import { sessionNamespaceForAgent } from './sessionInventory'
@@ -140,12 +141,12 @@ export interface BuiltAgentComposition {
   dispose(): Promise<void>
 }
 
-/** Environment-wide generated skill roots are compatibility-only, never a configured-Agent grant. */
+/** The platform default retains the single-Agent host's generated skill roots. */
 export function provisionedSkillPathsForAgent(
   agent: CompiledAgentHostAgentSpec,
   provisioning: EnvironmentProvisioningSnapshot | undefined,
 ): readonly string[] {
-  return 'legacyDefault' in agent ? provisioning?.skillPaths ?? [] : []
+  return agent.agentTypeId === DEFAULT_AGENT_TYPE_ID ? provisioning?.skillPaths ?? [] : []
 }
 
 /**
@@ -171,9 +172,7 @@ export async function buildAgentComposition(
   // gets it without per-host wiring, and sibling agents never see it. A
   // declared-but-unmountable knowledge folder fails this agent's composition
   // closed.
-  const knowledgeRootDir = 'legacyDefault' in input.agent
-    ? undefined
-    : input.agent.knowledge?.rootDir
+  const knowledgeRootDir = input.agent.knowledge?.rootDir
   let knowledgeBinding: RuntimeFilesystemBinding | undefined
   if (knowledgeRootDir !== undefined) {
     const runtimeHostOperations = options.runtimeHost ?? runtimeBundle.runtimeHost
@@ -230,9 +229,7 @@ export async function buildAgentComposition(
   const tools = [...standardTools, ...(runtimeScope.extraTools ?? [])]
 
   const readyTracker = createRuntimeReadyStatusTracker(options.runtimeModeAdapter, { harnessReady: true })
-  const encodedPreferredModel = 'legacyDefault' in input.agent
-    ? undefined
-    : input.agent.model?.preferred
+  const encodedPreferredModel = input.agent.model?.preferred
   const unprojectedPi = withPiHarnessDefaults({
     ...runtimeScope.pi,
     defaultModel: parseEncodedModelSelection(encodedPreferredModel) ?? runtimeScope.pi?.defaultModel,
@@ -276,16 +273,12 @@ export async function buildAgentComposition(
       }),
   }
   const baseHarnessFactory = options.harnessFactory
-  const configured = !('legacyDefault' in input.agent)
   const configuredNamespace = sessionNamespaceForAgent(
     input.agent,
     input.workspaceScopeId,
     runtimeScope.sessionNamespace,
   )
-  const authoredInstructions = configured
-    ? input.agent.definition.instructions
-    : undefined
-  const staticPromptAppend = [authoredInstructions, runtimeScope.systemPromptAppend]
+  const staticPromptAppend = [input.agent.definition.instructions, runtimeScope.systemPromptAppend]
     .filter((part): part is string => Boolean(part))
     .join('\n\n') || undefined
 
