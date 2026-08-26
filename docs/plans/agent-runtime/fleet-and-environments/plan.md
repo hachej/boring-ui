@@ -12,7 +12,7 @@ track: owner
 ## Authority
 
 > **Amended 2026-07-31.** This file no longer holds sequencing authority.
-> [`docs/direction/DIRECTION.md`](../../direction/DIRECTION.md) (owner-ratified 2026-07-27) decides
+> [`docs/direction/DIRECTION.md`](../../../direction/DIRECTION.md) (owner-ratified 2026-07-27) decides
 > what happens next and in what order; where this file and DIRECTION disagree,
 > DIRECTION wins. In particular the F-graph ordering below places a visible
 > second agent downstream of F3b-ii/F7, and names a public agent selector as a
@@ -26,13 +26,13 @@ for #391. Decision 28 owns durable invariants. The #805 fleet plan is the sole
 source for implementation node definitions, dependency edges, and replacement
 Bead acceptance; diagrams here are non-normative mirrors.
 
-- Durable ruling: [`../../DECISIONS.md`](../../DECISIONS.md), Decision 28.
+- Durable ruling: [`../../../DECISIONS.md`](../../../DECISIONS.md), Decision 28.
 - Package implementation and exact replacement Bead map under root
   `wt-391-forward-step1a-current-xn9`:
-  [`../805/runtime-refactor/work/A1-agent-authoring/WORKSPACE-AGENT-FLEET-PLAN.md`](../805/runtime-refactor/work/A1-agent-authoring/WORKSPACE-AGENT-FLEET-PLAN.md).
-- Consumption modes: [`AGENT-CONSUMPTION-MODES.md`](AGENT-CONSUMPTION-MODES.md).
-- Ownership: [`OWNERSHIP.md`](OWNERSHIP.md).
-- Retained work alignment: [`ROADMAP-ALIGNMENT.md`](ROADMAP-ALIGNMENT.md).
+  [`../../../issues/805/runtime-refactor/work/A1-agent-authoring/WORKSPACE-AGENT-FLEET-PLAN.md`](../../../issues/805/runtime-refactor/work/A1-agent-authoring/WORKSPACE-AGENT-FLEET-PLAN.md).
+- Consumption modes: [`../consumption-modes/AGENT-CONSUMPTION-MODES.md`](../consumption-modes/AGENT-CONSUMPTION-MODES.md).
+- Ownership: [`../alignment/OWNERSHIP.md`](../alignment/OWNERSHIP.md).
+- Retained work alignment: [`../alignment/ROADMAP-ALIGNMENT.md`](../alignment/ROADMAP-ALIGNMENT.md).
 
 All TypeScript in this product plan is illustrative vocabulary. Normative
 package interfaces and exact field names live only in the #805 fleet plan.

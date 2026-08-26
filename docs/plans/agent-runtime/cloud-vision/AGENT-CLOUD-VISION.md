@@ -21,7 +21,7 @@ Agent fleet, Workspace-persisted default, service-shaped Agent applications,
 governed Environment service, then authenticated MCP—pointed at that eventual
 shape so nothing built now has to be undone later. Signup domain only initializes
 the default. It is deliberately non-binding: it does not create, reorder, or
-gate any Bead, and it does not change [Decision 28](../../DECISIONS.md)'s
+gate any Bead, and it does not change [Decision 28](../../../DECISIONS.md)'s
 sequencing. If anything here conflicts with `plan.md` or
 `AGENT-CONSUMPTION-MODES.md`, those documents control.
 
@@ -123,7 +123,7 @@ selection before this distinction arises.
 ## 5. Two consumption tiers
 
 Two tiers map onto the modes and terms in
-[`AGENT-CONSUMPTION-MODES.md`](AGENT-CONSUMPTION-MODES.md).
+[`AGENT-CONSUMPTION-MODES.md`](../consumption-modes/AGENT-CONSUMPTION-MODES.md).
 
 ### SaaS
 
@@ -141,7 +141,7 @@ is the external ingress surface.
 Instance-per-tenant: one deployment dedicated to one customer. The deployable
 app repository owns its provider and operations configuration; this framework
 repository retains only the topology and sandbox analysis in
-[`docs/plans/archive/remote-sandbox-self-host-analysis.md`](../../plans/archive/remote-sandbox-self-host-analysis.md)
+[`docs/plans/archive/remote-sandbox-self-host-analysis.md`](../../../plans/archive/remote-sandbox-self-host-analysis.md)
 (archived; superseded by the ratified SBX1 own-cloud/gVisor decision).
 The same future framework/schema version and sandbox contract—not an A1
 promise—would make this a second consumption tier of the same product, not a
@@ -201,7 +201,7 @@ this stack.
 
 Target architecture is two independent backend concerns behind the neutral
 `boring-sandbox` provider seam consumed by `boring-bash` (see
-[`docs/issues/808/plan.md`](../808/plan.md)):
+[`docs/issues/808/plan.md`](../../../issues/808/plan.md)):
 
 - **Placement** — a `remote-worker` executor fleet on owned VPS boxes,
   replacing the Vercel-hosted placement while speaking the same sandbox

@@ -1,6 +1,6 @@
 # Agent consumption modes
 
-> Shared architecture contract under Decision 28. [`plan.md`](plan.md) controls
+> Shared architecture contract under Decision 28. [`plan.md`](../fleet-and-environments/plan.md) controls
 > delivery order. Workspace bundles a static application fleet and persists its
 > default Agent. Core/web and CLI are independent Workspace consumers.
 

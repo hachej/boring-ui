@@ -11,13 +11,13 @@ parent: 905
 
 > **Kind: historical record.** This plan executed and closed. It governs
 > nothing today.
-> - **Sequencing** is owned by [`docs/direction/DIRECTION.md`](../../direction/DIRECTION.md).
+> - **Sequencing** is owned by [`docs/direction/DIRECTION.md`](../../../direction/DIRECTION.md).
 > - **The gateway contract** is owned by
->   [`packages/agent/docs/AGENT_GATEWAY_V0.md`](../../../packages/agent/docs/AGENT_GATEWAY_V0.md),
+>   [`packages/agent/docs/AGENT_GATEWAY_V0.md`](../../../../packages/agent/docs/AGENT_GATEWAY_V0.md),
 >   colocated with its types. **§6 below drifted from the shipped code** (input
 >   DTOs nest `scope` rather than inheriting it, among other differences) and is
 >   retained only as the pre-implementation record. Do not build from §6.
-> - **Architecture rulings** are owned by [`docs/DECISIONS.md`](../../DECISIONS.md)
+> - **Architecture rulings** are owned by [`docs/DECISIONS.md`](../../../DECISIONS.md)
 >   (Decision 29 records what this plan shipped).
 
 One frozen contract (`AgentGateway`), one canonical construction path
@@ -225,7 +225,7 @@ storage are internals.
 
 > **Superseded as a build target.** Written before implementation; the shipped
 > types diverge. Build against
-> [`packages/agent/docs/AGENT_GATEWAY_V0.md`](../../../packages/agent/docs/AGENT_GATEWAY_V0.md)
+> [`packages/agent/docs/AGENT_GATEWAY_V0.md`](../../../../packages/agent/docs/AGENT_GATEWAY_V0.md)
 > and `packages/agent/src/shared/gateway/`. Retained for provenance.
 
 Public Gateway types live in `packages/agent/src/shared/gateway/` (no `node:*`,

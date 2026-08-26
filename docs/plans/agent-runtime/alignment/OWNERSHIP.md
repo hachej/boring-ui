@@ -1,6 +1,6 @@
 # #391 plan ownership map
 
-Issue #391 owns the Decision 28 product roadmap in [`plan.md`](plan.md): one
+Issue #391 owns the Decision 28 product roadmap in [`plan.md`](../fleet-and-environments/plan.md): one
 static application fleet, Workspace-persisted default Agent, signup-domain
 initialization, independent Core/web and CLI consumers, service-shaped in-process
 Agent applications, and one governed `boring-bash` Environment API over neutral

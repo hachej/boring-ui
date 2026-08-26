@@ -76,6 +76,7 @@ standalone (`createAgentApp`) with zero core dependency.
 - [`TAILWIND-V4-STYLE-ISOLATION.md`](TAILWIND-V4-STYLE-ISOLATION.md) — how packages share Tailwind v4 tokens: workspace owns `--boring-*` `:root` tokens; agent inherits them scoped to `[data-boring-agent]` (test-enforced).
 - [`PERFORMANCE.md`](PERFORMANCE.md) — historical Vercel-sandbox vs local FS latency benchmarks (harness removed; kept for reference).
 - [`FIXES.md`](FIXES.md) — production/runtime fix ledger for recurring incidents and deploy bugs.
+- [`plans/agent-runtime/`](plans/agent-runtime/README.md) — the absorbed #391/#909 agent-runtime planning pack.
 - [`procedures/`](procedures/README.md) — agent workflow, maintainer loop, coding practices,
   review history, procedures, proof gates, owner decisions, and budgeted
   autonomy.
@@ -108,7 +109,7 @@ Rules that follow from this:
 
 ## Normative specs (code cites these)
 
-- [`packages/agent/docs/AGENT_GATEWAY_V0.md`](../packages/agent/docs/AGENT_GATEWAY_V0.md) — the AgentGateway v0 session contract (7 methods, branded scope, 13 error codes, conformance levels). Supersedes `docs/issues/909/plan.md` §6.
+- [`packages/agent/docs/AGENT_GATEWAY_V0.md`](../packages/agent/docs/AGENT_GATEWAY_V0.md) — the AgentGateway v0 session contract (7 methods, branded scope, 13 error codes, conformance levels). Supersedes `docs/plans/agent-runtime/gateway/plan.md` §6.
 - [`packages/workspace/docs/PLUGIN_SYSTEM.md`](../packages/workspace/docs/PLUGIN_SYSTEM.md) — the plugin/agent-layer spec; source cites it as `Per PLUGIN_SYSTEM.md §X`. Keep section numbering stable.
 - [`packages/workspace/docs/PLUGIN_STRUCTURE.md`](../packages/workspace/docs/PLUGIN_STRUCTURE.md) — canonical layout + code patterns for new plugins.
 

@@ -1,6 +1,6 @@
 # #391 work-package alignment under Decision 28
 
-> [`plan.md`](plan.md) is dispatch authority. This matrix preserves useful work
+> [`plan.md`](../fleet-and-environments/plan.md) is dispatch authority. This matrix preserves useful work
 > without allowing Decision 26's typed-product graph, old AgentHost machinery,
 > or dormant work packages to resume.
 

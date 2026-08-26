@@ -95,7 +95,7 @@ OWNER RATIFY: Migrate only inventoried credential-bearing legacy settings into t
   and the two-workspace proof. Those tests remain required for LLM consumers;
   its proposed single setting and `WORKSPACE_SETTINGS_ENCRYPTION_KEY` storage are
   superseded by this plan after ratification.
-- [`docs/issues/391/AGENT-CLOUD-VISION.md`](../391/AGENT-CLOUD-VISION.md#4-custom-tools)
+- [`docs/plans/agent-runtime/cloud-vision/AGENT-CLOUD-VISION.md`](../../plans/agent-runtime/cloud-vision/AGENT-CLOUD-VISION.md#4-custom-tools)
   splits a custom tool into control-plane declaration data and sandbox-only
   tenant handler code. It requires per-invocation secrets and default-deny
   egress. Provider registration and credential metadata therefore stay on the

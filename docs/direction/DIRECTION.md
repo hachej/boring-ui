@@ -31,7 +31,7 @@ surface per agent), Environment leases, per-agent model policy
 core, CLI, playground, delegation) composing through it, enforced by CI
 invariants. Also shipped: A1 authored-agent groundwork, boring-bash/sandbox
 extraction, BYOK credential-injection contract, D1 tenant provisioning.
-Authority for what exists: `docs/issues/909/plan.md` §6 (frozen).
+Authority for what exists: `docs/plans/agent-runtime/gateway/plan.md` §6 (frozen).
 
 ## Wave 1 — NOW: the multi-agent console (beads .27 → .31)
 
@@ -61,7 +61,7 @@ slice absorbed by .27), `.28` (re-land native sessions + rename menu, after
   — the store and its consumer are both written, and no production caller
   passes `eventStore`. Resolve the agent-keying question (§Lane reality)
   BEFORE any durable schema is written.
-- **F-graph execution begins** (Decision 28 detail: `docs/issues/391/plan.md`):
+- **F-graph execution begins** (Decision 28 detail: `docs/plans/agent-runtime/fleet-and-environments/plan.md`):
   F0b inventory → F1/F2 Environment contracts + boring-bash service → onward.
   F0a paperwork (the rebased #904 with its three shipped-reality amendments)
   is ratified during Wave 1; F1+ execution does NOT start before the Wave 1

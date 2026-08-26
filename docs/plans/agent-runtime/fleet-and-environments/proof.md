@@ -10,10 +10,10 @@
 - Decision 28: `docs/DECISIONS.md`.
 - Product gates: [`plan.md`](plan.md).
 - Normative package contracts/DAG:
-  [`../805/runtime-refactor/work/A1-agent-authoring/WORKSPACE-AGENT-FLEET-PLAN.md`](../805/runtime-refactor/work/A1-agent-authoring/WORKSPACE-AGENT-FLEET-PLAN.md).
-- Consumption modes: [`AGENT-CONSUMPTION-MODES.md`](AGENT-CONSUMPTION-MODES.md).
-- Ownership: [`OWNERSHIP.md`](OWNERSHIP.md).
-- Alignment: [`ROADMAP-ALIGNMENT.md`](ROADMAP-ALIGNMENT.md).
+  [`../../../issues/805/runtime-refactor/work/A1-agent-authoring/WORKSPACE-AGENT-FLEET-PLAN.md`](../../../issues/805/runtime-refactor/work/A1-agent-authoring/WORKSPACE-AGENT-FLEET-PLAN.md).
+- Consumption modes: [`../consumption-modes/AGENT-CONSUMPTION-MODES.md`](../consumption-modes/AGENT-CONSUMPTION-MODES.md).
+- Ownership: [`../alignment/OWNERSHIP.md`](../alignment/OWNERSHIP.md).
+- Alignment: [`../alignment/ROADMAP-ALIGNMENT.md`](../alignment/ROADMAP-ALIGNMENT.md).
 
 ## Retained merged evidence
 

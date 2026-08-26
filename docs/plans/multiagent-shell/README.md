@@ -100,6 +100,11 @@ composing as apps-as-recipes into a company OS.
 [`shell-plan-review.html`](shell-plan-review.html) ·
 [`job-thread-plan-review.html`](job-thread-plan-review.html)
 
+**Ruling record:** [`north-star-ledger.md`](north-star-ledger.md) absorbs
+issue #1399 — every dated owner ruling behind this pack, verbatim, each
+annotated with what later rulings kept or superseded. The pack's "#1399"
+citations resolve there.
+
 Chapters 2–4 keep their content; their **dependency rationale derives from
 chapter 1**, and the executable ordering lives in `docs/direction/DIRECTION.md`.
 Each chapter carries a dated *Re-sequencing ruling 2026-08-26* block at its
