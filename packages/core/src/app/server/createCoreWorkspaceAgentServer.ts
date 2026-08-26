@@ -13,7 +13,6 @@ import {
   createRemoteWorkerModeAdapter,
   createResolvedRuntimeScopeIdentity,
   createValidatingAgentFleetCompiler,
-  DEFAULT_AGENT_TYPE_ID,
   isBuiltInDefaultAgentSpec,
   provisionWorkspaceRuntime,
   projectAuthorizedSessionRunDetails,
@@ -1130,7 +1129,6 @@ export async function createCoreWorkspaceAgentServer(
   const regularAgentTypeIds = availableAgentTypeIds
   if (
     options.defaultAgentTypeId !== undefined
-    && rawConfig.defaultAgentTypeId !== DEFAULT_AGENT_TYPE_ID
     && options.defaultAgentTypeId !== rawConfig.defaultAgentTypeId
   ) {
     throw new ConfigValidationError([{

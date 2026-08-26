@@ -247,6 +247,22 @@ describe('loadConfiguredAgentFleet', () => {
     })
   })
 
+  test('throws FleetConfigError when a policy seat tier is not a string', async () => {
+    const root = await temporaryFleetRoot()
+    const policyPath = join(root, 'policy.yaml')
+    await writeFile(policyPath, 'models:\n  seats:\n    alpha: 42\n')
+
+    await expect(loadConfiguredAgentFleet({
+      ...await validAlphaOptions(),
+      policyPath,
+      env: {},
+    })).rejects.toMatchObject({
+      name: 'FleetConfigError',
+      code: ErrorCode.enum.AGENT_FLEET_CONFIG_FILE_INVALID,
+      field: 'models.seats.alpha',
+    })
+  })
+
   test('throws FleetConfigError when policy references a missing model tier', async () => {
     const root = await temporaryFleetRoot()
     const policyPath = join(root, 'policy.yaml')

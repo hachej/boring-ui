@@ -131,12 +131,16 @@ test('uses one validated config default for plugins, backfill, and future worksp
   } finally { await app.close() }
 }, 30_000)
 
-test('normalizes the deprecated option into the one application default', async () => {
+test('accepts a matching deprecated option without creating a second application default', async () => {
   mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
     runtimePlugins: [], agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
     preservedUiStateKeys: [], routeContributions: [],
   })
-  const config = createBaseTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' })
+  const config = createTestCoreConfig({
+    stores: 'postgres',
+    databaseUrl: 'postgres://test',
+    defaultAgentTypeId: 'reviewer',
+  })
   const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
   const app = await createCoreWorkspaceAgentServer({
     config,

@@ -180,15 +180,28 @@ export function parseModelTierCandidates(raw: unknown, path: string): ModelTierC
   return Object.freeze(result)
 }
 
-function parseSeatTiers(raw: unknown): Readonly<Record<string, string>> {
-  if (!isRecord(raw)) return Object.freeze({})
+function parseSeatTiers(raw: unknown, path: string): Readonly<Record<string, string>> {
+  const name = basename(path)
+  if (!isRecord(raw)) {
+    throw new FleetConfigError({ field: 'policy', message: `${name} must be an object` })
+  }
   const models = raw.models
-  if (!isRecord(models)) return Object.freeze({})
+  if (!isRecord(models)) {
+    throw new FleetConfigError({ field: 'models', message: `${name} must declare a "models" object` })
+  }
   const seats = models.seats
-  if (!isRecord(seats)) return Object.freeze({})
+  if (!isRecord(seats)) {
+    throw new FleetConfigError({ field: 'models.seats', message: `${name} must declare a "models.seats" object` })
+  }
   const result: Record<string, string> = {}
   for (const [seat, tier] of Object.entries(seats)) {
-    if (typeof tier === 'string') result[seat] = tier
+    if (!isNonBlankString(seat) || !isNonBlankString(tier)) {
+      throw new FleetConfigError({
+        field: `models.seats.${seat}`,
+        message: `${name} models.seats entries must map non-empty seat names to non-empty tier names`,
+      })
+    }
+    result[seat] = tier
   }
   return Object.freeze(result)
 }
@@ -295,7 +308,10 @@ export async function loadConfiguredAgentFleet(
   const seats = parseFleetConfig(fleetRaw, options.fleetConfigPath)
   const modelTierCandidates = parseModelTierCandidates(fleetRaw, options.fleetConfigPath)
 
-  const seatTiers = parseSeatTiers(await readYamlFile(options.policyPath, 'policyPath'))
+  const seatTiers = parseSeatTiers(
+    await readYamlFile(options.policyPath, 'policyPath'),
+    options.policyPath,
+  )
   validateSeatTierCandidates(seatTiers, modelTierCandidates, options.fleetConfigPath, options.policyPath)
 
   const agents: ConfiguredAgentHostAgentSpec[] = []
