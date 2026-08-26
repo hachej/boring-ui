@@ -2,7 +2,11 @@ import { createHash, randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 
 import { withTaskId } from '../../__tests__/_setup'
-import type { UserStore, WorkspaceStore } from '../../app/types.js'
+import type {
+  UserStore,
+  WorkspaceStore,
+  WorkspaceStoreCreateOptions,
+} from '../../app/types.js'
 import { ERROR_CODES } from '../../../shared/errors.js'
 
 const TASK_ID = 'boring-ui-v2-dvmv'
@@ -13,6 +17,8 @@ interface WorkspaceStoreConformanceOptions {
   makeUserStore: () => MaybePromise<UserStore>
   deleteRuntime: (workspaceId: string) => MaybePromise<void>
   expireInvite: (workspaceId: string, inviteId: string) => MaybePromise<void>
+  /** Explicitly manufactures a pre-Decision-28 row without using production create. */
+  seedLegacyNullDefaultAgentTypeId: (store: WorkspaceStore, workspaceId: string) => MaybePromise<void>
   makeAppIds?: () => { appId: string; otherAppId: string }
   emailDomain?: string
 }
@@ -33,6 +39,19 @@ function defaultAppIds() {
     appId: `store-conformance-${tag}`,
     otherAppId: `store-conformance-alt-${tag}`,
   }
+}
+
+function createWorkspace(
+  store: WorkspaceStore,
+  userId: string,
+  name: string,
+  appId: string,
+  options: Partial<WorkspaceStoreCreateOptions> = {},
+) {
+  return store.create(userId, name, appId, {
+    defaultAgentTypeId: 'default',
+    ...options,
+  })
 }
 
 async function seedUsers(
@@ -231,7 +250,7 @@ export function describeWorkspaceStoreConformance(
       'create adds workspace and owner membership',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
-        const ws = await workspaceStore.create(users.owner.id, 'Conformance WS', appId)
+        const ws = await createWorkspace(workspaceStore, users.owner.id, 'Conformance WS', appId)
         expect(ws.appId).toBe(appId)
         expect(ws.createdBy).toBe(users.owner.id)
         expect(await workspaceStore.getMemberRole(ws.id, users.owner.id)).toBe('owner')
@@ -243,7 +262,7 @@ export function describeWorkspaceStoreConformance(
       'round-trips workspaceTypeId through create, list, get, mapper output, and update',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
-        const created = await workspaceStore.create(users.owner.id, 'Typed WS', appId, {
+        const created = await createWorkspace(workspaceStore, users.owner.id, 'Typed WS', appId, {
           workspaceTypeId: 'legal-review',
         })
         expect(created.workspaceTypeId).toBe('legal-review')
@@ -275,7 +294,8 @@ export function describeWorkspaceStoreConformance(
           `a${'0'.repeat(62)}`,
         ]
         for (const [index, workspaceTypeId] of validIds.entries()) {
-          await expect(workspaceStore.create(
+          await expect(createWorkspace(
+            workspaceStore,
             users.owner.id,
             `Valid type ${index}`,
             appId,
@@ -292,7 +312,8 @@ export function describeWorkspaceStoreConformance(
         const { workspaceStore, appId, users } = await setup()
         const invalidIds: unknown[] = [null, '', 'Default', '-legal', '0legal', 'legal_review', 'legal.review', `a${'0'.repeat(63)}`]
         for (const [index, workspaceTypeId] of invalidIds.entries()) {
-          await expect(workspaceStore.create(
+          await expect(createWorkspace(
+            workspaceStore,
             users.owner.id,
             `Invalid type ${index}`,
             appId,
@@ -310,7 +331,7 @@ export function describeWorkspaceStoreConformance(
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
         const id = randomUUID()
-        const created = await workspaceStore.create(users.owner.id, 'Immutable type', appId, {
+        const created = await createWorkspace(workspaceStore, users.owner.id, 'Immutable type', appId, {
           id,
           workspaceTypeId: 'legal-review',
         })
@@ -321,7 +342,7 @@ export function describeWorkspaceStoreConformance(
         } as unknown as Partial<Pick<typeof created, 'name'>>)).rejects.toMatchObject({
           code: ERROR_CODES.WORKSPACE_TYPE_IMMUTABLE,
         })
-        await expect(workspaceStore.create(users.owner.id, 'Conflicting create', appId, {
+        await expect(createWorkspace(workspaceStore, users.owner.id, 'Conflicting create', appId, {
           id,
           workspaceTypeId: 'insurance-review',
         })).rejects.toMatchObject({
@@ -336,19 +357,30 @@ export function describeWorkspaceStoreConformance(
     )
 
     it(
-      'persists defaultAgentTypeId at initialization and defaults to null (D28)',
+      'persists explicit and compatibility-default Agent seats at initialization (D28)',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
-        const seated = await workspaceStore.create(users.owner.id, 'Seated WS', appId, {
+        const seated = await createWorkspace(workspaceStore, users.owner.id, 'Seated WS', appId, {
           defaultAgentTypeId: 'boring-v2',
         })
         expect(seated.defaultAgentTypeId).toBe('boring-v2')
         expect((await workspaceStore.get(seated.id))?.defaultAgentTypeId).toBe('boring-v2')
         expect((await workspaceStore.list(users.owner.id, appId))[0]?.defaultAgentTypeId).toBe('boring-v2')
 
-        const unseated = await workspaceStore.create(users.owner.id, 'Unseated WS', appId)
-        expect(unseated.defaultAgentTypeId ?? null).toBeNull()
-        expect((await workspaceStore.get(unseated.id))?.defaultAgentTypeId ?? null).toBeNull()
+        const omittedOptions = await workspaceStore.create(
+          users.owner.id,
+          'Missing seat options',
+          appId,
+        )
+        const omittedIdentity = await workspaceStore.create(
+          users.owner.id,
+          'Missing seat identity',
+          appId,
+          {},
+        )
+        expect(omittedOptions.defaultAgentTypeId).toBe('default')
+        expect(omittedIdentity.defaultAgentTypeId).toBe('default')
+        expect(await workspaceStore.list(users.owner.id, appId)).toHaveLength(3)
         assertionPassed('default-agent-type-persisted-at-init')
       }),
     )
@@ -357,10 +389,12 @@ export function describeWorkspaceStoreConformance(
       'inventories legacy cohorts and compare-and-sets NULL defaults idempotently',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, otherAppId, users } = await setup()
-        const legacy = await workspaceStore.create(users.owner.id, 'Legacy NULL', appId)
-        const known = await workspaceStore.create(users.owner.id, 'Known', appId, { defaultAgentTypeId: 'default' })
-        const unknown = await workspaceStore.create(users.owner.id, 'Unknown', appId, { defaultAgentTypeId: 'retired-seat' })
-        const otherAppLegacy = await workspaceStore.create(users.owner.id, 'Other app NULL', otherAppId)
+        const legacy = await createWorkspace(workspaceStore, users.owner.id, 'Legacy NULL', appId)
+        await options.seedLegacyNullDefaultAgentTypeId(workspaceStore, legacy.id)
+        const known = await createWorkspace(workspaceStore, users.owner.id, 'Known', appId, { defaultAgentTypeId: 'default' })
+        const unknown = await createWorkspace(workspaceStore, users.owner.id, 'Unknown', appId, { defaultAgentTypeId: 'retired-seat' })
+        const otherAppLegacy = await createWorkspace(workspaceStore, users.owner.id, 'Other app NULL', otherAppId)
+        await options.seedLegacyNullDefaultAgentTypeId(workspaceStore, otherAppLegacy.id)
 
         expect(await workspaceStore.inventoryDefaultAgentTypeIds(appId)).toEqual([
           { defaultAgentTypeId: null, count: 1 },
@@ -381,7 +415,8 @@ export function describeWorkspaceStoreConformance(
       'allows exactly one concurrent NULL-default compare-and-set winner',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
-        const legacy = await workspaceStore.create(users.owner.id, 'Concurrent legacy NULL', appId)
+        const legacy = await createWorkspace(workspaceStore, users.owner.id, 'Concurrent legacy NULL', appId)
+        await options.seedLegacyNullDefaultAgentTypeId(workspaceStore, legacy.id)
         const results = await Promise.all([
           workspaceStore.compareAndSetNullDefaultAgentTypeId(appId, 'default'),
           workspaceStore.compareAndSetNullDefaultAgentTypeId(appId, 'alternate'),
@@ -397,11 +432,11 @@ export function describeWorkspaceStoreConformance(
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
         const id = randomUUID()
-        await workspaceStore.create(users.owner.id, 'Write once', appId, {
+        await createWorkspace(workspaceStore, users.owner.id, 'Write once', appId, {
           id,
           defaultAgentTypeId: 'boring-v2',
         })
-        const recreated = await workspaceStore.create(users.owner.id, 'Write once', appId, {
+        const recreated = await createWorkspace(workspaceStore, users.owner.id, 'Write once', appId, {
           id,
           defaultAgentTypeId: 'other-seat',
         })
@@ -418,9 +453,10 @@ export function describeWorkspaceStoreConformance(
       'rejects invalid defaultAgentTypeId at the trusted create seam with a stable code',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
-        const invalidIds: unknown[] = ['', 'Default', '-seat', '0seat', 'seat_a', `a${'0'.repeat(63)}`]
+        const invalidIds: unknown[] = [null, '', 'Default', '-seat', '0seat', 'seat_a', `a${'0'.repeat(63)}`]
         for (const [index, defaultAgentTypeId] of invalidIds.entries()) {
-          await expect(workspaceStore.create(
+          await expect(createWorkspace(
+            workspaceStore,
             users.owner.id,
             `Invalid seat ${index}`,
             appId,
@@ -450,9 +486,9 @@ export function describeWorkspaceStoreConformance(
       'list scopes by membership and appId',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, otherAppId, users } = await setup()
-        const owned = await workspaceStore.create(users.owner.id, 'Owned', appId)
-        await workspaceStore.create(users.owner.id, 'Other App', otherAppId)
-        await workspaceStore.create(users.member.id, 'Not Member', appId)
+        const owned = await createWorkspace(workspaceStore, users.owner.id, 'Owned', appId)
+        await createWorkspace(workspaceStore, users.owner.id, 'Other App', otherAppId)
+        await createWorkspace(workspaceStore, users.member.id, 'Not Member', appId)
 
         const list = await workspaceStore.list(users.owner.id, appId)
         expect(list.map((ws) => ws.id)).toContain(owned.id)
@@ -466,7 +502,7 @@ export function describeWorkspaceStoreConformance(
       'get returns workspace by id and null for unknown id',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
-        const ws = await workspaceStore.create(users.owner.id, 'Lookup', appId)
+        const ws = await createWorkspace(workspaceStore, users.owner.id, 'Lookup', appId)
         expect((await workspaceStore.get(ws.id))?.id).toBe(ws.id)
         expect(await workspaceStore.get(randomUUID())).toBeNull()
         assertionPassed('workspace-get-happy-and-missing')
@@ -477,7 +513,7 @@ export function describeWorkspaceStoreConformance(
       'update mutates name and returns null for unknown workspace',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
-        const ws = await workspaceStore.create(users.owner.id, 'Before', appId)
+        const ws = await createWorkspace(workspaceStore, users.owner.id, 'Before', appId)
         const updated = await workspaceStore.update(ws.id, { name: 'After' })
         expect(updated?.name).toBe('After')
         expect(await workspaceStore.update(randomUUID(), { name: 'Nope' })).toBeNull()
@@ -489,7 +525,7 @@ export function describeWorkspaceStoreConformance(
       'delete soft-deletes workspace and returns not_found for unknown id',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
-        const ws = await workspaceStore.create(users.owner.id, 'Delete Me', appId)
+        const ws = await createWorkspace(workspaceStore, users.owner.id, 'Delete Me', appId)
         expect(await workspaceStore.delete(ws.id)).toEqual({ removed: true })
         expect(await workspaceStore.get(ws.id)).toBeNull()
         expect(await workspaceStore.update(ws.id, { name: 'After Delete' })).toBeNull()
@@ -507,9 +543,9 @@ export function describeWorkspaceStoreConformance(
         const { workspaceStore, appId, users } = await setup()
         expect(await workspaceStore.getWorkspacesWhereSoleOwner(users.owner.id)).toEqual([])
 
-        const sole = await workspaceStore.create(users.owner.id, 'Sole', appId)
-        const shared = await workspaceStore.create(users.owner.id, 'Shared', appId)
-        const deletedSole = await workspaceStore.create(users.owner.id, 'Deleted Sole', appId)
+        const sole = await createWorkspace(workspaceStore, users.owner.id, 'Sole', appId)
+        const shared = await createWorkspace(workspaceStore, users.owner.id, 'Shared', appId)
+        const deletedSole = await createWorkspace(workspaceStore, users.owner.id, 'Deleted Sole', appId)
         await workspaceStore.upsertMember(shared.id, users.member.id, 'owner')
         await workspaceStore.delete(deletedSole.id)
 
@@ -525,7 +561,7 @@ export function describeWorkspaceStoreConformance(
       'isMember/getMemberRole reflect membership accurately',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
-        const ws = await workspaceStore.create(users.owner.id, 'Member Check', appId)
+        const ws = await createWorkspace(workspaceStore, users.owner.id, 'Member Check', appId)
         await workspaceStore.upsertMember(ws.id, users.member.id, 'editor')
 
         expect(await workspaceStore.isMember(ws.id, users.owner.id)).toBe(true)
@@ -540,7 +576,7 @@ export function describeWorkspaceStoreConformance(
       'listMembers returns enriched members joined with user info',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
-        const ws = await workspaceStore.create(users.owner.id, 'Members', appId)
+        const ws = await createWorkspace(workspaceStore, users.owner.id, 'Members', appId)
         await workspaceStore.upsertMember(ws.id, users.member.id, 'editor')
 
         const members = await workspaceStore.listMembers(ws.id)
@@ -559,7 +595,7 @@ export function describeWorkspaceStoreConformance(
       'upsertMember inserts and updates roles',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
-        const ws = await workspaceStore.create(users.owner.id, 'Upsert Member', appId)
+        const ws = await createWorkspace(workspaceStore, users.owner.id, 'Upsert Member', appId)
 
         const inserted = await workspaceStore.upsertMember(ws.id, users.member.id, 'viewer')
         expect(inserted.role).toBe('viewer')
@@ -573,7 +609,7 @@ export function describeWorkspaceStoreConformance(
       'managed member operations preserve concurrent owner promotion',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
-        const ws = await workspaceStore.create(users.owner.id, 'Managed Members', appId)
+        const ws = await createWorkspace(workspaceStore, users.owner.id, 'Managed Members', appId)
 
         await Promise.all([
           workspaceStore.createMemberIfAbsent(ws.id, users.member.id, 'editor'),
@@ -602,7 +638,7 @@ export function describeWorkspaceStoreConformance(
       'removeMember removes members and reports not_member for missing',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
-        const ws = await workspaceStore.create(users.owner.id, 'Remove', appId)
+        const ws = await createWorkspace(workspaceStore, users.owner.id, 'Remove', appId)
         await workspaceStore.upsertMember(ws.id, users.member.id, 'editor')
 
         expect(await workspaceStore.removeMember(ws.id, users.member.id)).toEqual({ removed: true })
@@ -619,7 +655,7 @@ export function describeWorkspaceStoreConformance(
       'removeMember blocks removing last owner',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
-        const ws = await workspaceStore.create(users.owner.id, 'Owner Rules', appId)
+        const ws = await createWorkspace(workspaceStore, users.owner.id, 'Owner Rules', appId)
 
         expect(await workspaceStore.removeMember(ws.id, users.owner.id)).toEqual({
           removed: false,
@@ -633,8 +669,8 @@ export function describeWorkspaceStoreConformance(
       'createInvite/listInvites produce workspace-scoped invite records',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
-        const ws = await workspaceStore.create(users.owner.id, 'Invites', appId)
-        const otherWs = await workspaceStore.create(users.owner.id, 'Invites Other', appId)
+        const ws = await createWorkspace(workspaceStore, users.owner.id, 'Invites', appId)
+        const otherWs = await createWorkspace(workspaceStore, users.owner.id, 'Invites Other', appId)
 
         const first = await workspaceStore.createInvite(ws.id, users.member.email, 'editor', users.owner.id)
         await workspaceStore.createInvite(otherWs.id, users.other.email, 'viewer', users.owner.id)
@@ -653,8 +689,8 @@ export function describeWorkspaceStoreConformance(
       'getInvite/getInviteByTokenHash return matches and null on miss',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
-        const ws = await workspaceStore.create(users.owner.id, 'Invite Lookup', appId)
-        const otherWs = await workspaceStore.create(users.owner.id, 'Invite Lookup Other', appId)
+        const ws = await createWorkspace(workspaceStore, users.owner.id, 'Invite Lookup', appId)
+        const otherWs = await createWorkspace(workspaceStore, users.owner.id, 'Invite Lookup Other', appId)
         const created = await workspaceStore.createInvite(ws.id, users.member.email, 'viewer', users.owner.id)
 
         const byId = await workspaceStore.getInvite(ws.id, created.invite.id)
@@ -673,7 +709,7 @@ export function describeWorkspaceStoreConformance(
       'revokeInvite removes invite and is idempotent',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
-        const ws = await workspaceStore.create(users.owner.id, 'Invite Revoke', appId)
+        const ws = await createWorkspace(workspaceStore, users.owner.id, 'Invite Revoke', appId)
         const created = await workspaceStore.createInvite(ws.id, users.member.email, 'viewer', users.owner.id)
 
         expect(await workspaceStore.revokeInvite(ws.id, created.invite.id)).toBe(true)
@@ -686,7 +722,7 @@ export function describeWorkspaceStoreConformance(
       'acceptInvite success marks accepted and creates membership',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
-        const ws = await workspaceStore.create(users.owner.id, 'Invite Accept', appId)
+        const ws = await createWorkspace(workspaceStore, users.owner.id, 'Invite Accept', appId)
         const created = await workspaceStore.createInvite(ws.id, users.member.email, 'editor', users.owner.id)
 
         const accepted = await workspaceStore.acceptInvite(ws.id, created.invite.id, users.member.id)
@@ -702,7 +738,7 @@ export function describeWorkspaceStoreConformance(
       'acceptInvite throws invite_not_found and invite_already_accepted',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
-        const ws = await workspaceStore.create(users.owner.id, 'Invite Errors', appId)
+        const ws = await createWorkspace(workspaceStore, users.owner.id, 'Invite Errors', appId)
         const created = await workspaceStore.createInvite(ws.id, users.member.email, 'viewer', users.owner.id)
 
         await expectHttpErrorCode(
@@ -725,7 +761,7 @@ export function describeWorkspaceStoreConformance(
       'acceptInvite throws invite_email_mismatch and invite_expired',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
-        const ws = await workspaceStore.create(users.owner.id, 'Invite Error Cases', appId)
+        const ws = await createWorkspace(workspaceStore, users.owner.id, 'Invite Error Cases', appId)
 
         const mismatch = await workspaceStore.createInvite(ws.id, users.other.email, 'viewer', users.owner.id)
         await expectHttpErrorCode(
@@ -749,7 +785,7 @@ export function describeWorkspaceStoreConformance(
       'getWorkspaceSettings is empty before writes',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
-        const ws = await workspaceStore.create(users.owner.id, 'Settings', appId)
+        const ws = await createWorkspace(workspaceStore, users.owner.id, 'Settings', appId)
         expect(await workspaceStore.getWorkspaceSettings(ws.id)).toEqual([])
         assertionPassed('workspace-settings-empty-by-default')
       }),
@@ -759,7 +795,7 @@ export function describeWorkspaceStoreConformance(
       'putWorkspaceSettings returns metadata-only entries and getWorkspaceSettings reflects keys',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
-        const ws = await workspaceStore.create(users.owner.id, 'Settings Put', appId)
+        const ws = await createWorkspace(workspaceStore, users.owner.id, 'Settings Put', appId)
 
         const put = await workspaceStore.putWorkspaceSettings(ws.id, {
           github_token: 'secret',
@@ -780,7 +816,7 @@ export function describeWorkspaceStoreConformance(
       'getWorkspaceRuntime auto-creates ready row when missing',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
-        const ws = await workspaceStore.create(users.owner.id, 'Runtime', appId)
+        const ws = await createWorkspace(workspaceStore, users.owner.id, 'Runtime', appId)
 
         const created = await workspaceStore.getWorkspaceRuntime(ws.id)
         expect(created?.state).toBe('ready')
@@ -802,7 +838,7 @@ export function describeWorkspaceStoreConformance(
       'putWorkspaceRuntime updates runtime fields',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
-        const ws = await workspaceStore.create(users.owner.id, 'Runtime Put', appId)
+        const ws = await createWorkspace(workspaceStore, users.owner.id, 'Runtime Put', appId)
         const stepStartedAt = new Date().toISOString()
 
         const updated = await workspaceStore.putWorkspaceRuntime(ws.id, {
@@ -828,7 +864,7 @@ export function describeWorkspaceStoreConformance(
       'retryWorkspaceRuntime transitions error to pending and no-ops otherwise',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
-        const ws = await workspaceStore.create(users.owner.id, 'Runtime Retry', appId)
+        const ws = await createWorkspace(workspaceStore, users.owner.id, 'Runtime Retry', appId)
 
         expect(await workspaceStore.retryWorkspaceRuntime(ws.id)).toBeNull()
         await workspaceStore.putWorkspaceRuntime(ws.id, {
@@ -847,7 +883,7 @@ export function describeWorkspaceStoreConformance(
       'getUiState returns null when no state exists',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
-        const ws = await workspaceStore.create(users.owner.id, 'UI State', appId)
+        const ws = await createWorkspace(workspaceStore, users.owner.id, 'UI State', appId)
         expect(await workspaceStore.getUiState(users.owner.id, ws.id)).toBeNull()
         assertionPassed('ui-state-default-null')
       }),
@@ -857,7 +893,7 @@ export function describeWorkspaceStoreConformance(
       'putUiState stores state scoped by (userId, workspaceId)',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
-        const ws = await workspaceStore.create(users.owner.id, 'UI Put', appId)
+        const ws = await createWorkspace(workspaceStore, users.owner.id, 'UI Put', appId)
         const state = { activePanel: 'chat', collapsed: true }
 
         await workspaceStore.putUiState(users.owner.id, ws.id, state)

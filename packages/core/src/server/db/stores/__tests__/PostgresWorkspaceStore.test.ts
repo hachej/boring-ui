@@ -9,6 +9,7 @@ import { PostgresUserStore } from '../PostgresUserStore'
 import { ERROR_CODES } from '../../../../shared/errors'
 import type { CoreConfig } from '../../../../shared/types'
 import { describeWorkspaceStoreConformance } from '../../__tests__/storeConformance'
+import type { WorkspaceStoreCreateOptions } from '../../../app/types'
 
 const TEST_DB_URL = process.env.DATABASE_URL ?? 'postgres://ubuntu:test@localhost/boring_ui_test'
 const ENCRYPTION_KEY_A = 'a'.repeat(64)
@@ -404,11 +405,23 @@ async function seedUser(tag?: string): Promise<string> {
   return row.id as string
 }
 
+function createWorkspace(
+  userId: string,
+  name: string,
+  appId: string,
+  options: Partial<WorkspaceStoreCreateOptions> = {},
+) {
+  return store.create(userId, name, appId, {
+    defaultAgentTypeId: 'default',
+    ...options,
+  })
+}
+
 describe('PostgresWorkspaceStore Sub-PR1', () => {
   describe('create', () => {
     it('returns a Workspace and auto-inserts the creator as owner member', async () => {
       const userId = await seedUser()
-      const ws = await store.create(userId, 'My WS', APP_ID)
+      const ws = await createWorkspace(userId, 'My WS', APP_ID)
 
       expect(ws.id).toBeDefined()
       expect(ws.appId).toBe(APP_ID)
@@ -423,7 +436,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
 
     it('is transactional — no orphan workspace when create fails', async () => {
       const fakeUser = '00000000-0000-0000-0000-ffffffffffff'
-      await expect(store.create(fakeUser, 'Bad', APP_ID)).rejects.toThrow()
+      await expect(createWorkspace(fakeUser, 'Bad', APP_ID)).rejects.toThrow()
 
       const [row] = await sqlClient`
         SELECT count(*)::int AS count FROM workspaces
@@ -464,8 +477,8 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
       const userA = await seedUser('list-a')
       const userB = await seedUser('list-b')
 
-      await store.create(userA, 'WS-A', APP_ID)
-      await store.create(userB, 'WS-B', APP_ID)
+      await createWorkspace(userA, 'WS-A', APP_ID)
+      await createWorkspace(userB, 'WS-B', APP_ID)
 
       const listA = await store.list(userA, APP_ID)
       expect(listA).toHaveLength(1)
@@ -474,8 +487,8 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
 
     it('filters by appId', async () => {
       const userId = await seedUser('list-app')
-      await store.create(userId, 'WS-App1', APP_ID)
-      await store.create(userId, 'WS-App2', APP_ID_2)
+      await createWorkspace(userId, 'WS-App1', APP_ID)
+      await createWorkspace(userId, 'WS-App2', APP_ID_2)
 
       const list1 = await store.list(userId, APP_ID)
       expect(list1).toHaveLength(1)
@@ -488,7 +501,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
 
     it('excludes soft-deleted workspaces', async () => {
       const userId = await seedUser('list-del')
-      const ws = await store.create(userId, 'Gone', APP_ID)
+      const ws = await createWorkspace(userId, 'Gone', APP_ID)
       await store.delete(ws.id)
 
       const list = await store.list(userId, APP_ID)
@@ -497,8 +510,8 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
 
     it('orders isDefault DESC, then createdAt DESC', async () => {
       const userId = await seedUser('list-ord')
-      const ws1 = await store.create(userId, 'First', APP_ID)
-      const ws2 = await store.create(userId, 'Second', APP_ID)
+      const ws1 = await createWorkspace(userId, 'First', APP_ID)
+      const ws2 = await createWorkspace(userId, 'Second', APP_ID)
 
       await sqlClient`UPDATE workspaces SET is_default = true WHERE id = ${ws1.id}`
 
@@ -511,7 +524,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
   describe('get', () => {
     it('returns workspace by id', async () => {
       const userId = await seedUser()
-      const ws = await store.create(userId, 'GetMe', APP_ID)
+      const ws = await createWorkspace(userId, 'GetMe', APP_ID)
       const got = await store.get(ws.id)
       expect(got).not.toBeNull()
       expect(got!.name).toBe('GetMe')
@@ -524,7 +537,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
 
     it('returns null for soft-deleted workspace', async () => {
       const userId = await seedUser()
-      const ws = await store.create(userId, 'SoftDel', APP_ID)
+      const ws = await createWorkspace(userId, 'SoftDel', APP_ID)
       await store.delete(ws.id)
       expect(await store.get(ws.id)).toBeNull()
     })
@@ -533,7 +546,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
   describe('update', () => {
     it('updates name and returns updated workspace', async () => {
       const userId = await seedUser()
-      const ws = await store.create(userId, 'Old', APP_ID)
+      const ws = await createWorkspace(userId, 'Old', APP_ID)
       const updated = await store.update(ws.id, { name: 'New' })
       expect(updated).not.toBeNull()
       expect(updated!.name).toBe('New')
@@ -541,7 +554,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
 
     it('returns null for soft-deleted workspace', async () => {
       const userId = await seedUser()
-      const ws = await store.create(userId, 'Del', APP_ID)
+      const ws = await createWorkspace(userId, 'Del', APP_ID)
       await store.delete(ws.id)
       expect(await store.update(ws.id, { name: 'Nope' })).toBeNull()
     })
@@ -550,7 +563,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
   describe('delete', () => {
     it('soft-deletes and sets deletedAt', async () => {
       const userId = await seedUser()
-      const ws = await store.create(userId, 'ToDelete', APP_ID)
+      const ws = await createWorkspace(userId, 'ToDelete', APP_ID)
       const result = await store.delete(ws.id)
       expect(result).toEqual({ removed: true })
 
@@ -571,7 +584,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
     it('isMember returns true/false correctly', async () => {
       const userA = await seedUser('mem-a')
       const userB = await seedUser('mem-b')
-      const ws = await store.create(userA, 'MemberTest', APP_ID)
+      const ws = await createWorkspace(userA, 'MemberTest', APP_ID)
 
       expect(await store.isMember(ws.id, userA)).toBe(true)
       expect(await store.isMember(ws.id, userB)).toBe(false)
@@ -579,7 +592,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
 
     it('getMemberRole returns role or null', async () => {
       const userId = await seedUser()
-      const ws = await store.create(userId, 'RoleTest', APP_ID)
+      const ws = await createWorkspace(userId, 'RoleTest', APP_ID)
 
       expect(await store.getMemberRole(ws.id, userId)).toBe('owner')
       expect(await store.getMemberRole(ws.id, '00000000-0000-0000-0000-000000000000')).toBeNull()
@@ -589,7 +602,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
   describe('listMembers', () => {
     it('returns members enriched with user info', async () => {
       const userId = await seedUser('lm')
-      const ws = await store.create(userId, 'ListM', APP_ID)
+      const ws = await createWorkspace(userId, 'ListM', APP_ID)
 
       const members = await store.listMembers(ws.id)
       expect(members).toHaveLength(1)
@@ -605,7 +618,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
     it('inserts a new member', async () => {
       const owner = await seedUser('ups-own')
       const editor = await seedUser('ups-ed')
-      const ws = await store.create(owner, 'Upsert', APP_ID)
+      const ws = await createWorkspace(owner, 'Upsert', APP_ID)
 
       const member = await store.upsertMember(ws.id, editor, 'editor')
       expect(member.role).toBe('editor')
@@ -615,7 +628,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
 
     it('updates role on conflict', async () => {
       const owner = await seedUser('ups-upd')
-      const ws = await store.create(owner, 'Upsert2', APP_ID)
+      const ws = await createWorkspace(owner, 'Upsert2', APP_ID)
 
       await store.upsertMember(ws.id, owner, 'editor')
       const role = await store.getMemberRole(ws.id, owner)
@@ -627,7 +640,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
     it('removes an existing member', async () => {
       const owner = await seedUser('rm-own')
       const editor = await seedUser('rm-ed')
-      const ws = await store.create(owner, 'Remove', APP_ID)
+      const ws = await createWorkspace(owner, 'Remove', APP_ID)
       await store.upsertMember(ws.id, editor, 'editor')
 
       const result = await store.removeMember(ws.id, editor)
@@ -637,7 +650,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
 
     it('returns NOT_MEMBER for non-member', async () => {
       const owner = await seedUser('rm-nm')
-      const ws = await store.create(owner, 'RemoveNM', APP_ID)
+      const ws = await createWorkspace(owner, 'RemoveNM', APP_ID)
 
       const result = await store.removeMember(ws.id, '00000000-0000-0000-0000-000000000000')
       expect(result).toEqual({ removed: false, code: ERROR_CODES.NOT_MEMBER })
@@ -645,7 +658,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
 
     it('returns LAST_OWNER when removing the sole owner', async () => {
       const owner = await seedUser('rm-lo')
-      const ws = await store.create(owner, 'LastOwner', APP_ID)
+      const ws = await createWorkspace(owner, 'LastOwner', APP_ID)
 
       const result = await store.removeMember(ws.id, owner)
       expect(result).toEqual({ removed: false, code: ERROR_CODES.LAST_OWNER })
@@ -654,7 +667,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
     it('allows removing an owner when another co-owner exists', async () => {
       const ownerA = await seedUser('rm-coa')
       const ownerB = await seedUser('rm-cob')
-      const ws = await store.create(ownerA, 'CoOwner', APP_ID)
+      const ws = await createWorkspace(ownerA, 'CoOwner', APP_ID)
       await store.upsertMember(ws.id, ownerB, 'owner')
 
       const result = await store.removeMember(ws.id, ownerA)
@@ -672,7 +685,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
 
     it('returns workspace where user is the sole owner', async () => {
       const userId = await seedUser('sole-one')
-      const ws = await store.create(userId, 'SoleWS', APP_ID)
+      const ws = await createWorkspace(userId, 'SoleWS', APP_ID)
 
       const result = await store.getWorkspacesWhereSoleOwner(userId)
       expect(result).toHaveLength(1)
@@ -682,7 +695,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
     it('excludes workspace with a co-owner', async () => {
       const userA = await seedUser('sole-co-a')
       const userB = await seedUser('sole-co-b')
-      const ws = await store.create(userA, 'CoOwnedWS', APP_ID)
+      const ws = await createWorkspace(userA, 'CoOwnedWS', APP_ID)
       await store.upsertMember(ws.id, userB, 'owner')
 
       const result = await store.getWorkspacesWhereSoleOwner(userA)
@@ -691,7 +704,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
 
     it('excludes soft-deleted workspaces', async () => {
       const userId = await seedUser('sole-del')
-      const ws = await store.create(userId, 'DeletedSole', APP_ID)
+      const ws = await createWorkspace(userId, 'DeletedSole', APP_ID)
       await store.delete(ws.id)
 
       const result = await store.getWorkspacesWhereSoleOwner(userId)
@@ -701,7 +714,7 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
     it('excludes workspace where user is editor (not owner)', async () => {
       const owner = await seedUser('sole-ed-own')
       const editor = await seedUser('sole-ed-ed')
-      const ws = await store.create(owner, 'EditorWS', APP_ID)
+      const ws = await createWorkspace(owner, 'EditorWS', APP_ID)
       await store.upsertMember(ws.id, editor, 'editor')
 
       const result = await store.getWorkspacesWhereSoleOwner(editor)
@@ -711,8 +724,8 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
     it('mixed: returns sole-owned but not co-owned', async () => {
       const userA = await seedUser('sole-mix-a')
       const userB = await seedUser('sole-mix-b')
-      const wsSole = await store.create(userA, 'Sole', APP_ID)
-      const wsShared = await store.create(userA, 'Shared', APP_ID)
+      const wsSole = await createWorkspace(userA, 'Sole', APP_ID)
+      const wsShared = await createWorkspace(userA, 'Shared', APP_ID)
       await store.upsertMember(wsShared.id, userB, 'owner')
 
       const result = await store.getWorkspacesWhereSoleOwner(userA)
@@ -734,6 +747,13 @@ describeWorkspaceStoreConformance(
         UPDATE workspace_invites
         SET expires_at = NOW() - interval '1 minute'
         WHERE workspace_id = ${workspaceId} AND id = ${inviteId}
+      `
+    },
+    seedLegacyNullDefaultAgentTypeId: async (_workspaceStore, workspaceId) => {
+      await sqlClient`
+        UPDATE workspaces
+        SET default_agent_type_id = NULL
+        WHERE id = ${workspaceId}
       `
     },
     makeAppIds: () => ({ appId: APP_ID, otherAppId: APP_ID_2 }),

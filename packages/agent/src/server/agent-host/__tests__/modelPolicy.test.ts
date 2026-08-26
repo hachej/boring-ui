@@ -111,7 +111,7 @@ async function resolveModel(
     agentTypeId,
     requestId: `create-${sessionId}`,
   })
-  const resolved = await (host.created.gateway as EmbeddedAgentGateway).resolveHostSessionBinding(scope, ref)
+  const resolved = await (host.created.gateway as unknown as EmbeddedAgentGateway).resolveHostSessionBinding(scope, ref)
   const harness = resolved.binding.composition.harness as AgentCoreHarness
   const sessionCtx = {
     workspaceId: scope.workspaceScopeId,

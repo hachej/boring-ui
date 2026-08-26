@@ -252,12 +252,17 @@ describe('signup-domain default-agent initialization (Decision 28 hook)', () => 
     expect(create.mock.calls[0]![3]).toEqual({ isDefault: true, defaultAgentTypeId: 'boring-v2' })
   })
 
-  it('persists no default when neither mapping nor boot default apply', async () => {
-    const { create } = await runSignup({
-      config: makeConfig({ defaultAgentTypeId: undefined, signupAgentDefaults: undefined }),
-      headers: { [TRUSTED_SIGNUP_HOSTNAME_HEADER]: 'legal.example' },
+  it('preserves the legacy default seat when no application default is configured', async () => {
+    const config = makeConfig({ defaultAgentTypeId: undefined, signupAgentDefaults: undefined })
+    const { store, create } = makeFakeStore()
+    const hook = createPostSignupHook({ config, workspaceStore: store, transport: null })
+
+    await hook(user, null)
+
+    expect(create).toHaveBeenCalledWith(user.id, 'Default workspace', config.appId, {
+      isDefault: true,
+      defaultAgentTypeId: 'default',
     })
-    expect(create.mock.calls[0]![3]).toEqual({ isDefault: true })
   })
 
   it('never reads the hostname or agent id from caller-controlled headers', async () => {

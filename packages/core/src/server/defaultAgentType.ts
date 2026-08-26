@@ -1,4 +1,19 @@
-import { ERROR_CODES, HttpError } from '../shared/errors.js'
+import { ERROR_CODES } from '../shared/errors.js'
+
+type DefaultAgentTypeErrorCode =
+  | typeof ERROR_CODES.INVALID_DEFAULT_AGENT_TYPE_ID
+  | typeof ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT
+
+/** Transport-neutral failure raised by default-Agent validation and resolution. */
+export class DefaultAgentTypeError extends Error {
+  readonly code: DefaultAgentTypeErrorCode
+
+  constructor(code: DefaultAgentTypeErrorCode, message: string) {
+    super(message)
+    this.name = 'DefaultAgentTypeError'
+    this.code = code
+  }
+}
 
 /**
  * Decision 28: every initialized Workspace durably persists its
@@ -18,9 +33,24 @@ export function isAgentTypeId(value: unknown): value is string {
 export function parseTrustedDefaultAgentTypeId(value: unknown): string | null {
   if (value === undefined || value === null) return null
   if (!isAgentTypeId(value)) {
-    throw new HttpError({ status: 400, code: ERROR_CODES.INVALID_DEFAULT_AGENT_TYPE_ID, message: 'Invalid default agent type ID' })
+    throw new DefaultAgentTypeError(
+      ERROR_CODES.INVALID_DEFAULT_AGENT_TYPE_ID,
+      'Invalid default agent type ID',
+    )
   }
   return value
+}
+
+/** Production workspace initialization must never manufacture a legacy NULL. */
+export function parseRequiredDefaultAgentTypeId(value: unknown): string {
+  const parsed = parseTrustedDefaultAgentTypeId(value)
+  if (parsed === null) {
+    throw new DefaultAgentTypeError(
+      ERROR_CODES.INVALID_DEFAULT_AGENT_TYPE_ID,
+      'A default agent type ID is required',
+    )
+  }
+  return parsed
 }
 
 export interface WorkspaceDefaultAgentTypeInventoryItem {
@@ -54,25 +84,41 @@ export function classifyWorkspaceDefaultAgentTypeCohorts(
 
 export const LEGACY_DEFAULT_AGENT_TYPE_ID = 'default'
 
+function validateApplicationAgentTypeIds(agentTypeIds: readonly string[]): void {
+  const unique = new Set<string>()
+  for (const agentTypeId of agentTypeIds) {
+    if (!isAgentTypeId(agentTypeId) || unique.has(agentTypeId)) {
+      throw new DefaultAgentTypeError(
+        ERROR_CODES.INVALID_DEFAULT_AGENT_TYPE_ID,
+        'Application Agent fleet identities must be unique valid IDs',
+      )
+    }
+    unique.add(agentTypeId)
+  }
+}
+
 /** Resolves and validates the application default used by the NULL-only backfill. */
 export function resolveApplicationDefaultAgentTypeId(input: {
-  readonly bootDefaultAgentTypeId: string | undefined
+  readonly configuredDefaultAgentTypeId: string | undefined
   readonly availableAgentTypeIds: readonly string[]
 }): string {
-  const candidate = input.bootDefaultAgentTypeId ?? input.availableAgentTypeIds[0] ?? LEGACY_DEFAULT_AGENT_TYPE_ID
+  validateApplicationAgentTypeIds(input.availableAgentTypeIds)
+  const candidate = input.configuredDefaultAgentTypeId === undefined
+    ? input.availableAgentTypeIds[0] ?? LEGACY_DEFAULT_AGENT_TYPE_ID
+    : parseRequiredDefaultAgentTypeId(input.configuredDefaultAgentTypeId)
   if (!input.availableAgentTypeIds.includes(candidate)) {
-    throw new HttpError({
-      status: 500,
-      code: ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT,
-      message: 'Configured application default Agent is unavailable',
-    })
+    throw new DefaultAgentTypeError(
+      ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT,
+      'Configured application default Agent is unavailable',
+    )
   }
   return candidate
 }
 
 export interface ResolveWorkspaceDefaultAgentTypeIdInput {
   readonly persistedDefaultAgentTypeId: string | null | undefined
-  readonly bootDefaultAgentTypeId: string | undefined
+  /** The application default already validated against the fleet at boot. */
+  readonly applicationDefaultAgentTypeId: string
   readonly availableAgentTypeIds: readonly string[]
   readonly onUnknownPersistedSeat?: (diagnostic: {
     readonly code: typeof ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT
@@ -88,15 +134,14 @@ export interface ResolveWorkspaceDefaultAgentTypeIdInput {
  */
 export function resolveWorkspaceDefaultAgentTypeId(input: ResolveWorkspaceDefaultAgentTypeIdInput): string {
   const persisted = input.persistedDefaultAgentTypeId ?? null
-  if (persisted === null) return resolveApplicationDefaultAgentTypeId(input)
+  if (persisted === null) return input.applicationDefaultAgentTypeId
   if (input.availableAgentTypeIds.includes(persisted)) return persisted
   input.onUnknownPersistedSeat?.({
     code: ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT,
     persistedDefaultAgentTypeId: persisted,
   })
-  throw new HttpError({
-    status: 409,
-    code: ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT,
-    message: 'Workspace default Agent is unavailable',
-  })
+  throw new DefaultAgentTypeError(
+    ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT,
+    'Workspace default Agent is unavailable',
+  )
 }
