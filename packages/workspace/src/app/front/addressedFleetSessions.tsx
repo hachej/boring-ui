@@ -66,6 +66,9 @@ function controllerStateEqual<TSession extends WorkspaceAgentSession>(
     && current.loading === next.loading
     && current.loadingMore === next.loadingMore
     && current.hasMore === next.hasMore
+    && current.archivedLoaded === next.archivedLoaded
+    && current.archivedLoading === next.archivedLoading
+    && current.hasMoreArchived === next.hasMoreArchived
     && current.error === next.error
     && current.activeSessionId === next.activeSessionId
     && current.resumeSessionId === next.resumeSessionId
@@ -221,12 +224,19 @@ export function useAddressedFleetSessions<TSession extends WorkspaceAgentSession
     const allFailed = statuses.length > 0 && statuses.every((status) => status === "error")
     const error = discoveryError ?? (allFailed ? controllers.map((controller) => controller.error).find(Boolean) : undefined)
     const hasMore = controllers.some((controller) => controller.hasMore)
+    const archiveCapable = controllers.length === agents.length
+      && controllers.every((controller) => controller.setArchived && controller.loadArchived)
     return {
       sourceIdentity: fleetSourceIdentity,
       sessions: authoritative,
       loading,
       loadingMore: controllers.some((controller) => controller.loadingMore),
       hasMore,
+      ...(archiveCapable ? {
+        archivedLoaded: controllers.every((controller) => controller.archivedLoaded),
+        archivedLoading: controllers.some((controller) => controller.archivedLoading),
+        hasMoreArchived: controllers.some((controller) => controller.hasMoreArchived),
+      } : {}),
       inventoryAuthoritative: !loading && !hasMore && statuses.every((status) => status === "loaded"),
       error,
       activeSessionId: selected?.activeSessionId,
@@ -255,6 +265,17 @@ export function useAddressedFleetSessions<TSession extends WorkspaceAgentSession
         const owner = ownerFor(id, requestedOwner)
         return controllerFor(owner)?.rename?.(id, title, owner)
       },
+      ...(archiveCapable ? {
+        setArchived(id: string, archived: boolean, requestedOwner?: string) {
+          const owner = ownerFor(id, requestedOwner)
+          return controllerFor(owner)?.setArchived?.(id, archived, owner)
+        },
+        loadArchived: async () => {
+          await Promise.all(controllers
+            .filter((controller) => !controller.archivedLoaded || controller.hasMoreArchived)
+            .map((controller) => controller.loadArchived?.()))
+        },
+      } : {}),
       delete(id, requestedOwner) {
         const owner = ownerFor(id, requestedOwner)
         return controllerFor(owner)?.delete(id, owner)

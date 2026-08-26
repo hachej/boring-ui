@@ -181,6 +181,13 @@ class ScriptedSessionStore implements SessionStore {
     return toSummary(record)
   }
 
+  async setArchived(_ctx: SessionCtx, sessionId: string, archived: boolean): Promise<SessionSummary> {
+    const record = this.records.get(sessionId)
+    if (!record) throw new Error(`Session not found: ${sessionId}`)
+    record.archived = archived
+    return toSummary(record)
+  }
+
   async delete(_ctx: SessionCtx, sessionId: string): Promise<void> {
     this.records.delete(sessionId)
   }
@@ -471,5 +478,6 @@ function toSummary(record: ScriptedSessionRecord): SessionSummary {
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
     turnCount: record.turnCount,
+    ...(record.archived === true ? { archived: true } : {}),
   }
 }

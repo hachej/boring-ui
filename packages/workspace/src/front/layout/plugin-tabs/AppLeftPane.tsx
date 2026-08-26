@@ -174,6 +174,11 @@ export interface AppLeftPaneProps {
   onRenameSession?: (id: string, title: string, agentTypeId?: string) => void | Promise<unknown>
   /** Archive / unarchive a chat. Visibility only — never a delete. */
   onSetSessionArchived?: (id: string, archived: boolean, agentTypeId?: string) => void | Promise<unknown>
+  /** Paginated archived-only inventory, independent from active chat pages. */
+  archivedLoaded?: boolean
+  archivedLoading?: boolean
+  hasMoreArchived?: boolean
+  onLoadArchived?: () => void | Promise<unknown>
   /**
    * single-project: workspace shown below the app-title logo, no Workspaces
    * section — just the session list. multi-project: the Workspaces/projects
@@ -270,6 +275,10 @@ export function AppLeftPane({
   onDeleteSession,
   onRenameSession,
   onSetSessionArchived,
+  archivedLoaded = false,
+  archivedLoading = false,
+  hasMoreArchived = false,
+  onLoadArchived,
   layoutMode = "single-project",
 }: AppLeftPaneProps) {
   const primaryNavigationEntries = navigationEntries.filter((entry) => entry.kind === "primary")
@@ -599,11 +608,15 @@ export function AppLeftPane({
   // promoted to a disclosure, because archived chats are the one group that
   // should stay folded away until asked for. Nothing renders when nothing is
   // archived, so the pane is unchanged for anyone who never archives.
-  const renderArchivedSection = () => archivedSessions.length > 0 ? (
+  const renderArchivedSection = () => archivedSessions.length > 0 || onLoadArchived ? (
     <section data-boring-workspace-part="app-left-pane-archived" className="space-y-1" aria-label="Archived chats">
       <button
         type="button"
-        onClick={() => setArchivedExpanded((current) => !current)}
+        onClick={() => setArchivedExpanded((current) => {
+          const expanding = !current
+          if (expanding && !archivedLoaded && !archivedLoading) void onLoadArchived?.()
+          return expanding
+        })}
         aria-expanded={archivedExpanded}
         className="flex w-full items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75 transition-colors motion-reduce:transition-none hover:bg-foreground/[0.055] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
       >
@@ -618,6 +631,22 @@ export function AppLeftPane({
       {archivedExpanded ? (
         <div className="space-y-0.5">
           {archivedSessions.map((session) => renderSession(session, false))}
+          {archivedLoading && archivedSessions.length === 0 ? (
+            <div role="status" className="px-2 py-1 text-[11px] text-muted-foreground">Loading archived chats…</div>
+          ) : null}
+          {archivedLoaded && !archivedLoading && archivedSessions.length === 0 ? (
+            <div className="px-2 py-1 text-[11px] text-muted-foreground">No archived chats.</div>
+          ) : null}
+          {hasMoreArchived ? (
+            <button
+              type="button"
+              disabled={archivedLoading}
+              onClick={() => void onLoadArchived?.()}
+              className="rounded-md px-2 py-1 text-left text-[12px] text-muted-foreground hover:text-foreground disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            >
+              {archivedLoading ? "Loading…" : "Load more archived chats"}
+            </button>
+          ) : null}
         </div>
       ) : null}
     </section>

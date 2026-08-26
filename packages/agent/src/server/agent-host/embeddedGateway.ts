@@ -2,9 +2,11 @@ import { createHash, randomUUID } from 'node:crypto'
 import {
   AgentGatewayError,
   AgentGatewayErrorCode,
+  supportsSessionArchive,
   type AgentGateway,
   type AgentGatewayErrorDTO,
   type AgentSessionActivity,
+  type AgentSessionArchiveFilter,
   type AgentSessionConnection,
   type AgentSessionEvent,
   type AgentSessionRef,
@@ -259,8 +261,9 @@ export class EmbeddedAgentGateway implements AgentGateway {
     if (input.agentTypeId && !this.runtime.compiledById.has(input.agentTypeId)) {
       throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN, 'agent type is not available')
     }
+    const archivedFilter: AgentSessionArchiveFilter = input.archived ?? 'all'
     const cursor = input.cursor
-      ? this.decodeCursor(input.cursor, claim.workspaceScopeId, input.agentTypeId, normalizedLimit)
+      ? this.decodeCursor(input.cursor, claim.workspaceScopeId, input.agentTypeId, normalizedLimit, archivedFilter)
       : { depth: 0, after: undefined }
     const agents = input.agentTypeId
       ? [input.agentTypeId]
@@ -275,25 +278,27 @@ export class EmbeddedAgentGateway implements AgentGateway {
     const perAgentLimit = cursor.depth + normalizedLimit + 1
     const rows: AgentSessionSummary[] = []
     for (const agentTypeId of agents) {
-      const listed = await this.runtime.listSessionSummaries(agentTypeId, input.scope, claim, { limit: perAgentLimit })
+      // Filtering belongs inside each physical session shard before its bounded
+      // prefix is cut. Otherwise an opposite-state prefix can consume the
+      // entire per-seat budget and make matching older sessions unreachable.
+      const listed = await this.runtime.listSessionSummaries(agentTypeId, input.scope, claim, {
+        limit: perAgentLimit,
+        archived: archivedFilter,
+      })
       for (const item of listed) {
         const ref = { agentTypeId, sessionId: item.id }
         rows.push(summaryFromLegacy(ref, item, this.runtime.activity.get(claim.workspaceScopeId, ref)))
       }
     }
     rows.sort(compareSessions)
-    // Archiving narrows the page AFTER the runtime listed every owned session,
-    // so a hidden row never silently consumes a slot in the caller's page.
-    const visible = input.archived && input.archived !== 'all'
-      ? rows.filter((row) => (row.archived === true) === (input.archived === 'archived'))
-      : rows
-    const eligible = cursor.after ? visible.filter((row) => isAfterCursor(row, cursor.after!)) : visible
+    const eligible = cursor.after ? rows.filter((row) => isAfterCursor(row, cursor.after!)) : rows
     const sessions = eligible.slice(0, normalizedLimit)
     const nextCursor = eligible.length > sessions.length && sessions.length > 0
       ? this.encodeCursor(
           claim.workspaceScopeId,
           input.agentTypeId,
           normalizedLimit,
+          archivedFilter,
           cursor.depth + sessions.length,
           sessions.at(-1)!,
         )
@@ -563,16 +568,12 @@ export class EmbeddedAgentGateway implements AgentGateway {
   async setSessionArchived(input: Parameters<AgentGateway['setSessionArchived']>[0]) {
     const claim = await this.verify(input.scope)
     const binding = await this.bindingForSession(input.scope, claim, input.ref)
+    const repository = binding.composition.sessionStore
+    if (!supportsSessionArchive(repository)) {
+      throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE, 'session repository does not support archiving')
+    }
     return await this.sessionEffect(input.ref, claim, 'session.archive', input.requestId, { archived: input.archived }, async () => {
-      const repository = binding.composition.sessionStore as typeof binding.composition.sessionStore & {
-        setArchived?: (ctx: { workspaceId?: string }, sessionId: string, archived: boolean) => Promise<{
-          title: string; createdAt: string; updatedAt: string; archived?: boolean
-        }>
-      }
-      if (!repository.setArchived) {
-        throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE, 'session repository does not support archiving')
-      }
-      const updated = await repository.setArchived!(
+      const updated = await repository.setArchived(
         { workspaceId: claim.workspaceScopeId }, input.ref.sessionId, input.archived,
       )
       return summaryFromLegacy(input.ref, updated, this.runtime.activity.get(claim.workspaceScopeId, input.ref))
@@ -940,6 +941,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
     workspaceScopeId: string,
     agentTypeId: string | undefined,
     limit: number,
+    archived: AgentSessionArchiveFilter,
     depth: number,
     last: AgentSessionSummary,
   ): string {
@@ -947,6 +949,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
       workspaceScopeId,
       agentTypeId: agentTypeId ?? null,
       limit,
+      archived,
       depth,
       updatedAt: last.updatedAt,
       lastAgentTypeId: last.ref.agentTypeId,
@@ -962,6 +965,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
     workspaceScopeId: string,
     agentTypeId: string | undefined,
     limit: number,
+    archived: AgentSessionArchiveFilter,
   ): { depth: number; after: { updatedAt: number; agentTypeId: string; sessionId: string } } {
     try {
       const [encoded, signature, extra] = cursor.split('.')
@@ -973,6 +977,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
         decoded.workspaceScopeId !== workspaceScopeId
         || decoded.agentTypeId !== (agentTypeId ?? null)
         || decoded.limit !== limit
+        || decoded.archived !== archived
         || typeof decoded.depth !== 'number'
         || !Number.isInteger(decoded.depth)
         || decoded.depth < 0

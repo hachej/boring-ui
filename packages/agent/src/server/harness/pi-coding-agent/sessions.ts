@@ -342,17 +342,26 @@ export class PiSessionStore implements SessionStore {
   }
 
   /**
-   * Visibility only: the transcript is not opened, appended to, rewritten, or
-   * even stat-ed here. The session id is resolved (which is what enforces
-   * tenancy) and then a single sidecar entry is added or removed, so
-   * archive → unarchive is a true round trip.
+   * Visibility only. Resolve tenancy and build the receipt through the bounded
+   * listing projection; never call `load`, whose legacy compatibility path may
+   * compact ui_snapshot entries and therefore mutate transcript bytes/mtime.
    */
   async setArchived(ctx: SessionCtx, sessionId: string, archived: boolean): Promise<SessionSummary> {
-    const resolvedId = (await this.load(ctx, sessionId)).id;
-    await this.withWriter(`archive:${this.sessionDir}`, async () => {
-      await writeSessionArchived(this.sessionDir, resolvedId, archived);
-    });
-    return await this.load(ctx, sessionId);
+    const filepath = await this.resolveSessionFile(sessionId, ctx);
+    const summary = await this.summarizeFile(ctx, filepath);
+    if (!summary) throw new Error(`Session not found: ${sessionId}`);
+
+    await writeSessionArchived(this.sessionDir, summary.id, archived);
+    try {
+      // Close the validate→marker race with deletion. If delete won before the
+      // marker landed, remove the orphan; if it wins after this check, its own
+      // post-unlink cleanup removes the marker.
+      await this.resolveSessionFile(summary.id, ctx);
+    } catch (error) {
+      await forgetArchivedSession(this.sessionDir, summary.id);
+      throw error;
+    }
+    return archived ? { ...summary, archived: true } : summary;
   }
 
   async load(ctx: SessionCtx, sessionId: string): Promise<SessionDetail> {
@@ -670,11 +679,10 @@ export class PiSessionStore implements SessionStore {
       await rm(linkedPiFile, { force: true });
       this.prefixCache.delete(linkedPiFile);
     }
-    // A real delete removed the transcript, so the archive sidecar must not
-    // keep pointing at an id that no longer exists.
-    await this.withWriter(`archive:${this.sessionDir}`, async () => {
-      await forgetArchivedSession(this.sessionDir, fileSessionId ?? sessionId);
-    });
+    // A real delete removed the transcript, so its independent archive marker
+    // must not remain. A racing archive also rechecks transcript existence
+    // after publishing its marker and removes an orphan if this unlink won.
+    await forgetArchivedSession(this.sessionDir, fileSessionId ?? sessionId);
   }
 
   private async resolveSessionFile(sessionId: string, ctx?: SessionCtx): Promise<string> {

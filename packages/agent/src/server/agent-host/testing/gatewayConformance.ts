@@ -575,6 +575,7 @@ export function gatewayConformance(options: GatewayConformanceOptions): void {
       await expectCode(fixture.gateway.listSessions({ scope: scopeB, cursor, limit: 1 }), 'AGENT_SESSION_CURSOR_INVALID')
       await expectCode(fixture.gateway.listSessions({ scope: scopeA, cursor, limit: 2 }), 'AGENT_SESSION_CURSOR_INVALID')
       await expectCode(fixture.gateway.listSessions({ scope: scopeA, cursor, agentTypeId: 'alpha', limit: 1 }), 'AGENT_SESSION_CURSOR_INVALID')
+      await expectCode(fixture.gateway.listSessions({ scope: scopeA, cursor, archived: 'active', limit: 1 }), 'AGENT_SESSION_CURSOR_INVALID')
 
       const all = await fixture.gateway.listSessions({ scope: scopeA, limit: 20 })
       expect(all.sessions).toEqual([...all.sessions].sort((left, right) =>

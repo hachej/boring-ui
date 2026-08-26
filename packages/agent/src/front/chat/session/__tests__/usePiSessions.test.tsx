@@ -180,7 +180,7 @@ describe('usePiSessions', () => {
     expect(result.current.sessions.map((item) => item.id)).toEqual(['pi-running'])
     expect(remote.factory).toHaveBeenCalledTimes(1)
     expect(remote.created[0]?.options).toMatchObject({ sessionId: 'pi-running', workspaceId: 'workspace-a', storageScope: 'scope-a' })
-    expect(fetchMock).toHaveBeenCalledWith('/api/v1/agents/default/sessions?limit=50', {
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/agents/default/sessions?limit=50&archived=active', {
       headers: { authorization: 'Bearer redacted', 'x-boring-storage-scope': 'scope-a' },
     })
     expect(persisted.values.get(activeSessionStorageKey('scope-a'))).toBe('pi-running')
@@ -369,7 +369,7 @@ describe('usePiSessions', () => {
 
     expect(result.current.sessions).toHaveLength(50)
     expect(result.current.hasMore).toBe(true)
-    expect(fetchMock).toHaveBeenCalledWith('/api/v1/agents/default/sessions?limit=50', {
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/agents/default/sessions?limit=50&archived=active', {
       headers: { 'x-boring-storage-scope': 'scope-a' },
     })
 
@@ -377,7 +377,7 @@ describe('usePiSessions', () => {
       await result.current.loadMore()
     })
 
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/v1/agents/default/sessions?limit=50&cursor=50', {
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/v1/agents/default/sessions?limit=50&archived=active&cursor=50', {
       headers: { 'x-boring-storage-scope': 'scope-a' },
     })
     expect(result.current.sessions.map((item) => item.id)).toEqual([
@@ -409,7 +409,7 @@ describe('usePiSessions', () => {
     expect(result.current.activeSessionId).toBe('pi-older-active')
     expect(result.current.activeSession).toEqual(expect.objectContaining({ id: 'pi-older-active' }))
     expect(remote.created[0]?.options.sessionId).toBe('pi-older-active')
-    expect(fetchMock).toHaveBeenCalledWith('/api/v1/agents/default/sessions?limit=50', {
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/agents/default/sessions?limit=50&archived=active', {
       headers: { 'x-boring-storage-scope': 'scope-a' },
     })
     expect(persisted.values.get(activeSessionStorageKey('scope-a'))).toBe('pi-older-active')
@@ -545,7 +545,7 @@ describe('usePiSessions', () => {
     rerender({ scope: 'scope-b' })
 
     await waitFor(() => expect(result.current.activeSessionId).toBe('b-active'))
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/v1/agents/default/sessions?limit=50', {
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/v1/agents/default/sessions?limit=50&archived=active', {
       headers: { 'x-boring-storage-scope': 'scope-b' },
     })
     expect(persisted.values.get(activeSessionStorageKey('scope-b'))).toBe('b-active')
@@ -606,7 +606,7 @@ describe('usePiSessions', () => {
     rerender({ apiBaseUrl: 'http://new.example' })
 
     await waitFor(() => expect(result.current.activeSessionId).toBe('new-0'))
-    expect(fetchMock).toHaveBeenNthCalledWith(2, 'http://new.example/api/v1/agents/default/sessions?limit=50', {
+    expect(fetchMock).toHaveBeenNthCalledWith(2, 'http://new.example/api/v1/agents/default/sessions?limit=50&archived=active', {
       headers: { 'x-boring-storage-scope': 'scope-a' },
     })
     expect(persisted.values.get(activeSessionStorageKey('scope-a'))).toBe('new-0')
@@ -638,7 +638,7 @@ describe('usePiSessions', () => {
     rerender({ token: 'new' })
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
-    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/v1/agents/default/sessions?limit=50', {
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/v1/agents/default/sessions?limit=50&archived=active', {
       headers: {
         authorization: 'Bearer new',
         'x-boring-storage-scope': 'scope-a',
@@ -867,7 +867,7 @@ describe('usePiSessions', () => {
       await result.current.loadMore()
     })
 
-    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/v1/agents/default/sessions?limit=50&cursor=50', {
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/v1/agents/default/sessions?limit=50&archived=active&cursor=50', {
       headers: { 'x-boring-storage-scope': 'scope-a' },
     })
     expect(result.current.sessions.map((item) => item.id)).toContain('pi-50')

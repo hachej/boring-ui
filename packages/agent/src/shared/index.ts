@@ -73,11 +73,13 @@ export type { AgentTool, ToolExecContext, ToolResult, JSONSchema } from './tool'
 export type { ToolUiMetadata } from './tool-ui'
 export { isToolUiMetadata, extractToolUiMetadata } from './tool-ui'
 export type { CatalogDeps, ToolCatalog } from './catalog'
-export { SAFE_NATIVE_SESSION_ID } from './session'
+export { SAFE_NATIVE_SESSION_ID, supportsSessionArchive } from './session'
 export { safeRandomUUID } from './random-id'
 export type {
+  ArchiveSessionStore,
   SessionStore,
   SessionCtx,
+  SessionArchiveFilter,
   SessionListOptions,
   SessionSummary,
   SessionDetail,
@@ -200,6 +202,7 @@ export type {
   AgentScopeVerifier,
   AgentSendReceipt,
   AgentSessionActivity,
+  AgentSessionArchiveFilter,
   AgentSessionConnection,
   AgentSessionPage,
   AgentSessionRef,

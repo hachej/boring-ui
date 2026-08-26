@@ -23,6 +23,7 @@ import { createTestRuntimeModeAdapter } from '@agent-test-host'
 import type { AuthorizedAgentScope } from '../../../shared/index'
 import type { SessionListOptions } from '../../../shared/session'
 import { PiSessionStore } from '../../harness/pi-coding-agent/sessions'
+import { writeSessionArchived } from '../../harness/pi-coding-agent/sessionArchiveIndex'
 import { createAgentHost } from '../createAgentHost'
 import { sessionNamespaceForAgent } from '../sessionInventory'
 import type { AgentHostAgentSpec } from '../types'
@@ -167,6 +168,63 @@ describe('legacyDefault seat storage placement', () => {
 })
 
 describe('seat session listing pagination', () => {
+  it('pushes archive filtering into each store before cutting its bounded prefix', async () => {
+    const sessionRoot = await temporaryRoot()
+    const workspaceRoot = join(sessionRoot, 'workspace')
+    const workspaceScopeId = 'workspace-filter:storage-filter'
+    const scope = { workspaceScopeId, authSubjectId: 'subject-a' } as AuthorizedAgentScope
+    const dir = join(sessionRoot, pathDerivedDirName(workspaceRoot))
+    for (let index = 0; index < 8; index += 1) {
+      await plant(dir, `session-${index}`, `Session ${index}`, workspaceScopeId, Date.UTC(2026, 6, 20) + index * 60_000)
+    }
+    // The matching rows are behind six newer opposite-state rows. Gateway-side
+    // post-filtering of a limit-2 prefix would return an empty terminal page.
+    await writeSessionArchived(dir, 'session-0', true)
+    await writeSessionArchived(dir, 'session-1', true)
+
+    const listOptions: SessionListOptions[] = []
+    const originalList = PiSessionStore.prototype.list
+    vi.spyOn(PiSessionStore.prototype, 'list').mockImplementation(async function (this: PiSessionStore, ctx, options) {
+      listOptions.push(options ?? {})
+      return await originalList.call(this, ctx, options)
+    })
+
+    const host = await startHost({ agents: [legacyDefaultAgent], sessionRoot, workspaceRoot, sessionNamespace: '' })
+    try {
+      const first = await host.gateway.listSessions({ scope, agentTypeId: 'default', archived: 'archived', limit: 1 })
+      expect(first.sessions.map((row) => row.ref.sessionId)).toEqual(['session-1'])
+      const second = await host.gateway.listSessions({ scope, agentTypeId: 'default', archived: 'archived', limit: 1, cursor: first.nextCursor })
+      expect(second.sessions.map((row) => row.ref.sessionId)).toEqual(['session-0'])
+      expect(listOptions.every((options) => options.archived === 'archived')).toBe(true)
+    } finally {
+      await host.host.close()
+    }
+  })
+
+  it('binds archive state to pagination cursors', async () => {
+    const sessionRoot = await temporaryRoot()
+    const workspaceRoot = join(sessionRoot, 'workspace')
+    const workspaceScopeId = 'workspace-cursor:storage-cursor'
+    const scope = { workspaceScopeId, authSubjectId: 'subject-a' } as AuthorizedAgentScope
+    const dir = join(sessionRoot, pathDerivedDirName(workspaceRoot))
+    await plant(dir, 'active-a', 'Active A', workspaceScopeId, Date.UTC(2026, 6, 20))
+    await plant(dir, 'active-b', 'Active B', workspaceScopeId, Date.UTC(2026, 6, 21))
+
+    const host = await startHost({ agents: [legacyDefaultAgent], sessionRoot, workspaceRoot, sessionNamespace: '' })
+    try {
+      const active = await host.gateway.listSessions({ scope, agentTypeId: 'default', archived: 'active', limit: 1 })
+      await expect(host.gateway.listSessions({
+        scope,
+        agentTypeId: 'default',
+        archived: 'archived',
+        limit: 1,
+        cursor: active.nextCursor,
+      })).rejects.toMatchObject({ code: 'AGENT_SESSION_CURSOR_INVALID' })
+    } finally {
+      await host.host.close()
+    }
+  })
+
   it('bounds every store read and pages without gaps or repeats', async () => {
     const sessionRoot = await temporaryRoot()
     const workspaceRoot = join(sessionRoot, 'workspace')

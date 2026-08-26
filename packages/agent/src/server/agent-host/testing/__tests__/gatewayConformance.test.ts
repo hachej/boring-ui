@@ -514,7 +514,9 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
     this.assertOpen()
     const claim = this.verify(input.scope)
     const limit = input.limit ?? 50
-    const filter = input.agentTypeId ?? ''
+    const agentFilter = input.agentTypeId ?? ''
+    const archiveFilter = input.archived ?? 'all'
+    const filter = JSON.stringify([agentFilter, archiveFilter])
     let after: readonly [number, string, string] | undefined
     if (input.cursor !== undefined) {
       const parsed = this.parseCursor(input.cursor)
@@ -529,7 +531,8 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
     }
     const ordered = [...this.sessions.values()]
       .filter((session) => session.workspaceScopeId === claim.workspaceScopeId)
-      .filter((session) => filter === '' || session.ref.agentTypeId === filter)
+      .filter((session) => agentFilter === '' || session.ref.agentTypeId === agentFilter)
+      .filter((session) => archiveFilter === 'all' || session.archived === (archiveFilter === 'archived'))
       .sort((left, right) => this.compareSessions(left, right))
       .filter((session) => after === undefined || this.compareTuple(session, after) > 0)
     const sessions = ordered.slice(0, limit).map((session) => this.summary(session))

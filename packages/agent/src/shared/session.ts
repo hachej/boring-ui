@@ -21,6 +21,15 @@ export interface SessionStore {
  * every existing caller keeps seeing exactly what it saw before archiving
  * existed; the flag on each summary is what lets a client partition.
  */
+export interface ArchiveSessionStore extends SessionStore {
+  setArchived(ctx: SessionCtx, sessionId: string, archived: boolean): Promise<SessionSummary>
+}
+
+/** Typed capability check used at optional composition boundaries. */
+export function supportsSessionArchive(store: SessionStore): store is ArchiveSessionStore {
+  return typeof store.setArchived === 'function'
+}
+
 export type SessionArchiveFilter = 'active' | 'archived' | 'all'
 
 export interface SessionCtx {

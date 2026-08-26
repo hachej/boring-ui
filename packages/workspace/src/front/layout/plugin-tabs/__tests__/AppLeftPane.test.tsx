@@ -1024,6 +1024,32 @@ describe("AppLeftPane", () => {
       expect(screen.getByText("Second session")).toBeInTheDocument()
     })
 
+    it("loads and exposes archived pages beyond the first 50", async () => {
+      const onLoadArchived = vi.fn()
+      const onSetSessionArchived = vi.fn()
+      renderWithArchived({
+        sessions: Array.from({ length: 51 }, (_, index) => ({
+          id: `archived-${index}`,
+          title: `Archived session ${index}`,
+          archived: true,
+        })),
+        archivedLoaded: true,
+        hasMoreArchived: true,
+        onLoadArchived,
+        onSetSessionArchived,
+      })
+
+      await userEvent.click(screen.getByRole("button", { name: /Archived/ }))
+      expect(screen.getByText("Archived session 50")).toBeInTheDocument()
+      await userEvent.click(screen.getByRole("button", { name: "Load more archived chats" }))
+      expect(onLoadArchived).toHaveBeenCalledTimes(1)
+
+      const row = screen.getByText("Archived session 50").closest('[data-boring-workspace-part="app-session-row"]')
+      await userEvent.click(within(row as HTMLElement).getByRole("button", { name: "Chat actions for Archived session 50" }))
+      await userEvent.click(screen.getByText("Unarchive session"))
+      expect(onSetSessionArchived).toHaveBeenCalledWith("archived-50", false, undefined)
+    })
+
     it("shows no Archived section when nothing is archived", () => {
       renderWithArchived({ sessions: [{ id: "s1", title: "First session" }] })
       expect(screen.queryByRole("button", { name: /Archived/ })).not.toBeInTheDocument()

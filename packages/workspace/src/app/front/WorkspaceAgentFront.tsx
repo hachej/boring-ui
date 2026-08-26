@@ -125,6 +125,9 @@ export interface WorkspaceAgentSessionsApi<
   loading: boolean
   loadingMore?: boolean
   hasMore?: boolean
+  archivedLoaded?: boolean
+  archivedLoading?: boolean
+  hasMoreArchived?: boolean
   /** True only when missing rows may be pruned across every addressed owner. */
   inventoryAuthoritative?: boolean
   error?: Error | null
@@ -139,8 +142,11 @@ export interface WorkspaceAgentSessionsApi<
   /** Returns the canonical created row; void providers are a protocol violation. */
   create: (input?: { title?: string; resumeSessionId?: string; agentTypeId?: string }) => TSession | Promise<TSession>
   rename?: (id: string, title: string, agentTypeId?: string) => void | Promise<unknown>
+  /** Explicit typed archive capability; absence hides archive controls. */
+  setArchived?: (id: string, archived: boolean, agentTypeId?: string) => void | Promise<unknown>
   delete: (id: string, agentTypeId?: string) => void | Promise<unknown>
   loadMore?: () => void | Promise<unknown>
+  loadArchived?: () => void | Promise<unknown>
   refresh?: (options?: { background?: boolean; throwOnError?: boolean }) => void | Promise<unknown>
 }
 
@@ -553,6 +559,10 @@ function useDefaultWorkspacePiSessions(options: Parameters<UseWorkspaceAgentSess
     switch: (id, owner) => {
       if (owner && owner !== options.agentTypeId) return
       piSessions.switch(id)
+    },
+    setArchived: async (id, archived, owner) => {
+      if (owner && owner !== options.agentTypeId) throw new Error("session owner does not match this archive capability")
+      return await piSessions.setArchived(id, archived)
     },
     delete: async (id, owner) => {
       if (!owner || owner === options.agentTypeId) return await piSessions.delete(id)
@@ -2158,21 +2168,10 @@ export function WorkspaceAgentFront<
     await sessionApi?.refresh?.({ background: true })
   }, [apiBaseUrl, onRenameSession, resolvedRequestHeaders, selectedAgentTypeId, sessionApi])
 
-  // Archiving is the rename mutation's twin: one addressed POST, then the
-  // authoritative inventory refresh. It is deliberately NOT the delete path —
-  // the server keeps the transcript and only flips a visibility flag.
   const setChatSessionArchived = useCallback(async (sessionId: string, archived: boolean, sessionAgentTypeId?: string) => {
-    const owner = sessionAgentTypeId ?? selectedAgentTypeId
-    const endpoint = `${apiBaseUrl?.replace(/\/$/, "") ?? ""}/api/v1/agents/${encodeURIComponent(owner)}/sessions/${encodeURIComponent(sessionId)}/archive`
-    const requestId = `session-archive:${globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`}`
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { ...resolvedRequestHeaders, "content-type": "application/json" },
-      body: JSON.stringify({ requestId, archived }),
-    })
-    if (!response.ok) throw new Error(`${archived ? "archive" : "unarchive"} failed (${response.status})`)
-    await sessionApi?.refresh?.({ background: true })
-  }, [apiBaseUrl, resolvedRequestHeaders, selectedAgentTypeId, sessionApi])
+    if (!sessionApi?.setArchived) throw new Error("session provider does not support archiving")
+    await sessionApi.setArchived(sessionId, archived, sessionAgentTypeId)
+  }, [sessionApi])
 
   const reloadAgentPluginsForSession = useCallback(async (ref: { agentTypeId: string; sessionId: string }) => {
     const endpoint = `${apiBaseUrl?.replace(/\/$/, "") ?? ""}/api/v1/agents/${encodeURIComponent(ref.agentTypeId)}/reload`
@@ -2790,7 +2789,11 @@ export function WorkspaceAgentFront<
           onToggleSessionPinned={toggleSessionPinned}
           onDeleteSession={canDeleteSessions ? deleteSessionAndPane : undefined}
           onRenameSession={sessionApi?.rename ? resolvedRename : undefined}
-          onSetSessionArchived={sessionApi ? setChatSessionArchived : undefined}
+          onSetSessionArchived={sessionApi?.setArchived ? setChatSessionArchived : undefined}
+          archivedLoaded={sessionApi?.archivedLoaded}
+          archivedLoading={sessionApi?.archivedLoading}
+          hasMoreArchived={sessionApi?.hasMoreArchived}
+          onLoadArchived={sessionApi?.loadArchived}
         />
       )}
     >

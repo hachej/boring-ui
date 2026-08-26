@@ -74,10 +74,18 @@ export interface UsePiSessionsResult {
   loading: boolean
   loadingMore: boolean
   hasMore: boolean
+  /** Archived inventory is paged independently from the active list. */
+  archivedLoaded: boolean
+  archivedLoading: boolean
+  hasMoreArchived: boolean
   error: Error | undefined
   refresh: (options?: PiSessionRefreshOptions) => Promise<void>
   create: (init?: PiSessionCreateInit) => Promise<SessionSummary>
   rename: (id: string, title: string) => Promise<SessionSummary>
+  /** Explicit archive capability; never aliases delete. */
+  setArchived: (id: string, archived: boolean) => Promise<SessionSummary>
+  /** Loads the first or next archived-only page. */
+  loadArchived: () => Promise<void>
   switch: (id: string) => void
   delete: (id: string) => Promise<void>
   loadMore: () => Promise<void>
@@ -147,6 +155,9 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
   const [loading, setLoading] = useState(enabled)
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(false)
+  const [archivedLoaded, setArchivedLoaded] = useState(false)
+  const [archivedLoading, setArchivedLoading] = useState(false)
+  const [hasMoreArchived, setHasMoreArchived] = useState(false)
   const [error, setError] = useState<Error | undefined>(undefined)
   const mountedRef = useRef(false)
   const refreshVersionRef = useRef(0)
@@ -156,6 +167,10 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
   const hasMoreRef = useRef(hasMore)
   const canonicalLoadedCountRef = useRef(0)
   const nextCursorRef = useRef<string | undefined>(undefined)
+  const archivedCursorRef = useRef<string | undefined>(undefined)
+  const archivedLoadedRef = useRef(false)
+  const archiveRequestSeqRef = useRef(0)
+  const archiveInFlightRef = useRef(false)
   const loadMoreRequestSeqRef = useRef(0)
   const loadMoreInFlightRef = useRef(false)
   const pendingCreatedRef = useRef<Map<string, SessionSummary>>(new Map())
@@ -203,8 +218,8 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
 
   const requestHeaders = useCallback((): Record<string, string> => normalizedHeaders, [normalizedHeaders])
   const sessionsUrl = useCallback((suffix = '') => `${apiBaseUrl}${sessionsApiPath}${suffix}`, [apiBaseUrl, sessionsApiPath])
-  const sessionsListUrl = useCallback((cursor?: string) => {
-    const query = new URLSearchParams({ limit: String(SESSION_PAGE_SIZE) })
+  const sessionsListUrl = useCallback((cursor?: string, archived: 'active' | 'archived' = 'active') => {
+    const query = new URLSearchParams({ limit: String(SESSION_PAGE_SIZE), archived })
     if (cursor) query.set('cursor', cursor)
     return sessionsUrl(`?${query.toString()}`)
   }, [sessionsUrl])
@@ -265,7 +280,15 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
     const current = applyOptions.background && pageMayHaveMore
       ? sessionsRef.current.filter((session) => !requestedActiveId || requestedActiveReturned || session.id !== requestedActiveId)
       : []
-    const merged = mergeSessions(Array.from(pendingCreated.values()), filteredData, current.filter((session) => !deletedIds.has(session.id)))
+    const retainedArchived = replacingScope
+      ? []
+      : sessionsRef.current.filter((session) => session.archived === true && !deletedIds.has(session.id))
+    const merged = mergeSessions(
+      Array.from(pendingCreated.values()),
+      filteredData,
+      current.filter((session) => !deletedIds.has(session.id)),
+      retainedArchived,
+    )
     const rememberedEmptyId = readBootResumeSessionId({
       bootResumeSource,
       storage: options.bootResumeStorage,
@@ -278,6 +301,15 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
       ? Math.max(canonicalLoadedCountRef.current, canonicalCount)
       : canonicalCount
 
+    if (replacingScope) {
+      archiveRequestSeqRef.current += 1
+      archiveInFlightRef.current = false
+      archivedCursorRef.current = undefined
+      archivedLoadedRef.current = false
+      setArchivedLoaded(false)
+      setArchivedLoading(false)
+      setHasMoreArchived(false)
+    }
     loadedDataSourceRef.current = dataSourceKey
     dataStorageScopeRef.current = storageScope
     setDataStorageScope(storageScope)
@@ -315,6 +347,13 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
       setLoading(false)
       setLoadingMore(false)
       setHasMore(false)
+      archivedCursorRef.current = undefined
+      archivedLoadedRef.current = false
+      archiveRequestSeqRef.current += 1
+      archiveInFlightRef.current = false
+      setArchivedLoaded(false)
+      setArchivedLoading(false)
+      setHasMoreArchived(false)
       persistActive(undefined)
       return
     }
@@ -397,6 +436,41 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
     }
   }, [enabled, fetchImpl, hasMore, loading, loadingMore, persistActive, requestHeaders, requestScopeKey, sessionsListUrl, sourceIsCurrent])
 
+  const loadArchived = useCallback(async (): Promise<void> => {
+    if (!enabled || archivedLoading || archiveInFlightRef.current) return
+    if (archivedLoadedRef.current && !hasMoreArchived) return
+    const requestSeq = ++archiveRequestSeqRef.current
+    const scope = requestScopeKey
+    archiveInFlightRef.current = true
+    setArchivedLoading(true)
+    try {
+      const page = await fetchSessionList(
+        fetchImpl,
+        sessionsListUrl(archivedCursorRef.current, 'archived'),
+        requestHeaders(),
+      )
+      if (requestSeq !== archiveRequestSeqRef.current || !sourceIsCurrent(scope)) return
+      const archived = page.sessions.filter((session) => !pendingDeletedRef.current.has(session.id))
+      const merged = mergeSessions(
+        sessionsRef.current.filter((session) => !pendingDeletedRef.current.has(session.id)),
+        archived,
+      )
+      archivedCursorRef.current = page.nextCursor
+      archivedLoadedRef.current = true
+      setSessions(merged)
+      setArchivedLoaded(true)
+      setHasMoreArchived(page.nextCursor !== undefined)
+      setError(undefined)
+    } catch (err) {
+      if (requestSeq === archiveRequestSeqRef.current && sourceIsCurrent(scope)) {
+        setError(err instanceof Error ? err : new Error(String(err)))
+      }
+    } finally {
+      if (requestSeq === archiveRequestSeqRef.current) archiveInFlightRef.current = false
+      if (requestSeq === archiveRequestSeqRef.current && sourceIsCurrent(scope)) setArchivedLoading(false)
+    }
+  }, [archivedLoading, enabled, fetchImpl, hasMoreArchived, requestHeaders, requestScopeKey, sessionsListUrl, sourceIsCurrent])
+
   useEffect(() => {
     if (!enabled || !connectActiveSession || !activeSessionId || !activeSessionKnown) {
       setActivePiSession(undefined)
@@ -473,6 +547,22 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
     return renamed
   }, [enabled, ensurePendingScope, fetchImpl, requestHeaders, requestScopeKey, sessionsUrl, sourceIsCurrent])
 
+  const setArchived = useCallback(async (id: string, archived: boolean): Promise<SessionSummary> => {
+    const scope = requestScopeKey
+    if (!sourceIsCurrent(scope)) throw new StaleSessionsSourceError()
+    if (!enabled) throw new Error('Pi sessions are disabled')
+    const response = await fetchImpl(sessionsUrl(`/${encodeURIComponent(id)}/archive`), {
+      method: 'POST',
+      headers: { ...requestHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requestId: createRequestId('archive'), archived }),
+    })
+    if (!response.ok) throw new Error(`Failed to ${archived ? 'archive' : 'unarchive'} session: ${response.status}`)
+    const updated = toAddressedSessionSummary(await response.json())
+    if (!sourceIsCurrent(scope)) throw new StaleSessionsSourceError()
+    setSessions((current) => current.map((session) => session.id === id ? updated : session))
+    return updated
+  }, [enabled, fetchImpl, requestHeaders, requestScopeKey, sessionsUrl, sourceIsCurrent])
+
   const deleteSession = useCallback(async (id: string): Promise<void> => {
     const scope = requestScopeKey
     if (!sourceIsCurrent(scope)) throw new StaleSessionsSourceError()
@@ -525,7 +615,14 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
     pendingDeletedRef.current.clear()
     loadMoreRequestSeqRef.current += 1
     loadMoreInFlightRef.current = false
-    canonicalLoadedCountRef.current = canonicalPageCount(sessionsRef.current)
+    archiveRequestSeqRef.current += 1
+    archiveInFlightRef.current = false
+    archivedCursorRef.current = undefined
+    archivedLoadedRef.current = false
+    setArchivedLoaded(false)
+    setArchivedLoading(false)
+    setHasMoreArchived(false)
+    canonicalLoadedCountRef.current = canonicalPageCount(sessionsRef.current.filter((session) => session.archived !== true))
     loadedDataSourceRef.current = dataSourceKey
     dataStorageScopeRef.current = storageScope
     setDataStorageScope(storageScope)
@@ -549,10 +646,15 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
     loading: enabled ? loading : false,
     loadingMore,
     hasMore: enabled ? hasMore : false,
+    archivedLoaded,
+    archivedLoading,
+    hasMoreArchived: enabled ? hasMoreArchived : false,
     error,
     refresh,
     create,
     rename,
+    setArchived,
+    loadArchived,
     switch: switchSession,
     delete: deleteSession,
     loadMore,

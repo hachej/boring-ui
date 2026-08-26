@@ -4,6 +4,56 @@ import { describe, expect, test, vi } from 'vitest'
 import { usePiSessions } from '../usePiSessions'
 
 describe('usePiSessions addressed Agent transport', () => {
+  test('pages archived inventory independently so sessions beyond 50 can be unarchived', async () => {
+    const archivedRow = (index: number) => ({
+      ref: { agentTypeId: 'alpha', sessionId: `archived-${index}` },
+      title: `Archived ${index}`,
+      status: 'idle',
+      createdAt: index,
+      updatedAt: index,
+      archived: true,
+    })
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input), 'http://local')
+      if (init?.method === 'POST') {
+        const id = url.pathname.split('/').at(-2)!
+        return new Response(JSON.stringify({
+          ...archivedRow(Number(id.split('-').at(-1))),
+          archived: undefined,
+        }), { status: 200, headers: { 'content-type': 'application/json' } })
+      }
+      if (url.searchParams.get('archived') === 'active') {
+        return new Response(JSON.stringify({ sessions: [] }), { status: 200, headers: { 'content-type': 'application/json' } })
+      }
+      const cursor = url.searchParams.get('cursor')
+      return new Response(JSON.stringify(cursor
+        ? { sessions: [archivedRow(50)] }
+        : { sessions: Array.from({ length: 50 }, (_, index) => archivedRow(index)), nextCursor: 'archived-page-2' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    })
+
+    const { result } = renderHook(() => usePiSessions({
+      agentTypeId: 'alpha',
+      fetch: fetchMock as typeof fetch,
+      connectActiveSession: false,
+      storageScope: 'default',
+      retry: { maxRetries: 0 },
+    }))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await act(async () => { await result.current.loadArchived() })
+    expect(result.current.sessions).toHaveLength(50)
+    expect(result.current.hasMoreArchived).toBe(true)
+    await act(async () => { await result.current.loadArchived() })
+    expect(result.current.sessions.map((session) => session.id)).toContain('archived-50')
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('archived=archived&cursor=archived-page-2'))).toBe(true)
+
+    await act(async () => { await result.current.setArchived('archived-50', false) })
+    expect(result.current.sessions.find((session) => session.id === 'archived-50')?.archived).toBeUndefined()
+  })
+
   test('carries agentTypeId through list, cursor continuation, create, and delete', async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = []
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {

@@ -1,103 +1,78 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 
 /**
- * Archiving is a VISIBILITY state, never a deletion. Transcripts are host app
- * user data (AGENTS.md rule 9), so the flag is deliberately kept OUT of the
- * JSONL transcript and parked in a sidecar index beside it, in the very same
- * durable session directory (BORING_AGENT_SESSION_ROOT):
+ * Archive state is physically sharded by session, just like the transcript it
+ * describes. A shared aggregate would turn unrelated sessions into one
+ * read-modify-write contention domain and cannot be made safe across host
+ * processes without a separate lock service.
  *
- *   <sessionDir>/archived.json
+ * Each final marker is created by atomic rename inside this directory:
  *
- * Two properties fall out of that choice, and both are what make "archive can
- * never lose data" checkable rather than merely asserted:
+ *   <sessionDir>/.archive/<base64url(sessionId)>.json
  *
- *  - The transcript bytes are untouched, so unarchive restores the exact
- *    session — there is nothing to restore, it was never modified.
- *  - The transcript mtime is untouched, so archiving does not reshuffle a list
- *    that sorts by last activity.
- *
- * A missing, empty, or corrupt index simply means "nothing is archived": the
- * sidecar can never make a real session disappear.
+ * Marker files never contain transcript data and never require opening a
+ * transcript through a load/repair path.
  */
-export const SESSION_ARCHIVE_INDEX_FILENAME = "archived.json";
+export const SESSION_ARCHIVE_DIRECTORY_NAME = ".archive";
 
-const ARCHIVE_INDEX_VERSION = 1;
+const ARCHIVE_MARKER_VERSION = 1;
+const ARCHIVE_MARKER_SUFFIX = ".json";
 
-interface ArchiveIndexFile {
+interface ArchiveMarkerFile {
   version: number;
-  /** sessionId -> ISO timestamp the session was archived at. */
-  archived: Record<string, string>;
+  sessionId: string;
+  archivedAt: string;
 }
 
-function archiveIndexPath(sessionDir: string): string {
-  return join(sessionDir, SESSION_ARCHIVE_INDEX_FILENAME);
+function archiveDirectory(sessionDir: string): string {
+  return join(sessionDir, SESSION_ARCHIVE_DIRECTORY_NAME);
 }
 
-function parseArchiveIndex(raw: string): Record<string, string> {
-  const parsed = JSON.parse(raw) as unknown;
-  if (typeof parsed !== "object" || parsed === null) return {};
-  const archived = (parsed as ArchiveIndexFile).archived;
-  if (typeof archived !== "object" || archived === null) return {};
-  const entries: Record<string, string> = {};
-  for (const [sessionId, archivedAt] of Object.entries(archived)) {
-    if (typeof sessionId === "string" && sessionId && typeof archivedAt === "string") {
-      entries[sessionId] = archivedAt;
-    }
-  }
-  return entries;
+function markerFilename(sessionId: string): string {
+  return `${Buffer.from(sessionId, "utf8").toString("base64url")}${ARCHIVE_MARKER_SUFFIX}`;
 }
 
-/**
- * Production creates several PiSessionStore instances over one shared session
- * directory, and each store serializes writers only through its OWN instance
- * queue — so caller-side serialization cannot protect the shared sidecar. All
- * read-modify-write mutations below therefore serialize HERE, keyed by the
- * canonical directory, which makes concurrent archives from any number of
- * store instances (or bare callers) accumulate instead of overwrite.
- */
-const dirLocks = new Map<string, Promise<unknown>>();
-
-async function withDirectoryLock<T>(sessionDir: string, action: () => Promise<T>): Promise<T> {
-  const key = resolve(sessionDir);
-  const previous = dirLocks.get(key) ?? Promise.resolve();
-  const gate = previous.then(() => {}, () => {});
-  const result = gate.then(action);
-  const tail = result.then(() => {}, () => {});
-  dirLocks.set(key, tail);
-  void tail.then(() => {
-    if (dirLocks.get(key) === tail) dirLocks.delete(key);
-  });
-  return result;
+function markerPath(sessionDir: string, sessionId: string): string {
+  return join(archiveDirectory(sessionDir), markerFilename(sessionId));
 }
 
-/** Every archived session id in this directory. Absent/corrupt index = none. */
-export async function readSessionArchiveIndex(sessionDir: string): Promise<Record<string, string>> {
-  let raw: string;
+function parseMarker(raw: string): ArchiveMarkerFile | null {
   try {
-    raw = await readFile(archiveIndexPath(sessionDir), "utf-8");
+    const parsed = JSON.parse(raw) as Partial<ArchiveMarkerFile>;
+    return parsed.version === ARCHIVE_MARKER_VERSION
+      && typeof parsed.sessionId === "string"
+      && parsed.sessionId.length > 0
+      && typeof parsed.archivedAt === "string"
+      ? parsed as ArchiveMarkerFile
+      : null;
   } catch {
-    return {};
-  }
-  try {
-    return parseArchiveIndex(raw);
-  } catch {
-    // A truncated or hand-edited index must not hide real sessions.
-    return {};
+    return null;
   }
 }
 
+/** Every valid archived session id in this directory. Corrupt markers are ignored. */
 export async function readArchivedSessionIds(sessionDir: string): Promise<Set<string>> {
-  return new Set(Object.keys(await readSessionArchiveIndex(sessionDir)));
+  const directory = archiveDirectory(sessionDir);
+  const files = await readdir(directory).catch(() => []);
+  const ids = new Set<string>();
+  await Promise.all(files
+    .filter((file) => file.endsWith(ARCHIVE_MARKER_SUFFIX))
+    .map(async (file) => {
+      const marker = parseMarker(await readFile(join(directory, file), "utf8").catch(() => ""));
+      // The filename binds the marker to the id. This also ignores a marker
+      // copied or hand-edited under another session's name.
+      if (marker && file === markerFilename(marker.sessionId)) ids.add(marker.sessionId);
+    }));
+  return ids;
 }
 
 /**
- * Read-modify-write the sidecar atomically (temp file + rename inside the same
- * directory, so the swap is never half-written) and serialized across ALL
- * store instances sharing the directory via the per-directory lock above.
- *
- * Returns true when the index changed.
+ * Atomically create or remove one session's marker. Different sessions never
+ * share a writable file, so independent processes cannot lose one another's
+ * updates. Concurrent opposite-state operations are ordinary last-filesystem-
+ * operation-wins updates and never affect the transcript.
  */
 export async function writeSessionArchived(
   sessionDir: string,
@@ -105,37 +80,35 @@ export async function writeSessionArchived(
   archived: boolean,
   now = new Date(),
 ): Promise<boolean> {
-  return await withDirectoryLock(sessionDir, async () => {
-    const entries = await readSessionArchiveIndex(sessionDir);
-    const wasArchived = entries[sessionId] !== undefined;
-    if (wasArchived === archived) return false;
-    if (archived) entries[sessionId] = now.toISOString();
-    else delete entries[sessionId];
-    await persist(sessionDir, entries);
-    return true;
-  });
-}
+  const target = markerPath(sessionDir, sessionId);
+  if (!archived) {
+    try {
+      await rm(target);
+      return true;
+    } catch (error) {
+      if ((error as { code?: string }).code === "ENOENT") return false;
+      throw error;
+    }
+  }
 
-/** Housekeeping for a genuinely deleted session; never called by archiving. */
-export async function forgetArchivedSession(sessionDir: string, sessionId: string): Promise<void> {
-  await withDirectoryLock(sessionDir, async () => {
-    const entries = await readSessionArchiveIndex(sessionDir);
-    if (entries[sessionId] === undefined) return;
-    delete entries[sessionId];
-    await persist(sessionDir, entries);
-  });
-}
-
-async function persist(sessionDir: string, entries: Record<string, string>): Promise<void> {
-  const file: ArchiveIndexFile = { version: ARCHIVE_INDEX_VERSION, archived: entries };
-  await mkdir(sessionDir, { recursive: true });
-  const target = archiveIndexPath(sessionDir);
+  await mkdir(archiveDirectory(sessionDir), { recursive: true });
+  const marker: ArchiveMarkerFile = {
+    version: ARCHIVE_MARKER_VERSION,
+    sessionId,
+    archivedAt: now.toISOString(),
+  };
   const tmp = `${target}.${randomUUID()}.tmp`;
   try {
-    await writeFile(tmp, `${JSON.stringify(file, null, 2)}\n`, "utf-8");
+    await writeFile(tmp, `${JSON.stringify(marker)}\n`, { encoding: "utf8", flag: "wx" });
     await rename(tmp, target);
+    return true;
   } catch (error) {
     await rm(tmp, { force: true }).catch(() => {});
     throw error;
   }
+}
+
+/** Housekeeping for a genuinely deleted session; never called by archiving. */
+export async function forgetArchivedSession(sessionDir: string, sessionId: string): Promise<void> {
+  await rm(markerPath(sessionDir, sessionId), { force: true });
 }
