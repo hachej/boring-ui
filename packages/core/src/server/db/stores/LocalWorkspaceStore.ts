@@ -21,7 +21,7 @@ import {
   assertWorkspaceTypeIdNotMutable,
   parseTrustedWorkspaceTypeId,
 } from '../../workspaceType.js'
-import { parseTrustedDefaultAgentTypeId } from '../../defaultAgentType.js'
+import { parseRequiredDefaultAgentTypeId } from '../../defaultAgentType.js'
 import type { LocalUserStore } from './LocalUserStore.js'
 
 function toWorkspace(workspace: Workspace): Workspace {
@@ -39,11 +39,11 @@ export class LocalWorkspaceStore implements WorkspaceStore {
 
   constructor(private userStore: LocalUserStore) {}
 
-  async create(userId: string, name: string, appId: string, opts: WorkspaceStoreCreateOptions = {}): Promise<Workspace> {
+  async create(userId: string, name: string, appId: string, opts: WorkspaceStoreCreateOptions): Promise<Workspace> {
     const workspaceTypeId = parseTrustedWorkspaceTypeId(opts?.workspaceTypeId)
-    const defaultAgentTypeId = parseTrustedDefaultAgentTypeId(opts.defaultAgentTypeId)
-    const id = opts?.id ?? randomUUID()
-    const existing = opts?.id ? this.workspaces.get(id) : undefined
+    const defaultAgentTypeId = parseRequiredDefaultAgentTypeId(opts?.defaultAgentTypeId)
+    const id = opts.id ?? randomUUID()
+    const existing = opts.id ? this.workspaces.get(id) : undefined
     if (existing) {
       assertWorkspaceTypeIdMatches(existing.workspaceTypeId, workspaceTypeId)
       return toWorkspace(existing)
@@ -121,8 +121,7 @@ export class LocalWorkspaceStore implements WorkspaceStore {
   }
 
   async compareAndSetNullDefaultAgentTypeId(appId: string, value: string): Promise<number> {
-    const defaultAgentTypeId = parseTrustedDefaultAgentTypeId(value)
-    if (defaultAgentTypeId === null) return 0
+    const defaultAgentTypeId = parseRequiredDefaultAgentTypeId(value)
     let updated = 0
     for (const [id, workspace] of this.workspaces) {
       if (workspace.appId !== appId || workspace.defaultAgentTypeId != null) continue

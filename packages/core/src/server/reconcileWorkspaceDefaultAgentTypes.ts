@@ -80,7 +80,7 @@ export async function reconcileWorkspaceDefaultAgentTypes(
   if (after.nullCount > 0) {
     throw new DefaultAgentTypeError(
       ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT,
-      'Workspace default Agent legacy reconciliation did not converge',
+      'Workspace default Agent reconciliation did not converge',
     )
   }
   log.info({

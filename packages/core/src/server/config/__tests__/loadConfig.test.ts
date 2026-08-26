@@ -674,6 +674,7 @@ describe('validateConfig', () => {
         staticDir: null,
         databaseUrl: null,
         stores: 'local',
+        defaultAgentTypeId: 'default',
         cors: { origins: [], credentials: true },
         bodyLimit: 1024,
         logLevel: 'info',
@@ -764,6 +765,7 @@ describe('buildRuntimeConfigPayload', () => {
       staticDir: null,
       databaseUrl: null,
       stores: 'local',
+      defaultAgentTypeId: 'default',
       cors: {
         origins: ['http://localhost:3000'],
         credentials: true,

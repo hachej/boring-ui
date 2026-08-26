@@ -20,7 +20,6 @@ import { SqliteEventStreamStore, type EventStreamStore } from '../events/eventSt
 import { safeCapture, type TelemetrySink } from '../../shared/telemetry'
 import { ErrorCode } from '../../shared/error-codes'
 import {
-  DEFAULT_AGENT_TYPE_ID,
   type CompiledAgentHostAgentSpec,
   type CreateAgentHostOptions,
   type ResolvedAgentRuntimeScope,
@@ -141,12 +140,12 @@ export interface BuiltAgentComposition {
   dispose(): Promise<void>
 }
 
-/** The platform default retains the single-Agent host's generated skill roots. */
+/** Environment skill roots require an ordinary trusted host provisioning grant. */
 export function provisionedSkillPathsForAgent(
   agent: CompiledAgentHostAgentSpec,
   provisioning: EnvironmentProvisioningSnapshot | undefined,
 ): readonly string[] {
-  return agent.agentTypeId === DEFAULT_AGENT_TYPE_ID ? provisioning?.skillPaths ?? [] : []
+  return agent.provisioning?.inheritSkillPaths ? provisioning?.skillPaths ?? [] : []
 }
 
 /**

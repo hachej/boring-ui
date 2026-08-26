@@ -42,8 +42,8 @@ export interface UserStore {
 }
 
 export interface WorkspaceStoreCreateOptions {
-  /** Omission persists NULL for legacy-compatibility mode; stores never select an Agent. */
-  readonly defaultAgentTypeId?: string
+  /** Required real application-fleet Agent; stores validate but never select it. */
+  readonly defaultAgentTypeId: string
   readonly workspaceTypeId?: string
   isDefault?: boolean
   id?: string
@@ -51,7 +51,7 @@ export interface WorkspaceStoreCreateOptions {
 }
 
 export interface WorkspaceStore {
-  create(userId: string, name: string, appId: string, opts?: WorkspaceStoreCreateOptions): Promise<Workspace>
+  create(userId: string, name: string, appId: string, opts: WorkspaceStoreCreateOptions): Promise<Workspace>
   list(userId: string, appId: string): Promise<Workspace[]>
   /** Inventory persisted default-Agent cohorts without interpreting fleet membership. */
   inventoryDefaultAgentTypeIds(appId: string): Promise<WorkspaceDefaultAgentTypeInventoryItem[]>

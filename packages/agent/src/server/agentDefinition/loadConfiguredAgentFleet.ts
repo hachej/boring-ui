@@ -282,11 +282,10 @@ async function packageSkillContent(packageRoot: string, skill: FleetSkillBinding
  * descriptors, `.agents/factory/policy.yaml` `models.seats` tiers, and the
  * priority-ordered `models.tiers` candidates declared in fleet.yaml.
  *
- * Fails closed per seat: a persona that fails materialization, digest
- * verification, or spec composition is excluded with a stable diagnostic —
- * the remaining valid seats still compose. Whole-fleet config errors (an
- * unreadable/malformed fleet.yaml or policy.yaml) throw `FleetConfigError`,
- * since there is no seat set to fail closed against.
+ * Fails startup when any configured seat cannot materialize or verify. Only
+ * genuinely unseated discovered packages remain nonfatal diagnostics. Whole-
+ * fleet config errors (including unreadable/malformed fleet or policy YAML)
+ * throw `FleetConfigError`.
  */
 export async function loadConfiguredAgentFleet(
   options: LoadConfiguredAgentFleetOptions,
@@ -296,14 +295,7 @@ export async function loadConfiguredAgentFleet(
   const seats = parseFleetConfig(fleetRaw, options.fleetConfigPath)
   const modelTierCandidates = parseModelTierCandidates(fleetRaw, options.fleetConfigPath)
 
-  let seatTiers: Readonly<Record<string, string>> = Object.freeze({})
-  try {
-    seatTiers = parseSeatTiers(await readYamlFile(options.policyPath, 'policyPath'))
-  } catch {
-    // Model-tier resolution is best-effort: an unreadable/malformed policy
-    // file omits preferred models for every seat rather than failing boot.
-    seatTiers = Object.freeze({})
-  }
+  const seatTiers = parseSeatTiers(await readYamlFile(options.policyPath, 'policyPath'))
   validateSeatTierCandidates(seatTiers, modelTierCandidates, options.fleetConfigPath, options.policyPath)
 
   const agents: ConfiguredAgentHostAgentSpec[] = []
@@ -439,6 +431,18 @@ export async function loadConfiguredAgentFleet(
         })
       }
     }
+  }
+
+  const fatalDiagnostics = diagnostics.filter((diagnostic) =>
+    diagnostic.seat !== undefined || seatedDefinitionIds.has(diagnostic.agentTypeId),
+  )
+  if (fatalDiagnostics.length > 0) {
+    throw new FleetConfigError({
+      field: 'seats',
+      message: `configured Agent fleet is invalid: ${fatalDiagnostics
+        .map((diagnostic) => `${diagnostic.agentTypeId}: ${diagnostic.message}`)
+        .join('; ')}`,
+    })
   }
 
   return Object.freeze({ agents: Object.freeze(agents), diagnostics: Object.freeze(diagnostics) })

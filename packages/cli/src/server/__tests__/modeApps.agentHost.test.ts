@@ -606,6 +606,7 @@ describe.sequential("CLI Agent Host composition", () => {
               label: "Agent",
               version: "1",
             },
+            provisioning: { inheritSkillPaths: true },
           }],
           hostId: "cli-trusted-local",
         }))

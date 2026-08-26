@@ -53,7 +53,7 @@ export const coreConfigSchema = z.object({
 
   // Decision 28: boot-time host default Agent seat, stamped onto workspaces
   // at initialization. Same slug grammar as workspace type ids.
-  defaultAgentTypeId: z.string().regex(AGENT_TYPE_ID_PATTERN).optional(),
+  defaultAgentTypeId: z.string().regex(AGENT_TYPE_ID_PATTERN).default('default'),
 
   // Decision 28 hook: exact trusted signup hostname -> fleet agentTypeId.
   // Trusted host configuration only; consumed once at new-default-workspace

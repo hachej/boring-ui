@@ -4,6 +4,7 @@ import type { WorkspaceStore } from '../app/types.js'
 import type { MailTransport } from '../mail/transport.js'
 import { renderWelcome } from '../mail/templates/index.js'
 import { REQUEST_SCOPE_WORKSPACE_HEADER } from './requestWorkspaceScope.js'
+import { parseRequiredDefaultAgentTypeId } from '../defaultAgentType.js'
 import {
   normalizeSignupHostname,
   resolveSignupDefaultAgentTypeId,
@@ -73,9 +74,7 @@ export function createPostSignupHook(deps: PostSignupHookDeps) {
     logger,
     disableDefaultWorkspaceCreation,
   } = deps
-  const applicationDefaultAgentTypeId = disableDefaultWorkspaceCreation
-    ? undefined
-    : config.defaultAgentTypeId
+  const applicationDefaultAgentTypeId = parseRequiredDefaultAgentTypeId(config.defaultAgentTypeId)
 
   return async function postSignupHook(
     user: PostSignupUser & Record<string, unknown>,
@@ -126,8 +125,7 @@ export function createPostSignupHook(deps: PostSignupHookDeps) {
       const initialSeat = signupSeat ?? applicationDefaultAgentTypeId
       await workspaceStore.create(user.id, 'Default workspace', config.appId, {
         isDefault: true,
-        // Decision 28: stamp a regular configured seat when available. An
-        // omitted value remains the explicit legacy-compatibility marker.
+        // Decision 28: every initialized Workspace persists a real seat.
         defaultAgentTypeId: initialSeat,
       })
     }

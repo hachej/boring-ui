@@ -232,6 +232,10 @@ export interface AgentHostAgentSpec {
     /** RESERVED / NOT ENFORCED. Per-turn token-limit enforcement is future work. */
     readonly maxTokensPerTurn?: number
   }
+  /** Trusted host-owned provisioning grants; absent means no inherited resources. */
+  readonly provisioning?: {
+    readonly inheritSkillPaths?: boolean
+  }
 }
 
 export type ConfiguredAgentHostAgentSpec = AgentHostAgentSpec

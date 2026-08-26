@@ -65,6 +65,7 @@ describe('Agent composition skill coordinates', () => {
     const defaultAgent = {
       agentTypeId: 'default',
       definition: { label: 'Agent', instructions: 'default' },
+      provisioning: { inheritSkillPaths: true },
     } as const
 
     expect(provisionedSkillPathsForAgent(alpha, provisioning)).toEqual([])

@@ -4,6 +4,7 @@ import { HttpError, ERROR_CODES } from '../../shared/errors.js'
 import { requireWorkspaceMember } from '../auth/requireWorkspaceMember.js'
 import { authorizeRequestScopedWorkspace } from '../auth/requestWorkspaceScope.js'
 import { assertWorkspaceTypeIdNotMutable } from '../workspaceType.js'
+import { parseRequiredDefaultAgentTypeId } from '../defaultAgentType.js'
 import { createWorkspaceBody, updateWorkspaceBody } from './__schemas__/workspaces.js'
 
 const DEFAULT_WORKSPACE_NAME = 'Default workspace'
@@ -12,7 +13,7 @@ const COMPANY_CONTEXT_WORKSPACE_MANAGED_BY = 'company-context'
 const workspaceRoutesPlugin: FastifyPluginAsync = async (app) => {
   const store = app.workspaceStore
   const provisioner = app.provisioner
-  const defaultAgentTypeId = app.config.defaultAgentTypeId
+  const defaultAgentTypeId = parseRequiredDefaultAgentTypeId(app.config.defaultAgentTypeId)
   const defaultWorkspaceCreates = new Map<string, Promise<Awaited<ReturnType<typeof store.list>>>>()
 
   async function provisionWorkspace(workspace: Awaited<ReturnType<typeof store.create>>, ownerId: string, request: FastifyRequest) {
@@ -50,7 +51,6 @@ const workspaceRoutesPlugin: FastifyPluginAsync = async (app) => {
     const workspace = await store.create(userId, name, app.config.appId, {
       isDefault,
       // Decision 28: stamp the configured regular default at initialization.
-      // Omission is the explicit legacy-compatibility mode.
       defaultAgentTypeId,
     })
     await provisionWorkspace(workspace, userId, request)
