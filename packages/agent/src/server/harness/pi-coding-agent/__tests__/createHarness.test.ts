@@ -25,6 +25,7 @@ import { locateHostWorkspaceSkill } from "../../../agent-host/skillPathProjectio
 
 const fsHooks = vi.hoisted(() => ({
   onRename: undefined as (() => Promise<void>) | undefined,
+  onStat: undefined as ((path: unknown) => Promise<void>) | undefined,
   onUnlink: undefined as (() => Promise<void>) | undefined,
   onWriteFile: undefined as ((data: unknown) => void) | undefined,
 }));
@@ -36,6 +37,11 @@ vi.mock("node:fs/promises", async (importOriginal) => {
     rename: async (...args: Parameters<typeof actual.rename>) => {
       if (fsHooks.onRename) return fsHooks.onRename();
       return actual.rename(...args);
+    },
+    stat: async (...args: Parameters<typeof actual.stat>) => {
+      const result = await actual.stat(...args);
+      await fsHooks.onStat?.(args[0]);
+      return result;
     },
     writeFile: async (...args: Parameters<typeof actual.writeFile>) => {
       fsHooks.onWriteFile?.(args[1]);
@@ -1790,6 +1796,58 @@ describe("PiSessionStore", () => {
     await expect(store.list(directCtx)).resolves.toEqual([
       expect.objectContaining({ id: nativeId, updatedAt: "2026-06-04T00:00:10.000Z" }),
     ]);
+  });
+
+  it("uses the refreshed wrapper snapshot when an append lands after the directory stat", async () => {
+    const id = "wrapper-append-during-prefix-refresh";
+    const filepath = join(tmpDir, `${id}.jsonl`);
+    await writeFile(filepath, [
+      JSON.stringify({
+        type: "session",
+        version: CURRENT_SESSION_VERSION,
+        id,
+        timestamp: "2026-07-20T00:00:00.000Z",
+        cwd: "/tmp",
+        boringSessionCtx: ctx,
+      }),
+      JSON.stringify({
+        type: "message",
+        id: "first",
+        parentId: null,
+        timestamp: "2026-07-20T00:00:01.000Z",
+        message: { role: "user", content: "first" },
+      }),
+      "",
+    ].join("\n"), "utf-8");
+
+    let appended = false;
+    fsHooks.onStat = async (path) => {
+      if (appended || String(path) !== filepath) return;
+      appended = true;
+      await appendFile(filepath, `${JSON.stringify({
+        type: "message",
+        id: "second",
+        parentId: "first",
+        timestamp: "2026-07-20T00:00:02.000Z",
+        message: { role: "user", content: "second" },
+      })}\n`, "utf-8");
+    };
+
+    try {
+      const store = new PiSessionStore("/tmp", tmpDir);
+      const first = await store.list(ctx);
+      const second = await store.list(ctx);
+
+      expect(appended).toBe(true);
+      expect(first).toEqual([
+        expect.objectContaining({ id, turnCount: 2, updatedAt: "2026-07-20T00:00:02.000Z" }),
+      ]);
+      expect(second).toEqual([
+        expect.objectContaining({ id, turnCount: 2, updatedAt: "2026-07-20T00:00:02.000Z" }),
+      ]);
+    } finally {
+      fsHooks.onStat = undefined;
+    }
   });
 
   it("list orders by updatedAt descending", async () => {

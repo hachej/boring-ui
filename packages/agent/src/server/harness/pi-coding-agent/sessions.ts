@@ -753,7 +753,7 @@ export class PiSessionStore implements SessionStore {
   private async sessionSortKey(
     { filepath, stat }: SessionFileStat,
   ): Promise<SessionSortKey> {
-    const fileMtimeMs = Number(stat.mtimeMs);
+    let fileMtimeMs = Number(stat.mtimeMs);
     // Once a readable header supplies an id, it stays canonical even if a
     // later step (linked-file stat, transcript tail scan) throws — the
     // filename stem is only for files with no readable header at all.
@@ -767,6 +767,9 @@ export class PiSessionStore implements SessionStore {
       // populated this cache entry. Its header id supplies the canonical
       // tiebreak id (the row's `summary.id`).
       const cached = await this.readPrefixCache(filepath, stat);
+      // readPrefixCache may refresh after an append that landed after the
+      // directory stat. Scan and cache ordering against that same snapshot.
+      fileMtimeMs = cached.mtimeMs;
       headerId = cached.headerId ?? undefined;
       if (!headerId) return stemFallback();
 
@@ -802,7 +805,7 @@ export class PiSessionStore implements SessionStore {
         ).catch(() => undefined);
         if (linkedOrdering?.hasEntries) selectedOrdering = linkedOrdering;
       }
-      selectedOrdering ??= await nativeTranscriptOrdering(filepath, Number(stat.size))
+      selectedOrdering ??= await nativeTranscriptOrdering(filepath, cached.size)
         .catch((): NativeTranscriptOrdering => ({ hasEntries: false }));
       const orderingUpdatedAtMs = selectedOrdering.latestMessageAtMs
         ?? Math.max(fileMtimeMs, linkedStat ? Number(linkedStat.mtimeMs) : 0);
