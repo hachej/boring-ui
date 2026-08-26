@@ -63,6 +63,16 @@ migration project.
    hydrate/reconcile pattern as the reference for our resume UX; the
    lease-handoff attachment states (`detached/attaching/attached/degraded`)
    as vocabulary for our reconnect states.
+5. **The seam is the align mechanism.** A companion analysis (owner-supplied,
+   reconciled in [`pi-v2-removal-map.md`](pi-v2-removal-map.md)) maps what
+   Boring UI eventually stops owning, and contributes the concrete
+   now-step: one `PiPlatform` interface between our surfaces and the agent
+   runtime, adapter-implemented over today's gateway/0.80.7 path, someday
+   by a pi-v2 adapter. Components depend on the seam, never pi internals.
+   Adoption-neutral, valuable either way; tracked as bead
+   `wt-391-forward-oueu` (dispatch ordering belongs to DIRECTION). Its
+   corrected end state keeps the D29 gateway *contract* (internals may
+   delegate) and keeps durable session storage host-owned (rule 9).
 
 **Honest time-saved verdict:** less than hoped on the UI (their multi-agent
 pane is deferred; transcript is a stub), meaningful on the substrate (a
