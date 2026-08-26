@@ -325,10 +325,11 @@ export function AppLeftPane({
   // both cardinalities. Hosts wanting the plain shell omit `agents` entirely.
   const agentRowsEnabled = agents.length > 0
   // Fleet CHROME — per-Agent sections and the New chat Agent picker — only
-  // earns its keep once there is more than one Agent to choose between. With a
-  // single Agent (the default seat) the pane is a flat "Chats" list, owner
-  // spec; the fleet hub (many seats) keeps the full tree.
-  const fleetChromeEnabled = agents.length > 1
+  // earns its keep once there is more than one creation target in the complete
+  // catalog. With a single Agent the pane is a flat "Chats" list, owner spec;
+  // a hidden legacy fallback still counts as a choice because Option B keeps
+  // explicit `default` creation available even when it has no card.
+  const fleetChromeEnabled = listedAgents.length > 1
   // Ratified layout: each Agent's chats nest under its card in single-project
   // mode; multi-project keeps chats inside the project tree instead.
   const nestedAgentChats = fleetChromeEnabled && layoutMode !== "multi-project"

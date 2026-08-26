@@ -72,12 +72,12 @@ Note `listAgents` takes `ListAgentsInput`, not a bare `AuthorizedAgentScope`.
 
 ### Output DTOs
 
-`AgentSummary` (`agentTypeId`, `label`, `description?`, `legacy?`,
-`definition?{version,digest}`), `AgentSessionSummary` (`ref`, `title`,
-`status`, `createdAt`, `updatedAt`), `AgentSessionPage` (`sessions`,
+`AgentSummary` (`agentTypeId`, `label`, `description?`, `pluginIds?`,
+`legacy?`, `definition?{version,digest}`), `AgentSessionSummary` (`ref`,
+`title`, `status`, `createdAt`, `updatedAt`), `AgentSessionPage` (`sessions`,
 `nextCursor?`), and the receipts (`CommandReceipt`, `AgentSendReceipt`,
 `QueueClearReceipt`, `StopReceipt`) are unchanged from §6, field for field,
-apart from `AgentSummary.legacy`.
+apart from `AgentSummary.pluginIds` and `AgentSummary.legacy`.
 
 `legacy: true` marks the `default` fallback identity, listed beside a
 configured fleet so sessions bound to it stay addressable (gh-1296). It is not

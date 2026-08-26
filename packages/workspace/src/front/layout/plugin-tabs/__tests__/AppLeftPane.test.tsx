@@ -473,6 +473,35 @@ describe("AppLeftPane", () => {
     expect(within(screen.getByRole("menu")).getByText("default")).toBeInTheDocument()
   })
 
+  it("keeps fleet creation choices when an empty fallback leaves one authored seat", async () => {
+    const user = userEvent.setup()
+    const handlers = renderFleetPane({
+      agents: [
+        { agentTypeId: "default", label: "default", legacy: true, sessionsStatus: "loaded" },
+        { agentTypeId: "alpha", label: "Boring Alpha", sessionsStatus: "loaded" },
+      ],
+      selectedAgentTypeId: "default",
+      sessions: [{ id: "alpha-one", agentTypeId: "alpha", title: "Alpha session" }],
+      pinnedSessionRefs: [],
+    })
+
+    expect(document.querySelector('[data-boring-workspace-part="app-left-agents-count"]')).toHaveTextContent("1 seat")
+    expect(document.querySelector('[data-boring-agent-type-id="default"]')).toBeNull()
+    expect(document.querySelector('[data-boring-agent-type-id="alpha"]')).not.toBeNull()
+    expect(screen.queryByRole("button", { name: /^default;/ })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Boring Alpha;/ })).toBeInTheDocument()
+
+    await user.click(screen.getByRole("button", { name: "Choose Agent for new chat" }))
+    const menu = screen.getByRole("menu")
+    expect(within(menu).getByRole("menuitem", { name: "default" })).toBeInTheDocument()
+    expect(within(menu).getByRole("menuitem", { name: "Alpha" })).toBeInTheDocument()
+    await user.click(within(menu).getByRole("menuitem", { name: "default" }))
+    expect(handlers.onSelectAgent).toHaveBeenCalledWith("default")
+
+    await user.click(screen.getByRole("button", { name: "Start new chat with default" }))
+    expect(handlers.onCreateSession).toHaveBeenCalledWith("default")
+  })
+
   it("keeps a legacy fallback that owns chats listed, so those chats stay reachable", () => {
     renderFleetPane({
       agents: [
