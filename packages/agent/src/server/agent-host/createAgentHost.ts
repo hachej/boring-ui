@@ -64,6 +64,7 @@ export interface AgentHostRuntime {
     agentTypeId: string,
     scope: AuthorizedAgentScope,
     claim: VerifiedAgentScopeClaim,
+    options?: import('../../shared/session').SessionListOptions,
   ): Promise<readonly import('../../shared/session').SessionSummary[]>
   isDraining(): boolean
   assertOpen(): void
@@ -320,9 +321,9 @@ function createRuntime(
     },
     activity,
     shutdownGraceMs: graceMs,
-    listSessionSummaries(agentTypeId, scope, claim) {
+    listSessionSummaries(agentTypeId, scope, claim, options) {
       runtime.assertOpen()
-      return inventory.list(agentTypeId, scope, claim)
+      return inventory.list(agentTypeId, scope, claim, options)
     },
     isDraining: () => draining,
     assertOpen() {

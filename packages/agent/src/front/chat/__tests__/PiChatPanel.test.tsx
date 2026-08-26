@@ -2040,7 +2040,10 @@ describe('PiChatPanel sandbox shell', () => {
     await waitFor(() => expect(onReloadAgentPlugins).toHaveBeenCalledTimes(1))
     expect(onCommandResult).toHaveBeenCalledWith(expect.stringContaining('Extensions reloaded.'))
     expect(onCommandResult).toHaveBeenCalledWith(expect.stringContaining('plugin front failed once but recovered'))
-    expect(remote.prompt).not.toHaveBeenCalled()
+    // The reload outcome also lands in the model's context instead of staying a UI bubble.
+    await waitFor(() => expect(remote.prompt).toHaveBeenCalledWith(expect.objectContaining({
+      message: '/reload result:\nExtensions reloaded.\n\nWarnings:\nplugin front failed once but recovered',
+    })))
   })
 
   test('runs a safe assistant /reload link through composer policy without clearing the draft', async () => {
@@ -2078,7 +2081,9 @@ describe('PiChatPanel sandbox shell', () => {
     await waitFor(() => expect(onReloadAgentPlugins).toHaveBeenCalledTimes(1))
     expect(onBeforeSubmit).toHaveBeenCalledWith('/reload', expect.objectContaining({ source: 'composer' }))
     expect((textarea as HTMLTextAreaElement).value).toBe('keep this draft')
-    expect(remote.prompt).not.toHaveBeenCalled()
+    await waitFor(() => expect(remote.prompt).toHaveBeenCalledWith(expect.objectContaining({
+      message: '/reload result:\nExtensions reloaded.',
+    })))
     expect(screen.queryByRole('button', { name: 'Run /reset command' })).toBeNull()
   })
 
@@ -2122,6 +2127,40 @@ describe('PiChatPanel sandbox shell', () => {
     await waitFor(() => expect(remote.prompt).toHaveBeenCalledWith(expect.objectContaining({ message: 'skill: launch' })))
     expect(onPromptSubmitStarted).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'pi-1' }))
     expect((textarea as HTMLTextAreaElement).value).toBe('preserve this draft')
+  })
+
+  test('keeps full send bookkeeping when /reload reports its result into the transcript', async () => {
+    const remote = new FakeRemotePiSession(remoteState())
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/v1/agents/default/sessions?')) return jsonResponse([session('pi-1')])
+      throw new Error(`unexpected fetch ${url}`)
+    })
+    const onReloadAgentPlugins = vi.fn(async () => ({ message: 'Extensions reloaded.', reloaded: true }))
+    const onPromptSubmitStarted = vi.fn()
+
+    render(
+      <PiChatPanel
+        storageScope="workspace-a"
+        serverResourcesEnabled={false}
+        fetch={fetchMock as unknown as typeof fetch}
+        createRemoteSession={remoteFactory(remote)}
+        onReloadAgentPlugins={onReloadAgentPlugins}
+        onPromptSubmitStarted={onPromptSubmitStarted}
+      />,
+    )
+
+    const textarea = await screen.findByLabelText('Agent prompt')
+    fireEvent.change(textarea, { target: { value: '/reload' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
+
+    // The model-facing report reaches the transcript as an admitted run…
+    await waitFor(() => expect(remote.prompt).toHaveBeenCalledWith(expect.objectContaining({
+      message: '/reload result:\nExtensions reloaded.',
+    })))
+    // …so it gets the same submit-started bookkeeping a plain prompt gets.
+    expect(onPromptSubmitStarted).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'pi-1' }))
+    expect((textarea as HTMLTextAreaElement).value).toBe('')
   })
 
   test('registers slash commands contributed by a composer plugin', async () => {
@@ -2326,7 +2365,10 @@ describe('PiChatPanel sandbox shell', () => {
     expect(commandsRequestCount).toBe(preReloadCount)
     expect(container.querySelector('[data-boring-plugin-update="error"]')).toBeTruthy()
     expect(container.querySelector('[data-boring-plugin-update="success"]')).toBeNull()
-    expect(remote.prompt).not.toHaveBeenCalled()
+    // A failed reload is what the agent sees, not a silent success.
+    await waitFor(() => expect(remote.prompt).toHaveBeenCalledWith(expect.objectContaining({
+      message: '/reload result:\nExtension update failed: Agent plugin reload is not configured.',
+    })))
   })
 
   test('reports unknown legacy plugin reload results as errors', async () => {
@@ -2357,7 +2399,9 @@ describe('PiChatPanel sandbox shell', () => {
     await waitFor(() => expect(onCommandResult).toHaveBeenCalledWith('Extension update failed: Agent harness does not support reload'))
     expect(container.querySelector('[data-boring-plugin-update="error"]')).toBeTruthy()
     expect(container.querySelector('[data-boring-plugin-update="success"]')).toBeNull()
-    expect(remote.prompt).not.toHaveBeenCalled()
+    await waitFor(() => expect(remote.prompt).toHaveBeenCalledWith(expect.objectContaining({
+      message: '/reload result:\nExtension update failed: Agent harness does not support reload',
+    })))
   })
 
   test('hotReloadEnabled=false makes /reload fall through as a normal Pi prompt', async () => {

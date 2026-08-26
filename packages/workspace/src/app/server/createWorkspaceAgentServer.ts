@@ -1279,7 +1279,6 @@ export async function createWorkspaceAgentServer(
     : undefined
   const agents = opts.agents ?? await resolveDefaultAgentFleet({
     ...(fleetRepositoryRoot ? { repositoryRoot: fleetRepositoryRoot } : {}),
-    workspaceRoot,
     ...(discoveredPackages ? { discoveredPackages } : {}),
   })
   const legacyStandaloneDefaultComposition = agents.length === 1 && "legacyDefault" in agents[0]!

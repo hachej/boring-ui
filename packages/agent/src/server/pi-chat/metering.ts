@@ -14,11 +14,11 @@ import { createLogger } from '@hachej/boring-bash/server'
  *                     (fail closed) so hosts can enforce hard stops.
  *   recordUsage       once per native assistant message carrying usage.
  *                     `usageId` is a stable idempotency key.
- *   settleRun         when the run reaches a native terminal state and usage
- *                     was recorded (or it finished ok).
- *   releaseRun        when the run never produced billable usage: rejected
- *                     execution, cleared queue, cancel/abort, or error before
- *                     any usage arrived.
+ *   settleRun         when the run reaches a native terminal state and billable
+ *                     usage or an authoritative all-zero usage row was recorded.
+ *   releaseRun        when the run does not settle: rejected execution, cleared
+ *                     queue, cancel/abort, error before usage, or a fail-closed
+ *                     fallback charge.
  *
  * Every run terminates with exactly one settle or release from the
  * coordinator; sinks should still treat all four methods as idempotent
@@ -30,8 +30,8 @@ export interface AgentMeteringSink {
   reserveRun(input: MeteringReserveInput): Promise<MeteringReservationResult>
   /** Records the usage and returns the credit micros it was actually billed. The
    * coordinator counts a usage as billable from this charged amount (not raw provider
-   * fields), so a row that prices to 0 (e.g. cost-only usage when provider cost isn't
-   * trusted) doesn't make a free run settle. */
+   * fields). A complete, internally consistent all-zero report settles at zero;
+   * potentially billable usage priced to 0 retains fail-closed fallback. */
   recordUsage(input: MeteringUsageInput): Promise<MeteringUsageResult>
   settleRun(input: MeteringSettleInput): Promise<void>
   releaseRun(input: MeteringReleaseInput): Promise<void>
@@ -103,12 +103,11 @@ export type MeteringReleaseReason =
   | 'queue-cleared'
   | 'cancelled'
   | 'error-before-usage'
-  // A usage write was ATTEMPTED but FAILED — real tokens, no ledger row → charge the
-  // fallback hold (a paid run must never close free).
+  // A potentially billable usage write was ATTEMPTED but FAILED — real tokens/cost,
+  // no ledger row → charge the fallback hold (a paid run must never close free).
   | 'usage-write-failed'
-  // The run executed (successful with no/zero provider usage, or started then errored)
-  // but produced NO billable usage row — deliberately charge the fallback hold. Distinct
-  // from usage-write-failed (no write was attempted/failed); both charge the hold.
+  // A successful run reported no usage event (or potentially billable usage produced
+  // no debit) — deliberately charge the fallback hold.
   | 'fallback-hold-charge'
 
 export interface MeteringReleaseInput extends MeteringRunScope {
@@ -147,9 +146,13 @@ interface MeteringRun {
    * across run instances. */
   instanceId: number
   usageCount: number
-  /** Count of recorded usage rows that carried positive tokens. A successful run
-   * with only zero-token usage (provider reported no/zero tokens) must not settle
-   * a paid hold for free — it falls back to the hold like a missing-usage run. */
+  /** Remains true only while every observed usage object is a complete, internally
+   * consistent raw all-zero report. Prevents a later zero row from masking an earlier
+   * partial, invalid, contradictory, or potentially billable report. */
+  allUsageReportsExplicitZero: boolean
+  /** Count of authoritative all-zero rows successfully persisted by the sink. */
+  persistedExplicitZeroUsageCount: number
+  /** Count of recorded usage rows that produced a positive debit. */
   billableUsageCount: number
   /** Message ids recorded this attempt (id-ful dedup of repeat message_end and
    * the agent_end echo). Cleared on auto-retry. */
@@ -247,6 +250,14 @@ export function normalizeMeteringUsage(value: unknown): MeteringUsage | undefine
       total: readTokenCount(cost.total),
     },
   }
+}
+
+function isExplicitCompleteZeroUsage(value: unknown): boolean {
+  if (!isRecord(value) || !isRecord(value.cost)) return false
+  const hasOwnZeroFields = (record: Record<string, unknown>, fields: string[]) =>
+    fields.every((field) => Object.prototype.hasOwnProperty.call(record, field) && record[field] === 0)
+  return hasOwnZeroFields(value, ['input', 'output', 'cacheRead', 'cacheWrite', 'totalTokens'])
+    && hasOwnZeroFields(value.cost, ['input', 'output', 'cacheRead', 'cacheWrite', 'total'])
 }
 
 export interface ReservePromptInput {
@@ -604,12 +615,20 @@ export class PiChatMeteringCoordinator {
     opts: { isAgentEndFinal?: boolean } = {},
   ): void {
     if (!isRecord(message) || message.role !== 'assistant') return
+    // A message without a usage property is not a usage event (agent_end echoes often
+    // omit it). An explicitly present but malformed value is an untrusted usage event
+    // and must prevent an earlier zero row from making the run settle free.
+    if (!Object.prototype.hasOwnProperty.call(message, 'usage')) return
+    const explicitCompleteZero = isExplicitCompleteZeroUsage(message.usage)
     const usage = normalizeMeteringUsage(message.usage)
-    if (!usage) return
 
     const run = state.active ?? state.pendingPrompts[0]
     if (!run || run.terminal) {
       this.logError('assistant usage arrived with no reserved run; usage not metered', { messageRole: 'assistant' })
+      return
+    }
+    if (!usage) {
+      run.allUsageReportsExplicitZero = false
       return
     }
 
@@ -629,6 +648,7 @@ export class PiChatMeteringCoordinator {
     }
 
     run.usageCount += 1
+    if (!explicitCompleteZero) run.allUsageReportsExplicitZero = false
     const model = typeof message.model === 'string' && message.model.length > 0 ? message.model : undefined
     const provider = typeof message.provider === 'string' && message.provider.length > 0 ? message.provider : undefined
     const stopReason = typeof message.stopReason === 'string' ? message.stopReason : undefined
@@ -665,17 +685,14 @@ export class PiChatMeteringCoordinator {
         // is NOT billable, so finishRun won't settle a free hold; a row that billed
         // a positive amount IS, so it won't be fallback-charged on top of its debit.
         if (result.billedMicros > 0) run.billableUsageCount += 1
+        if (explicitCompleteZero) run.persistedExplicitZeroUsageCount += 1
       } catch (error) {
-        // A FAILED write only counts as lost paid work (→ fallback hold charge) if
-        // the row could actually have billed a positive amount: positive tokens, or a
-        // positive provider cost that pricing MIGHT bill. An all-zero usage row prices
-        // to 0 regardless, so a failed write for it must NOT charge the hold — the
-        // successfully-written same row is released free, and the two must agree (else
-        // a transient write failure over-charges a non-billable aborted run). We can't
-        // read the real billed amount here (the write threw), so use the conservative
-        // could-bill heuristic: charge on positive/unknown, free on definitely-zero.
-        const couldBill = usage.input + usage.output + usage.cacheRead + usage.cacheWrite > 0 || usage.cost.total > 0
-        if (couldBill) run.usageWriteFailed = true
+        // A FAILED potentially billable write is lost paid work and must charge the
+        // fallback hold. Incomplete, invalid, and contradictory reports are treated as
+        // potentially billable here because they are not authoritative zero evidence.
+        // A failed authoritative-zero write instead reaches the ordinary fallback-hold
+        // path when a successful run cannot settle all of its reported zero rows.
+        if (!explicitCompleteZero) run.usageWriteFailed = true
         throw error
       }
     },
@@ -700,6 +717,8 @@ export class PiChatMeteringCoordinator {
       reservationId: undefined,
       instanceId: (this.runInstances += 1),
       usageCount: 0,
+      allUsageReportsExplicitZero: true,
+      persistedExplicitZeroUsageCount: 0,
       billableUsageCount: 0,
       recordedMessageIds: new Set(),
       lastIdlessUsageKey: undefined,
@@ -764,23 +783,24 @@ export class PiChatMeteringCoordinator {
       if (run.billableUsageCount > 0) {
         return this.sink.settleRun({ ...run.scope, reservationId: run.reservationId, status })
       }
-      // No billable usage written and no failed write. Charge the fallback hold ONLY
-      // for a SUCCESSFUL run that reported no/zero usage: a normal completion produces
-      // a usage row, so its absence suggests a reporting gap (uncaptured paid work) —
-      // don't return a paid hold free. An ERROR with no billable usage is FREED: Pi
-      // harvests a failed provider call's usage onto agent_end (so real paid work shows
-      // as billable usage above), which means a no-usage error is most likely
-      // non-billable — a pre-provider/config/auth failure (e.g. missing API key) that
-      // did no provider work. Charging the full worst-case hold for those would grossly
-      // over-charge a failed run that consumed nothing. (Residual: a provider that
-      // billed for a failed call whose usage Pi never reported at all goes free — a
-      // narrow under-charge, the symmetric cost of not over-charging config failures.)
-      // A VOLUNTARY user stop is never charged the fallback hold: the user cancelled
-      // before any billable usage, so the worst-case hold must be released, not billed.
-      // This holds even if pi reports the aborted run as a no-usage success (status
-      // 'ok') instead of 'aborted' — the explicit stop signal is authoritative.
-      const didPaidWork = status === 'ok' && !run.userStopped
-      if (didPaidWork) {
+      // A successful run whose EVERY raw usage report was explicitly complete,
+      // internally consistent, and all-zero can safely settle its persisted zero rows.
+      // Settling (rather than inventing a release reason) releases the unused hold in
+      // the sink while preserving the durable zero-usage audit row. Partial, invalid,
+      // contradictory, mixed potentially billable, or failed-to-persist reports cannot
+      // take this path and retain fail-closed fallback behavior.
+      if (status === 'ok'
+        && !run.userStopped
+        && run.usageCount > 0
+        && run.allUsageReportsExplicitZero
+        && run.persistedExplicitZeroUsageCount === run.usageCount) {
+        return this.sink.settleRun({ ...run.scope, reservationId: run.reservationId, status })
+      }
+      // An ERROR with no billable usage is FREED: Pi harvests a failed provider call's
+      // usage onto agent_end (so real paid work shows as billable usage above), which
+      // means a no-usage error is most likely non-billable — a pre-provider/config/auth
+      // failure. A VOLUNTARY user stop is also never charged the fallback hold.
+      if (status === 'ok' && !run.userStopped) {
         return this.sink.releaseRun({ ...run.scope, reservationId: run.reservationId, reason: 'fallback-hold-charge' })
       }
       return this.sink.releaseRun({

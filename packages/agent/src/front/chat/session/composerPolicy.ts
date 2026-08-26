@@ -94,7 +94,7 @@ export class PiComposerPolicyController {
       if (command?.kind === 'skill') {
         return this.submitExpandedText(skillCommandText(parsed.name, parsed.args), source, false)
       }
-      if (command) return this.runLocalCommand(parsed.name, parsed.args)
+      if (command) return this.runLocalCommand(parsed.name, parsed.args, source)
     }
 
     if (isPiChatBusy(this.options.session.getState().status) && files.length > 0) {
@@ -149,7 +149,7 @@ export class PiComposerPolicyController {
     }))
   }
 
-  private async runLocalCommand(commandName: string, args: string): Promise<PiComposerSubmitResult> {
+  private async runLocalCommand(commandName: string, args: string, source?: PiComposerSubmitInput['source']): Promise<PiComposerSubmitResult> {
     const command = this.options.registry.get(commandName)
     if (isPiChatBusy(this.options.session.getState().status) && command?.allowWhileBusy?.(args) !== true) {
       return this.block('busy-slash-command', 'Slash commands are not queued while the agent is responding.')
@@ -162,6 +162,18 @@ export class PiComposerPolicyController {
         : undefined
     const preserveDraft = Boolean(result && typeof result === 'object' && result.preserveDraft === true)
     if (message) this.options.onCommandResult?.(message)
+    // A command that reports a model-facing result also lands it in the
+    // transcript, so the agent sees the outcome instead of having to probe for
+    // it. Same expanded-text path skill commands use.
+    const modelMessage = result && typeof result === 'object' ? result.modelMessage?.trim() : undefined
+    if (modelMessage) {
+      // That admitted run must return its real receipt (prompt/follow-up with
+      // clientNonce/cursor) so callers run full send bookkeeping —
+      // onPromptSubmitStarted, stale-rejection dismissal, local-submitted
+      // cursor cleanup — exactly as they would for a plain prompt. The
+      // human-facing notice above stays a side effect.
+      return await this.submitExpandedText(modelMessage, source, false)
+    }
     return { type: 'command', command: commandName, ...(message ? { result: message } : {}), preserveDraft }
   }
 

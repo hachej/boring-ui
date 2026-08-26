@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react"
-import { Bot } from "lucide-react"
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react"
+import { Bot, Search } from "lucide-react"
+import { IconButton } from "@hachej/boring-ui-kit"
 import {
   PiChatPanel as DefaultPiChatPanel,
   usePiSessions as useDefaultPiSessions,
@@ -9,7 +10,7 @@ import {
   type ToolRendererOverrides,
 } from "@hachej/boring-agent/front"
 import { WorkspaceProvider, type WorkspaceProviderProps } from "../../front/provider/WorkspaceProvider"
-import { ChatLayout, TopBar, ThemeToggle, type ChatLayoutProps, type ChatPanePendingPlacement, type ChatPaneSplitDirection } from "../../front/layout"
+import { ChatLayout, TopBar, ThemeToggle, useKeyboardInset, type ChatLayoutProps, type ChatPanePendingPlacement, type ChatPaneSplitDirection } from "../../front/layout"
 import { WORKSPACE_COMPOSER_STOP_REASONS, emitWorkspaceComposerStop } from "../../front/chrome/chat/composerStop"
 import type { WorkspaceChatPanelProps } from "../../front/chrome/chat/types"
 import type {
@@ -18,11 +19,8 @@ import type {
   SurfaceShellProps,
   SurfaceShellSnapshot,
 } from "../../front/chrome/artifact-surface/SurfaceShell"
-import { AgentPage } from "../../front/chrome/skills/AgentPage"
 import { WorkspaceShellCapabilitiesProvider } from "../../front/shell/WorkspaceShellCapabilitiesContext"
 import { useWorkspaceShellCapabilitiesHost } from "./WorkspaceShellCapabilitiesHost"
-import { PluginsOverlay } from "../../front/chrome/plugins/PluginsOverlay"
-import { AgentDetailsOverlay } from "../../front/chrome/agents/AgentDetailsOverlay"
 import { AppLeftPane, AppLeftRail, createAppLeftNavigationEntries } from "../../front/layout/plugin-tabs/AppLeftPane"
 import { PluginTabsWorkspaceShell } from "../../front/layout/plugin-tabs/PluginTabsWorkspaceShell"
 import { chatPaneAgentLabels } from "../../front/layout/chatPaneAgentLabels"
@@ -69,6 +67,10 @@ import {
   type WorkspaceSessionRef,
 } from "../../front/sessionIdentity"
 import { startSessionActivityStream } from "../../front/sessionActivity"
+
+const AgentPage = lazy(() => import("../../front/chrome/skills/AgentPage").then((module) => ({ default: module.AgentPage })))
+const PluginsOverlay = lazy(() => import("../../front/chrome/plugins/PluginsOverlay").then((module) => ({ default: module.PluginsOverlay })))
+const AgentDetailsOverlay = lazy(() => import("../../front/chrome/agents/AgentDetailsOverlay").then((module) => ({ default: module.AgentDetailsOverlay })))
 
 const AGENT_OVERLAY_PREFIX = "agent-details:"
 const NATIVE_SESSION_UUID_PATTERN = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
@@ -334,6 +336,14 @@ export interface WorkspaceAgentFrontProps<
   extraPanels?: string[]
   extraCommands?: SlashCommand[]
   provisionWorkspace?: boolean
+  /**
+   * Opt in/out of server-backed pi-chat sessions independently of workspace
+   * provisioning. When omitted, remote sessions follow `provisionWorkspace`
+   * (enabled unless `provisionWorkspace={false}`). Apps that disable
+   * provisioning but still reach the agent pi-chat routes should pass `true`
+   * so chat uses real server session ids instead of local-only ones.
+   */
+  remoteSessionsEnabled?: boolean
   bootPreloadPaths?: string[]
   onWorkspaceWarmupStatusChange?: (status: WorkspaceWarmupStatus) => void
 }
@@ -756,6 +766,7 @@ export function WorkspaceAgentFront<
   extraPanels,
   extraCommands,
   provisionWorkspace,
+  remoteSessionsEnabled,
   bootPreloadPaths,
   onWorkspaceWarmupStatusChange,
   onOpenNav,
@@ -766,6 +777,9 @@ export function WorkspaceAgentFront<
 }: WorkspaceAgentFrontProps<TSession>) {
   const viewport = useViewportWidth()
   const mobileShellActive = mobileShellEnabled && isCompactViewport(viewport)
+  // Publishes `--keyboard-inset` on <html> for every surface below. This is the
+  // outermost component that always mounts, so it is the one place it belongs.
+  useKeyboardInset()
   const externalPluginsEnabled = externalPlugins !== false
   const resolvedFrontPluginHotReload = externalPluginsEnabled ? frontPluginHotReload : false
   const resolvedHotReloadEnabled = externalPluginsEnabled ? hotReloadEnabled : false
@@ -906,10 +920,22 @@ export function WorkspaceAgentFront<
   const chatPanel = (chatPanelProp ?? DefaultPiChatPanel) as ComponentType<WorkspaceChatPanelProps>
   const useSessions = (useSessionsProp ?? useDefaultWorkspacePiSessions) as UseWorkspaceAgentSessions<TSession>
   const shouldUseRemoteSessions = !chatPanelProp || Boolean(useSessionsProp)
-  // provisionWorkspace only controls workspace runtime provisioning; it must not
-  // disable remote pi-chat sessions when the default remote-backed chat panel is
-  // still active (gh-601).
-  const remoteSessionHookEnabled = shouldUseRemoteSessions
+  // Provisioning and server-backed sessions are separate concerns: apps can
+  // disable workspace provisioning and still use real pi-chat sessions.
+  const remoteSessionsResolved = remoteSessionsEnabled ?? (provisionWorkspace !== false)
+  const remoteSessionHookEnabled = shouldUseRemoteSessions && remoteSessionsResolved
+  const remoteSessionsDisabledWarnedRef = useRef(false)
+  useEffect(() => {
+    if (remoteSessionsDisabledWarnedRef.current) return
+    if (!shouldUseRemoteSessions || remoteSessionsResolved || provisionWorkspace !== false) return
+    if (remoteSessionsEnabled !== undefined) return
+    remoteSessionsDisabledWarnedRef.current = true
+    if (typeof import.meta !== 'undefined' && import.meta.env?.DEV) {
+      console.warn(
+        "[boring-ui] WorkspaceAgentFront: provisionWorkspace={false} also disabled server-backed chat sessions, so the chat panel will use local-only session ids while still reaching the agent pi-chat routes. Pass remoteSessionsEnabled={true} to keep remote sessions.",
+      )
+    }
+  }, [provisionWorkspace, remoteSessionsEnabled, remoteSessionsResolved, shouldUseRemoteSessions])
   const fleetAgentIdentity = addressedAgents.agents.map((agent) => agent.agentTypeId).sort().join(",")
   const sessionSourceIdentity = useMemo(() => sessionDataSourceIdentity({
     workspaceId,
@@ -2091,7 +2117,7 @@ export function WorkspaceAgentFront<
   // A restored/open active pane that survived authoritative inventory
   // reconciliation owns enough addressed identity to hydrate even when the
   // mutable global active preference is absent. An implicit placeholder does not.
-  const hydrateMessages = !autoSubmitHydrationDisabled && provisionWorkspace !== false && (
+  const hydrateMessages = !autoSubmitHydrationDisabled && remoteSessionsResolved && (
     shouldUseRemoteSessions
       ? Boolean(effectiveActiveSessionId || activeChatPaneIsInventoried)
       : true
@@ -2323,6 +2349,35 @@ export function WorkspaceAgentFront<
   const topBarLeftContent = topBarLeft ? (
     <div className="flex min-w-0 items-center gap-2">{topBarLeft}</div>
   ) : undefined
+  // At compact the mobile chat bar already carries the real session title, so a
+  // top bar above it is a second title row over the same chat — three stacked
+  // headers before the first pixel of transcript. It is dropped there, except
+  // when the host supplied opaque chrome of its own (brand + site nav, sign-in,
+  // version badge) that lives nowhere else; that bar then shows the app name
+  // rather than repeating the session title.
+  const hostSuppliedTopBarChrome = Boolean(topBarLeftContent) || topBarRight != null
+  const showTopBar = !mobileShellActive || hostSuppliedTopBarChrome
+  // The two actions the top bar owned that ARE relocatable follow it into the
+  // mobile bar when it is gone. The command palette especially: a phone has no
+  // ⌘K, so this button is its only entry point.
+  const mobileChatBarActions = mobileShellActive && !showTopBar ? (
+    <>
+      {/* 44px hit area: the UI-review mobile touch-target gate requires it and
+          the merged bar is a phone-only surface. */}
+      <IconButton
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        className="mobile-shell-bar-action size-11"
+        onClick={openCommandPalette}
+        aria-label="Search catalogs and commands"
+        title="Search"
+      >
+        <Search className="size-4" />
+      </IconButton>
+      {showThemeToggle ? <ThemeToggle className="size-11" /> : null}
+    </>
+  ) : undefined
   const activeChatPaneRef = activeChatPaneId ? workspaceSessionRefFromKey(activeChatPaneId) : null
   const openChatPaneRefs = useMemo(() => chatPaneIds.map((id) => workspaceSessionRefFromKey(id)), [chatPaneIds])
   const pinnedRefs = useMemo(() => pinnedIds.map((id) => workspaceSessionRefFromKey(id)), [pinnedIds])
@@ -2389,7 +2444,15 @@ export function WorkspaceAgentFront<
     // became independent is no longer always the addressed one.
     const requestedAgentTypeId = options?.agentTypeId ?? selectedAgentTypeId
     try {
-      const session = await coordinateRemoteCreate(dedupeKey, options)
+      // `agentTypeId` addresses the fleet wrapper; it is not part of the
+      // canonical single-Agent create-session body. Forwarding the synthetic
+      // `default` owner made strict Agent hosts reject quick-chat creation.
+      const createInput = fleetModeEnabled
+        ? options
+        : options?.title
+          ? { title: options.title }
+          : undefined
+      const session = await coordinateRemoteCreate(dedupeKey, createInput)
       const sessionId = createdSessionId(session)
       if (!sessionId) return { success: false as const, reason: "create-failed" as const, message: "Chat session creation did not return a canonical session." }
       const returnedAgentTypeId = (session as { agentTypeId?: unknown }).agentTypeId
@@ -2423,7 +2486,7 @@ export function WorkspaceAgentFront<
     } catch (error) {
       return { success: false as const, reason: "create-failed" as const, message: error instanceof Error ? error.message : "Chat session creation failed." }
     }
-  }, [coordinateRemoteCreate, rawDelete, rawSwitch, selectedAgentTypeId])
+  }, [coordinateRemoteCreate, fleetModeEnabled, rawDelete, rawSwitch, selectedAgentTypeId])
   const createShellChatSession = useCallback(async (options?: { title?: string }) => {
     shellSessionCreateSequenceRef.current += 1
     return await createAddressedSessionWithoutActivating(`shell:${shellSessionCreateSequenceRef.current}`, {
@@ -2540,7 +2603,7 @@ export function WorkspaceAgentFront<
       headerInsetEnd={!surfaceOpen}
     />
   ) : null
-  const leftOverlayNode = pluginLeftOverlayNode ?? customLeftOverlayNode ?? agentLeftOverlayNode ?? (leftOverlay === "skills" && singleAgentSkillsActionEnabled ? (
+  const unresolvedLeftOverlayNode = pluginLeftOverlayNode ?? customLeftOverlayNode ?? agentLeftOverlayNode ?? (leftOverlay === "skills" && singleAgentSkillsActionEnabled ? (
     <AgentPage
       onClose={() => setLeftOverlay(null)}
       headerInsetStart={mobileShellActive}
@@ -2557,6 +2620,11 @@ export function WorkspaceAgentFront<
       headerInsetEnd={!surfaceOpen}
     />
   ) : null)
+  const leftOverlayNode = unresolvedLeftOverlayNode ? (
+    <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading…</div>}>
+      {unresolvedLeftOverlayNode}
+    </Suspense>
+  ) : null
   const mainContent = remoteSessionsTransitioning ? (
     <ChatSessionTransitionState />
   ) : (
@@ -2576,6 +2644,7 @@ export function WorkspaceAgentFront<
       chatPaneSplitPending={chatPaneSplitPending}
       pendingChatPanePlacement={pendingChatPanePlacement}
       onPendingChatPanePlacementConsumed={consumePendingChatPanePlacement}
+      chatTopActions={mobileChatBarActions}
       onDropChatSession={openChatPane}
       flashChatPaneId={flashChatPane?.workspaceId === workspaceId ? flashChatPane.id : null}
       surface={surfaceOpen ? "artifact-surface" : null}
@@ -2712,9 +2781,12 @@ export function WorkspaceAgentFront<
     </PluginTabsWorkspaceShell>
   ) : (
     <div className="flex h-full min-h-0 flex-col">
+      {showTopBar ? (
       <TopBar
         appTitle={appTitle}
-        sessionTitle={remoteSessionsTransitioning ? "Loading sessions…" : resolvedSessionTitle ?? defaultSessionTitle}
+        sessionTitle={mobileShellActive
+          ? undefined
+          : remoteSessionsTransitioning ? "Loading sessions…" : resolvedSessionTitle ?? defaultSessionTitle}
         // The non-plugin-tabs shell shows the active chat's title in its bar,
         // so it is a chat header too and names its Agent like the others.
         // Undefined below two Agents, which is when the map itself is null.
@@ -2723,6 +2795,7 @@ export function WorkspaceAgentFront<
         topBarLeft={topBarLeftContent}
         topBarRight={topBarRightContent}
       />
+      ) : null}
       {mainContent}
     </div>
   )

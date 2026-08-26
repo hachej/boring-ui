@@ -52,6 +52,8 @@ function validateWorkspaceRoot(workspaceRoot: string): void {
   }
 }
 
+export type BwrapNamespaceProfile = 'full' | 'docker'
+
 export interface BwrapArgsOptions {
   extraArgs?: string[]
   postWorkspaceArgs?: string[]
@@ -59,11 +61,45 @@ export interface BwrapArgsOptions {
   newSession?: boolean
   dropAllCapabilities?: boolean
   /**
+   * `full` preserves bwrap's default isolation by unsharing every supported
+   * namespace. `docker` avoids a nested user namespace for hardened outer
+   * containers that forbid mounting proc there; it must drop all capabilities.
+   */
+  namespaceProfile?: BwrapNamespaceProfile
+  /**
    * Workspace-relative prefixes re-bound readonly on top of the writable
    * workspace mount, so spawned shells cannot mutate protected paths that the
    * Operations layer already refuses to mutate.
    */
   readonlyPaths?: readonly string[]
+}
+
+const DOCKER_FORBIDDEN_RAW_FLAGS = new Set([
+  '--args',
+  '--cap-add',
+  '--share-net',
+  '--unshare-all',
+  '--userns',
+  '--userns2',
+  '--pidns',
+  '--uid',
+  '--gid',
+  '--disable-userns',
+  '--assert-userns-disabled',
+  '--userns-block-fd',
+])
+
+function assertDockerRawArgsSafe(args: readonly string[] | undefined, source: string): void {
+  for (const arg of args ?? []) {
+    const flag = arg.split('=', 1)[0]
+    if (
+      flag === '--'
+      || flag.startsWith('--unshare-')
+      || DOCKER_FORBIDDEN_RAW_FLAGS.has(flag)
+    ) {
+      throw new Error(`docker namespace profile forbids ${flag} in ${source}`)
+    }
+  }
 }
 
 function normalizeReadonlyPath(input: string): string {
@@ -88,12 +124,41 @@ export function buildBwrapArgs(workspaceRoot: string, options?: BwrapArgsOptions
   validateWorkspaceRoot(workspaceRoot)
 
   const network = options?.network ?? 'shared'
+  if (network !== 'shared' && network !== 'isolated') {
+    throw new Error(`unsupported bwrap network mode: ${String(network)}`)
+  }
+  const namespaceProfile = options?.namespaceProfile ?? 'full'
+  if (namespaceProfile !== 'full' && namespaceProfile !== 'docker') {
+    throw new Error(`unsupported bwrap namespace profile: ${String(namespaceProfile)}`)
+  }
+  if (namespaceProfile === 'docker') {
+    // Raw argument seams are needed for controlled mounts, but must not be able
+    // to counteract the namespace/capability policy emitted below.
+    assertDockerRawArgsSafe(options?.extraArgs, 'extraArgs')
+    assertDockerRawArgsSafe(options?.postWorkspaceArgs, 'postWorkspaceArgs')
+  }
+  const namespaceArgs = namespaceProfile === 'full'
+    ? [
+        '--unshare-all',
+        ...(network === 'shared' ? ['--share-net'] : []),
+      ]
+    : [
+        // bwrap always creates a mount namespace. Avoid only the nested user
+        // namespace that some hardened Docker hosts reject when mounting proc.
+        '--unshare-ipc',
+        '--unshare-pid',
+        '--unshare-uts',
+        '--unshare-cgroup',
+        ...(network === 'isolated' ? ['--unshare-net'] : []),
+      ]
+  // Docker-compatible mode executes outside a user namespace while the outer
+  // container has SYS_ADMIN. Capabilities must never reach the sandbox command.
+  const dropAllCapabilities = namespaceProfile === 'docker' || options?.dropAllCapabilities === true
   const args: string[] = [
-    '--unshare-all',
-    ...(network === 'shared' ? ['--share-net'] : []),
+    ...namespaceArgs,
     '--die-with-parent',
     ...(options?.newSession === false ? [] : ['--new-session']),
-    ...(options?.dropAllCapabilities ? ['--cap-drop', 'ALL'] : []),
+    ...(dropAllCapabilities ? ['--cap-drop', 'ALL'] : []),
     '--tmpfs', '/',
     '--proc', '/proc',
     '--dev', '/dev',

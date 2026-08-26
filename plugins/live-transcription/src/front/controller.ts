@@ -1,5 +1,5 @@
 import type { SlashCommand } from "@hachej/boring-agent/front"
-import { postUiCommand } from "@hachej/boring-workspace"
+import { postUiCommand } from "@hachej/boring-workspace/plugin"
 import {
   KYUTAI_PCM_FRAME_BYTES,
   KYUTAI_PCM_FRAME_SAMPLES,
