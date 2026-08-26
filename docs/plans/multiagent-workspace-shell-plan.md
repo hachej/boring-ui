@@ -12,6 +12,16 @@ This plan **composes** three existing artifacts. It does not restate them.
 | **Job Thread v0 plan** — engine chapter, *in this PR* | The thread *engine*: `JobProjectionV0`, relay, handoff tool, receipts, seat boundary | sibling doc [`job-thread-v0-plan.md`](job-thread-v0-plan.md) + [gate doc](job-thread-v0-plan-review.html); own owner gate + bead epic `wt-391-forward-jfxd` |
 | **#1355 Console plan** | The console *substrate*: session/project console rows, collections | `docs/issues/1355/plan.md` (branch `plan/1355-persistent-console`) |
 | **Ratified long-term pack** | Frozen ontology, invariants, decision register | `docs/plans/long-term/ratified/*` |
+| **Founder / Chief-of-Staff delta plan** — consumer chapter, *in this PR* | The flagship **consumer**: the first product persona the shell and Job Threads serve, and its D1–D6 capability deltas | sibling doc [`founder-chief-of-staff-delta-plan.md`](founder-chief-of-staff-delta-plan.md) — its own owner gate, its own slices F1–F3 |
+
+**The consumer chapter's relationship.** The chief-of-staff agent is the first
+persona this substrate exists to serve: its D1–D6 deltas (cross-project
+aggregation, objective-ranked queue, daily operating review, shipped-evidence
+ledger, sales pipeline, notes ingestion) **ride on** the shell's surfaces —
+D1/D3 render into Inbox and Work, D2's queue is a Library view, D3's review is
+an attention item — and on Job Threads as the execution unit. Its content,
+sequencing and **owner gate remain its own**; this plan neither restates nor
+supersedes them.
 
 **What THIS plan owns:** the **new workspace shell layout** — the IA, the
 mounts, the center modes, the Library — and the **integration route** that
@@ -40,8 +50,8 @@ into a route.
 multi-agent planning PR. The Job Thread v0 plan is its **engine chapter** and
 now lives here as a sibling doc — [`job-thread-v0-plan.md`](job-thread-v0-plan.md),
 with its gate doc [`job-thread-v0-plan-review.html`](job-thread-v0-plan-review.html).
-PR #1403 is closed as superseded; its `jfxd` bead graph and owner gate are
-unchanged. PR #1401 stays separate **by design** — it is the ratification
+PR #1403 (engine) and PR #1389 (consumer) are closed as superseded; their bead
+graphs and owner gates are unchanged. PR #1401 stays separate **by design** — it is the ratification
 instrument, and the owner's merge *is* the ruling.
 
 ---
