@@ -1,7 +1,6 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
+import { mkdir, writeFile } from "node:fs/promises"
 import { join } from "node:path"
-import { describe, expect, it } from "vitest"
+import { afterAll, describe, expect, it } from "vitest"
 import {
   createUiReviewReproducePath,
   createUiReviewStateId,
@@ -12,7 +11,12 @@ import {
   type UiReviewViewport,
 } from "../core/contracts"
 import { pairWithLocalBaseline as pairWithSpec } from "../core/pairing"
+import { cleanupUiReviewTempRootSync, createUiReviewTempDir } from "../core/tempRoot"
 import { testSpec } from "./fixtures"
+
+// The run-scoped temp root belongs to this worker process; remove it here rather than relying on
+// how the runner terminates workers (vitest and Playwright both signal-kill them).
+afterAll(() => { cleanupUiReviewTempRootSync() })
 
 const pairWithLocalBaseline = (input: Omit<Parameters<typeof pairWithSpec>[0], "spec">) => pairWithSpec({ ...input, spec: testSpec })
 
@@ -77,8 +81,8 @@ function gates(states: UiReviewState[]): UiHardGateResult[] {
 
 describe("local UI review baseline pairing", () => {
   it("pairs exactly six known checkpoints and excludes unmatched Bombadil states", async () => {
-    const baselineRoot = await mkdtemp(join(tmpdir(), "ui-baseline."))
-    const outputRoot = await mkdtemp(join(tmpdir(), "ui-candidate."))
+    const baselineRoot = await createUiReviewTempDir("ui-baseline.")
+    const outputRoot = await createUiReviewTempDir("ui-candidate.")
     for (const viewport of viewports) await mkdir(join(outputRoot, "selected", viewport.name), { recursive: true })
     const baselineStates = await statesFor(baselineRoot, "before")
     const explorationBytes = new TextEncoder().encode("bombadil")
@@ -127,7 +131,7 @@ describe("local UI review baseline pairing", () => {
   })
 
   it("rejects using the output directory as its own baseline", async () => {
-    const root = await mkdtemp(join(tmpdir(), "ui-baseline-collision."))
+    const root = await createUiReviewTempDir("ui-baseline-collision.")
     await expect(pairWithLocalBaseline({ baselineRoot: root, outputRoot: root, runId: "after", candidateStates: [] })).rejects.toThrow("UI_REVIEW_BASELINE_OUTPUT_COLLISION")
   })
 })

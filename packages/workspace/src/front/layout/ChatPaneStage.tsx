@@ -1,7 +1,34 @@
+import { lazy, Suspense } from "react"
+import { LoadingState } from "@hachej/boring-ui-kit"
 import type { ReactNode } from "react"
 import { cn } from "../lib/utils"
 import { decodeWorkspaceSessionDrag, type WorkspaceSessionRef } from "../sessionIdentity"
-import { ChatPaneStageDock } from "./ChatPaneStageDock"
+import { COMPACT_MAX_WIDTH } from "./breakpoints"
+
+/**
+ * The dockview stage is code-split: the compact mobile shell never renders it
+ * (it renders `MobileSingleChatPane` instead), so a phone should not parse or
+ * download dockview-react at all. Desktop pays one extra chunk hop on mount.
+ */
+const ChatPaneStageDock = lazy(() => import("./ChatPaneStageDock").then((m) => ({ default: m.ChatPaneStageDock })))
+
+// Warm the chunk at boot on desktop-sized viewports so the Suspense window is
+// effectively closed before first paint; compact viewports never fetch it —
+// that is the entire point of the split.
+if (typeof window !== "undefined" && window.innerWidth >= COMPACT_MAX_WIDTH) {
+  void import("./ChatPaneStageDock")
+}
+
+/**
+ * Synchronous fallback for the chunk hop. Deliberately does NOT render the
+ * pane content: mounting the pane here and again under the dock would remount
+ * it once the chunk lands, aborting and re-firing the chat session's event
+ * stream subscription. A phone never sees this fallback at all — the compact
+ * shell renders `MobileSingleChatPane` instead of this component.
+ */
+function DockFallback() {
+  return <LoadingState centered />
+}
 
 export interface ChatPaneDescriptor {
   id: string
@@ -75,7 +102,18 @@ export interface ChatPaneStageProps {
  * workspace.
  */
 export function ChatPaneStage(props: ChatPaneStageProps) {
-  return <ChatPaneStageDock {...props} />
+  return (
+    <Suspense fallback={<DockFallback />}>
+      <ChatPaneStageDock {...props} />
+    </Suspense>
+  )
+}
+
+export function readablePaneTitle(title: string | undefined, id: string | undefined): string {
+  const trimmed = title?.trim()
+  const isMachineId = trimmed === id
+    || Boolean(trimmed && /(?:^|::)[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(trimmed))
+  return trimmed && !isMachineId ? trimmed : "New chat"
 }
 
 export function paneTitle(pane: { title?: string | null }): string {
