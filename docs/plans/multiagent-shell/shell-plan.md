@@ -47,11 +47,11 @@ transcript; per-agent work logs are drill-down provenance, like CI logs behind
 a PR check (#1399, owner sharpening 2026-08-24).
 
 **1 Thread = 1 job.** The thread is the unit of WORK, not the unit of agent.
-The user talks to the job. **Proposed** as an amendment — *"A Thread may span
-multiple Seats, projected as one timeline; one Thread per job."* — in PR #1401
-(`RECONCILIATION.md` §7; `VISION.md` R-c untouched at
-`docs/plans/long-term/ratified/VISION.md:112-115`). **Owner merge is pending;
-a rejection voids this premise and most of this plan with it.** Naming is settled:
+The user talks to the job. **Ratified** 2026-08-26 by owner merge of PR #1401
+(merge `58406c465`) — *"A Thread may span multiple Seats, projected as one
+timeline; one Thread per job."* Recorded in `RECONCILIATION.md` §7;
+`VISION.md` R-c untouched at
+`docs/plans/long-term/ratified/VISION.md:112-115`. Naming is settled:
 **multi-seat Thread / Job Thread**, never "channel" — *channel* stays reserved
 for transport/ingress.
 
@@ -464,7 +464,7 @@ v0 slice. Gated on the P1 View work landing, and on Q3's persistence ruling.
   (`job-thread-plan.md:687-697`). This plan mounts that adapter; it does not
   design it.
 - *Blocked by:* jfxd S4 (→ the engine chapter's owner gate, S1–S3), therefore
-  #1401.
+  #1401 (now ratified — no longer a blocker).
 - *Scope:* `workspace-shell/ThreadPage.tsx` + canvas mount/teardown guards.
 - *Proof:* `pnpm --filter @hachej/boring-workspace test -- src/front/layout/workspace-shell/__tests__/threadPage.test.tsx`
   **and** `pnpm --filter workspace-playground exec playwright test e2e/workspace-shell-thread.spec.ts`
@@ -613,7 +613,7 @@ does not discover a conflict:
 ## 6. Gates & sequencing
 
 ```
-#1401 (amendment, OPEN — a rejection voids the premise) ──┐
+#1401 (amendment) RATIFIED 2026-08-26 ────────────────────┐
                                                           ├→ jfxd S1→S2→S3→S4 → L4
 #1382 (objectives, OPEN) ─────────────────────────────────┘
 
@@ -710,6 +710,11 @@ to jfxd S4 + L4 and is the highest-risk item here. All entity data is fixture
 This plan went through three review rounds: fresh-eyes and GPT-5 Codex
 (cross-model adversarial) on round 1, then a targeted precision verify on
 round 2. All three returned `revise`; every P0/P1/P2 is folded.
+
+**Premise update (2026-08-26):** PR #1401 was merged while this round was in
+flight — the multi-seat Thread amendment is now **ratified**, not proposed. The
+plan's largest external risk is retired; the engine gate and #1355 Gate 1
+remain open.
 
 **Claims retracted as wrong along the way.** Round 1: that a third layout is a
 ~5-line change (§4.1), and that L1/L2/L3/L5/L6 were unblocked today (§6).

@@ -71,7 +71,7 @@ own gate; all three are unanswered.
 |---|---|---|
 | Shell gate — 13 questions (`wt-391-forward-shell-ngfs.1`) | all 11 shell beads | open |
 | Engine gate — 8 rulings (`wt-391-forward-jfxd.1`) | S1–S6, and shell L4 through S4 | open |
-| PR [#1401](https://github.com/hachej/boring-ui/pull/1401) — multi-seat Thread amendment | the premise itself | **open; a rejection voids it** |
+| PR [#1401](https://github.com/hachej/boring-ui/pull/1401) — multi-seat Thread amendment | *(was: the premise itself)* | **ratified 2026-08-26** ✅ |
 | #1355 Gate 1 | console collections → live Work rows, Library persistence | unanswered |
 
 **The honest unblocked tranche** (after the shell gate only): **L1** layout
