@@ -1,5 +1,10 @@
 # #391 work-package alignment under Decision 28
 
+> **Historical (July 2026) — do not dispatch from this file.** The dispatch-
+> authority sentence below is superseded: `docs/direction/DIRECTION.md` alone
+> owns sequencing, and several rows are stale — see this folder's
+> [`README.md`](README.md) for the current-truth ledger.
+
 > [`plan.md`](../fleet-and-environments/plan.md) is dispatch authority. This matrix preserves useful work
 > without allowing Decision 26's typed-product graph, old AgentHost machinery,
 > or dormant work packages to resume.

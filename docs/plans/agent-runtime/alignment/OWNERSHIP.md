@@ -1,5 +1,10 @@
 # #391 plan ownership map
 
+> **Historical (July 2026) — do not dispatch from this file.** Sequencing and
+> dispatch authority live in `docs/direction/DIRECTION.md`. Several rows are
+> stale (issues since closed, work since shipped, ownership since moved) —
+> the current-truth ledger is in this folder's [`README.md`](README.md).
+
 Issue #391 owns the Decision 28 product roadmap in [`plan.md`](../fleet-and-environments/plan.md): one
 static application fleet, Workspace-persisted default Agent, signup-domain
 initialization, independent Core/web and CLI consumers, service-shaped in-process
