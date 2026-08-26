@@ -24,6 +24,7 @@ export async function runWithBombadilStartupRetry(input: {
 
 export function isRetryableBombadilStartupFailure(stderr: string): boolean {
   return stderr.includes("Timeout while resolving websocket URL from browser process")
+    || stderr.includes("Failed to create a ProcessSingleton for your profile directory")
 }
 
 export async function resetBombadilOutputDirectory(cwd: string, outputPath: string): Promise<void> {
