@@ -486,6 +486,7 @@ Each decision has four fields:
 | **Rationale** | Decision 28's forbid-list is authority-scoped (AgentHost, publication content-addressed storage, mutable registries, authored executable catalogs, second behavior composers); a static presentation map introduces none of those. The deleted 54-line renderer (`454d06f3b^:apps/full-app/src/server/deployment/agentHostLanding.ts`) supplies reusable escaping/validation/`cache-control: no-store` logic, while its controller/revision plumbing stays deleted per PR #794's "do not restore only partial controller wiring" guidance — the lean path restores no controller wiring at all. |
 | **Supersedes / retains** | Supersedes nothing. Retains Decisions 25 and 28 in full, including their rejection of AgentHost/controller/publication machinery, and Decision 28's signup-domain initialization semantics unchanged. |
 | **Re-evaluate when** | Journaled multi-host publication is needed at scale — the archived path B (AgentHost revival). Re-evaluation requires a new decision amending 25/28 and must revert the #794 deletion as a unit, never restore partial controller wiring, and must not let hostname grant membership, routing, selection, or default-rewrite authority. |
+| **Addendum (2026-08-10, recorded 2026-08-26)** | Owner ruled the per-agent landing *pages* are an **app concern**: the tenant application (Seneca) renders them; the platform ships no landing renderer (platform renderer #1154 closed on this ruling). This narrows what D30 authorizes the platform to ship — the bounded hostname→content map stands, its rendering lives app-side. Source: `direction/DIRECTION.md` landing lane + `direction/state/2026-08-26.md`. |
 
 ## 31. Sovereign sandbox — Firecracker microVMs, gVisor superseded
 
@@ -496,6 +497,7 @@ Each decision has four fields:
 | **Why** | The controlling evidence is the sandbox engine security evaluation, the managed-provider comparison, and the cost model (all under `issues/1081/references/`): a syscall-filter boundary (gVisor) is a weaker isolation class than hardware virtualization for hostile multi-tenant code, and the cost model showed the sovereign Firecracker fleet competitive with managed offerings. |
 | **Supersedes / retains** | Supersedes the gVisor-based own-cloud design (the non-binding agent-cloud vision note describing it carries a contradiction banner at `plans/agent-runtime/cloud-vision/README.md`). Retains D25/D28/D29 unchanged — this chooses the *engine* under the existing SandboxProvider seam, not new authority machinery. |
 | **Re-evaluate when** | Firecracker cannot meet a required capability (GPU passthrough class, nested virt hosts unavailable) or the managed provider proves the better sovereign path at equal isolation class — re-evaluation must keep the hardware-virtualization isolation floor. |
+| **Addendum (2026-08-12, recorded 2026-08-26)** | Same-date companion ruling: **no S3 object versioning in v1** of the sandbox service — rejected as cost/complexity without a consumer; revisit only with a named restore/audit requirement. Source: `direction/state/` sandbox-service-architecture notes. |
 
 ## Process
 

@@ -241,7 +241,10 @@ separate product decision. **This amendment takes that deferred decision.**
 The surface over a Workspace is a shell with five top-level domains —
 **Search · Inbox · Work · Agents · Library** (Search renders at the top of the
 nav; the enumeration is a set, not a layout). Nav is domains; the vertical
-plugin rail is tools.
+plugin rail is tools. Two interview rulings (2026-08-26) complete the frame:
+**plugins MAY add top-level nav entries** — the five domains are the floor,
+not a closed set; crowding is an accepted risk — and **deep links split as:
+the shell owns the serializable location, the host owns URL translation.**
 
 - **Transparent multi-agent Threads.** A Thread looks like an ordinary chat with
   several agents inside it, behind **one composer**. Workers are hidden behind
