@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { appendFileSync, writeFileSync } from "node:fs";
 import { appendFile, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile, utimes } from "node:fs/promises";
-import { CURRENT_SESSION_VERSION, DefaultResourceLoader, formatSkillsForPrompt, SessionManager, SettingsManager } from "@mariozechner/pi-coding-agent";
+import { CURRENT_SESSION_VERSION, DefaultResourceLoader, formatSkillsForPrompt, SessionManager } from "@mariozechner/pi-coding-agent";
 import { basename, join } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import {
@@ -9,7 +9,6 @@ import {
   createPiCodingAgentHarness,
   mergePiPackageSources,
   projectSkillResourceLocations,
-  syncCodexCompactionBudget,
   withPiHarnessDefaults,
 } from "../createHarness.js";
 import { adaptToolsForPi } from "../tool-adapter.js";
@@ -89,44 +88,6 @@ async function createSessionWithTurn(
 }
 
 describe("createPiCodingAgentHarness", () => {
-  it("reserves extra Codex compaction headroom without changing model metadata", () => {
-    const declaredContextWindow = 128_000;
-    const model = {
-      provider: "openai-codex",
-      id: "gpt-codex-test",
-      contextWindow: declaredContextWindow,
-    };
-    const settingsManager = SettingsManager.inMemory({
-      compaction: { enabled: true, reserveTokens: 16_384, keepRecentTokens: 20_000 },
-    });
-
-    const baseline = settingsManager.getCompactionSettings();
-    syncCodexCompactionBudget(settingsManager, baseline, model);
-    syncCodexCompactionBudget(settingsManager, baseline, model);
-
-    expect(model.contextWindow).toBe(declaredContextWindow);
-    expect(settingsManager.getCompactionSettings()).toEqual({
-      enabled: true,
-      reserveTokens: 32_768,
-      keepRecentTokens: 20_000,
-    });
-    // The larger reserve triggers at 95,232 instead of 111,616.
-    expect(100_000).toBeGreaterThan(declaredContextWindow - 32_768);
-    expect(100_000).toBeLessThan(declaredContextWindow - 16_384);
-
-    // Switching away restores the baseline instead of retaining or stacking
-    // Codex headroom; switching back applies exactly one headroom increment.
-    syncCodexCompactionBudget(settingsManager, baseline, {
-      provider: "anthropic",
-      contextWindow: declaredContextWindow,
-    });
-    expect(settingsManager.getCompactionSettings()).toEqual(baseline);
-    syncCodexCompactionBudget(settingsManager, baseline, model);
-    expect(settingsManager.getCompactionReserveTokens()).toBe(32_768);
-    syncCodexCompactionBudget(settingsManager, baseline, undefined);
-    expect(settingsManager.getCompactionSettings()).toEqual(baseline);
-  });
-
   it("returns an AgentHarness with correct shape", () => {
     const harness = createPiCodingAgentHarness({
       tools: [noopTool],

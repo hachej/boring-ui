@@ -93,8 +93,6 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
     create: () => ({
       getResolvedSettings: () => ({}),
       loadAllSettings: vi.fn(),
-      getCompactionSettings: () => ({ enabled: true, reserveTokens: 16_384, keepRecentTokens: 20_000 }),
-      applyOverrides: vi.fn(),
     }),
   },
   ModelRegistry: {
