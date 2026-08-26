@@ -31,7 +31,10 @@ surface per agent), Environment leases, per-agent model policy
 core, CLI, playground, delegation) composing through it, enforced by CI
 invariants. Also shipped: A1 authored-agent groundwork, boring-bash/sandbox
 extraction, BYOK credential-injection contract, D1 tenant provisioning.
-Authority for what exists: `docs/plans/agent-runtime/gateway/plan.md` §6 (frozen).
+Authority for what exists: `packages/agent/docs/AGENT_GATEWAY_V0.md` (the
+binding contract, colocated with its types, per D29). The gateway plan's §6
+(`docs/plans/agent-runtime/gateway/plan.md`) is historical — its own header
+says it drifted and defers to the package contract.
 
 ## Wave 1 — NOW: the multi-agent console (beads .27 → .31)
 

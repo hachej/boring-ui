@@ -1,5 +1,12 @@
 # 909 execution orchestrator prompt
 
+> **RETIRED — do not execute.** This prompt drove the #909 bead graph, which
+> has completed; the gateway shipped in v0.1.91 (Decision 29). It is kept as
+> a historical record only. Two of its rules are now stale: its "do NOT add
+> durable ledgers" instruction predates D29's Level-D addendum (2026-08-26),
+> and its `docs/issues/909/*` paths moved to `docs/plans/agent-runtime/`
+> (mapping in `docs/issues/909/README.md`).
+
 Usage (after PR #911 is merged and H0 recorded on the epic):
 
 ```bash
@@ -7,7 +14,7 @@ cd /home/ubuntu/projects/boring-ui-v2
 git worktree add .worktrees/issue-909-orchestrator -b issue-909/orchestrator origin/main
 cd .worktrees/issue-909-orchestrator
 # pi coordinator (gemini) — or pipe the same prompt into: codex exec -s danger-full-access -m gpt-5.6-sol -
-pi -p -a "$(cat docs/issues/909/ORCHESTRATOR-PROMPT.md)"
+pi -p -a "$(cat docs/plans/agent-runtime/gateway/ORCHESTRATOR-PROMPT.md)"
 ```
 
 ---
@@ -27,9 +34,9 @@ own worktree. Do not implement large diffs yourself.
 
 ## Authority
 
-- Plan (normative): `docs/issues/909/plan.md` — "owner descope 2026-07-23"
+- Plan (normative): `docs/plans/agent-runtime/gateway/plan.md` — "owner descope 2026-07-23"
   deltas + DS fixes are normative; §13 pre-descope dispositions are NOT.
-- Companion: `docs/issues/909/plugin-contribution-model.md`.
+- Companion: `docs/plans/agent-runtime/plugins-across-hosts/plugin-contribution-model.md`.
 - Bead graph: epic `wt-391-forward-0jpy`, children `.1`–`.17`. Beads are
   self-contained: execute from description + acceptance, exactly as written.
 - Per-bead procedure: **the `/exec` skill.** Read `.agents/skills/exec/SKILL.md`;

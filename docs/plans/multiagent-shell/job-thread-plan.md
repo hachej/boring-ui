@@ -461,6 +461,16 @@ interface JobCursorV0 { jobId: string; refKey: string; consumedThroughSeq: numbe
   source ref, held in `JobCursorV0` (how far the relay has interpreted that seat's events) and a **delivered-context watermark** per destination
   (`deliveredThroughOrdinal` — what a given send actually carried). A destination that completed and
   emitted a handoff before a crash is therefore still discoverable after restart.
+> **Design debt (2026-08-26 gateway-area review).** Two gaps in this recovery design, both to be
+> resolved in the post-[durable-streams] redesign, not patched here: (1) the shipped gateway
+> exposes **no request-ledger lookup operation**, and its internal ledger key is the full
+> scope/actor/operation/target/request tuple, not bare `requestId` — step 1 as written has no API;
+> Level-D replay / same-`requestId` re-dispatch is the likely substitute. (2) Boot recovery
+> re-dispatches, but neither the job nor the edge persists an authorization principal, and gateway
+> scope is a non-serializable runtime capability re-verified on every use (D29) — recovery must
+> persist a non-capability principal *reference* and re-authorize it, or require authenticated
+> re-entry before re-dispatching.
+
 - **Recovery order** (on boot, per job, for each edge lacking a terminal phase):
   1. Re-read the destination session's durable state — the request ledger and, failing that, the
      session snapshot — keyed by `requestId`.
@@ -571,11 +581,21 @@ marks; it does not build a view.
   gateway session identity is scoped by `agentTypeId`, so equal ids under two agents could answer the
   wrong participant's question. v0 matches
   `(workspaceScopeId, agentTypeId, sessionId)` against `participants[].conversation` and ignores any
-  hint it cannot resolve to exactly one participant. **No ask-user change** is still required — the
-  answer routes through the existing `ask-user.v1.answer` bridge op and its `answerToken`
+  hint it cannot resolve to exactly one participant. **Correction (2026-08-26 gateway-area review):
+  this DOES require an ask-user change.** Current pending-question hints carry only `sessionId`
+  (`plugins/ask-user/src/server/askUserStatePublisher.ts:6-20`), so the triple cannot be matched
+  without carrying addressed identity (`workspaceScopeId`, `agentTypeId`) through pending state and
+  the bridge — a small, named S4 obligation. The answer path itself is unchanged: it still routes
+  through the existing `ask-user.v1.answer` bridge op and its `answerToken`
   (`askUserRuntime.ts:160-177`).
 
 ### Level D honesty
+
+> **SUPERSEDED 2026-08-26 (see Re-sequencing ruling, §7).** This subsection's shipping position —
+> "v0 ships against Level B" and restart loss accepted — is the **rejected** starting point: the
+> engine does not ship on Level B; [durable-streams] (Level D default-on, D29 addendum) is a
+> precondition, and Q7 is RULED, not open. The analysis below is kept as the honest record of what
+> Level B can and cannot do.
 
 Round 1 called enabling `BORING_CHAT_DURABLE_STREAM` "Level D activation". Withdrawn — **the flag is
 not conformance**. It installs a SQLite event store (`buildAgentComposition.ts:30-43`), while every

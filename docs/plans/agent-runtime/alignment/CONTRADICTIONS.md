@@ -15,7 +15,7 @@ they conclude.
 |---|---|---|---|
 | fleet-and-environments | revise (9 findings) | pass | README rewritten as a reconciliation layer: DIRECTION-only authority (incl. F-graph edges + the #805 DAG demoted to reference), shipped-D29/gateway reality named where the frozen text predates it, the silent default-agent fallback flagged as a code-vs-D28 defect (#1311 line), F7 re-gated behind [durable-streams]+[seat-storage], the in-process adapter mandate superseded, the AgentHost stop-condition read narrowly. Stale `DECISIONS.md` links to the old `docs/issues/391/plan.md` path repaired. The frozen `plan.md` itself is untouched. |
 | cloud-vision | pending | pass | — |
-| gateway | pending | pending (rate-limited, retrying) | — |
+| gateway | revise (10 findings) | pending (rate-limited, retrying) | Four real engine-plan gaps folded into `job-thread-plan.md`: the recovery step that read a nonexistent gateway ledger operation is marked design debt for the post-[durable-streams] redesign (with the missing-authorization-principal gap beside it); the ask-user triple join is corrected to name its required ask-user change (addressed identity through pending state) as an S4 obligation; the "v0 ships on Level B" subsection is bannered SUPERSEDED. DIRECTION's authority line now points at the package contract (`AGENT_GATEWAY_V0.md`), not the drifted plan §6. Gateway README rewritten as historical with caveats (pushed-host topology = owner input not ratified; renamed members); orchestrator prompt gets a RETIRED banner and repaired paths. |
 | plugins-across-hosts | pending | pending (rate-limited, retrying) | — |
 | consumption-modes | pending | pending (rate-limited, retrying) | — |
 | alignment | pending | pending (rate-limited, retrying) | — |
