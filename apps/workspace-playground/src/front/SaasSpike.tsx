@@ -1,90 +1,83 @@
 /**
  * The SaaS spike shell, RE-COMPOSED from shipped components.
  *
- * LAYOUT (owner refinements #4 and #6), left to right:
+ * LAYOUT (the converged Meridian canvas), left to right:
  *
- *     NAV (domains)  |  VIEW EXPLORER  |  CONTENT  [ | contextual chat ]
+ *     NAV (domains)  |  VIEW EXPLORER  |  CONTENT
  *
- * There is no global activity rail. The rail was removed by ruling once the
- * Library became the view switcher: two switchers for one job is redundant
- * chrome. It survives in exactly one place — the thread canvas (#6b) — where
- * it is the visual signature of an EMBEDDED workspace.
+ * There is no global chat column and no global activity rail. Chat is not a
+ * column here — it is what a THREAD is, so "talk to the agent" navigates to
+ * Work rather than opening a sidecar (convergence ruling 6). The rail survives
+ * in exactly one place — the thread canvas — where it is the visual signature
+ * of an EMBEDDED workspace.
  *
  * What each existing block gave us:
  *
  *   - `PluginTabsWorkspaceShell` — the outer frame: left pane, collapsed rail,
- *     resize handle, mobile Sheet, floating collapse button. A dumb frame
- *     taking `leftPane`/`collapsedRail`/`children`.
+ *     resize handle, mobile Sheet. A dumb frame taking
+ *     `leftPane`/`collapsedRail`/`children`; this shell drives its collapse
+ *     state and supplies its own header toggle instead of the shell's floating
+ *     one (`showCollapseControl={false}`).
  *   - `ArtifactSurfacePane` — the Dockview surface, used TWICE: once for the
- *     content column, once for the thread canvas. Same engine, and the reason
- *     the canvas needed no new machinery. (`SurfaceShell` was the earlier
- *     choice, but it hard-wires its sources pane and rail to the RIGHT of the
- *     centre; with the rail gone and the explorer required on the LEFT, the
- *     bare surface is the piece that actually fits.)
- *   - `FileTreeView` — the REAL file tree, against the live agent API. The one
- *     thing on this screen that is not fixture data; its edits really save.
+ *     content column, once for the thread canvas.
+ *   - `FileTreeView` / `FileTreePane` — the REAL file tree, against the live
+ *     agent API. The one thing on this screen that is not fixture data.
  *   - `DataExplorer` (`@hachej/boring-data-explorer`) — Companies and Funds in
- *     the explorer column, fed by fixture adapters. No backend.
- *   - `CodeEditorPane` / `MarkdownEditorPane` / `csv-viewer`, via the registry —
- *     the canvas opens real files in the workspace's own editors, which autosave
- *     to `POST /api/v1/files`.
- *   - `AppLeftPaneAgentCard`, `AppSessionRow`, `RailAction` — real left-pane
- *     row/card/rail primitives.
- *   - `JobThreadView` + `SaasSpikeFixtures` — this branch's own thread mock,
- *     extended with inline artifact cards.
- *   - `useWorkspaceAttention` — the real Inbox store, seeded with fixture
- *     blockers so badges are computed by shipped code.
- *
- * NAV order is fixed: Inbox (single triage surface) / Work / Agents / Library /
- * Search. Selecting a Library view mounts its explorer and opens its home —
- * one mechanism, driven by the `SAAS_VIEWS` table.
+ *     the explorer column, fed by fixture adapters.
+ *   - `CodeEditorPane` / `MarkdownEditorPane` / `csv-viewer`, via the registry.
+ *   - `InboxOverlay` + `HumanArtifactList` — the real triage surface, over the
+ *     real attention store, with real artifact cards.
+ *   - `AutomationPanel` — the real automation page, over live rows.
+ *   - `JobThreadView` + `SaasSpikeFixtures` — this branch's own thread mock.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react"
-import {
-  Bot,
-  Building2,
-  ChevronRight,
-  Columns3,
-  FileText,
-  Inbox as InboxIcon,
-  Landmark,
-  LayoutGrid,
-  Library,
-  type LucideIcon,
-  Search,
-  Sparkles,
-  Table2,
-  Workflow,
-  X,
-} from "lucide-react"
-import { Button, Chip, StatusBadge, Textarea } from "@hachej/boring-ui-kit"
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
+import { Archive, Building2, Columns3, FileText, Landmark, MessageSquare } from "lucide-react"
+import { Button, StatusBadge } from "@hachej/boring-ui-kit"
 import {
   ArtifactSurfacePane,
   FileTreeView,
-  WorkbenchActivityRail,
   WorkspaceProvider,
+  WorkspaceShellCapabilitiesProvider,
   useWorkspaceAttention,
+  type HumanArtifact,
   type PaneProps,
   type PanelConfig,
+  type WorkspaceShellArtifactTarget,
+  type WorkspaceShellCapabilities,
+  type WorkspaceShellCapabilityResult,
 } from "@hachej/boring-workspace"
 import { DataExplorer } from "@hachej/boring-data-explorer/front"
 import { InboxOverlay, createAskUserPlugin } from "@hachej/boring-ask-user/front"
 import { AutomationPanel, boringAutomationPlugin } from "@hachej/boring-automation/front"
 // Internal source imports. The playground aliases `@` -> packages/workspace/src
-// (see vite.config.ts). These three modules import no workspace context, so
-// pulling them from source next to a dist-built `WorkspaceProvider` cannot
-// split a context — the one hazard that would matter here. Anything
-// context-dependent is read through the package entry above instead.
+// (see vite.config.ts). This module imports no workspace context, so pulling it
+// from source next to a dist-built `WorkspaceProvider` cannot split a context.
 import { PluginTabsWorkspaceShell } from "@/front/layout/plugin-tabs/PluginTabsWorkspaceShell"
-import { AppLeftPaneAgentCard } from "@/front/layout/plugin-tabs/AppLeftPaneAgentCards"
-import { AppSessionRow } from "@/front/layout/plugin-tabs/AppLeftPaneSessionRow"
-import { RailAction } from "@/front/layout/plugin-tabs/AppLeftPaneActions"
-import { PaneCollapseButton } from "@/front/layout/paneCollapseButton"
 import { JobThreadView } from "./JobThreadView"
+import { SaasLeftNav, SaasLeftRail, useLiveAutomationCount, type SaasNavActions } from "./SaasLeftNav"
+import { CANVAS_PANELS, SaasCanvasCard, SaasThreadCanvas } from "./SaasThreadCanvas"
+import {
+  activateDockPanel,
+  openContentFile,
+  openSaasAgent,
+  openSaasArchived,
+  openSaasAutomations,
+  openSaasCompany,
+  openSaasFund,
+  openSaasInbox,
+  openSaasThread,
+  openSaasView,
+  openSaasViewById,
+  shellRef,
+  type CenterPage,
+  type CenterState,
+  type SurfaceApi,
+} from "./saasShell"
 import {
   SAAS_AGENTS,
-  SAAS_AUTOMATIONS,
+  SAAS_ARCHIVED_THREADS,
   SAAS_ARTIFACTS,
+  SAAS_CANVAS_SURFACE_KIND,
   SAAS_COMPANIES,
   SAAS_COMPANY_ADAPTER,
   SAAS_COMPANY_FACETS,
@@ -94,15 +87,11 @@ import {
   SAAS_THREADS,
   SAAS_VIEWS,
   saasCanvasItem,
+  saasInboxArtifacts,
   saasThreadCanvas,
-  saasThreadCanvasGroup,
-  saasThreadCanvasGroups,
   type SaasArtifact,
-  type SaasCanvasGroup,
-  type SaasCanvasItem,
   type SaasThread,
   type SaasView,
-  type SaasViewKind,
 } from "./SaasSpikeFixtures"
 
 const SAAS_AGENT_TYPE = "builder"
@@ -118,152 +107,35 @@ function needsYouThreads(): readonly SaasThread[] {
   return SAAS_THREADS.filter((thread) => thread.status === "Needs you")
 }
 
-/** Dockview's container api, borrowed off PaneProps so the spike needs no direct dockview dep. */
-type SurfaceApi = PaneProps["containerApi"]
+/** The thread a record's "Ask agent" should land on (ruling 6). */
+function threadForCompany(companyId: string): SaasThread | undefined {
+  return SAAS_THREADS.find((thread) => thread.companyIds.includes(companyId))
+}
 
-/**
- * CENTER MODES (owner rulings #8, #9).
- *
- * The centre is NOT one always-on Dockview. Tabs are a document affordance, so
- * they exist only where documents do:
- *
- *   - "dock"  — Library artifacts: files, saved views, collection homes,
- *               dashboards. Tab strip allowed; that is what Dockview is for.
- *   - "page"  — everything else: a thread, an agent, a company or fund record.
- *               These render as PAGES. No tab chrome, and opening one REPLACES
- *               the centre rather than accumulating a tab.
- *
- * The dock is genuinely UNMOUNTED in page mode. Hiding it would have left its
- * tab strip in the DOM and its stale panels alive behind a thread, which is
- * exactly what the ruling forbids. Dockview persists its layout under
- * `storageKey`, so returning to the Library restores the tabs that were open.
- */
-type CenterPage =
-  | { kind: "inbox" }
-  | { kind: "automations" }
-  | { kind: "thread"; threadId: string }
-  | { kind: "agent"; agentId: string }
-  | { kind: "company"; companyId: string }
-  | { kind: "fund"; fundId: string }
-
-type CenterState = { mode: "dock" } | { mode: "page"; page: CenterPage }
-
-interface DockRequest {
-  id: string
-  component: string
-  title: string
-  params?: Record<string, unknown>
+function threadForFund(fundId: string): SaasThread | undefined {
+  return SAAS_THREADS.find((thread) => thread.fundId === fundId)
 }
 
 /**
- * The live shell handle.
+ * "Ask agent" — the ONLY chat affordance a record page gets.
  *
- * Module scope on purpose: the openers below are called from module-level
- * components (a record page's breadcrumb has to be able to go back to its
- * collection), while the centre mode and the explorer are React state.
+ * The global chat column is retired: a sidecar that talks about the pane you
+ * are looking at is a second conversation surface competing with the thread
+ * that already owns that work. So this navigates INTO Work.
  */
-const shellRef: {
-  content: SurfaceApi | null
-  setView: ((view: SaasView) => void) | null
-  setCenter: ((center: CenterState) => void) | null
-  /**
-   * The panel the dock SHOULD be showing. Declarative, and deliberately never
-   * cleared: under StrictMode the surface mounts, unmounts and remounts, so a
-   * queue that was consumed by the first (discarded) mount left the Library
-   * showing an empty dock. Re-applying the same request on every ready is
-   * idempotent, and it also restores the right tab on the way back to Library.
-   */
-  dockTarget: DockRequest | null
-} = { content: null, setView: null, setCenter: null, dockTarget: null }
-
-function activateDockPanel(api: SurfaceApi, config: DockRequest): void {
-  const existing = api.getPanel(config.id)
-  if (existing) {
-    existing.api.setActive()
-    return
-  }
-  api.addPanel({ id: config.id, component: config.component, title: config.title, params: config.params })
-}
-
-/**
- * Show a Library artifact: switch the centre to dock mode and open its tab.
- *
- * Switching modes unmounts/mounts the surface, so the request is recorded and
- * re-applied on the next ready rather than being lost with the old instance.
- */
-function openDockPanel(config: DockRequest): void {
-  shellRef.dockTarget = config
-  shellRef.setCenter?.({ mode: "dock" })
-  const api = shellRef.content
-  if (api) activateDockPanel(api, config)
-}
-
-/** Show a PAGE: replaces the centre outright. */
-function openCenterPage(page: CenterPage): void {
-  shellRef.setCenter?.({ mode: "page", page })
-}
-
-/**
- * Extension -> registered panel id.
- *
- * Mirrors `filesystemSurfaceResolver`. The real resolver runs inside
- * `SurfaceShell.openFile`, and a bare `ArtifactSurfacePane` has no open-file
- * logic of its own, so the handful of extensions the fixtures use are mapped
- * here rather than reimplementing the resolver.
- */
-function panelForPath(path: string): string {
-  if (/\.mdx?$/i.test(path)) return "markdown-editor"
-  if (/\.(csv|tsv)$/i.test(path)) return "csv-viewer"
-  return "code-editor"
-}
-
-function baseName(path: string): string {
-  return path.split("/").filter(Boolean).pop() ?? path
-}
-
-/** A file is a Library artifact, so it opens as a dock tab. */
-function openContentFile(path: string): void {
-  openDockPanel({
-    id: `file:${path}`,
-    component: panelForPath(path),
-    title: baseName(path),
-    params: { path, filesystem: "user", mode: "edit" },
-  })
-}
-
-/**
- * Select a view: mount its explorer in column 2, open its home in column 3.
- * Every Library view is an artifact view, so every one of them is dock mode.
- */
-function openSaasView(view: SaasView | undefined): void {
-  if (!view) return
-  shellRef.setView?.(view)
-  openDockPanel({ id: view.homePanel, component: view.homePanel, title: view.title })
-}
-
-// Records, threads, agents and the Inbox are PAGES (#9c).
-function openSaasCompany(companyId: string): void {
-  openCenterPage({ kind: "company", companyId })
-}
-
-function openSaasFund(fundId: string): void {
-  openCenterPage({ kind: "fund", fundId })
-}
-
-function openSaasThread(threadId: string): void {
-  openCenterPage({ kind: "thread", threadId })
-}
-
-function openSaasAgent(agentId: string): void {
-  openCenterPage({ kind: "agent", agentId })
-}
-
-function openSaasInbox(): void {
-  openCenterPage({ kind: "inbox" })
-}
-
-function openSaasAutomations(): void {
-  openCenterPage({ kind: "automations" })
+function AskAgentButton({ thread }: { thread: SaasThread | undefined }) {
+  if (!thread) return null
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      data-boring-workspace-part="saas-ask-agent"
+      onClick={() => openSaasThread(thread.id)}
+    >
+      <MessageSquare className="size-3.5" strokeWidth={1.75} />
+      Ask agent
+    </Button>
+  )
 }
 
 /** Content-column breadcrumb. The first crumb returns to the view's home. */
@@ -346,10 +218,110 @@ function OverviewPanel() {
  * `onClose` is a no-op: the overlay is designed to be dismissible, but here it
  * IS the page, and a page has nothing to dismiss to.
  */
+/**
+ * INBOX EVIDENCE (convergence ruling 5).
+ *
+ * Nothing new is rendered for the artifact cards: seeding each blocker with
+ * `inbox.artifacts` is enough, because `InboxOverlay` already expands an item
+ * into `HumanArtifactList` and routes a click through `openHumanArtifact` ->
+ * `shell.openArtifact`. The shell is normally `WorkspaceAgentFront`; here the
+ * spike IS the shell, so it answers that capability itself and turns the
+ * request into the SAME inset canvas the thread page uses.
+ *
+ * The identifier the two ends agree on is the canvas item id, carried as the
+ * artifact's `target` under this shell's own `surfaceKind`.
+ */
+function inboxEvidenceTarget(target: WorkspaceShellArtifactTarget | null): { threadId: string; itemId: string } | null {
+  if (!target || target.type !== "surface") return null
+  if (target.surfaceKind !== SAAS_CANVAS_SURFACE_KIND || !target.target) return null
+  const itemId = target.target
+  const thread = SAAS_THREADS.find((candidate) => saasThreadCanvas(candidate.id).some((item) => item.id === itemId))
+  return thread ? { threadId: thread.id, itemId } : null
+}
+
 function InboxPage() {
+  const [evidence, setEvidence] = useState<{ threadId: string; itemId: string } | null>(null)
+  const shell = useMemo<WorkspaceShellCapabilities>(() => {
+    const unavailable = (message: string): WorkspaceShellCapabilityResult => ({ success: false, reason: "open-failed", message })
+    return {
+      openArtifact: (target) => {
+        const resolved = inboxEvidenceTarget(target)
+        if (!resolved) return { success: false, reason: "no-artifact", message: "This item has no evidence the canvas can open." }
+        setEvidence(resolved)
+        return { success: true }
+      },
+      // A thread IS the chat here, so "open the chat" is a navigation, not a
+      // detached window; the full-chat and detached forms answer the same way.
+      openDetachedChat: (ref) => { openSaasThread(ref.sessionId); return { success: true } },
+      openFullChat: (ref) => { openSaasThread(ref.sessionId); return { success: true } },
+      openInboxItem: () => unavailable("The Inbox is already the open page."),
+    }
+  }, [])
+
+  const item = evidence ? saasCanvasItem(evidence.itemId) : undefined
+
   return (
-    <div className="h-full min-h-0 bg-background" data-boring-workspace-part="saas-inbox-page">
-      <InboxOverlay onClose={() => {}} pinStorageKey="boring-ui-v2:saas-spike:inbox-pins" />
+    <div className="flex h-full min-h-0 bg-background" data-boring-workspace-part="saas-inbox-page" data-evidence-open={evidence ? "true" : "false"}>
+      <div className="min-w-[420px] flex-1">
+        <WorkspaceShellCapabilitiesProvider value={shell}>
+          <InboxOverlay onClose={() => {}} pinStorageKey="boring-ui-v2:saas-spike:inbox-pins" />
+        </WorkspaceShellCapabilitiesProvider>
+      </div>
+      {evidence ? (
+        <div className="flex min-h-0 w-[52%] min-w-[420px] flex-col border-l border-border/70">
+          <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border/60 px-4">
+            <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-foreground/[0.07] text-muted-foreground"><FileText className="size-3.5" strokeWidth={1.75} /></span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[13px] font-semibold text-foreground">{item?.title ?? "Evidence"}</p>
+              <p className="truncate text-[11px] text-muted-foreground">{item?.meta ?? "Attached to this decision"}</p>
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => openSaasThread(evidence.threadId)}>Open thread</Button>
+          </div>
+          <SaasCanvasCard>
+            <SaasThreadCanvas
+              key={evidence.threadId}
+              threadId={evidence.threadId}
+              focusItemId={evidence.itemId}
+              onActiveItemChange={() => {}}
+              onClose={() => setEvidence(null)}
+              closeLabel="Close evidence"
+            />
+          </SaasCanvasCard>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+/**
+ * ARCHIVED THREADS — where Work's second drill-in lands (ruling 2).
+ *
+ * A page-mode list, deliberately plain: the archive is a place you visit to
+ * find one closed thread, not a surface that needs its own machinery.
+ */
+function ArchivedPage() {
+  return (
+    <div className="h-full overflow-y-auto bg-background p-8" data-boring-workspace-part="saas-archived-page">
+      <Breadcrumbs trail={[{ label: "Work" }, { label: "Archived" }]} />
+      <h1 className="mt-2 text-2xl font-semibold tracking-[-0.025em] text-foreground">Archived threads</h1>
+      <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+        {SAAS_ARCHIVED_THREADS.length} threads closed out of Work. Fixture rows — nothing in this spike archives a thread yet.
+      </p>
+      <section className="mt-8 max-w-3xl">
+        <div className="divide-y divide-border/60 border-t border-border/70">
+          {SAAS_ARCHIVED_THREADS.map((thread) => (
+            <div key={thread.id} className="flex items-center gap-4 py-4">
+              <span className="grid size-8 shrink-0 place-items-center rounded-md border border-border/70 bg-muted/30 text-muted-foreground"><Archive className="size-3.5" strokeWidth={1.75} /></span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium text-foreground">{thread.title}</span>
+                <span className="mt-0.5 block truncate text-xs text-muted-foreground">{thread.subject}</span>
+              </span>
+              <span className="shrink-0 text-xs text-muted-foreground">{thread.outcome}</span>
+              <span className="w-16 shrink-0 text-right text-xs tabular-nums text-muted-foreground/70">{thread.closedAt}</span>
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   )
 }
@@ -370,7 +342,9 @@ function AutomationsPage() {
 }
 
 // ---------------------------------------------------------------------------
-// THREAD = chat that summons a canvas (#5, #6b, #7).
+// THREAD = chat that summons a canvas (#5, #6b, #7). The canvas itself lives
+// in `SaasThreadCanvas.tsx`, because the Inbox mounts the same one as its
+// evidence pane (ruling 5).
 // ---------------------------------------------------------------------------
 
 /**
@@ -379,172 +353,6 @@ function AutomationsPage() {
  */
 const CHAT_MIN_WIDTH = 712
 const CANVAS_MIN_WIDTH = 360
-
-/** Panels the embedded canvas is allowed to mount. */
-const CANVAS_PANELS = ["markdown-editor", "code-editor", "csv-viewer", "saas-company", "saas-fund"]
-
-function canvasPanelId(item: SaasCanvasItem): string {
-  return `canvas:${item.id}`
-}
-
-const canvasGroupIcon: Record<SaasCanvasGroup, LucideIcon> = {
-  outputs: Sparkles,
-  files: FileText,
-  records: Building2,
-}
-
-const canvasGroupLabel: Record<SaasCanvasGroup, string> = {
-  outputs: "Outputs",
-  files: "Working files",
-  records: "Referenced records",
-}
-
-/**
- * The canvas surface: an embedded `ArtifactSurfacePane` plus its own slim rail.
- *
- * The rail is the visual signature of an embedded workspace (#6b) — it exists
- * HERE and nowhere else in the shell, and its icons are the thread's scope
- * groups, not global tools. Switching group swaps which pane set the canvas
- * shows, so the rail is a real switcher rather than decoration.
- *
- * Two rules make nesting a second Dockview inside the content one safe, both
- * read out of the dock code:
- *   1. DISTINCT `storageKey` — the default is shared, and two surfaces on it
- *      would overwrite each other's layout.
- *   2. DISJOINT panel ids — `DockviewShell` subscribes EVERY instance to the
- *      global `workspaceEvents` bus and applies `panelClose` to its own api, so
- *      an id in both surfaces would close in both. Canvas ids are prefixed
- *      `canvas:`; the content column uses `file:` / `saas-*`.
- */
-function ThreadCanvas({
-  threadId,
-  focusItemId,
-  onActiveItemChange,
-  onClose,
-}: {
-  threadId: string
-  focusItemId: string | null
-  onActiveItemChange: (itemId: string | null) => void
-  onClose: () => void
-}) {
-  const groups = useMemo(() => saasThreadCanvasGroups(threadId), [threadId])
-  const focusItem = focusItemId ? saasCanvasItem(focusItemId) : undefined
-  const [group, setGroup] = useState<SaasCanvasGroup>(() => focusItem?.group ?? groups[0] ?? "outputs")
-  const apiRef = useRef<SurfaceApi | null>(null)
-
-  const mountGroup = useCallback((api: SurfaceApi, nextGroup: SaasCanvasGroup, focusId?: string | null) => {
-    const items = saasThreadCanvasGroup(threadId, nextGroup)
-    const wanted = new Set(items.map(canvasPanelId))
-    for (const panel of [...api.panels]) {
-      if (!wanted.has(panel.id)) api.removePanel(panel)
-    }
-    for (const item of items) {
-      const id = canvasPanelId(item)
-      if (api.getPanel(id)) continue
-      if (item.kind === "file" && item.path) {
-        api.addPanel({
-          id,
-          component: panelForPath(item.path),
-          title: item.title,
-          // A real path in edit mode: these panes autosave to
-          // POST /api/v1/files, so edits here land on disk for real.
-          params: { path: item.path, filesystem: "user", mode: "edit" },
-        })
-      } else if (item.kind === "company" && item.recordId) {
-        api.addPanel({ id, component: "saas-company", title: item.title, params: { companyId: item.recordId, embedded: true } })
-      } else if (item.kind === "fund" && item.recordId) {
-        api.addPanel({ id, component: "saas-fund", title: item.title, params: { fundId: item.recordId, embedded: true } })
-      }
-    }
-    const target = focusId ? items.find((item) => item.id === focusId) : items[0]
-    if (target) api.getPanel(canvasPanelId(target))?.api.setActive()
-  }, [threadId])
-
-  // The last focus request already applied. Without it, every group change
-  // re-ran the focus effect, which saw the focused artifact in a DIFFERENT
-  // group and snapped the rail straight back — the rail looked inert.
-  const appliedFocusRef = useRef<string | null>(null)
-  const focusRef = useRef<string | null>(focusItemId)
-  focusRef.current = focusItemId
-
-  const handleReady = useCallback((api: SurfaceApi) => {
-    apiRef.current = api
-    appliedFocusRef.current = focusRef.current
-    mountGroup(api, group, focusRef.current)
-    // Switching a canvas TAB moves the mark in the transcript, so the two
-    // always point at each other (#7.4).
-    api.onDidActivePanelChange?.(() => {
-      const active = api.activePanel?.id
-      onActiveItemChange(active ? active.replace(/^canvas:/, "") : null)
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mountGroup, onActiveItemChange])
-
-  // Group changed — by the rail, or because a card named another group.
-  useEffect(() => {
-    const api = apiRef.current
-    if (!api) return
-    const focus = focusRef.current
-    const item = focus ? saasCanvasItem(focus) : undefined
-    mountGroup(api, group, item?.group === group ? focus : null)
-  }, [group, mountGroup])
-
-  // A NEW focus request from the transcript.
-  useEffect(() => {
-    if (!focusItemId || appliedFocusRef.current === focusItemId) return
-    appliedFocusRef.current = focusItemId
-    const item = saasCanvasItem(focusItemId)
-    if (!item) return
-    if (item.group !== group) {
-      // The group effect above mounts and focuses it.
-      setGroup(item.group)
-      return
-    }
-    const api = apiRef.current
-    if (api) mountGroup(api, group, focusItemId)
-  }, [focusItemId, group, mountGroup])
-
-  return (
-    // `flex-1 min-w-0` is load-bearing: this root is itself a flex ITEM inside
-    // the inset card, and without it the Dockview surface below collapsed to
-    // zero width and the card rendered blank beside the rail.
-    <div className="saas-canvas-quiet-tabs flex h-full min-h-0 w-full min-w-0 flex-1" data-boring-workspace-part="saas-thread-canvas">
-      <div className="min-w-0 flex-1">
-        <ArtifactSurfacePane
-          storageKey={`boring-ui-v2:layout:saas-spike:canvas:${threadId}`}
-          allowedPanels={CANVAS_PANELS}
-          onReady={handleReady}
-          className="h-full"
-        />
-      </div>
-      {/* The embedded workspace's rail — the REAL `WorkbenchActivityRail` from
-          the workbench, not a replica (#10). Same metrics, same quiet grey,
-          same instant tooltips, same accent rule; only the entries are ours,
-          scoped to this thread rather than to global workspace sources. */}
-      <WorkbenchActivityRail
-        side="right"
-        aria-label="Canvas scope"
-        className="border-l border-border/70"
-        leading={(
-          <PaneCollapseButton className="workbench-rail-action" label="Close canvas" side="left" onClick={onClose}>
-            <X className="h-4 w-4" strokeWidth={1.75} />
-          </PaneCollapseButton>
-        )}
-        entries={groups.map((item) => {
-          const Icon = canvasGroupIcon[item]
-          return {
-            id: item,
-            title: canvasGroupLabel[item],
-            icon: <Icon className="h-4 w-4" />,
-            active: group === item,
-            focused: group === item,
-            select: () => setGroup(item),
-          }
-        })}
-      />
-    </div>
-  )
-}
 
 /**
  * A thread. Opens as PURE CHAT; the conversation summons the canvas (#7).
@@ -620,16 +428,14 @@ function ThreadPage({ threadId }: { threadId: string }) {
             {/* Ruling (C): the canvas is an INSET CARD inside the thread frame,
                 not a flush full-height column. The frame's own chrome is
                 visible around it on three sides. */}
-            <div className="flex min-h-0 flex-1 flex-col py-4 pr-4" style={{ minWidth: CANVAS_MIN_WIDTH }}>
-              <div className="flex min-h-0 flex-1 overflow-hidden rounded-[10px] border border-border bg-popover shadow-sm">
-              <ThreadCanvas
+            <SaasCanvasCard minWidth={CANVAS_MIN_WIDTH}>
+              <SaasThreadCanvas
                 threadId={threadId}
                 focusItemId={openItemId}
                 onActiveItemChange={(itemId) => { if (itemId) setOpenItemId(itemId) }}
                 onClose={() => setOpenItemId(null)}
               />
-              </div>
-            </div>
+            </SaasCanvasCard>
           </>
         ) : undefined}
         chatWidth={canvasOpen ? chatWidth : undefined}
@@ -788,12 +594,15 @@ function CompanyRecord({ companyId, embedded = false }: { companyId: string; emb
   return (
     <div className={`h-full overflow-y-auto bg-background ${embedded ? "p-5" : "p-8"}`}>
       {embedded ? null : (
-        <Breadcrumbs
-          trail={[
-            { label: "Companies", onClick: () => openSaasView(SAAS_VIEWS.find((view) => view.id === "view-companies")) },
-            { label: company.name },
-          ]}
-        />
+        <div className="flex items-start justify-between gap-4">
+          <Breadcrumbs
+            trail={[
+              { label: "Companies", onClick: () => openSaasViewById("view-companies") },
+              { label: company.name },
+            ]}
+          />
+          <AskAgentButton thread={threadForCompany(company.id)} />
+        </div>
       )}
       <h1 className={`mt-2 font-semibold tracking-[-0.025em] text-foreground ${embedded ? "text-lg" : "text-2xl"}`}>{company.name}</h1>
       <p className="mt-1 text-xs text-muted-foreground">{company.sector} · {company.stage} · {company.headquarters}</p>
@@ -857,12 +666,15 @@ function FundRecord({ fundId, embedded = false }: { fundId: string; embedded?: b
   return (
     <div className={`h-full overflow-y-auto bg-background ${embedded ? "p-5" : "p-8"}`}>
       {embedded ? null : (
-        <Breadcrumbs
-          trail={[
-            { label: "Funds", onClick: () => openSaasView(SAAS_VIEWS.find((view) => view.id === "view-funds")) },
-            { label: fund.name },
-          ]}
-        />
+        <div className="flex items-start justify-between gap-4">
+          <Breadcrumbs
+            trail={[
+              { label: "Funds", onClick: () => openSaasViewById("view-funds") },
+              { label: fund.name },
+            ]}
+          />
+          <AskAgentButton thread={threadForFund(fund.id)} />
+        </div>
       )}
       <h1 className={`mt-2 font-semibold tracking-[-0.025em] text-foreground ${embedded ? "text-lg" : "text-2xl"}`}>{fund.name}</h1>
       <p className="mt-1 text-xs text-muted-foreground">{fund.strategy} · {fund.vintage} vintage · {fund.status}</p>
@@ -966,6 +778,7 @@ function CenterPageView({ page }: { page: CenterPage }) {
   if (page.kind === "company") return <CompanyRecord companyId={page.companyId} />
   if (page.kind === "fund") return <FundRecord fundId={page.fundId} />
   if (page.kind === "automations") return <AutomationsPage />
+  if (page.kind === "archived") return <ArchivedPage />
   return <InboxPage />
 }
 
@@ -1043,349 +856,6 @@ function ViewExplorer({ view }: { view: SaasView }) {
   )
 }
 
-const viewKindIcon: Record<SaasViewKind, LucideIcon> = {
-  collection: Table2,
-  document: Library,
-  dashboard: LayoutGrid,
-  kanban: Columns3,
-  chart: LayoutGrid,
-}
-
-// ---------------------------------------------------------------------------
-// LEFT NAV — domains, in the owner's fixed order.
-//
-// Collapse/rollup idioms are lifted from `AppLeftPaneConsoleSpike`: one
-// `ReadonlySet<string>` of expanded section ids toggled through `toggleSet`, and
-// the rule that a COLLAPSED header states what is actionable while an EXPANDED
-// one goes silent because its rows say it themselves.
-// ---------------------------------------------------------------------------
-
-function toggleSet(current: ReadonlySet<string>, key: string): ReadonlySet<string> {
-  const next = new Set(current)
-  if (next.has(key)) next.delete(key)
-  else next.add(key)
-  return next
-}
-
-function NavEntry({
-  icon: Icon,
-  label,
-  active,
-  trailing,
-  onClick,
-}: {
-  icon: LucideIcon
-  label: string
-  active?: boolean
-  trailing?: ReactNode
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-current={active ? "page" : undefined}
-      className="group flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-[13px] text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 aria-[current=page]:bg-foreground/[0.07] aria-[current=page]:font-medium aria-[current=page]:text-foreground"
-    >
-      <Icon className="size-3.5 shrink-0" strokeWidth={1.75} aria-hidden="true" />
-      <span className="min-w-0 flex-1 truncate text-left">{label}</span>
-      {trailing}
-    </button>
-  )
-}
-
-/** The amber attention count. One component, so Inbox and a collapsed Work header cannot drift. */
-function AttentionCount({ count }: { count: number }) {
-  if (count <= 0) return null
-  return (
-    <span
-      data-boring-workspace-part="saas-attention-count"
-      className="ml-auto rounded-full bg-amber-500/15 px-1.5 text-[10px] font-semibold tabular-nums text-amber-700 dark:text-amber-300"
-    >
-      {count}
-    </span>
-  )
-}
-
-function NavSection({
-  icon: Icon,
-  label,
-  sectionId,
-  expanded,
-  onToggle,
-  attention,
-  children,
-}: {
-  icon: LucideIcon
-  label: string
-  sectionId: string
-  expanded: boolean
-  onToggle: (sectionId: string) => void
-  attention: number
-  children: ReactNode
-}) {
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={() => onToggle(sectionId)}
-        aria-expanded={expanded}
-        className="group flex h-8 w-full items-center gap-2 rounded-md px-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/75 transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-      >
-        <ChevronRight
-          className={`size-3 shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`}
-          strokeWidth={2}
-          aria-hidden="true"
-        />
-        <Icon className="size-3.5 shrink-0" strokeWidth={1.75} aria-hidden="true" />
-        <span className="min-w-0 flex-1 truncate text-left">{label}</span>
-        {/* Collapsed says what is actionable; expanded goes quiet. */}
-        {expanded ? null : <AttentionCount count={attention} />}
-      </button>
-      {expanded ? <div className="mt-0.5 pl-2">{children}</div> : null}
-    </div>
-  )
-}
-
-function SubGroupLabel({ children }: { children: ReactNode }) {
-  return <p className="px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/60">{children}</p>
-}
-
-interface SaasNavActions {
-  openInbox: () => void
-  openThread: (threadId: string) => void
-  openAgent: (agentId: string) => void
-  openView: (view: SaasView) => void
-  openAutomations: () => void
-  openCommandPalette: () => void
-}
-
-function SaasLeftNav({
-  actions,
-  activePanelId,
-  activeViewId,
-  attentionThreadIds,
-}: {
-  actions: SaasNavActions
-  activePanelId: string | null
-  activeViewId: string | null
-  attentionThreadIds: ReadonlySet<string>
-}) {
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set(["work"]))
-  const onToggle = useCallback((sectionId: string) => setExpanded((current) => toggleSet(current, sectionId)), [])
-  const workAttention = SAAS_THREADS.filter((thread) => attentionThreadIds.has(thread.id)).length
-  const agentAttention = SAAS_AGENTS.filter((agent) => agent.status === "Needs you").length
-
-  return (
-    <aside
-      data-boring-workspace-part="app-left-pane"
-      className="flex h-full min-h-0 w-56 shrink-0 flex-col border-r border-border/70 bg-[color:var(--surface-workbench-left)] px-2 py-3"
-    >
-      <div className="flex h-10 items-center gap-2 pl-9">
-        <span className="grid size-6 place-items-center rounded-md bg-foreground text-[11px] font-bold text-background">M</span>
-        <span className="text-sm font-semibold tracking-[-0.015em] text-foreground">Meridian</span>
-      </div>
-
-      <nav aria-label="Main navigation" className="mt-4 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
-        {/* 1. INBOX — first, by owner ruling: the single triage surface. */}
-        <NavEntry
-          icon={InboxIcon}
-          label="Inbox"
-          active={activePanelId === "saas-inbox"}
-          trailing={<AttentionCount count={attentionThreadIds.size} />}
-          onClick={actions.openInbox}
-        />
-
-        {/* 2. WORK — Threads + Automations. */}
-        <NavSection icon={Workflow} label="Work" sectionId="work" expanded={expanded.has("work")} onToggle={onToggle} attention={workAttention}>
-          <SubGroupLabel>Threads</SubGroupLabel>
-          {SAAS_THREADS.map((thread) => (
-            <AppSessionRow
-              key={thread.id}
-              session={{ id: thread.id, agentTypeId: SAAS_AGENT_TYPE, title: thread.title, nativeSessionId: thread.id, hasAssistantReply: true }}
-              state={activePanelId === `saas-thread:${thread.id}` ? "active" : "normal"}
-              pinned={false}
-              affordances="console"
-              compact
-              attentionBadge={attentionThreadIds.has(thread.id) ? { kind: "approval", label: "approve", tone: "warning", priority: 20 } : undefined}
-              onSwitch={() => actions.openThread(thread.id)}
-            />
-          ))}
-          <SubGroupLabel>Automations</SubGroupLabel>
-          {/* The rows stay fixtures (they name plausible portfolio automations),
-              but the click now has a real destination: the product's own
-              automation page. Ruling (A). */}
-          {SAAS_AUTOMATIONS.map((automation) => (
-            <button
-              key={automation.id}
-              type="button"
-              onClick={actions.openAutomations}
-              // No per-row active state: every row is a door to the SAME
-              // automation page, so marking one (or all three) as current
-              // would claim a selection the page does not have.
-              className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-              title={`${automation.cadence} · last run ${automation.lastRun}`}
-            >
-              <span className="size-1.5 shrink-0 rounded-full bg-foreground/25" aria-hidden="true" />
-              <span className="min-w-0 flex-1 truncate">{automation.title}</span>
-            </button>
-          ))}
-        </NavSection>
-
-        {/* 3. AGENTS — the roster, using the shipped agent card. */}
-        <NavSection icon={Bot} label="Agents" sectionId="agents" expanded={expanded.has("agents")} onToggle={onToggle} attention={agentAttention}>
-          {SAAS_AGENTS.map((agent) => (
-            <AppLeftPaneAgentCard
-              key={agent.id}
-              agentTypeId={agent.id}
-              label={agent.name}
-              description={agent.role}
-              filtered={false}
-              active={activePanelId === `saas-agent:${agent.id}`}
-              showSessionCount={false}
-              stats={{
-                sessions: agent.threadIds.length,
-                working: agent.status === "Working" ? 1 : 0,
-                attention: agent.status === "Needs you" ? 1 : 0,
-              }}
-              onCreateSession={() => actions.openAgent(agent.id)}
-              showCreate={false}
-              onToggleFilter={() => actions.openAgent(agent.id)}
-            />
-          ))}
-        </NavSection>
-
-        {/* 4. LIBRARY — one entry per VIEW. A file is a view; so is a
-            collection, a dashboard and a kanban. No sub-groups: the flat list
-            IS the ruling ("1 entry = 1 view"). */}
-        <NavSection icon={Library} label="Library" sectionId="library" expanded={expanded.has("library")} onToggle={onToggle} attention={0}>
-          {SAAS_VIEWS.map((view) => {
-            const KindIcon = viewKindIcon[view.kind]
-            return (
-              <button
-                key={view.id}
-                type="button"
-                onClick={() => actions.openView(view)}
-                aria-current={activeViewId === view.id ? "page" : undefined}
-                className="group flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-left text-[13px] text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 aria-[current=page]:bg-foreground/[0.07] aria-[current=page]:font-medium aria-[current=page]:text-foreground"
-                title={`${view.kind} · ${view.note}`}
-              >
-                <KindIcon className="size-3.5 shrink-0 text-muted-foreground/60" strokeWidth={1.75} aria-hidden="true" />
-                <span className="min-w-0 flex-1 truncate">{view.title}</span>
-              </button>
-            )
-          })}
-        </NavSection>
-
-        {/* 5. SEARCH — the shipped command palette. */}
-        <NavEntry icon={Search} label="Search" onClick={actions.openCommandPalette} />
-      </nav>
-
-      <div className="mt-auto border-t border-border/60 pt-3">
-        <div className="flex items-center gap-2 px-2 py-2">
-          <span className="grid size-7 place-items-center rounded-full bg-foreground/[0.09] text-[10px] font-semibold text-foreground">AK</span>
-          <span className="min-w-0">
-            <span className="block truncate text-xs font-medium text-foreground">Alex Kim</span>
-            <span className="block truncate text-[10px] text-muted-foreground">Investment team</span>
-          </span>
-        </div>
-      </div>
-    </aside>
-  )
-}
-
-/** Collapsed nav, built from the shipped `RailAction`. */
-function SaasLeftRail({ actions, attention }: { actions: SaasNavActions; attention: number }) {
-  return (
-    <aside
-      data-boring-workspace-part="app-left-rail"
-      className="flex h-full w-11 shrink-0 flex-col items-center gap-1 border-r border-border/70 bg-[color:var(--surface-workbench-left)] pb-3 pt-14"
-    >
-      <RailAction
-        label="Inbox"
-        icon={<InboxIcon className="size-4" strokeWidth={1.75} />}
-        onClick={actions.openInbox}
-        trailing={attention > 0 ? <AttentionCount count={attention} /> : undefined}
-      />
-      <RailAction label="Search" icon={<Search className="size-4" strokeWidth={1.75} />} onClick={actions.openCommandPalette} />
-    </aside>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// CHAT COLUMN — one more column beside the current pane. Never a navigation.
-//
-// Honest note on reuse: `PiChatComposerSurface` is a fully controlled component
-// with ~45 required props whose entire state machine lives in `PiChatPanel`,
-// and `ChatPanelHost` needs a live workspace/session. Neither has a fixture
-// seam. The established precedent on this branch is `JobThreadView`, which
-// replicates the chat surface's RESOLVED classes rather than importing it —
-// "same pixels, no variant". This column follows that same precedent.
-// ---------------------------------------------------------------------------
-
-function ChatColumn({ contextLabel, onClose }: { contextLabel: string | null; onClose: () => void }) {
-  const [draft, setDraft] = useState("")
-  const suggestions = contextLabel
-    ? ["Summarize what changed", "What needs my decision?", "Show the supporting evidence"]
-    : ["Review portfolio changes", "Show everything that needs me", "Start Acme diligence"]
-  return (
-    <aside
-      data-boring-workspace-part="saas-contextual-chat"
-      className="flex w-[380px] min-w-[320px] shrink-0 flex-col border-l border-border/70 bg-[color:var(--surface-chat)]"
-    >
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border/70 px-3">
-        <span className="grid size-7 place-items-center rounded-full bg-foreground/[0.07] text-foreground"><Sparkles className="size-3.5" strokeWidth={1.75} /></span>
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate text-[13px] font-semibold text-foreground">{contextLabel ?? "Chat"}</h2>
-          <p className="text-[11px] text-muted-foreground">Context follows the active pane</p>
-        </div>
-        <Button variant="ghost" size="icon-xs" aria-label="Close chat" onClick={onClose}><X className="size-3.5" /></Button>
-      </header>
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5">
-        {contextLabel ? <Chip className="max-w-full"><span className="truncate">{contextLabel}</span></Chip> : null}
-        <div className="mt-8">
-          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/70">
-            <span className="size-1.5 rounded-full bg-success" />Agent ready
-          </div>
-          <p className="mt-3 text-sm leading-6 text-foreground">
-            I have the active pane and its linked artifacts in context. What would you like to understand or produce?
-          </p>
-        </div>
-        <div className="mt-8">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/70">Suggested</p>
-          <div className="mt-2 flex flex-col gap-2">
-            {suggestions.map((suggestion) => (
-              <button
-                key={suggestion}
-                type="button"
-                onClick={() => setDraft(suggestion)}
-                className="rounded-lg border border-border/70 bg-background px-3 py-2.5 text-left text-xs leading-5 text-foreground transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-              >
-                {suggestion}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-      <div className="shrink-0 border-t border-border/70 p-3">
-        <div className="rounded-xl border border-border/80 bg-background focus-within:ring-2 focus-within:ring-ring/30">
-          <Textarea
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            rows={3}
-            placeholder="Ask in this context…"
-            className="min-h-20 resize-none border-0 bg-transparent text-sm shadow-none focus-visible:ring-0 dark:bg-transparent"
-          />
-          <div className="flex items-center justify-between gap-2 px-2 pb-2">
-            <span className="text-[10px] text-muted-foreground/65">Fixture · composer visual only</span>
-            <Button size="icon-xs" disabled aria-label="Send fixture message"><ChevronRight className="size-3" /></Button>
-          </div>
-        </div>
-      </div>
-    </aside>
-  )
-}
-
 // ---------------------------------------------------------------------------
 
 /**
@@ -1404,7 +874,17 @@ function SaasAttentionSeed() {
         reason: "ask-user.approval",
         sessionId: thread.id,
         agentTypeId: SAAS_AGENT_TYPE,
-        inbox: { kind: "approval", sourceLabel: thread.title },
+        label: thread.subject,
+        inbox: {
+          kind: "approval",
+          sourceLabel: thread.title,
+          updatedAt: new Date(),
+          // Ruling 5: a decision arrives WITH its evidence. These are real
+          // `HumanArtifact`s — the same shape the ask-user tool emits — so the
+          // shipped `HumanArtifactList` renders the cards and the shipped
+          // `openHumanArtifact` path opens them.
+          artifacts: saasInboxArtifacts(thread.id) as HumanArtifact[],
+        },
         sessionBadge: { kind: "approval", label: "approve", tone: "warning", priority: 20 },
       })
     }
@@ -1418,12 +898,11 @@ const FILES_VIEW = SAAS_VIEWS.find((view) => view.id === "view-files")!
  * The Library's Dockview. Mounted only in dock mode, so a thread cannot have a
  * stale tab strip behind it.
  */
-function DockCenter({ onActivePanelChange }: { onActivePanelChange: (title: string | null) => void }) {
+function DockCenter() {
   const handleReady = useCallback((api: SurfaceApi) => {
     shellRef.content = api
     if (shellRef.dockTarget) activateDockPanel(api, shellRef.dockTarget)
-    api.onDidActivePanelChange?.(() => onActivePanelChange(api.activePanel?.title ?? null))
-  }, [onActivePanelChange])
+  }, [])
 
   // The handle must not outlive the surface: a queued request after unmount
   // has to queue, not land on a dead api.
@@ -1441,12 +920,11 @@ function DockCenter({ onActivePanelChange }: { onActivePanelChange: (title: stri
 
 function SaasSpikeShell() {
   const [collapsed, setCollapsed] = useState(false)
-  const [chatOpen, setChatOpen] = useState(false)
-  const [activeTitle, setActiveTitle] = useState<string | null>(null)
   const [view, setView] = useState<SaasView>(FILES_VIEW)
   const [center, setCenter] = useState<CenterState>({ mode: "page", page: { kind: "inbox" } })
   const [explorerWidth, setExplorerWidth] = useState(320)
   const { blockers } = useWorkspaceAttention()
+  const automationCount = useLiveAutomationCount()
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
 
   const attentionThreadIds = useMemo(() => {
@@ -1469,6 +947,7 @@ function SaasSpikeShell() {
     openAgent: openSaasAgent,
     openView: openSaasView,
     openAutomations: openSaasAutomations,
+    openArchived: openSaasArchived,
     openCommandPalette: () => {
       window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }))
     },
@@ -1477,6 +956,8 @@ function SaasSpikeShell() {
   const activePageId = center.mode === "page"
     ? (center.page.kind === "inbox" ? "saas-inbox" : `saas-${center.page.kind}`)
     : null
+  const activeThreadId = center.mode === "page" && center.page.kind === "thread" ? center.page.threadId : null
+  const activeAgentId = center.mode === "page" && center.page.kind === "agent" ? center.page.agentId : null
 
   const onDragStart = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault()
@@ -1490,20 +971,30 @@ function SaasSpikeShell() {
   }, [])
   const onDragEnd = useCallback(() => { dragRef.current = null }, [])
 
+  // Both nav faces read the SAME state object, which is what keeps the
+  // collapsed rail's flyouts from drifting from the expanded pane.
+  const navState = {
+    actions,
+    activePageId,
+    activeThreadId,
+    activeAgentId,
+    activeViewId: center.mode === "dock" ? view.id : null,
+    attentionThreadIds,
+    automationCount,
+    onCollapse: () => setCollapsed(true),
+    onExpand: () => setCollapsed(false),
+  }
+
   return (
     <PluginTabsWorkspaceShell
       collapsed={collapsed}
       onCollapse={() => setCollapsed(true)}
       onExpand={() => setCollapsed(false)}
-      leftPane={(
-        <SaasLeftNav
-          actions={actions}
-          activePanelId={activePageId}
-          activeViewId={center.mode === "dock" ? view.id : null}
-          attentionThreadIds={attentionThreadIds}
-        />
-      )}
-      collapsedRail={<SaasLeftRail actions={actions} attention={attentionThreadIds.size} />}
+      // Ruling 3: the toggle lives in the nav header / rail, not floating over
+      // the shell's top-left corner.
+      showCollapseControl={false}
+      leftPane={<SaasLeftNav {...navState} />}
+      collapsedRail={<SaasLeftRail {...navState} />}
     >
       <div className="flex h-full min-h-0 w-full">
         {/* Column 2 — the VIEW EXPLORER, directly right of the nav. */}
@@ -1534,18 +1025,9 @@ function SaasSpikeShell() {
 
         {/* Column 3 — CONTENT, in one of two modes (#8, #9). */}
         <div className="min-w-0 flex-1" data-boring-workspace-part="saas-center" data-center-mode={center.mode}>
-          {center.mode === "dock"
-            ? <DockCenter onActivePanelChange={setActiveTitle} />
-            : <CenterPageView page={center.page} />}
+          {center.mode === "dock" ? <DockCenter /> : <CenterPageView page={center.page} />}
         </div>
-
-        {chatOpen ? <ChatColumn contextLabel={activeTitle} onClose={() => setChatOpen(false)} /> : null}
       </div>
-      {chatOpen ? null : (
-        <div className="absolute bottom-4 right-4 z-50">
-          <Button size="sm" onClick={() => setChatOpen(true)}><Sparkles className="size-3.5" />Chat</Button>
-        </div>
-      )}
     </PluginTabsWorkspaceShell>
   )
 }

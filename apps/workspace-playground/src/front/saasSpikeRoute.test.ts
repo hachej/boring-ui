@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest"
 import { isSaasSpikeRoute } from "./saasSpikeRoute"
+import * as fixtures from "./SaasSpikeFixtures"
 import {
   SAAS_AGENTS,
+  SAAS_ARCHIVED_THREADS,
   SAAS_ARTIFACTS,
+  SAAS_CANVAS_SURFACE_KIND,
   SAAS_COMPANIES,
   SAAS_COMPANY_ADAPTER,
   SAAS_FUNDS,
@@ -10,6 +13,7 @@ import {
   SAAS_THREADS,
   SAAS_THREAD_CANVAS,
   SAAS_VIEWS,
+  saasInboxArtifacts,
   saasThreadCanvas,
   saasThreadCanvasGroups,
 } from "./SaasSpikeFixtures"
@@ -151,6 +155,66 @@ describe("workspace-playground SaaS spike route", () => {
   it("returns an empty canvas for threads with no working set", () => {
     expect(saasThreadCanvas("acme-diligence").length).toBeGreaterThan(0)
     expect(saasThreadCanvas("no-such-thread")).toEqual([])
+  })
+
+  // ---------------------------------------------------------------------
+  // CONVERGENCE RULINGS
+  // ---------------------------------------------------------------------
+
+  // Ruling 2: Work carries threads plus TWO drill-ins. The automation one is
+  // wired to the live backend, so a fixture list beside it would be a second,
+  // contradicting answer — the fixture export is gone, and this asserts it
+  // stays gone rather than quietly coming back.
+  it("keeps no fixture automation list — the automation count is live", () => {
+    expect("SAAS_AUTOMATIONS" in fixtures).toBe(false)
+  })
+
+  it("gives the Archived drill-in a non-trivial fixture list with distinct ids", () => {
+    expect(SAAS_ARCHIVED_THREADS.length).toBeGreaterThanOrEqual(3)
+    const ids = SAAS_ARCHIVED_THREADS.map((thread) => thread.id)
+    expect(new Set(ids).size).toBe(ids.length)
+    // Archived threads are a SEPARATE list; an id in both would make one thread
+    // appear live and closed at once.
+    const liveIds = new Set(SAAS_THREADS.map((thread) => thread.id))
+    expect(ids.every((id) => !liveIds.has(id))).toBe(true)
+    for (const thread of SAAS_ARCHIVED_THREADS) {
+      expect(thread.title.length).toBeGreaterThan(0)
+      expect(thread.outcome.length).toBeGreaterThan(0)
+    }
+  })
+
+  // Ruling 5: every seeded blocker must arrive WITH evidence, and every piece
+  // of that evidence must resolve to a canvas item — an inbox artifact card
+  // that opens nothing is exactly the failure this guards.
+  it("gives every needs-you thread inbox artifacts that resolve to its canvas", () => {
+    const needsYou = SAAS_THREADS.filter((thread) => thread.status === "Needs you")
+    expect(needsYou.length).toBeGreaterThanOrEqual(2)
+    for (const thread of needsYou) {
+      const artifacts = saasInboxArtifacts(thread.id)
+      expect(artifacts.length).toBeGreaterThan(0)
+      const canvasIds = new Set(saasThreadCanvas(thread.id).map((item) => item.id))
+      for (const artifact of artifacts) {
+        expect(artifact.surfaceKind).toBe(SAAS_CANVAS_SURFACE_KIND)
+        expect(canvasIds.has(artifact.target)).toBe(true)
+        expect(artifact.title.length).toBeGreaterThan(0)
+      }
+      // `HumanArtifactListSchema` rejects duplicate ids, so the seed would be
+      // refused before it ever rendered.
+      const ids = artifacts.map((artifact) => artifact.id)
+      expect(new Set(ids).size).toBe(ids.length)
+    }
+    expect(saasInboxArtifacts("no-such-thread")).toEqual([])
+  })
+
+  // Ruling 4: the files GROUP stopped being a rail entry (the icon is a popover
+  // trigger now), so every canvas thread must still have at least two MOUNTED
+  // groups left — otherwise the rail would have a single inert icon.
+  it("leaves each canvas at least two mounted groups once files becomes a popover", () => {
+    for (const threadId of Object.keys(SAAS_THREAD_CANVAS)) {
+      const mounted = saasThreadCanvasGroups(threadId).filter((group) => group !== "files")
+      expect(mounted.length).toBeGreaterThanOrEqual(2)
+      expect(mounted[0]).toBe("outputs")
+    }
   })
 
   it("serves Companies and Funds from fixture adapters with working facets", async () => {

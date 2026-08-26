@@ -703,6 +703,14 @@ export const SAAS_THREADS: readonly SaasThread[] = [
       metric: "claims",
       current: 4,
       target: 5,
+      // Convergence ruling 5: this thread is one of the two SEEDED BLOCKERS, so
+      // it has to carry evidence the Inbox can open. Its canvas is real for the
+      // same reason Acme's is — real workspace paths and a real record.
+      cards: {
+        research: ["canvas-lantern-notes", "canvas-lantern-status"],
+        review: ["canvas-lantern-record"],
+        update: ["canvas-lantern-thesis"],
+      },
     }),
   },
   {
@@ -951,31 +959,33 @@ export const SAAS_VIEWS: readonly SaasView[] = [
 export const SAAS_COLLECTION_VIEWS = SAAS_VIEWS.filter((view) => view.kind === "collection")
 
 // ---------------------------------------------------------------------------
-// WORK > Automations, and the AGENTS roster (owner refinement #3).
+// WORK > Archived, and the AGENTS roster (owner refinement #3).
+//
+// The Automations fixture rows that used to live here are GONE (convergence
+// ruling 2). Work now carries one muted `Automations · N` drill-in whose count
+// and destination are both the LIVE automation backend — a fixture list beside
+// a live page was two answers to one question.
 // ---------------------------------------------------------------------------
 
-export interface SaasAutomation {
+export interface SaasArchivedThread {
   id: string
   title: string
-  cadence: string
-  lastRun: string
+  subject: string
+  closedAt: string
+  outcome: string
 }
 
 /**
- * Fixture rows, deliberately.
- *
- * `plugins/boring-automation` exists and its `AutomationCard`/`AutomationPanel`
- * are real, but (a) the plugin is not a `workspace-playground` dependency, so
- * using it means a dependency add + a `build:deps` change + a dev-server
- * restart, and (b) its components are panel-sized cards driven by `client.ts`
- * against a live automation backend — the wrong shape for a nav sub-group row
- * even if it were wired. So Automations are quiet nav rows here, and the
- * plugin stays un-integrated. Called out rather than hidden.
+ * Archived threads: fixture rows, and the honest reason is that nothing in the
+ * spike ever archives a thread. The drill-in exists to prove the SHAPE — Work
+ * stays short because finished threads roll up behind one muted count.
  */
-export const SAAS_AUTOMATIONS: readonly SaasAutomation[] = [
-  { id: "weekly-digest", title: "Weekly portfolio digest", cadence: "Mondays 07:00", lastRun: "2d ago" },
-  { id: "filing-watch", title: "Filing watch — Forge Industrial", cadence: "On new filing", lastRun: "6h ago" },
-  { id: "reserve-check", title: "Reserve pacing check", cadence: "Month end", lastRun: "12d ago" },
+export const SAAS_ARCHIVED_THREADS: readonly SaasArchivedThread[] = [
+  { id: "archived-kestrel-followon", title: "Kestrel follow-on sizing", subject: "Size the Series C follow-on against the reserve plan.", closedAt: "Aug 14", outcome: "Followed on at $6M" },
+  { id: "archived-tidegrid-refresh", title: "Tidegrid thesis refresh", subject: "Re-test the grid-software thesis after the Q1 reset.", closedAt: "Aug 7", outcome: "Thesis unchanged" },
+  { id: "archived-parcelworks-exit", title: "Parcelworks exit readiness", subject: "Assess exit readiness ahead of banker conversations.", closedAt: "Jul 29", outcome: "Deferred to Q4" },
+  { id: "archived-harbor-dd", title: "Harbor Clinical diligence", subject: "Clinical operations diligence for the Series B.", closedAt: "Jul 21", outcome: "Passed" },
+  { id: "archived-cinder-model", title: "Cinder Carbon unit model", subject: "Rebuild the deployment unit economics model.", closedAt: "Jul 11", outcome: "Model handed to IC" },
 ]
 
 export interface SaasAgent {
@@ -1036,6 +1046,39 @@ export const SAAS_THREAD_CANVAS: Readonly<Record<string, readonly SaasCanvasItem
     { id: "canvas-forge-analysis", title: "analysis.py", kind: "file", group: "files", path: "analysis.py", meta: "Pacing model" },
     { id: "canvas-forge-record", title: "Forge Industrial Partners", kind: "fund", group: "records", recordId: "forge-industrial", meta: "Fund record" },
   ],
+  "lantern-thesis": [
+    { id: "canvas-lantern-thesis", title: "outreach-draft.md", kind: "file", group: "outputs", path: "outreach-draft.md", meta: "Thesis draft · editable" },
+    { id: "canvas-lantern-notes", title: "README.md", kind: "file", group: "files", path: "README.md", meta: "Expert call notes" },
+    { id: "canvas-lantern-status", title: "status.csv", kind: "file", group: "files", path: "status.csv", meta: "Claim status table" },
+    { id: "canvas-lantern-record", title: "Luma Health", kind: "company", group: "records", recordId: "luma-health", meta: "Company record" },
+  ],
+}
+
+/**
+ * The evidence an INBOX item carries (convergence ruling 5).
+ *
+ * Deliberately DERIVED from the thread's canvas rather than written twice: an
+ * inbox artifact is a promise that clicking it opens something, and the canvas
+ * is the only thing in this shell that can honour that promise. `surfaceKind`
+ * is this shell's own kind, resolved by the shell-capability handler the spike
+ * installs; `target` is the canvas item id.
+ */
+export const SAAS_CANVAS_SURFACE_KIND = "saas.canvas.item"
+
+export function saasInboxArtifacts(threadId: string): readonly {
+  id: string
+  surfaceKind: string
+  target: string
+  title: string
+  description: string
+}[] {
+  return saasThreadCanvas(threadId).map((item) => ({
+    id: `${threadId}:${item.id}`,
+    surfaceKind: SAAS_CANVAS_SURFACE_KIND,
+    target: item.id,
+    title: item.title,
+    description: item.meta,
+  }))
 }
 
 /** Canvas items for a thread, in one scope group. */
