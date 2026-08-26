@@ -97,13 +97,14 @@ popover** — file access without leaving the thread; (4) **standalone Library**
 - **Artifacts are shared via the workspace.** Seats on a job share one
   canonical workspace filesystem — no copy, no sync — with *distinct per-seat
   authority* (tools, grants, model capability; credentials never cross seats).
-  Backing: Decision 25 (`docs/DECISIONS.md:410` — same-workspace agents
-  "intentionally share filesystem/process/runtime authority while retaining
-  distinct route, prompt, tool, session, readiness, receipt, log, and
-  provenance identity") and Decision 28 (`docs/DECISIONS.md:463` — same-Workspace
-  agents "share logical Workspace data through the canonical Environment API …
-  without copying the authoritative filesystem"). Owner ruling 2026-08-25 in
-  #1399 makes this explicit for Job Threads.
+  Backing: Decision 28 (`docs/DECISIONS.md:463` — same-Workspace agents
+  "share logical Workspace data through the canonical Environment API …
+  without copying the authoritative filesystem", with narrower grants getting
+  separately enforced execution views). What is shared is **canonical data**,
+  never invocation authority — each seat's execution runs under its own
+  scope. (D25's older "share filesystem/process/runtime authority" wording
+  described a superseded topology; do not cite it.) Owner ruling 2026-08-25
+  in #1399 makes this explicit for Job Threads.
 - **The conversation is posts-only.** Only settled posts and system markers
   cross a seat boundary; no prompt-crossing, no free-text @-parsing. This is
   the Job Thread plan's Q4 and is *safety, not style* — validated against Grok

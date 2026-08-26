@@ -81,7 +81,14 @@ deferral.
 > not need redoing: Buzz = shared durable log with emergent turn-taking and no
 > home for caps; Grok Bot = shared-VM implicit context, no loop control,
 > fragmented threads. Level D is what makes the blackboard shape *possible*, so
-> the choice is made when the substrate is real — not before.
+> the choice is made when the substrate is real — not before. One constraint on
+> that future choice: a blackboard is a shared-transcript runtime primitive,
+> and ratified §7 requires **its own explicit promotion gate** for any such
+> primitive (§8 creates no shared-runtime room) — selecting the blackboard
+> post-P1 is therefore an owner ruling plus a ratified-plan amendment, never
+> just an engineering pick. The relay-vs-native-binding default is stated in
+> the engine chapter: D22's native binding unless a D22/D28 amendment says
+> otherwise.
 
 ---
 

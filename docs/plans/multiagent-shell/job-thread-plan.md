@@ -33,6 +33,18 @@ Ordering and dependencies live only in §7; §§1–6 describe shape.
 > gate.** v0 proposes the relay as a *candidate* because it needs no agent-facing capability and is
 > deletable; the choice is owner question Q2, deferred post-P1 with the default stated here.
 
+> **Two further engine gaps recorded 2026-08-26 (consumption-modes area review), both owned by the
+> post-P1 gate alongside Q2:**
+> (1) **The orchestrator voice has no Seat.** Ratified §8 promises workers hidden behind *the
+> orchestrator's* voice; this plan's relay is explicitly non-Agent/non-Seat and routes unaddressed
+> human turns directly to a worker — nothing supplies the orchestrator's voice, authority, or
+> provenance. The post-P1 design must either staff an orchestrator Agent/Seat distinct from the
+> transport relay, or take an explicit §7/§8 amendment accepting a voiceless v0.
+> (2) **Posts-only cannot yet express D22's two-way `input-required` conversation.** If the ratified
+> native binding is built, a mid-task information request has no posts-only shape; the design must
+> either admit typed `input-required` request/answer posts across the boundary, or the D22/D28
+> amendment that selects the relay must say so.
+
 ## What this plan builds
 
 Twelve artifacts, nothing else. Product words first, code noun in `code`. "Built by" points at §7,
@@ -326,13 +338,12 @@ returns immediately, the relay decides what happens next).
 the design, so state it plainly: *participants share the work, not each other's minds and keys.*
 
 - **The artifact boundary is OPEN.** Participants on a job **share one workspace and one canonical
-  filesystem**. Ratified, not invented: agents in a workspace "intentionally share
-  filesystem/process/runtime authority while retaining distinct route, prompt, tool, session,
-  readiness, receipt, log, and provenance identity" (D25, `docs/DECISIONS.md:410`), and same-workspace
+  filesystem**. Ratified, not invented: same-workspace
   agents share workspace data through the canonical Environment API, with narrower grants getting
   "separately enforced execution views **without copying the authoritative filesystem**" (D28,
   `:463`) — one API for tools, bash, UI and CLI precisely to prevent "filesystem split brain"
-  (`:462`). So the worker's files *are* the reviewer's files. The reviewer reads the branch the
+  (`:462`). What is shared is canonical **data**, never invocation authority — each seat executes
+  under its own scope. So the worker's files *are* the reviewer's files. The reviewer reads the branch the
   worker wrote; nothing is copied, synced, or handed over as an attachment. Per-participant reach is
   governed by mounts and tool authority, not by partition. This is the half of the shared-VM feel
   people actually like, delivered natively and governed.
