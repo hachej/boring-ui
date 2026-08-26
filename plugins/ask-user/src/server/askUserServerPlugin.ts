@@ -27,7 +27,7 @@ export function createAskUserServerPlugin(options: AskUserServerPluginOptions): 
   }
   const store = options.store ?? options.runtime?.store ?? createDefaultStore(options.workspaceRoot)
   const runtime = options.runtime ?? new AskUserRuntime({ store })
-  let stopPublisher: (() => void) | undefined
+  let stopPublisher: (() => Promise<void>) | undefined
   const ensurePublisher = () => {
     if (stopPublisher) return
     const bridge = options.bridge ?? getWorkspaceUiBridge()
@@ -40,7 +40,7 @@ export function createAskUserServerPlugin(options: AskUserServerPluginOptions): 
     // because the in-process waiter map is empty by construction at boot (#1348).
     ensurePublisher()
     app.addHook("onClose", async () => {
-      stopPublisher?.()
+      await stopPublisher?.()
       options.onClose?.()
     })
   }
