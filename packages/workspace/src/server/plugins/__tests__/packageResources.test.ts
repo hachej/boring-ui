@@ -58,7 +58,7 @@ function resolveOne(
     pluginId: input.pluginId ?? 'test',
     packageName: input.packageName ?? '@example/plugin',
     packageRoot,
-  }], input.options).then((result) => result.registry)
+  }], input.options)
 }
 
 afterEach(async () => {
@@ -69,7 +69,7 @@ describe('resolveWorkspacePackageResources', () => {
   test('deduplicates direct/scanned provenance and keeps Pi paths separate from confined mounts', async () => {
     const root = await tempRoot()
     const packageRoot = await packageFixture(root)
-    const { registry } = await resolveWorkspacePackageResources([
+    const registry = await resolveWorkspacePackageResources([
       { pluginId: 'direct', packageName: '@example/plugin', packageRoot },
       { pluginId: 'scanned', packageName: '@example/plugin', packageRoot: new URL(`file://${packageRoot}/`) },
     ])
@@ -94,7 +94,7 @@ describe('resolveWorkspacePackageResources', () => {
     expect(registry.locateSkill(join(packageRoot, 'settings.json'))).toBeUndefined()
     expect(registry.generation).toMatch(/^[a-f0-9]{64}$/)
 
-    const { registry: repeated } = await resolveWorkspacePackageResources([
+    const repeated = await resolveWorkspacePackageResources([
       { pluginId: 'scanned', packageName: '@example/plugin', packageRoot },
       { pluginId: 'direct', packageName: '@example/plugin', packageRoot },
     ])
@@ -248,7 +248,7 @@ describe('resolveWorkspacePackageResources', () => {
     const sharedFile = join(sharedRoot, 'SKILL.md')
     await writeFile(sharedFile, '---\nname: shared-authoring\ndescription: Shared.\n---\n', 'utf8')
 
-    const { registry } = await resolveWorkspacePackageResources([
+    const registry = await resolveWorkspacePackageResources([
       { pluginId: 'direct', packageName: '@example/plugin', packageRoot },
       { pluginId: 'scan', packageName: '@example/plugin', packageRoot },
     ], {
@@ -324,6 +324,19 @@ describe('resolveWorkspacePackageResources', () => {
       .toEqual(snapshot.registry.skills[0].resource)
     expect(snapshot.binding).toEqual({ mounts: snapshot.registry.readonlyMounts })
     expect(snapshot.diagnostics).toEqual([])
+  })
+
+  test('preserves the stable error for an invalid required shared skill', async () => {
+    const root = await tempRoot()
+    const missingSkill = join(root, 'missing', 'SKILL.md')
+
+    await expect(resolveWorkspacePackageResources([], {
+      sharedSkillPaths: [{ id: 'required-missing', skillFile: missingSkill }],
+    })).rejects.toMatchObject({
+      name: 'WorkspacePackageResourceRegistryError',
+      code: PACKAGE_RESOURCE_INVALID_CODE,
+      packageName: 'shared/pi-agent',
+    })
   })
 
   // gh-1196: one unadmittable shared-skill entry must not fail the scan closed.

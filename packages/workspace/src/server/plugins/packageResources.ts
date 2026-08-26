@@ -279,7 +279,7 @@ export interface SharedSkillPath {
  * One entry the resolver declined to admit. Only entries the caller marked
  * skippable can appear here; a required entry still fails the whole resolve.
  */
-export interface SkippedWorkspacePackageResource {
+interface SkippedPackageResource {
   readonly kind: 'package-contribution' | 'shared-skill'
   /** Package name for a contribution, shared skill id for a shared skill. */
   readonly id: string
@@ -294,7 +294,7 @@ export interface ResolveWorkspacePackageResourcesOptions {
   sharedSkillPaths?: readonly SharedSkillPath[]
   /**
    * Speculatively scanned contributions. An entry that is not independently
-   * admissible is reported in `skipped` instead of failing the resolve, and is
+   * admissible produces a diagnostic instead of failing the resolve, and is
    * never mounted or exposed.
    */
   skippableContributions?: readonly WorkspacePackageResourceRecord[]
@@ -411,6 +411,13 @@ function assertNoOverlappingLogicalRoots(drafts: readonly ResolvedSkillDraft[]):
 export async function resolveWorkspacePackageResources(
   contributions: readonly WorkspacePackageResourceRecord[],
   options: ResolveWorkspacePackageResourcesOptions = {},
+): Promise<ResolvedWorkspacePackageResourceRegistry> {
+  return (await resolveWorkspacePackageResourcesWithDiagnostics(contributions, options)).registry
+}
+
+async function resolveWorkspacePackageResourcesWithDiagnostics(
+  contributions: readonly WorkspacePackageResourceRecord[],
+  options: ResolveWorkspacePackageResourcesOptions = {},
 ): Promise<{
   readonly registry: ResolvedWorkspacePackageResourceRegistry
   readonly diagnostics: readonly PackageResourceDiagnostic[]
@@ -418,8 +425,8 @@ export async function resolveWorkspacePackageResources(
   const skippableContributions = options.skippableContributions ?? []
   // Package skips are reported in skippable-input order regardless of which
   // phase rejected them, so callers see one stable diagnostic sequence.
-  const packageSkips: { order: number; entry: SkippedWorkspacePackageResource }[] = []
-  const sharedSkips: SkippedWorkspacePackageResource[] = []
+  const packageSkips: { order: number; entry: SkippedPackageResource }[] = []
+  const sharedSkips: SkippedPackageResource[] = []
 
   // Phase 1 — independent admission. Required entries fail the resolve; a
   // skippable entry is dropped here and never touched again.
@@ -520,41 +527,21 @@ export async function resolveWorkspacePackageResources(
   const sharedLocatorAliases = new Map<string, AgentSkillResource>()
 
   /**
-   * Single resolution point for one shared-skill entry. Resolves the record
-   * exactly once and reports an admission verdict as a typed skip instead of
-   * throwing; any other error propagates (gh-1196: a resolver defect must
-   * surface, not masquerade as a stale symlink).
+   * Resolve every shared-skill entry exactly once. Required entries preserve
+   * the original stable error; only ambient/skippable entries may degrade to a
+   * diagnostic, and only for this resolver's own invalid-resource verdict.
    */
-  const resolveSharedSkillRecord = async (
-    shared: SharedSkillPath,
-  ): Promise<
-    | { readonly kind: 'resolved'; readonly skill: Omit<Awaited<ReturnType<typeof resolveSharedSkill>>, 'sourceFile'>; readonly sourceFile: string }
-    | { readonly kind: 'skipped'; readonly id: string; readonly code: string; readonly message: string }
-  > => {
-    try {
-      const { sourceFile, ...skill } = await resolveSharedSkill(shared)
-      return { kind: 'resolved', skill, sourceFile }
-    } catch (error) {
-      const refusal = admissionRefusal(error)
-      if (!refusal) throw error
-      return { kind: 'skipped', id: shared.id, ...refusal }
-    }
-  }
-
   const admitShared = async (entries: readonly SharedSkillPath[], skippable: boolean) => {
     for (const shared of entries) {
-      const outcome = await resolveSharedSkillRecord(shared)
-      if (outcome.kind === 'skipped') {
-        if (!skippable) throw new WorkspacePackageResourceRegistryError(
-          outcome.code as typeof PACKAGE_RESOURCE_INVALID_CODE,
-          'shared/pi-agent',
-          outcome.message,
-        )
-        sharedSkips.push({ kind: 'shared-skill', id: outcome.id, code: outcome.code, message: outcome.message })
-        continue
+      try {
+        const { sourceFile, ...skill } = await resolveSharedSkill(shared)
+        sharedLocatorAliases.set(sourceFile, skill.resource)
+        skills.push({ ...skill, pluginIds: ['host:shared-skill'] })
+      } catch (error) {
+        const refusal = sharedSkillAdmissionRefusal(error)
+        if (!skippable || !refusal) throw error
+        sharedSkips.push({ kind: 'shared-skill', id: shared.id, ...refusal })
       }
-      sharedLocatorAliases.set(outcome.sourceFile, outcome.skill.resource)
-      skills.push({ ...outcome.skill, pluginIds: ['host:shared-skill'] })
     }
   }
   await admitShared(options.sharedSkillPaths ?? [], false)
@@ -660,16 +647,10 @@ export interface PackageResourceDiagnostic {
 }
 
 /**
- * Speculative package/shared-skill inputs may degrade only when the host
- * explicitly declines to admit them. `SKIPPABLE_RESOURCE_CODES` carries the
- * path-admission verdicts shared with the digest layer;
- * `PACKAGE_RESOURCE_INVALID_CODE` is this layer's own validated-input verdict.
- * Anything else — a conflict, TypeError, EACCES, or resolver defect — must
- * propagate rather than masquerade as a routine skip.
+ * Speculative package inputs may degrade only on an explicit admission verdict.
+ * Keep these path-policy codes in lockstep with piResourceDigest.ts without a
+ * cross-layer export. Unexpected filesystem and resolver errors still propagate.
  */
-// Kept in deliberate lockstep with the digest layer's skippable
-// path-admission verdicts (piResourceDigest.ts) without a cross-layer
-// export: workspace admission adds its own not-a-skill verdict below.
 const RESOURCE_ADMISSION_CODES: ReadonlySet<string> = new Set<string>([
   'PATH_ESCAPE',
   'PATH_SYMLINK_ESCAPE',
@@ -679,6 +660,13 @@ const RESOURCE_ADMISSION_CODES: ReadonlySet<string> = new Set<string>([
 function resourceAdmissionCode(error: unknown): string | undefined {
   const code = (error as { code?: unknown })?.code
   return typeof code === 'string' && RESOURCE_ADMISSION_CODES.has(code) ? code : undefined
+}
+
+/** Ambient shared skills may degrade only on this resolver's invalid verdict. */
+function sharedSkillAdmissionRefusal(error: unknown): { code: string; message: string } | undefined {
+  if (!(error instanceof WorkspacePackageResourceRegistryError)
+    || error.code !== PACKAGE_RESOURCE_INVALID_CODE) return undefined
+  return { code: error.code, message: error.message }
 }
 
 export function packageResourceHandlesPath(
@@ -765,7 +753,7 @@ export async function resolveWorkspacePackageResourceSnapshot<TBinding = never>(
   // routine, and failing the whole scan closed used to 500 every agent-scoped
   // route. The resolver reports these per entry in a single pass — do not
   // reintroduce a probe that re-runs it once per candidate.
-  const { registry, diagnostics } = await resolveWorkspacePackageResources(input.declared, {
+  const { registry, diagnostics } = await resolveWorkspacePackageResourcesWithDiagnostics(input.declared, {
     skippableContributions: input.scanned,
     skippableSharedSkillPaths: input.sharedSkillPaths ?? [],
   })

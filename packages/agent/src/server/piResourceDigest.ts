@@ -240,17 +240,16 @@ type UnadmittedEntryPolicy = 'reject' | 'skip'
 /**
  * The error codes that mean "this entry is not admissible", as opposed to "the
  * resolver is broken". Only these may be degraded to a skip; every other error
- * class must propagate. Exported so the workspace layer's shared-skill probe
- * degrades on exactly the same verdicts instead of keeping its own copy.
+ * class must propagate. This policy is private to Pi's resource walk.
  */
-export const SKIPPABLE_RESOURCE_CODES: ReadonlySet<string> = new Set<string>([
+const SKIPPABLE_PI_RESOURCE_CODES: ReadonlySet<string> = new Set<string>([
   ErrorCode.enum.PATH_ESCAPE,
   ErrorCode.enum.PATH_SYMLINK_ESCAPE,
 ])
 
 function skippableResourceCode(error: unknown): string | undefined {
   const code = (error as { code?: unknown })?.code
-  return typeof code === 'string' && SKIPPABLE_RESOURCE_CODES.has(code) ? code : undefined
+  return typeof code === 'string' && SKIPPABLE_PI_RESOURCE_CODES.has(code) ? code : undefined
 }
 
 /** The entry whose admission was refused, and how this walk frames a skip of it. */
@@ -275,7 +274,7 @@ type PiEntryRefusal =
  * The single admission gate for a refused Pi resource entry.
  *
  * Under `reject` — and for any refusal that is a resolver defect rather than an
- * admission verdict (see {@link SKIPPABLE_RESOURCE_CODES}) — this throws. Under
+ * admission verdict (see {@link SKIPPABLE_PI_RESOURCE_CODES}) — this throws. Under
  * `skip` it frames the verdict and returns, and the caller must abandon the
  * entry: a skipped entry is never realpath'd, opened, or mounted. The skip is
  * still framed into the hash, so the digest moves when a skipped entry appears

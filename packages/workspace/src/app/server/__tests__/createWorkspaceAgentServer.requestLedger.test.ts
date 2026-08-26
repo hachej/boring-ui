@@ -30,31 +30,21 @@ const baseOptions = {
 }
 
 describe("workspace agent server request ledger placement", () => {
-  test("honors an explicit host-owned requestLedgerPath", async () => {
+  test("opts into BORING_AGENT_SESSION_ROOT for its ledger", async () => {
     const workspaceRoot = await tempDir("boring-ws-ledger-root-")
-    const hostState = await tempDir("boring-ws-ledger-host-")
-    const requestLedgerPath = join(hostState, "agent-state", "request-ledger.sqlite")
-    process.env.BORING_AGENT_SESSION_ROOT = await tempDir("boring-ws-ledger-env-")
+    const sessionRoot = await tempDir("boring-ws-ledger-env-")
+    process.env.BORING_AGENT_SESSION_ROOT = sessionRoot
 
-    const server = await createWorkspaceAgentServer({
-      ...baseOptions,
-      workspaceRoot,
-      sessionRoot: await tempDir("boring-ws-ledger-sessions-"),
-      requestLedgerPath,
-    })
+    const server = await createWorkspaceAgentServer({ ...baseOptions, workspaceRoot })
 
     try {
-      expect(existsSync(requestLedgerPath)).toBe(true)
+      expect(existsSync(join(sessionRoot, ".agent-request-ledger.sqlite"))).toBe(true)
       expect(existsSync(join(workspaceRoot, ".boring", "agent-request-ledger.sqlite"))).toBe(false)
     } finally {
       await server.close()
     }
   }, 120_000)
 
-
-  // The explicit-path case above proves the wiring; the full four-case
-  // precedence matrix is unit-owned by requestLedgerPath.test.ts. The one
-  // behavior unique to THIS host is its legacy tail (.boring/), kept below.
   test("keeps the legacy .boring workspace ledger when no host path is configured", async () => {
     const workspaceRoot = await tempDir("boring-ws-ledger-root-")
     delete process.env.BORING_AGENT_SESSION_ROOT
