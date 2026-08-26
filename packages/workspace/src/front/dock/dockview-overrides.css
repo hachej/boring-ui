@@ -56,14 +56,6 @@
   height: 44px !important;
 }
 
-/* When the full left block is collapsed, the icon rail disappears. Reserve
-   header-only space for the overlaid "Show workspace menu" button so it does
-   not sit on top of the first dockview tab. This is not a full-height column. */
-.workbench-dockview[data-left-block-collapsed="true"] .dv-tabs-and-actions-container,
-.workbench-dockview[data-left-block-collapsed="true"] .tabs-and-actions-container {
-  padding-left: 44px !important;
-}
-
 /* The app shell renders fixed top-right workbench/full-workspace controls
    over this 44px tab strip. Reserve enough room so dockview's built-in open-tabs
    overflow trigger sits left of that chrome instead of underneath it.
@@ -72,6 +64,27 @@
 .workbench-dockview .dv-tabs-and-actions-container,
 .workbench-dockview .tabs-and-actions-container {
   padding-right: 72px !important;
+}
+
+/* Mobile full-bleed takeover renders no WorkbenchHeaderActions, so nothing is
+   overlaid on the right edge of the strip. Reclaim the 72px gutter — on a 390px
+   viewport it was 18% of the width reserved for controls that aren't there. */
+.workbench-dockview[data-full-bleed="true"] .dv-tabs-and-actions-container,
+.workbench-dockview[data-full-bleed="true"] .tabs-and-actions-container {
+  padding-right: 8px !important;
+}
+
+/* At phone widths the tab strip is the only navigation chrome left, so tabs
+   share the row instead of hitting the 120px floor and overflowing after two. */
+@media (max-width: 639px) {
+  .workbench-dockview .dv-shell .dv-tab,
+  .workbench-dockview .dv-shell .tab,
+  .workbench-dockview.dv-shell .dv-tab,
+  .workbench-dockview.dv-shell .tab {
+    min-width: 0;
+    max-width: 60vw;
+    flex: 1 1 0;
+  }
 }
 
 /* Tab base — pill-style, rounded top */

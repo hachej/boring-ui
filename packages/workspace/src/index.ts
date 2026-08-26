@@ -364,6 +364,11 @@ export {
   WORKSPACE_ATTENTION_ACTION_EVENT,
   emitWorkspaceAttentionAction,
   useWorkspaceAttention,
+  // The provider is a VALUE, not just a type: a plugin that contributes an
+  // attention-driven surface (the Inbox badge) has to be able to mount one to
+  // test it. Only the props type was exported, so importing the component from
+  // the package root silently yielded `undefined` at runtime.
+  WorkspaceAttentionProvider,
   workspaceAttentionSessionBadgeForBlocker,
 } from "./front/provider"
 export type {

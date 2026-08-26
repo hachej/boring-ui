@@ -23,6 +23,7 @@ import {
   projectAuthorizedSessionRunDetails,
   registerAgentHostEnvironmentRoutes,
   resolveBuiltinRuntimeLayoutRoot,
+  resolveRequestLedgerPath,
   sandboxRuntimeHostOperations,
   withRuntimeEnvContributions,
   type AgentFleetCompiler,
@@ -197,6 +198,12 @@ export interface WorkspaceAgentCreateOptions {
     runtimeBundle: RuntimeBundle
   }) => Promise<void>
   sessionRoot?: string
+  /**
+   * Durable request ledger file. Host application state, not workspace content:
+   * point it at host-owned storage. Defaults per
+   * {@link resolveRequestLedgerPath}.
+   */
+  requestLedgerPath?: string
   externalPlugins?: boolean
   /** Independently trusted roots for configured Pi resources outside the workspace/plugin roots. */
   piResourceAuthorizedRoots?: string[]
@@ -1279,7 +1286,6 @@ export async function createWorkspaceAgentServer(
     : undefined
   const agents = opts.agents ?? await resolveDefaultAgentFleet({
     ...(fleetRepositoryRoot ? { repositoryRoot: fleetRepositoryRoot } : {}),
-    workspaceRoot,
     ...(discoveredPackages ? { discoveredPackages } : {}),
   })
   const legacyStandaloneDefaultComposition = agents.length === 1 && "legacyDefault" in agents[0]!
@@ -1666,7 +1672,12 @@ export async function createWorkspaceAgentServer(
     runtimeModeAdapter: modeAdapter,
     runtimeHost,
     sessionRoot: opts.sessionRoot,
-    requestLedgerPath: join(workspaceRoot, ".boring", "agent-request-ledger.sqlite"),
+    requestLedgerPath: resolveRequestLedgerPath({
+      requestLedgerPath: opts.requestLedgerPath,
+      sessionRoot: opts.sessionRoot,
+      acceptSessionRootEnv: true,
+      legacy: { layout: "workspace-boring-dir", workspaceRoot },
+    }),
     telemetry: opts.telemetry,
     metering: opts.metering,
     harnessFactory: opts.harnessFactory,
