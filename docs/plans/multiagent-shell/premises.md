@@ -35,7 +35,7 @@ Two consequences, stated plainly:
 |---|---|---|---|---|
 | **P1** | Durable streams — Level D conformance, default-on | the whole engine | yes — `wt-391-forward-9p50` (exists) | ~2 sessions |
 | **P2** | Thread storage model — spike + competitor study | engine S1, the "noun" question, #1355's ref types | yes — new, brief below | 1 research + 1 spike session |
-| **P3** | Seat storage / C7 — audit-grade attribution | honest who-said-what everywhere | yes — new | ~2 sessions |
+| **P3** | Seat storage — audit-grade attribution (ratified concept, formerly C7) | honest who-said-what everywhere | yes — new | ~2 sessions |
 | **P4** | Kernel View — first ratified slice | Library saved views | yes — new | sizing unknown, see below |
 | **P5** | Merge queue | branch health for everything | no — a list, not a bead | ongoing |
 | **P6** | Gates re-ruled post-P2 | the engine gate, the shell gate | yes — re-point existing gate beads | minutes of owner time |
@@ -160,7 +160,7 @@ repair.
 
 ---
 
-### P3 — Seat storage / C7 (audit-grade attribution)
+### P3 — Seat storage: audit-grade attribution (the ratified seat-catalog concept, formerly C7)
 
 **Ruling.** *Who-said-what is audit-grade from day one.* Display-only participant
 chips are **rejected**.

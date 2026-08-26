@@ -16,15 +16,18 @@ Re-cut by owner direction 2026-08-26
 build it". A small number of kernel capabilities must land and be proven first;
 the surface is built on top of them. Two rulings set the tone:
 
-- **The engine does not ship on Level B.** It waits for durable streams (P1).
+- **The engine does not ship on Level B.** Levels are the ratified durability
+  conformance scale: Level B ≈ bounded replay + snapshot rehydrate (what we have
+  today), Level D ≈ fully durable streams a client can always resume. The engine
+  waits for Level D (P1).
 - **The thread storage model is not decided.** It goes to a spike with a
   competitor study (P2), and the engine's data-model slice waits on its findings.
 
 | # | Premise | State | Unblocks |
 |---|---|---|---|
-| **P1** | Durable streams — Level D conformance, default-on | beaded (`wt-391-forward-9p50`), ~2 sessions | the whole engine |
+| **P1** | Durable streams — Level D conformance, default-on | tracked in the issue tracker as bead `wt-391-forward-9p50`, ~2 sessions | the whole engine |
 | **P2** | Thread storage model — spike + competitor study | **newly scoped**, brief in ch.1 | engine S1, the storage question, #1355 ref types |
-| **P3** | Seat storage / C7 — audit-grade attribution | ratified in principle, unscoped in practice | honest who-said-what everywhere |
+| **P3** | Seat storage — the tamper-proof who-said-what record (ratified concept, formerly C7) | ratified in principle, unscoped in practice | honest who-said-what everywhere |
 | **P4** | Kernel View — first ratified slice | **no sizing yet** | Library saved views |
 | **P5** | Merge queue | standing obligation, not a bead | branch health for everything |
 | **P6** | Gates re-ruled post-P2 | minutes of owner time, cannot happen early | both owner gates |
@@ -33,20 +36,26 @@ the surface is built on top of them. Two rulings set the tone:
 full P2 brief, the interview rulings, the sequencing diagram, and the honest
 sizing.
 
-**Substrate-free exceptions** may run early, in parallel with the premises:
+**Substrate-free exceptions** — slices that touch no thread, no session, no
+storage, no attribution — may run early, in parallel with the premises:
 **L1** layout traits · **L1.5** shell location · **L2a** nav chrome (counts
-absent). They touch no thread, no session, no storage, no attribution — a
-property that can be checked, not an exemption granted.
+absent). "Substrate-free" is a property that can be checked, not an exemption
+granted. (A *slice* is one implementation unit sized for a single work session;
+each becomes one bead — one tracked issue — in the tracker.)
 
 ---
 
 ## The design is the specification
 
-The design canvas (owner-iterated *Meridian Shell*) and the spike branch
-`weekend/saas-hybrid-spike` are **not proposals awaiting a slot**. They are the
-**specification the premises are built to serve** — the spike proves the whole
-IA is reachable by recomposing components that already ship, and the canvas
-settled the visual language and the five-domain structure.
+The design canvas (*Meridian Shell* — the set of owner-iterated visual mockups)
+and the spike branch `weekend/saas-hybrid-spike` (a running frontend built by
+recomposing existing components, not a feature branch) are **not proposals
+awaiting a slot**. They are the **specification the premises are built to
+serve** — the spike proves the whole IA is reachable with components that
+already ship, and the canvas settled the visual language and the five-domain
+structure. One honest boundary on that claim: the spike specifies the *frame*;
+the chat transcript inside it is still a visual fixture (see **Status →
+Honest risk**).
 
 What that specification says:
 
@@ -92,8 +101,10 @@ chapters never re-list each other.
 
 ## Status
 
-**Pre-gate, and now premise-gated.** No shell or engine implementation bead is
-dispatchable except the three substrate-free chrome slices.
+**Pre-gate, and now premise-gated.** A *gate* is a batched owner-review event:
+a document of questions only the owner can rule on, blocking the beads listed
+against it until ruled. No shell or engine implementation bead is dispatchable
+except the three substrate-free chrome slices.
 
 | Gate | Blocks | State |
 |---|---|---|

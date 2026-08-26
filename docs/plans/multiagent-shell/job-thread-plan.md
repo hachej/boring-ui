@@ -671,8 +671,9 @@ on drill-down.
 >
 > **4. Attribution is audit-grade from day one.** §8's honest concession —
 > `participantId` as a display handle with no audit weight — is **rejected as a
-> shipping position**. **P3** pulls C7 seat storage forward so per-message
-> attribution resolves through real envelope identity. Q3 is thereby **RULED**.
+> shipping position**. **P3** pulls seat storage (the tamper-proof
+> who-said-what record, formerly C7) forward so per-message attribution
+> resolves through real envelope identity. Q3 is thereby **RULED**.
 >
 > **5. Relay-first vs blackboard is a post-P1 decision.** Both remain candidates;
 > the Buzz / Grok Bot research stands and does not need redoing. Q2 is
