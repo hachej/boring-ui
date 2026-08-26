@@ -1,8 +1,14 @@
 # Gateway
 
-This area covers the `AgentGateway`: the one frozen contract and one
-construction path every consumer (workspace, core, CLI, playground,
-delegation) talks to when it wants to start or resume an agent session.
+This area covers the `AgentGateway`: the single interface every consumer
+(workspace, core, CLI, playground, delegation) talks to when it wants to
+start or resume an agent session — seven session methods plus `close()`,
+produced by exactly one construction function (`createAgentHost()`) so no
+consumer can wire an agent any other way. "Frozen contract" means the
+interface is versioned and stable, not that the code is dead. Durability
+"Levels" in these docs are the conformance scale: Level B ≈ bounded replay +
+snapshot rehydrate (what shipped), Level D ≈ fully durable streams a client
+can always resume (now a committed precondition for the multi-agent engine).
 
 ## Files
 

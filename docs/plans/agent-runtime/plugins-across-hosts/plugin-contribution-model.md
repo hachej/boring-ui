@@ -3,7 +3,7 @@
 Status: owner analysis, converged through R1–R9 adversarial hardening plus
 the D1–D2 direction review (full round table at the end); final owner pass
 2026-07-23 restored three owner-ruled sections a hardening restructure had
-silently dropped (territories, folder split, one-machinery). Companion to `plan.md`;
+silently dropped (territories, folder split, one-machinery). Companion to `../gateway/plan.md`;
 feeds the catalog lane, MIG-DEL, and v2/PL1. Grounded in code inventories of
 `plugins/boring-automation` and MacroAnalyst (`~/projects/boring-macro`),
 corrected in review.
@@ -337,7 +337,7 @@ Gateway):
 | R5 | REVISE — 1 P1 (ambiguity). The "Two UI Territories" rule was inconsistent with the `boring-automation` exemplar, which is a Workspace plugin but contributes a center panel (workbench territory). The rule was refined to clarify that Workspace plugins can open console-level management panels in the main workbench area, distinct from the agent-bound work surfaces owned by Agent plugins. |
 | R6 | REVISE — 1 P1 (missing detail). The model for "tool offers carrying... prompt fragment[s]" lacked a defined composition strategy, creating risk of unpredictable agent behavior and prompt conflicts. The rule was updated to specify that fragments are composed into a dedicated prompt section in a stable, deterministic order (alphabetical by plugin ID). |
 | R7 | REVISE — 1 P1 (flawed future architecture). The proposed future split into `defineWorkspacePlugin`/`defineAgentPlugin` would prevent a single package from providing both kinds of features, harming reusability. The section was rewritten to clarify that v0 uses the existing `definePlugin` and activation context to select contributions. For the future, it now proposes a single `definePlugin` with namespaced `workspace` and `agent` blocks, which is a more flexible and robust design. |
-| R8 | **READY** — No P0/P1 issues found. A full document review confirmed that recent revisions have resolved all previously identified inconsistencies. The model is now internally consistent, aligned with `plan.md` and code exemplars, and specifies a robust future-state API design. |
+| R8 | **READY** — No P0/P1 issues found. A full document review confirmed that recent revisions have resolved all previously identified inconsistencies. The model is now internally consistent, aligned with `../gateway/plan.md` and code exemplars, and specifies a robust future-state API design. |
 | R9 | **READY** — No P0/P1 issues found. A second full review confirmed the document's clarity and robustness. No significant ambiguities or inconsistencies remain. The hardening process is converged. |
 | D1 | Direction review (fresh sol xhigh) — direction CONFIRMED; top-5 missing concerns ranked; **adjudicated R7's unified `definePlugin` against the owner's two typed entrypoints: R7's premise false (two functions do not prevent both-parts packages); owner ruling restored with subpath-entrypoint refinement** (`./workspace`/`./agent`; unified descriptor internal-only). Bead amendments confirmed. |
 | D2 | Direction review round 2 — G2 downgraded (attention = #380 extension, per owner correction); G1 semantic memory confirmed as the one unreserved seam; version coexistence narrowed to per-generation isolation; release/install spine = new control-plane lane with zero v0 type changes; scenario answers (inbox-as-plugin, CoS-as-agent, composition-not-silos, experience projection) validated. Dialogue closed at owner directive; deferred items parked in the control-plane lane section. |
