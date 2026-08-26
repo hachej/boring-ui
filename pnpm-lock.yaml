@@ -23,8 +23,8 @@ importers:
         specifier: 11.16.1
         version: 11.16.1
       typescript:
-        specifier: ^7.0.2
-        version: 7.0.2
+        specifier: ^6.0.3
+        version: 6.0.3
 
   apps/agent-playground:
     dependencies:
@@ -373,13 +373,13 @@ importers:
         version: 19.2.8(react@19.2.8)
       tsup:
         specifier: ^8.4.0
-        version: 8.5.1(jiti@2.7.0)(postcss@8.5.26)(tsx@4.23.12)(typescript@7.0.2)(yaml@2.9.0)
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.26)(tsx@4.23.12)(typescript@6.0.3)(yaml@2.9.0)
       tsx:
         specifier: ^4.23.6
         version: 4.23.12
       typescript:
-        specifier: ^7.0.2
-        version: 7.0.2
+        specifier: ^6.0.3
+        version: 6.0.3
       vite:
         specifier: ^8.2.1
         version: 8.2.1(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)
@@ -422,10 +422,10 @@ importers:
         version: 5.12.1
       tsup:
         specifier: ^8.4.0
-        version: 8.5.1(jiti@2.7.0)(postcss@8.5.26)(tsx@4.23.12)(typescript@7.0.2)(yaml@2.9.0)
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.26)(tsx@4.23.12)(typescript@6.0.3)(yaml@2.9.0)
       typescript:
-        specifier: ^7.0.2
-        version: 7.0.2
+        specifier: ^6.0.3
+        version: 6.0.3
       vitest:
         specifier: ^4.1.9
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@22.20.1)(jsdom@30.0.1(@noble/hashes@2.3.0))(vite@8.2.1(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))
@@ -434,7 +434,7 @@ importers:
     dependencies:
       '@blaxel/core':
         specifier: 0.3.11
-        version: 0.3.11(@hey-api/openapi-ts@0.99.0(typescript@7.0.2))
+        version: 0.3.11(@hey-api/openapi-ts@0.99.0(typescript@6.0.3))
       '@hachej/boring-agent':
         specifier: workspace:*
         version: link:../agent
@@ -456,10 +456,10 @@ importers:
         version: 22.20.1
       tsup:
         specifier: ^8.4.0
-        version: 8.5.1(jiti@2.7.0)(postcss@8.5.26)(tsx@4.23.12)(typescript@7.0.2)(yaml@2.9.0)
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.26)(tsx@4.23.12)(typescript@6.0.3)(yaml@2.9.0)
       typescript:
-        specifier: ^7.0.2
-        version: 7.0.2
+        specifier: ^6.0.3
+        version: 6.0.3
       vitest:
         specifier: ^4.1.9
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@22.20.1)(jsdom@30.0.1(@noble/hashes@2.3.0))(vite@8.2.1(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))
@@ -518,8 +518,8 @@ importers:
         specifier: ^1.32.0
         version: 1.32.0(react@19.2.8)
       typescript:
-        specifier: ^7.0.2
-        version: 7.0.2
+        specifier: ^6.0.3
+        version: 6.0.3
       vite:
         specifier: ^8.2.1
         version: 8.2.1(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)
@@ -547,7 +547,7 @@ importers:
         version: 4.3.3
       tsup:
         specifier: ^8.4.0
-        version: 8.5.1(jiti@2.7.0)(postcss@8.5.26)(tsx@4.23.12)(typescript@7.0.2)(yaml@2.9.0)
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.26)(tsx@4.23.12)(typescript@6.0.3)(yaml@2.9.0)
       vitest:
         specifier: ^4.1.9
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@22.20.1)(jsdom@30.0.1(@noble/hashes@2.3.0))(vite@8.2.1(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))
@@ -683,13 +683,13 @@ importers:
         version: 19.2.8(react@19.2.8)
       tsup:
         specifier: ^8.4.0
-        version: 8.5.1(jiti@2.7.0)(postcss@8.5.26)(tsx@4.23.12)(typescript@7.0.2)(yaml@2.9.0)
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.26)(tsx@4.23.12)(typescript@6.0.3)(yaml@2.9.0)
       tsx:
         specifier: ^4.23.6
         version: 4.23.12
       typescript:
-        specifier: ^7.0.2
-        version: 7.0.2
+        specifier: ^6.0.3
+        version: 6.0.3
       vitest:
         specifier: ^4.1.9
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@22.20.1)(jsdom@30.0.1(@noble/hashes@2.3.0))(vite@8.2.1(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))
@@ -703,10 +703,10 @@ importers:
         version: 22.20.1
       tsup:
         specifier: ^8.4.0
-        version: 8.5.1(jiti@2.7.0)(postcss@8.5.26)(tsx@4.23.12)(typescript@7.0.2)(yaml@2.9.0)
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.26)(tsx@4.23.12)(typescript@6.0.3)(yaml@2.9.0)
       typescript:
-        specifier: ^7.0.2
-        version: 7.0.2
+        specifier: ^6.0.3
+        version: 6.0.3
       vitest:
         specifier: ^4.1.9
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@22.20.1)(jsdom@30.0.1(@noble/hashes@2.3.0))(vite@8.2.1(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))
@@ -791,10 +791,10 @@ importers:
         version: 4.3.3
       tsup:
         specifier: ^8.4.0
-        version: 8.5.1(jiti@2.7.0)(postcss@8.5.26)(tsx@4.23.12)(typescript@7.0.2)(yaml@2.9.0)
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.26)(tsx@4.23.12)(typescript@6.0.3)(yaml@2.9.0)
       typescript:
-        specifier: ^7.0.2
-        version: 7.0.2
+        specifier: ^6.0.3
+        version: 6.0.3
       vitest:
         specifier: ^4.1.9
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@22.20.1)(jsdom@30.0.1(@noble/hashes@2.3.0))(vite@8.2.1(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))
@@ -1008,16 +1008,16 @@ importers:
         version: 4.3.3
       tsup:
         specifier: ^8.0.0
-        version: 8.5.1(jiti@2.7.0)(postcss@8.5.26)(tsx@4.23.12)(typescript@7.0.2)(yaml@2.9.0)
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.26)(tsx@4.23.12)(typescript@6.0.3)(yaml@2.9.0)
       typescript:
-        specifier: ^7.0.2
-        version: 7.0.2
+        specifier: ^6.0.3
+        version: 6.0.3
       vite:
         specifier: ^8.2.1
         version: 8.2.1(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)
       vite-plugin-dts:
         specifier: ^5.0.3
-        version: 5.0.3(esbuild@0.28.2)(rolldown@1.2.4)(rollup@4.62.2)(typescript@7.0.2)(vite@8.2.1(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))
+        version: 5.0.3(esbuild@0.28.2)(rolldown@1.2.4)(rollup@4.62.2)(typescript@6.0.3)(vite@8.2.1(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))
       vitest:
         specifier: ^4.1.9
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@22.20.1)(jsdom@30.0.1(@noble/hashes@2.3.0))(vite@8.2.1(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))
@@ -9624,6 +9624,11 @@ packages:
   typebox@1.3.7:
     resolution: {integrity: sha512-meKuifc33Pccx0O6PdIzYMq3Og8zvP4TIi/a+Bw3AEMZMxOD0+RHGQvpglEe6Zdy3wZ8nqn/j95h8LUZLk/6Hg==}
 
+  typescript@6.0.3:
+    resolution: {integrity: sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==}
+    engines: {node: '>=14.17'}
+    hasBin: true
+
   typescript@7.0.2:
     resolution: {integrity: sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA==}
     engines: {node: '>=16.20.0'}
@@ -10530,9 +10535,9 @@ snapshots:
 
   '@better-fetch/fetch@1.3.1': {}
 
-  '@blaxel/core@0.3.11(@hey-api/openapi-ts@0.99.0(typescript@7.0.2))':
+  '@blaxel/core@0.3.11(@hey-api/openapi-ts@0.99.0(typescript@6.0.3))':
     dependencies:
-      '@hey-api/client-fetch': 0.10.2(@hey-api/openapi-ts@0.99.0(typescript@7.0.2))
+      '@hey-api/client-fetch': 0.10.2(@hey-api/openapi-ts@0.99.0(typescript@6.0.3))
       '@modelcontextprotocol/sdk': 1.30.0(zod@3.25.76)
       archiver: 7.0.1
       axios: 1.19.0
@@ -11568,9 +11573,9 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@hey-api/client-fetch@0.10.2(@hey-api/openapi-ts@0.99.0(typescript@7.0.2))':
+  '@hey-api/client-fetch@0.10.2(@hey-api/openapi-ts@0.99.0(typescript@6.0.3))':
     dependencies:
-      '@hey-api/openapi-ts': 0.99.0(typescript@7.0.2)
+      '@hey-api/openapi-ts': 0.99.0(typescript@6.0.3)
 
   '@hey-api/codegen-core@0.9.1':
     dependencies:
@@ -11587,7 +11592,7 @@ snapshots:
       '@types/json-schema': 7.0.15
       js-yaml: 4.2.0
 
-  '@hey-api/openapi-ts@0.99.0(typescript@7.0.2)':
+  '@hey-api/openapi-ts@0.99.0(typescript@6.0.3)':
     dependencies:
       '@hey-api/codegen-core': 0.9.1
       '@hey-api/json-schema-ref-parser': 1.4.4
@@ -11599,7 +11604,7 @@ snapshots:
       color-support: 1.1.3
       commander: 15.0.0
       get-tsconfig: 4.14.0
-      typescript: 7.0.2
+      typescript: 6.0.3
     transitivePeerDependencies:
       - magicast
 
@@ -18142,6 +18147,34 @@ snapshots:
 
   tslib@2.8.1: {}
 
+  tsup@8.5.1(jiti@2.7.0)(postcss@8.5.26)(tsx@4.23.12)(typescript@6.0.3)(yaml@2.9.0):
+    dependencies:
+      bundle-require: 5.1.0(esbuild@0.27.7)
+      cac: 6.7.14
+      chokidar: 4.0.3
+      consola: 3.4.2
+      debug: 4.4.3
+      esbuild: 0.27.7
+      fix-dts-default-cjs-exports: 1.0.1
+      joycon: 3.1.1
+      picocolors: 1.1.1
+      postcss-load-config: 6.0.1(jiti@2.7.0)(postcss@8.5.26)(tsx@4.23.12)(yaml@2.9.0)
+      resolve-from: 5.0.0
+      rollup: 4.62.2
+      source-map: 0.7.6
+      sucrase: 3.35.1
+      tinyexec: 0.3.2
+      tinyglobby: 0.2.17
+      tree-kill: 1.2.2
+    optionalDependencies:
+      postcss: 8.5.26
+      typescript: 6.0.3
+    transitivePeerDependencies:
+      - jiti
+      - supports-color
+      - tsx
+      - yaml
+
   tsup@8.5.1(jiti@2.7.0)(postcss@8.5.26)(tsx@4.23.12)(typescript@7.0.2)(yaml@2.9.0):
     dependencies:
       bundle-require: 5.1.0(esbuild@0.27.7)
@@ -18193,6 +18226,8 @@ snapshots:
   typebox@1.1.38: {}
 
   typebox@1.3.7: {}
+
+  typescript@6.0.3: {}
 
   typescript@7.0.2:
     optionalDependencies:
@@ -18280,7 +18315,7 @@ snapshots:
 
   unpipe@1.0.0: {}
 
-  unplugin-dts@1.0.3(esbuild@0.28.2)(rolldown@1.2.4)(rollup@4.62.2)(typescript@7.0.2)(vite@8.2.1(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)):
+  unplugin-dts@1.0.3(esbuild@0.28.2)(rolldown@1.2.4)(rollup@4.62.2)(typescript@6.0.3)(vite@8.2.1(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)):
     dependencies:
       '@rollup/pluginutils': 5.4.0(rollup@4.62.2)
       '@volar/typescript': 2.4.28
@@ -18289,7 +18324,7 @@ snapshots:
       kolorist: 1.8.0
       local-pkg: 1.2.1
       magic-string: 0.30.21
-      typescript: 7.0.2
+      typescript: 6.0.3
       unplugin: 2.3.11
     optionalDependencies:
       esbuild: 0.28.2
@@ -18377,9 +18412,9 @@ snapshots:
       d3-time: 3.1.0
       d3-timer: 3.0.1
 
-  vite-plugin-dts@5.0.3(esbuild@0.28.2)(rolldown@1.2.4)(rollup@4.62.2)(typescript@7.0.2)(vite@8.2.1(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)):
+  vite-plugin-dts@5.0.3(esbuild@0.28.2)(rolldown@1.2.4)(rollup@4.62.2)(typescript@6.0.3)(vite@8.2.1(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)):
     dependencies:
-      unplugin-dts: 1.0.3(esbuild@0.28.2)(rolldown@1.2.4)(rollup@4.62.2)(typescript@7.0.2)(vite@8.2.1(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))
+      unplugin-dts: 1.0.3(esbuild@0.28.2)(rolldown@1.2.4)(rollup@4.62.2)(typescript@6.0.3)(vite@8.2.1(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))
     optionalDependencies:
       rollup: 4.62.2
       vite: 8.2.1(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)
