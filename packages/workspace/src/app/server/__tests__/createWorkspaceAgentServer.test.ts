@@ -1475,6 +1475,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
           systemPrompt: "ALPHA_PLUGIN_PROMPT",
           piPackages: ["npm:alpha-pi"],
           extensionPaths: ["/plugins/alpha.ts"],
+          skills: [{ name: "alpha-runtime", source: "/plugins/alpha-runtime" }],
           packageResources: [{ packageName: "@example/alpha", packageRoot: alphaPackageRoot }],
         },
         {
@@ -1485,6 +1486,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
           systemPrompt: "BETA_PLUGIN_PROMPT",
           piPackages: ["npm:beta-pi"],
           extensionPaths: ["/plugins/beta.ts"],
+          skills: [{ name: "beta-runtime", source: "/plugins/beta-runtime" }],
           packageResources: [{ packageName: "@example/beta", packageRoot: betaPackageRoot }],
         },
       ],
@@ -1521,6 +1523,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
           pi?: {
             packages?: unknown[]
             extensionPaths?: string[]
+            additionalSkillPaths?: string[]
             getHotReloadableResources?: () => { additionalSkillPaths?: string[] }
             locateSkillResource?: (filePath: string) => { filesystem: string; path: string } | undefined
           }
@@ -1548,8 +1551,14 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       expect(alpha.pi?.packages).not.toContain("npm:beta-pi")
       expect(alpha.pi?.extensionPaths).toEqual(expect.arrayContaining(["/plugins/alpha.ts"]))
       expect(alpha.pi?.extensionPaths).not.toContain("/plugins/beta.ts")
-      expect(alpha.pi?.getHotReloadableResources?.().additionalSkillPaths).toContain(join(alphaPackageRoot, "skills", "alpha"))
-      expect(alpha.pi?.getHotReloadableResources?.().additionalSkillPaths).not.toContain(join(betaPackageRoot, "skills", "beta"))
+      expect(alpha.pi?.additionalSkillPaths).toContain("/workspace/.agents/skills")
+      expect(alpha.pi?.additionalSkillPaths).not.toContain(join(workspaceRoot, ".boring-agent", "skills"))
+      const alphaSkillPaths = alpha.pi?.getHotReloadableResources?.().additionalSkillPaths ?? []
+      expect(alphaSkillPaths).toContain(join(alphaPackageRoot, "skills", "alpha"))
+      expect(alphaSkillPaths.some((path) => path.endsWith("/alpha-plugin/alpha-runtime"))).toBe(true)
+      expect(alphaSkillPaths).not.toContain(join(betaPackageRoot, "skills", "beta"))
+      expect(alphaSkillPaths.some((path) => path.endsWith("/beta-plugin/beta-runtime"))).toBe(false)
+      expect(alphaSkillPaths.some((path) => path.endsWith("/.boring-agent/skills"))).toBe(false)
       expect(await alpha.loadSystemPromptAppend?.()).toContain("ALPHA_MANIFEST_PROMPT")
       expect(await alpha.loadSystemPromptAppend?.()).not.toContain("BETA_MANIFEST_PROMPT")
       const alphaSkillFile = join(alphaPackageRoot, "skills", "alpha", "SKILL.md")
@@ -1578,8 +1587,14 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       expect(beta.systemPromptAppend).not.toContain("ALPHA_PLUGIN_PROMPT")
       expect(beta.pi?.packages).toContain("npm:beta-pi")
       expect(beta.pi?.packages).not.toContain("npm:alpha-pi")
-      expect(beta.pi?.getHotReloadableResources?.().additionalSkillPaths).toContain(join(betaPackageRoot, "skills", "beta"))
-      expect(beta.pi?.getHotReloadableResources?.().additionalSkillPaths).not.toContain(join(alphaPackageRoot, "skills", "alpha"))
+      expect(beta.pi?.additionalSkillPaths).toContain("/workspace/.agents/skills")
+      expect(beta.pi?.additionalSkillPaths).not.toContain(join(workspaceRoot, ".boring-agent", "skills"))
+      const betaSkillPaths = beta.pi?.getHotReloadableResources?.().additionalSkillPaths ?? []
+      expect(betaSkillPaths).toContain(join(betaPackageRoot, "skills", "beta"))
+      expect(betaSkillPaths.some((path) => path.endsWith("/beta-plugin/beta-runtime"))).toBe(true)
+      expect(betaSkillPaths).not.toContain(join(alphaPackageRoot, "skills", "alpha"))
+      expect(betaSkillPaths.some((path) => path.endsWith("/alpha-plugin/alpha-runtime"))).toBe(false)
+      expect(betaSkillPaths.some((path) => path.endsWith("/.boring-agent/skills"))).toBe(false)
       expect(await beta.loadSystemPromptAppend?.()).toContain("BETA_MANIFEST_PROMPT")
       expect(await beta.loadSystemPromptAppend?.()).not.toContain("ALPHA_MANIFEST_PROMPT")
       expect(beta.pi?.locateSkillResource?.(join(betaPackageRoot, "skills", "beta", "SKILL.md"))).toEqual({

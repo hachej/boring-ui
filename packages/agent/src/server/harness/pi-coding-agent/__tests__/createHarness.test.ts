@@ -8,7 +8,6 @@ import {
   createResourceSettingsManager,
   createPiCodingAgentHarness,
   mergePiPackageSources,
-  projectRuntimePathToHost,
   projectSkillResourceLocations,
   withPiHarnessDefaults,
 } from "../createHarness.js";
@@ -22,6 +21,7 @@ import { sessionFilePath } from "./fixtures/sessionFiles.js";
 import { ErrorCode } from "../../../../shared/error-codes.js";
 import type { AgentTool } from "../../../../shared/tool.js";
 import { createPiResourceDigestInput, digestPiResourceInputs } from "../../../piResourceDigest.js";
+import { locateHostWorkspaceSkill } from "../../../agent-host/skillPathProjection.js";
 
 const fsHooks = vi.hoisted(() => ({
   onRename: undefined as (() => Promise<void>) | undefined,
@@ -410,42 +410,65 @@ describe("pi extension path hot reload", () => {
   });
 });
 
-describe("projectRuntimePathToHost", () => {
-  it("maps sandbox workspace skill paths into the host workspace", () => {
-    expect(projectRuntimePathToHost(
-      "/workspace/.agents/skills",
-      "/data/workspaces/workspace-1",
-      "/workspace",
-    )).toBe("/data/workspaces/workspace-1/.agents/skills");
-    expect(projectRuntimePathToHost(
-      "/workspace/.boring-agent/skills",
-      "/data/workspaces/workspace-1",
-      "/workspace",
-    )).toBe("/data/workspaces/workspace-1/.boring-agent/skills");
-  });
+describe("host-backed workspace skill reload", () => {
+  it("reloads a late skill into the same Constellation-shaped session and sanitizes its prompt location", async () => {
+    const hostParent = await mkdtemp(join(tmpdir(), "constellation-skill-reload-"));
+    const hostWorkspaceRoot = join(hostParent, "data", "workspaces", "workspace-1");
+    const hostSkillRoot = join(hostWorkspaceRoot, ".agents", "skills");
+    await mkdir(hostSkillRoot, { recursive: true });
+    const harness = createPiCodingAgentHarness({
+      tools: [{ ...noopTool, name: "read", description: "Read a workspace file" }],
+      cwd: hostWorkspaceRoot,
+      runtimeCwd: "/workspace",
+      pi: {
+        noSkills: true,
+        noExtensions: true,
+        additionalSkillPaths: [hostSkillRoot],
+        locateSkillResource: (filePath) => locateHostWorkspaceSkill({
+          filePath,
+          runtimeWorkspaceRoot: "/workspace",
+          hostStorageRoot: hostWorkspaceRoot,
+        }),
+      },
+    });
 
-  it("preserves image-baked, relative, and direct-mode paths", () => {
-    expect(projectRuntimePathToHost(
-      "/app/knowledge-base/skills",
-      "/data/workspaces/workspace-1",
-      "/workspace",
-    )).toBe("/app/knowledge-base/skills");
-    expect(projectRuntimePathToHost(
-      ".agents/skills",
-      "/data/workspaces/workspace-1",
-      "/workspace",
-    )).toBe(".agents/skills");
-    expect(projectRuntimePathToHost(
-      "/data/workspaces/workspace-1/.agents/skills",
-      "/data/workspaces/workspace-1",
-    )).toBe("/data/workspaces/workspace-1/.agents/skills");
-  });
+    try {
+      const session = await harness.sessions.create({ workspaceId: "workspace-1" });
+      await harness.getPiSessionAdapter({ sessionId: session.id, message: "start" }, {
+        abortSignal: new AbortController().signal,
+        workdir: "/workspace",
+        workspaceId: "workspace-1",
+      });
+      expect(harness.getSystemPrompt?.(session.id)).not.toContain("late-skill");
+
+      const lateSkillDir = join(hostSkillRoot, "late-skill");
+      await mkdir(lateSkillDir, { recursive: true });
+      await writeFile(join(lateSkillDir, "SKILL.md"), [
+        "---",
+        "name: late-skill",
+        "description: Loaded after session start.",
+        "---",
+        "# Late skill",
+        "",
+      ].join("\n"), "utf8");
+
+      await expect(harness.reloadSession?.(session.id)).resolves.toBe(true);
+      expect(harness.hasPiSession(session.id)).toBe(true);
+      expect(harness.getResourceDiagnostics?.(session.id)).toEqual([]);
+      const prompt = harness.getSystemPrompt?.(session.id) ?? "";
+      expect(prompt).toContain("late-skill");
+      expect(prompt).toContain('{"filesystem":"user","path":".agents/skills/late-skill/SKILL.md"}');
+      expect(prompt).not.toContain(hostWorkspaceRoot);
+    } finally {
+      await rm(hostParent, { recursive: true, force: true });
+    }
+  }, 20_000);
 });
 
 describe("projectSkillResourceLocations", () => {
-  it("projects located package skills without changing workspace skills", () => {
+  it("projects package and host-loaded workspace skills to tool-readable locators", () => {
     const packagePath = "/srv/node_modules/@example/plugin/skills/reporting/SKILL.md";
-    const workspacePath = "/workspace/.agents/skills/local/SKILL.md";
+    const workspacePath = "/data/workspaces/workspace-1/.agents/skills/local/SKILL.md";
     const prompt = formatSkillsForPrompt([packagePath, workspacePath].map((filePath, index) => ({
       name: `skill-${index}`,
       description: `Skill ${index}`,
@@ -455,14 +478,19 @@ describe("projectSkillResourceLocations", () => {
       disableModelInvocation: false,
     })));
 
-    const projected = projectSkillResourceLocations(prompt, (filePath) =>
-      filePath === packagePath
-        ? { filesystem: "agent_resources", path: "packages/@example/plugin/skills/reporting/SKILL.md" }
-        : undefined,
-    );
+    const projected = projectSkillResourceLocations(prompt, (filePath) => {
+      if (filePath === packagePath) {
+        return { filesystem: "agent_resources", path: "packages/@example/plugin/skills/reporting/SKILL.md" };
+      }
+      if (filePath === workspacePath) {
+        return { filesystem: "user", path: ".agents/skills/local/SKILL.md" };
+      }
+      return undefined;
+    });
 
     expect(projected).toContain('<location>{"filesystem":"agent_resources","path":"packages/@example/plugin/skills/reporting/SKILL.md"}</location>');
-    expect(projected).toContain(`<location>${workspacePath}</location>`);
+    expect(projected).toContain('<location>{"filesystem":"user","path":".agents/skills/local/SKILL.md"}</location>');
+    expect(projected).not.toContain("/data/workspaces");
     expect(projected).not.toContain(`<location>${packagePath}</location>`);
     expect(projected).toContain("pass its filesystem and path fields to the read tool");
     expect(projected).not.toContain("use that absolute path in tool commands");
