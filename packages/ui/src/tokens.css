@@ -35,6 +35,8 @@
   --boring-muted-foreground: oklch(0.52 0.008 72);
   --boring-destructive: oklch(0.577 0.245 27.325);
   --boring-destructive-foreground: oklch(0.985 0.002 72);
+  /* Waiting-for-human attention, distinct from selected/active accent. */
+  --boring-attention: oklch(0.55 0.11 75);
   --boring-border: oklch(0.915 0.004 72);
   --boring-input: oklch(0.915 0.004 72);
   --boring-accent: oklch(0.62 0.14 65);
@@ -71,6 +73,7 @@
   --muted-foreground: var(--boring-muted-foreground);
   --destructive: var(--boring-destructive);
   --destructive-foreground: var(--boring-destructive-foreground);
+  --attention: var(--boring-attention);
   --border: var(--boring-border);
   --input: var(--boring-input);
   --accent: var(--boring-accent);
@@ -110,6 +113,7 @@
   --boring-success-soft: oklch(0.22 0.04 145);
   --boring-destructive: oklch(0.396 0.141 25.768);
   --boring-destructive-foreground: oklch(0.985 0 0);
+  --boring-attention: oklch(0.8 0.11 75);
   --boring-border: oklch(0.269 0.006 285.885);
   --boring-input: oklch(0.269 0.006 285.885);
   --boring-ring: oklch(0.72 0.13 65);
@@ -134,6 +138,7 @@
   --muted-foreground: var(--boring-muted-foreground);
   --destructive: var(--boring-destructive);
   --destructive-foreground: var(--boring-destructive-foreground);
+  --attention: var(--boring-attention);
   --border: var(--boring-border);
   --input: var(--boring-input);
   --accent: var(--boring-accent);
