@@ -18,6 +18,37 @@ describe('AgentSessionActivityIndex terminal outcomes', () => {
     expect(index.get('ws', ref)).toBe('idle')
   })
 
+  it('settles an accepted pending run when it fails before agent-start', () => {
+    const index = new AgentSessionActivityIndex()
+    const statuses: string[] = []
+    index.subscribe('ws', ({ status }) => statuses.push(status))
+
+    index.set('ws', ref, 'running')
+    index.observe('ws', ref, {
+      type: 'error',
+      seq: 1,
+      retryable: false,
+      error: { code: ErrorCode.enum.INTERNAL_ERROR, message: 'provider down', retryable: false },
+    })
+
+    expect(statuses).toEqual(['running', 'error'])
+    expect(index.get('ws', ref)).toBe('error')
+  })
+
+  it('does not let a turn-less error settle an active identified turn', () => {
+    const index = new AgentSessionActivityIndex()
+    index.observe('ws', ref, { type: 'agent-start', seq: 1, turnId: 't1' })
+
+    index.observe('ws', ref, {
+      type: 'error',
+      seq: 2,
+      retryable: false,
+      error: { code: ErrorCode.enum.INTERNAL_ERROR, message: 'unattributed', retryable: false },
+    })
+
+    expect(index.get('ws', ref)).toBe('running')
+  })
+
   it('never publishes a failed transition for the error emitted while aborting', () => {
     const index = new AgentSessionActivityIndex()
     const statuses: string[] = []

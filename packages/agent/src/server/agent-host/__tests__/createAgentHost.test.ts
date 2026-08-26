@@ -1089,6 +1089,59 @@ describe('createAgentHost', () => {
     await app.close()
   })
 
+  it('settles session activity when an accepted prompt rejects before agent-start', async () => {
+    const workspaceRoot = await root()
+    let rejectRun: ((reason?: unknown) => void) | undefined
+    const created = await createAgentHost({
+      ...options(workspaceRoot),
+      inMemoryRequestLedgerMode: 'test',
+      harnessFactory: async (input) => {
+        const harness = createScriptedPiHarness(input)
+        return {
+          ...harness,
+          async getPiSessionAdapter(
+            sendInput: Parameters<typeof harness.getPiSessionAdapter>[0],
+            ctx: Parameters<typeof harness.getPiSessionAdapter>[1],
+          ) {
+            const adapter = await harness.getPiSessionAdapter(sendInput, ctx)
+            return new Proxy(adapter, {
+              get(target, property) {
+                if (property === 'prompt') {
+                  return () => new Promise<void>((_resolve, reject) => { rejectRun = reject })
+                }
+                const value = Reflect.get(target, property, target)
+                return typeof value === 'function' ? value.bind(target) : value
+              },
+            })
+          },
+        }
+      },
+    })
+    const ref = await created.gateway.createSession({
+      scope,
+      agentTypeId: 'alpha',
+      requestId: 'create-pre-start-rejection',
+    })
+    const connection = await created.gateway.connectSession({ scope, ref })
+
+    await expect(connection.send({
+      kind: 'prompt',
+      requestId: 'pre-start-rejection',
+      clientNonce: 'pre-start-rejection',
+      content: 'fail before start',
+    })).resolves.toMatchObject({ accepted: true })
+    expect((await created.gateway.readSessionState({ scope, ref })).summary.status).toBe('running')
+
+    expect(rejectRun).toBeTypeOf('function')
+    rejectRun!(new Error('provider failed before start'))
+    await vi.waitFor(async () => {
+      expect((await created.gateway.readSessionState({ scope, ref })).summary.status).toBe('error')
+    })
+
+    await connection.close()
+    await created.host.close()
+  })
+
   it('preserves safe pre-mutation service errors and canonicalizes post-begin failures on first response and replay', async () => {
     const workspaceRoot = await root()
     const stable = Object.assign(new Error('session catalog is locked'), {

@@ -390,7 +390,8 @@ export class EmbeddedAgentGateway implements AgentGateway {
       input.ref.sessionId,
       initialCursor,
       (event) => {
-        this.runtime.activity.observe(claim.workspaceScopeId, input.ref, event)
+        // The composition's live event source owns activity observation.
+        // Connection subscriptions can replay old turns and must stay read-only.
         queue.push({
           ref: input.ref,
           seq: event.seq,

@@ -20,6 +20,8 @@ interface EmbeddedGatewayFixture extends GatewayConformanceFixture {
     release(): void
   }
   rejectNextPrompt(error: Error): void
+  emitSessionEvent(ref: AgentSessionRef, event: PiChatEvent): void
+  observeSessionEvent(ref: AgentSessionRef, event: PiChatEvent): void
 }
 
 interface RecordValue {
@@ -39,6 +41,8 @@ let globalCreated = 0
 class FakeService implements PiChatSessionService {
   readonly records = new Map<string, RecordValue>()
   nextPromptError: Error | undefined
+
+  constructor(private readonly onEvent: (sessionId: string, event: PiChatEvent) => void) {}
 
   async listSessions(_ctx: PiSessionRequestContext, options?: { includeId?: string }) {
     const rows = [...this.records.values()].map(this.summary)
@@ -168,10 +172,15 @@ class FakeService implements PiChatSessionService {
     this.get(sessionId).updatedAt = new Date(updatedAt).toISOString()
   }
 
+  emit(sessionId: string, event: PiChatEvent): PiChatEvent {
+    return this.publish(this.get(sessionId), event)
+  }
+
   private publish(record: RecordValue, event: PiChatEvent): PiChatEvent {
     const published = { ...event, seq: ++record.seq } as PiChatEvent
     record.events.push(published)
     if (record.events.length > 4) record.events.shift()
+    this.onEvent(record.id, published)
     for (const subscriber of record.subscribers) subscriber(published)
     return published
   }
@@ -195,6 +204,7 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
   const issued = new WeakSet<object>()
   const revoked = new WeakSet<object>()
   const services = new Map<string, FakeService>()
+  const activity = new AgentSessionActivityIndex()
   type AdmissionDisposition = 'strong-reject' | 'retryable' | {
     entered(): void
     wait: Promise<void>
@@ -208,12 +218,13 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
     const key = `${workspaceScopeId}:${agentTypeId}`
     let service = services.get(key)
     if (!service) {
-      service = new FakeService()
+      service = new FakeService((sessionId, event) => {
+        activity.observe(workspaceScopeId, { agentTypeId, sessionId }, event)
+      })
       services.set(key, service)
     }
     return service
   }
-  const activity = new AgentSessionActivityIndex()
   const runtime = {
     options: {},
     compiledAgents: agents,
@@ -308,6 +319,18 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
     },
     rejectNextPrompt(error) {
       for (const service of services.values()) service.nextPromptError = error
+    },
+    emitSessionEvent(ref, event) {
+      for (const service of services.values()) {
+        if (service.records.has(ref.sessionId)) service.emit(ref.sessionId, event)
+      }
+    },
+    observeSessionEvent(ref, event) {
+      for (const [key, service] of services) {
+        if (!key.endsWith(`:${ref.agentTypeId}`) || !service.records.has(ref.sessionId)) continue
+        const workspaceScopeId = key.slice(0, -(ref.agentTypeId.length + 1))
+        activity.observe(workspaceScopeId, ref, event)
+      }
     },
     modelLoopStarts(ref) {
       for (const service of services.values()) {

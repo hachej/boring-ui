@@ -3,6 +3,29 @@ import { ErrorCode } from '../../../shared/error-codes'
 import { createEmbeddedGatewayFixture } from './embeddedGatewayFixture'
 
 describe('EmbeddedAgentGateway safe action failures', () => {
+  it('does not let a connection replay of an old completed turn settle a newer run', async () => {
+    const fixture = await createEmbeddedGatewayFixture()
+    const scope = fixture.issueScope()
+    const ref = await fixture.gateway.createSession({
+      scope,
+      agentTypeId: 'alpha',
+      requestId: 'create-replay-session',
+    })
+    fixture.emitSessionEvent(ref, { type: 'agent-start', seq: 0, turnId: 'old-turn' })
+    fixture.emitSessionEvent(ref, { type: 'agent-end', seq: 0, turnId: 'old-turn', status: 'ok' })
+    // Model the race where the canonical source has delivered a newer start
+    // while this connection still has only the old completed turn to replay.
+    fixture.observeSessionEvent(ref, { type: 'agent-start', seq: 3, turnId: 'new-turn' })
+
+    const connection = await fixture.gateway.connectSession({ scope, ref, cursor: 0 })
+
+    const summary = (await fixture.gateway.listSessions({ scope, agentTypeId: 'alpha' })).sessions
+      .find((session) => session.ref.sessionId === ref.sessionId)
+    expect(summary?.status).toBe('running')
+    await connection.close()
+    await fixture.gateway.close()
+  })
+
   it('replays a stable pre-dispatch payment rejection instead of outcome-unknown', async () => {
     const fixture = await createEmbeddedGatewayFixture()
     const scope = fixture.issueScope()
