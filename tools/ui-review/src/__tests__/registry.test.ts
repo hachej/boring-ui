@@ -78,6 +78,13 @@ describe("UI review spec registry", () => {
     ] as unknown as UiReviewExplorationState[]
     expect(select(firstSettledWaitPath)).toBe(firstSettledWaitPath[3])
 
+    const desktopHydratingActionPath = [
+      { ordinal: 2, viewport: { name: "desktop" }, action: "Wait", screenshotDigest: "closed", screenshotBytes: 100, screenshotPHash: "ffffffffffffffff", normalizedState: { palette: { dialogVisible: false, mode: "none" } } },
+      { ordinal: 3, viewport: { name: "desktop" }, action: { Click: {} }, screenshotDigest: "hydrating", screenshotBytes: 120, screenshotPHash: "213f213f3f3f3f21", normalizedState: { palette: { dialogVisible: true, mode: "Chats" } } },
+      { ordinal: 15, viewport: { name: "desktop" }, action: "Wait", screenshotDigest: "settled", screenshotBytes: 120, screenshotPHash: "0000003c3c000000", normalizedState: { palette: { dialogVisible: true, mode: "Chats" } } },
+    ] as unknown as UiReviewExplorationState[]
+    expect(select(desktopHydratingActionPath)).toBe(desktopHydratingActionPath[2])
+
     const shortestPaintedPath = [
       { ordinal: 5, viewport: { name: "mobile" }, action: "Wait", screenshotDigest: "closed", screenshotBytes: 100, screenshotPHash: "fefefefefefefefe", normalizedState: { palette: { dialogVisible: false, mode: "none" } } },
       { ordinal: 10, viewport: { name: "mobile" }, action: { TypeText: { text: ">" } }, screenshotDigest: "painted-action", screenshotBytes: 120, screenshotPHash: "ffbfff0000000000", normalizedState: { palette: { dialogVisible: true, mode: "Commands" } } },

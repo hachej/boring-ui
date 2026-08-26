@@ -129,10 +129,11 @@ export const workspaceCommandPaletteSpec: UiReviewSpec = {
       const replayableDialogActions = dialogStates
         .filter((state) => state.action !== "Wait" && state.action !== null)
         .sort((left, right) => left.ordinal - right.ordinal)
-      // DOM visibility can precede paint. Prefer the shortest settled Wait or
-      // strongly painted action; a short trace avoids crossing unrelated async
-      // workspace hydration and session creation during replay. Keep the weaker
-      // compact-viewport action fallback only when no painted Wait exists.
+      // DOM visibility can precede paint. Desktop replay therefore prefers the
+      // earliest settled Wait over an action-frame screenshot that may still be
+      // hydrating. Compact replay prefers the earliest strongly painted action:
+      // waiting for its much smaller full-frame pHash change can cross unrelated
+      // async workspace hydration and session creation during replay.
       // Encoded PNG byte size is not a monotonic paint signal.
       // The pHash threshold is viewport-aware: the whole-viewport hash is
       // calibrated against desktop, where the palette covers a large share of
@@ -158,11 +159,16 @@ export const workspaceCommandPaletteSpec: UiReviewSpec = {
       )
       const earliestStrongWait = waits.find((state) => (paintedDialogDistance(state) ?? -1) >= 5)
       const earliestStrongAction = replayableDialogActions.find((state) => (paintedDialogDistance(state) ?? -1) >= 5)
-      return [earliestStrongWait, earliestStrongAction]
-        .filter((state): state is UiReviewExplorationState => state !== undefined)
-        .sort((left, right) => left.ordinal - right.ordinal)[0]
-        ?? [...waits].reverse().find(hasGenuinelyPaintedDialog)
-        ?? replayableDialogActions.find(hasGenuinelyPaintedDialog)
+      const isCompact = ordered[0]?.viewport.name === "mobile"
+      return isCompact
+        ? earliestStrongAction
+          ?? earliestStrongWait
+          ?? waits.find(hasGenuinelyPaintedDialog)
+          ?? replayableDialogActions.find(hasGenuinelyPaintedDialog)
+        : earliestStrongWait
+          ?? waits.find(hasGenuinelyPaintedDialog)
+          ?? earliestStrongAction
+          ?? replayableDialogActions.find(hasGenuinelyPaintedDialog)
     },
   },
 }
