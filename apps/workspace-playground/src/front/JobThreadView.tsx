@@ -327,7 +327,7 @@ function initials(label: string): string {
   return (second ? `${first}${second}` : first).toUpperCase()
 }
 
-function SeatChip({ agentTypeId, name, size = "sm" }: { agentTypeId: string; name: string; size?: "sm" | "md" }) {
+export function SeatChip({ agentTypeId, name, size = "sm" }: { agentTypeId: string; name: string; size?: "sm" | "md" }) {
   return (
     <span
       data-boring-workspace-part="job-thread-seat-chip"

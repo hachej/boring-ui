@@ -49,15 +49,18 @@ import {
 import { DataExplorer } from "@hachej/boring-data-explorer/front"
 import { InboxOverlay, createAskUserPlugin } from "@hachej/boring-ask-user/front"
 import { AutomationPanel, boringAutomationPlugin } from "@hachej/boring-automation/front"
+import { PiChatPanel } from "@hachej/boring-agent/front"
 // Internal source imports. The playground aliases `@` -> packages/workspace/src
 // (see vite.config.ts). This module imports no workspace context, so pulling it
 // from source next to a dist-built `WorkspaceProvider` cannot split a context.
 import { PluginTabsWorkspaceShell } from "@/front/layout/plugin-tabs/PluginTabsWorkspaceShell"
-import { JobThreadView } from "./JobThreadView"
+import { JobThreadView, SeatChip, jobThreadSeats, jobThreadShowsSeatAttribution } from "./JobThreadView"
 import { SaasLeftNav, SaasLeftRail, useLiveAutomationCount, type SaasNavActions } from "./SaasLeftNav"
 import { CANVAS_PANELS, SaasCanvasCard, SaasThreadCanvas } from "./SaasThreadCanvas"
 import {
   activateDockPanel,
+  createSaasThreadSession,
+  explorerVisibleForCenter,
   openContentFile,
   openSaasAgent,
   openSaasArchived,
@@ -68,7 +71,9 @@ import {
   openSaasThread,
   openSaasView,
   openSaasViewById,
+  readSaasThreadSessionId,
   shellRef,
+  storeSaasThreadSessionId,
   type CenterPage,
   type CenterState,
   type SurfaceApi,
@@ -355,16 +360,163 @@ const CHAT_MIN_WIDTH = 712
 const CANVAS_MIN_WIDTH = 360
 
 /**
- * A thread. Opens as PURE CHAT; the conversation summons the canvas (#7).
- *
- * The canvas is closed until an inline artifact card is clicked, which keeps
- * the continuity rule intact — a thread still reads as today's chat until the
- * moment you ask it for more.
+ * A thread's real chat session: created lazily on first open against the live
+ * agent API, remembered thereafter (module-level, localStorage-backed — see
+ * `saasShell.ts`), so re-opening the same fixture thread reuses the same
+ * session rather than minting a new one on every click.
  */
-function ThreadPage({ threadId }: { threadId: string }) {
+function useSaasThreadSession(threadId: string, title: string, agentTypeId: string, workspaceId: string) {
+  const [sessionId, setSessionId] = useState<string | null>(() => readSaasThreadSessionId(threadId))
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const existing = readSaasThreadSessionId(threadId)
+    if (existing) {
+      setSessionId(existing)
+      setError(null)
+      return
+    }
+    let cancelled = false
+    setSessionId(null)
+    setError(null)
+    void createSaasThreadSession(agentTypeId, workspaceId, title)
+      .then((id) => {
+        if (cancelled) return
+        storeSaasThreadSessionId(threadId, id)
+        setSessionId(id)
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Could not start a session for this thread.")
+      })
+    return () => { cancelled = true }
+  }, [threadId, title, agentTypeId, workspaceId])
+
+  return { sessionId, error }
+}
+
+/**
+ * The REAL chat surface (weekend follow-up ruling): a thread is today's chat,
+ * so it mounts the shipped `PiChatPanel` — the same implementation
+ * `WorkspaceAgentFront` uses for every other route in this app — bound to a
+ * REAL session the live agent API creates.
+ *
+ * Composition choice, stated rather than hidden: this mounts `PiChatPanel`
+ * directly rather than the `ChatPanelHost` wrapper `WorkspaceAgentFront` uses
+ * internally. `ChatPanelHost` is a private package export that wires a live
+ * UI-command bridge/dispatch context (agent tool calls driving
+ * `openFile`/`openSurface` commands into a workbench surface) — this fixture
+ * shell stands up no such bridge, so that wiring would be dead code here. What
+ * this DOES give, honestly: the real composer, the real transcript feed, the
+ * real session-scoped event stream, and the real error path if sending hits
+ * an unfunded/unconfigured model. Nothing about the chat itself is faked —
+ * `data-boring-agent-part="chat"` on the rendered root is `PiChatPanel`'s own
+ * marker, not a lookalike's.
+ */
+function RealThreadChat({
+  threadId,
+  title,
+  workspaceId,
+  agentTypeId,
+}: {
+  threadId: string
+  title: string
+  workspaceId: string
+  agentTypeId: string
+}) {
+  const { sessionId, error } = useSaasThreadSession(threadId, title, agentTypeId, workspaceId)
+
+  if (error) {
+    return (
+      <div className="grid h-full place-items-center bg-background p-8 text-center" data-boring-workspace-part="saas-thread-session-error">
+        <p role="alert" className="max-w-sm text-sm text-destructive">
+          Could not start a real session for this thread: {error}
+        </p>
+      </div>
+    )
+  }
+  if (!sessionId) {
+    return (
+      <div className="grid h-full place-items-center bg-background text-sm text-muted-foreground" data-boring-workspace-part="saas-thread-session-loading">
+        Starting session…
+      </div>
+    )
+  }
+  return (
+    <PiChatPanel
+      key={sessionId}
+      sessionId={sessionId}
+      agentTypeId={agentTypeId}
+      apiBaseUrl=""
+      workspaceId={workspaceId}
+      chrome={false}
+      showSessions={false}
+      hotReloadEnabled={false}
+      className="h-full"
+    />
+  )
+}
+
+/**
+ * Thread top bar: title, status, the canvas toggle and — only on a multi-seat
+ * job — the seat chips plus the "Multi-agent preview" escape hatch. This
+ * replaces the fixture `JobThreadView` header for the real-chat default; the
+ * preview toggle is what keeps the fixture multi-seat presentation reachable
+ * without pretending it rides the real transcript (owner ruling: real empty
+ * session is more honest than a replica).
+ */
+function ThreadTopBar({
+  thread,
+  previewMode,
+  onTogglePreview,
+  canvasOpen,
+  onToggleCanvas,
+}: {
+  thread: SaasThread
+  previewMode: boolean
+  onTogglePreview: () => void
+  canvasOpen: boolean
+  onToggleCanvas: () => void
+}) {
+  const seats = jobThreadSeats(thread.job)
+  const showAttribution = jobThreadShowsSeatAttribution(thread.job)
+  return (
+    <div
+      data-boring-workspace-part="saas-thread-topbar"
+      className="flex shrink-0 items-center gap-2 border-b border-border/60 px-4 py-1.5"
+    >
+      {!previewMode && showAttribution ? (
+        <div className="flex -space-x-1" data-boring-workspace-part="saas-thread-seats">
+          {seats.map((seat) => (
+            <SeatChip key={seat.agentTypeId} agentTypeId={seat.agentTypeId} name={seat.name} size="md" />
+          ))}
+        </div>
+      ) : null}
+      <h1 className="min-w-0 truncate text-[13px] font-medium text-foreground">{thread.title}</h1>
+      <StatusBadge tone={statusTone(thread.status)}>{thread.status}</StatusBadge>
+      <span className="flex-1" />
+      <Button variant="ghost" size="sm" onClick={onToggleCanvas} data-boring-workspace-part="saas-thread-canvas-toggle">
+        {canvasOpen ? "Hide canvas" : "Canvas"}
+      </Button>
+      {showAttribution ? (
+        <Button variant="ghost" size="sm" onClick={onTogglePreview} data-boring-workspace-part="saas-thread-preview-toggle">
+          {previewMode ? "Real chat" : "Multi-agent preview"}
+        </Button>
+      ) : null}
+    </div>
+  )
+}
+
+/**
+ * A thread. Opens as PURE CHAT — now the REAL session chat, not a replica —
+ * and the conversation frame can still summon the canvas (#7). The fixture
+ * multi-seat presentation (`JobThreadView`) survives only behind the
+ * "Multi-agent preview" toggle in `ThreadTopBar`.
+ */
+function ThreadPage({ threadId, workspaceId, agentTypeId }: { threadId: string; workspaceId: string; agentTypeId: string }) {
   const thread = SAAS_THREADS.find((item) => item.id === threadId)
   const items = threadId ? saasThreadCanvas(threadId) : []
   const [openItemId, setOpenItemId] = useState<string | null>(null)
+  const [previewMode, setPreviewMode] = useState(false)
   // Ruling (D): the transcript keeps IDENTICAL styling with the canvas open.
   // The transcript is `mx-auto max-w-[680px] px-4`, so anything under 712px
   // would start squeezing it and the conversation would visibly restyle. That
@@ -400,46 +552,82 @@ function ThreadPage({ threadId }: { threadId: string }) {
   }
 
   const canvasOpen = openItemId !== null
+  // Real chat has no inline artifact cards (nothing drives them — see
+  // `RealThreadChat`'s doc comment), so the top bar's Canvas button opens the
+  // thread's first working-set item directly; the preview's inline cards keep
+  // working exactly as before via `artifactBinding`.
+  const toggleCanvas = useCallback(() => {
+    setOpenItemId((current) => (current !== null ? null : items[0]?.id ?? null))
+  }, [items])
+
+  const canvasNode = canvasOpen ? (
+    <>
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize chat and canvas"
+        tabIndex={0}
+        onPointerDown={onDragStart}
+        onPointerMove={onDragMove}
+        onPointerUp={onDragEnd}
+        onPointerCancel={onDragEnd}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowLeft") setChatWidth((width) => Math.max(CHAT_MIN_WIDTH, width - 24))
+          if (event.key === "ArrowRight") setChatWidth((width) => width + 24)
+        }}
+        className="relative w-px shrink-0 cursor-col-resize bg-border transition-colors hover:bg-primary/40 focus-visible:bg-primary/50 focus-visible:outline-none"
+      >
+        <span aria-hidden="true" className="absolute inset-y-0 -left-1.5 -right-1.5" />
+      </div>
+      {/* Ruling (C): the canvas is an INSET CARD inside the thread frame, not a
+          flush full-height column. The frame's own chrome is visible around it
+          on three sides. */}
+      <SaasCanvasCard minWidth={CANVAS_MIN_WIDTH}>
+        <SaasThreadCanvas
+          threadId={threadId}
+          focusItemId={openItemId}
+          onActiveItemChange={(itemId) => { if (itemId) setOpenItemId(itemId) }}
+          onClose={() => setOpenItemId(null)}
+        />
+      </SaasCanvasCard>
+    </>
+  ) : undefined
 
   return (
-    <div ref={splitRef} className="h-full min-h-0" data-boring-workspace-part="saas-thread-split" data-canvas-open={canvasOpen ? "true" : "false"}>
-      <JobThreadView
-        fixture={thread.job}
-        artifacts={artifactBinding}
-        canvas={canvasOpen ? (
-          <>
-            <div
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="Resize chat and canvas"
-              tabIndex={0}
-              onPointerDown={onDragStart}
-              onPointerMove={onDragMove}
-              onPointerUp={onDragEnd}
-              onPointerCancel={onDragEnd}
-              onKeyDown={(event) => {
-                if (event.key === "ArrowLeft") setChatWidth((width) => Math.max(CHAT_MIN_WIDTH, width - 24))
-                if (event.key === "ArrowRight") setChatWidth((width) => width + 24)
-              }}
-              className="relative w-px shrink-0 cursor-col-resize bg-border transition-colors hover:bg-primary/40 focus-visible:bg-primary/50 focus-visible:outline-none"
-            >
-              <span aria-hidden="true" className="absolute inset-y-0 -left-1.5 -right-1.5" />
-            </div>
-            {/* Ruling (C): the canvas is an INSET CARD inside the thread frame,
-                not a flush full-height column. The frame's own chrome is
-                visible around it on three sides. */}
-            <SaasCanvasCard minWidth={CANVAS_MIN_WIDTH}>
-              <SaasThreadCanvas
-                threadId={threadId}
-                focusItemId={openItemId}
-                onActiveItemChange={(itemId) => { if (itemId) setOpenItemId(itemId) }}
-                onClose={() => setOpenItemId(null)}
-              />
-            </SaasCanvasCard>
-          </>
-        ) : undefined}
-        chatWidth={canvasOpen ? chatWidth : undefined}
+    <div
+      ref={splitRef}
+      className="flex h-full min-h-0 flex-col"
+      data-boring-workspace-part="saas-thread-split"
+      data-canvas-open={canvasOpen ? "true" : "false"}
+      data-thread-mode={previewMode ? "preview" : "real"}
+    >
+      <ThreadTopBar
+        thread={thread}
+        previewMode={previewMode}
+        onTogglePreview={() => setPreviewMode((current) => !current)}
+        canvasOpen={canvasOpen}
+        onToggleCanvas={toggleCanvas}
       />
+      {previewMode ? (
+        <div className="min-h-0 flex-1">
+          <JobThreadView
+            fixture={thread.job}
+            artifacts={artifactBinding}
+            canvas={canvasNode}
+            chatWidth={canvasOpen ? chatWidth : undefined}
+          />
+        </div>
+      ) : (
+        <div className="flex min-h-0 flex-1">
+          <div
+            className="relative flex min-h-0 flex-col"
+            style={canvasOpen ? { width: chatWidth, minWidth: chatWidth, flex: "0 0 auto" } : { flex: "1 1 auto" }}
+          >
+            <RealThreadChat threadId={thread.id} title={thread.title} workspaceId={workspaceId} agentTypeId={agentTypeId} />
+          </div>
+          {canvasNode}
+        </div>
+      )}
     </div>
   )
 }
@@ -772,8 +960,8 @@ function saasPanels(): PanelConfig[] {
  * carries the chat's own header, so anything added here would be the second
  * header the ruling forbids.
  */
-function CenterPageView({ page }: { page: CenterPage }) {
-  if (page.kind === "thread") return <ThreadPage threadId={page.threadId} />
+function CenterPageView({ page, workspaceId, agentTypeId }: { page: CenterPage; workspaceId: string; agentTypeId: string }) {
+  if (page.kind === "thread") return <ThreadPage threadId={page.threadId} workspaceId={workspaceId} agentTypeId={agentTypeId} />
   if (page.kind === "agent") return <AgentPage agentId={page.agentId} />
   if (page.kind === "company") return <CompanyRecord companyId={page.companyId} />
   if (page.kind === "fund") return <FundRecord fundId={page.fundId} />
@@ -918,7 +1106,7 @@ function DockCenter() {
   )
 }
 
-function SaasSpikeShell() {
+function SaasSpikeShell({ workspaceId, agentTypeId }: { workspaceId: string; agentTypeId: string }) {
   const [collapsed, setCollapsed] = useState(false)
   const [view, setView] = useState<SaasView>(FILES_VIEW)
   const [center, setCenter] = useState<CenterState>({ mode: "page", page: { kind: "inbox" } })
@@ -997,35 +1185,45 @@ function SaasSpikeShell() {
       collapsedRail={<SaasLeftRail {...navState} />}
     >
       <div className="flex h-full min-h-0 w-full">
-        {/* Column 2 — the VIEW EXPLORER, directly right of the nav. */}
-        <aside
-          data-boring-workspace-part="saas-view-explorer"
-          className="flex min-h-0 shrink-0 flex-col border-r border-border/70 bg-[color:var(--surface-workbench-left)]"
-          style={{ width: explorerWidth }}
-        >
-          <ViewExplorer view={view} />
-        </aside>
-        <div
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize view explorer"
-          tabIndex={0}
-          onPointerDown={onDragStart}
-          onPointerMove={onDragMove}
-          onPointerUp={onDragEnd}
-          onPointerCancel={onDragEnd}
-          onKeyDown={(event) => {
-            if (event.key === "ArrowLeft") setExplorerWidth((width) => Math.max(220, width - 16))
-            if (event.key === "ArrowRight") setExplorerWidth((width) => Math.min(460, width + 16))
-          }}
-          className="relative w-px shrink-0 cursor-col-resize bg-transparent transition-colors hover:bg-primary/40 focus-visible:bg-primary/50 focus-visible:outline-none"
-        >
-          <span aria-hidden="true" className="absolute inset-y-0 -left-1.5 -right-1.5" />
-        </div>
+        {/* Column 2 — the VIEW EXPLORER, directly right of the nav.
+            Domain-scoped, not separately toggled: it exists only while the
+            centre is in dock mode (a Library view). Work/Inbox/Agents/
+            Automations/Archived are page mode and get no explorer column —
+            deriving presence from `center.mode` is what stops it persisting
+            outside the Library, rather than patching each nav handler to
+            remember to clear it. */}
+        {explorerVisibleForCenter(center) && (
+          <>
+            <aside
+              data-boring-workspace-part="saas-view-explorer"
+              className="flex min-h-0 shrink-0 flex-col border-r border-border/70 bg-[color:var(--surface-workbench-left)]"
+              style={{ width: explorerWidth }}
+            >
+              <ViewExplorer view={view} />
+            </aside>
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize view explorer"
+              tabIndex={0}
+              onPointerDown={onDragStart}
+              onPointerMove={onDragMove}
+              onPointerUp={onDragEnd}
+              onPointerCancel={onDragEnd}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowLeft") setExplorerWidth((width) => Math.max(220, width - 16))
+                if (event.key === "ArrowRight") setExplorerWidth((width) => Math.min(460, width + 16))
+              }}
+              className="relative w-px shrink-0 cursor-col-resize bg-transparent transition-colors hover:bg-primary/40 focus-visible:bg-primary/50 focus-visible:outline-none"
+            >
+              <span aria-hidden="true" className="absolute inset-y-0 -left-1.5 -right-1.5" />
+            </div>
+          </>
+        )}
 
         {/* Column 3 — CONTENT, in one of two modes (#8, #9). */}
         <div className="min-w-0 flex-1" data-boring-workspace-part="saas-center" data-center-mode={center.mode}>
-          {center.mode === "dock" ? <DockCenter /> : <CenterPageView page={center.page} />}
+          {center.mode === "dock" ? <DockCenter /> : <CenterPageView page={center.page} workspaceId={workspaceId} agentTypeId={agentTypeId} />}
         </div>
       </div>
     </PluginTabsWorkspaceShell>
@@ -1064,11 +1262,14 @@ export function SaasSpike() {
   }
   if (!meta) return <div className="h-screen w-screen bg-background" />
 
+  const workspaceId = meta.workspaceId ?? "Workspace"
+  const agentTypeId = meta.defaultAgentTypeId ?? SAAS_AGENT_TYPE
+
   return (
     <WorkspaceProvider
-      agentTypeId={meta.defaultAgentTypeId ?? SAAS_AGENT_TYPE}
+      agentTypeId={agentTypeId}
       apiBaseUrl=""
-      workspaceId={meta.workspaceId ?? "Workspace"}
+      workspaceId={workspaceId}
       appTitle="Meridian"
       workspaceLabel={meta.projectName ?? "Portfolio"}
       plugins={saasPlugins}
@@ -1080,7 +1281,7 @@ export function SaasSpike() {
     >
       <SaasAttentionSeed />
       <div className="h-screen w-screen">
-        <SaasSpikeShell />
+        <SaasSpikeShell workspaceId={workspaceId} agentTypeId={agentTypeId} />
       </div>
     </WorkspaceProvider>
   )

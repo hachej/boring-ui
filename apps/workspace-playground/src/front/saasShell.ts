@@ -34,6 +34,19 @@ export type CenterPage =
 
 export type CenterState = { mode: "dock" } | { mode: "page"; page: CenterPage }
 
+/**
+ * VIEW EXPLORER presence, derived from the active centre — never a separate
+ * toggle. Library entries (`openSaasView`) put the centre in dock mode, which
+ * is the only mode with an explorer; every page destination (a thread, the
+ * Inbox, an agent, a record, automations, archived) is page mode, which has
+ * none. Deriving from `center` here — rather than a boolean flipped by each
+ * nav handler — is what stops the explorer persisting outside the Library:
+ * there is no second state to forget to clear.
+ */
+export function explorerVisibleForCenter(center: CenterState): boolean {
+  return center.mode === "dock"
+}
+
 export interface DockRequest {
   id: string
   component: string
@@ -151,4 +164,62 @@ export function openSaasAutomations(): void {
 
 export function openSaasArchived(): void {
   openCenterPage({ kind: "archived" })
+}
+
+// ---------------------------------------------------------------------------
+// REAL THREAD SESSIONS (weekend follow-up ruling).
+//
+// A thread mounts the shipped chat, and the shipped chat needs a REAL session
+// id from the live agent API — not a fixture string. One real session is
+// created lazily per fixture thread, on first open, via the same
+// `POST /api/v1/agents/:id/sessions` endpoint `App.tsx`'s showcase route
+// already uses. The mapping is remembered in localStorage so re-opening a
+// thread reuses its session rather than minting a new one on every click.
+// ---------------------------------------------------------------------------
+
+const THREAD_SESSION_STORAGE_KEY = "boring-ui-v2:saas-spike:thread-sessions"
+
+function readThreadSessionMap(): Record<string, string> {
+  if (typeof window === "undefined") return {}
+  try {
+    const raw = window.localStorage.getItem(THREAD_SESSION_STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as unknown
+    return parsed && typeof parsed === "object" ? parsed as Record<string, string> : {}
+  } catch {
+    return {}
+  }
+}
+
+/** The remembered real session id for a fixture thread, if one was already created. */
+export function readSaasThreadSessionId(threadId: string): string | null {
+  return readThreadSessionMap()[threadId] ?? null
+}
+
+/** Remember a fixture thread's real session id across reloads. Best-effort. */
+export function storeSaasThreadSessionId(threadId: string, sessionId: string): void {
+  if (typeof window === "undefined") return
+  try {
+    const map = readThreadSessionMap()
+    map[threadId] = sessionId
+    window.localStorage.setItem(THREAD_SESSION_STORAGE_KEY, JSON.stringify(map))
+  } catch {
+    // Best-effort: a failed write just means the next open creates a new session.
+  }
+}
+
+/** Create a real session against the live agent API. Throws on failure — callers surface it honestly. */
+export async function createSaasThreadSession(agentTypeId: string, workspaceId: string, title: string): Promise<string> {
+  const response = await fetch(`/api/v1/agents/${encodeURIComponent(agentTypeId)}/sessions`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-boring-workspace-id": workspaceId,
+    },
+    body: JSON.stringify({ title }),
+  })
+  if (!response.ok) throw new Error(`session create failed (${response.status})`)
+  const payload = await response.json() as { sessionId?: string }
+  if (!payload.sessionId) throw new Error("session create returned no session id")
+  return payload.sessionId
 }
