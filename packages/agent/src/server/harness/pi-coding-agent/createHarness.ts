@@ -15,6 +15,7 @@ import {
   type ExtensionCommandContext,
   type ExtensionFactory,
   type SlashCommandInfo,
+  type SettingsManager,
 } from "@mariozechner/pi-coding-agent";
 import type { AgentHarness, AgentSlashCommandSummary, AgentSendInput, RunContext } from "../../../shared/harness.js";
 import { ErrorCode } from "../../../shared/error-codes.js";
@@ -267,20 +268,27 @@ type ContextWindowModel = {
 };
 
 /**
- * Codex enforces its input limit before generation. Keep additional headroom
- * beyond Pi's normal compaction reserve so continuation prompts and tool
- * schemas cannot push an otherwise compacted request over the provider limit.
+ * Codex enforces its input limit before generation. Increase Pi's compaction
+ * reserve without falsifying the selected model's canonical context window.
+ * Settings are read dynamically by Pi at compaction time, so this also covers
+ * models restored or selected by Pi rather than explicitly requested here.
  */
-export function withCodexContextBudget<T extends ContextWindowModel>(model: T): T {
-  if (model.provider !== "openai-codex") return model;
+export function applyCodexCompactionBudget(
+  settingsManager: SettingsManager,
+  model: ContextWindowModel,
+): void {
+  if (model.provider !== "openai-codex") return;
   const headroom = Math.max(
     CODEX_CONTEXT_HEADROOM_MIN_TOKENS,
     Math.ceil(model.contextWindow * CODEX_CONTEXT_HEADROOM_RATIO),
   );
-  return {
-    ...model,
-    contextWindow: Math.max(1, model.contextWindow - headroom),
-  };
+  const compaction = settingsManager.getCompactionSettings();
+  settingsManager.applyOverrides({
+    compaction: {
+      ...compaction,
+      reserveTokens: compaction.reserveTokens + headroom,
+    },
+  });
 }
 
 function resolveRequestedModel(
@@ -299,7 +307,7 @@ function resolveRequestedModel(
     if (options.strict) throw modelUnavailableError(input)
     return undefined
   }
-  return withCodexContextBudget(model);
+  return model;
 }
 
 function resolveDefaultModel(
@@ -313,7 +321,7 @@ function resolveDefaultModel(
   const configured = readConfiguredDefaultModel();
   if (configured) {
     const model = modelRegistry.find(configured.provider, configured.id);
-    if (model) return withCodexContextBudget(model);
+    if (model) return model;
   }
   return undefined;
 }
@@ -731,14 +739,13 @@ export function createPiCodingAgentHarness(opts: {
       sessionManager,
       authStorage,
       modelRegistry,
+      settingsManager,
       ...(resourceLoader ? { resourceLoader } : {}),
     });
 
-    // Pi may select a saved/default model when the caller did not provide one.
-    // Apply the same Codex budget to that fallback before the first request.
-    if (!model && piSession.model?.provider === "openai-codex") {
-      await piSession.setModel(withCodexContextBudget(piSession.model));
-    }
+    // Pi may restore or select a fallback model when the caller did not
+    // provide one. Apply the reserve to the final model before the first run.
+    if (piSession.model) applyCodexCompactionBudget(settingsManager, piSession.model);
 
     const restoreFollowUpContextWrapper = rememberQueuedFollowUpRunContexts(piSession, runContextState, () => runContextStorage.getStore());
     const unsubscribePiRunContextListener = piSession.subscribe((event) => updateRunContextStateFromPiEvent(runContextState, event, (ctx) => runContextStorage.enterWith(ctx)));

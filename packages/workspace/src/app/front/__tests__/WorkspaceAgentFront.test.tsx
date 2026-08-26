@@ -618,8 +618,8 @@ describe("WorkspaceAgentFront", () => {
 
   it("shows the Agent nav action for an actual single-agent catalog", () => {
     const useAgentSelection = () => ({
-      agents: [{ agentTypeId: "default", label: "Agent" }],
-      selectedAgentTypeId: "default",
+      agents: [{ agentTypeId: "alpha", label: "Alpha" }],
+      selectedAgentTypeId: "alpha",
       loading: false,
       error: undefined,
       selectAgentTypeId: vi.fn(),
@@ -638,7 +638,7 @@ describe("WorkspaceAgentFront", () => {
 
     render(
       <WorkspaceAgentFront
-        workspaceId="legacy-single-agent"
+        workspaceId="single-agent-catalog"
         workspaceLayout="plugin-tabs"
         chatPanel={SessionIdChatPanel}
         addressedAgentSelection

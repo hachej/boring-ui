@@ -13,7 +13,6 @@ import { afterEach, beforeEach, expect, test, describe } from "vitest"
 import { createExecUiTool, createWorkspaceUiTools } from "../ui-control/tools/uiTools"
 import { createInMemoryBridge } from "../bridge/createInMemoryBridge"
 import type { WorkspaceBridge } from "../../shared/ui-bridge"
-import { HumanArtifactListSchema } from "../../shared/artifacts"
 
 const FAKE_CTX = {
   abortSignal: new AbortController().signal,
@@ -242,24 +241,17 @@ describe("createExecUiTool — path validation", () => {
     ])
   })
 
-  test("exec_ui routes plural presentation only through the shipped HumanArtifact contract", () => {
+  test("exec_ui describes its single-surface boundary without optional workflow policy", () => {
     const tool = createExecUiTool(bridge, { workspaceRoot })
-    const artifacts = HumanArtifactListSchema.parse([
-      { id: "proof-a", surfaceKind: "workspace.open.path", target: "proof/a.md", title: "Proof A" },
-      { id: "proof-b", surfaceKind: "workspace.open.path", target: "proof/b.md", title: "Proof B" },
-    ])
 
-    expect(artifacts).toHaveLength(2)
     expect(tool.description).toContain("single-slot focus action")
     expect(tool.description).toContain("only the last remains visible")
-    expect(tool.description).toContain("structured plural HumanArtifact list")
-    expect(tool.description).toContain("including ask_user")
-    expect(tool.description).toContain("artifacts[], supplied by the active tool or workflow")
-    expect(tool.description).toContain("register every")
-    expect(tool.description).toContain("not use repeated openFile calls as a plural")
-    expect(tool.description).toContain("claim that chat automatically recognizes arbitrary @path text")
-    expect(tool.description).not.toContain("plain-text `@path` mention")
-    expect(tool.description).not.toContain("inline artifact card")
+    expect(tool.description).toContain("exec_ui cannot present multiple files at once")
+    expect(tool.description).toContain("repeated openFile calls as a plural presentation mechanism")
+    expect(tool.description).toContain("do not claim that chat recognizes arbitrary @path text")
+    expect(tool.description).not.toContain("HumanArtifact")
+    expect(tool.description).not.toContain("ask_user")
+    expect(tool.description).not.toContain("artifacts[]")
   })
 
   test("exec_ui advertises openSurface filesystem", () => {

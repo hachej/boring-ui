@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { writeFileSync } from "node:fs";
 import { appendFile, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile, utimes } from "node:fs/promises";
-import { CURRENT_SESSION_VERSION, DefaultResourceLoader, formatSkillsForPrompt, SessionManager } from "@mariozechner/pi-coding-agent";
+import { CURRENT_SESSION_VERSION, DefaultResourceLoader, formatSkillsForPrompt, SessionManager, SettingsManager } from "@mariozechner/pi-coding-agent";
 import { basename, join } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import {
@@ -9,7 +9,7 @@ import {
   createPiCodingAgentHarness,
   mergePiPackageSources,
   projectSkillResourceLocations,
-  withCodexContextBudget,
+  applyCodexCompactionBudget,
   withPiHarnessDefaults,
 } from "../createHarness.js";
 import { adaptToolsForPi } from "../tool-adapter.js";
@@ -89,23 +89,35 @@ async function createSessionWithTurn(
 }
 
 describe("createPiCodingAgentHarness", () => {
-  it("reserves extra Codex context headroom before compaction/continue requests", () => {
+  it("reserves extra Codex compaction headroom without changing model metadata", () => {
     const declaredContextWindow = 128_000;
-    const budgeted = withCodexContextBudget({
+    const model = {
       provider: "openai-codex",
       id: "gpt-codex-test",
       contextWindow: declaredContextWindow,
+    };
+    const settingsManager = SettingsManager.inMemory({
+      compaction: { enabled: true, reserveTokens: 16_384, keepRecentTokens: 20_000 },
     });
 
-    expect(budgeted.contextWindow).toBe(111_616);
-    // Pi's normal 16,384-token compaction reserve now triggers at 95,232
-    // instead of 111,616, so this oversized compacted continuation is trimmed.
-    expect(100_000).toBeGreaterThan(budgeted.contextWindow - 16_384);
+    applyCodexCompactionBudget(settingsManager, model);
+
+    expect(model.contextWindow).toBe(declaredContextWindow);
+    expect(settingsManager.getCompactionSettings()).toEqual({
+      enabled: true,
+      reserveTokens: 32_768,
+      keepRecentTokens: 20_000,
+    });
+    // The larger reserve triggers at 95,232 instead of 111,616.
+    expect(100_000).toBeGreaterThan(declaredContextWindow - 32_768);
     expect(100_000).toBeLessThan(declaredContextWindow - 16_384);
-    expect(withCodexContextBudget({
+
+    const anthropicSettings = SettingsManager.inMemory();
+    applyCodexCompactionBudget(anthropicSettings, {
       provider: "anthropic",
       contextWindow: declaredContextWindow,
-    }).contextWindow).toBe(declaredContextWindow);
+    });
+    expect(anthropicSettings.getCompactionReserveTokens()).toBe(16_384);
   });
 
   it("returns an AgentHarness with correct shape", () => {

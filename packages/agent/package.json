@@ -69,7 +69,7 @@
     "docs"
   ],
   "scripts": {
-    "build": "tsup && node ./scripts/build-front-css.mjs && pnpm run build:assert",
+    "build": "tsup && pnpm run build:assert",
     "build:dev": "{ [ -d '../ui/dist' ] || pnpm --filter @hachej/boring-ui-kit build; } && tsup --config tsup.dev.config.ts && node ./scripts/build-front-css.mjs",
     "build:assert": "node ./scripts/assert-build-artifacts.mjs",
     "dev": "tsx src/server/dev.ts",

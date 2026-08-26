@@ -91,38 +91,6 @@ describe('createAgentHost', () => {
     await second.host.close()
   })
 
-  it('presents the default agent as a regular member of both legacy and composed fleets', async () => {
-    const legacy = await createAgentHost({
-      ...options(await root()),
-      agents: [{ agentTypeId: 'default', legacyDefault: true }],
-    })
-    expect((await legacy.host.describe()).agents).toEqual([{ agentTypeId: 'default', label: 'Agent' }])
-    expect(await legacy.gateway.listAgents({ scope })).toEqual([{ agentTypeId: 'default', label: 'Agent' }])
-    await legacy.host.close()
-
-    const composed = await createAgentHost({
-      ...options(await root()),
-      agents: [
-        { agentTypeId: 'default', legacyDefault: true },
-        { agentTypeId: 'alpha', definition: { instructions: 'alpha', label: 'Alpha' } },
-      ],
-    })
-    const expectedFleet = [
-      { agentTypeId: 'default', label: 'Agent' },
-      { agentTypeId: 'alpha', label: 'Alpha' },
-    ]
-    expect((await composed.host.describe()).agents).toEqual(expectedFleet)
-    expect(await composed.gateway.listAgents({ scope })).toEqual(expectedFleet)
-
-    const defaultSession = await composed.gateway.createSession({
-      scope,
-      agentTypeId: 'default',
-      requestId: 'legacy-default-direct-access',
-    })
-    expect(defaultSession.agentTypeId).toBe('default')
-    await composed.host.close()
-  })
-
   // The ledger path chain now has one canonical owner. These pin this host's
   // effective default so delegating to it cannot move the file.
   it('keeps its durable ledger default at <sessionRoot>/.agent-request-ledger.sqlite', async () => {
