@@ -117,6 +117,8 @@ describe('createAgentHost', () => {
     })
     expect(defaultSession.agentTypeId).toBe('default')
     await composed.host.close()
+  })
+
   // The ledger path chain now has one canonical owner. These pin this host's
   // effective default so delegating to it cannot move the file.
   it('keeps its durable ledger default at <sessionRoot>/.agent-request-ledger.sqlite', async () => {
