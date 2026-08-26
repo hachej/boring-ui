@@ -44,7 +44,7 @@ export const mocks = (() => {
       id: string
       appId: string
       defaultAgentTypeId: string | null
-    }> => ({ id, appId: 'test-app', defaultAgentTypeId: null })),
+    } | null> => ({ id, appId: 'test-app', defaultAgentTypeId: null })),
     getUser: vi.fn(async (id: string) => ({ id })),
     inventoryDefaultAgentTypeIds: vi.fn(async (_appId: string): Promise<Array<{ defaultAgentTypeId: string | null; count: number }>> => []),
     compareAndSetNullDefaultAgentTypeId: vi.fn(async (_appId: string, _value: string) => 0),

@@ -90,9 +90,7 @@ export function useAddressedAgentSelection({
         agents,
         selectedAgentTypeId: agents.some((agent) => agent.agentTypeId === previous.selectedAgentTypeId)
           ? previous.selectedAgentTypeId
-          : agents.some((agent) => agent.agentTypeId === preferredAgentTypeId)
-            ? preferredAgentTypeId
-            : agents[0]?.agentTypeId,
+          : preferredAgentTypeId ?? agents[0]?.agentTypeId,
         loading: false,
         error: undefined,
       }))

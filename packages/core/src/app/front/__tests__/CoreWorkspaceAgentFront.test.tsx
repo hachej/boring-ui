@@ -6,6 +6,7 @@ import { MemoryRouter, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 let currentWorkspaceId: string | null = 'workspace-a'
+let currentWorkspaceDefaultAgentTypeId: string | null = null
 let routePath = '/workspace/workspace-a'
 let routeStatus: { status: string; workspaceId?: string | null; message?: string } = {
   status: 'matched',
@@ -56,7 +57,11 @@ vi.mock('../../../front/index.js', () => ({
       emailVerification: false,
     },
   }),
-  useCurrentWorkspace: () => currentWorkspaceId ? ({ id: currentWorkspaceId, name: 'Workspace A' }) : null,
+  useCurrentWorkspace: () => currentWorkspaceId ? ({
+    id: currentWorkspaceId,
+    name: 'Workspace A',
+    defaultAgentTypeId: currentWorkspaceDefaultAgentTypeId,
+  }) : null,
   useSession: () => unstableSessionObject && sessionState.data
     ? { data: { user: { ...sessionState.data.user } }, isPending: sessionState.isPending }
     : sessionState,
@@ -119,6 +124,7 @@ async function importSubject() {
 describe('CoreWorkspaceAgentFront', () => {
   beforeEach(() => {
     currentWorkspaceId = 'workspace-a'
+    currentWorkspaceDefaultAgentTypeId = null
     routePath = '/workspace/workspace-a'
     routeStatus = { status: 'matched', workspaceId: 'workspace-a' }
     workspaceAgentProps = null
@@ -167,6 +173,16 @@ describe('CoreWorkspaceAgentFront', () => {
       bootPreloadPaths: ['/custom-preload'],
     })
   }, 15_000) // Cold Core composition can exceed 10s under full-suite CI load.
+
+  it('forwards the persisted regular default instead of the app compatibility fallback', async () => {
+    currentWorkspaceDefaultAgentTypeId = 'reviewer'
+    const { CoreWorkspaceAgentFront } = await importSubject()
+
+    render(<CoreWorkspaceAgentFront agentTypeId="default" />)
+
+    expect(screen.getByTestId('workspace-agent-front')).toBeInTheDocument()
+    expect(workspaceAgentProps?.agentTypeId).toBe('reviewer')
+  })
 
   it('allows apps to suppress the default workspace switcher', async () => {
     const { CoreWorkspaceAgentFront } = await importSubject()

@@ -1667,9 +1667,13 @@ export async function createCoreWorkspaceAgentServer(
     })
   }
 
-  const assertWorkspaceDefaultAgentExecutionAvailable = async (workspaceId: string): Promise<void> => {
+  const getActiveAppWorkspace = async (workspaceId: string) => {
     const workspace = await workspaceStore.get(workspaceId)
     if (!workspace || workspace.appId !== config.appId) throw httpError('workspace access denied', 403)
+    return workspace
+  }
+  const assertWorkspaceDefaultAgentExecutionAvailable = async (workspaceId: string): Promise<void> => {
+    const workspace = await getActiveAppWorkspace(workspaceId)
     resolveWorkspaceDefaultAgentTypeId({
       persistedDefaultAgentTypeId: workspace.defaultAgentTypeId,
       applicationDefaultAgentTypeId,
@@ -1796,19 +1800,19 @@ export async function createCoreWorkspaceAgentServer(
     app.get('/api/v1/workspace/meta', async (request, reply) => {
       try {
         const workspaceId = await resolveWorkspaceId(request)
-        const [workspace, workspaceRootForRequest] = await Promise.all([
-          workspaceStore.get(workspaceId),
-          resolveRoot(workspaceId, request),
-        ])
+        // Validate the active application Workspace before root resolution so a
+        // retained membership on a soft-deleted row cannot recreate its root.
+        const workspace = await getActiveAppWorkspace(workspaceId)
+        const workspaceRootForRequest = await resolveRoot(workspaceId, request)
         return {
           workspaceId,
           workspaceRoot: workspaceRootForRequest,
-          projectName: workspace?.name ?? 'Workspace',
+          projectName: workspace.name,
           // Decision 28: a configured persisted default is authoritative.
           // Unknown values fail stably and are never reinterpreted as a boot
           // or fleet default.
           defaultAgentTypeId: resolveWorkspaceDefaultAgentTypeId({
-            persistedDefaultAgentTypeId: workspace?.defaultAgentTypeId,
+            persistedDefaultAgentTypeId: workspace.defaultAgentTypeId,
             applicationDefaultAgentTypeId,
             regularAgentTypeIds,
             onUnknownPersistedSeat: (diagnostic) => {

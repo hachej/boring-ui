@@ -206,7 +206,10 @@ export async function runAgentEffect<TContext, TReceipt>(
           // Policy dependencies may fail transiently (for example, a Workspace
           // lookup during a database outage). Keep the request pending so the
           // same idempotency key can be retried after recovery.
-          throw failure(preEffectFailure(error, 'effect policy evaluation failed'))
+          throw new AgentGatewayError(
+            AgentGatewayErrorCode.AGENT_SHARED_ENVIRONMENT_UNAVAILABLE,
+            'effect policy is temporarily unavailable',
+          )
         }
         if (policyError) {
           return await rejectAndReplay(runtime, key, { kind: 'gateway', error: policyError })

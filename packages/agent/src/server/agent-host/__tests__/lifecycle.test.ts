@@ -213,7 +213,8 @@ describe('Agent Host lifecycle', () => {
     const input = { scope, agentTypeId: 'alpha', requestId: 'retry-policy-infrastructure' }
 
     await expect(created.gateway.createSession(input)).rejects.toMatchObject({
-      code: AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
+      code: AgentGatewayErrorCode.AGENT_SHARED_ENVIRONMENT_UNAVAILABLE,
+      message: 'effect policy is temporarily unavailable',
     })
     await expect(ledger.read(createRequestKey(input.requestId))).resolves.toMatchObject({
       state: 'pending-admission',
