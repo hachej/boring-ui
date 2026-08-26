@@ -70,6 +70,18 @@ standalone (`createAgentApp`) with zero core dependency.
 | --- | --- | --- |
 | `@hachej/boring-ui-review-tools` (`tools/ui-review`) | Private scenario-driven UI review engine. Registered behavior specs target local apps; component specs use tool-owned fixture hosts. Deterministic gates remain authoritative and visual criticism advisory. | [README](../tools/ui-review/README.md) |
 
+## The canonical-completeness rule
+
+**A fresh agent reading only the canonical files — this index, `vision/`,
+`roadmap/`, `direction/`, `DECISIONS.md`, and the `plans/` packs — must know
+exactly where the project is and where it is going.** `docs/issues/` is
+execution history, never a required read. Therefore: if a canonical document
+needs a fact that lives in an issue folder, the *fact* gets promoted — an
+owner ruling becomes a `DECISIONS.md` entry, a spike verdict becomes a
+[`vision/explorations.md`](vision/explorations.md) row, a living plan moves
+into `plans/` — and the issue folder keeps only the working tree behind a
+pointer. Citing into `docs/issues/` from a canonical doc is a bug.
+
 ## Cross-cutting docs (this folder)
 
 - [`DECISIONS.md`](DECISIONS.md) — locked architectural decisions registry for the agent runtime (what/why/rationale/re-evaluate-when). Changing a locked decision requires updating this doc.

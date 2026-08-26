@@ -487,6 +487,16 @@ Each decision has four fields:
 | **Supersedes / retains** | Supersedes nothing. Retains Decisions 25 and 28 in full, including their rejection of AgentHost/controller/publication machinery, and Decision 28's signup-domain initialization semantics unchanged. |
 | **Re-evaluate when** | Journaled multi-host publication is needed at scale — the archived path B (AgentHost revival). Re-evaluation requires a new decision amending 25/28 and must revert the #794 deletion as a unit, never restore partial controller wiring, and must not let hostname grant membership, routing, selection, or default-rewrite authority. |
 
+## 31. Sovereign sandbox — Firecracker microVMs, gVisor superseded
+
+| Field | |
+|---|---|
+| **Status** | **Accepted (2026-08-12; recorded in this ledger 2026-08-26).** Final owner decision made in [`issues/1081/tech-choice.md`](issues/1081/tech-choice.md) (issue #1081, PR #1220); this entry records the existing ruling — it decides nothing new. |
+| **What** | The sovereign sandbox service runs tenant code in **Firecracker microVMs** (hardware virtualization boundary). This supersedes the single-tenant gVisor/runsc design and the intermediate "self-host first, generic S3 sync-hybrid" design. Managed-provider fallback (Blaxel-class) is acceptable only at hardware-microVM isolation; its API-capability fit still requires its named Gate 0 spike. Architecture: `issues/1081/sandbox-sovereign-design.md`; build plan: `issues/1081/sandbox-sovereign-build.md`. |
+| **Why** | The controlling evidence is the sandbox engine security evaluation, the managed-provider comparison, and the cost model (all under `issues/1081/references/`): a syscall-filter boundary (gVisor) is a weaker isolation class than hardware virtualization for hostile multi-tenant code, and the cost model showed the sovereign Firecracker fleet competitive with managed offerings. |
+| **Supersedes / retains** | Supersedes the gVisor-based own-cloud design (the non-binding agent-cloud vision note describing it carries a contradiction banner at `plans/agent-runtime/cloud-vision/README.md`). Retains D25/D28/D29 unchanged — this chooses the *engine* under the existing SandboxProvider seam, not new authority machinery. |
+| **Re-evaluate when** | Firecracker cannot meet a required capability (GPU passthrough class, nested virt hosts unavailable) or the managed provider proves the better sovereign path at equal isolation class — re-evaluation must keep the hardware-virtualization isolation floor. |
+
 ## Process
 
 1. Any PR that changes a locked decision **must** update this document.
