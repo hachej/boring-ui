@@ -710,8 +710,11 @@ describe("WorkspaceAgentFront", () => {
     expect(selected).toHaveBeenCalledWith("beta")
 
     await user.click(screen.getByRole("button", { name: "Settings for Beta" }))
-    const detailsOverlay = document.querySelector('[data-boring-workspace-part="agent-details-overlay"]')
-    expect(detailsOverlay).not.toBeNull()
+    const detailsOverlay = await waitFor(() => {
+      const overlay = document.querySelector('[data-boring-workspace-part="agent-details-overlay"]')
+      expect(overlay).not.toBeNull()
+      return overlay
+    })
     expect(detailsOverlay).toHaveTextContent("Beta")
     expect(detailsOverlay).toHaveTextContent("Plugins")
     expect(detailsOverlay).toHaveTextContent("ask-user")
