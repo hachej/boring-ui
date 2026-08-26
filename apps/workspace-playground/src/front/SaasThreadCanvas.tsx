@@ -22,7 +22,7 @@ import { Building2, FileText, Search, Sparkles, X, type LucideIcon } from "lucid
 // because the pane reads the filesystem plugin's fetch-client context, which is
 // NOT realm-shared, so a source import beside a dist `WorkspaceProvider` would
 // have split that context and rendered an unconfigured tree.
-import { ArtifactSurfacePane, FileTreePane, WorkbenchActivityRail } from "@hachej/boring-workspace"
+import { ArtifactSurfacePane, FileTreePane, WorkbenchActivityRail, type FileTreeRootConfig } from "@hachej/boring-workspace"
 // Internal source imports (the playground aliases `@` -> packages/workspace/src).
 // `paneCollapseButton` and the bridge types carry no workspace context.
 import { PaneCollapseButton } from "@/front/layout/paneCollapseButton"
@@ -75,6 +75,27 @@ const canvasGroupLabel: Record<SaasCanvasGroup, string> = {
  * header and feeds the pane's `searchQuery` prop — the same seam the workbench
  * uses, not a second search implementation.
  */
+/**
+ * The deployment's filesystem roots, straight off the live catalog.
+ *
+ * `FileTreePane` renders its root SELECTOR only when its host hands it more
+ * than one root — it does not go looking for a catalog itself. This popover is
+ * the host, so it asks. A workspace with one filesystem correctly gets the
+ * pane's single-root chrome instead of a dropdown with one entry.
+ */
+function useFilesystemRoots(): readonly FileTreeRootConfig[] | undefined {
+  const [roots, setRoots] = useState<readonly FileTreeRootConfig[] | undefined>(undefined)
+  useEffect(() => {
+    const controller = new AbortController()
+    void fetch("/api/v1/filesystems", { signal: controller.signal })
+      .then(async (response) => response.ok ? await response.json() as { filesystems?: FileTreeRootConfig[] } : null)
+      .then((payload) => { if (payload?.filesystems?.length) setRoots(payload.filesystems) })
+      .catch(() => { /* One root is the pane's own default; a failed catalog changes nothing. */ })
+    return () => controller.abort()
+  }, [])
+  return roots
+}
+
 function CanvasFileTreePopover({
   activePath,
   onOpenFile,
@@ -85,6 +106,7 @@ function CanvasFileTreePopover({
   onDismiss: () => void
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null)
+  const roots = useFilesystemRoots()
   const [query, setQuery] = useState("")
   const [debouncedQuery, setDebouncedQuery] = useState("")
   // `FileTreeView` documents `searchQuery` as "already-debounced".
@@ -146,7 +168,7 @@ function CanvasFileTreePopover({
         />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto py-1">
-        <FileTreePane bridge={bridge} filesystem="user" searchQuery={debouncedQuery} />
+        <FileTreePane bridge={bridge} filesystem="user" roots={roots ? [...roots] : undefined} searchQuery={debouncedQuery} />
       </div>
       <p className="shrink-0 border-t border-border/70 px-3 py-1.5 text-[10px] text-muted-foreground/70">
         Live workspace · opening a file adds it to this canvas
