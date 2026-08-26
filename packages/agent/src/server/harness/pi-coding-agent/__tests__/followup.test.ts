@@ -60,7 +60,12 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
     async reload() { /* no-op */ }
   },
   SettingsManager: {
-    create: () => ({ getResolvedSettings: () => ({}), loadAllSettings: vi.fn() }),
+    create: () => ({
+      getResolvedSettings: () => ({}),
+      loadAllSettings: vi.fn(),
+      getCompactionSettings: () => ({ enabled: true, reserveTokens: 16_384, keepRecentTokens: 20_000 }),
+      applyOverrides: vi.fn(),
+    }),
   },
 }));
 
