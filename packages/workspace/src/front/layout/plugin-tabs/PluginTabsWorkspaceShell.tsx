@@ -91,6 +91,14 @@ export interface PluginTabsWorkspaceShellProps {
   maxLeftPaneWidth?: number
   className?: string
   mobileShellEnabled?: boolean
+  /**
+   * Render this shell's own floating collapse control (default `true`).
+   *
+   * Set `false` when the host puts the panel toggle inside its own left-pane
+   * header instead — the shell then owns collapse STATE only, and there is no
+   * second floating button overlapping the host's chrome.
+   */
+  showCollapseControl?: boolean
 }
 
 export function PluginTabsWorkspaceShell({
@@ -106,6 +114,7 @@ export function PluginTabsWorkspaceShell({
   maxLeftPaneWidth = 420,
   className,
   mobileShellEnabled,
+  showCollapseControl = true,
 }: PluginTabsWorkspaceShellProps) {
   const [mobileOpen, setMobileOpen] = useState(false)
   const viewport = useViewportWidth()
@@ -165,7 +174,7 @@ export function PluginTabsWorkspaceShell({
 
       {/* The same control owns both states. Expanded chrome reserves matching
           header space; collapsed chrome occupies the rail's fixed top slot. */}
-      {!mobileShell || !mobileOpen ? (
+      {showCollapseControl && (!mobileShell || !mobileOpen) ? (
       <div className="pointer-events-none absolute left-[calc(0.375rem+env(safe-area-inset-left))] top-[calc(0.5rem+env(safe-area-inset-top))] z-[70]">
         <PaneCollapseButton
           label={effectiveCollapsed ? "Open app navigation" : "Hide app navigation"}

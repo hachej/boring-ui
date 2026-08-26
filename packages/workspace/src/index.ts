@@ -113,6 +113,9 @@ export type { AppLeftOverlayChromeValue } from "./shared/plugins/appLeftOverlayC
 export {
   WORKSPACE_CHAT_PROMPT_ACCEPTED_EVENT,
   useWorkspaceShellCapabilities,
+  // Apps that are their own shell (rather than mounting `WorkspaceAgentFront`)
+  // need to answer `openArtifact` themselves, so the provider is public too.
+  WorkspaceShellCapabilitiesProvider,
 } from "./shared/plugins/workspaceShellCapabilities"
 export type {
   WorkspaceChatPromptAcceptedDetail,
@@ -220,6 +223,11 @@ export { CodeEditorPane } from "./plugins/filesystemPlugin/front/code-editor/Cod
 export type { CodeEditorPaneProps } from "./plugins/filesystemPlugin/front/code-editor/CodeEditorPane"
 export { FileTreeView } from "./plugins/filesystemPlugin/front/file-tree/FileTreeView"
 export type { FileTreeViewProps } from "./plugins/filesystemPlugin/front/file-tree/FileTreeView"
+// The canonical Files-source chrome (root selector + refresh/upload) around the
+// tree. Exported so an app shell can present the real Files controls somewhere
+// other than the workbench's own left pane — e.g. in a floating panel.
+export { FileTreePane } from "./plugins/filesystemPlugin/front/file-tree/FileTreePane"
+export type { FileTreePaneProps, FileTreeRootConfig } from "./plugins/filesystemPlugin/front/file-tree/FileTreePane"
 export { MarkdownEditorPane } from "./plugins/filesystemPlugin/front/markdown-editor/MarkdownEditorPane"
 export type { MarkdownEditorPaneProps } from "./plugins/filesystemPlugin/front/markdown-editor/MarkdownEditorPane"
 export { definePanel } from "./front/registry/types"
