@@ -71,9 +71,13 @@ deferral.
 > **Descoped by this ruling.** The engine's interim Level-B receipt machinery —
 > the durable `JobRelayReceiptV0` chain built to make relay hops idempotent and
 > restart-safe *on a non-durable substrate* — is **descoped pending P1**. On a
-> Level D substrate a large part of it is redundant. It is not deleted from the
-> plan; it is marked `descoped-pending-P1` so the post-P1 design can decide how
-> much survives.
+> Level D substrate *some* of it is redundant — but the pi-v2 analysis
+> (2026-08-26, `research/pi-v2-alignment.md`) corrects an overstatement here:
+> harness-level durability makes effects idempotent *within one agent's own
+> operation*; **crash-safe reservation of a turn across sessions has no
+> substrate equivalent**, so the cross-session half of the receipt design
+> likely survives. It is not deleted from the plan; it is marked
+> `descoped-pending-P1` and the post-P1 design decides how much survives.
 
 > **Relay-first vs blackboard is now a post-P1 decision.** Both remain live
 > candidates. The Buzz / Grok Bot research (recorded in #1399) stands and does

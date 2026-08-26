@@ -698,9 +698,12 @@ on drill-down.
 > **2. The interim Level-B receipt machinery is `descoped-pending-P1`.** The
 > durable `JobRelayReceiptV0` chain, the idempotent re-dispatch path and the
 > crash-recovery ordering in **S1** and **S3** exist to make relay hops
-> restart-safe *on a non-durable substrate*. On Level D much of that is
-> redundant. These are not deleted — they are marked descoped pending P1, and
-> the post-P1 design decides how much survives.
+> restart-safe *on a non-durable substrate*. On Level D the *within-session*
+> half is redundant; the **cross-session reservation half is not** — no
+> substrate (ours or pi v2's harness) reserves a turn across sessions
+> (`research/pi-v2-alignment.md`, 2026-08-26). These are not deleted — they
+> are marked descoped pending P1, and the post-P1 design decides how much
+> survives.
 >
 > **3. The storage model is not decided — §1's "noun" question is withdrawn.**
 > It goes to **P2** (spike + competitor study, brief in `premises.md`). **S1**
