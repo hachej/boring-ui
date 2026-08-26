@@ -257,6 +257,41 @@ describe("uiRoutes", () => {
     await expect(bridge.drainCommands!()).resolves.toEqual([])
   })
 
+  test("PUT /ui/state lets a publisher write a server-owned slot but not a browser snapshot", async () => {
+    // The two callers of this route need opposite treatment for preserved keys.
+    // A browser snapshot (front always stamps causedBy) must never write them,
+    // or a snapshot taken before a publish silently reverts it. A publisher
+    // sends no causedBy and must be able to seed the slot, or the publish is
+    // dropped — which is exactly how questions.pending went missing in
+    // workspaces mode.
+    const app = Fastify({ logger: false })
+    const bridge = createInMemoryBridge()
+    await app.register(uiRoutes, { bridge, preserveStateKeys: ["questions.pending"] })
+    await app.ready()
+
+    const published = await app.inject({
+      method: "PUT",
+      url: "/api/v1/ui/state",
+      payload: { state: { "questions.pending": { question: { questionId: "q1" } } } },
+    })
+    expect(published.statusCode).toBe(204)
+    await expect(bridge.getState()).resolves.toMatchObject({
+      "questions.pending": { question: { questionId: "q1" } },
+    })
+
+    const snapshot = await app.inject({
+      method: "PUT",
+      url: "/api/v1/ui/state",
+      payload: { state: { drawerOpen: true }, causedBy: "user" },
+    })
+    expect(snapshot.statusCode).toBe(204)
+    await expect(bridge.getState()).resolves.toMatchObject({
+      drawerOpen: true,
+      "questions.pending": { question: { questionId: "q1" } },
+    })
+    await app.close()
+  })
+
   test("PUT /ui/state merges with server-published slots", async () => {
     const app = Fastify({ logger: false })
     const bridge = createInMemoryBridge()

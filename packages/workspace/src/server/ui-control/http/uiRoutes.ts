@@ -147,7 +147,19 @@ export function uiRoutes(
         : opts.preserveStateKeys ?? [];
       await updateUiState(bridge, (current) => {
         const next = { ...body.state };
+        // Preserved keys are server-owned. Two callers reach this route and they
+        // need opposite treatment:
+        //
+        //  - A browser view-state snapshot (the front always stamps `causedBy`)
+        //    echoes back whatever it last read. Letting it write these keys means
+        //    a snapshot taken before a server publish silently reverts it, so the
+        //    stored value always wins over the body.
+        //  - A publisher writing the slot directly sends no `causedBy`. That is
+        //    how server-published state is seeded over HTTP; dropping those
+        //    writes loses the publish entirely.
+        const isBrowserSnapshot = body.causedBy !== undefined;
         for (const key of preserveStateKeys) {
+          if (!isBrowserSnapshot && key in body.state) continue;
           delete next[key];
           if (Object.prototype.hasOwnProperty.call(current, key)) next[key] = current[key];
         }
