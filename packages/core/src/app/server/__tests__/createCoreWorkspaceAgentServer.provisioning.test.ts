@@ -541,6 +541,7 @@ test('core/full-app grants addressed tools only to the selected agent type', asy
     execute: vi.fn(async () => ({ content: [{ type: 'text' as const, text: 'ok' }] })),
   })
   const seenAgentTypes: string[] = []
+  const seenWorkspaceIds: string[] = []
   let macroSearchDescription = 'macro search v1'
 
   const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
@@ -548,8 +549,9 @@ test('core/full-app grants addressed tools only to the selected agent type', asy
     config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
     workspaceRoot: '/tmp/full-app-workspaces',
     getExtraTools: async () => [tool('shared_tool')],
-    getAgentExtraTools: async ({ agentTypeId }) => {
+    getAgentExtraTools: async ({ agentTypeId, workspaceId }) => {
       seenAgentTypes.push(agentTypeId)
+      seenWorkspaceIds.push(workspaceId)
       return agentTypeId === 'macro'
         ? [tool('macro_search', macroSearchDescription), tool('persist_derived_series')]
         : []
@@ -563,6 +565,7 @@ test('core/full-app grants addressed tools only to the selected agent type', asy
     const scope = await projection.authorizeAgentRequest(fakeRequest('workspace-a', 'user-a'))
     const verifiedClaim = { workspaceScopeId: 'workspace-a', authSubjectId: 'user-a' }
     const environment = {
+      runtimeWorkspaceId: 'runtime-workspace-a',
       workspaceRoot: '/tmp/full-app-workspaces/workspace-a',
       placementIdentity: 'workspace-a',
       provisioningFingerprint: 'test-provisioning',
@@ -592,6 +595,11 @@ test('core/full-app grants addressed tools only to the selected agent type', asy
     expect(changedMacroContract.physicalBindingIdentity).not.toBe(macro.physicalBindingIdentity)
     expect(changedMacroContract.resourceInputDigest).not.toBe(macro.resourceInputDigest)
     expect(seenAgentTypes).toEqual(['macro', 'charlotteledoux', 'macro'])
+    expect(seenWorkspaceIds).toEqual([
+      'runtime-workspace-a',
+      'runtime-workspace-a',
+      'runtime-workspace-a',
+    ])
   } finally {
     await app.close()
   }
