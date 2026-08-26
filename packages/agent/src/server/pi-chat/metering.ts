@@ -453,6 +453,24 @@ export class PiChatMeteringCoordinator {
   }
 
   /**
+   * A combined queue prompt failed before agent-start. Move its first promoted
+   * reservation back to the front of the queued set without touching the sink;
+   * false means agent-start already consumed it and restoration would duplicate
+   * work that began executing.
+   */
+  restorePromotedFollowUp(sessionId: string, selector: { clientNonce?: string; clientSeq?: number }, stateKey = sessionId): boolean {
+    const state = this.sessions.get(stateKey)
+    if (!state || selector.clientNonce === undefined || selector.clientSeq === undefined) return false
+    const runId = followUpRunId(sessionId, selector.clientNonce, selector.clientSeq)
+    const index = state.pendingPrompts.findIndex((run) => run.scope.runId === runId)
+    if (index < 0) return false
+    const [run] = state.pendingPrompts.splice(index, 1)
+    if (!run) return false
+    state.queued.unshift(run)
+    return true
+  }
+
+  /**
    * Mark the currently-active run as voluntarily user-stopped (the /stop button),
    * so its terminal accounting RELEASES the hold instead of charging the fallback.
    * Must be called before the abort so the flag is set when the native aborted

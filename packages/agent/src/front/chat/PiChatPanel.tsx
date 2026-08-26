@@ -9,7 +9,7 @@ import {
   WORKSPACE_COMMAND_NOTIFY_EVENT,
   type CommandNotifyPayload,
 } from '../../shared/agentPluginEvents'
-import type { PiChatEvent, PiChatStatus } from '../../shared/chat'
+import type { PiChatEvent, PiChatStatus, QueuedUserMessage } from '../../shared/chat'
 import type { AvailableModel, ModelSelection, ThinkingLevel } from '../chatPanelSettings'
 import { DEFAULT_THINKING } from '../chatPanelSettings'
 import { cn } from '../lib'
@@ -84,6 +84,7 @@ const EMPTY_BLOCKERS: never[] = []
 /** Stable id for the notice that surfaces a rejected run (so re-rejections replace
  * it rather than stacking, and the next admit can retract it). */
 const RUN_REJECTED_NOTICE_ID = 'run-rejected'
+const RESUME_QUEUED_ERROR_PREFIX = 'resume-queued-error:'
 
 export type { ComposerBlocker, ComposerBlockerAction, PanelNotice }
 
@@ -395,6 +396,10 @@ export function PiChatPanel<
   const [draft, setDraft] = useState(() => initialDraft ?? '')
   const draftRef = useRef(draft)
   draftRef.current = draft
+  const [queueMutationPending, setQueueMutationPending] = useState(false)
+  const [resumeQueuedPendingSessionIds, setResumeQueuedPendingSessionIds] = useState<Set<string>>(() => new Set())
+  const [resumeQueuedErrorsBySessionId, setResumeQueuedErrorsBySessionId] = useState<Map<string, PanelNotice>>(() => new Map())
+  const resumeQueuedInFlightRef = useRef(new Map<string, Promise<unknown>>())
   const initialDraftGuard = useRef(new InitialDraftAutoSubmitGuard())
   const pendingAutoSubmitSettleRef = useRef<string | undefined>(undefined)
   const acceptedAutoSubmitSettleRef = useRef<string | undefined>(undefined)
@@ -470,6 +475,18 @@ export function PiChatPanel<
   )
 
   const activeChatSessionId = selectedChatState?.sessionId
+  const resumeQueuedPending = Boolean(activeChatSessionId && resumeQueuedPendingSessionIds.has(activeChatSessionId))
+  const resumeQueuedError = activeChatSessionId ? resumeQueuedErrorsBySessionId.get(activeChatSessionId) : undefined
+  // Resume-queued pending/error/in-flight state is keyed by bare session id.
+  // Reset it when the owning agent/storage scope changes so state cannot leak
+  // into a different session that reuses the same id.
+  const chatScopeKey = `${externalSessionId ? 'external' : 'managed'}\u0000${agentTypeId}\u0000${storageScope ?? ''}`
+  useEffect(() => {
+    setQueueMutationPending(false)
+    setResumeQueuedPendingSessionIds(new Set())
+    setResumeQueuedErrorsBySessionId(new Map())
+    resumeQueuedInFlightRef.current.clear()
+  }, [chatScopeKey])
   const warmupNotice = composerNoticeForWarmup(workspaceWarmupStatus)
   const runtimeDependenciesNotice = composerNoticeForRuntimeDependencies(workspaceWarmupStatus)
   const workspaceWarmupBlocked = Boolean(warmupNotice)
@@ -516,7 +533,7 @@ export function PiChatPanel<
           dismissible: true,
         }]
       : []
-    const combined = [...fromState, ...sessionNotice, ...largeStateNotice, ...localNotices]
+    const combined = [...fromState, ...sessionNotice, ...largeStateNotice, ...(resumeQueuedError ? [resumeQueuedError] : []), ...localNotices]
       .filter((notice) => !dismissedNoticeIds.has(notice.id))
     // A terminal chat error (history failed to load, no messages present)
     // already explains why the agent looks unreachable. Showing
@@ -525,7 +542,7 @@ export function PiChatPanel<
     // but only when there's genuinely no history, matching the gate in
     // RuntimeNotices/PiConversationSurface (see terminalChatErrors.ts).
     return filterCompetingNoiseNotices(combined, messages.length === 0)
-  }, [debug, debugState?.largeStateWarning, dismissedNoticeIds, localNotices, messages.length, selectedChatState, sessionsError])
+  }, [debug, debugState?.largeStateWarning, dismissedNoticeIds, localNotices, messages.length, resumeQueuedError, selectedChatState, sessionsError])
 
   const addLocalNotice = useCallback((notice: PanelNotice) => {
     setLocalNotices((previous) => {
@@ -537,6 +554,15 @@ export function PiChatPanel<
   const clearLocalNotice = useCallback((id: string) => {
     setDismissedNoticeIds((previous) => new Set(previous).add(id))
     setLocalNotices((previous) => previous.filter((notice) => notice.id !== id))
+    if (id.startsWith(RESUME_QUEUED_ERROR_PREFIX)) {
+      const sessionId = id.slice(RESUME_QUEUED_ERROR_PREFIX.length)
+      setResumeQueuedErrorsBySessionId((previous) => {
+        if (!previous.has(sessionId)) return previous
+        const next = new Map(previous)
+        next.delete(sessionId)
+        return next
+      })
+    }
   }, [])
 
   // Remove a notice so it can be shown again later (unlike clearLocalNotice, which
@@ -803,6 +829,7 @@ export function PiChatPanel<
       getDraft: () => draftRef.current,
       onDraftChange: setComposerDraft,
       allowPromptDuringInitialHydration,
+      onQueueMutationPending: setQueueMutationPending,
       onPromptSubmitStarted: () => {
         markLocalSubmitted(activeChatSessionId)
       },
@@ -953,10 +980,20 @@ export function PiChatPanel<
     })
   }, [addLocalNotice, policy])
 
+  const removeQueued = useCallback(() => {
+    if (!policy) return
+    void policy.removeAllQueued().then((result) => {
+      if (!result.ok) {
+        addLocalNotice({ id: 'remove-queued', level: 'warning', text: result.message, dismissible: true })
+      }
+    })
+  }, [addLocalNotice, policy])
+
   const stop = useCallback(() => {
     onComposerStop?.()
     clearLocalSubmitted(activeChatSessionId)
-    void policy?.stop().catch((error) => {
+    // Stop aborts the active turn while explicitly holding queued follow-ups.
+    void policy?.interrupt({ queueAction: 'hold' }).catch((error) => {
       addLocalNotice({ id: 'stop-error', level: 'error', text: errorMessage(error, 'Could not stop the chat session.'), dismissible: true })
     })
   }, [activeChatSessionId, addLocalNotice, clearLocalSubmitted, onComposerStop, policy])
@@ -966,6 +1003,39 @@ export function PiChatPanel<
       addLocalNotice({ id: 'interrupt-error', level: 'error', text: errorMessage(error, 'Could not interrupt the chat session.'), dismissible: true })
     })
   }, [addLocalNotice, policy])
+
+  const resumeQueued = useCallback(() => {
+    const sessionId = activeChatSessionId
+    if (!policy || !sessionId || resumeQueuedInFlightRef.current.has(sessionId)) return
+    const errorNoticeId = `${RESUME_QUEUED_ERROR_PREFIX}${sessionId}`
+    dropLocalNotice(errorNoticeId)
+    setResumeQueuedErrorsBySessionId((previous) => {
+      if (!previous.has(sessionId)) return previous
+      const next = new Map(previous)
+      next.delete(sessionId)
+      return next
+    })
+    setResumeQueuedPendingSessionIds((previous) => new Set(previous).add(sessionId))
+    const run = policy.resumeQueued()
+    resumeQueuedInFlightRef.current.set(sessionId, run)
+    void run.catch((error) => {
+      setResumeQueuedErrorsBySessionId((previous) => new Map(previous).set(sessionId, {
+        id: errorNoticeId,
+        level: 'error',
+        text: errorMessage(error, 'Could not resume queued follow-ups.'),
+        dismissible: true,
+      }))
+    }).finally(() => {
+      if (resumeQueuedInFlightRef.current.get(sessionId) !== run) return
+      resumeQueuedInFlightRef.current.delete(sessionId)
+      setResumeQueuedPendingSessionIds((previous) => {
+        if (!previous.has(sessionId)) return previous
+        const next = new Set(previous)
+        next.delete(sessionId)
+        return next
+      })
+    })
+  }, [activeChatSessionId, dropLocalNotice, policy])
 
   useEffect(() => {
     setPluginUpdateState(null)
@@ -1156,6 +1226,10 @@ export function PiChatPanel<
               onComposerBlockerAction={onComposerBlockerAction}
               queuePreview={queuePreview}
               onEditQueued={editQueued}
+              onRemoveQueued={removeQueued}
+              queueMutationPending={queueMutationPending}
+              onResumeQueued={resumeQueued}
+              resumeQueuedPending={resumeQueuedPending}
               hotReloadEnabled={hotReloadEnabled}
               pluginUpdateState={pluginUpdateState}
               onDismissPluginUpdate={dismissPluginUpdate}

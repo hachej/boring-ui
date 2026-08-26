@@ -160,6 +160,11 @@ export interface IdempotentAgentControl {
   readonly requestId: string
 }
 
+export interface IdempotentInterruptControl extends IdempotentAgentControl {
+  /** Abort-and-queue policy specific to interrupt commands. */
+  readonly queueAction?: 'hold' | 'resume'
+}
+
 export interface IdempotentQueueClear extends IdempotentAgentControl {
   readonly clientNonce?: string
   readonly clientSeq?: number
@@ -197,7 +202,7 @@ export interface AgentSessionConnection {
   readonly ref: AgentSessionRef
   readonly events: AsyncIterable<AgentSessionEvent>
   send(input: IdempotentAgentSend): Promise<AgentSendReceipt>
-  interrupt(input: IdempotentAgentControl): Promise<CommandReceipt>
+  interrupt(input: IdempotentInterruptControl): Promise<CommandReceipt>
   stop(input: IdempotentAgentControl): Promise<StopReceipt>
   clearQueue(input: IdempotentQueueClear): Promise<QueueClearReceipt>
   close(): Promise<void>
