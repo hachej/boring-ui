@@ -58,7 +58,7 @@ describe("UI review spec registry", () => {
     expect(registry.get("full-app-smoke").target.root).toBe("apps/full-app")
   })
 
-  it("selects a painted command-palette Wait for replay", () => {
+  it("selects the shortest painted command-palette state for replay", () => {
     const select = uiReviewSpecs.get("workspace-command-palette").exploration!.selectReplayState
     const states = [
       { ordinal: 19, viewport: { name: "desktop" }, action: "Wait", screenshotDigest: "painted", screenshotBytes: 80, screenshotPHash: "ffffffffffffffff", normalizedState: { palette: { dialogVisible: true, mode: "Commands" } } },
@@ -77,6 +77,13 @@ describe("UI review spec registry", () => {
       { ordinal: 4, viewport: { name: "desktop" }, action: "Wait", screenshotDigest: "painted", screenshotBytes: 120, screenshotPHash: "ffffffffffffffff", normalizedState: { palette: { dialogVisible: true, mode: "Commands" } } },
     ] as unknown as UiReviewExplorationState[]
     expect(select(firstSettledWaitPath)).toBe(firstSettledWaitPath[3])
+
+    const shortestPaintedPath = [
+      { ordinal: 5, viewport: { name: "mobile" }, action: "Wait", screenshotDigest: "closed", screenshotBytes: 100, screenshotPHash: "fefefefefefefefe", normalizedState: { palette: { dialogVisible: false, mode: "none" } } },
+      { ordinal: 10, viewport: { name: "mobile" }, action: { TypeText: { text: ">" } }, screenshotDigest: "painted-action", screenshotBytes: 120, screenshotPHash: "ffbfff0000000000", normalizedState: { palette: { dialogVisible: true, mode: "Commands" } } },
+      { ordinal: 62, viewport: { name: "mobile" }, action: "Wait", screenshotDigest: "painted-wait", screenshotBytes: 120, screenshotPHash: "ffffff0000000000", normalizedState: { palette: { dialogVisible: true, mode: "Chats" } } },
+    ] as unknown as UiReviewExplorationState[]
+    expect(select(shortestPaintedPath)).toBe(shortestPaintedPath[1])
 
     const mobileStates = [
       { ordinal: 17, viewport: { name: "mobile" }, action: "Wait", screenshotDigest: "painted", screenshotBytes: 80, screenshotPHash: "ffffffffffffffff", normalizedState: { palette: { dialogVisible: true, mode: null } } },

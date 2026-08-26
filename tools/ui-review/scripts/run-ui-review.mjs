@@ -1,7 +1,9 @@
 import { spawn } from "node:child_process"
 import { cp, mkdir, readdir } from "node:fs/promises"
+import { tmpdir } from "node:os"
 import { isAbsolute, join, resolve, sep } from "node:path"
 import { parseUiReviewArgs } from "./ui-review-args.mjs"
+import { uiReviewTempEnvironment } from "./ui-review-env.mjs"
 import { readUiReviewWorktreeIdentity } from "./ui-review-worktree.mjs"
 import { getUiReviewSpec } from "../src/registry.ts"
 import { UI_REVIEW_TEMP_ROOT_ENV, cleanupUiReviewTempRootSync, installUiReviewTempCleanupHandlers, uiReviewTempRoot } from "../src/core/tempRoot.ts"
@@ -51,6 +53,7 @@ if (unexpectedTargetEnv) throw new Error(`UI_REVIEW_SPEC_ENV_UNDECLARED:${spec.i
 const testEnv = {
   ...targetEnv,
   PATH: requiredEnv("PATH"), HOME: isolated.home, XDG_CONFIG_HOME: isolated.config, XDG_CACHE_HOME: isolated.cache,
+  ...uiReviewTempEnvironment(tmpdir()),
   COREPACK_HOME: process.env.COREPACK_HOME || join(requiredEnv("HOME"), ".cache/corepack"),
   PI_CODING_AGENT_DIR: isolated.config, UI_REVIEW_OUTPUT_DIR: outputDir,
   UI_REVIEW_RUN_ID: process.env.UI_REVIEW_RUN_ID?.trim() || `${spec.id}-${Date.now()}`,
