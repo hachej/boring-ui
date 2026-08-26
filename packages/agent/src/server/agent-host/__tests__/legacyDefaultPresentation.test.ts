@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { AgentGatewayErrorCode } from '../../../shared/index'
 import type { AgentHostAgentSpec } from '../types'
 import { createEmbeddedGatewayFixture } from './embeddedGatewayFixture'
 
@@ -42,7 +43,7 @@ describe('legacy default presentation (gh-1296)', () => {
       agentTypeId: 'default',
       requestId: 'forbidden-legacy-create',
     })).rejects.toMatchObject({
-      code: 'AGENT_COMMAND_INVALID_STATE',
+      code: AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
       message: 'legacy default agent is available for history only',
     })
     await expect(fixture.gateway.listSessions({ scope, agentTypeId: 'default' }))
