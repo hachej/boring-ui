@@ -406,7 +406,10 @@ export async function resolveWorkspacePackageResources(
   contributions: readonly WorkspacePackageResourceRecord[],
   options: ResolveWorkspacePackageResourcesOptions = {},
 ): Promise<ResolvedWorkspacePackageResourceRegistry> {
-  return (await resolveWorkspacePackageResourcesWithDiagnostics(contributions, options)).registry
+  const requiredOptions: ResolveWorkspacePackageResourcesOptions = {
+    ...(options.sharedSkillPaths ? { sharedSkillPaths: options.sharedSkillPaths } : {}),
+  }
+  return (await resolveWorkspacePackageResourcesWithDiagnostics(contributions, requiredOptions)).registry
 }
 
 async function resolveWorkspacePackageResourcesWithDiagnostics(

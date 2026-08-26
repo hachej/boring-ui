@@ -339,6 +339,22 @@ describe('resolveWorkspacePackageResources', () => {
     })
   })
 
+  test('ignores snapshot-private skippable inputs passed through a structural options object', async () => {
+    const root = await tempRoot()
+    const skillRoot = join(root, 'global-skills', 'hidden')
+    await mkdir(skillRoot, { recursive: true })
+    const skillFile = join(skillRoot, 'SKILL.md')
+    await writeFile(skillFile, '---\nname: hidden\ndescription: Hidden.\n---\n', 'utf8')
+    const structuralOptions = {
+      sharedSkillPaths: [],
+      skippableSharedSkillPaths: [{ id: 'hidden', skillFile }],
+    }
+
+    const registry = await resolveWorkspacePackageResources([], structuralOptions)
+
+    expect(registry.skills).toEqual([])
+  })
+
   // gh-1196: one unadmittable shared-skill entry must not fail the scan closed.
   test('degrades an unadmittable shared skill to a diagnostic and keeps the rest', async () => {
     const root = await tempRoot()
