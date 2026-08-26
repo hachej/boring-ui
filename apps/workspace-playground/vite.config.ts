@@ -177,6 +177,8 @@ export default defineConfig({
   },
   server: {
     port: VITE_PORT,
+    // Allow tailscale-serve HTTPS proxying (demo access via *.ts.net).
+    allowedHosts: [".ts.net"],
     ...(releaseCandidateDistOnly
       ? { warmup: { clientFiles: [resolve(__dirname, "src/front/main.tsx")] } }
       : {}),

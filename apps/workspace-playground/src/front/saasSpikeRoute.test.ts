@@ -7,17 +7,21 @@ import {
   SAAS_COMPANY_ADAPTER,
   SAAS_FUNDS,
   SAAS_FUND_ADAPTER,
-  SAAS_SAVED_VIEWS,
   SAAS_THREADS,
+  SAAS_THREAD_CANVAS,
+  SAAS_VIEWS,
+  saasThreadCanvas,
+  saasThreadCanvasGroups,
 } from "./SaasSpikeFixtures"
 
 describe("workspace-playground SaaS spike route", () => {
-  it("enables only for the explicit saasSpike opt-in", () => {
+  // This dev server exists to show the spike, so the bare URL opens it and
+  // `?saasSpike=0` is the way back to the normal playground.
+  it("is the default route, with an explicit opt-out", () => {
+    expect(isSaasSpikeRoute("")).toBe(true)
     expect(isSaasSpikeRoute("?saasSpike=1")).toBe(true)
+    expect(isSaasSpikeRoute("?other=1")).toBe(true)
     expect(isSaasSpikeRoute("?saasSpike=0")).toBe(false)
-    expect(isSaasSpikeRoute("?jobThread=1")).toBe(false)
-    expect(isSaasSpikeRoute("?consoleSpike=1")).toBe(false)
-    expect(isSaasSpikeRoute("")).toBe(false)
   })
 
   it("keeps every record cross-link inside the fixture graph", () => {
@@ -40,24 +44,90 @@ describe("workspace-playground SaaS spike route", () => {
     }
   })
 
-  // The re-composition's architecture claim: a rail TOOL and a LIBRARY entry are
-  // two doors onto ONE view. `createDataCatalogPlugin({ id: "saas-companies",
-  // visualizationPanelId: "saas-companies-visualization" })` registers that panel
-  // id for the rail; the saved view must carry the SAME id, or the two doors
-  // quietly become two lookalike panels and the claim is false.
-  it("points each collection saved view at the panel its rail tool registers", () => {
-    const collectionPanels = SAAS_SAVED_VIEWS
-      .filter((view) => view.kind === "collection")
-      .map((view) => view.panel)
-    expect(collectionPanels).toEqual(["saas-companies-visualization", "saas-funds-visualization"])
+  // Refinements #4/#6: selecting a view is ONE mechanism — mount the view's
+  // explorer in column 2, open its home in column 3 — and this table is the
+  // only place that pairing is written down.
+  it("gives every view a distinct home panel and a known kind", () => {
+    const homes = SAAS_VIEWS.map((view) => view.homePanel)
+    expect(new Set(homes).size).toBe(homes.length)
+    for (const view of SAAS_VIEWS) {
+      expect(["collection", "document", "dashboard", "kanban", "chart"]).toContain(view.kind)
+      expect(view.homePanel.startsWith("saas-")).toBe(true)
+    }
   })
 
-  it("gives every saved view a distinct panel id and a known kind", () => {
-    const panels = SAAS_SAVED_VIEWS.map((view) => view.panel)
-    expect(new Set(panels).size).toBe(panels.length)
-    for (const view of SAAS_SAVED_VIEWS) {
-      expect(["collection", "document", "dashboard", "kanban", "chart"]).toContain(view.kind)
+  it("lists the Library views in the ruled order, one entry per view", () => {
+    // "1 entry = 1 view; a file is a view." Files leads because the explorer
+    // must never open on an empty gutter.
+    expect(SAAS_VIEWS.map((view) => view.id)).toEqual([
+      "view-files",
+      "view-companies",
+      "view-funds",
+      "view-portfolio-overview",
+      "view-diligence-pipeline",
+    ])
+    expect(SAAS_VIEWS.filter((view) => view.kind === "collection").map((view) => view.homePanel))
+      .toEqual(["saas-companies-home", "saas-funds-home"])
+    expect(SAAS_VIEWS.find((view) => view.id === "view-files")?.kind).toBe("document")
+  })
+
+  // Refinement #5: the thread canvas is an embedded workbench over REAL files.
+  it("seeds thread canvases with real workspace paths and real records", () => {
+    const companyIds = new Set(SAAS_COMPANIES.map((company) => company.id))
+    const fundIds = new Set(SAAS_FUNDS.map((fund) => fund.id))
+    const threadIds = new Set(SAAS_THREADS.map((thread) => thread.id))
+
+    for (const [threadId, items] of Object.entries(SAAS_THREAD_CANVAS)) {
+      expect(threadIds.has(threadId)).toBe(true)
+      expect(items.length).toBeGreaterThanOrEqual(2)
+      for (const item of items) {
+        if (item.kind === "file") {
+          // A fixture-only name would render an editor that saves nothing.
+          expect(item.path).toBeTruthy()
+          expect(item.path?.startsWith("/")).toBe(false)
+        }
+        if (item.kind === "company") expect(companyIds.has(item.recordId ?? "")).toBe(true)
+        if (item.kind === "fund") expect(fundIds.has(item.recordId ?? "")).toBe(true)
+      }
+      // Canvas ids must stay disjoint from the outer surface's `file:` ids:
+      // DockviewShell applies global panelClose events to every instance.
+      expect(new Set(items.map((item) => item.id)).size).toBe(items.length)
+      expect(items.every((item) => !item.id.startsWith("file:"))).toBe(true)
     }
+  })
+
+  // Refinement #6b: the rail survives ONLY inside the canvas, where its icons
+  // are the thread's scope groups. No groups would mean a rail with no purpose.
+  it("gives each canvas thread at least two scope groups, in ruled order", () => {
+    for (const threadId of Object.keys(SAAS_THREAD_CANVAS)) {
+      const groups = saasThreadCanvasGroups(threadId)
+      expect(groups.length).toBeGreaterThanOrEqual(2)
+      // "outputs" leads: what the agent produced is what you most want to see.
+      expect(groups[0]).toBe("outputs")
+      expect(new Set(groups).size).toBe(groups.length)
+    }
+    expect(saasThreadCanvasGroups("no-such-thread")).toEqual([])
+  })
+
+  // Refinement #7: the transcript summons the canvas, so every artifact card id
+  // on a post must resolve to a canvas item of that same thread. A dangling id
+  // would render a card that opens nothing.
+  it("resolves every in-transcript artifact card to a canvas item", () => {
+    for (const thread of SAAS_THREADS) {
+      const canvasIds = new Set(saasThreadCanvas(thread.id).map((item) => item.id))
+      const cardIds = thread.job.entries.flatMap((entry) => (
+        entry.kind === "post" ? [...(entry.artifacts ?? [])] : []
+      ))
+      for (const id of cardIds) expect(canvasIds.has(id)).toBe(true)
+      // Threads with a canvas must actually advertise it in the transcript,
+      // because the canvas is closed until a card is clicked.
+      if (canvasIds.size > 0) expect(cardIds.length).toBeGreaterThanOrEqual(3)
+    }
+  })
+
+  it("returns an empty canvas for threads with no working set", () => {
+    expect(saasThreadCanvas("acme-diligence").length).toBeGreaterThan(0)
+    expect(saasThreadCanvas("no-such-thread")).toEqual([])
   })
 
   it("serves Companies and Funds from fixture adapters with working facets", async () => {

@@ -47,6 +47,7 @@
  *     behind a drill-down, never inline.
  */
 import type { ReactNode } from "react"
+import { Building2, FileText } from "lucide-react"
 
 /* ------------------------------------------------------------------ *
  * Fixture types — a deliberately thin mirror of the plan's contract.
@@ -83,6 +84,13 @@ export interface JobThreadPost extends JobThreadEntryBase {
   snapshotDerived?: boolean
   /** The tool call this post settled, when it was one. */
   toolCall?: string
+  /**
+   * Canvas item ids this post produced or referenced, rendered as inline
+   * ARTIFACT CARDS. Clicking one summons the canvas with that artifact
+   * focused — the conversation is what opens the workbench, so the link
+   * belongs on the message rather than in a separate list.
+   */
+  artifacts?: readonly string[]
 }
 
 export interface JobThreadMarker extends JobThreadEntryBase {
@@ -101,6 +109,21 @@ export interface JobThreadGate extends JobThreadEntryBase {
 }
 
 export type JobThreadEntry = JobThreadPost | JobThreadMarker | JobThreadGate
+
+/** What an inline artifact card needs to render. Supplied by the host. */
+export interface JobThreadArtifact {
+  id: string
+  title: string
+  meta: string
+  kind: "file" | "company" | "fund"
+}
+
+export interface JobThreadArtifactBinding {
+  byId: ReadonlyMap<string, JobThreadArtifact>
+  /** The artifact currently focused in the canvas, marked in the transcript. */
+  activeId?: string | null
+  onOpen?: (artifactId: string) => void
+}
 
 export interface JobThreadFixture {
   title: string
@@ -441,14 +464,59 @@ function UserMessage({ entry }: { entry: JobThreadPost }) {
  * plus one line of seat attribution, which is the ONLY multi-agent tell and is
  * omitted entirely on a one-seat job.
  */
+/**
+ * Inline artifact cards — the transcript's handle on the canvas.
+ *
+ * Compact by ruling: icon + name + one line of meta, nothing else. The card
+ * owning the focused canvas tab gets the active treatment, so the transcript
+ * and the canvas visibly point at each other.
+ */
+function ArtifactCards({ ids, binding }: { ids?: readonly string[]; binding?: JobThreadArtifactBinding }) {
+  if (!ids?.length || !binding) return null
+  const cards = ids.map((id) => binding.byId.get(id)).filter((card): card is JobThreadArtifact => Boolean(card))
+  if (!cards.length) return null
+  return (
+    <div className="mt-1 flex flex-col gap-1.5" data-boring-workspace-part="job-thread-artifact-cards">
+      {cards.map((card) => {
+        const active = binding.activeId === card.id
+        const Icon = card.kind === "file" ? FileText : Building2
+        return (
+          <button
+            key={card.id}
+            type="button"
+            onClick={() => binding.onOpen?.(card.id)}
+            data-boring-workspace-part="job-thread-artifact-card"
+            data-boring-state={active ? "active" : "idle"}
+            aria-current={active ? "true" : undefined}
+            className="group/card flex w-full max-w-[24rem] items-center gap-2.5 rounded-lg border border-border/70 bg-card px-2.5 py-2 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 aria-[current=true]:border-primary/50 aria-[current=true]:bg-primary/[0.06]"
+          >
+            <span className="grid size-7 shrink-0 place-items-center rounded-md border border-border/60 bg-muted/40 text-muted-foreground group-aria-[current=true]/card:border-primary/40 group-aria-[current=true]/card:text-foreground">
+              <Icon className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[12.5px] font-medium leading-tight text-foreground">{card.title}</span>
+              <span className="mt-0.5 block truncate text-[11px] leading-snug text-muted-foreground">{card.meta}</span>
+            </span>
+            {active ? (
+              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.08em] text-primary">Open</span>
+            ) : null}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 function AgentMessage({
   entry,
   participant,
   showAttribution,
+  artifacts,
 }: {
   entry: JobThreadPost
   participant?: JobThreadParticipant
   showAttribution: boolean
+  artifacts?: JobThreadArtifactBinding
 }) {
   const name = participant?.name ?? entry.agentTypeId
   return (
@@ -483,6 +551,7 @@ function AgentMessage({
           <span className="text-[12px] text-muted-foreground">{entry.toolCall}()</span>
         ) : null}
         <p>{entry.body}</p>
+        <ArtifactCards ids={entry.artifacts} binding={artifacts} />
       </div>
     </div>
   )
@@ -536,7 +605,27 @@ function GateBlock({ entry, participant }: { entry: JobThreadGate; participant?:
  * The view.
  * ------------------------------------------------------------------ */
 
-export function JobThreadView({ fixture = JOB_THREAD_FIXTURE }: { fixture?: JobThreadFixture }): ReactNode {
+export function JobThreadView({
+  fixture = JOB_THREAD_FIXTURE,
+  artifacts,
+  canvas,
+  chatWidth,
+}: {
+  fixture?: JobThreadFixture
+  /** Binding for the inline artifact cards (refinement #7). */
+  artifacts?: JobThreadArtifactBinding
+  /**
+   * The canvas, rendered BESIDE the transcript inside this component's frame.
+   *
+   * ONE FRAME, by ruling: the thread header spans transcript and canvas, and
+   * the canvas brings no header of its own. That is why the canvas is a slot
+   * here rather than a sibling of JobThreadView — a sibling would need its own
+   * chrome and the thread would read as two panes, not one surface.
+   */
+  canvas?: ReactNode
+  /** Transcript column width while the canvas is open; unset means full width. */
+  chatWidth?: number
+}): ReactNode {
   const ordered = jobThreadTimelineOrder(fixture.entries)
   const byAgent = new Map(fixture.participants.map((participant) => [participant.agentTypeId, participant]))
   const seats = jobThreadSeats(fixture)
@@ -573,7 +662,13 @@ export function JobThreadView({ fixture = JOB_THREAD_FIXTURE }: { fixture?: JobT
         FIXTURE — mocked Job Thread v0. No relay, no gateway, no store. Controls are inert.
       </p>
 
-      {/* Transcript: the Pi chat list geometry, unchanged. */}
+      {/* Transcript | canvas. The canvas slides in beside the transcript; with
+          no canvas this collapses to exactly the pure-chat layout as before. */}
+      <div className="flex min-h-0 flex-1">
+      <div
+        className="relative flex min-h-0 min-w-[420px] flex-col"
+        style={chatWidth == null ? { flex: "1 1 auto" } : { width: chatWidth, flex: "0 0 auto" }}
+      >
       <div className="relative min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-[680px] flex-col gap-6 px-4 py-4">
           {ordered.map((entry) => {
@@ -588,13 +683,15 @@ export function JobThreadView({ fixture = JOB_THREAD_FIXTURE }: { fixture?: JobT
                 entry={entry}
                 participant={byAgent.get(entry.agentTypeId)}
                 showAttribution={showAttribution}
+                artifacts={artifacts}
               />
             )
           })}
         </div>
       </div>
 
-      {/* Composer: one job, one place to talk to it. Visual-only. */}
+      {/* Composer: one job, one place to talk to it. Visual-only. It belongs to
+          the transcript column, so the canvas never pushes it off-centre. */}
       <div className="relative z-20 shrink-0 px-3 pb-2 pt-1">
         <div className="relative mx-auto flex w-full max-w-[680px] items-center overflow-visible rounded-xl bg-transparent shadow-[inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.7)]">
           <textarea
@@ -613,6 +710,9 @@ export function JobThreadView({ fixture = JOB_THREAD_FIXTURE }: { fixture?: JobT
             </svg>
           </span>
         </div>
+      </div>
+      </div>
+      {canvas}
       </div>
     </div>
   )

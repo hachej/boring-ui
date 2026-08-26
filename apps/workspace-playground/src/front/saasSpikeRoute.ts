@@ -6,5 +6,8 @@
  */
 export function isSaasSpikeRoute(search?: string): boolean {
   const resolvedSearch = search ?? (typeof window === "undefined" ? "" : window.location.search)
-  return new URLSearchParams(resolvedSearch).get("saasSpike") === "1"
+  const value = new URLSearchParams(resolvedSearch).get("saasSpike")
+  // Demo default: this server exists to show the spike, so the bare URL opens
+  // it too; `?saasSpike=0` opts back into the normal playground.
+  return value !== "0"
 }

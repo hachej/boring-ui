@@ -19,6 +19,16 @@ export interface SaasCompany {
 export interface SaasFund {
   id: string
   name: string
+  /**
+   * Short label for the explorer's TRAILING badge.
+   *
+   * DataExplorer rows are correctly disciplined — title/subtitle are
+   * `min-w-0 flex-1 truncate`, trailing and meta are `shrink-0` — which means a
+   * long trailing badge never shrinks and instead squeezes the title and clips
+   * the date. The full fund name in that slot was the cause of the clipping in
+   * the review screenshot; the fix is short data, not a patched component.
+   */
+  shortName: string
   strategy: string
   vintage: string
   aum: string
@@ -54,6 +64,7 @@ export const SAAS_FUNDS: readonly SaasFund[] = [
   {
     id: "forge-industrial",
     name: "Forge Industrial Partners",
+    shortName: "Forge",
     strategy: "Industrial software & automation",
     vintage: "2024",
     aum: "$640M",
@@ -64,6 +75,7 @@ export const SAAS_FUNDS: readonly SaasFund[] = [
   {
     id: "northstar-ventures",
     name: "Northstar Ventures III",
+    shortName: "Northstar III",
     strategy: "Enterprise & applied AI",
     vintage: "2023",
     aum: "$420M",
@@ -74,6 +86,7 @@ export const SAAS_FUNDS: readonly SaasFund[] = [
   {
     id: "lantern-health",
     name: "Lantern Health Fund",
+    shortName: "Lantern",
     strategy: "Care delivery & life sciences",
     vintage: "2022",
     aum: "$315M",
@@ -84,6 +97,7 @@ export const SAAS_FUNDS: readonly SaasFund[] = [
   {
     id: "arbor-climate",
     name: "Arbor Climate I",
+    shortName: "Arbor I",
     strategy: "Climate infrastructure",
     vintage: "2024",
     aum: "$280M",
@@ -94,6 +108,7 @@ export const SAAS_FUNDS: readonly SaasFund[] = [
   {
     id: "meridian-growth",
     name: "Meridian Growth II",
+    shortName: "Meridian II",
     strategy: "Vertical SaaS",
     vintage: "2021",
     aum: "$510M",
@@ -564,6 +579,12 @@ interface ThreadCopy {
   metric: string
   current: number
   target: number
+  /**
+   * Canvas item ids surfaced as ARTIFACT CARDS inside the owning agent post
+   * (refinement #7). The transcript is what summons the canvas, so the link
+   * lives on the message that produced the artifact — not in a separate list.
+   */
+  cards?: { research?: readonly string[]; review?: readonly string[]; update?: readonly string[] }
 }
 
 function threadJob(copy: ThreadCopy): JobThreadFixture {
@@ -571,10 +592,10 @@ function threadJob(copy: ThreadCopy): JobThreadFixture {
   const reviewer = "investment-reviewer"
   const entries: readonly JobThreadEntry[] = [
     { kind: "post", id: `${copy.title}-request`, turnOrdinal: 1, seq: 1, agentTypeId: "owner", phase: "settled", body: copy.request, relativeTime: "2h ago" },
-    { kind: "post", id: `${copy.title}-research`, turnOrdinal: 2, seq: 7, agentTypeId: worker, phase: "settled", body: copy.research, relativeTime: "1h ago", toolCall: "read_artifacts" },
+    { kind: "post", id: `${copy.title}-research`, turnOrdinal: 2, seq: 7, agentTypeId: worker, phase: "settled", body: copy.research, relativeTime: "1h ago", toolCall: "read_artifacts", artifacts: copy.cards?.research },
     { kind: "marker", id: `${copy.title}-handoff`, turnOrdinal: 2, seq: 7, markerOrdinal: 1, variant: "handoff", text: "Diligence worker → Investment reviewer: pressure-test the evidence" },
-    { kind: "post", id: `${copy.title}-review`, turnOrdinal: 3, seq: 3, agentTypeId: reviewer, phase: "settled", body: copy.review, relativeTime: "48m ago" },
-    { kind: "post", id: `${copy.title}-update`, turnOrdinal: 4, seq: 10, agentTypeId: worker, phase: "settled", body: copy.update, relativeTime: "24m ago" },
+    { kind: "post", id: `${copy.title}-review`, turnOrdinal: 3, seq: 3, agentTypeId: reviewer, phase: "settled", body: copy.review, relativeTime: "48m ago", artifacts: copy.cards?.review },
+    { kind: "post", id: `${copy.title}-update`, turnOrdinal: 4, seq: 10, agentTypeId: worker, phase: "settled", body: copy.update, relativeTime: "24m ago", artifacts: copy.cards?.update },
   ]
   return {
     title: copy.title,
@@ -609,6 +630,11 @@ export const SAAS_THREADS: readonly SaasThread[] = [
       metric: "checks",
       current: 7,
       target: 9,
+      cards: {
+        research: ["canvas-acme-readme", "canvas-acme-data"],
+        review: ["canvas-acme-record"],
+        update: ["canvas-acme-draft"],
+      },
     }),
   },
   {
@@ -627,6 +653,11 @@ export const SAAS_THREADS: readonly SaasThread[] = [
       research: "Acme leads on efficient growth, Northline leads on bookings but has deployment risk, and Switchyard's sales cycle stretched by 19 days. Existing reserves cover the base plan.",
       review: "Separate business risk from financing risk. Northline's deployments are operationally constrained; Switchyard is the only company with a plausible near-term reserve call.",
       update: "Updated the watch list and drafted a two-scenario reserve note for Switchyard. No action is recommended for Acme or Northline this quarter.",
+      cards: {
+        research: ["canvas-forge-analysis"],
+        review: ["canvas-forge-record"],
+        update: ["canvas-forge-draft"],
+      },
       metric: "companies",
       current: 3,
       target: 3,
@@ -794,13 +825,14 @@ function fixtureAdapter(
 }
 
 const fundNameById = new Map(SAAS_FUNDS.map((fund) => [fund.id, fund.name]))
+const fundShortById = new Map(SAAS_FUNDS.map((fund) => [fund.id, fund.shortName]))
 
 const COMPANY_ROWS: readonly ExplorerItem[] = SAAS_COMPANIES.map((company) => ({
   id: company.id,
   title: company.name,
   subtitle: `${company.sector} · ${company.stage}`,
   leading: { code: company.name.slice(0, 2).toUpperCase(), tooltip: company.name },
-  trailing: [{ code: fundNameById.get(company.fundId) ?? company.fundId, tooltip: "Fund" }],
+  trailing: [{ code: fundShortById.get(company.fundId) ?? company.fundId, tooltip: fundNameById.get(company.fundId) ?? "Fund" }],
   meta: company.lastUpdate,
 }))
 
@@ -841,64 +873,82 @@ export const SAAS_FUND_FACETS = [
 ]
 
 // ---------------------------------------------------------------------------
-// LIBRARY: saved views (owner refinement #2)
+// LIBRARY: views (owner refinements #2 and #4)
 //
-// The Library is a VIEW library, not a file list. Its entries follow the
-// ratified `ViewDescriptor` vocabulary (`docs/plans/long-term/inbox/
-// 2026-08-17-part1-chatgpt-synthesis.md`): a view is `{ kind, title, subject?,
-// query?, state? }` and `kind` is the semantic shape the agent reasons in
-// (collection / document / dashboard / kanban / chart), never a Dockview id.
+// "1 entry = 1 view; a file is a view." The Library is a VIEW library, and its
+// entries follow the ratified `ViewDescriptor` vocabulary
+// (`docs/plans/long-term/inbox/2026-08-17-part1-chatgpt-synthesis.md`): a view
+// is `{ kind, title, subject?, query?, state? }`, where `kind` is the semantic
+// shape the agent reasons in (collection / document / dashboard / kanban /
+// chart) and never a Dockview id.
 //
-// The architecture point the spike has to make VISIBLE: the rail TOOL and the
-// Library ENTRY open the SAME component over the SAME fixture module. So the
-// `collection` entries below carry the very panel id that
-// `createDataCatalogPlugin` registers for the matching rail source — clicking
-// either path lands on one panel instance, not two lookalikes.
-// ---------------------------------------------------------------------------
+// Refinements #4 and #6 make the shell three-column master-detail, and this
+// table is what makes that ONE mechanism rather than three. Selecting a view —
+// from the Library nav or from a record page's breadcrumb — does exactly two
+// things:
+//
+//   (a) mounts the view's explorer in COLUMN 2 (`ViewExplorer` switches on
+//       `kind`: document -> the real file tree, collection -> DataExplorer), and
+//   (b) opens `homePanel` in COLUMN 3.
+//
+// An earlier cut also carried a `sourceId`, because Companies/Funds were
+// registered as workbench SOURCES so they would appear as icons on the global
+// activity rail. That rail was removed by ruling — the Library IS the view
+// switcher, and two switchers for one job is redundant chrome — so the field
+// went with it rather than lingering as data nothing reads.
 
 export type SaasViewKind = "collection" | "document" | "dashboard" | "kanban" | "chart"
 
-export interface SaasSavedView {
+export interface SaasView {
   id: string
   title: string
   kind: SaasViewKind
-  /** Registered panel component id this view opens. */
-  panel: string
-  params?: Record<string, unknown>
-  /** Why this entry exists, shown as the row's quiet subtitle. */
+  /** Registered panel id opened in the content column as this view's home. */
+  homePanel: string
+  /** Quiet subtitle on the nav row. */
   note: string
 }
 
-export const SAAS_SAVED_VIEWS: readonly SaasSavedView[] = [
+export const SAAS_VIEWS: readonly SaasView[] = [
+  {
+    id: "view-files",
+    title: "Files",
+    kind: "document",
+    homePanel: "saas-file-home",
+    note: "real workspace filetree",
+  },
   {
     id: "view-companies",
     title: "Companies",
     kind: "collection",
-    panel: "saas-companies-visualization",
-    note: "same panel as the rail tool",
+    homePanel: "saas-companies-home",
+    note: `${SAAS_COMPANIES.length} records`,
   },
   {
     id: "view-funds",
     title: "Funds",
     kind: "collection",
-    panel: "saas-funds-visualization",
-    note: "same panel as the rail tool",
+    homePanel: "saas-funds-home",
+    note: `${SAAS_FUNDS.length} records`,
   },
   {
     id: "view-portfolio-overview",
     title: "Portfolio overview",
     kind: "dashboard",
-    panel: "saas-overview",
+    homePanel: "saas-overview",
     note: "portfolio stat tiles",
   },
   {
     id: "view-diligence-pipeline",
     title: "Diligence pipeline",
     kind: "kanban",
-    panel: "saas-kanban-placeholder",
+    homePanel: "saas-kanban-placeholder",
     note: "placeholder — not built yet",
   },
 ]
+
+/** The two catalog views, whose rail source and explorer come from the data-catalog plugin. */
+export const SAAS_COLLECTION_VIEWS = SAAS_VIEWS.filter((view) => view.kind === "collection")
 
 // ---------------------------------------------------------------------------
 // WORK > Automations, and the AGENTS roster (owner refinement #3).
@@ -941,3 +991,74 @@ export const SAAS_AGENTS: readonly SaasAgent[] = [
   { id: "reviewer", name: "Reviewer", role: "Challenges conclusions before they reach you", status: "Needs you", threadIds: ["acme-diligence"] },
   { id: "scribe", name: "Scribe", role: "Drafts memos and meeting material", status: "Idle", threadIds: ["forge-portfolio-review"] },
 ]
+
+// ---------------------------------------------------------------------------
+// THREAD CANVAS — the embedded workbench working set (owner refinement #5).
+//
+// Inside a thread the content column splits: chat on the left, CANVAS on the
+// right. The canvas is an EMBEDDED workbench — the same Dockview machinery the
+// Library content column uses, in scoped chrome (tabs and panes only; no
+// activity rail, no source pane).
+//
+// Seeding rule, and the reason these are REAL paths: a canvas tab of kind
+// "file" opens the workspace's own editor pane against the live filesystem, so
+// the path has to exist in `apps/workspace-playground/workspace`. Fixture
+// artifact names would have produced a canvas that looks right and edits
+// nothing. Company/fund tabs cross-mount the SAME record-page component the
+// Library content column uses — one component, two mounts.
+// ---------------------------------------------------------------------------
+
+export type SaasCanvasGroup = "files" | "records" | "outputs"
+
+export interface SaasCanvasItem {
+  id: string
+  title: string
+  kind: "file" | "company" | "fund"
+  /** Which scope group the canvas rail files this under (refinement #6b). */
+  group: SaasCanvasGroup
+  /** Real workspace-relative path, for `kind: "file"`. */
+  path?: string
+  /** Record id, for `kind: "company" | "fund"`. */
+  recordId?: string
+  /** One-line meta shown on the in-transcript artifact card. */
+  meta: string
+}
+
+export const SAAS_THREAD_CANVAS: Readonly<Record<string, readonly SaasCanvasItem[]>> = {
+  "acme-diligence": [
+    { id: "canvas-acme-draft", title: "outreach-draft.md", kind: "file", group: "outputs", path: "outreach-draft.md", meta: "Draft memo · editable" },
+    { id: "canvas-acme-readme", title: "README.md", kind: "file", group: "files", path: "README.md", meta: "Workspace notes" },
+    { id: "canvas-acme-data", title: "data.csv", kind: "file", group: "files", path: "data.csv", meta: "Cohort table" },
+    { id: "canvas-acme-record", title: "Acme Corp", kind: "company", group: "records", recordId: "acme-corp", meta: "Company record" },
+  ],
+  "forge-portfolio-review": [
+    { id: "canvas-forge-draft", title: "outreach-draft.md", kind: "file", group: "outputs", path: "outreach-draft.md", meta: "Draft memo · editable" },
+    { id: "canvas-forge-analysis", title: "analysis.py", kind: "file", group: "files", path: "analysis.py", meta: "Pacing model" },
+    { id: "canvas-forge-record", title: "Forge Industrial Partners", kind: "fund", group: "records", recordId: "forge-industrial", meta: "Fund record" },
+  ],
+}
+
+/** Canvas items for a thread, in one scope group. */
+export function saasThreadCanvasGroup(threadId: string, group: SaasCanvasGroup): readonly SaasCanvasItem[] {
+  return saasThreadCanvas(threadId).filter((item) => item.group === group)
+}
+
+/** Scope groups a thread actually has content for — the canvas rail's icons. */
+export function saasThreadCanvasGroups(threadId: string): readonly SaasCanvasGroup[] {
+  const order: readonly SaasCanvasGroup[] = ["outputs", "files", "records"]
+  return order.filter((group) => saasThreadCanvasGroup(threadId, group).length > 0)
+}
+
+/** Look up one canvas item across every thread. */
+export function saasCanvasItem(itemId: string): SaasCanvasItem | undefined {
+  for (const items of Object.values(SAAS_THREAD_CANVAS)) {
+    const found = items.find((item) => item.id === itemId)
+    if (found) return found
+  }
+  return undefined
+}
+
+/** Canvas tabs for a thread; threads with no working set open chat-only. */
+export function saasThreadCanvas(threadId: string): readonly SaasCanvasItem[] {
+  return SAAS_THREAD_CANVAS[threadId] ?? []
+}
