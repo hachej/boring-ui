@@ -2,7 +2,9 @@
 
 Adversarial alignment audit of PR #1409 (the multi-agent vision pack) against
 the ratified long-term pack, the decision ledger, and the absorbed #391/#909
-agent-runtime plans. Run 2026-08-26 (Sol, xhigh, two passes). Verdict:
+agent-runtime plans. Run 2026-08-26 (Sol, xhigh, two passes). Decision
+numbers (D22, D28, D29…) refer to `docs/DECISIONS.md`; "RECONCILIATION §8"
+and "VISION R-c" refer to `docs/plans/long-term/ratified/`. Verdict:
 **three confirmed conflicts, all resolved on this branch**; the
 Gateway/session spine itself is sound.
 
@@ -15,10 +17,13 @@ they conclude.
 |---|---|---|---|
 | fleet-and-environments | revise (9 findings) | pass | README rewritten as a reconciliation layer: DIRECTION-only authority (incl. F-graph edges + the #805 DAG demoted to reference), shipped-D29/gateway reality named where the frozen text predates it, the silent default-agent fallback flagged as a code-vs-D28 defect (#1311 line), F7 re-gated behind [durable-streams]+[seat-storage], the in-process adapter mandate superseded, the AgentHost stop-condition read narrowly. Stale `DECISIONS.md` links to the old `docs/issues/391/plan.md` path repaired. The frozen `plan.md` itself is untouched. |
 | cloud-vision | pending | pass | — |
-| gateway | revise (10 findings) | pending (rate-limited, retrying) | Four real engine-plan gaps folded into `job-thread-plan.md`: the recovery step that read a nonexistent gateway ledger operation is marked design debt for the post-[durable-streams] redesign (with the missing-authorization-principal gap beside it); the ask-user triple join is corrected to name its required ask-user change (addressed identity through pending state) as an S4 obligation; the "v0 ships on Level B" subsection is bannered SUPERSEDED. DIRECTION's authority line now points at the package contract (`AGENT_GATEWAY_V0.md`), not the drifted plan §6. Gateway README rewritten as historical with caveats (pushed-host topology = owner input not ratified; renamed members); orchestrator prompt gets a RETIRED banner and repaired paths. |
-| plugins-across-hosts | pending | pending (rate-limited, retrying) | — |
-| consumption-modes | pending | pending (rate-limited, retrying) | — |
-| alignment | pending | pending (rate-limited, retrying) | — |
+| gateway | revise (10 findings) | pass (reader lane) | Four real engine-plan gaps folded into `job-thread-plan.md`: the recovery step that read a nonexistent gateway ledger operation is marked design debt for the post-[durable-streams] redesign (with the missing-authorization-principal gap beside it); the ask-user triple join is corrected to name its required ask-user change (addressed identity through pending state) as an S4 obligation; the "v0 ships on Level B" subsection is bannered SUPERSEDED. DIRECTION's authority line now points at the package contract (`AGENT_GATEWAY_V0.md`), not the drifted plan §6. Gateway README rewritten as historical with caveats (pushed-host topology = owner input not ratified; renamed members); orchestrator prompt gets a RETIRED banner and repaired paths. |
+| plugins-across-hosts | pending | revise (reader lane) | README deepened: two plugin kinds / two planes / tool ledgers / scoped state / deferred marketplace named up front; gateway-plan link added; "adversarial hardening" glossed; analysis-vs-ratified boundary stated. |
+| consumption-modes | pending | revise (reader lane) | README rewritten: the four modes and the 17-invariant shared contract named up front, jargon glossed, multi-seat Threads placed as an instance of the workspace-local mode. |
+| alignment | pending | revise (reader lane) | README updated to describe `CONTRADICTIONS.md` (it predated the file); decision-ledger path glosses added to this file's intro. |
+
+*(Reader lane note: pi's free pool saturated mid-wave after two areas; the
+remaining four reader reviews ran on Haiku subagents with the same brief.)*
 
 ---
 
