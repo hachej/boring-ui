@@ -217,3 +217,81 @@ planning, not new scope for it.
 **Deferred (unchanged from RECONCILIATION §5 / VISION §10).** The human-facing
 multi-agent selector/switch UX remains a separate product decision; this
 amendment ratifies the data-model sentence only.
+
+---
+
+## 8. OWNER RULING — 2026-08-26 (amendment; product surface + premises order; tracked in #1399)
+
+Additive to §6 and §7, not a reopening: the frozen ontology, invariants,
+durability model and DAG above are unchanged. §7 ratified the data-model
+sentence and explicitly deferred "the human-facing multi-agent selector/switch
+UX" as a separate product decision. **This amendment takes that deferred
+decision.**
+
+### (a) The product surface is the multi-agent workspace shell
+
+The surface over a Workspace is a shell with five top-level domains —
+**Inbox · Work · Agents · Library · Search**. Nav is domains; the vertical
+plugin rail is tools.
+
+- **Transparent multi-agent Threads.** A Thread looks like an ordinary chat with
+  several agents inside it, behind **one composer**. Workers are hidden behind
+  the orchestrator: the user addresses a *voice*, not a *Seat*. Per-Seat work
+  logs are drill-down provenance, not the primary surface — the §7 projection
+  read as one collapsed timeline.
+- **One workbench, many mounts.** The artifact/file surface is a single
+  component mounted in several places — inside a Thread as a canvas, under an
+  attention item as an evidence viewer, as a transient file popover, and
+  standalone as the Library. It is one component, not four surfaces.
+- **Deterministic Views beside agentic Threads.** The shell renders ordinary
+  application Views (collections, records, dashboards) *next to* agentic
+  Threads, with conversation available as a column beside a View rather than a
+  separate destination. This is what makes the surface an application rather
+  than a chat client.
+- **Library is the View library**, consistent with the ratified P1 line
+  (`VISION.md:38`) — Dockview stays a renderer, and agents reason over Views and
+  artifacts, never renderer concepts (invariant 4, `VISION.md:134`).
+
+This ratifies the *shape* of the surface. It does not schedule it — see (c).
+
+### (b) The design canvas and the spike branch are ratified specification artifacts
+
+Two artifacts are promoted from exploration to **specification**:
+
+- **The design canvas** (owner-iterated *Meridian Shell* mockups) — the visual
+  language and the five-domain structure.
+- **The spike branch `weekend/saas-hybrid-spike`** — the constructive proof that
+  the IA above is reachable by **recomposing components that already ship**,
+  rather than by new invention.
+
+Their status: they are what the implementation is checked *against*. They are
+not themselves an implementation claim — the spike's chat column and thread
+transcript are explicitly visual fixtures, and nothing in this amendment says
+otherwise.
+
+### (c) Kernel premises precede the surface build
+
+**Ruling.** The surface above is built **on** kernel capabilities, not beside
+them. Named preconditions, in the sequencing sense:
+
+1. **Durable streams.** The multi-agent engine is not built on conformance
+   Level B. Level D conformance lands and goes default-on first — D29's own
+   named re-evaluation trigger (`DECISIONS.md:472`, `:476`), now called.
+2. **Seat storage.** Per-message attribution in a multi-seat Thread is
+   **audit-grade from day one**, resolving through ratified `seatId` in C7
+   (P0 required, §5 above). Display-grade participant handles are not a
+   shipping position.
+3. **Views.** Saved Views in the Library wait for the first ratified slice of
+   the kernel View contract *as a set* — `ViewDescriptor` + `ViewResolver` +
+   `ViewHost` + `ViewContext` + `ViewRef` (`V2-IMPLEMENTATION-SPEC.md:144-149`).
+   No lookalike descriptor is minted in the product layer meanwhile.
+
+**Explicit non-change.** This amendment promotes no new noun, activates no A2A
+loopback, and creates no shared-runtime room; §7's non-change clause stands
+unaltered. The **thread storage model is explicitly NOT ratified here** — it is
+an open technical question routed to a spike, and nothing in (a) presumes its
+outcome.
+
+**Where the program lives.** The premise program, its sizing and its briefs are
+planning material, not ratified text: `docs/plans/multiagent-shell/premises.md`,
+tracked in [#1409](https://github.com/hachej/boring-ui/pull/1409).

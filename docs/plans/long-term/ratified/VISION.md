@@ -36,6 +36,7 @@ is needed:
 | **Capability** (define once, project to surfaces, `effect` classified) | R1 authority/mechanism + the agent-native harvest; effect classes map to our admission model (`observe/propose` free; `mutate/external-effect` need authority — and `external-effect` is exactly where C6's `unknown-outcome` lives) | adopt; D-2/D31 text |
 | **Objective / Candidate / Evaluation / Outcome** | **genuinely NEW** — the optimization records. Sit ON TOP of the envelope: every Candidate carries `producedByRunId`; the ratified trajectory dataset (runId·agentId·digest·seatId·cost·outcome) is exactly this join | new; small durable tables, JSON payloads |
 | **View** (semantic, renderer-independent) | reconciliation P1 ViewDescriptor; Dockview demoted to renderer | ratified P1 |
+
 | **ExecutionContext** (provenance: who/authority/run/thread/surface/approval) | envelope key + scope + C5 approvalRef — one struct threading what already exists | adopt |
 | **Approval** (evidence + authority; agents cannot manufacture it) | C5 durable pause (ratified spec: request-ID keyed, channel-answerable) + approvalRef in context | scheduled C5 |
 
@@ -183,6 +184,18 @@ AR1-003/004 · result → runId + artifacts[] · P0.1–0.6 (RCE first) · P-1 �
 - **K7** First paid vertical (creator growth — shortest feedback loop), as an experiment composition, concierge OK
 - **K8** Second structurally different vertical (macro / formulation / SME GTM)
 - **K9** Only then: extract Product packaging
+
+> **Amendment — 2026-08-26 (owner ruling, tracked in #1399; full text in
+> RECONCILIATION.md §8):** the product surface these verticals are delivered
+> through is ratified as the **multi-agent workspace shell** — Inbox · Work ·
+> Agents · Library · Search, transparent multi-agent Threads behind one
+> composer, one workbench with many mounts, and deterministic Views beside
+> agentic Threads. The design canvas and the `weekend/saas-hybrid-spike` branch
+> are the ratified specification artifacts. **Kernel premises precede the
+> surface build:** durable streams (Level D default-on) before the multi-agent
+> engine, `seatId`-in-C7 audit-grade attribution before participant display, and
+> the first ratified View slice before Library saved Views. The thread storage
+> model is explicitly NOT ratified and is routed to a spike.
 
 P1 (from reconciliation) interleaves: ViewDescriptor + artifact UX land with K2
 (candidates need Views to be inspected/approved).
