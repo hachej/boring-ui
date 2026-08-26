@@ -1,19 +1,23 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MessageResponse } from "../message";
 
-const renderMarkdown = (md: string) =>
-  render(<MessageResponse>{md}</MessageResponse>);
+const TEST_URL = "https://github.com/hachej/boring-ui";
+const MARKDOWN_LINK = `See the [boring-ui repo](${TEST_URL}) here.`;
+
+const renderMarkdown = (markdown: string) =>
+  render(<MessageResponse linkSafety={{ enabled: false }}>{markdown}</MessageResponse>);
+
+const renderedLink = () => screen.getByRole("link", { name: "boring-ui repo" });
+const copyButton = () => screen.getByRole("button", { name: "Copy URL" });
+const openButton = () => screen.getByRole("button", { name: "Open URL in new tab" });
 
 describe("MessageResponse link affordances (#1395)", () => {
   const clipboardWrite = vi.fn().mockResolvedValue(undefined);
 
   beforeEach(() => {
-    Object.assign(navigator, {
-      clipboard: { writeText: clipboardWrite },
-    });
-    Object.defineProperty(window, "isSecureContext", { value: true, configurable: true });
+    Object.assign(navigator, { clipboard: { writeText: clipboardWrite } });
     vi.stubGlobal("open", vi.fn());
   });
 
@@ -23,53 +27,64 @@ describe("MessageResponse link affordances (#1395)", () => {
     clipboardWrite.mockClear();
   });
 
-  const link = () => screen.getByRole("link", { name: "boring-ui repo" });
-  const copyBtn = () => screen.getByRole("button", { name: "Copy URL" });
-  const openBtn = () => screen.getByRole("button", { name: "Open URL in new tab" });
+  it("decorates Streamdown links without replacing their anchor behavior", () => {
+    renderMarkdown(MARKDOWN_LINK);
 
-  it("renders hover actions for markdown links without altering the anchor", () => {
-    renderMarkdown("See the [boring-ui repo](https://github.com/hachej/boring-ui) here.");
-
-    const a = link();
-    expect(a.getAttribute("href")).toBe("https://github.com/hachej/boring-ui");
-    expect(a.getAttribute("target")).toBe("_blank");
-    expect(a.getAttribute("rel")).toContain("noopener");
-    // Actions exist in the DOM; visibility is hover/focus-driven CSS.
-    expect(copyBtn()).toBeTruthy();
-    expect(openBtn()).toBeTruthy();
-    expect(document.querySelector('[data-boring-agent-part="chat-url-actions"]')).toBeTruthy();
+    const anchor = renderedLink();
+    expect(anchor.getAttribute("href")).toBe(TEST_URL);
+    expect(anchor.getAttribute("target")).toBe("_blank");
+    expect(anchor.getAttribute("rel")).toContain("noreferrer");
+    expect(anchor.className).toContain("wrap-anywhere");
+    expect(anchor.getAttribute("data-streamdown")).toBe("link");
+    expect(copyButton()).toBeTruthy();
+    expect(openButton()).toBeTruthy();
   });
 
-  it("reveals actions on link hover and focus-within", () => {
-    renderMarkdown("See the [boring-ui repo](https://github.com/hachej/boring-ui) here.");
-    const group = document.querySelector('[data-boring-agent-part="chat-url-actions"]') as HTMLElement;
-    expect(group.className).toContain("opacity-0");
+  it("scopes reveal styles to the URL group and blocks pointer events while hidden", () => {
+    renderMarkdown(MARKDOWN_LINK);
 
-    fireEvent.mouseOver(link());
-    fireEvent.mouseEnter(link().closest("span.group")!);
-    expect(group.className).toMatch(/group-hover:opacity-100/);
+    const group = document.querySelector('[data-boring-agent-part="chat-url-group"]') as HTMLElement;
+    const actions = document.querySelector('[data-boring-agent-part="chat-url-actions"]') as HTMLElement;
 
-    fireEvent.focus(copyBtn());
-    expect(group.className).toMatch(/group-focus-within:opacity-100/);
+    expect(group.className).toContain("group/markdown-link");
+    expect(actions.className).toContain("opacity-0");
+    expect(actions.className).toContain("pointer-events-none");
+    expect(actions.className).toContain("group-hover/markdown-link:opacity-100");
+    expect(actions.className).toContain("group-hover/markdown-link:pointer-events-auto");
+    expect(actions.hasAttribute("node")).toBe(false);
   });
 
-  it("copies the raw href via the clipboard on Copy click", async () => {
-    renderMarkdown("See the [boring-ui repo](https://github.com/hachej/boring-ui) here.");
-    fireEvent.click(copyBtn());
-    await waitFor(() => expect(clipboardWrite).toHaveBeenCalledWith("https://github.com/hachej/boring-ui"));
-    // Copied feedback swaps the icon button's title.
-    await waitFor(() => expect((copyBtn() as HTMLButtonElement).title).toBe("Copied"));
+  it("copies the raw markdown href through the canonical clipboard helper", async () => {
+    renderMarkdown(MARKDOWN_LINK);
+    fireEvent.click(copyButton());
+
+    await waitFor(() => expect(clipboardWrite).toHaveBeenCalledWith(TEST_URL));
+    await waitFor(() => expect(copyButton().getAttribute("title")).toBe("Copied"));
   });
 
-  it("opens the raw href in a new tab via the Open action", () => {
-    renderMarkdown("See the [boring-ui repo](https://github.com/hachej/boring-ui) here.");
-    fireEvent.click(openBtn());
+  it("delegates Open to the original Streamdown link", () => {
+    renderMarkdown(MARKDOWN_LINK);
+    const anchor = renderedLink();
+    const click = vi.spyOn(anchor, "click").mockImplementation(() => undefined);
 
-    expect(window.open).toHaveBeenCalledWith(
-      "https://github.com/hachej/boring-ui",
-      "_blank",
-      "noopener,noreferrer",
+    fireEvent.click(openButton());
+
+    expect(click).toHaveBeenCalledOnce();
+  });
+
+  it("preserves Streamdown linkSafety for Open", async () => {
+    const onLinkCheck = vi.fn().mockResolvedValue(true);
+    render(
+      <MessageResponse linkSafety={{ enabled: true, onLinkCheck }}>
+        {MARKDOWN_LINK}
+      </MessageResponse>,
     );
+
+    expect(screen.getByRole("button", { name: "boring-ui repo" }).getAttribute("data-streamdown")).toBe("link");
+    fireEvent.click(openButton());
+
+    await waitFor(() => expect(onLinkCheck).toHaveBeenCalledWith(TEST_URL));
+    await waitFor(() => expect(window.open).toHaveBeenCalledWith(TEST_URL, "_blank", "noreferrer"));
   });
 
   it("leaves non-link content untouched", () => {

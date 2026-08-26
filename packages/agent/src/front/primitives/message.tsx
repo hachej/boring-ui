@@ -23,7 +23,10 @@ import {
 } from "react";
 import { Streamdown } from "streamdown";
 import { useStreamdownPlugins } from "./useStreamdownPlugins";
-import { MarkdownLink } from "./markdownLink"
+import {
+  markdownLinkComponents,
+  rehypeMarkdownLinkActions,
+} from "./markdownLink";
 import {
   CodeBlock,
   CodeBlockCopyButton,
@@ -417,9 +420,6 @@ const MarkdownCode = ({
 const markdownComponents = {
   pre: MarkdownPre,
   code: MarkdownCode,
-  // Chat URLs get hover Copy/Open affordances (#1395); the href and text
-  // flow stay untouched.
-  a: MarkdownLink,
 } as unknown as ComponentProps<typeof Streamdown>["components"];
 
 export type BoringMessageResponseProps = MessageResponseProps & {
@@ -428,7 +428,7 @@ export type BoringMessageResponseProps = MessageResponseProps & {
 };
 
 export const MessageResponse = memo(
-  ({ className, shikiTheme, components, codeFilename, ...props }: BoringMessageResponseProps) => {
+  ({ className, shikiTheme, components, codeFilename, rehypePlugins, ...props }: BoringMessageResponseProps) => {
     const streamdownPlugins = useStreamdownPlugins(props.children, { code: false });
     return (
       <Streamdown
@@ -437,10 +437,12 @@ export const MessageResponse = memo(
           className
         )}
         plugins={streamdownPlugins}
+        rehypePlugins={[...(rehypePlugins ?? []), rehypeMarkdownLinkActions]}
         shikiTheme={shikiTheme ?? DEFAULT_SHIKI_THEME}
         components={{
           ...markdownComponents,
           ...(components ?? {}),
+          ...markdownLinkComponents,
           ...(codeFilename ? { pre: (props: ComponentProps<"pre">) => <MarkdownPre {...props} filename={codeFilename} /> } : {}),
         } as ComponentProps<typeof Streamdown>["components"]}
         {...props}
