@@ -1,56 +1,93 @@
-import { useMemo, useState, type ReactNode } from "react"
+/**
+ * `?saasSpike=1` — hybrid SaaS + Agent shell, RE-COMPOSED (owner correction).
+ *
+ * The first cut of this spike hand-built a shell, a nav, two `<table>`s and a
+ * fake file tree. That was the wrong artifact: it proved a picture, not the
+ * product. This version proves the product by REUSING what already ships and
+ * only re-organizing it. What each block gave us:
+ *
+ *   - `PluginTabsWorkspaceShell` (packages/workspace, plugin-tabs layout) — the
+ *     real outer frame: left pane, collapsed rail, resize handle, mobile Sheet,
+ *     and the floating collapse button. It is a dumb 2-column frame that takes
+ *     `leftPane` / `collapsedRail` / `children`, so re-composition is exactly
+ *     what it is for.
+ *   - `SurfaceShell` (the workbench) — the vertical plugin icon RAIL, the
+ *     source pane beside it, and the Dockview centre with real tabs. This is
+ *     the owner's "additional column" gesture, and it is not ours to rebuild.
+ *   - `filesystemPlugin` — the REAL file tree, against the live playground agent
+ *     API. It browses `apps/workspace-playground/workspace` for real; it is the
+ *     only part of this screen that is not fixture data.
+ *   - `createDataCatalogPlugin` + `DataExplorer` — Companies and Funds, as rail
+ *     TOOLS, fed by fixture adapters. No backend.
+ *   - `AppLeftPaneAgentCard`, `AppSessionRow`, `RailAction` — the real left-pane
+ *     row/card/rail primitives, imported from source (all three are
+ *     context-free, so they compose safely here).
+ *   - `JobThreadView` + `SaasSpikeFixtures` — kept verbatim from this branch.
+ *   - `useWorkspaceAttention` — the real Inbox/attention store. Fixture blockers
+ *     are seeded into it, so the Inbox badge and the collapsed-Work rollup are
+ *     computed by the shipped code path, not by counting fixtures by hand.
+ *
+ * IA (owner ruling): the RAIL is tools, the NAV is domains. Nav order is fixed:
+ * Inbox (first — single triage surface), Work, Agents, Library, Search.
+ *
+ * Everything the nav opens lands in the SAME Dockview centre. The chat column
+ * is one more column beside it, never a navigation.
+ */
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import {
+  Bot,
+  Building2,
+  ChevronRight,
+  Columns3,
+  Inbox as InboxIcon,
+  Landmark,
+  LayoutGrid,
+  Library,
+  type LucideIcon,
+  Search,
+  Sparkles,
+  Table2,
+  Workflow,
+  X,
+} from "lucide-react"
 import { Button, Chip, StatusBadge, Textarea } from "@hachej/boring-ui-kit"
+import {
+  SurfaceShell,
+  WorkspaceProvider,
+  useWorkspaceAttention,
+  type PaneProps,
+  type PanelConfig,
+  type SurfaceShellApi,
+} from "@hachej/boring-workspace"
+import { createDataCatalogPlugin } from "@hachej/boring-data-catalog/front"
+// Internal source imports. The playground aliases `@` -> packages/workspace/src
+// (see vite.config.ts). These three modules import no workspace context, so
+// pulling them from source next to a dist-built `WorkspaceProvider` cannot
+// split a context — the one hazard that would matter here. Anything
+// context-dependent is read through the package entry above instead.
+import { PluginTabsWorkspaceShell } from "@/front/layout/plugin-tabs/PluginTabsWorkspaceShell"
+import { AppLeftPaneAgentCard } from "@/front/layout/plugin-tabs/AppLeftPaneAgentCards"
+import { AppSessionRow } from "@/front/layout/plugin-tabs/AppLeftPaneSessionRow"
+import { RailAction } from "@/front/layout/plugin-tabs/AppLeftPaneActions"
 import { JobThreadView } from "./JobThreadView"
 import {
-  SAAS_ARTIFACTS,
+  SAAS_AGENTS,
+  SAAS_AUTOMATIONS,
   SAAS_COMPANIES,
+  SAAS_COMPANY_ADAPTER,
+  SAAS_COMPANY_FACETS,
   SAAS_FUNDS,
+  SAAS_FUND_ADAPTER,
+  SAAS_FUND_FACETS,
+  SAAS_SAVED_VIEWS,
   SAAS_THREADS,
-  type SaasArtifact,
-  type SaasCompany,
-  type SaasFund,
+  type SaasAgent,
+  type SaasSavedView,
   type SaasThread,
+  type SaasViewKind,
 } from "./SaasSpikeFixtures"
 
-type SaasSection = "overview" | "companies" | "funds" | "threads" | "artifacts"
-
-interface SaasLocation {
-  section: SaasSection
-  recordId?: string
-}
-
-type IconName = SaasSection | "chat" | "close" | "chevron" | "file" | "folder" | "spark" | "arrow"
-
-const navItems: readonly { id: SaasSection; label: string }[] = [
-  { id: "overview", label: "Overview" },
-  { id: "companies", label: "Companies" },
-  { id: "funds", label: "Funds" },
-  { id: "threads", label: "Threads" },
-  { id: "artifacts", label: "Artifacts" },
-]
-
-function Icon({ name, className = "size-4" }: { name: IconName; className?: string }) {
-  const common = { fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round" as const, strokeLinejoin: "round" as const }
-  const paths: Record<IconName, ReactNode> = {
-    overview: <><rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1" /><rect x="9" y="2.5" width="4.5" height="4.5" rx="1" /><rect x="2.5" y="9" width="4.5" height="4.5" rx="1" /><rect x="9" y="9" width="4.5" height="4.5" rx="1" /></>,
-    companies: <><path d="M3 13.5v-10h7v10" /><path d="M10 7h3v6.5M5.5 5.5h2M5.5 8h2M5.5 10.5h2M2 13.5h12" /></>,
-    funds: <><path d="M2.5 6h11M3.5 6V4l4.5-2 4.5 2v2M4.5 7.5v4M8 7.5v4M11.5 7.5v4M2.5 13.5h11" /></>,
-    threads: <><path d="M3 3.5h10v7H7l-3.5 2.5v-2.5H3z" /><path d="M5.5 6h5M5.5 8h3.5" /></>,
-    artifacts: <><path d="M3.5 2.5h5l4 4v7h-9z" /><path d="M8.5 2.5v4h4M5.5 9h5M5.5 11h4" /></>,
-    chat: <><path d="M2.5 3.5h11v8h-6L4 14v-2.5H2.5z" /><path d="M5.5 6.5h5M5.5 8.5h3.5" /></>,
-    close: <><path d="M4 4l8 8M12 4l-8 8" /></>,
-    chevron: <><path d="M6 3.5L10.5 8 6 12.5" /></>,
-    file: <><path d="M4 2.5h5l3 3v8H4zM9 2.5v3h3" /></>,
-    folder: <><path d="M2.5 4h4l1.2 1.5h5.8v7.5h-11z" /></>,
-    spark: <><path d="M8 1.8l1.1 3.1L12.2 6 9.1 7.1 8 10.2 6.9 7.1 3.8 6l3.1-1.1zM12.5 10l.5 1.5 1.5.5-1.5.5-.5 1.5-.5-1.5-1.5-.5 1.5-.5z" /></>,
-    arrow: <><path d="M3 8h10M9 4l4 4-4 4" /></>,
-  }
-  return <svg viewBox="0 0 16 16" aria-hidden="true" className={className} {...common}>{paths[name]}</svg>
-}
-
-function fundFor(company: SaasCompany): SaasFund | undefined {
-  return SAAS_FUNDS.find((fund) => fund.id === company.fundId)
-}
+const SAAS_AGENT_TYPE = "builder"
 
 function statusTone(status: SaasThread["status"]): "warning" | "info" | "success" {
   if (status === "Needs you") return "warning"
@@ -58,42 +95,43 @@ function statusTone(status: SaasThread["status"]): "warning" | "info" | "success
   return "info"
 }
 
-function PageHeader({ eyebrow, title, description, trailing }: { eyebrow: string; title: string; description: string; trailing?: ReactNode }) {
-  return (
-    <header className="flex items-start justify-between gap-6">
-      <div className="min-w-0">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/75">{eyebrow}</p>
-        <h1 className="mt-2 text-2xl font-semibold tracking-[-0.025em] text-foreground">{title}</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{description}</p>
-      </div>
-      {trailing ? <div className="shrink-0">{trailing}</div> : null}
-    </header>
-  )
+/** Threads waiting on a human — the one number the Inbox entry is allowed to show. */
+function needsYouThreads(): readonly SaasThread[] {
+  return SAAS_THREADS.filter((thread) => thread.status === "Needs you")
 }
 
-function OverviewView({ navigate }: { navigate: (location: SaasLocation) => void }) {
-  const sectorCount = new Set(SAAS_COMPANIES.map((company) => company.sector)).size
-  const tiles: readonly { label: string; value: string; note: string; section: SaasSection }[] = [
-    { label: "Companies tracked", value: String(SAAS_COMPANIES.length), note: `Across ${sectorCount} sectors`, section: "companies" },
-    { label: "Funds", value: String(SAAS_FUNDS.length), note: "$2.2B fixture AUM", section: "funds" },
-    { label: "Open threads", value: String(SAAS_THREADS.filter((thread) => thread.status !== "Complete").length), note: "2 active today", section: "threads" },
-    { label: "Needs you", value: String(SAAS_THREADS.filter((thread) => thread.status === "Needs you").length), note: "Decisions waiting", section: "threads" },
+// ---------------------------------------------------------------------------
+// PANELS — everything the nav opens is a registered Dockview panel, so the
+// centre is always the real surface and never a bespoke router.
+// ---------------------------------------------------------------------------
+
+/**
+ * The Overview tiles are the one surface kept deliberately bespoke.
+ *
+ * There is no dashboard/stat-tile primitive in `packages/ui`, and the deck
+ * plugin's widgets are chart/markdown widgets bound to a deck document rather
+ * than free-standing KPI tiles — wiring a deck document to render four numbers
+ * would be more scaffolding than the numbers. Four tiles of plain markup is the
+ * honest smaller thing.
+ */
+function OverviewPanel() {
+  const sectors = new Set(SAAS_COMPANIES.map((company) => company.sector)).size
+  const tiles = [
+    { label: "Companies tracked", value: String(SAAS_COMPANIES.length), note: `Across ${sectors} sectors` },
+    { label: "Funds", value: String(SAAS_FUNDS.length), note: "$2.2B fixture AUM" },
+    { label: "Open threads", value: String(SAAS_THREADS.filter((thread) => thread.status !== "Complete").length), note: "2 active today" },
+    { label: "Needs you", value: String(needsYouThreads().length), note: "Decisions waiting" },
   ]
   return (
-    <div className="saas-spike-page">
-      <PageHeader
-        eyebrow="Portfolio intelligence"
-        title="Good morning, Alex."
-        description="Explore the portfolio directly, then bring an agent into the exact context where you need help."
-      />
+    <div className="h-full overflow-y-auto bg-background p-8">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/75">Saved dashboard</p>
+      <h1 className="mt-2 text-2xl font-semibold tracking-[-0.025em] text-foreground">Portfolio overview</h1>
       <section aria-label="Portfolio summary" className="mt-8 grid overflow-hidden rounded-xl border border-border/70 bg-card sm:grid-cols-2 xl:grid-cols-4">
         {tiles.map((tile, index) => (
-          <button
+          <div
             key={tile.label}
-            type="button"
-            onClick={() => navigate({ section: tile.section })}
             className={[
-              "group min-h-32 text-left px-5 py-5 transition-colors hover:bg-muted/45 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
+              "min-h-32 px-5 py-5",
               index > 0 ? "border-t border-border/60 xl:border-l xl:border-t-0" : "",
               index % 2 === 1 ? "sm:border-l" : "",
               index === 1 ? "sm:border-t-0" : "",
@@ -101,326 +139,668 @@ function OverviewView({ navigate }: { navigate: (location: SaasLocation) => void
           >
             <span className="text-xs font-medium text-muted-foreground">{tile.label}</span>
             <span className="mt-3 block text-3xl font-semibold tracking-[-0.04em] text-foreground">{tile.value}</span>
-            <span className="mt-2 flex items-center justify-between gap-2 text-xs text-muted-foreground/75">
-              {tile.note}<Icon name="arrow" className="size-3.5 opacity-0 transition-opacity group-hover:opacity-100" />
-            </span>
-          </button>
+            <span className="mt-2 block text-xs text-muted-foreground/75">{tile.note}</span>
+          </div>
         ))}
       </section>
-      <section className="mt-10">
-        <div className="flex items-baseline justify-between gap-4 border-b border-border/70 pb-3">
-          <div>
-            <h2 className="text-sm font-semibold text-foreground">Recent threads</h2>
-            <p className="mt-1 text-xs text-muted-foreground">Work moving across the portfolio</p>
-          </div>
-          <Button variant="ghost" size="xs" onClick={() => navigate({ section: "threads" })}>View all</Button>
-        </div>
-        <div className="divide-y divide-border/60">
-          {SAAS_THREADS.slice(0, 4).map((thread) => (
+    </div>
+  )
+}
+
+function InboxPanel({ params }: PaneProps<{ onOpenThread?: (threadId: string) => void }>) {
+  const waiting = needsYouThreads()
+  return (
+    <div className="h-full overflow-y-auto bg-background p-8">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/75">Triage</p>
+      <h1 className="mt-2 text-2xl font-semibold tracking-[-0.025em] text-foreground">Inbox</h1>
+      <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+        Every decision the portfolio is waiting on, in one place. Nothing else in this app is allowed to be a second triage surface.
+      </p>
+      {waiting.length === 0 ? (
+        <p className="mt-8 text-sm text-muted-foreground">Nothing needs you.</p>
+      ) : (
+        <div className="mt-8 divide-y divide-border/60 overflow-hidden rounded-xl border border-border/70 bg-card">
+          {waiting.map((thread) => (
             <button
               key={thread.id}
               type="button"
-              onClick={() => navigate({ section: "threads", recordId: thread.id })}
-              className="group flex w-full items-center gap-4 px-1 py-4 text-left transition-colors hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+              onClick={() => params?.onOpenThread?.(thread.id)}
+              className="group flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40"
             >
-              <span className="grid size-8 shrink-0 place-items-center rounded-full bg-foreground/[0.06] text-muted-foreground"><Icon name="threads" /></span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium text-foreground">{thread.title}</span>
+                <span className="mt-1 block truncate text-xs text-muted-foreground">{thread.subject}</span>
+              </span>
+              <StatusBadge tone="warning">{thread.status}</StatusBadge>
+              <span className="w-16 text-right text-xs text-muted-foreground/70">{thread.updatedAt}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ThreadPanel({ params }: PaneProps<{ threadId?: string }>) {
+  const thread = SAAS_THREADS.find((item) => item.id === params?.threadId)
+  if (!thread) return <div className="grid h-full place-items-center bg-background p-8 text-sm text-muted-foreground">Thread not found.</div>
+  return <JobThreadView fixture={thread.job} />
+}
+
+/**
+ * Agent detail.
+ *
+ * The shipped `AgentPage` (packages/workspace .../chrome/skills/AgentPage.tsx)
+ * is the right component in shape, but it reads its skills/tools through
+ * `useWorkspacePluginClient()`, which resolves against a live
+ * `/api/v1/agents/:id/{skills,tools}` — there is no fixture seam on it short of
+ * mocking the hook, which is a test affordance and not an app one. So the agent
+ * page here is a small fixture stand-in that reuses `AppLeftPaneAgentCard` for
+ * the identity block and lists the agent's threads. Called out rather than
+ * dressed up as reuse.
+ */
+function AgentPanel({ params }: PaneProps<{ agentId?: string; onOpenThread?: (threadId: string) => void }>) {
+  const agent = SAAS_AGENTS.find((item) => item.id === params?.agentId)
+  if (!agent) return <div className="grid h-full place-items-center bg-background p-8 text-sm text-muted-foreground">Agent not found.</div>
+  const threads = agent.threadIds.map((id) => SAAS_THREADS.find((thread) => thread.id === id)).filter((thread): thread is SaasThread => Boolean(thread))
+  return (
+    <div className="h-full overflow-y-auto bg-background p-8">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/75">Agent</p>
+      <h1 className="mt-2 text-2xl font-semibold tracking-[-0.025em] text-foreground">{agent.name}</h1>
+      <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{agent.role}</p>
+      <section className="mt-8">
+        <h2 className="border-b border-border/70 pb-3 text-sm font-semibold text-foreground">Threads this agent is on</h2>
+        <div className="divide-y divide-border/60">
+          {threads.map((thread) => (
+            <button
+              key={thread.id}
+              type="button"
+              onClick={() => params?.onOpenThread?.(thread.id)}
+              className="group flex w-full items-center gap-4 px-1 py-4 text-left hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            >
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium text-foreground">{thread.title}</span>
                 <span className="mt-0.5 block truncate text-xs text-muted-foreground">{thread.subject}</span>
               </span>
-              <StatusBadge tone={statusTone(thread.status)} className="shrink-0">{thread.status}</StatusBadge>
-              <span className="w-16 shrink-0 text-right text-xs text-muted-foreground/70">{thread.updatedAt}</span>
-              <Icon name="chevron" className="size-3.5 shrink-0 text-muted-foreground/40 transition-transform group-hover:translate-x-0.5" />
+              <StatusBadge tone={statusTone(thread.status)}>{thread.status}</StatusBadge>
             </button>
           ))}
         </div>
       </section>
+      <p className="mt-10 text-xs text-muted-foreground/70">
+        Fixture agent page. The shipped Agent page (skills + tools) needs a live agent API and has no fixture seam.
+      </p>
     </div>
   )
 }
 
-function CompaniesView({ openCompany }: { openCompany: (companyId: string) => void }) {
+function KanbanPlaceholderPanel() {
   return (
-    <div className="saas-spike-page">
-      <PageHeader eyebrow="Portfolio" title="Companies" description="The operating view of every tracked company, organized for fast scanning and drill-down." />
-      <div className="mt-8 overflow-x-auto rounded-xl border border-border/70 bg-card">
-        <div className="flex items-center justify-between gap-4 border-b border-border/70 px-4 py-3">
-          <p className="text-xs text-muted-foreground"><span className="font-medium text-foreground">{SAAS_COMPANIES.length}</span> active records</p>
-          <span className="rounded-md border border-border/70 bg-background px-2.5 py-1.5 text-xs text-muted-foreground">All sectors</span>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] border-collapse text-left text-sm">
-            <thead className="bg-muted/30 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/75">
-              <tr><th className="px-4 py-3">Company</th><th className="px-4 py-3">Sector</th><th className="px-4 py-3">Fund</th><th className="px-4 py-3 text-right">Last update</th><th className="w-10" /></tr>
-            </thead>
-            <tbody className="divide-y divide-border/60">
-              {SAAS_COMPANIES.map((company) => (
-                <tr
-                  key={company.id}
-                  onClick={() => openCompany(company.id)}
-                  className="group cursor-pointer transition-colors hover:bg-muted/45"
-                >
-                  <td className="px-4 py-3.5 font-medium text-foreground"><button type="button" onClick={() => openCompany(company.id)} className="rounded-sm text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40">{company.name}</button></td>
-                  <td className="px-4 py-3.5 text-muted-foreground">{company.sector}</td>
-                  <td className="px-4 py-3.5 text-muted-foreground">{fundFor(company)?.name}</td>
-                  <td className="px-4 py-3.5 text-right text-xs text-muted-foreground">{company.lastUpdate}</td>
-                  <td className="pr-3 text-muted-foreground/40"><Icon name="chevron" className="size-3.5 transition-transform group-hover:translate-x-0.5" /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+    <div className="grid h-full place-items-center bg-background p-8 text-center">
+      <div>
+        <span className="mx-auto grid size-10 place-items-center rounded-lg border border-border/70 bg-muted/30 text-muted-foreground"><Columns3 className="size-4" /></span>
+        <h1 className="mt-4 text-sm font-semibold text-foreground">Diligence pipeline</h1>
+        <p className="mt-1 max-w-xs text-sm leading-6 text-muted-foreground">
+          A saved view of kind <code>kanban</code>. No kanban component exists in the repo yet, so this entry is a placeholder — it holds the shelf slot without pretending to be built.
+        </p>
       </div>
     </div>
   )
 }
 
-function CompanyView({ company, navigate, openChat }: { company: SaasCompany; navigate: (location: SaasLocation) => void; openChat: () => void }) {
-  const fund = fundFor(company)
-  const documents = company.documentIds.map((id) => SAAS_ARTIFACTS.find((item) => item.id === id)).filter((item): item is SaasArtifact => Boolean(item))
-  const threads = company.threadIds.map((id) => SAAS_THREADS.find((item) => item.id === id)).filter((item): item is SaasThread => Boolean(item))
+const SAAS_PANEL_IDS = ["saas-overview", "saas-inbox", "saas-thread", "saas-agent", "saas-kanban-placeholder"] as const
+
+function saasPanels(): PanelConfig[] {
+  return [
+    { id: "saas-overview", title: "Portfolio overview", placement: "shared-dockview", source: "app", component: OverviewPanel },
+    { id: "saas-inbox", title: "Inbox", placement: "shared-dockview", source: "app", component: InboxPanel },
+    { id: "saas-thread", title: "Thread", placement: "shared-dockview", source: "app", component: ThreadPanel },
+    { id: "saas-agent", title: "Agent", placement: "shared-dockview", source: "app", component: AgentPanel },
+    { id: "saas-kanban-placeholder", title: "Diligence pipeline", placement: "shared-dockview", source: "app", component: KanbanPlaceholderPanel },
+  ]
+}
+
+// ---------------------------------------------------------------------------
+// RAIL TOOLS — Companies and Funds are workspace SOURCES, exactly like Files.
+// `createDataCatalogPlugin` registers the rail icon, the source pane (a
+// `DataExplorer` over our fixture adapter) and the centre visualization panel.
+// The visualization panel ids below are the same ids the Library's saved-view
+// entries carry, which is what makes "one view, two doors" literally true.
+// ---------------------------------------------------------------------------
+
+const companiesPlugin = createDataCatalogPlugin({
+  id: "saas-companies",
+  label: "Companies",
+  adapter: SAAS_COMPANY_ADAPTER,
+  facets: SAAS_COMPANY_FACETS,
+  workspacePageIcon: Building2,
+  visualizationPanelId: "saas-companies-visualization",
+  visualizationTitle: "Companies",
+  searchPlaceholder: "Search companies…",
+  emptyState: "No companies match these filters",
+})
+
+const fundsPlugin = createDataCatalogPlugin({
+  id: "saas-funds",
+  label: "Funds",
+  adapter: SAAS_FUND_ADAPTER,
+  facets: SAAS_FUND_FACETS,
+  workspacePageIcon: Landmark,
+  visualizationPanelId: "saas-funds-visualization",
+  visualizationTitle: "Funds",
+  searchPlaceholder: "Search funds…",
+  emptyState: "No funds match these filters",
+})
+
+// `filesystemPlugin` is NOT listed here: `WorkspaceProvider` already registers
+// it as a default, and passing it again throws `plugin "filesystem" registered
+// twice`. The real file tree arrives through that default, not through us.
+const saasPlugins = [companiesPlugin, fundsPlugin]
+
+const viewKindIcon: Record<SaasViewKind, LucideIcon> = {
+  collection: Table2,
+  document: Library,
+  dashboard: LayoutGrid,
+  kanban: Columns3,
+  chart: LayoutGrid,
+}
+
+// ---------------------------------------------------------------------------
+// LEFT NAV — domains, in the owner's fixed order.
+//
+// Collapse/rollup idioms are lifted from `AppLeftPaneConsoleSpike`: one
+// `ReadonlySet<string>` of expanded section ids toggled through `toggleSet`, and
+// the rule that a COLLAPSED header states what is actionable while an EXPANDED
+// one goes silent because its rows say it themselves.
+// ---------------------------------------------------------------------------
+
+function toggleSet(current: ReadonlySet<string>, key: string): ReadonlySet<string> {
+  const next = new Set(current)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  return next
+}
+
+function NavEntry({
+  icon: Icon,
+  label,
+  active,
+  trailing,
+  onClick,
+}: {
+  icon: LucideIcon
+  label: string
+  active?: boolean
+  trailing?: ReactNode
+  onClick: () => void
+}) {
   return (
-    <div className="saas-spike-page">
-      <PageHeader
-        eyebrow={`${company.sector} · ${company.stage}`}
-        title={company.name}
-        description={company.summary}
-        trailing={<Button size="sm" onClick={openChat}><Icon name="spark" />Ask about {company.name}</Button>}
-      />
-      <div className="mt-8 grid gap-10 xl:grid-cols-[minmax(0,1fr)_280px]">
-        <div className="min-w-0 space-y-10">
-          <section>
-            <h2 className="text-sm font-semibold text-foreground">Key metrics</h2>
-            <div className="mt-3 grid grid-cols-3 overflow-hidden rounded-lg border border-border/70">
-              {company.metrics.map((metric, index) => (
-                <div key={metric.label} className={`px-4 py-4 ${index > 0 ? "border-l border-border/60" : ""}`}>
-                  <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/70">{metric.label}</p>
-                  <p className="mt-2 text-xl font-semibold tracking-[-0.025em] text-foreground">{metric.value}</p>
-                </div>
-              ))}
+    <button
+      type="button"
+      onClick={onClick}
+      aria-current={active ? "page" : undefined}
+      className="group flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-[13px] text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 aria-[current=page]:bg-foreground/[0.07] aria-[current=page]:font-medium aria-[current=page]:text-foreground"
+    >
+      <Icon className="size-3.5 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+      <span className="min-w-0 flex-1 truncate text-left">{label}</span>
+      {trailing}
+    </button>
+  )
+}
+
+/** The amber attention count. One component, so Inbox and a collapsed Work header cannot drift. */
+function AttentionCount({ count }: { count: number }) {
+  if (count <= 0) return null
+  return (
+    <span
+      data-boring-workspace-part="saas-attention-count"
+      className="ml-auto rounded-full bg-amber-500/15 px-1.5 text-[10px] font-semibold tabular-nums text-amber-700 dark:text-amber-300"
+    >
+      {count}
+    </span>
+  )
+}
+
+function NavSection({
+  icon: Icon,
+  label,
+  sectionId,
+  expanded,
+  onToggle,
+  attention,
+  children,
+}: {
+  icon: LucideIcon
+  label: string
+  sectionId: string
+  expanded: boolean
+  onToggle: (sectionId: string) => void
+  attention: number
+  children: ReactNode
+}) {
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => onToggle(sectionId)}
+        aria-expanded={expanded}
+        className="group flex h-8 w-full items-center gap-2 rounded-md px-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/75 transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+      >
+        <ChevronRight
+          className={`size-3 shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`}
+          strokeWidth={2}
+          aria-hidden="true"
+        />
+        <Icon className="size-3.5 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+        <span className="min-w-0 flex-1 truncate text-left">{label}</span>
+        {/* Collapsed says what is actionable; expanded goes quiet. */}
+        {expanded ? null : <AttentionCount count={attention} />}
+      </button>
+      {expanded ? <div className="mt-0.5 pl-2">{children}</div> : null}
+    </div>
+  )
+}
+
+function SubGroupLabel({ children }: { children: ReactNode }) {
+  return <p className="px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/60">{children}</p>
+}
+
+interface SaasNavActions {
+  openInbox: () => void
+  openThread: (threadId: string) => void
+  openAgent: (agentId: string) => void
+  openSavedView: (view: SaasSavedView) => void
+  openFilesTool: () => void
+  openCommandPalette: () => void
+}
+
+function SaasLeftNav({
+  actions,
+  activePanelId,
+  attentionThreadIds,
+}: {
+  actions: SaasNavActions
+  activePanelId: string | null
+  attentionThreadIds: ReadonlySet<string>
+}) {
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set(["work"]))
+  const onToggle = useCallback((sectionId: string) => setExpanded((current) => toggleSet(current, sectionId)), [])
+  const workAttention = SAAS_THREADS.filter((thread) => attentionThreadIds.has(thread.id)).length
+  const agentAttention = SAAS_AGENTS.filter((agent) => agent.status === "Needs you").length
+
+  return (
+    <aside
+      data-boring-workspace-part="app-left-pane"
+      className="flex h-full min-h-0 w-56 shrink-0 flex-col border-r border-border/70 bg-[color:var(--surface-workbench-left)] px-2 py-3"
+    >
+      <div className="flex h-10 items-center gap-2 pl-9">
+        <span className="grid size-6 place-items-center rounded-md bg-foreground text-[11px] font-bold text-background">M</span>
+        <span className="text-sm font-semibold tracking-[-0.015em] text-foreground">Meridian</span>
+      </div>
+
+      <nav aria-label="Main navigation" className="mt-4 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
+        {/* 1. INBOX — first, by owner ruling: the single triage surface. */}
+        <NavEntry
+          icon={InboxIcon}
+          label="Inbox"
+          active={activePanelId === "saas-inbox"}
+          trailing={<AttentionCount count={attentionThreadIds.size} />}
+          onClick={actions.openInbox}
+        />
+
+        {/* 2. WORK — Threads + Automations. */}
+        <NavSection icon={Workflow} label="Work" sectionId="work" expanded={expanded.has("work")} onToggle={onToggle} attention={workAttention}>
+          <SubGroupLabel>Threads</SubGroupLabel>
+          {SAAS_THREADS.map((thread) => (
+            <AppSessionRow
+              key={thread.id}
+              session={{ id: thread.id, agentTypeId: SAAS_AGENT_TYPE, title: thread.title, nativeSessionId: thread.id, hasAssistantReply: true }}
+              state={activePanelId === `saas-thread:${thread.id}` ? "active" : "normal"}
+              pinned={false}
+              affordances="console"
+              compact
+              attentionBadge={attentionThreadIds.has(thread.id) ? { kind: "approval", label: "approve", tone: "warning", priority: 20 } : undefined}
+              onSwitch={() => actions.openThread(thread.id)}
+            />
+          ))}
+          <SubGroupLabel>Automations</SubGroupLabel>
+          {SAAS_AUTOMATIONS.map((automation) => (
+            <div key={automation.id} className="flex h-8 items-center gap-2 rounded-md px-2 text-[13px] text-muted-foreground">
+              <span className="size-1.5 shrink-0 rounded-full bg-foreground/25" aria-hidden="true" />
+              <span className="min-w-0 flex-1 truncate" title={`${automation.cadence} · last run ${automation.lastRun}`}>{automation.title}</span>
             </div>
-          </section>
-          <section>
-            <div className="border-b border-border/70 pb-3">
-              <h2 className="text-sm font-semibold text-foreground">Documents</h2>
-              <p className="mt-1 text-xs text-muted-foreground">Artifacts available to you and the agent</p>
-            </div>
-            {documents.length > 0 ? <div className="divide-y divide-border/60">
-              {documents.map((document) => (
-                <button key={document.id} type="button" onClick={() => navigate({ section: "artifacts", recordId: document.id })} className="group flex w-full items-center gap-3 px-1 py-3.5 text-left hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40">
-                  <span className="grid size-8 place-items-center rounded-md border border-border/70 bg-muted/30 text-muted-foreground"><Icon name="file" /></span>
-                  <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-foreground">{document.name}</span><span className="mt-0.5 block text-xs text-muted-foreground">{document.kind} · {document.updatedAt}</span></span>
-                  <Icon name="chevron" className="size-3.5 text-muted-foreground/40 transition-transform group-hover:translate-x-0.5" />
-                </button>
-              ))}
-            </div> : <p className="py-6 text-sm text-muted-foreground">No fixture documents attached.</p>}
-          </section>
-          <section>
-            <div className="border-b border-border/70 pb-3">
-              <h2 className="text-sm font-semibold text-foreground">Threads about this company</h2>
-              <p className="mt-1 text-xs text-muted-foreground">Agent work that carries this company as context</p>
-            </div>
-            {threads.length > 0 ? <div className="divide-y divide-border/60">
-              {threads.map((thread) => (
-                <button key={thread.id} type="button" onClick={() => navigate({ section: "threads", recordId: thread.id })} className="group flex w-full items-center gap-3 px-1 py-3.5 text-left hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40">
-                  <span className="grid size-8 place-items-center rounded-full bg-foreground/[0.06] text-muted-foreground"><Icon name="threads" /></span>
-                  <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-foreground">{thread.title}</span><span className="mt-0.5 block truncate text-xs text-muted-foreground">{thread.subject}</span></span>
-                  <StatusBadge tone={statusTone(thread.status)}>{thread.status}</StatusBadge>
-                  <Icon name="chevron" className="size-3.5 text-muted-foreground/40 transition-transform group-hover:translate-x-0.5" />
-                </button>
-              ))}
-            </div> : <p className="py-6 text-sm text-muted-foreground">No threads yet. Open Chat to start in this company context.</p>}
-          </section>
+          ))}
+          <p className="px-2 pb-1 pt-1.5 text-[10px] leading-4 text-muted-foreground/60">
+            Fixture rows — the automation plugin needs its own backend.
+          </p>
+        </NavSection>
+
+        {/* 3. AGENTS — the roster, using the shipped agent card. */}
+        <NavSection icon={Bot} label="Agents" sectionId="agents" expanded={expanded.has("agents")} onToggle={onToggle} attention={agentAttention}>
+          {SAAS_AGENTS.map((agent) => (
+            <AppLeftPaneAgentCard
+              key={agent.id}
+              agentTypeId={agent.id}
+              label={agent.name}
+              description={agent.role}
+              filtered={false}
+              active={activePanelId === `saas-agent:${agent.id}`}
+              showSessionCount={false}
+              stats={{
+                sessions: agent.threadIds.length,
+                working: agent.status === "Working" ? 1 : 0,
+                attention: agent.status === "Needs you" ? 1 : 0,
+              }}
+              onCreateSession={() => actions.openAgent(agent.id)}
+              showCreate={false}
+              onToggleFilter={() => actions.openAgent(agent.id)}
+            />
+          ))}
+        </NavSection>
+
+        {/* 4. LIBRARY — a VIEW library: files subtree + saved views of any kind. */}
+        <NavSection icon={Library} label="Library" sectionId="library" expanded={expanded.has("library")} onToggle={onToggle} attention={0}>
+          <SubGroupLabel>Files</SubGroupLabel>
+          <NavEntry icon={Library} label="Browse workspace files" onClick={actions.openFilesTool} />
+          <p className="px-2 pb-1 pt-1 text-[10px] leading-4 text-muted-foreground/60">
+            Opens the real file tree in the rail — live workspace, not fixtures.
+          </p>
+          <SubGroupLabel>Saved views</SubGroupLabel>
+          {SAAS_SAVED_VIEWS.map((view) => {
+            const KindIcon = viewKindIcon[view.kind]
+            return (
+              <button
+                key={view.id}
+                type="button"
+                onClick={() => actions.openSavedView(view)}
+                aria-current={activePanelId === view.panel ? "page" : undefined}
+                className="group flex w-full items-start gap-2.5 rounded-md px-2 py-1.5 text-left text-[13px] text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 aria-[current=page]:bg-foreground/[0.07] aria-[current=page]:text-foreground"
+              >
+                <KindIcon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/60" strokeWidth={1.75} aria-hidden="true" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">{view.title}</span>
+                  <span className="block truncate text-[10px] text-muted-foreground/60">{view.kind} · {view.note}</span>
+                </span>
+              </button>
+            )
+          })}
+        </NavSection>
+
+        {/* 5. SEARCH — the shipped command palette. */}
+        <NavEntry icon={Search} label="Search" onClick={actions.openCommandPalette} />
+      </nav>
+
+      <div className="mt-auto border-t border-border/60 pt-3">
+        <div className="flex items-center gap-2 px-2 py-2">
+          <span className="grid size-7 place-items-center rounded-full bg-foreground/[0.09] text-[10px] font-semibold text-foreground">AK</span>
+          <span className="min-w-0">
+            <span className="block truncate text-xs font-medium text-foreground">Alex Kim</span>
+            <span className="block truncate text-[10px] text-muted-foreground">Investment team</span>
+          </span>
         </div>
-        <aside>
-          <h2 className="border-b border-border/70 pb-3 text-sm font-semibold text-foreground">Company details</h2>
-          <dl className="divide-y divide-border/60 text-sm">
-            <div className="py-3"><dt className="text-xs text-muted-foreground">Fund</dt><dd className="mt-1"><button type="button" className="font-medium text-foreground hover:underline" onClick={() => fund && navigate({ section: "funds", recordId: fund.id })}>{fund?.name}</button></dd></div>
-            <div className="py-3"><dt className="text-xs text-muted-foreground">Headquarters</dt><dd className="mt-1 text-foreground">{company.headquarters}</dd></div>
-            <div className="py-3"><dt className="text-xs text-muted-foreground">Ownership</dt><dd className="mt-1 text-foreground">{company.ownership}</dd></div>
-            <div className="py-3"><dt className="text-xs text-muted-foreground">Last update</dt><dd className="mt-1 text-foreground">{company.lastUpdate}</dd></div>
-          </dl>
-        </aside>
       </div>
-    </div>
-  )
-}
-
-function FundsView({ openFund }: { openFund: (fundId: string) => void }) {
-  return (
-    <div className="saas-spike-page">
-      <PageHeader eyebrow="Portfolio" title="Funds" description="Fund-level exposure, pacing, and the companies behind each strategy." />
-      <div className="mt-8 overflow-x-auto rounded-xl border border-border/70 bg-card">
-        <table className="w-full min-w-[680px] border-collapse text-left text-sm">
-          <thead className="bg-muted/30 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/75"><tr><th className="px-4 py-3">Fund</th><th className="px-4 py-3">Strategy</th><th className="px-4 py-3">Vintage</th><th className="px-4 py-3">AUM</th><th className="px-4 py-3 text-right">Companies</th><th className="w-10" /></tr></thead>
-          <tbody className="divide-y divide-border/60">
-            {SAAS_FUNDS.map((fund) => (
-              <tr key={fund.id} onClick={() => openFund(fund.id)} className="group cursor-pointer hover:bg-muted/45">
-                <td className="px-4 py-4"><button type="button" onClick={() => openFund(fund.id)} className="rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"><span className="font-medium text-foreground hover:underline">{fund.name}</span><span className="mt-0.5 block text-xs text-muted-foreground">{fund.status}</span></button></td>
-                <td className="px-4 py-4 text-muted-foreground">{fund.strategy}</td><td className="px-4 py-4 text-muted-foreground">{fund.vintage}</td><td className="px-4 py-4 font-medium text-foreground">{fund.aum}</td>
-                <td className="px-4 py-4 text-right tabular-nums text-muted-foreground">{SAAS_COMPANIES.filter((company) => company.fundId === fund.id).length}</td><td className="pr-3 text-muted-foreground/40"><Icon name="chevron" className="size-3.5 transition-transform group-hover:translate-x-0.5" /></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
-}
-
-function FundView({ fund, navigate, openChat }: { fund: SaasFund; navigate: (location: SaasLocation) => void; openChat: () => void }) {
-  const companies = SAAS_COMPANIES.filter((company) => company.fundId === fund.id)
-  return (
-    <div className="saas-spike-page">
-      <PageHeader eyebrow={`${fund.vintage} vintage · ${fund.status}`} title={fund.name} description={fund.summary} trailing={<Button size="sm" onClick={openChat}><Icon name="spark" />Ask about this fund</Button>} />
-      <dl className="mt-8 grid grid-cols-3 overflow-hidden rounded-lg border border-border/70">
-        {[{ label: "Strategy", value: fund.strategy }, { label: "Fixture AUM", value: fund.aum }, { label: "Companies", value: String(companies.length) }].map((item, index) => <div key={item.label} className={`px-4 py-4 ${index > 0 ? "border-l border-border/60" : ""}`}><dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/70">{item.label}</dt><dd className="mt-2 text-sm font-semibold text-foreground">{item.value}</dd></div>)}
-      </dl>
-      <section className="mt-10">
-        <div className="border-b border-border/70 pb-3"><h2 className="text-sm font-semibold text-foreground">Portfolio companies</h2><p className="mt-1 text-xs text-muted-foreground">Open a company without leaving the deterministic portfolio flow</p></div>
-        <div className="divide-y divide-border/60">
-          {companies.map((company) => <button key={company.id} type="button" onClick={() => navigate({ section: "companies", recordId: company.id })} className="group flex w-full items-center gap-4 px-1 py-4 text-left hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"><span className="min-w-0 flex-1"><span className="font-medium text-foreground">{company.name}</span><span className="mt-0.5 block text-xs text-muted-foreground">{company.sector} · {company.stage}</span></span><span className="text-xs text-muted-foreground">{company.metrics[0]?.value} ARR</span><span className="w-20 text-right text-xs text-muted-foreground">{company.lastUpdate}</span><Icon name="chevron" className="size-3.5 text-muted-foreground/40 transition-transform group-hover:translate-x-0.5" /></button>)}
-        </div>
-      </section>
-    </div>
-  )
-}
-
-function ThreadsView({ openThread, openChat }: { openThread: (threadId: string) => void; openChat: () => void }) {
-  return (
-    <div className="saas-spike-page">
-      <PageHeader eyebrow="Agent work" title="Threads" description="Jobs continue across companies, funds, and source artifacts while the portfolio remains explorable." trailing={<Button size="sm" onClick={openChat}>Start thread</Button>} />
-      <div className="mt-8 overflow-hidden rounded-xl border border-border/70 bg-card divide-y divide-border/60">
-        {SAAS_THREADS.map((thread) => (
-          <button key={thread.id} type="button" onClick={() => openThread(thread.id)} className="group flex w-full items-center gap-4 px-4 py-4 text-left hover:bg-muted/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40">
-            <span className="grid size-9 shrink-0 place-items-center rounded-full bg-foreground/[0.06] text-muted-foreground"><Icon name="threads" /></span>
-            <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-foreground">{thread.title}</span><span className="mt-1 block truncate text-xs text-muted-foreground">{thread.subject}</span></span>
-            <span className="hidden max-w-40 truncate text-xs text-muted-foreground xl:block">{thread.companyIds.length} {thread.companyIds.length === 1 ? "company" : "companies"}</span>
-            <StatusBadge tone={statusTone(thread.status)}>{thread.status}</StatusBadge><span className="w-16 text-right text-xs text-muted-foreground/70">{thread.updatedAt}</span><Icon name="chevron" className="size-3.5 text-muted-foreground/40 transition-transform group-hover:translate-x-0.5" />
-          </button>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function ThreadView({ thread, navigate }: { thread: SaasThread; navigate: (location: SaasLocation) => void }) {
-  const artifacts = thread.artifactIds.map((id) => SAAS_ARTIFACTS.find((artifact) => artifact.id === id)).filter((artifact): artifact is SaasArtifact => Boolean(artifact))
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center gap-3 border-b border-border/60 bg-muted/20 px-4 py-2">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/70">Artifacts touched</span>
-        <div className="flex min-w-0 flex-1 gap-1.5 overflow-hidden">
-          {artifacts.map((artifact) => <Button key={artifact.id} variant="ghost" size="xs" className="min-w-0 max-w-48" onClick={() => navigate({ section: "artifacts", recordId: artifact.id })}><Icon name="file" /><span className="truncate">{artifact.name}</span></Button>)}
-        </div>
-        <Button variant="ghost" size="xs" onClick={() => navigate({ section: "artifacts" })}>Explore all</Button>
-      </div>
-      <div className="min-h-0 flex-1"><JobThreadView fixture={thread.job} /></div>
-    </div>
-  )
-}
-
-interface ArtifactBranch {
-  name: string
-  children: readonly { name: string; artifacts: readonly SaasArtifact[] }[]
-}
-
-function artifactBranches(): readonly ArtifactBranch[] {
-  const branches = new Map<string, Map<string, SaasArtifact[]>>()
-  for (const artifact of SAAS_ARTIFACTS) {
-    const [root = "Other", folder = "General"] = artifact.path
-    const folders = branches.get(root) ?? new Map<string, SaasArtifact[]>()
-    const files = folders.get(folder) ?? []
-    files.push(artifact)
-    folders.set(folder, files)
-    branches.set(root, folders)
-  }
-  return [...branches].map(([name, children]) => ({ name, children: [...children].map(([childName, artifacts]) => ({ name: childName, artifacts })) }))
-}
-
-function ArtifactsView({ selected, openArtifact }: { selected?: SaasArtifact; openArtifact: (artifactId: string) => void }) {
-  const branches = useMemo(artifactBranches, [])
-  return (
-    <div className="grid h-full min-h-0 grid-cols-[250px_minmax(0,1fr)]">
-      <aside className="min-h-0 overflow-y-auto border-r border-border/70 bg-[color:var(--surface-workbench-left)] px-2 py-4">
-        <div className="px-2 pb-3"><p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/75">Artifact library</p><p className="mt-1 text-xs text-muted-foreground">Fixture workspace</p></div>
-        {branches.map((branch) => <div key={branch.name} className="mt-2"><div className="flex items-center gap-2 px-2 py-1.5 text-xs font-semibold text-foreground/85"><Icon name="folder" className="size-3.5 text-muted-foreground" />{branch.name}</div>{branch.children.map((child) => <div key={child.name} className="ml-3 border-l border-border/70 pl-1"><div className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground"><Icon name="folder" className="size-3" />{child.name}</div>{child.artifacts.map((artifact) => <button key={artifact.id} type="button" onClick={() => openArtifact(artifact.id)} data-active={selected?.id === artifact.id ? "true" : undefined} className="group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 data-[active=true]:bg-foreground/[0.07] data-[active=true]:font-medium data-[active=true]:text-foreground"><Icon name="file" className="size-3.5 shrink-0" /><span className="truncate">{artifact.name}</span></button>)}</div>)}</div>)}
-      </aside>
-      <div className="min-h-0 overflow-y-auto bg-background">
-        {selected ? <div className="mx-auto max-w-3xl px-8 py-10"><PageHeader eyebrow={`${selected.kind} · ${selected.updatedAt}`} title={selected.name} description={selected.summary} /><div className="mt-8 rounded-xl border border-border/70 bg-card p-8"><div className="mx-auto max-w-xl"><div className="flex items-center justify-between border-b border-border/70 pb-4"><span className="text-xs font-semibold text-foreground">Document preview</span><StatusBadge>Fixture</StatusBadge></div><h2 className="mt-8 text-xl font-semibold tracking-[-0.02em] text-foreground">{selected.name.replace(/\.[^.]+$/, "")}</h2><p className="mt-4 text-sm leading-7 text-muted-foreground">{selected.summary}</p><div className="mt-8 space-y-3"><span className="block h-2 w-full rounded-full bg-muted" /><span className="block h-2 w-[92%] rounded-full bg-muted" /><span className="block h-2 w-[76%] rounded-full bg-muted" /><span className="mt-6 block h-2 w-[88%] rounded-full bg-muted" /><span className="block h-2 w-[64%] rounded-full bg-muted" /></div><p className="mt-10 text-xs text-muted-foreground/70">Placeholder preview — the artifact browser is fixture-only.</p></div></div></div> : <div className="grid h-full place-items-center p-8 text-center"><div><span className="mx-auto grid size-10 place-items-center rounded-lg border border-border/70 bg-muted/30 text-muted-foreground"><Icon name="artifacts" /></span><h1 className="mt-4 text-sm font-semibold text-foreground">Explore artifacts</h1><p className="mt-1 max-w-xs text-sm leading-6 text-muted-foreground">Choose a file from the tree to inspect it without asking an agent.</p></div></div>}
-      </div>
-    </div>
-  )
-}
-
-function breadcrumb(location: SaasLocation): readonly string[] {
-  if (!location.recordId) return [navItems.find((item) => item.id === location.section)?.label ?? "Overview"]
-  if (location.section === "companies") return ["Companies", SAAS_COMPANIES.find((item) => item.id === location.recordId)?.name ?? "Company"]
-  if (location.section === "funds") return ["Funds", SAAS_FUNDS.find((item) => item.id === location.recordId)?.name ?? "Fund"]
-  if (location.section === "threads") return ["Threads", SAAS_THREADS.find((item) => item.id === location.recordId)?.title ?? "Thread"]
-  if (location.section === "artifacts") return ["Artifacts", SAAS_ARTIFACTS.find((item) => item.id === location.recordId)?.name ?? "File"]
-  return ["Overview"]
-}
-
-function ChatColumn({ location, onClose, navigate }: { location: SaasLocation; onClose: () => void; navigate: (location: SaasLocation) => void }) {
-  const [draft, setDraft] = useState("")
-  const company = location.section === "companies" && location.recordId ? SAAS_COMPANIES.find((item) => item.id === location.recordId) : undefined
-  const fund = location.section === "funds" && location.recordId ? SAAS_FUNDS.find((item) => item.id === location.recordId) : undefined
-  const artifact = location.section === "artifacts" && location.recordId ? SAAS_ARTIFACTS.find((item) => item.id === location.recordId) : undefined
-  const thread = location.section === "threads" && location.recordId ? SAAS_THREADS.find((item) => item.id === location.recordId) : undefined
-  const contextLabel = company?.name ?? fund?.name ?? artifact?.name ?? thread?.title
-  const title = company ? `Thread: ${company.name} diligence` : fund ? `Thread: ${fund.name} brief` : artifact ? `Ask about ${artifact.name}` : thread ? thread.title : "Chat"
-  const suggestions = company
-    ? ["Summarize latest filings", "What changed since last update?", "Draft questions for management"]
-    : fund
-      ? ["Summarize portfolio risk", "Compare company momentum", "Draft the quarterly review"]
-      : artifact
-        ? ["Summarize this document", "Extract the key risks", "Compare with prior materials"]
-        : thread
-          ? ["Summarize where we are", "What needs my decision?", "Show the supporting evidence"]
-          : ["Review portfolio changes", "Show everything that needs me", "Start Acme diligence"]
-  return (
-    <aside className="flex min-h-0 flex-col border-l border-border/70 bg-[color:var(--surface-chat)]" data-boring-workspace-part="saas-contextual-chat">
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border/70 px-3"><span className="grid size-7 place-items-center rounded-full bg-foreground/[0.07] text-foreground"><Icon name="spark" className="size-3.5" /></span><div className="min-w-0 flex-1"><h2 className="truncate text-[13px] font-semibold text-foreground">{title}</h2><p className="text-[11px] text-muted-foreground">Context follows your current view</p></div><Button variant="ghost" size="icon-xs" aria-label="Close chat" onClick={onClose}><Icon name="close" /></Button></header>
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5">
-        {contextLabel ? <Chip className="max-w-full"><Icon name={company ? "companies" : fund ? "funds" : artifact ? "file" : "threads"} className="size-3" /><span className="truncate">{contextLabel}</span></Chip> : null}
-        {location.section === "overview" && !location.recordId ? <div className="mt-1"><p className="text-sm font-medium text-foreground">Continue a thread</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Pick up existing work, or start with the whole portfolio in view.</p><div className="mt-4 divide-y divide-border/60 border-y border-border/60">{SAAS_THREADS.slice(0, 3).map((item) => <button key={item.id} type="button" onClick={() => navigate({ section: "threads", recordId: item.id })} className="group flex w-full items-center gap-2 py-3 text-left"><span className="min-w-0 flex-1"><span className="block truncate text-xs font-medium text-foreground">{item.title}</span><span className="mt-0.5 block text-[11px] text-muted-foreground">{item.updatedAt}</span></span><StatusBadge tone={statusTone(item.status)} className="text-[10px]">{item.status}</StatusBadge><Icon name="chevron" className="size-3 text-muted-foreground/40" /></button>)}</div><Button variant="outline" size="sm" className="mt-4 w-full" onClick={() => setDraft("Start a new thread about ")}>Start a new thread</Button></div> : <div className="mt-8"><div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/70"><span className="size-1.5 rounded-full bg-success" />Agent ready</div><p className="mt-3 text-sm leading-6 text-foreground">I have the current record and its linked artifacts in context. What would you like to understand or produce?</p></div>}
-        <div className="mt-8"><p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/70">Suggested</p><div className="mt-2 flex flex-col gap-2">{suggestions.map((suggestion) => <button key={suggestion} type="button" onClick={() => setDraft(suggestion)} className="rounded-lg border border-border/70 bg-background px-3 py-2.5 text-left text-xs leading-5 text-foreground transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40">{suggestion}</button>)}</div></div>
-      </div>
-      <div className="shrink-0 border-t border-border/70 p-3"><div className="rounded-xl border border-border/80 bg-background focus-within:ring-2 focus-within:ring-ring/30"><Textarea value={draft} onChange={(event) => setDraft(event.target.value)} rows={3} placeholder="Ask in this context…" className="min-h-20 resize-none border-0 bg-transparent text-sm shadow-none focus-visible:ring-0 dark:bg-transparent" /><div className="flex items-center justify-between gap-2 px-2 pb-2"><span className="text-[10px] text-muted-foreground/65">Fixture · composer visual only</span><Button size="icon-xs" disabled aria-label="Send fixture message"><Icon name="arrow" className="size-3" /></Button></div></div></div>
     </aside>
   )
 }
 
-export function SaasSpike() {
-  const [location, setLocation] = useState<SaasLocation>({ section: "overview" })
-  const [chatOpen, setChatOpen] = useState(false)
-  const crumbs = breadcrumb(location)
-  const navigate = (next: SaasLocation) => setLocation(next)
-  const company = location.section === "companies" && location.recordId ? SAAS_COMPANIES.find((item) => item.id === location.recordId) : undefined
-  const fund = location.section === "funds" && location.recordId ? SAAS_FUNDS.find((item) => item.id === location.recordId) : undefined
-  const thread = location.section === "threads" && location.recordId ? SAAS_THREADS.find((item) => item.id === location.recordId) : undefined
-  const artifact = location.section === "artifacts" && location.recordId ? SAAS_ARTIFACTS.find((item) => item.id === location.recordId) : undefined
+/** Collapsed nav, built from the shipped `RailAction`. */
+function SaasLeftRail({ actions, attention }: { actions: SaasNavActions; attention: number }) {
+  return (
+    <aside
+      data-boring-workspace-part="app-left-rail"
+      className="flex h-full w-11 shrink-0 flex-col items-center gap-1 border-r border-border/70 bg-[color:var(--surface-workbench-left)] pb-3 pt-14"
+    >
+      <RailAction
+        label="Inbox"
+        icon={<InboxIcon className="size-4" strokeWidth={1.75} />}
+        onClick={actions.openInbox}
+        trailing={attention > 0 ? <AttentionCount count={attention} /> : undefined}
+      />
+      <RailAction label="Search" icon={<Search className="size-4" strokeWidth={1.75} />} onClick={actions.openCommandPalette} />
+    </aside>
+  )
+}
 
-  let content: ReactNode
-  if (location.section === "overview") content = <OverviewView navigate={navigate} />
-  else if (location.section === "companies") content = company ? <CompanyView company={company} navigate={navigate} openChat={() => setChatOpen(true)} /> : <CompaniesView openCompany={(recordId) => navigate({ section: "companies", recordId })} />
-  else if (location.section === "funds") content = fund ? <FundView fund={fund} navigate={navigate} openChat={() => setChatOpen(true)} /> : <FundsView openFund={(recordId) => navigate({ section: "funds", recordId })} />
-  else if (location.section === "threads") content = thread ? <ThreadView thread={thread} navigate={navigate} /> : <ThreadsView openThread={(recordId) => navigate({ section: "threads", recordId })} openChat={() => setChatOpen(true)} />
-  else content = <ArtifactsView selected={artifact} openArtifact={(recordId) => navigate({ section: "artifacts", recordId })} />
+// ---------------------------------------------------------------------------
+// CHAT COLUMN — one more column beside the current pane. Never a navigation.
+//
+// Honest note on reuse: `PiChatComposerSurface` is a fully controlled component
+// with ~45 required props whose entire state machine lives in `PiChatPanel`,
+// and `ChatPanelHost` needs a live workspace/session. Neither has a fixture
+// seam. The established precedent on this branch is `JobThreadView`, which
+// replicates the chat surface's RESOLVED classes rather than importing it —
+// "same pixels, no variant". This column follows that same precedent.
+// ---------------------------------------------------------------------------
+
+function ChatColumn({ contextLabel, onClose }: { contextLabel: string | null; onClose: () => void }) {
+  const [draft, setDraft] = useState("")
+  const suggestions = contextLabel
+    ? ["Summarize what changed", "What needs my decision?", "Show the supporting evidence"]
+    : ["Review portfolio changes", "Show everything that needs me", "Start Acme diligence"]
+  return (
+    <aside
+      data-boring-workspace-part="saas-contextual-chat"
+      className="flex w-[380px] min-w-[320px] shrink-0 flex-col border-l border-border/70 bg-[color:var(--surface-chat)]"
+    >
+      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border/70 px-3">
+        <span className="grid size-7 place-items-center rounded-full bg-foreground/[0.07] text-foreground"><Sparkles className="size-3.5" strokeWidth={1.75} /></span>
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-[13px] font-semibold text-foreground">{contextLabel ?? "Chat"}</h2>
+          <p className="text-[11px] text-muted-foreground">Context follows the active pane</p>
+        </div>
+        <Button variant="ghost" size="icon-xs" aria-label="Close chat" onClick={onClose}><X className="size-3.5" /></Button>
+      </header>
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5">
+        {contextLabel ? <Chip className="max-w-full"><span className="truncate">{contextLabel}</span></Chip> : null}
+        <div className="mt-8">
+          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/70">
+            <span className="size-1.5 rounded-full bg-success" />Agent ready
+          </div>
+          <p className="mt-3 text-sm leading-6 text-foreground">
+            I have the active pane and its linked artifacts in context. What would you like to understand or produce?
+          </p>
+        </div>
+        <div className="mt-8">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/70">Suggested</p>
+          <div className="mt-2 flex flex-col gap-2">
+            {suggestions.map((suggestion) => (
+              <button
+                key={suggestion}
+                type="button"
+                onClick={() => setDraft(suggestion)}
+                className="rounded-lg border border-border/70 bg-background px-3 py-2.5 text-left text-xs leading-5 text-foreground transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+              >
+                {suggestion}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="shrink-0 border-t border-border/70 p-3">
+        <div className="rounded-xl border border-border/80 bg-background focus-within:ring-2 focus-within:ring-ring/30">
+          <Textarea
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            rows={3}
+            placeholder="Ask in this context…"
+            className="min-h-20 resize-none border-0 bg-transparent text-sm shadow-none focus-visible:ring-0 dark:bg-transparent"
+          />
+          <div className="flex items-center justify-between gap-2 px-2 pb-2">
+            <span className="text-[10px] text-muted-foreground/65">Fixture · composer visual only</span>
+            <Button size="icon-xs" disabled aria-label="Send fixture message"><ChevronRight className="size-3" /></Button>
+          </div>
+        </div>
+      </div>
+    </aside>
+  )
+}
+
+// ---------------------------------------------------------------------------
+
+/**
+ * Fixture attention, seeded into the REAL attention store.
+ *
+ * The Inbox badge and the collapsed-Work rollup then come out of the shipped
+ * code path. If this seeding is wrong, the badges are wrong — which is the
+ * point of not counting fixtures by hand in the nav.
+ */
+function SaasAttentionSeed() {
+  const { addBlocker } = useWorkspaceAttention()
+  useEffect(() => {
+    for (const thread of needsYouThreads()) {
+      addBlocker({
+        id: `saas-spike:${thread.id}`,
+        reason: "ask-user.approval",
+        sessionId: thread.id,
+        agentTypeId: SAAS_AGENT_TYPE,
+        inbox: { kind: "approval", sourceLabel: thread.title },
+        sessionBadge: { kind: "approval", label: "approve", tone: "warning", priority: 20 },
+      })
+    }
+  }, [addBlocker])
+  return null
+}
+
+function SaasSpikeShell() {
+  const surfaceRef = useRef<SurfaceShellApi | null>(null)
+  const [collapsed, setCollapsed] = useState(false)
+  const [chatOpen, setChatOpen] = useState(false)
+  const [activePanelId, setActivePanelId] = useState<string | null>(null)
+  const [activeTitle, setActiveTitle] = useState<string | null>(null)
+  const { blockers } = useWorkspaceAttention()
+
+  const attentionThreadIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const blocker of blockers) if (blocker.sessionId) ids.add(blocker.sessionId)
+    return ids
+  }, [blockers])
+
+  const openThread = useCallback((threadId: string) => {
+    const thread = SAAS_THREADS.find((item) => item.id === threadId)
+    surfaceRef.current?.openPanel({
+      id: `saas-thread:${threadId}`,
+      component: "saas-thread",
+      title: thread?.title ?? "Thread",
+      params: { threadId },
+    })
+  }, [])
+
+  const actions = useMemo<SaasNavActions>(() => ({
+    openInbox: () => surfaceRef.current?.openPanel({ id: "saas-inbox", component: "saas-inbox", title: "Inbox", params: { onOpenThread: openThread } }),
+    openThread,
+    openAgent: (agentId: string) => {
+      const agent = SAAS_AGENTS.find((item) => item.id === agentId)
+      surfaceRef.current?.openPanel({
+        id: `saas-agent:${agentId}`,
+        component: "saas-agent",
+        title: agent?.name ?? "Agent",
+        params: { agentId, onOpenThread: openThread },
+      })
+    },
+    openSavedView: (view: SaasSavedView) => {
+      // The saved view carries the panel id the RAIL tool registers, so the
+      // library entry and the rail tool land on ONE panel instance.
+      surfaceRef.current?.openPanel({ id: view.panel, component: view.panel, title: view.title })
+    },
+    // The Files tool is a rail source; revealing the workspace root opens it.
+    openFilesTool: () => surfaceRef.current?.expandToFile("."),
+    openCommandPalette: () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }))
+    },
+  }), [openThread])
+
+  // Land on the Inbox: it is the single triage surface, so it is also the
+  // thing that should already be open when the app opens.
+  const handleReady = useCallback((api: SurfaceShellApi) => {
+    surfaceRef.current = api
+    api.openPanel({ id: "saas-inbox", component: "saas-inbox", title: "Inbox", params: { onOpenThread: openThread } })
+  }, [openThread])
+
+  const handleChange = useCallback((snapshot: { openTabs: { id: string; title: string }[]; activeTab: string | null }) => {
+    setActivePanelId(snapshot.activeTab)
+    setActiveTitle(snapshot.openTabs.find((tab) => tab.id === snapshot.activeTab)?.title ?? null)
+  }, [])
 
   return (
-    <div className={`saas-spike-shell ${chatOpen ? "saas-spike-shell--chat-open" : ""}`} data-chat-open={chatOpen ? "true" : "false"} data-boring-workspace-part="saas-spike">
-      <aside className="flex min-h-0 flex-col border-r border-border/70 bg-[color:var(--surface-workbench-left)] px-2 py-3">
-        <div className="flex h-10 items-center gap-2 px-2"><span className="grid size-6 place-items-center rounded-md bg-foreground text-[11px] font-bold text-background">M</span><span className="text-sm font-semibold tracking-[-0.015em] text-foreground">Meridian</span></div>
-        <nav aria-label="Main navigation" className="mt-5 flex flex-col gap-0.5">{navItems.map((item) => <button key={item.id} type="button" aria-current={location.section === item.id ? "page" : undefined} onClick={() => navigate({ section: item.id })} className="group flex h-8 items-center gap-2.5 rounded-md px-2 text-[13px] text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 aria-[current=page]:bg-foreground/[0.07] aria-[current=page]:font-medium aria-[current=page]:text-foreground"><Icon name={item.id} className="size-3.5 shrink-0" /><span className="truncate">{item.label}</span>{item.id === "threads" && SAAS_THREADS.some((value) => value.status === "Needs you") ? <span className="ml-auto rounded-full bg-amber-500/15 px-1.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">2</span> : null}</button>)}</nav>
-        <div className="mt-auto border-t border-border/60 pt-3"><div className="flex items-center gap-2 px-2 py-2"><span className="grid size-7 place-items-center rounded-full bg-foreground/[0.09] text-[10px] font-semibold text-foreground">AK</span><span className="min-w-0"><span className="block truncate text-xs font-medium text-foreground">Alex Kim</span><span className="block truncate text-[10px] text-muted-foreground">Investment team</span></span></div></div>
-      </aside>
-      <main className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background">
-        <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border/70 px-4"><div className="flex min-w-0 flex-1 items-center gap-1.5 text-xs text-muted-foreground">{crumbs.map((crumb, index) => <span key={`${crumb}-${index}`} className="flex min-w-0 items-center gap-1.5">{index > 0 ? <span className="text-muted-foreground/40">/</span> : null}{index === 0 && crumbs.length > 1 ? <button type="button" onClick={() => navigate({ section: location.section })} className="truncate rounded-sm hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40">{crumb}</button> : <span className={index === crumbs.length - 1 ? "truncate font-medium text-foreground" : "truncate"}>{crumb}</span>}</span>)}</div><span className="hidden rounded-full border border-border/70 bg-muted/30 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground lg:inline-flex">Fixture data</span><Button variant={chatOpen ? "secondary" : "outline"} size="sm" aria-pressed={chatOpen} onClick={() => setChatOpen((current) => !current)}><Icon name="chat" />{chatOpen ? "Close chat" : "Chat"}</Button></header>
-        <div className="min-h-0 flex-1 overflow-hidden">{content}</div>
-      </main>
-      {chatOpen ? <ChatColumn location={location} onClose={() => setChatOpen(false)} navigate={navigate} /> : null}
-    </div>
+    <PluginTabsWorkspaceShell
+      collapsed={collapsed}
+      onCollapse={() => setCollapsed(true)}
+      onExpand={() => setCollapsed(false)}
+      leftPane={<SaasLeftNav actions={actions} activePanelId={activePanelId} attentionThreadIds={attentionThreadIds} />}
+      collapsedRail={<SaasLeftRail actions={actions} attention={attentionThreadIds.size} />}
+    >
+      <div className="flex h-full min-h-0 w-full">
+        <div className="min-w-0 flex-1">
+          <SurfaceShell
+            storageKey="boring-ui-v2:layout:saas-spike"
+            extraPanels={[...SAAS_PANEL_IDS, "saas-companies-visualization", "saas-funds-visualization"]}
+            showCloseAction={false}
+            hideLevelOneHeader
+            onReady={handleReady}
+            onChange={handleChange}
+          />
+        </div>
+        {chatOpen ? <ChatColumn contextLabel={activeTitle} onClose={() => setChatOpen(false)} /> : null}
+      </div>
+      {chatOpen ? null : (
+        <div className="absolute bottom-4 right-4 z-50">
+          <Button size="sm" onClick={() => setChatOpen(true)}><Sparkles className="size-3.5" />Chat</Button>
+        </div>
+      )}
+    </PluginTabsWorkspaceShell>
+  )
+}
+
+interface WorkspaceMeta {
+  workspaceId?: string
+  projectName?: string
+  defaultAgentTypeId?: string
+}
+
+export function SaasSpike() {
+  // The file tree is REAL, so this route needs the same workspace identity the
+  // main playground route resolves. Fixtures cover everything else.
+  const [meta, setMeta] = useState<WorkspaceMeta | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    void fetch("/api/v1/workspace/meta")
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`workspace metadata request failed (${response.status})`)
+        return await response.json() as WorkspaceMeta
+      })
+      .then((value) => { if (!cancelled) setMeta(value) })
+      .catch(() => { if (!cancelled) setError("The SaaS spike could not reach the workspace API. The file tree needs it; reload to try again.") })
+    return () => { cancelled = true }
+  }, [])
+
+  if (error) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-background p-6">
+        <p role="alert" className="max-w-md text-center text-sm text-destructive">{error}</p>
+      </div>
+    )
+  }
+  if (!meta) return <div className="h-screen w-screen bg-background" />
+
+  return (
+    <WorkspaceProvider
+      agentTypeId={meta.defaultAgentTypeId ?? SAAS_AGENT_TYPE}
+      apiBaseUrl=""
+      workspaceId={meta.workspaceId ?? "Workspace"}
+      appTitle="Meridian"
+      workspaceLabel={meta.projectName ?? "Portfolio"}
+      plugins={saasPlugins}
+      panels={saasPanels()}
+      persistenceEnabled
+      storageKey="boring-ui-v2:layout:saas-spike"
+      manageDocumentTitle={false}
+      bridgeEndpoint={null}
+    >
+      <SaasAttentionSeed />
+      <div className="h-screen w-screen">
+        <SaasSpikeShell />
+      </div>
+    </WorkspaceProvider>
   )
 }

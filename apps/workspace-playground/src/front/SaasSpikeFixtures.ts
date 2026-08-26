@@ -1,4 +1,5 @@
 import type { JobThreadEntry, JobThreadFixture } from "./JobThreadView"
+import type { ExplorerDataSource, ExplorerItem, Facets } from "@hachej/boring-data-explorer/shared"
 
 export interface SaasCompany {
   id: string
@@ -715,4 +716,228 @@ export const SAAS_THREADS: readonly SaasThread[] = [
       target: 2,
     }),
   },
+]
+
+// ---------------------------------------------------------------------------
+// RE-COMPOSITION LAYER (owner correction, 2026-08-26)
+//
+// The spike no longer hand-rolls tables/tree/shell. It feeds the SAME fixture
+// records above into the components that already exist:
+//
+//   - Companies / Funds  -> `DataExplorer` from `@hachej/boring-data-explorer`,
+//     mounted as workbench workspace SOURCES via `createDataCatalogPlugin`.
+//     That plugin takes an injected `ExplorerDataSource`, never a backend, so
+//     the adapters below are the whole integration.
+//   - Files              -> the real `filesystemPlugin` file tree against the
+//     live playground agent API. Not fixture-fed; it browses the actual
+//     `apps/workspace-playground/workspace` directory.
+//
+// HONEST LIMITATION, stated once: `DataExplorer` is a faceted LIST (leading
+// badge, title, subtitle, trailing badges, right-aligned meta), not a columnar
+// grid. There is no columnar table primitive anywhere in `packages/ui` or in
+// either data plugin. So "Companies" reads as a searchable, facet-filtered list
+// rather than the Company|Sector|Fund|Last-update table the bespoke version
+// drew. That is a real loss of column scannability and a real gain of search +
+// facets; it is the shape the existing building block actually has.
+// ---------------------------------------------------------------------------
+
+
+/**
+ * Minimal in-memory `ExplorerDataSource`.
+ *
+ * `plugins/data-explorer/src/front/fixtureAdapters.ts` has the same helper, but
+ * only its two prebuilt `createMock*Adapter()` factories are exported — the
+ * generic `makeAdapter` is private. This is that helper, narrowed to what the
+ * spike needs, so the spike stays on the plugin's public contract.
+ */
+function fixtureAdapter(
+  rows: readonly ExplorerItem[],
+  extractFacets: (row: ExplorerItem) => Record<string, string>,
+): ExplorerDataSource {
+  const matches = (row: ExplorerItem, filters: Record<string, string[]>): boolean => {
+    const values = extractFacets(row)
+    for (const [key, selected] of Object.entries(filters)) {
+      if (!selected.length) continue
+      if (!selected.includes(values[key] ?? "")) return false
+    }
+    return true
+  }
+  return {
+    async search(args) {
+      let pool = [...rows]
+      if (args.group) pool = pool.filter((row) => extractFacets(row)[args.group!.key] === args.group!.value)
+      if (args.query) {
+        const query = args.query.toLowerCase()
+        pool = pool.filter((row) => (
+          row.title.toLowerCase().includes(query) || (row.subtitle?.toLowerCase().includes(query) ?? false)
+        ))
+      }
+      pool = pool.filter((row) => matches(row, args.filters))
+      const slice = pool.slice(args.offset, args.offset + args.limit)
+      return { items: slice, total: pool.length, hasMore: args.offset + slice.length < pool.length }
+    },
+    async fetchFacets(args) {
+      const pool = rows.filter((row) => matches(row, args.filters))
+      const facets: Facets = {}
+      for (const row of pool) {
+        for (const [key, value] of Object.entries(extractFacets(row))) {
+          if (!value) continue
+          const bucket = (facets[key] ??= [])
+          const existing = bucket.find((entry) => entry.value === value)
+          if (existing) existing.count += 1
+          else bucket.push({ value, count: 1 })
+        }
+      }
+      return facets
+    },
+  }
+}
+
+const fundNameById = new Map(SAAS_FUNDS.map((fund) => [fund.id, fund.name]))
+
+const COMPANY_ROWS: readonly ExplorerItem[] = SAAS_COMPANIES.map((company) => ({
+  id: company.id,
+  title: company.name,
+  subtitle: `${company.sector} · ${company.stage}`,
+  leading: { code: company.name.slice(0, 2).toUpperCase(), tooltip: company.name },
+  trailing: [{ code: fundNameById.get(company.fundId) ?? company.fundId, tooltip: "Fund" }],
+  meta: company.lastUpdate,
+}))
+
+const FUND_ROWS: readonly ExplorerItem[] = SAAS_FUNDS.map((fund) => ({
+  id: fund.id,
+  title: fund.name,
+  subtitle: `${fund.strategy} · ${fund.vintage} vintage`,
+  leading: { code: fund.name.slice(0, 2).toUpperCase(), tooltip: fund.name },
+  trailing: [{ code: fund.status, tooltip: "Status" }],
+  meta: fund.aum,
+}))
+
+const companyById = new Map(SAAS_COMPANIES.map((company) => [company.id, company]))
+const fundById = new Map(SAAS_FUNDS.map((fund) => [fund.id, fund]))
+
+export const SAAS_COMPANY_ADAPTER: ExplorerDataSource = fixtureAdapter(COMPANY_ROWS, (row): Record<string, string> => {
+  const company = companyById.get(row.id)
+  if (!company) return {}
+  return { sector: company.sector, stage: company.stage, fund: fundNameById.get(company.fundId) ?? "" }
+})
+
+export const SAAS_FUND_ADAPTER: ExplorerDataSource = fixtureAdapter(FUND_ROWS, (row): Record<string, string> => {
+  const fund = fundById.get(row.id)
+  if (!fund) return {}
+  return { strategy: fund.strategy, vintage: fund.vintage, status: fund.status }
+})
+
+export const SAAS_COMPANY_FACETS = [
+  { key: "sector", label: "Sector" },
+  { key: "fund", label: "Fund" },
+  { key: "stage", label: "Stage" },
+]
+
+export const SAAS_FUND_FACETS = [
+  { key: "strategy", label: "Strategy" },
+  { key: "vintage", label: "Vintage" },
+  { key: "status", label: "Status" },
+]
+
+// ---------------------------------------------------------------------------
+// LIBRARY: saved views (owner refinement #2)
+//
+// The Library is a VIEW library, not a file list. Its entries follow the
+// ratified `ViewDescriptor` vocabulary (`docs/plans/long-term/inbox/
+// 2026-08-17-part1-chatgpt-synthesis.md`): a view is `{ kind, title, subject?,
+// query?, state? }` and `kind` is the semantic shape the agent reasons in
+// (collection / document / dashboard / kanban / chart), never a Dockview id.
+//
+// The architecture point the spike has to make VISIBLE: the rail TOOL and the
+// Library ENTRY open the SAME component over the SAME fixture module. So the
+// `collection` entries below carry the very panel id that
+// `createDataCatalogPlugin` registers for the matching rail source — clicking
+// either path lands on one panel instance, not two lookalikes.
+// ---------------------------------------------------------------------------
+
+export type SaasViewKind = "collection" | "document" | "dashboard" | "kanban" | "chart"
+
+export interface SaasSavedView {
+  id: string
+  title: string
+  kind: SaasViewKind
+  /** Registered panel component id this view opens. */
+  panel: string
+  params?: Record<string, unknown>
+  /** Why this entry exists, shown as the row's quiet subtitle. */
+  note: string
+}
+
+export const SAAS_SAVED_VIEWS: readonly SaasSavedView[] = [
+  {
+    id: "view-companies",
+    title: "Companies",
+    kind: "collection",
+    panel: "saas-companies-visualization",
+    note: "same panel as the rail tool",
+  },
+  {
+    id: "view-funds",
+    title: "Funds",
+    kind: "collection",
+    panel: "saas-funds-visualization",
+    note: "same panel as the rail tool",
+  },
+  {
+    id: "view-portfolio-overview",
+    title: "Portfolio overview",
+    kind: "dashboard",
+    panel: "saas-overview",
+    note: "portfolio stat tiles",
+  },
+  {
+    id: "view-diligence-pipeline",
+    title: "Diligence pipeline",
+    kind: "kanban",
+    panel: "saas-kanban-placeholder",
+    note: "placeholder — not built yet",
+  },
+]
+
+// ---------------------------------------------------------------------------
+// WORK > Automations, and the AGENTS roster (owner refinement #3).
+// ---------------------------------------------------------------------------
+
+export interface SaasAutomation {
+  id: string
+  title: string
+  cadence: string
+  lastRun: string
+}
+
+/**
+ * Fixture rows, deliberately.
+ *
+ * `plugins/boring-automation` exists and its `AutomationCard`/`AutomationPanel`
+ * are real, but (a) the plugin is not a `workspace-playground` dependency, so
+ * using it means a dependency add + a `build:deps` change + a dev-server
+ * restart, and (b) its components are panel-sized cards driven by `client.ts`
+ * against a live automation backend — the wrong shape for a nav sub-group row
+ * even if it were wired. So Automations are quiet nav rows here, and the
+ * plugin stays un-integrated. Called out rather than hidden.
+ */
+export const SAAS_AUTOMATIONS: readonly SaasAutomation[] = [
+  { id: "weekly-digest", title: "Weekly portfolio digest", cadence: "Mondays 07:00", lastRun: "2d ago" },
+  { id: "filing-watch", title: "Filing watch — Forge Industrial", cadence: "On new filing", lastRun: "6h ago" },
+  { id: "reserve-check", title: "Reserve pacing check", cadence: "Month end", lastRun: "12d ago" },
+]
+
+export interface SaasAgent {
+  id: string
+  name: string
+  role: string
+  status: "Idle" | "Working" | "Needs you"
+  threadIds: readonly string[]
+}
+
+export const SAAS_AGENTS: readonly SaasAgent[] = [
+  { id: "analyst", name: "Analyst", role: "Reads filings and builds the evidence base", status: "Working", threadIds: ["acme-diligence", "forge-portfolio-review"] },
+  { id: "reviewer", name: "Reviewer", role: "Challenges conclusions before they reach you", status: "Needs you", threadIds: ["acme-diligence"] },
+  { id: "scribe", name: "Scribe", role: "Drafts memos and meeting material", status: "Idle", threadIds: ["forge-portfolio-review"] },
 ]
