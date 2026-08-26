@@ -13,7 +13,8 @@
 //
 // Checks (see docs/procedures/... — none yet; this header is the doc):
 //   1. manifest    — package.json parses; boring.agent.{definitionId,version,
-//                     label,instructionsRef} present; instructionsRef file exists.
+//                     label,instructionsRef} and pi.skills are present;
+//                     instructionsRef file exists.
 //   2. compiles    — materializeAgentDirectory() compiles the package
 //                     (manifest validation + instructions + knowledge/ digesting)
 //                     without throwing.
@@ -88,7 +89,7 @@ async function pathExists(path) {
  * caller can both report it and feed a preflight-annotated descriptor to the
  * real loader.
  */
-async function checkManifest(pkgDir) {
+export async function checkManifest(pkgDir) {
   const pkgPath = resolve(pkgDir, 'package.json')
   const errors = []
   let raw
@@ -119,8 +120,8 @@ async function checkManifest(pkgDir) {
     }
   }
   const skills = parsed.pi?.skills
-  if (skills !== undefined && (!Array.isArray(skills) || skills.some((skill) => typeof skill !== 'string'))) {
-    errors.push('pi.skills, when present, must be an array of strings')
+  if (!Array.isArray(skills) || skills.some((skill) => typeof skill !== 'string')) {
+    errors.push('pi.skills must be an array of strings')
   }
   return { ok: errors.length === 0, errors, manifest: parsed, agent }
 }
@@ -162,6 +163,31 @@ async function readSeatTier(path, seat) {
   const raw = parseYaml(await readFile(path, 'utf8'))
   const tier = raw?.models?.seats?.[seat]
   return typeof tier === 'string' ? tier : undefined
+}
+
+export function classifySeatStatus({ seatName, composed, hasUnseatedMarker, realFailureCount }) {
+  if (seatName && composed) {
+    return { ok: true, detail: `SEATED as "${seatName}" — composes in fleet.yaml (PASS)` }
+  }
+  if (seatName && realFailureCount === 0) {
+    return {
+      ok: false,
+      detail: `seat "${seatName}" is bound to this definitionId but did not compose, and no diagnostic explains why`,
+    }
+  }
+  if (seatName) {
+    return { ok: false, detail: `seat "${seatName}" is bound to this definitionId but failed to compose (see diagnostics above)` }
+  }
+  if (hasUnseatedMarker) {
+    return { ok: true, detail: 'DISCOVERED-BUT-UNSEATED (AGENT_DEFINITION_UNSEATED) — inert, PASS' }
+  }
+  if (realFailureCount > 0) {
+    return { ok: false, detail: 'discovered but excluded before seat resolution (see diagnostics above)' }
+  }
+  return {
+    ok: false,
+    detail: 'definitionId is ambiguous or excluded (see diagnostics above); not seated and not cleanly unseated',
+  }
 }
 
 async function main() {
@@ -274,26 +300,13 @@ async function main() {
       record('diagnostic', false, `${diag.code}${diag.seat ? ` (seat ${diag.seat})` : ''}: ${diag.message}`)
     }
 
-    if (seatBinding && composed) {
-      record('seat-status', true, `SEATED as "${seatBinding.seat}" — composes in fleet.yaml (PASS)`)
-    } else if (seatBinding && !composed && realFailures.length === 0) {
-      // Seated per fleet.yaml but didn't compose and no diagnostic pinned to
-      // this definitionId explains why (e.g. a conflicted definitionId,
-      // whose diagnostics are recorded against every claimant equally, or a
-      // thrown fleet-compose error swallowed above) — surface it as a
-      // failure rather than silently reporting "seated".
-      record('seat-status', false, `seat "${seatBinding.seat}" is bound to this definitionId but did not compose, and no diagnostic explains why`)
-    } else if (seatBinding) {
-      record('seat-status', false, `seat "${seatBinding.seat}" is bound to this definitionId but failed to compose (see diagnostics above)`)
-    } else if (unseatedMarker) {
-      record('seat-status', true, `DISCOVERED-BUT-UNSEATED (AGENT_DEFINITION_UNSEATED) — inert, PASS`)
-    } else if (realFailures.length > 0) {
-      record('seat-status', false, 'discovered but excluded before seat resolution (see diagnostics above)')
-    } else {
-      // Reachable only if a same-definitionId conflict excluded it from both
-      // the unseated-marker path and any seat binding.
-      record('seat-status', false, 'definitionId is ambiguous or excluded (see diagnostics above); not seated and not cleanly unseated')
-    }
+    const seatStatus = classifySeatStatus({
+      seatName: seatBinding?.seat,
+      composed: Boolean(composed),
+      hasUnseatedMarker: Boolean(unseatedMarker),
+      realFailureCount: realFailures.length,
+    })
+    record('seat-status', seatStatus.ok, seatStatus.detail)
 
     // ---- Check 6: model policy (structural only) -------------------------
     if (seatBinding) {
@@ -332,7 +345,10 @@ function emit(report, jsonMode) {
   console.log(`[factory:check] ${report.ok ? 'PASS' : 'FAIL'} overall`)
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.stack ?? error.message : String(error))
-  process.exit(1)
-})
+const isMain = process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url
+if (isMain) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.stack ?? error.message : String(error))
+    process.exit(1)
+  })
+}
