@@ -69,12 +69,19 @@ function transcript(id: string, title: string, workspaceScopeId: string, timesta
   ].join('\n')
 }
 
-/** Plants an existing transcript with a deterministic mtime so listing order is stable. */
-async function plant(dir: string, id: string, title: string, workspaceScopeId: string, atMs: number): Promise<void> {
+/** Plants an existing transcript with deterministic message and filesystem timestamps. */
+async function plant(
+  dir: string,
+  id: string,
+  title: string,
+  workspaceScopeId: string,
+  atMs: number,
+  mtimeMs = atMs,
+): Promise<void> {
   await mkdir(dir, { recursive: true })
   const filepath = join(dir, `${id}.jsonl`)
   await writeFile(filepath, transcript(id, title, workspaceScopeId, new Date(atMs).toISOString()))
-  await utimes(filepath, new Date(atMs), new Date(atMs))
+  await utimes(filepath, new Date(mtimeMs), new Date(mtimeMs))
 }
 
 async function startHost(input: {
@@ -286,6 +293,85 @@ describe('seat session listing pagination', () => {
       expect(listOptions.map((options) => options!.limit)).toEqual([3, 3, 3, 3])
       expect(listOptions[0]?.after).toBeUndefined()
       expect(listOptions.slice(1).every((options) => options?.after?.agentTypeId === 'default')).toBe(true)
+    } finally {
+      await host.host.close()
+    }
+  })
+
+  it('pages archived wrappers by emitted updatedAt when mtimes oppose message timestamps', async () => {
+    const sessionRoot = await temporaryRoot()
+    const workspaceRoot = join(sessionRoot, 'workspace')
+    const workspaceScopeId = 'workspace-wrapper-order:storage-a'
+    const scope = { workspaceScopeId, authSubjectId: 'subject-a' } as AuthorizedAgentScope
+    const dir = join(sessionRoot, pathDerivedDirName(workspaceRoot))
+    const baseMs = Date.UTC(2026, 6, 20)
+    const rows = [
+      { id: 'message-newest', messageMs: baseMs + 3_000, mtimeMs: baseMs + 1_000 },
+      { id: 'message-middle', messageMs: baseMs + 2_000, mtimeMs: baseMs + 3_000 },
+      { id: 'message-oldest', messageMs: baseMs + 1_000, mtimeMs: baseMs + 2_000 },
+    ]
+    for (const row of rows) {
+      await plant(dir, row.id, row.id, workspaceScopeId, row.messageMs, row.mtimeMs)
+      await writeSessionArchived(dir, row.id, true)
+    }
+    const store = new PiSessionStore(workspaceRoot, { sessionRoot, storageCwd: workspaceRoot })
+    await expect(store.list(
+      { workspaceId: workspaceScopeId },
+      { archived: 'archived' },
+    )).resolves.toEqual(rows.map((row) => expect.objectContaining({
+      id: row.id,
+      updatedAt: new Date(row.messageMs).toISOString(),
+    })))
+
+    const host = await startHost({ agents: [legacyDefaultAgent], sessionRoot, workspaceRoot, sessionNamespace: '' })
+    try {
+      const seen: Array<{ id: string; updatedAt: number }> = []
+      let cursor: string | undefined
+      do {
+        const page = await host.gateway.listSessions({
+          scope,
+          agentTypeId: 'default',
+          archived: 'archived',
+          limit: 1,
+          cursor,
+        })
+        seen.push(...page.sessions.map((row) => ({ id: row.ref.sessionId, updatedAt: row.updatedAt })))
+        cursor = page.nextCursor
+      } while (cursor)
+
+      expect(seen).toEqual(rows.map((row) => ({
+        id: row.id,
+        updatedAt: row.messageMs,
+      })))
+      expect(new Set(seen.map((row) => row.id)).size).toBe(rows.length)
+
+      const refs = new Map(rows.map((row) => [row.id, { agentTypeId: 'default', sessionId: row.id }]))
+      const unarchived = await host.gateway.setSessionArchived({
+        scope,
+        ref: refs.get('message-newest')!,
+        requestId: 'unarchive-wrapper-newest',
+        archived: false,
+      })
+      expect(unarchived).toMatchObject({ ref: refs.get('message-newest') })
+      expect(unarchived.archived).toBeUndefined()
+
+      // The cursor did not strand older archived rows: their ids still resolve
+      // through the same store mutation paths used by unarchive and delete.
+      const restored = await store.setArchived(
+        { workspaceId: workspaceScopeId },
+        'message-oldest',
+        false,
+      )
+      expect(restored).toMatchObject({ id: 'message-oldest' })
+      expect(restored.archived).toBeUndefined()
+      await expect(store.delete(
+        { workspaceId: workspaceScopeId },
+        'message-middle',
+      )).resolves.toBeUndefined()
+      await expect(store.has(
+        { workspaceId: workspaceScopeId },
+        'message-middle',
+      )).resolves.toBe(false)
     } finally {
       await host.host.close()
     }

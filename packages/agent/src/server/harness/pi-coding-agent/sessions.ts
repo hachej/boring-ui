@@ -40,9 +40,10 @@ import {
   writeSessionArchived,
 } from "./sessionArchiveIndex.js";
 import {
-  latestNativeMessageTimestamp,
+  nativeTranscriptOrdering,
   parseSessionTranscript,
   summarizeSessionTranscript,
+  type NativeTranscriptOrdering,
   type SessionTranscriptSummary,
 } from "./nativeSessionTranscript.js";
 export {
@@ -125,12 +126,11 @@ interface PrefixCacheEntry {
   /** Header id of this transcript, so listing never re-reads a prefix to learn it. */
   headerId?: string | null;
   /**
-   * Recency key of a native transcript, derived from its own bytes by
-   * {@link latestNativeMessageTimestamp}. Cached because it is a pure function
-   * of this file at this (mtime, size), and recomputing it for every file on
-   * every listing was a per-request full-store tail scan (#1338).
+   * Canonical ordering timestamp emitted verbatim as `SessionSummary.updatedAt`.
+   * It is cached by wrapper and linked-file snapshots so listing does not
+   * repeat a full-store bounded tail scan on every request (#1338).
    */
-  nativeSortMtimeMs?: number;
+  orderingUpdatedAtMs?: number;
   sessionCtx?: StoredSessionCtx;
   linkedDev?: number;
   linkedIno?: number;
@@ -279,8 +279,8 @@ export class PiSessionStore implements SessionStore {
     // order, so one could fall outside the requested prefix and then fail
     // the gateway's cursor filter forever — a session that never appears.
     visibleFiles.sort((a, b) => compareSessionOrder(
-      [a.sortMtimeMs, "", a.sortId],
-      [b.sortMtimeMs, "", b.sortId],
+      [a.orderingUpdatedAtMs, "", a.sortId],
+      [b.orderingUpdatedAtMs, "", b.sortId],
     ));
 
     const { offset, limit } = options;
@@ -293,7 +293,7 @@ export class PiSessionStore implements SessionStore {
     const after = options.after;
     const afterFiles = after
       ? visibleFiles.filter((file) => compareSessionOrder(
-        [file.sortMtimeMs, after.agentTypeId, file.sortId],
+        [file.orderingUpdatedAtMs, after.agentTypeId, file.sortId],
         after.position,
       ) > 0)
       : visibleFiles;
@@ -752,56 +752,80 @@ export class PiSessionStore implements SessionStore {
 
   private async sessionSortKey(
     { filepath, stat }: SessionFileStat,
-  ): Promise<{ sortMtimeMs: number; sortId: string }> {
-    let sortMtimeMs = stat.mtime.getTime();
+  ): Promise<SessionSortKey> {
+    const fileMtimeMs = Number(stat.mtimeMs);
     // Once a readable header supplies an id, it stays canonical even if a
-    // later step (linked-file stat, native timestamp scan) throws — the
+    // later step (linked-file stat, transcript tail scan) throws — the
     // filename stem is only for files with no readable header at all.
-    let headerId: string | undefined = undefined;
-    const stemFallback = (): { sortMtimeMs: number; sortId: string } => ({
-      sortMtimeMs,
+    let headerId: string | undefined;
+    const stemFallback = (): SessionSortKey => ({
+      orderingUpdatedAtMs: fileMtimeMs,
       sortId: wrapperSessionId(filepath),
     });
     try {
       // One prefix read per file per listing: `referencedPiFiles` already
-      // populated this cache entry. Its header id supplies BOTH the native-
-      // file test and the canonical tiebreak id (the row's `summary.id`);
-      // re-reading and re-parsing the prefix here was a second full-store
-      // pass on every request (#1338).
+      // populated this cache entry. Its header id supplies the canonical
+      // tiebreak id (the row's `summary.id`).
       const cached = await this.readPrefixCache(filepath, stat);
       headerId = cached.headerId ?? undefined;
+      if (!headerId) return stemFallback();
+
       const linkedPiFile = cached.referencedPiFile;
-      if (linkedPiFile && resolve(linkedPiFile) !== resolve(filepath)) {
-        const linkedStat = await fsStat(linkedPiFile);
-        sortMtimeMs = Math.max(sortMtimeMs, linkedStat.mtime.getTime());
+      const hasLinkedTranscript = Boolean(
+        linkedPiFile && resolve(linkedPiFile) !== resolve(filepath),
+      );
+      const linkedStat = hasLinkedTranscript
+        ? await fsStat(linkedPiFile!).catch(() => undefined)
+        : undefined;
+      const linkedSnapshotMatches = linkedStat
+        ? cached.linkedDev === Number(linkedStat.dev)
+          && cached.linkedIno === Number(linkedStat.ino)
+          && cached.linkedMtimeMs === Number(linkedStat.mtimeMs)
+          && cached.linkedCtimeMs === Number(linkedStat.ctimeMs)
+          && cached.linkedSize === Number(linkedStat.size)
+        : cached.linkedMtimeMs === undefined && cached.linkedSize === undefined;
+      if (cached.orderingUpdatedAtMs !== undefined
+        && (!hasLinkedTranscript || linkedSnapshotMatches)) {
+        return { orderingUpdatedAtMs: cached.orderingUpdatedAtMs, sortId: headerId };
       }
-      if (!headerId) {
-        // Headerless file: the stem is the id `resolveSessionFile` accepts —
-        // never a last-underscore truncation.
-        return stemFallback();
+
+      // Wrapper and direct-native rows use the same bounded-tail derivation.
+      // A non-empty linked transcript owns a wrapper's projected turns, so its
+      // last message is also the row's ordering timestamp. Header-only links
+      // leave the wrapper as owner. This is the same source-selection rule as
+      // `selectTranscriptSummary`, without full-store transcript summaries.
+      let selectedOrdering: NativeTranscriptOrdering | undefined;
+      if (linkedPiFile && linkedStat) {
+        const linkedOrdering = await nativeTranscriptOrdering(
+          linkedPiFile,
+          Number(linkedStat.size),
+        ).catch(() => undefined);
+        if (linkedOrdering?.hasEntries) selectedOrdering = linkedOrdering;
       }
-      if (!isTimestampNamedPiSessionFile(filepath, headerId)) {
-        // Readable header in a non-timestamp-named (wrapper) transcript: the
-        // header id is canonical — it is exactly what `summary.id` emits — so
-        // the gateway's full-id total order and this store's prefix agree.
-        // Sorting by the filename here would order by a different key than
-        // the id we report for the row (#1338 review round 2).
-        return { sortMtimeMs, sortId: headerId };
-      }
-      if (cached.nativeSortMtimeMs !== undefined) {
-        return { sortMtimeMs: cached.nativeSortMtimeMs, sortId: headerId };
-      }
-      const latest = await latestNativeMessageTimestamp(filepath, Number(stat.size));
-      if (latest === undefined) return { sortMtimeMs, sortId: headerId };
-      // Only a value derived purely from this file's own bytes is cacheable:
-      // the (mtime, size) key does not invalidate on a linked file's change.
-      this.prefixCache.set(filepath, { ...cached, nativeSortMtimeMs: latest });
-      return { sortMtimeMs: latest, sortId: headerId };
+      selectedOrdering ??= await nativeTranscriptOrdering(filepath, Number(stat.size))
+        .catch((): NativeTranscriptOrdering => ({ hasEntries: false }));
+      const orderingUpdatedAtMs = selectedOrdering.latestMessageAtMs
+        ?? Math.max(fileMtimeMs, linkedStat ? Number(linkedStat.mtimeMs) : 0);
+      // A changed linked snapshot invalidates any cached full summary. Keeping
+      // it while refreshing only the ordering key would make the freshness
+      // check compare stale content against the new snapshot identity.
+      const { summary: _staleSummary, ...cacheWithoutSummary } = cached;
+      this.prefixCache.set(filepath, {
+        ...cacheWithoutSummary,
+        orderingUpdatedAtMs,
+        ...(linkedStat ? {
+          linkedDev: Number(linkedStat.dev),
+          linkedIno: Number(linkedStat.ino),
+          linkedMtimeMs: Number(linkedStat.mtimeMs),
+          linkedCtimeMs: Number(linkedStat.ctimeMs),
+          linkedSize: Number(linkedStat.size),
+        } : {}),
+      });
+      return { orderingUpdatedAtMs, sortId: headerId };
     } catch {
-      // Unreadable linked file / failed timestamp scan: keep the file's own
-      // mtime. If a header was already read, its id remains the tiebreak key;
-      // only a file with no readable header falls back to the stem.
-      return headerId ? { sortMtimeMs, sortId: headerId } : stemFallback();
+      return headerId
+        ? { orderingUpdatedAtMs: fileMtimeMs, sortId: headerId }
+        : stemFallback();
     }
   }
 
@@ -841,24 +865,23 @@ export class PiSessionStore implements SessionStore {
 
       const entries = parseJsonlPrefixEntries(content);
       const linkedPiFile = extractPiSessionFilePath(entries);
-      const [sessionScan, linked] = await Promise.all([
+      const [sessionScan, linked, order] = await Promise.all([
         this.readTranscriptSummary(filepath),
         linkedPiFile && resolve(linkedPiFile) !== resolve(filepath)
           ? this.readLinkedPiSessionSummary(linkedPiFile)
           : null,
+        this.sessionSortKey({ filepath, stat: fileStat }),
       ]);
       if (!sessionScan) return null;
       const sessionTranscript = sessionScan.summary;
       const transcript = selectTranscriptSummary(sessionTranscript, linked?.summary);
       const title = projectedTranscriptTitle(sessionTranscript, linked?.summary) ?? "New session";
-      const updatedAtMs = transcript.latestMessageAtMs
-        ?? Math.max(Number(fileStat.mtimeMs), linked?.mtimeMs ?? 0);
 
       const summary = {
         id: header.id,
         title,
         createdAt: header.timestamp,
-        updatedAt: new Date(updatedAtMs).toISOString(),
+        updatedAt: new Date(order.orderingUpdatedAtMs).toISOString(),
         turnCount: transcript.turnCount,
         ...(directNative
           ? {
@@ -878,11 +901,10 @@ export class PiSessionStore implements SessionStore {
           ctimeMs: Number(sessionScan.stat.ctimeMs),
           size: Number(sessionScan.stat.size),
           referencedPiFile: linkedPiFile,
-          // Preserve the canonical row/tiebreak id and native sort scan added
-          // by #1338 while retaining the exact snapshot identity required by
-          // title-authority cache correctness.
+          // Preserve the exact ordering timestamp emitted above while
+          // retaining snapshot identity required by title-authority caching.
           headerId: header.id,
-          ...(cached?.nativeSortMtimeMs !== undefined ? { nativeSortMtimeMs: cached.nativeSortMtimeMs } : {}),
+          orderingUpdatedAtMs: order.orderingUpdatedAtMs,
           sessionCtx,
           ...(linked ? {
             linkedDev: Number(linked.dev),
@@ -1373,7 +1395,7 @@ function nativeSessionFilename(sessionId: string, isoTimestamp: string): string 
  * See {@link PiSessionStore.sessionSortKey} for how `sortId` is derived.
  */
 interface SessionSortKey {
-  sortMtimeMs: number;
+  orderingUpdatedAtMs: number;
   /** Canonical session id: header id whenever a readable header exists (wrapper or native); stem only for headerless files. */
   sortId: string;
 }

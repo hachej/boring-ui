@@ -1960,7 +1960,11 @@ describe("PiSessionStore", () => {
 
     const defaultCtx = { workspaceId: "default" };
     const firstList = await store.list(defaultCtx, { limit: 1 });
-    expect(firstList[0]).toEqual(expect.objectContaining({ id: "boring-linked", turnCount: 1 }));
+    expect(firstList[0]).toEqual(expect.objectContaining({
+      id: "boring-linked",
+      turnCount: 1,
+      updatedAt: "2026-06-04T00:00:01.000Z",
+    }));
 
     const { appendFile } = await import("node:fs/promises");
     await appendFile(nativePath, `${JSON.stringify({
@@ -1978,6 +1982,7 @@ describe("PiSessionStore", () => {
       id: "boring-linked",
       title: "first linked prompt",
       turnCount: 2,
+      updatedAt: "2026-06-04T00:00:02.000Z",
     }));
 
     // Same-size content rewrites with a restored mtime still change ctime and
