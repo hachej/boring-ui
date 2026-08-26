@@ -495,16 +495,24 @@ export class EmbeddedAgentGateway implements AgentGateway {
     const service = binding.composition.service
     if (command.kind === 'prompt') {
       return await this.sessionEffect(ref, claim, 'session.prompt', command.requestId, command as unknown as JsonValue, async () => {
-        const receipt = await service.prompt(context(claim, command.requestId), ref.sessionId, {
-          message: command.content,
-          displayMessage: command.displayContent,
-          clientNonce: command.clientNonce,
-          model: command.model,
-          thinkingLevel: command.thinkingLevel,
-          attachments: command.attachments ? [...command.attachments] : undefined,
-        })
-        this.runtime.activity.set(claim.workspaceScopeId, ref, 'running')
-        return { ...receipt, disposition: 'prompt' as const }
+        // Publish pending before entering the service: adapter.prompt() may hand
+        // back an already-rejected promise whose turn-less error is observed
+        // before the accepted receipt reaches this await.
+        const pendingRun = this.runtime.activity.beginPendingRun(claim.workspaceScopeId, ref)
+        try {
+          const receipt = await service.prompt(context(claim, command.requestId), ref.sessionId, {
+            message: command.content,
+            displayMessage: command.displayContent,
+            clientNonce: command.clientNonce,
+            model: command.model,
+            thinkingLevel: command.thinkingLevel,
+            attachments: command.attachments ? [...command.attachments] : undefined,
+          })
+          return { ...receipt, disposition: 'prompt' as const }
+        } catch (error) {
+          this.runtime.activity.rollbackPendingRun(claim.workspaceScopeId, ref, pendingRun)
+          throw error
+        }
       }, {
         duplicateReceipt: true,
         bindingKey: binding.key,

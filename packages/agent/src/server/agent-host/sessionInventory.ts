@@ -125,12 +125,19 @@ interface StoredAgentSessionActivity extends AgentSessionActivityUpdate {
   readonly workspaceScopeId: string
   readonly activeTurnId?: string
   readonly pendingRun: boolean
+  readonly generation: number
+}
+
+interface PendingAgentSessionRun {
+  readonly generation: number
+  readonly previous?: Pick<StoredAgentSessionActivity, 'status' | 'activeTurnId' | 'pendingRun'>
 }
 
 /** Process-lifetime live-turn projection. Reads never create activity rows. */
 export class AgentSessionActivityIndex {
   private readonly activity = new Map<string, StoredAgentSessionActivity>()
   private readonly subscribers = new Map<string, Set<(update: AgentSessionActivityUpdate) => void>>()
+  private nextGeneration = 0
 
   get(workspaceScopeId: string, ref: AgentSessionRef): AgentSessionActivity {
     return this.activity.get(agentSessionKey(workspaceScopeId, ref))?.status ?? 'idle'
@@ -149,28 +156,55 @@ export class AgentSessionActivityIndex {
     this.setForTurn(workspaceScopeId, ref, status, activeTurnId, pendingRun)
   }
 
+  beginPendingRun(workspaceScopeId: string, ref: AgentSessionRef): PendingAgentSessionRun {
+    const existing = this.activity.get(agentSessionKey(workspaceScopeId, ref))
+    const previous = existing
+      ? { status: existing.status, activeTurnId: existing.activeTurnId, pendingRun: existing.pendingRun }
+      : undefined
+    const generation = this.setForTurn(workspaceScopeId, ref, 'running', undefined, true, true)
+    return { generation, previous }
+  }
+
+  rollbackPendingRun(workspaceScopeId: string, ref: AgentSessionRef, run: PendingAgentSessionRun): void {
+    const existing = this.activity.get(agentSessionKey(workspaceScopeId, ref))
+    // Native events or a newer command own any later generation.
+    if (existing?.generation !== run.generation || !existing.pendingRun) return
+    this.setForTurn(
+      workspaceScopeId,
+      ref,
+      run.previous?.status ?? 'idle',
+      run.previous?.activeTurnId,
+      run.previous?.pendingRun ?? false,
+      true,
+    )
+  }
+
   private setForTurn(
     workspaceScopeId: string,
     ref: AgentSessionRef,
     status: AgentSessionActivity,
     activeTurnId: string | undefined,
     pendingRun: boolean,
-  ): void {
+    replaceGeneration = false,
+  ): number {
     const key = agentSessionKey(workspaceScopeId, ref)
     const existing = this.activity.get(key)
     if (
-      existing?.status === status
+      !replaceGeneration
+      && existing?.status === status
       && existing.activeTurnId === activeTurnId
       && existing.pendingRun === pendingRun
-    ) return
+    ) return existing.generation
     const update = { ref, status }
-    this.activity.set(key, { workspaceScopeId, ...update, activeTurnId, pendingRun })
+    const generation = ++this.nextGeneration
+    this.activity.set(key, { workspaceScopeId, ...update, activeTurnId, pendingRun, generation })
     // An agent-start can replace an optimistic pending run with active turn
     // identity without publishing a duplicate status transition.
-    if (existing?.status === status) return
+    if (existing?.status === status) return generation
     for (const subscriber of this.subscribers.get(workspaceScopeId) ?? []) {
       try { subscriber(update) } catch { /* Activity observers cannot fail an Agent run. */ }
     }
+    return generation
   }
 
   snapshot(workspaceScopeId: string): AgentSessionActivityUpdate[] {

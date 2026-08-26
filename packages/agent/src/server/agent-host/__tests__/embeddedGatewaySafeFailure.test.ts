@@ -56,6 +56,7 @@ describe('EmbeddedAgentGateway safe action failures', () => {
       statusCode: 402,
     })
     expect(fixture.modelLoopStarts(ref)).toBe(0)
+    expect((await fixture.gateway.readSessionState({ scope, ref })).summary.status).toBe('idle')
     await connection.close()
     await fixture.gateway.close()
   })

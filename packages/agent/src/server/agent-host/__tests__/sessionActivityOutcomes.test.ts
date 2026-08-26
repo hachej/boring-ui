@@ -10,7 +10,7 @@ describe('AgentSessionActivityIndex terminal outcomes', () => {
     const statuses: string[] = []
     index.subscribe('ws', ({ status }) => statuses.push(status))
 
-    index.set('ws', ref, 'running')
+    index.beginPendingRun('ws', ref)
     index.observe('ws', ref, { type: 'agent-start', seq: 1, turnId: 't1' })
     index.observe('ws', ref, { type: 'agent-end', seq: 2, turnId: 't1', status: 'ok' })
 
@@ -23,7 +23,7 @@ describe('AgentSessionActivityIndex terminal outcomes', () => {
     const statuses: string[] = []
     index.subscribe('ws', ({ status }) => statuses.push(status))
 
-    index.set('ws', ref, 'running')
+    index.beginPendingRun('ws', ref)
     index.observe('ws', ref, {
       type: 'error',
       seq: 1,
@@ -33,6 +33,31 @@ describe('AgentSessionActivityIndex terminal outcomes', () => {
 
     expect(statuses).toEqual(['running', 'error'])
     expect(index.get('ws', ref)).toBe('error')
+  })
+
+  it('rolls a rejected service invocation back to the activity it replaced', () => {
+    const index = new AgentSessionActivityIndex()
+    const statuses: string[] = []
+    index.set('ws', ref, 'error')
+    index.subscribe('ws', ({ status }) => statuses.push(status))
+
+    const pendingRun = index.beginPendingRun('ws', ref)
+    index.rollbackPendingRun('ws', ref, pendingRun)
+
+    expect(statuses).toEqual(['running', 'error'])
+    expect(index.get('ws', ref)).toBe('error')
+  })
+
+  it('does not let a stale service rollback overwrite a synchronously observed turn', () => {
+    const index = new AgentSessionActivityIndex()
+    const pendingRun = index.beginPendingRun('ws', ref)
+
+    index.observe('ws', ref, { type: 'agent-start', seq: 1, turnId: 't1' })
+    index.rollbackPendingRun('ws', ref, pendingRun)
+
+    expect(index.get('ws', ref)).toBe('running')
+    index.observe('ws', ref, { type: 'agent-end', seq: 2, turnId: 't1', status: 'ok' })
+    expect(index.get('ws', ref)).toBe('idle')
   })
 
   it('does not let a turn-less error settle an active identified turn', () => {

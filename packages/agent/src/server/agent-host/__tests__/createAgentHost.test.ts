@@ -1089,9 +1089,8 @@ describe('createAgentHost', () => {
     await app.close()
   })
 
-  it('settles session activity when an accepted prompt rejects before agent-start', async () => {
+  it('settles session activity when adapter.prompt immediately returns a rejected promise', async () => {
     const workspaceRoot = await root()
-    let rejectRun: ((reason?: unknown) => void) | undefined
     const created = await createAgentHost({
       ...options(workspaceRoot),
       inMemoryRequestLedgerMode: 'test',
@@ -1107,7 +1106,7 @@ describe('createAgentHost', () => {
             return new Proxy(adapter, {
               get(target, property) {
                 if (property === 'prompt') {
-                  return () => new Promise<void>((_resolve, reject) => { rejectRun = reject })
+                  return () => Promise.reject(new Error('provider failed before start'))
                 }
                 const value = Reflect.get(target, property, target)
                 return typeof value === 'function' ? value.bind(target) : value
@@ -1130,10 +1129,6 @@ describe('createAgentHost', () => {
       clientNonce: 'pre-start-rejection',
       content: 'fail before start',
     })).resolves.toMatchObject({ accepted: true })
-    expect((await created.gateway.readSessionState({ scope, ref })).summary.status).toBe('running')
-
-    expect(rejectRun).toBeTypeOf('function')
-    rejectRun!(new Error('provider failed before start'))
     await vi.waitFor(async () => {
       expect((await created.gateway.readSessionState({ scope, ref })).summary.status).toBe('error')
     })
