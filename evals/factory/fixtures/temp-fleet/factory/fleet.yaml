@@ -1,0 +1,29 @@
+# Temp fleet fixture for the factory eval suite (evals/factory/).
+#
+# Mirrors the shape of .agents/factory/fleet.yaml and the loader's own test
+# fixtures (packages/agent/src/server/agentDefinition/__tests__/fixtures/fleet)
+# but lives outside the real, trust-class-B fleet config so evals never touch
+# it. Two unrelated seats:
+#   - factory-smoke:   used by checks/01-boot.ts (compose + boot + live turn)
+#   - creator-growth:  a stand-in second-product persona used by
+#                       checks/08-product-isolation.ts. No real
+#                       "creator-growth" plugin exists in this repository;
+#                       this fixture stands in for a distinct, unrelated
+#                       product package.
+models:
+  tiers:
+    T3:
+      - provider: anthropic
+        id: claude-sonnet-4-6
+        envVar: ANTHROPIC_API_KEY
+      - provider: openrouter
+        id: stealth/ox-alpha
+        envVar: OPENROUTER_API_KEY
+
+seats:
+  - seat: factory-smoke
+    agentTypeId: boring-factory-smoke
+    skills: []
+  - seat: creator-growth
+    agentTypeId: boring-creator-growth
+    skills: []
