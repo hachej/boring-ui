@@ -10,11 +10,11 @@ review: verdict `revise` at 9e42e893a; this revision answers it. No implementati
 **Concept** (owner, [#1399](https://github.com/hachej/boring-ui/issues/1399)): the Thread is the unit
 of WORK, not of agent. The human talks to the job; staffing collapses behind one merged timeline, and
 per-agent sessions demote to drill-down provenance — CI logs behind a PR check. Convergence:
-**1 Thread = 1 job = 1 Objective**.
+**1 Thread = 1 job (an Objective link is optional, one-way)**.
 
 **Naming is ratified, not free**: the product concept is a *multi-seat Thread* / *Job Thread*, never
 "channel" (`channel` is reserved for transport/ingress: C5 "channel-answerable", Track C, Slack/CLI).
-PR [#1401](https://github.com/hachej/boring-ui/pull/1401) (open) appends to `RECONCILIATION.md` §7 and
+PR [#1401](https://github.com/hachej/boring-ui/pull/1401) (merged/ratified 2026-08-26) appends to `RECONCILIATION.md` §7 and
 `VISION.md` R-c: *"A Thread may span multiple Seats, projected as one timeline; one Thread per job."*
 
 **What v0 builds** is a *projection* over several per-agent Sessions, driven by a **relay** — a
@@ -200,8 +200,8 @@ second event system.
 ### Today
 
 `Thread` is frozen as one object with Session: *"a Thread is not a Pi session, transcript, or tab —
-it owns one record and many Runs"* (`VISION.md:112-115`), and the V2 spec's `Thread
-{ threadId; workspaceId; title; participants; workingSet }` (`V2-IMPLEMENTATION-SPEC.md:121`)
+it owns one record and many Runs"* (`VISION.md:113-116`), and the V2 spec's `Thread
+{ threadId; workspaceId; title; participants; workingSet }` (`V2-IMPLEMENTATION-SPEC.md:122`)
 **already carries a `participants` field**. `Seat { seatId; workspaceId; agentId; role?; budget?;
 permissions?; bindingState }` (`:119`) binds an *Agent* to a Workspace and "grants participation, not
 identity". No Thread, Seat, or participant noun exists in code (`ThreadRef|threadId|ConsoleCollection`
@@ -261,9 +261,9 @@ be paid up front: (i) an explicit R-c amendment, since Thread=Session becomes Th
   `packages/agent/src/shared/workspaceAgentDispatcher.ts:57-71`). Only the long-lived
   `WorkspaceAgentGatewayBinding {gateway, scope, agentTypeId}` (`:67-71`) is single-agent.
 - The trusted composition root already issues **per-request** scope and guards workspace selectors
-  (`createWorkspaceAgentServer.ts:2088-2101`): `scopeIssuer.issue({claim:{workspaceScopeId,
+  (`createWorkspaceAgentServer.ts:2108-2113`): `scopeIssuer.issue({claim:{workspaceScopeId,
   authSubjectId}})` then `agentHost.runWithWorkspaceAgent({...input, authorizedScope}, run)`.
-  Unbounded access was deliberately removed (`:2103-2104`).
+  Unbounded access was deliberately removed (`:2116`).
 - The capability handed to the callback is **callback-scoped and non-retainable**:
   `LeaseBoundWorkspaceAgent` is documented "lease guarded by the Host and must not be retained after
   the callback" (`shared/workspaceAgentDispatcher.ts:40-42`). Its `dispatch(input, onEvent,
@@ -688,8 +688,10 @@ on drill-down.
 > Objective is not mandatory for a job (Q5 **RULED**).
 
 
-Ordering lives here and nowhere else. **The real critical path is open PRs**, not the #1355 gate:
-#1401 (naming ratification) and #1382 (objectives) block v0 content; #1393 blocks only the deferred
+Slice content lives here; dependency rationale lives in
+[`premises.md`](premises.md) and the executable ordering in
+`docs/direction/DIRECTION.md`. **The real critical path is open PRs**, not the #1355 gate:
+#1401 (naming ratification, **merged/ratified 2026-08-26**) and #1382 (objectives) block v0 content; #1393 blocks only the deferred
 Console item. **Gate G** = #1355 Gate 1 architecture approval (`docs/issues/1355/plan.md:372-376`,
 *"No implementation bead is ready before it"*), still unanswered — it binds **only** the deferred
 follow-on, because v0 touches no Console store. Each slice is one session and follows the #1355 bead
@@ -699,7 +701,7 @@ idiom (`plan.md:378-417`).
 `JobRelayEdgeV0`, `JobRelayTransitionV0`, `JobChainStateV0`, `JobCursorV0` schemas; file store with revision CAS,
 lock, atomic rename, load diagnostics; and the **`openEdge()` allocator** — one locked mutation that
 allocates `turnOrdinal`, mints `requestId`, reserves chain counters, and appends the pending edge. Append-only enforced. No relay, no UI, no agent tool.
-- *Blocked by:* owner ruling on Q1 (noun); PR #1401 merged.
+- *Blocked by:* owner ruling on Q1 (noun); PR #1401 merged ✅ 2026-08-26 — satisfied.
 - *Scope:* `plugins/job-threads/src/shared/{types,schema}.ts`, `src/server/{jobProjectionStore,edgeLog}.ts` + tests.
 - *Proof:* `pnpm --filter @hachej/boring-job-threads test -- src/server/__tests__/jobProjectionStore.test.ts src/server/__tests__/edgeLog.test.ts src/shared/__tests__/schema.test.ts`; `pnpm --filter @hachej/boring-job-threads typecheck`.
 - *Negative proof:* concurrent `openEdge()` calls never allocate same `turnOrdinal` and never
@@ -740,7 +742,7 @@ idiom. Drill-down links. No new timeline/list component, no Console pane changes
 - *Negative proof:* an ask-user hint whose triple matches no participant renders nowhere and answers
   nothing; a single-seat job renders byte-for-byte through the unmodified `PiChatPanel` path.
 
-**S5 — K7 demo fixture.** Two-agent fleet, scripted adapter acceptance asserting the §5 sequence,
+**S5 — [creator-growth-vertical] (formerly K7) demo fixture.** Two-agent fleet, scripted adapter acceptance asserting the §5 sequence,
 Objective compensation path, plus a separately-labelled live smoke.
 - *Blocked by:* S4; PR #1382 merged.
 - *Scope:* demo fleet config + `src/server/__tests__/k7Demo.test.ts`.
@@ -801,13 +803,15 @@ provenance"* (`docs/DECISIONS.md:365`). Envelope-grade attribution arrives with 
 > | Q8 acceptance bar | **RULED: confirmed unchanged** — fixture-gated; live runs are a labelled smoke check |
 
 
-1. **The noun.** Q1-A projection descriptor with a distinct noun (`JobProjectionV0`, recommended,
+1. **RULED 2026-08-26 (see Re-sequencing ruling above)** — SUPERSEDED by P2. **The noun.** Q1-A projection descriptor with a distinct noun (`JobProjectionV0`, recommended,
    R-c untouched) or Q1-B canonical multi-seat Thread (better end state; costs an R-c amendment, C7
    Thread ownership, seatId-in-C7 pulled forward, and a #1355 ref rework)?
-2. **Relay vs native binding.** D24 (`:364`) ratifies a native in-process agent-to-agent binding with
+2. **RULED 2026-08-26 (see Re-sequencing ruling above)** — DEFERRED to post-P1. **Relay vs native binding.** D24 (`:364`) ratifies a native in-process agent-to-agent binding with
    `input-required`. v0 proposes the relay (no agent-facing capability, deletable, caps centrally
-   enforced). Confirm the relay for v0, or build the ratified binding instead?
-3. **Attribution grade.** Accept explicitly display-grade `participantId` for v0, or pull ratified
+   enforced). Confirm the relay for v0, or build the ratified binding instead? The relay-vs-blackboard/
+   native-binding choice is deferred to after durable streams land (post-P1), per the re-sequencing
+   ruling above; both candidates remain live until then.
+3. **RULED 2026-08-26 (see Re-sequencing ruling above)** — audit-grade attribution. **Attribution grade.** Accept explicitly display-grade `participantId` for v0, or pull ratified
    C7 `seatId` forward now so the demo's audit story is envelope-grade?
 4. **The two boundaries.** Confirm the pairing: the **artifact** boundary stays **open** — one shared
    workspace and one canonical filesystem for all participants, per D25 (`:410`) / D28 (`:462-463`),
@@ -819,7 +823,7 @@ provenance"* (`docs/DECISIONS.md:365`). Envelope-grade attribution arrives with 
    `clientRequestId` compensation, or should `Objective` gain a `threadId`?
 6. **Context and budget.** Confirm oldest-first truncation with no summarization, and confirm that
    per-Thread *spend* is out of v0 (it needs a job dimension on `MeteringRunScope`, §3)?
-7. **Level D.** v0 ships against Level B with the §4 limitation accepted. Complete Level D
+7. **RULED 2026-08-26 (see Re-sequencing ruling above)** — engine waits for durable streams. **Level D.** v0 ships against Level B with the §4 limitation accepted. Complete Level D
    conformance (streaming lane #1009) now, or defer?
 8. **Acceptance bar.** Confirm fixture-driven acceptance as the gate, with the live-model walkthrough
    labelled a non-deterministic smoke check?

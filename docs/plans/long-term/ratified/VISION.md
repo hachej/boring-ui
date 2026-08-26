@@ -113,7 +113,9 @@ unnamed and force a later migration. Seat type = leaf; lifecycle = workspace
 **R-c. Thread vs Session.** One object. `Thread` is the product/kernel name;
 Session is the runtime implementation it recasts (A2a per-session record = the
 thread's record). The V2 doc's warning stands: a Thread is not a Pi session,
-transcript, or tab — it *owns* one record and many Runs.
+transcript, or tab — it *owns* one record and many Runs. *(Storage-shape note,
+2026-08-26: the "one record" backing shape is suspended pending the
+thread-storage spike — RECONCILIATION §8; the ontology is unchanged.)*
 
 > **Amendment — 2026-08-24 (owner ruling, tracked in #1399; full text in
 > RECONCILIATION.md §7):** a Thread may span multiple Seats, projected as one
@@ -202,7 +204,7 @@ P1 (from reconciliation) interleaves: ViewDescriptor + artifact UX land with K2
 
 ## 6. Research program & kill criteria (adopted verbatim from V2)
 
-H1 useful candidates · H2 evaluators discriminate · H3 feedback improves
+H1 (label H1; research hypothesis, not a roadmap code) useful candidates · H2 evaluators discriminate · H3 feedback improves
 generations · H4 improvements reuse without collapse · H5 one vertical pays.
 Scorecard: solution quality, learning efficiency, economic efficiency, human
 burden. Kill: recursion ≤ baseline; feedback can't become evaluation; users

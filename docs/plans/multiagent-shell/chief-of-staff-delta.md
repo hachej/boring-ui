@@ -158,6 +158,13 @@ projection lands via supported attention API only (no ask-user internals import)
 
 ### Slice F3: Sales loop (D5)
 
+**Repo boundary.** This slice builds *generic founder-operations substrate* —
+a pipeline store, a research persona, a follow-up generator — as reusable
+product capability. Actual GTM content, vertical sequencing, landing copy and
+outreach motions live in the Seneca tenant repository, per the direction
+refresh (`docs/direction/DIRECTION.md`); nothing here schedules or contains
+commercial campaigns.
+
 SQLite pipeline store (boring-mail data-model pattern), prospect-research specialist
 persona (worker-class seat instructions, no new seat without owner ruling),
 follow-up generator writing draft intentions. Read-only external fetch via #1309

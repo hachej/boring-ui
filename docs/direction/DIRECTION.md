@@ -309,7 +309,9 @@ Companion analysis:
 (`docs/plans/multiagent-shell/`, chapter 1 `premises.md` owns the program).
 Rulings ledger: [#1399](https://github.com/hachej/boring-ui/issues/1399).
 Ratifications: [#1401](https://github.com/hachej/boring-ui/pull/1401) (MERGED)
-and [#1416](https://github.com/hachej/boring-ui/pull/1416) (OPEN, owner gate).
+and [#1416](https://github.com/hachej/boring-ui/pull/1416) (CLOSED, absorbed into
+#1409 — #1409 is now the ratification instrument; merging it ratifies
+`RECONCILIATION.md` §8).
 
 ### Naming convention (applies from here down)
 
@@ -448,6 +450,6 @@ they depend on have landed.
 | Saved views | **Wait for [saved-views-kernel].** A first view library is files + built-in views only; no lookalike descriptor minted in the product layer meanwhile. |
 | Nav extensibility | **Plugins CAN add top-level entries.** The closed-IA recommendation was ruled against; crowding risk noted and accepted. |
 | Deep links | **The shell owns the serializable location; the host owns URL translation.** |
-| Specification | **The design canvas and `weekend/saas-hybrid-spike` are ratified specification artifacts** — what implementation is checked against, not proposals awaiting a slot (#1416). Their chat column and thread transcript are explicitly visual fixtures; that is not an implementation claim. |
+| Specification | **The design canvas and `weekend/saas-hybrid-spike` are ratified specification artifacts** — what implementation is checked against, not proposals awaiting a slot (unlike #1409, still pending merge). Their chat column and thread transcript are explicitly visual fixtures; that is not an implementation claim. |
 | Commercial split | **Reaffirmed and extended.** Premises never pricing: commercial sequencing lives in the tenant repo; the platform ships credential, attribution and usage-fact substrate only. Precedent: the 2026-08-10 landing ruling. |
 | Merge discipline | **Zero autonomous merges holds** (verified: all 31 merges in the 08-22→08-26 window were owner-performed). **Review ladders did not happen** — nine weekend PRs produced zero formal review submissions. Restore the review gate before the premise burn, and never close a PR without a recorded reason (#1380 and #1381 were closed silently). |

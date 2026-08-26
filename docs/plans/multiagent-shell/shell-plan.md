@@ -1,6 +1,9 @@
 # Multi-agent workspace shell — vision + implementation route
 
-Status: **plan, pre-gate.** Owner gate required before any bead dispatch.
+Status: **plan, pre-gate.** Owner gate required before any bead dispatch,
+**except the three substrate-free chrome slices** (L1 layout traits, L1.5
+shell location, L2a nav chrome) ruled early-dispatchable in the 2026-08-26
+direction refresh (`docs/direction/DIRECTION.md`).
 Tracking: #1399 (north-star ruling ledger). Author session: 2026-08-26.
 
 ## 0. What this plan is, and what it is not
@@ -31,9 +34,11 @@ Anything already ruled elsewhere is cited, never re-decided. Where this plan
 needs something from another plan it says so as an explicit dependency
 (§5, §6).
 
-**This is chapter 1 of a pack.** The front door — [`README.md`](README.md) —
-owns the vision summary, the chapter map, the gate status, the design lineage
-and the ordering. This chapter does not restate them.
+**This is chapter 2 of a pack** (chapter 1 is [`premises.md`](premises.md)).
+The front door — [`README.md`](README.md) — owns the vision summary, the
+chapter map, the gate status and the design lineage; dependency rationale
+lives in `premises.md`; the executable ordering and merge queue live in
+`docs/direction/DIRECTION.md`. This chapter does not restate any of them.
 
 ---
 
@@ -127,10 +132,12 @@ loopback and no shared-runtime room (excluded by #1401). No rewrite of
 ## 2. Today → Delta
 
 The spike branch **`weekend/saas-hybrid-spike`** (worktree
-`.worktrees/weekend-saas-spike`, HEAD `e027c90d4`, 4 commits on `33e5f4671`)
-is the Today for most shell claims: it proves the IA is a **recomposition of
-components that already ship**, not new invention. It is 19 files, +3240/−65,
-and only 5 of those files touch production packages.
+`.worktrees/weekend-saas-spike`, ratified at immutable commit `08cc60523`,
+8 commits on `33e5f4671`) is the Today for most shell claims: it proves the IA
+is a **recomposition of components that already ship**, not new invention. It
+is 24 files, +4305/−67, and only 5 of those files touch production packages.
+At that commit the thread chat mounts a **real single-agent session**; the
+multi-voice transcript is what remains fixture territory (see §8).
 
 ### Today — real, already shipping
 
@@ -455,7 +462,7 @@ only once its three prerequisites are ruled.
 *as a set*, with a resolver and a migration from `ShellLibraryEntryV0`. Not a
 v0 slice. Gated on the P1 View work landing, and on Q3's persistence ruling.
 
-**L4 — thread view = chat + inset canvas.**
+**L4, the thread-view slice — thread view = chat + inset canvas.**
 - *WHAT:* the thread page renders the **real** chat with an inset
   `ArtifactSurfacePane` canvas summoned from a message artifact card, plus
   `WorkbenchActivityRail side="right"` (`SaasSpike.tsx:513-544`). Consumes
@@ -648,7 +655,8 @@ L1 → L1.5 → L2a → (L3a → L3b, L5, L6) → L7a → L7b
                         read-only capability every resolver enforces (L5)
 
 #1409 owner gate (the 12 questions in §7, incl. Q13 nav supersession)
-      → blocks every bead below
+      → blocks every bead below EXCEPT the substrate-free trio
+        (L1, L1.5, L2a chrome — ruled early-dispatchable, DIRECTION.md)
 
 #1355 Gate 1 (architecture approval, UNANSWERED — "No implementation bead is
    ready before it", docs/issues/1355/plan.md:372-376)
@@ -657,8 +665,9 @@ L1 → L1.5 → L2a → (L3a → L3b, L5, L6) → L7a → L7b
       (NOT the nav supersession — that is Q13 here, see §5.3)
 ```
 
-**The honest unblocked tranche: L1, L2a, L3a, and L6 in part** — all behind the
-#1409 owner gate, which blocks every bead. (the popover
+**The honest unblocked tranche: L1, L1.5 and L2a chrome** — dispatchable now as
+the ruled substrate-free exception; **L3a and L6 in part** additionally wait on
+the owner gate. (the popover
 itself; its center-routing behavior depends on L3a). L1.5 is unblocked *as
 work* but wants Q1 answered first. Everything else waits on a gate owned by
 someone else. Round 1 claimed "L1, L2, L3, L5, L6 are unblocked today" — that

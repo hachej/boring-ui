@@ -8,6 +8,12 @@ Canonical PR: [#1409](https://github.com/hachej/boring-ui/pull/1409) ·
 North star: [#1399](https://github.com/hachej/boring-ui/issues/1399) ·
 Re-cut by owner direction 2026-08-26
 
+> **Merging #1409 ratifies** the §8 amendment it carries in
+> `docs/plans/long-term/ratified/RECONCILIATION.md` (surface shape, ratified
+> spec artifacts, premises-precede-surface). Earlier vehicles #1416, #1403,
+> #1389, #1417 and #1418 are closed and absorbed here. The plan chapters
+> themselves stay planning material, not ratified text.
+
 ---
 
 ## Read this first: the program
@@ -32,9 +38,11 @@ the surface is built on top of them. Two rulings set the tone:
 | **P5** | Merge queue | standing obligation, not a bead | branch health for everything |
 | **P6** | Gates re-ruled post-P2 | minutes of owner time, cannot happen early | both owner gates |
 
-**[`premises.md`](premises.md) is the chapter that owns this.** It carries the
-full P2 brief, the interview rulings, the sequencing diagram, and the honest
-sizing.
+**[`premises.md`](premises.md) is the chapter that owns the dependency
+rationale.** It carries the full P2 brief, the interview rulings, the
+sequencing diagram, and the honest sizing. The **executable ordering and merge
+queue** live in `docs/direction/DIRECTION.md` — the pack explains *why* things
+wait; DIRECTION alone says *when* they run.
 
 **Substrate-free exceptions** — slices that touch no thread, no session, no
 storage, no attribution — may run early, in parallel with the premises:
@@ -64,7 +72,7 @@ agents inside it. **One composer.** Workers hidden behind the orchestrator: the
 user sees a *voice*, not a *seat*. **1 Thread = 1 job** — the unit of WORK, not
 of agent (ratified 2026-08-26, PR #1401). **Threads archive, they don't die.**
 
-**The shell = Inbox / Work / Agents / Library / Search**, over one workspace. Nav
+**The shell = Search (top) / Inbox / Work / Agents / Library**, over one workspace. Nav
 is domains; the vertical plugin rail is tools. **Chat opens as a column beside
 any view, never a page switch.** Library is the view library, with *Dockview
 demoted to renderer*. The embedded workbench is **one component with four
@@ -92,10 +100,11 @@ composing as apps-as-recipes into a company OS.
 [`shell-plan-review.html`](shell-plan-review.html) ·
 [`job-thread-plan-review.html`](job-thread-plan-review.html)
 
-Chapters 2–4 keep their content; their **sequencing derives from chapter 1**.
-Each carries a dated *Re-sequencing ruling 2026-08-26* block at its sequencing
-section, superseding the graph it shipped with. This file owns the ordering; the
-chapters never re-list each other.
+Chapters 2–4 keep their content; their **dependency rationale derives from
+chapter 1**, and the executable ordering lives in `docs/direction/DIRECTION.md`.
+Each chapter carries a dated *Re-sequencing ruling 2026-08-26* block at its
+sequencing section, superseding the graph it shipped with. The chapters never
+re-list each other.
 
 ---
 
@@ -115,9 +124,11 @@ except the three substrate-free chrome slices.
 | #1355 Gate 1 | console collections → live Work rows | unanswered |
 | PR [#1401](https://github.com/hachej/boring-ui/pull/1401) — multi-seat Thread amendment | *(was: the premise itself)* | **ratified 2026-08-26** ✅ |
 
-**Honest risk.** The spike proves the *frame*, not the *chat* — the composer and
-the thread transcript are visual fixtures everywhere they appear. That proof is
-shell L4, which now sits behind P1, P2 and P3. Separately: **P2 and P3 are
+**Honest risk.** The spike proves the *frame*, and (at the ratified commit
+`08cc60523`) a **real single-agent chat session** inside a Thread. What it does
+not prove is the *multi-voice transcript* — several agents behind one composer
+with audit-grade attribution. That proof is L4, the thread-view slice, which
+now sits behind P1, P2 and P3. Separately: **P2 and P3 are
 coupled** (attribution shape depends on storage shape) and could deadlock if run
 as independent spikes; P2's decision criteria are written to prevent it.
 
@@ -125,9 +136,9 @@ as independent spikes; P2's decision criteria are written to prevent it.
 
 ## Live artifacts
 
-- **Spike branch** `weekend/saas-hybrid-spike` (HEAD `e027c90d4`) — the
-  specification, cited at `file:line` throughout chapter 2. Worktree
-  `.worktrees/weekend-saas-spike`.
+- **Spike branch** `weekend/saas-hybrid-spike`, ratified at immutable commit
+  `08cc60523` — the specification, cited at `file:line` throughout chapter 2.
+  Worktree `.worktrees/weekend-saas-spike`.
 - **The design canvas** — owner-iterated *Meridian Shell* mockups.
 - **Design lineage:** [#1357](https://github.com/hachej/boring-ui/pull/1357)
   persistent console surface → `docs/issues/1355/plan.md` →

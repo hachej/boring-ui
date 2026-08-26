@@ -18,7 +18,7 @@ descriptive names; old letter-number codes appear once in parentheses.
 | 3 | Flexible sandbox | **Partial** | Sovereign service architecture merged (#1220 / #1081) — Firecracker microVM-per-sandbox on EU bare metal in v1, **docs only**. gVisor still non-executing; no remote-worker impl; CLI defaults `direct`; no network-egress isolation |
 | 4 | External MCP + artifact delivery | **Partial** | Consumption lane complete: connect-time SSRF enforcement (#1135) merged, lane correctly paused. Managed-agent ingress hardcoded off; shareable artifacts missing |
 | 5 | Durable streams / transport | **Partial → the critical path** | Fail-loud flag guard (#1142) merged; lane closed at conformance Level B. Level D is now the keystone premise; stream-keying question still open before durable rows harden |
-| 6 | Workspace as control plane | **Partial; specification settled, surface unbuilt** | Product surface ratified in shape (#1401 merged; #1416 open owner gate). Inbox badge/attention alignment (#1396) merged. Cross-surface session observability and unified approvals still missing |
+| 6 | Workspace as control plane | **Partial; specification settled, surface unbuilt** | Product surface ratified in shape (#1401 merged; #1416 closed, absorbed into #1409, which is now the ratification instrument). Inbox badge/attention alignment (#1396) merged. Cross-surface session observability and unified approvals still missing |
 | 7 | Multi-agent EU deployment | **Partial** | Persisted default agent (#1156) + signup-domain hook (#1165) merged; deploy runbook documented (#1387). Per-agent landing pages moved app-side (owner ruling 2026-08-10). **Golden-path timing proof still never recorded** |
 | 8 | EU-sovereign hosting | **Holds** | Reinforced by the sovereign sandbox architecture's EU-bare-metal v1 topology |
 | 9 | The farm | **Deferred** (by design) | Objectives plugin (#1382) and archive sessions (#1376) accumulate substrate in the open queue; correctly not built as product |
@@ -26,8 +26,10 @@ descriptive names; old letter-number codes appear once in parentheses.
 ## Premises wave — the current critical path
 
 Program: `docs/plans/multiagent-shell/premises.md`
-([#1409](https://github.com/hachej/boring-ui/pull/1409)); ordering ratified by
-[#1416](https://github.com/hachej/boring-ui/pull/1416) (owner gate).
+([#1409](https://github.com/hachej/boring-ui/pull/1409), the ratification
+instrument — merging it ratifies `RECONCILIATION.md` §8); ordering previously
+routed through [#1416](https://github.com/hachej/boring-ui/pull/1416), now
+CLOSED and absorbed into #1409.
 
 | Premise | Status (2026-08-26) |
 |---|---|
@@ -49,7 +51,7 @@ Program: `docs/plans/multiagent-shell/premises.md`
 | Authored catalog / agent packages | **Delivered** — #1202 merged 2026-08-11 (discovery + knowledge + install on the three-seat roster). Epic #1107 closed as a duplicate surface; work lives in the `xp3s` beads |
 | BYOK (#1082/#1010) | **In progress, stalled** — vault (#1132) and onboarding plan r3 (#1151) merged; durable credential persistence **#1145 open since 2026-08-07** |
 | Landing lane | **Superseded 2026-08-10** by owner ruling: per-agent landings are an app concern; #1154 closed. Platform kept #1156/#1165 |
-| Product surface (multi-agent shell) | **Specification ratified, implementation premise-gated.** #1401 merged (thread noun); #1416 open (surface + premise order); #1409 open (canonical plan pack) |
+| Product surface (multi-agent shell) | **Specification ratified, implementation premise-gated.** #1401 merged (thread noun); #1416 closed, absorbed into #1409 (surface + premise order); #1409 open — now the ratification instrument (canonical plan pack) |
 | Objectives plugin (#1382) | **Open**, 15 commits; the 8-eval factory suite (#1383) is **stacked behind it and not on main** |
 | Factory weekend residue | #1387/#1388 merged; #1380, #1381, #1384 closed unmerged (#1384 with a recorded reason, the other two **silently**); branches orphaned |
 | Sovereign sandbox (#1081) | **Architecture merged (#1220), zero implementation.** Wave 4 implementation gates unchanged |

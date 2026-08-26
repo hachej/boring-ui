@@ -453,4 +453,4 @@ Narrow these once the files exist.
 
 ## Thermo review
 
-Plan review is recorded in [`reviews/boring-tasks-kanban-plugin-thermo-review.md`](reviews/boring-tasks-kanban-plugin-thermo-review.md). The review's blocker findings were incorporated into this plan before opening the PR.
+Plan review is recorded in [`boring-tasks-kanban-plugin-thermo-review.md`](boring-tasks-kanban-plugin-thermo-review.md). The review's blocker findings were incorporated into this plan before opening the PR.

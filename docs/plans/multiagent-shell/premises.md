@@ -7,8 +7,10 @@ and proven before the surface that depends on it. The design canvas and the
 spike branch are not a proposal to be scheduled — they are **the specification**
 these premises are built to serve.
 
-This chapter owns the program. The engine and shell chapters keep their content;
-their **sequencing** now derives from here.
+This chapter owns the program's **dependency rationale** — what waits on what,
+and why. The engine and shell chapters keep their content; their sequencing
+derives from here. The **executable ordering and merge queue** live in
+`docs/direction/DIRECTION.md`, which alone answers "when".
 
 ---
 
@@ -210,19 +212,12 @@ already guarded against — inventing a lookalike `ViewDescriptor`.
 
 ### P5 — Merge queue
 
-Not a bead — a list, and a standing health obligation. The pack's slices assume
-a branch that is not diverging from a long tail of open work. Notable open PRs
-that touch the same surfaces:
+Not a bead — a standing health obligation. The pack's slices assume a branch
+that is not diverging from a long tail of open work. **The queue itself lives
+in `docs/direction/DIRECTION.md`** (the single executable merge queue); this
+premise does not maintain a second copy.
 
-- **#1382** objectives plugin — the Thread↔Objective link (ruled optional,
-  one-way) lands against it
-- **#1393** console left-pane variant — direct ancestor of shell L2a
-- **#1376** archive sessions — session-level archive; thread-level is a P2 finding
-- **#1343** Inbox projects all durable questions — feeds shell L5
-- **#1288** code-factory / durable dispatch loop
-- **#1166** env-mounts, **#1145**/**#1164** BYOK — kernel-adjacent, not on this path
-
-**Obligation:** before any premise bead is dispatched, this list gets a pass —
+**Obligation:** before any premise bead is dispatched, that queue gets a pass —
 merge what is green, close what is superseded. A premise landing onto a stale
 tree is how the last re-cut got expensive.
 
