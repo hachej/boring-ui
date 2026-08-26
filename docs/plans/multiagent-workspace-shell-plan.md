@@ -194,19 +194,60 @@ deep links and restored center state would diverge.
   back through a controlled prop. Consistent with `:274` and with how project
   settings and new-tab hrefs already work (`:275-277`).
 
+**ONE canonical owner (round-2 defect).** Round 2 let §3 own location *and* gave
+L3a its own `CenterState` machine — two owners of the same fact. Corrected:
+**the location reducer is canonical; `CenterHost` DERIVES its mode from
+`location.center` and owns no navigational state of its own.** Its only private
+state is renderer-local dock tab arrangement, which is deliberately *not*
+serialized.
+
+Round 2's flat shape also could not distinguish Work's Threads / Automations /
+Archived lists, carried no selected-Inbox-item identity, and made evidence an
+opaque `ref` with no reconstruction contract. Replaced with a
+**domain-discriminated destination union**:
+
 ```ts
+type ShellDestination =
+  | { domain: "inbox"; itemId?: string }
+  | { domain: "work"; section: "threads" | "automations" | "archived"; id?: string }
+  | { domain: "agents"; agentId?: string }
+  | { domain: "library"; entryId?: string }
+  | { domain: "search"; query?: string }
+
+// Evidence is a TYPED reference, resolvable without ambient state.
+// Fields mirror what the two real records already carry:
+//   WorkspaceInboxItem  (plugins/ask-user/src/front/inbox/inboxItemModel.ts:23)
+//   HumanArtifactSchema (packages/workspace/src/shared/artifacts/humanArtifact.ts:18)
+type EvidenceRef = {
+  origin: { kind: "inbox-item"; itemId: string } | { kind: "session"; sessionId: string }
+  surfaceKind: string   // HumanArtifact.surfaceKind
+  target: string        // HumanArtifact.target
+}
+
 type ShellLocation = {
-  domain: "inbox" | "work" | "agents" | "library" | "search"
-  target?: { kind: "thread" | "automation" | "agent" | "view" | "file"; id: string }
-  center: { mode: "page" } | { mode: "dock"; activePanelId?: string }
-  mount?: { kind: "canvas" | "evidence" | "popover"; ref: string }   // L4/L5/L6
-  chat?: { attachedTo: string }                                      // post-v0, see Q4
+  destination: ShellDestination
+  center: { mode: "page" } | { mode: "dock" }   // no activePanelId — see below
+  mount?:
+    | { kind: "canvas"; artifactId: string }
+    | { kind: "evidence"; ref: EvidenceRef }
+    | { kind: "popover" }
+  chat?: { attachedTo: string }                 // post-v0, see Q4
 }
 ```
 
-Deep-link / refresh / back must be **stated, not discovered**: a URL round-trips
-to the same `ShellLocation`; refresh restores domain + target + center mode
-(dock tab state stays renderer-local per L3a); back/forward moves between
+**`activePanelId` is gone.** Round 2 serialized it while the same section
+declared dock tab state renderer-local with no tab history — a direct
+contradiction. If a one-shot "open this and focus it" is needed, it travels as
+a `navigate()` *argument*, never as persisted location.
+
+**Reconstruction contract.** Every destination and every `EvidenceRef` must be
+resolvable from the serialized value alone — no ambient selection, no
+"whatever was open". A ref whose origin no longer exists resolves to a labelled
+tombstone, never a throw.
+
+Deep-link / refresh / back are **stated, not discovered**: a URL round-trips to
+the same `ShellLocation`; refresh restores destination + center mode (dock tab
+arrangement is renderer-local and deliberately lost); back/forward moves between
 locations, never between dock tabs. Multi-workspace: `ShellLocation` is scoped
 *inside* a workspace; switching workspace resets it.
 
@@ -237,16 +278,32 @@ every site reads a named trait and a new layout must fill the table in.
 |---|---|---|---|---|---|
 | 1 | `:781` | *(predicate definition — deleted)* | — | — | → `resolveLayoutTraits()` |
 | 2 | `:798` | `fleetMode` | off | on | **on** — Agents is a nav domain |
-| 3 | `:1641-1642` | `pluginsOwnWorkspaceSources` | on | off | **off** — shell owns its explorer |
-| 4 | `:2362`, `:2372` | `paletteSearchesChatPanes` | off | on | **on** (scope open — Q6) |
+| 3 | `:1641-1642` | `chatLayoutWorkspaceSourceSidebar` | on | off | **off** |
+| 4 | `:2361-2372` | `paletteSearchesChatPanes` | off | on | **on** (scope open — Q6) |
+| 4b | `:2369` (`onOpenAsTab`) | `paletteOpensNewPane` | off | **on** | **off** (v0) |
 | 5 | `:2560` | `chatLayoutNav` | `"session-list"` | `null` | **`null`** — shell owns nav |
-| 6 | `:2569` | `chatPaneSplitting` | on | off | **off** (v0; threads aren't split panes) |
+| 6a | `:2569` | `chatPaneCreateAfter` | on | **off** | **off** |
+| 6b | `:2570` + `ChatPaneStageDock.tsx:634` | `chatPaneSplitting` | on | **on** *(not off today)* | **off** (v0) |
+| 6c | persisted pane list | `multiPaneRestore` | on | on | **off** (v0 — single thread pane) |
 | 7 | `:2578` | `chatOverlaySlot` | `null` | overlay node | **`null`** — overlays are pages (L5) |
 | 8 | `:2595` | `openNavAffordance` | on | off | **off** |
 | 9 | `:2614` | `shellComposition` | ChatLayout only | `PluginTabsWorkspaceShell` | **`WorkspaceShell`** |
 | 10 | `:2725` | `publishedNavOpen` | `effectiveNavOpen` | `!collapsed` | **`!collapsed`** |
 
-Rows 4 and 6 are **proposals, not rulings** — flagged in §7.
+**Row 3 is deliberately narrow.** It gates only *ChatLayout's legacy outer
+source drawer*. Plugin workspace sources stay registered and are still consumed
+by `SurfaceShell`'s sidebar (`SurfaceShell.tsx:1024-1028`) in every layout —
+"off" here does not mean the shell stops seeing plugin sources.
+
+**Rows 6a/6b/6c were one row in round 2, and it was wrong.** `:2569` suppresses
+only *create-after*; `onSplitChatPane` is passed **unconditionally** at `:2570`
+and the dock renders split controls whenever it is present
+(`ChatPaneStageDock.tsx:634`). So splitting is **on in plugin-tabs today** and
+a single `chatPaneSplitting: off` trait could not have enforced anything.
+Turning it off for `workspace-shell` requires making `:2570` trait-gated too —
+that is now in L1's scope.
+
+Rows 4, 4b, 6b and 6c are **proposals, not rulings** — flagged in §7 (Q6, Q9).
 
 ### 4.2 Two boundary rules
 
@@ -267,12 +324,16 @@ most **one** deliberate export — the layout entry itself — or **none**.
 
 ### 4.3 Slices
 
-Bead-ready. Suggested anchor prefix `wt-391-forward-shell`.
+Suggested anchor prefix `wt-391-forward-shell`. **L1, L1.5, L2a, L3a, L3b, L4,
+L5, L6 and L7a/b/c are beads. L2b is a blocker inventory, not a bead** — it has
+no scope and no runnable proof by construction, and will be written as a slice
+only once its three prerequisites are ruled.
 
 **L1 — layout traits + internal shell composition.**
 - *WHAT:* add `"workspace-shell"` to `WorkspaceAgentLayout`; replace the
   `isPluginTabsLayout` boolean with `resolveLayoutTraits(layout)` and convert
-  all 9 semantic sites per §4.1; add
+  all semantic sites per §4.1 — **including making `:2570` trait-gated**, which
+  it is not today; add
   `front/layout/workspace-shell/` (private chrome) composing the frame the
   spike proved. Reducer holds `SurfaceShellApi` (§4.2a). Replace the spike's
   module-global `shellRef` with a provider. Replace the spike-local
@@ -328,9 +389,13 @@ Bead-ready. Suggested anchor prefix `wt-391-forward-shell`.
 - *Negative proof:* a plugin registering an **unknown section id at runtime**
   (not just in types) is surfaced as a diagnostic and dropped deterministically,
   asserted by test; every destination reachable expanded is reachable collapsed;
-  a nav with all counts absent renders without layout shift.
+  **count-absent stability is asserted structurally, not geometrically** — the
+  badge slot is a fixed-width element that renders with `data-count="none"`
+  rather than unmounting, asserted in jsdom. jsdom implements no layout
+  (`packages/workspace/vitest.setup.ts:38`), so "no layout shift" cannot be
+  proven there; any true geometry claim moves to the L7a browser run.
 
-**L2b — live Work rows + `Archived · N`. BLOCKED.**
+**L2b — live Work rows + `Archived · N`. BLOCKER INVENTORY, NOT A BEAD.**
 - *WHAT:* real job rows (one row per multi-participant job) and real archive
   counts.
 - *Blocked by:* three items owned elsewhere — (i) the left-pane row model
@@ -340,8 +405,9 @@ Bead-ready. Suggested anchor prefix `wt-391-forward-shell`.
   cannot hold a job as one row (`job-thread-v0-plan.md:723-725`); (iii)
   `JobProjectionV0` has no lifecycle field, so `Archived · N` has no source
   (#1399, 2026-08-26) — to be folded at jfxd S1 or filed as gate errata.
-- *Proof / negative proof:* deferred until the prerequisites are ruled; writing
-  them now would be fiction.
+- *Status:* no scope, no proofs, no bead. Writing them before the prerequisites
+  are ruled would be fiction. This entry exists to keep the three blockers
+  visible and attributed.
 
 **L3a — center page/dock modes (renderer-local).**
 - *WHAT:* the `CenterState = {mode:"dock"} | {mode:"page"; page}` machine
@@ -349,13 +415,21 @@ Bead-ready. Suggested anchor prefix `wt-391-forward-shell`.
   unmounted in page mode. Dock tab state is **renderer-local**, deliberately
   *not* in `ShellLocation` (§3).
 - *Blocked by:* L1, L1.5.
-- *Scope:* `workspace-shell/CenterHost.tsx`.
+- *Scope:* `workspace-shell/CenterHost.tsx` **plus an in-slice harness route**
+  (`apps/workspace-playground/src/front/ShellHarness.tsx`, dev-only) so this
+  slice proves itself without depending on L7a adoption. Round 2's e2e command
+  was circular *and* used a filter matching no project — the playground package
+  is named `workspace-playground`
+  (`apps/workspace-playground/package.json:2`), so
+  `--filter @hachej/boring-ui-playground` exits 0 on "No projects matched".
 - *Proof:* `pnpm --filter @hachej/boring-workspace test -- src/front/layout/workspace-shell/__tests__/centerHost.test.tsx`;
-  `pnpm --filter @hachej/boring-ui-playground test:e2e -- e2e/workspace-shell.spec.ts -g "dock survives page round-trip"`.
+  `pnpm --filter workspace-playground exec playwright test e2e/workspace-shell-center.spec.ts` against the harness route.
 - *Negative proof:* no Dockview type appears in `CenterHost`'s props or in the
   reducer — the surface handle is `SurfaceShellApi` (§4.2a), asserted by a type
   test; entering page mode unmounts the dock (asserted by DOM absence, not
-  visibility).
+  visibility); `CenterHost` holds no navigational state — its mode is a pure
+  function of `location.center` (§3), asserted by rendering it twice from the
+  same location and diffing.
 
 **L3b — Library over existing files and panels (noncanonical).**
 - *WHAT:* Library as the standalone workbench mount, listing **files and open
@@ -370,11 +444,21 @@ Bead-ready. Suggested anchor prefix `wt-391-forward-shell`.
   Shipping a lookalike schema without resolver, context or host would create a
   second, wrong "ViewDescriptor".
 - *Blocked by:* L3a.
-- *Scope:* `workspace-shell/LibraryPage.tsx`, `shared/shellLibraryEntry.ts`.
-- *Proof:* `pnpm --filter @hachej/boring-workspace test -- src/front/layout/workspace-shell/__tests__/libraryPage.test.tsx`.
+- *Producers (named, not implied):* (i) **files** — the existing filesystem
+  listing behind `FileTreeView`/`filesystemSurfaceResolver`; (ii) **open
+  panels** — `SurfaceShellApi.getSnapshot()` (`SurfaceShell.tsx:69-87`), the
+  only renderer-free handle to what is open; (iii) **agent outputs** —
+  `HumanArtifact` records (`humanArtifact.ts:18`). One adapter per producer
+  into `ShellLibraryEntryV0`; no new persistence in this slice (Q3).
+- *Scope:* `workspace-shell/LibraryPage.tsx`, `shared/shellLibraryEntry.ts`,
+  `workspace-shell/libraryAdapters/{files,panels,artifacts}.ts`.
+- *Proof:* `pnpm --filter @hachej/boring-workspace test -- src/front/layout/workspace-shell/__tests__/libraryPage.test.tsx src/shared/__tests__/shellLibraryEntry.test.ts`.
 - *Negative proof:* `grep -rn "ViewDescriptor" packages/workspace/src` returns
   nothing; an entry of unknown `kind` renders a labelled placeholder and never
-  throws; `ShellLibraryEntryV0` carries no renderer field.
+  throws; **the no-renderer-field rule is executable, not prose** —
+  `ShellLibraryEntryV0` is a `.strict()` zod schema and a test asserts that
+  objects carrying `panelId`/`dockviewId`/`component`/`presentation` fail to
+  parse.
 
 **Later, gated — canonical saved Views.** Consumes the ratified View contract
 *as a set*, with a resolver and a migration from `ShellLibraryEntryV0`. Not a
@@ -392,7 +476,7 @@ v0 slice. Gated on the P1 View work landing, and on Q3's persistence ruling.
   #1401.
 - *Scope:* `workspace-shell/ThreadPage.tsx` + canvas mount/teardown guards.
 - *Proof:* `pnpm --filter @hachej/boring-workspace test -- src/front/layout/workspace-shell/__tests__/threadPage.test.tsx`
-  **and** `pnpm --filter @hachej/boring-ui-playground test:e2e -- e2e/workspace-shell-thread.spec.ts`
+  **and** `pnpm --filter workspace-playground exec playwright test e2e/workspace-shell-thread.spec.ts`
   driving a scripted two-participant fixture: assert merged transcript order,
   agent chips, and canvas opening from an artifact card. A component test alone
   does not prove this.
@@ -411,15 +495,31 @@ v0 slice. Gated on the P1 View work landing, and on Q3's persistence ruling.
   not simulate it"* and *"Inbox cannot grant authority"*
   (`docs/issues/1355/plan.md:239-243`). Authority-grade approval is reserved
   for C5.
-- *Blocked by:* L3a. See §5 for the #1355 relationship.
+- *SCOPED TO FILE EVIDENCE (P1 from review).* v0 mounts **only file evidence**,
+  as `mode:"view"` panes, because that is the only thing the platform can
+  enforce today: `SurfaceShellApi` opens surfaces/panels/files
+  (`SurfaceShell.tsx:69-87`) and arbitrary non-file resolvers are unrestricted
+  at `SurfaceShell.tsx:573-578`. Built-in file panes honour `mode:"view"`;
+  an arbitrary `surfaceKind` cannot be held read-only. **Evidence of arbitrary
+  `surfaceKind` is explicitly deferred** until a read-only capability exists
+  that every eligible resolver/panel enforces — filed as future work, not
+  smuggled into v0.
+- *NOT A SECOND INBOX (P1 from review).* `AttentionPage` is a **projection/mount
+  of the same provider #1355 Slice 5C will own**
+  (`docs/issues/1355/plan.md:464-470`), not an independent surface. **Cutover
+  edge:** when 5C lands, `AttentionPage` retires to a thin alias over the
+  Console provider and its local item-fetching is deleted. That edge is part of
+  this slice's definition of done, recorded now so it is not rediscovered later.
+- *Blocked by:* L3a. See §5 for the full #1355 relationship.
 - *Scope:* `workspace-shell/AttentionPage.tsx`; `InboxOverlayProps` gains a page
   mode.
 - *Proof:* `pnpm --filter @hachej/boring-ask-user test -- src/front/inbox/__tests__/`;
-  `pnpm --filter @hachej/boring-ui-playground test:e2e -- e2e/inbox-demo.spec.ts`.
-- *Negative proof:* the evidence viewer is mounted read-only and **an attempted
-  write is rejected** — the test performs the write and asserts the rejection,
-  it does not merely inspect the UI; no string "approve"/"approval" appears in
-  the surface's copy (asserted by test).
+  `pnpm --filter workspace-playground exec playwright test e2e/inbox-demo.spec.ts`.
+- *Negative proof:* **an attempted write on an evidence file pane is rejected** —
+  the test performs the write and asserts rejection, it does not inspect the UI;
+  a non-file `surfaceKind` passed as evidence is refused with a labelled
+  "unsupported evidence kind" rather than opened unrestricted; no string
+  "approve"/"approval" appears in the surface's copy (asserted by test).
 
 **L6 — popover file access.**
 - *WHAT:* `FileTreeView` in a dismissible popover from the thread.
@@ -436,17 +536,51 @@ v0 slice. Gated on the P1 View work landing, and on Q3's persistence ruling.
   only an explicit activation does, and it switches center to dock mode with the
   opened path active; dismissing the popover never closes the opened panel.
 
-**L7a — playground adoption + e2e.** **L7b — full-app adoption.**
-- *WHAT:* flip each host onto `workspace-shell` behind an **off-by-default**
-  flag (inverting the spike's default-on route,
+Round 2 gave L7a/L7b one shared stanza with no separate scope, omitted CLI
+entirely, and used a root script that does not exist — the root exposes `e2e`,
+not `test:e2e` (`package.json:37`). **Three separate beads, host-specific
+proofs:**
+
+**Baseline rule for all three.** The flag-off comparison uses a **screenshot
+baseline captured from `main` BEFORE L1 lands**, committed as a fixture. A
+baseline regenerated from the changed implementation proves nothing. Note that
+`release-candidate-golden-route.spec.ts` contains **no screenshot comparison
+today** and Playwright defines **no viewport project set**
+(`apps/workspace-playground/playwright.config.ts:17`) — so L7a must *add* the
+visual assertion and an explicit viewport list; it cannot lean on either.
+
+**L7a — playground adoption + shell e2e.**
+- *WHAT:* flip the playground onto `workspace-shell` behind an
+  **off-by-default** flag (inverting the spike's default-on route,
   `saasSpikeRoute.ts:7-13`); wire Search to the real `CommandPalette`
-  (`index.ts:206`), dead in the spike (`SaasSpike.tsx:1472-1474`).
-- *Blocked by:* L1–L6 (L7b additionally by L7a).
-- *Proof:* `pnpm test:e2e` incl. `e2e/workspace-shell.spec.ts`.
-- *Negative proof (named baseline):* with the flag off,
-  `release-candidate-golden-route.spec.ts` visual comparison against the
-  **pre-L1 `main` screenshots regenerated on this branch**, `maxDiffPixels: 0`
-  at the project's existing viewport set. Not "looks the same".
+  (`index.ts:206`), dead in the spike (`SaasSpike.tsx:1472-1474`); promote the
+  L3a harness route into the real adoption path; add the viewport set + visual
+  assertion.
+- *Blocked by:* L1–L6.
+- *Scope:* `apps/workspace-playground/src/front/App.tsx`,
+  `playwright.config.ts`, `e2e/workspace-shell.spec.ts`, baseline fixtures.
+- *Proof:* `pnpm --filter workspace-playground exec playwright test e2e/workspace-shell.spec.ts`.
+- *Negative proof:* with the flag off, the golden route matches the **pre-L1
+  committed baseline** at `maxDiffPixels: 0` across the declared viewports.
+
+**L7b — full-app adoption.**
+- *WHAT:* env-var-gated adoption in `apps/full-app`.
+- *Blocked by:* L7a.
+- *Scope:* `apps/full-app/src/front/main.tsx` + its e2e.
+- *Proof:* `pnpm --filter @hachej/boring-full-app test`; full-app e2e with the
+  flag on and off.
+- *Negative proof:* with the env var unset, full-app renders `plugin-tabs`
+  unchanged against its pre-L1 baseline.
+
+**L7c — CLI adoption.**
+- *WHAT:* workspace-setting-gated adoption in the CLI hub
+  (`packages/cli/src/front/App.tsx:460,517`).
+- *Blocked by:* L7a.
+- *Scope:* CLI front + its front bundle rebuild.
+- *Proof:* `pnpm --filter @hachej/boring-ui-cli test`; manual hub smoke with the
+  setting on and off.
+- *Negative proof:* with the setting absent, the hub renders `plugin-tabs`
+  unchanged; the setting is per-workspace and does not leak across workspaces.
 
 **Explicit post-v0 non-goal:** contextual chat beside a *view* (as opposed to a
 thread). It has no session to attach to, and the spike never proved a live
@@ -462,19 +596,26 @@ does not discover a conflict:
 1. **The shell CONSUMES #1355's providers and collections when they land.** It
    does not reimplement them. Until they land, the shell's Work rows are static
    chrome (L2a) and its live rows are blocked (L2b).
-2. **The workspace-local Inbox mount (L5) is a compatibility surface**, matching
-   #1355's own framing of the `ask-user` file records as *"a named compatibility
-   adapter, not final C5 truth"* (`docs/issues/1355/plan.md:236-238`). The
-   Console-global Inbox (#1355 Slice 5C, `:464-470`) is the eventual single
-   surface; L5 must not present itself as a second one.
+2. **The workspace-local Inbox mount (L5) is a projection of the same provider
+   #1355 Slice 5C will own** (`docs/issues/1355/plan.md:464-470`) — not a second
+   Inbox. It matches #1355's framing of the `ask-user` file records as *"a named
+   compatibility adapter, not final C5 truth"* (`:236-238`). **Cutover edge:**
+   when 5C lands, `AttentionPage` retires to a thin alias over the Console
+   provider and its local item-fetching is deleted. Stated now so the removal
+   edge exists before the surface does.
 3. **Nav ownership: this plan's IA supersedes #1355 Slice 3's left-pane
    organization** (`docs/issues/1355/plan.md:409-413`) **for the
    `workspace-shell` layout only** — Slice 3 continues to own `plugin-tabs`.
-   *This supersession needs the owner's explicit gate;* it is not self-declared.
-4. **`ConsoleCollection` is not the Library's store.** It groups
-   `ConsoleThreadRefV1` records as personal navigation metadata
-   (`docs/issues/1355/plan.md:54-58`); it cannot hold saved data views. Q3
-   asks where they live instead.
+   **This is its own #1409 owner decision (Q13), not a #1355 Gate 1 item.**
+   Round 2 routed it into #1355 Gate 1, but that gate's four questions are about
+   `ConsoleCollection` ownership, `(appId, principalId)` derivation and
+   `Move to project` semantics (`docs/issues/1355/plan.md:588-596`) — none of
+   them rules on workspace-shell nav. The dependency edge belongs to this PR.
+4. **`ConsoleCollection` is not the Library's store.** It is *"host/control-plane
+   navigation metadata analogous to a saved View or folder … It does not own a
+   Thread record, Task, Human Intention, or Automation"*
+   (`docs/issues/1355/plan.md:89-92`); it cannot hold saved data views. Q3 asks
+   where they live instead.
 
 ---
 
@@ -486,17 +627,26 @@ does not discover a conflict:
 #1382 (objectives, OPEN) ─────────────────────────────────┘
 
 L1 → L1.5 → L2a → (L3a → L3b, L5, L6) → L7a → L7b
-                     └─ L2b BLOCKED: #1393 kind-discriminator
-                        + ConsoleThreadRefV1 repair + jfxd lifecycle field
+                                              └→ L7c
+                     └─ L2b = BLOCKER INVENTORY, not a bead:
+                        #1393 kind-discriminator + ConsoleThreadRefV1 repair
+                        + jfxd lifecycle field
                      └─ canonical saved Views BLOCKED: ratified P1 View set + Q3
+                     └─ arbitrary-surfaceKind evidence BLOCKED: needs a
+                        read-only capability every resolver enforces (L5)
+
+#1409 owner gate (the 12 questions in §7, incl. Q13 nav supersession)
+      → blocks every bead below
 
 #1355 Gate 1 (architecture approval, UNANSWERED — "No implementation bead is
    ready before it", docs/issues/1355/plan.md:372-376)
       → Console collections/providers → L2b live rows, Library persistence
-      → and the §5.3 nav-supersession gate
+      → and L5's 5C cutover
+      (NOT the nav supersession — that is Q13 here, see §5.3)
 ```
 
-**The honest unblocked tranche: L1, L2a, L3a, and L6 in part** (the popover
+**The honest unblocked tranche: L1, L2a, L3a, and L6 in part** — all behind the
+#1409 owner gate, which blocks every bead. (the popover
 itself; its center-routing behavior depends on L3a). L1.5 is unblocked *as
 work* but wants Q1 answered first. Everything else waits on a gate owned by
 someone else. Round 1 claimed "L1, L2, L3, L5, L6 are unblocked today" — that
@@ -536,7 +686,10 @@ was false, and both reviewers said so.
 8. **Classic-layout deprecation line.** Three layouts is a real maintenance tax
    (§4.1's matrix must be filled for all three, forever). Is `classic` on a
    deprecation path, and if so from when?
-9. **Chat-pane splitting in the shell** (traits row 6) — confirm off for v0.
+9. **Chat-pane behavior in the shell** (traits rows 4b, 6b, 6c) — confirm
+   `off` for v0 for splitting, palette-open-in-new-pane, and multi-pane
+   restore. Note splitting is **on in plugin-tabs today** and turning it off
+   requires trait-gating `:2570`, which is currently unconditional.
 10. **`WorkbenchLeftPane` vs Library.** If the workbench re-homes as Library,
     what happens to today's mounts in `ChatLayout.tsx:647-655` — kept for
     `classic`, or migrated?
@@ -546,6 +699,10 @@ was false, and both reviewers said so.
     Four columns and hover flyouts on a phone is unanswered.
 12. **Kanban.** `SAAS_VIEWS` carries kanban descriptors with no kanban renderer
     in the repo (`SaasSpike.tsx:688-700`). In scope for Library, or deferred?
+13. **Nav supersession.** Does this plan's fixed IA supersede #1355 Slice 3's
+    left-pane organization for the `workspace-shell` layout, with Slice 3
+    retaining `plugin-tabs`? This is a #1409 decision, not a #1355 Gate 1 item
+    (§5.3).
 
 ---
 
@@ -559,8 +716,18 @@ proves a live multi-agent transcript renders in this shell; that proof belongs
 to jfxd S4 + L4 and is the highest-risk item here. All entity data is fixture
 (`SaasSpikeFixtures.ts`, 1107 lines) and the shell has **no component tests**.
 
-Round 1 of this plan was reviewed by fresh-eyes and by GPT-5 Codex; both
-returned `revise`, and this revision folds every P0 and P1. Two round-1 claims
-were **wrong and are retracted**: that a third layout is a ~5-line change
-(§4.1), and that L1/L2/L3/L5/L6 were unblocked today (§6). It has not been
-re-reviewed since.
+This plan went through three review rounds: fresh-eyes and GPT-5 Codex
+(cross-model adversarial) on round 1, then a targeted precision verify on
+round 2. All three returned `revise`; every P0/P1/P2 is folded.
+
+**Claims retracted as wrong along the way.** Round 1: that a third layout is a
+~5-line change (§4.1), and that L1/L2/L3/L5/L6 were unblocked today (§6).
+Round 2: that `chatPaneSplitting` was one trait already off in plugin-tabs (it
+is on, and `:2570` is unconditional); that `ShellLocation` could serialize its
+own declared destinations; that `CenterHost` could own center state while §3
+owned location; that L5 could enforce read-only evidence for arbitrary
+`surfaceKind`; that nav supersession belonged to #1355 Gate 1; and four proof
+commands that would not have run (`pnpm test:e2e` and
+`--filter @hachej/boring-ui-playground` both match nothing).
+
+The plan has not been re-reviewed since round 3.
