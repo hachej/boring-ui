@@ -4,18 +4,19 @@ import { vi } from "vitest"
 
 vi.mock("@boring/agent/server", () => ({}))
 
-import Fastify from "fastify"
+import Fastify, { type FastifyInstance } from "fastify"
 import { existsSync } from "node:fs"
 import { mkdtemp } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { Readable } from "node:stream"
 import { describe, expect, it } from "vitest"
 import type { AskUserStore } from "../askUserStore"
 import { AskUserRuntime } from "../askUserRuntime"
 import { createAskUserTool } from "../createAskUserTool"
 import { createAskUserServerPlugin } from "../askUserServerPlugin"
 import { MemoryAskUserStore } from "./testAskUserStore"
-import type { UiBridge, UiCommand, UiState } from "@hachej/boring-workspace/server"
+import { UI_STATE_INVALIDATION_COMMAND, createInMemoryBridge, uiRoutes, type UiBridge, type UiCommand, type UiState } from "@hachej/boring-workspace/server"
 import * as workspacePlugin from "@hachej/boring-workspace/plugin"
 import { ASK_USER_UI_STATE_SLOTS } from "../../shared/constants"
 import type { AskUserQuestion } from "../../shared/types"
@@ -34,6 +35,48 @@ function bridge(): UiBridge & { commands: UiCommand[] } {
 
 const schema = { wireVersion: 1 as const, fields: [{ type: "text" as const, name: "answer", label: "Answer" }] }
 const pendingWait = { timeout: 30_000 }
+
+type SseEvent = { event: string; data: Record<string, unknown> }
+
+function createSseReader(reader: ReadableStreamDefaultReader<Uint8Array>) {
+  const decoder = new TextDecoder()
+  let buffer = ""
+  const queue: SseEvent[] = []
+  const drain = () => {
+    const chunks = buffer.split("\n\n")
+    buffer = chunks.pop() ?? ""
+    for (const chunk of chunks) {
+      const event = chunk.match(/^event:\s*(.+)$/m)?.[1]?.trim()
+      const data = chunk.match(/^data:\s*(.+)$/m)?.[1]
+      if (event && data) queue.push({ event, data: JSON.parse(data) as Record<string, unknown> })
+    }
+  }
+  return {
+    async next(eventName: string): Promise<SseEvent> {
+      while (true) {
+        const index = queue.findIndex(({ event }) => event === eventName)
+        if (index >= 0) return queue.splice(index, 1)[0]!
+        const chunk = await reader.read()
+        if (chunk.done) throw new Error(`SSE closed before ${eventName}`)
+        buffer += decoder.decode(chunk.value, { stream: true })
+        drain()
+      }
+    },
+  }
+}
+
+async function openUiCommandSse(app: FastifyInstance, signal: AbortSignal) {
+  const response = await app.inject({
+    method: "GET",
+    url: "/api/v1/ui/commands/next",
+    payloadAsStream: true,
+    signal,
+  })
+  return {
+    statusCode: response.statusCode,
+    reader: Readable.toWeb(response.stream()).getReader() as ReadableStreamDefaultReader<Uint8Array>,
+  }
+}
 
 async function waitForPendingQuestion(store: AskUserStore, sessionId: string): Promise<AskUserQuestion> {
   const started = Date.now()
@@ -157,6 +200,171 @@ describe("createAskUserServerPlugin", () => {
       bridgeSpy.mockRestore()
     }
   })
+
+  it("queues the invalidation for a question raised with no client attached, and delivers it on connect", async () => {
+    // The named gap in #873: a requestless ask_user fires from the CLI with no
+    // browser anywhere. The existing SSE test attaches its reader first, so it
+    // only proves live delivery. Here nothing is listening when the question is
+    // raised, and the invalidation must survive until a client shows up.
+    const { store, runtime } = await fixture()
+    const liveBridge = createInMemoryBridge()
+    const plugin = createAskUserServerPlugin({ store, runtime, bridge: liveBridge, sessionId: "fallback" })
+    const app = Fastify()
+    const controller = new AbortController()
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
+    try {
+      await app.register(plugin.routes!)
+      await app.register(uiRoutes, { bridge: liveBridge })
+
+      const startupCommands = await vi.waitFor(async () => {
+        const commands = await liveBridge.drainCommands!()
+        expect(commands).not.toHaveLength(0)
+        return commands
+      }, pendingWait)
+      expect(startupCommands).toEqual([expect.objectContaining({
+        kind: UI_STATE_INVALIDATION_COMMAND,
+        params: { keys: [ASK_USER_UI_STATE_SLOTS.PENDING] },
+      })])
+
+      const tool = plugin.agentTools!.find((candidate) => candidate.name === "ask_user")!
+      const pendingResult = tool.execute({ title: "Raised while nobody watched", schema }, {
+        toolCallId: "call-headless",
+        sessionId: "session-headless",
+        abortSignal: new AbortController().signal,
+      })
+      const pending = await waitForPendingQuestion(store, "session-headless")
+      await vi.waitFor(async () => expect((await liveBridge.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toMatchObject({
+        hint: { questionId: pending.questionId, sessionId: "session-headless", status: "ready" },
+      }))
+
+      // Only now does a browser connect.
+      const response = await openUiCommandSse(app, controller.signal)
+      expect(response.statusCode).toBe(200)
+      reader = response.reader
+      const sse = createSseReader(reader)
+      await expect(sse.next("init")).resolves.toMatchObject({ event: "init" })
+      await expect(sse.next("command")).resolves.toMatchObject({
+        data: { kind: UI_STATE_INVALIDATION_COMMAND, params: { keys: [ASK_USER_UI_STATE_SLOTS.PENDING] } },
+      })
+
+      const state = (await app.inject({ method: "GET", url: "/api/v1/ui/state" })).json<Record<string, unknown>>()
+      expect(state[ASK_USER_UI_STATE_SLOTS.PENDING]).toMatchObject({
+        hint: { questionId: pending.questionId, sessionId: "session-headless", status: "ready" },
+      })
+      expect(JSON.stringify(state)).not.toContain("answerToken")
+
+      await runtime.cancelQuestion(pending.questionId, pending.sessionId)
+      await expect(pendingResult).resolves.toMatchObject({ details: { status: "cancelled" } })
+    } finally {
+      controller.abort()
+      await reader?.cancel().catch(() => undefined)
+      await app.close()
+    }
+  })
+
+  it("keeps authoritative pending state recoverable when another client consumed the invalidation", async () => {
+    const { store, runtime } = await fixture()
+    const liveBridge = createInMemoryBridge()
+    const otherClientCommands: UiCommand[] = []
+    const disconnectOtherClient = liveBridge.subscribeCommands((command) => {
+      otherClientCommands.push(command)
+      return true
+    })
+    const plugin = createAskUserServerPlugin({ store, runtime, bridge: liveBridge, sessionId: "fallback" })
+    const app = Fastify()
+    const controller = new AbortController()
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
+    try {
+      await app.register(plugin.routes!)
+      await app.register(uiRoutes, { bridge: liveBridge })
+      await vi.waitFor(() => expect(otherClientCommands).not.toHaveLength(0), pendingWait)
+      otherClientCommands.length = 0
+
+      const tool = plugin.agentTools!.find((candidate) => candidate.name === "ask_user")!
+      const pendingResult = tool.execute({ title: "Missed by reconnecting client", schema }, {
+        toolCallId: "call-other-client",
+        sessionId: "session-other-client",
+        abortSignal: new AbortController().signal,
+      })
+      const pending = await waitForPendingQuestion(store, "session-other-client")
+      await vi.waitFor(() => expect(otherClientCommands).toEqual([expect.objectContaining({
+        kind: UI_STATE_INVALIDATION_COMMAND,
+        params: { keys: [ASK_USER_UI_STATE_SLOTS.PENDING] },
+      })]), pendingWait)
+      await expect(liveBridge.drainCommands!()).resolves.toEqual([])
+
+      // This client connects after the other subscriber accepted the command,
+      // so there is nothing to replay. Its init signal drives the frontend's
+      // authoritative state refresh covered by the paired front-shell test.
+      const response = await openUiCommandSse(app, controller.signal)
+      expect(response.statusCode).toBe(200)
+      reader = response.reader
+      const sse = createSseReader(reader)
+      await expect(sse.next("init")).resolves.toMatchObject({ event: "init" })
+      const state = (await app.inject({ method: "GET", url: "/api/v1/ui/state" })).json<Record<string, unknown>>()
+      expect(state[ASK_USER_UI_STATE_SLOTS.PENDING]).toMatchObject({
+        hint: { questionId: pending.questionId, sessionId: pending.sessionId, status: "ready" },
+      })
+
+      await runtime.cancelQuestion(pending.questionId, pending.sessionId)
+      await expect(pendingResult).resolves.toMatchObject({ details: { status: "cancelled" } })
+    } finally {
+      controller.abort()
+      await reader?.cancel().catch(() => undefined)
+      disconnectOtherClient()
+      await app.close()
+    }
+  })
+
+  it("pushes requestless ask_user lifecycle invalidations over the live UI SSE boundary", async () => {
+    const { store, runtime } = await fixture()
+    const liveBridge = createInMemoryBridge()
+    const plugin = createAskUserServerPlugin({ store, runtime, bridge: liveBridge, sessionId: "fallback" })
+    const app = Fastify()
+    const controller = new AbortController()
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
+    try {
+      await app.register(plugin.routes!)
+      await app.register(uiRoutes, { bridge: liveBridge })
+      await vi.waitFor(async () => expect((await liveBridge.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ hint: null, hintsBySession: {} }))
+
+      const response = await openUiCommandSse(app, controller.signal)
+      expect(response.statusCode).toBe(200)
+      reader = response.reader
+      const sse = createSseReader(reader)
+      await expect(sse.next("init")).resolves.toMatchObject({ event: "init" })
+      await expect(sse.next("command")).resolves.toMatchObject({
+        data: { kind: UI_STATE_INVALIDATION_COMMAND, params: { keys: [ASK_USER_UI_STATE_SLOTS.PENDING] } },
+      })
+
+      const tool = plugin.agentTools!.find((candidate) => candidate.name === "ask_user")!
+      const pendingResult = tool.execute({ title: "Requestless decision", schema }, {
+        toolCallId: "call-requestless",
+        sessionId: "session-requestless",
+        abortSignal: new AbortController().signal,
+      })
+      const pending = await waitForPendingQuestion(store, "session-requestless")
+      await expect(sse.next("command")).resolves.toMatchObject({
+        data: { kind: UI_STATE_INVALIDATION_COMMAND, params: { keys: [ASK_USER_UI_STATE_SLOTS.PENDING] } },
+      })
+      const state = (await app.inject({ method: "GET", url: "/api/v1/ui/state" })).json<Record<string, unknown>>()
+      expect(state[ASK_USER_UI_STATE_SLOTS.PENDING]).toMatchObject({
+        hint: { questionId: pending.questionId, sessionId: "session-requestless", status: "ready" },
+      })
+      expect(JSON.stringify(state)).not.toContain("answerToken")
+
+      await runtime.cancelQuestion(pending.questionId, pending.sessionId)
+      await expect(pendingResult).resolves.toMatchObject({ details: { status: "cancelled" } })
+      await expect(sse.next("command")).resolves.toMatchObject({
+        data: { kind: UI_STATE_INVALIDATION_COMMAND, params: { keys: [ASK_USER_UI_STATE_SLOTS.PENDING] } },
+      })
+      await vi.waitFor(async () => expect((await liveBridge.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ hint: null, hintsBySession: {} }))
+    } finally {
+      controller.abort()
+      try { await reader?.cancel() } catch {}
+      await app.close()
+    }
+  }, 30_000)
 
   it("publishes persisted pending state when plugin routes attach after server bridge registration", async () => {
     const { store, runtime } = await fixture()
