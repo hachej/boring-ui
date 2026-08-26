@@ -370,7 +370,7 @@ only once its three prerequisites are ruled.
 **L1.5 — shell location contract.** *(new; §3)*
 - *WHAT:* `ShellLocation` type, reducer, `navigate()`, and the host
   serialization seam. No new nav chrome.
-- *Blocked by:* L1; owner answer to Q1.
+- *Blocked by:* L1. Q1 is ruled: shell owns location state; host owns URL translation.
 - *Scope:* `workspace-shell/{shellLocation.ts,ShellLocationProvider.tsx}`.
 - *Proof:* `pnpm --filter @hachej/boring-workspace test -- src/front/layout/workspace-shell/__tests__/shellLocation.test.ts`.
 - *Negative proof:* every `ShellLocation` round-trips through serialize→parse
@@ -379,27 +379,33 @@ only once its three prerequisites are ruled.
   rather than throwing.
 
 **L2a — nav chrome + flyouts (static).**
-- *WHAT:* the ruled fixed order (Inbox · Work[Threads · Automations · Archived]
-  · Agents · Library · Search) as a **declared IA** with plugin actions
-  slotting into *named sections* rather than today's flat merged list
-  (`WorkspaceAgentFront.tsx:2473-2498`). Collapsed rail gains the **flyout**
-  mirroring Work — absent from the spike (`SaasSpike.tsx:1298-1313`). Counts
-  render from whatever source exists; **zero/absent is a valid state**.
+- *WHAT:* render the ratified built-ins in order — **Search at the top**, then
+  Inbox · Work[Threads · Automations · Archived] · Agents · Library — while
+  preserving the owner's later ruling that plugins **may add top-level
+  entries**. Replace today's flat merge (`WorkspaceAgentFront.tsx:2473-2498`)
+  with a deterministic insertion contract: built-ins never reorder, plugin
+  ordering has a stable tie-break, duplicate IDs produce diagnostics, and
+  overflow stays keyboard/touch reachable. The owner explicitly accepted the
+  crowding risk; this slice must not restore the rejected closed-IA/named-section
+  proposal. Collapsed rail gains the **flyout** mirroring Work — absent from the
+  spike (`SaasSpike.tsx:1298-1313`). Counts render from whatever source exists;
+  **zero/absent is a valid state**.
 - *WHY THIS PLAN OWNS IT:* neither sibling does. The Job Thread plan explicitly
   disowns the nav reframe (`job-thread-plan.md:718-721`), and #1355's
   Slice 3 shell is a *Console* organization, not this IA — see §5.
 - *Blocked by:* L1, L1.5.
-- *Scope:* `workspace-shell/{ShellNav,ShellNavSections,ShellRail}.tsx`; a
-  section id on the app-left action contract.
+- *Scope:* `workspace-shell/{ShellNav,ShellNavSections,ShellRail}.tsx`; the
+  minimum app-left action metadata needed for deterministic top-level insertion.
 - *Proof:* `pnpm --filter @hachej/boring-workspace test -- src/front/layout/workspace-shell/__tests__/shellNav.test.tsx`.
-- *Negative proof:* a plugin registering an **unknown section id at runtime**
-  (not just in types) is surfaced as a diagnostic and dropped deterministically,
-  asserted by test; every destination reachable expanded is reachable collapsed;
-  **count-absent stability is asserted structurally, not geometrically** — the
-  badge slot is a fixed-width element that renders with `data-count="none"`
-  rather than unmounting, asserted in jsdom. jsdom implements no layout
-  (`packages/workspace/vitest.setup.ts:38`), so "no layout shift" cannot be
-  proven there; any true geometry claim moves to the L7a browser run.
+- *Negative proof:* duplicate plugin IDs are diagnosed and rejected; two plugin
+  entries with equal order resolve deterministically without reordering the five
+  built-ins; every built-in and plugin destination reachable expanded is
+  keyboard/touch reachable collapsed; **count-absent stability is asserted
+  structurally, not geometrically** — the badge slot is a fixed-width element
+  that renders with `data-count="none"` rather than unmounting, asserted in
+  jsdom. jsdom implements no layout (`packages/workspace/vitest.setup.ts:38`),
+  so "no layout shift" cannot be proven there; any true geometry claim moves to
+  the L7a browser run.
 
 **L2b — live Work rows + `Archived · N`. BLOCKER INVENTORY, NOT A BEAD.**
 - *WHAT:* real job rows (one row per multi-participant job) and real archive
@@ -757,12 +763,14 @@ was false, and both reviewers said so.
 ## 8. Honest status
 
 The IA, the mounts and the center modes are **proven by recomposition** — the
-spike's real contribution, and a strong result. But the **chat**, which is what
-the whole vision is about, is a **visual fixture in both places it appears**
+spike's real contribution, and a strong result. At the ratified pin the Thread
+mounts a **real single-agent `PiChatPanel`**; the contextual chat beside a View
+remains visual-only, and the **multi-voice transcript** remains a fixture
 (`SaasSpike.tsx:1380-1381`, `JobThreadView.tsx:608`). Nothing in the spike
-proves a live multi-agent transcript renders in this shell; that proof belongs
-to jfxd S4 + L4 and is the highest-risk item here. All entity data is fixture
-(`SaasSpikeFixtures.ts`, 1107 lines) and the shell has **no component tests**.
+proves several agents behind one composer with audit-grade attribution; that
+proof belongs to jfxd S4 + L4 and is the highest-risk item here. All entity data
+is fixture (`SaasSpikeFixtures.ts`, 1107 lines) and the shell has **no component
+tests**.
 
 This plan went through three review rounds: fresh-eyes and GPT-5 Codex
 (cross-model adversarial) on round 1, then a targeted precision verify on
@@ -783,4 +791,7 @@ owned location; that L5 could enforce read-only evidence for arbitrary
 commands that would not have run (`pnpm test:e2e` and
 `--filter @hachej/boring-ui-playground` both match nothing).
 
-The plan has not been re-reviewed since round 3.
+A 2026-08-26 final consistency pass repaired the open-nav ruling, spike-proof
+boundary, Bead DoR splits, gate dependencies, and tracker priorities. An
+independent Model-Card final gate over the resulting working tree is still
+required before this plan may claim PASS.

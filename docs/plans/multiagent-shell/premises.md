@@ -35,9 +35,9 @@ Two consequences, stated plainly:
 
 | # | Premise | Unblocks | Beadable | Size |
 |---|---|---|---|---|
-| **P1** | Durable streams — Level D conformance, default-on | the whole engine | yes — `wt-391-forward-9p50` (exists) | ~2 sessions |
-| **P2** | Thread storage model — spike + competitor study | engine S1, the "noun" question, #1355's ref types | yes — new, brief below | 1 research + 1 spike session |
-| **P3** | Seat storage — audit-grade attribution (ratified concept, formerly C7) | honest who-said-what everywhere | yes — new | ~2 sessions |
+| **P1** | Durable streams — Level D conformance, default-on | the whole engine | epic `wt-391-forward-9p50`: `.1` conformance, `.2` rollout | 2 × one-session slices |
+| **P2** | Thread storage model — spike + competitor study | engine S1, the "noun" question, #1355's ref types | epic `shell-ngfs.13`: `.13.1` research, `.13.2` spike | 2 × one-session slices |
+| **P3** | Seat storage — audit-grade attribution (ratified concept, formerly C7) | honest who-said-what everywhere | epic `shell-ngfs.14`: `.14.1` catalog/envelope, `.14.2` projection | 2 × one-session slices |
 | **P4** | Kernel View — first ratified slice | Library saved views | yes — new | sizing unknown, see below |
 | **P5** | Merge queue | branch health for everything | no — a list, not a bead | ongoing |
 | **P6** | Gates re-ruled post-P2 | the engine gate, the shell gate | yes — re-point existing gate beads | minutes of owner time |
@@ -56,16 +56,15 @@ replay + snapshot rehydrate) is the currently shipped bar; Level D is
 "specified and deferred" (`docs/DECISIONS.md:472`). The owner has now called the
 deferral.
 
-- **WHAT:** unskip and green the Level D restart/ledger/activity conformance
-  tests; implement whatever they reveal missing in the `SqliteEventStreamStore`
-  path; flip `BORING_CHAT_DURABLE_STREAM` default-on behind a rollout note;
-  record the D29 re-evaluation as a dated DECISIONS addendum (owner merge =
-  ratification).
-- **Scope / Proof:** as already written on `wt-391-forward-9p50` — gateway
-  conformance suite green at Level D; restart-replay e2e on the playground
-  golden route; DECISIONS addendum PR.
-- **Honest sizing:** ~2 sessions, splittable into (implement) and
-  (flip + ratify). The bead already says so.
+- **WHAT:** child `.1` unskips and greens the Level D restart/ledger/activity
+  conformance tests and implements what they reveal missing in the
+  `SqliteEventStreamStore` path. Child `.2` then flips
+  `BORING_CHAT_DURABLE_STREAM` default-on behind a rollout note and carries the
+  dated D29 re-evaluation addendum (owner merge = ratification).
+- **Scope / Proof:** as written on epic `wt-391-forward-9p50` and its children —
+  gateway conformance green at Level D; restart-replay e2e on the playground
+  golden route; default-on/rollback proof; DECISIONS addendum PR.
+- **Honest sizing:** two one-session slices: `.1` implement, `.2` flip + ratify.
 - **Unblocks:** every engine slice. Also reframes the relay-vs-blackboard
   choice — see the note below.
 
@@ -160,9 +159,10 @@ per-session records; and what #1355's reference types would have to become.
 **Explicitly NOT in scope:** shipping either candidate; the relay/blackboard
 choice (that is post-P1); any UI.
 
-**Honest sizing:** one research session (Part A) + one spike session (Part B),
-runnable in parallel. Part B should not start before P1's shape is known, since
-criterion 1 depends on it.
+**Honest sizing:** two one-session children under epic `shell-ngfs.13`:
+`.13.1` research may run in parallel with P1; `.13.2` is the technical spike
+and starts after P1a (`9p50.1`) establishes Level D's shape, since criterion 1
+depends on it.
 
 **Feeds:** the engine gate (P6), engine S1, and #1355's `ConsoleThreadRefV1`
 repair.
@@ -188,8 +188,10 @@ C7 (`job-thread-plan.md` §8). The owner has ruled that this gap does not ship.
 - **Proof:** an attribution that survives a participant being removed; a test
   asserting no attribution path reads a mutable display field; the trajectory
   spine carrying `seatId` end to end.
-- **Honest sizing:** ~2 sessions, and genuinely uncertain — this is the premise
-  most likely to grow once opened, because it touches the envelope.
+- **Honest sizing:** two one-session children under epic `shell-ngfs.14`:
+  `.14.1` host catalog/envelope identity, then `.14.2` message/trajectory
+  projection. It remains the premise most likely to grow once opened; if either
+  child proves too large twice, split it rather than retrying.
 - **Unblocks:** honest agent chips in the thread timeline (shell L4), drill-down
   provenance, and any later billing/metering per seat.
 
@@ -330,10 +332,10 @@ therefore waits.
 
 ## Honest status of this program
 
-- **P1** is scoped and beaded; it is the only premise that is genuinely ready.
-- **P2** is scoped here for the first time; nobody has run it.
-- **P3** is ratified in principle and unscoped in practice; it is the one most
-  likely to grow.
+- **P1** is scoped into two one-session children; P1a is genuinely ready.
+- **P2** is scoped into research and technical-spike children; nobody has run them.
+- **P3** is ratified and now split into catalog/envelope and provenance-projection
+  children; its implementation uncertainty remains high.
 - **P4** has no sizing at all and needs its own planning pass.
 - **P5** is discipline, not work.
 - **P6** is cheap but cannot happen early.

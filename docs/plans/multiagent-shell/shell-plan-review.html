@@ -68,12 +68,12 @@ footer{margin:24px 0 8px;color:var(--muted);font-size:12.5px;text-align:center}
   <p class="tldr">A <b>new workspace layout</b>, not a rewrite: a third value on the existing
   <code>WorkspaceAgentLayout</code> switch, composed as a sibling to today's <code>plugin-tabs</code>
   shell, reusing components a spike already proved. It gives the multi-agent vision a home &mdash;
-  <b>Inbox / Work / Agents / Library / Search</b> over one workspace, with chat as a column beside a
-  view rather than a page you switch to.</p>
+  <b>Search / Inbox / Work / Agents / Library</b> over one workspace, with chat as a column beside a
+  view rather than a page you switch to. Plugins may add top-level entries; built-ins keep this order.</p>
   <div class="meta">Round 3 (folds fresh-eyes, cross-model, and targeted precision review) · PR
   <a href="https://github.com/hachej/boring-ui/pull/1409">#1409</a> · Issue
   <a href="https://github.com/hachej/boring-ui/issues/1399">#1399</a> · Branch
-  <code>weekend/multiagent-shell-plan</code> · 13 questions · No implementation before owner sign-off</div>
+  <code>weekend/multiagent-shell-plan</code> · 3 ruled + 10 remaining questions · Only L1/L1.5/L2a may run before sign-off</div>
 </header>
 
 <section class="card" style="border-top:5px solid var(--amber)">
@@ -83,9 +83,9 @@ footer{margin:24px 0 8px;color:var(--muted);font-size:12.5px;text-align:center}
   them. <b>Three of the thirteen questions below are already RULED</b> and are marked as such.</p>
   <table>
   <tr><th>#</th><th>Premise</th><th>State</th><th>Unblocks</th></tr>
-  <tr><td>P1</td><td><b>Durable streams</b> — Level D conformance, default-on</td><td class="low">beaded, ~2 sessions</td><td>the whole engine</td></tr>
-  <tr><td>P2</td><td><b>Thread storage model</b> — spike + competitor study</td><td class="med">newly scoped</td><td>engine S1, the storage question</td></tr>
-  <tr><td>P3</td><td><b>Seat storage / C7</b> — audit-grade attribution</td><td class="med">unscoped in practice</td><td>honest who-said-what</td></tr>
+  <tr><td>P1</td><td><b>Durable streams</b> — Level D conformance, default-on</td><td class="low">2 one-session children</td><td>the whole engine</td></tr>
+  <tr><td>P2</td><td><b>Thread storage model</b> — spike + competitor study</td><td class="med">2 one-session children</td><td>engine S1, the storage question</td></tr>
+  <tr><td>P3</td><td><b>Seat storage / C7</b> — audit-grade attribution</td><td class="med">2 one-session children</td><td>honest who-said-what</td></tr>
   <tr><td>P4</td><td><b>Kernel View</b> — first ratified slice</td><td class="high">no sizing yet</td><td>Library saved views</td></tr>
   <tr><td>P5</td><td>Merge queue</td><td class="low">a list, not a bead</td><td>branch health</td></tr>
   <tr><td>P6</td><td>Gates re-ruled post-P2</td><td class="low">minutes of owner time</td><td>both gates</td></tr>
@@ -162,8 +162,8 @@ footer{margin:24px 0 8px;color:var(--muted);font-size:12.5px;text-align:center}
     <li><code>ArtifactSurfacePane</code> nests safely (dock <i>and</i> thread canvas)</li>
     <li>Page/dock center modes, dock genuinely unmounted in page mode</li></ul></div>
     <div class="box"><b>Not proven by anything</b>
-    <ul><li><b>The chat is a visual fixture in both places it appears</b> &mdash; disabled send button, literally labelled &ldquo;composer visual only&rdquo;</li>
-    <li>The thread transcript is a playground mock</li>
+    <ul><li><b>The multi-voice transcript is still a visual fixture</b>; the ratified pin proves only one real single-agent <code>PiChatPanel</code></li>
+    <li>Contextual chat beside a View remains visual-only</li>
     <li>All entity data is fixture (1,107 lines)</li>
     <li>Zero component tests for the shell</li>
     <li>Mobile: never exercised</li></ul></div>
@@ -184,7 +184,7 @@ footer{margin:24px 0 8px;color:var(--muted);font-size:12.5px;text-align:center}
   <tr><td>2</td><td>L5 enforces read-only evidence for any artifact</td><td class="med">Only file panes can be held read-only; arbitrary resolvers are unrestricted.</td></tr>
   <tr><td>2</td><td>Four proof commands</td><td class="med">Would not have run &mdash; wrong package filter, non-existent root script.</td></tr>
   </table>
-  <p class="small">The plan has not been re-reviewed since round 3.</p>
+  <p class="small">A final consistency pass repaired owner-ruling, Bead DoR, gate-edge, proof-boundary, and tracker-priority drift. Independent Model-Card final gate remains required.</p>
 </section>
 
 <section class="card">
@@ -204,15 +204,15 @@ footer{margin:24px 0 8px;color:var(--muted);font-size:12.5px;text-align:center}
   <div class="qhead"><span class="qnum">2</span><span class="qtitle">Nav extensibility &mdash; and the Inbox paradox</span>
   <span class="small" style="margin-left:auto">BUILD-DEFINING</span></div>
   <p>The ruled IA is fixed and ordered. But <b>Inbox itself arrives today as a plugin contribution</b> (<code>appLeftActions: [{ id: "inbox", … order: 10 }]</code>). A closed IA either hardcodes a destination the plugin owns, or keeps a contribution point the IA claims to have closed.</p>
-  <table><tr><th style="width:40px">#</th><th>Option</th><th>Consequence</th></tr><tr><td><b>A</b></td><td><b>Named section slots (recommended).</b> IA fixed and ordered; plugins slot into declared sections.</td><td class="small">Keeps plugin extensibility honest without letting plugins reorder the IA.</td></tr><tr><td><b>B</b></td><td>Tools rail only &mdash; plugins never appear in nav.</td><td class="small">Simplest, but demotes existing plugin surfaces.</td></tr><tr><td><b>C</b></td><td>IA fully closed; Inbox promoted into the shell, ask-user loses its nav entry.</td><td class="small">Cleanest IA, but a real behavior change for a shipped plugin.</td></tr></table>
-  <div class="rec"><b>Recommendation:</b> A.<br><span class="small"><b>Cost of the answer:</b> Shapes L2a. B or C means editing the ask-user plugin.</span></div>
+  <table><tr><th style="width:40px">#</th><th>Option</th><th>Consequence</th></tr><tr><td><b>A</b></td><td>Named section slots.</td><td class="small">Rejected: it closes the top level indirectly.</td></tr><tr><td><b>B</b></td><td>Tools rail only.</td><td class="small">Rejected: existing plugin destinations stay valid.</td></tr><tr><td><b>C</b></td><td>IA fully closed.</td><td class="small">Rejected.</td></tr><tr><td><b>D</b></td><td><b>RULED: plugins may add top-level entries.</b></td><td class="small">Built-ins keep Search-first order; insertion is deterministic; crowding risk accepted.</td></tr></table>
+  <div class="rec"><b>Owner ruling:</b> D. L2a implements an open top level and may not restore the old named-section recommendation.</div>
 </div>
 <div class="card" style="margin-top:14px">
   <div class="qhead"><span class="qnum">3</span><span class="qtitle">Library persistence</span>
   <span class="small" style="margin-left:auto">BUILD-DEFINING</span></div>
   <p>Where do saved views live? #1355's <code>ConsoleCollection</code> <b>cannot</b> hold them &mdash; it is navigation metadata that explicitly owns no Thread, Task, Intention or Automation.</p>
-  <table><tr><th style="width:40px">#</th><th>Option</th><th>Consequence</th></tr><tr><td><b>A</b></td><td><b>Descriptor-local / unsaved for the first tranche (recommended).</b></td><td class="small">Ships L3b now; defers the store until the ratified View work lands.</td></tr><tr><td><b>B</b></td><td>Workspace settings.</td><td class="small">Available today, but settings is not a collection store.</td></tr><tr><td><b>C</b></td><td>A new plugin store.</td><td class="small">Correct long-term, a slice of its own.</td></tr></table>
-  <div class="rec"><b>Recommendation:</b> A &mdash; do not invent a store before the View contract exists.<br><span class="small"><b>Cost of the answer:</b> Gates whether L3b ships in the first tranche.</span></div>
+  <table><tr><th style="width:40px">#</th><th>Option</th><th>Consequence</th></tr><tr><td><b>A</b></td><td><b>RULED: no saved-view persistence in v0.</b></td><td class="small">L3b serves files + built-in views; saved Views wait for P4's kernel contract as a set.</td></tr><tr><td><b>B</b></td><td>Workspace settings.</td><td class="small">Rejected: settings is not a View store.</td></tr><tr><td><b>C</b></td><td>A new shell plugin store.</td><td class="small">Rejected: would mint a lookalike View system.</td></tr></table>
+  <div class="rec"><b>Owner ruling:</b> A. P4, not the shell, owns the first persistent saved-View slice.</div>
 </div>
 <div class="card" style="margin-top:14px">
   <div class="qhead"><span class="qnum">4</span><span class="qtitle">Nav supersession vs #1355 Slice 3</span>
@@ -287,8 +287,9 @@ footer{margin:24px 0 8px;color:var(--muted);font-size:12.5px;text-align:center}
 
 <section class="card">
   <h2>Slices &amp; sequencing</h2>
-  <div class="gate"><b>This gate blocks every bead below.</b> Epic <code>wt-391-forward-shell-ngfs</code>,
-  gate bead <code>.1</code>, eleven slice beads. No dependency cycles.</div>
+  <div class="gate"><b>This gate blocks L3a and every later shell bead.</b> The substrate-free chain
+  <code>L1 → L1.5 → L2a</code> is the explicit exception and may run before P6. Epic
+  <code>wt-391-forward-shell-ngfs</code>; no dependency cycles.</div>
 <svg class="dg" viewBox="0 0 1050 300" role="img" aria-label="Slice dependency graph">
 <defs><marker id="ah2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="var(--blue)"/></marker>
 <marker id="ah3" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="var(--muted)"/></marker></defs>
@@ -317,8 +318,8 @@ footer{margin:24px 0 8px;color:var(--muted);font-size:12.5px;text-align:center}
 <text class="lbl" x="24" y="200">BLOCKED ELSEWHERE — NOT BEADS</text>
 <rect class="bx3" x="24" y="212" width="322" height="66" rx="8"/><text class="t" x="185" y="234" text-anchor="middle">L2b live Work rows · Archived · N</text><text class="c" x="185" y="252" text-anchor="middle">#1393 kind-discriminator · ConsoleThreadRefV1</text><text class="c" x="185" y="268" text-anchor="middle">repair · jfxd lifecycle field</text>
 </svg>
-  <p class="dgcap"><b>The honest unblocked tranche: L1, L1.5, L2a, L3a</b> (and L6 in part).
-  Everything else waits on a gate someone else owns. <b>L2b is a blocker inventory, not a bead</b> &mdash;
+  <p class="dgcap"><b>The honest early tranche: L1, L1.5, L2a only.</b>
+  L3a and everything later waits on P6 or another named premise. <b>L2b is a blocker inventory, not a bead</b> &mdash;
   it has no runnable proof by construction.</p>
 </section>
 
@@ -326,7 +327,7 @@ footer{margin:24px 0 8px;color:var(--muted);font-size:12.5px;text-align:center}
   <h2>Honest risks</h2>
   <table>
   <tr><th>Risk</th><th>Grade</th><th>Where it lands</th></tr>
-  <tr><td><b>The chat is unproven.</b> A visual fixture in both places the spike shows it. Nothing demonstrates a live multi-agent transcript in this shell.</td><td class="high">HIGH</td><td>L4 &mdash; and L4 is also the slice gated on another plan.</td></tr>
+  <tr><td><b>The multi-voice chat is unproven.</b> The pin proves one real single-agent chat, but nothing demonstrates several agents behind one composer with audit-grade attribution.</td><td class="high">HIGH</td><td>L4 &mdash; gated on P1, P2, P3 and engine S4.</td></tr>
   <tr><td><s><b>#1401 may be rejected.</b></s> <b>RETIRED &mdash; ratified 2026-08-26.</b> The multi-seat Thread amendment is merged.</td><td class="low">RESOLVED</td><td>The plan's largest external risk is gone.</td></tr>
   <tr><td><b>Three layouts is a permanent tax.</b> The traits matrix must be filled for all three, forever.</td><td class="med">MEDIUM</td><td>Q10 &mdash; capped only by a deprecation line.</td></tr>
   <tr><td><b>Two plans want the nav.</b> This IA and #1355 Slice 3 both organize a left pane.</td><td class="med">MEDIUM</td><td>Q4 &mdash; a scoped supersession resolves it.</td></tr>
@@ -338,13 +339,14 @@ footer{margin:24px 0 8px;color:var(--muted);font-size:12.5px;text-align:center}
 
 <section class="card">
   <h2>What sign-off means</h2>
-  <p class="tldr">Answering the 13 questions unblocks <b>four beads</b> &mdash; L1, L1.5, L2a, L3a &mdash;
-  and nothing else. The remaining seven wait on the engine gate, the #1355 gate, or each other.
-  #1401 was ratified on 2026-08-26, so the premise is settled.</p>
+  <p class="tldr">Three questions are already ruled. After P2 reports, answering the
+  remaining owner questions unblocks <b>L3a</b>; later beads still wait on the engine,
+  P3, #1355, or each other. L1, L1.5 and L2a are already early-dispatchable by the
+  substrate-free ruling. #1401 was ratified on 2026-08-26.</p>
   <div class="callout">The plan deliberately does <b>not</b> ask you to approve the vision &mdash;
   that is already ruled in <a href="https://github.com/hachej/boring-ui/issues/1399">#1399</a>.
-  It asks you to approve a <b>route</b>, and to settle the thirteen places where the route
-  had to guess.</div>
+  It asks you to approve a <b>route</b>, and to settle the ten still-open places where the route
+  must not guess.</div>
 </section>
 
 <footer>Multi-agent workspace shell &mdash; owner gate ·

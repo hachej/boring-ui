@@ -33,9 +33,9 @@ CLOSED and absorbed into #1409.
 
 | Premise | Status (2026-08-26) |
 |---|---|
-| **[durable-streams]** (bead `wt-391-forward-9p50`, formerly P1) | **Keystone, ready, not started.** Scoped and beaded; ~2 sessions. Blocks `shell-ngfs.13`, `shell-ngfs.7`, `jfxd.2`. **Bead is P2 while three dependents are P1 — re-prioritise before dispatch** |
+| **[durable-streams]** (epic `wt-391-forward-9p50`, formerly P1) | **Keystone, not started.** Split into P0 children `.1` conformance and `.2` default-on rollout; `.1` is ready and downstream engine work depends on `.2`. |
 | **[thread-storage-spike]** (`shell-ngfs.13`, formerly P2) | **Newly scoped, never run.** Competitor study + in-stack spike; 1 research + 1 spike session |
-| **[seat-audit-attribution]** (`shell-ngfs.14`, formerly P3) | **Ratified in principle, unscoped in practice.** ~2 sessions, most likely to grow — it touches the envelope |
+| **[seat-audit-attribution]** (epic `shell-ngfs.14`, formerly P3) | **Ratified and split, not started.** `.14.1` owns catalog/envelope identity; `.14.2` owns provenance projection. Two uncertain one-session slices. |
 | **[saved-views-kernel]** (formerly P4) | **No sizing at all.** Needs its own planning pass |
 | **[merge-queue]** (formerly P5) | **Standing obligation, overdue a pass.** Path items: #1382 (+ the eval suite stacked behind it), #1343, #1376, #1386, #1409, #1416 |
 | **[gate-re-ruling]** (formerly P6) | Blocked until [thread-storage-spike] reports; minutes of owner time |

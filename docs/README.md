@@ -12,7 +12,9 @@ procedures live in [`procedures/`](procedures/README.md).
 
 | Need | Read |
 | --- | --- |
-| Direction & vision (sequencing authority, living vision, completion tracker) | [`direction/`](direction/README.md) — [`DIRECTION.md`](direction/DIRECTION.md) · [`VISION.md`](direction/VISION.md) · [`STATE.md`](direction/STATE.md) |
+| **The whole vision, one story** (four layers, proof ledger, open questions) | [`vision/`](vision/README.md) — [`explorations.md`](vision/explorations.md) proof ledger |
+| **The roadmap, readable** (how programs relate; defers to DIRECTION for all scheduling) | [`roadmap/`](roadmap/README.md) |
+| Direction & sequencing authority (the ONLY executable ordering) | [`direction/`](direction/README.md) — [`DIRECTION.md`](direction/DIRECTION.md) · [`VISION.md`](direction/VISION.md) · [`STATE.md`](direction/STATE.md) |
 | Ratified long-term architecture pack (frozen; owner rulings) | [`plans/long-term/ratified/`](plans/long-term/ratified/README.md) — [`VISION.md`](plans/long-term/ratified/VISION.md) · [`ARCHITECTURE-PLAN.md`](plans/long-term/ratified/ARCHITECTURE-PLAN.md) · [`RECONCILIATION.md`](plans/long-term/ratified/RECONCILIATION.md) |
 | Boring Factory (chassis-first product built on boring-ui) | [`factory/VISION.md`](factory/VISION.md) · [`factory/TODO.md`](factory/TODO.md) · stage contract `.agents/factory/README.md` |
 | Visual architecture (package map and runtime layers) | [`visual/`](visual/README.md) |

@@ -31,9 +31,9 @@ the surface is built on top of them. Two rulings set the tone:
 
 | # | Premise | State | Unblocks |
 |---|---|---|---|
-| **P1** | Durable streams — Level D conformance, default-on | tracked in the issue tracker as bead `wt-391-forward-9p50`, ~2 sessions | the whole engine |
-| **P2** | Thread storage model — spike + competitor study | **newly scoped**, brief in ch.1 | engine S1, the storage question, #1355 ref types |
-| **P3** | Seat storage — the tamper-proof who-said-what record (ratified concept, formerly C7) | ratified in principle, unscoped in practice | honest who-said-what everywhere |
+| **P1** | Durable streams — Level D conformance, default-on | epic `wt-391-forward-9p50`; one-session children `.1` conformance + `.2` rollout | the whole engine |
+| **P2** | Thread storage model — spike + competitor study | epic `shell-ngfs.13`; one-session children `.13.1` research + `.13.2` spike | engine S1, the storage question, #1355 ref types |
+| **P3** | Seat storage — the tamper-proof who-said-what record (ratified concept, formerly C7) | epic `shell-ngfs.14`; one-session children `.14.1` catalog/envelope + `.14.2` projection | honest who-said-what everywhere |
 | **P4** | Kernel View — first ratified slice | **no sizing yet** | Library saved views |
 | **P5** | Merge queue | standing obligation, not a bead | branch health for everything |
 | **P6** | Gates re-ruled post-P2 | minutes of owner time, cannot happen early | both owner gates |
@@ -79,7 +79,7 @@ demoted to renderer*. The embedded workbench is **one component with four
 mounts**: thread canvas, evidence viewer, file popover, standalone Library.
 
 **Two boundaries.** Artifacts are **shared** via one canonical workspace
-filesystem with distinct per-seat authority (D25/D28). The conversation is
+filesystem with distinct per-seat authority (D28; D25's older shared-runtime wording is superseded). The conversation is
 **posts-only**. Agents share the work, not each other's minds and keys.
 
 **Real-SaaS and agent-SaaS mixed:** deterministic Views beside agentic Threads,

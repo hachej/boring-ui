@@ -356,25 +356,26 @@ Two rulings set the tone, both from the owner interview of 2026-08-26:
 model is not decided**. Full program:
 `docs/plans/multiagent-shell/premises.md` in #1409.
 
-1. **[durable-streams]** (bead `wt-391-forward-9p50`, formerly P1) — **the
-   keystone; start here.** Level D restart/ledger/activity conformance green,
-   `BORING_CHAT_DURABLE_STREAM` default-on, and a dated Decision 29
-   re-evaluation addendum in `DECISIONS.md` (owner merge = ratification). This
-   is D29's own named trigger arriving (`DECISIONS.md:472`/`:476`), not new
-   scope. ~2 sessions, splittable into implement / flip-and-ratify. Unblocks the
-   whole engine. **Its bead is currently P2 while three dependents are P1 —
-   re-prioritise it before dispatch.**
-2. **[thread-storage-spike]** (bead `wt-391-forward-shell-ngfs.13`, formerly
-   P2) — competitor study over six comparable facts, plus an in-stack technical
-   spike of the two candidate storage shapes. Decides the engine's storage, what
-   #1355's conversation references may point at, and whether one thread per job
-   is a record or a view. 1 research + 1 spike session; the spike half starts
-   after [durable-streams]' shape is known.
-3. **[seat-audit-attribution]** (bead `wt-391-forward-shell-ngfs.14`, formerly
-   P3 / seat storage C7) — `seatId` as real envelope identity, not a mutable
-   display handle. Sequencing, not new ontology: already ratified as required
-   (`docs/plans/long-term/ratified/RECONCILIATION.md:153`). Display-only
-   participant chips are **rejected**. ~2 sessions and genuinely uncertain.
+1. **[durable-streams]** (epic `wt-391-forward-9p50`, formerly P1) — **the
+   keystone; start here.** Child `.1` makes Level D restart/ledger/activity
+   conformance green; child `.2` makes `BORING_CHAT_DURABLE_STREAM` default-on
+   and carries the dated Decision 29 re-evaluation addendum (owner merge =
+   ratification). This is D29's own named trigger arriving
+   (`DECISIONS.md:472`/`:476`), not new scope. Two one-session slices,
+   implement then flip-and-ratify. Both are P0; downstream engine work depends
+   on `.2`.
+2. **[thread-storage-spike]** (epic `wt-391-forward-shell-ngfs.13`, formerly
+   P2) — child `.13.1` runs the competitor study over six comparable facts;
+   child `.13.2` runs the in-stack two-candidate spike after durable-streams
+   `.1` establishes the Level D shape. Together they decide what the owner gate
+   may choose for engine storage and #1355 references. Two one-session slices.
+3. **[seat-audit-attribution]** (epic `wt-391-forward-shell-ngfs.14`, formerly
+   P3 / seat storage C7) — child `.14.1` lands host catalog/envelope identity;
+   child `.14.2` projects immutable `seatId` through messages, trajectories,
+   artifacts and usage. Sequencing, not new ontology: already ratified as
+   required (`docs/plans/long-term/ratified/RECONCILIATION.md:153`).
+   Display-only participant chips are **rejected**. Two one-session slices with
+   genuine implementation uncertainty.
 4. **[saved-views-kernel]** (formerly P4) — the first ratified View slice, the
    contract as a set. **Unsized; needs its own planning pass before estimation.**
    Does not block a view library over files and built-in views.
@@ -444,7 +445,7 @@ they depend on have landed.
 | Decision | Ruling |
 |---|---|
 | Sequencing | **Premises before surface.** Kernel capabilities land and are proven before the product surface built on them. Supersedes the wave ordering above without retracting it. |
-| Keystone | **[durable-streams] first.** Highest-leverage node; its bead must be re-prioritised to match its dependents. |
+| Keystone | **[durable-streams] first.** Highest-leverage node; its two children are P0 and downstream engine work depends on the rollout child. |
 | Engine substrate | **The engine does not ship on conformance Level B.** Interim receipt machinery `descoped-pending-P1`; relay-vs-blackboard decided after the substrate is real, both candidates live. |
 | Thread storage model | **NOT decided.** Routed to [thread-storage-spike]; the plan-level noun recommendation is withdrawn. Nothing in the ratified product surface presumes its outcome. |
 | Attribution | **Audit-grade from day one.** Display-only participant chips rejected; `seatId` in the seat catalogue pulled forward. |
