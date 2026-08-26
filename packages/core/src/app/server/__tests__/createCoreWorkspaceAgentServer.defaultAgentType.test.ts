@@ -2,7 +2,8 @@ import { access, mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test, vi } from 'vitest'
-import { createTestCoreConfig } from '../../../server/__tests__/createTestApp.js'
+import { createTestCoreConfig as createBaseTestCoreConfig } from '../../../server/__tests__/createTestApp.js'
+import type { CoreConfig } from '../../../shared/types.js'
 import {
   mocks,
   pluginContexts,
@@ -11,6 +12,10 @@ import {
 const REGULAR_AGENTS = [
   { agentTypeId: 'general', definition: { label: 'General', instructions: 'Answer general questions.' } },
 ] as const
+
+function createTestCoreConfig(overrides: Partial<CoreConfig> = {}): CoreConfig {
+  return createBaseTestCoreConfig({ defaultAgentTypeId: 'general', ...overrides })
+}
 
 test.each([
   {
@@ -131,7 +136,7 @@ test('normalizes the deprecated option into the one application default', async 
     runtimePlugins: [], agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
     preservedUiStateKeys: [], routeContributions: [],
   })
-  const config = createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' })
+  const config = createBaseTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' })
   const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
   const app = await createCoreWorkspaceAgentServer({
     config,
@@ -245,7 +250,7 @@ test.each(['before-inventory', 'cas', 'cas-undefined-table', 'after-inventory', 
       workspaceRoot: '/tmp/full-app-workspaces',
       serveFrontend: false,
     })).rejects.toThrow(stage === 'remaining-null'
-      ? 'Workspace default Agent legacy reconciliation did not converge'
+      ? 'Workspace default Agent reconciliation did not converge'
       : stage.includes('undefined-table') ? /relation failure/ : /unavailable/)
     expect(mocks.hostClose).toHaveBeenCalledOnce()
     expect(mocks.hostRegisterDirectRoutes).not.toHaveBeenCalled()
@@ -336,7 +341,7 @@ test('unknown persisted default denies execution but preserves session and histo
   const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
   let dispatcher: import('@hachej/boring-agent/server').WorkspaceAgentDispatcherResolver | undefined
   const app = await createCoreWorkspaceAgentServer({
-    config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+    config: createBaseTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
     workspaceRoot: '/tmp/full-app-workspaces',
     serveFrontend: false,
     onWorkspaceAgentDispatcher: (value) => { dispatcher = value },
@@ -374,7 +379,7 @@ test('rejects actual execution paths before binding or Environment acquisition',
     runtimePlugins: [], agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
     preservedUiStateKeys: [], routeContributions: [],
   })
-  const config = createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' })
+  const config = createBaseTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' })
   mocks.getWorkspace.mockImplementation(async (id: string) => ({
     id,
     appId: config.appId,

@@ -122,6 +122,7 @@ export type {
 } from './agentDefinition/instructionFileRefs'
 export {
   DEFAULT_AGENT_FLEET,
+  isBuiltInDefaultAgentSpec,
   resolveDefaultAgentFleet,
 } from './agentDefinition/resolveDefaultAgentFleet'
 export type {

@@ -45,7 +45,7 @@ import {
   type VerifiedAgentScopeClaim,
   type WorkspaceProvisioningResult,
   type WorkspaceAgentDispatcherResolver,
-  DEFAULT_AGENT_TYPE_ID,
+  isBuiltInDefaultAgentSpec,
   resolveDefaultAgentFleet,
 } from "@hachej/boring-agent/server"
 import type { AgentEffectAdmission } from "@hachej/boring-agent/core"
@@ -620,7 +620,7 @@ interface NormalizedAgentRuntimeContribution {
   readonly agentOptions: AgentSpecPluginArtifactProjection["agentOptions"]
   readonly includeAllDiscoveredPluginResources: boolean
   /** Preserves established standalone plugin/tool ordering for the platform default Agent. */
-  readonly standaloneDefaultComposition: boolean
+  readonly singleAgentComposition: boolean
 }
 
 export const AGENT_RUNTIME_IDENTITY_ERROR_CODE = "BORING_AGENT_RUNTIME_IDENTITY_INCOMPLETE"
@@ -741,13 +741,14 @@ function agentRuntimeContributionIdentityInput(input: {
   readonly includeAllDiscoveredPluginResources: boolean
 }): Pick<NormalizedAgentRuntimeContribution, "artifacts" | "validatedConfig" | "grants" | "toolContractDigests" | "bindingInputs"> {
   const { agent, projection } = input
-  const configuredBindings = agent.agentTypeId === DEFAULT_AGENT_TYPE_ID ? [] : (agent.plugins ?? [])
+  const configuredBindings = agent.plugins ?? []
   const toolContractDigests = (projection.agentOptions.extraTools ?? []).map(toolContractDigest)
   const bindingInputs = jsonIdentityValue({
     agent: {
       agentTypeId: agent.agentTypeId,
       definition: agent.definition,
       model: agent.model,
+      provisioning: agent.provisioning,
       pluginOrder: configuredBindings.map((binding) => binding.name),
     },
     resolvedPolicy: resolvedPolicyIdentity(input.resolvedPolicy, input.agent.resolvedPolicyDigest),
@@ -796,7 +797,6 @@ export function projectAgentSpecPluginArtifacts(
   agent: AgentHostAgentSpec,
   artifacts: readonly ResolvedWorkspacePluginArtifact[],
   workspaceScopedArtifacts: readonly ResolvedWorkspacePluginArtifact[] = [],
-  defaultPlugins: Pick<ServerBootstrapOptions, "defaults" | "excludeDefaults"> = {},
 ): AgentSpecPluginArtifactProjection {
   const byId = new Map<string, ResolvedWorkspacePluginArtifact>()
   for (const artifact of artifacts) {
@@ -806,13 +806,12 @@ export function projectAgentSpecPluginArtifacts(
     byId.set(artifact.id, artifact)
   }
 
-  const selectAll = agent.agentTypeId === DEFAULT_AGENT_TYPE_ID
-  const requested = selectAll ? [] : (agent.plugins ?? [])
-  const selected: ResolvedWorkspacePluginArtifact[] = selectAll ? [...artifacts] : []
+  const requested = agent.plugins ?? []
+  const selected: ResolvedWorkspacePluginArtifact[] = []
   const selectedIds = new Set(selected.map((artifact) => artifact.id))
   const workspaceScopedIds = new Set(workspaceScopedArtifacts.map((artifact) => artifact.id))
   const requestedIds = new Set<string>()
-  for (const artifact of selectAll ? [] : workspaceScopedArtifacts) {
+  for (const artifact of workspaceScopedArtifacts) {
     if (selectedIds.has(artifact.id)) continue
     const canonical = byId.get(artifact.id)
     if (!canonical) {
@@ -840,7 +839,6 @@ export function projectAgentSpecPluginArtifacts(
   }
 
   const projected = bootstrapServer({
-    ...(selectAll ? defaultPlugins : {}),
     plugins: selected.map((artifact) => artifact.plugin),
   })
   return {
@@ -1286,8 +1284,7 @@ export async function createWorkspaceAgentServer(
     ...(fleetRepositoryRoot ? { repositoryRoot: fleetRepositoryRoot } : {}),
     ...(discoveredPackages ? { discoveredPackages } : {}),
   })
-  const standaloneDefaultComposition = agents.length === 1
-    && agents[0]!.agentTypeId === DEFAULT_AGENT_TYPE_ID
+  const singleAgentComposition = agents.length === 1
   const bridge = createInMemoryBridge()
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
   const modeAdapter = opts.runtimeModeAdapter ?? createSandboxRuntimeModeAdapter(resolvedMode)
@@ -1335,6 +1332,14 @@ export async function createWorkspaceAgentServer(
     bridge,
     installPluginAuthoring: pluginAuthoringEnabled,
   })
+  const hostAgents = opts.agents === undefined && agents.length > 1
+    ? agents.map((agent) => isBuiltInDefaultAgentSpec(agent)
+      ? {
+          ...agent,
+          plugins: pluginCollection.resolvedPluginArtifacts.map((artifact) => ({ name: artifact.id })),
+        }
+      : agent)
+    : agents
   const defaultPluginPackagePaths = pluginCollection.defaultPluginPackagePaths
   const ctx: WorkspaceAgentServerPluginContext = { workspaceRoot, bridge }
   const allPluginEntries: WorkspacePluginEntry[] = pluginCollection.resolvedPluginArtifacts
@@ -1486,6 +1491,14 @@ export async function createWorkspaceAgentServer(
     plugins: pluginCollection.resolvedPluginArtifacts.map((artifact) => artifact.plugin),
     excludeDefaults: opts.excludeDefaults,
   })
+  const allPluginAgentOptions = {
+    extraTools: allPluginAgentProjection.agentTools,
+    pi: {
+      packages: allPluginAgentProjection.piPackages,
+      extensionPaths: allPluginAgentProjection.extensionPaths,
+    },
+    systemPromptAppend: allPluginAgentProjection.systemPromptAppend || undefined,
+  }
   const canonicalDefaultPluginPackagePaths = new Set(defaultPluginPackagePaths.map((path) => resolve(path)))
   const workspaceScopedDefaultArtifacts = opts.workspaceScopedDefaultPluginAgentContributions
     ? pluginCollection.resolvedPluginArtifacts.filter((artifact) =>
@@ -1518,12 +1531,10 @@ export async function createWorkspaceAgentServer(
         ? await opts.fleetCompiler.compile({ agents: fleet })
         : fleet
       return compiled.map((agent) => {
-        const includeAllPlugins = agent.agentTypeId === DEFAULT_AGENT_TYPE_ID
         const projection = projectAgentSpecPluginArtifacts(
           agent,
           pluginCollection.resolvedPluginArtifacts,
           workspaceScopedDefaultArtifacts,
-          { defaults: opts.defaults, excludeDefaults: opts.excludeDefaults },
         )
         const pluginIds = projection.artifacts.map((artifact) => artifact.id)
         const resolvedPolicy = {
@@ -1532,21 +1543,25 @@ export async function createWorkspaceAgentServer(
             : {}),
           pluginIds,
         }
-        const includeAllDiscoveredPluginResources = includeAllPlugins
-        const identityProjection = standaloneDefaultComposition && includeAllPlugins
-          ? { artifacts: projection.artifacts, runtimePlugins: [], agentOptions: { extraTools: [], pi: {} } }
+        const includeAllDiscoveredPluginResources = singleAgentComposition
+        const effectiveProjection = singleAgentComposition
+          ? {
+              artifacts: pluginCollection.resolvedPluginArtifacts,
+              runtimePlugins: allPluginAgentProjection.runtimePlugins,
+              agentOptions: allPluginAgentOptions,
+            }
           : projection
         normalizedRuntimeContributions.set(agent.agentTypeId, {
           ...agentRuntimeContributionIdentityInput({
             agent,
             resolvedPolicy,
-            projection: identityProjection,
-            includeAllDiscoveredPluginResources: standaloneDefaultComposition ? false : includeAllDiscoveredPluginResources,
+            projection: effectiveProjection,
+            includeAllDiscoveredPluginResources,
           }),
-          runtimePlugins: projection.runtimePlugins,
-          agentOptions: projection.agentOptions,
+          runtimePlugins: effectiveProjection.runtimePlugins,
+          agentOptions: effectiveProjection.agentOptions,
           includeAllDiscoveredPluginResources,
-          standaloneDefaultComposition: standaloneDefaultComposition && includeAllPlugins,
+          singleAgentComposition: singleAgentComposition,
         })
         return { ...agent, resolvedPolicy }
       })
@@ -1589,9 +1604,9 @@ export async function createWorkspaceAgentServer(
     ...appSystemPromptParts,
     opts.systemPromptAppend,
   ].filter(Boolean).join("\n\n") || undefined
-  const standaloneDefaultCompositionSystemPromptAppend = [
+  const singleAgentCompositionSystemPromptAppend = [
     ...appSystemPromptParts,
-    pluginCollection.agentOptions.systemPromptAppend,
+    allPluginAgentOptions.systemPromptAppend,
   ].filter(Boolean).join("\n\n") || undefined
   const refreshWorkspaceAgentResources = async (input?: {
     availabilityPrechecked?: boolean
@@ -1662,7 +1677,7 @@ export async function createWorkspaceAgentServer(
   }))
   const scopeIssuer = createWorkspaceAgentScopeIssuer(workspaceScopeId)
   const agentHost = await createAgentHost({
-    agents,
+    agents: hostAgents,
     fleetCompiler,
     hostId: "workspace-agent-host",
     scopeVerifier: scopeIssuer.verifier,
@@ -1745,7 +1760,7 @@ export async function createWorkspaceAgentServer(
             requestId,
           }) ?? []
           const packageRegistry = currentPackageResourceSnapshot?.registry
-          const packageBinding = standaloneDefaultComposition && packageRegistry?.readonlyMounts.length
+          const packageBinding = singleAgentComposition && packageRegistry?.readonlyMounts.length
             ? await runtimeHost.createAgentResourceFilesystemBinding(
                 AGENT_RESOURCES_FILESYSTEM_ID,
                 packageRegistry.readonlyMounts,
@@ -1799,7 +1814,7 @@ export async function createWorkspaceAgentServer(
       const locateAgentPackageSkill = (filePath: string) => getAgentPackageResourceView()?.locateSkill(filePath)
       const resolvedBasePi = basePi
       const selectedPi = contribution.agentOptions.pi
-      const staticPiResources = contribution.standaloneDefaultComposition
+      const staticPiResources = contribution.singleAgentComposition
         ? {
             packages: compactPiPackages([
               workspacePackagePiPackage,
@@ -1821,12 +1836,12 @@ export async function createWorkspaceAgentServer(
               ...(selectedPi?.extensionPaths ?? []),
             ]),
           }
-      const identityBaseExtraTools = contribution.standaloneDefaultComposition
-        ? [...baseExtraTools, ...(pluginCollection.agentOptions.extraTools ?? [])]
+      const identityBaseExtraTools = contribution.singleAgentComposition
+        ? [...baseExtraTools, ...(allPluginAgentOptions.extraTools ?? [])]
         : baseExtraTools
       const baseBindingInputs = jsonIdentityValue({
-        systemPromptAppend: contribution.standaloneDefaultComposition
-          ? standaloneDefaultCompositionSystemPromptAppend ?? null
+        systemPromptAppend: contribution.singleAgentComposition
+          ? singleAgentCompositionSystemPromptAppend ?? null
           : baseSystemPromptAppend ?? null,
         piHarnessPolicy: {
           noContextFiles: resolvedBasePi.noContextFiles ?? null,

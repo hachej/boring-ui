@@ -13,6 +13,8 @@ import {
   createRemoteWorkerModeAdapter,
   createResolvedRuntimeScopeIdentity,
   createValidatingAgentFleetCompiler,
+  DEFAULT_AGENT_TYPE_ID,
+  isBuiltInDefaultAgentSpec,
   provisionWorkspaceRuntime,
   projectAuthorizedSessionRunDetails,
   resolveDefaultAgentFleet,
@@ -1128,7 +1130,7 @@ export async function createCoreWorkspaceAgentServer(
   const regularAgentTypeIds = availableAgentTypeIds
   if (
     options.defaultAgentTypeId !== undefined
-    && rawConfig.defaultAgentTypeId !== undefined
+    && rawConfig.defaultAgentTypeId !== DEFAULT_AGENT_TYPE_ID
     && options.defaultAgentTypeId !== rawConfig.defaultAgentTypeId
   ) {
     throw new ConfigValidationError([{
@@ -1271,6 +1273,12 @@ export async function createCoreWorkspaceAgentServer(
       return plugin
     }),
   )
+
+  const hostAgents = options.agents === undefined
+    ? agents.map((agent) => isBuiltInDefaultAgentSpec(agent)
+      ? { ...agent, plugins: resolvedPlugins.map((plugin) => ({ name: plugin.id })) }
+      : agent)
+    : agents
 
   const externalPluginsEnabled = options.externalPlugins !== false
   const installPluginAuthoring = externalPluginsEnabled && options.installPluginAuthoring === true
@@ -1723,7 +1731,7 @@ export async function createCoreWorkspaceAgentServer(
   }
 
   const agentHost = await createAgentHost({
-    agents,
+    agents: hostAgents,
     fleetCompiler: createValidatingAgentFleetCompiler({
       plugins: resolvedPlugins.map((plugin) => ({
         id: plugin.id,

@@ -11,6 +11,7 @@ const TEST_CONFIG: CoreConfig = {
   staticDir: null,
   databaseUrl: null,
   stores: 'local',
+  defaultAgentTypeId: 'default',
   cors: {
     origins: ['http://localhost:3000'],
     credentials: true,

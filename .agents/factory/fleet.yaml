@@ -7,8 +7,8 @@
 #
 # Skill digests are authority pins, refreshed via `pnpm check:skill-digests`
 # / `scripts/refresh-skill-digests.mjs --write` (gh-1106 slice 1, #1109).
-# A stale pin silently DROPS that seat and keeps the fleet — repin in the same
-# commit as any .agents/skills/<name>/SKILL.md edit.
+# A stale pin fails fleet startup — repin in the same commit as any
+# .agents/skills/<name>/SKILL.md edit.
 #
 # Model per seat resolves at boot from policy.yaml's `models.seats` tier
 # through the priority-ordered concrete candidates below. Keep seat policy in

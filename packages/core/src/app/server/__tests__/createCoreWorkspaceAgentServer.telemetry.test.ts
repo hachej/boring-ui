@@ -151,6 +151,7 @@ vi.mock('../../../server/config/index.js', () => ({
     auth: { url: 'http://localhost:3000' },
     encryption: { workspaceSettingsKey: 'test-key' },
     stores: 'postgres',
+    defaultAgentTypeId: 'default',
   }),
 }))
 
@@ -200,6 +201,7 @@ function makeBootConfig(overrides: Partial<CoreConfig> = {}): CoreConfig {
     },
     features: { githubOauth: false, googleOauth: false, invitesEnabled: true, sendWelcomeEmail: true, inviteTtlDays: 7 },
     ...overrides,
+    defaultAgentTypeId: overrides.defaultAgentTypeId ?? 'default',
   }
 }
 

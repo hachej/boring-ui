@@ -157,11 +157,11 @@ export interface CoreConfig {
   /**
    * Boot-time host default Agent seat. Stamped onto workspaces at
    * initialization (Decision 28) and used as the resolution fallback when a
-   * workspace has no persisted `defaultAgentTypeId`. Standalone Core callers
-   * that omit it retain the legacy `default` seat; composed fleet servers
-   * normalize this field to their validated application default at boot.
+   * workspace has no persisted `defaultAgentTypeId` during rolling migration.
+   * Generic hosts use the regular platform `default` Agent; composed fleet
+   * servers normalize this field to their validated application default.
    */
-  defaultAgentTypeId?: string
+  defaultAgentTypeId: string
 
   /**
    * Decision 28 hook: exact trusted signup hostname -> fleet agentTypeId.
