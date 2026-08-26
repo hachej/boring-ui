@@ -63,7 +63,7 @@ footer{margin:24px 0 8px;color:var(--muted);font-size:12.5px;text-align:center}
 </style></head><body><main class="wrap">
 
 <header class="hero">
-  <div class="eyebrow">Gate 1 · Plan approval</div>
+  <div class="eyebrow">Owner gate · Plan approval · <b>re-sequenced premise-gated 2026-08-26</b></div>
   <div class="row"><h1>Job Thread v0 — 1 Thread = 1 job</h1><span class="pill">OWNER DECISION</span></div>
   <p class="tldr">A <b>projection</b>, not a new Thread: several per-agent Pi sessions merged into one job
   timeline via a stateless <b>relay</b>, with typed handoffs, centrally-enforced caps, and an honest
@@ -74,6 +74,29 @@ footer{margin:24px 0 8px;color:var(--muted);font-size:12.5px;text-align:center}
   <a href="https://github.com/hachej/boring-ui/issues/1399">#1399</a> · Branch
   <code>weekend/jobthread-v0-plan</code> · No implementation before owner sign-off</div>
 </header>
+
+<section class="card" style="border-top:5px solid var(--amber)">
+  <h2>⚠ Re-sequenced 2026-08-26 — the engine is premise-gated</h2>
+  <p class="tldr">Owner direction: <b>do not build the engine on conformance Level B.</b> It waits for
+  durable streams. And <b>the storage model is not decided</b> &mdash; it goes to a spike. The slice
+  <i>content</i> below is unchanged and still the reference; when it runs, and two of its premises,
+  have moved.</p>
+  <table>
+  <tr><th>Ruling</th><th>Effect on this plan</th></tr>
+  <tr><td><b>Engine waits for P1</b> — Level D conformance, default-on (<code>wt-391-forward-9p50</code>)</td><td class="med"><b>Q7 RULED: wait for it.</b> §4's Level D limitation and non-goal 8 are resolved by waiting, not by accepting the limitation.</td></tr>
+  <tr><td><b>Level-B receipt machinery descoped</b></td><td class="med">The <code>JobRelayReceiptV0</code> chain, idempotent re-dispatch and crash-recovery ordering in <b>S1/S3</b> exist to survive a non-durable substrate. Marked <code>descoped-pending-P1</code> — not deleted; the post-P1 design decides how much survives.</td></tr>
+  <tr><td><b>Storage model → P2 spike</b></td><td class="high"><b>Q1 (the noun) is WITHDRAWN and superseded.</b> S1 cannot start before P2 reports — P2 decides whether <code>JobProjectionV0</code> is the right shape at all.</td></tr>
+  <tr><td><b>Attribution audit-grade from day one</b></td><td class="med"><b>Q3 RULED.</b> §8's honest concession — <code>participantId</code> as a display handle with no audit weight — is <b>rejected as a shipping position</b>. C7 pulled forward as P3.</td></tr>
+  <tr><td><b>Relay vs blackboard → post-P1</b></td><td class="low"><b>Q2 DEFERRED, not answered.</b> Both candidates live. The Buzz / Grok Bot research stands.</td></tr>
+  <tr><td><b>Thread ↔ Objective</b></td><td class="low"><b>Q5 RULED: optional one-way link.</b> An Objective is not mandatory for a job.</td></tr>
+  <tr><td><b>Unchanged</b></td><td class="low"><b>Q4, Q6, Q8 RULED as confirmed</b> — posts-only boundary, truncation-only context, fixture-gated acceptance.</td></tr>
+  </table>
+  <div class="gate"><b>Remaining for this gate</b> (premise P6, after P2 reports): the storage decision
+  itself, and the relay-vs-blackboard choice. Everything else above is settled.</div>
+  <p class="small">Program: <code>docs/plans/multiagent-shell/premises.md</code> ·
+  Now part of <a href="https://github.com/hachej/boring-ui/pull/1409">PR #1409</a> ·
+  Ratification instrument: <a href="https://github.com/hachej/boring-ui/pull/1416">PR #1416</a></p>
+</section>
 
 <section class="card">
   <h2>What this plan builds</h2>

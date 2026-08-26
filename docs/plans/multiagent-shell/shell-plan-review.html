@@ -63,7 +63,7 @@ footer{margin:24px 0 8px;color:var(--muted);font-size:12.5px;text-align:center}
 </style></head><body><main class="wrap">
 
 <header class="hero">
-  <div class="eyebrow">Owner gate · Plan approval</div>
+  <div class="eyebrow">Owner gate · Plan approval · <b>re-cut premises-first 2026-08-26</b></div>
   <div class="row"><h1>Multi-agent workspace shell</h1><span class="pill">OWNER DECISION</span></div>
   <p class="tldr">A <b>new workspace layout</b>, not a rewrite: a third value on the existing
   <code>WorkspaceAgentLayout</code> switch, composed as a sibling to today's <code>plugin-tabs</code>
@@ -75,6 +75,33 @@ footer{margin:24px 0 8px;color:var(--muted);font-size:12.5px;text-align:center}
   <a href="https://github.com/hachej/boring-ui/issues/1399">#1399</a> · Branch
   <code>weekend/multiagent-shell-plan</code> · 13 questions · No implementation before owner sign-off</div>
 </header>
+
+<section class="card" style="border-top:5px solid var(--amber)">
+  <h2>⚠ Re-cut 2026-08-26 — premises first</h2>
+  <p class="tldr">Owner direction: this is no longer &ldquo;approve the plan, then build the UI&rdquo;.
+  A small number of <b>kernel premises</b> must land and be proven before the surface that depends on
+  them. <b>Three of the thirteen questions below are already RULED</b> and are marked as such.</p>
+  <table>
+  <tr><th>#</th><th>Premise</th><th>State</th><th>Unblocks</th></tr>
+  <tr><td>P1</td><td><b>Durable streams</b> — Level D conformance, default-on</td><td class="low">beaded, ~2 sessions</td><td>the whole engine</td></tr>
+  <tr><td>P2</td><td><b>Thread storage model</b> — spike + competitor study</td><td class="med">newly scoped</td><td>engine S1, the storage question</td></tr>
+  <tr><td>P3</td><td><b>Seat storage / C7</b> — audit-grade attribution</td><td class="med">unscoped in practice</td><td>honest who-said-what</td></tr>
+  <tr><td>P4</td><td><b>Kernel View</b> — first ratified slice</td><td class="high">no sizing yet</td><td>Library saved views</td></tr>
+  <tr><td>P5</td><td>Merge queue</td><td class="low">a list, not a bead</td><td>branch health</td></tr>
+  <tr><td>P6</td><td>Gates re-ruled post-P2</td><td class="low">minutes of owner time</td><td>both gates</td></tr>
+  </table>
+  <div class="rec"><b>Already ruled from the interview:</b>
+  <b>Q1</b> shell owns the serializable location, the <b>host</b> owns URL translation &mdash; as recommended.
+  <b>Q2</b> nav extensibility stays <b>OPEN; plugins CAN add top-level entries</b> &mdash; the closed-IA
+  recommendation is <b>rejected</b>, crowding risk accepted.
+  <b>Q3</b> Library saved views <b>wait for the kernel View system</b> (P4); v0 Library = files + built-in views only.</div>
+  <div class="gate"><b>Substrate-free exceptions may run early</b>, in parallel with the premises:
+  <b>L1</b> layout traits · <b>L1.5</b> shell location · <b>L2a</b> nav chrome (counts absent).
+  They touch no thread, session, storage or attribution &mdash; a property that can be checked, not an
+  exemption granted. <b>L4 now waits on P1, P2 and P3.</b></div>
+  <p class="small">Program: <code>docs/plans/multiagent-shell/premises.md</code> ·
+  Ratification instrument: <a href="https://github.com/hachej/boring-ui/pull/1416">PR #1416</a></p>
+</section>
 
 <section class="card">
   <h2>One PR, three chapters</h2>
@@ -161,6 +188,7 @@ footer{margin:24px 0 8px;color:var(--muted);font-size:12.5px;text-align:center}
 
 <section class="card">
   <h2>The 13 questions</h2>
+  <div class="warn"><b>Q1, Q2 and Q3 are already RULED</b> (see the re-cut strip at the top). Q1 confirmed as recommended; <b>Q2 ruled against</b> the recommendation; Q3 ruled to wait for P4. They are kept below for the record.</div>
   <p class="tldr">Ordered by how much they change the build. Each has a recommendation; the plan is
   written assuming the recommendations, so a different answer means a rewrite of that slice.</p>
 
