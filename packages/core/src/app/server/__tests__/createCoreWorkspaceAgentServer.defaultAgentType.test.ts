@@ -398,6 +398,27 @@ test('rejects actual execution paths before binding or Environment acquisition',
         },
       })
     }
+
+    mocks.getWorkspace.mockResolvedValue(null)
+    const deletedWorkspace = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/default/sessions',
+      headers,
+      payload: { requestId: 'blocked-deleted-workspace' },
+    })
+    expect(deletedWorkspace.statusCode).toBe(403)
+    expect(deletedWorkspace.json()).toMatchObject({
+      error: { code: 'AGENT_SCOPE_DENIED' },
+    })
+    const deletedReplay = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/default/sessions',
+      headers,
+      payload: { requestId: 'blocked-deleted-workspace' },
+    })
+    expect(deletedReplay.statusCode).toBe(403)
+    expect(deletedReplay.json()).toMatchObject({ error: { code: 'AGENT_SCOPE_DENIED' } })
+
     expect(createEnvironment).not.toHaveBeenCalled()
     expect(mocks.provisionWorkspaceRuntime).not.toHaveBeenCalled()
   } finally {
