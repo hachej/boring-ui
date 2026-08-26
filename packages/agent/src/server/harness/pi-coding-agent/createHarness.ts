@@ -44,6 +44,8 @@ interface PiSessionHandle {
   piSession: AgentSession;
   modelRegistry: ModelRegistry;
   sessionManager: SessionManager;
+  settingsManager: SettingsManager;
+  compactionBaseline: ReturnType<SettingsManager["getCompactionSettings"]>;
   resourceLoader: DefaultResourceLoader;
   sessionId: string;
   sessionCtx: SessionCtx;
@@ -273,20 +275,21 @@ type ContextWindowModel = {
  * Settings are read dynamically by Pi at compaction time, so this also covers
  * models restored or selected by Pi rather than explicitly requested here.
  */
-export function applyCodexCompactionBudget(
+export function syncCodexCompactionBudget(
   settingsManager: SettingsManager,
-  model: ContextWindowModel,
+  baseline: ReturnType<SettingsManager["getCompactionSettings"]>,
+  model: ContextWindowModel | undefined,
 ): void {
-  if (model.provider !== "openai-codex") return;
-  const headroom = Math.max(
-    CODEX_CONTEXT_HEADROOM_MIN_TOKENS,
-    Math.ceil(model.contextWindow * CODEX_CONTEXT_HEADROOM_RATIO),
-  );
-  const compaction = settingsManager.getCompactionSettings();
+  const headroom = model?.provider === "openai-codex"
+    ? Math.max(
+        CODEX_CONTEXT_HEADROOM_MIN_TOKENS,
+        Math.ceil(model.contextWindow * CODEX_CONTEXT_HEADROOM_RATIO),
+      )
+    : 0;
   settingsManager.applyOverrides({
     compaction: {
-      ...compaction,
-      reserveTokens: compaction.reserveTokens + headroom,
+      ...baseline,
+      reserveTokens: baseline.reserveTokens + headroom,
     },
   });
 }
@@ -362,6 +365,11 @@ async function applyRequestedSessionOptions(
     ) {
       await handle.piSession.setModel(requestedModel);
     }
+    syncCodexCompactionBudget(
+      handle.settingsManager,
+      handle.compactionBaseline,
+      handle.piSession.model,
+    );
   }
 
   if (input.thinkingLevel) {
@@ -693,6 +701,7 @@ export function createPiCodingAgentHarness(opts: {
       agentDir,
       effectivePackages,
     )
+    const compactionBaseline = settingsManager.getCompactionSettings()
     const resourceLoader = new DefaultResourceLoader({
       cwd: opts.cwd,
       agentDir,
@@ -745,7 +754,7 @@ export function createPiCodingAgentHarness(opts: {
 
     // Pi may restore or select a fallback model when the caller did not
     // provide one. Apply the reserve to the final model before the first run.
-    if (piSession.model) applyCodexCompactionBudget(settingsManager, piSession.model);
+    syncCodexCompactionBudget(settingsManager, compactionBaseline, piSession.model);
 
     const restoreFollowUpContextWrapper = rememberQueuedFollowUpRunContexts(piSession, runContextState, () => runContextStorage.getStore());
     const unsubscribePiRunContextListener = piSession.subscribe((event) => updateRunContextStateFromPiEvent(runContextState, event, (ctx) => runContextStorage.enterWith(ctx)));
@@ -757,6 +766,8 @@ export function createPiCodingAgentHarness(opts: {
       piSession,
       modelRegistry,
       sessionManager,
+      settingsManager,
+      compactionBaseline,
       resourceLoader,
       sessionId: sessionId,
       sessionCtx,
@@ -771,7 +782,15 @@ export function createPiCodingAgentHarness(opts: {
     const handles = piSessionHandlesFor(sessionId);
     if (handles.length === 0) return false;
     refreshEffectiveResources();
-    await Promise.all(handles.map((handle) => handle.piSession.reload()));
+    await Promise.all(handles.map(async (handle) => {
+      await handle.piSession.reload();
+      handle.compactionBaseline = handle.settingsManager.getCompactionSettings();
+      syncCodexCompactionBudget(
+        handle.settingsManager,
+        handle.compactionBaseline,
+        handle.piSession.model,
+      );
+    }));
     return true;
   }
 

@@ -1629,7 +1629,7 @@ describe("WorkspaceAgentFront", () => {
       expect(screen.getByRole("button", { name: "New chat with Alpha" })).toBeInTheDocument()
       expect(screen.getByRole("button", { name: "New chat with Beta" })).toBeInTheDocument()
       expect(screen.queryByRole("status", { name: "Loading chats" })).not.toBeInTheDocument()
-    }, { timeout: 3_000 })
+    })
     expect(visibleChatSessionIds()).toEqual(["alpha-one", "beta-one"])
     expect(JSON.parse(localStorage.getItem("boring-workspace:chat-panes:async-fleet-restore") ?? "null")).toMatchObject({
       version: 2,

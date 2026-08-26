@@ -678,6 +678,7 @@ describe('HarnessPiChatService', () => {
 
     expect(events).toContainEqual(expect.objectContaining({
       type: 'error',
+      retryable: true,
       error: expect.objectContaining({
         code: ErrorCode.enum.MODEL_CONTEXT_WINDOW_EXCEEDED,
         message: expect.not.stringContaining('context_length_exceeded'),

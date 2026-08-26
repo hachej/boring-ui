@@ -9,7 +9,7 @@ import {
   createPiCodingAgentHarness,
   mergePiPackageSources,
   projectSkillResourceLocations,
-  applyCodexCompactionBudget,
+  syncCodexCompactionBudget,
   withPiHarnessDefaults,
 } from "../createHarness.js";
 import { adaptToolsForPi } from "../tool-adapter.js";
@@ -100,7 +100,9 @@ describe("createPiCodingAgentHarness", () => {
       compaction: { enabled: true, reserveTokens: 16_384, keepRecentTokens: 20_000 },
     });
 
-    applyCodexCompactionBudget(settingsManager, model);
+    const baseline = settingsManager.getCompactionSettings();
+    syncCodexCompactionBudget(settingsManager, baseline, model);
+    syncCodexCompactionBudget(settingsManager, baseline, model);
 
     expect(model.contextWindow).toBe(declaredContextWindow);
     expect(settingsManager.getCompactionSettings()).toEqual({
@@ -112,12 +114,15 @@ describe("createPiCodingAgentHarness", () => {
     expect(100_000).toBeGreaterThan(declaredContextWindow - 32_768);
     expect(100_000).toBeLessThan(declaredContextWindow - 16_384);
 
-    const anthropicSettings = SettingsManager.inMemory();
-    applyCodexCompactionBudget(anthropicSettings, {
+    // Switching away restores the baseline instead of retaining or stacking
+    // Codex headroom; switching back applies exactly one headroom increment.
+    syncCodexCompactionBudget(settingsManager, baseline, {
       provider: "anthropic",
       contextWindow: declaredContextWindow,
     });
-    expect(anthropicSettings.getCompactionReserveTokens()).toBe(16_384);
+    expect(settingsManager.getCompactionSettings()).toEqual(baseline);
+    syncCodexCompactionBudget(settingsManager, baseline, model);
+    expect(settingsManager.getCompactionReserveTokens()).toBe(32_768);
   });
 
   it("returns an AgentHarness with correct shape", () => {
