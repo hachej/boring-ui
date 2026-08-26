@@ -91,7 +91,7 @@ describe('createAgentHost', () => {
     await second.host.close()
   })
 
-  it('presents a lone legacy default but hides it from a composed fleet without breaking direct access', async () => {
+  it('presents the default agent as a regular member of both legacy and composed fleets', async () => {
     const legacy = await createAgentHost({
       ...options(await root()),
       agents: [{ agentTypeId: 'default', legacyDefault: true }],
@@ -107,8 +107,12 @@ describe('createAgentHost', () => {
         { agentTypeId: 'alpha', definition: { instructions: 'alpha', label: 'Alpha' } },
       ],
     })
-    expect((await composed.host.describe()).agents).toEqual([{ agentTypeId: 'alpha', label: 'Alpha' }])
-    expect(await composed.gateway.listAgents({ scope })).toEqual([{ agentTypeId: 'alpha', label: 'Alpha' }])
+    const expectedFleet = [
+      { agentTypeId: 'default', label: 'Agent' },
+      { agentTypeId: 'alpha', label: 'Alpha' },
+    ]
+    expect((await composed.host.describe()).agents).toEqual(expectedFleet)
+    expect(await composed.gateway.listAgents({ scope })).toEqual(expectedFleet)
 
     const defaultSession = await composed.gateway.createSession({
       scope,

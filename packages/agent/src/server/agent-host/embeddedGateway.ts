@@ -23,7 +23,6 @@ import {
 import { AgentSessionEventQueue } from './agentSessionEventQueue'
 import { agentSessionKey } from './agentSessionKey'
 import { canonicalDigest } from './canonical'
-import { presentedAgentFleet } from './fleetPresentation'
 import { stableServiceActionFailure } from './stableServiceError'
 import type { AgentHostRuntime } from './createAgentHost'
 import type {
@@ -240,8 +239,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
 
   async listAgents(input: { readonly scope: AuthorizedAgentScope }) {
     await this.verify(input.scope)
-    const presentedAgents = presentedAgentFleet(this.runtime.compiledAgents)
-    return presentedAgents.map((agent) => ({
+    return this.runtime.compiledAgents.map((agent) => ({
       agentTypeId: agent.agentTypeId,
       label: 'legacyDefault' in agent ? 'Agent' : agent.definition.label,
       ...('legacyDefault' in agent || !agent.plugins?.length
