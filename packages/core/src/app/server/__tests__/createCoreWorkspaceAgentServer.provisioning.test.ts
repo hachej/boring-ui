@@ -574,7 +574,11 @@ test.each([
   })
   const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
   const result = createCoreWorkspaceAgentServer({
-    config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+    config: createTestCoreConfig({
+      stores: 'postgres',
+      databaseUrl: 'postgres://test',
+      defaultAgentTypeId: 'configured',
+    }),
     workspaceRoot: '/tmp/full-app-workspaces',
     serveFrontend: false,
     agents: [agent],
@@ -593,7 +597,11 @@ test('core/full-app rejects unknown plugin config keys with a stable code before
   })
   const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
   const result = createCoreWorkspaceAgentServer({
-    config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+    config: createTestCoreConfig({
+      stores: 'postgres',
+      databaseUrl: 'postgres://test',
+      defaultAgentTypeId: 'configured',
+    }),
     workspaceRoot: '/tmp/full-app-workspaces',
     serveFrontend: false,
     plugins: [{
@@ -634,7 +642,11 @@ test('core/full-app rejects an invalid fleet before Host identity or Environment
   const sessionRoot = join(tmpdir(), `boring-core-rejected-fleet-${randomUUID()}`)
   const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
   const result = createCoreWorkspaceAgentServer({
-    config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+    config: createTestCoreConfig({
+      stores: 'postgres',
+      databaseUrl: 'postgres://test',
+      defaultAgentTypeId: 'configured',
+    }),
     workspaceRoot: '/tmp/full-app-workspaces',
     sessionRoot,
     serveFrontend: false,
