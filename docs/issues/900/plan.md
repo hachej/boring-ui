@@ -3,7 +3,7 @@ github: https://github.com/hachej/boring-ui/issues/900
 issue: 900
 state: needs-info
 updated: 2026-08-27
-flag: flag:boring-mcp-composio-catalog
+flag: BORING_MCP_COMPOSIO_CATALOG_ENABLED
 track: owner
 ---
 
@@ -29,6 +29,36 @@ reconciles:
   real child's identity and approval semantics;
 - the frozen long-term contracts in `VISION.md`, `ARCHITECTURE-PLAN.md`,
   `RECONCILIATION.md`, and `V2-PORT-HANDBOOK.md`.
+
+### Verified current source
+
+Source snapshot: `origin/main@bb20ba8daa670bac977f2f3ff647a3bc457a6649`
+(2026-08-27). The current-source statements in this plan were checked against
+that revision. Since the earlier #806 census at `98619e9b8`, relevant main
+changes are limited to Host skill-path projection, transactional queue
+interrupt behavior, dependency bumps, and release metadata; no Composio
+catalog runtime, durable create-intent/lease store, provider reconciliation,
+C5×C6 handoff, or C2 first-class child execution appeared.
+
+At this snapshot:
+
+- `plugins/boring-mcp/src/server/composioManagedConnector.ts` still derives the
+  legacy plaintext `${workspaceId}:${userId}` subject, creates provider Sessions
+  without a durable pre-POST intent, accepts any credential-free HTTPS Session
+  URL, forwards the operator key after that broad check, selects the first
+  active/reported account without the planned finite uniqueness scan, and owns
+  no crash-durable cleanup lease.
+- `plugins/boring-mcp/src/server/toolCatalog.ts` still lists and locally filters
+  complete source tool sets; its cache is process-local, its source revision is
+  derived from mutable stored source fields, and describe is keyed by display
+  `toolName`, not the full provider identity/revision fence specified here.
+- `plugins/boring-mcp/src/server/mcpSdkTransport.ts` has SSRF-safe DNS pinning
+  for user-registered sources but exposes no caller `AbortSignal`; that generic
+  path is not evidence of the private abortable Composio operation client.
+- `@hachej/boring-mcp` is version `0.1.105` and declares MCP SDK `^1.30.0`;
+  package metadata is evidence only, not a frozen protocol or lifecycle claim.
+- The eight gh900 Beads added by this PR remain deferred; none is an
+  implementation receipt.
 
 **Planning result:** the live capability proof is complete, but Gate 1 remains
 **BLOCKED**. Discovery-only 900.1 must reland as three small serial PRs: shared
@@ -117,7 +147,8 @@ provider calls. A timeout after possible provider acceptance settles as
 | Probe | Catalog probe is explicitly unsupported in 900.1; no synthetic success | Avoid inventing an incompatible probe DTO |
 | Compatibility | Curated product policy/UI stays default; shared Composio transport security is hardened | Prevents product broadening without preserving an exploitable custody gap |
 | Port alignment | Consume frozen Authority/Approval/Run/C2 contracts; no new durable kernel noun | V2 handbook and “no parallel abstraction” rule |
-| Inbound Access boundary | #806 may expose only the exact resident Connector-facing `AgentTool`; it cannot materialize app-native provider children, bypass C5/provider authority, or flatten C2 identity | Keeps the combined PR coherent without merging inbound and outbound products |
+| Inbound Access boundary | #806 may expose only the exact resident Connector-facing `AgentTool`; it cannot materialize app-native provider children, bypass C5/provider authority, flatten C2 identity, or move inbound OAuth/bearer material into provider custody | Keeps the combined PR coherent without merging inbound and outbound products |
+| Facts vs commerce | The real child owns canonical artifact/usage attribution; Boring emits facts, while Seneca owns credits, pricing, checkout, and margins | Shares only kernel seams and prevents a cross-plane billing or artifact ledger |
 
 ## Architecture
 
@@ -406,12 +437,19 @@ opaque formatting, not authority or secrecy.
 ### Startup and shutdown
 
 ```text
-startup-draining --leases resolved--> accepting
-       | unresolved retained durably       |
-       +-----------------------------------+
+startup-draining --provider proof resolves every intent/lease--> accepting
+       |
+       +-- unresolved retained durably --> startup-blocked
+                                             |
+                                             +-- retry reconciliation --> startup-draining
+
 accepting --close()--> closing --bounded active wait + every lease attempted-->
                          closed-clean | closed-pending-cleanup
 ```
+
+Only provider-backed proof may move startup reconciliation to `accepting`.
+`startup-blocked` admits no curated or catalog Composio Session; it is never a
+fallback path into acceptance.
 
 `createSessionWithTrackedIntent` durably writes a bounded creation intent before
 the provider POST. If the provider returns a Session ID, the client validates it
@@ -514,11 +552,15 @@ before 900.2 becomes `ready-for-agent`.
 
 900.2 consumes C2's eventual canonical public event and authorization interfaces
 **unchanged**. This plan defines no issue-local child-event type. Conformance
-must show the real Composio child slug, parent call identity, `RunId=RequestKey`, and
-plan digest through call, paired result, durable record, renderer, metering, and
-audit; pre-call authorization must operate on the real child. Today's canonical
-chat events and C2's final contract—not an issue-local event spelling—govern
-wire fields.
+must show the real Composio child slug, parent call identity,
+`RunId=RequestKey`, plan digest, artifacts, and usage through call, paired
+result, durable record, renderer, metering, and audit; pre-call authorization
+must operate on the real child. Artifact references reuse the canonical
+same-workspace seam and retain the real child's Run/Seat provenance; provider
+OAuth/operator secrets and raw provider values never become artifact metadata.
+Commercial credit balances, rates, checkout, and margins remain app-owned and
+are not inferred from these generic facts. Today's canonical chat events and
+C2's final contract—not an issue-local event spelling—govern wire fields.
 
 ### Required C5×C6 durable handoff
 
@@ -917,16 +959,36 @@ for token in [
     "75s global bound",
     "expected source revision",
     "5 pages, 100 rows/page, 500 rows total",
+    "<=1500 added/modified LOC",
 ]:
     assert token in bead_text, token
 md = Path("docs/issues/900/plan.md").read_text()
 inbound = Path("docs/issues/806/external-workspace-mcp-plan.md").read_text()
+old_inbound = Path("docs/issues/806/plan.md").read_text()
 direction = Path("docs/direction/DIRECTION.md").read_text()
 html = Path("docs/issues/900/plan-review.html").read_text()
 for token in ["BLOCKER", "C3", "C1", "C2", "durable cleanup", "exact-origin", "RFC 8785", *ids]:
     assert token in md and token in html, token
 for token in ["inbound MCP Access", "outbound MCP Connectors", "first-class child"]:
     assert token in inbound and token in direction, token
+for token in [
+    "RunId := RequestKey",
+    "reversible canonical wire encoding",
+    "direct-effect result record",
+    "envelope's terminal digest",
+]:
+    assert token in inbound, token
+for forbidden in [
+    "durable collision-checked `runId → complete RequestKey` index",
+    "domain-separated SHA-256 digest of canonical key bytes",
+    "bounded result/artifacts, and safe outcome",
+]:
+    assert forbidden not in inbound, forbidden
+assert "startup-blocked" in md and "never a fallback path into acceptance" in md
+assert "Audit/envelope metadata" in bead_text and "Agent-owned record" in bead_text
+assert len(old_inbound.splitlines()) < 60
+assert "e95b683fa3ca68cccd01531da698914da820493f:docs/issues/806/plan.md" in old_inbound
+assert "none of the former" in old_inbound.lower()
 assert ("ChildToolCall" + "Event") not in md
 assert ("type:" + '"tool_call"') not in md
 assert "<script" not in html
@@ -974,8 +1036,10 @@ secret scan, package gates, and clean Seneca compile/typecheck/test/build/e2e.
 All eight implementation beads exist in `.beads/issues.jsonl` and are
 **DEFERRED** while Gate 1 is blocked. Each carries WHAT, exact proof commands,
 bounded file scope, dependencies, acceptance criteria, priority, and a one-
-session 300–420 minute estimate. The Beads graph—not this summary—is dispatch
-authority.
+session 300–420 minute estimate. Every slice is capped at **≤1500 added/modified
+production LOC**; tests/docs do not count toward that numeric cap but do count
+toward review breadth. Split before review rather than waive the cap. The Beads
+graph—not this summary—is dispatch authority.
 
 ### Slice 900.1a — Shared Composio protocol custody
 
@@ -1251,7 +1315,13 @@ Accepted final-review corrections:
   parity; and
 - the combined planning PR updates ytk2/96e7/0ijm/84w5 to match the canonical
   create-gap, signal/bounds, fairness, exact-describe, and pagination contracts,
-  with planning-proof token assertions before undefer.
+  with planning-proof token assertions before undefer;
+- the follow-up independent review corrected the startup diagram so unresolved
+  create intent/lease state reaches `startup-blocked`, never `accepting`; and
+- the approved-child Bead now limits value-free storage to audit/envelope
+  metadata while requiring C2's bounded sanitized model-visible child
+  arguments/results or canonical artifact references and provided-argument
+  bindings in the Agent-owned record. Secrets remain forbidden everywhere.
 
 Combined-program alignment retained: #806 inbound Access consumes only the
 exact resident Connector tool, preserves this plan's C5/provider authority and

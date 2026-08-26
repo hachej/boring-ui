@@ -313,18 +313,23 @@ while preserving two distinct product planes:
    [`../issues/900/plan.md`](../issues/900/plan.md); generic registration remains
    #1011.
 
-The planes share host authority, Workspace/Seat projection, native-tool
-identity, C5 approval, C6 accepted-work, C2 first-class child execution,
-revocation, metering facts, and sandbox/runtime bindings. They do **not** share
-transport direction, OAuth grants, provider registration, secret custody, or
-product UI.
+The planes share **only** canonical kernel seams: host authority,
+Workspace/Seat projection, native-tool identity, C5 approval, C6 accepted-work,
+C2 first-class child execution, revocation, artifact/usage facts, and
+sandbox/runtime bindings. They do **not** share transport direction, OAuth
+grants, provider registration, secret custody, commercial credits/pricing, or
+product UI. Inbound bearer/grant material never becomes an outbound provider
+credential; outbound operator/provider secrets never enter inbound tokens,
+URLs, tool arguments, artifacts, or audit payloads.
 
 Cross-plane ruling: inbound Access may expose the exact resident Connector
 `AgentTool`, but it never materializes provider-catalog children, bypasses
 Connector/provider approval, creates a second runtime/store/ledger, or flattens
 C2 parent/child identity. Effectful full-catalog Connector execution remains
 blocked until C2's complete canonical predecessor closure and the Connector's
-C5×C6/C2 conformance are green.
+C5×C6/C2 conformance—including artifact and usage attribution to the real
+child—is green. Generic Boring emits facts; the app owns credits, pricing, and
+checkout.
 
 This amendment supersedes prior uses of ambiguous “External MCP”: #806 is
 **inbound MCP Access**; #900/#1011 are **outbound MCP Connectors**. Landing this

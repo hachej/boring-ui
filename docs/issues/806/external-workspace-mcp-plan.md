@@ -147,9 +147,14 @@ external MCP client
 
 ### Verified current source
 
-Source snapshot: `origin/main@98619e9b84538de25cb3eab7c41c8f5af1dd77f8`
-(the main revision used when this combined PR was last reconciled). All paths and claims below were
-rechecked against that revision rather than inherited from the old #806 plan.
+Source snapshot: `origin/main@bb20ba8daa670bac977f2f3ff647a3bc457a6649`
+(2026-08-27). All paths and claims below were rechecked against that revision
+rather than inherited from the old #806 plan. Since the prior
+`98619e9b84538de25cb3eab7c41c8f5af1dd77f8` census, main changed the same Host
+funnel only for host-projected skill paths and transactional queue interrupts;
+it did not add MCP Access, A7, `originGrantId`, collision-safe tool resolution,
+or the C6/C7 capabilities required here. The source statements below therefore
+remain current at the new snapshot.
 
 - `packages/agent/package.json` is version `0.1.105` and pins
   `@modelcontextprotocol/sdk` `1.30.0`; this is current implementation evidence,
@@ -211,14 +216,14 @@ rechecked against that revision rather than inherited from the old #806 plan.
   compose above this seam and may not become a guest-side authority.
 - Generic MCP/share exports are public from `packages/agent/src/server/index.ts`.
   The owner-authorized deletion is app-specific, not package-wide.
-- Draft PR #1415 (`plan/900-perfect-mcp` at `2f5fa4358`) is the outbound
-  full-catalog Composio design, not this inbound protocol. Its executed #1226
-  evidence shows that an outer `call_tool`/`mcp_tool_call` cannot anonymously
-  dispatch an app-native provider tool: doing so loses child identity and
-  approval semantics. The draft therefore blocks effectful full-catalog
-  execution on C2's complete predecessor closure and preserves a first-class
-  child. PR #1415 is alignment input only while unmerged/BLOCKER; it is not
-  current dispatch authority.
+- PR #1415 began as the outbound full-catalog Composio design (earlier quarry
+  head `2f5fa4358`) and is now the combined planning artifact containing this
+  inbound protocol too. Its executed #1226 evidence shows that an outer
+  `call_tool`/`mcp_tool_call` cannot anonymously dispatch an app-native provider
+  tool: doing so loses child identity and approval semantics. The combined
+  artifact therefore blocks effectful full-catalog execution on C2's complete
+  predecessor closure and preserves a first-class child. While PR #1415 remains
+  unmerged/BLOCKER it is planning review input, not current dispatch authority.
 
 ### Delta
 
@@ -520,16 +525,29 @@ non-cooperative tool or external side effect may leave the target run completed,
 failed, or `unknown-outcome`; `stopped: true` never claims an already-issued
 external effect was reversed.
 
-Public `runId` is a versioned, deterministic, opaque codec over the complete
-RequestKey: a domain-separated SHA-256 digest of canonical key bytes, encoded
-as bounded unpadded base64url with a fixed `brun_v1_` prefix. It is not raw JSON,
-not reversible, not a second UUID, and is safe as one path segment. C6 keeps a
-durable collision-checked `runId → complete RequestKey` index for authorized
-lookup; this is an index over the one envelope, not a second ledger or identity.
-`agent_run_status` accepts only a target Agent-run id (`session.prompt` or
-`agent.session.prompt.create`); a `cancelRunId` is not a substitute and returns
-the same non-disclosing run-not-found result as any wrong-kind id. Collision
-handling fails closed. Raw `requestId` is never used in a path, URL, or log key.
+`RunId := RequestKey` without qualification. In TypeScript, `RunId` is a branded
+view of the complete canonical RequestKey, not another identifier. The public
+string is only a **reversible canonical wire encoding** of that same value:
+`brun_v1_` plus bounded unpadded base64url of canonical UTF-8 JSON for the fixed
+ordered tuple `[workspaceScopeId, authSubjectId, operation, canonicalTarget,
+requestId]`. `canonicalTarget` is itself a fixed tuple selected by its
+discriminator: `['agent',agentTypeId]`,
+`['session',agentTypeId,sessionId]`,
+`['seat-tool',seatId,agentId,nativeToolName]`, `['seat',seatId,agentId]`, or
+`['run',targetRunId]`; no object-key ordering is implicit. Decode must recover
+and validate the complete RequestKey byte for byte; non-canonical encodings,
+unknown versions, oversized decoded values, or failed round trips are rejected. There is no hash-derived run identity, durable
+`runId → RequestKey` index, reconciliation table, collision policy, or second
+UUID.
+
+`agent_run_status` accepts only a target Agent-run `RunId` whose decoded
+operation is `session.prompt` or `agent.session.prompt.create`; a `cancelRunId`
+is not a substitute and returns the same non-disclosing run-not-found result as
+any wrong-kind id. If a bounded path/URL segment is needed, the edge may derive
+a separate opaque `runRef` from the canonical `RunId`; `runRef` is edge-only,
+never appears in envelopes, records, metering, artifacts, outcomes, or audit as
+the accepted-work identity, and cannot be accepted where a `RunId` is required.
+Raw `requestId` is never used alone in a path, URL, or log key.
 
 ### 4.4 Standard tools
 
@@ -596,7 +614,7 @@ output = {
 }
 ```
 
-`runId` uses §4.3's canonical direct-effect RequestKey codec. The envelope
+`runId` uses §4.3's reversible canonical direct-effect RequestKey encoding. The envelope
 records server-resolved `seatId`, human `authSubjectId`, and immutable
 `originGrantId`. Complete-key replay/conflict follows §4.3, including after
 reauthorization. Revoking a grant aborts only active effects whose immutable
@@ -869,9 +887,25 @@ authoritative terminal Agent record event. For a sessionless public request,
 `agent.session.prompt.create` atomically records its allocated `sessionId` in
 the same admission receipt before dispatch; it does not nest `session.create`
 and `session.prompt` ledgers. `runId` is §4.3's projection of the applicable
-complete RequestKey. C6 stores human subject, workspace, internal Seat,
-Agent/definition, resolved model, session, `originGrantId`, usage linkage,
-bounded result/artifacts, and safe outcome.
+complete RequestKey. The C6 **envelope** stores only host-owned admission and
+authority facts (human subject, workspace, internal Seat, Agent/definition,
+resolved model, session, `originGrantId`), status, usage linkage, artifact
+references/provenance, and the terminal outcome digest. It never stores prompt,
+`finalText`, direct-tool content, provider arguments/results, or other record
+content.
+
+For Agent runs, `finalText` and model-visible result content are read from the
+authoritative Agent-owned per-session record, and the envelope's terminal digest
+is verified against that record. For a direct native call with no session, the
+Agent package owns one durable **direct-effect result record** keyed by the same
+canonical `RunId`/RequestKey. It stores the bounded sanitized native content,
+updates, and canonical artifact references needed for replay; it is not a
+conversation record, envelope, ledger, identity, or new kernel noun. A direct
+call associated with a real session may additionally append its model-visible
+content to that session record, but no fake session is minted. C6 settlement
+reads the applicable Agent-owned record, writes only its digest/references to
+the envelope, and replay returns content from that record. Production fails
+closed if the required authoritative record store is process-local.
 
 Required behavior:
 
@@ -921,9 +955,10 @@ Prefer native pagination/limits. Never silently truncate. Oversized faithful
 results may spill through the authorized workspace adapter:
 
 - images: `assets/images/`;
-- generic: `assets/artifacts/<opaque-runId>/`.
+- generic: `assets/artifacts/<opaque-runRef>/`.
 
-The segment is only §4.3's bounded `runId`, never raw `requestId`. Creation and
+The segment is only §4.3's bounded edge-only `runRef`, never `runId` or raw
+`requestId`; artifact provenance still carries canonical `RunId`. Creation and
 every dereference go through the authorized Workspace adapter's containment
 checks; lexical normalization alone is insufficient. Exact/over tests cover
 absolute paths, both separators, traversal/encoding, symlink escape and swap
@@ -1029,6 +1064,8 @@ MCP is never a product rollback target.
 - generic injected authorized-Seat projection contract; Agent consumes but does
   not create or catalog Seats;
 - resolved native-tool catalog and direct executor;
+- Agent-owned durable direct-effect result records keyed by canonical RequestKey,
+  kept outside the host envelope, with an explicit schema migration/rollback;
 - C6 envelope consumption, origin-grant provenance/index, and A7 model
   projection;
 - share/artifact mapping, bounds, safe errors, and conformance tests;
@@ -1142,12 +1179,17 @@ Workspace-owned C7 provenance.
 
 Implement `agent_tool_call` over the exact catalog object and canonical C6
 identity, including schema/readiness, trusted context, abort/update, replay,
-origin-grant provenance, bounds, and native identity.
+origin-grant provenance, bounds, native identity, and the Agent-owned durable
+direct-effect result record. The host envelope stores only status, outcome
+digest, and artifact references/provenance; it stores no native result content.
 
 **Acceptance:** representative deterministic read/write/edit/bash/custom and
 already-direct Connector fixtures prove same object/runtime/workspace/sandbox;
 complete-key replay, cross-operation nonce isolation, changed-resolution/digest
-conflict, disconnect replay to result/unknown outcome, and revocation only for
+conflict, disconnect/restart replay from the direct-effect record to result or
+unknown outcome, envelope-content absence and digest/reference integrity, a
+versioned record-store migration with old-binary/rollback decision, and
+revocation only for
 matching active origin grant; internal seat/native audit and zero model calls.
 A full-catalog fixture exposes only its resident search/describe/proposal tools;
 provider children are absent from `agent_tools_list`. Any effectful proposal
@@ -1174,8 +1216,9 @@ terminal, a second ledger, or session-wide stop.
 **Acceptance:** ambient auth canary absent; list/run use the same issuer/path
 but fresh capabilities, with run authoritative; default/allowed/denied model;
 new-session admission atomically records its session and existing-session target
-is reauthorized; complete RequestKey/digest/runId codec and bounded request ids;
-authoritative terminal; waiter disconnect; background/status after
+is reauthorized; complete RequestKey/digest/reversible RunId encoding and bounded request ids;
+authoritative terminal from the per-session record; envelope contains no
+`finalText` or model-visible content; waiter disconnect; background/status after
 reauthorization; `targetRunId`/`cancelRunId` separation, cancel replay/conflict/
 crash, wrong-kind status denial, and targeted cancel leaving another
 same-session run active; human/origin-grant/internal-seat/model/usage identity
@@ -1319,7 +1362,7 @@ normal thermo review.
 | Safe discovery | no prompt/toolCount/private fields; optional digest | inspect real response |
 | Native catalog | exact resident object, collision, readiness, current schema; no provider-child materialization | real direct and Connector discovery tools |
 | Connector child boundary | C2 predecessor/conformance gate; native parent plus first-class child identity; existing approval; no flattening/second store | approved/denied/unknown provider operation retains parent/child audit |
-| Direct durability | complete RequestKey/digest/runId codec; cross-operation isolation; disconnect/replay; no duplicate effect | reconnect to accepted call |
+| Direct durability | complete RequestKey/digest/reversible RunId encoding; no identity index; Agent-owned direct-effect result record; envelope contains digest/references only; cross-operation isolation; disconnect/replay; no duplicate effect | reconnect to accepted call |
 | Models | fresh A7 capability per list/run through same issuer/path; ambient auth absent | real allowed/denied models |
 | Agent runs | terminal-not-acceptance; wait/background; target-only status; distinct targetRunId/cancelRunId; cancel replay/conflict | disconnect/reconnect real run |
 | Revocation | AS logout/token revocation/product disconnect separated; race fence; grant-only active stop; membership-wide denial | real disconnect versus logout/token revoke/member removal |
@@ -1444,14 +1487,16 @@ slices remain independently blocked by #900's named gates.
 ### Independent review packet — revise; dispositions
 
 Target: this file against
-`origin/main@98619e9b84538de25cb3eab7c41c8f5af1dd77f8`. Verdict received:
+`origin/main@bb20ba8daa670bac977f2f3ff647a3bc457a6649` (current-source claims
+refreshed after the original review; no reviewed architecture disposition was
+reopened). Verdict received:
 **NOT READY / BLOCK**. This revision accepts every P0/P1 and material P2 from
 Reviews 1–2:
 
 | Finding | Severity | Disposition |
 | --- | --- | --- |
 | Issue plan cannot activate work under `DIRECTION.md` | P0 | Accepted: §0, global slice gate, stop conditions, and §21 require a landed inbound-#806 direction amendment before acceptance or dispatch. |
-| RequestKey/run identity omitted operation/target and sessionless admission | P0 | Accepted: §4.3 freezes full key, four operation/target contracts, atomic new-session receipt, canonical digest, and opaque deterministic run-id codec. |
+| RequestKey/run identity omitted operation/target and sessionless admission | P0 | Accepted: §4.3 freezes full key, four operation/target contracts, atomic new-session receipt, canonical digest, and reversible canonical RunId wire encoding. |
 | Slice 3 promised active revocation without A8 | P1 | Accepted: A8 is now a Slice 3 dependency. |
 | List/run cannot share one invocation-scoped A7 result | P1 | Accepted: fresh capability per call through one issuer/narrowing path; run is authoritative and no handle persists. |
 | Seat ownership conflicted with frozen Q4 | P1 | Accepted: Workspace/C7 owns Seat catalog/grants/projection; Agent only consumes an injected generic contract; Core composes authenticated facts. |
@@ -1461,7 +1506,7 @@ Reviews 1–2:
 | Bearer/metadata normative sources were too broad | P1 | Accepted: §4.1 adds MCP plus RFC 6750/9728/8707/8414/7636/9207/8628 matrix and public metadata exception. |
 | Host/Origin/proxy algorithm was underspecified | P1 | Accepted: §4.1 freezes configured authority, immediate-peer trust, one forwarding format, conflict rejection, HTTP/2, and Origin behavior. |
 | Digest/cancel replay was underspecified | P1 | Accepted: §4.3 defines domain-separated material digest, cross-operation behavior, cancel as C6 effect, and honest advisory outcomes. |
-| Public runId/spill path was unsafe | P1 | Accepted: bounded SHA-256/base64url codec, bounded request ids, no raw nonce paths, and adapter containment/TOCTOU tests. |
+| Public runId/spill path was unsafe | P1 | Accepted then corrected by independent review: RunId is now the branded RequestKey with a reversible canonical wire encoding and no identity index; bounded path-only `runRef`, bounded request ids, and adapter containment/TOCTOU tests keep raw nonces out of paths. |
 | Sovereign sandbox assertion lacked non-direct proof | P2 | Accepted: Slice 3 adds a fake remote-worker `SandboxProviderV1` pair and credential-boundary canaries. |
 | Optional device flow became release-mandatory | P2 | Accepted: Slices 7–8 and release proof qualify headless checks by enablement; failure leaves device off, not PKCE blocked. |
 | Hydra was assigned the approval UI | P2 | Accepted: ownership now separates headless Hydra from Seneca/Boring login, consent, grant, and disconnect UI/API. |
@@ -1480,6 +1525,21 @@ remains provenance only.
 | `DIRECTION.md` still marks #806 reference-only | P0 | Accepted: combined PR #1415 now carries the explicit inbound+outbound direction amendment; this file remains candidate-only until that PR lands. |
 | Old canonical pointers remain in #806/#807 docs | P1 | Accepted: combined PR #1415 now carries all three pointer migrations atomically with both plans. |
 | Cancel target and cancel-effect identity were conflated | P1 | Accepted: §4.3 and §4.4 separate `targetRunId` from RequestKey-derived `cancelRunId`, define replay/conflict/unknown outcome, and keep `agent_run_status` target-run-only. |
+
+### Independent combined-plan review packet — FAIL; dispositions applied
+
+| Finding | Severity | Disposition |
+| --- | --- | --- |
+| SHA-derived `runId` plus durable reverse index violated `RunId := RequestKey` | P0 | Accepted: §4.3 now defines `RunId` as the branded complete RequestKey with a reversible canonical wire encoding and no identity index/reconciliation table. A separate bounded `runRef` is edge/path-only and never accepted-work identity. |
+| C6 envelope was assigned bounded result content | P0 | Accepted: §8 restores R2. Agent-run content comes from the per-session Agent record; sessionless direct content comes from an Agent-owned durable direct-effect result record keyed by the same RequestKey. The envelope stores admission facts, status, outcome digest, usage linkage, and artifact references/provenance only. Slice 3 now owns migration/rollback and proof. |
+| Historical #806 disclaimer left a contradictory live-looking plan body | P1 | Accepted: `docs/issues/806/plan.md` is reduced to a short tombstone and points to exact historical object `e95b683f…`. |
+| Outbound startup diagram visually allowed unresolved intent to acceptance | P2 material | Accepted in `docs/issues/900/plan.md`: unresolved reconciliation enters `startup-blocked`; only provider proof reaches `accepting`. |
+| gh900 execution Bead made every record value-free | P1 | Accepted in `.beads/issues.jsonl`: value-free applies to audit/envelope metadata; the Agent record retains bounded sanitized model-visible arguments/results or artifact references and provided-argument bindings. Secrets remain forbidden everywhere. |
+
+The packet's verified-correct findings remain unchanged: two-plane separation,
+exact resident `AgentTool` versus first-class C2 child identity, frozen
+predecessor ordering, provider create-gap reconciliation, eight deferred Beads,
+nine internal edges, serial reland, and planning-only containment.
 
 ### PR #1415 outbound-Connector alignment
 
