@@ -644,6 +644,49 @@ on drill-down.
 
 ## 7. Slices
 
+> ### Re-sequencing ruling — 2026-08-26 (owner)
+>
+> **This section's ordering is superseded.** The pack is now sequenced
+> premises-first; ordering lives in [`premises.md`](premises.md). The slices'
+> *content* below is unchanged and still the reference — only when they run, and
+> two of their premises, have moved.
+>
+> **1. The engine does not ship on Level B.** It waits for **P1** (Level D
+> conformance, default-on — bead `wt-391-forward-9p50`). §4's "Level D honesty"
+> limitation and non-goal 8 ("No Level D claim") are resolved by waiting rather
+> than by accepting the limitation. Q7 is thereby **RULED**.
+>
+> **2. The interim Level-B receipt machinery is `descoped-pending-P1`.** The
+> durable `JobRelayReceiptV0` chain, the idempotent re-dispatch path and the
+> crash-recovery ordering in **S1** and **S3** exist to make relay hops
+> restart-safe *on a non-durable substrate*. On Level D much of that is
+> redundant. These are not deleted — they are marked descoped pending P1, and
+> the post-P1 design decides how much survives.
+>
+> **3. The storage model is not decided — §1's "noun" question is withdrawn.**
+> It goes to **P2** (spike + competitor study, brief in `premises.md`). **S1**
+> cannot start before P2 reports: P2 decides whether `JobProjectionV0` is the
+> right shape at all, or whether the thread is a first-class record. Q1 is
+> superseded by P2, not answered here.
+>
+> **4. Attribution is audit-grade from day one.** §8's honest concession —
+> `participantId` as a display handle with no audit weight — is **rejected as a
+> shipping position**. **P3** pulls C7 seat storage forward so per-message
+> attribution resolves through real envelope identity. Q3 is thereby **RULED**.
+>
+> **5. Relay-first vs blackboard is a post-P1 decision.** Both remain candidates;
+> the Buzz / Grok Bot research stands and does not need redoing. Q2 is
+> **deferred to post-P1**, not answered now.
+>
+> **Unchanged by this ruling:** the posts-only conversation boundary (Q4), the
+> shared-workspace artifact boundary (Q4), truncation-only context with no
+> summarization (Q6), and fixture-gated acceptance with live runs as a labelled
+> smoke check (Q8).
+>
+> **Newly ruled:** Thread ↔ Objective is an **optional one-way link** — an
+> Objective is not mandatory for a job (Q5 **RULED**).
+
+
 Ordering lives here and nowhere else. **The real critical path is open PRs**, not the #1355 gate:
 #1401 (naming ratification) and #1382 (objectives) block v0 content; #1393 blocks only the deferred
 Console item. **Gate G** = #1355 Gate 1 architecture approval (`docs/issues/1355/plan.md:372-376`,
@@ -741,6 +784,21 @@ human (a posted message) or the relay (a handoff). v0 records the distinction in
 provenance"* (`docs/DECISIONS.md:365`). Envelope-grade attribution arrives with C7, not with v0.
 
 ## 9. Owner questions
+
+> **Interview rulings, 2026-08-26.** Several of these are now answered or
+> superseded. Marked inline below; full text in [`premises.md`](premises.md).
+>
+> | Q | Status |
+> |---|---|
+> | Q1 the noun | **SUPERSEDED by P2** — storage model goes to a spike + competitor study |
+> | Q2 relay vs native binding | **DEFERRED to post-P1** — both candidates live |
+> | Q3 attribution grade | **RULED: audit-grade from day one** — C7 pulled forward as P3; display-only chips rejected |
+> | Q4 the two boundaries | **RULED: confirmed unchanged** — artifacts shared, conversation posts-only |
+> | Q5 Objective coupling | **RULED: optional one-way link** — an Objective is not mandatory for a job |
+> | Q6 context and budget | **RULED: confirmed unchanged** — truncation-only, no summarization; per-Thread spend out of v0 |
+> | Q7 Level D | **RULED: wait for it** — engine does not ship on Level B; P1 is a precondition, not a companion track |
+> | Q8 acceptance bar | **RULED: confirmed unchanged** — fixture-gated; live runs are a labelled smoke check |
+
 
 1. **The noun.** Q1-A projection descriptor with a distinct noun (`JobProjectionV0`, recommended,
    R-c untouched) or Q1-B canonical multi-seat Thread (better end state; costs an R-c amendment, C7

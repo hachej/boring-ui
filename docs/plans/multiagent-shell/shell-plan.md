@@ -612,6 +612,27 @@ does not discover a conflict:
 
 ## 6. Gates & sequencing
 
+> ### Re-sequencing ruling — 2026-08-26 (owner)
+>
+> **This section's graph below is superseded.** The pack is now sequenced
+> premises-first; ordering lives in [`premises.md`](premises.md).
+>
+> What changed for this chapter:
+>
+> - **L4** (thread view) now waits on **P1** durable streams, **P2** storage
+>   model and **P3** audit-grade attribution — not merely on the engine's S4.
+> - **L3b**'s saved-views half waits on **P4** (kernel View). v0 Library =
+>   **files + built-in views only**, which is unblocked.
+> - **L1**, **L1.5** and **L2a-chrome** are **substrate-free** and may run early,
+>   in parallel with the premises. `premises.md` justifies each individually.
+> - **L2b** remains a blocker inventory, not a bead.
+> - **L5**, **L6**, **L7a/b/c** follow the engine, which follows P1.
+>
+> Two of this chapter's open questions are now **RULED** — see §7. The old graph
+> is kept below because its *internal* L→L edges are unchanged and still correct;
+> only the external gates moved.
+
+
 ```
 #1401 (amendment) RATIFIED 2026-08-26 ────────────────────┐
                                                           ├→ jfxd S1→S2→S3→S4 → L4
@@ -646,6 +667,25 @@ was false, and both reviewers said so.
 ---
 
 ## 7. Open questions
+
+> **Interview rulings, 2026-08-26.** Three are now answered; full text in
+> [`premises.md`](premises.md).
+>
+> | Q | Status |
+> |---|---|
+> | Q1 routing/location ownership | **RULED as recommended** — the shell owns the serializable location; the **HOST owns URL translation** |
+> | Q2 nav extensibility | **RULED AGAINST the recommendation** — see the verbatim ruling below |
+> | Q3 Library persistence | **RULED: wait for the kernel View system (P4)** — v0 Library = files + built-in views only |
+>
+> **Q2 — owner ruling, verbatim in intent:** *nav extensibility stays **OPEN** —
+> plugins **CAN** add top-level entries.* The closed-IA recommendation (named
+> section slots, IA closed to plugins) is **rejected**. The crowding risk —
+> that an unbounded number of plugin-contributed top-level entries degrades the
+> five-domain IA — was put to the owner and is **accepted**. L2a implements an
+> open top level accordingly; the Inbox paradox (Q2's original framing)
+> dissolves, since Inbox arriving as a plugin contribution is now simply
+> legitimate.
+
 
 1. **Routing/location ownership.** *Recommended: package owns `ShellLocation`
    state + `navigate()`; host owns URL serialization* (§3), consistent with
