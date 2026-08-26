@@ -1659,7 +1659,7 @@ export async function createCoreWorkspaceAgentServer(
 
       const agentTools = await options.getAgentExtraTools({
         agentTypeId,
-        workspaceId: verifiedClaim.workspaceScopeId,
+        workspaceId: environment.runtimeWorkspaceId ?? verifiedClaim.workspaceScopeId,
         workspaceRoot: environment.workspaceRoot,
         runtimeMode: runtimeModeAdapter.id,
         workspaceFsCapability: runtimeModeAdapter.workspaceFsCapability,
