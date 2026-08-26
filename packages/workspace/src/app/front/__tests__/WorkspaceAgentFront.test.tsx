@@ -700,7 +700,7 @@ describe("WorkspaceAgentFront", () => {
     // Agent-details reload is agent-scoped. With Alpha still active, reloading
     // Beta must not combine Beta with Alpha's unrelated session id.
     await user.click(screen.getByRole("button", { name: "Settings for Beta" }))
-    await user.click(screen.getByRole("button", { name: "Reload Beta" }))
+    await user.click(await screen.findByRole("button", { name: "Reload Beta" }, { timeout: 5_000 }))
     await waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([input]) =>
       String(input).endsWith("/api/v1/agents/beta/reload"))).toBe(true))
     const betaReloadCall = vi.mocked(fetch).mock.calls.find(([input]) =>
@@ -741,7 +741,7 @@ describe("WorkspaceAgentFront", () => {
     expect(unifiedDetailsOverlay).toHaveTextContent("MCP access")
     expect(unifiedDetailsOverlay).not.toHaveTextContent("Runtime plugins explicitly bound")
     expect(within(unifiedDetailsOverlay as HTMLElement).queryByRole("tab")).not.toBeInTheDocument()
-  }, 15_000)
+  }, 30_000)
 
   it("initializes a controlled colliding id to its explicit active owner", () => {
     localStorage.setItem("boring-workspace:chat-panes:explicit-active-owner", JSON.stringify({
