@@ -8,11 +8,13 @@ only into the package you're working on.
 
 Agent hard rules and routing live in [`AGENTS.md`](../AGENTS.md) (imported by
 `CLAUDE.md`). Agent workflow, coding process, review history, and proof
-procedures live in [`kanzen/`](kanzen/).
+procedures live in [`procedures/`](procedures/README.md).
 
 | Need | Read |
 | --- | --- |
 | Direction & vision (sequencing authority, living vision, completion tracker) | [`direction/`](direction/README.md) — [`DIRECTION.md`](direction/DIRECTION.md) · [`VISION.md`](direction/VISION.md) · [`STATE.md`](direction/STATE.md) |
+| Ratified long-term architecture pack (frozen; owner rulings) | [`plans/long-term/ratified/`](plans/long-term/ratified/README.md) — [`VISION.md`](plans/long-term/ratified/VISION.md) · [`ARCHITECTURE-PLAN.md`](plans/long-term/ratified/ARCHITECTURE-PLAN.md) · [`RECONCILIATION.md`](plans/long-term/ratified/RECONCILIATION.md) |
+| Boring Factory (chassis-first product built on boring-ui) | [`factory/VISION.md`](factory/VISION.md) · [`factory/TODO.md`](factory/TODO.md) · stage contract `.agents/factory/README.md` |
 | Visual architecture (package map and runtime layers) | [`visual/`](visual/README.md) |
 
 ## What this is
@@ -74,7 +76,7 @@ standalone (`createAgentApp`) with zero core dependency.
 - [`TAILWIND-V4-STYLE-ISOLATION.md`](TAILWIND-V4-STYLE-ISOLATION.md) — how packages share Tailwind v4 tokens: workspace owns `--boring-*` `:root` tokens; agent inherits them scoped to `[data-boring-agent]` (test-enforced).
 - [`PERFORMANCE.md`](PERFORMANCE.md) — historical Vercel-sandbox vs local FS latency benchmarks (harness removed; kept for reference).
 - [`FIXES.md`](FIXES.md) — production/runtime fix ledger for recurring incidents and deploy bugs.
-- [`kanzen/`](kanzen/) — agent workflow, maintainer loop, coding practices,
+- [`procedures/`](procedures/README.md) — agent workflow, maintainer loop, coding practices,
   review history, procedures, proof gates, owner decisions, and budgeted
   autonomy.
 - [`web/`](web/README.md) — human-oriented guide: architecture overview, full package map, getting started, composition guide, design FAQ, troubleshooting map, per-package explainers, glossary. Orientation, not normative spec — canonical specs live in `packages/*/docs/`.
