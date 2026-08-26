@@ -180,7 +180,10 @@ describe("createAskUserServerPlugin", () => {
     }
   })
 
-  it("abandons persisted questions whose blocking waiter was lost on restart", async () => {
+  // Inverted deliberately for #1348: booting the plugin used to sweep every persisted
+  // pending question to `abandoned`, wiping the owner's review queue on every hub
+  // restart. Boot must leave durable gates ready, published, and answerable.
+  it("keeps persisted questions ready and answerable after a restart (#1348)", async () => {
     const { store, runtime: previousRuntime } = await fixture()
     const pendingResult = previousRuntime.ask({ sessionId: "orphan-session", title: "Orphaned question", schema })
     const pending = await waitForPendingQuestion(store, "orphan-session")
@@ -192,8 +195,12 @@ describe("createAskUserServerPlugin", () => {
     try {
       await app.register(plugin.routes!)
       await app.ready()
-      await expect(store.getPending("orphan-session")).resolves.toBeNull()
-      await vi.waitFor(async () => expect((await liveBridge.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ hint: null, hintsBySession: {} }))
+      await expect(store.getPending("orphan-session")).resolves.toMatchObject({ questionId: pending.questionId, status: "ready" })
+      await vi.waitFor(async () => expect((await liveBridge.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toMatchObject({
+        hintsBySession: { "orphan-session": expect.objectContaining({ questionId: pending.questionId }) },
+      }))
+      await expect(restartedRuntime.submitAnswer(pending.questionId, "orphan-session", { answer: "ok" })).resolves.toBe("answered")
+      await expect(store.getByQuestionId(pending.questionId)).resolves.toMatchObject({ status: "answered" })
       previousRuntime.coordinator.resolveCancelled(pending.questionId, "abandoned")
       await pendingResult
     } finally {

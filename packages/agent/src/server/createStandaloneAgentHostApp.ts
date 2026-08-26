@@ -1,5 +1,4 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify'
-import { join } from 'node:path'
 import type { PiSessionRequestContext } from '../core/piChatSessionService'
 import type { AuthorizedAgentScope, VerifiedAgentScopeClaim } from '../shared/index'
 import { ErrorCode } from '../shared/error-codes'
@@ -8,6 +7,7 @@ import type { TelemetrySink } from '../shared/telemetry'
 import type { AgentTool } from '../shared/tool'
 import { createAgentHost } from './agent-host/createAgentHost'
 import { registerAgentHostEnvironmentRoutes } from './agent-host/environmentHttpProjection'
+import { resolveRequestLedgerPath } from './agent-host/requestLedgerPath'
 import type { AgentMeteringSink } from './pi-chat/metering'
 import { getEnv } from './config/env'
 import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
@@ -76,6 +76,12 @@ export interface CreateStandaloneAgentHostAppOptions {
   }) => Promise<void>
   sessionDir?: string
   sessionRoot?: string
+  /**
+   * Durable request ledger file. Host application state, not workspace content:
+   * point it at host-owned storage. Defaults per
+   * {@link resolveRequestLedgerPath}.
+   */
+  requestLedgerPath?: string
   externalPlugins?: boolean
   beforeReload?: () => void | {
     readonly diagnostics?: ReadonlyArray<{ source: string; message: string; pluginId?: string }>
@@ -201,7 +207,12 @@ export async function createStandaloneAgentHostApp(
       runtimeModeAdapter: modeAdapter,
       runtimeHost,
       sessionRoot: options.sessionRoot,
-      requestLedgerPath: join(workspaceRoot, '.boring', 'agent-request-ledger.sqlite'),
+      requestLedgerPath: resolveRequestLedgerPath({
+        requestLedgerPath: options.requestLedgerPath,
+        sessionRoot: options.sessionRoot,
+        acceptSessionRootEnv: true,
+        legacy: { layout: 'workspace-boring-dir', workspaceRoot },
+      }),
       telemetry: options.telemetry,
       metering: options.metering,
       harnessFactory: options.harnessFactory,

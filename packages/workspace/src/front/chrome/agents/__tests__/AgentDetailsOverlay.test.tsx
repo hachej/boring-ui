@@ -1,3 +1,4 @@
+import type { ComponentProps } from "react"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -70,11 +71,12 @@ function respond(payloads: {
   })
 }
 
-function renderOverlay() {
+function renderOverlay(props: Partial<ComponentProps<typeof AgentDetailsOverlay>> = {}) {
   return render(
     <AgentDetailsOverlay
       agent={agent}
       onClose={vi.fn()}
+      {...props}
     />,
   )
 }
@@ -387,6 +389,68 @@ describe("AgentDetailsOverlay", () => {
 
     expect(await screen.findByText("Skills couldn't be loaded.")).toBeInTheDocument()
     expect(screen.getByText("run_shell")).toBeInTheDocument()
+  })
+
+  it("hides the Reload agent action when the host offers no reload capability", async () => {
+    respond({})
+    renderOverlay()
+
+    expect(await screen.findByText("No skills.")).toBeInTheDocument()
+    // Hidden, never a permanently disabled control: nothing here can ever
+    // enable it, so a dead button would only teach the user to distrust the
+    // header.
+    expect(screen.queryByRole("button", { name: "Reload Concierge" })).not.toBeInTheDocument()
+  })
+
+  it("reloads this agent's composition through the host effect and reports it", async () => {
+    respond({ skills: { skills: [{ name: "triage" }] } })
+    // In-flight state, not a silent click: the host effect is a round trip.
+    let settle: () => void = () => {}
+    const onReloadAgent = vi.fn().mockImplementation(
+      () => new Promise<void>((resolve) => { settle = () => resolve() }),
+    )
+    renderOverlay({ onReloadAgent })
+
+    const action = await screen.findByRole("button", { name: "Reload Concierge" })
+    await waitFor(() => expect(action).toBeEnabled())
+    fireEvent.click(action)
+    await waitFor(() => expect(action).toBeDisabled())
+
+    settle()
+    // Reload targets the agent this overlay describes, not the addressed one.
+    await waitFor(() => expect(onReloadAgent).toHaveBeenCalledWith("concierge"))
+    await waitFor(() => expect(mocks.postUiCommand).toHaveBeenCalledWith({
+      kind: "showNotification",
+      params: {
+        msg: "Agent reloaded. New chats use the updated instructions; chats already open keep the composition they started with.",
+        level: "info",
+      },
+    }))
+    // A landed reload changes the composition, so the page re-reads it.
+    await waitFor(() => expect(
+      mocks.getJson.mock.calls.filter(([path]) => (path as string).endsWith("/describe")).length,
+    ).toBeGreaterThan(1))
+    await waitFor(() => expect(screen.getByRole("button", { name: "Reload Concierge" })).toBeEnabled())
+  })
+
+  it("reports a failed reload and leaves the action usable again", async () => {
+    respond({ skills: { skills: [{ name: "triage" }] } })
+    const onReloadAgent = vi.fn().mockRejectedValue(new Error("reload failed (503)"))
+    renderOverlay({ onReloadAgent })
+
+    fireEvent.click(await screen.findByRole("button", { name: "Reload Concierge" }))
+
+    await waitFor(() => expect(mocks.postUiCommand).toHaveBeenCalledWith({
+      kind: "showNotification",
+      params: { msg: "reload failed (503)", level: "error" },
+    }))
+    // A failed reload never claims success, and never refreshes a composition
+    // the host did not replace.
+    expect(mocks.postUiCommand).not.toHaveBeenCalledWith(expect.objectContaining({
+      params: expect.objectContaining({ level: "info" }),
+    }))
+    expect(mocks.getJson.mock.calls.filter(([path]) => (path as string).endsWith("/describe")).length).toBe(1)
+    await waitFor(() => expect(screen.getByRole("button", { name: "Reload Concierge" })).toBeEnabled())
   })
 
   it("reports unavailable sources without an API client, keeping list plugin ids", async () => {
