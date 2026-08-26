@@ -288,8 +288,18 @@ export class EmbeddedAgentGateway implements AgentGateway {
 
   async createSession(input: Parameters<AgentGateway['createSession']>[0]) {
     const claim = await this.verify(input.scope)
-    if (!this.runtime.compiledById.has(input.agentTypeId)) {
+    const agent = this.runtime.compiledById.get(input.agentTypeId)
+    if (!agent) {
       throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN, 'agent type is not available')
+    }
+    // Decision 28 keeps the legacy default only for session/history
+    // compatibility beside an authored fleet. Enforce that at the Gateway so
+    // HTTP, MCP, dispatcher, and embedded callers share one creation rule.
+    if ('legacyDefault' in agent && fleetHasConfiguredAgents(this.runtime.compiledAgents)) {
+      throw new AgentGatewayError(
+        AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
+        'legacy default agent is available for history only',
+      )
     }
     const target: AgentRequestTarget = { kind: 'agent', agentTypeId: input.agentTypeId }
     let binding: Awaited<ReturnType<AgentHostRuntime['resolveBinding']>> | undefined

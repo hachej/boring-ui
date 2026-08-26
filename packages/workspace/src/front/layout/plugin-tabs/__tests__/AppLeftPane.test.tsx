@@ -485,11 +485,28 @@ describe("AppLeftPane", () => {
       pinnedSessionRefs: [],
     })
 
-    expect(document.querySelector('[data-boring-workspace-part="app-left-agents-count"]')).toHaveTextContent("3 seats")
+    expect(document.querySelector('[data-boring-workspace-part="app-left-agents-count"]')).toHaveTextContent("2 seats")
     expect(document.querySelector('[data-boring-agent-type-id="default"]')).not.toBeNull()
     expect(screen.getByRole("region", { name: "default sessions" })).toContainElement(
       screen.getByText("Chat from before the fleet"),
     )
+  })
+
+  it("keeps fallback route and error chrome visible when only its history source fails", () => {
+    renderFleetPane({
+      agents: [
+        { agentTypeId: "default", label: "default", legacy: true, sessionsStatus: "error" },
+        { agentTypeId: "alpha", label: "Boring Alpha", sessionsStatus: "loaded" },
+        { agentTypeId: "beta", label: "Boring Beta", sessionsStatus: "loaded" },
+      ],
+      addressedAgentTypeId: "default",
+      sessions: [{ id: "alpha-one", agentTypeId: "alpha", title: "Alpha session" }],
+      pinnedSessionRefs: [],
+    })
+
+    expect(document.querySelector('[data-boring-workspace-part="app-left-agents-count"]')).toHaveTextContent("2 seats")
+    expect(screen.getByRole("button", { name: "Collapse default; chats unavailable" })).toBeInTheDocument()
+    expect(screen.getByRole("alert")).toHaveTextContent("Chats unavailable.")
   })
 
   // gh-1296 review fix: the fallback card is reachability chrome, not a seat.

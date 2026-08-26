@@ -14,6 +14,11 @@ import type { AgentGatewayEffect, AgentHostAgentSpec } from '../types'
 import type { GatewayConformanceFixture } from '../testing/gatewayConformance'
 
 interface EmbeddedGatewayFixture extends GatewayConformanceFixture {
+  seedSession(input: {
+    workspaceScopeId: string
+    agentTypeId: string
+    title: string
+  }): Promise<AgentSessionRef>
   modelLoopStarts(ref: AgentSessionRef): number
   blockAdmission(operation: AgentGatewayEffect): {
     entered: Promise<void>
@@ -291,6 +296,13 @@ export async function createEmbeddedGatewayFixture(
   return {
     gateway: embedded,
     issueScope,
+    async seedSession({ workspaceScopeId, agentTypeId, title }) {
+      const created = await serviceFor(workspaceScopeId, agentTypeId).createSession({
+        workspaceId: workspaceScopeId,
+        requestId: 'fixture-history-seed',
+      }, { title })
+      return { agentTypeId, sessionId: created.id }
+    },
     revoke(scope) { revoked.add(scope as object) },
     setActivity(ref: AgentSessionRef, activity: AgentSessionActivity) {
       for (const [key, service] of services) {

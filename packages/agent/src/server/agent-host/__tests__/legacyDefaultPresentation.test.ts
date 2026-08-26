@@ -21,21 +21,42 @@ describe('legacy default presentation (gh-1296)', () => {
     ])
   })
 
-  it('keeps the single-agent boot byte-identical: one default agent still reads "Agent"', async () => {
+  it('keeps the single-agent boot byte-identical and creation-capable', async () => {
     const fixture = await createEmbeddedGatewayFixture({ agents: [LEGACY_DEFAULT] })
     const scope = fixture.issueScope({ workspaceScopeId: 'workspace-a', authSubjectId: 'subject-a' })
 
     expect(await fixture.gateway.listAgents({ scope })).toEqual([{ agentTypeId: 'default', label: 'Agent' }])
+    await expect(fixture.gateway.createSession({
+      scope,
+      agentTypeId: 'default',
+      requestId: 'fallback-only-create',
+    })).resolves.toMatchObject({ agentTypeId: 'default' })
+  })
+
+  it('rejects direct creation on the history-only fallback beside an authored fleet', async () => {
+    const fixture = await createEmbeddedGatewayFixture({ agents: CONFIGURED_FLEET })
+    const scope = fixture.issueScope({ workspaceScopeId: 'workspace-a', authSubjectId: 'subject-a' })
+
+    await expect(fixture.gateway.createSession({
+      scope,
+      agentTypeId: 'default',
+      requestId: 'forbidden-legacy-create',
+    })).rejects.toMatchObject({
+      code: 'AGENT_COMMAND_INVALID_STATE',
+      message: 'legacy default agent is available for history only',
+    })
+    await expect(fixture.gateway.listSessions({ scope, agentTypeId: 'default' }))
+      .resolves.toEqual({ sessions: [] })
   })
 
   it('keeps sessions bound to `default` addressable, listed and readable beside a fleet', async () => {
     const fixture = await createEmbeddedGatewayFixture({ agents: CONFIGURED_FLEET })
     const scope = fixture.issueScope({ workspaceScopeId: 'workspace-a', authSubjectId: 'subject-a' })
-    // A chat someone started before the fleet existed.
-    const legacyRef = await fixture.gateway.createSession({
-      scope,
+    // Seed a chat created before the authored fleet existed without using the
+    // now-forbidden public creation path.
+    const legacyRef = await fixture.seedSession({
+      workspaceScopeId: 'workspace-a',
       agentTypeId: 'default',
-      requestId: 'legacy-chat',
       title: 'Legacy chat',
     })
     const seatRef = await fixture.gateway.createSession({

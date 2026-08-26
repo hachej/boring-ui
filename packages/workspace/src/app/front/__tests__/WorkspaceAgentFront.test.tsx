@@ -707,12 +707,61 @@ describe("WorkspaceAgentFront", () => {
     expect(document.querySelector('[data-boring-workspace-part="app-left-agents-count"]')).toHaveTextContent("2 seats")
   })
 
+  it("keeps fallback history error chrome visible when authored session sources still load", async () => {
+    const user = userEvent.setup()
+    const agents = [
+      { agentTypeId: "default", label: "default", legacy: true },
+      { agentTypeId: "alpha", label: "Alpha" },
+      { agentTypeId: "beta", label: "Beta" },
+    ]
+    const useAgentSelection = () => ({
+      agents,
+      selectedAgentTypeId: "alpha",
+      loading: false,
+      error: undefined,
+      selectAgentTypeId: vi.fn(),
+    })
+    const legacyHistoryError = new Error("legacy history unavailable")
+    const useFleetSessions: AttestedWorkspaceAgentFrontProps<WorkspaceAgentSession>["useSessions"] = (options) => ({
+      sessions: options.agentTypeId === "alpha"
+        ? [{ id: "alpha-one", agentTypeId: "alpha", title: "Alpha one", updatedAt: 2 }]
+        : [],
+      loading: false,
+      error: options.agentTypeId === "default" ? legacyHistoryError : undefined,
+      activeSessionId: undefined,
+      activeSessionAgentTypeId: options.agentTypeId,
+      activeSession: undefined,
+      workspaceId: options.workspaceId,
+      switch: vi.fn(),
+      create: vi.fn(),
+      delete: vi.fn(),
+    })
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="fleet-partial-error"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        addressedAgentSelection
+        useAddressedAgentSelection={useAgentSelection}
+        useSessions={useFleetSessions}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getAllByText("Alpha one").length).toBeGreaterThan(0))
+    expect(document.querySelector('[data-boring-workspace-part="app-left-agents-count"]')).toHaveTextContent("2 seats")
+    await user.click(screen.getByRole("button", { name: "Expand default; chats unavailable" }))
+    expect(screen.getByText("Chats unavailable.")).toHaveAttribute("role", "alert")
+  })
+
   // gh-1296 review fix: opening a default-bound chat switches the addressed
   // owner to the legacy fallback, but creation must never follow it there —
   // otherwise reading history retargets New chat at `default` and manufactures
   // more fallback-bound sessions.
-  it("does not retarget new chats at the legacy fallback after opening a legacy chat", async () => {
+  it("keeps implicit new chats authored and never retargets an explicit legacy split", async () => {
     const user = userEvent.setup()
+    const createAttempts = vi.fn()
     const createdBy = vi.fn()
     const agents = [
       { agentTypeId: "default", label: "default", legacy: true },
@@ -745,6 +794,8 @@ describe("WorkspaceAgentFront", () => {
         workspaceId: options.workspaceId,
         switch: vi.fn(),
         create: async () => {
+          createAttempts(owner)
+          if (owner === "default") throw new Error("legacy default agent is available for history only")
           createdBy(owner)
           return { id: `${owner}-new`, agentTypeId: owner, title: `${owner} new`, updatedAt: 9 }
         },
@@ -776,8 +827,16 @@ describe("WorkspaceAgentFront", () => {
       expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-session-id", "legacy-one")
     })
 
-    // Creation does NOT follow: the primary picker target derives from an
-    // authored seat and the menu never offers `default`.
+    // A split is explicitly owned by the pane being split. Preserve that
+    // legacy owner through the session controller so the Gateway rejection is
+    // honest; never turn it into an Alpha session behind the user's back.
+    await user.click(screen.getByRole("button", { name: /^Split .* chat vertically$/ }))
+    await waitFor(() => expect(createAttempts).toHaveBeenCalledWith("default"))
+    expect(createdBy).not.toHaveBeenCalled()
+    expect(screen.getAllByTestId("chat-pane")).toHaveLength(1)
+
+    // Implicit New chat does NOT follow history selection: the primary picker
+    // target derives from an authored seat and never offers `default`.
     const primary = screen.getByRole("button", { name: /^Start new chat with / })
     expect(primary).not.toHaveAttribute("aria-label", "Start new chat with default")
     await user.click(screen.getByRole("button", { name: "Choose Agent for new chat" }))
@@ -792,6 +851,7 @@ describe("WorkspaceAgentFront", () => {
       expect(createdBy).toHaveBeenCalledWith("alpha")
     })
     expect(createdBy).not.toHaveBeenCalledWith("default")
+    expect(createAttempts).toHaveBeenCalledWith("default")
   })
 
   it("discovers an addressed fleet, groups its chats, and creates through the chosen owner", async () => {

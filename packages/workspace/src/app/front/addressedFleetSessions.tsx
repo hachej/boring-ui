@@ -251,17 +251,10 @@ export function useAddressedFleetSessions<TSession extends WorkspaceAgentSession
         controllerFor(owner)?.switch(id, owner)
       },
       create(input) {
-        // gh-1296 review fix: the legacy fallback is reachable for list/switch/
-        // read, but never a creation target — retarget a legacy request to the
-        // first authored seat so opening old default chats cannot multiply
-        // fallback-bound sessions. A fleet that is only the fallback keeps it.
-        const requested = input?.agentTypeId ?? selectedAgentTypeId
-        const requestedIsLegacy = requested != null && agents.find(
-          (agent) => agent.agentTypeId === requested,
-        )?.legacy === true
-        const owner = requestedIsLegacy
-          ? agents.find((agent) => !agent.legacy)?.agentTypeId ?? requested
-          : requested
+        // Preserve explicit ownership exactly. In particular, a split of a
+        // legacy history pane must reach the canonical Gateway as `default`
+        // and be rejected there, never silently become the first authored seat.
+        const owner = input?.agentTypeId ?? selectedAgentTypeId
         const controller = controllerFor(owner)
         if (!owner || !controller) return Promise.reject(new Error("Agent sessions are not ready"))
         const { agentTypeId: _agentTypeId, ...createInput } = input ?? {}

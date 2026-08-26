@@ -702,9 +702,9 @@ export async function createAgentHost(
         hostId,
         agents: compiledAgents.map((agent) => ({
           agentTypeId: agent.agentTypeId,
-          ...('legacyDefault' in agent
-            ? legacyDefaultPresentation(configuredFleet)
-            : { label: agent.definition.label }),
+          label: 'legacyDefault' in agent
+            ? legacyDefaultPresentation(configuredFleet).label
+            : agent.definition.label,
           ...('legacyDefault' in agent || agent.definition.digest === undefined
             ? {}
             : { definitionDigest: agent.definition.digest }),

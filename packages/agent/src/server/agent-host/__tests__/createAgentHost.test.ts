@@ -48,6 +48,28 @@ function options(sessionRoot: string) {
 }
 
 describe('createAgentHost', () => {
+  it('keeps the legacy marker on the Gateway catalog instead of leaking it through host.describe()', async () => {
+    const sessionRoot = await root()
+    const created = await createAgentHost({
+      ...options(sessionRoot),
+      agents: [
+        { agentTypeId: 'default', legacyDefault: true },
+        { agentTypeId: 'alpha', definition: { instructions: 'alpha', label: 'Alpha' } },
+      ],
+    })
+
+    expect((await created.gateway.listAgents({ scope }))[0]).toEqual({
+      agentTypeId: 'default',
+      label: 'default',
+      legacy: true,
+    })
+    expect((await created.host.describe()).agents[0]).toEqual({
+      agentTypeId: 'default',
+      label: 'default',
+    })
+    await created.host.close()
+  })
+
   it('requires durable transactional ledger ownership for the direct projection unless test/dev in-memory mode is explicit', async () => {
     await expect(createAgentHost({
       ...options(await root()),

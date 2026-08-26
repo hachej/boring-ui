@@ -2,8 +2,8 @@
  * How the legacy `default` runtime presents itself in agent listings.
  *
  * The `default` agentTypeId is never removed from a composed fleet: existing
- * sessions are bound to it and hosts normalize `default → primary` (DECISIONS,
- * Decision 30), so dropping it from the compiled fleet would strand chat
+ * sessions are bound to it and Decision 28 retains session/history
+ * compatibility, so dropping it from the compiled fleet would strand chat
  * history. What gh-1296 fixes is the *presentation*: alongside a configured
  * fleet the fallback used to advertise itself as an authored seat labelled
  * `Agent`, sitting above the real seats.

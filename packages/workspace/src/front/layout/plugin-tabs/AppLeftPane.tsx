@@ -33,8 +33,9 @@ export interface AppLeftPaneAgent {
   sessionsStatus?: "loading" | "loaded" | "error"
   /**
    * The host's legacy `default` fallback rather than an authored seat. It is
-   * not fleet chrome material — but it keeps its card for as long as it owns
-   * chats, because that card is how those chats are reached (gh-1296).
+   * not fleet chrome material — but it keeps its card while it owns chats or
+   * its history source failed, because that card carries route/error chrome
+   * for the fallback history (gh-1296).
    */
   legacy?: boolean
 }
@@ -308,8 +309,16 @@ export function AppLeftPane({
     return owned
   }, [listedAgents, sessions])
   const agents = useMemo(
-    () => listedAgents.filter((agent) => !agent.legacy || legacyAgentsWithChats.has(agent.agentTypeId)),
+    () => listedAgents.filter((agent) => (
+      !agent.legacy
+      || legacyAgentsWithChats.has(agent.agentTypeId)
+      || agent.sessionsStatus === "error"
+    )),
     [legacyAgentsWithChats, listedAgents],
+  )
+  const factorySeatCount = useMemo(
+    () => agents.filter((agent) => !agent.legacy).length,
+    [agents],
   )
   // Fleet row idiom (accent dot, compact rows, owner labels): any addressed
   // fleet gets it, including a fleet of one, so chat cards look identical in
@@ -580,22 +589,28 @@ export function AppLeftPane({
               ? agentSessions.map((session) => renderSession(session, pinnedSet.has(workspaceSessionKeyFor(session)), activeProjectId ?? undefined, false, true))
               : (agent.sessionsStatus ?? "loading") === "loading"
                 ? renderChatsLoading()
-                : (
-                  <div className="flex min-h-[26px] items-center gap-1.5 pl-6 pr-1.5 text-[12px] text-muted-foreground/80">
-                    <span>No chats yet.</span>
-                    <button
-                      type="button"
-                      data-boring-mobile-dismiss="true"
-                      onClick={() => {
-                        onSelectAgent?.(agent.agentTypeId)
-                        onCreateSession(agent.agentTypeId)
-                      }}
-                      className="app-left-empty-start rounded-sm text-[12px] font-medium text-[color:var(--accent)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                    >
-                      Start one
-                    </button>
-                  </div>
-                )}
+                : agent.sessionsStatus === "error"
+                  ? (
+                    <div role="alert" className="flex min-h-[26px] items-center pl-6 pr-1.5 text-[12px] text-destructive">
+                      Chats unavailable.
+                    </div>
+                  )
+                  : (
+                    <div className="flex min-h-[26px] items-center gap-1.5 pl-6 pr-1.5 text-[12px] text-muted-foreground/80">
+                      <span>No chats yet.</span>
+                      <button
+                        type="button"
+                        data-boring-mobile-dismiss="true"
+                        onClick={() => {
+                          onSelectAgent?.(agent.agentTypeId)
+                          onCreateSession(agent.agentTypeId)
+                        }}
+                        className="app-left-empty-start rounded-sm text-[12px] font-medium text-[color:var(--accent)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                      >
+                        Start one
+                      </button>
+                    </div>
+                  )}
           </div>
         ) : null}
       </div>
@@ -655,7 +670,7 @@ export function AppLeftPane({
             {/* Lowercased against the row's uppercase: "5 SEATS" in the title's
                 tracking shouts louder than the title. */}
             <span data-boring-workspace-part="app-left-agents-count" className="shrink-0 normal-case font-normal tabular-nums tracking-normal text-muted-foreground">
-              {agents.length} {agents.length === 1 ? "seat" : "seats"}
+              {factorySeatCount} {factorySeatCount === 1 ? "seat" : "seats"}
             </span>
             <button
               type="button"

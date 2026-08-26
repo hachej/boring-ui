@@ -83,9 +83,13 @@ apart from `AgentSummary.legacy`.
 configured fleet only so the sessions bound to it stay addressable (gh-1296).
 It is not an authored seat: with configured Agents in the fleet it is labelled
 `default` rather than `Agent`, and clients keep listing and routing its
-sessions while leaving it out of seat chrome unless it owns chats. A fleet that
-is nothing but the fallback is the legacy single-agent boot and is unchanged —
-label `Agent`, no `legacy` flag.
+sessions while leaving it out of seat chrome unless it owns chats or its
+history source fails. Decision 28
+retains that history compatibility, while Decision 29 makes the Gateway the
+canonical enforcement point: `createSession` rejects this history-only target
+when an authored Agent shares the fleet. A fleet that is nothing but the
+fallback is the legacy single-agent boot and remains creation-capable — label
+`Agent`, no `legacy` flag.
 
 Session activity is the extracted alias `AgentSessionActivity`:
 `'idle' | 'running' | 'aborting' | 'error'`.
