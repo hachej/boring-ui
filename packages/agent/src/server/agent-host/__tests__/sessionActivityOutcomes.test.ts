@@ -220,6 +220,47 @@ describe('EmbeddedAgentGateway cancellation outcomes', () => {
     }
   })
 
+  it('records active Send-now replacement intent once before Pi ends the old turn without publishing idle', async () => {
+    const { fixture, scope, ref, connection, statuses, unsubscribe } = await runningSession()
+    try {
+      await connection.send({
+        kind: 'followup',
+        requestId: 'followup',
+        clientNonce: 'queued',
+        clientSeq: 1,
+        content: 'send now',
+      })
+      fixture.endOnNextControl(ref, 'interrupt', 'ok')
+      await connection.interrupt({ requestId: 'resume', queueAction: 'resume' })
+
+      expect(fixture.cancellationIntents(ref)).toBe(1)
+      expect(statuses).toEqual(['running', 'aborting', 'aborted', 'running'])
+      expect(statuses).not.toContain('idle')
+      await expect(fixture.gateway.readSessionState({ scope, ref })).resolves.toMatchObject({
+        summary: { status: 'running' },
+      })
+    } finally {
+      unsubscribe()
+      await connection.close()
+    }
+  })
+
+  it('does not record cancellation intent for a no-op Resume', async () => {
+    const { fixture, scope, ref, connection, statuses, unsubscribe } = await runningSession()
+    try {
+      await connection.interrupt({ requestId: 'empty-resume', queueAction: 'resume' })
+
+      expect(fixture.cancellationIntents(ref)).toBe(0)
+      expect(statuses).toEqual(['running'])
+      await expect(fixture.gateway.readSessionState({ scope, ref })).resolves.toMatchObject({
+        summary: { status: 'running' },
+      })
+    } finally {
+      unsubscribe()
+      await connection.close()
+    }
+  })
+
   it('records stop intent before Pi synchronously reports agent-end ok without publishing idle', async () => {
     const { fixture, scope, ref, connection, statuses, unsubscribe } = await runningSession()
     try {

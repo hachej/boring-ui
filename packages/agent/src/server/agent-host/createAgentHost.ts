@@ -436,6 +436,14 @@ function createRuntime(
                   activity.observe(claim.workspaceScopeId, { agentTypeId, sessionId }, event)
                 }
               },
+              beginSessionCancellation: (sessionId) => {
+                if (draining) return
+                const ref = { agentTypeId, sessionId }
+                const cancellation = activity.beginCancellation(claim.workspaceScopeId, ref)
+                return cancellation
+                  ? () => activity.rollbackCancellation(claim.workspaceScopeId, ref, cancellation)
+                  : undefined
+              },
             })
             const generation = (nextBindingGeneration.get(currentKey) ?? 0) + 1
             nextBindingGeneration.set(currentKey, generation)

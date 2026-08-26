@@ -20,6 +20,7 @@ interface EmbeddedGatewayFixture extends GatewayConformanceFixture {
     release(): void
   }
   rejectNextPrompt(error: Error): void
+  cancellationIntents(ref: AgentSessionRef): number
   endCurrentTurn(ref: AgentSessionRef, status: 'ok' | 'aborted' | 'error'): void
   endOnNextControl(ref: AgentSessionRef, control: 'interrupt' | 'stop', status: 'ok' | 'aborted' | 'error'): void
   emitSessionEvent(ref: AgentSessionRef, event: PiChatEvent): void
@@ -49,7 +50,10 @@ class FakeService implements PiChatSessionService {
   nextPromptError: Error | undefined
   private readonly nextControlEnd = new Map<string, 'ok' | 'aborted' | 'error'>()
 
-  constructor(private readonly onEvent: (sessionId: string, event: PiChatEvent) => void) {}
+  constructor(
+    private readonly onEvent: (sessionId: string, event: PiChatEvent) => void,
+    private readonly beginActiveTurnReplacement: (sessionId: string) => void | (() => void),
+  ) {}
 
   async listSessions(_ctx: PiSessionRequestContext, options?: { includeId?: string }) {
     const rows = [...this.records.values()].map(this.summary)
@@ -151,7 +155,25 @@ class FakeService implements PiChatSessionService {
 
   async interrupt(_ctx: PiSessionRequestContext, sessionId: string, payload: { queueAction?: 'hold' | 'resume' }) {
     const record = this.get(sessionId)
-    if (payload.queueAction !== 'resume' && record.status === 'running') record.status = 'aborting'
+    if (payload.queueAction === 'resume') {
+      // Mirror the canonical HarnessPiChatService admission seam: an empty
+      // Resume is a no-op, while active Send-now records replacement intent
+      // before the old turn can end synchronously.
+      if (record.queue.length === 0) return { accepted: true as const, cursor: record.seq }
+      const wasActive = record.status === 'running' || record.status === 'aborting'
+      const rollback = wasActive ? this.beginActiveTurnReplacement(sessionId) : undefined
+      try {
+        this.publishControlEnd(record, 'interrupt')
+      } catch (error) {
+        if (typeof rollback === 'function') rollback()
+        throw error
+      }
+      record.queue = []
+      record.status = 'running'
+      this.publish(record, { type: 'agent-start', seq: 0, turnId: `turn-${record.seq + 1}` })
+      return { accepted: true as const, cursor: record.seq }
+    }
+    if (record.status === 'running') record.status = 'aborting'
     this.publishControlEnd(record, 'interrupt')
     return { accepted: true as const, cursor: record.seq }
   }
@@ -233,6 +255,7 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
   const revoked = new WeakSet<object>()
   const services = new Map<string, FakeService>()
   const activity = new AgentSessionActivityIndex()
+  const cancellationIntentCounts = new Map<string, number>()
   type AdmissionDisposition = 'strong-reject' | 'retryable' | {
     entered(): void
     wait: Promise<void>
@@ -246,9 +269,20 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
     const key = `${workspaceScopeId}:${agentTypeId}`
     let service = services.get(key)
     if (!service) {
-      service = new FakeService((sessionId, event) => {
-        activity.observe(workspaceScopeId, { agentTypeId, sessionId }, event)
-      })
+      service = new FakeService(
+        (sessionId, event) => {
+          activity.observe(workspaceScopeId, { agentTypeId, sessionId }, event)
+        },
+        (sessionId) => {
+          const ref = { agentTypeId, sessionId }
+          const activityKey = `${workspaceScopeId}:${agentTypeId}:${sessionId}`
+          cancellationIntentCounts.set(activityKey, (cancellationIntentCounts.get(activityKey) ?? 0) + 1)
+          const cancellation = activity.beginCancellation(workspaceScopeId, ref)
+          return cancellation
+            ? () => activity.rollbackCancellation(workspaceScopeId, ref, cancellation)
+            : undefined
+        },
+      )
       services.set(key, service)
     }
     return service
@@ -347,6 +381,14 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
     },
     rejectNextPrompt(error) {
       for (const service of services.values()) service.nextPromptError = error
+    },
+    cancellationIntents(ref) {
+      for (const [key, service] of services) {
+        if (!key.endsWith(`:${ref.agentTypeId}`) || !service.records.has(ref.sessionId)) continue
+        const workspaceScopeId = key.slice(0, -(ref.agentTypeId.length + 1))
+        return cancellationIntentCounts.get(`${workspaceScopeId}:${ref.agentTypeId}:${ref.sessionId}`) ?? 0
+      }
+      return 0
     },
     endCurrentTurn(ref, status) {
       for (const service of services.values()) {

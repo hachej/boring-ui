@@ -103,6 +103,8 @@ export interface HarnessPiChatServiceOptions {
   metering?: AgentMeteringSink
   /** Host-owned process-lifetime projection of live session activity. */
   onEvent?: (sessionId: string, event: PiChatEvent) => void
+  /** Records replacement intent before an active Send-now abort can settle. */
+  beginActiveTurnReplacement?: (sessionId: string) => void | (() => void)
   /** Receives non-fatal metering pipeline failures (default: console.warn). */
   meteringLogger?: MeteringErrorLogger
   /** Canonical HTTP projection for lazily loaded persisted attachment bytes. */
@@ -123,6 +125,7 @@ export class HarnessPiChatService implements PiChatSessionService {
   private readonly workspace?: Workspace
   private readonly eventStore?: EventStreamStore
   private readonly onEvent?: (sessionId: string, event: PiChatEvent) => void
+  private readonly beginActiveTurnReplacement?: HarnessPiChatServiceOptions['beginActiveTurnReplacement']
   private readonly attachmentUrl?: HarnessPiChatServiceOptions['attachmentUrl']
   private readonly channels = new Map<string, LiveSessionChannel>()
   // Coalesce cold callers so only one adapter subscription owns the channel.
@@ -152,6 +155,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     this.workspace = options.workspace
     this.eventStore = options.eventStore
     this.onEvent = options.onEvent
+    this.beginActiveTurnReplacement = options.beginActiveTurnReplacement
     this.attachmentUrl = options.attachmentUrl
     this.metering = options.metering
       ? new PiChatMeteringCoordinator(options.metering, options.meteringLogger)
@@ -599,6 +603,12 @@ export class HarnessPiChatService implements PiChatSessionService {
       return { accepted: true, cursor: this.channels.get(sessionKey)?.buffer.latestSeq ?? 0 }
     }
     if (isResume) this.queueResumeAdmissions.add(sessionKey)
+    // The service owns the no-op decision, so it must establish host cancellation
+    // intent here: after admission guards, but before Pi can synchronously report
+    // the replaced turn as agent-end:ok while aborting.
+    const rollbackActiveTurnReplacement = isResume && wasActive
+      ? this.beginActiveTurnReplacement?.(sessionId)
+      : undefined
     const sendNowTransaction = isResume ? createSendNowTransaction() : undefined
     if (sendNowTransaction) this.sendNowTransactions.set(sessionKey, sendNowTransaction)
     try {
@@ -636,6 +646,7 @@ export class HarnessPiChatService implements PiChatSessionService {
         // Release prompt reservations stranded before agent-start.
         this.metering?.releasePending(sessionKey)
       } catch (error) {
+        if (typeof rollbackActiveTurnReplacement === 'function') rollbackActiveTurnReplacement()
         let reportedError = error
         if (resumeQueueCleared && sendNowTransaction?.disposition !== 'cancel-and-discard') {
           const restore = await this.restoreInterruptedQueue(sessionId, sessionKey, adapter, resumedFollowUps)

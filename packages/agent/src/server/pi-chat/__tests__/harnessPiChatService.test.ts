@@ -1696,11 +1696,21 @@ describe('HarnessPiChatService', () => {
     if (subscription.type === 'ok') subscription.unsubscribe()
   })
 
-  it('nudges an active session by clearing then sending the full held queue once', async () => {
+  it('records host replacement intent before nudging an active session once', async () => {
     const adapter = createAdapter()
+    const order: string[] = []
     const queuedWhenAborted: string[][] = []
-    adapter.abort = vi.fn(async () => { queuedWhenAborted.push([...adapter.readSnapshot().followUpMessages]) })
-    const { service } = createService(adapter)
+    adapter.abort = vi.fn(async () => {
+      order.push('abort')
+      queuedWhenAborted.push([...adapter.readSnapshot().followUpMessages])
+    })
+    const beginActiveTurnReplacement = vi.fn(() => { order.push('intent') })
+    const service = new HarnessPiChatService({
+      harness: createHarness(adapter),
+      sessionStore,
+      workdir: '/workspace',
+      beginActiveTurnReplacement,
+    })
 
     await service.followUp(ctx, 's1', {
       message: 'message 2',
@@ -1714,6 +1724,9 @@ describe('HarnessPiChatService', () => {
     })
     await expect(service.interrupt(ctx, 's1', { queueAction: 'resume' })).resolves.toMatchObject({ accepted: true })
 
+    expect(beginActiveTurnReplacement).toHaveBeenCalledOnce()
+    expect(beginActiveTurnReplacement).toHaveBeenCalledWith('s1')
+    expect(order).toEqual(['intent', 'abort'])
     expect(adapter.abortRetry).toHaveBeenCalledTimes(1)
     expect(adapter.abort).toHaveBeenCalledTimes(1)
     expect(queuedWhenAborted).toEqual([[]])
@@ -2044,9 +2057,15 @@ describe('HarnessPiChatService', () => {
     expect(released).not.toHaveBeenCalledWith(expect.objectContaining({ runId: 'pi-run:s1:followup:meter-3:3' }))
   })
 
-  it('does not let a repeated active nudge abort the replacement turn', async () => {
+  it('does not let a no-op repeated active nudge create another cancellation intent', async () => {
     const adapter = createAdapter()
-    const { service } = createService(adapter)
+    const beginActiveTurnReplacement = vi.fn()
+    const service = new HarnessPiChatService({
+      harness: createHarness(adapter),
+      sessionStore,
+      workdir: '/workspace',
+      beginActiveTurnReplacement,
+    })
 
     await service.followUp(ctx, 's1', {
       message: 'nudge exactly once',
@@ -2056,6 +2075,7 @@ describe('HarnessPiChatService', () => {
     await expect(service.interrupt(ctx, 's1', { queueAction: 'resume' })).resolves.toMatchObject({ accepted: true })
     await expect(service.interrupt(ctx, 's1', { queueAction: 'resume' })).resolves.toMatchObject({ accepted: true })
 
+    expect(beginActiveTurnReplacement).toHaveBeenCalledTimes(1)
     expect(adapter.abort).toHaveBeenCalledTimes(1)
     expect(adapter.prompt).toHaveBeenCalledTimes(1)
     expect(adapter.continueQueuedFollowUp).not.toHaveBeenCalled()

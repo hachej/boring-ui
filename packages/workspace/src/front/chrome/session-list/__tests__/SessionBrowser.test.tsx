@@ -464,6 +464,29 @@ describe("SessionBrowser", () => {
     },
   )
 
+  it("keeps an active Send Now replacement sequence out of completed", () => {
+    const addressed = sample.map((session) => ({ ...session, agentTypeId: "alpha" }))
+    render(<SessionBrowser sessions={addressed} activeRef={{ sessionId: "s1", agentTypeId: "alpha" }} activityWorkspaceId="ws-send-now" />)
+
+    for (const status of ["running", "aborting", "aborted", "running"] as const) {
+      act(() => {
+        window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+          detail: {
+            workspaceId: "ws-send-now",
+            sessionId: "s2",
+            agentTypeId: "alpha",
+            working: status === "running" || status === "aborting",
+            status,
+            control: "resume",
+          },
+        }))
+      })
+      expect(document.querySelector('[data-boring-badge="completed"]')).toBeNull()
+    }
+
+    expect(document.querySelector('[data-boring-badge="working"]')).toBeInTheDocument()
+  })
+
   it("treats snapshot disappearance as outcome-unknown while clearing working", () => {
     const addressed = sample.map((session) => ({ ...session, agentTypeId: "alpha" }))
     render(<SessionBrowser sessions={addressed} activeRef={{ sessionId: "s1", agentTypeId: "alpha" }} activityWorkspaceId="ws-snapshot" />)
