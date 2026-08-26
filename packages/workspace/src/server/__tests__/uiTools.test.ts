@@ -244,15 +244,19 @@ describe("createExecUiTool — path validation", () => {
   test("exec_ui requires sequential auto-focused opens without optional workflow policy", () => {
     const tool = createExecUiTool(bridge, { workspaceRoot })
 
-    expect(tool.description).toContain("single-slot focus action")
-    expect(tool.description).toContain("Every successful")
-    expect(tool.description).toContain("automatically focuses the requested file")
-    expect(tool.description).toContain("openFile once for EACH requested path")
-    expect(tool.description).toContain("only the final file remains visible")
-    expect(tool.description).toContain("do not refuse the request, shorten it to one call")
-    expect(tool.description).toContain("cannot keep multiple files visible at once")
-    expect(tool.description).toContain("chat does not")
-    expect(tool.description).toContain("recognize arbitrary @path text")
+    expect(tool.description).toContain(
+      [
+        "IMPORTANT: openFile is a single-slot focus action. Every successful",
+        "call automatically focuses the requested file. When the user asks to",
+        "open multiple files, call openFile once for EACH requested path, in the",
+        "requested order. Each call replaces the non-persistent focused preview,",
+        "so only the final file remains visible. That sequential focus behavior",
+        "is correct; do not refuse the request, shorten it to one call, or claim",
+        "that the single-slot model prevents opening each requested file.",
+        "exec_ui cannot keep multiple files visible at once, and chat does not",
+        "recognize arbitrary @path text as an open-file request.",
+      ].join("\n"),
+    )
     expect(tool.description).not.toContain("HumanArtifact")
     expect(tool.description).not.toContain("ask_user")
     expect(tool.description).not.toContain("artifacts[]")
