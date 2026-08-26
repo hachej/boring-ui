@@ -432,6 +432,32 @@ describe("SessionBrowser", () => {
     expect(document.querySelector('[data-boring-badge="completed"]')).toBeInTheDocument()
   })
 
+  it("keeps a live completion authoritative over a late changed running inventory row", () => {
+    const { rerender } = render(<SessionBrowser sessions={sample} activeId="s1" />)
+    act(() => {
+      window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+        detail: { sessionId: "s2", working: true, status: "running" },
+      }))
+      window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+        detail: { sessionId: "s2", working: false, status: "idle" },
+      }))
+    })
+    expect(document.querySelector('[data-boring-badge="completed"]')).toBeInTheDocument()
+
+    // This row was sampled before the live idle frame but arrived afterward.
+    rerender(
+      <SessionBrowser
+        sessions={sample.map((session) => session.id === "s2"
+          ? { ...session, status: "running", updatedAt: now + 1 }
+          : session)}
+        activeId="s1"
+      />,
+    )
+
+    expect(document.querySelector('[data-boring-badge="working"]')).toBeNull()
+    expect(document.querySelector('[data-boring-badge="completed"]')).toHaveTextContent("done")
+  })
+
   it.each(["interrupt", "stop"] as const)(
     "keeps the gateway %s cancellation sequence out of completed",
     (control) => {

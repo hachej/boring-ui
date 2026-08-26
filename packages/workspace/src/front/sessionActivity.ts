@@ -93,6 +93,8 @@ interface ScopedSessionActivityModel {
   inventoryFingerprints: ReadonlyMap<string, string>
   /** Inventory fingerprint seen when the latest live event for this key arrived. */
   liveInventoryFingerprints: ReadonlyMap<string, string | undefined>
+  /** Sessions whose explicit live statuses supersede inventory for this source lifetime. */
+  authoritativeLiveKeys: ReadonlySet<string>
   working: ReadonlySet<string>
   terminal: ReadonlyMap<string, TerminalEntry>
 }
@@ -155,6 +157,7 @@ function createScopedModel(
     inventorySnapshot,
     inventoryFingerprints: new Map(),
     liveInventoryFingerprints: new Map(),
+    authoritativeLiveKeys: new Set(),
     working: new Set(),
     terminal: new Map(),
   }
@@ -183,8 +186,12 @@ function reconcileInventory(
     const key = workspaceSessionKeyFor(session)
     const fingerprint = inventoryFingerprint(session)
     fingerprints.set(key, fingerprint)
-    // A live frame that arrived after this exact inventory row remains newer,
-    // even when an unrelated row causes the inventory array to refresh.
+    // Explicit live statuses remain authoritative for this session/source
+    // lifetime. An inventory response may have been sampled before the live
+    // frame even when its row fingerprint differs from the prior inventory.
+    if (model.authoritativeLiveKeys.has(key)) continue
+    // Outcome-less panel events remain newer than the exact inventory row they
+    // observed, but a changed row can settle their unknown outcome.
     if (liveFingerprints.has(key) && liveFingerprints.get(key) === fingerprint) continue
     liveFingerprints.delete(key)
     if (session.status) next = applyActivity(next, key, session.status, completedVisibleMs)
@@ -284,17 +291,25 @@ export function useSessionActivityStates(
           completedVisibleMs,
         )
         const liveFingerprints = new Map(scoped.liveInventoryFingerprints)
-        liveFingerprints.set(key, scoped.inventoryFingerprints.get(key))
         if (status) {
+          const authoritativeLiveKeys = new Set(scoped.authoritativeLiveKeys)
+          if (detail.status === status) {
+            authoritativeLiveKeys.add(key)
+            liveFingerprints.delete(key)
+          } else {
+            liveFingerprints.set(key, scoped.inventoryFingerprints.get(key))
+          }
           return {
             ...applyActivity(scoped, key, status, completedVisibleMs),
             liveInventoryFingerprints: liveFingerprints,
+            authoritativeLiveKeys,
           }
         }
         if (detail.working !== false || !scoped.working.has(key)) return scoped
         // A panel can report that streaming stopped but cannot identify the
         // outcome. Clear working atomically, but wait for an explicit live or
         // inventory outcome before showing any terminal badge.
+        liveFingerprints.set(key, scoped.inventoryFingerprints.get(key))
         const working = new Set(scoped.working)
         working.delete(key)
         return { ...scoped, working, liveInventoryFingerprints: liveFingerprints }
