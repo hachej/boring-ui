@@ -28,6 +28,10 @@
       "types": "./dist/front/index.d.ts",
       "import": "./dist/front/index.js"
     },
+    "./front/descriptor": {
+      "types": "./dist/front/descriptor.d.ts",
+      "import": "./dist/front/descriptor.js"
+    },
     "./server": {
       "types": "./dist/server/index.d.ts",
       "import": "./dist/server/index.js"
@@ -44,7 +48,7 @@
   },
   "sideEffects": false,
   "scripts": {
-    "build": "tsup",
+    "build": "tsup --config tsup.config.ts && tsup --config tsup.descriptor.config.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --no-file-parallelism",
     "lint": "pnpm run typecheck",

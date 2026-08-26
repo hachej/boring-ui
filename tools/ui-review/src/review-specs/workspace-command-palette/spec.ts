@@ -1,7 +1,7 @@
 import { createRequire } from "node:module"
 import { resolve } from "node:path"
 import { expect } from "@playwright/test"
-import type { UiReviewSpec } from "../../core/reviewSpec"
+import type { UiReviewExplorationState, UiReviewSpec } from "../../core/reviewSpec"
 import type { UiReviewViewport } from "../../core/contracts"
 import { hexadecimalHammingDistance } from "../../core/imageHash"
 import { observeBrowserDocument } from "../../core/browserObservation"
@@ -126,15 +126,20 @@ export const workspaceCommandPaletteSpec: UiReviewSpec = {
       const waits = dialogStates
         .filter((state) => state.action === "Wait")
         .sort((left, right) => left.ordinal - right.ordinal)
+      const replayableDialogActions = dialogStates
+        .filter((state) => state.action !== "Wait")
+        .sort((left, right) => left.ordinal - right.ordinal)
       // DOM visibility can precede paint. Prefer the latest replayable Wait
       // whose screenshot differs from a prior post-bootstrap closed state;
-      // encoded PNG byte size is not a monotonic paint signal.
+      // encoded PNG byte size is not a monotonic paint signal. If the following
+      // Wait was deduplicated after a faster paint, fall back to the latest
+      // genuinely painted replayable dialog action state.
       // The pHash threshold is viewport-aware: the whole-viewport hash is
       // calibrated against desktop, where the palette covers a large share of
       // the frame. At compact the dialog is deliberately small and top-anchored,
       // so opening it legitimately moves the full-page pHash by only a few bits
       // — a strict >4 would reject every genuinely painted mobile state.
-      const painted = [...waits].reverse().find((state) => {
+      const hasGenuinelyPaintedDialog = (state: UiReviewExplorationState): boolean => {
         const closed = ordered.filter((candidate) => {
           const palette = candidate.normalizedState.palette as Record<string, unknown> | undefined
           return (candidate.ordinal > 2 || candidate.action === "Wait")
@@ -147,8 +152,9 @@ export const workspaceCommandPaletteSpec: UiReviewSpec = {
           && typeof state.screenshotPHash === "string"
           && typeof closed.screenshotPHash === "string"
           && hexadecimalHammingDistance(state.screenshotPHash, closed.screenshotPHash) >= minimumPHashDistance
-      })
-      return painted
+      }
+      return [...waits].reverse().find(hasGenuinelyPaintedDialog)
+        ?? [...replayableDialogActions].reverse().find(hasGenuinelyPaintedDialog)
     },
   },
 }

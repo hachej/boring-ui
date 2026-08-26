@@ -114,6 +114,15 @@ Session is the runtime implementation it recasts (A2a per-session record = the
 thread's record). The V2 doc's warning stands: a Thread is not a Pi session,
 transcript, or tab — it *owns* one record and many Runs.
 
+> **Amendment — 2026-08-24 (owner ruling, tracked in #1399; full text in
+> RECONCILIATION.md §7):** a Thread may span multiple Seats, projected as one
+> timeline; one Thread per job. Mechanism = per-Run `seatId` on the existing
+> trajectory spine (Q3), no new machinery. Named **multi-seat Thread / Job
+> Thread**, never "channel" (channel stays reserved for transport/ingress —
+> C5, Track C, Slack/CLI). Does not activate A2A loopback or a shared-runtime
+> room: v0 is projection-based, an orchestrator Seat relaying between
+> per-agent sessions as a client of each; agents never call agents.
+
 **R-d. "RuntimeFilesystem" rename** (V2 §17): correct and cheap — the agent
 package's internal `Workspace` type is filesystem/execution state and collides
 with the product noun. Do at A1 (types extraction) where the rename is free.

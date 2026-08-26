@@ -181,6 +181,36 @@ export type CoreWorkspacePluginEntry = CoreWorkspaceAgentServerPlugin | CoreWork
 
 type CoreWorkspaceBridgeExtraTool = AgentTool
 
+function canonicalToolContractValue(value: unknown, field: string): string {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return JSON.stringify(value)
+  if (typeof value === 'number' && Number.isFinite(value)) return JSON.stringify(value)
+  if (Array.isArray(value)) {
+    return `[${value.map((entry, index) => canonicalToolContractValue(entry, `${field}[${index}]`)).join(',')}]`
+  }
+  if (!value || typeof value !== 'object' || value instanceof URL) {
+    throw new Error(`${field} contains an opaque value without a stable tool contract`)
+  }
+  const prototype = Object.getPrototypeOf(value)
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new Error(`${field} contains an opaque value without a stable tool contract`)
+  }
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, entry]) => entry !== undefined)
+    .sort(([left], [right]) => left.localeCompare(right))
+  return `{${entries.map(([key, entry]) => (
+    `${JSON.stringify(key)}:${canonicalToolContractValue(entry, `${field}.${key}`)}`
+  )).join(',')}}`
+}
+
+function addressedToolContractDigests(tools: readonly AgentTool[]): string[] {
+  return tools.map((tool) => {
+    const { execute: _execute, ...contract } = tool
+    return createHash('sha256')
+      .update(canonicalToolContractValue(contract, `agentTool.${tool.name}`))
+      .digest('hex')
+  }).sort()
+}
+
 export interface CoreWorkspaceBridgeExtraToolsContext {
   workspaceId: string
   workspaceRoot: string
@@ -240,6 +270,19 @@ export interface CreateCoreWorkspaceAgentServerOptions {
   }) => Readonly<{ identity: string; loadSystemPromptAppend?: () => Promise<string | undefined> }>
     | Promise<Readonly<{ identity: string; loadSystemPromptAppend?: () => Promise<string | undefined> }>>
   getExtraTools?: (ctx: {
+    workspaceId: string
+    workspaceRoot: string
+    runtimeMode: RuntimeModeId
+    workspaceFsCapability?: RuntimeModeAdapter['workspaceFsCapability']
+    authSubject?: string
+  }) => AgentTool[] | Promise<AgentTool[]>
+  /**
+   * Trusted host tools granted to one addressed agent type only. These are
+   * composed after Host authorization, so a fleet sibling never receives or
+   * advertises another agent's capabilities.
+   */
+  getAgentExtraTools?: (ctx: {
+    agentTypeId: string
     workspaceId: string
     workspaceRoot: string
     runtimeMode: RuntimeModeId
@@ -1447,7 +1490,7 @@ export async function createCoreWorkspaceAgentServer(
     const identity = createResolvedRuntimeScopeIdentity({
       artifacts: pluginArtifacts,
       validatedConfig: piIdentity,
-      grants: options.getExtraTools ? [userId] : [],
+      grants: options.getExtraTools || options.getAgentExtraTools ? [userId] : [],
       placementClassIdentity: runtimeModeAdapter.id,
       isolationMode: runtimeModeAdapter.id,
       toolContractDigests: extraTools.map((tool) => tool.name),
@@ -1611,8 +1654,42 @@ export async function createCoreWorkspaceAgentServer(
     async resolveAuthorizedEnvironmentScope({ authorizedScope }) {
       return scopeAuthority.resolveEnvironment(authorizedScope)
     },
-    async resolveAuthorizedAgentRuntimeScope({ authorizedScope }) {
-      return scopeAuthority.resolveAgentRuntime(authorizedScope)
+    async resolveAuthorizedAgentRuntimeScope({
+      authorizedScope,
+      verifiedClaim,
+      agentTypeId,
+      environment,
+    }) {
+      const runtime = scopeAuthority.resolveAgentRuntime(authorizedScope)
+      if (!options.getAgentExtraTools) return runtime
+
+      const agentTools = await options.getAgentExtraTools({
+        agentTypeId,
+        workspaceId: verifiedClaim.workspaceScopeId,
+        workspaceRoot: environment.workspaceRoot,
+        runtimeMode: runtimeModeAdapter.id,
+        workspaceFsCapability: runtimeModeAdapter.workspaceFsCapability,
+        authSubject: verifiedClaim.authSubjectId,
+      })
+      const extraTools = [...(runtime.extraTools ?? []), ...agentTools]
+      const toolContractDigests = addressedToolContractDigests(agentTools)
+      const scopedToolIdentity = JSON.stringify({
+        baseIdentity: runtime.identity,
+        agentTypeId,
+        toolContractDigests,
+      })
+      const identity = createHash('sha256').update(scopedToolIdentity).digest('hex')
+      const physicalBindingIdentity = createHash('sha256').update(JSON.stringify({
+        basePhysicalBindingIdentity: runtime.physicalBindingIdentity ?? runtime.identity,
+        agentTypeId,
+        toolContractDigests,
+      })).digest('hex')
+      const resourceInputDigest = `sha256:${createHash('sha256').update(JSON.stringify({
+        baseResourceInputDigest: runtime.resourceInputDigest ?? null,
+        agentTypeId,
+        toolContractDigests,
+      })).digest('hex')}`
+      return { ...runtime, identity, physicalBindingIdentity, resourceInputDigest, extraTools }
     },
   })
 

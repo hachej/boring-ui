@@ -196,6 +196,7 @@ const WORKSPACE_PLUGIN_SINGLETON_EXPORTS = [
   "captureFrontPlugin",
   "createCapturingBoringFrontAPI",
   "definePlugin",
+  "postUiCommand",
   "validateBoringPluginManifest",
   "isSafePluginRelativePath",
   "isValidBoringPluginId",
