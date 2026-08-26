@@ -1,20 +1,25 @@
 ---
 github: https://github.com/hachej/boring-ui/issues/806
 issue: 806
-state: ready-for-human
+state: historical
 track: owner
 flag: not-needed
-updated: 2026-07-18
+updated: 2026-08-26
 ---
 
 # gh-806 Authenticated external MCP for a typed Seneca workspace
 
-## Authority and planning state
+## Historical authority notice
 
-This is the canonical remaining-work plan for issue #806. It recuts only
-Decision 26 **Step 1B**: authenticated external MCP ingress to the same
-domain-routed, membership-authorized workspace and sole server-selected agent
-that the web surface uses. The named consumer is **Seneca**.
+This is the historical Decision-26 Step-1B plan. It is retained as evidence and
+is not dispatch authority. The canonical inbound MCP Access plan is
+[`external-workspace-mcp-plan.md`](external-workspace-mcp-plan.md), coordinated
+with the outbound Composio Connector plan at
+[`../900/plan.md`](../900/plan.md) by the 2026-08-26 direction amendment.
+
+The historical scope below recut authenticated external MCP ingress to one
+server-selected Agent. Decision 28 and the new canonical plan supersede that
+shape; none of this file's readiness or dependency claims may dispatch work.
 
 Shared authority remains:
 
