@@ -440,7 +440,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
           const receipt = await currentBinding.composition.service.interrupt(
             context(current, requestId), input.ref.sessionId, payload,
           )
-          if (queueAction !== 'resume' && this.runtime.activity.get(current.workspaceScopeId, input.ref) === 'running') {
+          if (this.runtime.activity.get(current.workspaceScopeId, input.ref) === 'running') {
             this.runtime.activity.set(current.workspaceScopeId, input.ref, 'aborting')
           }
           return receipt

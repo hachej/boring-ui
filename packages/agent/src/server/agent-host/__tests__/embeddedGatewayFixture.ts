@@ -133,9 +133,9 @@ class FakeService implements PiChatSessionService {
     return { accepted: true as const, cursor: event.seq, cleared: before - record.queue.length }
   }
 
-  async interrupt(_ctx: PiSessionRequestContext, sessionId: string, payload: { queueAction?: 'hold' | 'resume' }) {
+  async interrupt(_ctx: PiSessionRequestContext, sessionId: string) {
     const record = this.get(sessionId)
-    if (payload.queueAction !== 'resume' && record.status === 'running') record.status = 'aborting'
+    if (record.status === 'running') record.status = 'aborting'
     return { accepted: true as const, cursor: record.seq }
   }
 

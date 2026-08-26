@@ -84,7 +84,6 @@ const EMPTY_BLOCKERS: never[] = []
 /** Stable id for the notice that surfaces a rejected run (so re-rejections replace
  * it rather than stacking, and the next admit can retract it). */
 const RUN_REJECTED_NOTICE_ID = 'run-rejected'
-const RESUME_QUEUED_ERROR_PREFIX = 'resume-queued-error:'
 
 export type { ComposerBlocker, ComposerBlockerAction, PanelNotice }
 
@@ -397,9 +396,8 @@ export function PiChatPanel<
   const draftRef = useRef(draft)
   draftRef.current = draft
   const queueCoordinationKeysRef = useRef(new Map<string, object>())
-  const [resumeQueuedPendingSessionIds, setResumeQueuedPendingSessionIds] = useState<Set<string>>(() => new Set())
-  const [resumeQueuedErrorsBySessionId, setResumeQueuedErrorsBySessionId] = useState<Map<string, PanelNotice>>(() => new Map())
-  const resumeQueuedInFlightRef = useRef(new Map<string, Promise<unknown>>())
+  const [resumeQueuedPending, setResumeQueuedPending] = useState(false)
+  const resumeQueuedInFlightRef = useRef<Promise<unknown> | undefined>(undefined)
   const initialDraftGuard = useRef(new InitialDraftAutoSubmitGuard())
   const pendingAutoSubmitSettleRef = useRef<string | undefined>(undefined)
   const acceptedAutoSubmitSettleRef = useRef<string | undefined>(undefined)
@@ -475,8 +473,6 @@ export function PiChatPanel<
   )
 
   const activeChatSessionId = selectedChatState?.sessionId
-  const resumeQueuedPending = Boolean(activeChatSessionId && resumeQueuedPendingSessionIds.has(activeChatSessionId))
-  const resumeQueuedError = activeChatSessionId ? resumeQueuedErrorsBySessionId.get(activeChatSessionId) : undefined
   const warmupNotice = composerNoticeForWarmup(workspaceWarmupStatus)
   const runtimeDependenciesNotice = composerNoticeForRuntimeDependencies(workspaceWarmupStatus)
   const workspaceWarmupBlocked = Boolean(warmupNotice)
@@ -523,7 +519,7 @@ export function PiChatPanel<
           dismissible: true,
         }]
       : []
-    const combined = [...fromState, ...sessionNotice, ...largeStateNotice, ...(resumeQueuedError ? [resumeQueuedError] : []), ...localNotices]
+    const combined = [...fromState, ...sessionNotice, ...largeStateNotice, ...localNotices]
       .filter((notice) => !dismissedNoticeIds.has(notice.id))
     // A terminal chat error (history failed to load, no messages present)
     // already explains why the agent looks unreachable. Showing
@@ -532,7 +528,7 @@ export function PiChatPanel<
     // but only when there's genuinely no history, matching the gate in
     // RuntimeNotices/PiConversationSurface (see terminalChatErrors.ts).
     return filterCompetingNoiseNotices(combined, messages.length === 0)
-  }, [debug, debugState?.largeStateWarning, dismissedNoticeIds, localNotices, messages.length, resumeQueuedError, selectedChatState, sessionsError])
+  }, [debug, debugState?.largeStateWarning, dismissedNoticeIds, localNotices, messages.length, selectedChatState, sessionsError])
 
   const addLocalNotice = useCallback((notice: PanelNotice) => {
     setLocalNotices((previous) => {
@@ -544,15 +540,6 @@ export function PiChatPanel<
   const clearLocalNotice = useCallback((id: string) => {
     setDismissedNoticeIds((previous) => new Set(previous).add(id))
     setLocalNotices((previous) => previous.filter((notice) => notice.id !== id))
-    if (id.startsWith(RESUME_QUEUED_ERROR_PREFIX)) {
-      const sessionId = id.slice(RESUME_QUEUED_ERROR_PREFIX.length)
-      setResumeQueuedErrorsBySessionId((previous) => {
-        if (!previous.has(sessionId)) return previous
-        const next = new Map(previous)
-        next.delete(sessionId)
-        return next
-      })
-    }
   }, [])
 
   // Remove a notice so it can be shown again later (unlike clearLocalNotice, which
@@ -991,37 +978,18 @@ export function PiChatPanel<
   }, [addLocalNotice, policy])
 
   const resumeQueued = useCallback(() => {
-    const sessionId = activeChatSessionId
-    if (!policy || !sessionId || resumeQueuedInFlightRef.current.has(sessionId)) return
-    const errorNoticeId = `${RESUME_QUEUED_ERROR_PREFIX}${sessionId}`
-    dropLocalNotice(errorNoticeId)
-    setResumeQueuedErrorsBySessionId((previous) => {
-      if (!previous.has(sessionId)) return previous
-      const next = new Map(previous)
-      next.delete(sessionId)
-      return next
-    })
-    setResumeQueuedPendingSessionIds((previous) => new Set(previous).add(sessionId))
+    if (!policy || resumeQueuedInFlightRef.current) return
+    setResumeQueuedPending(true)
     const run = policy.resumeQueued()
-    resumeQueuedInFlightRef.current.set(sessionId, run)
+    resumeQueuedInFlightRef.current = run
     void run.catch((error) => {
-      setResumeQueuedErrorsBySessionId((previous) => new Map(previous).set(sessionId, {
-        id: errorNoticeId,
-        level: 'error',
-        text: errorMessage(error, 'Could not resume queued follow-ups.'),
-        dismissible: true,
-      }))
+      addLocalNotice({ id: 'resume-queued-error', level: 'error', text: errorMessage(error, 'Could not resume queued follow-ups.'), dismissible: true })
     }).finally(() => {
-      if (resumeQueuedInFlightRef.current.get(sessionId) !== run) return
-      resumeQueuedInFlightRef.current.delete(sessionId)
-      setResumeQueuedPendingSessionIds((previous) => {
-        if (!previous.has(sessionId)) return previous
-        const next = new Set(previous)
-        next.delete(sessionId)
-        return next
-      })
+      if (resumeQueuedInFlightRef.current !== run) return
+      resumeQueuedInFlightRef.current = undefined
+      setResumeQueuedPending(false)
     })
-  }, [activeChatSessionId, dropLocalNotice, policy])
+  }, [addLocalNotice, policy])
 
   useEffect(() => {
     setPluginUpdateState(null)
