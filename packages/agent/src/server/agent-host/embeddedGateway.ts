@@ -6,7 +6,6 @@ import {
   type AgentGateway,
   type AgentGatewayErrorDTO,
   type AgentSessionActivity,
-  type AgentSessionArchiveFilter,
   type AgentSessionConnection,
   type AgentSessionEvent,
   type AgentSessionRef,
@@ -15,6 +14,8 @@ import {
   type AuthorizedAgentScope,
   type IdempotentAgentSend,
   type JsonValue,
+  type SessionArchiveFilter,
+  type SessionOrderTuple,
   type VerifiedAgentScopeClaim,
 } from '../../shared/index'
 import type { PiChatEvent, PiChatSnapshot } from '../../shared/chat'
@@ -110,27 +111,22 @@ function summaryFromLegacy(
   }
 }
 
-function sessionOrderKey(summary: AgentSessionSummary) {
-  return {
-    updatedAtMs: summary.updatedAt,
-    agentTypeId: summary.ref.agentTypeId,
-    sessionId: summary.ref.sessionId,
-  }
+function sessionOrderTuple(summary: AgentSessionSummary): SessionOrderTuple {
+  return [summary.updatedAt, summary.ref.agentTypeId, summary.ref.sessionId]
 }
 
 function compareSessions(left: AgentSessionSummary, right: AgentSessionSummary): number {
-  return compareSessionOrder(sessionOrderKey(left), sessionOrderKey(right))
+  return compareSessionOrder(sessionOrderTuple(left), sessionOrderTuple(right))
 }
 
 function isAfterCursor(
   summary: AgentSessionSummary,
   cursor: { updatedAt: number; agentTypeId: string; sessionId: string },
 ): boolean {
-  return compareSessionOrder(sessionOrderKey(summary), {
-    updatedAtMs: cursor.updatedAt,
-    agentTypeId: cursor.agentTypeId,
-    sessionId: cursor.sessionId,
-  }) > 0
+  return compareSessionOrder(
+    sessionOrderTuple(summary),
+    [cursor.updatedAt, cursor.agentTypeId, cursor.sessionId],
+  ) > 0
 }
 
 export class EmbeddedAgentGateway implements AgentGateway {
@@ -267,7 +263,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
     if (input.agentTypeId && !this.runtime.compiledById.has(input.agentTypeId)) {
       throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN, 'agent type is not available')
     }
-    const archivedFilter: AgentSessionArchiveFilter = input.archived ?? 'all'
+    const archivedFilter: SessionArchiveFilter = input.archived ?? 'all'
     const cursor = input.cursor
       ? this.decodeCursor(input.cursor, claim.workspaceScopeId, input.agentTypeId, normalizedLimit, archivedFilter)
       : { depth: 0, after: undefined }
@@ -585,8 +581,10 @@ export class EmbeddedAgentGateway implements AgentGateway {
     if (!runtimeScope) {
       throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND, 'session does not exist')
     }
+    const setArchived = this.runtime.setSessionArchived
     return await this.sessionEffect(input.ref, claim, 'session.archive', input.requestId, { archived: input.archived }, async () => {
-      const updated = await this.runtime.setSessionArchived(
+      if (!setArchived) throw new TypeError('session archive capability was not classified')
+      const updated = await setArchived(
         input.ref.agentTypeId,
         input.scope,
         claim,
@@ -594,6 +592,16 @@ export class EmbeddedAgentGateway implements AgentGateway {
         input.archived,
       )
       return summaryFromLegacy(input.ref, updated, this.runtime.activity.get(claim.workspaceScopeId, input.ref))
+    }, {
+      classify: async () => setArchived
+        ? { kind: 'execute' }
+        : {
+            kind: 'reject',
+            error: new AgentGatewayError(
+              AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
+              'session repository does not support archive',
+            ).toJSON(),
+          },
     }) as AgentSessionSummary
   }
 
@@ -958,7 +966,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
     workspaceScopeId: string,
     agentTypeId: string | undefined,
     limit: number,
-    archived: AgentSessionArchiveFilter,
+    archived: SessionArchiveFilter,
     depth: number,
     last: AgentSessionSummary,
   ): string {
@@ -982,7 +990,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
     workspaceScopeId: string,
     agentTypeId: string | undefined,
     limit: number,
-    archived: AgentSessionArchiveFilter,
+    archived: SessionArchiveFilter,
   ): { depth: number; after: { updatedAt: number; agentTypeId: string; sessionId: string } } {
     try {
       const [encoded, signature, extra] = cursor.split('.')

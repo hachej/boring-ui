@@ -268,8 +268,8 @@ export class PiSessionStore implements SessionStore {
     // order, so one could fall outside the requested prefix and then fail
     // the gateway's cursor filter forever — a session that never appears.
     visibleFiles.sort((a, b) => compareSessionOrder(
-      { updatedAtMs: a.sortMtimeMs, agentTypeId: "", sessionId: a.sortId },
-      { updatedAtMs: b.sortMtimeMs, agentTypeId: "", sessionId: b.sortId },
+      [a.sortMtimeMs, "", a.sortId],
+      [b.sortMtimeMs, "", b.sortId],
     ));
 
     const { offset, limit } = options;

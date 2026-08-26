@@ -20,6 +20,7 @@ interface EmbeddedGatewayFixture extends GatewayConformanceFixture {
     release(): void
   }
   rejectNextPrompt(error: Error): void
+  disableArchiveCapability(): void
 }
 
 interface RecordValue {
@@ -319,6 +320,9 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
     },
     rejectNextPrompt(error) {
       for (const service of services.values()) service.nextPromptError = error
+    },
+    disableArchiveCapability() {
+      Reflect.deleteProperty(runtime, 'setSessionArchived')
     },
     modelLoopStarts(ref) {
       for (const service of services.values()) {

@@ -415,7 +415,7 @@ describe('equal-updatedAt tiebreak (sessions must never disappear)', () => {
     // every page is a single row, so any prefix/order disagreement surfaces
     // immediately as a gap, a repeat, or a wrong first row.
     const UNDERSCORE_IDS = ['b_a', 'a_z', 'aa', 'zz_9']
-    // localeCompare over full ids: 'a_z' < 'aa' ('_' < 'a'), then 'b_a', 'zz_9'.
+    // Canonical code-unit order over full ids: 'a_z' < 'aa' ('_' < 'a'), then 'b_a', 'zz_9'.
     const EXPECTED = ['a_z', 'aa', 'b_a', 'zz_9']
 
     const sessionRoot = await temporaryRoot()

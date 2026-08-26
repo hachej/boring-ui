@@ -1,21 +1,21 @@
 /** Native Pi/session IDs are path-safe segments; dots may only separate non-empty segments. */
 export const SAFE_NATIVE_SESSION_ID = /^[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)*$/
 
-export interface SessionOrderKey {
-  readonly updatedAtMs: number
-  readonly agentTypeId: string
-  readonly sessionId: string
-}
+export type SessionOrderTuple = readonly [
+  updatedAtMs: number,
+  agentTypeId: string,
+  sessionId: string,
+]
 
 /**
  * Canonical session inventory order: newest first, then UTF-16 code-unit
  * identity order. Cursor boundaries and every bounded store prefix must use
- * this exact comparator; locale-sensitive ordering is not stable or portable.
+ * this exact tuple comparator; locale-sensitive ordering is not stable or portable.
  */
-export function compareSessionOrder(left: SessionOrderKey, right: SessionOrderKey): number {
-  return right.updatedAtMs - left.updatedAtMs
-    || compareSessionIdentity(left.agentTypeId, right.agentTypeId)
-    || compareSessionIdentity(left.sessionId, right.sessionId)
+export function compareSessionOrder(left: SessionOrderTuple, right: SessionOrderTuple): number {
+  return right[0] - left[0]
+    || compareSessionIdentity(left[1], right[1])
+    || compareSessionIdentity(left[2], right[2])
 }
 
 function compareSessionIdentity(left: string, right: string): number {
@@ -27,6 +27,8 @@ export interface SessionStore {
   create(ctx: SessionCtx, init?: { title?: string }): Promise<SessionSummary>
   /** Native Pi transcripts can append a session_info title without a wrapper. */
   rename?(ctx: SessionCtx, sessionId: string, title: string): Promise<SessionSummary>
+  /** Optional visibility capability; implementations must not alias it to delete. */
+  setArchived?(ctx: SessionCtx, sessionId: string, archived: boolean): Promise<SessionSummary>
   load(ctx: SessionCtx, sessionId: string): Promise<SessionDetail>
   delete(ctx: SessionCtx, sessionId: string): Promise<void>
 }

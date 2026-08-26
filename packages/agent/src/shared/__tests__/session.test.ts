@@ -14,6 +14,7 @@ test('SessionStore contract', () => {
   expectTypeOf<SessionStore>().toHaveProperty('load')
   expectTypeOf<SessionStore>().toHaveProperty('delete')
   expectTypeOf<SessionStore>().toHaveProperty('rename')
+  expectTypeOf<SessionStore>().toHaveProperty('setArchived')
 
   expectTypeOf<SessionStore['list']>().parameters.toEqualTypeOf<[ctx: SessionCtx, options?: SessionListOptions]>()
   expectTypeOf<SessionStore['list']>().returns.toEqualTypeOf<Promise<SessionSummary[]>>()
@@ -24,6 +25,10 @@ test('SessionStore contract', () => {
     [ctx: SessionCtx, sessionId: string]
   >()
   expectTypeOf<SessionStore['load']>().returns.toEqualTypeOf<Promise<SessionDetail>>()
+  expectTypeOf<NonNullable<SessionStore['setArchived']>>().parameters.toEqualTypeOf<
+    [ctx: SessionCtx, sessionId: string, archived: boolean]
+  >()
+  expectTypeOf<NonNullable<SessionStore['setArchived']>>().returns.toEqualTypeOf<Promise<SessionSummary>>()
   expectTypeOf<SessionStore['delete']>().returns.toEqualTypeOf<Promise<void>>()
 })
 

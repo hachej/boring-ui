@@ -88,9 +88,23 @@ describe('usePiSessions addressed Agent transport', () => {
     expect(result.current.sessions.map((session) => `${session.id}:${session.archived ? 'archived' : 'active'}`)).toEqual(['x:archived', 'y:archived'])
     expect(archivedGets).toBe(2)
 
+    // A second tab deletes y; refreshing both already-loaded filters removes
+    // its stale archived row instead of preserving a merged pager snapshot.
     archived = [row('x', true)]
     await act(async () => { await result.current.refresh({ background: true }) })
     expect(result.current.sessions.map((session) => session.id)).toEqual(['x'])
+
+    // The other tab then restores x. Active and archived pages are replaced
+    // as one filter-keyed refresh, so the row crosses the boundary exactly once.
+    active = [row('x', false)]
+    archived = []
+    await act(async () => { await result.current.refresh({ background: true }) })
+    expect(result.current.sessions.map((session) => `${session.id}:${session.archived ? 'archived' : 'active'}`)).toEqual(['x:active'])
+
+    // Finally an external delete must retire the active page's prior row too.
+    active = []
+    await act(async () => { await result.current.refresh({ background: true }) })
+    expect(result.current.sessions).toEqual([])
   })
 
   test('fences older list responses against successful archive mutations', async () => {

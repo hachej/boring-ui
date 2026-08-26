@@ -65,7 +65,7 @@ export interface AgentHostRuntime {
     claim: VerifiedAgentScopeClaim,
     options?: import('../../shared/session').SessionListOptions,
   ): Promise<readonly import('../../shared/session').SessionSummary[]>
-  setSessionArchived(
+  setSessionArchived?(
     agentTypeId: string,
     scope: AuthorizedAgentScope,
     claim: VerifiedAgentScopeClaim,

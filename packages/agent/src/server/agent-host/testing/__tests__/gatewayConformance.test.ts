@@ -47,7 +47,7 @@ class InMemoryAgentRequestLedger implements AgentRequestLedger {
     const current = this.records.get(identity)
     if (current !== undefined) {
       if (current.digest !== digest) {
-        throw new AgentGatewayError('AGENT_REQUEST_CONFLICT', 'request id reused with a different payload')
+        throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT, 'request id reused with a different payload')
       }
       return { ownership: 'existing', record: current }
     }
@@ -834,15 +834,15 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
 
   private compareSessions(left: FakeSession, right: FakeSession): number {
     return compareSessionOrder(
-      { updatedAtMs: left.updatedAt, agentTypeId: left.ref.agentTypeId, sessionId: left.ref.sessionId },
-      { updatedAtMs: right.updatedAt, agentTypeId: right.ref.agentTypeId, sessionId: right.ref.sessionId },
+      [left.updatedAt, left.ref.agentTypeId, left.ref.sessionId],
+      [right.updatedAt, right.ref.agentTypeId, right.ref.sessionId],
     )
   }
 
   private compareTuple(session: FakeSession, tuple: readonly [number, string, string]): number {
     return compareSessionOrder(
-      { updatedAtMs: session.updatedAt, agentTypeId: session.ref.agentTypeId, sessionId: session.ref.sessionId },
-      { updatedAtMs: tuple[0], agentTypeId: tuple[1], sessionId: tuple[2] },
+      [session.updatedAt, session.ref.agentTypeId, session.ref.sessionId],
+      tuple,
     )
   }
 

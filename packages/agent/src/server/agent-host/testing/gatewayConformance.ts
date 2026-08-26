@@ -609,8 +609,8 @@ export function gatewayConformance(options: GatewayConformanceOptions): void {
 
       const all = await fixture.gateway.listSessions({ scope: scopeA, limit: 20 })
       expect(all.sessions).toEqual([...all.sessions].sort((left, right) => compareSessionOrder(
-        { updatedAtMs: left.updatedAt, agentTypeId: left.ref.agentTypeId, sessionId: left.ref.sessionId },
-        { updatedAtMs: right.updatedAt, agentTypeId: right.ref.agentTypeId, sessionId: right.ref.sessionId },
+        [left.updatedAt, left.ref.agentTypeId, left.ref.sessionId],
+        [right.updatedAt, right.ref.agentTypeId, right.ref.sessionId],
       )))
       expect(all.sessions.map((session) => session.ref)).toEqual([alphaA, alphaC, beta])
     })

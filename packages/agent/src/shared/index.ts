@@ -76,7 +76,7 @@ export type { CatalogDeps, ToolCatalog } from './catalog'
 export { SAFE_NATIVE_SESSION_ID, compareSessionOrder } from './session'
 export { safeRandomUUID } from './random-id'
 export type {
-  SessionOrderKey,
+  SessionOrderTuple,
   SessionStore,
   SessionCtx,
   SessionArchiveFilter,
@@ -202,7 +202,6 @@ export type {
   AgentScopeVerifier,
   AgentSendReceipt,
   AgentSessionActivity,
-  AgentSessionArchiveFilter,
   AgentSessionConnection,
   AgentSessionPage,
   AgentSessionRef,

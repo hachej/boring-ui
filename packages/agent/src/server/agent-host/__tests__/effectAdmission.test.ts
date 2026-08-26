@@ -92,6 +92,25 @@ describe('Embedded Agent Gateway strong effect admission', () => {
     await expect(fixture.gateway.listSessions({ scope, archived: 'active' })).resolves.toEqual({ sessions: [] })
   })
 
+  it('rejects and replays an unsupported archive capability without mutation', async () => {
+    const { fixture, scope, ref } = await createSession()
+    fixture.disableArchiveCapability()
+    const input = { scope, ref, requestId: 'archive-unsupported', archived: true }
+
+    await expect(fixture.gateway.setSessionArchived(input)).rejects.toMatchObject({
+      code: AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
+    })
+    await expect(fixture.gateway.setSessionArchived(input)).rejects.toMatchObject({
+      code: AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
+    })
+    await expect(fixture.gateway.setSessionArchived({ ...input, archived: false })).rejects.toMatchObject({
+      code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT,
+    })
+    await expect(fixture.gateway.listSessions({ scope, archived: 'active' })).resolves.toMatchObject({
+      sessions: [expect.objectContaining({ ref })],
+    })
+  })
+
   it('applies strong admission to prompt, follow-up, interrupt, stop, and queue clear', async () => {
     const { fixture, scope, ref } = await createSession()
     const connection = await fixture.gateway.connectSession({ scope, ref })

@@ -5,6 +5,7 @@ import type {
   QueuedUserMessage,
   ThinkingLevel,
 } from '../chat'
+import type { SessionArchiveFilter } from '../session'
 import type { AgentSessionEvent } from './events'
 
 export type WorkspaceScopeId = string
@@ -78,10 +79,8 @@ export interface AuthorizedAgentSessionQuery {
   readonly cursor?: string
   readonly limit?: number
   /** Defaults to `all`; archiving is a visibility flag, not a listing default. */
-  readonly archived?: AgentSessionArchiveFilter
+  readonly archived?: SessionArchiveFilter
 }
-
-export type AgentSessionArchiveFilter = 'active' | 'archived' | 'all'
 
 export type AgentSessionActivity = 'idle' | 'running' | 'aborting' | 'error'
 
