@@ -96,6 +96,16 @@ Honesty about open questions is part of the vision:
 The complete conflict record and how each was resolved:
 [`../plans/agent-runtime/alignment/CONTRADICTIONS.md`](../plans/agent-runtime/alignment/CONTRADICTIONS.md).
 
+**One thesis awaits ratification.** A full business/product framing — *one
+product family, three jobs: Operate / Distribute / Improve*, over a
+Distribution × Adaptivity matrix, with cross-cutting requirements
+(prompt-injection as untrusted data, deterministic domain kernels,
+immutable-revision promotion, `npx boring create`/`deploy`) — sits in
+`../plans/long-term/inbox/` (2026-08-17 synthesis set). Its promotion
+scaffold (`../plans/long-term/10-product.md` and siblings) was created and
+never filled. It is **not ratified** and this file does not adopt it;
+ratifying, reshaping, or rejecting it is an open owner decision.
+
 ## Who owns what
 
 | Question | Owner |
