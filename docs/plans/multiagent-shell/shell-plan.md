@@ -9,10 +9,10 @@ This plan **composes** three existing artifacts. It does not restate them.
 
 | Artifact | Owns | Where |
 |---|---|---|
-| **Job Thread v0 plan** — engine chapter, *in this PR* | The thread *engine*: `JobProjectionV0`, relay, handoff tool, receipts, seat boundary | sibling doc [`job-thread-v0-plan.md`](job-thread-v0-plan.md) + [gate doc](job-thread-v0-plan-review.html); own owner gate + bead epic `wt-391-forward-jfxd` |
+| **Job Thread v0 plan** — engine chapter, *in this PR* | The thread *engine*: `JobProjectionV0`, relay, handoff tool, receipts, seat boundary | sibling doc [`job-thread-plan.md`](job-thread-plan.md) + [gate doc](job-thread-plan-review.html); own owner gate + bead epic `wt-391-forward-jfxd` |
 | **#1355 Console plan** | The console *substrate*: session/project console rows, collections | `docs/issues/1355/plan.md` (branch `plan/1355-persistent-console`) |
 | **Ratified long-term pack** | Frozen ontology, invariants, decision register | `docs/plans/long-term/ratified/*` |
-| **Founder / Chief-of-Staff delta plan** — consumer chapter, *in this PR* | The flagship **consumer**: the first product persona the shell and Job Threads serve, and its D1–D6 capability deltas | sibling doc [`founder-chief-of-staff-delta-plan.md`](founder-chief-of-staff-delta-plan.md) — its own owner gate, its own slices F1–F3 |
+| **Founder / Chief-of-Staff delta plan** — consumer chapter, *in this PR* | The flagship **consumer**: the first product persona the shell and Job Threads serve, and its D1–D6 capability deltas | sibling doc [`chief-of-staff-delta.md`](chief-of-staff-delta.md) — its own owner gate, its own slices F1–F3 |
 
 **The consumer chapter's relationship.** The chief-of-staff agent is the first
 persona this substrate exists to serve: its D1–D6 deltas (cross-project
@@ -31,28 +31,9 @@ Anything already ruled elsewhere is cited, never re-decided. Where this plan
 needs something from another plan it says so as an explicit dependency
 (§5, §6).
 
-**Design lineage / prior art.** This shell is the sixth step of a chain, not a
-fresh idea. [PR #1357](https://github.com/hachej/boring-ui/pull/1357) (closed,
-`spike/1355-console-ux`) explored the persistent Console UX and contributed the
-earliest statement of a **persistent multi-project console surface** — one shell
-that outlives any single project or chat, which this plan's IA generalizes from
-"console over projects" to "shell over one workspace's five domains".
-`docs/issues/1355/plan.md` then gave that surface an architecture;
-[PR #1393](https://github.com/hachej/boring-ui/pull/1393)
-(`weekend/console-left-pane-variant`) refined its left pane into view modes with
-a single collapse level — the direct ancestor of L2a's nav chrome and flyout.
-The **design canvas** (owner-iterated Meridian Shell mockups) settled the visual
-language and the five-domain IA; `weekend/saas-hybrid-spike` then proved that IA
-was reachable by recomposing shipped components (§2); this plan turns the proof
-into a route.
-
-**Canonical consolidation (owner, 2026-08-26).** PR #1409 is *the* canonical
-multi-agent planning PR. The Job Thread v0 plan is its **engine chapter** and
-now lives here as a sibling doc — [`job-thread-v0-plan.md`](job-thread-v0-plan.md),
-with its gate doc [`job-thread-v0-plan-review.html`](job-thread-v0-plan-review.html).
-PR #1403 (engine) and PR #1389 (consumer) are closed as superseded; their bead
-graphs and owner gates are unchanged. PR #1401 stays separate **by design** — it is the ratification
-instrument, and the owner's merge *is* the ruling.
+**This is chapter 1 of a pack.** The front door — [`README.md`](README.md) —
+owns the vision summary, the chapter map, the gate status, the design lineage
+and the ordering. This chapter does not restate them.
 
 ---
 
@@ -390,7 +371,7 @@ only once its three prerequisites are ruled.
   mirroring Work — absent from the spike (`SaasSpike.tsx:1298-1313`). Counts
   render from whatever source exists; **zero/absent is a valid state**.
 - *WHY THIS PLAN OWNS IT:* neither sibling does. The Job Thread plan explicitly
-  disowns the nav reframe (`job-thread-v0-plan.md:718-721`), and #1355's
+  disowns the nav reframe (`job-thread-plan.md:718-721`), and #1355's
   Slice 3 shell is a *Console* organization, not this IA — see §5.
 - *Blocked by:* L1, L1.5.
 - *Scope:* `workspace-shell/{ShellNav,ShellNavSections,ShellRail}.tsx`; a
@@ -410,9 +391,9 @@ only once its three prerequisites are ruled.
   counts.
 - *Blocked by:* three items owned elsewhere — (i) the left-pane row model
   `AppLeftPaneSession` has **no `kind` discriminator** and PR #1393 does not add
-  one (`job-thread-v0-plan.md:546-552`; `AppLeftPane.tsx:17-27`); (ii) #1355's
+  one (`job-thread-plan.md:546-552`; `AppLeftPane.tsx:17-27`); (ii) #1355's
   `ConsoleThreadRefV1` session-tuple key is single-seat by construction and
-  cannot hold a job as one row (`job-thread-v0-plan.md:723-725`); (iii)
+  cannot hold a job as one row (`job-thread-plan.md:723-725`); (iii)
   `JobProjectionV0` has no lifecycle field, so `Archived · N` has no source
   (#1399, 2026-08-26) — to be folded at jfxd S1 or filed as gate errata.
 - *Status:* no scope, no proofs, no bead. Writing them before the prerequisites
@@ -480,7 +461,7 @@ v0 slice. Gated on the P1 View work landing, and on Q3's persistence ruling.
   `WorkbenchActivityRail side="right"` (`SaasSpike.tsx:513-544`). Consumes
   jfxd **S4** — the message-source adapter feeding the existing `PiChatPanel` a
   merged `(turnOrdinal, seq, markerOrdinal)` stream
-  (`job-thread-v0-plan.md:687-697`). This plan mounts that adapter; it does not
+  (`job-thread-plan.md:687-697`). This plan mounts that adapter; it does not
   design it.
 - *Blocked by:* jfxd S4 (→ the engine chapter's owner gate, S1–S3), therefore
   #1401.

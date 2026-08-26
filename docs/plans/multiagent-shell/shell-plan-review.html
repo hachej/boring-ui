@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Multi-agent workspace shell — owner gate</title>
+<style>
+:root{color-scheme:light dark;--bg:#f3f5f8;--card:#fff;--ink:#172033;--muted:#647084;--line:#d9dee8;--blue:#2456d6;--green:#137a52;--amber:#916500;--red:#b42318}
+@media(prefers-color-scheme:dark){:root{--bg:#0f131b;--card:#181e29;--ink:#eef3fa;--muted:#a9b4c5;--line:#303a4b;--blue:#8cadff;--green:#65d7a5;--amber:#efc75f;--red:#ff8c84}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif}
+.wrap{max-width:1080px;margin:auto;padding:20px}
+.hero,.card{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 8px 28px #0000000d}
+.hero{padding:22px 24px;border-top:5px solid var(--blue)}
+.eyebrow{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.09em}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+h1{font-size:clamp(23px,4vw,36px);line-height:1.12;margin:6px 0}
+.pill{padding:4px 9px;border-radius:999px;background:#fff0c7;color:#6b4900;font-weight:700;font-size:12px}
+.meta,.small{color:var(--muted)}
+.tldr{font-size:17px;max-width:900px}
+.card{padding:20px 22px;margin-top:16px}
+h2{margin:0 0 12px;font-size:20px}
+h3{margin:18px 0 8px;font-size:15.5px}
+table{border-collapse:collapse;width:100%;display:block;overflow:auto}
+th,td{border:1px solid var(--line);padding:9px 11px;text-align:left;vertical-align:top;font-size:14px}
+th{background:color-mix(in srgb,var(--blue) 8%,var(--card))}
+.two td{width:50%}
+ul{margin:5px 0;padding-left:20px}
+code{background:color-mix(in srgb,var(--muted) 13%,transparent);padding:1px 5px;border-radius:5px;font-size:.92em}
+.low{background:color-mix(in srgb,var(--green) 14%,var(--card))}
+.med{background:color-mix(in srgb,var(--amber) 15%,var(--card))}
+.high{background:color-mix(in srgb,var(--red) 14%,var(--card))}
+.callout{border-left:4px solid var(--blue);padding:4px 0 4px 14px;margin-top:10px}
+.warn{border-left:4px solid var(--amber);padding:4px 0 4px 14px;margin-top:10px}
+.review{border-left:4px solid var(--amber);padding-left:14px}
+a{color:var(--blue)}
+.qnum{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:8px;background:var(--blue);color:#fff;font-weight:800;font-size:13px;margin-right:8px;flex:none}
+.qhead{display:flex;align-items:center;gap:2px}
+.qtitle{font-size:16px;font-weight:700}
+.rec{border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:color-mix(in srgb,var(--green) 8%,var(--card));margin-top:10px}
+.rec b{color:var(--green)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:720px){.grid2{grid-template-columns:1fr}}
+.box{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:color-mix(in srgb,var(--muted) 5%,var(--card))}
+.dg{width:100%;height:auto;display:block;margin:8px 0 4px}
+.dg .bx{fill:color-mix(in srgb,var(--blue) 8%,var(--card));stroke:var(--line);stroke-width:1}
+.dg .bx2{fill:color-mix(in srgb,var(--green) 10%,var(--card));stroke:var(--line);stroke-width:1}
+.dg .bx3{fill:color-mix(in srgb,var(--amber) 13%,var(--card));stroke:var(--line);stroke-width:1}
+.dg .t{fill:var(--ink);font:600 12.5px ui-sans-serif,system-ui,sans-serif}
+.dg .c{fill:var(--muted);font:400 10px ui-monospace,SFMono-Regular,Menlo,monospace}
+.dg .lbl{fill:var(--muted);font:700 10.5px ui-sans-serif,system-ui,sans-serif;letter-spacing:.09em}
+.dg .ln{stroke:var(--line);stroke-width:1.4}
+.dg .ar{stroke:var(--blue);stroke-width:1.5;fill:none}
+.dg .arx{stroke:var(--muted);stroke-width:1.3;fill:none;stroke-dasharray:4 3}
+.dg .m{fill:var(--ink);font:400 11px ui-sans-serif,system-ui,sans-serif;stroke:var(--card);stroke-width:3.5;paint-order:stroke fill}
+.dg .gut{fill:var(--muted);font:700 9.5px ui-sans-serif,system-ui,sans-serif}
+.dg .n{fill:var(--blue);font:700 9.5px ui-sans-serif,system-ui,sans-serif}
+.dgcap{color:var(--muted);font-size:12.5px;margin:2px 0 0}
+.box b{display:block;margin-bottom:4px;font-size:12.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.slices{display:flex;flex-wrap:wrap;gap:10px;align-items:stretch}
+.slice{border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-width:150px;flex:1;background:color-mix(in srgb,var(--blue) 5%,var(--card))}
+.slice h4{margin:0 0 4px;font-size:14px}
+.slice .b{font-size:12.5px;color:var(--muted)}
+.arrow{align-self:center;color:var(--muted);font-size:20px}
+.gate{border:1px dashed var(--amber);border-radius:10px;padding:8px 12px;background:color-mix(in srgb,var(--amber) 12%,var(--card));font-size:13px;margin-top:10px}
+footer{margin:24px 0 8px;color:var(--muted);font-size:12.5px;text-align:center}
+</style></head><body><main class="wrap">
+
+<header class="hero">
+  <div class="eyebrow">Owner gate · Plan approval</div>
+  <div class="row"><h1>Multi-agent workspace shell</h1><span class="pill">OWNER DECISION</span></div>
+  <p class="tldr">A <b>new workspace layout</b>, not a rewrite: a third value on the existing
+  <code>WorkspaceAgentLayout</code> switch, composed as a sibling to today's <code>plugin-tabs</code>
+  shell, reusing components a spike already proved. It gives the multi-agent vision a home &mdash;
+  <b>Inbox / Work / Agents / Library / Search</b> over one workspace, with chat as a column beside a
+  view rather than a page you switch to.</p>
+  <div class="meta">Round 3 (folds fresh-eyes, cross-model, and targeted precision review) · PR
+  <a href="https://github.com/hachej/boring-ui/pull/1409">#1409</a> · Issue
+  <a href="https://github.com/hachej/boring-ui/issues/1399">#1399</a> · Branch
+  <code>weekend/multiagent-shell-plan</code> · 13 questions · No implementation before owner sign-off</div>
+</header>
+
+<section class="card">
+  <h2>One PR, three chapters</h2>
+  <p class="tldr">#1409 is the canonical multi-agent planning PR. Three plans, one gate each,
+  no duplicated content.</p>
+  <div class="slices">
+    <div class="slice"><h4>Shell</h4><div class="b">This document. Layout, IA, mounts, integration route. <b>13 questions.</b></div></div>
+    <div class="arrow">+</div>
+    <div class="slice"><h4>Engine</h4><div class="b">Job Thread v0 &mdash; projection, relay, handoffs. <b>Its own 8 rulings</b>, unchanged.</div></div>
+    <div class="arrow">+</div>
+    <div class="slice"><h4>Consumer</h4><div class="b">Founder / chief-of-staff delta &mdash; D1&ndash;D6. <b>Its own gate</b>, unchanged.</div></div>
+  </div>
+  <div class="callout"><b>Design lineage.</b> Not a fresh idea &mdash; the sixth step of a chain:
+  <a href="https://github.com/hachej/boring-ui/pull/1357">#1357</a> persistent multi-project console surface
+  &rarr; <code>docs/issues/1355/plan.md</code> architecture
+  &rarr; <a href="https://github.com/hachej/boring-ui/pull/1393">#1393</a> left-pane view modes
+  &rarr; the design canvas (Meridian Shell)
+  &rarr; <code>weekend/saas-hybrid-spike</code> proving the IA by recomposition
+  &rarr; this plan turning the proof into a route.</div>
+</section>
+
+<section class="card">
+  <h2>The shape</h2>
+<svg class="dg" viewBox="0 0 1050 330" role="img" aria-label="The shell: five nav domains, tool rail, center, contextual chat">
+<defs><marker id="ah" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="var(--muted)"/></marker></defs>
+<text class="lbl" x="30" y="22">NAV = DOMAINS</text>
+<rect class="bx" x="30" y="34" width="170" height="40" rx="8"/><text class="t" x="115" y="59" text-anchor="middle">Inbox</text>
+<rect class="bx" x="30" y="80" width="170" height="66" rx="8"/><text class="t" x="115" y="102" text-anchor="middle">Work</text><text class="c" x="115" y="120" text-anchor="middle">Threads · Automations</text><text class="c" x="115" y="136" text-anchor="middle">Archived · N</text>
+<rect class="bx" x="30" y="152" width="170" height="40" rx="8"/><text class="t" x="115" y="177" text-anchor="middle">Agents</text>
+<rect class="bx" x="30" y="198" width="170" height="40" rx="8"/><text class="t" x="115" y="223" text-anchor="middle">Library</text>
+<rect class="bx" x="30" y="244" width="170" height="40" rx="8"/><text class="t" x="115" y="269" text-anchor="middle">Search</text>
+<text class="lbl" x="222" y="22">TOOLS</text>
+<rect class="bx3" x="222" y="34" width="52" height="250" rx="8"/><text class="c" x="248" y="150" text-anchor="middle" transform="rotate(-90 248 150)">plugin rail → columns</text>
+<text class="lbl" x="296" y="22">CENTER · PAGE OR DOCK</text>
+<rect class="bx2" x="296" y="34" width="450" height="250" rx="8"/>
+<text class="t" x="521" y="120" text-anchor="middle">One embedded workbench</text>
+<text class="c" x="521" y="146" text-anchor="middle">thread canvas · evidence viewer</text>
+<text class="c" x="521" y="164" text-anchor="middle">file popover · standalone Library</text>
+<text class="c" x="521" y="196" text-anchor="middle">Dockview stays a renderer</text>
+<text class="lbl" x="768" y="22">CHAT = COLUMN, NEVER A PAGE SWITCH</text>
+<rect class="bx" x="768" y="34" width="252" height="250" rx="8"/>
+<text class="t" x="894" y="140" text-anchor="middle">Several agents,</text><text class="t" x="894" y="162" text-anchor="middle">one composer</text>
+<text class="c" x="894" y="190" text-anchor="middle">workers behind the orchestrator</text>
+<text class="c" x="894" y="310" text-anchor="middle">1 Thread = 1 job</text>
+</svg>
+  <p class="dgcap">Nav is domains; the vertical plugin rail is tools. The workbench is
+  <b>one component with four mounts</b>. Deterministic Views sit beside agentic Threads.</p>
+</section>
+
+<section class="card">
+  <h2>Why this is cheap &mdash; and where it isn't</h2>
+  <div class="grid2">
+    <div class="box"><b>Proven by the spike</b>
+    <ul><li>The IA renders from <b>shipped components</b> &mdash; 19 files, only 5 touching production packages</li>
+    <li>Real file tree against the real filesystem</li>
+    <li><code>InboxOverlay</code> / <code>AutomationPanel</code> render as pages unchanged</li>
+    <li><code>ArtifactSurfacePane</code> nests safely (dock <i>and</i> thread canvas)</li>
+    <li>Page/dock center modes, dock genuinely unmounted in page mode</li></ul></div>
+    <div class="box"><b>Not proven by anything</b>
+    <ul><li><b>The chat is a visual fixture in both places it appears</b> &mdash; disabled send button, literally labelled &ldquo;composer visual only&rdquo;</li>
+    <li>The thread transcript is a playground mock</li>
+    <li>All entity data is fixture (1,107 lines)</li>
+    <li>Zero component tests for the shell</li>
+    <li>Mobile: never exercised</li></ul></div>
+  </div>
+  <div class="warn"><b>The honest headline.</b> The spike proves the <i>frame</i>. It proves nothing
+  about a live multi-agent transcript inside that frame. That is slice L4, and it is the highest-risk
+  item in the plan.</div>
+</section>
+
+<section class="card">
+  <h2>Three review rounds, and what they changed</h2>
+  <p>Every round returned <b>revise</b>. Claims retracted as wrong:</p>
+  <table><tr><th>Round</th><th>Claim</th><th>Reality</th></tr>
+  <tr><td>1</td><td>&ldquo;A third layout is a ~5-line change&rdquo;</td><td class="high"><code>isPluginTabsLayout</code> has 12 occurrences / 9 semantic decision sites. A boolean cannot carry a third layout.</td></tr>
+  <tr><td>1</td><td>&ldquo;L1/L2/L3/L5/L6 unblocked today&rdquo;</td><td class="high">Three of those depend on work owned by other plans.</td></tr>
+  <tr><td>2</td><td><code>chatPaneSplitting</code> is one trait, already off in plugin-tabs</td><td class="high">Splitting is <b>on</b> today &mdash; <code>onSplitChatPane</code> is passed unconditionally. The trait could not have enforced anything.</td></tr>
+  <tr><td>2</td><td><code>ShellLocation</code> could serialize its destinations</td><td class="med">It could not distinguish Work's three lists, nor reconstruct evidence.</td></tr>
+  <tr><td>2</td><td>L5 enforces read-only evidence for any artifact</td><td class="med">Only file panes can be held read-only; arbitrary resolvers are unrestricted.</td></tr>
+  <tr><td>2</td><td>Four proof commands</td><td class="med">Would not have run &mdash; wrong package filter, non-existent root script.</td></tr>
+  </table>
+  <p class="small">The plan has not been re-reviewed since round 3.</p>
+</section>
+
+<section class="card">
+  <h2>The 13 questions</h2>
+  <p class="tldr">Ordered by how much they change the build. Each has a recommendation; the plan is
+  written assuming the recommendations, so a different answer means a rewrite of that slice.</p>
+
+<div class="card" style="margin-top:14px">
+  <div class="qhead"><span class="qnum">1</span><span class="qtitle">Routing / location ownership</span>
+  <span class="small" style="margin-left:auto">BUILD-DEFINING</span></div>
+  <p>Who owns the canonical shell location and route lifecycle? Both reviewers named this the deepest gap. The package has no router <i>by contract</i> &mdash; an existing prop says so in as many words. The spike violated that with a module-global mutable ref.</p>
+  <table><tr><th style="width:40px">#</th><th>Option</th><th>Consequence</th></tr><tr><td><b>A</b></td><td><b>Split (recommended).</b> Package owns <code>ShellLocation</code> state + <code>navigate()</code>; host owns URL serialization.</td><td class="small">Consistent with today's contract. Deep links, back/forward and refresh all become stated behavior.</td></tr><tr><td><b>B</b></td><td>Host owns location entirely; package is fully controlled.</td><td class="small">Cleanest boundary, but every host re-implements five domains of routing.</td></tr></table>
+  <div class="rec"><b>Recommendation:</b> A &mdash; it matches how project settings and new-tab hrefs already work.<br><span class="small"><b>Cost of the answer:</b> Slice L1.5, one session. Answer changes the reducer shape and the package boundary.</span></div>
+</div>
+<div class="card" style="margin-top:14px">
+  <div class="qhead"><span class="qnum">2</span><span class="qtitle">Nav extensibility &mdash; and the Inbox paradox</span>
+  <span class="small" style="margin-left:auto">BUILD-DEFINING</span></div>
+  <p>The ruled IA is fixed and ordered. But <b>Inbox itself arrives today as a plugin contribution</b> (<code>appLeftActions: [{ id: "inbox", … order: 10 }]</code>). A closed IA either hardcodes a destination the plugin owns, or keeps a contribution point the IA claims to have closed.</p>
+  <table><tr><th style="width:40px">#</th><th>Option</th><th>Consequence</th></tr><tr><td><b>A</b></td><td><b>Named section slots (recommended).</b> IA fixed and ordered; plugins slot into declared sections.</td><td class="small">Keeps plugin extensibility honest without letting plugins reorder the IA.</td></tr><tr><td><b>B</b></td><td>Tools rail only &mdash; plugins never appear in nav.</td><td class="small">Simplest, but demotes existing plugin surfaces.</td></tr><tr><td><b>C</b></td><td>IA fully closed; Inbox promoted into the shell, ask-user loses its nav entry.</td><td class="small">Cleanest IA, but a real behavior change for a shipped plugin.</td></tr></table>
+  <div class="rec"><b>Recommendation:</b> A.<br><span class="small"><b>Cost of the answer:</b> Shapes L2a. B or C means editing the ask-user plugin.</span></div>
+</div>
+<div class="card" style="margin-top:14px">
+  <div class="qhead"><span class="qnum">3</span><span class="qtitle">Library persistence</span>
+  <span class="small" style="margin-left:auto">BUILD-DEFINING</span></div>
+  <p>Where do saved views live? #1355's <code>ConsoleCollection</code> <b>cannot</b> hold them &mdash; it is navigation metadata that explicitly owns no Thread, Task, Intention or Automation.</p>
+  <table><tr><th style="width:40px">#</th><th>Option</th><th>Consequence</th></tr><tr><td><b>A</b></td><td><b>Descriptor-local / unsaved for the first tranche (recommended).</b></td><td class="small">Ships L3b now; defers the store until the ratified View work lands.</td></tr><tr><td><b>B</b></td><td>Workspace settings.</td><td class="small">Available today, but settings is not a collection store.</td></tr><tr><td><b>C</b></td><td>A new plugin store.</td><td class="small">Correct long-term, a slice of its own.</td></tr></table>
+  <div class="rec"><b>Recommendation:</b> A &mdash; do not invent a store before the View contract exists.<br><span class="small"><b>Cost of the answer:</b> Gates whether L3b ships in the first tranche.</span></div>
+</div>
+<div class="card" style="margin-top:14px">
+  <div class="qhead"><span class="qnum">4</span><span class="qtitle">Nav supersession vs #1355 Slice 3</span>
+  <span class="small" style="margin-left:auto">BUILD-DEFINING</span></div>
+  <p>Does this plan's fixed IA supersede #1355 Slice 3's left-pane organization for the <code>workspace-shell</code> layout, with Slice 3 retaining <code>plugin-tabs</code>? <b>This is a #1409 decision, not a #1355 Gate 1 item</b> &mdash; that gate's four questions are about collection ownership and never rule on shell nav.</p>
+  <table><tr><th style="width:40px">#</th><th>Option</th><th>Consequence</th></tr><tr><td><b>A</b></td><td><b>Yes, scoped supersession (recommended).</b> This IA owns <code>workspace-shell</code>; Slice 3 owns <code>plugin-tabs</code>.</td><td class="small">Both plans proceed without a merge conflict in the nav.</td></tr><tr><td><b>B</b></td><td>#1355 Slice 3 owns nav in both layouts.</td><td class="small">Then L2a is deleted and the shell inherits Console organization.</td></tr></table>
+  <div class="rec"><b>Recommendation:</b> A.<br><span class="small"><b>Cost of the answer:</b> Without an answer, L2a and #1355 Slice 3 will collide.</span></div>
+</div>
+<div class="card" style="margin-top:14px">
+  <div class="qhead"><span class="qnum">5</span><span class="qtitle">Contextual chat beside a view</span>
+  <span class="small" style="margin-left:auto">SCOPE</span></div>
+  <p>Chat beside a <i>view</i> (not a thread) has no session to attach to. The spike never proved a live composer at all.</p>
+  <table><tr><th style="width:40px">#</th><th>Option</th><th>Consequence</th></tr><tr><td><b>A</b></td><td><b>Explicit post-v0 non-goal (recommended).</b> L7 may complete without it.</td><td class="small">Honest. Chat beside a <i>thread</i> (L4) still ships.</td></tr><tr><td><b>B</b></td><td>Prerequisite to L7 &mdash; mint an ephemeral thread per view.</td><td class="small">Adds a session-lifecycle design to the critical path.</td></tr></table>
+  <div class="rec"><b>Recommendation:</b> A.<br><span class="small"><b>Cost of the answer:</b> B adds at least one slice and a lifecycle question.</span></div>
+</div>
+<div class="card" style="margin-top:14px">
+  <div class="qhead"><span class="qnum">6</span><span class="qtitle">Export surface &amp; semver posture</span>
+  <span class="small" style="margin-left:auto">SCOPE</span></div>
+  <p>Round 1 proposed exporting five visual internals. Withdrawn: the root entry states every export is deliberate, and a layout selected <i>inside</i> the package needs none.</p>
+  <table><tr><th style="width:40px">#</th><th>Option</th><th>Consequence</th></tr><tr><td><b>A</b></td><td><b>Internal package layout (recommended).</b> Zero or one deliberate export.</td><td class="small">No consumer coupling to private chrome.</td></tr><tr><td><b>B</b></td><td>Public headless seam.</td><td class="small">Only if a named external consumer requires it.</td></tr></table>
+  <div class="rec"><b>Recommendation:</b> A, unless you can name the consumer.<br><span class="small"><b>Cost of the answer:</b> A is strictly cheaper.</span></div>
+</div>
+<div class="card" style="margin-top:14px">
+  <div class="qhead"><span class="qnum">7</span><span class="qtitle">Search / palette scoping</span>
+  <span class="small" style="margin-left:auto">SCOPE</span></div>
+  <p>Search is a nav domain <i>and</i> &#8984;K is an existing chat-pane palette. Two things called search.</p>
+  <table><tr><th style="width:40px">#</th><th>Option</th><th>Consequence</th></tr><tr><td><b>A</b></td><td><b>Domain-scoped Search page + existing palette (recommended).</b></td><td class="small">What the traits matrix assumes.</td></tr><tr><td><b>B</b></td><td>One palette scoped across all five domains.</td><td class="small">Nicer end state; a slice of its own.</td></tr></table>
+  <div class="rec"><b>Recommendation:</b> A for v0, B as follow-on.<br><span class="small"><b>Cost of the answer:</b> B is not costed in this plan.</span></div>
+</div>
+<div class="card" style="margin-top:14px">
+  <div class="qhead"><span class="qnum">8</span><span class="qtitle">Chat-pane behavior in the shell</span>
+  <span class="small" style="margin-left:auto">SCOPE</span></div>
+  <p>Confirm <b>off</b> for v0: splitting, palette-open-in-new-pane, multi-pane restore. Note splitting is <b>on in plugin-tabs today</b>, and turning it off requires trait-gating a call site that is currently unconditional.</p>
+  <table><tr><th style="width:40px">#</th><th>Option</th><th>Consequence</th></tr><tr><td><b>A</b></td><td><b>All three off for v0 (recommended).</b> One thread pane.</td><td class="small">Matches &ldquo;1 Thread = 1 job&rdquo;. Adds one trait-gate to L1.</td></tr><tr><td><b>B</b></td><td>Keep splitting on.</td><td class="small">Then a job's timeline can be split across panes &mdash; contradicts the vision.</td></tr></table>
+  <div class="rec"><b>Recommendation:</b> A.<br><span class="small"><b>Cost of the answer:</b> Adds a small amount of work to L1.</span></div>
+</div>
+<div class="card" style="margin-top:14px">
+  <div class="qhead"><span class="qnum">9</span><span class="qtitle">Attention data source &amp; polling cost</span>
+  <span class="small" style="margin-left:auto">RISK</span></div>
+  <p>Five domains with counts and badges implies five subscriptions. Nothing in the plan costs this.</p>
+  <table><tr><th style="width:40px">#</th><th>Option</th><th>Consequence</th></tr><tr><td><b>A</b></td><td>Name the source and interval now.</td><td class="small">Prevents a performance surprise at L2a.</td></tr><tr><td><b>B</b></td><td>Ship counts absent, measure later.</td><td class="small">L2a already treats zero/absent as a valid state.</td></tr></table>
+  <div class="rec"><b>Recommendation:</b> B for the first tranche, A before L7.<br><span class="small"><b>Cost of the answer:</b> Unpriced either way &mdash; flagged honestly.</span></div>
+</div>
+<div class="card" style="margin-top:14px">
+  <div class="qhead"><span class="qnum">10</span><span class="qtitle">Classic-layout deprecation line</span>
+  <span class="small" style="margin-left:auto">RISK</span></div>
+  <p>Three layouts is a permanent tax: the traits matrix must be filled for all three, forever.</p>
+  <table><tr><th style="width:40px">#</th><th>Option</th><th>Consequence</th></tr><tr><td><b>A</b></td><td>Put <code>classic</code> on a deprecation path with a date.</td><td class="small">Caps the tax.</td></tr><tr><td><b>B</b></td><td>Keep all three indefinitely.</td><td class="small">Every future layout decision is a 3-column choice.</td></tr></table>
+  <div class="rec"><b>Recommendation:</b> A &mdash; name the date even if it is distant.<br><span class="small"><b>Cost of the answer:</b> Affects every future slice, not this one.</span></div>
+</div>
+<div class="card" style="margin-top:14px">
+  <div class="qhead"><span class="qnum">11</span><span class="qtitle">Touch reachability</span>
+  <span class="small" style="margin-left:auto">RISK</span></div>
+  <p>Flyouts are hover-driven. The spike never passes <code>mobileShellEnabled</code>, so the mobile sheet path is unexercised by <i>every</i> claim in the plan.</p>
+  <table><tr><th style="width:40px">#</th><th>Option</th><th>Consequence</th></tr><tr><td><b>A</b></td><td>Declare mobile out of scope for v0, explicitly.</td><td class="small">Honest; the current claims do not cover it.</td></tr><tr><td><b>B</b></td><td>Design the mobile shell now.</td><td class="small">A separate design pass.</td></tr></table>
+  <div class="rec"><b>Recommendation:</b> A.<br><span class="small"><b>Cost of the answer:</b> B is not costed.</span></div>
+</div>
+<div class="card" style="margin-top:14px">
+  <div class="qhead"><span class="qnum">12</span><span class="qtitle">WorkbenchLeftPane vs Library</span>
+  <span class="small" style="margin-left:auto">RISK</span></div>
+  <p>If the workbench re-homes as Library, what happens to today's mounts inside <code>ChatLayout</code>?</p>
+  <table><tr><th style="width:40px">#</th><th>Option</th><th>Consequence</th></tr><tr><td><b>A</b></td><td>Kept for <code>classic</code>, unchanged.</td><td class="small">No migration; some duplication.</td></tr><tr><td><b>B</b></td><td>Migrated.</td><td class="small">Touches the classic layout &mdash; outside this plan's additive promise.</td></tr></table>
+  <div class="rec"><b>Recommendation:</b> A.<br><span class="small"><b>Cost of the answer:</b> B would break the &ldquo;classic untouched&rdquo; guarantee.</span></div>
+</div>
+<div class="card" style="margin-top:14px">
+  <div class="qhead"><span class="qnum">13</span><span class="qtitle">Kanban</span>
+  <span class="small" style="margin-left:auto">RISK</span></div>
+  <p>The spike's view fixtures carry kanban descriptors; no kanban renderer exists in the repo.</p>
+  <table><tr><th style="width:40px">#</th><th>Option</th><th>Consequence</th></tr><tr><td><b>A</b></td><td><b>Deferred (recommended).</b> Library ships without kanban.</td><td class="small">No new renderer in v0.</td></tr><tr><td><b>B</b></td><td>In scope for Library.</td><td class="small">Adds a renderer slice.</td></tr></table>
+  <div class="rec"><b>Recommendation:</b> A.<br><span class="small"><b>Cost of the answer:</b> B adds a slice.</span></div>
+</div></section>
+
+<section class="card">
+  <h2>Slices &amp; sequencing</h2>
+  <div class="gate"><b>This gate blocks every bead below.</b> Epic <code>wt-391-forward-shell-ngfs</code>,
+  gate bead <code>.1</code>, eleven slice beads. No dependency cycles.</div>
+<svg class="dg" viewBox="0 0 1050 300" role="img" aria-label="Slice dependency graph">
+<defs><marker id="ah2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="var(--blue)"/></marker>
+<marker id="ah3" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="var(--muted)"/></marker></defs>
+<text class="lbl" x="24" y="20">UNBLOCKED TRANCHE (P1)</text>
+<rect class="bx2" x="24" y="30" width="150" height="46" rx="8"/><text class="t" x="99" y="50" text-anchor="middle">L1 traits</text><text class="c" x="99" y="66" text-anchor="middle">9 sites → matrix</text>
+<rect class="bx2" x="196" y="30" width="150" height="46" rx="8"/><text class="t" x="271" y="50" text-anchor="middle">L1.5 location</text><text class="c" x="271" y="66" text-anchor="middle">ShellLocation</text>
+<rect class="bx2" x="368" y="30" width="150" height="46" rx="8"/><text class="t" x="443" y="50" text-anchor="middle">L2a nav chrome</text><text class="c" x="443" y="66" text-anchor="middle">IA + flyouts</text>
+<rect class="bx2" x="368" y="96" width="150" height="46" rx="8"/><text class="t" x="443" y="116" text-anchor="middle">L3a center</text><text class="c" x="443" y="132" text-anchor="middle">page / dock</text>
+<text class="lbl" x="546" y="20">DEPENDENT (P2)</text>
+<rect class="bx" x="546" y="30" width="132" height="40" rx="8"/><text class="t" x="612" y="55" text-anchor="middle">L3b Library</text>
+<rect class="bx" x="546" y="78" width="132" height="40" rx="8"/><text class="t" x="612" y="103" text-anchor="middle">L5 evidence</text>
+<rect class="bx" x="546" y="126" width="132" height="40" rx="8"/><text class="t" x="612" y="151" text-anchor="middle">L6 popover</text>
+<rect class="bx3" x="546" y="174" width="132" height="52" rx="8"/><text class="t" x="612" y="196" text-anchor="middle">L4 thread</text><text class="c" x="612" y="212" text-anchor="middle">needs jfxd S4</text>
+<rect class="bx" x="712" y="78" width="132" height="40" rx="8"/><text class="t" x="778" y="103" text-anchor="middle">L7a playground</text>
+<rect class="bx" x="878" y="46" width="132" height="40" rx="8"/><text class="t" x="944" y="71" text-anchor="middle">L7b full-app</text>
+<rect class="bx" x="878" y="110" width="132" height="40" rx="8"/><text class="t" x="944" y="135" text-anchor="middle">L7c CLI</text>
+<path class="ar" d="M174,53 L192,53" marker-end="url(#ah2)"/>
+<path class="ar" d="M346,53 L364,53" marker-end="url(#ah2)"/>
+<path class="ar" d="M271,78 L271,119 L364,119" marker-end="url(#ah2)"/>
+<path class="ar" d="M518,119 L542,119 L542,50 L542,50" marker-end="url(#ah2)"/>
+<path class="ar" d="M518,119 L542,119" marker-end="url(#ah2)"/>
+<path class="ar" d="M678,98 L708,98" marker-end="url(#ah2)"/>
+<path class="ar" d="M844,98 L862,98 L862,66 L874,66" marker-end="url(#ah2)"/>
+<path class="ar" d="M844,98 L862,98 L862,130 L874,130" marker-end="url(#ah2)"/>
+<path class="arx" d="M612,226 L612,250 L778,250 L778,122" marker-end="url(#ah3)"/>
+<text class="lbl" x="24" y="200">BLOCKED ELSEWHERE — NOT BEADS</text>
+<rect class="bx3" x="24" y="212" width="322" height="66" rx="8"/><text class="t" x="185" y="234" text-anchor="middle">L2b live Work rows · Archived · N</text><text class="c" x="185" y="252" text-anchor="middle">#1393 kind-discriminator · ConsoleThreadRefV1</text><text class="c" x="185" y="268" text-anchor="middle">repair · jfxd lifecycle field</text>
+</svg>
+  <p class="dgcap"><b>The honest unblocked tranche: L1, L1.5, L2a, L3a</b> (and L6 in part).
+  Everything else waits on a gate someone else owns. <b>L2b is a blocker inventory, not a bead</b> &mdash;
+  it has no runnable proof by construction.</p>
+</section>
+
+<section class="card">
+  <h2>Honest risks</h2>
+  <table>
+  <tr><th>Risk</th><th>Grade</th><th>Where it lands</th></tr>
+  <tr><td><b>The chat is unproven.</b> A visual fixture in both places the spike shows it. Nothing demonstrates a live multi-agent transcript in this shell.</td><td class="high">HIGH</td><td>L4 &mdash; and L4 is also the slice gated on another plan.</td></tr>
+  <tr><td><b>#1401 may be rejected.</b> The multi-seat Thread amendment is proposed, not ratified.</td><td class="high">HIGH</td><td>A rejection voids the premise and most of this plan with it.</td></tr>
+  <tr><td><b>Three layouts is a permanent tax.</b> The traits matrix must be filled for all three, forever.</td><td class="med">MEDIUM</td><td>Q10 &mdash; capped only by a deprecation line.</td></tr>
+  <tr><td><b>Two plans want the nav.</b> This IA and #1355 Slice 3 both organize a left pane.</td><td class="med">MEDIUM</td><td>Q4 &mdash; a scoped supersession resolves it.</td></tr>
+  <tr><td><b>Read-only evidence is only enforceable for files.</b> Arbitrary resolvers are unrestricted.</td><td class="med">MEDIUM</td><td>L5 scoped to file evidence; the rest deferred.</td></tr>
+  <tr><td><b>No component tests exist for the shell.</b> The spike shipped one route test.</td><td class="med">MEDIUM</td><td>Every slice carries its own proof + negative proof.</td></tr>
+  <tr><td><b>Mobile is unexercised.</b> Four columns and hover flyouts on a phone.</td><td class="low">LOW (scoped out)</td><td>Q11 &mdash; recommend declaring it out of scope for v0.</td></tr>
+  </table>
+</section>
+
+<section class="card">
+  <h2>What sign-off means</h2>
+  <p class="tldr">Answering the 13 questions unblocks <b>four beads</b> &mdash; L1, L1.5, L2a, L3a &mdash;
+  and nothing else. The remaining seven wait on the engine gate, the #1355 gate, or each other.
+  Rejecting #1401 voids the premise.</p>
+  <div class="callout">The plan deliberately does <b>not</b> ask you to approve the vision &mdash;
+  that is already ruled in <a href="https://github.com/hachej/boring-ui/issues/1399">#1399</a>.
+  It asks you to approve a <b>route</b>, and to settle the thirteen places where the route
+  had to guess.</div>
+</section>
+
+<footer>Multi-agent workspace shell &mdash; owner gate ·
+Plan: <code>docs/plans/multiagent-shell/shell-plan.md</code> ·
+PR <a href="https://github.com/hachej/boring-ui/pull/1409">#1409</a> ·
+Round 3 (fresh-eyes + cross-model + targeted precision) · No implementation before sign-off</footer>
+</main></body></html>
