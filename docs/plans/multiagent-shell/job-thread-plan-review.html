@@ -345,19 +345,25 @@ footer{margin:24px 0 8px;color:var(--muted);font-size:12.5px;text-align:center}
   <td class="low">Low (accepted)</td><td class="med">Medium</td>
   <td>v0 ships hop/invocation caps only; a real budget is named as v1 work requiring a
   <code>MeteringRunScope</code> schema change — not silently dropped, explicitly out.</td></tr>
-  <tr><td>Attribution is display-grade (<code>participantId</code>), not envelope-grade — round 1's
-  claim that per-Run <code>seatId</code> gives audit parity is withdrawn.</td>
-  <td class="med">Medium</td><td class="med">Medium</td>
-  <td>Recorded honestly in §8; causal initiator vs. authorization principal are distinguished in the
-  receipt (<code>sourceRef</code>/<code>handoffEdge</code>) even without seat identity.</td></tr>
+  <tr><td>Audit-grade attribution is mandatory; the old display-only
+  <code>participantId</code> position is rejected and cannot ship.</td>
+  <td class="med">Medium</td><td class="high">High</td>
+  <td>P3 completes the C7 Seat catalogue and end-to-end <code>seatId</code> trajectory through
+  <code>wt-391-forward-shell-ngfs.14.1</code> then completion child
+  <code>.14.2</code>. No engine or Thread-rendering slice may substitute a mutable display handle.</td></tr>
   </table>
 </section>
 
 <section class="card">
-  <h2>Owner action</h2>
-  <p>Rule on the 8 questions above (defaults shown are the plan's recommendation — silence is not
-  approval). Approval unlocks S1 only; it does not authorize skipping per-slice proof or merge gates.
-  Reject, request changes, or defer per question if needed.</p>
+  <h2>Owner action — post-evidence P6 gate</h2>
+  <p>This gate opens only after durable-stream completion child <code>wt-391-forward-9p50.2</code>
+  and both storage-spike outputs <code>wt-391-forward-shell-ngfs.13.1</code>/<code>.13.2</code>
+  are green. The owner then rules exactly the remaining design questions: storage model; D22 native
+  binding versus an explicit relay/blackboard amendment; orchestrator Agent/Seat; typed
+  <code>input-required</code> request/answer under posts-only; and which Level-B receipt machinery
+  survives. Already-ratified Thread, Objective-link, audit-grade Seat, posts-only, truncation, and
+  fixture-gate decisions are not reopened. After the ruling, update S1–S6 Bead bodies to match before
+  any implementation dispatch; gate approval alone does not waive per-slice proof or merge gates.</p>
 </section>
 
 <footer>Job Thread v0 · round 2 · PR #1403 · built per <code>docs/procedures/visual-review-doc.md</code></footer>

@@ -345,9 +345,13 @@ only once its three prerequisites are ruled.
   module-global `shellRef` with a provider. Replace the spike-local
   `panelForPath` (`SaasSpike.tsx:206-218`) with the real
   `filesystemSurfaceResolver`. Delete the playground `@` alias.
-- *Inherited prerequisites (spike-only, must land here — they are NOT on main):*
+- *Inherited prerequisites (spike-only, must land here — they are NOT on main).*
+  **Execution note (APR 2026-08-26): this slice's FIRST commit re-authors (or
+  cherry-picks from the ratified pin `08cc60523`) these three exports on its
+  own branch — the spike never merges; do not wait for them and do not assume
+  spike commits are present.**
   (i) the `WorkbenchActivityRail` extraction and its export
-  (`packages/workspace/src/index.ts:325-326` on `e027c90d4`); (ii) the
+  (`packages/workspace/src/index.ts:325-326` at the ratified pin); (ii) the
   `InboxOverlay`/`InboxOverlayProps` re-exports
   (`plugins/ask-user/src/front/index.tsx:286-287`); (iii) the `AutomationPanel`
   export (`plugins/boring-automation/src/front/index.tsx:60`).

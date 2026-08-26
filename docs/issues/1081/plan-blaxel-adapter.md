@@ -39,9 +39,9 @@ The recommended initial support boundary is:
   preview, and the existing spike received `403` for Drive.
 
 No live API request was made for this investigation. Static SDK inspection and
-official documentation were cross-checked against the existing
-[`BLAXEL-SPIKE.md`](../../../BLAXEL-SPIKE.md) lifecycle evidence
-(spike file was never committed — lost artifact, noted in docs/vision/explorations.md).
+official documentation were cross-checked against the historical `BLAXEL-SPIKE.md` lifecycle evidence (the spike file was never
+committed and is a lost artifact, recorded in `docs/vision/explorations.md`; it
+is intentionally not linked).
 
 ## Evidence boundary
 

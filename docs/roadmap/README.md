@@ -32,18 +32,21 @@ storage, or attribution.
 
 | Program | Waits on | Detail |
 |---|---|---|
-| Multi-agent engine (Job Threads) | premises 1–3, then its owner gate | [`job-thread-plan.md`](../plans/multiagent-shell/job-thread-plan.md) |
-| Shell surfaces beyond chrome | the shell owner gate + the engine | [`shell-plan.md`](../plans/multiagent-shell/shell-plan.md) |
-| Chief-of-staff consumer | the shell + the engine | [`chief-of-staff-delta.md`](../plans/multiagent-shell/chief-of-staff-delta.md) |
+| Multi-agent engine mechanics (Job Threads) | [durable-streams] + both [thread-storage-spike] outputs, then its post-evidence owner gate | [`job-thread-plan.md`](../plans/multiagent-shell/job-thread-plan.md) |
+| Audit-grade attribution and Thread rendering | [seat-storage] as well as the durable/storage premises | [`premises.md`](../plans/multiagent-shell/premises.md) P3 and [`shell-plan.md`](../plans/multiagent-shell/shell-plan.md) thread-view slice |
+| Other shell surfaces beyond early chrome | their slice-specific owner-gate and Bead dependencies; no blanket “wait for the engine” rule | [`shell-plan.md`](../plans/multiagent-shell/shell-plan.md) |
+| Chief-of-staff consumer | the exact shell/engine surfaces each delta consumes | [`chief-of-staff-delta.md`](../plans/multiagent-shell/chief-of-staff-delta.md) |
 | Library saved views | [kernel-views] | premises P4 |
 | Remote/third-party hosts, marketplace | their own frozen gates | DIRECTION Wave 4 |
 | Commercial sequencing | nothing platform-side — it lives in Seneca | tenant repo roadmap |
 
 ## Where execution actually happens
 
-DIRECTION's waves (currently: multi-agent console demo → streaming
-durability + fleet execution → BYOK/MCP on named consumers → v2 era) are the
-dispatch truth, bead by bead. Read
-[`../direction/DIRECTION.md`](../direction/DIRECTION.md) before dispatching
-anything; read [`../vision/README.md`](../vision/README.md) first if you
-want the story the waves serve.
+DIRECTION's current queue has two parallel waves: **Wave A — Premises** for the
+kernel work above, plus only the explicitly substrate-free shell-layout,
+shell-location, and shell-navigation tranche; and **Wave B — Commercial**, whose
+commercial ordering lives in the Seneca tenant repository while Boring supplies
+only neutral platform substrate. The older numbered waves are historical and
+superseded for dispatch. Read [`../direction/DIRECTION.md`](../direction/DIRECTION.md)
+before dispatching anything; read [`../vision/README.md`](../vision/README.md)
+first if you want the story the queue serves.
