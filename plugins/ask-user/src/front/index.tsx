@@ -281,4 +281,8 @@ export function createAskUserPlugin(options: CreateAskUserPluginOptions = {}): B
 }
 export const askUserPlugin: BoringFrontFactoryWithId = createAskUserPlugin()
 export { inboxDemoPlugin, createInboxDemoBlockers, INBOX_DEMO_SESSION_ID } from "./inbox/examples/inboxDemoPlugin"
+// Exported so a host can render the product Inbox somewhere other than the
+// app-left overlay — e.g. as a full page. Same component, same attention store.
+export { InboxOverlay } from "./inbox/InboxOverlay"
+export type { InboxOverlayProps } from "./inbox/InboxOverlay"
 export default askUserPlugin

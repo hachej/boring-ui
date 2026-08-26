@@ -314,6 +314,8 @@ export type {
 export { SessionBrowser } from "./front/chrome/session-list/SessionBrowser"
 export { SurfaceShell } from "./front/chrome/artifact-surface/SurfaceShell"
 export { WorkbenchLeftPane } from "./front/chrome/workbench-left/WorkbenchLeftPane"
+export { WorkbenchActivityRail } from "./front/chrome/workbench-left/WorkbenchActivityRail"
+export type { WorkbenchActivityRailProps, WorkbenchActivityRailEntry } from "./front/chrome/workbench-left/WorkbenchActivityRail"
 export { useWorkspaceLeftPaneActions } from "./front/chrome/workbench-left/useWorkspaceLeftPaneActions"
 export type { SessionBrowserProps } from "./front/chrome/session-list/SessionBrowser"
 export type {

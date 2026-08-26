@@ -27,3 +27,24 @@ body,
   margin: 0;
   overflow: hidden;
 }
+
+/* Owner ruling #9b: the thread canvas is allowed a tab strip — it views
+ * artifacts — but it must stay QUIET. It sits inside a conversation, so tabs
+ * that shout compete with the transcript for the eye. Same tabs, lower
+ * contrast and a shorter strip; the active tab still reads clearly. */
+.saas-canvas-quiet-tabs .dv-tabs-and-actions-container {
+  min-height: 30px;
+  background: transparent;
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 60%, transparent);
+}
+
+.saas-canvas-quiet-tabs .dv-tab {
+  font-size: 11.5px;
+  opacity: 0.72;
+  background: transparent;
+}
+
+.saas-canvas-quiet-tabs .dv-tab.dv-active-tab {
+  opacity: 1;
+  background: color-mix(in oklch, var(--foreground) 5%, transparent);
+}

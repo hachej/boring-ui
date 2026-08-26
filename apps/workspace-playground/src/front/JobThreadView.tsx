@@ -666,8 +666,10 @@ export function JobThreadView({
           no canvas this collapses to exactly the pure-chat layout as before. */}
       <div className="flex min-h-0 flex-1">
       <div
-        className="relative flex min-h-0 min-w-[420px] flex-col"
-        style={chatWidth == null ? { flex: "1 1 auto" } : { width: chatWidth, flex: "0 0 auto" }}
+        className="relative flex min-h-0 flex-col"
+        style={chatWidth == null
+          ? { flex: "1 1 auto" }
+          : { width: chatWidth, minWidth: chatWidth, flex: "0 0 auto" }}
       >
       <div className="relative min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-[680px] flex-col gap-6 px-4 py-4">

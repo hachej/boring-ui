@@ -71,6 +71,29 @@ describe("workspace-playground SaaS spike route", () => {
     expect(SAAS_VIEWS.find((view) => view.id === "view-files")?.kind).toBe("document")
   })
 
+  // Rulings #8/#9: tabs are a document affordance. Every Library view opens a
+  // dock tab, so every view's home must be a registered dock panel — while
+  // threads/agents/records are pages and must NOT be registered, or there would
+  // still be a way to open one as a tab.
+  it("keeps every Library view home inside the dock panel set", () => {
+    const dockPanels = new Set([
+      "saas-overview",
+      "saas-kanban-placeholder",
+      "saas-companies-home",
+      "saas-funds-home",
+      "saas-file-home",
+      "saas-company",
+      "saas-fund",
+    ])
+    for (const view of SAAS_VIEWS) {
+      expect(dockPanels.has(view.homePanel)).toBe(true)
+    }
+    // Page surfaces must not be dock panels.
+    for (const pageId of ["saas-thread", "saas-inbox", "saas-agent"]) {
+      expect(dockPanels.has(pageId)).toBe(false)
+    }
+  })
+
   // Refinement #5: the thread canvas is an embedded workbench over REAL files.
   it("seeds thread canvases with real workspace paths and real records", () => {
     const companyIds = new Set(SAAS_COMPANIES.map((company) => company.id))

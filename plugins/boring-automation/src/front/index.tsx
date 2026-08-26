@@ -54,3 +54,7 @@ export const boringAutomationPlugin: BoringFrontFactoryWithId = definePlugin({
 export default boringAutomationPlugin
 export * from "../shared"
 export { createAutomationClient, AutomationClientError } from "./client"
+// Exported so a host can present the automation surface somewhere other than
+// this plugin's own overlay/center panel — e.g. as a full page in an app shell
+// that renders pages rather than dock tabs.
+export { AutomationPanel } from "./AutomationPanel"

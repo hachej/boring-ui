@@ -109,6 +109,15 @@ export async function startPlaygroundServer(): Promise<void> {
           },
           trust: "internal",
         },
+        // Ruling (A): the Work nav's automation rows open the REAL automation
+        // page, so the real routes have to exist. The directory loader makes
+        // that a few lines; the default file store persists under the workspace
+        // root, so automations created in the demo survive a reload.
+        {
+          dir: resolve(APP_ROOT, "../../plugins/boring-automation"),
+          options: { agentTypeId: defaultAgentTypeId, workspaceRoot },
+          trust: "internal",
+        },
         ...scriptedCapabilityPlugins,
       ],
       defaultPluginPackages: ["@hachej/boring-ask-user", "@hachej/boring-diagram"],
