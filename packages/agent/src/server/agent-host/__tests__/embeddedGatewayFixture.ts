@@ -22,6 +22,10 @@ interface EmbeddedGatewayFixture extends GatewayConformanceFixture {
   rejectNextPrompt(error: Error): void
   emitSessionEvent(ref: AgentSessionRef, event: PiChatEvent): void
   observeSessionEvent(ref: AgentSessionRef, event: PiChatEvent): void
+  subscribeActivity(
+    scope: AuthorizedAgentScope,
+    subscriber: (update: { ref: AgentSessionRef; status: AgentSessionActivity }) => void,
+  ): () => void
 }
 
 interface RecordValue {
@@ -331,6 +335,9 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
         const workspaceScopeId = key.slice(0, -(ref.agentTypeId.length + 1))
         activity.observe(workspaceScopeId, ref, event)
       }
+    },
+    subscribeActivity(scope, subscriber) {
+      return activity.subscribe(scope.workspaceScopeId, subscriber)
     },
     modelLoopStarts(ref) {
       for (const service of services.values()) {

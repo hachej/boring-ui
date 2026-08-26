@@ -495,9 +495,9 @@ export class EmbeddedAgentGateway implements AgentGateway {
     const service = binding.composition.service
     if (command.kind === 'prompt') {
       return await this.sessionEffect(ref, claim, 'session.prompt', command.requestId, command as unknown as JsonValue, async () => {
-        // Publish pending before entering the service: adapter.prompt() may hand
-        // back an already-rejected promise whose turn-less error is observed
-        // before the accepted receipt reaches this await.
+        // Claim pending ownership before entering the service so a turn-less
+        // native error can settle this invocation, but publish working only
+        // after the service acknowledges acceptance.
         const pendingRun = this.runtime.activity.beginPendingRun(claim.workspaceScopeId, ref)
         try {
           const receipt = await service.prompt(context(claim, command.requestId), ref.sessionId, {
@@ -508,6 +508,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
             thinkingLevel: command.thinkingLevel,
             attachments: command.attachments ? [...command.attachments] : undefined,
           })
+          this.runtime.activity.commitPendingRun(claim.workspaceScopeId, ref, pendingRun)
           return { ...receipt, disposition: 'prompt' as const }
         } catch (error) {
           this.runtime.activity.rollbackPendingRun(claim.workspaceScopeId, ref, pendingRun)

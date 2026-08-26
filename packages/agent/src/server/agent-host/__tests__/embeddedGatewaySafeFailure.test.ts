@@ -35,6 +35,12 @@ describe('EmbeddedAgentGateway safe action failures', () => {
       requestId: 'create-payment-session',
     })
     const connection = await fixture.gateway.connectSession({ scope, ref })
+    const published: string[] = []
+    const unsubscribeActivity = fixture.subscribeActivity(scope, (update) => {
+      if (update.ref.agentTypeId === ref.agentTypeId && update.ref.sessionId === ref.sessionId) {
+        published.push(update.status)
+      }
+    })
     fixture.rejectNextPrompt(Object.assign(new Error('Top up credits to continue.'), {
       code: ErrorCode.enum.PAYMENT_REQUIRED,
       statusCode: 402,
@@ -56,7 +62,9 @@ describe('EmbeddedAgentGateway safe action failures', () => {
       statusCode: 402,
     })
     expect(fixture.modelLoopStarts(ref)).toBe(0)
+    expect(published).toEqual([])
     expect((await fixture.gateway.readSessionState({ scope, ref })).summary.status).toBe('idle')
+    unsubscribeActivity()
     await connection.close()
     await fixture.gateway.close()
   })

@@ -5,17 +5,49 @@ import { AgentSessionActivityIndex } from '../sessionInventory'
 describe('AgentSessionActivityIndex terminal outcomes', () => {
   const ref = { agentTypeId: 'alpha', sessionId: 'session-1' }
 
-  it('attaches turn identity to optimistic running without duplicating the transition', () => {
+  it('lets a native start publish and attach turn identity before service acceptance', () => {
     const index = new AgentSessionActivityIndex()
     const statuses: string[] = []
     index.subscribe('ws', ({ status }) => statuses.push(status))
 
-    index.beginPendingRun('ws', ref)
+    const pendingRun = index.beginPendingRun('ws', ref)
     index.observe('ws', ref, { type: 'agent-start', seq: 1, turnId: 't1' })
+    index.commitPendingRun('ws', ref, pendingRun)
     index.observe('ws', ref, { type: 'agent-end', seq: 2, turnId: 't1', status: 'ok' })
 
     expect(statuses).toEqual(['running', 'idle'])
     expect(index.get('ws', ref)).toBe('idle')
+  })
+
+  it('publishes running when an accepted invocation has not started natively', () => {
+    const index = new AgentSessionActivityIndex()
+    const statuses: string[] = []
+    index.subscribe('ws', ({ status }) => statuses.push(status))
+
+    const pendingRun = index.beginPendingRun('ws', ref)
+    expect(statuses).toEqual([])
+    index.commitPendingRun('ws', ref, pendingRun)
+
+    expect(statuses).toEqual(['running'])
+    expect(index.get('ws', ref)).toBe('running')
+  })
+
+  it('lets a pre-start error settle pending ownership before service acceptance', () => {
+    const index = new AgentSessionActivityIndex()
+    const statuses: string[] = []
+    index.subscribe('ws', ({ status }) => statuses.push(status))
+
+    const pendingRun = index.beginPendingRun('ws', ref)
+    index.observe('ws', ref, {
+      type: 'error',
+      seq: 1,
+      retryable: false,
+      error: { code: ErrorCode.enum.INTERNAL_ERROR, message: 'provider down', retryable: false },
+    })
+    index.commitPendingRun('ws', ref, pendingRun)
+
+    expect(statuses).toEqual(['error'])
+    expect(index.get('ws', ref)).toBe('error')
   })
 
   it('settles an accepted pending run when it fails before agent-start', () => {
@@ -23,7 +55,8 @@ describe('AgentSessionActivityIndex terminal outcomes', () => {
     const statuses: string[] = []
     index.subscribe('ws', ({ status }) => statuses.push(status))
 
-    index.beginPendingRun('ws', ref)
+    const pendingRun = index.beginPendingRun('ws', ref)
+    index.commitPendingRun('ws', ref, pendingRun)
     index.observe('ws', ref, {
       type: 'error',
       seq: 1,
@@ -35,7 +68,7 @@ describe('AgentSessionActivityIndex terminal outcomes', () => {
     expect(index.get('ws', ref)).toBe('error')
   })
 
-  it('rolls a rejected service invocation back to the activity it replaced', () => {
+  it('silently rolls a rejected service invocation back to the activity it replaced', () => {
     const index = new AgentSessionActivityIndex()
     const statuses: string[] = []
     index.set('ws', ref, 'error')
@@ -44,7 +77,7 @@ describe('AgentSessionActivityIndex terminal outcomes', () => {
     const pendingRun = index.beginPendingRun('ws', ref)
     index.rollbackPendingRun('ws', ref, pendingRun)
 
-    expect(statuses).toEqual(['running', 'error'])
+    expect(statuses).toEqual([])
     expect(index.get('ws', ref)).toBe('error')
   })
 
