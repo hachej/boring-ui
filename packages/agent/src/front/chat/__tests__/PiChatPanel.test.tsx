@@ -624,7 +624,7 @@ describe('PiChatPanel sandbox shell', () => {
 
     await waitFor(() => {
       expect(fetchMock.mock.calls.map((call) => String(call[0]))).toEqual(expect.arrayContaining([
-        'https://agent.test/api/v1/agents/default/sessions?limit=50',
+        'https://agent.test/api/v1/agents/default/sessions?limit=50&archived=active',
         'https://agent.test/api/v1/agents/default/models',
         expect.stringContaining('https://agent.test/api/v1/agents/default/commands'),
       ]))
