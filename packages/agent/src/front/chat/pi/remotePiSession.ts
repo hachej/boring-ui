@@ -1,8 +1,5 @@
 import { ErrorCode } from '../../../shared/error-codes'
-import {
-  errorResponseCode,
-  gatewayResponseErrorFromBody,
-} from '../gatewayResponseError'
+import { errorResponseCode, gatewayResponseErrorFromBody } from '../gatewayResponseError'
 import type {
   CommandReceipt,
   FollowUpPayload,

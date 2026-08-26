@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ErrorCode } from '../../../../shared/error-codes'
+import { AgentGatewayErrorCode } from '../../../../shared/gateway/errors'
 import type { PiChatEvent, PiChatSnapshot } from '../../../../shared/chat'
 import { PI_CHAT_CURSOR_AHEAD_CODE, PI_CHAT_REPLAY_GAP_CODE } from '../piChatStream'
 import { RemotePiSession, piChatErrorCode } from '../remotePiSession'
@@ -816,8 +817,8 @@ describe('RemotePiSession', () => {
     expect(piChatErrorCode(Object.assign(new Error('x'), { errorCode: 'NOT_A_REAL_CODE' }))).toBeUndefined()
     expect(piChatErrorCode(Object.assign(new Error('x'), { errorCode: ErrorCode.enum.SESSION_LOCKED }))).toBe(ErrorCode.enum.SESSION_LOCKED)
     expect(piChatErrorCode(Object.assign(new Error('x'), {
-      errorCode: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
-    }))).toBe(AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH)
+      errorCode: AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
+    }))).toBe(AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE)
   })
 
   it('clears optimistic queued follow-ups from the stop receipt before a queue echo arrives', async () => {
