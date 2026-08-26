@@ -430,6 +430,10 @@ export type BoringMessageResponseProps = MessageResponseProps & {
 export const MessageResponse = memo(
   ({ className, shikiTheme, components, codeFilename, rehypePlugins, allowedTags, ...props }: BoringMessageResponseProps) => {
     const streamdownPlugins = useStreamdownPlugins(props.children, { code: false });
+    const linkRehypePlugins = useMemo(
+      () => markdownLinkRehypePlugins(rehypePlugins, allowedTags),
+      [allowedTags, rehypePlugins],
+    );
     return (
       <Streamdown
         className={cn(
@@ -437,7 +441,7 @@ export const MessageResponse = memo(
           className
         )}
         plugins={streamdownPlugins}
-        rehypePlugins={markdownLinkRehypePlugins(rehypePlugins, allowedTags)}
+        rehypePlugins={linkRehypePlugins}
         allowedTags={allowedTags}
         shikiTheme={shikiTheme ?? DEFAULT_SHIKI_THEME}
         components={{

@@ -110,6 +110,25 @@ describe("MessageResponse link affordances (#1395)", () => {
     expect(screen.getAllByRole("button", { name: "Open URL in new tab" })).toHaveLength(1);
   });
 
+  it("keeps the rehype pipeline stable across streaming token updates", async () => {
+    let transformerRuns = 0;
+    const probePlugin = () => () => {
+      transformerRuns += 1;
+    };
+    const rehypePlugins = [probePlugin];
+    const view = render(
+      <MessageResponse rehypePlugins={rehypePlugins}>{"settled block\n\nstream"}</MessageResponse>,
+    );
+    await waitFor(() => expect(transformerRuns).toBeGreaterThanOrEqual(2));
+    transformerRuns = 0;
+
+    view.rerender(
+      <MessageResponse rehypePlugins={rehypePlugins}>{"settled block\n\nstreaming"}</MessageResponse>,
+    );
+
+    await waitFor(() => expect(transformerRuns).toBe(1));
+  });
+
   it("does not decorate incomplete streaming links", () => {
     render(<MessageResponse>{"[unfinished](https://example.com"}</MessageResponse>);
 
