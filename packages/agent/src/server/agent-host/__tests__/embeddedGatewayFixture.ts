@@ -28,6 +28,7 @@ interface RecordValue {
   createdAt: string
   updatedAt: string
   status: AgentSessionActivity
+  archived: boolean
   seq: number
   queue: QueuedUserMessage[]
   events: PiChatEvent[]
@@ -40,8 +41,12 @@ class FakeService implements PiChatSessionService {
   readonly records = new Map<string, RecordValue>()
   nextPromptError: Error | undefined
 
-  async listSessions(_ctx: PiSessionRequestContext, options?: { includeId?: string }) {
-    const rows = [...this.records.values()].map(this.summary)
+  async listSessions(_ctx: PiSessionRequestContext, options?: { includeId?: string; archived?: 'active' | 'archived' | 'all' }) {
+    const rows = [...this.records.values()]
+      .filter((record) => options?.archived === undefined
+        || options.archived === 'all'
+        || record.archived === (options.archived === 'archived'))
+      .map(this.summary)
     if (!options?.includeId || rows.some((row) => row.id === options.includeId)) return rows
     return rows
   }
@@ -56,6 +61,7 @@ class FakeService implements PiChatSessionService {
       createdAt: now,
       updatedAt: now,
       status: 'idle',
+      archived: false,
       seq: 0,
       queue: [],
       events: [],
@@ -148,6 +154,12 @@ class FakeService implements PiChatSessionService {
     return { accepted: true as const, cursor: record.seq, stopped, clearedQueue }
   }
 
+  async setArchived(sessionId: string, archived: boolean) {
+    const record = this.get(sessionId)
+    record.archived = archived
+    return this.summary(record)
+  }
+
   async rename(sessionId: string, title: string) {
     const record = this.get(sessionId)
     record.title = title
@@ -183,6 +195,7 @@ class FakeService implements PiChatSessionService {
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
     turnCount: 0,
+    ...(record.archived ? { archived: true as const } : {}),
   })
 }
 
@@ -215,11 +228,14 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
     compiledById: new Map(agents.map((agent) => [agent.agentTypeId, agent])),
     ledger: new InMemoryAgentRequestLedger(),
     activity,
-    async listSessionSummaries(agentTypeId: string, _scope: AuthorizedAgentScope, claim: { workspaceScopeId: string }) {
+    async listSessionSummaries(agentTypeId: string, _scope: AuthorizedAgentScope, claim: { workspaceScopeId: string }, options?: { archived?: 'active' | 'archived' | 'all' }) {
       return await serviceFor(claim.workspaceScopeId, agentTypeId).listSessions({
         workspaceId: claim.workspaceScopeId,
         requestId: 'inventory-list',
-      })
+      }, options)
+    },
+    async setSessionArchived(agentTypeId: string, _scope: AuthorizedAgentScope, claim: { workspaceScopeId: string }, sessionId: string, archived: boolean) {
+      return await serviceFor(claim.workspaceScopeId, agentTypeId).setArchived(sessionId, archived)
     },
     effectAdmission: {
       async admit({ operation }: { operation: AgentGatewayEffect }) {

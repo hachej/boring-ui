@@ -26,6 +26,7 @@ import { ErrorCode } from "../../../shared/error-codes.js";
 import type { ChatModelSelection } from "../../../shared/chat/chatSubmitPayload.js";
 import {
   SAFE_NATIVE_SESSION_ID,
+  compareSessionOrder,
   type SessionStore,
   type SessionCtx,
   type SessionSummary,
@@ -142,11 +143,6 @@ interface NormalizedListOptions {
 /** `archived` is present (true) only while archived, so the wire stays quiet. */
 function withArchivedFlag(summary: SessionSummary, archivedIds: ReadonlySet<string>): SessionSummary {
   return archivedIds.has(summary.id) ? { ...summary, archived: true } : summary;
-}
-
-function matchesArchiveFilter(summary: SessionSummary, filter: SessionArchiveFilter): boolean {
-  if (filter === "all") return true;
-  return filter === "archived" ? summary.archived === true : summary.archived !== true;
 }
 
 function sessionDirForNamespace(namespace: string, explicitRoot?: string): string {
@@ -271,19 +267,26 @@ export class PiSessionStore implements SessionStore {
     // Sorting on recency alone left equal-updatedAt sessions in readdir
     // order, so one could fall outside the requested prefix and then fail
     // the gateway's cursor filter forever — a session that never appears.
-    visibleFiles.sort((a, b) =>
-      b.sortMtimeMs - a.sortMtimeMs
-      || a.sortId.localeCompare(b.sortId));
+    visibleFiles.sort((a, b) => compareSessionOrder(
+      { updatedAtMs: a.sortMtimeMs, agentTypeId: "", sessionId: a.sortId },
+      { updatedAtMs: b.sortMtimeMs, agentTypeId: "", sessionId: b.sortId },
+    ));
 
     const { offset, limit } = options;
     const includeId = options.includeId;
-    // One index read per listing: the flag is stamped on every summary and the
-    // filter is applied inside the same page loop that skips turn-less rows,
-    // so offset/limit keep counting the rows the caller can actually see.
+    // Marker membership is known from the canonical header id before any
+    // transcript summary is built. Filter the candidate files here so an
+    // opposite-state prefix costs bounded prefix reads, not one full transcript
+    // summary per hidden session. includeId is resolved separately below.
     const archivedIds = await readArchivedSessionIds(this.sessionDir);
-    const pageSummaries = await this.summarizeVisiblePage(visibleFiles, {
+    const filteredFiles = options.archived === "all"
+      ? visibleFiles
+      : visibleFiles.filter((file) => (
+        archivedIds.has(file.sortId) === (options.archived === "archived")
+      ));
+    const pageSummaries = await this.summarizeVisiblePage(filteredFiles, {
       ctx, offset, limit, includeId, includeEmpty: options.includeEmpty,
-      archivedIds, archivedFilter: options.archived,
+      archivedIds,
     });
     if (!includeId || pageSummaries.some((summary) => summary.id === includeId)) return pageSummaries;
 
@@ -967,7 +970,6 @@ export class PiSessionStore implements SessionStore {
       includeId: string | undefined;
       includeEmpty: boolean;
       archivedIds: ReadonlySet<string>;
-      archivedFilter: SessionArchiveFilter;
     },
   ): Promise<SessionSummary[]> {
     if (options.limit === 0) return [];
@@ -989,14 +991,6 @@ export class PiSessionStore implements SessionStore {
       for (const rawSummary of summaries) {
         if (!rawSummary) continue;
         const summary = withArchivedFlag(rawSummary, options.archivedIds);
-        // Archiving hides a row; it never removes one. An explicit include-by-id
-        // (the just-created / boot-resumed session) still resolves either way.
-        if (
-          !matchesArchiveFilter(summary, options.archivedFilter)
-          && summary.id !== options.includeId
-        ) {
-          continue;
-        }
         // A session is written eagerly at create, so a New chat the user never
         // sent leaves a real transcript with no turns. It is not user content
         // yet, so keep it out of every listing — except when the client asks

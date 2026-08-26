@@ -44,7 +44,7 @@ describe('Embedded Agent Gateway strong effect admission', () => {
     await expect(fixture.gateway.listSessions({ scope, agentTypeId: 'alpha' })).resolves.toMatchObject({ sessions: [] })
   })
 
-  it('admits rename and delete before either session mutation', async () => {
+  it('admits rename, archive, and delete before any session mutation', async () => {
     const { fixture, scope, ref } = await createSession()
     fixture.queueAdmission('session.rename', 'strong-reject')
     await expect(fixture.gateway.renameSession({
@@ -57,6 +57,17 @@ describe('Embedded Agent Gateway strong effect admission', () => {
       summary: { title: 'Original title' },
     })
 
+    fixture.queueAdmission('session.archive', 'strong-reject')
+    await expect(fixture.gateway.setSessionArchived({
+      scope,
+      ref,
+      requestId: 'denied-archive',
+      archived: true,
+    })).rejects.toMatchObject(denied)
+    await expect(fixture.gateway.listSessions({ scope, archived: 'active' })).resolves.toMatchObject({
+      sessions: [expect.objectContaining({ ref })],
+    })
+
     fixture.queueAdmission('session.delete', 'strong-reject')
     await expect(fixture.gateway.deleteSession({
       scope,
@@ -64,6 +75,21 @@ describe('Embedded Agent Gateway strong effect admission', () => {
       requestId: 'denied-delete',
     })).rejects.toMatchObject(denied)
     await expect(fixture.gateway.readSessionState({ scope, ref })).resolves.toMatchObject({ ref })
+  })
+
+  it('executes archive through inventory with replay and digest-conflict semantics', async () => {
+    const { fixture, scope, ref } = await createSession()
+    const input = { scope, ref, requestId: 'archive-once', archived: true }
+    const first = await fixture.gateway.setSessionArchived(input)
+    expect(first.archived).toBe(true)
+    await expect(fixture.gateway.setSessionArchived(input)).resolves.toEqual(first)
+    await expect(fixture.gateway.setSessionArchived({ ...input, archived: false })).rejects.toMatchObject({
+      code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT,
+    })
+    await expect(fixture.gateway.listSessions({ scope, archived: 'archived' })).resolves.toMatchObject({
+      sessions: [expect.objectContaining({ ref, archived: true })],
+    })
+    await expect(fixture.gateway.listSessions({ scope, archived: 'active' })).resolves.toEqual({ sessions: [] })
   })
 
   it('applies strong admission to prompt, follow-up, interrupt, stop, and queue clear', async () => {

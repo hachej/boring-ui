@@ -54,6 +54,79 @@ describe('usePiSessions addressed Agent transport', () => {
     expect(result.current.sessions.find((session) => session.id === 'archived-50')?.archived).toBeUndefined()
   })
 
+  test('refreshes every loaded archive filter after external mutations', async () => {
+    const row = (id: string, archived: boolean) => ({
+      ref: { agentTypeId: 'alpha', sessionId: id },
+      title: id,
+      status: 'idle',
+      createdAt: 1,
+      updatedAt: id === 'x' ? 2 : 1,
+      ...(archived ? { archived: true } : {}),
+    })
+    let active = [row('x', false)]
+    let archived = [row('y', true)]
+    let archivedGets = 0
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), 'http://local')
+      const wantsArchived = url.searchParams.get('archived') === 'archived'
+      if (wantsArchived) archivedGets += 1
+      return new Response(JSON.stringify({ sessions: wantsArchived ? archived : active }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    })
+    const { result } = renderHook(() => usePiSessions({
+      agentTypeId: 'alpha', fetch: fetchMock as typeof fetch, connectActiveSession: false, retry: { maxRetries: 0 },
+    }))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await act(async () => { await result.current.loadArchived() })
+    expect(result.current.sessions.map((session) => `${session.id}:${session.archived ? 'archived' : 'active'}`)).toEqual(['x:active', 'y:archived'])
+
+    active = []
+    archived = [row('x', true), row('y', true)]
+    await act(async () => { await result.current.refresh({ background: true }) })
+    expect(result.current.sessions.map((session) => `${session.id}:${session.archived ? 'archived' : 'active'}`)).toEqual(['x:archived', 'y:archived'])
+    expect(archivedGets).toBe(2)
+
+    archived = [row('x', true)]
+    await act(async () => { await result.current.refresh({ background: true }) })
+    expect(result.current.sessions.map((session) => session.id)).toEqual(['x'])
+  })
+
+  test('fences older list responses against successful archive mutations', async () => {
+    let resolveRefresh!: (response: Response) => void
+    let activeGets = 0
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input), 'http://local')
+      if (init?.method === 'POST') {
+        return new Response(JSON.stringify({
+          ref: { agentTypeId: 'alpha', sessionId: 'x' }, title: 'x', status: 'idle', createdAt: 1, updatedAt: 1, archived: true,
+        }), { status: 200, headers: { 'content-type': 'application/json' } })
+      }
+      activeGets += 1
+      const response = new Response(JSON.stringify({ sessions: [{
+        ref: { agentTypeId: 'alpha', sessionId: 'x' }, title: 'x', status: 'idle', createdAt: 1, updatedAt: 1,
+      }] }), { status: 200, headers: { 'content-type': 'application/json' } })
+      if (activeGets === 1) return response
+      return await new Promise<Response>((resolve) => { resolveRefresh = resolve })
+    })
+    const { result } = renderHook(() => usePiSessions({
+      agentTypeId: 'alpha', fetch: fetchMock as typeof fetch, connectActiveSession: false, retry: { maxRetries: 0 },
+    }))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    let refresh!: Promise<void>
+    act(() => { refresh = result.current.refresh({ background: true }) })
+    await waitFor(() => expect(activeGets).toBe(2))
+    await act(async () => { await result.current.setArchived('x', true) })
+    await act(async () => {
+      resolveRefresh(new Response(JSON.stringify({ sessions: [{
+        ref: { agentTypeId: 'alpha', sessionId: 'x' }, title: 'x', status: 'idle', createdAt: 1, updatedAt: 1,
+      }] }), { status: 200, headers: { 'content-type': 'application/json' } }))
+      await refresh
+    })
+    expect(result.current.sessions).toEqual([expect.objectContaining({ id: 'x', archived: true })])
+  })
+
   test('carries agentTypeId through list, cursor continuation, create, and delete', async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = []
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {

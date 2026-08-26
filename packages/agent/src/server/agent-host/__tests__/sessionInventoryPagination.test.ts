@@ -20,7 +20,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   }
 })
 import { createTestRuntimeModeAdapter } from '@agent-test-host'
-import type { AuthorizedAgentScope } from '../../../shared/index'
+import { AgentGatewayErrorCode, type AuthorizedAgentScope } from '../../../shared/index'
 import type { SessionListOptions } from '../../../shared/session'
 import { PiSessionStore } from '../../harness/pi-coding-agent/sessions'
 import { writeSessionArchived } from '../../harness/pi-coding-agent/sessionArchiveIndex'
@@ -157,10 +157,23 @@ describe('legacyDefault seat storage placement', () => {
     })
     try {
       const page = await host.gateway.listSessions({ scope, limit: 10 })
+      const ref = { agentTypeId: 'default', sessionId: 'pre-existing-session' }
       expect(page.sessions).toEqual([expect.objectContaining({
-        ref: { agentTypeId: 'default', sessionId: 'pre-existing-session' },
+        ref,
         title: 'A session the user already had',
       })])
+      // The host's harnessFactory deliberately throws. Success proves archive
+      // mutation shares the storage-only inventory owner used by listing and
+      // does not boot a separately composed session repository.
+      await expect(host.gateway.setSessionArchived({
+        scope,
+        ref,
+        requestId: 'archive-pre-existing',
+        archived: true,
+      })).resolves.toMatchObject({ ref, archived: true })
+      await expect(host.gateway.listSessions({ scope, archived: 'archived' })).resolves.toMatchObject({
+        sessions: [expect.objectContaining({ ref, archived: true })],
+      })
     } finally {
       await host.host.close()
     }
@@ -219,7 +232,7 @@ describe('seat session listing pagination', () => {
         archived: 'archived',
         limit: 1,
         cursor: active.nextCursor,
-      })).rejects.toMatchObject({ code: 'AGENT_SESSION_CURSOR_INVALID' })
+      })).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_SESSION_CURSOR_INVALID })
     } finally {
       await host.host.close()
     }
@@ -339,6 +352,34 @@ describe('equal-updatedAt tiebreak (sessions must never disappear)', () => {
 
       expect(seen).toEqual(['alpha', 'beta', 'xray', 'yankee', 'zeta'])
       expect(new Set(seen).size).toBe(IDS.length)
+    } finally {
+      await host.host.close()
+    }
+  })
+
+  it('uses one code-unit order for mixed-case and punctuation across store and cursor pages', async () => {
+    const ids = ['z', 'a_', 'a-', 'a', 'Z', 'A']
+    const expected = ['A', 'Z', 'a', 'a-', 'a_', 'z']
+    const sessionRoot = await temporaryRoot()
+    const workspaceRoot = join(sessionRoot, 'workspace')
+    const workspaceScopeId = 'workspace-case:storage-case'
+    const scope = { workspaceScopeId, authSubjectId: 'subject-a' } as AuthorizedAgentScope
+    const dir = join(sessionRoot, pathDerivedDirName(workspaceRoot))
+    for (const id of ids) await plantNativeTie(dir, id, workspaceScopeId)
+
+    const store = new PiSessionStore(workspaceRoot, { sessionRoot, storageCwd: workspaceRoot })
+    expect((await store.list({ workspaceId: workspaceScopeId })).map((row) => row.id)).toEqual(expected)
+
+    const host = await startHost({ agents: [legacyDefaultAgent], sessionRoot, workspaceRoot, sessionNamespace: '' })
+    try {
+      const paged: string[] = []
+      let cursor: string | undefined
+      do {
+        const page = await host.gateway.listSessions({ scope, agentTypeId: 'default', limit: 1, cursor })
+        paged.push(...page.sessions.map((row) => row.ref.sessionId))
+        cursor = page.nextCursor
+      } while (cursor)
+      expect(paged).toEqual(expected)
     } finally {
       await host.host.close()
     }

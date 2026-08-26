@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import {
   AgentGatewayError,
   AgentGatewayErrorCode,
-  supportsSessionArchive,
+  compareSessionOrder,
   type AgentGateway,
   type AgentGatewayErrorDTO,
   type AgentSessionActivity,
@@ -110,21 +110,27 @@ function summaryFromLegacy(
   }
 }
 
-function compareSessions(a: AgentSessionSummary, b: AgentSessionSummary): number {
-  return b.updatedAt - a.updatedAt
-    || a.ref.agentTypeId.localeCompare(b.ref.agentTypeId)
-    || a.ref.sessionId.localeCompare(b.ref.sessionId)
+function sessionOrderKey(summary: AgentSessionSummary) {
+  return {
+    updatedAtMs: summary.updatedAt,
+    agentTypeId: summary.ref.agentTypeId,
+    sessionId: summary.ref.sessionId,
+  }
+}
+
+function compareSessions(left: AgentSessionSummary, right: AgentSessionSummary): number {
+  return compareSessionOrder(sessionOrderKey(left), sessionOrderKey(right))
 }
 
 function isAfterCursor(
   summary: AgentSessionSummary,
   cursor: { updatedAt: number; agentTypeId: string; sessionId: string },
 ): boolean {
-  return summary.updatedAt < cursor.updatedAt
-    || (summary.updatedAt === cursor.updatedAt && (
-      summary.ref.agentTypeId > cursor.agentTypeId
-      || (summary.ref.agentTypeId === cursor.agentTypeId && summary.ref.sessionId > cursor.sessionId)
-    ))
+  return compareSessionOrder(sessionOrderKey(summary), {
+    updatedAtMs: cursor.updatedAt,
+    agentTypeId: cursor.agentTypeId,
+    sessionId: cursor.sessionId,
+  }) > 0
 }
 
 export class EmbeddedAgentGateway implements AgentGateway {
@@ -567,17 +573,28 @@ export class EmbeddedAgentGateway implements AgentGateway {
    */
   async setSessionArchived(input: Parameters<AgentGateway['setSessionArchived']>[0]) {
     const claim = await this.verify(input.scope)
-    const binding = await this.bindingForSession(input.scope, claim, input.ref)
-    const repository = binding.composition.sessionStore
-    if (!supportsSessionArchive(repository)) {
-      throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE, 'session repository does not support archiving')
+    if (!this.runtime.compiledById.has(input.ref.agentTypeId)) {
+      throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN, 'agent type is not available')
+    }
+    const runtimeScope = await this.runtime.resolveSessionRuntime(
+      input.ref.agentTypeId,
+      input.scope,
+      claim,
+      input.ref.sessionId,
+    )
+    if (!runtimeScope) {
+      throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND, 'session does not exist')
     }
     return await this.sessionEffect(input.ref, claim, 'session.archive', input.requestId, { archived: input.archived }, async () => {
-      const updated = await repository.setArchived(
-        { workspaceId: claim.workspaceScopeId }, input.ref.sessionId, input.archived,
+      const updated = await this.runtime.setSessionArchived(
+        input.ref.agentTypeId,
+        input.scope,
+        claim,
+        input.ref.sessionId,
+        input.archived,
       )
       return summaryFromLegacy(input.ref, updated, this.runtime.activity.get(claim.workspaceScopeId, input.ref))
-    }, { bindingKey: binding.key }) as AgentSessionSummary
+    }) as AgentSessionSummary
   }
 
   async deleteSession(input: Parameters<AgentGateway['deleteSession']>[0]): Promise<void> {

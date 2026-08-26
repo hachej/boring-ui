@@ -1,17 +1,32 @@
 /** Native Pi/session IDs are path-safe segments; dots may only separate non-empty segments. */
 export const SAFE_NATIVE_SESSION_ID = /^[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)*$/
 
+export interface SessionOrderKey {
+  readonly updatedAtMs: number
+  readonly agentTypeId: string
+  readonly sessionId: string
+}
+
+/**
+ * Canonical session inventory order: newest first, then UTF-16 code-unit
+ * identity order. Cursor boundaries and every bounded store prefix must use
+ * this exact comparator; locale-sensitive ordering is not stable or portable.
+ */
+export function compareSessionOrder(left: SessionOrderKey, right: SessionOrderKey): number {
+  return right.updatedAtMs - left.updatedAtMs
+    || compareSessionIdentity(left.agentTypeId, right.agentTypeId)
+    || compareSessionIdentity(left.sessionId, right.sessionId)
+}
+
+function compareSessionIdentity(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0
+}
+
 export interface SessionStore {
   list(ctx: SessionCtx, options?: SessionListOptions): Promise<SessionSummary[]>
   create(ctx: SessionCtx, init?: { title?: string }): Promise<SessionSummary>
   /** Native Pi transcripts can append a session_info title without a wrapper. */
   rename?(ctx: SessionCtx, sessionId: string, title: string): Promise<SessionSummary>
-  /**
-   * Visibility only. Archiving never touches the transcript: it records the
-   * session id in a sidecar index beside the transcripts, so unarchiving
-   * restores the row byte-for-byte.
-   */
-  setArchived?(ctx: SessionCtx, sessionId: string, archived: boolean): Promise<SessionSummary>
   load(ctx: SessionCtx, sessionId: string): Promise<SessionDetail>
   delete(ctx: SessionCtx, sessionId: string): Promise<void>
 }
@@ -21,15 +36,6 @@ export interface SessionStore {
  * every existing caller keeps seeing exactly what it saw before archiving
  * existed; the flag on each summary is what lets a client partition.
  */
-export interface ArchiveSessionStore extends SessionStore {
-  setArchived(ctx: SessionCtx, sessionId: string, archived: boolean): Promise<SessionSummary>
-}
-
-/** Typed capability check used at optional composition boundaries. */
-export function supportsSessionArchive(store: SessionStore): store is ArchiveSessionStore {
-  return typeof store.setArchived === 'function'
-}
-
 export type SessionArchiveFilter = 'active' | 'archived' | 'all'
 
 export interface SessionCtx {

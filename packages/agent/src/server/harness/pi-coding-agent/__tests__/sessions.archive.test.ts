@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -99,6 +99,16 @@ describe("PiSessionStore archive state", () => {
 
     const all = await store.list(ctx);
     expect(all.map((session) => session.id).sort()).toEqual([kept, shelved].sort());
+  });
+
+  it("filters opposite-state files before transcript summarization", async () => {
+    const ids: string[] = [];
+    for (let index = 0; index < 20; index += 1) ids.push(await seedTranscript(`Archived ${index}`));
+    await Promise.all(ids.map((id) => store.setArchived(ctx, id, true)));
+    const summarize = vi.spyOn(store as unknown as { summarizeFile: (...args: unknown[]) => Promise<unknown> }, "summarizeFile");
+
+    await expect(store.list(ctx, { archived: "active", limit: 1 })).resolves.toEqual([]);
+    expect(summarize).not.toHaveBeenCalled();
   });
 
   it("persists one marker per session and accepts prototype-looking ids", async () => {

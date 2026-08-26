@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   AgentGatewayError,
   AgentGatewayErrorCode,
+  compareSessionOrder,
   type AgentGateway,
   type AgentGatewayErrorDTO,
   type AgentSessionActivity,
@@ -832,15 +833,17 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
   }
 
   private compareSessions(left: FakeSession, right: FakeSession): number {
-    return right.updatedAt - left.updatedAt
-      || left.ref.agentTypeId.localeCompare(right.ref.agentTypeId)
-      || left.ref.sessionId.localeCompare(right.ref.sessionId)
+    return compareSessionOrder(
+      { updatedAtMs: left.updatedAt, agentTypeId: left.ref.agentTypeId, sessionId: left.ref.sessionId },
+      { updatedAtMs: right.updatedAt, agentTypeId: right.ref.agentTypeId, sessionId: right.ref.sessionId },
+    )
   }
 
   private compareTuple(session: FakeSession, tuple: readonly [number, string, string]): number {
-    return tuple[0] - session.updatedAt
-      || session.ref.agentTypeId.localeCompare(tuple[1])
-      || session.ref.sessionId.localeCompare(tuple[2])
+    return compareSessionOrder(
+      { updatedAtMs: session.updatedAt, agentTypeId: session.ref.agentTypeId, sessionId: session.ref.sessionId },
+      { updatedAtMs: tuple[0], agentTypeId: tuple[1], sessionId: tuple[2] },
+    )
   }
 
   private createCursor(payload: {
