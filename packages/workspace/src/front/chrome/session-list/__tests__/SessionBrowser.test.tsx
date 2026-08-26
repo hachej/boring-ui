@@ -616,7 +616,12 @@ describe("SessionBrowser", () => {
           id="session-browser"
           onRender={() => committedFailedStates.push(Boolean(document.querySelector('[data-boring-badge="failed"]')))}
         >
-          <SessionBrowser sessions={sample} activeId="s1" activityWorkspaceId={workspaceId} />
+          <SessionBrowser
+            sessions={sample}
+            activeId="s1"
+            activityWorkspaceId={workspaceId}
+            sessionSourceIdentity={`source:${workspaceId}`}
+          />
         </Profiler>
       )
     }
@@ -634,8 +639,42 @@ describe("SessionBrowser", () => {
     expect(committedFailedStates.slice(switchRenderIndex)[0]).toBe(false)
   })
 
+  it("starts clean when the session source changes within one workspace", () => {
+    const committedFailedStates: boolean[] = []
+    function Probe({ sourceIdentity }: { sourceIdentity: string }) {
+      return (
+        <Profiler
+          id="session-browser-source"
+          onRender={() => committedFailedStates.push(Boolean(document.querySelector('[data-boring-badge="failed"]')))}
+        >
+          <SessionBrowser
+            sessions={sample}
+            activeId="s1"
+            activityWorkspaceId="ws-same"
+            sessionSourceIdentity={sourceIdentity}
+          />
+        </Profiler>
+      )
+    }
+
+    const { rerender } = render(<Probe sourceIdentity="source-a" />)
+    act(() => {
+      window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+        detail: { workspaceId: "ws-same", sessionId: "s2", status: "error" },
+      }))
+    })
+    expect(committedFailedStates.at(-1)).toBe(true)
+
+    const switchRenderIndex = committedFailedStates.length
+    rerender(<Probe sourceIdentity="source-b" />)
+    expect(committedFailedStates.slice(switchRenderIndex)[0]).toBe(false)
+    expect(document.querySelector('[data-boring-badge="failed"]')).toBeNull()
+  })
+
   it("resets terminal badges when the workspace source switches onto a colliding id", () => {
-    const { rerender } = render(<SessionBrowser sessions={sample} activeId="s1" activityWorkspaceId="ws-a" />)
+    const { rerender } = render(
+      <SessionBrowser sessions={sample} activeId="s1" activityWorkspaceId="ws-a" sessionSourceIdentity="source:ws-a" />,
+    )
 
     act(() => {
       window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
@@ -646,7 +685,9 @@ describe("SessionBrowser", () => {
 
     // Same session id under another workspace must start clean: cached state
     // from the previous source may not survive a source switch.
-    rerender(<SessionBrowser sessions={sample} activeId="s1" activityWorkspaceId="ws-b" />)
+    rerender(
+      <SessionBrowser sessions={sample} activeId="s1" activityWorkspaceId="ws-b" sessionSourceIdentity="source:ws-b" />,
+    )
     expect(document.querySelector('[data-boring-badge="failed"]')).toBeNull()
     expect(document.querySelector('[data-boring-badge="completed"]')).toBeNull()
   })

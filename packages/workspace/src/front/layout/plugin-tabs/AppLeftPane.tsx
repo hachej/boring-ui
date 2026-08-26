@@ -113,8 +113,10 @@ export interface AppLeftPaneProps {
   width?: number
   appTitle?: string
   workspaceLabel?: string
-  /** Owning workspace id — scopes optimistic working-state to this workspace. */
+  /** Owning workspace id, used to filter workspace-tagged activity events. */
   workspaceId: string
+  /** Identity of the complete session source; resets cached activity on change. */
+  sessionSourceIdentity?: string
   workspaceSectionTitle?: string
   projects?: AppLeftPaneProject[]
   activeProjectId?: string | null
@@ -232,6 +234,7 @@ export function AppLeftPane({
   appTitle,
   workspaceLabel,
   workspaceId,
+  sessionSourceIdentity,
   workspaceSectionTitle = "Workspaces",
   projects,
   activeProjectId,
@@ -289,7 +292,10 @@ export function AppLeftPane({
   )
   const openSet = useMemo(() => new Set(normalizedOpenSessionIds), [normalizedOpenSessionIds])
   const pinnedSet = useMemo(() => new Set(normalizedPinnedSessionIds), [normalizedPinnedSessionIds])
-  const { workingSessionIds } = useSessionActivityStates(sessions, { scopeKey: workspaceId })
+  const { workingSessionIds } = useSessionActivityStates(sessions, {
+    sourceScopeKey: sessionSourceIdentity ?? "",
+    workspaceId,
+  })
   // Fleet row idiom (accent dot, compact rows, owner labels): any addressed
   // fleet gets it, including a fleet of one, so chat cards look identical in
   // both cardinalities. Hosts wanting the plain shell omit `agents` entirely.

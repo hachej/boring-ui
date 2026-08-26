@@ -88,7 +88,7 @@ interface TerminalEntry {
 }
 
 interface ScopedSessionActivityModel {
-  scopeKey: string
+  sourceScopeKey: string
   inventorySnapshot: string
   inventoryFingerprints: ReadonlyMap<string, string>
   /** Inventory fingerprint seen when the latest live event for this key arrived. */
@@ -146,12 +146,12 @@ function applyActivity(
 }
 
 function createScopedModel(
-  scopeKey: string,
+  sourceScopeKey: string,
   sessions: readonly SessionActivityItem[],
   inventorySnapshot: string,
 ): ScopedSessionActivityModel {
   let model: ScopedSessionActivityModel = {
-    scopeKey,
+    sourceScopeKey,
     inventorySnapshot,
     inventoryFingerprints: new Map(),
     liveInventoryFingerprints: new Map(),
@@ -200,12 +200,12 @@ function reconcileInventory(
 
 function modelForInputs(
   current: ScopedSessionActivityModel,
-  scopeKey: string,
+  sourceScopeKey: string,
   sessions: readonly SessionActivityItem[],
   inventorySnapshot: string,
   completedVisibleMs: number,
 ): ScopedSessionActivityModel {
-  if (current.scopeKey !== scopeKey) return createScopedModel(scopeKey, sessions, inventorySnapshot)
+  if (current.sourceScopeKey !== sourceScopeKey) return createScopedModel(sourceScopeKey, sessions, inventorySnapshot)
   if (current.inventorySnapshot !== inventorySnapshot) {
     return reconcileInventory(current, sessions, inventorySnapshot, completedVisibleMs)
   }
@@ -219,44 +219,46 @@ function parseLiveStatus(detail: { status?: unknown; working?: unknown }): Sessi
   return undefined
 }
 
-function eventBelongsToScope(workspaceId: unknown, scopeKey: string): boolean {
-  if (scopeKey) return workspaceId === scopeKey
-  return typeof workspaceId !== "string"
+function eventBelongsToWorkspace(eventWorkspaceId: unknown, workspaceId: string): boolean {
+  if (workspaceId) return eventWorkspaceId === workspaceId
+  return typeof eventWorkspaceId !== "string"
 }
 
 /**
- * One scoped model for optimistic panel state, authoritative live outcomes,
- * and inventory reconciliation. Live frames are applied atomically so an
- * explicit aborted outcome can never pass through `completed`; scope-tagged
- * state also makes the first render after a workspace switch start clean.
+ * One source-scoped model for optimistic panel state, authoritative live
+ * outcomes, and inventory reconciliation. Live frames are applied atomically
+ * so an explicit aborted outcome can never pass through `completed`.
+ * `workspaceId` filters events only; source changes within one workspace still
+ * reset the model before the first committed render.
  */
 export function useSessionActivityStates(
   sessions: readonly SessionActivityItem[],
-  options: { scopeKey: string; completedVisibleMs?: number },
+  options: { sourceScopeKey: string; workspaceId: string; completedVisibleMs?: number },
 ): {
   workingSessionIds: ReadonlySet<string>
   terminalSessionStates: ReadonlyMap<string, SessionTerminalState>
 } {
-  const scopeKey = options.scopeKey
+  const sourceScopeKey = options.sourceScopeKey
+  const workspaceId = options.workspaceId
   const completedVisibleMs = options.completedVisibleMs ?? COMPLETED_VISIBLE_MS
   const inventorySnapshot = useMemo(() => inventorySnapshotFor(sessions), [sessions])
   const [model, setModel] = useState<ScopedSessionActivityModel>(() => (
-    createScopedModel(scopeKey, sessions, inventorySnapshot)
+    createScopedModel(sourceScopeKey, sessions, inventorySnapshot)
   ))
-  // Derive against the current scope and inventory during render. Waiting for
-  // an effect would expose one committed frame of the previous workspace (or
+  // Derive against the current source and inventory during render. Waiting for
+  // an effect would expose one committed frame of the previous source (or
   // superseded inventory) before the scoped model catches up.
-  const visibleModel = modelForInputs(model, scopeKey, sessions, inventorySnapshot, completedVisibleMs)
+  const visibleModel = modelForInputs(model, sourceScopeKey, sessions, inventorySnapshot, completedVisibleMs)
 
   useEffect(() => {
     setModel((current) => modelForInputs(
       current,
-      scopeKey,
+      sourceScopeKey,
       sessions,
       inventorySnapshot,
       completedVisibleMs,
     ))
-  }, [completedVisibleMs, inventorySnapshot, scopeKey, sessions])
+  }, [completedVisibleMs, inventorySnapshot, sessions, sourceScopeKey])
 
   useEffect(() => {
     const onStatus = (event: Event) => {
@@ -267,7 +269,7 @@ export function useSessionActivityStates(
         working?: unknown
         status?: unknown
       } | undefined
-      if (typeof detail?.sessionId !== "string" || !eventBelongsToScope(detail.workspaceId, scopeKey)) return
+      if (typeof detail?.sessionId !== "string" || !eventBelongsToWorkspace(detail.workspaceId, workspaceId)) return
       const status = parseLiveStatus(detail)
       const key = workspaceSessionKey(
         detail.sessionId,
@@ -276,7 +278,7 @@ export function useSessionActivityStates(
       setModel((current) => {
         const scoped = modelForInputs(
           current,
-          scopeKey,
+          sourceScopeKey,
           sessions,
           inventorySnapshot,
           completedVisibleMs,
@@ -301,7 +303,7 @@ export function useSessionActivityStates(
     window.addEventListener(CHAT_SESSION_STATUS_EVENT, onStatus)
     window.dispatchEvent(new Event(CHAT_SESSION_STATUS_REQUEST_EVENT))
     return () => window.removeEventListener(CHAT_SESSION_STATUS_EVENT, onStatus)
-  }, [completedVisibleMs, inventorySnapshot, scopeKey, sessions])
+  }, [completedVisibleMs, inventorySnapshot, sessions, sourceScopeKey, workspaceId])
 
   useEffect(() => {
     const expiries = [...visibleModel.terminal.values()]
@@ -311,7 +313,7 @@ export function useSessionActivityStates(
     const timer = setTimeout(() => {
       const now = Date.now()
       setModel((current) => {
-        if (current.scopeKey !== scopeKey) return current
+        if (current.sourceScopeKey !== sourceScopeKey) return current
         const terminal = new Map(current.terminal)
         let changed = false
         for (const [key, entry] of terminal) {
@@ -324,7 +326,7 @@ export function useSessionActivityStates(
       })
     }, Math.max(0, Math.min(...expiries) - Date.now()))
     return () => clearTimeout(timer)
-  }, [scopeKey, visibleModel])
+  }, [sourceScopeKey, visibleModel])
 
   const terminalSessionStates = useMemo(() => {
     const states = new Map<string, SessionTerminalState>()

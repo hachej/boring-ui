@@ -36,11 +36,9 @@ export interface SessionBrowserProps {
   loadingMore?: boolean
   onClose?: () => void
   className?: string
-  /**
-   * Workspace id scoping the terminal-state caches. Switching workspaces
-   * resets cached completed/failed chips so a colliding session id in another
-   * workspace can never inherit them.
-   */
+  /** Identity of the complete session source; resets cached activity on change. */
+  sessionSourceIdentity?: string
+  /** Workspace id used only to filter workspace-tagged activity events. */
   activityWorkspaceId?: string
 }
 
@@ -137,6 +135,7 @@ export function SessionBrowser({
   loadingMore = false,
   onClose,
   className,
+  sessionSourceIdentity,
   activityWorkspaceId,
 }: SessionBrowserProps) {
   // Pinned sessions sit in their own section on top, in pin order. Open
@@ -192,7 +191,8 @@ export function SessionBrowser({
     () => normalizedOpenIds.length > 0 || normalizedPinnedIds.length > 0,
   )
   const { workingSessionIds, terminalSessionStates } = useSessionActivityStates(sessions, {
-    scopeKey: activityWorkspaceId ?? "",
+    sourceScopeKey: sessionSourceIdentity ?? "",
+    workspaceId: activityWorkspaceId ?? "",
   })
   const { blockers } = useWorkspaceAttention()
   const sessionBadges = useMemo(() => {

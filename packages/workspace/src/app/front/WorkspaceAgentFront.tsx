@@ -2403,8 +2403,9 @@ export function WorkspaceAgentFront<
     hasMore: sessionApi?.hasMore,
     loadingMore: sessionApi?.loadingMore,
     onClose: () => setNavOpen(false),
-    // Scopes terminal completed/failed chips to this workspace's source so a
-    // workspace switch can never tint a colliding session id (review of gh-1364).
+    // Reset cached activity for any session-source change, while workspace id
+    // remains solely the authorization/filter boundary for activity events.
+    sessionSourceIdentity,
     activityWorkspaceId: workspaceId,
   }
   const canDeleteSessions = Boolean(sessionApi || onDeleteSession || !hasExplicitSessionProps)
@@ -2725,6 +2726,7 @@ export function WorkspaceAgentFront<
           appTitle={appTitle}
           workspaceLabel={workspaceLabel}
           workspaceId={workspaceId}
+          sessionSourceIdentity={sessionSourceIdentity}
           workspaceSectionTitle={workspaceSectionTitle}
           layoutMode={appLeftLayoutMode}
           headerMode={appLeftHeaderMode}

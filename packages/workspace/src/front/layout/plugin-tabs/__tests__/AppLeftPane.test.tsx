@@ -1,4 +1,4 @@
-import { useEffect } from "react"
+import { Profiler, useEffect } from "react"
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
@@ -59,6 +59,49 @@ describe("AppLeftPane", () => {
     expect(sessionScroll).toContainElement(screen.getByText("First session"))
     expect(sessionScroll).not.toContainElement(screen.getByRole("button", { name: "New chat" }))
     expect(newChat).toContainElement(screen.getByRole("button", { name: "New chat" }))
+  })
+
+  it("starts clean when the session source changes within one workspace", () => {
+    const committedWorkingStates: boolean[] = []
+    const navigationEntries = testNavigationEntries()
+    function Probe({ sourceIdentity }: { sourceIdentity: string }) {
+      return (
+        <WorkspaceAttentionProvider>
+          <Profiler
+            id="app-left-source"
+            onRender={() => committedWorkingStates.push(Boolean(document.querySelector('[data-boring-badge="working"]')))}
+          >
+            <AppLeftPane
+              appTitle="Test"
+              workspaceId="ws-same"
+              sessionSourceIdentity={sourceIdentity}
+              sessions={sessions}
+              activeSessionId="s1"
+              openSessionIds={["s1"]}
+              pinnedSessionIds={[]}
+              onCreateSession={vi.fn()}
+              navigationEntries={navigationEntries}
+              onSwitchSession={vi.fn()}
+              onOpenSessionAsPane={vi.fn()}
+              onToggleSessionPinned={vi.fn()}
+            />
+          </Profiler>
+        </WorkspaceAttentionProvider>
+      )
+    }
+
+    const { rerender } = render(<Probe sourceIdentity="source-a" />)
+    act(() => {
+      window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+        detail: { workspaceId: "ws-same", sessionId: "s2", status: "running" },
+      }))
+    })
+    expect(committedWorkingStates.at(-1)).toBe(true)
+
+    const switchRenderIndex = committedWorkingStates.length
+    rerender(<Probe sourceIdentity="source-b" />)
+    expect(committedWorkingStates.slice(switchRenderIndex)[0]).toBe(false)
+    expect(document.querySelector('[data-boring-badge="working"]')).toBeNull()
   })
 
   function renderFleetPane(overrides: Partial<Parameters<typeof AppLeftPane>[0]> = {}) {

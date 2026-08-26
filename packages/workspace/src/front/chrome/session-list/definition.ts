@@ -21,6 +21,7 @@ interface SessionListPaneParams {
   hasMore?: boolean
   loadingMore?: boolean
   onClose?: () => void
+  sessionSourceIdentity?: string
   activityWorkspaceId?: string
 }
 
@@ -42,6 +43,7 @@ function SessionListPane({ params }: PaneProps<SessionListPaneParams | undefined
     hasMore: params?.hasMore,
     loadingMore: params?.loadingMore,
     onClose: params?.onClose,
+    sessionSourceIdentity: params?.sessionSourceIdentity,
     activityWorkspaceId: params?.activityWorkspaceId,
   })
 }
