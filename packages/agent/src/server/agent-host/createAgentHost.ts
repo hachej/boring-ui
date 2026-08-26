@@ -436,6 +436,15 @@ function createRuntime(
                   activity.observe(claim.workspaceScopeId, { agentTypeId, sessionId }, event)
                 }
               },
+              beginSessionRun: (sessionId) => {
+                if (draining) return
+                const ref = { agentTypeId, sessionId }
+                const run = activity.beginPendingRun(claim.workspaceScopeId, ref)
+                return {
+                  accept: () => activity.commitPendingRun(claim.workspaceScopeId, ref, run),
+                  reject: () => activity.rollbackPendingRun(claim.workspaceScopeId, ref, run),
+                }
+              },
               beginSessionCancellation: (sessionId) => {
                 if (draining) return
                 const ref = { agentTypeId, sessionId }

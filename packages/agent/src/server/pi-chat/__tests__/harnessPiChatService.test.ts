@@ -133,6 +133,31 @@ function renderMessagesFromEvents(events: PiChatEvent[]) {
 }
 
 describe('HarnessPiChatService', () => {
+  it('claims direct prompt ownership exactly once before adapter execution', async () => {
+    const adapter = createAdapter()
+    const order: string[] = []
+    adapter.prompt = vi.fn(async () => { order.push('prompt') })
+    const beginRunOwnership = vi.fn(() => {
+      order.push('begin')
+      return {
+        accept: () => { order.push('accept') },
+        reject: () => { order.push('reject') },
+      }
+    })
+    const service = new HarnessPiChatService({
+      harness: createHarness(adapter),
+      sessionStore,
+      workdir: '/workspace',
+      beginRunOwnership,
+    })
+
+    await expect(service.prompt(ctx, 's1', { message: 'owned prompt', clientNonce: 'owned-direct' }))
+      .resolves.toMatchObject({ accepted: true })
+
+    expect(beginRunOwnership).toHaveBeenCalledOnce()
+    expect(order).toEqual(['begin', 'prompt', 'accept'])
+  })
+
   it('serves id-less live attachment bytes from the addressed event URL', async () => {
     const adapter = createAdapter()
     const service = new HarnessPiChatService({
@@ -1614,13 +1639,15 @@ describe('HarnessPiChatService', () => {
     if (subscription.type === 'ok') subscription.unsubscribe()
   })
 
-  it('acknowledges interrupt while the auto-posted replacement remains stoppable', async () => {
+  it('claims continueQueuedFollowUp replacement ownership before execution and keeps it stoppable', async () => {
     const adapter = createAdapter()
     const replacement = deferred<void>()
+    const order: string[] = []
     let replacementStarted = false
     let replacementSettled = false
     void replacement.promise.then(() => { replacementSettled = true })
     adapter.continueQueuedFollowUp = vi.fn(() => {
+      order.push('continue')
       replacementStarted = true
       adapter.readSnapshot().followUpMessages = []
       return replacement.promise
@@ -1628,7 +1655,19 @@ describe('HarnessPiChatService', () => {
     adapter.abort = vi.fn(async () => {
       if (replacementStarted) replacement.resolve()
     })
-    const { service } = createService(adapter)
+    const beginRunOwnership = vi.fn(() => {
+      order.push('begin')
+      return {
+        accept: () => { order.push('accept') },
+        reject: () => { order.push('reject') },
+      }
+    })
+    const service = new HarnessPiChatService({
+      harness: createHarness(adapter),
+      sessionStore,
+      workdir: '/workspace',
+      beginRunOwnership,
+    })
 
     await service.followUp(ctx, 's1', {
       message: 'stoppable replacement',
@@ -1638,6 +1677,8 @@ describe('HarnessPiChatService', () => {
     await expect(service.interrupt(ctx, 's1', {})).resolves.toMatchObject({ accepted: true })
 
     expect(adapter.continueQueuedFollowUp).toHaveBeenCalledOnce()
+    expect(beginRunOwnership).toHaveBeenCalledOnce()
+    expect(order).toEqual(['begin', 'continue', 'accept'])
     expect(replacementSettled).toBe(false)
 
     await expect(service.stop(ctx, 's1', {})).resolves.toMatchObject({ accepted: true, stopped: true })
@@ -1704,11 +1745,20 @@ describe('HarnessPiChatService', () => {
       order.push('abort')
       queuedWhenAborted.push([...adapter.readSnapshot().followUpMessages])
     })
+    adapter.prompt = vi.fn(async () => { order.push('prompt') })
+    const beginRunOwnership = vi.fn(() => {
+      order.push('begin-run')
+      return {
+        accept: () => { order.push('accept-run') },
+        reject: () => { order.push('reject-run') },
+      }
+    })
     const beginActiveTurnReplacement = vi.fn(() => { order.push('intent') })
     const service = new HarnessPiChatService({
       harness: createHarness(adapter),
       sessionStore,
       workdir: '/workspace',
+      beginRunOwnership,
       beginActiveTurnReplacement,
     })
 
@@ -1726,7 +1776,8 @@ describe('HarnessPiChatService', () => {
 
     expect(beginActiveTurnReplacement).toHaveBeenCalledOnce()
     expect(beginActiveTurnReplacement).toHaveBeenCalledWith('s1')
-    expect(order).toEqual(['intent', 'abort'])
+    expect(beginRunOwnership).toHaveBeenCalledOnce()
+    expect(order).toEqual(['intent', 'abort', 'begin-run', 'prompt', 'accept-run'])
     expect(adapter.abortRetry).toHaveBeenCalledTimes(1)
     expect(adapter.abort).toHaveBeenCalledTimes(1)
     expect(queuedWhenAborted).toEqual([[]])
@@ -2081,11 +2132,17 @@ describe('HarnessPiChatService', () => {
     expect(adapter.continueQueuedFollowUp).not.toHaveBeenCalled()
   })
 
-  it('admits only one rapid Resume and never reposts the resumed queue twice', async () => {
+  it('admits only one rapid idle Resume, claims its replacement once, and never reposts twice', async () => {
     const adapter = createAdapter()
     adapter.readSnapshot().isStreaming = false
     adapter.readSnapshot().isRetrying = false
-    const { service } = createService(adapter)
+    const beginRunOwnership = vi.fn(() => ({ accept: vi.fn(), reject: vi.fn() }))
+    const service = new HarnessPiChatService({
+      harness: createHarness(adapter),
+      sessionStore,
+      workdir: '/workspace',
+      beginRunOwnership,
+    })
 
     await service.followUp(ctx, 's1', {
       message: 'resume exactly once',
@@ -2096,6 +2153,7 @@ describe('HarnessPiChatService', () => {
     await expect(service.interrupt(ctx, 's1', { queueAction: 'resume' })).resolves.toMatchObject({ accepted: true })
 
     expect(adapter.prompt).toHaveBeenCalledTimes(1)
+    expect(beginRunOwnership).toHaveBeenCalledTimes(1)
     expect(adapter.continueQueuedFollowUp).not.toHaveBeenCalled()
     expect(adapter.abort).not.toHaveBeenCalled()
   })

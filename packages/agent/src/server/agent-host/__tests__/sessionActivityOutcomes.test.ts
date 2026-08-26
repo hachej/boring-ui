@@ -234,10 +234,118 @@ describe('EmbeddedAgentGateway cancellation outcomes', () => {
       await connection.interrupt({ requestId: 'resume', queueAction: 'resume' })
 
       expect(fixture.cancellationIntents(ref)).toBe(1)
+      expect(fixture.runOwnershipClaims(ref)).toBe(2)
       expect(statuses).toEqual(['running', 'aborting', 'aborted', 'running'])
       expect(statuses).not.toContain('idle')
       await expect(fixture.gateway.readSessionState({ scope, ref })).resolves.toMatchObject({
         summary: { status: 'running' },
+      })
+    } finally {
+      unsubscribe()
+      await connection.close()
+    }
+  })
+
+  it('settles an active replacement rejection after the old turn terminates', async () => {
+    const { fixture, scope, ref, connection, statuses, unsubscribe } = await runningSession()
+    try {
+      await connection.send({
+        kind: 'followup',
+        requestId: 'followup-reject',
+        clientNonce: 'queued-reject',
+        clientSeq: 1,
+        content: 'reject send now',
+      })
+      fixture.rejectNextReplacement(new Error('replacement rejected'))
+      fixture.endOnNextControl(ref, 'interrupt', 'ok')
+      await connection.interrupt({ requestId: 'resume-reject', queueAction: 'resume' })
+
+      expect(fixture.cancellationIntents(ref)).toBe(1)
+      expect(fixture.runOwnershipClaims(ref)).toBe(2)
+      expect(statuses).toEqual(['running', 'aborting', 'aborted', 'running', 'error'])
+      await expect(fixture.gateway.readSessionState({ scope, ref })).resolves.toMatchObject({
+        summary: { status: 'error' },
+      })
+    } finally {
+      unsubscribe()
+      await connection.close()
+    }
+  })
+
+  it('claims idle Resume replacement ownership and lets native start settle success', async () => {
+    const fixture = await createEmbeddedGatewayFixture()
+    const scope = fixture.issueScope()
+    const ref = await fixture.gateway.createSession({ scope, agentTypeId: 'alpha', requestId: 'idle-create' })
+    const connection = await fixture.gateway.connectSession({ scope, ref })
+    const statuses: string[] = []
+    const unsubscribe = fixture.subscribeActivity(scope, ({ status }) => statuses.push(status))
+    try {
+      await connection.send({
+        kind: 'followup',
+        requestId: 'idle-followup',
+        clientNonce: 'idle-queued',
+        clientSeq: 1,
+        content: 'resume idle',
+      })
+      await connection.interrupt({ requestId: 'idle-resume', queueAction: 'resume' })
+
+      expect(fixture.runOwnershipClaims(ref)).toBe(1)
+      expect(fixture.cancellationIntents(ref)).toBe(0)
+      expect(statuses).toEqual(['running'])
+      await expect(fixture.gateway.readSessionState({ scope, ref })).resolves.toMatchObject({
+        summary: { status: 'running' },
+      })
+    } finally {
+      unsubscribe()
+      await connection.close()
+    }
+  })
+
+  it('settles an idle Resume immediate rejection to error without cancellation intent', async () => {
+    const fixture = await createEmbeddedGatewayFixture()
+    const scope = fixture.issueScope()
+    const ref = await fixture.gateway.createSession({ scope, agentTypeId: 'alpha', requestId: 'idle-reject-create' })
+    const connection = await fixture.gateway.connectSession({ scope, ref })
+    const statuses: string[] = []
+    const unsubscribe = fixture.subscribeActivity(scope, ({ status }) => statuses.push(status))
+    try {
+      await connection.send({
+        kind: 'followup',
+        requestId: 'idle-reject-followup',
+        clientNonce: 'idle-reject-queued',
+        clientSeq: 1,
+        content: 'reject idle resume',
+      })
+      fixture.rejectNextReplacement(new Error('idle replacement rejected'))
+      await connection.interrupt({ requestId: 'idle-resume-reject', queueAction: 'resume' })
+
+      expect(fixture.runOwnershipClaims(ref)).toBe(1)
+      expect(fixture.cancellationIntents(ref)).toBe(0)
+      expect(statuses).toEqual(['running', 'error'])
+      await expect(fixture.gateway.readSessionState({ scope, ref })).resolves.toMatchObject({
+        summary: { status: 'error' },
+      })
+    } finally {
+      unsubscribe()
+      await connection.close()
+    }
+  })
+
+  it('keeps an idle empty Resume a no-op without run ownership', async () => {
+    const fixture = await createEmbeddedGatewayFixture()
+    const scope = fixture.issueScope()
+    const ref = await fixture.gateway.createSession({ scope, agentTypeId: 'alpha', requestId: 'idle-noop-create' })
+    const connection = await fixture.gateway.connectSession({ scope, ref })
+    const statuses: string[] = []
+    const unsubscribe = fixture.subscribeActivity(scope, ({ status }) => statuses.push(status))
+    try {
+      await connection.interrupt({ requestId: 'idle-empty-resume', queueAction: 'resume' })
+
+      expect(fixture.runOwnershipClaims(ref)).toBe(0)
+      expect(fixture.cancellationIntents(ref)).toBe(0)
+      expect(statuses).toEqual([])
+      await expect(fixture.gateway.readSessionState({ scope, ref })).resolves.toMatchObject({
+        summary: { status: 'idle' },
       })
     } finally {
       unsubscribe()
@@ -251,6 +359,7 @@ describe('EmbeddedAgentGateway cancellation outcomes', () => {
       await connection.interrupt({ requestId: 'empty-resume', queueAction: 'resume' })
 
       expect(fixture.cancellationIntents(ref)).toBe(0)
+      expect(fixture.runOwnershipClaims(ref)).toBe(1)
       expect(statuses).toEqual(['running'])
       await expect(fixture.gateway.readSessionState({ scope, ref })).resolves.toMatchObject({
         summary: { status: 'running' },

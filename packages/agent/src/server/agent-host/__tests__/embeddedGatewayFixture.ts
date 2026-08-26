@@ -1,6 +1,7 @@
 import {
   AgentGatewayError,
   AgentGatewayErrorCode,
+  ErrorCode,
   type AgentSessionActivity,
   type AgentSessionRef,
   type AuthorizedAgentScope,
@@ -20,6 +21,8 @@ interface EmbeddedGatewayFixture extends GatewayConformanceFixture {
     release(): void
   }
   rejectNextPrompt(error: Error): void
+  rejectNextReplacement(error: Error): void
+  runOwnershipClaims(ref: AgentSessionRef): number
   cancellationIntents(ref: AgentSessionRef): number
   endCurrentTurn(ref: AgentSessionRef, status: 'ok' | 'aborted' | 'error'): void
   endOnNextControl(ref: AgentSessionRef, control: 'interrupt' | 'stop', status: 'ok' | 'aborted' | 'error'): void
@@ -48,10 +51,12 @@ let globalCreated = 0
 class FakeService implements PiChatSessionService {
   readonly records = new Map<string, RecordValue>()
   nextPromptError: Error | undefined
+  nextReplacementError: Error | undefined
   private readonly nextControlEnd = new Map<string, 'ok' | 'aborted' | 'error'>()
 
   constructor(
     private readonly onEvent: (sessionId: string, event: PiChatEvent) => void,
+    private readonly beginRunOwnership: (sessionId: string) => { accept(): void; reject(): void } | undefined,
     private readonly beginActiveTurnReplacement: (sessionId: string) => void | (() => void),
   ) {}
 
@@ -113,18 +118,25 @@ class FakeService implements PiChatSessionService {
   }
 
   async prompt(_ctx: PiSessionRequestContext, sessionId: string, payload: { clientNonce: string }) {
-    if (this.nextPromptError) {
-      const error = this.nextPromptError
-      this.nextPromptError = undefined
+    const ownership = this.beginRunOwnership(sessionId)
+    try {
+      if (this.nextPromptError) {
+        const error = this.nextPromptError
+        this.nextPromptError = undefined
+        throw error
+      }
+      const record = this.get(sessionId)
+      if (record.status === 'running' || record.status === 'aborting') {
+        throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE, 'prompt is invalid while active')
+      }
+      record.status = 'running'
+      const event = this.publish(record, { type: 'agent-start', seq: 0, turnId: `turn-${record.seq + 1}` })
+      ownership?.accept()
+      return { accepted: true as const, cursor: event.seq, clientNonce: payload.clientNonce }
+    } catch (error) {
+      ownership?.reject()
       throw error
     }
-    const record = this.get(sessionId)
-    if (record.status === 'running' || record.status === 'aborting') {
-      throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE, 'prompt is invalid while active')
-    }
-    record.status = 'running'
-    const event = this.publish(record, { type: 'agent-start', seq: 0, turnId: `turn-${record.seq + 1}` })
-    return { accepted: true as const, cursor: event.seq, clientNonce: payload.clientNonce }
   }
 
   async followUp(_ctx: PiSessionRequestContext, sessionId: string, payload: { clientNonce: string; clientSeq: number; message: string }) {
@@ -169,8 +181,30 @@ class FakeService implements PiChatSessionService {
         throw error
       }
       record.queue = []
-      record.status = 'running'
-      this.publish(record, { type: 'agent-start', seq: 0, turnId: `turn-${record.seq + 1}` })
+      const ownership = this.beginRunOwnership(sessionId)
+      try {
+        const replacementError = this.nextReplacementError
+        this.nextReplacementError = undefined
+        const replacement = replacementError
+          ? Promise.reject(replacementError)
+          : Promise.resolve().then(() => {
+              record.status = 'running'
+              this.publish(record, { type: 'agent-start', seq: 0, turnId: `turn-${record.seq + 1}` })
+            })
+        ownership?.accept()
+        void replacement.catch((error) => {
+          record.status = 'error'
+          this.publish(record, {
+            type: 'error',
+            seq: 0,
+            retryable: false,
+            error: { code: ErrorCode.enum.INTERNAL_ERROR, message: error instanceof Error ? error.message : 'replacement failed', retryable: false },
+          })
+        })
+      } catch (error) {
+        ownership?.reject()
+        throw error
+      }
       return { accepted: true as const, cursor: record.seq }
     }
     if (record.status === 'running') record.status = 'aborting'
@@ -255,6 +289,7 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
   const revoked = new WeakSet<object>()
   const services = new Map<string, FakeService>()
   const activity = new AgentSessionActivityIndex()
+  const runOwnershipCounts = new Map<string, number>()
   const cancellationIntentCounts = new Map<string, number>()
   type AdmissionDisposition = 'strong-reject' | 'retryable' | {
     entered(): void
@@ -272,6 +307,16 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
       service = new FakeService(
         (sessionId, event) => {
           activity.observe(workspaceScopeId, { agentTypeId, sessionId }, event)
+        },
+        (sessionId) => {
+          const ref = { agentTypeId, sessionId }
+          const activityKey = `${workspaceScopeId}:${agentTypeId}:${sessionId}`
+          runOwnershipCounts.set(activityKey, (runOwnershipCounts.get(activityKey) ?? 0) + 1)
+          const run = activity.beginPendingRun(workspaceScopeId, ref)
+          return {
+            accept: () => activity.commitPendingRun(workspaceScopeId, ref, run),
+            reject: () => activity.rollbackPendingRun(workspaceScopeId, ref, run),
+          }
         },
         (sessionId) => {
           const ref = { agentTypeId, sessionId }
@@ -381,6 +426,17 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
     },
     rejectNextPrompt(error) {
       for (const service of services.values()) service.nextPromptError = error
+    },
+    rejectNextReplacement(error) {
+      for (const service of services.values()) service.nextReplacementError = error
+    },
+    runOwnershipClaims(ref) {
+      for (const [key, service] of services) {
+        if (!key.endsWith(`:${ref.agentTypeId}`) || !service.records.has(ref.sessionId)) continue
+        const workspaceScopeId = key.slice(0, -(ref.agentTypeId.length + 1))
+        return runOwnershipCounts.get(`${workspaceScopeId}:${ref.agentTypeId}:${ref.sessionId}`) ?? 0
+      }
+      return 0
     },
     cancellationIntents(ref) {
       for (const [key, service] of services) {

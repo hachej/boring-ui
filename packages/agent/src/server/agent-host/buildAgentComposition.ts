@@ -127,6 +127,7 @@ export interface BuildAgentCompositionInput {
     'runtimeModeAdapter' | 'runtimeHost' | 'sessionRoot' | 'telemetry' | 'metering' | 'harnessFactory'
   >
   readonly observeSessionEvent?: (sessionId: string, event: import('../../shared/chat').PiChatEvent) => void
+  readonly beginSessionRun?: (sessionId: string) => import('../pi-chat/harnessPiChatService').HarnessPiChatRunOwnership | undefined
   readonly beginSessionCancellation?: (sessionId: string) => void | (() => void)
 }
 
@@ -330,6 +331,7 @@ export async function buildAgentComposition(
     workdir: runtimeBundle.workspace.root,
     workspace: runtimeBundle.workspace,
     onEvent: input.observeSessionEvent,
+    beginRunOwnership: input.beginSessionRun,
     beginActiveTurnReplacement: input.beginSessionCancellation,
     attachmentUrl: ({ sessionId, messageId, index }) =>
       `/api/v1/agents/${encodeURIComponent(input.agent.agentTypeId)}/sessions/${encodeURIComponent(sessionId)}/attachments/${encodeURIComponent(messageId)}/${index}`,

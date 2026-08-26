@@ -503,25 +503,15 @@ export class EmbeddedAgentGateway implements AgentGateway {
     const service = binding.composition.service
     if (command.kind === 'prompt') {
       return await this.sessionEffect(ref, claim, 'session.prompt', command.requestId, command as unknown as JsonValue, async () => {
-        // Claim pending ownership before entering the service so a turn-less
-        // native error can settle this invocation, but publish working only
-        // after the service acknowledges acceptance.
-        const pendingRun = this.runtime.activity.beginPendingRun(claim.workspaceScopeId, ref)
-        try {
-          const receipt = await service.prompt(context(claim, command.requestId), ref.sessionId, {
-            message: command.content,
-            displayMessage: command.displayContent,
-            clientNonce: command.clientNonce,
-            model: command.model,
-            thinkingLevel: command.thinkingLevel,
-            attachments: command.attachments ? [...command.attachments] : undefined,
-          })
-          this.runtime.activity.commitPendingRun(claim.workspaceScopeId, ref, pendingRun)
-          return { ...receipt, disposition: 'prompt' as const }
-        } catch (error) {
-          this.runtime.activity.rollbackPendingRun(claim.workspaceScopeId, ref, pendingRun)
-          throw error
-        }
+        const receipt = await service.prompt(context(claim, command.requestId), ref.sessionId, {
+          message: command.content,
+          displayMessage: command.displayContent,
+          clientNonce: command.clientNonce,
+          model: command.model,
+          thinkingLevel: command.thinkingLevel,
+          attachments: command.attachments ? [...command.attachments] : undefined,
+        })
+        return { ...receipt, disposition: 'prompt' as const }
       }, {
         duplicateReceipt: true,
         bindingKey: binding.key,

@@ -88,6 +88,13 @@ interface SendNowTransaction {
   settlement?: Promise<void>
 }
 
+export interface HarnessPiChatRunOwnership {
+  /** The adapter accepted execution; native agent-start now owns settlement. */
+  accept(): void
+  /** Execution threw before returning a run promise. */
+  reject(): void
+}
+
 export interface HarnessPiChatServiceOptions {
   harness: AgentHarness
   sessionStore: SessionStore
@@ -103,6 +110,8 @@ export interface HarnessPiChatServiceOptions {
   metering?: AgentMeteringSink
   /** Host-owned process-lifetime projection of live session activity. */
   onEvent?: (sessionId: string, event: PiChatEvent) => void
+  /** Claims host ownership immediately before any adapter-backed run starts. */
+  beginRunOwnership?: (sessionId: string) => HarnessPiChatRunOwnership | undefined
   /** Records replacement intent before an active Send-now abort can settle. */
   beginActiveTurnReplacement?: (sessionId: string) => void | (() => void)
   /** Receives non-fatal metering pipeline failures (default: console.warn). */
@@ -125,6 +134,7 @@ export class HarnessPiChatService implements PiChatSessionService {
   private readonly workspace?: Workspace
   private readonly eventStore?: EventStreamStore
   private readonly onEvent?: (sessionId: string, event: PiChatEvent) => void
+  private readonly beginRunOwnership?: HarnessPiChatServiceOptions['beginRunOwnership']
   private readonly beginActiveTurnReplacement?: HarnessPiChatServiceOptions['beginActiveTurnReplacement']
   private readonly attachmentUrl?: HarnessPiChatServiceOptions['attachmentUrl']
   private readonly channels = new Map<string, LiveSessionChannel>()
@@ -155,6 +165,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     this.workspace = options.workspace
     this.eventStore = options.eventStore
     this.onEvent = options.onEvent
+    this.beginRunOwnership = options.beginRunOwnership
     this.beginActiveTurnReplacement = options.beginActiveTurnReplacement
     this.attachmentUrl = options.attachmentUrl
     this.metering = options.metering
@@ -482,7 +493,10 @@ export class HarnessPiChatService implements PiChatSessionService {
     try {
       const input = await toPiPromptInput(payload, this.workspace)
       this.lifecycle.assertOpen()
-      const run = this.trackActiveRun(sessionKey, this.runAndDrainPublishQueue(channel, adapter.prompt(input)))
+      const run = this.trackActiveRun(sessionKey, this.runAndDrainPublishQueue(
+        channel,
+        this.launchAdapterRun(sessionId, () => adapter.prompt(input)),
+      ))
       run.catch((error) => {
         this.metering?.failPromptRun(sessionId, payload.clientNonce, sessionKey)
         if (!this.messageMetadata.hasPrompt(sessionKey, { clientNonce: payload.clientNonce, displayText: payload.displayMessage ?? payload.message })) return
@@ -768,7 +782,10 @@ export class HarnessPiChatService implements PiChatSessionService {
 
     let promptRun: Promise<void>
     try {
-      promptRun = this.runAndDrainPublishQueue(channel, adapter.prompt(serverText))
+      promptRun = this.runAndDrainPublishQueue(
+        channel,
+        this.launchAdapterRun(sessionId, () => adapter.prompt(serverText)),
+      )
     } catch (error) {
       this.metering?.restorePromotedFollowUp(sessionId, first.followUp, sessionKey)
       const restore = await this.restoreInterruptedQueue(sessionId, sessionKey, adapter, queued, combinedFollowUp)
@@ -902,7 +919,10 @@ export class HarnessPiChatService implements PiChatSessionService {
         const channel = this.channels.get(sessionKey)
         const run = this.trackActiveRun(
           sessionKey,
-          this.runAndDrainPublishQueue(channel, adapter.continueQueuedFollowUp()),
+          this.runAndDrainPublishQueue(
+            channel,
+            this.launchAdapterRun(sessionId, () => adapter.continueQueuedFollowUp!()),
+          ),
         )
         // Native continuation owns the whole replacement turn. Keep tracking it
         // for Stop/disposal, but do not hold the interrupt command open until the
@@ -939,7 +959,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     this.clearAutoPostedFollowUpForFallback(sessionId, sessionKey, adapter, followUp)
     this.metering?.promoteQueuedToPrompt(sessionKey, followUp)
     try {
-      await this.runPrompt(sessionKey, adapter, metadata?.serverText ?? followUp.displayText)
+      await this.runPrompt(sessionId, sessionKey, adapter, metadata?.serverText ?? followUp.displayText)
     } catch (err) {
       // The repost rejected before agent-start; release the promoted hold so
       // it doesn't strand in pendingPrompts and misattribute later usage, then
@@ -963,11 +983,26 @@ export class HarnessPiChatService implements PiChatSessionService {
     }
   }
 
-  private async runPrompt(sessionKey: string, adapter: PiAgentSessionAdapter, input: PiAgentPromptInput): Promise<void> {
+  private async runPrompt(sessionId: string, sessionKey: string, adapter: PiAgentSessionAdapter, input: PiAgentPromptInput): Promise<void> {
     await Promise.race([
-      this.trackActiveRun(sessionKey, this.runAndDrainPublishQueue(this.channels.get(sessionKey), adapter.prompt(input))),
+      this.trackActiveRun(sessionKey, this.runAndDrainPublishQueue(
+        this.channels.get(sessionKey),
+        this.launchAdapterRun(sessionId, () => adapter.prompt(input)),
+      )),
       this.lifecycle.closingPromise,
     ])
+  }
+
+  private launchAdapterRun(sessionId: string, launch: () => Promise<void>): Promise<void> {
+    const ownership = this.beginRunOwnership?.(sessionId)
+    try {
+      const run = launch()
+      ownership?.accept()
+      return run
+    } catch (error) {
+      ownership?.reject()
+      throw error
+    }
   }
 
   private async trackActiveRun(sessionKey: string, run: Promise<void>): Promise<void> {
