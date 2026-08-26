@@ -1705,6 +1705,14 @@ export async function createCoreWorkspaceAgentServer(
               requestId: input.key.requestId,
             }
           }
+          if ((error as { statusCode?: unknown })?.statusCode === 403) {
+            return {
+              code: AgentGatewayErrorCode.AGENT_SCOPE_DENIED,
+              message: 'workspace access denied',
+              target: input.target,
+              requestId: input.key.requestId,
+            }
+          }
           throw error
         }
       }
