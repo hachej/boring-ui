@@ -34,8 +34,10 @@ export function createAskUserServerPlugin(options: AskUserServerPluginOptions): 
     if (bridge) stopPublisher = new AskUserStatePublisher(store, bridge).start()
   }
   const lifecycle: FastifyPluginAsync = async (app) => {
-    const pending = await store.listPending()
-    await runtime.abandonOrphanedPending(pending.map((question) => question.sessionId))
+    // Boot must not touch persisted questions. A `ready` question is a durable
+    // decision request owned by the human, not a property of the asking session:
+    // sweeping "orphans" here abandoned every pending gate on each hub restart
+    // because the in-process waiter map is empty by construction at boot (#1348).
     ensurePublisher()
     app.addHook("onClose", async () => {
       stopPublisher?.()

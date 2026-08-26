@@ -262,14 +262,24 @@ describe("AskUserRuntime", () => {
     await expect(first).resolves.toMatchObject({ status: "cancelled", reason: "aborted" })
   })
 
-  it("abandons persisted startup orphans", async () => {
+  // Inverted deliberately for #1348. This used to assert that a fresh runtime over a
+  // persisted store abandons every pending question ("startup orphans"). A hub restart
+  // must never void the owner's review queue: waiter presence is in-process state, so
+  // after a restart every durable gate looks orphaned. `ready` survives the restart.
+  it("keeps persisted pending questions ready and answerable across a restart (#1348)", async () => {
     const store = await makeStore()
     const question = makeQuestion({ questionId: "orphan-q", sessionId: "s1" })
     await store.createPending(question)
 
     const restarted = new AskUserRuntime({ store })
-    await restarted.abandonOrphanedPending(["s1"])
-    await expect(store.getByQuestionId(question.questionId)).resolves.toMatchObject({ status: "abandoned" })
+    await expect(store.listPending()).resolves.toMatchObject([{ questionId: question.questionId, status: "ready" }])
+    await expect(store.getPending("s1")).resolves.toMatchObject({ status: "ready" })
+
+    await expect(restarted.submitAnswer(question.questionId, "s1", { answer: "approved" })).resolves.toBe("answered")
+    await expect(store.getByQuestionId(question.questionId)).resolves.toMatchObject({ status: "answered" })
+    await expect(store.getTranscriptEventsForQuestion(question.questionId)).resolves.toMatchObject([
+      { type: "answered", answer: { values: { answer: "approved" } } },
+    ])
   })
 
   it("abandons an orphaned pending question before creating a new one for the same session", async () => {
@@ -291,13 +301,25 @@ describe("AskUserRuntime", () => {
     await expect(next).resolves.toMatchObject({ status: "cancelled" })
   })
 
-  it("abandons if submit/cancel discovers a missing waiter", async () => {
+  // Inverted deliberately for #1348: submit used to convert an answer into an
+  // abandonment when the waiter was gone, silently dropping the owner's decision.
+  it("persists an answer submitted after the waiter is gone (#1348)", async () => {
     const store = await makeStore()
     const question = makeQuestion()
     await store.createPending(question)
 
     const restarted = new AskUserRuntime({ store })
-    await restarted.submitAnswer(question.questionId, "s1", {})
+    await expect(restarted.submitAnswer(question.questionId, "s1", {})).resolves.toBe("answered")
+    await expect(store.getByQuestionId(question.questionId)).resolves.toMatchObject({ status: "answered" })
+  })
+
+  it("abandons if cancel discovers a missing waiter", async () => {
+    const store = await makeStore()
+    const question = makeQuestion()
+    await store.createPending(question)
+
+    const restarted = new AskUserRuntime({ store })
+    await restarted.cancelQuestion(question.questionId, "s1")
     await expect(store.getByQuestionId(question.questionId)).resolves.toMatchObject({ status: "abandoned" })
   })
 

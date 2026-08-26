@@ -732,6 +732,17 @@ describe("WorkspaceAgentFront", () => {
       ["beta", "fleet-ui:beta"],
     ]))
 
+    // Agent-details reload is agent-scoped. With Alpha still active, reloading
+    // Beta must not combine Beta with Alpha's unrelated session id.
+    await user.click(screen.getByRole("button", { name: "Settings for Beta" }))
+    await user.click(await screen.findByRole("button", { name: "Reload Beta" }, { timeout: 5_000 }))
+    await waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([input]) =>
+      String(input).endsWith("/api/v1/agents/beta/reload"))).toBe(true))
+    const betaReloadCall = vi.mocked(fetch).mock.calls.find(([input]) =>
+      String(input).endsWith("/api/v1/agents/beta/reload"))
+    expect(JSON.parse(String(betaReloadCall?.[1]?.body))).toEqual({ requestId: expect.any(String) })
+    await user.click(screen.getByRole("button", { name: "Close Beta details" }))
+
     const betaSessionButton = screen.getByText("Beta one").closest("button")
     expect(betaSessionButton).toBeInstanceOf(HTMLButtonElement)
     await user.click(betaSessionButton!)
@@ -765,7 +776,7 @@ describe("WorkspaceAgentFront", () => {
     expect(unifiedDetailsOverlay).toHaveTextContent("MCP access")
     expect(unifiedDetailsOverlay).not.toHaveTextContent("Runtime plugins explicitly bound")
     expect(within(unifiedDetailsOverlay as HTMLElement).queryByRole("tab")).not.toBeInTheDocument()
-  })
+  }, 30_000)
 
   it("initializes a controlled colliding id to its explicit active owner", () => {
     localStorage.setItem("boring-workspace:chat-panes:explicit-active-owner", JSON.stringify({
@@ -2329,6 +2340,7 @@ describe("WorkspaceAgentFront", () => {
   it("keeps remote sessions when provisioning is disabled but remoteSessionsEnabled is set", async () => {
     const onWarmup = vi.fn()
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+
       const url = String(input)
       if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
       if (url.includes("/api/v1/agents/default/models")) return new Response(JSON.stringify({ models: [] }), { status: 200 })
@@ -2336,6 +2348,7 @@ describe("WorkspaceAgentFront", () => {
       if (isDefaultSessionsCollectionUrl(url)) {
         return new Response(JSON.stringify({ sessions: [{ id: "sess-remote-known", title: "Known remote" }] }), { status: 200 })
       }
+
       return new Response(null, { status: 204 })
     })
     vi.stubGlobal("fetch", fetchMock)
@@ -2362,6 +2375,7 @@ describe("WorkspaceAgentFront", () => {
     expect(fetchMock.mock.calls.some(([input, init]) =>
       String(input).includes("/agents/default/sessions") && (init?.method === "POST" || init?.method === "DELETE"),
     )).toBe(false)
+
   })
 
   it("creates a fresh remote session for auth-return auto-submit instead of reusing the old active session", async () => {

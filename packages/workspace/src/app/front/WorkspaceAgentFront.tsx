@@ -2158,13 +2158,13 @@ export function WorkspaceAgentFront<
     await sessionApi?.refresh?.({ background: true })
   }, [apiBaseUrl, onRenameSession, resolvedRequestHeaders, selectedAgentTypeId, sessionApi])
 
-  const reloadAgentPluginsForSession = useCallback(async (ref: { agentTypeId: string; sessionId: string }) => {
+  const reloadAgentPluginsForSession = useCallback(async (ref: { agentTypeId: string; sessionId?: string }) => {
     const endpoint = `${apiBaseUrl?.replace(/\/$/, "") ?? ""}/api/v1/agents/${encodeURIComponent(ref.agentTypeId)}/reload`
     const requestId = `reload:${globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`}`
     const response = await fetch(endpoint, {
       method: "POST",
       headers: { ...resolvedRequestHeaders, "content-type": "application/json" },
-      body: JSON.stringify({ requestId, sessionId: ref.sessionId }),
+      body: JSON.stringify({ requestId, ...(ref.sessionId ? { sessionId: ref.sessionId } : {}) }),
     })
     if (!response.ok) {
       const payload = await response.json().catch(() => ({})) as { error?: string }
@@ -2599,6 +2599,15 @@ export function WorkspaceAgentFront<
     <AgentDetailsOverlay
       agent={activeAgentOverlayOption}
       onClose={() => setLeftOverlay(null)}
+      // Persona instructions only recompile through the `agent.reload` host
+      // effect, so the page that shows them also offers the reload. Targets the
+      // agent this overlay describes, NOT the addressed chat agent.
+      // Resolves with no message so the overlay tells the AGENT story (runtime
+      // pin semantics) rather than the extension-reload wording this shared
+      // helper writes for the Plugins surface.
+      onReloadAgent={async (agentTypeId) => {
+        await reloadAgentPluginsForSession({ agentTypeId })
+      }}
       headerInsetStart={mobileShellActive}
       headerInsetEnd={!surfaceOpen}
     />
