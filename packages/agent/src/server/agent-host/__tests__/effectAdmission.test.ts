@@ -111,6 +111,24 @@ describe('Embedded Agent Gateway strong effect admission', () => {
     })
   })
 
+  it('keeps active runtime activity running when Resume is admitted as a no-op', async () => {
+    const { fixture, scope, ref } = await createSession()
+    const connection = await fixture.gateway.connectSession({ scope, ref })
+    fixture.setActivity(ref, 'running')
+
+    try {
+      await expect(connection.interrupt({ requestId: 'active-resume', queueAction: 'resume' })).resolves.toMatchObject({
+        accepted: true,
+      })
+      await expect(fixture.gateway.readSessionState({ scope, ref })).resolves.toMatchObject({
+        summary: { status: 'running' },
+        state: { status: 'streaming' },
+      })
+    } finally {
+      await connection.close()
+    }
+  })
+
   it('applies strong admission to prompt, follow-up, interrupt, stop, and queue clear', async () => {
     const { fixture, scope, ref } = await createSession()
     const connection = await fixture.gateway.connectSession({ scope, ref })

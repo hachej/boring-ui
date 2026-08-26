@@ -22,7 +22,6 @@ import {
   provisionWorkspaceRuntime,
   projectAuthorizedSessionRunDetails,
   registerAgentHostEnvironmentRoutes,
-  resolveBuiltinRuntimeLayoutRoot,
   resolveRequestLedgerPath,
   sandboxRuntimeHostOperations,
   withRuntimeEnvContributions,
@@ -1291,9 +1290,7 @@ export async function createWorkspaceAgentServer(
   const legacyStandaloneDefaultComposition = agents.length === 1 && "legacyDefault" in agents[0]!
   const bridge = createInMemoryBridge()
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
-  const modeAdapter = opts.runtimeModeAdapter ?? createSandboxRuntimeModeAdapter(
-    resolvedMode as 'direct' | 'local' | 'blaxel' | 'vercel-sandbox',
-  )
+  const modeAdapter = opts.runtimeModeAdapter ?? createSandboxRuntimeModeAdapter(resolvedMode)
   const runtimeHost = opts.runtimeHost ?? modeAdapter.runtimeHost ?? sandboxRuntimeHostOperations
   const workspaceFsCapability = modeAdapter.workspaceFsCapability ?? "best-effort"
   const validateUiPaths = opts.validateUiPaths ?? workspaceFsCapability === "strong"
@@ -1352,13 +1349,22 @@ export async function createWorkspaceAgentServer(
     ],
   })
 
+  const runtimeWorkspaceRoot = modeAdapter.getRuntimeLayoutRoot({
+    workspaceRoot,
+    sessionId: opts.sessionId ?? DEFAULT_WORKSPACE_SCOPE_ID,
+    workspaceId: opts.sessionId ?? DEFAULT_WORKSPACE_SCOPE_ID,
+  })
+  const runtimeLayout = runtimeHost.getBoringAgentRuntimePaths(runtimeWorkspaceRoot)
+  const runtimeUserSkillsPath = join(runtimeWorkspaceRoot, ".agents", "skills")
+  const hostUserSkillsPath = join(workspaceRoot, ".agents", "skills")
+
   // Static app resources are global to every Agent. Plugin Agent resources are
   // added later from the normalized contribution for that Agent.
   const workspacePackagePiPackage = pluginAuthoringEnabled ? createBoringPiPackageSource() : undefined
   const builtInBoringPiSkillPaths = pluginAuthoringEnabled ? resolveBoringPiSkillPaths(workspaceRoot) : []
   const baseStaticPiSkillPaths = [
     ...builtInBoringPiSkillPaths,
-    join(workspaceRoot, ".agents", "skills"),
+    runtimeUserSkillsPath,
     ...(opts.pi?.additionalSkillPaths ?? []),
   ]
   const baseStaticPiPackages = [workspacePackagePiPackage, ...(opts.pi?.packages ?? [])]
@@ -1430,15 +1436,6 @@ export async function createWorkspaceAgentServer(
     return inputs
   }
   let currentRuntimeProvisioning = opts.runtimeProvisioning
-  const runtimeWorkspaceRoot = modeAdapter.getRuntimeLayoutRoot?.({
-    workspaceRoot,
-    sessionId: opts.sessionId ?? DEFAULT_WORKSPACE_SCOPE_ID,
-    workspaceId: opts.sessionId ?? DEFAULT_WORKSPACE_SCOPE_ID,
-  }) ?? resolveBuiltinRuntimeLayoutRoot(
-    resolvedMode as "direct" | "local" | "blaxel" | "vercel-sandbox",
-    workspaceRoot,
-  )
-  const runtimeLayout = runtimeHost.getBoringAgentRuntimePaths(runtimeWorkspaceRoot)
   type RuntimeProvisionerContext = Parameters<NonNullable<WorkspaceAgentCreateOptions["runtimeProvisioner"]>>[0]
   const runRuntimeProvisioning = async (runtimeBundle: RuntimeProvisionerContext["runtimeBundle"]) => {
     if (opts.provisionWorkspace === false) return currentRuntimeProvisioning
@@ -1914,7 +1911,9 @@ export async function createWorkspaceAgentServer(
           !packageResourceHandlesPath(path, [runtimeLayout.skills, ...packageRoots]),
         )
         const additionalSkillPaths = uniqueStrings([
-            ...(resolvedBasePi.additionalSkillPaths ?? []),
+            ...(resolvedBasePi.additionalSkillPaths ?? []).map((path) =>
+              path === runtimeUserSkillsPath ? hostUserSkillsPath : path,
+            ),
             ...(selectedPi?.additionalSkillPaths ?? []),
             ...selectedSourceSkillPaths,
             ...digestHotSkillPaths,
