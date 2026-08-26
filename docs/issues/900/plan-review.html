@@ -15,7 +15,8 @@
   CUR --> P[Shared private Composio protocol client]
   CAT --> F[Per-principal fair scheduler\npartitioned quotas + source-local cache]
   F --> P
-  P --> L[Create Session: bound ID + persist lease\nbefore returning untrusted endpoint]
+  P --> I[Persist create intent before provider POST]
+  I --> L[Provider create; promote bounded Session ID\nto lease before endpoint exposure]
   L --> O[Separate exact backend.composio.dev trust\nbefore any header]
   O --> D[Internal SEARCH + SCHEMA only]
   D --> R[Full bounded signatures\nexecution blocked]
@@ -25,7 +26,7 @@
   U --> Z[Accepted-work settlement or unknown-outcome]
   classDef now fill:#dbe7ff,stroke:#2456d6,color:#172033;
   classDef blocked fill:#ffe4e1,stroke:#b42318,color:#172033;
-  class M,P,L,O,CAT,F,D,R,X,SRC now; class E,C2,U,Z blocked;</pre><div class="callout"><strong>Gate remains blocked:</strong> owner must select the durable cleanup persistence/secret-handle seam, approve shared curated-path exact-origin hardening, and assign the canonical execution predecessor closure. No implementation approval is requested.</div></section>
+  class M,P,I,L,O,CAT,F,D,R,X,SRC now; class E,C2,U,Z blocked;</pre><div class="callout"><strong>Gate remains blocked:</strong> owner must select the durable cleanup persistence/secret-handle seam and provider create-gap reconciliation proof, approve shared curated-path exact-origin hardening, and assign the canonical execution predecessor closure. No implementation approval is requested.</div></section>
 
 <section class="card"><h2>Goals / Non-goals</h2><table class="two"><tr><th>Goals</th><th>Non-goals</th></tr><tr><td><ul><li>One host-authoritative Composio service for Seneca</li><li>Full-catalog bounded search and exact describe before connect</li><li>Shared exact-origin operator-secret custody</li><li>Fair app-owned runtime with crash-durable cleanup</li><li>Eventually: RFC 8785 approval bytes, first-class child and unknown-outcome</li></ul></td><td><ul><li>No Registry, custom URL, stdio, workbench or bash</li><li>No generated direct tools in context</li><li>No anonymous outer dispatcher</li><li>No issue-local approval, Run or child-event contract</li><li>No automatic effect retry or silent account fallback</li></ul></td></tr></table></section>
 
@@ -36,11 +37,12 @@
   participant C as Composio
   A->>R: search(actor, host-derived source, query)
   R->>R: fixed-window admission before fair queue
-  R->>C: create Session with combined AbortSignal
+  R->>S: persist bounded create intent before POST
+  R->>C: create Session with reconciliation key + combined AbortSignal
   C-->>R: raw Session ID + untrusted endpoint/headers
   R->>R: bound ID (1..256 UTF-8 bytes; no controls/lone surrogates)
-  R->>S: persist lease(ID, actor/source/project/credential revisions, resolver handle)
-  R->>R: only now return Session; validate exact origin before any header
+  R->>S: atomically promote intent to lease(ID)
+  R->>R: only now expose Session; validate exact origin before any header
   R->>C: SEARCH then SCHEMA using private bounded client
   C-->>R: provider metadata
   R->>R: validate identifiers, bytes, depth/nodes, canaries, revision
@@ -55,7 +57,7 @@
 <tr><td>Catalog provenance</td><td>Open-string <code>supports</code> / host recomputation</td><td><code>requireCatalogSource</code></td><td>Stored provider strings cannot grant operator-secret-backed capability.</td></tr>
 <tr><td>Availability</td><td>Connected account implies service / independent service state</td><td>Independent</td><td>Discovery must work before connection; account is execution authority.</td></tr>
 <tr><td>Fairness</td><td>Global FIFO / principal-only / hierarchy</td><td>Workspace→principal round-robin; global 4+16, workspace 2+8, principal 2+4</td><td>Tenant means workspace; conservative admitted-request bound is 75s (five 15s waves), not 30s.</td></tr>
-<tr><td>Cleanup</td><td>In-memory map / durable pre-trust lease</td><td><code>createSessionAndLease</code> before endpoint trust; fresh drain signal; honest close</td><td>Store unreadable fails startup; close cannot abort the cleanup it must perform.</td></tr>
+<tr><td>Cleanup</td><td>In-memory map / durable intent+lease with provider reconciliation</td><td>Intent before POST; atomic intent→lease before endpoint trust; fresh drain signal; honest close</td><td>Unknown remote acceptance remains blocking until provider proof; store unreadable fails startup.</td></tr>
 <tr><td>Exact describe</td><td>Toolkit+slug only / full returned identity fence</td><td>Toolkit+slug+optional version+expected schema/source revisions</td><td>Version mismatch and source drift cannot masquerade as exact describe.</td></tr>
 <tr><td>Provider identifiers</td><td>Unbounded opaque ID / bounded encoded ID</td><td>Session ID 1..256 UTF-8 bytes, no controls/lone surrogates, strict path-segment encoding</td><td>Protects durable keys and cleanup URL construction.</td></tr>
 <tr><td>Account pagination</td><td>Unbounded consistency scan / bounded complete scan</td><td>5 pages · 100/page · 500 total · 15s</td><td>Over-limit or partial uniqueness fails resource-limited.</td></tr>
@@ -80,10 +82,10 @@
   class PC,FS,ED discovery; class AA,JP,AC,DU,AU future; class EXT blocked;</pre><p class="small">All eight beads are DEFERRED and each has WHAT, proof, bounded file scope, dependencies, acceptance criteria and a 300–420 minute estimate. <code>br dep cycles</code>: no cycles. No 900.4 release bead exists because process/release work is not yet dispatchable.</p></section>
 
 <section class="card"><h2>Bead register</h2><table><tr><th>Slice</th><th>Bead</th><th>Priority</th><th>Direct blockers</th></tr>
-<tr><td>900.1a custody</td><td><code>wt-391-forward-gh900-composio-protocol-custody-ytk2</code></td><td>P0</td><td>Owner decisions + bead correction for caller-signal scope and Session-ID bounds</td></tr>
-<tr><td>900.1b search</td><td><code>wt-391-forward-gh900-composio-fair-search-96e7</code></td><td>P1</td><td>ytk2 + bead correction from invalid 30s claim to hierarchical 75s bound</td></tr>
-<tr><td>900.1c describe</td><td><code>wt-391-forward-gh900-composio-exact-describe-0ijm</code></td><td>P1</td><td>96e7 + bead correction for version/source fence</td></tr>
-<tr><td>900.2a account</td><td><code>wt-391-forward-gh900-composio-account-authority-84w5</code></td><td>P2</td><td>0ijm + owner migration decision + bead pagination ceilings</td></tr>
+<tr><td>900.1a custody</td><td><code>wt-391-forward-gh900-composio-protocol-custody-ytk2</code></td><td>P0</td><td>Owner store/reconciliation/hardening decisions; bead now carries create-intent, caller-signal and Session-ID contracts</td></tr>
+<tr><td>900.1b search</td><td><code>wt-391-forward-gh900-composio-fair-search-96e7</code></td><td>P1</td><td>ytk2; bead now carries hierarchical workspace→principal fairness and 75s bound</td></tr>
+<tr><td>900.1c describe</td><td><code>wt-391-forward-gh900-composio-exact-describe-0ijm</code></td><td>P1</td><td>96e7; bead now carries exact version and expected source/schema fences</td></tr>
+<tr><td>900.2a account</td><td><code>wt-391-forward-gh900-composio-account-authority-84w5</code></td><td>P2</td><td>0ijm + owner migration decision; bead now carries finite fail-closed pagination ceilings</td></tr>
 <tr><td>900.2b proposal</td><td><code>wt-391-forward-gh900-composio-jcs-proposal-wu5i</code></td><td>P2</td><td>84w5</td></tr>
 <tr><td>900.2c execution</td><td><code>wt-391-forward-gh900-composio-approved-child-usvx</code></td><td>P2</td><td>wu5i + complete external C2 closure (exact IDs absent)</td></tr>
 <tr><td>900.3a discovery UI</td><td><code>wt-391-forward-gh900-composio-discovery-ui-mrp0</code></td><td>P2</td><td>0ijm + 84w5</td></tr>
@@ -94,7 +96,7 @@
 <tr><td>Operator key forwarded to arbitrary HTTPS Session endpoint</td><td class="high">Present today</td><td class="high">Critical</td><td>900.1a shared exact-origin validator before every header; evil.example mutation test.</td></tr>
 <tr><td>Forged source row selects privileged backend</td><td class="high">Structurally possible</td><td class="high">Critical</td><td>Host-only source recomputation; forged/cross-actor tests before secret resolution.</td></tr>
 <tr><td>Workspace A monopolizes runtime</td><td class="high">Likely with global FIFO</td><td class="high">High</td><td>Admission before queue, workspace→principal round-robin, conservative workspace B 75s test.</td></tr>
-<tr><td>Crash, invalid ID/URL, or store outage orphans Session</td><td class="med">Medium</td><td class="high">High</td><td>Bound/encode ID; create-and-lease before endpoint return; unreadable store fails startup; fresh drain signal and honest close.</td></tr>
+<tr><td>Crash between provider acceptance and local lease promotion orphans Session</td><td class="med">Medium</td><td class="high">High</td><td>Persist intent before POST; require provider idempotency/lookup/listing or finite-TTL sweep proof; unresolved intent blocks admission and clean state.</td></tr>
 <tr><td>Timeout work continues and mutates state</td><td class="high">Current generic transport cannot abort</td><td class="high">High</td><td>Private signal-aware client plus narrow curated handler/app signal seam; observed abort and no-late-write tests.</td></tr>
 <tr><td>Approval consumed without admitted Run</td><td class="med">Crash window</td><td class="high">Critical</td><td>Transactional/recoverable C5×C6 handoff and crash matrix.</td></tr>
 <tr><td>Legacy subject change hides accounts</td><td class="high">Certain if changed blindly</td><td class="high">High</td><td>900.1 keeps legacy subject; 900.2 inventories/quarantines and relinks or migrates by owner decision.</td></tr>
@@ -104,11 +106,11 @@
 </table></section>
 
 <section class="card"><h2>Open owner blockers</h2><table><tr><th>Owner</th><th>Decision</th><th>Recommendation</th></tr>
-<tr><td>Owner · Gate 1</td><td>Canonical durable cleanup store and versioned secret-resolver handle</td><td>Host durable control-plane store available during startup; never user settings/plugin JSON/raw key.</td></tr>
+<tr><td>Owner · Gate 1</td><td>Canonical durable cleanup store, versioned secret-resolver handle, and provider create-gap reconciliation</td><td>Host durable control-plane store plus idempotent create/authoritative lookup or finite-TTL sweep proof; never claim orphan freedom from a local lease alone.</td></tr>
 <tr><td>Owner · Gate 1</td><td>Allow 900.1a to harden the existing curated Composio transport</td><td>Required for safe custody; if rejected, 900.1 remains blocked rather than preserving arbitrary-origin key forwarding.</td></tr>
 <tr><td>Architecture Steward · Gate 1</td><td>Assign exact beads/PRs for C2's complete predecessor closure and C5×C6 handoff</td><td>Follow frozen DAG; do not create #900 substitutes.</td></tr>
 <tr><td>Owner · before 900.2</td><td>Legacy/new subject conflict handling</td><td>Inventory, quarantine, explicit relink unless migration+rollback is approved.</td></tr>
-<tr><td>Owner</td><td>Draft PR #1309 disposition</td><td>Keep as quarry while replacement slices land; never merge <code>dca7692</code>.</td></tr>
+<tr><td>Owner</td><td>Draft PR #1309 disposition</td><td>Resolved 2026-08-26: PR closed; retain <code>dca7692</code> as quarry only and never merge or revive it.</td></tr>
 <tr><td>Owner / Operations · 900.4</td><td>Project isolation, vendor and deployment gates</td><td>Record explicit acceptance; live API did not prove project isolation.</td></tr>
 </table></section>
 
@@ -116,7 +118,7 @@
 <tr><td>Exact-origin custody</td><td>Curated flag-off <code>https://evil.example</code>; zero forwarded headers; invalid endpoint still leaves durable cleanup lease.</td></tr>
 <tr><td>Host authority</td><td>Forged persisted row, wrong deterministic ID, cross-user/workspace—all zero secret/provider calls.</td></tr>
 <tr><td>Fairness</td><td>Workspace A fills active+queue quota; admitted workspace B completes or receives its own provider result within the conservative 75-second global bound.</td></tr>
-<tr><td>Crash-durable cleanup</td><td>Oversized/control/path-confusion IDs fail; create-and-lease precedes endpoint trust; kill/restart drains; unreadable store admits none; repeated close uses fresh drain signal.</td></tr>
+<tr><td>Crash-durable cleanup</td><td>Intent precedes POST; returned ID promotes atomically to lease before endpoint trust; crash at provider-response/promotion gap reconciles or blocks; unreadable store admits none; repeated close uses fresh drain signal.</td></tr>
 <tr><td>Abort correctness</td><td>Catalog and curated Composio-specific caller signals reach fetch; no late success/cache/lease mutation; close abort never cancels fresh cleanup drain.</td></tr>
 <tr><td>Exact describe</td><td>Optional version and expected source revision match the search identity; mismatch/source drift reject or report deterministically.</td></tr>
 <tr><td>Account uniqueness</td><td>5-page/100-row/500-total/15-second ceilings; over-limit or partial scan fails resource-limited.</td></tr>
@@ -126,10 +128,10 @@
 <tr><td>Canonical bytes</td><td>RFC 8785 cross-process vectors plus Unicode/bidi/control display and replay tests.</td></tr>
 <tr><td>Beads graph</td><td>Proof parses exactly 8 deferred beads, validates Ready fields and exact 9-edge equality; <code>br dep cycles</code> has no cycles; <code>br ready</code> returns zero gh900 beads; <code>bv</code> reports 254 nodes / 282 edges / <code>Cycles:null</code>.</td></tr>
 <tr><td>Commands</td><td>Explicit <code>.beads/issues.jsonl</code> + plan + HTML status allowlist; Markdown↔HTML/Beads parity; self-contained HTMLParser; <code>git diff --check</code>; no staged files. Package tests remain per implementation bead.</td></tr>
-<tr><td>References</td><td><a href="https://github.com/hachej/boring-ui/issues/900">#900</a> · <a href="https://github.com/hachej/boring-ui/pull/910">#910</a> · <a href="https://github.com/hachej/boring-ui/pull/946">#946</a> · <a href="https://github.com/hachej/boring-ui/pull/1309">#1309</a> · <a href="https://github.com/hachej/boring-ui/issues/1226">#1226</a> · <code>docs/issues/900/plan.md</code></td></tr>
+<tr><td>References</td><td><a href="https://github.com/hachej/boring-ui/issues/900">#900 outbound</a> · <a href="https://github.com/hachej/boring-ui/issues/806">#806 inbound</a> · <a href="https://github.com/hachej/boring-ui/pull/910">#910</a> · <a href="https://github.com/hachej/boring-ui/pull/946">#946</a> · <a href="https://github.com/hachej/boring-ui/pull/1309">#1309 closed quarry</a> · <a href="https://github.com/hachej/boring-ui/issues/1226">#1226</a> · <code>docs/issues/900/plan.md</code> · <code>docs/issues/806/external-workspace-mcp-plan.md</code></td></tr>
 </table></section>
 
-<section class="card"><h2>Adversarial review</h2><div class="review"><p><strong>Final OPUS verdict: BLOCKER. Final SOL verdict: BLOCKER.</strong> A prior OPUS route failed with <code>Unknown agent: project.opus48-plan-reviewer</code>; that failed attempt is not evidence and is superseded only by the final supplied OPUS report.</p><p>Accepted corrections: full version/source-fenced describe; bounded/encoded Session IDs; create-and-lease before separate endpoint trust; distinct active and drain signals; unreadable-store fail-closed; explicit curated caller-signal seam; hierarchical workspace→principal fairness with 75s conservative bound; finite account pagination; exact Session ID as the sole durable Session value; and proof that parses eight deferred beads, exact nine edges, readiness, cycles, graph stats and self-contained artifact parity.</p><p>Because this review may not mutate beads, mismatches in ytk2/96e7/0ijm/84w5 are explicit before-undefer blockers. Canonical external C2 edges remain absent. Current state is <code>needs-info</code>.</p></div></section>
+<section class="card"><h2>Adversarial review</h2><div class="review"><p><strong>Final OPUS verdict: BLOCKER. Final SOL verdict: BLOCKER.</strong> A prior OPUS route failed with <code>Unknown agent: project.opus48-plan-reviewer</code>; that failed attempt is not evidence and is superseded only by the final supplied OPUS report.</p><p>Accepted corrections: full version/source-fenced describe; bounded/encoded Session IDs; create intent before POST plus provider-backed reconciliation and atomic lease promotion before separate endpoint trust; distinct active and drain signals; unreadable-store fail-closed; explicit curated caller-signal seam; hierarchical workspace→principal fairness with 75s conservative bound; finite account pagination; exact Session ID as the sole durable Session value; and proof that parses eight deferred beads, exact nine edges, readiness, cycles, graph stats and self-contained artifact parity.</p><p>The combined planning PR updates ytk2/96e7/0ijm/84w5 to match the canonical create-gap, signal/bounds, fairness, exact-describe and pagination contracts; proof asserts these tokens before undefer. Canonical external C2 edges remain absent. Current state is <code>needs-info</code>.</p></div></section>
 
-<section class="card"><h2>Next owner action</h2><p><strong>Resolve Gate-1 authority decisions, direct the four bead text corrections, and have the Architecture Steward materialize exact external C2 predecessor edges.</strong> Subject migration policy additionally blocks 900.2. Reconcile GitHub's stale ready label outside this no-comment task, then rerun independent T1 review before any bead is undeferred. Do not merge PR #1309 or start implementation now.</p></section>
+<section class="card"><h2>Next owner action</h2><p><strong>Resolve Gate-1 authority decisions and have the Architecture Steward materialize exact external C2 predecessor edges.</strong> Subject migration policy additionally blocks 900.2. PR #1309 is closed and remains quarry only. Review this outbound plan together with the companion inbound #806 plan in the combined planning PR; do not start implementation until each plan's independent gates are satisfied.</p></section>
 </main></body></html>

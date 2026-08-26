@@ -69,19 +69,22 @@ slice absorbed by .27), `.28` (re-land native sessions + rename menu, after
 
 ## Wave 3 — trigger: named consumers, not calendar
 
-**BYOK and External MCP share one prerequisite** — a per-workspace credential
-and registration substrate (§Lane reality). Whichever fires first builds it;
-it is a named deliverable of this wave, not an implementation detail of
-either lane. Sequence them adjacently.
+**BYOK and outbound MCP Connectors share one prerequisite** — a per-workspace
+credential and registration substrate (§Lane reality). Whichever fires first
+builds it; it is a named deliverable of this wave, not an implementation detail
+of either lane. Sequence them adjacently. Inbound MCP Access is a separate
+resource-server edge activated by the 2026-08-26 amendment below.
 
 - **BYOK** (KEY0 + parked PR #917; issue #1010): becomes load-bearing when
   multi-agent model costs are real. First step is ratifying the de-facto
   policy the shipped code implements. The `.30` model-cap revisit is
   MANDATORY here — it has no bead and nothing else forces it.
-- **External MCP** (#900, re-land per #946: small reviewed slices,
-  application-owned atomic backend; issue #1011): waits for its consumer —
-  mail/tools for the CoS persona, or a client need. Do not re-land #937
-  wholesale.
+- **Outbound MCP Connectors** (#900 Composio, re-land per #946 as small
+  reviewed slices; generic lane #1011): waits for its consumer — mail/tools for
+  the CoS persona, or a client need. Do not re-land #937 wholesale.
+- **Inbound MCP Access** (#806): one OAuth-bound human/workspace resource at
+  `/mcp`, independently gated by its canonical plan and the frozen DAG. It does
+  not register outbound providers or weaken Connector authority.
 - **Authored catalog** (`0jpy.9`, includes fleet-time model-ID validation and
   maxTokensPerTurn enforcement): when personas become data.
 
@@ -178,10 +181,12 @@ real duplication is two replay sources. Rewrite the bead before working it.
 | `docs/issues/909/` | Frozen record of what shipped + follow-up beads. Binding for the Gateway contract (§6) |
 | `docs/issues/391/` | Decision-28 detail for Waves 2+. Binding once its wave opens |
 | `docs/issues/805/` | A1 shipped; remainder absorbed into 391's F-graph. Reference only |
-| `docs/issues/808/`, `820/`, `806/`, `900/` | Lane detail for Waves 3–4. Reference until their trigger fires — but §Lane reality outranks them on what exists |
+| `docs/issues/808/`, `820/` | Lane detail for Waves 3–4. Reference until their trigger fires — but §Lane reality outranks them on what exists |
+| `docs/issues/806/external-workspace-mcp-plan.md` | Inbound MCP Access canonical plan once the 2026-08-26 combined-plan amendment lands; dispatch remains frozen by its gates |
+| `docs/issues/900/plan.md` | Outbound Composio Connector canonical plan; discovery/execution remain blocked by its explicit gates |
 
 Lane tracking issues (each with a draft seed PR): #1009 streaming, #1010 BYOK,
-#1011 external MCP, #1012 sandbox. Issues #820 and #808 are CLOSED; #1010 and
+#1011 outbound MCP Connectors, #1012 sandbox. Issues #820 and #808 are CLOSED; #1010 and
 #1012 replace them as the tracking issues for their parked PRs.
 
 Bead graph: epic `wt-391-forward-0jpy` follow-ups (Wave 1–2) + F-graph under
@@ -218,8 +223,8 @@ Decision 30 (presentation-only landings).
   (#1141); readiness/observability surface in review (#1142).
 - **Wave 3 opened early, per its own triggers firing.** BYOK: KmsBackend vault
   + local-KEK backend merged (#1132); durable credential persistence in review
-  (#1145); plans r3 ratified (#1137). External MCP: user-registered typed MCP
-  source with SSRF-safe validation (#1130), per-agent MCP grants via capability
+  (#1145); plans r3 ratified (#1137). Outbound MCP Connectors: user-registered
+  typed MCP source with SSRF-safe validation (#1130), per-agent MCP grants via capability
   projection (#1131) merged; connect-time SSRF enforcement in review (#1135).
 - **Landing lane revived within D28** (presentation-only, zero authority
   effects, per the #1153 memo): config-driven bounded hostname landings
@@ -290,3 +295,39 @@ Sequencing consequences (ratified):
   continue; it never preempts landing, BYOK, or #1107.
 - **#1127 channels: deprioritized.**
 - **UI polish loop: standing low-effort background work** — keeps running.
+
+---
+
+## Amendment 2026-08-26 — one coherent inbound + outbound MCP program
+
+The owner activates one coordinated **planning program**, carried by one PR,
+while preserving two distinct product planes:
+
+1. **Inbound MCP Access (#806):** an external MCP client authorizes one human
+   and one workspace, discovers available Agents and their exact resident native
+   tools, invokes qualified tools, runs Agents, and receives live same-workspace
+   artifacts. Its canonical plan is
+   [`../issues/806/external-workspace-mcp-plan.md`](../issues/806/external-workspace-mcp-plan.md).
+2. **Outbound MCP Connectors (#900/#1011):** a Boring Agent discovers and uses
+   external provider capabilities. The current sellable Composio plan is
+   [`../issues/900/plan.md`](../issues/900/plan.md); generic registration remains
+   #1011.
+
+The planes share host authority, Workspace/Seat projection, native-tool
+identity, C5 approval, C6 accepted-work, C2 first-class child execution,
+revocation, metering facts, and sandbox/runtime bindings. They do **not** share
+transport direction, OAuth grants, provider registration, secret custody, or
+product UI.
+
+Cross-plane ruling: inbound Access may expose the exact resident Connector
+`AgentTool`, but it never materializes provider-catalog children, bypasses
+Connector/provider approval, creates a second runtime/store/ledger, or flattens
+C2 parent/child identity. Effectful full-catalog Connector execution remains
+blocked until C2's complete canonical predecessor closure and the Connector's
+C5×C6/C2 conformance are green.
+
+This amendment supersedes prior uses of ambiguous “External MCP”: #806 is
+**inbound MCP Access**; #900/#1011 are **outbound MCP Connectors**. Landing this
+combined planning PR makes both linked plans the coherent planning authority.
+It does not waive either plan's blockers, make deferred Beads dispatchable, or
+authorize implementation before their named frozen-DAG and owner gates.

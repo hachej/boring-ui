@@ -12,7 +12,12 @@ track: owner
 ## Status and source reconciliation
 
 This plan supersedes the 2026-07-22 implementation sequence in this file, but
-not the owner's product scope. It reconciles:
+not the owner's product scope. PR #1415 is now the owner's single combined MCP
+planning PR: this file remains the canonical **outbound Composio Connector**
+plan, while [`../806/external-workspace-mcp-plan.md`](../806/external-workspace-mcp-plan.md)
+owns **inbound MCP Access**. The plans share canonical kernel seams but not
+transport direction, grants, provider registration, or product UI. This plan
+reconciles:
 
 - issue #900 and its owner comments;
 - capability proof PR #910 / `docs/issues/900/composio-capability-spike.md`;
@@ -112,6 +117,7 @@ provider calls. A timeout after possible provider acceptance settles as
 | Probe | Catalog probe is explicitly unsupported in 900.1; no synthetic success | Avoid inventing an incompatible probe DTO |
 | Compatibility | Curated product policy/UI stays default; shared Composio transport security is hardened | Prevents product broadening without preserving an exploitable custody gap |
 | Port alignment | Consume frozen Authority/Approval/Run/C2 contracts; no new durable kernel noun | V2 handbook and “no parallel abstraction” rule |
+| Inbound Access boundary | #806 may expose only the exact resident Connector-facing `AgentTool`; it cannot materialize app-native provider children, bypass C5/provider authority, or flatten C2 identity | Keeps the combined PR coherent without merging inbound and outbound products |
 
 ## Architecture
 
@@ -128,7 +134,7 @@ CURRENT PRINCIPAL + WORKSPACE (host authority)
             |
  private abortable Composio operation client
             |
- parse Session ID -> persist durable cleanup lease -> validate exact origin
+ persist create intent -> provider POST -> promote Session ID to lease -> validate exact origin
             |
  unfiltered Session; workbench disabled; SEARCH + SCHEMA only
             |
@@ -187,8 +193,9 @@ type ComposioCatalogTool = {
 }
 
 interface ComposioOperationClient {
-  // Validates/bounds the Session ID and durably writes its lease before return.
-  createSessionAndLease(input: CreateSessionInput, activeSignal: AbortSignal): Promise<{
+  // Persists a create intent before POST. A returned Session ID is validated and
+  // atomically promotes that intent to a cleanup lease before caller exposure.
+  createSessionWithTrackedIntent(input: CreateSessionInput, activeSignal: AbortSignal): Promise<{
     sessionId: BoundedComposioSessionId
     untrustedEndpoint: string
     untrustedHeaders?: unknown
@@ -201,9 +208,10 @@ interface ComposioOperationClient {
 }
 
 interface ComposioCleanupLeaseStore {
-  // Persist immediately after parsing Session ID, before endpoint trust/use.
-  put(lease: {
-    sessionId: string
+  // Persist before provider POST; intentId is also the provider idempotency or
+  // reconciliation key when the selected provider mechanism supports one.
+  putCreateIntent(intent: {
+    intentId: string
     workspaceId: string
     userId: string
     sourceId: string
@@ -212,8 +220,14 @@ interface ComposioCleanupLeaseStore {
     secretResolverHandle: string // opaque host handle, never the key
     createdAt: string
   }): Promise<void>
-  deleteAfterVerified404(sessionId: string): Promise<void>
-  listForStartupDrain(): Promise<readonly ComposioCleanupLease[]>
+  // One transaction: retain intent on failure; never expose an unleased Session.
+  promoteIntentToLease(intentId: string, sessionId: string): Promise<void>
+  deleteLeaseAfterVerified404(sessionId: string): Promise<void>
+  resolveIntentAfterProviderProof(intentId: string, evidenceDigest: string): Promise<void>
+  listForStartupReconciliation(): Promise<{
+    intents: readonly ComposioCreateIntent[]
+    leases: readonly ComposioCleanupLease[]
+  }>
 }
 
 interface ComposioCatalogRuntime {
@@ -399,23 +413,35 @@ accepting --close()--> closing --bounded active wait + every lease attempted-->
                          closed-clean | closed-pending-cleanup
 ```
 
-`createSessionAndLease` validates the Session ID and durably writes its lease
-before it returns the untrusted endpoint/headers; callers cannot observe an
-unleased Session. The lease is removed only after verified GET 404. Startup
-reads and drains durable leases before new Composio admission. If the store
+`createSessionWithTrackedIntent` durably writes a bounded creation intent before
+the provider POST. If the provider returns a Session ID, the client validates it
+and atomically promotes the intent to a lease before returning any untrusted
+endpoint/headers; callers cannot observe an unleased Session. The lease is
+removed only after verified GET 404. A crash after provider acceptance but
+before response parsing/promotion leaves an unresolved intent, not a false
+clean state. Startup reconciles both intents and leases before new Composio
+admission. If the store
 cannot be opened/read, Composio startup fails closed with a stable storage-
 unavailable error and admits no curated or catalog Session. `close()` stops
 admission, aborts queued/active work, waits a bounded interval, then uses a fresh
 bounded drain signal to attempt every known lease. It always resolves one
 idempotent `CloseReport`; concurrent/repeated closes share it.
-`closed-pending-cleanup` is an honest local terminal state when cleanup or store
-access remains unresolved. Durable leases survive process death and retry next
-startup. The runtime never reports clean while a lease remains or the store
-cannot prove emptiness.
+`closed-pending-cleanup` is an honest local terminal state when cleanup, create
+intent, reconciliation, or store access remains unresolved. Durable intents and
+leases survive process death and retry next startup. The runtime never reports
+clean while either remains or the store/provider cannot prove absence.
 
-The canonical app-owned durable storage binding and versioned
-`secretResolverHandle -> credential revision` resolution are Gate 1 owner
-blockers; the runtime must not invent an unreviewed JSON file or retain raw keys.
+The provider must supply and the owner must select at least one production
+reconciliation mechanism: idempotent create keyed by `intentId`, authoritative
+Session listing/lookup by that key, or a documented finite provider TTL plus an
+operator sweep/proof procedure. Until live evidence proves one, unresolved
+intents block Composio admission indefinitely and 900.1 cannot ship. A local
+intent cannot prove whether the remote Session exists.
+
+The canonical app-owned durable storage binding, versioned
+`secretResolverHandle -> credential revision` resolution, and provider
+creation-reconciliation mechanism are Gate 1 owner blockers; the runtime must
+not invent an unreviewed JSON file, retain raw keys, or claim orphan freedom.
 
 ### Discovery operation
 
@@ -424,7 +450,10 @@ requested
  -> host requireCatalogSource
  -> fixed-window/per-principal admission
  -> fair queue
- -> create Session; validate ID + persist lease atomically before return
+ -> persist bounded create intent
+ -> provider POST using selected idempotency/reconciliation key
+ -> receive response; validate Session ID
+ -> atomically promote intent to lease before endpoint/header exposure
  -> receive untrusted endpoint/headers
  -> exact endpoint trust
  -> Session/meta-tool invariant checks
@@ -436,9 +465,10 @@ requested
  -> success
 ```
 
-Failure after Session creation either leaves a valid durable bounded lease until
-verified cleanup or fails startup/request because the store could not establish
-that lease; no unleased endpoint is trusted. Cleanup failure changes the owning request to
+Failure after Session creation leaves either a valid durable lease or an
+unresolved durable create intent. No unleased endpoint is trusted. Startup stays
+non-accepting until provider reconciliation proves the intent absent or promotes
+it to a concrete lease and cleans it. Cleanup failure changes the owning request to
 `MCP_PROVIDER_CLEANUP_FAILED`; only its breaker partition is affected until the
 app emergency ceiling is reached. Abort/timeout/close prevents late success,
 cache write, or lease deletion.
@@ -685,7 +715,7 @@ user data, retry effects, or promote personal credentials.
 1. shared private Composio protocol client used by curated and catalog modes;
 2. fake Composio HTTP + real MCP SDK fake Streamable HTTP with observed aborts;
 3. host-only `requireCatalogSource` and discriminated app runtime;
-4. durable cleanup lease store across process restart;
+4. durable create-intent/cleanup-lease store plus provider reconciliation across process restart;
 5. fair scheduler under two-principal saturation;
 6. source/catalog/bridge DTOs; and
 7. future C2 plus complete predecessor conformance and clean Seneca tarball E2E.
@@ -695,7 +725,8 @@ user data, retry effects, or promote personal credentials.
 - flag-off curated Session URL `https://evil.example` fails before any operator
   or Session header is forwarded;
 - deleting the exact-origin guard makes the test fail;
-- bounded Session ID is durably leased before malformed/evil endpoint rejection;
+- create intent is durable before POST; any bounded returned Session ID is
+  promoted to a lease before malformed/evil endpoint rejection;
 - oversized, control, lone-surrogate and path-confusion Session IDs fail; every
   cleanup path uses strict segment encoding;
 - durable-store unreadable at startup admits no Composio Session;
@@ -706,7 +737,9 @@ user data, retry effects, or promote personal credentials.
   its own provider error within the 75-second global worst-case bound;
 - per-partition cleanup cap does not block B; app emergency ceiling honestly
   blocks all admission;
-- kill after Session create, restart, startup drain, verified 404, lease delete;
+- kill before POST, after provider acceptance, after HTTP response but before
+  intent promotion, and after promotion; restart must reconcile/prove absence or
+  remain blocked, then verify 404 and delete the lease;
 - repeated/concurrent close returns the same clean/pending report;
 - timeout/abort/close is observed by fetch and produces no late success, cache
   write, or lease deletion;
@@ -747,21 +780,25 @@ returns as identity proof, or exactly-once provider execution claims.
 900.1 is not `ready-for-agent` until:
 
 1. the owner selects/approves the canonical app-owned durable cleanup persistence
-   seam and versioned secret-resolver handle;
+   seam, versioned secret-resolver handle, and provider-supported creation
+   idempotency/reconciliation or finite-TTL operator proof;
 2. the shared curated+catalog exact-origin hardening scope is approved;
 3. independent T1 review is clean on both artifacts;
 4. the existing 900.1a-c Definition-of-Ready beads are undeferred only after
    their owner decisions and external gates are recorded; and
-5. before undefer, bead text is corrected to match this canonical plan for
-   curated caller-signal plumbing, bounded/encoded Session IDs, hierarchical
-   fairness, exact describe version/source fence, and bounded account pagination.
+5. bead text matches this canonical plan for pre-POST create intent/provider
+   reconciliation, curated caller-signal plumbing, bounded/encoded Session IDs,
+   hierarchical fairness, exact describe version/source fence, and bounded
+   account pagination; planning proof asserts these contracts before undefer.
 
 ### 900.1 discovery acceptance
 
-1. 900.1a hardens all Composio Session consumers: exact origin before any header,
-   bounded/encoded Session ID durably leased before endpoint trust, explicit
-   Composio-specific caller-signal plumbing, separate active/drain signals, and
-   bounded protocol parser/client. Unreadable durable storage fails startup.
+1. 900.1a hardens all Composio Session consumers: durable intent before POST,
+   provider-backed create-gap reconciliation, exact origin before any header,
+   bounded/encoded Session ID atomically promoted to a lease before endpoint
+   trust, explicit Composio-specific caller-signal plumbing, separate active/
+   drain signals, and bounded protocol parser/client. Unreadable or unresolved
+   durable state fails startup/admission.
 2. Catalog source authority is host-recomputed; forged persisted provenance and
    cross-actor/workspace IDs never resolve secrets or call providers.
 3. Catalog flag-on with missing secret/store fails startup; service availability
@@ -846,9 +883,26 @@ expected_edges = {
     ("wt-391-forward-gh900-composio-approval-ui-mx5n", "wt-391-forward-gh900-composio-approved-child-usvx"),
     ("wt-391-forward-gh900-composio-approval-ui-mx5n", "wt-391-forward-gh900-composio-discovery-ui-mrp0"),
 }
-expected_paths = {".beads/issues.jsonl", "docs/issues/900/plan.md", "docs/issues/900/plan-review.html"}
-status = subprocess.check_output(["git", "status", "--porcelain=v1"], text=True)
-assert {line[3:] for line in status.splitlines()} == expected_paths
+expected_paths = {
+    ".beads/issues.jsonl",
+    "docs/direction/DIRECTION.md",
+    "docs/issues/806/external-workspace-mcp-plan.md",
+    "docs/issues/806/plan.md",
+    "docs/issues/806/runtime-refactor/README.md",
+    "docs/issues/807/plan.md",
+    "docs/issues/900/plan-review.html",
+    "docs/issues/900/plan.md",
+}
+merge_base = subprocess.check_output(
+    ["git", "merge-base", "origin/main", "HEAD"], text=True
+).strip()
+actual_paths = set(subprocess.check_output(
+    ["git", "diff", "--name-only", merge_base], text=True
+).splitlines())
+actual_paths.update(subprocess.check_output(
+    ["git", "ls-files", "--others", "--exclude-standard"], text=True
+).splitlines())
+assert actual_paths == expected_paths, (actual_paths, expected_paths)
 rows = {r["id"]: r for r in map(json.loads, Path(".beads/issues.jsonl").read_text().splitlines()) if r.get("id") in ids}
 assert set(rows) == ids and all(r["status"] == "deferred" for r in rows.values())
 for r in rows.values():
@@ -856,10 +910,23 @@ for r in rows.values():
     assert all(x in r["description"] for x in ["WHAT:", "PROOF PATH:", "FILE SCOPE:", "DEPENDENCIES:", "PR FIT:"])
 actual_edges = {(r["id"], d["depends_on_id"]) for r in rows.values() for d in r.get("dependencies", []) if d["depends_on_id"] in ids}
 assert actual_edges == expected_edges, (actual_edges, expected_edges)
+bead_text = "\n".join(r["description"] + "\n" + r["acceptance_criteria"] for r in rows.values())
+for token in [
+    "create intent before provider POST",
+    "provider-supported idempotent create",
+    "75s global bound",
+    "expected source revision",
+    "5 pages, 100 rows/page, 500 rows total",
+]:
+    assert token in bead_text, token
 md = Path("docs/issues/900/plan.md").read_text()
+inbound = Path("docs/issues/806/external-workspace-mcp-plan.md").read_text()
+direction = Path("docs/direction/DIRECTION.md").read_text()
 html = Path("docs/issues/900/plan-review.html").read_text()
 for token in ["BLOCKER", "C3", "C1", "C2", "durable cleanup", "exact-origin", "RFC 8785", *ids]:
     assert token in md and token in html, token
+for token in ["inbound MCP Access", "outbound MCP Connectors", "first-class child"]:
+    assert token in inbound and token in direction, token
 assert ("ChildToolCall" + "Event") not in md
 assert ("type:" + '"tool_call"') not in md
 assert "<script" not in html
@@ -872,9 +939,12 @@ git diff --check
 test -z "$(git diff --cached --name-only)"
 ```
 
-The status check includes untracked files and permits exactly the Beads export
-plus both canonical artifacts. HTML parity checks mirror verdict, actual bead
-IDs/edges, dependency closure and critical risks.
+The merge-base-to-working-tree check plus explicit untracked-file inventory
+permits exactly the Beads export, combined
+direction/pointer migration, both canonical plans, and the outbound review
+artifact. HTML parity checks mirror verdict, actual bead IDs/edges, dependency
+closure and critical risks; cross-plan tokens prove the inbound/outbound/C2
+boundary appears in both the direction amendment and inbound plan.
 
 ### Per discovery reland PR
 
@@ -913,8 +983,9 @@ authority.
 DEFERRED)
 
 **Delivers:** the shared private abortable/bounded Composio operation client and
-parser for curated and future catalog Sessions: exact origin before any header,
-Session ID durable lease before endpoint trust, raw workbench contract,
+parser for curated and future catalog Sessions: durable create intent before
+POST, provider reconciliation key/proof, exact origin before any header, atomic
+intent→Session lease before endpoint trust, raw workbench contract,
 invalid-origin cleanup, and no catalog behavior.
 
 **File scope:** `composioManagedConnector.ts`; new `composioProtocol.ts`; shared
@@ -922,11 +993,11 @@ MCP errors; `mcpSdkTransport.ts` only without generic semantic widening; narrow
 Composio-specific caller-signal plumbing in `sourceHandlers.ts`, `agentTools.ts`
 and `appServerBinding.ts`; focused curated/protocol/composition tests.
 
-**Blocked by:** owner-approved durable cleanup store/opaque secret handle and
-approval to harden curated Composio consumers. No bead predecessor. The current
-bead omits handler/composition signal scope and Session-ID structural bounds;
-because beads cannot be mutated in this review, it remains deferred and must be
-corrected before undefer.
+**Blocked by:** owner-approved durable intent/lease store, opaque secret handle,
+provider reconciliation mechanism, and approval to harden curated Composio
+consumers. No bead predecessor. The combined planning PR updates the bead with
+caller-signal scope, Session-ID bounds, and the complete create-gap contract; it
+remains deferred on the owner decisions.
 
 **Proof:** bead commands plus evil-origin, origin-guard mutation, abort,
 malformed-endpoint-after-ID, cleanup and canary faults.
@@ -949,8 +1020,9 @@ full-app composition if needed.
 
 **Proof:** forged-source, missing-startup-config, workspace/principal fairness,
 cleanup restart/close/store-unavailable, abort-late-write, source race/revision,
-raw denial and package gates from the bead. The current bead's 30-second two-
-principal claim must be corrected before undefer.
+raw denial and package gates from the bead. The combined planning PR updates the
+bead to hierarchical workspace→principal fairness and the conservative
+75-second global bound.
 
 ### Slice 900.1c — Exact describe and live discovery qualification
 
@@ -967,9 +1039,9 @@ search + describe + verified cleanup; no account execution or launch pagination.
 `sourceHandlers.ts`, shared DTOs/tests; capability script/record only for genuine
 sanitized changes.
 
-**Blocked by:** `wt-391-forward-gh900-composio-fair-search-96e7`. The current
-900.1c bead omits version and expected source revision from describe input; it
-remains deferred and must be corrected before undefer.
+**Blocked by:** `wt-391-forward-gh900-composio-fair-search-96e7`. The combined
+planning PR updates the bead with optional exact version and expected source
+revision; it remains deferred on its predecessor and live qualification.
 
 **Proof:** deterministic package gates, JCS revision vectors, stale-write and
 pathological schema tests, raw denial, and sanitized live qualification.
@@ -989,9 +1061,9 @@ fail resource-limited and admit no call.
 authority module and tests; no catalog, proposal, child execution or UI.
 
 **Blocked by:** `wt-391-forward-gh900-composio-exact-describe-0ijm` and the
-owner's subject migration decision. The current account-authority bead names
-pagination consistency but omits finite ceilings; it remains deferred and must
-be corrected before undefer.
+owner's subject migration decision. The combined planning PR updates the bead
+with 5-page/100-row/500-total/15-second ceilings and fail-closed partial scans;
+it remains deferred.
 
 ### Slice 900.2b — Immutable JCS call proposal
 
@@ -1114,10 +1186,13 @@ tracking only when prerequisites, access and owner gates make it dispatchable.
 
 ## Open owner questions / decisions
 
-1. **BLOCKER — durable cleanup persistence:** select the canonical app-owned
-   durable store and approve versioned `secretResolverHandle` resolution.
-   Recommendation: a host durable control-plane store with startup access, not
-   user settings or a plugin-local JSON file.
+1. **BLOCKER — durable cleanup and create-gap reconciliation:** select the
+   canonical app-owned durable store, approve versioned `secretResolverHandle`
+   resolution, and prove provider-supported idempotent create, authoritative
+   intent lookup/listing, or a finite-TTL operator sweep. Recommendation: a host
+   durable control-plane store with startup access, not user settings or a
+   plugin-local JSON file. Without remote reconciliation, unresolved intents
+   block admission and no orphan-free claim is permitted.
 2. **BLOCKER — shared transport security scope:** approve hardening the existing
    curated Composio path in 900.1a. Product semantics remain unchanged, but
    arbitrary HTTPS Session endpoints are rejected before key forwarding.
@@ -1127,8 +1202,9 @@ tracking only when prerequisites, access and owner gates make it dispatchable.
 4. **900.2 migration:** after legacy/new subject inventory, choose explicit
    relink (safest) or approve a migration/rollback protocol. Conflicts are
    quarantined either way.
-5. **Draft PR #1309:** retain as quarry while replacement slices land
-   (recommended) or supersede; never merge `dca7692`.
+5. **Resolved — draft PR #1309:** the owner closed it on 2026-08-26. Its exact
+   head `dca7692` remains quarry/evidence only and must never be merged or
+   revived; reland only through this plan's reviewed slices.
 6. **Release gates:** accept Composio project isolation attestation (the API did
    not prove it), DPA/subprocessors/residency/security/billing, and deployment
    ownership before 900.4.
@@ -1138,8 +1214,7 @@ tracking only when prerequisites, access and owner gates make it dispatchable.
    `wt-391-forward-rjkl.2` is absent from the current and inspected historical
    tracker, so it confers no dependency or completion authority.
 
-Until 1-3 are resolved, the bead/interface corrections named in Gate 1
-acceptance are applied, and independent review is clean, Gate 1 remains blocked
+Until 1-3 are resolved and independent review is clean, Gate 1 remains blocked
 and no implementation slice is `ready-for-agent`. Decision 4 additionally
 blocks 900.2 even after discovery is approved.
 
@@ -1156,8 +1231,9 @@ Accepted final-review corrections:
   requires exact supplied-version match, and reports/rejects source drift;
 - Session IDs are bounded to 1..256 UTF-8 bytes, valid non-control Unicode, and
   strict cleanup path-segment encoding, with mutation tests;
-- Session creation now guarantees durable lease persistence before returning an
-  untrusted endpoint; endpoint trust is a separate step;
+- Session creation now persists an intent before POST, promotes a returned ID to
+  a lease before returning an untrusted endpoint, and treats the remote
+  acceptance/local promotion crash gap as unresolved until provider proof;
 - active-operation abort and fresh bounded cleanup-drain signals are distinct;
   unreadable durable storage fails Composio startup and yields no clean report;
 - curated caller abort is narrowed to an explicit Composio-specific handler/app
@@ -1166,14 +1242,21 @@ Accepted final-review corrections:
   75-second global admitted-request bound instead of an invalid 30-second claim;
 - account uniqueness scans have 5-page/100-row/500-total/15-second ceilings and
   never select from partial results;
-- the durable lease permits the exact bounded Session ID only; every other
+- the durable create intent carries no Session URL/header/token; the promoted
+  lease permits the exact bounded Session ID only; every other
   Session URL/header/token/OAuth/operator value remains forbidden;
 - planning proof now parses exactly eight deferred beads, checks Definition-of-
   Ready fields, compares the exact nine internal edges, verifies none are ready,
   runs cycle/graph checks, parses self-contained HTML, and checks artifact
   parity; and
-- plan↔bead mismatches caused by the no-bead-mutation review constraint are
-  explicit blockers before undefer rather than silently represented as fixed.
+- the combined planning PR updates ytk2/96e7/0ijm/84w5 to match the canonical
+  create-gap, signal/bounds, fairness, exact-describe, and pagination contracts,
+  with planning-proof token assertions before undefer.
+
+Combined-program alignment retained: #806 inbound Access consumes only the
+exact resident Connector tool, preserves this plan's C5/provider authority and
+C2 first-class child identity, and creates no duplicate runtime, approval store,
+ledger, or child event.
 
 Confirmed retained decisions: exact-origin custody, host-only provenance,
 source-revision fence, crash-safe C5×C6 handoff, C2's complete canonical
@@ -1184,6 +1267,6 @@ RFC 8785 JCS, three small 900.1 relands, PR #1309 as quarry, and
 **Current verdict:** **BLOCKER**, not an approval recommendation. Material Gate-1
 blockers remain durable cleanup storage/secret-handle authority, curated
 transport hardening approval, exact canonical predecessor ownership/references,
-and the documented bead/interface corrections. Subject migration policy remains
-a separate blocker before 900.2. After those decisions and bead corrections,
+and the documented owner gates. Subject migration policy remains a separate
+blocker before 900.2. After those decisions,
 rerun independent T1 falsification on the exact artifacts before changing state.
