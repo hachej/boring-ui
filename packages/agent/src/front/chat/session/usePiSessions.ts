@@ -185,8 +185,9 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
   const archivedLoadedRef = useRef(false)
   const archiveRequestSeqRef = useRef(0)
   const archiveInFlightRef = useRef(false)
-  const loadMoreRequestSeqRef = useRef(0)
-  const loadMoreInFlightRef = useRef(false)
+  // Refresh and load-more share one owner so an old cursor cannot publish
+  // across a refreshed prefix.
+  const activeRequestOwnerRef = useRef<object | undefined>(undefined)
   const pendingCreatedRef = useRef<Map<string, SessionSummary>>(new Map())
   const pendingDeletedRef = useRef<Set<string>>(new Set())
   const pendingCreatedScopeRef = useRef(requestScopeKey)
@@ -358,16 +359,20 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
   const refresh = useCallback(async (refreshOptions: PiSessionRefreshOptions = {}) => {
     const scope = requestScopeKey
     if (mountedRef.current && !sourceIsCurrent(scope)) throw new StaleSessionsSourceError()
+    const requestOwner = {}
+    activeRequestOwnerRef.current = requestOwner
     const version = ++refreshVersionRef.current
     const mutationVersion = archiveMutationVersionRef.current
-    const isCurrent = () => sourceIsCurrent(scope) && version === refreshVersionRef.current
+    const isCurrent = () => (
+      sourceIsCurrent(scope)
+      && version === refreshVersionRef.current
+      && activeRequestOwnerRef.current === requestOwner
+    )
     clearRetryTimer(retryTimerRef)
     const background = refreshOptions.background === true
     let archivedRequestSeq: number | undefined
 
     if (!enabled) {
-      loadMoreRequestSeqRef.current += 1
-      loadMoreInFlightRef.current = false
       canonicalLoadedCountRef.current = 0
       loadedDataSourceRef.current = dataSourceKey
       dataStorageScopeRef.current = storageScope
@@ -382,11 +387,10 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
       setLoadingMore(false)
       setHasMore(false)
       persistActive(undefined)
+      if (activeRequestOwnerRef.current === requestOwner) activeRequestOwnerRef.current = undefined
       return
     }
 
-    loadMoreRequestSeqRef.current += 1
-    loadMoreInFlightRef.current = false
     setLoadingMore(false)
     if (!background) setLoading(true)
     try {
@@ -447,6 +451,7 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
       setLoading(false)
       if (refreshOptions.throwOnError) throw error
     } finally {
+      if (activeRequestOwnerRef.current === requestOwner) activeRequestOwnerRef.current = undefined
       if (archivedRequestSeq !== undefined && archivedRequestSeq === archiveRequestSeqRef.current) {
         archiveInFlightRef.current = false
         if (sourceIsCurrent(scope)) setArchivedLoading(false)
@@ -465,9 +470,9 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
   }, [refresh, options.refreshKey])
 
   const loadMore = useCallback(async (): Promise<void> => {
-    if (!enabled || loading || loadingMore || loadMoreInFlightRef.current || !hasMore) return
-    const requestSeq = ++loadMoreRequestSeqRef.current
-    loadMoreInFlightRef.current = true
+    if (!enabled || loading || loadingMore || activeRequestOwnerRef.current !== undefined || !hasMore) return
+    const requestOwner = {}
+    activeRequestOwnerRef.current = requestOwner
     const version = refreshVersionRef.current
     const mutationVersion = archiveMutationVersionRef.current
     const scope = requestScopeKey
@@ -476,7 +481,7 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
       const page = await fetchSessionList(fetchImpl, sessionsListUrl(nextCursorRef.current), requestHeaders())
       const data = page.sessions.filter((session) => !pendingDeletedRef.current.has(session.id))
       if (
-        requestSeq !== loadMoreRequestSeqRef.current
+        activeRequestOwnerRef.current !== requestOwner
         || version !== refreshVersionRef.current
         || mutationVersion !== archiveMutationVersionRef.current
         || !sourceIsCurrent(scope)
@@ -499,13 +504,13 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
         return next
       })
     } catch (err) {
-      if (requestSeq === loadMoreRequestSeqRef.current && version === refreshVersionRef.current && sourceIsCurrent(scope)) {
+      if (activeRequestOwnerRef.current === requestOwner && version === refreshVersionRef.current && sourceIsCurrent(scope)) {
         setError(err instanceof Error ? err : new Error(String(err)))
       }
     } finally {
-      if (requestSeq === loadMoreRequestSeqRef.current) loadMoreInFlightRef.current = false
-      if (requestSeq === loadMoreRequestSeqRef.current && version === refreshVersionRef.current && sourceIsCurrent(scope)) {
-        setLoadingMore(false)
+      if (activeRequestOwnerRef.current === requestOwner) {
+        activeRequestOwnerRef.current = undefined
+        if (version === refreshVersionRef.current && sourceIsCurrent(scope)) setLoadingMore(false)
       }
     }
   }, [enabled, fetchImpl, hasMore, loading, loadingMore, persistActive, publishFilterPagers, requestHeaders, requestScopeKey, sessionsListUrl, sourceIsCurrent])
@@ -710,8 +715,7 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
     if (!sourceIsCurrent(requestScopeKey)) return
     pendingCreatedRef.current.clear()
     pendingDeletedRef.current.clear()
-    loadMoreRequestSeqRef.current += 1
-    loadMoreInFlightRef.current = false
+    activeRequestOwnerRef.current = undefined
     resetArchivePager()
     publishFilterPagers()
     canonicalLoadedCountRef.current = canonicalPageCount(filterPagersRef.current.active.sessions)

@@ -682,6 +682,56 @@ describe('usePiSessions', () => {
     expect(result.current.hasMore).toBe(false)
   })
 
+  test('background refresh owns active paging until its externally shifted cursor chain publishes', async () => {
+    const remote = remoteFactory()
+    const refreshResponse = deferred<Response>()
+    const firstPage = Array.from({ length: 50 }, (_, index) => session(`row-${index}`))
+    const refreshedPrefix = [session('new'), ...firstPage.slice(0, 49)]
+    const refreshedTail = Array.from({ length: 49 }, (_, index) => session(`row-${49 + index}`))
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(firstPage))
+      .mockReturnValueOnce(refreshResponse.promise)
+      .mockResolvedValueOnce(jsonResponse(refreshedTail))
+
+    const { result } = renderHook(() => usePiSessions({
+      storageScope: 'scope-a',
+      fetch: fetchMock as unknown as typeof fetch,
+      createRemoteSession: remote.factory,
+    }))
+
+    await waitFor(() => expect(result.current.hasMore).toBe(true))
+    const staleLoadMore = result.current.loadMore
+
+    let refreshPromise!: Promise<void>
+    act(() => {
+      refreshPromise = result.current.refresh({ background: true })
+    })
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+
+    await act(async () => {
+      await staleLoadMore()
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+
+    await act(async () => {
+      refreshResponse.resolve(jsonResponse(refreshedPrefix))
+      await refreshPromise
+    })
+
+    await act(async () => {
+      await result.current.loadMore()
+    })
+
+    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/v1/agents/default/sessions?limit=50&archived=active&cursor=50', {
+      headers: { 'x-boring-storage-scope': 'scope-a' },
+    })
+    expect(result.current.sessions.map((item) => item.id)).toEqual([
+      'new',
+      ...Array.from({ length: 98 }, (_, index) => `row-${index}`),
+    ])
+    expect(result.current.hasMore).toBe(false)
+  })
+
   test('background refresh drops a requested active session that the server omits', async () => {
     const remote = remoteFactory()
     const firstPage = Array.from({ length: 50 }, (_, index) => session(`pi-${index}`))
