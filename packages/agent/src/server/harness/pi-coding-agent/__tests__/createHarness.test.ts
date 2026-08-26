@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { writeFileSync } from "node:fs";
+import { appendFileSync, writeFileSync } from "node:fs";
 import { appendFile, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile, utimes } from "node:fs/promises";
 import { CURRENT_SESSION_VERSION, DefaultResourceLoader, formatSkillsForPrompt, SessionManager } from "@mariozechner/pi-coding-agent";
 import { basename, join } from "node:path";
@@ -1122,6 +1122,101 @@ describe("PiSessionStore", () => {
     }
   });
 
+  it("rejects an over-limit title before mutating the native transcript", async () => {
+    const id = "native-over-limit-title";
+    const filepath = join(tmpDir, `2026-06-04_${id}.jsonl`);
+    const bytes = [
+      JSON.stringify({ type: "session", version: CURRENT_SESSION_VERSION, id, timestamp: "2026-06-04T00:00:00.000Z", cwd: "/tmp" }),
+      JSON.stringify({ type: "message", id: "assistant", parentId: null, message: { role: "assistant", content: "answer" } }),
+      "",
+    ].join("\n");
+    await writeFile(filepath, bytes, "utf-8");
+
+    const store = trustedNativeStore();
+    await expect(store.rename(directCtx, id, "x".repeat(201)))
+      .rejects.toThrow("Session title must be at most 200 characters");
+    await expect(readFile(filepath, "utf-8")).resolves.toBe(bytes);
+  });
+
+  it("repairs a valid native tail without a final newline before committing authority", async () => {
+    const id = "native-no-final-newline";
+    const filepath = join(tmpDir, `2026-06-04_${id}.jsonl`);
+    await writeFile(filepath, [
+      JSON.stringify({ type: "session", version: CURRENT_SESSION_VERSION, id, timestamp: "2026-06-04T00:00:00.000Z", cwd: "/tmp" }),
+      JSON.stringify({ type: "message", id: "user", parentId: null, message: { role: "user", content: "prompt" } }),
+    ].join("\n"), "utf-8");
+    const old = new Date(Date.now() - 60_000);
+    await utimes(filepath, old, old);
+    const mtimeBeforeRename = (await stat(filepath)).mtimeMs;
+
+    await trustedNativeStore().rename(directCtx, id, "Manual native title");
+    expect(Math.abs((await stat(filepath)).mtimeMs - mtimeBeforeRename)).toBeLessThanOrEqual(10);
+    await appendFile(filepath, `${JSON.stringify({ type: "session_info", id: "later-auto", parentId: null, timestamp: "2099-01-01T00:00:00.000Z", name: "Later auto" })}\n`);
+
+    const restarted = trustedNativeStore();
+    await expect(restarted.load(directCtx, id)).resolves.toMatchObject({ title: "Manual native title" });
+    await expect(restarted.list(directCtx)).resolves.toEqual([
+      expect.objectContaining({ id, title: "Manual native title" }),
+    ]);
+  });
+
+  it.each(["direct-native", "wrapped"])('fails closed on an unterminated malformed tail for %s', async (kind) => {
+    const id = `malformed-tail-${kind}`;
+    const filepath = kind === "direct-native"
+      ? join(tmpDir, `2026-06-04_${id}.jsonl`)
+      : join(tmpDir, `${id}.jsonl`);
+    const bytes = [
+      JSON.stringify({
+        type: "session",
+        version: CURRENT_SESSION_VERSION,
+        id,
+        timestamp: "2026-06-04T00:00:00.000Z",
+        cwd: "/tmp",
+        ...(kind === "wrapped" ? { boringSessionCtx: ctx } : {}),
+      }),
+      JSON.stringify({ type: "message", id: "user", parentId: null, message: { role: "user", content: "prompt" } }),
+      '{"type":"message","id":"in-progress"',
+    ].join("\n");
+    await writeFile(filepath, bytes, "utf-8");
+    const store = kind === "direct-native" ? trustedNativeStore() : new PiSessionStore("/tmp", tmpDir);
+    const accessCtx = kind === "direct-native" ? directCtx : ctx;
+
+    await expect(store.rename(accessCtx, id, "Must not commit")).rejects.toMatchObject({
+      code: ErrorCode.enum.SESSION_LOCKED,
+      retryable: true,
+    });
+    await expect(readFile(filepath, "utf-8")).resolves.toBe(bytes);
+  });
+
+  it.each(["direct-native", "wrapped"])('rejects a committed malformed tail as non-retryable for %s', async (kind) => {
+    const id = `committed-malformed-tail-${kind}`;
+    const filepath = kind === "direct-native"
+      ? join(tmpDir, `2026-06-04_${id}.jsonl`)
+      : join(tmpDir, `${id}.jsonl`);
+    const bytes = [
+      JSON.stringify({
+        type: "session",
+        version: CURRENT_SESSION_VERSION,
+        id,
+        timestamp: "2026-06-04T00:00:00.000Z",
+        cwd: "/tmp",
+        ...(kind === "wrapped" ? { boringSessionCtx: ctx } : {}),
+      }),
+      JSON.stringify({ type: "message", id: "user", parentId: null, message: { role: "user", content: "prompt" } }),
+      "not-valid-json",
+      "",
+    ].join("\n");
+    await writeFile(filepath, bytes, "utf-8");
+    const store = kind === "direct-native" ? trustedNativeStore() : new PiSessionStore("/tmp", tmpDir);
+    const accessCtx = kind === "direct-native" ? directCtx : ctx;
+
+    await expect(store.rename(accessCtx, id, "Must not commit")).rejects.toMatchObject({
+      code: ErrorCode.enum.SESSION_TRANSCRIPT_UNREADABLE,
+      retryable: false,
+    });
+    await expect(readFile(filepath, "utf-8")).resolves.toBe(bytes);
+  });
+
   it("rebranches a native rename after a concurrent message follows its append", async () => {
     const id = "native-concurrent-after";
     const filepath = join(tmpDir, `2026-06-04_${id}.jsonl`);
@@ -1153,7 +1248,16 @@ describe("PiSessionStore", () => {
       const store = trustedNativeStore();
       await store.rename(directCtx, id, "Renamed concurrently");
       const reopened = open(filepath, tmpDir, "/tmp");
-      expect(reopened.getLeafEntry()).toMatchObject({ type: "session_info", name: "Renamed concurrently", parentId: concurrentId });
+      const renamedEntry = reopened.getEntries().find(
+        (entry) => entry.type === "session_info" && entry.name === "Renamed concurrently",
+      );
+      const authority = reopened.getEntry(renamedEntry!.parentId!);
+      expect(authority).toMatchObject({
+        type: "custom",
+        customType: "boring.session-title-authority",
+        data: { titleSetByUser: true, title: "Renamed concurrently" },
+      });
+      expect(reopened.getLeafEntry()).toMatchObject({ type: "message", id: concurrentId, parentId: renamedEntry!.id });
       expect(reopened.buildContextEntries().map((entry) => entry.id)).toContain(concurrentId);
       expect(((await stat(filepath)).mtimeMs - mtimeBeforeRename) / 1000).toBeGreaterThan(1);
     } finally {
@@ -1161,7 +1265,121 @@ describe("PiSessionStore", () => {
     }
   });
 
-  it("fails closed after repeated native rename contention while retaining the concurrent branch", async () => {
+  it("accepts a concurrent append before a complete pair when the marker continues that branch", async () => {
+    const id = "native-concurrent-before-pair";
+    const filepath = join(tmpDir, `2026-06-04_${id}.jsonl`);
+    await writeFile(filepath, [
+      JSON.stringify({ type: "session", version: CURRENT_SESSION_VERSION, id, timestamp: "2026-06-04T00:00:00.000Z", cwd: "/tmp" }),
+      JSON.stringify({ type: "message", id: "assistant", parentId: null, message: { role: "assistant", content: "answer" } }),
+      "",
+    ].join("\n"), "utf-8");
+    const open = SessionManager.open.bind(SessionManager);
+    let injected = false;
+    const openSpy = vi.spyOn(SessionManager, "open").mockImplementation((...args) => {
+      if (!injected) {
+        injected = true;
+        appendFileSync(filepath, `${JSON.stringify({ type: "message", id: "before-pair", parentId: "assistant", timestamp: new Date().toISOString(), message: { role: "user", content: "concurrent before pair" } })}\n`);
+      }
+      return open(...args);
+    });
+
+    try {
+      const store = trustedNativeStore();
+      await expect(store.rename(directCtx, id, "Renamed after concurrent append"))
+        .resolves.toMatchObject({ title: "Renamed after concurrent append" });
+      const reopened = open(filepath, tmpDir, "/tmp");
+      const title = reopened.getLeafEntry();
+      const marker = reopened.getEntry(title!.parentId!);
+      expect(title).toMatchObject({ type: "session_info", name: "Renamed after concurrent append" });
+      expect(marker).toMatchObject({ type: "custom", parentId: "before-pair" });
+      await expect(store.list(directCtx)).resolves.toEqual([
+        expect.objectContaining({ id, title: "Renamed after concurrent append" }),
+      ]);
+    } finally {
+      openSpy.mockRestore();
+    }
+  });
+
+  it("retries a native rename when a concurrent message lands after open but before its marker", async () => {
+    const id = "native-concurrent-after-open";
+    const filepath = join(tmpDir, `2026-06-04_${id}.jsonl`);
+    await writeFile(filepath, [
+      JSON.stringify({ type: "session", version: CURRENT_SESSION_VERSION, id, timestamp: "2026-06-04T00:00:00.000Z", cwd: "/tmp" }),
+      JSON.stringify({ type: "message", id: "assistant", parentId: null, message: { role: "assistant", content: "answer" } }),
+      "",
+    ].join("\n"), "utf-8");
+    const open = SessionManager.open.bind(SessionManager);
+    let concurrentId = "";
+    let injected = false;
+    const openSpy = vi.spyOn(SessionManager, "open").mockImplementation((...args) => {
+      const manager = open(...args);
+      const appendCustomEntry = manager.appendCustomEntry.bind(manager);
+      vi.spyOn(manager, "appendCustomEntry").mockImplementation((customType, data) => {
+        if (!injected && customType === "boring.session-title-authority") {
+          injected = true;
+          concurrentId = open(filepath, tmpDir, "/tmp").appendMessage({
+            role: "user",
+            timestamp: Date.now(),
+            content: "concurrent after open",
+          });
+        }
+        return appendCustomEntry(customType, data);
+      });
+      return manager;
+    });
+
+    try {
+      const store = trustedNativeStore();
+      await expect(store.rename(directCtx, id, "Retried manual title"))
+        .resolves.toMatchObject({ title: "Retried manual title" });
+      const reopened = open(filepath, tmpDir, "/tmp");
+      expect(reopened.buildContextEntries().map((entry) => entry.id)).toContain(concurrentId);
+      await expect(store.load(directCtx, id)).resolves.toMatchObject({ title: "Retried manual title" });
+      await expect(store.list(directCtx)).resolves.toEqual([
+        expect.objectContaining({ id, title: "Retried manual title" }),
+      ]);
+    } finally {
+      openSpy.mockRestore();
+    }
+  });
+
+  it("does not restore mtime when an incomplete append follows the authority pair", async () => {
+    const id = "native-partial-after-pair";
+    const filepath = join(tmpDir, `2026-06-04_${id}.jsonl`);
+    await writeFile(filepath, [
+      JSON.stringify({ type: "session", version: CURRENT_SESSION_VERSION, id, timestamp: "2026-06-04T00:00:00.000Z", cwd: "/tmp" }),
+      JSON.stringify({ type: "message", id: "assistant", parentId: null, message: { role: "assistant", content: "answer" } }),
+      "",
+    ].join("\n"), "utf-8");
+    const old = new Date(Date.now() - 60_000);
+    await utimes(filepath, old, old);
+    const mtimeBeforeRename = (await stat(filepath)).mtimeMs;
+    const open = SessionManager.open.bind(SessionManager);
+    let injected = false;
+    const openSpy = vi.spyOn(SessionManager, "open").mockImplementation((...args) => {
+      const manager = open(...args);
+      const appendSessionInfo = manager.appendSessionInfo.bind(manager);
+      vi.spyOn(manager, "appendSessionInfo").mockImplementation((name) => {
+        const result = appendSessionInfo(name);
+        if (!injected) {
+          injected = true;
+          appendFileSync(filepath, '{"type":"message","id":"in-progress"');
+        }
+        return result;
+      });
+      return manager;
+    });
+
+    try {
+      await expect(trustedNativeStore().rename(directCtx, id, "Manual title"))
+        .resolves.toMatchObject({ title: "Manual title" });
+      expect((await stat(filepath)).mtimeMs - mtimeBeforeRename).toBeGreaterThan(30_000);
+    } finally {
+      openSpy.mockRestore();
+    }
+  });
+
+  it("commits a native rename while retaining a concurrent append after its complete authority pair", async () => {
     const id = "native-continuous-contention";
     const filepath = join(tmpDir, `2026-06-04_${id}.jsonl`);
     await writeFile(filepath, [
@@ -1186,17 +1404,215 @@ describe("PiSessionStore", () => {
 
     try {
       const store = trustedNativeStore();
-      await expect(store.rename(directCtx, id, "Renamed concurrently")).rejects.toMatchObject({
-        code: ErrorCode.enum.SESSION_LOCKED,
-        retryable: true,
-      });
+      await expect(store.rename(directCtx, id, "Renamed concurrently"))
+        .resolves.toMatchObject({ title: "Renamed concurrently" });
       const reopened = open(filepath, tmpDir, "/tmp");
-      expect(reopened.getSessionName()).toBe("Renamed concurrently");
       expect(reopened.buildContextEntries().map((entry) => entry.id)).toEqual(expect.arrayContaining(concurrentIds));
+      await expect(store.load(directCtx, id)).resolves.toMatchObject({ title: "Renamed concurrently" });
+      // Concurrent activity must keep its fresh mtime; only a rename-only append restores it.
       expect(((await stat(filepath)).mtimeMs - mtimeBeforeRename) / 1000).toBeGreaterThan(1);
     } finally {
       openSpy.mockRestore();
     }
+  });
+
+  it("keeps the previous manual authority when contention interrupts every replacement pair", async () => {
+    const id = "native-rejected-replacement";
+    const filepath = join(tmpDir, `2026-06-04_${id}.jsonl`);
+    await writeFile(filepath, [
+      JSON.stringify({ type: "session", version: CURRENT_SESSION_VERSION, id, timestamp: "2026-06-04T00:00:00.000Z", cwd: "/tmp" }),
+      JSON.stringify({ type: "message", id: "assistant", parentId: null, message: { role: "assistant", content: "answer" } }),
+      "",
+    ].join("\n"), "utf-8");
+    const store = trustedNativeStore();
+    await store.rename(directCtx, id, "Previous manual title");
+
+    const open = SessionManager.open.bind(SessionManager);
+    const openSpy = vi.spyOn(SessionManager, "open").mockImplementation((...args) => {
+      const manager = open(...args);
+      const appendCustomEntry = manager.appendCustomEntry.bind(manager);
+      vi.spyOn(manager, "appendCustomEntry").mockImplementation((customType, data) => {
+        const result = appendCustomEntry(customType, data);
+        open(filepath, tmpDir, "/tmp").appendMessage({ role: "user", timestamp: Date.now(), content: "concurrent between pair" });
+        return result;
+      });
+      return manager;
+    });
+
+    try {
+      await expect(store.rename(directCtx, id, "Rejected replacement")).rejects.toMatchObject({
+        code: ErrorCode.enum.SESSION_LOCKED,
+        retryable: true,
+      });
+      const restarted = trustedNativeStore();
+      await expect(restarted.load(directCtx, id)).resolves.toMatchObject({ title: "Previous manual title" });
+      await expect(restarted.list(directCtx)).resolves.toEqual([
+        expect.objectContaining({ id, title: "Previous manual title" }),
+      ]);
+    } finally {
+      openSpy.mockRestore();
+    }
+  });
+
+  it("keeps rejected first-rename attempts out of plain title fallback", async () => {
+    const id = "native-rejected-first-rename";
+    const filepath = join(tmpDir, `2026-06-04_${id}.jsonl`);
+    await writeFile(filepath, [
+      JSON.stringify({ type: "session", version: CURRENT_SESSION_VERSION, id, timestamp: "2026-06-04T00:00:00.000Z", cwd: "/tmp" }),
+      JSON.stringify({ type: "message", id: "user", parentId: null, message: { role: "user", content: "prompt" } }),
+      JSON.stringify({ type: "session_info", id: "auto", parentId: "user", name: "Original auto title" }),
+      "",
+    ].join("\n"), "utf-8");
+
+    const open = SessionManager.open.bind(SessionManager);
+    const openSpy = vi.spyOn(SessionManager, "open").mockImplementation((...args) => {
+      const manager = open(...args);
+      const appendCustomEntry = manager.appendCustomEntry.bind(manager);
+      vi.spyOn(manager, "appendCustomEntry").mockImplementation((customType, data) => {
+        const result = appendCustomEntry(customType, data);
+        if (customType === "boring.session-title-authority") {
+          open(filepath, tmpDir, "/tmp").appendMessage({ role: "user", timestamp: Date.now(), content: "concurrent between pair" });
+        }
+        return result;
+      });
+      return manager;
+    });
+
+    try {
+      await expect(trustedNativeStore().rename(directCtx, id, "Rejected first rename")).rejects.toMatchObject({
+        code: ErrorCode.enum.SESSION_LOCKED,
+        retryable: true,
+      });
+      const restarted = trustedNativeStore();
+      await expect(restarted.load(directCtx, id)).resolves.toMatchObject({ title: "Original auto title" });
+      await expect(restarted.list(directCtx)).resolves.toEqual([
+        expect.objectContaining({ id, title: "Original auto title" }),
+      ]);
+    } finally {
+      openSpy.mockRestore();
+    }
+  });
+
+  it("ignores interrupted or mismatched user-title markers", async () => {
+    const id = "native-incomplete-authority";
+    const filepath = join(tmpDir, `2026-06-04_${id}.jsonl`);
+    await writeFile(filepath, [
+      JSON.stringify({ type: "session", version: CURRENT_SESSION_VERSION, id, timestamp: "2026-06-04T00:00:00.000Z", cwd: "/tmp" }),
+      JSON.stringify({ type: "message", id: "user", parentId: null, message: { role: "user", content: "prompt" } }),
+      JSON.stringify({ type: "session_info", id: "auto", parentId: "user", name: "Auto title" }),
+      JSON.stringify({ type: "custom", id: "partial", parentId: "auto", timestamp: "2026-06-04T00:00:01.000Z", customType: "boring.session-title-authority", data: { titleSetByUser: true, title: "Partial title" } }),
+      "not-valid-json-between-authority-records",
+      JSON.stringify({ type: "session_info", id: "matching-but-not-adjacent", parentId: "partial", name: "Partial title" }),
+      JSON.stringify({ type: "session_info", id: "later-auto", parentId: "matching-but-not-adjacent", name: "Auto after malformed record" }),
+      '{"type":"message","id":"malformed-predecessor",',
+      JSON.stringify({ type: "custom", id: "marker-after-malformed", parentId: "malformed-predecessor", customType: "boring.session-title-authority", data: { titleSetByUser: true, title: "Must stay inert" } }),
+      "malformed-between-authority-records",
+      JSON.stringify({ type: "session_info", id: "title-after-malformed", parentId: "marker-after-malformed", name: "Must stay inert" }),
+      JSON.stringify({ type: "session_info", id: "final-auto", parentId: "title-after-malformed", name: "Auto after malformed record" }),
+      JSON.stringify({ type: "custom", id: "marker-before-idless-title", parentId: "final-auto", customType: "boring.session-title-authority", data: { titleSetByUser: true, title: "Idless manual title" } }),
+      JSON.stringify({ type: "session_info", parentId: "marker-before-idless-title", name: "Idless manual title" }),
+      JSON.stringify({ type: "session_info", id: "final-auto-2", parentId: null, name: "Auto after malformed record" }),
+      "",
+    ].join("\n"), "utf-8");
+    const store = trustedNativeStore();
+
+    await expect(store.load(directCtx, id)).resolves.toMatchObject({ title: "Auto after malformed record" });
+    await expect(store.list(directCtx)).resolves.toEqual([
+      expect.objectContaining({ id, title: "Auto after malformed record" }),
+    ]);
+  });
+
+  it("projects one manual title after malformed, giant, and duplicate-key predecessors", async () => {
+    const id = "wrapped-malformed-giant-predecessor";
+    const filepath = join(tmpDir, `${id}.jsonl`);
+    await writeFile(filepath, [
+      JSON.stringify({ type: "session", version: CURRENT_SESSION_VERSION, id, timestamp: "2026-06-04T00:00:00.000Z", cwd: "/tmp", boringSessionCtx: ctx }),
+      JSON.stringify({ type: "message", id: "user", parentId: null, message: { role: "user", content: "prompt" } }),
+      `{"type":"message","id":"first-id","payload":"${"x".repeat(96 * 1024)}","id":"canonical-last"}`,
+      JSON.stringify({ type: "custom", id: "marker", parentId: "canonical-last", customType: "boring.session-title-authority", data: { titleSetByUser: true, title: "Manual after giant predecessor" } }),
+      JSON.stringify({ type: "session_info", id: "manual", parentId: "marker", name: "Manual after giant predecessor" }),
+      JSON.stringify({ type: "session_info", id: "auto", parentId: "manual", name: "Legacy fallback" }),
+      "",
+    ].join("\n"), "utf-8");
+    const store = new PiSessionStore("/tmp", tmpDir);
+
+    await expect(store.load(ctx, id)).resolves.toMatchObject({ title: "Manual after giant predecessor" });
+    await expect(store.list(ctx)).resolves.toEqual([
+      expect.objectContaining({ id, title: "Manual after giant predecessor" }),
+    ]);
+  });
+
+  it("keeps a wrapped manual title authoritative across blank separators and restart", async () => {
+    const id = "wrapped-blank-separator";
+    const filepath = join(tmpDir, `${id}.jsonl`);
+    await writeFile(filepath, [
+      JSON.stringify({ type: "session", version: CURRENT_SESSION_VERSION, id, timestamp: "2026-06-04T00:00:00.000Z", cwd: "/tmp", boringSessionCtx: ctx }),
+      JSON.stringify({ type: "message", id: "user", parentId: null, timestamp: "2026-06-04T00:00:01.000Z", message: { role: "user", content: "prompt" } }),
+      "",
+      "",
+    ].join("\n"), "utf-8");
+    const store = new PiSessionStore("/tmp", tmpDir);
+
+    await expect(store.rename(ctx, id, "Manual title")).resolves.toMatchObject({ title: "Manual title" });
+    await appendFile(filepath, `${JSON.stringify({ type: "session_info", id: "later-auto", parentId: null, timestamp: "2026-06-04T00:00:03.000Z", name: "Later auto title" })}\n`);
+
+    const restarted = new PiSessionStore("/tmp", tmpDir);
+    await expect(restarted.load(ctx, id)).resolves.toMatchObject({ title: "Manual title" });
+    await expect(restarted.list(ctx)).resolves.toEqual([
+      expect.objectContaining({ id, title: "Manual title" }),
+    ]);
+  });
+
+  it("repairs a valid wrapper tail without a final newline and preserves activity mtime", async () => {
+    const id = "wrapped-no-final-newline";
+    const filepath = join(tmpDir, `${id}.jsonl`);
+    await writeFile(filepath, [
+      JSON.stringify({ type: "session", version: CURRENT_SESSION_VERSION, id, timestamp: "2026-06-04T00:00:00.000Z", cwd: "/tmp", boringSessionCtx: ctx }),
+      JSON.stringify({ type: "message", id: "user", parentId: null, timestamp: "2026-06-04T00:00:01.000Z", message: { role: "user", content: "prompt" } }),
+    ].join("\n"), "utf-8");
+    const oldTime = new Date(Date.now() - 10_000);
+    await utimes(filepath, oldTime, oldTime);
+    const mtimeBefore = (await stat(filepath)).mtimeMs;
+
+    await new PiSessionStore("/tmp", tmpDir).rename(ctx, id, "Manual wrapper title");
+    expect(Math.abs((await stat(filepath)).mtimeMs - mtimeBefore)).toBeLessThanOrEqual(10);
+    await appendFile(filepath, `${JSON.stringify({ type: "session_info", id: "later-auto", parentId: null, timestamp: "2099-01-01T00:00:00.000Z", name: "Later auto" })}\n`);
+
+    const restarted = new PiSessionStore("/tmp", tmpDir);
+    await expect(restarted.load(ctx, id)).resolves.toMatchObject({ title: "Manual wrapper title" });
+    await expect(restarted.list(ctx)).resolves.toEqual([
+      expect.objectContaining({ id, title: "Manual wrapper title" }),
+    ]);
+  });
+
+  it("enforces persisted title length and distinct authority IDs", async () => {
+    const id = "persisted-title-invariants";
+    const filepath = join(tmpDir, `2026-06-04_${id}.jsonl`);
+    const overLimit = "x".repeat(201);
+    await writeFile(filepath, [
+      JSON.stringify({ type: "session", version: CURRENT_SESSION_VERSION, id, timestamp: "2026-06-04T00:00:00.000Z", cwd: "/tmp" }),
+      JSON.stringify({ type: "message", id: "duplicate", parentId: null, message: { role: "user", content: "prompt" } }),
+      JSON.stringify({ type: "custom", id: "duplicate", parentId: "duplicate", customType: "boring.session-title-authority", data: { titleSetByUser: true, title: "Duplicate IDs" } }),
+      JSON.stringify({ type: "session_info", id: "duplicate-title", parentId: "duplicate", name: "Duplicate IDs" }),
+      JSON.stringify({ type: "custom", id: "long-marker", parentId: "duplicate-title", customType: "boring.session-title-authority", data: { titleSetByUser: true, title: overLimit } }),
+      JSON.stringify({ type: "session_info", id: "long-title", parentId: "long-marker", name: overLimit }),
+      JSON.stringify({ type: "session_info", id: "auto", parentId: "long-title", name: "Auto title" }),
+      "",
+    ].join("\n"), "utf-8");
+    const store = trustedNativeStore();
+    await expect(store.load(directCtx, id)).resolves.toMatchObject({ title: "Auto title" });
+
+    const exactLimit = "y".repeat(200);
+    await appendFile(filepath, [
+      JSON.stringify({ type: "custom", id: "exact-marker", parentId: "auto", customType: "boring.session-title-authority", data: { titleSetByUser: true, title: exactLimit } }),
+      JSON.stringify({ type: "session_info", id: "exact-title", parentId: "exact-marker", name: exactLimit }),
+      JSON.stringify({ type: "session_info", id: "later-auto", parentId: "exact-title", name: "Later auto" }),
+      "",
+    ].join("\n"));
+    await expect(new PiSessionStore("/tmp", {
+      sessionDir: tmpDir,
+      allowUnscopedNativeAccess: true,
+    }).load(directCtx, id)).resolves.toMatchObject({ title: exactLimit });
   });
 
   it("loads direct-native titles with the same precedence as list", async () => {
@@ -1215,6 +1631,38 @@ describe("PiSessionStore", () => {
 
     await appendFile(filepath, `${JSON.stringify({ type: "session_info", id: "title", parentId: "user", name: "Explicit native title" })}\n`);
     await expect(store.load(directCtx, id)).resolves.toMatchObject({ title: "Explicit native title" });
+  });
+
+  it.each(["direct-native", "wrapped-legacy"])("uses the newest manual title beyond the summary prefix for %s sessions", async (kind) => {
+    const id = `large-manual-${kind}`;
+    const store = kind === "direct-native" ? trustedNativeStore() : new PiSessionStore("/tmp", tmpDir);
+    const accessCtx = kind === "direct-native" ? directCtx : ctx;
+    const filepath = kind === "direct-native"
+      ? join(tmpDir, `2026-06-04_${id}.jsonl`)
+      : join(tmpDir, `${id}.jsonl`);
+    await writeFile(filepath, [
+      JSON.stringify({
+        type: "session",
+        version: CURRENT_SESSION_VERSION,
+        id,
+        timestamp: "2026-06-04T00:00:00.000Z",
+        cwd: "/tmp",
+        ...(kind === "wrapped-legacy" ? { boringSessionCtx: accessCtx } : {}),
+      }),
+      JSON.stringify({ type: "message", id: "user", parentId: null, timestamp: "2026-06-04T00:00:01.000Z", message: { role: "user", content: "prompt" } }),
+      "",
+    ].join("\n"), "utf-8");
+
+    await store.rename(accessCtx, id, "First manual title");
+    await appendFile(filepath, `${JSON.stringify({ type: "custom", id: "large", parentId: null, timestamp: "2026-06-04T00:00:02.000Z", customType: "padding", data: "x".repeat(96 * 1024) })}\n`);
+    await store.rename(accessCtx, id, "Newest manual title");
+    await appendFile(filepath, `${JSON.stringify({ type: "session_info", id: "later-auto", parentId: null, timestamp: "2099-06-04T00:00:03.000Z", name: "Later auto title" })}\n`);
+
+    const restarted = kind === "direct-native" ? trustedNativeStore() : new PiSessionStore("/tmp", tmpDir);
+    await expect(restarted.load(accessCtx, id)).resolves.toMatchObject({ title: "Newest manual title" });
+    await expect(restarted.list(accessCtx)).resolves.toEqual([
+      expect.objectContaining({ id, title: "Newest manual title" }),
+    ]);
   });
 
   it("streams large native transcript summaries, skips malformed records, and paginates across many transcripts", async () => {
@@ -1430,6 +1878,49 @@ describe("PiSessionStore", () => {
     }
   });
 
+  it("uses wrapper entries consistently when a linked native transcript has only a header", async () => {
+    const nativePath = join(tmpDir, "2026-06-04_native-header-only.jsonl");
+    const wrapperPath = join(tmpDir, "wrapper-header-only.jsonl");
+    await writeFile(nativePath, `${JSON.stringify({
+      type: "session",
+      version: CURRENT_SESSION_VERSION,
+      id: "native-header-only",
+      timestamp: "2026-06-04T00:00:00.000Z",
+      cwd: "/tmp",
+    })}\n`, "utf-8");
+    await writeFile(wrapperPath, [
+      JSON.stringify({
+        type: "session",
+        version: CURRENT_SESSION_VERSION,
+        id: "wrapper-header-only",
+        timestamp: "2026-06-04T00:00:00.000Z",
+        cwd: "/tmp",
+        boringSessionCtx: ctx,
+      }),
+      JSON.stringify({ type: "pi_session_file", timestamp: "2026-06-04T00:00:00.000Z", path: nativePath }),
+      JSON.stringify({
+        type: "message",
+        id: "wrapper-user",
+        parentId: null,
+        timestamp: "2026-06-04T00:00:01.000Z",
+        message: { role: "user", content: "wrapper prompt" },
+      }),
+      "",
+    ].join("\n"), "utf-8");
+
+    const store = new PiSessionStore("/tmp", tmpDir);
+    await expect(store.load(ctx, "wrapper-header-only")).resolves.toMatchObject({
+      title: "wrapper prompt",
+      turnCount: 1,
+    });
+    await expect(store.list(ctx)).resolves.toEqual([
+      expect.objectContaining({ id: "wrapper-header-only", title: "wrapper prompt", turnCount: 1 }),
+    ]);
+    await expect(store.loadEntries(ctx, "wrapper-header-only")).resolves.toMatchObject({
+      messages: [expect.objectContaining({ content: "wrapper prompt" })],
+    });
+  });
+
   it("refreshes cached summaries when linked Pi transcripts change", async () => {
     const store = new PiSessionStore("/tmp", tmpDir);
     const nativePath = join(tmpDir, "2026-06-04_native-linked.jsonl");
@@ -1483,7 +1974,25 @@ describe("PiSessionStore", () => {
     await utimes(nativePath, touched, touched);
 
     const secondList = await store.list(defaultCtx, { limit: 1 });
-    expect(secondList[0]).toEqual(expect.objectContaining({ id: "boring-linked", turnCount: 2 }));
+    expect(secondList[0]).toEqual(expect.objectContaining({
+      id: "boring-linked",
+      title: "first linked prompt",
+      turnCount: 2,
+    }));
+
+    // Same-size content rewrites with a restored mtime still change ctime and
+    // must invalidate the stable linked-summary cache.
+    const cachedStat = await stat(nativePath);
+    const rewritten = (await readFile(nativePath, "utf-8")).replace("first linked prompt", "other linked prompt");
+    await writeFile(nativePath, rewritten, "utf-8");
+    await utimes(nativePath, cachedStat.atime, cachedStat.mtime);
+
+    const rewrittenList = await store.list(defaultCtx, { limit: 1 });
+    expect(rewrittenList[0]).toEqual(expect.objectContaining({
+      id: "boring-linked",
+      title: "other linked prompt",
+      turnCount: 2,
+    }));
   });
 
   it("orders linked Pi transcript sessions by linked transcript mtime before pagination", async () => {
@@ -1590,5 +2099,23 @@ describe("PiSessionStore", () => {
     expect(detail.title).toBe("Roundtrip");
     expect(detail.id).toBe(session.id);
     expect(detail.turnCount).toBe(0);
+  });
+
+  it("keeps an explicit create title authoritative after auto-title and restart", async () => {
+    const store = new PiSessionStore("/tmp", tmpDir);
+    const session = await store.create(ctx, { title: "Created manually" });
+    const filepath = await sessionFilePath(tmpDir, session.id);
+    const manager = SessionManager.open(filepath, tmpDir, "/tmp");
+    manager.appendMessage({ role: "user", content: "prompt after create", timestamp: Date.now() });
+    manager.appendSessionInfo("Later automatic title");
+
+    const restarted = new PiSessionStore("/tmp", tmpDir);
+    await expect(restarted.load(ctx, session.id)).resolves.toMatchObject({
+      title: "Created manually",
+      turnCount: 1,
+    });
+    await expect(restarted.list(ctx)).resolves.toEqual([
+      expect.objectContaining({ id: session.id, title: "Created manually", turnCount: 1 }),
+    ]);
   });
 });
