@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { startUiCommandStream, type DispatchContext } from "../uiCommandStream"
+import { startUiCommandStream, startUiCommandTransport, type DispatchContext } from "../uiCommandStream"
 import type { SurfaceShellApi, SurfaceShellSnapshot } from "../../chrome/artifact-surface/SurfaceShell"
 import { events, workspaceEvents } from "../../events"
 import { UI_STATE_INVALIDATION_COMMAND } from "../../../shared/ui-bridge"
@@ -213,6 +213,26 @@ describe("startUiCommandStream — reconnect + fallback", () => {
     stop()
   })
 
+  it("publishes successful initial connection and reconnect transitions", () => {
+    const { ctor, instances } = makeEventSourceCtor()
+    const transitions: boolean[] = []
+    const off = events.on(workspaceEvents.uiCommandConnection, ({ connected }) => transitions.push(connected))
+    const stop = startUiCommandStream({
+      ctx: dispatchCtx(),
+      eventSourceCtor: ctor,
+      reconnectDelayMs: 100,
+    })
+
+    instances[0]!.__emit("init", JSON.stringify({ v: 1 }))
+    instances[0]!.__emit("error")
+    vi.advanceTimersByTime(100)
+    instances[1]!.__emit("init", JSON.stringify({ v: 1 }))
+
+    expect(transitions).toEqual([true, false, true])
+    off()
+    stop()
+  })
+
   it("falls back to polling once maxReconnects is exhausted", async () => {
     const { ctor, instances } = makeEventSourceCtor()
     const fetcher = vi.fn(async () =>
@@ -277,6 +297,195 @@ describe("startUiCommandStream — reconnect + fallback", () => {
     expect(fetcher).toHaveBeenCalledTimes(1)
     expect(ctx.__surface.__opened).toEqual(["x.ts"])
     stop()
+  })
+
+  it("publishes polling connection recovery without repeating healthy signals", async () => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }))
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ commands: [] }), { status: 200 }))
+      .mockImplementation(async () => new Response(JSON.stringify([]), { status: 200 }))
+    const transitions: boolean[] = []
+    const off = events.on(workspaceEvents.uiCommandConnection, ({ connected }) => transitions.push(connected))
+    const stop = startUiCommandStream({
+      ctx: dispatchCtx(),
+      eventSourceCtor: null,
+      fetcher: fetcher as unknown as typeof fetch,
+      pollIntervalMs: 100,
+    })
+
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(100)
+    await vi.advanceTimersByTimeAsync(100)
+    await vi.advanceTimersByTimeAsync(100)
+    await vi.advanceTimersByTimeAsync(100)
+
+    expect(transitions).toEqual([true, false, true, false, true])
+    off()
+    stop()
+  })
+
+  it("does not dispatch or reconnect after stop while poll JSON is pending", async () => {
+    let resolveJson: ((value: unknown) => void) | undefined
+    const json = new Promise<unknown>((resolve) => { resolveJson = resolve })
+    const onCommand = vi.fn()
+    const onConnectionChange = vi.fn()
+    const fetcher = vi.fn(async () => ({ ok: true, json: () => json }) as Response)
+    const stop = startUiCommandTransport({
+      eventSourceCtor: null,
+      fetcher: fetcher as unknown as typeof fetch,
+      pollIntervalMs: 100,
+      onCommand,
+      onConnectionChange,
+    })
+    await vi.advanceTimersByTimeAsync(0)
+
+    stop()
+    resolveJson?.([{ kind: "openFile", params: { path: "late.ts" } }])
+    await vi.advanceTimersByTimeAsync(500)
+
+    expect(onCommand).not.toHaveBeenCalled()
+    expect(onConnectionChange).not.toHaveBeenCalledWith(true)
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+
+  it("stops a polling batch after an in-flight command when transport is stopped", async () => {
+    let releaseFirst: (() => void) | undefined
+    const firstCommand = new Promise<void>((resolve) => { releaseFirst = resolve })
+    const seen: string[] = []
+    const onConnectionChange = vi.fn()
+    const fetcher = vi.fn(async () => new Response(JSON.stringify(["first", "second"]), { status: 200 }))
+    const stop = startUiCommandTransport({
+      eventSourceCtor: null,
+      fetcher: fetcher as unknown as typeof fetch,
+      pollIntervalMs: 100,
+      onCommand: async (command) => {
+        seen.push(String(command))
+        if (command === "first") await firstCommand
+      },
+      onConnectionChange,
+    })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(seen).toEqual(["first"])
+
+    stop()
+    releaseFirst?.()
+    await vi.advanceTimersByTimeAsync(500)
+
+    expect(seen).toEqual(["first"])
+    expect(onConnectionChange).not.toHaveBeenCalledWith(true)
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+
+  it("ignores duplicate errors from a superseded EventSource", () => {
+    const { ctor, instances } = makeEventSourceCtor()
+    const stop = startUiCommandTransport({
+      eventSourceCtor: ctor,
+      reconnectDelayMs: 100,
+      onCommand: vi.fn(),
+    })
+
+    instances[0]!.__emit("error")
+    instances[0]!.__emit("error")
+    vi.advanceTimersByTime(1_000)
+
+    expect(instances).toHaveLength(2)
+    stop()
+  })
+
+  it("makes superseded and stopped EventSource callbacks inert", () => {
+    const { ctor, instances } = makeEventSourceCtor()
+    const onCommand = vi.fn()
+    const onInit = vi.fn()
+    const onServerError = vi.fn()
+    const transitions: boolean[] = []
+    const stop = startUiCommandTransport({
+      eventSourceCtor: ctor,
+      reconnectDelayMs: 100,
+      onCommand,
+      onInit,
+      onServerError,
+      onConnectionChange: (connected) => transitions.push(connected),
+    })
+    const first = instances[0]!
+    first.__emit("init")
+    first.__emit("error")
+    vi.advanceTimersByTime(100)
+    const second = instances[1]!
+    second.__emit("init")
+    const callsBeforeStaleEvents = {
+      command: onCommand.mock.calls.length,
+      init: onInit.mock.calls.length,
+      serverError: onServerError.mock.calls.length,
+      transitions: [...transitions],
+    }
+
+    first.__emit("command", JSON.stringify({ kind: "openFile", params: { path: "stale.ts" } }))
+    first.__emit("init")
+    first.__emit("error", JSON.stringify({ code: "stale" }))
+    vi.advanceTimersByTime(1_000)
+
+    expect(onCommand).toHaveBeenCalledTimes(callsBeforeStaleEvents.command)
+    expect(onInit).toHaveBeenCalledTimes(callsBeforeStaleEvents.init)
+    expect(onServerError).toHaveBeenCalledTimes(callsBeforeStaleEvents.serverError)
+    expect(transitions).toEqual(callsBeforeStaleEvents.transitions)
+    expect(second.__closed).toBe(false)
+    expect(instances).toHaveLength(2)
+
+    stop()
+    second.__emit("command", JSON.stringify({ kind: "openFile", params: { path: "stopped.ts" } }))
+    second.__emit("init")
+    second.__emit("error")
+    vi.advanceTimersByTime(1_000)
+    expect(onCommand).toHaveBeenCalledTimes(callsBeforeStaleEvents.command)
+    expect(onInit).toHaveBeenCalledTimes(callsBeforeStaleEvents.init)
+    expect(instances).toHaveLength(2)
+  })
+
+  it("does not finish init when connection notification stops the transport", () => {
+    const { ctor, instances } = makeEventSourceCtor()
+    const globalTransitions: boolean[] = []
+    const off = events.on(workspaceEvents.uiCommandConnection, ({ connected }) => globalTransitions.push(connected))
+    const onInit = vi.fn()
+    let stop: () => void = () => undefined
+    stop = startUiCommandTransport({
+      eventSourceCtor: ctor,
+      onCommand: vi.fn(),
+      onInit,
+      onConnectionChange: (connected) => {
+        if (connected) stop()
+      },
+    })
+
+    instances[0]!.__emit("init")
+
+    expect(onInit).not.toHaveBeenCalled()
+    expect(globalTransitions).not.toContain(true)
+    expect(instances[0]!.__closed).toBe(true)
+    off()
+  })
+
+  it("does not reconnect when disconnection notification stops the transport", () => {
+    const { ctor, instances } = makeEventSourceCtor()
+    let stopOnDisconnect = false
+    let stop: () => void = () => undefined
+    stop = startUiCommandTransport({
+      eventSourceCtor: ctor,
+      reconnectDelayMs: 100,
+      onCommand: vi.fn(),
+      onConnectionChange: (connected) => {
+        if (!connected && stopOnDisconnect) stop()
+      },
+    })
+    instances[0]!.__emit("init")
+    stopOnDisconnect = true
+
+    instances[0]!.__emit("error")
+    vi.advanceTimersByTime(1_000)
+
+    expect(instances).toHaveLength(1)
+    expect(instances[0]!.__closed).toBe(true)
   })
 
   it("if cancelled fires while a reconnect timer is pending, the timer is a no-op (does NOT fall through to polling)", () => {

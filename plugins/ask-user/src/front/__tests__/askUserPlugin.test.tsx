@@ -119,6 +119,41 @@ describe("askUserPlugin front shell", () => {
     expect(fetchMock.mock.calls.filter(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")).length).toBeGreaterThanOrEqual(2)
   })
 
+  it("serializes provider and pane refresh requests through one coordinator", async () => {
+    let releasePending: (() => void) | undefined
+    const pendingGate = new Promise<void>((resolve) => { releasePending = resolve })
+    let pendingCalls = 0
+    let activePendingCalls = 0
+    let maxActivePendingCalls = 0
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) {
+        pendingCalls += 1
+        activePendingCalls += 1
+        maxActivePendingCalls = Math.max(maxActivePendingCalls, activePendingCalls)
+        if (pendingCalls === 1) await pendingGate
+        activePendingCalls -= 1
+        return Response.json({ ok: true, output: { pending: question } })
+      }
+      if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateFor(question))
+      return Response.json({})
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const Provider = getProvider()
+    const Panel = getPanel()
+
+    render(<Provider apiBaseUrl="" activeSessionId="default"><Panel params={{}} api={{ close: vi.fn() }} className="h-full" /></Provider>)
+    await waitFor(() => expect(pendingCalls).toBe(1))
+    expect(maxActivePendingCalls).toBe(1)
+
+    await act(async () => {
+      releasePending?.()
+      await pendingGate
+    })
+    expect(await screen.findByText("Choose A or B")).toBeInTheDocument()
+    expect(pendingCalls).toBe(1)
+    expect(maxActivePendingCalls).toBe(1)
+  })
+
   it("does not carry a colliding session question across Workspace identities", async () => {
     let currentQuestion: AskUserQuestion | null = question
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
@@ -373,48 +408,35 @@ describe("askUserPlugin front shell", () => {
     expect(screen.queryByText("First stale question")).not.toBeInTheDocument()
   })
 
-  it("reruns once for an invalidation that lands mid-refresh, and not more", async () => {
-    // The in-flight pass may have read /ui/state before the change, so a signal
-    // arriving while it runs cannot be considered covered by it. Exactly one
-    // trailing rerun must follow — no more, or a burst becomes a refresh loop.
+  it("refreshes authoritative state after a missed-command reconnect", async () => {
+    const recoveredQuestion = { ...question, questionId: "reconnected-q1", title: "Recovered after reconnect" }
     let current: AskUserQuestion | null = null
-    let releaseState: (() => void) | undefined
-    const gateFirstStateRead = { gated: true }
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) {
         return Response.json({ ok: true, output: { pending: current } })
       }
-      if (String(url).endsWith("/api/v1/ui/state")) {
-        if (gateFirstStateRead.gated) {
-          gateFirstStateRead.gated = false
-          await new Promise<void>((resolve) => { releaseState = resolve })
-        }
-        return Response.json(pendingStateFor(current))
-      }
+      if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateFor(current))
       return Response.json({})
     })
     vi.stubGlobal("fetch", fetchMock)
     const Provider = getProvider()
     const Panel = getPanel()
 
-    render(<Provider apiBaseUrl="" activeSessionId="gate-session" openSessionIds={["gate-session"]}><Panel params={{}} api={{ close: vi.fn() }} className="h-full" /></Provider>)
+    render(<Provider apiBaseUrl="" activeSessionId="default"><Panel params={{}} api={{ close: vi.fn() }} className="h-full" /></Provider>)
+    expect(await screen.findByText("No pending questions")).toBeInTheDocument()
     const stateFetchCount = () => fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/api/v1/ui/state")).length
-    await waitFor(() => expect(stateFetchCount()).toBe(1))
-    await waitFor(() => expect(releaseState).toBeTypeOf("function"))
+    const initialStateFetches = stateFetchCount()
 
-    // Three signals while the first pass is still blocked.
-    current = { ...question, questionId: "gate-q1", sessionId: "gate-session", title: "Arrived mid-refresh" }
+    // Another connected client consumed the invalidation while this client was
+    // offline, so no command is replayed here. Connection recovery must read
+    // the authoritative state slot instead.
+    current = recoveredQuestion
     act(() => {
-      for (let i = 0; i < 3; i++) {
-        events.emit(workspaceEvents.uiStateInvalidated, { cause: "remote", ts: Date.now(), keys: ["questions.pending"] })
-      }
+      events.emit(workspaceEvents.uiCommandConnection, { connected: true })
     })
-    expect(stateFetchCount()).toBe(1)
 
-    await act(async () => { releaseState?.(); await new Promise((resolve) => setTimeout(resolve, 20)) })
-
-    expect(await screen.findByText("Arrived mid-refresh")).toBeInTheDocument()
-    expect(stateFetchCount()).toBe(2)
+    expect(await screen.findByText("Recovered after reconnect")).toBeInTheDocument()
+    expect(stateFetchCount()).toBe(initialStateFetches + 1)
   })
 
   it("surfaces a requestless question when the server invalidates pending UI state", async () => {

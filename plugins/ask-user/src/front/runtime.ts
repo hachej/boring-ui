@@ -22,7 +22,7 @@ export type QuestionsRuntime = QuestionsStore & {
   authHeaders?: Record<string, string>
   activeSessionId?: string | null
   openSessionIds?: readonly string[]
-  refreshPending(sessionId: string): Promise<AskUserQuestion | null>
+  requestPendingRefresh(sessionId?: string): void
 }
 
 export function createQuestionsStore(): QuestionsStore {

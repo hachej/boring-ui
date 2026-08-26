@@ -27,7 +27,7 @@ export function createAskUserServerPlugin(options: AskUserServerPluginOptions): 
   }
   const store = options.store ?? options.runtime?.store ?? createDefaultStore(options.workspaceRoot)
   const runtime = options.runtime ?? new AskUserRuntime({ store })
-  let stopPublisher: (() => void) | undefined
+  let stopPublisher: (() => Promise<void>) | undefined
   const ensurePublisher = () => {
     if (stopPublisher) return
     const bridge = options.bridge ?? getWorkspaceUiBridge()
@@ -38,7 +38,7 @@ export function createAskUserServerPlugin(options: AskUserServerPluginOptions): 
     await runtime.abandonOrphanedPending(pending.map((question) => question.sessionId))
     ensurePublisher()
     app.addHook("onClose", async () => {
-      stopPublisher?.()
+      await stopPublisher?.()
       options.onClose?.()
     })
   }

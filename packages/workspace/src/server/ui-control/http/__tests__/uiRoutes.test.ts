@@ -1,7 +1,8 @@
 import Fastify from "fastify"
 import { describe, expect, test, vi } from "vitest"
-import { uiRoutes } from "../uiRoutes"
+import { subscribeUiCommandStream, uiRoutes } from "../uiRoutes"
 import { createInMemoryBridge } from "../../../bridge/createInMemoryBridge"
+import { updateUiState } from "../../../bridge/updateUiState"
 import { createPaneRenderStatusStore } from "../../panelStatus/paneRenderStatusStore"
 import type { WorkspaceBridge } from "../../../../shared/ui-bridge"
 import { URL_PANE_PANEL_ID } from "../../../../shared/urlPane"
@@ -157,6 +158,105 @@ describe("uiRoutes", () => {
     await app.close()
   })
 
+  test("streams through a bridge that implements only subscribeCommands", async () => {
+    let state: Record<string, unknown> | null = null
+    let nextSeq = 1
+    let handler: ((command: { kind: string; params: Record<string, unknown>; seq: number }) => unknown) | undefined
+    const bridge: WorkspaceBridge = {
+      async getState() { return state },
+      async setState(next) { state = next },
+      async postCommand(command) {
+        const seq = nextSeq++
+        handler?.({ ...command, seq })
+        return { seq, status: "ok" }
+      },
+      async emitUiEffect(command) { return await this.postCommand(command) },
+      subscribeCommands(nextHandler) {
+        handler = nextHandler
+        return () => { handler = undefined }
+      },
+    }
+    const received: string[] = []
+    const unsubscribe = await subscribeUiCommandStream(bridge, {
+      isOpen: () => true,
+      onReady: () => { received.push("init") },
+      onCommand: (command) => {
+        received.push(String((command.params as Record<string, unknown>).id))
+        return true
+      },
+    })
+
+    await bridge.postCommand({ kind: "openPanel", params: { id: "live", component: "demo.panel" } })
+    expect(received).toEqual(["init", "live"])
+    unsubscribe()
+  })
+
+  test("replays queued and onReady commands after init in sequence order", async () => {
+    const bridge = createInMemoryBridge()
+    await bridge.postCommand({ kind: "openPanel", params: { id: "pending", component: "demo.panel" } })
+    const received: string[] = []
+    let readyPost: Promise<unknown> | undefined
+    const unsubscribe = await subscribeUiCommandStream(bridge, {
+      isOpen: () => true,
+      onReady: () => {
+        received.push("init")
+        readyPost = bridge.postCommand({ kind: "openPanel", params: { id: "during-ready", component: "demo.panel" } })
+      },
+      onCommand: (command) => {
+        received.push(String((command.params as Record<string, unknown>).id))
+        return true
+      },
+    })
+    await readyPost
+
+    expect(received).toEqual(["init", "pending", "during-ready"])
+    await expect(bridge.drainCommands!()).resolves.toEqual([])
+    unsubscribe()
+  })
+
+  test("offers a replay rejected by one stream to another ready subscriber", async () => {
+    const bridge = createInMemoryBridge()
+    const accepted: number[] = []
+    let ready = false
+    bridge.subscribeCommands((command) => {
+      if (!ready) return false
+      accepted.push(command.seq)
+      return true
+    })
+    await bridge.postCommand({ kind: "openPanel", params: { id: "pending", component: "demo.panel" } })
+    ready = true
+
+    const unsubscribe = await subscribeUiCommandStream(bridge, {
+      isOpen: () => true,
+      onReady: () => undefined,
+      onCommand: () => false,
+    })
+
+    expect(accepted).toEqual([1])
+    await expect(bridge.drainCommands!()).resolves.toEqual([])
+    unsubscribe()
+  })
+
+  test("retains a rejected replay with its original sequence identity", async () => {
+    const bridge = createInMemoryBridge()
+    await bridge.postCommand({ kind: "openPanel", params: { id: "pending", component: "demo.panel" } })
+    const unsubscribe = await subscribeUiCommandStream(bridge, {
+      isOpen: () => true,
+      onReady: () => undefined,
+      onCommand: () => false,
+    })
+    unsubscribe()
+    const accepted: number[] = []
+
+    bridge.subscribeCommands((command) => {
+      accepted.push(command.seq)
+      return true
+    })
+
+    expect(accepted).toEqual([1])
+    await expect(bridge.drainCommands!()).resolves.toEqual([])
+  })
+
   test("PUT /ui/state merges with server-published slots", async () => {
     const app = Fastify({ logger: false })
     const bridge = createInMemoryBridge()
@@ -167,7 +267,13 @@ describe("uiRoutes", () => {
     const put = await app.inject({
       method: "PUT",
       url: "/api/v1/ui/state",
-      payload: { state: { activeFile: "a.ts" }, causedBy: "user" },
+      payload: {
+        state: {
+          activeFile: "a.ts",
+          "questions.pending": { question: { questionId: "browser-stale" } },
+        },
+        causedBy: "user",
+      },
     })
     expect(put.statusCode).toBe(204)
     await expect(bridge.getState()).resolves.toMatchObject({
@@ -175,6 +281,44 @@ describe("uiRoutes", () => {
       activeFile: "a.ts",
     })
     expect((await bridge.getState())?.staleBrowserKey).toBeUndefined()
+    await app.close()
+  })
+
+  test("PUT /ui/state preserves a publisher update made while key resolution is pending", async () => {
+    const app = Fastify({ logger: false })
+    const bridge = createInMemoryBridge()
+    await bridge.setState({ "questions.pending": { revision: "q1" } })
+    let releaseKeys: (() => void) | undefined
+    let markKeysRequested: (() => void) | undefined
+    const keysGate = new Promise<void>((resolve) => { releaseKeys = resolve })
+    const keysRequested = new Promise<void>((resolve) => { markKeysRequested = resolve })
+    await app.register(uiRoutes, {
+      bridge,
+      getPreserveStateKeys: async () => {
+        markKeysRequested?.()
+        await keysGate
+        return ["questions.pending"]
+      },
+    })
+    await app.ready()
+
+    const put = app.inject({
+      method: "PUT",
+      url: "/api/v1/ui/state",
+      payload: { state: { activeFile: "new.ts" }, causedBy: "user" },
+    })
+    await keysRequested
+    await updateUiState(bridge, (current) => ({
+      ...current,
+      "questions.pending": { revision: "q2" },
+    }))
+    releaseKeys?.()
+
+    expect((await put).statusCode).toBe(204)
+    await expect(bridge.getState()).resolves.toEqual({
+      activeFile: "new.ts",
+      "questions.pending": { revision: "q2" },
+    })
     await app.close()
   })
 

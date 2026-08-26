@@ -2,13 +2,21 @@ import type { FilesystemId, UiFileOpenMode } from "./types/filesystem"
 
 export const UI_STATE_INVALIDATION_COMMAND = "invalidateUiState" as const
 
+export type SequencedUiCommand = UiCommand & { seq: number }
+
 export interface UiBridge {
   getState(): Promise<UiState | null>
   setState(state: UiState): Promise<void>
   /** Canonical UI command dispatch method. */
   postCommand(cmd: UiCommand): Promise<CommandResult>
-  subscribeCommands(handler: (cmd: UiCommand & { seq: number }) => unknown): () => void
-  drainCommands?(): Promise<Array<UiCommand & { seq: number }>>
+  /**
+   * Subscribe to live commands. Implementations may replay queued commands
+   * during subscription and retain a command when every subscriber returns
+   * false or throws.
+   */
+  subscribeCommands(handler: (cmd: SequencedUiCommand) => unknown): () => void
+  /** @deprecated Polling compatibility shim; streaming uses subscribeCommands. */
+  drainCommands?(): Promise<SequencedUiCommand[]>
 }
 
 export type WorkspaceBridge = UiBridge & {

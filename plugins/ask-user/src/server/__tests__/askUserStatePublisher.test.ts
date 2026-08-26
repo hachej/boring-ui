@@ -6,7 +6,8 @@ import type { AskUserStore } from "../askUserStore"
 import { AskUserRuntime } from "../askUserRuntime"
 import { AskUserStatePublisher } from "../askUserStatePublisher"
 import { MemoryAskUserStore } from "./testAskUserStore"
-import type { UiBridge, UiCommand, UiState } from "@hachej/boring-workspace/server"
+import { UI_STATE_INVALIDATION_COMMAND, type UiBridge, type UiCommand, type UiState } from "@hachej/boring-workspace/server"
+import type { AskUserQuestion } from "../../shared/types"
 
 function bridge(): UiBridge & { commands: UiCommand[] } {
   let state: UiState | null = null
@@ -25,6 +26,20 @@ async function makeStore() {
 }
 
 const schema = { wireVersion: 1 as const, fields: [{ type: "text" as const, name: "answer", label: "Answer" }] }
+
+function pendingQuestion(sessionId: string): AskUserQuestion {
+  return {
+    questionId: `q-${sessionId}`,
+    sessionId,
+    ownerPrincipalId: "anonymous",
+    status: "ready",
+    answerToken: `token-${sessionId}`,
+    createdAt: new Date(0).toISOString(),
+    updatedAt: new Date(0).toISOString(),
+    artifacts: [],
+    schema,
+  }
+}
 
 async function waitForPending(store: AskUserStore, sessionId: string) {
   const started = Date.now()
@@ -207,6 +222,86 @@ describe("AskUserStatePublisher", () => {
     await runtime.cancelQuestion(pending.questionId, pending.sessionId)
     await expect(pendingResult).resolves.toMatchObject({ status: "cancelled" })
   }, 30_000)
+
+  it("retries a failed initial publication without another store event", async () => {
+    const store = await makeStore()
+    await store.createPending(pendingQuestion("initial-retry"))
+    const ui = bridge()
+    const postCommand = vi.spyOn(ui, "postCommand")
+      .mockRejectedValueOnce(new Error("temporary delivery failure"))
+      .mockImplementation(async (command) => {
+        ui.commands.push(command)
+        return { seq: ui.commands.length, status: "ok" }
+      })
+    const publisher = new AskUserStatePublisher(store, ui)
+    const stop = publisher.start()
+
+    await vi.waitFor(() => expect(postCommand).toHaveBeenCalledTimes(2))
+    expect(ui.commands).toEqual([{
+      kind: UI_STATE_INVALIDATION_COMMAND,
+      params: { keys: [ASK_USER_UI_STATE_SLOTS.PENDING] },
+    }])
+    await stop()
+  })
+
+  it("cancels retries and waits for queued publication work on stop", async () => {
+    const store = await makeStore()
+    await store.createPending(pendingQuestion("stopped-retry"))
+    const ui = bridge()
+    const postCommand = vi.spyOn(ui, "postCommand").mockRejectedValue(new Error("offline"))
+    const publisher = new AskUserStatePublisher(store, ui)
+    const stop = publisher.start()
+    await vi.waitFor(() => expect(postCommand).toHaveBeenCalledTimes(1))
+
+    await stop()
+    await new Promise((resolve) => setTimeout(resolve, 150))
+
+    expect(postCommand).toHaveBeenCalledTimes(1)
+  })
+
+  it("serializes restart behind stale work and prevents stale post-stop writes", async () => {
+    const store = await makeStore()
+    await store.createPending(pendingQuestion("restart"))
+    let state: UiState | null = null
+    let releaseFirstRead: (() => void) | undefined
+    let markFirstRead: (() => void) | undefined
+    const firstReadGate = new Promise<void>((resolve) => { releaseFirstRead = resolve })
+    const firstReadStarted = new Promise<void>((resolve) => { markFirstRead = resolve })
+    let reads = 0
+    let activeReads = 0
+    let maxActiveReads = 0
+    const setState = vi.fn(async (next: UiState) => { state = next })
+    const postCommand = vi.fn(async () => ({ seq: 1, status: "ok" as const }))
+    const ui: UiBridge = {
+      async getState() {
+        reads += 1
+        activeReads += 1
+        maxActiveReads = Math.max(maxActiveReads, activeReads)
+        if (reads === 1) {
+          markFirstRead?.()
+          await firstReadGate
+        }
+        activeReads -= 1
+        return state
+      },
+      setState,
+      postCommand,
+      subscribeCommands() { return () => undefined },
+    }
+    const publisher = new AskUserStatePublisher(store, ui)
+    const stopFirst = publisher.start()
+    await firstReadStarted
+
+    const stopping = stopFirst()
+    const stopSecond = publisher.start()
+    releaseFirstRead?.()
+    await stopping
+    await vi.waitFor(() => expect(postCommand).toHaveBeenCalledTimes(1))
+
+    expect(maxActiveReads).toBe(1)
+    expect(setState).toHaveBeenCalledTimes(1)
+    await stopSecond()
+  })
 
   it("publishes independent hints for multiple pending sessions", async () => {
     const store = await makeStore()

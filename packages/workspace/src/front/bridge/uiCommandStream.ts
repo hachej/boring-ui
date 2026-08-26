@@ -18,6 +18,7 @@
  * so it can be exercised in isolation.
  */
 import { dispatchUiCommand, type DispatchContext } from "./uiCommandDispatcher"
+import { events, workspaceEvents } from "../events"
 import type { UiCommand } from "./types"
 
 export type { DispatchContext } from "./uiCommandDispatcher"
@@ -45,6 +46,22 @@ export interface StreamOptions {
   reconnectDelayMs?: number
   /** Max reconnect attempts before giving up and falling back to polling. */
   maxReconnects?: number
+}
+
+export interface UiCommandTransportOptions {
+  endpoint?: string
+  query?: StreamOptions["query"]
+  eventSourceCtor?: typeof EventSource | null
+  eventSourceInit?: EventSourceInit
+  fetcher?: typeof fetch
+  pollIntervalMs?: number
+  reconnectDelayMs?: number
+  maxReconnects?: number
+  onCommand(raw: unknown): void | Promise<void>
+  onInit?(): void
+  onServerError?(raw: unknown): void
+  onPollResponse?(response: Response): void
+  onConnectionChange?(connected: boolean): void
 }
 
 const DEFAULT_POLL_INTERVAL_MS = 1500
@@ -77,9 +94,8 @@ function appendQuery(url: string, query?: StreamOptions["query"]): string {
  *    of repeated SSE failure (proxy stripping event-stream) won't fix
  *    itself in-session.
  */
-export function startUiCommandStream(opts: StreamOptions): () => void {
+export function startUiCommandTransport(opts: UiCommandTransportOptions): () => void {
   const endpoint = opts.endpoint ?? ""
-  const ctx = opts.ctx
   const query = opts.query
   const ESCtor =
     opts.eventSourceCtor === null
@@ -97,69 +113,123 @@ export function startUiCommandStream(opts: StreamOptions): () => void {
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
   let reconnectAttempt = 0
   let onPollFallback = false
+  let connected = false
 
-  function safeDispatch(raw: unknown): void {
-    if (raw && typeof raw === "object" && typeof (raw as UiCommand).kind === "string") {
-      dispatchUiCommand(raw as UiCommand, ctx)
-    }
+  function setConnected(value: boolean): boolean {
+    if (value && cancelled) return false
+    if (connected === value) return !cancelled
+    connected = value
+    opts.onConnectionChange?.(value)
+    if (cancelled || connected !== value) return false
+    events.emit(workspaceEvents.uiCommandConnection, { connected: value })
+    return !cancelled && connected === value
   }
 
   function startPollingFallback(): void {
     if (cancelled || onPollFallback || !fetcher) return
     onPollFallback = true
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer)
+      reconnectTimer = null
+    }
+    if (es) {
+      es.close()
+      es = null
+    }
     const tick = async (): Promise<void> => {
       if (cancelled) return
-      pollAbort = new AbortController()
+      const controller = new AbortController()
+      pollAbort = controller
+      const isCurrentPoll = () => !cancelled && onPollFallback && pollAbort === controller
       try {
         const res = await fetcher(appendQuery(`${endpoint}/api/v1/ui/commands/next?poll=true`, query), {
-          signal: pollAbort.signal,
+          signal: controller.signal,
         })
-        if (cancelled) return
+        if (!isCurrentPoll()) return
+        opts.onPollResponse?.(res)
+        if (!isCurrentPoll()) return
         if (res.ok) {
           const body = (await res.json()) as unknown
-          if (Array.isArray(body)) for (const cmd of body) safeDispatch(cmd)
-        }
+          if (!isCurrentPoll()) return
+          if (Array.isArray(body)) {
+            for (const cmd of body) {
+              if (!isCurrentPoll()) return
+              try {
+                await opts.onCommand(cmd)
+              } catch {
+                // The server has already drained the batch. A local dispatch
+                // failure must not discard commands later in that batch.
+              }
+              if (!isCurrentPoll()) return
+            }
+            setConnected(true)
+          } else setConnected(false)
+        } else setConnected(false)
       } catch {
         /* Network blip — try again on next tick. */
+        if (isCurrentPoll()) setConnected(false)
       } finally {
-        pollAbort = null
+        if (pollAbort === controller) pollAbort = null
       }
-      if (!cancelled) pollTimer = setTimeout(tick, pollIntervalMs)
+      if (!cancelled && onPollFallback) pollTimer = setTimeout(tick, pollIntervalMs)
     }
     void tick()
   }
 
   function openSse(): void {
-    if (cancelled) return
+    if (cancelled || onPollFallback) return
     if (!ESCtor) {
       startPollingFallback()
       return
     }
-    es = new ESCtor(appendQuery(`${endpoint}/api/v1/ui/commands/next`, query))
-    es.addEventListener("command", (ev) => {
+    const source = new ESCtor(
+      appendQuery(`${endpoint}/api/v1/ui/commands/next`, query),
+      opts.eventSourceInit,
+    )
+    es = source
+    const isCurrentSource = () => !cancelled && !onPollFallback && es === source
+    source.addEventListener("command", (ev) => {
+      if (!isCurrentSource()) return
       const data = (ev as MessageEvent).data
       if (typeof data !== "string" || data.length === 0) return
       try {
-        safeDispatch(JSON.parse(data))
+        void Promise.resolve(opts.onCommand(JSON.parse(data))).catch(() => undefined)
       } catch {
         /* Malformed JSON — drop. */
       }
     })
-    es.addEventListener("init", () => {
+    source.addEventListener("init", () => {
+      if (!isCurrentSource()) return
       // Fresh connection — reset backoff so a future hiccup gets the
       // full reconnect budget again instead of inheriting old attempts.
       reconnectAttempt = 0
+      if (!setConnected(true) || !isCurrentSource()) return
+      opts.onInit?.()
     })
-    es.addEventListener("error", () => {
-      if (cancelled) return
-      es?.close()
+    source.addEventListener("error", (ev) => {
+      if (!isCurrentSource()) return
+      const data = (ev as MessageEvent).data
+      if (typeof data === "string" && data.length > 0) {
+        try {
+          opts.onServerError?.(JSON.parse(data))
+        } catch {
+          /* Malformed server error — drop. */
+        }
+        return
+      }
+      if (!setConnected(false) || !isCurrentSource()) return
+      source.close()
       es = null
       reconnectAttempt += 1
       if (reconnectAttempt > maxReconnects) {
         startPollingFallback()
         return
       }
-      reconnectTimer = setTimeout(openSse, reconnectDelayMs * reconnectAttempt)
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null
+        openSse()
+      }, reconnectDelayMs * reconnectAttempt)
     })
   }
 
@@ -167,6 +237,7 @@ export function startUiCommandStream(opts: StreamOptions): () => void {
 
   return () => {
     cancelled = true
+    setConnected(false)
     if (es) {
       es.close()
       es = null
@@ -184,4 +255,21 @@ export function startUiCommandStream(opts: StreamOptions): () => void {
       reconnectTimer = null
     }
   }
+}
+
+export function startUiCommandStream(opts: StreamOptions): () => void {
+  return startUiCommandTransport({
+    endpoint: opts.endpoint,
+    query: opts.query,
+    eventSourceCtor: opts.eventSourceCtor,
+    fetcher: opts.fetcher,
+    pollIntervalMs: opts.pollIntervalMs,
+    reconnectDelayMs: opts.reconnectDelayMs,
+    maxReconnects: opts.maxReconnects,
+    onCommand(raw) {
+      if (raw && typeof raw === "object" && typeof (raw as UiCommand).kind === "string") {
+        dispatchUiCommand(raw as UiCommand, opts.ctx)
+      }
+    },
+  })
 }

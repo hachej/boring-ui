@@ -1,6 +1,5 @@
-import { useEffect } from "react"
+import { useEffect, useMemo } from "react"
 import {
-  UI_COMMAND_EVENT,
   WORKSPACE_ATTENTION_ACTION_EVENT,
   WORKSPACE_COMPOSER_STOP_EVENT,
   WORKSPACE_SURFACE_OPEN_SKIPPED_EVENT,
@@ -12,8 +11,9 @@ import {
   type WorkspaceAttentionActionDetail,
 } from "@hachej/boring-workspace"
 import { ASK_USER_PLUGIN_ID, ASK_USER_SURFACE_KIND, ASK_USER_UI_STATE_SLOTS } from "../shared/constants"
-import { createQuestionsClient, readPendingQuestionHintsFromState, type PendingQuestionHint } from "./client"
-import { isSessionOpen, type QuestionsRuntime } from "./runtime"
+import { createQuestionsClient } from "./client"
+import { createPendingRefreshCoordinator } from "./pendingRefresh"
+import { isSessionOpen, type QuestionsRuntime, type QuestionsStore } from "./runtime"
 
 export function useAskUserAttentionBlockers(runtime: QuestionsRuntime, pendingSnapshot: string): void {
   const { addBlocker, removeBlocker } = useWorkspaceAttention()
@@ -98,92 +98,31 @@ export function useAskUserComposerStopCancel(runtime: QuestionsRuntime): void {
 }
 
 export function useAskUserPendingRefresh(
-  runtime: QuestionsRuntime,
+  store: QuestionsStore,
   options: {
     apiBaseUrl: string
     authHeaders?: Record<string, string>
     activeSessionId?: string | null
   },
-): void {
+): (sessionId?: string) => void {
   const { activeSessionId, apiBaseUrl, authHeaders } = options
+  const coordinator = useMemo(
+    () => createPendingRefreshCoordinator({ apiBaseUrl, authHeaders, store }),
+    [apiBaseUrl, authHeaders, store],
+  )
   useEffect(() => {
-    let stopped = false
-    let inFlight: Promise<void> | null = null
-    let queued = false
-    let startTimer: ReturnType<typeof setTimeout> | null = null
-
-    /**
-     * Every trigger below funnels through here instead of calling the refresh
-     * directly. One refresh runs at a time and any request that arrives while
-     * one is in flight collapses into a single trailing rerun, so the read of
-     * `/ui/state` and the per-session hydration that follows it can never
-     * interleave with a newer pass and commit stale pending state. It also
-     * means redundant triggers (the same command seen on two channels, a burst
-     * of agent-stream parts) cost one extra pass at most rather than one pass
-     * each.
-     */
-    function requestRefresh(): void {
-      if (stopped) return
-      // Already running: remember that something changed after this pass began
-      // and rerun once when it lands. The in-flight pass may have read
-      // `/ui/state` before the change, so it cannot be trusted to cover it.
-      if (inFlight) {
-        queued = true
-        return
-      }
-      // Not running: start on the next tick rather than synchronously, so a
-      // burst arriving in one tick (the same command seen on two channels, or
-      // a repeated invalidation) collapses into a single pass instead of one
-      // pass plus a trailing rerun.
-      if (startTimer) return
-      startTimer = setTimeout(() => {
-        startTimer = null
-        if (stopped) return
-        inFlight = runRefresh().finally(() => {
-          inFlight = null
-          if (stopped || !queued) return
-          queued = false
-          requestRefresh()
-        })
-      }, 0)
-    }
-
-    async function runRefresh() {
-      let hints: PendingQuestionHint[] = []
-      try {
-        const response = await fetch(`${apiBaseUrl}/api/v1/ui/state`, { headers: authHeaders })
-        const state = await response.json().catch(() => null) as Record<string, unknown> | null
-        hints = readPendingQuestionHintsFromState(state)
-        if (!stopped && hasPendingStateSlot(state)) runtime.setPendingHints(hints)
-      } catch {
-        // UI state is a hint channel only; keep already-hydrated pending payloads.
-      }
-      const sessionsToHydrate = new Set<string>()
-      if (activeSessionId) sessionsToHydrate.add(activeSessionId)
-      for (const hint of hints) {
-        // A pending question can belong to a session that is no longer mounted
-        // in the current chat layout (for example a fresh/demo URL opened while
-        // an ask_user form is still blocking an older session). Hydrate every
-        // server-published hint so the Questions pane can still render the
-        // blocking form instead of an empty state.
-        sessionsToHydrate.add(hint.sessionId)
-      }
-      await Promise.all([...sessionsToHydrate].map(async (sessionId) => {
-        try {
-          await runtime.refreshPending(sessionId)
-        } catch {
-          if (!stopped) runtime.setPending(null, sessionId)
-        }
-      }))
-    }
-    const onRefreshRequested = () => requestRefresh()
-    const onVisibility = () => { if (document.visibilityState === "visible") requestRefresh() }
+    const deactivate = coordinator.activate(activeSessionId)
+    const onRefreshRequested = () => coordinator.request()
+    const onVisibility = () => { if (document.visibilityState === "visible") coordinator.request() }
     const onUiStateInvalidated = ({ keys }: { keys: string[] }) => {
-      if (keys.includes(ASK_USER_UI_STATE_SLOTS.PENDING)) requestRefresh()
+      if (keys.includes(ASK_USER_UI_STATE_SLOTS.PENDING)) coordinator.request()
+    }
+    const onUiCommandConnection = ({ connected }: { connected: boolean }) => {
+      if (connected) coordinator.request()
     }
     const onSurfaceOpenSkipped = (event: Event) => {
       const detail = (event as CustomEvent<{ kind?: unknown }>).detail
-      if (detail?.kind === ASK_USER_SURFACE_KIND) requestRefresh()
+      if (detail?.kind === ASK_USER_SURFACE_KIND) coordinator.request()
     }
     // Questions are created mid-run by the ask_user tool, with no focus or
     // UI-command transition to piggyback on. Throttle-refresh while agent
@@ -194,33 +133,30 @@ export function useAskUserPendingRefresh(
       if (agentDataTimer) return
       agentDataTimer = setTimeout(() => {
         agentDataTimer = null
-        requestRefresh()
+        coordinator.request()
       }, 1200)
     }
     const offAgentData = events.on(workspaceEvents.agentData, onAgentData)
-    // `postUiCommand` emits on the event bus AND dispatches UI_COMMAND_EVENT for
-    // the same command, so subscribing to both channels ran the refresh twice.
-    // The bus sees every command, so it is the single subscription.
+    // Local `postUiCommand` emits on both the bus and the DOM channel, so the
+    // bus alone avoids duplicate local refreshes. Remote stream commands bypass
+    // that bus; invalidation and connection recovery cover their state changes.
     const offUiCommand = events.on(workspaceEvents.uiCommand, onRefreshRequested)
     const offUiStateInvalidated = events.on(workspaceEvents.uiStateInvalidated, onUiStateInvalidated)
-    requestRefresh()
+    const offUiCommandConnection = events.on(workspaceEvents.uiCommandConnection, onUiCommandConnection)
     window.addEventListener("focus", onRefreshRequested)
     document.addEventListener("visibilitychange", onVisibility)
     window.addEventListener(WORKSPACE_SURFACE_OPEN_SKIPPED_EVENT, onSurfaceOpenSkipped)
     return () => {
-      stopped = true
       if (agentDataTimer) clearTimeout(agentDataTimer)
-      if (startTimer) clearTimeout(startTimer)
       offAgentData()
       offUiCommand()
       offUiStateInvalidated()
+      offUiCommandConnection()
       window.removeEventListener("focus", onRefreshRequested)
       document.removeEventListener("visibilitychange", onVisibility)
       window.removeEventListener(WORKSPACE_SURFACE_OPEN_SKIPPED_EVENT, onSurfaceOpenSkipped)
+      deactivate()
     }
-  }, [activeSessionId, apiBaseUrl, authHeaders, runtime])
-}
-
-function hasPendingStateSlot(state: Record<string, unknown> | null): boolean {
-  return !!state && Object.prototype.hasOwnProperty.call(state, ASK_USER_UI_STATE_SLOTS.PENDING)
+  }, [activeSessionId, coordinator])
+  return coordinator.request
 }

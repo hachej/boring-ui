@@ -13,6 +13,7 @@
  */
 // Testing utilities (for tests that need custom bridge wiring)
 export { createInMemoryBridge } from "./bridge/createInMemoryBridge"
+export { updateUiState } from "./bridge/updateUiState"
 export { uiRoutes } from "./ui-control/http/uiRoutes"
 export type { UiRoutesOptions } from "./ui-control/http/uiRoutes"
 export {
@@ -21,7 +22,14 @@ export {
   createWorkspaceUiTools,
 } from "./ui-control/tools/uiTools"
 export { UI_STATE_INVALIDATION_COMMAND } from "../shared/ui-bridge"
-export type { UiBridge, WorkspaceBridge, UiState, UiCommand, CommandResult } from "../shared/ui-bridge"
+export type {
+  UiBridge,
+  WorkspaceBridge,
+  UiState,
+  UiCommand,
+  SequencedUiCommand,
+  CommandResult,
+} from "../shared/ui-bridge"
 export {
   WorkspaceBridgeErrorCode,
   createWorkspaceBridgeError,

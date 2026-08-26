@@ -22,14 +22,34 @@ export function createInMemoryBridge(): WorkspaceBridge {
     }
   }
 
+  function offerCommand(command: AnnotatedCommand): boolean {
+    let delivered = false;
+    for (const handler of subscribers) {
+      try {
+        if (handler(command) !== false) delivered = true;
+      } catch {
+        // A broken sink must not prevent another subscriber from accepting the
+        // command or prevent the command from remaining queued.
+      }
+    }
+    return delivered;
+  }
+
+  function offerPendingCommands(): void {
+    if (pendingCommands.length === 0) return;
+    const queued = pendingCommands.splice(0, pendingCommands.length);
+    const undelivered = queued.filter((command) => !offerCommand(command));
+    if (undelivered.length === 0) return;
+    pendingCommands.unshift(...undelivered);
+    if (pendingCommands.length > MAX_PENDING_COMMANDS) {
+      pendingCommands.splice(0, pendingCommands.length - MAX_PENDING_COMMANDS);
+    }
+  }
+
   async function dispatchCommand(cmd: UiCommand): Promise<CommandResult> {
     const seq = nextSeq++;
     const annotated: AnnotatedCommand = { ...cmd, seq };
-    let delivered = false;
-    for (const handler of subscribers) {
-      if (handler(annotated) !== false) delivered = true;
-    }
-    if (!delivered) enqueuePending(annotated);
+    if (!offerCommand(annotated)) enqueuePending(annotated);
     return { seq, status: "ok" };
   }
 
@@ -52,6 +72,10 @@ export function createInMemoryBridge(): WorkspaceBridge {
 
     subscribeCommands(handler: CommandHandler): () => void {
       subscribers.add(handler);
+      // Subscribe before replaying. Commands posted during the replay see the
+      // subscriber, and a failed newcomer causes the queue to be offered to
+      // every already-ready subscriber instead of stranding it.
+      offerPendingCommands();
       return () => {
         subscribers.delete(handler);
       };

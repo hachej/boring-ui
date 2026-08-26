@@ -3,6 +3,7 @@ import type { WorkspaceStore, PanelState } from "../store/types"
 import type { FilesystemId, UiFileOpenMode } from "../../shared/types/filesystem"
 import { UI_STATE_INVALIDATION_COMMAND } from "../../shared/ui-bridge"
 import { dispatchUiStateInvalidation } from "./uiStateInvalidation"
+import { startUiCommandTransport } from "./uiCommandStream"
 
 export interface UIStatePut {
   v: 1
@@ -157,21 +158,11 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
     onConnectionChange,
   } = options
 
-  let eventSource: EventSource | null = null
-  let pollTimer: ReturnType<typeof setInterval> | null = null
+  let stopCommandTransport: (() => void) | null = null
   let debounceTimer: ReturnType<typeof setTimeout> | null = null
   let storeUnsub: (() => void) | null = null
-  let connected = false
   let destroyed = false
   let agentCommandDepth = 0
-
-  function setConnected(value: boolean) {
-    if (destroyed) return
-    if (connected !== value) {
-      connected = value
-      onConnectionChange?.(value)
-    }
-  }
 
   async function putState(causedBy: CausedBy): Promise<void> {
     if (destroyed) return
@@ -199,109 +190,53 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
     }, DEBOUNCE_MS)
   }
 
-  function handleSSEMessage(eventType: string, data: string): void {
+  async function handleCommand(raw: unknown): Promise<void> {
     if (destroyed) return
-    switch (eventType) {
-      case "init": {
-        setConnected(true)
-        putState("restore")
-        break
-      }
-      case "command": {
-        let parsed: SSECommand
-        try {
-          parsed = JSON.parse(data)
-        } catch {
-          return
-        }
-        if (parsed.v !== 1) {
-          onVersionMismatch?.(parsed.v)
-          return
-        }
-        if (!parsed.params || typeof parsed.params !== "object" || Array.isArray(parsed.params)) return
-        agentCommandDepth++
-        dispatchCommand(bridge, parsed.kind, parsed.params).finally(() => {
-          agentCommandDepth--
-        })
-        break
-      }
-      case "error": {
-        let parsed: SSEError
-        try {
-          parsed = JSON.parse(data)
-        } catch {
-          return
-        }
-        if (parsed.v !== 1) {
-          onVersionMismatch?.(parsed.v)
-          return
-        }
-        bridge.showNotification(parsed.message, "error")
-        break
-      }
-      case "heartbeat":
-        break
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return
+    const parsed = raw as SSECommand
+    if (parsed.v !== 1) {
+      onVersionMismatch?.(parsed.v)
+      return
     }
-  }
-
-  function connectSSE(): void {
-    const url = `${endpoint}/api/v1/ui/commands/next`
-    const es = new EventSource(url, { withCredentials: true })
-
-    es.addEventListener("init", (e: MessageEvent) => {
-      handleSSEMessage("init", e.data)
-    })
-
-    es.addEventListener("command", (e: MessageEvent) => {
-      handleSSEMessage("command", e.data)
-    })
-
-    es.addEventListener("error", (e: Event) => {
-      if ((e as MessageEvent).data) {
-        handleSSEMessage("error", (e as MessageEvent).data)
-      } else {
-        setConnected(false)
-      }
-    })
-
-    es.addEventListener("heartbeat", (e: MessageEvent) => {
-      handleSSEMessage("heartbeat", e.data)
-    })
-
-    eventSource = es
-  }
-
-  async function poll(): Promise<void> {
-    if (destroyed) return
+    if (!parsed.params || typeof parsed.params !== "object" || Array.isArray(parsed.params)) return
+    agentCommandDepth++
     try {
-      const url = `${endpoint}/api/v1/ui/commands/next?poll=true`
-      const response = await fetch(url, { headers: buildHeaders(authToken) })
-      if (destroyed) return
-      if (response.status === 401 || response.status === 403) {
-        onAuthError?.(response.status)
-        return
-      }
-      if (!response.ok) return
-      const commands: SSECommand[] = await response.json()
-      if (!Array.isArray(commands)) return
-      for (const cmd of commands) {
-        if (destroyed) return
-        if (cmd.v !== 1) {
-          onVersionMismatch?.(cmd.v)
-          continue
-        }
-        if (!cmd.params || typeof cmd.params !== "object" || Array.isArray(cmd.params)) continue
-        agentCommandDepth++
-        try {
-          await dispatchCommand(bridge, cmd.kind, cmd.params)
-        } finally {
-          agentCommandDepth--
-        }
-      }
-      setConnected(true)
-    } catch {
-      setConnected(false)
+      await dispatchCommand(bridge, parsed.kind, parsed.params)
+    } finally {
+      agentCommandDepth--
     }
+  }
+
+  function handleServerError(raw: unknown): void {
+    if (destroyed || !raw || typeof raw !== "object" || Array.isArray(raw)) return
+    const parsed = raw as SSEError
+    if (parsed.v !== 1) {
+      onVersionMismatch?.(parsed.v)
+      return
+    }
+    bridge.showNotification(parsed.message, "error")
+  }
+
+  function connectCommandTransport(): () => void {
+    return startUiCommandTransport({
+      endpoint,
+      eventSourceCtor: pollMode ? null : undefined,
+      eventSourceInit: { withCredentials: true },
+      fetcher: (input, init) => fetch(input, {
+        ...init,
+        headers: buildHeaders(authToken),
+      }),
+      pollIntervalMs: pollInterval,
+      onCommand: handleCommand,
+      onInit: () => { void putState("restore") },
+      onServerError: handleServerError,
+      onPollResponse: (response) => {
+        if (response.status === 401 || response.status === 403) {
+          onAuthError?.(response.status)
+        }
+      },
+      onConnectionChange,
+    })
   }
 
   function subscribeToStore(): void {
@@ -315,24 +250,14 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
   const client: BridgeClient = {
     connect() {
       destroyed = false
-      const useSSE = !pollMode && typeof EventSource !== "undefined"
-      if (useSSE) {
-        connectSSE()
-      } else {
-        poll()
-        pollTimer = setInterval(poll, pollInterval)
-      }
+      stopCommandTransport = connectCommandTransport()
       subscribeToStore()
     },
 
     disconnect() {
-      if (eventSource) {
-        eventSource.close()
-        eventSource = null
-      }
-      if (pollTimer !== null) {
-        clearInterval(pollTimer)
-        pollTimer = null
+      if (stopCommandTransport) {
+        stopCommandTransport()
+        stopCommandTransport = null
       }
       if (debounceTimer !== null) {
         clearTimeout(debounceTimer)
@@ -342,7 +267,6 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
         storeUnsub()
         storeUnsub = null
       }
-      setConnected(false)
       destroyed = true
     },
 
