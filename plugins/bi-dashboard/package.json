@@ -80,7 +80,7 @@
     "@perspective-dev/viewer": "5.1.0",
     "@perspective-dev/viewer-d3fc": "4.4.1",
     "@perspective-dev/viewer-datagrid": "5.1.0",
-    "lucide-react": "^1.31.0",
+    "lucide-react": "^1.32.0",
     "zod": "^4.3.6",
     "zustand": "^5.0.14"
   },
@@ -98,7 +98,7 @@
     "react-dom": "^19.2.8",
     "tsup": "^8.4.0",
     "tsx": "^4.23.6",
-    "typescript": "~6.0.3",
+    "typescript": "~7.0.2",
     "vite": "^8.2.1",
     "vitest": "^4.1.9"
   }
