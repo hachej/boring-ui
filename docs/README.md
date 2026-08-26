@@ -94,7 +94,7 @@ is how a "frozen" contract drifted from its own types for a full release.
 |---|---|---|
 | **Why** are we building this | issue [#391](https://github.com/hachej/boring-ui/issues/391) | The long-form vision |
 | **What** did we rule, and what did it kill | [`DECISIONS.md`](DECISIONS.md) | Ratified, append-only, supersession stated explicitly |
-| **When** — order and triggers | [`DIRECTION.md`](DIRECTION.md) | Owner-ratified waves. Wins over any issue plan on sequencing |
+| **When** — order and triggers | [`DIRECTION.md`](direction/DIRECTION.md) | Owner-ratified waves. Wins over any issue plan on sequencing |
 | **How** it works — contracts | package `docs/` beside the code | e.g. [`AGENT_GATEWAY_V0.md`](../packages/agent/docs/AGENT_GATEWAY_V0.md), `PLUGIN_SYSTEM.md` |
 | **What now** — dispatchable work | beads + GitHub issues | Must be reachable from a DIRECTION wave |
 

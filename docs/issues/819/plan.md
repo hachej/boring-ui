@@ -15,12 +15,12 @@ This is the canonical implementation plan for issue #819. It is plan-only until
 the owner accepts it and the activation gates below are satisfied.
 
 - Parent programme: [#391](https://github.com/hachej/boring-ui/issues/391) and
-  [`../391/plan.md`](../391/plan.md).
+  [`../../plans/agent-runtime/fleet-and-environments/plan.md`](../../plans/agent-runtime/fleet-and-environments/plan.md).
 - Control-plane/data-plane background vision (explicitly non-binding; see its
   own header):
   [`../391/AGENT-CLOUD-VISION.md`](../../plans/agent-runtime/cloud-vision/AGENT-CLOUD-VISION.md).
 - Workspace and agent identity authority:
-  [`../391/AGENT-CONSUMPTION-MODES.md`](../391/AGENT-CONSUMPTION-MODES.md).
+  [`../../plans/agent-runtime/consumption-modes/AGENT-CONSUMPTION-MODES.md`](../../plans/agent-runtime/consumption-modes/AGENT-CONSUMPTION-MODES.md).
 - Locked decisions: [`../../DECISIONS.md`](../../DECISIONS.md), Decisions 25
   and 26.
 - Event-shaped work: [#807](https://github.com/hachej/boring-ui/issues/807) and

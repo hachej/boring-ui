@@ -20,13 +20,13 @@ Shared authority remains:
 
 - [`../../DECISIONS.md`](../../DECISIONS.md), Decision 26, for delivery order
   and forbidden architecture;
-- [`../391/plan.md`](../391/plan.md) for Step 1A's typed workspace and sole-agent
+- [`../../plans/agent-runtime/fleet-and-environments/plan.md`](../../plans/agent-runtime/fleet-and-environments/plan.md) for Step 1A's typed workspace and sole-agent
   contract;
-- [`../391/AGENT-CONSUMPTION-MODES.md`](../391/AGENT-CONSUMPTION-MODES.md) for
+- [`../../plans/agent-runtime/consumption-modes/AGENT-CONSUMPTION-MODES.md`](../../plans/agent-runtime/consumption-modes/AGENT-CONSUMPTION-MODES.md) for
   Mode 0 external MCP semantics;
 - [`../391/AGENT-CLOUD-VISION.md`](../../plans/agent-runtime/cloud-vision/AGENT-CLOUD-VISION.md) for the
   non-binding execute-versus-data rule and control-plane/data-plane split;
-- [`../391/ROADMAP-ALIGNMENT.md`](../391/ROADMAP-ALIGNMENT.md) for ownership and
+- [`../../plans/agent-runtime/alignment/ROADMAP-ALIGNMENT.md`](../../plans/agent-runtime/alignment/ROADMAP-ALIGNMENT.md) for ownership and
   later-work triggers.
 
 `AGENT-CLOUD-VISION.md` was absent from the initial planning base

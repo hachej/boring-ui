@@ -12,7 +12,7 @@ updated: 2026-07-17
 
 ## Canonical entry
 
-This issue owns demand-gated marketplace, identity, consumption-contract, billing, catalog, channel, control-plane, and onboarding planning. The physical plan move from #391 is complete; this file is the canonical entry and index. Decision 26 splits AC1 by binding: workspace-local native delegation in Step 2, external A2A ingress in Step 3, and contracted/service agents later. Existing detailed plans are non-dispatchable until recut against [`../391/AGENT-CONSUMPTION-MODES.md`](../391/AGENT-CONSUMPTION-MODES.md) and [`../391/ROADMAP-ALIGNMENT.md`](../391/ROADMAP-ALIGNMENT.md).
+This issue owns demand-gated marketplace, identity, consumption-contract, billing, catalog, channel, control-plane, and onboarding planning. The physical plan move from #391 is complete; this file is the canonical entry and index. Decision 26 splits AC1 by binding: workspace-local native delegation in Step 2, external A2A ingress in Step 3, and contracted/service agents later. Existing detailed plans are non-dispatchable until recut against [`../../plans/agent-runtime/consumption-modes/AGENT-CONSUMPTION-MODES.md`](../../plans/agent-runtime/consumption-modes/AGENT-CONSUMPTION-MODES.md) and [`../../plans/agent-runtime/alignment/ROADMAP-ALIGNMENT.md`](../../plans/agent-runtime/alignment/ROADMAP-ALIGNMENT.md).
 
 ## Canonical documents
 
@@ -28,5 +28,5 @@ This issue owns demand-gated marketplace, identity, consumption-contract, billin
 - [`GTM-CALLKITS`](runtime-refactor/GTM-CALLKITS.md)
 
 Historical #391 architecture and the active phased product plan remain at
-[`../391/plan.md`](../391/plan.md). The latter controls shared sequencing; this
+[`../../plans/agent-runtime/fleet-and-environments/plan.md`](../../plans/agent-runtime/fleet-and-environments/plan.md). The latter controls shared sequencing; this
 issue regains dispatch authority only after its own Decision 26 recut.

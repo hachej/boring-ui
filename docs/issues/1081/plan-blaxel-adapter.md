@@ -40,7 +40,8 @@ The recommended initial support boundary is:
 
 No live API request was made for this investigation. Static SDK inspection and
 official documentation were cross-checked against the existing
-[`BLAXEL-SPIKE.md`](../../../BLAXEL-SPIKE.md) lifecycle evidence.
+[`BLAXEL-SPIKE.md`](../../../BLAXEL-SPIKE.md) lifecycle evidence
+(spike file was never committed — lost artifact, noted in docs/vision/explorations.md).
 
 ## Evidence boundary
 
