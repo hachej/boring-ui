@@ -52,6 +52,19 @@ test.each([
   expect(createEnvironment).not.toHaveBeenCalled()
 }, 30_000)
 
+test('rejects an empty application fleet before resource allocation', async () => {
+  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
+  await expect(createCoreWorkspaceAgentServer({
+    config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+    agents: [],
+    workspaceRoot: '/tmp/full-app-workspaces',
+    serveFrontend: false,
+  })).rejects.toMatchObject({ code: 'default_agent_type_unknown_seat' })
+
+  expect(mocks.createDatabase).not.toHaveBeenCalled()
+  expect(mocks.createAgentHost).not.toHaveBeenCalled()
+}, 30_000)
+
 test('core backfills through explicit CAS after fleet validation and before routes', async () => {
   mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
     runtimePlugins: [], agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
@@ -93,7 +106,7 @@ test('uses one validated config default for plugins, backfill, and future worksp
   const app = await createCoreWorkspaceAgentServer({
     config,
     agents: [
-      { agentTypeId: 'default', legacyDefault: true },
+      { agentTypeId: 'default', definition: { label: 'Agent', instructions: 'Default.' } },
       { agentTypeId: 'reviewer', definition: { label: 'Reviewer', instructions: 'Review.' } },
     ],
     plugins: [{ id: 'default-context-probe' }],
@@ -124,7 +137,7 @@ test('normalizes the deprecated option into the one application default', async 
     config,
     defaultAgentTypeId: 'reviewer',
     agents: [
-      { agentTypeId: 'default', legacyDefault: true },
+      { agentTypeId: 'default', definition: { label: 'Agent', instructions: 'Default.' } },
       { agentTypeId: 'reviewer', definition: { label: 'Reviewer', instructions: 'Review.' } },
     ],
     plugins: [{ id: 'deprecated-default-context-probe' }],
@@ -144,7 +157,7 @@ test('normalizes the deprecated option into the one application default', async 
   } finally { await app.close() }
 }, 30_000)
 
-test('rejects legacyDefault as a configured workspace default', async () => {
+test('accepts the real regular default Agent as the configured workspace default', async () => {
   const config = createTestCoreConfig({
     stores: 'postgres',
     databaseUrl: 'postgres://test',
@@ -152,21 +165,19 @@ test('rejects legacyDefault as a configured workspace default', async () => {
   })
   const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
 
-  await expect(createCoreWorkspaceAgentServer({
+  const app = await createCoreWorkspaceAgentServer({
     config,
     agents: [
-      { agentTypeId: 'default', legacyDefault: true },
+      { agentTypeId: 'default', definition: { label: 'Agent', instructions: 'Default.' } },
       { agentTypeId: 'general', definition: { label: 'General', instructions: 'Answer general questions.' } },
     ],
     workspaceRoot: '/tmp/full-app-workspaces',
     serveFrontend: false,
-  })).rejects.toMatchObject({
-    name: 'DefaultAgentTypeError',
-    code: 'default_agent_type_unknown_seat',
   })
-
-  expect(mocks.createDatabase).not.toHaveBeenCalled()
-  expect(mocks.createAgentHost).not.toHaveBeenCalled()
+  try {
+    expect(app.config.defaultAgentTypeId).toBe('default')
+    expect(mocks.compareAndSetNullDefaultAgentTypeId).toHaveBeenCalledWith(config.appId, 'default')
+  } finally { await app.close() }
 }, 30_000)
 
 test('rejects conflicting config and deprecated option defaults before resource allocation', async () => {
@@ -181,7 +192,7 @@ test('rejects conflicting config and deprecated option defaults before resource 
     config,
     defaultAgentTypeId: 'default',
     agents: [
-      { agentTypeId: 'default', legacyDefault: true },
+      { agentTypeId: 'default', definition: { label: 'Agent', instructions: 'Default.' } },
       { agentTypeId: 'reviewer', definition: { label: 'Reviewer', instructions: 'Review.' } },
     ],
     workspaceRoot: '/tmp/full-app-workspaces',
@@ -459,7 +470,7 @@ test('rejects actual execution paths before binding or Environment acquisition',
   }
 }, 60_000)
 
-test('workspace meta resolves a legacy NULL default from the configured application default, not the first fleet seat', async () => {
+test('workspace meta resolves a rolling-migration NULL from the configured application default, not the first fleet seat', async () => {
   mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
     runtimePlugins: [], agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
     preservedUiStateKeys: [], routeContributions: [],
@@ -479,7 +490,7 @@ test('workspace meta resolves a legacy NULL default from the configured applicat
   const app = await createCoreWorkspaceAgentServer({
     config,
     agents: [
-      { agentTypeId: 'default', legacyDefault: true },
+      { agentTypeId: 'default', definition: { label: 'Agent', instructions: 'Default.' } },
       { agentTypeId: 'reviewer', definition: { label: 'Reviewer', instructions: 'Review.' } },
     ],
     workspaceRoot: '/tmp/full-app-workspaces',

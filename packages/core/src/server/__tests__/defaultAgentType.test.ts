@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest'
 import { ERROR_CODES } from '../../shared/errors.js'
 import {
   DefaultAgentTypeError,
-  LEGACY_DEFAULT_AGENT_TYPE_ID,
   classifyWorkspaceDefaultAgentTypeCohorts,
   isAgentTypeId,
   parseRequiredDefaultAgentTypeId,
@@ -92,21 +91,9 @@ describe('resolveWorkspaceDefaultAgentTypeId', () => {
     })
   })
 
-  it('uses the legacy runtime only for a NULL compatibility workspace', () => {
-    expect(resolveWorkspaceDefaultAgentTypeId({
-      persistedDefaultAgentTypeId: null,
-      applicationDefaultAgentTypeId: null,
-      regularAgentTypeIds: [],
-    })).toBe(LEGACY_DEFAULT_AGENT_TYPE_ID)
-    expect(() => resolveWorkspaceDefaultAgentTypeId({
-      persistedDefaultAgentTypeId: 'retired-seat',
-      applicationDefaultAgentTypeId: null,
-      regularAgentTypeIds: [],
-    })).toThrowError(expect.objectContaining({ code: ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT }))
-  })
 })
 
-describe('legacy default-Agent cohorts', () => {
+describe('default-Agent cohorts', () => {
   it('classifies NULL, known, and unknown persisted cohorts without repair', () => {
     expect(classifyWorkspaceDefaultAgentTypeCohorts([
       { defaultAgentTypeId: null, count: 3 },
@@ -122,7 +109,7 @@ describe('legacy default-Agent cohorts', () => {
     })
   })
 
-  it('selects only regular fleet members and preserves legacy-only compatibility', () => {
+  it('selects only regular fleet members and rejects an empty application fleet', () => {
     expect(resolveApplicationDefaultAgentTypeId({
       configuredDefaultAgentTypeId: undefined,
       regularAgentTypeIds: ['general', 'reviewer'],
@@ -131,10 +118,10 @@ describe('legacy default-Agent cohorts', () => {
       configuredDefaultAgentTypeId: 'retired-seat',
       regularAgentTypeIds: ['general'],
     })).toThrowError(expect.objectContaining({ code: ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT }))
-    expect(resolveApplicationDefaultAgentTypeId({
+    expect(() => resolveApplicationDefaultAgentTypeId({
       configuredDefaultAgentTypeId: undefined,
       regularAgentTypeIds: [],
-    })).toBeNull()
+    })).toThrowError(expect.objectContaining({ code: ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT }))
   })
 
   it('validates canonical fleet identity grammar and uniqueness before resolution', () => {

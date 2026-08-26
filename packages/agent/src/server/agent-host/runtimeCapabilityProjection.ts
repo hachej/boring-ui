@@ -306,7 +306,6 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
       if (!spec) {
         throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN, 'agent type is not available')
       }
-      const legacy = 'legacyDefault' in spec
       let mcpServers: AgentHostAgentDescription['mcpServers'] = []
       if (mcpGrants) {
         const refs = mcpGrants.getMcpServerRefs(agentTypeId) ?? []
@@ -331,12 +330,10 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
       // withheld for every seat there (gh-1189). `authorizeAgentAccess` already
       // resolved the request's environment scope, so this costs no extra
       // resolution — only the confinement check itself.
-      const { refs: instructionFiles, withheld } = legacy
-        ? { refs: [] as readonly AgentInstructionFileRef[], withheld: [] }
-        : await resolveAgentInstructionFileRefs({
-            sources: spec.instructionSources,
-            workspaceRoot: resolved.environment.workspaceRoot,
-          })
+      const { refs: instructionFiles, withheld } = await resolveAgentInstructionFileRefs({
+        sources: spec.instructionSources,
+        workspaceRoot: resolved.environment.workspaceRoot,
+      })
       for (const entry of withheld) {
         // Fails loud, not silent: the overlay gets no instruction row and the
         // operator gets the stable code — now per request rather than per boot.
@@ -348,7 +345,7 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
       }
       return {
         agentTypeId,
-        model: legacy ? null : spec.model?.preferred ?? null,
+        model: spec.model?.preferred ?? null,
         instructionFiles,
         mcpServers,
       }

@@ -32,7 +32,7 @@ const agentServerMock = vi.hoisted(() => {
             draining: false,
             agents: compiled.map((agent: any) => ({
               agentTypeId: agent.agentTypeId,
-              label: agent.legacyDefault ? "Agent" : agent.definition?.label ?? agent.agentTypeId,
+              label: agent.definition.label,
             })),
           }),
           drain: vi.fn(async () => {}),
@@ -1502,7 +1502,10 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
           definition: { label: "Beta", instructions: "beta" },
           plugins: [{ name: "beta-plugin", config: { mode: "beta" } }],
         },
-        { agentTypeId: "default", legacyDefault: true },
+        {
+          agentTypeId: "default",
+          definition: { label: "Agent", instructions: "default" },
+        },
       ],
       fleetCompiler: { async compile({ agents }) { return agents } },
       defaultAgentTypeId: "alpha",
@@ -1753,17 +1756,13 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       ]
       // Sanity: the flag actually composed a multi-agent fleet (default +
       // the fixture seat), so `opts.agents` really was left undefined while
-      // the resolved fleet was not the single-legacy-agent shape.
+      // the resolved fleet was not the single-default-Agent shape.
       expect(createHostCall.agents.map((agent) => agent.agentTypeId).sort()).toEqual(["default", "fixture-one"])
 
       const scope = routeOptions.authorizedScope
-      // The literal `{ agentTypeId: 'default', legacyDefault: true }` fleet
-      // member is a deliberate catch-all and keeps every discovered plugin's
-      // resources by design (same as the "normalizes..." test's `legacy`
-      // case above) — that part is unaffected by this fix.
-      //
-      // The actual M3 bug: a resolved fleet seat that is NOT that literal
-      // legacyDefault entry (here, the fixture's own composed seat) must be
+      // The built-in regular default Agent explicitly keeps every discovered
+      // plugin's resources. A resolved authored fleet seat (here, the
+      // fixture's own composed seat) must be
       // scoped to only its own explicitly-bound plugins — it has none bound,
       // so it must not inherit the unbound global plugin's tools/prompt via
       // the base Pi options, which `legacyGlobalPluginAgentContributions`
@@ -1890,19 +1889,19 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
 
       // Installed means discoverable, not active: an empty roster keeps it inert.
       await writeFleet("")
-      expect(await bootAgentIds()).toEqual([{ agentTypeId: "default", version: undefined }])
+      expect(await bootAgentIds()).toEqual([{ agentTypeId: "default", version: "1" }])
 
       // Seating the definition activates the same local package on the next boot.
       await writeFleet("  - seat: local-worker\n    agentTypeId: fixture-local-worker\n    skills: []\n")
       expect(await bootAgentIds()).toEqual([
-        { agentTypeId: "default", version: undefined },
+        { agentTypeId: "default", version: "1" },
         { agentTypeId: "fixture-local-worker", version: "1.0.0" },
       ])
 
       // A package bump is observed only after reboot; no copied cache is involved.
       await writeManifest("1.1.0")
       expect(await bootAgentIds()).toEqual([
-        { agentTypeId: "default", version: undefined },
+        { agentTypeId: "default", version: "1" },
         { agentTypeId: "fixture-local-worker", version: "1.1.0" },
       ])
 
@@ -1916,14 +1915,14 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
         "    skills:\n" +
         `      - name: skills/local/SKILL.md\n        digest: sha256:${"0".repeat(64)}\n`,
       )
-      expect(await bootAgentIds()).toEqual([{ agentTypeId: "default", version: undefined }])
+      expect(await bootAgentIds()).toEqual([{ agentTypeId: "default", version: "1" }])
 
       // Unseating and removing the settings registration are both inert on boot.
       await writeFleet("")
-      expect(await bootAgentIds()).toEqual([{ agentTypeId: "default", version: undefined }])
+      expect(await bootAgentIds()).toEqual([{ agentTypeId: "default", version: "1" }])
       await writeFleet("  - seat: local-worker\n    agentTypeId: fixture-local-worker\n    skills: []\n")
       await writeFile(settingsPath, JSON.stringify({ packages: [] }), "utf8")
-      expect(await bootAgentIds()).toEqual([{ agentTypeId: "default", version: undefined }])
+      expect(await bootAgentIds()).toEqual([{ agentTypeId: "default", version: "1" }])
     } finally {
       if (previousFlag === undefined) delete process.env.BORING_AGENT_FLEET
       else process.env.BORING_AGENT_FLEET = previousFlag
@@ -1999,7 +1998,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     try {
       // A fleetRepositoryRoot that does not exist: with the flag off the seam
       // must not evaluate it (no eager fleet discovery / cwd fallback) — boot
-      // still yields the single legacy default agent (gh-1107 slice 1 fix
+      // still yields the single regular default Agent (gh-1107 slice 1 fix
       // round: flag-off purity extended to the workspace host seam).
       app = await createWorkspaceAgentServer({
         workspaceRoot,
@@ -2009,10 +2008,10 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
         externalPlugins: false,
       })
       const hostOptions = agentServerMock.createAgentHost.mock.calls.at(-1)![0] as {
-        agents: readonly { agentTypeId: string; legacyDefault?: boolean }[]
+        agents: readonly { agentTypeId: string; definition: { label: string } }[]
       }
       expect(hostOptions.agents.map((agent) => agent.agentTypeId)).toEqual(["default"])
-      expect(hostOptions.agents[0]?.legacyDefault).toBe(true)
+      expect(hostOptions.agents[0]?.definition.label).toBe("Agent")
     } finally {
       if (previousFlag === undefined) delete process.env.BORING_AGENT_FLEET
       else process.env.BORING_AGENT_FLEET = previousFlag

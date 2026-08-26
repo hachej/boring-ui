@@ -238,7 +238,6 @@
           "CreateStandaloneAgentHostAppOptions",
           "CreatedAgentHost",
           "InMemoryAgentRequestLedger",
-          "LegacyDefaultAgentHostSpec",
           "SqliteAgentRequestLedger",
           "createAgentHost",
           "createConfiguredAgentHostAgentSpec",

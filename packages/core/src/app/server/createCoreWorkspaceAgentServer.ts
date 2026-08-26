@@ -116,7 +116,6 @@ import {
 } from '../../server/signupAgentDefaults.js'
 import {
   DefaultAgentTypeError,
-  LEGACY_DEFAULT_AGENT_TYPE_ID,
   resolveApplicationDefaultAgentTypeId,
   resolveWorkspaceDefaultAgentTypeId,
 } from '../../server/defaultAgentType.js'
@@ -1108,8 +1107,8 @@ export async function createCoreWorkspaceAgentServer(
   // BORING_AGENT_FLEET=1 composes the config-driven production fleet
   // (gh-1106 slice 3, B2 fix round 1) from discovered agent packages plus
   // .agents/factory for the deployed core app host (apps/full-app), same
-  // helper as createWorkspaceAgentServer and the CLI hub; flag absent
-  // preserves the legacy single-default-agent boot byte-identically.
+  // helper as createWorkspaceAgentServer and the CLI hub; flag absence uses
+  // the regular built-in default Agent.
   //
   // workspaceRoot is `null`, not the base root: core serves
   // `<workspaceRoot>/<workspaceId>` and NEVER the base itself
@@ -1126,9 +1125,7 @@ export async function createCoreWorkspaceAgentServer(
     ...(discoveredPackages ? { discoveredPackages } : {}),
   })
   const availableAgentTypeIds = agents.map((agent) => agent.agentTypeId)
-  const regularAgentTypeIds = agents
-    .filter((agent) => !('legacyDefault' in agent))
-    .map((agent) => agent.agentTypeId)
+  const regularAgentTypeIds = availableAgentTypeIds
   if (
     options.defaultAgentTypeId !== undefined
     && rawConfig.defaultAgentTypeId !== undefined
@@ -1143,18 +1140,18 @@ export async function createCoreWorkspaceAgentServer(
     configuredDefaultAgentTypeId: options.defaultAgentTypeId ?? rawConfig.defaultAgentTypeId,
     regularAgentTypeIds,
   })
-  const executionDefaultAgentTypeId = applicationDefaultAgentTypeId ?? LEGACY_DEFAULT_AGENT_TYPE_ID
+  const executionDefaultAgentTypeId = applicationDefaultAgentTypeId
   const signupAgentDefaults = compileSignupAgentDefaults(
     rawConfig.signupAgentDefaults,
     regularAgentTypeIds,
     rawConfig.security?.trustedProxy,
   )
   // Decision 28 hook: validate all trusted signup/default config before
-  // allocating DB or HTTP resources. Only regular Agents can be persisted as a
-  // Workspace default; legacy-only applications retain compatibility NULLs.
+  // allocating DB or HTTP resources. Every initialized Workspace persists a
+  // real regular Agent as its default.
   const config: CoreConfig = {
     ...rawConfig,
-    defaultAgentTypeId: applicationDefaultAgentTypeId ?? undefined,
+    defaultAgentTypeId: applicationDefaultAgentTypeId,
     signupAgentDefaults,
   }
   const { app, sql, db, userStore, workspaceStore, telemetry } = await createCoreRuntime(
@@ -1795,15 +1792,13 @@ export async function createCoreWorkspaceAgentServer(
 
   let hostMounted = false
   try {
-    if (applicationDefaultAgentTypeId !== null) {
-      await reconcileWorkspaceDefaultAgentTypes({
-        workspaceStore,
-        appId: config.appId,
-        applicationDefaultAgentTypeId,
-        regularAgentTypeIds,
-        log: app.log,
-      })
-    }
+    await reconcileWorkspaceDefaultAgentTypes({
+      workspaceStore,
+      appId: config.appId,
+      applicationDefaultAgentTypeId,
+      regularAgentTypeIds,
+      log: app.log,
+    })
 
     app.get('/api/v1/workspace/meta', async (request, reply) => {
       try {

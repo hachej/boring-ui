@@ -223,7 +223,7 @@ describe('createCoreWorkspaceAgentServer telemetry wiring', () => {
     await expect(createCoreWorkspaceAgentServer({
       serveFrontend: false,
       config: makeBootConfig({ signupAgentDefaults: { 'legal.example': 'ghost-agent' } }),
-      agents: [{ agentTypeId: 'default', legacyDefault: true }],
+      agents: [{ agentTypeId: 'default', definition: { label: 'Agent', instructions: 'Default.' } }],
     })).rejects.toMatchObject({
       code: ERROR_CODES.INVALID_SIGNUP_AGENT_DEFAULTS,
     })
@@ -234,7 +234,7 @@ describe('createCoreWorkspaceAgentServer telemetry wiring', () => {
     await expect(createCoreWorkspaceAgentServer({
       serveFrontend: false,
       config: makeBootConfig({ signupAgentDefaults: { '*.example': 'default' } }),
-      agents: [{ agentTypeId: 'default', legacyDefault: true }],
+      agents: [{ agentTypeId: 'default', definition: { label: 'Agent', instructions: 'Default.' } }],
     })).rejects.toMatchObject({
       code: ERROR_CODES.INVALID_SIGNUP_AGENT_DEFAULTS,
     })
@@ -248,7 +248,7 @@ describe('createCoreWorkspaceAgentServer telemetry wiring', () => {
         security: { csp: { enabled: false }, trustedProxy: 'legacy-unsafe' },
         signupAgentDefaults: { 'legal.example': 'default' },
       }),
-      agents: [{ agentTypeId: 'default', legacyDefault: true }],
+      agents: [{ agentTypeId: 'default', definition: { label: 'Agent', instructions: 'Default.' } }],
     })).rejects.toMatchObject({
       code: ERROR_CODES.INVALID_SIGNUP_AGENT_DEFAULTS,
     })

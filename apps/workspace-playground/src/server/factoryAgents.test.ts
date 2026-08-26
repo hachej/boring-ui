@@ -61,7 +61,7 @@ describe('loadBoringFactoryAgents (loader against the real .agents/ tree)', () =
     expect(agents.some((agent) => agent.agentTypeId === defaultAgentTypeId)).toBe(true)
     for (const [index, expected] of EXPECTED.entries()) {
       const agent = agents[index]
-      if (!agent || 'legacyDefault' in agent) throw new Error('factory agent must be configured')
+      if (!agent) throw new Error('factory agent must be configured')
       expect(agent.definition.instructions).toBe(await expectedInstructions(expected.role, expected.skills))
       expect(agent.definition.instructions.match(/boring-skill:start/g)).toHaveLength(expected.skills.length)
       expect(agent.definition.instructions.match(/boring-skill:end/g)).toHaveLength(expected.skills.length)
@@ -80,7 +80,6 @@ describe('loadBoringFactoryAgents (loader against the real .agents/ tree)', () =
       const agents = await loadBoringFactoryAgents({ env: {} })
 
       for (const agent of agents) {
-        if ('legacyDefault' in agent) throw new Error('factory agent must be configured')
         const { refs, withheld } = await resolveAgentInstructionFileRefs({
           sources: agent.instructionSources,
           workspaceRoot: REPOSITORY_ROOT,
@@ -102,7 +101,6 @@ describe('loadBoringFactoryAgents (loader against the real .agents/ tree)', () =
 
       expect(agents.length).toBe(EXPECTED.length)
       for (const agent of agents) {
-        if ('legacyDefault' in agent) throw new Error('factory agent must be configured')
         const { refs, withheld } = await resolveAgentInstructionFileRefs({
           sources: agent.instructionSources,
           workspaceRoot: servedRoot,
