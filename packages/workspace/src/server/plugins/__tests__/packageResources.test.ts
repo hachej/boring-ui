@@ -333,7 +333,7 @@ describe('resolveWorkspacePackageResources', () => {
     ])
     expect(snapshot.diagnostics).toEqual([{
       source: 'shared-skill-scan',
-      message: 'shared skill "dangling" was not admissible and was skipped',
+      message: 'shared skill "dangling" was not admissible and was skipped: package resource is invalid: shared skill is not readable',
       pluginId: 'shared/pi-agent',
       code: PACKAGE_RESOURCE_INVALID_CODE,
     }])
@@ -368,6 +368,16 @@ describe('resolveWorkspacePackageResources', () => {
       scanned: [],
       sharedSkillPaths: [shared, { id: 'other', skillFile: sharedFile }],
     })).rejects.toBe(defect)
+  })
+
+  test('propagates an unexpected filesystem failure while resolving a scanned skill declaration', async () => {
+    const root = await tempRoot()
+    const packageRoot = await packageFixture(root, { skills: ['x'.repeat(300)] })
+
+    await expect(resolveWorkspacePackageResourceSnapshot({
+      declared: [],
+      scanned: [{ pluginId: 'scan', packageName: '@example/plugin', packageRoot }],
+    })).rejects.toMatchObject({ code: 'ENAMETOOLONG' })
   })
 
   test("rejects the host-shared reserved package name", async () => {

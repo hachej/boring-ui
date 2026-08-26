@@ -225,14 +225,15 @@ function validateEnvironmentScope(resolved: AgentHostEnvironmentScope): void {
  * Durable ledger file this host will open, or `undefined` when it was given
  * neither an explicit path nor a session root.
  *
- * `createAgentHost` is the innermost host: its `requestLedgerPath` is a
- * programmatic option taken verbatim (outer hosts normalize their user-facing
- * option before passing it down), and it has no in-workspace fallback — a host
- * with nothing host-owned to write to fails closed. The session-root tail is
- * owned by {@link resolveRequestLedgerPath}, the single canonical chain.
+ * `createAgentHost` is the innermost host. It delegates explicit-path and
+ * session-root normalization to the canonical resolver, but has no in-workspace
+ * fallback — a host with nothing host-owned to write to fails closed.
  */
 function resolveHostLedgerPath(options: CreateAgentHostOptions): string | undefined {
-  return options.requestLedgerPath ?? resolveRequestLedgerPath({ sessionRoot: options.sessionRoot })
+  return resolveRequestLedgerPath({
+    requestLedgerPath: options.requestLedgerPath,
+    sessionRoot: options.sessionRoot,
+  })
 }
 
 function createRuntime(

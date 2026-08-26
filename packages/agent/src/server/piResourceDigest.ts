@@ -97,7 +97,7 @@ interface WalkState {
   bytes: number
 }
 
-const FORMAT_VERSION = 'boring-pi-resource-digest-v6'
+const FORMAT_VERSION = 'boring-pi-resource-digest-v7'
 const EXCLUDED_DIRECTORIES = new Set(['.git', 'node_modules'])
 // Host-written observation metadata is not a Pi input. Including it makes the
 // act of loading a newly discovered Boring plugin invalidate its own reload.
@@ -348,8 +348,10 @@ async function hashResolvedPiInventory(
   state: WalkState,
   collections: ReturnType<typeof resolvedCollections>,
 ): Promise<void> {
-  const resources = new Set<string>()
-  const packageManifests = new Set<string>()
+  const requiredResources = new Set<string>()
+  const ambientResources = new Set<string>()
+  const requiredPackageManifests = new Set<string>()
+  const ambientPackageManifests = new Set<string>()
   const inventory = collections.flat().map((resource) => ({
     resource,
     descriptor: JSON.stringify({
@@ -362,15 +364,23 @@ async function hashResolvedPiInventory(
   })).sort((left, right) => left.descriptor.localeCompare(right.descriptor))
   for (const { resource, descriptor } of inventory) {
     frameString(state.hash, 'resolved-resource', descriptor)
+    // Pi marks only convention-based discovery from its user/project resource
+    // directories as `auto`. Configured packages and temporary explicit
+    // extensions carry their actual source and must remain fail-closed.
+    const ambient = resource.metadata.source === 'auto'
+    const resources = ambient ? ambientResources : requiredResources
+    const packageManifests = ambient ? ambientPackageManifests : requiredPackageManifests
     if (resource.metadata.origin === 'package' && resource.metadata.baseDir) {
       packageManifests.add(join(resource.metadata.baseDir, 'package.json'))
     }
     resources.add(resource.path)
   }
-  // Pi discovered these itself in the user's ambient tree; one symlinked entry
-  // there is normal and must degrade, not fail the digest closed (gh-1196).
-  await hashResourceCollection(state, state.authorizedRoots[0]!, 'resolved-package-manifest', [...packageManifests], false, 'skip')
-  await hashResourceCollection(state, state.authorizedRoots[0]!, 'resolved-resource', [...resources], false, 'skip')
+  await hashResourceCollection(state, state.authorizedRoots[0]!, 'resolved-package-manifest', [...requiredPackageManifests], false, 'reject')
+  await hashResourceCollection(state, state.authorizedRoots[0]!, 'resolved-resource', [...requiredResources], false, 'reject')
+  // Only convention-based ambient discovery may degrade. A symlink there is
+  // routine; the same symlink from a configured package/extension is a defect.
+  await hashResourceCollection(state, state.authorizedRoots[0]!, 'resolved-package-manifest', [...ambientPackageManifests], false, 'skip')
+  await hashResourceCollection(state, state.authorizedRoots[0]!, 'resolved-resource', [...ambientResources], false, 'skip')
 }
 
 /** Mirrors Pi's cwd-relative path normalization for configured resources. */

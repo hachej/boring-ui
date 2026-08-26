@@ -117,12 +117,13 @@ describe('resolveWorkspacePackageResourceSnapshot', () => {
     expect(snapshot.diagnostics).toEqual([
       {
         source: 'package-resource-scan',
-        message: 'scanned package skill resources were invalid',
+        message: 'package resource is invalid: pi.skills entry does not exist',
         pluginId: '@example/scanned-bad',
+        code: 'PACKAGE_RESOURCE_INVALID',
       },
       {
         source: 'shared-skill-scan',
-        message: 'shared skill "dangling" was not admissible and was skipped',
+        message: 'shared skill "dangling" was not admissible and was skipped: package resource is invalid: shared skill is not readable',
         pluginId: 'shared/pi-agent',
         code: 'PACKAGE_RESOURCE_INVALID',
       },
