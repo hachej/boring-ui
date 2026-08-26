@@ -337,23 +337,34 @@ authorize implementation before their named frozen-DAG and owner gates.
 ### Relationship to the pending premises-first program (#1409)
 
 PR #1409 is a separate, still-pending ratification and sequencing instrument;
-this consistency pass reviewed it through `016397fef`. If #1409 lands first,
-its complete premises-first amendment remains the sole current dispatch queue
-and this MCP amendment appends after it. Landing #1415 places neither #806 nor
-#900/#1011 in Wave A or Wave B: a later explicit owner amendment must place an
-exact MCP slice in the post-#1409 queue before dispatch. The old Wave-3
+this consistency pass reviewed its owner-authored exact head
+`7732c191698fed3d940565a1c874075baa2a7a19`. Regardless of merge order,
+DIRECTION remains the sole dispatch queue: this MCP amendment adds planning
+records only. Landing #1415 places neither #806 nor #900/#1011 in Wave A or
+Wave B; after #1409, a later explicit owner amendment must place an exact MCP
+slice in the post-premises queue before dispatch. A plan, Bead, tracker, or
+implementation brief cannot substitute for that placement. The old Wave-3
 “External MCP complete/paused” statement describes the earlier generic source,
 registration, and read-only Connector work, not the new inbound #806 edge or
 full-catalog #900 execution plan.
 
-Applicable MCP effect/run slices consume #1409's `[durable-streams]`
-(`wt-391-forward-9p50`) Level-D receipt and `[seat-audit-attribution]`
-(`wt-391-forward-shell-ngfs.14`) C7 work rather than creating parallel stores or
-display-only provenance. Neither MCP plan selects the unresolved
-Thread storage representation, creates an A2A/MCP loopback, widens the frozen
-seven-method `AgentGateway`, or adds a second `createAgentHost()` construction
-funnel. Merge resolution must preserve both dated amendments and #1409's path
-migrations. If #1409 has landed, the merged tree must resolve
+Applicable MCP effect/run slices consume #1409's exact
+`[durable-streams]` rollout child `wt-391-forward-9p50.2` (after Level-D child
+`.1`) and `[seat-audit-attribution]` projection child
+`wt-391-forward-shell-ngfs.14.2` (after host-catalog child `.14.1`) rather than
+creating parallel stores or display-only provenance. These rows exist at
+#1409's exact reviewed head; MCP dependencies must target the completion
+children, not their non-dispatchable program epics.
+
+Neither MCP plan selects the unresolved Thread storage representation, creates
+an A2A/MCP loopback, widens the frozen seven-method `AgentGateway`, or adds a
+second `createAgentHost()` construction funnel. #1409's canonical
+`docs/vision/` and non-scheduling `docs/roadmap/` layers remain above these
+issue details; this amendment neither duplicates nor contradicts them. Exact
+synthetic merge analysis reports content conflicts in `.beads/issues.jsonl`,
+this file, and the #806/#807 tombstones; merge resolution must preserve both
+dated amendments, both tombstones, all #1409 Beads, the eight gh900 Beads, and
+#1409's path migrations. The resolved tree must contain
 `docs/plans/agent-runtime/gateway/plan.md` and
 `docs/plans/agent-runtime/fleet-and-environments/plan.md`; retaining their old
 issue-folder locations as canonical is a failed merge.

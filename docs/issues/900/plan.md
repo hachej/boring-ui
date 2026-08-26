@@ -17,10 +17,13 @@ planning PR: this file remains the canonical **outbound Composio Connector**
 plan, while [`../806/external-workspace-mcp-plan.md`](../806/external-workspace-mcp-plan.md)
 owns **inbound MCP Access**. The plans share canonical kernel seams but not
 transport direction, grants, provider registration, or product UI. The separate
-pending premises-first PR #1409 was reviewed through `016397fef`: if it lands,
-#1415 appends after its `DIRECTION.md` amendment and establishes planning
-records only. Neither discovery nor execution enters Wave A/Wave B until a
-later owner amendment places the exact slice. This plan reconciles:
+pending premises-first PR #1409 was reviewed at owner-authored exact head
+`7732c191698fed3d940565a1c874075baa2a7a19`, including its canonical
+`docs/vision/`, non-scheduling `docs/roadmap/`, split premise Beads, moved paths,
+and merge contract. #1415 appends planning records only. Regardless of merge
+order, neither discovery nor execution enters Wave A/Wave B until a later
+`DIRECTION.md` owner amendment places the exact slice; no plan, Bead, tracker,
+or implementation brief can substitute for that placement. This plan reconciles:
 
 - issue #900 and its owner comments;
 - capability proof PR #910 / `docs/issues/900/composio-capability-spike.md`;
@@ -546,10 +549,11 @@ A2a -> A2b/C7 host session catalog -----------------------> C2
 
 The closure also includes every remaining incoming edge in the frozen canonical
 DAG. A7 invocation-scoped authority and A8 revocation are unconditional 900.2
-prerequisites, not “where applicable.” If #1409 lands, `[durable-streams]`
-(`wt-391-forward-9p50`) must be Level-D/default-on and
-`[seat-audit-attribution]` (`wt-391-forward-shell-ngfs.14`) must be green before
-900.2. These are canonical C6/C7 receipts, not Connector-local stores. This plan
+prerequisites, not “where applicable.” After #1409, `[durable-streams]` completion child
+`wt-391-forward-9p50.2` must be green after Level-D child `.1`, and
+`[seat-audit-attribution]` completion child
+`wt-391-forward-shell-ngfs.14.2` must be green after host-catalog child `.14.1`
+before 900.2. These are canonical C6/C7 receipts, not Connector-local stores. This plan
 does not shorten, reorder, or duplicate that graph. Placeholder issue-local
 beads are not proof that predecessors exist. The architecture Steward must
 provide exact bead/PR/conformance references before 900.2 becomes
@@ -880,9 +884,10 @@ returns as identity proof, or exactly-once provider execution claims.
 ### 900.2 execution acceptance
 
 1. C2 and its complete canonical predecessor closure are implemented,
-   referenced, and conformance-green; A7/A8 are green; if #1409 has landed,
-   `[durable-streams]` is Level-D/default-on and `[seat-audit-attribution]` is
-   green; no issue-local substitutes.
+   referenced, and conformance-green; A7/A8 are green; after #1409,
+   `[durable-streams]` completion child `wt-391-forward-9p50.2` and
+   `[seat-audit-attribution]` completion child
+   `wt-391-forward-shell-ngfs.14.2` are green; no issue-local substitutes.
 2. C5×C6 durable handoff survives every named crash point without consumed-
    approval/no-Run gap or redispatch.
 3. C2's canonical event/API preserves real child slug, parent, Run, plan, and
@@ -915,7 +920,7 @@ issue remains open if only discovery ships.
 python - <<'PY'
 from html.parser import HTMLParser
 from pathlib import Path
-import json, subprocess
+import json, os, subprocess, tempfile
 
 ids = {
     "wt-391-forward-gh900-composio-protocol-custody-ytk2",
@@ -989,6 +994,8 @@ for token in ["inbound MCP Access", "outbound MCP Connectors", "first-class chil
 for token in [
     "RunId := RequestKey",
     "confidentiality-protected wire",
+    "fixed-size padded frame",
+    "Owner gate — exact native Host capability",
     "direct-effect result record",
     "envelope's terminal digest",
 ]:
@@ -1000,8 +1007,20 @@ for forbidden in [
 ]:
     assert forbidden not in inbound, forbidden
 assert "startup-blocked" in md and "never a fallback path into acceptance" in md
-for token in ["premises-first", "wt-391-forward-9p50", "wt-391-forward-shell-ngfs.14"]:
+pr1409 = "7732c191698fed3d940565a1c874075baa2a7a19"
+for token in ["premises-first", "wt-391-forward-9p50.2", "wt-391-forward-shell-ngfs.14.2"]:
     assert token in md and token in inbound and token in direction, token
+rows1409 = {
+    r["id"]: r for r in map(json.loads, subprocess.check_output(
+        ["git", "show", f"{pr1409}:.beads/issues.jsonl"], text=True
+    ).splitlines())
+}
+assert rows1409["wt-391-forward-9p50.2"]["status"] == "open"
+assert rows1409["wt-391-forward-shell-ngfs.14.2"]["status"] == "open"
+assert any(d["depends_on_id"] == "wt-391-forward-9p50.1" for d in rows1409["wt-391-forward-9p50.2"]["dependencies"])
+assert any(d["depends_on_id"] == "wt-391-forward-shell-ngfs.14.1" for d in rows1409["wt-391-forward-shell-ngfs.14.2"]["dependencies"])
+for path in ["docs/vision/README.md", "docs/roadmap/README.md", "docs/plans/agent-runtime/gateway/plan.md", "docs/plans/agent-runtime/fleet-and-environments/plan.md"]:
+    subprocess.check_call(["git", "cat-file", "-e", f"{pr1409}:{path}"])
 assert "Audit/envelope metadata" in bead_text and "Agent-owned record" in bead_text
 assert len(old_inbound.splitlines()) < 60
 assert "e95b683fa3ca68cccd01531da698914da820493f:docs/issues/806/plan.md" in old_inbound
@@ -1009,12 +1028,44 @@ assert "none of the former" in old_inbound.lower()
 assert ("ChildToolCall" + "Event") not in md
 assert ("type:" + '"tool_call"') not in md
 assert "confidentiality-protected" in html and "runRef" not in html
-if "## Amendment 2026-08-26 — the premises re-sequencing" in direction:
-    for path in [
-        "docs/plans/agent-runtime/gateway/plan.md",
-        "docs/plans/agent-runtime/fleet-and-environments/plan.md",
-    ]:
-        assert Path(path).exists(), path
+# Build an unreferenced synthetic commit from the exact tracked working tree
+# through a temporary index; this neither stages nor modifies the real index.
+with tempfile.NamedTemporaryFile() as idx:
+    env = os.environ | {
+        "GIT_INDEX_FILE": idx.name,
+        "GIT_AUTHOR_NAME": "planning-proof",
+        "GIT_AUTHOR_EMAIL": "planning-proof@example.invalid",
+        "GIT_COMMITTER_NAME": "planning-proof",
+        "GIT_COMMITTER_EMAIL": "planning-proof@example.invalid",
+    }
+    subprocess.check_call(["git", "read-tree", "HEAD"], env=env)
+    subprocess.check_call(["git", "add", "-u"], env=env)
+    tree = subprocess.check_output(["git", "write-tree"], env=env, text=True).strip()
+    exact_tree_commit = subprocess.check_output(
+        ["git", "commit-tree", tree, "-p", "HEAD", "-m", "exact working tree gate"],
+        env=env, text=True
+    ).strip()
+merge = subprocess.run(
+    ["git", "merge-tree", "--write-tree", pr1409, exact_tree_commit],
+    text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+)
+assert merge.returncode == 1, merge.stdout
+expected_conflicts = {
+    ".beads/issues.jsonl",
+    "docs/direction/DIRECTION.md",
+    "docs/issues/806/plan.md",
+    "docs/issues/807/plan.md",
+}
+conflict_prefix = "CONFLICT (content): Merge conflict in "
+actual_conflicts = {
+    line.removeprefix(conflict_prefix)
+    for line in merge.stdout.splitlines()
+    if line.startswith(conflict_prefix)
+}
+assert actual_conflicts == expected_conflicts, (actual_conflicts, expected_conflicts)
+# These conflicts are an explicit merge gate, not a waiver: resolution must
+# preserve #1409's premise rows/vision/roadmap/moved paths and this PR's eight
+# gh900 rows, direction amendment, and tombstones.
 assert "<script" not in html
 HTMLParser().feed(html)
 PY
@@ -1062,8 +1113,8 @@ All eight implementation beads exist in `.beads/issues.jsonl` and are
 bounded file scope, dependencies, acceptance criteria, priority, and a one-
 session 300–420 minute estimate. Every slice is capped at **≤1500 added/modified
 production LOC**; tests/docs do not count toward that numeric cap but do count
-toward review breadth. Split before review rather than waive the cap. The Beads
-graph—not this summary—is dispatch authority.
+toward review breadth. Split before review rather than waive the cap. The Beads graph owns executable dependency detail, but
+`docs/direction/DIRECTION.md` alone owns dispatch placement.
 
 ### Slice 900.1a — Shared Composio protocol custody
 
@@ -1304,9 +1355,8 @@ tracking only when prerequisites, access and owner gates make it dispatchable.
 
 Until 1-3 are resolved and independent review is clean, Gate 1 remains blocked
 and no implementation slice is `ready-for-agent`. Decision 4 additionally
-blocks 900.2 even after discovery is approved. If #1409 lands, its sole
-`DIRECTION.md` dispatch queue is an additional global gate: #1415 itself places
-no #900 slice in Wave A or Wave B.
+blocks 900.2 even after discovery is approved. After #1409, its sole `DIRECTION.md` dispatch queue is the global placement
+gate: #1415 itself places no #900 slice in Wave A or Wave B.
 
 ## Adversarial review record
 
@@ -1353,9 +1403,11 @@ Combined-program alignment retained: #806 inbound Access consumes only the
 exact resident Connector tool, preserves this plan's C5/provider authority and
 C2 first-class child identity, and creates no duplicate runtime, approval store,
 ledger, or child event. The #1409 consistency audit additionally makes A7/A8
-unconditional for 900.2, consumes its Level-D and audit-grade Seat premises when
-landed, leaves Thread storage undecided, and keeps #1409's post-premises queue as
-the only dispatch authority.
+unconditional for 900.2, consumes exact completion children
+`wt-391-forward-9p50.2` and `wt-391-forward-shell-ngfs.14.2`, leaves Thread
+storage undecided, preserves the canonical vision/roadmap layers and moved
+paths, and keeps DIRECTION's post-premises queue as the only dispatch
+authority.
 
 Confirmed retained decisions: exact-origin custody, host-only provenance,
 source-revision fence, crash-safe C5×C6 handoff, C2's complete canonical
@@ -1367,5 +1419,23 @@ RFC 8785 JCS, three small 900.1 relands, PR #1309 as quarry, and
 blockers remain durable cleanup storage/secret-handle authority, curated
 transport hardening approval, exact canonical predecessor ownership/references,
 and the documented owner gates. Subject migration policy remains a separate
-blocker before 900.2. After those decisions,
-rerun independent T1 falsification on the exact artifacts before changing state.
+blocker before 900.2. After those decisions, rerun independent T1 falsification
+on the exact artifacts before changing state.
+
+### Complete /plan workflow refresh — exact heads
+
+Target: #1415 base head `1684badaad4da74dadadeed57d677f3033eb624d`
+plus the final unstaged planning revisions; cross-program authority: owner-authored
+#1409 head `7732c191698fed3d940565a1c874075baa2a7a19`.
+
+| Round | Reviewer | Verdict | Accepted / rejected |
+| --- | --- | --- | --- |
+| 1 — `/skill:fresh-eyes` | Sol xhigh / T1 | REVISE | Accepted sole-DIRECTION wording, exact-head/merge-contract proof, and premise checks. #1409 then advanced and supplied the formerly missing split premise Beads, so final references use completion children `.2` and `.14.2`. |
+| 2 | GPT-5.5 xhigh / strong Codex | CLEAN | No material finding. |
+| 3 | Sol xhigh / T1 security falsification | REVISE | Accepted fixed-length padded RunId framing. Accepted the private-Host-seam contradiction as an explicit inbound owner/D29 gate; rejected implicit `LeaseBoundWorkspaceAgent` widening. |
+| 4 | GPT-5.4 xhigh / strong Codex | CLEAN | Verified round-3 fixes, exact children, graph, artifact, and merge contract. |
+
+Failed Anthropic, Gemini, OpenRouter, and xAI routing attempts supplied no
+review findings and are not evidence. An independent final plan gate runs after
+this review record and all final validation; only that exact-tree gate may
+support the workflow verdict.

@@ -68,12 +68,14 @@ Connectors #900/#1011, and binds both plans to their shared C2/C5/C6/C7 seams
 without conflating products. This issue plan remains subordinate; the amendment
 becomes authority only when the combined PR lands.
 
-PR #1409 is a separate pending premises-first/ratification program, reviewed for
-consistency through `016397fef`. If it lands first, its `DIRECTION.md` amendment
-remains the sole dispatch queue and this plan's amendment appends after it.
-Landing #1415 establishes MCP planning authority but does not place any #806
-slice into Wave A or Wave B; a later owner amendment must place the exact slice.
-The old “External MCP complete/paused” row refers only to earlier generic
+PR #1409 is a separate pending premises-first/ratification program, reviewed at
+owner-authored exact head `7732c191698fed3d940565a1c874075baa2a7a19`.
+Regardless of merge order,
+`DIRECTION.md` remains the sole dispatch queue. Landing #1415 establishes MCP
+planning records but does not place any #806 slice into Wave A or Wave B; after
+#1409, a later owner amendment must place the exact slice. A plan, Bead,
+tracker, or implementation brief cannot substitute for that placement. The old
+“External MCP complete/paused” row refers only to earlier generic
 source/registration/read-only work, not this inbound resource-server edge.
 
 ### Pointer migration included in PR #1415
@@ -108,8 +110,13 @@ items, including their transitive dependencies, gate these #806 capabilities:
 | `C5` durable pause | ordered predecessor to C6 |
 | `C6` accepted-work/commit protocol | direct effects, Agent runs, durable status/cancel |
 | `C7` Seat/session catalog | internal Agent→Seat resolution and provenance |
-| `[durable-streams]` / `wt-391-forward-9p50` if #1409 lands | Level-D default-on receipt/stream substrate before effect, Agent-run, status, cancel, and revocation-stream slices |
-| `[seat-audit-attribution]` / `wt-391-forward-shell-ngfs.14` if #1409 lands | audit-grade C7 `seatId` through accepted effects, Agent records, artifacts, usage, and audit |
+| `[durable-streams]` completion child `wt-391-forward-9p50.2` after #1409 | Level-D/default-on receipt after conformance child `.1`, before effect, Agent-run, status, cancel, and revocation-stream slices |
+| `[seat-audit-attribution]` completion child `wt-391-forward-shell-ngfs.14.2` after #1409 | audit-grade C7 `seatId` projection after host-catalog child `.14.1`, through accepted effects, Agent records, artifacts, usage, and audit |
+
+The exact completion-child rows exist at #1409's reviewed head. MCP dependencies
+must target those children, not the non-dispatchable program epics. Merge
+resolution must preserve all #1409 rows plus the eight gh900 rows before exact
+external edges can be attached and proven.
 
 These #1409 receipts refine, rather than duplicate, C6/C7. No MCP slice may
 create a parallel event/replay store or substitute display identity for C7.
@@ -139,9 +146,10 @@ This candidate auth/permissions/public-protocol/deletion/release plan is
 `ready-for-owner`, blocked on the combined planning PR landing. Issue #806 is
 currently closed and its 2026-08-05 owner comment absorbed the pre-Decision-28
 plan into #391; the amendment in PR #1415 is the explicit owner-authorized
-reactivation. Landing that PR establishes planning authority only. No slice,
-including Slice 0, dispatches until a separate owner-approved implementation
-tracker/brief names it; P-1 must additionally land before feature Slice 1.
+reactivation. Landing that PR establishes planning authority only. No slice, including Slice
+0, dispatches until `DIRECTION.md` explicitly places that exact slice; an
+owner-approved tracker/brief may describe the work but cannot dispatch it. P-1
+must additionally land before feature Slice 1.
 
 ## 1. Problem and current reality
 
@@ -194,6 +202,13 @@ remain current at the new snapshot.
   and runtime facts. Its projection is private to Host composition.
 - `AgentGateway` in `packages/agent/src/shared/gateway/types.ts` is
   session-oriented. It has no direct-tool or model-discovery method.
+- The exact native `AgentTool` and its workspace/run/readiness binding exist on
+  private `AgentHostRuntimeCapabilityBinding`; today's public
+  `CreatedAgentHost`, `LeaseBoundWorkspaceAgent`, Gateway, and environment seams
+  do not expose that object. Therefore Slice 2/3 cannot honestly implement
+  exact-object discovery/execution without a D29-compatible Host capability
+  projection decision. This plan may not reconstruct tools, route through an
+  LLM, add a second composer, or widen `CreatedAgentHost`/Gateway implicitly.
 - Native `AgentTool` in `packages/agent/src/shared/tool.ts` contains name,
   description, JSON Schema, readiness requirements, and `execute`. Its trusted
   context carries abort, update, session/user/workspace/request identity.
@@ -551,9 +566,15 @@ identity. Slice 1 must select a reviewed deterministic misuse-resistant AEAD
 construction and library, with version/resource/issuer bound as associated
 data, a server-custodied versioned key, stable replay encoding, dual-read key
 rotation, strict size limits, canonical round-trip validation, and tamper/
-wrong-key/wrong-resource rejection. Decoding recovers the complete RequestKey;
-the wire value reveals none of `workspaceScopeId`, `authSubjectId`, `seatId`,
-`agentId`, session/target ids, operation, or raw `requestId`. There is no
+wrong-key/wrong-resource rejection. Before encryption, canonical bytes enter
+one versioned fixed-size padded frame selected from a source census; the
+authenticated inner length is bounded, padding is canonical and verified, and
+oversize input fails rather than selecting a variable-length fallback. Every
+valid v1 wire handle therefore has one constant length across operation/target
+shapes and minimum/maximum internal identifier lengths. Decoding recovers the
+complete RequestKey; content and length reveal none of `workspaceScopeId`,
+`authSubjectId`, `seatId`, `agentId`, session/target ids, operation, or raw
+`requestId`. There is no
 hash-derived run identity, durable `runId → RequestKey` index, reconciliation
 table, collision policy, or second UUID.
 
@@ -1075,11 +1096,11 @@ MCP is never a product rollback target.
 
 - current-standard MCP Access protocol/schema/transport module;
 - a generic `createMcpAccessRoutes(input)` Fastify plugin mounted by Core/app
-  composition beside the unchanged direct routes; it consumes only the existing
-  `gateway`, `runWithWorkspaceAgent`, and `acquireEnvironment` Host seams plus
-  injected authorization/Seat/A7 services—no new Gateway method,
-  `AgentHostDirectProjectionOptions` field, Host-result registrar, or
-  construction funnel;
+  composition beside the unchanged direct routes; its exact native-capability
+  input is blocked on an owner-approved D29-compatible Host projection. This
+  plan does not add a Gateway method, `CreatedAgentHost`/direct-projection
+  member, Host-result registrar, or construction funnel, and it forbids
+  reconstructing the exact tool outside Host;
 - generic injected authorized-Seat projection contract; Agent consumes but does
   not create or catalog Seats;
 - resolved native-tool catalog and direct executor;
@@ -1125,9 +1146,9 @@ migration in the owning C6/C7/app slice.
 amendment to `docs/direction/DIRECTION.md` establishing inbound #806 separately
 from outbound #1011, (2) the §0 pointer migration, (3) this candidate's review/
 owner acceptance, and (4) a separate owner-approved implementation tracker or
-brief dispatching that exact slice. If #1409 has landed, (1) additionally means
-a later explicit owner amendment placing that exact slice in its post-premises
-queue; #1415's planning amendment is not placement. This does not make Slice 0
+brief dispatching that exact slice. After #1409, (1) additionally means a later
+explicit owner amendment placing that exact slice in its post-premises queue;
+#1415's planning amendment is not placement. This does not make Slice 0
 depend on P-1. The combined planning PR alone dispatches nothing, and no
 issue-plan wording can waive the global gate.
 
@@ -1177,8 +1198,9 @@ handler before auth. Existing outbound Connectors remain green.
 ### Slice 2 — Single composer, Agent discovery, and native catalog (~1450 LOC)
 
 **Depends on:** global direction gate; 1; P0.4; Workspace-owned C7 authorized
-Seat projection; if #1409 lands, `[seat-audit-attribution]` before any claim of
-durable Seat provenance.
+Seat projection; the owner-approved D29-compatible exact native-capability
+projection gate; after #1409, `[seat-audit-attribution]` completion child
+`wt-391-forward-shell-ngfs.14.2` before any claim of durable Seat provenance.
 
 Land generic `createMcpAccessRoutes(input)` and mount it at Core/app Fastify
 composition beside the unchanged `created.registerDirectRoutes(...)` plugin.
@@ -1201,8 +1223,9 @@ owner review.
 ### Slice 3 — Project C6 direct native effects (~1350 LOC)
 
 **Depends on:** global direction gate; 2; A8; C6 direct-effect admission;
-Workspace-owned C7 provenance; if #1409 lands, `[durable-streams]` Level D
-must be default-on and `[seat-audit-attribution]` must be green.
+Workspace-owned C7 provenance; after #1409, `[durable-streams]` completion
+child `wt-391-forward-9p50.2` and `[seat-audit-attribution]` completion child
+`wt-391-forward-shell-ngfs.14.2` must be green.
 
 Implement `agent_tool_call` over the exact catalog object and canonical C6
 identity, including schema/readiness, trusted context, abort/update, replay,
@@ -1235,8 +1258,9 @@ Uninstrumented may-use-model tools remain unqualified.
 
 **Depends on:** global direction gate; 3; A7 and A8; C5 then C6 authoritative
 accepted-run/status/targeted cancel; Workspace-owned C7 session/Seat catalog;
-if #1409 lands, `[durable-streams]` Level D must be default-on and
-`[seat-audit-attribution]` must be green.
+after #1409, `[durable-streams]` completion child
+`wt-391-forward-9p50.2` and `[seat-audit-attribution]` completion child
+`wt-391-forward-shell-ngfs.14.2` must be green.
 
 Implement `agent_models_list`, `agent_run`, status, and run-targeted cancel over
 general A7/C6/C7 seams. Do not use ambient model registry, prompt-acceptance as
@@ -1245,8 +1269,9 @@ terminal, a second ledger, or session-wide stop.
 **Acceptance:** ambient auth canary absent; list/run use the same issuer/path
 but fresh capabilities, with run authoritative; default/allowed/denied model;
 new-session admission atomically records its session and existing-session target
-is reauthorized; complete RequestKey/digest/sealed canonical RunId encoding and
-bounded request ids;
+is reauthorized; complete RequestKey/digest/sealed canonical RunId encoding, one constant-length
+v1 padded frame across all operation/target/id-length cases, and bounded request
+ids;
 authoritative terminal from the per-session record; envelope contains no
 `finalText` or model-visible content; waiter disconnect; background/status after
 reauthorization; `targetRunId`/`cancelRunId` separation, cancel replay/conflict/
@@ -1395,7 +1420,7 @@ normal thermo review.
 | Safe discovery | no prompt/toolCount/private fields; optional digest | inspect real response |
 | Native catalog | exact resident object, collision, readiness, current schema; no provider-child materialization | real direct and Connector discovery tools |
 | Connector child boundary | C2 predecessor/conformance gate; native parent plus first-class child identity; existing approval; no flattening/second store | approved/denied/unknown provider operation retains parent/child audit |
-| Direct durability | complete RequestKey/digest/sealed canonical RunId encoding; no identity index; Agent-owned direct-effect result record; envelope contains digest/references only; cross-operation isolation; disconnect/replay; no duplicate effect | reconnect to accepted call |
+| Direct durability | complete RequestKey/digest/sealed constant-length canonical RunId encoding; no content/length disclosure or identity index; Agent-owned direct-effect result record; envelope contains digest/references only; cross-operation isolation; disconnect/replay; no duplicate effect | reconnect to accepted call |
 | Models | fresh A7 capability per list/run through same issuer/path; ambient auth absent | real allowed/denied models |
 | Agent runs | terminal-not-acceptance; wait/background; target-only status; distinct targetRunId/cancelRunId; cancel replay/conflict | disconnect/reconnect real run |
 | Revocation | AS logout/token revocation/product disconnect separated; race fence; grant-only active stop; membership-wide denial | real disconnect versus logout/token revoke/member removal |
@@ -1443,8 +1468,8 @@ name the pinned protocol/client, and explain live same-workspace artifacts.
 Stop if:
 
 - `DIRECTION.md` has not landed an owner amendment establishing inbound #806
-  separately from outbound #1011, or—after #1409—has not explicitly placed the
-  exact slice in the post-premises dispatch queue;
+  separately from outbound #1011 and, after #1409, has not explicitly placed
+  the exact slice in the post-premises dispatch queue;
 - the three §0 live authority pointers have not migrated to this candidate;
 - feature Slice 1–8 lacks P-1 or its named P0.4/A7/A8/C5/C6/C7 prerequisite,
   including applicable #1409 Level-D and audit-grade Seat receipts;
@@ -1461,6 +1486,8 @@ Stop if:
 - model listing/execution uses ambient Pi auth;
 - terminal means prompt accepted, cancel is session-wide, or cancellation
   claims reversal of a non-cooperative/external effect;
+- implementation reconstructs native tools outside Host or widens
+  `CreatedAgentHost`/`AgentGateway` without the explicit D29 owner gate;
 - implementation creates a second ledger/runtime/model/tool/workspace authority;
 - may-use-LLM tool lacks actual-usage reporting;
 - artifact exposes root/cross-workspace/tombstone path or token URL, or uses raw
@@ -1472,11 +1499,12 @@ Stop if:
 
 Open implementation/external blockers, not product decisions:
 
-1. Landing combined PR #1415 establishes planning authority. A separate
-   owner-approved implementation tracker/brief is the first dispatch barrier
-   for each slice; after #1409, a later explicit `DIRECTION.md` queue placement
-   is also required. P-1 is then first for feature work, with
-   P0.4/A7/A8/C5/C6/C7 and applicable Level-D/Seat receipts gating named slices.
+1. Landing combined PR #1415 establishes planning records. After #1409, an
+   explicit `DIRECTION.md` queue placement is the dispatch barrier for each
+   slice; a separate owner-approved implementation tracker/brief is also
+   required but cannot substitute for placement. P-1 is then first for feature
+   work, with P0.4/A7/A8/C5/C6/C7 and applicable Level-D/Seat receipts gating
+   named slices.
 2. Hydra device-flow RFC 8707 resource/audience propagation must be proven only
    before device flow is enabled.
 3. C6 needs the §4.3 operation/target additions, separate `originGrantId`
@@ -1484,9 +1512,15 @@ Open implementation/external blockers, not product decisions:
    run-targeted cancellation while retaining human `authSubjectId`.
 4. Workspace/C7's actual internal Agent→authorized-unique-Seat projection must
    be verified when it lands.
-5. Seneca shared-store/cross-replica revocation topology and measured revocation
+5. **Owner gate — exact native Host capability:** current public D29 Host seams
+   cannot expose the private resolved `AgentTool`/readiness/workspace/run binding
+   required by Slices 2–3. The owner/architecture Steward must approve a
+   D29-compatible projection or an explicit D29 re-evaluation. Until then,
+   `CreatedAgentHost`, `AgentGateway`, and the single Host funnel remain
+   unwidened; reconstruction, LLM routing, and a second composer are forbidden.
+6. Seneca shared-store/cross-replica revocation topology and measured revocation
    propagation bound must be chosen/proven.
-6. Effectful full-catalog Connector tools remain externally unqualified until
+7. Effectful full-catalog Connector tools remain externally unqualified until
    C2's complete canonical predecessor closure and the Connector-specific
    C5×C6/C2 conformance (including #900.2 for Composio) are green.
 
@@ -1498,8 +1532,8 @@ inbound #806 direction amendment, pointer migration, this plan, and the outbound
 #900 Composio plan. Until it lands, neither plane gains new dispatch authority.
 
 Afterward, create or approve the exact Slice 0 implementation tracker/brief and,
-if #1409 has landed, record its explicit post-premises queue placement; only
-those separate actions may dispatch its reference audit/deletion. Complete/
+after #1409, record its explicit post-premises `DIRECTION.md` queue placement;
+only both actions together may dispatch its reference audit/deletion. Complete/
 verify P-1 in parallel or next; Slice 1 additionally requires its own dispatch
 approval and cannot start until both Slice 0 and P-1 are complete. Outbound
 slices remain independently blocked by #900's named gates and queue placement.
@@ -1580,17 +1614,22 @@ nine internal edges, serial reland, and planning-only containment.
 
 ### PR #1409 cross-program consistency audit
 
-Two independent architecture reviews compared #1415 with pending #1409 through
-`016397fef`. Dispositions applied here and in the outbound plan:
+Earlier architecture reviews compared #1415 with pending #1409 through
+`016397fef`; this workflow re-ran consistency against owner-authored exact head
+`7732c191698fed3d940565a1c874075baa2a7a19`, including its canonical
+`docs/vision/`, non-scheduling `docs/roadmap/`, split premise Beads, moved paths,
+and merge contract. Dispositions applied here and in the outbound plan:
 
 - #1409's premises-first amendment remains the sole future dispatch queue;
   #1415 appends planning authority and places no slice in Wave A/Wave B;
 - D29's package `AGENT_GATEWAY_V0.md` remains binding; Core/app mounts MCP
   beside unchanged direct routes using existing Host seams, without a Gateway
   method, direct-projection option, registrar, or second Host funnel;
-- landed `[durable-streams]` and `[seat-audit-attribution]` become exact
-  prerequisites for applicable effects/runs/provenance, with no duplicate
-  replay or identity store;
+- `[durable-streams]` completion child `wt-391-forward-9p50.2` and
+  `[seat-audit-attribution]` completion child
+  `wt-391-forward-shell-ngfs.14.2` are the exact prerequisites for applicable
+  effects/runs/provenance, with no duplicate replay or identity store; merge
+  resolution must preserve their rows before exact external edges are attached;
 - this plan makes no Thread-storage decision: D29 sessions and C6 Agent-owned
   effect records are not a new multi-seat Thread representation; and
 - the public `RunId` wire encoding is sealed so the branded RequestKey remains
@@ -1613,3 +1652,24 @@ The review packet and follow-up gate are integrated, but this candidate remains
 `ready-for-owner` with `first-blocker: combined-plan-merge`. Review does not
 substitute for resolving PR #1415's recorded owner decisions, owner acceptance,
 or landing the combined amendment and plans.
+
+### Complete /plan workflow refresh — exact heads
+
+Target: #1415 base head `1684badaad4da74dadadeed57d677f3033eb624d`
+plus the final unstaged planning revisions; cross-program authority: owner-authored
+#1409 head `7732c191698fed3d940565a1c874075baa2a7a19`.
+
+| Round | Reviewer | Verdict | Disposition |
+| --- | --- | --- | --- |
+| 1 — `/skill:fresh-eyes` | Sol xhigh / T1 | REVISE | Accepted sole-DIRECTION wording, exact-head/merge-contract proof, and exact premise reconciliation. The then-current missing-Bead finding became obsolete when #1409 advanced and exported split premise rows; the final plan targets completion children `.2` and `.14.2`. |
+| 2 | GPT-5.5 xhigh / strong Codex | CLEAN | No material changes. |
+| 3 | Sol xhigh / T1 security falsification | REVISE | Accepted constant-length padded RunId framing. Accepted the Host-seam inconsistency as an explicit owner/D29 gate rather than the reviewer's suggested implicit seam widening. |
+| 4 | GPT-5.4 xhigh / strong Codex | CLEAN | Verified both round-3 findings closed and all combined-program invariants retained. |
+
+Rejected/non-applicable proposals: implicitly extending
+`LeaseBoundWorkspaceAgent` was not adopted because the owner requires
+D29/`CreatedAgentHost`/Gateway to remain unwidened without an explicit ruling;
+this is now a blocking owner gate, not a silent architecture change. Failed
+Anthropic, Gemini, OpenRouter, and xAI routing attempts supplied no review
+findings and are not evidence. The exact final working tree still requires the
+independent final plan gate recorded in the outbound canonical plan.
