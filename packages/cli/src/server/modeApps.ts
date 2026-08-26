@@ -694,11 +694,9 @@ export async function createWorkspacesModeApp(opts: {
     backendRegistry: InstanceType<typeof workspaceServer.RuntimeBackendRegistry>
     ensureLoaded: Promise<void>
   }>()
-  type CliPackageResourceRegistry = Awaited<ReturnType<typeof workspaceServer.resolveWorkspacePackageResources>>
-  interface CliPackageResourceSnapshot {
-    readonly registry: CliPackageResourceRegistry
-    readonly binding?: RuntimeFilesystemBinding
-  }
+  type CliPackageResourceSnapshot = Awaited<ReturnType<
+    typeof workspaceServer.resolveWorkspacePackageResourceSnapshot<RuntimeFilesystemBinding>
+  >>
   const pluginPiSnapshots = new Map<string, CliPluginPiSnapshot>()
   const packageResourceSnapshots = new Map<string, CliPackageResourceSnapshot>()
   const packageResourceDiagnostics = new Map<string, Array<{ source: string; message: string; pluginId?: string }>>()
