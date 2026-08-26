@@ -138,6 +138,7 @@ interface NormalizedListOptions {
   includeId: string | undefined;
   includeEmpty: boolean;
   archived: SessionArchiveFilter;
+  after: SessionListOptions["after"];
 }
 
 /** `archived` is present (true) only while archived, so the wire stays quiet. */
@@ -160,6 +161,7 @@ function normalizeListOptions(options: SessionListOptions | undefined): Normaliz
     includeId: options?.includeId,
     includeEmpty: options?.includeEmpty === true,
     archived: options?.archived ?? "all",
+    after: options?.after,
   };
 }
 
@@ -227,6 +229,7 @@ export class PiSessionStore implements SessionStore {
       normalizedOptions.includeId ?? null,
       normalizedOptions.includeEmpty,
       normalizedOptions.archived,
+      normalizedOptions.after ?? null,
     ]);
     const inFlight = this.listInFlight.get(inFlightKey);
     if (inFlight) return inFlight;
@@ -279,9 +282,16 @@ export class PiSessionStore implements SessionStore {
     // opposite-state prefix costs bounded prefix reads, not one full transcript
     // summary per hidden session. includeId is resolved separately below.
     const archivedIds = await readArchivedSessionIds(this.sessionDir);
+    const after = options.after;
+    const afterFiles = after
+      ? visibleFiles.filter((file) => compareSessionOrder(
+        [file.sortMtimeMs, after.agentTypeId, file.sortId],
+        after.position,
+      ) > 0)
+      : visibleFiles;
     const filteredFiles = options.archived === "all"
-      ? visibleFiles
-      : visibleFiles.filter((file) => (
+      ? afterFiles
+      : afterFiles.filter((file) => (
         archivedIds.has(file.sortId) === (options.archived === "archived")
       ));
     const pageSummaries = await this.summarizeVisiblePage(filteredFiles, {

@@ -318,14 +318,8 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
     const wasExhaustedBeyondFirstPage = applyOptions.background
       && !hasMoreRef.current
       && canonicalLoadedCountRef.current >= canonicalCount
-    const requestedActiveReturned = Boolean(requestedActiveId && filteredData.some((session) => session.id === requestedActiveId))
-    const currentActive = applyOptions.background && pageMayHaveMore
-      ? filterPagersRef.current.active.sessions.filter((session) => (
-        !requestedActiveId || requestedActiveReturned || session.id !== requestedActiveId
-      ))
-      : []
     filterPagersRef.current.active = {
-      sessions: mergeSessions(filteredData, currentActive.filter((session) => !deletedIds.has(session.id))),
+      sessions: mergeSessions(filteredData),
       nextCursor: applyOptions.nextCursor,
       loaded: true,
     }
@@ -408,7 +402,13 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
       let page: SessionPage | undefined
       for (let attempt = 0; ; attempt += 1) {
         try {
-          page = await fetchSessionList(fetchImpl, sessionsListUrl(), requestHeaders())
+          page = await fetchSessionPrefix({
+            fetchImpl,
+            firstUrl: sessionsListUrl(),
+            nextUrl: (cursor) => sessionsListUrl(cursor),
+            headers: requestHeaders(),
+            minimumRows: filterPagersRef.current.active.sessions.length,
+          })
           break
         } catch (err) {
           const transient = err instanceof SessionsPreparingError || isNetworkFetchError(err)

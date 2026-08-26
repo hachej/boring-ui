@@ -257,6 +257,14 @@ export class EmbeddedAgentGateway implements AgentGateway {
       const listed = await this.runtime.listSessionSummaries(agentTypeId, input.scope, claim, {
         limit: pagePlan.perAgentLimit,
         archived: pagePlan.archived,
+        ...(pagePlan.after
+          ? {
+              after: {
+                position: [pagePlan.after.updatedAt, pagePlan.after.agentTypeId, pagePlan.after.sessionId],
+                agentTypeId,
+              },
+            }
+          : {}),
       })
       for (const item of listed) {
         const ref = { agentTypeId, sessionId: item.id }

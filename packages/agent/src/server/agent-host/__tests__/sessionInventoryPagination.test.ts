@@ -279,11 +279,75 @@ describe('seat session listing pagination', () => {
         Array.from({ length: total }, (_unused, index) => `session-${total - 1 - index}`),
       )
 
-      // The listing NEVER asks the store for the whole directory: each read is
-      // bounded, and the bound only grows by the page size as paging deepens.
+      // The listing NEVER asks the store for the whole directory. Every page
+      // pushes its cursor boundary into the store and asks only for limit+1.
       expect(listOptions.length).toBe(pages)
       expect(listOptions.every((options) => typeof options?.limit === 'number')).toBe(true)
-      expect(listOptions.map((options) => options!.limit)).toEqual([3, 5, 7, 9])
+      expect(listOptions.map((options) => options!.limit)).toEqual([3, 3, 3, 3])
+      expect(listOptions[0]?.after).toBeUndefined()
+      expect(listOptions.slice(1).every((options) => options?.after?.agentTypeId === 'default')).toBe(true)
+    } finally {
+      await host.host.close()
+    }
+  })
+
+  it('does not terminate early when newer matching rows are archived between pages', async () => {
+    const sessionRoot = await temporaryRoot()
+    const workspaceRoot = join(sessionRoot, 'workspace')
+    const workspaceScopeId = 'workspace-concurrent-archive:storage-a'
+    const scope = { workspaceScopeId, authSubjectId: 'subject-a' } as AuthorizedAgentScope
+    const dir = join(sessionRoot, pathDerivedDirName(workspaceRoot))
+    const baseMs = Date.UTC(2026, 6, 20)
+    for (let index = 0; index < 5; index += 1) {
+      const id = `initial-archived-${index}`
+      await plant(dir, id, id, workspaceScopeId, baseMs + index * 60_000)
+      await writeSessionArchived(dir, id, true)
+    }
+    for (let index = 0; index < 4; index += 1) {
+      const id = `newer-active-${index}`
+      await plant(dir, id, id, workspaceScopeId, baseMs + (100 + index) * 60_000)
+    }
+
+    const host = await startHost({ agents: [legacyDefaultAgent], sessionRoot, workspaceRoot, sessionNamespace: '' })
+    try {
+      const first = await host.gateway.listSessions({
+        scope,
+        agentTypeId: 'default',
+        archived: 'archived',
+        limit: 2,
+      })
+      expect(first.sessions.map((row) => row.ref.sessionId)).toEqual([
+        'initial-archived-4',
+        'initial-archived-3',
+      ])
+      expect(first.nextCursor).toBeTypeOf('string')
+
+      // These rows now match the filter but are all newer than page one's
+      // cursor. They must not consume the bounded prefix used to find older rows.
+      for (let index = 0; index < 4; index += 1) {
+        await writeSessionArchived(dir, `newer-active-${index}`, true)
+      }
+
+      const seen = [...first.sessions.map((row) => row.ref.sessionId)]
+      let cursor = first.nextCursor
+      while (cursor) {
+        const page = await host.gateway.listSessions({
+          scope,
+          agentTypeId: 'default',
+          archived: 'archived',
+          limit: 2,
+          cursor,
+        })
+        seen.push(...page.sessions.map((row) => row.ref.sessionId))
+        cursor = page.nextCursor
+      }
+      expect(seen).toEqual([
+        'initial-archived-4',
+        'initial-archived-3',
+        'initial-archived-2',
+        'initial-archived-1',
+        'initial-archived-0',
+      ])
     } finally {
       await host.host.close()
     }

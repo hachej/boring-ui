@@ -657,6 +657,7 @@ describe('usePiSessions', () => {
       .mockResolvedValueOnce(jsonResponse(firstPage))
       .mockResolvedValueOnce(jsonResponse([session('pi-50')]))
       .mockResolvedValueOnce(jsonResponse(refreshedFirstPage))
+      .mockResolvedValueOnce(jsonResponse([session('pi-50')]))
 
     const { result } = renderHook(() => usePiSessions({
       storageScope: 'scope-a',
@@ -688,6 +689,7 @@ describe('usePiSessions', () => {
       .mockResolvedValueOnce(jsonResponse(firstPage))
       .mockResolvedValueOnce(jsonResponse([session('pi-50')]))
       .mockResolvedValueOnce(jsonResponse(firstPage))
+      .mockResolvedValueOnce(jsonResponse([]))
 
     const { result } = renderHook(() => usePiSessions({
       storageScope: 'scope-a',

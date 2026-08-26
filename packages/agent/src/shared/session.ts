@@ -53,6 +53,11 @@ export interface SessionListOptions {
   includeEmpty?: boolean
   /** Defaults to `all`: archiving is a visibility flag, not a listing default. */
   archived?: SessionArchiveFilter
+  /** Server-internal global cursor boundary applied before this store cuts its bounded prefix. */
+  after?: {
+    position: SessionOrderTuple
+    agentTypeId: string
+  }
 }
 
 export interface SessionSummary {

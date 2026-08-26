@@ -74,10 +74,9 @@ export class SessionInventoryPager {
       archived: input.archived,
       depth: cursor.depth,
       after: cursor.after,
-      // Every seat uses the same ordering as the merged page. A row at merged
-      // rank `r` cannot be deeper than `r` in its seat, and one extra row is
-      // enough to decide whether another merged page exists.
-      perAgentLimit: cursor.depth + limit + 1,
+      // The cursor boundary is pushed into every store query, so each seat only
+      // needs one page plus the lookahead row used to prove continuation.
+      perAgentLimit: limit + 1,
     }
   }
 

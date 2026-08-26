@@ -107,6 +107,85 @@ describe('usePiSessions addressed Agent transport', () => {
     expect(result.current.sessions).toEqual([])
   })
 
+  test('refresh replaces page-two active rows atomically when another client archives one', async () => {
+    const activeRow = (index: number, archived = false) => ({
+      ref: { agentTypeId: 'alpha', sessionId: `active-${index}` },
+      title: `Active ${index}`,
+      status: 'idle',
+      createdAt: 1_000 - index,
+      updatedAt: 1_000 - index,
+      ...(archived ? { archived: true } : {}),
+    })
+    const archivedSeed = {
+      ref: { agentTypeId: 'alpha', sessionId: 'archived-seed' },
+      title: 'Archived seed',
+      status: 'idle',
+      createdAt: 0,
+      updatedAt: 0,
+      archived: true,
+    }
+    let externallyArchived = false
+    let holdArchivedRefresh = false
+    let resolveArchivedRefresh: ((response: Response) => void) | undefined
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), 'http://local')
+      if (url.searchParams.get('archived') === 'archived') {
+        const sessions = [
+          ...(externallyArchived ? [activeRow(75, true)] : []),
+          archivedSeed,
+        ]
+        const response = new Response(JSON.stringify({ sessions }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+        if (holdArchivedRefresh) {
+          holdArchivedRefresh = false
+          return await new Promise<Response>((resolve) => { resolveArchivedRefresh = resolve })
+        }
+        return response
+      }
+      const active = Array.from({ length: 100 }, (_, index) => activeRow(index))
+        .filter((row) => !externallyArchived || row.ref.sessionId !== 'active-75')
+      const offset = url.searchParams.get('cursor') === 'active-page-2' ? 50 : 0
+      const sessions = active.slice(offset, offset + 50)
+      return new Response(JSON.stringify({
+        sessions,
+        ...(offset + sessions.length < active.length ? { nextCursor: 'active-page-2' } : {}),
+      }), { status: 200, headers: { 'content-type': 'application/json' } })
+    })
+    const { result } = renderHook(() => usePiSessions({
+      agentTypeId: 'alpha', fetch: fetchMock as typeof fetch, connectActiveSession: false, retry: { maxRetries: 0 },
+    }))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await act(async () => { await result.current.loadMore() })
+    await act(async () => { await result.current.loadArchived() })
+    expect(result.current.sessions.filter((session) => session.archived !== true)).toHaveLength(100)
+    expect(result.current.sessions.find((session) => session.id === 'active-75')?.archived).toBeUndefined()
+
+    externallyArchived = true
+    holdArchivedRefresh = true
+    fetchMock.mockClear()
+    let refresh!: Promise<void>
+    act(() => { refresh = result.current.refresh({ background: true }) })
+    await waitFor(() => expect(resolveArchivedRefresh).toBeTypeOf('function'))
+
+    // The active prefix has already been fetched through page two, but neither
+    // filter snapshot publishes until the archived prefix is ready too.
+    expect(result.current.sessions.find((session) => session.id === 'active-75')?.archived).toBeUndefined()
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('archived=active&cursor=active-page-2'))).toBe(true)
+
+    await act(async () => {
+      resolveArchivedRefresh!(new Response(JSON.stringify({
+        sessions: [activeRow(75, true), archivedSeed],
+      }), { status: 200, headers: { 'content-type': 'application/json' } }))
+      await refresh
+    })
+    expect(result.current.sessions.filter((session) => session.id === 'active-75')).toEqual([
+      expect.objectContaining({ id: 'active-75', archived: true }),
+    ])
+    expect(result.current.sessions.filter((session) => session.archived !== true)).toHaveLength(99)
+  })
+
   test('keeps refresh ownership of the archive pager until its prefix is applied', async () => {
     const archivedRow = (id: string, updatedAt: number) => ({
       ref: { agentTypeId: 'alpha', sessionId: id },
