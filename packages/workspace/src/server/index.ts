@@ -175,6 +175,7 @@ export type {
   ResolvedAgentPackageSkill,
   ResolveWorkspacePackageResourcesOptions,
   ResolvedWorkspacePackageResourceRegistry,
+  ResolvedWorkspacePackageResourceSnapshot,
   SharedSkillPath,
   SkippedWorkspacePackageResource,
 } from "./plugins/packageResources"

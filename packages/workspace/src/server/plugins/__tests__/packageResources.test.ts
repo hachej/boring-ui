@@ -305,6 +305,27 @@ describe('resolveWorkspacePackageResources', () => {
     expect(updated.generation).not.toBe(registry.generation)
   })
 
+  test('preserves the full registry snapshot contract consumed by CLI', async () => {
+    const root = await tempRoot()
+    const packageRoot = await packageFixture(root)
+    const snapshot = await resolveWorkspacePackageResourceSnapshot({
+      declared: [{ pluginId: 'direct', packageName: '@example/plugin', packageRoot }],
+      scanned: [],
+      createBinding: async (mounts) => ({ mounts }),
+    })
+
+    expect(snapshot.registry.generation).toMatch(/^[a-f0-9]{64}$/)
+    expect(snapshot.registry.handledPackageRoots).toEqual([await realpath(packageRoot)])
+    expect(snapshot.registry.managedSkills).toEqual([expect.objectContaining({
+      name: 'example-authoring',
+      source: '@example/plugin',
+    })])
+    expect(snapshot.registry.locateSkill(snapshot.registry.skills[0].skillFile))
+      .toEqual(snapshot.registry.skills[0].resource)
+    expect(snapshot.binding).toEqual({ mounts: snapshot.registry.readonlyMounts })
+    expect(snapshot.diagnostics).toEqual([])
+  })
+
   // gh-1196: one unadmittable shared-skill entry must not fail the scan closed.
   test('degrades an unadmittable shared skill to a diagnostic and keeps the rest', async () => {
     const root = await tempRoot()

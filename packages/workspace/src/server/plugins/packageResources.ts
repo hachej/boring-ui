@@ -746,16 +746,18 @@ export async function enumerateExternalSkillFiles(
   return [...files.values()]
 }
 
+export interface ResolvedWorkspacePackageResourceSnapshot<TBinding = never> {
+  readonly registry: ResolvedWorkspacePackageResourceRegistry
+  readonly binding?: TBinding
+  readonly diagnostics: readonly PackageResourceDiagnostic[]
+}
+
 export async function resolveWorkspacePackageResourceSnapshot<TBinding = never>(input: {
   readonly declared: readonly WorkspacePackageResourceRecord[]
   readonly scanned: readonly WorkspacePackageResourceRecord[]
   readonly sharedSkillPaths?: readonly { readonly id: string; readonly skillFile: string }[]
   readonly createBinding?: (mounts: readonly AgentResourceReadonlyMount[]) => Promise<TBinding>
-}): Promise<{
-  readonly registry: ResolvedWorkspacePackageResourceRegistry
-  readonly binding?: TBinding
-  readonly diagnostics: readonly PackageResourceDiagnostic[]
-}> {
+}): Promise<ResolvedWorkspacePackageResourceSnapshot<TBinding>> {
   // Scanned packages and ambient shared skills are speculative: an entry the
   // resolver will not admit is skipped with a diagnostic and is never resolved,
   // opened or exposed, while the rest still load. gh-1196: ~/.pi/agent/skills is

@@ -12,6 +12,7 @@ import type {
   AuthorizedAgentScope,
   VerifiedAgentScopeClaim,
 } from "@hachej/boring-agent/shared"
+import type { ResolvedWorkspacePackageResourceSnapshot } from "@hachej/boring-workspace/server"
 import { createNodeWorkspace, getBoringAgentRuntimePaths, type BoringAgentRuntimePaths } from "@hachej/boring-sandbox/providers/node-workspace"
 import { existsSync, readFileSync } from "node:fs"
 import { createRequire } from "node:module"
@@ -694,11 +695,7 @@ export async function createWorkspacesModeApp(opts: {
     backendRegistry: InstanceType<typeof workspaceServer.RuntimeBackendRegistry>
     ensureLoaded: Promise<void>
   }>()
-  type CliPackageResourceRegistry = Awaited<ReturnType<typeof workspaceServer.resolveWorkspacePackageResources>>
-  interface CliPackageResourceSnapshot {
-    readonly registry: CliPackageResourceRegistry
-    readonly binding?: RuntimeFilesystemBinding
-  }
+  type CliPackageResourceSnapshot = ResolvedWorkspacePackageResourceSnapshot<RuntimeFilesystemBinding>
   const pluginPiSnapshots = new Map<string, CliPluginPiSnapshot>()
   const packageResourceSnapshots = new Map<string, CliPackageResourceSnapshot>()
   const packageResourceDiagnostics = new Map<string, Array<{ source: string; message: string; pluginId?: string }>>()
