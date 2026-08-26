@@ -21,6 +21,21 @@ Anything already ruled elsewhere is cited, never re-decided. Where this plan
 needs something from another plan it says so as an explicit dependency
 (§5, §6).
 
+**Design lineage / prior art.** This shell is the sixth step of a chain, not a
+fresh idea. [PR #1357](https://github.com/hachej/boring-ui/pull/1357) (closed,
+`spike/1355-console-ux`) explored the persistent Console UX and contributed the
+earliest statement of a **persistent multi-project console surface** — one shell
+that outlives any single project or chat, which this plan's IA generalizes from
+"console over projects" to "shell over one workspace's five domains".
+`docs/issues/1355/plan.md` then gave that surface an architecture;
+[PR #1393](https://github.com/hachej/boring-ui/pull/1393)
+(`weekend/console-left-pane-variant`) refined its left pane into view modes with
+a single collapse level — the direct ancestor of L2a's nav chrome and flyout.
+The **design canvas** (owner-iterated Meridian Shell mockups) settled the visual
+language and the five-domain IA; `weekend/saas-hybrid-spike` then proved that IA
+was reachable by recomposing shipped components (§2); this plan turns the proof
+into a route.
+
 **Canonical consolidation (owner, 2026-08-26).** PR #1409 is *the* canonical
 multi-agent planning PR. The Job Thread v0 plan is its **engine chapter** and
 now lives here as a sibling doc — [`job-thread-v0-plan.md`](job-thread-v0-plan.md),
