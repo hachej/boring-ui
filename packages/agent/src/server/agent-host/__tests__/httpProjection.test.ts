@@ -10,6 +10,7 @@ import {
   type AuthorizedAgentScope,
   type IdempotentAgentControl,
   type IdempotentAgentSend,
+  type IdempotentInterruptControl,
   type IdempotentQueueClear,
 } from '../../../shared/index'
 import type { PiChatSessionService } from '../../../core/piChatSessionService'
@@ -104,7 +105,7 @@ class FakeGateway implements AgentGateway {
           ...(command.kind === 'followup' ? { clientSeq: command.clientSeq } : {}),
         }
       },
-      interrupt: async (control: IdempotentAgentControl) => {
+      interrupt: async (control: IdempotentInterruptControl) => {
         this.calls.push({ method: 'interrupt', input: control })
         return { accepted: true, cursor: 10 }
       },
@@ -314,7 +315,7 @@ describe('addressed Agent Host HTTP projection', () => {
     expect((await app.inject({
       method: 'POST',
       url: '/api/v1/agents/alpha/sessions/session-1/interrupt',
-      payload: { requestId: 'interrupt-1' },
+      payload: { requestId: 'interrupt-1', queueAction: 'hold' },
     })).statusCode).toBe(202)
     expect((await app.inject({
       method: 'POST',
@@ -336,7 +337,7 @@ describe('addressed Agent Host HTTP projection', () => {
       { method: 'createSession', input: { scope, agentTypeId: 'alpha', requestId: 'create-1', title: 'Created', resumeSessionId: 'persisted-empty' } },
       { method: 'send', input: expect.objectContaining({ kind: 'prompt', requestId: 'prompt-1', requireIdle: true, attachments: [expect.objectContaining({ path: 'uploads/chart.png' })] }) },
       { method: 'send', input: { kind: 'followup', requestId: 'follow-1', clientNonce: 'nonce-f', content: 'next', displayContent: 'Next', clientSeq: 3 } },
-      { method: 'interrupt', input: { requestId: 'interrupt-1' } },
+      { method: 'interrupt', input: { requestId: 'interrupt-1', queueAction: 'hold' } },
       { method: 'stop', input: { requestId: 'stop-1' } },
       { method: 'clearQueue', input: { requestId: 'clear-1', clientNonce: 'nonce-f', clientSeq: 3 } },
       { method: 'deleteSession', input: { scope, ref, requestId: 'delete-1' } },

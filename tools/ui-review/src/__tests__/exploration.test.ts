@@ -38,16 +38,21 @@ const validateReproduceOwnership = (input: Omit<Parameters<typeof validateOwners
 const viewport = { name: "mobile", width: 390, height: 844, deviceScaleFactor: 1 } as const
 
 describe("Bombadil exploration staging", () => {
-  it("retries a Chromium websocket startup timeout exactly once", async () => {
-    const runAttempt = vi.fn()
-      .mockResolvedValueOnce({ code: 1, stderr: 'Timeout while resolving websocket URL from browser process, stderr: BrowserStderr("")' })
-      .mockResolvedValueOnce({ code: 0, stderr: "" })
-    const resetOutput = vi.fn(async () => {})
-    const waitBeforeRetry = vi.fn(async () => {})
-    await expect(runWithBombadilStartupRetry({ runAttempt, resetOutput, waitBeforeRetry })).resolves.toBeUndefined()
-    expect(runAttempt).toHaveBeenCalledTimes(2)
-    expect(resetOutput).toHaveBeenCalledOnce()
-    expect(waitBeforeRetry).toHaveBeenCalledOnce()
+  it("retries transient Chromium startup failures exactly once", async () => {
+    for (const stderr of [
+      'Timeout while resolving websocket URL from browser process, stderr: BrowserStderr("")',
+      "Failed to create a ProcessSingleton for your profile directory",
+    ]) {
+      const runAttempt = vi.fn()
+        .mockResolvedValueOnce({ code: 1, stderr })
+        .mockResolvedValueOnce({ code: 0, stderr: "" })
+      const resetOutput = vi.fn(async () => {})
+      const waitBeforeRetry = vi.fn(async () => {})
+      await expect(runWithBombadilStartupRetry({ runAttempt, resetOutput, waitBeforeRetry })).resolves.toBeUndefined()
+      expect(runAttempt).toHaveBeenCalledTimes(2)
+      expect(resetOutput).toHaveBeenCalledOnce()
+      expect(waitBeforeRetry).toHaveBeenCalledOnce()
+    }
   })
 
   it("does not retry arbitrary Bombadil failures", async () => {
@@ -93,8 +98,9 @@ describe("Bombadil exploration staging", () => {
     }
   })
 
-  it("recognizes only the Chromium websocket startup signature", () => {
+  it("recognizes transient Chromium startup signatures", () => {
     expect(isRetryableBombadilStartupFailure("Timeout while resolving websocket URL from browser process")).toBe(true)
+    expect(isRetryableBombadilStartupFailure("Failed to create a ProcessSingleton for your profile directory")).toBe(true)
     expect(isRetryableBombadilStartupFailure("Timeout while replaying browser actions")).toBe(false)
   })
 

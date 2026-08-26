@@ -5,6 +5,7 @@ import type {
 } from "@mariozechner/pi-coding-agent";
 import {
   createPiFollowUpQueueCompat,
+  type PiFollowUpQueueCompat,
   type PiFollowUpQueueOptions,
   type PiFollowUpSelector,
 } from "../harness/pi-coding-agent/piFollowUpQueueCompat.js";
@@ -75,13 +76,26 @@ export interface PiAgentSessionAdapterOptions {
   continueQueuedFollowUp?: () => Promise<void>;
 }
 
+// createHarness creates a run-context-bound adapter for every command. Queue
+// identity belongs to the native Pi session, so every wrapper over that same
+// session must share nonce/selector bookkeeping.
+const followUpQueuesBySession = new WeakMap<PiAgentSessionLike, PiFollowUpQueueCompat>();
+
+function followUpQueueFor(session: PiAgentSessionLike): PiFollowUpQueueCompat {
+  const existing = followUpQueuesBySession.get(session);
+  if (existing) return existing;
+  const created = createPiFollowUpQueueCompat();
+  followUpQueuesBySession.set(session, created);
+  return created;
+}
+
 function normalizePromptInput(input: PiAgentPromptInput): { text: string; options?: PromptOptions } {
   if (typeof input === "string") return { text: input };
   return input;
 }
 
 export function createPiAgentSessionAdapter(session: PiAgentSessionLike, options: PiAgentSessionAdapterOptions = {}): PiAgentSessionAdapter {
-  const followUpQueue = createPiFollowUpQueueCompat();
+  const followUpQueue = followUpQueueFor(session);
   const adapter: PiAgentSessionAdapter = {
     readSnapshot() {
       return {
@@ -118,7 +132,12 @@ export function createPiAgentSessionAdapter(session: PiAgentSessionLike, options
     async followUp(text, followUpOptions) {
       const accepted = followUpQueue.record(text, followUpOptions);
       if (!accepted) return;
-      await session.followUp(text);
+      try {
+        await session.followUp(text);
+      } catch (error) {
+        followUpQueue.rollback(text, followUpOptions);
+        throw error;
+      }
     },
 
     clearFollowUp(selector) {

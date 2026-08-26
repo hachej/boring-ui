@@ -83,7 +83,8 @@ test.describe('Pi-native chat browser matrix', () => {
     expect((state as { prompts: unknown[] }).prompts).toHaveLength(2)
     await expect(conversation.getByText('/reload result:')).toBeVisible()
     expect((state as { followups: unknown[] }).followups).toHaveLength(3)
-    expect((state as { stops: number }).stops).toBeGreaterThanOrEqual(1)
+    expect((state as { clears: number }).clears).toBe(1)
+    expect((state as { stops: number }).stops).toBe(0)
   })
 
   test('pressing Escape while streaming auto-posts the next queued follow-up', async ({ page, backend }, testInfo) => {
