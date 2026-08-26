@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react"
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react"
 import { Bot, Search } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
 import {
@@ -19,11 +19,8 @@ import type {
   SurfaceShellProps,
   SurfaceShellSnapshot,
 } from "../../front/chrome/artifact-surface/SurfaceShell"
-import { AgentPage } from "../../front/chrome/skills/AgentPage"
 import { WorkspaceShellCapabilitiesProvider } from "../../front/shell/WorkspaceShellCapabilitiesContext"
 import { useWorkspaceShellCapabilitiesHost } from "./WorkspaceShellCapabilitiesHost"
-import { PluginsOverlay } from "../../front/chrome/plugins/PluginsOverlay"
-import { AgentDetailsOverlay } from "../../front/chrome/agents/AgentDetailsOverlay"
 import { AppLeftPane, AppLeftRail, createAppLeftNavigationEntries } from "../../front/layout/plugin-tabs/AppLeftPane"
 import { PluginTabsWorkspaceShell } from "../../front/layout/plugin-tabs/PluginTabsWorkspaceShell"
 import { chatPaneAgentLabels } from "../../front/layout/chatPaneAgentLabels"
@@ -70,6 +67,10 @@ import {
   type WorkspaceSessionRef,
 } from "../../front/sessionIdentity"
 import { startSessionActivityStream } from "../../front/sessionActivity"
+
+const AgentPage = lazy(() => import("../../front/chrome/skills/AgentPage").then((module) => ({ default: module.AgentPage })))
+const PluginsOverlay = lazy(() => import("../../front/chrome/plugins/PluginsOverlay").then((module) => ({ default: module.PluginsOverlay })))
+const AgentDetailsOverlay = lazy(() => import("../../front/chrome/agents/AgentDetailsOverlay").then((module) => ({ default: module.AgentDetailsOverlay })))
 
 const AGENT_OVERLAY_PREFIX = "agent-details:"
 const NATIVE_SESSION_UUID_PATTERN = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
@@ -2459,7 +2460,15 @@ export function WorkspaceAgentFront<
     // became independent is no longer always the addressed one.
     const requestedAgentTypeId = options?.agentTypeId ?? selectedAgentTypeId
     try {
-      const session = await coordinateRemoteCreate(dedupeKey, options)
+      // `agentTypeId` addresses the fleet wrapper; it is not part of the
+      // canonical single-Agent create-session body. Forwarding the synthetic
+      // `default` owner made strict Agent hosts reject quick-chat creation.
+      const createInput = fleetModeEnabled
+        ? options
+        : options?.title
+          ? { title: options.title }
+          : undefined
+      const session = await coordinateRemoteCreate(dedupeKey, createInput)
       const sessionId = createdSessionId(session)
       if (!sessionId) return { success: false as const, reason: "create-failed" as const, message: "Chat session creation did not return a canonical session." }
       const returnedAgentTypeId = (session as { agentTypeId?: unknown }).agentTypeId
@@ -2493,7 +2502,7 @@ export function WorkspaceAgentFront<
     } catch (error) {
       return { success: false as const, reason: "create-failed" as const, message: error instanceof Error ? error.message : "Chat session creation failed." }
     }
-  }, [coordinateRemoteCreate, rawDelete, rawSwitch, selectedAgentTypeId])
+  }, [coordinateRemoteCreate, fleetModeEnabled, rawDelete, rawSwitch, selectedAgentTypeId])
   const createShellChatSession = useCallback(async (options?: { title?: string }) => {
     shellSessionCreateSequenceRef.current += 1
     return await createAddressedSessionWithoutActivating(`shell:${shellSessionCreateSequenceRef.current}`, {
@@ -2610,7 +2619,7 @@ export function WorkspaceAgentFront<
       headerInsetEnd={!surfaceOpen}
     />
   ) : null
-  const leftOverlayNode = pluginLeftOverlayNode ?? customLeftOverlayNode ?? agentLeftOverlayNode ?? (leftOverlay === "skills" && singleAgentSkillsActionEnabled ? (
+  const unresolvedLeftOverlayNode = pluginLeftOverlayNode ?? customLeftOverlayNode ?? agentLeftOverlayNode ?? (leftOverlay === "skills" && singleAgentSkillsActionEnabled ? (
     <AgentPage
       onClose={() => setLeftOverlay(null)}
       headerInsetStart={mobileShellActive}
@@ -2627,6 +2636,11 @@ export function WorkspaceAgentFront<
       headerInsetEnd={!surfaceOpen}
     />
   ) : null)
+  const leftOverlayNode = unresolvedLeftOverlayNode ? (
+    <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading…</div>}>
+      {unresolvedLeftOverlayNode}
+    </Suspense>
+  ) : null
   const mainContent = remoteSessionsTransitioning ? (
     <ChatSessionTransitionState />
   ) : (
