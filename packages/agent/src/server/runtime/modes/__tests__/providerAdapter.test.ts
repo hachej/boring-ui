@@ -1,5 +1,17 @@
 import { expect, test, vi } from 'vitest'
 
+const createBwrapSandboxProviderCalls = vi.hoisted(() => vi.fn())
+vi.mock('@hachej/boring-sandbox/providers/bwrap', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@hachej/boring-sandbox/providers/bwrap')>()
+  return {
+    ...actual,
+    createBwrapSandboxProvider: (...args: Parameters<typeof actual.createBwrapSandboxProvider>) => {
+      createBwrapSandboxProviderCalls(...args)
+      return actual.createBwrapSandboxProvider(...args)
+    },
+  }
+})
+
 import type { SandboxProviderV1 } from '@hachej/boring-sandbox/shared'
 import type { Sandbox, Workspace } from '../../../../shared'
 import type { RuntimeBundle } from '../../mode'
@@ -76,6 +88,22 @@ function createPairProvider(options: {
   }
 }
 
+test('custom provider owns its runtime layout root without built-in mode casting', async () => {
+  const adapter = createProviderRuntimeModeAdapter({
+    id: 'custom-provider',
+    provider: createPairProvider({ dispose: vi.fn(async () => {}) }),
+    runtimeHost: testRuntimeHostOperations,
+    workspaceFsCapability: 'best-effort',
+    bash: { kind: 'remote' },
+    filesystem: { kind: 'remote-workspace' },
+  })
+
+  expect(adapter.id).toBe('custom-provider')
+  expect(adapter.getRuntimeLayoutRoot({ workspaceRoot: '/host', sessionId: 'session' }))
+    .toBe('/workspace')
+  await adapter.dispose?.()
+})
+
 test('health and disposal stay bound to the pair after RuntimeBundle decoration', async () => {
   const dispose = vi.fn(async () => {})
   const checkHealth = vi.fn(async () => ({ state: 'recreate' as const, message: 'stopped' }))
@@ -124,7 +152,23 @@ test('Agent owns built-in sandbox adapter selection and host operations', async 
   expect(adapter.id).toBe('direct')
   expect(adapter.runtimeHost).toBe(sandboxRuntimeHostOperations)
   await adapter.dispose?.()
-  expect(() => createSandboxRuntimeModeAdapter('custom' as 'direct')).toThrow('no built-in adapter')
+  expect(() => createSandboxRuntimeModeAdapter('custom')).toThrow('no built-in adapter')
+})
+
+test('local adapter forwards bwrap sandbox options to its provider', async () => {
+  createBwrapSandboxProviderCalls.mockClear()
+  const bwrap = { sandbox: { namespaceProfile: 'docker' as const } }
+
+  const adapter = createSandboxRuntimeModeAdapter('local', { bwrap })
+
+  expect(createBwrapSandboxProviderCalls).toHaveBeenCalledWith({
+    sandbox: {
+      namespaceProfile: 'docker',
+      network: 'shared',
+      dropAllCapabilities: true,
+    },
+  })
+  await adapter.dispose?.()
 })
 
 test('cached runtime eviction awaits asynchronous provider invalidation', async () => {

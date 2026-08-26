@@ -1,15 +1,21 @@
 import { createElement } from "react"
 import type { PaneProps } from "../../registry/types"
-import { WorkbenchLeftPane, type WorkbenchLeftPaneProps } from "./WorkbenchLeftPane"
+import type { WorkbenchLeftPaneProps } from "./WorkbenchLeftPane"
 
-function WorkbenchLeftPanel({ params }: PaneProps<WorkbenchLeftPaneProps | undefined>) {
-  return createElement(WorkbenchLeftPane, params ?? {})
+async function importWorkbenchLeftPanel() {
+  const { WorkbenchLeftPane } = await import("./WorkbenchLeftPane")
+  return {
+    default({ params }: PaneProps<WorkbenchLeftPaneProps | undefined>) {
+      return createElement(WorkbenchLeftPane, params ?? {})
+    },
+  }
 }
 
 export const workbenchLeftPanel = {
   id: "workbench-left",
   title: "Workbench",
-  component: WorkbenchLeftPanel,
+  component: importWorkbenchLeftPanel,
+  lazy: true,
   placement: "left",
   source: "builtin",
 }

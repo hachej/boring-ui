@@ -20,19 +20,6 @@ const FLEET_CONFIG_PATH = resolve(REPOSITORY_ROOT, '.agents', 'factory', 'fleet.
 const POLICY_PATH = resolve(REPOSITORY_ROOT, '.agents', 'factory', 'policy.yaml')
 
 export interface LoadBoringFactoryAgentsOptions {
-  /**
-   * The root the playground's `user` filesystem actually serves — i.e. the
-   * exact value `startPlaygroundServer` hands to `createWorkspaceAgentServer`
-   * (`BORING_AGENT_WORKSPACE_ROOT ?? WORKSPACE_DIR`), never the repository
-   * root the fleet is composed FROM.
-   *
-   * Required, and required to be passed in rather than recomputed here,
-   * because the two roots are independent: whoever decides what the client
-   * reads through is the only caller that can honestly answer whether a
-   * persona path is reachable. Getting this wrong does not fail loudly at
-   * boot — it publishes a well-formed ref that 404s on click.
-   */
-  readonly workspaceRoot: string
   readonly preferredModels?: Partial<Record<BoringFactoryRole, string>>
   /** Overridable for tests; defaults to `process.env`. */
   readonly env?: NodeJS.ProcessEnv
@@ -49,27 +36,22 @@ export async function loadBoringFactoryAgents(
 ): Promise<readonly AgentHostAgentSpec[]> {
   const { agents, diagnostics } = await loadConfiguredAgentFleet({
     discoveredPackages: await discoverRepositoryAgentPackages(REPOSITORY_ROOT),
-    // The SERVED root, not `REPOSITORY_ROOT`. The playground composes the
-    // fleet from this repository's `.agents/` tree but serves
-    // `apps/workspace-playground/workspace` (or
-    // `BORING_AGENT_WORKSPACE_ROOT`) as the `user` filesystem, so the two
-    // roots differ by default and the loader must gate against the one the
-    // client reads through. Run the playground with
+    // The loader no longer takes a served root: personas are recorded as
+    // absolute sources and addressed per request against whatever root that
+    // request is served from (gh-1189). The playground serves
+    // `apps/workspace-playground/workspace` (or `BORING_AGENT_WORKSPACE_ROOT`)
+    // while composing from this repository's `.agents/` tree, so run it with
     // `BORING_AGENT_WORKSPACE_ROOT=<repo root>` to make persona instructions
     // genuinely reachable and their links appear.
-    workspaceRoot: options.workspaceRoot,
     fleetConfigPath: FLEET_CONFIG_PATH,
     policyPath: POLICY_PATH,
     skillsRoot: resolve(REPOSITORY_ROOT, '.agents', 'skills'),
     ...(options.env ? { env: options.env } : {}),
   })
-  // Only diagnostics that actually EXCLUDE a seat are fatal here. An
-  // unpublishable instructions path withholds one link, and an unseated
-  // discovered definition is merely inert; failing boot over either would be
-  // a worse outcome than the missing row it reports.
-  const excluding = diagnostics.filter(
-    (d) => d.code !== 'AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE' && d.code !== 'AGENT_DEFINITION_UNSEATED',
-  )
+  // Only diagnostics that actually EXCLUDE a seat are fatal here. An unseated
+  // discovered definition is merely inert; failing boot over it would be a
+  // worse outcome than the missing row it reports.
+  const excluding = diagnostics.filter((d) => d.code !== 'AGENT_DEFINITION_UNSEATED')
   for (const diagnostic of diagnostics) {
     if (excluding.includes(diagnostic)) continue
     // Withholding a link is correct but must never be silent: without this the

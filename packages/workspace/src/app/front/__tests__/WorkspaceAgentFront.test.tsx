@@ -180,7 +180,7 @@ describe("WorkspaceAgentFront", () => {
     expect(MockEventSource.instances.filter((instance) => instance.url.includes("/api/v1/agent-plugins/events"))).toHaveLength(0)
   })
 
-  it("externalPlugins=true preserves explicit front and chat plugin reload UX", () => {
+  it("externalPlugins=true preserves explicit front and chat plugin reload UX", async () => {
     MockEventSource.instances = []
     vi.stubGlobal("EventSource", MockEventSource)
     let captured: WorkspaceChatPanelProps | undefined
@@ -200,10 +200,12 @@ describe("WorkspaceAgentFront", () => {
     )
 
     expect(MockEventSource.instances.filter((instance) => instance.url.includes("/api/v1/agent-plugins/events"))).toHaveLength(1)
-    expect(captured?.hotReloadEnabled).toBe(true)
+    // The chat pane mounts under the code-split dock stage, so capture lands
+    // one microtask after render.
+    await waitFor(() => expect(captured?.hotReloadEnabled).toBe(true))
   })
 
-  it("externalPlugins=false disables front and chat plugin reload UX", () => {
+  it("externalPlugins=false disables front and chat plugin reload UX", async () => {
     MockEventSource.instances = []
     vi.stubGlobal("EventSource", MockEventSource)
     let captured: WorkspaceChatPanelProps | undefined
@@ -223,7 +225,7 @@ describe("WorkspaceAgentFront", () => {
     )
 
     expect(MockEventSource.instances.filter((instance) => instance.url.includes("/api/v1/agent-plugins/events"))).toHaveLength(0)
-    expect(captured?.hotReloadEnabled).toBe(false)
+    await waitFor(() => expect(captured?.hotReloadEnabled).toBe(false))
   })
 
   it("keeps the chat shell in transition while remote sessions are still loading without an active session", () => {
@@ -340,7 +342,7 @@ describe("WorkspaceAgentFront", () => {
     expect(refresh).not.toHaveBeenCalled()
   })
 
-  it("renders a known active session while remote sessions are still loading", () => {
+  it("renders a known active session while remote sessions are still loading", async () => {
     const PendingChatPanel = (props: WorkspaceChatPanelProps) => (
       <div data-testid="chat-panel">Chat {props.sessionId} hydrate={String(props.hydrateMessages)}</div>
     )
@@ -362,11 +364,11 @@ describe("WorkspaceAgentFront", () => {
       />,
     )
 
-    expect(screen.getByTestId("chat-panel")).toHaveTextContent("Chat known-active hydrate=true")
+    expect(await screen.findByTestId("chat-panel")).toHaveTextContent("Chat known-active hydrate=true")
     expect(screen.queryByText("Loading sessions…")).not.toBeInTheDocument()
   })
 
-  it("renders the chat shell when remote sessions fail instead of pinning loading", () => {
+  it("renders the chat shell when remote sessions fail instead of pinning loading", async () => {
     const FailedChatPanel = (props: WorkspaceChatPanelProps) => (
       <div data-testid="chat-panel">Chat {props.sessionId} hydrate={String(props.hydrateMessages)}</div>
     )
@@ -388,7 +390,7 @@ describe("WorkspaceAgentFront", () => {
       />,
     )
 
-    expect(screen.getByTestId("chat-panel")).toHaveTextContent("Chat default hydrate=false")
+    expect(await screen.findByTestId("chat-panel")).toHaveTextContent("Chat default hydrate=false")
   })
 
   it("keeps session history closed by default and opens it from the rail button", async () => {
@@ -695,6 +697,17 @@ describe("WorkspaceAgentFront", () => {
       ["beta", "fleet-ui:beta"],
     ]))
 
+    // Agent-details reload is agent-scoped. With Alpha still active, reloading
+    // Beta must not combine Beta with Alpha's unrelated session id.
+    await user.click(screen.getByRole("button", { name: "Settings for Beta" }))
+    await user.click(await screen.findByRole("button", { name: "Reload Beta" }, { timeout: 5_000 }))
+    await waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([input]) =>
+      String(input).endsWith("/api/v1/agents/beta/reload"))).toBe(true))
+    const betaReloadCall = vi.mocked(fetch).mock.calls.find(([input]) =>
+      String(input).endsWith("/api/v1/agents/beta/reload"))
+    expect(JSON.parse(String(betaReloadCall?.[1]?.body))).toEqual({ requestId: expect.any(String) })
+    await user.click(screen.getByRole("button", { name: "Close Beta details" }))
+
     const betaSessionButton = screen.getByText("Beta one").closest("button")
     expect(betaSessionButton).toBeInstanceOf(HTMLButtonElement)
     await user.click(betaSessionButton!)
@@ -708,8 +721,11 @@ describe("WorkspaceAgentFront", () => {
     expect(selected).toHaveBeenCalledWith("beta")
 
     await user.click(screen.getByRole("button", { name: "Settings for Beta" }))
-    const detailsOverlay = document.querySelector('[data-boring-workspace-part="agent-details-overlay"]')
-    expect(detailsOverlay).not.toBeNull()
+    const detailsOverlay = await waitFor(() => {
+      const overlay = document.querySelector('[data-boring-workspace-part="agent-details-overlay"]')
+      expect(overlay).not.toBeNull()
+      return overlay
+    })
     expect(detailsOverlay).toHaveTextContent("Beta")
     expect(detailsOverlay).toHaveTextContent("Plugins")
     expect(detailsOverlay).toHaveTextContent("ask-user")
@@ -725,7 +741,7 @@ describe("WorkspaceAgentFront", () => {
     expect(unifiedDetailsOverlay).toHaveTextContent("MCP access")
     expect(unifiedDetailsOverlay).not.toHaveTextContent("Runtime plugins explicitly bound")
     expect(within(unifiedDetailsOverlay as HTMLElement).queryByRole("tab")).not.toBeInTheDocument()
-  })
+  }, 30_000)
 
   it("initializes a controlled colliding id to its explicit active owner", () => {
     localStorage.setItem("boring-workspace:chat-panes:explicit-active-owner", JSON.stringify({
@@ -2286,6 +2302,47 @@ describe("WorkspaceAgentFront", () => {
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agents/default/ready-status"))).toBe(false)
   })
 
+  it("keeps remote sessions when provisioning is disabled but remoteSessionsEnabled is set", async () => {
+    const onWarmup = vi.fn()
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+
+      const url = String(input)
+      if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      if (url.includes("/api/v1/agents/default/models")) return new Response(JSON.stringify({ models: [] }), { status: 200 })
+      if (url.includes("/api/v1/agents/default/skills")) return new Response(JSON.stringify({ skills: [] }), { status: 200 })
+      if (isDefaultSessionsCollectionUrl(url)) {
+        return new Response(JSON.stringify({ sessions: [{ id: "sess-remote-known", title: "Known remote" }] }), { status: 200 })
+      }
+
+      return new Response(null, { status: 204 })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="no-provision-remote-sessions"
+        provisionWorkspace={false}
+        remoteSessionsEnabled
+        persistenceEnabled={false}
+        onWorkspaceWarmupStatusChange={onWarmup}
+      />,
+    )
+
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([input]) => isDefaultSessionsCollectionUrl(String(input)))).toBe(true),
+    )
+    // The known server session must be consumed as an existing remote session, not treated as an
+    // empty list: the front must not create a replacement local session behind the user's back.
+    // (Deeper chat-props/state-route adoption evidence is warmup-gated here — with provisioning
+    // disabled the panel never mounts in jsdom — so hydration-on-adopt is pinned instead by the
+    // injected-hook tests above.)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(fetchMock.mock.calls.some(([input, init]) =>
+      String(input).includes("/agents/default/sessions") && (init?.method === "POST" || init?.method === "DELETE"),
+    )).toBe(false)
+
+  })
+
   it("creates a fresh remote session for auth-return auto-submit instead of reusing the old active session", async () => {
     let capturedChatProps: unknown
     const getCapturedChatProps = () => capturedChatProps as CapturedChatPanelProps | undefined
@@ -3391,6 +3448,34 @@ describe("WorkspaceAgentFront", () => {
     await act(async () => { releaseCreate() })
   })
 
+  it("does not send a synthetic Agent owner when creating a single-Agent quick chat", async () => {
+    const create = vi.fn(async () => ({ id: "quick", agentTypeId: "default", title: "Quick", updatedAt: Date.now(), turnCount: 0 }))
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="single-agent-quick-create"
+        workspaceLayout="plugin-tabs"
+        chatPanel={ChatPanel}
+        useSessions={() => ({
+          sessions: [{ id: "existing", title: "Existing", updatedAt: Date.now(), turnCount: 0 }],
+          activeSessionId: "existing",
+          activeSession: { id: "existing", title: "Existing", updatedAt: Date.now(), turnCount: 0 },
+          loading: false,
+          create,
+          switch: vi.fn(),
+          delete: vi.fn(),
+        })}
+        persistenceEnabled={false}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Quick chat" }))
+
+    await waitFor(() => expect(create).toHaveBeenCalledOnce())
+    expect(create).toHaveBeenCalledWith({ title: "New session" })
+    expect(await screen.findByRole("button", { name: "Dock panel" })).toBeInTheDocument()
+  })
+
   it("does not pass the New chat click event into remote session creation", async () => {
     const create = vi.fn(async () => ({ id: "manual", title: "Manual", updatedAt: Date.now(), turnCount: 0 }))
 
@@ -3932,5 +4017,62 @@ describe("WorkspaceAgentFront", () => {
     expect(captured.some((props) => props.sessionId === "default")).toBe(false)
     expect(captured.at(-1)?.hydrateMessages).toBe(true)
     expect(captured.at(-1)?.allowPromptDuringInitialHydration).toBe(true)
+  })
+
+  describe("compact top-bar gating", () => {
+    function setViewport(width: number) {
+      Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: width })
+      window.dispatchEvent(new Event("resize"))
+    }
+
+    afterEach(() => {
+      setViewport(1024)
+    })
+
+    function renderFront(props: Partial<Parameters<typeof WorkspaceAgentFront>[0]>) {
+      return render(
+        <WorkspaceAgentFront
+          workspaceId="topbar-gating"
+          workspaceLayout="plugin-tabs"
+          chatPanel={SessionIdChatPanel}
+          sessions={[{ id: "s1", title: "Focused session" }]}
+          activeSessionId="s1"
+          {...props}
+        />,
+      )
+    }
+
+    it("drops the top bar at compact and relocates its actions into the mobile chat bar", () => {
+      setViewport(390)
+      renderFront({})
+
+      // No second title row above the mobile bar.
+      expect(screen.queryByTestId("topbar"))?.toBeNull()
+      const bar = document.querySelector('[data-boring-workspace-part="mobile-chat-bar"]')
+      expect(bar).not.toBeNull()
+      // A phone has no ⌘K: the palette button and theme toggle live in the bar.
+      expect(within(bar as HTMLElement).getByRole("button", { name: "Search catalogs and commands" })).toBeInTheDocument()
+      expect(within(bar as HTMLElement).getByRole("button", { name: "Toggle theme" })).toBeInTheDocument()
+    })
+
+    it("keeps host-supplied top-bar chrome alive at compact instead of dropping it", () => {
+      setViewport(390)
+      renderFront({ topBarRight: <button type="button">Sign in</button> })
+
+      // The relocated actions are NOT duplicated into the chat bar when the
+      // host supplied its own chrome.
+      expect(screen.queryByRole("button", { name: "Search catalogs and commands" })).toBeNull()
+      // Host chrome is opaque and lives nowhere else: it stays reachable inside
+      // the app-navigation drawer (Sheet mounts it lazily, so open first).
+      fireEvent.click(screen.getByRole("button", { name: "Open app navigation" }))
+      expect(document.body.textContent).toContain("Sign in")
+    })
+
+    it("keeps the classic top bar on desktop widths", () => {
+      renderFront({ workspaceLayout: "classic" })
+
+      expect(document.querySelector('[data-boring-workspace-part="topbar"]')).not.toBeNull()
+      expect(document.querySelector('[data-boring-workspace-part="mobile-chat-bar"]')).toBeNull()
+    })
   })
 })

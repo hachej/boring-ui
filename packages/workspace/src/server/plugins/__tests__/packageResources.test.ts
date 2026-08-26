@@ -9,6 +9,7 @@ import {
   PACKAGE_RESOURCE_CONFLICT_CODE,
   PACKAGE_RESOURCE_INVALID_CODE,
   resolveWorkspacePackageResources,
+  resolveWorkspacePackageResourceSnapshot,
   selectAgentPackageResourceView,
 } from '../packageResources'
 
@@ -302,6 +303,81 @@ describe('resolveWorkspacePackageResources', () => {
       options: { sharedSkillPaths: [{ id: 'shared-authoring', skillFile: sharedFile }] },
     })
     expect(updated.generation).not.toBe(registry.generation)
+  })
+
+  // gh-1196: one unadmittable shared-skill entry must not fail the scan closed.
+  test('degrades an unadmittable shared skill to a diagnostic and keeps the rest', async () => {
+    const root = await tempRoot()
+    const packageRoot = await packageFixture(root)
+    const goodRoot = join(root, 'global-skills', 'shared-authoring')
+    await mkdir(goodRoot, { recursive: true })
+    const goodFile = join(goodRoot, 'SKILL.md')
+    await writeFile(goodFile, '---\nname: shared-authoring\ndescription: Shared.\n---\n', 'utf8')
+    const danglingRoot = join(root, 'global-skills', 'dangling')
+    await mkdir(danglingRoot, { recursive: true })
+    const danglingFile = join(danglingRoot, 'SKILL.md')
+    await symlink(join(root, 'does-not-exist', 'SKILL.md'), danglingFile)
+
+    const snapshot = await resolveWorkspacePackageResourceSnapshot({
+      declared: [{ pluginId: 'direct', packageName: '@example/plugin', packageRoot }],
+      scanned: [],
+      sharedSkillPaths: [
+        { id: 'dangling', skillFile: danglingFile },
+        { id: 'shared-authoring', skillFile: goodFile },
+      ],
+    })
+
+    expect(snapshot.registry.skills.map((skill) => skill.resource.path)).toEqual([
+      'packages/@example/plugin/skills/authoring/SKILL.md',
+      'shared/pi-agent/shared-authoring/SKILL.md',
+    ])
+    expect(snapshot.diagnostics).toEqual([{
+      source: 'shared-skill-scan',
+      message: 'shared skill "dangling" was not admissible and was skipped: package resource is invalid: shared skill is not readable',
+      pluginId: 'shared/pi-agent',
+      code: PACKAGE_RESOURCE_INVALID_CODE,
+    }])
+    // The escaping/dangling entry is skipped, never resolved into a mount.
+    expect(snapshot.registry.locateSkill(danglingFile)).toBeUndefined()
+    expect(snapshot.registry.readonlyMounts.map((mount) => mount.sourceRoot))
+      .not.toContain(await realpath(danglingRoot))
+  })
+
+  // gh-1196 follow-up: the per-entry probe degrades admission verdicts only.
+  // A resolver defect must not be laundered into "was not admissible".
+  test('propagates a non-admission error from the shared-skill probe', async () => {
+    const root = await tempRoot()
+    const packageRoot = await packageFixture(root)
+    const sharedRoot = join(root, 'global-skills', 'shared-authoring')
+    await mkdir(sharedRoot, { recursive: true })
+    const sharedFile = join(sharedRoot, 'SKILL.md')
+    await writeFile(sharedFile, '---\nname: shared-authoring\ndescription: Shared.\n---\n', 'utf8')
+
+    const defect = Object.assign(new Error('resolver blew up'), { code: 'EACCES' })
+    const shared = {
+      id: 'shared-authoring',
+      // A getter is the least invasive way to make the probe's own read throw
+      // with a non-admission error code.
+      get skillFile(): string {
+        throw defect
+      },
+    }
+
+    await expect(resolveWorkspacePackageResourceSnapshot({
+      declared: [{ pluginId: 'direct', packageName: '@example/plugin', packageRoot }],
+      scanned: [],
+      sharedSkillPaths: [shared, { id: 'other', skillFile: sharedFile }],
+    })).rejects.toBe(defect)
+  })
+
+  test('propagates an unexpected filesystem failure while resolving a scanned skill declaration', async () => {
+    const root = await tempRoot()
+    const packageRoot = await packageFixture(root, { skills: ['x'.repeat(300)] })
+
+    await expect(resolveWorkspacePackageResourceSnapshot({
+      declared: [],
+      scanned: [{ pluginId: 'scan', packageName: '@example/plugin', packageRoot }],
+    })).rejects.toMatchObject({ code: 'ENAMETOOLONG' })
   })
 
   test("rejects the host-shared reserved package name", async () => {

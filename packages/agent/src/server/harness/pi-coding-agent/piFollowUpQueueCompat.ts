@@ -43,6 +43,7 @@ export interface PiFollowUpQueueCompat {
    * one already seen this session (same client nonce) and must not re-queue.
    */
   record(text: string, options?: PiFollowUpQueueOptions): boolean;
+  rollback(text: string, options?: PiFollowUpQueueOptions): void;
   clear(piSession: PiAgentSessionLike, options?: PiFollowUpSelector): void;
 }
 
@@ -64,6 +65,14 @@ export function createPiFollowUpQueueCompat(): PiFollowUpQueueCompat {
     });
     if (nonce) seenNonces.add(nonce);
     return true;
+  }
+
+  function rollback(text: string, options?: PiFollowUpQueueOptions): void {
+    const index = queue.findIndex((item) => item.text === text
+      && item.clientNonce === options?.clientNonce
+      && item.clientSeq === options?.clientSeq)
+    if (index >= 0) queue.splice(index, 1)
+    if (options?.clientNonce) seenNonces.delete(options.clientNonce)
   }
 
   function clear(piSession: PiAgentSessionLike, options?: PiFollowUpSelector): void {
@@ -131,7 +140,7 @@ export function createPiFollowUpQueueCompat(): PiFollowUpQueueCompat {
     return removed;
   }
 
-  return { record, clear };
+  return { record, rollback, clear };
 }
 
 function removePiQueuedFollowUp(piSession: PiAgentSessionLike, text?: string, textOrdinal = 0): void {

@@ -66,6 +66,7 @@ import {
   FileTreeUploadManager,
   type FileTreeUploadManagerHandle,
 } from "./upload/FileTreeUploadManager"
+import { useFileDropTarget, type DroppedEntries } from "./upload/useFileDropTarget"
 
 export { copyToClipboard } from "./clipboard"
 
@@ -432,6 +433,21 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
   const openUploadTo = useCallback((destination: string) => {
     uploadManagerRef.current?.open(destination)
   }, [])
+
+  // An OS drop lands on the pane background, so it targets this root the way
+  // the background context-menu upload does — never the row selection, which
+  // the user is not pointing at while dragging.
+  const handleDropEntries = useCallback(({ files, directories }: DroppedEntries) => {
+    if (directories.length > 0) {
+      toast.error({
+        title: directories.length === 1 ? "Folders can't be uploaded" : "Folders were not uploaded",
+        description: `${directories.join(", ")} — drop the files inside instead.`,
+      })
+    }
+    if (files.length > 0) uploadManagerRef.current?.addFiles(files, rootDir)
+  }, [rootDir])
+
+  const fileDrop = useFileDropTarget({ enabled: canUpload, onDropEntries: handleDropEntries })
 
   const openUploadForSelection = useCallback(() => {
     const destination = selection
@@ -884,6 +900,27 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
     setEditing(null)
   }, [])
 
+  // Same transport the editor reads through (`GET /api/v1/files/raw`), so the
+  // download inherits the workspace-scope headers, the path validation and the
+  // per-filesystem access decision instead of introducing a second, weaker
+  // route. Handing the browser an object URL is how CodeEditorPane already
+  // downloads the open file.
+  const handleDownload = ctxAction(async () => {
+    const node = ctxMenu?.node
+    if (!node || node.kind !== "file") return
+    const objectUrl = URL.createObjectURL(
+      await dataClient.getRawFile(node.path, undefined, requestFilesystem),
+    )
+    try {
+      const anchor = document.createElement("a")
+      anchor.href = objectUrl
+      anchor.download = node.name
+      anchor.click()
+    } finally {
+      URL.revokeObjectURL(objectUrl)
+    }
+  })
+
   const handleCopyPath = ctxAction(async () => {
     if (!ctxMenu?.node) return
     await copyToClipboard(ctxMenu.node.path)
@@ -961,9 +998,21 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
 
       <div
         ref={containerRef}
-        className="min-h-0 flex-1 overflow-hidden"
+        className="relative min-h-0 flex-1 overflow-hidden"
         onContextMenu={handleBackgroundContextMenu}
+        {...fileDrop.handlers}
       >
+        {fileDrop.active && (
+          <div
+            data-testid="file-tree-drop-overlay"
+            className="pointer-events-none absolute inset-1 z-10 grid place-items-center rounded-md border-2 border-dashed border-primary/70 bg-primary/5"
+            aria-hidden="true"
+          >
+            <span className="rounded-md bg-background/90 px-2 py-1 text-xs font-medium text-foreground">
+              Drop files to upload to {rootDir === "." ? "the workspace root" : rootDir}
+            </span>
+          </div>
+        )}
         {isLoading ? (
           <div className="space-y-1 p-2" data-testid="tree-skeleton">
             {Array.from({ length: 8 }).map((_, i) => (
@@ -1058,6 +1107,11 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
                   }}
                 >
                   Delete
+                </Button>
+              )}
+              {ctxMenu.node.kind === "file" && (
+                <Button type="button" role="menuitem" variant="ghost" size="sm" className="w-full justify-start" onClick={handleDownload}>
+                  Download
                 </Button>
               )}
               <Button type="button" role="menuitem" variant="ghost" size="sm" className="w-full justify-start" onClick={handleCopyPath}>

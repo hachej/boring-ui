@@ -1,26 +1,10 @@
-import { definePlugin, type BoringFrontFactoryWithId } from "@hachej/boring-workspace/plugin"
-import { TASKS_PLUGIN_ID, TASKS_PLUGIN_LABEL } from "../shared"
-import { TasksGlyph, TasksOverlay } from "./TasksOverlay"
+import type { BoringFrontFactoryWithId } from "@hachej/boring-workspace/plugin"
+import { createTasksPlugin } from "./descriptor"
 
-export function createTasksPlugin(): BoringFrontFactoryWithId {
-  return definePlugin({
-    id: TASKS_PLUGIN_ID,
-    label: TASKS_PLUGIN_LABEL,
-    appLeftActions: [
-      {
-        id: "tasks",
-        label: TASKS_PLUGIN_LABEL,
-        icon: TasksGlyph,
-        overlay: TasksOverlay,
-        order: 40,
-      },
-    ],
-  })
-}
-
-const tasksPlugin = createTasksPlugin()
+const tasksPlugin: BoringFrontFactoryWithId = createTasksPlugin()
 
 export default tasksPlugin
+export { createTasksPlugin } from "./descriptor"
 export { TaskKanbanBoard } from "./TaskKanbanBoard"
 export { TasksOverlay } from "./TasksOverlay"
 export { createGitHubIssuesAdapter } from "./githubIssuesAdapter"

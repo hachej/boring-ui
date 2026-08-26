@@ -28,7 +28,12 @@ describe("workspace playground agent mode", () => {
       readFileSync(resolve(import.meta.dirname, "../../package.json"), "utf8"),
     ) as { scripts: Record<string, string> }
 
-    expect(packageJson.scripts.dev).toBe("pnpm run build:deps && vite")
+    // `dev` must stay factory-agent-free: the multi-agent fleet is opted into
+    // only by the named `dev:multiagent` script.
+    expect(packageJson.scripts.dev).toBe("pnpm run build:deps && pnpm run dev:app")
+    expect(packageJson.scripts["dev:app"]).toBe("vite")
+    expect(packageJson.scripts.dev).not.toContain("VITE_BORING_FACTORY_AGENTS")
+    expect(packageJson.scripts["dev:app"]).not.toContain("VITE_BORING_FACTORY_AGENTS")
     expect(packageJson.scripts["dev:multiagent"]).toBe("VITE_BORING_FACTORY_AGENTS=1 pnpm run dev")
     expect(resolvePlaygroundAgentMode({ VITE_BORING_FACTORY_AGENTS: "1" })).toBe("factory")
   })

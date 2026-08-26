@@ -144,6 +144,21 @@ const USAGE = {
   cost: { input: 0.0012, output: 0.0034, cacheRead: 0.00001, cacheWrite: 0.00002, total: 0.00463 },
 }
 
+const EXPLICIT_ZERO_USAGE = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+  totalTokens: 0,
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+}
+
+const POTENTIALLY_BILLABLE_USAGE = {
+  ...EXPLICIT_ZERO_USAGE,
+  input: 1,
+  totalTokens: 1,
+}
+
 function assistantMessageEnd(overrides: Record<string, unknown> = {}): AgentSessionEvent {
   return {
     type: 'message_end',
@@ -298,22 +313,70 @@ describe('pi chat metering', () => {
     ])
   })
 
-  it('does NOT settle for free when usage arrives with all-zero tokens', async () => {
+  it('settles a successful run at zero only for an explicit, complete, consistent all-zero report', async () => {
     const adapter = createAdapter()
     const { sink, calls } = createSink()
     const { service } = createService(adapter, sink)
 
     await service.prompt(ctx, 's1', { message: 'hi', clientNonce: 'nonce-zero' })
     adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
-    // Provider reports a usage object but every token field is zero → not billable.
-    adapter.emit(assistantMessageEnd({ usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } }))
+    adapter.emit(assistantMessageEnd({ usage: EXPLICIT_ZERO_USAGE }))
     adapter.emit(agentEnd('stop'))
     await service.flushMetering()
 
-    // A zero-token usage row carries no real charge — fall back to the hold.
+    expect(calls.usage).toHaveLength(1)
+    expect(calls.settled).toEqual([
+      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-zero', status: 'ok' }),
+    ])
+    expect(calls.released).toEqual([])
+  })
+
+  it.each([
+    ['empty object', {}],
+    ['missing token field', { input: 0, output: 0, cacheRead: 0, totalTokens: 0, cost: EXPLICIT_ZERO_USAGE.cost }],
+    ['missing cost field', { ...EXPLICIT_ZERO_USAGE, cost: { input: 0, output: 0, cacheRead: 0, total: 0 } }],
+    ['invalid token field', { ...EXPLICIT_ZERO_USAGE, output: '0' }],
+    ['invalid cost field', { ...EXPLICIT_ZERO_USAGE, cost: { ...EXPLICIT_ZERO_USAGE.cost, total: '0' } }],
+    ['negative token field', { ...EXPLICIT_ZERO_USAGE, input: -1 }],
+    ['negative cost field', { ...EXPLICIT_ZERO_USAGE, cost: { ...EXPLICIT_ZERO_USAGE.cost, input: -1 } }],
+    ['positive totalTokens contradicting zero components', { ...EXPLICIT_ZERO_USAGE, totalTokens: 1 }],
+  ])('fallback-charges a successful run for a non-authoritative usage report: %s', async (_case, usage) => {
+    const adapter = createAdapter()
+    const { sink, calls } = createSink()
+    const { service } = createService(adapter, sink)
+
+    await service.prompt(ctx, 's1', { message: 'hi', clientNonce: 'nonce-untrusted' })
+    adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
+    adapter.emit(assistantMessageEnd({ usage }))
+    adapter.emit(agentEnd('stop'))
+    await service.flushMetering()
+
+    expect(calls.usage).toHaveLength(1)
     expect(calls.settled).toEqual([])
     expect(calls.released).toEqual([
-      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-zero', reason: 'fallback-hold-charge' }),
+      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-untrusted', reason: 'fallback-hold-charge' }),
+    ])
+  })
+
+  it.each([
+    ['explicit zero then potentially billable', [EXPLICIT_ZERO_USAGE, POTENTIALLY_BILLABLE_USAGE]],
+    ['potentially billable then explicit zero', [POTENTIALLY_BILLABLE_USAGE, EXPLICIT_ZERO_USAGE]],
+  ])('does not let mixed usage reports settle at zero: %s', async (_case, usageReports) => {
+    const adapter = createAdapter()
+    const recordUsage = vi.fn(async () => ({ billedMicros: 0 }))
+    const { sink, calls } = createSink({ recordUsage })
+    const { service } = createService(adapter, sink)
+
+    await service.prompt(ctx, 's1', { message: 'hi', clientNonce: 'nonce-mixed' })
+    adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
+    usageReports.forEach((usage, index) => adapter.emit(assistantMessageEnd({ id: `mixed-${index}`, usage })))
+    adapter.emit(agentEnd('stop'))
+    await service.flushMetering()
+
+    expect(recordUsage).toHaveBeenCalledTimes(2)
+    expect(calls.settled).toEqual([])
+    expect(calls.released).toEqual([
+      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-mixed', reason: 'fallback-hold-charge' }),
     ])
   })
 
@@ -967,13 +1030,12 @@ describe('pi chat metering', () => {
     )
   })
 
-  it('releases (not settles) a run whose usage write failed, so no paid hold closes without a ledger row', async () => {
+  it('fallback-charges when a positive usage write fails, so no paid hold closes without a ledger row', async () => {
     const adapter = createAdapter()
-    const { sink, calls } = createSink({
-      recordUsage: async () => {
-        throw new Error('ledger insert failed')
-      },
+    const recordUsage = vi.fn(async () => {
+      throw new Error('ledger insert failed')
     })
+    const { sink, calls } = createSink({ recordUsage })
     const { service } = createService(adapter, sink)
 
     await service.prompt(ctx, 's1', { message: 'lossy', clientNonce: 'nonce-loss' })
@@ -982,13 +1044,37 @@ describe('pi chat metering', () => {
     adapter.emit(agentEnd('stop'))
     await service.flushMetering()
 
+    expect(recordUsage).toHaveBeenCalledWith(
+      expect.objectContaining({ usage: expect.objectContaining({ input: 1200, output: 340 }) }),
+    )
     expect(calls.settled).toEqual([])
     expect(calls.released).toEqual([
       expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-loss', reason: 'usage-write-failed' }),
     ])
   })
 
-  it('does NOT fallback-charge when a ZERO-billed usage write fails on an aborted run (frees, matching the success path)', async () => {
+  it('fallback-charges a successful run when its explicit-zero usage write fails', async () => {
+    const adapter = createAdapter()
+    const recordUsage = vi.fn(async () => {
+      throw new Error('ledger insert failed')
+    })
+    const { sink, calls } = createSink({ recordUsage })
+    const { service } = createService(adapter, sink)
+
+    await service.prompt(ctx, 's1', { message: 'zero', clientNonce: 'nonce-zfail-ok' })
+    adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
+    adapter.emit(assistantMessageEnd({ usage: EXPLICIT_ZERO_USAGE }))
+    adapter.emit(agentEnd('stop'))
+    await service.flushMetering()
+
+    expect(recordUsage).toHaveBeenCalledOnce()
+    expect(calls.settled).toEqual([])
+    expect(calls.released).toEqual([
+      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-zfail-ok', reason: 'fallback-hold-charge' }),
+    ])
+  })
+
+  it('does NOT fallback-charge when an explicit-zero usage write fails on an aborted run', async () => {
     const adapter = createAdapter()
     const { sink, calls } = createSink({
       recordUsage: async () => {
@@ -999,10 +1085,9 @@ describe('pi chat metering', () => {
 
     await service.prompt(ctx, 's1', { message: 'stop', clientNonce: 'nonce-zfail' })
     adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
-    // An all-zero usage row (would bill €0) whose WRITE fails, then the user aborts.
-    // The failed write must NOT charge the hold — the same zero row written
-    // successfully releases free, and the two must agree (no overcharge).
-    adapter.emit(assistantMessageEnd({ usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } }))
+    // The failed zero write cannot settle a successful run, but an explicitly
+    // aborted run still releases as cancelled because no potentially billable work ran.
+    adapter.emit(assistantMessageEnd({ usage: EXPLICIT_ZERO_USAGE }))
     adapter.emit(agentEnd('aborted'))
     await service.flushMetering()
 

@@ -800,7 +800,10 @@ export function createPiCodingAgentHarness(opts: {
      * the expected pre-first-turn state, not an error.
      */
     getSystemPrompt(sessionId: string): string | undefined {
-      return piSessionHandlesFor(sessionId)[0]?.piSession.systemPrompt;
+      const prompt = piSessionHandlesFor(sessionId)[0]?.piSession.systemPrompt;
+      return prompt && pi.locateSkillResource
+        ? projectSkillResourceLocations(prompt, pi.locateSkillResource)
+        : prompt;
     },
 
     hasPiSession(sessionId: string, ctx?: SessionCtx): boolean {

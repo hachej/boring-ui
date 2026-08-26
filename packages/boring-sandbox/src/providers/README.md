@@ -16,3 +16,26 @@ Concrete sandbox providers live behind this subpath as they move out of
 
 `resolveMode()` itself is owned by `@hachej/boring-bash/modes`. It resolves a
 mode id to one of these provider values; providers do not resolve modes.
+
+## Bubblewrap namespace profiles
+
+The bwrap provider defaults to `namespaceProfile: 'full'`, which preserves
+`--unshare-all`. Hardened Docker hosts that reject a proc mount inside a nested
+user namespace may opt into `namespaceProfile: 'docker'`. That profile keeps
+mount, IPC, PID, UTS, cgroup, and optional network isolation without creating a
+nested user namespace, and always emits `--cap-drop ALL`; callers cannot disable
+that capability drop. In this profile, raw `extraArgs`/`postWorkspaceArgs` may
+still add controlled mounts, but namespace controls, capability additions, and
+indirect `--args` expansion are rejected so later arguments cannot counteract
+the resolved policy.
+
+Applications select the profile through Agent's built-in local adapter:
+
+```ts
+createSandboxRuntimeModeAdapter('local', {
+  bwrap: { sandbox: { namespaceProfile: 'docker' } },
+})
+```
+
+The adapter resolves one policy and carries it through provider `Sandbox.exec`,
+Agent bash spawn hooks, and local provisioning commands.

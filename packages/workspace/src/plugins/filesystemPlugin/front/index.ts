@@ -1,4 +1,4 @@
-import { createElement, useEffect } from "react"
+import { createElement, lazy, Suspense, useEffect } from "react"
 import { FolderTree } from "lucide-react"
 import "./events"
 import {
@@ -10,16 +10,11 @@ import { useDataClient, useFileList } from "./data"
 import { DataProvider } from "./data/DataProvider"
 import { FilesystemRootsBinding } from "./FilesystemRootsBinding"
 import { useCatalogRegistry } from "../../../front/registry"
-import { preloadFileTreeComponent } from "./file-tree/FileTreeView"
-import { FileTreePane, type FileTreePaneParams } from "./file-tree/FileTreePane"
+import type { FileTreePaneParams } from "./file-tree/FileTreePane"
 import { useFileTreeRoots } from "./file-tree/FileTreeRootsProvider"
 import type { WorkspaceSourceProps } from "../../../shared/types/panel"
 import { FilesystemFilePanelBinding } from "./filePanelBinding"
 import { FilesystemAgentFileBridge } from "./agentFileBridge"
-import { CodeEditorPane } from "./code-editor/CodeEditorPane"
-import { MarkdownEditorPane } from "./markdown-editor/MarkdownEditorPane"
-import { MediaViewerPane } from "./media-viewer/MediaViewerPane"
-import { HtmlViewerPane } from "./html-viewer/HtmlViewerPane"
 import { emptyFilePanelDef } from "./empty-file-panel/definition"
 import { filesystemSurfaceResolver } from "./surfaceResolver"
 import type {
@@ -37,6 +32,16 @@ import {
   PDF_VIEWER_PANEL_ID,
 } from "../shared/constants"
 import { createFilesCatalog } from "./catalogs"
+
+const LazyFileTreePane = lazy(() => import("./file-tree/FileTreePane").then((module) => ({ default: module.FileTreePane })))
+const importCodeEditorPane = () => import("./code-editor/CodeEditorPane").then((module) => ({ default: module.CodeEditorPane }))
+const importMarkdownEditorPane = () => import("./markdown-editor/MarkdownEditorPane").then((module) => ({ default: module.MarkdownEditorPane }))
+const importMediaViewerPane = () => import("./media-viewer/MediaViewerPane").then((module) => ({ default: module.MediaViewerPane }))
+const importHtmlViewerPane = () => import("./html-viewer/HtmlViewerPane").then((module) => ({ default: module.HtmlViewerPane }))
+
+function panelFallback(label: string) {
+  return createElement("div", { className: "flex h-full items-center justify-center text-sm text-muted-foreground" }, `Loading ${label}…`)
+}
 
 // Re-export shared file pane utilities for external use
 export { useFilePane } from "./useFilePane"
@@ -74,22 +79,25 @@ function FilesystemDataProvider({
 }
 
 function FilesystemTreePreloadBinding() {
-  useEffect(() => {
-    preloadFileTreeComponent()
-  }, [])
+  // Warm only the cheap directory data. The tree implementation itself stays
+  // behind the Files surface boundary so chat-first paint never downloads it.
   useFileList(".")
   return null
 }
 
 export function FilesystemFileTreeSource(props: WorkspaceSourceProps<FileTreePaneParams>) {
   const roots = useFileTreeRoots()
-  return createElement(FileTreePane, {
-    ...props,
-    params: {
-      ...props.params,
-      roots: roots ? [...roots] : undefined,
-    },
-  })
+  return createElement(
+    Suspense,
+    { fallback: panelFallback("files") },
+    createElement(LazyFileTreePane, {
+      ...props,
+      params: {
+        ...props.params,
+        roots: roots ? [...roots] : undefined,
+      },
+    }),
+  )
 }
 
 function FilesystemCatalogBinding() {
@@ -145,7 +153,8 @@ const filesystemFront: BoringFrontSetup = (api) => {
   api.registerPanel({
     id: CODE_EDITOR_PANEL_ID,
     label: "Code",
-    component: CodeEditorPane,
+    component: importCodeEditorPane,
+    lazy: true,
     placement: "center",
     source: "builtin",
   })
@@ -154,35 +163,40 @@ const filesystemFront: BoringFrontSetup = (api) => {
     label: "CSV",
     // CSV currently uses the text editor shell; a tabular viewer can replace
     // this panel without changing the filesystem resolver contract.
-    component: CodeEditorPane,
+    component: importCodeEditorPane,
+    lazy: true,
     placement: "center",
     source: "builtin",
   })
   api.registerPanel({
     id: MARKDOWN_EDITOR_PANEL_ID,
     label: "Markdown",
-    component: MarkdownEditorPane,
+    component: importMarkdownEditorPane,
+    lazy: true,
     placement: "center",
     source: "builtin",
   })
   api.registerPanel({
     id: IMAGE_VIEWER_PANEL_ID,
     label: "Image",
-    component: MediaViewerPane,
+    component: importMediaViewerPane,
+    lazy: true,
     placement: "center",
     source: "builtin",
   })
   api.registerPanel({
     id: PDF_VIEWER_PANEL_ID,
     label: "PDF",
-    component: MediaViewerPane,
+    component: importMediaViewerPane,
+    lazy: true,
     placement: "center",
     source: "builtin",
   })
   api.registerPanel({
     id: HTML_VIEWER_PANEL_ID,
     label: "HTML",
-    component: HtmlViewerPane,
+    component: importHtmlViewerPane,
+    lazy: true,
     placement: "center",
     source: "builtin",
   })

@@ -40,7 +40,10 @@ export function ManagementOverlaySurface({
     >
       <header className={cn(
         "flex h-12 shrink-0 items-center justify-between border-b border-border/60",
-        headerInsetStart ? "pl-12" : "pl-4",
+        // Same token as the mobile bars (front/layout/mobileShell.tsx): both
+        // reserve the leading gutter for the SAME floating app-left control, so
+        // they must not each guess a different number.
+        headerInsetStart ? "pl-[var(--mobile-header-inset-start,3.25rem)]" : "pl-4",
         headerInsetEnd ? "pr-16" : "pr-4",
       )}>
         <div className="flex min-w-0 flex-1 items-center gap-2">

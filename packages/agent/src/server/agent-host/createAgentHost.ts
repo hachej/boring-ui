@@ -9,6 +9,7 @@ import { getOptionalRuntimeBundleStorageRoot } from '../runtime/mode'
 import { mergeRuntimeFilesystemBindings } from '../runtime/filesystemBindings'
 import { createAgentHostRoutes } from './httpProjection'
 import { InMemoryAgentRequestLedger } from './requestLedger'
+import { resolveRequestLedgerPath } from './requestLedgerPath'
 import { SqliteAgentRequestLedger } from './sqliteRequestLedger'
 import {
   createAgentHostRuntimeCapabilityProjection,
@@ -63,6 +64,7 @@ export interface AgentHostRuntime {
     agentTypeId: string,
     scope: AuthorizedAgentScope,
     claim: VerifiedAgentScopeClaim,
+    options?: import('../../shared/session').SessionListOptions,
   ): Promise<readonly import('../../shared/session').SessionSummary[]>
   isDraining(): boolean
   assertOpen(): void
@@ -219,6 +221,21 @@ function validateEnvironmentScope(resolved: AgentHostEnvironmentScope): void {
   if (!resolved.workspaceRoot.trim()) throw new TypeError('resolved environment workspaceRoot must be non-empty')
 }
 
+/**
+ * Durable ledger file this host will open, or `undefined` when it was given
+ * neither an explicit path nor a session root.
+ *
+ * `createAgentHost` is the innermost host. It delegates explicit-path and
+ * session-root normalization to the canonical resolver, but has no in-workspace
+ * fallback — a host with nothing host-owned to write to fails closed.
+ */
+function resolveHostLedgerPath(options: CreateAgentHostOptions): string | undefined {
+  return resolveRequestLedgerPath({
+    requestLedgerPath: options.requestLedgerPath,
+    sessionRoot: options.sessionRoot,
+  })
+}
+
 function createRuntime(
   options: CreateAgentHostOptions,
   compiledAgents: readonly CompiledAgentHostAgentSpec[],
@@ -284,12 +301,11 @@ function createRuntime(
   let draining = false
   let drainPromise: Promise<void> | undefined
   let closePromise: Promise<void> | undefined
+  const durableLedgerPath = resolveHostLedgerPath(options)
   const ledger: import('./types').AgentRequestLedger = options.requestLedger
-    ?? (options.inMemoryRequestLedgerMode
+    ?? (options.inMemoryRequestLedgerMode || !durableLedgerPath
       ? new InMemoryAgentRequestLedger()
-      : options.requestLedgerPath || options.sessionRoot
-        ? new SqliteAgentRequestLedger(options.requestLedgerPath ?? join(options.sessionRoot!, '.agent-request-ledger.sqlite'))
-        : new InMemoryAgentRequestLedger())
+      : new SqliteAgentRequestLedger(durableLedgerPath))
 
   const disposeBinding = (binding: RuntimeBinding): Promise<void> => {
     let disposal = bindingDisposals.get(binding)
@@ -319,9 +335,9 @@ function createRuntime(
     },
     activity,
     shutdownGraceMs: graceMs,
-    listSessionSummaries(agentTypeId, scope, claim) {
+    listSessionSummaries(agentTypeId, scope, claim, options) {
       runtime.assertOpen()
-      return inventory.list(agentTypeId, scope, claim)
+      return inventory.list(agentTypeId, scope, claim, options)
     },
     isDraining: () => draining,
     assertOpen() {
@@ -661,8 +677,7 @@ export async function createAgentHost(
   }
   const compiledAgents = await compileFleet(options)
   const hostId = await resolveHostId(options)
-  const durableLedgerPath = options.requestLedgerPath
-    ?? (options.sessionRoot ? join(options.sessionRoot, '.agent-request-ledger.sqlite') : undefined)
+  const durableLedgerPath = resolveHostLedgerPath(options)
   if (!options.requestLedger && !options.inMemoryRequestLedgerMode && !durableLedgerPath) {
     throw new TypeError(
       'createAgentHost requires requestLedgerPath or sessionRoot for its durable transactional ledger',

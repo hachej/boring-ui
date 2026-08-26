@@ -10,7 +10,7 @@ import {
   ErrorCode,
   type AgentSkillResource,
 } from '@hachej/boring-agent/shared'
-import { parseSkillMetadataFrontmatter } from '@hachej/boring-agent/server'
+import { SKIPPABLE_RESOURCE_CODES, parseSkillMetadataFrontmatter } from '@hachej/boring-agent/server'
 
 import type { WorkspacePackageResourceRecord } from './bootstrapServer'
 
@@ -73,6 +73,8 @@ export interface AgentResourceReadonlyMount {
 
 export interface ResolvedWorkspacePackageResourceRegistry {
   readonly generation: string
+  /** Entries the caller marked skippable that this resolve declined to admit. */
+  readonly skipped: readonly SkippedWorkspacePackageResource[]
   readonly additionalSkillPaths: readonly string[]
   readonly skills: readonly ResolvedAgentPackageSkill[]
   readonly managedSkills: readonly ResolvedAgentManagedSkill[]
@@ -150,6 +152,20 @@ function conflict(packageName: string, reason: string): WorkspacePackageResource
   )
 }
 
+function isExpectedPathAdmissionError(error: unknown): boolean {
+  const code = (error as { code?: unknown })?.code
+  return code === 'ENOENT' || code === 'ENOTDIR' || code === 'ELOOP'
+}
+
+function admissionRefusal(error: unknown): { code: string; message: string } | undefined {
+  const code = resourceAdmissionCode(error)
+  if (!code) return undefined
+  return {
+    code,
+    message: error instanceof Error ? error.message : `package resource admission failed (${code})`,
+  }
+}
+
 function packageRootPath(input: string | URL, packageName: string): string {
   if (input instanceof URL) {
     if (input.protocol !== 'file:') throw invalid(packageName, 'packageRoot URL must use file:')
@@ -181,16 +197,27 @@ function normalizeDeclaration(packageName: string, declaration: unknown): string
   return declaration
 }
 
+/**
+ * A skill resolved from the filesystem, before it is attributed to the plugins
+ * that contributed its package. Attribution is a cross-entry concern, so it is
+ * applied once during assembly rather than repeated per contribution.
+ */
+type ResolvedSkillDraft = Omit<ResolvedAgentPackageSkill, 'pluginIds'>
+
 async function resolveSkillRecord(input: {
   packageName: string
-  pluginIds: readonly string[]
   sourceSkillFile: string
   logicalFile: string
   packageRoot?: string
-}): Promise<ResolvedAgentPackageSkill> {
-  if (!(await stat(input.sourceSkillFile).catch(() => null))?.isFile()) {
+}): Promise<ResolvedSkillDraft> {
+  let sourceStat: Awaited<ReturnType<typeof stat>>
+  try {
+    sourceStat = await stat(input.sourceSkillFile)
+  } catch (error) {
+    if (!isExpectedPathAdmissionError(error)) throw error
     throw invalid(input.packageName, 'declared skill has no SKILL.md file')
   }
+  if (!sourceStat.isFile()) throw invalid(input.packageName, 'declared skill has no SKILL.md file')
   const [skillFile, mountRoot] = await Promise.all([
     realpath(input.sourceSkillFile),
     realpath(dirname(input.sourceSkillFile)),
@@ -206,7 +233,6 @@ async function resolveSkillRecord(input: {
   const { name, description } = parseSkillMetadataFrontmatter(content)
   return {
     packageName: input.packageName,
-    pluginIds: input.pluginIds,
     skillFile,
     mountRoot,
     resource: { filesystem: AGENT_RESOURCES_FILESYSTEM_ID, path: input.logicalFile },
@@ -219,12 +245,16 @@ async function resolveSkillDeclaration(
   packageName: string,
   canonicalPackageRoot: string,
   declaration: string,
-  pluginIds: readonly string[],
-): Promise<ResolvedAgentPackageSkill> {
+): Promise<ResolvedSkillDraft> {
   const declaredPath = resolve(canonicalPackageRoot, ...declaration.split('/'))
   if (!isInside(canonicalPackageRoot, declaredPath)) throw invalid(packageName, 'pi.skills entry escapes package root')
-  const declaredStat = await stat(declaredPath).catch(() => null)
-  if (!declaredStat) throw invalid(packageName, 'pi.skills entry does not exist')
+  let declaredStat: Awaited<ReturnType<typeof stat>>
+  try {
+    declaredStat = await stat(declaredPath)
+  } catch (error) {
+    if (!isExpectedPathAdmissionError(error)) throw error
+    throw invalid(packageName, 'pi.skills entry does not exist')
+  }
   const directFile = declaredStat.isFile() && posix.basename(declaration) === 'SKILL.md'
   if (!declaredStat.isDirectory() && !directFile) {
     throw invalid(packageName, 'pi.skills entry must be a skill directory or SKILL.md file')
@@ -232,7 +262,6 @@ async function resolveSkillDeclaration(
   const relativeSkillFile = directFile ? declaration : `${declaration}/SKILL.md`
   return resolveSkillRecord({
     packageName,
-    pluginIds,
     sourceSkillFile: resolve(canonicalPackageRoot, ...relativeSkillFile.split('/')),
     logicalFile: `packages/${packageName}/${relativeSkillFile}`,
     packageRoot: canonicalPackageRoot,
@@ -243,44 +272,233 @@ function rootsOverlap(left: string, right: string): boolean {
   return left === right || left.startsWith(`${right}/`) || right.startsWith(`${left}/`)
 }
 
+export interface SharedSkillPath {
+  readonly id: string
+  readonly skillFile: string
+}
+
+/**
+ * One entry the resolver declined to admit. Only entries the caller marked
+ * skippable can appear here; a required entry still fails the whole resolve.
+ */
+export interface SkippedWorkspacePackageResource {
+  readonly kind: 'package-contribution' | 'shared-skill'
+  /** Package name for a contribution, shared skill id for a shared skill. */
+  readonly id: string
+  /** Admission verdict that caused the skip. */
+  readonly code: string
+  /** Specific refusal retained for diagnostics; unexpected errors are rethrown. */
+  readonly message: string
+}
+
+export interface ResolveWorkspacePackageResourcesOptions {
+  /** Host-declared shared skills. An inadmissible entry fails the resolve. */
+  sharedSkillPaths?: readonly SharedSkillPath[]
+  /**
+   * Speculatively scanned contributions. An entry that is not independently
+   * admissible is reported in `skipped` instead of failing the resolve, and is
+   * never mounted or exposed.
+   */
+  skippableContributions?: readonly WorkspacePackageResourceRecord[]
+  /**
+   * Ambient shared skills discovered in the user's tree (`~/.pi/agent/skills`
+   * is normally a tree of symlinks, so a stale entry is routine). Degrades the
+   * same way as `skippableContributions`, but only on an admission verdict —
+   * a resolver defect still propagates (gh-1196).
+   */
+  skippableSharedSkillPaths?: readonly SharedSkillPath[]
+}
+
+/** A contribution that passed independent admission: canonical root + manifest. */
+interface AdmittedContribution {
+  readonly contribution: WorkspacePackageResourceRecord
+  readonly canonicalRoot: string
+  readonly manifest: PackageManifest
+  readonly skippable: boolean
+  /** Position in the skippable input, used to report skips in input order. */
+  readonly order: number
+}
+
+function packageKey(packageName: string, canonicalRoot: string): string {
+  return `${packageName}\0${canonicalRoot}`
+}
+
+/**
+ * Independent admission of one contribution: everything that can be decided
+ * from the contribution alone, with no reference to its siblings. Cross-entry
+ * conflicts are deliberately *not* checked here — they are decided later, over
+ * the survivors only, so that a skipped entry cannot manufacture a conflict.
+ */
+async function admitContribution(
+  contribution: WorkspacePackageResourceRecord,
+): Promise<{ canonicalRoot: string; manifest: PackageManifest }> {
+  if (contribution.packageName === 'shared/pi-agent') {
+    throw invalid(contribution.packageName, 'package name is reserved for host-owned shared skills')
+  }
+  const requestedRoot = packageRootPath(contribution.packageRoot, contribution.packageName)
+  let canonicalRoot: string
+  try {
+    canonicalRoot = await realpath(requestedRoot)
+  } catch (error) {
+    if (!isExpectedPathAdmissionError(error)) throw error
+    throw invalid(contribution.packageName, 'packageRoot is not readable')
+  }
+  let manifestBytes: string
+  try {
+    manifestBytes = await readFile(resolve(canonicalRoot, 'package.json'), 'utf8')
+  } catch (error) {
+    if (!isExpectedPathAdmissionError(error)) throw error
+    throw invalid(contribution.packageName, 'package manifest is not readable')
+  }
+  const manifest = parseManifest(contribution.packageName, manifestBytes)
+  if (manifest.name !== contribution.packageName) {
+    throw invalid(contribution.packageName, 'package manifest name does not match contribution')
+  }
+  return { canonicalRoot, manifest }
+}
+
+/** Resolve every skill a package declares, exactly once per package root. */
+async function resolvePackageSkills(
+  packageName: string,
+  canonicalRoot: string,
+  manifest: PackageManifest,
+): Promise<ResolvedSkillDraft[]> {
+  if (!Array.isArray(manifest.pi?.skills) || manifest.pi.skills.length === 0) {
+    throw invalid(packageName, 'package manifest must declare pi.skills')
+  }
+  const declarations = [...new Set(manifest.pi.skills.map((entry) => normalizeDeclaration(packageName, entry)))]
+  const drafts: ResolvedSkillDraft[] = []
+  for (const declaration of declarations.sort()) {
+    drafts.push(await resolveSkillDeclaration(packageName, canonicalRoot, declaration))
+  }
+  assertNoOverlappingLogicalRoots(drafts)
+  return drafts
+}
+
+/** Resolve one shared skill. Never called more than once per entry. */
+async function resolveSharedSkill(shared: SharedSkillPath): Promise<ResolvedSkillDraft & { sourceFile: string }> {
+  if (!shared.id || shared.id.includes('/') || shared.id.includes('\\') || shared.id === '.' || shared.id === '..') {
+    throw invalid('shared/pi-agent', 'shared skill id is invalid')
+  }
+  const sourceFile = resolve(shared.skillFile)
+  let skillFile: string
+  try {
+    skillFile = await realpath(sourceFile)
+  } catch (error) {
+    if (!isExpectedPathAdmissionError(error)) throw error
+    throw invalid('shared/pi-agent', 'shared skill is not readable')
+  }
+  if (posix.basename(skillFile.split(sep).join('/')) !== 'SKILL.md') {
+    throw invalid('shared/pi-agent', 'shared skill must name a SKILL.md file')
+  }
+  const skill = await resolveSkillRecord({
+    packageName: 'shared/pi-agent',
+    sourceSkillFile: skillFile,
+    logicalFile: `shared/pi-agent/${shared.id}/SKILL.md`,
+  })
+  return { ...skill, sourceFile }
+}
+
+function assertNoOverlappingLogicalRoots(drafts: readonly ResolvedSkillDraft[]): void {
+  const logicalRoots = drafts.map((skill) => posix.dirname(skill.resource.path))
+  for (let i = 0; i < logicalRoots.length; i++) {
+    for (let j = i + 1; j < logicalRoots.length; j++) {
+      if (rootsOverlap(logicalRoots[i], logicalRoots[j])) {
+        throw conflict(drafts[j].packageName, 'logical skill mounts overlap')
+      }
+    }
+  }
+}
+
 export async function resolveWorkspacePackageResources(
   contributions: readonly WorkspacePackageResourceRecord[],
-  options: {
-    sharedSkillPaths?: readonly { readonly id: string; readonly skillFile: string }[]
-  } = {},
+  options: ResolveWorkspacePackageResourcesOptions = {},
 ): Promise<ResolvedWorkspacePackageResourceRegistry> {
+  const skippableContributions = options.skippableContributions ?? []
+  // Package skips are reported in skippable-input order regardless of which
+  // phase rejected them, so callers see one stable diagnostic sequence.
+  const packageSkips: { order: number; entry: SkippedWorkspacePackageResource }[] = []
+  const sharedSkips: SkippedWorkspacePackageResource[] = []
+
+  // Phase 1 — independent admission. Required entries fail the resolve; a
+  // skippable entry is dropped here and never touched again.
+  const admitted: AdmittedContribution[] = []
+  const admitInto = async (records: readonly WorkspacePackageResourceRecord[], skippable: boolean) => {
+    for (const [order, contribution] of records.entries()) {
+      try {
+        const { canonicalRoot, manifest } = await admitContribution(contribution)
+        admitted.push({ contribution, canonicalRoot, manifest, skippable, order })
+      } catch (error) {
+        if (!skippable) throw error
+        const refusal = admissionRefusal(error)
+        if (!refusal) throw error
+        packageSkips.push({
+          order,
+          entry: { kind: 'package-contribution', id: contribution.packageName, ...refusal },
+        })
+      }
+    }
+  }
+  await admitInto(contributions, false)
+  await admitInto(skippableContributions, true)
+
+  // Phase 2 — resolve each distinct package root's skills exactly once. A root
+  // whose only claimants are skippable is dropped whole; one required claimant
+  // makes the failure fatal, as it is today.
+  const draftsByPackage = new Map<string, ResolvedSkillDraft[]>()
+  const surviving: AdmittedContribution[] = []
+  const droppedKeys = new Map<string, { code: string; message: string }>()
+  const requiredKeys = new Set(admitted
+    .filter((entry) => !entry.skippable)
+    .map((entry) => packageKey(entry.contribution.packageName, entry.canonicalRoot)))
+  for (const entry of admitted) {
+    const key = packageKey(entry.contribution.packageName, entry.canonicalRoot)
+    const alreadyDropped = droppedKeys.get(key)
+    if (alreadyDropped) {
+      packageSkips.push({
+        order: entry.order,
+        entry: { kind: 'package-contribution', id: entry.contribution.packageName, ...alreadyDropped },
+      })
+      continue
+    }
+    if (!draftsByPackage.has(key)) {
+      try {
+        draftsByPackage.set(key, await resolvePackageSkills(
+          entry.contribution.packageName,
+          entry.canonicalRoot,
+          entry.manifest,
+        ))
+      } catch (error) {
+        if (requiredKeys.has(key)) throw error
+        const refusal = admissionRefusal(error)
+        if (!refusal) throw error
+        droppedKeys.set(key, refusal)
+        packageSkips.push({
+          order: entry.order,
+          entry: { kind: 'package-contribution', id: entry.contribution.packageName, ...refusal },
+        })
+        continue
+      }
+    }
+    surviving.push(entry)
+  }
+
+  // Phase 3 — assemble. Cross-entry conflicts are decided here, over survivors
+  // only, in contribution order.
   const packageRecords = new Map<string, {
     root: string
     manifest: PackageManifest
     pluginIds: Set<string>
   }>()
-
-  for (const contribution of contributions) {
-    if (contribution.packageName === 'shared/pi-agent') {
-      throw invalid(contribution.packageName, 'package name is reserved for host-owned shared skills')
-    }
-    const requestedRoot = packageRootPath(contribution.packageRoot, contribution.packageName)
-    const canonicalRoot = await realpath(requestedRoot).catch(() => {
-      throw invalid(contribution.packageName, 'packageRoot is not readable')
-    })
+  for (const { contribution, canonicalRoot, manifest } of surviving) {
     const existingForName = packageRecords.get(contribution.packageName)?.root
     if (existingForName && existingForName !== canonicalRoot) {
       throw conflict(contribution.packageName, 'one package name resolved to multiple roots')
     }
-
-    const manifestBytes = await readFile(resolve(canonicalRoot, 'package.json'), 'utf8').catch(() => {
-      throw invalid(contribution.packageName, 'package manifest is not readable')
-    })
-    const manifest = parseManifest(contribution.packageName, manifestBytes)
-    if (manifest.name !== contribution.packageName) {
-      throw invalid(contribution.packageName, 'package manifest name does not match contribution')
-    }
-
     const existingAtRoot = [...packageRecords.entries()].find(([, record]) => record.root === canonicalRoot)
     if (existingAtRoot && existingAtRoot[0] !== contribution.packageName) {
       throw conflict(contribution.packageName, 'one package root was claimed by multiple names')
     }
-
     const record = packageRecords.get(contribution.packageName) ?? {
       root: canonicalRoot,
       manifest,
@@ -292,42 +510,33 @@ export async function resolveWorkspacePackageResources(
 
   const skills: ResolvedAgentPackageSkill[] = []
   for (const [packageName, record] of [...packageRecords.entries()].sort(([a], [b]) => a.localeCompare(b))) {
-    const manifest = record.manifest
-    if (!Array.isArray(manifest.pi?.skills) || manifest.pi.skills.length === 0) {
-      throw invalid(packageName, 'package manifest must declare pi.skills')
-    }
-    const declarations = [...new Set(manifest.pi.skills.map((entry) => normalizeDeclaration(packageName, entry)))]
-    for (const declaration of declarations.sort()) {
-      skills.push(await resolveSkillDeclaration(
-        packageName,
-        record.root,
-        declaration,
-        [...record.pluginIds].sort(),
-      ))
+    const pluginIds = [...record.pluginIds].sort()
+    for (const draft of draftsByPackage.get(packageKey(packageName, record.root)) ?? []) {
+      skills.push({ ...draft, pluginIds })
     }
   }
 
   const sharedLocatorAliases = new Map<string, AgentSkillResource>()
-  for (const shared of options.sharedSkillPaths ?? []) {
-    if (!shared.id || shared.id.includes('/') || shared.id.includes('\\') || shared.id === '.' || shared.id === '..') {
-      throw invalid('shared/pi-agent', 'shared skill id is invalid')
+  const admitShared = async (entries: readonly SharedSkillPath[], skippable: boolean) => {
+    for (const shared of entries) {
+      let resolved: Awaited<ReturnType<typeof resolveSharedSkill>>
+      try {
+        resolved = await resolveSharedSkill(shared)
+      } catch (error) {
+        // Only an admission verdict is routine. A resolver defect must surface,
+        // not masquerade as a stale symlink.
+        const refusal = skippable ? admissionRefusal(error) : undefined
+        if (!refusal) throw error
+        sharedSkips.push({ kind: 'shared-skill', id: shared.id, ...refusal })
+        continue
+      }
+      const { sourceFile, ...skill } = resolved
+      sharedLocatorAliases.set(sourceFile, skill.resource)
+      skills.push({ ...skill, pluginIds: ['host:shared-skill'] })
     }
-    const sourceFile = resolve(shared.skillFile)
-    const skillFile = await realpath(sourceFile).catch(() => {
-      throw invalid('shared/pi-agent', 'shared skill is not readable')
-    })
-    if (posix.basename(skillFile.split(sep).join('/')) !== 'SKILL.md') {
-      throw invalid('shared/pi-agent', 'shared skill must name a SKILL.md file')
-    }
-    const skill = await resolveSkillRecord({
-      packageName: 'shared/pi-agent',
-      pluginIds: ['host:shared-skill'],
-      sourceSkillFile: skillFile,
-      logicalFile: `shared/pi-agent/${shared.id}/SKILL.md`,
-    })
-    sharedLocatorAliases.set(sourceFile, skill.resource)
-    skills.push(skill)
   }
+  await admitShared(options.sharedSkillPaths ?? [], false)
+  await admitShared(options.skippableSharedSkillPaths ?? [], true)
 
   const logicalRoots = skills.map((skill) => posix.dirname(skill.resource.path))
   for (let i = 0; i < logicalRoots.length; i++) {
@@ -370,6 +579,10 @@ export async function resolveWorkspacePackageResources(
 
   return {
     generation: generationHash.digest('hex'),
+    skipped: [
+      ...packageSkips.sort((left, right) => left.order - right.order).map(({ entry }) => entry),
+      ...sharedSkips,
+    ],
     additionalSkillPaths: [...new Set(skills
       .filter((skill) => skill.packageName !== 'shared/pi-agent')
       .map((skill) => skill.mountRoot))],
@@ -404,6 +617,26 @@ export interface PackageResourceDiagnostic {
   readonly source: string
   readonly message: string
   readonly pluginId?: string
+  /** The admission verdict that caused the entry to be skipped, when there was one. */
+  readonly code?: string
+}
+
+/**
+ * Speculative package/shared-skill inputs may degrade only when the host
+ * explicitly declines to admit them. `SKIPPABLE_RESOURCE_CODES` carries the
+ * path-admission verdicts shared with the digest layer;
+ * `PACKAGE_RESOURCE_INVALID_CODE` is this layer's own validated-input verdict.
+ * Anything else — a conflict, TypeError, EACCES, or resolver defect — must
+ * propagate rather than masquerade as a routine skip.
+ */
+const RESOURCE_ADMISSION_CODES: ReadonlySet<string> = new Set<string>([
+  ...SKIPPABLE_RESOURCE_CODES,
+  PACKAGE_RESOURCE_INVALID_CODE,
+])
+
+function resourceAdmissionCode(error: unknown): string | undefined {
+  const code = (error as { code?: unknown })?.code
+  return typeof code === 'string' && RESOURCE_ADMISSION_CODES.has(code) ? code : undefined
 }
 
 export function packageResourceHandlesPath(
@@ -481,23 +714,31 @@ export async function resolveWorkspacePackageResourceSnapshot<TBinding = never>(
   readonly binding?: TBinding
   readonly diagnostics: readonly PackageResourceDiagnostic[]
 }> {
-  const accepted: WorkspacePackageResourceRecord[] = []
-  const diagnostics: PackageResourceDiagnostic[] = []
-  for (const record of input.scanned) {
-    try {
-      await resolveWorkspacePackageResources([record])
-      accepted.push(record)
-    } catch {
-      diagnostics.push({
-        source: 'package-resource-scan',
-        message: 'scanned package skill resources were invalid',
-        pluginId: record.packageName,
-      })
-    }
-  }
-  const registry = await resolveWorkspacePackageResources([...input.declared, ...accepted], {
-    sharedSkillPaths: input.sharedSkillPaths,
+  // Scanned packages and ambient shared skills are speculative: an entry the
+  // resolver will not admit is skipped with a diagnostic and is never resolved,
+  // opened or exposed, while the rest still load. gh-1196: ~/.pi/agent/skills is
+  // normally a tree of symlinks into other roots, so one stale entry there is
+  // routine, and failing the whole scan closed used to 500 every agent-scoped
+  // route. The resolver reports these per entry in a single pass — do not
+  // reintroduce a probe that re-runs it once per candidate.
+  const registry = await resolveWorkspacePackageResources(input.declared, {
+    skippableContributions: input.scanned,
+    skippableSharedSkillPaths: input.sharedSkillPaths ?? [],
   })
+  const diagnostics: PackageResourceDiagnostic[] = registry.skipped.map((entry) =>
+    entry.kind === 'package-contribution'
+      ? {
+          source: 'package-resource-scan',
+          message: entry.message,
+          pluginId: entry.id,
+          code: entry.code,
+        }
+      : {
+          source: 'shared-skill-scan',
+          message: `shared skill "${entry.id}" was not admissible and was skipped: ${entry.message}`,
+          pluginId: 'shared/pi-agent',
+          code: entry.code,
+        })
   const binding = registry.readonlyMounts.length > 0 && input.createBinding
     ? await input.createBinding(registry.readonlyMounts)
     : undefined

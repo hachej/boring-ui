@@ -64,6 +64,10 @@
   --boring-muted-foreground: oklch(0.52 0.008 72);
   --boring-destructive: oklch(0.577 0.245 27.325);
   --boring-destructive-foreground: oklch(0.985 0.002 72);
+  /* Ported ahead of the spike CSS it originated in: the Inbox count badge
+     (plugins/ask-user) needs an amber token distinct from --boring-accent
+     ("selected/active") to mark "waiting on you". */
+  --boring-attention: oklch(0.55 0.11 75);
   --boring-border: oklch(0.915 0.004 72);
   --boring-input: oklch(0.915 0.004 72);
   --boring-accent: oklch(0.62 0.14 65);
@@ -100,6 +104,7 @@
   --muted-foreground: var(--boring-muted-foreground);
   --destructive: var(--boring-destructive);
   --destructive-foreground: var(--boring-destructive-foreground);
+  --attention: var(--boring-attention);
   --border: var(--boring-border);
   --input: var(--boring-input);
   --accent: var(--boring-accent);
@@ -116,6 +121,28 @@
   --surface-chat: var(--boring-surface-chat);
   --surface-workbench: var(--boring-surface-workbench);
   --surface-workbench-left: var(--boring-surface-workbench-left);
+
+  /* Mobile viewport insets — public contract, see front/layout/useKeyboardInset.
+   *
+   * `--sa-*` aliases the safe-area env() values so chrome can write
+   * `var(--sa-bottom)` instead of repeating the env() + fallback everywhere
+   * (they only resolve non-zero when the host declares `viewport-fit=cover`,
+   * which host viewport metas are tested for).
+   *
+   * `--keyboard-inset` is the height of the strip covered by the software
+   * keyboard. It is rewritten on `<html>` by `useKeyboardInset()`; this
+   * declaration is the always-present `0px` default so the variable resolves
+   * on desktop and before that hook ever mounts. */
+  --sa-top: env(safe-area-inset-top, 0px);
+  --sa-right: env(safe-area-inset-right, 0px);
+  --sa-bottom: env(safe-area-inset-bottom, 0px);
+  --sa-left: env(safe-area-inset-left, 0px);
+  --keyboard-inset: 0px;
+  /* Mobile chrome metrics. The mobile shell bars and the management overlay
+   * leading gutter both consume these, so there is exactly one number to
+   * change per metric; component-side literals are only no-token fallbacks. */
+  --mobile-bar-height: 3rem;
+  --mobile-header-inset-start: 3.25rem;
 }
 
 [data-theme="dark"] {
@@ -139,6 +166,7 @@
   --boring-success-soft: oklch(0.22 0.04 145);
   --boring-destructive: oklch(0.396 0.141 25.768);
   --boring-destructive-foreground: oklch(0.985 0 0);
+  --boring-attention: oklch(0.8 0.11 75);
   --boring-border: oklch(0.269 0.006 285.885);
   --boring-input: oklch(0.269 0.006 285.885);
   --boring-ring: oklch(0.72 0.13 65);
@@ -161,6 +189,7 @@
   --muted-foreground: var(--boring-muted-foreground);
   --destructive: var(--boring-destructive);
   --destructive-foreground: var(--boring-destructive-foreground);
+  --attention: var(--boring-attention);
   --border: var(--boring-border);
   --input: var(--boring-input);
   --accent: var(--boring-accent);
@@ -196,6 +225,20 @@
   code, kbd, pre, samp, .font-mono, [class*="font-mono"] {
     font-family: var(--font-mono);
     font-feature-settings: "ss02", "ss03", "zero";
+  }
+  /* iOS Safari auto-zooms the page when a focused control renders below 16px,
+   * and never zooms back out — the dense 12-14px fields used across workspace
+   * chrome leave the user stranded at 1.3x with the layout cut off.
+   *
+   * `pointer: coarse` matches on the *primary* pointer only, so touchscreen
+   * laptops (primary pointer = trackpad/mouse) keep the dense desktop sizing;
+   * this fires on phones and tablets, where the chrome is the mobile shell and
+   * 16px controls are what the touch target sizing already assumes. `1em`
+   * keeps any control that is deliberately larger than 16px unchanged. */
+  @media (pointer: coarse) {
+    input, textarea, select {
+      font-size: max(16px, 1em);
+    }
   }
 }
 

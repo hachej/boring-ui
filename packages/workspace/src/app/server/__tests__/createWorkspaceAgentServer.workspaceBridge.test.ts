@@ -352,10 +352,12 @@ export default {
 
   test("disables WorkspaceBridge runtime env for remote-placement runtimes without public HTTPS URL", async () => {
     mockResolvedEnvironmentOnce(async () => Fastify())
+    const getRuntimeLayoutRoot = vi.fn(() => "/custom-workspace")
     const app = await createWorkspaceAgentServer({
       workspaceRoot: await makeTempDir("bridge-runtime-env-remote-"),
       runtimeModeAdapter: {
         id: "custom-remote-runtime",
+        getRuntimeLayoutRoot,
         workspaceFsCapability: "best-effort",
         async create() { throw new Error("not used by this composition test") },
       },
@@ -370,6 +372,11 @@ export default {
     const env = await capturedRuntimeEnv()
 
     expect(env).toEqual({ BORING_WORKSPACE_BRIDGE_DISABLED: "remote-bridge-url-must-be-https" })
+    expect(getRuntimeLayoutRoot).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceRoot: expect.any(String),
+      sessionId: "default",
+      workspaceId: "default",
+    }))
     expect(JSON.stringify(env)).not.toContain("12345678901234567890123456789012")
     await app.close()
   })

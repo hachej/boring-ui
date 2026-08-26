@@ -190,7 +190,7 @@ export async function provisionCliWorkspaceRuntime(opts: {
     let adapter = opts.adapter
     if (!adapter) {
       const modeAdapter = opts.modeAdapter
-        ?? agent.createSandboxRuntimeModeAdapter(opts.mode as 'direct' | 'local' | 'blaxel' | 'vercel-sandbox')
+        ?? agent.createSandboxRuntimeModeAdapter(opts.mode)
       scopedRuntime = await modeAdapter.create({
         workspaceRoot: opts.workspaceRoot,
         workspaceId: opts.workspaceRoot,
@@ -1004,11 +1004,11 @@ export async function createWorkspacesModeApp(opts: {
     discoveredAgentPackages = await workspaceServer.discoverRepositoryAgentPackages(fleetRepositoryRoot)
   }
   const agentHost = await agentServer.createAgentHost({
-    // The hub serves a DIFFERENT root per registered workspace, so there is no
-    // single one persona instruction refs could be addressed against.
+    // The hub serves a DIFFERENT root per registered workspace; persona
+    // instruction refs are therefore addressed per request against the root
+    // that request is served from, not once here (gh-1189).
     agents: await agentServer.resolveDefaultAgentFleet({
       repositoryRoot: fleetRepositoryRoot,
-      workspaceRoot: null,
       ...(discoveredAgentPackages ? { discoveredPackages: discoveredAgentPackages } : {}),
     }),
     fleetCompiler: { async compile({ agents }) { return agents } },
@@ -1019,11 +1019,11 @@ export async function createWorkspacesModeApp(opts: {
     requestLedgerPath: join(dirname(registry.path), "agent-request-ledger.sqlite"),
     async resolveAuthorizedEnvironmentScope({ authorizedScope }) {
       const workspace = trustedLocalScope.workspace(authorizedScope)
-      const runtimeLayoutRoot = sandboxRuntimeAdapter.getRuntimeLayoutRoot?.({
+      const runtimeLayoutRoot = sandboxRuntimeAdapter.getRuntimeLayoutRoot({
         workspaceRoot: workspace.path,
         workspaceId: workspace.id,
         sessionId: workspace.id,
-      }) ?? workspace.path
+      })
       return {
         placementIdentity: JSON.stringify([opts.mode, workspace.path]),
         workspaceRoot: workspace.path,

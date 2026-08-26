@@ -640,6 +640,69 @@ describe("CommandPalette", () => {
     })
   })
 
+  describe("responsive layout", () => {
+    async function openPalette() {
+      render(<CommandPalette />, { wrapper: createWrapper() })
+      fireKeydown("p", { metaKey: true })
+      await waitFor(() => {
+        expect(screen.getByRole("dialog")).toBeInTheDocument()
+      })
+    }
+
+    function getSearchLayout(): HTMLElement {
+      const layout = document.querySelector(".command-palette-search-layout")
+      if (!(layout instanceof HTMLElement)) throw new Error("search layout not rendered")
+      return layout
+    }
+
+    it("puts the input ahead of the mode switcher on compact viewports only", async () => {
+      await openPalette()
+      const layout = getSearchLayout()
+      const wrapper = layout.querySelector("[data-slot=command-input-wrapper]")
+      expect(wrapper).toBeInTheDocument()
+
+      // jsdom has no layout engine, so the compact ordering is asserted through
+      // the responsive utilities that produce it: the input claims the first
+      // full-width row below `sm:` and returns to the inline row above it.
+      expect(layout.className).toContain("[&>[data-slot=command-input-wrapper]]:order-first")
+      expect(layout.className).toContain("[&>[data-slot=command-input-wrapper]]:basis-full")
+      expect(layout.className).toContain("sm:[&>[data-slot=command-input-wrapper]]:order-none")
+      expect(layout.className).toContain("sm:[&>[data-slot=command-input-wrapper]]:basis-auto")
+      // The 15rem input floor is what forced the wrap; it must not apply compact.
+      expect(layout.className).not.toContain(" [&>[data-slot=command-input-wrapper]]:min-w-[15rem]")
+      expect(layout.className).toContain("sm:[&>[data-slot=command-input-wrapper]]:min-w-[15rem]")
+
+      const modeGroup = screen.getByRole("group", { name: "Palette mode" })
+      expect(modeGroup.className).toContain("basis-full")
+      expect(modeGroup.className).toContain("sm:basis-auto")
+    })
+
+    it("keeps mode button accessible names when the labels are visually hidden", async () => {
+      await openPalette()
+      for (const name of ["Sources", "Commands"]) {
+        const button = screen.getByRole("button", { name })
+        const label = button.querySelector("span.sr-only")
+        expect(label).not.toBeNull()
+        expect(label).toHaveTextContent(name)
+        // `sr-only`, not `hidden`: the name must survive the icon-only layout.
+        expect(label?.className).toContain("sm:not-sr-only")
+      }
+    })
+
+    it("caps the dialog height against the safe area and the software keyboard", async () => {
+      await openPalette()
+      const maxHeight = screen.getByRole("dialog").getAttribute("style") ?? ""
+      expect(maxHeight).toContain("100dvh")
+      expect(maxHeight).toContain("var(--keyboard-inset, 0px)")
+      expect(maxHeight).toContain("var(--sa-top, env(safe-area-inset-top, 0px))")
+    })
+
+    it("keeps the palette input at 16px so iOS does not zoom on focus", async () => {
+      await openPalette()
+      expect(getPaletteInput().className).toContain("text-base")
+    })
+  })
+
   describe("recent items", () => {
     it("saves selected catalog rows as RecentEntry with type catalog", async () => {
       const user = userEvent.setup()
