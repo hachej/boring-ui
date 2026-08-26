@@ -130,7 +130,7 @@ export function resolveBuiltinRuntimeLayoutRoot(
 }
 
 export function createSandboxRuntimeModeAdapter(
-  mode: BuiltinRuntimeModeId,
+  mode: RuntimeModeId,
   options: SandboxRuntimeModeOptions = {},
 ): RuntimeModeAdapter {
   switch (mode) {
@@ -179,5 +179,5 @@ export function createSandboxRuntimeModeAdapter(
 }
 
 export function createAgentSandboxRuntimeModeAdapter(mode: RuntimeModeId = 'direct'): RuntimeModeAdapter {
-  return createSandboxRuntimeModeAdapter(mode as BuiltinRuntimeModeId)
+  return createSandboxRuntimeModeAdapter(mode)
 }

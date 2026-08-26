@@ -231,25 +231,26 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
         sessionId,
         requestId: request.id,
       })
-      const hotResources = binding.scope.pi?.getHotReloadableResources?.()
+      const composedPi = binding.composition.pi
+      const hotResources = composedPi.getHotReloadableResources?.()
       const skillResourceSnapshot = await skillResourceSnapshotPromise
       const pi = hotResources
         ? {
-            ...binding.scope.pi,
+            ...composedPi,
             additionalSkillPaths: [
-              ...(binding.scope.pi?.additionalSkillPaths ?? []),
+              ...(composedPi.additionalSkillPaths ?? []),
               ...(hotResources.additionalSkillPaths ?? []),
             ],
             packages: [
-              ...(binding.scope.pi?.packages ?? []),
+              ...(composedPi.packages ?? []),
               ...(hotResources.packages ?? []),
             ],
             extensionPaths: [
-              ...(binding.scope.pi?.extensionPaths ?? []),
+              ...(composedPi.extensionPaths ?? []),
               ...(hotResources.extensionPaths ?? []),
             ],
           }
-        : binding.scope.pi
+        : composedPi
       const user = (request as typeof request & {
         user?: { id?: unknown; email?: unknown; emailVerified?: unknown } | null
       }).user
@@ -278,7 +279,6 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
         workspace: binding.composition.runtimeBundle.workspace,
         readyTracker: binding.composition.readyTracker,
         pi,
-        additionalSkillPaths: binding.environmentLease.provisioning?.skillPaths,
         skillResourceSnapshot,
         runContext: {
           abortSignal: new AbortController().signal,
