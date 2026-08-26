@@ -54,6 +54,54 @@ describe('usePiSessions addressed Agent transport', () => {
     expect(result.current.sessions.find((session) => session.id === 'archived-50')?.archived).toBeUndefined()
   })
 
+  test('background refresh exposes a new tail after an external unarchive grows an exact-50 active list', async () => {
+    const row = (id: string, updatedAt: number, archived = false) => ({
+      ref: { agentTypeId: 'alpha', sessionId: id },
+      title: id,
+      status: 'idle',
+      createdAt: updatedAt,
+      updatedAt,
+      ...(archived ? { archived: true } : {}),
+    })
+    const originalActive = Array.from({ length: 50 }, (_, index) => row(`active-${index}`, 100 - index))
+    const externallyUnarchived = row('external-unarchive', 200)
+    let active = originalActive
+    let archived = [row('external-unarchive', 200, true)]
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), 'http://local')
+      const wantsArchived = url.searchParams.get('archived') === 'archived'
+      const inventory = wantsArchived ? archived : active
+      const offset = url.searchParams.get('cursor') === 'active-page-2' ? 50 : 0
+      const sessions = inventory.slice(offset, offset + 50)
+      return new Response(JSON.stringify({
+        sessions,
+        ...(!wantsArchived && offset + sessions.length < inventory.length
+          ? { nextCursor: 'active-page-2' }
+          : {}),
+      }), { status: 200, headers: { 'content-type': 'application/json' } })
+    })
+    const { result } = renderHook(() => usePiSessions({
+      agentTypeId: 'alpha', fetch: fetchMock as typeof fetch, connectActiveSession: false, retry: { maxRetries: 0 },
+    }))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.sessions).toHaveLength(50)
+    expect(result.current.hasMore).toBe(false)
+    await act(async () => { await result.current.loadArchived() })
+
+    active = [externallyUnarchived, ...originalActive]
+    archived = []
+    await act(async () => { await result.current.refresh({ background: true }) })
+
+    expect(result.current.sessions.find((session) => session.id === 'external-unarchive')?.archived).toBeUndefined()
+    expect(result.current.hasMore).toBe(true)
+
+    await act(async () => { await result.current.loadMore() })
+    expect(result.current.sessions.filter((session) => session.archived !== true)).toHaveLength(51)
+    expect(result.current.sessions.map((session) => session.id)).toContain('active-49')
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('archived=active&cursor=active-page-2'))).toBe(true)
+  })
+
   test('refreshes every loaded archive filter after external mutations', async () => {
     const row = (id: string, archived: boolean) => ({
       ref: { agentTypeId: 'alpha', sessionId: id },

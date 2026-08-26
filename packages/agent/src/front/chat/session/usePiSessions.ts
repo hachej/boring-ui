@@ -179,7 +179,6 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
   // refresh that started before the POST and completed after it.
   const archiveMutationVersionRef = useRef(0)
   const activeSessionIdRef = useRef<string | undefined>(activeSessionId)
-  const hasMoreRef = useRef(hasMore)
   const canonicalLoadedCountRef = useRef(0)
   const nextCursorRef = useRef<string | undefined>(undefined)
   const archivedCursorRef = useRef<string | undefined>(undefined)
@@ -224,10 +223,6 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
   useEffect(() => {
     activeSessionIdRef.current = activeSessionId
   }, [activeSessionId])
-
-  useEffect(() => {
-    hasMoreRef.current = hasMore
-  }, [hasMore])
 
   const activeSessionKnown = Boolean(activeSessionId && sessions.some((session) => session.id === activeSessionId))
 
@@ -314,10 +309,6 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
       }
     }
     const canonicalCount = canonicalPageCount(filteredData)
-    const pageMayHaveMore = applyOptions.nextCursor !== undefined
-    const wasExhaustedBeyondFirstPage = applyOptions.background
-      && !hasMoreRef.current
-      && canonicalLoadedCountRef.current >= canonicalCount
     filterPagersRef.current.active = {
       sessions: mergeSessions(filteredData),
       nextCursor: applyOptions.nextCursor,
@@ -342,7 +333,7 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
     if (rememberedEmptyId && filteredData.some((session) => session.id === rememberedEmptyId)) {
       persistBootResume(undefined)
     }
-    const nextHasMore = pageMayHaveMore && !wasExhaustedBeyondFirstPage
+    const nextHasMore = applyOptions.nextCursor !== undefined
     canonicalLoadedCountRef.current = applyOptions.background
       ? Math.max(canonicalLoadedCountRef.current, canonicalCount)
       : canonicalCount

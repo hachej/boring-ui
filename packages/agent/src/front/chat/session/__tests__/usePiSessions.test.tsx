@@ -715,7 +715,7 @@ describe('usePiSessions', () => {
     expect(result.current.activeSessionId).toBe('pi-0')
   })
 
-  test('background refresh keeps load-more exhausted for exactly one full page', async () => {
+  test('background refresh trusts a replacement cursor after an exhausted full page', async () => {
     const remote = remoteFactory()
     const firstPage = Array.from({ length: 50 }, (_, index) => session(`pi-${index}`))
     fetchMock
@@ -742,7 +742,7 @@ describe('usePiSessions', () => {
     })
 
     expect(result.current.sessions).toHaveLength(50)
-    expect(result.current.hasMore).toBe(false)
+    expect(result.current.hasMore).toBe(true)
   })
 
   test('background refresh with a short first page drops stale loaded older sessions', async () => {
