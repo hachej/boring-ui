@@ -9,6 +9,17 @@ Gateway/session spine itself is sound.
 Per-area reviews (Sol + pi over each subfolder of this pack) append here as
 they conclude.
 
+## Per-area verdicts
+
+| Area | Sol (contradiction lens) | pi (reader lens) | Response |
+|---|---|---|---|
+| fleet-and-environments | revise (9 findings) | pass | README rewritten as a reconciliation layer: DIRECTION-only authority (incl. F-graph edges + the #805 DAG demoted to reference), shipped-D29/gateway reality named where the frozen text predates it, the silent default-agent fallback flagged as a code-vs-D28 defect (#1311 line), F7 re-gated behind [durable-streams]+[seat-storage], the in-process adapter mandate superseded, the AgentHost stop-condition read narrowly. Stale `DECISIONS.md` links to the old `docs/issues/391/plan.md` path repaired. The frozen `plan.md` itself is untouched. |
+| cloud-vision | pending | pass | — |
+| gateway | pending | pending (rate-limited, retrying) | — |
+| plugins-across-hosts | pending | pending (rate-limited, retrying) | — |
+| consumption-modes | pending | pending (rate-limited, retrying) | — |
+| alignment | pending | pending (rate-limited, retrying) | — |
+
 ---
 
 ## 1. Relay mechanism vs the ratified native binding — CONFIRMED, resolved
