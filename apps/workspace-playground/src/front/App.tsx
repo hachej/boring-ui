@@ -11,6 +11,8 @@ import { LoadingStatesShowcase, type LoadingStateMode } from "./LoadingStatesSho
 import { isConsoleSpikeRoute } from "./consoleSpikeRoute"
 import { isJobThreadRoute } from "./jobThreadRoute"
 import { JobThreadView } from "./JobThreadView"
+import { isSaasSpikeRoute } from "./saasSpikeRoute"
+import { SaasSpike } from "./SaasSpike"
 
 function isShowcaseRoute(): boolean {
   if (typeof window === "undefined") return false
@@ -301,7 +303,7 @@ function WorkspaceFullPageShell({ agentTypeId }: { agentTypeId: string }) {
   )
 }
 
-export function WorkspaceShell() {
+function WorkspaceRuntimeShell() {
   resetPlaygroundStorageIfRequested()
   const showcase = useMemo(isShowcaseRoute, [])
   const jobThread = useMemo(isJobThreadRoute, [])
@@ -562,4 +564,13 @@ export function WorkspaceShell() {
       chatParams={{ thinkingControl: true }}
     />
   )
+}
+
+/**
+ * Route before mounting the runtime shell: the SaaS spike is fixture-only and
+ * must not create providers or issue the workspace metadata request.
+ */
+export function WorkspaceShell() {
+  if (isSaasSpikeRoute()) return <SaasSpike />
+  return <WorkspaceRuntimeShell />
 }

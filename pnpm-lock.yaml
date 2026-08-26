@@ -183,6 +183,9 @@ importers:
       '@hachej/boring-tasks':
         specifier: workspace:*
         version: link:../../plugins/tasks
+      '@hachej/boring-ui-kit':
+        specifier: workspace:*
+        version: link:../../packages/ui
       '@hachej/boring-workspace':
         specifier: workspace:*
         version: link:../../packages/workspace
