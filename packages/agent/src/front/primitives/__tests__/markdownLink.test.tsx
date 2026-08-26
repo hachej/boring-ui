@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { rehypeMarkdownLinkActions } from "../markdownLink";
 import { MessageResponse } from "../message";
 
 const TEST_URL = "https://github.com/hachej/boring-ui";
@@ -93,6 +94,42 @@ describe("MessageResponse link affordances (#1395)", () => {
     expect(screen.queryByRole("link", { name: "bad" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Copy URL" })).toBeNull();
     expect(screen.getByText(/bad \[blocked\]/)).toBeTruthy();
+  });
+
+  it("does not duplicate controls when the decorator is registered more than once", () => {
+    render(
+      <MessageResponse
+        linkSafety={{ enabled: false }}
+        rehypePlugins={[rehypeMarkdownLinkActions, rehypeMarkdownLinkActions]}
+      >
+        {MARKDOWN_LINK}
+      </MessageResponse>,
+    );
+
+    expect(screen.getAllByRole("button", { name: "Copy URL" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Open URL in new tab" })).toHaveLength(1);
+  });
+
+  it("does not decorate incomplete streaming links", () => {
+    render(<MessageResponse>{"[unfinished](https://example.com"}</MessageResponse>);
+
+    expect(screen.queryByRole("button", { name: "Copy URL" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Open URL in new tab" })).toBeNull();
+  });
+
+  it("retains Streamdown's allowedTags sanitize-schema augmentation", () => {
+    render(
+      <MessageResponse
+        allowedTags={{ mention: ["user_id"] }}
+        linkSafety={{ enabled: false }}
+      >
+        {'<mention user_id="123">@agent</mention>'}
+      </MessageResponse>,
+    );
+
+    const mention = document.querySelector("mention");
+    expect(mention?.textContent).toBe("@agent");
+    expect(mention?.getAttribute("user_id")).toBe("123");
   });
 
   it("leaves non-link content untouched", () => {

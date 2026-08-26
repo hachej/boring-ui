@@ -1,11 +1,13 @@
 import { CheckIcon, CopyIcon, ExternalLinkIcon } from "lucide-react";
 import {
+  ComponentProps,
   MouseEvent as ReactMouseEvent,
   useCallback,
   useEffect,
   useRef,
   useState,
 } from "react";
+import { defaultRehypePlugins, Streamdown } from "streamdown";
 import { copyTextToClipboard } from "../clipboard";
 import { cn } from "../lib";
 
@@ -26,6 +28,7 @@ type HastNode = {
  */
 function decorateLinks(node: HastNode): void {
   if (!node.children) return;
+  if (node.properties?.["data-boring-agent-part"] === "chat-url-group") return;
 
   for (const child of node.children) decorateLinks(child);
 
@@ -59,6 +62,47 @@ function decorateLinks(node: HastNode): void {
 export const rehypeMarkdownLinkActions = () => (tree: HastNode) => {
   decorateLinks(tree);
 };
+
+type StreamdownProps = ComponentProps<typeof Streamdown>;
+type RehypePlugins = NonNullable<StreamdownProps["rehypePlugins"]>;
+type AllowedTags = StreamdownProps["allowedTags"];
+type SanitizeSchema = {
+  tagNames?: string[];
+  attributes?: Record<string, unknown>;
+  [key: string]: unknown;
+};
+
+/**
+ * Extend Streamdown's effective rehype pipeline without losing its defaults.
+ * Streamdown only augments the default sanitize schema for `allowedTags` when
+ * its own default array identity is used; appending our plugin requires doing
+ * that exported-schema composition explicitly.
+ */
+export function markdownLinkRehypePlugins(
+  configured: StreamdownProps["rehypePlugins"],
+  allowedTags: AllowedTags,
+): RehypePlugins {
+  if (configured) return [...configured, rehypeMarkdownLinkActions];
+
+  const sanitize = defaultRehypePlugins.sanitize;
+  if (!allowedTags || !Array.isArray(sanitize) || typeof sanitize[1] !== "object" || sanitize[1] === null) {
+    return [...Object.values(defaultRehypePlugins), rehypeMarkdownLinkActions];
+  }
+
+  const schema = sanitize[1] as SanitizeSchema;
+  const augmentedSchema: SanitizeSchema = {
+    ...schema,
+    tagNames: [...(schema.tagNames ?? []), ...Object.keys(allowedTags)],
+    attributes: { ...schema.attributes, ...allowedTags },
+  };
+
+  return [
+    defaultRehypePlugins.raw,
+    [sanitize[0], augmentedSchema],
+    defaultRehypePlugins.harden,
+    rehypeMarkdownLinkActions,
+  ];
+}
 
 type MarkdownLinkActionsProps = {
   href?: string;
