@@ -314,9 +314,8 @@ describe('PiChatPanel sandbox shell', () => {
     })
   })
 
-  test('stop interrupts instead of clearing queued follow-ups and clears local submitted state', async () => {
-    const queued = [{ id: 'queued-1', kind: 'followup' as const, displayText: 'keep me queued' }]
-    const remote = new FakeRemotePiSession(remoteState({ status: 'idle', lastSeq: 7, queue: { followUps: queued } }))
+  test('stop clears local submitted state when no stream events arrived yet', async () => {
+    const remote = new FakeRemotePiSession(remoteState({ status: 'idle', lastSeq: 7 }))
     const promptReceipt = deferred<{ accepted: true; cursor: number; clientNonce: string }>()
     remote.prompt.mockImplementationOnce(async () => promptReceipt.promise)
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
@@ -335,9 +334,7 @@ describe('PiChatPanel sandbox shell', () => {
     await screen.findByTestId('chat-working')
     fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
 
-    await waitFor(() => expect(remote.interrupt).toHaveBeenCalledTimes(1))
-    expect(remote.stop).not.toHaveBeenCalled()
-    expect(remote.clearQueue).not.toHaveBeenCalled()
+    await waitFor(() => expect(remote.stop).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(screen.queryByTestId('chat-working')).toBeNull())
     await screen.findByRole('button', { name: 'Submit' })
   })
@@ -840,8 +837,8 @@ describe('PiChatPanel sandbox shell', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
     fireEvent.keyDown(textarea, { key: 'Escape' })
-    await waitFor(() => expect(remote.interrupt).toHaveBeenCalledTimes(2))
-    expect(remote.stop).not.toHaveBeenCalled()
+    await waitFor(() => expect(remote.stop).toHaveBeenCalledTimes(1))
+    expect(remote.interrupt).toHaveBeenCalledTimes(1)
   })
 
   test('dismisses composer pickers with Escape before interrupting a streaming turn', async () => {

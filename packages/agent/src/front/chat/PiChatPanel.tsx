@@ -395,7 +395,6 @@ export function PiChatPanel<
   const [draft, setDraft] = useState(() => initialDraft ?? '')
   const draftRef = useRef(draft)
   draftRef.current = draft
-  const queueCoordinationKeysRef = useRef(new Map<string, object>())
   const initialDraftGuard = useRef(new InitialDraftAutoSubmitGuard())
   const pendingAutoSubmitSettleRef = useRef<string | undefined>(undefined)
   const acceptedAutoSubmitSettleRef = useRef<string | undefined>(undefined)
@@ -761,11 +760,6 @@ export function PiChatPanel<
 
   const policy = useMemo(() => {
     if (!selectedPiSession || !activeChatSessionId || !serverModelSelectionReady) return undefined
-    let queueCoordinationKey = queueCoordinationKeysRef.current.get(activeChatSessionId)
-    if (!queueCoordinationKey) {
-      queueCoordinationKey = {}
-      queueCoordinationKeysRef.current.set(activeChatSessionId, queueCoordinationKey)
-    }
     const policySession = {
       getState: () => {
         const state = selectedPiSession.getState()
@@ -782,7 +776,6 @@ export function PiChatPanel<
     }
     return createPiComposerPolicyController({
       session: policySession,
-      coordinationKey: queueCoordinationKey,
       registry,
       slashContext: {
         sessionId: activeChatSessionId,
@@ -963,9 +956,7 @@ export function PiChatPanel<
   const stop = useCallback(() => {
     onComposerStop?.()
     clearLocalSubmitted(activeChatSessionId)
-    // The composer Stop control interrupts instead of deleting queued follow-ups.
-    // The service retains its interrupt semantics, which may promote the next item.
-    void policy?.interrupt().catch((error) => {
+    void policy?.stop().catch((error) => {
       addLocalNotice({ id: 'stop-error', level: 'error', text: errorMessage(error, 'Could not stop the chat session.'), dismissible: true })
     })
   }, [activeChatSessionId, addLocalNotice, clearLocalSubmitted, onComposerStop, policy])

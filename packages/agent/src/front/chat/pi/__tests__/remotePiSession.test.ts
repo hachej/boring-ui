@@ -901,11 +901,7 @@ describe('RemotePiSession', () => {
       ['https://agent.test/api/v1/agents/default/sessions/s1/interrupt', 'POST'],
       ['https://agent.test/api/v1/agents/default/sessions/s1/stop', 'POST'],
     ])
-    expect(JSON.parse(String(postCalls[2]?.[1]?.body))).toEqual({
-      clientNonce: 'nonce-q',
-      clientSeq: 1,
-      requestId: expect.stringMatching(/^queue-clear:[a-f0-9-]{36}$/u),
-    })
+    expect(JSON.parse(String(postCalls[2]?.[1]?.body))).toEqual({ clientNonce: 'nonce-q', clientSeq: 1 })
     expect(session.getState().committedMessages).toEqual([])
     expect(session.getState().optimisticOutbox['nonce-1']).toMatchObject({
       role: 'user',
@@ -916,59 +912,6 @@ describe('RemotePiSession', () => {
     expect(Date.parse(session.getState().optimisticOutbox['nonce-1']?.createdAt ?? '')).not.toBeNaN()
     expect(session.getState().optimisticOutbox['nonce-q']).toBeUndefined()
 
-    session.dispose()
-  })
-
-  it('retries one selected queue clear with the same operation key after an ambiguous transport failure', async () => {
-    const bodies: unknown[] = []
-    let attempts = 0
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      if (!url.endsWith('/queue/clear')) throw new Error(`unexpected URL ${url}`)
-      bodies.push(JSON.parse(String(init?.body)))
-      attempts += 1
-      if (attempts === 1) throw new TypeError('connection reset after commit')
-      if (attempts <= 3) {
-        return jsonResponse({ error: { code: AgentGatewayErrorCode.AGENT_REQUEST_IN_PROGRESS, message: 'still clearing' } }, 409)
-      }
-      return jsonResponse({ accepted: true, cursor: 3, cleared: 1 })
-    }) as unknown as MockFetch
-    const session = createSession(fetchMock, { autoStart: false })
-
-    await expect(session.clearQueue({ clientNonce: 'nonce-q', clientSeq: 1 })).resolves.toEqual({
-      accepted: true,
-      cursor: 3,
-      cleared: 1,
-    })
-    expect(bodies).toHaveLength(4)
-    expect(bodies[0]).toEqual({
-      clientNonce: 'nonce-q',
-      clientSeq: 1,
-      requestId: expect.stringMatching(/^queue-clear:[a-f0-9-]{36}$/u),
-    })
-    expect(bodies.slice(1)).toEqual([bodies[0], bodies[0], bodies[0]])
-    session.dispose()
-  })
-
-  it('uses fresh bounded operation keys for repeated clears of the same arbitrary selector', async () => {
-    const nonce = `external/nonce with spaces:${'x'.repeat(96)}`
-    const bodies: Array<Record<string, unknown>> = []
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      if (!url.endsWith('/queue/clear')) throw new Error(`unexpected URL ${url}`)
-      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
-      return jsonResponse({ accepted: true, cursor: 3, cleared: 1 })
-    }) as unknown as MockFetch
-    const session = createSession(fetchMock, { autoStart: false })
-
-    await session.clearQueue({ clientNonce: nonce, clientSeq: 42 })
-    await session.clearQueue({ clientNonce: nonce, clientSeq: 42 })
-
-    expect(bodies).toHaveLength(2)
-    for (const body of bodies) {
-      expect(body).toMatchObject({ clientNonce: nonce, clientSeq: 42 })
-      expect(body.requestId).toEqual(expect.stringMatching(/^queue-clear:[a-f0-9-]{36}$/u))
-      expect(String(body.requestId)).toHaveLength(48)
-    }
-    expect(bodies[0]?.requestId).not.toBe(bodies[1]?.requestId)
     session.dispose()
   })
 

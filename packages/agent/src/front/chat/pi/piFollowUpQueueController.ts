@@ -8,7 +8,6 @@ import type {
   PromptPayload,
   PromptReceipt,
   QueuedUserMessage,
-  QueueClearPayload,
   QueueClearReceipt,
   StopReceipt,
 } from '../../../shared/chat'
@@ -18,7 +17,7 @@ export interface PiQueueSessionLike {
   getState(): PiChatState
   prompt(payload: PromptPayload): Promise<PromptReceipt>
   followUp(payload: FollowUpPayload): Promise<FollowUpReceipt>
-  clearQueue(payload?: QueueClearPayload): Promise<QueueClearReceipt>
+  clearQueue(): Promise<QueueClearReceipt>
   interrupt(): Promise<InterruptReceipt>
   stop(): Promise<StopReceipt>
 }
@@ -40,7 +39,6 @@ export interface PiQueueControllerOptions {
   onWarning?: (message: string) => void
   onPromptSubmitStarted?: (clientNonce: string) => void
   allowPromptDuringInitialHydration?: boolean
-  coordinationKey?: object
 }
 
 export type PiQueueSubmitResult =
@@ -52,12 +50,6 @@ export type PiQueueEditQueuedResult =
   | { type: 'cleared'; draft: string }
   | { type: 'empty'; message: string }
   | { type: 'clear-failed'; draft: string; error: unknown; message: string }
-
-interface QueueRecoveryCoordination {
-  inFlight?: Promise<PiQueueEditQueuedResult>
-}
-
-const queueRecoveryByKey = new WeakMap<object, QueueRecoveryCoordination>()
 
 export class PiFollowUpQueueController {
   private nextClientSeqFloor: number | undefined
@@ -110,21 +102,7 @@ export class PiFollowUpQueueController {
     return { type: 'prompt', clientNonce, cursor: receipt.cursor }
   }
 
-  editQueued(): Promise<PiQueueEditQueuedResult> {
-    const key = this.options.coordinationKey ?? this.session
-    const coordination = queueRecoveryByKey.get(key) ?? {}
-    queueRecoveryByKey.set(key, coordination)
-    if (coordination.inFlight) return coordination.inFlight
-    const run = this.editQueuedOnce()
-    coordination.inFlight = run
-    void run.finally(() => {
-      if (coordination.inFlight === run) coordination.inFlight = undefined
-      queueRecoveryByKey.delete(key)
-    }).catch(() => {})
-    return run
-  }
-
-  private async editQueuedOnce(): Promise<PiQueueEditQueuedResult> {
+  async editQueued(): Promise<PiQueueEditQueuedResult> {
     const followUps = this.session.getState().queue.followUps
     if (followUps.length === 0) {
       const message = 'No queued messages to edit.'
@@ -132,37 +110,17 @@ export class PiFollowUpQueueController {
       return { type: 'empty', message }
     }
 
-    const selected = followUps.map((followUp) => ({ followUp, selector: queueClearSelector(followUp) }))
-    const unselectable = selected.find((item) => !item.selector)
-    if (unselectable) {
-      const error = new Error('Queued message lacks a stable clear selector.')
-      const draft = this.options.getDraft?.() ?? ''
-      const message = 'Queued messages were not cleared, so the composer was left unchanged. Retry Edit queued.'
+    const draft = buildEditedQueuedDraft(followUps, this.options.getDraft?.() ?? '')
+    this.options.onDraftChange?.(draft)
+
+    try {
+      await this.session.clearQueue()
+      return { type: 'cleared', draft }
+    } catch (error) {
+      const message = 'Queued messages were copied into the composer, but the server queue was not cleared. They may still send unless you retry Edit queued or Stop.'
       this.options.onWarning?.(message)
       return { type: 'clear-failed', draft, error, message }
     }
-
-    // Recover the complete snapshot synchronously before the first destructive
-    // request. This keeps typed content in the originating composer even if the
-    // user switches sessions or a clear commits but its receipt is lost.
-    const currentDraft = this.options.getDraft?.() ?? ''
-    const draft = buildEditedQueuedDraft(followUps, currentDraft)
-    if (draft !== currentDraft) this.options.onDraftChange?.(draft)
-
-    let clearError: unknown
-    for (const item of selected) {
-      try {
-        await this.session.clearQueue(item.selector!)
-      } catch (error) {
-        clearError = error
-        break
-      }
-    }
-    if (!clearError) return { type: 'cleared', draft }
-
-    const message = 'Queued messages were copied into the composer, but some may remain queued. Review the queue and composer before sending.'
-    this.options.onWarning?.(message)
-    return { type: 'clear-failed', draft, error: clearError, message }
   }
 
   interrupt(): Promise<CommandReceipt> {
@@ -233,17 +191,6 @@ export function buildEditedQueuedDraft(followUps: readonly QueuedUserMessage[], 
   if (!queuedText) return draft
   if (!draft) return queuedText
   return `${queuedText}\n\n${draft}`
-}
-
-function queueClearSelector(followUp: QueuedUserMessage): QueueClearPayload | undefined {
-  if (followUp.clientNonce) {
-    return {
-      clientNonce: followUp.clientNonce,
-      ...(followUp.clientSeq !== undefined ? { clientSeq: followUp.clientSeq } : {}),
-    }
-  }
-  if (followUp.clientSeq !== undefined) return { clientSeq: followUp.clientSeq }
-  return undefined
 }
 
 function isBusySlashCommand(input: PiQueueSubmitInput): boolean {
