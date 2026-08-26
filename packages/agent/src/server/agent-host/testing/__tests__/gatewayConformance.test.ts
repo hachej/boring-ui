@@ -612,7 +612,7 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
         return this.control(claim, session, 'session.stop', input.requestId, () => {
           const clearedQueue = session.queue.splice(0)
           const stopped = session.activity === 'running' || session.activity === 'aborting'
-          session.activity = 'idle'
+          if (stopped) session.activity = 'aborting'
           return { accepted: true as const, cursor: this.appendEvent(session).seq, stopped, clearedQueue }
         })
       },

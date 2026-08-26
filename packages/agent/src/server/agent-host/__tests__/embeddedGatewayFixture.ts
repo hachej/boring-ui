@@ -20,6 +20,7 @@ interface EmbeddedGatewayFixture extends GatewayConformanceFixture {
     release(): void
   }
   rejectNextPrompt(error: Error): void
+  endCurrentTurn(ref: AgentSessionRef, status: 'ok' | 'aborted' | 'error'): void
   endOnNextControl(ref: AgentSessionRef, control: 'interrupt' | 'stop', status: 'ok' | 'aborted' | 'error'): void
   emitSessionEvent(ref: AgentSessionRef, event: PiChatEvent): void
   observeSessionEvent(ref: AgentSessionRef, event: PiChatEvent): void
@@ -169,14 +170,19 @@ class FakeService implements PiChatSessionService {
     this.nextControlEnd.set(`${control}:${sessionId}`, status)
   }
 
+  endCurrentTurn(sessionId: string, status: 'ok' | 'aborted' | 'error') {
+    const record = this.get(sessionId)
+    const start = [...record.events].reverse().find((event) => event.type === 'agent-start')
+    if (start?.type !== 'agent-start') throw new Error('terminal event requested without an active turn')
+    this.publish(record, { type: 'agent-end', seq: 0, turnId: start.turnId, status })
+  }
+
   private publishControlEnd(record: RecordValue, control: 'interrupt' | 'stop') {
     const key = `${control}:${record.id}`
     const status = this.nextControlEnd.get(key)
     if (!status) return
     this.nextControlEnd.delete(key)
-    const start = [...record.events].reverse().find((event) => event.type === 'agent-start')
-    if (start?.type !== 'agent-start') throw new Error('control terminal requested without an active turn')
-    this.publish(record, { type: 'agent-end', seq: 0, turnId: start.turnId, status })
+    this.endCurrentTurn(record.id, status)
   }
 
   async rename(sessionId: string, title: string) {
@@ -341,6 +347,11 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
     },
     rejectNextPrompt(error) {
       for (const service of services.values()) service.nextPromptError = error
+    },
+    endCurrentTurn(ref, status) {
+      for (const service of services.values()) {
+        if (service.records.has(ref.sessionId)) service.endCurrentTurn(ref.sessionId, status)
+      }
     },
     endOnNextControl(ref, control, status) {
       for (const service of services.values()) {

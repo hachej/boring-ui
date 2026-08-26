@@ -235,4 +235,26 @@ describe('EmbeddedAgentGateway cancellation outcomes', () => {
       await connection.close()
     }
   })
+
+  it('keeps an accepted stop aborting until Pi confirms the terminal outcome', async () => {
+    const { fixture, scope, ref, connection, statuses, unsubscribe } = await runningSession()
+    try {
+      await connection.stop({ requestId: 'stop' })
+
+      expect(statuses).toEqual(['running', 'aborting'])
+      await expect(fixture.gateway.readSessionState({ scope, ref })).resolves.toMatchObject({
+        summary: { status: 'aborting' },
+      })
+
+      fixture.endCurrentTurn(ref, 'ok')
+
+      expect(statuses).toEqual(['running', 'aborting', 'aborted'])
+      await expect(fixture.gateway.readSessionState({ scope, ref })).resolves.toMatchObject({
+        summary: { status: 'aborted' },
+      })
+    } finally {
+      unsubscribe()
+      await connection.close()
+    }
+  })
 })

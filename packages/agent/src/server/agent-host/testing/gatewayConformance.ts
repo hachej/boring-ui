@@ -489,11 +489,21 @@ export function gatewayConformance(options: GatewayConformanceOptions): void {
         expect(afterInterrupt).toBe(state === 'running' ? 'aborting' : state)
 
         fixture.setActivity(ref, state)
+        const stopped = state === 'running' || state === 'aborting'
         await expect(connection.stop({ requestId: `state-stop-${index}` })).resolves.toMatchObject({
           accepted: true,
-          stopped: state === 'running' || state === 'aborting',
+          stopped,
         })
-        expect((await fixture.gateway.readSessionState({ scope, ref })).summary.status).toBe('idle')
+        // A successful control receipt confirms only that stop was accepted.
+        // Active runs remain aborting until the runtime reports their terminal
+        // outcome; inactive states are not rewritten without such evidence.
+        expect((await fixture.gateway.readSessionState({ scope, ref })).summary.status).toBe(
+          stopped ? 'aborting' : state,
+        )
+        if (stopped) {
+          fixture.setActivity(ref, 'aborted')
+          expect((await fixture.gateway.readSessionState({ scope, ref })).summary.status).toBe('aborted')
+        }
         await connection.close()
       }
     })
