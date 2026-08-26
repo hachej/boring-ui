@@ -45,20 +45,20 @@ describe("createPendingRefreshCoordinator", () => {
     vi.unstubAllGlobals()
   })
 
-  it("commits active hydration and authoritative removals before a background request times out", async () => {
+  it("refreshes a newly invalidated active question while an unrelated hydration is hung", async () => {
     const store = createQuestionsStore()
-    const stale = { ...baseQuestion, questionId: "q-stale", sessionId: "stale" }
     const background = { ...baseQuestion, questionId: "q-background", sessionId: "background" }
-    store.setPending(stale)
+    const replacement = { ...baseQuestion, questionId: "q-replacement", title: "Replacement" }
+    let activeQuestion = baseQuestion
     let stateReads = 0
     const backgroundSignals: AbortSignal[] = []
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (url.endsWith("/api/v1/ui/state")) {
         stateReads += 1
-        return Response.json(pendingState([baseQuestion, background]))
+        return Response.json(pendingState([activeQuestion, background]))
       }
       const sessionId = requestedSession(init)
-      if (sessionId === "active") return Response.json({ ok: true, output: { pending: baseQuestion } })
+      if (sessionId === "active") return Response.json({ ok: true, output: { pending: activeQuestion } })
       if (sessionId === "background") {
         if (init?.signal) backgroundSignals.push(init.signal)
         return await new Promise<Response>(() => undefined)
@@ -74,23 +74,52 @@ describe("createPendingRefreshCoordinator", () => {
     const deactivate = coordinator.activate("active")
 
     await vi.advanceTimersByTimeAsync(0)
-
     expect(store.getPending("active")).toMatchObject({ questionId: "q-active" })
-    expect(store.getPending("stale")).toBeNull()
     expect(backgroundSignals[0]?.aborted).toBe(false)
-    coordinator.request("trailing")
-    await vi.advanceTimersByTimeAsync(99)
-    expect(stateReads).toBe(1)
 
-    await vi.advanceTimersByTimeAsync(1)
-    await Promise.resolve()
-    await vi.advanceTimersByTimeAsync(1)
-    expect(backgroundSignals[0]?.aborted).toBe(true)
+    activeQuestion = replacement
+    coordinator.request()
+    await vi.advanceTimersByTimeAsync(0)
+
     expect(stateReads).toBe(2)
+    expect(store.getPending("active")).toMatchObject({ questionId: "q-replacement" })
+    expect(backgroundSignals[0]?.aborted).toBe(false)
     deactivate()
   })
 
-  it("coalesces synchronous and mid-run requests into one trailing pass", async () => {
+  it("does not restore a background question removed by newer authoritative state", async () => {
+    const store = createQuestionsStore()
+    const background = { ...baseQuestion, questionId: "q-background", sessionId: "background" }
+    let includeBackground = true
+    let resolveBackground: ((response: Response) => void) | undefined
+    const delayedBackground = new Promise<Response>((resolve) => { resolveBackground = resolve })
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/api/v1/ui/state")) {
+        return Response.json(pendingState(includeBackground ? [baseQuestion, background] : [baseQuestion]))
+      }
+      if (requestedSession(init) === "background") return await delayedBackground
+      if (requestedSession(init) === "active") {
+        return Response.json({ ok: true, output: { pending: baseQuestion } })
+      }
+      return Response.json({ ok: true, output: { pending: null } })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const coordinator = createPendingRefreshCoordinator({ apiBaseUrl: "", store })
+    const deactivate = coordinator.activate("active")
+    await vi.advanceTimersByTimeAsync(0)
+
+    includeBackground = false
+    coordinator.request()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(store.getPending("background")).toBeNull()
+
+    resolveBackground?.(Response.json({ ok: true, output: { pending: background } }))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(store.getPending("background")).toBeNull()
+    deactivate()
+  })
+
+  it("coalesces synchronous requests and ignores a superseded hydration", async () => {
     const store = createQuestionsStore()
     let releaseFirstPending: (() => void) | undefined
     const firstPending = new Promise<void>((resolve) => { releaseFirstPending = resolve })
@@ -118,14 +147,14 @@ describe("createPendingRefreshCoordinator", () => {
     const deactivate = coordinator.activate("active")
 
     await vi.advanceTimersByTimeAsync(0)
-    expect(stateReads).toBe(1)
-    expect(pendingReads).toBe(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(stateReads).toBe(2)
+    expect(pendingReads).toBe(2)
+    expect(store.getPending("active")).toMatchObject({ questionId: "q-active" })
 
     releaseFirstPending?.()
     await vi.advanceTimersByTimeAsync(0)
-
-    expect(stateReads).toBe(2)
-    expect(pendingReads).toBe(2)
+    expect(store.getPending("active")).toMatchObject({ questionId: "q-active" })
     deactivate()
   })
 

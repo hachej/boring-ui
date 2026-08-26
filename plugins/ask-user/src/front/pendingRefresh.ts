@@ -16,6 +16,11 @@ type RefreshRun = {
   requestedSessions: Set<string>
 }
 
+type HydrationRun = {
+  generation: number
+  key: string
+}
+
 type PendingResult = {
   sessionId: string
   pending: AskUserQuestion | null
@@ -37,16 +42,20 @@ export function createPendingRefreshCoordinator({
 }: PendingRefreshOptions): PendingRefreshCoordinator {
   const client = createQuestionsClient({ apiBaseUrl, headers: authHeaders })
   const requestedSessions = new Set<string>()
+  const hydrationRuns = new Map<string, HydrationRun>()
   let generation = 0
   let activeGeneration: number | null = null
   let activeSessionId: string | null = null
-  let activeRun: RefreshRun | null = null
+  let latestRefresh: RefreshRun | null = null
   let startTimer: ReturnType<typeof setTimeout> | null = null
-  let dirty = false
   const requestControllers = new Set<AbortController>()
 
-  function isCurrent(run: RefreshRun): boolean {
-    return activeGeneration === run.generation && activeRun === run
+  function isActive(runGeneration: number): boolean {
+    return activeGeneration === runGeneration
+  }
+
+  function isLatestRefresh(run: RefreshRun): boolean {
+    return isActive(run.generation) && latestRefresh === run
   }
 
   async function runBounded<T>(run: (signal: AbortSignal) => Promise<T>): Promise<T> {
@@ -85,6 +94,24 @@ export function createPendingRefreshCoordinator({
     }
   }
 
+  function hydrateSession(sessionId: string, key: string, runGeneration: number, force: boolean): void {
+    const current = hydrationRuns.get(sessionId)
+    if (!force && current?.generation === runGeneration && current.key === key) return
+
+    const hydration: HydrationRun = { generation: runGeneration, key }
+    hydrationRuns.set(sessionId, hydration)
+    void fetchPending(sessionId)
+      .then((result) => {
+        if (isActive(runGeneration) && hydrationRuns.get(sessionId) === hydration && result.succeeded) {
+          store.setPending(result.pending, result.sessionId)
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (hydrationRuns.get(sessionId) === hydration) hydrationRuns.delete(sessionId)
+      })
+  }
+
   async function runRefresh(run: RefreshRun): Promise<void> {
     let hints: PendingQuestionHint[] = []
     let hasAuthoritativeHints = false
@@ -102,52 +129,44 @@ export function createPendingRefreshCoordinator({
       // UI state is a hint channel only; keep already-hydrated pending payloads.
     }
 
-    if (!isCurrent(run)) return
+    if (!isLatestRefresh(run)) return
     if (hasAuthoritativeHints) store.setPendingHints(hints)
 
+    const hintsBySession = new Map(hints.map((hint) => [hint.sessionId, hint]))
     const sessionsToHydrate = new Set(run.requestedSessions)
     if (run.activeSessionId) sessionsToHydrate.add(run.activeSessionId)
     for (const hint of hints) sessionsToHydrate.add(hint.sessionId)
-    await Promise.all([...sessionsToHydrate].map(async (sessionId) => {
-      const result = await fetchPending(sessionId)
-      if (isCurrent(run) && result.succeeded) {
-        store.setPending(result.pending, result.sessionId)
+    if (hasAuthoritativeHints) {
+      for (const sessionId of hydrationRuns.keys()) {
+        if (!sessionsToHydrate.has(sessionId)) hydrationRuns.delete(sessionId)
       }
-    }))
+    }
+    for (const sessionId of sessionsToHydrate) {
+      const hint = hintsBySession.get(sessionId)
+      const key = hint ? `${hint.questionId}:${hint.status ?? ""}` : "no-hint"
+      hydrateSession(sessionId, key, run.generation, run.requestedSessions.has(sessionId))
+    }
   }
 
   function schedule(): void {
-    if (activeGeneration === null || activeRun || startTimer || !dirty) return
+    if (activeGeneration === null || startTimer) return
     startTimer = setTimeout(() => {
       startTimer = null
-      if (activeGeneration === null || activeRun || !dirty) return
+      if (activeGeneration === null) return
 
-      dirty = false
       const run: RefreshRun = {
         generation: activeGeneration,
         activeSessionId,
         requestedSessions: new Set(requestedSessions),
       }
-      for (const sessionId of run.requestedSessions) requestedSessions.delete(sessionId)
-
-      // Defer the async body so activeRun is assigned before fetch executes.
-      // This closes the synchronous reentrancy window in which a trigger could
-      // otherwise schedule a second pass before the first was marked active.
-      activeRun = run
-      void Promise.resolve()
-        .then(() => runRefresh(run))
-        .catch(() => undefined)
-        .finally(() => {
-          if (activeRun !== run) return
-          activeRun = null
-          if (activeGeneration === run.generation && dirty) schedule()
-        })
+      requestedSessions.clear()
+      latestRefresh = run
+      void runRefresh(run).catch(() => undefined)
     }, 0)
   }
 
   function request(sessionId?: string): void {
     if (sessionId) requestedSessions.add(sessionId)
-    dirty = true
     schedule()
   }
 
@@ -155,12 +174,10 @@ export function createPendingRefreshCoordinator({
     if (activeGeneration !== runGeneration) return
     if (startTimer) clearTimeout(startTimer)
     startTimer = null
-    if (activeRun?.generation === runGeneration) {
-      for (const sessionId of activeRun.requestedSessions) requestedSessions.add(sessionId)
-      activeRun = null
-    }
     for (const controller of requestControllers) controller.abort()
     requestControllers.clear()
+    hydrationRuns.clear()
+    latestRefresh = null
     activeGeneration = null
     activeSessionId = null
   }
