@@ -17,14 +17,14 @@ should *rewrite toward pi v2* instead of building our premises on 0.80.7?
 
 | Pi v2 | Our block | Verdict |
 |---|---|---|
-| Durable restart-point + intent→effect→settlement sandwich; crash-safe recovery, no silent gap in-process | [durable-streams] | **PARTIAL.** Real durability — but "process-crash level, no fsync promise", explicitly single-process / single-writer / no replication ("a session lives in one place"). Level D — a client always resumes across host restarts — still has to be built at our gateway layer. |
+| Durable restart-point + intent→effect→settlement sandwich; crash-safe recovery, no silent gap in-process | [durable-streams] | **PARTIAL.** Real durability — explicitly single-process / single-writer / no replication ("a session lives in one place"); the no-fsync caveat applies to the **JSONL backend specifically** (the SQLite backend uses WAL + transactions). Level D — a client always resumes across host restarts — still has to be built at our gateway layer; of P1a's four named Level-D cases, only stream-sequence continuity is clearly replaceable by v2 — durable gateway ledger, effect admission, and cross-session activity remain ours. |
 | Session / Branch / AgentLane / operation | Thread / seat-lane / Run | **STRONG PRECEDENT, not a decision.** Maps closely onto the storage spike's option (ii) first-class thread record. No seat identity, no participant-removal semantics, single-writer assumed. |
 | Typed durable `value<T>`/`list<T>` (values.md) | thread record + seat catalog substrate | **MECHANISM, not policy.** A real candidate store; attribution/migration/fork policy still ours. |
 | Tool/assistant durability | relay `openEdge()` + receipts | **ORTHOGONAL.** Their sandwich makes effects idempotent *inside one lane's operation*; crash-safe reservation of a turn *across sessions* has no pi-v2 equivalent. (This corrects our earlier "Level D makes receipt machinery largely redundant" note — it overstated.) |
 | Multi-presentation attach (mini demo: N TUIs, one Session, one live transcript) | resumable multi-surface viewing | **DELIVERS the viewer half.** Working hydrate/reconcile reference. |
 | Multi-Session per presentation (several agents in one pane) | Job Thread projection | **DEFERRED ON THEIR SIDE — an explicit open decision.** Our core product mechanic is out of scope for them. |
 | `RemoteEvents` | durable streaming | **OPPOSITE:** deliberately non-durable, never replayed; their `Transcript` service is an unimplemented stub. |
-| Per-connection client identity | [seat-storage] audit-grade `seatId` | **ABSENT.** Attribution stays entirely ours. |
+| Per-connection client identity | [seat-storage] audit-grade `seatId` | **PARTIAL-ABSENT.** Pi assigns connection peer identity (`plugins.md:159`); what is absent is *durable, audit-grade* seat identity on the record — that stays ours. |
 | Facet RPC bus | D29 AgentGateway | **NO CONFLICT.** Their RPC is intra-process plumbing one level below the gateway funnel; adopting pi v2 forces no gateway rework. D22's `input-required` agent-to-agent shape still has no analogue. |
 | Worker replacement (lease handoff, durable state survives) | per-session shard, D29 record ownership | **VALIDATES** our shard model. One check: D29's "agent owns its session record" must be read as durable-record ownership, not live-process affinity. |
 
@@ -35,30 +35,47 @@ contract* (their words). The coding-agent services implemented end-to-end
 today: session directory/management, models, prompt/abort — queue, resume,
 compaction, transcript snapshot all throw not-implemented.
 
-**The breaking line:** a full re-architecture with **no compatibility
-decoder promised for durable session data** across 0.80.7 → v2. Session
-history is host-app user data for us (hard rule 9); a jump carries a real
-migration project.
+**The migration line (corrected by adversarial review, same day):** pi v2
+**ships a v3 compatibility decoder** — legacy coding-agent transcripts are
+required to open unchanged (`harness.md:2892`), the decoder exists
+(`legacy-v3.ts`), and conversion is atomic on first v4 write
+(`storage.ts:249`). The residual migration risk is **ours, not pi's**:
+Boring wrapper records, namespaces, linked-native identity, rollback, and
+host-volume layout (session history stays host-app user data, hard rule 9).
+Also decisive: **the v4 `Session`/`AgentHarness` core went public in 0.84.0
+and the legacy core repositories were removed; upstream is 0.84.3** — our
+0.80.7 pin is on a deleted line, so passive waiting is itself a risk.
 
-## Recommendation — TRACK AND ALIGN, do not rewrite now
+## Recommendation — SPLIT THE DECISION: bounded core-adoption spike now, facet layer later
+### (revised same-day after adversarial review; supersedes the first "track and align" cut)
 
-1. **Do not rewrite now.** Everything that makes our product ours — the
-   multi-agent projection, the cross-session turn mechanics, audit-grade
-   attribution, Level D at the gateway — pi v2 either defers, lacks, or
-   deliberately excludes. Rewriting today means riding a mid-flight
-   re-architecture through its breaking line for the parts we least need.
-2. **Align so nothing we build fights the pi-v2 shape:**
-   - the [thread-storage-spike] gains a **third comparator**: pi v2's
-     Session/Branch/AgentLane + typed values as candidate substrate for the
-     first-class-record option (bead `.13.1/.13.2` briefs updated);
-   - [durable-streams] implementation prefers designs compatible with
-     harness restart-point semantics (no bespoke event shapes a later
-     harness adoption would strand);
-   - the receipt-machinery descoping note is corrected (see premises).
-3. **Set an explicit jump trigger** (owner gate item, not a calendar): adopt
-   pi v2 when ALL of — (a) its transcript/resume service slices are real,
-   (b) a session-data migration story exists across the breaking line,
-   (c) our storage spike has reported (so we adopt onto a decided model).
+1. **Do not rewrite the product around the unfinished facet stack.** The
+   plugin/facet/RPC layer is design-input; multi-agent projection,
+   cross-session turn mechanics, and audit-grade attribution stay ours
+   regardless.
+2. **But do not passively track the core** — the v4 harness is shipped
+   (0.84.x, legacy core deleted), the v3 decoder exists, and our 0.80.7 pin
+   sits on a dead line. **Run a bounded pi-0.84.3 core-adoption spike
+   through the existing D29 gateway, alongside P1a:** open a real 0.80.7
+   transcript through the v3 importer; prompt, watch, restart, resume, roll
+   back; map `LaneSnapshot`/`LaneEvent` to the frozen gateway DTO; prove
+   host-volume/session identity. Sizing context: our bespoke durable-stream
+   surface is ~1,704 lines (+ its share of the 1,331-line
+   `HarnessPiChatService`) persisting `PiChatEvent` shapes pi v2 does not
+   speak — the spike decides how much of that P1a keeps versus delegates.
+   P1a retains the durable request-ledger, admission, activity, and public
+   replay guarantees **regardless of transcript source**.
+3. **Ordering is the owner's call, explicitly:** DIRECTION currently says
+   P1a "start here". Making the core spike *blocking* (vs parallel) is a
+   DIRECTION amendment only the owner makes — this research note does not
+   override it.
+4. **The facet/RPC layer adopts only when its contract becomes normative**
+   (their own label today: design input). Forced review triggers either
+   way: 0.80.x loses maintenance/security support, an unbackported security
+   fix appears, or we exceed an approved version lag.
+5. **Storage spike framing corrected:** pi v2 is **a substrate variant of
+   the first-class-record candidate**, not a third ontology — premises §P2
+   and the spike beads say so.
 4. **What we can steal immediately, zero adoption cost:** the mini demo's
    hydrate/reconcile pattern as the reference for our resume UX; the
    lease-handoff attachment states (`detached/attaching/attached/degraded`)

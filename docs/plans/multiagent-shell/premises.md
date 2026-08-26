@@ -139,7 +139,12 @@ which model our constraints most resemble and why.
 
 **Question.** *In our codebase, what does each storage model actually cost?*
 
-Two candidates, built far enough to be measured — not to ship:
+Two candidates, built far enough to be measured — not to ship. **Substrate
+note (pi-v2 analysis, 2026-08-26):** pi v2's shipped v4 harness
+(Session/Branch/AgentLane + typed durable values, public since 0.84.0, with
+a v3 transcript decoder) is evaluated as a **substrate variant of the
+first-class-record candidate** — not a third ontology
+(`research/pi-v2-alignment.md`). The candidates:
 
 - **(i) Index-card / projection.** A lightweight record that points at existing
   per-agent sessions and projects them into one timeline. Cheap to add; the
