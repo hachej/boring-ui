@@ -9,6 +9,8 @@ import {
   createLocalProvisioningAdapter,
 } from '../provisioningAdapter'
 
+const ENOENT_CODE = 'ENOENT'
+
 async function tempRoot(prefix: string): Promise<string> {
   return await mkdtemp(join(tmpdir(), prefix))
 }
@@ -113,8 +115,8 @@ test('local adapter rejects escaping write ancestors before outside mutation', a
   await expect(adapter.workspaceFs.mkdir('.agents/skills/nested')).rejects.toMatchObject({ reason: 'path-escape' })
   await expect(adapter.workspaceFs.writeText('.agents/other/nested/file.txt', 'escaped\n')).rejects.toMatchObject({ reason: 'path-escape' })
   expect(await readdir(outsideRoot)).toEqual(['sentinel.txt'])
-  await expect(stat(join(outsideRoot, 'skills'))).rejects.toMatchObject({ code: 'ENOENT' })
-  await expect(stat(join(outsideRoot, 'other'))).rejects.toMatchObject({ code: 'ENOENT' })
+  await expect(stat(join(outsideRoot, 'skills'))).rejects.toMatchObject({ code: ENOENT_CODE })
+  await expect(stat(join(outsideRoot, 'other'))).rejects.toMatchObject({ code: ENOENT_CODE })
 })
 
 test('local adapter exists() treats an out-of-workspace bin symlink as present (no realpath-escape throw)', async () => {
