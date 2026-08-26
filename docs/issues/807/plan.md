@@ -24,7 +24,7 @@ Current authority, in order:
    especially trusted workspace/agent binding before session-only addressing.
 4. [`../391/ROADMAP-ALIGNMENT.md`](../391/ROADMAP-ALIGNMENT.md), which retains
    T1 durable events and makes T2/channels thin, triggered follow-ons.
-5. [`../391/AGENT-CLOUD-VISION.md`](../391/AGENT-CLOUD-VISION.md), the
+5. [`../391/AGENT-CLOUD-VISION.md`](../../plans/agent-runtime/cloud-vision/AGENT-CLOUD-VISION.md), the
    non-binding north-star for the control-plane/data-plane split.
 
 The documents under [`runtime-refactor/work/`](runtime-refactor/work/) are

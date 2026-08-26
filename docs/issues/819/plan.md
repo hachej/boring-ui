@@ -16,8 +16,9 @@ the owner accepts it and the activation gates below are satisfied.
 
 - Parent programme: [#391](https://github.com/hachej/boring-ui/issues/391) and
   [`../391/plan.md`](../391/plan.md).
-- Control-plane/data-plane authority:
-  [`../391/AGENT-CLOUD-VISION.md`](../391/AGENT-CLOUD-VISION.md).
+- Control-plane/data-plane background vision (explicitly non-binding; see its
+  own header):
+  [`../391/AGENT-CLOUD-VISION.md`](../../plans/agent-runtime/cloud-vision/AGENT-CLOUD-VISION.md).
 - Workspace and agent identity authority:
   [`../391/AGENT-CONSUMPTION-MODES.md`](../391/AGENT-CONSUMPTION-MODES.md).
 - Locked decisions: [`../../DECISIONS.md`](../../DECISIONS.md), Decisions 25

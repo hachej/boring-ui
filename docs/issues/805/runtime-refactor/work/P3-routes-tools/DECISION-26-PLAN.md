@@ -33,7 +33,7 @@ The governing sources are:
 - [the active #391 roadmap](../../../../391/plan.md) and
   [roadmap alignment](../../../../391/ROADMAP-ALIGNMENT.md);
 - [agent consumption modes](../../../../391/AGENT-CONSUMPTION-MODES.md);
-- [agent-cloud vision](../../../../391/AGENT-CLOUD-VISION.md), used as a
+- [agent-cloud vision](../../../../../plans/agent-runtime/cloud-vision/AGENT-CLOUD-VISION.md), used as a
   non-binding control-plane/data-plane constraint; and
 - [coding invariants](../../../../../kanzen/procedures/coding-invariants.md),
   especially invariant 5 (Workspace + Sandbox are one runtime-mode pair) and

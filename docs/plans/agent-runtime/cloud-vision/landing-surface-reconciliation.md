@@ -1,5 +1,12 @@
 # Landing-surface reconciliation memo (#391)
 
+> **Historical body preserved as ratified (2026-08-08).** Statements of
+> then-current repo state below are stale — DIRECTION now exists on main,
+> Decision 29 is accepted, and the cleanup beads are closed. The POLICY
+> content (Decision 30, presentation-only hostname landing) stands; the
+> 2026-08-10 app-side ruling later superseded the platform-side
+> implementation path.
+
 **Status: RATIFIED 2026-08-08 — path A chosen; Decision 30 accepted.**
 Owner ratified path A ("static deployment for now") on 2026-08-08; the draft
 below is promoted to [Decision 30](../../../DECISIONS.md#30-presentation-only-hostname--landing-surface).

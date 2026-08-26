@@ -65,13 +65,16 @@ Archive ≠ delete: history, attribution and refs are retained; archived threads
 leave the default Work list and stay searchable (#1399, owner addition
 2026-08-26). This is what closes the old "channel lifetime" question.
 
-**The shell = Inbox / Work / Agents / Library / Search, over one workspace.**
-Left-nav top level, in that order (#1399, owner rulings 2026-08-26).
-**Inbox** first — the single triage surface, amber count badge. **Work** is
+**The shell = Search / Inbox / Work / Agents / Library, over one workspace.**
+Left-nav top level (#1399, owner rulings 2026-08-26; **Search moved to the
+top of the nav** in the later canvas iteration carried by the ratified spike
+pin — §8a records the set with that layout note).
+**Search** at the top — the palette. **Inbox** — the single triage surface,
+amber count badge. **Work** is
 collapsible: Threads + Automations, plus a muted `Archived · N` below
 Automations; automations are standing work that mints runs, filed under Work,
 not top-level. **Agents** is a roster → agent page. **Library** is the ratified
-name for the view library. **Search** is the palette.
+name for the view library.
 
 **Nav = domains. The vertical plugin icon rail = tools** (data-catalog,
 explorer, tasks, skills), opening as **columns**. Chat opens as a **contextual
@@ -164,9 +167,9 @@ multi-voice transcript is what remains fixture territory (see §8).
 | Gap | Why it matters | Evidence |
 |---|---|---|
 | **The shell components are not exported.** The spike reaches into workspace *source* via a playground-only Vite alias | A real host **cannot** import `PluginTabsWorkspaceShell`, `AppSessionRow`, `AppLeftPaneAgentCard`, `RailAction`, `PaneCollapseButton` today | imports `SaasSpike.tsx:78-82`; rationale `:73-77`; alias `apps/workspace-playground/vite.config.ts:96` + `tsconfig.json` paths |
-| **Fixed IA (Inbox/Work/Agents/Library/Search) vs plugin-contributed nav** | The ruled IA is hardcoded JSX in the spike (`SaasLeftNav` `SaasSpike.tsx:1163-1295`); production nav is an unordered merged action list | `WorkspaceAgentFront.tsx:2474-2498` vs `SaasSpike.tsx:1191-1281` |
+| **Fixed IA (Search/Inbox/Work/Agents/Library) vs plugin-contributed nav** | The ruled IA is hardcoded JSX in the spike (`SaasLeftNav` `SaasSpike.tsx:1163-1295`); production nav is an unordered merged action list | `WorkspaceAgentFront.tsx:2474-2498` vs `SaasSpike.tsx:1191-1281` |
 | **No flyout.** Collapsed rail exposes only Inbox + Search; the rest of the nav is unreachable | Owner ruled a collapsed flyout mirroring Work incl. `Archived · N` | `SaasLeftRail` `SaasSpike.tsx:1298-1313`; no hover-peek anywhere |
-| **Chat column is a visual fixture** — disabled send, "Fixture · composer visual only" | The single most load-bearing unproven claim of the spike | `ChatColumn` `SaasSpike.tsx:1326-1387`, disabled button `:1380-1381`; refusal documented `:1315-1324` (`PiChatComposerSurface` has ~45 required props; `ChatPanelHost` needs a live workspace/session) |
+| **Chat: partially superseded at the ratified pin.** This row described the old pin's fixture; at `08cc60523` the *thread* chat mounts a real single-agent session (`RealThreadChat`). Still unproven: the contextual chat-beside-a-view and the multi-voice transcript | The multi-voice transcript remains the most load-bearing unproven claim (L4, behind the premises) | `ChatColumn` `SaasSpike.tsx:1326-1387`, disabled button `:1380-1381`; refusal documented `:1315-1324` (`PiChatComposerSurface` has ~45 required props; `ChatPanelHost` needs a live workspace/session) |
 | **Thread transcript is a playground mock** | `JobThreadView` is not the shipped chat | `apps/workspace-playground/src/front/JobThreadView.tsx:608`; noted `SaasSpike.tsx:1320-1323` |
 | **Search nav entry is dead** — it dispatches a synthetic ⌘K event and nothing mounts `CommandPalette` | | `SaasSpike.tsx:1472-1474`; the real export sits unused at `packages/workspace/src/index.ts:206` |
 | **Module-global mutable `shellRef`** stands in for routing/state, never cleared | Not shippable | `SaasSpike.tsx:165-177` |

@@ -4,7 +4,7 @@
 > such as bundle, registry, deploy, tool declaration, and sandbox handler below
 > describe possible future products only. They are not the current
 > `AgentDefinition`, do not authorize authored executable references, and impose
-> no requirement on the A1 compiler/validator. Decision 28, `plan.md`, and the
+> no requirement on the A1 compiler/validator. Decision 28, `../fleet-and-environments/plan.md`, and the
 > #805 fleet plan control: current authored source is identity/safe metadata/
 > instructions only; trusted host plugins own executable behavior; there is no
 > mutable registry/control plane. Any future custom-tool/bundle/registry design
@@ -22,7 +22,7 @@ governed Environment service, then authenticated MCP—pointed at that eventual
 shape so nothing built now has to be undone later. Signup domain only initializes
 the default. It is deliberately non-binding: it does not create, reorder, or
 gate any Bead, and it does not change [Decision 28](../../../DECISIONS.md)'s
-sequencing. If anything here conflicts with `plan.md` or
+sequencing. If anything here conflicts with `../fleet-and-environments/plan.md` or
 `AGENT-CONSUMPTION-MODES.md`, those documents control.
 
 ## 2. Three layers

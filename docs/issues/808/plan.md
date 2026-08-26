@@ -31,7 +31,7 @@ extraction plan per Decision 26 + agent-cloud vision**. It is plan-only and is
 complete when this reviewed plan merges. The execution chain proposed below is
 not created by this PR.
 
-[`../391/AGENT-CLOUD-VISION.md`](../391/AGENT-CLOUD-VISION.md) is a current
+[`../391/AGENT-CLOUD-VISION.md`](../../plans/agent-runtime/cloud-vision/AGENT-CLOUD-VISION.md) is a current
 north-star note, explicitly non-binding on Beads. This plan follows its
 control-plane/data-plane split and the rule that executable tenant work runs
 only in the sandbox. Its long-term product ideas create no dependency and do

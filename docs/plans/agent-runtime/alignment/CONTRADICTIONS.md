@@ -16,7 +16,7 @@ they conclude.
 | Area | Sol (contradiction lens) | pi (reader lens) | Response |
 |---|---|---|---|
 | fleet-and-environments | revise (9 findings) | pass | README rewritten as a reconciliation layer: DIRECTION-only authority (incl. F-graph edges + the #805 DAG demoted to reference), shipped-D29/gateway reality named where the frozen text predates it, the silent default-agent fallback flagged as a code-vs-D28 defect (#1311 line), F7 re-gated behind [durable-streams]+[seat-storage], the in-process adapter mandate superseded, the AgentHost stop-condition read narrowly. Stale `DECISIONS.md` links to the old `docs/issues/391/plan.md` path repaired. The frozen `plan.md` itself is untouched. |
-| cloud-vision | pending | pass | — |
+| cloud-vision | revise (9 findings) | pass | The non-binding vision claimed the gVisor sandbox design "ratified" — the final owner decision (`docs/issues/1081/tech-choice.md`) supersedes gVisor and requires Firecracker; README now names this and three more contradictions the ratified side wins (plane model, sandbox-crossing overclaim, stale sequencing). Four docs (#819/#808-SBX1/#806/#820) that promoted the non-binding vision into "authority" re-qualified. Historical-body banner added to the ratified landing memo; six broken inbound links + one dead fragment repaired; "path A" glossed with the 2026-08-10 app-side implementation supersession noted. |
 | gateway | revise (10 findings) | pass (reader lane) | Four real engine-plan gaps folded into `job-thread-plan.md`: the recovery step that read a nonexistent gateway ledger operation is marked design debt for the post-[durable-streams] redesign (with the missing-authorization-principal gap beside it); the ask-user triple join is corrected to name its required ask-user change (addressed identity through pending state) as an S4 obligation; the "v0 ships on Level B" subsection is bannered SUPERSEDED. DIRECTION's authority line now points at the package contract (`AGENT_GATEWAY_V0.md`), not the drifted plan §6. Gateway README rewritten as historical with caveats (pushed-host topology = owner input not ratified; renamed members); orchestrator prompt gets a RETIRED banner and repaired paths. |
 | plugins-across-hosts | revise (8 findings) | revise (reader lane) | Sol: README now carries the supersession caveats — marketplace needs an explicit D28 amendment (mutable registry vs static fleet), remote-host generations are #905-gated, hostname authority superseded by D30, UI territory superseded by the ratified domain/tool split (and "active agent" does not exist under multi-seat Threads), the folder move conflicts with ratified move policy, the dispatcher inventory is obsolete. Two stale sibling `plan.md` refs in the model repaired to `../gateway/plan.md`. Named follow-up: `PLUGIN_SYSTEM.md:169` still rejects `boring.id` while shipped code accepts it — spec repair PR needed. Reader-lane fixes were folded earlier. | README deepened: two plugin kinds / two planes / tool ledgers / scoped state / deferred marketplace named up front; gateway-plan link added; "adversarial hardening" glossed; analysis-vs-ratified boundary stated. |
 | consumption-modes | revise (8 findings) | revise (reader lane) | Two engine gaps recorded at the correction note, owned by the post-P1 gate: the orchestrator voice has no Seat (ratified §8 promises workers behind the orchestrator's voice; the relay is non-Seat and routes human turns direct to workers), and posts-only cannot yet express D22's two-way `input-required` — the future amendment must resolve both. Superseded D25 "share process/runtime authority" quotes removed from shell + engine chapters (D28's canonical-data rule cited instead; data shared, invocation authority never). Blackboard now named as needing §7's own promotion gate in premises. README: session-ownership and delivery-map supersessions + the invariant-14 fallback defect disclosed; "one gateway" mis-attribution fixed (it is D29's rule). Reader-lane fixes were folded earlier. | README rewritten: the four modes and the 17-invariant shared contract named up front, jargon glossed, multi-seat Threads placed as an instance of the workspace-local mode. |
@@ -24,6 +24,16 @@ they conclude.
 
 *(Reader lane note: pi's free pool saturated mid-wave after two areas; the
 remaining four reader reviews ran on Haiku subagents with the same brief.)*
+
+**Cross-cutting re-check (fresh eyes over the folded branch, 2026-08-26):**
+every hot spot the folds touched — the D22 relay default, the storage
+suspension, the deployment-static fleet constraint, Objective optionality,
+the orchestrator-voice gap, Level B/D banners, decision numbering — reads
+consistently across the pack. Two residuals found and fixed: the shell
+chapter's §1 still stated the Inbox-first nav order twice (now Search-top,
+matching §8a and the ratified pin, and its §2 fixture row is updated to the
+pin's real single-agent chat), and the pack README still said
+`CONTRADICTIONS.md` "will arrive later".
 
 ---
 

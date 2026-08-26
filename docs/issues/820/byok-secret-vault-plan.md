@@ -95,11 +95,12 @@ OWNER RATIFY: Migrate only inventoried credential-bearing legacy settings into t
   and the two-workspace proof. Those tests remain required for LLM consumers;
   its proposed single setting and `WORKSPACE_SETTINGS_ENCRYPTION_KEY` storage are
   superseded by this plan after ratification.
-- [`docs/plans/agent-runtime/cloud-vision/AGENT-CLOUD-VISION.md`](../../plans/agent-runtime/cloud-vision/AGENT-CLOUD-VISION.md#4-custom-tools)
+- [`docs/plans/agent-runtime/cloud-vision/AGENT-CLOUD-VISION.md`](../../plans/agent-runtime/cloud-vision/AGENT-CLOUD-VISION.md#4-hypothetical-step-3later-custom-tools)
   splits a custom tool into control-plane declaration data and sandbox-only
-  tenant handler code. It requires per-invocation secrets and default-deny
-  egress. Provider registration and credential metadata therefore stay on the
-  control plane; tenant handler code and any deliberate untrusted delivery stay
+  tenant handler code. The (non-binding) cloud vision suggests per-invocation
+  secrets and default-deny egress; provider registration and credential
+  metadata stay on the control plane, and tenant handler code and any
+  deliberate untrusted delivery stay
   on the data plane.
 - The trust taxonomy in
   [`docs/issues/805/runtime-refactor/work/P3-routes-tools/DECISION-26-PLAN.md`](../805/runtime-refactor/work/P3-routes-tools/DECISION-26-PLAN.md#trust-taxonomy)

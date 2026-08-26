@@ -15,7 +15,7 @@ relinked.
 | [`plugins-across-hosts/`](plugins-across-hosts/README.md) | how a plugin behaves consistently across every host surface | owner analysis, converged through adversarial hardening (v2) |
 | [`consumption-modes/`](consumption-modes/README.md) | the ways something can consume an agent from a Workspace | shared architecture contract under Decision 28 |
 | [`cloud-vision/`](cloud-vision/README.md) | the longer-range "agent cloud" vision and the landing-surface decision | vision note is non-binding; landing-surface reconciliation is RATIFIED (Decision 30) |
-| [`alignment/`](alignment/README.md) | ownership map and work-package alignment across the issue set | will also receive a `CONTRADICTIONS.md` later |
+| [`alignment/`](alignment/README.md) | ownership map, work-package alignment, and the live contradiction-audit record | `CONTRADICTIONS.md` is live — the 2026-08-26 audit verdicts and per-area review table; start there |
 
 ## What did not move
 
