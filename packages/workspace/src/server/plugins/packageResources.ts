@@ -156,12 +156,9 @@ function isExpectedPathAdmissionError(error: unknown): boolean {
 }
 
 function admissionRefusal(error: unknown): { code: string; message: string } | undefined {
-  const code = resourceAdmissionCode(error)
-  if (!code) return undefined
-  return {
-    code,
-    message: error instanceof Error ? error.message : `package resource admission failed (${code})`,
-  }
+  if (!(error instanceof WorkspacePackageResourceRegistryError)
+    || error.code !== PACKAGE_RESOURCE_INVALID_CODE) return undefined
+  return { code: error.code, message: error.message }
 }
 
 function packageRootPath(input: string | URL, packageName: string): string {
@@ -535,7 +532,7 @@ async function resolveWorkspacePackageResourcesWithDiagnostics(
         sharedLocatorAliases.set(sourceFile, skill.resource)
         skills.push({ ...skill, pluginIds: ['host:shared-skill'] })
       } catch (error) {
-        const refusal = sharedSkillAdmissionRefusal(error)
+        const refusal = admissionRefusal(error)
         if (!skippable || !refusal) throw error
         sharedSkips.push({ kind: 'shared-skill', id: shared.id, ...refusal })
       }
@@ -603,29 +600,29 @@ async function resolveWorkspacePackageResourcesWithDiagnostics(
   return {
     diagnostics,
     registry: {
-    generation: generationHash.digest('hex'),
-    additionalSkillPaths: [...new Set(skills
-      .filter((skill) => skill.packageName !== 'shared/pi-agent')
-      .map((skill) => skill.mountRoot))],
-    skills,
-    managedSkills: skills
-      .filter((skill): skill is typeof skill & { name: string } => typeof skill.name === 'string')
-      .map((skill) => ({
-        name: skill.name,
-        description: skill.description ?? '',
-        resource: skill.resource,
-        invocable: false,
-        source: skill.packageName,
+      generation: generationHash.digest('hex'),
+      additionalSkillPaths: [...new Set(skills
+        .filter((skill) => skill.packageName !== 'shared/pi-agent')
+        .map((skill) => skill.mountRoot))],
+      skills,
+      managedSkills: skills
+        .filter((skill): skill is typeof skill & { name: string } => typeof skill.name === 'string')
+        .map((skill) => ({
+          name: skill.name,
+          description: skill.description ?? '',
+          resource: skill.resource,
+          invocable: false,
+          source: skill.packageName,
+        })),
+      handledPackageRoots: [...packageRecords.values()].map((record) => record.root).sort(),
+      readonlyMounts: skills.map((skill) => ({
+        logicalRoot: posix.dirname(skill.resource.path),
+        sourceRoot: skill.mountRoot,
       })),
-    handledPackageRoots: [...packageRecords.values()].map((record) => record.root).sort(),
-    readonlyMounts: skills.map((skill) => ({
-      logicalRoot: posix.dirname(skill.resource.path),
-      sourceRoot: skill.mountRoot,
-    })),
-    systemPrompts,
-    locateSkill(filePath) {
-      return locatorByFile.get(resolve(filePath))
-    },
+      systemPrompts,
+      locateSkill(filePath) {
+        return locatorByFile.get(resolve(filePath))
+      },
     },
   }
 }
@@ -641,29 +638,6 @@ export interface PackageResourceDiagnostic {
   readonly pluginId?: string
   /** The admission verdict that caused the entry to be skipped, when there was one. */
   readonly code?: string
-}
-
-/**
- * Speculative package inputs may degrade only on an explicit admission verdict.
- * Keep these path-policy codes in lockstep with piResourceDigest.ts without a
- * cross-layer export. Unexpected filesystem and resolver errors still propagate.
- */
-const RESOURCE_ADMISSION_CODES: ReadonlySet<string> = new Set<string>([
-  'PATH_ESCAPE',
-  'PATH_SYMLINK_ESCAPE',
-  PACKAGE_RESOURCE_INVALID_CODE,
-])
-
-function resourceAdmissionCode(error: unknown): string | undefined {
-  const code = (error as { code?: unknown })?.code
-  return typeof code === 'string' && RESOURCE_ADMISSION_CODES.has(code) ? code : undefined
-}
-
-/** Ambient shared skills may degrade only on this resolver's invalid verdict. */
-function sharedSkillAdmissionRefusal(error: unknown): { code: string; message: string } | undefined {
-  if (!(error instanceof WorkspacePackageResourceRegistryError)
-    || error.code !== PACKAGE_RESOURCE_INVALID_CODE) return undefined
-  return { code: error.code, message: error.message }
 }
 
 export function packageResourceHandlesPath(
@@ -731,18 +705,16 @@ export async function enumerateExternalSkillFiles(
   return [...files.values()]
 }
 
-export interface ResolvedWorkspacePackageResourceSnapshot<TBinding = never> {
-  readonly registry: ResolvedWorkspacePackageResourceRegistry
-  readonly binding?: TBinding
-  readonly diagnostics: readonly PackageResourceDiagnostic[]
-}
-
 export async function resolveWorkspacePackageResourceSnapshot<TBinding = never>(input: {
   readonly declared: readonly WorkspacePackageResourceRecord[]
   readonly scanned: readonly WorkspacePackageResourceRecord[]
   readonly sharedSkillPaths?: readonly { readonly id: string; readonly skillFile: string }[]
   readonly createBinding?: (mounts: readonly AgentResourceReadonlyMount[]) => Promise<TBinding>
-}): Promise<ResolvedWorkspacePackageResourceSnapshot<TBinding>> {
+}): Promise<{
+  readonly registry: ResolvedWorkspacePackageResourceRegistry
+  readonly binding?: TBinding
+  readonly diagnostics: readonly PackageResourceDiagnostic[]
+}> {
   // Scanned packages and ambient shared skills are speculative: an entry the
   // resolver will not admit is skipped with a diagnostic and is never resolved,
   // opened or exposed, while the rest still load. gh-1196: ~/.pi/agent/skills is

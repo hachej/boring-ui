@@ -30,15 +30,38 @@ const baseOptions = {
 }
 
 describe("workspace agent server request ledger placement", () => {
-  test("opts into BORING_AGENT_SESSION_ROOT for its ledger", async () => {
+  test("honors an explicit host-owned requestLedgerPath", async () => {
     const workspaceRoot = await tempDir("boring-ws-ledger-root-")
-    const sessionRoot = await tempDir("boring-ws-ledger-env-")
-    process.env.BORING_AGENT_SESSION_ROOT = sessionRoot
+    const hostState = await tempDir("boring-ws-ledger-host-")
+    const requestLedgerPath = join(hostState, "agent-state", "request-ledger.sqlite")
+    process.env.BORING_AGENT_SESSION_ROOT = await tempDir("boring-ws-ledger-env-")
 
-    const server = await createWorkspaceAgentServer({ ...baseOptions, workspaceRoot })
+    const server = await createWorkspaceAgentServer({
+      ...baseOptions,
+      workspaceRoot,
+      sessionRoot: await tempDir("boring-ws-ledger-sessions-"),
+      requestLedgerPath,
+    })
+
+    try {
+      expect(existsSync(requestLedgerPath)).toBe(true)
+      expect(existsSync(join(workspaceRoot, ".boring", "agent-request-ledger.sqlite"))).toBe(false)
+    } finally {
+      await server.close()
+    }
+  }, 120_000)
+
+  test("forwards the host session root before the environment fallback", async () => {
+    const workspaceRoot = await tempDir("boring-ws-ledger-root-")
+    const sessionRoot = await tempDir("boring-ws-ledger-sessions-")
+    const envRoot = await tempDir("boring-ws-ledger-env-")
+    process.env.BORING_AGENT_SESSION_ROOT = envRoot
+
+    const server = await createWorkspaceAgentServer({ ...baseOptions, workspaceRoot, sessionRoot })
 
     try {
       expect(existsSync(join(sessionRoot, ".agent-request-ledger.sqlite"))).toBe(true)
+      expect(existsSync(join(envRoot, ".agent-request-ledger.sqlite"))).toBe(false)
       expect(existsSync(join(workspaceRoot, ".boring", "agent-request-ledger.sqlite"))).toBe(false)
     } finally {
       await server.close()

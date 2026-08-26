@@ -175,7 +175,6 @@ export type {
   ResolvedAgentPackageSkill,
   ResolveWorkspacePackageResourcesOptions,
   ResolvedWorkspacePackageResourceRegistry,
-  ResolvedWorkspacePackageResourceSnapshot,
   SharedSkillPath,
 } from "./plugins/packageResources"
 // Boring plugin asset manager + reload-pluggability helpers.

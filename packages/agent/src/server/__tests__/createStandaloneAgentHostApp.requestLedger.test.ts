@@ -21,15 +21,38 @@ async function makeTempDir(prefix: string): Promise<string> {
   return dir
 }
 
-test('standalone host opts into BORING_AGENT_SESSION_ROOT for its ledger', async () => {
+test('standalone host writes the request ledger to an explicit host-owned path', async () => {
   const workspaceRoot = await makeTempDir('boring-standalone-ledger-ws-')
-  const sessionRoot = await makeTempDir('boring-standalone-ledger-env-')
-  setEnvForTest('BORING_AGENT_SESSION_ROOT', sessionRoot)
+  const hostState = await makeTempDir('boring-standalone-ledger-host-')
+  const requestLedgerPath = join(hostState, 'agent-state', 'request-ledger.sqlite')
+  setEnvForTest('BORING_AGENT_SESSION_ROOT', await makeTempDir('boring-standalone-ledger-env-'))
 
-  const app = await createStandaloneAgentHostApp({ workspaceRoot, logger: false })
+  const app = await createStandaloneAgentHostApp({
+    workspaceRoot,
+    sessionRoot: await makeTempDir('boring-standalone-ledger-sessions-'),
+    requestLedgerPath,
+    logger: false,
+  })
+
+  try {
+    expect(existsSync(requestLedgerPath)).toBe(true)
+    expect(existsSync(join(workspaceRoot, '.boring'))).toBe(false)
+  } finally {
+    await app.close()
+  }
+}, 120_000)
+
+test('standalone host forwards its session root before the environment fallback', async () => {
+  const workspaceRoot = await makeTempDir('boring-standalone-ledger-ws-')
+  const sessionRoot = await makeTempDir('boring-standalone-ledger-sessions-')
+  const envRoot = await makeTempDir('boring-standalone-ledger-env-')
+  setEnvForTest('BORING_AGENT_SESSION_ROOT', envRoot)
+
+  const app = await createStandaloneAgentHostApp({ workspaceRoot, sessionRoot, logger: false })
 
   try {
     expect(existsSync(join(sessionRoot, '.agent-request-ledger.sqlite'))).toBe(true)
+    expect(existsSync(join(envRoot, '.agent-request-ledger.sqlite'))).toBe(false)
     expect(existsSync(join(workspaceRoot, '.boring'))).toBe(false)
   } finally {
     await app.close()

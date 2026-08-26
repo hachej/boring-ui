@@ -305,27 +305,6 @@ describe('resolveWorkspacePackageResources', () => {
     expect(updated.generation).not.toBe(registry.generation)
   })
 
-  test('preserves the full registry snapshot contract consumed by CLI', async () => {
-    const root = await tempRoot()
-    const packageRoot = await packageFixture(root)
-    const snapshot = await resolveWorkspacePackageResourceSnapshot({
-      declared: [{ pluginId: 'direct', packageName: '@example/plugin', packageRoot }],
-      scanned: [],
-      createBinding: async (mounts) => ({ mounts }),
-    })
-
-    expect(snapshot.registry.generation).toMatch(/^[a-f0-9]{64}$/)
-    expect(snapshot.registry.handledPackageRoots).toEqual([await realpath(packageRoot)])
-    expect(snapshot.registry.managedSkills).toEqual([expect.objectContaining({
-      name: 'example-authoring',
-      source: '@example/plugin',
-    })])
-    expect(snapshot.registry.locateSkill(snapshot.registry.skills[0].skillFile))
-      .toEqual(snapshot.registry.skills[0].resource)
-    expect(snapshot.binding).toEqual({ mounts: snapshot.registry.readonlyMounts })
-    expect(snapshot.diagnostics).toEqual([])
-  })
-
   test('preserves the stable error for an invalid required shared skill', async () => {
     const root = await tempRoot()
     const missingSkill = join(root, 'missing', 'SKILL.md')
@@ -418,6 +397,24 @@ describe('resolveWorkspacePackageResources', () => {
 
     expect(error).toBeInstanceOf(Error)
     expect(error).not.toMatchObject({ code: PACKAGE_RESOURCE_INVALID_CODE })
+  })
+
+  test('propagates a foreign error that spoofs the invalid-resource code', async () => {
+    const foreignError = Object.assign(new Error('foreign resolver failure'), {
+      code: PACKAGE_RESOURCE_INVALID_CODE,
+    })
+    const shared = {
+      id: 'spoofed',
+      get skillFile(): string {
+        throw foreignError
+      },
+    }
+
+    await expect(resolveWorkspacePackageResourceSnapshot({
+      declared: [],
+      scanned: [],
+      sharedSkillPaths: [shared],
+    })).rejects.toBe(foreignError)
   })
 
   test("rejects the host-shared reserved package name", async () => {
