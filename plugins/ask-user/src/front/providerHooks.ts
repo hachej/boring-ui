@@ -37,7 +37,7 @@ export function useAskUserAttentionBlockers(runtime: QuestionsRuntime, pendingSn
         target: hint.questionId,
         label: hydrated?.title ?? "Answer the question in Questions to continue",
         sessionId: hint.sessionId,
-        agentTypeId: runtime.agentTypeId,
+        agentTypeId: runtime.agentTypeIdForSession(hint.sessionId),
         sessionBadge: { kind: "question", label: "question", tone: "attention", priority: 10 },
         pruneWhenSessionMissing: true,
         focus: { closeWorkbenchLeftPane: true },

@@ -594,6 +594,50 @@ describe("askUserPlugin front shell", () => {
     }
   })
 
+  it("keeps pending questions from different addressed agents in Inbox", async () => {
+    const alphaQuestion = { ...question, sessionId: "alpha-session" }
+    const betaQuestion = { ...nextQuestion, sessionId: "beta-session" }
+    const pendingBySession = new Map([[alphaQuestion.sessionId, alphaQuestion], [betaQuestion.sessionId, betaQuestion]])
+    const seen: unknown[] = []
+    function AttentionProbe() {
+      const { blockers } = useWorkspaceAttention()
+      seen.splice(0, seen.length, ...blockers)
+      return null
+    }
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) {
+        const body = JSON.parse(String(init?.body)) as { input?: { sessionId?: string } }
+        return Response.json({ ok: true, output: { pending: pendingBySession.get(body.input?.sessionId ?? "") ?? null } })
+      }
+      if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateForMany([...pendingBySession.values()]))
+      return Response.json({})
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(
+      <WorkspaceProvider
+        agentTypeId="alpha"
+        apiBaseUrl=""
+        capturedPlugins={[capturedPlugin]}
+        workspaceId="test-workspace"
+        activeSessionId={alphaQuestion.sessionId}
+        activeSessionAgentTypeId="alpha"
+        openSessionIds={[alphaQuestion.sessionId, betaQuestion.sessionId]}
+        attentionSessions={[
+          { sessionId: alphaQuestion.sessionId, agentTypeId: "alpha" },
+          { sessionId: betaQuestion.sessionId, agentTypeId: "beta" },
+        ]}
+      >
+        <AttentionProbe />
+      </WorkspaceProvider>,
+    )
+
+    await waitFor(() => expect(seen).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "ask-user:alpha-session:q1", agentTypeId: "alpha" }),
+      expect.objectContaining({ id: "ask-user:beta-session:q2", agentTypeId: "beta" }),
+    ])))
+  })
+
   it("contributes pending questions as explicit inbox attention blockers", async () => {
     const seen: unknown[] = []
     function AttentionProbe() {

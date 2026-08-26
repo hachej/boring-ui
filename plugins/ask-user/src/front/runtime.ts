@@ -22,6 +22,7 @@ export type QuestionsRuntime = QuestionsStore & {
   authHeaders?: Record<string, string>
   activeSessionId?: string | null
   openSessionIds?: readonly string[]
+  agentTypeIdForSession(sessionId: string): string | undefined
   requestPendingRefresh(sessionId?: string): void
 }
 

@@ -26,7 +26,7 @@ import { QuestionCancelButton, QuestionFields, QuestionForm, QuestionFormProvide
 import { InboxOverlay } from "./inbox/InboxOverlay"
 import { isInboxAttentionBlocker } from "./inbox/attentionBlockerAdapter"
 
-function AskUserProvider({ agentTypeId, apiBaseUrl, authHeaders, authScopeKey, activeSessionId, openSessionIds, children }: PluginProviderProps) {
+function AskUserProvider({ agentTypeId, apiBaseUrl, authHeaders, authScopeKey, activeSessionId, openSessionIds, sessionRefs, children }: PluginProviderProps) {
   const workspaceId = useWorkspaceContextOptional()?.workspaceId
   const authIdentity = useMemo(
     () => authScopeKey ?? JSON.stringify(Object.entries(authHeaders ?? {}).sort(([left], [right]) => left.localeCompare(right))),
@@ -41,8 +41,14 @@ function AskUserProvider({ agentTypeId, apiBaseUrl, authHeaders, authScopeKey, a
     authHeaders,
     activeSessionId,
     openSessionIds,
+    agentTypeIdForSession(sessionId) {
+      if (!sessionRefs) return agentTypeId
+      const matches = sessionRefs.filter((session) => session.sessionId === sessionId)
+      if (matches.length === 1) return matches[0]?.agentTypeId
+      return activeSessionId === sessionId ? agentTypeId : undefined
+    },
     requestPendingRefresh,
-  }), [activeSessionId, agentTypeId, apiBaseUrl, authHeaders, openSessionIds, requestPendingRefresh, store])
+  }), [activeSessionId, agentTypeId, apiBaseUrl, authHeaders, openSessionIds, requestPendingRefresh, sessionRefs, store])
   const pendingSnapshot = useSyncExternalStore(runtime.subscribe, () => pendingQuestionSnapshot(runtime), () => "none")
   useAskUserAttentionBlockers(runtime, pendingSnapshot)
   useAskUserAttentionActions(runtime)
