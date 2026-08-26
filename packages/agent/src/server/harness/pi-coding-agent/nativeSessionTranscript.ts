@@ -1,9 +1,12 @@
 import { createReadStream } from "node:fs";
 import { open } from "node:fs/promises";
 import { createInterface } from "node:readline";
+import type { SessionEntry, SessionHeader } from "@mariozechner/pi-coding-agent";
 import { textFromPiContent } from "./piSessionMessages.js";
-import { userSessionTitleFromSequence } from "./sessionTitleAuthority.js";
-import type { SessionEntry } from "@mariozechner/pi-coding-agent";
+import {
+  USER_SESSION_TITLE_CUSTOM_TYPE,
+  createUserSessionTitleProjection,
+} from "./sessionTitleAuthority.js";
 
 const NATIVE_TAIL_CHUNK_BYTES = 64 * 1024;
 export const NATIVE_TAIL_MAX_RECORD_BYTES = 256 * 1024;
@@ -87,50 +90,135 @@ export function nativeMessageTimestampFromBoundedPrefix(prefix: Buffer): number 
   return Number.isFinite(timestamp) ? timestamp : undefined;
 }
 
-export async function summarizeNativeTranscript(filepath: string): Promise<{
+export interface SessionTranscriptSummary {
   title?: string;
+  titleTimestamp?: string;
   userTitle?: string;
+  userTitleTimestamp?: string;
   firstUserTitle?: string;
+  entryCount: number;
   turnCount: number;
   hasAssistantReply: boolean;
   latestMessageAtMs?: number;
-}> {
+}
+
+interface SessionTranscriptAccumulator {
+  acceptLine(line: string, committed?: boolean): (SessionHeader | SessionEntry) | undefined;
+  summary(): SessionTranscriptSummary;
+}
+
+function createSessionTranscriptAccumulator(): SessionTranscriptAccumulator {
   let title: string | undefined;
-  let userTitle: string | undefined;
+  let titleTimestamp: string | undefined;
   let firstUserTitle: string | undefined;
+  let entryCount = 0;
   let turnCount = 0;
   let hasAssistantReply = false;
   let latestMessageAtMs: number | undefined;
-  let parentEntry: SessionEntry | undefined;
-  let previousEntry: SessionEntry | undefined;
+  const userTitle = createUserSessionTitleProjection();
+  const authorityMarkerIds = new Set<string>();
+
+  return {
+    acceptLine(line, committed = true) {
+      // Blank separators are formatting, not physical records.
+      if (!line.trim()) return undefined;
+      let entry: SessionHeader | SessionEntry;
+      try {
+        entry = JSON.parse(line) as SessionHeader | SessionEntry;
+      } catch {
+        userTitle.breakSequence();
+        return undefined;
+      }
+      if (!entry || typeof entry !== "object" || typeof entry.type !== "string") {
+        userTitle.breakSequence();
+        return undefined;
+      }
+
+      const record = entry as SessionEntry;
+      if (record.type === "custom"
+        && record.customType === USER_SESSION_TITLE_CUSTOM_TYPE
+        && typeof record.id === "string") authorityMarkerIds.add(record.id);
+
+      // An EOF fragment without a newline may still be in flight. It remains
+      // readable as legacy content, but cannot commit manual-title authority.
+      if (committed) userTitle.accept(entry);
+      else userTitle.breakSequence();
+      if (entry.type !== "session") entryCount += 1;
+      if (entry.type === "session_info" && typeof entry.name === "string") {
+        // A title linked to a manual-authority marker is never an auto-title
+        // fallback. Failed optimistic attempts therefore stay projection-inert.
+        if (!authorityMarkerIds.has(entry.parentId ?? "")) {
+          title = entry.name;
+          titleTimestamp = typeof entry.timestamp === "string" ? entry.timestamp : undefined;
+        }
+      } else if (entry.type === "message") {
+        const timestamp = typeof entry.timestamp === "string" ? Date.parse(entry.timestamp) : Number.NaN;
+        if (!Number.isNaN(timestamp)) latestMessageAtMs = timestamp;
+        if (entry.message?.role === "user") {
+          turnCount += 1;
+          firstUserTitle ??= textFromPiContent(entry.message.content).slice(0, 80) || undefined;
+        } else if (entry.message?.role === "assistant") {
+          hasAssistantReply = true;
+        }
+      }
+      return entry;
+    },
+    summary() {
+      return {
+        ...(title ? { title } : {}),
+        ...(titleTimestamp ? { titleTimestamp } : {}),
+        ...(userTitle.title ? { userTitle: userTitle.title } : {}),
+        ...(userTitle.timestamp ? { userTitleTimestamp: userTitle.timestamp } : {}),
+        ...(firstUserTitle ? { firstUserTitle } : {}),
+        entryCount,
+        turnCount,
+        hasAssistantReply,
+        ...(latestMessageAtMs !== undefined ? { latestMessageAtMs } : {}),
+      };
+    },
+  };
+}
+
+/** Parse entries and title projection together so cold loads never scan twice. */
+export function parseSessionTranscript(content: string): {
+  entries: (SessionHeader | SessionEntry)[];
+  summary: SessionTranscriptSummary;
+} {
+  const accumulator = createSessionTranscriptAccumulator();
+  const entries: (SessionHeader | SessionEntry)[] = [];
+  const physicalLines = content.split("\n");
+  const lastIndex = physicalLines.length - 1;
+  for (const [index, line] of physicalLines.entries()) {
+    const entry = accumulator.acceptLine(line, index < lastIndex);
+    if (entry) entries.push(entry);
+  }
+  return { entries, summary: accumulator.summary() };
+}
+
+async function transcriptEndsWithNewline(filepath: string): Promise<boolean> {
+  const handle = await open(filepath, "r");
+  try {
+    const { size } = await handle.stat();
+    if (size === 0) return true;
+    const byte = Buffer.allocUnsafe(1);
+    const { bytesRead } = await handle.read(byte, 0, 1, size - 1);
+    return bytesRead === 1 && byte[0] === 0x0a;
+  } finally {
+    await handle.close();
+  }
+}
+
+/** One streaming summary path for direct-native and wrapped JSONL transcripts. */
+export async function summarizeSessionTranscript(filepath: string): Promise<SessionTranscriptSummary> {
+  const accumulator = createSessionTranscriptAccumulator();
+  const endsWithNewline = await transcriptEndsWithNewline(filepath);
   const input = createReadStream(filepath, { encoding: "utf-8" });
   const lines = createInterface({ input, crlfDelay: Infinity });
+  let pending: string | undefined;
   for await (const line of lines) {
-    if (!line.trim()) continue;
-    try {
-      const entry = JSON.parse(line) as SessionEntry;
-      const persistedUserTitle = userSessionTitleFromSequence(parentEntry, previousEntry, entry);
-      parentEntry = previousEntry;
-      previousEntry = entry;
-      if (persistedUserTitle) userTitle = persistedUserTitle;
-      if (entry.type === "session_info" && typeof entry.name === "string") {
-        title = entry.name;
-        continue;
-      }
-      if (entry.type !== "message") continue;
-      const timestamp = typeof entry.timestamp === "string" ? Date.parse(entry.timestamp) : Number.NaN;
-      if (!Number.isNaN(timestamp)) latestMessageAtMs = timestamp;
-      if (entry.message?.role === "user") {
-        turnCount += 1;
-        firstUserTitle ??= textFromPiContent(entry.message.content).slice(0, 80) || undefined;
-      } else if (entry.message?.role === "assistant") {
-        hasAssistantReply = true;
-      }
-    } catch {
-      // Malformed physical records break authority adjacency but do not hide later records.
-      parentEntry = undefined;
-      previousEntry = undefined;
-    }
+    if (pending !== undefined) accumulator.acceptLine(pending);
+    pending = line;
   }
-  return { title, userTitle, firstUserTitle, turnCount, hasAssistantReply, latestMessageAtMs };
+  if (pending !== undefined) accumulator.acceptLine(pending, endsWithNewline);
+  return accumulator.summary();
 }
