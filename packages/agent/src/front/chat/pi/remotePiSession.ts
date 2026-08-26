@@ -268,16 +268,14 @@ export class RemotePiSession {
   }
 
   async clearQueue(payload: QueueClearPayload = {}): Promise<QueueClearReceipt> {
-    const receipt = hasQueueSelector(payload)
-      ? await this.postSelectedQueueClear({ ...payload, requestId: `queue-clear:${safeRandomUUID()}` })
-      : await this.postCommand('/queue/clear', payload, QueueClearReceiptSchema)
+    const receipt = await this.postQueueClear({ ...payload, requestId: `queue-clear:${safeRandomUUID()}` })
     if (!this.disposed && receipt.cleared > 0) {
       this.store.dispatch({ type: 'clear-optimistic-followups', ...payload }, { flush: true })
     }
     return receipt
   }
 
-  private async postSelectedQueueClear(commandPayload: QueueClearPayload & { requestId: string }): Promise<QueueClearReceipt> {
+  private async postQueueClear(commandPayload: QueueClearPayload & { requestId: string }): Promise<QueueClearReceipt> {
     let transportRetried = false
     for (let attempt = 0; ; attempt += 1) {
       try {
@@ -812,10 +810,6 @@ function estimateJsonBytes(value: unknown): number {
   } catch {
     return 0
   }
-}
-
-function hasQueueSelector(payload: QueueClearPayload): boolean {
-  return Boolean(payload.clientNonce) || payload.clientSeq !== undefined
 }
 
 function hasHeader(headers: Record<string, string>, name: string): boolean {

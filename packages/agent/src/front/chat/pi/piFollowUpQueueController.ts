@@ -41,7 +41,7 @@ export interface PiQueueControllerOptions {
   onWarning?: (message: string) => void
   onPromptSubmitStarted?: (clientNonce: string) => void
   allowPromptDuringInitialHydration?: boolean
-  coordinationKey?: object
+  onQueueMutationPending?: (pending: boolean) => void
 }
 
 export type PiQueueSubmitResult =
@@ -52,18 +52,12 @@ export type PiQueueSubmitResult =
 export type PiQueueEditQueuedResult =
   | { type: 'cleared'; draft: string }
   | { type: 'empty'; message: string }
+  | { type: 'busy'; message: string }
   | { type: 'clear-failed'; draft: string; error: unknown; message: string }
-
-interface QueueRecoveryCoordination {
-  inFlight?: Promise<PiQueueEditQueuedResult>
-  readonly recoveredSelectors: Map<string, string>
-  recoveredBlock: string
-}
-
-const queueRecoveryByKey = new WeakMap<object, QueueRecoveryCoordination>()
 
 export class PiFollowUpQueueController {
   private nextClientSeqFloor: number | undefined
+  private queueMutationPending = false
 
   constructor(
     private readonly session: PiQueueSessionLike,
@@ -114,115 +108,45 @@ export class PiFollowUpQueueController {
   }
 
   editQueued(): Promise<PiQueueEditQueuedResult> {
-    const key = this.options.coordinationKey ?? this.session
-    const coordination = queueRecoveryByKey.get(key) ?? {
-      recoveredSelectors: new Map<string, string>(),
-      recoveredBlock: '',
-    }
-    queueRecoveryByKey.set(key, coordination)
-    if (coordination.inFlight) return coordination.inFlight
-    const run = this.editQueuedOnce(coordination)
-    coordination.inFlight = run
-    void run.finally(() => {
-      if (coordination.inFlight === run) coordination.inFlight = undefined
-      if (coordination.recoveredSelectors.size === 0) queueRecoveryByKey.delete(key)
-    }).catch(() => {})
-    return run
+    return this.runQueueMutation<PiQueueEditQueuedResult>(
+      { type: 'busy', message: 'Another queue action is already in progress.' },
+      async () => {
+        const followUps = this.session.getState().queue.followUps
+        if (followUps.length === 0) {
+          const message = 'No queued messages to edit.'
+          this.options.onWarning?.(message)
+          return { type: 'empty', message }
+        }
+
+        const currentDraft = this.options.getDraft?.() ?? ''
+        const draft = buildEditedQueuedDraft(followUps, currentDraft)
+        if (draft !== currentDraft) this.options.onDraftChange?.(draft)
+        try {
+          await this.session.clearQueue()
+          return { type: 'cleared', draft }
+        } catch (error) {
+          const message = 'Queued messages were copied into the composer, but the server queue was not cleared. They may still send unless you retry Edit or Remove.'
+          this.options.onWarning?.(message)
+          return { type: 'clear-failed', draft, error, message }
+        }
+      },
+    )
   }
 
-  // Remove a single queued message from the hold queue by its clear selector.
-  // Metadata-free entries have no selector and cannot be individually removed.
-  async removeQueued(followUp: QueuedUserMessage): Promise<{ ok: true } | { ok: false; message: string }> {
-    const selector = queueClearSelector(followUp)
-    if (!selector) {
-      const message = 'This queued message has no removal id. Use Edit queued to recover it instead.'
-      this.options.onWarning?.(message)
-      return { ok: false, message }
-    }
-    try {
-      await this.session.clearQueue(selector)
-      return { ok: true }
-    } catch {
-      const message = 'Could not remove the queued message. It may still send unless you retry or use Edit queued.'
-      this.options.onWarning?.(message)
-      return { ok: false, message }
-    }
-  }
-
-  private async editQueuedOnce(coordination: QueueRecoveryCoordination): Promise<PiQueueEditQueuedResult> {
-    const followUps = this.session.getState().queue.followUps
-    if (followUps.length === 0) {
-      const message = 'No queued messages to edit.'
-      this.options.onWarning?.(message)
-      return { type: 'empty', message }
-    }
-
-    const selected = followUps.map((followUp) => ({ followUp, selector: queueClearSelector(followUp) }))
-    // Metadata-free queue entries have no stable per-item clear selector, so
-    // selector-scoped recovery cannot address them. Fall back to the legacy
-    // behavior: copy every queued message into the draft and full-clear the
-    // queue in one request, instead of refusing to edit at all.
-    if (selected.some((item) => !item.selector)) return this.editQueuedFallback(followUps)
-
-    // Recover each selector exactly once before its first destructive request.
-    // The coordination key survives policy/controller recreation for a session,
-    // so retrying a partial clear cannot duplicate text already in the draft.
-    const currentItems = new Map(selected.map((item) => [
-      queueSelectorKey(item.selector!),
-      item.followUp.displayText,
-    ]))
-    for (const [selectorKey, recoveredText] of coordination.recoveredSelectors) {
-      if (currentItems.get(selectorKey) !== recoveredText) coordination.recoveredSelectors.delete(selectorKey)
-    }
-    const newlyRecovered = selected.filter((item) => (
-      coordination.recoveredSelectors.get(queueSelectorKey(item.selector!)) !== item.followUp.displayText
-    ))
-    const currentDraft = this.options.getDraft?.() ?? ''
-    const newBlock = newlyRecovered.map((item) => item.followUp.displayText.trim()).filter(Boolean).join('\n\n')
-    const draft = newBlock && coordination.recoveredBlock && currentDraft.startsWith(coordination.recoveredBlock)
-      ? `${coordination.recoveredBlock}\n\n${newBlock}${currentDraft.slice(coordination.recoveredBlock.length)}`
-      : buildEditedQueuedDraft(newlyRecovered.map((item) => item.followUp), currentDraft)
-    if (draft !== currentDraft) this.options.onDraftChange?.(draft)
-    if (newBlock) coordination.recoveredBlock = coordination.recoveredBlock
-      ? `${coordination.recoveredBlock}\n\n${newBlock}`
-      : newBlock
-    for (const item of newlyRecovered) {
-      coordination.recoveredSelectors.set(queueSelectorKey(item.selector!), item.followUp.displayText)
-    }
-
-    let clearError: unknown
-    for (const item of selected) {
-      const selectorKey = queueSelectorKey(item.selector!)
-      try {
-        await this.session.clearQueue(item.selector!)
-        coordination.recoveredSelectors.delete(selectorKey)
-      } catch (error) {
-        clearError = error
-        break
-      }
-    }
-    if (coordination.recoveredSelectors.size === 0) coordination.recoveredBlock = ''
-    if (!clearError) return { type: 'cleared', draft }
-
-    const message = 'Queued messages were copied into the composer, but some may remain queued. Review the queue and composer before sending.'
-    this.options.onWarning?.(message)
-    return { type: 'clear-failed', draft, error: clearError, message }
-  }
-
-  // Legacy path for queues that contain metadata-free entries: copy all queued
-  // messages into the draft and issue a single full clear. No recovery
-  // coordination is needed because the clear is all-or-nothing.
-  private async editQueuedFallback(followUps: readonly QueuedUserMessage[]): Promise<PiQueueEditQueuedResult> {
-    const draft = buildEditedQueuedDraft(followUps, this.options.getDraft?.() ?? '')
-    this.options.onDraftChange?.(draft)
-    try {
-      await this.session.clearQueue()
-      return { type: 'cleared', draft }
-    } catch (error) {
-      const message = 'Queued messages were copied into the composer, but the server queue was not cleared. They may still send unless you retry Edit queued or Stop.'
-      this.options.onWarning?.(message)
-      return { type: 'clear-failed', draft, error, message }
-    }
+  removeAllQueued(): Promise<{ ok: true } | { ok: false; message: string }> {
+    return this.runQueueMutation<{ ok: true } | { ok: false; message: string }>(
+      { ok: false, message: 'Another queue action is already in progress.' },
+      async () => {
+        try {
+          await this.session.clearQueue()
+          return { ok: true }
+        } catch {
+          const message = 'Could not remove the queued messages. They may still send unless you retry or use Edit.'
+          this.options.onWarning?.(message)
+          return { ok: false, message }
+        }
+      },
+    )
   }
 
   interrupt(payload: InterruptPayload = {}): Promise<CommandReceipt> {
@@ -235,6 +159,18 @@ export class PiFollowUpQueueController {
 
   stop(): Promise<StopReceipt> {
     return this.session.stop()
+  }
+
+  private async runQueueMutation<T>(busyResult: T, action: () => Promise<T>): Promise<T> {
+    if (this.queueMutationPending) return busyResult
+    this.queueMutationPending = true
+    this.options.onQueueMutationPending?.(true)
+    try {
+      return await action()
+    } finally {
+      this.queueMutationPending = false
+      this.options.onQueueMutationPending?.(false)
+    }
   }
 
   private nextFollowUpClientSeq(): number {
@@ -296,22 +232,8 @@ export function buildEditedQueuedDraft(followUps: readonly QueuedUserMessage[], 
   const draft = existingDraft.trim()
   if (!queuedText) return draft
   if (!draft) return queuedText
+  if (draft === queuedText || draft.startsWith(`${queuedText}\n\n`)) return draft
   return `${queuedText}\n\n${draft}`
-}
-
-function queueClearSelector(followUp: QueuedUserMessage): QueueClearPayload | undefined {
-  if (followUp.clientNonce) {
-    return {
-      clientNonce: followUp.clientNonce,
-      ...(followUp.clientSeq !== undefined ? { clientSeq: followUp.clientSeq } : {}),
-    }
-  }
-  if (followUp.clientSeq !== undefined) return { clientSeq: followUp.clientSeq }
-  return undefined
-}
-
-function queueSelectorKey(selector: QueueClearPayload): string {
-  return `${selector.clientNonce ?? ''}:${selector.clientSeq ?? ''}`
 }
 
 function isBusySlashCommand(input: PiQueueSubmitInput): boolean {

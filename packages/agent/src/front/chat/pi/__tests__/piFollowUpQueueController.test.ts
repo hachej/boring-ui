@@ -136,7 +136,7 @@ describe('PiFollowUpQueueController', () => {
     ])
   })
 
-  it('restores the complete queue snapshot before clearing selected items in order', async () => {
+  it('copies the complete queue snapshot before one full clear', async () => {
     const ordered: string[] = []
     const session = new FakeQueueSession('streaming', [
       { id: 'q1', kind: 'followup', displayText: 'first queued', clientSeq: 1 },
@@ -144,7 +144,7 @@ describe('PiFollowUpQueueController', () => {
     ])
     const clearQueue = session.clearQueue
     session.clearQueue = vi.fn(async (payload?: QueueClearPayload) => {
-      ordered.push(`clear:${payload?.clientSeq}`)
+      ordered.push(`clear:${payload?.clientSeq ?? 'all'}`)
       return clearQueue(payload)
     })
     const controller = createPiFollowUpQueueController(session, {
@@ -159,8 +159,7 @@ describe('PiFollowUpQueueController', () => {
 
     expect(ordered).toEqual([
       'draft:first queued\n\nsecond queued\n\nexisting draft',
-      'clear:1',
-      'clear:2',
+      'clear:all',
     ])
     expect(session.state.queue.followUps).toEqual([])
   })
@@ -168,7 +167,6 @@ describe('PiFollowUpQueueController', () => {
   it('keeps the complete recovered snapshot when a later selected clear fails', async () => {
     const warnings: string[] = []
     const drafts: string[] = []
-    const coordinationKey = {}
     const session = new FakeQueueSession('streaming', [
       { id: 'q1', kind: 'followup', displayText: 'restored', clientSeq: 1 },
       { id: 'q2', kind: 'followup', displayText: 'still queued', clientSeq: 2 },
@@ -177,12 +175,11 @@ describe('PiFollowUpQueueController', () => {
     const failure = new Error('offline')
     let remainingFailures = 2
     session.clearQueue = vi.fn(async (payload?: QueueClearPayload) => {
-      if (payload?.clientSeq === 2 && remainingFailures-- > 0) throw failure
+      if (remainingFailures-- > 0) throw failure
       return clearQueue(payload)
     })
     let draft = ''
     const controller = createPiFollowUpQueueController(session, {
-      coordinationKey,
       getDraft: () => draft,
       onDraftChange: (next) => {
         draft = next
@@ -195,43 +192,20 @@ describe('PiFollowUpQueueController', () => {
       type: 'clear-failed',
       draft: 'restored\n\nstill queued',
       error: failure,
-      message: 'Queued messages were copied into the composer, but some may remain queued. Review the queue and composer before sending.',
+      message: 'Queued messages were copied into the composer, but the server queue was not cleared. They may still send unless you retry Edit or Remove.',
     })
 
     expect(drafts).toEqual(['restored\n\nstill queued'])
-    expect(session.state.queue.followUps).toEqual([
-      { id: 'q2', kind: 'followup', displayText: 'still queued', clientSeq: 2 },
-    ])
-    expect(warnings).toEqual(['Queued messages were copied into the composer, but some may remain queued. Review the queue and composer before sending.'])
+    expect(session.state.queue.followUps).toHaveLength(2)
+    expect(warnings).toEqual(['Queued messages were copied into the composer, but the server queue was not cleared. They may still send unless you retry Edit or Remove.'])
 
     await expect(controller.editQueued()).resolves.toMatchObject({ type: 'clear-failed', draft: 'restored\n\nstill queued' })
     expect(drafts).toEqual(['restored\n\nstill queued'])
-    expect(session.state.queue.followUps).toEqual([
-      { id: 'q2', kind: 'followup', displayText: 'still queued', clientSeq: 2 },
-    ])
+    expect(session.state.queue.followUps).toHaveLength(2)
 
-    const recreatedSession = new FakeQueueSession('streaming', [
-      ...session.state.queue.followUps,
-      { id: 'q3', kind: 'followup', displayText: 'newly queued', clientSeq: 3 },
-    ])
-    const recreatedController = createPiFollowUpQueueController(recreatedSession, {
-      coordinationKey,
-      getDraft: () => draft,
-      onDraftChange: (next) => {
-        draft = next
-        drafts.push(next)
-      },
-    })
-    await expect(recreatedController.editQueued()).resolves.toMatchObject({ type: 'cleared' })
-    expect(draft).toBe('restored\n\nstill queued\n\nnewly queued')
-    expect(drafts).toEqual([
-      'restored\n\nstill queued',
-      'restored\n\nstill queued\n\nnewly queued',
-    ])
-    expect(recreatedSession.state.queue.followUps).toEqual([])
   })
 
-  it('coalesces concurrent multi-item edits and preserves canonical order', async () => {
+  it('fences concurrent edits behind one destructive clear', async () => {
     const session = new FakeQueueSession('streaming', [
       { id: 'q1', kind: 'followup', displayText: 'first queued', clientSeq: 1 },
       { id: 'q2', kind: 'followup', displayText: 'second queued', clientSeq: 2 },
@@ -262,10 +236,10 @@ describe('PiFollowUpQueueController', () => {
     releaseFirstClear()
     const results = await Promise.all([first, second])
 
-    expect(results.map((result) => result.type)).toEqual(['cleared', 'cleared'])
+    expect(results.map((result) => result.type)).toEqual(['cleared', 'busy'])
     expect(draft).toBe('first queued\n\nsecond queued')
     expect(drafts).toEqual(['first queued\n\nsecond queued'])
-    expect(session.clearQueue).toHaveBeenCalledTimes(2)
+    expect(session.clearQueue).toHaveBeenCalledTimes(1)
     expect(session.state.queue.followUps).toEqual([])
   })
 
@@ -308,7 +282,7 @@ describe('PiFollowUpQueueController', () => {
     expect(session.state.queue.followUps).toEqual([])
   })
 
-  it('removeQueued clears exactly the selected held message and leaves the rest queued', async () => {
+  it('removeAllQueued clears the complete held queue', async () => {
     const queued = [
       { id: 'q1', kind: 'followup' as const, clientNonce: 'nonce-1', clientSeq: 1, displayText: 'first held' },
       { id: 'q2', kind: 'followup' as const, clientNonce: 'nonce-2', clientSeq: 2, displayText: 'second held' },
@@ -316,22 +290,22 @@ describe('PiFollowUpQueueController', () => {
     const session = new FakeQueueSession('streaming', queued)
     const controller = createPiFollowUpQueueController(session, {})
 
-    await expect(controller.removeQueued(queued[0]!)).resolves.toEqual({ ok: true })
+    await expect(controller.removeAllQueued()).resolves.toEqual({ ok: true })
 
     expect(session.clearQueue).toHaveBeenCalledTimes(1)
-    expect(session.clearQueue).toHaveBeenCalledWith({ clientNonce: 'nonce-1', clientSeq: 1 })
-    expect(session.state.queue.followUps.map((followUp) => followUp.displayText)).toEqual(['second held'])
+    expect(session.clearQueue).toHaveBeenCalledWith()
+    expect(session.state.queue.followUps).toEqual([])
   })
 
-  it('removeQueued refuses metadata-free entries without clearing anything', async () => {
+  it('keeps the queue and warns when removeAllQueued fails', async () => {
     const warnings: string[] = []
-    const legacyQueued = [{ id: 'q1', kind: 'followup' as const, displayText: 'legacy queued' }]
-    const session = new FakeQueueSession('streaming', legacyQueued)
+    const queued = [{ id: 'q1', kind: 'followup' as const, displayText: 'queued' }]
+    const session = new FakeQueueSession('streaming', queued)
+    session.clearQueue = vi.fn(async () => { throw new Error('offline') })
     const controller = createPiFollowUpQueueController(session, { onWarning: (message) => warnings.push(message) })
 
-    await expect(controller.removeQueued(legacyQueued[0]!)).resolves.toMatchObject({ ok: false })
+    await expect(controller.removeAllQueued()).resolves.toMatchObject({ ok: false })
 
-    expect(session.clearQueue).not.toHaveBeenCalled()
     expect(session.state.queue.followUps).toHaveLength(1)
     expect(warnings).toHaveLength(1)
   })

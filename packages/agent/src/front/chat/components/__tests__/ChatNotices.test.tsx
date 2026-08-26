@@ -38,30 +38,63 @@ describe('QueuedComposerNotice', () => {
     { id: 'q2', kind: 'followup' as const, clientNonce: 'n-2', displayText: 'second held' },
   ]
 
-  test('renders one remove button per queued message and removes the right one', () => {
+  test('renders one explicit action that removes the whole queue', () => {
     const onRemove = vi.fn()
     render(<QueuedComposerNotice followUps={followUps} onEdit={vi.fn()} onRemove={onRemove} />)
 
     expect(screen.getByText('2 queued follow-ups')).toBeTruthy()
-    const removeButtons = screen.getAllByRole('button', { name: /Remove queued message/ })
-    expect(removeButtons).toHaveLength(2)
+    const remove = screen.getByRole('button', { name: 'Remove all queued messages' })
+    expect(remove.querySelector('svg')).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: /Remove queued message 1 of 2: first held/ }))
+    fireEvent.click(remove)
     expect(onRemove).toHaveBeenCalledTimes(1)
-    expect(onRemove).toHaveBeenCalledWith(followUps[0])
   })
 
   test('renders the nudge action that flushes the held queue now', () => {
     const onResume = vi.fn()
     render(<QueuedComposerNotice followUps={followUps} onEdit={vi.fn()} onResume={onResume} />)
 
-    fireEvent.click(screen.getByRole('button', { name: /Nudge agent/ }))
+    const sendNow = screen.getByRole('button', { name: /Nudge agent/ })
+    expect(sendNow.textContent).toContain('Send now')
+    fireEvent.click(sendNow)
     expect(onResume).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: 'Edit queued follow-ups' }).textContent).toContain('Edit')
+  })
+
+  test('disables every destructive action while a queue mutation is pending', () => {
+    render(
+      <QueuedComposerNotice
+        followUps={followUps}
+        onEdit={vi.fn()}
+        onRemove={vi.fn()}
+        onResume={vi.fn()}
+        actionPending
+      />,
+    )
+
+    expect((screen.getByRole('button', { name: 'Remove all queued messages' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: /Nudge agent/ }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: 'Edit queued follow-ups' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  test('disables Remove and Edit while Send-now is pending', () => {
+    render(
+      <QueuedComposerNotice
+        followUps={followUps}
+        onEdit={vi.fn()}
+        onRemove={vi.fn()}
+        onResume={vi.fn()}
+        resumePending
+      />,
+    )
+
+    expect((screen.getByRole('button', { name: 'Remove all queued messages' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: 'Edit queued follow-ups' }) as HTMLButtonElement).disabled).toBe(true)
   })
 
   test('hides per-message remove buttons when the surface cannot address single entries', () => {
     render(<QueuedComposerNotice followUps={followUps} onEdit={vi.fn()} />)
-    expect(screen.queryAllByRole('button', { name: /Remove queued message/ })).toHaveLength(0)
+    expect(screen.queryByRole('button', { name: 'Remove all queued messages' })).toBeNull()
     // Legacy joined-text preview remains.
     expect(screen.getByText('first held - second held')).toBeTruthy()
   })

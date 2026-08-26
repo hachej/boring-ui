@@ -1,7 +1,7 @@
 "use client"
 
-import { AlertCircleIcon, ExternalLinkIcon, FastForwardIcon, ListRestartIcon, Loader2, XIcon } from 'lucide-react'
-import { IconButton } from '@hachej/boring-ui-kit'
+import { AlertCircleIcon, ExternalLinkIcon, Loader2, PencilIcon, SendHorizontalIcon, XIcon } from 'lucide-react'
+import { Button, IconButton } from '@hachej/boring-ui-kit'
 import type { QueuedUserMessage } from '../../../shared/chat'
 import { ErrorCode } from '../../../shared/error-codes'
 import type { ReactNode } from 'react'
@@ -161,17 +161,17 @@ export function QueuedComposerNotice({
   onResume,
   resumePending = false,
   onRemove,
-  removePendingId,
+  actionPending = false,
 }: {
   followUps: QueuedUserMessage[]
   onEdit: () => void
   onResume?: () => void
   resumePending?: boolean
-  /** Remove one queued message from the hold queue. Omit when the surface cannot address single entries. */
-  onRemove?: (followUp: QueuedUserMessage) => void
-  /** Id of the queued message currently being removed (shows busy state). */
-  removePendingId?: string
+  /** Remove every queued message from the hold queue. */
+  onRemove?: () => void
+  actionPending?: boolean
 }) {
+  const toolbarPending = actionPending || resumePending
   return (
     <div
       data-boring-agent-part="composer-queue-preview"
@@ -188,57 +188,54 @@ export function QueuedComposerNotice({
           {followUps.map((followUp) => followUp.displayText).join(' - ')}
         </div>
       </div>
-      {onRemove ? (
-        // Per-message removal lives in its own column so the flat preview —
-        // a locator contract — stays exactly one element.
-        <div className="flex shrink-0 flex-col gap-0.5" data-boring-agent-part="composer-queue-remove-list">
-          {followUps.map((followUp, index) => (
-            <IconButton
-              key={followUp.id}
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => onRemove(followUp)}
-              disabled={removePendingId === followUp.id}
-              aria-busy={removePendingId === followUp.id}
-              className="size-5 text-[color:var(--muted-foreground)] hover:bg-[color:var(--muted)] hover:text-[color:var(--foreground)]"
-              aria-label={`Remove queued message ${index + 1} of ${followUps.length}: ${followUp.displayText}`}
-              title={`Remove: ${followUp.displayText}`}
-              data-boring-agent-part="composer-queue-remove"
-            >
-              <XIcon className="size-3" aria-hidden="true" />
-            </IconButton>
-          ))}
-        </div>
-      ) : null}
-      <div className="flex shrink-0 items-center gap-1">
-        {onResume ? (
+      <div className="flex shrink-0 self-center items-center gap-1">
+        {onRemove ? (
           <IconButton
             type="button"
             variant="ghost"
-            size="icon-sm"
-            onClick={onResume}
-            disabled={resumePending}
-            aria-busy={resumePending}
+            size="icon-xs"
+            onClick={onRemove}
+            disabled={toolbarPending}
+            aria-busy={toolbarPending}
             className="text-[color:var(--muted-foreground)] hover:bg-[color:var(--muted)] hover:text-[color:var(--foreground)]"
-            aria-label="Nudge agent: stop the current run and send queued messages now"
-            title="Nudge agent: stop the current run and send queued messages now"
-            data-boring-agent-part="composer-queue-nudge"
+            aria-label="Remove all queued messages"
+            title="Remove all queued messages"
+            data-boring-agent-part="composer-queue-remove"
           >
-            <FastForwardIcon className="size-3.5" aria-hidden="true" />
+            <XIcon className="size-3" aria-hidden="true" />
           </IconButton>
         ) : null}
-        <IconButton
+        {onResume ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            onClick={onResume}
+            disabled={toolbarPending}
+            aria-busy={toolbarPending}
+            className="text-[color:var(--muted-foreground)] hover:bg-[color:var(--muted)] hover:text-[color:var(--foreground)]"
+            aria-label="Nudge agent: stop the current run and send queued messages now"
+            title="Send queued messages now and stop the current run"
+            data-boring-agent-part="composer-queue-nudge"
+          >
+            <SendHorizontalIcon className="size-3" aria-hidden="true" />
+            Send now
+          </Button>
+        ) : null}
+        <Button
           type="button"
           variant="ghost"
-          size="icon-sm"
+          size="xs"
           onClick={onEdit}
+          disabled={toolbarPending}
+          aria-busy={toolbarPending}
           className="text-[color:var(--muted-foreground)] hover:bg-[color:var(--muted)] hover:text-[color:var(--foreground)]"
           aria-label="Edit queued follow-ups"
-          title="Edit queued follow-ups"
+          title="Move queued messages back to the composer"
         >
-          <ListRestartIcon className="size-3.5" aria-hidden="true" />
-        </IconButton>
+          <PencilIcon className="size-3" aria-hidden="true" />
+          Edit
+        </Button>
       </div>
     </div>
   )

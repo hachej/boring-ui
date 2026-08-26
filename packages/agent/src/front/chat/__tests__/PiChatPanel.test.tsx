@@ -338,27 +338,24 @@ describe('PiChatPanel sandbox shell', () => {
     await waitFor(() => expect(screen.queryByText('2 queued follow-ups')).toBeNull())
   })
 
-  test('removes exactly one held follow-up from the queue toolbar', async () => {
+  test('removes the whole held queue from one toolbar action', async () => {
     const queued = [
       { id: 'queued-1', kind: 'followup' as const, clientNonce: 'remove-1', displayText: 'first held' },
       { id: 'queued-2', kind: 'followup' as const, clientNonce: 'remove-2', displayText: 'second held' },
     ]
     const remote = new FakeRemotePiSession(remoteState({ status: 'idle', lastSeq: 7, queue: { followUps: queued } }))
-    remote.clearQueue.mockImplementationOnce(async (payload?: { clientNonce?: string }) => {
-      const after = remote.state.queue.followUps.filter((followUp) => followUp.clientNonce !== payload?.clientNonce)
-      remote.setState({ ...remote.state, queue: { followUps: after } })
-      return { accepted: true, cursor: remote.state.lastSeq + 1, cleared: queued.length - after.length }
+    remote.clearQueue.mockImplementationOnce(async () => {
+      remote.setState({ ...remote.state, queue: { followUps: [] } })
+      return { accepted: true, cursor: remote.state.lastSeq + 1, cleared: queued.length }
     })
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
     render(<PiChatPanel serverResourcesEnabled={false} storageScope="scope-a" fetch={fetchMock as unknown as typeof fetch} createRemoteSession={remoteFactory(remote)} />)
 
     await screen.findByText('2 queued follow-ups')
-    fireEvent.click(screen.getByRole('button', { name: /Remove queued message 1 of 2: first held/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Remove all queued messages' }))
 
-    await waitFor(() => expect(remote.clearQueue).toHaveBeenCalledWith({ clientNonce: 'remove-1' }))
-    await waitFor(() => expect(screen.getByText('1 queued follow-up')).toBeTruthy())
-    expect(screen.queryByRole('button', { name: /Remove queued message .*first held/ })).toBeNull()
-    expect(screen.getByRole('button', { name: /Remove queued message .*second held/ })).toBeTruthy()
+    await waitFor(() => expect(remote.clearQueue).toHaveBeenCalledWith())
+    await waitFor(() => expect(screen.queryByText('2 queued follow-ups')).toBeNull())
   })
 
   test('stop interrupts instead of clearing queued follow-ups and clears local submitted state', async () => {

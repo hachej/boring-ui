@@ -396,7 +396,7 @@ export function PiChatPanel<
   const [draft, setDraft] = useState(() => initialDraft ?? '')
   const draftRef = useRef(draft)
   draftRef.current = draft
-  const queueCoordinationKeysRef = useRef(new Map<string, object>())
+  const [queueMutationPending, setQueueMutationPending] = useState(false)
   const [resumeQueuedPendingSessionIds, setResumeQueuedPendingSessionIds] = useState<Set<string>>(() => new Set())
   const [resumeQueuedErrorsBySessionId, setResumeQueuedErrorsBySessionId] = useState<Map<string, PanelNotice>>(() => new Map())
   const resumeQueuedInFlightRef = useRef(new Map<string, Promise<unknown>>())
@@ -477,16 +477,15 @@ export function PiChatPanel<
   const activeChatSessionId = selectedChatState?.sessionId
   const resumeQueuedPending = Boolean(activeChatSessionId && resumeQueuedPendingSessionIds.has(activeChatSessionId))
   const resumeQueuedError = activeChatSessionId ? resumeQueuedErrorsBySessionId.get(activeChatSessionId) : undefined
-  // Resume-queued pending/error/in-flight state and queue-recovery coordination
-  // are keyed by bare session id. When the same id reappears under a different
-  // agent/storage scope (compound session identity), that state must not leak
-  // across, so reset it whenever the owning scope changes.
+  // Resume-queued pending/error/in-flight state is keyed by bare session id.
+  // Reset it when the owning agent/storage scope changes so state cannot leak
+  // into a different session that reuses the same id.
   const chatScopeKey = `${externalSessionId ? 'external' : 'managed'}\u0000${agentTypeId}\u0000${storageScope ?? ''}`
   useEffect(() => {
+    setQueueMutationPending(false)
     setResumeQueuedPendingSessionIds(new Set())
     setResumeQueuedErrorsBySessionId(new Map())
     resumeQueuedInFlightRef.current.clear()
-    queueCoordinationKeysRef.current.clear()
   }, [chatScopeKey])
   const warmupNotice = composerNoticeForWarmup(workspaceWarmupStatus)
   const runtimeDependenciesNotice = composerNoticeForRuntimeDependencies(workspaceWarmupStatus)
@@ -787,11 +786,6 @@ export function PiChatPanel<
 
   const policy = useMemo(() => {
     if (!selectedPiSession || !activeChatSessionId || !serverModelSelectionReady) return undefined
-    let queueCoordinationKey = queueCoordinationKeysRef.current.get(activeChatSessionId)
-    if (!queueCoordinationKey) {
-      queueCoordinationKey = {}
-      queueCoordinationKeysRef.current.set(activeChatSessionId, queueCoordinationKey)
-    }
     const policySession = {
       getState: () => {
         const state = selectedPiSession.getState()
@@ -808,7 +802,6 @@ export function PiChatPanel<
     }
     return createPiComposerPolicyController({
       session: policySession,
-      coordinationKey: queueCoordinationKey,
       registry,
       slashContext: {
         sessionId: activeChatSessionId,
@@ -836,6 +829,7 @@ export function PiChatPanel<
       getDraft: () => draftRef.current,
       onDraftChange: setComposerDraft,
       allowPromptDuringInitialHydration,
+      onQueueMutationPending: setQueueMutationPending,
       onPromptSubmitStarted: () => {
         markLocalSubmitted(activeChatSessionId)
       },
@@ -986,11 +980,11 @@ export function PiChatPanel<
     })
   }, [addLocalNotice, policy])
 
-  const removeQueued = useCallback((followUp: QueuedUserMessage) => {
+  const removeQueued = useCallback(() => {
     if (!policy) return
-    void policy.removeQueued(followUp).then((result) => {
+    void policy.removeAllQueued().then((result) => {
       if (!result.ok) {
-        addLocalNotice({ id: `remove-queued-${followUp.id}`, level: 'warning', text: result.message, dismissible: true })
+        addLocalNotice({ id: 'remove-queued', level: 'warning', text: result.message, dismissible: true })
       }
     })
   }, [addLocalNotice, policy])
@@ -1233,6 +1227,7 @@ export function PiChatPanel<
               queuePreview={queuePreview}
               onEditQueued={editQueued}
               onRemoveQueued={removeQueued}
+              queueMutationPending={queueMutationPending}
               onResumeQueued={resumeQueued}
               resumeQueuedPending={resumeQueuedPending}
               hotReloadEnabled={hotReloadEnabled}

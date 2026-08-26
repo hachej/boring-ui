@@ -251,6 +251,25 @@ describe('RemotePiSession commands and idempotency', () => {
     session.dispose()
   })
 
+  it('retries a full queue clear with one stable operation key', async () => {
+    const bodies: unknown[] = []
+    let attempts = 0
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (!url.endsWith('/queue/clear')) throw new Error(`unexpected URL ${url}`)
+      bodies.push(JSON.parse(String(init?.body)))
+      attempts += 1
+      if (attempts === 1) throw new TypeError('connection reset after commit')
+      return jsonResponse({ accepted: true, cursor: 3, cleared: 2 })
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock, { autoStart: false })
+
+    await expect(session.clearQueue()).resolves.toMatchObject({ accepted: true, cleared: 2 })
+    expect(bodies).toHaveLength(2)
+    expect(bodies[0]).toEqual({ requestId: expect.stringMatching(/^queue-clear:[a-f0-9-]{36}$/u) })
+    expect(bodies[1]).toEqual(bodies[0])
+    session.dispose()
+  })
+
   it('uses fresh bounded operation keys for repeated clears of the same arbitrary selector', async () => {
     const nonce = `external/nonce with spaces:${'x'.repeat(96)}`
     const bodies: Array<Record<string, unknown>> = []

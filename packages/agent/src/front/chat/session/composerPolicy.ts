@@ -1,4 +1,4 @@
-import type { BoringChatMessage, ChatAttachmentPayload, InterruptPayload, PromptPayload, QueuedUserMessage } from '../../../shared/chat'
+import type { BoringChatMessage, ChatAttachmentPayload, InterruptPayload, PromptPayload } from '../../../shared/chat'
 import type { PromptInputFilePart } from '../../primitives/prompt-input-context'
 import type { AvailableModel, ModelSelection, ThinkingLevel } from '../../chatPanelSettings'
 import { DEFAULT_THINKING, isThinkingLevel, parseModelSelection } from '../../chatPanelSettings'
@@ -125,8 +125,8 @@ export class PiComposerPolicyController {
     return this.queueController.editQueued()
   }
 
-  removeQueued(followUp: QueuedUserMessage) {
-    return this.queueController.removeQueued(followUp)
+  removeAllQueued() {
+    return this.queueController.removeAllQueued()
   }
 
   interrupt(payload: InterruptPayload = {}) {

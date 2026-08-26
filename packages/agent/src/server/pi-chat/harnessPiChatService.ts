@@ -64,6 +64,30 @@ interface SyntheticPromptFailure {
   error: ChatError
 }
 
+interface InterruptedQueueEntry {
+  followUp: QueuedUserMessage
+  serverText: string
+}
+
+interface QueueRestoreFailure {
+  entry: InterruptedQueueEntry
+  error: unknown
+}
+
+interface QueueRestoreResult {
+  failures: QueueRestoreFailure[]
+}
+
+type SendNowDisposition = 'active' | 'cancel-and-restore' | 'cancel-and-discard'
+
+interface SendNowTransaction {
+  disposition: SendNowDisposition
+  completion: Promise<void>
+  complete: () => void
+  fail: (error: unknown) => void
+  settlement?: Promise<void>
+}
+
 export interface HarnessPiChatServiceOptions {
   harness: AgentHarness
   sessionStore: SessionStore
@@ -108,6 +132,8 @@ export class HarnessPiChatService implements PiChatSessionService {
   private readonly messageMetadata = new PiChatMessageMetadataReconciler()
   private readonly activePromptRuns = new Map<string, Promise<void>>()
   private readonly queueResumeAdmissions = new Set<string>()
+  private readonly queueRecoveryRuns = new Map<string, Promise<void>>()
+  private readonly sendNowTransactions = new Map<string, SendNowTransaction>()
   private readonly syntheticPromptFailures = new Map<string, SyntheticPromptFailure[]>()
   private readonly activeSyntheticPromptErrors = new Map<string, ChatError>()
   private readonly liveAttachments = new Map<string, {
@@ -416,6 +442,7 @@ export class HarnessPiChatService implements PiChatSessionService {
 
   private async promptBeforeDispose(ctx: PiSessionRequestContext, sessionId: string, payload: PromptPayload): Promise<PromptReceipt> {
     const sessionKey = this.sessionKey(ctx, sessionId)
+    await this.awaitQueueRecovery(sessionKey)
     const adapter = await this.getAdapter(ctx, sessionId, payload)
     const channel = await this.ensureChannel(ctx, sessionId, adapter)
     // Reservation is the dedup authority and must settle before model execution.
@@ -471,6 +498,7 @@ export class HarnessPiChatService implements PiChatSessionService {
 
   private async followUpBeforeDispose(ctx: PiSessionRequestContext, sessionId: string, payload: FollowUpPayload): Promise<FollowUpReceipt> {
     const sessionKey = this.sessionKey(ctx, sessionId)
+    await this.awaitQueueRecovery(sessionKey)
     const adapter = await this.getAdapter(ctx, sessionId, payload.message)
     const channel = await this.ensureChannel(ctx, sessionId, adapter)
     // Reserve before enqueueing so duplicates cannot take a second hold.
@@ -520,6 +548,9 @@ export class HarnessPiChatService implements PiChatSessionService {
 
   private async clearQueueBeforeDispose(ctx: PiSessionRequestContext, sessionId: string, payload: QueueClearPayload): Promise<QueueClearReceipt> {
     const sessionKey = this.sessionKey(ctx, sessionId)
+    const sendNow = this.sendNowTransactions.get(sessionKey)
+    if (sendNow && !hasFollowUpSelector(payload)) transitionSendNow(sendNow, 'cancel-and-discard')
+    await this.awaitQueueRecovery(sessionKey)
     const adapter = await this.getAdapter(ctx, sessionId, '')
     if (hasFollowUpSelector(payload)) {
       const before = adapter.readSnapshot().followUpMessages.length
@@ -544,41 +575,114 @@ export class HarnessPiChatService implements PiChatSessionService {
 
   private async interruptBeforeDispose(ctx: PiSessionRequestContext, sessionId: string, payload: InterruptPayload): Promise<{ accepted: true; cursor: number }> {
     const sessionKey = this.sessionKey(ctx, sessionId)
+    const activeSendNow = this.sendNowTransactions.get(sessionKey)
+    if (payload.queueAction === 'hold' && activeSendNow) {
+      transitionSendNow(activeSendNow, 'cancel-and-restore')
+      const activeAdapter = await this.getAdapter(ctx, sessionId, '')
+      this.metering?.markActiveStopped(sessionKey)
+      activeAdapter.abortRetry?.()
+      await activeAdapter.abort()
+      await activeSendNow.completion
+      await this.awaitQueueRecovery(sessionKey)
+      return { accepted: true, cursor: this.channels.get(sessionKey)?.buffer.latestSeq ?? 0 }
+    }
+    await this.awaitQueueRecovery(sessionKey)
     const adapter = await this.getAdapter(ctx, sessionId, '')
     const snapshot = adapter.readSnapshot()
     const wasActive = snapshot.isStreaming || snapshot.isRetrying
     const isResume = payload.queueAction === 'resume'
-    // Resume is an idle-only admission. A stale or double Resume must never
-    // mutate (especially abort) a turn that a prior Resume has already started.
-    if (isResume && (wasActive || this.queueResumeAdmissions.has(sessionKey) || this.activePromptRuns.has(sessionKey))) {
+    // A stale or double resume must never abort the replacement turn started by
+    // an earlier resume. The first request may intentionally interrupt an active
+    // turn (the queue toolbar's "Send now" action); subsequent requests are held
+    // out by queueResumeAdmissions until that replacement turn settles.
+    if (isResume && (snapshot.followUpMessages.length === 0 || this.queueResumeAdmissions.has(sessionKey) || (!wasActive && this.activePromptRuns.has(sessionKey)))) {
       return { accepted: true, cursor: this.channels.get(sessionKey)?.buffer.latestSeq ?? 0 }
     }
     if (isResume) this.queueResumeAdmissions.add(sessionKey)
+    const sendNowTransaction = isResume ? createSendNowTransaction() : undefined
+    if (sendNowTransaction) this.sendNowTransactions.set(sessionKey, sendNowTransaction)
     try {
       const shouldPromoteFollowUp = isResume || (wasActive && payload.queueAction !== 'hold')
-      const nextFollowUp = shouldPromoteFollowUp
-        ? this.nextFollowUpForInterrupt(sessionId, sessionKey, adapter)
-        : undefined
+      const queuedFollowUps = shouldPromoteFollowUp
+        ? this.followUpsForInterrupt(sessionId, sessionKey, adapter)
+        : []
+      const nextFollowUp = queuedFollowUps[0]
+      const resumedFollowUps = isResume
+        ? queuedFollowUps.map((followUp) => ({
+            followUp,
+            serverText: this.messageMetadata.findFollowUpForQueueItem(sessionKey, followUp)?.serverText ?? followUp.displayText,
+          }))
+        : []
       const activeRun = this.activePromptRuns.get(sessionKey)
-      // A hold-interrupt is the UI Stop path: the active turn is voluntarily
-      // cancelled while queued follow-ups are kept. Mark the active metering
-      // run user-stopped BEFORE the abort so its terminal accounting releases
-      // the hold instead of fallback-charging an aborted no-usage success —
-      // exactly what service.stop() has always done for this button.
-      if (payload.queueAction === 'hold') this.metering?.markActiveStopped(sessionKey)
-      adapter.abortRetry?.()
-      if (wasActive) await adapter.abort()
-      await this.drainPublishQueue(this.channels.get(sessionKey))
-      await activeRun?.catch(() => {})
-      // Release prompt reservations stranded before agent-start.
-      this.metering?.releasePending(sessionKey)
+      let resumeQueueCleared = false
+      try {
+        // Pi may automatically drain its native follow-up queue as the aborted
+        // run settles. Snapshot and clear before aborting so Send-now cannot
+        // emit entries individually and then repost the combined queue.
+        if (isResume && queuedFollowUps.length > 0) {
+          this.clearAllFollowUps(adapter, sessionId, sessionKey)
+          resumeQueueCleared = true
+        }
+        // Hold and active Send-now are both voluntary cancellation paths. Mark
+        // the old run before abort so a no-usage terminal event releases rather
+        // than fallback-charges its reservation.
+        if (payload.queueAction === 'hold' || (isResume && wasActive)) {
+          this.metering?.markActiveStopped(sessionKey)
+        }
+        adapter.abortRetry?.()
+        if (wasActive) await adapter.abort()
+        await this.drainPublishQueue(this.channels.get(sessionKey))
+        await activeRun?.catch(() => {})
+        // Release prompt reservations stranded before agent-start.
+        this.metering?.releasePending(sessionKey)
+      } catch (error) {
+        let reportedError = error
+        if (resumeQueueCleared && sendNowTransaction?.disposition !== 'cancel-and-discard') {
+          const restore = await this.restoreInterruptedQueue(sessionId, sessionKey, adapter, resumedFollowUps)
+          this.releaseFailedQueueRestorations(sessionKey, restore.failures)
+          if (restore.failures.length > 0) {
+            reportedError = new AggregateError(
+              [error, ...restore.failures.map((failure) => failure.error)],
+              'Send-now failed and the held queue could not be fully restored.',
+            )
+          }
+        }
+        sendNowTransaction?.fail(reportedError)
+        throw reportedError
+      }
       if (nextFollowUp) {
         this.lifecycle.assertOpen()
-        await this.autoPostInterruptedFollowUp(sessionId, sessionKey, adapter, nextFollowUp)
+        if (isResume && sendNowTransaction?.disposition === 'active') {
+          await this.autoPostInterruptedQueue(sessionId, sessionKey, adapter, resumedFollowUps, sendNowTransaction)
+        } else if (isResume && sendNowTransaction?.disposition === 'cancel-and-restore') {
+          const restore = await this.restoreInterruptedQueue(sessionId, sessionKey, adapter, resumedFollowUps)
+          this.releaseFailedQueueRestorations(sessionKey, restore.failures)
+          if (restore.failures.length > 0) {
+            const error = new AggregateError(
+              restore.failures.map((failure) => failure.error),
+              'Send-now was cancelled but the held queue could not be fully restored.',
+            )
+            sendNowTransaction.fail(error)
+            throw error
+          }
+        } else if (!isResume) {
+          await this.autoPostInterruptedFollowUp(sessionId, sessionKey, adapter, nextFollowUp)
+        }
       }
       return { accepted: true, cursor: this.channels.get(sessionKey)?.buffer.latestSeq ?? 0 }
     } finally {
-      if (isResume) this.queueResumeAdmissions.delete(sessionKey)
+      if (sendNowTransaction && !sendNowTransaction.settlement) {
+        if (this.sendNowTransactions.get(sessionKey) === sendNowTransaction) this.sendNowTransactions.delete(sessionKey)
+        sendNowTransaction.complete()
+      }
+      if (isResume) {
+        const resumedRun = this.activePromptRuns.get(sessionKey)
+        if (resumedRun) {
+          void resumedRun.finally(() => this.queueResumeAdmissions.delete(sessionKey)).catch(() => {})
+        } else {
+          this.queueResumeAdmissions.delete(sessionKey)
+        }
+      }
     }
   }
 
@@ -588,8 +692,11 @@ export class HarnessPiChatService implements PiChatSessionService {
 
   private async stopBeforeDispose(ctx: PiSessionRequestContext, sessionId: string): Promise<StopReceipt> {
     const sessionKey = this.sessionKey(ctx, sessionId)
+    const sendNow = this.sendNowTransactions.get(sessionKey)
+    if (sendNow) transitionSendNow(sendNow, 'cancel-and-discard')
+    await this.awaitQueueRecovery(sessionKey)
     const adapter = await this.getAdapter(ctx, sessionId, '')
-    const clearedQueue = this.clearAllFollowUps(adapter, sessionId, sessionKey)
+    const clearedBeforeAbort = this.clearAllFollowUps(adapter, sessionId, sessionKey)
     // The active run settles/releases via the native aborted agent-end; queued
     // and not-yet-started prompt reservations are released here so they don't
     // hold the user's balance until TTL. Mark the active run user-stopped BEFORE
@@ -600,8 +707,18 @@ export class HarnessPiChatService implements PiChatSessionService {
     this.metering?.releaseQueued(sessionKey)
     this.metering?.releasePending(sessionKey)
     await adapter.abort()
+    await sendNow?.completion
+    await this.awaitQueueRecovery(sessionKey)
+    const clearedAfterAbort = sendNow
+      ? this.clearAllFollowUps(adapter, sessionId, sessionKey)
+      : []
     await this.drainPublishQueue(this.channels.get(sessionKey))
-    return { accepted: true, stopped: true, cursor: this.channels.get(sessionKey)?.buffer.latestSeq ?? 0, clearedQueue: buildPiChatQueuedFollowUps(sessionId, clearedQueue) }
+    return {
+      accepted: true,
+      stopped: true,
+      cursor: this.channels.get(sessionKey)?.buffer.latestSeq ?? 0,
+      clearedQueue: buildPiChatQueuedFollowUps(sessionId, [...clearedBeforeAbort, ...clearedAfterAbort]),
+    }
   }
 
   private clearAllFollowUps(adapter: PiAgentSessionAdapter, sessionId: string, sessionKey: string): string[] {
@@ -612,12 +729,153 @@ export class HarnessPiChatService implements PiChatSessionService {
     return removedFollowUps(before, after)
   }
 
-  private nextFollowUpForInterrupt(sessionId: string, sessionKey: string, adapter: PiAgentSessionAdapter): QueuedUserMessage | undefined {
-    const followUps = this.messageMetadata.enrichQueuedFollowUps(
+  private followUpsForInterrupt(sessionId: string, sessionKey: string, adapter: PiAgentSessionAdapter): QueuedUserMessage[] {
+    return this.messageMetadata.enrichQueuedFollowUps(
       sessionKey,
       buildPiChatQueuedFollowUps(sessionId, adapter.readSnapshot().followUpMessages),
     )
-    return followUps[0]
+  }
+
+  private async autoPostInterruptedQueue(
+    sessionId: string,
+    sessionKey: string,
+    adapter: PiAgentSessionAdapter,
+    queued: InterruptedQueueEntry[],
+    transaction: SendNowTransaction,
+  ): Promise<void> {
+    const first = queued[0]
+    if (!first) return
+
+    const channel = this.channels.get(sessionKey)
+    const serverText = queued.map((item) => item.serverText).join('\n\n')
+    const combinedFollowUp = {
+      ...first.followUp,
+      displayText: queued.map((item) => item.followUp.displayText).join('\n\n'),
+    }
+    this.messageMetadata.recordConsumingFollowUp(sessionKey, combinedFollowUp, serverText)
+    this.metering?.promoteQueuedToPrompt(sessionKey, first.followUp)
+
+    let promptRun: Promise<void>
+    try {
+      promptRun = this.runAndDrainPublishQueue(channel, adapter.prompt(serverText))
+    } catch (error) {
+      this.metering?.restorePromotedFollowUp(sessionId, first.followUp, sessionKey)
+      const restore = await this.restoreInterruptedQueue(sessionId, sessionKey, adapter, queued, combinedFollowUp)
+      this.releaseFailedQueueRestorations(sessionKey, restore.failures)
+      throw restore.failures.length > 0
+        ? new AggregateError([error, ...restore.failures.map((failure) => failure.error)], 'Send-now failed and the held queue could not be fully restored.')
+        : error
+    }
+
+    const settlement = promptRun.then(() => {
+      this.releaseCombinedQueueRemainder(sessionKey, queued)
+    }).catch(async (error) => {
+      const unconsumed = this.messageMetadata.hasConsumingFollowUp(sessionKey, combinedFollowUp)
+      if (unconsumed && transaction.disposition !== 'cancel-and-discard') {
+        this.metering?.restorePromotedFollowUp(sessionId, first.followUp, sessionKey)
+        const restore = await this.restoreInterruptedQueue(sessionId, sessionKey, adapter, queued, combinedFollowUp)
+        this.releaseFailedQueueRestorations(sessionKey, restore.failures)
+        const reportedError = restore.failures.length > 0
+          ? new AggregateError([error, ...restore.failures.map((failure) => failure.error)], 'Send-now failed and the held queue could not be fully restored.')
+          : error
+        this.publishAutoPostedFollowUpRunError(sessionKey, sessionId, channel, reportedError)
+        return
+      }
+      if (unconsumed) {
+        this.messageMetadata.removeConsumingFollowUp(sessionKey, combinedFollowUp)
+        this.metering?.failPromotedFollowUp(sessionId, first.followUp, sessionKey)
+      }
+      this.releaseCombinedQueueRemainder(sessionKey, queued)
+      this.publishAutoPostedFollowUpRunError(sessionKey, sessionId, channel, error)
+    })
+    const trackedSettlement = this.trackActiveRun(sessionKey, settlement)
+    transaction.settlement = trackedSettlement
+    void trackedSettlement.finally(() => {
+      if (this.sendNowTransactions.get(sessionKey) === transaction) this.sendNowTransactions.delete(sessionKey)
+      transaction.complete()
+    }).catch(() => {})
+
+    // Acknowledge once synchronously emitted replacement events are durable;
+    // the tracked settlement (including recovery) remains fenced and stoppable.
+    await Promise.race([
+      this.drainPublishQueue(channel),
+      this.lifecycle.closingPromise,
+    ])
+    if (!this.messageMetadata.hasConsumingFollowUp(sessionKey, combinedFollowUp)) {
+      this.releaseCombinedQueueRemainder(sessionKey, queued)
+    }
+  }
+
+  private releaseCombinedQueueRemainder(sessionKey: string, queued: InterruptedQueueEntry[]): void {
+    for (const item of queued.slice(1)) {
+      this.metering?.releaseQueued(sessionKey, followUpSelector(item.followUp))
+    }
+  }
+
+  private async awaitQueueRecovery(sessionKey: string): Promise<void> {
+    await this.queueRecoveryRuns.get(sessionKey)
+  }
+
+  private restoreInterruptedQueue(
+    sessionId: string,
+    sessionKey: string,
+    adapter: PiAgentSessionAdapter,
+    queued: InterruptedQueueEntry[],
+    consumingFollowUp?: QueuedUserMessage,
+  ): Promise<QueueRestoreResult> {
+    const run = this.restoreInterruptedQueueOnce(sessionId, sessionKey, adapter, queued, consumingFollowUp)
+    const gate = run.then(() => {}, () => {})
+    this.queueRecoveryRuns.set(sessionKey, gate)
+    void gate.finally(() => {
+      if (this.queueRecoveryRuns.get(sessionKey) === gate) this.queueRecoveryRuns.delete(sessionKey)
+    })
+    return run
+  }
+
+  private async restoreInterruptedQueueOnce(
+    sessionId: string,
+    sessionKey: string,
+    adapter: PiAgentSessionAdapter,
+    queued: InterruptedQueueEntry[],
+    consumingFollowUp?: QueuedUserMessage,
+  ): Promise<QueueRestoreResult> {
+    const originalSelectors = new Set(queued.map((item) => queueEntryIdentity(item.followUp)))
+    const intervening = this.followUpsForInterrupt(sessionId, sessionKey, adapter)
+      .filter((followUp) => !originalSelectors.has(queueEntryIdentity(followUp)))
+      .map((followUp) => ({
+        followUp,
+        serverText: this.messageMetadata.findFollowUpForQueueItem(sessionKey, followUp)?.serverText ?? followUp.displayText,
+      }))
+    if (intervening.length > 0) this.clearAllFollowUps(adapter, sessionId, sessionKey)
+    if (consumingFollowUp) this.messageMetadata.removeConsumingFollowUp(sessionKey, consumingFollowUp)
+
+    const failures: QueueRestoreFailure[] = []
+    for (const entry of [...queued, ...intervening]) {
+      try {
+        await adapter.followUp(entry.serverText, {
+          displayText: entry.followUp.displayText,
+          clientNonce: entry.followUp.clientNonce,
+          clientSeq: entry.followUp.clientSeq,
+        })
+        if (entry.followUp.clientNonce && entry.followUp.clientSeq !== undefined) {
+          this.messageMetadata.recordFollowUp(sessionKey, {
+            message: entry.serverText,
+            displayMessage: entry.followUp.displayText,
+            clientNonce: entry.followUp.clientNonce,
+            clientSeq: entry.followUp.clientSeq,
+          })
+        }
+      } catch (error) {
+        failures.push({ entry, error })
+      }
+    }
+    return { failures }
+  }
+
+  private releaseFailedQueueRestorations(sessionKey: string, failures: QueueRestoreFailure[]): void {
+    for (const failure of failures) {
+      this.metering?.releaseQueued(sessionKey, followUpSelector(failure.entry.followUp))
+    }
   }
 
   private async autoPostInterruptedFollowUp(
@@ -1305,6 +1563,30 @@ function detectPromptImageMimeType(bytes: Uint8Array): string | null {
     if (brand === 'avif' || brand === 'avis') return 'image/avif'
   }
   return null
+}
+
+function createSendNowTransaction(): SendNowTransaction {
+  let complete!: () => void
+  let fail!: (error: unknown) => void
+  const completion = new Promise<void>((resolve, reject) => {
+    complete = resolve
+    fail = reject
+  })
+  void completion.catch(() => {})
+  return { disposition: 'active', completion, complete, fail }
+}
+
+function transitionSendNow(transaction: SendNowTransaction, next: Exclude<SendNowDisposition, 'active'>): void {
+  if (transaction.disposition === 'cancel-and-discard') return
+  if (next === 'cancel-and-discard' || transaction.disposition === 'active') {
+    transaction.disposition = next
+  }
+}
+
+function queueEntryIdentity(followUp: QueuedUserMessage): string {
+  if (followUp.clientNonce) return `nonce:${followUp.clientNonce}`
+  if (followUp.clientSeq !== undefined) return `seq:${followUp.clientSeq}`
+  return `legacy:${followUp.id}:${followUp.displayText}`
 }
 
 function removedFollowUps(before: readonly string[], after: readonly string[]): string[] {
