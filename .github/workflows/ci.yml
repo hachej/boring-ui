@@ -766,7 +766,7 @@ jobs:
   publish-ci:
     name: Publish CI packages to npm
     needs: [main-green-summary]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: ${{ github.ref_name == 'main' && github.event_name == 'push' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
