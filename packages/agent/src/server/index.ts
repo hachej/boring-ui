@@ -114,6 +114,13 @@ export type {
   ModelTierCandidate,
 } from './agentDefinition/loadConfiguredAgentFleet'
 export {
+  resolveAgentInstructionFileRefs,
+} from './agentDefinition/instructionFileRefs'
+export type {
+  ResolvedInstructionFileRefs,
+  WithheldInstructionRef,
+} from './agentDefinition/instructionFileRefs'
+export {
   LEGACY_DEFAULT_AGENT_FLEET,
   resolveDefaultAgentFleet,
 } from './agentDefinition/resolveDefaultAgentFleet'
@@ -197,6 +204,7 @@ export type {
   AgentRequestLedgerPrepareResult,
   AgentRequestLedgerRecord,
   AgentInstructionFileRef,
+  AgentInstructionSource,
   CompiledAgentHostAgentSpec,
   ConfiguredAgentHostAgentSpec,
   CreateAgentHostOptions,

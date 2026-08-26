@@ -1,11 +1,22 @@
 import { spawn } from "node:child_process"
-import { cp, mkdir, mkdtemp, readdir } from "node:fs/promises"
-import { tmpdir } from "node:os"
-import { isAbsolute, join, resolve } from "node:path"
+import { cp, mkdir, readdir } from "node:fs/promises"
+import { isAbsolute, join, resolve, sep } from "node:path"
 import { parseUiReviewArgs } from "./ui-review-args.mjs"
 import { readUiReviewWorktreeIdentity } from "./ui-review-worktree.mjs"
 import { getUiReviewSpec } from "../src/registry.ts"
+import { UI_REVIEW_TEMP_ROOT_ENV, cleanupUiReviewTempRootSync, installUiReviewTempCleanupHandlers, uiReviewTempRoot } from "../src/core/tempRoot.ts"
 
+let activeChild
+function terminateActiveChild() {
+  // The run root must outlive nothing that writes into it: kill the whole child process group
+  // (pnpm -> playwright -> workers) before removal. Default-terminated workers do not run exit
+  // handlers, so they can never clean up after themselves.
+  if (activeChild?.pid && activeChild.exitCode === null) {
+    try { process.kill(-activeChild.pid, "SIGTERM") } catch { /* already gone */ }
+  }
+  activeChild = undefined
+}
+installUiReviewTempCleanupHandlers({ beforeCleanup: terminateActiveChild })
 let command
 try { command = parseUiReviewArgs(process.argv.slice(2)) } catch (error) { console.error(error instanceof Error ? error.message : String(error)); process.exit(2) }
 let spec
@@ -20,7 +31,9 @@ const [buildCommand, ...buildArgs] = spec.target.buildCommand
 const build = await run(buildCommand, buildArgs, process.env, targetRoot)
 if (build !== 0) process.exit(build)
 
-const isolationRoot = process.env.UI_REVIEW_ISOLATION_ROOT ? resolve(process.env.UI_REVIEW_ISOLATION_ROOT) : await mkdtemp(join(tmpdir(), "boring-ui-review."))
+const providedIsolationRoot = process.env.UI_REVIEW_ISOLATION_ROOT?.trim()
+// A caller-provided isolation root belongs to the caller; only the run-scoped temp root is ours to remove.
+const isolationRoot = providedIsolationRoot ? resolve(providedIsolationRoot) : join(await uiReviewTempRoot(), "isolation")
 const isolated = { home: join(isolationRoot, "home"), config: join(isolationRoot, "config"), cache: join(isolationRoot, "cache"), workspace: join(isolationRoot, "workspace"), sessions: join(isolationRoot, "sessions") }
 await Promise.all(Object.values(isolated).map((path) => mkdir(path, { recursive: true })))
 if (spec.target.fixturePath) await cp(resolve(repoRoot, spec.target.fixturePath), isolated.workspace, { recursive: true, force: false, errorOnExist: false })
@@ -45,17 +58,36 @@ const testEnv = {
   UI_REVIEW_CANDIDATE_REVISION: identity.revision, UI_REVIEW_CANDIDATE_TREE_HASH: identity.treeHash,
   UI_REVIEW_VITE_PORT: String(port), ...(apiPort === undefined ? {} : { UI_REVIEW_AGENT_API_PORT: String(apiPort) }),
   ...(baselineDir ? { UI_REVIEW_BASELINE_DIR: baselineDir } : {}), ...(process.env.CI ? { CI: process.env.CI } : {}),
+  [UI_REVIEW_TEMP_ROOT_ENV]: await uiReviewTempRoot(),
   ...(process.env.UI_REVIEW_UPDATE_SNAPSHOTS === "1" ? { UI_REVIEW_UPDATE_SNAPSHOTS: "1" } : {}),
   PLAYWRIGHT_BROWSERS_PATH: process.env.PLAYWRIGHT_BROWSERS_PATH || join(requiredEnv("HOME"), ".cache", "ms-playwright"),
   ...(command.critic === "pi" ? { GEMINI_API_KEY: requiredEnv("GEMINI_API_KEY"), ...(process.env.BORING_UI_REVIEW_MODEL ? { BORING_UI_REVIEW_MODEL: process.env.BORING_UI_REVIEW_MODEL } : {}) } : {}),
 }
 const explorationEnv = { ...testEnv }; delete explorationEnv.GEMINI_API_KEY; delete explorationEnv.BORING_UI_REVIEW_MODEL
-if (spec.exploration) {
-  const exploration = await run("pnpm", ["exec", "tsx", "scripts/explore-review-spec.ts"], explorationEnv, toolRoot)
-  if (exploration !== 0 || command.exploreOnly) process.exit(exploration)
-} else if (command.exploreOnly) process.exit(0)
-const test = await run("pnpm", ["exec", "playwright", "test", "--config", "playwright.config.ts"], testEnv, toolRoot)
-process.exit(test)
+let exitCode = 0
+try {
+  if (spec.exploration) {
+    exitCode = await run("pnpm", ["exec", "tsx", "scripts/explore-review-spec.ts"], explorationEnv, toolRoot)
+    if (exitCode === 0 && !command.exploreOnly) exitCode = await run("pnpm", ["exec", "playwright", "test", "--config", "playwright.config.ts"], testEnv, toolRoot)
+  } else if (!command.exploreOnly) {
+    exitCode = await run("pnpm", ["exec", "playwright", "test", "--config", "playwright.config.ts"], testEnv, toolRoot)
+  }
+} finally {
+  const removed = cleanupUiReviewTempRootSync()
+  if (removed && (outputDir === removed || outputDir.startsWith(`${removed}${sep}`))) {
+    console.warn(`UI_REVIEW_OUTPUT_DISCARDED:${outputDir} (set UI_REVIEW_OUTPUT_DIR to keep artifacts, or UI_REVIEW_KEEP_TMP=1 to keep the run directory)`)
+  }
+}
+process.exit(exitCode)
 
 function requiredEnv(name) { const value = process.env[name]?.trim(); if (!value) throw new Error(`UI_REVIEW_REQUIRED_ENV_MISSING:${name}`); return value }
-function run(command, args, env = process.env, cwd = process.cwd()) { return new Promise((resolveExit) => { const child = spawn(command, args, { stdio: "inherit", env, cwd }); child.on("error", () => resolveExit(1)); child.on("exit", (code) => resolveExit(code ?? 1)) }) }
+function run(command, args, env = process.env, cwd = process.cwd()) {
+  return new Promise((resolveExit) => {
+    // `detached` gives the child its own process group so a signal can take down the whole tree
+    // (pnpm -> playwright -> workers), not just the direct child.
+    const child = spawn(command, args, { stdio: "inherit", env, cwd, detached: true })
+    activeChild = child
+    child.on("error", () => { if (activeChild === child) activeChild = undefined; resolveExit(1) })
+    child.on("exit", (code) => { if (activeChild === child) activeChild = undefined; resolveExit(code ?? 1) })
+  })
+}

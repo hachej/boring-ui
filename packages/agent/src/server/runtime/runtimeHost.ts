@@ -2,6 +2,7 @@ import type {
   RuntimeFilesystemBinding,
   RuntimeHostOperations,
 } from '@hachej/boring-bash/agent'
+import type { BwrapArgsOptions } from '@hachej/boring-sandbox/providers/bwrap'
 import type {
   BoringAgentRuntimePaths,
   CreateNodeWorkspaceOptions,
@@ -16,6 +17,12 @@ import type { Workspace } from '../../shared/workspace'
  * may inject an equivalent implementation with their Workspace + Sandbox pair.
  */
 export interface AgentRuntimeHostOperations extends RuntimeHostOperations {
+  /**
+   * Agent legally depends on the provider package, so the injected builder is
+   * typed with the canonical options here rather than the narrowed slice
+   * boring-bash declares.
+   */
+  buildBwrapArgs(workspaceRoot: string, options?: BwrapArgsOptions): string[]
   createNodeWorkspace(root: string, options?: CreateNodeWorkspaceOptions): Workspace
   getNodeWorkspaceHostRoot(workspace: Workspace): string | undefined
   getBoringAgentRuntimePaths(workspaceRoot: string): BoringAgentRuntimePaths
