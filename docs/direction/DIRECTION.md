@@ -31,7 +31,9 @@ surface per agent), Environment leases, per-agent model policy
 core, CLI, playground, delegation) composing through it, enforced by CI
 invariants. Also shipped: A1 authored-agent groundwork, boring-bash/sandbox
 extraction, BYOK credential-injection contract, D1 tenant provisioning.
-Authority for what exists: `docs/issues/909/plan.md` §6 (frozen).
+Authority for what exists: `packages/agent/docs/AGENT_GATEWAY_V0.md`, the
+binding contract colocated with the shipped types per D29. Older Gateway plan
+material is history, not a competing contract.
 
 ## Wave 1 — NOW: the multi-agent console (beads .27 → .31)
 
@@ -61,30 +63,27 @@ slice absorbed by .27), `.28` (re-land native sessions + rename menu, after
   — the store and its consumer are both written, and no production caller
   passes `eventStore`. Resolve the agent-keying question (§Lane reality)
   BEFORE any durable schema is written.
-- **F-graph execution begins** (Decision 28 detail: `docs/issues/391/plan.md`):
-  F0b inventory → F1/F2 Environment contracts + boring-bash service → onward.
+- **F-graph execution begins** (Decision 28 fleet/environment detail): F0b
+  inventory → F1/F2 Environment contracts + boring-bash service → onward.
   F0a paperwork (the rebased #904 with its three shipped-reality amendments)
   is ratified during Wave 1; F1+ execution does NOT start before the Wave 1
   demo exists.
 
 ## Wave 3 — trigger: named consumers, not calendar
 
-**BYOK and outbound MCP Connectors share one prerequisite** — a per-workspace
-credential and registration substrate (§Lane reality). Whichever fires first
-builds it; it is a named deliverable of this wave, not an implementation detail
-of either lane. Sequence them adjacently. Inbound MCP Access is a separate
-resource-server edge activated by the 2026-08-26 amendment below.
+**BYOK and External MCP share one prerequisite** — a per-workspace credential
+and registration substrate (§Lane reality). Whichever fires first builds it;
+it is a named deliverable of this wave, not an implementation detail of
+either lane. Sequence them adjacently.
 
 - **BYOK** (KEY0 + parked PR #917; issue #1010): becomes load-bearing when
   multi-agent model costs are real. First step is ratifying the de-facto
   policy the shipped code implements. The `.30` model-cap revisit is
   MANDATORY here — it has no bead and nothing else forces it.
-- **Outbound MCP Connectors** (#900 Composio, re-land per #946 as small
-  reviewed slices; generic lane #1011): waits for its consumer — mail/tools for
-  the CoS persona, or a client need. Do not re-land #937 wholesale.
-- **Inbound MCP Access** (#806): one OAuth-bound human/workspace resource at
-  `/mcp`, independently gated by its canonical plan and the frozen DAG. It does
-  not register outbound providers or weaken Connector authority.
+- **External MCP** (#900, re-land per #946: small reviewed slices,
+  application-owned atomic backend; issue #1011): waits for its consumer —
+  mail/tools for the CoS persona, or a client need. Do not re-land #937
+  wholesale.
 - **Authored catalog** (`0jpy.9`, includes fleet-time model-ID validation and
   maxTokensPerTurn enforcement): when personas become data.
 
@@ -178,15 +177,13 @@ real duplication is two replay sources. Rewrite the bead before working it.
 
 | Folder | Status |
 |---|---|
-| `docs/issues/909/` | Frozen record of what shipped + follow-up beads. Binding for the Gateway contract (§6) |
-| `docs/issues/391/` | Decision-28 detail for Waves 2+. Binding once its wave opens |
-| `docs/issues/805/` | A1 shipped; remainder absorbed into 391's F-graph. Reference only |
-| `docs/issues/808/`, `820/` | Lane detail for Waves 3–4. Reference until their trigger fires — but §Lane reality outranks them on what exists |
-| `docs/issues/806/external-workspace-mcp-plan.md` | Inbound MCP Access canonical plan once the 2026-08-26 combined-plan amendment lands; dispatch remains frozen by its gates |
-| `docs/issues/900/plan.md` | Outbound Composio Connector canonical plan; discovery/execution remain blocked by its explicit gates |
+| AgentGateway planning area | Historical; `packages/agent/docs/AGENT_GATEWAY_V0.md` binds the Gateway contract |
+| Fleet/environment planning area | Decision-28 detail for Waves 2+; follow #1409's canonical moved path if that PR lands |
+| A1 planning area | A1 shipped; remainder absorbed into Decision 28's F-graph. Reference only |
+| `docs/issues/808/`, `820/`, `806/`, `900/` | Lane detail for Waves 3–4. Reference until their trigger fires — but §Lane reality outranks them on what exists |
 
 Lane tracking issues (each with a draft seed PR): #1009 streaming, #1010 BYOK,
-#1011 outbound MCP Connectors, #1012 sandbox. Issues #820 and #808 are CLOSED; #1010 and
+#1011 external MCP, #1012 sandbox. Issues #820 and #808 are CLOSED; #1010 and
 #1012 replace them as the tracking issues for their parked PRs.
 
 Bead graph: epic `wt-391-forward-0jpy` follow-ups (Wave 1–2) + F-graph under
@@ -336,3 +333,27 @@ This amendment supersedes prior uses of ambiguous “External MCP”: #806 is
 combined planning PR makes both linked plans the coherent planning authority.
 It does not waive either plan's blockers, make deferred Beads dispatchable, or
 authorize implementation before their named frozen-DAG and owner gates.
+
+### Relationship to the pending premises-first program (#1409)
+
+PR #1409 is a separate, still-pending ratification and sequencing instrument;
+this consistency pass reviewed it through `016397fef`. If #1409 lands first,
+its complete premises-first amendment remains the sole current dispatch queue
+and this MCP amendment appends after it. Landing #1415 places neither #806 nor
+#900/#1011 in Wave A or Wave B: a later explicit owner amendment must place an
+exact MCP slice in the post-#1409 queue before dispatch. The old Wave-3
+“External MCP complete/paused” statement describes the earlier generic source,
+registration, and read-only Connector work, not the new inbound #806 edge or
+full-catalog #900 execution plan.
+
+Applicable MCP effect/run slices consume #1409's `[durable-streams]`
+(`wt-391-forward-9p50`) Level-D receipt and `[seat-audit-attribution]`
+(`wt-391-forward-shell-ngfs.14`) C7 work rather than creating parallel stores or
+display-only provenance. Neither MCP plan selects the unresolved
+Thread storage representation, creates an A2A/MCP loopback, widens the frozen
+seven-method `AgentGateway`, or adds a second `createAgentHost()` construction
+funnel. Merge resolution must preserve both dated amendments and #1409's path
+migrations. If #1409 has landed, the merged tree must resolve
+`docs/plans/agent-runtime/gateway/plan.md` and
+`docs/plans/agent-runtime/fleet-and-environments/plan.md`; retaining their old
+issue-folder locations as canonical is a failed merge.

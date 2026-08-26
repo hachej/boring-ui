@@ -68,6 +68,14 @@ Connectors #900/#1011, and binds both plans to their shared C2/C5/C6/C7 seams
 without conflating products. This issue plan remains subordinate; the amendment
 becomes authority only when the combined PR lands.
 
+PR #1409 is a separate pending premises-first/ratification program, reviewed for
+consistency through `016397fef`. If it lands first, its `DIRECTION.md` amendment
+remains the sole dispatch queue and this plan's amendment appends after it.
+Landing #1415 establishes MCP planning authority but does not place any #806
+slice into Wave A or Wave B; a later owner amendment must place the exact slice.
+The old “External MCP complete/paused” row refers only to earlier generic
+source/registration/read-only work, not this inbound resource-server edge.
+
 ### Pointer migration included in PR #1415
 
 The same combined PR atomically:
@@ -100,6 +108,16 @@ items, including their transitive dependencies, gate these #806 capabilities:
 | `C5` durable pause | ordered predecessor to C6 |
 | `C6` accepted-work/commit protocol | direct effects, Agent runs, durable status/cancel |
 | `C7` Seat/session catalog | internal Agent→Seat resolution and provenance |
+| `[durable-streams]` / `wt-391-forward-9p50` if #1409 lands | Level-D default-on receipt/stream substrate before effect, Agent-run, status, cancel, and revocation-stream slices |
+| `[seat-audit-attribution]` / `wt-391-forward-shell-ngfs.14` if #1409 lands | audit-grade C7 `seatId` through accepted effects, Agent records, artifacts, usage, and audit |
+
+These #1409 receipts refine, rather than duplicate, C6/C7. No MCP slice may
+create a parallel event/replay store or substitute display identity for C7.
+The pending `[thread-storage-spike]` makes no representation choice here:
+`agent_run` addresses D29 AgentGateway sessions, not a multi-seat product
+Thread, and the sessionless direct-effect result home is whatever Agent-owned
+record contract C6 ratifies. This plan freezes authorization/result semantics,
+not the unresolved Thread backing shape.
 
 The #806 owner packet is an **additive C6/C7 acceptance amendment, not a DAG
 reorder**:
@@ -526,28 +544,25 @@ failed, or `unknown-outcome`; `stopped: true` never claims an already-issued
 external effect was reversed.
 
 `RunId := RequestKey` without qualification. In TypeScript, `RunId` is a branded
-view of the complete canonical RequestKey, not another identifier. The public
-string is only a **reversible canonical wire encoding** of that same value:
-`brun_v1_` plus bounded unpadded base64url of canonical UTF-8 JSON for the fixed
-ordered tuple `[workspaceScopeId, authSubjectId, operation, canonicalTarget,
-requestId]`. `canonicalTarget` is itself a fixed tuple selected by its
-discriminator: `['agent',agentTypeId]`,
-`['session',agentTypeId,sessionId]`,
-`['seat-tool',seatId,agentId,nativeToolName]`, `['seat',seatId,agentId]`, or
-`['run',targetRunId]`; no object-key ordering is implicit. Decode must recover
-and validate the complete RequestKey byte for byte; non-canonical encodings,
-unknown versions, oversized decoded values, or failed round trips are rejected. There is no hash-derived run identity, durable
-`runId → RequestKey` index, reconciliation table, collision policy, or second
-UUID.
+view of the complete canonical RequestKey, not another identifier. Its public
+`brun_v1_` string is a bounded, self-contained, confidentiality-protected wire
+encoding of the same canonical bytes—not plaintext/base64 JSON and not a second
+identity. Slice 1 must select a reviewed deterministic misuse-resistant AEAD
+construction and library, with version/resource/issuer bound as associated
+data, a server-custodied versioned key, stable replay encoding, dual-read key
+rotation, strict size limits, canonical round-trip validation, and tamper/
+wrong-key/wrong-resource rejection. Decoding recovers the complete RequestKey;
+the wire value reveals none of `workspaceScopeId`, `authSubjectId`, `seatId`,
+`agentId`, session/target ids, operation, or raw `requestId`. There is no
+hash-derived run identity, durable `runId → RequestKey` index, reconciliation
+table, collision policy, or second UUID.
 
 `agent_run_status` accepts only a target Agent-run `RunId` whose decoded
 operation is `session.prompt` or `agent.session.prompt.create`; a `cancelRunId`
 is not a substitute and returns the same non-disclosing run-not-found result as
-any wrong-kind id. If a bounded path/URL segment is needed, the edge may derive
-a separate opaque `runRef` from the canonical `RunId`; `runRef` is edge-only,
-never appears in envelopes, records, metering, artifacts, outcomes, or audit as
-the accepted-work identity, and cannot be accepted where a `RunId` is required.
-Raw `requestId` is never used alone in a path, URL, or log key.
+any wrong-kind id. The bounded sealed `RunId` itself is the path-safe handle;
+no second `runRef` is minted. Raw `requestId` is never used alone in a path, URL,
+or log key.
 
 ### 4.4 Standard tools
 
@@ -614,7 +629,7 @@ output = {
 }
 ```
 
-`runId` uses §4.3's reversible canonical direct-effect RequestKey encoding. The envelope
+`runId` uses §4.3's sealed canonical direct-effect RequestKey encoding. The envelope
 records server-resolved `seatId`, human `authSubjectId`, and immutable
 `originGrantId`. Complete-key replay/conflict follows §4.3, including after
 reauthorization. Revoking a grant aborts only active effects whose immutable
@@ -955,10 +970,10 @@ Prefer native pagination/limits. Never silently truncate. Oversized faithful
 results may spill through the authorized workspace adapter:
 
 - images: `assets/images/`;
-- generic: `assets/artifacts/<opaque-runRef>/`.
+- generic: `assets/artifacts/<sealed-runId>/`.
 
-The segment is only §4.3's bounded edge-only `runRef`, never `runId` or raw
-`requestId`; artifact provenance still carries canonical `RunId`. Creation and
+The segment is §4.3's bounded, confidentiality-protected wire encoding of the
+canonical `RunId`, never raw `requestId` or plaintext RequestKey fields. Creation and
 every dereference go through the authorized Workspace adapter's containment
 checks; lexical normalization alone is insufficient. Exact/over tests cover
 absolute paths, both separators, traversal/encoding, symlink escape and swap
@@ -1059,8 +1074,12 @@ MCP is never a product rollback target.
 ### `packages/agent`
 
 - current-standard MCP Access protocol/schema/transport module;
-- `CreatedAgentHost.registerMcpAccessRoutes(options)` as the single composer,
-  closing over the same private runtime projection;
+- a generic `createMcpAccessRoutes(input)` Fastify plugin mounted by Core/app
+  composition beside the unchanged direct routes; it consumes only the existing
+  `gateway`, `runWithWorkspaceAgent`, and `acquireEnvironment` Host seams plus
+  injected authorization/Seat/A7 services—no new Gateway method,
+  `AgentHostDirectProjectionOptions` field, Host-result registrar, or
+  construction funnel;
 - generic injected authorized-Seat projection contract; Agent consumes but does
   not create or catalog Seats;
 - resolved native-tool catalog and direct executor;
@@ -1103,12 +1122,14 @@ migration in the owning C6/C7/app slice.
 ## 14. Serial implementation slices (≤1500 added/modified production LOC each)
 
 **Global gate:** every slice, including Slice 0, depends on (1) a landed owner
-amendment to `docs/direction/DIRECTION.md` activating inbound #806 separately
+amendment to `docs/direction/DIRECTION.md` establishing inbound #806 separately
 from outbound #1011, (2) the §0 pointer migration, (3) this candidate's review/
 owner acceptance, and (4) a separate owner-approved implementation tracker or
-brief dispatching that exact slice. This does not make Slice 0 depend on P-1.
-The combined planning PR alone dispatches nothing, and no issue-plan wording can
-waive the global gate.
+brief dispatching that exact slice. If #1409 has landed, (1) additionally means
+a later explicit owner amendment placing that exact slice in its post-premises
+queue; #1415's planning amendment is not placement. This does not make Slice 0
+depend on P-1. The combined planning PR alone dispatches nothing, and no
+issue-plan wording can waive the global gate.
 
 After that gate, slices execute in order; a named frozen prerequisite may land
 beforehand but not reorder this chain. Each slice is independently reviewable
@@ -1156,10 +1177,15 @@ handler before auth. Existing outbound Connectors remain green.
 ### Slice 2 — Single composer, Agent discovery, and native catalog (~1450 LOC)
 
 **Depends on:** global direction gate; 1; P0.4; Workspace-owned C7 authorized
-Seat projection.
+Seat projection; if #1409 lands, `[seat-audit-attribution]` before any claim of
+durable Seat provenance.
 
-Land `CreatedAgentHost.registerMcpAccessRoutes(options)`, public Agent-oriented
-schemas, safe discovery, opaque cursors, compact/full tool discovery, unique
+Land generic `createMcpAccessRoutes(input)` and mount it at Core/app Fastify
+composition beside the unchanged `created.registerDirectRoutes(...)` plugin.
+Inject the existing Host public seams and authorization/Seat/A7 services; do not
+change `CreatedAgentHost`, `AgentHostDirectProjectionOptions`, or `AgentGateway`.
+Land public Agent-oriented schemas, safe discovery, opaque cursors, compact/full
+tool discovery, unique
 native catalog, readiness, billing classification, and measured bounds. Effect
 handlers remain disabled.
 
@@ -1175,7 +1201,8 @@ owner review.
 ### Slice 3 — Project C6 direct native effects (~1350 LOC)
 
 **Depends on:** global direction gate; 2; A8; C6 direct-effect admission;
-Workspace-owned C7 provenance.
+Workspace-owned C7 provenance; if #1409 lands, `[durable-streams]` Level D
+must be default-on and `[seat-audit-attribution]` must be green.
 
 Implement `agent_tool_call` over the exact catalog object and canonical C6
 identity, including schema/readiness, trusted context, abort/update, replay,
@@ -1206,8 +1233,10 @@ Uninstrumented may-use-model tools remain unqualified.
 
 ### Slice 4 — Project A7 models and C6 Agent runs (~1450 LOC)
 
-**Depends on:** global direction gate; 3; A7; C5 then C6 authoritative
-accepted-run/status/targeted cancel; Workspace-owned C7 session/Seat catalog.
+**Depends on:** global direction gate; 3; A7 and A8; C5 then C6 authoritative
+accepted-run/status/targeted cancel; Workspace-owned C7 session/Seat catalog;
+if #1409 lands, `[durable-streams]` Level D must be default-on and
+`[seat-audit-attribution]` must be green.
 
 Implement `agent_models_list`, `agent_run`, status, and run-targeted cancel over
 general A7/C6/C7 seams. Do not use ambient model registry, prompt-acceptance as
@@ -1216,7 +1245,8 @@ terminal, a second ledger, or session-wide stop.
 **Acceptance:** ambient auth canary absent; list/run use the same issuer/path
 but fresh capabilities, with run authoritative; default/allowed/denied model;
 new-session admission atomically records its session and existing-session target
-is reauthorized; complete RequestKey/digest/reversible RunId encoding and bounded request ids;
+is reauthorized; complete RequestKey/digest/sealed canonical RunId encoding and
+bounded request ids;
 authoritative terminal from the per-session record; envelope contains no
 `finalText` or model-visible content; waiter disconnect; background/status after
 reauthorization; `targetRunId`/`cancelRunId` separation, cancel replay/conflict/
@@ -1269,7 +1299,8 @@ environment.
 
 Compose Authorization Code + PKCE, one-workspace approval, refresh, distinct AS
 logout/token revocation/product disconnect, optional device flow, and dark
-full-app `/mcp` route through the single Host composer. Add stock-client
+full-app `/mcp` route through the single Core/app composition root beside the
+unchanged Host direct routes. Add stock-client
 real-host smoke.
 
 **Acceptance:** code+PKCE with correctly attributed state/redirect/issuer/
@@ -1320,8 +1351,10 @@ sessions, and outbound Connectors remain healthy.
 Use public seams:
 
 - official MCP/RFC matrix conformance + pinned stock client;
-- `CreatedAgentHost.registerMcpAccessRoutes` with a real Core host and one Host
-  construction assertion;
+- `createMcpAccessRoutes(input)` mounted by a real Core host beside unchanged
+  direct routes, with one Host construction assertion and a type/runtime guard
+  that `CreatedAgentHost`, `AgentHostDirectProjectionOptions`, and
+  `AgentGateway` gained no MCP member;
 - two humans/workspaces/grants/Agents and current membership store;
 - exact native object/readiness/collision tests;
 - C6/C7 accepted-run and kill/restart tests;
@@ -1353,7 +1386,7 @@ normal thermo review.
 
 | Requirement | Automated proof | Release proof |
 | --- | --- | --- |
-| Direction, pointers, and frozen prerequisites | landed inbound-#806 `DIRECTION.md` amendment; three-pointer migration; P-1/P0.4/A7/A8/C5/C6/C7 receipts | exact landed revisions and canonical links |
+| Direction, pointers, and frozen prerequisites | landed inbound-#806 `DIRECTION.md` amendment; preserved #1409 premises amendment when applicable; three-pointer migration; P-1/P0.4/A7/A8/C5/C6/C7 plus applicable Level-D/seat-attribution receipts | exact landed revisions and canonical links |
 | Early tracer deletion | exact reference audit; full-app/generic/Connector tests | deployment config audit |
 | Current transport | official conformance + pinned stock client | client/version request trace |
 | OAuth/resource/scopes | public metadata; RFC 6750 challenges; wrong issuer/aud/resource; immutable read baseline and partial-grant/refresh matrix | real Hydra code exchange |
@@ -1362,7 +1395,7 @@ normal thermo review.
 | Safe discovery | no prompt/toolCount/private fields; optional digest | inspect real response |
 | Native catalog | exact resident object, collision, readiness, current schema; no provider-child materialization | real direct and Connector discovery tools |
 | Connector child boundary | C2 predecessor/conformance gate; native parent plus first-class child identity; existing approval; no flattening/second store | approved/denied/unknown provider operation retains parent/child audit |
-| Direct durability | complete RequestKey/digest/reversible RunId encoding; no identity index; Agent-owned direct-effect result record; envelope contains digest/references only; cross-operation isolation; disconnect/replay; no duplicate effect | reconnect to accepted call |
+| Direct durability | complete RequestKey/digest/sealed canonical RunId encoding; no identity index; Agent-owned direct-effect result record; envelope contains digest/references only; cross-operation isolation; disconnect/replay; no duplicate effect | reconnect to accepted call |
 | Models | fresh A7 capability per list/run through same issuer/path; ambient auth absent | real allowed/denied models |
 | Agent runs | terminal-not-acceptance; wait/background; target-only status; distinct targetRunId/cancelRunId; cancel replay/conflict | disconnect/reconnect real run |
 | Revocation | AS logout/token revocation/product disconnect separated; race fence; grant-only active stop; membership-wide denial | real disconnect versus logout/token revoke/member removal |
@@ -1409,10 +1442,12 @@ name the pinned protocol/client, and explain live same-workspace artifacts.
 
 Stop if:
 
-- `DIRECTION.md` has not landed an owner amendment activating inbound #806
-  separately from outbound #1011;
+- `DIRECTION.md` has not landed an owner amendment establishing inbound #806
+  separately from outbound #1011, or—after #1409—has not explicitly placed the
+  exact slice in the post-premises dispatch queue;
 - the three §0 live authority pointers have not migrated to this candidate;
-- feature Slice 1–8 lacks P-1 or its named P0.4/A7/A8/C5/C6/C7 prerequisite;
+- feature Slice 1–8 lacks P-1 or its named P0.4/A7/A8/C5/C6/C7 prerequisite,
+  including applicable #1409 Level-D and audit-grade Seat receipts;
 - official transport/client evidence contradicts the selected implementation;
 - authorization depends on Host/tool input/session id or skips membership;
 - public Agent resolution is ambiguous across multiple Seats;
@@ -1439,8 +1474,9 @@ Open implementation/external blockers, not product decisions:
 
 1. Landing combined PR #1415 establishes planning authority. A separate
    owner-approved implementation tracker/brief is the first dispatch barrier
-   for each slice. P-1 is then first for feature work, with
-   P0.4/A7/A8/C5/C6/C7 gating named slices.
+   for each slice; after #1409, a later explicit `DIRECTION.md` queue placement
+   is also required. P-1 is then first for feature work, with
+   P0.4/A7/A8/C5/C6/C7 and applicable Level-D/Seat receipts gating named slices.
 2. Hydra device-flow RFC 8707 resource/audience propagation must be proven only
    before device flow is enabled.
 3. C6 needs the §4.3 operation/target additions, separate `originGrantId`
@@ -1461,11 +1497,12 @@ outbound Gate-1 owner decisions, and land it.** It atomically carries the
 inbound #806 direction amendment, pointer migration, this plan, and the outbound
 #900 Composio plan. Until it lands, neither plane gains new dispatch authority.
 
-Afterward, create or approve the exact Slice 0 implementation tracker/brief;
-only that separate action may dispatch its reference audit/deletion. Complete/
+Afterward, create or approve the exact Slice 0 implementation tracker/brief and,
+if #1409 has landed, record its explicit post-premises queue placement; only
+those separate actions may dispatch its reference audit/deletion. Complete/
 verify P-1 in parallel or next; Slice 1 additionally requires its own dispatch
 approval and cannot start until both Slice 0 and P-1 are complete. Outbound
-slices remain independently blocked by #900's named gates.
+slices remain independently blocked by #900's named gates and queue placement.
 
 ## 22. Planning review record
 
@@ -1496,7 +1533,7 @@ Reviews 1–2:
 | Finding | Severity | Disposition |
 | --- | --- | --- |
 | Issue plan cannot activate work under `DIRECTION.md` | P0 | Accepted: §0, global slice gate, stop conditions, and §21 require a landed inbound-#806 direction amendment before acceptance or dispatch. |
-| RequestKey/run identity omitted operation/target and sessionless admission | P0 | Accepted: §4.3 freezes full key, four operation/target contracts, atomic new-session receipt, canonical digest, and reversible canonical RunId wire encoding. |
+| RequestKey/run identity omitted operation/target and sessionless admission | P0 | Accepted: §4.3 freezes full key, four operation/target contracts, atomic new-session receipt, canonical digest, and canonical RunId wire encoding; the later #1409 consistency audit sealed that encoding without changing identity. |
 | Slice 3 promised active revocation without A8 | P1 | Accepted: A8 is now a Slice 3 dependency. |
 | List/run cannot share one invocation-scoped A7 result | P1 | Accepted: fresh capability per call through one issuer/narrowing path; run is authoritative and no handle persists. |
 | Seat ownership conflicted with frozen Q4 | P1 | Accepted: Workspace/C7 owns Seat catalog/grants/projection; Agent only consumes an injected generic contract; Core composes authenticated facts. |
@@ -1506,7 +1543,7 @@ Reviews 1–2:
 | Bearer/metadata normative sources were too broad | P1 | Accepted: §4.1 adds MCP plus RFC 6750/9728/8707/8414/7636/9207/8628 matrix and public metadata exception. |
 | Host/Origin/proxy algorithm was underspecified | P1 | Accepted: §4.1 freezes configured authority, immediate-peer trust, one forwarding format, conflict rejection, HTTP/2, and Origin behavior. |
 | Digest/cancel replay was underspecified | P1 | Accepted: §4.3 defines domain-separated material digest, cross-operation behavior, cancel as C6 effect, and honest advisory outcomes. |
-| Public runId/spill path was unsafe | P1 | Accepted then corrected by independent review: RunId is now the branded RequestKey with a reversible canonical wire encoding and no identity index; bounded path-only `runRef`, bounded request ids, and adapter containment/TOCTOU tests keep raw nonces out of paths. |
+| Public runId/spill path was unsafe | P1 | Accepted then tightened by the #1409 consistency audit: RunId remains the branded RequestKey but uses one bounded, sealed canonical wire encoding with no identity index or second `runRef`; adapter containment/TOCTOU tests keep raw nonces and internal identity out of paths. |
 | Sovereign sandbox assertion lacked non-direct proof | P2 | Accepted: Slice 3 adds a fake remote-worker `SandboxProviderV1` pair and credential-boundary canaries. |
 | Optional device flow became release-mandatory | P2 | Accepted: Slices 7–8 and release proof qualify headless checks by enablement; failure leaves device off, not PKCE blocked. |
 | Hydra was assigned the approval UI | P2 | Accepted: ownership now separates headless Hydra from Seneca/Boring login, consent, grant, and disconnect UI/API. |
@@ -1530,7 +1567,7 @@ remains provenance only.
 
 | Finding | Severity | Disposition |
 | --- | --- | --- |
-| SHA-derived `runId` plus durable reverse index violated `RunId := RequestKey` | P0 | Accepted: §4.3 now defines `RunId` as the branded complete RequestKey with a reversible canonical wire encoding and no identity index/reconciliation table. A separate bounded `runRef` is edge/path-only and never accepted-work identity. |
+| SHA-derived `runId` plus durable reverse index violated `RunId := RequestKey` | P0 | Accepted: §4.3 defines `RunId` as the branded complete RequestKey with a sealed, reversible-by-authority canonical wire encoding and no identity index/reconciliation table or second edge identity. |
 | C6 envelope was assigned bounded result content | P0 | Accepted: §8 restores R2. Agent-run content comes from the per-session Agent record; sessionless direct content comes from an Agent-owned durable direct-effect result record keyed by the same RequestKey. The envelope stores admission facts, status, outcome digest, usage linkage, and artifact references/provenance only. Slice 3 now owns migration/rollback and proof. |
 | Historical #806 disclaimer left a contradictory live-looking plan body | P1 | Accepted: `docs/issues/806/plan.md` is reduced to a short tombstone and points to exact historical object `e95b683f…`. |
 | Outbound startup diagram visually allowed unresolved intent to acceptance | P2 material | Accepted in `docs/issues/900/plan.md`: unresolved reconciliation enters `startup-blocked`; only provider proof reaches `accepting`. |
@@ -1540,6 +1577,25 @@ The packet's verified-correct findings remain unchanged: two-plane separation,
 exact resident `AgentTool` versus first-class C2 child identity, frozen
 predecessor ordering, provider create-gap reconciliation, eight deferred Beads,
 nine internal edges, serial reland, and planning-only containment.
+
+### PR #1409 cross-program consistency audit
+
+Two independent architecture reviews compared #1415 with pending #1409 through
+`016397fef`. Dispositions applied here and in the outbound plan:
+
+- #1409's premises-first amendment remains the sole future dispatch queue;
+  #1415 appends planning authority and places no slice in Wave A/Wave B;
+- D29's package `AGENT_GATEWAY_V0.md` remains binding; Core/app mounts MCP
+  beside unchanged direct routes using existing Host seams, without a Gateway
+  method, direct-projection option, registrar, or second Host funnel;
+- landed `[durable-streams]` and `[seat-audit-attribution]` become exact
+  prerequisites for applicable effects/runs/provenance, with no duplicate
+  replay or identity store;
+- this plan makes no Thread-storage decision: D29 sessions and C6 Agent-owned
+  effect records are not a new multi-seat Thread representation; and
+- the public `RunId` wire encoding is sealed so the branded RequestKey remains
+  canonical without exposing internal Seat, subject, workspace, or session
+  identity or minting a second run identity.
 
 ### PR #1415 outbound-Connector alignment
 

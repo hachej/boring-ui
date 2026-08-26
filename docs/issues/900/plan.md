@@ -16,8 +16,11 @@ not the owner's product scope. PR #1415 is now the owner's single combined MCP
 planning PR: this file remains the canonical **outbound Composio Connector**
 plan, while [`../806/external-workspace-mcp-plan.md`](../806/external-workspace-mcp-plan.md)
 owns **inbound MCP Access**. The plans share canonical kernel seams but not
-transport direction, grants, provider registration, or product UI. This plan
-reconciles:
+transport direction, grants, provider registration, or product UI. The separate
+pending premises-first PR #1409 was reviewed through `016397fef`: if it lands,
+#1415 appends after its `DIRECTION.md` amendment and establishes planning
+records only. Neither discovery nor execution enters Wave A/Wave B until a
+later owner amendment places the exact slice. This plan reconciles:
 
 - issue #900 and its owner comments;
 - capability proof PR #910 / `docs/issues/900/composio-capability-spike.md`;
@@ -542,11 +545,15 @@ A2a -> A2b/C7 host session catalog -----------------------> C2
 ```
 
 The closure also includes every remaining incoming edge in the frozen canonical
-DAG (including A0/A1/A7/A8/A2a/C7 where the DAG makes it applicable) and any
-ratified successor amendments. This plan does not shorten, reorder, or duplicate
-that graph. Placeholder issue-local beads are not proof that predecessors exist.
-The architecture Steward must provide exact bead/PR/conformance references
-before 900.2 becomes `ready-for-agent`.
+DAG. A7 invocation-scoped authority and A8 revocation are unconditional 900.2
+prerequisites, not “where applicable.” If #1409 lands, `[durable-streams]`
+(`wt-391-forward-9p50`) must be Level-D/default-on and
+`[seat-audit-attribution]` (`wt-391-forward-shell-ngfs.14`) must be green before
+900.2. These are canonical C6/C7 receipts, not Connector-local stores. This plan
+does not shorten, reorder, or duplicate that graph. Placeholder issue-local
+beads are not proof that predecessors exist. The architecture Steward must
+provide exact bead/PR/conformance references before 900.2 becomes
+`ready-for-agent`.
 
 ### Required semantic conformance from C2
 
@@ -556,7 +563,9 @@ must show the real Composio child slug, parent call identity,
 `RunId=RequestKey`, plan digest, artifacts, and usage through call, paired
 result, durable record, renderer, metering, and audit; pre-call authorization
 must operate on the real child. Artifact references reuse the canonical
-same-workspace seam and retain the real child's Run/Seat provenance; provider
+same-workspace seam. Audit-grade C7 `seatId` must survive on the real child
+through call, result, Agent-owned record, renderer, metering, artifact
+provenance, and audit; parent/wrapper attribution is not a substitute. Provider
 OAuth/operator secrets and raw provider values never become artifact metadata.
 Commercial credit balances, rates, checkout, and margins remain app-owned and
 are not inferred from these generic facts. Today's canonical chat events and
@@ -871,11 +880,15 @@ returns as identity proof, or exactly-once provider execution claims.
 ### 900.2 execution acceptance
 
 1. C2 and its complete canonical predecessor closure are implemented,
-   referenced, and conformance-green; no issue-local substitutes.
+   referenced, and conformance-green; A7/A8 are green; if #1409 has landed,
+   `[durable-streams]` is Level-D/default-on and `[seat-audit-attribution]` is
+   green; no issue-local substitutes.
 2. C5×C6 durable handoff survives every named crash point without consumed-
    approval/no-Run gap or redispatch.
-3. C2's canonical event/API preserves real child slug, parent, Run and plan
-   identity through call/result/record/renderer/metering/audit.
+3. C2's canonical event/API preserves real child slug, parent, Run, plan, and
+   audit-grade C7 Seat identity through call/result/Agent-owned record/renderer/
+   metering/artifact provenance/audit; parent/wrapper identity cannot satisfy
+   child attribution.
 4. RFC 8785 JCS bytes are identical across display, digests, handoff, admission,
    and provider input; malformed Unicode/non-JSON values fail closed.
 5. Versioned subject migration inventories legacy/new accounts and quarantines
@@ -959,6 +972,8 @@ for token in [
     "75s global bound",
     "expected source revision",
     "5 pages, 100 rows/page, 500 rows total",
+    "[durable-streams]",
+    "[seat-audit-attribution]",
     "<=1500 added/modified LOC",
 ]:
     assert token in bead_text, token
@@ -973,7 +988,7 @@ for token in ["inbound MCP Access", "outbound MCP Connectors", "first-class chil
     assert token in inbound and token in direction, token
 for token in [
     "RunId := RequestKey",
-    "reversible canonical wire encoding",
+    "confidentiality-protected wire",
     "direct-effect result record",
     "envelope's terminal digest",
 ]:
@@ -985,12 +1000,21 @@ for forbidden in [
 ]:
     assert forbidden not in inbound, forbidden
 assert "startup-blocked" in md and "never a fallback path into acceptance" in md
+for token in ["premises-first", "wt-391-forward-9p50", "wt-391-forward-shell-ngfs.14"]:
+    assert token in md and token in inbound and token in direction, token
 assert "Audit/envelope metadata" in bead_text and "Agent-owned record" in bead_text
 assert len(old_inbound.splitlines()) < 60
 assert "e95b683fa3ca68cccd01531da698914da820493f:docs/issues/806/plan.md" in old_inbound
 assert "none of the former" in old_inbound.lower()
 assert ("ChildToolCall" + "Event") not in md
 assert ("type:" + '"tool_call"') not in md
+assert "confidentiality-protected" in html and "runRef" not in html
+if "## Amendment 2026-08-26 — the premises re-sequencing" in direction:
+    for path in [
+        "docs/plans/agent-runtime/gateway/plan.md",
+        "docs/plans/agent-runtime/fleet-and-environments/plan.md",
+    ]:
+        assert Path(path).exists(), path
 assert "<script" not in html
 HTMLParser().feed(html)
 PY
@@ -1280,7 +1304,9 @@ tracking only when prerequisites, access and owner gates make it dispatchable.
 
 Until 1-3 are resolved and independent review is clean, Gate 1 remains blocked
 and no implementation slice is `ready-for-agent`. Decision 4 additionally
-blocks 900.2 even after discovery is approved.
+blocks 900.2 even after discovery is approved. If #1409 lands, its sole
+`DIRECTION.md` dispatch queue is an additional global gate: #1415 itself places
+no #900 slice in Wave A or Wave B.
 
 ## Adversarial review record
 
@@ -1326,7 +1352,10 @@ Accepted final-review corrections:
 Combined-program alignment retained: #806 inbound Access consumes only the
 exact resident Connector tool, preserves this plan's C5/provider authority and
 C2 first-class child identity, and creates no duplicate runtime, approval store,
-ledger, or child event.
+ledger, or child event. The #1409 consistency audit additionally makes A7/A8
+unconditional for 900.2, consumes its Level-D and audit-grade Seat premises when
+landed, leaves Thread storage undecided, and keeps #1409's post-premises queue as
+the only dispatch authority.
 
 Confirmed retained decisions: exact-origin custody, host-only provenance,
 source-revision fence, crash-safe C5×C6 handoff, C2's complete canonical
