@@ -394,6 +394,18 @@ export function AppLeftPane({
     [pinnedSet, listedSessions],
   )
   const [archivedExpanded, setArchivedExpanded] = useState(false)
+  // Whether the Archived disclosure itself should render depends on whether
+  // any archived chat actually exists, and `sessions` only carries archived
+  // rows once the archived pager has been loaded at least once (#1429). A
+  // silent, one-shot background load — independent of whether the user ever
+  // expands the section — resolves that count so the control can stay
+  // hidden for anyone who has never archived a chat, instead of always
+  // rendering (and failing the 44px coarse-pointer touch-target gate) before
+  // its own emptiness is known.
+  useEffect(() => {
+    if (!onLoadArchived || archivedLoaded || archivedLoading) return
+    void onLoadArchived()
+  }, [onLoadArchived, archivedLoaded, archivedLoading])
   // One pass, three numbers. These used to be a memoized count plus two full
   // `sessions` scans re-run per Agent per render one line below it.
   const agentStats = useMemo(() => {
@@ -607,8 +619,11 @@ export function AppLeftPane({
   // same size, weight, tracking, tone and right-aligned count — with the label
   // promoted to a disclosure, because archived chats are the one group that
   // should stay folded away until asked for. Nothing renders when nothing is
-  // archived, so the pane is unchanged for anyone who never archives.
-  const renderArchivedSection = () => archivedSessions.length > 0 || onLoadArchived ? (
+  // archived, so the pane is unchanged for anyone who never archives (#1429:
+  // this used to also render whenever `onLoadArchived` merely existed, which
+  // is unconditionally true once a session API is wired up — the control
+  // showed on every screen, at zero archived chats, on every render).
+  const renderArchivedSection = () => archivedSessions.length > 0 ? (
     <section data-boring-workspace-part="app-left-pane-archived" className="space-y-1" aria-label="Archived chats">
       <button
         type="button"
@@ -618,7 +633,7 @@ export function AppLeftPane({
           return expanding
         })}
         aria-expanded={archivedExpanded}
-        className="flex w-full items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75 transition-colors motion-reduce:transition-none hover:bg-foreground/[0.055] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        className="app-left-pane-archived-toggle flex w-full items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75 transition-colors motion-reduce:transition-none hover:bg-foreground/[0.055] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
       >
         <ChevronRight
           className={cn("size-3 shrink-0 text-muted-foreground/70 transition-transform motion-reduce:transition-none", archivedExpanded && "rotate-90")}

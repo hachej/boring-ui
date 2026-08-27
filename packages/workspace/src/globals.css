@@ -572,6 +572,13 @@
     height: 44px;
   }
 
+  /* The Archived disclosure header (#1429) is a full-width text row, not an
+     icon slot, so it keeps its own rule rather than joining the fixed
+     44x44px block above: min-height only, width stays 100% of the pane. */
+  .app-left-pane-archived-toggle {
+    min-height: 44px;
+  }
+
 }
 
 /* ONE condition sizes a session row and the actions inside it.

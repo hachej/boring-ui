@@ -1055,6 +1055,37 @@ describe("AppLeftPane", () => {
       expect(screen.queryByRole("button", { name: /Archived/ })).not.toBeInTheDocument()
     })
 
+    // #1429: a session API always wires up `onLoadArchived`, so the control
+    // used to render on every screen — including at zero archived chats —
+    // because the render check was `archivedSessions.length > 0 ||
+    // onLoadArchived` and the second half is true unconditionally. This is
+    // the shape production actually renders: a handler is present, nothing
+    // is archived yet, and the pager has not resolved. The disclosure must
+    // stay hidden, and the component probes silently in the background
+    // (never expanding) to learn that the count is zero.
+    it("stays hidden at zero archived chats even though onLoadArchived is wired up", async () => {
+      const onLoadArchived = vi.fn()
+      renderWithArchived({
+        sessions: [{ id: "s1", title: "First session" }],
+        onLoadArchived,
+      })
+
+      await waitFor(() => expect(onLoadArchived).toHaveBeenCalledTimes(1))
+      expect(screen.queryByRole("button", { name: /Archived/ })).not.toBeInTheDocument()
+      expect(screen.queryByRole("button", { name: "Archived" })).not.toBeInTheDocument()
+    })
+
+    // #1429: the disclosure is a full-width text row, not an icon slot, so it
+    // gets its own coarse-pointer rule (`.app-left-pane-archived-toggle` in
+    // globals.css) rather than joining the fixed 44x44px block the icon
+    // controls share. Pin the class so the CSS contract cannot silently drift
+    // off the button the way the row shortcuts' sizing utility once did.
+    it("carries the coarse-pointer touch-target class when it renders", () => {
+      renderWithArchived()
+      const disclosure = screen.getByRole("button", { name: /Archived/ })
+      expect(disclosure.className).toContain("app-left-pane-archived-toggle")
+    })
+
     it("routes the row's archive action back to the host with the chat's owner", async () => {
       const onSetSessionArchived = vi.fn()
       renderWithArchived({
