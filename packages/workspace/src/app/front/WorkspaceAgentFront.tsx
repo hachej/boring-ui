@@ -838,6 +838,10 @@ export function WorkspaceAgentFront<
   )
   const effectiveAgentTypeId = addressedAgents.selectedAgentTypeId ?? defaultAgentTypeId
   const selectedAgentTypeId = effectiveAgentTypeId
+  // Fleet selection is session/pane-local. Workspace transport, plugin, and
+  // provisioning identity remains the configured Workspace default; otherwise
+  // switching to another Agent reboots the filesystem and plugin shell.
+  const workspaceTransportAgentTypeId = fleetModeEnabled ? defaultAgentTypeId : effectiveAgentTypeId
   // The New chat picker chooses who the *next* chat belongs to. It is
   // deliberately separate from the addressed selection that drives the open
   // chat, so retargeting never navigates away from what the user is reading.
@@ -2841,7 +2845,7 @@ export function WorkspaceAgentFront<
     <div className="relative h-full bg-background text-foreground">
       <WorkspaceShellCapabilitiesProvider value={shellCapabilitiesHost.shellCapabilities}>
       <WorkspaceProvider
-        agentTypeId={selectedAgentTypeId}
+        agentTypeId={workspaceTransportAgentTypeId}
         chatPanel={chatPanel}
         panels={providerPanels}
         commands={commands}
@@ -2878,7 +2882,7 @@ export function WorkspaceAgentFront<
         {addressedFleetSessions.sources}
         {!fleetModeEnabled || addressedAgents.selectedAgentTypeId ? (
           <WorkspaceBackgroundBoot
-            agentTypeId={effectiveAgentTypeId}
+            agentTypeId={workspaceTransportAgentTypeId}
             workspaceId={workspaceId}
             requestHeaders={resolvedRequestHeaders}
             apiBaseUrl={apiBaseUrl}

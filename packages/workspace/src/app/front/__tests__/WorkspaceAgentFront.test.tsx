@@ -744,6 +744,9 @@ describe("WorkspaceAgentFront", () => {
     await user.click(screen.getByRole("button", { name: "Close Beta details" }))
 
     const workspaceNavigationBeforeAgentSwitch = screen.getByLabelText("App navigation")
+    const workspaceBootCallsBeforeAgentSwitch = vi.mocked(fetch).mock.calls.filter(([input]) =>
+      String(input).includes("/api/v1/tree"),
+    ).length
     const betaSessionButton = screen.getByText("Beta one").closest("button")
     expect(betaSessionButton).toBeInstanceOf(HTMLButtonElement)
     await user.click(betaSessionButton!)
@@ -751,9 +754,12 @@ describe("WorkspaceAgentFront", () => {
       expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-agent-type-id", "beta")
       expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-session-id", "beta-one")
     })
-    // Agent/session selection is pane-local. It must not remount or replace the
-    // Workspace shell as though the workspace transport identity had changed.
+    // Agent/session selection is pane-local. It must neither remount the shell
+    // nor rerun Workspace boot as though its transport identity had changed.
     expect(screen.getByLabelText("App navigation")).toBe(workspaceNavigationBeforeAgentSwitch)
+    expect(vi.mocked(fetch).mock.calls.filter(([input]) =>
+      String(input).includes("/api/v1/tree"),
+    )).toHaveLength(workspaceBootCallsBeforeAgentSwitch)
 
     await user.click(screen.getByRole("button", { name: "New chat with Beta" }))
     await waitFor(() => expect(createdBy).toHaveBeenCalledWith("beta"))
