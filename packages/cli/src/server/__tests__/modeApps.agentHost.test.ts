@@ -288,6 +288,11 @@ describe.sequential("CLI Agent Host composition", () => {
       `${MODEL_TIERS_YAML}seats:\n  - seat: worker\n    agentTypeId: boring-worker\n    skills: []\n`,
       "utf8",
     )
+    await writeFile(
+      join(fleetRoot, ".agents", "factory", "policy.yaml"),
+      "models:\n  seats:\n    worker: T3\n",
+      "utf8",
+    )
     await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
       name: "@fixture/workspace-seat-tools",
       version: "1.0.0",
@@ -406,11 +411,13 @@ describe.sequential("CLI Agent Host composition", () => {
         "  - seat: repository-worker",
         "    agentTypeId: fixture-cli-repository-worker",
         "    skills: []",
-        "  - seat: local-worker",
-        "    agentTypeId: fixture-cli-local-worker",
-        "    skills: []",
         "",
       ].join("\n"),
+      "utf8",
+    )
+    await writeFile(
+      join(fleetRoot, ".agents", "factory", "policy.yaml"),
+      "models:\n  seats:\n    repository-worker: T3\n",
       "utf8",
     )
 
