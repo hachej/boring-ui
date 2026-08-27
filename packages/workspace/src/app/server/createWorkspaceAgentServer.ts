@@ -52,6 +52,7 @@ import {
   AGENT_RESOURCES_FILESYSTEM_ID,
   AgentGatewayError,
   AgentGatewayErrorCode,
+  ErrorCode,
   type AgentTool,
   type TelemetrySink,
 } from "@hachej/boring-agent/shared"
@@ -618,6 +619,18 @@ interface NormalizedAgentRuntimeContribution {
   readonly runtimePlugins: readonly WorkspaceRuntimeProvisioningInput[]
   readonly agentOptions: AgentSpecPluginArtifactProjection["agentOptions"]
   readonly includeAllDiscoveredPluginResources: boolean
+}
+
+export const CONFIGURED_DEFAULT_AGENT_ERROR_CODE = ErrorCode.enum.CONFIG_INVALID
+
+export class ConfiguredDefaultAgentError extends Error {
+  readonly code = CONFIGURED_DEFAULT_AGENT_ERROR_CODE
+  readonly field = "defaultAgentTypeId"
+
+  constructor(defaultAgentTypeId: string) {
+    super(`defaultAgentTypeId ${JSON.stringify(defaultAgentTypeId)} is not in the configured Agent fleet`)
+    this.name = "ConfiguredDefaultAgentError"
+  }
 }
 
 export const AGENT_RUNTIME_IDENTITY_ERROR_CODE = "BORING_AGENT_RUNTIME_IDENTITY_INCOMPLETE"
@@ -1283,6 +1296,9 @@ export async function createWorkspaceAgentServer(
     ...(fleetRepositoryRoot ? { repositoryRoot: fleetRepositoryRoot } : {}),
     ...(discoveredPackages ? { discoveredPackages } : {}),
   })
+  if (opts.defaultAgentTypeId !== undefined && !agents.some((agent) => agent.agentTypeId === opts.defaultAgentTypeId)) {
+    throw new ConfiguredDefaultAgentError(opts.defaultAgentTypeId)
+  }
   const bridge = createInMemoryBridge()
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
   const modeAdapter = opts.runtimeModeAdapter ?? createSandboxRuntimeModeAdapter(resolvedMode)

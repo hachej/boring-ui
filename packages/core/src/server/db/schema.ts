@@ -68,6 +68,10 @@ export const workspaces = pgTable(
       'workspaces_default_agent_type_id_check',
       sql`${table.defaultAgentTypeId} IS NULL OR ${table.defaultAgentTypeId} ~ '^[a-z][a-z0-9-]{0,62}$'`,
     ),
+    check(
+      'workspaces_default_agent_type_id_required_check',
+      sql`${table.defaultAgentTypeId} IS NOT NULL`,
+    ),
   ],
 )
 
