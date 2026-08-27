@@ -518,3 +518,24 @@ sequencing record):
 Dispatch consequence: **P1-A beads (A1–A5) and P1-B are the active premise
 lane**; P1-B after A2. `.13.2` (shape spike) after P1-A. Everything else in
 the 2026-08-26 amendment stands as written.
+
+---
+
+## Amendment 2026-08-27 (night) — strategic-audit fold
+
+An external Seneca × Boring strategic audit (business/GTM level) was reviewed
+against post-#1433 main. Most of its recommendations were already ratified
+position (Work-as-root §9a, one-family-three-jobs, headless-inside-a-product,
+Seneca-as-consumer, review-loop freeze, channels/marketplace deferral). Three
+genuinely open items were ruled:
+
+| Decision | Ruling |
+|---|---|
+| Thread staffing | **Two first-class modes (§10a).** Default = one bounded agent, grown on measured evidence; alternative = a predefined fleet declared by the agent/vertical package. The future engine plan optimizes the single-agent path first. |
+| Horizon ladder | **Split.** Of the audit's Horizon 0–5 ladder, only Horizon 0 (the internal factory as first consumer) and Horizon 2 (a second consumer proving the substrate) are platform framing — both already implicit here. Horizons 1/3/4/5 (first paid product, packages/distribution, developer cloud, recursive improvement) are commercial sequencing and live in the Seneca tenant repo's roadmap, per the premises-never-pricing split. Nothing new is dispatchable from the ladder. |
+| Agent presence | **Vocabulary recorded (§10b):** `hidden · ambient · drawer · page · roster`; `ambient` default for vertical SaaS, Meridian = `roster` flagship. Naming only. |
+
+The audit's decision filter (buyer / work-unit / feedback / reuse /
+irreversibility / complexity tests) is adopted as reviewer guidance for
+future capability proposals — a filter, not a gate. No premise, bead, or
+queue item changes; P1-A dispatch is unaffected.
