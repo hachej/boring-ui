@@ -11,8 +11,9 @@ handle.
 ## API sketch
 
 ```ts
+const provider = createVercelSandboxProvider({ lifecycle: 'disposable' })
 const service = new SandboxLeaseService({
-  provider,                         // host-injected SandboxProviderV1
+  provider,                         // host-injected disposable SandboxProviderV1
   workspaceRoot: '/host/verification-sandboxes', // host-owned only
   ttlMs: 10 * 60_000,
 })
@@ -46,7 +47,10 @@ unknown handle.
 - `Sandbox` provides lease-scoped command execution.
 
 No Vercel command, Vercel/Vault configuration, or credential flow appears in
-this spike.
+the lease service. A Vercel host must explicitly construct
+`createVercelSandboxProvider({ lifecycle: 'disposable' })`; disposing that pair
+deletes the remote sandbox and its cached handle. The provider's default remains
+`persistent` for normal Agent runtimes.
 
 ## Future Agent Worker integration
 
@@ -63,7 +67,7 @@ host-owned workspace root in tool parameters.
   limits, audit/telemetry, and a scheduler for `reapExpired()`.
 - Provider-specific network/image/isolation policy and proof are outside this
   neutral contract; choose only a qualified disposable provider for production.
-- A production host needs a retention policy for provider/host workspace
-  artifacts after pair disposal, plus retry/alerting for disposal failures.
+- A production host still needs retry/alerting for disposal failures. Failed
+  cleanup retains the lease so release or expiry reaping can retry it.
 - This in-memory lease registry is process-local and has no cross-process
   coordination or crash recovery.

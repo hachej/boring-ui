@@ -194,8 +194,10 @@ export class SandboxLeaseService {
   }
 
   private async disposeLease(lease: ActiveLease): Promise<void> {
-    this.leases.delete(lease.handle)
+    // Keep the lease addressable when provider cleanup fails so release/reaping
+    // can retry instead of losing the only handle to a live remote resource.
     await lease.pair.dispose()
+    this.leases.delete(lease.handle)
   }
 
   private assertOwner(ownerId: string): void {

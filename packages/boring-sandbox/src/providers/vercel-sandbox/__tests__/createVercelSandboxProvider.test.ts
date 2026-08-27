@@ -57,6 +57,7 @@ function createScheduler() {
 function addDurableHandleMetadata(sandbox: VercelSandbox, sandboxId: string) {
   const stop = vi.fn(async () => {})
   const snapshot = vi.fn(async () => ({ snapshotId: 'unexpected-snapshot' }))
+  const deleteSandbox = vi.fn(async () => {})
   Object.assign(sandbox, {
     sandboxId,
     name: sandboxId,
@@ -64,8 +65,9 @@ function addDurableHandleMetadata(sandbox: VercelSandbox, sandboxId: string) {
     status: 'running',
     stop,
     snapshot,
+    delete: deleteSandbox,
   })
-  return { stop, snapshot }
+  return { stop, snapshot, deleteSandbox }
 }
 
 const cleanups: Array<() => Promise<void>> = []
@@ -179,6 +181,45 @@ describe('createVercelSandboxProvider', () => {
     await provider.close?.()
     expect(scheduler.stopWorkspace).toHaveBeenCalledTimes(2)
     expect(scheduler.shutdown).toHaveBeenCalledOnce()
+  })
+
+  test('disposable lifecycle deletes the remote and handle before releasing the pair', async () => {
+    const harness = await createMockVercelSandboxHarness()
+    cleanups.push(harness.cleanup)
+    const { deleteSandbox } = addDurableHandleMetadata(harness.sandbox, 'sb-disposable')
+    const { store, deleteRecord } = createStore()
+    const client: VercelSandboxClient = {
+      create: vi.fn(async () => harness.sandbox),
+      get: vi.fn(),
+    }
+    const provider = createVercelSandboxProvider({
+      store,
+      vercelClient: client,
+      lifecycle: 'disposable',
+      getEnvVar,
+      logger: { info: vi.fn() },
+    })
+    const context: SandboxProviderCreateContextV1 = {
+      workspaceRoot: 'workspace-disposable',
+      workspaceId: 'workspace-disposable',
+      sessionId: 'session-disposable',
+    }
+
+    const firstPair = await provider.create(context)
+    deleteSandbox.mockRejectedValueOnce(new Error('remote delete failed'))
+    await expect(firstPair.dispose()).rejects.toThrow('remote delete failed')
+    expect(deleteRecord).not.toHaveBeenCalled()
+    await firstPair.dispose()
+    await firstPair.dispose()
+    const secondPair = await provider.create(context)
+
+    expect(deleteSandbox).toHaveBeenCalledTimes(2)
+    expect(deleteRecord).toHaveBeenCalledOnce()
+    expect(deleteRecord).toHaveBeenCalledWith('workspace-disposable')
+    expect(client.create).toHaveBeenCalledTimes(2)
+    expect(client.get).not.toHaveBeenCalled()
+    await secondPair.dispose()
+    expect(deleteSandbox).toHaveBeenCalledTimes(3)
   })
 
   test('invalidate evicts only the process cache and reacquires the persisted handle', async () => {

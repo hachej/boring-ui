@@ -172,4 +172,18 @@ describe('SandboxLeaseService', () => {
     await expect(service.runSandbox({ op: 'stat', ownerId: 'worker-a', lease: lease.handle }))
       .rejects.toMatchObject({ code: SANDBOX_LEASE_ERROR_CODES.LEASE_NOT_FOUND satisfies SandboxLeaseError['code'] })
   })
+
+  it('retains a lease when provider cleanup fails so release can retry', async () => {
+    const { service, pairs } = createService()
+    const lease = await service.acquire('worker-a')
+    pairs[0]?.dispose.mockRejectedValueOnce(new Error('remote delete failed'))
+
+    await expect(service.runSandbox({ op: 'release', ownerId: 'worker-a', lease: lease.handle }))
+      .rejects.toThrow('remote delete failed')
+    await expect(service.runSandbox({ op: 'stat', ownerId: 'worker-a', lease: lease.handle }))
+      .resolves.toMatchObject({ op: 'stat' })
+    await expect(service.runSandbox({ op: 'release', ownerId: 'worker-a', lease: lease.handle }))
+      .resolves.toEqual({ op: 'release', released: true })
+    expect(pairs[0]?.dispose).toHaveBeenCalledTimes(2)
+  })
 })
