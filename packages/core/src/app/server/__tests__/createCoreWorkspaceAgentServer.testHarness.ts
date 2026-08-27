@@ -48,7 +48,7 @@ export const mocks = (() => {
     getUser: vi.fn(async (id: string) => ({ id })),
     countNullDefaultAgentTypeIds: vi.fn(async (_appId: string): Promise<number> => 0),
     compareAndSetNullDefaultAgentTypeId: vi.fn(async (_appId: string, _value: string) => 0),
-    listAgentSeats: vi.fn(async (_workspaceId: string) => []),
+    listAgentSeats: vi.fn(async (_workspaceId: string): Promise<any[]> => []),
     hasAgentSeat: vi.fn(async (_workspaceId: string, _agentTypeId: string) => false),
     addAgentSeat: vi.fn(),
     getMemberRole: vi.fn(async (_workspaceId: string, _userId: string) => 'owner'),

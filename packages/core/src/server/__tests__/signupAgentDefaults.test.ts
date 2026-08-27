@@ -228,6 +228,8 @@ describe('signup-domain default-agent initialization (Decision 28 hook)', () => 
     expect(create.mock.calls[0]![3]).toEqual({
       isDefault: true,
       defaultAgentTypeId: 'boring-v2',
+      initialAgentSeatSource: 'generic-default',
+      enrolledByUserId: user.id,
     })
   })
 
@@ -237,19 +239,31 @@ describe('signup-domain default-agent initialization (Decision 28 hook)', () => 
     expect(create).toHaveBeenCalledWith(user.id, 'Default workspace', 'test-app', {
       isDefault: true,
       defaultAgentTypeId: 'legal',
+      initialAgentSeatSource: 'signup-intent',
+      enrolledByUserId: user.id,
     })
   })
 
   it('normalizes the host (case/port) before the exact lookup', async () => {
     const { create } = await runSignup({ headers: { [TRUSTED_SIGNUP_HOSTNAME_HEADER]: 'Legal.Example:443' } })
-    expect(create.mock.calls[0]![3]).toEqual({ isDefault: true, defaultAgentTypeId: 'legal' })
+    expect(create.mock.calls[0]![3]).toEqual({
+      isDefault: true,
+      defaultAgentTypeId: 'legal',
+      initialAgentSeatSource: 'signup-intent',
+      enrolledByUserId: user.id,
+    })
   })
 
   it('falls back to the boot default for unmapped hosts; email domain never selects', async () => {
     // User email is someone@legal.example, but the request host is unmapped:
     // the email domain must have no effect on seat selection.
     const { create } = await runSignup({ headers: { [TRUSTED_SIGNUP_HOSTNAME_HEADER]: 'unmapped.example' } })
-    expect(create.mock.calls[0]![3]).toEqual({ isDefault: true, defaultAgentTypeId: 'boring-v2' })
+    expect(create.mock.calls[0]![3]).toEqual({
+      isDefault: true,
+      defaultAgentTypeId: 'boring-v2',
+      initialAgentSeatSource: 'generic-default',
+      enrolledByUserId: user.id,
+    })
   })
 
   it('rejects a missing application default before signup can initialize a Workspace', () => {
@@ -273,7 +287,12 @@ describe('signup-domain default-agent initialization (Decision 28 hook)', () => 
         query: { hostname: 'legal.example', agentTypeId: 'legal' },
       },
     })
-    expect(create.mock.calls[0]![3]).toEqual({ isDefault: true, defaultAgentTypeId: 'boring-v2' })
+    expect(create.mock.calls[0]![3]).toEqual({
+      isDefault: true,
+      defaultAgentTypeId: 'boring-v2',
+      initialAgentSeatSource: 'generic-default',
+      enrolledByUserId: user.id,
+    })
   })
 
   it('does not persist the signup hostname as product identity', async () => {
@@ -281,7 +300,12 @@ describe('signup-domain default-agent initialization (Decision 28 hook)', () => 
     const [, name, appId, options] = create.mock.calls[0]!
     expect(name).toBe('Default workspace')
     expect(appId).toBe('test-app')
-    expect(Object.keys(options as object).sort()).toEqual(['defaultAgentTypeId', 'isDefault'])
+    expect(Object.keys(options as object).sort()).toEqual([
+      'defaultAgentTypeId',
+      'enrolledByUserId',
+      'initialAgentSeatSource',
+      'isDefault',
+    ])
     expect(JSON.stringify(create.mock.calls[0])).not.toContain('legal.example')
   })
 
