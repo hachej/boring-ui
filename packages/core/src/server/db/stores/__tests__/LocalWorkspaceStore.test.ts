@@ -388,13 +388,15 @@ describeWorkspaceStoreConformance(
         expiresAt: new Date(Date.now() - 60_000).toISOString(),
       })
     },
-    seedLegacyNullDefaultAgentTypeId: async (workspaceStore, workspaceId) => {
+    seedLegacyNullDefaultAgentTypeIds: async (workspaceStore, workspaceIds) => {
       const workspaces = (workspaceStore as unknown as {
         workspaces: Map<string, { defaultAgentTypeId?: string | null }>
       }).workspaces
-      const workspace = workspaces.get(workspaceId)
-      if (!workspace) throw new Error(`workspace ${workspaceId} not found`)
-      workspaces.set(workspaceId, { ...workspace, defaultAgentTypeId: null })
+      for (const workspaceId of workspaceIds) {
+        const workspace = workspaces.get(workspaceId)
+        if (!workspace) throw new Error(`workspace ${workspaceId} not found`)
+        workspaces.set(workspaceId, { ...workspace, defaultAgentTypeId: null })
+      }
     },
     makeAppIds: () => ({ appId: 'app1', otherAppId: 'app2' }),
     emailDomain: 'local.storetest.dev',
