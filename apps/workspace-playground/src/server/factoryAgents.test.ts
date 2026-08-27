@@ -135,10 +135,9 @@ describe('loadBoringFactoryAgents (loader against the real .agents/ tree)', () =
     try {
       const error = await loadBoringFactoryAgents({}).catch((cause: unknown) => cause)
       expect(error).toMatchObject({
-        name: 'TrustedAgentCompositionError',
-        diagnostics: [
-          { seat: 'triage', code: ErrorCode.enum.AGENT_FLEET_SEAT_SKILL_DIGEST_MISMATCH },
-        ],
+        name: 'FleetConfigError',
+        code: ErrorCode.enum.AGENT_FLEET_CONFIG_FILE_INVALID,
+        field: 'seats',
       })
       expect(String(error)).not.toMatch(/private\/root|SKILL\.md missing/)
     } finally {
