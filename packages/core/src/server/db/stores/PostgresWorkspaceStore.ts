@@ -3,6 +3,7 @@ import { and, eq, isNull, sql, desc } from 'drizzle-orm'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 
 import type {
+  WorkspaceDefaultAgentTypeInventoryItem,
   WorkspaceStore,
   WorkspaceStoreCreateOptions,
 } from '../../app/types.js'
@@ -230,12 +231,22 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
     return rows.map((r) => toWorkspace(r.ws))
   }
 
-  async countNullDefaultAgentTypeIds(appId: string): Promise<number> {
+  async inventoryDefaultAgentTypeIds(appId: string): Promise<WorkspaceDefaultAgentTypeInventoryItem[]> {
     const rows = await this.db
-      .select({ count: sql<number>`count(*)::integer` })
+      .select({
+        defaultAgentTypeId: workspaces.defaultAgentTypeId,
+        count: sql<number>`count(*)::integer`,
+      })
       .from(workspaces)
-      .where(and(eq(workspaces.appId, appId), isNull(workspaces.defaultAgentTypeId)))
-    return Number(rows[0]?.count ?? 0)
+      .where(eq(workspaces.appId, appId))
+      .groupBy(workspaces.defaultAgentTypeId)
+
+    return rows
+      .map((row) => ({
+        defaultAgentTypeId: row.defaultAgentTypeId,
+        count: Number(row.count),
+      }))
+      .sort((left, right) => (left.defaultAgentTypeId ?? '').localeCompare(right.defaultAgentTypeId ?? ''))
   }
 
   async compareAndSetNullDefaultAgentTypeId(appId: string, value: string): Promise<number> {

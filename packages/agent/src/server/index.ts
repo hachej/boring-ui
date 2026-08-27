@@ -196,6 +196,7 @@ export {
 export { DEFAULT_AGENT_TYPE_ID } from './agent-host/types'
 export type {
   AgentEffectAdmission,
+  AgentEffectPolicy,
   AgentFleetCompiler,
   AgentGatewayEffect,
   AgentHostAgentSpec,

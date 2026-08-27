@@ -46,7 +46,7 @@ export const mocks = (() => {
       defaultAgentTypeId: string | null
     } | null> => ({ id, appId: 'test-app', defaultAgentTypeId: null })),
     getUser: vi.fn(async (id: string) => ({ id })),
-    countNullDefaultAgentTypeIds: vi.fn(async (_appId: string): Promise<number> => 0),
+    inventoryDefaultAgentTypeIds: vi.fn(async (_appId: string): Promise<Array<{ defaultAgentTypeId: string | null; count: number }>> => []),
     compareAndSetNullDefaultAgentTypeId: vi.fn(async (_appId: string, _value: string) => 0),
     actualCreateAgentHost: undefined as undefined | ((options: any) => Promise<any>),
     actualCreateSandboxRuntimeModeAdapter: undefined as undefined | ((mode: 'direct') => any),
@@ -160,7 +160,7 @@ vi.doMock('../../../server/db/index.js', () => ({
   PostgresWorkspaceStore: class {
     get(id: string) { return mocks.getWorkspace(id) }
     isMember(workspaceId: string, userId: string) { return mocks.isMember(workspaceId, userId) }
-    countNullDefaultAgentTypeIds(appId: string) { return mocks.countNullDefaultAgentTypeIds(appId) }
+    inventoryDefaultAgentTypeIds(appId: string) { return mocks.inventoryDefaultAgentTypeIds(appId) }
     compareAndSetNullDefaultAgentTypeId(appId: string, value: string) {
       return mocks.compareAndSetNullDefaultAgentTypeId(appId, value)
     }
@@ -181,7 +181,7 @@ beforeEach(() => {
   mocks.isMember.mockResolvedValue(true)
   mocks.getWorkspace.mockImplementation(async (id: string) => ({ id, appId: 'test-app', defaultAgentTypeId: null }))
   mocks.getUser.mockImplementation(async (id: string) => ({ id }))
-  mocks.countNullDefaultAgentTypeIds.mockResolvedValue(0)
+  mocks.inventoryDefaultAgentTypeIds.mockResolvedValue([])
   mocks.compareAndSetNullDefaultAgentTypeId.mockResolvedValue(0)
 })
 

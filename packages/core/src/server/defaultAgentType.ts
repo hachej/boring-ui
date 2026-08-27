@@ -18,7 +18,8 @@ export class DefaultAgentTypeError extends Error {
 /**
  * Decision 28: every initialized Workspace durably persists a regular Agent's
  * `defaultAgentTypeId`. NULL exists only as a rolling-schema migration state.
- * This module owns trusted write validation and fail-closed runtime resolution.
+ * This module owns trusted write validation, cohort classification, and
+ * fail-closed runtime resolution.
  *
  * Agent type ids share the workspace-type slug grammar (lowercase slug,
  * <= 63 chars), matching the `workspaces_default_agent_type_id_check`
@@ -53,6 +54,35 @@ export function parseRequiredDefaultAgentTypeId(value: unknown): string {
   return parsed
 }
 
+export interface WorkspaceDefaultAgentTypeInventoryItem {
+  readonly defaultAgentTypeId: string | null
+  readonly count: number
+}
+
+export interface WorkspaceDefaultAgentTypeCohorts {
+  readonly nullCount: number
+  readonly knownCount: number
+  readonly unknown: ReadonlyArray<{ readonly defaultAgentTypeId: string; readonly count: number }>
+}
+
+/** Classifies persisted cohorts without mutating or repairing any row. */
+export function classifyWorkspaceDefaultAgentTypeCohorts(
+  inventory: readonly WorkspaceDefaultAgentTypeInventoryItem[],
+  availableAgentTypeIds: readonly string[],
+): WorkspaceDefaultAgentTypeCohorts {
+  const available = new Set(availableAgentTypeIds)
+  let nullCount = 0
+  let knownCount = 0
+  const unknown: Array<{ defaultAgentTypeId: string; count: number }> = []
+  for (const item of inventory) {
+    if (item.defaultAgentTypeId === null) nullCount += item.count
+    else if (available.has(item.defaultAgentTypeId)) knownCount += item.count
+    else unknown.push({ defaultAgentTypeId: item.defaultAgentTypeId, count: item.count })
+  }
+  unknown.sort((left, right) => left.defaultAgentTypeId.localeCompare(right.defaultAgentTypeId))
+  return { nullCount, knownCount, unknown }
+}
+
 function validateApplicationAgentTypeIds(agentTypeIds: readonly string[]): void {
   const unique = new Set<string>()
   for (const agentTypeId of agentTypeIds) {
@@ -68,10 +98,18 @@ function validateApplicationAgentTypeIds(agentTypeIds: readonly string[]): void 
 
 /** Resolves one required Workspace default from the validated application fleet. */
 export function resolveApplicationDefaultAgentTypeId(input: {
-  readonly configuredDefaultAgentTypeId: string
+  readonly configuredDefaultAgentTypeId: string | undefined
   readonly regularAgentTypeIds: readonly string[]
 }): string {
   validateApplicationAgentTypeIds(input.regularAgentTypeIds)
+  if (input.configuredDefaultAgentTypeId === undefined) {
+    const first = input.regularAgentTypeIds[0]
+    if (first) return first
+    throw new DefaultAgentTypeError(
+      ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT,
+      'Application Agent fleet must contain a default Agent',
+    )
+  }
   const candidate = parseRequiredDefaultAgentTypeId(input.configuredDefaultAgentTypeId)
   if (!input.regularAgentTypeIds.includes(candidate)) {
     throw new DefaultAgentTypeError(

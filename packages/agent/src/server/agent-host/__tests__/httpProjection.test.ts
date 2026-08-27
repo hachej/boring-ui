@@ -335,7 +335,7 @@ describe('addressed Agent Host HTTP projection', () => {
     expect((await app.inject({
       method: 'POST',
       url: '/api/v1/agents/alpha/sessions/session-1/interrupt',
-      payload: { requestId: 'interrupt-1' },
+      payload: { requestId: 'interrupt-1', queueAction: 'hold' },
     })).statusCode).toBe(202)
     expect((await app.inject({
       method: 'POST',
