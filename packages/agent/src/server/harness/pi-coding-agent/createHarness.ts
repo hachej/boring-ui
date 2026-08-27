@@ -706,6 +706,7 @@ export function createPiCodingAgentHarness(opts: {
       sessionManager,
       authStorage,
       modelRegistry,
+      settingsManager,
       ...(resourceLoader ? { resourceLoader } : {}),
     });
 

@@ -207,6 +207,60 @@ describe("createExecUiTool — path validation", () => {
     ])
   })
 
+  test("exec_ui preserves explicit file actions while deferring to registered domain surfaces", async () => {
+    const tool = createExecUiTool(bridge, { workspaceRoot })
+
+    expect(tool.description).toContain("Prefer an available registered domain-specific surface")
+    expect(tool.description).toContain("deck, dashboard, or")
+    expect(tool.description).toContain("playground catalog item")
+    expect(tool.description).toContain("use exec_ui openSurface exactly")
+    expect(tool.description).toContain("Otherwise, when the user asks to open / show /")
+    expect(tool.description).toContain("ALWAYS call exec_ui openFile")
+    expect(tool.description).toContain("same path is idempotent")
+
+    await tool.execute(
+      { kind: "openFile", params: { path: "src/README.md" } },
+      FAKE_CTX,
+    )
+    await tool.execute(
+      {
+        kind: "openSurface",
+        params: {
+          kind: "workspace.open.path",
+          target: "deck/intro.md",
+        },
+      },
+      FAKE_CTX,
+    )
+    await expect(bridge.drainCommands!()).resolves.toEqual([
+      expect.objectContaining({ kind: "openFile", params: { path: "src/README.md" } }),
+      expect.objectContaining({
+        kind: "openSurface",
+        params: { kind: "workspace.open.path", target: "deck/intro.md" },
+      }),
+    ])
+  })
+
+  test("exec_ui requires sequential auto-focused opens without optional workflow policy", () => {
+    const tool = createExecUiTool(bridge, { workspaceRoot })
+
+    expect(tool.description).toContain(
+      [
+        "IMPORTANT: Every successful openFile call automatically focuses the",
+        "requested file in its own persistent workbench tab. When the user asks",
+        "to open multiple files, call openFile once for EACH requested path, in",
+        "the requested order. All requested file tabs remain open, and the final",
+        "file is active. Do not refuse the request, shorten it to one/final call,",
+        "or claim that the workbench can show only one file. Reopening the same",
+        "path is idempotent and focuses its existing tab. Chat does not recognize",
+        "arbitrary @path text as an open-file request.",
+      ].join("\n"),
+    )
+    expect(tool.description).not.toContain("HumanArtifact")
+    expect(tool.description).not.toContain("ask_user")
+    expect(tool.description).not.toContain("artifacts[]")
+  })
+
   test("exec_ui advertises openSurface filesystem", () => {
     const tool = createExecUiTool(bridge, { workspaceRoot })
     const parameters = tool.parameters as {
@@ -442,6 +496,43 @@ describe("createExecUiTool — auto state verification", () => {
     await tool.execute({ kind: "openFile", params: { path: "index.ts" } }, FAKE_CTX)
     // verified on first read — loop should not iterate at all
     expect(callCount).toBe(1)
+  })
+
+  test("keeps retrying until the requested openFile tab is active", async () => {
+    let callCount = 0
+    const trackedBridge = {
+      ...bridge,
+      async getState() {
+        callCount++
+        const active = callCount >= 3
+        return {
+          v: 1 as const,
+          workbenchOpen: true,
+          drawerOpen: false,
+          openTabs: [
+            { id: "file:index.ts", title: "index.ts", params: { path: "index.ts" } },
+            { id: "file:other.ts", title: "other.ts", params: { path: "other.ts" } },
+          ],
+          activeTab: active ? "file:index.ts" : "file:other.ts",
+          activeFile: active ? "index.ts" : "other.ts",
+        }
+      },
+    }
+    const tool = createExecUiTool(trackedBridge, {
+      workspaceRoot,
+      verifyDelayMs: 1,
+      verifyRetries: 5,
+      verifyIntervalMs: 1,
+    })
+
+    const result = await tool.execute(
+      { kind: "openFile", params: { path: "index.ts" } },
+      FAKE_CTX,
+    )
+
+    expect(callCount).toBe(3)
+    const parsed = JSON.parse((result.content[0] as { type: "text"; text: string }).text)
+    expect(parsed.uiState.activeTab).toBe("file:index.ts")
   })
 
   test("retries until tab appears, then stops early", async () => {
