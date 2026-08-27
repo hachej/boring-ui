@@ -1144,6 +1144,46 @@ describe("WorkspaceAgentFront", () => {
     expect(within(appNav).queryByText("Active project session")).not.toBeInTheDocument()
   })
 
+  it("replaces the active pane when creating a project chat from a split layout", async () => {
+    const user = userEvent.setup()
+    localStorage.setItem(
+      "boring-workspace:chat-panes:project-new-chat-replaces",
+      JSON.stringify({ ids: ["s1", "s2"], activeId: "s2" }),
+    )
+
+    function Harness() {
+      const [sessions, setSessions] = useState([
+        { id: "s1", title: "First session" },
+        { id: "s2", title: "Second session" },
+      ])
+      const [activeSessionId, setActiveSessionId] = useState("s2")
+      return (
+        <WorkspaceAgentFront
+          workspaceId="project-new-chat-replaces"
+          workspaceLayout="plugin-tabs"
+          appLeftLayoutMode="multi-project"
+          chatPanel={SessionIdChatPanel}
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          appLeftProjects={[{ id: "project-new-chat-replaces", name: "Project Alpha" }]}
+          onCreateSession={() => {
+            const created = { id: "created", title: "Created session" }
+            setSessions((previous) => [created, ...previous])
+            setActiveSessionId(created.id)
+            return Promise.resolve(created)
+          }}
+        />
+      )
+    }
+
+    render(<Harness />)
+
+    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["s1", "s2"]))
+    await user.click(screen.getByRole("button", { name: "New chat in Project Alpha" }))
+
+    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["s1", "created"]))
+  })
+
   it("keeps classic workspace sources available outside plugin-tabs mode", async () => {
     function SourcePanel() {
       return <div>Classic source body</div>
