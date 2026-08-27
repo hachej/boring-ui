@@ -122,7 +122,6 @@ export type {
 } from './agentDefinition/instructionFileRefs'
 export {
   DEFAULT_AGENT_FLEET,
-  isBuiltInDefaultAgentSpec,
   resolveDefaultAgentFleet,
 } from './agentDefinition/resolveDefaultAgentFleet'
 export type {
@@ -197,7 +196,6 @@ export {
 export { DEFAULT_AGENT_TYPE_ID } from './agent-host/types'
 export type {
   AgentEffectAdmission,
-  AgentEffectPolicy,
   AgentFleetCompiler,
   AgentGatewayEffect,
   AgentHostAgentSpec,

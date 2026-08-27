@@ -18,7 +18,7 @@ import type { AgentMeteringSink } from '../pi-chat/metering'
 import type { ReadyStatusTracker } from '../runtime/readyStatus'
 import { resolveAgentInstructionFileRefs } from '../agentDefinition/instructionFileRefs'
 import { canonicalDigest } from './canonical'
-import type { AgentHostRuntime } from './createAgentHost'
+import type { AgentHostRuntime, RuntimeBinding } from './createAgentHost'
 import type { EmbeddedAgentGateway } from './embeddedGateway'
 import type { AgentHostDirectProjectionOptions, AgentInstructionFileRef } from './types'
 import { projectStableServiceError } from './stableServiceError'
@@ -351,7 +351,13 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
       }
     },
     async executeCommand({ request, agentTypeId, requestId, sessionId, name, args }) {
-      const { scope } = await authorize(request)
+      const { scope, binding } = await resolve(request, agentTypeId, sessionId)
+      if (!binding.composition.harness.executeSlashCommand) {
+        throw new AgentGatewayError(
+          AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
+          'Command execution is not supported by this Agent',
+        )
+      }
       const target = { kind: 'session' as const, ref: { agentTypeId, sessionId } }
       return await gateway.runHostEffect({
         scope,
@@ -359,17 +365,7 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
         target,
         requestId,
         payload: { ref: target.ref, name, args },
-        prepare: async () => {
-          const binding = (await gateway.resolveHostSessionBinding(scope, target.ref)).binding
-          if (!binding.composition.harness.executeSlashCommand) {
-            throw new AgentGatewayError(
-              AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
-              'Command execution is not supported by this Agent',
-            )
-          }
-          return binding
-        },
-        action: (binding) => runtime.runBindingOperation(binding.key, async () => {
+        action: () => runtime.runBindingOperation(binding.key, async () => {
           await binding.composition.harness.executeSlashCommand!(sessionId, name, args, {
             abortSignal: new AbortController().signal,
             workdir: binding.composition.runtimeBundle.workspace.root,
@@ -378,7 +374,7 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
             userId: scope.authSubjectId,
             sessionCtx: {
               workspaceId: scope.workspaceScopeId,
-            },
+              },
           })
           return { ok: true, sessionId, name }
         }),
@@ -402,6 +398,7 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
       const candidatePhysicalBinding = canonicalDigest(candidate.physicalBindingIdentity ?? candidate.identity)
       const target = { kind: 'agent' as const, agentTypeId }
       const reloadSessionId = sessionId ?? options.defaultSessionId ?? 'default'
+      let binding: RuntimeBinding | undefined
       return await gateway.runHostEffect({
         scope,
         operation: 'agent.reload',
@@ -415,7 +412,7 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
           candidatePhysicalBinding,
           candidateInputDigest: candidate.resourceInputDigest,
         },
-        prepare: async () => {
+        classify: async () => {
           const current = runtime.findPublishedCurrentBinding(
             agentTypeId,
             claim.workspaceScopeId,
@@ -426,61 +423,73 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
           if (sessionId) {
             const pinned = (await gateway.inspectPublishedSessionBinding(scope, { agentTypeId, sessionId })).binding
             if (current && pinned.generation !== current.generation) {
-              throw new AgentGatewayError(
-                AgentGatewayErrorCode.AGENT_RUNTIME_RESTART_REQUIRED,
-                'Session is pinned to a retired Agent runtime; restart is required',
-              )
+              return {
+                kind: 'reject' as const,
+                error: {
+                  code: AgentGatewayErrorCode.AGENT_RUNTIME_RESTART_REQUIRED,
+                  message: 'Session is pinned to a retired Agent runtime; restart is required',
+                },
+              }
             }
           }
-          if (!current) {
-            throw new AgentGatewayError(
-              AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
-              'Agent runtime binding is not currently published',
-            )
+          binding = current
+          if (!binding) {
+            return {
+              kind: 'reject' as const,
+              error: new AgentGatewayError(
+                AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
+                'Agent runtime binding is not currently published',
+              ).toJSON(),
+            }
           }
-          const currentIdentity = canonicalDigest(current.scope.identity)
-          const currentFingerprint = canonicalDigest(current.scope.environment.provisioningFingerprint)
-          const currentPhysicalBinding = canonicalDigest(current.scope.physicalBindingIdentity ?? current.scope.identity)
+          const currentIdentity = canonicalDigest(binding.scope.identity)
+          const currentFingerprint = canonicalDigest(binding.scope.environment.provisioningFingerprint)
+          const currentPhysicalBinding = canonicalDigest(binding.scope.physicalBindingIdentity ?? binding.scope.identity)
           if (
             currentIdentity !== candidateIdentity
             || currentFingerprint !== candidateFingerprint
             || currentPhysicalBinding !== candidatePhysicalBinding
           ) {
-            throw new AgentGatewayError(
-              AgentGatewayErrorCode.AGENT_RUNTIME_RESTART_REQUIRED,
-              'Agent runtime identity changed; restart is required',
-              {
-                currentIdentity,
-                candidateIdentity,
-                currentFingerprint,
-                candidateFingerprint,
-                currentPhysicalBinding,
-                candidatePhysicalBinding,
+            return {
+              kind: 'reject' as const,
+              error: {
+                code: AgentGatewayErrorCode.AGENT_RUNTIME_RESTART_REQUIRED,
+                message: 'Agent runtime identity changed; restart is required',
+                details: {
+                  currentIdentity,
+                  candidateIdentity,
+                  currentFingerprint,
+                  candidateFingerprint,
+                  currentPhysicalBinding,
+                  candidatePhysicalBinding,
+                },
               },
-            )
+            }
           }
           await candidate.revalidateResourceInputs?.()
-          return current
+          return { kind: 'execute' as const }
         },
-        action: async (binding) => {
-          return await runtime.runBindingOperation(binding.key, async () => {
+        action: async () => {
+          const current = binding
+          if (!current) throw new TypeError('reload executed before binding classification')
+          return await runtime.runBindingOperation(current.key, async () => {
             // Admission is asynchronous and occurs after classification. Fence
             // again before the first external reload mutation; failures from
             // this post-begin point intentionally remain outcome-unknown.
             await candidate.revalidateResourceInputs?.()
-            if (!binding.composition.harness.reloadSession) {
+            if (!current.composition.harness.reloadSession) {
               throw new AgentGatewayError(
                 AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
                 'Agent harness does not support reload',
               )
             }
             const applied = await candidate.applyReload?.({
-              runtimeBundle: binding.composition.runtimeBundle,
+              runtimeBundle: current.composition.runtimeBundle,
             })
             await candidate.revalidateResourceInputs?.()
-            const reloaded = await binding.composition.harness.reloadSession(reloadSessionId)
+            const reloaded = await current.composition.harness.reloadSession(reloadSessionId)
             await candidate.revalidateResourceInputs?.()
-            const diagnostics = (binding.composition.harness.getResourceDiagnostics?.(reloadSessionId) ?? [])
+            const diagnostics = (current.composition.harness.getResourceDiagnostics?.(reloadSessionId) ?? [])
               .map((entry) => ({ source: entry.source, message: entry.message }))
             const mergedDiagnostics = [
               ...(candidate.reloadMetadata?.diagnostics ?? []),

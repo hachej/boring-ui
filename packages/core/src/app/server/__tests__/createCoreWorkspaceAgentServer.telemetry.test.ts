@@ -139,7 +139,7 @@ vi.mock('../../../server/db/index.js', () => ({
   }),
   PostgresUserStore: class PostgresUserStore {},
   PostgresWorkspaceStore: class PostgresWorkspaceStore {
-    async inventoryDefaultAgentTypeIds() { return [] }
+    async countNullDefaultAgentTypeIds() { return 0 }
     async compareAndSetNullDefaultAgentTypeId() { return 0 }
   },
 }))

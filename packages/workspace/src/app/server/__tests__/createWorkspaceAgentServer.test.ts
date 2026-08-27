@@ -1227,6 +1227,52 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     expect(excluded.pi?.extensionPaths ?? []).not.toContain("/plugins/default-agent.ts")
   })
 
+  test("an explicit singleton without plugin bindings stays isolated", async () => {
+    const pluginTool = {
+      name: "ambient_tool",
+      description: "must not leak",
+      parameters: { type: "object", properties: {} },
+      async execute() { return { content: [] } },
+    }
+    await createWorkspaceAgentServer({
+      workspaceRoot: await makeTempDir("boring-explicit-singleton-isolation-"),
+      logger: false,
+      provisionWorkspace: false,
+      externalPlugins: false,
+      plugins: [{
+        id: "ambient-plugin",
+        contentDigest: "ambient-plugin-v1",
+        agentTools: [pluginTool],
+        systemPrompt: "AMBIENT_PLUGIN_PROMPT",
+        piPackages: ["npm:ambient-plugin"],
+      }],
+      agents: [{
+        agentTypeId: "custom",
+        definition: { label: "Custom", instructions: "Stay isolated." },
+      }],
+      defaultAgentTypeId: "custom",
+    })
+
+    const [routeOptions] = agentServerMock.captureResolvedRuntimeScope.mock.calls.at(-1) as unknown as [{
+      authorizedScope: object
+    }]
+    const [hostOptions] = agentServerMock.createAgentHost.mock.calls.at(-1) as unknown as [{
+      resolveDirectRuntimeScopeForTest(input: { agentTypeId: string; scope: object }): Promise<{
+        extraTools?: Array<{ name: string }>
+        systemPromptAppend?: string
+        pi?: { packages?: unknown[] }
+      }>
+    }]
+    const runtime = await hostOptions.resolveDirectRuntimeScopeForTest({
+      agentTypeId: "custom",
+      scope: routeOptions.authorizedScope,
+    })
+
+    expect(runtime.extraTools?.map((tool) => tool.name) ?? []).not.toContain("ambient_tool")
+    expect(runtime.systemPromptAppend ?? "").not.toContain("AMBIENT_PLUGIN_PROMPT")
+    expect(runtime.pi?.packages ?? []).not.toContain("npm:ambient-plugin")
+  })
+
   test("getHotReloadableResources reflects package.json#pi changes between calls", async () => {
     const workspaceRoot = await makeTempDir("boring-workspace-pi-dynamic-")
     const pluginRoot = join(workspaceRoot, ".pi", "extensions", "dyn-plugin")

@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest'
 import { ERROR_CODES } from '../../shared/errors.js'
 import {
   DefaultAgentTypeError,
-  classifyWorkspaceDefaultAgentTypeCohorts,
   isAgentTypeId,
   parseRequiredDefaultAgentTypeId,
   parseTrustedDefaultAgentTypeId,
@@ -93,33 +92,18 @@ describe('resolveWorkspaceDefaultAgentTypeId', () => {
 
 })
 
-describe('default-Agent cohorts', () => {
-  it('classifies NULL, known, and unknown persisted cohorts without repair', () => {
-    expect(classifyWorkspaceDefaultAgentTypeCohorts([
-      { defaultAgentTypeId: null, count: 3 },
-      { defaultAgentTypeId: 'default', count: 4 },
-      { defaultAgentTypeId: 'retired-seat', count: 2 },
-    ], ['boring-v2'])).toEqual({
-      nullCount: 3,
-      knownCount: 0,
-      unknown: [
-        { defaultAgentTypeId: 'default', count: 4 },
-        { defaultAgentTypeId: 'retired-seat', count: 2 },
-      ],
-    })
-  })
-
-  it('selects only regular fleet members and rejects an empty application fleet', () => {
+describe('application default Agent', () => {
+  it('selects only the configured fleet member and rejects an empty application fleet', () => {
     expect(resolveApplicationDefaultAgentTypeId({
-      configuredDefaultAgentTypeId: undefined,
+      configuredDefaultAgentTypeId: 'reviewer',
       regularAgentTypeIds: ['general', 'reviewer'],
-    })).toBe('general')
+    })).toBe('reviewer')
     expect(() => resolveApplicationDefaultAgentTypeId({
       configuredDefaultAgentTypeId: 'retired-seat',
       regularAgentTypeIds: ['general'],
     })).toThrowError(expect.objectContaining({ code: ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT }))
     expect(() => resolveApplicationDefaultAgentTypeId({
-      configuredDefaultAgentTypeId: undefined,
+      configuredDefaultAgentTypeId: 'default',
       regularAgentTypeIds: [],
     })).toThrowError(expect.objectContaining({ code: ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT }))
   })
@@ -132,7 +116,7 @@ describe('default-Agent cohorts', () => {
       ['default', 'default'],
     ]) {
       expect(() => resolveApplicationDefaultAgentTypeId({
-        configuredDefaultAgentTypeId: undefined,
+        configuredDefaultAgentTypeId: 'default',
         regularAgentTypeIds,
       })).toThrowError(expect.objectContaining({
         name: 'DefaultAgentTypeError',

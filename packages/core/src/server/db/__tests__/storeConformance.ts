@@ -382,7 +382,7 @@ export function describeWorkspaceStoreConformance(
     )
 
     it(
-      'inventories legacy cohorts and compare-and-sets NULL defaults idempotently',
+      'counts and compare-and-sets NULL defaults without touching non-NULL rows',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, otherAppId, users } = await setup()
         const legacy = await createWorkspace(workspaceStore, users.owner.id, 'Legacy NULL', appId)
@@ -392,12 +392,9 @@ export function describeWorkspaceStoreConformance(
         const otherAppLegacy = await createWorkspace(workspaceStore, users.owner.id, 'Other app NULL', otherAppId)
         await options.seedLegacyNullDefaultAgentTypeId(workspaceStore, otherAppLegacy.id)
 
-        expect(await workspaceStore.inventoryDefaultAgentTypeIds(appId)).toEqual([
-          { defaultAgentTypeId: null, count: 1 },
-          { defaultAgentTypeId: 'default', count: 1 },
-          { defaultAgentTypeId: 'retired-seat', count: 1 },
-        ])
+        expect(await workspaceStore.countNullDefaultAgentTypeIds(appId)).toBe(1)
         expect(await workspaceStore.compareAndSetNullDefaultAgentTypeId(appId, 'default')).toBe(1)
+        expect(await workspaceStore.countNullDefaultAgentTypeIds(appId)).toBe(0)
         expect(await workspaceStore.compareAndSetNullDefaultAgentTypeId(appId, 'default')).toBe(0)
         expect((await workspaceStore.get(legacy.id))?.defaultAgentTypeId).toBe('default')
         expect((await workspaceStore.get(known.id))?.defaultAgentTypeId).toBe('default')
