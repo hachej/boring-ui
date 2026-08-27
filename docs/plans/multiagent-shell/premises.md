@@ -36,7 +36,7 @@ Two consequences, stated plainly:
 | # | Premise | Unblocks | Beadable | Size |
 |---|---|---|---|---|
 | **P1** | Durable streams — Level D conformance, default-on | the whole engine | epic `wt-391-forward-9p50`: `.1` conformance, `.2` rollout | 2 × one-session slices |
-| **P2** | Thread storage model — spike + competitor study | engine S1, the "noun" question, #1355's ref types | epic `shell-ngfs.13`: `.13.1` research, `.13.2` spike | 2 × one-session slices |
+| **P2** | Thread storage model — spike + competitor study | engine S1, the "noun" question, #1355's ref types | epic `shell-ngfs.13`: `.13.1` research, `.13.2` spike | **re-sized 2026-08-27:** research 1–2 sessions, spike 2–3 (three candidates + pi substrate variant + Work-cardinality questions grew it; the old "2 × one-session" claim is withdrawn) |
 | **P3** | Seat storage — audit-grade attribution (ratified concept, formerly C7) | honest who-said-what everywhere | epic `shell-ngfs.14`: `.14.1` catalog/envelope, `.14.2` projection | 2 × one-session slices |
 | **P4** | Kernel View — first ratified slice | Library saved views | yes — new | sizing unknown, see below |
 | **P5** | Merge queue | branch health for everything | no — a list, not a bead | ongoing |
@@ -98,6 +98,26 @@ deferral.
 > accepted-work protocol: Work/Run admission, effect identity and
 > reconciliation, Artifact versions, Delivery, cost, and delayed Outcome
 > linkage remain separate durable semantics. The engine consumes both layers.
+
+> **Pi-adoption constraints on this premise (2026-08-27, from the gap
+> review).** If the pi-v4 core is adopted for any part of this premise:
+> (1) the harness adapter lives **under** the D29 gateway — a private
+> backend of the funnel, never a parallel session path; (2) an explicit
+> **crash/reconciliation protocol** between Boring's durable gateway ledger
+> and pi's Session store is a named deliverable — two durable stores that
+> can disagree after a crash need a defined winner and repair sequence;
+> (3) session identity stays **workspace-scoped** (our addressing, pi ids
+> internal); (4) **BYOK and model authority remain Boring-owned** — the D27
+> credential vault and the model-capability issuer stay authoritative over
+> pi's own Accounts/Models services, which must consume injected authority,
+> never source it.
+
+> **Named proof addition — the paused-human restart.** P1's proof set
+> includes the flagship journey: a thread paused on an ask-user question,
+> host restarts, the client reattaches — question, transcript, and pending
+> state intact, answer still routable. This is the single most
+> user-visible durability promise and must be a falsifiable e2e, not a
+> unit test.
 
 ---
 
@@ -167,6 +187,11 @@ first-class-record candidate** — not a third ontology
   Outcomes. One or more Threads or external conversations bind to it as
   interaction histories. A Job Thread is the default shell projection, but
   headless Work may have no Thread at all.
+  **Amendment gate:** if the spike recommends this candidate, "Work" is a
+  **new durable kernel root** — adopting it requires an explicit
+  ratified-plan amendment and owner ruling (rule 11), never a quiet schema
+  choice inside the engine. The spike report must say so on its first page
+  if (iii) wins.
 
 **Measure, for each:** write path complexity; read/replay cost for a long
 thread; behavior under P1's durable streams; how per-message attribution lands
