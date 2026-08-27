@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Button, ErrorState } from '@hachej/boring-ui-kit'
 import {
   WORKSPACE_DEFAULT_AGENT_ROUTE,
   type WorkspaceDefaultAgentOption,
+  type WorkspaceDefaultAgentRepinRequest,
   type WorkspaceDefaultAgentState,
 } from '../../shared/workspaceDefaultAgent.js'
 
@@ -36,6 +37,9 @@ export interface WorkspaceDefaultAgentRecoveryGateProps {
   readonly children: ReactNode
 }
 
+const PROBE_RETRY_LIMIT = 2
+const PROBE_RETRY_DELAY_MS = 1_500
+
 function recoveryEndpoint(apiBaseUrl: string | undefined): string {
   return `${apiBaseUrl?.replace(/\/$/, '') ?? ''}${WORKSPACE_DEFAULT_AGENT_ROUTE}`
 }
@@ -54,28 +58,72 @@ export function WorkspaceDefaultAgentRecoveryGate({
   onRecovered,
   children,
 }: WorkspaceDefaultAgentRecoveryGateProps) {
-  // Only a *confirmed* broken workspace is ever held in state: a healthy or
-  // unreachable probe leaves the tree untouched, so the happy path neither
-  // waits for this request nor re-renders because of it.
+  // Only a *confirmed* broken workspace is ever held in state: a healthy probe
+  // leaves the tree untouched, so the happy path neither waits for this request
+  // nor re-renders because of it.
   const [unavailable, setUnavailable] = useState<WorkspaceDefaultAgentState | null>(null)
+  // A probe that never lands is the dangerous case: the server still refuses
+  // every effect, so silently doing nothing would strand the user on a
+  // workspace that cannot work and offers no way out. Re-probe a bounded number
+  // of times, then hand over an explicit "Check again".
+  const [probeFailed, setProbeFailed] = useState(false)
+  // Incremented to force a re-probe; a plain retry counter cannot, because
+  // re-checking after giving up would reset it to a value it already holds and
+  // React would skip the effect.
+  const [probeRun, setProbeRun] = useState(0)
+  const consecutiveFailures = useRef(0)
   const endpoint = recoveryEndpoint(apiBaseUrl)
   const headers = { ...requestHeaders, 'x-boring-workspace-id': workspaceId }
   const headersKey = JSON.stringify(headers)
 
   useEffect(() => {
     let cancelled = false
+    let retryTimer: ReturnType<typeof setTimeout> | undefined
     setUnavailable(null)
+    setProbeFailed(false)
+    const failed = () => {
+      if (cancelled) return
+      consecutiveFailures.current += 1
+      if (consecutiveFailures.current <= PROBE_RETRY_LIMIT) {
+        retryTimer = setTimeout(
+          () => { if (!cancelled) setProbeRun((run) => run + 1) },
+          PROBE_RETRY_DELAY_MS * consecutiveFailures.current,
+        )
+        return
+      }
+      setProbeFailed(true)
+    }
     void fetch(endpoint, { headers: JSON.parse(headersKey) as Record<string, string> })
       .then((response) => (response.ok ? response.json() as Promise<unknown> : null))
       .then((payload) => {
         if (cancelled) return
-        if (isDefaultAgentState(payload) && payload.status === 'unavailable') setUnavailable(payload)
+        if (!isDefaultAgentState(payload)) {
+          failed()
+          return
+        }
+        consecutiveFailures.current = 0
+        if (payload.status === 'unavailable') setUnavailable(payload)
       })
-      .catch(() => {})
-    return () => { cancelled = true }
-  }, [endpoint, headersKey])
+      .catch(failed)
+    return () => {
+      cancelled = true
+      if (retryTimer) clearTimeout(retryTimer)
+    }
+  }, [endpoint, headersKey, probeRun])
 
-  if (!unavailable) return <>{children}</>
+  const recheck = useCallback(() => {
+    consecutiveFailures.current = 0
+    setProbeRun((run) => run + 1)
+  }, [])
+
+  if (!unavailable) {
+    return (
+      <>
+        {children}
+        {probeFailed && <WorkspaceDefaultAgentProbeFailureNotice onRecheck={recheck} />}
+      </>
+    )
+  }
 
   return (
     <WorkspaceDefaultAgentRecoveryPage
@@ -86,7 +134,29 @@ export function WorkspaceDefaultAgentRecoveryGate({
         setUnavailable(null)
         onRecovered?.(defaultAgentTypeId)
       }}
+      onStaleState={recheck}
     />
+  )
+}
+
+/**
+ * Non-blocking, because the workspace is only *probably* broken at this point:
+ * the probe never landed, so refusing access outright would punish an
+ * ordinary network blip. It gives the one thing the silent version lacked —
+ * a way to ask again.
+ */
+function WorkspaceDefaultAgentProbeFailureNotice({ onRecheck }: { onRecheck: () => void }) {
+  return (
+    <div
+      className="fixed inset-x-0 bottom-0 z-50 flex flex-wrap items-center justify-between gap-3 border-t border-border bg-card px-4 py-3 text-sm text-foreground shadow-lg"
+      role="status"
+      data-testid="workspace-default-agent-probe-failed"
+    >
+      <span>
+        This workspace&apos;s default Agent could not be verified. If nothing here runs, its Agent may be unavailable.
+      </span>
+      <Button className="min-h-[48px]" variant="outline" onClick={onRecheck}>Check again</Button>
+    </div>
   )
 }
 
@@ -95,11 +165,13 @@ function WorkspaceDefaultAgentRecoveryPage({
   endpoint,
   headers,
   onRecovered,
+  onStaleState,
 }: {
   state: WorkspaceDefaultAgentState
   endpoint: string
   headers: Record<string, string>
   onRecovered: (defaultAgentTypeId: string) => void
+  onStaleState: () => void
 }) {
   const [selected, setSelected] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -114,8 +186,19 @@ function WorkspaceDefaultAgentRecoveryPage({
       const response = await fetch(endpoint, {
         method: 'PUT',
         headers: { ...headers, 'content-type': 'application/json' },
-        body: JSON.stringify({ defaultAgentTypeId: selected }),
+        // The observed seat is part of the request: the server refuses the
+        // write if it is no longer what is persisted, so a stale tab can never
+        // clobber a recovery that already happened elsewhere.
+        body: JSON.stringify({
+          expectedDefaultAgentTypeId: missingAgentTypeId,
+          defaultAgentTypeId: selected,
+        } satisfies WorkspaceDefaultAgentRepinRequest),
       })
+      if (response.status === 409) {
+        setSaveError('This workspace was changed somewhere else. Re-reading its current state…')
+        onStaleState()
+        return
+      }
       if (!response.ok) {
         setSaveError('That Agent could not be saved as the default. It may have just become unavailable too.')
         return
@@ -126,7 +209,7 @@ function WorkspaceDefaultAgentRecoveryPage({
     } finally {
       setSaving(false)
     }
-  }, [endpoint, headers, onRecovered, selected])
+  }, [endpoint, headers, missingAgentTypeId, onRecovered, onStaleState, selected])
 
   return (
     <div

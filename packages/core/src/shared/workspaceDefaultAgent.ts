@@ -30,3 +30,16 @@ export interface WorkspaceDefaultAgentState {
   readonly persistedDefaultAgentTypeId: string | null
   readonly availableAgents: readonly WorkspaceDefaultAgentOption[]
 }
+
+/**
+ * The repin is a state *transition*, not a settings write: the caller must name
+ * the unavailable seat it observed. The server refuses unless that seat is both
+ * still the persisted value (no last-writer-wins over a concurrent recovery)
+ * and genuinely outside the fleet (this endpoint can never be repurposed to
+ * repin a healthy workspace, or to overwrite a NULL row the automated
+ * backfill owns).
+ */
+export interface WorkspaceDefaultAgentRepinRequest {
+  readonly expectedDefaultAgentTypeId: string
+  readonly defaultAgentTypeId: string
+}

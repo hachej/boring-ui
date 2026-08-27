@@ -33,6 +33,7 @@ export {
 export { WORKSPACE_DEFAULT_AGENT_ROUTE } from './workspaceDefaultAgent.js'
 export type {
   WorkspaceDefaultAgentOption,
+  WorkspaceDefaultAgentRepinRequest,
   WorkspaceDefaultAgentState,
 } from './workspaceDefaultAgent.js'
 

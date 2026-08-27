@@ -48,9 +48,10 @@ export const mocks = (() => {
     getUser: vi.fn(async (id: string) => ({ id })),
     countNullDefaultAgentTypeIds: vi.fn(async (_appId: string): Promise<number> => 0),
     compareAndSetNullDefaultAgentTypeId: vi.fn(async (_appId: string, _value: string) => 0),
-    setDefaultAgentTypeId: vi.fn(async (id: string, value: string) => ({
+    getMemberRole: vi.fn(async (_workspaceId: string, _userId: string): Promise<string | null> => 'owner'),
+    setDefaultAgentTypeId: vi.fn(async (id: string, _expected: string, value: string) => ({
       id, appId: 'test-app', defaultAgentTypeId: value,
-    })),
+    }) as { id: string; appId: string; defaultAgentTypeId: string } | null),
     actualCreateAgentHost: undefined as undefined | ((options: any) => Promise<any>),
     actualCreateSandboxRuntimeModeAdapter: undefined as undefined | ((mode: 'direct') => any),
     runtimeHost: {
@@ -167,8 +168,11 @@ vi.doMock('../../../server/db/index.js', () => ({
     compareAndSetNullDefaultAgentTypeId(appId: string, value: string) {
       return mocks.compareAndSetNullDefaultAgentTypeId(appId, value)
     }
-    setDefaultAgentTypeId(id: string, value: string) {
-      return mocks.setDefaultAgentTypeId(id, value)
+    getMemberRole(workspaceId: string, userId: string) {
+      return mocks.getMemberRole(workspaceId, userId)
+    }
+    setDefaultAgentTypeId(id: string, expected: string, value: string) {
+      return mocks.setDefaultAgentTypeId(id, expected, value)
     }
   },
 }))
@@ -189,7 +193,8 @@ beforeEach(() => {
   mocks.getUser.mockImplementation(async (id: string) => ({ id }))
   mocks.countNullDefaultAgentTypeIds.mockResolvedValue(0)
   mocks.compareAndSetNullDefaultAgentTypeId.mockResolvedValue(0)
-  mocks.setDefaultAgentTypeId.mockImplementation(async (id: string, value: string) => ({
+  mocks.getMemberRole.mockResolvedValue('owner')
+  mocks.setDefaultAgentTypeId.mockImplementation(async (id: string, _expected: string, value: string) => ({
     id, appId: 'test-app', defaultAgentTypeId: value,
   }))
 })

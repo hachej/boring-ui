@@ -1,9 +1,12 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { WorkspaceDefaultAgentRecoveryGate } from '../WorkspaceDefaultAgentRecovery.js'
 import type { WorkspaceDefaultAgentState } from '../../../shared/workspaceDefaultAgent.js'
+
+/** Mirrors PROBE_RETRY_LIMIT + the initial attempt in the component. */
+const PROBE_ATTEMPTS_BEFORE_GIVING_UP = 3
 
 const UNAVAILABLE: WorkspaceDefaultAgentState = {
   workspaceId: 'workspace-a',
@@ -15,8 +18,8 @@ const UNAVAILABLE: WorkspaceDefaultAgentState = {
   ],
 }
 
-function jsonResponse(body: unknown, ok = true) {
-  return { ok, json: async () => body } as unknown as Response
+function jsonResponse(body: unknown, status = 200) {
+  return { ok: status >= 200 && status < 300, status, json: async () => body } as unknown as Response
 }
 
 function renderGate(onRecovered?: (id: string) => void) {
@@ -71,7 +74,10 @@ describe('WorkspaceDefaultAgentRecoveryGate', () => {
     await waitFor(() => expect(onRecovered).toHaveBeenCalledWith('reviewer'))
     const write = fetchMock.mock.calls.find(([, init]) => (init as RequestInit | undefined)?.method === 'PUT')
     expect(write).toBeDefined()
-    expect(JSON.parse((write![1] as RequestInit).body as string)).toEqual({ defaultAgentTypeId: 'reviewer' })
+    expect(JSON.parse((write![1] as RequestInit).body as string)).toEqual({
+      expectedDefaultAgentTypeId: 'retired-seat',
+      defaultAgentTypeId: 'reviewer',
+    })
     expect(await screen.findByTestId('workspace-shell')).toBeTruthy()
   })
 
@@ -87,7 +93,7 @@ describe('WorkspaceDefaultAgentRecoveryGate', () => {
 
   it('surfaces a failed write instead of pretending the workspace recovered', async () => {
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => (
-      init?.method === 'PUT' ? jsonResponse({}, false) : jsonResponse(UNAVAILABLE)
+      init?.method === 'PUT' ? jsonResponse({}, 500) : jsonResponse(UNAVAILABLE)
     ))
     vi.stubGlobal('fetch', fetchMock)
     renderGate()
@@ -104,6 +110,72 @@ describe('WorkspaceDefaultAgentRecoveryGate', () => {
   it('does not lock the user out when the probe itself cannot be reached', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline') }))
     renderGate()
+    expect(await screen.findByTestId('workspace-shell')).toBeTruthy()
+  })
+
+  // Review round 1, finding 3: a broken workspace behind a failing probe used
+  // to get children it cannot use and no way to ask again.
+  it('offers a re-check after a probe failure and reveals the broken state on retry', async () => {
+    vi.useFakeTimers()
+    try {
+      let probes = 0
+      vi.stubGlobal('fetch', vi.fn(async () => {
+        probes += 1
+        if (probes <= PROBE_ATTEMPTS_BEFORE_GIVING_UP) throw new Error('offline')
+        return jsonResponse(UNAVAILABLE)
+      }))
+      renderGate()
+
+      // Bounded automatic re-probe first; only then the explicit affordance.
+      for (let tick = 0; tick < 8; tick += 1) {
+        await act(async () => { await vi.advanceTimersByTimeAsync(2_000) })
+      }
+      expect(probes).toBe(PROBE_ATTEMPTS_BEFORE_GIVING_UP)
+      expect(screen.getByTestId('workspace-shell')).toBeTruthy()
+      const notice = screen.getByTestId('workspace-default-agent-probe-failed')
+      expect(notice).toBeTruthy()
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
+      })
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      expect(screen.getByTestId('workspace-default-agent-recovery')).toBeTruthy()
+      expect(screen.queryByTestId('workspace-default-agent-probe-failed')).toBeNull()
+    } finally { vi.useRealTimers() }
+  })
+
+  it('treats a rejected probe response as a failure rather than a healthy workspace', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ error: 'boom' }, 500)))
+      renderGate()
+      for (let tick = 0; tick < 8; tick += 1) {
+        await act(async () => { await vi.advanceTimersByTimeAsync(2_000) })
+      }
+      expect(screen.getByTestId('workspace-default-agent-probe-failed')).toBeTruthy()
+    } finally { vi.useRealTimers() }
+  })
+
+  it('re-reads instead of retrying blindly when the server reports a stale repin', async () => {
+    let state = UNAVAILABLE
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.method !== 'PUT') return jsonResponse(state)
+      // Somebody else recovered this workspace between read and confirm.
+      state = { ...UNAVAILABLE, status: 'ok', persistedDefaultAgentTypeId: 'general' }
+      return jsonResponse({ code: 'default_agent_type_unknown_seat' }, 409)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const onRecovered = vi.fn()
+    renderGate(onRecovered)
+
+    await screen.findByTestId('workspace-default-agent-recovery')
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('radio', { name: /Reviewer/ }))
+    await user.click(screen.getByRole('button', { name: 'Set as default Agent' }))
+
+    // No false success, and the surface re-probes rather than insisting on a
+    // seat that is no longer the persisted one.
+    expect(onRecovered).not.toHaveBeenCalled()
     expect(await screen.findByTestId('workspace-shell')).toBeTruthy()
   })
 })

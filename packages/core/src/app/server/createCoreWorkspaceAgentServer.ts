@@ -1886,13 +1886,53 @@ export async function createCoreWorkspaceAgentServer(
     app.get(WORKSPACE_DEFAULT_AGENT_ROUTE, async (request) => await readWorkspaceDefaultAgentState(request))
 
     app.put(WORKSPACE_DEFAULT_AGENT_ROUTE, async (request) => {
+      // Repinning is a human recovery action. An agent-host request scope is an
+      // automated caller by construction, and Decision 28 reserves every
+      // automated path for the NULL-only backfill.
+      if (request.requestScope) {
+        throw new HttpError({
+          status: 403,
+          code: ERROR_CODES.AGENT_HOST_MANAGED_WORKSPACE_MUTATION_FORBIDDEN,
+          message: ERROR_CODES.AGENT_HOST_MANAGED_WORKSPACE_MUTATION_FORBIDDEN,
+          requestId: request.id,
+        })
+      }
       const workspaceId = await resolveWorkspaceId(request)
       await getActiveAppWorkspace(workspaceId)
+      // Membership alone is not enough: this changes a workspace-wide setting,
+      // so it takes the same editor floor as every other workspace mutation.
+      const userId = request.user?.id
+      if (!userId) {
+        throw new HttpError({
+          status: 401,
+          code: ERROR_CODES.UNAUTHORIZED,
+          message: 'authentication required',
+          requestId: request.id,
+        })
+      }
+      const role = await workspaceStore.getMemberRole(workspaceId, userId)
+      if (!role) {
+        throw new HttpError({
+          status: 403,
+          code: ERROR_CODES.NOT_MEMBER,
+          message: 'Not a member of this workspace',
+          requestId: request.id,
+        })
+      }
+      if (role === 'viewer') {
+        throw new HttpError({
+          status: 403,
+          code: ERROR_CODES.FORBIDDEN,
+          message: 'Requires editor role or higher',
+          requestId: request.id,
+        })
+      }
+      const body = request.body as { defaultAgentTypeId?: unknown; expectedDefaultAgentTypeId?: unknown } | null | undefined
       let candidate: string
+      let expected: string
       try {
-        candidate = parseRequiredDefaultAgentTypeId(
-          (request.body as { defaultAgentTypeId?: unknown } | null | undefined)?.defaultAgentTypeId,
-        )
+        candidate = parseRequiredDefaultAgentTypeId(body?.defaultAgentTypeId)
+        expected = parseRequiredDefaultAgentTypeId(body?.expectedDefaultAgentTypeId)
       } catch (error) {
         throw new HttpError({
           status: 400,
@@ -1911,17 +1951,34 @@ export async function createCoreWorkspaceAgentServer(
           requestId: request.id,
         })
       }
-      const updated = await workspaceStore.setDefaultAgentTypeId(workspaceId, candidate)
-      if (!updated) {
+      // Recovery-only: the seat being replaced must itself be outside the
+      // fleet. This endpoint therefore cannot be repurposed to repin a healthy
+      // workspace, and a stale tab presenting an old seat loses the CAS below.
+      const conflict = async (): Promise<never> => {
         throw new HttpError({
-          status: 404,
-          code: ERROR_CODES.NOT_FOUND,
-          message: 'Workspace not found',
+          status: 409,
+          code: ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT,
+          message: 'Workspace default Agent changed since it was read',
           requestId: request.id,
         })
       }
+      if (agentTypeIds.includes(expected)) await conflict()
+      const updated = await workspaceStore.setDefaultAgentTypeId(workspaceId, expected, candidate)
+      if (!updated) {
+        // Either the workspace vanished or another recovery already won.
+        const current = await workspaceStore.get(workspaceId)
+        if (!current) {
+          throw new HttpError({
+            status: 404,
+            code: ERROR_CODES.NOT_FOUND,
+            message: 'Workspace not found',
+            requestId: request.id,
+          })
+        }
+        await conflict()
+      }
       request.log.info(
-        { workspaceId, defaultAgentTypeId: candidate },
+        { workspaceId, defaultAgentTypeId: candidate, expectedDefaultAgentTypeId: expected },
         'workspace default Agent repinned by explicit user choice',
       )
       return {
