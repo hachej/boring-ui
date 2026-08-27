@@ -257,7 +257,9 @@ consumption modes). Those surfaces must reuse the same Work, operation,
 authority, artifact, decision, and evidence semantics — never parallel
 architectures.
 
-- **Transparent multi-agent Threads.** A Thread looks like an ordinary chat with
+- **Transparent multi-agent Threads.** *(Presentation superseded 2026-08-27
+  by §9b: the transcript is multi-author — one composer, explicit
+  specialists; the "voice, not a Seat" clause below is retired.)* A Thread looks like an ordinary chat with
   several agents inside it, behind **one composer**. Workers are hidden behind
   the orchestrator: the user addresses a *voice*, not a *Seat*. Per-Seat work
   logs are drill-down provenance, not the primary surface — the §7 projection
@@ -325,14 +327,15 @@ them. Named preconditions, in the sequencing sense:
 loopback, and creates no shared-runtime room; §7's non-change clause stands
 unaltered. The **thread storage model is explicitly NOT ratified here** — it is
 an open technical question routed to a spike, and nothing in (a) presumes its
-outcome.
+outcome. *(Update 2026-08-27, §9a: the value-root half has since been ruled —
+Thread = job root, 0..n Sessions; only the storage shape remains spiked.)*
 
 **Where the program lives.** The premise program, its sizing and its briefs are
 planning material, not ratified text: `docs/plans/multiagent-shell/premises.md`,
 tracked in [#1409](https://github.com/hachej/boring-ui/pull/1409). The list
 above is **dependency rationale only** — the single executable ordering and
 merge queue live in `docs/direction/DIRECTION.md`, which alone answers "when".
-Merging #1409 ratifies this §8.
+Merging #1409 ratifies this §8 *(merged 2026-08-27 — §8 is ratified)*.
 
 ## 9. OWNER RULING — 2026-08-27 (second grill; Thread/Session split, transcript authorship, pi gate)
 

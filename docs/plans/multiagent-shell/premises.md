@@ -37,7 +37,7 @@ Two consequences, stated plainly:
 
 | # | Premise | Unblocks | Beadable | Size |
 |---|---|---|---|---|
-| **P1** | Durable streams — Level D conformance, default-on | the whole engine | epic `wt-391-forward-9p50`: `.1` conformance, `.2` rollout | state machine — see P1 slice table |
+| **P1** | Durable streams — Level D conformance, default-on | the whole engine | epic `wt-391-forward-9p50`: A1–A5 (`.1/.3/.4/.5/.6`) → P1-B (`.7`) → P1-C (`.2`) | state machine — see P1 slice table |
 | **P2** | Thread storage **shape** — first-class stream vs projection (value-root RULED, §9a) | engine S1, #1355's ref types | epic `shell-ngfs.13`: `.13.1` research **DONE**, `.13.2` shape spike | shape spike 1–2 sessions after P1-A |
 | **P3** | Seat storage — audit-grade attribution (ratified concept, formerly C7) | honest who-said-what everywhere | epic `shell-ngfs.14`: `.14.1` catalog/envelope, `.14.2` projection | 2 × one-session slices |
 | **P4** | Kernel View — first ratified slice | Library saved views | yes — new | sizing unknown, see below |
@@ -60,10 +60,12 @@ the deferral (ruled 2026-08-26). P1 is the keystone premise: every engine
 slice is downstream of it, and it also reframes the relay-vs-blackboard
 choice (below).
 
-- **WHAT:** child `.1` unskips and greens the Level D restart/ledger/activity
-  conformance tests and implements what they reveal missing in the
-  `SqliteEventStreamStore` path. Child `.2` then flips
-  `BORING_CHAT_DURABLE_STREAM` default-on behind a rollout note and carries
+- **WHAT** (per the 2026-08-27 bead split): slices A1–A5 land the
+  substrate-neutral layer (identity/migration, harness seam, durable
+  request/effect/attention ledger, activity + resume, conformance proofs);
+  P1-B builds the Boring event backend behind the seam; P1-C unskips and
+  greens the Level D restart/ledger/activity conformance tests, flips
+  `BORING_CHAT_DURABLE_STREAM` default-on behind a rollout note, and carries
   the dated D29 re-evaluation addendum (owner merge = ratification).
 - **Scope / Proof:** as written on epic `wt-391-forward-9p50` and its
   children — gateway conformance green at Level D; restart-replay e2e on the

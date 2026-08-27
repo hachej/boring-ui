@@ -20,9 +20,10 @@
 > workable ledger-reconciliation protocol design. **Standing ruling: do
 > NOT wire pi 0.84.3 under D29; ~0 of the ~1,704 bespoke lines are
 > deletable today; P1's substrate-neutral layer proceeds now; the
-> event-store implementation WAITS for a qualifying pi release (owner
-> ruling — 2026-09-10 is a check-in, not a build trigger); re-run the
-> spike when pi publishes the dev runtime.** The analysis below is kept as the pre-spike record.
+> event-store implementation proceeds on Boring's own schema (the former
+> wait-for-pi and its dated check-in were removed 2026-08-27,
+> RECONCILIATION §9c); re-run this analysis only if a published pi runtime
+> clears the criteria below plus migration cost.** The analysis below is kept as the pre-spike record.
 
 Date: 2026-08-26. Analyzed at `earendil-works/pi` dev branch commit
 `5507d76` (same-day HEAD; local read-only clone `~/projects/pi-framework`).
@@ -193,11 +194,12 @@ backend, migration cost included.)*
 Passing the event-store criteria does **not** rehabilitate lanes — the two
 sets are evaluated independently.
 
-**2026-09-10 decision rule:**
+**Replacement decision rule** *(the dated 2026-09-10 rule that stood here
+was removed 2026-08-27 — §9c; nothing waits):*
 
-- A qualifying release exists → rerun the spike.
-- A dated near-term release plus strong evidence → optionally keep waiting.
-- Unpublished, or still failing → the owner explicitly chooses wait-again vs.
-  build-ours.
+- A qualifying published release exists → rerun the spike against the
+  then-working Boring backend, migration cost included.
+- Unpublished, or still failing → nothing changes; the Boring backend is
+  the standing implementation.
 
-No automatic build; no criteria-free waiting.
+No automatic adoption; no waiting of any kind.

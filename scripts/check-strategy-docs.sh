@@ -14,7 +14,7 @@ fail() { echo "$PREFIX FAIL: $1"; failures=$((failures + 1)); }
 forbid() {
   local pattern="$1" why="$2"
   local hits
-  hits=$(grep -rn --include='*.md' -F "$pattern" "${DIRS[@]}" 2>/dev/null || true)
+  hits=$(grep -rni --include='*.md' -F "$pattern" "${DIRS[@]}" 2>/dev/null || true)
   if [[ -n "$hits" ]]; then
     fail "$why"
     echo "$hits" | sed "s/^/$PREFIX   /"
@@ -29,6 +29,8 @@ forbid "still pending merge" "a merged PR is described as pending"
 forbid "Waiting for qualifying pi release" "removed pi wait gate stated as live"
 forbid "waits for a qualifying pi release" "removed pi wait gate stated as live"
 forbid "2026-09-10 is an owner check-in" "removed pi check-in stated as live"
+forbid "2026-09-10 is a check-in" "removed pi check-in stated as live"
+forbid "2026-09-10 decision rule" "removed pi decision rule stated as live"
 
 # 3. The old flat estimate for durable-streams was withdrawn.
 forbid "P1 is scoped into two one-session children" "withdrawn P1 estimate restated"

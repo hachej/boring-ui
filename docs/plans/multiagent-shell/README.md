@@ -4,11 +4,12 @@ The owner's multi-agent collaboration vision, and the **premises-first program**
 that builds it. The design is settled; what this pack sequences is the kernel
 work the design waits on.
 
-Canonical PR: [#1409](https://github.com/hachej/boring-ui/pull/1409) ·
+Canonical PR: [#1409](https://github.com/hachej/boring-ui/pull/1409)
+(**MERGED 2026-08-27**) ·
 North star: [#1399](https://github.com/hachej/boring-ui/issues/1399) ·
 Re-cut by owner direction 2026-08-26
 
-> **Merging #1409 ratifies** the §8 amendment it carries in
+> **#1409's merge (2026-08-27) ratified** the §8 amendment it carries in
 > `docs/plans/long-term/ratified/RECONCILIATION.md` (surface shape, ratified
 > spec artifacts, premises-precede-surface). Earlier vehicles #1416, #1403,
 > #1389, #1417 and #1418 are closed and absorbed here. The plan chapters
@@ -139,8 +140,8 @@ except the three substrate-free chrome slices.
 
 **Honest risk.** The spike proves the *frame*, and (at the ratified commit
 `08cc60523`) a **real single-agent chat session** inside a Thread. What it does
-not prove is the *multi-voice transcript* — several agents behind one composer
-with audit-grade attribution. That proof is L4, the thread-view slice, which
+not prove is the *multi-author transcript* — one composer, explicit
+specialists (§9b) with audit-grade attribution. That proof is L4, the thread-view slice, which
 now sits behind P1, P2 and P3. Separately: **P2 and P3 are
 coupled** (attribution shape depends on storage shape) and could deadlock if run
 as independent spikes; P2's decision criteria are written to prevent it.

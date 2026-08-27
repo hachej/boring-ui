@@ -12,7 +12,7 @@ This plan **composes** three existing artifacts. It does not restate them.
 
 | Artifact | Owns | Where |
 |---|---|---|
-| **Job Thread v0 plan** — engine chapter, *in this PR* | The thread *engine*: `JobProjectionV0`, relay, handoff tool, receipts, seat boundary | sibling doc [the demoted relay candidate](research/candidates/relay-projection-v0-job-thread-plan.md) + [gate doc](job-thread-plan-review.html); own owner gate + bead epic `wt-391-forward-jfxd` |
+| **Job Thread v0 plan** — engine chapter, *in this PR* | The thread *engine*: `JobProjectionV0`, relay, handoff tool, receipts, seat boundary | sibling doc [the demoted relay candidate](research/candidates/relay-projection-v0-job-thread-plan.md) + [gate doc](research/candidates/relay-projection-v0-job-thread-plan-review.html); own owner gate + bead epic `wt-391-forward-jfxd` |
 | **#1355 Console plan** | The console *substrate*: session/project console rows, collections | `docs/issues/1355/plan.md` (branch `plan/1355-persistent-console`) |
 | **Ratified long-term pack** | Frozen ontology, invariants, decision register | `docs/plans/long-term/ratified/*` |
 | **Founder / Chief-of-Staff delta plan** — consumer chapter, *in this PR* | The flagship **consumer**: the first product persona the shell and Job Threads serve, and its D1–D6 capability deltas | sibling doc [`chief-of-staff-delta.md`](chief-of-staff-delta.md) — its own owner gate, its own slices F1–F3 |
@@ -505,12 +505,14 @@ v0 slice. Gated on the P1 View work landing, and on Q3's persistence ruling.
 - *WHAT:* the thread page renders the **real** chat with an inset
   `ArtifactSurfacePane` canvas summoned from a message artifact card, plus
   `WorkbenchActivityRail side="right"` (`SaasSpike.tsx:513-544`). Consumes
-  jfxd **S4** — the message-source adapter feeding the existing `PiChatPanel` a
-  merged `(turnOrdinal, seq, markerOrdinal)` stream
-  (`research/candidates/relay-projection-v0-job-thread-plan.md:701-711`). This plan mounts that adapter; it does not
+  a message-source adapter feeding the existing `PiChatPanel` a merged
+  `(turnOrdinal, seq, markerOrdinal)` stream. The demoted relay candidate's
+  jfxd S4 sketched one (`research/candidates/relay-projection-v0-job-thread-plan.md:701-711`)
+  but is **non-dispatchable**; the adapter will be re-specified by the
+  post-shape-spike engine plan. This plan mounts that adapter; it does not
   design it.
-- *Blocked by:* jfxd S4 (→ the engine chapter's owner gate, S1–S3), therefore
-  #1401 (now ratified — no longer a blocker).
+- *Blocked by:* the post-shape-spike engine plan's adapter slice (the former
+  jfxd S4 role — the S1–S6 identifiers are historical, non-dispatchable).
 - *Scope:* `workspace-shell/ThreadPage.tsx` + canvas mount/teardown guards.
 - *Proof:* `pnpm --filter @hachej/boring-workspace test -- src/front/layout/workspace-shell/__tests__/threadPage.test.tsx`
   **and** `pnpm --filter workspace-playground exec playwright test e2e/workspace-shell-thread.spec.ts`
@@ -681,7 +683,7 @@ does not discover a conflict:
 
 ```
 #1401 (amendment) RATIFIED 2026-08-26 ────────────────────┐
-                                                          ├→ jfxd S1→S2→S3→S4 → L4
+                                                          ├→ engine plan (post-shape-spike; ex-jfxd S1–S4) → L4
 #1382 (objectives, OPEN) ─────────────────────────────────┘
 
 L1 → L1.5 → L2a → (L3a → L3b, L5, L6) → L7a → L7b
@@ -791,8 +793,9 @@ spike's real contribution, and a strong result. At the ratified pin the Thread
 mounts a **real single-agent `PiChatPanel`**; the contextual chat beside a View
 remains visual-only, and the **multi-voice transcript** remains a fixture
 (`SaasSpike.tsx:1380-1381`, `JobThreadView.tsx:608`). Nothing in the spike
-proves several agents behind one composer with audit-grade attribution; that
-proof belongs to jfxd S4 + L4 and is the highest-risk item here. All entity data
+proves the multi-author transcript (one composer, explicit specialists — §9b)
+with audit-grade attribution; that proof belongs to the post-shape-spike
+engine plan's adapter + L4 and is the highest-risk item here. All entity data
 is fixture (`SaasSpikeFixtures.ts`, 1107 lines) and the shell has **no component
 tests**.
 

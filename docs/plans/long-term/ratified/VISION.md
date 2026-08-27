@@ -209,7 +209,9 @@ AR1-003/004 · result → runId + artifacts[] · P0.1–0.6 (RCE first) · P-1 �
 > surface build:** durable streams (Level D default-on) before the multi-agent
 > engine, `seatId`-in-C7 audit-grade attribution before participant display, and
 > the first ratified View slice before Library saved Views. The thread storage
-> model is explicitly NOT ratified and is routed to a spike.
+> model is explicitly NOT ratified and is routed to a spike. *(See the
+> 2026-08-27 §9 update: transcript presentation is now multi-author, and the
+> storage value-root is ruled — only the shape remains spiked.)*
 
 P1 (from reconciliation) interleaves: ViewDescriptor + artifact UX land with K2
 (candidates need Views to be inspected/approved).
