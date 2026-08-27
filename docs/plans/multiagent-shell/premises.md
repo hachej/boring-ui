@@ -269,7 +269,7 @@ chips are **rejected**.
 The engine plan's own §8 already concedes the honest position: `participantId`
 values minted in the plugin are *"temporary display handles … not `seatId`, not
 envelope identity, and carry no audit weight"*, and ratified P0 puts `seatId` in
-C7 (`job-thread-plan.md` §8). The owner has ruled that this gap does not ship.
+C7 (the demoted relay candidate, `research/candidates/relay-projection-v0-job-thread-plan.md` §8). The owner has ruled that this gap does not ship.
 
 - **WHAT:** pull the ratified C7 seat-catalog work forward far enough that per-Run
   `seatId` is real envelope identity, and per-message attribution in a multi-seat

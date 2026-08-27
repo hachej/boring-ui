@@ -93,13 +93,13 @@ composing as apps-as-recipes into a company OS.
 |---|---|---|
 | 1 | [`premises.md`](premises.md) | **The program.** P1–P6, the P2 brief, interview rulings, sequencing. Start here. |
 | 2 | [`shell-plan.md`](shell-plan.md) | The **layout**: IA, four mounts, center modes, Library, location contract, slices L1–L7c |
-| 3 | [`job-thread-plan.md`](job-thread-plan.md) | The **engine**: projection, relay, handoffs, seat boundary, S1–S6 |
+| 3 | [`relay-projection-v0-job-thread-plan.md`](research/candidates/relay-projection-v0-job-thread-plan.md) *(HISTORICAL CANDIDATE — demoted 2026-08-27, non-dispatchable)* | The **engine**: projection, relay, handoffs, seat boundary, S1–S6 |
 | 4 | [`chief-of-staff-delta.md`](chief-of-staff-delta.md) | The **consumer**: founder / chief-of-staff persona, D1–D6, F1–F3 |
 | 5 | [`research/`](research/README.md) | The **evidence**: spikes, studies, reviews — indexed with supersessions |
 
 **Gate documents** (visual, one screen per question):
 [`shell-plan-review.html`](shell-plan-review.html) ·
-[`job-thread-plan-review.html`](job-thread-plan-review.html)
+[`relay-projection-v0-job-thread-plan-review.html`](research/candidates/relay-projection-v0-job-thread-plan-review.html)
 
 **Ruling record:** [`north-star-ledger.md`](north-star-ledger.md) absorbs
 issue #1399 — every dated owner ruling behind this pack, verbatim, each

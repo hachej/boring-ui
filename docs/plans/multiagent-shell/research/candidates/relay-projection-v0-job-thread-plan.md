@@ -4,6 +4,20 @@ state: draft (round 2 — folds fresh-eyes + Sol adversarial review)
 issue: 1399
 review: verdict `revise` at 9e42e893a; this revision answers it. No implementation before owner sign-off.
 ---
+---
+> ## ⚠️ HISTORICAL CANDIDATE — NON-DISPATCHABLE (demoted 2026-08-27)
+>
+> This is the relay/projection engine candidate as designed before the
+> second-grill rulings (`RECONCILIATION.md` §9). It embeds assumptions since
+> **overruled**: display-only participant handles (§9 attribution rulings),
+> "Q1 satisfied by #1401" (superseded by the storage program), a relay-first
+> shape decided before the storage-shape spike, and "workers hidden behind
+> one voice" (§9b: multi-author). **No slice in this document (S1–S6) may be
+> dispatched.** A new engine plan is written after the shape spike and gate
+> re-rule. Kept verbatim as the audit trail for the jfxd bead graph and the
+> 8 owner rulings it carried.
+---
+
 
 # Job Thread v0 — multi-seat Thread projection, K7 demo
 
@@ -707,7 +721,7 @@ on drill-down.
 > ### Re-sequencing ruling — 2026-08-26 (owner)
 >
 > **This section's ordering is superseded.** The pack is now sequenced
-> premises-first; ordering lives in [`premises.md`](premises.md). The slices'
+> premises-first; ordering lives in [`premises.md`](../../premises.md). The slices'
 > *content* below is unchanged and still the reference — only when they run, and
 > two of their premises, have moved.
 >
@@ -752,7 +766,7 @@ on drill-down.
 
 
 Slice content lives here; dependency rationale lives in
-[`premises.md`](premises.md) and the executable ordering in
+[`premises.md`](../../premises.md) and the executable ordering in
 `docs/direction/DIRECTION.md`. **The real critical path is open PRs**, not the #1355 gate:
 #1401 (naming ratification, **merged/ratified 2026-08-26**) and #1382 (objectives) block v0 content; #1393 blocks only the deferred
 Console item. **Gate G** = #1355 Gate 1 architecture approval (`docs/issues/1355/plan.md:372-376`,
@@ -853,7 +867,7 @@ provenance"* (`docs/DECISIONS.md:365`). Envelope-grade attribution arrives with 
 ## 9. Owner questions
 
 > **Interview rulings, 2026-08-26.** Several of these are now answered or
-> superseded. Marked inline below; full text in [`premises.md`](premises.md).
+> superseded. Marked inline below; full text in [`premises.md`](../../premises.md).
 >
 > | Q | Status |
 > |---|---|

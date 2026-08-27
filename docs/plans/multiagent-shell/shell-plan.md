@@ -12,7 +12,7 @@ This plan **composes** three existing artifacts. It does not restate them.
 
 | Artifact | Owns | Where |
 |---|---|---|
-| **Job Thread v0 plan** — engine chapter, *in this PR* | The thread *engine*: `JobProjectionV0`, relay, handoff tool, receipts, seat boundary | sibling doc [`job-thread-plan.md`](job-thread-plan.md) + [gate doc](job-thread-plan-review.html); own owner gate + bead epic `wt-391-forward-jfxd` |
+| **Job Thread v0 plan** — engine chapter, *in this PR* | The thread *engine*: `JobProjectionV0`, relay, handoff tool, receipts, seat boundary | sibling doc [the demoted relay candidate](research/candidates/relay-projection-v0-job-thread-plan.md) + [gate doc](job-thread-plan-review.html); own owner gate + bead epic `wt-391-forward-jfxd` |
 | **#1355 Console plan** | The console *substrate*: session/project console rows, collections | `docs/issues/1355/plan.md` (branch `plan/1355-persistent-console`) |
 | **Ratified long-term pack** | Frozen ontology, invariants, decision register | `docs/plans/long-term/ratified/*` |
 | **Founder / Chief-of-Staff delta plan** — consumer chapter, *in this PR* | The flagship **consumer**: the first product persona the shell and Job Threads serve, and its D1–D6 capability deltas | sibling doc [`chief-of-staff-delta.md`](chief-of-staff-delta.md) — its own owner gate, its own slices F1–F3 |
@@ -415,7 +415,7 @@ only once its three prerequisites are ruled.
   spike (`SaasSpike.tsx:1298-1313`). Counts render from whatever source exists;
   **zero/absent is a valid state**.
 - *WHY THIS PLAN OWNS IT:* neither sibling does. The Job Thread plan explicitly
-  disowns the nav reframe (`job-thread-plan.md:718-721`), and #1355's
+  disowns the nav reframe (`research/candidates/relay-projection-v0-job-thread-plan.md:732-735`), and #1355's
   Slice 3 shell is a *Console* organization, not this IA — see §5.
 - *Blocked by:* L1, L1.5.
 - *Scope:* `workspace-shell/{ShellNav,ShellNavSections,ShellRail}.tsx`; the
@@ -436,9 +436,9 @@ only once its three prerequisites are ruled.
   counts.
 - *Blocked by:* three items owned elsewhere — (i) the left-pane row model
   `AppLeftPaneSession` has **no `kind` discriminator** and PR #1393 does not add
-  one (`job-thread-plan.md:546-552`; `AppLeftPane.tsx:17-27`); (ii) #1355's
+  one (`research/candidates/relay-projection-v0-job-thread-plan.md:560-566`; `AppLeftPane.tsx:17-27`); (ii) #1355's
   `ConsoleThreadRefV1` session-tuple key is single-seat by construction and
-  cannot hold a job as one row (`job-thread-plan.md:723-725`); (iii)
+  cannot hold a job as one row (`research/candidates/relay-projection-v0-job-thread-plan.md:737-739`); (iii)
   `JobProjectionV0` has no lifecycle field, so `Archived · N` has no source
   (#1399, 2026-08-26) — to be folded at jfxd S1 or filed as gate errata.
 - *Status:* no scope, no proofs, no bead. Writing them before the prerequisites
@@ -506,7 +506,7 @@ v0 slice. Gated on the P1 View work landing, and on Q3's persistence ruling.
   `WorkbenchActivityRail side="right"` (`SaasSpike.tsx:513-544`). Consumes
   jfxd **S4** — the message-source adapter feeding the existing `PiChatPanel` a
   merged `(turnOrdinal, seq, markerOrdinal)` stream
-  (`job-thread-plan.md:687-697`). This plan mounts that adapter; it does not
+  (`research/candidates/relay-projection-v0-job-thread-plan.md:701-711`). This plan mounts that adapter; it does not
   design it.
 - *Blocked by:* jfxd S4 (→ the engine chapter's owner gate, S1–S3), therefore
   #1401 (now ratified — no longer a blocker).
