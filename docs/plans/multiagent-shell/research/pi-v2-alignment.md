@@ -42,7 +42,13 @@ compaction, transcript snapshot all throw not-implemented.
   That pre-answers the first seats-as-lanes probe question with YES. Per-lane
   identity is only a string name — our audit-grade `seatId` layers on top,
   exactly as designed. Lane→presentation routing exists but at the
-  experimental/mini prototype layer only.
+  experimental/mini prototype layer only. **Version precision:** the lane
+  *concept* ships in published 0.84.0+ ("v4 lane-based Session …
+  tree-scoped lane views"); the clean Session/Branch/AgentLane separation
+  and this multi-lane surface landed **one day after the v0.84.3 tag** —
+  dev-only until the next release. The spike's durability/import probes run
+  against published 0.84.3; its lane probes pin a dev commit and stay
+  provisional until released.
 - **Their post-WP05 roadmap (11 items) confirms our verdicts:** multi-agent
   orchestration is NOT on it, and the Transcript service is named only as a
   *future* consumer of session-wide watch. Next up for them: SQLite
