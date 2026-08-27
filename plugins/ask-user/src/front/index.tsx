@@ -26,13 +26,14 @@ import { QuestionCancelButton, QuestionFields, QuestionForm, QuestionFormProvide
 import { InboxOverlay } from "./inbox/InboxOverlay"
 import { isInboxAttentionBlocker } from "./inbox/attentionBlockerAdapter"
 
-function AskUserProvider({ agentTypeId, apiBaseUrl, authHeaders, authScopeKey, activeSessionId, openSessionIds, children }: PluginProviderProps) {
+function AskUserProvider({ agentTypeId, apiBaseUrl, authHeaders, authScopeKey, activeSessionId, openSessionIds, sessionRefs, children }: PluginProviderProps) {
   const workspaceId = useWorkspaceContextOptional()?.workspaceId
   const authIdentity = useMemo(
     () => authScopeKey ?? JSON.stringify(Object.entries(authHeaders ?? {}).sort(([left], [right]) => left.localeCompare(right))),
     [authHeaders, authScopeKey],
   )
   const store = useMemo(() => createQuestionsStore(), [agentTypeId, apiBaseUrl, authIdentity, workspaceId])
+  const requestPendingRefresh = useAskUserPendingRefresh(store, { activeSessionId, apiBaseUrl, authHeaders })
   const runtime = useMemo<QuestionsRuntime>(() => ({
     ...store,
     agentTypeId,
@@ -40,17 +41,18 @@ function AskUserProvider({ agentTypeId, apiBaseUrl, authHeaders, authScopeKey, a
     authHeaders,
     activeSessionId,
     openSessionIds,
-    async refreshPending(sessionId) {
-      const pending = await createQuestionsClient({ apiBaseUrl, headers: authHeaders }).pending(sessionId)
-      store.setPending(pending, sessionId)
-      return pending
+    agentTypeIdForSession(sessionId) {
+      if (!sessionRefs) return agentTypeId
+      const matches = sessionRefs.filter((session) => session.sessionId === sessionId)
+      if (matches.length === 1) return matches[0]?.agentTypeId
+      return activeSessionId === sessionId ? agentTypeId : undefined
     },
-  }), [activeSessionId, agentTypeId, apiBaseUrl, authHeaders, openSessionIds, store])
+    requestPendingRefresh,
+  }), [activeSessionId, agentTypeId, apiBaseUrl, authHeaders, openSessionIds, requestPendingRefresh, sessionRefs, store])
   const pendingSnapshot = useSyncExternalStore(runtime.subscribe, () => pendingQuestionSnapshot(runtime), () => "none")
   useAskUserAttentionBlockers(runtime, pendingSnapshot)
   useAskUserAttentionActions(runtime)
   useAskUserComposerStopCancel(runtime)
-  useAskUserPendingRefresh(runtime, { activeSessionId, apiBaseUrl, authHeaders })
   return <QuestionsRuntimeContext.Provider value={runtime}>{children}</QuestionsRuntimeContext.Provider>
 }
 
@@ -136,10 +138,11 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
   const question = hasExplicitTarget(params)
     ? (pending?.questionId === params.questionId ? pending : null)
     : pending
+  const explicitQuestionId = hasExplicitTarget(params) ? params.questionId : undefined
   useEffect(() => {
     if (!sessionId) return
-    if (!pending || (hasExplicitTarget(params) && pending.questionId !== params.questionId)) void runtime.refreshPending(sessionId).catch(() => undefined)
-  }, [params, pending, runtime, sessionId])
+    if (!pending || (explicitQuestionId && pending.questionId !== explicitQuestionId)) runtime.requestPendingRefresh(sessionId)
+  }, [explicitQuestionId, runtime.requestPendingRefresh, sessionId])
   useEffect(() => {
     const onStop = (event: Event) => {
       const detail = (event as CustomEvent<unknown>).detail

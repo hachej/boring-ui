@@ -20,9 +20,10 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   }
 })
 import { createTestRuntimeModeAdapter } from '@agent-test-host'
-import type { AuthorizedAgentScope } from '../../../shared/index'
+import { AgentGatewayErrorCode, type AuthorizedAgentScope } from '../../../shared/index'
 import type { SessionListOptions } from '../../../shared/session'
 import { PiSessionStore } from '../../harness/pi-coding-agent/sessions'
+import { writeSessionArchived } from '../../harness/pi-coding-agent/sessionArchiveIndex'
 import { createAgentHost } from '../createAgentHost'
 import { sessionNamespaceForAgent } from '../sessionInventory'
 import type { AgentHostAgentSpec } from '../types'
@@ -71,12 +72,19 @@ function transcript(id: string, title: string, workspaceScopeId: string, timesta
   ].join('\n')
 }
 
-/** Plants an existing transcript with a deterministic mtime so listing order is stable. */
-async function plant(dir: string, id: string, title: string, workspaceScopeId: string, atMs: number): Promise<void> {
+/** Plants an existing transcript with deterministic message and filesystem timestamps. */
+async function plant(
+  dir: string,
+  id: string,
+  title: string,
+  workspaceScopeId: string,
+  atMs: number,
+  mtimeMs = atMs,
+): Promise<void> {
   await mkdir(dir, { recursive: true })
   const filepath = join(dir, `${id}.jsonl`)
   await writeFile(filepath, transcript(id, title, workspaceScopeId, new Date(atMs).toISOString()))
-  await utimes(filepath, new Date(atMs), new Date(atMs))
+  await utimes(filepath, new Date(mtimeMs), new Date(mtimeMs))
 }
 
 async function startHost(input: {
@@ -159,10 +167,23 @@ describe('default Agent storage compatibility', () => {
     })
     try {
       const page = await host.gateway.listSessions({ scope, limit: 10 })
+      const ref = { agentTypeId: 'default', sessionId: 'pre-existing-session' }
       expect(page.sessions).toEqual([expect.objectContaining({
-        ref: { agentTypeId: 'default', sessionId: 'pre-existing-session' },
+        ref,
         title: 'A session the user already had',
       })])
+      // The host's harnessFactory deliberately throws. Success proves archive
+      // mutation shares the storage-only inventory owner used by listing and
+      // does not boot a separately composed session repository.
+      await expect(host.gateway.setSessionArchived({
+        scope,
+        ref,
+        requestId: 'archive-pre-existing',
+        archived: true,
+      })).resolves.toMatchObject({ ref, archived: true })
+      await expect(host.gateway.listSessions({ scope, archived: 'archived' })).resolves.toMatchObject({
+        sessions: [expect.objectContaining({ ref, archived: true })],
+      })
     } finally {
       await host.host.close()
     }
@@ -170,6 +191,63 @@ describe('default Agent storage compatibility', () => {
 })
 
 describe('seat session listing pagination', () => {
+  it('pushes archive filtering into each store before cutting its bounded prefix', async () => {
+    const sessionRoot = await temporaryRoot()
+    const workspaceRoot = join(sessionRoot, 'workspace')
+    const workspaceScopeId = 'workspace-filter:storage-filter'
+    const scope = { workspaceScopeId, authSubjectId: 'subject-a' } as AuthorizedAgentScope
+    const dir = join(sessionRoot, pathDerivedDirName(workspaceRoot))
+    for (let index = 0; index < 8; index += 1) {
+      await plant(dir, `session-${index}`, `Session ${index}`, workspaceScopeId, Date.UTC(2026, 6, 20) + index * 60_000)
+    }
+    // The matching rows are behind six newer opposite-state rows. Gateway-side
+    // post-filtering of a limit-2 prefix would return an empty terminal page.
+    await writeSessionArchived(dir, 'session-0', true)
+    await writeSessionArchived(dir, 'session-1', true)
+
+    const listOptions: SessionListOptions[] = []
+    const originalList = PiSessionStore.prototype.list
+    vi.spyOn(PiSessionStore.prototype, 'list').mockImplementation(async function (this: PiSessionStore, ctx, options) {
+      listOptions.push(options ?? {})
+      return await originalList.call(this, ctx, options)
+    })
+
+    const host = await startHost({ agents: [legacyDefaultAgent], sessionRoot, workspaceRoot, sessionNamespace: '' })
+    try {
+      const first = await host.gateway.listSessions({ scope, agentTypeId: 'default', archived: 'archived', limit: 1 })
+      expect(first.sessions.map((row) => row.ref.sessionId)).toEqual(['session-1'])
+      const second = await host.gateway.listSessions({ scope, agentTypeId: 'default', archived: 'archived', limit: 1, cursor: first.nextCursor })
+      expect(second.sessions.map((row) => row.ref.sessionId)).toEqual(['session-0'])
+      expect(listOptions.every((options) => options.archived === 'archived')).toBe(true)
+    } finally {
+      await host.host.close()
+    }
+  })
+
+  it('binds archive state to pagination cursors', async () => {
+    const sessionRoot = await temporaryRoot()
+    const workspaceRoot = join(sessionRoot, 'workspace')
+    const workspaceScopeId = 'workspace-cursor:storage-cursor'
+    const scope = { workspaceScopeId, authSubjectId: 'subject-a' } as AuthorizedAgentScope
+    const dir = join(sessionRoot, pathDerivedDirName(workspaceRoot))
+    await plant(dir, 'active-a', 'Active A', workspaceScopeId, Date.UTC(2026, 6, 20))
+    await plant(dir, 'active-b', 'Active B', workspaceScopeId, Date.UTC(2026, 6, 21))
+
+    const host = await startHost({ agents: [legacyDefaultAgent], sessionRoot, workspaceRoot, sessionNamespace: '' })
+    try {
+      const active = await host.gateway.listSessions({ scope, agentTypeId: 'default', archived: 'active', limit: 1 })
+      await expect(host.gateway.listSessions({
+        scope,
+        agentTypeId: 'default',
+        archived: 'archived',
+        limit: 1,
+        cursor: active.nextCursor,
+      })).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_SESSION_CURSOR_INVALID })
+    } finally {
+      await host.host.close()
+    }
+  })
+
   it('bounds every store read and pages without gaps or repeats', async () => {
     const sessionRoot = await temporaryRoot()
     const workspaceRoot = join(sessionRoot, 'workspace')
@@ -211,11 +289,154 @@ describe('seat session listing pagination', () => {
         Array.from({ length: total }, (_unused, index) => `session-${total - 1 - index}`),
       )
 
-      // The listing NEVER asks the store for the whole directory: each read is
-      // bounded, and the bound only grows by the page size as paging deepens.
+      // The listing NEVER asks the store for the whole directory. Every page
+      // pushes its cursor boundary into the store and asks only for limit+1.
       expect(listOptions.length).toBe(pages)
       expect(listOptions.every((options) => typeof options?.limit === 'number')).toBe(true)
-      expect(listOptions.map((options) => options!.limit)).toEqual([3, 5, 7, 9])
+      expect(listOptions.map((options) => options!.limit)).toEqual([3, 3, 3, 3])
+      expect(listOptions[0]?.after).toBeUndefined()
+      expect(listOptions.slice(1).every((options) => options?.after?.agentTypeId === 'default')).toBe(true)
+    } finally {
+      await host.host.close()
+    }
+  })
+
+  it('pages archived wrappers by emitted updatedAt when mtimes oppose message timestamps', async () => {
+    const sessionRoot = await temporaryRoot()
+    const workspaceRoot = join(sessionRoot, 'workspace')
+    const workspaceScopeId = 'workspace-wrapper-order:storage-a'
+    const scope = { workspaceScopeId, authSubjectId: 'subject-a' } as AuthorizedAgentScope
+    const dir = join(sessionRoot, pathDerivedDirName(workspaceRoot))
+    const baseMs = Date.UTC(2026, 6, 20)
+    const rows = [
+      { id: 'message-newest', messageMs: baseMs + 3_000, mtimeMs: baseMs + 1_000 },
+      { id: 'message-middle', messageMs: baseMs + 2_000, mtimeMs: baseMs + 3_000 },
+      { id: 'message-oldest', messageMs: baseMs + 1_000, mtimeMs: baseMs + 2_000 },
+    ]
+    for (const row of rows) {
+      await plant(dir, row.id, row.id, workspaceScopeId, row.messageMs, row.mtimeMs)
+      await writeSessionArchived(dir, row.id, true)
+    }
+    const store = new PiSessionStore(workspaceRoot, { sessionRoot, storageCwd: workspaceRoot })
+    await expect(store.list(
+      { workspaceId: workspaceScopeId },
+      { archived: 'archived' },
+    )).resolves.toEqual(rows.map((row) => expect.objectContaining({
+      id: row.id,
+      updatedAt: new Date(row.messageMs).toISOString(),
+    })))
+
+    const host = await startHost({ agents: [legacyDefaultAgent], sessionRoot, workspaceRoot, sessionNamespace: '' })
+    try {
+      const seen: Array<{ id: string; updatedAt: number }> = []
+      let cursor: string | undefined
+      do {
+        const page = await host.gateway.listSessions({
+          scope,
+          agentTypeId: 'default',
+          archived: 'archived',
+          limit: 1,
+          cursor,
+        })
+        seen.push(...page.sessions.map((row) => ({ id: row.ref.sessionId, updatedAt: row.updatedAt })))
+        cursor = page.nextCursor
+      } while (cursor)
+
+      expect(seen).toEqual(rows.map((row) => ({
+        id: row.id,
+        updatedAt: row.messageMs,
+      })))
+      expect(new Set(seen.map((row) => row.id)).size).toBe(rows.length)
+
+      const refs = new Map(rows.map((row) => [row.id, { agentTypeId: 'default', sessionId: row.id }]))
+      const unarchived = await host.gateway.setSessionArchived({
+        scope,
+        ref: refs.get('message-newest')!,
+        requestId: 'unarchive-wrapper-newest',
+        archived: false,
+      })
+      expect(unarchived).toMatchObject({ ref: refs.get('message-newest') })
+      expect(unarchived.archived).toBeUndefined()
+
+      // The cursor did not strand older archived rows: their ids still resolve
+      // through the same store mutation paths used by unarchive and delete.
+      const restored = await store.setArchived(
+        { workspaceId: workspaceScopeId },
+        'message-oldest',
+        false,
+      )
+      expect(restored).toMatchObject({ id: 'message-oldest' })
+      expect(restored.archived).toBeUndefined()
+      await expect(store.delete(
+        { workspaceId: workspaceScopeId },
+        'message-middle',
+      )).resolves.toBeUndefined()
+      await expect(store.has(
+        { workspaceId: workspaceScopeId },
+        'message-middle',
+      )).resolves.toBe(false)
+    } finally {
+      await host.host.close()
+    }
+  })
+
+  it('does not terminate early when newer matching rows are archived between pages', async () => {
+    const sessionRoot = await temporaryRoot()
+    const workspaceRoot = join(sessionRoot, 'workspace')
+    const workspaceScopeId = 'workspace-concurrent-archive:storage-a'
+    const scope = { workspaceScopeId, authSubjectId: 'subject-a' } as AuthorizedAgentScope
+    const dir = join(sessionRoot, pathDerivedDirName(workspaceRoot))
+    const baseMs = Date.UTC(2026, 6, 20)
+    for (let index = 0; index < 5; index += 1) {
+      const id = `initial-archived-${index}`
+      await plant(dir, id, id, workspaceScopeId, baseMs + index * 60_000)
+      await writeSessionArchived(dir, id, true)
+    }
+    for (let index = 0; index < 4; index += 1) {
+      const id = `newer-active-${index}`
+      await plant(dir, id, id, workspaceScopeId, baseMs + (100 + index) * 60_000)
+    }
+
+    const host = await startHost({ agents: [legacyDefaultAgent], sessionRoot, workspaceRoot, sessionNamespace: '' })
+    try {
+      const first = await host.gateway.listSessions({
+        scope,
+        agentTypeId: 'default',
+        archived: 'archived',
+        limit: 2,
+      })
+      expect(first.sessions.map((row) => row.ref.sessionId)).toEqual([
+        'initial-archived-4',
+        'initial-archived-3',
+      ])
+      expect(first.nextCursor).toBeTypeOf('string')
+
+      // These rows now match the filter but are all newer than page one's
+      // cursor. They must not consume the bounded prefix used to find older rows.
+      for (let index = 0; index < 4; index += 1) {
+        await writeSessionArchived(dir, `newer-active-${index}`, true)
+      }
+
+      const seen = [...first.sessions.map((row) => row.ref.sessionId)]
+      let cursor = first.nextCursor
+      while (cursor) {
+        const page = await host.gateway.listSessions({
+          scope,
+          agentTypeId: 'default',
+          archived: 'archived',
+          limit: 2,
+          cursor,
+        })
+        seen.push(...page.sessions.map((row) => row.ref.sessionId))
+        cursor = page.nextCursor
+      }
+      expect(seen).toEqual([
+        'initial-archived-4',
+        'initial-archived-3',
+        'initial-archived-2',
+        'initial-archived-1',
+        'initial-archived-0',
+      ])
     } finally {
       await host.host.close()
     }
@@ -289,6 +510,34 @@ describe('equal-updatedAt tiebreak (sessions must never disappear)', () => {
     }
   })
 
+  it('uses one code-unit order for mixed-case and punctuation across store and cursor pages', async () => {
+    const ids = ['z', 'a_', 'a-', 'a', 'Z', 'A']
+    const expected = ['A', 'Z', 'a', 'a-', 'a_', 'z']
+    const sessionRoot = await temporaryRoot()
+    const workspaceRoot = join(sessionRoot, 'workspace')
+    const workspaceScopeId = 'workspace-case:storage-case'
+    const scope = { workspaceScopeId, authSubjectId: 'subject-a' } as AuthorizedAgentScope
+    const dir = join(sessionRoot, pathDerivedDirName(workspaceRoot))
+    for (const id of ids) await plantNativeTie(dir, id, workspaceScopeId)
+
+    const store = new PiSessionStore(workspaceRoot, { sessionRoot, storageCwd: workspaceRoot })
+    expect((await store.list({ workspaceId: workspaceScopeId })).map((row) => row.id)).toEqual(expected)
+
+    const host = await startHost({ agents: [legacyDefaultAgent], sessionRoot, workspaceRoot, sessionNamespace: '' })
+    try {
+      const paged: string[] = []
+      let cursor: string | undefined
+      do {
+        const page = await host.gateway.listSessions({ scope, agentTypeId: 'default', limit: 1, cursor })
+        paged.push(...page.sessions.map((row) => row.ref.sessionId))
+        cursor = page.nextCursor
+      } while (cursor)
+      expect(paged).toEqual(expected)
+    } finally {
+      await host.host.close()
+    }
+  })
+
   it('orders tied sessions by id inside the store itself, before any truncation', async () => {
     const { PiSessionStore: Store } = await import('../../harness/pi-coding-agent/sessions')
     const sessionRoot = await temporaryRoot()
@@ -319,7 +568,7 @@ describe('equal-updatedAt tiebreak (sessions must never disappear)', () => {
     // every page is a single row, so any prefix/order disagreement surfaces
     // immediately as a gap, a repeat, or a wrong first row.
     const UNDERSCORE_IDS = ['b_a', 'a_z', 'aa', 'zz_9']
-    // localeCompare over full ids: 'a_z' < 'aa' ('_' < 'a'), then 'b_a', 'zz_9'.
+    // Canonical code-unit order over full ids: 'a_z' < 'aa' ('_' < 'a'), then 'b_a', 'zz_9'.
     const EXPECTED = ['a_z', 'aa', 'b_a', 'zz_9']
 
     const sessionRoot = await temporaryRoot()
