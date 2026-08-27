@@ -15,6 +15,7 @@ import { math } from "@streamdown/math";
 import { mermaid } from "@streamdown/mermaid";
 import type { UIMessage } from "ai";
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
+import { MarkdownLink } from "./markdownLink";
 import type { ComponentProps, HTMLAttributes, ReactElement, ReactNode } from "react";
 import {
   createContext,
@@ -426,6 +427,7 @@ const MarkdownCode = ({
 const markdownComponents = {
   pre: MarkdownPre,
   code: MarkdownCode,
+  a: MarkdownLink,
 } as unknown as ComponentProps<typeof Streamdown>["components"];
 
 export type BoringMessageResponseProps = MessageResponseProps & {

@@ -1,0 +1,632 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Issue #174 prototype — clickable slash commands in assistant text</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #09090b;
+      --panel: #111114;
+      --panel-2: #18181c;
+      --text: #f4f4f5;
+      --muted: #a1a1aa;
+      --subtle: #71717a;
+      --border: rgba(244, 244, 245, 0.12);
+      --border-strong: rgba(244, 244, 245, 0.22);
+      --accent: #8b5cf6;
+      --accent-2: #22c55e;
+      --warn: #f59e0b;
+      --danger: #ef4444;
+      --chip: rgba(139, 92, 246, 0.16);
+      --chip-hover: rgba(139, 92, 246, 0.28);
+      --shadow: 0 24px 70px rgba(0, 0, 0, 0.42);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at top left, rgba(139, 92, 246, 0.18), transparent 34rem),
+        radial-gradient(circle at bottom right, rgba(34, 197, 94, 0.10), transparent 30rem),
+        var(--bg);
+      color: var(--text);
+    }
+
+    main {
+      width: min(1180px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 32px 0;
+    }
+
+    .hero {
+      display: grid;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .eyebrow {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      max-width: 760px;
+      margin: 0;
+      font-size: clamp(30px, 5vw, 54px);
+      line-height: 0.95;
+      letter-spacing: -0.055em;
+    }
+
+    .lead {
+      max-width: 780px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.65;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+      gap: 20px;
+      align-items: start;
+    }
+
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      background: rgba(17, 17, 20, 0.82);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      backdrop-filter: blur(18px);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .card-title {
+      display: grid;
+      gap: 2px;
+    }
+
+    .card-title strong { font-size: 14px; }
+    .card-title span { color: var(--muted); font-size: 12px; }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 7px 10px;
+      color: var(--muted);
+      font-size: 12px;
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 99px;
+      background: var(--accent-2);
+      box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.14);
+    }
+
+    .chat {
+      display: grid;
+      gap: 18px;
+      padding: 20px;
+      min-height: 560px;
+    }
+
+    .message {
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+    }
+
+    .avatar {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, rgba(139, 92, 246, 0.45), rgba(34, 197, 94, 0.18));
+      border: 1px solid var(--border-strong);
+      font-weight: 800;
+      font-size: 13px;
+    }
+
+    .bubble {
+      max-width: 760px;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 14px 15px;
+      background: var(--panel-2);
+      color: #e8e8ee;
+      line-height: 1.65;
+    }
+
+    .bubble p { margin: 0 0 10px; }
+    .bubble p:last-child { margin-bottom: 0; }
+
+    .command-chip {
+      appearance: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin: 0 2px;
+      border: 1px solid rgba(139, 92, 246, 0.42);
+      border-radius: 999px;
+      padding: 2px 8px 3px;
+      color: #efe9ff;
+      background: var(--chip);
+      font: inherit;
+      font-weight: 700;
+      line-height: 1.35;
+      vertical-align: baseline;
+      cursor: pointer;
+      user-select: text;
+    }
+
+    .command-chip:hover,
+    .command-chip:focus-visible {
+      background: var(--chip-hover);
+      border-color: rgba(167, 139, 250, 0.72);
+      outline: none;
+      box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.20);
+    }
+
+    .command-chip[data-behavior="execute"]::after {
+      content: "run";
+      border-radius: 999px;
+      padding: 1px 5px;
+      background: rgba(34, 197, 94, 0.16);
+      color: #bbf7d0;
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .command-chip[data-behavior="insert"] {
+      border-color: rgba(245, 158, 11, 0.48);
+      background: rgba(245, 158, 11, 0.12);
+      color: #fff7db;
+    }
+
+    .command-chip[data-behavior="insert"]::after {
+      content: "draft";
+      border-radius: 999px;
+      padding: 1px 5px;
+      background: rgba(245, 158, 11, 0.18);
+      color: #fde68a;
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .command-chip[aria-disabled="true"] {
+      cursor: not-allowed;
+      color: var(--subtle);
+      border-color: rgba(161, 161, 170, 0.24);
+      background: rgba(161, 161, 170, 0.08);
+    }
+
+    .command-chip[aria-disabled="true"]::after {
+      content: "disabled";
+      border-radius: 999px;
+      padding: 1px 5px;
+      background: rgba(161, 161, 170, 0.12);
+      color: var(--subtle);
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .composer {
+      margin-top: auto;
+      border: 1px solid var(--border-strong);
+      border-radius: 22px;
+      background: rgba(9, 9, 11, 0.72);
+      padding: 12px;
+    }
+
+    .composer label {
+      display: block;
+      margin: 0 0 8px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 84px;
+      resize: vertical;
+      border: 0;
+      outline: none;
+      border-radius: 16px;
+      padding: 12px;
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text);
+      font: inherit;
+      line-height: 1.5;
+    }
+
+    .composer-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 10px;
+    }
+
+    .hint {
+      color: var(--subtle);
+      font-size: 12px;
+    }
+
+    .primary {
+      border: 0;
+      border-radius: 999px;
+      padding: 9px 14px;
+      color: white;
+      background: linear-gradient(135deg, var(--accent), #6d28d9);
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .side {
+      display: grid;
+      gap: 20px;
+    }
+
+    .panel-body { padding: 18px; }
+
+    .activity {
+      display: grid;
+      gap: 10px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .activity li {
+      display: grid;
+      gap: 3px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 11px 12px;
+      background: rgba(255, 255, 255, 0.035);
+    }
+
+    .activity strong { font-size: 13px; }
+    .activity span { color: var(--muted); font-size: 12px; line-height: 1.45; }
+
+    .registry {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border-radius: 16px;
+      font-size: 12px;
+    }
+
+    .registry th,
+    .registry td {
+      border-bottom: 1px solid var(--border);
+      padding: 10px 9px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .registry th {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .registry tr:last-child td { border-bottom: 0; }
+
+    code {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1px 5px;
+      background: rgba(255, 255, 255, 0.05);
+      color: #ddd6fe;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.92em;
+    }
+
+    .note {
+      border-left: 3px solid var(--accent);
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(139, 92, 246, 0.10);
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .toast {
+      position: fixed;
+      right: 20px;
+      bottom: 20px;
+      width: min(360px, calc(100vw - 40px));
+      border: 1px solid var(--border-strong);
+      border-radius: 18px;
+      padding: 13px 14px;
+      background: rgba(24, 24, 28, 0.94);
+      box-shadow: var(--shadow);
+      transform: translateY(24px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 160ms ease, transform 160ms ease;
+    }
+
+    .toast[data-visible="true"] {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    .toast strong { display: block; margin-bottom: 3px; }
+    .toast span { color: var(--muted); font-size: 13px; line-height: 1.45; }
+
+    @media (max-width: 880px) {
+      .layout { grid-template-columns: 1fr; }
+      .chat { min-height: 0; }
+      .card-header { align-items: flex-start; flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="hero" aria-labelledby="title">
+      <p class="eyebrow">GitHub issue #174 UX artifact</p>
+      <h1 id="title">Clickable slash commands inside assistant messages</h1>
+      <p class="lead">
+        Standalone prototype showing command mentions as action chips. Safe commands like <code>/reload</code>
+        can execute directly; commands that need context are inserted into the composer and focused; unknown or
+        unsafe commands are visible but inert.
+      </p>
+    </section>
+
+    <section class="layout">
+      <article class="card" aria-label="Chat prototype">
+        <header class="card-header">
+          <div class="card-title">
+            <strong>Agent chat</strong>
+            <span>Click the slash-command chips in assistant text.</span>
+          </div>
+          <span class="status-pill"><span class="status-dot" aria-hidden="true"></span><span id="session-status">Idle</span></span>
+        </header>
+
+        <div class="chat">
+          <div class="message">
+            <div class="avatar" aria-hidden="true">AI</div>
+            <div class="bubble">
+              <p>I updated plugin files. Please run <button class="command-chip" type="button" data-command="/reload" data-behavior="execute">/reload</button> to apply plugin changes.</p>
+              <p>This command is marked safe and idempotent in the registry, so clicking it uses the same action path as typing it into the composer and submitting.</p>
+            </div>
+          </div>
+
+          <div class="message">
+            <div class="avatar" aria-hidden="true">AI</div>
+            <div class="bubble">
+              <p>If you want to capture product feedback, start with <button class="command-chip" type="button" data-command="/feedback" data-behavior="insert">/feedback</button> and add the details before submitting.</p>
+              <p>Because this command needs user context, click only prepares the composer and focuses it. It does not submit automatically.</p>
+            </div>
+          </div>
+
+          <div class="message">
+            <div class="avatar" aria-hidden="true">AI</div>
+            <div class="bubble">
+              <p>Unknown future commands such as <button class="command-chip" type="button" data-command="/deploy-production" data-behavior="disabled" aria-disabled="true">/deploy-production</button> must not execute from rendered text.</p>
+              <p>Disabled chips communicate recognition/safety boundaries without creating accidental destructive actions.</p>
+            </div>
+          </div>
+
+          <form class="composer" id="composer-form">
+            <label for="composer-input">Composer</label>
+            <textarea id="composer-input" placeholder="Click /feedback to insert it here, or type a command manually..."></textarea>
+            <div class="composer-actions">
+              <span class="hint" id="composer-hint">Command chips should preserve surrounding text selection as much as possible.</span>
+              <button class="primary" type="submit">Submit</button>
+            </div>
+          </form>
+        </div>
+      </article>
+
+      <aside class="side">
+        <section class="card" aria-labelledby="activity-title">
+          <header class="card-header">
+            <div class="card-title">
+              <strong id="activity-title">Interaction log</strong>
+              <span>Shows what the app would do.</span>
+            </div>
+          </header>
+          <div class="panel-body">
+            <ol class="activity" id="activity-log" aria-live="polite">
+              <li>
+                <strong>Ready</strong>
+                <span>Try <code>/reload</code>, <code>/feedback</code>, and the disabled unknown command.</span>
+              </li>
+            </ol>
+          </div>
+        </section>
+
+        <section class="card" aria-labelledby="registry-title">
+          <header class="card-header">
+            <div class="card-title">
+              <strong id="registry-title">Registry metadata sketch</strong>
+              <span>Prototype-only model, not app code.</span>
+            </div>
+          </header>
+          <div class="panel-body">
+            <table class="registry">
+              <thead>
+                <tr>
+                  <th>Command</th>
+                  <th>clickBehavior</th>
+                  <th>Boundary</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>/reload</code></td>
+                  <td><code>execute</code></td>
+                  <td>Direct-run only because registry marks it safe/idempotent.</td>
+                </tr>
+                <tr>
+                  <td><code>/feedback</code></td>
+                  <td><code>insert</code></td>
+                  <td>Needs context; insert into composer and focus.</td>
+                </tr>
+                <tr>
+                  <td><code>/deploy-production</code></td>
+                  <td><code>disabled</code></td>
+                  <td>Unknown/destructive/future commands never run from text.</td>
+                </tr>
+              </tbody>
+            </table>
+            <p class="note">
+              Inline note: message rendering should reuse a slash-command registry rather than hard-code strings.
+              Only entries explicitly marked <code>execute</code> should run on click; every other command either drafts
+              composer text or remains disabled to avoid accidental execution.
+            </p>
+          </div>
+        </section>
+      </aside>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite">
+    <strong id="toast-title">Action</strong>
+    <span id="toast-body">Details</span>
+  </div>
+
+  <script>
+    const registry = {
+      '/reload': {
+        clickBehavior: 'execute',
+        safeDirectRun: true,
+        description: 'Reload plugins using the same flow as composer slash submit.'
+      },
+      '/feedback': {
+        clickBehavior: 'insert',
+        safeDirectRun: false,
+        description: 'Needs reporter context, so the user should edit before submitting.'
+      }
+    };
+
+    const log = document.getElementById('activity-log');
+    const composer = document.getElementById('composer-input');
+    const status = document.getElementById('session-status');
+    const toast = document.getElementById('toast');
+    const toastTitle = document.getElementById('toast-title');
+    const toastBody = document.getElementById('toast-body');
+    let toastTimer;
+
+    function addLog(title, detail) {
+      const item = document.createElement('li');
+      item.innerHTML = `<strong>${title}</strong><span>${detail}</span>`;
+      log.prepend(item);
+    }
+
+    function showToast(title, detail) {
+      window.clearTimeout(toastTimer);
+      toastTitle.textContent = title;
+      toastBody.textContent = detail;
+      toast.dataset.visible = 'true';
+      toastTimer = window.setTimeout(() => {
+        toast.dataset.visible = 'false';
+      }, 2600);
+    }
+
+    function executeCommand(command) {
+      status.textContent = 'Reloading…';
+      addLog('Executed ' + command, 'Safe direct execution: routed through the same command handler that composer submit would call.');
+      showToast('Reload started', command + ' was marked safe/idempotent and executed directly.');
+      window.setTimeout(() => {
+        status.textContent = 'Idle';
+        addLog('Reload complete', 'Status banner, telemetry, and errors would be shared with the composer execution path.');
+      }, 900);
+    }
+
+    function insertCommand(command) {
+      composer.value = command + ' ';
+      composer.focus();
+      composer.setSelectionRange(composer.value.length, composer.value.length);
+      addLog('Inserted ' + command, 'Needs context: the command was drafted in the composer but not submitted.');
+      showToast('Composer prepared', command + ' needs user details before it can run.');
+    }
+
+    function disabledCommand(command) {
+      addLog('Blocked ' + command, 'Unknown or unsafe command: no execution, no composer mutation.');
+      showToast('Command not available', command + ' is disabled because it is not registered as safe or insertable.');
+    }
+
+    document.querySelectorAll('.command-chip').forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const command = chip.dataset.command;
+        const registered = registry[command];
+        const behavior = registered?.clickBehavior ?? 'disabled';
+
+        if (chip.getAttribute('aria-disabled') === 'true' || behavior === 'disabled') {
+          disabledCommand(command);
+          return;
+        }
+
+        if (behavior === 'execute' && registered.safeDirectRun === true) {
+          executeCommand(command);
+          return;
+        }
+
+        if (behavior === 'insert') {
+          insertCommand(command);
+          return;
+        }
+
+        disabledCommand(command);
+      });
+    });
+
+    document.getElementById('composer-form').addEventListener('submit', (event) => {
+      event.preventDefault();
+      const value = composer.value.trim();
+      if (!value) {
+        showToast('Nothing to submit', 'Type a command or click an insert chip first.');
+        return;
+      }
+      addLog('Composer submit', `Submitted composer text: ${value}`);
+      showToast('Submitted', 'Prototype captured composer submission without calling app APIs.');
+      composer.value = '';
+    });
+  </script>
+</body>
+</html>

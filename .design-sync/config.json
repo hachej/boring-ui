@@ -1,0 +1,16 @@
+{
+  "projectId": "6817d283-5688-4b8c-a036-177aa1b6b994",
+  "shape": "package",
+  "pkg": "@hachej/boring-ui-kit",
+  "globalName": "BoringUIKit",
+  "buildCmd": "pnpm -F \"@hachej/boring-ui-kit...\" build",
+  "srcDir": "src",
+  "tsconfig": "tsconfig.json",
+  "cssEntry": "dist/styles.css",
+  "tokensGlob": "dist/tokens.css",
+  "tokensPkg": "@hachej/boring-ui-kit",
+  "runtimeFontPrefixes": [
+    "Geist"
+  ],
+  "readmeHeader": ".design-sync/conventions.md"
+}

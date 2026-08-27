@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000">
+<defs>
+  <linearGradient id="ceiling" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#11100f"/><stop offset="1" stop-color="#211f1c"/></linearGradient>
+  <linearGradient id="backWall" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#373631"/><stop offset=".58" stop-color="#292825"/><stop offset="1" stop-color="#1d1c1a"/></linearGradient>
+  <linearGradient id="leftWall" x1="0" y1="0" x2="1" y2=".4"><stop stop-color="#171715"/><stop offset="1" stop-color="#34322e"/></linearGradient>
+  <linearGradient id="rightWall" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#181715"/><stop offset="1" stop-color="#302e2a"/></linearGradient>
+  <linearGradient id="floor" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#8c5a33"/><stop offset="1" stop-color="#4a2a18"/></linearGradient>
+  <linearGradient id="wood" x1="0" y1="0" x2="1" y2=".15"><stop stop-color="#9a5f32"/><stop offset=".35" stop-color="#c3844f"/><stop offset=".7" stop-color="#7f4727"/><stop offset="1" stop-color="#b87441"/></linearGradient>
+  <linearGradient id="vanity" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#9b6035"/><stop offset="1" stop-color="#5f341f"/></linearGradient>
+  <linearGradient id="stone" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#f7f3ea"/><stop offset="1" stop-color="#cfc8bb"/></linearGradient>
+  <linearGradient id="porcelain" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#fffdf7"/><stop offset=".65" stop-color="#d9d5cc"/><stop offset="1" stop-color="#aaa69f"/></linearGradient>
+  <linearGradient id="glass" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#d8eff4" stop-opacity=".04"/><stop offset=".55" stop-color="#eafcff" stop-opacity=".22"/><stop offset="1" stop-color="#c8e7ec" stop-opacity=".06"/></linearGradient>
+  <radialGradient id="spot"><stop stop-color="#fff1cf" stop-opacity=".95"/><stop offset=".18" stop-color="#f5d79b" stop-opacity=".65"/><stop offset="1" stop-color="#f5d79b" stop-opacity="0"/></radialGradient>
+  <filter id="shadow" x="-30%" y="-30%" width="160%" height="170%"><feGaussianBlur in="SourceAlpha" stdDeviation="18"/><feOffset dy="16"/><feComponentTransfer><feFuncA type="linear" slope=".55"/></feComponentTransfer><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  <filter id="soft" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="22"/></filter>
+  <filter id="micro"><feTurbulence baseFrequency=".75" numOctaves="3" seed="5" type="fractalNoise" result="n"/><feColorMatrix in="n" type="saturate" values="0" result="g"/><feComponentTransfer in="g"><feFuncA type="table" tableValues="0 .07"/></feComponentTransfer><feBlend in="SourceGraphic" mode="overlay"/></filter>
+  <pattern id="slats" width="42" height="800" patternUnits="userSpaceOnUse"><rect width="42" height="800" fill="url(#wood)"/><rect x="35" width="7" height="800" fill="#2a1710"/><rect x="2" width="2" height="800" fill="#e5a56b" opacity=".25"/></pattern>
+  <pattern id="boards" width="240" height="88" patternUnits="userSpaceOnUse" patternTransform="skewX(-18)"><rect width="240" height="88" fill="url(#floor)"/><path d="M0 87H240M239 0V88" stroke="#2f190f" stroke-width="4" opacity=".55"/><path d="M20 24 C80 5 130 46 210 20 M14 57 C70 35 160 76 220 54" fill="none" stroke="#c68952" stroke-width="3" opacity=".16"/></pattern>
+  <clipPath id="backClip"><polygon points="245,120 1325,120 1260,730 315,730"/></clipPath>
+  <clipPath id="rightClip"><polygon points="1325,120 1600,0 1600,865 1260,730"/></clipPath>
+</defs>
+
+<!-- room shell, preserving the long narrow plan: vanity and WC at the end, bath along right wall -->
+<rect width="1600" height="1000" fill="#151412"/>
+<polygon points="0,0 1600,0 1325,120 245,120" fill="url(#ceiling)"/>
+<polygon points="245,120 1325,120 1260,730 315,730" fill="url(#backWall)" filter="url(#micro)"/>
+<polygon points="0,0 245,120 315,730 0,890" fill="url(#leftWall)" filter="url(#micro)"/>
+<polygon points="1325,120 1600,0 1600,865 1260,730" fill="url(#rightWall)" filter="url(#micro)"/>
+<polygon points="315,730 1260,730 1600,865 1600,1000 0,1000 0,890" fill="url(#boards)"/>
+
+<!-- subtle wall panel joints -->
+<g clip-path="url(#backClip)" stroke="#77736b" stroke-opacity=".16" stroke-width="2">
+  <path d="M245 330H1325M245 540H1325M620 120L600 730M1005 120L990 730"/>
+</g>
+
+<!-- warm wood shower/bath feature on the right wall -->
+<polygon points="1080,120 1325,120 1260,730 1060,730" fill="#d38a4e" opacity=".22" filter="url(#soft)"/>
+<polygon points="1098,118 1328,118 1261,730 1075,730" fill="url(#slats)"/>
+<path d="M1088 122L1071 728M1326 122L1260 728" stroke="#e6a969" stroke-width="10" opacity=".32" filter="url(#soft)"/>
+
+<!-- recessed niches -->
+<g filter="url(#shadow)">
+  <polygon points="1270,275 1322,255 1310,390 1255,403" fill="#10100f" stroke="#46423b" stroke-width="5"/>
+  <line x1="1261" y1="337" x2="1316" y2="321" stroke="#7e6d5d" stroke-width="5"/>
+  <rect x="1282" y="294" width="13" height="26" rx="4" fill="#c7a77f" transform="rotate(-12 1282 294)"/>
+  <rect x="1270" y="355" width="16" height="29" rx="4" fill="#856a50" transform="rotate(-12 1270 355)"/>
+</g>
+
+<!-- two tall, slim rounded mirrors inspired by reference 1 -->
+<g filter="url(#shadow)">
+  <rect x="520" y="205" width="185" height="300" rx="24" fill="#0c0d0d" stroke="#b9a689" stroke-width="8"/>
+  <rect x="531" y="216" width="163" height="278" rx="17" fill="#879292"/>
+  <rect x="780" y="205" width="185" height="300" rx="24" fill="#0c0d0d" stroke="#b9a689" stroke-width="8"/>
+  <rect x="791" y="216" width="163" height="278" rx="17" fill="#879292"/>
+  <g opacity=".34" fill="#eaf4f1"><polygon points="545,220 600,220 555,490 535,490"/><polygon points="805,220 860,220 815,490 795,490"/></g>
+  <g opacity=".18" stroke="#f7ffff" stroke-width="4"><path d="M665 225L615 490"/><path d="M925 225L875 490"/></g>
+</g>
+
+<!-- warm pendant lights flanking mirror group -->
+<g stroke="#b5844f" stroke-width="4">
+  <line x1="450" y1="118" x2="450" y2="300"/><line x1="1035" y1="118" x2="1035" y2="300"/>
+</g>
+<g filter="url(#shadow)">
+  <circle cx="450" cy="312" r="25" fill="#e3a25b" opacity=".95"/><circle cx="450" cy="312" r="12" fill="#fff3cf"/>
+  <circle cx="1035" cy="312" r="25" fill="#e3a25b" opacity=".95"/><circle cx="1035" cy="312" r="12" fill="#fff3cf"/>
+</g>
+<ellipse cx="450" cy="390" rx="120" ry="180" fill="url(#spot)" opacity=".23"/><ellipse cx="1035" cy="390" rx="120" ry="180" fill="url(#spot)" opacity=".23"/>
+
+<!-- floating walnut double vanity -->
+<g filter="url(#shadow)">
+  <polygon points="445,510 1030,510 1005,655 468,655" fill="url(#vanity)" stroke="#3e2318" stroke-width="5"/>
+  <polygon points="425,495 1048,495 1029,526 442,526" fill="url(#stone)" stroke="#b7ad9f" stroke-width="4"/>
+  <line x1="737" y1="526" x2="735" y2="650" stroke="#3c2419" stroke-width="4"/>
+  <g stroke="#2c211a" stroke-width="4" fill="none"><rect x="492" y="550" width="205" height="68" rx="4"/><rect x="772" y="550" width="205" height="68" rx="4"/></g>
+  <g fill="#191816"><rect x="584" y="575" width="24" height="6" rx="3"/><rect x="865" y="575" width="24" height="6" rx="3"/></g>
+</g>
+
+<!-- vessel basins and matte black taps -->
+<g filter="url(#shadow)">
+  <ellipse cx="610" cy="500" rx="103" ry="35" fill="#ddd8cf"/><path d="M507 500 Q520 568 610 568 Q700 568 713 500" fill="url(#porcelain)"/><ellipse cx="610" cy="498" rx="86" ry="24" fill="#b9b4aa"/>
+  <ellipse cx="866" cy="500" rx="103" ry="35" fill="#ddd8cf"/><path d="M763 500 Q776 568 866 568 Q956 568 969 500" fill="url(#porcelain)"/><ellipse cx="866" cy="498" rx="86" ry="24" fill="#b9b4aa"/>
+</g>
+<g stroke="#11110f" stroke-width="14" fill="none" stroke-linecap="round"><path d="M620 490V430Q620 410 640 410H657"/><path d="M876 490V430Q876 410 896 410H913"/></g>
+
+<!-- wall-hung toilet on left, matching plan -->
+<g filter="url(#shadow)">
+  <rect x="328" y="470" width="105" height="62" rx="8" fill="#22211e" stroke="#565149" stroke-width="4"/>
+  <circle cx="365" cy="502" r="8" fill="#929087"/><circle cx="396" cy="502" r="8" fill="#929087"/>
+  <ellipse cx="360" cy="657" rx="88" ry="40" fill="#d8d5cd"/>
+  <path d="M292 654 Q302 748 359 760 Q418 748 429 654" fill="url(#porcelain)"/>
+  <ellipse cx="360" cy="650" rx="73" ry="29" fill="#a9a69f" stroke="#f2efe8" stroke-width="10"/>
+</g>
+
+<!-- bath/shower along right wall, retaining the floor-plan fixture rather than replacing it with a walk-in shower -->
+<g filter="url(#shadow)">
+  <polygon points="1070,615 1285,580 1510,785 1230,855" fill="#c9c5bc"/>
+  <polygon points="1090,625 1278,598 1468,783 1235,830" fill="#777a77"/>
+  <path d="M1070 615 Q1100 745 1230 855 L1510 785 Q1475 720 1285 580Z" fill="none" stroke="url(#porcelain)" stroke-width="32"/>
+</g>
+
+<!-- frameless bath screen -->
+<polygon points="1048,280 1204,254 1260,735 1080,765" fill="url(#glass)" stroke="#a8c1c4" stroke-opacity=".55" stroke-width="5"/>
+<line x1="1052" y1="282" x2="1081" y2="765" stroke="#111" stroke-width="10"/>
+<line x1="1198" y1="258" x2="1258" y2="735" stroke="#111" stroke-width="6" opacity=".85"/>
+<rect x="1124" y="492" width="12" height="120" rx="6" fill="#0c0c0b" transform="rotate(-4 1124 492)"/>
+
+<!-- shower head and controls on warm feature wall -->
+<g stroke="#0d0d0c" fill="none" stroke-linecap="round">
+  <path d="M1184 172V226Q1184 245 1202 245H1248" stroke-width="15"/>
+  <ellipse cx="1250" cy="250" rx="62" ry="17" fill="#111" stroke-width="5"/>
+  <circle cx="1170" cy="450" r="17" fill="#111" stroke-width="5"/><circle cx="1218" cy="445" r="17" fill="#111" stroke-width="5"/>
+  <path d="M1190 470 Q1115 560 1170 674" stroke-width="10"/>
+  <path d="M1169 675 Q1188 700 1207 675V615" stroke-width="10"/>
+</g>
+
+<!-- ceiling spots -->
+<g filter="url(#shadow)">
+  <ellipse cx="390" cy="65" rx="35" ry="16" fill="#070707"/><ellipse cx="390" cy="70" rx="20" ry="10" fill="#fff4d6"/>
+  <ellipse cx="780" cy="70" rx="35" ry="16" fill="#070707"/><ellipse cx="780" cy="75" rx="20" ry="10" fill="#fff4d6"/>
+  <ellipse cx="1165" cy="66" rx="35" ry="16" fill="#070707"/><ellipse cx="1165" cy="71" rx="20" ry="10" fill="#fff4d6"/>
+</g>
+<ellipse cx="390" cy="270" rx="170" ry="260" fill="url(#spot)" opacity=".09"/><ellipse cx="780" cy="280" rx="170" ry="270" fill="url(#spot)" opacity=".11"/><ellipse cx="1165" cy="250" rx="180" ry="250" fill="url(#spot)" opacity=".13"/>
+
+<!-- foreground vignette -->
+<rect width="1600" height="1000" fill="none" stroke="#050505" stroke-width="80" opacity=".26"/>
+</svg>

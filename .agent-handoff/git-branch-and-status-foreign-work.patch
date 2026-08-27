@@ -1,0 +1,150 @@
+diff --git a/packages/boring-bash/src/server/index.ts b/packages/boring-bash/src/server/index.ts
+index 9a12a694f..557655dd8 100644
+--- a/packages/boring-bash/src/server/index.ts
++++ b/packages/boring-bash/src/server/index.ts
+@@ -106,6 +106,8 @@ export type {
+ } from './routes/fsEventBroadcaster'
+ 
+ export { buildGitFileUrl } from './git/buildGitFileUrl'
++export { resolveGitBranch } from './git/gitBranch'
++export type { GitBranchResult } from './git/gitBranch'
+ export { __gitTestUtils, resolveGitFileUrl } from './git/gitFileUrl'
+ export type { GitFileUrlResult } from './git/gitFileUrl'
+ 
+diff --git a/packages/boring-bash/src/server/routes/git.ts b/packages/boring-bash/src/server/routes/git.ts
+index 2cdab2967..8cf59e413 100644
+--- a/packages/boring-bash/src/server/routes/git.ts
++++ b/packages/boring-bash/src/server/routes/git.ts
+@@ -1,5 +1,6 @@
+ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
+ import type { Workspace } from '@hachej/boring-agent/shared'
++import { resolveGitBranch } from '../git/gitBranch'
+ import { isWorkspaceRelativeGitPath, resolveGitFileUrl } from '../git/gitFileUrl'
+ import {
+   ERROR_CODE_INTERNAL,
+@@ -87,5 +88,24 @@ export function gitRoutes(
+     }
+   })
+ 
++  app.get('/api/v1/git/branch', async (request, reply) => {
++    const workspaceRoot = await resolveWorkspaceRoot(request)
++    if (!workspaceRoot) {
++      return {
++        enabled: false,
++        reason: 'Git branch is unavailable for this runtime.',
++      }
++    }
++
++    try {
++      return await resolveGitBranch(workspaceRoot)
++    } catch (error) {
++      request.log.warn({ err: error }, 'failed to resolve git branch')
++      return reply.code(500).send({
++        error: { code: ERROR_CODE_INTERNAL, message: 'failed to resolve git branch' },
++      })
++    }
++  })
++
+   done()
+ }
+diff --git a/packages/cli/src/front/App.tsx b/packages/cli/src/front/App.tsx
+index 5535377ba..2dc331eb2 100644
+--- a/packages/cli/src/front/App.tsx
++++ b/packages/cli/src/front/App.tsx
+@@ -4,6 +4,7 @@ import * as ReactDomClient from "react-dom/client"
+ import * as ReactJsxDevRuntime from "react/jsx-dev-runtime"
+ import * as ReactJsxRuntime from "react/jsx-runtime"
+ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
++import { GitBranch } from "lucide-react"
+ import { createAskUserPlugin } from "@hachej/boring-ask-user/front"
+ import { boringAutomationPlugin } from "@hachej/boring-automation/front"
+ import { diagramPlugin } from "@hachej/boring-diagram/front"
+@@ -162,6 +163,60 @@ export function CliVersionBadge({ version }: { version?: string | null }) {
+   )
+ }
+ 
++interface GitBranchMeta {
++  enabled?: boolean
++  branch?: string
++  detached?: boolean
++}
++
++/**
++ * Shows the checked-out branch for Git-backed workspaces, and nothing at all
++ * otherwise — no error, no empty chrome slot.
++ *
++ * Refresh strategy: fetch on mount, on workspace switch, and on window focus.
++ * A branch only changes through work done outside this tab (a terminal, an
++ * agent run), so regaining focus is the moment the value can be stale. That
++ * mirrors the existing refreshWorkspaces() focus listener below and costs one
++ * cheap `git symbolic-ref` instead of a poll.
++ */
++export function CliGitBranchBadge({ workspaceId }: { workspaceId?: string | null }) {
++  const [meta, setMeta] = useState<GitBranchMeta | null>(null)
++
++  useEffect(() => {
++    let cancelled = false
++    const load = () => {
++      void fetch("/api/v1/git/branch", workspaceId ? { headers: { "x-boring-workspace-id": workspaceId } } : undefined)
++        .then(async (res) => res.ok ? await res.json() as GitBranchMeta : null)
++        .then((next) => { if (!cancelled) setMeta(next) })
++        .catch(() => { if (!cancelled) setMeta(null) })
++    }
++    // Drop the previous workspace's branch immediately so we never show it
++    // against the newly selected workspace.
++    setMeta(null)
++    load()
++    window.addEventListener("focus", load)
++    return () => {
++      cancelled = true
++      window.removeEventListener("focus", load)
++    }
++  }, [workspaceId])
++
++  const label = meta?.enabled ? meta.branch?.trim() : undefined
++  if (!label) return null
++  const description = meta?.detached ? `Detached HEAD at ${label}` : `Git branch ${label}`
++  return (
++    <span
++      data-boring-cli-part="git-branch"
++      aria-label={description}
++      title={description}
++      className="inline-flex max-w-40 items-center gap-1 rounded-full border border-border/60 bg-muted/40 px-2 py-0.5 text-[10px] font-medium leading-none tracking-tight text-muted-foreground"
++    >
++      <GitBranch className="size-3 shrink-0" strokeWidth={1.75} aria-hidden="true" />
++      <span className="truncate">{label}</span>
++    </span>
++  )
++}
++
+ export function CliWorkspaceShell() {
+   const [projectName, setProjectName] = useState("Workspace")
+   const [workspacesMode, setWorkspacesMode] = useState(false)
+@@ -483,7 +538,12 @@ export function CliWorkspaceShell() {
+         }
+         chatParams={{ thinkingControl: true }}
+         frontPluginHotReload={runtimePluginFrontLoadingEnabled ? "vite" : false}
+-        topBarRight={<CliVersionBadge version={cliVersion} />}
++        topBarRight={
++          <span className="flex items-center gap-1.5">
++            <CliGitBranchBadge workspaceId={activeWorkspace.id} />
++            <CliVersionBadge version={cliVersion} />
++          </span>
++        }
+         topBarLeft={
+           <WorkspaceSwitcherControl
+             displayMode="workspace"
+@@ -520,7 +580,12 @@ export function CliWorkspaceShell() {
+       activeSessionId={initialSessionId ?? undefined}
+       chatParams={{ thinkingControl: true }}
+       frontPluginHotReload={runtimePluginFrontLoadingEnabled ? "vite" : false}
+-      topBarRight={<CliVersionBadge version={cliVersion} />}
++      topBarRight={
++        <span className="flex items-center gap-1.5">
++          <CliGitBranchBadge />
++          <CliVersionBadge version={cliVersion} />
++        </span>
++      }
+     />
+   )
+ }

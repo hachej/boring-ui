@@ -1,0 +1,45 @@
+{
+  "project": "bathroom-dark-wood-mirror-combination",
+  "target": {
+    "aspect_ratio": "16:10",
+    "minimum_width_px": 1536,
+    "style": "photorealistic architectural interior visualization",
+    "camera": "doorway, eye height 1.55m, 24-28mm lens, straight verticals"
+  },
+  "reference_priority": [
+    {
+      "file": "01-floor-plan-bathroom.png",
+      "purpose": "room geometry, fixture placement and circulation",
+      "suggested_weight": 1.0
+    },
+    {
+      "file": "02-reference-mirrors.png",
+      "purpose": "two separate tall rounded-rectangle mirror shapes only",
+      "suggested_weight": 0.75
+    },
+    {
+      "file": "03-reference-dark-wood-wall.png",
+      "purpose": "charcoal microcement, warm vertical wood wet-zone wall, lighting mood",
+      "suggested_weight": 0.85
+    },
+    {
+      "file": "04-composition-guide.png",
+      "purpose": "rough viewpoint and palette guidance only",
+      "suggested_weight": 0.3
+    }
+  ],
+  "hard_constraints": [
+    "Keep the bathtub along the right wall",
+    "Keep the WC on the left",
+    "Keep the double vanity on the far wall",
+    "Keep the doorway and door swing clear",
+    "Do not enlarge or reshape the bathroom",
+    "Use two individual mirrors, not one wide mirror"
+  ],
+  "variants": [
+    "hero doorway view",
+    "vanity emphasis",
+    "wet-zone emphasis",
+    "brighter exposure variant"
+  ]
+}

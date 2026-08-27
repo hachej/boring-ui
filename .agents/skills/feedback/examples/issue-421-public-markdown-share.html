@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Issue #421 Prototype — Public Markdown Share Links</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #09090b;
+      --panel: #111113;
+      --panel-2: #17171a;
+      --muted: #a1a1aa;
+      --text: #f4f4f5;
+      --border: #2a2a30;
+      --accent: #9ee8c7;
+      --accent-strong: #34d399;
+      --danger: #f87171;
+      --warn: #facc15;
+      --info: #93c5fd;
+      --shadow: 0 24px 80px rgba(0, 0, 0, .35);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at top left, rgba(52, 211, 153, .16), transparent 34rem),
+        radial-gradient(circle at top right, rgba(147, 197, 253, .10), transparent 28rem),
+        var(--bg);
+      color: var(--text);
+    }
+
+    a { color: inherit; }
+
+    .shell {
+      width: min(1180px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 28px 0 48px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .logo {
+      display: grid;
+      place-items: center;
+      width: 36px;
+      height: 36px;
+      border: 1px solid rgba(158, 232, 199, .45);
+      border-radius: 12px;
+      background: linear-gradient(145deg, rgba(158, 232, 199, .16), rgba(255, 255, 255, .04));
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12);
+      font-weight: 800;
+      color: var(--accent);
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 16px;
+      line-height: 1.2;
+    }
+
+    .brand p {
+      margin: 2px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .pill-row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, .04);
+      color: var(--muted);
+      padding: 7px 10px;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .pill.good { border-color: rgba(52, 211, 153, .35); color: #c7f8e3; background: rgba(52, 211, 153, .08); }
+    .pill.warn { border-color: rgba(250, 204, 21, .35); color: #fef3c7; background: rgba(250, 204, 21, .08); }
+
+    .notice {
+      border: 1px solid rgba(147, 197, 253, .28);
+      border-radius: 18px;
+      background: rgba(147, 197, 253, .08);
+      padding: 14px 16px;
+      margin: 0 0 18px;
+      color: #dbeafe;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 330px;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      background: rgba(17, 17, 19, .9);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .viewer-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255, 255, 255, .025);
+      padding: 14px 16px;
+    }
+
+    .crumbs {
+      min-width: 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .crumbs strong {
+      display: block;
+      margin-top: 3px;
+      color: var(--text);
+      font-size: 14px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .segmented {
+      display: inline-flex;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: #0d0d0f;
+      padding: 3px;
+      flex-shrink: 0;
+    }
+    .segmented button {
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      padding: 7px 11px;
+      font: inherit;
+      font-size: 12px;
+    }
+    .segmented button[aria-pressed="true"] {
+      background: rgba(158, 232, 199, .15);
+      color: var(--accent);
+      box-shadow: inset 0 0 0 1px rgba(158, 232, 199, .22);
+    }
+
+    .doc {
+      padding: 34px min(7vw, 64px) 46px;
+      line-height: 1.7;
+    }
+    .doc h2 {
+      margin: 0 0 10px;
+      font-size: clamp(28px, 4vw, 46px);
+      letter-spacing: -.04em;
+      line-height: 1.05;
+    }
+    .doc .lede {
+      margin: 0 0 24px;
+      color: #d4d4d8;
+      font-size: 18px;
+      line-height: 1.55;
+    }
+    .doc h3 {
+      margin-top: 30px;
+      margin-bottom: 8px;
+      font-size: 18px;
+    }
+    .doc p, .doc li { color: #d8d8dd; }
+    .doc code {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: rgba(255, 255, 255, .05);
+      padding: 2px 5px;
+      color: #fef3c7;
+    }
+    .doc blockquote {
+      margin: 24px 0;
+      border-left: 3px solid var(--accent-strong);
+      border-radius: 0 12px 12px 0;
+      background: rgba(52, 211, 153, .07);
+      padding: 13px 16px;
+      color: #dcfce7;
+    }
+
+    .image-card {
+      margin: 24px 0;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: var(--panel-2);
+      overflow: hidden;
+    }
+    .image-card svg {
+      display: block;
+      width: 100%;
+      height: auto;
+      background: #0b0f14;
+    }
+    .caption {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      border-top: 1px solid var(--border);
+      padding: 10px 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .edit-panel { display: none; padding: 18px; border-top: 1px solid var(--border); background: rgba(255,255,255,.02); }
+    .edit-enabled .edit-panel { display: block; }
+    .edit-enabled .doc-readonly-note { display: none; }
+    textarea {
+      width: 100%;
+      min-height: 250px;
+      resize: vertical;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: #0b0b0d;
+      color: var(--text);
+      padding: 14px;
+      font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      outline: none;
+    }
+    textarea:focus { border-color: rgba(158, 232, 199, .5); box-shadow: 0 0 0 3px rgba(158, 232, 199, .08); }
+
+    .button-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 12px; }
+    .btn {
+      border: 1px solid rgba(158, 232, 199, .35);
+      border-radius: 12px;
+      background: rgba(158, 232, 199, .12);
+      color: #d1fae5;
+      cursor: pointer;
+      padding: 9px 12px;
+      font: inherit;
+      font-size: 13px;
+    }
+    .btn.secondary { border-color: var(--border); background: rgba(255,255,255,.04); color: var(--text); }
+    .btn:disabled { cursor: not-allowed; opacity: .45; }
+
+    aside { display: grid; gap: 14px; }
+    .side-card {
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      background: rgba(17, 17, 19, .86);
+      padding: 16px;
+      box-shadow: 0 18px 48px rgba(0,0,0,.25);
+    }
+    .side-card h2 {
+      margin: 0 0 10px;
+      font-size: 14px;
+      letter-spacing: .01em;
+    }
+    .side-card p, .side-card li {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+    .side-card ul { margin: 8px 0 0; padding-left: 18px; }
+    .kv {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .kv div {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: rgba(255,255,255,.03);
+      padding: 9px 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .kv strong { color: var(--text); font-weight: 600; text-align: right; }
+
+    .boundary {
+      display: grid;
+      gap: 8px;
+    }
+    .boundary-row {
+      display: grid;
+      grid-template-columns: 22px 1fr;
+      gap: 9px;
+      align-items: start;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .icon {
+      display: grid;
+      place-items: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      font-size: 12px;
+    }
+    .icon.yes { color: var(--accent); border-color: rgba(52, 211, 153, .35); background: rgba(52, 211, 153, .08); }
+    .icon.no { color: var(--danger); border-color: rgba(248, 113, 113, .35); background: rgba(248, 113, 113, .08); }
+
+    .mock-url {
+      display: block;
+      overflow-wrap: anywhere;
+      border: 1px dashed rgba(158, 232, 199, .34);
+      border-radius: 14px;
+      background: rgba(158, 232, 199, .06);
+      padding: 10px;
+      color: #bbf7d0;
+      font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    .footer-note {
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+      .topbar, .viewer-header { align-items: flex-start; flex-direction: column; }
+      .pill-row { justify-content: flex-start; }
+      .segmented { width: 100%; }
+      .segmented button { flex: 1; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar" aria-label="Prototype header">
+      <div class="brand">
+        <div class="logo" aria-hidden="true">B</div>
+        <div>
+          <h1>Public Markdown Review Link</h1>
+          <p>Issue #421 prototype · CLI-created narrow share surface</p>
+        </div>
+      </div>
+      <div class="pill-row" aria-label="Current share state">
+        <span class="pill good">Public read-only</span>
+        <span class="pill">1 Markdown file</span>
+        <span class="pill">2 local images</span>
+        <span class="pill warn">No workspace shell</span>
+      </div>
+    </header>
+
+    <section class="notice">
+      <strong>Prototype note:</strong> this artifact demonstrates the external reviewer experience after a CLI command creates a public link for one Markdown entry file. The public page can render the document and its declared local image dependencies only. It intentionally does not expose the full workspace UI, file tree, agent APIs, terminal, or arbitrary path browsing.
+    </section>
+
+    <div class="layout">
+      <section class="card" id="shareSurface" aria-label="Shared Markdown document">
+        <div class="viewer-header">
+          <div class="crumbs">
+            Shared from CLI: <code>boring share docs/review/design-note.md</code>
+            <strong>docs/review/design-note.md</strong>
+          </div>
+          <div class="segmented" aria-label="Prototype mode switch">
+            <button type="button" id="readButton" aria-pressed="true">Read-only view</button>
+            <button type="button" id="editButton" aria-pressed="false">Explicit edit mode</button>
+          </div>
+        </div>
+
+        <article class="doc" id="renderedDoc">
+          <p class="pill good doc-readonly-note" style="width: max-content; margin: 0 0 18px;">Reviewer can read and comment out-of-band; editing is off by default.</p>
+          <h2>CLI Review Draft: Lightweight Share Links</h2>
+          <p class="lede">This review draft proposes a small public surface for sharing a Markdown document and its embedded local images with an external reviewer.</p>
+
+          <blockquote>
+            Intended behavior: the share token grants access to this entry Markdown file plus dependency URLs that were resolved from the document at share time.
+          </blockquote>
+
+          <h3>Why this exists</h3>
+          <p>CLI users often need a quick review link for a design note, plan, or generated report. A narrow public page avoids asking reviewers to open the full Boring workspace just to read one Markdown document.</p>
+
+          <h3>Local image dependency</h3>
+          <p>The Markdown can reference local images such as <code>./images/flow.png</code>. The share service serves only those dependencies through scoped asset URLs.</p>
+
+          <figure class="image-card">
+            <svg viewBox="0 0 880 360" role="img" aria-label="Diagram showing CLI share command to narrow public review page">
+              <defs>
+                <linearGradient id="g1" x1="0" x2="1" y1="0" y2="1">
+                  <stop offset="0" stop-color="#34d399" stop-opacity=".35" />
+                  <stop offset="1" stop-color="#93c5fd" stop-opacity=".22" />
+                </linearGradient>
+              </defs>
+              <rect width="880" height="360" fill="#0b0f14" />
+              <circle cx="110" cy="80" r="120" fill="#34d399" opacity=".08" />
+              <circle cx="760" cy="300" r="140" fill="#93c5fd" opacity=".08" />
+              <g fill="none" stroke="#3f3f46" stroke-width="2">
+                <rect x="50" y="85" width="210" height="150" rx="22" />
+                <rect x="335" y="85" width="210" height="150" rx="22" />
+                <rect x="620" y="85" width="210" height="150" rx="22" />
+                <path d="M270 160 H325" stroke="#9ee8c7" />
+                <path d="M555 160 H610" stroke="#9ee8c7" />
+              </g>
+              <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" fill="#f4f4f5">
+                <text x="80" y="135">$ boring share</text>
+                <text x="80" y="163">design-note.md</text>
+                <text x="372" y="144">capability</text>
+                <text x="385" y="172">token</text>
+                <text x="666" y="144">public</text>
+                <text x="658" y="172">review page</text>
+              </g>
+              <g font-family="Inter, system-ui, sans-serif" font-size="13" fill="#a1a1aa">
+                <text x="86" y="205">Entry file selected by CLI</text>
+                <text x="362" y="205">Read-only by default</text>
+                <text x="646" y="205">No file tree or shell</text>
+              </g>
+            </svg>
+            <figcaption class="caption"><span>Resolved local image: <code>./images/share-flow.png</code></span><span>Served as scoped asset</span></figcaption>
+          </figure>
+
+          <h3>Optional public edit mode</h3>
+          <p>Edit mode must be explicit at share creation time, visually obvious to the reviewer, and limited to the entry Markdown file. Image uploads, folder edits, arbitrary file writes, shell commands, and agent actions remain unavailable.</p>
+        </article>
+
+        <section class="edit-panel" aria-label="Explicit edit mode demo">
+          <p class="pill warn" style="width: max-content; margin: 0 0 12px;">Edit mode is a separate capability and edits only docs/review/design-note.md</p>
+          <textarea id="markdownEditor" spellcheck="false"># CLI Review Draft: Lightweight Share Links
+
+This editable field represents the entry Markdown file only.
+
+![Share flow](./images/share-flow.png)
+
+Reviewer edits can be saved as a proposed update or direct write only if the share was created with an explicit edit capability.</textarea>
+          <div class="button-row">
+            <button class="btn" type="button" id="saveButton">Save entry Markdown</button>
+            <button class="btn secondary" type="button" disabled>Upload image disabled</button>
+            <button class="btn secondary" type="button" disabled>Open workspace disabled</button>
+            <span id="saveStatus" style="color: var(--muted); font-size: 13px;" aria-live="polite"></span>
+          </div>
+        </section>
+      </section>
+
+      <aside aria-label="Share details and safety boundaries">
+        <section class="side-card">
+          <h2>Public link</h2>
+          <code class="mock-url">https://share.boring.dev/s/md-7f3c.../docs/review/design-note</code>
+          <div class="kv">
+            <div><span>Default mode</span><strong>Read-only</strong></div>
+            <div><span>Edit capability</span><strong>Off unless explicit</strong></div>
+            <div><span>Scope</span><strong>Entry Markdown + images</strong></div>
+            <div><span>Expires</span><strong>Configurable</strong></div>
+          </div>
+        </section>
+
+        <section class="side-card">
+          <h2>Safety boundaries</h2>
+          <div class="boundary">
+            <div class="boundary-row"><span class="icon yes">✓</span><span>Render the selected Markdown document and sanitized local image dependencies.</span></div>
+            <div class="boundary-row"><span class="icon yes">✓</span><span>Allow edits only when the public link includes an explicit edit capability for the entry file.</span></div>
+            <div class="boundary-row"><span class="icon no">×</span><span>No full workspace chrome, file explorer, project list, or hidden adjacent files.</span></div>
+            <div class="boundary-row"><span class="icon no">×</span><span>No terminal, agent APIs, plugin admin routes, environment variables, or arbitrary path fetches.</span></div>
+          </div>
+        </section>
+
+        <section class="side-card">
+          <h2>Resolved assets</h2>
+          <p>Only image paths referenced by the Markdown are available to the page.</p>
+          <ul>
+            <li><code>./images/share-flow.png</code> → allowed</li>
+            <li><code>./images/screenshot.png</code> → allowed</li>
+            <li><code>../secrets.env</code> → blocked</li>
+            <li><code>/workspace/**</code> browsing → blocked</li>
+          </ul>
+        </section>
+
+        <section class="side-card">
+          <h2>CLI mental model</h2>
+          <p><code>boring share markdown docs/review/design-note.md --public</code></p>
+          <p>Optional edit mode should require a conspicuous flag, for example <code>--allow-edit-entry</code>, and the public UI must label that state clearly.</p>
+        </section>
+      </aside>
+    </div>
+
+    <p class="footer-note">Artifact scope: static UX prototype only. It contains no production app code, no network calls, and no dependency on the Boring workspace runtime.</p>
+  </main>
+
+  <script>
+    const surface = document.getElementById('shareSurface')
+    const readButton = document.getElementById('readButton')
+    const editButton = document.getElementById('editButton')
+    const saveButton = document.getElementById('saveButton')
+    const saveStatus = document.getElementById('saveStatus')
+
+    function setMode(mode) {
+      const edit = mode === 'edit'
+      surface.classList.toggle('edit-enabled', edit)
+      readButton.setAttribute('aria-pressed', String(!edit))
+      editButton.setAttribute('aria-pressed', String(edit))
+      saveStatus.textContent = edit ? 'Prototype only: saving would write the entry Markdown file, not the workspace.' : ''
+    }
+
+    readButton.addEventListener('click', () => setMode('read'))
+    editButton.addEventListener('click', () => setMode('edit'))
+    saveButton.addEventListener('click', () => {
+      saveStatus.textContent = 'Saved proposal for docs/review/design-note.md (prototype message).'
+    })
+  </script>
+</body>
+</html>
