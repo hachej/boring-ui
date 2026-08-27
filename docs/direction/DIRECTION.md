@@ -356,8 +356,23 @@ Two rulings set the tone, both from the owner interview of 2026-08-26:
 model is not decided**. Full program:
 `docs/plans/multiagent-shell/premises.md` in #1409.
 
+> **Owner amendment 2026-08-27 — spikes first, briefly.** Before
+> [durable-streams] commits any implementation schema, two short spikes run:
+> the **pi-0.84.3 core-adoption spike** (`wt-391-forward-9n6w`, 1–2
+> sessions — the pi framework shipped its v4 durable core and deleted the
+> line our pin sits on; the spike proves the migration path under the D29
+> gateway and sizes what our ~1,700-line bespoke stream surface keeps vs
+> delegates) and the **storage-model research half**
+> (`wt-391-forward-shell-ngfs.13.1`). `9p50.1` now depends on both. A
+> 1–2 session delay bought against building the keystone on a dead
+> substrate. The **headless golden path** (job in via API/CLI → agent runs
+> → artifact → human decision → restart survives → delivery) is adopted as
+> a named conformance proof that runs **parallel, not gating** — it never
+> blocks shell work.
+
 1. **[durable-streams]** (epic `wt-391-forward-9p50`, formerly P1) — **the
-   keystone; start here.** Child `.1` makes Level D restart/ledger/activity
+   keystone.** Starts after the two spikes above report. Child `.1` makes
+   Level D restart/ledger/activity
    conformance green; child `.2` makes `BORING_CHAT_DURABLE_STREAM` default-on
    and carries the dated Decision 29 re-evaluation addendum (owner merge =
    ratification). This is D29's own named trigger arriving
