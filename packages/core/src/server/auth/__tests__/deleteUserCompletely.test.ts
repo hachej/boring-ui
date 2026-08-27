@@ -59,8 +59,8 @@ async function seedWorkspace(ownerId: string, name: string): Promise<string> {
   const workspaceId = randomUUID()
 
   await sqlClient`
-    INSERT INTO workspaces (id, app_id, name, created_by, is_default)
-    VALUES (${workspaceId}, ${APP_ID}, ${name}, ${ownerId}, false)
+    INSERT INTO workspaces (id, app_id, name, created_by, is_default, default_agent_type_id)
+    VALUES (${workspaceId}, ${APP_ID}, ${name}, ${ownerId}, false, 'default')
   `
 
   await sqlClient`

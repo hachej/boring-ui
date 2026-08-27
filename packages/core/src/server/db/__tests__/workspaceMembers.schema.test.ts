@@ -57,8 +57,8 @@ beforeAll(async () => {
   memberId = member.id
 
   const [workspace] = await sql`
-    INSERT INTO workspaces (app_id, name, created_by)
-    VALUES ('members-app', 'Members Test Workspace', ${ownerId!})
+    INSERT INTO workspaces (app_id, name, created_by, default_agent_type_id)
+    VALUES ('members-app', 'Members Test Workspace', ${ownerId!}, 'default')
     RETURNING id
   `
   workspaceId = workspace.id

@@ -511,8 +511,8 @@ describe('DELETE /api/v1/me', () => {
     const owner = await createSessionUser('scoped-owner-delete')
     const peer = await createSessionUser('scoped-owner-peer')
     const [workspace] = await rawSql`
-      INSERT INTO workspaces (app_id, name, created_by, is_default)
-      VALUES ('test-app', 'Scoped Owner Workspace', ${owner.id}, false)
+      INSERT INTO workspaces (app_id, name, created_by, is_default, default_agent_type_id)
+      VALUES ('test-app', 'Scoped Owner Workspace', ${owner.id}, false, 'default')
       RETURNING id
     `
     await rawSql`
@@ -540,8 +540,8 @@ describe('DELETE /api/v1/me', () => {
     const owner = await createSessionUser('scoped-member-owner')
     const member = await createSessionUser('scoped-member-delete')
     const [workspace] = await rawSql`
-      INSERT INTO workspaces (app_id, name, created_by, is_default)
-      VALUES ('test-app', 'Scoped Member Workspace', ${owner.id}, false)
+      INSERT INTO workspaces (app_id, name, created_by, is_default, default_agent_type_id)
+      VALUES ('test-app', 'Scoped Member Workspace', ${owner.id}, false, 'default')
       RETURNING id
     `
     await rawSql`
@@ -565,8 +565,8 @@ describe('DELETE /api/v1/me', () => {
     const user = await createSessionUser('sole-owner-delete')
 
     const [soleOwnerWs] = await rawSql`
-      INSERT INTO workspaces (app_id, name, created_by, is_default)
-      VALUES ('test-app', 'Routes Sole Owner', ${user.id}, false)
+      INSERT INTO workspaces (app_id, name, created_by, is_default, default_agent_type_id)
+      VALUES ('test-app', 'Routes Sole Owner', ${user.id}, false, 'default')
       RETURNING id
     `
     await rawSql`
@@ -597,8 +597,8 @@ describe('DELETE /api/v1/me', () => {
     const peer = await createSessionUser('delete-me-peer')
 
     const [sharedWorkspace] = await rawSql`
-      INSERT INTO workspaces (app_id, name, created_by, is_default)
-      VALUES ('test-app', 'Delete Transfer Workspace', ${user.id}, false)
+      INSERT INTO workspaces (app_id, name, created_by, is_default, default_agent_type_id)
+      VALUES ('test-app', 'Delete Transfer Workspace', ${user.id}, false, 'default')
       RETURNING id
     `
     await rawSql`

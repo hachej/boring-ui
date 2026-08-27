@@ -70,8 +70,8 @@ beforeEach(async () => {
   `
 
   await sqlClient`
-    INSERT INTO workspaces (id, app_id, name, created_by)
-    VALUES (${WS_ID}, 'test-app', 'Invites WS', ${OWNER_ID})
+    INSERT INTO workspaces (id, app_id, name, created_by, default_agent_type_id)
+    VALUES (${WS_ID}, 'test-app', 'Invites WS', ${OWNER_ID}, 'default')
   `
 })
 
