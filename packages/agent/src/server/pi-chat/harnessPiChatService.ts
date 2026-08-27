@@ -1,7 +1,7 @@
 import type { AgentHarness, RunContext, AgentSendInput } from '../../shared/harness'
 import type { SessionCtx, SessionListOptions, SessionStore } from '../../shared/session'
 import type { Workspace } from '../../shared/workspace'
-import type { BoringChatMessage, BoringChatPart, ChatError, ChatModelSelection, FollowUpPayload, FollowUpReceipt, InterruptPayload, PiChatEvent, PiChatSnapshot, PromptPayload, PromptReceipt, QueuedUserMessage, QueueClearPayload, QueueClearReceipt, StopPayload, StopReceipt } from '../../shared/chat'
+import { chatErrorFromUnknown, type BoringChatMessage, type BoringChatPart, type ChatError, type ChatModelSelection, type FollowUpPayload, type FollowUpReceipt, type InterruptPayload, type PiChatEvent, type PiChatSnapshot, type PromptPayload, type PromptReceipt, type QueuedUserMessage, type QueueClearPayload, type QueueClearReceipt, type StopPayload, type StopReceipt } from '../../shared/chat'
 import { sessionStreamPath, type AgentEvent } from '../../shared/events'
 import { ErrorCode } from '../../shared/error-codes'
 import { formatOffset, parseOffset, MAX_READ_LIMIT, type EventStreamStore } from '../events/eventStreamStore'
@@ -62,6 +62,15 @@ interface LiveSessionChannel {
 interface SyntheticPromptFailure {
   message: BoringChatMessage
   error: ChatError
+}
+
+function mapSyntheticChatError(channel: LiveSessionChannel, error: ChatError): PiChatEvent {
+  return channel.mapper.mapSynthetic({
+    type: 'error',
+    turnId: channel.activeTurnId,
+    retryable: error.retryable,
+    error,
+  })
 }
 
 interface InterruptedQueueEntry {
@@ -1008,19 +1017,11 @@ export class HarnessPiChatService implements PiChatSessionService {
     error: unknown,
   ): void {
     if (!channel) return
-    const followUpError: ChatError = {
-      code: ErrorCode.enum.INTERNAL_ERROR,
-      message: error instanceof Error && error.message
-        ? error.message
-        : 'Queued follow-up failed before the agent run started.',
-      retryable: false,
-    }
-    const errorEvent = channel.mapper.mapSynthetic({
-      type: 'error',
-      turnId: channel.activeTurnId,
-      retryable: false,
-      error: followUpError,
-    })
+    const followUpError = chatErrorFromUnknown(
+      error,
+      'Queued follow-up failed before the agent run started.',
+    )
+    const errorEvent = mapSyntheticChatError(channel, followUpError)
     this.publishChannelEvents(sessionId, channel, [errorEvent], () => {
       this.activeSyntheticPromptErrors.set(sessionKey, followUpError)
       channel.activeTurnId = undefined
@@ -1097,17 +1098,11 @@ export class HarnessPiChatService implements PiChatSessionService {
       files: promptPayloadFileParts(payload, messageId),
       createdAt,
     })
-    const promptError: ChatError = {
-      code: ErrorCode.enum.INTERNAL_ERROR,
-      message: error instanceof Error && error.message ? error.message : 'Prompt failed before the agent run completed.',
-      retryable: false,
-    }
-    const errorEvent = channel.mapper.mapSynthetic({
-      type: 'error',
-      turnId: channel.activeTurnId,
-      retryable: false,
-      error: promptError,
-    })
+    const promptError = chatErrorFromUnknown(
+      error,
+      'Prompt failed before the agent run completed.',
+    )
+    const errorEvent = mapSyntheticChatError(channel, promptError)
     this.publishChannelEvents(sessionId, channel, [messageEvent, errorEvent], () => {
       const failures = this.syntheticPromptFailures.get(sessionKey) ?? []
       failures.push({ message, error: promptError })

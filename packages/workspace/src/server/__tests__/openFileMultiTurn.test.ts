@@ -28,6 +28,8 @@ const describeIf = HAS_KEY ? describe : describe.skip
 interface ToolCall {
   tool: string
   params: Record<string, unknown>
+  messageIndex: number
+  output?: unknown
 }
 
 async function setUiState(
@@ -71,7 +73,7 @@ async function readChatState(app: FastifyInstance, sessionId: string): Promise<R
 function captureTurn(messages: unknown[], fromIndex: number): { calls: ToolCall[]; text: string } {
   const calls: ToolCall[] = []
   const textParts: string[] = []
-  for (const message of messages.slice(fromIndex)) {
+  for (const [messageIndex, message] of messages.slice(fromIndex).entries()) {
     const parts = Array.isArray((message as { parts?: unknown[] })?.parts) ? (message as { parts: unknown[] }).parts : []
     for (const part of parts) {
       const rec = part as Record<string, unknown>
@@ -82,6 +84,8 @@ function captureTurn(messages: unknown[], fromIndex: number): { calls: ToolCall[
           params: rec.input && typeof rec.input === "object" && !Array.isArray(rec.input)
             ? (rec.input as Record<string, unknown>)
             : {},
+          messageIndex,
+          ...(rec.output !== undefined ? { output: rec.output } : {}),
         })
       }
     }
@@ -134,6 +138,11 @@ describeIf("exec_ui openFile — re-open after close (live LLM)", () => {
       join(workspaceRoot, "src", "README.md"),
       "# nested readme\n\nUsed by the re-open regression test.\n",
     )
+    await Promise.all([
+      writeFile(join(workspaceRoot, "src", "one.md"), "# one\n"),
+      writeFile(join(workspaceRoot, "src", "two.md"), "# two\n"),
+      writeFile(join(workspaceRoot, "src", "three.md"), "# three\n"),
+    ])
     app = await createWorkspaceAgentServer({
       workspaceRoot,
       mode: "direct",
@@ -145,6 +154,36 @@ describeIf("exec_ui openFile — re-open after close (live LLM)", () => {
     await app.close()
     await rm(workspaceRoot, { recursive: true, force: true })
   })
+
+  test(
+    "agent opens every requested file sequentially in requested order",
+    async () => {
+      const sessionId = await createChatSession(app, "Sequential plural file open")
+      await setUiState(app, { workbenchOpen: true, openTabs: [], activeTab: null })
+
+      const turn = await sendTurn(
+        app,
+        sessionId,
+        "Open these three files in this exact order: src/one.md, src/two.md, src/three.md",
+      )
+      const openFileCalls = turn.calls.filter(
+        (call) => call.tool === "exec_ui" && call.params.kind === "openFile",
+      )
+      const timeline = openFileCalls.map((call) => ({
+        path: (call.params as { params?: { path?: string } }).params?.path,
+        messageIndex: call.messageIndex,
+        status: (call.output as { details?: { status?: string } } | undefined)
+          ?.details?.status,
+      }))
+
+      expect(timeline, `turn calls: ${JSON.stringify(turn.calls)}\nText: ${turn.text}`).toEqual([
+        { path: "src/one.md", messageIndex: 1, status: "ok" },
+        { path: "src/two.md", messageIndex: 2, status: "ok" },
+        { path: "src/three.md", messageIndex: 3, status: "ok" },
+      ])
+    },
+    180_000,
+  )
 
   test(
     "agent re-calls exec_ui openFile after the tab is closed",

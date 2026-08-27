@@ -258,6 +258,10 @@ export function startUiCommandTransport(opts: UiCommandTransportOptions): () => 
 }
 
 export function startUiCommandStream(opts: StreamOptions): () => void {
+  const agentDispatchContext: DispatchContext = {
+    ...opts.ctx,
+    fileDisposition: "persistent",
+  }
   return startUiCommandTransport({
     endpoint: opts.endpoint,
     query: opts.query,
@@ -268,7 +272,7 @@ export function startUiCommandStream(opts: StreamOptions): () => void {
     maxReconnects: opts.maxReconnects,
     onCommand(raw) {
       if (raw && typeof raw === "object" && typeof (raw as UiCommand).kind === "string") {
-        dispatchUiCommand(raw as UiCommand, opts.ctx)
+        dispatchUiCommand(raw as UiCommand, agentDispatchContext)
       }
     },
   })

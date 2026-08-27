@@ -11,10 +11,10 @@ function fakeSurface(): SurfaceShellApi & {
   __expanded: string[]
   __expandCalls: Array<{ path: string; filesystem?: string }>
   __leftClosed: number
-  __openFileCalls: Array<{ path: string; filesystem?: string; mode?: string }>
+  __openFileCalls: Array<{ path: string; filesystem?: string; mode?: string; preview?: boolean }>
 } {
   const opened: string[] = []
-  const openFileCalls: Array<{ path: string; filesystem?: string; mode?: string }> = []
+  const openFileCalls: Array<{ path: string; filesystem?: string; mode?: string; preview?: boolean }> = []
   const surfaces: unknown[] = []
   const panels: unknown[] = []
   const expanded: string[] = []
@@ -26,11 +26,16 @@ function fakeSurface(): SurfaceShellApi & {
     __expanded: string[]
     __expandCalls: Array<{ path: string; filesystem?: string }>
     __leftClosed: number
-    __openFileCalls: Array<{ path: string; filesystem?: string; mode?: string }>
+    __openFileCalls: Array<{ path: string; filesystem?: string; mode?: string; preview?: boolean }>
   } = {
-    openFile: (path: string, options?: { filesystem?: string; mode?: string }) => {
+    openFile: (path: string, options?: { filesystem?: string; mode?: string; preview?: boolean }) => {
       opened.push(path)
-      openFileCalls.push({ path, filesystem: options?.filesystem, mode: options?.mode })
+      openFileCalls.push({
+        path,
+        filesystem: options?.filesystem,
+        mode: options?.mode,
+        ...(options?.preview !== undefined ? { preview: options.preview } : {}),
+      })
     },
     openSurface: (request: unknown) => surfaces.push(request),
     openPanel: (cfg: unknown) => panels.push(cfg),
@@ -86,6 +91,17 @@ describe("dispatchUiCommand", () => {
     const c = ctx()
     dispatchUiCommand({ kind: "openFile", params: { path: "/company/hr/policy.md", filesystem: "company_context" } }, c)
     expect(c.__surface.__openFileCalls).toEqual([{ path: "/company/hr/policy.md", filesystem: "company_context" }])
+  })
+
+  it("uses persistent tabs only for agent-stream dispatch provenance", () => {
+    const local = ctx()
+    const agent = ctx({ fileDisposition: "persistent" })
+
+    dispatchUiCommand({ kind: "openFile", params: { path: "local.ts" } }, local)
+    dispatchUiCommand({ kind: "openFile", params: { path: "agent.ts" } }, agent)
+
+    expect(local.__surface.__openFileCalls).toEqual([{ path: "local.ts", filesystem: "user" }])
+    expect(agent.__surface.__openFileCalls).toEqual([{ path: "agent.ts", filesystem: "user", preview: false }])
   })
 
   it("openFile is a no-op when path is missing or non-string", () => {
@@ -181,6 +197,45 @@ describe("dispatchUiCommand", () => {
       filesystem: "company_context",
     }])
     raf.mockRestore()
+  })
+
+  it("delivers closed-workbench plural opens exactly once in requested focus order", () => {
+    let workbenchOpen = false
+    let mounted = false
+    let parked: ((surface: SurfaceShellApi) => void) | undefined
+    const surface = fakeSurface()
+    const rafQueue: FrameRequestCallback[] = []
+    const originalRaf = global.requestAnimationFrame
+    global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      rafQueue.push(callback)
+      return rafQueue.length
+    }) as typeof requestAnimationFrame
+    const dispatchContext: DispatchContext = {
+      surface: () => mounted ? surface : null,
+      isWorkbenchOpen: () => workbenchOpen,
+      openWorkbench: () => { workbenchOpen = true },
+      fileDisposition: "persistent",
+      enqueue: (run) => { parked = run },
+    }
+    const flushRaf = () => {
+      for (const callback of rafQueue.splice(0)) callback(0)
+    }
+
+    try {
+      dispatchUiCommand({ kind: "openFile", params: { path: "one.md" } }, dispatchContext)
+      dispatchUiCommand({ kind: "openFile", params: { path: "two.md" } }, dispatchContext)
+      mounted = true
+      parked?.(surface)
+      flushRaf()
+      flushRaf()
+
+      expect(surface.__openFileCalls).toEqual([
+        { path: "one.md", filesystem: "user", preview: false },
+        { path: "two.md", filesystem: "user", preview: false },
+      ])
+    } finally {
+      global.requestAnimationFrame = originalRaf
+    }
   })
 
   it("openPanel calls surface.openPanel with the full config", () => {
