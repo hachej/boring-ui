@@ -1,0 +1,20 @@
+{
+  "name": "piv2-core-spike",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Standalone probe package for the pi-0.84.3 core-adoption spike (bead wt-391-forward-9n6w). Not part of the product build graph.",
+  "type": "module",
+  "scripts": {
+    "probe:import": "tsx probes/01-v3-import.ts",
+    "probe:restart": "tsx probes/02-restart-resume.ts",
+    "probe:host-volume": "tsx probes/04-host-volume.ts"
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "0.84.3",
+    "@earendil-works/pi-coding-agent": "0.84.3"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
