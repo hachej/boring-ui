@@ -162,8 +162,10 @@ session record.
 ## Adoption qualification criteria (behavior-gated, never version-gated)
 
 Passing these criteria — not the passage of time, and not a version number —
-is what triggers re-evaluation. 2026-09-10 is an owner check-in on progress,
-not an automatic build trigger either way.
+is what triggers re-evaluation. *(The dated owner check-in that stood here
+was removed 2026-08-27, RECONCILIATION §9c: nothing waits on pi anymore;
+these criteria are now purely the replacement bar for a working Boring
+backend, migration cost included.)*
 
 **EVENT-STORE adoption** requires all of:
 
