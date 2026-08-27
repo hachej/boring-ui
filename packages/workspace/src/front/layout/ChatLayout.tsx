@@ -262,7 +262,18 @@ export function ChatLayout(props: ChatLayoutProps) {
         shortcuts.push({ key: "3", mod: true, allowInEditable: true, handler: toggleSidebar })
       }
       if (!sidebarOpen && !navOpen && centerId === "chat") {
-        shortcuts.push({ key: "Escape", allowInEditable: true, handler: focusChat })
+        shortcuts.push({
+          key: "Escape",
+          allowInEditable: true,
+          // An open dropdown/dialog/popover should get first crack at
+          // Escape and close itself. Without this guard, this shortcut's
+          // unconditional preventDefault() fires before Radix's own
+          // Escape handling ever runs (both listen on `document` in the
+          // capture phase, and this one mounts first), so the overlay
+          // silently never closes. See #1391.
+          shouldHandle: () => !isDismissableOverlayOpen(),
+          handler: focusChat,
+        })
       }
       if (centerId === "chat") {
         shortcuts.push({ key: "\\", mod: true, allowInEditable: true, handler: toggleChatCollapsed })
@@ -782,6 +793,17 @@ export function ChatLayout(props: ChatLayoutProps) {
 
 function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n))
+}
+
+// Radix (dropdown menu, dialog, popover, ...) renders open overlays via a
+// portal and marks them with these attributes. When one is open, Escape
+// belongs to it — not to the "focus chat" shortcut below. See #1391.
+const DISMISSABLE_OVERLAY_OPEN_SELECTOR =
+  '[data-radix-popper-content-wrapper], [role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]'
+
+function isDismissableOverlayOpen(): boolean {
+  if (typeof document === "undefined") return false
+  return document.querySelector(DISMISSABLE_OVERLAY_OPEN_SELECTOR) !== null
 }
 
 type StoredNumberUpdate = number | ((previous: number) => number)
