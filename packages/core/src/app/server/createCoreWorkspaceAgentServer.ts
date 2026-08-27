@@ -88,6 +88,7 @@ import {
   createAuth,
   type BetterAuthInstance,
   type CoreDynamicAuthBaseURL,
+  type ResolveInitialAgentSeat,
 } from '../../server/auth/index.js'
 import {
   authorizeRequestScopedWorkspace,
@@ -325,6 +326,8 @@ export interface CreateCoreWorkspaceAgentServerOptions {
   appRoot?: string
   /** Opt into host-local auth callback URLs for an exact host allowlist. */
   authBaseURL?: CoreDynamicAuthBaseURL
+  /** Trusted app-owned server resolver for initial signup Seat intent. */
+  resolveInitialAgentSeat?: ResolveInitialAgentSeat
   config?: CoreConfig
   loadConfigOptions?: LoadConfigOptions
   plugins?: CoreWorkspacePluginEntry[]
@@ -1031,6 +1034,7 @@ async function createCoreRuntime(
   customTelemetry?: TelemetrySink,
   requestScopeResolver?: CoreRequestScopeResolver,
   authBaseURL?: CoreDynamicAuthBaseURL,
+  resolveInitialAgentSeat?: ResolveInitialAgentSeat,
 ): Promise<{
   app: CoreWorkspaceAgentServer
   sql: postgres.Sql
@@ -1067,6 +1071,7 @@ async function createCoreRuntime(
     logger: app.log,
     telemetry,
     disableDefaultWorkspaceCreation: requestScopeResolver !== undefined,
+    resolveInitialAgentSeat,
   })
 
   app.decorate('db', db)
@@ -1165,6 +1170,7 @@ export async function createCoreWorkspaceAgentServer(
     options.telemetry,
     options.requestScopeResolver,
     options.authBaseURL,
+    options.resolveInitialAgentSeat,
   )
   const appRoot = options.appRoot
   const serveFrontend =

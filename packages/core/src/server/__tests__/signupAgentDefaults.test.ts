@@ -244,6 +244,53 @@ describe('signup-domain default-agent initialization (Decision 28 hook)', () => 
     })
   })
 
+  it('prefers a trusted app-resolved signup intent over hostname and boot defaults', async () => {
+    const config = makeConfig()
+    const { store, create } = makeFakeStore()
+    const resolveInitialAgentSeat = vi.fn(async ({ context }: { context: PostSignupContext | null }) => {
+      expect(context?.getHeader?.('cookie')).toBe('agent-intent=opaque')
+      return { agentTypeId: 'charlotteledoux', source: 'signup-intent' as const }
+    })
+    const hook = createPostSignupHook({
+      config,
+      signupAgentDefaults: compileSignupAgentDefaults(
+        config.signupAgentDefaults,
+        ['boring-v2', 'legal', 'charlotteledoux'],
+        config.security?.trustedProxy,
+      ),
+      workspaceStore: store,
+      transport: null,
+      resolveInitialAgentSeat,
+    })
+
+    await hook(user, ctxWithHeaders({
+      cookie: 'agent-intent=opaque',
+      [TRUSTED_SIGNUP_HOSTNAME_HEADER]: 'legal.example',
+    }))
+
+    expect(resolveInitialAgentSeat).toHaveBeenCalledOnce()
+    expect(create).toHaveBeenCalledWith(user.id, 'Default workspace', 'test-app', {
+      isDefault: true,
+      defaultAgentTypeId: 'charlotteledoux',
+      initialAgentSeatSource: 'signup-intent',
+      enrolledByUserId: user.id,
+    })
+  })
+
+  it('fails closed before workspace creation when the trusted intent resolver fails', async () => {
+    const config = makeConfig()
+    const { store, create } = makeFakeStore()
+    const hook = createPostSignupHook({
+      config,
+      workspaceStore: store,
+      transport: null,
+      resolveInitialAgentSeat: async () => { throw new Error('intent store unavailable') },
+    })
+
+    await expect(hook(user, null)).rejects.toThrow('intent store unavailable')
+    expect(create).not.toHaveBeenCalled()
+  })
+
   it('normalizes the host (case/port) before the exact lookup', async () => {
     const { create } = await runSignup({ headers: { [TRUSTED_SIGNUP_HOSTNAME_HEADER]: 'Legal.Example:443' } })
     expect(create.mock.calls[0]![3]).toEqual({

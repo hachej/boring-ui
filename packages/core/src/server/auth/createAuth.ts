@@ -15,7 +15,7 @@ import {
   renderResetPassword,
   renderMagicLink,
 } from '../mail/templates/index.js'
-import { createPostSignupHook } from './postSignupHook.js'
+import { createPostSignupHook, type ResolveInitialAgentSeat } from './postSignupHook.js'
 import { isCoreEmailVerificationEnabled } from '../../shared/authPolicy.js'
 import { safeCapture, noopTelemetry, type TelemetrySink } from '../../shared/telemetry.js'
 import type { ValidatedSignupAgentDefaults } from '../signupAgentDefaults.js'
@@ -121,6 +121,7 @@ export interface CreateAuthOptions {
   /** Telemetry sink for auth.signed_up / auth.session_started (defaults to noop). */
   telemetry?: TelemetrySink
   disableDefaultWorkspaceCreation?: boolean
+  resolveInitialAgentSeat?: ResolveInitialAgentSeat
 }
 
 async function createReplayableRequest(request: Request): Promise<Request> {
@@ -209,6 +210,7 @@ export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOp
         transport,
         logger: opts.logger,
         disableDefaultWorkspaceCreation: opts.disableDefaultWorkspaceCreation,
+        resolveInitialAgentSeat: opts.resolveInitialAgentSeat,
       })
     : undefined
 
