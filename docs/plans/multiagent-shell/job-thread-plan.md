@@ -45,6 +45,16 @@ Ordering and dependencies live only in §7; §§1–6 describe shape.
 > either admit typed `input-required` request/answer posts across the boundary, or the D22/D28
 > amendment that selects the relay must say so.
 
+> **Substrate alignment (owner direction 2026-08-27).** This chapter's shape — a projection over
+> several per-agent 0.80.7 Sessions driven by a relay — was drawn against the old pi substrate. The
+> post-premise engine redesign MUST evaluate a further candidate: **seats as `AgentLane`s inside one
+> pi-v4 Session** (`research/pi-v2-alignment.md`), where the harness itself supplies the shared
+> durable timeline and drill-down, and our host supplies what pi lacks — seat identity/attribution,
+> cross-lane turn reservation and caps, the posts-only boundary, archive semantics. This joins Q2's
+> candidate set (relay / D22 native binding / blackboard / **pi-v4 lanes**); the ratified default
+> ordering is unchanged, and the choice remains the post-P1 owner gate's. Until then: design nothing
+> that hard-codes the several-sessions assumption where a one-Session-many-lanes shape would break it.
+
 ## What this plan builds
 
 Twelve artifacts, nothing else. Product words first, code noun in `code`. "Built by" points at §7,

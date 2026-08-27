@@ -35,6 +35,17 @@ contract* (their words). The coding-agent services implemented end-to-end
 today: session directory/management, models, prompt/abort — queue, resume,
 compaction, transcript snapshot all throw not-implemented.
 
+**Public signal (2026-08-26, evening):** pi's author publicly demoed the
+mini topology — *"internal multiplayer achieved… new harness makes this
+very easy"* — two terminal clients attached to one session with one shared
+live transcript. This is **multiplayer (many viewers, one agent), not
+multi-agent**; his own follow-up ("now i just need to draw the rest of the
+fine owl") marks the remainder as unbuilt. Net effect on this analysis:
+confirms the multi-presentation maturity claim, leaves the
+multi-agent-deferred verdict standing, and raises the urgency of the
+bounded core-adoption spike — the collaboration surface of the shipped v4
+core is evolving fast and in public.
+
 **The migration line (corrected by adversarial review, same day):** pi v2
 **ships a v3 compatibility decoder** — legacy coding-agent transcripts are
 required to open unchanged (`harness.md:2892`), the decoder exists
