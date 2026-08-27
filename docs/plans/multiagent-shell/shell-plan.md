@@ -44,27 +44,28 @@ lives in `premises.md`; the executable ordering and merge queue live in
 
 ## 1. Vision (owner's words, distilled)
 
-**Transparent multi-agent.** A thread looks like today's chat, with several
-agents inside it. **One composer.** Workers are hidden behind the
-orchestrator: what the user sees is a *voice*, not a *seat*. Staffing — which
-agents, how many sessions, the handoffs — collapses behind one merged
-transcript; per-agent work logs are drill-down provenance, like CI logs behind
-a PR check (#1399, owner sharpening 2026-08-24).
+**Transparent multi-agent — presentation RULED 2026-08-27 (§9b):
+multi-author.** A thread reads like a Slack thread: **one composer** for the
+human, several **named agents visibly authoring posts** (chips,
+joined/handoff/left markers), one merged timeline per §7's multi-seat
+ruling; per-agent work logs remain drill-down provenance, like CI logs
+behind a PR check. The 08-24 "workers hidden behind a voice" sharpening is
+superseded.
 
-**One composer is this shell's team-presentation policy** (single-voice),
-not a kernel rule — candidate policies for other Experiences include
-explicit-specialists, ambient-hidden, and debug-roster. Recognizing
-single-voice as a *staffed policy* is also the frame in which the
-orchestrator-Seat gap gets resolved.
+**Explicit-specialists is this shell's team-presentation policy**, not a
+kernel rule — candidate policies for other Experiences still include
+single-voice, ambient-hidden, and debug-roster. The orchestrator-Seat gap is
+resolved directly: the orchestrator is a named speaker holding its own Seat
+(§9b).
 
 **1 Thread = 1 job.** The thread is the unit of WORK, not the unit of agent.
 The user talks to the job. **Ratified** 2026-08-26 by owner merge of PR #1401
 (merge `58406c465`) — *"A Thread may span multiple Seats, projected as one
-timeline; one Thread per job."* Recorded in `RECONCILIATION.md` §7;
-`VISION.md` R-c untouched at
-`docs/plans/long-term/ratified/VISION.md:112-115`. Naming is settled:
-**multi-seat Thread / Job Thread**, never "channel" — *channel* stays reserved
-for transport/ingress.
+timeline; one Thread per job."* Recorded in `RECONCILIATION.md` §7, **amended
+2026-08-27 by §9a**: Thread = the durable job root; Session = one runtime
+conversation; 1 Thread : 0..n Sessions (`VISION.md` R-c amended in place).
+Naming is settled: **multi-seat Thread / Job Thread**, never "channel" —
+*channel* stays reserved for transport/ingress.
 
 **Threads archive, they do not die.** Work carries an `Archived · N` drill-in.
 Archive ≠ delete: history, attribution and refs are retained; archived threads

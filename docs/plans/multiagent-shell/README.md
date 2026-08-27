@@ -67,10 +67,14 @@ Honest risk**).
 
 What that specification says:
 
-**Transparent multi-agent.** A thread looks like today's chat, with several
-agents inside it. **One composer.** Workers hidden behind the orchestrator: the
-user sees a *voice*, not a *seat*. **1 Thread = 1 job** — the unit of WORK, not
-of agent (ratified 2026-08-26, PR #1401). **Threads archive, they don't die.**
+**Transparent multi-agent — AMENDED 2026-08-27 (§9b): multi-author.** A
+thread reads like a Slack thread: **one composer** for the human, several
+**named agents visibly authoring posts** (chips, joined/handoff/left markers);
+per-agent work logs stay one drill-down deeper. The earlier "workers hidden
+behind one voice" formula is retired; the orchestrator is a named speaker
+with its own Seat. **1 Thread = 1 job** — the durable job root, binding 0..n
+Sessions (ratified 2026-08-26 PR #1401, amended by RECONCILIATION §9a).
+**Threads archive, they don't die.**
 
 **The shell = Search (top) / Inbox / Work / Agents / Library**, over one workspace. Nav
 is domains; the vertical plugin rail is tools. **Chat opens as a column beside

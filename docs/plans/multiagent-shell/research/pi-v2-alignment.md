@@ -1,5 +1,11 @@
 # Pi v2 (AgentHarness) — alignment analysis and the rewrite question
 
+> **SEQUENCING UPDATE 2026-08-27 (second grill — RECONCILIATION §9c):** the
+> "wait for a qualifying pi release" gate referenced below is **removed**.
+> P1-B builds Boring's own event backend behind the seam; the adoption
+> criteria in this document remain the bar a future pi release must clear —
+> now including the migration cost of replacing a working backend.
+
 > **POST-SPIKE VERDICT (2026-08-27, spike report:
 > [`pi-core-adoption-spike-report.md`](pi-core-adoption-spike-report.md)).**
 > The empirical spike **overturns the "shipped core" premise below**: at
