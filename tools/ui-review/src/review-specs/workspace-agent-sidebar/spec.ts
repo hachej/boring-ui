@@ -2,6 +2,7 @@ import { createRequire } from "node:module"
 import { expect, type Page } from "@playwright/test"
 import type { UiReviewSpec } from "../../core/reviewSpec"
 import type { UiReviewViewport } from "../../core/contracts"
+import { runUiReviewReadinessWithReload } from "../../core/readiness"
 import {
   AGENT_SIDEBAR_HARD_GATE_CONTRACT,
   evaluateAgentSidebarHardGates,
@@ -31,15 +32,15 @@ const viewports: UiReviewViewport[] = [
   { name: "tablet", width: 834, height: 1112, deviceScaleFactor: 1, hasTouch: true },
 ]
 
-async function ensureAgentNavigation(page: Page): Promise<void> {
+async function ensureAgentNavigation(page: Page, timeoutMs = 60_000): Promise<void> {
   const trees = page.locator('[data-boring-workspace-part="app-left-agent-tree"]')
   const open = page.getByRole("button", { name: "Open app navigation" })
-  await expect.poll(async () => await trees.count() === 2 || await open.isVisible().catch(() => false), { timeout: 60_000 }).toBe(true)
+  await expect.poll(async () => await trees.count() === 2 || await open.isVisible().catch(() => false), { timeout: timeoutMs }).toBe(true)
   if (await trees.count() !== 2) await open.click()
-  await expect(trees).toHaveCount(2, { timeout: 60_000 })
-  await expect(page.getByRole("button", { name: /Collapse Alpha;/ })).toBeVisible({ timeout: 60_000 })
-  await expect(page.locator('[data-boring-workspace-part="app-left-agent-tree"][data-boring-agent-type-id="alpha"] [data-boring-workspace-part="app-session-row"]')).toHaveCount(1, { timeout: 60_000 })
-  await expect(page.getByRole("heading", { name: "What should we work on?" })).toBeVisible({ timeout: 60_000 })
+  await expect(trees).toHaveCount(2, { timeout: timeoutMs })
+  await expect(page.getByRole("button", { name: /Collapse Alpha;/ })).toBeVisible({ timeout: timeoutMs })
+  await expect(page.locator('[data-boring-workspace-part="app-left-agent-tree"][data-boring-agent-type-id="alpha"] [data-boring-workspace-part="app-session-row"]')).toHaveCount(1, { timeout: timeoutMs })
+  await expect(page.getByRole("heading", { name: "What should we work on?" })).toBeVisible({ timeout: timeoutMs })
 }
 
 export const workspaceAgentSidebarSpec: UiReviewSpec = {
@@ -69,7 +70,7 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
       VITE_HMR_HOST: "127.0.0.1",
       VITE_HMR_CLIENT_PORT: String(port),
     }),
-    ready: async (page) => ensureAgentNavigation(page),
+    ready: async (page, timeoutMs) => runUiReviewReadinessWithReload(page, timeoutMs, ensureAgentNavigation),
   },
   viewports,
   checkpoints: [

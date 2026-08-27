@@ -140,7 +140,11 @@ const palette = extract((state): SafePaletteState => {
     || bounds.x + bounds.width > state.window.innerWidth
     || bounds.y + bounds.height > state.window.innerHeight
   ))
-  const undersizedTouchTargets = state.window.innerWidth <= 500
+  // Bombadil 0.7 can size a viewport but cannot emulate touch. Do not judge
+  // its narrow fine-pointer browser against the coarse-pointer CSS contract;
+  // the registered Playwright mobile capture enforces that branch with
+  // `hasTouch: true`.
+  const undersizedTouchTargets = state.window.matchMedia("(pointer: coarse)").matches
     ? observation.undersizedTouchTargets
         .filter((target) => !target.exempt)
         .map((target) => `${target.label}:${Math.round(target.bounds.width)}x${Math.round(target.bounds.height)}`)

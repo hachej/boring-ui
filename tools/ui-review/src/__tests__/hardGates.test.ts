@@ -7,7 +7,7 @@ function snapshot(overrides: Partial<UiHardGateSnapshot> = {}): UiHardGateSnapsh
   return {
     stateId: "state-1",
     origin: "http://127.0.0.1:5380",
-    viewport: { width: 390, height: 844, mobile: true },
+    viewport: { width: 390, height: 844, compact: true, coarsePointer: true },
     consoleErrors: [],
     pageErrors: [],
     requestFailures: [],
@@ -111,6 +111,21 @@ describe("command palette hard gates", () => {
     ])
   })
 
+  it("separates compact layout from coarse-pointer touch enforcement", () => {
+    const undersizedTouchTargets = [
+      { label: "Archived", selector: "button", bounds: { x: 0, y: 0, width: 317, height: 20 }, exempt: false },
+    ]
+    const narrowFine = evaluateCommandPaletteHardGates(snapshot({
+      viewport: { width: 390, height: 844, compact: true, coarsePointer: false },
+      undersizedTouchTargets,
+    }))
+    expect(narrowFine.results.find((result) => result.id === "mobile-touch-targets")?.passed).toBe(true)
+    expect(narrowFine.results.some((result) => result.id === "command-palette-touch-hint")).toBe(true)
+
+    const narrowCoarse = evaluateCommandPaletteHardGates(snapshot({ undersizedTouchTargets }))
+    expect(narrowCoarse.results.find((result) => result.id === "mobile-touch-targets")?.passed).toBe(false)
+  })
+
   it("allows only origin-bound exact startup aborts", () => {
     const allowed = evaluateCommandPaletteHardGates(snapshot({
       requestFailures: [{ url: "http://127.0.0.1:5380/api/v1/agents/alpha/ready-status", errorText: "net::ERR_ABORTED" }],
@@ -144,7 +159,7 @@ describe("command palette hard gates", () => {
 
   it("enforces command-palette chrome invariants as machine-readable gates", () => {
     const report = evaluateCommandPaletteHardGates(snapshot({
-      viewport: { width: 1440, height: 900, mobile: false },
+      viewport: { width: 1440, height: 900, compact: false, coarsePointer: false },
       commandPalette: {
         checkpoint: "commands",
         visible: true,

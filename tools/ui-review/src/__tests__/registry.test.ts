@@ -43,6 +43,7 @@ describe("UI review spec registry", () => {
     const automationSpec = uiReviewSpecs.get("automation-pane-popover")
     expect(automationSpec.target.root).toBe("tools/ui-review/fixtures/workspace-components")
     expect(automationSpec.checkpoints).toHaveLength(4)
+    expect(uiReviewSpecs.get("workspace-command-palette").viewports.find((viewport) => viewport.name === "mobile")?.hasTouch).toBe(true)
     for (const id of uiReviewSpecs.ids()) {
       expect(uiReviewSpecs.get(id).target.serverCommand.slice(-3)).toEqual(["--host", "127.0.0.1", "--strictPort"])
     }
