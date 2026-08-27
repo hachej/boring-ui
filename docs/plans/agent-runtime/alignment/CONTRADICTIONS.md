@@ -1,0 +1,106 @@
+# Contradiction audit — multi-agent pack vs the ratified plan and the agent-runtime set
+
+Adversarial alignment audit of PR #1409 (the multi-agent vision pack) against
+the ratified long-term pack, the decision ledger, and the absorbed #391/#909
+agent-runtime plans. Run 2026-08-26 (Sol, xhigh, two passes). Decision
+numbers (D22, D28, D29…) refer to `docs/DECISIONS.md`; "RECONCILIATION §8"
+and "VISION R-c" refer to `docs/plans/long-term/ratified/`. Verdict:
+**three confirmed conflicts, all resolved on this branch**; the
+Gateway/session spine itself is sound.
+
+Per-area reviews (Sol + pi over each subfolder of this pack) append here as
+they conclude.
+
+## Per-area verdicts
+
+| Area | Sol (contradiction lens) | pi (reader lens) | Response |
+|---|---|---|---|
+| fleet-and-environments | revise (9 findings) | pass | README rewritten as a reconciliation layer: DIRECTION-only authority (incl. F-graph edges + the #805 DAG demoted to reference), shipped-D29/gateway reality named where the frozen text predates it, the silent default-agent fallback flagged as a code-vs-D28 defect (#1311 line), F7 re-gated behind [durable-streams]+[seat-storage], the in-process adapter mandate superseded, the AgentHost stop-condition read narrowly. Stale `DECISIONS.md` links to the old `docs/issues/391/plan.md` path repaired. The frozen `plan.md` itself is untouched. |
+| cloud-vision | revise (9 findings) | pass | The non-binding vision claimed the gVisor sandbox design "ratified" — the final owner decision (`docs/issues/1081/tech-choice.md`) supersedes gVisor and requires Firecracker; README now names this and three more contradictions the ratified side wins (plane model, sandbox-crossing overclaim, stale sequencing). Four docs (#819/#808-SBX1/#806/#820) that promoted the non-binding vision into "authority" re-qualified. Historical-body banner added to the ratified landing memo; six broken inbound links + one dead fragment repaired; "path A" glossed with the 2026-08-10 app-side implementation supersession noted. |
+| gateway | revise (10 findings) | pass (reader lane) | Four real engine-plan gaps folded into `job-thread-plan.md`: the recovery step that read a nonexistent gateway ledger operation is marked design debt for the post-[durable-streams] redesign (with the missing-authorization-principal gap beside it); the ask-user triple join is corrected to name its required ask-user change (addressed identity through pending state) as an S4 obligation; the "v0 ships on Level B" subsection is bannered SUPERSEDED. DIRECTION's authority line now points at the package contract (`AGENT_GATEWAY_V0.md`), not the drifted plan §6. Gateway README rewritten as historical with caveats (pushed-host topology = owner input not ratified; renamed members); orchestrator prompt gets a RETIRED banner and repaired paths. |
+| plugins-across-hosts | revise (8 findings) | revise (reader lane) | Sol: README now carries the supersession caveats — marketplace needs an explicit D28 amendment (mutable registry vs static fleet), remote-host generations are #905-gated, hostname authority superseded by D30, UI territory superseded by the ratified domain/tool split (and "active agent" does not exist under multi-seat Threads), the folder move conflicts with ratified move policy, the dispatcher inventory is obsolete. Two stale sibling `plan.md` refs in the model repaired to `../gateway/plan.md`. Named follow-up: `PLUGIN_SYSTEM.md:169` still rejects `boring.id` while shipped code accepts it — spec repair PR needed. Reader-lane fixes were folded earlier. | README deepened: two plugin kinds / two planes / tool ledgers / scoped state / deferred marketplace named up front; gateway-plan link added; "adversarial hardening" glossed; analysis-vs-ratified boundary stated. |
+| consumption-modes | revise (8 findings) | revise (reader lane) | Two engine gaps recorded at the correction note, owned by the post-P1 gate: the orchestrator voice has no Seat (ratified §8 promises workers behind the orchestrator's voice; the relay is non-Seat and routes human turns direct to workers), and posts-only cannot yet express D22's two-way `input-required` — the future amendment must resolve both. Superseded D25 "share process/runtime authority" quotes removed from shell + engine chapters (D28's canonical-data rule cited instead; data shared, invocation authority never). Blackboard now named as needing §7's own promotion gate in premises. README: session-ownership and delivery-map supersessions + the invariant-14 fallback defect disclosed; "one gateway" mis-attribution fixed (it is D29's rule). Reader-lane fixes were folded earlier. | README rewritten: the four modes and the 17-invariant shared contract named up front, jargon glossed, multi-seat Threads placed as an instance of the workspace-local mode. |
+| alignment | revise (11 findings) | revise (reader lane) | Both frozen files (ownership map, alignment matrix) now carry **Historical — do not dispatch** banners killing their present-tense authority claims (the matrix literally declared the fleet plan "dispatch authority"); the README carries a nine-item current-truth ledger: Agent owns sessions, #805 reference-only, #808→#1012, F0b done (#1388), default persistence shipped (#1156), durable streams = keystone not "later", collaboration re-gated behind the premises, billing moved to tenant repos, the #391 folder is a stub. | README updated to describe `CONTRADICTIONS.md` (it predated the file); decision-ledger path glosses added to this file's intro. |
+
+*(Reader lane note: pi's free pool saturated mid-wave after two areas; the
+remaining four reader reviews ran on Haiku subagents with the same brief.)*
+
+**Cross-cutting re-check (fresh eyes over the folded branch, 2026-08-26):**
+every hot spot the folds touched — the D22 relay default, the storage
+suspension, the deployment-static fleet constraint, Objective optionality,
+the orchestrator-voice gap, Level B/D banners, decision numbering — reads
+consistently across the pack. Two residuals found and fixed: the shell
+chapter's §1 still stated the Inbox-first nav order twice (now Search-top,
+matching §8a and the ratified pin, and its §2 fixture row is updated to the
+pin's real single-agent chat), and the pack README still said
+`CONTRADICTIONS.md` "will arrive later".
+
+---
+
+## 1. Relay mechanism vs the ratified native binding — CONFIRMED, resolved
+
+**The conflict.** The decision ledger ratifies a **native in-process
+agent-to-agent binding** as the internal collaboration mechanism (D22,
+`docs/DECISIONS.md:354`/`:364` — "no MCP loopback, no serialization; two-way
+chat via `input-required`"; internal A2A explicitly rejected). D25 defers
+D22's implementation *sequencing* — and a deferral does not authorize a
+replacement mechanism. The job-thread engine plan proposed a non-agent
+**relay** as the dispatch mechanism and framed the choice as "a live product
+choice, not a compliance requirement" — understating the ratified default.
+The engine plan also mislabeled the ruling as D24 (it is D22; D24 begins at
+`DECISIONS.md:390`).
+
+**Resolution (applied).** The engine plan's correction note, non-goal 2, and
+owner question Q2 now state the asymmetry: **the ratified default for the
+shipped engine is D22's native binding through the D29 AgentGateway funnel;
+shipping the relay instead requires an explicit D22/D28 amendment at the
+owner gate.** The v0 relay remains a candidate; Q2 stays deferred
+post-[durable-streams]. Decision numbering corrected.
+
+## 2. Thread storage suspension not propagated — CONFIRMED, resolved
+
+**The conflict.** RECONCILIATION §8 suspends the "a Thread owns one record"
+storage *shape* pending the thread-storage spike, with banners at
+RECONCILIATION §7 and VISION R-c — but five other normative sites still
+stated the one-record shape unqualified: the V2 implementation spec (locked
+"shard = per-thread records" line and the `Thread` interface comment), the V2
+port handbook (Thread implementation + Flue durability-shard note), the
+VISION §1 noun table, the engine plan's "Today" section, and the #1355
+console plan's single-session `ConsoleThreadRefV1`.
+
+**Resolution (applied).** Suspension notes added at every site, uniformly
+phrased: *the backing shape is suspended pending the thread-storage spike
+(RECONCILIATION §8); the ontology stands.* `ConsoleThreadRefV1` is
+additionally marked **blocked** on the spike's finding — a multi-seat Thread
+may not map to one `(agentTypeId, sessionId)` pair.
+
+## 3. Per-workspace fleet assumption — CONFIRMED (narrow), resolved
+
+**The conflict.** D28 rules that the **host application** defines one
+deployment-static fleet (compiled and validated at startup per D29); a
+Workspace persists only its default agent, and "per-Workspace fleet
+allowlists" sit on D28's re-evaluation list. The pack's retained owner
+synthesis ("1 channel = 1 fleet declared at the workspace level") and the
+shell plan's recipe definition read as Workspace-curated fleets — a
+capability nothing currently authorizes, and no premise carries the D28
+re-evaluation.
+
+**Resolution (applied).** The shell plan's recipe definition and the engine
+plan's staffing picker now say participants are **selected from the
+deployment-static application fleet**; the north-star ledger entry carries a
+status note; Workspace-*curated* fleets are named as requiring an explicit
+D28 re-evaluation if ever intended.
+
+---
+
+## Confirmed sound (checked, no conflict)
+
+- **Gateway/session spine.** The engine consumes sessions exclusively through
+  the D29 AgentGateway funnel (per-agent session addressing, single
+  construction path, `AuthorizedAgentScope` as a runtime capability); the
+  relay design holds no capability between turns.
+- **Premise program vs the 391-forward lanes.** [durable-streams] is the 391
+  epic's own bead (`wt-391-forward-9p50`); the D29 Level-D addendum rides
+  PR #1409 and matches D29's named re-evaluation trigger.
+- **Ontology.** No new noun; the multi-seat Thread ruling (merged PR #1401)
+  and §8 are additive, with the one named storage-shape exception above.

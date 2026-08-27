@@ -21,7 +21,7 @@ This plan replaced earlier A1 drafts under Decision 26 and records the owner
 grill completed on 2026-07-20. It no longer owns corrective implementation or
 sequencing. Current durable authority is Decision 28 in
 [`docs/DECISIONS.md`](../../../../../DECISIONS.md); current product gates are in
-[`docs/issues/391/plan.md`](../../../../391/plan.md), and the only normative A1
+[`docs/issues/391/plan.md`](../../../../../plans/agent-runtime/fleet-and-environments/plan.md), and the only normative A1
 implementation plan is
 [`WORKSPACE-AGENT-FLEET-PLAN.md`](WORKSPACE-AGENT-FLEET-PLAN.md).
 

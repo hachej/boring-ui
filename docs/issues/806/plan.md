@@ -20,21 +20,22 @@ Shared authority remains:
 
 - [`../../DECISIONS.md`](../../DECISIONS.md), Decision 26, for delivery order
   and forbidden architecture;
-- [`../391/plan.md`](../391/plan.md) for Step 1A's typed workspace and sole-agent
+- [`../../plans/agent-runtime/fleet-and-environments/plan.md`](../../plans/agent-runtime/fleet-and-environments/plan.md) for Step 1A's typed workspace and sole-agent
   contract;
-- [`../391/AGENT-CONSUMPTION-MODES.md`](../391/AGENT-CONSUMPTION-MODES.md) for
+- [`../../plans/agent-runtime/consumption-modes/AGENT-CONSUMPTION-MODES.md`](../../plans/agent-runtime/consumption-modes/AGENT-CONSUMPTION-MODES.md) for
   Mode 0 external MCP semantics;
-- [`../391/AGENT-CLOUD-VISION.md`](../391/AGENT-CLOUD-VISION.md) for the
+- [`../391/AGENT-CLOUD-VISION.md`](../../plans/agent-runtime/cloud-vision/AGENT-CLOUD-VISION.md) for the
   non-binding execute-versus-data rule and control-plane/data-plane split;
-- [`../391/ROADMAP-ALIGNMENT.md`](../391/ROADMAP-ALIGNMENT.md) for ownership and
+- [`../../plans/agent-runtime/alignment/ROADMAP-ALIGNMENT.md`](../../plans/agent-runtime/alignment/ROADMAP-ALIGNMENT.md) for ownership and
   later-work triggers.
 
 `AGENT-CLOUD-VISION.md` was absent from the initial planning base
 (`7a21d3580`), so the planning agent first read it from commit `f65d9e2e3`.
 During planning, that same document landed on `origin/main`; this branch will be
 rebased onto the landing commit before publication. The vision is non-binding
-by its own terms, but this recut adopts its load-bearing execute-versus-data
-rule and control-plane/data-plane split. Decision 26 and the canonical #391
+by its own terms, but this recut adopts its execute-versus-data rule and
+control-plane/data-plane split as non-binding background (its own header
+disclaims authority). Decision 26 and the canonical #391
 plan still win if they conflict.
 
 The documents under [`runtime-refactor/work/`](runtime-refactor/work/) are

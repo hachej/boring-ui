@@ -45,7 +45,7 @@ or gate taxonomies.
 
 The default is one issue per PR. When the owner explicitly requests one branch
 and one deferred review for multiple small fixes, follow the guarded
-[`rolling small-fixes batch`](procedures/rolling-small-fixes.md) exception. It
+[`rolling small-fixes batch`](rolling-small-fixes.md) exception. It
 keeps one issue per independently revertible commit and does not lower proof or
 review requirements.
 

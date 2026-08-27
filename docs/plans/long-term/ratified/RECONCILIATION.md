@@ -194,6 +194,12 @@ Runs from more than one Seat and rendered as one collapsed timeline; Thread
 still "owns one record and many Runs" per VISION R-c, now including Runs
 authored under different Seats.
 
+> **Superseded in part — 2026-08-26 (§8):** the *storage shape* behind "owns
+> one record" is suspended pending the thread-storage spike (§8c). The
+> ontology sentence — one Thread, many Seats, one collapsed timeline — stands;
+> whether the backing store is one first-class record or a projection over Run
+> records is the spike's question.
+
 **Naming ruling.** This concept is named **multi-seat Thread** / **Job
 Thread**. It is never called a "channel": `channel` stays reserved for
 transport/ingress surfaces (C5 durable pause's "channel-answerable" delivery,
@@ -217,3 +223,113 @@ planning, not new scope for it.
 **Deferred (unchanged from RECONCILIATION §5 / VISION §10).** The human-facing
 multi-agent selector/switch UX remains a separate product decision; this
 amendment ratifies the data-model sentence only.
+
+---
+
+## 8. OWNER RULING — 2026-08-26 (amendment; product surface + premises order; tracked in #1399)
+
+Additive to §6 and §7 with **one named exception**: the frozen ontology (the
+noun set), the invariants, and the DAG above are unchanged, but this amendment
+**suspends the "a Thread owns one record" storage-shape clause** (§5 above,
+and `VISION.md` §"Thread") pending the thread-storage spike — see (c) and the
+supersession banners at both older sites. §7 ratified the data-model sentence
+and explicitly deferred "the human-facing multi-agent selector/switch UX" as a
+separate product decision. **This amendment takes that deferred decision.**
+
+### (a) The flagship operator/collaboration surface is the multi-agent workspace shell
+
+The **reference surface for multi-agent, multi-work, operator-style use**
+over a Workspace is a shell with five top-level domains —
+**Search · Inbox · Work · Agents · Library** (Search renders at the top of the
+nav; the enumeration is a set, not a layout). Nav is domains; the vertical
+plugin rail is tools. Two interview rulings (2026-08-26) complete the frame:
+**plugins MAY add top-level nav entries** — the five domains are the floor,
+not a closed set; crowding is an accepted risk — and **deep links split as:
+the shell owns the serializable location, the host owns URL translation.**
+
+**Scope (owner ruling 2026-08-27).** This ratifies the Meridian shell as
+Boring's **flagship** operator and collaboration Experience. It does **not**
+make that shell the only valid Boring product surface. The same governed
+substrate may be consumed through a route-first vertical SaaS Experience, a
+chat-first expert Agent, a headless job API or MCP surface, an embedded
+capability, or an external message channel (consistent with Decision 28's
+consumption modes). Those surfaces must reuse the same Work, operation,
+authority, artifact, decision, and evidence semantics — never parallel
+architectures.
+
+- **Transparent multi-agent Threads.** A Thread looks like an ordinary chat with
+  several agents inside it, behind **one composer**. Workers are hidden behind
+  the orchestrator: the user addresses a *voice*, not a *Seat*. Per-Seat work
+  logs are drill-down provenance, not the primary surface — the §7 projection
+  read as one collapsed timeline. *(One composer and a hidden worker team are
+  the default **team-presentation policy of this shell** — not a universal
+  requirement for every product; another Experience may expose one agent,
+  explicit specialists, an ambient agent, or no composer while keeping the
+  same underlying agent and work model.)*
+- **One workbench, many mounts.** The artifact/file surface is a single
+  component mounted in several places — inside a Thread as a canvas, under an
+  attention item as an evidence viewer, as a transient file popover, and
+  standalone as the Library. It is one component, not four surfaces.
+- **Deterministic Views beside agentic Threads.** The shell renders ordinary
+  application Views (collections, records, dashboards) *next to* agentic
+  Threads, with conversation available as a column beside a View rather than a
+  separate destination. This is what makes the surface an application rather
+  than a chat client.
+- **Library is the View library**, consistent with the ratified P1 line
+  (`VISION.md:38`) — Dockview stays a renderer, and agents reason over Views and
+  artifacts, never renderer concepts (invariant 4, `VISION.md:144`).
+
+This ratifies the *shape* of the surface. It does not schedule it — see (c).
+
+### (b) The design canvas and the spike branch are ratified specification artifacts
+
+Two artifacts are promoted from exploration to **specification**:
+
+- **The design canvas** (owner-iterated *Meridian Shell* mockups) — the visual
+  language and the five-domain structure.
+- **The spike, ratified at the immutable commit `08cc60523`** (branch
+  `weekend/saas-hybrid-spike`) — the constructive proof that the IA above is
+  reachable by **recomposing components that already ship**, rather than by new
+  invention. The commit, not the moving branch, is the specification.
+
+Their status: they are what the implementation is checked *against*. They are
+not themselves an implementation claim. Honest scope of the proof at that
+commit: the thread chat mounts a **real single-agent session** (a live
+`PiChatPanel`); Search sits at the **top of the nav**, above the four domains;
+the retired element is the *global* chat column — conversation is contextual,
+beside a View or inside a Thread, never a global assistant pane. What remains
+**unproven fixture territory is the multi-voice transcript itself** — several
+agents behind one composer with audit-grade attribution — and nothing in this
+amendment says otherwise.
+
+### (c) Kernel premises precede the surface build
+
+**Ruling.** The surface above is built **on** kernel capabilities, not beside
+them. Named preconditions, in the sequencing sense:
+
+1. **Durable streams.** The multi-agent engine is not built on conformance
+   Level B. Level D conformance lands and goes default-on first — D29's own
+   named re-evaluation trigger (`DECISIONS.md:472`, `:476`), now called; the
+   dated D29 addendum recording this rides the same PR (`docs/DECISIONS.md`,
+   D29 addendum 2026-08-26).
+2. **Seat storage.** Per-message attribution in a multi-seat Thread is
+   **audit-grade from day one**, resolving through ratified `seatId` in C7
+   (P0 required, §5 above). Display-grade participant handles are not a
+   shipping position.
+3. **Views.** Saved Views in the Library wait for the first ratified slice of
+   the kernel View contract *as a set* — `ViewDescriptor` + `ViewResolver` +
+   `ViewHost` + `ViewContext` + `ViewRef` (`V2-IMPLEMENTATION-SPEC.md:144-149`).
+   No lookalike descriptor is minted in the product layer meanwhile.
+
+**Explicit non-change.** This amendment promotes no new noun, activates no A2A
+loopback, and creates no shared-runtime room; §7's non-change clause stands
+unaltered. The **thread storage model is explicitly NOT ratified here** — it is
+an open technical question routed to a spike, and nothing in (a) presumes its
+outcome.
+
+**Where the program lives.** The premise program, its sizing and its briefs are
+planning material, not ratified text: `docs/plans/multiagent-shell/premises.md`,
+tracked in [#1409](https://github.com/hachej/boring-ui/pull/1409). The list
+above is **dependency rationale only** — the single executable ordering and
+merge queue live in `docs/direction/DIRECTION.md`, which alone answers "when".
+Merging #1409 ratifies this §8.
