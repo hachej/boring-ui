@@ -4,6 +4,7 @@ import type { SandboxProviderV1, WorkspaceSandboxPairV1 } from '@hachej/boring-s
 import type { Sandbox, Workspace } from '../../shared/index'
 import {
   SANDBOX_LEASE_ERROR_CODES,
+  SandboxLeaseCleanupError,
   SandboxLeaseError,
   SandboxLeaseService,
   runSandbox,
@@ -122,6 +123,33 @@ describe('SandboxLeaseService', () => {
     expect(pairs[0]?.files.get('artifact.bin')).toEqual(new Uint8Array([1]))
   })
 
+  it('returns exact-head command evidence after host-side source provisioning', async () => {
+    const { service, pairs } = createService()
+    const lease = await service.acquire('worker-a')
+    const targetSha = '18301216eb258f39fda93c0e18e4416c5160b55b'
+    pairs[0]?.exec.mockResolvedValueOnce({
+      stdout: new TextEncoder().encode(`${targetSha}\n`),
+      stderr: new Uint8Array(),
+      exitCode: 0,
+      durationMs: 1,
+      truncated: false,
+    })
+
+    const proof = await service.runSandbox({
+      op: 'exec',
+      ownerId: 'worker-a',
+      lease: lease.handle,
+      command: 'git rev-parse HEAD',
+    })
+
+    expect(proof.op).toBe('exec')
+    expect(proof.op === 'exec' && new TextDecoder().decode(proof.result.stdout).trim()).toBe(targetSha)
+    expect(pairs[0]?.exec).toHaveBeenCalledWith('git rev-parse HEAD', {
+      timeoutMs: undefined,
+      maxOutputBytes: undefined,
+    })
+  })
+
   it('does not reveal or allow another owner to use a lease', async () => {
     const { service, pairs } = createService()
     const first = await service.acquire('worker-a')
@@ -149,6 +177,44 @@ describe('SandboxLeaseService', () => {
     now.value = 200
     await expect(service.reapExpired()).resolves.toBe(1)
     expect(pairs[1]?.dispose).toHaveBeenCalledTimes(1)
+  })
+
+  it('reaps every expired lease, retains failures, and reports partial cleanup', async () => {
+    const now = { value: 100 }
+    const { service, pairs } = createService(now)
+    await service.acquire('worker-a')
+    await service.acquire('worker-b')
+    await service.acquire('worker-c')
+    pairs[0]?.dispose.mockRejectedValueOnce(new Error('delete-a failed'))
+    pairs[2]?.dispose.mockRejectedValueOnce(new Error('delete-c failed'))
+    now.value = 200
+
+    await expect(service.reapExpired()).rejects.toMatchObject({
+      code: SANDBOX_LEASE_ERROR_CODES.LEASE_CLEANUP_FAILED satisfies SandboxLeaseCleanupError['code'],
+      operation: 'reap-expired',
+      releasedCount: 1,
+      failures: [expect.any(Error), expect.any(Error)],
+    })
+    expect(pairs.map((pair) => pair.dispose.mock.calls.length)).toEqual([1, 1, 1])
+    await expect(service.reapExpired()).resolves.toBe(2)
+    expect(pairs.map((pair) => pair.dispose.mock.calls.length)).toEqual([2, 1, 2])
+  })
+
+  it('disposes every active lease and reports partial cleanup', async () => {
+    const { service, pairs } = createService()
+    await service.acquire('worker-a')
+    await service.acquire('worker-b')
+    pairs[0]?.dispose.mockRejectedValueOnce(new Error('delete-a failed'))
+
+    await expect(service.dispose()).rejects.toMatchObject({
+      code: SANDBOX_LEASE_ERROR_CODES.LEASE_CLEANUP_FAILED satisfies SandboxLeaseCleanupError['code'],
+      operation: 'dispose',
+      releasedCount: 1,
+      failures: [expect.any(Error)],
+    })
+    expect(pairs.map((pair) => pair.dispose.mock.calls.length)).toEqual([1, 1])
+    await expect(service.dispose()).resolves.toBeUndefined()
+    expect(pairs.map((pair) => pair.dispose.mock.calls.length)).toEqual([2, 1])
   })
 
   it('rejects traversal and host-shaped upload destinations before touching the workspace', async () => {

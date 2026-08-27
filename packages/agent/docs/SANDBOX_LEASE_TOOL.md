@@ -16,7 +16,7 @@ const service = new SandboxLeaseService({
 })
 ```
 
-For Vercel, `immutableCacheSource` is a host-resolved opaque snapshot reference. The provider creates a new mutable sandbox from that immutable base. Disposing the pair deletes the remote fork, evicts its process cache, and deletes its persisted handle. Default Vercel provider behavior remains persistent unless `lifecycle: 'disposable'` is explicit.
+For Vercel, `immutableCacheSource` is a host-resolved opaque snapshot reference. The provider creates a fresh mutable sandbox from that exact immutable base and refuses to resume or reuse an existing Worker handle for the same workspace identity. Disposing the pair deletes the remote fork, evicts its process cache, and deletes its persisted handle. Default Vercel provider behavior remains persistent unless `lifecycle: 'disposable'` is explicit.
 
 ## Operations and authority boundary
 
@@ -33,12 +33,16 @@ The service supports `exec`, `read`, `write`, `list`, `stat`, `upload`, and `rel
 
 `exec` intentionally accepts neither cwd nor environment overrides. Filesystem paths are validated POSIX-relative paths. Upload accepts bytes already held by the caller and never accepts a host source path or URL.
 
+## Exact-source proof
+
+Source checkout is host provisioning and remains outside this lease service. After the host checks out the immutable target SHA, it should execute `git rev-parse HEAD` through the acquired lease and compare stdout to that target before accepting build or test evidence. The lease service returns this command evidence; it does not claim to perform or authorize source checkout.
+
 ## Lifecycle
 
 - `release` disposes the provider pair before removing the local lease.
 - Failed provider cleanup retains the lease so release or expiry reaping can retry.
-- `reapExpired()` is the host scheduler hook for TTL cleanup.
-- `dispose()` releases all leases during orderly host shutdown.
-- Hosts still need bounded concurrency, audit/telemetry, and crash reconciliation before broad production use.
+- `reapExpired()` attempts every expired lease. `dispose()` attempts every active lease.
+- Partial cleanup throws `SandboxLeaseCleanupError` with released and failed counts; only failed leases remain for retry.
+- Hosts still need bounded concurrency, audit/telemetry, source provisioning, and crash reconciliation before broad production use.
 
 Only trusted CI may publish immutable cache snapshots. This consumer surface cannot publish or mutate the base artifact; every fork is independently mutable and disposable.

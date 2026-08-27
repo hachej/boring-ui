@@ -287,6 +287,7 @@ async function createFresh(
   store: SandboxHandleStore,
   vercel: VercelSandboxClient,
   logger?: SandboxLifecycleLogger,
+  allowExisting = true,
 ): Promise<VercelSandboxHandle> {
   let sandbox: VercelSandboxHandle
   let sourceType: 'empty' | 'snapshot' | 'tarball' = 'empty'
@@ -308,7 +309,7 @@ async function createFresh(
         return await vercel.create(base)
       }
     } catch (error) {
-      if (isSandboxAlreadyExistsError(error)) {
+      if (allowExisting && isSandboxAlreadyExistsError(error)) {
         // Sandbox persisted on Vercel from a previous server instance — resume it.
         return await vercel.get({ name: base.name, sandboxId: base.name, resume: true })
       }
@@ -329,6 +330,8 @@ async function createFresh(
 }
 
 export interface ResolveSandboxHandleOptions {
+  /** Never resume or reuse a prior handle; used for disposable Worker sandboxes. */
+  freshOnly?: boolean
   /** Host-resolved immutable base used only when creating a fresh handle. */
   sourceSnapshotId?: string
   tarballUrl?: string
@@ -349,8 +352,40 @@ export async function resolveSandboxHandle(
     throw new Error('workspaceId must not be empty')
   }
   const expiredSandboxPolicy = opts?.expiredSandboxPolicy ?? 'recreate'
+  const freshOnly = opts?.freshOnly === true
 
   const inProcess = sandboxesByWorkspaceId.get(workspaceKey)
+  const inFlightResolution = inFlightResolutionsByWorkspaceId.get(workspaceKey)
+  if (freshOnly) {
+    if (inProcess || inFlightResolution) {
+      throw new Error(`fresh sandbox workspace is already active: ${workspaceKey}`)
+    }
+    const resolution = (async (): Promise<VercelSandboxHandle> => {
+      const persisted = await store.get(workspaceKey)
+      if (persisted) {
+        throw new Error(`fresh sandbox workspace already has a persisted handle: ${workspaceKey}`)
+      }
+      return await createFresh(
+        workspaceKey,
+        opts?.sourceSnapshotId,
+        opts?.tarballUrl,
+        null,
+        store,
+        vercel,
+        opts?.logger,
+        false,
+      )
+    })()
+    inFlightResolutionsByWorkspaceId.set(workspaceKey, resolution)
+    try {
+      return await resolution
+    } finally {
+      if (inFlightResolutionsByWorkspaceId.get(workspaceKey) === resolution) {
+        inFlightResolutionsByWorkspaceId.delete(workspaceKey)
+      }
+    }
+  }
+
   if (inProcess && !isSandboxExpired(inProcess)) {
     return inProcess
   }
@@ -358,7 +393,6 @@ export async function resolveSandboxHandle(
     sandboxesByWorkspaceId.delete(workspaceKey)
   }
 
-  const inFlightResolution = inFlightResolutionsByWorkspaceId.get(workspaceKey)
   if (inFlightResolution) {
     return await inFlightResolution
   }

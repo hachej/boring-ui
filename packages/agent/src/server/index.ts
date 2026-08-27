@@ -13,6 +13,7 @@ export type {
 export { resolveWorkspaceRoot } from './config/workspaceRoot'
 export {
   SANDBOX_LEASE_ERROR_CODES,
+  SandboxLeaseCleanupError,
   SandboxLeaseError,
   SandboxLeaseService,
   runSandbox,

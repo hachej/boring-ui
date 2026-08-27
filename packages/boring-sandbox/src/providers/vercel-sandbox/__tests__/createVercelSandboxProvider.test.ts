@@ -7,7 +7,7 @@ import type {
   SandboxHandleRecord,
   SandboxHandleStore,
 } from '@hachej/boring-agent/shared'
-import { afterEach, describe, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
 import { IMMUTABLE_SANDBOX_CACHE_SOURCE_VERSION_V1 } from '../../../shared/immutableCacheV1'
 import type { SandboxProviderCreateContextV1 } from '../../../shared/providerV1'
@@ -17,6 +17,31 @@ import {
   resetSandboxHandleCacheForTests,
   type VercelSandboxClient,
 } from '../resolveSandboxHandle'
+
+const { localSandboxDispose, localSandboxInit } = vi.hoisted(() => ({
+  localSandboxDispose: vi.fn(async () => {}),
+  localSandboxInit: vi.fn(async () => {}),
+}))
+
+vi.mock('../createVercelSandboxExec', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../createVercelSandboxExec')>()
+  return {
+    ...original,
+    createVercelSandboxExec(
+      ...args: Parameters<typeof original.createVercelSandboxExec>
+    ) {
+      const sandbox = original.createVercelSandboxExec(...args)
+      return {
+        ...sandbox,
+        async init(...initArgs: Parameters<NonNullable<typeof sandbox.init>>) {
+          await localSandboxInit()
+          return await sandbox.init?.(...initArgs)
+        },
+        dispose: localSandboxDispose,
+      }
+    },
+  }
+})
 
 interface StoreHarness {
   store: SandboxHandleStore
@@ -72,6 +97,11 @@ function addDurableHandleMetadata(sandbox: VercelSandbox, sandboxId: string) {
 }
 
 const cleanups: Array<() => Promise<void>> = []
+
+beforeEach(() => {
+  localSandboxDispose.mockReset().mockResolvedValue(undefined)
+  localSandboxInit.mockReset().mockResolvedValue(undefined)
+})
 
 afterEach(async () => {
   resetSandboxHandleCacheForTests()
@@ -156,6 +186,47 @@ describe('createVercelSandboxProvider', () => {
     expect(snapshot).not.toHaveBeenCalled()
     expect(deleteSandbox).toHaveBeenCalledOnce()
     expect(deleteRecord).toHaveBeenCalledWith('workspace-setup-failure')
+  })
+
+  test('remote setup cleanup continues when local sandbox cleanup fails', async () => {
+    const harness = await createMockVercelSandboxHarness()
+    cleanups.push(harness.cleanup)
+    const { deleteSandbox } = addDurableHandleMetadata(harness.sandbox, 'sb-local-cleanup-failure')
+    localSandboxInit.mockRejectedValueOnce(new Error('sandbox init failed'))
+    localSandboxDispose.mockRejectedValueOnce(new Error('local dispose failed'))
+    const { store, deleteRecord } = createStore()
+    const client: VercelSandboxClient = {
+      create: vi.fn(async () => harness.sandbox),
+      get: vi.fn(),
+    }
+    const logger = { info: vi.fn(), warn: vi.fn() }
+    const provider = createVercelSandboxProvider({
+      store,
+      vercelClient: client,
+      lifecycle: 'disposable',
+      getEnvVar,
+      logger,
+    })
+
+    await expect(provider.create({
+      workspaceRoot: 'workspace-local-cleanup-failure',
+      workspaceId: 'workspace-local-cleanup-failure',
+      sessionId: 'session-local-cleanup-failure',
+    })).rejects.toMatchObject({
+      code: 'VERCEL_API_ERROR',
+      message: 'sandbox init failed',
+    })
+
+    expect(localSandboxDispose).toHaveBeenCalledOnce()
+    expect(deleteSandbox).toHaveBeenCalledOnce()
+    expect(deleteRecord).toHaveBeenCalledWith('workspace-local-cleanup-failure')
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[vercel-sandbox:mode] local setup cleanup failed',
+      expect.objectContaining({
+        workspaceId: 'workspace-local-cleanup-failure',
+        error: 'local dispose failed',
+      }),
+    )
   })
 
   test('pair disposal is idempotent and leaves the durable cached handle reusable', async () => {

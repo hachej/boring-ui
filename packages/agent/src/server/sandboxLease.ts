@@ -13,6 +13,7 @@ export const SANDBOX_LEASE_ERROR_CODES = Object.freeze({
   INVALID_LEASE_REQUEST: 'invalid-lease-request',
   LEASE_NOT_FOUND: 'lease-not-found',
   LEASE_EXPIRED: 'lease-expired',
+  LEASE_CLEANUP_FAILED: 'lease-cleanup-failed',
   BINARY_UPLOAD_UNSUPPORTED: 'binary-upload-unsupported',
 } as const)
 
@@ -76,9 +77,25 @@ export class SandboxLeaseError extends Error {
   constructor(
     readonly code: SandboxLeaseErrorCode,
     message: string,
+    options?: ErrorOptions,
   ) {
-    super(message)
+    super(message, options)
     this.name = 'SandboxLeaseError'
+  }
+}
+
+export class SandboxLeaseCleanupError extends SandboxLeaseError {
+  constructor(
+    readonly operation: 'reap-expired' | 'dispose',
+    readonly releasedCount: number,
+    readonly failures: readonly unknown[],
+  ) {
+    super(
+      SANDBOX_LEASE_ERROR_CODES.LEASE_CLEANUP_FAILED,
+      `${operation} released ${releasedCount} lease(s) and failed to release ${failures.length}`,
+      { cause: new AggregateError(failures, `${operation} sandbox lease cleanup failures`) },
+    )
+    this.name = 'SandboxLeaseCleanupError'
   }
 }
 
@@ -153,12 +170,11 @@ export class SandboxLeaseService {
   /** Host scheduler hook: dispose expired leases before or between Worker runs. */
   async reapExpired(): Promise<number> {
     const expired = [...this.leases.values()].filter((lease) => lease.expiresAt <= this.now())
-    for (const lease of expired) await this.disposeLease(lease)
-    return expired.length
+    return await this.disposeLeases(expired, 'reap-expired')
   }
 
   async dispose(): Promise<void> {
-    for (const lease of [...this.leases.values()]) await this.disposeLease(lease)
+    await this.disposeLeases([...this.leases.values()], 'dispose')
   }
 
   private async upload(
@@ -191,6 +207,26 @@ export class SandboxLeaseService {
       throw new SandboxLeaseError(SANDBOX_LEASE_ERROR_CODES.LEASE_EXPIRED, 'sandbox lease has expired')
     }
     return lease
+  }
+
+  private async disposeLeases(
+    leases: readonly ActiveLease[],
+    operation: SandboxLeaseCleanupError['operation'],
+  ): Promise<number> {
+    let releasedCount = 0
+    const failures: unknown[] = []
+    for (const lease of leases) {
+      try {
+        await this.disposeLease(lease)
+        releasedCount += 1
+      } catch (error) {
+        failures.push(error)
+      }
+    }
+    if (failures.length > 0) {
+      throw new SandboxLeaseCleanupError(operation, releasedCount, failures)
+    }
+    return releasedCount
   }
 
   private async disposeLease(lease: ActiveLease): Promise<void> {

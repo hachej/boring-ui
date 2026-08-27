@@ -175,6 +175,70 @@ test('second call hits in-process cache without API calls', async () => {
   expect(store.puts).toHaveLength(1)
 })
 
+test('fresh-only resolution creates from the exact host-selected snapshot', async () => {
+  const store = createStore()
+  const created = createSandboxHandle('sb-fresh-source', {
+    sourceSnapshotId: 'snap-trusted-main',
+  })
+  const client: VercelSandboxClient = {
+    create: vi.fn(async () => created),
+    get: vi.fn(),
+  }
+
+  const resolved = await resolveSandboxHandle('workspace-fresh-source', store, client, {
+    freshOnly: true,
+    sourceSnapshotId: 'snap-trusted-main',
+  })
+
+  expect(resolved).toBe(created)
+  expect(client.create).toHaveBeenCalledWith(expect.objectContaining({
+    source: { type: 'snapshot', snapshotId: 'snap-trusted-main' },
+  }))
+  expect(client.get).not.toHaveBeenCalled()
+})
+
+test('fresh-only resolution rejects cached or persisted Worker handles instead of reusing them', async () => {
+  const store = createStore()
+  const created = createSandboxHandle('sb-active-worker')
+  const client: VercelSandboxClient = {
+    create: vi.fn(async () => created),
+    get: vi.fn(),
+  }
+  await resolveSandboxHandle('workspace-active-worker', store, client)
+
+  await expect(resolveSandboxHandle('workspace-active-worker', store, client, {
+    freshOnly: true,
+    sourceSnapshotId: 'snap-trusted-main',
+  })).rejects.toThrow('fresh sandbox workspace is already active')
+  expect(client.create).toHaveBeenCalledTimes(1)
+  expect(client.get).not.toHaveBeenCalled()
+
+  resetSandboxHandleCacheForTests()
+  await expect(resolveSandboxHandle('workspace-active-worker', store, client, {
+    freshOnly: true,
+    sourceSnapshotId: 'snap-trusted-main',
+  })).rejects.toThrow('fresh sandbox workspace already has a persisted handle')
+  expect(client.create).toHaveBeenCalledTimes(1)
+  expect(client.get).not.toHaveBeenCalled()
+})
+
+test('fresh-only resolution never resumes a colliding remote sandbox name', async () => {
+  const store = createStore()
+  const alreadyExists = Object.assign(new Error('already exists'), {
+    json: { error: { code: 'bad_request', message: 'sandbox already exists' } },
+  })
+  const client: VercelSandboxClient = {
+    create: vi.fn(async () => { throw alreadyExists }),
+    get: vi.fn(),
+  }
+
+  await expect(resolveSandboxHandle('workspace-remote-collision', store, client, {
+    freshOnly: true,
+    sourceSnapshotId: 'snap-trusted-main',
+  })).rejects.toBe(alreadyExists)
+  expect(client.get).not.toHaveBeenCalled()
+})
+
 test('workspace ids are normalized before cache/store lookup', async () => {
   const store = createStore()
   const created = createSandboxHandle('sb-normalized')

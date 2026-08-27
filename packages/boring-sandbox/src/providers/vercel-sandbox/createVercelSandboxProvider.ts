@@ -604,6 +604,7 @@ export function createVercelSandboxProvider(
             store,
             vercelClient,
             {
+              freshOnly: disposable,
               sourceSnapshotId,
               tarballUrl,
               logger,
@@ -778,17 +779,35 @@ export function createVercelSandboxProvider(
       } catch (error) {
         snapshotScheduler?.stopWorkspace(workspaceId)
         if (workspace) disposeVercelSandboxWorkspace(workspace)
-        await sandbox?.dispose?.()
+        try {
+          await sandbox?.dispose?.()
+        } catch (cleanupError) {
+          logger.warn?.('[vercel-sandbox:mode] local setup cleanup failed', {
+            workspaceId,
+            error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+          })
+        }
         if (disposable && sandboxHandle) {
+          let remoteDeleted = false
           try {
             await sandboxHandle.delete()
-            evictSandboxHandleCacheForWorkspace(workspaceId)
-            await store.delete(workspaceId)
+            remoteDeleted = true
           } catch (cleanupError) {
             logger.warn?.('[vercel-sandbox:mode] disposable setup cleanup failed', {
               workspaceId,
               error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
             })
+          }
+          if (remoteDeleted) {
+            evictSandboxHandleCacheForWorkspace(workspaceId)
+            try {
+              await store.delete(workspaceId)
+            } catch (cleanupError) {
+              logger.warn?.('[vercel-sandbox:mode] disposable handle cleanup failed', {
+                workspaceId,
+                error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+              })
+            }
           }
         }
         const code = (error as { code?: unknown } | null)?.code
