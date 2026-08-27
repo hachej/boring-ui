@@ -72,6 +72,7 @@ the agent ↔ workspace boundary is in
 - [STYLING](./STYLING.md) — CSS-variable theming contract and public selectors.
 - [UI-SHADCN](./UI-SHADCN.md) — `ChatPanel` styling model and tool-renderer overrides.
 - [tools](./tools.md) — built-in tools, package-added tools, and how to add custom tools.
+- [leased temporary-sandbox spike](./SANDBOX_LEASE_TOOL_SPIKE.md) — host-owned disposable verification lease, intentionally outside the normal runtime tool catalog.
 - [PLUGINS](./PLUGINS.md) — the two extension paths and tool-collision rules.
 - [MIGRATION](./MIGRATION.md) — moving legacy integrations to the v2 split.
 
