@@ -248,6 +248,16 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
     return rows.length
   }
 
+  async setDefaultAgentTypeId(id: string, value: string): Promise<Workspace | null> {
+    const defaultAgentTypeId = parseRequiredDefaultAgentTypeId(value)
+    const rows = await this.db
+      .update(workspaces)
+      .set({ defaultAgentTypeId })
+      .where(and(eq(workspaces.id, id), isNull(workspaces.deletedAt)))
+      .returning()
+    return rows.length > 0 ? toWorkspace(rows[0]) : null
+  }
+
   async get(id: string): Promise<Workspace | null> {
     const rows = await this.db
       .select()

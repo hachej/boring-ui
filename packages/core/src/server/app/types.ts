@@ -54,6 +54,13 @@ export interface WorkspaceStore {
   countNullDefaultAgentTypeIds(appId: string): Promise<number>
   /** Idempotent compare-and-set backfill: only rows still NULL may change. */
   compareAndSetNullDefaultAgentTypeId(appId: string, defaultAgentTypeId: string): Promise<number>
+  /**
+   * Explicit user-driven repin of one workspace's default Agent (gh-1402).
+   * This is the ONLY write that may overwrite a non-NULL persisted value, so
+   * it must never be reached from an automated/reconciliation path — the
+   * NULL-only compare-and-set above stays the automated one.
+   */
+  setDefaultAgentTypeId(id: string, defaultAgentTypeId: string): Promise<Workspace | null>
   get(id: string): Promise<Workspace | null>
   getIncludingDeleted(id: string): Promise<Workspace | null>
   restore(id: string): Promise<Workspace | null>

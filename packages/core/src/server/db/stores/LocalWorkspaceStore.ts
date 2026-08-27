@@ -126,6 +126,15 @@ export class LocalWorkspaceStore implements WorkspaceStore {
     return updated
   }
 
+  async setDefaultAgentTypeId(id: string, value: string): Promise<Workspace | null> {
+    const defaultAgentTypeId = parseRequiredDefaultAgentTypeId(value)
+    const workspace = this.workspaces.get(id)
+    if (!workspace || workspace.deletedAt) return null
+    const next = { ...workspace, defaultAgentTypeId }
+    this.workspaces.set(id, next)
+    return toWorkspace(next)
+  }
+
   async get(id: string): Promise<Workspace | null> {
     const ws = this.workspaces.get(id)
     if (!ws || ws.deletedAt) return null

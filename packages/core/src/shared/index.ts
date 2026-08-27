@@ -30,6 +30,12 @@ export {
   isWorkspaceTypeId,
 } from './workspaceType.js'
 
+export { WORKSPACE_DEFAULT_AGENT_ROUTE } from './workspaceDefaultAgent.js'
+export type {
+  WorkspaceDefaultAgentOption,
+  WorkspaceDefaultAgentState,
+} from './workspaceDefaultAgent.js'
+
 export { noopTelemetry, safeCapture } from './telemetry.js'
 export type { TelemetryEvent, TelemetrySink } from './telemetry.js'
 

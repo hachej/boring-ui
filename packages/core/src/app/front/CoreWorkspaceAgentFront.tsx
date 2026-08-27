@@ -23,6 +23,7 @@ import {
 } from '@hachej/boring-workspace/app/front'
 import { ChatFirstAuthenticatedShell } from './chatFirst/ChatFirstAuthenticatedShell.js'
 import { ChatFirstPublicShell, type ChatFirstPublicShellOptions } from './chatFirst/ChatFirstPublicShell.js'
+import { WorkspaceDefaultAgentRecoveryGate } from './WorkspaceDefaultAgentRecovery.js'
 import { installVitePreloadRecovery } from './vitePreloadRecovery.js'
 import {
   clearPendingChatEntry,
@@ -362,6 +363,14 @@ function WorkspaceRoute<
   }
 
   return (
+    <WorkspaceDefaultAgentRecoveryGate
+      workspaceId={workspaceId}
+      apiBaseUrl={resolvedWorkspaceProps.apiBaseUrl}
+      requestHeaders={requestHeaders}
+      // The workspace record that supplies `agentTypeId` below is cached by the
+      // workspace provider, so a repin only takes effect on a fresh read.
+      onRecovered={() => { window.location.reload() }}
+    >
     <WorkspaceAgentFront
       key={workspaceId}
       {...resolvedWorkspaceProps}
@@ -377,6 +386,7 @@ function WorkspaceRoute<
       hotReloadEnabled={false}
       showThemeToggle={false}
     />
+    </WorkspaceDefaultAgentRecoveryGate>
   )
 }
 

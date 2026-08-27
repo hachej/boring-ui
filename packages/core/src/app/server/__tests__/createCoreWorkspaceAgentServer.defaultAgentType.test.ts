@@ -332,3 +332,96 @@ test('workspace meta resolves a rolling-migration NULL from the configured appli
     expect(meta.json()).toMatchObject({ defaultAgentTypeId: 'reviewer' })
   } finally { await app.close() }
 }, 30_000)
+
+// gh-1402: the fail-closed default is only humane if the workspace owner can
+// see the broken state and repin it without database access.
+async function createRecoveryApp(persistedDefaultAgentTypeId: string | null) {
+  mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
+    runtimePlugins: [], agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
+    preservedUiStateKeys: [], routeContributions: [],
+  })
+  const config = createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' })
+  mocks.getWorkspace.mockImplementation(async (id: string) => ({
+    id, appId: config.appId, defaultAgentTypeId: persistedDefaultAgentTypeId as unknown as string,
+  }))
+  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
+  return await createCoreWorkspaceAgentServer({
+    config,
+    agents: [
+      { agentTypeId: 'general', definition: { label: 'General', instructions: 'Answer general questions.' } },
+      { agentTypeId: 'reviewer', definition: { label: 'Reviewer', instructions: 'Review.' } },
+    ],
+    workspaceRoot: '/tmp/full-app-workspaces',
+    serveFrontend: false,
+  })
+}
+
+const recoveryHeaders = { 'x-test-user-id': 'user-a' }
+const recoveryUrl = '/api/v1/workspace/default-agent?workspaceId=workspace-a'
+
+test('reports the unavailable seat alongside the seats that can replace it', async () => {
+  const app = await createRecoveryApp('retired-seat')
+  try {
+    // Resolution throws for this workspace; the recovery read must still answer.
+    const state = await app.inject({ method: 'GET', url: recoveryUrl, headers: recoveryHeaders })
+    expect(state.statusCode).toBe(200)
+    expect(state.json()).toEqual({
+      workspaceId: 'workspace-a',
+      status: 'unavailable',
+      persistedDefaultAgentTypeId: 'retired-seat',
+      availableAgents: [
+        { agentTypeId: 'general', label: 'General' },
+        { agentTypeId: 'reviewer', label: 'Reviewer' },
+      ],
+    })
+  } finally { await app.close() }
+}, 30_000)
+
+test('reports a healthy workspace as ok without touching the persisted value', async () => {
+  const app = await createRecoveryApp('reviewer')
+  try {
+    const state = await app.inject({ method: 'GET', url: recoveryUrl, headers: recoveryHeaders })
+    expect(state.statusCode).toBe(200)
+    expect(state.json()).toMatchObject({ status: 'ok', persistedDefaultAgentTypeId: 'reviewer' })
+    expect(mocks.setDefaultAgentTypeId).not.toHaveBeenCalled()
+  } finally { await app.close() }
+}, 30_000)
+
+test('repins the workspace default to an available Agent on explicit choice', async () => {
+  const app = await createRecoveryApp('retired-seat')
+  try {
+    const saved = await app.inject({
+      method: 'PUT', url: recoveryUrl, headers: recoveryHeaders,
+      payload: { defaultAgentTypeId: 'reviewer' },
+    })
+    expect(saved.statusCode).toBe(200)
+    expect(saved.json()).toMatchObject({ status: 'ok', persistedDefaultAgentTypeId: 'reviewer' })
+    expect(mocks.setDefaultAgentTypeId).toHaveBeenCalledWith('workspace-a', 'reviewer')
+  } finally { await app.close() }
+}, 30_000)
+
+test('refuses to repin onto another unavailable seat', async () => {
+  const app = await createRecoveryApp('retired-seat')
+  try {
+    const rejected = await app.inject({
+      method: 'PUT', url: recoveryUrl, headers: recoveryHeaders,
+      payload: { defaultAgentTypeId: 'also-retired' },
+    })
+    expect(rejected.statusCode).toBe(409)
+    expect(rejected.json()).toMatchObject({ code: 'default_agent_type_unknown_seat' })
+    expect(mocks.setDefaultAgentTypeId).not.toHaveBeenCalled()
+  } finally { await app.close() }
+}, 30_000)
+
+test('rejects a malformed requested agent id before any write', async () => {
+  const app = await createRecoveryApp('retired-seat')
+  try {
+    const rejected = await app.inject({
+      method: 'PUT', url: recoveryUrl, headers: recoveryHeaders,
+      payload: { defaultAgentTypeId: 'Not A Slug' },
+    })
+    expect(rejected.statusCode).toBe(400)
+    expect(rejected.json()).toMatchObject({ code: 'invalid_default_agent_type_id' })
+    expect(mocks.setDefaultAgentTypeId).not.toHaveBeenCalled()
+  } finally { await app.close() }
+}, 30_000)

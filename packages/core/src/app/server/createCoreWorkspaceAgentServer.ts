@@ -115,10 +115,16 @@ import {
 } from '../../server/signupAgentDefaults.js'
 import {
   DefaultAgentTypeError,
+  parseRequiredDefaultAgentTypeId,
   resolveApplicationDefaultAgentTypeId,
   resolveWorkspaceDefaultAgentTypeId,
 } from '../../server/defaultAgentType.js'
 import { reconcileWorkspaceDefaultAgentTypes } from '../../server/reconcileWorkspaceDefaultAgentTypes.js'
+import {
+  WORKSPACE_DEFAULT_AGENT_ROUTE,
+  type WorkspaceDefaultAgentOption,
+  type WorkspaceDefaultAgentState,
+} from '../../shared/workspaceDefaultAgent.js'
 import { WorkspaceRuntimeSandboxHandleStore } from '../../server/runtime/index.js'
 import { createDatabaseTelemetryFromEnv } from '../../server/telemetry/db.js'
 
@@ -1119,6 +1125,11 @@ export async function createCoreWorkspaceAgentServer(
     ...(discoveredPackages ? { discoveredPackages } : {}),
   })
   const agentTypeIds = agents.map((agent) => agent.agentTypeId)
+  // gh-1402: the pickable fleet offered by the default-Agent recovery surface.
+  const availableAgents: readonly WorkspaceDefaultAgentOption[] = agents.map((agent) => ({
+    agentTypeId: agent.agentTypeId,
+    label: agent.definition.label || agent.agentTypeId,
+  }))
   const applicationDefaultAgentTypeId = resolveApplicationDefaultAgentTypeId({
     configuredDefaultAgentTypeId: rawConfig.defaultAgentTypeId,
     regularAgentTypeIds: agentTypeIds,
@@ -1850,6 +1861,75 @@ export async function createCoreWorkspaceAgentServer(
         const message = error instanceof Error ? error.message : 'workspace meta failed'
         return reply.code(statusCode).send({ error: message })
       }
+    })
+
+    // gh-1402: the recovery pair for the fail-closed default (gh-1386).
+    // Deliberately does NOT reuse `resolveWorkspaceDefaultAgentTypeId`: this
+    // read must stay readable while the workspace is broken, which is exactly
+    // when resolution throws. It reports the state instead of enforcing it.
+    const readWorkspaceDefaultAgentState = async (
+      request: FastifyRequest,
+    ): Promise<WorkspaceDefaultAgentState> => {
+      const workspaceId = await resolveWorkspaceId(request)
+      const workspace = await getActiveAppWorkspace(workspaceId)
+      const persistedDefaultAgentTypeId = workspace.defaultAgentTypeId ?? null
+      const unavailable = persistedDefaultAgentTypeId !== null
+        && !agentTypeIds.includes(persistedDefaultAgentTypeId)
+      return {
+        workspaceId,
+        status: unavailable ? 'unavailable' : 'ok',
+        persistedDefaultAgentTypeId,
+        availableAgents,
+      }
+    }
+
+    app.get(WORKSPACE_DEFAULT_AGENT_ROUTE, async (request) => await readWorkspaceDefaultAgentState(request))
+
+    app.put(WORKSPACE_DEFAULT_AGENT_ROUTE, async (request) => {
+      const workspaceId = await resolveWorkspaceId(request)
+      await getActiveAppWorkspace(workspaceId)
+      let candidate: string
+      try {
+        candidate = parseRequiredDefaultAgentTypeId(
+          (request.body as { defaultAgentTypeId?: unknown } | null | undefined)?.defaultAgentTypeId,
+        )
+      } catch (error) {
+        throw new HttpError({
+          status: 400,
+          code: ERROR_CODES.INVALID_DEFAULT_AGENT_TYPE_ID,
+          message: error instanceof Error ? error.message : 'Invalid default agent type ID',
+          requestId: request.id,
+        })
+      }
+      // Recovery may never write another unavailable seat: the accepted set is
+      // the same validated fleet resolution checks against.
+      if (!agentTypeIds.includes(candidate)) {
+        throw new HttpError({
+          status: 409,
+          code: ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT,
+          message: 'Requested Agent is not an available regular fleet member',
+          requestId: request.id,
+        })
+      }
+      const updated = await workspaceStore.setDefaultAgentTypeId(workspaceId, candidate)
+      if (!updated) {
+        throw new HttpError({
+          status: 404,
+          code: ERROR_CODES.NOT_FOUND,
+          message: 'Workspace not found',
+          requestId: request.id,
+        })
+      }
+      request.log.info(
+        { workspaceId, defaultAgentTypeId: candidate },
+        'workspace default Agent repinned by explicit user choice',
+      )
+      return {
+        workspaceId,
+        status: 'ok',
+        persistedDefaultAgentTypeId: candidate,
+        availableAgents,
+      } satisfies WorkspaceDefaultAgentState
     })
 
     await registerCoreAgentHostEnvironmentRoutes(app, {

@@ -48,6 +48,9 @@ export const mocks = (() => {
     getUser: vi.fn(async (id: string) => ({ id })),
     countNullDefaultAgentTypeIds: vi.fn(async (_appId: string): Promise<number> => 0),
     compareAndSetNullDefaultAgentTypeId: vi.fn(async (_appId: string, _value: string) => 0),
+    setDefaultAgentTypeId: vi.fn(async (id: string, value: string) => ({
+      id, appId: 'test-app', defaultAgentTypeId: value,
+    })),
     actualCreateAgentHost: undefined as undefined | ((options: any) => Promise<any>),
     actualCreateSandboxRuntimeModeAdapter: undefined as undefined | ((mode: 'direct') => any),
     runtimeHost: {
@@ -164,6 +167,9 @@ vi.doMock('../../../server/db/index.js', () => ({
     compareAndSetNullDefaultAgentTypeId(appId: string, value: string) {
       return mocks.compareAndSetNullDefaultAgentTypeId(appId, value)
     }
+    setDefaultAgentTypeId(id: string, value: string) {
+      return mocks.setDefaultAgentTypeId(id, value)
+    }
   },
 }))
 
@@ -183,6 +189,9 @@ beforeEach(() => {
   mocks.getUser.mockImplementation(async (id: string) => ({ id }))
   mocks.countNullDefaultAgentTypeIds.mockResolvedValue(0)
   mocks.compareAndSetNullDefaultAgentTypeId.mockResolvedValue(0)
+  mocks.setDefaultAgentTypeId.mockImplementation(async (id: string, value: string) => ({
+    id, appId: 'test-app', defaultAgentTypeId: value,
+  }))
 })
 
 export function fakeRequest(workspaceId: string, userId: string) {
