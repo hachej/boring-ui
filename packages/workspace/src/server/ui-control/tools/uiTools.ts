@@ -178,10 +178,12 @@ function isVerified(
   if (kind === "openFile") {
     const path = typeof params.path === "string" ? params.path : null
     const filesystem = normalizeUiFilesystem(typeof params.filesystem === "string" ? params.filesystem : undefined)
-    return path !== null && tabs.some((t) =>
-      t.params?.path === path &&
-      normalizeUiFilesystem(typeof t.params?.filesystem === "string" ? t.params.filesystem : undefined) === filesystem
+    if (path === null) return false
+    const matchingTab = tabs.find((tab) =>
+      tab.params?.path === path &&
+      normalizeUiFilesystem(typeof tab.params?.filesystem === "string" ? tab.params.filesystem : undefined) === filesystem
     )
+    return matchingTab !== undefined && state.activeTab === matchingTab.id
   }
   if (kind === "openPanel") {
     const id = typeof params.id === "string" ? params.id : null

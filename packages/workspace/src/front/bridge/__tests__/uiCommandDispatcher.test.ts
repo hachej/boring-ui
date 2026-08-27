@@ -30,7 +30,12 @@ function fakeSurface(): SurfaceShellApi & {
   } = {
     openFile: (path: string, options?: { filesystem?: string; mode?: string; preview?: boolean }) => {
       opened.push(path)
-      openFileCalls.push({ path, filesystem: options?.filesystem, mode: options?.mode, preview: options?.preview })
+      openFileCalls.push({
+        path,
+        filesystem: options?.filesystem,
+        mode: options?.mode,
+        ...(options?.preview !== undefined ? { preview: options.preview } : {}),
+      })
     },
     openSurface: (request: unknown) => surfaces.push(request),
     openPanel: (cfg: unknown) => panels.push(cfg),
@@ -71,21 +76,32 @@ describe("dispatchUiCommand", () => {
     const c = ctx()
     dispatchUiCommand({ kind: "openFile", params: { path: "greeter.ts" } }, c)
     expect(c.__surface.__opened).toEqual(["greeter.ts"])
-    expect(c.__surface.__openFileCalls).toEqual([{ path: "greeter.ts", filesystem: "user", preview: false }])
+    expect(c.__surface.__openFileCalls).toEqual([{ path: "greeter.ts", filesystem: "user" }])
   })
 
   it("openFile forwards mode so view panels open genuinely read-only", () => {
     const c = ctx()
     dispatchUiCommand({ kind: "openFile", params: { path: "prompt.md", mode: "view" } }, c)
-    expect(c.__surface.__openFileCalls).toEqual([{ path: "prompt.md", filesystem: "user", mode: "view", preview: false }])
+    expect(c.__surface.__openFileCalls).toEqual([{ path: "prompt.md", filesystem: "user", mode: "view" }])
     dispatchUiCommand({ kind: "openFile", params: { path: "prompt.md", mode: "bogus" } }, c)
-    expect(c.__surface.__openFileCalls[1]).toEqual({ path: "prompt.md", filesystem: "user", preview: false })
+    expect(c.__surface.__openFileCalls[1]).toEqual({ path: "prompt.md", filesystem: "user" })
   })
 
   it("openFile forwards explicit company_context filesystem", () => {
     const c = ctx()
     dispatchUiCommand({ kind: "openFile", params: { path: "/company/hr/policy.md", filesystem: "company_context" } }, c)
-    expect(c.__surface.__openFileCalls).toEqual([{ path: "/company/hr/policy.md", filesystem: "company_context", preview: false }])
+    expect(c.__surface.__openFileCalls).toEqual([{ path: "/company/hr/policy.md", filesystem: "company_context" }])
+  })
+
+  it("uses persistent tabs only for agent-stream dispatch provenance", () => {
+    const local = ctx()
+    const agent = ctx({ fileDisposition: "persistent" })
+
+    dispatchUiCommand({ kind: "openFile", params: { path: "local.ts" } }, local)
+    dispatchUiCommand({ kind: "openFile", params: { path: "agent.ts" } }, agent)
+
+    expect(local.__surface.__openFileCalls).toEqual([{ path: "local.ts", filesystem: "user" }])
+    expect(agent.__surface.__openFileCalls).toEqual([{ path: "agent.ts", filesystem: "user", preview: false }])
   })
 
   it("openFile is a no-op when path is missing or non-string", () => {
@@ -179,9 +195,47 @@ describe("dispatchUiCommand", () => {
     expect(mountedSurface.__openFileCalls).toEqual([{
       path: "/policy.md",
       filesystem: "company_context",
-      preview: false,
     }])
     raf.mockRestore()
+  })
+
+  it("delivers closed-workbench plural opens exactly once in requested focus order", () => {
+    let workbenchOpen = false
+    let mounted = false
+    let parked: ((surface: SurfaceShellApi) => void) | undefined
+    const surface = fakeSurface()
+    const rafQueue: FrameRequestCallback[] = []
+    const originalRaf = global.requestAnimationFrame
+    global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      rafQueue.push(callback)
+      return rafQueue.length
+    }) as typeof requestAnimationFrame
+    const dispatchContext: DispatchContext = {
+      surface: () => mounted ? surface : null,
+      isWorkbenchOpen: () => workbenchOpen,
+      openWorkbench: () => { workbenchOpen = true },
+      fileDisposition: "persistent",
+      enqueue: (run) => { parked = run },
+    }
+    const flushRaf = () => {
+      for (const callback of rafQueue.splice(0)) callback(0)
+    }
+
+    try {
+      dispatchUiCommand({ kind: "openFile", params: { path: "one.md" } }, dispatchContext)
+      dispatchUiCommand({ kind: "openFile", params: { path: "two.md" } }, dispatchContext)
+      mounted = true
+      parked?.(surface)
+      flushRaf()
+      flushRaf()
+
+      expect(surface.__openFileCalls).toEqual([
+        { path: "one.md", filesystem: "user", preview: false },
+        { path: "two.md", filesystem: "user", preview: false },
+      ])
+    } finally {
+      global.requestAnimationFrame = originalRaf
+    }
   })
 
   it("openPanel calls surface.openPanel with the full config", () => {

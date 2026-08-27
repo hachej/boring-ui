@@ -113,6 +113,7 @@ describe("startUiCommandStream — SSE path", () => {
   it("dispatches commands received as `command` events", () => {
     const { ctor, instances } = makeEventSourceCtor()
     const ctx = dispatchCtx()
+    const openFile = vi.spyOn(ctx.__surface, "openFile")
     const stop = startUiCommandStream({ ctx, eventSourceCtor: ctor })
     const es = instances[0]!
 
@@ -121,6 +122,7 @@ describe("startUiCommandStream — SSE path", () => {
     es.__emit("command", JSON.stringify({ kind: "closeWorkbenchLeftPane", params: {} }))
 
     expect(ctx.__surface.__opened).toEqual(["greeter.ts"])
+    expect(openFile).toHaveBeenCalledWith("greeter.ts", expect.objectContaining({ preview: false }))
     expect(ctx.__surface.__panels).toHaveLength(1)
     expect(ctx.__surface.__leftClosed).toBe(1)
     stop()

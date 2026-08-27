@@ -498,6 +498,43 @@ describe("createExecUiTool — auto state verification", () => {
     expect(callCount).toBe(1)
   })
 
+  test("keeps retrying until the requested openFile tab is active", async () => {
+    let callCount = 0
+    const trackedBridge = {
+      ...bridge,
+      async getState() {
+        callCount++
+        const active = callCount >= 3
+        return {
+          v: 1 as const,
+          workbenchOpen: true,
+          drawerOpen: false,
+          openTabs: [
+            { id: "file:index.ts", title: "index.ts", params: { path: "index.ts" } },
+            { id: "file:other.ts", title: "other.ts", params: { path: "other.ts" } },
+          ],
+          activeTab: active ? "file:index.ts" : "file:other.ts",
+          activeFile: active ? "index.ts" : "other.ts",
+        }
+      },
+    }
+    const tool = createExecUiTool(trackedBridge, {
+      workspaceRoot,
+      verifyDelayMs: 1,
+      verifyRetries: 5,
+      verifyIntervalMs: 1,
+    })
+
+    const result = await tool.execute(
+      { kind: "openFile", params: { path: "index.ts" } },
+      FAKE_CTX,
+    )
+
+    expect(callCount).toBe(3)
+    const parsed = JSON.parse((result.content[0] as { type: "text"; text: string }).text)
+    expect(parsed.uiState.activeTab).toBe("file:index.ts")
+  })
+
   test("retries until tab appears, then stops early", async () => {
     // Simulates frontend being slow: tab absent for 2 reads, appears on 3rd.
     let callCount = 0

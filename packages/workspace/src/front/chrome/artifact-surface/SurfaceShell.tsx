@@ -528,13 +528,18 @@ export function SurfaceShell({
         ...fileBackedParams(resolved.params, normalizedPath, { filesystem, mode: options?.mode }),
         ...options?.extraParams,
       }
-      const panelParams = options?.preview === false
+      // A persistent open may promote an existing preview. A normal preview
+      // reopen must never demote an already-persistent tab.
+      const existingParams = options?.preview === false
         ? pinnedWorkbenchParams(params)
-        : workbenchPreviewParams(params)
+        : params
       fileBackedPanelIdsRef.current.add(panelId)
-      if (activateExistingFilePanel(api, normalizedPath, filesystem, resolved.component, panelParams)) {
+      if (activateExistingFilePanel(api, normalizedPath, filesystem, resolved.component, existingParams)) {
         return finish()
       }
+      const newPanelParams = options?.preview === false
+        ? pinnedWorkbenchParams(params)
+        : workbenchPreviewParams(params)
       if (options?.preview !== false) {
         prepareFilePreview(api, normalizedPath, filesystem, fileBackedPanelIdsRef.current)
       }
@@ -542,7 +547,7 @@ export function SurfaceShell({
         id: panelId,
         component: resolved.component,
         title: resolved.title ?? normalizedPath.split("/").pop() ?? normalizedPath,
-        params: panelParams,
+        params: newPanelParams,
       })) {
         return { ok: false, code: "not-ready", message: "surface not ready" }
       }
