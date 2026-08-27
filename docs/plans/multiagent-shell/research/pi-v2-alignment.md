@@ -1,5 +1,22 @@
 # Pi v2 (AgentHarness) — alignment analysis and the rewrite question
 
+> **POST-SPIKE VERDICT (2026-08-27, spike report:
+> [`pi-core-adoption-spike-report.md`](pi-core-adoption-spike-report.md)).**
+> The empirical spike **overturns the "shipped core" premise below**: at
+> published 0.84.3 the entire `AgentHarness` operational surface
+> (prompt/resume/abort/watch/lanes) is a compile-complete scaffold that
+> throws `HarnessNotImplemented` — only the storage layer is real running
+> code, and the v3 decoder is **dev-only, absent from the npm package**.
+> Also decisive: the **lanes candidate fails the posts-only store-isolation
+> test as shipped** (`findEntries()` without a lane filter reads across
+> lane boundaries). What the spike *proved*: storage-layer crash durability
+> (live kill+reopen), caller-configurable host-volume session roots, and a
+> workable ledger-reconciliation protocol design. **Standing ruling: do
+> NOT wire pi 0.84.3 under D29; ~0 of the ~1,704 bespoke lines are
+> deletable today; durable-streams proceeds on our own schema (both
+> spikes-first conditions met); re-run the spike when pi publishes the dev
+> runtime.** The analysis below is kept as the pre-spike record.
+
 Date: 2026-08-26. Analyzed at `earendil-works/pi` dev branch commit
 `5507d76` (same-day HEAD; local read-only clone `~/projects/pi-framework`).
 Three independent read passes (integration surface / durability core /
