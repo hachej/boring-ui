@@ -1,4 +1,4 @@
-import { useEffect } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
@@ -1073,6 +1073,72 @@ describe("AppLeftPane", () => {
       await waitFor(() => expect(onLoadArchived).toHaveBeenCalledTimes(1))
       expect(screen.queryByRole("button", { name: /Archived/ })).not.toBeInTheDocument()
       expect(screen.queryByRole("button", { name: "Archived" })).not.toBeInTheDocument()
+    })
+
+    // #1429 thermo-review follow-up: a bare `vi.fn()` never drives the real
+    // loading/error state transitions, so it could not catch the retry-storm
+    // bug. `usePiSessions.loadArchived`'s failure path leaves `archivedLoaded`
+    // false and resets `archivedLoading` to false in a `finally` — exactly
+    // the transition that used to re-satisfy the background probe's own
+    // trigger condition (and `loadArchived`'s identity also changes with
+    // `archivedLoading`), so a persistent failure turned the "one-shot"
+    // probe into an unbounded sequential fetch loop. This harness owns
+    // `archivedLoaded`/`archivedLoading` state exactly the way the real hook
+    // does, rejects every call, and proves the probe attempts exactly once.
+    it("does not retry the background probe after it rejects", async () => {
+      const onLoadArchivedImpl = vi.fn(() => Promise.reject(new Error("network down")))
+
+      function ArchiveFailureHarness() {
+        const [archivedLoaded, setArchivedLoaded] = useState(false)
+        const [archivedLoading, setArchivedLoading] = useState(false)
+        // Mirrors usePiSessions.loadArchived's real shape: loading flips on,
+        // the request rejects, `archivedLoaded` never becomes true, and
+        // `finally` resets loading back to false. The callback's identity
+        // also changes with `archivedLoading`, like the real hook's
+        // `useCallback` dep list.
+        const onLoadArchived = useCallback(async () => {
+          setArchivedLoading(true)
+          try {
+            await onLoadArchivedImpl()
+            setArchivedLoaded(true)
+          } catch {
+            // left unloaded, exactly like a rejected fetch in production
+          } finally {
+            setArchivedLoading(false)
+          }
+        }, [archivedLoading])
+        return (
+          <WorkspaceAttentionProvider>
+            <AppLeftPane
+              appTitle="Test"
+              sessions={[{ id: "s1", title: "First session" }]}
+              activeSessionId="s1"
+              openSessionIds={["s1"]}
+              pinnedSessionIds={[]}
+              onCreateSession={vi.fn()}
+              navigationEntries={testNavigationEntries()}
+              onSwitchSession={vi.fn()}
+              onOpenSessionAsPane={vi.fn()}
+              onToggleSessionPinned={vi.fn()}
+              archivedLoaded={archivedLoaded}
+              archivedLoading={archivedLoading}
+              onLoadArchived={onLoadArchived}
+            />
+          </WorkspaceAttentionProvider>
+        )
+      }
+
+      render(<ArchiveFailureHarness />)
+
+      await waitFor(() => expect(onLoadArchivedImpl).toHaveBeenCalledTimes(1))
+      // Let every re-render triggered by the loading->false transition (and
+      // any consequent effect re-run) play out before asserting there was no
+      // second call.
+      await waitFor(() => expect(screen.queryByRole("button", { name: /Archived/ })).not.toBeInTheDocument())
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      })
+      expect(onLoadArchivedImpl).toHaveBeenCalledTimes(1)
     })
 
     // #1429: the disclosure is a full-width text row, not an icon slot, so it

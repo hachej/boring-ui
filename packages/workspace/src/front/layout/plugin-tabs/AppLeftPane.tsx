@@ -402,8 +402,23 @@ export function AppLeftPane({
   // hidden for anyone who has never archived a chat, instead of always
   // rendering (and failing the 44px coarse-pointer touch-target gate) before
   // its own emptiness is known.
+  //
+  // Attempt-once-ever, not "retry while unloaded": a rejected `loadArchived`
+  // leaves `archivedLoaded` false and `archivedLoading` false (the request
+  // records an error and resets), which re-satisfies this effect's own
+  // trigger condition. `loadArchived`'s identity ALSO changes with
+  // `archivedLoading`, so the effect re-fires. Without a latch that survives
+  // the failure, a persistent API error turns this "probe" into an unbounded
+  // sequential fetch loop. The ref is set synchronously before the call (not
+  // in a success/failure branch), so it latches regardless of outcome and
+  // never rearms — a stuck failure just means the control stays hidden until
+  // the user archives a chat directly (which populates `sessions` without
+  // going through this probe at all).
+  const archivedProbeAttemptedRef = useRef(false)
   useEffect(() => {
+    if (archivedProbeAttemptedRef.current) return
     if (!onLoadArchived || archivedLoaded || archivedLoading) return
+    archivedProbeAttemptedRef.current = true
     void onLoadArchived()
   }, [onLoadArchived, archivedLoaded, archivedLoading])
   // One pass, three numbers. These used to be a memoized count plus two full
