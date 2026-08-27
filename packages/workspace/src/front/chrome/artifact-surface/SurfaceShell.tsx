@@ -259,6 +259,38 @@ function prepareFilePreview(
   preview.api.close()
 }
 
+/**
+ * Upper bound on file-backed tabs kept open at once. Agent-driven opens are
+ * persistent (each requested file keeps its own tab), so an agent looping over
+ * a directory would otherwise pin hundreds of tabs and make the tab strip
+ * useless. Oldest tab loses; the tab just opened and the active tab are never
+ * evicted.
+ */
+export const MAX_OPEN_FILE_TABS = 12
+
+function evictExcessFileTabs(
+  api: DockviewApi,
+  fileBackedPanelIds: Set<string>,
+  keepPanelId: string,
+): void {
+  const fileTabs = api.panels.filter((panel) => fileBackedPath(
+    { id: panel.id, params: panel.params as Record<string, unknown> | undefined },
+    fileBackedPanelIds,
+  ) !== null)
+  let excess = fileTabs.length - MAX_OPEN_FILE_TABS
+  if (excess <= 0) return
+  const activePanelId = api.activePanel?.id
+  // `api.panels` is tab order, so the front of the list is the oldest tab —
+  // the same one a user would close first.
+  for (const panel of fileTabs) {
+    if (excess <= 0) return
+    if (panel.id === keepPanelId || panel.id === activePanelId) continue
+    panel.api.close()
+    fileBackedPanelIds.delete(panel.id)
+    excess -= 1
+  }
+}
+
 function ok(): CommandResult {
   return { seq: ++seqCounter, status: "ok" }
 }
@@ -551,6 +583,7 @@ export function SurfaceShell({
       })) {
         return { ok: false, code: "not-ready", message: "surface not ready" }
       }
+      evictExcessFileTabs(api, fileBackedPanelIdsRef.current, panelId)
       return finish()
     }
 

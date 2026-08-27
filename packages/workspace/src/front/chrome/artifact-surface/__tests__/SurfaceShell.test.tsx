@@ -1,7 +1,7 @@
 import type { FunctionComponent } from "react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
-import { SurfaceShell, type SurfaceShellApi, type SurfaceShellProps } from "../SurfaceShell"
+import { MAX_OPEN_FILE_TABS, SurfaceShell, type SurfaceShellApi, type SurfaceShellProps } from "../SurfaceShell"
 import { RegistryProvider } from "../../../registry"
 import { PanelRegistry } from "../../../registry/PanelRegistry"
 import { CommandRegistry } from "../../../../shared/plugins/CommandRegistry"
@@ -352,6 +352,56 @@ describe("SurfaceShell", () => {
       ],
       activeTab: "file:user:three.md",
     })
+  })
+
+  it("bounds persistent file tabs so a looping agent cannot pin hundreds", async () => {
+    let surface: SurfaceShellApi | undefined
+    mockAddPanel.mockImplementation((config: any) => {
+      const panel = {
+        ...config,
+        api: {
+          setActive: () => { mockActivePanel = panel },
+          updateParameters: (params: Record<string, unknown>) => { panel.params = params },
+          close: () => {
+            // Mutate in place: SurfaceShell captured this exact array as
+            // `api.panels`, so reassigning would hide the close from it.
+            const index = mockPanels.indexOf(panel)
+            if (index >= 0) mockPanels.splice(index, 1)
+            if (mockActivePanel === panel) mockActivePanel = null
+          },
+        },
+      }
+      mockPanels.push(panel)
+      mockActivePanel = panel
+      return panel
+    })
+    mockGetPanel = (id: string) => mockPanels.find((panel) => panel.id === id)
+    const panelRegistry = new PanelRegistry()
+    panelRegistry.register("editor", { title: "Editor", placement: "center", component: () => null })
+    const surfaceResolverRegistry = new SurfaceResolverRegistry()
+    surfaceResolverRegistry.register("filesystem", {
+      source: "builtin",
+      resolve: (request) => request.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND
+        ? { component: "editor", params: { path: request.target }, score: 0 }
+        : undefined,
+    })
+
+    renderSurface("workspace-a", { onReady: (api) => { surface = api } }, panelRegistry, surfaceResolverRegistry)
+    await waitFor(() => expect(surface).toBeDefined())
+
+    const paths = Array.from({ length: MAX_OPEN_FILE_TABS + 3 }, (_, index) => `file-${index}.md`)
+    act(() => {
+      for (const path of paths) surface?.openFile(path, { preview: false })
+    })
+
+    const snapshot = surface?.getSnapshot()
+    expect(snapshot?.openTabs).toHaveLength(MAX_OPEN_FILE_TABS)
+    // The three oldest tabs are evicted; every newer one, including the last
+    // file the agent asked for, is still open and focused.
+    expect(snapshot?.openTabs.map((tab) => tab.id)).toEqual(
+      paths.slice(3).map((path) => `file:user:${path}`),
+    )
+    expect(snapshot?.activeTab).toBe(`file:user:${paths[paths.length - 1]}`)
   })
 
   it("promotes an existing preview when an agent persistently opens the same file", async () => {
