@@ -342,7 +342,10 @@ export interface WorkspaceAgentFrontProps<
    */
   hotReloadEnabled?: boolean
   extraPanels?: string[]
+  /** Fleet-wide commands supplied to every chat pane. */
   extraCommands?: SlashCommand[]
+  /** Commands resolved for the Agent that owns each individual chat pane. */
+  getExtraCommandsForAgent?: (agentTypeId: string) => readonly SlashCommand[]
   provisionWorkspace?: boolean
   /**
    * Opt in/out of server-backed pi-chat sessions independently of workspace
@@ -777,6 +780,7 @@ export function WorkspaceAgentFront<
   frontPluginHotReload,
   extraPanels,
   extraCommands,
+  getExtraCommandsForAgent,
   provisionWorkspace,
   remoteSessionsEnabled,
   bootPreloadPaths,
@@ -2207,6 +2211,8 @@ export function WorkspaceAgentFront<
     (sessionKey: string) => {
       const sessionRef = workspaceSessionRefFromKey(sessionKey)
       const sessionId = sessionRef.sessionId
+      const paneAgentTypeId = sessionRef.agentTypeId ?? selectedAgentTypeId
+      const paneExtraCommands = getExtraCommandsForAgent?.(paneAgentTypeId) ?? []
       const chatToolRenderers = (chatParams?.toolRenderers && typeof chatParams.toolRenderers === "object")
         ? chatParams.toolRenderers as ToolRendererOverrides
         : undefined
@@ -2214,7 +2220,7 @@ export function WorkspaceAgentFront<
       ...chatParams,
       ...(delayAutoSubmitDraft ? { autoSubmitInitialDraft: false, initialDraft: undefined } : {}),
       sessionId,
-      agentTypeId: sessionRef.agentTypeId ?? selectedAgentTypeId,
+      agentTypeId: paneAgentTypeId,
       apiBaseUrl,
       workspaceId,
       storageScope: workspaceId,
@@ -2225,7 +2231,7 @@ export function WorkspaceAgentFront<
       toolRenderers: { ...pluginToolRenderers, ...(chatToolRenderers ?? {}) },
       bridgeEndpoint: null,
       surfaceDispatch,
-      extraCommands,
+      extraCommands: [...(extraCommands ?? []), ...paneExtraCommands],
       workspaceWarmupStatus,
       hydrateMessages,
       allowPromptDuringInitialHydration: emptySessionIds.has(sessionKey),
@@ -2261,7 +2267,7 @@ export function WorkspaceAgentFront<
       ...(resolvedHotReloadEnabled !== undefined ? { hotReloadEnabled: resolvedHotReloadEnabled } : {}),
     }
     },
-    [apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, selectedAgentTypeId, sessionSourceIsCurrent, workspaceId],
+    [apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, surfaceDispatch, extraCommands, getExtraCommandsForAgent, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, selectedAgentTypeId, sessionSourceIsCurrent, workspaceId],
   )
   const centerParams = useMemo(
     () => makeCenterParams(chatSessionKey),

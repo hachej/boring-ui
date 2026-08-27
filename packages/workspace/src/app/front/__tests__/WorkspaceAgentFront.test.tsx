@@ -2570,6 +2570,82 @@ describe("WorkspaceAgentFront", () => {
     expect(createOwners).toEqual(["default"])
   })
 
+  it("resolves extra slash commands from each split pane's owning Agent", async () => {
+    const capturedByOwner = new Map<string, WorkspaceChatPanelProps>()
+    const CapturingChatPanel = (props: WorkspaceChatPanelProps) => {
+      capturedByOwner.set(props.agentTypeId ?? "", props)
+      return <div data-testid={`commands-${props.agentTypeId}`}>Commands for {props.agentTypeId}</div>
+    }
+    localStorage.setItem(
+      "boring-workspace:chat-panes:fleet-agent-commands",
+      JSON.stringify({
+        version: 2,
+        refs: [
+          { kind: "addressed", sessionId: "alpha-one", agentTypeId: "alpha" },
+          { kind: "addressed", sessionId: "beta-one", agentTypeId: "beta" },
+        ],
+        activeRef: { kind: "addressed", sessionId: "alpha-one", agentTypeId: "alpha" },
+      }),
+    )
+    const useFleetSelection = () => ({
+      agents: [
+        { agentTypeId: "alpha", label: "Boring Alpha" },
+        { agentTypeId: "beta", label: "Boring Beta" },
+      ],
+      selectedAgentTypeId: "alpha",
+      loading: false,
+      error: undefined,
+      selectAgentTypeId: vi.fn(),
+    })
+    const useFleetSessions: UseWorkspaceAgentSessions = (options) => {
+      const session = {
+        id: `${options.agentTypeId}-one`,
+        agentTypeId: options.agentTypeId,
+        title: `${options.agentTypeId} session`,
+      }
+      return {
+        sourceIdentity: options.sourceIdentity,
+        sessions: [session],
+        loading: false,
+        activeSessionId: session.id,
+        activeSessionAgentTypeId: options.agentTypeId,
+        activeSession: session,
+        switch: vi.fn(),
+        delete: vi.fn(),
+        create: vi.fn(),
+      }
+    }
+    const alphaCommand = {
+      name: "alpha-only",
+      description: "Only Alpha gets this command",
+      handler: vi.fn(),
+    }
+    const getExtraCommandsForAgent = vi.fn((agentTypeId: string) =>
+      agentTypeId === "alpha" ? [alphaCommand] : [],
+    )
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="fleet-agent-commands"
+        workspaceLayout="plugin-tabs"
+        chatPanel={CapturingChatPanel}
+        addressedAgentSelection
+        useAddressedAgentSelection={useFleetSelection}
+        useSessions={useFleetSessions}
+        getExtraCommandsForAgent={getExtraCommandsForAgent}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(capturedByOwner.has("alpha")).toBe(true)
+      expect(capturedByOwner.has("beta")).toBe(true)
+    })
+    expect(capturedByOwner.get("alpha")?.extraCommands).toEqual([alphaCommand])
+    expect(capturedByOwner.get("beta")?.extraCommands).toEqual([])
+    expect(getExtraCommandsForAgent).toHaveBeenCalledWith("alpha")
+    expect(getExtraCommandsForAgent).toHaveBeenCalledWith("beta")
+  })
+
   it("splits a pane into a chat owned by THAT pane's Agent, not the picker target", async () => {
     const user = userEvent.setup()
     const createOwners: (string | undefined)[] = []
