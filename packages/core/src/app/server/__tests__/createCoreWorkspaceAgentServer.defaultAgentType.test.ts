@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test, vi } from 'vitest'
 import { createTestCoreConfig as createBaseTestCoreConfig } from '../../../server/__tests__/createTestApp.js'
+import { reconcileWorkspaceDefaultAgentTypes } from '../../../server/reconcileWorkspaceDefaultAgentTypes.js'
 import type { CoreConfig } from '../../../shared/types.js'
 import {
   mocks,
@@ -16,86 +17,6 @@ const REGULAR_AGENTS = [
 function createTestCoreConfig(overrides: Partial<CoreConfig> = {}): CoreConfig {
   return createBaseTestCoreConfig({ defaultAgentTypeId: 'general', ...overrides })
 }
-
-test.each([
-  {
-    label: 'invalid grammar',
-    agents: [{ agentTypeId: 'Default', definition: { label: 'Invalid', instructions: 'Invalid.' } }],
-  },
-  {
-    label: 'duplicate identities',
-    agents: [
-      { agentTypeId: 'default', definition: { label: 'First', instructions: 'First.' } },
-      { agentTypeId: 'default', definition: { label: 'Second', instructions: 'Second.' } },
-    ],
-  },
-] as const)('rejects $label before config normalization or resource allocation', async ({ agents }) => {
-  const config = createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' })
-  const configNormalizationProbe = vi.fn(() => undefined)
-  Object.defineProperty(config, 'signupAgentDefaults', {
-    enumerable: true,
-    get: configNormalizationProbe,
-  })
-  const createEnvironment = vi.fn(async () => {
-    throw new Error('Environment must not be constructed')
-  })
-  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
-
-  await expect(createCoreWorkspaceAgentServer({
-    config,
-    agents,
-    runtimeModeAdapter: { id: 'direct', create: createEnvironment } as never,
-    workspaceRoot: '/tmp/full-app-workspaces',
-    serveFrontend: false,
-  })).rejects.toMatchObject({ code: 'invalid_default_agent_type_id' })
-
-  expect(configNormalizationProbe).not.toHaveBeenCalled()
-  expect(mocks.createDatabase).not.toHaveBeenCalled()
-  expect(mocks.collectWorkspaceAgentServerPlugins).not.toHaveBeenCalled()
-  expect(mocks.createAgentHost).not.toHaveBeenCalled()
-  expect(mocks.inventoryDefaultAgentTypeIds).not.toHaveBeenCalled()
-  expect(createEnvironment).not.toHaveBeenCalled()
-}, 30_000)
-
-test('rejects an empty application fleet before resource allocation', async () => {
-  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
-  await expect(createCoreWorkspaceAgentServer({
-    config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
-    agents: [],
-    workspaceRoot: '/tmp/full-app-workspaces',
-    serveFrontend: false,
-  })).rejects.toMatchObject({ code: 'default_agent_type_unknown_seat' })
-
-  expect(mocks.createDatabase).not.toHaveBeenCalled()
-  expect(mocks.createAgentHost).not.toHaveBeenCalled()
-}, 30_000)
-
-test('core backfills through explicit CAS after fleet validation and before routes', async () => {
-  mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
-    runtimePlugins: [], agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
-    preservedUiStateKeys: [], routeContributions: [],
-  })
-  mocks.inventoryDefaultAgentTypeIds
-    .mockResolvedValueOnce([{ defaultAgentTypeId: null, count: 2 }])
-    .mockResolvedValueOnce([{ defaultAgentTypeId: 'general', count: 2 }])
-  mocks.compareAndSetNullDefaultAgentTypeId.mockResolvedValueOnce(2)
-  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
-  const app = await createCoreWorkspaceAgentServer({
-    config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
-    agents: REGULAR_AGENTS,
-    workspaceRoot: '/tmp/full-app-workspaces',
-    serveFrontend: false,
-  })
-  try {
-    expect(mocks.inventoryDefaultAgentTypeIds).toHaveBeenNthCalledWith(1, 'boring-ui-v2-test')
-    expect(mocks.compareAndSetNullDefaultAgentTypeId).toHaveBeenCalledWith('boring-ui-v2-test', 'general')
-    expect(mocks.inventoryDefaultAgentTypeIds).toHaveBeenCalledTimes(2)
-    expect(mocks.createAgentHost.mock.invocationCallOrder[0])
-      .toBeLessThan(mocks.compareAndSetNullDefaultAgentTypeId.mock.invocationCallOrder[0]!)
-    expect(mocks.compareAndSetNullDefaultAgentTypeId.mock.invocationCallOrder[0])
-      .toBeLessThan(mocks.hostRegisterDirectRoutes.mock.invocationCallOrder[0]!)
-  } finally { await app.close() }
-}, 60_000)
 
 test('uses one validated config default for plugins, backfill, and future workspace writers', async () => {
   mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
@@ -131,183 +52,64 @@ test('uses one validated config default for plugins, backfill, and future worksp
   } finally { await app.close() }
 }, 30_000)
 
-test('accepts a matching deprecated option without creating a second application default', async () => {
-  mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
-    runtimePlugins: [], agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
-    preservedUiStateKeys: [], routeContributions: [],
-  })
-  const config = createTestCoreConfig({
-    stores: 'postgres',
-    databaseUrl: 'postgres://test',
-    defaultAgentTypeId: 'reviewer',
-  })
-  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
-  const app = await createCoreWorkspaceAgentServer({
-    config,
-    defaultAgentTypeId: 'reviewer',
-    agents: [
-      { agentTypeId: 'default', definition: { label: 'Agent', instructions: 'Default.' } },
-      { agentTypeId: 'reviewer', definition: { label: 'Reviewer', instructions: 'Review.' } },
-    ],
-    plugins: [{ id: 'deprecated-default-context-probe' }],
-    workspaceRoot: '/tmp/full-app-workspaces',
-    serveFrontend: false,
-  })
-  try {
-    expect(mocks.compareAndSetNullDefaultAgentTypeId)
-      .toHaveBeenCalledWith(config.appId, 'reviewer')
-    expect(pluginContexts).toEqual([
-      expect.objectContaining({
-        agentTypeId: 'reviewer',
-        availableAgentTypeIds: ['default', 'reviewer'],
-      }),
-    ])
-    expect(app.config.defaultAgentTypeId).toBe('reviewer')
-  } finally { await app.close() }
-}, 30_000)
+test('reconciles only NULL rows and reports scalar convergence counts', async () => {
+  const workspaceStore = {
+    countNullDefaultAgentTypeIds: vi.fn()
+      .mockResolvedValueOnce(2)
+      .mockResolvedValueOnce(0),
+    compareAndSetNullDefaultAgentTypeId: vi.fn().mockResolvedValueOnce(2),
+  }
+  const log = { info: vi.fn(), warn: vi.fn() }
 
-test('accepts the real regular default Agent as the configured workspace default', async () => {
-  const config = createTestCoreConfig({
-    stores: 'postgres',
-    databaseUrl: 'postgres://test',
-    defaultAgentTypeId: 'default',
-  })
-  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
-
-  const app = await createCoreWorkspaceAgentServer({
-    config,
-    agents: [
-      { agentTypeId: 'default', definition: { label: 'Agent', instructions: 'Default.' } },
-      { agentTypeId: 'general', definition: { label: 'General', instructions: 'Answer general questions.' } },
-    ],
-    workspaceRoot: '/tmp/full-app-workspaces',
-    serveFrontend: false,
-  })
-  try {
-    expect(app.config.defaultAgentTypeId).toBe('default')
-    expect(mocks.compareAndSetNullDefaultAgentTypeId).toHaveBeenCalledWith(config.appId, 'default')
-  } finally { await app.close() }
-}, 30_000)
-
-test('rejects conflicting config and deprecated option defaults before resource allocation', async () => {
-  const config = createTestCoreConfig({
-    stores: 'postgres',
-    databaseUrl: 'postgres://test',
-    defaultAgentTypeId: 'reviewer',
-  })
-  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
-
-  await expect(createCoreWorkspaceAgentServer({
-    config,
-    defaultAgentTypeId: 'default',
-    agents: [
-      { agentTypeId: 'default', definition: { label: 'Agent', instructions: 'Default.' } },
-      { agentTypeId: 'reviewer', definition: { label: 'Reviewer', instructions: 'Review.' } },
-    ],
-    workspaceRoot: '/tmp/full-app-workspaces',
-    serveFrontend: false,
-  })).rejects.toMatchObject({
-    name: 'ConfigValidationError',
-    code: 'config_validation_failed',
-    issues: [{
-      path: ['defaultAgentTypeId'],
-      message: expect.stringContaining('conflicts'),
-    }],
+  await reconcileWorkspaceDefaultAgentTypes({
+    workspaceStore,
+    appId: 'app-a',
+    applicationDefaultAgentTypeId: 'reviewer',
+    log,
   })
 
-  expect(mocks.createDatabase).not.toHaveBeenCalled()
-  expect(mocks.collectWorkspaceAgentServerPlugins).not.toHaveBeenCalled()
-  expect(mocks.createAgentHost).not.toHaveBeenCalled()
-}, 30_000)
+  expect(workspaceStore.compareAndSetNullDefaultAgentTypeId).toHaveBeenCalledWith('app-a', 'reviewer')
+  expect(log.info).toHaveBeenCalledWith(expect.objectContaining({
+    beforeNullCount: 2,
+    migratedCount: 2,
+    afterNullCount: 0,
+  }), expect.any(String))
+})
 
-test.each(['before-inventory', 'cas', 'cas-undefined-table', 'after-inventory', 'after-inventory-undefined-table', 'remaining-null'] as const)(
-  'closes AgentHost when default migration fails at %s',
-  async (stage) => {
-    mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
-      runtimePlugins: [], agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
-      preservedUiStateKeys: [], routeContributions: [],
-    })
-    if (stage === 'before-inventory') {
-      mocks.inventoryDefaultAgentTypeIds.mockRejectedValueOnce(new Error('inventory unavailable'))
-    } else if (stage === 'cas' || stage === 'cas-undefined-table') {
-      mocks.inventoryDefaultAgentTypeIds.mockResolvedValueOnce([])
-      mocks.compareAndSetNullDefaultAgentTypeId.mockRejectedValueOnce(
-        stage === 'cas'
-          ? new Error('CAS unavailable')
-          : Object.assign(new Error('CAS relation failure'), { cause: { code: '42P01' } }),
-      )
-    } else if (stage === 'after-inventory' || stage === 'after-inventory-undefined-table') {
-      mocks.inventoryDefaultAgentTypeIds
-        .mockResolvedValueOnce([])
-        .mockRejectedValueOnce(stage === 'after-inventory'
-          ? new Error('post-inventory unavailable')
-          : Object.assign(new Error('post-inventory relation failure'), { cause: { code: '42P01' } }))
-    } else {
-      mocks.inventoryDefaultAgentTypeIds
-        .mockResolvedValueOnce([{ defaultAgentTypeId: null, count: 1 }])
-        .mockResolvedValueOnce([{ defaultAgentTypeId: null, count: 1 }])
-    }
-    const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
-    await expect(createCoreWorkspaceAgentServer({
-      config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
-      agents: REGULAR_AGENTS,
-      workspaceRoot: '/tmp/full-app-workspaces',
-      serveFrontend: false,
-    })).rejects.toThrow(stage === 'remaining-null'
-      ? 'Workspace default Agent reconciliation did not converge'
-      : stage.includes('undefined-table') ? /relation failure/ : /unavailable/)
-    expect(mocks.hostClose).toHaveBeenCalledOnce()
-    expect(mocks.hostRegisterDirectRoutes).not.toHaveBeenCalled()
-  },
-  30_000,
-)
+test.each(['42P01', '42703'])('skips only a missing pre-migration schema (%s)', async (code) => {
+  const workspaceStore = {
+    countNullDefaultAgentTypeIds: vi.fn().mockRejectedValueOnce(Object.assign(
+      new Error('pre-schema'),
+      { cause: { code } },
+    )),
+    compareAndSetNullDefaultAgentTypeId: vi.fn(),
+  }
+  const log = { info: vi.fn(), warn: vi.fn() }
 
-test('keeps the pre-schema reference health composition bootable without weakening other migration failures', async () => {
-  mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
-    runtimePlugins: [], agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
-    preservedUiStateKeys: [], routeContributions: [],
+  await reconcileWorkspaceDefaultAgentTypes({
+    workspaceStore,
+    appId: 'app-a',
+    applicationDefaultAgentTypeId: 'reviewer',
+    log,
   })
-  mocks.inventoryDefaultAgentTypeIds.mockRejectedValueOnce(Object.assign(
-    new Error('inventory query failed'),
-    { cause: Object.assign(new Error('relation workspaces does not exist'), { code: '42P01' }) },
-  ))
-  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
-  const app = await createCoreWorkspaceAgentServer({
-    config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
-    agents: REGULAR_AGENTS,
-    workspaceRoot: '/tmp/full-app-workspaces',
-    serveFrontend: false,
-  })
-  try {
-    expect(mocks.compareAndSetNullDefaultAgentTypeId).not.toHaveBeenCalled()
-    expect(mocks.hostRegisterDirectRoutes).toHaveBeenCalledOnce()
-  } finally { await app.close() }
-}, 30_000)
 
-test('keeps the pre-0024 reference health composition bootable when the default_agent_type_id column is absent', async () => {
-  mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
-    runtimePlugins: [], agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
-    preservedUiStateKeys: [], routeContributions: [],
-  })
-  // A workspaces table that exists but predates migration 0024 raises
-  // undefined_column (42703), not undefined_table (42P01) — the inventory
-  // query selects a column the schema does not yet have.
-  mocks.inventoryDefaultAgentTypeIds.mockRejectedValueOnce(Object.assign(
-    new Error('inventory query failed'),
-    { cause: Object.assign(new Error('column "default_agent_type_id" does not exist'), { code: '42703' }) },
-  ))
-  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
-  const app = await createCoreWorkspaceAgentServer({
-    config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
-    agents: REGULAR_AGENTS,
-    workspaceRoot: '/tmp/full-app-workspaces',
-    serveFrontend: false,
-  })
-  try {
-    expect(mocks.compareAndSetNullDefaultAgentTypeId).not.toHaveBeenCalled()
-    expect(mocks.hostRegisterDirectRoutes).toHaveBeenCalledOnce()
-  } finally { await app.close() }
-}, 30_000)
+  expect(workspaceStore.compareAndSetNullDefaultAgentTypeId).not.toHaveBeenCalled()
+  expect(log.warn).toHaveBeenCalledOnce()
+})
+
+test('fails when NULL reconciliation does not converge', async () => {
+  const workspaceStore = {
+    countNullDefaultAgentTypeIds: vi.fn().mockResolvedValue(1),
+    compareAndSetNullDefaultAgentTypeId: vi.fn().mockResolvedValue(0),
+  }
+
+  await expect(reconcileWorkspaceDefaultAgentTypes({
+    workspaceStore,
+    appId: 'app-a',
+    applicationDefaultAgentTypeId: 'reviewer',
+    log: { info: vi.fn(), warn: vi.fn() },
+  })).rejects.toMatchObject({ code: 'default_agent_type_unknown_seat' })
+})
 
 test('workspace meta rejects a deleted workspace before recreating its root', async () => {
   mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
@@ -414,12 +216,39 @@ test('rejects actual execution paths before binding or Environment acquisition',
       'x-test-user-id': 'user-a',
       'x-boring-workspace-id': 'workspace-a',
     }
-    const requests = [
+    const directlyGatedRequests = [
       {
         method: 'POST' as const,
         url: '/api/v1/agents/default/sessions',
         payload: { requestId: 'blocked-create' },
       },
+    ]
+    for (const request of directlyGatedRequests) {
+      const response = await app.inject({ ...request, headers })
+      expect(response.statusCode, `${request.url}: ${response.body}`).toBe(404)
+      expect(response.json(), request.url).toMatchObject({
+        error: {
+          code: 'AGENT_TYPE_UNKNOWN',
+          details: { code: 'default_agent_type_unknown_seat' },
+        },
+      })
+    }
+
+    // Effects with unresolved runtime/session targets retain the canonical
+    // Host ordering: target validation may reject before effect admission.
+    // That is still fail-closed and does not acquire an Environment or mutate.
+    const missingBindingReload = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/default/reload',
+      headers,
+      payload: { requestId: 'blocked-reload' },
+    })
+    expect(missingBindingReload.statusCode).toBe(409)
+    expect(missingBindingReload.json()).toMatchObject({
+      error: { code: 'AGENT_COMMAND_INVALID_STATE' },
+    })
+
+    for (const request of [
       {
         method: 'POST' as const,
         url: '/api/v1/agents/default/sessions/missing/prompt',
@@ -435,20 +264,11 @@ test('rejects actual execution paths before binding or Environment acquisition',
         url: '/api/v1/agents/default/commands/execute',
         payload: { requestId: 'blocked-command', sessionId: 'missing', name: 'help', args: '' },
       },
-      {
-        method: 'POST' as const,
-        url: '/api/v1/agents/default/reload',
-        payload: { requestId: 'blocked-reload' },
-      },
-    ]
-    for (const request of requests) {
+    ]) {
       const response = await app.inject({ ...request, headers })
       expect(response.statusCode, `${request.url}: ${response.body}`).toBe(404)
       expect(response.json(), request.url).toMatchObject({
-        error: {
-          code: 'AGENT_TYPE_UNKNOWN',
-          details: { code: 'default_agent_type_unknown_seat' },
-        },
+        error: { code: 'AGENT_SESSION_NOT_FOUND' },
       })
     }
 

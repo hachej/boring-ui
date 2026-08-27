@@ -38,9 +38,12 @@ export interface ReconcileWorkspaceDefaultAgentTypesInput {
  * application default before any route can serve.
  *
  * Runs after the static fleet is compiled and validated, so the value written
- * is known to name a real seat. Re-running is idempotent, and because the
- * write is a compare-and-set against NULL, a concurrent non-NULL writer always
- * wins — a user's stored choice is never rewritten.
+ * is known to name a real seat. Migration 0025 installs a NOT VALID constraint:
+ * existing NULL rows remain reconcilable, while overlapping legacy processes
+ * cannot create a new NULL after the convergence count. Re-running is
+ * idempotent, and because the write is a compare-and-set against NULL, a
+ * concurrent non-NULL writer always wins — a user's stored choice is never
+ * rewritten.
  *
  * The one tolerated failure is a pre-0024 schema on the *initial* inventory:
  * the relation may be undefined (42P01), or exist without the migration 0024

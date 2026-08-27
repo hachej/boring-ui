@@ -241,7 +241,7 @@ test('uses one validated config default for backfill and future workspace writer
   const app = await createCoreWorkspaceAgentServer({
     config,
     agents: [
-      { agentTypeId: 'default', definition: { label: 'Agent', instructions: 'Default.' } },
+      { agentTypeId: 'default', legacyDefault: true },
       { agentTypeId: 'reviewer', definition: { label: 'Reviewer', instructions: 'Review.' } },
     ],
     workspaceRoot: '/tmp/full-app-workspaces',
@@ -406,7 +406,7 @@ test('workspace meta resolves a legacy NULL default from the configured applicat
   const app = await createCoreWorkspaceAgentServer({
     config,
     agents: [
-      { agentTypeId: 'default', definition: { label: 'Agent', instructions: 'Default.' } },
+      { agentTypeId: 'default', legacyDefault: true },
       { agentTypeId: 'reviewer', definition: { label: 'Reviewer', instructions: 'Review.' } },
     ],
     workspaceRoot: '/tmp/full-app-workspaces',
