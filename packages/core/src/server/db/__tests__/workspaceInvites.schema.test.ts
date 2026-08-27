@@ -53,8 +53,8 @@ async function ensureUser(id: string, email: string) {
 
 async function ensureWorkspace(id: string, createdBy: string) {
   await sql`
-    INSERT INTO workspaces (id, app_id, name, created_by, is_default)
-    VALUES (${id}, 'test-app', 'Test WS', ${createdBy}, false)
+    INSERT INTO workspaces (id, app_id, name, created_by, is_default, default_agent_type_id)
+    VALUES (${id}, 'test-app', 'Test WS', ${createdBy}, false, 'default')
     ON CONFLICT (id) DO NOTHING
   `
 }

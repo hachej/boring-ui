@@ -52,8 +52,8 @@ async function seedWorkspace(appId = 'orm1-app') {
   `
 
   const [workspace] = await sqlClient`
-    INSERT INTO workspaces (app_id, name, created_by, is_default)
-    VALUES (${appId}, 'ORM1 Workspace', ${owner.id}, false)
+    INSERT INTO workspaces (app_id, name, created_by, is_default, default_agent_type_id)
+    VALUES (${appId}, 'ORM1 Workspace', ${owner.id}, false, 'default')
     RETURNING id, app_id
   `
 
@@ -751,11 +751,26 @@ describeWorkspaceStoreConformance(
       `
     },
     seedLegacyNullDefaultAgentTypeId: async (_workspaceStore, workspaceId) => {
-      await sqlClient`
-        UPDATE workspaces
-        SET default_agent_type_id = NULL
-        WHERE id = ${workspaceId}
-      `
+      // Production keeps the rolling-upgrade guard installed as NOT VALID: it
+      // permits historical NULL rows but blocks new legacy writes. Recreate
+      // that historical state atomically so store conformance can exercise the
+      // NULL-only CAS without leaving the guard disabled.
+      await sqlClient.begin(async (transaction) => {
+        await transaction`
+          ALTER TABLE workspaces
+          DROP CONSTRAINT workspaces_default_agent_type_id_required_check
+        `
+        await transaction`
+          UPDATE workspaces
+          SET default_agent_type_id = NULL
+          WHERE id = ${workspaceId}
+        `
+        await transaction`
+          ALTER TABLE workspaces
+          ADD CONSTRAINT workspaces_default_agent_type_id_required_check
+          CHECK (default_agent_type_id IS NOT NULL) NOT VALID
+        `
+      })
     },
     makeAppIds: () => ({ appId: APP_ID, otherAppId: APP_ID_2 }),
     emailDomain: 'orm1-test.dev',

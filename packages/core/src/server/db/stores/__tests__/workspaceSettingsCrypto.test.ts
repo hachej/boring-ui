@@ -51,8 +51,8 @@ async function seedWorkspace() {
   `
 
   const [workspace] = await sqlClient`
-    INSERT INTO workspaces (app_id, name, created_by, is_default)
-    VALUES (${APP_ID}, 'IOZO Crypto Workspace', ${owner.id}, false)
+    INSERT INTO workspaces (app_id, name, created_by, is_default, default_agent_type_id)
+    VALUES (${APP_ID}, 'IOZO Crypto Workspace', ${owner.id}, false, 'default')
     RETURNING id
   `
 
