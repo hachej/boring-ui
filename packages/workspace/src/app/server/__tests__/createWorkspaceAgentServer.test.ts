@@ -120,6 +120,7 @@ vi.mock("@hachej/boring-agent/server", async (importOriginal) => {
 
 import {
   AgentRuntimeIdentityError,
+  ConfiguredDefaultAgentError,
   collectWorkspaceAgentServerPlugins,
   createWorkspaceAgentServer,
   digestWorkspacePiResourceInputs,
@@ -128,6 +129,10 @@ import {
   resolveBoringPiSkillPaths,
   resolveWorkspaceAgentServerPluginCollection,
 } from "../createWorkspaceAgentServer"
+import {
+  CONFIGURED_DEFAULT_AGENT_ERROR_CODE as PUBLIC_CONFIGURED_DEFAULT_AGENT_ERROR_CODE,
+  ConfiguredDefaultAgentError as PublicConfiguredDefaultAgentError,
+} from "../index"
 import { resolveDefaultWorkspacePluginPackagePaths } from "../defaultPluginPackages"
 import { RuntimeBackendRegistry } from "../../../server/runtimeBackend"
 
@@ -2108,6 +2113,33 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     expect(createRuntime).not.toHaveBeenCalled()
     expect(agentServerMock.provisionWorkspaceRuntime).not.toHaveBeenCalled()
     expect(agentServerMock.captureResolvedRuntimeScope).not.toHaveBeenCalled()
+  })
+
+  test("exports and fail-closes a configured default absent from the boot fleet", async () => {
+    expect(PublicConfiguredDefaultAgentError).toBe(ConfiguredDefaultAgentError)
+    expect(PUBLIC_CONFIGURED_DEFAULT_AGENT_ERROR_CODE).toBe("CONFIG_INVALID")
+
+    await expect(createWorkspaceAgentServer({
+      workspaceRoot: await makeTempDir("boring-agent-default-invalid-"),
+      logger: false,
+      externalPlugins: false,
+      agents: [{ agentTypeId: "configured", definition: { label: "Configured", instructions: "Be useful." } }],
+      defaultAgentTypeId: "missing-default",
+      fleetCompiler: { async compile({ agents }) { return agents } },
+    })).rejects.toMatchObject({
+      name: "ConfiguredDefaultAgentError",
+      code: "CONFIG_INVALID",
+      field: "defaultAgentTypeId",
+    })
+    await expect(createWorkspaceAgentServer({
+      workspaceRoot: await makeTempDir("boring-agent-default-empty-"),
+      logger: false,
+      externalPlugins: false,
+      agents: [{ agentTypeId: "configured", definition: { label: "Configured", instructions: "Be useful." } }],
+      defaultAgentTypeId: "",
+      fleetCompiler: { async compile({ agents }) { return agents } },
+    })).rejects.toMatchObject({ name: "ConfiguredDefaultAgentError", code: "CONFIG_INVALID" })
+    expect(agentServerMock.createAgentHost).not.toHaveBeenCalled()
   })
 
   test("defers provisioning to the Host Environment generation", async () => {
