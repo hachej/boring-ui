@@ -5,6 +5,8 @@ import type {
 } from '../../app/types.js'
 import type {
   Workspace,
+  WorkspaceAgentSeat,
+  WorkspaceAgentSeatSource,
   WorkspaceMember,
   WorkspaceInvite,
   WorkspaceRuntime,
@@ -29,6 +31,7 @@ function toWorkspace(workspace: Workspace): Workspace {
 
 export class LocalWorkspaceStore implements WorkspaceStore {
   private workspaces = new Map<string, Workspace>()
+  private agentSeats = new Map<string, WorkspaceAgentSeat>() // key: `${workspaceId}:${agentTypeId}`
   private members = new Map<string, WorkspaceMember>() // key: `${workspaceId}:${userId}`
   private invites = new Map<string, WorkspaceInvite>()
   private runtimes = new Map<string, WorkspaceRuntime>()
@@ -69,6 +72,14 @@ export class LocalWorkspaceStore implements WorkspaceStore {
       role: 'owner',
       createdAt: now,
     })
+    this.agentSeats.set(`${ws.id}:${defaultAgentTypeId}`, {
+      seatId: randomUUID(),
+      workspaceId: ws.id,
+      agentTypeId: defaultAgentTypeId,
+      source: opts.initialAgentSeatSource ?? 'generic-default',
+      enrolledByUserId: opts.enrolledByUserId ?? userId,
+      createdAt: now,
+    })
     this.runtimes.set(ws.id, {
       workspaceId: ws.id,
       spriteUrl: null,
@@ -107,6 +118,42 @@ export class LocalWorkspaceStore implements WorkspaceStore {
     return result
   }
 
+  async listAgentSeats(workspaceId: string): Promise<WorkspaceAgentSeat[]> {
+    return [...this.agentSeats.values()]
+      .filter((seat) => seat.workspaceId === workspaceId)
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt)
+        || left.agentTypeId.localeCompare(right.agentTypeId))
+      .map((seat) => ({ ...seat }))
+  }
+
+  async hasAgentSeat(workspaceId: string, agentTypeId: string): Promise<boolean> {
+    const parsedAgentTypeId = parseRequiredDefaultAgentTypeId(agentTypeId)
+    return this.agentSeats.has(`${workspaceId}:${parsedAgentTypeId}`)
+  }
+
+  async addAgentSeat(
+    workspaceId: string,
+    agentTypeId: string,
+    source: WorkspaceAgentSeatSource,
+    enrolledByUserId?: string,
+  ): Promise<WorkspaceAgentSeat> {
+    if (!this.workspaces.has(workspaceId)) throw new Error(`Workspace ${workspaceId} was not found`)
+    const parsedAgentTypeId = parseRequiredDefaultAgentTypeId(agentTypeId)
+    const key = `${workspaceId}:${parsedAgentTypeId}`
+    const existing = this.agentSeats.get(key)
+    if (existing) return { ...existing }
+    const seat: WorkspaceAgentSeat = {
+      seatId: randomUUID(),
+      workspaceId,
+      agentTypeId: parsedAgentTypeId,
+      source,
+      enrolledByUserId: enrolledByUserId ?? null,
+      createdAt: new Date().toISOString(),
+    }
+    this.agentSeats.set(key, seat)
+    return { ...seat }
+  }
+
   async countNullDefaultAgentTypeIds(appId: string): Promise<number> {
     let count = 0
     for (const workspace of this.workspaces.values()) {
@@ -121,6 +168,17 @@ export class LocalWorkspaceStore implements WorkspaceStore {
     for (const [id, workspace] of this.workspaces) {
       if (workspace.appId !== appId || workspace.defaultAgentTypeId != null) continue
       this.workspaces.set(id, { ...workspace, defaultAgentTypeId })
+      const seatKey = `${id}:${defaultAgentTypeId}`
+      if (!this.agentSeats.has(seatKey)) {
+        this.agentSeats.set(seatKey, {
+          seatId: randomUUID(),
+          workspaceId: id,
+          agentTypeId: defaultAgentTypeId,
+          source: 'migration-default',
+          enrolledByUserId: workspace.createdBy,
+          createdAt: new Date().toISOString(),
+        })
+      }
       updated += 1
     }
     return updated

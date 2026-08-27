@@ -114,10 +114,10 @@ export function createPostSignupHook(deps: PostSignupHookDeps) {
 
     if (!inviteAccepted && !disableDefaultWorkspaceCreation) {
       // Decision 28 hook: an exact trusted signup-domain mapping may
-      // initialize the default seat of this newly created default Workspace.
-      // The hostname is read once, matched exactly against boot-validated
-      // trusted host configuration, then discarded — it is never persisted
-      // and has no routing, membership, selection, or authorization effect.
+      // initialize the default Agent and its authorization Seat atomically.
+      // The hostname is read once and matched exactly against boot-validated
+      // trusted host configuration; only the resolved Agent id and source are
+      // persisted.
       const signupHostname = normalizeSignupHostname(
         readHeader(ctx, TRUSTED_SIGNUP_HOSTNAME_HEADER),
       )
@@ -125,8 +125,10 @@ export function createPostSignupHook(deps: PostSignupHookDeps) {
       const initialSeat = signupSeat ?? applicationDefaultAgentTypeId
       await workspaceStore.create(user.id, 'Default workspace', config.appId, {
         isDefault: true,
-        // Decision 28: every initialized Workspace persists a real seat.
+        // Decision 28: every initialized Workspace persists a real default.
         defaultAgentTypeId: initialSeat,
+        initialAgentSeatSource: signupSeat ? 'signup-intent' : 'generic-default',
+        enrolledByUserId: user.id,
       })
     }
 
