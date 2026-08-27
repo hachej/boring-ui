@@ -46,7 +46,10 @@ const agents = [
     plugins: [{ name: 'ask-user' }, { name: 'pr-review', config: { mode: 'strict' } }],
     model: { preferred: 'pi-large' },
   },
-  { agentTypeId: 'default', legacyDefault: true as const },
+  {
+    agentTypeId: 'default',
+    definition: { instructions: 'You are the default Agent.', label: 'Agent' },
+  },
 ]
 
 function createProjection(options: {
@@ -149,7 +152,7 @@ describe('describeAgent', () => {
     })])
   })
 
-  test('legacy default agent describes with no model or instruction refs', async () => {
+  test('platform default Agent describes with no model or instruction-file refs', async () => {
     const projection = createProjection()
     const description = await projection.describeAgent({ request: {} as never, agentTypeId: 'default' })
     expect(description).toEqual({

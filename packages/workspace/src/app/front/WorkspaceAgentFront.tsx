@@ -98,7 +98,7 @@ interface PendingCreatePane {
   workspaceId: string
   placementDirection?: ChatPaneSplitDirection
   createdId?: string
-  mode: "insert" | "replace"
+  mode: "insert" | "replace" | "replace-all"
 }
 
 export interface WorkspaceAgentSession {
@@ -838,6 +838,10 @@ export function WorkspaceAgentFront<
   )
   const effectiveAgentTypeId = addressedAgents.selectedAgentTypeId ?? defaultAgentTypeId
   const selectedAgentTypeId = effectiveAgentTypeId
+  // Fleet selection is session/pane-local. Workspace transport, plugin, and
+  // provisioning identity remains the configured Workspace default; otherwise
+  // switching to another Agent reboots the filesystem and plugin shell.
+  const workspaceTransportAgentTypeId = fleetModeEnabled ? defaultAgentTypeId : effectiveAgentTypeId
   // The New chat picker chooses who the *next* chat belongs to. It is
   // deliberately separate from the addressed selection that drives the open
   // chat, so retargeting never navigates away from what the user is reading.
@@ -1823,9 +1827,11 @@ export function WorkspaceAgentFront<
       const ids = prunedIds.length > 0 ? prunedIds : [resolvedDesiredSessionId]
       const activeId = current.activeId && ids.includes(current.activeId) ? current.activeId : ids[0] ?? resolvedDesiredSessionId
       const nextIds = pendingCreatedId
-        ? pendingCreatePane?.mode === "replace"
-          ? replaceActivePane(ids, pendingCreatePane.afterId, pendingCreatedId)
-          : insertPaneAfter(ids, pendingCreatePane?.afterId, pendingCreatedId)
+        ? pendingCreatePane?.mode === "replace-all"
+          ? [pendingCreatedId]
+          : pendingCreatePane?.mode === "replace"
+            ? replaceActivePane(ids, pendingCreatePane.afterId, pendingCreatedId)
+            : insertPaneAfter(ids, pendingCreatePane?.afterId, pendingCreatedId)
         : resolvedDesiredSessionId === activeId || ids.includes(resolvedDesiredSessionId)
           ? ids
           : replaceActivePane(ids, activeId, resolvedDesiredSessionId)
@@ -1941,7 +1947,7 @@ export function WorkspaceAgentFront<
 
   const createChatPaneTransaction = useCallback((
     afterId: string,
-    mode: "insert" | "replace",
+    mode: "insert" | "replace" | "replace-all",
     placementDirection?: ChatPaneSplitDirection,
     ownerAgentTypeId?: string,
   ) => {
@@ -1995,9 +2001,11 @@ export function WorkspaceAgentFront<
         ? (session as { agentTypeId: string }).agentTypeId
         : ownerAgentTypeId ?? effectiveAgentTypeId
       const createdKey = workspaceSessionKey(id, createdAgentTypeId)
-      const nextIds = mode === "replace"
-        ? replaceActivePane(ids, afterId, createdKey)
-        : insertPaneAfter(ids, afterId, createdKey)
+      const nextIds = mode === "replace-all"
+        ? [createdKey]
+        : mode === "replace"
+          ? replaceActivePane(ids, afterId, createdKey)
+          : insertPaneAfter(ids, afterId, createdKey)
       const nextState = { workspaceId, ids: nextIds, activeId: createdKey }
 
       if (!settleIfOwner()) return
@@ -2031,7 +2039,7 @@ export function WorkspaceAgentFront<
   }, [workspaceId])
 
   const createChatSession = useCallback((ownerAgentTypeId = fleetModeEnabled ? newChatAgentTypeId : undefined) => (
-    createChatPaneTransaction(activeChatPaneId, "replace", undefined, ownerAgentTypeId)
+    createChatPaneTransaction(activeChatPaneId, "replace-all", undefined, ownerAgentTypeId)
   ), [activeChatPaneId, newChatAgentTypeId, createChatPaneTransaction, fleetModeEnabled])
 
   const closeChatPane = useCallback((sessionKey: string) => {
@@ -2086,10 +2094,9 @@ export function WorkspaceAgentFront<
     return resolvedDelete(sessionId, sessionAgentTypeId)
   }, [chatPaneState, chatSessionKey, resolvedDelete, resolvedSwitch, workspaceId])
 
-  // "New chat" from the left bar. With a split already open, the new session
-  // gets its OWN dedicated pane (inserted after the active one) so the existing
-  // panes are never hijacked; with a single pane it just becomes the active
-  // chat — no gratuitous split for the common case.
+  // Every primary "New chat" affordance starts a fresh single-pane surface.
+  // Splits are retained only when the user explicitly chooses a split action;
+  // an Agent-card "+" must never make the new Agent look like a side chat.
   /**
    * Splitting a pane is NOT a "new chat" affordance: the button names the pane
    * it splits ("Split <title> chat vertically"), so the new chat must belong to
@@ -2838,7 +2845,7 @@ export function WorkspaceAgentFront<
     <div className="relative h-full bg-background text-foreground">
       <WorkspaceShellCapabilitiesProvider value={shellCapabilitiesHost.shellCapabilities}>
       <WorkspaceProvider
-        agentTypeId={selectedAgentTypeId}
+        agentTypeId={workspaceTransportAgentTypeId}
         chatPanel={chatPanel}
         panels={providerPanels}
         commands={commands}
@@ -2875,7 +2882,7 @@ export function WorkspaceAgentFront<
         {addressedFleetSessions.sources}
         {!fleetModeEnabled || addressedAgents.selectedAgentTypeId ? (
           <WorkspaceBackgroundBoot
-            agentTypeId={effectiveAgentTypeId}
+            agentTypeId={workspaceTransportAgentTypeId}
             workspaceId={workspaceId}
             requestHeaders={resolvedRequestHeaders}
             apiBaseUrl={apiBaseUrl}

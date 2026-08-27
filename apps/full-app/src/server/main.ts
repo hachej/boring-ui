@@ -40,7 +40,6 @@ async function main() {
   const app = await createCoreWorkspaceAgentServer({
     appRoot,
     config,
-    defaultAgentTypeId: 'default',
     serveFrontend: true,
     plugins: [...pluginComposition.plugins],
     defaultPluginPackages: [...pluginComposition.defaultPluginPackages],

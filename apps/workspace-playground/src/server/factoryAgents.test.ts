@@ -47,21 +47,25 @@ async function expectedInstructions(role: string, skills: readonly string[]): Pr
   return [base, ...blocks].join('\n\n')
 }
 
-// Migrated (gh-1106 slice 3): factoryAgents.ts is now a thin call to
-// loadConfiguredAgentFleet(); these tests exercise that loader against the
-// repository's real .agents/personas + .agents/factory/fleet.yaml tree
-// instead of the deleted bespoke composition.
+// Factory mode uses the canonical additive resolver against the repository's
+// real .agents/personas + .agents/factory/fleet.yaml tree.
 describe('loadBoringFactoryAgents (loader against the real .agents/ tree)', () => {
   test('composes exactly the independently expected canonical skills in deterministic order', async () => {
     const agents = await loadBoringFactoryAgents({})
     const defaultAgentTypeId = resolvePlaygroundDefaultAgentTypeId(agents)
 
-    expect(agents.map((agent) => agent.agentTypeId)).toEqual(EXPECTED.map(({ id }) => id))
-    expect(defaultAgentTypeId).toBe(EXPECTED[0].id)
-    expect(agents.some((agent) => agent.agentTypeId === defaultAgentTypeId)).toBe(true)
+    expect(agents.map((agent) => agent.agentTypeId)).toEqual([
+      'default',
+      ...EXPECTED.map(({ id }) => id),
+    ])
+    expect(defaultAgentTypeId).toBe('default')
+    expect(agents[0]).toMatchObject({
+      agentTypeId: 'default',
+      definition: { label: 'Agent' },
+    })
     for (const [index, expected] of EXPECTED.entries()) {
-      const agent = agents[index]
-      if (!agent || 'legacyDefault' in agent) throw new Error('factory agent must be configured')
+      const agent = agents[index + 1]
+      if (!agent) throw new Error('factory agent must be configured')
       expect(agent.definition.instructions).toBe(await expectedInstructions(expected.role, expected.skills))
       expect(agent.definition.instructions.match(/boring-skill:start/g)).toHaveLength(expected.skills.length)
       expect(agent.definition.instructions.match(/boring-skill:end/g)).toHaveLength(expected.skills.length)
@@ -79,8 +83,7 @@ describe('loadBoringFactoryAgents (loader against the real .agents/ tree)', () =
     test('resolves a ref that actually opens when the personas are inside the served root', async () => {
       const agents = await loadBoringFactoryAgents({ env: {} })
 
-      for (const agent of agents) {
-        if ('legacyDefault' in agent) throw new Error('factory agent must be configured')
+      for (const agent of agents.slice(1)) {
         const { refs, withheld } = await resolveAgentInstructionFileRefs({
           sources: agent.instructionSources,
           workspaceRoot: REPOSITORY_ROOT,
@@ -100,9 +103,8 @@ describe('loadBoringFactoryAgents (loader against the real .agents/ tree)', () =
       const servedRoot = resolve(REPOSITORY_ROOT, 'apps/workspace-playground/workspace')
       const agents = await loadBoringFactoryAgents({ env: {} })
 
-      expect(agents.length).toBe(EXPECTED.length)
-      for (const agent of agents) {
-        if ('legacyDefault' in agent) throw new Error('factory agent must be configured')
+      expect(agents.length).toBe(EXPECTED.length + 1)
+      for (const agent of agents.slice(1)) {
         const { refs, withheld } = await resolveAgentInstructionFileRefs({
           sources: agent.instructionSources,
           workspaceRoot: servedRoot,
@@ -137,10 +139,9 @@ describe('loadBoringFactoryAgents (loader against the real .agents/ tree)', () =
     try {
       const error = await loadBoringFactoryAgents({}).catch((cause: unknown) => cause)
       expect(error).toMatchObject({
-        name: 'TrustedAgentCompositionError',
-        diagnostics: [
-          { seat: 'triage', code: ErrorCode.enum.AGENT_FLEET_SEAT_SKILL_DIGEST_MISMATCH },
-        ],
+        name: 'FleetConfigError',
+        code: ErrorCode.enum.AGENT_FLEET_CONFIG_FILE_INVALID,
+        field: 'seats',
       })
       expect(String(error)).not.toMatch(/private\/root|SKILL\.md missing/)
     } finally {

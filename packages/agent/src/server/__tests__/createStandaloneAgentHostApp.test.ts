@@ -938,7 +938,11 @@ test('Final composed route/auth proof: standalone delegates its trusted scope to
       url: '/api/v1/files/search?q=proof',
       headers: { authorization: 'Bearer composition-proof-token' },
     })).statusCode).toBe(200)
-    expect(addressed.json()).toEqual([{ agentTypeId: 'default', label: 'Agent' }])
+    expect(addressed.json()).toEqual([{
+      agentTypeId: 'default',
+      label: 'Agent',
+      definition: { version: '1', digest: expect.any(String) },
+    }])
     assertComposedAgentHostRouteTable(app)
     expect(app.hasRoute({
       method: 'GET',

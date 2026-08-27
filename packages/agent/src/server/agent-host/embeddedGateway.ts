@@ -224,11 +224,11 @@ export class EmbeddedAgentGateway implements AgentGateway {
     await this.verify(input.scope)
     return this.runtime.compiledAgents.map((agent) => ({
       agentTypeId: agent.agentTypeId,
-      label: 'legacyDefault' in agent ? 'Agent' : agent.definition.label,
-      ...('legacyDefault' in agent || !agent.plugins?.length
+      label: agent.definition.label,
+      ...(!agent.plugins?.length
         ? {}
         : { pluginIds: agent.plugins.map((plugin) => plugin.name) }),
-      ...('legacyDefault' in agent || !agent.definition.version
+      ...(!agent.definition.version
         ? {}
         : { definition: { version: agent.definition.version, digest: canonicalDigest(agent.definition as unknown as JsonValue) } }),
     }))

@@ -39,20 +39,21 @@ export interface UserStore {
 }
 
 export interface WorkspaceStoreCreateOptions {
+  /** Required real application-fleet Agent; stores validate but never select it. */
+  readonly defaultAgentTypeId: string
   readonly workspaceTypeId?: string
   isDefault?: boolean
   id?: string
   managedBy?: string
-  /**
-   * Persisted default Agent seat (Decision 28). Applied only at workspace
-   * initialization; an existing workspace's value is never rewritten.
-   */
-  readonly defaultAgentTypeId?: string
 }
 
 export interface WorkspaceStore {
-  create(userId: string, name: string, appId: string, opts?: WorkspaceStoreCreateOptions): Promise<Workspace>
+  create(userId: string, name: string, appId: string, opts: WorkspaceStoreCreateOptions): Promise<Workspace>
   list(userId: string, appId: string): Promise<Workspace[]>
+  /** Count rolling-migration rows that still lack a persisted default Agent. */
+  countNullDefaultAgentTypeIds(appId: string): Promise<number>
+  /** Idempotent compare-and-set backfill: only rows still NULL may change. */
+  compareAndSetNullDefaultAgentTypeId(appId: string, defaultAgentTypeId: string): Promise<number>
   get(id: string): Promise<Workspace | null>
   getIncludingDeleted(id: string): Promise<Workspace | null>
   restore(id: string): Promise<Workspace | null>

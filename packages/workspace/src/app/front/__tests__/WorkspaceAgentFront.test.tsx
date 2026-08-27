@@ -743,6 +743,10 @@ describe("WorkspaceAgentFront", () => {
     expect(JSON.parse(String(betaReloadCall?.[1]?.body))).toEqual({ requestId: expect.any(String) })
     await user.click(screen.getByRole("button", { name: "Close Beta details" }))
 
+    const workspaceNavigationBeforeAgentSwitch = screen.getByLabelText("App navigation")
+    const workspaceBootCallsBeforeAgentSwitch = vi.mocked(fetch).mock.calls.filter(([input]) =>
+      String(input).includes("/api/v1/tree"),
+    ).length
     const betaSessionButton = screen.getByText("Beta one").closest("button")
     expect(betaSessionButton).toBeInstanceOf(HTMLButtonElement)
     await user.click(betaSessionButton!)
@@ -750,6 +754,12 @@ describe("WorkspaceAgentFront", () => {
       expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-agent-type-id", "beta")
       expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-session-id", "beta-one")
     })
+    // Agent/session selection is pane-local. It must neither remount the shell
+    // nor rerun Workspace boot as though its transport identity had changed.
+    expect(screen.getByLabelText("App navigation")).toBe(workspaceNavigationBeforeAgentSwitch)
+    expect(vi.mocked(fetch).mock.calls.filter(([input]) =>
+      String(input).includes("/api/v1/tree"),
+    )).toHaveLength(workspaceBootCallsBeforeAgentSwitch)
 
     await user.click(screen.getByRole("button", { name: "New chat with Beta" }))
     await waitFor(() => expect(createdBy).toHaveBeenCalledWith("beta"))
@@ -1195,7 +1205,7 @@ describe("WorkspaceAgentFront", () => {
     expect(within(appNav).queryByText("Active project session")).not.toBeInTheDocument()
   })
 
-  it("replaces the active pane when creating a project chat from a split layout", async () => {
+  it("collapses a split layout when a primary New chat action creates a session", async () => {
     const user = userEvent.setup()
     localStorage.setItem(
       "boring-workspace:chat-panes:project-new-chat-replaces",
@@ -1232,7 +1242,7 @@ describe("WorkspaceAgentFront", () => {
     await waitFor(() => expect(visibleChatSessionIds()).toEqual(["s1", "s2"]))
     await user.click(screen.getByRole("button", { name: "New chat in Project Alpha" }))
 
-    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["s1", "created"]))
+    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["created"]))
   })
 
   it("keeps classic workspace sources available outside plugin-tabs mode", async () => {

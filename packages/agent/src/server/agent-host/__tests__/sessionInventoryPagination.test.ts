@@ -41,7 +41,10 @@ async function temporaryRoot(): Promise<string> {
   return value
 }
 
-const legacyDefaultAgent = { agentTypeId: 'default', legacyDefault: true } as const satisfies AgentHostAgentSpec
+const defaultAgent = {
+  agentTypeId: 'default',
+  definition: { instructions: 'default', label: 'Agent' },
+} as const satisfies AgentHostAgentSpec
 
 function pathDerivedDirName(cwd: string): string {
   return `--${cwd.replace(/^[/\\]/, '').replace(/[/\\:]/g, '-')}--`
@@ -117,7 +120,7 @@ async function startHost(input: {
   })
 }
 
-describe('legacyDefault seat storage placement', () => {
+describe('default Agent storage compatibility', () => {
   it('keeps an empty runtime namespace on the cwd-derived directory both sides already use', async () => {
     const sessionRoot = await temporaryRoot()
     const workspaceRoot = join(sessionRoot, 'workspace')
@@ -126,7 +129,7 @@ describe('legacyDefault seat storage placement', () => {
     // `AgentSessionInventory` (read) consume. `undefined` is the deliberate
     // answer, and it must keep resolving to the path-derived directory that
     // already holds users' transcripts.
-    const namespace = sessionNamespaceForAgent(legacyDefaultAgent, 'workspace-a:storage-a', '')
+    const namespace = sessionNamespaceForAgent(defaultAgent, 'workspace-a:storage-a', '')
     expect(namespace).toBeUndefined()
 
     const store = new PiSessionStore(workspaceRoot, {
@@ -138,7 +141,7 @@ describe('legacyDefault seat storage placement', () => {
   })
 
   it('honours a host-supplied namespace for the same seat', () => {
-    expect(sessionNamespaceForAgent(legacyDefaultAgent, 'workspace-a:storage-a', 'workspace-a'))
+    expect(sessionNamespaceForAgent(defaultAgent, 'workspace-a:storage-a', 'workspace-a'))
       .toBe('workspace-a')
   })
 
@@ -157,7 +160,7 @@ describe('legacyDefault seat storage placement', () => {
     )
 
     const host = await startHost({
-      agents: [legacyDefaultAgent],
+      agents: [defaultAgent],
       sessionRoot,
       workspaceRoot,
       sessionNamespace: '',
@@ -209,7 +212,7 @@ describe('seat session listing pagination', () => {
       return await originalList.call(this, ctx, options)
     })
 
-    const host = await startHost({ agents: [legacyDefaultAgent], sessionRoot, workspaceRoot, sessionNamespace: '' })
+    const host = await startHost({ agents: [defaultAgent], sessionRoot, workspaceRoot, sessionNamespace: '' })
     try {
       const first = await host.gateway.listSessions({ scope, agentTypeId: 'default', archived: 'archived', limit: 1 })
       expect(first.sessions.map((row) => row.ref.sessionId)).toEqual(['session-1'])
@@ -230,7 +233,7 @@ describe('seat session listing pagination', () => {
     await plant(dir, 'active-a', 'Active A', workspaceScopeId, Date.UTC(2026, 6, 20))
     await plant(dir, 'active-b', 'Active B', workspaceScopeId, Date.UTC(2026, 6, 21))
 
-    const host = await startHost({ agents: [legacyDefaultAgent], sessionRoot, workspaceRoot, sessionNamespace: '' })
+    const host = await startHost({ agents: [defaultAgent], sessionRoot, workspaceRoot, sessionNamespace: '' })
     try {
       const active = await host.gateway.listSessions({ scope, agentTypeId: 'default', archived: 'active', limit: 1 })
       await expect(host.gateway.listSessions({
@@ -264,7 +267,7 @@ describe('seat session listing pagination', () => {
     })
 
     const host = await startHost({
-      agents: [legacyDefaultAgent],
+      agents: [defaultAgent],
       sessionRoot,
       workspaceRoot,
       sessionNamespace: '',
@@ -323,7 +326,7 @@ describe('seat session listing pagination', () => {
       updatedAt: new Date(row.messageMs).toISOString(),
     })))
 
-    const host = await startHost({ agents: [legacyDefaultAgent], sessionRoot, workspaceRoot, sessionNamespace: '' })
+    const host = await startHost({ agents: [defaultAgent], sessionRoot, workspaceRoot, sessionNamespace: '' })
     try {
       const seen: Array<{ id: string; updatedAt: number }> = []
       let cursor: string | undefined
@@ -394,7 +397,7 @@ describe('seat session listing pagination', () => {
       await plant(dir, id, id, workspaceScopeId, baseMs + (100 + index) * 60_000)
     }
 
-    const host = await startHost({ agents: [legacyDefaultAgent], sessionRoot, workspaceRoot, sessionNamespace: '' })
+    const host = await startHost({ agents: [defaultAgent], sessionRoot, workspaceRoot, sessionNamespace: '' })
     try {
       const first = await host.gateway.listSessions({
         scope,
@@ -484,7 +487,7 @@ describe('equal-updatedAt tiebreak (sessions must never disappear)', () => {
     }
 
     const host = await startHost({
-      agents: [legacyDefaultAgent],
+      agents: [defaultAgent],
       sessionRoot,
       workspaceRoot,
       sessionNamespace: '',
@@ -520,7 +523,7 @@ describe('equal-updatedAt tiebreak (sessions must never disappear)', () => {
     const store = new PiSessionStore(workspaceRoot, { sessionRoot, storageCwd: workspaceRoot })
     expect((await store.list({ workspaceId: workspaceScopeId })).map((row) => row.id)).toEqual(expected)
 
-    const host = await startHost({ agents: [legacyDefaultAgent], sessionRoot, workspaceRoot, sessionNamespace: '' })
+    const host = await startHost({ agents: [defaultAgent], sessionRoot, workspaceRoot, sessionNamespace: '' })
     try {
       const paged: string[] = []
       let cursor: string | undefined
@@ -578,7 +581,7 @@ describe('equal-updatedAt tiebreak (sessions must never disappear)', () => {
     }
 
     const host = await startHost({
-      agents: [legacyDefaultAgent],
+      agents: [defaultAgent],
       sessionRoot,
       workspaceRoot,
       sessionNamespace: '',
@@ -648,7 +651,7 @@ describe('equal-updatedAt tiebreak (sessions must never disappear)', () => {
     }
 
     const host = await startHost({
-      agents: [legacyDefaultAgent],
+      agents: [defaultAgent],
       sessionRoot,
       workspaceRoot,
       sessionNamespace: '',

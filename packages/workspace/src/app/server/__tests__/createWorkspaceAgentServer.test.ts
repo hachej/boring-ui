@@ -13,6 +13,7 @@ import {
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 
 const MODEL_TIERS_YAML = "models:\n  tiers:\n    T3:\n      - provider: anthropic\n        id: claude-sonnet-4-6\n        envVar: ANTHROPIC_API_KEY\n"
+const EMPTY_POLICY_YAML = "models:\n  seats: {}\n"
 
 const agentServerMock = vi.hoisted(() => {
   const captureResolvedRuntimeScope = vi.fn(async (_resolved?: unknown) => undefined)
@@ -32,7 +33,7 @@ const agentServerMock = vi.hoisted(() => {
             draining: false,
             agents: compiled.map((agent: any) => ({
               agentTypeId: agent.agentTypeId,
-              label: agent.legacyDefault ? "Agent" : agent.definition?.label ?? agent.agentTypeId,
+              label: agent.definition.label,
             })),
           }),
           drain: vi.fn(async () => {}),
@@ -119,6 +120,7 @@ vi.mock("@hachej/boring-agent/server", async (importOriginal) => {
 
 import {
   AgentRuntimeIdentityError,
+  ConfiguredDefaultAgentError,
   collectWorkspaceAgentServerPlugins,
   createWorkspaceAgentServer,
   digestWorkspacePiResourceInputs,
@@ -127,6 +129,10 @@ import {
   resolveBoringPiSkillPaths,
   resolveWorkspaceAgentServerPluginCollection,
 } from "../createWorkspaceAgentServer"
+import {
+  CONFIGURED_DEFAULT_AGENT_ERROR_CODE as PUBLIC_CONFIGURED_DEFAULT_AGENT_ERROR_CODE,
+  ConfiguredDefaultAgentError as PublicConfiguredDefaultAgentError,
+} from "../index"
 import { resolveDefaultWorkspacePluginPackagePaths } from "../defaultPluginPackages"
 import { RuntimeBackendRegistry } from "../../../server/runtimeBackend"
 
@@ -1139,10 +1145,8 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       { source: "npm:plugin-pi", extensions: ["./a.ts", "./b.ts"] },
       "npm:host-pi",
     ])
-    // In the v1 standalone composition Pi package inventory lived in the
-    // global base and was not part of contribution binding identity. Compare
-    // against that portable reference shape instead of pinning an
-    // environment-sensitive digest.
+    // A real regular Agent includes selected plugin Pi resources in its
+    // contribution identity; changing that ordinary binding changes identity.
     await createWorkspaceAgentServer({
       workspaceRoot: "/tmp/workspace-pi-forwarding",
       logger: false,
@@ -1161,11 +1165,11 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     const [referenceHost] = agentServerMock.createAgentHost.mock.calls.at(-1) as unknown as [{
       resolveDirectRuntimeScopeForTest(input: { agentTypeId: string; scope: object }): Promise<{ identity: string }>
     }]
-    const legacyReference = await referenceHost.resolveDirectRuntimeScopeForTest({
+    const reference = await referenceHost.resolveDirectRuntimeScopeForTest({
       agentTypeId: "default",
       scope: referenceRoute.authorizedScope,
     })
-    expect(runtime.identity).toBe(legacyReference.identity)
+    expect(runtime.identity).not.toBe(reference.identity)
   })
 
   test("projects defaults through the standalone Agent composition and honors exclusions", async () => {
@@ -1226,6 +1230,52 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     expect(excluded.systemPromptAppend ?? "").not.toContain("DEFAULT_AGENT_PROMPT")
     expect(excluded.pi?.packages ?? []).not.toContain("npm:default-agent")
     expect(excluded.pi?.extensionPaths ?? []).not.toContain("/plugins/default-agent.ts")
+  })
+
+  test("an explicit singleton without plugin bindings stays isolated", async () => {
+    const pluginTool = {
+      name: "ambient_tool",
+      description: "must not leak",
+      parameters: { type: "object", properties: {} },
+      async execute() { return { content: [] } },
+    }
+    await createWorkspaceAgentServer({
+      workspaceRoot: await makeTempDir("boring-explicit-singleton-isolation-"),
+      logger: false,
+      provisionWorkspace: false,
+      externalPlugins: false,
+      plugins: [{
+        id: "ambient-plugin",
+        contentDigest: "ambient-plugin-v1",
+        agentTools: [pluginTool],
+        systemPrompt: "AMBIENT_PLUGIN_PROMPT",
+        piPackages: ["npm:ambient-plugin"],
+      }],
+      agents: [{
+        agentTypeId: "custom",
+        definition: { label: "Custom", instructions: "Stay isolated." },
+      }],
+      defaultAgentTypeId: "custom",
+    })
+
+    const [routeOptions] = agentServerMock.captureResolvedRuntimeScope.mock.calls.at(-1) as unknown as [{
+      authorizedScope: object
+    }]
+    const [hostOptions] = agentServerMock.createAgentHost.mock.calls.at(-1) as unknown as [{
+      resolveDirectRuntimeScopeForTest(input: { agentTypeId: string; scope: object }): Promise<{
+        extraTools?: Array<{ name: string }>
+        systemPromptAppend?: string
+        pi?: { packages?: unknown[] }
+      }>
+    }]
+    const runtime = await hostOptions.resolveDirectRuntimeScopeForTest({
+      agentTypeId: "custom",
+      scope: routeOptions.authorizedScope,
+    })
+
+    expect(runtime.extraTools?.map((tool) => tool.name) ?? []).not.toContain("ambient_tool")
+    expect(runtime.systemPromptAppend ?? "").not.toContain("AMBIENT_PLUGIN_PROMPT")
+    expect(runtime.pi?.packages ?? []).not.toContain("npm:ambient-plugin")
   })
 
   test("getHotReloadableResources reflects package.json#pi changes between calls", async () => {
@@ -1502,7 +1552,11 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
           definition: { label: "Beta", instructions: "beta" },
           plugins: [{ name: "beta-plugin", config: { mode: "beta" } }],
         },
-        { agentTypeId: "default", legacyDefault: true },
+        {
+          agentTypeId: "default",
+          definition: { label: "Agent", instructions: "default" },
+          plugins: [{ name: "alpha-plugin" }, { name: "beta-plugin" }],
+        },
       ],
       fleetCompiler: { async compile({ agents }) { return agents } },
       defaultAgentTypeId: "alpha",
@@ -1650,13 +1704,13 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     )
   })
 
-  // M3 fix round 1 (gh-1106 slice 3): `legacyGlobalPluginAgentContributions`
+  // M3 fix round 1 (gh-1106 slice 3): global single-Agent plugin contributions
   // used to key off `opts.agents === undefined`. With BORING_AGENT_FLEET=1
   // and no explicit `opts.agents`, the RESOLVED fleet has more than the
-  // legacy default agent, but the option is still `undefined` — the old
-  // condition wrongly kept the legacy "give every agent the global plugin
-  // surface" behavior instead of scoping per agent.
-  test("BORING_AGENT_FLEET=1 with no explicit opts.agents scopes plugin contributions per Agent, not the legacy global fleet", async () => {
+  // platform default Agent, but the option is still `undefined` — the old
+  // condition wrongly gave every Agent the global plugin surface instead of
+  // scoping ordinary bindings per Agent.
+  test("BORING_AGENT_FLEET=1 with no explicit opts.agents scopes plugin contributions per Agent", async () => {
     const workspaceRoot = await makeTempDir("boring-agent-fleet-flag-")
     const fleetRoot = await makeTempDir("boring-agent-fleet-flag-repo-")
     const workspacePluginRoot = join(workspaceRoot, "workspace-plugin")
@@ -1686,6 +1740,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       `${MODEL_TIERS_YAML}seats:\n  - seat: one\n    agentTypeId: fixture-one\n    skills: []\n`,
       "utf8",
     )
+    await writeFile(join(fleetRoot, ".agents", "factory", "policy.yaml"), EMPTY_POLICY_YAML, "utf8")
     await mkdir(workspacePluginRoot, { recursive: true })
     await writeFile(join(workspacePluginRoot, "package.json"), JSON.stringify({
       name: "@fixture/workspace-plugin",
@@ -1753,20 +1808,16 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       ]
       // Sanity: the flag actually composed a multi-agent fleet (default +
       // the fixture seat), so `opts.agents` really was left undefined while
-      // the resolved fleet was not the single-legacy-agent shape.
+      // the resolved fleet was not the single-default-Agent shape.
       expect(createHostCall.agents.map((agent) => agent.agentTypeId).sort()).toEqual(["default", "fixture-one"])
 
       const scope = routeOptions.authorizedScope
-      // The literal `{ agentTypeId: 'default', legacyDefault: true }` fleet
-      // member is a deliberate catch-all and keeps every discovered plugin's
-      // resources by design (same as the "normalizes..." test's `legacy`
-      // case above) — that part is unaffected by this fix.
-      //
-      // The actual M3 bug: a resolved fleet seat that is NOT that literal
-      // legacyDefault entry (here, the fixture's own composed seat) must be
+      // The built-in regular default Agent explicitly keeps every discovered
+      // plugin's resources. A resolved authored fleet seat (here, the
+      // fixture's own composed seat) must be
       // scoped to only its own explicitly-bound plugins — it has none bound,
       // so it must not inherit the unbound global plugin's tools/prompt via
-      // the base Pi options, which `legacyGlobalPluginAgentContributions`
+      // the base Pi options, which global single-Agent contributions
       // used to wrongly apply server-wide whenever `opts.agents` was
       // undefined, flag or no flag.
       const seatScope = await hostOptions.resolveDirectRuntimeScopeForTest({ agentTypeId: "fixture-one", scope })
@@ -1781,7 +1832,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     }
   })
 
-  test("BORING_AGENT_FLEET boot excludes both valid and preflight-invalid packages that claim one definitionId", async () => {
+  test("BORING_AGENT_FLEET fails startup when packages conflict for a seated definitionId", async () => {
     const workspaceRoot = await makeTempDir("boring-agent-fleet-conflict-")
     const fleetRoot = await makeTempDir("boring-agent-fleet-conflict-repo-")
     const personasRoot = join(fleetRoot, ".agents", "personas")
@@ -1808,27 +1859,23 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       `${MODEL_TIERS_YAML}seats:\n  - seat: conflict\n    agentTypeId: fixture-conflict\n    skills: []\n`,
       "utf8",
     )
+    await writeFile(join(fleetRoot, ".agents", "factory", "policy.yaml"), EMPTY_POLICY_YAML, "utf8")
 
     const previousFlag = process.env.BORING_AGENT_FLEET
     process.env.BORING_AGENT_FLEET = "1"
-    let app: Awaited<ReturnType<typeof createWorkspaceAgentServer>> | undefined
     try {
-      app = await createWorkspaceAgentServer({
+      await expect(createWorkspaceAgentServer({
         workspaceRoot,
         fleetRepositoryRoot: fleetRoot,
         logger: false,
         provisionWorkspace: false,
         externalPlugins: false,
         fleetCompiler: { async compile({ agents }) { return agents } },
-      })
-      const hostOptions = agentServerMock.createAgentHost.mock.calls.at(-1)![0] as {
-        agents: readonly { agentTypeId: string }[]
-      }
-      expect(hostOptions.agents.map((agent) => agent.agentTypeId)).toEqual(["default"])
+      })).rejects.toMatchObject({ name: "FleetConfigError", field: "seats" })
+      expect(agentServerMock.createAgentHost).not.toHaveBeenCalled()
     } finally {
       if (previousFlag === undefined) delete process.env.BORING_AGENT_FLEET
       else process.env.BORING_AGENT_FLEET = previousFlag
-      if (app) await app.close()
     }
   })
 
@@ -1841,6 +1888,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     await mkdir(packageRoot, { recursive: true })
     await mkdir(join(workspaceRoot, ".pi"), { recursive: true })
     await mkdir(join(fleetRoot, ".agents", "factory"), { recursive: true })
+    await writeFile(join(fleetRoot, ".agents", "factory", "policy.yaml"), EMPTY_POLICY_YAML, "utf8")
     await writeFile(join(packageRoot, "instructions.md"), "Local worker instructions.\n", "utf8")
 
     const writeManifest = async (version: string, skills: string[] = []) => {
@@ -1890,23 +1938,23 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
 
       // Installed means discoverable, not active: an empty roster keeps it inert.
       await writeFleet("")
-      expect(await bootAgentIds()).toEqual([{ agentTypeId: "default", version: undefined }])
+      expect(await bootAgentIds()).toEqual([{ agentTypeId: "default", version: "1" }])
 
       // Seating the definition activates the same local package on the next boot.
       await writeFleet("  - seat: local-worker\n    agentTypeId: fixture-local-worker\n    skills: []\n")
       expect(await bootAgentIds()).toEqual([
-        { agentTypeId: "default", version: undefined },
+        { agentTypeId: "default", version: "1" },
         { agentTypeId: "fixture-local-worker", version: "1.0.0" },
       ])
 
       // A package bump is observed only after reboot; no copied cache is involved.
       await writeManifest("1.1.0")
       expect(await bootAgentIds()).toEqual([
-        { agentTypeId: "default", version: undefined },
+        { agentTypeId: "default", version: "1" },
         { agentTypeId: "fixture-local-worker", version: "1.1.0" },
       ])
 
-      // A stale seat-scoped digest excludes this agent while the rest boots.
+      // A stale seat-scoped digest fails configured fleet startup.
       await mkdir(join(packageRoot, "skills", "local"), { recursive: true })
       await writeFile(join(packageRoot, "skills", "local", "SKILL.md"), "# Local skill\n", "utf8")
       await writeManifest("1.2.0", ["skills/local/SKILL.md"])
@@ -1916,14 +1964,14 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
         "    skills:\n" +
         `      - name: skills/local/SKILL.md\n        digest: sha256:${"0".repeat(64)}\n`,
       )
-      expect(await bootAgentIds()).toEqual([{ agentTypeId: "default", version: undefined }])
+      await expect(bootAgentIds()).rejects.toMatchObject({ name: "FleetConfigError", field: "seats" })
 
-      // Unseating and removing the settings registration are both inert on boot.
+      // Unseating is inert; removing a still-seated package fails startup.
       await writeFleet("")
-      expect(await bootAgentIds()).toEqual([{ agentTypeId: "default", version: undefined }])
+      expect(await bootAgentIds()).toEqual([{ agentTypeId: "default", version: "1" }])
       await writeFleet("  - seat: local-worker\n    agentTypeId: fixture-local-worker\n    skills: []\n")
       await writeFile(settingsPath, JSON.stringify({ packages: [] }), "utf8")
-      expect(await bootAgentIds()).toEqual([{ agentTypeId: "default", version: undefined }])
+      await expect(bootAgentIds()).rejects.toMatchObject({ name: "FleetConfigError", field: "seats" })
     } finally {
       if (previousFlag === undefined) delete process.env.BORING_AGENT_FLEET
       else process.env.BORING_AGENT_FLEET = previousFlag
@@ -1968,30 +2016,26 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       `${MODEL_TIERS_YAML}seats:\n  - seat: remote-worker\n    agentTypeId: fixture-remote-worker\n    skills: []\n`,
       "utf8",
     )
+    await writeFile(join(fleetRoot, ".agents", "factory", "policy.yaml"), EMPTY_POLICY_YAML, "utf8")
 
     const previousFlag = process.env.BORING_AGENT_FLEET
     process.env.BORING_AGENT_FLEET = "1"
-    let app: Awaited<ReturnType<typeof createWorkspaceAgentServer>> | undefined
     try {
-      app = await createWorkspaceAgentServer({
+      await expect(createWorkspaceAgentServer({
         workspaceRoot,
         fleetRepositoryRoot: fleetRoot,
         logger: false,
         provisionWorkspace: false,
         fleetCompiler: { async compile({ agents }) { return agents } },
-      })
-      const hostOptions = agentServerMock.createAgentHost.mock.calls.at(-1)![0] as {
-        agents: readonly { agentTypeId: string }[]
-      }
-      expect(hostOptions.agents.map((agent) => agent.agentTypeId)).toEqual(["default"])
+      })).rejects.toMatchObject({ name: "FleetConfigError", field: "seats" })
+      expect(agentServerMock.createAgentHost).not.toHaveBeenCalled()
     } finally {
       if (previousFlag === undefined) delete process.env.BORING_AGENT_FLEET
       else process.env.BORING_AGENT_FLEET = previousFlag
-      if (app) await app.close()
     }
   })
 
-  test("BORING_AGENT_FLEET off: workspace host seam stays on the legacy single default agent and never probes the fleet root", async () => {
+  test("BORING_AGENT_FLEET off: workspace host seam stays on one regular default Agent and never probes the fleet root", async () => {
     const workspaceRoot = await makeTempDir("boring-agent-fleet-off-")
     const previousFlag = process.env.BORING_AGENT_FLEET
     delete process.env.BORING_AGENT_FLEET
@@ -1999,7 +2043,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     try {
       // A fleetRepositoryRoot that does not exist: with the flag off the seam
       // must not evaluate it (no eager fleet discovery / cwd fallback) — boot
-      // still yields the single legacy default agent (gh-1107 slice 1 fix
+      // still yields the single regular default Agent (gh-1107 slice 1 fix
       // round: flag-off purity extended to the workspace host seam).
       app = await createWorkspaceAgentServer({
         workspaceRoot,
@@ -2009,10 +2053,10 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
         externalPlugins: false,
       })
       const hostOptions = agentServerMock.createAgentHost.mock.calls.at(-1)![0] as {
-        agents: readonly { agentTypeId: string; legacyDefault?: boolean }[]
+        agents: readonly { agentTypeId: string; definition: { label: string } }[]
       }
       expect(hostOptions.agents.map((agent) => agent.agentTypeId)).toEqual(["default"])
-      expect(hostOptions.agents[0]?.legacyDefault).toBe(true)
+      expect(hostOptions.agents[0]?.definition.label).toBe("Agent")
     } finally {
       if (previousFlag === undefined) delete process.env.BORING_AGENT_FLEET
       else process.env.BORING_AGENT_FLEET = previousFlag
@@ -2069,6 +2113,33 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     expect(createRuntime).not.toHaveBeenCalled()
     expect(agentServerMock.provisionWorkspaceRuntime).not.toHaveBeenCalled()
     expect(agentServerMock.captureResolvedRuntimeScope).not.toHaveBeenCalled()
+  })
+
+  test("exports and fail-closes a configured default absent from the boot fleet", async () => {
+    expect(PublicConfiguredDefaultAgentError).toBe(ConfiguredDefaultAgentError)
+    expect(PUBLIC_CONFIGURED_DEFAULT_AGENT_ERROR_CODE).toBe("CONFIG_INVALID")
+
+    await expect(createWorkspaceAgentServer({
+      workspaceRoot: await makeTempDir("boring-agent-default-invalid-"),
+      logger: false,
+      externalPlugins: false,
+      agents: [{ agentTypeId: "configured", definition: { label: "Configured", instructions: "Be useful." } }],
+      defaultAgentTypeId: "missing-default",
+      fleetCompiler: { async compile({ agents }) { return agents } },
+    })).rejects.toMatchObject({
+      name: "ConfiguredDefaultAgentError",
+      code: "CONFIG_INVALID",
+      field: "defaultAgentTypeId",
+    })
+    await expect(createWorkspaceAgentServer({
+      workspaceRoot: await makeTempDir("boring-agent-default-empty-"),
+      logger: false,
+      externalPlugins: false,
+      agents: [{ agentTypeId: "configured", definition: { label: "Configured", instructions: "Be useful." } }],
+      defaultAgentTypeId: "",
+      fleetCompiler: { async compile({ agents }) { return agents } },
+    })).rejects.toMatchObject({ name: "ConfiguredDefaultAgentError", code: "CONFIG_INVALID" })
+    expect(agentServerMock.createAgentHost).not.toHaveBeenCalled()
   })
 
   test("defers provisioning to the Host Environment generation", async () => {

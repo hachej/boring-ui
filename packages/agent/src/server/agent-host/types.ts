@@ -172,7 +172,9 @@ export interface AgentInstructionSource {
   readonly role: 'persona'
 }
 
-export interface ConfiguredAgentHostAgentSpec {
+export const DEFAULT_AGENT_TYPE_ID = 'default'
+
+export interface AgentHostAgentSpec {
   readonly agentTypeId: string
   readonly definition: {
     readonly instructions: string
@@ -209,16 +211,13 @@ export interface ConfiguredAgentHostAgentSpec {
     /** RESERVED / NOT ENFORCED. Per-turn token-limit enforcement is future work. */
     readonly maxTokensPerTurn?: number
   }
+  /** Trusted host-owned provisioning grants; absent means no inherited resources. */
+  readonly provisioning?: {
+    readonly inheritSkillPaths?: boolean
+  }
 }
 
-export interface LegacyDefaultAgentHostSpec {
-  readonly agentTypeId: 'default'
-  readonly legacyDefault: true
-}
-
-export type AgentHostAgentSpec =
-  | ConfiguredAgentHostAgentSpec
-  | LegacyDefaultAgentHostSpec
+export type ConfiguredAgentHostAgentSpec = AgentHostAgentSpec
 
 /**
  * Server-only compiler output. App-specific validated handles may be attached,

@@ -1,5 +1,8 @@
 import { randomUUID, createHash } from 'node:crypto'
-import type { WorkspaceStore, WorkspaceStoreCreateOptions } from '../../app/types.js'
+import type {
+  WorkspaceStore,
+  WorkspaceStoreCreateOptions,
+} from '../../app/types.js'
 import type {
   Workspace,
   WorkspaceMember,
@@ -17,7 +20,7 @@ import {
   assertWorkspaceTypeIdNotMutable,
   parseTrustedWorkspaceTypeId,
 } from '../../workspaceType.js'
-import { parseTrustedDefaultAgentTypeId } from '../../defaultAgentType.js'
+import { parseRequiredDefaultAgentTypeId } from '../../defaultAgentType.js'
 import type { LocalUserStore } from './LocalUserStore.js'
 
 function toWorkspace(workspace: Workspace): Workspace {
@@ -35,11 +38,11 @@ export class LocalWorkspaceStore implements WorkspaceStore {
 
   constructor(private userStore: LocalUserStore) {}
 
-  async create(userId: string, name: string, appId: string, opts?: WorkspaceStoreCreateOptions): Promise<Workspace> {
+  async create(userId: string, name: string, appId: string, opts: WorkspaceStoreCreateOptions): Promise<Workspace> {
     const workspaceTypeId = parseTrustedWorkspaceTypeId(opts?.workspaceTypeId)
-    const defaultAgentTypeId = parseTrustedDefaultAgentTypeId(opts?.defaultAgentTypeId)
-    const id = opts?.id ?? randomUUID()
-    const existing = opts?.id ? this.workspaces.get(id) : undefined
+    const defaultAgentTypeId = parseRequiredDefaultAgentTypeId(opts?.defaultAgentTypeId)
+    const id = opts.id ?? randomUUID()
+    const existing = opts.id ? this.workspaces.get(id) : undefined
     if (existing) {
       assertWorkspaceTypeIdMatches(existing.workspaceTypeId, workspaceTypeId)
       return toWorkspace(existing)
@@ -102,6 +105,25 @@ export class LocalWorkspaceStore implements WorkspaceStore {
       return b.createdAt.localeCompare(a.createdAt)
     })
     return result
+  }
+
+  async countNullDefaultAgentTypeIds(appId: string): Promise<number> {
+    let count = 0
+    for (const workspace of this.workspaces.values()) {
+      if (workspace.appId === appId && workspace.defaultAgentTypeId == null) count += 1
+    }
+    return count
+  }
+
+  async compareAndSetNullDefaultAgentTypeId(appId: string, value: string): Promise<number> {
+    const defaultAgentTypeId = parseRequiredDefaultAgentTypeId(value)
+    let updated = 0
+    for (const [id, workspace] of this.workspaces) {
+      if (workspace.appId !== appId || workspace.defaultAgentTypeId != null) continue
+      this.workspaces.set(id, { ...workspace, defaultAgentTypeId })
+      updated += 1
+    }
+    return updated
   }
 
   async get(id: string): Promise<Workspace | null> {

@@ -2,7 +2,10 @@ import { createHash, randomBytes } from 'node:crypto'
 import { and, eq, isNull, sql, desc } from 'drizzle-orm'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 
-import type { WorkspaceStore, WorkspaceStoreCreateOptions } from '../../app/types.js'
+import type {
+  WorkspaceStore,
+  WorkspaceStoreCreateOptions,
+} from '../../app/types.js'
 import type {
   MemberRole,
   User,
@@ -20,7 +23,7 @@ import {
   assertWorkspaceTypeIdNotMutable,
   parseTrustedWorkspaceTypeId,
 } from '../../workspaceType.js'
-import { parseTrustedDefaultAgentTypeId } from '../../defaultAgentType.js'
+import { parseRequiredDefaultAgentTypeId } from '../../defaultAgentType.js'
 import {
   userSettings,
   users,
@@ -171,31 +174,31 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
   // Workspace CRUD (Sub-PR 1)
   // ---------------------------------------------------------------------------
 
-  async create(userId: string, name: string, appId: string, opts?: WorkspaceStoreCreateOptions): Promise<Workspace> {
+  async create(userId: string, name: string, appId: string, opts: WorkspaceStoreCreateOptions): Promise<Workspace> {
     const workspaceTypeId = parseTrustedWorkspaceTypeId(opts?.workspaceTypeId)
-    const defaultAgentTypeId = parseTrustedDefaultAgentTypeId(opts?.defaultAgentTypeId)
+    const defaultAgentTypeId = parseRequiredDefaultAgentTypeId(opts?.defaultAgentTypeId)
     return this.db.transaction(async (tx) => {
       const insert = tx
         .insert(workspaces)
         .values({
-          ...(opts?.id ? { id: opts.id } : {}),
+          ...(opts.id ? { id: opts.id } : {}),
           appId,
           workspaceTypeId,
           name,
           createdBy: userId,
-          isDefault: opts?.isDefault ?? false,
-          managedBy: opts?.managedBy ?? null,
+          isDefault: opts.isDefault ?? false,
+          managedBy: opts.managedBy ?? null,
           defaultAgentTypeId,
         })
 
-      const insertedRows = opts?.id
+      const insertedRows = opts.id
         ? await insert.onConflictDoNothing().returning()
         : await insert.returning()
 
-      const row = insertedRows[0] ?? (opts?.id
+      const row = insertedRows[0] ?? (opts.id
         ? (await tx.select().from(workspaces).where(eq(workspaces.id, opts.id)).limit(1))[0]
         : undefined)
-      if (!row) throw new Error(`Workspace ${opts?.id ?? name} was not created`)
+      if (!row) throw new Error(`Workspace ${opts.id ?? name} was not created`)
       assertWorkspaceTypeIdMatches(row.workspaceTypeId, workspaceTypeId)
 
       if (insertedRows.length > 0) {
@@ -225,6 +228,24 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
       .orderBy(desc(workspaces.isDefault), desc(workspaces.createdAt))
 
     return rows.map((r) => toWorkspace(r.ws))
+  }
+
+  async countNullDefaultAgentTypeIds(appId: string): Promise<number> {
+    const rows = await this.db
+      .select({ count: sql<number>`count(*)::integer` })
+      .from(workspaces)
+      .where(and(eq(workspaces.appId, appId), isNull(workspaces.defaultAgentTypeId)))
+    return Number(rows[0]?.count ?? 0)
+  }
+
+  async compareAndSetNullDefaultAgentTypeId(appId: string, value: string): Promise<number> {
+    const defaultAgentTypeId = parseRequiredDefaultAgentTypeId(value)
+    const rows = await this.db
+      .update(workspaces)
+      .set({ defaultAgentTypeId })
+      .where(and(eq(workspaces.appId, appId), isNull(workspaces.defaultAgentTypeId)))
+      .returning({ id: workspaces.id })
+    return rows.length
   }
 
   async get(id: string): Promise<Workspace | null> {
