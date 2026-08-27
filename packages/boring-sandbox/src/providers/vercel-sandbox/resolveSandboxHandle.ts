@@ -329,6 +329,8 @@ async function createFresh(
 }
 
 export interface ResolveSandboxHandleOptions {
+  /** Host-resolved immutable base used only when creating a fresh handle. */
+  sourceSnapshotId?: string
   tarballUrl?: string
   maxIdleMs?: number
   now?: () => number
@@ -509,7 +511,7 @@ export async function resolveSandboxHandle(
 
     return await createFresh(
       workspaceKey,
-      persisted?.snapshotId,
+      persisted?.snapshotId ?? opts?.sourceSnapshotId,
       opts?.tarballUrl,
       persisted,
       store,
