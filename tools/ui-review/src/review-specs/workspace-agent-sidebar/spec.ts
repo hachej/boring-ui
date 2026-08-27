@@ -2,7 +2,7 @@ import { createRequire } from "node:module"
 import { expect, type Page } from "@playwright/test"
 import type { UiReviewSpec } from "../../core/reviewSpec"
 import type { UiReviewViewport } from "../../core/contracts"
-import { runUiReviewReadinessWithReload } from "../../core/readiness"
+import { runUiReviewReadinessWithReload, type UiReviewReadinessDiagnostic } from "../../core/readiness"
 import {
   AGENT_SIDEBAR_HARD_GATE_CONTRACT,
   evaluateAgentSidebarHardGates,
@@ -11,6 +11,7 @@ import {
 } from "./hardGates"
 
 const AXE_SCRIPT_PATH = createRequire(import.meta.url).resolve("axe-core/axe.min.js")
+const readinessDiagnostics = new WeakMap<Page, UiReviewReadinessDiagnostic>()
 // Width and pointer are INDEPENDENT axes and the sidebar CSS uses both. A
 // two-point sample of (wide, fine) and (narrow, coarse) holds them locked
 // together, so a rule keyed to width and a rule keyed to pointer agree at
@@ -32,15 +33,25 @@ const viewports: UiReviewViewport[] = [
   { name: "tablet", width: 834, height: 1112, deviceScaleFactor: 1, hasTouch: true },
 ]
 
-async function ensureAgentNavigation(page: Page, timeoutMs = 60_000): Promise<void> {
+async function waitForAgentNavigationDiscovery(page: Page, timeoutMs: number): Promise<void> {
   const trees = page.locator('[data-boring-workspace-part="app-left-agent-tree"]')
   const open = page.getByRole("button", { name: "Open app navigation" })
   await expect.poll(async () => await trees.count() === 2 || await open.isVisible().catch(() => false), { timeout: timeoutMs }).toBe(true)
+}
+
+async function assertAgentNavigationContracts(page: Page, timeoutMs: number): Promise<void> {
+  const trees = page.locator('[data-boring-workspace-part="app-left-agent-tree"]')
+  const open = page.getByRole("button", { name: "Open app navigation" })
   if (await trees.count() !== 2) await open.click()
   await expect(trees).toHaveCount(2, { timeout: timeoutMs })
   await expect(page.getByRole("button", { name: /Collapse Alpha;/ })).toBeVisible({ timeout: timeoutMs })
   await expect(page.locator('[data-boring-workspace-part="app-left-agent-tree"][data-boring-agent-type-id="alpha"] [data-boring-workspace-part="app-session-row"]')).toHaveCount(1, { timeout: timeoutMs })
   await expect(page.getByRole("heading", { name: "What should we work on?" })).toBeVisible({ timeout: timeoutMs })
+}
+
+async function ensureAgentNavigation(page: Page, timeoutMs = 60_000): Promise<void> {
+  await waitForAgentNavigationDiscovery(page, timeoutMs)
+  await assertAgentNavigationContracts(page, timeoutMs)
 }
 
 export const workspaceAgentSidebarSpec: UiReviewSpec = {
@@ -49,7 +60,7 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
   // `collect` changed in lockstep with v5→v9, and a stale revision keeps a
   // replayed manifest alive across a scenario that no longer means the same
   // thing. Two numbers for one scenario is the drift this file keeps finding.
-  specRevision: "workspace-agent-sidebar-v14",
+  specRevision: "workspace-agent-sidebar-v15",
   fixtureResetId: "workspace-agent-sidebar-fixture-v1",
   rubricVersion: "impeccable-v1",
   target: {
@@ -70,7 +81,15 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
       VITE_HMR_HOST: "127.0.0.1",
       VITE_HMR_CLIENT_PORT: String(port),
     }),
-    ready: async (page, timeoutMs) => runUiReviewReadinessWithReload(page, timeoutMs, ensureAgentNavigation),
+    ready: async (page, timeoutMs) => {
+      const diagnostic = await runUiReviewReadinessWithReload(
+        page,
+        timeoutMs,
+        waitForAgentNavigationDiscovery,
+        assertAgentNavigationContracts,
+      )
+      readinessDiagnostics.set(page, diagnostic)
+    },
   },
   viewports,
   checkpoints: [
@@ -162,6 +181,8 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
   hardGates: {
     contractVersion: AGENT_SIDEBAR_HARD_GATE_CONTRACT,
     collect: async (page, stateId, checkpoint, viewport, errors): Promise<AgentSidebarHardGateSnapshot> => {
+      const readiness = readinessDiagnostics.get(page)
+      if (!readiness) throw new Error("UI_REVIEW_READINESS_DIAGNOSTIC_MISSING")
       if (!await page.evaluate(() => "axe" in window)) await page.addScriptTag({ path: AXE_SCRIPT_PATH })
       const [sidebar, axeViolations, documentWidth] = await Promise.all([
         page.evaluate(({ checkpoint, coarsePointer }) => {
@@ -359,6 +380,7 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
       return {
         stateId,
         checkpoint,
+        readiness,
         origin: new URL(page.url()).origin,
         // Both conditions the sidebar branches on, reported separately.
         // `mobileShell` is the JS width switch in PluginTabsWorkspaceShell

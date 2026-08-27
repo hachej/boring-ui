@@ -1,0 +1,1878 @@
+{
+  "schemaVersion": 1,
+  "contractVersion": "workspace-agent-sidebar-v15",
+  "results": [
+    {
+      "id": "fixture-ready",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+      "passed": true,
+      "evidence": "agentCount=2;detailOverlayCount=0"
+    },
+    {
+      "id": "readiness-retry",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+      "passed": true,
+      "evidence": "retryUsed=false;firstError=none"
+    },
+    {
+      "id": "console-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "page-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "request-failures",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+      "passed": true,
+      "evidence": "net::ERR_ABORTED http://127.0.0.1:5480/api/v1/filesystems [expected: Initial filesystem discovery is superseded when the addressed Agent source mounts.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/alpha/ready-status [expected: Agent readiness polling is cancelled after readiness resolves.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/session-activity/events?workspaceId=workspace [expected: Session activity stream is cancelled when switching checkpoints or closing context.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]"
+    },
+    {
+      "id": "http-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "horizontal-overflow",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+      "passed": true,
+      "evidence": "1440/1440"
+    },
+    {
+      "id": "axe-serious-critical",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "state-contract",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+      "passed": true,
+      "evidence": "{\"agentCount\":2,\"agentHeading\":\"Agents\",\"agentSeatSummary\":\"2 seats\",\"agentFilterCount\":1,\"legacyFilterCount\":0,\"visibleActionCount\":2,\"visibleAgentCountLabels\":2,\"expandedRegionCount\":1,\"guideCount\":1,\"pinnedHeading\":null,\"pinnedCount\":0,\"pinnedProvenance\":null,\"pinnedAgentSessionCount\":1,\"nestedPinnedHasPin\":false,\"detailOverlayCount\":0,\"detailTabCount\":0,\"capabilityHeadings\":[],\"legacyJargonCount\":0,\"actionOverlaps\":[],\"actionFallthrough\":[],\"illegibleTitles\":[],\"undersizedAgentControls\":[],\"checkpoint\":\"agent-list\"}"
+    },
+    {
+      "id": "session-row-action-overlap",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-action-fallthrough",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-title-legible",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "agent-touch-targets",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "fixture-ready",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:hover-actions:5fda938b6724",
+      "passed": true,
+      "evidence": "agentCount=2;detailOverlayCount=0"
+    },
+    {
+      "id": "readiness-retry",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:hover-actions:5fda938b6724",
+      "passed": true,
+      "evidence": "retryUsed=false;firstError=none"
+    },
+    {
+      "id": "console-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:hover-actions:5fda938b6724",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "page-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:hover-actions:5fda938b6724",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "request-failures",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:hover-actions:5fda938b6724",
+      "passed": true,
+      "evidence": "net::ERR_ABORTED http://127.0.0.1:5480/api/v1/filesystems [expected: Initial filesystem discovery is superseded when the addressed Agent source mounts.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/alpha/ready-status [expected: Agent readiness polling is cancelled after readiness resolves.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/session-activity/events?workspaceId=workspace [expected: Session activity stream is cancelled when switching checkpoints or closing context.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]"
+    },
+    {
+      "id": "http-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:hover-actions:5fda938b6724",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "horizontal-overflow",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:hover-actions:5fda938b6724",
+      "passed": true,
+      "evidence": "1440/1440"
+    },
+    {
+      "id": "axe-serious-critical",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:hover-actions:5fda938b6724",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "state-contract",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:hover-actions:5fda938b6724",
+      "passed": true,
+      "evidence": "{\"agentCount\":2,\"agentHeading\":\"Agents\",\"agentSeatSummary\":\"2 seats\",\"agentFilterCount\":1,\"legacyFilterCount\":0,\"visibleActionCount\":4,\"visibleAgentCountLabels\":2,\"expandedRegionCount\":1,\"guideCount\":1,\"pinnedHeading\":null,\"pinnedCount\":0,\"pinnedProvenance\":null,\"pinnedAgentSessionCount\":1,\"nestedPinnedHasPin\":false,\"detailOverlayCount\":0,\"detailTabCount\":0,\"capabilityHeadings\":[],\"legacyJargonCount\":0,\"actionOverlaps\":[],\"actionFallthrough\":[],\"illegibleTitles\":[],\"undersizedAgentControls\":[],\"checkpoint\":\"hover-actions\"}"
+    },
+    {
+      "id": "session-row-action-overlap",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:hover-actions:5fda938b6724",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-action-fallthrough",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:hover-actions:5fda938b6724",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-title-legible",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:hover-actions:5fda938b6724",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "agent-touch-targets",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:hover-actions:5fda938b6724",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "fixture-ready",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:expanded-sessions:449ab5944cdb",
+      "passed": true,
+      "evidence": "agentCount=2;detailOverlayCount=0"
+    },
+    {
+      "id": "readiness-retry",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:expanded-sessions:449ab5944cdb",
+      "passed": true,
+      "evidence": "retryUsed=false;firstError=none"
+    },
+    {
+      "id": "console-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:expanded-sessions:449ab5944cdb",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "page-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:expanded-sessions:449ab5944cdb",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "request-failures",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:expanded-sessions:449ab5944cdb",
+      "passed": true,
+      "evidence": "net::ERR_ABORTED http://127.0.0.1:5480/api/v1/filesystems [expected: Initial filesystem discovery is superseded when the addressed Agent source mounts.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/alpha/ready-status [expected: Agent readiness polling is cancelled after readiness resolves.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/session-activity/events?workspaceId=workspace [expected: Session activity stream is cancelled when switching checkpoints or closing context.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]"
+    },
+    {
+      "id": "http-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:expanded-sessions:449ab5944cdb",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "horizontal-overflow",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:expanded-sessions:449ab5944cdb",
+      "passed": true,
+      "evidence": "1440/1440"
+    },
+    {
+      "id": "axe-serious-critical",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:expanded-sessions:449ab5944cdb",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "state-contract",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:expanded-sessions:449ab5944cdb",
+      "passed": true,
+      "evidence": "{\"agentCount\":2,\"agentHeading\":\"Agents\",\"agentSeatSummary\":\"2 seats\",\"agentFilterCount\":1,\"legacyFilterCount\":0,\"visibleActionCount\":2,\"visibleAgentCountLabels\":2,\"expandedRegionCount\":2,\"guideCount\":2,\"pinnedHeading\":null,\"pinnedCount\":0,\"pinnedProvenance\":null,\"pinnedAgentSessionCount\":1,\"nestedPinnedHasPin\":false,\"detailOverlayCount\":0,\"detailTabCount\":0,\"capabilityHeadings\":[],\"legacyJargonCount\":0,\"actionOverlaps\":[],\"actionFallthrough\":[],\"illegibleTitles\":[],\"undersizedAgentControls\":[],\"checkpoint\":\"expanded-sessions\"}"
+    },
+    {
+      "id": "session-row-action-overlap",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:expanded-sessions:449ab5944cdb",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-action-fallthrough",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:expanded-sessions:449ab5944cdb",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-title-legible",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:expanded-sessions:449ab5944cdb",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "agent-touch-targets",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:expanded-sessions:449ab5944cdb",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "fixture-ready",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:pinned-chat:ac6274ade742",
+      "passed": true,
+      "evidence": "agentCount=2;detailOverlayCount=0"
+    },
+    {
+      "id": "readiness-retry",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:pinned-chat:ac6274ade742",
+      "passed": true,
+      "evidence": "retryUsed=false;firstError=none"
+    },
+    {
+      "id": "console-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:pinned-chat:ac6274ade742",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "page-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:pinned-chat:ac6274ade742",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "request-failures",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:pinned-chat:ac6274ade742",
+      "passed": true,
+      "evidence": "net::ERR_ABORTED http://127.0.0.1:5480/api/v1/filesystems [expected: Initial filesystem discovery is superseded when the addressed Agent source mounts.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/alpha/ready-status [expected: Agent readiness polling is cancelled after readiness resolves.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/session-activity/events?workspaceId=workspace [expected: Session activity stream is cancelled when switching checkpoints or closing context.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]"
+    },
+    {
+      "id": "http-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:pinned-chat:ac6274ade742",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "horizontal-overflow",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:pinned-chat:ac6274ade742",
+      "passed": true,
+      "evidence": "1440/1440"
+    },
+    {
+      "id": "axe-serious-critical",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:pinned-chat:ac6274ade742",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "state-contract",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:pinned-chat:ac6274ade742",
+      "passed": true,
+      "evidence": "{\"agentCount\":2,\"agentHeading\":\"Agents\",\"agentSeatSummary\":\"2 seats\",\"agentFilterCount\":1,\"legacyFilterCount\":0,\"visibleActionCount\":2,\"visibleAgentCountLabels\":2,\"expandedRegionCount\":2,\"guideCount\":2,\"pinnedHeading\":\"Pinned chats\",\"pinnedCount\":1,\"pinnedProvenance\":\"Alpha\",\"pinnedAgentSessionCount\":1,\"nestedPinnedHasPin\":true,\"detailOverlayCount\":0,\"detailTabCount\":0,\"capabilityHeadings\":[],\"legacyJargonCount\":0,\"actionOverlaps\":[],\"actionFallthrough\":[],\"illegibleTitles\":[],\"undersizedAgentControls\":[],\"checkpoint\":\"pinned-chat\"}"
+    },
+    {
+      "id": "session-row-action-overlap",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:pinned-chat:ac6274ade742",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-action-fallthrough",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:pinned-chat:ac6274ade742",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-title-legible",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:pinned-chat:ac6274ade742",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "agent-touch-targets",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:pinned-chat:ac6274ade742",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "fixture-ready",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:session-row-hover:69f8ea0cdd84",
+      "passed": true,
+      "evidence": "agentCount=2;detailOverlayCount=0"
+    },
+    {
+      "id": "readiness-retry",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:session-row-hover:69f8ea0cdd84",
+      "passed": true,
+      "evidence": "retryUsed=false;firstError=none"
+    },
+    {
+      "id": "console-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:session-row-hover:69f8ea0cdd84",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "page-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:session-row-hover:69f8ea0cdd84",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "request-failures",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:session-row-hover:69f8ea0cdd84",
+      "passed": true,
+      "evidence": "net::ERR_ABORTED http://127.0.0.1:5480/api/v1/filesystems [expected: Initial filesystem discovery is superseded when the addressed Agent source mounts.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/alpha/ready-status [expected: Agent readiness polling is cancelled after readiness resolves.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/session-activity/events?workspaceId=workspace [expected: Session activity stream is cancelled when switching checkpoints or closing context.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]"
+    },
+    {
+      "id": "http-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:session-row-hover:69f8ea0cdd84",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "horizontal-overflow",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:session-row-hover:69f8ea0cdd84",
+      "passed": true,
+      "evidence": "1440/1440"
+    },
+    {
+      "id": "axe-serious-critical",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:session-row-hover:69f8ea0cdd84",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "state-contract",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:session-row-hover:69f8ea0cdd84",
+      "passed": true,
+      "evidence": "{\"agentCount\":2,\"agentHeading\":\"Agents\",\"agentSeatSummary\":\"2 seats\",\"agentFilterCount\":1,\"legacyFilterCount\":0,\"visibleActionCount\":2,\"visibleAgentCountLabels\":2,\"expandedRegionCount\":2,\"guideCount\":2,\"pinnedHeading\":\"Pinned chats\",\"pinnedCount\":1,\"pinnedProvenance\":\"Alpha\",\"pinnedAgentSessionCount\":1,\"nestedPinnedHasPin\":true,\"detailOverlayCount\":0,\"detailTabCount\":0,\"capabilityHeadings\":[],\"legacyJargonCount\":0,\"actionOverlaps\":[],\"actionFallthrough\":[],\"illegibleTitles\":[],\"undersizedAgentControls\":[],\"checkpoint\":\"session-row-hover\"}"
+    },
+    {
+      "id": "session-row-action-overlap",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:session-row-hover:69f8ea0cdd84",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-action-fallthrough",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:session-row-hover:69f8ea0cdd84",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-title-legible",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:session-row-hover:69f8ea0cdd84",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "agent-touch-targets",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:session-row-hover:69f8ea0cdd84",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "fixture-ready",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:agent-details:346b10d7b601",
+      "passed": true,
+      "evidence": "agentCount=2;detailOverlayCount=1"
+    },
+    {
+      "id": "readiness-retry",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:agent-details:346b10d7b601",
+      "passed": true,
+      "evidence": "retryUsed=false;firstError=none"
+    },
+    {
+      "id": "console-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:agent-details:346b10d7b601",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "page-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:agent-details:346b10d7b601",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "request-failures",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:agent-details:346b10d7b601",
+      "passed": true,
+      "evidence": "net::ERR_ABORTED http://127.0.0.1:5480/api/v1/filesystems [expected: Initial filesystem discovery is superseded when the addressed Agent source mounts.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/alpha/ready-status [expected: Agent readiness polling is cancelled after readiness resolves.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/session-activity/events?workspaceId=workspace [expected: Session activity stream is cancelled when switching checkpoints or closing context.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]"
+    },
+    {
+      "id": "http-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:agent-details:346b10d7b601",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "horizontal-overflow",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:agent-details:346b10d7b601",
+      "passed": true,
+      "evidence": "1440/1440"
+    },
+    {
+      "id": "axe-serious-critical",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:agent-details:346b10d7b601",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "state-contract",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:agent-details:346b10d7b601",
+      "passed": true,
+      "evidence": "{\"agentCount\":2,\"agentHeading\":\"Agents\",\"agentSeatSummary\":\"2 seats\",\"agentFilterCount\":1,\"legacyFilterCount\":0,\"visibleActionCount\":4,\"visibleAgentCountLabels\":2,\"expandedRegionCount\":2,\"guideCount\":2,\"pinnedHeading\":\"Pinned chats\",\"pinnedCount\":1,\"pinnedProvenance\":\"Alpha\",\"pinnedAgentSessionCount\":1,\"nestedPinnedHasPin\":true,\"detailOverlayCount\":1,\"detailTabCount\":0,\"capabilityHeadings\":[\"Instructions\",\"Skills\",\"Tools\",\"MCP access\",\"Plugins\",\"Defaults\"],\"legacyJargonCount\":0,\"actionOverlaps\":[],\"actionFallthrough\":[],\"illegibleTitles\":[],\"undersizedAgentControls\":[],\"checkpoint\":\"agent-details\"}"
+    },
+    {
+      "id": "session-row-action-overlap",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:agent-details:346b10d7b601",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-action-fallthrough",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:agent-details:346b10d7b601",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-title-legible",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:agent-details:346b10d7b601",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "agent-touch-targets",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:desktop:agent-details:346b10d7b601",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "fixture-ready",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-list:f500dd434dce",
+      "passed": true,
+      "evidence": "agentCount=2;detailOverlayCount=0"
+    },
+    {
+      "id": "readiness-retry",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-list:f500dd434dce",
+      "passed": true,
+      "evidence": "retryUsed=false;firstError=none"
+    },
+    {
+      "id": "console-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-list:f500dd434dce",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "page-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-list:f500dd434dce",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "request-failures",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-list:f500dd434dce",
+      "passed": true,
+      "evidence": "net::ERR_ABORTED http://127.0.0.1:5480/api/v1/filesystems [expected: Initial filesystem discovery is superseded when the addressed Agent source mounts.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/alpha/ready-status [expected: Agent readiness polling is cancelled after readiness resolves.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/alpha/ready-status [expected: Agent readiness polling is cancelled after readiness resolves.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/session-activity/events?workspaceId=workspace [expected: Session activity stream is cancelled when switching checkpoints or closing context.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]"
+    },
+    {
+      "id": "http-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-list:f500dd434dce",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "horizontal-overflow",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-list:f500dd434dce",
+      "passed": true,
+      "evidence": "390/390"
+    },
+    {
+      "id": "axe-serious-critical",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-list:f500dd434dce",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "state-contract",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-list:f500dd434dce",
+      "passed": true,
+      "evidence": "{\"agentCount\":2,\"agentHeading\":\"Agents\",\"agentSeatSummary\":\"2 seats\",\"agentFilterCount\":1,\"legacyFilterCount\":0,\"visibleActionCount\":6,\"visibleAgentCountLabels\":2,\"expandedRegionCount\":1,\"guideCount\":1,\"pinnedHeading\":null,\"pinnedCount\":0,\"pinnedProvenance\":null,\"pinnedAgentSessionCount\":1,\"nestedPinnedHasPin\":false,\"detailOverlayCount\":0,\"detailTabCount\":0,\"capabilityHeadings\":[],\"legacyJargonCount\":0,\"actionOverlaps\":[],\"actionFallthrough\":[],\"illegibleTitles\":[],\"undersizedAgentControls\":[],\"checkpoint\":\"agent-list\"}"
+    },
+    {
+      "id": "session-row-action-overlap",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-list:f500dd434dce",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-action-fallthrough",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-list:f500dd434dce",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-title-legible",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-list:f500dd434dce",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "agent-touch-targets",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-list:f500dd434dce",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "fixture-ready",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:expanded-sessions:685db7fa65eb",
+      "passed": true,
+      "evidence": "agentCount=2;detailOverlayCount=0"
+    },
+    {
+      "id": "readiness-retry",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:expanded-sessions:685db7fa65eb",
+      "passed": true,
+      "evidence": "retryUsed=false;firstError=none"
+    },
+    {
+      "id": "console-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:expanded-sessions:685db7fa65eb",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "page-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:expanded-sessions:685db7fa65eb",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "request-failures",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:expanded-sessions:685db7fa65eb",
+      "passed": true,
+      "evidence": "net::ERR_ABORTED http://127.0.0.1:5480/api/v1/filesystems [expected: Initial filesystem discovery is superseded when the addressed Agent source mounts.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/alpha/ready-status [expected: Agent readiness polling is cancelled after readiness resolves.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/alpha/ready-status [expected: Agent readiness polling is cancelled after readiness resolves.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/session-activity/events?workspaceId=workspace [expected: Session activity stream is cancelled when switching checkpoints or closing context.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]"
+    },
+    {
+      "id": "http-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:expanded-sessions:685db7fa65eb",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "horizontal-overflow",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:expanded-sessions:685db7fa65eb",
+      "passed": true,
+      "evidence": "390/390"
+    },
+    {
+      "id": "axe-serious-critical",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:expanded-sessions:685db7fa65eb",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "state-contract",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:expanded-sessions:685db7fa65eb",
+      "passed": true,
+      "evidence": "{\"agentCount\":2,\"agentHeading\":\"Agents\",\"agentSeatSummary\":\"2 seats\",\"agentFilterCount\":1,\"legacyFilterCount\":0,\"visibleActionCount\":6,\"visibleAgentCountLabels\":2,\"expandedRegionCount\":2,\"guideCount\":2,\"pinnedHeading\":null,\"pinnedCount\":0,\"pinnedProvenance\":null,\"pinnedAgentSessionCount\":1,\"nestedPinnedHasPin\":false,\"detailOverlayCount\":0,\"detailTabCount\":0,\"capabilityHeadings\":[],\"legacyJargonCount\":0,\"actionOverlaps\":[],\"actionFallthrough\":[],\"illegibleTitles\":[],\"undersizedAgentControls\":[],\"checkpoint\":\"expanded-sessions\"}"
+    },
+    {
+      "id": "session-row-action-overlap",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:expanded-sessions:685db7fa65eb",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-action-fallthrough",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:expanded-sessions:685db7fa65eb",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-title-legible",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:expanded-sessions:685db7fa65eb",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "agent-touch-targets",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:expanded-sessions:685db7fa65eb",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "fixture-ready",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:pinned-chat:a74b1078eaec",
+      "passed": true,
+      "evidence": "agentCount=2;detailOverlayCount=0"
+    },
+    {
+      "id": "readiness-retry",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:pinned-chat:a74b1078eaec",
+      "passed": true,
+      "evidence": "retryUsed=false;firstError=none"
+    },
+    {
+      "id": "console-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:pinned-chat:a74b1078eaec",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "page-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:pinned-chat:a74b1078eaec",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "request-failures",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:pinned-chat:a74b1078eaec",
+      "passed": true,
+      "evidence": "net::ERR_ABORTED http://127.0.0.1:5480/api/v1/filesystems [expected: Initial filesystem discovery is superseded when the addressed Agent source mounts.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/alpha/ready-status [expected: Agent readiness polling is cancelled after readiness resolves.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/alpha/ready-status [expected: Agent readiness polling is cancelled after readiness resolves.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/session-activity/events?workspaceId=workspace [expected: Session activity stream is cancelled when switching checkpoints or closing context.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]"
+    },
+    {
+      "id": "http-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:pinned-chat:a74b1078eaec",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "horizontal-overflow",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:pinned-chat:a74b1078eaec",
+      "passed": true,
+      "evidence": "390/390"
+    },
+    {
+      "id": "axe-serious-critical",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:pinned-chat:a74b1078eaec",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "state-contract",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:pinned-chat:a74b1078eaec",
+      "passed": true,
+      "evidence": "{\"agentCount\":2,\"agentHeading\":\"Agents\",\"agentSeatSummary\":\"2 seats\",\"agentFilterCount\":1,\"legacyFilterCount\":0,\"visibleActionCount\":6,\"visibleAgentCountLabels\":2,\"expandedRegionCount\":2,\"guideCount\":2,\"pinnedHeading\":\"Pinned chats\",\"pinnedCount\":1,\"pinnedProvenance\":\"Alpha\",\"pinnedAgentSessionCount\":1,\"nestedPinnedHasPin\":true,\"detailOverlayCount\":0,\"detailTabCount\":0,\"capabilityHeadings\":[],\"legacyJargonCount\":0,\"actionOverlaps\":[],\"actionFallthrough\":[],\"illegibleTitles\":[],\"undersizedAgentControls\":[],\"checkpoint\":\"pinned-chat\"}"
+    },
+    {
+      "id": "session-row-action-overlap",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:pinned-chat:a74b1078eaec",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-action-fallthrough",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:pinned-chat:a74b1078eaec",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-title-legible",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:pinned-chat:a74b1078eaec",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "agent-touch-targets",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:pinned-chat:a74b1078eaec",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "fixture-ready",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:session-row-hover:a74b1078eaec",
+      "passed": true,
+      "evidence": "agentCount=2;detailOverlayCount=0"
+    },
+    {
+      "id": "readiness-retry",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:session-row-hover:a74b1078eaec",
+      "passed": true,
+      "evidence": "retryUsed=false;firstError=none"
+    },
+    {
+      "id": "console-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:session-row-hover:a74b1078eaec",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "page-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:session-row-hover:a74b1078eaec",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "request-failures",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:session-row-hover:a74b1078eaec",
+      "passed": true,
+      "evidence": "net::ERR_ABORTED http://127.0.0.1:5480/api/v1/filesystems [expected: Initial filesystem discovery is superseded when the addressed Agent source mounts.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/alpha/ready-status [expected: Agent readiness polling is cancelled after readiness resolves.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/alpha/ready-status [expected: Agent readiness polling is cancelled after readiness resolves.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/session-activity/events?workspaceId=workspace [expected: Session activity stream is cancelled when switching checkpoints or closing context.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]"
+    },
+    {
+      "id": "http-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:session-row-hover:a74b1078eaec",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "horizontal-overflow",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:session-row-hover:a74b1078eaec",
+      "passed": true,
+      "evidence": "390/390"
+    },
+    {
+      "id": "axe-serious-critical",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:session-row-hover:a74b1078eaec",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "state-contract",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:session-row-hover:a74b1078eaec",
+      "passed": true,
+      "evidence": "{\"agentCount\":2,\"agentHeading\":\"Agents\",\"agentSeatSummary\":\"2 seats\",\"agentFilterCount\":1,\"legacyFilterCount\":0,\"visibleActionCount\":6,\"visibleAgentCountLabels\":2,\"expandedRegionCount\":2,\"guideCount\":2,\"pinnedHeading\":\"Pinned chats\",\"pinnedCount\":1,\"pinnedProvenance\":\"Alpha\",\"pinnedAgentSessionCount\":1,\"nestedPinnedHasPin\":true,\"detailOverlayCount\":0,\"detailTabCount\":0,\"capabilityHeadings\":[],\"legacyJargonCount\":0,\"actionOverlaps\":[],\"actionFallthrough\":[],\"illegibleTitles\":[],\"undersizedAgentControls\":[],\"checkpoint\":\"session-row-hover\"}"
+    },
+    {
+      "id": "session-row-action-overlap",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:session-row-hover:a74b1078eaec",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-action-fallthrough",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:session-row-hover:a74b1078eaec",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-title-legible",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:session-row-hover:a74b1078eaec",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "agent-touch-targets",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:session-row-hover:a74b1078eaec",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "fixture-ready",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-card-menu:518339477738",
+      "passed": true,
+      "evidence": "agentCount=2;detailOverlayCount=0"
+    },
+    {
+      "id": "readiness-retry",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-card-menu:518339477738",
+      "passed": true,
+      "evidence": "retryUsed=false;firstError=none"
+    },
+    {
+      "id": "console-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-card-menu:518339477738",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "page-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-card-menu:518339477738",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "request-failures",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-card-menu:518339477738",
+      "passed": true,
+      "evidence": "net::ERR_ABORTED http://127.0.0.1:5480/api/v1/filesystems [expected: Initial filesystem discovery is superseded when the addressed Agent source mounts.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/alpha/ready-status [expected: Agent readiness polling is cancelled after readiness resolves.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/alpha/ready-status [expected: Agent readiness polling is cancelled after readiness resolves.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/session-activity/events?workspaceId=workspace [expected: Session activity stream is cancelled when switching checkpoints or closing context.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]"
+    },
+    {
+      "id": "http-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-card-menu:518339477738",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "horizontal-overflow",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-card-menu:518339477738",
+      "passed": true,
+      "evidence": "390/390"
+    },
+    {
+      "id": "axe-serious-critical",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-card-menu:518339477738",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "state-contract",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-card-menu:518339477738",
+      "passed": true,
+      "evidence": "{\"agentCount\":2,\"agentHeading\":\"Agents\",\"agentSeatSummary\":\"2 seats\",\"agentFilterCount\":1,\"legacyFilterCount\":0,\"visibleActionCount\":6,\"visibleAgentCountLabels\":2,\"expandedRegionCount\":2,\"guideCount\":2,\"pinnedHeading\":\"Pinned chats\",\"pinnedCount\":1,\"pinnedProvenance\":\"Alpha\",\"pinnedAgentSessionCount\":1,\"nestedPinnedHasPin\":true,\"detailOverlayCount\":0,\"detailTabCount\":0,\"capabilityHeadings\":[],\"legacyJargonCount\":0,\"actionOverlaps\":[],\"actionFallthrough\":[],\"illegibleTitles\":[],\"undersizedAgentControls\":[],\"checkpoint\":\"agent-card-menu\"}"
+    },
+    {
+      "id": "session-row-action-overlap",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-card-menu:518339477738",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-action-fallthrough",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-card-menu:518339477738",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-title-legible",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-card-menu:518339477738",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "agent-touch-targets",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-card-menu:518339477738",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "fixture-ready",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-details:14edc19e31d6",
+      "passed": true,
+      "evidence": "agentCount=0;detailOverlayCount=1"
+    },
+    {
+      "id": "readiness-retry",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-details:14edc19e31d6",
+      "passed": true,
+      "evidence": "retryUsed=false;firstError=none"
+    },
+    {
+      "id": "console-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-details:14edc19e31d6",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "page-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-details:14edc19e31d6",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "request-failures",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-details:14edc19e31d6",
+      "passed": true,
+      "evidence": "net::ERR_ABORTED http://127.0.0.1:5480/api/v1/filesystems [expected: Initial filesystem discovery is superseded when the addressed Agent source mounts.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/alpha/ready-status [expected: Agent readiness polling is cancelled after readiness resolves.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/alpha/ready-status [expected: Agent readiness polling is cancelled after readiness resolves.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/session-activity/events?workspaceId=workspace [expected: Session activity stream is cancelled when switching checkpoints or closing context.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]"
+    },
+    {
+      "id": "http-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-details:14edc19e31d6",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "horizontal-overflow",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-details:14edc19e31d6",
+      "passed": true,
+      "evidence": "390/390"
+    },
+    {
+      "id": "axe-serious-critical",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-details:14edc19e31d6",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "state-contract",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-details:14edc19e31d6",
+      "passed": true,
+      "evidence": "{\"agentCount\":0,\"agentHeading\":null,\"agentSeatSummary\":null,\"agentFilterCount\":0,\"legacyFilterCount\":0,\"visibleActionCount\":0,\"visibleAgentCountLabels\":0,\"expandedRegionCount\":0,\"guideCount\":0,\"pinnedHeading\":null,\"pinnedCount\":0,\"pinnedProvenance\":null,\"pinnedAgentSessionCount\":0,\"nestedPinnedHasPin\":false,\"detailOverlayCount\":1,\"detailTabCount\":0,\"capabilityHeadings\":[\"Instructions\",\"Skills\",\"Tools\",\"MCP access\",\"Plugins\",\"Defaults\"],\"legacyJargonCount\":0,\"actionOverlaps\":[],\"actionFallthrough\":[],\"illegibleTitles\":[],\"undersizedAgentControls\":[],\"checkpoint\":\"agent-details\"}"
+    },
+    {
+      "id": "session-row-action-overlap",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-details:14edc19e31d6",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-action-fallthrough",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-details:14edc19e31d6",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-title-legible",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-details:14edc19e31d6",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "agent-touch-targets",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:mobile:agent-details:14edc19e31d6",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "fixture-ready",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:agent-list:77aedd5277c5",
+      "passed": true,
+      "evidence": "agentCount=2;detailOverlayCount=0"
+    },
+    {
+      "id": "readiness-retry",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:agent-list:77aedd5277c5",
+      "passed": true,
+      "evidence": "retryUsed=false;firstError=none"
+    },
+    {
+      "id": "console-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:agent-list:77aedd5277c5",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "page-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:agent-list:77aedd5277c5",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "request-failures",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:agent-list:77aedd5277c5",
+      "passed": true,
+      "evidence": "net::ERR_ABORTED http://127.0.0.1:5480/api/v1/filesystems [expected: Initial filesystem discovery is superseded when the addressed Agent source mounts.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/alpha/ready-status [expected: Agent readiness polling is cancelled after readiness resolves.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/session-activity/events?workspaceId=workspace [expected: Session activity stream is cancelled when switching checkpoints or closing context.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]"
+    },
+    {
+      "id": "http-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:agent-list:77aedd5277c5",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "horizontal-overflow",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:agent-list:77aedd5277c5",
+      "passed": true,
+      "evidence": "500/500"
+    },
+    {
+      "id": "axe-serious-critical",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:agent-list:77aedd5277c5",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "state-contract",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:agent-list:77aedd5277c5",
+      "passed": true,
+      "evidence": "{\"agentCount\":2,\"agentHeading\":\"Agents\",\"agentSeatSummary\":\"2 seats\",\"agentFilterCount\":1,\"legacyFilterCount\":0,\"visibleActionCount\":6,\"visibleAgentCountLabels\":2,\"expandedRegionCount\":1,\"guideCount\":1,\"pinnedHeading\":null,\"pinnedCount\":0,\"pinnedProvenance\":null,\"pinnedAgentSessionCount\":1,\"nestedPinnedHasPin\":false,\"detailOverlayCount\":0,\"detailTabCount\":0,\"capabilityHeadings\":[],\"legacyJargonCount\":0,\"actionOverlaps\":[],\"actionFallthrough\":[],\"illegibleTitles\":[],\"undersizedAgentControls\":[],\"checkpoint\":\"agent-list\"}"
+    },
+    {
+      "id": "session-row-action-overlap",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:agent-list:77aedd5277c5",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-action-fallthrough",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:agent-list:77aedd5277c5",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-title-legible",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:agent-list:77aedd5277c5",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "agent-touch-targets",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:agent-list:77aedd5277c5",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "fixture-ready",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:hover-actions:2fcf93e74a74",
+      "passed": true,
+      "evidence": "agentCount=2;detailOverlayCount=0"
+    },
+    {
+      "id": "readiness-retry",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:hover-actions:2fcf93e74a74",
+      "passed": true,
+      "evidence": "retryUsed=false;firstError=none"
+    },
+    {
+      "id": "console-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:hover-actions:2fcf93e74a74",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "page-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:hover-actions:2fcf93e74a74",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "request-failures",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:hover-actions:2fcf93e74a74",
+      "passed": true,
+      "evidence": "net::ERR_ABORTED http://127.0.0.1:5480/api/v1/filesystems [expected: Initial filesystem discovery is superseded when the addressed Agent source mounts.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/alpha/ready-status [expected: Agent readiness polling is cancelled after readiness resolves.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/session-activity/events?workspaceId=workspace [expected: Session activity stream is cancelled when switching checkpoints or closing context.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]"
+    },
+    {
+      "id": "http-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:hover-actions:2fcf93e74a74",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "horizontal-overflow",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:hover-actions:2fcf93e74a74",
+      "passed": true,
+      "evidence": "500/500"
+    },
+    {
+      "id": "axe-serious-critical",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:hover-actions:2fcf93e74a74",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "state-contract",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:hover-actions:2fcf93e74a74",
+      "passed": true,
+      "evidence": "{\"agentCount\":2,\"agentHeading\":\"Agents\",\"agentSeatSummary\":\"2 seats\",\"agentFilterCount\":1,\"legacyFilterCount\":0,\"visibleActionCount\":6,\"visibleAgentCountLabels\":2,\"expandedRegionCount\":1,\"guideCount\":1,\"pinnedHeading\":null,\"pinnedCount\":0,\"pinnedProvenance\":null,\"pinnedAgentSessionCount\":1,\"nestedPinnedHasPin\":false,\"detailOverlayCount\":0,\"detailTabCount\":0,\"capabilityHeadings\":[],\"legacyJargonCount\":0,\"actionOverlaps\":[],\"actionFallthrough\":[],\"illegibleTitles\":[],\"undersizedAgentControls\":[],\"checkpoint\":\"hover-actions\"}"
+    },
+    {
+      "id": "session-row-action-overlap",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:hover-actions:2fcf93e74a74",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-action-fallthrough",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:hover-actions:2fcf93e74a74",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-title-legible",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:hover-actions:2fcf93e74a74",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "agent-touch-targets",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:hover-actions:2fcf93e74a74",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "fixture-ready",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:expanded-sessions:4bb4a97aa759",
+      "passed": true,
+      "evidence": "agentCount=2;detailOverlayCount=0"
+    },
+    {
+      "id": "readiness-retry",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:expanded-sessions:4bb4a97aa759",
+      "passed": true,
+      "evidence": "retryUsed=false;firstError=none"
+    },
+    {
+      "id": "console-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:expanded-sessions:4bb4a97aa759",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "page-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:expanded-sessions:4bb4a97aa759",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "request-failures",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:expanded-sessions:4bb4a97aa759",
+      "passed": true,
+      "evidence": "net::ERR_ABORTED http://127.0.0.1:5480/api/v1/filesystems [expected: Initial filesystem discovery is superseded when the addressed Agent source mounts.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/alpha/ready-status [expected: Agent readiness polling is cancelled after readiness resolves.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/session-activity/events?workspaceId=workspace [expected: Session activity stream is cancelled when switching checkpoints or closing context.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]"
+    },
+    {
+      "id": "http-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:expanded-sessions:4bb4a97aa759",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "horizontal-overflow",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:expanded-sessions:4bb4a97aa759",
+      "passed": true,
+      "evidence": "500/500"
+    },
+    {
+      "id": "axe-serious-critical",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:expanded-sessions:4bb4a97aa759",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "state-contract",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:expanded-sessions:4bb4a97aa759",
+      "passed": true,
+      "evidence": "{\"agentCount\":2,\"agentHeading\":\"Agents\",\"agentSeatSummary\":\"2 seats\",\"agentFilterCount\":1,\"legacyFilterCount\":0,\"visibleActionCount\":6,\"visibleAgentCountLabels\":2,\"expandedRegionCount\":2,\"guideCount\":2,\"pinnedHeading\":null,\"pinnedCount\":0,\"pinnedProvenance\":null,\"pinnedAgentSessionCount\":1,\"nestedPinnedHasPin\":false,\"detailOverlayCount\":0,\"detailTabCount\":0,\"capabilityHeadings\":[],\"legacyJargonCount\":0,\"actionOverlaps\":[],\"actionFallthrough\":[],\"illegibleTitles\":[],\"undersizedAgentControls\":[],\"checkpoint\":\"expanded-sessions\"}"
+    },
+    {
+      "id": "session-row-action-overlap",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:expanded-sessions:4bb4a97aa759",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-action-fallthrough",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:expanded-sessions:4bb4a97aa759",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-title-legible",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:expanded-sessions:4bb4a97aa759",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "agent-touch-targets",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:expanded-sessions:4bb4a97aa759",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "fixture-ready",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:pinned-chat:7a102c057f87",
+      "passed": true,
+      "evidence": "agentCount=2;detailOverlayCount=0"
+    },
+    {
+      "id": "readiness-retry",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:pinned-chat:7a102c057f87",
+      "passed": true,
+      "evidence": "retryUsed=false;firstError=none"
+    },
+    {
+      "id": "console-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:pinned-chat:7a102c057f87",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "page-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:pinned-chat:7a102c057f87",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "request-failures",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:pinned-chat:7a102c057f87",
+      "passed": true,
+      "evidence": "net::ERR_ABORTED http://127.0.0.1:5480/api/v1/filesystems [expected: Initial filesystem discovery is superseded when the addressed Agent source mounts.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/alpha/ready-status [expected: Agent readiness polling is cancelled after readiness resolves.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/session-activity/events?workspaceId=workspace [expected: Session activity stream is cancelled when switching checkpoints or closing context.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]"
+    },
+    {
+      "id": "http-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:pinned-chat:7a102c057f87",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "horizontal-overflow",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:pinned-chat:7a102c057f87",
+      "passed": true,
+      "evidence": "500/500"
+    },
+    {
+      "id": "axe-serious-critical",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:pinned-chat:7a102c057f87",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "state-contract",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:pinned-chat:7a102c057f87",
+      "passed": true,
+      "evidence": "{\"agentCount\":2,\"agentHeading\":\"Agents\",\"agentSeatSummary\":\"2 seats\",\"agentFilterCount\":1,\"legacyFilterCount\":0,\"visibleActionCount\":6,\"visibleAgentCountLabels\":2,\"expandedRegionCount\":2,\"guideCount\":2,\"pinnedHeading\":\"Pinned chats\",\"pinnedCount\":1,\"pinnedProvenance\":\"Alpha\",\"pinnedAgentSessionCount\":1,\"nestedPinnedHasPin\":true,\"detailOverlayCount\":0,\"detailTabCount\":0,\"capabilityHeadings\":[],\"legacyJargonCount\":0,\"actionOverlaps\":[],\"actionFallthrough\":[],\"illegibleTitles\":[],\"undersizedAgentControls\":[],\"checkpoint\":\"pinned-chat\"}"
+    },
+    {
+      "id": "session-row-action-overlap",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:pinned-chat:7a102c057f87",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-action-fallthrough",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:pinned-chat:7a102c057f87",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-title-legible",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:pinned-chat:7a102c057f87",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "agent-touch-targets",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:pinned-chat:7a102c057f87",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "fixture-ready",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:session-row-hover:2f8184eabf08",
+      "passed": true,
+      "evidence": "agentCount=2;detailOverlayCount=0"
+    },
+    {
+      "id": "readiness-retry",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:session-row-hover:2f8184eabf08",
+      "passed": true,
+      "evidence": "retryUsed=false;firstError=none"
+    },
+    {
+      "id": "console-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:session-row-hover:2f8184eabf08",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "page-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:session-row-hover:2f8184eabf08",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "request-failures",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:session-row-hover:2f8184eabf08",
+      "passed": true,
+      "evidence": "net::ERR_ABORTED http://127.0.0.1:5480/api/v1/filesystems [expected: Initial filesystem discovery is superseded when the addressed Agent source mounts.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/alpha/ready-status [expected: Agent readiness polling is cancelled after readiness resolves.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/session-activity/events?workspaceId=workspace [expected: Session activity stream is cancelled when switching checkpoints or closing context.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]"
+    },
+    {
+      "id": "http-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:session-row-hover:2f8184eabf08",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "horizontal-overflow",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:session-row-hover:2f8184eabf08",
+      "passed": true,
+      "evidence": "500/500"
+    },
+    {
+      "id": "axe-serious-critical",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:session-row-hover:2f8184eabf08",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "state-contract",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:session-row-hover:2f8184eabf08",
+      "passed": true,
+      "evidence": "{\"agentCount\":2,\"agentHeading\":\"Agents\",\"agentSeatSummary\":\"2 seats\",\"agentFilterCount\":1,\"legacyFilterCount\":0,\"visibleActionCount\":6,\"visibleAgentCountLabels\":2,\"expandedRegionCount\":2,\"guideCount\":2,\"pinnedHeading\":\"Pinned chats\",\"pinnedCount\":1,\"pinnedProvenance\":\"Alpha\",\"pinnedAgentSessionCount\":1,\"nestedPinnedHasPin\":true,\"detailOverlayCount\":0,\"detailTabCount\":0,\"capabilityHeadings\":[],\"legacyJargonCount\":0,\"actionOverlaps\":[],\"actionFallthrough\":[],\"illegibleTitles\":[],\"undersizedAgentControls\":[],\"checkpoint\":\"session-row-hover\"}"
+    },
+    {
+      "id": "session-row-action-overlap",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:session-row-hover:2f8184eabf08",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-action-fallthrough",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:session-row-hover:2f8184eabf08",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-title-legible",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:session-row-hover:2f8184eabf08",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "agent-touch-targets",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:session-row-hover:2f8184eabf08",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "fixture-ready",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:agent-details:239d7abb32ff",
+      "passed": true,
+      "evidence": "agentCount=0;detailOverlayCount=1"
+    },
+    {
+      "id": "readiness-retry",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:agent-details:239d7abb32ff",
+      "passed": true,
+      "evidence": "retryUsed=false;firstError=none"
+    },
+    {
+      "id": "console-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:agent-details:239d7abb32ff",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "page-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:agent-details:239d7abb32ff",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "request-failures",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:agent-details:239d7abb32ff",
+      "passed": true,
+      "evidence": "net::ERR_ABORTED http://127.0.0.1:5480/api/v1/filesystems [expected: Initial filesystem discovery is superseded when the addressed Agent source mounts.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/alpha/ready-status [expected: Agent readiness polling is cancelled after readiness resolves.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/session-activity/events?workspaceId=workspace [expected: Session activity stream is cancelled when switching checkpoints or closing context.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]"
+    },
+    {
+      "id": "http-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:agent-details:239d7abb32ff",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "horizontal-overflow",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:agent-details:239d7abb32ff",
+      "passed": true,
+      "evidence": "500/500"
+    },
+    {
+      "id": "axe-serious-critical",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:agent-details:239d7abb32ff",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "state-contract",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:agent-details:239d7abb32ff",
+      "passed": true,
+      "evidence": "{\"agentCount\":0,\"agentHeading\":null,\"agentSeatSummary\":null,\"agentFilterCount\":0,\"legacyFilterCount\":0,\"visibleActionCount\":0,\"visibleAgentCountLabels\":0,\"expandedRegionCount\":0,\"guideCount\":0,\"pinnedHeading\":null,\"pinnedCount\":0,\"pinnedProvenance\":null,\"pinnedAgentSessionCount\":0,\"nestedPinnedHasPin\":false,\"detailOverlayCount\":1,\"detailTabCount\":0,\"capabilityHeadings\":[\"Instructions\",\"Skills\",\"Tools\",\"MCP access\",\"Plugins\",\"Defaults\"],\"legacyJargonCount\":0,\"actionOverlaps\":[],\"actionFallthrough\":[],\"illegibleTitles\":[],\"undersizedAgentControls\":[],\"checkpoint\":\"agent-details\"}"
+    },
+    {
+      "id": "session-row-action-overlap",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:agent-details:239d7abb32ff",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-action-fallthrough",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:agent-details:239d7abb32ff",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-title-legible",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:agent-details:239d7abb32ff",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "agent-touch-targets",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:narrow-desktop:agent-details:239d7abb32ff",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "fixture-ready",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-list:9a22ac1429fd",
+      "passed": true,
+      "evidence": "agentCount=2;detailOverlayCount=0"
+    },
+    {
+      "id": "readiness-retry",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-list:9a22ac1429fd",
+      "passed": true,
+      "evidence": "retryUsed=false;firstError=none"
+    },
+    {
+      "id": "console-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-list:9a22ac1429fd",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "page-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-list:9a22ac1429fd",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "request-failures",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-list:9a22ac1429fd",
+      "passed": true,
+      "evidence": "net::ERR_ABORTED http://127.0.0.1:5480/api/v1/filesystems [expected: Initial filesystem discovery is superseded when the addressed Agent source mounts.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/alpha/ready-status [expected: Agent readiness polling is cancelled after readiness resolves.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/session-activity/events?workspaceId=workspace [expected: Session activity stream is cancelled when switching checkpoints or closing context.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]"
+    },
+    {
+      "id": "http-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-list:9a22ac1429fd",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "horizontal-overflow",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-list:9a22ac1429fd",
+      "passed": true,
+      "evidence": "834/834"
+    },
+    {
+      "id": "axe-serious-critical",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-list:9a22ac1429fd",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "state-contract",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-list:9a22ac1429fd",
+      "passed": true,
+      "evidence": "{\"agentCount\":2,\"agentHeading\":\"Agents\",\"agentSeatSummary\":\"2 seats\",\"agentFilterCount\":1,\"legacyFilterCount\":0,\"visibleActionCount\":6,\"visibleAgentCountLabels\":2,\"expandedRegionCount\":1,\"guideCount\":1,\"pinnedHeading\":null,\"pinnedCount\":0,\"pinnedProvenance\":null,\"pinnedAgentSessionCount\":1,\"nestedPinnedHasPin\":false,\"detailOverlayCount\":0,\"detailTabCount\":0,\"capabilityHeadings\":[],\"legacyJargonCount\":0,\"actionOverlaps\":[],\"actionFallthrough\":[],\"illegibleTitles\":[],\"undersizedAgentControls\":[],\"checkpoint\":\"agent-list\"}"
+    },
+    {
+      "id": "session-row-action-overlap",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-list:9a22ac1429fd",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-action-fallthrough",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-list:9a22ac1429fd",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-title-legible",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-list:9a22ac1429fd",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "agent-touch-targets",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-list:9a22ac1429fd",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "fixture-ready",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:expanded-sessions:ff1aa62cab1a",
+      "passed": true,
+      "evidence": "agentCount=2;detailOverlayCount=0"
+    },
+    {
+      "id": "readiness-retry",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:expanded-sessions:ff1aa62cab1a",
+      "passed": true,
+      "evidence": "retryUsed=false;firstError=none"
+    },
+    {
+      "id": "console-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:expanded-sessions:ff1aa62cab1a",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "page-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:expanded-sessions:ff1aa62cab1a",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "request-failures",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:expanded-sessions:ff1aa62cab1a",
+      "passed": true,
+      "evidence": "net::ERR_ABORTED http://127.0.0.1:5480/api/v1/filesystems [expected: Initial filesystem discovery is superseded when the addressed Agent source mounts.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/alpha/ready-status [expected: Agent readiness polling is cancelled after readiness resolves.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/session-activity/events?workspaceId=workspace [expected: Session activity stream is cancelled when switching checkpoints or closing context.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]"
+    },
+    {
+      "id": "http-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:expanded-sessions:ff1aa62cab1a",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "horizontal-overflow",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:expanded-sessions:ff1aa62cab1a",
+      "passed": true,
+      "evidence": "834/834"
+    },
+    {
+      "id": "axe-serious-critical",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:expanded-sessions:ff1aa62cab1a",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "state-contract",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:expanded-sessions:ff1aa62cab1a",
+      "passed": true,
+      "evidence": "{\"agentCount\":2,\"agentHeading\":\"Agents\",\"agentSeatSummary\":\"2 seats\",\"agentFilterCount\":1,\"legacyFilterCount\":0,\"visibleActionCount\":6,\"visibleAgentCountLabels\":2,\"expandedRegionCount\":2,\"guideCount\":2,\"pinnedHeading\":null,\"pinnedCount\":0,\"pinnedProvenance\":null,\"pinnedAgentSessionCount\":1,\"nestedPinnedHasPin\":false,\"detailOverlayCount\":0,\"detailTabCount\":0,\"capabilityHeadings\":[],\"legacyJargonCount\":0,\"actionOverlaps\":[],\"actionFallthrough\":[],\"illegibleTitles\":[],\"undersizedAgentControls\":[],\"checkpoint\":\"expanded-sessions\"}"
+    },
+    {
+      "id": "session-row-action-overlap",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:expanded-sessions:ff1aa62cab1a",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-action-fallthrough",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:expanded-sessions:ff1aa62cab1a",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-title-legible",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:expanded-sessions:ff1aa62cab1a",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "agent-touch-targets",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:expanded-sessions:ff1aa62cab1a",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "fixture-ready",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:pinned-chat:549902351eb4",
+      "passed": true,
+      "evidence": "agentCount=2;detailOverlayCount=0"
+    },
+    {
+      "id": "readiness-retry",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:pinned-chat:549902351eb4",
+      "passed": true,
+      "evidence": "retryUsed=false;firstError=none"
+    },
+    {
+      "id": "console-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:pinned-chat:549902351eb4",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "page-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:pinned-chat:549902351eb4",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "request-failures",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:pinned-chat:549902351eb4",
+      "passed": true,
+      "evidence": "net::ERR_ABORTED http://127.0.0.1:5480/api/v1/filesystems [expected: Initial filesystem discovery is superseded when the addressed Agent source mounts.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/alpha/ready-status [expected: Agent readiness polling is cancelled after readiness resolves.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/session-activity/events?workspaceId=workspace [expected: Session activity stream is cancelled when switching checkpoints or closing context.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]"
+    },
+    {
+      "id": "http-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:pinned-chat:549902351eb4",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "horizontal-overflow",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:pinned-chat:549902351eb4",
+      "passed": true,
+      "evidence": "834/834"
+    },
+    {
+      "id": "axe-serious-critical",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:pinned-chat:549902351eb4",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "state-contract",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:pinned-chat:549902351eb4",
+      "passed": true,
+      "evidence": "{\"agentCount\":2,\"agentHeading\":\"Agents\",\"agentSeatSummary\":\"2 seats\",\"agentFilterCount\":1,\"legacyFilterCount\":0,\"visibleActionCount\":6,\"visibleAgentCountLabels\":2,\"expandedRegionCount\":2,\"guideCount\":2,\"pinnedHeading\":\"Pinned chats\",\"pinnedCount\":1,\"pinnedProvenance\":\"Alpha\",\"pinnedAgentSessionCount\":1,\"nestedPinnedHasPin\":true,\"detailOverlayCount\":0,\"detailTabCount\":0,\"capabilityHeadings\":[],\"legacyJargonCount\":0,\"actionOverlaps\":[],\"actionFallthrough\":[],\"illegibleTitles\":[],\"undersizedAgentControls\":[],\"checkpoint\":\"pinned-chat\"}"
+    },
+    {
+      "id": "session-row-action-overlap",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:pinned-chat:549902351eb4",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-action-fallthrough",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:pinned-chat:549902351eb4",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-title-legible",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:pinned-chat:549902351eb4",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "agent-touch-targets",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:pinned-chat:549902351eb4",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "fixture-ready",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:session-row-hover:407e2be47481",
+      "passed": true,
+      "evidence": "agentCount=2;detailOverlayCount=0"
+    },
+    {
+      "id": "readiness-retry",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:session-row-hover:407e2be47481",
+      "passed": true,
+      "evidence": "retryUsed=false;firstError=none"
+    },
+    {
+      "id": "console-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:session-row-hover:407e2be47481",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "page-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:session-row-hover:407e2be47481",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "request-failures",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:session-row-hover:407e2be47481",
+      "passed": true,
+      "evidence": "net::ERR_ABORTED http://127.0.0.1:5480/api/v1/filesystems [expected: Initial filesystem discovery is superseded when the addressed Agent source mounts.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/alpha/ready-status [expected: Agent readiness polling is cancelled after readiness resolves.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/session-activity/events?workspaceId=workspace [expected: Session activity stream is cancelled when switching checkpoints or closing context.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]"
+    },
+    {
+      "id": "http-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:session-row-hover:407e2be47481",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "horizontal-overflow",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:session-row-hover:407e2be47481",
+      "passed": true,
+      "evidence": "834/834"
+    },
+    {
+      "id": "axe-serious-critical",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:session-row-hover:407e2be47481",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "state-contract",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:session-row-hover:407e2be47481",
+      "passed": true,
+      "evidence": "{\"agentCount\":2,\"agentHeading\":\"Agents\",\"agentSeatSummary\":\"2 seats\",\"agentFilterCount\":1,\"legacyFilterCount\":0,\"visibleActionCount\":6,\"visibleAgentCountLabels\":2,\"expandedRegionCount\":2,\"guideCount\":2,\"pinnedHeading\":\"Pinned chats\",\"pinnedCount\":1,\"pinnedProvenance\":\"Alpha\",\"pinnedAgentSessionCount\":1,\"nestedPinnedHasPin\":true,\"detailOverlayCount\":0,\"detailTabCount\":0,\"capabilityHeadings\":[],\"legacyJargonCount\":0,\"actionOverlaps\":[],\"actionFallthrough\":[],\"illegibleTitles\":[],\"undersizedAgentControls\":[],\"checkpoint\":\"session-row-hover\"}"
+    },
+    {
+      "id": "session-row-action-overlap",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:session-row-hover:407e2be47481",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-action-fallthrough",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:session-row-hover:407e2be47481",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-title-legible",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:session-row-hover:407e2be47481",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "agent-touch-targets",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:session-row-hover:407e2be47481",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "fixture-ready",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-card-menu:918485af6f88",
+      "passed": true,
+      "evidence": "agentCount=2;detailOverlayCount=0"
+    },
+    {
+      "id": "readiness-retry",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-card-menu:918485af6f88",
+      "passed": true,
+      "evidence": "retryUsed=false;firstError=none"
+    },
+    {
+      "id": "console-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-card-menu:918485af6f88",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "page-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-card-menu:918485af6f88",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "request-failures",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-card-menu:918485af6f88",
+      "passed": true,
+      "evidence": "net::ERR_ABORTED http://127.0.0.1:5480/api/v1/filesystems [expected: Initial filesystem discovery is superseded when the addressed Agent source mounts.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/alpha/ready-status [expected: Agent readiness polling is cancelled after readiness resolves.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/session-activity/events?workspaceId=workspace [expected: Session activity stream is cancelled when switching checkpoints or closing context.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]"
+    },
+    {
+      "id": "http-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-card-menu:918485af6f88",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "horizontal-overflow",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-card-menu:918485af6f88",
+      "passed": true,
+      "evidence": "834/834"
+    },
+    {
+      "id": "axe-serious-critical",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-card-menu:918485af6f88",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "state-contract",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-card-menu:918485af6f88",
+      "passed": true,
+      "evidence": "{\"agentCount\":2,\"agentHeading\":\"Agents\",\"agentSeatSummary\":\"2 seats\",\"agentFilterCount\":1,\"legacyFilterCount\":0,\"visibleActionCount\":6,\"visibleAgentCountLabels\":2,\"expandedRegionCount\":2,\"guideCount\":2,\"pinnedHeading\":\"Pinned chats\",\"pinnedCount\":1,\"pinnedProvenance\":\"Alpha\",\"pinnedAgentSessionCount\":1,\"nestedPinnedHasPin\":true,\"detailOverlayCount\":0,\"detailTabCount\":0,\"capabilityHeadings\":[],\"legacyJargonCount\":0,\"actionOverlaps\":[],\"actionFallthrough\":[],\"illegibleTitles\":[],\"undersizedAgentControls\":[],\"checkpoint\":\"agent-card-menu\"}"
+    },
+    {
+      "id": "session-row-action-overlap",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-card-menu:918485af6f88",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-action-fallthrough",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-card-menu:918485af6f88",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-title-legible",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-card-menu:918485af6f88",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "agent-touch-targets",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-card-menu:918485af6f88",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "fixture-ready",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-details:13c864a6e256",
+      "passed": true,
+      "evidence": "agentCount=2;detailOverlayCount=1"
+    },
+    {
+      "id": "readiness-retry",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-details:13c864a6e256",
+      "passed": true,
+      "evidence": "retryUsed=false;firstError=none"
+    },
+    {
+      "id": "console-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-details:13c864a6e256",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "page-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-details:13c864a6e256",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "request-failures",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-details:13c864a6e256",
+      "passed": true,
+      "evidence": "net::ERR_ABORTED http://127.0.0.1:5480/api/v1/filesystems [expected: Initial filesystem discovery is superseded when the addressed Agent source mounts.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/alpha/ready-status [expected: Agent readiness polling is cancelled after readiness resolves.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/session-activity/events?workspaceId=workspace [expected: Session activity stream is cancelled when switching checkpoints or closing context.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]"
+    },
+    {
+      "id": "http-errors",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-details:13c864a6e256",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "horizontal-overflow",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-details:13c864a6e256",
+      "passed": true,
+      "evidence": "834/834"
+    },
+    {
+      "id": "axe-serious-critical",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-details:13c864a6e256",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "state-contract",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-details:13c864a6e256",
+      "passed": true,
+      "evidence": "{\"agentCount\":2,\"agentHeading\":\"Agents\",\"agentSeatSummary\":\"2 seats\",\"agentFilterCount\":1,\"legacyFilterCount\":0,\"visibleActionCount\":6,\"visibleAgentCountLabels\":2,\"expandedRegionCount\":2,\"guideCount\":2,\"pinnedHeading\":\"Pinned chats\",\"pinnedCount\":1,\"pinnedProvenance\":\"Alpha\",\"pinnedAgentSessionCount\":1,\"nestedPinnedHasPin\":true,\"detailOverlayCount\":1,\"detailTabCount\":0,\"capabilityHeadings\":[\"Instructions\",\"Skills\",\"Tools\",\"MCP access\",\"Plugins\",\"Defaults\"],\"legacyJargonCount\":0,\"actionOverlaps\":[],\"actionFallthrough\":[],\"illegibleTitles\":[],\"undersizedAgentControls\":[],\"checkpoint\":\"agent-details\"}"
+    },
+    {
+      "id": "session-row-action-overlap",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-details:13c864a6e256",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-action-fallthrough",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-details:13c864a6e256",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "session-row-title-legible",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-details:13c864a6e256",
+      "passed": true,
+      "evidence": "[]"
+    },
+    {
+      "id": "agent-touch-targets",
+      "stateId": "workspace-agent-sidebar-1787863451885:workspace-agent-sidebar:candidate:tablet:agent-details:13c864a6e256",
+      "passed": true,
+      "evidence": "[]"
+    }
+  ]
+}

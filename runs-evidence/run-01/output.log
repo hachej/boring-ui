@@ -1,0 +1,506 @@
+Script started on 2026-08-27 20:02:37+00:00 [COMMAND="env UI_REVIEW_OUTPUT_DIR=.pi/ui-review/pr-1431-retained/run-01/output /usr/bin/time -p pnpm --filter @hachej/boring-ui-review-tools ui:review -- review workspace-agent-sidebar --critic=fixture" <not executed on terminal>]
+
+> @hachej/boring-ui-review-tools@0.0.1 ui:review /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/tools/ui-review
+> tsx scripts/run-ui-review.mjs -- review workspace-agent-sidebar --critic=fixture
+
+
+> workspace-playground@0.0.1 build:deps /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/apps/workspace-playground
+> pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-ui-plugin-cli build && pnpm --filter @hachej/boring-sandbox build && pnpm --filter @hachej/boring-bash build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-pi build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-deck build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-tasks build && pnpm --filter @hachej/boring-diagram build && pnpm --filter @hachej/boring-data-explorer build && pnpm --filter @hachej/boring-data-catalog build
+
+
+> @hachej/boring-ui-kit@0.1.105 build /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/ui
+> tsup && node scripts/build-styles.mjs
+
+CLI Building entry: {"index":"src/index.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/ui/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/index.js 96.25 KB
+ESM ⚡️ Build success in 996ms
+DTS Build start
+DTS ⚡️ Build success in 12985ms
+DTS dist/index.d.ts 34.51 KB
+
+> @hachej/boring-ui-plugin-cli@0.1.105 build /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/plugin-cli
+> tsup
+
+CLI Building entry: {"index":"src/index.ts","bin":"src/bin.ts","plugin-sources":"src/server/pluginSources.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/plugin-cli/tsup.config.ts
+CLI Target: node20
+CLI Cleaning output folder
+ESM Build start
+ESM dist/index.js          901.00 B
+ESM dist/plugin-sources.js 497.00 B
+ESM dist/chunk-YUAML3DZ.js 43.52 KB
+ESM dist/chunk-KTILPA2U.js 26.73 KB
+ESM dist/bin.js            265.00 B
+ESM ⚡️ Build success in 139ms
+DTS Build start
+DTS ⚡️ Build success in 11346ms
+DTS dist/bin.d.ts            20.00 B
+DTS dist/plugin-sources.d.ts 3.60 KB
+DTS dist/index.d.ts          4.45 KB
+
+> @hachej/boring-sandbox@0.1.105 build /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/boring-sandbox
+> tsup
+
+CLI Building entry: {"index":"src/index.ts","shared/index":"src/shared/index.ts","providers/index":"src/providers/index.ts","providers/direct/index":"src/providers/direct/index.ts","providers/bwrap/index":"src/providers/bwrap/index.ts","providers/node-workspace/index":"src/providers/node-workspace/index.ts","providers/blaxel/index":"src/providers/blaxel/index.ts","providers/vercel-sandbox/index":"src/providers/vercel-sandbox/index.ts","providers/runsc/index":"src/providers/runsc/index.ts","providers/remote-worker/index":"src/providers/remote-worker/index.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/boring-sandbox/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/index.js                          18.79 KB
+ESM dist/shared/index.js                   18.79 KB
+ESM dist/providers/index.js                222.88 KB
+ESM dist/providers/direct/index.js         25.22 KB
+ESM dist/providers/bwrap/index.js          36.60 KB
+ESM dist/providers/node-workspace/index.js 18.50 KB
+ESM dist/providers/vercel-sandbox/index.js 82.83 KB
+ESM dist/providers/runsc/index.js          113.12 KB
+ESM dist/providers/remote-worker/index.js  65.56 KB
+ESM dist/providers/blaxel/index.js         74.90 KB
+ESM ⚡️ Build success in 360ms
+DTS Build start
+DTS ⚡️ Build success in 97029ms
+DTS dist/providers/index.d.ts                      2.52 KB
+DTS dist/providers/remote-worker/index.d.ts        5.26 KB
+DTS dist/providers/blaxel/index.d.ts               2.04 KB
+DTS dist/providers/node-workspace/index.d.ts       4.41 KB
+DTS dist/providers/vercel-sandbox/index.d.ts       7.93 KB
+DTS dist/providers/runsc/index.d.ts                23.47 KB
+DTS dist/providers/bwrap/index.d.ts                2.10 KB
+DTS dist/providers/direct/index.d.ts               666.00 B
+DTS dist/shared/index.d.ts                         4.95 KB
+DTS dist/index.d.ts                                4.13 KB
+DTS dist/remoteWorkerProtocolV1-DpOvZJPN.d.ts      52.64 KB
+DTS dist/qualificationBundle-BpxgRXzG.d.ts         16.09 KB
+DTS dist/createBlaxelSandboxProvider-Dwi7-j_a.d.ts 3.32 KB
+DTS dist/providerV1-DJqs6BH8.d.ts                  10.20 KB
+DTS dist/createRemoteWorkerProvider-pvurIYzi.d.ts  4.67 KB
+DTS dist/createVercelSandboxProvider-yiIz7ngX.d.ts 2.99 KB
+
+> @hachej/boring-bash@0.1.105 build /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/boring-bash
+> tsup
+
+CLI Building entry: {"index":"src/index.ts","agent/index":"src/agent/index.ts","shared/index":"src/shared/index.ts","server/index":"src/server/index.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/boring-bash/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/index.js        2.49 KB
+ESM dist/agent/index.js  65.83 KB
+ESM dist/shared/index.js 3.41 KB
+ESM dist/server/index.js 110.44 KB
+ESM ⚡️ Build success in 224ms
+DTS Build start
+DTS ⚡️ Build success in 40555ms
+DTS dist/agent/index.d.ts    7.65 KB
+DTS dist/server/index.d.ts   24.76 KB
+DTS dist/shared/index.d.ts   4.63 KB
+DTS dist/index.d.ts          539.00 B
+DTS dist/types-B1IBAjcp.d.ts 6.13 KB
+
+> @hachej/boring-agent@0.1.105 build /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/agent
+> tsup && pnpm run build:assert
+
+CLI Building entry: {"shared/index":"src/shared/index.ts","core/index":"src/core/index.ts","server/index":"src/server/index.ts","server/pi-session-readability":"src/server/harness/pi-coding-agent/sessionReadability.ts","server/agent-host/testing/gatewayConformance":"src/server/agent-host/testing/gatewayConformance.ts","server/agent-host/testing/compositionRouteProof":"src/server/agent-host/testing/compositionRouteProof.ts","server/worker/index":"src/server/worker/index.ts","front/index":"src/front/index.ts","front/artifacts":"src/front/artifacts.ts","eval/index":"src/eval/index.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/agent/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/eval/index.js                                      16.12 KB
+ESM dist/front/artifacts.js                                 381.00 B
+ESM dist/createHarness-KLDDWSAQ.js                          445.00 B
+ESM dist/DebugDrawer-JNA43SVR.js                            139.00 B
+ESM dist/shared/index.js                                    6.58 KB
+ESM dist/core/index.js                                      21.44 KB
+ESM dist/server/index.js                                    6.16 KB
+ESM dist/server/pi-session-readability.js                   940.00 B
+ESM dist/server/agent-host/testing/gatewayConformance.js    32.62 KB
+ESM dist/server/agent-host/testing/compositionRouteProof.js 3.65 KB
+ESM dist/server/worker/index.js                             13.49 KB
+ESM dist/chunk-6OANSUEI.js                                  47.63 KB
+ESM dist/chunk-7XAOVFSN.js                                  664.00 B
+ESM dist/chunk-WSQ5QNIY.js                                  509.00 B
+ESM dist/chunk-N6THTH7P.js                                  2.78 KB
+ESM dist/chunk-45FX2746.js                                  110.54 KB
+ESM dist/chunk-4XOW57KJ.js                                  14.25 KB
+ESM dist/chunk-2BGLZZ7T.js                                  174.00 B
+ESM dist/chunk-HIDIG2SW.js                                  13.65 KB
+ESM dist/chunk-YGRQ4Q5P.js                                  685.00 B
+ESM dist/chunk-3JFPS2O6.js                                  5.57 KB
+ESM dist/chunk-MIMIJGNG.js                                  545.21 KB
+ESM dist/front/index.js                                     487.65 KB
+ESM ⚡️ Build success in 863ms
+DTS Build start
+"buildBwrapArgs" and "createBwrapSandboxProvider" are imported from external module "@hachej/boring-sandbox/providers/bwrap" but never used in "host/sandbox.ts".
+"createNodeWorkspace", "getBoringAgentPathEntries", "getBoringAgentRuntimeEnv" and "getBoringAgentRuntimePaths" are imported from external module "@hachej/boring-sandbox/providers/node-workspace" but never used in "host/sandbox.ts".
+"createBlaxelSandboxProvider" and "BLAXEL_WORKSPACE_ROOT" are imported from external module "@hachej/boring-sandbox/providers/blaxel" but never used in "host/sandbox.ts".
+"createDirectSandboxProvider" is imported from external module "@hachej/boring-sandbox/providers/direct" but never used in "host/sandbox.ts".
+DTS ⚡️ Build success in 121285ms
+DTS dist/core/index.d.ts                                      1.86 KB
+DTS dist/server/agent-host/testing/compositionRouteProof.d.ts 312.00 B
+DTS dist/server/agent-host/testing/gatewayConformance.d.ts    1.98 KB
+DTS dist/server/pi-session-readability.d.ts                   501.00 B
+DTS dist/eval/index.d.ts                                      8.97 KB
+DTS dist/server/worker/index.d.ts                             3.05 KB
+DTS dist/shared/index.d.ts                                    151.69 KB
+DTS dist/front/index.d.ts                                     40.72 KB
+DTS dist/server/index.d.ts                                    77.86 KB
+DTS dist/front/artifacts.d.ts                                 1.83 KB
+DTS dist/piChatSessionService-D8rBmrZu.d.ts                   4.35 KB
+DTS dist/middleware-CaAEXpi5.d.ts                             3.17 KB
+DTS dist/file-search-Cql8Bbbc.d.ts                            4.09 KB
+DTS dist/errors-J1d6SUxa.d.ts                                 10.30 KB
+DTS dist/sandbox-BMhut3kh.d.ts                                13.29 KB
+DTS dist/harness-CZqwOOkf.d.ts                                10.52 KB
+DTS dist/piChatEvent-D_1e69l_.d.ts                            63.86 KB
+DTS dist/lease-DCul8Ozq.d.ts                                  18.77 KB
+DTS dist/types-BbxQvuPQ.d.ts                                  40.79 KB
+
+> @hachej/boring-agent@0.1.105 build:assert /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/agent
+> node ./scripts/assert-build-artifacts.mjs
+
+build-artifacts: OK
+
+> @hachej/boring-pi@0.1.13 build /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/pi
+> node scripts/assert-package.mjs
+
+boring-pi package resources: OK
+
+> @hachej/boring-workspace@0.1.105 build /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/workspace
+> tsup && vite build && node ./scripts/build-workspace-css.mjs && node ./scripts/assert-build-artifacts.mjs
+
+CLI Building entry: {"app-server":"src/app/server/index.ts","server":"src/server/index.ts","runtime-server":"src/server/runtimeBackend/defineRuntimeServerPlugin.ts","shared":"src/shared/index.ts","bridge-client":"src/bridge-client/index.ts","events":"src/front/events/index.ts","plugin":"src/plugin.ts"}
+CLI Using tsconfig: tsconfig.tsup.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/workspace/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/runtime-server.js 1.12 KB
+ESM dist/app-server.js     281.04 KB
+ESM dist/shared.js         10.70 KB
+ESM dist/server.js         212.30 KB
+ESM dist/bridge-client.js  14.60 KB
+ESM dist/events.js         2.96 KB
+ESM dist/plugin.js         21.25 KB
+ESM ⚡️ Build success in 182ms
+DTS Build start
+DTS ⚡️ Build success in 22916ms
+DTS dist/app-server.d.ts                    21.13 KB
+DTS dist/bridge-client.d.ts                 3.20 KB
+DTS dist/events.d.ts                        7.32 KB
+DTS dist/plugin.d.ts                        15.36 KB
+DTS dist/server.d.ts                        38.13 KB
+DTS dist/runtime-server.d.ts                2.12 KB
+DTS dist/shared.d.ts                        11.84 KB
+DTS dist/types-B1hDNDJf.d.ts                146.00 B
+DTS dist/runtimeEnv-lpJtogzS.d.ts           19.71 KB
+DTS dist/manifest-B3IoRf9m.d.ts             2.88 KB
+DTS dist/surface-BppFFmNz.d.ts              5.29 KB
+DTS dist/urlPane-D5wJ6ItF.d.ts              2.75 KB
+DTS dist/agent-tool-Clfxoyef.d.ts           1.26 KB
+DTS dist/workspace-bridge-rpc-BHsOJMlW.d.ts 5.41 KB
+DTS dist/ui-bridge-DzjfAFqa.d.ts            2.36 KB
+DTS dist/filesystem-BIUerwPV.d.ts           1.13 KB
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - `__dirname` (vite.config.ts:14:24). Use `import.meta.dirname` instead
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+[1;1H[0J8:08:33 PM [vite] warning: `esbuild` option was specified by "vite:react-babel" plugin. This option is deprecated, please use `oxc` instead.
+`optimizeDeps.rollupOptions` / `ssr.optimizeDeps.rollupOptions` is deprecated. Use `optimizeDeps.rolldownOptions` instead. Note that this option may be set by a plugin. Set VITE_DEPRECATION_TRACE=1 to see where it is called.
+[vite:react-babel] We recommend switching to `@vitejs/plugin-react-oxc` for improved performance. More information at https://vite.dev/rolldown
+vite v8.2.1 building client environment for production...
+[2Ktransforming (1)  rolldown/runtime.js[2Ktransforming (9) src/front/testing/createMockPaneProps.ts[2Ktransforming (35) src/plugins/filesystemPlugin/front/index.ts[2Ktransforming (64) src/front/artifacts/openHumanArtifact.ts[2Ktransforming (80) src/front/provider/WorkspaceProvider.tsx[2Ktransforming (99) src/front/store/localStorageValues.ts[2Ktransforming (127) src/front/bridge/client.ts[2Ktransforming (145) src/front/layout/ThemeToggle.tsx[2Ktransforming (164) src/plugins/filesystemPlugin/front/ConflictBanner.tsx[2Ktransforming (187) src/plugins/filesystemPlugin/front/file-tree/upload/useBatchFileUpload.ts[2Ktransforming (217) src/plugins/filesystemPlugin/front/media-viewer/MediaViewer.tsx[2Ktransforming (232) src/front/chrome/artifact-surface/definition.ts[2Ktransforming (239) src/front/detached/useDetachedPanelPosition.ts[2Ktransforming (351) ../../node_modules/.pnpm/aria-query@5.3.0/node_modules/aria-query/lib/etc/roles/literal/progressbarRole.js[2K✓ 416 modules transformed.
+[2Krendering chunks (1)...[2Krendering chunks (2)...[2Krendering chunks (3)...[2Krendering chunks (4)...[2Krendering chunks (5)...[2Krendering chunks (6)...[2Krendering chunks (7)...[2Krendering chunks (8)...[2Krendering chunks (9)...[2Krendering chunks (10)...[2Krendering chunks (11)...[2Krendering chunks (12)...[2Krendering chunks (13)...[2Krendering chunks (14)...[2Krendering chunks (15)...[2Krendering chunks (16)...[2Krendering chunks (17)...[2Krendering chunks (18)...[2Krendering chunks (19)...[2Krendering chunks (20)...[2Krendering chunks (21)...[2Krendering chunks (22)...[2Krendering chunks (23)...[2Krendering chunks (24)...[2Krendering chunks (25)...[2Krendering chunks (26)...[2Krendering chunks (27)...[2Krendering chunks (28)...[2Krendering chunks (29)...[2Krendering chunks (30)...[2Krendering chunks (31)...[2Krendering chunks (32)...[2Krendering chunks (33)...[2Krendering chunks (34)...[2Krendering chunks (35)...[2Krendering chunks (36)...[2Krendering chunks (37)...[2Krendering chunks (38)...[2Krendering chunks (39)...[2Krendering chunks (40)...[2Krendering chunks (41)...[2Krendering chunks (42)...[2Krendering chunks (43)...[2Krendering chunks (44)...[2Krendering chunks (45)...[2K
+[unplugin:dts] Start generate declaration files...
+[unplugin:dts] Start bundling declaration files...
+
+[unplugin:dts] Failed to load '@microsoft/api-extractor', have you installed it?
+
+
+[unplugin:dts] Error occurred, skip bundle declaration files.
+
+[unplugin:dts] Declaration files built in 41563ms.
+
+computing gzip size...
+[2Kdist/boring-workspace.css                    8.93 kB │ gzip:  1.90 kB
+dist/loading.js                              0.10 kB │ gzip:  0.09 kB
+dist/reloadEvent-Dm9lkxge.js                 0.12 kB │ gzip:  0.12 kB
+dist/utils-BRcxFdrz.js                       0.18 kB │ gzip:  0.15 kB
+dist/panel-C3f-tnSJ.js                       0.27 kB │ gzip:  0.16 kB
+dist/filesystemErrorRedaction-DNGYs3Sy.js    0.29 kB │ gzip:  0.22 kB
+dist/ControlTooltip-B8daAfJ0.js              0.67 kB │ gzip:  0.39 kB
+dist/getFileIcon-DjXq4MdF.js                 0.67 kB │ gzip:  0.35 kB
+dist/uiCommandBus-DxuPkZNB.js                0.67 kB │ gzip:  0.39 kB
+dist/paneCollapseButton-DD581Jio.js          0.79 kB │ gzip:  0.48 kB
+dist/rolldown-runtime-B0aSnxlc.js            0.95 kB │ gzip:  0.52 kB
+dist/toast-BPlCG87n.js                       1.10 kB │ gzip:  0.56 kB
+dist/MarkdownEditorPane-CztIzlvD.js          1.23 kB │ gzip:  0.67 kB
+dist/cornerChrome-exf_qORF.js                1.33 kB │ gzip:  0.72 kB
+dist/testing-e2e.js                          1.43 kB │ gzip:  0.79 kB
+dist/ManagementOverlaySurface-Ckf5SijN.js    1.59 kB │ gzip:  0.71 kB
+dist/selectors-BfOn6gAj.js                   1.73 kB │ gzip:  0.69 kB
+dist/events-C96ZDGkP.js                      1.80 kB │ gzip:  0.85 kB
+dist/ChatPaneStage-Clo_Ab__.js               3.82 kB │ gzip:  1.49 kB
+dist/hooks-KGLWJ9KK.js                       3.96 kB │ gzip:  1.46 kB
+dist/charts.js                               4.47 kB │ gzip:  1.71 kB
+dist/useWorkspacePluginClient-DHk44NlO.js    4.81 kB │ gzip:  1.93 kB
+dist/MediaViewerPane-4M5gIVZj.js             4.98 kB │ gzip:  1.93 kB
+dist/FileTreePane-BF-69Grz.js                5.47 kB │ gzip:  1.98 kB
+dist/agentCapabilities-BmNe6PR0.js           5.75 kB │ gzip:  1.76 kB
+dist/WorkspaceLoadingState-B32iyXGB.js       6.55 kB │ gzip:  1.43 kB
+dist/HtmlViewerPane-hxQM5LCI.js              7.25 kB │ gzip:  2.80 kB
+dist/PluginsOverlay-CIKNRoe_.js              8.76 kB │ gzip:  2.64 kB
+dist/FileTree-BvW6Tf9Q.js                    8.92 kB │ gzip:  3.46 kB
+dist/PluginErrorBoundary-D40QG108.js        10.36 kB │ gzip:  2.68 kB
+dist/CodeEditorPane-CXpfJdO_.js             10.55 kB │ gzip:  3.70 kB
+dist/FilePaneShell-Bg6zOuPv.js              10.58 kB │ gzip:  3.70 kB
+dist/AgentPage-fSoLJISv.js                  11.09 kB │ gzip:  3.08 kB
+dist/WorkbenchLeftPane-Bq6DjPva.js          12.31 kB │ gzip:  4.05 kB
+dist/AgentDetailsOverlay-DdT9st8I.js        14.62 kB │ gzip:  4.08 kB
+dist/ChatPaneStageDock-D7kfKff5.js          15.05 kB │ gzip:  4.86 kB
+dist/DataProvider-D36E-nK7.js               15.48 kB │ gzip:  5.06 kB
+dist/MarkdownEditor-D4wFaEj9.js             25.25 kB │ gzip:  8.28 kB
+dist/workspace.js                           32.07 kB │ gzip: 10.36 kB
+dist/FileTreeView-E9Y2MTAA.js               33.06 kB │ gzip: 10.18 kB
+dist/TopBar-CJcU7yE4.js                     39.65 kB │ gzip: 10.71 kB
+dist/SurfaceShell-BleZZc2Y.js               41.99 kB │ gzip: 12.56 kB
+dist/WorkspaceProvider-D6VRx8mg.js         129.49 kB │ gzip: 35.24 kB
+dist/app-front.js                          167.67 kB │ gzip: 43.61 kB
+dist/testing.js                            254.45 kB │ gzip: 44.26 kB
+
+✓ built in 42.37s
+[2K[1G[33m[PLUGIN_TIMINGS] [0mYour build spent 99% of 42.4s inside plugin hooks (41.9s).
+Measured inside the callback, so queue time is excluded and time the callback itself awaited is not:
+  - unplugin-dts buildStart (91%, 38.5s, 1 call)
+  - unplugin-dts writeBundle (5%, 2.0s, 1 call)
+  - unplugin-dts transform (3%, 1.2s, 416 calls)
+See https://rolldown.rs/reference/InputOptions.checks#plugintimings for more details.
+
+assert-build-artifacts: all 21 artifacts present
+
+> @hachej/boring-core@0.1.105 build /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/core
+> tsup && pnpm run build:assert
+
+CLI Building entry: {"server/index":"src/server/index.ts","server/db/index":"src/server/db/index.ts","app/server/index":"src/app/server/index.ts","app/front/index":"src/app/front/index.ts","app/vite/index":"src/app/vite/index.ts","front/index":"src/front/index.ts","front/top-bar-slot":"src/front/components/TopBarSlot.tsx","shared/index":"src/shared/index.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/core/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/chunk-N3GHKI6K.js     117.69 KB
+ESM dist/app/vite/index.js     786.00 B
+ESM dist/server/index.js       77.59 KB
+ESM dist/server/db/index.js    739.00 B
+ESM dist/front/top-bar-slot.js 159.00 B
+ESM dist/chunk-HYNKZSTF.js     437.00 B
+ESM dist/chunk-MVXKJ6N6.js     178.71 KB
+ESM dist/shared/index.js       752.00 B
+ESM dist/chunk-YMWFQN6F.js     338.00 B
+ESM dist/chunk-J4CABG52.js     134.18 KB
+ESM dist/chunk-AQBXNPMD.js     254.00 B
+ESM dist/chunk-I4PGL4ZD.js     488.00 B
+ESM dist/app/front/index.js    65.32 KB
+ESM dist/app/server/index.js   69.73 KB
+ESM dist/chunk-WYRJV2HL.js     2.68 KB
+ESM dist/chunk-MLKGABMK.js     191.00 B
+ESM dist/front/index.js        2.47 KB
+ESM ⚡️ Build success in 196ms
+DTS Build start
+"magicLinkClient" is imported from external module "better-auth/client/plugins" but never used in "src/front/auth/authClient.ts".
+DTS ⚡️ Build success in 108382ms
+DTS dist/app/front/index.d.ts                   14.41 KB
+DTS dist/app/server/index.d.ts                  11.97 KB
+DTS dist/app/vite/index.d.ts                    1.35 KB
+DTS dist/front/index.d.ts                       21.39 KB
+DTS dist/front/top-bar-slot.d.ts                295.00 B
+DTS dist/server/db/index.d.ts                   12.00 KB
+DTS dist/server/index.d.ts                      49.36 KB
+DTS dist/shared/index.d.ts                      1.31 KB
+DTS dist/CoreFront-DB1OfNJU.d.ts                2.42 KB
+DTS dist/loadConfig-ep_nNP8O.d.ts               4.48 KB
+DTS dist/PostgresModelBudgetStore-BNPbrJyU.d.ts 16.58 KB
+DTS dist/types-CWIetRGO.d.ts                    8.08 KB
+DTS dist/telemetry-DR18MeI0.d.ts                466.00 B
+DTS dist/types-C0x-x3Of.d.ts                    9.93 KB
+
+> @hachej/boring-core@0.1.105 build:assert /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/core
+> node ./scripts/assert-build-artifacts.mjs
+
+assert-build-artifacts: all 10 exported artifact(s) present, 4 stylesheet(s) with resolvable @imports
+
+> @hachej/boring-deck@0.1.105 build /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/plugins/deck
+> tsup
+
+CLI Building entry: {"front/index":"src/front/index.tsx","shared/index":"src/shared/index.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/plugins/deck/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/shared/index.js 8.25 KB
+ESM dist/front/index.js  38.25 KB
+ESM ⚡️ Build success in 67ms
+DTS Build start
+DTS ⚡️ Build success in 26931ms
+DTS dist/front/index.d.ts    1.76 KB
+DTS dist/shared/index.d.ts   961.00 B
+DTS dist/types-Dt_A9RNg.d.ts 1.57 KB
+
+> @hachej/boring-ask-user@0.1.105 build /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/plugins/ask-user
+> tsup
+
+CLI Building entry: {"front/index":"src/front/index.tsx","server/index":"src/server/index.ts","shared/index":"src/shared/index.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/plugins/ask-user/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/server/index.js 62.30 KB
+ESM dist/shared/index.js 15.54 KB
+ESM dist/front/index.js  96.25 KB
+ESM ⚡️ Build success in 93ms
+DTS Build start
+DTS ⚡️ Build success in 39592ms
+DTS dist/front/index.d.ts    854.00 B
+DTS dist/server/index.d.ts   11.16 KB
+DTS dist/shared/index.d.ts   118.64 KB
+DTS dist/types-Qke6DnHq.d.ts 5.84 KB
+
+> @hachej/boring-tasks@0.1.105 build /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/plugins/tasks
+> tsup --config tsup.config.ts && tsup --config tsup.descriptor.config.ts && node scripts/assert-declarations.mjs
+
+CLI Building entry: {"front/index":"src/front/index.tsx","server/index":"src/server/index.ts","shared/index":"src/shared/index.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/plugins/tasks/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/shared/index.js 4.89 KB
+ESM dist/server/index.js 102.42 KB
+ESM dist/front/index.js  143.51 KB
+ESM ⚡️ Build success in 183ms
+DTS Build start
+DTS ⚡️ Build success in 49338ms
+DTS dist/front/index.d.ts  2.63 KB
+DTS dist/server/index.d.ts 11.43 KB
+DTS dist/shared/index.d.ts 7.77 KB
+CLI Building entry: {"front/descriptor":"src/front/descriptor.tsx"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/plugins/tasks/tsup.descriptor.config.ts
+CLI Target: es2022
+ESM Build start
+ESM dist/front/descriptor.js      3.89 KB
+ESM dist/TasksOverlay-ILOTZDWQ.js 128.39 KB
+ESM ⚡️ Build success in 143ms
+DTS Build start
+DTS ⚡️ Build success in 25587ms
+DTS dist/front/descriptor.d.ts 172.00 B
+tasks declarations: root, front, and front/descriptor types resolve through emitted/public paths
+
+> @hachej/boring-diagram@0.1.105 build /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/plugins/diagram
+> tsup
+
+CLI Building entry: {"front/index":"src/front/index.tsx","server/index":"src/server/index.ts","shared/index":"src/shared/index.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/plugins/diagram/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/front/index.js  47.05 KB
+ESM dist/server/index.js 11.99 KB
+ESM dist/shared/index.js 845.00 B
+ESM ⚡️ Build success in 54ms
+DTS Build start
+DTS ⚡️ Build success in 54487ms
+DTS dist/front/index.d.ts  185.00 B
+DTS dist/server/index.d.ts 384.00 B
+DTS dist/shared/index.d.ts 424.00 B
+
+> @hachej/boring-data-explorer@0.1.105 build /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/plugins/data-explorer
+> tsup
+
+CLI Building entry: {"front/index":"src/front/index.ts","shared/index":"src/shared/index.ts","testing/index":"src/testing/index.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/plugins/data-explorer/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/shared/index.js  0 B
+ESM dist/front/index.js   25.36 KB
+ESM dist/testing/index.js 4.81 KB
+ESM ⚡️ Build success in 59ms
+DTS Build start
+DTS ⚡️ Build success in 5838ms
+DTS dist/testing/index.d.ts 248.00 B
+DTS dist/front/index.d.ts   3.88 KB
+DTS dist/shared/index.d.ts  2.19 KB
+
+> @hachej/boring-data-catalog@0.1.105 build /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/plugins/data-catalog
+> tsup
+
+CLI Building entry: {"front/index":"src/front/index.tsx","server/index":"src/server/index.ts","shared/index":"src/shared/index.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/plugins/data-catalog/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/front/index.js  10.63 KB
+ESM dist/server/index.js 4.67 KB
+ESM dist/shared/index.js 296.00 B
+ESM ⚡️ Build success in 47ms
+DTS Build start
+DTS ⚡️ Build success in 49852ms
+DTS dist/server/index.d.ts 1.29 KB
+DTS dist/front/index.d.ts  5.59 KB
+DTS dist/shared/index.d.ts 294.00 B
+[WebServer] (!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+[WebServer]   - `__dirname` (vite.config.ts:9:59). Use `import.meta.dirname` instead
+[WebServer]   - import "./src/server/dev" without a file extension (vite.config.ts:6:66). Add the file extension
+[WebServer]   - import "./src/release-candidate-dist" without a file extension (vite.config.ts:7:50). Add the file extension
+[WebServer]   - import "./testing/scriptedPiHarness" without a file extension (src/server/dev.ts:7:50). Add the file extension
+[WebServer]   - import "./testing/twoAgentFleet" without a file extension (src/server/dev.ts:13:8). Add the file extension
+[WebServer]   - import "./factoryAgents" without a file extension (src/server/dev.ts:16:41). Add the file extension
+[WebServer]   - import "./playgroundAgentMode" without a file extension (src/server/dev.ts:17:44). Add the file extension
+[WebServer]   - import "../shared/playgroundAgents" without a file extension (src/server/dev.ts:18:53). Add the file extension
+[WebServer]   - import "../../shared/playgroundAgents" without a file extension (src/server/testing/twoAgentFleet.ts:2:48). Add the file extension
+[WebServer] Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+[WebServer] 8:15:50 PM [vite] warning: `esbuild` option was specified by "vite:react-babel" plugin. This option is deprecated, please use `oxc` instead.
+[WebServer] `optimizeDeps.rollupOptions` / `ssr.optimizeDeps.rollupOptions` is deprecated. Use `optimizeDeps.rolldownOptions` instead. Note that this option may be set by a plugin. Set VITE_DEPRECATION_TRACE=1 to see where it is called.
+[WebServer] [vite:react-babel] We recommend switching to `@vitejs/plugin-react-oxc` for improved performance. More information at https://vite.dev/rolldown
+[WebServer] (node:2747164) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:2747164) [BORING_WORKSPACE_BRIDGE_INSECURE_AUTH] Warning: createWorkspaceAgentServer is using createLocalCliBridgeAuthPolicy for WorkspaceBridge browser calls. This policy is unauthenticated, grants registered bridge capabilities to a fixed local-cli principal, and is intended only for local/dev CLI usage. Provide workspaceBridge.browserAuthPolicy before exposing this server.
+
+Running 1 test using 1 worker
+
+     1 [chromium] › e2e/review.spec.ts:54:3 › UI review › captures and reviews workspace-agent-sidebar
+  ✓  1 [chromium] › e2e/review.spec.ts:54:3 › UI review › captures and reviews workspace-agent-sidebar (57.7s)
+
+  1 passed (1.1m)
+real 856.52
+user 1197.94
+sys 70.03
+
+Script done on 2026-08-27 20:16:53+00:00 [COMMAND_EXIT_CODE="0"]
