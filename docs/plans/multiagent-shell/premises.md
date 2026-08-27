@@ -354,14 +354,15 @@ deferred into P2.
   the engine ruling. Sequence: (1) a short **pre-gate synthesis** folds the
   durable-streams evidence and both storage-spike outputs into updated gate
   artifacts; (2) the owner rules the **engine** questions in this order:
-  storage model → native-binding default vs an explicit relay amendment (a
-  blackboard needs its own promotion gate) → the orchestrator Seat's concrete
-  binding/voice → the typed `input-required` shape → which interim receipt
-  machinery survives; (3) only then the **shell-only** questions and the
-  shell's storage consequences. Never re-ask what is ruled: an orchestrator
-  Seat *exists* (ratified — only its concrete binding is open), a voiceless
-  v0 would be an explicit amendment not a peer option, L1.5's location
-  question, shell Q1–Q3, and the D29 policy addendum are all already ruled.
+  storage **shape** (root is ruled, §9a) → native-binding default vs an
+  explicit relay amendment (a blackboard needs its own promotion gate) → the
+  orchestrator Seat's concrete binding → the typed `input-required` shape →
+  which interim receipt machinery survives; (3) only then the **shell-only**
+  questions and the shell's storage consequences. Never re-ask what is
+  ruled: the orchestrator Seat *exists* and speaks as a named author (§9b —
+  only its concrete binding is open), the transcript is multi-author (§9b),
+  L1.5's location question, shell Q1–Q3, and the D29 policy addendum are all
+  already ruled.
 - **Proof:** both gate bead bodies updated; both review docs' status strips
   updated; an answered Human Intention per gate, in the order above.
 - **Honest sizing:** minutes of owner time, once P2 has reported — plus one
