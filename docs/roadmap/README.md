@@ -31,14 +31,19 @@ individual dependency edges, not one serial order — rationale in
 traits, shell location, nav chrome — because they touch no thread, session,
 storage, or attribution.
 
-**Spikes first (owner-ruled 2026-08-27):** the **pi-0.84.3 core-adoption
-spike** (`wt-391-forward-9n6w`) and the **storage research half**
-(`shell-ngfs.13.1`) run BEFORE [durable-streams] commits implementation
-schema — a 1–2 session delay against building the keystone on a dead
-substrate. The `PiPlatform` seam (`wt-391-forward-oueu`) is the
-adoption-neutral companion. The **headless golden path** (API/CLI job in →
-agent runs → artifact → decision → restart survives → delivery) is a named
-conformance proof running **parallel, never gating** shell work.
+**Post-spike (owner-ruled 2026-08-27):** both spikes are DONE. The **pi-0.84.3
+core-adoption spike** (`wt-391-forward-9n6w`) verdict: do not wire 0.84.3 —
+the published harness is a `HarnessNotImplemented` scaffold, the v3 decoder is
+dev-only, and lanes fail the posts-only isolation test. The **competitor
+research half** (`shell-ngfs.13.1`) is also done: Linear/Intercom stand as
+existence proofs for the work-record candidate. [durable-streams]'s P1
+substrate-neutral work — plus the private harness backend seam under D29 —
+starts NOW, behind the merge-queue preflight. The event-store slice WAITS for
+a qualifying pi release; 2026-09-10 is an owner check-in, not a build
+trigger. The **headless golden path** (API/CLI job in → agent runs →
+artifact → decision → restart survives → delivery) runs **parallel, never
+gating** substrate-free shell chrome — but it is required evidence for P1
+completion, so it indirectly gates every Thread-view slice that consumes P1.
 
 ## What each program waits on
 

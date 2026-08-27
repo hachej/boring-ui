@@ -356,6 +356,21 @@ Two rulings set the tone, both from the owner interview of 2026-08-26:
 model is not decided**. Full program:
 `docs/plans/multiagent-shell/premises.md` in #1409.
 
+> **Owner amendment 2026-08-27 (evening) — post-spike execution split.**
+> Completed: the pi 0.84.3 adoption spike (verdict: published harness =
+> scaffold, do not wire; report in the shell pack's research/) and the P2
+> competitor research. **Starts now:** P1's substrate-neutral durability —
+> the private harness backend seam under D29, gateway request/effect
+> ledger, effect admission, activity recovery, resume protocol — plus the
+> paused-human and headless conformance journeys. **Waits for a qualifying
+> pi runtime release:** the event-stream sequence/storage implementation
+> (adoption is behavior-gated by the criteria in the pack's
+> `research/pi-v2-alignment.md`, never version-gated). **2026-09-10 is an
+> owner check-in, not an automatic build trigger.** Gating precision: the
+> headless journey never gates substrate-free chrome, but it is required
+> evidence for P1 completion — and therefore indirectly gates every Job
+> Thread or Thread-view slice that consumes P1.
+
 > **Owner amendment 2026-08-27 — spikes first, briefly.** Before
 > [durable-streams] commits any implementation schema, two short spikes run:
 > the **pi-0.84.3 core-adoption spike** (`wt-391-forward-9n6w`, 1–2

@@ -35,7 +35,7 @@ Two consequences, stated plainly:
 
 | # | Premise | Unblocks | Beadable | Size |
 |---|---|---|---|---|
-| **P1** | Durable streams — Level D conformance, default-on | the whole engine | epic `wt-391-forward-9p50`: `.1` conformance, `.2` rollout | 2 × one-session slices |
+| **P1** | Durable streams — Level D conformance, default-on | the whole engine | epic `wt-391-forward-9p50`: `.1` conformance, `.2` rollout | state machine — see P1 slice table |
 | **P2** | Thread storage model — spike + competitor study | engine S1, the "noun" question, #1355's ref types | epic `shell-ngfs.13`: `.13.1` research, `.13.2` spike | **re-sized 2026-08-27:** research 1–2 sessions, spike 2–3 (three candidates + pi substrate variant + Work-cardinality questions grew it; the old "2 × one-session" claim is withdrawn) |
 | **P3** | Seat storage — audit-grade attribution (ratified concept, formerly C7) | honest who-said-what everywhere | epic `shell-ngfs.14`: `.14.1` catalog/envelope, `.14.2` projection | 2 × one-session slices |
 | **P4** | Kernel View — first ratified slice | Library saved views | yes — new | sizing unknown, see below |
@@ -64,7 +64,9 @@ deferral.
 - **Scope / Proof:** as written on epic `wt-391-forward-9p50` and its children —
   gateway conformance green at Level D; restart-replay e2e on the playground
   golden route; default-on/rollback proof; DECISIONS addendum PR.
-- **Honest sizing:** two one-session slices: `.1` implement, `.2` flip + ratify.
+- **Honest sizing:** superseded — see the P1 slice-state table below (the
+  "two one-session slices" claim is withdrawn; P1-B is blocked-on-pi in its
+  own bead `wt-391-forward-hotp`, and P1 is not complete before P1-C).
 - **Unblocks:** every engine slice. Also reframes the relay-vs-blackboard
   choice — see the note below.
 
@@ -120,13 +122,28 @@ deferral.
 > durable gateway **ledger**, effect **admission**, cross-session
 > **activity**, and the resume-to-browser protocol are ours on any
 > substrate. Therefore: the **substrate-neutral layer starts now**, written
-> against gateway/seam interfaces (the `PiPlatform` seam, raised to P1,
-> lands alongside); the **event-store schema waits for pi** — the owner
+> against gateway/seam interfaces (the `AgentHarnessBackend` seam — private,
+> under the D29 gateway, raised to P1 — lands alongside); the **event-store schema waits for pi** — the owner
 > explicitly accepts waiting where it saves dev time (ruling sharpened
 > 2026-08-27). The two-week mark (2026-09-10) is a **check-in, not a
 > forced build**: if pi has not shipped the runtime by then, the owner
 > decides wait-longer vs build-ours; nothing starts by default. A release
 > watcher is armed on the pi package registry.
+
+**P1 slice table.**
+
+| Slice | State |
+|---|---|
+| P1-A1 identity + migration contract | Ready |
+| P1-A2 private harness backend seam (under D29) | Ready |
+| P1-A3 request/effect/attention durability | Ready |
+| P1-A4 activity + resume protocol | Ready |
+| P1-A5 headless + paused-human proofs | Ready after A2–A4 |
+| P1-B event-stream backend | Waiting for qualifying pi release |
+| P1-C Level-D completion + default-on + D29 evidence | Waiting for P1-B |
+
+A blocked portion never lives inside an in-progress bead — P1-B is its own
+blocked bead, and P1 is not complete before P1-C.
 
 > **Named proof addition — the paused-human restart.** P1's proof set
 > includes the flagship journey: a thread paused on an ask-user question,
@@ -235,6 +252,20 @@ depends on it.
 
 **Feeds:** the engine gate (P6), engine S1, and #1355's `ConsoleThreadRefV1`
 repair.
+
+**Split (owner ruling, 2026-08-27).**
+
+- **P2-B1 (now): semantic/cardinality prototype.** No production storage.
+  Prototype the reference shapes for #1355 against: a headless Work with no
+  conversation; one Work bound to WhatsApp + web conversations; a Job Thread
+  with one Work; several internal conversations for one customer job; a
+  stable Delivery/Outcome after conversation archive.
+- **P2-B2 (later): durability/performance/migration benchmark.** After a pi
+  or Boring event backend exists: replay cost, restart behavior, migration
+  from existing sessions, participant changes, long-thread read cost, and
+  the actual storage schema.
+
+Business semantics move now; no throwaway event-store work.
 
 ---
 

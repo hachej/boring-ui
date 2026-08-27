@@ -41,17 +41,19 @@ multi-agent layer refuses to build without.
 Detail: [`../plans/agent-runtime/`](../plans/agent-runtime/README.md) ·
 binding contract `packages/agent/docs/AGENT_GATEWAY_V0.md`.
 
-**Substrate strategy (2026-08-27).** The pi framework underneath this layer
-is mid-rewrite: its shipped v4 harness (0.84.x) provides a durable session
-core with a migration decoder, while its multi-agent and transcript layers
-remain unbuilt. Ruling: **do not rewrite around the unfinished parts; run a
-bounded core-adoption spike now** (through the gateway, alongside the
-durable-streams work), keep a thin `PiPlatform` seam so components never
-touch pi internals, and evaluate pi's lane model as one storage-spike
-candidate. Full analysis and the split adopt/track triggers:
-[`pi-v2-alignment.md`](../plans/multiagent-shell/research/pi-v2-alignment.md)
-+ the reconciled
-[`removal map`](../plans/multiagent-shell/research/pi-v2-removal-map.md).
+**Substrate strategy — post-spike, 2026-08-27.** The published pi 0.84.3
+package contains a usable durable Session storage layer but NOT the
+operational AgentHarness runtime or v3 importer the earlier analysis assumed
+— the empirical spike proved the operational surface is scaffolding, and the
+lane model fails the posts-only isolation test as shipped. Boring therefore
+does not adopt 0.84.3. Boring proceeds now with its substrate-neutral
+gateway, admission, recovery, activity, and human-pause work behind D29 (a
+private harness backend seam underneath the gateway — components never
+depend on pi). The replaceable event-stream storage slice waits for a
+qualifying pi release and is re-evaluated empirically — behavior-gated,
+never version-gated. Analysis + adoption criteria:
+[pi-v2-alignment](../plans/multiagent-shell/research/pi-v2-alignment.md) ·
+[spike report](../plans/multiagent-shell/research/pi-core-adoption-spike-report.md).
 
 ## Layer 2 — the optimization kernel (the new work)
 

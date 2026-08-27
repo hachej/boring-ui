@@ -74,20 +74,25 @@ Boring UI owns                      Pi v2 owns (when its slices are real)
 ## The seam (the actionable now-work)
 
 The map's best contribution, adoption-neutral and valuable even if we never
-jump: one stable internal interface between our surfaces and the agent
-runtime —
+jump: one PRIVATE backend interface UNDER the D29 gateway, named
+**`AgentHarnessBackend`** — replacing the earlier `PiPlatform` sketch —
 
 ```ts
-interface PiPlatform {
-  connection; sessions; chat; transcript; models; accounts
+interface AgentHarnessBackend {
+  openSession; importSession; readSnapshot; watchEvents;
+  submitPrompt; abortOperation; inspectOperation; closeSession
 }
 ```
 
 — implemented today by an adapter over our current gateway/0.80.7 path, and
-someday by a pi-v2 adapter. Components depend on the seam, never on pi
-internals. This is the concrete mechanism behind the alignment
-recommendation's "align so nothing we build fights the pi-v2 shape", and it
-is tracked as its own bead (see `pi-v2-alignment.md` §Recommendation).
+someday by a pi-v2 adapter. UI components **never** depend on this seam —
+they depend on the D29 gateway only; `AgentHarnessBackend` is the gateway's
+private runtime adapter. It must NOT own accounts, credentials, payer,
+workspace membership, model eligibility, provider secrets, billing, seat
+identity, public pagination, or public receipts — those stay above it in
+Boring. This is the concrete mechanism behind the alignment recommendation's
+"align so nothing we build fights the pi-v2 shape", and it is tracked as its
+own bead (see `pi-v2-alignment.md` §Recommendation).
 
 ## Migration sequence (adopted verbatim — it matches our ruling)
 

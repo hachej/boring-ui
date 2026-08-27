@@ -13,9 +13,10 @@
 > (live kill+reopen), caller-configurable host-volume session roots, and a
 > workable ledger-reconciliation protocol design. **Standing ruling: do
 > NOT wire pi 0.84.3 under D29; ~0 of the ~1,704 bespoke lines are
-> deletable today; durable-streams proceeds on our own schema (both
-> spikes-first conditions met); re-run the spike when pi publishes the dev
-> runtime.** The analysis below is kept as the pre-spike record.
+> deletable today; P1's substrate-neutral layer proceeds now; the
+> event-store implementation WAITS for a qualifying pi release (owner
+> ruling — 2026-09-10 is a check-in, not a build trigger); re-run the
+> spike when pi publishes the dev runtime.** The analysis below is kept as the pre-spike record.
 
 Date: 2026-08-26. Analyzed at `earendil-works/pi` dev branch commit
 `5507d76` (same-day HEAD; local read-only clone `~/projects/pi-framework`).
@@ -151,3 +152,44 @@ worked durable-harness design + typed-values store to evaluate instead of
 invent), and largest as *validation* — an independent team converged on our
 shard model, our server-owns-routing shape, and a first-class durable
 session record.
+
+## Adoption qualification criteria (behavior-gated, never version-gated)
+
+Passing these criteria — not the passage of time, and not a version number —
+is what triggers re-evaluation. 2026-09-10 is an owner check-in on progress,
+not an automatic build trigger either way.
+
+**EVENT-STORE adoption** requires all of:
+
+1. Operational prompt/resume/watch/abort in the **published** package (not a
+   dev-only branch).
+2. The published importer opens real v3 sessions.
+3. Kill+reopen preserves sequence continuity.
+4. Session roots are host-controlled.
+5. Workspace-scoped identity is imposable.
+6. Ownership fencing is adequate, or is safely superseded by our
+   single-writer protocol.
+7. D29 snapshot/cursor semantics are implementable without leaking pi types.
+8. The ledger↔session repair protocol passes every crash boundary.
+9. Adoption removes enough code/risk to justify the migration.
+
+**LANES** additionally require:
+
+1. No cross-lane read through an ordinary backend handle (or an
+   independently enforced store boundary).
+2. Exact immutable `seatId` attribution.
+3. Seat removal never rewrites history.
+4. Credentials/private context are lane-isolated.
+5. Only settled, typed posts cross lane boundaries.
+
+Passing the event-store criteria does **not** rehabilitate lanes — the two
+sets are evaluated independently.
+
+**2026-09-10 decision rule:**
+
+- A qualifying release exists → rerun the spike.
+- A dated near-term release plus strong evidence → optionally keep waiting.
+- Unpublished, or still failing → the owner explicitly chooses wait-again vs.
+  build-ours.
+
+No automatic build; no criteria-free waiting.

@@ -1,15 +1,41 @@
 # Plan — Clean, durable, stateless agents composable in workspaces
 
-Status: **DRAFT r2 — one adversarial review folded (grok-4.6). Second
-cross-model review (claude-fable-5) BLOCKED on credentials; owner gate cannot
-proceed until it runs.**
+Status: **r3 — superseded-in-part by owner rulings 2026-08-27 (recorded by
+the shell-pack session); r2 body preserved below as historical detail.**
 Spine authority: `docs/direction/DIRECTION.md` (2026-07-27, amended 2026-08-08).
 Decision 28/29 govern architecture; `packages/agent/docs/AGENT_GATEWAY_V0.md`
 governs the session contract ("code wins" rule applies); the #391 F-graph
 governs Environment execution. Where this plan and DIRECTION disagree,
 DIRECTION wins until the owner amends it.
 
-## Review log
+## r3 revision summary (2026-08-27)
+
+Per the owner's post-spike rulings, this plan is re-cut as three P1 slices
+(see `docs/plans/multiagent-shell/premises.md` P1 for the authoritative
+slice table):
+
+- **P1-A (substrate-neutral durability) — DISPATCHABLE NOW:** canonical
+  session identity memo, gateway request/effect ledger, activity-index
+  reconstruction, follow-up/attention persistence, two-store reconciliation
+  contract, private harness backend seam under D29, headless + paused-human
+  tests.
+- **P1-B (transcript/event sequence continuity) — BLOCKED** on a qualifying
+  pi runtime release plus an empirical re-spike; criteria live in
+  `docs/plans/multiagent-shell/research/pi-v2-alignment.md` §Adoption
+  qualification criteria.
+- **P1-C (Level-D completion, default-on, D29 re-evidence gate)** — after
+  P1-B.
+
+r2's open questions are superseded: identity is **workspace-scoped**, per
+the premise constraints (not the r2 global-`sessionId`-vs-`agentTypeId`
+question); the serial A1→A2→A3 sequencing and "packaging Plan B" question
+move out of this plan. The r2 owner-gate note below (missing second
+reviewer) applies to the **r2 body only** — P1-A dispatches under the
+DIRECTION amendment regardless of that stalled review.
+
+---
+
+## Review log (r2, historical)
 
 | Round | Reviewer | Verdict | Disposition |
 |---|---|---|---|

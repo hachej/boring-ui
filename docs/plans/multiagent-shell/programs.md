@@ -7,8 +7,13 @@ this page instead.
 
 ## Durable streams — restart-safe agent interactions
 
-- Plan: [`../durable-streams-plan.md`](../durable-streams-plan.md) (DRAFT r2;
-  owner gate blocked on the second cross-model review — see its review log).
+- Status: **ACTIVE** — P1-A is approved and dispatchable (DIRECTION
+  amendment 2026-08-27); P1-B is waiting for a qualifying pi release; P1-C
+  is waiting for P1-B. See `premises.md` P1 for the slice table.
+- Plan: [`../durable-streams-plan.md`](../durable-streams-plan.md) (r3; the
+  r2 body's "blocked on the second cross-model review" note applied only to
+  the r2 plan body and does not gate P1-A — see the plan's r3 revision
+  summary and its review log).
 - Ratified basis: `docs/plans/long-term/ratified/recommendations/R-33-02-durable-pause/`.
 - Acceptance bug (stays open until this ships): **#1348** — pending owner gates
   are marked abandoned when the hub restarts.
