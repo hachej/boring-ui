@@ -1,9 +1,6 @@
 import { ERROR_CODES } from '../shared/errors.js'
 import type { WorkspaceStore } from './app/types.js'
-import {
-  DefaultAgentTypeError,
-  classifyWorkspaceDefaultAgentTypeCohorts,
-} from './defaultAgentType.js'
+import { DefaultAgentTypeError } from './defaultAgentType.js'
 
 /** Postgres `undefined_table` — the workspaces relation does not exist yet. */
 const UNDEFINED_TABLE = '42P01'
@@ -21,12 +18,13 @@ function hasErrorCode(error: unknown, code: string): boolean {
 }
 
 export interface ReconcileWorkspaceDefaultAgentTypesInput {
-  readonly workspaceStore: WorkspaceStore
+  readonly workspaceStore: Pick<
+    WorkspaceStore,
+    'countNullDefaultAgentTypeIds' | 'compareAndSetNullDefaultAgentTypeId'
+  >
   readonly appId: string
   /** The validated non-NULL application default the backfill writes. */
   readonly applicationDefaultAgentTypeId: string
-  /** Regular configured Agent ids; compatibility runtimes are excluded. */
-  readonly regularAgentTypeIds: readonly string[]
   readonly log: {
     info(payload: Record<string, unknown>, message: string): void
     warn(payload: Record<string, unknown>, message: string): void
@@ -51,11 +49,11 @@ export interface ReconcileWorkspaceDefaultAgentTypesInput {
 export async function reconcileWorkspaceDefaultAgentTypes(
   input: ReconcileWorkspaceDefaultAgentTypesInput,
 ): Promise<void> {
-  const { appId, applicationDefaultAgentTypeId, regularAgentTypeIds, log, workspaceStore } = input
+  const { appId, applicationDefaultAgentTypeId, log, workspaceStore } = input
 
-  let inventoryBefore: Awaited<ReturnType<WorkspaceStore['inventoryDefaultAgentTypeIds']>>
+  let beforeNullCount: number
   try {
-    inventoryBefore = await workspaceStore.inventoryDefaultAgentTypeIds(appId)
+    beforeNullCount = await workspaceStore.countNullDefaultAgentTypeIds(appId)
   } catch (error) {
     const missingRelation = hasErrorCode(error, UNDEFINED_TABLE)
     const missingColumn = hasErrorCode(error, UNDEFINED_COLUMN)
@@ -68,16 +66,12 @@ export async function reconcileWorkspaceDefaultAgentTypes(
     return
   }
 
-  const before = classifyWorkspaceDefaultAgentTypeCohorts(inventoryBefore, regularAgentTypeIds)
   const migratedCount = await workspaceStore.compareAndSetNullDefaultAgentTypeId(
     appId,
     applicationDefaultAgentTypeId,
   )
-  const after = classifyWorkspaceDefaultAgentTypeCohorts(
-    await workspaceStore.inventoryDefaultAgentTypeIds(appId),
-    regularAgentTypeIds,
-  )
-  if (after.nullCount > 0) {
+  const afterNullCount = await workspaceStore.countNullDefaultAgentTypeIds(appId)
+  if (afterNullCount > 0) {
     throw new DefaultAgentTypeError(
       ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT,
       'Workspace default Agent reconciliation did not converge',
@@ -87,8 +81,8 @@ export async function reconcileWorkspaceDefaultAgentTypes(
     event: 'workspace.default_agent_type_id.backfill',
     appId,
     applicationDefaultAgentTypeId,
-    before,
+    beforeNullCount,
     migratedCount,
-    after,
-  }, 'workspace default Agent legacy cohorts reconciled')
+    afterNullCount,
+  }, 'workspace default Agent legacy NULL rows reconciled')
 }

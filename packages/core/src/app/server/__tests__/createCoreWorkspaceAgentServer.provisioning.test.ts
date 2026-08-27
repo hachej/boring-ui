@@ -142,8 +142,15 @@ test('core/full-app gives strong admission only to the direct Host projection', 
 
   try {
     const hostOptions = (mocks.createAgentHost as any).mock.calls.at(-1)?.[0]
-    expect(hostOptions.effectPolicy).toMatchObject({ evaluate: expect.any(Function) })
-    expect(hostOptions.effectAdmission).toBe(effectAdmission)
+    const admissionInput = {
+      key: { requestId: 'interrupt-1' },
+      operation: 'session.interrupt',
+      scope: {},
+      target: { kind: 'session' },
+    }
+    await expect(hostOptions.effectAdmission.admit(admissionInput)).resolves.toMatchObject({ type: 'accepted' })
+    expect(effectAdmission.admit).toHaveBeenCalledWith(admissionInput)
+    expect(hostOptions).not.toHaveProperty('effectPolicy')
     expect(hostOptions).not.toHaveProperty('admitEffect')
     expect(mocks.hostRegisterDirectRoutes).toHaveBeenCalledOnce()
   } finally {

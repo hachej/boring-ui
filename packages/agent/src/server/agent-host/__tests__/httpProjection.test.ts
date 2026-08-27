@@ -15,7 +15,7 @@ import {
 } from '../../../shared/index'
 import type { PiChatSessionService } from '../../../core/piChatSessionService'
 import { ErrorCode } from '../../../shared/error-codes'
-import type { AgentHostGateway, AgentHostHandle } from '../types'
+import type { AgentHostHandle } from '../types'
 import { createAgentHostRoutes } from '../httpProjection'
 import { AgentSessionActivityIndex } from '../sessionInventory'
 
@@ -48,7 +48,7 @@ const event: AgentSessionEvent = {
   event: { type: 'agent-start', seq: 8, turnId: 'turn-1' },
 }
 
-class FakeGateway implements AgentHostGateway {
+class FakeGateway implements AgentGateway {
   readonly calls: Array<{ method: string; input: unknown }> = []
   events: AgentSessionEvent[] = [event]
   sendError: unknown
@@ -82,22 +82,6 @@ class FakeGateway implements AgentHostGateway {
 
   async deleteSession(input: Parameters<AgentGateway['deleteSession']>[0]) {
     this.calls.push({ method: 'deleteSession', input })
-  }
-
-  async sendSession(input: {
-    readonly scope: AuthorizedAgentScope
-    readonly ref: AgentSessionRef
-    readonly command: IdempotentAgentSend
-  }) {
-    this.calls.push({ method: 'sendSession', input })
-    if (this.sendError) throw this.sendError
-    return {
-      accepted: true as const,
-      cursor: 9,
-      disposition: input.command.kind,
-      clientNonce: input.command.clientNonce,
-      ...(input.command.kind === 'followup' ? { clientSeq: input.command.clientSeq } : {}),
-    }
   }
 
   async connectSession(input: Parameters<AgentGateway['connectSession']>[0]): Promise<AgentSessionConnection> {
@@ -351,34 +335,8 @@ describe('addressed Agent Host HTTP projection', () => {
     expect(gateway.calls).toEqual(expect.arrayContaining([
       { method: 'listSessions', input: { scope, agentTypeId: 'alpha', cursor: undefined, limit: 25 } },
       { method: 'createSession', input: { scope, agentTypeId: 'alpha', requestId: 'create-1', title: 'Created', resumeSessionId: 'persisted-empty' } },
-      {
-        method: 'sendSession',
-        input: {
-          scope,
-          ref,
-          command: expect.objectContaining({
-            kind: 'prompt',
-            requestId: 'prompt-1',
-            requireIdle: true,
-            attachments: [expect.objectContaining({ path: 'uploads/chart.png' })],
-          }),
-        },
-      },
-      {
-        method: 'sendSession',
-        input: {
-          scope,
-          ref,
-          command: {
-            kind: 'followup',
-            requestId: 'follow-1',
-            clientNonce: 'nonce-f',
-            content: 'next',
-            displayContent: 'Next',
-            clientSeq: 3,
-          },
-        },
-      },
+      { method: 'send', input: expect.objectContaining({ kind: 'prompt', requestId: 'prompt-1', requireIdle: true, attachments: [expect.objectContaining({ path: 'uploads/chart.png' })] }) },
+      { method: 'send', input: { kind: 'followup', requestId: 'follow-1', clientNonce: 'nonce-f', content: 'next', displayContent: 'Next', clientSeq: 3 } },
       { method: 'interrupt', input: { requestId: 'interrupt-1', queueAction: 'hold' } },
       { method: 'stop', input: { requestId: 'stop-1' } },
       { method: 'clearQueue', input: { requestId: 'clear-1', clientNonce: 'nonce-f', clientSeq: 3 } },
@@ -522,7 +480,6 @@ describe('addressed Agent Host HTTP projection', () => {
       [AgentGatewayErrorCode.AGENT_SESSION_REPLAY_GAP, 409],
       [AgentGatewayErrorCode.AGENT_SESSION_CURSOR_AHEAD, 409],
       [AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED, 503],
-      [AgentGatewayErrorCode.AGENT_SHARED_ENVIRONMENT_UNAVAILABLE, 503],
     ] as const) {
       const gateway = new FakeGateway()
       gateway.connectSession = vi.fn(async () => {
@@ -545,8 +502,7 @@ describe('addressed Agent Host HTTP projection', () => {
     })
     expect(response.statusCode).toBe(409)
     expect(response.json()).toEqual({ error: { code: AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE, message: 'session is running' } })
-    expect(gateway.calls).not.toContainEqual({ method: 'connectSession', input: expect.anything() })
-    expect(gateway.calls).not.toContainEqual({ method: 'close', input: expect.anything() })
+    expect(gateway.calls).toContainEqual({ method: 'close', input: ref })
     await invalidState.app.close()
   })
 
@@ -565,8 +521,7 @@ describe('addressed Agent Host HTTP projection', () => {
     expect(response.json()).toEqual({
       error: { code: ErrorCode.enum.PAYMENT_REQUIRED, message: 'insufficient credit' },
     })
-    expect(gateway.calls).not.toContainEqual({ method: 'connectSession', input: expect.anything() })
-    expect(gateway.calls).not.toContainEqual({ method: 'close', input: expect.anything() })
+    expect(gateway.calls).toContainEqual({ method: 'close', input: ref })
     await app.close()
   })
 

@@ -24,11 +24,6 @@ export const DEFAULT_AGENT_FLEET: readonly AgentHostAgentSpec[] = Object.freeze(
   }),
 ])
 
-/** True only for the canonical built-in spec, before a host binds ordinary plugins. */
-export function isBuiltInDefaultAgentSpec(agent: AgentHostAgentSpec): boolean {
-  return agent === DEFAULT_AGENT_FLEET[0]
-}
-
 export interface ResolveDefaultAgentFleetOptions {
   /** Repository root used to resolve `.agents/{factory,skills}`. Defaults to `process.cwd()`. */
   readonly repositoryRoot?: string

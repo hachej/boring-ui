@@ -209,7 +209,7 @@ vi.mock('../../../server/db/index.js', () => ({
   }),
   PostgresUserStore: class PostgresUserStore {},
   PostgresWorkspaceStore: class PostgresWorkspaceStore {
-    async inventoryDefaultAgentTypeIds() { return [] }
+    async countNullDefaultAgentTypeIds() { return 0 }
     async compareAndSetNullDefaultAgentTypeId() { return 0 }
   },
 }))
@@ -217,6 +217,7 @@ vi.mock('../../../server/db/index.js', () => ({
 vi.mock('../../../server/config/index.js', () => ({
   loadConfig: async () => ({
     appId: 'test-app',
+    defaultAgentTypeId: 'default',
     cors: { origins: ['http://localhost:3000'], credentials: true },
     auth: { url: 'http://localhost:3000' },
     encryption: { workspaceSettingsKey: 'test-key' },

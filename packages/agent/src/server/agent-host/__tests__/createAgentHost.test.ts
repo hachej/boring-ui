@@ -914,9 +914,7 @@ describe('createAgentHost', () => {
     })
     expect(admissionMutation.statusCode).toBe(409)
     expect(admissionMutation.json()).toMatchObject({
-      // Post-admission resource preparation still precedes beginEffect, so a
-      // failed immutable-input fence is a stable non-mutation conflict.
-      error: { code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT },
+      error: { code: AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN },
     })
     expect(applyReload).toHaveBeenCalledTimes(2)
     resourceInputsValid = true
