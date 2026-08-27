@@ -829,6 +829,55 @@ test('core/full-app can enable plugin CLI provisioning for remote plugin editing
   }
 })
 
+test('core/full-app keeps remote extension isolation when getAgentPi is invoked', async () => {
+  mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
+    runtimePlugins: [],
+    provisioningContributions: [],
+    agentOptions: {
+      extraTools: [],
+      pi: { additionalSkillPaths: [], packages: [] },
+      systemPromptAppend: undefined,
+    },
+    preservedUiStateKeys: [],
+    routeContributions: [],
+  })
+
+  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
+  const app = await createCoreWorkspaceAgentServer({
+    config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+    workspaceRoot: '/tmp/full-app-workspaces',
+    runtimeModeAdapter: {
+      id: 'vercel-sandbox',
+      getRuntimeLayoutRoot: () => '/workspace',
+      runtimeHost: mocks.runtimeHost as any,
+      create: vi.fn(),
+    },
+    // Runtime callers are untyped; ignore unsupported fields rather than
+    // allowing an agent-specific grant to relax remote isolation.
+    getAgentPi: async () => ({ noExtensions: false } as never),
+    serveFrontend: false,
+  })
+
+  try {
+    const hostOptions = (mocks.createAgentHost as any).mock.calls[0]?.[0]
+    const projection = (mocks.hostRegisterDirectRoutes as any).mock.calls[0]?.[0]
+    const scope = await projection.authorizeAgentRequest(fakeRequest('workspace-a', 'user-a'))
+    await expect(hostOptions.resolveAuthorizedAgentRuntimeScope({
+      authorizedScope: scope,
+      verifiedClaim: { workspaceScopeId: 'workspace-a', authSubjectId: 'user-a' },
+      agentTypeId: 'remote-agent',
+      environment: {
+        runtimeWorkspaceId: 'workspace-a',
+        workspaceRoot: '/tmp/full-app-workspaces/workspace-a',
+        placementIdentity: 'workspace-a',
+        provisioningFingerprint: 'test-provisioning',
+      },
+    })).resolves.toMatchObject({ pi: { noExtensions: true } })
+  } finally {
+    await app.close()
+  }
+})
+
 test('core/full-app composition honors BORING_AGENT_WORKSPACE_ROOT for workspace provisioning while keeping plugin collection rooted at cwd', async () => {
   mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
     runtimePlugins: [],

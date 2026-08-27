@@ -222,6 +222,12 @@ export interface CoreWorkspaceBridgeExtraToolsContext {
 
 export type CoreWorkspaceBridgePiContext = CoreWorkspaceBridgeExtraToolsContext
 
+/** Declarative Pi resources a trusted host may grant to one authorized Agent seat. */
+export type AgentPiCapabilityOptions = Pick<
+  PiHarnessOptions,
+  'additionalSkillPaths' | 'packages' | 'extensionPaths'
+>
+
 export interface CreateCoreWorkspaceAgentServerOptions {
   workspaceRoot?: string
   sessionId?: string
@@ -268,7 +274,7 @@ export interface CreateCoreWorkspaceAgentServerOptions {
     runtimeMode: RuntimeModeId
     workspaceFsCapability?: RuntimeModeAdapter['workspaceFsCapability']
     authSubject: string
-  }) => PiHarnessOptions | undefined | Promise<PiHarnessOptions | undefined>
+  }) => AgentPiCapabilityOptions | undefined | Promise<AgentPiCapabilityOptions | undefined>
   getSessionNamespace?: (ctx: {
     workspaceId: string
     workspaceRoot: string
@@ -1683,17 +1689,21 @@ export async function createCoreWorkspaceAgentServer(
         options.getAgentExtraTools?.(context) ?? [],
         options.getAgentPi?.(context),
       ])
-      if (agentPi?.extensionFactories?.length || agentPi?.getHotReloadableResources || agentPi?.locateSkillResource) {
-        throw new Error('getAgentPi may configure only declarative Pi resources; use trusted host extensionPaths instead of executable callbacks')
-      }
       if (agentTools.length === 0 && !agentPi) return runtime
 
       const extraTools = [...(runtime.extraTools ?? []), ...agentTools]
-      const pi = mergePiOptions(runtime.pi, agentPi)
+      const addressedPi = agentPi && {
+        additionalSkillPaths: agentPi.additionalSkillPaths,
+        packages: agentPi.packages,
+        extensionPaths: agentPi.extensionPaths,
+      }
+      const pi = mergePiOptions(runtime.pi, addressedPi)
       const addressedResourceFence = await createPiResourceDigestFence(async () => createPiResourceDigestInput({
         piCwd: environment.workspaceRoot,
-        noSkills: agentPi?.noSkills,
-        noContextFiles: agentPi?.noContextFiles,
+        // Addressed options are the explicit resources below; do not scan
+        // ambient workspace skills/context while building this supplemental fence.
+        noSkills: true,
+        noContextFiles: true,
         resourceSets: [{
           additionalSkillPaths: agentPi?.additionalSkillPaths ?? [],
           packages: agentPi?.packages ?? [],

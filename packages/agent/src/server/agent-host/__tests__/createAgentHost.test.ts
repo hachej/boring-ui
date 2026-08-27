@@ -938,11 +938,17 @@ describe('createAgentHost', () => {
     const changedResources = await app.inject({
       method: 'POST',
       url: '/api/v1/agents/alpha/reload',
-      payload: { requestId: 'reload-direct', sessionId },
+      payload: { requestId: 'reload-changed-resources', sessionId },
     })
     expect(changedResources.statusCode).toBe(409)
     expect(changedResources.json()).toMatchObject({
-      error: { code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT },
+      error: {
+        code: AgentGatewayErrorCode.AGENT_RUNTIME_RESTART_REQUIRED,
+        details: {
+          currentInputDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+          candidateInputDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+        },
+      },
     })
     expect(reloadSession).toHaveBeenCalledTimes(2)
     expect(applyReload).toHaveBeenCalledTimes(3)
