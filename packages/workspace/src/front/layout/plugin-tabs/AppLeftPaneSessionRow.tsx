@@ -114,6 +114,7 @@ export function AppSessionRow({
   onOpenDetached,
   onTogglePinned,
   onRename,
+  onToggleArchived,
   onDelete,
 }: {
   session: AppLeftPaneSession
@@ -132,6 +133,8 @@ export function AppSessionRow({
   onOpenDetached?: (id: string) => void
   onTogglePinned?: (id: string) => void
   onRename?: (id: string, title: string) => void | Promise<unknown>
+  /** Visibility only: the chat leaves the list, never the session volume. */
+  onToggleArchived?: (id: string, archived: boolean) => unknown
   onDelete?: (id: string) => unknown
 }) {
   const title = session.title || "Untitled"
@@ -141,9 +144,10 @@ export function AppSessionRow({
   const canCopy = session.ephemeral !== true
   const splitAvailable = state === "normal" && actionsAvailable && canSplit && Boolean(onOpenAsPane)
   const pinAvailable = canPin && Boolean(onTogglePinned)
+  const archiveAvailable = Boolean(onToggleArchived) && session.ephemeral !== true
   // Split left the menu for its own hover shortcut, so it no longer justifies
   // opening one — a menu with only that entry would render empty.
-  const showMenu = pinAvailable || canCopy || renameAvailable || Boolean(onDelete)
+  const showMenu = pinAvailable || canCopy || renameAvailable || archiveAvailable || Boolean(onDelete)
   // A chat already on stage has nothing to gain from the quick overlay —
   // placement shortcuts only apply to chats that are not open yet.
   const detachAvailable = state === "normal" && actionsAvailable && Boolean(onOpenDetached)
@@ -312,8 +316,10 @@ export function AppSessionRow({
             canRename={renameAvailable}
             canPin={pinAvailable}
             pinned={pinned}
+            archived={session.archived === true}
             onTogglePinned={onTogglePinned}
             onRename={rename.begin}
+            {...(archiveAvailable ? { onToggleArchived } : {})}
             onDelete={onDelete}
             onOpenChange={setMenuOpen}
           />

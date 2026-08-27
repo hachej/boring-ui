@@ -78,6 +78,18 @@ export class AgentSessionInventory {
     return await resolved.store.list({ workspaceId: claim.workspaceScopeId }, options)
   }
 
+  async setArchived(
+    agentTypeId: string,
+    scope: AuthorizedAgentScope,
+    claim: VerifiedAgentScopeClaim,
+    sessionId: string,
+    archived: boolean,
+  ): Promise<SessionSummary> {
+    const resolved = await this.resolveStore(agentTypeId, scope, claim)
+    if (!resolved) throw new Error(`Session not found: ${sessionId}`)
+    return await resolved.store.setArchived({ workspaceId: claim.workspaceScopeId }, sessionId, archived)
+  }
+
   async resolveSessionRuntime(
     agentTypeId: string,
     scope: AuthorizedAgentScope,

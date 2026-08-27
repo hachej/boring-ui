@@ -642,6 +642,7 @@ function legacyAgentGateway(agent: Agent): AgentGateway {
     async listSessions() { return { sessions: [] } },
     async readSessionState() { throw new Error('not implemented') },
     async renameSession() { throw new Error('not implemented') },
+    async setSessionArchived() { throw new Error('not implemented') },
     async deleteSession() {},
     async close() {},
   }
