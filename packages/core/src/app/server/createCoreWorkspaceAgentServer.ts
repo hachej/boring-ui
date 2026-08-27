@@ -1839,7 +1839,8 @@ export async function createCoreWorkspaceAgentServer(
       log: app.log,
     })
 
-    if (options.canEnrollAgent) {
+    const canEnrollAgent = options.canEnrollAgent
+    if (canEnrollAgent) {
       app.get('/api/v1/workspaces/:workspaceId/agent-seats', async (request, reply) => {
         const userId = request.user?.id
         if (!userId) return reply.code(401).send({ error: 'authentication required' })
@@ -1896,7 +1897,7 @@ export async function createCoreWorkspaceAgentServer(
         }
         let eligible: boolean
         try {
-          eligible = await options.canEnrollAgent({ workspaceId, userId, agentTypeId })
+          eligible = await canEnrollAgent({ workspaceId, userId, agentTypeId })
         } catch {
           return reply.code(503).send({ error: 'agent enrollment policy is unavailable' })
         }
