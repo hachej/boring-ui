@@ -49,9 +49,11 @@ lane model fails the posts-only isolation test as shipped. Boring therefore
 does not adopt 0.84.3. Boring proceeds now with its substrate-neutral
 gateway, admission, recovery, activity, and human-pause work behind D29 (a
 private harness backend seam underneath the gateway — components never
-depend on pi). The replaceable event-stream storage slice waits for a
-qualifying pi release and is re-evaluated empirically — behavior-gated,
-never version-gated. Analysis + adoption criteria:
+depend on pi). The event-stream storage slice is built on
+**Boring's own schema** behind that seam — the pi wait gate was removed by
+owner ruling 2026-08-27 (RECONCILIATION §9c); a future pi release is adopted
+only if it beats the behavior criteria **and** the migration cost of a
+working backend. Analysis + criteria:
 [pi-v2-alignment](../plans/multiagent-shell/research/pi-v2-alignment.md) ·
 [spike report](../plans/multiagent-shell/research/pi-core-adoption-spike-report.md).
 
@@ -68,10 +70,12 @@ Detail: [`../plans/long-term/ratified/VISION.md`](../plans/long-term/ratified/VI
 ## Layer 3 — the product surface (specified, premise-gated)
 
 The **multi-agent workspace shell**: Search on top, then Inbox / Work /
-Agents / Library over one workspace. A **Thread is one job** — several
-agents inside what looks like an ordinary chat, one composer, workers hidden
-behind an orchestrator's voice, per-agent logs demoted to drill-down
-provenance. Threads archive, they never die. The embedded workbench is one
+Agents / Library over one workspace. A **Thread is one job** — the durable
+job root, binding zero or more conversations (RECONCILIATION §9a). In
+Meridian it reads like a Slack thread: **one composer, explicit
+specialists** — several named agents visibly authoring posts, with per-agent
+work logs one drill-down deeper (§9b; the earlier "workers hidden behind one
+voice" framing is retired). Threads archive, they never die. The embedded workbench is one
 component mounted four ways (thread canvas, evidence viewer, file popover,
 standalone Library). Two deliberate boundaries: artifacts are **shared**
 through the workspace; conversation is **posts-only** — agents share the
@@ -104,14 +108,16 @@ Detail: the Seneca repository's `docs/COMMERCIAL-ROADMAP.md`.
 
 Honesty about open questions is part of the vision:
 
-- **Thread storage shape** — one first-class record vs a projection over run
-  records: goes to a dedicated spike with a competitor study before the
-  engine's first slice.
+- **Thread storage shape** — first-class Thread stream vs a projection over
+  Session records: goes to the dedicated shape spike (the competitor study
+  is done; the value-root half was ruled — RECONCILIATION §9a).
 - **Relay vs native binding vs blackboard** — how agent turns technically
   hop: decided after durable streams land; the ratified default is the
   native in-process binding unless an explicit amendment says otherwise.
-- **The orchestrator's Seat** — the surface promises one voice; the engine
-  must staff it or the owner must amend the promise.
+
+*(Resolved since first writing: the orchestrator's Seat — the owner amended
+the promise to multi-author transcripts, and the orchestrator holds its own
+Seat like any named speaker — §9b.)*
 
 The complete conflict record and how each was resolved:
 [`../plans/agent-runtime/alignment/CONTRADICTIONS.md`](../plans/agent-runtime/alignment/CONTRADICTIONS.md).

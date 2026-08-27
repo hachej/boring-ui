@@ -39,7 +39,7 @@ is needed:
 | **Agent** (`agentId` + `definitionDigest`) | ratified AgentRef (RECONCILIATION Q — `agentId=agentTypeId` initially, `definition.digest` exists) | ratified, opportunistic P0 |
 | **Run** ("runId minted before accepted execution, stable across metering/artifacts/evals/outcomes") | **ratified verbatim: `RunId := RequestKey`**, minted at envelope admission (C6/D-c) | ratified; C6 scheduled |
 | **Workspace** (durable governed world) | workspace = composition + view + trusted plugin host (B7) | ratified |
-| **Thread** (resumable work, not chat) | **= Session** under A2a (per-session record shard — shard *shape* suspended pending the thread-storage spike, RECONCILIATION §8). One noun, two names — Thread is the product name, Session the runtime name; do not create two objects | naming ruling below |
+| **Thread** (resumable work, not chat) | **AMENDED 2026-08-27 (RECONCILIATION §9a): Thread = durable job root; Session = one runtime conversation; 1 Thread : 0..n Sessions.** The earlier "= Session, one object" reading is superseded. Timeline storage *shape* (first-class stream vs projection over Sessions) stays spiked | R-c below, as amended |
 | **Mount** (governed namespace) | multi-FS bindings (boring-bash), #1123 mount sets, environment leases — Mount is their semantic promotion | seam exists; extraction when pulled |
 | **Authority** (host-issued, non-forgeable, only narrows) | R1 + `AuthorizedAgentScope` + A7 issuer + A8 revocation + effective-capability ∩ rule | ratified; A7/A8 scheduled |
 | **Capability** (define once, project to surfaces, `effect` classified) | R1 authority/mechanism + the agent-native harvest; effect classes map to our admission model (`observe/propose` free; `mutate/external-effect` need authority — and `external-effect` is exactly where C6's `unknown-outcome` lives) | adopt; D-2/D31 text |
@@ -119,7 +119,10 @@ catalog), which *is* the seat ledger. Deferring Seat would leave C7's rows
 unnamed and force a later migration. Seat type = leaf; lifecycle = workspace
 (ratified Q4).
 
-**R-c. Thread vs Session.** One object. `Thread` is the product/kernel name;
+**R-c. Thread vs Session.** *(Amended 2026-08-27 — RECONCILIATION §9a: two
+objects. Thread = the durable job root, one per job; Session = one runtime
+conversation; a Thread binds 0..n Sessions. The paragraph below is the
+superseded 08-24 reading, kept for the audit trail.)* One object. `Thread` is the product/kernel name;
 Session is the runtime implementation it recasts (A2a per-session record = the
 thread's record). The V2 doc's warning stands: a Thread is not a Pi session,
 transcript, or tab — it *owns* one record and many Runs. *(Storage-shape note,
@@ -206,7 +209,9 @@ AR1-003/004 · result → runId + artifacts[] · P0.1–0.6 (RCE first) · P-1 �
 > surface build:** durable streams (Level D default-on) before the multi-agent
 > engine, `seatId`-in-C7 audit-grade attribution before participant display, and
 > the first ratified View slice before Library saved Views. The thread storage
-> model is explicitly NOT ratified and is routed to a spike.
+> model is explicitly NOT ratified and is routed to a spike. *(See the
+> 2026-08-27 §9 update: transcript presentation is now multi-author, and the
+> storage value-root is ruled — only the shape remains spiked.)*
 
 P1 (from reconciliation) interleaves: ViewDescriptor + artifact UX land with K2
 (candidates need Views to be inspected/approved).

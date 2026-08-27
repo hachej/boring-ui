@@ -257,7 +257,9 @@ consumption modes). Those surfaces must reuse the same Work, operation,
 authority, artifact, decision, and evidence semantics — never parallel
 architectures.
 
-- **Transparent multi-agent Threads.** A Thread looks like an ordinary chat with
+- **Transparent multi-agent Threads.** *(Presentation superseded 2026-08-27
+  by §9b: the transcript is multi-author — one composer, explicit
+  specialists; the "voice, not a Seat" clause below is retired.)* A Thread looks like an ordinary chat with
   several agents inside it, behind **one composer**. Workers are hidden behind
   the orchestrator: the user addresses a *voice*, not a *Seat*. Per-Seat work
   logs are drill-down provenance, not the primary surface — the §7 projection
@@ -325,11 +327,63 @@ them. Named preconditions, in the sequencing sense:
 loopback, and creates no shared-runtime room; §7's non-change clause stands
 unaltered. The **thread storage model is explicitly NOT ratified here** — it is
 an open technical question routed to a spike, and nothing in (a) presumes its
-outcome.
+outcome. *(Update 2026-08-27, §9a: the value-root half has since been ruled —
+Thread = job root, 0..n Sessions; only the storage shape remains spiked.)*
 
 **Where the program lives.** The premise program, its sizing and its briefs are
 planning material, not ratified text: `docs/plans/multiagent-shell/premises.md`,
 tracked in [#1409](https://github.com/hachej/boring-ui/pull/1409). The list
 above is **dependency rationale only** — the single executable ordering and
 merge queue live in `docs/direction/DIRECTION.md`, which alone answers "when".
-Merging #1409 ratifies this §8.
+Merging #1409 ratifies this §8 *(merged 2026-08-27 — §8 is ratified)*.
+
+## 9. OWNER RULING — 2026-08-27 (second grill; Thread/Session split, transcript authorship, pi gate)
+
+Ruled in the owner grill of 2026-08-27 (post-#1409). Three rulings; each names
+what it supersedes. Recorded here per rule 11 — ontology changes land in the
+ratified pack, never silently.
+
+**(a) Thread/Session split — R-c amended.** R-c's "Thread = Session, one
+object" clause is **amended**: they are now two objects.
+
+> **A Thread is the durable job root** — the product noun for one unit of
+> customer work ("resumable work, not chat", as VISION already says). **A
+> Session is one runtime conversation.** One Thread binds **zero or more
+> Sessions** (headless Work = a Thread with none; a job spanning channels or
+> re-opened conversations = a Thread with several). "One Thread per job"
+> stands; its converse does not — a job is not limited to one conversation.
+> "Channel" stays reserved for transport/ingress (§7 naming ruling,
+> unchanged). Seats attribute Runs, unchanged.
+
+This resolves the **value-root half** of the P2 storage question by ruling,
+not by spike: the "Work + conversation bindings" candidate is adopted **at
+the ontology level with Thread as the root noun** — no new "Work" kernel noun
+is minted, because ratified Thread already means resumable work. The
+requirements that force this were already ratified (headless jobs, one job
+across WhatsApp + web, economics surviving conversation archive/erasure); a
+three-way spike over two pre-excluded candidates would have been ceremony.
+What **remains spiked** is only the storage **shape**: whether the Thread's
+timeline is a first-class durable stream or a projection over its Sessions'
+records (premises P2, rescoped).
+
+**(b) Transcript authorship — multi-author.** The §8 surface language
+"workers hidden behind the orchestrator's voice" is **superseded**. Meridian's
+Thread transcript shows **several named agents**: one composer for the human,
+but specialist agents visibly author their own posts (name chips,
+joined/handoff/left markers), consistent with §7's collapsed multi-seat
+timeline. The formula is **"one job, one composer, explicit specialists"** —
+"one voice" is retired. Consequence: the orchestrator is a named speaker like
+any other and therefore **holds its own Seat** (closing the known
+orchestrator-Seat gap in the direct way). Audit-grade per-Run `seatId` (§8
+precondition 2) is unchanged and now also backs the visible chips.
+
+**(c) Pi wait gate removed.** The "P1-B waits for a qualifying pi release /
+2026-09-10 owner check-in" construction is **removed as a gate** (sequencing
+detail lives in DIRECTION). The event-stream backend proceeds on Boring's own
+schema behind the `AgentHarnessBackend` seam; a future pi release is adopted
+only if it demonstrably beats the migration cost against the existing
+behavior criteria. No ontology change; recorded here because §8's program
+text referenced the wait.
+
+**Explicit non-change.** No A2A loopback, no shared-runtime room; §7's
+non-change clause stands. Posts-only and artifact-sharing boundaries stand.

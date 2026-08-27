@@ -16,11 +16,12 @@ individual dependency edges, not one serial order — rationale in
 1. **[durable-streams]** — conversations a client can always resume,
    default-on. The keystone: the engine does not ship without it. Tracked as
    bead `wt-391-forward-9p50`.
-2. **[thread-storage-spike]** — decide what a multi-seat Thread *is* in
-   storage, with a competitor study. Its research half may run in parallel; the
-   technical half consumes P1a's durable-stream shape and blocks the engine's
-   first slice.
-3. **[seat-audit-attribution]** — an independent P3a → P3b lane for audit-grade who-said-what; display-only attribution
+2. **[thread-storage-spike]** — decide the Thread timeline's storage
+   **shape** (first-class stream vs projection over Sessions). The value root
+   is RULED (2026-08-27, RECONCILIATION §9a: Thread = job root, 0..n
+   Sessions) and the competitor study is DONE; the shape spike consumes
+   P1-A's durable-stream shape and blocks the engine's first slice.
+3. **[seat-audit-attribution]** — an independent `.14.1` → `.14.2` lane for audit-grade who-said-what; display-only attribution
    is rejected as a shipping position.
 4. **[kernel-views]** — the first ratified View slice; Library saved views
    wait for it.
@@ -36,11 +37,11 @@ core-adoption spike** (`wt-391-forward-9n6w`) verdict: do not wire 0.84.3 —
 the published harness is a `HarnessNotImplemented` scaffold, the v3 decoder is
 dev-only, and lanes fail the posts-only isolation test. The **competitor
 research half** (`shell-ngfs.13.1`) is also done: Linear/Intercom stand as
-existence proofs for the work-record candidate. [durable-streams]'s P1
+existence proofs for the value-root ontology since ruled in §9a. [durable-streams]'s P1
 substrate-neutral work — plus the private harness backend seam under D29 —
-starts NOW, behind the merge-queue preflight. The event-store slice WAITS for
-a qualifying pi release; 2026-09-10 is an owner check-in, not a build
-trigger. The **headless golden path** (API/CLI job in → agent runs →
+starts NOW, behind the merge-queue preflight. **Second grill 2026-08-27: the
+pi wait on the event-store slice is REMOVED** (RECONCILIATION §9c) — P1-B
+builds Boring's own event backend behind the seam once the seam (A2) lands. The **headless golden path** (API/CLI job in → agent runs →
 artifact → decision → restart survives → delivery) runs **parallel, never
 gating** substrate-free shell chrome — but it is required evidence for P1
 completion, so it indirectly gates every Thread-view slice that consumes P1.
@@ -49,8 +50,8 @@ completion, so it indirectly gates every Thread-view slice that consumes P1.
 
 | Program | Waits on | Detail |
 |---|---|---|
-| Multi-agent engine mechanics (Job Threads) | [durable-streams] + both [thread-storage-spike] outputs, then its post-evidence owner gate | [`job-thread-plan.md`](../plans/multiagent-shell/job-thread-plan.md) |
-| Audit-grade attribution substrate | independent P3a host catalogue/envelope → P3b provenance projection | [`premises.md`](../plans/multiagent-shell/premises.md) P3 |
+| Multi-agent engine mechanics (Job Threads) | [durable-streams] + both [thread-storage-spike] outputs, then its post-evidence owner gate | [relay candidate (historical)](../plans/multiagent-shell/research/candidates/relay-projection-v0-job-thread-plan.md) — new engine plan post-shape-spike |
+| Audit-grade attribution substrate | independent `.14.1` host catalogue/envelope → `.14.2` provenance projection | [`premises.md`](../plans/multiagent-shell/premises.md) P3 |
 | Thread rendering | join of [durable-streams], [thread-storage-spike], and [seat-audit-attribution] | [`shell-plan.md`](../plans/multiagent-shell/shell-plan.md) thread-view slice |
 | Other shell surfaces beyond early chrome | their slice-specific owner-gate and Bead dependencies; no blanket “wait for the engine” rule | [`shell-plan.md`](../plans/multiagent-shell/shell-plan.md) |
 | Chief-of-staff consumer | the exact shell/engine surfaces each delta consumes | [`chief-of-staff-delta.md`](../plans/multiagent-shell/chief-of-staff-delta.md) |
