@@ -43,6 +43,33 @@ interface SandboxLifecycleLogger {
 
 export type ExpiredSandboxPolicy = 'recreate' | 'error'
 
+export class SandboxHandlePersistenceError extends AggregateError {
+  readonly workspaceId: string
+  readonly sandboxId: string
+  readonly remoteDeleted: boolean
+  readonly storeCleared: boolean
+
+  constructor(init: {
+    workspaceId: string
+    sandboxId: string
+    persistenceError: unknown
+    cleanupErrors: unknown[]
+    remoteDeleted: boolean
+    storeCleared: boolean
+  }) {
+    super(
+      [init.persistenceError, ...init.cleanupErrors],
+      `failed to persist fresh disposable sandbox handle for ${init.workspaceId}; remoteDeleted=${init.remoteDeleted}; storeCleared=${init.storeCleared}`,
+      { cause: init.persistenceError },
+    )
+    this.name = 'SandboxHandlePersistenceError'
+    this.workspaceId = init.workspaceId
+    this.sandboxId = init.sandboxId
+    this.remoteDeleted = init.remoteDeleted
+    this.storeCleared = init.storeCleared
+  }
+}
+
 export class SandboxHandleUnavailableError extends Error {
   readonly code = 'SANDBOX_EXPIRED' as const
   readonly statusCode = 410
@@ -288,6 +315,7 @@ async function createFresh(
   vercel: VercelSandboxClient,
   logger?: SandboxLifecycleLogger,
   allowExisting = true,
+  cleanupFreshPersistenceFailure = false,
 ): Promise<VercelSandboxHandle> {
   let sandbox: VercelSandboxHandle
   let sourceType: 'empty' | 'snapshot' | 'tarball' = 'empty'
@@ -326,7 +354,49 @@ async function createFresh(
     sourceSnapshotId: snapshotId ?? null,
   })
 
-  return await persistAndCache(workspaceId, sandbox, previous, store)
+  try {
+    return await persistAndCache(workspaceId, sandbox, previous, store)
+  } catch (persistenceError) {
+    if (!cleanupFreshPersistenceFailure) throw persistenceError
+
+    const sandboxId = getSandboxIdentifier(sandbox)
+    const cleanupErrors: unknown[] = []
+    let remoteDeleted = false
+    let storeCleared = false
+    try {
+      await sandbox.delete()
+      remoteDeleted = true
+    } catch (cleanupError) {
+      cleanupErrors.push(cleanupError)
+    }
+    sandboxesByWorkspaceId.delete(workspaceId)
+    try {
+      await store.delete(workspaceId)
+      storeCleared = true
+    } catch (cleanupError) {
+      cleanupErrors.push(cleanupError)
+    }
+    logger?.warn?.('[sandbox] fresh disposable handle persistence failed', {
+      workspaceId,
+      sandboxId,
+      remoteDeleted,
+      storeCleared,
+      cleanupErrorCount: cleanupErrors.length,
+      requiresRemoteReconciliation: !remoteDeleted,
+      persistenceError: persistenceError instanceof Error
+        ? persistenceError.message
+        : String(persistenceError),
+      cleanupErrors: cleanupErrors.map((error) => error instanceof Error ? error.message : String(error)),
+    })
+    throw new SandboxHandlePersistenceError({
+      workspaceId,
+      sandboxId,
+      persistenceError,
+      cleanupErrors,
+      remoteDeleted,
+      storeCleared,
+    })
+  }
 }
 
 export interface ResolveSandboxHandleOptions {
@@ -374,6 +444,7 @@ export async function resolveSandboxHandle(
         vercel,
         opts?.logger,
         false,
+        true,
       )
     })()
     inFlightResolutionsByWorkspaceId.set(workspaceKey, resolution)

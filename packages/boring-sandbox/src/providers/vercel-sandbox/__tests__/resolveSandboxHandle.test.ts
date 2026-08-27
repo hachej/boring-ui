@@ -6,6 +6,7 @@ import type {
   SandboxHandleStore,
 } from '@hachej/boring-agent/shared'
 import {
+  SandboxHandlePersistenceError,
   SandboxHandleUnavailableError,
   type VercelSandboxClient,
   resetSandboxHandleCacheForTests,
@@ -15,6 +16,7 @@ import {
 type MutableSandbox = VercelSandbox & {
   setStatus(next: 'running' | 'stopped' | 'failed' | 'aborted'): void
   stop(opts?: { signal?: AbortSignal; blocking?: boolean }): Promise<unknown>
+  delete(opts?: { signal?: AbortSignal }): Promise<void>
 }
 
 function createSandboxHandle(
@@ -26,6 +28,7 @@ function createSandboxHandle(
 ): MutableSandbox {
   let status = opts.status ?? 'running'
   const stop = vi.fn(async () => ({}))
+  const deleteSandbox = vi.fn(async () => {})
 
   const sandbox = {
     sandboxId,
@@ -33,6 +36,7 @@ function createSandboxHandle(
     persistent: true,
     sourceSnapshotId: opts.sourceSnapshotId,
     stop,
+    delete: deleteSandbox,
     get status() {
       return status
     },
@@ -676,9 +680,106 @@ test('non-retryable get errors are propagated', async () => {
   expect(client.create).not.toHaveBeenCalled()
 })
 
-test('store.put failure does not poison in-process cache', async () => {
+test('fresh disposable persistence failure deletes the remote and clears partial state before retry', async () => {
+  const persistenceError = new Error('put failed after partial write')
+  const first = createSandboxHandle('sb-disposable-put-failure')
+  const second = createSandboxHandle('sb-disposable-retry')
+  const records = new Map<string, SandboxHandleRecord>()
+  let putAttempts = 0
+  const deleteRecord = vi.fn(async (workspaceId: string) => { records.delete(workspaceId) })
+  const store: SandboxHandleStore = {
+    async get(workspaceId) { return records.get(workspaceId) ?? null },
+    async put(record) {
+      putAttempts += 1
+      records.set(record.workspaceId, record)
+      if (putAttempts === 1) throw persistenceError
+    },
+    delete: deleteRecord,
+    async list() { return [...records.values()] },
+  }
+  const client: VercelSandboxClient = {
+    create: vi.fn()
+      .mockResolvedValueOnce(first)
+      .mockResolvedValueOnce(second),
+    get: vi.fn(),
+  }
+
+  const failed = resolveSandboxHandle('workspace-disposable-put-failure', store, client, {
+    freshOnly: true,
+    sourceSnapshotId: 'snap-trusted-main',
+  })
+  await expect(failed).rejects.toMatchObject({
+    name: 'SandboxHandlePersistenceError',
+    workspaceId: 'workspace-disposable-put-failure',
+    sandboxId: 'sb-disposable-put-failure',
+    remoteDeleted: true,
+    storeCleared: true,
+    cause: persistenceError,
+  })
+  await expect(failed).rejects.toBeInstanceOf(SandboxHandlePersistenceError)
+  expect(first.delete).toHaveBeenCalledOnce()
+  expect(deleteRecord).toHaveBeenCalledWith('workspace-disposable-put-failure')
+  await expect(store.get('workspace-disposable-put-failure')).resolves.toBeNull()
+
+  await expect(resolveSandboxHandle('workspace-disposable-put-failure', store, client, {
+    freshOnly: true,
+    sourceSnapshotId: 'snap-trusted-main',
+  })).resolves.toBe(second)
+  expect(client.create).toHaveBeenCalledTimes(2)
+  expect(client.get).not.toHaveBeenCalled()
+})
+
+test('fresh disposable persistence error preserves primary and failed-delete evidence', async () => {
+  const persistenceError = new Error('put failed')
+  const remoteDeleteError = new Error('remote delete failed')
+  const created = createSandboxHandle('sb-reconcile-required')
+  vi.mocked(created.delete).mockRejectedValueOnce(remoteDeleteError)
+  const deleteRecord = vi.fn(async () => {})
+  const store: SandboxHandleStore = {
+    async get() { return null },
+    async put() { throw persistenceError },
+    delete: deleteRecord,
+    async list() { return [] },
+  }
+  const logger = { info: vi.fn(), warn: vi.fn() }
+  const client: VercelSandboxClient = {
+    create: vi.fn(async () => created),
+    get: vi.fn(),
+  }
+
+  const failure = await resolveSandboxHandle('workspace-reconcile-required', store, client, {
+    freshOnly: true,
+    sourceSnapshotId: 'snap-trusted-main',
+    logger,
+  }).catch((error: unknown) => error)
+
+  expect(failure).toBeInstanceOf(SandboxHandlePersistenceError)
+  expect(failure).toMatchObject({
+    cause: persistenceError,
+    remoteDeleted: false,
+    storeCleared: true,
+    sandboxId: 'sb-reconcile-required',
+  })
+  expect((failure as AggregateError).errors).toEqual([persistenceError, remoteDeleteError])
+  expect(deleteRecord).toHaveBeenCalledWith('workspace-reconcile-required')
+  expect(logger.warn).toHaveBeenCalledWith(
+    '[sandbox] fresh disposable handle persistence failed',
+    expect.objectContaining({
+      workspaceId: 'workspace-reconcile-required',
+      sandboxId: 'sb-reconcile-required',
+      remoteDeleted: false,
+      storeCleared: true,
+      requiresRemoteReconciliation: true,
+      persistenceError: 'put failed',
+      cleanupErrors: ['remote delete failed'],
+    }),
+  )
+})
+
+test('store.put failure does not poison in-process cache or delete persistent runtime', async () => {
+  const first = createSandboxHandle('sb-first-attempt')
   const emitted = [
-    createSandboxHandle('sb-first-attempt'),
+    first,
     createSandboxHandle('sb-second-attempt'),
   ]
   let putAttempts = 0
@@ -707,6 +808,7 @@ test('store.put failure does not poison in-process cache', async () => {
   await expect(
     resolveSandboxHandle('workspace-put-failure', store, client),
   ).rejects.toThrow('put failed')
+  expect(first.delete).not.toHaveBeenCalled()
   const resolved = await resolveSandboxHandle('workspace-put-failure', store, client)
 
   expect((resolved as any).sandboxId).toBe('sb-second-attempt')

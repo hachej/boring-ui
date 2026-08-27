@@ -35,12 +35,13 @@ The service supports `exec`, `read`, `write`, `list`, `stat`, `upload`, and `rel
 
 ## Exact-source proof
 
-Source checkout is host provisioning and remains outside this lease service. After the host checks out the immutable target SHA, it should execute `git rev-parse HEAD` through the acquired lease and compare stdout to that target before accepting build or test evidence. The lease service returns this command evidence; it does not claim to perform or authorize source checkout.
+Source checkout is host provisioning and remains outside this lease service. After the host checks out the immutable target SHA, it should execute `git rev-parse HEAD` through the acquired lease and compare stdout to that target before accepting build or test evidence. The lease service returns this command evidence; it does not claim to perform or authorize source checkout. A sanitized live Vercel qualification is recorded in [issue #1437](https://github.com/hachej/boring-ui/issues/1437#issuecomment-5444798207).
 
 ## Lifecycle
 
 - `release` disposes the provider pair before removing the local lease.
 - Failed provider cleanup retains the lease so release or expiry reaping can retry.
+- If fresh disposable handle persistence fails after remote creation, the resolver compensates by deleting that remote and clearing partial cache/store state. `SandboxHandlePersistenceError` preserves the primary persistence error plus cleanup failures and reconciliation metadata.
 - `reapExpired()` attempts every expired lease. `dispose()` attempts every active lease.
 - Partial cleanup throws `SandboxLeaseCleanupError` with released and failed counts; only failed leases remain for retry.
 - Hosts still need bounded concurrency, audit/telemetry, source provisioning, and crash reconciliation before broad production use.
