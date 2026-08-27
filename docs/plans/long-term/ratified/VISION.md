@@ -19,6 +19,15 @@ outcome → evidence → better candidates, better agents, reusable vertical
 intelligence. Optimization is the commercial word; hypothesis/evidence is the
 architecture.
 
+> **Amendment — 2026-08-27 (owner ruling, ratified via #1409):** the north
+> star's "every visible app is a View over that engine" is scoped: every
+> visible product is an **Experience over the governed work substrate**, and
+> every product is *evidence-ready* — but the **explicit** optimization loop
+> (Objective/Candidate/Evaluation/Outcome) attaches where a real objective
+> and measurable outcome signal exist, rather than being mandatory vocabulary
+> for every product. The kernel remains the compounding layer; ordinary
+> operate-mode products are not forced into its ontology.
+
 ## 1. The decisive discovery: the three documents describe ONE system
 
 The V2 kernel's 12 nouns map almost entirely onto machinery that is built,

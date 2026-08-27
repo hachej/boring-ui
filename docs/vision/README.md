@@ -11,16 +11,22 @@ and [`../roadmap/README.md`](../roadmap/README.md) — how this sequences.
 
 ---
 
-## The one paragraph
+## The one paragraph (ratified compact thesis, 2026-08-27)
 
-Boring is a **sovereign engine that turns private data, explicit objectives,
-agent exploration, and real feedback into measurably better outcomes** — and
-every visible product (a client dashboard, a creator-growth agent, a
-chief-of-staff workbench) is a *view over that engine*, not a separate app.
-The user-facing shape is a **multi-agent workspace**: one shell where
-deterministic views sit beside agentic threads, several agents work one job
-behind a single composer, and everything they produce lands in one governed
-filesystem with an audit-grade record of who did what.
+Boring is a **sovereign agent-native application platform**. Humans, agents,
+automations, and authorized external clients perform durable domain work
+through governed operations over private sources; they produce attributable
+artifacts and effects, receive human decisions and real outcomes, and can
+improve through controlled versioned revision.
+
+There is **one product family hired for three jobs**: **Operate** domain
+work, **Distribute** expert capability, and **Improve** candidates or
+methods against evidence. The product may be consumed as route-first SaaS, a
+headless or channel-first agent job, a personal expert agent, an embedded
+capability, or the **flagship multi-agent workspace shell (Meridian)** — no
+one surface owns the substrate. Every visible product is an *Experience over
+the governed work substrate*; the explicit optimization loop attaches where
+a real objective and outcome signal exist.
 
 ## Layer 1 — the execution engine (built, hardening)
 
@@ -96,15 +102,16 @@ Honesty about open questions is part of the vision:
 The complete conflict record and how each was resolved:
 [`../plans/agent-runtime/alignment/CONTRADICTIONS.md`](../plans/agent-runtime/alignment/CONTRADICTIONS.md).
 
-**One thesis awaits ratification.** A full business/product framing — *one
-product family, three jobs: Operate / Distribute / Improve*, over a
-Distribution × Adaptivity matrix, with cross-cutting requirements
-(prompt-injection as untrusted data, deterministic domain kernels,
-immutable-revision promotion, `npx boring create`/`deploy`) — sits in
-`../plans/long-term/inbox/` (2026-08-17 synthesis set). Its promotion
-scaffold (`../plans/long-term/10-product.md` and siblings) was created and
-never filled. It is **not ratified** and this file does not adopt it;
-ratifying, reshaping, or rejecting it is an open owner decision.
+**The compact product thesis above is ratified (owner ruling 2026-08-27,
+via PR #1409).** Its long-form source — the 2026-08-17 synthesis set in
+`../plans/long-term/inbox/` (the Distribution × Adaptivity matrix, the
+cross-cutting requirements: prompt-injection as untrusted data,
+deterministic domain kernels, immutable-revision promotion,
+`npx boring create`/`deploy`) — remains **reference and capability-atlas
+material, not a dispatch list**; promoting any of its detailed capabilities
+into scheduled work still goes through DIRECTION and the gates. The
+2026-08-27 full-vision review that drove this ratification is at
+[`../plans/multiagent-shell/research/full-vision-review-2026-08-27.md`](../plans/multiagent-shell/research/full-vision-review-2026-08-27.md).
 
 ## Who owns what
 

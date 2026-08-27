@@ -55,6 +55,12 @@ Ordering and dependencies live only in §7; §§1–6 describe shape.
 > ordering is unchanged, and the choice remains the post-P1 owner gate's. Until then: design nothing
 > that hard-codes the several-sessions assumption where a one-Session-many-lanes shape would break it.
 
+> **Cardinality note (full-vision review, 2026-08-27).** A Job Thread is the shell's conversational
+> projection of customer-value work. The ratified shorthand "1 Thread = 1 job" means one Thread never
+> mixes unrelated jobs. The storage spike (P2) remains free to conclude that headless work can exist
+> without a Thread, or that one work item binds several conversations — this chapter does not own the
+> universal cardinality, and the storage-shape suspension (§8) already opens exactly this question.
+
 ## What this plan builds
 
 Twelve artifacts, nothing else. Product words first, code noun in `code`. "Built by" points at §7,

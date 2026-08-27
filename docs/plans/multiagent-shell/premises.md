@@ -93,6 +93,12 @@ deferral.
 > the engine chapter: D22's native binding unless a D22/D28 amendment says
 > otherwise.
 
+> **Scope boundary.** Level-D streams are the keystone for restart-safe
+> multi-Agent conversation and timeline projection. They do not replace the
+> accepted-work protocol: Work/Run admission, effect identity and
+> reconciliation, Artifact versions, Delivery, cost, and delayed Outcome
+> linkage remain separate durable semantics. The engine consumes both layers.
+
 ---
 
 ### P2 — Thread storage model (spike + competitor study)
@@ -135,6 +141,11 @@ Study each for the same six facts, so the answers are comparable:
 **Output:** a comparison table on those six facts, plus a short verdict naming
 which model our constraints most resemble and why.
 
+**Widened question (full-vision review, 2026-08-27).** Beyond the six facts,
+also ask how each system relates the durable customer-value unit to its
+conversations: can that unit exist without a conversation at all, and can it
+bind more than one?
+
 #### Brief — Part B: technical spike, in our stack
 
 **Question.** *In our codebase, what does each storage model actually cost?*
@@ -151,6 +162,11 @@ first-class-record candidate** — not a third ontology
   timeline is derived.
 - **(ii) First-class thread record.** The thread owns its own durable message
   stream; per-agent sessions become an implementation detail beneath it.
+- **(iii) Work + conversation bindings.** A durable Work/Job record owns the
+  job contract, economics, Runs, Artifacts, Deliveries, Decisions, and
+  Outcomes. One or more Threads or external conversations bind to it as
+  interaction histories. A Job Thread is the default shell projection, but
+  headless Work may have no Thread at all.
 
 **Measure, for each:** write path complexity; read/replay cost for a long
 thread; behavior under P1's durable streams; how per-message attribution lands
@@ -164,6 +180,9 @@ per-session records; and what #1355's reference types would have to become.
 3. Which lets a Thread's participants change without rewriting or losing history?
 4. Which requires the smaller migration from today's per-session records?
 5. Which one can #1355 type its conversation references against *today*, without assuming single-seat?
+6. Which candidate supports a bounded headless job without fabricating a chat?
+7. Which candidate supports a request that begins in WhatsApp and continues in the web app?
+8. Which candidate keeps Work economics and Outcomes stable if a conversation is forked, archived, or deleted under policy?
 
 **Explicitly NOT in scope:** shipping either candidate; the relay/blackboard
 choice (that is post-P1); any UI.
@@ -204,6 +223,13 @@ C7 (`job-thread-plan.md` §8). The owner has ruled that this gap does not ship.
 - **Unblocks:** honest agent chips in the thread timeline (shell L4), drill-down
   provenance, and any later billing/metering per seat.
 
+> **Actor vs Seat.** Seat attribution is the Agent-specific part of the causal
+> record. The wider envelope must retain the acting Actor and represented
+> Party for human, automation, service, and external-client actions. A Seat
+> is mandatory when an Agent acts through a binding; it is not a replacement
+> for universal Actor identity — humans, automations, and MCP clients are
+> never forced into Seats.
+
 ---
 
 ### P4 — Kernel View (first ratified slice)
@@ -225,6 +251,14 @@ already guarded against — inventing a lookalike `ViewDescriptor`.
   its own planning pass before anyone estimates it.
 - **Unblocks:** Library saved views (shell L3b's deferred half). Does **not**
   block v0 Library over files and built-in views.
+
+> **Pressure-tests for the planning pass.** The View contract must be shaped
+> against at least: (1) a route-first vertical page, (2) a Meridian
+> workbench mount, (3) an Artifact deep link from headless Work, (4) a
+> schema-validated agent-proposed Experience change — not only Library
+> persistence. The first slice may stay small, but the contract may not
+> encode Dockview, Library, or the multi-agent shell as universal ownership
+> assumptions.
 
 ---
 

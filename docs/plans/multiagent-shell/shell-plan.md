@@ -51,6 +51,12 @@ agents, how many sessions, the handoffs — collapses behind one merged
 transcript; per-agent work logs are drill-down provenance, like CI logs behind
 a PR check (#1399, owner sharpening 2026-08-24).
 
+**One composer is this shell's team-presentation policy** (single-voice),
+not a kernel rule — candidate policies for other Experiences include
+explicit-specialists, ambient-hidden, and debug-roster. Recognizing
+single-voice as a *staffed policy* is also the frame in which the
+orchestrator-Seat gap gets resolved.
+
 **1 Thread = 1 job.** The thread is the unit of WORK, not the unit of agent.
 The user talks to the job. **Ratified** 2026-08-26 by owner merge of PR #1401
 (merge `58406c465`) — *"A Thread may span multiple Seats, projected as one
@@ -63,7 +69,10 @@ for transport/ingress.
 **Threads archive, they do not die.** Work carries an `Archived · N` drill-in.
 Archive ≠ delete: history, attribution and refs are retained; archived threads
 leave the default Work list and stay searchable (#1399, owner addition
-2026-08-26). This is what closes the old "channel lifetime" question.
+2026-08-26). This is what closes the old "channel lifetime" question. (Archive is a
+user-facing lifecycle that preserves history; it never overrides retention,
+legal hold, erasure, or tenant-deletion policy — those are separate governed
+lifecycles.)
 
 **The shell = Search / Inbox / Work / Agents / Library, over one workspace.**
 Left-nav top level (#1399, owner rulings 2026-08-26; **Search moved to the
@@ -75,6 +84,13 @@ collapsible: Threads + Automations, plus a muted `Archived · N` below
 Automations; automations are standing work that mints runs, filed under Work,
 not top-level. **Agents** is a roster → agent page. **Library** is the ratified
 name for the view library.
+
+**Scope: the five-domain IA is the Meridian operator default, not universal
+navigation.** Vertical Experiences may present route-first product
+navigation, hide the Agents domain, collapse Library into domain views, or
+omit this shell entirely — the shell is a client of the application and Work
+contracts, never their owner (full-vision review 2026-08-27; consistent with
+the Decision-28 consumption modes).
 
 **Nav = domains. The vertical plugin icon rail = tools** (data-catalog,
 explorer, tasks, skills), opening as **columns**. Chat opens as a **contextual
@@ -107,7 +123,11 @@ popover** — file access without leaving the thread; (4) **standalone Library**
   never invocation authority — each seat's execution runs under its own
   scope. (D25's older "share filesystem/process/runtime authority" wording
   described a superseded topology; do not cite it.) Owner ruling 2026-08-25
-  in #1399 makes this explicit for Job Threads.
+  in #1399 makes this explicit for Job Threads. The canonical workspace
+  filesystem is the **first shared Source** and stays authoritative for file
+  artifacts; non-file work (databases, mail, CRM, semantic data, external
+  services) stays canonical in its own source and is shared through governed
+  operations and typed references, never forced into POSIX.
 - **The conversation is posts-only.** Only settled posts and system markers
   cross a seat boundary; no prompt-crossing, no free-text @-parsing. This is
   the Job Thread plan's Q4 and is *safety, not style* — validated against Grok

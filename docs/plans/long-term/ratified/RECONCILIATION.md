@@ -236,9 +236,10 @@ supersession banners at both older sites. §7 ratified the data-model sentence
 and explicitly deferred "the human-facing multi-agent selector/switch UX" as a
 separate product decision. **This amendment takes that deferred decision.**
 
-### (a) The product surface is the multi-agent workspace shell
+### (a) The flagship operator/collaboration surface is the multi-agent workspace shell
 
-The surface over a Workspace is a shell with five top-level domains —
+The **reference surface for multi-agent, multi-work, operator-style use**
+over a Workspace is a shell with five top-level domains —
 **Search · Inbox · Work · Agents · Library** (Search renders at the top of the
 nav; the enumeration is a set, not a layout). Nav is domains; the vertical
 plugin rail is tools. Two interview rulings (2026-08-26) complete the frame:
@@ -246,11 +247,25 @@ plugin rail is tools. Two interview rulings (2026-08-26) complete the frame:
 not a closed set; crowding is an accepted risk — and **deep links split as:
 the shell owns the serializable location, the host owns URL translation.**
 
+**Scope (owner ruling 2026-08-27).** This ratifies the Meridian shell as
+Boring's **flagship** operator and collaboration Experience. It does **not**
+make that shell the only valid Boring product surface. The same governed
+substrate may be consumed through a route-first vertical SaaS Experience, a
+chat-first expert Agent, a headless job API or MCP surface, an embedded
+capability, or an external message channel (consistent with Decision 28's
+consumption modes). Those surfaces must reuse the same Work, operation,
+authority, artifact, decision, and evidence semantics — never parallel
+architectures.
+
 - **Transparent multi-agent Threads.** A Thread looks like an ordinary chat with
   several agents inside it, behind **one composer**. Workers are hidden behind
   the orchestrator: the user addresses a *voice*, not a *Seat*. Per-Seat work
   logs are drill-down provenance, not the primary surface — the §7 projection
-  read as one collapsed timeline.
+  read as one collapsed timeline. *(One composer and a hidden worker team are
+  the default **team-presentation policy of this shell** — not a universal
+  requirement for every product; another Experience may expose one agent,
+  explicit specialists, an ambient agent, or no composer while keeping the
+  same underlying agent and work model.)*
 - **One workbench, many mounts.** The artifact/file surface is a single
   component mounted in several places — inside a Thread as a canvas, under an
   attention item as an evidence viewer, as a transient file popover, and
