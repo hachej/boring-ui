@@ -36,7 +36,6 @@ type SafePaletteState = {
   modalOutOfBounds: boolean
   visibleModalCount: number
   focusedControlInvalid: boolean
-  undersizedTouchTargets: string[]
   lastActionWasPaletteOpen: boolean
   lastActionWasInitial: boolean
   controls: Array<{ name: string; fingerprint: Fingerprint; point: Point }>
@@ -140,11 +139,6 @@ const palette = extract((state): SafePaletteState => {
     || bounds.x + bounds.width > state.window.innerWidth
     || bounds.y + bounds.height > state.window.innerHeight
   ))
-  // Bombadil 0.7 can size a viewport but cannot emulate pointer capability.
-  // Its CI browser can even report a coarse desktop pointer, so never infer
-  // touch policy here. Registered Playwright captures enforce the coarse
-  // branch explicitly with `hasTouch: true`.
-  const undersizedTouchTargets: string[] = []
   const lastActionWasPaletteOpen = typeof state.lastAction === "object"
     && state.lastAction !== null
     && "Click" in state.lastAction
@@ -169,7 +163,6 @@ const palette = extract((state): SafePaletteState => {
     modalOutOfBounds,
     visibleModalCount: observation.visibleModals.length,
     focusedControlInvalid,
-    undersizedTouchTargets,
     lastActionWasPaletteOpen,
     lastActionWasInitial,
     controls: allowed,
@@ -186,6 +179,4 @@ export const command_palette_has_no_horizontal_overflow = always(() => !palette.
 export const command_palette_modals_stay_in_viewport = always(() => !palette.current.modalOutOfBounds)
 export const command_palette_has_at_most_one_modal = always(() => palette.current.visibleModalCount <= 1)
 export const command_palette_focus_stays_visible = always(() => !palette.current.focusedControlInvalid)
-export const command_palette_mobile_touch_targets_are_sized = always(() => palette.current.undersizedTouchTargets.length === 0)
-
 export const commandPaletteSafeActions = actions(() => createSafeCommandPaletteActions(palette.current))
