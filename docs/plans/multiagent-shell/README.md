@@ -26,13 +26,16 @@ the surface is built on top of them. Two rulings set the tone:
   conformance scale: Level B ≈ bounded replay + snapshot rehydrate (what we have
   today), Level D ≈ fully durable streams a client can always resume. The engine
   waits for Level D (P1).
-- **The thread storage model is not decided.** It goes to a spike with a
-  competitor study (P2), and the engine's data-model slice waits on its findings.
+- **The thread storage model is half decided.** The value root is ruled
+  (2026-08-27, RECONCILIATION §9a: Thread = job root, 0..n Sessions; the
+  competitor study is done); only the storage **shape** — first-class stream
+  vs projection — still goes to the P2 spike, and the engine's data-model
+  slice waits on its findings.
 
 | # | Premise | State | Unblocks |
 |---|---|---|---|
-| **P1** | Durable streams — Level D conformance, default-on | epic `wt-391-forward-9p50`; one-session children `.1` conformance + `.2` rollout | the whole engine |
-| **P2** | Thread storage model — spike + competitor study | epic `shell-ngfs.13`; one-session children `.13.1` research + `.13.2` spike | engine S1, the storage question, #1355 ref types |
+| **P1** | Durable streams — Level D conformance, default-on | epic `wt-391-forward-9p50`; beads A1–A5 (`.1/.3/.4/.5/.6`) → P1-B (`.7`) → P1-C (`.2`) | the whole engine |
+| **P2** | Thread storage **shape** (value root RULED, §9a; study DONE) | epic `shell-ngfs.13`; `.13.1` research CLOSED, `.13.2` shape spike after P1-A | engine S1, #1355 ref types |
 | **P3** | Seat storage — the tamper-proof who-said-what record (ratified concept, formerly C7) | epic `shell-ngfs.14`; one-session children `.14.1` catalog/envelope + `.14.2` projection | honest who-said-what everywhere |
 | **P4** | Kernel View — first ratified slice | **no sizing yet** | Library saved views |
 | **P5** | Merge queue | standing obligation, not a bead | branch health for everything |

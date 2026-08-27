@@ -27,7 +27,9 @@ Two consequences, stated plainly:
 - **The engine does not ship on Level B.** The interim receipt machinery that
   existed to survive a non-durable substrate is **descoped**.
 - **The storage model is not decided.** It goes to a spike with a competitor
-  study, and the engine's data-model slice waits on its findings.
+  study, and the engine's data-model slice waits on its findings. *(Update
+  2026-08-27: the study is done and the value-root half is ruled — §9a; only
+  the storage shape remains spiked. See P2 below.)*
 
 ---
 
