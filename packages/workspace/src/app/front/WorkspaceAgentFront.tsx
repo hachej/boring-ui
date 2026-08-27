@@ -2106,11 +2106,6 @@ export function WorkspaceAgentFront<
     )
   ), [createChatPaneAfter, fleetModeEnabled, effectiveAgentTypeId])
 
-  const createChatSessionPreferNewPane = useCallback((ownerAgentTypeId = newChatAgentTypeId) => {
-    if (chatPaneIds.length >= 2) return createChatPaneAfter(activeChatPaneId, undefined, ownerAgentTypeId)
-    return createChatSession(ownerAgentTypeId)
-  }, [activeChatPaneId, newChatAgentTypeId, chatPaneIds.length, createChatPaneAfter, createChatSession])
-
   const [autoSubmitHydrationDisabled, setAutoSubmitHydrationDisabled] = useState(requestedAutoSubmitInitialDraft)
   const autoSubmitHydrationWorkspaceRef = useRef(workspaceId)
   useEffect(() => {
@@ -2750,7 +2745,7 @@ export function WorkspaceAgentFront<
             // without a switch needs the pending-entry contract (plan §5.1) — deferred.
             if (projectId === (appLeftActiveProjectId ?? workspaceId)) {
               setLeftOverlay(null)
-              void createChatSessionPreferNewPane()
+              void createChatSession()
             } else {
               onSwitchAppLeftProject?.(projectId)
             }
