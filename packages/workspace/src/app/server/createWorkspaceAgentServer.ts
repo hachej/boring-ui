@@ -1745,7 +1745,14 @@ export async function createWorkspaceAgentServer(
             userId: verifiedClaim.authSubjectId,
             requestId,
           }) ?? []
-          return callerBindings
+          const packageRegistry = currentPackageResourceSnapshot?.registry
+          const packageBinding = hostOwnedDefaultAgentTypeId && packageRegistry?.readonlyMounts.length
+            ? await runtimeHost.createAgentResourceFilesystemBinding(
+                AGENT_RESOURCES_FILESYSTEM_ID,
+                packageRegistry.readonlyMounts,
+              )
+            : undefined
+          return [...callerBindings, ...(packageBinding ? [packageBinding] : [])]
         },
       }
     },
