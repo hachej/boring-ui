@@ -112,6 +112,20 @@ deferral.
 > pi's own Accounts/Models services, which must consume injected authority,
 > never source it.
 
+> **No-waste split (owner direction 2026-08-27, post-spike).** Pi's real v4
+> runtime is close (dev essentially complete) but unpublished, and the
+> owner will not idle the keystone nor build throwaway work. The spike
+> proved the split line: of P1's four conformance concerns, only
+> **stream-sequence continuity** is substrate-replaceable by pi v2 — the
+> durable gateway **ledger**, effect **admission**, cross-session
+> **activity**, and the resume-to-browser protocol are ours on any
+> substrate. Therefore: the **substrate-neutral layer starts now**, written
+> against gateway/seam interfaces (the `PiPlatform` seam, raised to P1,
+> lands alongside); the **event-store schema is deferred briefly** — until
+> pi's next release publishes the dev runtime or a two-week timebox
+> expires, whichever first — then adopt-behind-the-seam or build ours. A
+> release watcher is armed on the pi package registry.
+
 > **Named proof addition — the paused-human restart.** P1's proof set
 > includes the flagship journey: a thread paused on an ask-user question,
 > host restarts, the client reattaches — question, transcript, and pending
