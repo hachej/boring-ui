@@ -35,6 +35,26 @@ contract* (their words). The coding-agent services implemented end-to-end
 today: session directory/management, models, prompt/abort — queue, resume,
 compaction, transcript snapshot all throw not-implemented.
 
+**Fresh-branch insights (2026-08-27, origin/dev at `f0bfae2`):**
+
+- **Multi-lane-per-Session is real and implemented** — `lane(name, …)`,
+  `lanes()`, `SessionSnapshot.lanes: LaneInfo[]` (`agent-harness.ts:559`).
+  That pre-answers the first seats-as-lanes probe question with YES. Per-lane
+  identity is only a string name — our audit-grade `seatId` layers on top,
+  exactly as designed. Lane→presentation routing exists but at the
+  experimental/mini prototype layer only.
+- **Their post-WP05 roadmap (11 items) confirms our verdicts:** multi-agent
+  orchestration is NOT on it, and the Transcript service is named only as a
+  *future* consumer of session-wide watch. Next up for them: SQLite
+  ownership fencing (WP07) — because single-writer enforcement currently
+  has **two documented unfixed lease races**, and their own docs state a
+  JSONL session opened twice is "corrupt and undetected".
+- **Consequences for us:** any adoption uses the SQLite backend only, and
+  our gateway keeps its *own* ownership fencing regardless of substrate (do
+  not inherit WP07's open races). The remote-session contract is an
+  explicitly unresolved decision upstream — one more reason the D29 funnel
+  stays the boundary.
+
 **Public signal (2026-08-26, evening):** pi's author publicly demoed the
 mini topology — *"internal multiplayer achieved… new harness makes this
 very easy"* — two terminal clients attached to one session with one shared
