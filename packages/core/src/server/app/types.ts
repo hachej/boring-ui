@@ -4,6 +4,8 @@ import type {
   CapabilitiesResponse,
   User,
   Workspace,
+  WorkspaceAgentSeat,
+  WorkspaceAgentSeatSource,
   WorkspaceMember,
   WorkspaceInvite,
   WorkspaceRuntime,
@@ -42,6 +44,9 @@ export interface WorkspaceStoreCreateOptions {
   /** Required real application-fleet Agent; stores validate but never select it. */
   readonly defaultAgentTypeId: string
   readonly workspaceTypeId?: string
+  /** Defaults to generic-default and is inserted atomically with the workspace. */
+  readonly initialAgentSeatSource?: WorkspaceAgentSeatSource
+  readonly enrolledByUserId?: string
   isDefault?: boolean
   id?: string
   managedBy?: string
@@ -50,6 +55,14 @@ export interface WorkspaceStoreCreateOptions {
 export interface WorkspaceStore {
   create(userId: string, name: string, appId: string, opts: WorkspaceStoreCreateOptions): Promise<Workspace>
   list(userId: string, appId: string): Promise<Workspace[]>
+  listAgentSeats(workspaceId: string): Promise<WorkspaceAgentSeat[]>
+  hasAgentSeat(workspaceId: string, agentTypeId: string): Promise<boolean>
+  addAgentSeat(
+    workspaceId: string,
+    agentTypeId: string,
+    source: WorkspaceAgentSeatSource,
+    enrolledByUserId?: string,
+  ): Promise<WorkspaceAgentSeat>
   /** Count rolling-migration rows that still lack a persisted default Agent. */
   countNullDefaultAgentTypeIds(appId: string): Promise<number>
   /** Idempotent compare-and-set backfill: only rows still NULL may change. */

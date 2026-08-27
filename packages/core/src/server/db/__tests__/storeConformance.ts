@@ -382,6 +382,56 @@ export function describeWorkspaceStoreConformance(
     )
 
     it(
+      'creates exactly one initial Agent Seat atomically and adds Seats idempotently',
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
+        const { workspaceStore, appId, users } = await setup()
+        const workspace = await createWorkspace(
+          workspaceStore,
+          users.owner.id,
+          'Seat conformance',
+          appId,
+          {
+            defaultAgentTypeId: 'charlotteledoux',
+            initialAgentSeatSource: 'signup-intent',
+            enrolledByUserId: users.owner.id,
+          },
+        )
+
+        expect(await workspaceStore.hasAgentSeat(workspace.id, 'charlotteledoux')).toBe(true)
+        expect(await workspaceStore.listAgentSeats(workspace.id)).toEqual([
+          expect.objectContaining({
+            workspaceId: workspace.id,
+            agentTypeId: 'charlotteledoux',
+            source: 'signup-intent',
+            enrolledByUserId: users.owner.id,
+          }),
+        ])
+
+        const first = await workspaceStore.addAgentSeat(
+          workspace.id,
+          'macro-analyst',
+          'user-add',
+          users.owner.id,
+        )
+        const repeated = await workspaceStore.addAgentSeat(
+          workspace.id,
+          'macro-analyst',
+          'operator',
+          users.other.id,
+        )
+        expect(repeated).toEqual(first)
+        expect(await workspaceStore.listAgentSeats(workspace.id)).toHaveLength(2)
+        await expect(workspaceStore.addAgentSeat(
+          workspace.id,
+          'Macro Analyst',
+          'user-add',
+          users.owner.id,
+        )).rejects.toMatchObject({ code: ERROR_CODES.INVALID_DEFAULT_AGENT_TYPE_ID })
+        assertionPassed('workspace-agent-seats-atomic-and-idempotent')
+      }),
+    )
+
+    it(
       'counts and compare-and-sets NULL defaults without touching non-NULL rows',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, otherAppId, users } = await setup()
@@ -396,6 +446,7 @@ export function describeWorkspaceStoreConformance(
         expect(await workspaceStore.countNullDefaultAgentTypeIds(appId)).toBe(0)
         expect(await workspaceStore.compareAndSetNullDefaultAgentTypeId(appId, 'default')).toBe(0)
         expect((await workspaceStore.get(legacy.id))?.defaultAgentTypeId).toBe('default')
+        expect(await workspaceStore.hasAgentSeat(legacy.id, 'default')).toBe(true)
         expect((await workspaceStore.get(known.id))?.defaultAgentTypeId).toBe('default')
         expect((await workspaceStore.get(unknown.id))?.defaultAgentTypeId).toBe('retired-seat')
         expect((await workspaceStore.get(otherAppLegacy.id))?.defaultAgentTypeId ?? null).toBeNull()

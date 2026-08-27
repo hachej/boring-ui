@@ -10,6 +10,8 @@ import type {
   MemberRole,
   User,
   Workspace,
+  WorkspaceAgentSeat,
+  WorkspaceAgentSeatSource,
   WorkspaceInvite,
   WorkspaceMember,
   WorkspaceRuntime,
@@ -28,6 +30,7 @@ import {
   userSettings,
   users,
   workspaces,
+  workspaceAgentSeats,
   workspaceInvites,
   workspaceMembers,
   workspaceRuntimeResources,
@@ -126,6 +129,17 @@ function toWorkspaceInvite(row: typeof workspaceInvites.$inferSelect): Workspace
   }
 }
 
+function toWorkspaceAgentSeat(row: typeof workspaceAgentSeats.$inferSelect): WorkspaceAgentSeat {
+  return {
+    seatId: row.seatId,
+    workspaceId: row.workspaceId,
+    agentTypeId: row.agentTypeId,
+    source: row.source as WorkspaceAgentSeatSource,
+    enrolledByUserId: row.enrolledByUserId,
+    createdAt: toIso(row.createdAt)!,
+  }
+}
+
 function toWorkspaceMember(row: typeof workspaceMembers.$inferSelect): WorkspaceMember {
   return {
     workspaceId: row.workspaceId,
@@ -207,6 +221,12 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
           userId,
           role: 'owner',
         })
+        await tx.insert(workspaceAgentSeats).values({
+          workspaceId: row.id,
+          agentTypeId: defaultAgentTypeId,
+          source: opts.initialAgentSeatSource ?? 'generic-default',
+          enrolledByUserId: opts.enrolledByUserId ?? userId,
+        })
       }
 
       return toWorkspace(row)
@@ -230,6 +250,59 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
     return rows.map((r) => toWorkspace(r.ws))
   }
 
+  async listAgentSeats(workspaceId: string): Promise<WorkspaceAgentSeat[]> {
+    const rows = await this.db
+      .select()
+      .from(workspaceAgentSeats)
+      .where(eq(workspaceAgentSeats.workspaceId, workspaceId))
+      .orderBy(workspaceAgentSeats.createdAt, workspaceAgentSeats.agentTypeId)
+    return rows.map(toWorkspaceAgentSeat)
+  }
+
+  async hasAgentSeat(workspaceId: string, agentTypeId: string): Promise<boolean> {
+    const parsedAgentTypeId = parseRequiredDefaultAgentTypeId(agentTypeId)
+    const rows = await this.db
+      .select({ seatId: workspaceAgentSeats.seatId })
+      .from(workspaceAgentSeats)
+      .where(and(
+        eq(workspaceAgentSeats.workspaceId, workspaceId),
+        eq(workspaceAgentSeats.agentTypeId, parsedAgentTypeId),
+      ))
+      .limit(1)
+    return rows.length > 0
+  }
+
+  async addAgentSeat(
+    workspaceId: string,
+    agentTypeId: string,
+    source: WorkspaceAgentSeatSource,
+    enrolledByUserId?: string,
+  ): Promise<WorkspaceAgentSeat> {
+    const parsedAgentTypeId = parseRequiredDefaultAgentTypeId(agentTypeId)
+    const inserted = await this.db
+      .insert(workspaceAgentSeats)
+      .values({
+        workspaceId,
+        agentTypeId: parsedAgentTypeId,
+        source,
+        enrolledByUserId: enrolledByUserId ?? null,
+      })
+      .onConflictDoNothing({
+        target: [workspaceAgentSeats.workspaceId, workspaceAgentSeats.agentTypeId],
+      })
+      .returning()
+    const row = inserted[0] ?? (await this.db
+      .select()
+      .from(workspaceAgentSeats)
+      .where(and(
+        eq(workspaceAgentSeats.workspaceId, workspaceId),
+        eq(workspaceAgentSeats.agentTypeId, parsedAgentTypeId),
+      ))
+      .limit(1))[0]
+    if (!row) throw new Error(`Agent Seat ${workspaceId}/${parsedAgentTypeId} was not created`)
+    return toWorkspaceAgentSeat(row)
+  }
+
   async countNullDefaultAgentTypeIds(appId: string): Promise<number> {
     const rows = await this.db
       .select({ count: sql<number>`count(*)::integer` })
@@ -240,12 +313,22 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
 
   async compareAndSetNullDefaultAgentTypeId(appId: string, value: string): Promise<number> {
     const defaultAgentTypeId = parseRequiredDefaultAgentTypeId(value)
-    const rows = await this.db
-      .update(workspaces)
-      .set({ defaultAgentTypeId })
-      .where(and(eq(workspaces.appId, appId), isNull(workspaces.defaultAgentTypeId)))
-      .returning({ id: workspaces.id })
-    return rows.length
+    return await this.db.transaction(async (tx) => {
+      const rows = await tx
+        .update(workspaces)
+        .set({ defaultAgentTypeId })
+        .where(and(eq(workspaces.appId, appId), isNull(workspaces.defaultAgentTypeId)))
+        .returning({ id: workspaces.id, createdBy: workspaces.createdBy })
+      if (rows.length > 0) {
+        await tx.insert(workspaceAgentSeats).values(rows.map((row) => ({
+          workspaceId: row.id,
+          agentTypeId: defaultAgentTypeId,
+          source: 'migration-default',
+          enrolledByUserId: row.createdBy,
+        }))).onConflictDoNothing()
+      }
+      return rows.length
+    })
   }
 
   async get(id: string): Promise<Workspace | null> {
