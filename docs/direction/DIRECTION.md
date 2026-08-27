@@ -356,34 +356,29 @@ Two rulings set the tone, both from the owner interview of 2026-08-26:
 model is not decided**. Full program:
 `docs/plans/multiagent-shell/premises.md` in #1409.
 
-> **Owner amendment 2026-08-27 (evening) — post-spike execution split.**
-> Completed: the pi 0.84.3 adoption spike (verdict: published harness =
-> scaffold, do not wire; report in the shell pack's research/) and the P2
-> competitor research. **Starts now:** P1's substrate-neutral durability —
-> the private harness backend seam under D29, gateway request/effect
-> ledger, effect admission, activity recovery, resume protocol — plus the
-> paused-human and headless conformance journeys. **Waits for a qualifying
-> pi runtime release:** the event-stream sequence/storage implementation
-> (adoption is behavior-gated by the criteria in the pack's
-> `research/pi-v2-alignment.md`, never version-gated). **2026-09-10 is an
-> owner check-in, not an automatic build trigger.** Gating precision: the
-> headless journey never gates substrate-free chrome, but it is required
-> evidence for P1 completion — and therefore indirectly gates every Job
-> Thread or Thread-view slice that consumes P1.
-
-> **Owner amendment 2026-08-27 — spikes first, briefly.** Before
-> [durable-streams] commits any implementation schema, two short spikes run:
-> the **pi-0.84.3 core-adoption spike** (`wt-391-forward-9n6w`, 1–2
-> sessions — the pi framework shipped its v4 durable core and deleted the
-> line our pin sits on; the spike proves the migration path under the D29
-> gateway and sizes what our ~1,700-line bespoke stream surface keeps vs
-> delegates) and the **storage-model research half**
-> (`wt-391-forward-shell-ngfs.13.1`). `9p50.1` now depends on both. A
-> 1–2 session delay bought against building the keystone on a dead
-> substrate. The **headless golden path** (job in via API/CLI → agent runs
-> → artifact → human decision → restart survives → delivery) is adopted as
-> a named conformance proof that runs **parallel, not gating** — it never
-> blocks shell work.
+> **Owner amendments 2026-08-27 (consolidated) — spikes ran, execution
+> split.** Two short spikes ran the same day, before [durable-streams]
+> commits any implementation schema: the **pi-0.84.3 core-adoption spike**
+> (`wt-391-forward-9n6w` — the pi framework shipped its v4 durable core and
+> deleted the line our pin sits on; the spike proves the migration path
+> under the D29 gateway and sizes what our ~1,700-line bespoke stream
+> surface keeps vs delegates) and the **storage-model competitor research**
+> (`wt-391-forward-shell-ngfs.13.1`). Both completed: the core spike's
+> verdict is **do not wire pi 0.84.3** (published harness = scaffold, not a
+> durable substrate; report in the shell pack's `research/`), and the P2
+> competitor research is done. **Starts now:** P1-A, the substrate-neutral
+> layer — the private harness backend seam under D29
+> (`AgentHarnessBackend`), gateway request/effect ledger, effect admission,
+> activity recovery, resume protocol — plus the paused-human and headless
+> conformance journeys. **Waits for a qualifying pi runtime release:** P1-B,
+> the event-stream sequence/storage implementation (adoption is
+> behavior-gated by the criteria in the pack's `research/pi-v2-alignment.md`,
+> never version-gated; **2026-09-10 is an owner check-in, not an automatic
+> build trigger**). P1-C (Level-D completion, default-on, D29 evidence) runs
+> after P1-B. Gating precision: the headless journey runs parallel and never
+> gates substrate-free chrome, but it is required evidence for P1
+> completion — and therefore indirectly gates every Job Thread or
+> Thread-view slice that consumes P1.
 
 1. **[durable-streams]** (epic `wt-391-forward-9p50`, formerly P1) — **the
    keystone.** Starts after the two spikes above report. Child `.1` makes

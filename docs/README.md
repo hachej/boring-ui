@@ -10,6 +10,21 @@ Agent hard rules and routing live in [`AGENTS.md`](../AGENTS.md) (imported by
 `CLAUDE.md`). Agent workflow, coding process, review history, and proof
 procedures live in [`procedures/`](procedures/README.md).
 
+## Cold-start reading order (5 files)
+
+1. [`vision/README.md`](vision/README.md) — what Boring is, the ratified thesis.
+2. [`roadmap/README.md`](roadmap/README.md) — the shape of the programs.
+3. [`direction/DIRECTION.md`](direction/DIRECTION.md) — the ONLY "when".
+4. [`plans/multiagent-shell/README.md`](plans/multiagent-shell/README.md) — the active program pack.
+5. [`plans/agent-runtime/alignment/CONTRADICTIONS.md`](plans/agent-runtime/alignment/CONTRADICTIONS.md) — what was fought over and resolved.
+
+## Precedence (who wins)
+
+User/owner rulings > ratified pack ([`plans/long-term/ratified/`](plans/long-term/ratified/README.md) + [`DECISIONS.md`](DECISIONS.md)) >
+[`DIRECTION.md`](direction/DIRECTION.md) for sequencing > pack chapters for scope/rationale >
+`research/` folders for evidence (each has its own index naming supersessions) >
+`archive/` and issue folders — history, never a required read.
+
 | Need | Read |
 | --- | --- |
 | **The whole vision, one story** (four layers, proof ledger, open questions) | [`vision/`](vision/README.md) — [`explorations.md`](vision/explorations.md) proof ledger |

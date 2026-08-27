@@ -46,91 +46,32 @@ Two consequences, stated plainly:
 
 ### P1 — Durable streams (Level D conformance → default-on)
 
-**Ruling.** *Do not build the engine on Level B.* The engine waits for durable
-streams.
+#### What P1 is
 
+*Do not build the engine on Level B.* The engine waits for durable streams.
 This is not new work invented by this program — it is **D29's own named
 re-evaluation trigger arriving**: durable replay becomes load-bearing once
-concurrent multi-agent streams exist (`docs/DECISIONS.md:476`). Level B (bounded
-replay + snapshot rehydrate) is the currently shipped bar; Level D is
-"specified and deferred" (`docs/DECISIONS.md:472`). The owner has now called the
-deferral.
+concurrent multi-agent streams exist (`docs/DECISIONS.md:476`). Level B
+(bounded replay + snapshot rehydrate) is the currently shipped bar; Level D
+is "specified and deferred" (`docs/DECISIONS.md:472`). The owner has called
+the deferral (ruled 2026-08-26). P1 is the keystone premise: every engine
+slice is downstream of it, and it also reframes the relay-vs-blackboard
+choice (below).
 
 - **WHAT:** child `.1` unskips and greens the Level D restart/ledger/activity
   conformance tests and implements what they reveal missing in the
   `SqliteEventStreamStore` path. Child `.2` then flips
-  `BORING_CHAT_DURABLE_STREAM` default-on behind a rollout note and carries the
-  dated D29 re-evaluation addendum (owner merge = ratification).
-- **Scope / Proof:** as written on epic `wt-391-forward-9p50` and its children —
-  gateway conformance green at Level D; restart-replay e2e on the playground
-  golden route; default-on/rollback proof; DECISIONS addendum PR.
-- **Honest sizing:** superseded — see the P1 slice-state table below (the
-  "two one-session slices" claim is withdrawn; P1-B is blocked-on-pi in its
-  own bead `wt-391-forward-hotp`, and P1 is not complete before P1-C).
-- **Unblocks:** every engine slice. Also reframes the relay-vs-blackboard
-  choice — see the note below.
+  `BORING_CHAT_DURABLE_STREAM` default-on behind a rollout note and carries
+  the dated D29 re-evaluation addendum (owner merge = ratification).
+- **Scope / Proof:** as written on epic `wt-391-forward-9p50` and its
+  children — gateway conformance green at Level D; restart-replay e2e on the
+  playground golden route; default-on/rollback proof; DECISIONS addendum PR.
+- **Unblocks:** every engine slice.
 
-> **Descoped by this ruling.** The engine's interim Level-B receipt machinery —
-> the durable `JobRelayReceiptV0` chain built to make relay hops idempotent and
-> restart-safe *on a non-durable substrate* — is **descoped pending P1**. On a
-> Level D substrate *some* of it is redundant — but the pi-v2 analysis
-> (2026-08-26, `research/pi-v2-alignment.md`) corrects an overstatement here:
-> harness-level durability makes effects idempotent *within one agent's own
-> operation*; **crash-safe reservation of a turn across sessions has no
-> substrate equivalent**, so the cross-session half of the receipt design
-> likely survives. It is not deleted from the plan; it is marked
-> `descoped-pending-P1` and the post-P1 design decides how much survives.
+#### The slice state machine
 
-> **Relay-first vs blackboard is now a post-P1 decision.** Both remain live
-> candidates. The Buzz / Grok Bot research (recorded in #1399) stands and does
-> not need redoing: Buzz = shared durable log with emergent turn-taking and no
-> home for caps; Grok Bot = shared-VM implicit context, no loop control,
-> fragmented threads. Level D is what makes the blackboard shape *possible*, so
-> the choice is made when the substrate is real — not before. One constraint on
-> that future choice: a blackboard is a shared-transcript runtime primitive,
-> and ratified §7 requires **its own explicit promotion gate** for any such
-> primitive (§8 creates no shared-runtime room) — selecting the blackboard
-> post-P1 is therefore an owner ruling plus a ratified-plan amendment, never
-> just an engineering pick. The relay-vs-native-binding default is stated in
-> the engine chapter: D22's native binding unless a D22/D28 amendment says
-> otherwise.
-
-> **Scope boundary.** Level-D streams are the keystone for restart-safe
-> multi-Agent conversation and timeline projection. They do not replace the
-> accepted-work protocol: Work/Run admission, effect identity and
-> reconciliation, Artifact versions, Delivery, cost, and delayed Outcome
-> linkage remain separate durable semantics. The engine consumes both layers.
-
-> **Pi-adoption constraints on this premise (2026-08-27, from the gap
-> review).** If the pi-v4 core is adopted for any part of this premise:
-> (1) the harness adapter lives **under** the D29 gateway — a private
-> backend of the funnel, never a parallel session path; (2) an explicit
-> **crash/reconciliation protocol** between Boring's durable gateway ledger
-> and pi's Session store is a named deliverable — two durable stores that
-> can disagree after a crash need a defined winner and repair sequence;
-> (3) session identity stays **workspace-scoped** (our addressing, pi ids
-> internal); (4) **BYOK and model authority remain Boring-owned** — the D27
-> credential vault and the model-capability issuer stay authoritative over
-> pi's own Accounts/Models services, which must consume injected authority,
-> never source it.
-
-> **No-waste split (owner direction 2026-08-27, post-spike).** Pi's real v4
-> runtime is close (dev essentially complete) but unpublished, and the
-> owner will not idle the keystone nor build throwaway work. The spike
-> proved the split line: of P1's four conformance concerns, only
-> **stream-sequence continuity** is substrate-replaceable by pi v2 — the
-> durable gateway **ledger**, effect **admission**, cross-session
-> **activity**, and the resume-to-browser protocol are ours on any
-> substrate. Therefore: the **substrate-neutral layer starts now**, written
-> against gateway/seam interfaces (the `AgentHarnessBackend` seam — private,
-> under the D29 gateway, raised to P1 — lands alongside); the **event-store schema waits for pi** — the owner
-> explicitly accepts waiting where it saves dev time (ruling sharpened
-> 2026-08-27). The two-week mark (2026-09-10) is a **check-in, not a
-> forced build**: if pi has not shipped the runtime by then, the owner
-> decides wait-longer vs build-ours; nothing starts by default. A release
-> watcher is armed on the pi package registry.
-
-**P1 slice table.**
+P1's honest sizing is a state machine, not a flat "two one-session slices"
+estimate — that earlier claim is withdrawn.
 
 | Slice | State |
 |---|---|
@@ -142,15 +83,99 @@ deferral.
 | P1-B event-stream backend | Waiting for qualifying pi release |
 | P1-C Level-D completion + default-on + D29 evidence | Waiting for P1-B |
 
-A blocked portion never lives inside an in-progress bead — P1-B is its own
-blocked bead, and P1 is not complete before P1-C.
+Bead mapping: `wt-391-forward-9p50.1` is P1-A (the substrate-neutral slices,
+A1–A5); `wt-391-forward-hotp` is P1-B, its own **blocked-on-pi** bead;
+`wt-391-forward-9p50.2` is P1-C. A blocked portion never lives inside an
+in-progress bead — P1-B is split out precisely so P1-A's readiness is not
+hostage to P1-B's wait, and P1 is not complete before P1-C runs.
 
-> **Named proof addition — the paused-human restart.** P1's proof set
-> includes the flagship journey: a thread paused on an ask-user question,
-> host restarts, the client reattaches — question, transcript, and pending
-> state intact, answer still routable. This is the single most
-> user-visible durability promise and must be a falsifiable e2e, not a
-> unit test.
+#### Scope boundary
+
+Level-D streams are the keystone for restart-safe multi-Agent conversation
+and timeline projection. They do not replace the accepted-work protocol:
+Work/Run admission, effect identity and reconciliation, Artifact versions,
+Delivery, cost, and delayed Outcome linkage remain separate durable
+semantics. The engine consumes both layers.
+
+#### Pi rules
+
+Constraints on this premise if the pi-v4 core is adopted for any part of it
+(ruled 2026-08-27, from the gap review and sharpened in the post-spike
+no-waste split):
+
+1. The harness adapter lives **under** the D29 gateway / `AgentHarnessBackend`
+   seam — a private backend of the funnel, never a parallel session path.
+   That seam is raised to P1 and lands alongside the substrate-neutral layer.
+2. An explicit **crash/reconciliation protocol** between Boring's durable
+   gateway ledger and pi's Session store is a named deliverable — two durable
+   stores that can disagree after a crash need a defined winner and repair
+   sequence.
+3. Session identity stays **workspace-scoped** (our addressing, pi ids
+   internal).
+4. **BYOK and model authority remain Boring-owned** — the D27 credential
+   vault and the model-capability issuer stay authoritative over pi's own
+   Accounts/Models services, which must consume injected authority, never
+   source it.
+
+The post-spike split (owner direction 2026-08-27) turned these constraints
+into a concrete build order. Of P1's four conformance concerns, only
+**stream-sequence continuity** is substrate-replaceable by pi v2 — the
+durable gateway **ledger**, effect **admission**, cross-session **activity**,
+and the resume-to-browser protocol are ours on any substrate. So: the
+**substrate-neutral layer (P1-A) starts now**, written against the
+gateway/seam interfaces; the **event-store schema (P1-B) waits for a
+qualifying pi release** — the owner explicitly accepts waiting where it saves
+dev time. Adoption is behavior-gated by the criteria in
+`research/pi-v2-alignment.md`, never version-gated. **2026-09-10 is an owner
+check-in, not an automatic build trigger**: if pi has not shipped a
+qualifying runtime by then, the owner decides wait-longer vs build-ours;
+nothing starts by default. A release watcher is armed on the pi package
+registry.
+
+#### Named proofs
+
+**The paused-human restart.** P1's proof set includes the flagship journey:
+a thread paused on an ask-user question, host restarts, the client
+reattaches — question, transcript, and pending state intact, answer still
+routable. This is the single most user-visible durability promise and must
+be a falsifiable e2e, not a unit test.
+
+**The headless journey.** Job in via API/CLI → agent runs → artifact → human
+decision → restart survives → delivery. Adopted as a named conformance proof
+that runs parallel, not gating: it never blocks substrate-free shell chrome,
+but it is **required evidence for P1 completion** — and therefore
+indirectly gates every Job Thread or Thread-view slice that consumes P1.
+
+#### Descoped and deferred choices
+
+**Level-B receipt machinery — descoped-pending-P1.** The engine's interim
+Level-B receipt machinery — the durable `JobRelayReceiptV0` chain built to
+make relay hops idempotent and restart-safe *on a non-durable substrate* —
+is descoped pending P1 (ruled 2026-08-26). On a Level D substrate *some* of
+it is redundant — but the pi-v2 analysis (2026-08-26,
+`research/pi-v2-alignment.md`) corrects an overstatement here: harness-level
+durability makes effects idempotent *within one agent's own operation*;
+**crash-safe reservation of a turn across sessions has no substrate
+equivalent**, so the cross-session half of the receipt design likely
+survives. It is not deleted from the plan; it is marked
+`descoped-pending-P1`, and the post-P1 design decides how much survives.
+
+**Relay-vs-blackboard — post-P1.** Both remain live candidates (ruled
+2026-08-26). The Buzz / Grok Bot research (recorded in #1399) stands and does
+not need redoing: Buzz = shared durable log with emergent turn-taking and no
+home for caps; Grok Bot = shared-VM implicit context, no loop control,
+fragmented threads. Level D is what makes the blackboard shape *possible*, so
+the choice is made when the substrate is real — not before. One constraint
+on that future choice: a blackboard is a shared-transcript runtime
+primitive, and ratified §7 requires **its own explicit promotion gate** for
+any such primitive (§8 creates no shared-runtime room) — selecting the
+blackboard post-P1 is therefore an owner ruling plus a ratified-plan
+amendment, never just an engineering pick. The relay-vs-native-binding
+default is stated in the engine chapter: D22's native binding unless a
+D22/D28 amendment says otherwise.
+
+*Ruling history: this section consolidates dated rulings of 2026-08-26/27;
+the commit history of this file is the audit trail.*
 
 ---
 
