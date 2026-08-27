@@ -21,6 +21,7 @@ import {
   createAgentHostRuntimeCapabilityRoutes,
   type AgentHostRuntimeCapabilityProjection,
 } from './runtimeCapabilityProjection'
+import { statusForGatewayError } from './gatewayHttpStatus'
 import { projectStableServiceError } from './stableServiceError'
 
 const ADDRESSED_HEARTBEAT_INTERVAL_MS = 25_000
@@ -183,25 +184,6 @@ function parseWithSchema<T>(
   return undefined
 }
 
-function statusForGatewayError(code: string): number {
-  if (code === AgentGatewayErrorCode.AGENT_SCOPE_DENIED) return 403
-  if (code === AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND || code === AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN) return 404
-  if (
-    code === AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT
-    || code === AgentGatewayErrorCode.AGENT_REQUEST_IN_PROGRESS
-    || code === AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN
-    || code === AgentGatewayErrorCode.AGENT_RUNTIME_RESTART_REQUIRED
-    || code === AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE
-    || code.includes('CURSOR')
-    || code.includes('REPLAY')
-  ) return 409
-  if (
-    code === AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED
-    || code === AgentGatewayErrorCode.AGENT_SHARED_ENVIRONMENT_UNAVAILABLE
-  ) return 503
-  return 400
-}
-
 function sendError(reply: FastifyReply, error: unknown): FastifyReply {
   if (error instanceof AgentGatewayError) {
     return reply.code(statusForGatewayError(error.code)).send({ error: error.toJSON() })
@@ -243,8 +225,18 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
     const query = parseWithSchema(ActivityEventsQuerySchema, request.query, reply, 'query')
     if (!query) return
     let workspaceScopeId: string
+    let scope: Awaited<ReturnType<ProjectionOptions['authorizeAgentRequest']>>
+    let snapshot: AgentSessionActivityUpdate[]
     try {
-      workspaceScopeId = await input.resolveActivityWorkspaceScope(request)
+      ;[workspaceScopeId, scope] = await Promise.all([
+        input.resolveActivityWorkspaceScope(request),
+        input.options.authorizeAgentRequest(request),
+      ])
+      const visibleAgentTypeIds = new Set(
+        (await input.gateway.listAgents({ scope })).map((agent) => agent.agentTypeId),
+      )
+      snapshot = input.activity.snapshot(workspaceScopeId)
+        .filter((update) => visibleAgentTypeIds.has(update.ref.agentTypeId))
     } catch (error) {
       return sendError(reply, error)
     }
@@ -258,10 +250,21 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
       if (reply.raw.destroyed || reply.raw.writableEnded) return
       reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
     }
+    let eventTail = Promise.resolve()
     const unsubscribe = input.activity.subscribe(workspaceScopeId, (update: AgentSessionActivityUpdate) => {
-      write('activity', update)
+      eventTail = eventTail.then(async () => {
+        await input.gateway.authorizeAgentAccess?.({
+          scope,
+          agentTypeId: update.ref.agentTypeId,
+          operation: 'stream.event',
+        })
+        write('activity', update)
+      }).catch(() => {
+        cleanup()
+        if (!reply.raw.writableEnded) reply.raw.end()
+      })
     })
-    write('snapshot', { sessions: input.activity.snapshot(workspaceScopeId) })
+    write('snapshot', { sessions: snapshot })
     const heartbeat = setInterval(() => {
       if (!reply.raw.writableEnded) reply.raw.write(': heartbeat\n\n')
     }, ADDRESSED_HEARTBEAT_INTERVAL_MS)

@@ -104,6 +104,29 @@ describe('GET /api/v1/ready-status', () => {
     await app.close()
   }, 15_000)
 
+  test('closes a pending stream before emitting an event when authorization is revoked', async () => {
+    const tracker = new ReadyStatusTracker({
+      sandboxReady: true,
+      harnessReady: true,
+      capabilities: { runtimeDependencies: { state: 'preparing' } },
+    })
+    const authorizeEvent = vi.fn(async () => {
+      throw new Error('revoked')
+    })
+    const app = Fastify({ logger: false })
+    app.register(readyStatusRoutes, { tracker, authorizeEvent })
+    await app.ready()
+    setTimeout(() => tracker.updateRuntimeDependencies({ state: 'ready' }), 0)
+
+    const response = await app.inject({ method: 'GET', url: '/api/v1/ready-status' })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.body).toContain('"runtimeDependencies":{"state":"preparing"')
+    expect(response.body).not.toContain('"runtimeDependencies":{"state":"ready"')
+    expect(authorizeEvent).toHaveBeenCalledOnce()
+    await app.close()
+  })
+
   test('registers pending SSE with Host lifecycle and unregisters on terminal readiness', async () => {
     const tracker = new ReadyStatusTracker({
       sandboxReady: true,

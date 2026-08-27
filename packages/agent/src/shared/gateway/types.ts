@@ -52,6 +52,42 @@ export interface AgentScopeVerifier {
   verify(scope: AuthorizedAgentScope): Promise<VerifiedAgentScopeClaim>
 }
 
+/**
+ * Product-owned access decision for one deployed Agent in one verified scope.
+ * The Host consumes this decision before session lookup, runtime binding, or
+ * effects. A host without a resolver preserves the legacy all-deployed policy.
+ */
+export type AgentAccessDecision =
+  | { readonly state: 'allowed'; readonly seatId?: string }
+  | { readonly state: 'not-available'; readonly reason: 'not-deployed' | 'not-seated' }
+  | {
+      readonly state: 'entitlement-denied'
+      readonly seatId: string
+      readonly denial: 'subscription-required' | 'forbidden'
+    }
+  | { readonly state: 'policy-unavailable'; readonly retryAfterSeconds?: number }
+
+export type AgentAccessOperation =
+  | 'catalog'
+  | 'session.list'
+  | 'session.read'
+  | 'session.create'
+  | 'session.mutate'
+  | 'runtime.bind'
+  | 'runtime.effect'
+  | 'stream.event'
+
+export interface ResolveAgentAccessInput {
+  readonly authorizedScope: AuthorizedAgentScope
+  readonly verifiedClaim: VerifiedAgentScopeClaim
+  readonly agentTypeId: string
+  readonly operation: AgentAccessOperation
+}
+
+export type ResolveAgentAccess = (
+  input: ResolveAgentAccessInput,
+) => Promise<AgentAccessDecision>
+
 export interface AgentSessionRef {
   readonly agentTypeId: string
   readonly sessionId: string
@@ -226,6 +262,11 @@ export interface AgentSessionConnection {
 }
 
 export interface AgentGateway {
+  authorizeAgentAccess?(input: {
+    readonly scope: AuthorizedAgentScope
+    readonly agentTypeId: string
+    readonly operation: AgentAccessOperation
+  }): Promise<void>
   listAgents(input: ListAgentsInput): Promise<readonly AgentSummary[]>
   listSessions(input: AuthorizedAgentSessionQuery): Promise<AgentSessionPage>
   createSession(input: CreateAgentSessionInput): Promise<AgentSessionRef>
