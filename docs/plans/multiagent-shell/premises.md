@@ -36,7 +36,7 @@ Two consequences, stated plainly:
 | # | Premise | Unblocks | Beadable | Size |
 |---|---|---|---|---|
 | **P1** | Durable streams — Level D conformance, default-on | the whole engine | epic `wt-391-forward-9p50`: `.1` conformance, `.2` rollout | state machine — see P1 slice table |
-| **P2** | Thread storage model — spike + competitor study | engine S1, the "noun" question, #1355's ref types | epic `shell-ngfs.13`: `.13.1` research, `.13.2` spike | **re-sized 2026-08-27:** research 1–2 sessions, spike 2–3 (three candidates + pi substrate variant + Work-cardinality questions grew it; the old "2 × one-session" claim is withdrawn) |
+| **P2** | Thread storage **shape** — first-class stream vs projection (value-root RULED, §9a) | engine S1, #1355's ref types | epic `shell-ngfs.13`: `.13.1` research **DONE**, `.13.2` shape spike | shape spike 1–2 sessions after P1-A |
 | **P3** | Seat storage — audit-grade attribution (ratified concept, formerly C7) | honest who-said-what everywhere | epic `shell-ngfs.14`: `.14.1` catalog/envelope, `.14.2` projection | 2 × one-session slices |
 | **P4** | Kernel View — first ratified slice | Library saved views | yes — new | sizing unknown, see below |
 | **P5** | Merge queue | branch health for everything | no — a list, not a bead | ongoing |
@@ -80,14 +80,13 @@ estimate — that earlier claim is withdrawn.
 | P1-A3 request/effect/attention durability | Ready |
 | P1-A4 activity + resume protocol | Ready |
 | P1-A5 headless + paused-human proofs | Ready after A2–A4 |
-| P1-B event-stream backend | Waiting for qualifying pi release |
-| P1-C Level-D completion + default-on + D29 evidence | Waiting for P1-B |
+| P1-B event-stream backend (Boring schema; pi gate REMOVED, §9c) | Ready after A2 |
+| P1-C Level-D completion + default-on + D29 evidence | After P1-B and A5 |
 
-Bead mapping: `wt-391-forward-9p50.1` is P1-A (the substrate-neutral slices,
-A1–A5); `wt-391-forward-hotp` is P1-B, its own **blocked-on-pi** bead;
-`wt-391-forward-9p50.2` is P1-C. A blocked portion never lives inside an
-in-progress bead — P1-B is split out precisely so P1-A's readiness is not
-hostage to P1-B's wait, and P1 is not complete before P1-C runs.
+Bead mapping (split 2026-08-27, one bead per slice): `9p50.1` = A1,
+`9p50.3` = A2, `9p50.4` = A3, `9p50.5` = A4, `9p50.6` = A5 (deps A2–A4),
+`9p50.7` = P1-B (dep A2), `9p50.2` = P1-C (deps P1-B, A5). All under epic
+`wt-391-forward-9p50`. P1 is not complete before P1-C runs.
 
 #### Scope boundary
 
@@ -121,16 +120,13 @@ The post-spike split (owner direction 2026-08-27) turned these constraints
 into a concrete build order. Of P1's four conformance concerns, only
 **stream-sequence continuity** is substrate-replaceable by pi v2 — the
 durable gateway **ledger**, effect **admission**, cross-session **activity**,
-and the resume-to-browser protocol are ours on any substrate. So: the
-**substrate-neutral layer (P1-A) starts now**, written against the
-gateway/seam interfaces; the **event-store schema (P1-B) waits for a
-qualifying pi release** — the owner explicitly accepts waiting where it saves
-dev time. Adoption is behavior-gated by the criteria in
-`research/pi-v2-alignment.md`, never version-gated. **2026-09-10 is an owner
-check-in, not an automatic build trigger**: if pi has not shipped a
-qualifying runtime by then, the owner decides wait-longer vs build-ours;
-nothing starts by default. A release watcher is armed on the pi package
-registry.
+and the resume-to-browser protocol are ours on any substrate. **The pi wait
+gate is REMOVED** (second grill, 2026-08-27 — RECONCILIATION §9c): P1-A
+starts now against the gateway/seam interfaces, and **P1-B builds Boring's
+own event backend** behind the `AgentHarnessBackend` seam once A2 lands. No
+calendar check-in, no wait-for-release. The `research/pi-v2-alignment.md`
+criteria survive only as the bar a future pi release must clear — behavior
+plus migration cost against a then-working backend — to replace it.
 
 #### Named proofs
 
@@ -181,116 +177,87 @@ the commit history of this file is the audit trail.*
 
 ### P2 — Thread storage model (spike + competitor study)
 
-**Ruling.** *Not decided.* The old "noun" question — projection descriptor vs
-canonical multi-seat Thread — is **withdrawn as a plan-level recommendation**
-and replaced by this premise. The engine's data-model slice consumes its
-findings.
+**Ruling (updated 2026-08-27, second grill).** The premise is now **half
+ruled, half spiked**:
 
-This is the highest-leverage unknown in the program. It decides the shape of the
-engine's storage, what #1355's conversation references can point at, and whether
-"1 Thread = 1 job" is a record or a view.
+- **RULED — the value root** (RECONCILIATION §9a): a **Thread is the durable
+  job root**; a **Session is one runtime conversation**; one Thread binds
+  **0..n Sessions** (headless = zero; channel-spanning or re-opened jobs =
+  several). The old three-candidate framing conflated this question with
+  storage; the requirements already ratified (headless Work, one job across
+  WhatsApp + web, economics surviving conversation archive) excluded the
+  Thread-as-conversation-root candidates, so this half was decided by ruling —
+  a spike over pre-excluded candidates is ceremony. Candidate (iii) below is
+  adopted **at the ontology level with Thread as the root noun** — no new
+  "Work" kernel noun.
+- **SPIKED — the storage shape** (child `.13.2`): is the Thread's timeline a
+  **first-class durable stream** or a **projection over its Sessions'
+  records**? That is the remaining highest-leverage unknown; the engine's
+  data-model slice consumes its findings, and #1355's conversation references
+  type against the ruled ontology plus this shape answer.
 
-#### Brief — Part A: competitor study
+#### Part A: competitor study — DONE (2026-08-27)
 
-**Research question.** *How do systems that successfully run long-lived,
-multi-participant conversations model the relationship between a durable
-conversation record and the individual sessions/runs inside it?*
+Delivered: [`research/thread-storage-competitor-study.md`](research/thread-storage-competitor-study.md)
+(bead `shell-ngfs.13.1`, CLOSED) — a 7×7 primary-sourced comparison
+(Slack, Discord, Linear, Intercom, Notion, Buzz, pi v2) over the six canonical
+facts plus the widened value-unit question. Headline findings consumed by the
+ruling above: **Linear and Intercom are existence proofs for the
+work-record-root model**; Buzz has the strongest authorship story; pi v2 is a
+pure conversation substrate with no value-root. No storage shape was chosen —
+that is Part B's job.
 
-Study each for the same six facts, so the answers are comparable:
+#### Part B: the shape spike, in our stack (rescoped 2026-08-27)
 
-1. What is the durable unit — the conversation, the message, or the participant session?
-2. Is participation a property of the record, or a separate join?
-3. How is per-message authorship attributed, and is it audit-grade or display-grade?
-4. What happens to the record when a participant is removed — rewrite, tombstone, or retain?
-5. How is "the same conversation" addressed across surfaces (deep link, API, search)?
-6. What does archival mean — a flag, a move, or a different store?
+**Question.** *Given the ruled ontology (Thread = job root, 0..n Sessions),
+what does each storage **shape** for the Thread timeline actually cost in our
+codebase?* Two shapes, built far enough to be measured — not to ship:
 
-**Systems to study:**
+- **(i) Projection.** The Thread record is lightweight; the timeline is
+  derived by projecting its bound Sessions' records into one view. Cheap to
+  add; replay cost and cross-Session ordering are the risks.
+- **(ii) First-class stream.** The Thread owns its own durable timeline
+  stream; Session records feed it and become an implementation detail
+  beneath it. Stronger ordering and attribution locality; migration and
+  write-path complexity are the risks.
 
-| System | Why it is on the list |
-|---|---|
-| **Slack** | Channel + threaded replies at very large scale; the canonical "channel is the record" model |
-| **Discord** | Threads as first-class children of channels; explicit archive semantics |
-| **Linear** | Issue-as-record with a comment stream; closest to "1 Thread = 1 job" |
-| **Intercom** | Conversation record with *both* human and agent participants and handoffs — the closest analogue to our problem |
-| **Notion** | Blocks-as-records; discussion attached to arbitrary subjects |
-| **Buzz** | Already researched (#1399): shared durable event log, no central record. The "no record at all" end of the spectrum |
+**Substrate note** (pi-v2 analysis, 2026-08-26): a pi-backed store, if ever
+adopted past the §9c bar, is a substrate variant of shape (ii) — not a third
+shape. The former candidate (iii) is no longer a spike candidate: its
+ontology half was **adopted by ruling** (§9a, Thread as root — the rule-11
+amendment it required has been made), and its storage half is exactly the
+(i)-vs-(ii) question this spike answers.
 
-**Output:** a comparison table on those six facts, plus a short verdict naming
-which model our constraints most resemble and why.
-
-**Widened question (full-vision review, 2026-08-27).** Beyond the six facts,
-also ask how each system relates the durable customer-value unit to its
-conversations: can that unit exist without a conversation at all, and can it
-bind more than one?
-
-#### Brief — Part B: technical spike, in our stack
-
-**Question.** *In our codebase, what does each storage model actually cost?*
-
-Two candidates, built far enough to be measured — not to ship. **Substrate
-note (pi-v2 analysis, 2026-08-26):** pi v2's shipped v4 harness
-(Session/Branch/AgentLane + typed durable values, public since 0.84.0, with
-a v3 transcript decoder) is evaluated as a **substrate variant of the
-first-class-record candidate** — not a third ontology
-(`research/pi-v2-alignment.md`). The candidates:
-
-- **(i) Index-card / projection.** A lightweight record that points at existing
-  per-agent sessions and projects them into one timeline. Cheap to add; the
-  timeline is derived.
-- **(ii) First-class thread record.** The thread owns its own durable message
-  stream; per-agent sessions become an implementation detail beneath it.
-- **(iii) Work + conversation bindings.** A durable Work/Job record owns the
-  job contract, economics, Runs, Artifacts, Deliveries, Decisions, and
-  Outcomes. One or more Threads or external conversations bind to it as
-  interaction histories. A Job Thread is the default shell projection, but
-  headless Work may have no Thread at all.
-  **Amendment gate:** if the spike recommends this candidate, "Work" is a
-  **new durable kernel root** — adopting it requires an explicit
-  ratified-plan amendment and owner ruling (rule 11), never a quiet schema
-  choice inside the engine. The spike report must say so on its first page
-  if (iii) wins.
-
-**Measure, for each:** write path complexity; read/replay cost for a long
-thread; behavior under P1's durable streams; how per-message attribution lands
-(feeds P3); what a participant change costs; migration cost from today's
-per-session records; and what #1355's reference types would have to become.
+**Measure, for each shape:** write-path complexity; read/replay cost for a
+long Thread; behavior under P1's durable streams; how per-message attribution
+lands (feeds P3); what a participant change costs; migration cost from
+today's per-session records; what #1355's reference types become.
 
 **Decision criteria — the spike is done when it can answer:**
 
-1. Which model survives a restart with the timeline intact, with least new machinery on top of P1?
+1. Which shape survives a restart with the timeline intact, with least new machinery on top of P1?
 2. Which gives audit-grade attribution without a second ledger (P3's constraint)?
 3. Which lets a Thread's participants change without rewriting or losing history?
 4. Which requires the smaller migration from today's per-session records?
-5. Which one can #1355 type its conversation references against *today*, without assuming single-seat?
-6. Which candidate supports a bounded headless job without fabricating a chat?
-7. Which candidate supports a request that begins in WhatsApp and continues in the web app?
-8. Which candidate keeps Work economics and Outcomes stable if a conversation is forked, archived, or deleted under policy?
+5. Which can #1355 type its conversation references against *today*, without assuming single-seat?
 
-**Explicitly NOT in scope:** shipping either candidate; the relay/blackboard
-choice (that is post-P1); any UI.
+(The former criteria 6–8 — headless jobs, channel-spanning jobs, economics
+surviving archive — are no longer spike criteria: the §9a ruling settles them
+at the ontology level, and both shapes must satisfy them as **conformance
+requirements**, checked in the spike report, not used to pick a winner.)
 
-**Honest sizing:** two one-session children under epic `shell-ngfs.13`:
-`.13.1` research may run in parallel with P1; `.13.2` is the technical spike
-and starts after P1a (`9p50.1`) establishes Level D's shape, since criterion 1
-depends on it.
+**Explicitly NOT in scope:** shipping either shape; the relay/blackboard
+choice (post-P1); any UI.
+
+**Sizing and order:** one child, `shell-ngfs.13.2` (retitled to the shape
+spike), 1–2 sessions, starting after P1-A establishes Level D's shape (its
+criterion 1 depends on it). A first sub-step may run earlier: prototype
+#1355's reference shapes against the ruled ontology (a Thread with zero /
+one / several Sessions; a stable Delivery/Outcome after Session archive) —
+no production storage.
 
 **Feeds:** the engine gate (P6), engine S1, and #1355's `ConsoleThreadRefV1`
 repair.
-
-**Split (owner ruling, 2026-08-27).**
-
-- **P2-B1 (now): semantic/cardinality prototype.** No production storage.
-  Prototype the reference shapes for #1355 against: a headless Work with no
-  conversation; one Work bound to WhatsApp + web conversations; a Job Thread
-  with one Work; several internal conversations for one customer job; a
-  stable Delivery/Outcome after conversation archive.
-- **P2-B2 (later): durability/performance/migration benchmark.** After a pi
-  or Boring event backend exists: replay cost, restart behavior, migration
-  from existing sessions, participant changes, long-thread read cost, and
-  the actual storage schema.
-
-Business semantics move now; no throwaway event-store work.
 
 ---
 
@@ -420,6 +387,21 @@ chapter's open-questions section.
 | Nav extensibility | **OPEN — plugins CAN add top-level entries.** *The owner ruled against the closed-IA recommendation.* Crowding risk is noted and **accepted**. |
 | Library saved views | **Wait for the kernel View system** (P4). v0 Library = files + built-in views only. |
 
+## Rulings folded from the second owner grill (2026-08-27)
+
+Full ontology text in `docs/plans/long-term/ratified/RECONCILIATION.md` §9;
+sequencing consequences in `docs/direction/DIRECTION.md` (amendment
+2026-08-27 evening).
+
+| Topic | Ruling |
+|---|---|
+| Thread/Session | **R-c amended (§9a):** Thread = durable job root, one per job; Session = one runtime conversation; 1 Thread : 0..n Sessions. Channel stays transport. |
+| P2 value root | **Ruled, not spiked** — Thread is the root (former candidate iii at ontology level, no new noun). Only the storage **shape** goes to `.13.2`. |
+| Transcript authorship | **Multi-author (§9b):** one composer, several named agents visibly authoring posts; "one voice / workers hidden" retired; the orchestrator holds its own Seat. |
+| Pi gate | **Removed (§9c):** P1-B builds the Boring event backend behind the seam; no calendar check-in. |
+| P1-A granularity | **Five beads** (`9p50.1/.3/.4/.5/.6`) plus P1-B (`9p50.7`) and P1-C (`9p50.2`). |
+| Relay engine plan | **Demoted to historical candidate** under `research/candidates/`; new engine plan written post-shape-spike from §9's rulings. |
+
 ---
 
 ## Sequencing
@@ -427,9 +409,9 @@ chapter's open-questions section.
 ```
         ┌─────────────────────── run in parallel ───────────────────────┐
         │                                                               │
-   P1 durable streams          P2 storage spike           P3 seat/C7 audit
-   (9p50, ~2 sessions)         A: competitor study        (~2 sessions)
-        │                      B: technical spike ◄── needs P1's shape
+   P1 durable streams          P2 storage shape           P3 seat/C7 audit
+   (9p50: A1–A5 → B → C)       A: study DONE              (~2 sessions)
+        │                      B: shape spike ◄── needs P1-A's shape
         │                           │                          │
         └───────────┬───────────────┘                          │
                     ▼                                          │
@@ -484,11 +466,14 @@ therefore waits.
 
 ---
 
-## Honest status of this program
+## Honest status of this program (refreshed 2026-08-27, second grill)
 
-- **P1** is scoped into two one-session children; P1a is genuinely ready.
-- **P2** is scoped into research and technical-spike children; nobody has run them.
-- **P3** is ratified and now split into catalog/envelope and provenance-projection
+- **P1** is a state machine, one bead per slice: A1–A5 ready (A5 after
+  A2–A4), P1-B ready after A2 (pi gate removed), P1-C last. Nothing has run.
+- **P2** research half is **DONE** (`research/thread-storage-competitor-study.md`);
+  the value root is **ruled** (§9a); the shape spike (`.13.2`) has not run
+  and waits on P1-A.
+- **P3** is ratified and split into catalog/envelope and provenance-projection
   children; its implementation uncertainty remains high.
 - **P4** has no sizing at all and needs its own planning pass.
 - **P5** is discipline, not work.
