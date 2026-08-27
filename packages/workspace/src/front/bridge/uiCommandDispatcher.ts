@@ -141,6 +141,9 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
         try {
           surface.openFile(path, {
             filesystem: normalizeUiFilesystem(strParam(cmd.params, "filesystem")),
+            // Agent-driven opens are persistent so a plural request can show
+            // every requested file; each call still activates its own tab.
+            preview: false,
             // mode reaches the file panel params; "view" panels (markdown
             // etc.) render genuinely read-only.
             ...(mode ? { mode } : {}),

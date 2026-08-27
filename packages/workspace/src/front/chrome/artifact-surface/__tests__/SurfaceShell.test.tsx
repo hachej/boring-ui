@@ -309,6 +309,34 @@ describe("SurfaceShell", () => {
     }))
   })
 
+  it("retains persistent file opens as distinct tabs while focusing each one", async () => {
+    let surface: SurfaceShellApi | undefined
+    const panelRegistry = new PanelRegistry()
+    panelRegistry.register("editor", { title: "Editor", placement: "center", component: () => null })
+    const surfaceResolverRegistry = new SurfaceResolverRegistry()
+    surfaceResolverRegistry.register("filesystem", {
+      source: "builtin",
+      resolve: (request) => request.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND
+        ? { component: "editor", params: { path: request.target }, score: 0 }
+        : undefined,
+    })
+
+    renderSurface("workspace-a", { onReady: (api) => { surface = api } }, panelRegistry, surfaceResolverRegistry)
+    await waitFor(() => expect(surface).toBeDefined())
+
+    await act(async () => {
+      surface?.openFile("one.md", { preview: false })
+      surface?.openFile("two.md", { preview: false })
+      surface?.openFile("three.md", { preview: false })
+    })
+
+    expect(mockAddPanel.mock.calls.map(([panel]) => panel)).toEqual([
+      expect.objectContaining({ id: "file:user:one.md", params: expect.objectContaining({ __workbenchPreview: false }) }),
+      expect.objectContaining({ id: "file:user:two.md", params: expect.objectContaining({ __workbenchPreview: false }) }),
+      expect.objectContaining({ id: "file:user:three.md", params: expect.objectContaining({ __workbenchPreview: false }) }),
+    ])
+  })
+
   it("reactivates legacy user file panels instead of duplicating default workspace opens", async () => {
     let surface: SurfaceShellApi | undefined
     const legacySetActive = vi.fn()

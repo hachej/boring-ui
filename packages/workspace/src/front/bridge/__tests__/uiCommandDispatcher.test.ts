@@ -11,10 +11,10 @@ function fakeSurface(): SurfaceShellApi & {
   __expanded: string[]
   __expandCalls: Array<{ path: string; filesystem?: string }>
   __leftClosed: number
-  __openFileCalls: Array<{ path: string; filesystem?: string; mode?: string }>
+  __openFileCalls: Array<{ path: string; filesystem?: string; mode?: string; preview?: boolean }>
 } {
   const opened: string[] = []
-  const openFileCalls: Array<{ path: string; filesystem?: string; mode?: string }> = []
+  const openFileCalls: Array<{ path: string; filesystem?: string; mode?: string; preview?: boolean }> = []
   const surfaces: unknown[] = []
   const panels: unknown[] = []
   const expanded: string[] = []
@@ -26,11 +26,11 @@ function fakeSurface(): SurfaceShellApi & {
     __expanded: string[]
     __expandCalls: Array<{ path: string; filesystem?: string }>
     __leftClosed: number
-    __openFileCalls: Array<{ path: string; filesystem?: string; mode?: string }>
+    __openFileCalls: Array<{ path: string; filesystem?: string; mode?: string; preview?: boolean }>
   } = {
-    openFile: (path: string, options?: { filesystem?: string; mode?: string }) => {
+    openFile: (path: string, options?: { filesystem?: string; mode?: string; preview?: boolean }) => {
       opened.push(path)
-      openFileCalls.push({ path, filesystem: options?.filesystem, mode: options?.mode })
+      openFileCalls.push({ path, filesystem: options?.filesystem, mode: options?.mode, preview: options?.preview })
     },
     openSurface: (request: unknown) => surfaces.push(request),
     openPanel: (cfg: unknown) => panels.push(cfg),
@@ -71,21 +71,21 @@ describe("dispatchUiCommand", () => {
     const c = ctx()
     dispatchUiCommand({ kind: "openFile", params: { path: "greeter.ts" } }, c)
     expect(c.__surface.__opened).toEqual(["greeter.ts"])
-    expect(c.__surface.__openFileCalls).toEqual([{ path: "greeter.ts", filesystem: "user" }])
+    expect(c.__surface.__openFileCalls).toEqual([{ path: "greeter.ts", filesystem: "user", preview: false }])
   })
 
   it("openFile forwards mode so view panels open genuinely read-only", () => {
     const c = ctx()
     dispatchUiCommand({ kind: "openFile", params: { path: "prompt.md", mode: "view" } }, c)
-    expect(c.__surface.__openFileCalls).toEqual([{ path: "prompt.md", filesystem: "user", mode: "view" }])
+    expect(c.__surface.__openFileCalls).toEqual([{ path: "prompt.md", filesystem: "user", mode: "view", preview: false }])
     dispatchUiCommand({ kind: "openFile", params: { path: "prompt.md", mode: "bogus" } }, c)
-    expect(c.__surface.__openFileCalls[1]).toEqual({ path: "prompt.md", filesystem: "user" })
+    expect(c.__surface.__openFileCalls[1]).toEqual({ path: "prompt.md", filesystem: "user", preview: false })
   })
 
   it("openFile forwards explicit company_context filesystem", () => {
     const c = ctx()
     dispatchUiCommand({ kind: "openFile", params: { path: "/company/hr/policy.md", filesystem: "company_context" } }, c)
-    expect(c.__surface.__openFileCalls).toEqual([{ path: "/company/hr/policy.md", filesystem: "company_context" }])
+    expect(c.__surface.__openFileCalls).toEqual([{ path: "/company/hr/policy.md", filesystem: "company_context", preview: false }])
   })
 
   it("openFile is a no-op when path is missing or non-string", () => {
@@ -179,6 +179,7 @@ describe("dispatchUiCommand", () => {
     expect(mountedSurface.__openFileCalls).toEqual([{
       path: "/policy.md",
       filesystem: "company_context",
+      preview: false,
     }])
     raf.mockRestore()
   })

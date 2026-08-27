@@ -57,6 +57,8 @@ export interface OpenPanelConfig {
 export interface SurfaceShellOpenFileOptions {
   filesystem?: FilesystemId
   mode?: UiFileOpenMode
+  /** Preview opens replace the previous preview; persistent opens retain one tab per file. */
+  preview?: boolean
 }
 
 /** Result of openFileCore — the shared resolve/activate logic behind openFile
@@ -526,16 +528,21 @@ export function SurfaceShell({
         ...fileBackedParams(resolved.params, normalizedPath, { filesystem, mode: options?.mode }),
         ...options?.extraParams,
       }
+      const panelParams = options?.preview === false
+        ? pinnedWorkbenchParams(params)
+        : workbenchPreviewParams(params)
       fileBackedPanelIdsRef.current.add(panelId)
-      if (activateExistingFilePanel(api, normalizedPath, filesystem, resolved.component, params)) {
+      if (activateExistingFilePanel(api, normalizedPath, filesystem, resolved.component, panelParams)) {
         return finish()
       }
-      prepareFilePreview(api, normalizedPath, filesystem, fileBackedPanelIdsRef.current)
+      if (options?.preview !== false) {
+        prepareFilePreview(api, normalizedPath, filesystem, fileBackedPanelIdsRef.current)
+      }
       if (!activateDockviewPanel({
         id: panelId,
         component: resolved.component,
         title: resolved.title ?? normalizedPath.split("/").pop() ?? normalizedPath,
-        params: workbenchPreviewParams(params),
+        params: panelParams,
       })) {
         return { ok: false, code: "not-ready", message: "surface not ready" }
       }

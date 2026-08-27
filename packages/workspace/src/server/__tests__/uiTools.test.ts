@@ -246,15 +246,14 @@ describe("createExecUiTool — path validation", () => {
 
     expect(tool.description).toContain(
       [
-        "IMPORTANT: openFile is a single-slot focus action. Every successful",
-        "call automatically focuses the requested file. When the user asks to",
-        "open multiple files, call openFile once for EACH requested path, in the",
-        "requested order. Each call replaces the non-persistent focused preview,",
-        "so only the final file remains visible. That sequential focus behavior",
-        "is correct; do not refuse the request, shorten it to one call, or claim",
-        "that the single-slot model prevents opening each requested file.",
-        "exec_ui cannot keep multiple files visible at once, and chat does not",
-        "recognize arbitrary @path text as an open-file request.",
+        "IMPORTANT: Every successful openFile call automatically focuses the",
+        "requested file in its own persistent workbench tab. When the user asks",
+        "to open multiple files, call openFile once for EACH requested path, in",
+        "the requested order. All requested file tabs remain open, and the final",
+        "file is active. Do not refuse the request, shorten it to one/final call,",
+        "or claim that the workbench can show only one file. Reopening the same",
+        "path is idempotent and focuses its existing tab. Chat does not recognize",
+        "arbitrary @path text as an open-file request.",
       ].join("\n"),
     )
     expect(tool.description).not.toContain("HumanArtifact")
