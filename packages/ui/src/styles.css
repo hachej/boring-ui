@@ -45,4 +45,15 @@
   --radius-xl: var(--boring-radius-xl);
   --font-sans: var(--boring-font-sans);
   --font-mono: var(--boring-font-mono);
+  /* Pin the elevation scale explicitly rather than relying on Tailwind's
+   * built-in --shadow-* defaults. shadow-md rendered fully transparent
+   * (rgba(0,0,0,0) 0 0 0 0) on popover surfaces in both themes (#1392) — the
+   * implicit default is fragile across this kit's import chain (ui-kit ->
+   * workspace/agent globals.css each re-import "tailwindcss", so the
+   * generated utility can end up depending on cascade/build order instead of
+   * an explicit value). Values match Tailwind's own shadow-sm/md/lg ramp so
+   * elevation stays visually consistent, just no longer implicit. */
+  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 }
