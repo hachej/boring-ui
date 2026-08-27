@@ -51,7 +51,12 @@ Ordering and dependencies live only in §7; §§1–6 describe shape.
 > pi-v4 Session** (`research/pi-v2-alignment.md`), where the harness itself supplies the shared
 > durable timeline and drill-down, and our host supplies what pi lacks — seat identity/attribution,
 > cross-lane turn reservation and caps, the posts-only boundary, archive semantics. This joins Q2's
-> candidate set (relay / D22 native binding / blackboard / **pi-v4 lanes**); the ratified default
+> candidate set (relay / D22 native binding / blackboard / **pi-v4 lanes** / the **hybrid**:
+> private Session per Seat + lanes *inside* a Seat for its own branches + the Job Thread for
+> settled cross-agent posts — see `research/agentlane-vs-automation.md`, which also records the
+> automation-dependency ruling: the automation plugin *invokes* multi-agent Work as one admission
+> client and never owns team semantics, and the rule that pi may replace runtime coordination
+> mechanics but never product coordination semantics); the ratified default
 > ordering is unchanged, and the choice remains the post-P1 owner gate's. Until then: design nothing
 > that hard-codes the several-sessions assumption where a one-Session-many-lanes shape would break it.
 
