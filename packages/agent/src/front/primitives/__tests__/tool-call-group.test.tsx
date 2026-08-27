@@ -40,6 +40,47 @@ describe('ToolCallGroup renderer metadata', () => {
     expect(html).not.toContain('Running 0s')
   })
 
+  test('keeps running precedence when a group also needs approval', () => {
+    const runningPart = toolPart({
+      toolCallId: 'call-running',
+      state: 'input-available',
+      output: undefined,
+    })
+    const approvalPart = toolPart({
+      toolCallId: 'call-approval',
+      state: 'approval-requested',
+      output: undefined,
+    })
+
+    const html = renderToStaticMarkup(
+      <ToolCallGroup
+        tools={[
+          { part: runningPart as any, key: 'call-running' },
+          { part: approvalPart as any, key: 'call-approval' },
+        ]}
+        mergedToolRenderers={{}}
+      />,
+    )
+
+    expect(html).toContain('data-boring-agent-tool-state="running"')
+    expect(html).toContain('Using custom_tool ×2')
+    expect(html).toContain('Running 0s')
+    expect(html).not.toContain('data-boring-agent-tool-state="approval-needed"')
+    expect(html).not.toContain('Needs approval')
+  })
+
+  test('keeps plain output-available groups settled', () => {
+    const html = renderToStaticMarkup(
+      <ToolCallGroup tools={[{ part: toolPart() as any, key: 'call-1' }]} mergedToolRenderers={{}} />,
+    )
+
+    expect(html).toContain('data-boring-agent-tool-state="settled"')
+    expect(html).toContain('Used custom_tool')
+    expect(html).not.toContain('data-boring-agent-tool-state="failed"')
+    expect(html).not.toContain('Failed custom_tool')
+    expect(html).not.toContain('data-boring-agent-tool-state="running"')
+  })
+
   test.each(['output-denied', 'approval-responded'] as const)('marks %s groups settled', (state) => {
     const part = toolPart({ state })
 
@@ -64,6 +105,22 @@ describe('ToolCallGroup renderer metadata', () => {
     expect(html).not.toContain('Tool calls: Used custom_tool')
     expect(html).not.toContain('data-boring-agent-tool-state="settled"')
     expect(html).not.toContain('Running 0s')
+  })
+
+  test('marks explicit output-error groups failed', () => {
+    const part = toolPart({
+      state: 'output-error',
+      errorText: 'tool failed',
+    })
+
+    const html = renderToStaticMarkup(
+      <ToolCallGroup tools={[{ part: part as any, key: 'call-1' }]} mergedToolRenderers={{}} />,
+    )
+
+    expect(html).toContain('data-boring-agent-tool-state="failed"')
+    expect(html).toContain('Failed custom_tool')
+    expect(html).not.toContain('data-boring-agent-tool-state="settled"')
+    expect(html).not.toContain('Used custom_tool')
   })
 
   test('bounds expanded tool detail rows to the normal tool lane', () => {
