@@ -37,6 +37,7 @@ type SafePaletteState = {
   visibleModalCount: number
   focusedControlInvalid: boolean
   lastActionWasPaletteOpen: boolean
+  lastActionWasNavigationOpen: boolean
   lastActionWasInitial: boolean
   controls: Array<{ name: string; fingerprint: Fingerprint; point: Point }>
 }
@@ -145,6 +146,10 @@ const palette = extract((state): SafePaletteState => {
     && ["Search", "Search⌘K", "Search catalogs and commands"].includes(
       state.lastAction.Click.fingerprint.accessibleName ?? "",
     )
+  const lastActionWasNavigationOpen = typeof state.lastAction === "object"
+    && state.lastAction !== null
+    && "Click" in state.lastAction
+    && state.lastAction.Click.fingerprint.accessibleName === "Open app navigation"
   const lastActionWasInitial = state.lastAction === null || state.lastAction === undefined
   const input = dialog?.querySelector("input") as HTMLInputElement | null
   const text = dialog?.textContent?.replace(/\s+/g, " ").trim() ?? ""
@@ -164,6 +169,7 @@ const palette = extract((state): SafePaletteState => {
     visibleModalCount: observation.visibleModals.length,
     focusedControlInvalid,
     lastActionWasPaletteOpen,
+    lastActionWasNavigationOpen,
     lastActionWasInitial,
     controls: allowed,
   }
