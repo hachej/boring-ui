@@ -121,10 +121,12 @@ deferral.
 > **activity**, and the resume-to-browser protocol are ours on any
 > substrate. Therefore: the **substrate-neutral layer starts now**, written
 > against gateway/seam interfaces (the `PiPlatform` seam, raised to P1,
-> lands alongside); the **event-store schema is deferred briefly** — until
-> pi's next release publishes the dev runtime or a two-week timebox
-> expires, whichever first — then adopt-behind-the-seam or build ours. A
-> release watcher is armed on the pi package registry.
+> lands alongside); the **event-store schema waits for pi** — the owner
+> explicitly accepts waiting where it saves dev time (ruling sharpened
+> 2026-08-27). The two-week mark (2026-09-10) is a **check-in, not a
+> forced build**: if pi has not shipped the runtime by then, the owner
+> decides wait-longer vs build-ours; nothing starts by default. A release
+> watcher is armed on the pi package registry.
 
 > **Named proof addition — the paused-human restart.** P1's proof set
 > includes the flagship journey: a thread paused on an ask-user question,
