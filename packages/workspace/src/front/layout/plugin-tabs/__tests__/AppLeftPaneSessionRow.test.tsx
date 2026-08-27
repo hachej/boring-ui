@@ -27,9 +27,9 @@ function row(overrides: Partial<Parameters<typeof AppSessionRow>[0]> = {}) {
 }
 
 describe("AppSessionRow native actions", () => {
-  it("keeps session mutations in one actions menu", () => {
-    const onDelete = vi.fn()
-    row({ onDelete, onRename: vi.fn() })
+  it("keeps session mutations in one actions menu, with Archive as the exit", () => {
+    const onToggleArchived = vi.fn()
+    row({ onToggleArchived, onRename: vi.fn() })
     // Split moved to a direct hover action; the menu must not repeat it.
     expect(screen.getByRole("button", { name: /in a split pane$/ })).toBeInTheDocument()
     openMenu()
@@ -37,6 +37,26 @@ describe("AppSessionRow native actions", () => {
     expect(screen.getByText("Pin chat")).toBeInTheDocument()
     expect(screen.getByText("Copy session ID")).toBeInTheDocument()
     expect(screen.getByText("Rename")).toBeInTheDocument()
+    // Owner decision (#1376): raw deletion is demoted to the Archived view.
+    // An active row offers Archive and must NOT offer Delete.
+    fireEvent.click(screen.getByText("Archive session"))
+    expect(onToggleArchived).toHaveBeenCalledWith("native-1", true)
+    expect(screen.queryByText("Delete")).not.toBeInTheDocument()
+  })
+
+  it("offers Unarchive and Delete only once a session is archived", () => {
+    const onDelete = vi.fn()
+    const onToggleArchived = vi.fn()
+    row({
+      session: { id: "native-1", title: "Native chat", nativeSessionId: "native-1", hasAssistantReply: true, archived: true },
+      onDelete,
+      onToggleArchived,
+      onRename: vi.fn(),
+    })
+    openMenu()
+    fireEvent.click(screen.getByText("Unarchive session"))
+    expect(onToggleArchived).toHaveBeenCalledWith("native-1", false)
+    openMenu()
     fireEvent.click(screen.getByText("Delete"))
     expect(onDelete).toHaveBeenCalledWith("native-1")
   })
@@ -144,5 +164,48 @@ describe("AppSessionRow native actions", () => {
     row({ onRename: undefined })
     openMenu()
     expect(screen.queryByText("Rename")).not.toBeInTheDocument()
+  })
+
+  it("archives from the actions menu without offering a destructive affordance", () => {
+    const onToggleArchived = vi.fn()
+    row({ onToggleArchived })
+    openMenu()
+    fireEvent.click(screen.getByText("Archive session"))
+    expect(onToggleArchived).toHaveBeenCalledWith("native-1", true)
+  })
+
+  it("offers the way back on an archived row", () => {
+    const onToggleArchived = vi.fn()
+    row({
+      session: { id: "native-1", title: "Native chat", nativeSessionId: "native-1", hasAssistantReply: true, archived: true },
+      onToggleArchived,
+    })
+    openMenu()
+    expect(screen.queryByText("Archive session")).not.toBeInTheDocument()
+    fireEvent.click(screen.getByText("Unarchive session"))
+    expect(onToggleArchived).toHaveBeenCalledWith("native-1", false)
+  })
+
+  it("leaves the native context menu alone on a row with actions", () => {
+    // Archive lives in the kebab menu only; right-click stays the browser's.
+    const onToggleArchived = vi.fn()
+    row({ onToggleArchived })
+    const sessionRow = screen.getByText("Native chat").closest('[data-boring-workspace-part="app-session-row"]')
+    const contextMenu = new MouseEvent("contextmenu", { bubbles: true, cancelable: true })
+    fireEvent(sessionRow as Node, contextMenu)
+    expect(contextMenu.defaultPrevented).toBe(false)
+  })
+
+  it("leaves the native context menu alone on a row with no actions", () => {
+    row({
+      session: { id: "local-1", title: "Local draft", ephemeral: true },
+      canSplit: false,
+      canPin: false,
+      onTogglePinned: undefined,
+    })
+    const sessionRow = screen.getByText("Local draft").closest('[data-boring-workspace-part="app-session-row"]')
+    const contextMenu = new MouseEvent("contextmenu", { bubbles: true, cancelable: true })
+    fireEvent(sessionRow as Node, contextMenu)
+    expect(contextMenu.defaultPrevented).toBe(false)
   })
 })

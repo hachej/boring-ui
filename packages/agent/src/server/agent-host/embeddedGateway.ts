@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import {
   AgentGatewayError,
   AgentGatewayErrorCode,
@@ -23,6 +23,7 @@ import {
 import { AgentSessionEventQueue } from './agentSessionEventQueue'
 import { agentSessionKey } from './agentSessionKey'
 import { canonicalDigest } from './canonical'
+import { SessionInventoryPager } from './sessionInventoryPagination'
 import { stableServiceActionFailure } from './stableServiceError'
 import type { AgentHostRuntime } from './createAgentHost'
 import type {
@@ -31,8 +32,6 @@ import type {
   AgentRequestKey,
   AgentRequestTarget,
 } from './types'
-
-const DEFAULT_PAGE_LIMIT = 50
 
 type RetryableSessionGuard = () => Promise<AgentGatewayErrorDTO | undefined>
 type EffectSerializer = <T>(effect: () => Promise<T>) => Promise<T>
@@ -57,7 +56,6 @@ interface EffectOptions {
 interface SessionEffectOptions extends Omit<EffectOptions, 'serialize'> {
   bindingKey?: string
 }
-const MAX_PAGE_LIMIT = 100
 
 type ReceiptObject = Readonly<Record<string, JsonValue>>
 
@@ -91,6 +89,7 @@ function summaryFromLegacy(
     turnCount?: number
     nativeSessionId?: string
     hasAssistantReply?: boolean
+    archived?: boolean
   },
   status: AgentSessionActivity,
 ): AgentSessionSummary {
@@ -103,28 +102,12 @@ function summaryFromLegacy(
     ...(typeof summary.turnCount === 'number' ? { turnCount: summary.turnCount } : {}),
     ...(typeof summary.nativeSessionId === 'string' ? { nativeSessionId: summary.nativeSessionId } : {}),
     ...(typeof summary.hasAssistantReply === 'boolean' ? { hasAssistantReply: summary.hasAssistantReply } : {}),
+    ...(summary.archived === true ? { archived: true } : {}),
   }
 }
 
-function compareSessions(a: AgentSessionSummary, b: AgentSessionSummary): number {
-  return b.updatedAt - a.updatedAt
-    || a.ref.agentTypeId.localeCompare(b.ref.agentTypeId)
-    || a.ref.sessionId.localeCompare(b.ref.sessionId)
-}
-
-function isAfterCursor(
-  summary: AgentSessionSummary,
-  cursor: { updatedAt: number; agentTypeId: string; sessionId: string },
-): boolean {
-  return summary.updatedAt < cursor.updatedAt
-    || (summary.updatedAt === cursor.updatedAt && (
-      summary.ref.agentTypeId > cursor.agentTypeId
-      || (summary.ref.agentTypeId === cursor.agentTypeId && summary.ref.sessionId > cursor.sessionId)
-    ))
-}
-
 export class EmbeddedAgentGateway implements AgentGateway {
-  private readonly cursorSecret = randomUUID()
+  private readonly sessionInventoryPager = new SessionInventoryPager()
   private readonly connections = new Set<() => Promise<void>>()
   private readonly writerTails = new Map<string, Promise<void>>()
   private readonly knownSessions = new Set<string>()
@@ -253,45 +236,42 @@ export class EmbeddedAgentGateway implements AgentGateway {
 
   async listSessions(input: Parameters<AgentGateway['listSessions']>[0]) {
     const claim = await this.verify(input.scope)
-    const normalizedLimit = Math.min(MAX_PAGE_LIMIT, Math.max(1, Math.floor(input.limit ?? DEFAULT_PAGE_LIMIT)))
     if (input.agentTypeId && !this.runtime.compiledById.has(input.agentTypeId)) {
       throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN, 'agent type is not available')
     }
-    const cursor = input.cursor
-      ? this.decodeCursor(input.cursor, claim.workspaceScopeId, input.agentTypeId, normalizedLimit)
-      : { depth: 0, after: undefined }
+    const pagePlan = this.sessionInventoryPager.plan({
+      workspaceScopeId: claim.workspaceScopeId,
+      agentTypeId: input.agentTypeId,
+      limit: input.limit,
+      archived: input.archived ?? 'all',
+      cursor: input.cursor,
+    })
     const agents = input.agentTypeId
       ? [input.agentTypeId]
       : [...this.runtime.compiledById.keys()]
-    // Bounded fan-out. Every seat's store orders by the same recency key this
-    // gateway sorts by, so a row that lands at merged rank `r` sits at rank
-    // <= r inside its own seat's listing. The page covers merged ranks
-    // [depth, depth + limit), and one extra row decides `nextCursor` — so
-    // `depth + limit + 1` rows per seat is exactly sufficient and never reads
-    // the rest of the store (#1338: an unbounded listing parsed every
-    // transcript on every request).
-    const perAgentLimit = cursor.depth + normalizedLimit + 1
     const rows: AgentSessionSummary[] = []
     for (const agentTypeId of agents) {
-      const listed = await this.runtime.listSessionSummaries(agentTypeId, input.scope, claim, { limit: perAgentLimit })
+      // Filtering belongs inside each physical session shard before its bounded
+      // prefix is cut. Otherwise an opposite-state prefix can consume the
+      // entire per-seat budget and make matching older sessions unreachable.
+      const listed = await this.runtime.listSessionSummaries(agentTypeId, input.scope, claim, {
+        limit: pagePlan.perAgentLimit,
+        archived: pagePlan.archived,
+        ...(pagePlan.after
+          ? {
+              after: {
+                position: [pagePlan.after.updatedAt, pagePlan.after.agentTypeId, pagePlan.after.sessionId],
+                agentTypeId,
+              },
+            }
+          : {}),
+      })
       for (const item of listed) {
         const ref = { agentTypeId, sessionId: item.id }
         rows.push(summaryFromLegacy(ref, item, this.runtime.activity.get(claim.workspaceScopeId, ref)))
       }
     }
-    rows.sort(compareSessions)
-    const eligible = cursor.after ? rows.filter((row) => isAfterCursor(row, cursor.after!)) : rows
-    const sessions = eligible.slice(0, normalizedLimit)
-    const nextCursor = eligible.length > sessions.length && sessions.length > 0
-      ? this.encodeCursor(
-          claim.workspaceScopeId,
-          input.agentTypeId,
-          normalizedLimit,
-          cursor.depth + sessions.length,
-          sessions.at(-1)!,
-        )
-      : undefined
-    return { sessions, ...(nextCursor ? { nextCursor } : {}) }
+    return this.sessionInventoryPager.page(pagePlan, rows)
   }
 
   async createSession(input: Parameters<AgentGateway['createSession']>[0]) {
@@ -547,6 +527,51 @@ export class EmbeddedAgentGateway implements AgentGateway {
       )
       return summaryFromLegacy(input.ref, renamed, this.runtime.activity.get(claim.workspaceScopeId, input.ref))
     }, { bindingKey: binding.key }) as AgentSessionSummary
+  }
+
+  /**
+   * Visibility only. This never reaches the delete path: the session
+   * repository records the flag beside the transcript and hands back the same
+   * summary, so `archived: false` restores the row untouched.
+   */
+  async setSessionArchived(input: Parameters<AgentGateway['setSessionArchived']>[0]) {
+    const claim = await this.verify(input.scope)
+    if (!this.runtime.compiledById.has(input.ref.agentTypeId)) {
+      throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN, 'agent type is not available')
+    }
+    const setArchived = this.runtime.setSessionArchived
+    return await this.sessionEffect(input.ref, claim, 'session.archive', input.requestId, { archived: input.archived }, async () => {
+      if (!setArchived) throw new TypeError('session archive capability was not classified')
+      const updated = await setArchived(
+        input.ref.agentTypeId,
+        input.scope,
+        claim,
+        input.ref.sessionId,
+        input.archived,
+      )
+      return summaryFromLegacy(input.ref, updated, this.runtime.activity.get(claim.workspaceScopeId, input.ref))
+    }, {
+      classify: async () => setArchived
+        ? { kind: 'execute' }
+        : {
+            kind: 'reject',
+            error: new AgentGatewayError(
+              AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
+              'session repository does not support archive',
+            ).toJSON(),
+          },
+      preflight: async () => {
+        const runtimeScope = await this.runtime.resolveSessionRuntime(
+          input.ref.agentTypeId,
+          input.scope,
+          claim,
+          input.ref.sessionId,
+        )
+        if (!runtimeScope) {
+          throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND, 'session does not exist')
+        }
+      },
+    }) as AgentSessionSummary
   }
 
   async deleteSession(input: Parameters<AgentGateway['deleteSession']>[0]): Promise<void> {
@@ -906,60 +931,4 @@ export class EmbeddedAgentGateway implements AgentGateway {
     }
   }
 
-  private encodeCursor(
-    workspaceScopeId: string,
-    agentTypeId: string | undefined,
-    limit: number,
-    depth: number,
-    last: AgentSessionSummary,
-  ): string {
-    const payload = JSON.stringify({
-      workspaceScopeId,
-      agentTypeId: agentTypeId ?? null,
-      limit,
-      depth,
-      updatedAt: last.updatedAt,
-      lastAgentTypeId: last.ref.agentTypeId,
-      sessionId: last.ref.sessionId,
-    })
-    const encoded = Buffer.from(payload).toString('base64url')
-    const signature = createHash('sha256').update(`${this.cursorSecret}:${encoded}`).digest('base64url')
-    return `${encoded}.${signature}`
-  }
-
-  private decodeCursor(
-    cursor: string,
-    workspaceScopeId: string,
-    agentTypeId: string | undefined,
-    limit: number,
-  ): { depth: number; after: { updatedAt: number; agentTypeId: string; sessionId: string } } {
-    try {
-      const [encoded, signature, extra] = cursor.split('.')
-      if (!encoded || !signature || extra) throw new Error('malformed')
-      const expected = createHash('sha256').update(`${this.cursorSecret}:${encoded}`).digest('base64url')
-      if (signature !== expected) throw new Error('signature')
-      const decoded = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as Record<string, unknown>
-      if (
-        decoded.workspaceScopeId !== workspaceScopeId
-        || decoded.agentTypeId !== (agentTypeId ?? null)
-        || decoded.limit !== limit
-        || typeof decoded.depth !== 'number'
-        || !Number.isInteger(decoded.depth)
-        || decoded.depth < 0
-        || typeof decoded.updatedAt !== 'number'
-        || typeof decoded.lastAgentTypeId !== 'string'
-        || typeof decoded.sessionId !== 'string'
-      ) throw new Error('binding')
-      return {
-        depth: decoded.depth,
-        after: {
-          updatedAt: decoded.updatedAt,
-          agentTypeId: decoded.lastAgentTypeId,
-          sessionId: decoded.sessionId,
-        },
-      }
-    } catch {
-      throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_SESSION_CURSOR_INVALID, 'session cursor is invalid')
-    }
-  }
 }

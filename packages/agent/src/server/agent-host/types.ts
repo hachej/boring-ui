@@ -35,6 +35,7 @@ export type { LeaseBoundWorkspaceAgent } from '../../shared/workspaceAgentDispat
 export type AgentGatewayEffect =
   | 'session.create'
   | 'session.rename'
+  | 'session.archive'
   | 'session.delete'
   | 'session.prompt'
   | 'session.followup'

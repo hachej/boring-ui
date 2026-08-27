@@ -984,4 +984,89 @@ describe("AppLeftPane", () => {
     expect(badge?.closest('[data-boring-workspace-part="app-session-row"]')).toHaveTextContent("Second session")
     expect(screen.getByText("question")).toBeInTheDocument()
   })
+
+  describe("archived chats", () => {
+    function renderWithArchived(overrides: Partial<Parameters<typeof AppLeftPane>[0]> = {}) {
+      return render(
+        <WorkspaceAttentionProvider>
+          <AppLeftPane
+            appTitle="Test"
+            sessions={[
+              { id: "s1", title: "First session" },
+              { id: "s2", title: "Second session", archived: true },
+            ]}
+            activeSessionId="s1"
+            openSessionIds={["s1"]}
+            pinnedSessionIds={[]}
+            onCreateSession={vi.fn()}
+            navigationEntries={testNavigationEntries()}
+            onSwitchSession={vi.fn()}
+            onOpenSessionAsPane={vi.fn()}
+            onToggleSessionPinned={vi.fn()}
+            {...overrides}
+          />
+        </WorkspaceAttentionProvider>,
+      )
+    }
+
+    it("keeps archived chats out of the default list but one click away", async () => {
+      renderWithArchived()
+
+      expect(screen.getByText("First session")).toBeInTheDocument()
+      expect(screen.queryByText("Second session")).not.toBeInTheDocument()
+
+      const disclosure = screen.getByRole("button", { name: /Archived/ })
+      expect(disclosure).toHaveTextContent("1")
+      expect(disclosure).toHaveAttribute("aria-expanded", "false")
+
+      await userEvent.click(disclosure)
+      expect(screen.getByRole("button", { name: /Archived/ })).toHaveAttribute("aria-expanded", "true")
+      expect(screen.getByText("Second session")).toBeInTheDocument()
+    })
+
+    it("loads and exposes archived pages beyond the first 50", async () => {
+      const onLoadArchived = vi.fn()
+      const onSetSessionArchived = vi.fn()
+      renderWithArchived({
+        sessions: Array.from({ length: 51 }, (_, index) => ({
+          id: `archived-${index}`,
+          title: `Archived session ${index}`,
+          archived: true,
+        })),
+        archivedLoaded: true,
+        hasMoreArchived: true,
+        onLoadArchived,
+        onSetSessionArchived,
+      })
+
+      await userEvent.click(screen.getByRole("button", { name: /Archived/ }))
+      expect(screen.getByText("Archived session 50")).toBeInTheDocument()
+      await userEvent.click(screen.getByRole("button", { name: "Load more archived chats" }))
+      expect(onLoadArchived).toHaveBeenCalledTimes(1)
+
+      const row = screen.getByText("Archived session 50").closest('[data-boring-workspace-part="app-session-row"]')
+      await userEvent.click(within(row as HTMLElement).getByRole("button", { name: "Chat actions for Archived session 50" }))
+      await userEvent.click(screen.getByText("Unarchive session"))
+      expect(onSetSessionArchived).toHaveBeenCalledWith("archived-50", false, undefined)
+    })
+
+    it("shows no Archived section when nothing is archived", () => {
+      renderWithArchived({ sessions: [{ id: "s1", title: "First session" }] })
+      expect(screen.queryByRole("button", { name: /Archived/ })).not.toBeInTheDocument()
+    })
+
+    it("routes the row's archive action back to the host with the chat's owner", async () => {
+      const onSetSessionArchived = vi.fn()
+      renderWithArchived({
+        sessions: [{ id: "s1", title: "First session", agentTypeId: "alpha" }],
+        onSetSessionArchived,
+      })
+
+      const sessionRow = screen.getByText("First session").closest('[data-boring-workspace-part="app-session-row"]')
+      await userEvent.click(within(sessionRow as HTMLElement).getByRole("button", { name: "Chat actions for First session" }))
+      await userEvent.click(screen.getByText("Archive session"))
+
+      expect(onSetSessionArchived).toHaveBeenCalledWith("s1", true, "alpha")
+    })
+  })
 })

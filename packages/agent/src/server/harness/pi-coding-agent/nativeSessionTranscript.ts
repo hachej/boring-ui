@@ -12,10 +12,20 @@ const NATIVE_TAIL_CHUNK_BYTES = 64 * 1024;
 export const NATIVE_TAIL_MAX_RECORD_BYTES = 256 * 1024;
 export const NATIVE_TAIL_MAX_RECORD_FRAGMENTS = 4;
 
-export async function latestNativeMessageTimestamp(filepath: string, size: number): Promise<number | undefined> {
+export interface NativeTranscriptOrdering {
+  hasEntries: boolean;
+  latestMessageAtMs?: number;
+}
+
+/**
+ * Derives transcript ordering from bounded record prefixes. `hasEntries` also
+ * identifies whether a linked native transcript owns the wrapper projection.
+ */
+export async function nativeTranscriptOrdering(filepath: string, size: number): Promise<NativeTranscriptOrdering> {
   const handle = await open(filepath, "r");
   let end = size;
   let lineFragments: Buffer[] = [];
+  let hasEntries = false;
   try {
     while (end > 0) {
       const start = Math.max(0, end - NATIVE_TAIL_CHUNK_BYTES);
@@ -27,11 +37,14 @@ export async function latestNativeMessageTimestamp(filepath: string, size: numbe
         if (newline < 0) break;
         // Once a record start is found, retain only its bounded prefix and
         // the immediately following chunks. Never reconstruct a full record.
-        const timestamp = nativeMessageTimestampFromBoundedPrefix(
+        const metadata = nativeRecordOrderingFromBoundedPrefix(
           nativeTailRecordPrefix(chunk.subarray(newline + 1, lineEnd), lineFragments),
         );
         lineFragments = [];
-        if (timestamp !== undefined) return timestamp;
+        hasEntries ||= metadata.hasEntry;
+        if (metadata.latestMessageAtMs !== undefined) {
+          return { hasEntries: true, latestMessageAtMs: metadata.latestMessageAtMs };
+        }
         lineEnd = newline;
       }
       if (lineEnd > 0) {
@@ -41,9 +54,15 @@ export async function latestNativeMessageTimestamp(filepath: string, size: numbe
     }
     // At file start, the last retained fragment is the record prefix and the
     // preceding fragments are its immediate continuation in reverse-read order.
-    return nativeMessageTimestampFromBoundedPrefix(
+    const metadata = nativeRecordOrderingFromBoundedPrefix(
       nativeTailRecordPrefix(lineFragments.at(-1) ?? Buffer.alloc(0), lineFragments.slice(0, -1)),
     );
+    return {
+      hasEntries: hasEntries || metadata.hasEntry,
+      ...(metadata.latestMessageAtMs !== undefined
+        ? { latestMessageAtMs: metadata.latestMessageAtMs }
+        : {}),
+    };
   } finally {
     await handle.close();
   }
@@ -78,16 +97,27 @@ function nativeTailRecordPrefix(recordStart: Buffer, followingFragments: Buffer[
   return prefix;
 }
 
-export function nativeMessageTimestampFromBoundedPrefix(prefix: Buffer): number | undefined {
-  if (prefix.length === 0) return undefined;
+function nativeRecordOrderingFromBoundedPrefix(prefix: Buffer): {
+  hasEntry: boolean;
+  latestMessageAtMs?: number;
+} {
+  if (prefix.length === 0) return { hasEntry: false };
   const line = prefix.subarray(0, NATIVE_TAIL_MAX_RECORD_BYTES).toString("utf-8");
   // Pi writes `type` first and its timestamp before message payloads. This is
   // intentionally a root-prefix check, not a JSON parser for a whole record.
-  if (!/^\s*\{\s*"type"\s*:\s*"message"(?:\s*,|\s*})/.test(line)) return undefined;
+  const typeMatch = /^\s*\{\s*"type"\s*:\s*"([^"\\]+)"(?:\s*,|\s*})/.exec(line);
+  if (!typeMatch || typeMatch[1] === "session") return { hasEntry: false };
+  if (typeMatch[1] !== "message") return { hasEntry: true };
   const timestampMatch = /"timestamp"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/.exec(line);
-  if (!timestampMatch) return undefined;
+  if (!timestampMatch) return { hasEntry: true };
   const timestamp = Date.parse(timestampMatch[1]);
-  return Number.isFinite(timestamp) ? timestamp : undefined;
+  return Number.isFinite(timestamp)
+    ? { hasEntry: true, latestMessageAtMs: timestamp }
+    : { hasEntry: true };
+}
+
+export function nativeMessageTimestampFromBoundedPrefix(prefix: Buffer): number | undefined {
+  return nativeRecordOrderingFromBoundedPrefix(prefix).latestMessageAtMs;
 }
 
 export interface SessionTranscriptSummary {
