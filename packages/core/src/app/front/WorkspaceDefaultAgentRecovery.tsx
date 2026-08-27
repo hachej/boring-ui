@@ -39,6 +39,8 @@ export interface WorkspaceDefaultAgentRecoveryGateProps {
 
 const PROBE_RETRY_LIMIT = 2
 const PROBE_RETRY_DELAY_MS = 1_500
+/** Matches the workspace filesystem fetch client's DEFAULT_TIMEOUT. */
+const PROBE_TIMEOUT_MS = 10_000
 
 function recoveryEndpoint(apiBaseUrl: string | undefined): string {
   return `${apiBaseUrl?.replace(/\/$/, '') ?? ''}${WORKSPACE_DEFAULT_AGENT_ROUTE}`
@@ -78,11 +80,13 @@ export function WorkspaceDefaultAgentRecoveryGate({
 
   useEffect(() => {
     let cancelled = false
+    let settled = false
     let retryTimer: ReturnType<typeof setTimeout> | undefined
     setUnavailable(null)
     setProbeFailed(false)
     const failed = () => {
-      if (cancelled) return
+      if (cancelled || settled) return
+      settled = true
       consecutiveFailures.current += 1
       if (consecutiveFailures.current <= PROBE_RETRY_LIMIT) {
         retryTimer = setTimeout(
@@ -93,20 +97,36 @@ export function WorkspaceDefaultAgentRecoveryGate({
       }
       setProbeFailed(true)
     }
-    void fetch(endpoint, { headers: JSON.parse(headersKey) as Record<string, string> })
+    // A hung connection never rejects and never resolves, so nothing downstream
+    // would ever run: without this bound the retry ladder and the "Check again"
+    // escape hatch are both unreachable. The timeout drives the failure path
+    // itself rather than waiting for the fetch to notice the abort, because a
+    // request wedged below the abort signal may never settle either.
+    const controller = new AbortController()
+    const timeoutTimer = setTimeout(() => {
+      if (cancelled || settled) return
+      controller.abort()
+      failed()
+    }, PROBE_TIMEOUT_MS)
+    void fetch(endpoint, {
+      headers: JSON.parse(headersKey) as Record<string, string>,
+      signal: controller.signal,
+    })
       .then((response) => (response.ok ? response.json() as Promise<unknown> : null))
       .then((payload) => {
-        if (cancelled) return
+        if (cancelled || settled) return
         if (!isDefaultAgentState(payload)) {
           failed()
           return
         }
+        settled = true
         consecutiveFailures.current = 0
         if (payload.status === 'unavailable') setUnavailable(payload)
       })
       .catch(failed)
     return () => {
       cancelled = true
+      clearTimeout(timeoutTimer)
       if (retryTimer) clearTimeout(retryTimer)
     }
   }, [endpoint, headersKey, probeRun])

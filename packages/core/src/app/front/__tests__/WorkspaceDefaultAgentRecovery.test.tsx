@@ -7,6 +7,8 @@ import type { WorkspaceDefaultAgentState } from '../../../shared/workspaceDefaul
 
 /** Mirrors PROBE_RETRY_LIMIT + the initial attempt in the component. */
 const PROBE_ATTEMPTS_BEFORE_GIVING_UP = 3
+/** Mirrors PROBE_TIMEOUT_MS in the component. */
+const PROBE_TIMEOUT_MS = 10_000
 
 const UNAVAILABLE: WorkspaceDefaultAgentState = {
   workspaceId: 'workspace-a',
@@ -135,6 +137,54 @@ describe('WorkspaceDefaultAgentRecoveryGate', () => {
       const notice = screen.getByTestId('workspace-default-agent-probe-failed')
       expect(notice).toBeTruthy()
 
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
+      })
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      expect(screen.getByTestId('workspace-default-agent-recovery')).toBeTruthy()
+      expect(screen.queryByTestId('workspace-default-agent-probe-failed')).toBeNull()
+    } finally { vi.useRealTimers() }
+  })
+
+  // Round 2: a hung connection neither rejects nor resolves, so nothing on the
+  // failure path used to run at all and "Check again" was unreachable.
+  it('bounds a probe that never settles and still reaches Check again', async () => {
+    vi.useFakeTimers()
+    try {
+      let probes = 0
+      const signals: AbortSignal[] = []
+      let respondWithBrokenState = false
+      vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+        probes += 1
+        if (init?.signal) signals.push(init.signal)
+        if (respondWithBrokenState) return jsonResponse(UNAVAILABLE)
+        // Never settles, and ignores the abort signal the way a wedged
+        // connection can: the component must not depend on it rejecting.
+        return await new Promise<Response>(() => {})
+      }))
+      renderGate()
+
+      // Nothing has happened yet — that is the whole bug: no rejection, no
+      // response, so no retry and no affordance until the timeout bounds it.
+      await act(async () => { await vi.advanceTimersByTimeAsync(PROBE_TIMEOUT_MS - 1) })
+      expect(probes).toBe(1)
+      expect(screen.queryByTestId('workspace-default-agent-probe-failed')).toBeNull()
+
+      // Each attempt is bounded, and the ladder respects PROBE_RETRY_LIMIT.
+      await act(async () => { await vi.advanceTimersByTimeAsync(2) })
+      expect(signals[0]?.aborted).toBe(true)
+      for (let tick = 0; tick < 40; tick += 1) {
+        await act(async () => { await vi.advanceTimersByTimeAsync(1_000) })
+      }
+      expect(probes).toBe(PROBE_ATTEMPTS_BEFORE_GIVING_UP)
+      expect(screen.getByTestId('workspace-shell')).toBeTruthy()
+      expect(screen.getByTestId('workspace-default-agent-probe-failed')).toBeTruthy()
+
+      // No further probes once it has given up — the user is in control.
+      await act(async () => { await vi.advanceTimersByTimeAsync(60_000) })
+      expect(probes).toBe(PROBE_ATTEMPTS_BEFORE_GIVING_UP)
+
+      respondWithBrokenState = true
       await act(async () => {
         fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
       })
