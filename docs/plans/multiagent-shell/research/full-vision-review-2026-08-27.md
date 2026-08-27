@@ -76,6 +76,15 @@ vs blackboard vs pi-v4 lanes; orchestrator Seat binding; the exact
 View/Experience contract; distribution/packaging; context transformation
 beyond v0 truncation.
 
+**Cross-reference — pi-v2 substrate strategy.** The review's Execution
+layer ("Agent revisions · Gateway · durable streams · leases · models")
+sits exactly where the parallel pi-v2 decision landed
+([`pi-v2-alignment.md`](pi-v2-alignment.md)): bounded 0.84.3 core-adoption
+spike now, facet layer on a normative contract, `PiPlatform` seam, lanes as
+a storage-spike candidate. The two analyses are complementary — the review
+scopes *what the platform is*; the pi-v2 strategy scopes *what runtime it
+stands on* — and neither supersedes the other.
+
 The full review text follows the owner's records (supplied in-session,
 2026-08-27); its §7 contains the exact proposed amendment diffs, its §11
 the seven owner decisions, its Appendix B a 20-point "architecture

@@ -31,6 +31,14 @@ individual dependency edges, not one serial order — rationale in
 traits, shell location, nav chrome — because they touch no thread, session,
 storage, or attribution.
 
+**Runs alongside [durable-streams]:** the **pi-0.84.3 core-adoption spike**
+(bead `wt-391-forward-9n6w`) — our agent-runtime dependency shipped its v4
+durable core and deleted the legacy line our pin sits on; the spike proves
+the migration path through the gateway and sizes what our bespoke streaming
+surface keeps vs delegates. Whether it *blocks* the durable-streams work is
+an explicit DIRECTION amendment only the owner makes. The `PiPlatform` seam
+(bead `wt-391-forward-oueu`) is the adoption-neutral companion.
+
 ## What each program waits on
 
 | Program | Waits on | Detail |
