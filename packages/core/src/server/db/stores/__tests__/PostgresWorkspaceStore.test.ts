@@ -750,11 +750,11 @@ describeWorkspaceStoreConformance(
         WHERE workspace_id = ${workspaceId} AND id = ${inviteId}
       `
     },
-    seedLegacyNullDefaultAgentTypeId: async (_workspaceStore, workspaceId) => {
+    seedLegacyNullDefaultAgentTypeIds: async (_workspaceStore, workspaceIds) => {
       // Production keeps the rolling-upgrade guard installed as NOT VALID: it
-      // permits historical NULL rows but blocks new legacy writes. Recreate
-      // that historical state atomically so store conformance can exercise the
-      // NULL-only CAS without leaving the guard disabled.
+      // permits historical NULL rows but blocks new legacy writes. Seed the
+      // complete historical cohort before reinstalling that barrier so store
+      // conformance can exercise the NULL-only CAS authentically.
       await sqlClient.begin(async (transaction) => {
         await transaction`
           ALTER TABLE workspaces
@@ -763,7 +763,7 @@ describeWorkspaceStoreConformance(
         await transaction`
           UPDATE workspaces
           SET default_agent_type_id = NULL
-          WHERE id = ${workspaceId}
+          WHERE id = ANY(${workspaceIds}::uuid[])
         `
         await transaction`
           ALTER TABLE workspaces

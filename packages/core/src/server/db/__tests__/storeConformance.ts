@@ -17,8 +17,8 @@ interface WorkspaceStoreConformanceOptions {
   makeUserStore: () => MaybePromise<UserStore>
   deleteRuntime: (workspaceId: string) => MaybePromise<void>
   expireInvite: (workspaceId: string, inviteId: string) => MaybePromise<void>
-  /** Explicitly manufactures a pre-Decision-28 row without using production create. */
-  seedLegacyNullDefaultAgentTypeId: (store: WorkspaceStore, workspaceId: string) => MaybePromise<void>
+  /** Explicitly manufactures pre-Decision-28 rows without using production create. */
+  seedLegacyNullDefaultAgentTypeIds: (store: WorkspaceStore, workspaceIds: readonly string[]) => MaybePromise<void>
   makeAppIds?: () => { appId: string; otherAppId: string }
   emailDomain?: string
 }
@@ -386,11 +386,10 @@ export function describeWorkspaceStoreConformance(
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, otherAppId, users } = await setup()
         const legacy = await createWorkspace(workspaceStore, users.owner.id, 'Legacy NULL', appId)
-        await options.seedLegacyNullDefaultAgentTypeId(workspaceStore, legacy.id)
         const known = await createWorkspace(workspaceStore, users.owner.id, 'Known', appId, { defaultAgentTypeId: 'default' })
         const unknown = await createWorkspace(workspaceStore, users.owner.id, 'Unknown', appId, { defaultAgentTypeId: 'retired-seat' })
         const otherAppLegacy = await createWorkspace(workspaceStore, users.owner.id, 'Other app NULL', otherAppId)
-        await options.seedLegacyNullDefaultAgentTypeId(workspaceStore, otherAppLegacy.id)
+        await options.seedLegacyNullDefaultAgentTypeIds(workspaceStore, [legacy.id, otherAppLegacy.id])
 
         expect(await workspaceStore.countNullDefaultAgentTypeIds(appId)).toBe(1)
         expect(await workspaceStore.compareAndSetNullDefaultAgentTypeId(appId, 'default')).toBe(1)
@@ -409,7 +408,7 @@ export function describeWorkspaceStoreConformance(
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
         const legacy = await createWorkspace(workspaceStore, users.owner.id, 'Concurrent legacy NULL', appId)
-        await options.seedLegacyNullDefaultAgentTypeId(workspaceStore, legacy.id)
+        await options.seedLegacyNullDefaultAgentTypeIds(workspaceStore, [legacy.id])
         const results = await Promise.all([
           workspaceStore.compareAndSetNullDefaultAgentTypeId(appId, 'default'),
           workspaceStore.compareAndSetNullDefaultAgentTypeId(appId, 'alternate'),
