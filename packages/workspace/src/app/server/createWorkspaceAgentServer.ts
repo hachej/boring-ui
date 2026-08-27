@@ -794,6 +794,7 @@ export function projectAgentSpecPluginArtifacts(
   agent: AgentHostAgentSpec,
   artifacts: readonly ResolvedWorkspacePluginArtifact[],
   workspaceScopedArtifacts: readonly ResolvedWorkspacePluginArtifact[] = [],
+  hostDefaults: Pick<ServerBootstrapOptions, "defaults" | "excludeDefaults"> = {},
 ): AgentSpecPluginArtifactProjection {
   const byId = new Map<string, ResolvedWorkspacePluginArtifact>()
   for (const artifact of artifacts) {
@@ -836,6 +837,7 @@ export function projectAgentSpecPluginArtifacts(
   }
 
   const projected = bootstrapServer({
+    ...hostDefaults,
     plugins: selected.map((artifact) => artifact.plugin),
   })
   return {
@@ -1524,27 +1526,16 @@ export async function createWorkspaceAgentServer(
         ? await opts.fleetCompiler.compile({ agents: fleet })
         : fleet
       return compiled.map((agent) => {
+        const receivesHostOwnedComposition = agent.agentTypeId === hostOwnedDefaultAgentTypeId
         const projection = projectAgentSpecPluginArtifacts(
           agent,
           pluginCollection.resolvedPluginArtifacts,
           workspaceScopedDefaultArtifacts,
+          receivesHostOwnedComposition
+            ? { defaults: opts.defaults, excludeDefaults: opts.excludeDefaults }
+            : undefined,
         )
-        const receivesHostOwnedComposition = agent.agentTypeId === hostOwnedDefaultAgentTypeId
-        const effectiveProjection = receivesHostOwnedComposition
-          ? {
-              artifacts: pluginCollection.resolvedPluginArtifacts,
-              runtimePlugins: allPluginAgentProjection.runtimePlugins,
-              agentOptions: {
-                extraTools: allPluginAgentProjection.agentTools,
-                pi: {
-                  packages: allPluginAgentProjection.piPackages,
-                  extensionPaths: allPluginAgentProjection.extensionPaths,
-                },
-                systemPromptAppend: allPluginAgentProjection.systemPromptAppend || undefined,
-              },
-            }
-          : projection
-        const pluginIds = effectiveProjection.artifacts.map((artifact) => artifact.id)
+        const pluginIds = projection.artifacts.map((artifact) => artifact.id)
         const resolvedPolicy = {
           ...("resolvedPolicy" in agent && agent.resolvedPolicy && typeof agent.resolvedPolicy === "object"
             ? agent.resolvedPolicy as Readonly<Record<string, unknown>>
@@ -1555,11 +1546,11 @@ export async function createWorkspaceAgentServer(
           ...agentRuntimeContributionIdentityInput({
             agent,
             resolvedPolicy,
-            projection: effectiveProjection,
+            projection,
             includeAllDiscoveredPluginResources: receivesHostOwnedComposition,
           }),
-          runtimePlugins: effectiveProjection.runtimePlugins,
-          agentOptions: effectiveProjection.agentOptions,
+          runtimePlugins: projection.runtimePlugins,
+          agentOptions: projection.agentOptions,
           includeAllDiscoveredPluginResources: receivesHostOwnedComposition,
         })
         return { ...agent, resolvedPolicy }
