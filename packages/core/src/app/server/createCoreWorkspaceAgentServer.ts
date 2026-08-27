@@ -257,6 +257,18 @@ export interface CreateCoreWorkspaceAgentServerOptions {
     workspaceRoot: string
     request?: FastifyRequest
   }) => PiHarnessOptions | undefined | Promise<PiHarnessOptions | undefined>
+  /**
+   * Trusted host Pi capability policy for one already-authorized Agent seat.
+   * Authored agent directories cannot enable packages/extensions themselves.
+   */
+  getAgentPi?: (ctx: {
+    agentTypeId: string
+    workspaceId: string
+    workspaceRoot: string
+    runtimeMode: RuntimeModeId
+    workspaceFsCapability?: RuntimeModeAdapter['workspaceFsCapability']
+    authSubject: string
+  }) => PiHarnessOptions | undefined | Promise<PiHarnessOptions | undefined>
   getSessionNamespace?: (ctx: {
     workspaceId: string
     workspaceRoot: string
@@ -1499,27 +1511,27 @@ export async function createCoreWorkspaceAgentServer(
       placementIdentity,
       provisioningFingerprint,
     })).digest('hex')
-    const buildResourceDigestInput = async () => {
-      const hotResources = pi.getHotReloadableResources?.()
+    const buildResourceDigestInput = async (resolvedPi: PiHarnessOptions = pi) => {
+      const hotResources = resolvedPi.getHotReloadableResources?.()
       return createPiResourceDigestInput({
         piCwd: root,
-        noSkills: pi.noSkills,
-        noContextFiles: pi.noContextFiles,
+        noSkills: resolvedPi.noSkills,
+        noContextFiles: resolvedPi.noContextFiles,
         resourceSets: [{
           promptParts: [
             pluginCollection.agentOptions.systemPromptAppend,
             await contribution?.loadSystemPromptAppend?.(),
           ],
           additionalSkillPaths: [
-            ...(pi.additionalSkillPaths ?? []),
+            ...(resolvedPi.additionalSkillPaths ?? []),
             ...(hotResources?.additionalSkillPaths ?? []),
           ],
           packages: [
-            ...(pi.packages ?? []),
+            ...(resolvedPi.packages ?? []),
             ...(hotResources?.packages ?? []),
           ],
           extensionPaths: [
-            ...(pi.extensionPaths ?? []),
+            ...(resolvedPi.extensionPaths ?? []),
             ...(hotResources?.extensionPaths ?? []),
           ],
         }],
@@ -1658,35 +1670,73 @@ export async function createCoreWorkspaceAgentServer(
       environment,
     }) {
       const runtime = scopeAuthority.resolveAgentRuntime(authorizedScope)
-      if (!options.getAgentExtraTools) return runtime
-
-      const agentTools = await options.getAgentExtraTools({
+      if (!options.getAgentExtraTools && !options.getAgentPi) return runtime
+      const context = {
         agentTypeId,
         workspaceId: environment.runtimeWorkspaceId ?? verifiedClaim.workspaceScopeId,
         workspaceRoot: environment.workspaceRoot,
         runtimeMode: runtimeModeAdapter.id,
         workspaceFsCapability: runtimeModeAdapter.workspaceFsCapability,
         authSubject: verifiedClaim.authSubjectId,
-      })
+      }
+      const [agentTools, agentPi] = await Promise.all([
+        options.getAgentExtraTools?.(context) ?? [],
+        options.getAgentPi?.(context),
+      ])
+      if (agentPi?.extensionFactories?.length || agentPi?.getHotReloadableResources || agentPi?.locateSkillResource) {
+        throw new Error('getAgentPi may configure only declarative Pi resources; use trusted host extensionPaths instead of executable callbacks')
+      }
+      if (agentTools.length === 0 && !agentPi) return runtime
+
       const extraTools = [...(runtime.extraTools ?? []), ...agentTools]
+      const pi = mergePiOptions(runtime.pi, agentPi)
+      const addressedResourceFence = await createPiResourceDigestFence(async () => createPiResourceDigestInput({
+        piCwd: environment.workspaceRoot,
+        noSkills: agentPi?.noSkills,
+        noContextFiles: agentPi?.noContextFiles,
+        resourceSets: [{
+          additionalSkillPaths: agentPi?.additionalSkillPaths ?? [],
+          packages: agentPi?.packages ?? [],
+          extensionPaths: agentPi?.extensionPaths ?? [],
+        }],
+        authorizedRoots: [
+          environment.workspaceRoot,
+          pluginWorkspaceRoot,
+          ...defaultPluginPackagePaths,
+          ...pluginEntries.flatMap((entry) => 'dir' in entry ? [entry.dir] : []),
+          ...(options.piResourceAuthorizedRoots ?? []),
+        ],
+      }))
       const toolContractDigests = addressedToolContractDigests(agentTools)
       const scopedToolIdentity = JSON.stringify({
         baseIdentity: runtime.identity,
         agentTypeId,
         toolContractDigests,
+        pi,
       })
       const identity = createHash('sha256').update(scopedToolIdentity).digest('hex')
       const physicalBindingIdentity = createHash('sha256').update(JSON.stringify({
         basePhysicalBindingIdentity: runtime.physicalBindingIdentity ?? runtime.identity,
         agentTypeId,
         toolContractDigests,
+        pi,
       })).digest('hex')
-      const resourceInputDigest = `sha256:${createHash('sha256').update(JSON.stringify({
-        baseResourceInputDigest: runtime.resourceInputDigest ?? null,
-        agentTypeId,
-        toolContractDigests,
-      })).digest('hex')}`
-      return { ...runtime, identity, physicalBindingIdentity, resourceInputDigest, extraTools }
+      return {
+        ...runtime,
+        identity,
+        physicalBindingIdentity,
+        resourceInputDigest: `sha256:${createHash('sha256').update(JSON.stringify([
+          runtime.resourceInputDigest ?? null,
+          addressedResourceFence.resourceInputDigest,
+          toolContractDigests,
+        ])).digest('hex')}`,
+        revalidateResourceInputs: async () => {
+          await runtime.revalidateResourceInputs?.()
+          await addressedResourceFence.revalidateResourceInputs()
+        },
+        extraTools,
+        pi,
+      }
     },
   })
 

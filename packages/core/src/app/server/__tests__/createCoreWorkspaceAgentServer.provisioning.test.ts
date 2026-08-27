@@ -547,6 +547,7 @@ test('core/full-app grants addressed tools only to the selected agent type', asy
   })
   const seenAgentTypes: string[] = []
   const seenWorkspaceIds: string[] = []
+  const seenPiAgentTypes: string[] = []
   let macroSearchDescription = 'macro search v1'
 
   const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
@@ -560,6 +561,12 @@ test('core/full-app grants addressed tools only to the selected agent type', asy
       return agentTypeId === 'macro'
         ? [tool('macro_search', macroSearchDescription), tool('persist_derived_series')]
         : []
+    },
+    getAgentPi: async ({ agentTypeId }) => {
+      seenPiAgentTypes.push(agentTypeId)
+      return agentTypeId === 'macro'
+        ? { packages: ['npm:macro-only-pi-package'] }
+        : undefined
     },
     serveFrontend: false,
   })
@@ -596,6 +603,8 @@ test('core/full-app grants addressed tools only to the selected agent type', asy
     expect(macro.identity).not.toBe(charlotte.identity)
     expect(macro.physicalBindingIdentity).not.toBe(charlotte.physicalBindingIdentity)
     expect(macro.resourceInputDigest).not.toBe(charlotte.resourceInputDigest)
+    expect(macro.pi.packages).toContain('npm:macro-only-pi-package')
+    expect(charlotte.pi.packages).not.toContain('npm:macro-only-pi-package')
     expect(changedMacroContract.identity).not.toBe(macro.identity)
     expect(changedMacroContract.physicalBindingIdentity).not.toBe(macro.physicalBindingIdentity)
     expect(changedMacroContract.resourceInputDigest).not.toBe(macro.resourceInputDigest)
@@ -605,6 +614,7 @@ test('core/full-app grants addressed tools only to the selected agent type', asy
       'runtime-workspace-a',
       'runtime-workspace-a',
     ])
+    expect(seenPiAgentTypes).toEqual(['macro', 'charlotteledoux', 'macro'])
   } finally {
     await app.close()
   }
@@ -669,7 +679,9 @@ test('core/full-app fences Pi extension and prompt content through reload revali
     config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
     workspaceRoot,
     getWorkspaceRoot: async () => workspaceRoot,
-    getPi: async () => ({ extensionPaths: [extensionPath] }),
+    getAgentPi: async ({ agentTypeId }) => agentTypeId === 'factory-orchestrator'
+      ? { extensionPaths: [extensionPath] }
+      : undefined,
     getRuntimeScopeContribution: async () => ({
       identity: 'dynamic-prompt',
       loadSystemPromptAppend: async () => dynamicPrompt,
@@ -681,7 +693,18 @@ test('core/full-app fences Pi extension and prompt content through reload revali
     const hostOptions = (mocks.createAgentHost as any).mock.calls[0]?.[0]
     const projection = (mocks.hostRegisterDirectRoutes as any).mock.calls[0]?.[0]
     const scope = await projection.authorizeAgentRequest(fakeRequest('workspace-a', 'user-a'))
-    const runtime = await hostOptions.resolveAuthorizedAgentRuntimeScope({ authorizedScope: scope })
+    const agentRuntimeInput = {
+      authorizedScope: scope,
+      verifiedClaim: { workspaceScopeId: 'workspace-a', authSubjectId: 'user-a' },
+      agentTypeId: 'factory-orchestrator',
+      environment: {
+        runtimeWorkspaceId: 'workspace-a',
+        workspaceRoot,
+        placementIdentity: 'workspace-a',
+        provisioningFingerprint: 'test-provisioning',
+      },
+    }
+    const runtime = await hostOptions.resolveAuthorizedAgentRuntimeScope(agentRuntimeInput)
     expect(runtime.resourceInputDigest).toMatch(/^sha256:/)
     await expect(runtime.revalidateResourceInputs()).resolves.toBeUndefined()
 
@@ -691,7 +714,7 @@ test('core/full-app fences Pi extension and prompt content through reload revali
     })
 
     const nextScope = await projection.authorizeAgentRequest(fakeRequest('workspace-a', 'user-a'))
-    const nextRuntime = await hostOptions.resolveAuthorizedAgentRuntimeScope({ authorizedScope: nextScope })
+    const nextRuntime = await hostOptions.resolveAuthorizedAgentRuntimeScope({ ...agentRuntimeInput, authorizedScope: nextScope })
     dynamicPrompt = 'dynamic after'
     await expect(nextRuntime.revalidateResourceInputs()).rejects.toMatchObject({
       code: 'AGENT_REQUEST_CONFLICT',
