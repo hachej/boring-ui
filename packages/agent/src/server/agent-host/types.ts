@@ -3,6 +3,7 @@ import type {
   AgentGateway,
   AgentGatewayErrorDTO,
   AgentScopeVerifier,
+  ResolveAgentAccess,
   AgentSessionRef,
   AgentTool,
   AuthorizedAgentScope,
@@ -44,6 +45,7 @@ export type AgentGatewayEffect =
   | 'session.queue.clear'
   | 'agent.reload'
   | 'session.command.execute'
+  | 'session.tool.external-effect'
 
 export type AgentRequestTarget =
   | { readonly kind: 'agent'; readonly agentTypeId: string }
@@ -367,6 +369,8 @@ export interface CreateAgentHostOptions {
   readonly fleetCompiler: AgentFleetCompiler
   readonly hostId?: string
   readonly scopeVerifier: AgentScopeVerifier
+  /** Optional product-owned Seat/entitlement policy; omission preserves legacy fleet-wide access. */
+  readonly resolveAgentAccess?: ResolveAgentAccess
   readonly runtimeModeAdapter: RuntimeModeAdapter
   readonly runtimeHost?: AgentRuntimeHostOperations
   readonly sessionRoot?: string

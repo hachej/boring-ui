@@ -497,6 +497,9 @@ describe('addressed Agent Host HTTP projection', () => {
     await denied.app.close()
 
     for (const [code, status] of [
+      [AgentGatewayErrorCode.AGENT_ENTITLEMENT_REQUIRED, 402],
+      [AgentGatewayErrorCode.AGENT_ACCESS_FORBIDDEN, 403],
+      [AgentGatewayErrorCode.AGENT_ACCESS_POLICY_UNAVAILABLE, 503],
       [AgentGatewayErrorCode.AGENT_SESSION_REPLAY_GAP, 409],
       [AgentGatewayErrorCode.AGENT_SESSION_CURSOR_AHEAD, 409],
       [AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED, 503],

@@ -751,24 +751,18 @@ describeWorkspaceStoreConformance(
       `
     },
     seedLegacyNullDefaultAgentTypeIds: async (_workspaceStore, workspaceIds) => {
-      // Production keeps the rolling-upgrade guard installed as NOT VALID: it
-      // permits historical NULL rows but blocks new legacy writes. Seed the
-      // complete historical cohort before reinstalling that barrier so store
-      // conformance can exercise the NULL-only CAS authentically.
+      // Seat rollout is additive: legacy writers may still create NULL
+      // defaults until the later enforcement cutover. Manufacture that cohort
+      // directly so conformance can exercise the NULL-only CAS.
       await sqlClient.begin(async (transaction) => {
         await transaction`
           ALTER TABLE workspaces
-          DROP CONSTRAINT workspaces_default_agent_type_id_required_check
+          DROP CONSTRAINT IF EXISTS workspaces_default_agent_type_id_required_check
         `
         await transaction`
           UPDATE workspaces
           SET default_agent_type_id = NULL
           WHERE id = ANY(${workspaceIds}::uuid[])
-        `
-        await transaction`
-          ALTER TABLE workspaces
-          ADD CONSTRAINT workspaces_default_agent_type_id_required_check
-          CHECK (default_agent_type_id IS NOT NULL) NOT VALID
         `
       })
     },

@@ -235,7 +235,11 @@ export type {
 } from './agent-host/types'
 export type { LeaseBoundWorkspaceAgent } from '../shared/workspaceAgentDispatcher'
 export type {
+  AgentAccessDecision,
+  AgentAccessOperation,
   AuthorizedAgentScope,
+  ResolveAgentAccess,
+  ResolveAgentAccessInput,
   VerifiedAgentScopeClaim,
 } from '../shared/gateway/types'
 export type { AgentHarnessFactory, AgentHarnessFactoryInput } from '../shared/harness'

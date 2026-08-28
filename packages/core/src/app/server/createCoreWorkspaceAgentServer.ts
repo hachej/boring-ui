@@ -18,6 +18,8 @@ import {
   resolveDefaultAgentFleet,
   resolveRequestLedgerPath,
   withRuntimeEnvContributions,
+  type AgentAccessDecision,
+  type AgentAccessOperation,
   type AgentEffectAdmission,
   type AgentFleetCompiler,
   type AgentGatewayEffect,
@@ -86,8 +88,12 @@ import {
   createAuth,
   type BetterAuthInstance,
   type CoreDynamicAuthBaseURL,
+  type ResolveInitialAgentSeat,
 } from '../../server/auth/index.js'
-import { REQUEST_SCOPE_WORKSPACE_HEADER } from '../../server/auth/requestWorkspaceScope.js'
+import {
+  authorizeRequestScopedWorkspace,
+  REQUEST_SCOPE_WORKSPACE_HEADER,
+} from '../../server/auth/requestWorkspaceScope.js'
 import {
   createCoreApp,
   registerRoutes,
@@ -320,6 +326,8 @@ export interface CreateCoreWorkspaceAgentServerOptions {
   appRoot?: string
   /** Opt into host-local auth callback URLs for an exact host allowlist. */
   authBaseURL?: CoreDynamicAuthBaseURL
+  /** Trusted app-owned server resolver for initial signup Seat intent. */
+  resolveInitialAgentSeat?: ResolveInitialAgentSeat
   config?: CoreConfig
   loadConfigOptions?: LoadConfigOptions
   plugins?: CoreWorkspacePluginEntry[]
@@ -354,6 +362,24 @@ export interface CreateCoreWorkspaceAgentServerOptions {
   sandboxHandleStore?: SandboxHandleStore
   /** Trusted Agent fleet compiled before any Agent route is mounted. */
   agents?: readonly AgentHostAgentSpec[]
+  /**
+   * Workspace Seat enforcement is opt-in for rolling migrations. `compat`
+   * preserves legacy fleet-wide access; `enforce` requires a durable Seat.
+   */
+  workspaceAgentAccessMode?: 'compat' | 'enforce'
+  /** Product-owned entitlement decision, evaluated only after a Seat exists. */
+  resolveAgentEntitlement?: (ctx: {
+    workspaceId: string
+    userId: string
+    agentTypeId: string
+    operation: AgentAccessOperation
+  }) => Promise<AgentAccessDecision>
+  /** Explicit app policy enabling add-only Seat management for eligible products. */
+  canEnrollAgent?: (ctx: {
+    workspaceId: string
+    userId: string
+    agentTypeId: string
+  }) => boolean | Promise<boolean>
   /**
    * Repository root used to resolve `.agents/{personas,factory}` when
    * `BORING_AGENT_FLEET=1` composes the fleet and `agents` is not supplied.
@@ -1008,6 +1034,7 @@ async function createCoreRuntime(
   customTelemetry?: TelemetrySink,
   requestScopeResolver?: CoreRequestScopeResolver,
   authBaseURL?: CoreDynamicAuthBaseURL,
+  resolveInitialAgentSeat?: ResolveInitialAgentSeat,
 ): Promise<{
   app: CoreWorkspaceAgentServer
   sql: postgres.Sql
@@ -1044,6 +1071,7 @@ async function createCoreRuntime(
     logger: app.log,
     telemetry,
     disableDefaultWorkspaceCreation: requestScopeResolver !== undefined,
+    resolveInitialAgentSeat,
   })
 
   app.decorate('db', db)
@@ -1142,6 +1170,7 @@ export async function createCoreWorkspaceAgentServer(
     options.telemetry,
     options.requestScopeResolver,
     options.authBaseURL,
+    options.resolveInitialAgentSeat,
   )
   const appRoot = options.appRoot
   const serveFrontend =
@@ -1742,6 +1771,23 @@ export async function createCoreWorkspaceAgentServer(
     }),
     hostId: options.agentHostId ?? (sessionRoot ? undefined : 'core-workspace-agent'),
     scopeVerifier: scopeAuthority.verifier,
+    ...(options.workspaceAgentAccessMode === 'enforce'
+      ? {
+          resolveAgentAccess: async ({ verifiedClaim, agentTypeId, operation }) => {
+            const workspaceId = scopeAuthority.resolveWorkspaceId(verifiedClaim)
+            const seated = await workspaceStore.hasAgentSeat(workspaceId, agentTypeId)
+            if (!seated) return { state: 'not-available' as const, reason: 'not-seated' as const }
+            return options.resolveAgentEntitlement
+              ? await options.resolveAgentEntitlement({
+                  workspaceId,
+                  userId: verifiedClaim.authSubjectId,
+                  agentTypeId,
+                  operation,
+                })
+              : { state: 'allowed' as const }
+          },
+        }
+      : {}),
     runtimeModeAdapter: hostRuntimeModeAdapter,
     runtimeHost,
     telemetry,
@@ -1799,6 +1845,81 @@ export async function createCoreWorkspaceAgentServer(
       log: app.log,
     })
 
+    const canEnrollAgent = options.canEnrollAgent
+    if (canEnrollAgent) {
+      app.get('/api/v1/workspaces/:workspaceId/agent-seats', async (request, reply) => {
+        const userId = request.user?.id
+        if (!userId) return reply.code(401).send({ error: 'authentication required' })
+        const { workspaceId } = request.params as { workspaceId: string }
+        const scoped = await authorizeRequestScopedWorkspace(request, workspaceId)
+        if (!scoped) {
+          await getActiveAppWorkspace(workspaceId)
+          if (!await workspaceStore.isMember(workspaceId, userId)) {
+            return reply.code(404).send({ error: 'workspace not found' })
+          }
+        }
+        const visible: Array<{ agentTypeId: string; createdAt: string }> = []
+        for (const seat of await workspaceStore.listAgentSeats(workspaceId)) {
+          if (!agentTypeIds.includes(seat.agentTypeId)) continue
+          let decision: AgentAccessDecision
+          try {
+            decision = options.resolveAgentEntitlement
+              ? await options.resolveAgentEntitlement({
+                  workspaceId,
+                  userId,
+                  agentTypeId: seat.agentTypeId,
+                  operation: 'catalog',
+                })
+              : { state: 'allowed', seatId: seat.seatId }
+          } catch {
+            return reply.code(503).send({ error: 'agent access policy is unavailable' })
+          }
+          if (decision.state === 'policy-unavailable') {
+            return reply.code(503).send({ error: 'agent access policy is unavailable' })
+          }
+          if (decision.state === 'allowed') {
+            visible.push({ agentTypeId: seat.agentTypeId, createdAt: seat.createdAt })
+          }
+        }
+        return reply.code(200).send({ seats: visible })
+      })
+
+      app.post('/api/v1/workspaces/:workspaceId/agent-seats/:agentTypeId', async (request, reply) => {
+        const userId = request.user?.id
+        if (!userId) return reply.code(401).send({ error: 'authentication required' })
+        const { workspaceId, agentTypeId } = request.params as {
+          workspaceId: string
+          agentTypeId: string
+        }
+        const scoped = await authorizeRequestScopedWorkspace(request, workspaceId, 'editor')
+        if (!scoped) {
+          await getActiveAppWorkspace(workspaceId)
+          const role = await workspaceStore.getMemberRole(workspaceId, userId)
+          if (!role) return reply.code(404).send({ error: 'workspace not found' })
+          if (role === 'viewer') return reply.code(403).send({ error: 'workspace editor role required' })
+        }
+        if (!agentTypeIds.includes(agentTypeId)) {
+          return reply.code(404).send({ error: 'agent type is not available' })
+        }
+        let eligible: boolean
+        try {
+          eligible = await canEnrollAgent({ workspaceId, userId, agentTypeId })
+        } catch {
+          return reply.code(503).send({ error: 'agent enrollment policy is unavailable' })
+        }
+        if (!eligible) return reply.code(404).send({ error: 'agent type is not available' })
+        const seat = await workspaceStore.addAgentSeat(
+          workspaceId,
+          agentTypeId,
+          'user-add',
+          userId,
+        )
+        return reply.code(200).send({
+          seat: { agentTypeId: seat.agentTypeId, createdAt: seat.createdAt },
+        })
+      })
+    }
+
     app.get('/api/v1/workspace/meta', async (request, reply) => {
       try {
         const workspaceId = await resolveWorkspaceId(request)
@@ -1806,6 +1927,11 @@ export async function createCoreWorkspaceAgentServer(
         // retained membership on a soft-deleted row cannot recreate its root.
         const workspace = await getActiveAppWorkspace(workspaceId)
         const workspaceRootForRequest = await resolveRoot(workspaceId, request)
+        const defaultEligibleAgentTypeIds = options.workspaceAgentAccessMode === 'enforce'
+          ? (await workspaceStore.listAgentSeats(workspaceId))
+              .map((seat) => seat.agentTypeId)
+              .filter((agentTypeId) => agentTypeIds.includes(agentTypeId))
+          : agentTypeIds
         return {
           workspaceId,
           workspaceRoot: workspaceRootForRequest,
@@ -1816,7 +1942,7 @@ export async function createCoreWorkspaceAgentServer(
           defaultAgentTypeId: resolveWorkspaceDefaultAgentTypeId({
             persistedDefaultAgentTypeId: workspace.defaultAgentTypeId,
             applicationDefaultAgentTypeId,
-            regularAgentTypeIds: agentTypeIds,
+            regularAgentTypeIds: defaultEligibleAgentTypeIds,
             onUnknownPersistedSeat: (diagnostic) => {
               request.log.warn(
                 { workspaceId, ...diagnostic },
