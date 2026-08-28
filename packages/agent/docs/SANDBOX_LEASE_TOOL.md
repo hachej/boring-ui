@@ -1,49 +1,107 @@
-# Leased verification sandboxes
+# Native disposable sandbox tools
 
-`SandboxLeaseService` is a server-only foundation for temporary verification targets. It does not register an Agent tool and does not redirect an Agent's ordinary runtime `Workspace` or `Sandbox`.
+A trusted host may grant an Agent runtime a `ResolvedSandboxToolCapability`.
+The capability adds one lifecycle tool and one optional argument to the existing
+canonical coding tools:
 
-A trusted host constructs the service with a qualified disposable provider, a host-owned workspace root, and a bounded TTL:
+```text
+sandbox({ op: "create" }) → { sandbox, expiresAt }
+
+bash({ command, sandbox? })
+read/write/edit/find/grep/ls({ ..., sandbox? })
+upload_file({ ..., sandbox? }) // only when upload_file is enabled
+
+sandbox({ op: "release", sandbox })
+```
+
+Omitting `sandbox` preserves the primary user workspace exactly. Supplying an
+opaque lease explicitly targets that disposable `Workspace + Sandbox` pair.
+There is no mutable current-sandbox switch. One Agent session may create and
+use several leases concurrently.
+
+## Host authority
+
+The embedding host constructs one shared `SandboxLeaseService` for an authorized
+profile and passes it only after Agent authorization:
 
 ```ts
 const provider = createVercelSandboxProvider({
   lifecycle: 'disposable',
   immutableCacheSource: hostResolvedCacheSource,
 })
-const service = new SandboxLeaseService({
+const leases = new SandboxLeaseService({
   provider,
   workspaceRoot: '/host/verification-sandboxes',
+  serviceDigest: hostPolicyDigest,
   ttlMs: 10 * 60_000,
+  reapIntervalMs: 30_000,
+  drainTimeoutMs: 30_000,
+  maxActiveLeasesPerOwner: 3,
+  maxActiveLeasesTotal: 12,
 })
+
+return {
+  ...runtimeScope,
+  sandboxTools: { digest: hostPolicyDigest, leases },
+}
 ```
 
-For Vercel, `immutableCacheSource` is a host-resolved opaque snapshot reference. The provider creates a fresh mutable sandbox from that exact immutable base and refuses to resume or reuse an existing Worker handle for the same workspace identity. Disposing the pair deletes the remote fork, evicts its process cache, and deletes its persisted handle. Default Vercel provider behavior remains persistent unless `lifecycle: 'disposable'` is explicit.
+The model cannot supply provider, snapshot, image, repository, environment,
+credentials, resources, network policy, TTL, quotas, host paths, or owner ID.
+Ownership is derived by the host from workspace scope, Agent type, and exact
+Agent session. `list` means list-own; another owner receives the same unavailable
+response as an unknown handle.
 
-## Operations and authority boundary
+The capability digest participates directly in runtime binding and reload
+identity. A changed profile/cache/quota grant requires a new binding rather than
+hot-mutable authority. Authored agents and plugins cannot self-grant this
+capability or replace its reserved standard-tool names.
 
-The service supports `exec`, `read`, `write`, `list`, `stat`, `upload`, and `release` against an opaque lease. Each call is also bound to host-authenticated owner identity. Another owner receives the same unavailable error as an unknown handle.
+## Execution and source proof
 
-`ownerId` is an internal service binding, not a Worker claim. A future Worker tool adapter must inject authenticated owner identity and expose only the lease plus operation-specific fields. It must not expose:
+Repository checkout is ordinary targeted bash, not a management input:
 
-- provider configuration or identity;
-- snapshot/cache/image references;
-- environment values or credentials;
-- network/resource controls;
-- host paths;
-- cache publication or deletion operations.
+```text
+bash({ sandbox, command: "git fetch origin <ref> && git checkout --detach <ref>" })
+bash({ sandbox, command: "git rev-parse HEAD" })
+```
 
-`exec` intentionally accepts neither cwd nor environment overrides. Filesystem paths are validated POSIX-relative paths. Upload accepts bytes already held by the caller and never accepts a host source path or URL.
+The resolved HEAD is accepted proof; a branch label is not. The host still
+controls which repository/profile and credentials exist in the base. Targeted
+tools inherit neither the primary runtime environment, host storage root,
+filesystem bindings, nor secrets. `sandbox` plus a named `filesystem` is
+rejected; `filesystem: "user"` means the leased user workspace.
 
-## Exact-source proof
+## Lifecycle and accepted work
 
-Source checkout is host provisioning and remains outside this lease service. After the host checks out the immutable target SHA, it should execute `git rev-parse HEAD` through the acquired lease and compare stdout to that target before accepting build or test evidence. The lease service returns this command evidence; it does not claim to perform or authorize source checkout. A sanitized live Vercel qualification is recorded in [issue #1437](https://github.com/hachej/boring-ui/issues/1437#issuecomment-5444798207).
+`sandbox.create` and `sandbox.release` are external effects. They run through
+the AgentHost accepted-work ledger introduced by prerequisite PR #1446.
+Completed requests replay their receipts; outcome-unknown requests never
+reinvoke the model-requested effect.
 
-## Lifecycle
+Operational tools pin the pair through `withPair`. Release, expiry, owner-end,
+and host shutdown atomically enter draining, reject new pins, wait a bounded
+time for existing operations, then delete. Failed or timed-out cleanup remains
+`cleanup-pending` and continues counting against quota.
 
-- `release` disposes the provider pair before removing the local lease.
-- Failed provider cleanup retains the lease so release or expiry reaping can retry.
-- If fresh disposable handle persistence fails after remote creation, the resolver compensates by deleting that remote and clearing partial cache/store state. `SandboxHandlePersistenceError` preserves the primary persistence error plus cleanup failures and reconciliation metadata.
-- `reapExpired()` attempts every expired lease. `dispose()` attempts every active lease.
-- Partial cleanup throws `SandboxLeaseCleanupError` with released and failed counts; only failed leases remain for retry.
-- Hosts still need bounded concurrency, audit/telemetry, source provisioning, and crash reconciliation before broad production use.
+Remote deletion is separate registered host maintenance:
 
-Only trusted CI may publish immutable cache snapshots. This consumer surface cannot publish or mutate the base artifact; every fork is independently mutable and disposable.
+```text
+operationId: sandbox.remote.dispose.v1
+key: sha256(serviceDigest + ":" + opaqueLease)
+```
+
+The service-owned unref'ed timer reaps expired and cleanup-pending leases without
+overlapping ticks. Retrying this qualified idempotent cleanup never rewrites an
+outcome-unknown external-effect receipt. Host shutdown clears the timer and
+awaits service disposal.
+
+## Current boundaries
+
+- Only canonical `bash`, file tools, and enabled `upload_file` are targetable.
+- Plugin, MCP, UI, custom tools, and `execute_isolated_code` cannot resolve leases.
+- The registry is process-local. Broad multi-host automation still requires a
+  durable lease registry and reconciler.
+- Trusted main CI cache publication, cache registry/retention, affected-package
+  planning, brokered credentials, and Seneca Worker-only policy remain separate
+  slices.
