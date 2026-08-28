@@ -143,6 +143,19 @@ describe('SandboxLeaseService lifecycle registry', () => {
     await service.dispose()
   })
 
+  it('compensates a returned pair when readiness fails before publication', async () => {
+    const pair = fakePair('unhealthy')
+    pair.pair = { ...pair.pair, checkHealth: async () => { throw new Error('health failed') } }
+    const { service } = createService({ create: async () => pair.pair })
+
+    await expect(service.acquire('owner-a')).rejects.toMatchObject({
+      code: SANDBOX_LEASE_ERROR_CODES.LEASE_CREATION_ABORTED,
+    })
+    expect(pair.dispose).toHaveBeenCalledOnce()
+    expect(service.listOwn('owner-a')).toEqual([])
+    await service.dispose()
+  })
+
   it('reserves quota before async provider creation', async () => {
     const gate = await deferred<WorkspaceSandboxPairV1>()
     const { service } = createService({ maxOwner: 1, maxTotal: 1, create: async () => await gate.promise })

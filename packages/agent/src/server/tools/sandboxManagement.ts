@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 
-import type { JsonValue } from '../../shared/index'
+import { AgentGatewayError, AgentGatewayErrorCode, type JsonValue } from '../../shared/index'
 import type { AgentTool, ToolExecContext, ToolResult } from '../../shared/tool'
 import {
   defineAcceptedExternalEffectTool,
@@ -59,7 +59,7 @@ export function sandboxLeaseOwnerId(
   if (!ctx.sessionId?.trim()) throw new SandboxLeaseError(SANDBOX_LEASE_ERROR_CODES.INVALID_LEASE_REQUEST, 'sandbox requires an Agent session')
   if (ctx.workspaceId !== undefined && ctx.workspaceId !== options.workspaceScopeId) throw invalid()
   return createHash('sha256')
-    .update(`${options.workspaceScopeId}:${options.agentTypeId}:${ctx.sessionId}`)
+    .update(JSON.stringify([options.workspaceScopeId, options.agentTypeId, ctx.sessionId]))
     .digest('hex')
 }
 
@@ -76,6 +76,10 @@ function result(details: Record<string, unknown>): ToolResult {
 }
 
 function errorResult(error: unknown): ToolResult {
+  if (error instanceof AgentGatewayError) {
+    const details = { code: error.code, retryable: error.code === AgentGatewayErrorCode.AGENT_REQUEST_IN_PROGRESS }
+    return { content: [{ type: 'text', text: error.message }], details, isError: true }
+  }
   if (error instanceof SandboxLeaseError) {
     const details = { code: error.code, retryable: error.retryable }
     return {
@@ -99,6 +103,7 @@ function safeFailure(error: unknown): AgentRequestFailure | undefined {
     SANDBOX_LEASE_ERROR_CODES.LEASE_EXPIRED,
     SANDBOX_LEASE_ERROR_CODES.LEASE_DRAINING,
     SANDBOX_LEASE_ERROR_CODES.LEASE_QUOTA_EXCEEDED,
+    SANDBOX_LEASE_ERROR_CODES.LEASE_CREATION_ABORTED,
     SANDBOX_LEASE_ERROR_CODES.SERVICE_CLOSED,
   ])
   if (!safeCodes.has(error.code)) return undefined

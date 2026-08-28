@@ -129,6 +129,7 @@ export class SandboxLeaseService {
     this.assertOwner(ownerId)
     this.reserve(ownerId)
     let pair: WorkspaceSandboxPairV1 | undefined
+    let published = false
     try {
       if (signal?.aborted) throw this.creationAborted()
       const handle = this.nextHandle()
@@ -136,15 +137,9 @@ export class SandboxLeaseService {
         workspaceRoot: join(this.options.workspaceRoot, handle),
         sessionId: handle,
       })
-      if (signal?.aborted) {
-        await pair.dispose()
-        throw this.creationAborted()
-      }
+      if (signal?.aborted) throw this.creationAborted()
       const health = await pair.checkHealth?.()
-      if (health?.state === 'recreate') {
-        await pair.dispose()
-        throw new SandboxLeaseError(SANDBOX_LEASE_ERROR_CODES.LEASE_CLEANUP_FAILED, 'sandbox pair is not healthy', true)
-      }
+      if (health?.state === 'recreate') throw this.creationAborted('sandbox pair is not healthy')
       const lease: ActiveLease = {
         handle,
         ownerId,
@@ -156,9 +151,22 @@ export class SandboxLeaseService {
         zeroActiveWaiters: new Set(),
       }
       this.leases.set(handle, lease)
+      published = true
       return { handle, expiresAt: lease.expiresAt }
     } catch (error) {
-      if (pair && signal?.aborted) await pair.dispose().catch(() => undefined)
+      if (pair && !published) {
+        try {
+          await pair.dispose()
+        } catch (cleanupError) {
+          throw new SandboxLeaseError(
+            SANDBOX_LEASE_ERROR_CODES.LEASE_CLEANUP_FAILED,
+            'sandbox creation compensation failed',
+            true,
+            { cause: new AggregateError([error, cleanupError]) },
+          )
+        }
+        if (!(error instanceof SandboxLeaseError)) throw this.creationAborted()
+      }
       throw error
     } finally {
       this.unreserve(ownerId)
@@ -393,8 +401,8 @@ export class SandboxLeaseService {
     return handle
   }
 
-  private creationAborted(): SandboxLeaseError {
-    return new SandboxLeaseError(SANDBOX_LEASE_ERROR_CODES.LEASE_CREATION_ABORTED, 'sandbox creation was aborted', true)
+  private creationAborted(message = 'sandbox creation was aborted'): SandboxLeaseError {
+    return new SandboxLeaseError(SANDBOX_LEASE_ERROR_CODES.LEASE_CREATION_ABORTED, message, true)
   }
 
   private invalid(message: string): never {

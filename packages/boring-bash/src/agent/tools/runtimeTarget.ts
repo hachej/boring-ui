@@ -39,6 +39,11 @@ export function withSandboxTarget(
 ): AgentTool {
   return {
     ...primary,
+    description: `${primary.description} When sandbox is supplied, the operation targets that disposable lease; lease-targeted outputs are not durable after release.`,
+    promptSnippet: [
+      primary.promptSnippet,
+      'Optional sandbox targets an explicitly leased disposable remote workspace; omit it for the primary user workspace.',
+    ].filter(Boolean).join('\n'),
     parameters: withSandboxParameter(primary.parameters),
     async execute(params, ctx) {
       const requested = params.sandbox
