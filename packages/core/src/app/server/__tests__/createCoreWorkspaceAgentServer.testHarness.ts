@@ -48,10 +48,13 @@ export const mocks = (() => {
     getUser: vi.fn(async (id: string) => ({ id })),
     countNullDefaultAgentTypeIds: vi.fn(async (_appId: string): Promise<number> => 0),
     compareAndSetNullDefaultAgentTypeId: vi.fn(async (_appId: string, _value: string) => 0),
+    getMemberRole: vi.fn(async (_workspaceId: string, _userId: string): Promise<string | null> => 'owner'),
+    setDefaultAgentTypeId: vi.fn(async (id: string, _expected: string, value: string) => ({
+      id, appId: 'test-app', defaultAgentTypeId: value,
+    }) as { id: string; appId: string; defaultAgentTypeId: string } | null),
     listAgentSeats: vi.fn(async (_workspaceId: string): Promise<any[]> => []),
     hasAgentSeat: vi.fn(async (_workspaceId: string, _agentTypeId: string) => false),
     addAgentSeat: vi.fn(),
-    getMemberRole: vi.fn(async (_workspaceId: string, _userId: string) => 'owner'),
     actualCreateAgentHost: undefined as undefined | ((options: any) => Promise<any>),
     actualCreateSandboxRuntimeModeAdapter: undefined as undefined | ((mode: 'direct') => any),
     runtimeHost: {
@@ -168,12 +171,17 @@ vi.doMock('../../../server/db/index.js', () => ({
     compareAndSetNullDefaultAgentTypeId(appId: string, value: string) {
       return mocks.compareAndSetNullDefaultAgentTypeId(appId, value)
     }
+    getMemberRole(workspaceId: string, userId: string) {
+      return mocks.getMemberRole(workspaceId, userId)
+    }
+    setDefaultAgentTypeId(id: string, expected: string, value: string) {
+      return mocks.setDefaultAgentTypeId(id, expected, value)
+    }
     listAgentSeats(workspaceId: string) { return mocks.listAgentSeats(workspaceId) }
     hasAgentSeat(workspaceId: string, agentTypeId: string) { return mocks.hasAgentSeat(workspaceId, agentTypeId) }
     addAgentSeat(workspaceId: string, agentTypeId: string, source: string, enrolledByUserId?: string) {
       return mocks.addAgentSeat(workspaceId, agentTypeId, source, enrolledByUserId)
     }
-    getMemberRole(workspaceId: string, userId: string) { return mocks.getMemberRole(workspaceId, userId) }
   },
 }))
 
@@ -193,9 +201,12 @@ beforeEach(() => {
   mocks.getUser.mockImplementation(async (id: string) => ({ id }))
   mocks.countNullDefaultAgentTypeIds.mockResolvedValue(0)
   mocks.compareAndSetNullDefaultAgentTypeId.mockResolvedValue(0)
+  mocks.getMemberRole.mockResolvedValue('owner')
+  mocks.setDefaultAgentTypeId.mockImplementation(async (id: string, _expected: string, value: string) => ({
+    id, appId: 'test-app', defaultAgentTypeId: value,
+  }))
   mocks.listAgentSeats.mockResolvedValue([])
   mocks.hasAgentSeat.mockResolvedValue(false)
-  mocks.getMemberRole.mockResolvedValue('owner')
   mocks.addAgentSeat.mockImplementation(async (workspaceId, agentTypeId, source, enrolledByUserId) => ({
     seatId: `seat-${agentTypeId}`,
     workspaceId,

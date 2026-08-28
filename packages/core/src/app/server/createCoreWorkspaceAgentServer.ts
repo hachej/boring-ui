@@ -121,10 +121,16 @@ import {
 } from '../../server/signupAgentDefaults.js'
 import {
   DefaultAgentTypeError,
+  parseRequiredDefaultAgentTypeId,
   resolveApplicationDefaultAgentTypeId,
   resolveWorkspaceDefaultAgentTypeId,
 } from '../../server/defaultAgentType.js'
 import { reconcileWorkspaceDefaultAgentTypes } from '../../server/reconcileWorkspaceDefaultAgentTypes.js'
+import {
+  WORKSPACE_DEFAULT_AGENT_ROUTE,
+  type WorkspaceDefaultAgentOption,
+  type WorkspaceDefaultAgentState,
+} from '../../shared/workspaceDefaultAgent.js'
 import { WorkspaceRuntimeSandboxHandleStore } from '../../server/runtime/index.js'
 import { createDatabaseTelemetryFromEnv } from '../../server/telemetry/db.js'
 
@@ -1147,6 +1153,11 @@ export async function createCoreWorkspaceAgentServer(
     ...(discoveredPackages ? { discoveredPackages } : {}),
   })
   const agentTypeIds = agents.map((agent) => agent.agentTypeId)
+  // gh-1402: the pickable fleet offered by the default-Agent recovery surface.
+  const availableAgents: readonly WorkspaceDefaultAgentOption[] = agents.map((agent) => ({
+    agentTypeId: agent.agentTypeId,
+    label: agent.definition.label || agent.agentTypeId,
+  }))
   const applicationDefaultAgentTypeId = resolveApplicationDefaultAgentTypeId({
     configuredDefaultAgentTypeId: rawConfig.defaultAgentTypeId,
     regularAgentTypeIds: agentTypeIds,
@@ -1976,6 +1987,132 @@ export async function createCoreWorkspaceAgentServer(
         const message = error instanceof Error ? error.message : 'workspace meta failed'
         return reply.code(statusCode).send({ error: message })
       }
+    })
+
+    // gh-1402: the recovery pair for the fail-closed default (gh-1386).
+    // Deliberately does NOT reuse `resolveWorkspaceDefaultAgentTypeId`: this
+    // read must stay readable while the workspace is broken, which is exactly
+    // when resolution throws. It reports the state instead of enforcing it.
+    const readWorkspaceDefaultAgentState = async (
+      request: FastifyRequest,
+    ): Promise<WorkspaceDefaultAgentState> => {
+      const workspaceId = await resolveWorkspaceId(request)
+      const workspace = await getActiveAppWorkspace(workspaceId)
+      const persistedDefaultAgentTypeId = workspace.defaultAgentTypeId ?? null
+      const unavailable = persistedDefaultAgentTypeId !== null
+        && !agentTypeIds.includes(persistedDefaultAgentTypeId)
+      return {
+        workspaceId,
+        status: unavailable ? 'unavailable' : 'ok',
+        persistedDefaultAgentTypeId,
+        availableAgents,
+      }
+    }
+
+    app.get(WORKSPACE_DEFAULT_AGENT_ROUTE, async (request) => await readWorkspaceDefaultAgentState(request))
+
+    app.put(WORKSPACE_DEFAULT_AGENT_ROUTE, async (request) => {
+      // Repinning is a human recovery action. An agent-host request scope is an
+      // automated caller by construction, and Decision 28 reserves every
+      // automated path for the NULL-only backfill.
+      if (request.requestScope) {
+        throw new HttpError({
+          status: 403,
+          code: ERROR_CODES.AGENT_HOST_MANAGED_WORKSPACE_MUTATION_FORBIDDEN,
+          message: ERROR_CODES.AGENT_HOST_MANAGED_WORKSPACE_MUTATION_FORBIDDEN,
+          requestId: request.id,
+        })
+      }
+      const workspaceId = await resolveWorkspaceId(request)
+      await getActiveAppWorkspace(workspaceId)
+      // Membership alone is not enough: this changes a workspace-wide setting,
+      // so it takes the same editor floor as every other workspace mutation.
+      const userId = request.user?.id
+      if (!userId) {
+        throw new HttpError({
+          status: 401,
+          code: ERROR_CODES.UNAUTHORIZED,
+          message: 'authentication required',
+          requestId: request.id,
+        })
+      }
+      const role = await workspaceStore.getMemberRole(workspaceId, userId)
+      if (!role) {
+        throw new HttpError({
+          status: 403,
+          code: ERROR_CODES.NOT_MEMBER,
+          message: 'Not a member of this workspace',
+          requestId: request.id,
+        })
+      }
+      if (role === 'viewer') {
+        throw new HttpError({
+          status: 403,
+          code: ERROR_CODES.FORBIDDEN,
+          message: 'Requires editor role or higher',
+          requestId: request.id,
+        })
+      }
+      const body = request.body as { defaultAgentTypeId?: unknown; expectedDefaultAgentTypeId?: unknown } | null | undefined
+      let candidate: string
+      let expected: string
+      try {
+        candidate = parseRequiredDefaultAgentTypeId(body?.defaultAgentTypeId)
+        expected = parseRequiredDefaultAgentTypeId(body?.expectedDefaultAgentTypeId)
+      } catch (error) {
+        throw new HttpError({
+          status: 400,
+          code: ERROR_CODES.INVALID_DEFAULT_AGENT_TYPE_ID,
+          message: error instanceof Error ? error.message : 'Invalid default agent type ID',
+          requestId: request.id,
+        })
+      }
+      // Recovery may never write another unavailable seat: the accepted set is
+      // the same validated fleet resolution checks against.
+      if (!agentTypeIds.includes(candidate)) {
+        throw new HttpError({
+          status: 409,
+          code: ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT,
+          message: 'Requested Agent is not an available regular fleet member',
+          requestId: request.id,
+        })
+      }
+      // Recovery-only: the seat being replaced must itself be outside the
+      // fleet. This endpoint therefore cannot be repurposed to repin a healthy
+      // workspace, and a stale tab presenting an old seat loses the CAS below.
+      const conflict = async (): Promise<never> => {
+        throw new HttpError({
+          status: 409,
+          code: ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT,
+          message: 'Workspace default Agent changed since it was read',
+          requestId: request.id,
+        })
+      }
+      if (agentTypeIds.includes(expected)) await conflict()
+      const updated = await workspaceStore.setDefaultAgentTypeId(workspaceId, expected, candidate)
+      if (!updated) {
+        // Either the workspace vanished or another recovery already won.
+        const current = await workspaceStore.get(workspaceId)
+        if (!current) {
+          throw new HttpError({
+            status: 404,
+            code: ERROR_CODES.NOT_FOUND,
+            message: 'Workspace not found',
+            requestId: request.id,
+          })
+        }
+        await conflict()
+      }
+      request.log.info(
+        { workspaceId, defaultAgentTypeId: candidate, expectedDefaultAgentTypeId: expected },
+        'workspace default Agent repinned by explicit user choice',
+      )
+      return {
+        workspaceId,
+        status: 'ok',
+        persistedDefaultAgentTypeId: candidate,
+        availableAgents,
+      } satisfies WorkspaceDefaultAgentState
     })
 
     await registerCoreAgentHostEnvironmentRoutes(app, {

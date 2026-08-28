@@ -493,6 +493,38 @@ export function describeWorkspaceStoreConformance(
     )
 
     it(
+      'repins an existing default only through the explicit recovery write (gh-1402)',
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
+        const { workspaceStore, appId, users } = await setup()
+        const stranded = await createWorkspace(workspaceStore, users.owner.id, 'Stranded', appId, {
+          defaultAgentTypeId: 'retired-seat',
+        })
+        const untouched = await createWorkspace(workspaceStore, users.owner.id, 'Untouched', appId, {
+          defaultAgentTypeId: 'retired-seat',
+        })
+
+        const repinned = await workspaceStore.setDefaultAgentTypeId(stranded.id, 'retired-seat', 'default')
+        expect(repinned).toMatchObject({ id: stranded.id, defaultAgentTypeId: 'default' })
+        expect((await workspaceStore.get(stranded.id))?.defaultAgentTypeId).toBe('default')
+        // The explicit write is scoped to one workspace: the automated NULL-only
+        // backfill still owns every other row and leaves them exactly as found.
+        expect((await workspaceStore.get(untouched.id))?.defaultAgentTypeId).toBe('retired-seat')
+        expect(await workspaceStore.compareAndSetNullDefaultAgentTypeId(appId, 'default')).toBe(0)
+        expect((await workspaceStore.get(untouched.id))?.defaultAgentTypeId).toBe('retired-seat')
+
+        // A second confirm from a stale tab still presents the seat it read, so
+        // the compare-and-set matches nothing and the newer recovery survives.
+        expect(await workspaceStore.setDefaultAgentTypeId(stranded.id, 'retired-seat', 'alternate')).toBeNull()
+        expect((await workspaceStore.get(stranded.id))?.defaultAgentTypeId).toBe('default')
+
+        await expect(workspaceStore.setDefaultAgentTypeId(stranded.id, 'default', 'Not A Slug'))
+          .rejects.toMatchObject({ code: ERROR_CODES.INVALID_DEFAULT_AGENT_TYPE_ID })
+        expect(await workspaceStore.setDefaultAgentTypeId(randomUUID(), 'retired-seat', 'default')).toBeNull()
+        assertionPassed('default-agent-type-explicit-repin')
+      }),
+    )
+
+    it(
       'rejects invalid defaultAgentTypeId at the trusted create seam with a stable code',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()

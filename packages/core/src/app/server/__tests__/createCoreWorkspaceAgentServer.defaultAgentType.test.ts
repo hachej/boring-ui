@@ -332,3 +332,172 @@ test('workspace meta resolves a rolling-migration NULL from the configured appli
     expect(meta.json()).toMatchObject({ defaultAgentTypeId: 'reviewer' })
   } finally { await app.close() }
 }, 30_000)
+
+// gh-1402: the fail-closed default is only humane if the workspace owner can
+// see the broken state and repin it without database access.
+async function createRecoveryApp(persistedDefaultAgentTypeId: string | null) {
+  mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
+    runtimePlugins: [], agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
+    preservedUiStateKeys: [], routeContributions: [],
+  })
+  const config = createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' })
+  mocks.getWorkspace.mockImplementation(async (id: string) => ({
+    id, appId: config.appId, defaultAgentTypeId: persistedDefaultAgentTypeId as unknown as string,
+  }))
+  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
+  return await createCoreWorkspaceAgentServer({
+    config,
+    agents: [
+      { agentTypeId: 'general', definition: { label: 'General', instructions: 'Answer general questions.' } },
+      { agentTypeId: 'reviewer', definition: { label: 'Reviewer', instructions: 'Review.' } },
+    ],
+    workspaceRoot: '/tmp/full-app-workspaces',
+    serveFrontend: false,
+  })
+}
+
+const recoveryHeaders = { 'x-test-user-id': 'user-a' }
+const recoveryUrl = '/api/v1/workspace/default-agent?workspaceId=workspace-a'
+
+test('reports the unavailable seat alongside the seats that can replace it', async () => {
+  const app = await createRecoveryApp('retired-seat')
+  try {
+    // Resolution throws for this workspace; the recovery read must still answer.
+    const state = await app.inject({ method: 'GET', url: recoveryUrl, headers: recoveryHeaders })
+    expect(state.statusCode).toBe(200)
+    expect(state.json()).toEqual({
+      workspaceId: 'workspace-a',
+      status: 'unavailable',
+      persistedDefaultAgentTypeId: 'retired-seat',
+      availableAgents: [
+        { agentTypeId: 'general', label: 'General' },
+        { agentTypeId: 'reviewer', label: 'Reviewer' },
+      ],
+    })
+  } finally { await app.close() }
+}, 30_000)
+
+test('reports a healthy workspace as ok without touching the persisted value', async () => {
+  const app = await createRecoveryApp('reviewer')
+  try {
+    const state = await app.inject({ method: 'GET', url: recoveryUrl, headers: recoveryHeaders })
+    expect(state.statusCode).toBe(200)
+    expect(state.json()).toMatchObject({ status: 'ok', persistedDefaultAgentTypeId: 'reviewer' })
+    expect(mocks.setDefaultAgentTypeId).not.toHaveBeenCalled()
+  } finally { await app.close() }
+}, 30_000)
+
+test('repins the workspace default to an available Agent on explicit choice', async () => {
+  const app = await createRecoveryApp('retired-seat')
+  try {
+    const saved = await app.inject({
+      method: 'PUT', url: recoveryUrl, headers: recoveryHeaders,
+      payload: { expectedDefaultAgentTypeId: 'retired-seat', defaultAgentTypeId: 'reviewer' },
+    })
+    expect(saved.statusCode).toBe(200)
+    expect(saved.json()).toMatchObject({ status: 'ok', persistedDefaultAgentTypeId: 'reviewer' })
+    expect(mocks.setDefaultAgentTypeId).toHaveBeenCalledWith('workspace-a', 'retired-seat', 'reviewer')
+  } finally { await app.close() }
+}, 30_000)
+
+test('refuses to repin onto another unavailable seat', async () => {
+  const app = await createRecoveryApp('retired-seat')
+  try {
+    const rejected = await app.inject({
+      method: 'PUT', url: recoveryUrl, headers: recoveryHeaders,
+      payload: { expectedDefaultAgentTypeId: 'retired-seat', defaultAgentTypeId: 'also-retired' },
+    })
+    expect(rejected.statusCode).toBe(409)
+    expect(rejected.json()).toMatchObject({ code: 'default_agent_type_unknown_seat' })
+    expect(mocks.setDefaultAgentTypeId).not.toHaveBeenCalled()
+  } finally { await app.close() }
+}, 30_000)
+
+test('rejects a malformed requested agent id before any write', async () => {
+  const app = await createRecoveryApp('retired-seat')
+  try {
+    const rejected = await app.inject({
+      method: 'PUT', url: recoveryUrl, headers: recoveryHeaders,
+      payload: { expectedDefaultAgentTypeId: 'retired-seat', defaultAgentTypeId: 'Not A Slug' },
+    })
+    expect(rejected.statusCode).toBe(400)
+    expect(rejected.json()).toMatchObject({ code: 'invalid_default_agent_type_id' })
+    expect(mocks.setDefaultAgentTypeId).not.toHaveBeenCalled()
+  } finally { await app.close() }
+}, 30_000)
+
+// Review round 1, finding 1: membership alone must not carry mutation authority.
+test('denies a viewer the workspace-wide repin', async () => {
+  const app = await createRecoveryApp('retired-seat')
+  mocks.getMemberRole.mockResolvedValue('viewer')
+  try {
+    const rejected = await app.inject({
+      method: 'PUT', url: recoveryUrl, headers: recoveryHeaders,
+      payload: { expectedDefaultAgentTypeId: 'retired-seat', defaultAgentTypeId: 'reviewer' },
+    })
+    expect(rejected.statusCode).toBe(403)
+    expect(rejected.json()).toMatchObject({ code: 'forbidden' })
+    expect(mocks.setDefaultAgentTypeId).not.toHaveBeenCalled()
+  } finally { await app.close() }
+}, 30_000)
+
+test('allows an editor the repin a viewer was denied', async () => {
+  const app = await createRecoveryApp('retired-seat')
+  mocks.getMemberRole.mockResolvedValue('editor')
+  try {
+    const saved = await app.inject({
+      method: 'PUT', url: recoveryUrl, headers: recoveryHeaders,
+      payload: { expectedDefaultAgentTypeId: 'retired-seat', defaultAgentTypeId: 'reviewer' },
+    })
+    expect(saved.statusCode).toBe(200)
+  } finally { await app.close() }
+}, 30_000)
+
+test('denies a non-member and an unauthenticated caller the repin', async () => {
+  const app = await createRecoveryApp('retired-seat')
+  try {
+    mocks.isMember.mockResolvedValue(false)
+    const nonMember = await app.inject({
+      method: 'PUT', url: recoveryUrl, headers: recoveryHeaders,
+      payload: { expectedDefaultAgentTypeId: 'retired-seat', defaultAgentTypeId: 'reviewer' },
+    })
+    expect(nonMember.statusCode).toBe(403)
+
+    mocks.isMember.mockResolvedValue(true)
+    const anonymous = await app.inject({
+      method: 'PUT', url: recoveryUrl,
+      payload: { expectedDefaultAgentTypeId: 'retired-seat', defaultAgentTypeId: 'reviewer' },
+    })
+    expect(anonymous.statusCode).toBe(401)
+    expect(mocks.setDefaultAgentTypeId).not.toHaveBeenCalled()
+  } finally { await app.close() }
+}, 30_000)
+
+// Review round 1, finding 2: the repin is a recovery transition, not a
+// last-writer-wins settings write.
+test('refuses a stale repin whose observed seat is no longer persisted', async () => {
+  const app = await createRecoveryApp('reviewer')
+  // The competing tab already recovered this workspace; the compare-and-set in
+  // the store therefore matches no row.
+  mocks.setDefaultAgentTypeId.mockResolvedValue(null)
+  try {
+    const rejected = await app.inject({
+      method: 'PUT', url: recoveryUrl, headers: recoveryHeaders,
+      payload: { expectedDefaultAgentTypeId: 'retired-seat', defaultAgentTypeId: 'general' },
+    })
+    expect(rejected.statusCode).toBe(409)
+    expect(rejected.json()).toMatchObject({ code: 'default_agent_type_unknown_seat' })
+  } finally { await app.close() }
+}, 30_000)
+
+test('refuses to repin a healthy workspace through the recovery route', async () => {
+  const app = await createRecoveryApp('reviewer')
+  try {
+    const rejected = await app.inject({
+      method: 'PUT', url: recoveryUrl, headers: recoveryHeaders,
+      payload: { expectedDefaultAgentTypeId: 'reviewer', defaultAgentTypeId: 'general' },
+    })
+    expect(rejected.statusCode).toBe(409)
+    expect(mocks.setDefaultAgentTypeId).not.toHaveBeenCalled()
+  } finally { await app.close() }
+}, 30_000)

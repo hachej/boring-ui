@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Navigate, Route, useLocation, useParams } from 'react-router-dom'
 import { WorkspaceProvider } from '@hachej/boring-workspace'
 import { ErrorState } from '@hachej/boring-ui-kit'
@@ -18,11 +18,15 @@ import {
   WorkspaceAgentFront,
   WorkspaceBootGate,
   WorkspaceFullPagePanel,
+  DEFAULT_BOOT_PRELOAD_PATHS,
   type WorkspaceAgentFrontProps,
   type WorkspaceAgentSession,
+  type WorkspaceWarmupStatus,
 } from '@hachej/boring-workspace/app/front'
+import { ERROR_CODES } from '../../shared/errors.js'
 import { ChatFirstAuthenticatedShell } from './chatFirst/ChatFirstAuthenticatedShell.js'
 import { ChatFirstPublicShell, type ChatFirstPublicShellOptions } from './chatFirst/ChatFirstPublicShell.js'
+import { WorkspaceDefaultAgentRecovery } from './WorkspaceDefaultAgentRecovery.js'
 import { installVitePreloadRecovery } from './vitePreloadRecovery.js'
 import {
   clearPendingChatEntry,
@@ -39,6 +43,7 @@ installVitePreloadRecovery()
 const DEFAULT_WORKSPACE_ROUTE = '/workspace/:id'
 const DEFAULT_WORKSPACE_ID_PARAM = 'id'
 const DEFAULT_FULL_PAGE_BASE_PATH = '/full-page'
+const WORKSPACE_META_PATH = '/api/v1/workspace/meta'
 
 type ChatEntryMode = 'auth-first' | 'chat-first'
 type RoutedWorkspaceAgentProps<TSession extends WorkspaceAgentSession = WorkspaceAgentSession> = Omit<WorkspaceAgentFrontProps<TSession>, 'workspaceId' | 'frontPluginHotReload' | 'hotReloadEnabled'>
@@ -315,6 +320,32 @@ function WorkspaceRoute<
       : undefined,
     [resolvedWorkspaceProps.fullPageBasePath, workspaceId],
   )
+  // gh-1402: recovery mounts *reactively*, off the boot failure the server
+  // already produces (gh-1386's DEFAULT_AGENT_TYPE_UNKNOWN_SEAT), not off a
+  // speculative probe. `/api/v1/workspace/meta` is the call that carries that
+  // verdict, so it joins the existing boot batch; a healthy workspace makes no
+  // request on this feature's behalf.
+  const resolvedBootPreloadPaths = useMemo(
+    () => Array.from(new Set([...(bootPreloadPaths ?? DEFAULT_BOOT_PRELOAD_PATHS), WORKSPACE_META_PATH])),
+    [bootPreloadPaths],
+  )
+  // Scoped to the workspace that produced it, the same way WorkspaceAgentFront
+  // scopes its own warmup state: this route survives `:id` changes, so an
+  // unscoped code would follow the user from a broken workspace onto a healthy
+  // one and mount recovery for a workspace that never reported the failure.
+  const [bootFailure, setBootFailure] = useState<{ workspaceId: string; code: string | null }>(
+    () => ({ workspaceId, code: null }),
+  )
+  // Reset during render, not in an effect: an effect would leave one frame in
+  // which a verdict from a previous visit to this workspace is live again.
+  // Discarding it means a returning user waits for the *current* boot to speak.
+  if (bootFailure.workspaceId !== workspaceId) setBootFailure({ workspaceId, code: null })
+  const hostWarmupStatusChange = workspaceProps.onWorkspaceWarmupStatusChange
+  const handleWorkspaceWarmupStatusChange = useCallback((status: WorkspaceWarmupStatus) => {
+    setBootFailure({ workspaceId, code: status.status === 'failed' ? status.code ?? null : null })
+    hostWarmupStatusChange?.(status)
+  }, [hostWarmupStatusChange, workspaceId])
+  const activeBootFailureCode = bootFailure.workspaceId === workspaceId ? bootFailure.code : null
 
   if (!workspaceId) return <>{resolvedLoadingFallback}</>
 
@@ -361,6 +392,21 @@ function WorkspaceRoute<
     },
   }
 
+  // Only this one boot failure gets the recovery surface. Every other boot
+  // error keeps the workspace's normal failure handling.
+  if (activeBootFailureCode === ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT) {
+    return (
+      <WorkspaceDefaultAgentRecovery
+        workspaceId={workspaceId}
+        apiBaseUrl={resolvedWorkspaceProps.apiBaseUrl}
+        requestHeaders={requestHeaders}
+        // The workspace record that supplies `agentTypeId` below is cached by
+        // the workspace provider, so a repin only takes effect on a fresh read.
+        onRecovered={() => { window.location.reload() }}
+      />
+    )
+  }
+
   return (
     <WorkspaceAgentFront
       key={workspaceId}
@@ -372,7 +418,8 @@ function WorkspaceRoute<
       authHeaders={authHeaders}
       fullPageBasePath={scopedFullPageBasePath}
       chatParams={chatParams}
-      bootPreloadPaths={bootPreloadPaths}
+      bootPreloadPaths={resolvedBootPreloadPaths}
+      onWorkspaceWarmupStatusChange={handleWorkspaceWarmupStatusChange}
       frontPluginHotReload={false}
       hotReloadEnabled={false}
       showThemeToggle={false}
