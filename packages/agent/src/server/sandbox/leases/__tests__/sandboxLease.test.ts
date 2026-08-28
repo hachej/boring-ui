@@ -7,6 +7,7 @@ import {
   SandboxLeaseCleanupError,
   SandboxLeaseService,
 } from '../sandboxLease'
+import { SandboxLeaseServiceRegistry } from '../sandboxLeaseServiceRegistry'
 
 interface FakePair {
   pair: WorkspaceSandboxPairV1
@@ -45,6 +46,7 @@ function createService(input: {
   maxTotal?: number
   drainTimeoutMs?: number
   create?: () => Promise<WorkspaceSandboxPairV1>
+  close?: () => Promise<void>
   createHandle?: () => string
 } = {}) {
   const pairs: FakePair[] = []
@@ -56,7 +58,7 @@ function createService(input: {
   }))
   const service = new SandboxLeaseService({
     workspaceRoot: '/host/leases',
-    provider: { create: providerCreate } as unknown as SandboxProviderV1,
+    provider: { create: providerCreate, close: input.close } as unknown as SandboxProviderV1,
     serviceDigest: 'profile-v1',
     ttlMs: 60_000,
     reapIntervalMs: 60_000,
@@ -142,6 +144,27 @@ describe('SandboxLeaseService lifecycle registry', () => {
     await service.release('owner-a', lease.handle)
     expect(pairs[0]?.dispose).toHaveBeenCalledOnce()
     await service.dispose()
+  })
+
+  it('does not let provider close delete a published pair while an operation is pinned', async () => {
+    const providerClose = vi.fn(async () => {})
+    const { service, pairs } = createService({ drainTimeoutMs: 5, close: providerClose })
+    const lease = await service.acquire('owner-a')
+    const gate = await deferred<void>()
+    const operation = service.withPair('owner-a', lease.handle, async () => await gate.promise)
+    await Promise.resolve()
+
+    await expect(service.dispose()).rejects.toBeInstanceOf(SandboxLeaseCleanupError)
+    expect(providerClose).toHaveBeenCalledOnce()
+    expect(pairs[0]?.dispose).not.toHaveBeenCalled()
+
+    gate.resolve()
+    await operation
+    await expect(service.dispose()).resolves.toBeUndefined()
+    expect(pairs[0]?.dispose).toHaveBeenCalledOnce()
+    expect(providerClose).toHaveBeenCalledOnce()
+    await service.dispose()
+    expect(providerClose).toHaveBeenCalledOnce()
   })
 
   it('compensates a returned pair when readiness fails before publication', async () => {
@@ -403,6 +426,41 @@ describe('SandboxLeaseService lifecycle registry', () => {
     gate.resolve()
     await Promise.all(operations)
     await service.dispose()
+  })
+
+  it('joins a provider-close attempt that outlives the first shutdown deadline', async () => {
+    const gate = await deferred<void>()
+    const providerClose = vi.fn(async () => await gate.promise)
+    const { service } = createService({ close: providerClose, drainTimeoutMs: 5 })
+
+    await expect(service.dispose()).rejects.toBeInstanceOf(SandboxLeaseCleanupError)
+    const retry = service.dispose()
+    await Promise.resolve()
+    expect(providerClose).toHaveBeenCalledOnce()
+    gate.resolve()
+    await expect(retry).resolves.toBeUndefined()
+    expect(providerClose).toHaveBeenCalledOnce()
+  })
+
+  it('retries a zero-lease provider-close failure without overlapping attempts', async () => {
+    const providerClose = vi.fn()
+      .mockRejectedValueOnce(new Error('provider orphan cleanup failed'))
+      .mockResolvedValue(undefined)
+    const { service } = createService({ close: providerClose })
+
+    const first = service.dispose()
+    expect(service.dispose()).toBe(first)
+    await expect(first).rejects.toBeInstanceOf(SandboxLeaseCleanupError)
+    expect(providerClose).toHaveBeenCalledOnce()
+
+    const registry = new SandboxLeaseServiceRegistry()
+    registry.register({ digest: 'profile-v1', leases: service })
+    await expect(registry.disposeUntil(Date.now() + 100)).resolves.toEqual([
+      { status: 'fulfilled', value: undefined },
+    ])
+    expect(providerClose).toHaveBeenCalledTimes(2)
+    await expect(service.dispose()).resolves.toBeUndefined()
+    expect(providerClose).toHaveBeenCalledTimes(2)
   })
 
   it('closes idempotently and rejects new create or pin operations', async () => {

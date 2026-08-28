@@ -114,7 +114,9 @@ export class SandboxLeaseService {
   private readonly timer: ReturnType<typeof setInterval>
   private pendingTotal = 0
   private closed = false
+  private providerClosed = false
   private reapInFlight: Promise<number> | undefined
+  private providerCloseInFlight: Promise<void> | undefined
   private disposal: Promise<void> | undefined
 
   constructor(private readonly options: SandboxLeaseServiceOptions) {
@@ -259,8 +261,9 @@ export class SandboxLeaseService {
 
   dispose(): Promise<void> {
     if (!this.disposal) {
-      const wrapped = this.disposeOnce().finally(() => {
-        if ((this.leases.size > 0 || this.pendingAcquisitions.size > 0) && this.disposal === wrapped) this.disposal = undefined
+      const wrapped = this.disposeOnce().catch((error: unknown) => {
+        if (this.disposal === wrapped) this.disposal = undefined
+        throw error
       })
       this.disposal = wrapped
     }
@@ -292,11 +295,25 @@ export class SandboxLeaseService {
       failures.push(error)
     }
     try {
-      if (this.options.provider.close) await this.withDeadline(this.options.provider.close(), deadline, 'sandbox provider close timed out')
+      await this.withDeadline(this.closeProvider(), deadline, 'sandbox provider close timed out')
     } catch (error) {
       failures.push(error)
     }
     if (failures.length) throw new SandboxLeaseCleanupError('dispose', 0, failures)
+  }
+
+  private closeProvider(): Promise<void> {
+    if (!this.options.provider.close || this.providerClosed) return Promise.resolve()
+    if (!this.providerCloseInFlight) {
+      const effect = Promise.resolve().then(async () => { await this.options.provider.close?.() })
+      const tracked = effect
+        .then(() => { this.providerClosed = true })
+        .finally(() => {
+          if (this.providerCloseInFlight === tracked) this.providerCloseInFlight = undefined
+        })
+      this.providerCloseInFlight = tracked
+    }
+    return this.providerCloseInFlight
   }
 
   private async runScheduledReap(): Promise<void> {

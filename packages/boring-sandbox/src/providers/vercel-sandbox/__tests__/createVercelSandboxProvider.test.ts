@@ -364,6 +364,39 @@ describe('createVercelSandboxProvider', () => {
     expect(deleteRecord).not.toHaveBeenCalled()
   })
 
+  test('provider close leaves a published disposable pair under caller cleanup authority', async () => {
+    const harness = await createMockVercelSandboxHarness()
+    cleanups.push(harness.cleanup)
+    const { deleteSandbox } = addDurableHandleMetadata(harness.sandbox, 'sb-published-owner')
+    const { store } = createStore()
+    const client: VercelSandboxClient = {
+      create: vi.fn(async () => harness.sandbox),
+      get: vi.fn(),
+    }
+    const provider = createVercelSandboxProvider({
+      store,
+      vercelClient: client,
+      lifecycle: 'disposable',
+      getEnvVar,
+      logger: { info: vi.fn() },
+    })
+
+    const pair = await provider.create({
+      workspaceRoot: 'workspace-published-owner',
+      workspaceId: 'workspace-published-owner',
+      sessionId: 'session-published-owner',
+    })
+    await expect(pair.checkHealth?.()).resolves.toEqual({ state: 'ok' })
+
+    await expect(provider.close!()).resolves.toBeUndefined()
+    expect(deleteSandbox).not.toHaveBeenCalled()
+    expect(localSandboxDispose).not.toHaveBeenCalled()
+
+    await expect(pair.dispose()).resolves.toBeUndefined()
+    expect(deleteSandbox).toHaveBeenCalledOnce()
+    expect(localSandboxDispose).toHaveBeenCalledOnce()
+  })
+
   test('invalidate evicts only the process cache and reacquires the persisted handle', async () => {
     const harness = await createMockVercelSandboxHarness()
     cleanups.push(harness.cleanup)

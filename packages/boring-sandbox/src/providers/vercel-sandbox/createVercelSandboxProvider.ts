@@ -529,10 +529,10 @@ export function createVercelSandboxProvider(
   // periodic snapshotter here: sandbox.snapshot() stops the active session.
   const snapshotScheduler = opts.snapshotScheduler ?? null
   const disposable = opts.lifecycle === 'disposable'
-  const pendingDisposableCleanups = new Set<() => Promise<void>>()
-  const settleDisposableCleanup = async (cleanup: () => Promise<void>): Promise<void> => {
+  const unpublishedDisposableCleanups = new Set<() => Promise<void>>()
+  const settleUnpublishedDisposableCleanup = async (cleanup: () => Promise<void>): Promise<void> => {
     await cleanup()
-    pendingDisposableCleanups.delete(cleanup)
+    unpublishedDisposableCleanups.delete(cleanup)
   }
 
   return {
@@ -547,8 +547,8 @@ export function createVercelSandboxProvider(
     },
     async close() {
       const results = await Promise.allSettled([
-        ...[...pendingDisposableCleanups].map(async (cleanup) => {
-          await settleDisposableCleanup(cleanup)
+        ...[...unpublishedDisposableCleanups].map(async (cleanup) => {
+          await settleUnpublishedDisposableCleanup(cleanup)
         }),
         ...(snapshotScheduler ? [snapshotScheduler.shutdown()] : []),
       ])
@@ -658,7 +658,7 @@ export function createVercelSandboxProvider(
             sandbox: resolvedSandboxHandle,
             disposeLocal,
           })
-          pendingDisposableCleanups.add(disposableCleanup)
+          unpublishedDisposableCleanups.add(disposableCleanup)
         }
 
         const sandboxId = resolvedSandboxHandle.name ?? resolvedSandboxHandle.sandboxId ?? 'unknown-sandbox'
@@ -784,7 +784,7 @@ export function createVercelSandboxProvider(
         const pairDispose = disposable
           ? async () => {
               if (!disposableCleanup) throw new TypeError('disposable sandbox cleanup authority is unavailable')
-              await settleDisposableCleanup(disposableCleanup)
+              await disposableCleanup()
             }
           : disposeLocal
         const pair: WorkspaceSandboxPairV1 = {
@@ -814,12 +814,16 @@ export function createVercelSandboxProvider(
         if (!disposable) {
           const setup = await setupOutcome
           if (setup.state === 'failed') throw setup.error
+        } else if (disposableCleanup) {
+          // From this point the returned pair is the sole cleanup owner. The
+          // provider retains authority only for failures before publication.
+          unpublishedDisposableCleanups.delete(disposableCleanup)
         }
         return pair
       } catch (error) {
         if (disposableCleanup) {
           try {
-            await settleDisposableCleanup(disposableCleanup)
+            await settleUnpublishedDisposableCleanup(disposableCleanup)
           } catch (cleanupError) {
             logger.warn?.('[vercel-sandbox:mode] disposable setup cleanup failed', {
               workspaceId,
