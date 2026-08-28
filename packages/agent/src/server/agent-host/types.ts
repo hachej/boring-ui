@@ -255,8 +255,6 @@ export interface ResolvedSandboxToolCapability {
   /** Host-owned profile/cache/quota identity; callers must include changes in runtime identity. */
   readonly digest: string
   readonly leases: SandboxLeaseService
-  /** Explicit deterministic-test escape hatch; production hosts omit this. */
-  readonly allowInMemoryLedgerForTests?: boolean
 }
 
 export interface ResolvedAgentRuntimeScope {

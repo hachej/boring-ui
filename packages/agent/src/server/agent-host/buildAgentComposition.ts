@@ -260,7 +260,6 @@ export async function buildAgentComposition(
           leases: sandboxCapability.leases,
           workspaceScopeId: input.workspaceScopeId,
           agentTypeId: input.agent.agentTypeId,
-          allowInMemoryLedgerForTests: sandboxCapability.allowInMemoryLedgerForTests,
         })]
       : []),
     ...extraTools,
