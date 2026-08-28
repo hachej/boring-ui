@@ -25,10 +25,20 @@ let unstableSessionObject = false
 const signInEmailMock = vi.fn(async () => ({ data: {}, error: null }))
 const signUpEmailMock = vi.fn(async () => ({ data: {}, error: null }))
 const navigateMock = vi.hoisted(() => vi.fn())
+/**
+ * Lets a test change the routed `:id` *without remounting the route*, which is
+ * the lifecycle gh-1402's workspace-scoped boot failure has to survive. Null
+ * means "use the real params", so every other test is untouched.
+ */
+const routeParamsOverride = vi.hoisted(() => ({ current: null as Record<string, string> | null }))
 
 vi.mock('react-router-dom', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react-router-dom')>()
-  return { ...actual, useNavigate: () => navigateMock }
+  return {
+    ...actual,
+    useNavigate: () => navigateMock,
+    useParams: () => routeParamsOverride.current ?? actual.useParams(),
+  }
 })
 
 vi.mock('../../../front/index.js', () => ({
@@ -138,6 +148,7 @@ describe('CoreWorkspaceAgentFront', () => {
     signInEmailMock.mockClear()
     signUpEmailMock.mockClear()
     navigateMock.mockClear()
+    routeParamsOverride.current = null
     window.sessionStorage.clear()
   })
 
@@ -216,6 +227,57 @@ describe('CoreWorkspaceAgentFront', () => {
     expect(await screen.findByTestId('workspace-default-agent-recovery')).toBeInTheDocument()
     expect(screen.queryByTestId('workspace-agent-front')).not.toBeInTheDocument()
   })
+
+  it('does not carry one workspace\'s recovery state onto another in the same mounted route', async () => {
+    const recoveryFetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        workspaceId: 'workspace-a',
+        status: 'unavailable',
+        persistedDefaultAgentTypeId: 'retired-seat',
+        availableAgents: [{ agentTypeId: 'general', label: 'General' }],
+      }),
+    }))
+    vi.stubGlobal('fetch', recoveryFetch)
+    routeParamsOverride.current = { id: 'workspace-a' }
+    const { CoreWorkspaceAgentFront } = await importSubject()
+    const { rerender } = render(<CoreWorkspaceAgentFront agentTypeId="default" />)
+
+    const reportBootFailure = async (code?: string) => {
+      const onWarmup = workspaceAgentProps?.onWorkspaceWarmupStatusChange as (status: unknown) => void
+      await act(async () => {
+        onWarmup({ status: 'failed', message: 'Workspace default Agent is unavailable', ...(code ? { code } : {}) })
+      })
+    }
+    const switchWorkspace = async (id: string) => {
+      routeParamsOverride.current = { id }
+      currentWorkspaceId = id
+      routeStatus = { status: 'matched', workspaceId: id }
+      await act(async () => { rerender(<CoreWorkspaceAgentFront agentTypeId="default" />) })
+    }
+
+    await reportBootFailure('default_agent_type_unknown_seat')
+    expect(await screen.findByTestId('workspace-default-agent-recovery')).toBeInTheDocument()
+    const fetchesForA = recoveryFetch.mock.calls.length
+    expect(fetchesForA).toBeGreaterThan(0)
+
+    // The route survives the `:id` change, so an unscoped failure code would
+    // follow the user onto a workspace that never reported it.
+    await switchWorkspace('workspace-b')
+    expect(screen.queryByTestId('workspace-default-agent-recovery')).not.toBeInTheDocument()
+    expect(screen.getByTestId('workspace-agent-front')).toBeInTheDocument()
+    expect(recoveryFetch.mock.calls).toHaveLength(fetchesForA)
+
+    // Returning to the broken workspace does not resurrect the stale verdict
+    // either: workspace A has to report it again, which its remounted front does.
+    await switchWorkspace('workspace-a')
+    expect(screen.queryByTestId('workspace-default-agent-recovery')).not.toBeInTheDocument()
+    expect(recoveryFetch.mock.calls).toHaveLength(fetchesForA)
+
+    await reportBootFailure('default_agent_type_unknown_seat')
+    expect(await screen.findByTestId('workspace-default-agent-recovery')).toBeInTheDocument()
+  }, 30_000)
 
   it('leaves an unrelated boot failure to the workspace\'s own error handling', async () => {
     const fetchMock = vi.fn(async () => ({ ok: false, status: 500, json: async () => ({}) }))

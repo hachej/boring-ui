@@ -329,12 +329,23 @@ function WorkspaceRoute<
     () => Array.from(new Set([...(bootPreloadPaths ?? DEFAULT_BOOT_PRELOAD_PATHS), WORKSPACE_META_PATH])),
     [bootPreloadPaths],
   )
-  const [bootFailureCode, setBootFailureCode] = useState<string | null>(null)
+  // Scoped to the workspace that produced it, the same way WorkspaceAgentFront
+  // scopes its own warmup state: this route survives `:id` changes, so an
+  // unscoped code would follow the user from a broken workspace onto a healthy
+  // one and mount recovery for a workspace that never reported the failure.
+  const [bootFailure, setBootFailure] = useState<{ workspaceId: string; code: string | null }>(
+    () => ({ workspaceId, code: null }),
+  )
+  // Reset during render, not in an effect: an effect would leave one frame in
+  // which a verdict from a previous visit to this workspace is live again.
+  // Discarding it means a returning user waits for the *current* boot to speak.
+  if (bootFailure.workspaceId !== workspaceId) setBootFailure({ workspaceId, code: null })
   const hostWarmupStatusChange = workspaceProps.onWorkspaceWarmupStatusChange
   const handleWorkspaceWarmupStatusChange = useCallback((status: WorkspaceWarmupStatus) => {
-    setBootFailureCode(status.status === 'failed' ? status.code ?? null : null)
+    setBootFailure({ workspaceId, code: status.status === 'failed' ? status.code ?? null : null })
     hostWarmupStatusChange?.(status)
-  }, [hostWarmupStatusChange])
+  }, [hostWarmupStatusChange, workspaceId])
+  const activeBootFailureCode = bootFailure.workspaceId === workspaceId ? bootFailure.code : null
 
   if (!workspaceId) return <>{resolvedLoadingFallback}</>
 
@@ -383,7 +394,7 @@ function WorkspaceRoute<
 
   // Only this one boot failure gets the recovery surface. Every other boot
   // error keeps the workspace's normal failure handling.
-  if (bootFailureCode === ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT) {
+  if (activeBootFailureCode === ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT) {
     return (
       <WorkspaceDefaultAgentRecovery
         workspaceId={workspaceId}
