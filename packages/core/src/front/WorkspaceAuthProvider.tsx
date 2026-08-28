@@ -1,4 +1,4 @@
-import { createContext, useContext } from 'react'
+import { createContext, useContext, useEffect } from 'react'
 import type { ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { matchPath, useLocation, useParams } from 'react-router-dom'
@@ -82,6 +82,32 @@ function workspaceIdFromPath(
   return null
 }
 
+/** Remembers the last workspace the user landed on so sign-in restores it instead of
+ * always resolving to the default/first workspace (issue #1449). Client-side only —
+ * per rule 9, this is a UI preference, not session-history data, so localStorage (like
+ * ThemeProvider's `boring-core:theme`) is the lightest mechanism; it survives sign-out
+ * so a fresh sign-in restores it, and is validated against the user's current workspace
+ * membership list before use so a stale/removed id can never be trusted blindly. */
+const LAST_WORKSPACE_STORAGE_KEY = 'boring-core:last-workspace'
+
+function readLastWorkspaceId(): string | null {
+  if (typeof window === 'undefined') return null
+  try {
+    return localStorage.getItem(LAST_WORKSPACE_STORAGE_KEY)
+  } catch {
+    return null
+  }
+}
+
+function writeLastWorkspaceId(workspaceId: string) {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.setItem(LAST_WORKSPACE_STORAGE_KEY, workspaceId)
+  } catch {
+    // localStorage unavailable (private mode, quota, etc.) — restoration is best-effort.
+  }
+}
+
 function routeStatusFromError(workspaceId: string, error: unknown): WorkspaceRouteStatus {
   const detail = getHttpErrorDetail(error)
   if (detail.status === 404 || detail.code === 'not_found') {
@@ -116,9 +142,11 @@ export function WorkspaceAuthProvider({
     enabled: canQueryProtectedApi,
   })
 
+  const lastWorkspaceId = routeWorkspaceId === null ? readLastWorkspaceId() : null
   const defaultWorkspace =
     routeWorkspaceId === null
-      ? (workspacesQuery.data?.find((workspace) => workspace.isDefault)
+      ? (workspacesQuery.data?.find((workspace) => workspace.id === lastWorkspaceId)
+        ?? workspacesQuery.data?.find((workspace) => workspace.isDefault)
         ?? workspacesQuery.data?.[0]
         ?? null)
       : null
@@ -149,6 +177,11 @@ export function WorkspaceAuthProvider({
     if (workspace?.id === routeWorkspaceId) return { status: 'matched', workspaceId: routeWorkspaceId, workspace }
     return { status: 'mismatched', workspaceId: routeWorkspaceId, currentWorkspaceId: workspace?.id ?? null }
   })()
+
+  const matchedWorkspaceId = routeStatus.status === 'matched' ? routeStatus.workspaceId : null
+  useEffect(() => {
+    if (matchedWorkspaceId) writeLastWorkspaceId(matchedWorkspaceId)
+  }, [matchedWorkspaceId])
 
   return (
     <WorkspaceContext.Provider value={{ workspace, role, routeStatus }}>

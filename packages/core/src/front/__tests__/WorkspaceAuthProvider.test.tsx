@@ -198,7 +198,10 @@ function mockDeferredWorkspaceDetail(
   })
 }
 
+const LAST_WORKSPACE_STORAGE_KEY = 'boring-core:last-workspace'
+
 beforeEach(() => {
+  window.localStorage.clear()
   mockSessionState.current = {
     data: {
       user: {
@@ -567,6 +570,59 @@ describe('WorkspaceAuthProvider', () => {
       )
       expect(screen.getByTestId('ws-role').textContent).toBe('owner')
       assertionPassed('workspace-loading-resolves')
+      qc.clear()
+    }),
+  )
+
+  it(
+    'restores the last-selected workspace on / after visiting it via route, surviving sign-out/in',
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
+      const qc = createQueryClient()
+      mockWorkspacesList([WS_1, WS_2])
+      mockWorkspaceDetail(WS_1, 'owner')
+      mockWorkspaceDetail(WS_2, 'editor')
+
+      // Visit the non-default workspace explicitly — this records it as "last selected".
+      const first = renderWithRouter(`/workspace/${WS_2.id}`, qc)
+      await waitFor(() =>
+        expect(screen.getByTestId('ws-name').textContent).toBe('Second WS'),
+      )
+      expect(window.localStorage.getItem(LAST_WORKSPACE_STORAGE_KEY)).toBe(WS_2.id)
+      first.unmount()
+      qc.clear()
+
+      // Simulate sign-out/in: query cache clears (as AuthProvider.signOut does), but
+      // localStorage persists. Landing on `/` afresh should restore WS_2, not the default.
+      const qc2 = createQueryClient()
+      mockWorkspacesList([WS_1, WS_2])
+      mockWorkspaceDetail(WS_1, 'owner')
+      mockWorkspaceDetail(WS_2, 'editor')
+
+      renderWithRouter('/', qc2)
+      await waitFor(() =>
+        expect(screen.getByTestId('ws-name').textContent).toBe('Second WS'),
+      )
+      expect(screen.getByTestId('ws-role').textContent).toBe('editor')
+      assertionPassed('workspace-restored-last-selected')
+      qc2.clear()
+    }),
+  )
+
+  it(
+    'falls back to the default workspace when the remembered id is stale (no longer a member)',
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
+      const qc = createQueryClient()
+      window.localStorage.setItem(LAST_WORKSPACE_STORAGE_KEY, 'ws-deleted-or-not-a-member')
+      mockWorkspacesList([WS_2, WS_1])
+      mockWorkspaceDetail(WS_1, 'owner')
+
+      renderWithRouter('/', qc)
+
+      await waitFor(() =>
+        expect(screen.getByTestId('ws-name').textContent).toBe('Default workspace'),
+      )
+      expect(screen.getByTestId('ws-role').textContent).toBe('owner')
+      assertionPassed('workspace-stale-last-selected-falls-back-to-default')
       qc.clear()
     }),
   )
