@@ -253,6 +253,7 @@ describe("Bombadil exploration staging", () => {
       query: "",
       workspaceReady: false,
       lastActionWasPaletteOpen: true,
+      lastActionWasNavigationOpen: false,
       lastActionWasInitial: false,
       controls: [{ name: "palette-mode-commands", point: { x: 10.25, y: 20.5 } }],
     }
@@ -283,6 +284,7 @@ describe("Bombadil exploration staging", () => {
         ...transient,
         workspaceReady: true,
         lastActionWasPaletteOpen: false,
+        lastActionWasNavigationOpen: true,
         lastActionWasInitial: true,
         controls: [{ name: "palette-mode-commands", point: { x: 11.75, y: 20.5 } }],
       },
@@ -329,6 +331,7 @@ describe("command palette action safety", () => {
       dialogVisible: false,
       inputFocused: false,
       lastActionWasPaletteOpen: false,
+      lastActionWasNavigationOpen: false,
       lastActionWasInitial: false,
       controls: [trigger],
     })).toEqual(["Wait", { Click: { fingerprint, point: trigger.point } }])
@@ -336,8 +339,37 @@ describe("command palette action safety", () => {
       dialogVisible: false,
       inputFocused: false,
       lastActionWasPaletteOpen: false,
+      lastActionWasNavigationOpen: false,
       lastActionWasInitial: true,
       controls: [trigger],
+    })).toEqual(["Wait"])
+  })
+
+  it("waits one action after opening app navigation before using revealed controls", () => {
+    const fingerprint = {
+      testId: null,
+      id: null,
+      role: null,
+      accessibleName: "Search⌘K",
+      tag: "button",
+      href: null,
+      nameAttr: null,
+      placeholder: null,
+      inputType: "button",
+      textContent: "Search⌘K",
+      structuralPath: null,
+    }
+    expect(createSafeCommandPaletteActions({
+      dialogVisible: false,
+      inputFocused: false,
+      lastActionWasPaletteOpen: false,
+      lastActionWasNavigationOpen: true,
+      lastActionWasInitial: false,
+      controls: [{
+        name: "open-command-palette",
+        fingerprint,
+        point: { x: 166.7, y: 82 },
+      }],
     })).toEqual(["Wait"])
   })
 

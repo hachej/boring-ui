@@ -29,6 +29,7 @@ import { createCalibrationRecord, createExecutionPacket } from "../src/core/impr
 import { pairWithLocalBaseline } from "../src/core/pairing"
 import { renderUiReviewHtml, renderUiReviewMarkdown } from "../src/core/report"
 import { cleanupUiReviewTempRootSync, createUiReviewTempDir } from "../src/core/tempRoot"
+import { withStableBrowserCapture } from "../src/core/captureStability"
 import {
   checkpointAppliesToViewport,
   type UiReviewBrowserErrors,
@@ -207,26 +208,28 @@ async function capture(
   results: UiHardGateReport["results"],
   visualBaseline?: UiReviewVisualBaselineResult,
 ): Promise<void> {
-  const screenshotPath = `selected/${viewport.name}/${String(states.length + 1).padStart(3, "0")}-${checkpoint}.png`
-  const absolutePath = resolve(outputRoot, screenshotPath)
-  await mkdir(dirname(absolutePath), { recursive: true })
-  const screenshot = await page.screenshot({ animations: "disabled" })
-  await writeFile(absolutePath, screenshot)
-  const screenshotDigest = createHash("sha256").update(screenshot).digest("hex")
-  const stateId = createUiReviewStateId({ runId, scenarioId: spec.id, role: "candidate", viewport, checkpoint, screenshotDigest })
-  states.push({
-    id: stateId,
-    scenarioId: spec.id,
-    role: "candidate",
-    checkpoint,
-    viewport,
-    screenshotPath,
-    screenshotDigest,
-    screenshotBytes: screenshot.byteLength,
-    source: "known",
+  await withStableBrowserCapture(page, async () => {
+    const screenshotPath = `selected/${viewport.name}/${String(states.length + 1).padStart(3, "0")}-${checkpoint}.png`
+    const absolutePath = resolve(outputRoot, screenshotPath)
+    await mkdir(dirname(absolutePath), { recursive: true })
+    const screenshot = await page.screenshot({ animations: "disabled" })
+    await writeFile(absolutePath, screenshot)
+    const screenshotDigest = createHash("sha256").update(screenshot).digest("hex")
+    const stateId = createUiReviewStateId({ runId, scenarioId: spec.id, role: "candidate", viewport, checkpoint, screenshotDigest })
+    states.push({
+      id: stateId,
+      scenarioId: spec.id,
+      role: "candidate",
+      checkpoint,
+      viewport,
+      screenshotPath,
+      screenshotDigest,
+      screenshotBytes: screenshot.byteLength,
+      source: "known",
+    })
+    const snapshot = await spec.hardGates.collect(page, stateId, checkpoint, viewport, copyErrors(errors), visualBaseline)
+    results.push(...spec.hardGates.evaluate(snapshot).results)
   })
-  const snapshot = await spec.hardGates.collect(page, stateId, checkpoint, viewport, copyErrors(errors), visualBaseline)
-  results.push(...spec.hardGates.evaluate(snapshot).results)
 }
 
 function explorationGateResults(selection: UiReviewSelection | null): UiHardGateReport["results"] {

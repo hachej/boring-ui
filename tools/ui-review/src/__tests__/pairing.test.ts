@@ -115,7 +115,7 @@ describe("local UI review baseline pairing", () => {
       statePairs: [],
     }
     await writeFile(join(baselineRoot, "manifest.json"), JSON.stringify(baselineManifest), "utf8")
-    await writeFile(join(baselineRoot, "hard-gates.json"), JSON.stringify({ schemaVersion: 1, contractVersion: "command-palette-v3", results: gates(baselineManifest.states) }), "utf8")
+    await writeFile(join(baselineRoot, "hard-gates.json"), JSON.stringify({ schemaVersion: 1, contractVersion: "command-palette-v4", results: gates(baselineManifest.states) }), "utf8")
 
     const candidateStates = await statesFor(outputRoot, "after")
     candidateStates.push({ ...exploration, id: "unmatched-candidate-bombadil", role: "candidate" })

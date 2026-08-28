@@ -43,6 +43,7 @@ describe("UI review spec registry", () => {
     const automationSpec = uiReviewSpecs.get("automation-pane-popover")
     expect(automationSpec.target.root).toBe("tools/ui-review/fixtures/workspace-components")
     expect(automationSpec.checkpoints).toHaveLength(4)
+    expect(uiReviewSpecs.get("workspace-command-palette").viewports.find((viewport) => viewport.name === "mobile")?.hasTouch).toBe(true)
     for (const id of uiReviewSpecs.ids()) {
       expect(uiReviewSpecs.get(id).target.serverCommand.slice(-3)).toEqual(["--host", "127.0.0.1", "--strictPort"])
     }
@@ -123,6 +124,7 @@ describe("UI review spec registry", () => {
         query: "",
         workspaceReady: false,
         lastActionWasPaletteOpen: true,
+        lastActionWasNavigationOpen: false,
         lastActionWasInitial: false,
         controls: [{ name: "open-command-palette", point: { x: 10.25, y: 20.5 } }],
       },
@@ -133,6 +135,7 @@ describe("UI review spec registry", () => {
         ...durable.palette,
         workspaceReady: true,
         lastActionWasPaletteOpen: false,
+        lastActionWasNavigationOpen: true,
         lastActionWasInitial: true,
         controls: [{ name: "open-command-palette", point: { x: 11.75, y: 20.5 } }],
       },

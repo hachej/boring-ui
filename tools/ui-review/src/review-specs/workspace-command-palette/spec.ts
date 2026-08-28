@@ -11,12 +11,12 @@ import { COMMAND_PALETTE_HARD_GATE_CONTRACT, evaluateCommandPaletteHardGates, va
 const AXE_SCRIPT_PATH = createRequire(import.meta.url).resolve("axe-core/axe.min.js")
 const viewports: UiReviewViewport[] = [
   { name: "desktop", width: 1440, height: 900, deviceScaleFactor: 1 },
-  { name: "mobile", width: 390, height: 844, deviceScaleFactor: 1 },
+  { name: "mobile", width: 390, height: 844, deviceScaleFactor: 1, hasTouch: true },
 ]
 
 export const workspaceCommandPaletteSpec: UiReviewSpec = {
   id: "workspace-command-palette",
-  specRevision: "workspace-command-palette-v3",
+  specRevision: "workspace-command-palette-v5",
   fixtureResetId: "workspace-playground-e2e-fresh-v1",
   rubricVersion: "impeccable-v1",
   target: {
@@ -80,7 +80,19 @@ export const workspaceCommandPaletteSpec: UiReviewSpec = {
         }),
         page.evaluate(observeCommandPaletteSurface, { checkpoint }),
       ])
-      return { stateId, viewport: { width: viewport.width, height: viewport.height, mobile: viewport.name === "mobile" }, axeViolations, commandPalette, ...errors, ...observed }
+      return {
+        stateId,
+        viewport: {
+          width: viewport.width,
+          height: viewport.height,
+          compact: viewport.name === "mobile",
+          coarsePointer: viewport.hasTouch === true,
+        },
+        axeViolations,
+        commandPalette,
+        ...errors,
+        ...observed,
+      }
     },
     evaluate: (snapshot) => evaluateCommandPaletteHardGates(snapshot as UiHardGateSnapshot),
     validate: validateCommandPaletteHardGateReport,
@@ -93,6 +105,7 @@ export const workspaceCommandPaletteSpec: UiReviewSpec = {
       const durablePalette = { ...palette } as Record<string, unknown>
       delete durablePalette.workspaceReady
       delete durablePalette.lastActionWasPaletteOpen
+      delete durablePalette.lastActionWasNavigationOpen
       delete durablePalette.lastActionWasInitial
       durablePalette.controls = Array.isArray(durablePalette.controls)
         ? durablePalette.controls.flatMap((control) => (
