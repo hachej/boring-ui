@@ -62,6 +62,7 @@ All API failures must use the response envelope:
 | `SANDBOX_LEASE_DRAINING` | Disposable lease is draining or awaiting cleanup | 409 | retry/reacquire | warn | stable (trusted API) |
 | `SANDBOX_LEASE_QUOTA_EXCEEDED` | Host-owned per-session or total disposable lease quota is exhausted | 429 | release/retry | warn | stable (trusted API) |
 | `SANDBOX_LEASE_CREATION_ABORTED` | Lease creation was cancelled and compensated before publication | 409 | retry | warn | stable (trusted API) |
+| `SANDBOX_LEASE_DRAIN_TIMEOUT` | Active sandbox operations did not drain before provider cleanup began | 409 | retry | warn | stable (trusted API) |
 | `SANDBOX_LEASE_CLEANUP_FAILED` | Registered idempotent remote cleanup did not converge yet | 503 | retry | error | stable (trusted API) |
 | `SANDBOX_LEASE_SERVICE_CLOSED` | Host-owned lease service is shutting down | 503 | retry elsewhere | warn | stable (trusted API) |
 | `SANDBOX_TARGET_INVALID` | Ordinary tool sandbox target or filesystem combination is invalid | 400 | user-fix | warn | stable (trusted API) |

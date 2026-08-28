@@ -10,6 +10,7 @@ import type { PiChatEventSubscriber, PiChatSessionService, PiSessionRequestConte
 import { EmbeddedAgentGateway } from '../embeddedGateway'
 import { InMemoryAgentRequestLedger } from '../requestLedger'
 import { AgentSessionActivityIndex } from '../sessionInventory'
+import type { SandboxLeaseService } from '../../sandbox/leases/sandboxLease'
 import type { AgentGatewayEffect, AgentHostAgentSpec } from '../types'
 import type { GatewayConformanceFixture } from '../testing/gatewayConformance'
 
@@ -21,6 +22,7 @@ interface EmbeddedGatewayFixture extends GatewayConformanceFixture {
   }
   rejectNextPrompt(error: Error): void
   disableArchiveCapability(): void
+  setSandboxTools(agentTypeId: string, leases: SandboxLeaseService): void
 }
 
 interface RecordValue {
@@ -223,6 +225,7 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
     return service
   }
   const activity = new AgentSessionActivityIndex()
+  const sandboxToolsByAgent = new Map<string, SandboxLeaseService>()
   const runtime = {
     options: {},
     compiledAgents: agents,
@@ -276,7 +279,12 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
       const service = serviceFor(claim.workspaceScopeId, agentTypeId)
       return {
         key: `${claim.workspaceScopeId}:${agentTypeId}`,
-        scope: { identity: 'shared-runtime' },
+        scope: {
+          identity: 'shared-runtime',
+          ...(sandboxToolsByAgent.has(agentTypeId)
+            ? { sandboxTools: { digest: 'fixture-sandbox-tools', leases: sandboxToolsByAgent.get(agentTypeId)! } }
+            : {}),
+        },
         environmentLease: { bundle: {}, release() {} },
         composition: {
           service,
@@ -323,6 +331,9 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
     },
     disableArchiveCapability() {
       Reflect.deleteProperty(runtime, 'setSessionArchived')
+    },
+    setSandboxTools(agentTypeId, leases) {
+      sandboxToolsByAgent.set(agentTypeId, leases)
     },
     modelLoopStarts(ref) {
       for (const service of services.values()) {

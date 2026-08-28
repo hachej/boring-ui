@@ -37,9 +37,12 @@ export function withSandboxTarget(
   primary: AgentTool,
   options: SandboxTargetToolOptions,
 ): AgentTool {
+  const targetedDescription = primary.name === 'upload_file'
+    ? 'Copy a workspace file within artifact storage. When sandbox is supplied, both source and returned path remain lease-local and are deleted on release; omit sandbox for stable primary-workspace artifacts.'
+    : `${primary.description} When sandbox is supplied, the operation targets that disposable lease; lease-targeted outputs are not durable after release.`
   return {
     ...primary,
-    description: `${primary.description} When sandbox is supplied, the operation targets that disposable lease; lease-targeted outputs are not durable after release.`,
+    description: targetedDescription,
     promptSnippet: [
       primary.promptSnippet,
       'Optional sandbox targets an explicitly leased disposable remote workspace; omit it for the primary user workspace.',

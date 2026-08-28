@@ -1,5 +1,3 @@
-import { createHash } from 'node:crypto'
-
 import { AgentGatewayError, AgentGatewayErrorCode, type JsonValue } from '../../shared/index'
 import type { AgentTool, ToolExecContext, ToolResult } from '../../shared/tool'
 import {
@@ -15,6 +13,8 @@ import {
   type SandboxLeaseService,
   type SandboxLeaseStatus,
 } from '../sandbox/leases/sandboxLease'
+import { sandboxLeaseOwnerId } from '../sandbox/leases/sandboxLeaseOwner'
+export { sandboxLeaseOwnerId } from '../sandbox/leases/sandboxLeaseOwner'
 
 const HANDLE_PATTERN = '^[A-Za-z0-9_-]{16,128}$'
 
@@ -50,17 +50,6 @@ function parseInput(input: Record<string, unknown>): ManagementInput {
 
 function invalid(): SandboxLeaseError {
   return new SandboxLeaseError(SANDBOX_LEASE_ERROR_CODES.INVALID_LEASE_REQUEST, 'sandbox management request is invalid')
-}
-
-export function sandboxLeaseOwnerId(
-  options: Pick<SandboxManagementToolOptions, 'workspaceScopeId' | 'agentTypeId'>,
-  ctx: ToolExecContext,
-): string {
-  if (!ctx.sessionId?.trim()) throw new SandboxLeaseError(SANDBOX_LEASE_ERROR_CODES.INVALID_LEASE_REQUEST, 'sandbox requires an Agent session')
-  if (ctx.workspaceId !== undefined && ctx.workspaceId !== options.workspaceScopeId) throw invalid()
-  return createHash('sha256')
-    .update(JSON.stringify([options.workspaceScopeId, options.agentTypeId, ctx.sessionId]))
-    .digest('hex')
 }
 
 function publicStatus(status: SandboxLeaseStatus) {
@@ -104,6 +93,7 @@ function safeFailure(error: unknown): AgentRequestFailure | undefined {
     SANDBOX_LEASE_ERROR_CODES.LEASE_DRAINING,
     SANDBOX_LEASE_ERROR_CODES.LEASE_QUOTA_EXCEEDED,
     SANDBOX_LEASE_ERROR_CODES.LEASE_CREATION_ABORTED,
+    SANDBOX_LEASE_ERROR_CODES.LEASE_DRAIN_TIMEOUT,
     SANDBOX_LEASE_ERROR_CODES.SERVICE_CLOSED,
   ])
   if (!safeCodes.has(error.code)) return undefined
@@ -120,7 +110,7 @@ async function executeManagement(
   options: SandboxManagementToolOptions,
   params: Record<string, unknown>,
   ctx: ToolExecContext,
-  invocation: AcceptedExternalEffectInvocation,
+  invocation?: AcceptedExternalEffectInvocation,
 ): Promise<ToolResult> {
   try {
     const input = parseInput(params)
@@ -130,6 +120,12 @@ async function executeManagement(
     }
     if (input.op === 'status') {
       return result({ op: 'status', ...publicStatus(options.leases.status(owner, input.sandbox)) })
+    }
+    if (!invocation) {
+      throw new AgentGatewayError(
+        AgentGatewayErrorCode.AGENT_ACCEPTED_WORK_UNAVAILABLE,
+        'accepted work is unavailable for this tool invocation',
+      )
     }
     const executeAccepted = createAcceptedToolEffectExecutor({
       runtime: options.runtime,
@@ -181,10 +177,13 @@ export function createSandboxManagementTool(options: SandboxManagementToolOption
         },
       ],
     },
-    async execute() {
-      throw invalid()
+    async execute(params, ctx) {
+      return await executeManagement(options, params, ctx)
     },
   }
-  return defineAcceptedExternalEffectTool(base, async (params, ctx, invocation) =>
-    await executeManagement(options, params, ctx, invocation))
+  return defineAcceptedExternalEffectTool(
+    base,
+    async (params, ctx, invocation) => await executeManagement(options, params, ctx, invocation),
+    (params) => params.op === 'create' || params.op === 'release',
+  )
 }

@@ -47,31 +47,38 @@ export interface AcceptedExternalEffectInvocation {
   readonly toolCallId: string
 }
 
+type AcceptedExternalEffectDispatch = (
+  params: Record<string, unknown>,
+  ctx: ToolExecContext,
+  invocation: AcceptedExternalEffectInvocation,
+) => Promise<ToolResult>
+
+interface AcceptedExternalEffectDefinition {
+  readonly execute: AcceptedExternalEffectDispatch
+  readonly requiresAcceptedWork: (params: Record<string, unknown>) => boolean
+}
+
 export interface AcceptedExternalEffectTool extends AgentTool {
-  readonly [acceptedExternalEffectTool]: (
-    params: Record<string, unknown>,
-    ctx: ToolExecContext,
-    invocation: AcceptedExternalEffectInvocation,
-  ) => Promise<ToolResult>
+  readonly [acceptedExternalEffectTool]: AcceptedExternalEffectDefinition
 }
 
 export function defineAcceptedExternalEffectTool(
   tool: AgentTool,
-  executeAccepted: AcceptedExternalEffectTool[typeof acceptedExternalEffectTool],
+  executeAccepted: AcceptedExternalEffectDispatch,
+  requiresAcceptedWork: (params: Record<string, unknown>) => boolean = () => true,
 ): AcceptedExternalEffectTool {
-  return Object.assign({
-    ...tool,
-    async execute(): Promise<ToolResult> {
-      throw unavailable()
-    },
-  }, { [acceptedExternalEffectTool]: executeAccepted })
+  return Object.assign({ ...tool }, {
+    [acceptedExternalEffectTool]: { execute: executeAccepted, requiresAcceptedWork },
+  })
 }
 
 export function acceptedExternalEffectExecutor(
   tool: AgentTool,
-): AcceptedExternalEffectTool[typeof acceptedExternalEffectTool] | undefined {
-  const execute = (tool as Partial<AcceptedExternalEffectTool>)[acceptedExternalEffectTool]
-  return typeof execute === 'function' ? execute : undefined
+  params?: Record<string, unknown>,
+): AcceptedExternalEffectDispatch | undefined {
+  const definition = (tool as Partial<AcceptedExternalEffectTool>)[acceptedExternalEffectTool]
+  if (!definition || (params && !definition.requiresAcceptedWork(params))) return undefined
+  return definition.execute
 }
 
 function unavailable(): AgentGatewayError {

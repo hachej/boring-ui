@@ -77,12 +77,16 @@ rejected; `filesystem: "user"` means the leased user workspace.
 `sandbox.create` and `sandbox.release` are external effects. They run through
 the AgentHost accepted-work ledger introduced by prerequisite PR #1446.
 Completed requests replay their receipts; outcome-unknown requests never
-reinvoke the model-requested effect.
+reinvoke the model-requested effect. `sandbox.list` and `sandbox.status` are
+observations and execute without accepted-work provenance.
 
 Operational tools pin the pair through `withPair`. Release, expiry, owner-end,
 and host shutdown atomically enter draining, reject new pins, wait a bounded
-time for existing operations, then delete. Failed or timed-out cleanup remains
-`cleanup-pending` and continues counting against quota.
+time for existing operations, then delete. A pre-provider drain timeout has its
+own safely retryable error; provider cleanup ambiguity remains
+`cleanup-pending` and continues counting against quota. Session deletion joins
+owner cleanup. Host shutdown uses one service-wide drain deadline, including
+pending creations and provider close.
 
 Remote deletion is separate registered host maintenance:
 
@@ -92,9 +96,14 @@ key: sha256(serviceDigest + ":" + opaqueLease)
 ```
 
 The service-owned unref'ed timer reaps expired and cleanup-pending leases without
-overlapping ticks. Retrying this qualified idempotent cleanup never rewrites an
+overlapping ticks. Every attempt is routed through the closed internal
+registration and emits redacted append-only reconciliation telemetry containing
+the registration-key digest, attempt count, reason, outcome, and stable failure
+code. Retrying this qualified idempotent cleanup never rewrites an
 outcome-unknown external-effect receipt. Host shutdown clears the timer and
-awaits service disposal.
+awaits bounded service disposal. Creation rechecks cancellation and closure
+after provider creation and health checks; failed unpublished-pair compensation
+is retained as cleanup-pending maintenance.
 
 ## Current boundaries
 

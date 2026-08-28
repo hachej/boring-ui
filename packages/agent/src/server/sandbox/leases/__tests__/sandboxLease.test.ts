@@ -133,7 +133,7 @@ describe('SandboxLeaseService lifecycle registry', () => {
     await Promise.resolve()
 
     await expect(service.release('owner-a', lease.handle))
-      .rejects.toMatchObject({ code: SANDBOX_LEASE_ERROR_CODES.LEASE_CLEANUP_FAILED })
+      .rejects.toMatchObject({ code: SANDBOX_LEASE_ERROR_CODES.LEASE_DRAIN_TIMEOUT })
     expect(service.status('owner-a', lease.handle).state).toBe('cleanup-pending')
     expect(pairs[0]?.dispose).not.toHaveBeenCalled()
     gate.resolve()
@@ -184,6 +184,41 @@ describe('SandboxLeaseService lifecycle registry', () => {
     await service.dispose()
   })
 
+  it('fences a pending creation against shutdown before publishing it', async () => {
+    const gate = await deferred<WorkspaceSandboxPairV1>()
+    const pair = fakePair('shutdown-race')
+    const { service } = createService({ create: async () => await gate.promise })
+    const acquiring = service.acquire('owner-a')
+    await Promise.resolve()
+    const closing = service.dispose()
+    gate.resolve(pair.pair)
+
+    await expect(acquiring).rejects.toMatchObject({ code: SANDBOX_LEASE_ERROR_CODES.LEASE_CREATION_ABORTED })
+    await closing
+    expect(pair.dispose).toHaveBeenCalledOnce()
+    expect(service.listOwn('owner-a')).toEqual([])
+  })
+
+  it('rechecks cancellation after asynchronous health and retains failed compensation', async () => {
+    const health = await deferred<void>()
+    const pair = fakePair('health-race')
+    pair.pair = { ...pair.pair, checkHealth: async () => { await health.promise; return { state: 'ok' } } }
+    pair.dispose.mockRejectedValueOnce(new Error('delete unavailable'))
+    const { service } = createService({ create: async () => pair.pair })
+    const controller = new AbortController()
+    const acquiring = service.acquire('owner-a', controller.signal)
+    await Promise.resolve()
+    controller.abort()
+    health.resolve()
+
+    await expect(acquiring).rejects.toMatchObject({ code: SANDBOX_LEASE_ERROR_CODES.LEASE_CLEANUP_FAILED })
+    expect(service.listOwn('owner-a')).toEqual([
+      expect.objectContaining({ state: 'cleanup-pending' }),
+    ])
+    await expect(service.releaseOwner('owner-a')).resolves.toBe(1)
+    await service.dispose()
+  })
+
   it('projects expiry without observing side effects and reaps every expired lease', async () => {
     const now = { value: 100 }
     const { service, pairs } = createService({ now })
@@ -226,7 +261,7 @@ describe('SandboxLeaseService lifecycle registry', () => {
       serviceDigest: 'scheduled-profile',
       ttlMs: 1_000,
       reapIntervalMs: 1_000,
-      drainTimeoutMs: 100,
+      drainTimeoutMs: 5_000,
       maxActiveLeasesPerOwner: 1,
       maxActiveLeasesTotal: 1,
       telemetry,
@@ -238,10 +273,35 @@ describe('SandboxLeaseService lifecycle registry', () => {
     expect(pair.dispose).toHaveBeenCalledOnce()
     gate.resolve()
     await vi.advanceTimersByTimeAsync(0)
-    expect(telemetry.capture).toHaveBeenCalledOnce()
+    expect(telemetry.capture).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'sandbox.lease.cleanup.reconciliation',
+      properties: expect.objectContaining({
+        operationId: 'sandbox.remote.dispose.v1',
+        attemptedCount: 1,
+        outcome: 'settled',
+      }),
+    }))
+    expect(telemetry.capture).toHaveBeenCalledWith(expect.objectContaining({ name: 'sandbox.lease.cleanup' }))
     expect(JSON.stringify(telemetry.capture.mock.calls)).not.toContain('lease-handle-0001')
     await service.dispose()
     vi.useRealTimers()
+  })
+
+  it('uses one shutdown drain deadline across multiple pinned leases', async () => {
+    const { service } = createService({ drainTimeoutMs: 20 })
+    const first = await service.acquire('owner-a')
+    const second = await service.acquire('owner-a')
+    const gate = await deferred<void>()
+    const operations = [first, second].map(async (lease) =>
+      await service.withPair('owner-a', lease.handle, async () => await gate.promise))
+    await Promise.resolve()
+    const startedAt = Date.now()
+    await expect(service.dispose()).rejects.toBeInstanceOf(SandboxLeaseCleanupError)
+    expect(Date.now() - startedAt).toBeLessThan(100)
+    expect(service.listOwn('owner-a')).toHaveLength(2)
+    gate.resolve()
+    await Promise.all(operations)
+    await service.dispose()
   })
 
   it('closes idempotently and rejects new create or pin operations', async () => {

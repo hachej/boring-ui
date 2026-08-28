@@ -72,7 +72,7 @@ export function adaptToolForPi(tool: AgentTool, sessionId?: string, telemetry: T
           workspaceId: runContext?.workspaceId,
           requestId: runContext?.requestId,
         };
-        const executeAccepted = acceptedExternalEffectExecutor(tool);
+        const executeAccepted = acceptedExternalEffectExecutor(tool, params as Record<string, unknown>);
         const result = executeAccepted
           ? await executeAccepted(params as Record<string, unknown>, publicContext, {
               provenance: acceptedWorkForRunContext(runContext),

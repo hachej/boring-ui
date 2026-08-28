@@ -59,7 +59,7 @@ function fixture() {
     agentTypeId: 'worker',
     allowInMemoryLedgerForTests: true,
   })
-  return { tool, leases, execute: acceptedExternalEffectExecutor(tool)! }
+  return { tool, leases, execute: acceptedExternalEffectExecutor(tool, { op: 'create' })! }
 }
 
 describe('sandbox management tool', () => {
@@ -76,8 +76,9 @@ describe('sandbox management tool', () => {
 
   it('fails closed through ordinary public execution', async () => {
     const { tool } = fixture()
-    await expect(tool.execute({ op: 'create' }, ctx)).rejects.toMatchObject({
-      code: AgentGatewayErrorCode.AGENT_ACCEPTED_WORK_UNAVAILABLE,
+    await expect(tool.execute({ op: 'create' }, ctx)).resolves.toMatchObject({
+      isError: true,
+      details: { code: AgentGatewayErrorCode.AGENT_ACCEPTED_WORK_UNAVAILABLE },
     })
   })
 
@@ -92,12 +93,14 @@ describe('sandbox management tool', () => {
     expect(leases.acquire).toHaveBeenCalledOnce()
   })
 
-  it('lists and inspects only through the host-derived owner binding', async () => {
-    const { execute, leases } = fixture()
-    await expect(execute({ op: 'list' }, ctx, invocation)).resolves.toMatchObject({
+  it('lists and inspects without accepted-work provenance through the host-derived owner binding', async () => {
+    const { tool, leases } = fixture()
+    expect(acceptedExternalEffectExecutor(tool, { op: 'list' })).toBeUndefined()
+    expect(acceptedExternalEffectExecutor(tool, { op: 'status', sandbox: 'lease-handle-0001' })).toBeUndefined()
+    await expect(tool.execute({ op: 'list' }, ctx)).resolves.toMatchObject({
       details: { op: 'list', sandboxes: [{ sandbox: 'lease-handle-0001' }] },
     })
-    await expect(execute({ op: 'status', sandbox: 'lease-handle-0001' }, ctx, invocation)).resolves.toMatchObject({
+    await expect(tool.execute({ op: 'status', sandbox: 'lease-handle-0001' }, ctx)).resolves.toMatchObject({
       details: { op: 'status', sandbox: 'lease-handle-0001', state: 'active' },
     })
     const listedOwner = vi.mocked(leases.listOwn).mock.calls[0]?.[0]

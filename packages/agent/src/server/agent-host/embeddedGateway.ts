@@ -36,6 +36,7 @@ import {
   runAcceptedEffect,
   type RunAcceptedEffectOptions,
 } from './runAcceptedEffect'
+import { sandboxLeaseOwnerIdForSession } from '../sandbox/leases/sandboxLeaseOwner'
 import type {
   AgentGatewayEffect,
   AgentRequestKey,
@@ -679,6 +680,13 @@ export class EmbeddedAgentGateway implements AgentGateway {
       await binding.composition.service.deleteSession!(
         context(claim, input.requestId), input.ref.sessionId,
       )
+      if (binding.scope.sandboxTools) {
+        const ownerId = sandboxLeaseOwnerIdForSession({
+          workspaceScopeId: claim.workspaceScopeId,
+          agentTypeId: input.ref.agentTypeId,
+        }, input.ref.sessionId)
+        await binding.scope.sandboxTools.leases.releaseOwner(ownerId)
+      }
       this.runtime.activity.delete(claim.workspaceScopeId, input.ref)
       return null
     }, { bindingKey: binding.key })
