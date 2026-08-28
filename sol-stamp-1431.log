@@ -1,0 +1,2034 @@
+Reading additional input from stdin...
+OpenAI Codex v0.144.0
+--------
+workdir: /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 01a04761-20c4-75c3-9069-f2e587de9667
+--------
+user
+Final verify-and-stamp for PR #1431 (hachej/boring-ui, branch fix/1390-ui-review-determinism, this worktree — git fetch origin fix/1390-ui-review-determinism and checkout its head). Prior REVISE demanded: (a) retry-usage diagnostic so a discovery reload can't silently mask regressions, (b) the 5/5 consecutive proof re-run with RETAINED artifacts. Author pushed 3d346da1 with both + disposition comment + runs-evidence/ directory. Verify: 1) read gh pr view 1431 --comments (review + disposition); 2) inspect runs-evidence/ in this worktree — confirm the artifacts are real (5 runs, each green, hard-gates present) and the README's claims match the files; 3) read the retry-diagnostic diff — confirm a reload leaves report-visible evidence and the regression tests pin it; 4) spot-check by running the exact spec ONCE yourself in the foreground (pnpm --filter @hachej/boring-ui-review-tools ui:review -- review workspace-agent-sidebar --critic=fixture) — one fresh green run on top of the retained five is sufficient corroboration; poll it synchronously. Post ONE comment on the PR: SHIP or REVISE. If SHIP: gh pr edit 1431 --add-label ready-for-human. No merge/push. End with the verdict line.
+codex
+I’m using the project’s `exec` workflow and delegation model for this final gate. I’ll synchronize the worktree to the requested branch head, independently verify retained evidence and retry diagnostics, run the exact foreground spec once, then post exactly one SHIP/REVISE comment and label only if SHIP.
+exec
+/usr/bin/zsh -lc "sed -n '1,240p' /home/ubuntu/.codex/RTK.md && sed -n '1,260p' .agents/skills/exec/SKILL.md && sed -n '1,260p' docs/procedures/MODEL-CARD.md && sed -n '1,280p' docs/procedures/boring-loop.md" in /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390
+ succeeded in 0ms:
+# RTK - Rust Token Killer (Codex CLI)
+
+**Usage**: Token-optimized CLI proxy for shell commands.
+
+## Rule
+
+Always prefix shell commands with `rtk`.
+
+Examples:
+
+```bash
+rtk git status
+rtk cargo test
+rtk npm run build
+rtk pytest -q
+```
+
+## Meta Commands
+
+```bash
+rtk gain            # Token savings analytics
+rtk gain --history  # Recent command savings history
+rtk proxy <cmd>     # Run raw command without filtering
+```
+
+## Verification
+
+```bash
+rtk --version
+rtk gain
+which rtk
+```
+---
+name: exec
+description: Drive one ready artifact through implementation, proof, review, and owner handoff.
+disable-model-invocation: true
+---
+
+# Exec
+
+Drive one executable TODO, plan, Beads epic, or validated UI packet to
+`ready-for-human`; never merge.
+
+Read the artifact, `docs/procedures/boring-loop.md`, and
+`docs/procedures/MODEL-CARD.md`. Load only the needed procedure:
+
+- worktrees/delegation: `docs/procedures/worktree-agent.md`
+- proof: `docs/procedures/proof-of-work.md`
+- UI packets: `docs/procedures/visual-review.md`
+- handoff: `docs/procedures/owner-review-card.md`
+- provider method: `../../skill-references/exec/index.md`
+
+Require clear scope, acceptance, proof, dependencies, and risk; repair planning
+gaps through `/skill:plan` and stop on unresolved human intent. For Beads work,
+pull your work: `br ready --json`, lease exactly one bead, and stamp your
+session id on it in the same act — never work unclaimed. Refresh the lease as
+you work (any `br` touch counts; cadence key `beadle.lease_heartbeat_minutes`);
+poll long waits synchronously so the heartbeat keeps beating. Never end a turn
+waiting for an event you did not schedule a wake-up for. Never delegate work
+that carries a stop-and-ask gate to a sub-agent — the sub-agent inherits the
+gate but cannot verify who satisfies it (escalate gates up, never down).
+Syntax that bites: `br comments add <id> -m "..."` (plural, id first) and
+`--assignee` (no `-a` on update); a failed comment is a lost heartbeat — check
+exit status.
+
+**Owner demo/retest gate:** before inviting the owner to test (or RE-test) a
+live surface, the exact reported action must pass in that exact environment —
+same origin, same click path — proven by an automated run (Playwright/curl)
+with a screenshot. Fixes that live on other branches get cherry-picked into
+the demo environment first. "Should work now" is never grounds for an invite;
+a wasted owner test is a factory defect.
+
+Implement the smallest bounded slice with behavior tests, record current proof,
+apply the Model Card review ladder and mandatory code-thermo gate, and integrate
+or disposition every material finding. Re-prove and re-review non-trivial fixes.
+Then open/update the PR and hand it over as **two artifacts, both in the
+workspace**: run the present-pr generator (`.agents/skills/present-pr/`) with
+`--out .handoff/pr-<n>-presentation.html`, then `exec_ui openFile` that page
+(HTML viewer pane) and, whenever the change has a running surface, `exec_ui
+openPanel` component `url-pane.panel` with `params.url` pointing at your live
+demo. Send the owner card through `ask_user` (PR comment fallback) naming both
+panes; never hand the owner a bare localhost URL in chat. Use commit subjects
+`[br-###] description` and push after every commit. Marking the bead is the last
+act, after both panes are open.
+
+For a UI packet, validate it first and follow the complete round, stop, baseline,
+and Inbox rules in `visual-review.md`; the packet grants no edit or merge
+authority.
+
+Before compaction, perform the handoff ritual in `.agents/factory/README.md`
+Session rules and link the artifact from the bead. At handoff/closure, write a
+one-line `friction` note on the bead. Never close your own bead.
+
+Exit only with green proof or an explicit waiver/residual risk, current required
+reviews, a human-runnable validation path, and a clear next action.
+# Boring v2 Model Card
+
+Priority-ordered tiers, not a scheduler. Seats bind to tiers, never model IDs
+(`.agents/factory/policy.yaml` references tiers only). Within a tier, pick the
+first available model — quota is an availability gate, not an optimizer. A
+rate limit falls to the next model in the same tier; a whole tier exhausted
+defers shippable work, it never silently downgrades. A quality miss escalates
+a tier.
+
+| Tier | Models | Role |
+| --- | --- | --- |
+| T1 frontier | Fable; Sol xhigh | Fable holds AgentHost/pi-native seats (Concierge, Steward) and class-B/thermo review. Sol xhigh is a codex-exec-only cross-model adversarial pass on plans and class-B PRs (shared 5h OpenAI window, cap 2 tracks) — it cannot hold a seat. |
+| T2 strong | Opus 4.8; Sol medium | Opus is the default Reviewer seat and works hard-tagged beads. Sol medium runs lighter cross-checks. |
+| T3 workhorse | Terra; Sonnet 4.6 | Terra (codex, cannot hold a pi session) does cheap bulk/mechanical delegated work. Sonnet 4.6 is the pi-native Worker default and runs triage sweeps. |
+| T4 mechanical | Luna; Haiku | Luna (codex) is the cheapest pass. Haiku runs where a pi-native automation runtime is required — Beadle tick, reconciliation, notifications. |
+
+## Review ladder
+
+```text
+draft → T2/T3 self-check → T1 cross-model pass (plans, class-B) → T1 (Fable) falsification → integrate
+```
+
+- Worker self-check is not independent review; consequential work still climbs the ladder.
+- Sol xhigh (T1, codex-exec) is required for canonical plans and for medium/hard,
+  structural, risky, or contested work — it precedes Fable.
+- Fable (T1) is the human-gated final falsification: `manual-gate` requires
+  Inbox approval per call. Fable gets no direct repo tools; it delegates
+  read-only context gathering to a Sonnet subagent and returns a verdict —
+  it does not rewrite the work. Another model integrates the verdict, then
+  review repeats.
+- Code requires thermo: T2/T3 for small changes, T1 for complex/structural/risky.
+  Docs/config-only changes are exempt.
+
+Minimal record:
+
+```text
+reviewer: <model/tier>
+target: <revision>
+verdict: clean | revise
+findings: <summary or link>
+```
+
+## Visual evidence operator
+
+Prefer Qwen 3.6 on the local `mac` provider as the cheap evidence operator: it
+runs the deterministic scenario and packages objective evidence (DOM
+assertions, screenshots, logs) — it never grades its own run, plans fixes, or
+edits product code. A vision-capable T2 reviewer grades the bundle
+independently. Fallback: another T4 worker, same no-critic/no-edit bounds,
+resolved model id recorded in the handoff.
+
+## Price snapshot
+
+Tracked via the [documentation refresh task list](documentation-refresh-tasks.md)
+(`model-pricing`, weekly). Price is a routing input, not evidence of a
+capability change — track first-pass success, review findings, retries, and
+cost per accepted change before changing a model's tier.
+
+Use `ask_user` for intent, risk, T1 spend, visual validation, and merge
+approval; use a GitHub comment when unavailable.
+# Boring Loop v2
+
+```text
+feedback → triage → plan → exec
+```
+
+Factory seats, gates, and lanes live in `.agents/factory/README.md`. This file
+owns the loop's states and quality bars — do not duplicate the factory stage
+table here.
+
+Use `/skill:ask-boring` when routing is unclear. The Boring Factory
+(`.agents/factory/README.md`) wraps this sequence with seats, dispatch, and
+human gates; it adds no new ordering — this file stays authoritative for the loop.
+
+| Step | Output | Next |
+| --- | --- | --- |
+| `feedback` | canonical bug issue or feature-backlog item | `triage` for bugs; stop for backlog |
+| `triage` | category, state, first blocker, next action | `plan`, `exec`, or human |
+| `plan` | TODO, canonical plan, or Beads graph with proof path | `exec` or human |
+| `exec` | reviewed/proven PR plus runnable validation handoff | owner review |
+
+## State model
+
+- Category: `bug` or `enhancement` (one when possible).
+- State: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, or
+  `wontfix` (exactly one).
+- First blocker: `clarity`, `risk`, `plan`, `implementation`, `proof`, `review`,
+  `merge`, or `none`.
+
+Put detail in comments, not labels. Do not revive `state:*`, `phase:*`, `track:*`,
+or gate taxonomies.
+
+## Quality bars
+
+- **Feedback:** one deduplicated, redacted canonical item.
+- **Triage:** verified when cheap; stop at the first blocker.
+- **Plan:** problem/solution, decisions, rollback/flag when relevant, test seams,
+  acceptance, proof, and only necessary slices. Wide refactors use
+  `expand → migrate batches → contract`.
+- **Exec:** current proof, required review dispositions, thermo for code, and a
+  human-ready artifact/test playbook. Follow `procedures/proof-of-work.md` and
+  `procedures/owner-review-card.md`. The owner-facing deliverable of every
+  implementation PR is a present-pr artifact (`.agents/skills/present-pr/`):
+  context diagram, area→package flow, and importance-ordered diffs.
+
+The default is one issue per PR. When the owner explicitly requests one branch
+and one deferred review for multiple small fixes, follow the guarded
+[`rolling small-fixes batch`](rolling-small-fixes.md) exception. It
+keeps one issue per independently revertible commit and does not lower proof or
+review requirements.
+
+Default to `ready-for-human` for auth, billing, permissions, secrets, migrations,
+public APIs, releases, deletion-heavy/broad work, unclear rollback, or risky
+proof waivers. Use `ask_user` for decisions; GitHub comments are the fallback.
+
+exec
+/usr/bin/zsh -lc "rtk git status --short --branch && sed -n '1,260p' docs/procedures/worktree-agent.md && sed -n '1,280p' docs/procedures/proof-of-work.md" in /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390
+ succeeded in 210ms:
+* fix/1390-ui-review-determinism...origin/fix/1390-ui-review-determinism
+?? sol-1390-finish.log
+?? sol-1390.log
+?? sol-1431-loop.log
+?? sol-stamp-1431.log
+?? sol-thermo-1431.log
+# Worktree Agent Procedure
+
+Use this when `/exec` delegates implementation.
+
+## Rules
+
+- Keep all project worktrees under `.worktrees/`.
+- Never push directly to remote `main`.
+- Inspect branch, dirty state, and existing ownership before editing.
+- Do not overwrite another agent's work.
+- One epic = one GH issue = one worktree = one PR. Workers claim beads and commit
+  directly to the epic branch — no per-bead sub-branches. Coordinate ownership
+  and conflicts through bead file scope (`bead-ready.md`): concurrent beads in
+  one epic must not overlap files. No messaging or file-reservation system is
+  used (see `.agents/factory/tools.md`, "Not in the factory").
+- The standing bugfix lane (`fix/rolling`) is the exception: see
+  `rolling-small-fixes.md`.
+- Outside the factory, the orchestrator chooses branch/worktree topology and PR
+  granularity from task shape, dependencies, rollback, and review budget.
+- Read-only research/review can run independently. Writers must not silently
+  race on the same files.
+- Stacked PRs use one branch per layer; each layer has its own proof and review.
+- Stop before destructive git/filesystem operations, force pushes, releases,
+  publishes, worktree cleanup, or file deletion unless explicitly authorized.
+
+## Setup
+
+Run setup from the canonical project checkout, not from inside another worktree.
+
+```bash
+mkdir -p .worktrees
+git worktree add .worktrees/<lane> -b <branch> <base>
+cd .worktrees/<lane>
+git status --short --branch
+```
+
+If the target branch already exists, attach the worktree to that branch rather
+than creating a second lane. Record the chosen topology in the execution handoff.
+# Proof of work
+
+Every implementation needs auditable proof. Do not say “tested” without evidence.
+
+## Accepted proof types
+
+Use at least one; use more when risk is higher.
+
+- **Exact command** — command run, result, and short output summary.
+- **Screenshot/demo** — artifact/URL plus what to inspect.
+- **Manual steps** — exact reproduction or verification path.
+- **Waiver** — why proof is not possible or not worth the cost, plus residual risk.
+
+## PR proof comment
+
+Before owner review or merge, post proof for the current PR head SHA, subject/
+title carrying the bead ID (`[br-###]`).
+
+```md
+Proof of work
+
+What changed:
+- ...
+
+Automated verification:
+- `command` ✅/❌
+
+Screenshot/demo:
+- ... / N/A
+
+Manual validation:
+1. ... / N/A
+
+Waiver / known gaps:
+- None / ...
+```
+
+## UI proof
+
+For UI/workspace behavior, prefer a screenshot or demo plus manual steps. If using a local playground, never post public host/IP addresses. Ports, local/operator paths, and safe preview URLs are OK.
+
+Useful artifact tools when needed:
+
+- `uvx showboat` for command/evidence documents.
+- `uvx rodney` for browser screenshots and assertions.
+
+codex
+The worktree is already on the requested branch; only unrelated untracked log files are present, so I’m preserving them. I’ll fast-forward the tracked branch to the fetched remote head without touching those files.
+exec
+/usr/bin/zsh -lc 'rtk git fetch origin fix/1390-ui-review-determinism && rtk git checkout fix/1390-ui-review-determinism && rtk git merge --ff-only origin/fix/1390-ui-review-determinism && rtk git rev-parse HEAD && rtk git status --short --branch' in /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390
+ succeeded in 1063ms:
+ok fetched (1 new refs)
+Already on 'fix/1390-ui-review-determinism'
+Your branch is up to date with 'origin/fix/1390-ui-review-determinism'.
+Already up to date.
+3d346da1ae66bf1af7dd7f0f61f5dfb4b6705a4d
+* fix/1390-ui-review-determinism...origin/fix/1390-ui-review-determinism
+?? sol-1390-finish.log
+?? sol-1390.log
+?? sol-1431-loop.log
+?? sol-stamp-1431.log
+?? sol-thermo-1431.log
+
+exec
+/usr/bin/zsh -lc 'rtk gh pr view 1431 --repo hachej/boring-ui --comments && rtk git show --stat --oneline --decorate 3d346da1 && rtk git diff 3d346da1''^ 3d346da1 -- runs-evidence packages plugins scripts' in /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390
+ succeeded in 1479ms:
+author:	hachej
+association:	owner
+edited:	false
+status:	none
+--
+## Proof of work
+
+Final head: `65f32725057e5583a064c8807b352087eda15bd8`
+
+- Capture stability freezes motion and keeps screenshot + DOM gates on one settled frame.
+- Sidebar readiness performs one bounded discovery reload before its final retry.
+- Playwright explicitly models touch with `hasTouch`; Bombadil no longer infers pointer capability.
+- Bombadil inserts one settle action after opening app navigation so generated and replayed action sets agree.
+
+Validation:
+
+- `pnpm --filter @hachej/boring-ui-review-tools test` — 95/95 PASS.
+- `pnpm --filter @hachej/boring-ui-review-tools typecheck` — PASS.
+- `pnpm --filter @hachej/boring-ui-review-tools ui:review -- review workspace-agent-sidebar --critic=fixture` — 5/5 consecutive PASS on the final runtime tree (1.1m, 1.1m, 1.2m, 1.7m, 1.1m).
+- GitHub CI run `33101687058` — PASS, including UI Review.
+- Independent thermonuclear review — clean after follow-up findings were closed and re-reviewed.
+
+The PR remains open and unmerged for owner validation.
+
+--
+author:	hachej
+association:	owner
+edited:	false
+status:	none
+--
+## Thermonuclear review: REVISE
+
+### Ranked findings
+
+1. **P1 — the discovery retry is broader than discovery and silently erases the first readiness failure.** `runUiReviewReadinessWithReload` catches every error from the full `ensureAgentNavigation` sequence (`tools/ui-review/src/core/readiness.ts:11-15`, called from `workspace-agent-sidebar/spec.ts:73`). That sequence checks not only terminal roster discovery, but also both trees, the Alpha collapse control, the Alpha session row, and the composer heading. A transient regression in any of those later contracts can fail once, reload, pass, and leave no indication in the report or logs that the first hydration was broken. The retry is bounded to exactly one reload, and request/HTTP/console/page errors remain accumulated and hard-gated, but a pure DOM/readiness failure is still masked. Split the discovery-availability probe from the full readiness assertions so only the terminal discovery state earns a reload, and preserve/emit the first error plus a retry marker. Add a test proving a post-discovery contract failure is not retried and a test proving the retry diagnostic is observable.
+
+### Adversarial checks
+
+- **5/5 proof:** reproducible in principle and credible, but the five-run count is **trusted**, not independently verified: the PR body/comment preserve only summaries and the command discards run artifacts by default. I independently ran the exact command at head `65f3272`; it passed `1/1` in `1.1m`. GitHub run `33101687058` and its UI Review job are green.
+- **Pointer model:** **verified clean for registered coverage.** The command-palette 390x844 viewport explicitly sets `hasTouch: true`; the Playwright context propagates it; hard-gate collection derives `coarsePointer` from that same capability; the coarse case still fails on a 20px target; and registry coverage asserts the mobile viewport remains touch-enabled. Bombadil loses its width-inferred touch property, but it cannot model pointer capability, while the deterministic Playwright 44px gate remains. A configured touch viewport does not escape; only a misconfigured viewport that omits `hasTouch` would.
+- **Assertions:** **verified no broad weakening.** Local harness tests pass 95/95 and typecheck is clean. Existing test edits are contract-version/model-shape updates; added tests cover freeze lifetime/cleanup, exactly-one reload/final failure, compact-vs-coarse enforcement, and replay settling. The removed Bombadil touch assertion is the intentional relocation described above.
+- **Capture settling:** **verified structurally.** Motion freeze spans screenshot plus DOM collection, waits for fonts and two animation frames, and cleans up in `finally`.
+
+### Verified vs trusted
+
+**Verified:** PR diff/head and issue history; 95/95 unit tests; typecheck; one fresh exact sidebar review pass; CI/UI Review success; pointer and capture control flow.
+
+**Trusted:** the original five consecutive local passes and their individual timings, because raw per-run artifacts/logs were not retained.
+
+**Verdict: REVISE.**
+--
+author:	hachej
+association:	owner
+edited:	false
+status:	none
+--
+## Thermonuclear REVISE disposition
+
+Head: `3d346da1ae66bf1af7dd7f0f61f5dfb4b6705a4d`
+
+Disposition: **addressed**.
+
+- Split sidebar discovery availability from the downstream readiness contracts. Only the discovery probe can trigger the single bounded reload; tree count, Alpha collapse, Alpha session row, and composer heading now execute once outside the retry catch.
+- A retry emits `UI_REVIEW_READINESS_DISCOVERY_RETRY` with the preserved first error.
+- The same `retryUsed` / `firstError` diagnostic is required in every captured state's `readiness-retry` hard-gate evidence, so a recovered reload is visible in `hard-gates.json` and the generated report.
+- Added tests proving a post-discovery contract failure is not retried and proving the log/returned/hard-gate diagnostic is observable.
+- Unit suite: `97/97` pass. Typecheck: pass. Independent strict re-review of the fix: clean.
+
+### Consecutive exact-spec proof
+
+Command:
+
+```sh
+pnpm --filter @hachej/boring-ui-review-tools ui:review -- review workspace-agent-sidebar --critic=fixture
+```
+
+| Run | Playwright duration | Full command wall time | Result | Hard gates | Readiness evidence |
+| --- | ---: | ---: | --- | ---: | --- |
+| 1 | 1.1m | 856.52s | PASS | 312/312 | 24/24 `retryUsed=false` |
+| 2 | 1.2m | 836.65s | PASS | 312/312 | 24/24 `retryUsed=false` |
+| 3 | 1.2m | 804.32s | PASS | 312/312 | 24/24 `retryUsed=false` |
+| 4 | 1.2m | 837.12s | PASS | 312/312 | 24/24 `retryUsed=false` |
+| 5 | 1.1m | 774.79s | PASS | 312/312 | 24/24 `retryUsed=false` |
+
+Aggregate retained evidence: **5 runs, 1,560/1,560 hard gates green, 120/120 no-retry diagnostics, 0 retry-used diagnostics**.
+
+### Retained evidence file list
+
+- `runs-evidence/README.md`
+- `runs-evidence/run-01/output.log`
+- `runs-evidence/run-01/hard-gates.json`
+- `runs-evidence/run-01/report.md`
+- `runs-evidence/run-01/manifest.json`
+- `runs-evidence/run-02/output.log`
+- `runs-evidence/run-02/hard-gates.json`
+- `runs-evidence/run-02/report.md`
+- `runs-evidence/run-02/manifest.json`
+- `runs-evidence/run-03/output.log`
+- `runs-evidence/run-03/hard-gates.json`
+- `runs-evidence/run-03/report.md`
+- `runs-evidence/run-03/manifest.json`
+- `runs-evidence/run-04/output.log`
+- `runs-evidence/run-04/hard-gates.json`
+- `runs-evidence/run-04/report.md`
+- `runs-evidence/run-04/manifest.json`
+- `runs-evidence/run-05/output.log`
+- `runs-evidence/run-05/hard-gates.json`
+- `runs-evidence/run-05/report.md`
+- `runs-evidence/run-05/manifest.json`
+
+### Key excerpts
+
+- Run 1: `1 passed (1.1m)`; `real 856.52`.
+- Run 2: `1 passed (1.2m)`; `real 836.65`.
+- Run 3: `1 passed (1.2m)`; `real 804.32`.
+- Run 4: `1 passed (1.2m)`; `real 837.12`.
+- Run 5: `1 passed (1.1m)`; `real 774.79`.
+- Every retained `hard-gates.json`: 312 results, zero failures, 24 `retryUsed=false;firstError=none` results, zero `retryUsed=true` results.
+
+The generated manifest tree hashes vary because the worktree already contained an actively written, untracked `sol-1431-loop.log`; the tracked source diff under test did not change across the five consecutive runs. SHA-256 values for every raw transcript and hard-gate report are recorded in `runs-evidence/README.md`.
+
+No merge performed.
+--
+3d346da1a (HEAD -> fix/1390-ui-review-determinism, origin/fix/1390-ui-review-determinism) #1390 fix(ui-review): retry diagnostics + retained 5/5 evidence
+ runs-evidence/README.md                            |   47 +
+ runs-evidence/run-01/hard-gates.json               | 1878 ++++++++++++++++++++
+ runs-evidence/run-01/manifest.json                 |  408 +++++
+ runs-evidence/run-01/output.log                    |  506 ++++++
+ runs-evidence/run-01/report.md                     |   26 +
+ runs-evidence/run-02/hard-gates.json               | 1878 ++++++++++++++++++++
+ runs-evidence/run-02/manifest.json                 |  408 +++++
+ runs-evidence/run-02/output.log                    |  505 ++++++
+ runs-evidence/run-02/report.md                     |   26 +
+ runs-evidence/run-03/hard-gates.json               | 1878 ++++++++++++++++++++
+ runs-evidence/run-03/manifest.json                 |  408 +++++
+ runs-evidence/run-03/output.log                    |  508 ++++++
+ runs-evidence/run-03/report.md                     |   26 +
+ runs-evidence/run-04/hard-gates.json               | 1878 ++++++++++++++++++++
+ runs-evidence/run-04/manifest.json                 |  408 +++++
+ runs-evidence/run-04/output.log                    |  508 ++++++
+ runs-evidence/run-04/report.md                     |   26 +
+ runs-evidence/run-05/hard-gates.json               | 1878 ++++++++++++++++++++
+ runs-evidence/run-05/manifest.json                 |  408 +++++
+ runs-evidence/run-05/output.log                    |  505 ++++++
+ runs-evidence/run-05/report.md                     |   26 +
+ .../src/__tests__/agentSidebarHardGates.test.ts    |   14 +
+ tools/ui-review/src/__tests__/readiness.test.ts    |   51 +-
+ tools/ui-review/src/core/readiness.ts              |   30 +-
+ .../workspace-agent-sidebar/hardGates.ts           |   10 +-
+ .../review-specs/workspace-agent-sidebar/spec.ts   |   30 +-
+ 26 files changed, 14251 insertions(+), 23 deletions(-)
+runs-evidence/README.md              |   47 +
+ runs-evidence/run-01/hard-gates.json | 1878 ++++++++++++++++++++++++++++++++++
+ runs-evidence/run-01/manifest.json   |  408 ++++++++
+ runs-evidence/run-01/output.log      |  506 +++++++++
+ runs-evidence/run-01/report.md       |   26 +
+ runs-evidence/run-02/hard-gates.json | 1878 ++++++++++++++++++++++++++++++++++
+ runs-evidence/run-02/manifest.json   |  408 ++++++++
+ runs-evidence/run-02/output.log      |  505 +++++++++
+ runs-evidence/run-02/report.md       |   26 +
+ runs-evidence/run-03/hard-gates.json | 1878 ++++++++++++++++++++++++++++++++++
+ runs-evidence/run-03/manifest.json   |  408 ++++++++
+ runs-evidence/run-03/output.log      |  508 +++++++++
+ runs-evidence/run-03/report.md       |   26 +
+ runs-evidence/run-04/hard-gates.json | 1878 ++++++++++++++++++++++++++++++++++
+ runs-evidence/run-04/manifest.json   |  408 ++++++++
+ runs-evidence/run-04/output.log      |  508 +++++++++
+ runs-evidence/run-04/report.md       |   26 +
+ runs-evidence/run-05/hard-gates.json | 1878 ++++++++++++++++++++++++++++++++++
+ runs-evidence/run-05/manifest.json   |  408 ++++++++
+ runs-evidence/run-05/output.log      |  505 +++++++++
+ runs-evidence/run-05/report.md       |   26 +
+ 21 files changed, 14139 insertions(+)
+
+--- Changes ---
+
+runs-evidence/README.md
+  @@ -0,0 +1,47 @@
+  +# PR #1431 retained 5/5 evidence
+  +
+  +Exact scenario command executed five times consecutively:
+  +
+  +```sh
+  +pnpm --filter @hachej/boring-ui-review-tools ui:review -- review workspace-agent-sidebar --critic=fixture
+  +```
+  +
+  +Each invocation ran synchronously in the foreground with a distinct `UI_REVIEW_OUTPUT_DIR`. The transcript records both Playwright's scenario duration and `/usr/bin/time` wall time for the complete command, including dependency builds.
+  +
+  +| Run | Playwright duration | Full command wall time | Result | Hard gates | Readiness diagnostics |
+  +| --- | ---: | ---: | --- | ---: | --- |
+  +| 1 | 1.1m | 856.52s | PASS | 312/312 | 24/24 `retryUsed=false` |
+  +| 2 | 1.2m | 836.65s | PASS | 312/312 | 24/24 `retryUsed=false` |
+  +| 3 | 1.2m | 804.32s | PASS | 312/312 | 24/24 `retryUsed=false` |
+  +| 4 | 1.2m | 837.12s | PASS | 312/312 | 24/24 `retryUsed=false` |
+  +| 5 | 1.1m | 774.79s | PASS | 312/312 | 24/24 `retryUsed=false` |
+  +
+  +## Retained files
+  +
+  +Every `run-0N/` directory contains:
+  +
+  +- `output.log` — raw foreground transcript, including exact invocation, `1 passed`, and wall timing.
+  +- `hard-gates.json` — complete 312-result hard-gate report.
+  +- `report.md` — generated run summary.
+  +- `manifest.json` — generated 24-state manifest.
+  +
+  +## Key excerpts
+  +
+  +- Run 1: `1 passed (1.1m)`; `real 856.52`.
+  +- Run 2: `1 passed (1.2m)`; `real 836.65`.
+  +- Run 3: `1 passed (1.2m)`; `real 804.32`.
+  +- Run 4: `1 passed (1.2m)`; `real 837.12`.
+  +- Run 5: `1 passed (1.1m)`; `real 774.79`.
+  +- Each `hard-gates.json` has 312 results, zero failures, 24 `readiness-retry` results with `retryUsed=false;firstError=none`, and zero `retryUsed=true` results.
+  +
+  +The generated manifests share candidate revision `65f32725057e5583a064c8807b352087eda15bd8`. Their tree hashes differ because the worktree already contained an actively written, untracked `sol-1431-loop.log`; the tracked source diff under test did not change between runs.
+  +
+  +## SHA-256
+  +
+  +| Run | `output.log` | `hard-gates.json` |
+  +| --- | --- | --- |
+  +| 1 | `12828bb1c7a4a14dff42d4f6551d56d5db2d4289aaeabffd035a594d2ae0f54f` | `75ea182d4190714bbcbf63fe60228ee302306139554e336da6f89578a908a684` |
+  +| 2 | `9fd445a1f5ad3a2432f84dc0f915143eed8370b1c9170a218fb7f95e9598d51b` | `daabe6de2cabcebd60675b72f118809a693991991c01ad03ea95440a32f4972f` |
+  +| 3 | `e7f3ab0d8cf7a0c122e2d60bc811d51db68118749cba15d09dcfb667e8b13b1f` | `9512c879eaa7ddbe248c2f1997195ce7d4769c396a46730c4b9d010f39c6f769` |
+  +| 4 | `811d2f14c1c8caeffed61adbda84b678d0b82de846372f0e0b4a99ad519df0b4` | `93b2e39380ca9ffd7819fb6bd1d5953332a6b8fec6c8091ef0c1c311e3bb7c7d` |
+  +| 5 | `3af751f7690255227d930bf1c16ebf9df329aaadb2b4cd237d7445660ec0fbcd` | `45a82a717284e36bdf5940908c2255439528a04ab9da3664ef48c2b212c1f5fd` |
+  +47 -0
+
+runs-evidence/run-01/hard-gates.json
+  @@ -0,0 +1,1878 @@
+  +{
+  +  "schemaVersion": 1,
+  +  "contractVersion": "workspace-agent-sidebar-v15",
+  +  "results": [
+  +    {
+  +      "id": "fixture-ready",
+  +      "stateId": "workspace-agent-sidebar-1787861742446:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+  +      "passed": true,
+  +      "evidence": "agentCount=2;detailOverlayCount=0"
+  +    },
+  +    {
+  +      "id": "readiness-retry",
+  +      "stateId": "workspace-agent-sidebar-1787861742446:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+  +      "passed": true,
+  +      "evidence": "retryUsed=false;firstError=none"
+  +    },
+  +    {
+  +      "id": "console-errors",
+  +      "stateId": "workspace-agent-sidebar-1787861742446:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+  +      "passed": true,
+  +      "evidence": "none"
+  +    },
+  +    {
+  +      "id": "page-errors",
+  +      "stateId": "workspace-agent-sidebar-1787861742446:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+  +      "passed": true,
+  +      "evidence": "none"
+  +    },
+  +    {
+  +      "id": "request-failures",
+  +      "stateId": "workspace-agent-sidebar-1787861742446:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+  +      "passed": true,
+  +      "evidence": "net::ERR_ABORTED http://127.0.0.1:5480/api/v1/filesystems [expected: Initial filesystem discovery is superseded when the addressed Agent source mounts.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/alpha/ready-status [expected: Agent readiness polling is cancelled after readiness resolves.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/session-activity/events?workspaceId=workspace [expected: Session activity stream is cancelled when switching checkpoints or closing context.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]"
+  +    },
+  +    {
+  +      "id": "http-errors",
+  +      "stateId": "workspace-agent-sidebar-1787861742446:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+  +      "passed": true,
+  +      "evidence": "none"
+  +    },
+  +    {
+  +      "id": "horizontal-overflow",
+  +      "stateId": "workspace-agent-sidebar-1787861742446:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+  +      "passed": true,
+  +      "evidence": "1440/1440"
+  +    },
+  +    {
+  +      "id": "axe-serious-critical",
+  +      "stateId": "workspace-agent-sidebar-1787861742446:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+  +      "passed": true,
+  +      "evidence": "none"
+  +    },
+  +    {
+  +      "id": "state-contract",
+  +      "stateId": "workspace-agent-sidebar-1787861742446:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+  +      "passed": true,
+  +      "evidence": "{\"agentCount\":2,\"agentHeading\":\"Agents\",\"agentSeatSummary\":\"2 seats\",\"agentFilterCount\":1,\"legacyFilterCount\":0,\"visibleActionCount\":2,\"visibleAgentCountLabels\":2,\"expandedRegionCount\":1,\"guideCount\":1,\"pinnedHeading\":null,\"pinnedCount\":0,\"pinnedProvenance\":null,\"pinnedAgentSessionCount\":1,\"nestedPinnedHasPin\":false,\"detailOverlayCount\":0,\"detailTabCount\":0,\"capabilityHeadings\":[],\"legacyJargonCount\":0,\"actionOverlaps\":[],\"actionFallthrough\":[],\"illegibleTitles\":[],\"undersizedAgentControls\":[],\"checkpoint\":\"agent-list\"}"
+  +    },
+  +    {
+  +      "id": "session-row-action-overlap",
+  +      "stateId": "workspace-agent-sidebar-1787861742446:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+  +      "passed": true,
+  +      "evidence": "[]"
+  +    },
+  +    {
+  +      "id": "session-row-action-fallthrough",
+  +      "stateId": "workspace-agent-sidebar-1787861742446:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+  +      "passed": true,
+  +      "evidence": "[]"
+  +    },
+  +    {
+  +      "id": "session-row-title-legible",
+  +      "stateId": "workspace-agent-sidebar-1787861742446:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+  +      "passed": true,
+  +      "evidence": "[]"
+  +    },
+  +    {
+  +      "id": "agent-touch-targets",
+  +      "stateId": "workspace-agent-sidebar-1787861742446:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+  +      "passed": true,
+  +      "evidence": "[]"
+  +    },
+  +    {
+  +      "id": "fixture-ready",
+  +      "stateId": "workspace-agent-sidebar-1787861742446:workspace-agent-sidebar:candidate:desktop:hover-actions:47c1642db65c",
+  +      "passed": true,
+  +      "evidence": "agentCount=2;detailOverlayCount=0"
+  +    },
+  +    {
+  +      "id": "readiness-retry",
+  +      "stateId": "workspace-agent-sidebar-1787861742446:workspace-agent-sidebar:candidate:desktop:hover-actions:47c1642db65c",
+  +      "passed": true,
+  +      "evidence": "retryUsed=false;firstError=none"
+  +    },
+  +    {
+  +      "id": "console-errors",
+  +      "stateId": "workspace-agent-sidebar-1787861742446:workspace-agent-sidebar:candidate:desktop:hover-actions:47c1642db65c",
+  +      "passed": true,
+  +      "evidence": "none"
+  +    },
+  ... (1778 lines truncated)
+  +1878 -0
+
+runs-evidence/run-01/manifest.json
+  @@ -0,0 +1,408 @@
+  +{
+  +  "schemaVersion": 1,
+  +  "runId": "workspace-agent-sidebar-1787861742446",
+  +  "scenarioId": "workspace-agent-sidebar",
+  +  "rubricVersion": "impeccable-v1",
+  +  "resolvedModel": "fixture",
+  +  "candidateRevision": "65f32725057e5583a064c8807b352087eda15bd8",
+  +  "candidateTreeHash": "294b4e934ce8a2275877e482fcf7b2c3e1a855a71b028dd9adc9e55cf5e8b1f9",
+  +  "states": [
+  +    {
+  +      "id": "workspace-agent-sidebar-1787861742446:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+  +      "scenarioId": "workspace-agent-sidebar",
+  +      "role": "candidate",
+  +      "checkpoint": "agent-list",
+  +      "viewport": {
+  +        "name": "desktop",
+  +        "width": 1440,
+  +        "height": 900,
+  +        "deviceScaleFactor": 1
+  +      },
+  +      "screenshotPath": "selected/desktop/001-agent-list.png",
+  +      "screenshotDigest": "2ee0a6d8e5dc2f6126de5d3f9455c1efb6a5ee998056eb5ab6ea56976d3c7080",
+  +      "screenshotBytes": 54797,
+  +      "source": "known"
+  +    },
+  +    {
+  +      "id": "workspace-agent-sidebar-1787861742446:workspace-agent-sidebar:candidate:desktop:hover-actions:47c1642db65c",
+  +      "scenarioId": "workspace-agent-sidebar",
+  +      "role": "candidate",
+  +      "checkpoint": "hover-actions",
+  +      "viewport": {
+  +        "name": "desktop",
+  +        "width": 1440,
+  +        "height": 900,
+  +        "deviceScaleFactor": 1
+  +      },
+  +      "screenshotPath": "selected/desktop/002-hover-actions.png",
+  +      "screenshotDigest": "47c1642db65cdf51d10a22a7a04d13a54bdaf2cc1e7ec708bc8de46c630ebe30",
+  +      "screenshotBytes": 54014,
+  +      "source": "known"
+  +    },
+  +    {
+  +      "id": "workspace-agent-sidebar-1787861742446:workspace-agent-sidebar:candidate:desktop:expanded-sessions:449ab5944cdb",
+  +      "scenarioId": "workspace-agent-sidebar",
+  +      "role": "candidate",
+  +      "checkpoint": "expanded-sessions",
+  +      "viewport": {
+  +        "name": "desktop",
+  +        "width": 1440,
+  +        "height": 900,
+  +        "deviceScaleFactor": 1
+  +      },
+  +      "screenshotPath": "selected/desktop/003-expanded-sessions.png",
+  +      "screenshotDigest": "449ab5944cdb767ee901980d6ff5f901fb10e10db18c206dd0977f7244b56c40",
+  +      "screenshotBytes": 57102,
+  +      "source": "known"
+  +    },
+  +    {
+  +      "id": "workspace-agent-sidebar-1787861742446:workspace-agent-sidebar:candidate:desktop:pinned-chat:347af1442096",
+  +      "scenarioId": "workspace-agent-sidebar",
+  +      "role": "candidate",
+  +      "checkpoint": "pinned-chat",
+  +      "viewport": {
+  +        "name": "desktop",
+  +        "width": 1440,
+  +        "height": 900,
+  +        "deviceScaleFactor": 1
+  +      },
+  +      "screenshotPath": "selected/desktop/004-pinned-chat.png",
+  +      "screenshotDigest": "347af1442096a9bb0c2c4ee980e00aa1e88ff00385adf6988747653032f5c257",
+  +      "screenshotBytes": 60168,
+  +      "source": "known"
+  +    },
+  +    {
+  +      "id": "workspace-agent-sidebar-1787861742446:workspace-agent-sidebar:candidate:desktop:session-row-hover:a2cc10c1264b",
+  +      "scenarioId": "workspace-agent-sidebar",
+  +      "role": "candidate",
+  +      "checkpoint": "session-row-hover",
+  +      "viewport": {
+  +        "name": "desktop",
+  +        "width": 1440,
+  +        "height": 900,
+  +        "deviceScaleFactor": 1
+  +      },
+  +      "screenshotPath": "selected/desktop/005-session-row-hover.png",
+  +      "screenshotDigest": "a2cc10c1264b9056e43e96ad93fcc412000aa10c212618604df12af35052498a",
+  +      "screenshotBytes": 58364,
+  +      "source": "known"
+  +    },
+  +    {
+  +      "id": "workspace-agent-sidebar-1787861742446:workspace-agent-sidebar:candidate:desktop:agent-details:f4034507cd8f",
+  +      "scenarioId": "workspace-agent-sidebar",
+  +      "role": "candidate",
+  +      "checkpoint": "agent-details",
+  +      "viewport": {
+  +        "name": "desktop",
+  +        "width": 1440,
+  +        "height": 900,
+  +        "deviceScaleFactor": 1
+  +      },
+  ... (308 lines truncated)
+  +408 -0
+
+runs-evidence/run-01/output.log
+  @@ -0,0 +1,506 @@
+  +Script started on 2026-08-27 20:02:37+00:00 [COMMAND="env UI_REVIEW_OUTPUT_DIR=.pi/ui-review/pr-1431-retained/run-01/output /usr/bin/time -p pnpm --filter @hachej/boring-ui-review-tools ui:review -- review workspace-agent-sidebar --critic=fixture" <not executed on terminal>]
+  +
+  +> @hachej/boring-ui-review-tools@0.0.1 ui:review /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/tools/ui-review
+  +> tsx scripts/run-ui-review.mjs -- review workspace-agent-sidebar --critic=fixture
+  +
+  +
+  +> workspace-playground@0.0.1 build:deps /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/apps/workspace-playground
+  +> pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-ui-plugin-cli build && pnpm --filter @hachej/boring-sandbox build && pnpm --filter @hachej/boring-bash build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-pi build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-deck build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-tasks build && pnpm --filter @hachej/boring-diagram build && pnpm --filter @hachej/boring-data-explorer build && pnpm --filter @hachej/boring-data-catalog build
+  +
+  +
+  +> @hachej/boring-ui-kit@0.1.105 build /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/ui
+  +> tsup && node scripts/build-styles.mjs
+  +
+  +CLI Building entry: {"index":"src/index.ts"}
+  +CLI Using tsconfig: tsconfig.json
+  +CLI tsup v8.5.1
+  +CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/ui/tsup.config.ts
+  +CLI Target: es2022
+  +CLI Cleaning output folder
+  +ESM Build start
+  +ESM dist/index.js 96.25 KB
+  +ESM ⚡️ Build success in 996ms
+  +DTS Build start
+  +DTS ⚡️ Build success in 12985ms
+  +DTS dist/index.d.ts 34.51 KB
+  +
+  +> @hachej/boring-ui-plugin-cli@0.1.105 build /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/plugin-cli
+  +> tsup
+  +
+  +CLI Building entry: {"index":"src/index.ts","bin":"src/bin.ts","plugin-sources":"src/server/pluginSources.ts"}
+  +CLI Using tsconfig: tsconfig.json
+  +CLI tsup v8.5.1
+  +CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/plugin-cli/tsup.config.ts
+  +CLI Target: node20
+  +CLI Cleaning output folder
+  +ESM Build start
+  +ESM dist/index.js          901.00 B
+  +ESM dist/plugin-sources.js 497.00 B
+  +ESM dist/chunk-YUAML3DZ.js 43.52 KB
+  +ESM dist/chunk-KTILPA2U.js 26.73 KB
+  +ESM dist/bin.js            265.00 B
+  +ESM ⚡️ Build success in 139ms
+  +DTS Build start
+  +DTS ⚡️ Build success in 11346ms
+  +DTS dist/bin.d.ts            20.00 B
+  +DTS dist/plugin-sources.d.ts 3.60 KB
+  +DTS dist/index.d.ts          4.45 KB
+  +
+  +> @hachej/boring-sandbox@0.1.105 build /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/boring-sandbox
+  +> tsup
+  +
+  +CLI Building entry: {"index":"src/index.ts","shared/index":"src/shared/index.ts","providers/index":"src/providers/index.ts","providers/direct/index":"src/providers/direct/index.ts","providers/bwrap/index":"src/providers/bwrap/index.ts","providers/node-workspace/index":"src/providers/node-workspace/index.ts","providers/blaxel/index":"src/providers/blaxel/index.ts","providers/vercel-sandbox/index":"src/providers/vercel-sandbox/index.ts","providers/runsc/index":"src/providers/runsc/index.ts","providers/remote-worker/index":"src/providers/remote-worker/index.ts"}
+  +CLI Using tsconfig: tsconfig.json
+  +CLI tsup v8.5.1
+  +CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/boring-sandbox/tsup.config.ts
+  +CLI Target: es2022
+  +CLI Cleaning output folder
+  +ESM Build start
+  +ESM dist/index.js                          18.79 KB
+  +ESM dist/shared/index.js                   18.79 KB
+  +ESM dist/providers/index.js                222.88 KB
+  +ESM dist/providers/direct/index.js         25.22 KB
+  +ESM dist/providers/bwrap/index.js          36.60 KB
+  +ESM dist/providers/node-workspace/index.js 18.50 KB
+  +ESM dist/providers/vercel-sandbox/index.js 82.83 KB
+  +ESM dist/providers/runsc/index.js          113.12 KB
+  +ESM dist/providers/remote-worker/index.js  65.56 KB
+  +ESM dist/providers/blaxel/index.js         74.90 KB
+  +ESM ⚡️ Build success in 360ms
+  +DTS Build start
+  +DTS ⚡️ Build success in 97029ms
+  +DTS dist/providers/index.d.ts                      2.52 KB
+  +DTS dist/providers/remote-worker/index.d.ts        5.26 KB
+  +DTS dist/providers/blaxel/index.d.ts               2.04 KB
+  +DTS dist/providers/node-workspace/index.d.ts       4.41 KB
+  +DTS dist/providers/vercel-sandbox/index.d.ts       7.93 KB
+  +DTS dist/providers/runsc/index.d.ts                23.47 KB
+  +DTS dist/providers/bwrap/index.d.ts                2.10 KB
+  +DTS dist/providers/direct/index.d.ts               666.00 B
+  +DTS dist/shared/index.d.ts                         4.95 KB
+  +DTS dist/index.d.ts                                4.13 KB
+  +DTS dist/remoteWorkerProtocolV1-DpOvZJPN.d.ts      52.64 KB
+  +DTS dist/qualificationBundle-BpxgRXzG.d.ts         16.09 KB
+  +DTS dist/createBlaxelSandboxProvider-Dwi7-j_a.d.ts 3.32 KB
+  +DTS dist/providerV1-DJqs6BH8.d.ts                  10.20 KB
+  +DTS dist/createRemoteWorkerProvider-pvurIYzi.d.ts  4.67 KB
+  +DTS dist/createVercelSandboxProvider-yiIz7ngX.d.ts 2.99 KB
+  +
+  +> @hachej/boring-bash@0.1.105 build /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/boring-bash
+  +> tsup
+  +
+  +CLI Building entry: {"index":"src/index.ts","agent/index":"src/agent/index.ts","shared/index":"src/shared/index.ts","server/index":"src/server/index.ts"}
+  +CLI Using tsconfig: tsconfig.json
+  +CLI tsup v8.5.1
+  +CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/boring-bash/tsup.config.ts
+  +CLI Target: es2022
+  +CLI Cleaning output folder
+  +ESM Build start
+  +ESM dist/index.js        2.49 KB
+  +ESM dist/agent/index.js  65.83 KB
+  ... (406 lines truncated)
+  +506 -0
+
+runs-evidence/run-01/report.md
+  @@ -0,0 +1,26 @@
+  +# UI review · workspace-agent-sidebar
+  +
+  +- Run: `workspace-agent-sidebar-1787861742446`
+  +- Model: `fixture`
+  +- Rubric: `impeccable-v1`
+  +- Score: **8.0/10**
+  +  - hierarchy: **8.0/10**
+  +  - spacingAlignment: **8.0/10**
+  +  - typographyColor: **8.0/10**
+  +  - consistency: **8.0/10**
+  +  - interactionStates: **8.0/10**
+  +  - responsiveAccessibility: **8.0/10**
+  +- Confidence: **100%**
+  +- Hard-gate failures: **0**
+  +
+  +## Owner spot-check
+  +1. Compare Agent list, hover actions, expanded sessions, pinned chat, and Agent details at desktop 1440×900.
+  +2. Compare Agent list, expanded sessions, pinned chat, and Agent details at mobile 390×844.
+  +3. Compare the same states at narrow-desktop 500×900 (fine pointer) and tablet 834×1112 (coarse pointer) — the width/pointer corners a wide-fine plus narrow-coarse pair cannot see.
+  +4. Confirm pinned chats remain top-level and show their Agent provenance.
+  +5. Confirm desktop actions appear on hover/focus while touch actions remain directly available.
+  +6. Confirm Agent rows expand/collapse chats while only the dedicated settings control opens Agent details.
+  +7. Confirm Agent details is one unified page with no Overview/Settings tab split.
+  +8. Confirm all deterministic hard gates are green before approving visual taste.
+  +
+  +Open `report.html` for captured states and exact evidence.
+  +26 -0
+
+runs-evidence/run-02/hard-gates.json
+  @@ -0,0 +1,1878 @@
+  +{
+  +  "schemaVersion": 1,
+  +  "contractVersion": "workspace-agent-sidebar-v15",
+  +  "results": [
+  +    {
+  +      "id": "fixture-ready",
+  +      "stateId": "workspace-agent-sidebar-1787862624051:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+  +      "passed": true,
+  +      "evidence": "agentCount=2;detailOverlayCount=0"
+  +    },
+  +    {
+  +      "id": "readiness-retry",
+  +      "stateId": "workspace-agent-sidebar-1787862624051:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+  +      "passed": true,
+  +      "evidence": "retryUsed=false;firstError=none"
+  +    },
+  +    {
+  +      "id": "console-errors",
+  +      "stateId": "workspace-agent-sidebar-1787862624051:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+  +      "passed": true,
+  +      "evidence": "none"
+  +    },
+  +    {
+  +      "id": "page-errors",
+  +      "stateId": "workspace-agent-sidebar-1787862624051:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+  +      "passed": true,
+  +      "evidence": "none"
+  +    },
+  +    {
+  +      "id": "request-failures",
+  +      "stateId": "workspace-agent-sidebar-1787862624051:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+  +      "passed": true,
+  +      "evidence": "net::ERR_ABORTED http://127.0.0.1:5480/api/v1/filesystems [expected: Initial filesystem discovery is superseded when the addressed Agent source mounts.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/tree?path=. [expected: Initial tree discovery is superseded by workspace hydration.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/alpha/ready-status [expected: Agent readiness polling is cancelled after readiness resolves.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/agents/session-activity/events?workspaceId=workspace [expected: Session activity stream is cancelled when switching checkpoints or closing context.]\nnet::ERR_ABORTED http://127.0.0.1:5480/api/v1/ui/state [expected: UI-state hydration writes can supersede their preceding read.]"
+  +    },
+  +    {
+  +      "id": "http-errors",
+  +      "stateId": "workspace-agent-sidebar-1787862624051:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+  +      "passed": true,
+  +      "evidence": "none"
+  +    },
+  +    {
+  +      "id": "horizontal-overflow",
+  +      "stateId": "workspace-agent-sidebar-1787862624051:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+  +      "passed": true,
+  +      "evidence": "1440/1440"
+  +    },
+  +    {
+  +      "id": "axe-serious-critical",
+  +      "stateId": "workspace-agent-sidebar-1787862624051:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+  +      "passed": true,
+  +      "evidence": "none"
+  +    },
+  +    {
+  +      "id": "state-contract",
+  +      "stateId": "workspace-agent-sidebar-1787862624051:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+  +      "passed": true,
+  +      "evidence": "{\"agentCount\":2,\"agentHeading\":\"Agents\",\"agentSeatSummary\":\"2 seats\",\"agentFilterCount\":1,\"legacyFilterCount\":0,\"visibleActionCount\":2,\"visibleAgentCountLabels\":2,\"expandedRegionCount\":1,\"guideCount\":1,\"pinnedHeading\":null,\"pinnedCount\":0,\"pinnedProvenance\":null,\"pinnedAgentSessionCount\":1,\"nestedPinnedHasPin\":false,\"detailOverlayCount\":0,\"detailTabCount\":0,\"capabilityHeadings\":[],\"legacyJargonCount\":0,\"actionOverlaps\":[],\"actionFallthrough\":[],\"illegibleTitles\":[],\"undersizedAgentControls\":[],\"checkpoint\":\"agent-list\"}"
+  +    },
+  +    {
+  +      "id": "session-row-action-overlap",
+  +      "stateId": "workspace-agent-sidebar-1787862624051:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+  +      "passed": true,
+  +      "evidence": "[]"
+  +    },
+  +    {
+  +      "id": "session-row-action-fallthrough",
+  +      "stateId": "workspace-agent-sidebar-1787862624051:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+  +      "passed": true,
+  +      "evidence": "[]"
+  +    },
+  +    {
+  +      "id": "session-row-title-legible",
+  +      "stateId": "workspace-agent-sidebar-1787862624051:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+  +      "passed": true,
+  +      "evidence": "[]"
+  +    },
+  +    {
+  +      "id": "agent-touch-targets",
+  +      "stateId": "workspace-agent-sidebar-1787862624051:workspace-agent-sidebar:candidate:desktop:agent-list:2ee0a6d8e5dc",
+  +      "passed": true,
+  +      "evidence": "[]"
+  +    },
+  +    {
+  +      "id": "fixture-ready",
+  +      "stateId": "workspace-agent-sidebar-1787862624051:workspace-agent-sidebar:candidate:desktop:hover-actions:47c1642db65c",
+  +      "passed": true,
+  +      "evidence": "agentCount=2;detailOverlayCount=0"
+  +    },
+  +    {
+  +      "id": "readiness-retry",
+  +      "stateId": "workspace-agent-sidebar-1787862624051:workspace-agent-sidebar:candidate:desktop:hover-actions:47c1642db65c",
+  +      "passed": true,
+  +      "evidence": "retryUsed=false;firstError=none"
+  +    },
+  +    {
+  +      "id": "console-errors",
+  +      "stateId": "workspace-agent-sidebar-1787862624051:workspace-agent-sidebar:candidate:desktop:hover-actions:47c1642db65c",
+  +      "passed": true,
+  +      "evidence": "none"
+  +    },
+  ... (1778 lines truncated)
+  +1878 -0
+
+runs-evidence/run-02/manifest.json
+  @@ -0,0 +1,408 @@
+  +{
+  +  "schemaVersion": 1,
+  +  "runId": "workspace-agent-sidebar-1787862624051",
+
+... (more changes truncated)
+  +3 -0
+[full diff: rtk git diff --no-compact]
+
+exec
+/usr/bin/zsh -lc "rtk git diff-tree --no-commit-id --name-only -r 3d346da1 | rg '"'^tools/ui-review/'"' && rtk git show --format=fuller --no-ext-diff 3d346da1 -- tools/ui-review/src/core/readiness.ts tools/ui-review/src/review-specs/workspace-agent-sidebar/spec.ts tools/ui-review/src/review-specs/workspace-agent-sidebar/hardGates.ts tools/ui-review/src/__tests__/readiness.test.ts tools/ui-review/src/__tests__/agentSidebarHardGates.test.ts" in /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390
+ succeeded in 116ms:
+commit 3d346da1ae66bf1af7dd7f0f61f5dfb4b6705a4d
+Author:     hachej <julien.hurault@sumeo.io>
+AuthorDate: Thu Aug 27 21:14:56 2026 +0000
+Commit:     hachej <julien.hurault@sumeo.io>
+CommitDate: Thu Aug 27 21:14:56 2026 +0000
+
+    #1390 fix(ui-review): retry diagnostics + retained 5/5 evidence
+    
+    Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+    Claude-Session: https://claude.ai/code/session_01MQgxe5KTr2N2pjgjgKPXHK
+
+diff --git a/tools/ui-review/src/__tests__/agentSidebarHardGates.test.ts b/tools/ui-review/src/__tests__/agentSidebarHardGates.test.ts
+index ac957d2a2..64fd16844 100644
+--- a/tools/ui-review/src/__tests__/agentSidebarHardGates.test.ts
++++ b/tools/ui-review/src/__tests__/agentSidebarHardGates.test.ts
+@@ -5,6 +5,7 @@ function snapshot(requestFailures: AgentSidebarHardGateSnapshot["requestFailures
+   return {
+     stateId: "state",
+     checkpoint: "agent-list",
++    readiness: { retryUsed: false, firstError: null },
+     origin: "http://127.0.0.1:5480",
+     viewport: { width: 1440, height: 900, mobileShell: false, coarsePointer: false },
+     documentWidth: { scrollWidth: 1440, clientWidth: 1440 },
+@@ -216,3 +217,16 @@ describe("workspace Agent sidebar request-failure gate", () => {
+     expect(gate?.evidence).toContain("[unexpected]")
+   })
+ })
++
++describe("workspace Agent sidebar readiness-retry evidence", () => {
++  it("preserves whether discovery retried and the original failure", () => {
++    const report = evaluateAgentSidebarHardGates({
++      ...snapshot([]),
++      readiness: { retryUsed: true, firstError: "Error: roster discovery failed" },
++    })
++    const gate = report.results.find((result) => result.id === "readiness-retry")
++
++    expect(gate).toMatchObject({ passed: true })
++    expect(gate?.evidence).toBe("retryUsed=true;firstError=Error: roster discovery failed")
++  })
++})
+diff --git a/tools/ui-review/src/__tests__/readiness.test.ts b/tools/ui-review/src/__tests__/readiness.test.ts
+index 9f39171a2..3458200e8 100644
+--- a/tools/ui-review/src/__tests__/readiness.test.ts
++++ b/tools/ui-review/src/__tests__/readiness.test.ts
+@@ -4,35 +4,62 @@ import { runUiReviewReadinessWithReload } from "../core/readiness"
+ describe("UI review page readiness", () => {
+   it("does not reload when the first hydration reaches readiness", async () => {
+     const page = { reload: vi.fn(async () => {}) }
+-    const ready = vi.fn(async () => {})
++    const discover = vi.fn(async () => {})
++    const assertReady = vi.fn(async () => {})
+ 
+-    await runUiReviewReadinessWithReload(page, 60_000, ready)
++    await expect(runUiReviewReadinessWithReload(page, 60_000, discover, assertReady)).resolves.toEqual({
++      retryUsed: false,
++      firstError: null,
++    })
+ 
+-    expect(ready).toHaveBeenCalledOnce()
++    expect(discover).toHaveBeenCalledOnce()
++    expect(assertReady).toHaveBeenCalledOnce()
+     expect(page.reload).not.toHaveBeenCalled()
+   })
+ 
+-  it("reloads once when one-shot app hydration becomes terminal", async () => {
++  it("reloads once when one-shot app discovery becomes terminal and exposes the diagnostic", async () => {
+     const page = { reload: vi.fn(async () => {}) }
+-    const ready = vi.fn()
++    const discover = vi.fn()
+       .mockRejectedValueOnce(new Error("roster discovery failed"))
+       .mockResolvedValueOnce(undefined)
++    const assertReady = vi.fn(async () => {})
++    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+ 
+-    await runUiReviewReadinessWithReload(page, 60_000, ready)
++    const diagnostic = await runUiReviewReadinessWithReload(page, 60_000, discover, assertReady)
+ 
+-    expect(ready).toHaveBeenNthCalledWith(1, page, 30_000)
++    expect(discover).toHaveBeenNthCalledWith(1, page, 30_000)
+     expect(page.reload).toHaveBeenCalledWith({ waitUntil: "domcontentloaded" })
+-    expect(ready).toHaveBeenNthCalledWith(2, page, 60_000)
++    expect(discover).toHaveBeenNthCalledWith(2, page, 60_000)
++    expect(assertReady).toHaveBeenCalledOnce()
++    expect(diagnostic).toEqual({ retryUsed: true, firstError: "Error: roster discovery failed" })
++    expect(warn).toHaveBeenCalledWith("UI_REVIEW_READINESS_DISCOVERY_RETRY: Error: roster discovery failed")
++    warn.mockRestore()
+   })
+ 
+-  it("surfaces the final readiness failure after exactly one reload", async () => {
++  it("surfaces the final discovery failure after exactly one reload", async () => {
+     const page = { reload: vi.fn(async () => {}) }
+-    const ready = vi.fn()
++    const discover = vi.fn()
+       .mockRejectedValueOnce(new Error("first hydration failed"))
+       .mockRejectedValueOnce(new Error("second hydration failed"))
++    const assertReady = vi.fn(async () => {})
++    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+ 
+-    await expect(runUiReviewReadinessWithReload(page, 60_000, ready)).rejects.toThrow("second hydration failed")
++    await expect(runUiReviewReadinessWithReload(page, 60_000, discover, assertReady)).rejects.toThrow("second hydration failed")
+     expect(page.reload).toHaveBeenCalledOnce()
+-    expect(ready).toHaveBeenCalledTimes(2)
++    expect(discover).toHaveBeenCalledTimes(2)
++    expect(assertReady).not.toHaveBeenCalled()
++    warn.mockRestore()
++  })
++
++  it("does not retry a post-discovery readiness contract failure", async () => {
++    const page = { reload: vi.fn(async () => {}) }
++    const discover = vi.fn(async () => {})
++    const assertReady = vi.fn(async () => { throw new Error("composer heading missing") })
++
++    await expect(runUiReviewReadinessWithReload(page, 60_000, discover, assertReady)).rejects.toThrow("composer heading missing")
++
++    expect(discover).toHaveBeenCalledOnce()
++    expect(assertReady).toHaveBeenCalledOnce()
++    expect(page.reload).not.toHaveBeenCalled()
+   })
+ })
+diff --git a/tools/ui-review/src/core/readiness.ts b/tools/ui-review/src/core/readiness.ts
+index 420757d1b..52d92a951 100644
+--- a/tools/ui-review/src/core/readiness.ts
++++ b/tools/ui-review/src/core/readiness.ts
+@@ -2,16 +2,34 @@ type ReloadablePage = {
+   reload(options: { waitUntil: "domcontentloaded" }): Promise<unknown>
+ }
+ 
+-/** Retry one-shot client hydration once; waiting longer cannot recover a rejected discovery fetch. */
++export type UiReviewReadinessDiagnostic = {
++  retryUsed: boolean
++  firstError: string | null
++}
++
++const RETRY_MARKER = "UI_REVIEW_READINESS_DISCOVERY_RETRY"
++
++function errorSummary(error: unknown): string {
++  const summary = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
++  return summary.replace(/\s+/g, " ").slice(0, 1_000) || "unknown discovery failure"
++}
++
++/** Retry only one-shot discovery; all downstream readiness contracts run exactly once. */
+ export async function runUiReviewReadinessWithReload<TPage extends ReloadablePage>(
+   page: TPage,
+   timeoutMs: number,
+-  ready: (page: TPage, timeoutMs: number) => Promise<void>,
+-): Promise<void> {
++  discover: (page: TPage, timeoutMs: number) => Promise<void>,
++  assertReady: (page: TPage, timeoutMs: number) => Promise<void>,
++): Promise<UiReviewReadinessDiagnostic> {
++  let diagnostic: UiReviewReadinessDiagnostic = { retryUsed: false, firstError: null }
+   try {
+-    await ready(page, Math.max(1, Math.floor(timeoutMs / 2)))
+-  } catch {
++    await discover(page, Math.max(1, Math.floor(timeoutMs / 2)))
++  } catch (error) {
++    diagnostic = { retryUsed: true, firstError: errorSummary(error) }
++    console.warn(`${RETRY_MARKER}: ${diagnostic.firstError}`)
+     await page.reload({ waitUntil: "domcontentloaded" })
+-    await ready(page, timeoutMs)
++    await discover(page, timeoutMs)
+   }
++  await assertReady(page, timeoutMs)
++  return diagnostic
+ }
+diff --git a/tools/ui-review/src/review-specs/workspace-agent-sidebar/hardGates.ts b/tools/ui-review/src/review-specs/workspace-agent-sidebar/hardGates.ts
+index 73b72acfc..8bb25857b 100644
+--- a/tools/ui-review/src/review-specs/workspace-agent-sidebar/hardGates.ts
++++ b/tools/ui-review/src/review-specs/workspace-agent-sidebar/hardGates.ts
+@@ -59,7 +59,10 @@ import type { UiReviewBrowserErrors } from "../../core/reviewSpec"
+ // per Agent, which is the staged one. Seeding a second chat inside the
+ // readiness probe was tried and left the Agent tree with zero rows, so the
+ // gap is recorded in `spec.ts` rather than claimed closed here.
+-export const AGENT_SIDEBAR_HARD_GATE_CONTRACT = "workspace-agent-sidebar-v14"
++// v15 records whether the bounded discovery reload was used and preserves its
++// first error in every captured state's evidence, so successful recovery can
++// never silently hide a discovery-readiness regression.
++export const AGENT_SIDEBAR_HARD_GATE_CONTRACT = "workspace-agent-sidebar-v15"
+ 
+ const KNOWN_ABORTED_REQUESTS: Array<{
+   rationale: string
+@@ -77,6 +80,7 @@ const KNOWN_ABORTED_REQUESTS: Array<{
+ 
+ const REQUIRED_GATES = [
+   "fixture-ready",
++  "readiness-retry",
+   "console-errors",
+   "page-errors",
+   "request-failures",
+@@ -93,6 +97,7 @@ const REQUIRED_GATES = [
+ export interface AgentSidebarHardGateSnapshot extends UiReviewBrowserErrors {
+   stateId: string
+   checkpoint: string
++  readiness: { retryUsed: boolean; firstError: string | null }
+   origin: string
+   /**
+    * The two conditions the sidebar branches on, kept apart on purpose:
+@@ -203,6 +208,9 @@ export function evaluateAgentSidebarHardGates(snapshot: AgentSidebarHardGateSnap
+     ))
+ 
+   add("fixture-ready", surfaceReady, `agentCount=${state.agentCount};detailOverlayCount=${state.detailOverlayCount}`)
++  add("readiness-retry", true, snapshot.readiness.retryUsed
++    ? `retryUsed=true;firstError=${snapshot.readiness.firstError ?? "unknown discovery failure"}`
++    : "retryUsed=false;firstError=none")
+   add("console-errors", snapshot.consoleErrors.length === 0, snapshot.consoleErrors.join("\n") || "none")
+   add("page-errors", snapshot.pageErrors.length === 0, snapshot.pageErrors.join("\n") || "none")
+   add("request-failures", unexpectedFailures.length === 0, classifiedFailures.map(({ entry, rationale }) => `${entry.errorText} ${entry.url}${rationale ? ` [expected: ${rationale}]` : " [unexpected]"}`).join("\n") || "none observed")
+diff --git a/tools/ui-review/src/review-specs/workspace-agent-sidebar/spec.ts b/tools/ui-review/src/review-specs/workspace-agent-sidebar/spec.ts
+index b8354dc66..0af3a1113 100644
+--- a/tools/ui-review/src/review-specs/workspace-agent-sidebar/spec.ts
++++ b/tools/ui-review/src/review-specs/workspace-agent-sidebar/spec.ts
+@@ -2,7 +2,7 @@ import { createRequire } from "node:module"
+ import { expect, type Page } from "@playwright/test"
+ import type { UiReviewSpec } from "../../core/reviewSpec"
+ import type { UiReviewViewport } from "../../core/contracts"
+-import { runUiReviewReadinessWithReload } from "../../core/readiness"
++import { runUiReviewReadinessWithReload, type UiReviewReadinessDiagnostic } from "../../core/readiness"
+ import {
+   AGENT_SIDEBAR_HARD_GATE_CONTRACT,
+   evaluateAgentSidebarHardGates,
+@@ -11,6 +11,7 @@ import {
+ } from "./hardGates"
+ 
+ const AXE_SCRIPT_PATH = createRequire(import.meta.url).resolve("axe-core/axe.min.js")
++const readinessDiagnostics = new WeakMap<Page, UiReviewReadinessDiagnostic>()
+ // Width and pointer are INDEPENDENT axes and the sidebar CSS uses both. A
+ // two-point sample of (wide, fine) and (narrow, coarse) holds them locked
+ // together, so a rule keyed to width and a rule keyed to pointer agree at
+@@ -32,10 +33,15 @@ const viewports: UiReviewViewport[] = [
+   { name: "tablet", width: 834, height: 1112, deviceScaleFactor: 1, hasTouch: true },
+ ]
+ 
+-async function ensureAgentNavigation(page: Page, timeoutMs = 60_000): Promise<void> {
++async function waitForAgentNavigationDiscovery(page: Page, timeoutMs: number): Promise<void> {
+   const trees = page.locator('[data-boring-workspace-part="app-left-agent-tree"]')
+   const open = page.getByRole("button", { name: "Open app navigation" })
+   await expect.poll(async () => await trees.count() === 2 || await open.isVisible().catch(() => false), { timeout: timeoutMs }).toBe(true)
++}
++
++async function assertAgentNavigationContracts(page: Page, timeoutMs: number): Promise<void> {
++  const trees = page.locator('[data-boring-workspace-part="app-left-agent-tree"]')
++  const open = page.getByRole("button", { name: "Open app navigation" })
+   if (await trees.count() !== 2) await open.click()
+   await expect(trees).toHaveCount(2, { timeout: timeoutMs })
+   await expect(page.getByRole("button", { name: /Collapse Alpha;/ })).toBeVisible({ timeout: timeoutMs })
+@@ -43,13 +49,18 @@ async function ensureAgentNavigation(page: Page, timeoutMs = 60_000): Promise<vo
+   await expect(page.getByRole("heading", { name: "What should we work on?" })).toBeVisible({ timeout: timeoutMs })
+ }
+ 
++async function ensureAgentNavigation(page: Page, timeoutMs = 60_000): Promise<void> {
++  await waitForAgentNavigationDiscovery(page, timeoutMs)
++  await assertAgentNavigationContracts(page, timeoutMs)
++}
++
+ export const workspaceAgentSidebarSpec: UiReviewSpec = {
+   id: "workspace-agent-sidebar",
+   // Tracks the hard-gate contract deliberately: this spec's viewport matrix and
+   // `collect` changed in lockstep with v5→v9, and a stale revision keeps a
+   // replayed manifest alive across a scenario that no longer means the same
+   // thing. Two numbers for one scenario is the drift this file keeps finding.
+-  specRevision: "workspace-agent-sidebar-v14",
++  specRevision: "workspace-agent-sidebar-v15",
+   fixtureResetId: "workspace-agent-sidebar-fixture-v1",
+   rubricVersion: "impeccable-v1",
+   target: {
+@@ -70,7 +81,15 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
+       VITE_HMR_HOST: "127.0.0.1",
+       VITE_HMR_CLIENT_PORT: String(port),
+     }),
+-    ready: async (page, timeoutMs) => runUiReviewReadinessWithReload(page, timeoutMs, ensureAgentNavigation),
++    ready: async (page, timeoutMs) => {
++      const diagnostic = await runUiReviewReadinessWithReload(
++        page,
++        timeoutMs,
++        waitForAgentNavigationDiscovery,
++        assertAgentNavigationContracts,
++      )
++      readinessDiagnostics.set(page, diagnostic)
++    },
+   },
+   viewports,
+   checkpoints: [
+@@ -162,6 +181,8 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
+   hardGates: {
+     contractVersion: AGENT_SIDEBAR_HARD_GATE_CONTRACT,
+     collect: async (page, stateId, checkpoint, viewport, errors): Promise<AgentSidebarHardGateSnapshot> => {
++      const readiness = readinessDiagnostics.get(page)
++      if (!readiness) throw new Error("UI_REVIEW_READINESS_DIAGNOSTIC_MISSING")
+       if (!await page.evaluate(() => "axe" in window)) await page.addScriptTag({ path: AXE_SCRIPT_PATH })
+       const [sidebar, axeViolations, documentWidth] = await Promise.all([
+         page.evaluate(({ checkpoint, coarsePointer }) => {
+@@ -359,6 +380,7 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
+       return {
+         stateId,
+         checkpoint,
++        readiness,
+         origin: new URL(page.url()).origin,
+         // Both conditions the sidebar branches on, reported separately.
+         // `mobileShell` is the JS width switch in PluginTabsWorkspaceShell
+
+exec
+/usr/bin/zsh -lc "rtk rg --files runs-evidence | sort && rtk sha256sum runs-evidence/run-*/output.log runs-evidence/run-*/hard-gates.json && rtk zsh -lc 'for d in runs-evidence/run-*; do jq -r --arg d \""'$d" "['"\\"'$d, (.contractVersion // '"\\\"missing\\\"), (.results|length|tostring), ([.results[]|select(.passed "'!= true)]|length|tostring), ([.results[]|select(.id == '"\\\"readiness-retry\\\")]|length|tostring), ([.results[]|select(.id == \\\"readiness-retry\\\" and .evidence == \\\"retryUsed=false;firstError=none\\\")]|length|tostring), ([.results[]|select(.id == \\\"readiness-retry\\\" and (.evidence|startswith(\\\"retryUsed=true\\\")))]|length|tostring)] | @tsv\" \""'$d/hard-gates.json"; done'"' && rtk zsh -lc 'for d in runs-evidence/run-*; do printf \"%s\\t\" \""'$d"; jq -r "[.states|length, .candidateRevision, .candidateTreeHash] | @tsv" "$d/manifest.json"; rg -o "1 passed '"\\(["'^)]*'"\\)|real [0-9.]+|Command exited with non-zero status [0-9]+|Script done.*COMMAND_EXIT_CODE=.[0-9]+\" \""'$d/output.log" | tail -n 4; done'"'" in /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390
+ succeeded in 694ms:
+runs-evidence/README.md
+runs-evidence/run-01/hard-gates.json
+runs-evidence/run-01/manifest.json
+runs-evidence/run-01/output.log
+runs-evidence/run-01/report.md
+runs-evidence/run-02/hard-gates.json
+runs-evidence/run-02/manifest.json
+runs-evidence/run-02/output.log
+runs-evidence/run-02/report.md
+runs-evidence/run-03/hard-gates.json
+runs-evidence/run-03/manifest.json
+runs-evidence/run-03/output.log
+runs-evidence/run-03/report.md
+runs-evidence/run-04/hard-gates.json
+runs-evidence/run-04/manifest.json
+runs-evidence/run-04/output.log
+runs-evidence/run-04/report.md
+runs-evidence/run-05/hard-gates.json
+runs-evidence/run-05/manifest.json
+runs-evidence/run-05/output.log
+runs-evidence/run-05/report.md
+12828bb1c7a4a14dff42d4f6551d56d5db2d4289aaeabffd035a594d2ae0f54f  runs-evidence/run-01/output.log
+9fd445a1f5ad3a2432f84dc0f915143eed8370b1c9170a218fb7f95e9598d51b  runs-evidence/run-02/output.log
+e7f3ab0d8cf7a0c122e2d60bc811d51db68118749cba15d09dcfb667e8b13b1f  runs-evidence/run-03/output.log
+811d2f14c1c8caeffed61adbda84b678d0b82de846372f0e0b4a99ad519df0b4  runs-evidence/run-04/output.log
+3af751f7690255227d930bf1c16ebf9df329aaadb2b4cd237d7445660ec0fbcd  runs-evidence/run-05/output.log
+75ea182d4190714bbcbf63fe60228ee302306139554e336da6f89578a908a684  runs-evidence/run-01/hard-gates.json
+daabe6de2cabcebd60675b72f118809a693991991c01ad03ea95440a32f4972f  runs-evidence/run-02/hard-gates.json
+9512c879eaa7ddbe248c2f1997195ce7d4769c396a46730c4b9d010f39c6f769  runs-evidence/run-03/hard-gates.json
+93b2e39380ca9ffd7819fb6bd1d5953332a6b8fec6c8091ef0c1c311e3bb7c7d  runs-evidence/run-04/hard-gates.json
+45a82a717284e36bdf5940908c2255439528a04ab9da3664ef48c2b212c1f5fd  runs-evidence/run-05/hard-gates.json
+runs-evidence/run-01	workspace-agent-sidebar-v15	312	0	24	24	0
+runs-evidence/run-02	workspace-agent-sidebar-v15	312	0	24	24	0
+runs-evidence/run-03	workspace-agent-sidebar-v15	312	0	24	24	0
+runs-evidence/run-04	workspace-agent-sidebar-v15	312	0	24	24	0
+runs-evidence/run-05	workspace-agent-sidebar-v15	312	0	24	24	0
+runs-evidence/run-01	jq: error (at runs-evidence/run-01/manifest.json:408): Cannot index array with string "candidateRevision"
+binary file matches (found "\0" byte around offset 14161)
+runs-evidence/run-02	jq: error (at runs-evidence/run-02/manifest.json:408): Cannot index array with string "candidateRevision"
+binary file matches (found "\0" byte around offset 14157)
+runs-evidence/run-03	jq: error (at runs-evidence/run-03/manifest.json:408): Cannot index array with string "candidateRevision"
+binary file matches (found "\0" byte around offset 14158)
+runs-evidence/run-04	jq: error (at runs-evidence/run-04/manifest.json:408): Cannot index array with string "candidateRevision"
+binary file matches (found "\0" byte around offset 14157)
+runs-evidence/run-05	jq: error (at runs-evidence/run-05/manifest.json:408): Cannot index array with string "candidateRevision"
+binary file matches (found "\0" byte around offset 14159)
+
+exec
+/usr/bin/zsh -lc "rtk zsh -lc 'for d in runs-evidence/run-*; do jq -r \"[(.states|length), .candidateRevision, .candidateTreeHash] | @tsv\" \""'$d/manifest.json" | sed "s#''^#$d'"\\t#\"; tr -d \"\\000\" < \""'$d/output.log" | rg --text "1 passed '"\\(|"'^real [0-9.]+$|COMMAND_EXIT_CODE" | tail -n 3; done'"' && rtk git diff --quiet 65f32725057e5583a064c8807b352087eda15bd8 3d346da1 -- . ':(exclude)runs-evidence' ':(exclude)tools/ui-review/src/__tests__/agentSidebarHardGates.test.ts' ':(exclude)tools/ui-review/src/__tests__/readiness.test.ts' ':(exclude)tools/ui-review/src/core/readiness.ts' ':(exclude)tools/ui-review/src/review-specs/workspace-agent-sidebar/hardGates.ts' ':(exclude)tools/ui-review/src/review-specs/workspace-agent-sidebar/spec.ts'; printf 'excluded_diff_exit=%s\\n' "'$?' in /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390
+ succeeded in 390ms:
+runs-evidence/run-01	24	65f32725057e5583a064c8807b352087eda15bd8	294b4e934ce8a2275877e482fcf7b2c3e1a855a71b028dd9adc9e55cf5e8b1f9
+  1 passed (1.1m)
+Script done on 2026-08-27 20:16:53+00:00 [COMMAND_EXIT_CODE="0"]
+runs-evidence/run-02	24	65f32725057e5583a064c8807b352087eda15bd8	3fea0b0709d91411a8e1960d98092efa93b6c8bd14afd565cd1f5e4f1c39c726
+  1 passed (1.2m)
+Script done on 2026-08-27 20:31:40+00:00 [COMMAND_EXIT_CODE="0"]
+runs-evidence/run-03	24	65f32725057e5583a064c8807b352087eda15bd8	fde11e619ca1912708e0e5b37b9a2843bc6c5e2e6309b33e726569dee679fe1a
+  1 passed (1.2m)
+Script done on 2026-08-27 20:45:23+00:00 [COMMAND_EXIT_CODE="0"]
+runs-evidence/run-04	24	65f32725057e5583a064c8807b352087eda15bd8	4bd4aff8968d85c1b56e4013415c2daf56e0e08a19e57aab69870c42d49ae72d
+  1 passed (1.2m)
+Script done on 2026-08-27 20:59:36+00:00 [COMMAND_EXIT_CODE="0"]
+runs-evidence/run-05	24	65f32725057e5583a064c8807b352087eda15bd8	0e5bc8a5625674f701209b4c95b3f041b0e2e928c6c3107f198d3f4d4d2d8a8d
+  1 passed (1.1m)
+Script done on 2026-08-27 21:12:49+00:00 [COMMAND_EXIT_CODE="0"]
+
+excluded_diff_exit=0
+
+exec
+/usr/bin/zsh -lc "rtk zsh -lc 'for d in runs-evidence/run-*; do tr -d \"\\000\\r\" < \""'$d/output.log" | tail -n 8 | sed "s#''^#$d: #"; done'"'" in /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390
+ succeeded in 296ms:
+runs-evidence/run-01:   ✓  1 [chromium] › e2e/review.spec.ts:54:3 › UI review › captures and reviews workspace-agent-sidebar (57.7s)
+runs-evidence/run-01: 
+runs-evidence/run-01:   1 passed (1.1m)
+runs-evidence/run-01: real 856.52
+runs-evidence/run-01: user 1197.94
+runs-evidence/run-01: sys 70.03
+runs-evidence/run-01: 
+runs-evidence/run-01: Script done on 2026-08-27 20:16:53+00:00 [COMMAND_EXIT_CODE="0"]
+runs-evidence/run-02:   ✓  1 [chromium] › e2e/review.spec.ts:54:3 › UI review › captures and reviews workspace-agent-sidebar (1.0m)
+runs-evidence/run-02: 
+runs-evidence/run-02:   1 passed (1.2m)
+runs-evidence/run-02: real 836.65
+runs-evidence/run-02: user 1198.44
+runs-evidence/run-02: sys 67.82
+runs-evidence/run-02: 
+runs-evidence/run-02: Script done on 2026-08-27 20:31:40+00:00 [COMMAND_EXIT_CODE="0"]
+runs-evidence/run-03:   ✓  1 [chromium] › e2e/review.spec.ts:54:3 › UI review › captures and reviews workspace-agent-sidebar (59.8s)
+runs-evidence/run-03: 
+runs-evidence/run-03:   1 passed (1.2m)
+runs-evidence/run-03: real 804.32
+runs-evidence/run-03: user 1165.97
+runs-evidence/run-03: sys 64.92
+runs-evidence/run-03: 
+runs-evidence/run-03: Script done on 2026-08-27 20:45:23+00:00 [COMMAND_EXIT_CODE="0"]
+runs-evidence/run-04:   ✓  1 [chromium] › e2e/review.spec.ts:54:3 › UI review › captures and reviews workspace-agent-sidebar (59.7s)
+runs-evidence/run-04: 
+runs-evidence/run-04:   1 passed (1.2m)
+runs-evidence/run-04: real 837.12
+runs-evidence/run-04: user 1198.44
+runs-evidence/run-04: sys 67.56
+runs-evidence/run-04: 
+runs-evidence/run-04: Script done on 2026-08-27 20:59:36+00:00 [COMMAND_EXIT_CODE="0"]
+runs-evidence/run-05:   ✓  1 [chromium] › e2e/review.spec.ts:54:3 › UI review › captures and reviews workspace-agent-sidebar (59.0s)
+runs-evidence/run-05: 
+runs-evidence/run-05:   1 passed (1.1m)
+runs-evidence/run-05: real 774.79
+runs-evidence/run-05: user 1133.34
+runs-evidence/run-05: sys 63.93
+runs-evidence/run-05: 
+runs-evidence/run-05: Script done on 2026-08-27 21:12:49+00:00 [COMMAND_EXIT_CODE="0"]
+
+codex
+The retained bundle checks out so far: five distinct foreground transcripts exit 0, each reports one pass, each hard-gate file has 312/312 passing results and 24/24 no-retry diagnostics, and every README SHA-256 and timing matches. The retry diff also narrows reloads to discovery only and pins both observability and non-retry behavior. I’m now running the exact scenario once in the foreground and will poll it synchronously to completion.
+exec
+/usr/bin/zsh -lc 'rtk pnpm --filter @hachej/boring-ui-review-tools ui:review -- review workspace-agent-sidebar --critic=fixture' in /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390
+codex
+The corroboration run is still healthy and building dependencies; no scenario failure has appeared. The independent audits also came back clean: artifact structure/counts match the required gate contract, and the retry evidence is rendered into the generated HTML report with focused regression tests passing.
+codex
+The fresh run remains in the expected dependency-build phase and continues green. The warnings seen are the same non-fatal build warnings; package artifact assertions are passing.
+ succeeded in 884736ms:
+
+> @hachej/boring-ui-review-tools@0.0.1 ui:review /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/tools/ui-review
+> tsx scripts/run-ui-review.mjs -- review workspace-agent-sidebar --critic=fixture
+
+
+> workspace-playground@0.0.1 build:deps /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/apps/workspace-playground
+> pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-ui-plugin-cli build && pnpm --filter @hachej/boring-sandbox build && pnpm --filter @hachej/boring-bash build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-pi build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-deck build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-tasks build && pnpm --filter @hachej/boring-diagram build && pnpm --filter @hachej/boring-data-explorer build && pnpm --filter @hachej/boring-data-catalog build
+
+
+> @hachej/boring-ui-kit@0.1.105 build /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/ui
+> tsup && node scripts/build-styles.mjs
+
+CLI Building entry: {"index":"src/index.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/ui/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/index.js 96.25 KB
+ESM ⚡️ Build success in 112ms
+DTS Build start
+DTS ⚡️ Build success in 6945ms
+DTS dist/index.d.ts 34.51 KB
+
+> @hachej/boring-ui-plugin-cli@0.1.105 build /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/plugin-cli
+> tsup
+
+CLI Building entry: {"index":"src/index.ts","bin":"src/bin.ts","plugin-sources":"src/server/pluginSources.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/plugin-cli/tsup.config.ts
+CLI Target: node20
+CLI Cleaning output folder
+ESM Build start
+ESM dist/index.js          901.00 B
+ESM dist/plugin-sources.js 497.00 B
+ESM dist/chunk-KTILPA2U.js 26.73 KB
+ESM dist/chunk-YUAML3DZ.js 43.52 KB
+ESM dist/bin.js            265.00 B
+ESM ⚡️ Build success in 117ms
+DTS Build start
+DTS ⚡️ Build success in 10293ms
+DTS dist/bin.d.ts            20.00 B
+DTS dist/plugin-sources.d.ts 3.60 KB
+DTS dist/index.d.ts          4.45 KB
+
+> @hachej/boring-sandbox@0.1.105 build /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/boring-sandbox
+> tsup
+
+CLI Building entry: {"index":"src/index.ts","shared/index":"src/shared/index.ts","providers/index":"src/providers/index.ts","providers/direct/index":"src/providers/direct/index.ts","providers/bwrap/index":"src/providers/bwrap/index.ts","providers/node-workspace/index":"src/providers/node-workspace/index.ts","providers/blaxel/index":"src/providers/blaxel/index.ts","providers/vercel-sandbox/index":"src/providers/vercel-sandbox/index.ts","providers/runsc/index":"src/providers/runsc/index.ts","providers/remote-worker/index":"src/providers/remote-worker/index.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/boring-sandbox/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/index.js                          18.79 KB
+ESM dist/providers/bwrap/index.js          36.60 KB
+ESM dist/providers/node-workspace/index.js 18.50 KB
+ESM dist/shared/index.js                   18.79 KB
+ESM dist/providers/blaxel/index.js         74.90 KB
+ESM dist/providers/vercel-sandbox/index.js 82.83 KB
+ESM dist/providers/runsc/index.js          113.12 KB
+ESM dist/providers/remote-worker/index.js  65.56 KB
+ESM dist/providers/direct/index.js         25.22 KB
+ESM dist/providers/index.js                222.88 KB
+ESM ⚡️ Build success in 234ms
+DTS Build start
+DTS ⚡️ Build success in 102858ms
+DTS dist/providers/index.d.ts                      2.52 KB
+DTS dist/providers/remote-worker/index.d.ts        5.26 KB
+DTS dist/providers/blaxel/index.d.ts               2.04 KB
+DTS dist/providers/node-workspace/index.d.ts       4.41 KB
+DTS dist/providers/vercel-sandbox/index.d.ts       7.93 KB
+DTS dist/providers/runsc/index.d.ts                23.47 KB
+DTS dist/providers/bwrap/index.d.ts                2.10 KB
+DTS dist/providers/direct/index.d.ts               666.00 B
+DTS dist/shared/index.d.ts                         4.95 KB
+DTS dist/index.d.ts                                4.13 KB
+DTS dist/remoteWorkerProtocolV1-DpOvZJPN.d.ts      52.64 KB
+DTS dist/qualificationBundle-BpxgRXzG.d.ts         16.09 KB
+DTS dist/createBlaxelSandboxProvider-Dwi7-j_a.d.ts 3.32 KB
+DTS dist/providerV1-DJqs6BH8.d.ts                  10.20 KB
+DTS dist/createRemoteWorkerProvider-pvurIYzi.d.ts  4.67 KB
+DTS dist/createVercelSandboxProvider-yiIz7ngX.d.ts 2.99 KB
+
+> @hachej/boring-bash@0.1.105 build /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/boring-bash
+> tsup
+
+CLI Building entry: {"index":"src/index.ts","agent/index":"src/agent/index.ts","shared/index":"src/shared/index.ts","server/index":"src/server/index.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/boring-bash/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/index.js        2.49 KB
+ESM dist/agent/index.js  65.83 KB
+ESM dist/server/index.js 110.44 KB
+ESM dist/shared/index.js 3.41 KB
+ESM ⚡️ Build success in 169ms
+DTS Build start
+DTS ⚡️ Build success in 34758ms
+DTS dist/agent/index.d.ts    7.65 KB
+DTS dist/server/index.d.ts   24.76 KB
+DTS dist/shared/index.d.ts   4.63 KB
+DTS dist/index.d.ts          539.00 B
+DTS dist/types-B1IBAjcp.d.ts 6.13 KB
+
+> @hachej/boring-agent@0.1.105 build /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/agent
+> tsup && pnpm run build:assert
+
+CLI Building entry: {"shared/index":"src/shared/index.ts","core/index":"src/core/index.ts","server/index":"src/server/index.ts","server/pi-session-readability":"src/server/harness/pi-coding-agent/sessionReadability.ts","server/agent-host/testing/gatewayConformance":"src/server/agent-host/testing/gatewayConformance.ts","server/agent-host/testing/compositionRouteProof":"src/server/agent-host/testing/compositionRouteProof.ts","server/worker/index":"src/server/worker/index.ts","front/index":"src/front/index.ts","front/artifacts":"src/front/artifacts.ts","eval/index":"src/eval/index.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/agent/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/front/artifacts.js                                 381.00 B
+ESM dist/eval/index.js                                      16.12 KB
+ESM dist/shared/index.js                                    6.58 KB
+ESM dist/DebugDrawer-JNA43SVR.js                            139.00 B
+ESM dist/server/index.js                                    6.16 KB
+ESM dist/server/agent-host/testing/gatewayConformance.js    32.62 KB
+ESM dist/createHarness-KLDDWSAQ.js                          445.00 B
+ESM dist/server/pi-session-readability.js                   940.00 B
+ESM dist/server/agent-host/testing/compositionRouteProof.js 3.65 KB
+ESM dist/server/worker/index.js                             13.49 KB
+ESM dist/chunk-45FX2746.js                                  110.54 KB
+ESM dist/chunk-7XAOVFSN.js                                  664.00 B
+ESM dist/chunk-WSQ5QNIY.js                                  509.00 B
+ESM dist/chunk-6OANSUEI.js                                  47.63 KB
+ESM dist/front/index.js                                     487.65 KB
+ESM dist/chunk-N6THTH7P.js                                  2.78 KB
+ESM dist/chunk-4XOW57KJ.js                                  14.25 KB
+ESM dist/chunk-HIDIG2SW.js                                  13.65 KB
+ESM dist/chunk-YGRQ4Q5P.js                                  685.00 B
+ESM dist/chunk-3JFPS2O6.js                                  5.57 KB
+ESM dist/core/index.js                                      21.44 KB
+ESM dist/chunk-2BGLZZ7T.js                                  174.00 B
+ESM dist/chunk-MIMIJGNG.js                                  545.21 KB
+ESM ⚡️ Build success in 668ms
+DTS Build start
+"buildBwrapArgs" and "createBwrapSandboxProvider" are imported from external module "@hachej/boring-sandbox/providers/bwrap" but never used in "host/sandbox.ts".
+"createNodeWorkspace", "getBoringAgentPathEntries", "getBoringAgentRuntimeEnv" and "getBoringAgentRuntimePaths" are imported from external module "@hachej/boring-sandbox/providers/node-workspace" but never used in "host/sandbox.ts".
+"createBlaxelSandboxProvider" and "BLAXEL_WORKSPACE_ROOT" are imported from external module "@hachej/boring-sandbox/providers/blaxel" but never used in "host/sandbox.ts".
+"createDirectSandboxProvider" is imported from external module "@hachej/boring-sandbox/providers/direct" but never used in "host/sandbox.ts".
+DTS ⚡️ Build success in 120218ms
+DTS dist/core/index.d.ts                                      1.86 KB
+DTS dist/server/agent-host/testing/compositionRouteProof.d.ts 312.00 B
+DTS dist/server/agent-host/testing/gatewayConformance.d.ts    1.98 KB
+DTS dist/server/pi-session-readability.d.ts                   501.00 B
+DTS dist/eval/index.d.ts                                      8.97 KB
+DTS dist/server/worker/index.d.ts                             3.05 KB
+DTS dist/shared/index.d.ts                                    151.69 KB
+DTS dist/front/index.d.ts                                     40.72 KB
+DTS dist/server/index.d.ts                                    77.86 KB
+DTS dist/front/artifacts.d.ts                                 1.83 KB
+DTS dist/piChatSessionService-D8rBmrZu.d.ts                   4.35 KB
+DTS dist/middleware-CaAEXpi5.d.ts                             3.17 KB
+DTS dist/file-search-Cql8Bbbc.d.ts                            4.09 KB
+DTS dist/errors-J1d6SUxa.d.ts                                 10.30 KB
+DTS dist/sandbox-BMhut3kh.d.ts                                13.29 KB
+DTS dist/harness-CZqwOOkf.d.ts                                10.52 KB
+DTS dist/piChatEvent-D_1e69l_.d.ts                            63.86 KB
+DTS dist/lease-DCul8Ozq.d.ts                                  18.77 KB
+DTS dist/types-BbxQvuPQ.d.ts                                  40.79 KB
+
+> @hachej/boring-agent@0.1.105 build:assert /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/agent
+> node ./scripts/assert-build-artifacts.mjs
+
+build-artifacts: OK
+
+> @hachej/boring-pi@0.1.13 build /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/pi
+> node scripts/assert-package.mjs
+
+boring-pi package resources: OK
+
+> @hachej/boring-workspace@0.1.105 build /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/workspace
+> tsup && vite build && node ./scripts/build-workspace-css.mjs && node ./scripts/assert-build-artifacts.mjs
+
+CLI Building entry: {"app-server":"src/app/server/index.ts","server":"src/server/index.ts","runtime-server":"src/server/runtimeBackend/defineRuntimeServerPlugin.ts","shared":"src/shared/index.ts","bridge-client":"src/bridge-client/index.ts","events":"src/front/events/index.ts","plugin":"src/plugin.ts"}
+CLI Using tsconfig: tsconfig.tsup.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/workspace/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/server.js         212.30 KB
+ESM dist/bridge-client.js  14.60 KB
+ESM dist/app-server.js     281.04 KB
+ESM dist/plugin.js         21.25 KB
+ESM dist/runtime-server.js 1.12 KB
+ESM dist/events.js         2.96 KB
+ESM dist/shared.js         10.70 KB
+ESM ⚡️ Build success in 195ms
+DTS Build start
+DTS ⚡️ Build success in 26772ms
+DTS dist/app-server.d.ts                    21.13 KB
+DTS dist/bridge-client.d.ts                 3.20 KB
+DTS dist/events.d.ts                        7.32 KB
+DTS dist/plugin.d.ts                        15.36 KB
+DTS dist/server.d.ts                        38.13 KB
+DTS dist/runtime-server.d.ts                2.12 KB
+DTS dist/shared.d.ts                        11.84 KB
+DTS dist/types-B1hDNDJf.d.ts                146.00 B
+DTS dist/runtimeEnv-lpJtogzS.d.ts           19.71 KB
+DTS dist/manifest-B3IoRf9m.d.ts             2.88 KB
+DTS dist/surface-BppFFmNz.d.ts              5.29 KB
+DTS dist/urlPane-D5wJ6ItF.d.ts              2.75 KB
+DTS dist/agent-tool-Clfxoyef.d.ts           1.26 KB
+DTS dist/workspace-bridge-rpc-BHsOJMlW.d.ts 5.41 KB
+DTS dist/ui-bridge-DzjfAFqa.d.ts            2.36 KB
+DTS dist/filesystem-BIUerwPV.d.ts           1.13 KB
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - `__dirname` (vite.config.ts:14:24). Use `import.meta.dirname` instead
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+[1;1H[0J8:06:35 AM [vite] warning: `esbuild` option was specified by "vite:react-babel" plugin. This option is deprecated, please use `oxc` instead.
+`optimizeDeps.rollupOptions` / `ssr.optimizeDeps.rollupOptions` is deprecated. Use `optimizeDeps.rolldownOptions` instead. Note that this option may be set by a plugin. Set VITE_DEPRECATION_TRACE=1 to see where it is called.
+[vite:react-babel] We recommend switching to `@vitejs/plugin-react-oxc` for improved performance. More information at https://vite.dev/rolldown
+vite v8.2.1 building client environment for production...
+[2Ktransforming (1)  rolldown/runtime.js[2Ktransforming (23) src/shared/plugins/taskProvenance.ts[2Ktransforming (24) src/shared/artifacts/index.ts[2Ktransforming (60) src/plugins/filesystemPlugin/front/file-tree/FileTreeView.tsx[2Ktransforming (81) src/front/plugin/PluginErrorBoundary.tsx[2Ktransforming (116) src/front/components/useCommandPaletteCatalogSearch.ts[2Ktransforming (143) src/shared/artifacts/handover.ts[2Ktransforming (172) src/front/attention/WorkspaceAttentionProvider.tsx[2Ktransforming (195) src/front/layout/useModalDrawer.ts[2Ktransforming (228) src/shared/plugins/manifest.ts[2Ktransforming (242) src/front/dock/dockview-overrides.css[2Ktransforming (348) ../../node_modules/.pnpm/aria-query@5.3.0/node_modules/aria-q[2K✓ 416 modules transformed.
+[2Krendering chunks (1)...[2Krendering chunks (2)...[2Krendering chunks (3)...[2Krendering chunks (4)...[2Krendering chunks (5)...[2Krendering chunks (6)...[2Krendering chunks (7)...[2Krendering chunks (8)...[2Krendering chunks (9)...[2Krendering chunks (10)...[2Krendering chunks (11)...[2Krendering chunks (12)...[2Krendering chunks (13)...[2Krendering chunks (14)...[2Krendering chunks (15)...[2Krendering chunks (16)...[2Krendering chunks (17)...[2Krendering chunks (18)...[2Krendering chunks (19)...[2Krendering chunks (20)...[2Krendering chunks (21)...[2Krendering chunks (22)...[2Krendering chunks (23)...[2Krendering chunks (24)...[2Krendering chunks (25)...[2Krendering chunks (26)...[2Krendering chunks (27)...[2Krendering chunks (28)...[2Krendering chunks (29)...[2Krendering chunks (30)...[2Krendering chunks (31)...[2Krendering chunks (32)...[2Krendering chunks (33)...[2Krendering chunks (34)...[2Krendering chunks (35)...[2Krendering chunks (36)...[2Krendering chunks (37)...[2Krendering chunks (38)...[2Krendering chunks (39)...[2Krendering chunks (40)...[2Krendering chunks (41)...[2Krendering chunks (42)...[2Krendering chunks (43)...[2Krendering chunks (44)...[2Krendering chunks (45)...[2K
+[unplugin:dts] Start generate declaration files...
+[unplugin:dts] Start bundling declaration files...
+
+[unplugin:dts] Failed to load '@microsoft/api-extractor', have you installed it?
+
+
+[unplugin:dts] Error occurred, skip bundle declaration files.
+
+[unplugin:dts] Declaration files built in 52193ms.
+
+computing gzip size...
+[2Kdist/boring-workspace.css                    8.93 kB │ gzip:  1.90 kB
+dist/loading.js                              0.10 kB │ gzip:  0.09 kB
+dist/reloadEvent-Dm9lkxge.js                 0.12 kB │ gzip:  0.12 kB
+dist/utils-BRcxFdrz.js                       0.18 kB │ gzip:  0.15 kB
+dist/panel-C3f-tnSJ.js                       0.27 kB │ gzip:  0.16 kB
+dist/filesystemErrorRedaction-DNGYs3Sy.js    0.29 kB │ gzip:  0.22 kB
+dist/ControlTooltip-B8daAfJ0.js              0.67 kB │ gzip:  0.39 kB
+dist/getFileIcon-DjXq4MdF.js                 0.67 kB │ gzip:  0.35 kB
+dist/uiCommandBus-DxuPkZNB.js                0.67 kB │ gzip:  0.39 kB
+dist/paneCollapseButton-DD581Jio.js          0.79 kB │ gzip:  0.48 kB
+dist/rolldown-runtime-B0aSnxlc.js            0.95 kB │ gzip:  0.52 kB
+dist/toast-BPlCG87n.js                       1.10 kB │ gzip:  0.56 kB
+dist/MarkdownEditorPane-CztIzlvD.js          1.23 kB │ gzip:  0.67 kB
+dist/cornerChrome-exf_qORF.js                1.33 kB │ gzip:  0.72 kB
+dist/testing-e2e.js                          1.43 kB │ gzip:  0.79 kB
+dist/ManagementOverlaySurface-Ckf5SijN.js    1.59 kB │ gzip:  0.71 kB
+dist/selectors-BfOn6gAj.js                   1.73 kB │ gzip:  0.69 kB
+dist/events-C96ZDGkP.js                      1.80 kB │ gzip:  0.85 kB
+dist/ChatPaneStage-Clo_Ab__.js               3.82 kB │ gzip:  1.49 kB
+dist/hooks-KGLWJ9KK.js                       3.96 kB │ gzip:  1.46 kB
+dist/charts.js                               4.47 kB │ gzip:  1.71 kB
+dist/useWorkspacePluginClient-DHk44NlO.js    4.81 kB │ gzip:  1.93 kB
+dist/MediaViewerPane-4M5gIVZj.js             4.98 kB │ gzip:  1.93 kB
+dist/FileTreePane-BF-69Grz.js                5.47 kB │ gzip:  1.98 kB
+dist/agentCapabilities-BmNe6PR0.js           5.75 kB │ gzip:  1.76 kB
+dist/WorkspaceLoadingState-B32iyXGB.js       6.55 kB │ gzip:  1.43 kB
+dist/HtmlViewerPane-hxQM5LCI.js              7.25 kB │ gzip:  2.80 kB
+dist/PluginsOverlay-CIKNRoe_.js              8.76 kB │ gzip:  2.64 kB
+dist/FileTree-BvW6Tf9Q.js                    8.92 kB │ gzip:  3.46 kB
+dist/PluginErrorBoundary-D40QG108.js        10.36 kB │ gzip:  2.68 kB
+dist/CodeEditorPane-CXpfJdO_.js             10.55 kB │ gzip:  3.70 kB
+dist/FilePaneShell-Bg6zOuPv.js              10.58 kB │ gzip:  3.70 kB
+dist/AgentPage-fSoLJISv.js                  11.09 kB │ gzip:  3.08 kB
+dist/WorkbenchLeftPane-Bq6DjPva.js          12.31 kB │ gzip:  4.05 kB
+dist/AgentDetailsOverlay-DdT9st8I.js        14.62 kB │ gzip:  4.08 kB
+dist/ChatPaneStageDock-D7kfKff5.js          15.05 kB │ gzip:  4.86 kB
+dist/DataProvider-D36E-nK7.js               15.48 kB │ gzip:  5.06 kB
+dist/MarkdownEditor-D4wFaEj9.js             25.25 kB │ gzip:  8.28 kB
+dist/workspace.js                           32.07 kB │ gzip: 10.36 kB
+dist/FileTreeView-E9Y2MTAA.js               33.06 kB │ gzip: 10.18 kB
+dist/TopBar-CJcU7yE4.js                     39.65 kB │ gzip: 10.71 kB
+dist/SurfaceShell-BleZZc2Y.js               41.99 kB │ gzip: 12.56 kB
+dist/WorkspaceProvider-D6VRx8mg.js         129.49 kB │ gzip: 35.24 kB
+dist/app-front.js                          167.67 kB │ gzip: 43.61 kB
+dist/testing.js                            254.45 kB │ gzip: 44.26 kB
+
+✓ built in 52.95s
+[2K[1G[33m[PLUGIN_TIMINGS] [0mYour build spent 99% of 52.9s inside plugin hooks (52.5s).
+Measured inside the callback, so queue time is excluded and time the callback itself awaited is not:
+  - unplugin-dts buildStart (94%, 49.7s, 1 call)
+  - unplugin-dts writeBundle (3%, 1.6s, 1 call)
+See https://rolldown.rs/reference/InputOptions.checks#plugintimings for more details.
+
+assert-build-artifacts: all 21 artifacts present
+
+> @hachej/boring-core@0.1.105 build /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/core
+> tsup && pnpm run build:assert
+
+CLI Building entry: {"server/index":"src/server/index.ts","server/db/index":"src/server/db/index.ts","app/server/index":"src/app/server/index.ts","app/front/index":"src/app/front/index.ts","app/vite/index":"src/app/vite/index.ts","front/index":"src/front/index.ts","front/top-bar-slot":"src/front/components/TopBarSlot.tsx","shared/index":"src/shared/index.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/core/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/server/index.js       77.59 KB
+ESM dist/app/vite/index.js     786.00 B
+ESM dist/server/db/index.js    739.00 B
+ESM dist/app/server/index.js   69.73 KB
+ESM dist/front/index.js        2.47 KB
+ESM dist/chunk-J4CABG52.js     134.18 KB
+ESM dist/app/front/index.js    65.32 KB
+ESM dist/front/top-bar-slot.js 159.00 B
+ESM dist/chunk-HYNKZSTF.js     437.00 B
+ESM dist/shared/index.js       752.00 B
+ESM dist/chunk-YMWFQN6F.js     338.00 B
+ESM dist/chunk-I4PGL4ZD.js     488.00 B
+ESM dist/chunk-AQBXNPMD.js     254.00 B
+ESM dist/chunk-WYRJV2HL.js     2.68 KB
+ESM dist/chunk-MLKGABMK.js     191.00 B
+ESM dist/chunk-N3GHKI6K.js     117.69 KB
+ESM dist/chunk-MVXKJ6N6.js     178.71 KB
+ESM ⚡️ Build success in 287ms
+DTS Build start
+"magicLinkClient" is imported from external module "better-auth/client/plugins" but never used in "src/front/auth/authClient.ts".
+DTS ⚡️ Build success in 124882ms
+DTS dist/app/front/index.d.ts                   14.41 KB
+DTS dist/app/server/index.d.ts                  11.97 KB
+DTS dist/app/vite/index.d.ts                    1.35 KB
+DTS dist/front/index.d.ts                       21.39 KB
+DTS dist/front/top-bar-slot.d.ts                295.00 B
+DTS dist/server/db/index.d.ts                   12.00 KB
+DTS dist/server/index.d.ts                      49.36 KB
+DTS dist/shared/index.d.ts                      1.31 KB
+DTS dist/CoreFront-DB1OfNJU.d.ts                2.42 KB
+DTS dist/loadConfig-ep_nNP8O.d.ts               4.48 KB
+DTS dist/PostgresModelBudgetStore-BNPbrJyU.d.ts 16.58 KB
+DTS dist/types-CWIetRGO.d.ts                    8.08 KB
+DTS dist/telemetry-DR18MeI0.d.ts                466.00 B
+DTS dist/types-C0x-x3Of.d.ts                    9.93 KB
+
+> @hachej/boring-core@0.1.105 build:assert /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/packages/core
+> node ./scripts/assert-build-artifacts.mjs
+
+assert-build-artifacts: all 10 exported artifact(s) present, 4 stylesheet(s) with resolvable @imports
+
+> @hachej/boring-deck@0.1.105 build /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/plugins/deck
+> tsup
+
+CLI Building entry: {"front/index":"src/front/index.tsx","shared/index":"src/shared/index.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/plugins/deck/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/front/index.js  38.25 KB
+ESM dist/shared/index.js 8.25 KB
+ESM ⚡️ Build success in 109ms
+DTS Build start
+DTS ⚡️ Build success in 27508ms
+DTS dist/front/index.d.ts    1.76 KB
+DTS dist/shared/index.d.ts   961.00 B
+DTS dist/types-Dt_A9RNg.d.ts 1.57 KB
+
+> @hachej/boring-ask-user@0.1.105 build /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/plugins/ask-user
+> tsup
+
+CLI Building entry: {"front/index":"src/front/index.tsx","server/index":"src/server/index.ts","shared/index":"src/shared/index.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/plugins/ask-user/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/front/index.js  96.25 KB
+ESM dist/server/index.js 62.30 KB
+ESM dist/shared/index.js 15.54 KB
+ESM ⚡️ Build success in 172ms
+DTS Build start
+DTS ⚡️ Build success in 42715ms
+DTS dist/front/index.d.ts    854.00 B
+DTS dist/server/index.d.ts   11.16 KB
+DTS dist/shared/index.d.ts   118.64 KB
+DTS dist/types-Qke6DnHq.d.ts 5.84 KB
+
+> @hachej/boring-tasks@0.1.105 build /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/plugins/tasks
+> tsup --config tsup.config.ts && tsup --config tsup.descriptor.config.ts && node scripts/assert-declarations.mjs
+
+CLI Building entry: {"front/index":"src/front/index.tsx","server/index":"src/server/index.ts","shared/index":"src/shared/index.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/plugins/tasks/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/shared/index.js 4.89 KB
+ESM dist/server/index.js 102.42 KB
+ESM dist/front/index.js  143.51 KB
+ESM ⚡️ Build success in 97ms
+DTS Build start
+DTS ⚡️ Build success in 53086ms
+DTS dist/front/index.d.ts  2.63 KB
+DTS dist/server/index.d.ts 11.43 KB
+DTS dist/shared/index.d.ts 7.77 KB
+CLI Building entry: {"front/descriptor":"src/front/descriptor.tsx"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/plugins/tasks/tsup.descriptor.config.ts
+CLI Target: es2022
+ESM Build start
+ESM dist/front/descriptor.js      3.89 KB
+ESM dist/TasksOverlay-ILOTZDWQ.js 128.39 KB
+ESM ⚡️ Build success in 75ms
+DTS Build start
+DTS ⚡️ Build success in 28131ms
+DTS dist/front/descriptor.d.ts 172.00 B
+tasks declarations: root, front, and front/descriptor types resolve through emitted/public paths
+
+> @hachej/boring-diagram@0.1.105 build /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/plugins/diagram
+> tsup
+
+CLI Building entry: {"front/index":"src/front/index.tsx","server/index":"src/server/index.ts","shared/index":"src/shared/index.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/plugins/diagram/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/server/index.js 11.99 KB
+ESM dist/shared/index.js 845.00 B
+ESM dist/front/index.js  47.05 KB
+ESM ⚡️ Build success in 51ms
+DTS Build start
+DTS ⚡️ Build success in 53224ms
+DTS dist/front/index.d.ts  185.00 B
+DTS dist/server/index.d.ts 384.00 B
+DTS dist/shared/index.d.ts 424.00 B
+
+> @hachej/boring-data-explorer@0.1.105 build /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/plugins/data-explorer
+> tsup
+
+CLI Building entry: {"front/index":"src/front/index.ts","shared/index":"src/shared/index.ts","testing/index":"src/testing/index.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/plugins/data-explorer/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/shared/index.js  0 B
+ESM dist/front/index.js   25.36 KB
+ESM dist/testing/index.js 4.81 KB
+ESM ⚡️ Build success in 41ms
+DTS Build start
+DTS ⚡️ Build success in 7349ms
+DTS dist/testing/index.d.ts 248.00 B
+DTS dist/front/index.d.ts   3.88 KB
+DTS dist/shared/index.d.ts  2.19 KB
+
+> @hachej/boring-data-catalog@0.1.105 build /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/plugins/data-catalog
+> tsup
+
+CLI Building entry: {"front/index":"src/front/index.tsx","server/index":"src/server/index.ts","shared/index":"src/shared/index.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390/plugins/data-catalog/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/shared/index.js 296.00 B
+ESM dist/front/index.js  10.63 KB
+ESM dist/server/index.js 4.67 KB
+ESM ⚡️ Build success in 48ms
+DTS Build start
+DTS ⚡️ Build success in 50992ms
+DTS dist/server/index.d.ts 1.29 KB
+DTS dist/front/index.d.ts  5.59 KB
+DTS dist/shared/index.d.ts 294.00 B
+[WebServer] (!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+[WebServer]   - `__dirname` (vite.config.ts:9:59). Use `import.meta.dirname` instead
+[WebServer]   - import "./src/server/dev" without a file extension (vite.config.ts:6:66). Add the file extension
+[WebServer]   - import "./src/release-candidate-dist" without a file extension (vite.config.ts:7:50). Add the file extension
+[WebServer]   - import "./testing/scriptedPiHarness" without a file extension (src/server/dev.ts:7:50). Add the file extension
+[WebServer]   - import "./testing/twoAgentFleet" without a file extension (src/server/dev.ts:13:8). Add the file extension
+[WebServer]   - import "./factoryAgents" without a file extension (src/server/dev.ts:16:41). Add the file extension
+[WebServer]   - import "./playgroundAgentMode" without a file extension (src/server/dev.ts:17:44). Add the file extension
+[WebServer]   - import "../shared/playgroundAgents" without a file extension (src/server/dev.ts:18:53). Add the file extension
+[WebServer]   - import "../../shared/playgroundAgents" without a file extension (src/server/testing/twoAgentFleet.ts:2:48). Add the file extension
+[WebServer] Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+[WebServer] 8:14:32 AM [vite] warning: `esbuild` option was specified by "vite:react-babel" plugin. This option is deprecated, please use `oxc` instead.
+[WebServer] `optimizeDeps.rollupOptions` / `ssr.optimizeDeps.rollupOptions` is deprecated. Use `optimizeDeps.rolldownOptions` instead. Note that this option may be set by a plugin. Set VITE_DEPRECATION_TRACE=1 to see where it is called.
+[WebServer] [vite:react-babel] We recommend switching to `@vitejs/plugin-react-oxc` for improved performance. More information at https://vite.dev/rolldown
+[WebServer] (node:3516701) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:3516701) [BORING_WORKSPACE_BRIDGE_INSECURE_AUTH] Warning: createWorkspaceAgentServer is using createLocalCliBridgeAuthPolicy for WorkspaceBridge browser calls. This policy is unauthenticated, grants registered bridge capabilities to a fixed local-cli principal, and is intended only for local/dev CLI usage. Provide workspaceBridge.browserAuthPolicy before exposing this server.
+
+Running 1 test using 1 worker
+
+     1 ….spec.ts:54:3 › UI review › captures and reviews workspace-agent-sidebar
+[1A[2K[0G  ✓  1 …s:54:3 › UI review › captures and reviews workspace-agent-sidebar (1.1m)[1E
+  1 passed (1.2m)
+UI_REVIEW_OUTPUT_DISCARDED:/tmp/boring-ui-review-run.B2PAWY/isolation/output (set UI_REVIEW_OUTPUT_DIR to keep artifacts, or UI_REVIEW_KEEP_TMP=1 to keep the run directory)
+
+codex
+The fresh foreground run completed green: `1 passed (1.2m)`, exit code 0. I’m doing the final head/status check now; if the PR still points at audited SHA `3d346da1`, I’ll stamp SHIP with one PR comment and add `ready-for-human`.
+exec
+/usr/bin/zsh -lc 'rtk gh pr view 1431 --repo hachej/boring-ui --json headRefOid,headRefName,state,labels && rtk git rev-parse HEAD && rtk git status --short --branch' in /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390
+ succeeded in 757ms:
+{"headRefName":"fix/1390-ui-review-determinism","headRefOid":"3d346da1ae66bf1af7dd7f0f61f5dfb4b6705a4d","labels":[],"state":"OPEN"}
+3d346da1ae66bf1af7dd7f0f61f5dfb4b6705a4d
+* fix/1390-ui-review-determinism...origin/fix/1390-ui-review-determinism
+?? sol-1390-finish.log
+?? sol-1390.log
+?? sol-1431-loop.log
+?? sol-stamp-1431.log
+?? sol-thermo-1431.log
+
+exec
+/usr/bin/zsh -lc "rtk gh pr comment 1431 --repo hachej/boring-ui --body '## Final verification: SHIP
+
+Verified at head 3d346da1ae66bf1af7dd7f0f61f5dfb4b6705a4d.
+
+- Prior REVISE disposition fully addresses the requested retry diagnostic and retained proof.
+- Retained evidence is real and internally consistent: 5 foreground runs, 5 exit-code-0 passes, 1,560/1,560 hard gates green, and 120/120 readiness diagnostics reporting retryUsed=false; README hashes, timings, revisions, and file claims match.
+- Reload is restricted to discovery. A used retry preserves and emits the first error, propagates retryUsed/firstError into every captured state, and renders that evidence in the generated report. Regression tests pin observable retry evidence and prove post-discovery contract failures are not retried.
+- Fresh corroboration: pnpm --filter @hachej/boring-ui-review-tools ui:review -- review workspace-agent-sidebar --critic=fixture passed once in the foreground (1 passed, 1.2m, exit 0).
+
+Verdict: SHIP.'" in /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390
+ succeeded in 1241ms:
+ok commented #1431
+
+exec
+/usr/bin/zsh -lc 'rtk gh pr edit 1431 --repo hachej/boring-ui --add-label ready-for-human && rtk gh pr view 1431 --repo hachej/boring-ui --json labels,headRefOid,state' in /home/ubuntu/projects/boring-ui-v2/.worktrees/retest-1390
+ succeeded in 2773ms:
+ok edited #1431
+{"headRefOid":"3d346da1ae66bf1af7dd7f0f61f5dfb4b6705a4d","labels":[{"id":"LA_kwDOSLWWUs8AAAACrBOEQg","name":"ready-for-human","description":"Boring v2: human judgment, access, approval, review, or merge needed","color":"F9A825"}],"state":"OPEN"}
+
+codex
+Verified PR #1431 at `3d346da1`:
+
+- Retained 5/5 artifacts and all 1,560 hard gates validated.
+- Retry diagnostic and regression coverage validated.
+- Fresh exact-spec run passed: `1 passed (1.2m)`.
+- Posted one SHIP comment.
+- Added `ready-for-human`.
+- No merge or push performed.
+
+VERDICT: SHIP
+tokens used
+142,169
+Verified PR #1431 at `3d346da1`:
+
+- Retained 5/5 artifacts and all 1,560 hard gates validated.
+- Retry diagnostic and regression coverage validated.
+- Fresh exact-spec run passed: `1 passed (1.2m)`.
+- Posted one SHIP comment.
+- Added `ready-for-human`.
+- No merge or push performed.
+
+VERDICT: SHIP
