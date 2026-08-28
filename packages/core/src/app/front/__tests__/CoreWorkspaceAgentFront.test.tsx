@@ -82,6 +82,7 @@ vi.mock('@hachej/boring-workspace', async (importOriginal) => {
 })
 
 vi.mock('@hachej/boring-workspace/app/front', () => ({
+  DEFAULT_BOOT_PRELOAD_PATHS: ['/api/v1/tree?path=.'],
   WorkspaceAgentFront: (props: Record<string, unknown>) => {
     workspaceAgentProps = props
     return (
@@ -170,9 +171,11 @@ describe('CoreWorkspaceAgentFront', () => {
         existing: 'auth',
         'x-boring-workspace-id': 'workspace-a',
       },
-      bootPreloadPaths: ['/custom-preload'],
+      // gh-1402: the workspace-meta call the recovery verdict rides on joins the
+      // host's own preload set; it is not a separate per-boot request.
+      bootPreloadPaths: ['/custom-preload', '/api/v1/workspace/meta'],
     })
-  }, 15_000) // Cold Core composition can exceed 10s under full-suite CI load.
+  }, 30_000) // Cold Core composition can exceed 15s under full-suite CI load.
 
   it('forwards the persisted regular default instead of the app compatibility fallback', async () => {
     currentWorkspaceDefaultAgentTypeId = 'reviewer'
@@ -182,6 +185,53 @@ describe('CoreWorkspaceAgentFront', () => {
 
     expect(screen.getByTestId('workspace-agent-front')).toBeInTheDocument()
     expect(workspaceAgentProps?.agentTypeId).toBe('reviewer')
+  })
+
+  // gh-1402: recovery is mounted reactively off the boot failure the server
+  // already produces, and off that one code only.
+  it('mounts default-Agent recovery when the workspace boot reports the unavailable seat', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        workspaceId: 'workspace-a',
+        status: 'unavailable',
+        persistedDefaultAgentTypeId: 'retired-seat',
+        availableAgents: [{ agentTypeId: 'general', label: 'General' }],
+      }),
+    })))
+    const { CoreWorkspaceAgentFront } = await importSubject()
+    render(<CoreWorkspaceAgentFront agentTypeId="default" />)
+    expect(screen.getByTestId('workspace-agent-front')).toBeInTheDocument()
+
+    // The boot path already asks for it, so the verdict arrives without any
+    // extra request of the recovery feature's own.
+    expect(workspaceAgentProps?.bootPreloadPaths).toContain('/api/v1/workspace/meta')
+
+    const onWarmup = workspaceAgentProps?.onWorkspaceWarmupStatusChange as (status: unknown) => void
+    await act(async () => {
+      onWarmup({ status: 'failed', message: 'Workspace default Agent is unavailable', code: 'default_agent_type_unknown_seat' })
+    })
+
+    expect(await screen.findByTestId('workspace-default-agent-recovery')).toBeInTheDocument()
+    expect(screen.queryByTestId('workspace-agent-front')).not.toBeInTheDocument()
+  })
+
+  it('leaves an unrelated boot failure to the workspace\'s own error handling', async () => {
+    const fetchMock = vi.fn(async () => ({ ok: false, status: 500, json: async () => ({}) }))
+    vi.stubGlobal('fetch', fetchMock)
+    const { CoreWorkspaceAgentFront } = await importSubject()
+    render(<CoreWorkspaceAgentFront agentTypeId="default" />)
+
+    const onWarmup = workspaceAgentProps?.onWorkspaceWarmupStatusChange as (status: unknown) => void
+    await act(async () => {
+      onWarmup({ status: 'failed', message: 'tree failed with 500' })
+    })
+
+    // A generic boot failure must not be dressed up as an Agent problem.
+    expect(screen.queryByTestId('workspace-default-agent-recovery')).not.toBeInTheDocument()
+    expect(screen.getByTestId('workspace-agent-front')).toBeInTheDocument()
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('allows apps to suppress the default workspace switcher', async () => {

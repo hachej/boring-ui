@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Button, ErrorState } from '@hachej/boring-ui-kit'
 import {
   WORKSPACE_DEFAULT_AGENT_ROUTE,
@@ -11,36 +11,35 @@ import {
  * gh-1402: the UX half of the fail-closed default Agent (gh-1386).
  *
  * When a workspace's persisted default names a seat that no longer exists,
- * every gated effect is refused with `default_agent_type_unknown_seat`. Without
- * this surface the only recovery is editing the database. Here the owner sees
- * which Agent is missing and repins the workspace to an available one.
+ * resolution refuses instead of silently rehoming the workspace. Without this
+ * surface the only recovery is editing the database. Here the owner sees which
+ * Agent is missing and repins the workspace to an available one.
  *
- * The probe is deliberately NOT a render gate on the happy path: it runs
- * alongside the workspace and swaps in only once the server has *confirmed*
- * the broken state. A healthy workspace therefore pays no boot latency, and a
- * probe that fails (offline, proxy hiccup) degrades to the normal workspace
- * rather than locking the user out of a workspace that may be fine — the
- * server, not this component, is what enforces the guarantee.
+ * Mounting is *reactive*: the host route renders this only once the workspace
+ * boot has already failed with DEFAULT_AGENT_TYPE_UNKNOWN_SEAT. There is no
+ * speculative probe, so a healthy workspace never pays a request, never waits,
+ * and never re-renders for this feature. The one fetch below runs on mount of
+ * this page — i.e. only for a workspace the server has already refused — and
+ * asks the single question the page cannot answer on its own: which Agents can
+ * replace the missing one.
  */
 
-export interface WorkspaceDefaultAgentRecoveryGateProps {
+type LoadState =
+  | { readonly status: 'loading' }
+  | { readonly status: 'failed' }
+
+export interface WorkspaceDefaultAgentRecoveryProps {
   readonly workspaceId: string
   readonly apiBaseUrl?: string
   readonly requestHeaders?: Record<string, string>
   /**
    * Called once the new default is persisted. Workspace-derived props (the
    * transport agentTypeId above all) are read from a cached workspace record,
-   * so the host route must re-derive them; the gate itself only knows that the
-   * write succeeded.
+   * so the host route must re-derive them; this page only knows the write
+   * succeeded.
    */
   readonly onRecovered?: (defaultAgentTypeId: string) => void
-  readonly children: ReactNode
 }
-
-const PROBE_RETRY_LIMIT = 2
-const PROBE_RETRY_DELAY_MS = 1_500
-/** Matches the workspace filesystem fetch client's DEFAULT_TIMEOUT. */
-const PROBE_TIMEOUT_MS = 10_000
 
 function recoveryEndpoint(apiBaseUrl: string | undefined): string {
   return `${apiBaseUrl?.replace(/\/$/, '') ?? ''}${WORKSPACE_DEFAULT_AGENT_ROUTE}`
@@ -53,129 +52,76 @@ function isDefaultAgentState(value: unknown): value is WorkspaceDefaultAgentStat
     && Array.isArray(candidate!.availableAgents)
 }
 
-export function WorkspaceDefaultAgentRecoveryGate({
+export function WorkspaceDefaultAgentRecovery({
   workspaceId,
   apiBaseUrl,
   requestHeaders,
   onRecovered,
-  children,
-}: WorkspaceDefaultAgentRecoveryGateProps) {
-  // Only a *confirmed* broken workspace is ever held in state: a healthy probe
-  // leaves the tree untouched, so the happy path neither waits for this request
-  // nor re-renders because of it.
-  const [unavailable, setUnavailable] = useState<WorkspaceDefaultAgentState | null>(null)
-  // A probe that never lands is the dangerous case: the server still refuses
-  // every effect, so silently doing nothing would strand the user on a
-  // workspace that cannot work and offers no way out. Re-probe a bounded number
-  // of times, then hand over an explicit "Check again".
-  const [probeFailed, setProbeFailed] = useState(false)
-  // Incremented to force a re-probe; a plain retry counter cannot, because
-  // re-checking after giving up would reset it to a value it already holds and
-  // React would skip the effect.
-  const [probeRun, setProbeRun] = useState(0)
-  const consecutiveFailures = useRef(0)
+}: WorkspaceDefaultAgentRecoveryProps) {
+  const [state, setState] = useState<WorkspaceDefaultAgentState | LoadState>({ status: 'loading' })
+  const [reload, setReload] = useState(0)
   const endpoint = recoveryEndpoint(apiBaseUrl)
   const headers = { ...requestHeaders, 'x-boring-workspace-id': workspaceId }
   const headersKey = JSON.stringify(headers)
 
   useEffect(() => {
     let cancelled = false
-    let settled = false
-    let retryTimer: ReturnType<typeof setTimeout> | undefined
-    setUnavailable(null)
-    setProbeFailed(false)
-    const failed = () => {
-      if (cancelled || settled) return
-      settled = true
-      consecutiveFailures.current += 1
-      if (consecutiveFailures.current <= PROBE_RETRY_LIMIT) {
-        retryTimer = setTimeout(
-          () => { if (!cancelled) setProbeRun((run) => run + 1) },
-          PROBE_RETRY_DELAY_MS * consecutiveFailures.current,
-        )
-        return
-      }
-      setProbeFailed(true)
-    }
-    // A hung connection never rejects and never resolves, so nothing downstream
-    // would ever run: without this bound the retry ladder and the "Check again"
-    // escape hatch are both unreachable. The timeout drives the failure path
-    // itself rather than waiting for the fetch to notice the abort, because a
-    // request wedged below the abort signal may never settle either.
-    const controller = new AbortController()
-    const timeoutTimer = setTimeout(() => {
-      if (cancelled || settled) return
-      controller.abort()
-      failed()
-    }, PROBE_TIMEOUT_MS)
-    void fetch(endpoint, {
-      headers: JSON.parse(headersKey) as Record<string, string>,
-      signal: controller.signal,
-    })
+    setState({ status: 'loading' })
+    void fetch(endpoint, { headers: JSON.parse(headersKey) as Record<string, string> })
       .then((response) => (response.ok ? response.json() as Promise<unknown> : null))
       .then((payload) => {
-        if (cancelled || settled) return
-        if (!isDefaultAgentState(payload)) {
-          failed()
-          return
-        }
-        settled = true
-        consecutiveFailures.current = 0
-        if (payload.status === 'unavailable') setUnavailable(payload)
+        if (cancelled) return
+        setState(isDefaultAgentState(payload) ? payload : { status: 'failed' })
       })
-      .catch(failed)
-    return () => {
-      cancelled = true
-      clearTimeout(timeoutTimer)
-      if (retryTimer) clearTimeout(retryTimer)
-    }
-  }, [endpoint, headersKey, probeRun])
+      .catch(() => { if (!cancelled) setState({ status: 'failed' }) })
+    return () => { cancelled = true }
+  }, [endpoint, headersKey, reload])
 
-  const recheck = useCallback(() => {
-    consecutiveFailures.current = 0
-    setProbeRun((run) => run + 1)
-  }, [])
+  const reread = useCallback(() => setReload((run) => run + 1), [])
 
-  if (!unavailable) {
+  if (state.status === 'loading') {
     return (
-      <>
-        {children}
-        {probeFailed && <WorkspaceDefaultAgentProbeFailureNotice onRecheck={recheck} />}
-      </>
+      <RecoveryShell testId="workspace-default-agent-recovery-loading">
+        <ErrorState
+          className="w-full max-w-lg"
+          title="Checking this workspace's Agent"
+          description="Reading which Agents are available…"
+        />
+      </RecoveryShell>
+    )
+  }
+
+  if (state.status === 'failed') {
+    return (
+      <RecoveryShell testId="workspace-default-agent-recovery-unreachable">
+        <ErrorState
+          className="w-full max-w-lg"
+          title="Default Agent unavailable"
+          description="This workspace cannot open, and the list of Agents that could replace its default could not be read."
+          actions={<Button className="min-h-[48px]" variant="outline" onClick={reread}>Try again</Button>}
+        />
+      </RecoveryShell>
     )
   }
 
   return (
     <WorkspaceDefaultAgentRecoveryPage
-      state={unavailable}
+      state={state}
       endpoint={endpoint}
       headers={headers}
-      onRecovered={(defaultAgentTypeId) => {
-        setUnavailable(null)
-        onRecovered?.(defaultAgentTypeId)
-      }}
-      onStaleState={recheck}
+      onRecovered={(defaultAgentTypeId) => onRecovered?.(defaultAgentTypeId)}
+      onStaleState={reread}
     />
   )
 }
 
-/**
- * Non-blocking, because the workspace is only *probably* broken at this point:
- * the probe never landed, so refusing access outright would punish an
- * ordinary network blip. It gives the one thing the silent version lacked —
- * a way to ask again.
- */
-function WorkspaceDefaultAgentProbeFailureNotice({ onRecheck }: { onRecheck: () => void }) {
+function RecoveryShell({ testId, children }: { testId: string; children: React.ReactNode }) {
   return (
     <div
-      className="fixed inset-x-0 bottom-0 z-50 flex flex-wrap items-center justify-between gap-3 border-t border-border bg-card px-4 py-3 text-sm text-foreground shadow-lg"
-      role="status"
-      data-testid="workspace-default-agent-probe-failed"
+      className="flex h-screen min-h-0 items-center justify-center overflow-auto bg-background px-6 py-10 text-foreground"
+      data-testid={testId}
     >
-      <span>
-        This workspace&apos;s default Agent could not be verified. If nothing here runs, its Agent may be unavailable.
-      </span>
-      <Button className="min-h-[48px]" variant="outline" onClick={onRecheck}>Check again</Button>
+      {children}
     </div>
   )
 }
@@ -232,10 +178,7 @@ function WorkspaceDefaultAgentRecoveryPage({
   }, [endpoint, headers, missingAgentTypeId, onRecovered, onStaleState, selected])
 
   return (
-    <div
-      className="flex h-screen min-h-0 items-center justify-center overflow-auto bg-background px-6 py-10 text-foreground"
-      data-testid="workspace-default-agent-recovery"
-    >
+    <RecoveryShell testId="workspace-default-agent-recovery">
       <ErrorState
         className="w-full max-w-lg"
         title="Default Agent unavailable"
@@ -258,7 +201,7 @@ function WorkspaceDefaultAgentRecoveryPage({
             <Button
               className="min-h-[48px] w-full sm:w-auto"
               variant="outline"
-              onClick={() => { window.location.reload() }}
+              onClick={onStaleState}
             >
               Retry
             </Button>
@@ -291,7 +234,7 @@ function WorkspaceDefaultAgentRecoveryPage({
           <p className="text-sm text-destructive" role="alert">{saveError}</p>
         )}
       </ErrorState>
-    </div>
+    </RecoveryShell>
   )
 }
 
