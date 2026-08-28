@@ -416,6 +416,22 @@ function extractHttpStatus(error: unknown): number | null {
   return typeof responseStatus === 'number' ? responseStatus : null
 }
 
+function isDisposableSandboxAlreadyAbsent(error: unknown): boolean {
+  const status = extractHttpStatus(error)
+  if (status === 404 || status === 410) return true
+  const code = (error as { json?: { error?: { code?: unknown } } } | null)?.json?.error?.code
+  const message = error instanceof Error ? error.message : String(error)
+  return code === 'not_found' || /already (?:absent|deleted)|sandbox (?:was )?not found/i.test(message)
+}
+
+async function deleteDisposableSandbox(sandbox: VercelSandboxWithRunCommand): Promise<void> {
+  try {
+    await sandbox.delete()
+  } catch (error) {
+    if (!isDisposableSandboxAlreadyAbsent(error)) throw error
+  }
+}
+
 function isExpiredSandboxRuntimeError(error: unknown): boolean {
   const code = (error as { code?: unknown } | null)?.code
   if (code === 'SANDBOX_EXPIRED') return true
@@ -759,7 +775,7 @@ export function createVercelSandboxProvider(
               return
             }
             if (!remoteDeleted) {
-              await resolvedSandboxHandle.delete()
+              await deleteDisposableSandbox(resolvedSandboxHandle)
               remoteDeleted = true
             }
             evictSandboxHandleCacheForWorkspace(workspaceId)
@@ -790,7 +806,7 @@ export function createVercelSandboxProvider(
         if (disposable && sandboxHandle) {
           let remoteDeleted = false
           try {
-            await sandboxHandle.delete()
+            await deleteDisposableSandbox(sandboxHandle)
             remoteDeleted = true
           } catch (cleanupError) {
             logger.warn?.('[vercel-sandbox:mode] disposable setup cleanup failed', {

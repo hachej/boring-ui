@@ -314,8 +314,10 @@ describe('createVercelSandboxProvider', () => {
       source: { type: 'snapshot', snapshotId: 'snap_trusted_main' },
     }))
     expect(client.get).not.toHaveBeenCalled()
-    await secondPair.dispose()
+    deleteSandbox.mockRejectedValueOnce(Object.assign(new Error('sandbox not found'), { status: 404 }))
+    await expect(secondPair.dispose()).resolves.toBeUndefined()
     expect(deleteSandbox).toHaveBeenCalledTimes(3)
+    expect(deleteRecord).toHaveBeenCalledTimes(2)
   })
 
   test('invalidate evicts only the process cache and reacquires the persisted handle', async () => {

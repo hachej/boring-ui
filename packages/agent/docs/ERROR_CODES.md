@@ -56,6 +56,16 @@ All API failures must use the response envelope:
 | `OUTPUT_TRUNCATED` | Max output bytes reached; output was clipped | 200 | user-fix | warn | stable (public API) |
 | `SANDBOX_NOT_READY` | Remote sandbox cold start / provisioning | 503 | retry | warn | stable (public API) |
 | `SANDBOX_EXPIRED` | Remote sandbox TTL elapsed | 410 | retry | warn | stable (public API) |
+| `SANDBOX_LEASE_INVALID` | Disposable lease management input or host configuration is invalid | 400 | user/operator-fix | warn | stable (trusted API) |
+| `SANDBOX_LEASE_NOT_FOUND` | Opaque disposable lease is unavailable to this Agent session | 404 | reacquire | warn | stable (trusted API) |
+| `SANDBOX_LEASE_EXPIRED` | Disposable lease TTL elapsed | 410 | reacquire | warn | stable (trusted API) |
+| `SANDBOX_LEASE_DRAINING` | Disposable lease is draining or awaiting cleanup | 409 | retry/reacquire | warn | stable (trusted API) |
+| `SANDBOX_LEASE_QUOTA_EXCEEDED` | Host-owned per-session or total disposable lease quota is exhausted | 429 | release/retry | warn | stable (trusted API) |
+| `SANDBOX_LEASE_CREATION_ABORTED` | Lease creation was cancelled and compensated before publication | 409 | retry | warn | stable (trusted API) |
+| `SANDBOX_LEASE_CLEANUP_FAILED` | Registered idempotent remote cleanup did not converge yet | 503 | retry | error | stable (trusted API) |
+| `SANDBOX_LEASE_SERVICE_CLOSED` | Host-owned lease service is shutting down | 503 | retry elsewhere | warn | stable (trusted API) |
+| `SANDBOX_TARGET_INVALID` | Ordinary tool sandbox target or filesystem combination is invalid | 400 | user-fix | warn | stable (trusted API) |
+| `SANDBOX_TARGET_FAILED` | Targeted ordinary tool could not resolve or execute against the leased pair | 503 | retry | error | stable (trusted API) |
 | `VERCEL_API_ERROR` | Generic upstream Vercel SDK/API failure | 502 | retry | error | stable (public API) |
 | `BLAXEL_API_ERROR` | Generic upstream Blaxel SDK/API failure | 502 | retry | error | stable (public API) |
 | `BLAXEL_CONFIG_DRIFT` | Existing Blaxel sandbox or Volume differs from requested immutable configuration | 409 | operator action | error | stable (public API) |

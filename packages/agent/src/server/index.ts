@@ -16,12 +16,12 @@ export {
   SandboxLeaseCleanupError,
   SandboxLeaseError,
   SandboxLeaseService,
-  runSandbox,
+  SANDBOX_REMOTE_DISPOSE_OPERATION_ID,
 } from './sandbox/leases/sandboxLease'
 export type {
-  RunSandboxInput,
-  RunSandboxResult,
   SandboxLease,
+  SandboxLeaseStatus,
+  SandboxLeaseState,
   SandboxLeaseErrorCode,
   SandboxLeaseServiceOptions,
 } from './sandbox/leases/sandboxLease'
@@ -231,6 +231,7 @@ export type {
   CreatedAgentHost,
   AuthorizedEnvironmentIntent,
   ResolvedAgentRuntimeScope,
+  ResolvedSandboxToolCapability,
   ResolvedEnvironmentScope,
 } from './agent-host/types'
 export type { LeaseBoundWorkspaceAgent } from '../shared/workspaceAgentDispatcher'
