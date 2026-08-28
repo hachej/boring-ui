@@ -3,10 +3,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type { Sandbox as VercelSandbox } from '@vercel/sandbox'
-import {
-  SandboxLeaseCleanupError,
-  SandboxLeaseService,
-} from '@hachej/boring-agent/server'
 import type {
   SandboxHandleRecord,
   SandboxHandleStore,
@@ -101,12 +97,6 @@ function addDurableHandleMetadata(sandbox: VercelSandbox, sandboxId: string) {
 }
 
 const cleanups: Array<() => Promise<void>> = []
-
-async function deferred<T>() {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>((done) => { resolve = done })
-  return { promise, resolve }
-}
 
 beforeEach(() => {
   localSandboxDispose.mockReset().mockResolvedValue(undefined)
@@ -374,7 +364,7 @@ describe('createVercelSandboxProvider', () => {
     expect(deleteRecord).not.toHaveBeenCalled()
   })
 
-  test('provider close cannot delete a published pair while its lease is pinned', async () => {
+  test('provider close leaves a published disposable pair under caller cleanup authority', async () => {
     const harness = await createMockVercelSandboxHarness()
     cleanups.push(harness.cleanup)
     const { deleteSandbox } = addDurableHandleMetadata(harness.sandbox, 'sb-published-owner')
@@ -390,29 +380,19 @@ describe('createVercelSandboxProvider', () => {
       getEnvVar,
       logger: { info: vi.fn() },
     })
-    const service = new SandboxLeaseService({
-      workspaceRoot: '/host/published-owner',
-      provider,
-      serviceDigest: 'published-owner-profile',
-      ttlMs: 60_000,
-      reapIntervalMs: 60_000,
-      drainTimeoutMs: 5,
-      maxActiveLeasesPerOwner: 1,
-      maxActiveLeasesTotal: 1,
-      createHandle: () => 'published-owner-lease',
-    })
-    const lease = await service.acquire('owner-a')
-    const gate = await deferred<void>()
-    const operation = service.withPair('owner-a', lease.handle, async () => await gate.promise)
-    await Promise.resolve()
 
-    await expect(service.dispose()).rejects.toBeInstanceOf(SandboxLeaseCleanupError)
+    const pair = await provider.create({
+      workspaceRoot: 'workspace-published-owner',
+      workspaceId: 'workspace-published-owner',
+      sessionId: 'session-published-owner',
+    })
+    await expect(pair.checkHealth?.()).resolves.toEqual({ state: 'ok' })
+
+    await expect(provider.close!()).resolves.toBeUndefined()
     expect(deleteSandbox).not.toHaveBeenCalled()
     expect(localSandboxDispose).not.toHaveBeenCalled()
 
-    gate.resolve()
-    await operation
-    await expect(service.dispose()).resolves.toBeUndefined()
+    await expect(pair.dispose()).resolves.toBeUndefined()
     expect(deleteSandbox).toHaveBeenCalledOnce()
     expect(localSandboxDispose).toHaveBeenCalledOnce()
   })
