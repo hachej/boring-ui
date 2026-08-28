@@ -180,15 +180,28 @@ export function parseModelTierCandidates(raw: unknown, path: string): ModelTierC
   return Object.freeze(result)
 }
 
-function parseSeatTiers(raw: unknown): Readonly<Record<string, string>> {
-  if (!isRecord(raw)) return Object.freeze({})
+function parseSeatTiers(raw: unknown, path: string): Readonly<Record<string, string>> {
+  const name = basename(path)
+  if (!isRecord(raw)) {
+    throw new FleetConfigError({ field: 'policy', message: `${name} must be an object` })
+  }
   const models = raw.models
-  if (!isRecord(models)) return Object.freeze({})
+  if (!isRecord(models)) {
+    throw new FleetConfigError({ field: 'models', message: `${name} must declare a "models" object` })
+  }
   const seats = models.seats
-  if (!isRecord(seats)) return Object.freeze({})
+  if (!isRecord(seats)) {
+    throw new FleetConfigError({ field: 'models.seats', message: `${name} must declare a "models.seats" object` })
+  }
   const result: Record<string, string> = {}
   for (const [seat, tier] of Object.entries(seats)) {
-    if (typeof tier === 'string') result[seat] = tier
+    if (!isNonBlankString(seat) || !isNonBlankString(tier)) {
+      throw new FleetConfigError({
+        field: `models.seats.${seat}`,
+        message: `${name} models.seats entries must map non-empty seat names to non-empty tier names`,
+      })
+    }
+    result[seat] = tier
   }
   return Object.freeze(result)
 }
@@ -282,11 +295,10 @@ async function packageSkillContent(packageRoot: string, skill: FleetSkillBinding
  * descriptors, `.agents/factory/policy.yaml` `models.seats` tiers, and the
  * priority-ordered `models.tiers` candidates declared in fleet.yaml.
  *
- * Fails closed per seat: a persona that fails materialization, digest
- * verification, or spec composition is excluded with a stable diagnostic —
- * the remaining valid seats still compose. Whole-fleet config errors (an
- * unreadable/malformed fleet.yaml or policy.yaml) throw `FleetConfigError`,
- * since there is no seat set to fail closed against.
+ * Fails startup when any configured seat cannot materialize or verify. Only
+ * genuinely unseated discovered packages remain nonfatal diagnostics. Whole-
+ * fleet config errors (including unreadable/malformed fleet or policy YAML)
+ * throw `FleetConfigError`.
  */
 export async function loadConfiguredAgentFleet(
   options: LoadConfiguredAgentFleetOptions,
@@ -296,14 +308,10 @@ export async function loadConfiguredAgentFleet(
   const seats = parseFleetConfig(fleetRaw, options.fleetConfigPath)
   const modelTierCandidates = parseModelTierCandidates(fleetRaw, options.fleetConfigPath)
 
-  let seatTiers: Readonly<Record<string, string>> = Object.freeze({})
-  try {
-    seatTiers = parseSeatTiers(await readYamlFile(options.policyPath, 'policyPath'))
-  } catch {
-    // Model-tier resolution is best-effort: an unreadable/malformed policy
-    // file omits preferred models for every seat rather than failing boot.
-    seatTiers = Object.freeze({})
-  }
+  const seatTiers = parseSeatTiers(
+    await readYamlFile(options.policyPath, 'policyPath'),
+    options.policyPath,
+  )
   validateSeatTierCandidates(seatTiers, modelTierCandidates, options.fleetConfigPath, options.policyPath)
 
   const agents: ConfiguredAgentHostAgentSpec[] = []
@@ -439,6 +447,18 @@ export async function loadConfiguredAgentFleet(
         })
       }
     }
+  }
+
+  const fatalDiagnostics = diagnostics.filter((diagnostic) =>
+    diagnostic.seat !== undefined || seatedDefinitionIds.has(diagnostic.agentTypeId),
+  )
+  if (fatalDiagnostics.length > 0) {
+    throw new FleetConfigError({
+      field: 'seats',
+      message: `configured Agent fleet is invalid: ${fatalDiagnostics
+        .map((diagnostic) => `${diagnostic.agentTypeId}: ${diagnostic.message}`)
+        .join('; ')}`,
+    })
   }
 
   return Object.freeze({ agents: Object.freeze(agents), diagnostics: Object.freeze(diagnostics) })

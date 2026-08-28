@@ -17,7 +17,7 @@ const OTHER_USER = 'budget-user-2'
 function baseConfig(databaseUrl: string): CoreConfig {
   return {
     appId: 'test-app', appName: 'Test App', appLogo: null, port: 0, host: '127.0.0.1', staticDir: null,
-    databaseUrl, stores: 'postgres', cors: { origins: ['http://localhost:3000'], credentials: true },
+    databaseUrl, stores: 'postgres', defaultAgentTypeId: 'default', cors: { origins: ['http://localhost:3000'], credentials: true },
     bodyLimit: 16 * 1024 * 1024, logLevel: 'silent' as CoreConfig['logLevel'], encryption: { workspaceSettingsKey: 'a'.repeat(64) },
     auth: { secret: 's'.repeat(64), url: 'http://localhost:3000', sessionTtlSeconds: 3600, sessionCookieSecure: false },
     features: { githubOauth: false, googleOauth: false, invitesEnabled: true, sendWelcomeEmail: true, inviteTtlDays: 7 },

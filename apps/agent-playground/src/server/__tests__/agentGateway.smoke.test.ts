@@ -156,7 +156,11 @@ describe('agent-playground AgentGateway reference composition', () => {
     await expect(runtime.gateway.listAgents({
       scope: Object.freeze({ workspaceScopeId: 'agent-playground', authSubjectId: 'forged' }) as AuthorizedAgentScope,
     })).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_SCOPE_DENIED })
-    expect(addressed.json()).toEqual([{ agentTypeId: PLAYGROUND_AGENT_TYPE_ID, label: 'Agent' }])
+    expect(addressed.json()).toEqual([{
+      agentTypeId: PLAYGROUND_AGENT_TYPE_ID,
+      label: 'Playground Agent',
+      definition: { version: '1', digest: expect.any(String) },
+    }])
     expect(runtime.app.hasRoute({
       method: 'POST',
       url: '/api/v1/agents/:agentTypeId/reload',

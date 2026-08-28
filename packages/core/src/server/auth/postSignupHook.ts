@@ -4,6 +4,7 @@ import type { WorkspaceStore } from '../app/types.js'
 import type { MailTransport } from '../mail/transport.js'
 import { renderWelcome } from '../mail/templates/index.js'
 import { REQUEST_SCOPE_WORKSPACE_HEADER } from './requestWorkspaceScope.js'
+import { parseRequiredDefaultAgentTypeId } from '../defaultAgentType.js'
 import {
   normalizeSignupHostname,
   resolveSignupDefaultAgentTypeId,
@@ -34,6 +35,21 @@ type InviteFailureCode =
   | 'invite_already_accepted'
   | 'invite_email_mismatch'
 
+export interface InitialAgentSeatResolution {
+  agentTypeId: string
+  source: 'signup-intent' | 'generic-default'
+}
+
+export interface ResolveInitialAgentSeatInput {
+  user: PostSignupUser
+  context: PostSignupContext | null
+  applicationDefaultAgentTypeId: string
+}
+
+export type ResolveInitialAgentSeat = (
+  input: ResolveInitialAgentSeatInput,
+) => InitialAgentSeatResolution | undefined | Promise<InitialAgentSeatResolution | undefined>
+
 export interface PostSignupHookDeps {
   config: CoreConfig
   /** Boot-compiled, fleet-validated map. Raw CoreConfig is never consumed. */
@@ -42,6 +58,8 @@ export interface PostSignupHookDeps {
   transport: MailTransport | null
   logger?: { warn: (obj: Record<string, unknown>, msg: string) => void }
   disableDefaultWorkspaceCreation?: boolean
+  /** Trusted app resolver for a server-issued signup intent. */
+  resolveInitialAgentSeat?: ResolveInitialAgentSeat
 }
 
 function readHeader(ctx: PostSignupContext | null, name: string): string | null {
@@ -72,7 +90,9 @@ export function createPostSignupHook(deps: PostSignupHookDeps) {
     transport,
     logger,
     disableDefaultWorkspaceCreation,
+    resolveInitialAgentSeat,
   } = deps
+  const applicationDefaultAgentTypeId = parseRequiredDefaultAgentTypeId(config.defaultAgentTypeId)
 
   return async function postSignupHook(
     user: PostSignupUser & Record<string, unknown>,
@@ -112,19 +132,30 @@ export function createPostSignupHook(deps: PostSignupHookDeps) {
 
     if (!inviteAccepted && !disableDefaultWorkspaceCreation) {
       // Decision 28 hook: an exact trusted signup-domain mapping may
-      // initialize the default seat of this newly created default Workspace.
-      // The hostname is read once, matched exactly against boot-validated
-      // trusted host configuration, then discarded — it is never persisted
-      // and has no routing, membership, selection, or authorization effect.
+      // initialize the default Agent and its authorization Seat atomically.
+      // The hostname is read once and matched exactly against boot-validated
+      // trusted host configuration; only the resolved Agent id and source are
+      // persisted.
+      const resolvedIntent = await resolveInitialAgentSeat?.({
+        user,
+        context: ctx,
+        applicationDefaultAgentTypeId,
+      })
       const signupHostname = normalizeSignupHostname(
         readHeader(ctx, TRUSTED_SIGNUP_HOSTNAME_HEADER),
       )
       const signupSeat = resolveSignupDefaultAgentTypeId(signupAgentDefaults, signupHostname)
-      const initialSeat = signupSeat ?? config.defaultAgentTypeId
+      const initialSeat = parseRequiredDefaultAgentTypeId(
+        resolvedIntent?.agentTypeId ?? signupSeat ?? applicationDefaultAgentTypeId,
+      )
+      const initialSeatSource = resolvedIntent?.source
+        ?? (signupSeat ? 'signup-intent' : 'generic-default')
       await workspaceStore.create(user.id, 'Default workspace', config.appId, {
         isDefault: true,
-        // Decision 28: stamp the initial default seat at initialization only.
-        ...(initialSeat ? { defaultAgentTypeId: initialSeat } : {}),
+        // Decision 28: every initialized Workspace persists a real default.
+        defaultAgentTypeId: initialSeat,
+        initialAgentSeatSource: initialSeatSource,
+        enrolledByUserId: user.id,
       })
     }
 

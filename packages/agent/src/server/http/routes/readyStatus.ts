@@ -4,6 +4,8 @@ import type { ReadyStatusTracker } from '../../runtime/readyStatus'
 export interface ReadyStatusRouteOptions {
   path?: string
   authorizeRequest?: (request: FastifyRequest) => void | Promise<void>
+  /** Re-evaluated before every streamed status event; denial closes the stream. */
+  authorizeEvent?: (request: FastifyRequest) => void | Promise<void>
   tracker?: ReadyStatusTracker
   getTracker?: (request: FastifyRequest) => ReadyStatusTracker | Promise<ReadyStatusTracker>
   deferLeaseRelease?: (request: FastifyRequest) => void
@@ -85,13 +87,18 @@ export function readyStatusRoutes(
       reply.hijack()
       opts.deferLeaseRelease?.(request)
 
+      let eventTail = Promise.resolve()
       unsubscribe = tracker.subscribe((event) => {
         if (closed) return
-        reply.raw.write(`event: status\ndata: ${JSON.stringify(event)}\n\n`)
-        const runtimePending = event.capabilities.runtimeDependencies.state === 'preparing'
-        if (event.state === 'degraded' || (event.state === 'ready' && !runtimePending)) {
-          queueMicrotask(closeStream)
-        }
+        eventTail = eventTail.then(async () => {
+          await opts.authorizeEvent?.(request)
+          if (closed) return
+          reply.raw.write(`event: status\ndata: ${JSON.stringify(event)}\n\n`)
+          const runtimePending = event.capabilities.runtimeDependencies.state === 'preparing'
+          if (event.state === 'degraded' || (event.state === 'ready' && !runtimePending)) {
+            queueMicrotask(closeStream)
+          }
+        }).catch(closeStream)
       })
       if (closed) unsubscribe()
       if (transportClosed) closeStream()

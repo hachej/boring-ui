@@ -70,46 +70,68 @@ async function writeSingleSeatFleet(path: string, seat: string): Promise<void> {
   ].join('\n'))
 }
 
+async function validAlphaOptions() {
+  const root = await temporaryFleetRoot()
+  const fleetConfigPath = join(root, 'fleet.yaml')
+  await writeFile(fleetConfigPath, [
+    'models:',
+    '  tiers:',
+    '    T3:',
+    '      - provider: anthropic',
+    '        id: claude-sonnet-4-6',
+    '        envVar: ANTHROPIC_API_KEY',
+    'seats:',
+    '  - seat: alpha',
+    '    agentTypeId: fixture-alpha',
+    '    skills:',
+    '      - name: greet',
+    '        digest: sha256:830555b295458756d3c94bce4cc763d7e666e47b59a9718015de3d237818d116',
+    '      - name: skills/local',
+    '        digest: sha256:97e420f7713ef2c4be618078f12936196c39790accea4c03e174ee981e9e2b37',
+    '',
+  ].join('\n'))
+  return {
+    discoveredPackages: [DISCOVERED_PACKAGES[0]!],
+    fleetConfigPath,
+    policyPath: POLICY_PATH,
+    skillsRoot: SKILLS_ROOT,
+  }
+}
+
 describe('loadConfiguredAgentFleet', () => {
-  test('composes valid seats and excludes an invalid seat with a stable diagnostic', async () => {
-    const result = await loadConfiguredAgentFleet({
+  test('fails the whole configured fleet when any seated Agent is invalid', async () => {
+    await expect(loadConfiguredAgentFleet({
       ...options(),
       env: { ANTHROPIC_API_KEY: 'test-key' },
+    })).rejects.toMatchObject({
+      name: 'FleetConfigError',
+      code: ErrorCode.enum.AGENT_FLEET_CONFIG_FILE_INVALID,
+      field: 'seats',
     })
+  })
 
-    expect(result.agents).toHaveLength(1)
+  test('composes a fully valid configured seat', async () => {
+    const result = await loadConfiguredAgentFleet({
+      ...await validAlphaOptions(),
+      env: { ANTHROPIC_API_KEY: 'test-key' },
+    })
     const [alpha] = result.agents
-    if (!alpha || 'legacyDefault' in alpha) throw new Error('expected a configured agent')
+    if (!alpha) throw new Error('expected a configured agent')
     expect(alpha.agentTypeId).toBe('fixture-alpha')
     expect(alpha.definition.instructions).toContain('You are Alpha.')
     expect(alpha.definition.instructions).toContain('boring-skill:start name=greet')
     expect(alpha.definition.instructions).toContain('boring-skill:start name=package-2-97e420f7713e')
     expect(alpha.model).toEqual({ preferred: 'anthropic:claude-sonnet-4-6' })
-    // gh-1107 slice 2: the compiled definition digest is the identity and
-    // the package's knowledge/ folder rides the spec for composition to
-    // mount as an agent-scoped readonly binding.
     expect(alpha.definition.digest).toMatch(/^sha256:[0-9a-f]{64}$/)
     expect(alpha.knowledge?.rootDir).toBe(resolve(PERSONAS_DIR, 'alpha', 'knowledge'))
-
-    expect(result.diagnostics).toHaveLength(3)
-    expect(result.diagnostics).toContainEqual(expect.objectContaining({
-      seat: 'broken',
-      code: ErrorCode.enum.AGENT_FLEET_SEAT_SKILL_DIGEST_MISMATCH,
-    }))
-    // m7 (fix round 1): pin the persona-level exclusion path too — a
-    // definitionId/agentTypeId mismatch is a persona defect, not a skill
-    // digest problem, and must land on the distinct diagnostic code.
-    expect(result.diagnostics).toContainEqual(expect.objectContaining({
-      seat: 'mismatched',
-      code: ErrorCode.enum.AGENT_FLEET_SEAT_PERSONA_INVALID,
-    }))
+    expect(result.diagnostics).toEqual([])
   })
 
   test('records the persona instructions source as a canonical host absolute path', async () => {
-    const result = await loadConfiguredAgentFleet({ ...options(), env: {} })
+    const result = await loadConfiguredAgentFleet({ ...await validAlphaOptions(), env: {} })
 
     const [alpha] = result.agents
-    if (!alpha || 'legacyDefault' in alpha) throw new Error('expected a configured agent')
+    if (!alpha) throw new Error('expected a configured agent')
     // Nothing downstream can invert seat -> directory, which is why the loader
     // records it. It records an ABSOLUTE host path and NOT a workspace-relative
     // ref: which workspace root serves this seat is only known per request
@@ -150,17 +172,17 @@ describe('loadConfiguredAgentFleet', () => {
     // actually being served (see resolveAgentInstructionFileRefs).
     expect(result.agents).toHaveLength(1)
     const [linked] = result.agents
-    if (!linked || 'legacyDefault' in linked) throw new Error('expected a configured agent')
+    if (!linked) throw new Error('expected a configured agent')
     expect(linked.instructionSources).toEqual([
       { absolutePath: join(await realpath(outsidePersona), 'instructions.md'), role: 'persona' },
     ])
   })
 
   test('omits preferredModel when no candidate API key is present', async () => {
-    const result = await loadConfiguredAgentFleet({ ...options(), env: {} })
+    const result = await loadConfiguredAgentFleet({ ...await validAlphaOptions(), env: {} })
 
     const [alpha] = result.agents
-    if (!alpha || 'legacyDefault' in alpha) throw new Error('expected a configured agent')
+    if (!alpha) throw new Error('expected a configured agent')
     expect(alpha.model).toBeUndefined()
   })
 
@@ -213,6 +235,34 @@ describe('loadConfiguredAgentFleet', () => {
     })
   })
 
+  test('throws FleetConfigError when policy.yaml is missing', async () => {
+    await expect(loadConfiguredAgentFleet({
+      ...await validAlphaOptions(),
+      policyPath: resolve(FIXTURE_ROOT, 'factory', 'does-not-exist-policy.yaml'),
+      env: {},
+    })).rejects.toMatchObject({
+      name: 'FleetConfigError',
+      code: ErrorCode.enum.AGENT_FLEET_CONFIG_FILE_INVALID,
+      field: 'policyPath',
+    })
+  })
+
+  test('throws FleetConfigError when a policy seat tier is not a string', async () => {
+    const root = await temporaryFleetRoot()
+    const policyPath = join(root, 'policy.yaml')
+    await writeFile(policyPath, 'models:\n  seats:\n    alpha: 42\n')
+
+    await expect(loadConfiguredAgentFleet({
+      ...await validAlphaOptions(),
+      policyPath,
+      env: {},
+    })).rejects.toMatchObject({
+      name: 'FleetConfigError',
+      code: ErrorCode.enum.AGENT_FLEET_CONFIG_FILE_INVALID,
+      field: 'models.seats.alpha',
+    })
+  })
+
   test('throws FleetConfigError when policy references a missing model tier', async () => {
     const root = await temporaryFleetRoot()
     const policyPath = join(root, 'policy.yaml')
@@ -231,7 +281,11 @@ describe('loadConfiguredAgentFleet', () => {
 
   test('keeps discovered but unseated packages inert and visible in diagnostics', async () => {
     const result = await loadConfiguredAgentFleet({
-      ...options([...DISCOVERED_PACKAGES, descriptor(resolve(PERSONAS_DIR, 'alpha'), 'fixture-unseated', [])]),
+      ...await validAlphaOptions(),
+      discoveredPackages: [
+        DISCOVERED_PACKAGES[0]!,
+        descriptor(resolve(PERSONAS_DIR, 'alpha'), 'fixture-unseated', []),
+      ],
       env: {},
     })
     expect(result.agents.map((agent) => agent.agentTypeId)).not.toContain('fixture-unseated')
@@ -241,17 +295,16 @@ describe('loadConfiguredAgentFleet', () => {
     }))
   })
 
-  test('fails closed every package claiming a conflicting definitionId', async () => {
+  test('fails startup when packages conflict for a seated definitionId', async () => {
     const alpha = descriptor(resolve(PERSONAS_DIR, 'alpha'), 'fixture-alpha', ['greet', 'skills/local'])
-    const result = await loadConfiguredAgentFleet({
-      ...options([alpha, {
+    await expect(loadConfiguredAgentFleet({
+      ...await validAlphaOptions(),
+      discoveredPackages: [alpha, {
         ...alpha,
         rootDir: resolve(PERSONAS_DIR, 'broken'),
         preflight: { ok: false, errors: [{ code: PREFLIGHT_INVALID_PLUGIN_METADATA, message: 'fixture preflight failure' }] },
-      }]),
+      }],
       env: {},
-    })
-    expect(result.agents).toHaveLength(0)
-    expect(result.diagnostics.filter((item) => item.code === ErrorCode.enum.AGENT_DEFINITION_ID_CONFLICT)).toHaveLength(2)
+    })).rejects.toMatchObject({ name: 'FleetConfigError', field: 'seats' })
   })
 })

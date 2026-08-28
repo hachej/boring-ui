@@ -2,11 +2,16 @@ import { createHash, randomBytes } from 'node:crypto'
 import { and, eq, isNull, sql, desc } from 'drizzle-orm'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 
-import type { WorkspaceStore, WorkspaceStoreCreateOptions } from '../../app/types.js'
+import type {
+  WorkspaceStore,
+  WorkspaceStoreCreateOptions,
+} from '../../app/types.js'
 import type {
   MemberRole,
   User,
   Workspace,
+  WorkspaceAgentSeat,
+  WorkspaceAgentSeatSource,
   WorkspaceInvite,
   WorkspaceMember,
   WorkspaceRuntime,
@@ -20,11 +25,12 @@ import {
   assertWorkspaceTypeIdNotMutable,
   parseTrustedWorkspaceTypeId,
 } from '../../workspaceType.js'
-import { parseTrustedDefaultAgentTypeId } from '../../defaultAgentType.js'
+import { parseRequiredDefaultAgentTypeId } from '../../defaultAgentType.js'
 import {
   userSettings,
   users,
   workspaces,
+  workspaceAgentSeats,
   workspaceInvites,
   workspaceMembers,
   workspaceRuntimeResources,
@@ -123,6 +129,17 @@ function toWorkspaceInvite(row: typeof workspaceInvites.$inferSelect): Workspace
   }
 }
 
+function toWorkspaceAgentSeat(row: typeof workspaceAgentSeats.$inferSelect): WorkspaceAgentSeat {
+  return {
+    seatId: row.seatId,
+    workspaceId: row.workspaceId,
+    agentTypeId: row.agentTypeId,
+    source: row.source as WorkspaceAgentSeatSource,
+    enrolledByUserId: row.enrolledByUserId,
+    createdAt: toIso(row.createdAt)!,
+  }
+}
+
 function toWorkspaceMember(row: typeof workspaceMembers.$inferSelect): WorkspaceMember {
   return {
     workspaceId: row.workspaceId,
@@ -171,31 +188,31 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
   // Workspace CRUD (Sub-PR 1)
   // ---------------------------------------------------------------------------
 
-  async create(userId: string, name: string, appId: string, opts?: WorkspaceStoreCreateOptions): Promise<Workspace> {
+  async create(userId: string, name: string, appId: string, opts: WorkspaceStoreCreateOptions): Promise<Workspace> {
     const workspaceTypeId = parseTrustedWorkspaceTypeId(opts?.workspaceTypeId)
-    const defaultAgentTypeId = parseTrustedDefaultAgentTypeId(opts?.defaultAgentTypeId)
+    const defaultAgentTypeId = parseRequiredDefaultAgentTypeId(opts?.defaultAgentTypeId)
     return this.db.transaction(async (tx) => {
       const insert = tx
         .insert(workspaces)
         .values({
-          ...(opts?.id ? { id: opts.id } : {}),
+          ...(opts.id ? { id: opts.id } : {}),
           appId,
           workspaceTypeId,
           name,
           createdBy: userId,
-          isDefault: opts?.isDefault ?? false,
-          managedBy: opts?.managedBy ?? null,
+          isDefault: opts.isDefault ?? false,
+          managedBy: opts.managedBy ?? null,
           defaultAgentTypeId,
         })
 
-      const insertedRows = opts?.id
+      const insertedRows = opts.id
         ? await insert.onConflictDoNothing().returning()
         : await insert.returning()
 
-      const row = insertedRows[0] ?? (opts?.id
+      const row = insertedRows[0] ?? (opts.id
         ? (await tx.select().from(workspaces).where(eq(workspaces.id, opts.id)).limit(1))[0]
         : undefined)
-      if (!row) throw new Error(`Workspace ${opts?.id ?? name} was not created`)
+      if (!row) throw new Error(`Workspace ${opts.id ?? name} was not created`)
       assertWorkspaceTypeIdMatches(row.workspaceTypeId, workspaceTypeId)
 
       if (insertedRows.length > 0) {
@@ -203,6 +220,12 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
           workspaceId: row.id,
           userId,
           role: 'owner',
+        })
+        await tx.insert(workspaceAgentSeats).values({
+          workspaceId: row.id,
+          agentTypeId: defaultAgentTypeId,
+          source: opts.initialAgentSeatSource ?? 'generic-default',
+          enrolledByUserId: opts.enrolledByUserId ?? userId,
         })
       }
 
@@ -225,6 +248,87 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
       .orderBy(desc(workspaces.isDefault), desc(workspaces.createdAt))
 
     return rows.map((r) => toWorkspace(r.ws))
+  }
+
+  async listAgentSeats(workspaceId: string): Promise<WorkspaceAgentSeat[]> {
+    const rows = await this.db
+      .select()
+      .from(workspaceAgentSeats)
+      .where(eq(workspaceAgentSeats.workspaceId, workspaceId))
+      .orderBy(workspaceAgentSeats.createdAt, workspaceAgentSeats.agentTypeId)
+    return rows.map(toWorkspaceAgentSeat)
+  }
+
+  async hasAgentSeat(workspaceId: string, agentTypeId: string): Promise<boolean> {
+    const parsedAgentTypeId = parseRequiredDefaultAgentTypeId(agentTypeId)
+    const rows = await this.db
+      .select({ seatId: workspaceAgentSeats.seatId })
+      .from(workspaceAgentSeats)
+      .where(and(
+        eq(workspaceAgentSeats.workspaceId, workspaceId),
+        eq(workspaceAgentSeats.agentTypeId, parsedAgentTypeId),
+      ))
+      .limit(1)
+    return rows.length > 0
+  }
+
+  async addAgentSeat(
+    workspaceId: string,
+    agentTypeId: string,
+    source: WorkspaceAgentSeatSource,
+    enrolledByUserId?: string,
+  ): Promise<WorkspaceAgentSeat> {
+    const parsedAgentTypeId = parseRequiredDefaultAgentTypeId(agentTypeId)
+    const inserted = await this.db
+      .insert(workspaceAgentSeats)
+      .values({
+        workspaceId,
+        agentTypeId: parsedAgentTypeId,
+        source,
+        enrolledByUserId: enrolledByUserId ?? null,
+      })
+      .onConflictDoNothing({
+        target: [workspaceAgentSeats.workspaceId, workspaceAgentSeats.agentTypeId],
+      })
+      .returning()
+    const row = inserted[0] ?? (await this.db
+      .select()
+      .from(workspaceAgentSeats)
+      .where(and(
+        eq(workspaceAgentSeats.workspaceId, workspaceId),
+        eq(workspaceAgentSeats.agentTypeId, parsedAgentTypeId),
+      ))
+      .limit(1))[0]
+    if (!row) throw new Error(`Agent Seat ${workspaceId}/${parsedAgentTypeId} was not created`)
+    return toWorkspaceAgentSeat(row)
+  }
+
+  async countNullDefaultAgentTypeIds(appId: string): Promise<number> {
+    const rows = await this.db
+      .select({ count: sql<number>`count(*)::integer` })
+      .from(workspaces)
+      .where(and(eq(workspaces.appId, appId), isNull(workspaces.defaultAgentTypeId)))
+    return Number(rows[0]?.count ?? 0)
+  }
+
+  async compareAndSetNullDefaultAgentTypeId(appId: string, value: string): Promise<number> {
+    const defaultAgentTypeId = parseRequiredDefaultAgentTypeId(value)
+    return await this.db.transaction(async (tx) => {
+      const rows = await tx
+        .update(workspaces)
+        .set({ defaultAgentTypeId })
+        .where(and(eq(workspaces.appId, appId), isNull(workspaces.defaultAgentTypeId)))
+        .returning({ id: workspaces.id, createdBy: workspaces.createdBy })
+      if (rows.length > 0) {
+        await tx.insert(workspaceAgentSeats).values(rows.map((row) => ({
+          workspaceId: row.id,
+          agentTypeId: defaultAgentTypeId,
+          source: 'migration-default',
+          enrolledByUserId: row.createdBy,
+        }))).onConflictDoNothing()
+      }
+      return rows.length
+    })
   }
 
   async get(id: string): Promise<Workspace | null> {

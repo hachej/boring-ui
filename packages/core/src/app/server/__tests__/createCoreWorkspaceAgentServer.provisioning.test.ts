@@ -3,165 +3,9 @@ import { randomUUID } from 'node:crypto'
 import { access, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import Fastify from 'fastify'
-import { beforeEach, expect, test, vi } from 'vitest'
-import type { CoreConfig } from '../../../shared/types.js'
+import { expect, test, vi } from 'vitest'
 import { createTestCoreConfig } from '../../../server/__tests__/createTestApp.js'
-
-const mocks = vi.hoisted(() => {
-  const hostRegisterDirectRoutes = vi.fn((_projection: any) => async () => {})
-  const hostClose = vi.fn(async () => {})
-  const acquireEnvironment = vi.fn()
-  return {
-    createAgentHost: vi.fn(async (options: any) => {
-      await options.fleetCompiler.compile({ agents: options.agents })
-      return {
-        marker: 'prebuilt-agent-host',
-        host: { close: hostClose, drain: vi.fn(async () => {}) },
-        registerDirectRoutes: hostRegisterDirectRoutes,
-        acquireEnvironment,
-        runWithWorkspaceAgent: vi.fn(),
-      }
-    }),
-    hostRegisterDirectRoutes,
-    hostClose,
-    acquireEnvironment,
-    provisionWorkspaceRuntime: vi.fn(async () => ({ changed: false, env: {}, pathEntries: [], skillPaths: [] })),
-    collectWorkspaceAgentServerPlugins: vi.fn(),
-    createWorkspaceUiTools: vi.fn(() => []),
-    isMember: vi.fn(async (_workspaceId: string, _userId: string) => true),
-    getWorkspace: vi.fn(async (id: string) => ({ id, appId: 'test-app' })),
-    getUser: vi.fn(async (id: string) => ({ id })),
-    actualCreateAgentHost: undefined as undefined | ((options: any) => Promise<any>),
-    runtimeHost: {
-      source: 'custom-adapter-host',
-      getBoringAgentRuntimePaths: vi.fn((root: string) => ({ workspaceRoot: root })),
-    },
-  }
-})
-
-vi.mock('@hachej/boring-agent/server', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@hachej/boring-agent/server')>()
-  mocks.actualCreateAgentHost = actual.createAgentHost
-  return {
-    ...actual,
-    autoDetectMode: () => 'direct',
-    compactPiPackages: (packages: unknown[]) => packages,
-    createAgentHost: mocks.createAgentHost,
-    createValidatingAgentFleetCompiler: actual.createValidatingAgentFleetCompiler,
-    provisionWorkspaceRuntime: mocks.provisionWorkspaceRuntime,
-  }
-})
-
-vi.mock('@hachej/boring-workspace/app/server', () => ({
-  assertWorkspaceBridgeHandlersTrusted: () => {},
-  collectWorkspaceAgentServerPlugins: mocks.collectWorkspaceAgentServerPlugins,
-  createSandboxRuntimeModeAdapter: () => ({
-    id: 'direct',
-    getRuntimeLayoutRoot: ({ workspaceRoot }: { workspaceRoot: string }) => workspaceRoot,
-    runtimeHost: mocks.runtimeHost,
-  }),
-  hasDirServerPlugin: () => false,
-  omitPluginAuthoringProvisioning: (plugins: Array<{ id: string }>) => plugins.filter((plugin) => plugin.id !== 'boring-ui-plugin-cli-package'),
-  readWorkspacePluginPackagePiSnapshot: () => ({
-    additionalSkillPaths: [],
-    packages: [],
-    extensionPaths: [],
-    systemPromptAppend: undefined,
-  }),
-  readWorkspacePluginPackageRuntimePlugins: () => [],
-  resolveDefaultWorkspacePluginPackagePaths: () => [],
-  resolveOnePluginEntry: async (entry: unknown) => entry,
-  sandboxRuntimeHostOperations: {},
-}))
-
-vi.mock('@hachej/boring-workspace/server', () => ({
-  createBrowserBridgeAuthPolicy: () => vi.fn(),
-  createInMemoryBridge: () => ({ postCommand: vi.fn(), drainCommands: vi.fn(), getState: vi.fn(), emitUiEffect: vi.fn(), setState: vi.fn(), subscribeCommands: vi.fn() }),
-  createWorkspaceBridgeRegistry: () => ({ call: vi.fn(), getDefinition: vi.fn(), registerHandler: vi.fn() }),
-  createWorkspaceUiTools: mocks.createWorkspaceUiTools,
-  InMemoryWorkspaceBridgeIdempotencyStore: class InMemoryWorkspaceBridgeIdempotencyStore {},
-  uiRoutes: async () => {},
-  workspaceBridgeHttpRoutes: async () => {},
-}))
-
-vi.mock('../../../server/app/index.js', () => ({
-  createCoreApp: async (
-    config: CoreConfig,
-    options?: { requestScopeResolver?: (request: unknown) => Promise<unknown> | unknown },
-  ) => {
-    const app = Fastify({ logger: false })
-    app.decorate('config', config)
-    app.addHook('onRequest', async (request) => {
-      const userId = request.headers['x-test-user-id']
-      if (typeof userId === 'string') request.user = { id: userId } as never
-    })
-    if (options?.requestScopeResolver) {
-      app.addHook('onRequest', async (request) => {
-        request.requestScope = await options.requestScopeResolver!(request) as never
-      })
-    }
-    app.setErrorHandler((error, request, reply) => {
-      const status = (error as { status?: unknown }).status
-      const code = (error as { code?: unknown }).code
-      if (typeof status === 'number' && typeof code === 'string') {
-        return reply.code(status).send({ code, message: (error as Error).message, requestId: request.id })
-      }
-      return reply.send(error)
-    })
-    return app
-  },
-  registerRoutes: async () => {},
-  registerDirectRoutes: () => async () => {},
-}))
-
-vi.mock('../../../server/auth/index.js', () => ({
-  authHook: async () => {},
-  createAuth: () => ({ handler: vi.fn(async () => new Response(null, { status: 404 })) }),
-}))
-
-beforeEach(() => {
-  vi.clearAllMocks()
-  mocks.provisionWorkspaceRuntime.mockResolvedValue({ changed: false, env: {}, pathEntries: [], skillPaths: [] })
-  mocks.acquireEnvironment.mockReset()
-  mocks.isMember.mockResolvedValue(true)
-  mocks.getWorkspace.mockImplementation(async (id: string) => ({ id, appId: 'test-app' }))
-  mocks.getUser.mockImplementation(async (id: string) => ({ id }))
-})
-
-vi.mock('../../../server/routes/index.js', () => ({
-  registerInviteRoutes: async () => {},
-  registerMemberRoutes: async () => {},
-  registerSettingsRoutes: async () => {},
-  registerWorkspaceRoutes: async () => {},
-}))
-
-vi.mock('../../../server/db/index.js', () => ({
-  createDatabase: () => ({ db: {}, sql: { end: vi.fn(async () => {}) } }),
-  PostgresUserStore: class {
-    getById(id: string) { return mocks.getUser(id) }
-  },
-  PostgresWorkspaceStore: class {
-    get(id: string) { return mocks.getWorkspace(id) }
-    isMember(workspaceId: string, userId: string) { return mocks.isMember(workspaceId, userId) }
-  },
-}))
-
-vi.mock('../../../server/runtime/index.js', () => ({
-  WorkspaceRuntimeSandboxHandleStore: class {},
-}))
-
-function fakeRequest(workspaceId: string, userId: string) {
-  return {
-    id: `request-${workspaceId}`,
-    method: 'GET',
-    url: '/api/v1/agents',
-    headers: { 'x-boring-workspace-id': workspaceId },
-    raw: { rawHeaders: ['x-boring-workspace-id', workspaceId] },
-    query: {},
-    user: { id: userId, email: `${userId}@example.com`, emailVerified: true },
-  }
-}
+import { fakeRequest, mocks } from './createCoreWorkspaceAgentServer.testHarness.js'
 
 test('core production mounts only the awaited CreatedAgentHost route projection', async () => {
   const source = await readFile(join(import.meta.dirname, '..', 'createCoreWorkspaceAgentServer.ts'), 'utf8')
@@ -278,6 +122,166 @@ test('core/full-app composition forwards collected runtime provisioning plugins 
   }
 }, 15_000) // Full Core composition can exceed Vitest's default timeout on a cold module load.
 
+test('core enforces workspace Seats before product entitlement policy', async () => {
+  mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
+    runtimePlugins: [],
+    agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
+    preservedUiStateKeys: [],
+    routeContributions: [],
+  })
+  mocks.getWorkspace.mockImplementation(async (id) => ({
+    id,
+    appId: 'boring-ui-v2-test',
+    defaultAgentTypeId: 'default',
+  }))
+  mocks.hasAgentSeat.mockImplementation(async (_workspaceId, agentTypeId) => agentTypeId === 'default')
+  const resolveAgentEntitlement = vi.fn(async () => ({ state: 'allowed' as const, seatId: 'seat-default' }))
+  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
+  const app = await createCoreWorkspaceAgentServer({
+    config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+    workspaceRoot: '/tmp/full-app-workspaces',
+    serveFrontend: false,
+    workspaceAgentAccessMode: 'enforce',
+    resolveAgentEntitlement,
+  })
+
+  try {
+    const hostOptions = (mocks.createAgentHost as any).mock.calls[0]?.[0] as Record<string, any>
+    const projection = (mocks.hostRegisterDirectRoutes as any).mock.calls[0]?.[0] as Record<string, any>
+    const scope = await projection.authorizeAgentRequest(fakeRequest('workspace-a', 'user-a'))
+    const verifiedClaim = await hostOptions.scopeVerifier.verify(scope)
+    await expect(hostOptions.resolveAgentAccess({
+      verifiedClaim,
+      agentTypeId: 'other-agent',
+      operation: 'session.create',
+    })).resolves.toEqual({ state: 'not-available', reason: 'not-seated' })
+    expect(resolveAgentEntitlement).not.toHaveBeenCalled()
+
+    await expect(hostOptions.resolveAgentAccess({
+      verifiedClaim,
+      agentTypeId: 'default',
+      operation: 'session.create',
+    })).resolves.toEqual({ state: 'allowed', seatId: 'seat-default' })
+    expect(mocks.hasAgentSeat).toHaveBeenCalledWith('workspace-a', 'default')
+    expect(resolveAgentEntitlement).toHaveBeenCalledWith({
+      workspaceId: 'workspace-a',
+      userId: 'user-a',
+      agentTypeId: 'default',
+      operation: 'session.create',
+    })
+  } finally {
+    await app.close()
+  }
+}, 15_000)
+
+test('core exposes idempotent add-only workspace Agent Seat routes', async () => {
+  mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
+    runtimePlugins: [],
+    agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
+    preservedUiStateKeys: [],
+    routeContributions: [],
+  })
+  mocks.getWorkspace.mockImplementation(async (id) => ({
+    id,
+    appId: 'boring-ui-v2-test',
+    defaultAgentTypeId: 'default',
+  }))
+  mocks.listAgentSeats.mockResolvedValue([{
+    seatId: 'seat-default',
+    workspaceId: 'workspace-a',
+    agentTypeId: 'default',
+    source: 'operator',
+    enrolledByUserId: 'private-operator-id',
+    createdAt: '2026-08-27T00:00:00.000Z',
+  }])
+  let entitlementUnavailable = false
+  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
+  const app = await createCoreWorkspaceAgentServer({
+    config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+    workspaceRoot: '/tmp/full-app-workspaces',
+    serveFrontend: false,
+    canEnrollAgent: async () => true,
+    resolveAgentEntitlement: async () => entitlementUnavailable
+      ? { state: 'policy-unavailable' }
+      : { state: 'allowed', seatId: 'seat-default' },
+    requestScopeResolver: () => ({
+      bindingId: 'binding-a',
+      workspaceId: 'workspace-a',
+      defaultDeploymentId: 'deployment-a',
+      activeRevision: 'revision-a',
+      resolvedDigest: 'digest-a',
+    }),
+  })
+
+  try {
+    const listed = await app.inject({
+      method: 'GET',
+      url: '/api/v1/workspaces/workspace-a/agent-seats',
+      headers: { 'x-test-user-id': 'user-a' },
+    })
+    expect(listed.statusCode).toBe(200)
+    expect(listed.json()).toEqual({
+      seats: [{ agentTypeId: 'default', createdAt: '2026-08-27T00:00:00.000Z' }],
+    })
+    expect(listed.body).not.toContain('source')
+    expect(listed.body).not.toContain('private-operator-id')
+
+    entitlementUnavailable = true
+    const unavailable = await app.inject({
+      method: 'GET',
+      url: '/api/v1/workspaces/workspace-a/agent-seats',
+      headers: { 'x-test-user-id': 'user-a' },
+    })
+    expect(unavailable.statusCode).toBe(503)
+    entitlementUnavailable = false
+
+    const added = await app.inject({
+      method: 'POST',
+      url: '/api/v1/workspaces/workspace-a/agent-seats/default',
+      headers: {
+        'x-test-user-id': 'user-a',
+        'x-boring-workspace-id': 'workspace-a',
+        origin: 'http://localhost:3000',
+      },
+    })
+    expect(added.statusCode, added.body).toBe(200)
+    expect(added.json()).toMatchObject({
+      seat: { agentTypeId: 'default' },
+    })
+    expect(added.json().seat).not.toHaveProperty('source')
+    expect(added.json().seat).not.toHaveProperty('enrolledByUserId')
+    expect(mocks.addAgentSeat).toHaveBeenCalledWith(
+      'workspace-a',
+      'default',
+      'user-add',
+      'user-a',
+    )
+
+    const unknown = await app.inject({
+      method: 'POST',
+      url: '/api/v1/workspaces/workspace-a/agent-seats/not-deployed',
+      headers: {
+        'x-test-user-id': 'user-a',
+        'x-boring-workspace-id': 'workspace-a',
+        origin: 'http://localhost:3000',
+      },
+    })
+    expect(unknown.statusCode).toBe(404)
+
+    const crossBound = await app.inject({
+      method: 'POST',
+      url: '/api/v1/workspaces/workspace-b/agent-seats/default',
+      headers: {
+        'x-test-user-id': 'user-a',
+        origin: 'http://localhost:3000',
+      },
+    })
+    expect(crossBound.statusCode).toBe(421)
+  } finally {
+    await app.close()
+  }
+}, 30_000)
+
 test('core/full-app gives strong admission only to the direct Host projection', async () => {
   mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
     runtimePlugins: [],
@@ -298,7 +302,15 @@ test('core/full-app gives strong admission only to the direct Host projection', 
 
   try {
     const hostOptions = (mocks.createAgentHost as any).mock.calls.at(-1)?.[0]
-    expect(hostOptions.effectAdmission).toBe(effectAdmission)
+    const admissionInput = {
+      key: { requestId: 'interrupt-1' },
+      operation: 'session.interrupt',
+      scope: {},
+      target: { kind: 'session' },
+    }
+    await expect(hostOptions.effectAdmission.admit(admissionInput)).resolves.toMatchObject({ type: 'accepted' })
+    expect(effectAdmission.admit).toHaveBeenCalledWith(admissionInput)
+    expect(hostOptions).not.toHaveProperty('effectPolicy')
     expect(hostOptions).not.toHaveProperty('admitEffect')
     expect(mocks.hostRegisterDirectRoutes).toHaveBeenCalledOnce()
   } finally {
@@ -336,7 +348,11 @@ test.each([
   })
   const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
   const result = createCoreWorkspaceAgentServer({
-    config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+    config: createTestCoreConfig({
+      stores: 'postgres',
+      databaseUrl: 'postgres://test',
+      defaultAgentTypeId: 'configured',
+    }),
     workspaceRoot: '/tmp/full-app-workspaces',
     serveFrontend: false,
     agents: [agent],
@@ -355,7 +371,11 @@ test('core/full-app rejects unknown plugin config keys with a stable code before
   })
   const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
   const result = createCoreWorkspaceAgentServer({
-    config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+    config: createTestCoreConfig({
+      stores: 'postgres',
+      databaseUrl: 'postgres://test',
+      defaultAgentTypeId: 'configured',
+    }),
     workspaceRoot: '/tmp/full-app-workspaces',
     serveFrontend: false,
     plugins: [{
@@ -396,7 +416,11 @@ test('core/full-app rejects an invalid fleet before Host identity or Environment
   const sessionRoot = join(tmpdir(), `boring-core-rejected-fleet-${randomUUID()}`)
   const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
   const result = createCoreWorkspaceAgentServer({
-    config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+    config: createTestCoreConfig({
+      stores: 'postgres',
+      databaseUrl: 'postgres://test',
+      defaultAgentTypeId: 'configured',
+    }),
     workspaceRoot: '/tmp/full-app-workspaces',
     sessionRoot,
     serveFrontend: false,
@@ -429,7 +453,7 @@ test('core/full-app scope authority rejects forgeries and cross-workspace route 
     routeContributions: [],
   })
   const config = createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' })
-  mocks.getWorkspace.mockImplementation(async (id: string) => ({ id, appId: config.appId }))
+  mocks.getWorkspace.mockImplementation(async (id: string) => ({ id, appId: config.appId, defaultAgentTypeId: null }))
   const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
   const app = await createCoreWorkspaceAgentServer({
     config,

@@ -4,11 +4,12 @@ The owner's multi-agent collaboration vision, and the **premises-first program**
 that builds it. The design is settled; what this pack sequences is the kernel
 work the design waits on.
 
-Canonical PR: [#1409](https://github.com/hachej/boring-ui/pull/1409) ·
+Canonical PR: [#1409](https://github.com/hachej/boring-ui/pull/1409)
+(**MERGED 2026-08-27**) ·
 North star: [#1399](https://github.com/hachej/boring-ui/issues/1399) ·
 Re-cut by owner direction 2026-08-26
 
-> **Merging #1409 ratifies** the §8 amendment it carries in
+> **#1409's merge (2026-08-27) ratified** the §8 amendment it carries in
 > `docs/plans/long-term/ratified/RECONCILIATION.md` (surface shape, ratified
 > spec artifacts, premises-precede-surface). Earlier vehicles #1416, #1403,
 > #1389, #1417 and #1418 are closed and absorbed here. The plan chapters
@@ -26,13 +27,16 @@ the surface is built on top of them. Two rulings set the tone:
   conformance scale: Level B ≈ bounded replay + snapshot rehydrate (what we have
   today), Level D ≈ fully durable streams a client can always resume. The engine
   waits for Level D (P1).
-- **The thread storage model is not decided.** It goes to a spike with a
-  competitor study (P2), and the engine's data-model slice waits on its findings.
+- **The thread storage model is half decided.** The value root is ruled
+  (2026-08-27, RECONCILIATION §9a: Thread = job root, 0..n Sessions; the
+  competitor study is done); only the storage **shape** — first-class stream
+  vs projection — still goes to the P2 spike, and the engine's data-model
+  slice waits on its findings.
 
 | # | Premise | State | Unblocks |
 |---|---|---|---|
-| **P1** | Durable streams — Level D conformance, default-on | epic `wt-391-forward-9p50`; one-session children `.1` conformance + `.2` rollout | the whole engine |
-| **P2** | Thread storage model — spike + competitor study | epic `shell-ngfs.13`; one-session children `.13.1` research + `.13.2` spike | engine S1, the storage question, #1355 ref types |
+| **P1** | Durable streams — Level D conformance, default-on | epic `wt-391-forward-9p50`; beads A1–A5 (`.1/.3/.4/.5/.6`) → P1-B (`.7`) → P1-C (`.2`) | the whole engine |
+| **P2** | Thread storage **shape** (value root RULED, §9a; study DONE) | epic `shell-ngfs.13`; `.13.1` research CLOSED, `.13.2` shape spike after P1-A | engine S1, #1355 ref types |
 | **P3** | Seat storage — the tamper-proof who-said-what record (ratified concept, formerly C7) | epic `shell-ngfs.14`; one-session children `.14.1` catalog/envelope + `.14.2` projection | honest who-said-what everywhere |
 | **P4** | Kernel View — first ratified slice | **no sizing yet** | Library saved views |
 | **P5** | Merge queue | standing obligation, not a bead | branch health for everything |
@@ -67,10 +71,14 @@ Honest risk**).
 
 What that specification says:
 
-**Transparent multi-agent.** A thread looks like today's chat, with several
-agents inside it. **One composer.** Workers hidden behind the orchestrator: the
-user sees a *voice*, not a *seat*. **1 Thread = 1 job** — the unit of WORK, not
-of agent (ratified 2026-08-26, PR #1401). **Threads archive, they don't die.**
+**Transparent multi-agent — AMENDED 2026-08-27 (§9b): multi-author.** A
+thread reads like a Slack thread: **one composer** for the human, several
+**named agents visibly authoring posts** (chips, joined/handoff/left markers);
+per-agent work logs stay one drill-down deeper. The earlier "workers hidden
+behind one voice" formula is retired; the orchestrator is a named speaker
+with its own Seat. **1 Thread = 1 job** — the durable job root, binding 0..n
+Sessions (ratified 2026-08-26 PR #1401, amended by RECONCILIATION §9a).
+**Threads archive, they don't die.**
 
 **The shell = Search (top) / Inbox / Work / Agents / Library**, over one workspace. Nav
 is domains; the vertical plugin rail is tools. **Chat opens as a column beside
@@ -93,13 +101,13 @@ composing as apps-as-recipes into a company OS.
 |---|---|---|
 | 1 | [`premises.md`](premises.md) | **The program.** P1–P6, the P2 brief, interview rulings, sequencing. Start here. |
 | 2 | [`shell-plan.md`](shell-plan.md) | The **layout**: IA, four mounts, center modes, Library, location contract, slices L1–L7c |
-| 3 | [`job-thread-plan.md`](job-thread-plan.md) | The **engine**: projection, relay, handoffs, seat boundary, S1–S6 |
+| 3 | [`relay-projection-v0-job-thread-plan.md`](research/candidates/relay-projection-v0-job-thread-plan.md) *(HISTORICAL CANDIDATE — demoted 2026-08-27, non-dispatchable)* | The **engine**: projection, relay, handoffs, seat boundary, S1–S6 |
 | 4 | [`chief-of-staff-delta.md`](chief-of-staff-delta.md) | The **consumer**: founder / chief-of-staff persona, D1–D6, F1–F3 |
 | 5 | [`research/`](research/README.md) | The **evidence**: spikes, studies, reviews — indexed with supersessions |
 
 **Gate documents** (visual, one screen per question):
 [`shell-plan-review.html`](shell-plan-review.html) ·
-[`job-thread-plan-review.html`](job-thread-plan-review.html)
+[`relay-projection-v0-job-thread-plan-review.html`](research/candidates/relay-projection-v0-job-thread-plan-review.html)
 
 **Ruling record:** [`north-star-ledger.md`](north-star-ledger.md) absorbs
 issue #1399 — every dated owner ruling behind this pack, verbatim, each
@@ -132,8 +140,8 @@ except the three substrate-free chrome slices.
 
 **Honest risk.** The spike proves the *frame*, and (at the ratified commit
 `08cc60523`) a **real single-agent chat session** inside a Thread. What it does
-not prove is the *multi-voice transcript* — several agents behind one composer
-with audit-grade attribution. That proof is L4, the thread-view slice, which
+not prove is the *multi-author transcript* — one composer, explicit
+specialists (§9b) with audit-grade attribution. That proof is L4, the thread-view slice, which
 now sits behind P1, P2 and P3. Separately: **P2 and P3 are
 coupled** (attribution shape depends on storage shape) and could deadlock if run
 as independent spikes; P2's decision criteria are written to prevent it.

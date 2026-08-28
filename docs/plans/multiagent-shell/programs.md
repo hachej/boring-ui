@@ -7,9 +7,10 @@ this page instead.
 
 ## Durable streams — restart-safe agent interactions
 
-- Status: **ACTIVE** — P1-A is approved and dispatchable (DIRECTION
-  amendment 2026-08-27); P1-B is waiting for a qualifying pi release; P1-C
-  is waiting for P1-B. See `premises.md` P1 for the slice table.
+- Status: **ACTIVE** — P1-A is approved and dispatchable as five beads
+  (`9p50.1/.3/.4/.5/.6`); P1-B (`9p50.7`) builds the Boring event backend
+  after A2 — the pi wait was removed 2026-08-27 (RECONCILIATION §9c); P1-C
+  (`9p50.2`) runs last. See `premises.md` P1 for the slice table.
 - Plan: [`../durable-streams-plan.md`](../durable-streams-plan.md) (r3; the
   r2 body's "blocked on the second cross-model review" note applied only to
   the r2 plan body and does not gate P1-A — see the plan's r3 revision

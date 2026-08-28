@@ -288,6 +288,11 @@ describe.sequential("CLI Agent Host composition", () => {
       `${MODEL_TIERS_YAML}seats:\n  - seat: worker\n    agentTypeId: boring-worker\n    skills: []\n`,
       "utf8",
     )
+    await writeFile(
+      join(fleetRoot, ".agents", "factory", "policy.yaml"),
+      "models:\n  seats:\n    worker: T3\n",
+      "utf8",
+    )
     await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
       name: "@fixture/workspace-seat-tools",
       version: "1.0.0",
@@ -406,11 +411,13 @@ describe.sequential("CLI Agent Host composition", () => {
         "  - seat: repository-worker",
         "    agentTypeId: fixture-cli-repository-worker",
         "    skills: []",
-        "  - seat: local-worker",
-        "    agentTypeId: fixture-cli-local-worker",
-        "    skills: []",
         "",
       ].join("\n"),
+      "utf8",
+    )
+    await writeFile(
+      join(fleetRoot, ".agents", "factory", "policy.yaml"),
+      "models:\n  seats:\n    repository-worker: T3\n",
       "utf8",
     )
 
@@ -599,7 +606,15 @@ describe.sequential("CLI Agent Host composition", () => {
         expect(fixture.createAgentHost).toHaveBeenCalledTimes(1)
         assertComposedAgentHostRouteTable(fixture.app)
         expect(fixture.createAgentHost).toHaveBeenCalledWith(expect.objectContaining({
-          agents: [{ agentTypeId: "default", legacyDefault: true }],
+          agents: [{
+            agentTypeId: "default",
+            definition: {
+              instructions: "You are the default Agent for this workspace.",
+              label: "Agent",
+              version: "1",
+            },
+            provisioning: { inheritSkillPaths: true },
+          }],
           hostId: "cli-trusted-local",
         }))
         const hostOptions = fixture.createAgentHost.mock.calls[0]?.[0]
@@ -611,7 +626,11 @@ describe.sequential("CLI Agent Host composition", () => {
 
         const addressed = await fixture.app.inject({ method: "GET", url: "/api/v1/agents", headers })
         expect(addressed.statusCode, addressed.body).toBe(200)
-        expect(addressed.json()).toEqual([{ agentTypeId: "default", label: "Agent" }])
+        expect(addressed.json()).toEqual([{
+          agentTypeId: "default",
+          label: "Agent",
+          definition: { version: "1", digest: expect.any(String) },
+        }])
         expect((await fixture.app.inject({
           method: "GET",
           url: "/api/v1/files/search?q=proof",

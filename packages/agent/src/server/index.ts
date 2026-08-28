@@ -121,7 +121,7 @@ export type {
   WithheldInstructionRef,
 } from './agentDefinition/instructionFileRefs'
 export {
-  LEGACY_DEFAULT_AGENT_FLEET,
+  DEFAULT_AGENT_FLEET,
   resolveDefaultAgentFleet,
 } from './agentDefinition/resolveDefaultAgentFleet'
 export type {
@@ -193,6 +193,7 @@ export {
   createEnvironmentProvisioningFingerprint,
   createResolvedRuntimeScopeIdentity,
 } from './agent-host/runtimeScopeIdentity'
+export { DEFAULT_AGENT_TYPE_ID } from './agent-host/types'
 export type {
   AgentEffectAdmission,
   AgentFleetCompiler,
@@ -215,13 +216,16 @@ export type {
   CreateAgentHostOptions,
   CreatedAgentHost,
   AuthorizedEnvironmentIntent,
-  LegacyDefaultAgentHostSpec,
   ResolvedAgentRuntimeScope,
   ResolvedEnvironmentScope,
 } from './agent-host/types'
 export type { LeaseBoundWorkspaceAgent } from '../shared/workspaceAgentDispatcher'
 export type {
+  AgentAccessDecision,
+  AgentAccessOperation,
   AuthorizedAgentScope,
+  ResolveAgentAccess,
+  ResolveAgentAccessInput,
   VerifiedAgentScopeClaim,
 } from '../shared/gateway/types'
 export type { AgentHarnessFactory, AgentHarnessFactoryInput } from '../shared/harness'

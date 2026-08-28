@@ -1,5 +1,11 @@
 # Pi v2 (AgentHarness) — alignment analysis and the rewrite question
 
+> **SEQUENCING UPDATE 2026-08-27 (second grill — RECONCILIATION §9c):** the
+> "wait for a qualifying pi release" gate referenced below is **removed**.
+> P1-B builds Boring's own event backend behind the seam; the adoption
+> criteria in this document remain the bar a future pi release must clear —
+> now including the migration cost of replacing a working backend.
+
 > **POST-SPIKE VERDICT (2026-08-27, spike report:
 > [`pi-core-adoption-spike-report.md`](pi-core-adoption-spike-report.md)).**
 > The empirical spike **overturns the "shipped core" premise below**: at
@@ -14,9 +20,10 @@
 > workable ledger-reconciliation protocol design. **Standing ruling: do
 > NOT wire pi 0.84.3 under D29; ~0 of the ~1,704 bespoke lines are
 > deletable today; P1's substrate-neutral layer proceeds now; the
-> event-store implementation WAITS for a qualifying pi release (owner
-> ruling — 2026-09-10 is a check-in, not a build trigger); re-run the
-> spike when pi publishes the dev runtime.** The analysis below is kept as the pre-spike record.
+> event-store implementation proceeds on Boring's own schema (the former
+> wait-for-pi and its dated check-in were removed 2026-08-27,
+> RECONCILIATION §9c); re-run this analysis only if a published pi runtime
+> clears the criteria below plus migration cost.** The analysis below is kept as the pre-spike record.
 
 Date: 2026-08-26. Analyzed at `earendil-works/pi` dev branch commit
 `5507d76` (same-day HEAD; local read-only clone `~/projects/pi-framework`).
@@ -156,8 +163,10 @@ session record.
 ## Adoption qualification criteria (behavior-gated, never version-gated)
 
 Passing these criteria — not the passage of time, and not a version number —
-is what triggers re-evaluation. 2026-09-10 is an owner check-in on progress,
-not an automatic build trigger either way.
+is what triggers re-evaluation. *(The dated owner check-in that stood here
+was removed 2026-08-27, RECONCILIATION §9c: nothing waits on pi anymore;
+these criteria are now purely the replacement bar for a working Boring
+backend, migration cost included.)*
 
 **EVENT-STORE adoption** requires all of:
 
@@ -185,11 +194,12 @@ not an automatic build trigger either way.
 Passing the event-store criteria does **not** rehabilitate lanes — the two
 sets are evaluated independently.
 
-**2026-09-10 decision rule:**
+**Replacement decision rule** *(the dated 2026-09-10 rule that stood here
+was removed 2026-08-27 — §9c; nothing waits):*
 
-- A qualifying release exists → rerun the spike.
-- A dated near-term release plus strong evidence → optionally keep waiting.
-- Unpublished, or still failing → the owner explicitly chooses wait-again vs.
-  build-ours.
+- A qualifying published release exists → rerun the spike against the
+  then-working Boring backend, migration cost included.
+- Unpublished, or still failing → nothing changes; the Boring backend is
+  the standing implementation.
 
-No automatic build; no criteria-free waiting.
+No automatic adoption; no waiting of any kind.

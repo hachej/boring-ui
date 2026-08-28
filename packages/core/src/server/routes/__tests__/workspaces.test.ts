@@ -3,7 +3,7 @@ import Fastify from 'fastify'
 import type { FastifyInstance } from 'fastify'
 import { registerWorkspaceRoutes } from '../workspaces'
 import { registerErrorHandler } from '../../app/errorHandler'
-import type { WorkspaceStore } from '../../app/types'
+import type { WorkspaceStore, WorkspaceStoreCreateOptions } from '../../app/types'
 import type { MemberRole, Workspace, WorkspaceMember, WorkspaceRuntime } from '../../../shared/types'
 import type { WorkspaceProvisioner } from '../../provisioner/types'
 import { ERROR_CODES } from '../../../shared/errors'
@@ -28,18 +28,19 @@ function resetState() {
 
 function mockWorkspaceStore(): WorkspaceStore {
   return {
-    create: async (userId: string, name: string, appId: string, opts?: { isDefault?: boolean; workspaceTypeId?: string }) => {
+    create: async (userId: string, name: string, appId: string, opts: WorkspaceStoreCreateOptions) => {
       storeCalls.push('create')
       const id = `ws-${nextWsId++}`
       const ws: Workspace = {
         id,
         appId,
-        workspaceTypeId: opts?.workspaceTypeId ?? 'default',
+        workspaceTypeId: opts.workspaceTypeId ?? 'default',
         name,
         createdBy: userId,
         createdAt: new Date().toISOString(),
         deletedAt: null,
-        isDefault: opts?.isDefault ?? false,
+        isDefault: opts.isDefault ?? false,
+        defaultAgentTypeId: opts.defaultAgentTypeId,
       }
       workspaces.set(id, ws)
       const wsMembers = members.get(id) ?? new Map()
@@ -87,7 +88,8 @@ let app: FastifyInstance
 beforeAll(async () => {
   app = Fastify({ logger: false })
 
-  app.decorate('config', { appId: APP_ID } as any)
+  // Public route registration requires and stamps one real default Agent.
+  app.decorate('config', { appId: APP_ID, defaultAgentTypeId: 'default' } as any)
   app.decorate('workspaceStore', mockWorkspaceStore())
   app.decorate('provisioner', null)
   registerErrorHandler(app)
@@ -167,6 +169,7 @@ describe('POST /api/v1/workspaces', () => {
     expect(body.workspace.name).toBe('My WS')
     expect(body.workspace.createdBy).toBe(OWNER_ID)
     expect(body.workspace.workspaceTypeId).toBe('default')
+    expect(body.workspace.defaultAgentTypeId).toBe('default')
     expect(body.role).toBe('owner')
   })
 
@@ -585,7 +588,7 @@ describe('Provisioner integration', () => {
     }
 
     provApp = Fastify({ logger: false })
-    provApp.decorate('config', { appId: APP_ID } as any)
+    provApp.decorate('config', { appId: APP_ID, defaultAgentTypeId: 'default' } as any)
     provApp.decorate('workspaceStore', provMockWorkspaceStore())
     provApp.decorate('provisioner', mockProvisioner)
     registerErrorHandler(provApp)

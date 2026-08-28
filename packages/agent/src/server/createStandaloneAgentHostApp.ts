@@ -6,6 +6,7 @@ import type { AgentHarnessFactory } from '../shared/harness'
 import type { TelemetrySink } from '../shared/telemetry'
 import type { AgentTool } from '../shared/tool'
 import { createAgentHost } from './agent-host/createAgentHost'
+import { DEFAULT_AGENT_FLEET } from './agentDefinition/resolveDefaultAgentFleet'
 import { registerAgentHostEnvironmentRoutes } from './agent-host/environmentHttpProjection'
 import { resolveRequestLedgerPath } from './agent-host/requestLedgerPath'
 import type { AgentMeteringSink } from './pi-chat/metering'
@@ -200,7 +201,7 @@ export async function createStandaloneAgentHostApp(
 
   try {
     created = await createAgentHost({
-      agents: [{ agentTypeId: 'default', legacyDefault: true }],
+      agents: DEFAULT_AGENT_FLEET,
       fleetCompiler: { async compile({ agents }) { return agents } },
       hostId: 'standalone-agent-host',
       scopeVerifier: authority.verifier,

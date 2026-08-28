@@ -7,6 +7,7 @@ import type { AgentHarnessFactory, AgentHarnessFactoryInput } from '../../../sha
 import { createTestRuntimeModeAdapter } from '@agent-test-host'
 import { PiSessionStore } from '../../harness/pi-coding-agent/sessions'
 import { createScriptedPiHarness } from '../../testing/scriptedPiHarness'
+import { DEFAULT_AGENT_FLEET } from '../../agentDefinition/resolveDefaultAgentFleet'
 import { createAgentHost } from '../createAgentHost'
 
 const roots: string[] = []
@@ -233,15 +234,15 @@ describe('createAgentHost AH0 acceptance integration', () => {
     await host.host.close()
   })
 
-  it('keeps the legacy prompt sentinel byte-compatible while configured prompts use exact precedence', async () => {
-    const sessionRoot = await temporaryRoot('agent-host-legacy-prompt-')
-    const workspaceRoot = await temporaryRoot('agent-host-legacy-prompt-workspace-')
+  it('composes the real default Agent instructions before host and dynamic prompts', async () => {
+    const sessionRoot = await temporaryRoot('agent-host-default-prompt-')
+    const workspaceRoot = await temporaryRoot('agent-host-default-prompt-workspace-')
     const scope = { workspaceScopeId: 'workspace', authSubjectId: 'subject' } as AuthorizedAgentScope
     const captures: CapturedHarness[] = []
     const host = await createAgentHost({
-      agents: [{ agentTypeId: 'default', legacyDefault: true }],
+      agents: DEFAULT_AGENT_FLEET,
       fleetCompiler: { async compile({ agents }) { return agents } },
-      hostId: 'legacy-prompt-host',
+      hostId: 'default-prompt-host',
       scopeVerifier: { async verify() { return { workspaceScopeId: 'workspace', authSubjectId: 'subject' } } },
       runtimeModeAdapter: createTestRuntimeModeAdapter('direct'),
       sessionRoot,
@@ -253,18 +254,22 @@ describe('createAgentHost AH0 acceptance integration', () => {
       },
       async resolveAuthorizedAgentRuntimeScope() {
         return {
-          identity: 'legacy',
-          physicalBindingIdentity: 'legacy',
-          resourceInputDigest: 'legacy',
-          sessionNamespace: 'legacy',
+          identity: 'default',
+          physicalBindingIdentity: 'default',
+          resourceInputDigest: 'default',
+          sessionNamespace: 'default',
           systemPromptAppend: 'HOST_STATIC',
           loadSystemPromptAppend: async () => 'DYNAMIC',
         }
       },
     })
     await host.gateway.createSession({ scope, agentTypeId: 'default', requestId: 'create' })
-    expect(captures[0]?.input.systemPromptAppend).toBe('HOST_STATIC')
-    expect(captures[0]?.renderedPrompt).toBe('HARNESS_BASE\n\nHOST_STATIC\n\nDYNAMIC')
+    expect(captures[0]?.input.systemPromptAppend).toBe(
+      'You are the default Agent for this workspace.\n\nHOST_STATIC',
+    )
+    expect(captures[0]?.renderedPrompt).toBe(
+      'HARNESS_BASE\n\nYou are the default Agent for this workspace.\n\nHOST_STATIC\n\nDYNAMIC',
+    )
     await host.host.close()
   })
 })

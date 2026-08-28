@@ -313,8 +313,9 @@ Companion analysis:
 Rulings ledger: [#1399](https://github.com/hachej/boring-ui/issues/1399).
 Ratifications: [#1401](https://github.com/hachej/boring-ui/pull/1401) (MERGED)
 and [#1416](https://github.com/hachej/boring-ui/pull/1416) (CLOSED, absorbed into
-#1409 — #1409 is now the ratification instrument; merging it ratifies
-`RECONCILIATION.md` §8).
+#1409 — #1409 was the ratification instrument and is **MERGED 2026-08-27**
+(`eb574cfe7`), so `RECONCILIATION.md` §8 is ratified; §9 landed after it via
+the second-grill repair PR).
 
 ### Naming convention (applies from here down)
 
@@ -370,30 +371,38 @@ model is not decided**. Full program:
 > layer — the private harness backend seam under D29
 > (`AgentHarnessBackend`), gateway request/effect ledger, effect admission,
 > activity recovery, resume protocol — plus the paused-human and headless
-> conformance journeys. **Waits for a qualifying pi runtime release:** P1-B,
-> the event-stream sequence/storage implementation (adoption is
-> behavior-gated by the criteria in the pack's `research/pi-v2-alignment.md`,
-> never version-gated; **2026-09-10 is an owner check-in, not an automatic
-> build trigger**). P1-C (Level-D completion, default-on, D29 evidence) runs
+> conformance journeys. **P1-B (event-stream backend): the pi wait is
+> REMOVED** (owner ruling, second grill 2026-08-27 — RECONCILIATION §9c).
+> P1-B builds Boring's own event backend behind the `AgentHarnessBackend`
+> seam, after P1-A establishes the seam; no calendar check-in, no
+> wait-for-release. The `pi-v2-alignment.md` criteria survive only as the
+> bar a future pi release must beat (including migration cost) to replace
+> that backend. P1-C (Level-D completion, default-on, D29 evidence) runs
 > after P1-B. Gating precision: the headless journey runs parallel and never
 > gates substrate-free chrome, but it is required evidence for P1
 > completion — and therefore indirectly gates every Job Thread or
 > Thread-view slice that consumes P1.
 
 1. **[durable-streams]** (epic `wt-391-forward-9p50`, formerly P1) — **the
-   keystone.** Starts after the two spikes above report. Child `.1` makes
-   Level D restart/ledger/activity
-   conformance green; child `.2` makes `BORING_CHAT_DURABLE_STREAM` default-on
-   and carries the dated Decision 29 re-evaluation addendum (owner merge =
+   keystone.** Both spikes have reported; P1-A is dispatchable NOW. Structure
+   per the amendment box above and `premises.md` P1: **P1-A** = five beads
+   (A1 identity/migration, A2 harness seam, A3 request/effect/attention
+   durability, A4 activity/resume, A5 headless + paused-human proofs — A5
+   after A2–A4); **P1-B** = the Boring event backend behind the seam (pi wait
+   removed, §9c); **P1-C** = Level-D completion + `BORING_CHAT_DURABLE_STREAM`
+   default-on + the dated Decision 29 re-evaluation addendum (owner merge =
    ratification). This is D29's own named trigger arriving
-   (`DECISIONS.md:472`/`:476`), not new scope. Two one-session slices,
-   implement then flip-and-ratify. Both are P0; downstream engine work depends
-   on `.2`.
+   (`DECISIONS.md:472`/`:476`), not new scope. The old "two one-session
+   slices" estimate is withdrawn. All P0; downstream engine work depends on
+   P1-C.
 2. **[thread-storage-spike]** (epic `wt-391-forward-shell-ngfs.13`, formerly
-   P2) — child `.13.1` runs the competitor study over six comparable facts;
-   child `.13.2` runs the in-stack two-candidate spike after durable-streams
-   `.1` establishes the Level D shape. Together they decide what the owner gate
-   may choose for engine storage and #1355 references. Two one-session slices.
+   P2) — **rescoped 2026-08-27.** Child `.13.1` (competitor study) is **DONE**
+   (`research/thread-storage-competitor-study.md`). The value-root half is
+   **ruled, not spiked** (RECONCILIATION §9a: Thread = job root, 0..n
+   Sessions). Child `.13.2` shrinks to the storage-**shape** spike only —
+   first-class Thread stream vs projection over Session records — and starts
+   after durable-streams P1-A establishes the Level D shape. It decides what
+   the owner gate may choose for engine storage and #1355 references.
 3. **[seat-audit-attribution]** (epic `wt-391-forward-shell-ngfs.14`, formerly
    P3 / seat storage C7) — child `.14.1` lands host catalog/envelope identity;
    child `.14.2` projects immutable `seatId` through messages, trajectories,
@@ -406,9 +415,9 @@ model is not decided**. Full program:
    Does not block a view library over files and built-in views.
 5. **[merge-queue]** (formerly P5) — a standing obligation, not a bead: this
    list gets a pass **before any premise bead is dispatched**. Current path
-   items: #1382 (and the eval suite stacked behind it), #1343, #1376, #1386,
-   #1409; kernel-adjacent but off-path: #1145, #1166, #1288. #1416 is closed
-   and absorbed into #1409, so it is not a queue item. Also decide
+   items: #1382 (and the eval suite stacked behind it), #1343, #1376, #1386;
+   kernel-adjacent but off-path: #1145, #1166, #1288. #1409 is MERGED and
+   #1416 is closed-absorbed into it — neither is a queue item. Also decide
    the two orphaned weekend branches (`weekend/k7-agent-packages`,
    `weekend/factory-check`).
 6. **[gate-re-ruling]** (formerly P6) — re-rule both owner gates after
@@ -480,6 +489,53 @@ they depend on have landed.
 | Saved views | **Wait for [saved-views-kernel].** A first view library is files + built-in views only; no lookalike descriptor minted in the product layer meanwhile. |
 | Nav extensibility | **Plugins CAN add top-level entries.** The closed-IA recommendation was ruled against; crowding risk noted and accepted. |
 | Deep links | **The shell owns the serializable location; the host owns URL translation.** |
-| Specification | **The design canvas and `weekend/saas-hybrid-spike` are ratified specification artifacts** — what implementation is checked against, not proposals awaiting a slot (unlike #1409, still pending merge). Their chat column and thread transcript are explicitly visual fixtures; that is not an implementation claim. |
+| Specification | **The design canvas and `weekend/saas-hybrid-spike` are ratified specification artifacts** — what implementation is checked against, not proposals awaiting a slot (unlike #1409 at the time; since merged 2026-08-27). Their chat column and thread transcript are explicitly visual fixtures; that is not an implementation claim. |
 | Commercial split | **Reaffirmed and extended.** Premises never pricing: commercial sequencing lives in the tenant repo; the platform ships credential, attribution and usage-fact substrate only. Precedent: the 2026-08-10 landing ruling. |
 | Merge discipline | **Zero autonomous merges holds** (verified: all 31 merges in the 08-22→08-26 window were owner-performed). **Review ladders did not happen** — nine weekend PRs produced zero formal review submissions. Restore the review gate before the premise burn, and never close a PR without a recorded reason (#1380 and #1381 were closed silently). |
+
+---
+
+## Amendment 2026-08-27 (evening) — second-grill rulings + drift repair
+
+A full-repo second-opinion review of the merged #1409 found the strategy
+sound but the repository representing several versions of it as
+simultaneously executable. The owner grilled through every open branch the
+same day. Rulings (ontology halves recorded in
+`docs/plans/long-term/ratified/RECONCILIATION.md` §9; this section is the
+sequencing record):
+
+| Decision | Ruling |
+|---|---|
+| Thread/Session | **R-c amended (§9a).** Thread = durable job root, one per job; Session = one runtime conversation; 1 Thread : 0..n Sessions (headless = zero). Channel stays transport. The P2 value-root question is ruled, not spiked — a spike over pre-excluded candidates is ceremony. |
+| Thread storage | **Only the shape is still open** — first-class Thread stream vs projection over Sessions. `.13.1` research DONE; `.13.2` rescoped to shape-only, after P1-A. |
+| Transcript authorship | **Multi-author (§9b).** One composer, several named agents visibly authoring posts with chips and join/handoff/left markers. "One voice / workers hidden" retired; formula = one job, one composer, explicit specialists. The orchestrator holds its own Seat. |
+| Pi gate | **Removed (§9c).** No 2026-09-10 ritual, no wait-for-release. P1-B builds the Boring event backend behind the `AgentHarnessBackend` seam; pi adoptable later only past the behavior + migration-cost bar. |
+| P1-A granularity | **Five beads**, A1–A5, individually reviewable (the single `9p50.1` bead under-represented the state machine). |
+| Relay engine plan | **Demoted to historical candidate** (`multiagent-shell/research/candidates/`). Its S1–S6 embedded superseded assumptions (display-only participant ids, satisfied-Q1 claims, relay-first shape). A new engine plan is written after the shape spike + gate re-rule, from §9's rulings. |
+| Doc governance | **Prose repair + tiny lint.** `scripts/check-strategy-docs.sh` fails CI on known drift markers (merged PRs described as pending, withdrawn estimates in executable sections, missing candidate banners). No YAML state machine. |
+| Shell claims | **Left as-is by explicit owner choice** — the "design is settled" framing stands; multi-agent interaction, View-side chat, and mobile remain evidence-gated in fact but are not re-worded. |
+
+Dispatch consequence: **P1-A beads (A1–A5) and P1-B are the active premise
+lane**; P1-B after A2. `.13.2` (shape spike) after P1-A. Everything else in
+the 2026-08-26 amendment stands as written.
+
+---
+
+## Amendment 2026-08-27 (night) — strategic-audit fold
+
+An external Seneca × Boring strategic audit (business/GTM level) was reviewed
+against post-#1433 main. Most of its recommendations were already ratified
+position (Work-as-root §9a, one-family-three-jobs, headless-inside-a-product,
+Seneca-as-consumer, review-loop freeze, channels/marketplace deferral). Three
+genuinely open items were ruled:
+
+| Decision | Ruling |
+|---|---|
+| Thread staffing | **Two first-class modes (§10a).** Default = one bounded agent, grown on measured evidence; alternative = a predefined fleet declared by the agent/vertical package. The future engine plan optimizes the single-agent path first. |
+| Horizon ladder | **Split.** Of the audit's Horizon 0–5 ladder, only Horizon 0 (the internal factory as first consumer) and Horizon 2 (a second consumer proving the substrate) are platform framing — both already implicit here. Horizons 1/3/4/5 (first paid product, packages/distribution, developer cloud, recursive improvement) are commercial sequencing and live in the Seneca tenant repo's roadmap, per the premises-never-pricing split. Nothing new is dispatchable from the ladder. |
+| Agent presence | **Vocabulary recorded (§10b):** `hidden · ambient · drawer · page · roster`; `ambient` default for vertical SaaS, Meridian = `roster` flagship. Naming only. |
+
+The audit's decision filter (buyer / work-unit / feedback / reuse /
+irreversibility / complexity tests) is adopted as reviewer guidance for
+future capability proposals — a filter, not a gate. No premise, bead, or
+queue item changes; P1-A dispatch is unaffected.

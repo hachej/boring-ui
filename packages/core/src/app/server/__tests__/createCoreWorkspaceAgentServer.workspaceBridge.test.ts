@@ -301,11 +301,14 @@ vi.mock('../../../server/db/index.js', () => ({
       workspaceServerMock.memberChecks.push([workspaceId, userId])
       return true
     }
+    async countNullDefaultAgentTypeIds() { return 0 }
+    async compareAndSetNullDefaultAgentTypeId() { return 0 }
   },
 }))
 
 vi.mock('../../../server/config/index.js', () => ({
   loadConfig: async () => ({
+    defaultAgentTypeId: 'default',
     auth: { url: 'http://localhost:3000' },
     cors: { origins: ['https://app.example.test'] },
     encryption: { workspaceSettingsKey: 'test-key' },
