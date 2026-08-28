@@ -106,6 +106,7 @@ export class SandboxLeaseCleanupError extends SandboxLeaseError {
 /** Host-owned lifecycle registry for mutable disposable sandbox pairs. */
 export class SandboxLeaseService {
   private readonly leases = new Map<string, ActiveLease>()
+  private readonly pendingHandles = new Set<string>()
   private readonly pendingByOwner = new Map<string, number>()
   private readonly pendingAcquisitions = new Set<Promise<void>>()
   private readonly now: () => number
@@ -134,14 +135,19 @@ export class SandboxLeaseService {
   async acquire(ownerId: string, signal?: AbortSignal): Promise<SandboxLease> {
     this.assertOpen()
     this.assertOwner(ownerId)
-    this.reserve(ownerId)
-    let finishPending!: () => void
-    const pending = new Promise<void>((resolve) => { finishPending = resolve })
-    this.pendingAcquisitions.add(pending)
-    const handle = this.nextHandle()
+    let reserved = false
+    let handle: string | undefined
+    let finishPending: (() => void) | undefined
+    let pending: Promise<void> | undefined
     let pair: WorkspaceSandboxPairV1 | undefined
     let published = false
     try {
+      this.reserve(ownerId)
+      reserved = true
+      handle = this.reserveHandle()
+      pending = new Promise<void>((resolve) => { finishPending = resolve })
+      this.pendingAcquisitions.add(pending)
+
       this.assertCreationPublishable(signal)
       pair = await this.options.provider.create({
         workspaceRoot: join(this.options.workspaceRoot, handle),
@@ -157,7 +163,7 @@ export class SandboxLeaseService {
       published = true
       return { handle, expiresAt: lease.expiresAt }
     } catch (error) {
-      if (pair && !published) {
+      if (pair && handle && !published) {
         const compensation = this.createLease(ownerId, handle, pair, 'cleanup-pending')
         compensation.cleanupReason = 'create-compensation'
         try {
@@ -175,9 +181,10 @@ export class SandboxLeaseService {
       }
       throw error
     } finally {
-      this.unreserve(ownerId)
-      this.pendingAcquisitions.delete(pending)
-      finishPending()
+      if (handle) this.pendingHandles.delete(handle)
+      if (reserved) this.unreserve(ownerId)
+      if (pending) this.pendingAcquisitions.delete(pending)
+      finishPending?.()
     }
   }
 
@@ -208,9 +215,13 @@ export class SandboxLeaseService {
       throw new SandboxLeaseError(SANDBOX_LEASE_ERROR_CODES.LEASE_EXPIRED, 'sandbox lease has expired')
     }
     lease.activeOperations += 1
+    let cleanupAfterUnpin = false
     try {
       const health = await lease.pair.checkHealth?.()
       if (health?.state === 'recreate') {
+        lease.state = 'draining'
+        lease.cleanupReason = 'expiry'
+        cleanupAfterUnpin = true
         throw new SandboxLeaseError(SANDBOX_LEASE_ERROR_CODES.LEASE_EXPIRED, 'sandbox lease is unavailable')
       }
       return await action(lease.pair)
@@ -220,6 +231,7 @@ export class SandboxLeaseService {
         for (const wake of lease.zeroActiveWaiters) wake()
         lease.zeroActiveWaiters.clear()
       }
+      if (cleanupAfterUnpin) void this.startCleanup(lease).catch(() => undefined)
     }
   }
 
@@ -505,9 +517,14 @@ export class SandboxLeaseService {
     if (!ownerId.trim()) this.invalid('ownerId is required')
   }
 
-  private nextHandle(): string {
+  private reserveHandle(): string {
     const handle = this.createHandle()
-    if (!LEASE_HANDLE_PATTERN.test(handle) || this.leases.has(handle)) this.invalid('lease handle generator returned an invalid handle')
+    if (
+      !LEASE_HANDLE_PATTERN.test(handle)
+      || this.leases.has(handle)
+      || this.pendingHandles.has(handle)
+    ) this.invalid('lease handle generator returned an invalid or colliding handle')
+    this.pendingHandles.add(handle)
     return handle
   }
 

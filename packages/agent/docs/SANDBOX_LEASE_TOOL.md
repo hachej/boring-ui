@@ -88,6 +88,13 @@ own safely retryable error; provider cleanup ambiguity remains
 owner cleanup. Host shutdown uses one service-wide drain deadline, including
 pending creations and provider close.
 
+Disposable Vercel forks never enter the persistent/resumable handle store. The
+provider returns a cleanup-capable pair immediately after remote creation and
+exposes initialization through pair readiness; if setup fails, lease acquisition
+retains that unpublished pair as cleanup-pending until idempotent deletion
+converges. Persistent non-disposable runtimes keep their existing resumable
+handle lifecycle.
+
 Remote deletion is separate registered host maintenance:
 
 ```text

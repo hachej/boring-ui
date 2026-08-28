@@ -45,6 +45,7 @@ function createService(input: {
   maxTotal?: number
   drainTimeoutMs?: number
   create?: () => Promise<WorkspaceSandboxPairV1>
+  createHandle?: () => string
 } = {}) {
   const pairs: FakePair[] = []
   let sequence = 0
@@ -63,7 +64,7 @@ function createService(input: {
     maxActiveLeasesPerOwner: input.maxOwner ?? 3,
     maxActiveLeasesTotal: input.maxTotal ?? 5,
     now: () => input.now?.value ?? 100,
-    createHandle: () => `lease-handle-${String(++sequence).padStart(4, '0')}`,
+    createHandle: input.createHandle ?? (() => `lease-handle-${String(++sequence).padStart(4, '0')}`),
   })
   return { service, pairs, providerCreate }
 }
@@ -170,6 +171,55 @@ describe('SandboxLeaseService lifecycle registry', () => {
     await service.dispose()
   })
 
+  it('releases quota and pending-handle ownership when the handle generator is invalid', async () => {
+    let attempts = 0
+    const created = fakePair('valid-after-invalid')
+    const { service, providerCreate } = createService({
+      maxOwner: 1,
+      maxTotal: 1,
+      createHandle: () => ++attempts === 1 ? 'invalid' : 'lease-handle-0001',
+      create: async () => created.pair,
+    })
+
+    await expect(service.acquire('owner-a')).rejects.toMatchObject({
+      code: SANDBOX_LEASE_ERROR_CODES.INVALID_LEASE_REQUEST,
+    })
+    const lease = await service.acquire('owner-a')
+    expect(lease.handle).toBe('lease-handle-0001')
+    expect(providerCreate).toHaveBeenCalledOnce()
+    await service.release('owner-a', lease.handle)
+    expect(created.dispose).toHaveBeenCalledOnce()
+    await service.dispose()
+  })
+
+  it('rejects published and concurrent pending handle collisions without creating orphan pairs', async () => {
+    const firstGate = await deferred<WorkspaceSandboxPairV1>()
+    const firstPair = fakePair('first-collision-owner')
+    const providerCreate = vi.fn(async () => await firstGate.promise)
+    const { service } = createService({
+      maxOwner: 3,
+      maxTotal: 3,
+      createHandle: () => 'lease-handle-0001',
+      create: providerCreate,
+    })
+
+    const first = service.acquire('owner-a')
+    await Promise.resolve()
+    await expect(service.acquire('owner-b')).rejects.toMatchObject({
+      code: SANDBOX_LEASE_ERROR_CODES.INVALID_LEASE_REQUEST,
+    })
+    expect(providerCreate).toHaveBeenCalledOnce()
+    firstGate.resolve(firstPair.pair)
+    const lease = await first
+    await expect(service.acquire('owner-b')).rejects.toMatchObject({
+      code: SANDBOX_LEASE_ERROR_CODES.INVALID_LEASE_REQUEST,
+    })
+    expect(providerCreate).toHaveBeenCalledOnce()
+    await service.release('owner-a', lease.handle)
+    expect(firstPair.dispose).toHaveBeenCalledOnce()
+    await service.dispose()
+  })
+
   it('compensates an aborted creation without publishing a lease', async () => {
     const gate = await deferred<WorkspaceSandboxPairV1>()
     const pair = fakePair('late')
@@ -199,6 +249,25 @@ describe('SandboxLeaseService lifecycle registry', () => {
     expect(service.listOwn('owner-a')).toEqual([])
   })
 
+  it('retains cleanup authority when readiness and the first compensation delete both fail', async () => {
+    const pair = fakePair('setup-delete-ambiguous')
+    pair.pair = { ...pair.pair, checkHealth: async () => { throw new Error('setup failed') } }
+    pair.dispose.mockRejectedValueOnce(new Error('delete acknowledgement lost'))
+    const { service } = createService({ create: async () => pair.pair })
+
+    await expect(service.acquire('owner-a')).rejects.toMatchObject({
+      code: SANDBOX_LEASE_ERROR_CODES.LEASE_CLEANUP_FAILED,
+    })
+    expect(service.listOwn('owner-a')).toEqual([
+      expect.objectContaining({ handle: 'lease-handle-0001', state: 'cleanup-pending' }),
+    ])
+    expect(pair.dispose).toHaveBeenCalledOnce()
+    await expect(service.reapExpired()).resolves.toBe(1)
+    expect(pair.dispose).toHaveBeenCalledTimes(2)
+    expect(service.listOwn('owner-a')).toEqual([])
+    await service.dispose()
+  })
+
   it('rechecks cancellation after asynchronous health and retains failed compensation', async () => {
     const health = await deferred<void>()
     const pair = fakePair('health-race')
@@ -216,6 +285,38 @@ describe('SandboxLeaseService lifecycle registry', () => {
       expect.objectContaining({ state: 'cleanup-pending' }),
     ])
     await expect(service.releaseOwner('owner-a')).resolves.toBe(1)
+    await service.dispose()
+  })
+
+  it('atomically drains an unhealthy lease after its health-check pin and retains cleanup failure', async () => {
+    const health = await deferred<void>()
+    const unhealthy = fakePair('health-recreate')
+    let healthChecks = 0
+    unhealthy.pair = {
+      ...unhealthy.pair,
+      checkHealth: async () => {
+        healthChecks += 1
+        if (healthChecks === 1) return { state: 'ok' }
+        await health.promise
+        return { state: 'recreate' }
+      },
+    }
+    unhealthy.dispose.mockRejectedValueOnce(new Error('delete ambiguous'))
+    const { service } = createService({ create: async () => unhealthy.pair })
+    const lease = await service.acquire('owner-a')
+    const checked = service.withPair('owner-a', lease.handle, async () => undefined)
+    await Promise.resolve()
+    health.resolve()
+
+    await expect(checked).rejects.toMatchObject({ code: SANDBOX_LEASE_ERROR_CODES.LEASE_EXPIRED })
+    await vi.waitFor(() => {
+      expect(service.status('owner-a', lease.handle).state).toBe('cleanup-pending')
+    })
+    await expect(service.withPair('owner-a', lease.handle, async () => undefined))
+      .rejects.toMatchObject({ code: SANDBOX_LEASE_ERROR_CODES.LEASE_DRAINING })
+    expect(unhealthy.dispose).toHaveBeenCalledOnce()
+    await service.release('owner-a', lease.handle)
+    expect(unhealthy.dispose).toHaveBeenCalledTimes(2)
     await service.dispose()
   })
 

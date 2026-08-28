@@ -32,7 +32,6 @@ export type { CreateVercelProvisioningAdapterOptions } from './provisioningAdapt
 export {
   evictSandboxHandleCacheForWorkspace,
   resolveSandboxHandle,
-  SandboxHandlePersistenceError,
 } from './resolveSandboxHandle'
 export type {
   ExpiredSandboxPolicy,

@@ -6,7 +6,6 @@ import type {
   SandboxHandleStore,
 } from '@hachej/boring-agent/shared'
 import {
-  SandboxHandlePersistenceError,
   SandboxHandleUnavailableError,
   type VercelSandboxClient,
   resetSandboxHandleCacheForTests,
@@ -177,70 +176,6 @@ test('second call hits in-process cache without API calls', async () => {
   expect(client.create).toHaveBeenCalledTimes(1)
   expect(client.get).not.toHaveBeenCalled()
   expect(store.puts).toHaveLength(1)
-})
-
-test('fresh-only resolution creates from the exact host-selected snapshot', async () => {
-  const store = createStore()
-  const created = createSandboxHandle('sb-fresh-source', {
-    sourceSnapshotId: 'snap-trusted-main',
-  })
-  const client: VercelSandboxClient = {
-    create: vi.fn(async () => created),
-    get: vi.fn(),
-  }
-
-  const resolved = await resolveSandboxHandle('workspace-fresh-source', store, client, {
-    freshOnly: true,
-    sourceSnapshotId: 'snap-trusted-main',
-  })
-
-  expect(resolved).toBe(created)
-  expect(client.create).toHaveBeenCalledWith(expect.objectContaining({
-    source: { type: 'snapshot', snapshotId: 'snap-trusted-main' },
-  }))
-  expect(client.get).not.toHaveBeenCalled()
-})
-
-test('fresh-only resolution rejects cached or persisted Worker handles instead of reusing them', async () => {
-  const store = createStore()
-  const created = createSandboxHandle('sb-active-worker')
-  const client: VercelSandboxClient = {
-    create: vi.fn(async () => created),
-    get: vi.fn(),
-  }
-  await resolveSandboxHandle('workspace-active-worker', store, client)
-
-  await expect(resolveSandboxHandle('workspace-active-worker', store, client, {
-    freshOnly: true,
-    sourceSnapshotId: 'snap-trusted-main',
-  })).rejects.toThrow('fresh sandbox workspace is already active')
-  expect(client.create).toHaveBeenCalledTimes(1)
-  expect(client.get).not.toHaveBeenCalled()
-
-  resetSandboxHandleCacheForTests()
-  await expect(resolveSandboxHandle('workspace-active-worker', store, client, {
-    freshOnly: true,
-    sourceSnapshotId: 'snap-trusted-main',
-  })).rejects.toThrow('fresh sandbox workspace already has a persisted handle')
-  expect(client.create).toHaveBeenCalledTimes(1)
-  expect(client.get).not.toHaveBeenCalled()
-})
-
-test('fresh-only resolution never resumes a colliding remote sandbox name', async () => {
-  const store = createStore()
-  const alreadyExists = Object.assign(new Error('already exists'), {
-    json: { error: { code: 'bad_request', message: 'sandbox already exists' } },
-  })
-  const client: VercelSandboxClient = {
-    create: vi.fn(async () => { throw alreadyExists }),
-    get: vi.fn(),
-  }
-
-  await expect(resolveSandboxHandle('workspace-remote-collision', store, client, {
-    freshOnly: true,
-    sourceSnapshotId: 'snap-trusted-main',
-  })).rejects.toBe(alreadyExists)
-  expect(client.get).not.toHaveBeenCalled()
 })
 
 test('workspace ids are normalized before cache/store lookup', async () => {
@@ -678,102 +613,6 @@ test('non-retryable get errors are propagated', async () => {
     resolveSandboxHandle('workspace-auth-error', store, client),
   ).rejects.toThrow('HTTP 401')
   expect(client.create).not.toHaveBeenCalled()
-})
-
-test('fresh disposable persistence failure deletes the remote and clears partial state before retry', async () => {
-  const persistenceError = new Error('put failed after partial write')
-  const first = createSandboxHandle('sb-disposable-put-failure')
-  const second = createSandboxHandle('sb-disposable-retry')
-  const records = new Map<string, SandboxHandleRecord>()
-  let putAttempts = 0
-  const deleteRecord = vi.fn(async (workspaceId: string) => { records.delete(workspaceId) })
-  const store: SandboxHandleStore = {
-    async get(workspaceId) { return records.get(workspaceId) ?? null },
-    async put(record) {
-      putAttempts += 1
-      records.set(record.workspaceId, record)
-      if (putAttempts === 1) throw persistenceError
-    },
-    delete: deleteRecord,
-    async list() { return [...records.values()] },
-  }
-  const client: VercelSandboxClient = {
-    create: vi.fn()
-      .mockResolvedValueOnce(first)
-      .mockResolvedValueOnce(second),
-    get: vi.fn(),
-  }
-
-  const failed = resolveSandboxHandle('workspace-disposable-put-failure', store, client, {
-    freshOnly: true,
-    sourceSnapshotId: 'snap-trusted-main',
-  })
-  await expect(failed).rejects.toMatchObject({
-    name: 'SandboxHandlePersistenceError',
-    workspaceId: 'workspace-disposable-put-failure',
-    sandboxId: 'sb-disposable-put-failure',
-    remoteDeleted: true,
-    storeCleared: true,
-    cause: persistenceError,
-  })
-  await expect(failed).rejects.toBeInstanceOf(SandboxHandlePersistenceError)
-  expect(first.delete).toHaveBeenCalledOnce()
-  expect(deleteRecord).toHaveBeenCalledWith('workspace-disposable-put-failure')
-  await expect(store.get('workspace-disposable-put-failure')).resolves.toBeNull()
-
-  await expect(resolveSandboxHandle('workspace-disposable-put-failure', store, client, {
-    freshOnly: true,
-    sourceSnapshotId: 'snap-trusted-main',
-  })).resolves.toBe(second)
-  expect(client.create).toHaveBeenCalledTimes(2)
-  expect(client.get).not.toHaveBeenCalled()
-})
-
-test('fresh disposable persistence error preserves primary and failed-delete evidence', async () => {
-  const persistenceError = new Error('put failed')
-  const remoteDeleteError = new Error('remote delete failed')
-  const created = createSandboxHandle('sb-reconcile-required')
-  vi.mocked(created.delete).mockRejectedValueOnce(remoteDeleteError)
-  const deleteRecord = vi.fn(async () => {})
-  const store: SandboxHandleStore = {
-    async get() { return null },
-    async put() { throw persistenceError },
-    delete: deleteRecord,
-    async list() { return [] },
-  }
-  const logger = { info: vi.fn(), warn: vi.fn() }
-  const client: VercelSandboxClient = {
-    create: vi.fn(async () => created),
-    get: vi.fn(),
-  }
-
-  const failure = await resolveSandboxHandle('workspace-reconcile-required', store, client, {
-    freshOnly: true,
-    sourceSnapshotId: 'snap-trusted-main',
-    logger,
-  }).catch((error: unknown) => error)
-
-  expect(failure).toBeInstanceOf(SandboxHandlePersistenceError)
-  expect(failure).toMatchObject({
-    cause: persistenceError,
-    remoteDeleted: false,
-    storeCleared: true,
-    sandboxId: 'sb-reconcile-required',
-  })
-  expect((failure as AggregateError).errors).toEqual([persistenceError, remoteDeleteError])
-  expect(deleteRecord).toHaveBeenCalledWith('workspace-reconcile-required')
-  expect(logger.warn).toHaveBeenCalledWith(
-    '[sandbox] fresh disposable handle persistence failed',
-    expect.objectContaining({
-      workspaceId: 'workspace-reconcile-required',
-      sandboxId: 'sb-reconcile-required',
-      remoteDeleted: false,
-      storeCleared: true,
-      requiresRemoteReconciliation: true,
-      persistenceError: 'put failed',
-      cleanupErrors: ['remote delete failed'],
-    }),
-  )
 })
 
 test('store.put failure does not poison in-process cache or delete persistent runtime', async () => {

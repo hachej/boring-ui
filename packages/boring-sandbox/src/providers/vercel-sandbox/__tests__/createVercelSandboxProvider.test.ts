@@ -151,6 +151,7 @@ describe('createVercelSandboxProvider', () => {
     const harness = await createMockVercelSandboxHarness()
     cleanups.push(harness.cleanup)
     const { stop, snapshot, deleteSandbox } = addDurableHandleMetadata(harness.sandbox, 'sb-setup-failure')
+    deleteSandbox.mockRejectedValueOnce(new Error('first delete acknowledgement lost'))
     vi.spyOn((harness.sandbox as unknown as { fs: { mkdir(): Promise<void> } }).fs, 'mkdir')
       .mockRejectedValueOnce(Object.assign(
         new Error('workspace root setup failed'),
@@ -171,21 +172,24 @@ describe('createVercelSandboxProvider', () => {
       logger: { info: vi.fn() },
     })
 
-    await expect(provider.create({
+    const pair = await provider.create({
       workspaceRoot: 'workspace-setup-failure',
       workspaceId: 'workspace-setup-failure',
       sessionId: 'session-setup-failure',
-    })).rejects.toMatchObject({
+    })
+    await expect(pair.checkHealth?.()).rejects.toMatchObject({
       code: 'VERCEL_API_ERROR',
       message: 'workspace root setup failed',
     })
+    await expect(pair.dispose()).rejects.toThrow('disposable sandbox cleanup failed')
+    await expect(pair.dispose()).resolves.toBeUndefined()
 
-    expect(scheduler.trackWorkspace).toHaveBeenCalledTimes(1)
+    expect(scheduler.trackWorkspace).not.toHaveBeenCalled()
     expect(scheduler.stopWorkspace).toHaveBeenCalledOnce()
     expect(stop).not.toHaveBeenCalled()
     expect(snapshot).not.toHaveBeenCalled()
-    expect(deleteSandbox).toHaveBeenCalledOnce()
-    expect(deleteRecord).toHaveBeenCalledWith('workspace-setup-failure')
+    expect(deleteSandbox).toHaveBeenCalledTimes(2)
+    expect(deleteRecord).not.toHaveBeenCalled()
   })
 
   test('remote setup cleanup continues when local sandbox cleanup fails', async () => {
@@ -208,24 +212,24 @@ describe('createVercelSandboxProvider', () => {
       logger,
     })
 
-    await expect(provider.create({
+    const pair = await provider.create({
       workspaceRoot: 'workspace-local-cleanup-failure',
       workspaceId: 'workspace-local-cleanup-failure',
       sessionId: 'session-local-cleanup-failure',
-    })).rejects.toMatchObject({
+    })
+    await expect(pair.checkHealth?.()).rejects.toMatchObject({
       code: 'VERCEL_API_ERROR',
       message: 'sandbox init failed',
     })
+    await expect(pair.dispose()).rejects.toThrow('disposable sandbox cleanup failed')
+    await pair.dispose()
 
-    expect(localSandboxDispose).toHaveBeenCalledOnce()
+    expect(localSandboxDispose).toHaveBeenCalledTimes(2)
     expect(deleteSandbox).toHaveBeenCalledOnce()
-    expect(deleteRecord).toHaveBeenCalledWith('workspace-local-cleanup-failure')
-    expect(logger.warn).toHaveBeenCalledWith(
+    expect(deleteRecord).not.toHaveBeenCalled()
+    expect(logger.warn).not.toHaveBeenCalledWith(
       '[vercel-sandbox:mode] local setup cleanup failed',
-      expect.objectContaining({
-        workspaceId: 'workspace-local-cleanup-failure',
-        error: 'local dispose failed',
-      }),
+      expect.anything(),
     )
   })
 
@@ -270,7 +274,7 @@ describe('createVercelSandboxProvider', () => {
     expect(scheduler.shutdown).toHaveBeenCalledOnce()
   })
 
-  test('disposable lifecycle deletes the remote and handle before releasing the pair', async () => {
+  test('disposable lifecycle bypasses resumable storage and converges remote deletion', async () => {
     const harness = await createMockVercelSandboxHarness()
     cleanups.push(harness.cleanup)
     const { deleteSandbox } = addDurableHandleMetadata(harness.sandbox, 'sb-disposable')
@@ -299,15 +303,15 @@ describe('createVercelSandboxProvider', () => {
 
     const firstPair = await provider.create(context)
     deleteSandbox.mockRejectedValueOnce(new Error('remote delete failed'))
-    await expect(firstPair.dispose()).rejects.toThrow('remote delete failed')
+    await expect(firstPair.dispose()).rejects.toThrow('disposable sandbox cleanup failed')
     expect(deleteRecord).not.toHaveBeenCalled()
     await firstPair.dispose()
     await firstPair.dispose()
     const secondPair = await provider.create(context)
 
     expect(deleteSandbox).toHaveBeenCalledTimes(2)
-    expect(deleteRecord).toHaveBeenCalledOnce()
-    expect(deleteRecord).toHaveBeenCalledWith('workspace-disposable')
+    expect(deleteRecord).not.toHaveBeenCalled()
+    expect(await store.list()).toEqual([])
     expect(client.create).toHaveBeenCalledTimes(2)
     expect(client.create).toHaveBeenNthCalledWith(1, expect.objectContaining({
       persistent: true,
@@ -317,7 +321,7 @@ describe('createVercelSandboxProvider', () => {
     deleteSandbox.mockRejectedValueOnce(Object.assign(new Error('sandbox not found'), { status: 404 }))
     await expect(secondPair.dispose()).resolves.toBeUndefined()
     expect(deleteSandbox).toHaveBeenCalledTimes(3)
-    expect(deleteRecord).toHaveBeenCalledTimes(2)
+    expect(deleteRecord).not.toHaveBeenCalled()
   })
 
   test('invalidate evicts only the process cache and reacquires the persisted handle', async () => {
