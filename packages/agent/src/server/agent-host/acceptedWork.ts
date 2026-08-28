@@ -11,7 +11,7 @@ import type { AgentTool, ToolExecContext, ToolResult } from '../../shared/tool'
 import { canonicalDigest } from './canonical'
 import type { AgentHostRuntime } from './createAgentHost'
 import type { AgentRequestKey } from './types'
-import { runAcceptedEffect } from './runAcceptedEffect'
+import { runAcceptedEffect, type SafeActionFailureClassifier } from './runAcceptedEffect'
 
 const acceptedWorkProvenance = Symbol('boring.acceptedWorkProvenance')
 const acceptedExternalEffectTool = Symbol('boring.acceptedExternalEffectTool')
@@ -123,6 +123,10 @@ export function createAcceptedToolEffectExecutor(options: AcceptedToolEffectExec
     readonly tool: string
     readonly op: string
     readonly sandbox?: string
+    /** Validation/quota checks proven to precede provider dispatch. */
+    readonly preflight?: () => Promise<void>
+    /** Classifies only failures that are proven not to have crossed the provider boundary. */
+    readonly classifySafeActionFailure?: SafeActionFailureClassifier
     readonly action: () => Promise<JsonValue>
   }): Promise<JsonValue> {
     validateProvenance(input.provenance, options)
@@ -146,6 +150,8 @@ export function createAcceptedToolEffectExecutor(options: AcceptedToolEffectExec
         op: input.op,
         ...(input.sandbox === undefined ? {} : { sandbox: input.sandbox }),
       },
+      preflight: input.preflight,
+      classifySafeActionFailure: input.classifySafeActionFailure,
       action: input.action,
     })
   }

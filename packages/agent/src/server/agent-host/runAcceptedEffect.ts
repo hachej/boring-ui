@@ -18,7 +18,7 @@ type EffectClassification =
   | { readonly kind: 'execute' }
   | { readonly kind: 'reject'; readonly error: AgentGatewayErrorDTO }
 type EffectClassifier = () => Promise<EffectClassification>
-type SafeActionFailureClassifier = (error: unknown) => AgentRequestFailure | undefined
+export type SafeActionFailureClassifier = (error: unknown) => AgentRequestFailure | undefined
 
 export interface RunAcceptedEffectOptions {
   readonly runtime: AgentHostRuntime
@@ -201,14 +201,10 @@ export async function runAcceptedEffect(options: RunAcceptedEffectOptions): Prom
           await runtime.ledger.markOutcomeUnknown(key, unknown.toJSON()).catch(() => {})
           throw unknown
         }
-        try {
-          runtime.assertOpen()
-        } catch (error) {
-          if (error instanceof AgentGatewayError) {
-            await runtime.ledger.reject(key, { kind: 'gateway', error: error.toJSON() }).catch(() => {})
-          }
-          throw error
-        }
+        // Once the provider action returns, host drain must not downgrade a
+        // potentially-completed external effect to a safe rejection. Settlement
+        // remains available while finite effects drain; if it fails, the record
+        // becomes outcome-unknown below.
         try {
           await runtime.ledger.complete(key, receipt)
           return receipt

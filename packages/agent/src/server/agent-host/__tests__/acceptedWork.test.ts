@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { AgentGatewayErrorCode, type JsonValue } from '../../../shared/index'
+import { AgentGatewayError, AgentGatewayErrorCode, type JsonValue } from '../../../shared/index'
 import { InMemoryAgentRequestLedger } from '../requestLedger'
 import type { AgentHostRuntime } from '../createAgentHost'
 import type { AgentRequestKey } from '../types'
@@ -33,6 +33,7 @@ function provenance(overrides: Partial<AcceptedWorkProvenance> = {}): AcceptedWo
 function runtime() {
   const ledger = new InMemoryAgentRequestLedger()
   const admitted: AgentRequestKey[] = []
+  const assertOpen = vi.fn()
   const value = {
     ledger,
     effectAdmission: {
@@ -41,10 +42,10 @@ function runtime() {
         return { type: 'accepted' as const, admissionReceipt: `admitted:${key.requestId}` }
       },
     },
-    assertOpen() {},
+    assertOpen,
     startPreparedEffect<T>(_key: AgentRequestKey, effect: () => Promise<T>) { return effect() },
   } as unknown as AgentHostRuntime
-  return { runtime: value, ledger, admitted }
+  return { runtime: value, ledger, admitted, assertOpen }
 }
 
 function executor(host: AgentHostRuntime) {
@@ -115,6 +116,99 @@ describe('accepted external tool effects', () => {
     await expect(execute(input)).rejects.toMatchObject({
       code: AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
     })
+    expect(action).toHaveBeenCalledOnce()
+  })
+
+  it('settles the known receipt when host drain starts after provider success', async () => {
+    const fixture = runtime()
+    const execute = executor(fixture.runtime)
+    const action = vi.fn(async () => {
+      fixture.assertOpen.mockImplementation(() => {
+        throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED, 'agent host is closing')
+      })
+      return { released: true } satisfies JsonValue
+    })
+    const input = {
+      provenance: provenance(),
+      toolCallId: 'tool-call-drain',
+      tool: 'sandbox',
+      op: 'release',
+      sandbox: 'lease-1234567890',
+      action,
+    }
+
+    await expect(execute(input)).resolves.toEqual({ released: true })
+    fixture.assertOpen.mockReset()
+    await expect(execute(input)).resolves.toEqual({ released: true })
+    expect(action).toHaveBeenCalledOnce()
+  })
+
+  it('records proven pre-provider validation failures as rejected', async () => {
+    const fixture = runtime()
+    const execute = executor(fixture.runtime)
+    const action = vi.fn(async () => ({ ok: true } satisfies JsonValue))
+    const preflight = vi.fn(async () => {
+      throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE, 'sandbox quota exceeded')
+    })
+    const input = {
+      provenance: provenance(),
+      toolCallId: 'tool-call-quota',
+      tool: 'sandbox',
+      op: 'create',
+      preflight,
+      action,
+    }
+
+    await expect(execute(input)).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE })
+    await expect(execute(input)).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE })
+    expect(preflight).toHaveBeenCalledOnce()
+    expect(action).not.toHaveBeenCalled()
+  })
+
+  it('classifies only explicitly safe action failures as rejected', async () => {
+    const fixture = runtime()
+    const execute = executor(fixture.runtime)
+    const providerNotCalled = Object.assign(new Error('reservation unavailable'), { safe: true })
+    const action = vi.fn(async () => { throw providerNotCalled })
+    const classifySafeActionFailure = vi.fn((error: unknown) => error === providerNotCalled
+      ? {
+          kind: 'gateway' as const,
+          error: new AgentGatewayError(
+            AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
+            'sandbox reservation unavailable',
+          ).toJSON(),
+        }
+      : undefined)
+    const input = {
+      provenance: provenance(),
+      toolCallId: 'tool-call-safe-failure',
+      tool: 'sandbox',
+      op: 'create',
+      classifySafeActionFailure,
+      action,
+    }
+
+    await expect(execute(input)).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE })
+    await expect(execute(input)).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE })
+    expect(action).toHaveBeenCalledOnce()
+    expect(classifySafeActionFailure).toHaveBeenCalledOnce()
+  })
+
+  it('marks settlement failure outcome-unknown and never reinvokes the action', async () => {
+    const fixture = runtime()
+    const execute = executor(fixture.runtime)
+    vi.spyOn(fixture.ledger, 'complete').mockRejectedValue(new Error('ledger unavailable'))
+    const action = vi.fn(async () => ({ sandbox: 'lease-1234567890' } satisfies JsonValue))
+    const input = {
+      provenance: provenance(),
+      toolCallId: 'tool-call-settlement',
+      tool: 'sandbox',
+      op: 'create',
+      action,
+    }
+
+    await expect(execute(input)).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN })
+    await expect(execute(input)).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN })
     expect(action).toHaveBeenCalledOnce()
   })
 
