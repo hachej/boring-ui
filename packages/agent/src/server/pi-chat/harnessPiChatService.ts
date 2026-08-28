@@ -80,6 +80,8 @@ function mapSyntheticChatError(channel: LiveSessionChannel, error: ChatError): P
 interface InterruptedQueueEntry {
   followUp: QueuedUserMessage
   serverText: string
+  /** Original submission context; never projected into queue state or events. */
+  requestContext?: PiSessionRequestContext
 }
 
 interface QueueRestoreFailure {
@@ -143,6 +145,7 @@ export class HarnessPiChatService implements PiChatSessionService {
   // Fence slow cold opens from publishing an adapter after deletion retires its incarnation.
   private readonly sessionGenerations = new Map<string, number>()
   private readonly messageMetadata = new PiChatMessageMetadataReconciler()
+  private readonly followUpRunContexts = new Map<string, Map<string, PiSessionRequestContext>>()
   private readonly activePromptRuns = new Map<string, Promise<void>>()
   private readonly queueResumeAdmissions = new Set<string>()
   private readonly queueRecoveryRuns = new Map<string, Promise<void>>()
@@ -235,6 +238,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     this.sessionGenerations.clear()
     this.activePromptRuns.clear()
     this.queueResumeAdmissions.clear()
+    this.followUpRunContexts.clear()
     this.syntheticPromptFailures.clear()
     this.activeSyntheticPromptErrors.clear()
     this.liveAttachments.clear()
@@ -282,6 +286,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     this.channels.delete(sessionKey)
     try { this.metering?.releaseSession(sessionKey) } catch (error) { teardownError ??= error }
     this.messageMetadata.clearSession(sessionKey)
+    this.followUpRunContexts.delete(sessionKey)
     this.syntheticPromptFailures.delete(sessionKey)
     this.activeSyntheticPromptErrors.delete(sessionKey)
     try { await this.sessionStore.delete(sessionCtx, sessionId) } catch (error) { teardownError ??= error }
@@ -539,6 +544,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     }
     if (outcome === 'cancelled') throw promptCancelledError()
     this.messageMetadata.recordFollowUp(sessionKey, payload)
+    this.rememberFollowUpRunContext(sessionKey, payload, ctx)
     try {
       this.lifecycle.assertOpen()
       await adapter.followUp(payload.message, {
@@ -549,6 +555,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     } catch (err) {
       this.metering?.failFollowUpRun(sessionKey, payload)
       this.messageMetadata.removeFollowUp(sessionKey, payload)
+      this.removeFollowUpRunContext(sessionKey, payload)
       throw err
     }
     await this.drainPublishQueue(channel)
@@ -572,11 +579,13 @@ export class HarnessPiChatService implements PiChatSessionService {
       const after = adapter.readSnapshot().followUpMessages.length
       if (after < before) {
         this.messageMetadata.removeFollowUp(sessionKey, payload)
+        this.removeFollowUpRunContext(sessionKey, payload)
         this.metering?.releaseQueued(sessionKey, payload)
       }
       return { accepted: true, cursor: this.channels.get(sessionKey)?.buffer.latestSeq ?? 0, cleared: Math.max(0, before - after) }
     }
     const clearedQueue = this.clearAllFollowUps(adapter, sessionId, sessionKey)
+    this.followUpRunContexts.delete(sessionKey)
     await this.drainPublishQueue(this.channels.get(sessionKey))
     this.metering?.releaseQueued(sessionKey)
     return { accepted: true, cursor: this.channels.get(sessionKey)?.buffer.latestSeq ?? 0, cleared: clearedQueue.length }
@@ -619,13 +628,13 @@ export class HarnessPiChatService implements PiChatSessionService {
       const queuedFollowUps = shouldPromoteFollowUp
         ? this.followUpsForInterrupt(sessionId, sessionKey, adapter)
         : []
-      const nextFollowUp = queuedFollowUps[0]
-      const resumedFollowUps = isResume
-        ? queuedFollowUps.map((followUp) => ({
-            followUp,
-            serverText: this.messageMetadata.findFollowUpForQueueItem(sessionKey, followUp)?.serverText ?? followUp.displayText,
-          }))
-        : []
+      const interruptedFollowUps = queuedFollowUps.map((followUp) => ({
+        followUp,
+        serverText: this.messageMetadata.findFollowUpForQueueItem(sessionKey, followUp)?.serverText ?? followUp.displayText,
+        requestContext: this.followUpRunContext(sessionKey, followUp),
+      }))
+      const nextFollowUp = interruptedFollowUps[0]
+      const resumedFollowUps = isResume ? interruptedFollowUps : []
       const activeRun = this.activePromptRuns.get(sessionKey)
       let resumeQueueCleared = false
       try {
@@ -710,6 +719,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     await this.awaitQueueRecovery(sessionKey)
     const adapter = await this.getAdapter(ctx, sessionId, '')
     const clearedBeforeAbort = this.clearAllFollowUps(adapter, sessionId, sessionKey)
+    this.followUpRunContexts.delete(sessionKey)
     // The active run settles/releases via the native aborted agent-end; queued
     // and not-yet-started prompt reservations are released here so they don't
     // hold the user's balance until TTL. Mark the active run user-stopped BEFORE
@@ -768,9 +778,12 @@ export class HarnessPiChatService implements PiChatSessionService {
     this.messageMetadata.recordConsumingFollowUp(sessionKey, combinedFollowUp, serverText)
     this.metering?.promoteQueuedToPrompt(sessionKey, first.followUp)
 
+    const promotedAdapter = first.requestContext
+      ? await this.getAdapter(first.requestContext, sessionId, serverText, { authorize: false })
+      : adapter
     let promptRun: Promise<void>
     try {
-      promptRun = this.runAndDrainPublishQueue(channel, adapter.prompt(serverText))
+      promptRun = this.runAndDrainPublishQueue(channel, promotedAdapter.prompt(serverText))
     } catch (error) {
       this.metering?.restorePromotedFollowUp(sessionId, first.followUp, sessionKey)
       const restore = await this.restoreInterruptedQueue(sessionId, sessionKey, adapter, queued, combinedFollowUp)
@@ -781,6 +794,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     }
 
     const settlement = promptRun.then(() => {
+      this.removeFollowUpRunContext(sessionKey, first.followUp)
       this.releaseCombinedQueueRemainder(sessionKey, queued)
     }).catch(async (error) => {
       const unconsumed = this.messageMetadata.hasConsumingFollowUp(sessionKey, combinedFollowUp)
@@ -796,6 +810,7 @@ export class HarnessPiChatService implements PiChatSessionService {
       }
       if (unconsumed) {
         this.messageMetadata.removeConsumingFollowUp(sessionKey, combinedFollowUp)
+        this.removeFollowUpRunContext(sessionKey, first.followUp)
         this.metering?.failPromotedFollowUp(sessionId, first.followUp, sessionKey)
       }
       this.releaseCombinedQueueRemainder(sessionKey, queued)
@@ -821,6 +836,7 @@ export class HarnessPiChatService implements PiChatSessionService {
 
   private releaseCombinedQueueRemainder(sessionKey: string, queued: InterruptedQueueEntry[]): void {
     for (const item of queued.slice(1)) {
+      this.removeFollowUpRunContext(sessionKey, item.followUp)
       this.metering?.releaseQueued(sessionKey, followUpSelector(item.followUp))
     }
   }
@@ -858,6 +874,7 @@ export class HarnessPiChatService implements PiChatSessionService {
       .map((followUp) => ({
         followUp,
         serverText: this.messageMetadata.findFollowUpForQueueItem(sessionKey, followUp)?.serverText ?? followUp.displayText,
+        requestContext: this.followUpRunContext(sessionKey, followUp),
       }))
     if (intervening.length > 0) this.clearAllFollowUps(adapter, sessionId, sessionKey)
     if (consumingFollowUp) this.messageMetadata.removeConsumingFollowUp(sessionKey, consumingFollowUp)
@@ -865,7 +882,10 @@ export class HarnessPiChatService implements PiChatSessionService {
     const failures: QueueRestoreFailure[] = []
     for (const entry of [...queued, ...intervening]) {
       try {
-        await adapter.followUp(entry.serverText, {
+        const restoreAdapter = entry.requestContext
+          ? await this.getAdapter(entry.requestContext, sessionId, entry.serverText, { authorize: false })
+          : adapter
+        await restoreAdapter.followUp(entry.serverText, {
           displayText: entry.followUp.displayText,
           clientNonce: entry.followUp.clientNonce,
           clientSeq: entry.followUp.clientSeq,
@@ -887,6 +907,7 @@ export class HarnessPiChatService implements PiChatSessionService {
 
   private releaseFailedQueueRestorations(sessionKey: string, failures: QueueRestoreFailure[]): void {
     for (const failure of failures) {
+      this.removeFollowUpRunContext(sessionKey, failure.entry.followUp)
       this.metering?.releaseQueued(sessionKey, followUpSelector(failure.entry.followUp))
     }
   }
@@ -895,8 +916,9 @@ export class HarnessPiChatService implements PiChatSessionService {
     sessionId: string,
     sessionKey: string,
     adapter: PiAgentSessionAdapter,
-    followUp: QueuedUserMessage,
+    entry: InterruptedQueueEntry,
   ): Promise<void> {
+    const { followUp } = entry
     const metadata = this.messageMetadata.findFollowUpForQueueItem(sessionKey, followUp)
     this.messageMetadata.recordConsumingFollowUp(sessionKey, followUp, metadata?.serverText)
     if (adapter.continueQueuedFollowUp) {
@@ -940,15 +962,18 @@ export class HarnessPiChatService implements PiChatSessionService {
     // clearing after the repost would duplicate the queued user turn.
     this.clearAutoPostedFollowUpForFallback(sessionId, sessionKey, adapter, followUp)
     this.metering?.promoteQueuedToPrompt(sessionKey, followUp)
+    const promotedAdapter = entry.requestContext
+      ? await this.getAdapter(entry.requestContext, sessionId, entry.serverText, { authorize: false })
+      : adapter
     try {
-      await this.runPrompt(sessionKey, adapter, metadata?.serverText ?? followUp.displayText)
+      await this.runPrompt(sessionKey, promotedAdapter, metadata?.serverText ?? followUp.displayText)
     } catch (err) {
       // The repost rejected before agent-start; release the promoted hold so
       // it doesn't strand in pendingPrompts and misattribute later usage, then
       // restore the queue item because fallback reposting never consumed it.
       this.metering?.failPromotedFollowUp(sessionId, followUp, sessionKey)
       this.lifecycle.assertOpen()
-      await adapter.followUp(metadata?.serverText ?? followUp.displayText, {
+      await promotedAdapter.followUp(metadata?.serverText ?? followUp.displayText, {
         displayText: followUp.displayText,
         clientNonce: followUp.clientNonce,
         clientSeq: followUp.clientSeq,
@@ -1083,6 +1108,9 @@ export class HarnessPiChatService implements PiChatSessionService {
       channel.messageTurnIds.set(event.final.id, channel.activeTurnId)
     }
     if (event.type === 'agent-end' && channel.activeTurnId === event.turnId) channel.activeTurnId = undefined
+    if (event.type === 'followup-consumed' || (event.type === 'message-start' && event.role === 'user')) {
+      this.removeFollowUpRunContext(sessionKey, event)
+    }
     this.messageMetadata.consumeEvent(sessionKey, event)
     this.onEvent?.(sessionId, event)
     channel.buffer.publish(event)
@@ -1135,6 +1163,38 @@ export class HarnessPiChatService implements PiChatSessionService {
 
   private async drainPublishQueue(channel: LiveSessionChannel | undefined): Promise<void> {
     await channel?.publishQueue
+  }
+
+  private rememberFollowUpRunContext(
+    sessionKey: string,
+    selector: { clientNonce?: string; clientSeq?: number },
+    ctx: PiSessionRequestContext,
+  ): void {
+    const identity = queueSelectorIdentity(selector)
+    if (!identity) return
+    const contexts = this.followUpRunContexts.get(sessionKey) ?? new Map<string, PiSessionRequestContext>()
+    contexts.set(identity, ctx)
+    this.followUpRunContexts.set(sessionKey, contexts)
+  }
+
+  private followUpRunContext(
+    sessionKey: string,
+    selector: { clientNonce?: string; clientSeq?: number },
+  ): PiSessionRequestContext | undefined {
+    const identity = queueSelectorIdentity(selector)
+    return identity ? this.followUpRunContexts.get(sessionKey)?.get(identity) : undefined
+  }
+
+  private removeFollowUpRunContext(
+    sessionKey: string,
+    selector: { clientNonce?: string; clientSeq?: number },
+  ): void {
+    const identity = queueSelectorIdentity(selector)
+    if (!identity) return
+    const contexts = this.followUpRunContexts.get(sessionKey)
+    if (!contexts) return
+    contexts.delete(identity)
+    if (contexts.size === 0) this.followUpRunContexts.delete(sessionKey)
   }
 
   private async getAdapter(
@@ -1585,6 +1645,12 @@ function transitionSendNow(transaction: SendNowTransaction, next: Exclude<SendNo
   if (next === 'cancel-and-discard' || transaction.disposition === 'active') {
     transaction.disposition = next
   }
+}
+
+function queueSelectorIdentity(selector: { clientNonce?: string; clientSeq?: number }): string | undefined {
+  if (selector.clientNonce) return `nonce:${selector.clientNonce}`
+  if (selector.clientSeq !== undefined) return `seq:${selector.clientSeq}`
+  return undefined
 }
 
 function queueEntryIdentity(followUp: QueuedUserMessage): string {

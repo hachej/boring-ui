@@ -160,6 +160,61 @@ describe('HarnessPiChatService', () => {
     expect(JSON.stringify(runContext)).not.toContain('accepted-parent-request')
   })
 
+  it('promotes Send-now with the queued submission context instead of interrupt provenance', async () => {
+    const adapter = createAdapter()
+    const harness = createHarness(adapter)
+    const service = new HarnessPiChatService({ harness, sessionStore, workdir: '/workspace' })
+    const queuedKey: AgentRequestKey = {
+      workspaceScopeId: 'workspace-a', authSubjectId: 'queued-subject', operation: 'session.followup',
+      target: { kind: 'session', ref: { agentTypeId: 'worker', sessionId: 's1' } }, requestId: 'queued-request',
+    }
+    const interruptKey: AgentRequestKey = {
+      workspaceScopeId: 'workspace-a', authSubjectId: 'interrupt-subject', operation: 'session.command.execute',
+      target: { kind: 'session', ref: { agentTypeId: 'worker', sessionId: 's1' } }, requestId: 'interrupt-request',
+    }
+    const queuedContext = attachAcceptedWorkProvenance({
+      ...ctx, authSubject: 'queued-subject', requestId: 'queued-request', sessionAuthority: 'workspace-scope' as const,
+    }, { parentKey: queuedKey, claim: { workspaceScopeId: 'workspace-a', authSubjectId: 'queued-subject' } })
+    const interruptContext = attachAcceptedWorkProvenance({
+      ...ctx, authSubject: 'interrupt-subject', requestId: 'interrupt-request', sessionAuthority: 'workspace-scope' as const,
+    }, { parentKey: interruptKey, claim: { workspaceScopeId: 'workspace-a', authSubjectId: 'interrupt-subject' } })
+
+    await service.followUp(queuedContext, 's1', { message: 'send now', clientNonce: 'queued-nonce', clientSeq: 1 })
+    await service.interrupt(interruptContext, 's1', { queueAction: 'resume' })
+
+    const getAdapter = harness.getPiSessionAdapter as ReturnType<typeof vi.fn>
+    const promotedRunContext = getAdapter.mock.calls.at(-1)?.[1] as RunContext
+    expect(promotedRunContext.userId).toBe('queued-subject')
+    expect(readAcceptedWorkProvenance(promotedRunContext)?.parentKey).toEqual(queuedKey)
+    expect(readAcceptedWorkProvenance(promotedRunContext)?.parentKey).not.toEqual(interruptKey)
+    await service.dispose()
+  })
+
+  it('does not borrow interrupt provenance when a promoted queue item has none', async () => {
+    const adapter = createAdapter()
+    const harness = createHarness(adapter)
+    const service = new HarnessPiChatService({ harness, sessionStore, workdir: '/workspace' })
+    const queuedContext = {
+      ...ctx, authSubject: 'queued-subject', requestId: 'queued-request', sessionAuthority: 'workspace-scope' as const,
+    }
+    const interruptKey: AgentRequestKey = {
+      workspaceScopeId: 'workspace-a', authSubjectId: 'interrupt-subject', operation: 'session.command.execute',
+      target: { kind: 'session', ref: { agentTypeId: 'worker', sessionId: 's1' } }, requestId: 'interrupt-request',
+    }
+    const interruptContext = attachAcceptedWorkProvenance({
+      ...ctx, authSubject: 'interrupt-subject', requestId: 'interrupt-request', sessionAuthority: 'workspace-scope' as const,
+    }, { parentKey: interruptKey, claim: { workspaceScopeId: 'workspace-a', authSubjectId: 'interrupt-subject' } })
+
+    await service.followUp(queuedContext, 's1', { message: 'plain send now', clientNonce: 'plain-nonce', clientSeq: 1 })
+    await service.interrupt(interruptContext, 's1', { queueAction: 'resume' })
+
+    const getAdapter = harness.getPiSessionAdapter as ReturnType<typeof vi.fn>
+    const promotedRunContext = getAdapter.mock.calls.at(-1)?.[1] as RunContext
+    expect(promotedRunContext.userId).toBe('queued-subject')
+    expect(readAcceptedWorkProvenance(promotedRunContext)).toBeUndefined()
+    await service.dispose()
+  })
+
   it('serves id-less live attachment bytes from the addressed event URL', async () => {
     const adapter = createAdapter()
     const service = new HarnessPiChatService({
