@@ -196,6 +196,8 @@ export {
 } from './gateway/errors'
 export type { AgentGatewayErrorDTO } from './gateway/errors'
 export type {
+  AgentAccessDecision,
+  AgentAccessOperation,
   AgentFollowUpCommand,
   AgentGateway,
   AgentPromptCommand,
@@ -224,6 +226,8 @@ export type {
   ListAgentsInput,
   ReadAgentSessionStateInput,
   RenameAgentSessionInput,
+  ResolveAgentAccess,
+  ResolveAgentAccessInput,
   VerifiedAgentScopeClaim,
   WorkspaceScopeId,
 } from './gateway/types'

@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
-import { AgentGatewayError, AgentGatewayErrorCode } from '../../shared/index'
+import { AgentGatewayError, AgentGatewayErrorCode, type AgentAccessOperation } from '../../shared/index'
 import { ErrorCode } from '../../shared/error-codes'
 import type { AgentHarness, RunContext } from '../../shared/harness'
 import type { AgentTool } from '../../shared/tool'
@@ -21,6 +21,7 @@ import { canonicalDigest } from './canonical'
 import type { AgentHostRuntime, RuntimeBinding } from './createAgentHost'
 import type { EmbeddedAgentGateway } from './embeddedGateway'
 import type { AgentHostDirectProjectionOptions, AgentInstructionFileRef } from './types'
+import { statusForGatewayError } from './gatewayHttpStatus'
 import { projectStableServiceError } from './stableServiceError'
 import {
   resolveAgentMcpGrants,
@@ -124,6 +125,7 @@ export interface AgentHostRuntimeCapabilityProjection {
   authorizeRequest(input: {
     readonly request: FastifyRequest
     readonly agentTypeId: string
+    readonly operation?: AgentAccessOperation
   }): Promise<void>
   resolveBinding(input: {
     readonly request: FastifyRequest
@@ -212,11 +214,12 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
     sessionChangesTracker: options.sessionChangesTracker,
     metering: runtime.options.metering,
     registerSubscription: runtime.registerSubscription,
-    async authorizeRequest({ request, agentTypeId }) {
-      await authorize(request)
+    async authorizeRequest({ request, agentTypeId, operation = 'session.read' }) {
+      const { scope, claim } = await authorize(request)
       if (!runtime.compiledById.has(agentTypeId)) {
         throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN, 'agent type is not available')
       }
+      await runtime.assertAgentAccess?.(agentTypeId, scope, claim, operation)
     },
     async resolveBinding({ request, agentTypeId, sessionId }) {
       const { claim, binding } = await resolve(request, agentTypeId, sessionId)
@@ -540,26 +543,9 @@ function body<T>(schema: z.ZodType<T>, request: FastifyRequest, reply: FastifyRe
   return undefined
 }
 
-function statusFor(error: AgentGatewayError): number {
-  if (error.code === AgentGatewayErrorCode.AGENT_SCOPE_DENIED) return 403
-  if (
-    error.code === AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN
-    || error.code === AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND
-  ) return 404
-  if (
-    error.code === AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT
-    || error.code === AgentGatewayErrorCode.AGENT_REQUEST_IN_PROGRESS
-    || error.code === AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN
-    || error.code === AgentGatewayErrorCode.AGENT_RUNTIME_RESTART_REQUIRED
-    || error.code === AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE
-  ) return 409
-  if (error.code === AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED) return 503
-  return 400
-}
-
 function sendError(reply: FastifyReply, error: unknown): FastifyReply {
   if (error instanceof AgentGatewayError) {
-    return reply.code(statusFor(error)).send({ error: error.toJSON() })
+    return reply.code(statusForGatewayError(error.code)).send({ error: error.toJSON() })
   }
   const stable = projectStableServiceError(error)
   if (stable) {
@@ -652,6 +638,13 @@ export function createAgentHostRuntimeCapabilityRoutes(
     await app.register(readyStatusRoutes, {
       path: '/api/v1/agents/:agentTypeId/ready-status',
       authorizeRequest: async (request) => { await resolve(request, agentId(request)) },
+      authorizeEvent: async (request) => {
+        await projection.authorizeRequest({
+          request,
+          agentTypeId: agentId(request),
+          operation: 'stream.event',
+        })
+      },
       getTracker: async (request) => (await resolve(request, agentId(request))).readyTracker,
       registerStreamClose: projection.registerSubscription,
     })

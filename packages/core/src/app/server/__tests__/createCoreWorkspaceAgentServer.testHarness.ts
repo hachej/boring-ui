@@ -52,6 +52,9 @@ export const mocks = (() => {
     setDefaultAgentTypeId: vi.fn(async (id: string, _expected: string, value: string) => ({
       id, appId: 'test-app', defaultAgentTypeId: value,
     }) as { id: string; appId: string; defaultAgentTypeId: string } | null),
+    listAgentSeats: vi.fn(async (_workspaceId: string): Promise<any[]> => []),
+    hasAgentSeat: vi.fn(async (_workspaceId: string, _agentTypeId: string) => false),
+    addAgentSeat: vi.fn(),
     actualCreateAgentHost: undefined as undefined | ((options: any) => Promise<any>),
     actualCreateSandboxRuntimeModeAdapter: undefined as undefined | ((mode: 'direct') => any),
     runtimeHost: {
@@ -174,6 +177,11 @@ vi.doMock('../../../server/db/index.js', () => ({
     setDefaultAgentTypeId(id: string, expected: string, value: string) {
       return mocks.setDefaultAgentTypeId(id, expected, value)
     }
+    listAgentSeats(workspaceId: string) { return mocks.listAgentSeats(workspaceId) }
+    hasAgentSeat(workspaceId: string, agentTypeId: string) { return mocks.hasAgentSeat(workspaceId, agentTypeId) }
+    addAgentSeat(workspaceId: string, agentTypeId: string, source: string, enrolledByUserId?: string) {
+      return mocks.addAgentSeat(workspaceId, agentTypeId, source, enrolledByUserId)
+    }
   },
 }))
 
@@ -196,6 +204,16 @@ beforeEach(() => {
   mocks.getMemberRole.mockResolvedValue('owner')
   mocks.setDefaultAgentTypeId.mockImplementation(async (id: string, _expected: string, value: string) => ({
     id, appId: 'test-app', defaultAgentTypeId: value,
+  }))
+  mocks.listAgentSeats.mockResolvedValue([])
+  mocks.hasAgentSeat.mockResolvedValue(false)
+  mocks.addAgentSeat.mockImplementation(async (workspaceId, agentTypeId, source, enrolledByUserId) => ({
+    seatId: `seat-${agentTypeId}`,
+    workspaceId,
+    agentTypeId,
+    source,
+    enrolledByUserId: enrolledByUserId ?? null,
+    createdAt: '2026-08-27T00:00:00.000Z',
   }))
 })
 

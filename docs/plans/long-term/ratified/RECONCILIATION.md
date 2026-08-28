@@ -387,3 +387,37 @@ text referenced the wait.
 
 **Explicit non-change.** No A2A loopback, no shared-runtime room; §7's
 non-change clause stands. Posts-only and artifact-sharing boundaries stand.
+
+## 10. OWNER RULING — 2026-08-27 (strategic-audit fold: staffing modes, agent presence)
+
+Ruled after the external Seneca × Boring strategic audit (2026-08-27). Two
+small ontology/product-policy rulings; the audit's commercial sequencing went
+to the tenant repo per the premises-never-pricing split (DIRECTION records
+that disposition).
+
+**(a) Thread staffing — two first-class modes.** How many agents work a job
+is a **per-job choice between two modes**, both first-class:
+
+> **Grow-as-needed (default):** a Thread starts with **one bounded agent**;
+> specialists are added only on measured evidence (quality or cost) —
+> multi-agent is capability, not a maturity goal. **Predefined fleet:** an
+> agent/vertical package may declare a team shape that staffs the Thread
+> from the start. When nothing is declared, grow-as-needed applies.
+
+Consequence for the future engine plan: the v0 engine optimizes the
+single-agent path first and must not tax it with team overhead; §9b's
+multi-author transcript is presentation and holds in both modes (a
+single-agent Thread simply has one named author besides the human).
+
+**(b) Agent-presence vocabulary.** An Experience declares its agent-presence
+policy from a closed vocabulary:
+
+> `hidden · ambient · drawer · page · roster`
+
+**`ambient` is the default for vertical-SaaS Experiences** (the user sees
+records, deliverables, exceptions, decisions — not orchestration);
+**Meridian is the explicit-`roster` flagship.** Naming only — no
+implementation obligation until the first Experience-layer slice.
+
+**Explicit non-change.** No new nouns, no A2A loopback, no shared-runtime
+room; §7 and §9 stand unaltered.

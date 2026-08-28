@@ -29,6 +29,23 @@ export type Workspace = {
   readonly defaultAgentTypeId?: string | null
 }
 
+export type WorkspaceAgentSeatSource =
+  | 'signup-intent'
+  | 'generic-default'
+  | 'user-add'
+  | 'migration-default'
+  | 'migration-session'
+  | 'operator'
+
+export type WorkspaceAgentSeat = {
+  seatId: string
+  workspaceId: string
+  agentTypeId: string
+  source: WorkspaceAgentSeatSource
+  enrolledByUserId: string | null
+  createdAt: string
+}
+
 export type WorkspaceMember = {
   workspaceId: string
   userId: string
