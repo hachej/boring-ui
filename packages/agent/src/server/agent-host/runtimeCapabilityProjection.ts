@@ -23,6 +23,7 @@ import type { EmbeddedAgentGateway } from './embeddedGateway'
 import type { AgentHostDirectProjectionOptions, AgentInstructionFileRef } from './types'
 import { statusForGatewayError } from './gatewayHttpStatus'
 import { projectStableServiceError } from './stableServiceError'
+import { attachAcceptedWorkProvenance } from './acceptedWork'
 import {
   resolveAgentMcpGrants,
   type McpConnectorCatalog,
@@ -368,8 +369,8 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
         target,
         requestId,
         payload: { ref: target.ref, name, args },
-        action: () => runtime.runBindingOperation(binding.key, async () => {
-          await binding.composition.harness.executeSlashCommand!(sessionId, name, args, {
+        action: (provenance) => runtime.runBindingOperation(binding.key, async () => {
+          await binding.composition.harness.executeSlashCommand!(sessionId, name, args, attachAcceptedWorkProvenance({
             abortSignal: new AbortController().signal,
             workdir: binding.composition.runtimeBundle.workspace.root,
             workspaceId: scope.workspaceScopeId,
@@ -377,8 +378,8 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
             userId: scope.authSubjectId,
             sessionCtx: {
               workspaceId: scope.workspaceScopeId,
-              },
-          })
+            },
+          }, provenance))
           return { ok: true, sessionId, name }
         }),
       })

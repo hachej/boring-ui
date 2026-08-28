@@ -21,6 +21,10 @@ import { buildPiChatHistory } from './piChatHistory'
 import { PiChatMeteringCoordinator, type AgentMeteringSink, type MeteringErrorLogger } from './metering'
 import { HarnessPiChatServiceLifecycle } from './piChatServiceLifecycle'
 import { codedError } from '../codedError'
+import {
+  attachAcceptedWorkProvenance,
+  readAcceptedWorkProvenance,
+} from '../agent-host/acceptedWork'
 
 type PiNativeHarness = AgentHarness & {
   getPiSessionAdapter?: (input: AgentSendInput, ctx: RunContext) => Promise<PiAgentSessionAdapter>
@@ -1153,7 +1157,7 @@ export class HarnessPiChatService implements PiChatSessionService {
       ...(typeof input !== 'string' && input.thinkingLevel ? { thinkingLevel: input.thinkingLevel } : {}),
       ...(typeof input !== 'string' && input.attachments ? { attachments: input.attachments } : {}),
     }
-    const adapter = await this.harness.getPiSessionAdapter(sendInput, {
+    const runContext: RunContext = {
       abortSignal: new AbortController().signal,
       workdir: this.workdir,
       workspaceId: ctx.workspaceId,
@@ -1162,7 +1166,12 @@ export class HarnessPiChatService implements PiChatSessionService {
       sessionCtx: toSessionCtx(ctx),
       userEmail: ctx.authEmail,
       userEmailVerified: ctx.authEmailVerified,
-    })
+    }
+    const provenance = readAcceptedWorkProvenance(ctx)
+    const adapter = await this.harness.getPiSessionAdapter(
+      sendInput,
+      provenance ? attachAcceptedWorkProvenance(runContext, provenance) : runContext,
+    )
     await this.lifecycle.assertAdapterOwned(adapter)
     return adapter
   }

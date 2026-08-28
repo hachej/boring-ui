@@ -10,6 +10,11 @@ import { selectMessagesForRender } from '../../../front/chat/pi/selectors'
 import type { PiAgentSessionAdapter, PiAgentSessionSnapshot } from '../PiAgentSessionAdapter'
 import { HarnessPiChatService } from '../harnessPiChatService'
 import type { PiSessionRequestContext } from '../piSessionIdentity'
+import {
+  attachAcceptedWorkProvenance,
+  readAcceptedWorkProvenance,
+} from '../../agent-host/acceptedWork'
+import type { AgentRequestKey } from '../../agent-host/types'
 
 const ctx: PiSessionRequestContext = {
   workspaceId: 'workspace-a',
@@ -133,6 +138,28 @@ function renderMessagesFromEvents(events: PiChatEvent[]) {
 }
 
 describe('HarnessPiChatService', () => {
+  it('projects accepted parent provenance into the concrete harness RunContext without serializing it', async () => {
+    const { service, harness } = createService()
+    const parentKey: AgentRequestKey = {
+      workspaceScopeId: 'workspace-a',
+      authSubjectId: 'user-a',
+      operation: 'session.prompt',
+      target: { kind: 'session', ref: { agentTypeId: 'worker', sessionId: 's1' } },
+      requestId: 'accepted-parent-request',
+    }
+    const acceptedContext = attachAcceptedWorkProvenance({ ...ctx }, {
+      parentKey,
+      claim: { workspaceScopeId: 'workspace-a', authSubjectId: 'user-a' },
+    })
+
+    await service.prompt(acceptedContext, 's1', { message: 'hello', clientNonce: 'accepted-parent' })
+
+    const getAdapter = harness.getPiSessionAdapter as ReturnType<typeof vi.fn>
+    const runContext = getAdapter.mock.calls[0]?.[1] as RunContext
+    expect(readAcceptedWorkProvenance(runContext)?.parentKey).toEqual(parentKey)
+    expect(JSON.stringify(runContext)).not.toContain('accepted-parent-request')
+  })
+
   it('serves id-less live attachment bytes from the addressed event URL', async () => {
     const adapter = createAdapter()
     const service = new HarnessPiChatService({

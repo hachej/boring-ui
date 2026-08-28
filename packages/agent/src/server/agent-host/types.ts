@@ -45,6 +45,7 @@ export type AgentGatewayEffect =
   | 'session.queue.clear'
   | 'agent.reload'
   | 'session.command.execute'
+  | 'session.tool.external-effect'
 
 export type AgentRequestTarget =
   | { readonly kind: 'agent'; readonly agentTypeId: string }
