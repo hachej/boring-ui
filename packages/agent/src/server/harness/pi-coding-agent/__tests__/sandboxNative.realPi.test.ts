@@ -102,6 +102,60 @@ describe('native sandbox tools through real Pi', () => {
     }
   })
 
+  it('registers the native catalog through the default createPiCodingAgentHarness composition', async () => {
+    const host = runtime([])
+    const remote = pair()
+    const providerCreate = vi.fn(async () => remote.value)
+    const leases = new SandboxLeaseService({
+      workspaceRoot: '/host/leases', provider: { create: providerCreate } as unknown as SandboxProviderV1,
+      serviceDigest: 'default-pi-composition', ttlMs: 60_000, reapIntervalMs: 60_000, drainTimeoutMs: 100,
+      maxActiveLeasesPerOwner: 1, maxActiveLeasesTotal: 1,
+      createHandle: () => 'lease-handle-0001',
+    })
+    const primaryBundle = {
+      workspace: remote.value.workspace,
+      sandbox: { ...remote.value.sandbox, id: 'primary', exec: vi.fn() },
+      fileSearch: { async search() { return [] } },
+      bash: { kind: 'remote' }, filesystem: { kind: 'remote-workspace' },
+    } satisfies RuntimeBundle
+    const composition = await buildAgentComposition({
+      agent: {
+        agentTypeId: 'worker',
+        definition: { instructions: 'worker', label: 'Worker', digest: `sha256:${'a'.repeat(64)}` },
+      },
+      workspaceScopeId: 'workspace-a',
+      runtimeScope: {
+        identity: 'default-pi-runtime',
+        environment: {
+          placementIdentity: 'default-pi-environment', workspaceRoot: '/workspace',
+          provisioningFingerprint: 'default-pi-provisioning',
+        },
+        sessionNamespace: 'default-pi',
+        sandboxTools: { digest: 'default-pi-composition', leases },
+        includeFilesystemTools: false,
+      },
+      runtimeBundle: primaryBundle,
+      hostRuntime: host,
+      options: {
+        runtimeModeAdapter: {
+          id: 'vercel-sandbox', async create() { return primaryBundle },
+          getRuntimeLayoutRoot() { return '/workspace' },
+        },
+      },
+    })
+    try {
+      expect(composition.harness.id).toBe('pi-coding-agent')
+      expect(composition.tools.map((tool) => tool.name)).toEqual(['bash', 'sandbox'])
+      expect(JSON.stringify(composition.tools.find((tool) => tool.name === 'bash')?.parameters))
+        .toContain('sandbox')
+      expect(providerCreate).not.toHaveBeenCalled()
+    } finally {
+      await composition.dispose()
+      await leases.dispose()
+      await host.ledger.close?.()
+    }
+  })
+
   it('rejects every reserved name at the composition seam before harness or provider acquisition', async () => {
     for (const reserved of ['sandbox', 'bash', 'read', 'write', 'edit', 'find', 'grep', 'ls', 'upload_file']) {
       const host = runtime([])
