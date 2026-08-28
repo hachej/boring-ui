@@ -53,13 +53,17 @@ function showcaseSessionCount(): number {
   return Number.isFinite(requested) ? Math.min(100, Math.max(1, Math.floor(requested))) : 1
 }
 
+// Decorative-only entries used to pad the session list when `?sessions=N`
+// is requested (session-list volume/scroll demos). These never back a real
+// server session — only the boot-created session (below) is ever selected
+// by default, so they are never connected to.
 function createInitialShowcaseSessions() {
   const count = showcaseSessionCount()
   const now = Date.now()
-  return Array.from({ length: count }, (_, index) => ({
-    id: index === 0 ? SHOWCASE_SESSION_ID : `${SHOWCASE_SESSION_ID}-${index + 1}`,
-    title: showcaseSessionTitles[index % showcaseSessionTitles.length] ?? `Session ${index + 1}`,
-    updatedAt: now - index * 60_000,
+  return Array.from({ length: Math.max(0, count - 1) }, (_, index) => ({
+    id: `${SHOWCASE_SESSION_ID}-${index + 2}`,
+    title: showcaseSessionTitles[(index + 1) % showcaseSessionTitles.length] ?? `Session ${index + 2}`,
+    updatedAt: now - (index + 1) * 60_000,
   }))
 }
 
@@ -172,33 +176,79 @@ export function WorkspaceShell() {
   const [workspaceId, setWorkspaceId] = useState("Workspace")
   const [metaLoaded, setMetaLoaded] = useState(Boolean(loadingShowcase))
   const [metaError, setMetaError] = useState<string | null>(null)
-  const [showcaseActiveSessionId, setShowcaseActiveSessionId] = useState(SHOWCASE_SESSION_ID)
+  const [showcaseActiveSessionId, setShowcaseActiveSessionId] = useState<string | undefined>(undefined)
   const [showcaseSessions, setShowcaseSessions] = useState(createInitialShowcaseSessions)
+  // The showcase route pre-seeds a client-side session id, but the chat pane
+  // always talks to a real backend session (see packages/workspace's chat
+  // pane, which requires params.sessionId and hydrates it over the network).
+  // A session that only ever exists in localStorage 404s on hydrate, which is
+  // what previously produced the permanent "session was not found" banner
+  // and a disabled composer (gh-1452). `showcaseBootState` gates rendering
+  // the chat panel until a real backend session has been created.
+  const [showcaseBootState, setShowcaseBootState] = useState<"pending" | "ready" | "error">(showcase ? "pending" : "ready")
   const sessions = showcase ? showcaseSessions : undefined
   const liveShowcaseSessionIds = useRef(new Set<string>())
-  const createShowcaseSession = useCallback(async () => {
+  const requestNewShowcaseSession = useCallback(async (title: string) => {
     const response = await fetch(`/api/v1/agents/${encodeURIComponent(defaultAgentTypeId)}/sessions`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
         "x-boring-workspace-id": "default",
       },
-      body: JSON.stringify({ title: "New chat" }),
+      body: JSON.stringify({ title }),
     })
     if (!response.ok) throw new Error(`showcase session create failed (${response.status})`)
     const payload = await response.json() as { agentTypeId?: string; sessionId?: string }
     if (!payload.sessionId) throw new Error("showcase session create returned no session id")
-    const session = {
+    return {
       id: payload.sessionId,
       agentTypeId: payload.agentTypeId ?? defaultAgentTypeId,
-      title: "New chat",
+      title,
       updatedAt: Date.now(),
     }
+  }, [defaultAgentTypeId])
+  const createShowcaseSession = useCallback(async () => {
+    const session = await requestNewShowcaseSession("New chat")
     liveShowcaseSessionIds.current.add(session.id)
     setShowcaseSessions((current) => [...current, session])
     setShowcaseActiveSessionId(session.id)
     return session
-  }, [defaultAgentTypeId])
+  }, [requestNewShowcaseSession])
+  // Boot the initial showcase session: create it on the real backend (with
+  // retries to ride out a cold dev-server boot) before the composer is ever
+  // shown, instead of pre-seeding a session id that never materializes
+  // server-side.
+  const showcaseBootStartedRef = useRef(false)
+  useEffect(() => {
+    if (!showcase || !metaLoaded || !defaultAgentTypeId) return
+    if (showcaseBootStartedRef.current) return
+    showcaseBootStartedRef.current = true
+    let cancelled = false
+    const maxAttempts = 5
+    const boot = async () => {
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        try {
+          const session = await requestNewShowcaseSession(showcaseSessionTitles[0] ?? "New chat")
+          if (cancelled) return
+          liveShowcaseSessionIds.current.add(session.id)
+          seedShowcase(session.id)
+          setShowcaseSessions((current) => [session, ...current])
+          setShowcaseActiveSessionId(session.id)
+          setShowcaseBootState("ready")
+          return
+        } catch {
+          if (cancelled) return
+          if (attempt === maxAttempts) {
+            setShowcaseBootState("error")
+            return
+          }
+          await new Promise((resolve) => setTimeout(resolve, 300 * attempt))
+        }
+      }
+    }
+    void boot()
+    return () => { cancelled = true }
+  }, [defaultAgentTypeId, metaLoaded, requestNewShowcaseSession, showcase])
   const renameShowcaseSession = useCallback((sessionId: string, title: string) => {
     setShowcaseSessions((current) => current.map((session) => (
       session.id === sessionId ? { ...session, title, updatedAt: Date.now() } : session
@@ -243,8 +293,6 @@ export function WorkspaceShell() {
     return () => { cancelled = true }
   }, [showcase, loadingShowcase])
 
-  if (showcase) seedShowcase(SHOWCASE_SESSION_ID)
-
   if (loadingShowcase) {
     return <LoadingStatesShowcase mode={loadingShowcase} />
   }
@@ -254,6 +302,19 @@ export function WorkspaceShell() {
       return (
         <div className="flex h-screen w-screen items-center justify-center bg-background p-6">
           <p role="alert" className="max-w-md text-center text-sm text-destructive">{metaError}</p>
+        </div>
+      )
+    }
+    return <div className="h-screen w-screen bg-background" />
+  }
+
+  if (showcase && showcaseBootState !== "ready") {
+    if (showcaseBootState === "error") {
+      return (
+        <div className="flex h-screen w-screen items-center justify-center bg-background p-6">
+          <p role="alert" className="max-w-md text-center text-sm text-destructive">
+            The showcase could not start its session. Reload to try again.
+          </p>
         </div>
       )
     }
