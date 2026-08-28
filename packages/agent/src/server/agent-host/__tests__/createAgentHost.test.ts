@@ -4,12 +4,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import Fastify from 'fastify'
+import type { SandboxProviderV1, WorkspaceSandboxPairV1 } from '@hachej/boring-sandbox/shared'
 import { AgentGatewayError, AgentGatewayErrorCode, type AuthorizedAgentScope } from '../../../shared/index'
 import { ErrorCode } from '../../../shared/error-codes'
 import type { AgentHarnessFactory } from '../../../shared/harness'
 import { createTestRuntimeModeAdapter } from '@agent-test-host'
 import { getEnv, restoreEnvForTest, setEnvForTest } from '../../config/env'
 import { createScriptedPiHarness } from '../../testing/scriptedPiHarness'
+import { SandboxLeaseService } from '../../sandbox/leases/sandboxLease'
 import { InMemorySessionChangesTracker } from '../../http/sessionChangesTracker'
 import type { RuntimeFilesystemBinding } from '../../runtime/mode'
 import { InMemoryAgentRequestLedger } from '../requestLedger'
@@ -696,6 +698,48 @@ describe('createAgentHost', () => {
     await run
     expect(writeCompleted).toBe(true)
     await created.host.close()
+  })
+
+  it('retries fail-once sandbox deletion during host shutdown until it settles', async () => {
+    const sessionRoot = await root()
+    const remoteDispose = vi.fn()
+      .mockRejectedValueOnce(new Error('remote deletion acknowledgement lost'))
+      .mockResolvedValue(undefined)
+    const leases = new SandboxLeaseService({
+      workspaceRoot: sessionRoot,
+      provider: {
+        async create() {
+          return { dispose: remoteDispose } as unknown as WorkspaceSandboxPairV1
+        },
+      } as unknown as SandboxProviderV1,
+      serviceDigest: 'host-shutdown-retry',
+      ttlMs: 60_000,
+      reapIntervalMs: 60_000,
+      drainTimeoutMs: 100,
+      maxActiveLeasesPerOwner: 1,
+      maxActiveLeasesTotal: 1,
+      createHandle: () => 'lease-handle-0001',
+    })
+    await leases.acquire('owner-a')
+    const created = await createAgentHost({
+      ...options(sessionRoot),
+      shutdownGraceMs: 250,
+      resolveAuthorizedAgentRuntimeScope: vi.fn(async () => ({
+        identity: 'runtime-with-sandbox-cleanup',
+        physicalBindingIdentity: 'runtime-with-sandbox-cleanup',
+        resourceInputDigest: 'runtime-with-sandbox-cleanup',
+        sessionNamespace: 'alpha-sandbox-cleanup',
+        sandboxTools: { digest: 'host-shutdown-retry', leases },
+      })),
+    })
+    await created.gateway.createSession({
+      scope,
+      agentTypeId: 'alpha',
+      requestId: 'sandbox-shutdown-retry',
+    })
+
+    await expect(created.host.close()).resolves.toBeUndefined()
+    expect(remoteDispose).toHaveBeenCalledTimes(2)
   })
 
   it('force-revokes a never-settling callback operation at shutdown grace and publishes no late continuation', async () => {

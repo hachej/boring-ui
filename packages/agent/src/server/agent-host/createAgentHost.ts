@@ -702,7 +702,8 @@ function createRuntime(
       }
     },
     closeRuntime() {
-      closePromise ??= (async () => {
+      if (closePromise) return closePromise
+      const attempt = (async () => {
         let firstError: unknown
         try {
           await runtime.drainRuntime()
@@ -727,7 +728,7 @@ function createRuntime(
           )
           if (failed) firstError ??= failed.reason
         }
-        const sandboxCleanup = await sandboxLeaseServices.dispose()
+        const sandboxCleanup = await sandboxLeaseServices.disposeUntil(Date.now() + graceMs)
         const failedSandboxCleanup = sandboxCleanup.find(
           (result): result is PromiseRejectedResult => result.status === 'rejected',
         )
@@ -752,7 +753,12 @@ function createRuntime(
         }
         if (firstError !== undefined) throw firstError
       })()
-      return closePromise
+      const retryable = attempt.catch((error) => {
+        if (closePromise === retryable) closePromise = undefined
+        throw error
+      })
+      closePromise = retryable
+      return retryable
     },
   }
   return runtime
@@ -832,8 +838,14 @@ export async function createAgentHost(
     },
     close() {
       runtime.startDrain()
-      hostClose ??= runtime.closeRuntime()
-      return hostClose
+      if (hostClose) return hostClose
+      const attempt = runtime.closeRuntime()
+      const retryable = attempt.catch((error) => {
+        if (hostClose === retryable) hostClose = undefined
+        throw error
+      })
+      hostClose = retryable
+      return retryable
     },
   })
 

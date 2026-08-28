@@ -529,6 +529,11 @@ export function createVercelSandboxProvider(
   // periodic snapshotter here: sandbox.snapshot() stops the active session.
   const snapshotScheduler = opts.snapshotScheduler ?? null
   const disposable = opts.lifecycle === 'disposable'
+  const pendingDisposableCleanups = new Set<() => Promise<void>>()
+  const settleDisposableCleanup = async (cleanup: () => Promise<void>): Promise<void> => {
+    await cleanup()
+    pendingDisposableCleanups.delete(cleanup)
+  }
 
   return {
     contractVersion: PROVIDER_CONTRACT_VERSION,
@@ -541,7 +546,16 @@ export function createVercelSandboxProvider(
       evictSandboxHandleCacheForWorkspace(workspaceId)
     },
     async close() {
-      await snapshotScheduler?.shutdown()
+      const results = await Promise.allSettled([
+        ...[...pendingDisposableCleanups].map(async (cleanup) => {
+          await settleDisposableCleanup(cleanup)
+        }),
+        ...(snapshotScheduler ? [snapshotScheduler.shutdown()] : []),
+      ])
+      const failures = results
+        .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+        .map((result) => result.reason)
+      if (failures.length > 0) throw new AggregateError(failures, 'Vercel sandbox provider cleanup failed')
     },
     async create(ctx): Promise<WorkspaceSandboxPairV1> {
       const telemetry = ctx.telemetry
@@ -574,10 +588,24 @@ export function createVercelSandboxProvider(
 
       const workspaceId = ctx.workspaceId ?? ctx.workspaceRoot
       let tarballUrl: string | undefined
-      let sandboxHandle: VercelSandboxWithRunCommand | undefined
       let workspace: ReturnType<typeof createVercelSandboxWorkspace> | undefined
       let sandbox: ReturnType<typeof createVercelSandboxExec> | undefined
+      let disposableCleanup: (() => Promise<void>) | undefined
+      let workspaceDisposed = false
+      let localSandboxDisposed = false
       let setupFailureCaptured = false
+      const disposeLocal = async (): Promise<void> => {
+        if (workspaceDisposed && localSandboxDisposed) return
+        snapshotScheduler?.stopWorkspace(workspaceId)
+        if (!workspaceDisposed && workspace) {
+          disposeVercelSandboxWorkspace(workspace)
+          workspaceDisposed = true
+        }
+        if (!localSandboxDisposed && sandbox) {
+          await sandbox.dispose?.()
+          localSandboxDisposed = true
+        }
+      }
 
       try {
         if (ctx.templatePath) {
@@ -625,7 +653,13 @@ export function createVercelSandboxProvider(
                 },
               ),
         })
-        sandboxHandle = resolvedSandboxHandle
+        if (disposable) {
+          disposableCleanup = createDisposableSandboxDisposer({
+            sandbox: resolvedSandboxHandle,
+            disposeLocal,
+          })
+          pendingDisposableCleanups.add(disposableCleanup)
+        }
 
         const sandboxId = resolvedSandboxHandle.name ?? resolvedSandboxHandle.sandboxId ?? 'unknown-sandbox'
         logger.info('[vercel-sandbox:mode] resolved sandbox handle', {
@@ -699,25 +733,6 @@ export function createVercelSandboxProvider(
           },
         })
 
-        let workspaceDisposed = false
-        let localSandboxDisposed = false
-        const disposeLocal = async (): Promise<void> => {
-          if (workspaceDisposed && localSandboxDisposed) return
-          snapshotScheduler?.stopWorkspace(workspaceId)
-          if (!workspaceDisposed) {
-            disposeVercelSandboxWorkspace(readyWorkspace)
-            workspaceDisposed = true
-          }
-          if (!localSandboxDisposed) {
-            await readySandbox.dispose?.()
-            localSandboxDisposed = true
-          }
-        }
-        const disposeDisposable = createDisposableSandboxDisposer({
-          sandbox: resolvedSandboxHandle,
-          disposeLocal,
-        })
-
         const setupOutcome = Promise.resolve().then(async () => {
           // Setup is readiness, not provider acquisition. Disposable callers
           // receive cleanup authority before any initialization can fail.
@@ -766,6 +781,12 @@ export function createVercelSandboxProvider(
           return { state: 'failed' as const, error: normalized }
         })
 
+        const pairDispose = disposable
+          ? async () => {
+              if (!disposableCleanup) throw new TypeError('disposable sandbox cleanup authority is unavailable')
+              await settleDisposableCleanup(disposableCleanup)
+            }
+          : disposeLocal
         const pair: WorkspaceSandboxPairV1 = {
           workspace: readyWorkspace,
           sandbox: readySandbox,
@@ -787,7 +808,7 @@ export function createVercelSandboxProvider(
               }
             }
           },
-          dispose: disposable ? disposeDisposable : disposeLocal,
+          dispose: pairDispose,
         }
 
         if (!disposable) {
@@ -796,25 +817,20 @@ export function createVercelSandboxProvider(
         }
         return pair
       } catch (error) {
-        snapshotScheduler?.stopWorkspace(workspaceId)
-        if (workspace) disposeVercelSandboxWorkspace(workspace)
-        try {
-          await sandbox?.dispose?.()
-        } catch (cleanupError) {
-          logger.warn?.('[vercel-sandbox:mode] local setup cleanup failed', {
-            workspaceId,
-            error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
-          })
-        }
-        if (disposable && sandboxHandle) {
-          const disposeRemote = createDisposableSandboxDisposer({
-            sandbox: sandboxHandle,
-            disposeLocal: async () => {},
-          })
+        if (disposableCleanup) {
           try {
-            await disposeRemote()
+            await settleDisposableCleanup(disposableCleanup)
           } catch (cleanupError) {
             logger.warn?.('[vercel-sandbox:mode] disposable setup cleanup failed', {
+              workspaceId,
+              error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+            })
+          }
+        } else {
+          try {
+            await disposeLocal()
+          } catch (cleanupError) {
+            logger.warn?.('[vercel-sandbox:mode] local setup cleanup failed', {
               workspaceId,
               error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
             })

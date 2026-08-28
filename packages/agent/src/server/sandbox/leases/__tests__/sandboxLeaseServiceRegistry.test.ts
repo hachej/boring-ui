@@ -42,4 +42,19 @@ describe('SandboxLeaseServiceRegistry', () => {
     await registry.dispose()
     expect(leases.dispose).toHaveBeenCalledOnce()
   })
+
+  it('retains failed services and retries them to terminal disposal within a deadline', async () => {
+    const dispose = vi.fn()
+      .mockRejectedValueOnce(new Error('remote deletion acknowledgement lost'))
+      .mockResolvedValue(undefined)
+    const leases = { dispose } as unknown as SandboxLeaseService
+    const registry = new SandboxLeaseServiceRegistry()
+    registry.register({ digest: 'profile-a', leases })
+
+    await expect(registry.disposeUntil(Date.now() + 100)).resolves.toEqual([
+      { status: 'fulfilled', value: undefined },
+    ])
+    expect(dispose).toHaveBeenCalledTimes(2)
+    await expect(registry.dispose()).resolves.toEqual([])
+  })
 })

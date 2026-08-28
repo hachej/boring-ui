@@ -287,7 +287,6 @@ async function createFresh(
   store: SandboxHandleStore,
   vercel: VercelSandboxClient,
   logger?: SandboxLifecycleLogger,
-  allowExisting = true,
 ): Promise<VercelSandboxHandle> {
   let sandbox: VercelSandboxHandle
   let sourceType: 'empty' | 'snapshot' | 'tarball' = 'empty'
@@ -309,7 +308,7 @@ async function createFresh(
         return await vercel.create(base)
       }
     } catch (error) {
-      if (allowExisting && isSandboxAlreadyExistsError(error)) {
+      if (isSandboxAlreadyExistsError(error)) {
         // Sandbox persisted on Vercel from a previous server instance — resume it.
         return await vercel.get({ name: base.name, sandboxId: base.name, resume: true })
       }

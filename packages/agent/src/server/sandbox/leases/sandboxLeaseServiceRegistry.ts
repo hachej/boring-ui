@@ -19,8 +19,23 @@ export class SandboxLeaseServiceRegistry {
   }
 
   async dispose(): Promise<readonly PromiseSettledResult<void>[]> {
-    const services = [...this.serviceByDigest.values()]
-    this.serviceByDigest.clear()
-    return await Promise.allSettled(services.map(async (service) => await service.dispose()))
+    const entries = [...this.serviceByDigest.entries()]
+    return await Promise.allSettled(entries.map(async ([digest, service]) => {
+      await service.dispose()
+      if (this.serviceByDigest.get(digest) === service) {
+        this.serviceByDigest.delete(digest)
+        this.digestByService.delete(service)
+      }
+    }))
+  }
+
+  async disposeUntil(deadline: number): Promise<readonly PromiseSettledResult<void>[]> {
+    let results = await this.dispose()
+    while (results.some((result) => result.status === 'rejected') && Date.now() < deadline) {
+      const remaining = deadline - Date.now()
+      await new Promise<void>((resolve) => setTimeout(resolve, Math.min(10, remaining)))
+      results = await this.dispose()
+    }
+    return results
   }
 }

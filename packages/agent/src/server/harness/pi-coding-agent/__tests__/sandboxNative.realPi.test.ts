@@ -11,7 +11,7 @@ import {
 import { describe, expect, it, vi } from 'vitest'
 
 import type { SandboxProviderV1, WorkspaceSandboxPairV1 } from '@hachej/boring-sandbox/shared'
-import { buildHarnessAgentTools } from '@hachej/boring-bash/agent'
+import { buildFilesystemAgentTools, buildHarnessAgentTools } from '@hachej/boring-bash/agent'
 import type { RuntimeBundle } from '../../../runtime/mode'
 import type { RunContext } from '../../../../shared/harness'
 import { ErrorCode } from '../../../../shared/error-codes'
@@ -79,7 +79,6 @@ describe('native sandbox tools through real Pi', () => {
           provisioningFingerprint: 'default-catalog-provisioning',
         },
         sessionNamespace: 'default-catalog',
-        includeFilesystemTools: false,
       },
       runtimeBundle: primaryBundle,
       hostRuntime: host,
@@ -95,7 +94,10 @@ describe('native sandbox tools through real Pi', () => {
     try {
       const surface = (tools: readonly { name: string; description: string; parameters: unknown }[]) =>
         tools.map(({ name, description, parameters }) => ({ name, description, parameters }))
-      expect(surface(composition.tools)).toEqual(surface(buildHarnessAgentTools(primaryBundle)))
+      expect(surface(composition.tools)).toEqual(surface([
+        ...buildHarnessAgentTools(primaryBundle),
+        ...buildFilesystemAgentTools(primaryBundle),
+      ]))
     } finally {
       await composition.dispose()
       await host.ledger.close?.()

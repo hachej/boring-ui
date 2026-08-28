@@ -192,6 +192,46 @@ describe('createVercelSandboxProvider', () => {
     expect(deleteRecord).not.toHaveBeenCalled()
   })
 
+  test('retains cleanup authority when post-create adaptation fails and deletion needs retry', async () => {
+    const harness = await createMockVercelSandboxHarness()
+    cleanups.push(harness.cleanup)
+    const { deleteSandbox } = addDurableHandleMetadata(harness.sandbox, 'sb-post-create-failure')
+    deleteSandbox.mockRejectedValueOnce(new Error('first delete acknowledgement lost'))
+    const { store, deleteRecord } = createStore()
+    const client: VercelSandboxClient = {
+      create: vi.fn(async () => harness.sandbox),
+      get: vi.fn(),
+    }
+    const logger = {
+      info: vi.fn()
+        .mockImplementationOnce(() => {})
+        .mockImplementationOnce(() => { throw new Error('logger failed after remote creation') }),
+      warn: vi.fn(),
+    }
+    const provider = createVercelSandboxProvider({
+      store,
+      vercelClient: client,
+      lifecycle: 'disposable',
+      getEnvVar,
+      logger,
+    })
+
+    await expect(provider.create({
+      workspaceRoot: 'workspace-post-create-failure',
+      workspaceId: 'workspace-post-create-failure',
+      sessionId: 'session-post-create-failure',
+    })).rejects.toMatchObject({
+      code: 'VERCEL_API_ERROR',
+      message: 'logger failed after remote creation',
+    })
+    expect(deleteSandbox).toHaveBeenCalledOnce()
+
+    await expect(provider.close!()).resolves.toBeUndefined()
+    await expect(provider.close!()).resolves.toBeUndefined()
+    expect(deleteSandbox).toHaveBeenCalledTimes(2)
+    expect(deleteRecord).not.toHaveBeenCalled()
+  })
+
   test('remote setup cleanup continues when local sandbox cleanup fails', async () => {
     const harness = await createMockVercelSandboxHarness()
     cleanups.push(harness.cleanup)
