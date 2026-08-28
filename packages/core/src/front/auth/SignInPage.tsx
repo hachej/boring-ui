@@ -6,7 +6,7 @@ import { Button, Card, CardContent, CardDescription, CardFooter, CardHeader, Car
 import { useSignIn } from './AuthProvider.js'
 import { GoogleAuthButton } from './GoogleAuthButton.js'
 import { useOptionalConfig } from '../ConfigProvider.js'
-import { routes } from '../utils.js'
+import { routes, withForwardedAuthParams } from '../utils.js'
 
 const signInSchema = z.object({
   email: z.string().email('Please enter a valid email'),
@@ -23,6 +23,10 @@ function readGoogleAuthError(): string | null {
   return error ? DEFAULT_GOOGLE_SIGNIN_ERROR : null
 }
 
+function readSearch(): string {
+  return typeof window === 'undefined' ? '' : window.location.search
+}
+
 export function SignInPage() {
   const signIn = useSignIn()
   const config = useOptionalConfig()
@@ -30,6 +34,7 @@ export function SignInPage() {
   const [oauthError, setOauthError] = useState<string | null>(() => readGoogleAuthError())
   const [isSubmitting, setIsSubmitting] = useState(false)
   const showGoogleAuth = config?.features.googleOauth === true
+  const signupHref = withForwardedAuthParams(routes.signup, readSearch())
 
   const {
     register,
@@ -122,7 +127,7 @@ export function SignInPage() {
               <a href={routes.forgotPassword} className="text-muted-foreground hover:underline">
                 Forgot password?
               </a>
-              <a href={routes.signup} className="text-muted-foreground hover:underline">
+              <a href={signupHref} className="text-muted-foreground hover:underline">
                 Sign up
               </a>
             </div>

@@ -158,3 +158,38 @@ export function routeHref(
   }
   return path
 }
+
+const INVITE_ACCEPT_PATH_RE = /^\/invites\/([^/?#]+)/
+
+/**
+ * The invite-accept redirect (`?redirect=/invites/:token`) carries the invite token in the
+ * path, not as an `invite_token` query param. Signup needs the raw token to send the
+ * `x-invite-token` header, so this recovers it when only `redirect` was forwarded.
+ */
+export function extractInviteTokenFromRedirect(redirect: string | null): string | null {
+  if (!redirect) return null
+  const match = INVITE_ACCEPT_PATH_RE.exec(redirect)
+  if (!match) return null
+  try {
+    return decodeURIComponent(match[1])
+  } catch {
+    return match[1]
+  }
+}
+
+/**
+ * Builds an href to another auth route that forwards `redirect` and `invite_token` from the
+ * current query string, so invite context survives switching between sign-in and sign-up.
+ */
+export function withForwardedAuthParams(path: string, search: string): string {
+  const params = new URLSearchParams(search)
+  const redirect = params.get('redirect')
+  const inviteToken = params.get('invite_token') ?? extractInviteTokenFromRedirect(redirect)
+
+  const forwarded = new URLSearchParams()
+  if (redirect) forwarded.set('redirect', redirect)
+  if (inviteToken) forwarded.set('invite_token', inviteToken)
+
+  const qs = forwarded.toString()
+  return qs ? `${path}?${qs}` : path
+}

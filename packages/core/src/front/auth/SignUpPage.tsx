@@ -8,7 +8,7 @@ import { useSignUp } from './AuthProvider.js'
 import { GoogleAuthButton } from './GoogleAuthButton.js'
 import { isRuntimeEmailVerificationEnabled } from '../../shared/authPolicy.js'
 import { useOptionalConfig } from '../ConfigProvider.js'
-import { routes } from '../utils.js'
+import { extractInviteTokenFromRedirect, routes, withForwardedAuthParams } from '../utils.js'
 
 const signUpSchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -35,10 +35,14 @@ export function SignUpPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [success, setSuccess] = useState(false)
 
-  const inviteToken = typeof window !== 'undefined'
-    ? new URLSearchParams(window.location.search).get('invite_token')
-    : null
+  const search = typeof window !== 'undefined' ? window.location.search : ''
+  const searchParams = new URLSearchParams(search)
+  // The invite-accept redirect (?redirect=/invites/:token) carries the token in the path.
+  // Fall back to that so invite context survives even when only `redirect` made it here.
+  const inviteToken = searchParams.get('invite_token')
+    ?? extractInviteTokenFromRedirect(searchParams.get('redirect'))
   const showGoogleAuth = config?.features.googleOauth === true && !inviteToken
+  const signinHref = withForwardedAuthParams(routes.signin, search)
 
   const {
     register,
@@ -86,7 +90,7 @@ export function SignUpPage() {
             </CardDescription>
           </CardHeader>
           <CardFooter>
-            <a href={routes.signin} className="text-sm text-muted-foreground hover:underline">
+            <a href={signinHref} className="text-sm text-muted-foreground hover:underline">
               Back to sign in
             </a>
           </CardFooter>
@@ -171,7 +175,7 @@ export function SignUpPage() {
             </Button>
             <div className="text-sm text-center">
               <span className="text-muted-foreground">Already have an account? </span>
-              <a href={routes.signin} className="hover:underline">
+              <a href={signinHref} className="hover:underline">
                 Sign in
               </a>
             </div>

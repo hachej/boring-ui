@@ -196,6 +196,52 @@ describe('SignUpPage', () => {
   )
 
   it(
+    'derives invite_token from a redirect=/invites/:token param and hides Google sign-up',
+    withTaskId(GOOGLE_AUTH_TASK_ID, async ({ assertionPassed }) => {
+      mockUseOptionalConfig.mockReturnValue({ features: { googleOauth: true } })
+      mockSignUpEmail.mockResolvedValue({ data: { user: { id: 'u1' } }, error: null })
+      window.history.pushState({}, '', '/auth/signup?redirect=%2Finvites%2Ftok-xyz')
+
+      render(<SignUpPage />, { wrapper: Wrapper })
+
+      expect(screen.queryByRole('button', { name: /continue with google/i })).toBeNull()
+
+      const user = userEvent.setup()
+      await user.type(screen.getByLabelText(/name/i), 'Invited')
+      await user.type(screen.getByLabelText(/email/i), 'invited@example.com')
+      await user.type(screen.getByLabelText(/password/i), 'secret12345')
+      await user.click(screen.getByRole('button', { name: /sign up/i }))
+
+      await waitFor(() =>
+        expect(mockSignUpEmail).toHaveBeenCalledWith(
+          { email: 'invited@example.com', password: 'secret12345', name: 'Invited' },
+          { headers: { 'x-invite-token': 'tok-xyz' } },
+        ),
+      )
+      assertionPassed('signup-invite-token-from-redirect')
+    }),
+  )
+
+  it(
+    'forwards redirect and invite_token query params through the Sign-in link',
+    withTaskId(EMAIL_AUTH_TASK_ID, async ({ assertionPassed }) => {
+      window.history.pushState(
+        {},
+        '',
+        '/auth/signup?redirect=%2Finvites%2Ftok-123&invite_token=tok-123',
+      )
+
+      render(<SignUpPage />, { wrapper: Wrapper })
+
+      expect(screen.getByText(/already have an account/i).closest('div')
+        ?.querySelector('a')?.getAttribute('href')).toBe(
+        '/auth/signin?redirect=%2Finvites%2Ftok-123&invite_token=tok-123',
+      )
+      assertionPassed('signup-forwards-invite-context')
+    }),
+  )
+
+  it(
     'displays server error inline',
     withTaskId(EMAIL_AUTH_TASK_ID, async ({ assertionPassed }) => {
       mockSignUpEmail.mockResolvedValue({
