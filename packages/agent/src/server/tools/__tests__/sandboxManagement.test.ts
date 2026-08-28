@@ -7,7 +7,13 @@ import type { AgentHostRuntime } from '../../agent-host/createAgentHost'
 import { InMemoryAgentRequestLedger } from '../../agent-host/requestLedger'
 import { acceptedExternalEffectExecutor } from '../../agent-host/acceptedWork'
 import type { AgentRequestKey } from '../../agent-host/types'
-import type { SandboxLeaseService } from '../../sandbox/leases/sandboxLease'
+import type { SandboxProviderV1, WorkspaceSandboxPairV1 } from '@hachej/boring-sandbox/shared'
+import {
+  SANDBOX_LEASE_ERROR_CODES,
+  SandboxLeaseError,
+  SandboxLeaseService,
+} from '../../sandbox/leases/sandboxLease'
+import { sandboxLeaseOwnerId } from '../../sandbox/leases/sandboxLeaseOwner'
 import { createSandboxManagementTool } from '../sandboxManagement'
 
 const parentKey: AgentRequestKey = {
@@ -45,12 +51,14 @@ function runtime(): AgentHostRuntime {
   } as unknown as AgentHostRuntime
 }
 
-function fixture() {
+function fixture(releaseError?: SandboxLeaseError) {
   const leases = {
     acquire: vi.fn(async () => ({ handle: 'lease-handle-0001', expiresAt: 1234 })),
     listOwn: vi.fn(() => [{ handle: 'lease-handle-0001', expiresAt: 1234, state: 'active' as const }]),
     status: vi.fn(() => ({ handle: 'lease-handle-0001', expiresAt: 1234, state: 'active' as const })),
-    release: vi.fn(async () => {}),
+    release: vi.fn(async () => {
+      if (releaseError) throw releaseError
+    }),
   } as unknown as SandboxLeaseService
   const tool = createSandboxManagementTool({
     runtime: runtime(),
@@ -118,5 +126,106 @@ describe('sandbox management tool', () => {
 
     await expect(execute({ op: 'list', provider: 'vercel' }, ctx, invocation))
       .resolves.toMatchObject({ isError: true, details: { code: ErrorCode.enum.SANDBOX_LEASE_INVALID } })
+  })
+
+  it.each([
+    [SANDBOX_LEASE_ERROR_CODES.INVALID_LEASE_REQUEST, false],
+    [SANDBOX_LEASE_ERROR_CODES.LEASE_NOT_FOUND, false],
+    [SANDBOX_LEASE_ERROR_CODES.LEASE_EXPIRED, false],
+    [SANDBOX_LEASE_ERROR_CODES.LEASE_DRAINING, true],
+    [SANDBOX_LEASE_ERROR_CODES.LEASE_QUOTA_EXCEEDED, true],
+    [SANDBOX_LEASE_ERROR_CODES.LEASE_CREATION_ABORTED, true],
+    [SANDBOX_LEASE_ERROR_CODES.LEASE_DRAIN_TIMEOUT, true],
+    [SANDBOX_LEASE_ERROR_CODES.SERVICE_CLOSED, false],
+  ] as const)('preserves canonical service error %s on initial execution and replay', async (code, retryable) => {
+    const { tool, leases } = fixture(new SandboxLeaseError(code, 'internal service detail', retryable))
+    const executeRelease = acceptedExternalEffectExecutor(tool, { op: 'release', sandbox: 'lease-handle-0001' })!
+    const releaseInvocation = { ...invocation, toolCallId: `release-${code}` }
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const response = await executeRelease(
+        { op: 'release', sandbox: 'lease-handle-0001' },
+        { ...ctx, toolCallId: releaseInvocation.toolCallId },
+        releaseInvocation,
+      )
+      expect(response).toMatchObject({ isError: true, details: { code, retryable } })
+      expect(response.content[0]?.text).not.toContain('internal service detail')
+    }
+    expect(leases.release).toHaveBeenCalledOnce()
+  })
+
+  it('preserves drain timeout on initial execution and accepted-work replay without disposing an active pair', async () => {
+    const dispose = vi.fn(async () => {})
+    const pair = {
+      workspace: {},
+      sandbox: {},
+      dispose,
+    } as unknown as WorkspaceSandboxPairV1
+    const provider = {
+      create: vi.fn(async () => pair),
+    } as unknown as SandboxProviderV1
+    const leases = new SandboxLeaseService({
+      workspaceRoot: '/host/sandboxes',
+      provider,
+      serviceDigest: 'service-a',
+      ttlMs: 60_000,
+      reapIntervalMs: 60_000,
+      drainTimeoutMs: 10,
+      maxActiveLeasesPerOwner: 2,
+      maxActiveLeasesTotal: 2,
+      createHandle: () => 'lease-handle-0001',
+    })
+    const tool = createSandboxManagementTool({
+      runtime: runtime(),
+      leases,
+      workspaceScopeId: 'workspace-a',
+      agentTypeId: 'worker',
+      allowInMemoryLedgerForTests: true,
+    })
+    const owner = sandboxLeaseOwnerId({ workspaceScopeId: 'workspace-a', agentTypeId: 'worker' }, ctx)
+    const lease = await leases.acquire(owner)
+    let finishOperation!: () => void
+    const operationGate = new Promise<void>((resolve) => { finishOperation = resolve })
+    const operation = leases.withPair(owner, lease.handle, async () => await operationGate)
+    await Promise.resolve()
+    const executeRelease = acceptedExternalEffectExecutor(tool, { op: 'release', sandbox: lease.handle })!
+    const releaseInvocation = { ...invocation, toolCallId: 'release-drain-timeout' }
+
+    try {
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        await expect(executeRelease(
+          { op: 'release', sandbox: lease.handle },
+          { ...ctx, toolCallId: releaseInvocation.toolCallId },
+          releaseInvocation,
+        )).resolves.toMatchObject({
+          isError: true,
+          details: { code: SANDBOX_LEASE_ERROR_CODES.LEASE_DRAIN_TIMEOUT, retryable: true },
+        })
+        expect(dispose).not.toHaveBeenCalled()
+      }
+    } finally {
+      finishOperation()
+      await operation
+      await leases.release(owner, lease.handle)
+      await leases.dispose()
+    }
+  })
+
+  it('sanitizes unknown provider-shaped failures as generic cleanup failure', async () => {
+    const { tool, leases } = fixture()
+    vi.mocked(leases.status).mockImplementation(() => {
+      throw Object.assign(new Error('provider secret detail'), {
+        code: ErrorCode.enum.VERCEL_API_ERROR,
+        statusCode: 503,
+        retryable: true,
+      })
+    })
+
+    const response = await tool.execute({ op: 'status', sandbox: 'lease-handle-0001' }, ctx)
+    expect(response).toMatchObject({
+      isError: true,
+      details: { code: SANDBOX_LEASE_ERROR_CODES.LEASE_CLEANUP_FAILED, retryable: true },
+    })
+    expect(response.content[0]?.text).toBe('sandbox operation failed')
   })
 })

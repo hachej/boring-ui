@@ -6,6 +6,7 @@ import {
   type AcceptedExternalEffectInvocation,
 } from '../agent-host/acceptedWork'
 import type { AgentHostRuntime } from '../agent-host/createAgentHost'
+import { projectStableServiceError } from '../agent-host/stableServiceError'
 import type { AgentRequestFailure } from '../agent-host/types'
 import {
   SANDBOX_LEASE_ERROR_CODES,
@@ -64,6 +65,48 @@ function result(details: Record<string, unknown>): ToolResult {
   }
 }
 
+const SAFE_SANDBOX_SERVICE_ERRORS = Object.freeze({
+  [SANDBOX_LEASE_ERROR_CODES.INVALID_LEASE_REQUEST]: {
+    statusCode: 409,
+    message: 'sandbox management request is invalid',
+  },
+  [SANDBOX_LEASE_ERROR_CODES.LEASE_NOT_FOUND]: {
+    statusCode: 409,
+    message: 'sandbox lease is unavailable',
+  },
+  [SANDBOX_LEASE_ERROR_CODES.LEASE_EXPIRED]: {
+    statusCode: 409,
+    message: 'sandbox lease has expired',
+  },
+  [SANDBOX_LEASE_ERROR_CODES.LEASE_DRAINING]: {
+    statusCode: 409,
+    message: 'sandbox lease is unavailable',
+  },
+  [SANDBOX_LEASE_ERROR_CODES.LEASE_QUOTA_EXCEEDED]: {
+    statusCode: 429,
+    message: 'sandbox lease quota exceeded',
+  },
+  [SANDBOX_LEASE_ERROR_CODES.LEASE_CREATION_ABORTED]: {
+    statusCode: 409,
+    message: 'sandbox creation was aborted',
+  },
+  [SANDBOX_LEASE_ERROR_CODES.LEASE_DRAIN_TIMEOUT]: {
+    statusCode: 409,
+    message: 'sandbox operations did not drain',
+  },
+  [SANDBOX_LEASE_ERROR_CODES.SERVICE_CLOSED]: {
+    statusCode: 409,
+    message: 'sandbox lease service is closed',
+  },
+} as const)
+
+type SafeSandboxServiceErrorCode = keyof typeof SAFE_SANDBOX_SERVICE_ERRORS
+
+function safeSandboxServiceError(code: string): typeof SAFE_SANDBOX_SERVICE_ERRORS[SafeSandboxServiceErrorCode] | undefined {
+  if (!Object.prototype.hasOwnProperty.call(SAFE_SANDBOX_SERVICE_ERRORS, code)) return undefined
+  return SAFE_SANDBOX_SERVICE_ERRORS[code as SafeSandboxServiceErrorCode]
+}
+
 function errorResult(error: unknown): ToolResult {
   if (error instanceof AgentGatewayError) {
     const details = { code: error.code, retryable: error.code === AgentGatewayErrorCode.AGENT_REQUEST_IN_PROGRESS }
@@ -77,6 +120,18 @@ function errorResult(error: unknown): ToolResult {
       isError: true,
     }
   }
+  const stable = projectStableServiceError(error)
+  const service = stable ? safeSandboxServiceError(stable.error.code) : undefined
+  if (stable && service && stable.statusCode === service.statusCode) {
+    const details = { code: stable.error.code, retryable: stable.error.retryable ?? false }
+    return {
+      // Replayed service failures are reconstructed as plain coded Errors. Use
+      // the canonical public message rather than trusting their message field.
+      content: [{ type: 'text', text: service.message }],
+      details,
+      isError: true,
+    }
+  }
   return {
     content: [{ type: 'text', text: 'sandbox operation failed' }],
     details: { code: SANDBOX_LEASE_ERROR_CODES.LEASE_CLEANUP_FAILED, retryable: true },
@@ -86,22 +141,13 @@ function errorResult(error: unknown): ToolResult {
 
 function safeFailure(error: unknown): AgentRequestFailure | undefined {
   if (!(error instanceof SandboxLeaseError)) return undefined
-  const safeCodes = new Set<string>([
-    SANDBOX_LEASE_ERROR_CODES.INVALID_LEASE_REQUEST,
-    SANDBOX_LEASE_ERROR_CODES.LEASE_NOT_FOUND,
-    SANDBOX_LEASE_ERROR_CODES.LEASE_EXPIRED,
-    SANDBOX_LEASE_ERROR_CODES.LEASE_DRAINING,
-    SANDBOX_LEASE_ERROR_CODES.LEASE_QUOTA_EXCEEDED,
-    SANDBOX_LEASE_ERROR_CODES.LEASE_CREATION_ABORTED,
-    SANDBOX_LEASE_ERROR_CODES.LEASE_DRAIN_TIMEOUT,
-    SANDBOX_LEASE_ERROR_CODES.SERVICE_CLOSED,
-  ])
-  if (!safeCodes.has(error.code)) return undefined
+  const service = safeSandboxServiceError(error.code)
+  if (!service) return undefined
   return {
     kind: 'service',
     error: {
-      statusCode: error.code === SANDBOX_LEASE_ERROR_CODES.LEASE_QUOTA_EXCEEDED ? 429 : 409,
-      error: { code: error.code, message: error.message, retryable: error.retryable },
+      statusCode: service.statusCode,
+      error: { code: error.code, message: service.message, retryable: error.retryable },
     },
   }
 }
