@@ -1,6 +1,6 @@
 import { ErrorCode, type AgentTool, type AuthorizedAgentScope } from '@hachej/boring-agent/shared'
 import { randomUUID } from 'node:crypto'
-import { access, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test, vi } from 'vitest'
@@ -71,7 +71,7 @@ test('core environment routes acquire one Host lease and release it after a fini
   } finally {
     await app.close()
   }
-}, 15_000)
+}, 30_000) // Full Core composition can exceed 15 seconds on a cold module load.
 
 test('core/full-app composition forwards collected runtime provisioning plugins to agent routes', async () => {
   const runtimePlugin = {
@@ -643,6 +643,200 @@ test('core/full-app grants addressed tools only to the selected agent type', asy
     await app.close()
   }
 }, 15_000)
+
+test('core/full-app changes every runtime identity when only addressed Pi changes', async () => {
+  mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
+    runtimePlugins: [],
+    provisioningContributions: [],
+    agentOptions: {
+      extraTools: [],
+      pi: { additionalSkillPaths: [], packages: [] },
+      systemPromptAppend: undefined,
+    },
+    preservedUiStateKeys: [],
+    routeContributions: [],
+  })
+  const workspaceRoot = await mkdtemp(join(tmpdir(), 'core-pi-identity-'))
+  const firstSkillPath = join(workspaceRoot, 'skills', 'first')
+  const secondSkillPath = join(workspaceRoot, 'skills', 'second')
+  await mkdir(firstSkillPath, { recursive: true })
+  await mkdir(secondSkillPath, { recursive: true })
+  await writeFile(join(firstSkillPath, 'SKILL.md'), '---\nname: first\ndescription: First identity input.\n---\n')
+  await writeFile(join(secondSkillPath, 'SKILL.md'), '---\nname: second\ndescription: Second identity input.\n---\n')
+  let addressedSkillPath = firstSkillPath
+
+  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
+  const app = await createCoreWorkspaceAgentServer({
+    config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+    workspaceRoot,
+    getWorkspaceRoot: async () => workspaceRoot,
+    getAgentPi: async () => ({ additionalSkillPaths: [addressedSkillPath] }),
+    serveFrontend: false,
+  })
+
+  try {
+    const hostOptions = (mocks.createAgentHost as any).mock.calls[0]?.[0]
+    const projection = (mocks.hostRegisterDirectRoutes as any).mock.calls[0]?.[0]
+    const scope = await projection.authorizeAgentRequest(fakeRequest('workspace-a', 'user-a'))
+    const input = {
+      authorizedScope: scope,
+      verifiedClaim: { workspaceScopeId: 'workspace-a', authSubjectId: 'user-a' },
+      agentTypeId: 'macro',
+      environment: {
+        runtimeWorkspaceId: 'runtime-workspace-a',
+        workspaceRoot,
+        placementIdentity: 'workspace-a',
+        provisioningFingerprint: 'test-provisioning',
+      },
+      intent: { kind: 'agent-binding', operation: 'new-binding', requestId: 'same-request' },
+    }
+    const first = await hostOptions.resolveAuthorizedAgentRuntimeScope(input)
+    addressedSkillPath = secondSkillPath
+    const second = await hostOptions.resolveAuthorizedAgentRuntimeScope(input)
+
+    expect.soft(second.identity).not.toBe(first.identity)
+    expect.soft(second.physicalBindingIdentity).not.toBe(first.physicalBindingIdentity)
+    expect.soft(second.resourceInputDigest).not.toBe(first.resourceInputDigest)
+  } finally {
+    await app.close()
+  }
+}, 30_000)
+
+test('core/full-app addressed routes deny a sibling another agent\'s Pi grants', async () => {
+  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
+  const actualCreateAgentHost = mocks.actualCreateAgentHost
+  const createRuntimeModeAdapter = mocks.actualCreateSandboxRuntimeModeAdapter
+  if (!actualCreateAgentHost || !createRuntimeModeAdapter) {
+    throw new Error('real AgentHost test dependencies were not captured')
+  }
+  mocks.createAgentHost.mockImplementationOnce(actualCreateAgentHost)
+  mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
+    runtimePlugins: [],
+    provisioningContributions: [],
+    agentOptions: {
+      extraTools: [],
+      pi: { additionalSkillPaths: [], packages: [], noSkills: false, noExtensions: false },
+      systemPromptAppend: undefined,
+    },
+    preservedUiStateKeys: [],
+    routeContributions: [],
+  })
+  const workspaceRoot = await mkdtemp(join(tmpdir(), 'core-sibling-pi-grants-'))
+  const sessionRoot = await mkdtemp(join(tmpdir(), 'core-sibling-pi-sessions-'))
+  const packageRoot = join(workspaceRoot, 'macro-package')
+  const packageSkillPath = join(packageRoot, 'skills', 'macro-package-skill')
+  const directSkillPath = join(workspaceRoot, 'macro-direct-skill')
+  const extensionPath = join(workspaceRoot, 'macro-extension.ts')
+  await mkdir(packageSkillPath, { recursive: true })
+  await mkdir(directSkillPath, { recursive: true })
+  await writeFile(join(packageRoot, 'package.json'), JSON.stringify({
+    name: 'macro-pi-package',
+    version: '1.0.0',
+    type: 'module',
+    pi: { skills: ['skills/macro-package-skill'] },
+  }))
+  await writeFile(join(packageSkillPath, 'SKILL.md'), [
+    '---',
+    'name: macro-package-skill',
+    'description: Package grant visible only to Macro.',
+    '---',
+    '# Macro package skill',
+  ].join('\n'))
+  await writeFile(join(directSkillPath, 'SKILL.md'), [
+    '---',
+    'name: macro-direct-skill',
+    'description: Direct skill grant visible only to Macro.',
+    '---',
+    '# Macro direct skill',
+  ].join('\n'))
+  await writeFile(extensionPath, [
+    'export default function (pi: any) {',
+    "  pi.registerCommand('macro-extension-grant', {",
+    "    description: 'Extension grant visible only to Macro.',",
+    '    handler: async () => {},',
+    '  })',
+    '}',
+  ].join('\n'))
+
+  const config = createTestCoreConfig({
+    stores: 'postgres',
+    databaseUrl: 'postgres://test',
+    defaultAgentTypeId: 'macro',
+  })
+  mocks.getWorkspace.mockImplementation(async (id) => ({
+    id,
+    appId: config.appId,
+    defaultAgentTypeId: 'macro',
+  }))
+  const app = await createCoreWorkspaceAgentServer({
+    config,
+    agents: [
+      { agentTypeId: 'macro', definition: { label: 'Macro', instructions: 'Analyze macros.' } },
+      { agentTypeId: 'sibling', definition: { label: 'Sibling', instructions: 'Stay isolated.' } },
+    ],
+    workspaceRoot,
+    sessionRoot,
+    getWorkspaceRoot: async () => workspaceRoot,
+    runtimeModeAdapter: createRuntimeModeAdapter('direct'),
+    getAgentPi: async ({ agentTypeId }) => agentTypeId === 'macro'
+      ? {
+          packages: [packageRoot],
+          additionalSkillPaths: [directSkillPath],
+          extensionPaths: [extensionPath],
+        }
+      : undefined,
+    serveFrontend: false,
+  })
+
+  try {
+    const headers = {
+      'x-test-user-id': 'user-a',
+      'x-boring-workspace-id': 'workspace-a',
+    }
+    const createSession = async (agentTypeId: string) => {
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/v1/agents/${agentTypeId}/sessions`,
+        headers,
+        payload: { requestId: `create-${agentTypeId}` },
+      })
+      expect(response.statusCode, response.body).toBe(201)
+      return response.json().sessionId as string
+    }
+    const macroSessionId = await createSession('macro')
+    const siblingSessionId = await createSession('sibling')
+    const macroSkills = await app.inject({ method: 'GET', url: '/api/v1/agents/macro/skills', headers })
+    const siblingSkills = await app.inject({ method: 'GET', url: '/api/v1/agents/sibling/skills', headers })
+    expect(macroSkills.statusCode, macroSkills.body).toBe(200)
+    expect(siblingSkills.statusCode, siblingSkills.body).toBe(200)
+    expect(macroSkills.json()).not.toHaveProperty('error')
+    expect(siblingSkills.json()).not.toHaveProperty('error')
+    const macroSkillNames = macroSkills.json().skills.map((skill: { name: string }) => skill.name)
+    const siblingSkillNames = siblingSkills.json().skills.map((skill: { name: string }) => skill.name)
+    expect(macroSkillNames).toEqual(expect.arrayContaining(['macro-package-skill', 'macro-direct-skill']))
+    expect(siblingSkillNames).not.toContain('macro-package-skill')
+    expect(siblingSkillNames).not.toContain('macro-direct-skill')
+
+    const macroCommands = await app.inject({
+      method: 'GET',
+      url: `/api/v1/agents/macro/commands?sessionId=${macroSessionId}`,
+      headers,
+    })
+    const siblingCommands = await app.inject({
+      method: 'GET',
+      url: `/api/v1/agents/sibling/commands?sessionId=${siblingSessionId}`,
+      headers,
+    })
+    expect(macroCommands.statusCode, macroCommands.body).toBe(200)
+    expect(siblingCommands.statusCode, siblingCommands.body).toBe(200)
+    expect(macroCommands.json().commands.map((command: { name: string }) => command.name))
+      .toContain('macro-extension-grant')
+    expect(siblingCommands.json().commands.map((command: { name: string }) => command.name))
+      .not.toContain('macro-extension-grant')
+  } finally {
+    await app.close()
+  }
+}, 60_000)
 
 test('core/full-app keeps semantic identity stable across physical workspace roots', async () => {
   mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
