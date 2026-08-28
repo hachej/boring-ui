@@ -53,10 +53,24 @@
   "include": [
     "src/**/*",
     "scripts/**/*.ts",
-    "vite.config.ts"
+    "vite.config.ts",
+    "../../packages/agent/src/**/*",
+    "../../packages/boring-bash/src/**/*",
+    "../../packages/boring-sandbox/src/**/*",
+    "../../packages/core/src/**/*",
+    "../../packages/workspace/src/**/*",
+    "../../plugins/boring-automation/src/**/*",
+    "../../plugins/boring-governance/src/**/*",
+    "../../plugins/boring-mcp/src/**/*"
   ],
   "exclude": [
     "node_modules",
-    "dist"
+    "dist",
+    "../../packages/*/src/**/__tests__/**",
+    "../../packages/*/src/**/eval/**",
+    "../../packages/*/host/**",
+    "../../packages/*/test-host/**",
+    "../../plugins/*/src/**/__tests__/**",
+    "../../plugins/*/src/**/eval/**"
   ]
 }
