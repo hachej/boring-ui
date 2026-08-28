@@ -11,16 +11,16 @@ import {
 import { describe, expect, it, vi } from 'vitest'
 
 import type { SandboxProviderV1, WorkspaceSandboxPairV1 } from '@hachej/boring-sandbox/shared'
-import { buildHarnessAgentTools, type RuntimeBundle } from '@hachej/boring-bash/agent'
+import type { RuntimeBundle } from '@hachej/boring-bash/agent'
 import type { RunContext } from '../../../../shared/harness'
 import type { Sandbox, Workspace } from '../../../../shared/index'
 import type { AgentHostRuntime } from '../../../agent-host/createAgentHost'
 import type { AgentRequestKey } from '../../../agent-host/types'
 import { attachAcceptedWorkProvenance } from '../../../agent-host/acceptedWork'
-import { InMemoryAgentRequestLedger } from '../../../agent-host/requestLedger'
+import { SqliteAgentRequestLedger } from '../../../agent-host/sqliteRequestLedger'
 import { SandboxLeaseService } from '../../../sandbox/leases/sandboxLease'
-import { createSandboxManagementTool } from '../../../tools/sandboxManagement'
-import { addSandboxTargeting } from '../../../tools/sandboxTargeting'
+import { createScriptedPiHarness } from '../../../testing/scriptedPiHarness'
+import { buildAgentComposition } from '../../../agent-host/buildAgentComposition'
 import { adaptToolsForPi } from '../tool-adapter'
 
 const encoder = new TextEncoder()
@@ -30,7 +30,7 @@ function stream(events: unknown[], finalMessage: unknown) { return { async *[Sym
 function resources() { const extensions = { extensions: [], errors: [], runtime: createExtensionRuntime() }; return { getExtensions: () => extensions, getSkills: () => ({ skills: [], diagnostics: [] }), getPrompts: () => ({ prompts: [], diagnostics: [] }), getThemes: () => ({ themes: [], diagnostics: [] }), getAgentsFiles: () => ({ agentsFiles: [] }), getSystemPrompt: () => undefined, getAppendSystemPrompt: () => [], extendResources: () => {}, reload: async () => {} } }
 
 function runtime(admitted: AgentRequestKey[]): AgentHostRuntime {
-  const ledger = new InMemoryAgentRequestLedger()
+  const ledger = new SqliteAgentRequestLedger(':memory:')
   return {
     ledger,
     effectAdmission: { async admit({ key }: { key: AgentRequestKey }) { admitted.push(key); return { type: 'accepted' as const, admissionReceipt: `admit:${key.requestId}` } } },
@@ -71,15 +71,36 @@ describe('native sandbox tools through real Pi', () => {
       fileSearch: { async search() { return [] } },
       bash: { kind: 'remote' }, filesystem: { kind: 'remote-workspace' },
     } as RuntimeBundle
-    const targeted = addSandboxTargeting(
-      buildHarnessAgentTools(primaryBundle).filter((tool) => tool.name === 'bash'),
-      { leases, workspaceScopeId: 'workspace-a', agentTypeId: 'worker', includeFilesystemTools: false, includeUploadTools: false },
-    )
-    const management = createSandboxManagementTool({
-      runtime: host, leases, workspaceScopeId: 'workspace-a', agentTypeId: 'worker', allowInMemoryLedgerForTests: true,
-    })
+    const composition = await buildAgentComposition({
+      agent: {
+        agentTypeId: 'worker',
+        definition: { instructions: 'worker', label: 'Worker', digest: `sha256:${'a'.repeat(64)}` },
+      },
+      workspaceScopeId: 'workspace-a',
+      runtimeScope: {
+        identity: 'native-composed-runtime',
+        environment: {
+          placementIdentity: 'native-composed-environment',
+          workspaceRoot: '/workspace',
+          provisioningFingerprint: 'native-composed-provisioning',
+        },
+        sessionNamespace: 'native-composed',
+        sandboxTools: { digest: 'native-test', leases, allowInMemoryLedgerForTests: true },
+        includeFilesystemTools: false,
+      },
+      runtimeBundle: primaryBundle,
+      hostRuntime: host,
+      options: {
+        runtimeModeAdapter: {
+          id: 'vercel-sandbox',
+          async create() { return primaryBundle },
+          getRuntimeLayoutRoot() { return '/workspace' },
+        },
+        harnessFactory: createScriptedPiHarness,
+      },
+    } as any)
     const runContextStorage = new AsyncLocalStorage<RunContext>()
-    const tools = adaptToolsForPi([management, ...targeted], 'session-a', undefined, () => runContextStorage.getStore())
+    const tools = adaptToolsForPi([...composition.tools], 'session-a', undefined, () => runContextStorage.getStore())
 
     let turn = 0
     const authStorage = AuthStorage.inMemory()
@@ -124,6 +145,7 @@ describe('native sandbox tools through real Pi', () => {
       expect(admitted.map((key) => key.operation)).toEqual(['session.tool.external-effect', 'session.tool.external-effect'])
     } finally {
       session.dispose()
+      await composition.dispose()
       await leases.dispose().catch(() => {})
     }
   })
