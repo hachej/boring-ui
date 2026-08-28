@@ -145,8 +145,33 @@ export function ChatLayout(props: ChatLayoutProps) {
   // hard-floored the nav drawer at 280px, overflowing any narrower host.
   const effectiveNavWidth = clamp(navWidth, 200, 360)
   const effectiveSidebarWidth = clamp(sidebarWidth, 200, Math.max(240, Math.floor(viewport * 0.5)))
-  const surfaceMax = mobileShell ? viewport : Math.max(480, Math.floor(viewport * 0.72))
-  const effectiveSurfaceWidth = mobileShell ? viewport : clamp(surfaceWidth, 480, surfaceMax)
+  const sidebarOpen = Boolean(props.sidebar)
+  // `viewport` is the full browser window width. Hosts that wrap ChatLayout
+  // in their own persistent chrome (e.g. the plugin-tabs shell's app-left
+  // rail/pane) consume some of that width before ChatLayout's own row ever
+  // starts, so `viewport` overstates how much room the chat+workbench row
+  // actually has — `rowWidth` (measured off this component's own root,
+  // populated below) is the real figure and is preferred once available.
+  // `surfaceMax`/`effectiveSurfaceWidth` used to size the workbench purely
+  // off `viewport`, so on medium desktop widths a wide persisted workbench
+  // could consume the entire real row, squeezing the chat column (and any
+  // mandatory chat overlay like Tasks/Skills) down toward 0 width while
+  // editor tabs stayed open — ChatLayout deliberately skips the
+  // auto-collapse-chat-on-narrow-viewport effect below whenever an overlay
+  // is active, so the overlay's flex wrapper was the thing left computing
+  // to ~0 width. See #1451.
+  const [measuredRowWidth, setMeasuredRowWidth] = useState<number | null>(null)
+  const rowWidth = measuredRowWidth ?? viewport
+  const MIN_CHAT_OVERLAY_WIDTH = 280
+  const chatOverlayReserve = !mobileShell && props.chatOverlay && surfaceOpen && !chatCollapsed
+    ? MIN_CHAT_OVERLAY_WIDTH
+    : 0
+  const surfaceMax = mobileShell
+    ? viewport
+    : Math.max(480, Math.floor(rowWidth * 0.72))
+  const effectiveSurfaceWidth = mobileShell
+    ? viewport
+    : Math.max(200, Math.min(clamp(surfaceWidth, 480, surfaceMax), rowWidth - chatOverlayReserve))
   const uiSurface = getFunction<() => SurfaceShellApi | null>(props.centerParams, "getSurface")
   const uiIsWorkbenchOpen = getFunction<() => boolean>(props.centerParams, "isWorkbenchOpen")
   const uiOpenWorkbench = getFunction<() => void>(props.centerParams, "openWorkbench")
@@ -162,13 +187,27 @@ export function ChatLayout(props: ChatLayoutProps) {
   const activeMobileChatPane = hasChatPanes
     ? chatPanes.find((pane) => pane.id === props.activeChatPaneId) ?? chatPanes[0]
     : undefined
-  const sidebarOpen = Boolean(props.sidebar)
   const shellRef = useRef<HTMLDivElement | null>(null)
   const navDrawerRef = useRef<HTMLElement | null>(null)
   const sidebarDrawerRef = useRef<HTMLElement | null>(null)
   const scheduleLocalComposerFocus = useCallback(() => {
     const shell = shellRef.current
     if (shell) scheduleComposerFocus(shell)
+  }, [])
+  // Feeds `measuredRowWidth` above with this component's own real content
+  // width — see the #1451 note at its declaration for why `viewport` alone
+  // is not a safe basis for sizing the workbench column.
+  useEffect(() => {
+    const el = shellRef.current
+    if (!el || typeof ResizeObserver === "undefined") return
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width
+      if (typeof width !== "number") return
+      setMeasuredRowWidth((previous) => (previous === width ? previous : width))
+    })
+    observer.observe(el)
+    setMeasuredRowWidth(el.getBoundingClientRect().width)
+    return () => observer.disconnect()
   }, [])
   const navIsTopDrawer = navOpen && (mobileShell || !sidebarOpen)
   const sidebarIsTopDrawer = sidebarOpen && !navIsTopDrawer
