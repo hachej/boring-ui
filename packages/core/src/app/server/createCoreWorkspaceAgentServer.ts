@@ -1508,7 +1508,9 @@ export async function createCoreWorkspaceAgentServer(
       ? await options.getTemplatePath({ workspaceId, workspaceRoot: root, request })
       : options.templatePath ?? normalizeOptionalPath(process.env.BORING_AGENT_TEMPLATE_PATH)
     const resolvedPi = await resolvePiOptions({ workspaceId, workspaceRoot: root, request }) ?? {}
-    const pi: PiHarnessOptions = runtimeModeAdapter.id === 'blaxel' || runtimeModeAdapter.id === 'vercel-sandbox'
+    const pi: PiHarnessOptions = runtimeModeAdapter.id === 'blaxel'
+      || runtimeModeAdapter.id === 'vercel-sandbox'
+      || runtimeModeAdapter.id === 'remote-worker'
       ? { ...resolvedPi, noExtensions: true }
       : resolvedPi
     const sessionNamespace = await resolveSessionNamespace({
@@ -1835,34 +1837,38 @@ export async function createCoreWorkspaceAgentServer(
         options.getAgentExtraTools?.(context) ?? [],
         options.getAgentPi?.(context),
       ])
-      if (agentTools.length === 0 && !agentPi) return runtime
+      const addressedPi = agentPi && (
+        (agentPi.additionalSkillPaths?.length ?? 0) > 0
+        || (agentPi.packages?.length ?? 0) > 0
+        || (agentPi.extensionPaths?.length ?? 0) > 0
+      )
+        ? {
+            additionalSkillPaths: agentPi.additionalSkillPaths,
+            packages: agentPi.packages,
+            extensionPaths: agentPi.extensionPaths,
+          }
+        : undefined
+      if (agentTools.length === 0 && !addressedPi) return runtime
 
       const extraTools = [...(runtime.extraTools ?? []), ...agentTools]
-      const addressedPi = agentPi && {
-        additionalSkillPaths: agentPi.additionalSkillPaths,
-        packages: agentPi.packages,
-        extensionPaths: agentPi.extensionPaths,
-      }
-      const pi = mergePiOptions(runtime.pi, addressedPi)
-      const addressedResourceFence = await createPiResourceDigestFence(async () => createPiResourceDigestInput({
-        piCwd: environment.workspaceRoot,
-        // Addressed options are the explicit resources below; do not scan
-        // ambient workspace skills/context while building this supplemental fence.
-        noSkills: true,
-        noContextFiles: true,
-        resourceSets: [{
-          additionalSkillPaths: agentPi?.additionalSkillPaths ?? [],
-          packages: agentPi?.packages ?? [],
-          extensionPaths: agentPi?.extensionPaths ?? [],
-        }],
-        authorizedRoots: [
-          environment.workspaceRoot,
-          pluginWorkspaceRoot,
-          ...defaultPluginPackagePaths,
-          ...pluginEntries.flatMap((entry) => 'dir' in entry ? [entry.dir] : []),
-          ...(options.piResourceAuthorizedRoots ?? []),
-        ],
-      }))
+      const pi = addressedPi ? mergePiOptions(runtime.pi, addressedPi) : runtime.pi
+      const addressedResourceFence = addressedPi
+        ? await createPiResourceDigestFence(async () => createPiResourceDigestInput({
+            piCwd: environment.workspaceRoot,
+            // Addressed options are the explicit resources below; do not scan
+            // ambient workspace skills/context while building this supplemental fence.
+            noSkills: true,
+            noContextFiles: true,
+            resourceSets: [addressedPi],
+            authorizedRoots: [
+              environment.workspaceRoot,
+              pluginWorkspaceRoot,
+              ...defaultPluginPackagePaths,
+              ...pluginEntries.flatMap((entry) => 'dir' in entry ? [entry.dir] : []),
+              ...(options.piResourceAuthorizedRoots ?? []),
+            ],
+          }))
+        : undefined
       const toolContractDigests = addressedToolContractDigests(agentTools)
       const scopedToolIdentity = JSON.stringify({
         baseIdentity: runtime.identity,
@@ -1871,25 +1877,37 @@ export async function createCoreWorkspaceAgentServer(
         pi,
       })
       const identity = createHash('sha256').update(scopedToolIdentity).digest('hex')
+      // The physical slot is stable across semantic tool/Pi revisions. The
+      // Host uses it to find the one published generation and classify a
+      // changed semantic identity as restart-required instead of publishing a
+      // parallel current binding.
       const physicalBindingIdentity = createHash('sha256').update(JSON.stringify({
         basePhysicalBindingIdentity: runtime.physicalBindingIdentity ?? runtime.identity,
         agentTypeId,
-        toolContractDigests,
-        pi,
       })).digest('hex')
+      const resourceInputDigest = addressedResourceFence
+        ? `sha256:${createHash('sha256').update(JSON.stringify({
+            baseResourceInputDigest: runtime.resourceInputDigest ?? null,
+            agentTypeId,
+            toolContractDigests,
+            addressedPiResourceInputDigest: addressedResourceFence.resourceInputDigest,
+          })).digest('hex')}`
+        : `sha256:${createHash('sha256').update(JSON.stringify({
+            baseResourceInputDigest: runtime.resourceInputDigest ?? null,
+            agentTypeId,
+            toolContractDigests,
+          })).digest('hex')}`
       return {
         ...runtime,
         identity,
         physicalBindingIdentity,
-        resourceInputDigest: `sha256:${createHash('sha256').update(JSON.stringify([
-          runtime.resourceInputDigest ?? null,
-          addressedResourceFence.resourceInputDigest,
-          toolContractDigests,
-        ])).digest('hex')}`,
-        revalidateResourceInputs: async () => {
-          await runtime.revalidateResourceInputs?.()
-          await addressedResourceFence.revalidateResourceInputs()
-        },
+        resourceInputDigest,
+        revalidateResourceInputs: addressedResourceFence
+          ? async () => {
+              await runtime.revalidateResourceInputs?.()
+              await addressedResourceFence.revalidateResourceInputs()
+            }
+          : runtime.revalidateResourceInputs,
         extraTools,
         pi,
       }
