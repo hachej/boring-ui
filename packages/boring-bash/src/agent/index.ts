@@ -2,6 +2,8 @@ export { buildFilesystemAgentTools } from './tools/filesystem'
 export { buildHarnessAgentTools } from './tools/harness'
 export { buildUploadAgentTools } from './tools/upload'
 export { remoteWorkspaceGrepTool } from './tools/remoteWorkspaceGrepTool'
+export { withSandboxTarget } from './tools/runtimeTarget'
+export type { SandboxTargetToolOptions } from './tools/runtimeTarget'
 
 export { boundFs } from './tools/operations/bound'
 export { remoteSandboxBashOps } from './tools/operations/remoteSandbox'

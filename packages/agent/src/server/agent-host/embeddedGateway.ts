@@ -191,6 +191,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
       resolved.physicalBindingIdentity ?? resolved.identity,
       resolved.identity,
       resolved.environment.provisioningFingerprint,
+      resolved.sandboxTools?.digest,
     )
     if (!binding) {
       throw new AgentGatewayError(

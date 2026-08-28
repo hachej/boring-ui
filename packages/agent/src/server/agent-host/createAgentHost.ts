@@ -135,6 +135,7 @@ export interface AgentHostRuntime {
     physicalBindingIdentity: string,
     bindingIdentity?: string,
     provisioningFingerprint?: string,
+    sandboxToolsDigest?: string,
   ): RuntimeBinding | undefined
   startDrain(): void
   drainRuntime(): Promise<void>
@@ -223,6 +224,7 @@ async function resolveHostId(options: CreateAgentHostOptions): Promise<string> {
 
 function validateResolvedRuntimeScope(resolved: ResolvedAgentRuntimeScope): void {
   if (!resolved.identity.trim()) throw new TypeError('resolved runtime scope identity must be non-empty')
+  if (resolved.sandboxTools && !resolved.sandboxTools.digest.trim()) throw new TypeError('sandbox tool capability digest must be non-empty')
   if (!resolved.environment.placementIdentity.trim() || !resolved.environment.provisioningFingerprint.trim()) {
     throw new TypeError('resolved environment identity must be non-empty')
   }
@@ -232,6 +234,7 @@ function validateDirectResolvedRuntimeScope(
   resolved: Omit<ResolvedAgentRuntimeScope, 'environment'>,
 ): void {
   if (!resolved.identity.trim()) throw new TypeError('resolved runtime scope identity must be non-empty')
+  if (resolved.sandboxTools && !resolved.sandboxTools.digest.trim()) throw new TypeError('sandbox tool capability digest must be non-empty')
   if (!resolved.resourceInputDigest?.trim()) {
     throw new TypeError('direct resolved runtime scope resourceInputDigest must be non-empty')
   }
@@ -362,6 +365,7 @@ function createRuntime(
   )
   const activity = new AgentSessionActivityIndex()
   const bindings = new Map<string, Promise<RuntimeBinding>>()
+  const sandboxLeaseServices = new Set<import('../sandbox/leases/sandboxLease').SandboxLeaseService>()
   const publishedCurrentBindings = new Map<string, RuntimeBinding>()
   const currentBindingReservations = new Map<string, string>()
   const nextBindingGeneration = new Map<string, number>()
@@ -474,15 +478,22 @@ function createRuntime(
         `binding:${agentTypeId}`,
       )
       validateResolvedRuntimeScope(resolved)
+      if (resolved.sandboxTools) sandboxLeaseServices.add(resolved.sandboxTools.leases)
       const key = JSON.stringify([
         agentTypeId,
         claim.workspaceScopeId,
         resolved.identity,
         resolved.environment.provisioningFingerprint,
         resolved.physicalBindingIdentity ?? resolved.identity,
+        resolved.sandboxTools?.digest ?? null,
       ])
       const physicalBindingIdentity = resolved.physicalBindingIdentity ?? resolved.identity
-      const currentKey = JSON.stringify([agentTypeId, claim.workspaceScopeId, physicalBindingIdentity])
+      const currentKey = JSON.stringify([
+        agentTypeId,
+        claim.workspaceScopeId,
+        physicalBindingIdentity,
+        resolved.sandboxTools?.digest ?? null,
+      ])
       const useCanonicalCurrent = options.resolveAuthorizedAgentRuntimeScope !== undefined
       if (useCanonicalCurrent) {
         const current = publishedCurrentBindings.get(currentKey)
@@ -512,6 +523,7 @@ function createRuntime(
               workspaceScopeId: claim.workspaceScopeId,
               runtimeScope: resolved,
               runtimeBundle,
+              hostRuntime: runtime,
               environmentProvisioning: environmentLease.provisioning,
               options,
               observeSessionEvent: (sessionId, event) => {
@@ -581,11 +593,13 @@ function createRuntime(
       physicalBindingIdentity,
       bindingIdentity,
       provisioningFingerprint,
+      sandboxToolsDigest,
     ) {
       const exact = publishedCurrentBindings.get(JSON.stringify([
         agentTypeId,
         workspaceScopeId,
         physicalBindingIdentity,
+        sandboxToolsDigest ?? null,
       ]))
       if (exact) return exact
       const matches = [...publishedCurrentBindings.values()].filter((binding) =>
@@ -712,6 +726,14 @@ function createRuntime(
           )
           if (failed) firstError ??= failed.reason
         }
+        const sandboxCleanup = await Promise.allSettled(
+          [...sandboxLeaseServices].map(async (service) => await service.dispose()),
+        )
+        sandboxLeaseServices.clear()
+        const failedSandboxCleanup = sandboxCleanup.find(
+          (result): result is PromiseRejectedResult => result.status === 'rejected',
+        )
+        if (failedSandboxCleanup) firstError ??= failedSandboxCleanup.reason
         try {
           await environments.close(graceMs)
         } catch (error) {

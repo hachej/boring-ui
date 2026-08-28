@@ -30,6 +30,7 @@ import type {
   WorkspaceAgentDispatcherContext,
 } from '../../shared/workspaceAgentDispatcher'
 import type { AgentSkillResourceSnapshot } from '../http/routes/skills'
+import type { SandboxLeaseService } from '../sandbox/leases/sandboxLease'
 
 export type { LeaseBoundWorkspaceAgent } from '../../shared/workspaceAgentDispatcher'
 
@@ -250,6 +251,14 @@ export interface ResolvedEnvironmentScope {
   }) => Promise<WorkspaceProvisioningResult | undefined>
 }
 
+export interface ResolvedSandboxToolCapability {
+  /** Host-owned profile/cache/quota identity; callers must include changes in runtime identity. */
+  readonly digest: string
+  readonly leases: SandboxLeaseService
+  /** Explicit deterministic-test escape hatch; production hosts omit this. */
+  readonly allowInMemoryLedgerForTests?: boolean
+}
+
 export interface ResolvedAgentRuntimeScope {
   /** Persisted semantic compatibility identity. */
   readonly identity: string
@@ -267,6 +276,8 @@ export interface ResolvedAgentRuntimeScope {
   readonly environment: ResolvedEnvironmentScope
   readonly sessionNamespace: string
   readonly pi?: PiHarnessOptions
+  /** Trusted host-only disposable sandbox capability. Authored agents cannot construct it. */
+  readonly sandboxTools?: ResolvedSandboxToolCapability
   readonly extraTools?: readonly AgentTool[]
   readonly includeFilesystemTools?: boolean
   readonly includeUploadTools?: boolean

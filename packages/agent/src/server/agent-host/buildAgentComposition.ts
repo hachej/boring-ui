@@ -27,6 +27,12 @@ import {
 import type { EnvironmentProvisioningSnapshot } from './environmentLease'
 import { sessionNamespaceForAgent } from './sessionInventory'
 import { locateHostWorkspaceSkill, projectRuntimeSkillPathToHost } from './skillPathProjection'
+import type { AgentHostRuntime } from './createAgentHost'
+import { createSandboxManagementTool } from '../tools/sandboxManagement'
+import {
+  addSandboxTargeting,
+  assertNoSandboxToolCollisions,
+} from '../tools/sandboxTargeting'
 
 /**
  * Flag-gated durable event streaming. When set (`1`/`true`), production
@@ -121,6 +127,7 @@ export interface BuildAgentCompositionInput {
   readonly workspaceScopeId: string
   readonly runtimeScope: ResolvedAgentRuntimeScope
   readonly runtimeBundle: RuntimeBundle
+  readonly hostRuntime: AgentHostRuntime
   readonly environmentProvisioning?: EnvironmentProvisioningSnapshot
   readonly options: Pick<
     CreateAgentHostOptions,
@@ -211,7 +218,7 @@ export async function buildAgentComposition(
         ) ?? [],
       ]
     : undefined
-  const standardTools: AgentTool[] = [
+  const primaryStandardTools: AgentTool[] = [
     ...buildHarnessAgentTools(bashRuntimeBundle, input.environmentProvisioning
       ? {
           getCurrent: () => ({
@@ -225,7 +232,39 @@ export async function buildAgentComposition(
     })),
     ...(runtimeScope.includeUploadTools ? buildUploadAgentTools(bashRuntimeBundle) : []),
   ]
-  const tools = [...standardTools, ...(runtimeScope.extraTools ?? [])]
+  const sandboxCapability = runtimeScope.sandboxTools
+  const extraTools = runtimeScope.extraTools ?? []
+  if (sandboxCapability) {
+    try {
+      assertNoSandboxToolCollisions(extraTools, runtimeScope.includeUploadTools === true)
+    } catch (error) {
+      throw Object.assign(error instanceof Error ? error : new Error('sandbox tool collision'), {
+        code: ErrorCode.enum.AUTHORED_AGENT_TOOL_COLLISION,
+      })
+    }
+  }
+  const standardTools = sandboxCapability
+    ? addSandboxTargeting(primaryStandardTools, {
+        leases: sandboxCapability.leases,
+        workspaceScopeId: input.workspaceScopeId,
+        agentTypeId: input.agent.agentTypeId,
+        includeFilesystemTools: runtimeScope.includeFilesystemTools !== false,
+        includeUploadTools: runtimeScope.includeUploadTools === true,
+      })
+    : primaryStandardTools
+  const tools = [
+    ...standardTools,
+    ...(sandboxCapability
+      ? [createSandboxManagementTool({
+          runtime: input.hostRuntime,
+          leases: sandboxCapability.leases,
+          workspaceScopeId: input.workspaceScopeId,
+          agentTypeId: input.agent.agentTypeId,
+          allowInMemoryLedgerForTests: sandboxCapability.allowInMemoryLedgerForTests,
+        })]
+      : []),
+    ...extraTools,
+  ]
 
   const readyTracker = createRuntimeReadyStatusTracker(options.runtimeModeAdapter, { harnessReady: true })
   const encodedPreferredModel = input.agent.model?.preferred
