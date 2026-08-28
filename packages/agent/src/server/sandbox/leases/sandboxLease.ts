@@ -5,7 +5,7 @@ import type {
   SandboxProviderV1,
   WorkspaceSandboxPairV1,
 } from '@hachej/boring-sandbox/shared'
-import type { Entry, ExecResult, Stat } from '../shared/index'
+import type { Entry, ExecResult, Stat } from '../../../shared/index'
 
 const LEASE_HANDLE_PATTERN = /^[A-Za-z0-9_-]{16,128}$/
 

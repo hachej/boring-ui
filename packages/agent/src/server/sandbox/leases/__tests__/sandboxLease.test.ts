@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import type { SandboxProviderV1, WorkspaceSandboxPairV1 } from '@hachej/boring-sandbox/shared'
-import type { Sandbox, Workspace } from '../../shared/index'
+import type { Sandbox, Workspace } from '../../../../shared/index'
 import {
   SANDBOX_LEASE_ERROR_CODES,
   SandboxLeaseCleanupError,

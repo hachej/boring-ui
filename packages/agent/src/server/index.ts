@@ -17,14 +17,14 @@ export {
   SandboxLeaseError,
   SandboxLeaseService,
   runSandbox,
-} from './sandboxLease'
+} from './sandbox/leases/sandboxLease'
 export type {
   RunSandboxInput,
   RunSandboxResult,
   SandboxLease,
   SandboxLeaseErrorCode,
   SandboxLeaseServiceOptions,
-} from './sandboxLease'
+} from './sandbox/leases/sandboxLease'
 export { createRemoteWorkerModeAdapter } from './runtime/modes/remote-worker'
 export type { RemoteWorkerModeAdapterOptions } from './runtime/modes/remote-worker'
 export { createRemoteWorkerWorkspace } from './workspace/createRemoteWorkerWorkspace'
