@@ -11,8 +11,10 @@ import {
 import { describe, expect, it, vi } from 'vitest'
 
 import type { SandboxProviderV1, WorkspaceSandboxPairV1 } from '@hachej/boring-sandbox/shared'
-import type { RuntimeBundle } from '@hachej/boring-bash/agent'
+import { buildHarnessAgentTools } from '@hachej/boring-bash/agent'
+import type { RuntimeBundle } from '../../../runtime/mode'
 import type { RunContext } from '../../../../shared/harness'
+import { ErrorCode } from '../../../../shared/error-codes'
 import type { Sandbox, Workspace } from '../../../../shared/index'
 import type { AgentHostRuntime } from '../../../agent-host/createAgentHost'
 import type { AgentRequestKey } from '../../../agent-host/types'
@@ -54,6 +56,111 @@ function pair() {
 }
 
 describe('native sandbox tools through real Pi', () => {
+  it('keeps the no-capability default catalog byte-equivalent to canonical boring-bash tools', async () => {
+    const host = runtime([])
+    const remote = pair()
+    const primaryBundle = {
+      workspace: remote.value.workspace,
+      sandbox: { ...remote.value.sandbox, id: 'primary', exec: vi.fn() },
+      fileSearch: { async search() { return [] } },
+      bash: { kind: 'remote' }, filesystem: { kind: 'remote-workspace' },
+    } satisfies RuntimeBundle
+    const composition = await buildAgentComposition({
+      agent: {
+        agentTypeId: 'worker',
+        definition: { instructions: 'worker', label: 'Worker', digest: `sha256:${'a'.repeat(64)}` },
+      },
+      workspaceScopeId: 'workspace-a',
+      runtimeScope: {
+        identity: 'default-catalog-runtime',
+        environment: {
+          placementIdentity: 'default-catalog-environment',
+          workspaceRoot: '/workspace',
+          provisioningFingerprint: 'default-catalog-provisioning',
+        },
+        sessionNamespace: 'default-catalog',
+        includeFilesystemTools: false,
+      },
+      runtimeBundle: primaryBundle,
+      hostRuntime: host,
+      options: {
+        runtimeModeAdapter: {
+          id: 'vercel-sandbox',
+          async create() { return primaryBundle },
+          getRuntimeLayoutRoot() { return '/workspace' },
+        },
+        harnessFactory: createScriptedPiHarness,
+      },
+    })
+    try {
+      const surface = (tools: readonly { name: string; description: string; parameters: unknown }[]) =>
+        tools.map(({ name, description, parameters }) => ({ name, description, parameters }))
+      expect(surface(composition.tools)).toEqual(surface(buildHarnessAgentTools(primaryBundle)))
+    } finally {
+      await composition.dispose()
+      await host.ledger.close?.()
+    }
+  })
+
+  it('rejects every reserved name at the composition seam before harness or provider acquisition', async () => {
+    for (const reserved of ['sandbox', 'bash', 'read', 'write', 'edit', 'find', 'grep', 'ls', 'upload_file']) {
+      const host = runtime([])
+      const remote = pair()
+      const providerCreate = vi.fn(async () => remote.value)
+      const leases = new SandboxLeaseService({
+        workspaceRoot: '/host/leases', provider: { create: providerCreate } as unknown as SandboxProviderV1,
+        serviceDigest: `collision-${reserved}`, ttlMs: 60_000, reapIntervalMs: 60_000, drainTimeoutMs: 100,
+        maxActiveLeasesPerOwner: 1, maxActiveLeasesTotal: 1,
+        createHandle: () => 'lease-handle-0001',
+      })
+      const primaryBundle = {
+        workspace: remote.value.workspace,
+        sandbox: { ...remote.value.sandbox, id: 'primary', exec: vi.fn() },
+        fileSearch: { async search() { return [] } },
+        bash: { kind: 'remote' }, filesystem: { kind: 'remote-workspace' },
+      } satisfies RuntimeBundle
+      const harnessFactory = vi.fn(createScriptedPiHarness)
+      try {
+        await expect(buildAgentComposition({
+          agent: {
+            agentTypeId: 'worker',
+            definition: { instructions: 'worker', label: 'Worker', digest: `sha256:${'a'.repeat(64)}` },
+          },
+          workspaceScopeId: 'workspace-a',
+          runtimeScope: {
+            identity: `collision-runtime-${reserved}`,
+            environment: {
+              placementIdentity: 'collision-environment', workspaceRoot: '/workspace',
+              provisioningFingerprint: 'collision-provisioning',
+            },
+            sessionNamespace: 'collision',
+            sandboxTools: { digest: `collision-${reserved}`, leases },
+            includeFilesystemTools: true,
+            includeUploadTools: true,
+            extraTools: [{
+              name: reserved, description: 'collision', parameters: {},
+              async execute() { return { content: [{ type: 'text' as const, text: 'collision' }] } },
+            }],
+          },
+          runtimeBundle: primaryBundle,
+          hostRuntime: host,
+          options: {
+            runtimeModeAdapter: {
+              id: 'vercel-sandbox', async create() { return primaryBundle },
+              getRuntimeLayoutRoot() { return '/workspace' },
+            },
+            harnessFactory,
+          },
+        })).rejects.toMatchObject({ code: ErrorCode.enum.AUTHORED_AGENT_TOOL_COLLISION })
+        expect(harnessFactory).not.toHaveBeenCalled()
+        expect(providerCreate).not.toHaveBeenCalled()
+      } finally {
+        await leases.dispose()
+        await host.ledger.close?.()
+      }
+    }
+  })
+
   it('creates, targets ordinary bash, and releases through the real adapter', async () => {
     const admitted: AgentRequestKey[] = []
     const host = runtime(admitted)
@@ -85,7 +192,7 @@ describe('native sandbox tools through real Pi', () => {
           provisioningFingerprint: 'native-composed-provisioning',
         },
         sessionNamespace: 'native-composed',
-        sandboxTools: { digest: 'native-test', leases, allowInMemoryLedgerForTests: true },
+        sandboxTools: { digest: 'native-test', leases },
         includeFilesystemTools: false,
       },
       runtimeBundle: primaryBundle,
@@ -98,7 +205,7 @@ describe('native sandbox tools through real Pi', () => {
         },
         harnessFactory: createScriptedPiHarness,
       },
-    } as any)
+    })
     const runContextStorage = new AsyncLocalStorage<RunContext>()
     const tools = adaptToolsForPi([...composition.tools], 'session-a', undefined, () => runContextStorage.getStore())
 

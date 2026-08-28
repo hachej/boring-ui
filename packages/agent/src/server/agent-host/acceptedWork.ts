@@ -67,7 +67,19 @@ export function defineAcceptedExternalEffectTool(
   executeAccepted: AcceptedExternalEffectDispatch,
   requiresAcceptedWork: (params: Record<string, unknown>) => boolean = () => true,
 ): AcceptedExternalEffectTool {
-  return Object.assign({ ...tool }, {
+  const executeObservation = tool.execute.bind(tool)
+  return Object.assign({
+    ...tool,
+    async execute(params: Record<string, unknown>, ctx: ToolExecContext): Promise<ToolResult> {
+      if (!requiresAcceptedWork(params)) return await executeObservation(params, ctx)
+      const error = unavailable()
+      return {
+        content: [{ type: 'text', text: error.message }],
+        details: { code: error.code, retryable: false },
+        isError: true,
+      }
+    },
+  }, {
     [acceptedExternalEffectTool]: { execute: executeAccepted, requiresAcceptedWork },
   })
 }

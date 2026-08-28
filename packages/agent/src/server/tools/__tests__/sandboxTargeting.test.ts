@@ -99,11 +99,11 @@ function fixture() {
 }
 
 describe('native sandbox targeting', () => {
-  it('reserves management and canonical target names only when the capability is composed', () => {
-    expect(() => assertNoSandboxToolCollisions([primary('sandbox')], false)).toThrow('reserves tool name: sandbox')
-    expect(() => assertNoSandboxToolCollisions([primary('bash')], false)).toThrow('reserves tool name: bash')
+  it('reserves every canonical target name only when the capability is composed', () => {
+    for (const name of ['sandbox', 'bash', 'read', 'write', 'edit', 'find', 'grep', 'ls', 'upload_file']) {
+      expect(() => assertNoSandboxToolCollisions([primary(name)], true)).toThrow(`reserves tool name: ${name}`)
+    }
     expect(() => assertNoSandboxToolCollisions([primary('upload_file')], false)).not.toThrow()
-    expect(() => assertNoSandboxToolCollisions([primary('upload_file')], true)).toThrow('reserves tool name: upload_file')
     expect(() => assertNoSandboxToolCollisions([primary('custom')], true)).not.toThrow()
   })
 

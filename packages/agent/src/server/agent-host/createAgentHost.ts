@@ -14,6 +14,7 @@ import { EmbeddedAgentGateway } from './embeddedGateway'
 import { EnvironmentLeaseManager, type EnvironmentLease } from './environmentLease'
 import { getOptionalRuntimeBundleStorageRoot } from '../runtime/mode'
 import { mergeRuntimeFilesystemBindings } from '../runtime/filesystemBindings'
+import { SandboxLeaseServiceRegistry } from '../sandbox/leases/sandboxLeaseServiceRegistry'
 import { createAgentHostRoutes } from './httpProjection'
 import { InMemoryAgentRequestLedger } from './requestLedger'
 import { resolveRequestLedgerPath } from './requestLedgerPath'
@@ -365,7 +366,7 @@ function createRuntime(
   )
   const activity = new AgentSessionActivityIndex()
   const bindings = new Map<string, Promise<RuntimeBinding>>()
-  const sandboxLeaseServices = new Set<import('../sandbox/leases/sandboxLease').SandboxLeaseService>()
+  const sandboxLeaseServices = new SandboxLeaseServiceRegistry()
   const publishedCurrentBindings = new Map<string, RuntimeBinding>()
   const currentBindingReservations = new Map<string, string>()
   const nextBindingGeneration = new Map<string, number>()
@@ -478,7 +479,7 @@ function createRuntime(
         `binding:${agentTypeId}`,
       )
       validateResolvedRuntimeScope(resolved)
-      if (resolved.sandboxTools) sandboxLeaseServices.add(resolved.sandboxTools.leases)
+      if (resolved.sandboxTools) sandboxLeaseServices.register(resolved.sandboxTools)
       const key = JSON.stringify([
         agentTypeId,
         claim.workspaceScopeId,
@@ -726,10 +727,7 @@ function createRuntime(
           )
           if (failed) firstError ??= failed.reason
         }
-        const sandboxCleanup = await Promise.allSettled(
-          [...sandboxLeaseServices].map(async (service) => await service.dispose()),
-        )
-        sandboxLeaseServices.clear()
+        const sandboxCleanup = await sandboxLeaseServices.dispose()
         const failedSandboxCleanup = sandboxCleanup.find(
           (result): result is PromiseRejectedResult => result.status === 'rejected',
         )

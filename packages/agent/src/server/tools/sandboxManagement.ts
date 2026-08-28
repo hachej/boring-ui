@@ -152,11 +152,10 @@ function safeFailure(error: unknown): AgentRequestFailure | undefined {
   }
 }
 
-async function executeManagement(
+async function executeObservation(
   options: SandboxManagementToolOptions,
   params: Record<string, unknown>,
   ctx: ToolExecContext,
-  invocation?: AcceptedExternalEffectInvocation,
 ): Promise<ToolResult> {
   try {
     const input = parseInput(params)
@@ -167,12 +166,22 @@ async function executeManagement(
     if (input.op === 'status') {
       return result({ op: 'status', ...publicStatus(options.leases.status(owner, input.sandbox)) })
     }
-    if (!invocation) {
-      throw new AgentGatewayError(
-        AgentGatewayErrorCode.AGENT_ACCEPTED_WORK_UNAVAILABLE,
-        'accepted work is unavailable for this tool invocation',
-      )
-    }
+    throw invalid()
+  } catch (error) {
+    return errorResult(error)
+  }
+}
+
+async function executeAcceptedManagement(
+  options: SandboxManagementToolOptions,
+  params: Record<string, unknown>,
+  ctx: ToolExecContext,
+  invocation: AcceptedExternalEffectInvocation,
+): Promise<ToolResult> {
+  try {
+    const input = parseInput(params)
+    if (input.op !== 'create' && input.op !== 'release') throw invalid()
+    const owner = sandboxLeaseOwnerId(options, ctx)
     const executeAccepted = createAcceptedToolEffectExecutor({
       runtime: options.runtime,
       workspaceScopeId: options.workspaceScopeId,
@@ -224,12 +233,12 @@ export function createSandboxManagementTool(options: SandboxManagementToolOption
       ],
     },
     async execute(params, ctx) {
-      return await executeManagement(options, params, ctx)
+      return await executeObservation(options, params, ctx)
     },
   }
   return defineAcceptedExternalEffectTool(
     base,
-    async (params, ctx, invocation) => await executeManagement(options, params, ctx, invocation),
+    async (params, ctx, invocation) => await executeAcceptedManagement(options, params, ctx, invocation),
     (params) => params.op === 'create' || params.op === 'release',
   )
 }

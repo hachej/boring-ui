@@ -1,12 +1,15 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { AgentGatewayError, AgentGatewayErrorCode, type JsonValue } from '../../../shared/index'
+import type { AgentTool, ToolExecContext } from '../../../shared/tool'
 import { InMemoryAgentRequestLedger } from '../requestLedger'
 import type { AgentHostRuntime } from '../createAgentHost'
 import type { AgentRequestKey } from '../types'
 import {
+  acceptedExternalEffectExecutor,
   attachAcceptedWorkProvenance,
   createAcceptedToolEffectExecutor,
+  defineAcceptedExternalEffectTool,
   readAcceptedWorkProvenance,
   type AcceptedWorkProvenance,
 } from '../acceptedWork'
@@ -59,6 +62,41 @@ function executor(host: AgentHostRuntime) {
 }
 
 describe('accepted external tool effects', () => {
+  it('centrally denies public effects, preserves observations, and exposes private accepted dispatch only for effects', async () => {
+    const observation = vi.fn(async () => ({ content: [{ type: 'text' as const, text: 'observed' }] }))
+    const accepted = vi.fn(async () => ({ content: [{ type: 'text' as const, text: 'accepted' }] }))
+    const tool = defineAcceptedExternalEffectTool({
+      name: 'managed',
+      description: 'managed test tool',
+      parameters: {},
+      execute: observation,
+    } satisfies AgentTool, accepted, (params) => params.op === 'mutate')
+    const ctx = {
+      abortSignal: new AbortController().signal,
+      toolCallId: 'tool-call-a',
+      sessionId: 'session-a',
+    } as ToolExecContext
+
+    await expect(tool.execute({ op: 'mutate' }, ctx)).resolves.toMatchObject({
+      isError: true,
+      details: { code: AgentGatewayErrorCode.AGENT_ACCEPTED_WORK_UNAVAILABLE },
+    })
+    expect(observation).not.toHaveBeenCalled()
+    await expect(tool.execute({ op: 'observe' }, ctx)).resolves.toMatchObject({
+      content: [{ text: 'observed' }],
+    })
+    expect(observation).toHaveBeenCalledOnce()
+    expect(acceptedExternalEffectExecutor(tool, { op: 'observe' })).toBeUndefined()
+    const dispatch = acceptedExternalEffectExecutor(tool, { op: 'mutate' })!
+    const exact = provenance()
+    await dispatch({ op: 'mutate' }, ctx, { provenance: exact, toolCallId: 'tool-call-a' })
+    expect(accepted).toHaveBeenCalledWith(
+      { op: 'mutate' },
+      ctx,
+      { provenance: exact, toolCallId: 'tool-call-a' },
+    )
+  })
+
   it('requires a durable transactional ledger outside explicit tests', () => {
     const fixture = runtime()
     expect(() => createAcceptedToolEffectExecutor({

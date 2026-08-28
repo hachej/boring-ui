@@ -87,13 +87,22 @@ export function addSandboxTargeting(
   primaryTools: readonly AgentTool[],
   options: SandboxTargetingOptions,
 ): AgentTool[] {
+  const delegatesByPair = new WeakMap<WorkspaceSandboxPairV1, ReadonlyMap<string, AgentTool>>()
+  const delegatesFor = (pair: WorkspaceSandboxPairV1): ReadonlyMap<string, AgentTool> => {
+    const existing = delegatesByPair.get(pair)
+    if (existing) return existing
+    const created = new Map(toolsForBundle(leasedBundle(pair), options).map((tool) => [tool.name, tool]))
+    delegatesByPair.set(pair, created)
+    return created
+  }
+
   return primaryTools.map((primary) => {
     if (!TARGETABLE_NAMES.has(primary.name)) return primary
     return withSandboxTarget(primary, {
       async executeTargeted(sandbox, params, ctx) {
         try {
           return await options.leases.withPair(owner(options, ctx), sandbox, async (pair) => {
-            const target = toolsForBundle(leasedBundle(pair), options).find((tool) => tool.name === primary.name)
+            const target = delegatesFor(pair).get(primary.name)
             if (!target) {
               return {
                 content: [{ type: 'text', text: 'tool is not available in the leased sandbox' }],

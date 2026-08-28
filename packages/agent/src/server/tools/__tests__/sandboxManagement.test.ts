@@ -211,6 +211,29 @@ describe('sandbox management tool', () => {
     }
   })
 
+  it('keeps ambiguous create cleanup outcome-unknown immutable across replay', async () => {
+    const { tool, leases } = fixture()
+    vi.mocked(leases.acquire).mockRejectedValueOnce(new SandboxLeaseError(
+      SANDBOX_LEASE_ERROR_CODES.LEASE_CLEANUP_FAILED,
+      'setup failed and first remote delete acknowledgement was lost',
+      true,
+    ))
+    const executeCreate = acceptedExternalEffectExecutor(tool, { op: 'create' })!
+    const createInvocation = { ...invocation, toolCallId: 'create-ambiguous-cleanup' }
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      await expect(executeCreate(
+        { op: 'create' },
+        { ...ctx, toolCallId: createInvocation.toolCallId },
+        createInvocation,
+      )).resolves.toMatchObject({
+        isError: true,
+        details: { code: AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN },
+      })
+    }
+    expect(leases.acquire).toHaveBeenCalledOnce()
+  })
+
   it('sanitizes unknown provider-shaped failures as generic cleanup failure', async () => {
     const { tool, leases } = fixture()
     vi.mocked(leases.status).mockImplementation(() => {
