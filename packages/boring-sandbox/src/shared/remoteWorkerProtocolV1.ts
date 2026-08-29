@@ -12,22 +12,26 @@ export const REMOTE_WORKER_MAX_CAPABILITY_LIFETIME_MS = 5 * 60 * 1000;
 export const REMOTE_WORKER_MAX_WORKSPACE_ENVELOPE_BYTES_V1 = 15 * 1024 * 1024;
 export const REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1 =
   "exclusive-binary-create";
+export const REMOTE_WORKER_MULTI_SANDBOX_ROOTS_CAPABILITY_V1 =
+  "multi-sandbox-roots-v1";
+
+export type RemoteWorkerNegotiatedCapabilityV1 =
+  | typeof REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1
+  | typeof REMOTE_WORKER_MULTI_SANDBOX_ROOTS_CAPABILITY_V1;
 
 export function negotiateRemoteWorkerHealthCapabilitiesV1(
   requestedCapabilitiesHeader: string | undefined,
-): { negotiatedCapabilities?: Array<typeof REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1> } {
-  const requestedCapabilities = requestedCapabilitiesHeader
-    ?.split(",")
-    .map((value) => value.trim());
-  return requestedCapabilities?.includes(
+  supportedCapabilities: readonly RemoteWorkerNegotiatedCapabilityV1[] = [
     REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1,
-  )
-    ? {
-        negotiatedCapabilities: [
-          REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1,
-        ],
-      }
-    : {};
+  ],
+): { negotiatedCapabilities?: RemoteWorkerNegotiatedCapabilityV1[] } {
+  const requestedCapabilities = new Set(
+    requestedCapabilitiesHeader?.split(",").map((value) => value.trim()),
+  );
+  const negotiatedCapabilities = supportedCapabilities.filter((capability) =>
+    requestedCapabilities.has(capability),
+  );
+  return negotiatedCapabilities.length > 0 ? { negotiatedCapabilities } : {};
 }
 
 export const REMOTE_WORKER_HEADERS_V1 = Object.freeze({
@@ -153,8 +157,14 @@ export const RemoteWorkerHealthResponseSchemaV1 = z
       .length(5)
       .refine((values) => new Set(values).size === values.length),
     negotiatedCapabilities: z
-      .array(z.literal(REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1))
-      .max(1)
+      .array(
+        z.enum([
+          REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1,
+          REMOTE_WORKER_MULTI_SANDBOX_ROOTS_CAPABILITY_V1,
+        ]),
+      )
+      .max(2)
+      .refine((values) => new Set(values).size === values.length)
       .optional(),
   })
   .strict();
@@ -414,6 +424,10 @@ export type RemoteWorkerRenewResponseV1 = z.infer<
 export const RemoteWorkerDeleteResponseSchemaV1 = z
   .object({ disposed: z.literal(true) })
   .strict();
+
+export type RemoteWorkerDeleteResponseV1 = z.infer<
+  typeof RemoteWorkerDeleteResponseSchemaV1
+>;
 
 export const RemoteWorkerFsEventSchemaV1 = z
   .object({

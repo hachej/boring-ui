@@ -185,6 +185,70 @@ describe("H5 sandboxId <-> authorized workspaceId tenant binding", () => {
     });
   });
 
+  test("keeps authorized create tickets immutable and registry-local", async () => {
+    const { registry, tokenFor } = authenticatedRegistry();
+    const request = createRequest("workspace-a", "lease-a");
+    const authorization = await registry.authorizeCreate({
+      request,
+      capabilityToken: tokenFor(
+        capability({
+          workspaceId: request.workspaceId,
+          operation: "create",
+          requestDigest: remoteWorkerRequestDigestV1(request),
+        }),
+      ),
+    });
+    expect(Object.isFrozen(authorization)).toBe(true);
+    expect(Object.isFrozen(authorization.request)).toBe(true);
+
+    const forged = {
+      ...authorization,
+      request: createRequest("workspace-b", "lease-b"),
+    } as typeof authorization;
+    await expect(
+      registry.bindAuthorized({
+        authorization: forged,
+        sandboxId: "sandbox-forged",
+        leaseExpiresAtMs: nowMs + 60_000,
+      }),
+    ).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.requestInvalid,
+    });
+
+    const foreignAuthenticator = vi.fn(() => {
+      throw new Error("foreign registry authenticator must not run");
+    });
+    const foreignRegistry = new RemoteWorkerSandboxBindingRegistryV1({
+      workerId: "worker-2",
+      now: () => nowMs,
+      capabilityAuthenticator: { authenticate: foreignAuthenticator },
+      receiptAuthenticator: {
+        authenticate: (payload) =>
+          `authenticated:${remoteWorkerRequestDigestV1(payload)}`,
+      },
+    });
+    await expect(
+      foreignRegistry.bindAuthorized({
+        authorization,
+        sandboxId: "sandbox-foreign",
+        leaseExpiresAtMs: nowMs + 60_000,
+      }),
+    ).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.requestInvalid,
+    });
+    expect(foreignAuthenticator).not.toHaveBeenCalled();
+
+    await expect(
+      registry.bindAuthorized({
+        authorization,
+        sandboxId: "sandbox-a",
+        leaseExpiresAtMs: nowMs + 60_000,
+      }),
+    ).resolves.toMatchObject({
+      payload: { workspaceId: "workspace-a", sandboxId: "sandbox-a" },
+    });
+  });
+
   test("tenant A's exec cannot address tenant B's sandbox before the exec adapter", async () => {
     const securityCounter = vi.fn(() => {
       throw new Error("observer must not replace the stable mismatch");
@@ -405,7 +469,39 @@ describe("H5 sandboxId <-> authorized workspaceId tenant binding", () => {
     expect(effect).not.toHaveBeenCalled();
   });
 
-  test("serializes conflicting concurrent create bindings", async () => {
+  test("binds one worker sandbox to each workspace+client lease replay key", async () => {
+    const { registry, tokenFor } = authenticatedRegistry();
+    const request = createRequest("workspace-a", "lease-a");
+    const requestDigest = remoteWorkerRequestDigestV1(request);
+    const bind = (sandboxId: string) =>
+      registry.bind({
+        sandboxId,
+        request,
+        capabilityToken: tokenFor(
+          capability({
+            workspaceId: "workspace-a",
+            operation: "create",
+            requestDigest,
+          }),
+        ),
+        leaseExpiresAtMs: nowMs + 60_000,
+      });
+
+    const results = await Promise.allSettled([
+      bind("sandbox-a"),
+      bind("sandbox-b"),
+    ]);
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toEqual([
+      expect.objectContaining({
+        reason: expect.objectContaining({
+          code: REMOTE_WORKER_ERROR_CODES_V1.idempotencyConflict,
+        }),
+      }),
+    ]);
+  });
+
+  test("keeps same-named concurrent sandbox bindings isolated by workspace", async () => {
     let releaseReceipt!: () => void;
     const receiptGate = new Promise<void>((resolve) => {
       releaseReceipt = resolve;
@@ -459,8 +555,8 @@ describe("H5 sandboxId <-> authorized workspaceId tenant binding", () => {
     await expect(first).resolves.toMatchObject({
       payload: { workspaceId: "workspace-a" },
     });
-    await expect(second).rejects.toMatchObject({
-      code: REMOTE_WORKER_ERROR_CODES_V1.sandboxWorkspaceMismatch,
+    await expect(second).resolves.toMatchObject({
+      payload: { workspaceId: "workspace-b" },
     });
   });
 
@@ -627,6 +723,45 @@ describe("H5 sandboxId <-> authorized workspaceId tenant binding", () => {
       );
       expect(second.close).toHaveBeenCalledOnce();
     } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("handles async stream-close rejection once without an unhandled rejection", async () => {
+    vi.useFakeTimers();
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    try {
+      const { registry, tokenFor } = authenticatedRegistry({
+        eventStreamLifetimeMs: 1_000,
+      });
+      await bindTenant(registry, tokenFor, "workspace-a", "sandbox-a");
+      const requestBody = {};
+      const rawClose = vi.fn(() => Promise.reject(new Error("close failed")));
+      const stream = await registry.authorizeEventStream(
+        {
+          sandboxId: "sandbox-a",
+          operation: "events",
+          requestBody,
+          capabilityToken: tokenFor(
+            capability({
+              workspaceId: "workspace-a",
+              sandboxId: "sandbox-a",
+              operation: "events",
+              requestDigest: remoteWorkerRequestDigestV1(requestBody),
+            }),
+          ),
+        },
+        () => ({ closed: new Promise<void>(() => {}), close: rawClose }),
+      );
+
+      stream.close();
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(rawClose).toHaveBeenCalledOnce();
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off("unhandledRejection", unhandled);
       vi.useRealTimers();
     }
   });
