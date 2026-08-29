@@ -78,7 +78,7 @@ export interface CreateRunscSessionInputV1 {
 }
 export interface CreateCompositeRunscSessionInputV1 {
   readonly sandboxId?: string; readonly clientLeaseId: string;
-  readonly createDigest?: `sha256:${string}`; readonly workspaceId: string;
+  readonly workspaceId: string;
   readonly workspaceMountSource?: TrustedWorkspaceMountSource;
   readonly image: string; readonly idleTtlMs?: number; readonly hardLifetimeMs?: number;
 }
@@ -164,8 +164,11 @@ export class RunscSessionRuntimeV1 {
   get supportsMultiSandboxRoots(): boolean {
     return Boolean(this.options.sandboxRoots && this.options.multiSandboxRootsAdmitted === true);
   }
-  async startupSweep(): Promise<void> {
+  startupSweep(): Promise<void> {
     if (this.closed) this.unavailable();
+    return this.track(() => this.startupSweepOnce());
+  }
+  private async startupSweepOnce(): Promise<void> {
     const listed = await runDockerChecked(this.options.runner, {
       argv: buildDockerOwnedContainerListArgv(),
       timeoutMs: RUNSC_RUNTIME_LIMITS_V1.disposeTimeoutMs,
@@ -210,17 +213,15 @@ export class RunscSessionRuntimeV1 {
   }
   private createForMode(input: AnyCreateInputV1, multiRoot: boolean): Promise<AnySessionLeaseV1> {
     return this.state.create(input, multiRoot, this.maxConcurrentCreates,
-      (normalized, digest) => this.track(this.createNew(normalized, digest, multiRoot), this.pendingCreates));
+      () => safeOpaqueId(this.sandboxIdFactory(), "sandbox id"),
+      (normalized, digest) => this.track(() => this.createNew(normalized, digest, multiRoot), this.pendingCreates));
   }
   private async createNew(
-    input: AnyCreateInputV1,
+    input: AnyCreateInputV1 & { readonly sandboxId: string },
     digest: `sha256:${string}`,
     multiRoot: boolean,
   ): Promise<AnySessionLeaseV1> {
-    const sandboxId = safeOpaqueId(
-      input.sandboxId ?? this.sandboxIdFactory(),
-      "sandbox id",
-    );
+    const sandboxId = input.sandboxId;
     const sessionKey = multiRoot
       ? compositeSessionKey(input.workspaceId, sandboxId) : sandboxId;
     if (this.state.sessions.has(sessionKey)) this.idempotencyConflict();
@@ -291,7 +292,17 @@ export class RunscSessionRuntimeV1 {
     }
     return this.state.lease(record, true);
   }
-  async exec(
+  exec(
+    sandboxId: string,
+    workspaceId: string,
+    requestInput: RemoteWorkerExecRequestV1,
+    signal?: AbortSignal,
+    credentialScope?: AuthorizedWorkspaceCredentialScopeV1,
+  ): Promise<RemoteWorkerExecResponseV1> {
+    if (this.closed) this.unavailable();
+    return this.track(() => this.execOnce(sandboxId, workspaceId, requestInput, signal, credentialScope));
+  }
+  private async execOnce(
     sandboxId: string,
     workspaceId: string,
     requestInput: RemoteWorkerExecRequestV1,
@@ -342,17 +353,9 @@ export class RunscSessionRuntimeV1 {
     record.activeExec = true;
     this.activeExecs += 1;
     this.touch(record);
-    const operation = this.track(
-      this.executeInvocation(
-        record,
-        request.invocationId,
-        invocation,
-        request,
-        signal,
-        credentialScope,
-      ),
+    return await this.executeInvocation(
+      record, request.invocationId, invocation, request, signal, credentialScope,
     );
-    return await operation;
   }
   private async executeInvocation(
     record: SessionRecordV1,
@@ -484,7 +487,15 @@ export class RunscSessionRuntimeV1 {
     workspaceId: string,
     operation: RemoteWorkerWorkspaceOperationV1,
   ): Promise<RemoteWorkerWorkspaceResultV1>;
-  async fs(
+  fs(
+    sandboxId: string,
+    workspaceOrOperation: string | RemoteWorkerWorkspaceOperationV1,
+    operation?: RemoteWorkerWorkspaceOperationV1,
+  ): Promise<RemoteWorkerWorkspaceResultV1> {
+    if (this.closed) this.unavailable();
+    return this.track(() => this.fsOnce(sandboxId, workspaceOrOperation, operation));
+  }
+  private async fsOnce(
     sandboxId: string,
     workspaceOrOperation: string | RemoteWorkerWorkspaceOperationV1,
     operation?: RemoteWorkerWorkspaceOperationV1,
@@ -563,10 +574,7 @@ export class RunscSessionRuntimeV1 {
   private async shutdownOnce(): Promise<void> {
     for (const record of this.state.sessions.values()) clearTimeout(record.timer);
     await Promise.allSettled([...this.pendingCreates]);
-    await Promise.race([
-      Promise.allSettled([...this.pendingOperations]),
-      new Promise<void>((resolve) => setTimeout(resolve, RUNSC_RUNTIME_LIMITS_V1.shutdownDrainMs)),
-    ]);
+    await Promise.allSettled([...this.pendingOperations]);
     const cleanup = await Promise.allSettled([...this.state.sessions.values()]
       .map(async (record) => await this.retire(record, "shutdown")));
     let rootFailure: unknown;
@@ -828,8 +836,8 @@ export class RunscSessionRuntimeV1 {
     safeOpaqueId(sandboxId, "sandbox id");
     await this.retirement.notifyMissingComposite(workspaceId, sandboxId);
   }
-  private track<T>(operation: Promise<T>, operations = this.pendingOperations): Promise<T> {
-    operations.add(operation);
+  private track<T>(start: () => Promise<T>, operations = this.pendingOperations): Promise<T> {
+    const operation = Promise.resolve().then(start); operations.add(operation);
     const cleanup = (): void => {
       operations.delete(operation);
     };

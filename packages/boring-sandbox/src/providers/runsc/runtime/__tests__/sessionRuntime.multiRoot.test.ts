@@ -36,11 +36,9 @@ function fakeRunner(): DockerCommandRunner & { run: ReturnType<typeof vi.fn> } {
     run: vi.fn(async (input: DockerCommandInput) => {
       if (input.argv[0] === "ps") return success("");
       if (input.argv[0] !== "exec") return success("container-id\n");
-      const request = JSON.parse(new TextDecoder().decode(input.stdin));
       if (input.argv.at(-1) === "workspace") {
-        return request.op === "probe"
-          ? success({ openat2: true })
-          : success({ ok: true });
+        const request = JSON.parse(new TextDecoder().decode(input.stdin));
+        return request.op === "probe" ? success({ openat2: true }) : success({ ok: true });
       }
       return success({
         ok: true,
@@ -107,6 +105,7 @@ function runtime(options: {
     check(workspaceId: string): Promise<void>;
   };
   readonly runtimeIdFactory?: () => string;
+  readonly sandboxIdFactory?: () => string;
   readonly runner?: DockerCommandRunner;
   readonly now?: () => number;
 } = {}) {
@@ -120,6 +119,7 @@ function runtime(options: {
     },
     runtimeIdFactory:
       options.runtimeIdFactory ?? (() => (++id).toString(16).padStart(32, "0")),
+    ...(options.sandboxIdFactory ? { sandboxIdFactory: options.sandboxIdFactory } : {}),
     sandboxRoots: options.roots,
     ...(options.now ? { now: options.now } : {}),
     ...(options.admitted === undefined
@@ -493,6 +493,136 @@ describe("runsc multi-root and legacy compatibility", () => {
     });
     await expect(sessions.shutdown()).resolves.toBeUndefined();
     expect(roots.close).toHaveBeenCalledTimes(2);
+  });
+
+  test("reserves legacy sandbox identity before effects and joins only the exact request", async () => {
+    let releaseQuota: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => { releaseQuota = resolve; });
+    const docker = fakeRunner();
+    const sessions = runtime({ runner: docker, quota: {
+      apply: vi.fn(async () => await gate), check: vi.fn(async () => undefined),
+    } });
+    const first = sessions.create(createInput);
+    const replay = sessions.create(createInput);
+    expect(() => sessions.create({
+      ...createInput, clientLeaseId: "lease-b", workspaceId: secondWorkspaceId,
+    })).toThrowError(expect.objectContaining({
+      code: REMOTE_WORKER_ERROR_CODES_V1.idempotencyConflict,
+    }));
+    releaseQuota?.();
+    await expect(Promise.all([first, replay])).resolves.toHaveLength(2);
+    expect(docker.run.mock.calls.filter(([request]) => request.argv[0] === "run")).toHaveLength(1);
+    await sessions.dispose("sandbox-a");
+    expect(docker.run.mock.calls.filter(([request]) => request.argv[0] === "rm")).toHaveLength(1);
+  });
+
+  test("reserves factory-issued composite identities while preserving cross-workspace isolation", async () => {
+    const roots = multiSandboxRoots();
+    const sandboxIdFactory = vi.fn(() => "factory-sandbox");
+    const sessions = runtime({ roots, admitted: true, sandboxIdFactory });
+    const first = sessions.createComposite({ ...createInput, sandboxId: undefined });
+    const replay = sessions.createComposite({ ...createInput, sandboxId: undefined });
+    expect(() => sessions.createComposite({
+      ...createInput, sandboxId: undefined, clientLeaseId: "lease-b",
+    })).toThrowError(expect.objectContaining({
+      code: REMOTE_WORKER_ERROR_CODES_V1.idempotencyConflict,
+    }));
+    const second = sessions.createComposite({
+      ...createInput, sandboxId: undefined, workspaceId: secondWorkspaceId,
+    });
+    await expect(Promise.all([first, replay, second])).resolves.toEqual([
+      expect.objectContaining({ sandboxId: "factory-sandbox", newlyAllocated: true }),
+      expect.objectContaining({ sandboxId: "factory-sandbox", newlyAllocated: false }),
+      expect.objectContaining({ sandboxId: "factory-sandbox", newlyAllocated: true }),
+    ]);
+    expect(sandboxIdFactory).toHaveBeenCalledTimes(3);
+    await sessions.dispose("factory-sandbox", workspaceId);
+    await expect(sessions.renew("factory-sandbox", secondWorkspaceId, 1_000))
+      .resolves.toMatchObject({ sandboxId: "factory-sandbox" });
+    await sessions.dispose("factory-sandbox", secondWorkspaceId);
+  });
+
+  test("derives composite idempotency from normalized runtime inputs, never a supplied digest", async () => {
+    let releaseQuota: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => { releaseQuota = resolve; });
+    const roots = multiSandboxRoots();
+    const sessions = runtime({ roots, admitted: true, quota: {
+      workspaceRoot: roots.sandboxRoot,
+      apply: vi.fn(async () => await gate), check: vi.fn(async () => undefined),
+    } });
+    const forged = `sha256:${"a".repeat(64)}`;
+    const first = sessions.createComposite({ ...createInput, createDigest: forged } as never);
+    for (const changed of [
+      { image: `${image}-changed` },
+      { idleTtlMs: 2_000 },
+      { workspaceMountSource: "/forged/root" as TrustedWorkspaceMountSource },
+      { sandboxId: "sandbox-b" },
+    ]) {
+      expect(() => sessions.createComposite({
+        ...createInput, ...changed, createDigest: forged,
+      } as never)).toThrowError(expect.objectContaining({
+        code: REMOTE_WORKER_ERROR_CODES_V1.idempotencyConflict,
+      }));
+    }
+    expect(() => sessions.createComposite({
+      ...createInput, workspaceId: aliasWorkspaceId.toUpperCase(), createDigest: forged,
+    } as never)).toThrowError(expect.objectContaining({
+      code: REMOTE_WORKER_ERROR_CODES_V1.requestInvalid,
+    }));
+    await vi.waitFor(() => expect(roots.prepare).toHaveBeenCalledTimes(1));
+    releaseQuota?.(); await first; await sessions.dispose("sandbox-a", workspaceId);
+  });
+
+  test("shutdown waits for admitted startup sweep", async () => {
+    let releaseList: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => { releaseList = resolve; });
+    const roots = multiSandboxRoots();
+    const docker = fakeRunner();
+    const baseRun = docker.run.getMockImplementation() as (input: DockerCommandInput) => Promise<DockerCommandResult>;
+    docker.run.mockImplementation(async (input) => {
+      if (input.argv[0] === "ps") await gate;
+      return await baseRun(input);
+    });
+    const sessions = runtime({ roots, admitted: true, runner: docker });
+    const sweeping = sessions.startupSweep();
+    await vi.waitFor(() => expect(docker.run).toHaveBeenCalledTimes(1));
+    let closed = false;
+    const closing = sessions.shutdown().then(() => { closed = true; });
+    await Promise.resolve(); expect(closed).toBe(false);
+    releaseList?.(); await sweeping; await closing;
+    expect(roots.startupSweep).toHaveBeenCalledTimes(1);
+    const calls = docker.run.mock.calls.length; await Promise.resolve();
+    expect(docker.run).toHaveBeenCalledTimes(calls);
+  });
+
+  test.each(["fs", "exec"] as const)("shutdown waits for admitted %s work", async (kind) => {
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const roots = multiSandboxRoots();
+    const docker = fakeRunner();
+    const baseRun = docker.run.getMockImplementation() as (input: DockerCommandInput) => Promise<DockerCommandResult>;
+    let block = false;
+    docker.run.mockImplementation(async (input) => {
+      if (block && input.argv[0] === "exec" && input.argv.at(-1) === (kind === "fs" ? "workspace" : "invoke")) await gate;
+      return await baseRun(input);
+    });
+    const sessions = runtime({ roots, admitted: true, runner: docker });
+    await sessions.createComposite(createInput); block = true;
+    const admitted = kind === "fs"
+      ? sessions.fs("sandbox-a", workspaceId, mkdirRequest)
+      : sessions.exec("sandbox-a", workspaceId, {
+        invocationId: "invocation-a", command: "printf ok", timeoutMs: 30_000, maxOutputBytes: 1024,
+      });
+    await vi.waitFor(() => expect(docker.run.mock.calls.some(([input]) =>
+      input.argv[0] === "exec" && input.argv.at(-1) === (kind === "fs" ? "workspace" : "invoke"))).toBe(true));
+    let closed = false;
+    const closing = sessions.shutdown().then(() => { closed = true; });
+    await Promise.resolve(); expect(closed).toBe(false);
+    release?.();
+    await admitted;
+    await closing;
+    const calls = docker.run.mock.calls.length; await Promise.resolve();
+    expect(docker.run).toHaveBeenCalledTimes(calls);
   });
 
   test("requires canonical composite authority for every admitted multi-root operation", async () => {

@@ -4,44 +4,38 @@ import type { TrustedWorkspaceMountSource } from "./dockerArgv";
 import { runscRuntimeError } from "./errors";
 import { validateCanonicalQuotaWorkspaceId, validateQuotaWorkspaceId } from "./quota";
 export interface SessionCreateStateInputV1 {
-  readonly sandboxId?: string; readonly clientLeaseId: string; readonly createDigest?: `sha256:${string}`;
-  readonly workspaceId: string; readonly workspaceMountSource?: TrustedWorkspaceMountSource; readonly image: string;
+  readonly sandboxId?: string; readonly clientLeaseId: string; readonly workspaceId: string;
+  readonly workspaceMountSource?: TrustedWorkspaceMountSource; readonly image: string;
   readonly idleTtlMs?: number; readonly hardLifetimeMs?: number;
 }
 export interface SessionLeaseStateV1 {
-  readonly sandboxId: string; readonly leaseExpiresAtMs: number; readonly hardExpiresAtMs: number;
-  readonly newlyAllocated?: boolean;
+  readonly sandboxId: string; readonly leaseExpiresAtMs: number; readonly hardExpiresAtMs: number; readonly newlyAllocated?: boolean;
 }
 export interface SessionIdentityRecordV1 {
   readonly sandboxId: string; readonly clientLeaseId: string; readonly createDigest: `sha256:${string}`;
-  readonly workspaceId: string; readonly ownsWorkspaceMountSource: boolean;
-  leaseExpiresAtMs: number; readonly hardExpiresAtMs: number; timer: ReturnType<typeof setTimeout>;
-  readonly invocations: { clear(): void }; readonly retirement?: unknown;
+  readonly workspaceId: string; readonly ownsWorkspaceMountSource: boolean; leaseExpiresAtMs: number;
+  readonly hardExpiresAtMs: number; timer: ReturnType<typeof setTimeout>; readonly invocations: { clear(): void }; readonly retirement?: unknown;
 }
-export function compositeSessionKey(workspaceId: string, opaqueId: string): string {
-  return `${workspaceId}\u0000${opaqueId}`;
-}
+export function compositeSessionKey(workspaceId: string, opaqueId: string): string { return `${workspaceId}\u0000${opaqueId}`; }
 export function safeOpaqueId(value: string, label: string): string {
   if (/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(value)) return value;
   throw runscRuntimeError(REMOTE_WORKER_ERROR_CODES_V1.requestInvalid,
     `remote-worker ${label} is invalid`);
 }
-function normalizeCreateInput(input: SessionCreateStateInputV1, multiRoot: boolean) {
-  if (input.sandboxId !== undefined) safeOpaqueId(input.sandboxId, "sandbox id");
-  safeOpaqueId(input.clientLeaseId, "client lease id");
-  const workspaceId = multiRoot ? validateCanonicalQuotaWorkspaceId(input.workspaceId)
-    : validateQuotaWorkspaceId(input.workspaceId);
-  const normalized: SessionCreateStateInputV1 = workspaceId === input.workspaceId
-    ? input : { ...input, workspaceId };
-  const supplied = multiRoot && "createDigest" in normalized ? normalized.createDigest : undefined;
-  const digest = supplied ?? remoteWorkerRequestDigestV1({
+function normalizeCreateInput(input: SessionCreateStateInputV1, multiRoot: boolean, sandboxId: string) {
+  safeOpaqueId(sandboxId, "sandbox id"); safeOpaqueId(input.clientLeaseId, "client lease id");
+  const workspaceId = multiRoot ? validateCanonicalQuotaWorkspaceId(input.workspaceId) : validateQuotaWorkspaceId(input.workspaceId);
+  const normalized = { ...input, sandboxId, workspaceId };
+  const digest = remoteWorkerRequestDigestV1({
     sandboxId: normalized.sandboxId, clientLeaseId: normalized.clientLeaseId, workspaceId,
     workspaceMountSource: normalized.workspaceMountSource, image: normalized.image,
     idleTtlMs: normalized.idleTtlMs, hardLifetimeMs: normalized.hardLifetimeMs,
   });
-  if (!/^sha256:[a-f0-9]{64}$/.test(digest)) sessionStateError("conflict");
-  return { input: normalized, workspaceId, digest,
-    createKey: multiRoot ? compositeSessionKey(workspaceId, normalized.clientLeaseId) : normalized.clientLeaseId };
+  return {
+    input: normalized, workspaceId, digest,
+    createKey: multiRoot ? compositeSessionKey(workspaceId, normalized.clientLeaseId) : normalized.clientLeaseId,
+    sessionKey: multiRoot ? compositeSessionKey(workspaceId, normalized.sandboxId) : normalized.sandboxId,
+  };
 }
 type SessionStateErrorV1 = "unavailable" | "composite-authority" | "not-found" |
   "workspace-mismatch" | "conflict" | "incomplete-cleanup";
@@ -60,28 +54,29 @@ export function sessionStateError(kind: SessionStateErrorV1): never {
 export class RunscSessionStateV1<RecordV1 extends SessionIdentityRecordV1> {
   readonly sessions = new Map<string, RecordV1>(); readonly leaseBindings = new Map<string, RecordV1>();
   private readonly legacyWorkspaceBindings = new Map<string, RecordV1>();
-  private readonly pendingLegacyWorkspaces = new Set<string>();
-  private readonly pendingCreates = new Map<string,
-    { digest: `sha256:${string}`; promise: Promise<SessionLeaseStateV1> }>();
+  private readonly pendingLegacyWorkspaces = new Set<string>(); private readonly pendingSessionKeys = new Set<string>();
+  private readonly pendingCreates = new Map<string, { digest: `sha256:${string}`; sandboxId: string; promise: Promise<SessionLeaseStateV1> }>();
   private activeCreates = 0;
-  create(
-    input: SessionCreateStateInputV1,
-    multiRoot: boolean,
-    maxConcurrentCreates: number,
-    createNew: (input: SessionCreateStateInputV1, digest: `sha256:${string}`) => Promise<SessionLeaseStateV1>,
+  create(input: SessionCreateStateInputV1, multiRoot: boolean, maxConcurrentCreates: number,
+    allocateSandboxId: () => string, createNew: (input: SessionCreateStateInputV1 & { sandboxId: string }, digest: `sha256:${string}`) => Promise<SessionLeaseStateV1>,
   ): Promise<SessionLeaseStateV1> {
-    const normalized = normalizeCreateInput(input, multiRoot);
-    const existing = this.leaseBindings.get(normalized.createKey);
+    safeOpaqueId(input.clientLeaseId, "client lease id");
+    const workspaceId = multiRoot ? validateCanonicalQuotaWorkspaceId(input.workspaceId) : validateQuotaWorkspaceId(input.workspaceId);
+    const createKey = multiRoot ? compositeSessionKey(workspaceId, input.clientLeaseId) : input.clientLeaseId;
+    const existing = this.leaseBindings.get(createKey); const pending = this.pendingCreates.get(createKey);
+    const sandboxId = input.sandboxId ?? existing?.sandboxId ?? pending?.sandboxId ?? allocateSandboxId();
+    const normalized = normalizeCreateInput(input, multiRoot, sandboxId);
     if (existing) {
       if (existing.createDigest !== normalized.digest) sessionStateError("conflict");
       if (existing.retirement) sessionStateError("incomplete-cleanup");
       return Promise.resolve(this.lease(existing, false));
     }
-    const pending = this.pendingCreates.get(normalized.createKey);
     if (pending) {
       if (pending.digest !== normalized.digest) sessionStateError("conflict");
       return pending.promise.then((lease) => multiRoot ? { ...lease, newlyAllocated: false } : lease);
     }
+    if (this.sessions.has(normalized.sessionKey) || this.pendingSessionKeys.has(normalized.sessionKey))
+      sessionStateError("conflict");
     if (!multiRoot && (this.legacyWorkspaceBindings.has(normalized.workspaceId) ||
       this.pendingLegacyWorkspaces.has(normalized.workspaceId))) sessionStateError("conflict");
     if (this.activeCreates >= maxConcurrentCreates) {
@@ -89,13 +84,13 @@ export class RunscSessionStateV1<RecordV1 extends SessionIdentityRecordV1> {
         "remote-worker create concurrency is exhausted");
     }
     this.activeCreates += 1;
+    this.pendingSessionKeys.add(normalized.sessionKey);
     if (!multiRoot) this.pendingLegacyWorkspaces.add(normalized.workspaceId);
     const operation = createNew(normalized.input, normalized.digest);
-    this.pendingCreates.set(normalized.createKey, { digest: normalized.digest, promise: operation });
+    this.pendingCreates.set(normalized.createKey, { digest: normalized.digest, sandboxId, promise: operation });
     const finish = (): void => {
-      this.activeCreates -= 1;
-      this.pendingCreates.delete(normalized.createKey);
-      this.pendingLegacyWorkspaces.delete(normalized.workspaceId);
+      this.activeCreates -= 1; this.pendingCreates.delete(normalized.createKey);
+      this.pendingSessionKeys.delete(normalized.sessionKey); this.pendingLegacyWorkspaces.delete(normalized.workspaceId);
     };
     void operation.then(finish, finish);
     return operation;
@@ -108,8 +103,7 @@ export class RunscSessionStateV1<RecordV1 extends SessionIdentityRecordV1> {
     return record?.workspaceId === canonical ? record : undefined;
   }
   findLegacySession(sandboxId: string): RecordV1 | undefined {
-    safeOpaqueId(sandboxId, "sandbox id");
-    return this.sessions.get(sandboxId);
+    safeOpaqueId(sandboxId, "sandbox id"); return this.sessions.get(sandboxId);
   }
   sessionKey(record: RecordV1): string {
     return record.ownsWorkspaceMountSource ? compositeSessionKey(record.workspaceId, record.sandboxId) : record.sandboxId;

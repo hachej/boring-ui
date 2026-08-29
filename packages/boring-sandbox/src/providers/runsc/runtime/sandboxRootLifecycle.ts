@@ -7,28 +7,18 @@ import { RUNSC_RUNTIME_LIMITS_V1 } from "./limits";
 import { RUNSC_QUOTA_LOCK_NAME, validateCanonicalQuotaWorkspaceId, type FixedProjectQuotaManagerV1 } from "./quota";
 const sandboxIdPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 type QuotaManager = Pick<FixedProjectQuotaManagerV1, "workspaceRoot" | "apply" | "check">; type RootIdentity = Readonly<{ dev: bigint; ino: bigint }>;
-interface PendingRoot {
-  readonly workspace: string; readonly workspaceRoot: string; readonly sandboxRoot: string;
-  workspaceCreated: boolean; created: boolean;
-}
+interface PendingRoot { readonly workspace: string; readonly workspaceRoot: string; readonly sandboxRoot: string; workspaceCreated: boolean; created: boolean; }
 export interface RunscSandboxRootLifecycleOptionsV1 {
-  readonly sandboxRoot: string; readonly trustedOwnerUid?: number;
-  readonly prepareOwnership?: (path: string) => void | Promise<void>;
-  readonly removeSandboxRoot?: (path: string) => void | Promise<void>;
-  readonly removeWorkspaceRoot?: (path: string) => void | Promise<void>;
-}
-function invalidRoot(message: string, cause?: unknown): never {
-  throw runscRuntimeError(REMOTE_WORKER_ERROR_CODES_V1.pathUnsafe, message, cause); }
+  readonly sandboxRoot: string; readonly trustedOwnerUid?: number; readonly prepareOwnership?: (path: string) => void | Promise<void>;
+  readonly removeSandboxRoot?: (path: string) => void | Promise<void>; readonly removeWorkspaceRoot?: (path: string) => void | Promise<void>; }
+function invalidRoot(message: string, cause?: unknown): never { throw runscRuntimeError(REMOTE_WORKER_ERROR_CODES_V1.pathUnsafe, message, cause); }
 function normalizedSandboxId(sandboxId: string): string {
-  if (!sandboxIdPattern.test(sandboxId)) invalidRoot("remote-worker sandbox id is invalid");
-  return sandboxId; }
+  if (!sandboxIdPattern.test(sandboxId)) invalidRoot("remote-worker sandbox id is invalid"); return sandboxId; }
 function errorCode(error: unknown, code: string): boolean {
   return Boolean(error && typeof error === "object" && "code" in error && error.code === code); }
 export class RunscSandboxRootLifecycleV1 {
-  readonly sandboxRoot: string;
-  private readonly trustedOwnerUid: number;
-  private trustedRootIdentity?: RootIdentity; private readonly readyWorkspaces = new Set<string>();
-  private readonly workspaceInflight = new Map<string, Promise<void>>(); private readonly pendingRoots = new Map<string, PendingRoot>();
+  readonly sandboxRoot: string; private readonly trustedOwnerUid: number; private trustedRootIdentity?: RootIdentity;
+  private readonly readyWorkspaces = new Set<string>(); private readonly workspaceInflight = new Map<string, Promise<void>>(); private readonly pendingRoots = new Map<string, PendingRoot>();
   constructor(private readonly options: RunscSandboxRootLifecycleOptionsV1) {
     const normalized = resolve(options.sandboxRoot);
     if (!isAbsolute(options.sandboxRoot) || normalized === "/" ||
@@ -228,13 +218,8 @@ export class RunscSandboxRootLifecycleV1 {
       }
     })();
     this.workspaceInflight.set(workspace, operation);
-    try {
-      await operation;
-    } catch (error) {
-      throw error;
-    } finally {
-      this.workspaceInflight.delete(workspace);
-    }
+    try { await operation; }
+    finally { this.workspaceInflight.delete(workspace); }
   }
   private async removeEmptyWorkspace(workspace: string, workspaceRoot: string): Promise<void> {
     try {
