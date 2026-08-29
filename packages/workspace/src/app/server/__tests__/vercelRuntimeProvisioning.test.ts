@@ -163,6 +163,7 @@ function createFakeVercelMode(state: {
 
   return {
     id: "vercel-sandbox",
+    getRuntimeLayoutRoot: () => workspaceRoot,
     workspaceFsCapability: "best-effort",
     async create(ctx) {
       if (state.acquisitions !== undefined) state.acquisitions += 1
@@ -207,7 +208,7 @@ test("startup uses one scoped pair, reload reuses the live pair, and custom host
   // The direct Host remains lazy until the first route needs a live binding.
   expect(state.acquisitions).toBe(0)
   expect(state.disposals).toBe(0)
-  expect(getRuntimePaths).toHaveBeenCalledWith(hostWorkspaceRoot)
+  expect(getRuntimePaths).toHaveBeenCalledWith("/workspace")
 
   expect((await app.inject({ method: "GET", url: "/api/v1/agents/default/ready-status" })).statusCode).toBe(200)
   const reload = await app.inject({ method: "POST", url: "/api/v1/agents/default/reload", payload: { requestId: "vercel-runtime-provisioning" } })

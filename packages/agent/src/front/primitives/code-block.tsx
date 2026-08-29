@@ -28,7 +28,6 @@ import type {
   HighlighterGeneric,
   ThemedToken,
 } from "shiki";
-import { createHighlighter } from "shiki";
 
 // Shiki uses bitflags for font styles: 1=italic, 2=bold, 4=underline
 // oxlint-disable-next-line eslint(no-bitwise)
@@ -156,10 +155,10 @@ const getHighlighter = (
     return cached;
   }
 
-  const highlighterPromise = createHighlighter({
+  const highlighterPromise = import("shiki").then(({ createHighlighter }) => createHighlighter({
     langs: [language],
     themes: ["github-light", "github-dark"],
-  });
+  }));
 
   highlighterCache.set(language, highlighterPromise);
   return highlighterPromise;

@@ -19,6 +19,15 @@ outcome → evidence → better candidates, better agents, reusable vertical
 intelligence. Optimization is the commercial word; hypothesis/evidence is the
 architecture.
 
+> **Amendment — 2026-08-27 (owner ruling, ratified via #1409):** the north
+> star's "every visible app is a View over that engine" is scoped: every
+> visible product is an **Experience over the governed work substrate**, and
+> every product is *evidence-ready* — but the **explicit** optimization loop
+> (Objective/Candidate/Evaluation/Outcome) attaches where a real objective
+> and measurable outcome signal exist, rather than being mandatory vocabulary
+> for every product. The kernel remains the compounding layer; ordinary
+> operate-mode products are not forced into its ontology.
+
 ## 1. The decisive discovery: the three documents describe ONE system
 
 The V2 kernel's 12 nouns map almost entirely onto machinery that is built,
@@ -30,12 +39,13 @@ is needed:
 | **Agent** (`agentId` + `definitionDigest`) | ratified AgentRef (RECONCILIATION Q — `agentId=agentTypeId` initially, `definition.digest` exists) | ratified, opportunistic P0 |
 | **Run** ("runId minted before accepted execution, stable across metering/artifacts/evals/outcomes") | **ratified verbatim: `RunId := RequestKey`**, minted at envelope admission (C6/D-c) | ratified; C6 scheduled |
 | **Workspace** (durable governed world) | workspace = composition + view + trusted plugin host (B7) | ratified |
-| **Thread** (resumable work, not chat) | **= Session** under A2a (per-session record shard). One noun, two names — Thread is the product name, Session the runtime name; do not create two objects | naming ruling below |
+| **Thread** (resumable work, not chat) | **AMENDED 2026-08-27 (RECONCILIATION §9a): Thread = durable job root; Session = one runtime conversation; 1 Thread : 0..n Sessions.** The earlier "= Session, one object" reading is superseded. Timeline storage *shape* (first-class stream vs projection over Sessions) stays spiked | R-c below, as amended |
 | **Mount** (governed namespace) | multi-FS bindings (boring-bash), #1123 mount sets, environment leases — Mount is their semantic promotion | seam exists; extraction when pulled |
 | **Authority** (host-issued, non-forgeable, only narrows) | R1 + `AuthorizedAgentScope` + A7 issuer + A8 revocation + effective-capability ∩ rule | ratified; A7/A8 scheduled |
 | **Capability** (define once, project to surfaces, `effect` classified) | R1 authority/mechanism + the agent-native harvest; effect classes map to our admission model (`observe/propose` free; `mutate/external-effect` need authority — and `external-effect` is exactly where C6's `unknown-outcome` lives) | adopt; D-2/D31 text |
 | **Objective / Candidate / Evaluation / Outcome** | **genuinely NEW** — the optimization records. Sit ON TOP of the envelope: every Candidate carries `producedByRunId`; the ratified trajectory dataset (runId·agentId·digest·seatId·cost·outcome) is exactly this join | new; small durable tables, JSON payloads |
 | **View** (semantic, renderer-independent) | reconciliation P1 ViewDescriptor; Dockview demoted to renderer | ratified P1 |
+
 | **ExecutionContext** (provenance: who/authority/run/thread/surface/approval) | envelope key + scope + C5 approvalRef — one struct threading what already exists | adopt |
 | **Approval** (evidence + authority; agents cannot manufacture it) | C5 durable pause (ratified spec: request-ID keyed, channel-answerable) + approvalRef in context | scheduled C5 |
 
@@ -109,10 +119,24 @@ catalog), which *is* the seat ledger. Deferring Seat would leave C7's rows
 unnamed and force a later migration. Seat type = leaf; lifecycle = workspace
 (ratified Q4).
 
-**R-c. Thread vs Session.** One object. `Thread` is the product/kernel name;
+**R-c. Thread vs Session.** *(Amended 2026-08-27 — RECONCILIATION §9a: two
+objects. Thread = the durable job root, one per job; Session = one runtime
+conversation; a Thread binds 0..n Sessions. The paragraph below is the
+superseded 08-24 reading, kept for the audit trail.)* One object. `Thread` is the product/kernel name;
 Session is the runtime implementation it recasts (A2a per-session record = the
 thread's record). The V2 doc's warning stands: a Thread is not a Pi session,
-transcript, or tab — it *owns* one record and many Runs.
+transcript, or tab — it *owns* one record and many Runs. *(Storage-shape note,
+2026-08-26: the "one record" backing shape is suspended pending the
+thread-storage spike — RECONCILIATION §8; the ontology is unchanged.)*
+
+> **Amendment — 2026-08-24 (owner ruling, tracked in #1399; full text in
+> RECONCILIATION.md §7):** a Thread may span multiple Seats, projected as one
+> timeline; one Thread per job. Mechanism = per-Run `seatId` on the existing
+> trajectory spine (Q3), no new machinery. Named **multi-seat Thread / Job
+> Thread**, never "channel" (channel stays reserved for transport/ingress —
+> C5, Track C, Slack/CLI). Does not activate A2A loopback or a shared-runtime
+> room: v0 is projection-based, an orchestrator Seat relaying between
+> per-agent sessions as a client of each; agents never call agents.
 
 **R-d. "RuntimeFilesystem" rename** (V2 §17): correct and cheap — the agent
 package's internal `Workspace` type is filesystem/execution state and collides
@@ -175,12 +199,26 @@ AR1-003/004 · result → runId + artifacts[] · P0.1–0.6 (RCE first) · P-1 �
 - **K8** Second structurally different vertical (macro / formulation / SME GTM)
 - **K9** Only then: extract Product packaging
 
+> **Amendment — 2026-08-26 (owner ruling, tracked in #1399; full text in
+> RECONCILIATION.md §8):** the product surface these verticals are delivered
+> through is ratified as the **multi-agent workspace shell** — Inbox · Work ·
+> Agents · Library · Search, transparent multi-agent Threads behind one
+> composer, one workbench with many mounts, and deterministic Views beside
+> agentic Threads. The design canvas and the `weekend/saas-hybrid-spike` branch
+> are the ratified specification artifacts. **Kernel premises precede the
+> surface build:** durable streams (Level D default-on) before the multi-agent
+> engine, `seatId`-in-C7 audit-grade attribution before participant display, and
+> the first ratified View slice before Library saved Views. The thread storage
+> model is explicitly NOT ratified and is routed to a spike. *(See the
+> 2026-08-27 §9 update: transcript presentation is now multi-author, and the
+> storage value-root is ruled — only the shape remains spiked.)*
+
 P1 (from reconciliation) interleaves: ViewDescriptor + artifact UX land with K2
 (candidates need Views to be inspected/approved).
 
 ## 6. Research program & kill criteria (adopted verbatim from V2)
 
-H1 useful candidates · H2 evaluators discriminate · H3 feedback improves
+H1 (label H1; research hypothesis, not a roadmap code) useful candidates · H2 evaluators discriminate · H3 feedback improves
 generations · H4 improvements reuse without collapse · H5 one vertical pays.
 Scorecard: solution quality, learning efficiency, economic efficiency, human
 burden. Kill: recursion ≤ baseline; feedback can't become evaluation; users

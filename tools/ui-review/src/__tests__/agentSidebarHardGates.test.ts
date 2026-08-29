@@ -5,6 +5,7 @@ function snapshot(requestFailures: AgentSidebarHardGateSnapshot["requestFailures
   return {
     stateId: "state",
     checkpoint: "agent-list",
+    readiness: { retryUsed: false, firstError: null },
     origin: "http://127.0.0.1:5480",
     viewport: { width: 1440, height: 900, mobileShell: false, coarsePointer: false },
     documentWidth: { scrollWidth: 1440, clientWidth: 1440 },
@@ -214,5 +215,18 @@ describe("workspace Agent sidebar request-failure gate", () => {
     const gate = report.results.find((result) => result.id === "request-failures")
     expect(gate).toMatchObject({ passed: false })
     expect(gate?.evidence).toContain("[unexpected]")
+  })
+})
+
+describe("workspace Agent sidebar readiness-retry evidence", () => {
+  it("preserves whether discovery retried and the original failure", () => {
+    const report = evaluateAgentSidebarHardGates({
+      ...snapshot([]),
+      readiness: { retryUsed: true, firstError: "Error: roster discovery failed" },
+    })
+    const gate = report.results.find((result) => result.id === "readiness-retry")
+
+    expect(gate).toMatchObject({ passed: true })
+    expect(gate?.evidence).toBe("retryUsed=true;firstError=Error: roster discovery failed")
   })
 })

@@ -1,4 +1,9 @@
-import { buildBwrapArgs } from '@hachej/boring-sandbox/providers/bwrap'
+import {
+  buildBwrapArgs,
+  createLocalRuntimeDescriptor,
+  type BwrapArgsOptions,
+  type BwrapSandboxProviderOptions,
+} from '@hachej/boring-sandbox/providers/bwrap'
 import {
   assertRealPathWithinWorkspace,
   BORING_AGENT_DIR,
@@ -64,6 +69,39 @@ export const sandboxRuntimeHostOperations = agentSandboxRuntimeHostOperations
 
 export interface SandboxRuntimeModeOptions {
   readonly sandboxHandleStore?: SandboxHandleStore
+  readonly bwrap?: BwrapSandboxProviderOptions
+}
+
+type ResolvedBwrapPolicy = Required<Pick<
+  BwrapArgsOptions,
+  'namespaceProfile' | 'network' | 'dropAllCapabilities'
+>>
+
+function resolveBwrapPolicy(options: BwrapSandboxProviderOptions | undefined): ResolvedBwrapPolicy {
+  const sandbox = options?.sandbox
+  const namespaceProfile = sandbox?.namespaceProfile ?? 'full'
+  return {
+    namespaceProfile,
+    network: sandbox?.network ?? 'shared',
+    // Docker mode runs outside a nested user namespace. Never allow the outer
+    // container's SYS_ADMIN capability to reach any local execution path.
+    dropAllCapabilities: namespaceProfile === 'docker' || sandbox?.dropAllCapabilities === true,
+  }
+}
+
+function withBwrapPolicy(
+  runtimeHost: AgentRuntimeHostOperations,
+  policy: ResolvedBwrapPolicy,
+): AgentRuntimeHostOperations {
+  return {
+    ...runtimeHost,
+    buildBwrapArgs(workspaceRoot, executionOptions) {
+      return runtimeHost.buildBwrapArgs(workspaceRoot, {
+        ...executionOptions,
+        ...policy,
+      })
+    },
+  }
 }
 
 export function getSandboxRuntimeModeDescriptor(
@@ -99,9 +137,12 @@ export function createSandboxRuntimeDescriptorAdapter(
   descriptor: SandboxRuntimeModeDescriptorV1,
   options: SandboxRuntimeModeOptions = {},
 ): RuntimeModeAdapter {
+  const policy = descriptor.id === 'local' ? resolveBwrapPolicy(options.bwrap) : undefined
   return createDescriptorRuntimeModeAdapter({
     descriptor,
-    runtimeHost: agentSandboxRuntimeHostOperations,
+    runtimeHost: policy
+      ? withBwrapPolicy(agentSandboxRuntimeHostOperations, policy)
+      : agentSandboxRuntimeHostOperations,
     pairFactoryOptions: {
       sandboxHandleStore: options.sandboxHandleStore,
     },
@@ -112,8 +153,17 @@ export function createSandboxRuntimeModeAdapter(
   mode: RuntimeModeId,
   options: SandboxRuntimeModeOptions = {},
 ): RuntimeModeAdapter {
+  const descriptor = mode === 'local'
+    ? createLocalRuntimeDescriptor({
+        ...options.bwrap,
+        sandbox: {
+          ...options.bwrap?.sandbox,
+          ...resolveBwrapPolicy(options.bwrap),
+        },
+      })
+    : getSandboxRuntimeModeDescriptor(mode)
   return createSandboxRuntimeDescriptorAdapter(
-    getSandboxRuntimeModeDescriptor(mode),
+    descriptor,
     options,
   )
 }

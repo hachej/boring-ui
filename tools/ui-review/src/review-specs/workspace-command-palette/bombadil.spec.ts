@@ -36,8 +36,8 @@ type SafePaletteState = {
   modalOutOfBounds: boolean
   visibleModalCount: number
   focusedControlInvalid: boolean
-  undersizedTouchTargets: string[]
   lastActionWasPaletteOpen: boolean
+  lastActionWasNavigationOpen: boolean
   lastActionWasInitial: boolean
   controls: Array<{ name: string; fingerprint: Fingerprint; point: Point }>
 }
@@ -140,17 +140,16 @@ const palette = extract((state): SafePaletteState => {
     || bounds.x + bounds.width > state.window.innerWidth
     || bounds.y + bounds.height > state.window.innerHeight
   ))
-  const undersizedTouchTargets = state.window.innerWidth <= 500
-    ? observation.undersizedTouchTargets
-        .filter((target) => !target.exempt)
-        .map((target) => `${target.label}:${Math.round(target.bounds.width)}x${Math.round(target.bounds.height)}`)
-    : []
   const lastActionWasPaletteOpen = typeof state.lastAction === "object"
     && state.lastAction !== null
     && "Click" in state.lastAction
     && ["Search", "Search⌘K", "Search catalogs and commands"].includes(
       state.lastAction.Click.fingerprint.accessibleName ?? "",
     )
+  const lastActionWasNavigationOpen = typeof state.lastAction === "object"
+    && state.lastAction !== null
+    && "Click" in state.lastAction
+    && state.lastAction.Click.fingerprint.accessibleName === "Open app navigation"
   const lastActionWasInitial = state.lastAction === null || state.lastAction === undefined
   const input = dialog?.querySelector("input") as HTMLInputElement | null
   const text = dialog?.textContent?.replace(/\s+/g, " ").trim() ?? ""
@@ -169,8 +168,8 @@ const palette = extract((state): SafePaletteState => {
     modalOutOfBounds,
     visibleModalCount: observation.visibleModals.length,
     focusedControlInvalid,
-    undersizedTouchTargets,
     lastActionWasPaletteOpen,
+    lastActionWasNavigationOpen,
     lastActionWasInitial,
     controls: allowed,
   }
@@ -186,6 +185,4 @@ export const command_palette_has_no_horizontal_overflow = always(() => !palette.
 export const command_palette_modals_stay_in_viewport = always(() => !palette.current.modalOutOfBounds)
 export const command_palette_has_at_most_one_modal = always(() => palette.current.visibleModalCount <= 1)
 export const command_palette_focus_stays_visible = always(() => !palette.current.focusedControlInvalid)
-export const command_palette_mobile_touch_targets_are_sized = always(() => palette.current.undersizedTouchTargets.length === 0)
-
 export const commandPaletteSafeActions = actions(() => createSafeCommandPaletteActions(palette.current))

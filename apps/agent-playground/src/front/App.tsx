@@ -41,6 +41,10 @@ export function App() {
   const [showSessions, setShowSessions] = useState(showSessionsParam === '1')
 
   useEffect(() => {
+    // data-theme is the palette selector used by ui-kit tokens.css and the
+    // agent front styles; the .dark class is kept for any consumer still
+    // keying on it. Setting only one of the two leaves the pane half-themed.
+    document.documentElement.setAttribute('data-theme', theme)
     document.documentElement.classList.toggle('dark', theme === 'dark')
     window.localStorage.setItem(THEME_STORAGE_KEY, theme)
   }, [theme])

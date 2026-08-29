@@ -4,7 +4,12 @@
 /* Standard boring theme (light + dark --boring-* values + shadcn bridge). */
 @import '@hachej/boring-ui-kit/tokens.css' layer(base);
 
-@custom-variant dark (&:where(.dark, .dark *));
+/* Must match the selector the token palettes key on (ui-kit tokens.css and
+ * @boring/agent front styles both use [data-theme="dark"]). Keying the dark
+ * variant on .dark here while the palettes key on data-theme swaps utility
+ * colors without swapping the token surfaces — the class of mismatch that
+ * produced the white-on-white agent subtree in the past. */
+@custom-variant dark (&:is([data-theme="dark"], [data-theme="dark"] *));
 
 /* App-local Tailwind scan roots only. Agent classes ship precompiled via
  * @boring/agent/front/styles.css imported from main.tsx. */

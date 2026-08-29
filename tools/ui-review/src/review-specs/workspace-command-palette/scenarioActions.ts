@@ -21,6 +21,7 @@ export type ScenarioActionState = {
   dialogVisible: boolean
   inputFocused: boolean
   lastActionWasPaletteOpen: boolean
+  lastActionWasNavigationOpen: boolean
   lastActionWasInitial: boolean
   controls: ScenarioActionControl[]
 }
@@ -49,6 +50,7 @@ export function createSafeCommandPaletteActions(state: ScenarioActionState): Sce
   })
 
   if (state.lastActionWasInitial) return ["Wait"]
+  if (!state.dialogVisible && state.lastActionWasNavigationOpen) return ["Wait"]
   const openPalette = state.controls.find((control) => control.name === "open-command-palette")
   if (!state.dialogVisible && openPalette) return ["Wait", click(openPalette)]
   const openNavigation = state.controls.find((control) => control.name === "open-app-navigation")

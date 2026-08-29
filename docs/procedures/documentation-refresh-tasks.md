@@ -1,6 +1,6 @@
 # Documentation Refresh Tasks
 
-The nightly [documentation refresh procedure](procedures/documentation-refresh.md)
+The nightly [documentation refresh procedure](documentation-refresh.md)
 runs only tasks whose cadence is due. A task remains here only while it gates a
 named capability.
 

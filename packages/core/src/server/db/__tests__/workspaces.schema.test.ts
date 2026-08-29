@@ -14,6 +14,7 @@ const BASE_CONFIG: CoreConfig = {
   staticDir: null,
   databaseUrl: TEST_DB_URL,
   stores: 'postgres',
+  defaultAgentTypeId: 'default',
   cors: { origins: ['http://localhost:3000'], credentials: true },
   bodyLimit: 16 * 1024 * 1024,
   logLevel: 'silent' as CoreConfig['logLevel'],
@@ -57,8 +58,8 @@ afterAll(async () => {
 describe('workspaces schema', () => {
   it('inserts a workspace with defaults', async () => {
     const [ws] = await sql`
-      INSERT INTO workspaces (app_id, name, created_by)
-      VALUES ('app1', 'Default workspace', ${userAId})
+      INSERT INTO workspaces (app_id, name, created_by, default_agent_type_id)
+      VALUES ('app1', 'Default workspace', ${userAId}, 'default')
       RETURNING *
     `
     expect(ws.id).toBeDefined()
@@ -75,12 +76,12 @@ describe('workspaces schema', () => {
 
   it('partial unique index: rejects second default for same (user, app)', async () => {
     await sql`
-      INSERT INTO workspaces (app_id, name, created_by, is_default)
-      VALUES ('dup-app', 'Default 1', ${userAId}, true)
+      INSERT INTO workspaces (app_id, name, created_by, is_default, default_agent_type_id)
+      VALUES ('dup-app', 'Default 1', ${userAId}, true, 'default')
     `
     await expect(
-      sql`INSERT INTO workspaces (app_id, name, created_by, is_default)
-          VALUES ('dup-app', 'Default 2', ${userAId}, true)`,
+      sql`INSERT INTO workspaces (app_id, name, created_by, is_default, default_agent_type_id)
+          VALUES ('dup-app', 'Default 2', ${userAId}, true, 'default')`,
     ).rejects.toThrow(/duplicate key|unique/)
 
     await sql`DELETE FROM workspaces WHERE created_by = ${userAId} AND app_id = 'dup-app'`
@@ -88,12 +89,12 @@ describe('workspaces schema', () => {
 
   it('partial unique index: allows non-default duplicates for same (user, app)', async () => {
     await sql`
-      INSERT INTO workspaces (app_id, name, created_by, is_default)
-      VALUES ('multi-app', 'WS 1', ${userAId}, false)
+      INSERT INTO workspaces (app_id, name, created_by, is_default, default_agent_type_id)
+      VALUES ('multi-app', 'WS 1', ${userAId}, false, 'default')
     `
     await sql`
-      INSERT INTO workspaces (app_id, name, created_by, is_default)
-      VALUES ('multi-app', 'WS 2', ${userAId}, false)
+      INSERT INTO workspaces (app_id, name, created_by, is_default, default_agent_type_id)
+      VALUES ('multi-app', 'WS 2', ${userAId}, false, 'default')
     `
     const rows = await sql`
       SELECT id FROM workspaces
@@ -106,12 +107,12 @@ describe('workspaces schema', () => {
 
   it('cross-app isolation: default per (userA, appX) AND (userA, appY) both succeed', async () => {
     await sql`
-      INSERT INTO workspaces (app_id, name, created_by, is_default)
-      VALUES ('appX', 'Default X', ${userAId}, true)
+      INSERT INTO workspaces (app_id, name, created_by, is_default, default_agent_type_id)
+      VALUES ('appX', 'Default X', ${userAId}, true, 'default')
     `
     await sql`
-      INSERT INTO workspaces (app_id, name, created_by, is_default)
-      VALUES ('appY', 'Default Y', ${userAId}, true)
+      INSERT INTO workspaces (app_id, name, created_by, is_default, default_agent_type_id)
+      VALUES ('appY', 'Default Y', ${userAId}, true, 'default')
     `
     const rows = await sql`
       SELECT app_id FROM workspaces
@@ -127,12 +128,12 @@ describe('workspaces schema', () => {
 
   it('cross-user isolation: different users can each have a default for same app', async () => {
     await sql`
-      INSERT INTO workspaces (app_id, name, created_by, is_default)
-      VALUES ('shared-app', 'A Default', ${userAId}, true)
+      INSERT INTO workspaces (app_id, name, created_by, is_default, default_agent_type_id)
+      VALUES ('shared-app', 'A Default', ${userAId}, true, 'default')
     `
     await sql`
-      INSERT INTO workspaces (app_id, name, created_by, is_default)
-      VALUES ('shared-app', 'B Default', ${userBId}, true)
+      INSERT INTO workspaces (app_id, name, created_by, is_default, default_agent_type_id)
+      VALUES ('shared-app', 'B Default', ${userBId}, true, 'default')
     `
     const rows = await sql`
       SELECT created_by FROM workspaces
@@ -146,8 +147,8 @@ describe('workspaces schema', () => {
 
   it('soft delete: sets deleted_at without removing row', async () => {
     const [ws] = await sql`
-      INSERT INTO workspaces (app_id, name, created_by)
-      VALUES ('soft-del', 'To Delete', ${userAId})
+      INSERT INTO workspaces (app_id, name, created_by, default_agent_type_id)
+      VALUES ('soft-del', 'To Delete', ${userAId}, 'default')
       RETURNING id
     `
     await sql`UPDATE workspaces SET deleted_at = NOW() WHERE id = ${ws.id}`
@@ -164,8 +165,8 @@ describe('workspaces schema', () => {
       RETURNING id
     `
     const [ws] = await sql`
-      INSERT INTO workspaces (app_id, name, created_by)
-      VALUES ('orphan-app', 'Orphaned WS', ${tempUser.id})
+      INSERT INTO workspaces (app_id, name, created_by, default_agent_type_id)
+      VALUES ('orphan-app', 'Orphaned WS', ${tempUser.id}, 'default')
       RETURNING id
     `
     await expect(

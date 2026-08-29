@@ -139,7 +139,10 @@ vi.mock('@hachej/boring-workspace/app/server', () => ({
     runtimePlugins: [],
     routeContributions: [],
   }),
-  createSandboxRuntimeModeAdapter: () => ({ id: 'direct' }),
+  createSandboxRuntimeModeAdapter: () => ({
+    id: 'direct',
+    getRuntimeLayoutRoot: ({ workspaceRoot }: { workspaceRoot: string }) => workspaceRoot,
+  }),
   hasDirServerPlugin: () => false,
   provisionWorkspaceAgentServer: vi.fn(),
   readWorkspacePluginPackagePiSnapshot: () => ({
@@ -205,12 +208,16 @@ vi.mock('../../../server/db/index.js', () => ({
     sql: { end: vi.fn() },
   }),
   PostgresUserStore: class PostgresUserStore {},
-  PostgresWorkspaceStore: class PostgresWorkspaceStore {},
+  PostgresWorkspaceStore: class PostgresWorkspaceStore {
+    async countNullDefaultAgentTypeIds() { return 0 }
+    async compareAndSetNullDefaultAgentTypeId() { return 0 }
+  },
 }))
 
 vi.mock('../../../server/config/index.js', () => ({
   loadConfig: async () => ({
     appId: 'test-app',
+    defaultAgentTypeId: 'default',
     cors: { origins: ['http://localhost:3000'], credentials: true },
     auth: { url: 'http://localhost:3000' },
     encryption: { workspaceSettingsKey: 'test-key' },

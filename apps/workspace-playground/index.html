@@ -2,7 +2,12 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- interactive-widget=resizes-content: Android Chrome >= 108 otherwise
+         leaves the layout viewport at full height when the software keyboard
+         opens, so the composer of a fixed-height `overflow: hidden` shell ends
+         up underneath it. iOS ignores the key; `useKeyboardInset()` covers it
+         there via `--keyboard-inset`. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
     <title>Workspace Playground</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

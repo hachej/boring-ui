@@ -178,10 +178,12 @@ function isVerified(
   if (kind === "openFile") {
     const path = typeof params.path === "string" ? params.path : null
     const filesystem = normalizeUiFilesystem(typeof params.filesystem === "string" ? params.filesystem : undefined)
-    return path !== null && tabs.some((t) =>
-      t.params?.path === path &&
-      normalizeUiFilesystem(typeof t.params?.filesystem === "string" ? t.params.filesystem : undefined) === filesystem
+    if (path === null) return false
+    const matchingTab = tabs.find((tab) =>
+      tab.params?.path === path &&
+      normalizeUiFilesystem(typeof tab.params?.filesystem === "string" ? tab.params.filesystem : undefined) === filesystem
     )
+    return matchingTab !== undefined && state.activeTab === matchingTab.id
   }
   if (kind === "openPanel") {
     const id = typeof params.id === "string" ? params.id : null
@@ -215,14 +217,26 @@ export function createExecUiTool(
       "confirmation question first unless the target is genuinely ambiguous",
       "or unsafe.",
       "",
-      "CRITICAL: When the user asks to open / show / display / navigate to a",
-      "file, ALWAYS call exec_ui openFile. Never skip the call based on",
-      "conversation history OR get_ui_state output — even if openTabs already",
-      "lists the file. State can drift (the user may have closed the tab,",
-      "the persisted state may be stale, the tab may not be focused). Calling",
-      "openFile when the file is already open is idempotent: it focuses the",
-      "tab. Saying \"already opened\" without calling the tool is a bug — the",
-      "user explicitly requested an action; honor it.",
+      "CRITICAL: Prefer an available registered domain-specific surface when",
+      "its instructions match the target (for example, a deck, dashboard, or",
+      "playground catalog item); use exec_ui openSurface exactly as those",
+      "instructions require. Otherwise, when the user asks to open / show /",
+      "display / navigate to a file, ALWAYS call exec_ui openFile. Never skip",
+      "the call based on conversation history OR get_ui_state output — even if",
+      "openTabs already lists the file. State can drift (the user may have",
+      "closed the tab, the persisted state may be stale, the file may not be",
+      "focused). Calling openFile for the same path is idempotent: it focuses",
+      "the workbench file slot. Saying \"already opened\" without calling the",
+      "tool is a bug — honor the user's explicit action.",
+      "",
+      "IMPORTANT: Every successful openFile call automatically focuses the",
+      "requested file in its own persistent workbench tab. When the user asks",
+      "to open multiple files, call openFile once for EACH requested path, in",
+      "the requested order. All requested file tabs remain open, and the final",
+      "file is active. Do not refuse the request, shorten it to one/final call,",
+      "or claim that the workbench can show only one file. Reopening the same",
+      "path is idempotent and focuses its existing tab. Chat does not recognize",
+      "arbitrary @path text as an open-file request.",
       "",
       "Supported `kind` values:",
       "",

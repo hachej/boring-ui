@@ -24,6 +24,7 @@ const BASE_CONFIG: CoreConfig = {
   staticDir: null,
   databaseUrl: TEST_DB_URL,
   stores: 'postgres',
+  defaultAgentTypeId: 'default',
   cors: { origins: ['http://localhost:3000'], credentials: true },
   bodyLimit: 16 * 1024 * 1024,
   logLevel: 'silent' as CoreConfig['logLevel'],
@@ -50,8 +51,8 @@ async function seedWorkspace() {
   `
 
   const [workspace] = await sqlClient`
-    INSERT INTO workspaces (app_id, name, created_by, is_default)
-    VALUES (${APP_ID}, 'IOZO Crypto Workspace', ${owner.id}, false)
+    INSERT INTO workspaces (app_id, name, created_by, is_default, default_agent_type_id)
+    VALUES (${APP_ID}, 'IOZO Crypto Workspace', ${owner.id}, false, 'default')
     RETURNING id
   `
 

@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -7,6 +8,7 @@ import { AgentGatewayError, AgentGatewayErrorCode, type AuthorizedAgentScope } f
 import { ErrorCode } from '../../../shared/error-codes'
 import type { AgentHarnessFactory } from '../../../shared/harness'
 import { createTestRuntimeModeAdapter } from '@agent-test-host'
+import { getEnv, restoreEnvForTest, setEnvForTest } from '../../config/env'
 import { createScriptedPiHarness } from '../../testing/scriptedPiHarness'
 import { InMemorySessionChangesTracker } from '../../http/sessionChangesTracker'
 import type { RuntimeFilesystemBinding } from '../../runtime/mode'
@@ -87,6 +89,162 @@ describe('createAgentHost', () => {
     const second = await createAgentHost(options(sessionRoot))
     expect(second.host.hostId).toBe(first.host.hostId)
     await second.host.close()
+  })
+
+  it('filters the catalog and rejects an unseated Agent before runtime resolution', async () => {
+    const sessionRoot = await root()
+    const base = options(sessionRoot)
+    const resolveAgentAccess = vi.fn(async ({ agentTypeId }: { agentTypeId: string }) =>
+      agentTypeId === 'alpha'
+        ? { state: 'allowed' as const, seatId: 'seat-alpha' }
+        : { state: 'not-available' as const, reason: 'not-seated' as const },
+    )
+    const created = await createAgentHost({
+      ...base,
+      agents: [
+        { agentTypeId: 'alpha', definition: { instructions: 'alpha', label: 'Alpha' } },
+        { agentTypeId: 'beta', definition: { instructions: 'beta', label: 'Beta' } },
+      ],
+      resolveAgentAccess,
+    })
+
+    await expect(created.gateway.listAgents({ scope })).resolves.toEqual([
+      expect.objectContaining({ agentTypeId: 'alpha' }),
+    ])
+    await expect(created.gateway.createSession({
+      scope,
+      agentTypeId: 'beta',
+      requestId: 'create-beta',
+    })).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN })
+    expect(base.resolveAuthorizedAgentRuntimeScope).not.toHaveBeenCalled()
+    await created.host.close()
+  })
+
+  it('preserves structured entitlement and policy-unavailable failures', async () => {
+    const sessionRoot = await root()
+    const base = options(sessionRoot)
+    const decision = vi.fn(async () => ({
+      state: 'entitlement-denied' as const,
+      seatId: 'seat-alpha',
+      denial: 'subscription-required' as const,
+    }))
+    const created = await createAgentHost({ ...base, resolveAgentAccess: decision })
+
+    await expect(created.gateway.createSession({
+      scope,
+      agentTypeId: 'alpha',
+      requestId: 'requires-subscription',
+    })).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_ENTITLEMENT_REQUIRED })
+
+    decision.mockResolvedValueOnce({ state: 'policy-unavailable' } as never)
+    await expect(created.gateway.listAgents({ scope }))
+      .rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_ACCESS_POLICY_UNAVAILABLE })
+    await created.host.close()
+  })
+
+  it('maps structured access failures on runtime capability routes', async () => {
+    let unavailable = false
+    const created = await createAgentHost({
+      ...options(await root()),
+      resolveAgentAccess: vi.fn(async () => unavailable
+        ? { state: 'policy-unavailable' as const }
+        : {
+            state: 'entitlement-denied' as const,
+            seatId: 'seat-alpha',
+            denial: 'subscription-required' as const,
+          }),
+    })
+    const app = Fastify()
+    await app.register(created.registerDirectRoutes({ authorizeAgentRequest: async () => scope }))
+    await app.ready()
+
+    const payment = await app.inject({ method: 'GET', url: '/api/v1/agents/alpha/describe' })
+    expect(payment.statusCode).toBe(402)
+    expect(payment.json()).toMatchObject({ error: { code: AgentGatewayErrorCode.AGENT_ENTITLEMENT_REQUIRED } })
+
+    unavailable = true
+    const outage = await app.inject({ method: 'GET', url: '/api/v1/agents/alpha/describe' })
+    expect(outage.statusCode).toBe(503)
+    expect(outage.json()).toMatchObject({ error: { code: AgentGatewayErrorCode.AGENT_ACCESS_POLICY_UNAVAILABLE } })
+
+    await app.close()
+    await created.host.close()
+  })
+
+  it('fails closed when the product access resolver throws', async () => {
+    const created = await createAgentHost({
+      ...options(await root()),
+      resolveAgentAccess: vi.fn(async () => { throw new Error('policy database unavailable') }),
+    })
+
+    await expect(created.gateway.listAgents({ scope }))
+      .rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_ACCESS_POLICY_UNAVAILABLE })
+    await created.host.close()
+  })
+
+  it('rechecks access immediately before effect admission', async () => {
+    const base = options(await root())
+    let decisions = 0
+    const admit = vi.fn(async () => ({ type: 'accepted' as const, admissionReceipt: 'should-not-run' }))
+    const created = await createAgentHost({
+      ...base,
+      effectAdmission: { admit },
+      resolveAgentAccess: vi.fn(async () => {
+        decisions += 1
+        return decisions === 3
+          ? { state: 'not-available' as const, reason: 'not-seated' as const }
+          : { state: 'allowed' as const, seatId: 'seat-alpha' }
+      }),
+    })
+
+    await expect(created.gateway.createSession({
+      scope,
+      agentTypeId: 'alpha',
+      requestId: 'revoked-before-admission',
+    })).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN })
+    expect(admit).not.toHaveBeenCalled()
+    expect(base.resolveAuthorizedAgentRuntimeScope).not.toHaveBeenCalled()
+
+    await expect(created.gateway.createSession({
+      scope,
+      agentTypeId: 'alpha',
+      requestId: 'revoked-before-admission',
+    })).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN })
+    expect(admit).not.toHaveBeenCalled()
+    await created.host.close()
+  })
+
+  // The ledger path chain now has one canonical owner. These pin this host's
+  // effective default so delegating to it cannot move the file.
+  it('keeps its durable ledger default at <sessionRoot>/.agent-request-ledger.sqlite', async () => {
+    const originalSessionRootEnv = getEnv('BORING_AGENT_SESSION_ROOT')
+    const sessionRoot = await root()
+    const explicitRoot = await root()
+    const explicitPath = join(explicitRoot, 'nested', 'requests.sqlite')
+    try {
+      // This host never consults BORING_AGENT_SESSION_ROOT: outer hosts own that.
+      setEnvForTest('BORING_AGENT_SESSION_ROOT', await root())
+
+      const fromSessionRoot = await createAgentHost({ ...options(sessionRoot), hostId: 'ledger-default' })
+      await fromSessionRoot.host.close()
+      expect(existsSync(join(sessionRoot, '.agent-request-ledger.sqlite'))).toBe(true)
+
+      const explicit = await createAgentHost({
+        ...options(sessionRoot),
+        hostId: 'ledger-explicit',
+        requestLedgerPath: explicitPath,
+      })
+      await explicit.host.close()
+      expect(existsSync(explicitPath)).toBe(true)
+
+      await expect(createAgentHost({
+        ...options(sessionRoot),
+        hostId: 'ledger-fail-closed',
+        sessionRoot: undefined,
+      })).rejects.toThrow('requestLedgerPath or sessionRoot')
+    } finally {
+      restoreEnvForTest('BORING_AGENT_SESSION_ROOT', originalSessionRootEnv)
+    }
   })
 
   it('requires a stable host identity source and validates explicit IDs', async () => {

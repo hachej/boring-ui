@@ -30,6 +30,23 @@ export type Workspace = {
   readonly defaultAgentTypeId?: string | null
 }
 
+export type WorkspaceAgentSeatSource =
+  | 'signup-intent'
+  | 'generic-default'
+  | 'user-add'
+  | 'migration-default'
+  | 'migration-session'
+  | 'operator'
+
+export type WorkspaceAgentSeat = {
+  seatId: string
+  workspaceId: string
+  agentTypeId: string
+  source: WorkspaceAgentSeatSource
+  enrolledByUserId: string | null
+  createdAt: string
+}
+
 export type WorkspaceMember = {
   workspaceId: string
   userId: string
@@ -158,9 +175,11 @@ export interface CoreConfig {
   /**
    * Boot-time host default Agent seat. Stamped onto workspaces at
    * initialization (Decision 28) and used as the resolution fallback when a
-   * workspace has no persisted `defaultAgentTypeId`.
+   * workspace has no persisted `defaultAgentTypeId` during rolling migration.
+   * Generic hosts use the regular platform `default` Agent; composed fleet
+   * servers normalize this field to their validated application default.
    */
-  defaultAgentTypeId?: string
+  defaultAgentTypeId: string
 
   /**
    * Decision 28 hook: exact trusted signup hostname -> fleet agentTypeId.

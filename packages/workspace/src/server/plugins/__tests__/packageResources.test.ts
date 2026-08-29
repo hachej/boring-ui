@@ -9,6 +9,7 @@ import {
   PACKAGE_RESOURCE_CONFLICT_CODE,
   PACKAGE_RESOURCE_INVALID_CODE,
   resolveWorkspacePackageResources,
+  resolveWorkspacePackageResourceSnapshot,
   selectAgentPackageResourceView,
 } from '../packageResources'
 
@@ -302,6 +303,118 @@ describe('resolveWorkspacePackageResources', () => {
       options: { sharedSkillPaths: [{ id: 'shared-authoring', skillFile: sharedFile }] },
     })
     expect(updated.generation).not.toBe(registry.generation)
+  })
+
+  test('preserves the stable error for an invalid required shared skill', async () => {
+    const root = await tempRoot()
+    const missingSkill = join(root, 'missing', 'SKILL.md')
+
+    await expect(resolveWorkspacePackageResources([], {
+      sharedSkillPaths: [{ id: 'required-missing', skillFile: missingSkill }],
+    })).rejects.toMatchObject({
+      name: 'WorkspacePackageResourceRegistryError',
+      code: PACKAGE_RESOURCE_INVALID_CODE,
+      packageName: 'shared/pi-agent',
+    })
+  })
+
+  test('ignores snapshot-private skippable inputs passed through a structural options object', async () => {
+    const root = await tempRoot()
+    const skillRoot = join(root, 'global-skills', 'hidden')
+    await mkdir(skillRoot, { recursive: true })
+    const skillFile = join(skillRoot, 'SKILL.md')
+    await writeFile(skillFile, '---\nname: hidden\ndescription: Hidden.\n---\n', 'utf8')
+    const structuralOptions = {
+      sharedSkillPaths: [],
+      skippableSharedSkillPaths: [{ id: 'hidden', skillFile }],
+    }
+
+    const registry = await resolveWorkspacePackageResources([], structuralOptions)
+
+    expect(registry.skills).toEqual([])
+  })
+
+  // gh-1196: one unadmittable shared-skill entry must not fail the scan closed.
+  test('degrades an unadmittable shared skill to a diagnostic and keeps the rest', async () => {
+    const root = await tempRoot()
+    const packageRoot = await packageFixture(root)
+    const goodRoot = join(root, 'global-skills', 'shared-authoring')
+    await mkdir(goodRoot, { recursive: true })
+    const goodFile = join(goodRoot, 'SKILL.md')
+    await writeFile(goodFile, '---\nname: shared-authoring\ndescription: Shared.\n---\n', 'utf8')
+    const danglingRoot = join(root, 'global-skills', 'dangling')
+    await mkdir(danglingRoot, { recursive: true })
+    const danglingFile = join(danglingRoot, 'SKILL.md')
+    await symlink(join(root, 'does-not-exist', 'SKILL.md'), danglingFile)
+
+    const snapshot = await resolveWorkspacePackageResourceSnapshot({
+      declared: [{ pluginId: 'direct', packageName: '@example/plugin', packageRoot }],
+      scanned: [],
+      sharedSkillPaths: [
+        { id: 'dangling', skillFile: danglingFile },
+        { id: 'shared-authoring', skillFile: goodFile },
+      ],
+    })
+
+    expect(snapshot.registry.skills.map((skill) => skill.resource.path)).toEqual([
+      'packages/@example/plugin/skills/authoring/SKILL.md',
+      'shared/pi-agent/shared-authoring/SKILL.md',
+    ])
+    expect(snapshot.diagnostics).toEqual([{
+      source: 'shared-skill-scan',
+      message: 'shared skill "dangling" was not admissible and was skipped: package resource is invalid: shared skill is not readable',
+      pluginId: 'shared/pi-agent',
+      code: PACKAGE_RESOURCE_INVALID_CODE,
+    }])
+    // The escaping/dangling entry is skipped, never resolved into a mount.
+    expect(snapshot.registry.locateSkill(danglingFile)).toBeUndefined()
+    expect(snapshot.registry.readonlyMounts.map((mount) => mount.sourceRoot))
+      .not.toContain(await realpath(danglingRoot))
+  })
+
+  test('propagates an unexpected filesystem failure while resolving a scanned skill declaration', async () => {
+    const root = await tempRoot()
+    const packageRoot = await packageFixture(root, { skills: ['x'.repeat(300)] })
+
+    await expect(resolveWorkspacePackageResourceSnapshot({
+      declared: [],
+      scanned: [{ pluginId: 'scan', packageName: '@example/plugin', packageRoot }],
+    })).rejects.toMatchObject({ code: 'ENAMETOOLONG' })
+  })
+
+  test('propagates a malformed optional skill instead of laundering it into a diagnostic', async () => {
+    const root = await tempRoot()
+    const skillRoot = join(root, 'global-skills', 'malformed')
+    await mkdir(skillRoot, { recursive: true })
+    const skillFile = join(skillRoot, 'SKILL.md')
+    await writeFile(skillFile, '---\nname: [unterminated\n---\n', 'utf8')
+
+    const error = await resolveWorkspacePackageResourceSnapshot({
+      declared: [],
+      scanned: [],
+      sharedSkillPaths: [{ id: 'malformed', skillFile }],
+    }).then(() => undefined, (cause: unknown) => cause)
+
+    expect(error).toBeInstanceOf(Error)
+    expect(error).not.toMatchObject({ code: PACKAGE_RESOURCE_INVALID_CODE })
+  })
+
+  test('propagates a foreign error that spoofs the invalid-resource code', async () => {
+    const foreignError = Object.assign(new Error('foreign resolver failure'), {
+      code: PACKAGE_RESOURCE_INVALID_CODE,
+    })
+    const shared = {
+      id: 'spoofed',
+      get skillFile(): string {
+        throw foreignError
+      },
+    }
+
+    await expect(resolveWorkspacePackageResourceSnapshot({
+      declared: [],
+      scanned: [],
+      sharedSkillPaths: [shared],
+    })).rejects.toBe(foreignError)
   })
 
   test("rejects the host-shared reserved package name", async () => {

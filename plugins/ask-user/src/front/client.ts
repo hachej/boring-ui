@@ -57,6 +57,7 @@ export function createQuestionsClient(options: QuestionsClientOptions = {}) {
     input: Record<string, unknown>,
     sessionId?: string,
     idempotencyKey?: string,
+    signal?: AbortSignal,
   ): Promise<T> {
     const response = await fetch(`${options.apiBaseUrl ?? ""}/api/v1/workspace-bridge/call`, {
       method: "POST",
@@ -70,6 +71,7 @@ export function createQuestionsClient(options: QuestionsClientOptions = {}) {
         ...(sessionId ? { "x-boring-session-id": sessionId } : {}),
       },
       body: JSON.stringify({ op, input, ...(idempotencyKey ? { idempotencyKey } : {}) }),
+      signal,
     })
     const payload = await response.json().catch(() => ({})) as BridgeResponse<T>
     if (!response.ok) {
@@ -91,11 +93,13 @@ export function createQuestionsClient(options: QuestionsClientOptions = {}) {
   }
 
   return {
-    async pending(sessionId: string): Promise<AskUserQuestion | null> {
+    async pending(sessionId: string, signal?: AbortSignal): Promise<AskUserQuestion | null> {
       const output = await callBridge<{ pending: AskUserQuestion | null }>(
         ASK_USER_BRIDGE_OPS.pending,
         { sessionId },
         sessionId,
+        undefined,
+        signal,
       )
       return normalizeQuestion(output.pending)
     },

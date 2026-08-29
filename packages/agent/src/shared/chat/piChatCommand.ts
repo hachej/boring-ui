@@ -14,7 +14,10 @@ export interface QueueClearPayload {
   clientNonce?: string
   clientSeq?: number
 }
-export type InterruptPayload = Record<string, never>
+export interface InterruptPayload {
+  /** Queue policy for this interrupt: hold after abort, or resume while idle. */
+  queueAction?: 'hold' | 'resume'
+}
 export type StopPayload = Record<string, never>
 
 export interface CommandReceipt {

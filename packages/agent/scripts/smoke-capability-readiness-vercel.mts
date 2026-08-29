@@ -215,8 +215,7 @@ async function main(): Promise<void> {
         runtimeProvisioning = await provisionWorkspaceRuntime({
           adapter: provisioningAdapter,
           runtimeLayout: agentSandboxRuntimeHostOperations.getBoringAgentRuntimePaths(
-            runtimeModeAdapter.getRuntimeLayoutRoot?.({ workspaceRoot: tempDir, workspaceId, sessionId: workspaceId })
-              ?? tempDir,
+            runtimeModeAdapter.getRuntimeLayoutRoot({ workspaceRoot: tempDir, workspaceId, sessionId: workspaceId }),
           ),
           runtimeHost: agentSandboxRuntimeHostOperations,
           plugins: [{

@@ -10,12 +10,12 @@ import type {
 
 import { createServerFileSearch } from '../createServerFileSearch'
 import type {
-  BuiltinRuntimeModeId,
   ModeContext,
   RuntimeBashStrategy,
   RuntimeBundle,
   RuntimeFilesystemStrategy,
   RuntimeModeAdapter,
+  RuntimeModeId,
 } from '../mode'
 import type { WorkspaceProvisioningAdapter } from '../../workspace/provisioning'
 import type { AgentRuntimeHostOperations } from '../runtimeHost'
@@ -26,7 +26,7 @@ import {
 } from './provisioningAdapter'
 
 interface ProviderRuntimeModeAdapterOptions {
-  id: BuiltinRuntimeModeId | (string & {})
+  id: RuntimeModeId
   provider?: SandboxProviderV1
   providerFactory?: () => SandboxProviderV1 | Promise<SandboxProviderV1>
   resolveRuntimeRoot?: (context: ModeContext) => string

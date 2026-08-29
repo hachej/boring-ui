@@ -44,7 +44,7 @@ export function TasksOverlay({ onClose }: BoringFrontAppLeftOverlayProps) {
     <div data-boring-workspace-part="tasks-overlay" className="flex h-full min-h-0 flex-col bg-background">
       <header className={[
         "flex h-12 shrink-0 items-center justify-between border-b border-border/60",
-        headerInsetStart ? "pl-12" : "pl-4",
+        headerInsetStart ? "pl-[calc(var(--mobile-header-inset-start,3.25rem)+var(--sa-left,0px))]" : "pl-4",
         headerInsetEnd ? "pr-16" : "pr-4",
       ].join(" ")}
       >

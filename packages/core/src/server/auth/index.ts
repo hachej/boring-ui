@@ -5,7 +5,12 @@ export type {
   CreateAuthOptions,
 } from './createAuth.js'
 export { createPostSignupHook } from './postSignupHook.js'
-export type { PostSignupHookDeps } from './postSignupHook.js'
+export type {
+  InitialAgentSeatResolution,
+  PostSignupHookDeps,
+  ResolveInitialAgentSeat,
+  ResolveInitialAgentSeatInput,
+} from './postSignupHook.js'
 export { authHook } from './authHook.js'
 export type { AuthHookOptions } from './authHook.js'
 export { requireWorkspaceMember } from './requireWorkspaceMember.js'

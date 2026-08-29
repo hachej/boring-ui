@@ -56,6 +56,9 @@ async function prepareWritablePath(
   runtimeHost: AgentRuntimeHostOperations,
 ): Promise<string> {
   const absPath = runtimeHost.validatePath(root, relPath)
+  if (enforceSymlinkBoundary) {
+    await runtimeHost.resolveRealWorkspacePath(root, relPath)
+  }
   await mkdir(dirname(absPath), { recursive: true })
   if (enforceSymlinkBoundary) {
     await runtimeHost.assertRealPathWithinWorkspace(root, dirname(absPath))
@@ -188,6 +191,9 @@ function createWorkspaceFs(
     },
     async mkdir(workspaceRelativePath) {
       const absPath = runtimeHost.validatePath(workspaceRoot, workspaceRelativePath)
+      if (enforceSymlinkBoundary) {
+        await runtimeHost.resolveRealWorkspacePath(workspaceRoot, workspaceRelativePath)
+      }
       await mkdir(absPath, { recursive: true })
       if (enforceSymlinkBoundary) {
         await runtimeHost.assertRealPathWithinWorkspace(workspaceRoot, absPath)

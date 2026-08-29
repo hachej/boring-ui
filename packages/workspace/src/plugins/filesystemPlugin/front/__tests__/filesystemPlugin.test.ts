@@ -43,6 +43,10 @@ describe("filesystemPlugin", () => {
       "pdf-viewer",
       "html-viewer",
     ])
+    for (const panel of registrations.panels.filter((panel) => panel.id !== "empty-file-panel")) {
+      expect(panel.lazy).toBe(true)
+      expect(typeof panel.component).toBe("function")
+    }
   })
 
   it("all panels and workspace sources have source 'builtin'", () => {

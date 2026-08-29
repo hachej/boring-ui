@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
-import { AgentGatewayError, AgentGatewayErrorCode } from '../../shared/index'
+import { AgentGatewayError, AgentGatewayErrorCode, type AgentAccessOperation } from '../../shared/index'
 import { ErrorCode } from '../../shared/error-codes'
 import type { AgentHarness, RunContext } from '../../shared/harness'
 import type { AgentTool } from '../../shared/tool'
@@ -16,10 +16,12 @@ import { systemPromptRoutes } from '../http/routes/systemPrompt'
 import type { SessionChangesTracker } from '../http/sessionChangesTracker'
 import type { AgentMeteringSink } from '../pi-chat/metering'
 import type { ReadyStatusTracker } from '../runtime/readyStatus'
+import { resolveAgentInstructionFileRefs } from '../agentDefinition/instructionFileRefs'
 import { canonicalDigest } from './canonical'
 import type { AgentHostRuntime, RuntimeBinding } from './createAgentHost'
 import type { EmbeddedAgentGateway } from './embeddedGateway'
 import type { AgentHostDirectProjectionOptions, AgentInstructionFileRef } from './types'
+import { statusForGatewayError } from './gatewayHttpStatus'
 import { projectStableServiceError } from './stableServiceError'
 import {
   resolveAgentMcpGrants,
@@ -123,6 +125,7 @@ export interface AgentHostRuntimeCapabilityProjection {
   authorizeRequest(input: {
     readonly request: FastifyRequest
     readonly agentTypeId: string
+    readonly operation?: AgentAccessOperation
   }): Promise<void>
   resolveBinding(input: {
     readonly request: FastifyRequest
@@ -211,11 +214,12 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
     sessionChangesTracker: options.sessionChangesTracker,
     metering: runtime.options.metering,
     registerSubscription: runtime.registerSubscription,
-    async authorizeRequest({ request, agentTypeId }) {
-      await authorize(request)
+    async authorizeRequest({ request, agentTypeId, operation = 'session.read' }) {
+      const { scope, claim } = await authorize(request)
       if (!runtime.compiledById.has(agentTypeId)) {
         throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN, 'agent type is not available')
       }
+      await runtime.assertAgentAccess?.(agentTypeId, scope, claim, operation)
     },
     async resolveBinding({ request, agentTypeId, sessionId }) {
       const { claim, binding } = await resolve(request, agentTypeId, sessionId)
@@ -230,25 +234,26 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
         sessionId,
         requestId: request.id,
       })
-      const hotResources = binding.scope.pi?.getHotReloadableResources?.()
+      const composedPi = binding.composition.pi
+      const hotResources = composedPi.getHotReloadableResources?.()
       const skillResourceSnapshot = await skillResourceSnapshotPromise
       const pi = hotResources
         ? {
-            ...binding.scope.pi,
+            ...composedPi,
             additionalSkillPaths: [
-              ...(binding.scope.pi?.additionalSkillPaths ?? []),
+              ...(composedPi.additionalSkillPaths ?? []),
               ...(hotResources.additionalSkillPaths ?? []),
             ],
             packages: [
-              ...(binding.scope.pi?.packages ?? []),
+              ...(composedPi.packages ?? []),
               ...(hotResources.packages ?? []),
             ],
             extensionPaths: [
-              ...(binding.scope.pi?.extensionPaths ?? []),
+              ...(composedPi.extensionPaths ?? []),
               ...(hotResources.extensionPaths ?? []),
             ],
           }
-        : binding.scope.pi
+        : composedPi
       const user = (request as typeof request & {
         user?: { id?: unknown; email?: unknown; emailVerified?: unknown } | null
       }).user
@@ -277,7 +282,6 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
         workspace: binding.composition.runtimeBundle.workspace,
         readyTracker: binding.composition.readyTracker,
         pi,
-        additionalSkillPaths: binding.environmentLease.provisioning?.skillPaths,
         skillResourceSnapshot,
         runContext: {
           abortSignal: new AbortController().signal,
@@ -300,12 +304,11 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
       // sibling route. Checking existence first turns an unauthorized request
       // into an agent-existence oracle: unknown vs denied are distinguishable
       // without any right to ask.
-      const { claim } = await authorizeAgentAccess(request, agentTypeId)
+      const { claim, resolved } = await authorizeAgentAccess(request, agentTypeId)
       const spec = runtime.compiledById.get(agentTypeId)
       if (!spec) {
         throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN, 'agent type is not available')
       }
-      const legacy = 'legacyDefault' in spec
       let mcpServers: AgentHostAgentDescription['mcpServers'] = []
       if (mcpGrants) {
         const refs = mcpGrants.getMcpServerRefs(agentTypeId) ?? []
@@ -324,10 +327,29 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
           }))
         }
       }
+      // Address the authored sources against the root THIS request is served
+      // from. Composition cannot do it: the CLI hub and core serve a different
+      // workspace per request off one shared fleet, so a ref fixed at boot is
+      // withheld for every seat there (gh-1189). `authorizeAgentAccess` already
+      // resolved the request's environment scope, so this costs no extra
+      // resolution — only the confinement check itself.
+      const { refs: instructionFiles, withheld } = await resolveAgentInstructionFileRefs({
+        sources: spec.instructionSources,
+        workspaceRoot: resolved.environment.workspaceRoot,
+      })
+      for (const entry of withheld) {
+        // Fails loud, not silent: the overlay gets no instruction row and the
+        // operator gets the stable code — now per request rather than per boot.
+        request.log?.warn?.({
+          agentTypeId,
+          code: entry.code,
+          workspaceScopeId: claim.workspaceScopeId,
+        }, `${entry.message}; its persona instructions are not linkable here`)
+      }
       return {
         agentTypeId,
-        model: legacy ? null : spec.model?.preferred ?? null,
-        instructionFiles: legacy ? [] : spec.instructionFiles ?? [],
+        model: spec.model?.preferred ?? null,
+        instructionFiles,
         mcpServers,
       }
     },
@@ -521,26 +543,9 @@ function body<T>(schema: z.ZodType<T>, request: FastifyRequest, reply: FastifyRe
   return undefined
 }
 
-function statusFor(error: AgentGatewayError): number {
-  if (error.code === AgentGatewayErrorCode.AGENT_SCOPE_DENIED) return 403
-  if (
-    error.code === AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN
-    || error.code === AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND
-  ) return 404
-  if (
-    error.code === AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT
-    || error.code === AgentGatewayErrorCode.AGENT_REQUEST_IN_PROGRESS
-    || error.code === AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN
-    || error.code === AgentGatewayErrorCode.AGENT_RUNTIME_RESTART_REQUIRED
-    || error.code === AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE
-  ) return 409
-  if (error.code === AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED) return 503
-  return 400
-}
-
 function sendError(reply: FastifyReply, error: unknown): FastifyReply {
   if (error instanceof AgentGatewayError) {
-    return reply.code(statusFor(error)).send({ error: error.toJSON() })
+    return reply.code(statusForGatewayError(error.code)).send({ error: error.toJSON() })
   }
   const stable = projectStableServiceError(error)
   if (stable) {
@@ -633,6 +638,13 @@ export function createAgentHostRuntimeCapabilityRoutes(
     await app.register(readyStatusRoutes, {
       path: '/api/v1/agents/:agentTypeId/ready-status',
       authorizeRequest: async (request) => { await resolve(request, agentId(request)) },
+      authorizeEvent: async (request) => {
+        await projection.authorizeRequest({
+          request,
+          agentTypeId: agentId(request),
+          operation: 'stream.event',
+        })
+      },
       getTracker: async (request) => (await resolve(request, agentId(request))).readyTracker,
       registerStreamClose: projection.registerSubscription,
     })

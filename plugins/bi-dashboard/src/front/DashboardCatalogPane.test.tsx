@@ -18,6 +18,12 @@ class IntersectionObserverStub {
   readonly thresholds = [0]
 
   static async trigger() {
+    // The pane rebuilds its observer in a passive effect once a page settles,
+    // so the observer for the *current* page can still be a tick away when
+    // findByText resolves. Waiting for a live observer makes the trigger
+    // deterministic instead of racing that effect — without it this test fails
+    // roughly one run in eight.
+    await waitFor(() => expect(this.instances.some((instance) => instance.active)).toBe(true))
     const observer = [...this.instances].reverse().find((instance) => instance.active)
     await observer?.callback([{ isIntersecting: true } as IntersectionObserverEntry], observer as unknown as IntersectionObserver)
   }

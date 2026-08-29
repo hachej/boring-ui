@@ -50,6 +50,9 @@
       "@hachej/boring-automation/front": [
         "../../plugins/boring-automation/src/front/index.tsx"
       ],
+      "@hachej/boring-automation/front/descriptor": [
+        "../../plugins/boring-automation/src/front/descriptor.tsx"
+      ],
       "@hachej/boring-automation/server": [
         "../../plugins/boring-automation/src/server/index.ts"
       ],
@@ -67,6 +70,9 @@
       ],
       "@hachej/boring-tasks/front": [
         "../../plugins/tasks/src/front/index.tsx"
+      ],
+      "@hachej/boring-tasks/front/descriptor": [
+        "../../plugins/tasks/src/front/descriptor.tsx"
       ],
       "@hachej/boring-tasks/server": [
         "../../plugins/tasks/src/server/index.ts"
@@ -91,6 +97,9 @@
       ],
       "@hachej/boring-ui-plugin-cli": [
         "../plugin-cli/src/index.ts"
+      ],
+      "@hachej/boring-workspace/loading": [
+        "../workspace/src/loading.ts"
       ]
     },
     "ignoreDeprecations": "6.0"

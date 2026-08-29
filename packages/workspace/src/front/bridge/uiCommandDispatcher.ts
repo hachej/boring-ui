@@ -9,7 +9,9 @@ import type { SurfaceShellApi, OpenPanelConfig } from "../chrome/artifact-surfac
 import type { UiCommand } from "./types"
 import { normalizeUiFilesystem, parseFileOpenMode } from "../../shared/types/filesystem"
 import type { SurfaceOpenRequest } from "../../shared/types/surface"
+import { UI_STATE_INVALIDATION_COMMAND } from "../../shared/ui-bridge"
 import { expandToFileSchema } from "./validation"
+import { dispatchUiStateInvalidation } from "./uiStateInvalidation"
 
 /**
  * Browser CustomEvent name dispatched on `window` when a `showNotification`
@@ -30,6 +32,8 @@ export interface DispatchContext {
   isWorkbenchOpen: () => boolean
   /** Toggle the workbench pane open. Must be a no-op when already open. */
   openWorkbench: () => void
+  /** Internal dispatch provenance: server-streamed agent opens persist; local opens preview. */
+  fileDisposition?: "preview" | "persistent"
   /** Open the workbench sources/file-tree pane. Must be a no-op when already open. */
   openWorkbenchSources?: () => void
   /** Close the workbench pane when a command opened it only for an ephemeral task. */
@@ -54,6 +58,7 @@ const KNOWN_KINDS = new Set([
   "showNotification",
   "closePanel",
   "closeWorkbenchLeftPane",
+  UI_STATE_INVALIDATION_COMMAND,
 ])
 
 function strParam(params: Record<string, unknown>, key: string): string | null {
@@ -114,8 +119,8 @@ function runWhenSurfaceReady(
 }
 
 /**
- * Apply a single agent-issued UI command. Pure function: takes a command
- * + a context with the surface handle and returns nothing. Unknown kinds
+ * Apply a single UI command. Pure function: takes a command + a context with
+ * the surface handle and dispatch provenance, then returns nothing. Unknown kinds
  * are silently ignored — the agent and frontend can drift on supported
  * commands without breaking the chat. Known-but-unhandled kinds
  * (navigateToLine, showNotification, closePanel) are accepted-but-no-op
@@ -125,16 +130,25 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
   if (!KNOWN_KINDS.has(cmd.kind)) return
 
   switch (cmd.kind) {
+    case UI_STATE_INVALIDATION_COMMAND:
+      dispatchUiStateInvalidation(cmd.params)
+      return
     case "openFile": {
       const path = strParam(cmd.params, "path")
       if (!path) return
       const wasClosed = !ctx.isWorkbenchOpen()
       if (wasClosed) ctx.openWorkbench()
       const mode = parseFileOpenMode(strParam(cmd.params, "mode"))
+      let dispatched = false
       const run = (surface: SurfaceShellApi) => {
+        if (dispatched) return
+        dispatched = true
         try {
           surface.openFile(path, {
             filesystem: normalizeUiFilesystem(strParam(cmd.params, "filesystem")),
+            // Persistence is dispatch provenance, not wire data: only the
+            // server-streamed agent context opts out of replaceable previews.
+            ...(ctx.fileDisposition === "persistent" ? { preview: false } : {}),
             // mode reaches the file panel params; "view" panels (markdown
             // etc.) render genuinely read-only.
             ...(mode ? { mode } : {}),

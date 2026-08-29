@@ -1,6 +1,13 @@
 import type { AgentSessionEvent } from '@mariozechner/pi-coding-agent'
 import { ErrorCode } from '../../shared/error-codes'
-import { sanitizeToolUiMetadata, type BoringChatMessage, type BoringChatPart, type PiChatEvent } from '../../shared/chat'
+import {
+  chatErrorFromUnknown,
+  isModelContextWindowError,
+  sanitizeToolUiMetadata,
+  type BoringChatMessage,
+  type BoringChatPart,
+  type PiChatEvent,
+} from '../../shared/chat'
 import { buildPiChatHistory } from './piChatHistory'
 import { buildPiChatQueuedFollowUps } from './piChatSnapshot'
 
@@ -209,6 +216,10 @@ export class PiChatEventMapper {
       }
       case 'error': {
         const errorMessage = errorMessageFromAssistantError(assistantEvent)
+        // Pi auto-compacts and retries context overflow after this stream event.
+        // Wait for agent_end so successful recovery stays invisible; a terminal
+        // retry failure is normalized there instead of exposing provider JSON.
+        if (isModelContextWindowError(errorMessage)) return []
         if (this.activeTurnId) this.errorEmittedTurnIds.add(this.activeTurnId)
         return [
           this.event({
@@ -308,16 +319,13 @@ export class PiChatEventMapper {
     if (status !== 'error' || event.willRetry === true) return []
     if (this.errorEmittedTurnIds.has(turnId)) return []
     this.errorEmittedTurnIds.add(turnId)
+    const error = chatErrorFromUnknown(agentEndErrorMessage(event), 'Agent turn failed.')
     return [
       this.event({
         type: 'error',
         turnId,
-        retryable: false,
-        error: {
-          code: ErrorCode.enum.INTERNAL_ERROR,
-          message: agentEndErrorMessage(event),
-          retryable: false,
-        },
+        retryable: error.retryable,
+        error,
       }),
     ]
   }

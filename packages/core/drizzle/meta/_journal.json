@@ -176,6 +176,20 @@
       "when": 1786147200000,
       "tag": "0024_workspace_default_agent_type_id",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1787875200000,
+      "tag": "0025_workspace_default_agent_type_id_required",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1787961600000,
+      "tag": "0026_workspace_agent_seats",
+      "breakpoints": true
     }
   ]
 }

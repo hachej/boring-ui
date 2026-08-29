@@ -10,6 +10,7 @@ import {
   type AuthorizedAgentScope,
   type IdempotentAgentControl,
   type IdempotentAgentSend,
+  type IdempotentInterruptControl,
   type IdempotentQueueClear,
 } from '../../../shared/index'
 import type { PiChatSessionService } from '../../../core/piChatSessionService'
@@ -79,6 +80,11 @@ class FakeGateway implements AgentGateway {
     return { ...summary, title: input.title }
   }
 
+  async setSessionArchived(input: Parameters<AgentGateway['setSessionArchived']>[0]) {
+    this.calls.push({ method: 'setSessionArchived', input })
+    return input.archived ? { ...summary, archived: true } : summary
+  }
+
   async deleteSession(input: Parameters<AgentGateway['deleteSession']>[0]) {
     this.calls.push({ method: 'deleteSession', input })
   }
@@ -104,7 +110,7 @@ class FakeGateway implements AgentGateway {
           ...(command.kind === 'followup' ? { clientSeq: command.clientSeq } : {}),
         }
       },
-      interrupt: async (control: IdempotentAgentControl) => {
+      interrupt: async (control: IdempotentInterruptControl) => {
         this.calls.push({ method: 'interrupt', input: control })
         return { accepted: true, cursor: 10 }
       },
@@ -288,6 +294,21 @@ describe('addressed Agent Host HTTP projection', () => {
       payload: { requestId: 'rename-1', title: 'Renamed' },
     })).json()).toMatchObject({ title: 'Renamed' })
 
+    expect((await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/alpha/sessions/session-1/archive',
+      payload: { requestId: 'archive-1', archived: true },
+    })).json()).toMatchObject({ archived: true })
+    expect((await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/alpha/sessions/session-1/archive',
+      payload: { requestId: 'archive-2', archived: false },
+    })).json().archived).toBeUndefined()
+    expect((await app.inject({
+      method: 'GET',
+      url: '/api/v1/agents/alpha/sessions?archived=active',
+    })).statusCode).toBe(200)
+
     const prompt = await app.inject({
       method: 'POST',
       url: '/api/v1/agents/alpha/sessions/session-1/prompt',
@@ -314,7 +335,7 @@ describe('addressed Agent Host HTTP projection', () => {
     expect((await app.inject({
       method: 'POST',
       url: '/api/v1/agents/alpha/sessions/session-1/interrupt',
-      payload: { requestId: 'interrupt-1' },
+      payload: { requestId: 'interrupt-1', queueAction: 'hold' },
     })).statusCode).toBe(202)
     expect((await app.inject({
       method: 'POST',
@@ -336,7 +357,7 @@ describe('addressed Agent Host HTTP projection', () => {
       { method: 'createSession', input: { scope, agentTypeId: 'alpha', requestId: 'create-1', title: 'Created', resumeSessionId: 'persisted-empty' } },
       { method: 'send', input: expect.objectContaining({ kind: 'prompt', requestId: 'prompt-1', requireIdle: true, attachments: [expect.objectContaining({ path: 'uploads/chart.png' })] }) },
       { method: 'send', input: { kind: 'followup', requestId: 'follow-1', clientNonce: 'nonce-f', content: 'next', displayContent: 'Next', clientSeq: 3 } },
-      { method: 'interrupt', input: { requestId: 'interrupt-1' } },
+      { method: 'interrupt', input: { requestId: 'interrupt-1', queueAction: 'hold' } },
       { method: 'stop', input: { requestId: 'stop-1' } },
       { method: 'clearQueue', input: { requestId: 'clear-1', clientNonce: 'nonce-f', clientSeq: 3 } },
       { method: 'deleteSession', input: { scope, ref, requestId: 'delete-1' } },
@@ -476,6 +497,9 @@ describe('addressed Agent Host HTTP projection', () => {
     await denied.app.close()
 
     for (const [code, status] of [
+      [AgentGatewayErrorCode.AGENT_ENTITLEMENT_REQUIRED, 402],
+      [AgentGatewayErrorCode.AGENT_ACCESS_FORBIDDEN, 403],
+      [AgentGatewayErrorCode.AGENT_ACCESS_POLICY_UNAVAILABLE, 503],
       [AgentGatewayErrorCode.AGENT_SESSION_REPLAY_GAP, 409],
       [AgentGatewayErrorCode.AGENT_SESSION_CURSOR_AHEAD, 409],
       [AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED, 503],

@@ -24,6 +24,8 @@ export {
   PLUGIN_AUTHORING_PROVISIONING_IDS,
   AGENT_SPEC_PLUGIN_PROJECTION_ERROR_CODE,
   AgentSpecPluginProjectionError,
+  CONFIGURED_DEFAULT_AGENT_ERROR_CODE,
+  ConfiguredDefaultAgentError,
   type AgentSpecPluginArtifactProjection,
   type CollectWorkspaceAgentServerPluginsOptions,
   type CreateWorkspaceAgentServerOptions,

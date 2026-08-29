@@ -56,6 +56,7 @@ export default defineConfig({
         "testing-e2e": resolve(__dirname, "src/front/testing/e2e.ts"),
         charts: resolve(__dirname, "src/front/charts/index.tsx"),
         "app-front": resolve(__dirname, "src/app/front/index.ts"),
+        loading: resolve(__dirname, "src/loading.ts"),
       },
       formats: ["es"],
     },

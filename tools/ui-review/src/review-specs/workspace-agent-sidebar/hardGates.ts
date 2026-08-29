@@ -59,7 +59,10 @@ import type { UiReviewBrowserErrors } from "../../core/reviewSpec"
 // per Agent, which is the staged one. Seeding a second chat inside the
 // readiness probe was tried and left the Agent tree with zero rows, so the
 // gap is recorded in `spec.ts` rather than claimed closed here.
-export const AGENT_SIDEBAR_HARD_GATE_CONTRACT = "workspace-agent-sidebar-v14"
+// v15 records whether the bounded discovery reload was used and preserves its
+// first error in every captured state's evidence, so successful recovery can
+// never silently hide a discovery-readiness regression.
+export const AGENT_SIDEBAR_HARD_GATE_CONTRACT = "workspace-agent-sidebar-v15"
 
 const KNOWN_ABORTED_REQUESTS: Array<{
   rationale: string
@@ -77,6 +80,7 @@ const KNOWN_ABORTED_REQUESTS: Array<{
 
 const REQUIRED_GATES = [
   "fixture-ready",
+  "readiness-retry",
   "console-errors",
   "page-errors",
   "request-failures",
@@ -93,6 +97,7 @@ const REQUIRED_GATES = [
 export interface AgentSidebarHardGateSnapshot extends UiReviewBrowserErrors {
   stateId: string
   checkpoint: string
+  readiness: { retryUsed: boolean; firstError: string | null }
   origin: string
   /**
    * The two conditions the sidebar branches on, kept apart on purpose:
@@ -203,6 +208,9 @@ export function evaluateAgentSidebarHardGates(snapshot: AgentSidebarHardGateSnap
     ))
 
   add("fixture-ready", surfaceReady, `agentCount=${state.agentCount};detailOverlayCount=${state.detailOverlayCount}`)
+  add("readiness-retry", true, snapshot.readiness.retryUsed
+    ? `retryUsed=true;firstError=${snapshot.readiness.firstError ?? "unknown discovery failure"}`
+    : "retryUsed=false;firstError=none")
   add("console-errors", snapshot.consoleErrors.length === 0, snapshot.consoleErrors.join("\n") || "none")
   add("page-errors", snapshot.pageErrors.length === 0, snapshot.pageErrors.join("\n") || "none")
   add("request-failures", unexpectedFailures.length === 0, classifiedFailures.map(({ entry, rationale }) => `${entry.errorText} ${entry.url}${rationale ? ` [expected: ${rationale}]` : " [unexpected]"}`).join("\n") || "none observed")

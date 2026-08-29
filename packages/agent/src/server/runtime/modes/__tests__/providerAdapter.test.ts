@@ -4,6 +4,17 @@ import {
   type SandboxProviderV1,
   type SandboxRuntimeModeDescriptorV1,
 } from '@hachej/boring-sandbox/shared'
+const createLocalRuntimeDescriptorCalls = vi.hoisted(() => vi.fn())
+vi.mock('@hachej/boring-sandbox/providers/bwrap', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@hachej/boring-sandbox/providers/bwrap')>()
+  return {
+    ...actual,
+    createLocalRuntimeDescriptor: (...args: Parameters<typeof actual.createLocalRuntimeDescriptor>) => {
+      createLocalRuntimeDescriptorCalls(...args)
+      return actual.createLocalRuntimeDescriptor(...args)
+    },
+  }
+})
 import type { Sandbox, Workspace } from '../../../../shared'
 import { ErrorCode } from '../../../../shared/error-codes'
 import type { RuntimeBundle } from '../../mode'
@@ -83,6 +94,22 @@ function createPairProvider(options: {
     },
   }
 }
+
+test('custom provider owns its runtime layout root without built-in mode casting', async () => {
+  const adapter = createProviderRuntimeModeAdapter({
+    id: 'custom-provider',
+    provider: createPairProvider({ dispose: vi.fn(async () => {}) }),
+    runtimeHost: testRuntimeHostOperations,
+    workspaceFsCapability: 'best-effort',
+    bash: { kind: 'remote' },
+    filesystem: { kind: 'remote-workspace' },
+  })
+
+  expect(adapter.id).toBe('custom-provider')
+  expect(adapter.getRuntimeLayoutRoot({ workspaceRoot: '/host', sessionId: 'session' }))
+    .toBe('/workspace')
+  await adapter.dispose?.()
+})
 
 test('health and disposal stay bound to the pair after RuntimeBundle decoration', async () => {
   const dispose = vi.fn(async () => {})
@@ -178,7 +205,6 @@ test('Agent owns built-in sandbox adapter selection and host operations', async 
   expect(() => createSandboxRuntimeModeAdapter('custom')).toThrow('no built-in adapter')
 })
 
-
 test('the explicit remote-worker V0 seam owns host composition without borrowing the V1 descriptor', () => {
   const adapter = createRemoteWorkerModeAdapter({
     baseUrl: 'http://worker.test',
@@ -258,6 +284,22 @@ test('retries provider creation and tolerates disposal after a factory rejection
   await expect(adapter.create({ workspaceRoot: '/tmp/workspace', sessionId: 'session' }))
     .resolves.toMatchObject({ workspace: { root: '/workspace' } })
   expect(providerFactory).toHaveBeenCalledTimes(2)
+})
+
+test('local adapter forwards bwrap sandbox options to its provider', async () => {
+  createLocalRuntimeDescriptorCalls.mockClear()
+  const bwrap = { sandbox: { namespaceProfile: 'docker' as const } }
+
+  const adapter = createSandboxRuntimeModeAdapter('local', { bwrap })
+
+  expect(createLocalRuntimeDescriptorCalls).toHaveBeenCalledWith({
+    sandbox: {
+      namespaceProfile: 'docker',
+      network: 'shared',
+      dropAllCapabilities: true,
+    },
+  })
+  await adapter.dispose?.()
 })
 
 test('cached runtime eviction awaits asynchronous provider invalidation', async () => {

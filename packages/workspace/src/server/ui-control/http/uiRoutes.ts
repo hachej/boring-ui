@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { z, type ZodSchema } from "zod";
-import type { UiBridge, UiCommand } from "../../../shared/ui-bridge";
+import type { SequencedUiCommand, UiBridge, UiCommand } from "../../../shared/ui-bridge";
+import { updateUiState } from "../../bridge/updateUiState";
 import { resolveUrlPaneTarget, URL_PANE_PANEL_ID, type UrlPanePolicy } from "../../../shared/urlPane";
 import { resolveUrlPanePolicyFromEnv } from "../urlPanePolicy";
 import { createPaneRenderStatusStore, type PaneRenderStatusStore } from "../panelStatus/paneRenderStatusStore";
@@ -61,6 +62,30 @@ export interface UiRoutesOptions {
   urlPanePolicy?: UrlPanePolicy;
 }
 
+type UiCommandStreamSink = {
+  isOpen(): boolean;
+  onReady(): void;
+  onCommand(command: SequencedUiCommand): boolean;
+};
+
+export async function subscribeUiCommandStream(
+  bridge: UiBridge,
+  sink: UiCommandStreamSink,
+): Promise<() => void> {
+  if (!sink.isOpen()) return () => undefined;
+  sink.onReady();
+  if (!sink.isOpen()) return () => undefined;
+
+  // The canonical bridge subscribes before synchronously replaying queued
+  // commands, so rejected writes retain their original sequence identity.
+  const unsubscribe = bridge.subscribeCommands((command) => (
+    sink.isOpen() ? sink.onCommand(command) : false
+  ));
+  if (sink.isOpen()) return unsubscribe;
+  unsubscribe();
+  return () => undefined;
+}
+
 /**
  * The URL pane's origin rule is enforced in the front, which is the only thing
  * that renders an iframe. Rejecting the command here as well is defence in
@@ -117,16 +142,29 @@ export function uiRoutes(
       await touchUi(request);
       const body = request.body as z.infer<typeof setStateBodySchema>;
       const bridge = await resolveBridge(request);
-      const current = (await bridge.getState()) ?? {};
       const preserveStateKeys = opts.getPreserveStateKeys
         ? await opts.getPreserveStateKeys(request)
         : opts.preserveStateKeys ?? [];
-      const preserved = Object.fromEntries(
-        preserveStateKeys
-          .filter((key) => !(key in body.state) && key in current)
-          .map((key) => [key, current[key]]),
-      );
-      await bridge.setState({ ...body.state, ...preserved });
+      await updateUiState(bridge, (current) => {
+        const next = { ...body.state };
+        // Preserved keys are server-owned. Two callers reach this route and they
+        // need opposite treatment:
+        //
+        //  - A browser view-state snapshot (the front always stamps `causedBy`)
+        //    echoes back whatever it last read. Letting it write these keys means
+        //    a snapshot taken before a server publish silently reverts it, so the
+        //    stored value always wins over the body.
+        //  - A publisher writing the slot directly sends no `causedBy`. That is
+        //    how server-published state is seeded over HTTP; dropping those
+        //    writes loses the publish entirely.
+        const isBrowserSnapshot = body.causedBy !== undefined;
+        for (const key of preserveStateKeys) {
+          if (!isBrowserSnapshot && key in body.state) continue;
+          delete next[key];
+          if (Object.prototype.hasOwnProperty.call(current, key)) next[key] = current[key];
+        }
+        return next;
+      });
       return reply.code(204).send();
     },
   );
@@ -167,26 +205,7 @@ export function uiRoutes(
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
     });
-    reply.raw.write(
-      `event: init\ndata: ${JSON.stringify({ v: UI_BRIDGE_PROTOCOL_VERSION })}\n\n`,
-    );
-
-    // Drain any commands queued BEFORE this subscriber connected. Without
-    // this, a command posted in the gap between page-reload and EventSource-
-    // reconnect is silently dropped: postCommand broadcasts to the (empty)
-    // subscriber set, the message lands in pendingCommands, and the next
-    // subscriber only sees future broadcasts. Tests that bootClean → POST
-    // openPanel hit this race when Vite is cold.
-    if (bridge.drainCommands) {
-      const queued = await bridge.drainCommands();
-      for (const cmd of queued) {
-        reply.raw.write(
-          `event: command\ndata: ${JSON.stringify(encodeCommand(cmd))}\n\n`,
-        );
-      }
-    }
-
-    const unsub = bridge.subscribeCommands((cmd) => {
+    const writeCommand = (cmd: SequencedUiCommand): boolean => {
       if (reply.raw.destroyed || reply.raw.writableEnded) return false;
       try {
         reply.raw.write(`event: command\ndata: ${JSON.stringify(encodeCommand(cmd))}\n\n`);
@@ -194,8 +213,37 @@ export function uiRoutes(
       } catch {
         return false;
       }
+    };
+    let unsub: () => void = () => undefined;
+    let heartbeat: ReturnType<typeof setInterval> | null = null;
+    let cleanedUp = false;
+    const cleanup = () => {
+      if (cleanedUp) return;
+      cleanedUp = true;
+      if (heartbeat) clearInterval(heartbeat);
+      unsub();
+    };
+    request.raw.once("close", cleanup);
+    reply.raw.once("close", cleanup);
+
+    unsub = await subscribeUiCommandStream(bridge, {
+      isOpen: () => !cleanedUp && !reply.raw.destroyed && !reply.raw.writableEnded,
+      onReady: () => {
+        // Establish the connection-ready handshake before subscribeCommands
+        // synchronously replays queued commands.
+        reply.raw.write(
+          `event: init\ndata: ${JSON.stringify({ v: UI_BRIDGE_PROTOCOL_VERSION })}\n\n`,
+        );
+      },
+      onCommand: writeCommand,
     });
-    const heartbeat = setInterval(() => {
+    if (cleanedUp || reply.raw.destroyed || reply.raw.writableEnded) {
+      unsub();
+      reply.hijack();
+      return;
+    }
+
+    heartbeat = setInterval(() => {
       if (reply.raw.writableEnded) return;
       void touchUi(request);
       reply.raw.write(
@@ -203,19 +251,9 @@ export function uiRoutes(
       );
     }, HEARTBEAT_MS);
 
-    let cleanedUp = false;
-    const cleanup = () => {
-      if (cleanedUp) return;
-      cleanedUp = true;
-      clearInterval(heartbeat);
-      unsub();
-    };
     // `reply.raw` is the authoritative lifetime of this long-lived response.
     // Behind a dev/reverse proxy the request body can remain open even after
     // the downstream EventSource closes, stranding upstream SSE connections.
-    request.raw.once("close", cleanup);
-    reply.raw.once("close", cleanup);
-
     reply.hijack();
   });
 
