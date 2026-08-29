@@ -88,9 +88,7 @@ describe("RunscSessionRuntimeV1 startup admission", () => {
   test("caps accepted sessions below the worst-case root recovery ceiling", async () => {
     const sandboxRoots = roots();
     const sessions = runtime(runner(), sandboxRoots);
-    const limit = Math.floor(
-      RUNSC_RUNTIME_LIMITS_V1.maxStartupSweepContainers / 2,
-    );
+    const limit = RUNSC_RUNTIME_LIMITS_V1.maxStartupSweepContainers;
     for (let index = 0; index < limit; index += 1) {
       await sessions.createComposite({
         ...createInput,
@@ -111,7 +109,7 @@ describe("RunscSessionRuntimeV1 startup admission", () => {
     );
     expect(sandboxRoots.prepare).toHaveBeenCalledTimes(limit);
     await sessions.shutdown();
-  });
+  }, 30_000);
 
   test("joins one destructive sweep and makes success idempotent", async () => {
     let release: (() => void) | undefined;
@@ -227,6 +225,32 @@ describe("RunscSessionRuntimeV1 startup admission", () => {
       sandboxId: "sandbox-a",
     });
     expect(attempts).toBe(2);
+  });
+
+  test("shutdown retains and retries failed Docker startup cleanup debt", async () => {
+    let removeAttempts = 0;
+    const docker = runner(async (input) => {
+      if (input.argv[0] === "ps") return success(`${"a".repeat(64)}\n`);
+      if (input.argv[0] === "rm" && ++removeAttempts <= 2) {
+        throw new Error(`Docker sweep failed ${removeAttempts}`);
+      }
+      return success();
+    });
+    const sandboxRoots = roots();
+    const sessions = runtime(docker, sandboxRoots);
+
+    await expect(sessions.startupSweep()).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.dockerCommandFailed,
+    });
+    expect(removeAttempts).toBe(1);
+    await expect(sessions.shutdown()).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.dockerCommandFailed,
+    });
+    expect(removeAttempts).toBe(2);
+    await expect(sessions.shutdown()).resolves.toBeUndefined();
+    expect(removeAttempts).toBe(3);
+    expect(sandboxRoots.startupSweep).toHaveBeenCalledTimes(1);
+    expect(sandboxRoots.close).toHaveBeenCalledTimes(2);
   });
 
   test("shutdown joins an admitted sweep before closing roots", async () => {

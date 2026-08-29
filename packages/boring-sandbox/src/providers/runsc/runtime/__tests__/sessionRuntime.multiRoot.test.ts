@@ -140,11 +140,14 @@ const createInput = {
   sandboxId: "sandbox-a",
   clientLeaseId: "lease-a",
   workspaceId,
+  image,
+};
+const legacyCreateInput = {
+  ...createInput,
   workspaceMountSource: trustedWorkspaceMountSource(
     "/srv/boring/workspaces",
     workspaceId,
   ),
-  image,
 };
 
 const mkdirRequest = { op: "mkdir" as const, path: "dir", recursive: true };
@@ -170,7 +173,7 @@ describe("runsc multi-root and legacy compatibility", () => {
   test("exposes distinct legacy and qualified composite create gates", async () => {
     const roots = multiSandboxRoots();
     const dormant = runtime({ roots, admitted: false });
-    expect(() => dormant.create(createInput)).toThrowError(
+    expect(() => dormant.create(legacyCreateInput)).toThrowError(
       expect.objectContaining({
         code: REMOTE_WORKER_ERROR_CODES_V1.requestInvalid,
       }),
@@ -289,7 +292,7 @@ describe("runsc multi-root and legacy compatibility", () => {
     const sessions = runtime({ quota: { apply, check } });
     const legacyWorkspaceId = ` ${workspaceId.toUpperCase()} `;
     const legacyInput = {
-      ...createInput,
+      ...legacyCreateInput,
       workspaceId: legacyWorkspaceId,
       workspaceMountSource: trustedWorkspaceMountSource(
         "/srv/boring/workspaces",
@@ -314,10 +317,10 @@ describe("runsc multi-root and legacy compatibility", () => {
 
   test("preserves legacy workspace, sandbox, and client-lease collision behavior", async () => {
     const sessions = runtime();
-    await sessions.create(createInput);
+    await sessions.create(legacyCreateInput);
     expect(() =>
       sessions.create({
-        ...createInput,
+        ...legacyCreateInput,
         sandboxId: "sandbox-b",
         clientLeaseId: "lease-b",
       }),
@@ -328,7 +331,7 @@ describe("runsc multi-root and legacy compatibility", () => {
     );
     expect(() =>
       sessions.create({
-        ...createInput,
+        ...legacyCreateInput,
         workspaceId: secondWorkspaceId,
         workspaceMountSource: trustedWorkspaceMountSource(
           "/srv/boring/workspaces",
@@ -353,10 +356,10 @@ describe("runsc multi-root and legacy compatibility", () => {
         check: vi.fn(async () => undefined),
       },
     });
-    const first = sessions.create(createInput);
+    const first = sessions.create(legacyCreateInput);
 
     expect(() =>
-      sessions.create({ ...createInput, sandboxId: "sandbox-b" }),
+      sessions.create({ ...legacyCreateInput, sandboxId: "sandbox-b" }),
     ).toThrowError(
       expect.objectContaining({
         code: REMOTE_WORKER_ERROR_CODES_V1.idempotencyConflict,
@@ -404,7 +407,7 @@ describe("runsc multi-root and legacy compatibility", () => {
       check: vi.fn(async () => undefined),
     };
     const sessions = runtime({ runner: docker, quota });
-    const creating = sessions.create(createInput);
+    const creating = sessions.create(legacyCreateInput);
     await vi.waitFor(() => expect(quota.apply).toHaveBeenCalledTimes(1));
     let closed = false;
     const closing = sessions.shutdown().then(() => {
@@ -570,11 +573,11 @@ describe("runsc multi-root and legacy compatibility", () => {
         check: vi.fn(async () => undefined),
       },
     });
-    const first = sessions.create(createInput);
-    const replay = sessions.create(createInput);
+    const first = sessions.create(legacyCreateInput);
+    const replay = sessions.create(legacyCreateInput);
     expect(() =>
       sessions.create({
-        ...createInput,
+        ...legacyCreateInput,
         clientLeaseId: "lease-b",
         workspaceId: secondWorkspaceId,
       }),
@@ -664,10 +667,13 @@ describe("runsc multi-root and legacy compatibility", () => {
       ...createInput,
       createDigest: forged,
     } as never);
+    const ignoredMountReplay = sessions.createComposite({
+      ...createInput,
+      workspaceMountSource: "/forged/root",
+    } as never);
     for (const changed of [
       { image: `${image}-changed` },
       { idleTtlMs: 2_000 },
-      { workspaceMountSource: "/forged/root" as TrustedWorkspaceMountSource },
       { sandboxId: "sandbox-b" },
     ]) {
       expect(() =>
@@ -695,7 +701,9 @@ describe("runsc multi-root and legacy compatibility", () => {
     );
     await vi.waitFor(() => expect(roots.prepare).toHaveBeenCalledTimes(1));
     releaseQuota?.();
-    await first;
+    await expect(Promise.all([first, ignoredMountReplay])).resolves.toHaveLength(
+      2,
+    );
     await sessions.dispose("sandbox-a", workspaceId);
   });
 
@@ -786,6 +794,98 @@ describe("runsc multi-root and legacy compatibility", () => {
       const calls = docker.run.mock.calls.length;
       await Promise.resolve();
       expect(docker.run).toHaveBeenCalledTimes(calls);
+    },
+  );
+
+  test.each([
+    { kind: "exec", hardExpiry: false },
+    { kind: "fs", hardExpiry: false },
+    { kind: "exec", hardExpiry: true },
+    { kind: "fs", hardExpiry: true },
+  ] as const)(
+    "pins an active $kind through $hardExpiry hard-expiry mode",
+    async ({ kind, hardExpiry }) => {
+      vi.useFakeTimers();
+      try {
+        let nowMs = 1_000;
+        let release: (() => void) | undefined;
+        const gate = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const roots = multiSandboxRoots();
+        const docker = fakeRunner();
+        const baseRun = docker.run.getMockImplementation() as (
+          input: DockerCommandInput,
+        ) => Promise<DockerCommandResult>;
+        let block = false;
+        docker.run.mockImplementation(async (input) => {
+          if (
+            block &&
+            input.argv[0] === "exec" &&
+            input.argv.at(-1) === (kind === "fs" ? "workspace" : "invoke")
+          ) {
+            await gate;
+          }
+          return await baseRun(input);
+        });
+        const sessions = runtime({
+          roots,
+          admitted: true,
+          runner: docker,
+          now: () => nowMs,
+        });
+        await sessions.createComposite({
+          ...createInput,
+          idleTtlMs: hardExpiry ? 500 : 100,
+          hardLifetimeMs: hardExpiry ? 100 : 500,
+        });
+        block = true;
+        const operation =
+          kind === "fs"
+            ? sessions.fs("sandbox-a", workspaceId, mkdirRequest)
+            : sessions.exec("sandbox-a", workspaceId, {
+                invocationId: "invocation-expiry",
+                command: "printf ok",
+                timeoutMs: 30_000,
+                maxOutputBytes: 1_024,
+              });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(
+          docker.run.mock.calls.some(
+            ([input]) =>
+              input.argv[0] === "exec" &&
+              input.argv.at(-1) === (kind === "fs" ? "workspace" : "invoke"),
+          ),
+        ).toBe(true);
+        const removalsBeforeExpiry = docker.run.mock.calls.filter(
+          ([input]) => input.argv[0] === "rm",
+        ).length;
+
+        nowMs = 1_100;
+        await vi.advanceTimersByTimeAsync(100);
+        expect(
+          docker.run.mock.calls.filter(([input]) => input.argv[0] === "rm"),
+        ).toHaveLength(removalsBeforeExpiry);
+        expect(roots.dispose).not.toHaveBeenCalled();
+
+        release?.();
+        await operation;
+        if (hardExpiry) {
+          expect(roots.dispose).toHaveBeenCalledTimes(1);
+          await expect(
+            sessions.renew("sandbox-a", workspaceId, 100),
+          ).rejects.toMatchObject({
+            code: REMOTE_WORKER_ERROR_CODES_V1.sandboxNotFound,
+          });
+        } else {
+          await expect(
+            sessions.renew("sandbox-a", workspaceId, 100),
+          ).resolves.toMatchObject({ sandboxId: "sandbox-a" });
+          await sessions.dispose("sandbox-a", workspaceId);
+        }
+      } finally {
+        vi.useRealTimers();
+      }
     },
   );
 

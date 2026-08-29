@@ -1,4 +1,5 @@
 import {
+  chmod,
   lstat,
   mkdir,
   readFile,
@@ -16,7 +17,10 @@ import { describe, expect, test, vi } from "vitest";
 
 import { REMOTE_WORKER_ERROR_CODES_V1 } from "../../../../shared/remoteWorkerProtocolV1";
 import { RUNSC_RUNTIME_LIMITS_V1 } from "../limits";
-import { FixedProjectQuotaManagerV1 } from "../quota";
+import {
+  FixedProjectQuotaManagerV1,
+  RUNSC_QUOTA_LOCK_NAME,
+} from "../quota";
 import { RunscSandboxRootLifecycleV1 } from "../sandboxRootLifecycle";
 
 const workspaceA = "00000000-0000-4000-8000-000000000001";
@@ -337,6 +341,89 @@ describe("runsc per-sandbox root lifecycle", () => {
     ).rejects.toMatchObject({ code: "REMOTE_WORKER_INCOMPLETE_CLEANUP" });
     await expect(pendingRoots.retryPendingCleanup()).resolves.toBe(1);
   });
+
+  test("serializes retry and sweep behind an in-flight prepare", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "boring-runsc-roots-"));
+    const root = join(parent, "sandboxes");
+    await mkdir(root, { mode: 0o750 });
+    let releaseOwnership: (() => void) | undefined;
+    const ownershipGate = new Promise<void>((resolve) => {
+      releaseOwnership = resolve;
+    });
+    const roots = new RunscSandboxRootLifecycleV1({
+      sandboxRoot: root,
+      prepareOwnership: async () => await ownershipGate,
+      trustedOwnerUid: process.getuid?.() ?? 0,
+    });
+    const quota = {
+      workspaceRoot: root,
+      apply: vi.fn(async () => undefined),
+      check: vi.fn(async () => undefined),
+    };
+
+    const preparing = roots.prepare(workspaceA, "sandbox-a", quota);
+    await vi.waitFor(async () =>
+      expect(lstat(join(root, workspaceA, "sandbox-a"))).resolves.toMatchObject(
+        {},
+      ),
+    );
+    let retrySettled = false;
+    const retry = roots.retryPendingCleanup().then((count) => {
+      retrySettled = true;
+      return count;
+    });
+    let sweepSettled = false;
+    const sweep = roots.startupSweep().then((count) => {
+      sweepSettled = true;
+      return count;
+    });
+    await Promise.resolve();
+    expect(retrySettled).toBe(false);
+    expect(sweepSettled).toBe(false);
+    await expect(lstat(join(root, workspaceA, "sandbox-a"))).resolves.toMatchObject(
+      {},
+    );
+
+    releaseOwnership?.();
+    const source = await preparing;
+    await expect(retry).resolves.toBe(0);
+    await expect(sweep).resolves.toBe(1);
+    await expect(lstat(String(source))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  test("excludes the fixed quota lock and admits exactly sweepable distinct roots", async () => {
+    const { root, roots, quota } = await lifecycle();
+    const lockPath = join(root, RUNSC_QUOTA_LOCK_NAME);
+    await writeFile(lockPath, "lock");
+    await chmod(lockPath, 0o600);
+    const rootCount = Math.floor(
+      RUNSC_RUNTIME_LIMITS_V1.maxStartupSweepContainers / 2,
+    );
+    for (let index = 1; index <= rootCount; index += 1) {
+      const suffix = index.toString(16).padStart(12, "0");
+      await roots.prepare(
+        `00000000-0000-4000-8000-${suffix}`,
+        `sandbox-${index}`,
+        quota,
+      );
+    }
+    expect(roots.ownedRecoveryEntryCount).toBe(
+      RUNSC_RUNTIME_LIMITS_V1.maxStartupSweepContainers,
+    );
+    await expect(
+      roots.prepare(workspaceA, "over-capacity", quota),
+    ).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.pathUnsafe,
+    });
+
+    const restarted = new RunscSandboxRootLifecycleV1({
+      sandboxRoot: root,
+      prepareOwnership: async () => undefined,
+      trustedOwnerUid: process.getuid?.() ?? 0,
+    });
+    await expect(restarted.startupSweep()).resolves.toBe(rootCount);
+    await expect(lstat(lockPath)).resolves.toMatchObject({});
+  }, 30_000);
 
   test("bounded startup sweep removes owned leaves beneath the dedicated root", async () => {
     const { roots, quota } = await lifecycle();

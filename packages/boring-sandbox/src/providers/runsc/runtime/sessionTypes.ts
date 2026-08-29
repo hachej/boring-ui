@@ -44,7 +44,6 @@ export interface CreateCompositeRunscSessionInputV1 {
   readonly sandboxId?: string;
   readonly clientLeaseId: string;
   readonly workspaceId: string;
-  readonly workspaceMountSource?: TrustedWorkspaceMountSource;
   readonly image: string;
   readonly idleTtlMs?: number;
   readonly hardLifetimeMs?: number;

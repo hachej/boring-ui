@@ -74,7 +74,9 @@ export class RunscSandboxRootLifecycleV1 {
   private trustedRootIdentity?: RootIdentity;
   private readonly readyWorkspaces = new Set<string>();
   private readonly workspaceInflight = new Map<string, Promise<void>>();
+  /** Every root this process owns: preparing, active, or retained for cleanup. */
   private readonly pendingRoots = new Map<string, PendingRoot>();
+  private ownershipOperation: Promise<unknown> = Promise.resolve();
   constructor(private readonly options: RunscSandboxRootLifecycleOptionsV1) {
     const normalized = resolve(options.sandboxRoot);
     if (
@@ -104,7 +106,26 @@ export class RunscSandboxRootLifecycleV1 {
     return count;
   }
 
-  async prepare(
+  /** Exact leaf + distinct workspace-parent entries a restart must enumerate. */
+  get ownedRecoveryEntryCount(): number {
+    const workspaces = new Set<string>();
+    for (const pending of this.pendingRoots.values()) {
+      workspaces.add(pending.workspace);
+    }
+    return this.pendingRoots.size + workspaces.size;
+  }
+
+  prepare(
+    workspaceId: string,
+    sandboxId: string,
+    quota: QuotaManager,
+  ): Promise<TrustedWorkspaceMountSource> {
+    return this.withOwnershipLock(
+      async () => await this.prepareOnce(workspaceId, sandboxId, quota),
+    );
+  }
+
+  private async prepareOnce(
     workspaceId: string,
     sandboxId: string,
     quota: QuotaManager,
@@ -122,9 +143,13 @@ export class RunscSandboxRootLifecycleV1 {
       workspace,
       sandbox,
     );
+    const workspaceAlreadyOwned = [...this.pendingRoots.values()].some(
+      (pending) => pending.workspace === workspace,
+    );
+    const additionalRecoveryEntries = workspaceAlreadyOwned ? 1 : 2;
     if (
       this.pendingRoots.has(sandboxRoot) ||
-      this.pendingRoots.size >=
+      this.ownedRecoveryEntryCount + additionalRecoveryEntries >
         RUNSC_RUNTIME_LIMITS_V1.maxStartupSweepContainers
     ) {
       invalidRoot("remote-worker sandbox root cleanup capacity is exhausted");
@@ -150,7 +175,6 @@ export class RunscSandboxRootLifecycleV1 {
       await this.assertTrustedRoot();
       await this.assertExactDirectory(workspaceRoot, true);
       await this.assertExactDirectory(sandboxRoot, false);
-      this.pendingRoots.delete(sandboxRoot);
       return source;
     } catch (error) {
       if (!workspaceReady) {
@@ -169,11 +193,15 @@ export class RunscSandboxRootLifecycleV1 {
       invalidRoot("remote-worker sandbox root could not be prepared", error);
     }
   }
-  async retryPendingCleanup(): Promise<number> {
+  retryPendingCleanup(): Promise<number> {
+    return this.withOwnershipLock(async () => await this.retryPendingCleanupOnce());
+  }
+
+  private async retryPendingCleanupOnce(): Promise<number> {
     let cleaned = 0;
     let firstFailure: unknown;
     for (const pending of [...this.pendingRoots.values()]) {
-      if (!pending.created && !pending.workspaceCreated) continue;
+      if (!pending.retainedForCleanup) continue;
       try {
         await this.cleanupPendingRoot(pending);
         cleaned += 1;
@@ -193,21 +221,26 @@ export class RunscSandboxRootLifecycleV1 {
   async close(): Promise<void> {
     await this.retryPendingCleanup();
   }
-  async dispose(source: TrustedWorkspaceMountSource): Promise<void> {
+  dispose(source: TrustedWorkspaceMountSource): Promise<void> {
+    return this.withOwnershipLock(async () => await this.disposeOnce(source));
+  }
+
+  private async disposeOnce(source: TrustedWorkspaceMountSource): Promise<void> {
     const sandboxRoot = this.assertOwnedSource(source);
     const workspaceRoot = dirname(sandboxRoot);
     const workspace = workspaceRoot.slice(this.sandboxRoot.length + 1);
+    const pending = this.pendingRoots.get(sandboxRoot) ?? {
+      workspace,
+      workspaceRoot,
+      sandboxRoot,
+      workspaceCreated: true,
+      created: true,
+      retainedForCleanup: true,
+    };
+    pending.retainedForCleanup = true;
+    this.pendingRoots.set(sandboxRoot, pending);
     try {
-      await this.assertTrustedRoot();
-      try {
-        await this.assertExactDirectory(workspaceRoot, true);
-        await this.assertExactDirectory(sandboxRoot, false);
-        await this.removeSandboxRoot(sandboxRoot);
-      } catch (error) {
-        if (!errorCode(error, "ENOENT")) throw error;
-      }
-      await this.assertTrustedRoot();
-      await this.removeEmptyWorkspace(workspace, workspaceRoot);
+      await this.cleanupPendingRoot(pending);
     } catch (error) {
       throw runscRuntimeError(
         REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
@@ -216,19 +249,23 @@ export class RunscSandboxRootLifecycleV1 {
       );
     }
   }
-  async startupSweep(): Promise<number> {
-    const retried = await this.retryPendingCleanup();
+  startupSweep(): Promise<number> {
+    return this.withOwnershipLock(async () => await this.startupSweepOnce());
+  }
+
+  private async startupSweepOnce(): Promise<number> {
+    const retried = await this.retryPendingCleanupOnce();
     await this.assertTrustedRoot();
     const entries = await readdir(this.sandboxRoot, { withFileTypes: true });
     let discovered = 0;
     const roots: TrustedWorkspaceMountSource[] = [];
     for (const workspace of entries) {
-      if (++discovered > RUNSC_RUNTIME_LIMITS_V1.maxStartupSweepContainers) {
-        invalidRoot("remote-worker startup root cleanup exceeds its bound");
-      }
       if (workspace.name === RUNSC_QUOTA_LOCK_NAME) {
         await this.assertQuotaMetadata(join(this.sandboxRoot, workspace.name));
         continue;
+      }
+      if (++discovered > RUNSC_RUNTIME_LIMITS_V1.maxStartupSweepContainers) {
+        invalidRoot("remote-worker startup root cleanup exceeds its bound");
       }
       if (workspace.isSymbolicLink() || !workspace.isDirectory()) {
         invalidRoot("remote-worker sandbox root contains an unowned entry");
@@ -256,7 +293,7 @@ export class RunscSandboxRootLifecycleV1 {
       }
       if (sandboxes.length === 0) await rmdir(workspaceRoot);
     }
-    for (const root of roots) await this.dispose(root);
+    for (const root of roots) await this.disposeOnce(root);
     return retried + roots.length;
   }
   private async cleanupFailedPrepare(pending: PendingRoot): Promise<void> {
@@ -289,9 +326,7 @@ export class RunscSandboxRootLifecycleV1 {
       } catch (error) {
         if (!errorCode(error, "ENOENT")) throw error;
       }
-    if (pending.workspaceCreated) {
-      await this.removeEmptyWorkspace(pending.workspace, pending.workspaceRoot);
-    }
+    await this.removeEmptyWorkspace(pending.workspace, pending.workspaceRoot);
     this.pendingRoots.delete(pending.sandboxRoot);
   }
   private async removeSandboxRoot(path: string): Promise<void> {
@@ -352,6 +387,15 @@ export class RunscSandboxRootLifecycleV1 {
         throw error;
     }
   }
+  private withOwnershipLock<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.ownershipOperation.then(operation, operation);
+    this.ownershipOperation = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+
   private async assertTrustedRoot(): Promise<void> {
     try {
       const stat = await lstat(this.sandboxRoot, { bigint: true });

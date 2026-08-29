@@ -85,6 +85,7 @@ export class RunscSessionRuntimeV1 {
   private closed = false;
   private shutdownComplete = false;
   private startupComplete = false;
+  private startupCleanupPending = false;
   private shutdownOperation?: Promise<void>;
   private startupOperation?: Promise<void>;
   constructor(private readonly options: RunscSessionRuntimeOptionsV1) {
@@ -127,6 +128,10 @@ export class RunscSessionRuntimeV1 {
       try {
         await this.startupSweepOnce();
         this.startupComplete = true;
+        this.startupCleanupPending = false;
+      } catch (error) {
+        this.startupCleanupPending = true;
+        throw error;
       } finally {
         this.startupOperation = undefined;
         this.state.endSweep();
@@ -192,8 +197,6 @@ export class RunscSessionRuntimeV1 {
       multiRoot,
       this.maxConcurrentCreates,
       RUNSC_RUNTIME_LIMITS_V1.maxStartupSweepContainers,
-      multiRoot ? 2 : 1,
-      () => this.options.sandboxRoots?.pendingCleanupCount ?? 0,
       () => safeOpaqueId(this.sandboxIdFactory(), "sandbox id"),
       (normalized, digest) =>
         this.track(
@@ -237,7 +240,9 @@ export class RunscSessionRuntimeV1 {
       await this.options.quota.apply(input.workspaceId);
       if (this.closed) this.unavailable();
       await this.options.quota.check(input.workspaceId);
-      workspaceMountSource = input.workspaceMountSource;
+      workspaceMountSource = (
+        input as CreateRunscSessionInputV1
+      ).workspaceMountSource;
     }
     if (!workspaceMountSource) {
       throw runscRuntimeError(
@@ -343,7 +348,9 @@ export class RunscSessionRuntimeV1 {
         "remote-worker exec concurrency is exhausted",
       );
     }
-    await this.requireInvocationCapacity(record);
+    if (record.invocations.size >= MAX_INVOCATION_RECORDS) {
+      await this.requireInvocationCapacity(record);
+    }
     const invocation: InvocationRecordV1 = { digest, state: "running" };
     record.invocations.set(request.invocationId, invocation);
     record.activeExec = true;
@@ -421,9 +428,7 @@ export class RunscSessionRuntimeV1 {
       }
       record.activeExec = false;
       this.activeExecs -= 1;
-      if (this.state.sessions.get(this.state.sessionKey(record)) === record) {
-        this.touch(record);
-      }
+      await this.settleOperationExpiry(record);
     }
   }
   private async resolveInvocationCredentials(
@@ -521,6 +526,7 @@ export class RunscSessionRuntimeV1 {
       return result;
     } finally {
       record.activeFs = false;
+      await this.settleOperationExpiry(record);
     }
   }
   async renew(
@@ -592,10 +598,19 @@ export class RunscSessionRuntimeV1 {
       ),
     );
     let rootFailure: unknown;
+    if (this.startupCleanupPending) {
+      try {
+        await this.startupSweepOnce();
+        this.startupCleanupPending = false;
+        this.startupComplete = true;
+      } catch (error) {
+        rootFailure = error;
+      }
+    }
     try {
       await this.options.sandboxRoots?.close();
     } catch (error) {
-      rootFailure = error;
+      rootFailure ??= error;
     }
     const failure = cleanup.find(
       (result): result is PromiseRejectedResult => result.status === "rejected",
@@ -773,12 +788,17 @@ export class RunscSessionRuntimeV1 {
     }
     const nowMs = this.now();
     if (record.hardExpiresAtMs <= nowMs || record.leaseExpiresAtMs <= nowMs) {
-      const hard = record.hardExpiresAtMs <= nowMs;
-      await this.retire(record, hard ? "hard-expiry" : "idle");
-      throw runscRuntimeError(
-        REMOTE_WORKER_ERROR_CODES_V1.sandboxExpired,
-        "remote-worker sandbox expired",
-      );
+      const reason: "idle" | "hard-expiry" =
+        record.hardExpiresAtMs <= nowMs ? "hard-expiry" : "idle";
+      if (record.activeExec || record.activeFs) {
+        record.expiryPending = reason;
+      } else {
+        await this.retire(record, reason);
+        throw runscRuntimeError(
+          REMOTE_WORKER_ERROR_CODES_V1.sandboxExpired,
+          "remote-worker sandbox expired",
+        );
+      }
     }
     return record;
   }
@@ -788,8 +808,12 @@ export class RunscSessionRuntimeV1 {
     const deadline = Math.min(record.leaseExpiresAtMs, record.hardExpiresAtMs);
     record.timer = setTimeout(
       () => {
-        const reason: RunscSessionRetirementReasonV1 =
+        const reason: "idle" | "hard-expiry" =
           record.hardExpiresAtMs <= this.now() ? "hard-expiry" : "idle";
+        if (record.activeExec || record.activeFs) {
+          record.expiryPending = reason;
+          return;
+        }
         void this.retire(record, reason).catch(() => undefined);
       },
       Math.max(0, deadline - this.now()),
@@ -797,12 +821,26 @@ export class RunscSessionRuntimeV1 {
   }
   private touch(record: SessionRecordV1): void {
     if (record.retirement) return;
+    record.expiryPending = undefined;
     record.leaseExpiresAtMs = Math.min(
       this.now() + record.idleTtlMs,
       record.hardExpiresAtMs,
     );
     this.armTimer(record);
   }
+  private async settleOperationExpiry(record: SessionRecordV1): Promise<void> {
+    if (this.state.sessions.get(this.state.sessionKey(record)) !== record) return;
+    if (record.retirement) return;
+    if (
+      record.expiryPending === "hard-expiry" ||
+      record.hardExpiresAtMs <= this.now()
+    ) {
+      await this.retire(record, "hard-expiry");
+      return;
+    }
+    this.touch(record);
+  }
+
   private nextRuntimeId(): string {
     const value = this.runtimeIdFactory();
     if (!/^[a-f0-9]{32}$/.test(value)) {

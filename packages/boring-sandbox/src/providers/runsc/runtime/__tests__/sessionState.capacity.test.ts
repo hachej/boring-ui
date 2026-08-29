@@ -40,8 +40,6 @@ function allocate(
     false,
     limit,
     limit,
-    1,
-    () => 0,
     () => "unused",
     async (normalized, digest) => {
       effects();
@@ -128,54 +126,4 @@ describe("RunscSessionStateV1 owned-session capacity", () => {
     });
   });
 
-  test("charges externally retained cleanup without double-counting active roots", async () => {
-    const state = new RunscSessionStateV1<RecordV1>();
-    let retainedCleanup = 2;
-    const effects = vi.fn();
-    const create = (index: number) =>
-      state.create(
-        input(index),
-        true,
-        4,
-        4,
-        2,
-        () => retainedCleanup,
-        () => `sandbox-${index}`,
-        async (normalized, digest) => {
-          effects();
-          const record: RecordV1 = {
-            sandboxId: normalized.sandboxId,
-            clientLeaseId: normalized.clientLeaseId,
-            createDigest: digest,
-            workspaceId: normalized.workspaceId,
-            ownsWorkspaceMountSource: true,
-            leaseExpiresAtMs: 2,
-            hardExpiresAtMs: 3,
-            timer: setTimeout(() => undefined, 60_000),
-            invocations: { clear: vi.fn() },
-          };
-          state.bind(record);
-          return state.lease(record, true);
-        },
-      );
-
-    await expect(create(1)).resolves.toMatchObject({ sandboxId: "sandbox-1" });
-    expect(effects).toHaveBeenCalledTimes(1);
-    expect(() => create(2)).toThrowError(
-      expect.objectContaining({
-        code: REMOTE_WORKER_ERROR_CODES_V1.createConcurrencyExhausted,
-      }),
-    );
-    expect(effects).toHaveBeenCalledTimes(1);
-
-    const record = state.sessions.get(
-      "00000000-0000-4000-8000-000000000001\u0000sandbox-1",
-    );
-    expect(record).toBeDefined();
-    if (!record) return;
-    state.detach(record);
-    retainedCleanup = 0;
-    await expect(create(2)).resolves.toMatchObject({ sandboxId: "sandbox-2" });
-    expect(effects).toHaveBeenCalledTimes(2);
-  });
 });

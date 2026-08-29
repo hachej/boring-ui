@@ -24,6 +24,7 @@ export interface SessionRecordV1 {
   timer: ReturnType<typeof setTimeout>;
   activeExec: boolean;
   activeFs: boolean;
+  expiryPending?: "idle" | "hard-expiry";
   invocations: Map<string, InvocationRecordV1>;
   retirement?: {
     readonly reason: RunscSessionRetirementReasonV1;

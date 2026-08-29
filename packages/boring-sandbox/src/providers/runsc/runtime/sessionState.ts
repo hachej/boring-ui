@@ -56,12 +56,23 @@ function normalizeCreateInput(
   const workspaceId = multiRoot
     ? validateCanonicalQuotaWorkspaceId(input.workspaceId)
     : validateQuotaWorkspaceId(input.workspaceId);
-  const normalized = { ...input, sandboxId, workspaceId };
+  const normalized = multiRoot
+    ? {
+        sandboxId,
+        clientLeaseId: input.clientLeaseId,
+        workspaceId,
+        image: input.image,
+        idleTtlMs: input.idleTtlMs,
+        hardLifetimeMs: input.hardLifetimeMs,
+      }
+    : { ...input, sandboxId, workspaceId };
   const digest = remoteWorkerRequestDigestV1({
     sandboxId: normalized.sandboxId,
     clientLeaseId: normalized.clientLeaseId,
     workspaceId,
-    workspaceMountSource: normalized.workspaceMountSource,
+    ...(multiRoot
+      ? {}
+      : { workspaceMountSource: normalized.workspaceMountSource }),
     image: normalized.image,
     idleTtlMs: normalized.idleTtlMs,
     hardLifetimeMs: normalized.hardLifetimeMs,
@@ -135,9 +146,7 @@ export class RunscSessionStateV1<RecordV1 extends SessionIdentityRecordV1> {
     input: SessionCreateStateInputV1,
     multiRoot: boolean,
     maxConcurrentCreates: number,
-    maxOwnedResources: number,
-    ownedResourcesPerSession: number,
-    additionalOwnedResources: () => number,
+    maxOwnedSessions: number,
     allocateSandboxId: () => string,
     createNew: (
       input: SessionCreateStateInputV1 & { sandboxId: string },
@@ -188,11 +197,10 @@ export class RunscSessionStateV1<RecordV1 extends SessionIdentityRecordV1> {
         REMOTE_WORKER_ERROR_CODES_V1.createConcurrencyExhausted,
         "remote-worker create concurrency is exhausted",
       );
-    const ownedResources =
-      (this.sessions.size + this.pendingSessionKeys.size) *
-        ownedResourcesPerSession +
-      additionalOwnedResources();
-    if (ownedResources + ownedResourcesPerSession > maxOwnedResources) {
+    if (
+      this.sessions.size + this.pendingSessionKeys.size + 1 >
+      maxOwnedSessions
+    ) {
       throw runscRuntimeError(
         REMOTE_WORKER_ERROR_CODES_V1.createConcurrencyExhausted,
         "remote-worker session capacity is exhausted",

@@ -12,6 +12,31 @@ Workspace identity remains the authorization and aggregate-quota key. Sandbox id
 
 The runtime fails closed unless multi-root use is explicitly admitted by trusted composition. This slice does not add the authenticated remote-worker handler, protocol negotiation, provider wiring, or a worker capability advertisement.
 
+## Reviewable split manifest
+
+The readable source is partitioned without hidden dependencies:
+
+- **A0 — root/quota/retirement lifecycle:** `runtime/dockerArgv.ts`,
+  `runtime/quota.ts`, `runtime/sandboxRootLifecycle.ts`,
+  `runtime/sessionRetirement.ts`, their focused tests, and only their related
+  `runsc/index.ts` exports. A0 also carries the four exact Docker `ps` recovery
+  mock hunks in `sessionRuntime.test.ts` (the removal-retry cases at the
+  `removeAttempts >= 2 && removeAttempts <= 4`, `removeAttempts === 1`,
+  failed-create `removeAttempts === 1`, and `failedRemovalPending` branches).
+  Until A1 lands, A0 exports `CompositeRunscSessionRetirementV1` directly from
+  `sessionRetirement.ts`.
+- **A1 — composite session runtime/state:** `runtime/sessionState.ts`,
+  `runtime/sessionRuntime.ts`, `runtime/sessionRecord.ts`,
+  `runtime/sessionTypes.ts`, all A1-only session tests and integration scripts,
+  the remaining documentation, and the remaining session exports in
+  `runsc/index.ts`.
+
+The later authenticated handler/protocol qualification is a separate A2. Its
+adapter must not pass `workspaceMountSource` to composite create; A1 derives
+that mount solely from the trusted root lifecycle. A0 must typecheck, build,
+and test against the legacy base runtime; A1 stacked on A0 must reproduce this
+full source tree.
+
 ## Evidence in this slice
 
 Focused tests cover composite identity, per-sandbox root creation, independent retirement, cleanup retry, and workspace-aggregate quota addressing. The existing runsc integration exercises the runtime directly. It is non-admitting evidence and does not qualify or advertise remote-worker multi-lease support.

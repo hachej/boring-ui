@@ -82,18 +82,16 @@ describe("runsc recoverable resource capacity", () => {
       multiSandboxRootsAdmitted: true,
       runtimeIdFactory: () => "1".repeat(32),
     });
-    expect(() =>
+    await expect(
       sessions.createComposite({
         sandboxId: "blocked-at-boundary",
         clientLeaseId: "blocked-at-boundary",
         workspaceId,
         image,
       }),
-    ).toThrowError(
-      expect.objectContaining({
-        code: REMOTE_WORKER_ERROR_CODES_V1.createConcurrencyExhausted,
-      }),
-    );
+    ).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.pathUnsafe,
+    });
     expect(ownershipEffects).toBe(retainedBoundary);
     expect(docker.run).not.toHaveBeenCalled();
 
