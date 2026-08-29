@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { isAbsolute, resolve } from "node:path";
 
 import { REMOTE_WORKER_ERROR_CODES_V1 } from "../../../shared/remoteWorkerProtocolV1";
 
@@ -17,7 +18,12 @@ export const RUNSC_QUOTA_HELPER_EXCEEDED_EXIT = 73;
 
 const workspaceIdPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const canonicalWorkspaceIdPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
+export const RUNSC_QUOTA_LOCK_NAME = ".boring-quota.lock" as const;
+
+/** Preserves the V1 quota helper's legacy trim-and-lowercase contract. */
 export function validateQuotaWorkspaceId(workspaceId: string): string {
   const normalized = workspaceId.trim().toLowerCase();
   if (!workspaceIdPattern.test(normalized)) {
@@ -27,6 +33,17 @@ export function validateQuotaWorkspaceId(workspaceId: string): string {
     );
   }
   return normalized;
+}
+
+/** Multi-root identities must already be canonical so aliases cannot select roots. */
+export function validateCanonicalQuotaWorkspaceId(workspaceId: string): string {
+  if (!canonicalWorkspaceIdPattern.test(workspaceId)) {
+    throw runscRuntimeError(
+      REMOTE_WORKER_ERROR_CODES_V1.requestInvalid,
+      "remote-worker workspace id is invalid",
+    );
+  }
+  return workspaceId;
 }
 
 export type QuotaHelperOperationV1 = "apply" | "check";
@@ -40,21 +57,24 @@ export interface QuotaHelperCommandRunnerV1 {
   run(input: {
     readonly argv: readonly [QuotaHelperOperationV1, string, string];
     readonly timeoutMs: number;
+    readonly workspaceRoot?: string;
   }): Promise<QuotaHelperCommandResultV1>;
 }
 
-export class FixedQuotaHelperCommandRunnerV1
-  implements QuotaHelperCommandRunnerV1
-{
+export class FixedQuotaHelperCommandRunnerV1 implements QuotaHelperCommandRunnerV1 {
   async run(input: {
     readonly argv: readonly [QuotaHelperOperationV1, string, string];
     readonly timeoutMs: number;
+    readonly workspaceRoot?: string;
   }): Promise<QuotaHelperCommandResultV1> {
     return await new Promise((resolve, reject) => {
       const child = spawn(RUNSC_QUOTA_HELPER_PATH, [...input.argv], {
         shell: false,
         stdio: "ignore",
         windowsHide: true,
+        ...(input.workspaceRoot
+          ? { env: { BORING_WORKSPACE_ROOT: input.workspaceRoot } }
+          : {}),
       });
       let timedOut = false;
       const timer = setTimeout(() => {
@@ -80,7 +100,26 @@ export class FixedQuotaHelperCommandRunnerV1
 }
 
 export class FixedProjectQuotaManagerV1 {
-  constructor(private readonly runner: QuotaHelperCommandRunnerV1) {}
+  readonly workspaceRoot?: string;
+
+  constructor(
+    private readonly runner: QuotaHelperCommandRunnerV1,
+    workspaceRoot?: string,
+  ) {
+    if (workspaceRoot === undefined) return;
+    const canonical = resolve(workspaceRoot);
+    if (
+      !isAbsolute(workspaceRoot) ||
+      canonical === "/" ||
+      canonical !== workspaceRoot
+    ) {
+      throw runscRuntimeError(
+        REMOTE_WORKER_ERROR_CODES_V1.configInvalid,
+        "remote-worker quota root is invalid",
+      );
+    }
+    this.workspaceRoot = canonical;
+  }
 
   async apply(workspaceId: string): Promise<void> {
     await this.invoke("apply", workspaceId);
@@ -98,6 +137,7 @@ export class FixedProjectQuotaManagerV1 {
     const result = await this.runner.run({
       argv: [operation, normalized, RUNSC_WORKSPACE_QUOTA_PROFILE_V1.profileId],
       timeoutMs: RUNSC_RUNTIME_LIMITS_V1.createTimeoutMs,
+      ...(this.workspaceRoot ? { workspaceRoot: this.workspaceRoot } : {}),
     });
     if (result.timedOut) {
       throw runscRuntimeError(

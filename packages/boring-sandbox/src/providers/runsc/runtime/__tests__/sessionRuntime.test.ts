@@ -313,6 +313,13 @@ describe("warm runsc session runtime", () => {
             };
           }
         }
+        if (
+          input.argv[0] === "ps" &&
+          removeAttempts >= 2 &&
+          removeAttempts <= 4
+        ) {
+          return success("container-id\n");
+        }
         return await run(input);
       });
       const sessions = runtime(runner);
@@ -695,6 +702,9 @@ describe("warm runsc session runtime", () => {
             code: "ECONNREFUSED",
           });
         }
+        if (input.argv[0] === "ps" && removeAttempts === 1) {
+          return success("container-id\n");
+        }
         return await run(input);
       });
       const sessions = runtime(runner, {
@@ -767,6 +777,9 @@ describe("warm runsc session runtime", () => {
               };
             }
           }
+          if (input.argv[0] === "ps" && removeAttempts === 1) {
+            return success("container-id\n");
+          }
           return await run(input);
         });
         const sessions = runtime(runner);
@@ -798,12 +811,18 @@ describe("warm runsc session runtime", () => {
         input: DockerCommandInput,
       ) => Promise<DockerCommandResult>;
       let removeAttempts = 0;
+      let failedRemovalPending = false;
       runner.run.mockImplementation(async (input) => {
         if (input.argv[0] === "rm") {
           removeAttempts += 1;
           if (removeAttempts === 1) {
+            failedRemovalPending = true;
             throw new Error("transient docker outage");
           }
+        }
+        if (input.argv[0] === "ps" && failedRemovalPending) {
+          failedRemovalPending = false;
+          return success("container-id\n");
         }
         return await run(input);
       });
