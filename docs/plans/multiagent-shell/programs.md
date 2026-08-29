@@ -12,7 +12,7 @@ this page instead.
   after A2 — the pi wait was removed 2026-08-27 (RECONCILIATION §9c); P1-C
   (`9p50.2`) runs last. See `premises.md` P1 for the slice table.
 - Detailed P1-A plan (one section per bead, dispatch order A2→A1→A3→A4→A5):
-  [`../durable-streams-p1a-plan.md`](../durable-streams-p1a-plan.md) — draft, in the review ladder.
+  [`../durable-streams-p1a-plan.md`](../durable-streams-p1a-plan.md) — r3, review ladder done (fresh-eyes ×2, Sol), awaiting owner gate 1; gate doc [`../durable-streams-p1a-plan-review.html`](../durable-streams-p1a-plan-review.html).
 - Plan: [`../durable-streams-plan.md`](../durable-streams-plan.md) (r3; the
   r2 body's "blocked on the second cross-model review" note applied only to
   the r2 plan body and does not gate P1-A — see the plan's r3 revision
