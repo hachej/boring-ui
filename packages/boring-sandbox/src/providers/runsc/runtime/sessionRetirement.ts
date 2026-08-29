@@ -36,22 +36,32 @@ interface CompositeFieldsV1 {
   readonly workspaceMountSource: TrustedWorkspaceMountSource;
   readonly ownsWorkspaceMountSource: boolean;
 }
-interface CleanupStateV1 { containerRemoved: boolean; rootRemoved: boolean }
+interface CleanupStateV1 {
+  containerRemoved: boolean;
+  rootRemoved: boolean;
+}
 export interface RunscSessionRetirementManagerOptionsV1<
   RecordV1 extends RetirableRunscSessionRecordV1,
 > {
   readonly runner: DockerCommandRunner;
   readonly detach: (record: RecordV1) => void;
   readonly onRetire?: (value: RunscSessionRetirementV1) => void | Promise<void>;
-  readonly onCompositeRetire?: (value: CompositeRunscSessionRetirementV1) => void | Promise<void>;
-  readonly disposeMountSource?: (source: TrustedWorkspaceMountSource) => void | Promise<void>;
+  readonly onCompositeRetire?: (
+    value: CompositeRunscSessionRetirementV1,
+  ) => void | Promise<void>;
+  readonly disposeMountSource?: (
+    source: TrustedWorkspaceMountSource,
+  ) => void | Promise<void>;
 }
 export class RunscSessionRetirementManagerV1<
-  RecordV1 extends RetirableRunscSessionRecordV1> {
+  RecordV1 extends RetirableRunscSessionRecordV1,
+> {
   private readonly cleanupInflight = new Map<RecordV1, Promise<void>>();
   private readonly cleanupState = new WeakMap<RecordV1, CleanupStateV1>();
   private readonly notificationInflight = new Map<string, Promise<void>>();
-  constructor(private readonly options: RunscSessionRetirementManagerOptionsV1<RecordV1>) {}
+  constructor(
+    private readonly options: RunscSessionRetirementManagerOptionsV1<RecordV1>,
+  ) {}
   async retire(
     record: RecordV1,
     reason: RunscSessionRetirementReasonV1,
@@ -63,8 +73,11 @@ export class RunscSessionRetirementManagerV1<
     record.retirement ??= { reason, notify, attempts: 0 };
     const operation = this.removeAndDetach(record);
     this.cleanupInflight.set(record, operation);
-    try { await operation; }
-    finally { this.cleanupInflight.delete(record); }
+    try {
+      await operation;
+    } finally {
+      this.cleanupInflight.delete(record);
+    }
   }
   async notifyMissing(sandboxId: string): Promise<void> {
     await this.notifyMissingWithKey(`legacy\u0000${sandboxId}`, {
@@ -72,7 +85,10 @@ export class RunscSessionRetirementManagerV1<
       reason: "missing",
     });
   }
-  async notifyMissingComposite(workspaceId: string, sandboxId: string): Promise<void> {
+  async notifyMissingComposite(
+    workspaceId: string,
+    sandboxId: string,
+  ): Promise<void> {
     await this.notifyMissingWithKey(`${workspaceId}\u0000${sandboxId}`, {
       workspaceId,
       sandboxId,
@@ -87,8 +103,11 @@ export class RunscSessionRetirementManagerV1<
     if (existing) return await existing;
     const operation = this.notify(value);
     this.notificationInflight.set(key, operation);
-    try { await operation; }
-    finally { this.notificationInflight.delete(key); }
+    try {
+      await operation;
+    } finally {
+      this.notificationInflight.delete(key);
+    }
   }
   private async removeAndDetach(record: RecordV1): Promise<void> {
     const composite = this.compositeFields(record);
@@ -113,15 +132,29 @@ export class RunscSessionRetirementManagerV1<
         state.rootRemoved = true;
       }
       if (record.retirement!.notify) {
-        await this.notify(composite?.ownsWorkspaceMountSource
-          ? { workspaceId: composite.workspaceId, sandboxId: record.sandboxId, reason: record.retirement!.reason }
-          : { sandboxId: record.sandboxId, reason: record.retirement!.reason });
+        await this.notify(
+          composite?.ownsWorkspaceMountSource
+            ? {
+                workspaceId: composite.workspaceId,
+                sandboxId: record.sandboxId,
+                reason: record.retirement!.reason,
+              }
+            : {
+                sandboxId: record.sandboxId,
+                reason: record.retirement!.reason,
+              },
+        );
       }
     } catch (error) {
       record.retirement!.attempts += 1;
       this.scheduleRetry(record);
-      if (error && typeof error === "object" && "code" in error &&
-        error.code === REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup) throw error;
+      if (
+        error &&
+        typeof error === "object" &&
+        "code" in error &&
+        error.code === REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup
+      )
+        throw error;
       throw runscRuntimeError(
         REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
         "remote-worker sandbox cleanup is incomplete",
@@ -144,7 +177,8 @@ export class RunscSessionRetirementManagerV1<
         timeoutMs: RUNSC_RUNTIME_LIMITS_V1.disposeTimeoutMs,
         maxOutputBytes: 64 * 1024,
       });
-      if (!removed.timedOut && !removed.aborted && removed.exitCode === 0) return;
+      if (!removed.timedOut && !removed.aborted && removed.exitCode === 0)
+        return;
     } catch {
       // A process failure may occur after Docker accepted removal.
     }
@@ -162,18 +196,25 @@ export class RunscSessionRetirementManagerV1<
   private scheduleRetry(record: RecordV1): void {
     if (!record.retirement) return;
     const exponent = Math.max(0, record.retirement.attempts - 1);
-    const delayMs = Math.min(RETIREMENT_RETRY_BASE_MS * 2 ** exponent, RETIREMENT_RETRY_MAX_MS);
+    const delayMs = Math.min(
+      RETIREMENT_RETRY_BASE_MS * 2 ** exponent,
+      RETIREMENT_RETRY_MAX_MS,
+    );
     clearTimeout(record.timer);
     record.timer = setTimeout(() => {
-      void this.retire(record, record.retirement!.reason, record.retirement!.notify)
-        .catch(() => undefined);
+      void this.retire(
+        record,
+        record.retirement!.reason,
+        record.retirement!.notify,
+      ).catch(() => undefined);
     }, delayMs);
   }
   private async notify(
     retirement: RunscSessionRetirementV1 | CompositeRunscSessionRetirementV1,
   ): Promise<void> {
     try {
-      if ("workspaceId" in retirement) await this.options.onCompositeRetire?.(retirement);
+      if ("workspaceId" in retirement)
+        await this.options.onCompositeRetire?.(retirement);
       else await this.options.onRetire?.(retirement);
     } catch (error) {
       throw runscRuntimeError(

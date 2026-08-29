@@ -61,9 +61,7 @@ export interface QuotaHelperCommandRunnerV1 {
   }): Promise<QuotaHelperCommandResultV1>;
 }
 
-export class FixedQuotaHelperCommandRunnerV1
-  implements QuotaHelperCommandRunnerV1
-{
+export class FixedQuotaHelperCommandRunnerV1 implements QuotaHelperCommandRunnerV1 {
   async run(input: {
     readonly argv: readonly [QuotaHelperOperationV1, string, string];
     readonly timeoutMs: number;
@@ -110,7 +108,11 @@ export class FixedProjectQuotaManagerV1 {
   ) {
     if (workspaceRoot === undefined) return;
     const canonical = resolve(workspaceRoot);
-    if (!isAbsolute(workspaceRoot) || canonical === "/" || canonical !== workspaceRoot) {
+    if (
+      !isAbsolute(workspaceRoot) ||
+      canonical === "/" ||
+      canonical !== workspaceRoot
+    ) {
       throw runscRuntimeError(
         REMOTE_WORKER_ERROR_CODES_V1.configInvalid,
         "remote-worker quota root is invalid",

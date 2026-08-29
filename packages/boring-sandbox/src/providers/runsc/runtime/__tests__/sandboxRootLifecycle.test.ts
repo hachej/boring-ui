@@ -14,6 +14,7 @@ import { mkdtemp } from "node:fs/promises";
 
 import { describe, expect, test, vi } from "vitest";
 
+import { REMOTE_WORKER_ERROR_CODES_V1 } from "../../../../shared/remoteWorkerProtocolV1";
 import { RUNSC_RUNTIME_LIMITS_V1 } from "../limits";
 import { FixedProjectQuotaManagerV1 } from "../quota";
 import { RunscSandboxRootLifecycleV1 } from "../sandboxRootLifecycle";
@@ -52,8 +53,12 @@ describe("runsc per-sandbox root lifecycle", () => {
 
     await roots.dispose(sourceA);
 
-    await expect(lstat(String(sourceA))).rejects.toMatchObject({ code: "ENOENT" });
-    await expect(readFile(join(String(sourceB), "state"), "utf8")).resolves.toBe("b");
+    await expect(lstat(String(sourceA))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(
+      readFile(join(String(sourceB), "state"), "utf8"),
+    ).resolves.toBe("b");
     await expect(lstat(root)).resolves.toMatchObject({});
   });
 
@@ -66,7 +71,9 @@ describe("runsc per-sandbox root lifecycle", () => {
       roots.prepare(` ${workspaceA}`, "sandbox-spaced", quota),
     ).rejects.toMatchObject({ code: "REMOTE_WORKER_REQUEST_INVALID" });
     await roots.prepare(workspaceA, "sandbox-a", quota);
-    await expect(roots.prepare(workspaceA, "sandbox-a", quota)).rejects.toMatchObject({
+    await expect(
+      roots.prepare(workspaceA, "sandbox-a", quota),
+    ).rejects.toMatchObject({
       code: "REMOTE_WORKER_PATH_UNSAFE",
     });
     await expect(
@@ -74,7 +81,9 @@ describe("runsc per-sandbox root lifecycle", () => {
     ).resolves.toMatchObject({});
 
     await symlink(join(root, workspaceA), join(root, workspaceB));
-    await expect(roots.prepare(workspaceB, "sandbox-b", quota)).rejects.toMatchObject({
+    await expect(
+      roots.prepare(workspaceB, "sandbox-b", quota),
+    ).rejects.toMatchObject({
       code: "REMOTE_WORKER_PATH_UNSAFE",
     });
   });
@@ -112,6 +121,7 @@ describe("runsc per-sandbox root lifecycle", () => {
         message: "remote-worker sandbox root cleanup is incomplete",
       });
       await expect(lstat(sandboxRoot)).resolves.toMatchObject({});
+      expect(roots.pendingCleanupCount).toBe(1);
 
       if (convergence === "retry") {
         await expect(roots.retryPendingCleanup()).resolves.toBe(1);
@@ -121,7 +131,10 @@ describe("runsc per-sandbox root lifecycle", () => {
         await expect(roots.startupSweep()).resolves.toBe(1);
       }
       expect(removeAttempts).toBe(2);
-      await expect(lstat(sandboxRoot)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(roots.pendingCleanupCount).toBe(0);
+      await expect(lstat(sandboxRoot)).rejects.toMatchObject({
+        code: "ENOENT",
+      });
     },
   );
 
@@ -132,7 +145,9 @@ describe("runsc per-sandbox root lifecycle", () => {
     let parentAttempts = 0;
     const roots = new RunscSandboxRootLifecycleV1({
       sandboxRoot: root,
-      prepareOwnership: async () => { throw new Error("ownership failed"); },
+      prepareOwnership: async () => {
+        throw new Error("ownership failed");
+      },
       removeWorkspaceRoot: async (path) => {
         parentAttempts += 1;
         await rmdir(path);
@@ -142,14 +157,110 @@ describe("runsc per-sandbox root lifecycle", () => {
     });
     const quota = {
       workspaceRoot: root,
-      apply: vi.fn(async () => undefined), check: vi.fn(async () => undefined),
+      apply: vi.fn(async () => undefined),
+      check: vi.fn(async () => undefined),
     };
-    await expect(roots.prepare(workspaceA, "sandbox-a", quota)).rejects.toMatchObject({
+    await expect(
+      roots.prepare(workspaceA, "sandbox-a", quota),
+    ).rejects.toMatchObject({
       code: "REMOTE_WORKER_INCOMPLETE_CLEANUP",
     });
-    await expect(lstat(join(root, workspaceA, "sandbox-a"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(roots.pendingCleanupCount).toBe(1);
+    await expect(
+      lstat(join(root, workspaceA, "sandbox-a")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
     await expect(roots.retryPendingCleanup()).resolves.toBe(1);
+    expect(roots.pendingCleanupCount).toBe(0);
     expect(parentAttempts).toBe(1);
+  });
+
+  test("retains failed-prepare parent cleanup after a permission error", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "boring-runsc-roots-"));
+    const root = join(parent, "sandboxes");
+    await mkdir(root, { mode: 0o750 });
+    let parentAttempts = 0;
+    const roots = new RunscSandboxRootLifecycleV1({
+      sandboxRoot: root,
+      prepareOwnership: async () => {
+        throw new Error("ownership failed");
+      },
+      removeWorkspaceRoot: async (path) => {
+        parentAttempts += 1;
+        if (parentAttempts === 1) {
+          throw Object.assign(new Error("permission uncertain"), {
+            code: "EACCES",
+          });
+        }
+        await rmdir(path);
+      },
+      trustedOwnerUid: process.getuid?.() ?? 0,
+    });
+    const quota = {
+      workspaceRoot: root,
+      apply: vi.fn(async () => undefined),
+      check: vi.fn(async () => undefined),
+    };
+
+    await expect(
+      roots.prepare(workspaceA, "sandbox-a", quota),
+    ).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+    });
+    expect(roots.pendingCleanupCount).toBe(1);
+    await expect(
+      lstat(join(root, workspaceA, "sandbox-a")),
+    ).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(lstat(join(root, workspaceA))).resolves.toMatchObject({});
+
+    await expect(roots.retryPendingCleanup()).resolves.toBe(1);
+    expect(parentAttempts).toBe(2);
+    expect(roots.pendingCleanupCount).toBe(0);
+    await expect(lstat(join(root, workspaceA))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  test("retries ambiguous parent removal after the leaf is already absent", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "boring-runsc-roots-"));
+    const root = join(parent, "sandboxes");
+    await mkdir(root, { mode: 0o750 });
+    let parentAttempts = 0;
+    const roots = new RunscSandboxRootLifecycleV1({
+      sandboxRoot: root,
+      prepareOwnership: async () => undefined,
+      removeWorkspaceRoot: async (path) => {
+        parentAttempts += 1;
+        if (parentAttempts === 1) {
+          throw Object.assign(new Error("permission uncertain"), {
+            code: "EACCES",
+          });
+        }
+        await rmdir(path);
+      },
+      trustedOwnerUid: process.getuid?.() ?? 0,
+    });
+    const quota = {
+      workspaceRoot: root,
+      apply: vi.fn(async () => undefined),
+      check: vi.fn(async () => undefined),
+    };
+    const source = await roots.prepare(workspaceA, "sandbox-a", quota);
+
+    await expect(roots.dispose(source)).rejects.toMatchObject({
+      code: "REMOTE_WORKER_INCOMPLETE_CLEANUP",
+    });
+    await expect(lstat(String(source))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(lstat(join(root, workspaceA))).resolves.toMatchObject({});
+
+    await expect(roots.dispose(source)).resolves.toBeUndefined();
+    expect(parentAttempts).toBe(2);
+    await expect(lstat(join(root, workspaceA))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   });
 
   test("converges when an owned parent is already absent", async () => {
@@ -158,7 +269,9 @@ describe("runsc per-sandbox root lifecycle", () => {
     await mkdir(root, { mode: 0o750 });
     const roots = new RunscSandboxRootLifecycleV1({
       sandboxRoot: root,
-      prepareOwnership: async () => { throw new Error("ownership failed"); },
+      prepareOwnership: async () => {
+        throw new Error("ownership failed");
+      },
       removeWorkspaceRoot: async (path) => {
         await rmdir(path);
         throw Object.assign(new Error("already absent"), { code: "ENOENT" });
@@ -167,13 +280,18 @@ describe("runsc per-sandbox root lifecycle", () => {
     });
     const quota = {
       workspaceRoot: root,
-      apply: vi.fn(async () => undefined), check: vi.fn(async () => undefined),
+      apply: vi.fn(async () => undefined),
+      check: vi.fn(async () => undefined),
     };
-    await expect(roots.prepare(workspaceA, "sandbox-a", quota)).rejects.toMatchObject({
+    await expect(
+      roots.prepare(workspaceA, "sandbox-a", quota),
+    ).rejects.toMatchObject({
       code: "REMOTE_WORKER_PATH_UNSAFE",
     });
     await expect(roots.retryPendingCleanup()).resolves.toBe(0);
-    await expect(lstat(join(root, workspaceA))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(lstat(join(root, workspaceA))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   });
 
   test("converges when retry observes ENOENT after an after-effect removal failure", async () => {
@@ -205,7 +323,9 @@ describe("runsc per-sandbox root lifecycle", () => {
 
     const pendingRoots = new RunscSandboxRootLifecycleV1({
       sandboxRoot: root,
-      prepareOwnership: async () => { throw new Error("ownership failed"); },
+      prepareOwnership: async () => {
+        throw new Error("ownership failed");
+      },
       removeSandboxRoot: async (path) => {
         await rm(path, { recursive: true, force: true });
         throw new Error("response lost after removal");
@@ -224,16 +344,22 @@ describe("runsc per-sandbox root lifecycle", () => {
     const sourceB = await roots.prepare(workspaceB, "sandbox-b", quota);
 
     await expect(roots.startupSweep()).resolves.toBe(2);
-    await expect(lstat(String(sourceA))).rejects.toMatchObject({ code: "ENOENT" });
-    await expect(lstat(String(sourceB))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(lstat(String(sourceA))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(lstat(String(sourceB))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   });
 
   test("composes the fixed quota manager once before leaves and checks it on reuse/restart", async () => {
     const { root, roots } = await lifecycle();
-    const run = vi.fn(async (_input: {
-      readonly argv: readonly ["apply" | "check", string, string];
-      readonly timeoutMs: number;
-    }) => ({ exitCode: 0, timedOut: false }));
+    const run = vi.fn(
+      async (_input: {
+        readonly argv: readonly ["apply" | "check", string, string];
+        readonly timeoutMs: number;
+      }) => ({ exitCode: 0, timedOut: false }),
+    );
     const quota = new FixedProjectQuotaManagerV1({ run }, root);
     await roots.prepare(workspaceA, "sandbox-a", quota);
     await roots.prepare(workspaceA, "sandbox-b", quota);
@@ -264,9 +390,9 @@ describe("runsc per-sandbox root lifecycle", () => {
       }),
       check: vi.fn(async () => undefined),
     };
-    await expect(
-      roots.prepare(workspaceA, "sandbox-a", quota),
-    ).rejects.toThrow("quota unavailable");
+    await expect(roots.prepare(workspaceA, "sandbox-a", quota)).rejects.toThrow(
+      "quota unavailable",
+    );
     await expect(lstat(join(root, workspaceA))).rejects.toMatchObject({
       code: "ENOENT",
     });

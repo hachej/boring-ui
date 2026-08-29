@@ -18,9 +18,7 @@ export type {
   RunscHostCommandResult,
   RunscHostCommandRunner,
 } from "./preflight";
-export {
-  preflightRunsc,
-} from "./preflight";
+export { preflightRunsc } from "./preflight";
 export type {
   RuntimeIsolationColdStartEvidence,
   RuntimeIsolationColdStartSample,

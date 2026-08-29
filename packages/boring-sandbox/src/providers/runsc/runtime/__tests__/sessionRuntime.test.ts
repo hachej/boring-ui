@@ -323,7 +323,11 @@ describe("warm runsc session runtime", () => {
             };
           }
         }
-        if (input.argv[0] === "ps" && removeAttempts >= 2 && removeAttempts <= 4) {
+        if (
+          input.argv[0] === "ps" &&
+          removeAttempts >= 2 &&
+          removeAttempts <= 4
+        ) {
           return success("container-id\n");
         }
         return await run(input);

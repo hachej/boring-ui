@@ -42,7 +42,9 @@ export function trustedWorkspaceMountSource(
     workspaceRoot.includes("\0") ||
     workspaceRoot.includes(",") ||
     /[\r\n]/.test(workspaceRoot) ||
-    workspaceRoot.split("/").some((component) => component === ".." || component === ".")
+    workspaceRoot
+      .split("/")
+      .some((component) => component === ".." || component === ".")
   ) {
     invalidDockerInput("workspace root");
   }
@@ -81,7 +83,8 @@ export function buildDockerRunArgv(
   profile: DockerRunProfileV1,
 ): readonly string[] {
   const containerName = dockerContainerNameV1(profile.runtimeId);
-  if (!imageDigestPattern.test(profile.image)) invalidDockerInput("image digest");
+  if (!imageDigestPattern.test(profile.image))
+    invalidDockerInput("image digest");
   return Object.freeze([
     "run",
     "-d",

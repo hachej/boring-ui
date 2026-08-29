@@ -65,19 +65,24 @@ describe("runsc session retirement", () => {
   test.each([
     ["timeout-after-effect", result({ timedOut: true, exitCode: -1 })],
     ["already-absent", result({ exitCode: 1 })],
-  ] as const)("converges when Docker removal is %s and exact absence is proven", async (_label, removal) => {
-    const runner = {
-      run: vi.fn(async (input: DockerCommandInput) =>
-        input.argv[0] === "rm" ? removal : result(),
-      ),
-    };
-    const { retirement, detach, disposeMountSource } = manager(runner);
-    const session = record();
+  ] as const)(
+    "converges when Docker removal is %s and exact absence is proven",
+    async (_label, removal) => {
+      const runner = {
+        run: vi.fn(async (input: DockerCommandInput) =>
+          input.argv[0] === "rm" ? removal : result(),
+        ),
+      };
+      const { retirement, detach, disposeMountSource } = manager(runner);
+      const session = record();
 
-    await expect(retirement.retire(session, "cleanup")).resolves.toBeUndefined();
-    expect(disposeMountSource).toHaveBeenCalledTimes(1);
-    expect(detach).toHaveBeenCalledWith(session);
-  });
+      await expect(
+        retirement.retire(session, "cleanup"),
+      ).resolves.toBeUndefined();
+      expect(disposeMountSource).toHaveBeenCalledTimes(1);
+      expect(detach).toHaveBeenCalledWith(session);
+    },
+  );
 
   test("retains retirement ownership when the exact owned container remains", async () => {
     const runner = {
