@@ -199,12 +199,14 @@ export class RunscSessionRuntimeV1 {
     await this.options.sandboxRoots?.startupSweep();
   }
   create(input: CreateRunscSessionInputV1): Promise<RunscSessionLeaseV1> {
+    if (this.closed) this.unavailable();
     if (this.options.sandboxRoots) this.compositeAuthorityRequired();
     return this.createForMode(input, false) as Promise<RunscSessionLeaseV1>;
   }
   createComposite(
     input: CreateCompositeRunscSessionInputV1,
   ): Promise<CompositeRunscSessionLeaseV1> {
+    if (this.closed) this.unavailable();
     if (!this.supportsMultiSandboxRoots) {
       throw runscRuntimeError(
         REMOTE_WORKER_ERROR_CODES_V1.unqualified,
@@ -214,7 +216,6 @@ export class RunscSessionRuntimeV1 {
     return this.createForMode(input, true) as Promise<CompositeRunscSessionLeaseV1>;
   }
   private createForMode(input: AnyCreateInputV1, multiRoot: boolean): Promise<AnySessionLeaseV1> {
-    if (this.closed) this.unavailable();
     return this.state.create(input, multiRoot, this.maxConcurrentCreates,
       (normalized, digest) => this.track(this.createNew(normalized, digest, multiRoot)));
   }
