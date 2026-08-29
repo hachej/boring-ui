@@ -1503,9 +1503,9 @@ export function WorkspaceAgentFront<
   // reconciliation effect below to re-run so the aged-out key is actually
   // dropped and reconciliation falls back to the real session.
   const [optimisticCreateAckTick, setOptimisticCreateAckTick] = useState(0)
-  const optimisticCreateAckTimersRef = useRef<Set<ReturnType<typeof window.setTimeout>>>(new Set())
+  const optimisticCreateAckTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
   useEffect(() => () => {
-    for (const timer of optimisticCreateAckTimersRef.current) window.clearTimeout(timer)
+    for (const timer of optimisticCreateAckTimersRef.current) clearTimeout(timer)
     optimisticCreateAckTimersRef.current.clear()
   }, [])
   // A workspace/source switch resets chatPaneState to empty (see the
@@ -2063,7 +2063,7 @@ export function WorkspaceAgentFront<
       if (!settleIfOwner()) return
       optimisticCreatedPaneKeysRef.current.set(createdKey, Date.now())
       if (typeof window !== "undefined") {
-        const timer = window.setTimeout(() => {
+        const timer = setTimeout(() => {
           optimisticCreateAckTimersRef.current.delete(timer)
           // Force the reconciliation effect to re-evaluate even if nothing
           // else changed in the meantime — that is exactly the abnormal case
