@@ -246,38 +246,44 @@ const workspaceRoutesPlugin: FastifyPluginAsync = async (app) => {
         }
       }
 
-      const result = await store.delete(id)
+      // #1463: soft-delete + "does the acting user still have an active
+      // workspace, and if not create a replacement" run as ONE database
+      // transaction (see PostgresWorkspaceStore.deleteAndRecreateDefaultIfEmpty).
+      // If the replacement insert fails for any reason, the whole transaction
+      // rolls back — including the original soft-delete — so this either
+      // fully succeeds or the workspace is left exactly as it was. We never
+      // report `deleted: true` while the account is committed at zero active
+      // workspaces: a DB-layer failure here propagates as a 500, honestly.
+      const result = await store.deleteAndRecreateDefaultIfEmpty(id, request.user!.id, {
+        name: DEFAULT_WORKSPACE_NAME,
+        defaultAgentTypeId,
+      })
 
-      if (result.removed) {
-        request.log.info({ workspaceId: id }, 'workspace.delete.complete')
-
-        // #1463: never leave the deleting user with zero active workspaces.
-        // The old unpartitioned index made this recreate collide with the
-        // just-tombstoned default (duplicate key → 500, account bricked);
-        // the migration scopes the index to deleted_at IS NULL, so this now
-        // succeeds cleanly. Recreate synchronously, in this same operation,
-        // instead of relying on the next GET /workspaces to notice and repair it.
-        const remaining = await store.list(request.user!.id, workspace.appId)
-        if (remaining.length === 0) {
-          try {
-            await createWorkspaceForUser(request.user!.id, DEFAULT_WORKSPACE_NAME, true, request)
-          } catch (err) {
-            // The delete itself already succeeded — don't fail the response
-            // over a best-effort replacement default. Worst case, the next
-            // GET /api/v1/workspaces recreate-on-list still fixes it up.
-            request.log.error({ userId: request.user!.id, err }, 'workspace.delete.recreate_default.failed')
-          }
-        }
-
-        return { deleted: true }
+      if (!result.removed) {
+        throw new HttpError({
+          status: 404,
+          code: ERROR_CODES.NOT_FOUND,
+          message: 'Workspace not found',
+          requestId: request.id,
+        })
       }
 
-      throw new HttpError({
-        status: 404,
-        code: ERROR_CODES.NOT_FOUND,
-        message: 'Workspace not found',
-        requestId: request.id,
-      })
+      request.log.info({ workspaceId: id }, 'workspace.delete.complete')
+
+      // Provisioning (filesystem/sandbox) can't join the DB transaction above,
+      // so it's driven here, after the DB state has durably committed. On
+      // failure this throws PROVISION_FAILED (same contract as POST
+      // /api/v1/workspaces): the replacement workspace row already exists —
+      // the account is not workspace-less — and the runtime is left in
+      // 'error' state, retryable via POST /runtime/retry, exactly like a
+      // failed creation. We do NOT swallow this: silently returning
+      // `deleted: true` over an unprovisioned, error-state replacement would
+      // misreport what actually happened.
+      if (result.recreated) {
+        await provisionWorkspace(result.recreated, result.recreated.createdBy, request)
+      }
+
+      return { deleted: true }
     },
   )
 }

@@ -64,10 +64,11 @@ describe('v7 platform E2E', () => {
     let workspaceId: string
     let rawToken: string
     let inviteId: string
+    let workspaceStore: LocalWorkspaceStore
 
     beforeAll(async () => {
       const userStore = new LocalUserStore()
-      const workspaceStore = new LocalWorkspaceStore(userStore)
+      workspaceStore = new LocalWorkspaceStore(userStore)
       const idempotencyStore = createInMemoryIdempotencyStore()
 
       // Seed alice and bob
@@ -288,12 +289,49 @@ describe('v7 platform E2E', () => {
       expect(res.json().code).toBe('last_owner')
     })
 
-    // 11. Bob deletes workspace
-    it('Bob deletes workspace', async () => {
+    // 11. Bob deletes workspace — he was promoted to owner (step 8), not the
+    // original creator (Alice, step 1). This is the last workspace either of
+    // them has, so #1463's transactional recreate fires. Assert the full
+    // ownership-transition contract the reviewer asked for: who ends up
+    // owning the replacement, and what happens to the original creator.
+    it('Bob deletes workspace (a non-creator promoted owner) — the replacement is created for Bob, and Alice is left with nothing shared', async () => {
       const res = await inject('DELETE', `/api/v1/workspaces/${workspaceId}`, 'bob')
       expect(res.statusCode).toBe(200)
       expect(res.json()).toEqual({ deleted: true })
       expect(destroyFn).toHaveBeenCalledWith(workspaceId)
+
+      // The deleted workspace is really gone.
+      expect(await workspaceStore.get(workspaceId)).toBeNull()
+
+      // Bob — the acting/deleting user, not Alice the original creator — owns
+      // the replacement default. This matches the current public POST policy
+      // (whoever creates it owns it); it's a real ownership transition and is
+      // pinned down explicitly here rather than left implicit.
+      const bobWorkspaces = await workspaceStore.list('bob', 'test-app')
+      expect(bobWorkspaces).toHaveLength(1)
+      const replacement = bobWorkspaces[0]
+      expect(replacement.id).not.toBe(workspaceId)
+      expect(replacement.createdBy).toBe('bob')
+      expect(replacement.isDefault).toBe(true)
+      expect(await workspaceStore.getMemberRole(replacement.id, 'bob')).toBe('owner')
+
+      // The provisioner was invoked for Bob as the owner of the replacement,
+      // not Alice.
+      expect(provisionFn).toHaveBeenCalledWith(expect.objectContaining({
+        workspaceId: replacement.id,
+        ownerId: 'bob',
+      }))
+
+      // Alice (the original creator, demoted to editor in step 9) is not a
+      // member of Bob's replacement — deleting a shared workspace does not
+      // silently carry her along into a new one. She simply has zero
+      // workspaces in this app until her own next GET /workspaces call
+      // auto-provisions her a separate, unrelated default (proven safe by
+      // the migration test above — it no longer collides even though the
+      // deleted "Acme" workspace she originally created also had
+      // is_default = true, now soft-deleted, for the same createdBy).
+      expect(await workspaceStore.list('alice', 'test-app')).toHaveLength(0)
+      expect(await workspaceStore.getMemberRole(replacement.id, 'alice')).toBeNull()
     })
   })
 
