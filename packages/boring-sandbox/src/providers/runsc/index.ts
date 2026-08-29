@@ -134,6 +134,10 @@ export {
   type QuotaHelperOperationV1,
 } from "./runtime/quota";
 export {
+  RunscSandboxRootLifecycleV1,
+  type RunscSandboxRootLifecycleOptionsV1,
+} from "./runtime/sandboxRootLifecycle";
+export {
   RunscSessionRuntimeV1,
   type CreateRunscSessionInputV1,
   type RunscSessionLeaseV1,

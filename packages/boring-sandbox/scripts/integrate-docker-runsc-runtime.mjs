@@ -435,7 +435,7 @@ try {
   };
   session = new RunscSessionRuntimeV1({
     runner,
-    quota: { async apply() {}, async check() {} },
+    quota: { workspaceRoot, async apply() {}, async check() {} },
     runtimeIdFactory() {
       const id = randomBytes(16).toString("hex");
       runtimeIds.push(id);

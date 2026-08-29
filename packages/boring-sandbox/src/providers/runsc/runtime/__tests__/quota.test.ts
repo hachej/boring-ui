@@ -10,23 +10,32 @@ import {
 } from "../quota";
 
 const workspaceId = "00000000-0000-4000-8000-000000000001";
+const workspaceRoot = "/srv/boring/workspaces";
 
 describe("fixed project quota contract", () => {
-  test("passes only validated workspace id and the fixed profile to the helper", async () => {
+  test("passes only a canonical workspace id and the fixed profile to the helper", async () => {
     const run = vi.fn(async () => ({ exitCode: 0, timedOut: false }));
-    await new FixedProjectQuotaManagerV1({ run }).apply(workspaceId.toUpperCase());
+    await new FixedProjectQuotaManagerV1({ run }, workspaceRoot).apply(workspaceId);
     expect(run).toHaveBeenCalledWith({
       argv: ["apply", workspaceId, RUNSC_WORKSPACE_QUOTA_PROFILE_V1.profileId],
       timeoutMs: 120_000,
+      workspaceRoot,
     });
   });
 
-  test.each(["../workspace", "/srv/workspace", "$(id)", "workspace-a"])(
+  test.each([
+    "../workspace",
+    "/srv/workspace",
+    "$(id)",
+    "workspace-a",
+    "ABCDEF00-0000-4000-8000-000000000001",
+    ` ${workspaceId}`,
+  ])(
     "rejects arbitrary path/shell input: %s",
     async (untrusted) => {
       const run = vi.fn();
       await expect(
-        new FixedProjectQuotaManagerV1({ run }).apply(untrusted),
+        new FixedProjectQuotaManagerV1({ run }, workspaceRoot).apply(untrusted),
       ).rejects.toMatchObject({
         code: REMOTE_WORKER_ERROR_CODES_V1.requestInvalid,
       });
@@ -41,7 +50,7 @@ describe("fixed project quota contract", () => {
           exitCode: RUNSC_QUOTA_HELPER_EXCEEDED_EXIT,
           timedOut: false,
         }),
-      }).check(workspaceId),
+      }, workspaceRoot).check(workspaceId),
     ).rejects.toMatchObject({
       code: REMOTE_WORKER_ERROR_CODES_V1.quotaExceeded,
     });
