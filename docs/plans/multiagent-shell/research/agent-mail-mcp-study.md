@@ -8,14 +8,16 @@ status: research memo, ideas only. No code reuse (see license). Verdict row in d
 # MCP Agent Mail study
 
 **Subject:** `Dicklesworthstone/mcp_agent_mail` — https://github.com/Dicklesworthstone/mcp_agent_mail
-(2,114★ / 225 forks / last push 2026-08-26 / created 2025-10-23; "under active development").
+(2,114★ / 225 forks / last push 2026-08-26 / created 2025-10-23; "under active development"; reviewed at
+`main` = `7bce6f031bc2` on 2026-08-29 — README claims and source reads are distinguished below).
 Not to be confused with **AgentMail** (agentmail.to, real email inboxes for agents), `agenticmail`, or
 `email-agent-mcp` (Gmail/O365 connectors); a `steveyegge/` fork indexed under the same tagline now 404s.
 **License:** MIT *with an OpenAI/Anthropic rider* — no rights to those parties or anyone acting "for the
-benefit of" them, and "use" includes analyzing/indexing. Treat as **ideas-only** as a working
-posture, but note the rider's "use" definition arguably reaches the analysis itself and any
-field-level derivation (the proposal's `PostAddressingV0` mirrors `to`/`ack_required`/`importance`
-closely) — whether that is acceptable is an **owner legal call**, not a settled exemption.
+benefit of" them, and "use" includes analyzing/indexing. **Posture (Sol finding 5): no further reliance, source
+analysis, or implementation pending an owner/legal determination.** The rider's "use" definition reaches
+analysis and indexing, and this memo itself reports source reads; "ideas-only" is therefore not a settled
+exemption but the question the owner must rule on. License revision reviewed: the LICENSE file at the
+commit above. This is a document-consistency note, not a legal opinion.
 
 ## 1. What it is
 
@@ -40,10 +42,11 @@ thread can see different subsets.
 search_messages, summarize_thread, acknowledge_message, file_reservation_paths, release_file_reservations,
 acquire/renew/release_build_slot, request_contact, respond_contact, set_contact_policy, macro_*,
 sweep_stale_agents, install_precommit_guard, …`) plus read-only `resource://inbox/{agent}` etc.
-Discovery = `list_agents`/`whois`. **No push mechanism is documented** — agents `fetch_inbox`; the only
-wake-up story the README offers is the *commercial* Companion app ("Message Stacks" fanning scheduled
-prompts into tmux panes). "Polling only" is therefore an inference from the README's silence, not a stated
-design claim. Identity = per-agent
+Discovery = `list_agents`/`whois`. **Inbox consumption is pull-based** (`fetch_inbox`). The OSS config
+does expose optional **file-signal notifications** (`NotificationSettings` in `src/mcp_agent_mail/config.py`)
+that external watchers can observe via inotify/FSEvents/kqueue — so "polling only" would be wrong — but a
+signal file does not admit or schedule an agent turn; the only turn-scheduling story the README offers is
+the *commercial* Companion app ("Message Stacks" fanning scheduled prompts into tmux panes). Identity = per-agent
 `registration_token` or MCP-session binding; server auth = static bearer/JWT, localhost open by default.
 
 **Humans:** a server-rendered web UI (project → per-agent inbox → thread), FTS search, a Gmail-style
@@ -51,8 +54,9 @@ signed/encrypted static export, and a **Human Overseer** composer: the human pos
 `HumanOverseer` (program `WebUI`, model `Human`) with a hard-coded "pause → do this → resume" preamble.
 
 **Does not do:** authority (contact policy is spam control, not permission), tenancy beyond
-project-path + one server token, budgets/caps/spend, loop control, audit-grade attribution (name string +
-token; overseer is a fake agent), execution/steering. **Self-reported limits:** polling token burn,
+project-path + one server token, **orchestration-level hop/invocation/spend budgets** (it has HTTP rate
+limiting and stores optional summarization cost — not Boring's per-chain caps), loop control, audit-grade
+attribution (name string + token; overseer is a fake agent), execution/steering. **Self-reported limits:** polling token burn,
 stale-agent rot (`sweep_stale_agents`, `am doctor`), `CONTACT_REQUIRED` drops the body, absolute
 attachment paths = filesystem read primitive, advisory-only reservations (`--no-verify` bypasses).
 
@@ -63,7 +67,7 @@ attachment paths = filesystem read primitive, advisory-only reservations (`--no-
 | Relay / blackboard / other? | **Other: durable mailbox (actor-model store).** No floor-holder, no ordinals, no caps (not a relay); no shared transcript, per-recipient views (not a blackboard). Nearest ledger row is Buzz, but narrower. |
 | Posts-only (§9 "only settled posts and system markers cross")? | **Satisfied by convention, not guaranteed.** A message is an authored post; reasoning/tools/keys cross only if pasted. No server notion of "settled turn"; attachments are a leak path. Same human asymmetry as ours (overseer sees all). |
 | "1 job = 1 channel, 1:1 + 1:n" in our nouns | **= the §7/§9b multi-author Thread + an addressee field on posts.** No new noun; "channel" stays transport (§7). A *private* per-Thread inbox or direct agent→agent send is **A2A loopback / a shared-runtime room** → own promotion gate (§7, §8, §9, §10 non-change clauses). |
-| File reservations vs D28 | **Wrong layer for us.** Their leases exist because agents own separate checkouts; ours share one canonical workspace with per-seat authority (D28, `DECISIONS.md:463-466`; D25's older shared-runtime wording is superseded and not cited). Keep only an advisory "intends to edit X" **system marker**; enforcement, if ever, lives in Environment admission, not git hooks. |
+| File reservations vs D28 | **Same problem, different layer.** Their README's own workflow reserves paths for concurrent agents *in the same repository* — so the lease is same-workspace coordination, like ours. Boring places it differently: advisory intent is authored post metadata; any enforcement lives in governed Environment admission with per-seat authority (D28, `DECISIONS.md:463-466`; D25's older shared-runtime wording is superseded and not cited), never in git hooks. |
 
 ## 3. Steal now vs wait
 
@@ -80,12 +84,13 @@ agent→agent sends, subscriber/wake-up models. Level D makes these decidable; c
 ## 4. Risks if copied literally
 
 Unbounded reply loops (no hop counter — worse than Grok Bot's social mitigation; our per-chain caps are the
-fix) · zero spend dimension · name-string attribution vs P3 audit-grade `seatId` · legibility collapses to
+fix) · no orchestration-level spend/hop budget · name-string attribution vs P3 audit-grade `seatId` · legibility collapses to
 N inboxes (the fragmented-threads failure in the Grok Bot row) · polling needs an external scheduler (their
 answer is paid) · stale identities break broadcast · license rider.
 
 ## 5. Source honesty
 
-Primary: README (`/blob/main/README.md`), `src/mcp_agent_mail/{app,models}.py` at main on 2026-08-29,
-GitHub API metadata. Not run locally; tool list is from `@mcp.tool` decorators, not a live `tools/list`.
+Primary: README (`/blob/main/README.md`), `src/mcp_agent_mail/{app,models,config}.py` at `7bce6f031bc2` on
+2026-08-29, GitHub API metadata. README marketing claims (Companion app, Message Stacks) are reported as
+claims; source-derived statements are marked as such. Not run locally; tool list is from `@mcp.tool` decorators, not a live `tools/list`.
 Companion/iOS claims are the README's own marketing, unverified. No user-complaint corpus was surveyed.
