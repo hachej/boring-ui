@@ -405,7 +405,39 @@ describe("H5 sandboxId <-> authorized workspaceId tenant binding", () => {
     expect(effect).not.toHaveBeenCalled();
   });
 
-  test("serializes conflicting concurrent create bindings", async () => {
+  test("binds one worker sandbox to each workspace+client lease replay key", async () => {
+    const { registry, tokenFor } = authenticatedRegistry();
+    const request = createRequest("workspace-a", "lease-a");
+    const requestDigest = remoteWorkerRequestDigestV1(request);
+    const bind = (sandboxId: string) =>
+      registry.bind({
+        sandboxId,
+        request,
+        capabilityToken: tokenFor(
+          capability({
+            workspaceId: "workspace-a",
+            operation: "create",
+            requestDigest,
+          }),
+        ),
+        leaseExpiresAtMs: nowMs + 60_000,
+      });
+
+    const results = await Promise.allSettled([
+      bind("sandbox-a"),
+      bind("sandbox-b"),
+    ]);
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toEqual([
+      expect.objectContaining({
+        reason: expect.objectContaining({
+          code: REMOTE_WORKER_ERROR_CODES_V1.idempotencyConflict,
+        }),
+      }),
+    ]);
+  });
+
+  test("keeps same-named concurrent sandbox bindings isolated by workspace", async () => {
     let releaseReceipt!: () => void;
     const receiptGate = new Promise<void>((resolve) => {
       releaseReceipt = resolve;
@@ -459,8 +491,8 @@ describe("H5 sandboxId <-> authorized workspaceId tenant binding", () => {
     await expect(first).resolves.toMatchObject({
       payload: { workspaceId: "workspace-a" },
     });
-    await expect(second).rejects.toMatchObject({
-      code: REMOTE_WORKER_ERROR_CODES_V1.sandboxWorkspaceMismatch,
+    await expect(second).resolves.toMatchObject({
+      payload: { workspaceId: "workspace-b" },
     });
   });
 

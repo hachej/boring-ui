@@ -4,6 +4,7 @@ import {
   REMOTE_WORKER_ERROR_CODES_V1,
   REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1,
   REMOTE_WORKER_HEADERS_V1,
+  REMOTE_WORKER_MULTI_SANDBOX_ROOTS_CAPABILITY_V1,
   REMOTE_WORKER_PROTOCOL_VERSION,
   type RemoteWorkerBindingReceiptPayloadV1,
   type RemoteWorkerCapabilityClaimsV1,
@@ -35,7 +36,7 @@ function bindingAuthenticator(
   return `binding:${remoteWorkerRequestDigestV1(payload)}`;
 }
 
-function fleet() {
+function fleet(requiredMultiSandboxRoots = false) {
   return parseRemoteWorkerFleetConfigV1({
     protocolVersion: REMOTE_WORKER_PROTOCOL_VERSION,
     bucketCount: 256,
@@ -50,6 +51,13 @@ function fleet() {
         expectedQualificationBundleDigest: digest,
         expectedProviderCohortDigest: digest,
         expectedImageDigest: digest,
+        ...(requiredMultiSandboxRoots
+          ? {
+              requiredCapabilities: [
+                REMOTE_WORKER_MULTI_SANDBOX_ROOTS_CAPABILITY_V1,
+              ],
+            }
+          : {}),
         buckets: Array.from({ length: 256 }, (_, index) => index),
       },
     ],
@@ -71,9 +79,11 @@ class FakeTransport implements RemoteWorkerTransportV1 {
   leaseExpiresAtMs = nowMs + 60_000;
   renewLeaseExpiresAtMs = nowMs + 120_000;
   rawRequestError?: Error;
+  rawCreateError?: Error;
   rawExecError?: Error;
   createFailures = 0;
   advertiseExclusiveBinaryCreate = false;
+  advertiseMultiSandboxRoots = false;
 
   async request(input: RemoteWorkerTransportRequestV1): Promise<unknown> {
     this.requests.push(input);
@@ -91,16 +101,24 @@ class FakeTransport implements RemoteWorkerTransportV1 {
         isolation: "docker-runsc-systrap",
         qualifiedAtMs: this.qualifiedAtMs,
         capabilities: ["fs", "events", "exec", "renew", "delete"],
-        ...(this.advertiseExclusiveBinaryCreate
-          ? {
-              negotiatedCapabilities: [
-                REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1,
-              ],
-            }
-          : {}),
+        ...(
+          this.advertiseExclusiveBinaryCreate || this.advertiseMultiSandboxRoots
+            ? {
+                negotiatedCapabilities: [
+                  ...(this.advertiseExclusiveBinaryCreate
+                    ? [REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1]
+                    : []),
+                  ...(this.advertiseMultiSandboxRoots
+                    ? [REMOTE_WORKER_MULTI_SANDBOX_ROOTS_CAPABILITY_V1]
+                    : []),
+                ],
+              }
+            : {}
+        ),
       };
     }
     if (input.path === "/internal/v1/sandboxes") {
+      if (this.rawCreateError) throw this.rawCreateError;
       if (this.createFailures > 0) {
         this.createFailures -= 1;
         throw new Error("ambiguous create response loss");
@@ -181,10 +199,11 @@ class FakeTransport implements RemoteWorkerTransportV1 {
 function providerOptions(
   transport: FakeTransport,
   capturedClaims: RemoteWorkerCapabilityClaimsV1[] = [],
+  requiredMultiSandboxRoots = false,
 ): RemoteWorkerSandboxProviderOptionsV1 {
   let sequence = 0;
   return {
-    fleet: fleet(),
+    fleet: fleet(requiredMultiSandboxRoots),
     transport,
     now: () => nowMs,
     idFactory: () => `opaque-${(sequence += 1)}`,
@@ -270,6 +289,40 @@ describe("remote-worker SandboxProviderV1 placement binding", () => {
     await pair.dispose();
   });
 
+  test("requires explicit multi-root negotiation only for qualified placements", async () => {
+    const oldWorker = new FakeTransport();
+    const gated = createRemoteWorkerSandboxProviderV1(
+      providerOptions(oldWorker, [], true),
+    );
+    await expect(
+      gated.create({
+        workspaceRoot: "/unused",
+        workspaceId: "workspace-gated",
+        sessionId: "session-a",
+      }),
+    ).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.unqualified,
+    });
+    expect(oldWorker.requests).toHaveLength(1);
+    expect(
+      oldWorker.requests[0]?.headers[
+        REMOTE_WORKER_HEADERS_V1.requestedCapabilities
+      ],
+    ).toContain(REMOTE_WORKER_MULTI_SANDBOX_ROOTS_CAPABILITY_V1);
+
+    const qualifiedWorker = new FakeTransport();
+    qualifiedWorker.advertiseMultiSandboxRoots = true;
+    const admitted = createRemoteWorkerSandboxProviderV1(
+      providerOptions(qualifiedWorker, [], true),
+    );
+    const pair = await admitted.create({
+      workspaceRoot: "/unused",
+      workspaceId: "workspace-qualified",
+      sessionId: "session-a",
+    });
+    await pair.dispose();
+  });
+
   test("new worker negotiation exposes exclusive create without changing legacy operations", async () => {
     const transport = new FakeTransport();
     transport.advertiseExclusiveBinaryCreate = true;
@@ -290,6 +343,34 @@ describe("remote-worker SandboxProviderV1 placement binding", () => {
       (request.body as { op?: unknown } | undefined)?.op === "createBinaryFile"
     )).toBe(true);
     await pair.dispose();
+  });
+
+  test("preserves a stable foreign provider error without retrying it", async () => {
+    const transport = new FakeTransport();
+    transport.rawCreateError = Object.assign(new Error("foreign bundle"), {
+      name: "SandboxProviderError",
+      code: REMOTE_WORKER_ERROR_CODES_V1.pathPrimitiveUnavailable,
+    });
+    const provider = createRemoteWorkerSandboxProviderV1(providerOptions(transport));
+
+    const failure = await provider
+      .create({
+        workspaceRoot: "/unused",
+        workspaceId: "workspace-foreign-error",
+        sessionId: "session-foreign-error",
+        requestId: "request-foreign-error",
+      })
+      .catch((error: unknown) => error);
+    expect(failure).toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.pathPrimitiveUnavailable,
+      message: "remote-worker returned a stable provider failure",
+    });
+    expect(JSON.stringify(failure)).not.toContain("foreign bundle");
+    expect(
+      transport.requests.filter(
+        (request) => request.path === "/internal/v1/sandboxes",
+      ),
+    ).toHaveLength(1);
   });
 
   test("recovers an ambiguous create with the same client lease request", async () => {
