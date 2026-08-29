@@ -440,6 +440,12 @@ describe('CoreWorkspaceAgentFront', () => {
     expect(coreFrontProps).toMatchObject({ publicPaths: ['/', '/workspace/:id', '/w/:id'] })
     expect(screen.getByTestId('workspace-agent-front')).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: 'Sign in' }).length).toBeGreaterThan(0)
+    // #1465: the sign-in dock keeps a stable class/label pair — the responsive
+    // sheet rules in chatFirstPublicShell.css hang off `.public-auth-dock`, and
+    // on a phone this dock is the only auth entry point.
+    const authDock = screen.getByRole('complementary', { name: 'Sign in' })
+    expect(authDock).toHaveClass('public-auth-dock')
+    expect(authDock.querySelector('.public-auth-card')).not.toBeNull()
     expect(screen.queryByText('Switcher')).not.toBeInTheDocument()
     expect(screen.queryByText('User menu')).not.toBeInTheDocument()
     expect(workspaceAgentProps).toMatchObject({

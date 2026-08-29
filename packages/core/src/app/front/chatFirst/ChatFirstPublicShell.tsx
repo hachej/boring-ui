@@ -156,7 +156,13 @@ export function ChatFirstPublicShell<
           </div>
         </>
       )}
-      <aside className="pointer-events-none fixed bottom-6 left-6 z-20 w-[300px]">
+      {/* Sign-in dock. Desktop: a floating card in the bottom-left gutter.
+          Narrow viewports have no gutter, so `chatFirstPublicShell.css` re-lays
+          it out as a full-width bottom sheet — it must stay mounted and
+          reachable there, it is the only auth entry point on a phone (the
+          workspace top bar's Sign in button lives in the collapsed app-left
+          pane in the plugin-tabs layout). */}
+      <aside className="public-auth-dock pointer-events-none fixed bottom-6 left-6 z-20 w-[300px]" aria-label="Sign in">
         <div className="pointer-events-auto">
           <AuthCard returnTo={returnTo} />
         </div>

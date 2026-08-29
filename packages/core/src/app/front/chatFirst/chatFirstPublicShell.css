@@ -187,13 +187,64 @@
   transform: rotate(-4deg);
 }
 
-/* Teaching arrows + bottom-left sign-in card are edge decorations that need
-   horizontal room — keep them on normal screens, hide only when genuinely
-   narrow (where they'd collide with the centered hero/composer). */
+/* Teaching arrows are edge decorations that need horizontal room — keep them on
+   normal screens, hide only when genuinely narrow (where they'd collide with
+   the centered hero/composer). */
 @media (max-width: 1100px) {
-  .public-arrow,
-  .public-chat-first-shell > aside {
+  .public-arrow {
     display: none;
+  }
+}
+
+/* --- Sign-in dock: floating gutter card → full-width bottom sheet ---
+   Below 1100px there is no left gutter to float in, so the card re-lays out as
+   a bottom sheet docked to the viewport edge. It stays mounted: on a phone the
+   dock is the ONLY sign-in/sign-up entry point (the workspace top bar's Sign in
+   button lives in the app-left pane, which is collapsed on the public shell). */
+@media (max-width: 1100px) {
+  .public-auth-dock {
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: auto;
+  }
+
+  .public-auth-dock .public-auth-card {
+    max-width: none;
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: 22px 22px 0 0;
+    /* Keep the sheet clear of the home indicator / gesture bar. */
+    padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
+    box-shadow: 0 -18px 48px color-mix(in oklch, var(--foreground) 16%, transparent);
+  }
+
+  /* Touch targets: 44px minimum on the sheet's controls (segmented tabs, the
+     name/email/password inputs, and the submit button). Desktop keeps the
+     compact gutter card. */
+  .public-auth-dock .public-auth-card button,
+  .public-auth-dock .public-auth-card input {
+    min-height: 44px;
+  }
+
+  /* Reserve the sheet's band at the bottom of the shell so the hero and the
+     composer lay out above it instead of behind it. `dvh` keeps the reserve
+     honest when the mobile browser chrome collapses; the dock is fixed, so it
+     sits inside the reserved band. */
+  .public-chat-first-shell:has(.public-auth-dock) {
+    height: 100dvh;
+    /* Cap the reserve on short/landscape viewports: there the sheet overlaps
+       the hero rather than squeezing the composer out of existence. */
+    padding-bottom: min(268px, 40dvh);
+  }
+
+  /* The sheet spans the viewport, but the form itself stays a readable column
+     instead of stretching an input edge to edge on a tablet. */
+  .public-auth-dock .public-auth-card > * {
+    margin-right: auto;
+    margin-left: auto;
+    max-width: 420px;
   }
 }
 
@@ -203,7 +254,7 @@
    picker menu is open, hide the bottom "Ask your AI here" arrow and the sign-in
    card so the menu reads cleanly; they return as soon as it closes. */
 .public-chat-first-shell:has([data-boring-agent-part="model-picker-menu"], [data-boring-agent-part="thinking-picker-menu"]) .public-arrow-agent,
-.public-chat-first-shell:has([data-boring-agent-part="model-picker-menu"], [data-boring-agent-part="thinking-picker-menu"]) > aside {
+.public-chat-first-shell:has([data-boring-agent-part="model-picker-menu"], [data-boring-agent-part="thinking-picker-menu"]) .public-auth-dock {
   display: none;
 }
 
