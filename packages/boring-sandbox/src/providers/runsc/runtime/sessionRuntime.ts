@@ -311,6 +311,7 @@ export class RunscSessionRuntimeV1 {
     credentialScope?: AuthorizedWorkspaceCredentialScopeV1,
   ): Promise<RemoteWorkerExecResponseV1> {
     const record = await this.activeSession(sandboxId, workspaceId);
+    this.requireOperationOwner(record);
     const parsedRequest =
       RemoteWorkerExecRequestSchemaV1.safeParse(requestInput);
     if (!parsedRequest.success) {
@@ -522,6 +523,7 @@ export class RunscSessionRuntimeV1 {
     const record = operation
       ? await this.activeSession(sandboxId, workspaceOrOperation as string)
       : await this.activeLegacySession(sandboxId);
+    this.requireOperationOwner(record);
     const request =
       operation ?? (workspaceOrOperation as RemoteWorkerWorkspaceOperationV1);
     if (record.activeExec || record.activeFs) {
@@ -562,6 +564,7 @@ export class RunscSessionRuntimeV1 {
       typeof workspaceOrIdleTtlMs === "string"
         ? await this.activeSession(sandboxId, workspaceOrIdleTtlMs)
         : await this.activeLegacySession(sandboxId);
+    this.requireOperationOwner(record);
     const bounded = boundedPositiveInteger(
       idleTtlMs ?? (workspaceOrIdleTtlMs as number),
       RUNSC_RUNTIME_LIMITS_V1.idleTtlMs,

@@ -352,6 +352,106 @@ describe("runsc explicit-dispose operation ownership", () => {
     ).toHaveLength(1);
   });
 
+  test("rejects filesystem work when disposal claims ownership during lookup", async () => {
+    let filesystemCalls = 0;
+    const runner = {
+      run: vi.fn(async (input: DockerCommandInput) => {
+        const mode = commandMode(input);
+        if (mode === "ps") return success("");
+        if (mode === "workspace") {
+          const request = JSON.parse(new TextDecoder().decode(input.stdin));
+          if (request.op === "probe") return success({ openat2: true });
+          filesystemCalls += 1;
+          return success({ ok: true });
+        }
+        return success("container-id\n");
+      }),
+    } satisfies DockerCommandRunner & { run: ReturnType<typeof vi.fn> };
+    const sessions = testRuntime(runner);
+    await sessions.create(createInput);
+
+    const filesystem = sessions.fs("sandbox-a", workspaceId, {
+      op: "mkdir",
+      path: "must-not-start",
+      recursive: true,
+    });
+    const disposalStarted = deferred<void>();
+    let disposal!: Promise<void>;
+    queueMicrotask(() => {
+      disposal = sessions.dispose("sandbox-a", workspaceId);
+      disposalStarted.resolve();
+    });
+    await disposalStarted.promise;
+
+    await expect(filesystem).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.sandboxDisposed,
+      message: "remote-worker sandbox retirement is in progress",
+    });
+    await disposal;
+    expect(filesystemCalls).toBe(0);
+  });
+
+  test("rejects renewal when disposal claims ownership during lookup", async () => {
+    const runner = {
+      run: vi.fn(async (input: DockerCommandInput) => {
+        const mode = commandMode(input);
+        if (mode === "ps") return success("");
+        if (mode === "workspace") return success({ openat2: true });
+        return success("container-id\n");
+      }),
+    } satisfies DockerCommandRunner & { run: ReturnType<typeof vi.fn> };
+    const sessions = testRuntime(runner);
+    await sessions.create(createInput);
+
+    const renewal = Promise.resolve().then(
+      async () => await sessions.renew("sandbox-a", workspaceId, 10_000),
+    );
+    const disposalStarted = deferred<void>();
+    let disposal!: Promise<void>;
+    queueMicrotask(() => {
+      disposal = sessions.dispose("sandbox-a", workspaceId);
+      disposalStarted.resolve();
+    });
+    await disposalStarted.promise;
+
+    await expect(renewal).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.sandboxDisposed,
+      message: "remote-worker sandbox retirement is in progress",
+    });
+    await disposal;
+  });
+
+  test("rejects exec when disposal claims ownership during lookup", async () => {
+    let invocationCalls = 0;
+    const runner = {
+      run: vi.fn(async (input: DockerCommandInput) => {
+        const mode = commandMode(input);
+        if (mode === "ps") return success("");
+        if (mode === "workspace") return success({ openat2: true });
+        if (mode === "invoke") invocationCalls += 1;
+        return success(mode === "invoke" ? helperResult() : "container-id\n");
+      }),
+    } satisfies DockerCommandRunner & { run: ReturnType<typeof vi.fn> };
+    const sessions = testRuntime(runner);
+    await sessions.create(createInput);
+
+    const execution = sessions.exec("sandbox-a", workspaceId, execRequest);
+    const disposalStarted = deferred<void>();
+    let disposal!: Promise<void>;
+    queueMicrotask(() => {
+      disposal = sessions.dispose("sandbox-a", workspaceId);
+      disposalStarted.resolve();
+    });
+    await disposalStarted.promise;
+
+    await expect(execution).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.sandboxDisposed,
+      message: "remote-worker sandbox retirement is in progress",
+    });
+    await disposal;
+    expect(invocationCalls).toBe(0);
+  });
+
   test("joins concurrent disposal and never binds or starts after disposal succeeds", async () => {
     const removal = deferred<DockerCommandResult>();
     let removeCalls = 0;
