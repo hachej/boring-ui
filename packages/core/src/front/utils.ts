@@ -159,22 +159,44 @@ export function routeHref(
   return path
 }
 
-const INVITE_ACCEPT_PATH_RE = /^\/invites\/([^/?#]+)/
+// Matches the *entire* redirect value against a single-segment `/invites/:token` path: no
+// leading `//` (protocol-relative), no trailing segments, no `?`/`#` smuggled into the
+// captured segment. Anything else (absolute URLs, extra path parts, query/hash) fails to
+// match at all rather than being trimmed down to a plausible-looking prefix.
+const INVITE_ACCEPT_PATH_RE = /^\/invites\/([^/?#]+)$/
+
+// Invite tokens are generated server-side as either a v4 UUID (LocalWorkspaceStore's
+// `randomUUID()`) or a 32-byte base64url string (PostgresWorkspaceStore's
+// `randomBytes(32).toString('base64url')`, 43 chars, unpadded). Only these two exact shapes
+// are accepted — anything else (including a decoded separator like `%2F`, which can only
+// ever decode to a `/`) is rejected rather than forwarded as a "close enough" token.
+const INVITE_TOKEN_RE =
+  /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[A-Za-z0-9_-]{43})$/
 
 /**
  * The invite-accept redirect (`?redirect=/invites/:token`) carries the invite token in the
  * path, not as an `invite_token` query param. Signup needs the raw token to send the
  * `x-invite-token` header, so this recovers it when only `redirect` was forwarded.
+ *
+ * Strict by construction: the redirect must be the complete, single-segment invite-accept
+ * path (no extra segments, no query/hash smuggled in), the segment is percent-decoded
+ * exactly once (a throw on malformed escapes yields `null`, never the raw/undecoded text),
+ * and the decoded result must match the invite token's actual character class. Anything
+ * that doesn't fully qualify returns `null` — never a fabricated or truncated token.
  */
 export function extractInviteTokenFromRedirect(redirect: string | null): string | null {
   if (!redirect) return null
   const match = INVITE_ACCEPT_PATH_RE.exec(redirect)
   if (!match) return null
+
+  let decoded: string
   try {
-    return decodeURIComponent(match[1])
+    decoded = decodeURIComponent(match[1])
   } catch {
-    return match[1]
+    return null
   }
+
+  return INVITE_TOKEN_RE.test(decoded) ? decoded : null
 }
 
 /**
