@@ -103,7 +103,7 @@ export interface AuthorizeRemoteWorkerSandboxInputV1<
 
 export interface RemoteWorkerAuthorizedEventStreamV1 {
   closed: Promise<void>;
-  close(): void;
+  close(): void | Promise<void>;
 }
 
 function bindingKey(workspaceId: string, sandboxId: string): string {
@@ -112,7 +112,7 @@ function bindingKey(workspaceId: string, sandboxId: string): string {
 
 function closeEventStream(stream: RemoteWorkerAuthorizedEventStreamV1): void {
   try {
-    stream.close();
+    void Promise.resolve(stream.close()).catch(() => undefined);
   } catch {
     // A stream callback cannot retain or replace binding authority.
   }
@@ -693,21 +693,34 @@ export class RemoteWorkerSandboxBindingRegistryV1 {
       );
     }
     const streams = this.activeEventStreams.get(key) ?? new Set();
-    streams.add(stream);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let closeStarted = false;
+    let managed: RemoteWorkerAuthorizedEventStreamV1;
+    const cleanup = (): void => {
+      if (timer) clearTimeout(timer);
+      timer = undefined;
+      streams.delete(managed);
+      if (streams.size === 0) this.activeEventStreams.delete(key);
+    };
+    managed = {
+      closed: stream.closed,
+      close() {
+        if (closeStarted) return;
+        closeStarted = true;
+        cleanup();
+        closeEventStream(stream);
+      },
+    };
+    streams.add(managed);
     this.activeEventStreams.set(key, streams);
     const deadlineMs = Math.min(
       capability.expiresAtMs,
       current.expiresAtMs,
       this.now() + this.eventStreamLifetimeMs,
     );
-    const timer = setTimeout(() => closeEventStream(stream), deadlineMs - this.now());
-    const cleanup = (): void => {
-      clearTimeout(timer);
-      streams.delete(stream);
-      if (streams.size === 0) this.activeEventStreams.delete(key);
-    };
-    void stream.closed.then(cleanup, cleanup);
-    return stream;
+    timer = setTimeout(managed.close, deadlineMs - this.now());
+    void managed.closed.then(cleanup, cleanup);
+    return managed;
   }
 
   retireBinding(workspaceId: string, sandboxId: string): void {

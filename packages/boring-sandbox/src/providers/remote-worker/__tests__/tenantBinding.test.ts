@@ -727,6 +727,45 @@ describe("H5 sandboxId <-> authorized workspaceId tenant binding", () => {
     }
   });
 
+  test("handles async stream-close rejection once without an unhandled rejection", async () => {
+    vi.useFakeTimers();
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    try {
+      const { registry, tokenFor } = authenticatedRegistry({
+        eventStreamLifetimeMs: 1_000,
+      });
+      await bindTenant(registry, tokenFor, "workspace-a", "sandbox-a");
+      const requestBody = {};
+      const rawClose = vi.fn(() => Promise.reject(new Error("close failed")));
+      const stream = await registry.authorizeEventStream(
+        {
+          sandboxId: "sandbox-a",
+          operation: "events",
+          requestBody,
+          capabilityToken: tokenFor(
+            capability({
+              workspaceId: "workspace-a",
+              sandboxId: "sandbox-a",
+              operation: "events",
+              requestDigest: remoteWorkerRequestDigestV1(requestBody),
+            }),
+          ),
+        },
+        () => ({ closed: new Promise<void>(() => {}), close: rawClose }),
+      );
+
+      stream.close();
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(rawClose).toHaveBeenCalledOnce();
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off("unhandledRejection", unhandled);
+      vi.useRealTimers();
+    }
+  });
+
   test("closes an event stream that finishes opening after concurrent delete", async () => {
     const { registry, tokenFor } = authenticatedRegistry();
     await bindTenant(registry, tokenFor, "workspace-a", "sandbox-a");

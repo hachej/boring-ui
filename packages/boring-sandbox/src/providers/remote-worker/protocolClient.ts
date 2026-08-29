@@ -449,28 +449,21 @@ export class RemoteWorkerProtocolClientV1 {
     }
     const transportStream = stream;
     let lifetimeTimer: ReturnType<typeof setTimeout> | undefined;
-    let streamCloseComplete = false;
-    let streamCloseInFlight: Promise<void> | undefined;
+    let closeStarted = false;
     const cleanup = (): void => {
       if (lifetimeTimer) clearTimeout(lifetimeTimer);
       lifetimeTimer = undefined;
       this.activeStreams.delete(stream);
     };
-    const closeStream = (): Promise<void> => {
-      if (lifetimeTimer) clearTimeout(lifetimeTimer);
-      lifetimeTimer = undefined;
-      if (streamCloseComplete) return Promise.resolve();
-      if (streamCloseInFlight) return streamCloseInFlight;
-      const operation = Promise.resolve().then(async () => {
-        await transportStream.close();
-        streamCloseComplete = true;
-        cleanup();
-      });
-      streamCloseInFlight = operation;
-      void operation.finally(() => {
-        if (streamCloseInFlight === operation) streamCloseInFlight = undefined;
-      }).catch(() => undefined);
-      return operation;
+    const closeStream = (): void => {
+      if (closeStarted) return;
+      closeStarted = true;
+      cleanup();
+      try {
+        void Promise.resolve(transportStream.close()).catch(() => undefined);
+      } catch {
+        // Local stream cleanup cannot retain remote sandbox authority.
+      }
     };
     stream = {
       close: closeStream,
@@ -491,23 +484,13 @@ export class RemoteWorkerProtocolClientV1 {
       leaseExpiresAtMs,
       this.options.now() + this.options.eventStreamLifetimeMs,
     );
-    lifetimeTimer = setTimeout(() => {
-      void closeStream().catch(() => undefined);
-    }, Math.max(0, deadlineMs - this.options.now()));
+    lifetimeTimer = setTimeout(closeStream, Math.max(0, deadlineMs - this.options.now()));
     void stream.closed.then(cleanup, cleanup);
     return stream;
   }
 
-  async closeEventStreams(): Promise<void> {
-    const streamResults = await Promise.allSettled(
-      [...this.activeStreams].map(async (stream) => await stream.close()),
-    );
-    if (streamResults.some((result) => result.status === "rejected")) {
-      throw new SandboxProviderError(
-        REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
-        "remote-worker event stream cleanup could not be confirmed",
-      );
-    }
+  closeEventStreams(): void {
+    for (const stream of this.activeStreams) stream.close();
   }
 
   async close(): Promise<void> {
@@ -516,12 +499,8 @@ export class RemoteWorkerProtocolClientV1 {
     if (this.closeInFlight) return await this.closeInFlight;
     const operation = (async () => {
       for (const controller of this.activeControllers) controller.abort();
-      const streamResult = await this.closeEventStreams().then(
-        () => undefined,
-        (error: unknown) => error,
-      );
+      this.closeEventStreams();
       await Promise.allSettled([...this.pending]);
-      if (streamResult !== undefined) throw streamResult;
       this.closeComplete = true;
     })();
     this.closeInFlight = operation;
@@ -595,8 +574,8 @@ export class RemoteWorkerLeaseClientV1 {
     return this.client.openEvents(this.sandboxId, leaseExpiresAtMs, onEvent);
   }
 
-  closeEventStreams(): Promise<void> {
-    return this.client.closeEventStreams();
+  closeEventStreams(): void {
+    this.client.closeEventStreams();
   }
 
   close(): Promise<void> {
