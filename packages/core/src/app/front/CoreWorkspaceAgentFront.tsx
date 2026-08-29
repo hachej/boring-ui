@@ -10,10 +10,16 @@ import {
   useCurrentWorkspace,
   useSession,
   useWorkspaceRouteStatus,
-  WorkspaceRouteErrorPage,
   type CoreFrontAuthPagesOverride,
   type CoreFrontCompanyAdminOptions,
 } from '../../front/index.js'
+// Imported directly from its module (not the `../../front/index.js` barrel):
+// this is a pure presentational component with no hooks/context, and
+// CoreWorkspaceAgentFront.test.tsx replaces the whole barrel with a manual
+// mock. Routing it through the barrel would silently render `undefined`
+// under that mock instead of the real terminal-route screen the test
+// (added by #1435) asserts on.
+import { WorkspaceRouteErrorPage } from '../../front/workspace/WorkspaceRouteErrorPage.js'
 import {
   parseFullPagePanelLocation,
   WorkspaceAgentFront,
