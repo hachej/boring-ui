@@ -239,6 +239,38 @@ export function ChatLayout(props: ChatLayoutProps) {
     observer.observe(el)
     return () => observer.disconnect()
   }, [])
+  // #1457 finding-2 follow-up: `useLayoutEffect` guarantees no *painted*
+  // frame shows the pre-measurement estimate, but it does not guarantee no
+  // *animated* one. `measure()` above reads `getBoundingClientRect()`,
+  // which forces a synchronous layout/style pass against whatever style is
+  // on the DOM at that instant (the first render's `effectiveSurfaceWidth`,
+  // computed from `rowWidthEstimate` — which cannot see host chrome outside
+  // this component, e.g. the plugin-tabs app-left pane). If the corrected
+  // width is applied in the same commit as a `transition-duration` that is
+  // already active on that property, the browser can still treat the
+  // forced-layout value as the transition's start point and animate through
+  // it, even though it was never actually painted. So the workbench's width
+  // transition is intentionally withheld (`surfaceTransitionEnabled` below,
+  // gated in the JSX) until a real measurement has landed, and even then it
+  // is armed one frame *later*, in this separate effect — never in the same
+  // commit as a width correction — so "transition turns on" and "width
+  // changes" can never be the same style recalculation.
+  const [surfaceTransitionEnabled, setSurfaceTransitionEnabled] = useState(false)
+  const surfaceTransitionArmedRef = useRef(false)
+  useEffect(() => {
+    if (surfaceTransitionArmedRef.current) return
+    // No real measurement yet, and one is still possible — wait for it
+    // rather than arming against the unmeasured estimate.
+    if (measuredRowWidth === null && typeof ResizeObserver !== "undefined") return
+    surfaceTransitionArmedRef.current = true
+    const raf = typeof requestAnimationFrame === "function"
+      ? requestAnimationFrame(() => setSurfaceTransitionEnabled(true))
+      : (setTimeout(() => setSurfaceTransitionEnabled(true), 0) as unknown as number)
+    return () => {
+      if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(raf)
+      else clearTimeout(raf as unknown as ReturnType<typeof setTimeout>)
+    }
+  }, [measuredRowWidth])
   const navIsTopDrawer = navOpen && (mobileShell || !sidebarOpen)
   const sidebarIsTopDrawer = sidebarOpen && !navIsTopDrawer
   useModalDrawer({ active: navIsTopDrawer, containerRef: navDrawerRef, onDismiss: closeNav, focusFallback: scheduleLocalComposerFocus, lifecycleKey: sidebarOpen })
@@ -748,7 +780,14 @@ export function ChatLayout(props: ChatLayoutProps) {
                     "relative",
                     // Collapsed workbench fills available width; otherwise it is a side panel.
                     chatCollapsed && surfaceOpen ? "min-w-0 flex-1" : "shrink-0",
-                    "transition-[flex-grow,flex-basis,width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+                    // Withheld until `surfaceTransitionEnabled` arms (see the
+                    // effect above) so the very first width correction —
+                    // driven by a real `rowRef` measurement replacing the
+                    // pre-measurement `rowWidthEstimate` — never animates.
+                    // Legitimate later changes (drag-resize, collapse
+                    // toggle, a real host-chrome resize) do animate, same as
+                    // before.
+                    surfaceTransitionEnabled && "transition-[flex-grow,flex-basis,width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
                     surfaceOpen && "border-l border-border",
                   ),
             )}

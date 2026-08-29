@@ -927,6 +927,119 @@ describe("ChatLayout component", () => {
     expect(workbench.style.width).toBe("680px")
   })
 
+  // #1457 re-review probes. The reviewer judged both non-blocking from code
+  // reading alone and flagged that the global `ResizeObserver` mock (a
+  // no-op) leaves this behavior untested. These install a *controllable*
+  // `ResizeObserver` for the duration of one test so the row's real
+  // measurement callback can be fired on demand, closing that gap with
+  // actual evidence instead of just re-reading the source.
+  function installControllableResizeObserver() {
+    let deliver: (() => void) | null = null
+    class ControllableResizeObserver {
+      constructor(callback: () => void) { deliver = callback }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+    const original = globalThis.ResizeObserver
+    vi.stubGlobal("ResizeObserver", ControllableResizeObserver)
+    return {
+      fire: () => act(() => { deliver?.() }),
+      restore: () => vi.stubGlobal("ResizeObserver", original),
+    }
+  }
+
+  it("ignores a transient 0-width row sample and recovers on the next positive one (#1457 probe 1)", () => {
+    const ro = installControllableResizeObserver()
+    setViewport(1024)
+    const storageKey = "chat-layout-1457-zero-guard"
+    window.localStorage.setItem(`${storageKey}:surfaceWidth`, "680")
+
+    const { container } = renderWithRegistry(
+      <ChatLayout
+        center="chat"
+        nav={null}
+        storageKey={storageKey}
+        surface="artifact-surface"
+        surfaceParams={{ onClose: vi.fn() }}
+        chatOverlay={<div>Tasks overlay</div>}
+      />,
+      ["chat", "artifact-surface"],
+    )
+
+    const row = container.querySelector('[data-boring-workspace-part="chat-workbench-row"]')
+    expect(row).toBeTruthy()
+    const workbenchWidth = () => screen.getByRole("complementary", { name: "Workbench" }).style.width
+
+    // Mount already exercised the 0-guard once (jsdom's real
+    // getBoundingClientRect is always zero), landing on the pre-measurement
+    // estimate. This is the value a legitimate collapse-to-0 must not
+    // disturb.
+    const beforeCollapse = workbenchWidth()
+
+    // A row that is legitimately, fully squeezed (or behind a momentary
+    // `display:none` ancestor) reports 0 — this must not be treated as "the
+    // real width is now 0" and propagated into sizing math.
+    vi.spyOn(row as Element, "getBoundingClientRect").mockReturnValue({ width: 0 } as DOMRect)
+    ro.fire()
+    expect(workbenchWidth()).toBe(beforeCollapse)
+
+    // Recovery: the next positive sample is applied normally — the guard
+    // does not get "stuck" ignoring real data after a 0 reading.
+    vi.spyOn(row as Element, "getBoundingClientRect").mockReturnValue({ width: 744 } as DOMRect)
+    ro.fire()
+    // 744 row, 280 chatOverlay reserve, persisted surfaceWidth 680 clamped
+    // to surfaceMax = max(480, floor(744*0.72)) = 535 → min(535, 744-280) = 464.
+    expect(workbenchWidth()).toBe("464px")
+    expect(workbenchWidth()).not.toBe(beforeCollapse)
+
+    ro.restore()
+  })
+
+  it("dedupes an identical resize sample: no further geometry change reaches the DOM (#1457 probe 2)", async () => {
+    const ro = installControllableResizeObserver()
+    setViewport(1024)
+    const storageKey = "chat-layout-1457-dedupe"
+
+    const { container } = renderWithRegistry(
+      <ChatLayout
+        center="chat"
+        nav={null}
+        storageKey={storageKey}
+        surface="artifact-surface"
+        surfaceParams={{ onClose: vi.fn() }}
+      />,
+      ["chat", "artifact-surface"],
+    )
+
+    const row = container.querySelector('[data-boring-workspace-part="chat-workbench-row"]')
+    expect(row).toBeTruthy()
+    vi.spyOn(row as Element, "getBoundingClientRect").mockReturnValue({ width: 900 } as DOMRect)
+    const workbenchWidth = () => screen.getByRole("complementary", { name: "Workbench" }).style.width
+
+    // First real sample changes the measured width (0 → 900): a real
+    // geometry change lands in the DOM.
+    ro.fire()
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)) })
+    const widthAfterFirstSample = workbenchWidth()
+    expect(widthAfterFirstSample).not.toBe("")
+
+    // Second delivery reports the *identical* width. React's own docs note
+    // that returning the same value from a state updater can still let the
+    // owning component "render" once more before bailing out of
+    // committing — so a raw render/commit-count assertion here would be an
+    // implementation-detail-sensitive, not-quite-accurate proxy (verified:
+    // an earlier version of this test asserting zero additional commits via
+    // a `Profiler` was flaky against exactly that documented behavior). What
+    // the reviewer's finding was actually about — and what matters for
+    // correctness — is that no *second geometry update* reaches the DOM.
+    ro.fire()
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)) })
+    expect(workbenchWidth()).toBe(widthAfterFirstSample)
+
+    ro.restore()
+  })
+
   it("owns collapsed, split, fullscreen, restore, and collapse transitions at the ChatLayout host", async () => {
     const panelRegistry = new PanelRegistry()
     panelRegistry.register("chat", { title: "Chat", lazy: false, component: DummyPanel })
