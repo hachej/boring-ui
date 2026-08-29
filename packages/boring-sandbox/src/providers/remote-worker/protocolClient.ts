@@ -21,6 +21,7 @@ import {
   type RemoteWorkerExecResponseV1,
   type RemoteWorkerFsEventEnvelopeV1,
   type RemoteWorkerHealthResponseV1,
+  type RemoteWorkerNegotiatedCapabilityV1,
   type RemoteWorkerOperationV1,
   type RemoteWorkerRenewRequestV1,
   type RemoteWorkerRenewResponseV1,
@@ -78,6 +79,7 @@ export interface RemoteWorkerProtocolClientOptionsV1 {
   requestTimeoutMs: number;
   capabilityLifetimeMs: number;
   eventStreamLifetimeMs: number;
+  requestedHealthCapabilities?: readonly RemoteWorkerNegotiatedCapabilityV1[];
 }
 
 export function parseRemoteWorkerRequestV1<T>(
@@ -297,8 +299,10 @@ export class RemoteWorkerProtocolClientV1 {
       method: "GET",
       path: "/internal/v1/health",
       headers: {
-        [REMOTE_WORKER_HEADERS_V1.requestedCapabilities]:
+        [REMOTE_WORKER_HEADERS_V1.requestedCapabilities]: [
           REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1,
+          ...(this.options.requestedHealthCapabilities ?? []),
+        ].join(","),
       },
       schema: RemoteWorkerHealthResponseSchemaV1,
     });

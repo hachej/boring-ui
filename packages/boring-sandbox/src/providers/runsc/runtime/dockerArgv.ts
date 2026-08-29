@@ -18,6 +18,7 @@ export type TrustedWorkspaceMountSource = string & {
 const runtimeIdPattern = /^[a-f0-9]{32}$/;
 const workspaceIdPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const sandboxIdPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const imageDigestPattern =
   /^(?:[a-z0-9.-]+(?::[0-9]{1,5})?\/)?[a-z0-9]+(?:[._-][a-z0-9]+)*(?:\/[a-z0-9]+(?:[._-][a-z0-9]+)*)*@sha256:[a-f0-9]{64}$/;
 
@@ -47,6 +48,18 @@ export function trustedWorkspaceMountSource(
   if (!workspaceIdPattern.test(workspaceId)) invalidDockerInput("workspace id");
   const source = `${workspaceRoot}/${workspaceId.toLowerCase()}`;
   if (source.length > 4096) invalidDockerInput("workspace mount source");
+  return source as TrustedWorkspaceMountSource;
+}
+
+export function trustedSandboxMountSource(
+  sandboxRoot: string,
+  workspaceId: string,
+  sandboxId: string,
+): TrustedWorkspaceMountSource {
+  const workspaceSource = trustedWorkspaceMountSource(sandboxRoot, workspaceId);
+  if (!sandboxIdPattern.test(sandboxId)) invalidDockerInput("sandbox id");
+  const source = `${workspaceSource}/${sandboxId}`;
+  if (source.length > 4096) invalidDockerInput("sandbox mount source");
   return source as TrustedWorkspaceMountSource;
 }
 

@@ -15,7 +15,10 @@ import {
   REMOTE_WORKER_ERROR_CODES_V1,
   type RemoteWorkerExecRequestV1,
 } from "../../../../shared/remoteWorkerProtocolV1";
-import { trustedWorkspaceMountSource } from "../dockerArgv";
+import {
+  trustedWorkspaceMountSource,
+  type TrustedWorkspaceMountSource,
+} from "../dockerArgv";
 import type {
   DockerCommandInput,
   DockerCommandResult,
@@ -26,6 +29,7 @@ import {
   createRunscInvocationCredentialResolverV1,
   runscCredentialPayloadMetadataBytesV1,
 } from "../invocationCredentials";
+import type { RunscSandboxRootLifecycleV1 } from "../sandboxRootLifecycle";
 import { RunscSessionRuntimeV1 } from "../sessionRuntime";
 
 const image = `registry.example/boring-workload@sha256:${"b".repeat(64)}`;
@@ -96,6 +100,7 @@ function runtime(
       apply(workspaceId: string): Promise<void>;
       check(workspaceId: string): Promise<void>;
     };
+    sandboxRoots?: RunscSandboxRootLifecycleV1;
   } = {},
 ) {
   let id = 0;
@@ -187,6 +192,7 @@ function runtime(
     runtimeIdFactory: () => (++id).toString(16).padStart(32, "0"),
     now: options.now,
     onRetire: options.onRetire,
+    sandboxRoots: options.sandboxRoots,
     invocationCredentials: createRunscInvocationCredentialResolverV1({
       bindings,
       providers,
@@ -196,6 +202,19 @@ function runtime(
       },
     }),
   });
+}
+
+function multiSandboxRoots(): RunscSandboxRootLifecycleV1 {
+  return {
+    prepare: vi.fn(async (authorizedWorkspaceId: string, sandboxId: string) =>
+      `${trustedWorkspaceMountSource(
+        "/srv/boring/workspaces",
+        authorizedWorkspaceId,
+      )}/${sandboxId}` as TrustedWorkspaceMountSource,
+    ),
+    dispose: vi.fn(async () => undefined),
+    startupSweep: vi.fn(async () => 0),
+  } as unknown as RunscSandboxRootLifecycleV1;
 }
 
 const createInput = {
@@ -668,6 +687,7 @@ describe("warm runsc session runtime", () => {
         code: REMOTE_WORKER_ERROR_CODES_V1.sandboxNotFound,
       });
       expect(retire).toHaveBeenCalledWith({
+        workspaceId,
         sandboxId: "sandbox-a",
         reason: "idle",
       });
@@ -722,6 +742,7 @@ describe("warm runsc session runtime", () => {
       expect(removeAttempts).toBe(2);
       expect(retire).toHaveBeenCalledTimes(1);
       expect(retire).toHaveBeenCalledWith({
+        workspaceId,
         sandboxId: "sandbox-a",
         reason: "idle",
       });
@@ -827,6 +848,7 @@ describe("warm runsc session runtime", () => {
       expect(removeAttempts).toBe(2);
       expect(onRetire).toHaveBeenCalledTimes(1);
       expect(onRetire).toHaveBeenCalledWith({
+        workspaceId: secondWorkspaceId,
         sandboxId: "sandbox-b",
         reason: "shutdown",
       });
@@ -835,6 +857,7 @@ describe("warm runsc session runtime", () => {
       expect(removeAttempts).toBe(3);
       expect(onRetire).toHaveBeenCalledTimes(2);
       expect(onRetire).toHaveBeenCalledWith({
+        workspaceId,
         sandboxId: "sandbox-a",
         reason: "shutdown",
       });
@@ -893,6 +916,7 @@ describe("warm runsc session runtime", () => {
     const missing = sessions.renew("sandbox-a", 100);
     await vi.waitFor(() =>
       expect(onRetire).toHaveBeenCalledWith({
+        workspaceId: undefined,
         sandboxId: "sandbox-a",
         reason: "missing",
       }),
@@ -924,20 +948,34 @@ describe("warm runsc session runtime", () => {
     ]);
   });
 
-  test("serializes quota application against every session for one workspace", async () => {
-    let releaseApply: (() => void) | undefined;
-    const apply = vi.fn(
-      async () =>
-        await new Promise<void>((resolve) => {
-          releaseApply = resolve;
-        }),
-    );
+  test("keys same-named sandboxes and create replays by authorized workspace", async () => {
     const runner = fakeRunner();
-    const sessions = runtime(runner, {
-      quota: { apply, check: vi.fn(async () => undefined) },
+    const sessions = runtime(runner, { sandboxRoots: multiSandboxRoots() });
+    const secondWorkspaceId = "00000000-0000-4000-8000-000000000002";
+    await sessions.create(createInput);
+    await sessions.create({
+      ...createInput,
+      workspaceId: secondWorkspaceId,
+      workspaceMountSource: trustedWorkspaceMountSource(
+        "/srv/boring/workspaces",
+        secondWorkspaceId,
+      ),
     });
-    const first = sessions.create(createInput);
-    await vi.waitFor(() => expect(apply).toHaveBeenCalledOnce());
+
+    await sessions.dispose("sandbox-a", workspaceId);
+    await expect(
+      sessions.renew("sandbox-a", secondWorkspaceId, 1_000),
+    ).resolves.toMatchObject({ sandboxId: "sandbox-a" });
+    await expect(
+      sessions.renew("sandbox-a", workspaceId, 1_000),
+    ).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.sandboxWorkspaceMismatch,
+    });
+  });
+
+  test("preserves the legacy one-session-per-workspace runtime by default", async () => {
+    const sessions = runtime(fakeRunner());
+    await sessions.create(createInput);
     expect(() =>
       sessions.create({
         ...createInput,
@@ -949,20 +987,31 @@ describe("warm runsc session runtime", () => {
         code: REMOTE_WORKER_ERROR_CODES_V1.idempotencyConflict,
       }),
     );
+  });
+
+  test("admits concurrent sessions while charging each to the same workspace quota", async () => {
+    let releaseApply: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      releaseApply = resolve;
+    });
+    const apply = vi.fn(async () => await gate);
+    const check = vi.fn(async () => undefined);
+    const runner = fakeRunner();
+    const sessions = runtime(runner, {
+      quota: { apply, check },
+      sandboxRoots: multiSandboxRoots(),
+    });
+    const first = sessions.create(createInput);
+    const second = sessions.create({
+      ...createInput,
+      sandboxId: "sandbox-b",
+      clientLeaseId: "lease-b",
+    });
+    await vi.waitFor(() => expect(apply).toHaveBeenCalledTimes(2));
     releaseApply?.();
-    await first;
-    expect(() =>
-      sessions.create({
-        ...createInput,
-        sandboxId: "sandbox-c",
-        clientLeaseId: "lease-c",
-      }),
-    ).toThrowError(
-      expect.objectContaining({
-        code: REMOTE_WORKER_ERROR_CODES_V1.idempotencyConflict,
-      }),
-    );
-    expect(apply).toHaveBeenCalledOnce();
+    await expect(Promise.all([first, second])).resolves.toHaveLength(2);
+    expect(apply.mock.calls).toEqual([[workspaceId], [workspaceId]]);
+    expect(check.mock.calls).toEqual([[workspaceId], [workspaceId]]);
   });
 
   test("retires instead of dropping invocation replay markers at its bound", async () => {
@@ -985,6 +1034,7 @@ describe("warm runsc session runtime", () => {
       code: REMOTE_WORKER_ERROR_CODES_V1.sandboxExpired,
     });
     expect(retire).toHaveBeenCalledWith({
+      workspaceId,
       sandboxId: "sandbox-a",
       reason: "history",
     });

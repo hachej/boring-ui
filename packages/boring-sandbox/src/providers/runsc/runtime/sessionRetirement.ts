@@ -1,6 +1,9 @@
 import { REMOTE_WORKER_ERROR_CODES_V1 } from "../../../shared/remoteWorkerProtocolV1";
 
-import { buildDockerRemoveArgv } from "./dockerArgv";
+import {
+  buildDockerRemoveArgv,
+  type TrustedWorkspaceMountSource,
+} from "./dockerArgv";
 import type { DockerCommandRunner } from "./dockerRunner";
 import { runDockerChecked } from "./dockerRunner";
 import { runscRuntimeError } from "./errors";
@@ -13,18 +16,24 @@ export type RunscSessionRetirementReasonV1 =
   "idle" | "hard-expiry" | "missing" | "cleanup" | "history" | "shutdown";
 
 export interface RunscSessionRetirementV1 {
+  readonly workspaceId?: string;
   readonly sandboxId: string;
   readonly reason: RunscSessionRetirementReasonV1;
 }
 
 export interface RetirableRunscSessionRecordV1 {
+  readonly workspaceId: string;
   readonly sandboxId: string;
   readonly runtimeId: string;
+  readonly workspaceMountSource: TrustedWorkspaceMountSource;
+  readonly ownsWorkspaceMountSource: boolean;
   timer: ReturnType<typeof setTimeout>;
   retirement?: {
     readonly reason: RunscSessionRetirementReasonV1;
     readonly notify: boolean;
     attempts: number;
+    containerRemoved: boolean;
+    rootRemoved: boolean;
   };
 }
 
@@ -35,6 +44,9 @@ export interface RunscSessionRetirementManagerOptionsV1<
   readonly detach: (record: RecordV1) => void;
   readonly onRetire?: (
     retirement: RunscSessionRetirementV1,
+  ) => void | Promise<void>;
+  readonly disposeMountSource: (
+    source: TrustedWorkspaceMountSource,
   ) => void | Promise<void>;
 }
 
@@ -56,7 +68,13 @@ export class RunscSessionRetirementManagerV1<
     const existing = this.cleanupInflight.get(record);
     if (existing) return await existing;
     clearTimeout(record.timer);
-    record.retirement ??= { reason, notify, attempts: 0 };
+    record.retirement ??= {
+      reason,
+      notify,
+      attempts: 0,
+      containerRemoved: false,
+      rootRemoved: !record.ownsWorkspaceMountSource,
+    };
     const retirement = this.removeAndDetach(record);
     this.cleanupInflight.set(record, retirement);
     try {
@@ -66,42 +84,58 @@ export class RunscSessionRetirementManagerV1<
     }
   }
 
-  async notifyMissing(sandboxId: string): Promise<void> {
-    const existing = this.notificationInflight.get(sandboxId);
+  async notifyMissing(workspaceId: string | undefined, sandboxId: string): Promise<void> {
+    const key = `${workspaceId ?? "legacy"}\u0000${sandboxId}`;
+    const existing = this.notificationInflight.get(key);
     if (existing) return await existing;
-    const retirement = this.notify({ sandboxId, reason: "missing" });
-    this.notificationInflight.set(sandboxId, retirement);
+    const retirement = this.notify({ workspaceId, sandboxId, reason: "missing" });
+    this.notificationInflight.set(key, retirement);
     try {
       await retirement;
     } finally {
-      this.notificationInflight.delete(sandboxId);
+      this.notificationInflight.delete(key);
     }
   }
 
   private async removeAndDetach(record: RecordV1): Promise<void> {
     try {
-      await runDockerChecked(this.options.runner, {
-        argv: buildDockerRemoveArgv(record.runtimeId),
-        timeoutMs: RUNSC_RUNTIME_LIMITS_V1.disposeTimeoutMs,
-        maxOutputBytes: 64 * 1024,
-      });
+      if (!record.retirement!.containerRemoved) {
+        await runDockerChecked(this.options.runner, {
+          argv: buildDockerRemoveArgv(record.runtimeId),
+          timeoutMs: RUNSC_RUNTIME_LIMITS_V1.disposeTimeoutMs,
+          maxOutputBytes: 64 * 1024,
+        });
+        record.retirement!.containerRemoved = true;
+      }
+      if (!record.retirement!.rootRemoved) {
+        await this.options.disposeMountSource(record.workspaceMountSource);
+        record.retirement!.rootRemoved = true;
+      }
+      if (record.retirement!.notify) {
+        await this.notify({
+          workspaceId: record.workspaceId,
+          sandboxId: record.sandboxId,
+          reason: record.retirement!.reason,
+        });
+      }
     } catch (error) {
       record.retirement!.attempts += 1;
       this.scheduleRetry(record);
+      if (
+        error &&
+        typeof error === "object" &&
+        "code" in error &&
+        error.code === REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup
+      ) {
+        throw error;
+      }
       throw runscRuntimeError(
         REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
         "remote-worker sandbox cleanup is incomplete",
         error,
       );
     }
-    const retirement = record.retirement;
     this.options.detach(record);
-    if (retirement?.notify) {
-      await this.notify({
-        sandboxId: record.sandboxId,
-        reason: retirement.reason,
-      });
-    }
   }
 
   private scheduleRetry(record: RecordV1): void {
