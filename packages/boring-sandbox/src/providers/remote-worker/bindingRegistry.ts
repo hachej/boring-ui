@@ -183,6 +183,7 @@ export class RemoteWorkerSandboxBindingRegistryV1 {
     string,
     RemoteWorkerSandboxBindingRecordV1
   >();
+  private readonly sandboxWorkspaces = new Map<string, Set<string>>();
   private readonly activeEventStreams = new Map<
     string,
     Set<RemoteWorkerAuthorizedEventStreamV1>
@@ -432,6 +433,18 @@ export class RemoteWorkerSandboxBindingRegistryV1 {
     );
   }
 
+  private indexBinding(record: RemoteWorkerSandboxBindingRecordV1): void {
+    const workspaces = this.sandboxWorkspaces.get(record.sandboxId) ?? new Set();
+    workspaces.add(record.workspaceId);
+    this.sandboxWorkspaces.set(record.sandboxId, workspaces);
+  }
+
+  private unindexBinding(record: RemoteWorkerSandboxBindingRecordV1): void {
+    const workspaces = this.sandboxWorkspaces.get(record.sandboxId);
+    workspaces?.delete(record.workspaceId);
+    if (workspaces?.size === 0) this.sandboxWorkspaces.delete(record.sandboxId);
+  }
+
   private async finishBind(input: BindAuthorizedRemoteWorkerSandboxInputV1 & {
     sandboxId: string;
   }): Promise<RemoteWorkerBindingReceiptV1> {
@@ -493,6 +506,7 @@ export class RemoteWorkerSandboxBindingRegistryV1 {
       bindingReceipt: receipt,
     });
     this.records.set(bindingKey(request.workspaceId, sandboxId), record);
+    this.indexBinding(record);
     this.createBindings.set(
       bindingKey(request.workspaceId, request.clientLeaseId),
       record,
@@ -514,7 +528,7 @@ export class RemoteWorkerSandboxBindingRegistryV1 {
     const requestDigest = bindingRequestDigest(input.requestBody);
     const record = this.records.get(bindingKey(capability.workspaceId, sandboxId));
     if (!record) {
-      if ([...this.records.values()].some((candidate) => candidate.sandboxId === sandboxId)) {
+      if (this.sandboxWorkspaces.has(sandboxId)) {
         try {
           this.onSecurityViolation?.({
             code: REMOTE_WORKER_ERROR_CODES_V1.sandboxWorkspaceMismatch,
@@ -676,6 +690,7 @@ export class RemoteWorkerSandboxBindingRegistryV1 {
     this.activeEventStreams.delete(key);
     this.records.delete(key);
     if (record) {
+      this.unindexBinding(record);
       this.createBindings.delete(bindingKey(workspaceId, record.clientLeaseId));
     }
   }
@@ -689,6 +704,7 @@ export class RemoteWorkerSandboxBindingRegistryV1 {
     this.activeEventStreams.clear();
     this.records.clear();
     this.createBindings.clear();
+    this.sandboxWorkspaces.clear();
   }
 
   async dispose<T>(
@@ -706,6 +722,7 @@ export class RemoteWorkerSandboxBindingRegistryV1 {
     }
     this.activeEventStreams.delete(key);
     this.records.delete(key);
+    this.unindexBinding(record);
     this.createBindings.delete(
       bindingKey(record.workspaceId, record.clientLeaseId),
     );
