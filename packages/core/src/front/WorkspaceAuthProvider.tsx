@@ -87,22 +87,31 @@ function workspaceIdFromPath(
  * per rule 9, this is a UI preference, not session-history data, so localStorage (like
  * ThemeProvider's `boring-core:theme`) is the lightest mechanism; it survives sign-out
  * so a fresh sign-in restores it, and is validated against the user's current workspace
- * membership list before use so a stale/removed id can never be trusted blindly. */
-const LAST_WORKSPACE_STORAGE_KEY = 'boring-core:last-workspace'
+ * membership list before use so a stale/removed id can never be trusted blindly.
+ *
+ * Scoped per authenticated user id (`boring-core:last-workspace:<userId>`) — a shared
+ * browser must never steer user B to the workspace user A last selected, even when B is
+ * also a member of it. Without a signed-in user id there is nothing to key on, so reads
+ * and writes are simply no-ops. */
+const LAST_WORKSPACE_STORAGE_PREFIX = 'boring-core:last-workspace:'
 
-function readLastWorkspaceId(): string | null {
-  if (typeof window === 'undefined') return null
+function lastWorkspaceStorageKey(userId: string): string {
+  return `${LAST_WORKSPACE_STORAGE_PREFIX}${userId}`
+}
+
+function readLastWorkspaceId(userId: string | null): string | null {
+  if (typeof window === 'undefined' || !userId) return null
   try {
-    return localStorage.getItem(LAST_WORKSPACE_STORAGE_KEY)
+    return localStorage.getItem(lastWorkspaceStorageKey(userId))
   } catch {
     return null
   }
 }
 
-function writeLastWorkspaceId(workspaceId: string) {
-  if (typeof window === 'undefined') return
+function writeLastWorkspaceId(userId: string | null, workspaceId: string) {
+  if (typeof window === 'undefined' || !userId) return
   try {
-    localStorage.setItem(LAST_WORKSPACE_STORAGE_KEY, workspaceId)
+    localStorage.setItem(lastWorkspaceStorageKey(userId), workspaceId)
   } catch {
     // localStorage unavailable (private mode, quota, etc.) — restoration is best-effort.
   }
@@ -142,7 +151,8 @@ export function WorkspaceAuthProvider({
     enabled: canQueryProtectedApi,
   })
 
-  const lastWorkspaceId = routeWorkspaceId === null ? readLastWorkspaceId() : null
+  const userId = user?.id ?? null
+  const lastWorkspaceId = routeWorkspaceId === null ? readLastWorkspaceId(userId) : null
   const defaultWorkspace =
     routeWorkspaceId === null
       ? (workspacesQuery.data?.find((workspace) => workspace.id === lastWorkspaceId)
@@ -180,8 +190,8 @@ export function WorkspaceAuthProvider({
 
   const matchedWorkspaceId = routeStatus.status === 'matched' ? routeStatus.workspaceId : null
   useEffect(() => {
-    if (matchedWorkspaceId) writeLastWorkspaceId(matchedWorkspaceId)
-  }, [matchedWorkspaceId])
+    if (matchedWorkspaceId) writeLastWorkspaceId(userId, matchedWorkspaceId)
+  }, [userId, matchedWorkspaceId])
 
   return (
     <WorkspaceContext.Provider value={{ workspace, role, routeStatus }}>

@@ -198,15 +198,19 @@ function mockDeferredWorkspaceDetail(
   })
 }
 
-const LAST_WORKSPACE_STORAGE_KEY = 'boring-core:last-workspace'
+const USER_1_ID = 'user-1'
+const USER_2_ID = 'user-2'
 
-beforeEach(() => {
-  window.localStorage.clear()
-  mockSessionState.current = {
+function lastWorkspaceStorageKey(userId: string): string {
+  return `boring-core:last-workspace:${userId}`
+}
+
+function sessionFor(userId: string) {
+  return {
     data: {
       user: {
-        id: 'user-1',
-        email: 'user-1@test.dev',
+        id: userId,
+        email: `${userId}@test.dev`,
         name: null,
         emailVerified: true,
         image: null,
@@ -218,6 +222,11 @@ beforeEach(() => {
     isPending: false,
     error: null,
   }
+}
+
+beforeEach(() => {
+  window.localStorage.clear()
+  mockSessionState.current = sessionFor(USER_1_ID)
 })
 
 function setUnauthenticatedSession() {
@@ -587,7 +596,7 @@ describe('WorkspaceAuthProvider', () => {
       await waitFor(() =>
         expect(screen.getByTestId('ws-name').textContent).toBe('Second WS'),
       )
-      expect(window.localStorage.getItem(LAST_WORKSPACE_STORAGE_KEY)).toBe(WS_2.id)
+      expect(window.localStorage.getItem(lastWorkspaceStorageKey(USER_1_ID))).toBe(WS_2.id)
       first.unmount()
       qc.clear()
 
@@ -612,7 +621,10 @@ describe('WorkspaceAuthProvider', () => {
     'falls back to the default workspace when the remembered id is stale (no longer a member)',
     withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
-      window.localStorage.setItem(LAST_WORKSPACE_STORAGE_KEY, 'ws-deleted-or-not-a-member')
+      window.localStorage.setItem(
+        lastWorkspaceStorageKey(USER_1_ID),
+        'ws-deleted-or-not-a-member',
+      )
       mockWorkspacesList([WS_2, WS_1])
       mockWorkspaceDetail(WS_1, 'owner')
 
@@ -624,6 +636,78 @@ describe('WorkspaceAuthProvider', () => {
       expect(screen.getByTestId('ws-role').textContent).toBe('owner')
       assertionPassed('workspace-stale-last-selected-falls-back-to-default')
       qc.clear()
+    }),
+  )
+
+  it(
+    'does not steer a second user to the first user\'s remembered workspace on a shared browser, even when both are members of it',
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
+      // User A (user-1) visits the shared, non-default workspace WS_2 — recorded as
+      // user-1's last-selected workspace.
+      const qcA = createQueryClient()
+      mockWorkspacesList([WS_1, WS_2])
+      mockWorkspaceDetail(WS_1, 'owner')
+      mockWorkspaceDetail(WS_2, 'editor')
+
+      const rendered = renderWithRouter(`/workspace/${WS_2.id}`, qcA)
+      await waitFor(() =>
+        expect(screen.getByTestId('ws-name').textContent).toBe('Second WS'),
+      )
+      expect(window.localStorage.getItem(lastWorkspaceStorageKey(USER_1_ID))).toBe(WS_2.id)
+      expect(window.localStorage.getItem(lastWorkspaceStorageKey(USER_2_ID))).toBeNull()
+      rendered.unmount()
+      qcA.clear()
+
+      // User B (user-2) — a shared browser, same localStorage — signs in. B is also a
+      // member of WS_2, but has never selected it. B must land on their own default
+      // (WS_1), not on A's remembered WS_2.
+      mockSessionState.current = sessionFor(USER_2_ID)
+      const qcB = createQueryClient()
+      mockWorkspacesList([WS_1, WS_2])
+      mockWorkspaceDetail(WS_1, 'viewer')
+      mockWorkspaceDetail(WS_2, 'viewer')
+
+      renderWithRouter('/', qcB)
+      await waitFor(() =>
+        expect(screen.getByTestId('ws-name').textContent).toBe('Default workspace'),
+      )
+      expect(screen.getByTestId('ws-role').textContent).toBe('viewer')
+      assertionPassed('workspace-second-user-not-steered-by-first-user-shared-membership')
+      qcB.clear()
+    }),
+  )
+
+  it(
+    'does not steer a second user (not a member of the first user\'s workspace) to a forbidden workspace',
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
+      // User A (user-1) visits WS_2 — recorded as user-1's last-selected workspace.
+      const qcA = createQueryClient()
+      mockWorkspacesList([WS_1, WS_2])
+      mockWorkspaceDetail(WS_1, 'owner')
+      mockWorkspaceDetail(WS_2, 'editor')
+
+      const rendered = renderWithRouter(`/workspace/${WS_2.id}`, qcA)
+      await waitFor(() =>
+        expect(screen.getByTestId('ws-name').textContent).toBe('Second WS'),
+      )
+      expect(window.localStorage.getItem(lastWorkspaceStorageKey(USER_1_ID))).toBe(WS_2.id)
+      rendered.unmount()
+      qcA.clear()
+
+      // User B signs in on the same browser but is NOT a member of WS_2 at all — their
+      // workspace list only contains WS_1. B must land on WS_1, never on WS_2.
+      mockSessionState.current = sessionFor(USER_2_ID)
+      const qcB = createQueryClient()
+      mockWorkspacesList([WS_1])
+      mockWorkspaceDetail(WS_1, 'owner')
+
+      renderWithRouter('/', qcB)
+      await waitFor(() =>
+        expect(screen.getByTestId('ws-name').textContent).toBe('Default workspace'),
+      )
+      expect(screen.getByTestId('ws-role').textContent).toBe('owner')
+      assertionPassed('workspace-second-user-not-a-member-falls-back-to-own-default')
+      qcB.clear()
     }),
   )
 })
