@@ -262,6 +262,7 @@ export class RunscSessionRuntimeV1 {
     safeOpaqueId(input.clientLeaseId, "client lease id");
     validateQuotaWorkspaceId(input.workspaceId);
     const digest = input.createDigest ?? remoteWorkerRequestDigestV1({
+      sandboxId: input.sandboxId,
       clientLeaseId: input.clientLeaseId,
       workspaceId: input.workspaceId,
       workspaceMountSource: input.workspaceMountSource,

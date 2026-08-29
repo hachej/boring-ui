@@ -501,18 +501,22 @@ try {
     assert(write.exitCode === 0, "workload workspace write");
     pass("workload-workspace-write", { helperPathAdmitted: false });
   } else {
-    await session.fs(sandboxId, {
+    await session.fs(sandboxId, workspaceId, {
       op: "writeFile",
       path: "persist.txt",
       data: "workspace-persists",
     });
-    const read = await session.fs(sandboxId, {
+    const read = await session.fs(sandboxId, workspaceId, {
       op: "readFile",
       path: "persist.txt",
     });
     assert(read.content === "workspace-persists", "workspace read/write");
-    await session.fs(sandboxId, { op: "mkdir", path: "dir", recursive: false });
-    await session.fs(sandboxId, {
+    await session.fs(sandboxId, workspaceId, {
+      op: "mkdir",
+      path: "dir",
+      recursive: false,
+    });
+    await session.fs(sandboxId, workspaceId, {
       op: "rename",
       from: "persist.txt",
       to: "dir/persist.txt",
@@ -521,7 +525,7 @@ try {
   }
 
   if (!rawWorkloadMode) {
-    await session.fs(sandboxId, {
+    await session.fs(sandboxId, workspaceId, {
       op: "writeFile",
       path: "race-target",
       data: "safe-race-value",
@@ -543,7 +547,7 @@ try {
     let escaped = false;
     for (let attempt = 0; attempt < 100; attempt += 1) {
       try {
-        const value = await session.fs(sandboxId, {
+        const value = await session.fs(sandboxId, workspaceId, {
           op: "readFile",
           path: "race",
         });
@@ -648,7 +652,7 @@ try {
       "workspace persistence",
     );
   } else {
-    const persisted = await session.fs(sandboxId, {
+    const persisted = await session.fs(sandboxId, workspaceId, {
       op: "readFile",
       path: "dir/persist.txt",
     });
@@ -824,7 +828,7 @@ try {
       maxOutputBytes: 64 * 1024,
     });
   } else {
-    await session.dispose(sandboxId);
+    await session.dispose(sandboxId, workspaceId);
   }
   assert(
     runtimeIds.every((id) => dockerFails(["inspect", `boring-sbx-${id}`])),

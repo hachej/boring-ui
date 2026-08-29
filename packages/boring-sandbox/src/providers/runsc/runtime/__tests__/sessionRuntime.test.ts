@@ -1045,6 +1045,44 @@ describe("warm runsc session runtime", () => {
     );
   });
 
+  test("rejects a sequential legacy replay that changes its sandbox id", async () => {
+    const sessions = runtime(fakeRunner());
+    await sessions.create(createInput);
+
+    expect(() =>
+      sessions.create({ ...createInput, sandboxId: "sandbox-b" }),
+    ).toThrowError(
+      expect.objectContaining({
+        code: REMOTE_WORKER_ERROR_CODES_V1.idempotencyConflict,
+      }),
+    );
+  });
+
+  test("rejects a pending legacy replay that changes its sandbox id", async () => {
+    let releaseApply: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      releaseApply = resolve;
+    });
+    const sessions = runtime(fakeRunner(), {
+      quota: {
+        apply: vi.fn(async () => await gate),
+        check: vi.fn(async () => undefined),
+      },
+    });
+    const first = sessions.create(createInput);
+
+    expect(() =>
+      sessions.create({ ...createInput, sandboxId: "sandbox-b" }),
+    ).toThrowError(
+      expect.objectContaining({
+        code: REMOTE_WORKER_ERROR_CODES_V1.idempotencyConflict,
+      }),
+    );
+
+    releaseApply?.();
+    await expect(first).resolves.toMatchObject({ sandboxId: "sandbox-a" });
+  });
+
   test("admits concurrent sessions while charging each to the same workspace quota", async () => {
     let releaseApply: (() => void) | undefined;
     const gate = new Promise<void>((resolve) => {
