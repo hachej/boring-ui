@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
 import { IMMUTABLE_SANDBOX_CACHE_SOURCE_VERSION_V1 } from '../../../shared/immutableCacheV1'
 import type { SandboxProviderCreateContextV1 } from '../../../shared/providerV1'
+import { expectDisposableProviderProfile } from '../../__tests__/conformance/disposableProvider'
 import { createMockVercelSandboxHarness } from '../../__tests__/mockVercelSandbox'
 import { createVercelSandboxProvider } from '../createVercelSandboxProvider'
 import {
@@ -172,11 +173,15 @@ describe('createVercelSandboxProvider', () => {
       logger: { info: vi.fn() },
     })
 
+    expectDisposableProviderProfile(provider, 'vercel-sandbox')
     const pair = await provider.create({
       workspaceRoot: 'workspace-setup-failure',
       workspaceId: 'workspace-setup-failure',
       sessionId: 'session-setup-failure',
     })
+    expect(client.create).toHaveBeenCalledWith(expect.objectContaining({
+      name: expect.stringMatching(/^boring-lease-[a-f0-9]{40}$/),
+    }))
     await expect(pair.checkHealth?.()).rejects.toMatchObject({
       code: 'VERCEL_API_ERROR',
       message: 'workspace root setup failed',
@@ -190,6 +195,35 @@ describe('createVercelSandboxProvider', () => {
     expect(snapshot).not.toHaveBeenCalled()
     expect(deleteSandbox).toHaveBeenCalledTimes(2)
     expect(deleteRecord).not.toHaveBeenCalled()
+  })
+
+  test('reconciles a disposable create whose acknowledgement is lost', async () => {
+    const harness = await createMockVercelSandboxHarness()
+    cleanups.push(harness.cleanup)
+    const { deleteSandbox } = addDurableHandleMetadata(harness.sandbox, 'sb-response-loss')
+    const client: VercelSandboxClient = {
+      create: vi.fn(async () => { throw Object.assign(new Error('response lost'), { status: 503 }) }),
+      get: vi.fn(async () => harness.sandbox),
+    }
+    const provider = createVercelSandboxProvider({
+      vercelClient: client,
+      lifecycle: 'disposable',
+      getEnvVar,
+      logger: { info: vi.fn() },
+    })
+
+    await expect(provider.create({
+      workspaceRoot: 'workspace-response-loss',
+      workspaceId: 'workspace-response-loss',
+      sessionId: 'session-response-loss',
+      requestId: 'request-response-loss',
+    })).rejects.toBeTruthy()
+    expect(client.get).toHaveBeenCalledWith(expect.objectContaining({
+      name: expect.stringMatching(/^boring-lease-/),
+      resume: false,
+    }))
+    expect(deleteSandbox).toHaveBeenCalledOnce()
+    await provider.close?.()
   })
 
   test('retains cleanup authority when post-create adaptation fails and deletion needs retry', async () => {

@@ -7,8 +7,9 @@ export async function createDisposableSandboxHandle(input: {
   readonly vercel: VercelSandboxClient
   readonly sourceSnapshotId?: string
   readonly tarballUrl?: string
+  readonly name?: string
 }): Promise<VercelSandboxHandle> {
-  const base = { persistent: true, snapshotExpiration: 0 }
+  const base = { persistent: true, snapshotExpiration: 0, ...(input.name ? { name: input.name } : {}) }
   if (input.sourceSnapshotId) {
     return await input.vercel.create({
       ...base,

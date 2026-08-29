@@ -6,13 +6,21 @@ Concrete sandbox providers live behind this subpath as they move out of
 
 | Runtime mode | Sandbox provider | Notes |
 | --- | --- | --- |
-| `direct` | `direct` | Trusted host mode; no isolation. |
-| `local` | `bwrap` | Linux bubblewrap. The mode id intentionally differs from the provider id. |
-| `vercel-sandbox` | `vercel-sandbox` | Optional remote PROXY provider. |
-| `blaxel` | `blaxel` | EU-region remote provider with a persistent Volume at `/workspace`; SDK 0.3.11 output caps are local and cancellation is best effort. |
-| `remote-worker` | `remote-worker` | Client/provider split from the app-owned worker server. Worker-dependent facts stay `unknown` until the P5 handshake reports them. |
+| `direct` | `direct` | Trusted host mode; no isolation. Explicit disposable mode removes its exact lease root; default retains it. |
+| `local` | `bwrap` | Linux bubblewrap. Explicit disposable mode removes its exact lease root; default retains it. The mode id intentionally differs from the provider id. |
+| `vercel-sandbox` | `vercel-sandbox` | Disposable named forks delete without resumable handles; persistent default is unchanged. |
+| `blaxel` | `blaxel` | Disposable mode is fresh/no-Volume/no-resume; default remains an EU-region persistent Volume at `/workspace`. |
+| `remote-worker` | `remote-worker` | Disposable mode requires negotiated `multi-sandbox-roots-v1` and transfers published cleanup to the pair; unqualified workers fail closed. |
 | pure/headless | `none` | No boring-bash environment. |
 | readonly files | `readonly` facade | File UI/search/watch without exec. |
+
+The disposable refinement is a host-only construction option, never a model
+input. It promises fresh creation, pre-effect correlated reconciliation,
+returned-pair ownership after publication, retryable idempotent disposal, and
+not-found convergence. Mechanical support does not grant D31 production
+qualification: direct/bwrap remain unsuitable for hostile tenants, Blaxel live
+qualification is profile-specific, and the current local gVisor profile cannot
+advertise remote-worker multi-root support because `openat2` is unavailable.
 
 `resolveMode()` itself is owned by `@hachej/boring-bash/modes`. It resolves a
 mode id to one of these provider values; providers do not resolve modes.

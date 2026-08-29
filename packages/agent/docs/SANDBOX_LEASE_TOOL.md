@@ -22,7 +22,14 @@ use several leases concurrently.
 ## Host authority
 
 The embedding host constructs one shared `SandboxLeaseService` for an authorized
-profile and passes it only after Agent authorization:
+profile and passes it only after Agent authorization. Multi-provider hosts use a
+versioned `SandboxLeaseProviderProfileV1`; its canonical digest binds workspace
+scope, placement, physical provider workspace, lease root, provider/template
+fingerprints, credential-version references, TTL, drain policy, and quotas.
+Live clients and secret bytes are excluded from that identity. Scope and digest
+validation run before environment, provider, or harness acquisition.
+
+For simple Vercel-only composition:
 
 ```ts
 const provider = createVercelSandboxProvider({
@@ -88,6 +95,22 @@ own safely retryable error; provider cleanup ambiguity remains
 owner cleanup. Host shutdown uses one service-wide drain deadline, including
 pending creations and provider close.
 
+Lease composition rejects a normal `SandboxProviderV1`; providers must expose
+the explicit `boring-sandbox.disposable-provider.v1` refinement. Supported
+mechanical profiles are:
+
+| provider | disposable behavior |
+| --- | --- |
+| direct | fresh exact child root; pair removes only that root |
+| bwrap/local | fresh exact child root mounted at `/workspace`; pair removes only that root |
+| Blaxel | fresh strict create, no Volume or handle store, correlated delete |
+| Vercel Sandbox | fresh named fork, no resumable handle, correlated delete |
+| remote-worker | requires qualified `multi-sandbox-roots-v1`; pair alone owns published delete |
+
+Default construction remains persistent/unchanged. Direct and bwrap are not
+hostile multi-tenant boundaries; managed and remote-worker profiles still
+require separate D31 host qualification before a Worker grant.
+
 Disposable Vercel forks never enter the persistent/resumable handle store. The
 provider returns a cleanup-capable pair immediately after remote creation and
 exposes initialization through pair readiness; if setup fails, lease acquisition
@@ -103,7 +126,9 @@ key: sha256(serviceDigest + ":" + opaqueLease)
 ```
 
 The service-owned unref'ed timer reaps expired and cleanup-pending leases without
-overlapping ticks. Every attempt is routed through the closed internal
+overlapping ticks. Session deletion settles before idempotent owner cleanup;
+a cleanup failure cannot rewrite a completed deletion receipt and remains
+retryable through the lease reaper. Every attempt is routed through the closed internal
 registration and emits redacted append-only reconciliation telemetry containing
 the registration-key digest, attempt count, reason, outcome, and stable failure
 code. Retrying this qualified idempotent cleanup never rewrites an
