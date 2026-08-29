@@ -188,11 +188,16 @@ function runtime(
   };
   return new RunscSessionRuntimeV1({
     runner,
-    quota: options.quota ?? { apply: vi.fn(), check: vi.fn() },
+    quota: {
+      workspaceRoot:
+        options.sandboxRoots?.sandboxRoot ?? "/srv/boring/workspaces",
+      ...(options.quota ?? { apply: vi.fn(), check: vi.fn() }),
+    },
     runtimeIdFactory: () => (++id).toString(16).padStart(32, "0"),
     now: options.now,
     onRetire: options.onRetire,
     sandboxRoots: options.sandboxRoots,
+    multiSandboxRootsAdmitted: options.sandboxRoots !== undefined,
     invocationCredentials: createRunscInvocationCredentialResolverV1({
       bindings,
       providers,
@@ -205,13 +210,39 @@ function runtime(
 }
 
 function multiSandboxRoots(): RunscSandboxRootLifecycleV1 {
+  const prepared = new Set<string>();
+  const inflight = new Map<string, Promise<void>>();
   return {
-    prepare: vi.fn(async (authorizedWorkspaceId: string, sandboxId: string) =>
-      `${trustedWorkspaceMountSource(
+    prepare: vi.fn(async (
+      authorizedWorkspaceId: string,
+      sandboxId: string,
+      quota: {
+        workspaceRoot: string;
+        apply(workspaceId: string): Promise<void>;
+        check(workspaceId: string): Promise<void>;
+      },
+    ) => {
+      const pending = inflight.get(authorizedWorkspaceId);
+      if (pending) {
+        await pending;
+        await quota.check(authorizedWorkspaceId);
+      } else if (prepared.has(authorizedWorkspaceId)) {
+        await quota.check(authorizedWorkspaceId);
+      } else {
+        const operation = quota.apply(authorizedWorkspaceId);
+        inflight.set(authorizedWorkspaceId, operation);
+        try {
+          await operation;
+          prepared.add(authorizedWorkspaceId);
+        } finally {
+          inflight.delete(authorizedWorkspaceId);
+        }
+      }
+      return `${trustedWorkspaceMountSource(
         "/srv/boring/workspaces",
         authorizedWorkspaceId,
-      )}/${sandboxId}` as TrustedWorkspaceMountSource,
-    ),
+      )}/${sandboxId}` as TrustedWorkspaceMountSource;
+    }),
     dispose: vi.fn(async () => undefined),
     startupSweep: vi.fn(async () => 0),
   } as unknown as RunscSandboxRootLifecycleV1;
@@ -241,7 +272,8 @@ describe("warm runsc session runtime", () => {
     const sessions = runtime(runner);
     const first = await sessions.create(createInput);
     const second = await sessions.create(createInput);
-    expect(second).toEqual(first);
+    expect(first.newlyAllocated).toBe(true);
+    expect(second).toEqual({ ...first, newlyAllocated: false });
     const one = await sessions.exec("sandbox-a", workspaceId, execRequest);
     const replay = await sessions.exec("sandbox-a", workspaceId, execRequest);
     expect(replay).toEqual(one);
@@ -332,6 +364,9 @@ describe("warm runsc session runtime", () => {
             };
           }
         }
+        if (input.argv[0] === "ps" && removeAttempts >= 2 && removeAttempts <= 4) {
+          return success("container-id\n");
+        }
         return await run(input);
       });
       const sessions = runtime(runner);
@@ -382,7 +417,9 @@ describe("warm runsc session runtime", () => {
 
       await vi.advanceTimersByTimeAsync(100);
       expect(removeAttempts).toBe(5);
-      await expect(sessions.renew("sandbox-a", 100)).rejects.toMatchObject({
+      await expect(
+        sessions.renew("sandbox-a", workspaceId, 100),
+      ).rejects.toMatchObject({
         code: REMOTE_WORKER_ERROR_CODES_V1.sandboxNotFound,
       });
     } finally {
@@ -683,7 +720,9 @@ describe("warm runsc session runtime", () => {
       await sessions.create({ ...createInput, idleTtlMs: 100 });
       clock = 1_100;
       await vi.advanceTimersByTimeAsync(100);
-      await expect(sessions.renew("sandbox-a", 100)).rejects.toMatchObject({
+      await expect(
+        sessions.renew("sandbox-a", workspaceId, 100),
+      ).rejects.toMatchObject({
         code: REMOTE_WORKER_ERROR_CODES_V1.sandboxNotFound,
       });
       expect(retire).toHaveBeenCalledWith({
@@ -715,6 +754,9 @@ describe("warm runsc session runtime", () => {
             code: "ECONNREFUSED",
           });
         }
+        if (input.argv[0] === "ps" && removeAttempts === 1) {
+          return success("container-id\n");
+        }
         return await run(input);
       });
       const sessions = runtime(runner, {
@@ -725,7 +767,9 @@ describe("warm runsc session runtime", () => {
       clock = 1_100;
       await vi.advanceTimersByTimeAsync(100);
 
-      await expect(sessions.renew("sandbox-a", 100)).rejects.toMatchObject({
+      await expect(
+        sessions.renew("sandbox-a", workspaceId, 100),
+      ).rejects.toMatchObject({
         code: REMOTE_WORKER_ERROR_CODES_V1.sandboxDisposed,
       });
       expect(() =>
@@ -746,7 +790,9 @@ describe("warm runsc session runtime", () => {
         sandboxId: "sandbox-a",
         reason: "idle",
       });
-      await expect(sessions.renew("sandbox-a", 100)).rejects.toMatchObject({
+      await expect(
+        sessions.renew("sandbox-a", workspaceId, 100),
+      ).rejects.toMatchObject({
         code: REMOTE_WORKER_ERROR_CODES_V1.sandboxNotFound,
       });
     } finally {
@@ -788,6 +834,9 @@ describe("warm runsc session runtime", () => {
               };
             }
           }
+          if (input.argv[0] === "ps" && removeAttempts === 1) {
+            return success("container-id\n");
+          }
           return await run(input);
         });
         const sessions = runtime(runner);
@@ -819,12 +868,18 @@ describe("warm runsc session runtime", () => {
         input: DockerCommandInput,
       ) => Promise<DockerCommandResult>;
       let removeAttempts = 0;
+      let failedRemovalPending = false;
       runner.run.mockImplementation(async (input) => {
         if (input.argv[0] === "rm") {
           removeAttempts += 1;
           if (removeAttempts === 1) {
+            failedRemovalPending = true;
             throw new Error("transient docker outage");
           }
+        }
+        if (input.argv[0] === "ps" && failedRemovalPending) {
+          failedRemovalPending = false;
+          return success("container-id\n");
         }
         return await run(input);
       });
@@ -886,6 +941,7 @@ describe("warm runsc session runtime", () => {
       try {
         await sessions.renew(
           scenario === "expired" ? "sandbox-a" : "sandbox-missing",
+          workspaceId,
           100,
         );
       } catch (error) {
@@ -913,16 +969,16 @@ describe("warm runsc session runtime", () => {
     const runner = fakeRunner();
     const sessions = runtime(runner, { onRetire });
 
-    const missing = sessions.renew("sandbox-a", 100);
+    const missing = sessions.renew("sandbox-a", workspaceId, 100);
     await vi.waitFor(() =>
       expect(onRetire).toHaveBeenCalledWith({
-        workspaceId: undefined,
+        workspaceId,
         sandboxId: "sandbox-a",
         reason: "missing",
       }),
     );
     await sessions.create(createInput);
-    await sessions.dispose("sandbox-a");
+    await sessions.dispose("sandbox-a", workspaceId);
 
     expect(
       runner.run.mock.calls.filter(([input]) => input.argv[0] === "rm"),
@@ -969,7 +1025,7 @@ describe("warm runsc session runtime", () => {
     await expect(
       sessions.renew("sandbox-a", workspaceId, 1_000),
     ).rejects.toMatchObject({
-      code: REMOTE_WORKER_ERROR_CODES_V1.sandboxWorkspaceMismatch,
+      code: REMOTE_WORKER_ERROR_CODES_V1.sandboxNotFound,
     });
   });
 
@@ -1007,11 +1063,11 @@ describe("warm runsc session runtime", () => {
       sandboxId: "sandbox-b",
       clientLeaseId: "lease-b",
     });
-    await vi.waitFor(() => expect(apply).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(apply).toHaveBeenCalledTimes(1));
     releaseApply?.();
     await expect(Promise.all([first, second])).resolves.toHaveLength(2);
-    expect(apply.mock.calls).toEqual([[workspaceId], [workspaceId]]);
-    expect(check.mock.calls).toEqual([[workspaceId], [workspaceId]]);
+    expect(apply.mock.calls).toEqual([[workspaceId]]);
+    expect(check.mock.calls).toEqual([[workspaceId]]);
   });
 
   test("retires instead of dropping invocation replay markers at its bound", async () => {

@@ -15,6 +15,7 @@ const {
   DockerCliCommandRunner,
   RemoteWorkerRunscHandlerV1,
   RunscSandboxRootLifecycleV1,
+  RunscSessionRuntimeV1,
   buildDockerRemoveArgv,
   buildDockerRunArgv,
   dockerContainerNameV1,
@@ -118,7 +119,13 @@ try {
   const roots = new RunscSandboxRootLifecycleV1({
     sandboxRoot,
     prepareOwnership,
+    trustedOwnerUid: process.getuid?.() ?? 0,
   });
+  const quota = {
+    workspaceRoot: sandboxRoot,
+    apply: async () => undefined,
+    check: async () => undefined,
+  };
   const bindingRegistry = new RemoteWorkerSandboxBindingRegistryV1({
     workerId: "worker-1",
     capabilityAuthenticator: {
@@ -143,9 +150,13 @@ try {
       qualificationRunId: "local-non-admitting-proof",
       qualifiedAtMs: Date.now(),
     },
+    openEvents: async () => ({
+      closed: new Promise(() => undefined),
+      close: () => undefined,
+    }),
     runtime: {
       runner: dockerRunner,
-      quota: { apply: async () => undefined, check: async () => undefined },
+      quota,
       sandboxIdFactory: () => `sandbox-${++sandboxSequence}`,
       sandboxRoots: roots,
     },
@@ -268,18 +279,49 @@ try {
     })
     .then(
       () => {
-        throw new Error("runsc helper without containment was admitted");
+        throw new Error("unqualified multi-root runtime was admitted");
       },
-      () => undefined,
+      (error) => {
+        assert(
+          error?.code === "REMOTE_WORKER_UNQUALIFIED",
+          "provider-visible unqualified failure",
+        );
+      },
     );
   await legacyProvider.close();
   assert(
-    handlerFailures.length === 2 &&
-      handlerFailures.every(
-        (code) => code === "REMOTE_WORKER_PATH_PRIMITIVE_UNAVAILABLE",
-      ),
-    "production runtime fails closed on openat2",
+    handlerFailures.length === 1 &&
+      handlerFailures[0] === "REMOTE_WORKER_UNQUALIFIED",
+    "stable unqualified failure is not retried across bundle boundaries",
   );
+
+  stage = "containment-primitive-probe";
+  const qualificationRuntime = new RunscSessionRuntimeV1({
+    runner: dockerRunner,
+    quota,
+    sandboxRoots: roots,
+    multiSandboxRootsAdmitted: true,
+    runtimeIdFactory: () => randomBytes(16).toString("hex"),
+    sandboxIdFactory: () => "containment-probe",
+  });
+  await qualificationRuntime
+    .create({
+      clientLeaseId: "containment-probe",
+      workspaceId,
+      image: workloadImage,
+    })
+    .then(
+      () => {
+        throw new Error("runsc helper without containment was admitted");
+      },
+      (error) => {
+        assert(
+          error?.code === "REMOTE_WORKER_PATH_PRIMITIVE_UNAVAILABLE",
+          "openat2 containment probe",
+        );
+      },
+    );
+  await qualificationRuntime.shutdown().catch(() => undefined);
   const workspaceEntries = await readdir(join(sandboxRoot, workspaceId)).catch(
     () => [],
   );
@@ -296,8 +338,8 @@ try {
   );
 
   stage = "raw-two-root-proof";
-  const sourceA = await roots.prepare(workspaceId, "raw-a");
-  const sourceB = await roots.prepare(workspaceId, "raw-b");
+  const sourceA = await roots.prepare(workspaceId, "raw-a", quota);
+  const sourceB = await roots.prepare(workspaceId, "raw-b", quota);
   const runtimeA = randomBytes(16).toString("hex");
   const runtimeB = randomBytes(16).toString("hex");
   for (const [runtimeId, source] of [
@@ -366,7 +408,8 @@ try {
     `${JSON.stringify({
       passed: true,
       qualified: false,
-      productionAdmission: "fail-closed-path-primitive-unavailable",
+      productionAdmission: "fail-closed-unqualified",
+      containmentQualification: "fail-closed-path-primitive-unavailable",
       multiRootCapabilityAdvertised: false,
       rawDockerRunscRoots: 2,
       rawIsolation: true,

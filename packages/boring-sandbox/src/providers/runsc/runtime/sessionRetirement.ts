@@ -1,6 +1,7 @@
 import { REMOTE_WORKER_ERROR_CODES_V1 } from "../../../shared/remoteWorkerProtocolV1";
 
 import {
+  buildDockerOwnedContainerLookupArgv,
   buildDockerRemoveArgv,
   type TrustedWorkspaceMountSource,
 } from "./dockerArgv";
@@ -16,7 +17,7 @@ export type RunscSessionRetirementReasonV1 =
   "idle" | "hard-expiry" | "missing" | "cleanup" | "history" | "shutdown";
 
 export interface RunscSessionRetirementV1 {
-  readonly workspaceId?: string;
+  readonly workspaceId: string;
   readonly sandboxId: string;
   readonly reason: RunscSessionRetirementReasonV1;
 }
@@ -84,8 +85,8 @@ export class RunscSessionRetirementManagerV1<
     }
   }
 
-  async notifyMissing(workspaceId: string | undefined, sandboxId: string): Promise<void> {
-    const key = `${workspaceId ?? "legacy"}\u0000${sandboxId}`;
+  async notifyMissing(workspaceId: string, sandboxId: string): Promise<void> {
+    const key = `${workspaceId}\u0000${sandboxId}`;
     const existing = this.notificationInflight.get(key);
     if (existing) return await existing;
     const retirement = this.notify({ workspaceId, sandboxId, reason: "missing" });
@@ -100,11 +101,7 @@ export class RunscSessionRetirementManagerV1<
   private async removeAndDetach(record: RecordV1): Promise<void> {
     try {
       if (!record.retirement!.containerRemoved) {
-        await runDockerChecked(this.options.runner, {
-          argv: buildDockerRemoveArgv(record.runtimeId),
-          timeoutMs: RUNSC_RUNTIME_LIMITS_V1.disposeTimeoutMs,
-          maxOutputBytes: 64 * 1024,
-        });
+        await this.removeContainerOrProveAbsent(record.runtimeId);
         record.retirement!.containerRemoved = true;
       }
       if (!record.retirement!.rootRemoved) {
@@ -136,6 +133,29 @@ export class RunscSessionRetirementManagerV1<
       );
     }
     this.options.detach(record);
+  }
+
+  private async removeContainerOrProveAbsent(runtimeId: string): Promise<void> {
+    try {
+      const removed = await this.options.runner.run({
+        argv: buildDockerRemoveArgv(runtimeId),
+        timeoutMs: RUNSC_RUNTIME_LIMITS_V1.disposeTimeoutMs,
+        maxOutputBytes: 64 * 1024,
+      });
+      if (!removed.timedOut && !removed.aborted && removed.exitCode === 0) return;
+    } catch {
+      // A transport/process failure can occur after Docker accepted removal.
+    }
+    const lookup = await runDockerChecked(this.options.runner, {
+      argv: buildDockerOwnedContainerLookupArgv(runtimeId),
+      timeoutMs: RUNSC_RUNTIME_LIMITS_V1.disposeTimeoutMs,
+      maxOutputBytes: 64 * 1024,
+    });
+    if (new TextDecoder().decode(lookup.stdout).trim() === "") return;
+    throw runscRuntimeError(
+      REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+      "remote-worker owned container removal is incomplete",
+    );
   }
 
   private scheduleRetry(record: RecordV1): void {

@@ -31,6 +31,7 @@ import {
   RemoteWorkerSandboxBindingRegistryV1,
   type RemoteWorkerAuthorizedEventStreamV1,
 } from "../../remote-worker/bindingRegistry";
+import { validateQuotaWorkspaceId } from "./quota";
 import type { RunscSessionRuntimeOptionsV1 } from "./sessionRuntime";
 import { RunscSessionRuntimeV1 } from "./sessionRuntime";
 export interface RemoteWorkerRunscQualificationV1 {
@@ -50,7 +51,7 @@ export interface RemoteWorkerRunscHandlerOptionsV1 {
   readonly credentialScopeForWorkspace?: (
     workspaceId: string,
   ) => AuthorizedWorkspaceCredentialScopeV1 | undefined;
-  readonly openEvents?: (input: {
+  readonly openEvents: (input: {
     workspaceId: string;
     sandboxId: string;
   }) => RemoteWorkerAuthorizedEventStreamV1 | Promise<RemoteWorkerAuthorizedEventStreamV1>;
@@ -78,15 +79,25 @@ export class RemoteWorkerRunscHandlerV1 {
         "remote-worker workload image does not match its qualification",
       );
     }
+    if (
+      options.multiSandboxRootsQualified === true &&
+      !options.runtime.sandboxRoots
+    ) {
+      throw new SandboxProviderError(
+        REMOTE_WORKER_ERROR_CODES_V1.configInvalid,
+        "remote-worker multi-root qualification has no root lifecycle",
+      );
+    }
     this.runtime = new RunscSessionRuntimeV1({
       ...options.runtime,
+      multiSandboxRootsAdmitted:
+        options.runtime.sandboxRoots !== undefined &&
+        options.multiSandboxRootsQualified === true,
       onRetire: async (retirement) => {
-        if (retirement.workspaceId) {
-          options.registry.retireBinding(
-            retirement.workspaceId,
-            retirement.sandboxId,
-          );
-        }
+        options.registry.retireBinding(
+          retirement.workspaceId,
+          retirement.sandboxId,
+        );
       },
     });
   }
@@ -94,10 +105,11 @@ export class RemoteWorkerRunscHandlerV1 {
     capabilityToken: string;
     requestedCapabilities?: string;
   }): Promise<RemoteWorkerHealthResponseV1> {
-    await this.options.registry.authorizeHealth({
+    const authorization = await this.options.registry.authorizeHealth({
       capabilityToken: input.capabilityToken,
       requestBody: {},
     });
+    this.assertCanonicalWorkspace(authorization.workspaceId);
     const supported: RemoteWorkerNegotiatedCapabilityV1[] = [
       REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1,
     ];
@@ -129,9 +141,11 @@ export class RemoteWorkerRunscHandlerV1 {
       capabilityToken: input.capabilityToken,
     });
     const request = authorization.request;
+    this.assertCanonicalWorkspace(request.workspaceId);
     this.assertQualification(request);
     const lease = await this.runtime.create({
       clientLeaseId: request.clientLeaseId,
+      createDigest: authorization.requestDigest,
       workspaceId: request.workspaceId,
       image: this.options.workloadImage,
       idleTtlMs: request.idleTimeoutMs,
@@ -152,7 +166,9 @@ export class RemoteWorkerRunscHandlerV1 {
         bindingReceipt,
       });
     } catch (error) {
-      await this.runtime.dispose(lease.sandboxId, request.workspaceId);
+      if (lease.newlyAllocated) {
+        await this.runtime.dispose(lease.sandboxId, request.workspaceId);
+      }
       throw error;
     }
   }
@@ -169,8 +185,14 @@ export class RemoteWorkerRunscHandlerV1 {
         requestBody: request,
         capabilityToken: input.capabilityToken,
       },
-      async (binding) =>
-        await this.runtime.fs(binding.sandboxId, binding.workspaceId, request),
+      async (binding) => {
+        this.assertCanonicalWorkspace(binding.workspaceId);
+        return await this.runtime.fs(
+          binding.sandboxId,
+          binding.workspaceId,
+          request,
+        );
+      },
     );
   }
   async exec(input: {
@@ -187,14 +209,16 @@ export class RemoteWorkerRunscHandlerV1 {
         requestBody: request,
         capabilityToken: input.capabilityToken,
       },
-      async (binding) =>
-        await this.runtime.exec(
+      async (binding) => {
+        this.assertCanonicalWorkspace(binding.workspaceId);
+        return await this.runtime.exec(
           binding.sandboxId,
           binding.workspaceId,
           request,
           input.signal,
           this.options.credentialScopeForWorkspace?.(binding.workspaceId),
-        ),
+        );
+      },
     );
   }
   async renew(input: {
@@ -211,6 +235,7 @@ export class RemoteWorkerRunscHandlerV1 {
         capabilityToken: input.capabilityToken,
       },
       async (binding) => {
+        this.assertCanonicalWorkspace(binding.workspaceId);
         const lease = await this.runtime.renew(
           binding.sandboxId,
           binding.workspaceId,
@@ -234,6 +259,7 @@ export class RemoteWorkerRunscHandlerV1 {
         capabilityToken: input.capabilityToken,
       },
       async (binding) => {
+        this.assertCanonicalWorkspace(binding.workspaceId);
         await this.runtime.dispose(binding.sandboxId, binding.workspaceId);
         return RemoteWorkerDeleteResponseSchemaV1.parse({ disposed: true });
       },
@@ -243,12 +269,6 @@ export class RemoteWorkerRunscHandlerV1 {
     capabilityToken: string;
     sandboxId: string;
   }): Promise<RemoteWorkerAuthorizedEventStreamV1> {
-    if (!this.options.openEvents) {
-      throw new SandboxProviderError(
-        REMOTE_WORKER_ERROR_CODES_V1.unavailable,
-        "remote-worker event streaming is unavailable",
-      );
-    }
     return await this.options.registry.authorizeEventStream(
       {
         sandboxId: input.sandboxId,
@@ -256,7 +276,10 @@ export class RemoteWorkerRunscHandlerV1 {
         requestBody: {},
         capabilityToken: input.capabilityToken,
       },
-      this.options.openEvents,
+      async (binding) => {
+        this.assertCanonicalWorkspace(binding.workspaceId);
+        return await this.options.openEvents(binding);
+      },
     );
   }
   async startupSweep(): Promise<void> {
@@ -265,6 +288,10 @@ export class RemoteWorkerRunscHandlerV1 {
   async shutdown(): Promise<void> {
     await this.runtime.shutdown();
   }
+  private assertCanonicalWorkspace(workspaceId: string): void {
+    validateQuotaWorkspaceId(workspaceId);
+  }
+
   private assertQualification(request: RemoteWorkerCreateRequestV1): void {
     const expected = this.options.qualification;
     if (

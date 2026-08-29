@@ -79,6 +79,7 @@ class FakeTransport implements RemoteWorkerTransportV1 {
   leaseExpiresAtMs = nowMs + 60_000;
   renewLeaseExpiresAtMs = nowMs + 120_000;
   rawRequestError?: Error;
+  rawCreateError?: Error;
   rawExecError?: Error;
   createFailures = 0;
   advertiseExclusiveBinaryCreate = false;
@@ -117,6 +118,7 @@ class FakeTransport implements RemoteWorkerTransportV1 {
       };
     }
     if (input.path === "/internal/v1/sandboxes") {
+      if (this.rawCreateError) throw this.rawCreateError;
       if (this.createFailures > 0) {
         this.createFailures -= 1;
         throw new Error("ambiguous create response loss");
@@ -341,6 +343,34 @@ describe("remote-worker SandboxProviderV1 placement binding", () => {
       (request.body as { op?: unknown } | undefined)?.op === "createBinaryFile"
     )).toBe(true);
     await pair.dispose();
+  });
+
+  test("preserves a stable foreign provider error without retrying it", async () => {
+    const transport = new FakeTransport();
+    transport.rawCreateError = Object.assign(new Error("foreign bundle"), {
+      name: "SandboxProviderError",
+      code: REMOTE_WORKER_ERROR_CODES_V1.pathPrimitiveUnavailable,
+    });
+    const provider = createRemoteWorkerSandboxProviderV1(providerOptions(transport));
+
+    const failure = await provider
+      .create({
+        workspaceRoot: "/unused",
+        workspaceId: "workspace-foreign-error",
+        sessionId: "session-foreign-error",
+        requestId: "request-foreign-error",
+      })
+      .catch((error: unknown) => error);
+    expect(failure).toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.pathPrimitiveUnavailable,
+      message: "remote-worker returned a stable provider failure",
+    });
+    expect(JSON.stringify(failure)).not.toContain("foreign bundle");
+    expect(
+      transport.requests.filter(
+        (request) => request.path === "/internal/v1/sandboxes",
+      ),
+    ).toHaveLength(1);
   });
 
   test("recovers an ambiguous create with the same client lease request", async () => {

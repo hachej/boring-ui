@@ -1,10 +1,20 @@
-import { lstat, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  readFile,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { mkdtemp } from "node:fs/promises";
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
+import { RUNSC_RUNTIME_LIMITS_V1 } from "../limits";
+import { FixedProjectQuotaManagerV1 } from "../quota";
 import { RunscSandboxRootLifecycleV1 } from "../sandboxRootLifecycle";
 
 const workspaceA = "00000000-0000-4000-8000-000000000001";
@@ -14,20 +24,27 @@ async function lifecycle() {
   const parent = await mkdtemp(join(tmpdir(), "boring-runsc-roots-"));
   const root = join(parent, "sandboxes");
   await mkdir(root, { mode: 0o750 });
+  const quota = {
+    workspaceRoot: root,
+    apply: vi.fn(async () => undefined),
+    check: vi.fn(async () => undefined),
+  };
   return {
     root,
+    quota,
     roots: new RunscSandboxRootLifecycleV1({
       sandboxRoot: root,
       prepareOwnership: async () => undefined,
+      trustedOwnerUid: process.getuid?.() ?? 0,
     }),
   };
 }
 
 describe("runsc per-sandbox root lifecycle", () => {
   test("creates exact workspace+sandbox children and removes only one", async () => {
-    const { root, roots } = await lifecycle();
-    const sourceA = await roots.prepare(workspaceA, "sandbox-a");
-    const sourceB = await roots.prepare(workspaceA, "sandbox-b");
+    const { root, roots, quota } = await lifecycle();
+    const sourceA = await roots.prepare(workspaceA, "sandbox-a", quota);
+    const sourceB = await roots.prepare(workspaceA, "sandbox-b", quota);
     await writeFile(join(String(sourceA), "state"), "a");
     await writeFile(join(String(sourceB), "state"), "b");
 
@@ -39,9 +56,9 @@ describe("runsc per-sandbox root lifecycle", () => {
   });
 
   test("fails closed on existing leaves and symlinked workspace parents", async () => {
-    const { root, roots } = await lifecycle();
-    await roots.prepare(workspaceA, "sandbox-a");
-    await expect(roots.prepare(workspaceA, "sandbox-a")).rejects.toMatchObject({
+    const { root, roots, quota } = await lifecycle();
+    await roots.prepare(workspaceA, "sandbox-a", quota);
+    await expect(roots.prepare(workspaceA, "sandbox-a", quota)).rejects.toMatchObject({
       code: "REMOTE_WORKER_PATH_UNSAFE",
     });
     await expect(
@@ -49,18 +66,98 @@ describe("runsc per-sandbox root lifecycle", () => {
     ).resolves.toMatchObject({});
 
     await symlink(join(root, workspaceA), join(root, workspaceB));
-    await expect(roots.prepare(workspaceB, "sandbox-b")).rejects.toMatchObject({
+    await expect(roots.prepare(workspaceB, "sandbox-b", quota)).rejects.toMatchObject({
       code: "REMOTE_WORKER_PATH_UNSAFE",
     });
   });
 
   test("bounded startup sweep removes owned leaves beneath the dedicated root", async () => {
-    const { roots } = await lifecycle();
-    const sourceA = await roots.prepare(workspaceA, "sandbox-a");
-    const sourceB = await roots.prepare(workspaceB, "sandbox-b");
+    const { roots, quota } = await lifecycle();
+    const sourceA = await roots.prepare(workspaceA, "sandbox-a", quota);
+    const sourceB = await roots.prepare(workspaceB, "sandbox-b", quota);
 
     await expect(roots.startupSweep()).resolves.toBe(2);
     await expect(lstat(String(sourceA))).rejects.toMatchObject({ code: "ENOENT" });
     await expect(lstat(String(sourceB))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  test("composes the fixed quota manager once before leaves and checks it on reuse/restart", async () => {
+    const { root, roots } = await lifecycle();
+    const run = vi.fn(async (_input: {
+      readonly argv: readonly ["apply" | "check", string, string];
+      readonly timeoutMs: number;
+    }) => ({ exitCode: 0, timedOut: false }));
+    const quota = new FixedProjectQuotaManagerV1({ run }, root);
+    await roots.prepare(workspaceA, "sandbox-a", quota);
+    await roots.prepare(workspaceA, "sandbox-b", quota);
+    expect(run.mock.calls.map(([input]) => input.argv[0])).toEqual([
+      "apply",
+      "check",
+    ]);
+
+    const restarted = new RunscSandboxRootLifecycleV1({
+      sandboxRoot: root,
+      prepareOwnership: async () => undefined,
+      trustedOwnerUid: process.getuid?.() ?? 0,
+    });
+    await restarted.prepare(workspaceA, "sandbox-c", quota);
+    expect(run.mock.calls.map(([input]) => input.argv[0])).toEqual([
+      "apply",
+      "check",
+      "check",
+    ]);
+  });
+
+  test("removes a newly-created workspace parent when quota preparation fails", async () => {
+    const { root, roots } = await lifecycle();
+    const quota = {
+      workspaceRoot: root,
+      apply: vi.fn(async () => {
+        throw new Error("quota unavailable");
+      }),
+      check: vi.fn(async () => undefined),
+    };
+    await expect(
+      roots.prepare(workspaceA, "sandbox-a", quota),
+    ).rejects.toThrow("quota unavailable");
+    await expect(lstat(join(root, workspaceA))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  test("bounds workspace parents as well as sandbox leaves during startup", async () => {
+    const { root, roots } = await lifecycle();
+    for (
+      let index = 1;
+      index <= RUNSC_RUNTIME_LIMITS_V1.maxStartupSweepContainers + 1;
+      index += 1
+    ) {
+      const suffix = index.toString(16).padStart(12, "0");
+      await mkdir(join(root, `00000000-0000-4000-8000-${suffix}`), {
+        mode: 0o750,
+      });
+    }
+    await expect(roots.startupSweep()).rejects.toMatchObject({
+      code: "REMOTE_WORKER_PATH_UNSAFE",
+    });
+  });
+
+  test("rejects a replaced trusted root and a symlink swapped before cleanup", async () => {
+    const { root, roots, quota } = await lifecycle();
+    const source = await roots.prepare(workspaceA, "sandbox-a", quota);
+    const outside = await mkdtemp(join(tmpdir(), "boring-runsc-outside-"));
+    await rm(String(source), { recursive: true });
+    await symlink(outside, String(source));
+    await expect(roots.dispose(source)).rejects.toMatchObject({
+      code: "REMOTE_WORKER_INCOMPLETE_CLEANUP",
+    });
+    await expect(lstat(outside)).resolves.toMatchObject({});
+
+    const moved = `${root}-moved`;
+    await rename(root, moved);
+    await mkdir(root, { mode: 0o750 });
+    await expect(
+      roots.prepare(workspaceB, "sandbox-b", quota),
+    ).rejects.toMatchObject({ code: "REMOTE_WORKER_PATH_UNSAFE" });
   });
 });

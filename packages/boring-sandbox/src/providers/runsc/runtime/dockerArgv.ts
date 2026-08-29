@@ -174,3 +174,18 @@ export function buildDockerOwnedContainerListArgv(): readonly string[] {
     `label=${RUNSC_RUNTIME_DOCKER_LABELS_V1.owner}=true`,
   ]);
 }
+
+export function buildDockerOwnedContainerLookupArgv(
+  runtimeId: string,
+): readonly string[] {
+  const containerName = dockerContainerNameV1(runtimeId);
+  return Object.freeze([
+    "ps",
+    "--all",
+    "--quiet",
+    "--filter",
+    `label=${RUNSC_RUNTIME_DOCKER_LABELS_V1.owner}=true`,
+    "--filter",
+    `name=^/${containerName}$`,
+  ]);
+}

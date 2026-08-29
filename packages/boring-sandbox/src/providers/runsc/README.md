@@ -16,7 +16,7 @@ A worker must set `multiSandboxRootsQualified: true` only after its exact worklo
 
 The source and mocked authenticated handler tests cover composite identity, two-root isolation, independent renewal/deletion, cleanup retry, and workspace-aggregate quota addressing. The local Docker+runsc proof also confirms two raw bind roots are isolated and independently deleted.
 
-The installed gVisor profile returns `ENOSYS` for `openat2`. The production provider → authenticated handler → `RunscSessionRuntimeV1` path therefore rejects admission with `REMOTE_WORKER_PATH_PRIMITIVE_UNAVAILABLE`, removes the provisional container/root, and does not advertise `multi-sandbox-roots-v1`.
+The installed gVisor profile returns `ENOSYS` for `openat2`. The production provider → authenticated handler path rejects an unqualified multi-root placement once with `REMOTE_WORKER_UNQUALIFIED` before runtime effects and does not advertise `multi-sandbox-roots-v1`. A separate explicitly admitted qualification-candidate runtime probe reaches the real workload helper, rejects with `REMOTE_WORKER_PATH_PRIMITIVE_UNAVAILABLE`, and removes its provisional container/root.
 
 Status: **implemented but not qualified**. Qualification remains blocked until an owner-approved compatible gVisor profile is available or a separate containment primitive is designed and security-reviewed. Do not treat the raw mount proof as production admission evidence.
 

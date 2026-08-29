@@ -6,6 +6,7 @@ import { describe, expect, test, vi } from "vitest";
 
 import { PROVIDER_CONTRACT_VERSION } from "../../../../shared/providerMatrix";
 import {
+  REMOTE_WORKER_ERROR_CODES_V1,
   REMOTE_WORKER_MULTI_SANDBOX_ROOTS_CAPABILITY_V1,
   REMOTE_WORKER_PROTOCOL_VERSION,
   RemoteWorkerCapabilityClaimsSchemaV1,
@@ -114,6 +115,7 @@ function harness(root: string, multiSandboxRootsQualified = true) {
     operation: RemoteWorkerOperationV1,
     requestBody: unknown,
     sandboxId?: string,
+    authorizedWorkspaceId = workspaceId,
   ): string => {
     const value = `token-${(tokenSequence += 1)}`;
     tokens.set(
@@ -121,7 +123,7 @@ function harness(root: string, multiSandboxRootsQualified = true) {
       RemoteWorkerCapabilityClaimsSchemaV1.parse({
         protocolVersion: REMOTE_WORKER_PROTOCOL_VERSION,
         workerId: "worker-1",
-        workspaceId,
+        workspaceId: authorizedWorkspaceId,
         ...(sandboxId ? { sandboxId } : {}),
         operation,
         requestDigest: remoteWorkerRequestDigestV1(requestBody),
@@ -151,7 +153,12 @@ function harness(root: string, multiSandboxRootsQualified = true) {
   const roots = new RunscSandboxRootLifecycleV1({
     sandboxRoot: root,
     prepareOwnership: async () => undefined,
+    trustedOwnerUid: process.getuid?.() ?? 0,
   });
+  const openEvents = vi.fn(async () => ({
+    closed: new Promise<void>(() => undefined),
+    close: () => undefined,
+  }));
   const handler = new RemoteWorkerRunscHandlerV1({
     registry,
     workloadImage,
@@ -164,9 +171,10 @@ function harness(root: string, multiSandboxRootsQualified = true) {
       qualificationRunId: "qualification-1",
       qualifiedAtMs: nowMs,
     },
+    openEvents,
     runtime: {
       runner,
-      quota: { apply, check },
+      quota: { workspaceRoot: root, apply, check },
       now: () => nowMs,
       runtimeIdFactory: () =>
         (++runtimeSequence).toString(16).padStart(32, "0"),
@@ -174,20 +182,34 @@ function harness(root: string, multiSandboxRootsQualified = true) {
       sandboxRoots: roots,
     },
   });
-  return { handler, token, runner, roots, apply, check };
+  return { handler, token, runner, roots, apply, check, openEvents };
 }
 
 describe("authenticated remote-worker runsc handler", () => {
-  test("does not advertise multi-root admission without exact-profile qualification", async () => {
+  test("does not advertise or admit multi-root runtime without exact-profile qualification", async () => {
     const parent = await mkdtemp(join(tmpdir(), "boring-handler-unqualified-"));
     const root = join(parent, "sandboxes");
-    await mkdir(root);
+    await mkdir(root, { mode: 0o750 });
     const { handler, token } = harness(root, false);
     const health = await handler.health({
       capabilityToken: token("health", {}),
       requestedCapabilities: REMOTE_WORKER_MULTI_SANDBOX_ROOTS_CAPABILITY_V1,
     });
     expect(health.negotiatedCapabilities).toBeUndefined();
+    const createA = request("unqualified-a");
+    const createB = request("unqualified-b");
+    await expect(
+      handler.create({
+        capabilityToken: token("create", createA),
+        request: createA,
+      }),
+    ).rejects.toMatchObject({ code: REMOTE_WORKER_ERROR_CODES_V1.unqualified });
+    await expect(
+      handler.create({
+        capabilityToken: token("create", createB),
+        request: createB,
+      }),
+    ).rejects.toMatchObject({ code: REMOTE_WORKER_ERROR_CODES_V1.unqualified });
   });
 
   test("retains exact binding authority across a transient root cleanup failure", async () => {
@@ -195,7 +217,7 @@ describe("authenticated remote-worker runsc handler", () => {
     try {
       const parent = await mkdtemp(join(tmpdir(), "boring-handler-retry-"));
       const root = join(parent, "sandboxes");
-      await mkdir(root);
+      await mkdir(root, { mode: 0o750 });
       const { handler, token, roots } = harness(root);
       const create = request("lease-retry");
       const lease = await handler.create({
@@ -229,7 +251,7 @@ describe("authenticated remote-worker runsc handler", () => {
   test("isolates and independently retires two leases in one authorized workspace", async () => {
     const parent = await mkdtemp(join(tmpdir(), "boring-handler-"));
     const root = join(parent, "sandboxes");
-    await mkdir(root);
+    await mkdir(root, { mode: 0o750 });
     const { handler, token, runner, apply, check } = harness(root);
     const requestA = request("lease-a");
     const requestB = request("lease-b");
@@ -310,12 +332,89 @@ describe("authenticated remote-worker runsc handler", () => {
       }),
     ).resolves.toEqual({ content: "b" });
 
-    expect(apply).toHaveBeenCalledTimes(2);
-    expect(check).toHaveBeenCalledTimes(2);
+    expect(apply).toHaveBeenCalledTimes(1);
+    expect(check).toHaveBeenCalledTimes(1);
     expect(apply.mock.calls.every(([id]) => id === workspaceId)).toBe(true);
     await handler.delete({
       capabilityToken: token("delete", {}, leaseB.sandboxId),
       sandboxId: leaseB.sandboxId,
     });
+  });
+
+  test("keeps the first sandbox alive across sequential and concurrent conflicting replays", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "boring-handler-replay-"));
+    const root = join(parent, "sandboxes");
+    await mkdir(root, { mode: 0o750 });
+    const { handler, token, runner } = harness(root);
+    const original = request("lease-stable");
+    const lease = await handler.create({
+      capabilityToken: token("create", original),
+      request: original,
+    });
+    const conflicts = [
+      { ...original, sessionId: "session-conflict" },
+      { ...original, maxOutputBytes: original.maxOutputBytes + 1 },
+    ];
+    for (const conflict of conflicts) {
+      await expect(
+        handler.create({
+          capabilityToken: token("create", conflict),
+          request: conflict,
+        }),
+      ).rejects.toMatchObject({
+        code: REMOTE_WORKER_ERROR_CODES_V1.idempotencyConflict,
+      });
+    }
+    const results = await Promise.allSettled(
+      conflicts.map(async (conflict) =>
+        await handler.create({
+          capabilityToken: token("create", conflict),
+          request: conflict,
+        }),
+      ),
+    );
+    expect(
+      results.every(
+        (result) =>
+          result.status === "rejected" &&
+          result.reason?.code === REMOTE_WORKER_ERROR_CODES_V1.idempotencyConflict,
+      ),
+    ).toBe(true);
+    const read = { op: "readFile" as const, path: "state" };
+    await expect(
+      handler.fs({
+        capabilityToken: token("fs", read, lease.sandboxId),
+        sandboxId: lease.sandboxId,
+        request: read,
+      }),
+    ).resolves.toEqual({ content: "" });
+    expect(runner.run.mock.calls.filter(([input]) => input.argv[0] === "rm")).toHaveLength(0);
+  });
+
+  test("health advertises an installed events operation and rejects noncanonical workspace authority", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "boring-handler-events-"));
+    const root = join(parent, "sandboxes");
+    await mkdir(root, { mode: 0o750 });
+    const { handler, token, openEvents } = harness(root);
+    const create = request("lease-events");
+    const lease = await handler.create({
+      capabilityToken: token("create", create),
+      request: create,
+    });
+    const stream = await handler.events({
+      capabilityToken: token("events", {}, lease.sandboxId),
+      sandboxId: lease.sandboxId,
+    });
+    expect(openEvents).toHaveBeenCalledWith({ workspaceId, sandboxId: lease.sandboxId });
+    stream.close();
+
+    const aliasedWorkspace = "ABCDEF00-0000-4000-8000-000000000001";
+    const aliased = { ...request("lease-alias"), workspaceId: aliasedWorkspace };
+    await expect(
+      handler.create({
+        capabilityToken: token("create", aliased, undefined, aliasedWorkspace),
+        request: aliased,
+      }),
+    ).rejects.toMatchObject({ code: REMOTE_WORKER_ERROR_CODES_V1.requestInvalid });
   });
 });
