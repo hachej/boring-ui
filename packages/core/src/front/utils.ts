@@ -170,8 +170,14 @@ const INVITE_ACCEPT_PATH_RE = /^\/invites\/([^/?#]+)$/
 // `randomBytes(32).toString('base64url')`, 43 chars, unpadded). Only these two exact shapes
 // are accepted — anything else (including a decoded separator like `%2F`, which can only
 // ever decode to a `/`) is rejected rather than forwarded as a "close enough" token.
+//
+// The UUID branch is pinned to what `randomUUID()` can actually emit: version nibble `4`
+// (13th hex digit) and RFC 4122 variant nibble `8`/`9`/`a`/`b` (17th hex digit). A
+// syntactically UUID-shaped string with any other version/variant nibble (e.g. a v1 UUID)
+// is not a value `randomUUID()` can produce, so it is rejected rather than accepted as
+// "close enough".
 const INVITE_TOKEN_RE =
-  /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[A-Za-z0-9_-]{43})$/
+  /^(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|[A-Za-z0-9_-]{43})$/
 
 /**
  * The invite-accept redirect (`?redirect=/invites/:token`) carries the invite token in the

@@ -260,6 +260,13 @@ describe('extractInviteTokenFromRedirect', () => {
     ['too-short base64url-looking token', `/invites/${'a'.repeat(20)}`],
     ['too-long base64url-looking token', `/invites/${'a'.repeat(44)}`],
     ['UUID missing a hyphen', '3fa85f645717-4562-b3fc-2c963f66afa6'.replace(/^/, '/invites/')],
+    // randomUUID() can only emit version 4 with an RFC 4122 variant nibble. A
+    // syntactically UUID-shaped string with the wrong version or variant nibble is not a
+    // value randomUUID() can ever produce and must not be extracted as a token.
+    ['UUID with wrong version nibble (v1, not v4)', '/invites/3fa85f64-5717-1562-73fc-2c963f66afa6'],
+    ['UUID with wrong version nibble (v5, not v4)', '/invites/3fa85f64-5717-5562-b3fc-2c963f66afa6'],
+    ['UUID with wrong variant nibble (7, not 8/9/a/b)', '/invites/3fa85f64-5717-4562-73fc-2c963f66afa6'],
+    ['UUID with wrong variant nibble (c, not 8/9/a/b)', '/invites/3fa85f64-5717-4562-c3fc-2c963f66afa6'],
     ['whitespace padding', ` /invites/${'a'.repeat(43)} `],
     ['non-invite redirect target', '/w/some-workspace/settings'],
   ]
