@@ -194,6 +194,13 @@ class ScriptedSessionStore implements SessionStore {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
     }
+    // Deletion is the actual "no longer needs tracking" event for the
+    // showcase provenance registry — not just a future boot's sweep. This
+    // is what closes the id-reuse hole: the pagehide cleanup path deletes a
+    // session through this exact method (via the ordinary DELETE route), so
+    // by the time its numeric id could ever be reused by an unrelated
+    // ordinary session, the registry no longer references it at all.
+    await unmarkPlaygroundShowcaseSession(this.explicitSessionRoot, sessionId)
   }
 
   async rename(_ctx: SessionCtx, sessionId: string, title: string): Promise<SessionSummary> {
@@ -313,37 +320,45 @@ class ScriptedSessionStore implements SessionStore {
     await this.sweepStaleShowcaseSessions()
   }
 
-  private async sweepStaleShowcaseSessions(): Promise<void> {
-    const registry = await readShowcaseRegistry(this.explicitSessionRoot)
-    if (registry.size === 0) return
-    let registryChanged = false
-    for (const id of registry) {
-      const record = this.records.get(id)
-      // Not one of this store's sessions — could belong to a different
-      // agent type/namespace sharing the same registry file, or already
-      // deleted by an earlier sweep/pagehide cleanup. Never guess; leave
-      // it for whichever store (if any) actually owns it, rather than
-      // pruning an entry this store cannot positively verify.
-      if (!record) continue
-      if (record.turnCount !== 0) {
-        // Got a real turn since being marked — it's an ordinary session now
-        // (kept like any other) and no longer needs tracking.
+  private sweepStaleShowcaseSessions(): Promise<void> {
+    // The whole read-modify-write goes through the same queue mark/unmark
+    // use, as ONE task — not a read followed by a separately-queued write —
+    // so a mark/unmark landing between this sweep's read and its write
+    // can't be silently overwritten by the sweep's own (now stale) copy of
+    // the registry.
+    return queueShowcaseRegistry(async () => {
+      const registry = await readShowcaseRegistryUnsafe(this.explicitSessionRoot)
+      if (registry.size === 0) return
+      let registryChanged = false
+      for (const id of registry) {
+        const record = this.records.get(id)
+        // Not one of this store's sessions — could belong to a different
+        // agent type/namespace sharing the same registry file, or already
+        // deleted (which now unmarks eagerly via `delete()`, so in the
+        // common case this branch only fires for a genuinely different
+        // store's entry, not a stale leftover from this store). Never
+        // guess; leave it for whichever store (if any) actually owns it.
+        if (!record) continue
+        if (record.turnCount !== 0) {
+          // Got a real turn since being marked — it's an ordinary session now
+          // (kept like any other) and no longer needs tracking.
+          registry.delete(id)
+          registryChanged = true
+          continue
+        }
+        this.records.delete(id)
         registry.delete(id)
         registryChanged = true
-        continue
+        try {
+          const names = await readdir(this.sessionDir)
+          const match = names.find((name) => name === `${id}.jsonl` || name.endsWith(`_${id}.jsonl`))
+          if (match) await unlink(join(this.sessionDir, match))
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+        }
       }
-      this.records.delete(id)
-      registry.delete(id)
-      registryChanged = true
-      try {
-        const names = await readdir(this.sessionDir)
-        const match = names.find((name) => name === `${id}.jsonl` || name.endsWith(`_${id}.jsonl`))
-        if (match) await unlink(join(this.sessionDir, match))
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-      }
-    }
-    if (registryChanged) await writeShowcaseRegistry(this.explicitSessionRoot, registry)
+      if (registryChanged) await writeShowcaseRegistryUnsafe(this.explicitSessionRoot, registry)
+    })
   }
 
   private takeNextSessionId(): string {
@@ -458,7 +473,7 @@ function showcaseRegistryPath(explicitRoot?: string): string {
   return join(sessionBaseDir(explicitRoot), SHOWCASE_REGISTRY_FILENAME)
 }
 
-async function readShowcaseRegistry(explicitRoot?: string): Promise<Set<string>> {
+async function readShowcaseRegistryUnsafe(explicitRoot?: string): Promise<Set<string>> {
   try {
     const text = await readFile(showcaseRegistryPath(explicitRoot), 'utf8')
     const parsed: unknown = JSON.parse(text)
@@ -471,10 +486,29 @@ async function readShowcaseRegistry(explicitRoot?: string): Promise<Set<string>>
   }
 }
 
-async function writeShowcaseRegistry(explicitRoot: string | undefined, ids: ReadonlySet<string>): Promise<void> {
+async function writeShowcaseRegistryUnsafe(explicitRoot: string | undefined, ids: ReadonlySet<string>): Promise<void> {
   const path = showcaseRegistryPath(explicitRoot)
   await mkdir(dirname(path), { recursive: true })
   await writeFile(path, JSON.stringify([...ids].sort()), 'utf8')
+}
+
+// Every read-modify-write of the registry file — mark, unmark, and the
+// boot-time sweep's own read+prune — is chained through this single
+// process-wide queue. `markPlaygroundShowcaseSession` is called from the
+// dev-only HTTP route handler (dev.ts), where two POSTs can genuinely
+// overlap (two tabs booting at once, a retry racing the original attempt);
+// an unlocked read-modify-write of the JSON file would let the second
+// write silently clobber the first write's addition. Node is
+// single-threaded, so serializing every access through one promise chain
+// is sufficient — no OS-level file lock needed for a same-process,
+// dev-only sidecar file.
+let showcaseRegistryQueue: Promise<unknown> = Promise.resolve()
+
+function queueShowcaseRegistry<T>(task: () => Promise<T>): Promise<T> {
+  const result = showcaseRegistryQueue.then(task, task)
+  // Never let one failed task poison the queue for later, unrelated calls.
+  showcaseRegistryQueue = result.catch(() => undefined)
+  return result
 }
 
 /**
@@ -483,11 +517,51 @@ async function writeShowcaseRegistry(explicitRoot: string | undefined, ids: Read
  * session-creation UI — that is what makes this provenance (as opposed to
  * the old title tag) immune to collision with a normal session.
  */
-export async function markPlaygroundShowcaseSession(explicitRoot: string | undefined, sessionId: string): Promise<void> {
-  const ids = await readShowcaseRegistry(explicitRoot)
-  if (ids.has(sessionId)) return
-  ids.add(sessionId)
-  await writeShowcaseRegistry(explicitRoot, ids)
+export function markPlaygroundShowcaseSession(explicitRoot: string | undefined, sessionId: string): Promise<void> {
+  return queueShowcaseRegistry(async () => {
+    const ids = await readShowcaseRegistryUnsafe(explicitRoot)
+    if (ids.has(sessionId)) return
+    ids.add(sessionId)
+    await writeShowcaseRegistryUnsafe(explicitRoot, ids)
+  })
+}
+
+/**
+ * Removes `sessionId` from the registry, if present. Called by
+ * `ScriptedSessionStore.delete` for every deletion (showcase-originated or
+ * not — a no-op if the id was never registered) so a session no longer
+ * needs tracking the moment it stops existing, instead of waiting for a
+ * future boot's sweep to notice. This is what prevents a stale registry
+ * entry from surviving long enough for its numeric id to be recycled by an
+ * unrelated ordinary session.
+ */
+export function unmarkPlaygroundShowcaseSession(explicitRoot: string | undefined, sessionId: string): Promise<void> {
+  return queueShowcaseRegistry(async () => {
+    const ids = await readShowcaseRegistryUnsafe(explicitRoot)
+    if (!ids.has(sessionId)) return
+    ids.delete(sessionId)
+    await writeShowcaseRegistryUnsafe(explicitRoot, ids)
+  })
+}
+
+/**
+ * True only if `sessionId` was previously marked by
+ * `markPlaygroundShowcaseSession` and hasn't since been unmarked. Used by
+ * the dev-only wrapper route to validate a client-supplied
+ * `resumeSessionId` before ever forwarding it to the real create-session
+ * endpoint: `resumeSessionId` travels through writable `sessionStorage`
+ * (App.tsx), so a stale or manipulated value could otherwise name an
+ * ordinary session the wrapper never created. Refusing to honor (and thus
+ * never marking) an unrecognized id closes that off — the wrapper can only
+ * ever resume an id it already vouched for itself.
+ */
+export function isPlaygroundShowcaseSession(explicitRoot: string | undefined, sessionId: string): Promise<boolean> {
+  return queueShowcaseRegistry(async () => (await readShowcaseRegistryUnsafe(explicitRoot)).has(sessionId))
+}
+
+/** Test-only: the registry's current on-disk contents, for asserting boundedness directly. */
+export function readPlaygroundShowcaseRegistryForTest(explicitRoot?: string): Promise<Set<string>> {
+  return queueShowcaseRegistry(() => readShowcaseRegistryUnsafe(explicitRoot))
 }
 
 class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {

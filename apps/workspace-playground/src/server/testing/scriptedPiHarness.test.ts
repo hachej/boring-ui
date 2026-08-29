@@ -2,7 +2,12 @@ import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { createScriptedPiHarness, markPlaygroundShowcaseSession } from './scriptedPiHarness'
+import {
+  createScriptedPiHarness,
+  isPlaygroundShowcaseSession,
+  markPlaygroundShowcaseSession,
+  readPlaygroundShowcaseRegistryForTest,
+} from './scriptedPiHarness'
 
 const runContext = (workdir: string) => ({
   abortSignal: new AbortController().signal,
@@ -178,6 +183,64 @@ describe('scripted Pi browser harness persistence', () => {
       // Hydration must not throw, and creating a real session must still
       // work normally alongside the unresolvable registry entry.
       await expect(harness.sessions!.create(ctx, { title: 'New chat' })).resolves.toMatchObject({ id: 'scripted-main' })
+    })
+
+    // gh-1458 review round 3: the previous "unresolvable entry" test above
+    // proved hydration doesn't crash on a foreign id, but it left the entry
+    // in the registry forever — retention, not pruning. This test proves
+    // the actual exploit sequence the review described is closed: mark a
+    // session, delete it exactly the way the pagehide cleanup path does
+    // (through the ordinary delete route, i.e. `sessions.delete`), let a
+    // later ordinary session recycle the freed numeric id, and confirm a
+    // subsequent boot's sweep does NOT delete that unrelated ordinary
+    // session.
+    it('unmarks a session on delete, so its numeric id can be safely recycled by an ordinary session later', async () => {
+      const workspaceRoot = await mkdtemp(join(tmpdir(), 'scripted-pi-showcase-recycle-workspace-'))
+      const sessionRoot = await mkdtemp(join(tmpdir(), 'scripted-pi-showcase-recycle-sessions-'))
+      const input = { cwd: workspaceRoot, sessionRoot }
+      const ctx = { workspaceId: 'workspace-a' }
+
+      // Boot 1: create + mark a showcase session, then delete it — exactly
+      // what the pagehide cleanup does for a session that never got a turn.
+      const first = createScriptedPiHarness(input)
+      const showcaseSession = await first.sessions!.create(ctx, { title: 'Navigation polish review' })
+      expect(showcaseSession.id).toBe('scripted-main')
+      await markPlaygroundShowcaseSession(sessionRoot, showcaseSession.id)
+      await expect(readPlaygroundShowcaseRegistryForTest(sessionRoot)).resolves.toEqual(new Set(['scripted-main']))
+      await first.sessions!.delete(ctx, showcaseSession.id)
+
+      // Deletion must unmark immediately — not wait for a future sweep.
+      await expect(readPlaygroundShowcaseRegistryForTest(sessionRoot)).resolves.toEqual(new Set())
+
+      // Boot 2: createCount resets on hydrate, so an ordinary (unmarked)
+      // session recycles the now-free 'scripted-main' id.
+      const second = createScriptedPiHarness(input)
+      const ordinarySession = await second.sessions!.create(ctx, { title: 'A developer’s real draft' })
+      expect(ordinarySession.id).toBe('scripted-main')
+
+      // Boot 3: if the stale registry entry had survived, this sweep would
+      // now delete the ordinary session that happens to share its id.
+      const third = createScriptedPiHarness(input)
+      const afterBoot3 = await third.sessions!.list(ctx, { includeEmpty: true })
+      expect(afterBoot3.map((session) => session.id)).toContain(ordinarySession.id)
+      expect(afterBoot3.find((session) => session.id === ordinarySession.id)?.title).toBe('A developer’s real draft')
+    })
+
+    it('serializes concurrent marks so two overlapping requests both land in the registry', async () => {
+      const sessionRoot = await mkdtemp(join(tmpdir(), 'scripted-pi-showcase-concurrent-sessions-'))
+      await Promise.all(
+        Array.from({ length: 20 }, (_, index) => markPlaygroundShowcaseSession(sessionRoot, `scripted-concurrent-${index}`)),
+      )
+      const registry = await readPlaygroundShowcaseRegistryForTest(sessionRoot)
+      expect(registry).toEqual(new Set(Array.from({ length: 20 }, (_, index) => `scripted-concurrent-${index}`)))
+    })
+
+    it('isPlaygroundShowcaseSession only recognizes ids this wrapper actually marked', async () => {
+      const sessionRoot = await mkdtemp(join(tmpdir(), 'scripted-pi-showcase-known-sessions-'))
+      await expect(isPlaygroundShowcaseSession(sessionRoot, 'scripted-unmarked')).resolves.toBe(false)
+      await markPlaygroundShowcaseSession(sessionRoot, 'scripted-marked')
+      await expect(isPlaygroundShowcaseSession(sessionRoot, 'scripted-marked')).resolves.toBe(true)
+      await expect(isPlaygroundShowcaseSession(sessionRoot, 'scripted-unmarked')).resolves.toBe(false)
     })
   })
 })

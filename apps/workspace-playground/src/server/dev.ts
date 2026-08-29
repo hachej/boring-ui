@@ -4,7 +4,7 @@ import { basename, dirname, resolve } from "node:path"
 import { createRemoteWorkerModeAdapter } from "@hachej/boring-agent/server"
 import { createReadonlyProjectionOperations } from "@hachej/boring-bash/server"
 import { createNodeWorkspace } from "@hachej/boring-sandbox/providers/node-workspace"
-import { createPersistedScriptedPiHarness, markPlaygroundShowcaseSession } from "./testing/scriptedPiHarness"
+import { createPersistedScriptedPiHarness, isPlaygroundShowcaseSession, markPlaygroundShowcaseSession } from "./testing/scriptedPiHarness"
 import { PLAYGROUND_SHOWCASE_SESSION_ROUTE } from "../shared/showcaseSession"
 import {
   SCRIPTED_ONE_AGENT,
@@ -150,7 +150,23 @@ export async function startPlaygroundServer(): Promise<void> {
       const forwardBody: Record<string, unknown> = {}
       if (typeof body.title === "string") forwardBody.title = body.title
       if (typeof body.requestId === "string") forwardBody.requestId = body.requestId
-      if (typeof body.resumeSessionId === "string") forwardBody.resumeSessionId = body.resumeSessionId
+      // `resumeSessionId` travels through the client's writable
+      // sessionStorage (App.tsx) — a stale or manipulated value could
+      // otherwise name an ordinary session this wrapper never created and
+      // marked, and the gateway would happily hand that session's ref back
+      // (embeddedGateway.ts createSession resumes any empty session it can
+      // resolve, regardless of who created it). Only ever forward it when
+      // it already names a session this wrapper itself previously marked —
+      // an unrecognized id is silently dropped, not forwarded, so the boot
+      // flow just creates a brand-new (still perfectly valid) session
+      // instead. This is what keeps "which route created it" a guarantee
+      // instead of a suggestion.
+      if (
+        typeof body.resumeSessionId === "string"
+        && await isPlaygroundShowcaseSession(process.env.BORING_AGENT_SESSION_ROOT, body.resumeSessionId)
+      ) {
+        forwardBody.resumeSessionId = body.resumeSessionId
+      }
       const workspaceIdHeader = request.headers["x-boring-workspace-id"]
       const injected = await app.inject({
         method: "POST",
