@@ -5,8 +5,8 @@ import type {
   DisposableSandboxProviderV1,
   ExtractedSandboxProviderIdV1,
 } from '@hachej/boring-sandbox/shared'
-import { isDisposableSandboxProviderV1 } from '@hachej/boring-sandbox/shared'
 import { SandboxLeaseService } from './sandboxLease'
+import { isDisposableLeaseProvider } from './disposableProvider'
 
 export const SANDBOX_LEASE_PROVIDER_PROFILE_VERSION_V1 =
   'boring-agent.sandbox-lease-profile.v1' as const
@@ -52,7 +52,7 @@ export function normalizeSandboxLeaseProviderProfileV1(
   }
   const workspaceScopeId = nonEmpty(identity.workspaceScopeId, 'workspaceScopeId')
   if (workspaceScopeId !== verifiedWorkspaceScopeId) throw new TypeError('sandbox lease profile scope is unauthorized')
-  if (!isDisposableSandboxProviderV1(profile.provider)) throw new TypeError('sandbox lease provider is not disposable')
+  if (!isDisposableLeaseProvider(profile.provider)) throw new TypeError('sandbox lease provider is not disposable')
   if (profile.provider.providerId !== identity.providerId) throw new TypeError('sandbox lease provider identity does not match')
   const leaseRoot = resolve(identity.leaseRoot)
   if (!isAbsolute(identity.leaseRoot) || parse(leaseRoot).root === leaseRoot) {

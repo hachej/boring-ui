@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { createDirectSandboxProvider } from '@hachej/boring-sandbox/providers/direct'
 import type { SandboxProviderV1, WorkspaceSandboxPairV1 } from '@hachej/boring-sandbox/shared'
 import type { Sandbox, Workspace } from '../../../../shared/index'
 import {
@@ -90,7 +89,10 @@ describe('SandboxLeaseService lifecycle registry', () => {
     vi.useFakeTimers()
     expect(() => new SandboxLeaseService({
       workspaceRoot: '/host/leases',
-      provider: createDirectSandboxProvider(),
+      provider: {
+        contractVersion: 'boring-sandbox.provider.v1',
+        providerId: 'direct',
+      } as unknown as SandboxProviderV1,
       serviceDigest: 'persistent-profile',
       ttlMs: 60_000,
       reapIntervalMs: 60_000,

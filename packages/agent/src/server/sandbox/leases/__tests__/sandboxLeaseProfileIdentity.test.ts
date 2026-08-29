@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { createDirectSandboxProvider } from '@hachej/boring-sandbox/providers/direct'
+import type { DisposableSandboxProviderV1, SandboxProviderV1 } from '@hachej/boring-sandbox/shared'
 import {
   SANDBOX_LEASE_PROVIDER_PROFILE_VERSION_V1,
   normalizeSandboxLeaseProviderProfileV1,
@@ -10,9 +10,25 @@ import {
 
 const sha = `sha256:${'a'.repeat(64)}` as const
 
+function disposableProvider(): DisposableSandboxProviderV1 {
+  return {
+    contractVersion: 'boring-sandbox.provider.v1',
+    providerId: 'direct',
+    capabilities: {} as never,
+    disposableProfile: {
+      contractVersion: 'boring-sandbox.disposable-provider.v1',
+      resume: false,
+      publishedCleanupOwner: 'returned-pair',
+      ambiguousCreate: 'correlated-reconciliation',
+    },
+    resolveRuntimeRoot: (context) => context.workspaceRoot,
+    async create() { throw new Error('not used') },
+  }
+}
+
 function profile(scope = 'workspace-a'): SandboxLeaseProviderProfileV1 {
   return {
-    provider: createDirectSandboxProvider({ leaseMode: 'disposable' }),
+    provider: disposableProvider(),
     identity: {
       contractVersion: SANDBOX_LEASE_PROVIDER_PROFILE_VERSION_V1,
       workspaceScopeId: scope,
@@ -50,7 +66,9 @@ describe('sandbox lease provider profile identity', () => {
     const value = profile()
     expect(() => normalizeSandboxLeaseProviderProfileV1({
       ...value,
-      provider: createDirectSandboxProvider() as never,
+      provider: {
+        contractVersion: 'boring-sandbox.provider.v1', providerId: 'direct',
+      } as unknown as SandboxProviderV1 as never,
     }, 'workspace-a')).toThrow('provider is not disposable')
     expect(() => normalizeSandboxLeaseProviderProfileV1({
       ...value,
