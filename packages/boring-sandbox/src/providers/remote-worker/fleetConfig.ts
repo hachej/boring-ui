@@ -5,8 +5,11 @@ import { z } from "zod";
 
 import {
   REMOTE_WORKER_ERROR_CODES_V1,
+  REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1,
+  REMOTE_WORKER_MULTI_SANDBOX_ROOTS_CAPABILITY_V1,
   REMOTE_WORKER_PROTOCOL_VERSION,
   RemoteWorkerSha256DigestSchemaV1,
+  type RemoteWorkerNegotiatedCapabilityV1,
 } from "../../shared/remoteWorkerProtocolV1";
 import { SandboxProviderError } from "../../shared/providerV1";
 
@@ -25,6 +28,11 @@ const tlsServerNameSchema = z
     /^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)(?:\.(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?))*$/,
   );
 
+const negotiatedCapabilitySchema = z.enum([
+  REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1,
+  REMOTE_WORKER_MULTI_SANDBOX_ROOTS_CAPABILITY_V1,
+]);
+
 const RemoteWorkerFleetWorkerConfigSchemaV1 = z
   .object({
     workerId: workerIdSchema,
@@ -36,6 +44,11 @@ const RemoteWorkerFleetWorkerConfigSchemaV1 = z
     expectedQualificationBundleDigest: RemoteWorkerSha256DigestSchemaV1,
     expectedProviderCohortDigest: RemoteWorkerSha256DigestSchemaV1,
     expectedImageDigest: RemoteWorkerSha256DigestSchemaV1,
+    requiredCapabilities: z
+      .array(negotiatedCapabilitySchema)
+      .max(2)
+      .refine((values) => new Set(values).size === values.length)
+      .default([]),
     buckets: z
       .array(
         z
@@ -66,6 +79,7 @@ export interface RemoteWorkerFleetWorkerConfigV1 {
   readonly expectedQualificationBundleDigest: `sha256:${string}`;
   readonly expectedProviderCohortDigest: `sha256:${string}`;
   readonly expectedImageDigest: `sha256:${string}`;
+  readonly requiredCapabilities?: readonly RemoteWorkerNegotiatedCapabilityV1[];
   readonly buckets: readonly number[];
 }
 
@@ -73,6 +87,37 @@ export interface RemoteWorkerFleetConfigV1 {
   readonly protocolVersion: typeof REMOTE_WORKER_PROTOCOL_VERSION;
   readonly bucketCount: typeof REMOTE_WORKER_BUCKET_COUNT_V1;
   readonly workers: readonly RemoteWorkerFleetWorkerConfigV1[];
+}
+
+export function remoteWorkerFleetConfigDigestV1(
+  config: RemoteWorkerFleetConfigV1,
+): `sha256:${string}` {
+  const workers = [...config.workers]
+    .map((worker) => ({
+      workerId: worker.workerId,
+      baseUrl: worker.baseUrl,
+      tokenFile: worker.tokenFile,
+      caFile: worker.caFile,
+      tlsServerName: worker.tlsServerName,
+      expectedEvidenceDigest: worker.expectedEvidenceDigest,
+      expectedQualificationBundleDigest:
+        worker.expectedQualificationBundleDigest,
+      expectedProviderCohortDigest: worker.expectedProviderCohortDigest,
+      expectedImageDigest: worker.expectedImageDigest,
+      requiredCapabilities: [...(worker.requiredCapabilities ?? [])].sort(),
+      buckets: [...worker.buckets].sort((left, right) => left - right),
+    }))
+    .sort((left, right) =>
+      left.workerId < right.workerId ? -1 : left.workerId > right.workerId ? 1 : 0,
+    );
+  return `sha256:${createHash("sha256")
+    .update(JSON.stringify({
+      contractVersion: "boring.remote-worker.fleet-config.v1",
+      protocolVersion: config.protocolVersion,
+      bucketCount: config.bucketCount,
+      workers,
+    }))
+    .digest("hex")}`;
 }
 
 export interface ParseRemoteWorkerFleetConfigOptionsV1 {
@@ -177,6 +222,9 @@ export function parseRemoteWorkerFleetConfigV1(
       expectedProviderCohortDigest:
         worker.expectedProviderCohortDigest as `sha256:${string}`,
       expectedImageDigest: worker.expectedImageDigest as `sha256:${string}`,
+      requiredCapabilities: Object.freeze(
+        [...worker.requiredCapabilities].sort(),
+      ),
       baseUrl: validateWorkerUrl(
         worker.baseUrl,
         options.allowInsecureLoopback === true,

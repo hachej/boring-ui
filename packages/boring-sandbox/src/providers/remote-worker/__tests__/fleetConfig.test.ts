@@ -1,10 +1,14 @@
 import { describe, expect, test } from "vitest";
 
 import { SandboxProviderError } from "../../../shared/providerV1";
-import { REMOTE_WORKER_PROTOCOL_VERSION } from "../../../shared/remoteWorkerProtocolV1";
+import {
+  REMOTE_WORKER_MULTI_SANDBOX_ROOTS_CAPABILITY_V1,
+  REMOTE_WORKER_PROTOCOL_VERSION,
+} from "../../../shared/remoteWorkerProtocolV1";
 import {
   parseRemoteWorkerFleetConfigV1,
   remoteWorkerBucketForWorkspaceV1,
+  remoteWorkerFleetConfigDigestV1,
   resolveRemoteWorkerPlacementV1,
 } from "../fleetConfig";
 
@@ -77,6 +81,48 @@ describe("remote-worker static fleet placement", () => {
       expect(() => parseRemoteWorkerFleetConfigV1(invalid)).toThrow(
         SandboxProviderError,
       );
+    }
+  });
+
+  test("normalizes and binds required negotiated capabilities", () => {
+    const allBuckets = Array.from({ length: 256 }, (_, index) => index);
+    const base = worker("worker-a", allBuckets);
+    const omitted = parseRemoteWorkerFleetConfigV1(config([base]));
+    const explicitEmpty = parseRemoteWorkerFleetConfigV1(
+      config([{ ...base, requiredCapabilities: [] }]),
+    );
+    const required = parseRemoteWorkerFleetConfigV1(
+      config([
+        {
+          ...base,
+          requiredCapabilities: [
+            REMOTE_WORKER_MULTI_SANDBOX_ROOTS_CAPABILITY_V1,
+          ],
+        },
+      ]),
+    );
+
+    expect(omitted.workers[0]?.requiredCapabilities).toEqual([]);
+    expect(Object.isFrozen(omitted.workers[0]?.requiredCapabilities)).toBe(true);
+    expect(remoteWorkerFleetConfigDigestV1(omitted)).toBe(
+      remoteWorkerFleetConfigDigestV1(explicitEmpty),
+    );
+    expect(remoteWorkerFleetConfigDigestV1(required)).not.toBe(
+      remoteWorkerFleetConfigDigestV1(omitted),
+    );
+
+    for (const requiredCapabilities of [
+      ["unknown-capability"],
+      [
+        REMOTE_WORKER_MULTI_SANDBOX_ROOTS_CAPABILITY_V1,
+        REMOTE_WORKER_MULTI_SANDBOX_ROOTS_CAPABILITY_V1,
+      ],
+    ]) {
+      expect(() =>
+        parseRemoteWorkerFleetConfigV1(
+          config([{ ...base, requiredCapabilities }]),
+        ),
+      ).toThrow(SandboxProviderError);
     }
   });
 

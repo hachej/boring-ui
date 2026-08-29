@@ -25,6 +25,7 @@ import {
 import {
   createRemoteWorkerSandboxProviderV1,
   type RemoteWorkerSandboxProviderOptionsV1,
+  type RemoteWorkerSandboxProviderV1,
 } from './remote-worker/createRemoteWorkerProvider'
 
 export interface StaticSandboxProviderOptionsV1 {
@@ -40,7 +41,7 @@ export type StaticSandboxProvidersV1 = Readonly<{
   local: SandboxProviderV1
   blaxel: SandboxProviderV1
   'vercel-sandbox': SandboxProviderV1
-  'remote-worker'?: SandboxProviderV1
+  'remote-worker'?: RemoteWorkerSandboxProviderV1
 }>
 
 export function createStaticSandboxProvidersV1(

@@ -22,6 +22,7 @@ import {
 } from "../../shared/providerV1";
 import {
   parseRemoteWorkerFleetConfigV1,
+  remoteWorkerFleetConfigDigestV1,
   resolveRemoteWorkerPlacementV1,
   type RemoteWorkerFleetConfigV1,
   type RemoteWorkerFleetWorkerConfigV1,
@@ -67,6 +68,10 @@ export interface RemoteWorkerBindingReceiptVerifierV1 {
   verifyBindingReceipt(
     input: RemoteWorkerBindingReceiptVerifierInputV1,
   ): boolean | Promise<boolean>;
+}
+
+export interface RemoteWorkerSandboxProviderV1 extends SandboxProviderV1 {
+  readonly providerConfigDigest: `sha256:${string}`;
 }
 
 export interface RemoteWorkerSandboxProviderOptionsV1 {
@@ -147,10 +152,11 @@ async function deleteRemoteSandboxV1(
 
 export function createRemoteWorkerSandboxProviderV1(
   options: RemoteWorkerSandboxProviderOptionsV1,
-): SandboxProviderV1 {
+): RemoteWorkerSandboxProviderV1 {
   const fleet = parseRemoteWorkerFleetConfigV1(options.fleet, {
     allowInsecureLoopback: options.allowInsecureLoopback,
   });
+  const providerConfigDigest = remoteWorkerFleetConfigDigestV1(fleet);
   const transport = options.transport;
   const now = options.now ?? Date.now;
   const idFactory = options.idFactory ?? randomUUID;
@@ -223,6 +229,7 @@ export function createRemoteWorkerSandboxProviderV1(
   return {
     contractVersion: PROVIDER_CONTRACT_VERSION,
     providerId: "remote-worker",
+    providerConfigDigest,
     capabilities: PROVIDER_CAPABILITIES["remote-worker"],
     resolveRuntimeRoot() {
       return REMOTE_WORKER_RUNTIME_CWD;
@@ -271,7 +278,7 @@ export function createRemoteWorkerSandboxProviderV1(
           requestTimeoutMs,
           capabilityLifetimeMs,
           eventStreamLifetimeMs,
-          requestedHealthCapabilities: worker.requiredCapabilities,
+          requiredCapabilities: worker.requiredCapabilities,
         });
 
         const request = parseRemoteWorkerRequestV1(
@@ -309,7 +316,7 @@ export function createRemoteWorkerSandboxProviderV1(
             ),
           ) ||
           !(worker.requiredCapabilities ?? []).every((capability) =>
-            health.negotiatedCapabilities?.includes(capability),
+            health.negotiatedCapabilities.includes(capability),
           )
         ) {
           await client.close();

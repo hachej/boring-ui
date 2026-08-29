@@ -14,6 +14,7 @@ import {
 } from "../../../shared/remoteWorkerProtocolV1";
 import { PROVIDER_CONTRACT_VERSION } from "../../../shared/providerMatrix";
 import { SandboxProviderError } from "../../../shared/providerV1";
+import { createStaticSandboxProvidersV1 } from "../../static";
 import {
   createRemoteWorkerSandboxProviderV1,
   type RemoteWorkerSandboxProviderOptionsV1,
@@ -90,6 +91,7 @@ class FakeTransport implements RemoteWorkerTransportV1 {
   createFailures = 0;
   advertiseExclusiveBinaryCreate = false;
   advertiseMultiSandboxRoots = false;
+  negotiatedCapabilitiesOverride?: unknown;
 
   async request(input: RemoteWorkerTransportRequestV1): Promise<unknown> {
     this.requests.push(input);
@@ -108,18 +110,21 @@ class FakeTransport implements RemoteWorkerTransportV1 {
         qualifiedAtMs: this.qualifiedAtMs,
         capabilities: ["fs", "events", "exec", "renew", "delete"],
         ...(
-          this.advertiseExclusiveBinaryCreate || this.advertiseMultiSandboxRoots
-            ? {
-                negotiatedCapabilities: [
-                  ...(this.advertiseExclusiveBinaryCreate
-                    ? [REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1]
-                    : []),
-                  ...(this.advertiseMultiSandboxRoots
-                    ? [REMOTE_WORKER_MULTI_SANDBOX_ROOTS_CAPABILITY_V1]
-                    : []),
-                ],
-              }
-            : {}
+          this.negotiatedCapabilitiesOverride !== undefined
+            ? { negotiatedCapabilities: this.negotiatedCapabilitiesOverride }
+            : this.advertiseExclusiveBinaryCreate ||
+                this.advertiseMultiSandboxRoots
+              ? {
+                  negotiatedCapabilities: [
+                    ...(this.advertiseExclusiveBinaryCreate
+                      ? [REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1]
+                      : []),
+                    ...(this.advertiseMultiSandboxRoots
+                      ? [REMOTE_WORKER_MULTI_SANDBOX_ROOTS_CAPABILITY_V1]
+                      : []),
+                  ],
+                }
+              : {}
         ),
       };
     }
@@ -294,6 +299,26 @@ describe("remote-worker SandboxProviderV1 placement binding", () => {
     ).toHaveLength(1);
   });
 
+  test("binds negotiated requirements into provider and static identity", () => {
+    const defaultProvider = createRemoteWorkerSandboxProviderV1(
+      providerOptions(new FakeTransport()),
+    );
+    const requiredProvider = createRemoteWorkerSandboxProviderV1(
+      providerOptions(new FakeTransport(), [], true),
+    );
+    const staticProviders = createStaticSandboxProvidersV1({
+      remoteWorker: providerOptions(new FakeTransport()),
+    });
+
+    expect(defaultProvider.providerConfigDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(requiredProvider.providerConfigDigest).not.toBe(
+      defaultProvider.providerConfigDigest,
+    );
+    expect(staticProviders["remote-worker"]?.providerConfigDigest).toBe(
+      defaultProvider.providerConfigDigest,
+    );
+  });
+
   test("new client omits exclusive create against an old worker", async () => {
     const transport = new FakeTransport();
     const provider = createRemoteWorkerSandboxProviderV1(providerOptions(transport));
@@ -329,7 +354,14 @@ describe("remote-worker SandboxProviderV1 placement binding", () => {
       oldWorker.requests[0]?.headers[
         REMOTE_WORKER_HEADERS_V1.requestedCapabilities
       ],
-    ).toContain(REMOTE_WORKER_MULTI_SANDBOX_ROOTS_CAPABILITY_V1);
+    ).toBe(
+      `${REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1},${REMOTE_WORKER_MULTI_SANDBOX_ROOTS_CAPABILITY_V1}`,
+    );
+    expect(
+      oldWorker.requests.filter(
+        (request) => request.path === "/internal/v1/sandboxes",
+      ),
+    ).toHaveLength(0);
 
     const qualifiedWorker = new FakeTransport();
     qualifiedWorker.advertiseMultiSandboxRoots = true;
@@ -342,6 +374,61 @@ describe("remote-worker SandboxProviderV1 placement binding", () => {
       sessionId: "session-a",
     });
     await pair.dispose();
+  });
+
+  test.each([
+    ["unknown", ["unknown-capability"]],
+    [
+      "duplicate",
+      [
+        REMOTE_WORKER_MULTI_SANDBOX_ROOTS_CAPABILITY_V1,
+        REMOTE_WORKER_MULTI_SANDBOX_ROOTS_CAPABILITY_V1,
+      ],
+    ],
+  ])("rejects %s advertised capabilities before create", async (_label, values) => {
+    const transport = new FakeTransport();
+    transport.negotiatedCapabilitiesOverride = values;
+    const provider = createRemoteWorkerSandboxProviderV1(
+      providerOptions(transport),
+    );
+
+    await expect(
+      provider.create({
+        workspaceRoot: "/unused",
+        workspaceId: "workspace-invalid-capabilities",
+        sessionId: "session-a",
+      }),
+    ).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.responseInvalid,
+    });
+    expect(
+      transport.requests.filter(
+        (request) => request.path === "/internal/v1/sandboxes",
+      ),
+    ).toHaveLength(0);
+  });
+
+  test("normalizes missing advertised capabilities into immutable health facts", async () => {
+    const transport = new FakeTransport();
+    const client = new RemoteWorkerProtocolClientV1({
+      worker: fleet().workers[0]!,
+      workspaceId: "workspace-health",
+      requestId: "request-health",
+      issuer: { issueCapability: async () => "capability-health" },
+      transport,
+      now: () => nowMs,
+      idFactory: () => "nonce-health",
+      requestTimeoutMs: 5_000,
+      capabilityLifetimeMs: 1_000,
+      eventStreamLifetimeMs: 5_000,
+    });
+
+    const health = await client.health();
+    expect(health.negotiatedCapabilities).toEqual([]);
+    expect(Object.isFrozen(health)).toBe(true);
+    expect(Object.isFrozen(health.capabilities)).toBe(true);
+    expect(Object.isFrozen(health.negotiatedCapabilities)).toBe(true);
+    await client.close();
   });
 
   test("new worker negotiation exposes exclusive create without changing legacy operations", async () => {

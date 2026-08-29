@@ -104,8 +104,18 @@ export interface RemoteWorkerProtocolClientOptionsV1 {
   requestTimeoutMs: number;
   capabilityLifetimeMs: number;
   eventStreamLifetimeMs: number;
-  requestedHealthCapabilities?: readonly RemoteWorkerNegotiatedCapabilityV1[];
+  requiredCapabilities?: readonly RemoteWorkerNegotiatedCapabilityV1[];
 }
+
+export type RemoteWorkerNormalizedHealthResponseV1 = Omit<
+  RemoteWorkerHealthResponseV1,
+  "capabilities" | "negotiatedCapabilities"
+> & {
+  readonly capabilities: ReadonlyArray<
+    RemoteWorkerHealthResponseV1["capabilities"][number]
+  >;
+  readonly negotiatedCapabilities: readonly RemoteWorkerNegotiatedCapabilityV1[];
+};
 
 export function parseRemoteWorkerRequestV1<T>(
   schema: StrictParser<T>,
@@ -321,18 +331,29 @@ export class RemoteWorkerProtocolClientV1 {
     return await this.track(operation);
   }
 
-  health(): Promise<RemoteWorkerHealthResponseV1> {
-    return this.request({
+  async health(): Promise<RemoteWorkerNormalizedHealthResponseV1> {
+    const requestedCapabilities = [
+      ...new Set([
+        REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1,
+        ...(this.options.requiredCapabilities ?? []),
+      ]),
+    ].sort();
+    const response = await this.request({
       operation: "health",
       method: "GET",
       path: "/internal/v1/health",
       headers: {
-        [REMOTE_WORKER_HEADERS_V1.requestedCapabilities]: [
-          REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1,
-          ...(this.options.requestedHealthCapabilities ?? []),
-        ].join(","),
+        [REMOTE_WORKER_HEADERS_V1.requestedCapabilities]:
+          requestedCapabilities.join(","),
       },
       schema: RemoteWorkerHealthResponseSchemaV1,
+    });
+    return Object.freeze({
+      ...response,
+      capabilities: Object.freeze([...response.capabilities]),
+      negotiatedCapabilities: Object.freeze(
+        [...(response.negotiatedCapabilities ?? [])].sort(),
+      ),
     });
   }
 
