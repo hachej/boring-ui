@@ -34,7 +34,7 @@ import { useSession } from '../auth/AuthProvider.js'
 import { useWorkspaceMembers } from '../hooks/useWorkspaceMembers.js'
 import type { EnrichedMember } from '../hooks/useWorkspaceMembers.js'
 import { apiFetch, getHttpErrorDetail } from '../utils.js'
-import type { MemberRole } from '../../shared/types.js'
+import type { MemberRole, Workspace } from '../../shared/types.js'
 
 const ROLE_OPTIONS: MemberRole[] = ['owner', 'editor', 'viewer']
 
@@ -95,13 +95,21 @@ export function MembersPage() {
     onSuccess: ({ userId }) => {
       setConfirmTarget(null)
       if (userId === currentUserId) {
-        // We just removed ourselves: there is nothing left to show on this
-        // page, and this workspace's members list is now forbidden to us.
-        // Leave immediately instead of refetching it — invalidating (rather
-        // than removing) the cache means an observer still mounted for one
-        // more tick won't trigger a doomed refetch. Invalidate the
-        // workspaces list too, so the picker on "/" resolves the next
-        // available workspace instead of a stale/removed one.
+        // We just removed ourselves. WorkspaceAuthProvider stays mounted
+        // across this navigation and resolves "/" synchronously from
+        // whatever is already in the query cache — an invalidate-only
+        // update races that resolution: the still-cached workspaces list
+        // (with this workspace as isDefault/first, plus its still-cached
+        // detail) can redirect straight back into the workspace we just
+        // left, before the invalidated refetch lands. Filter this
+        // workspace out of the cached list atomically, in this same
+        // callback, so "/" never observes a list that still contains it.
+        // (invalidateQueries afterward still reconciles with the server
+        // in the background, e.g. if another workspace was also removed
+        // concurrently.)
+        queryClient.setQueryData<Workspace[]>(WORKSPACES_QUERY_KEY, (existing) =>
+          existing ? existing.filter((w) => w.id !== workspaceId) : existing,
+        )
         queryClient.invalidateQueries({ queryKey: WORKSPACES_QUERY_KEY })
         navigate('/', { replace: true })
         return
