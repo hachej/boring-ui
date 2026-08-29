@@ -129,6 +129,38 @@ async function waitForCall(
   });
 }
 
+async function expectRetiringOperations(
+  sessions: RunscSessionRuntimeV1,
+): Promise<void> {
+  await expect(
+    sessions.renew("sandbox-a", workspaceId, 10_000),
+  ).rejects.toMatchObject({
+    code: REMOTE_WORKER_ERROR_CODES_V1.sandboxDisposed,
+  });
+  await expect(
+    Promise.resolve().then(async () => await sessions.create(createInput)),
+  ).rejects.toMatchObject({
+    code: REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+  });
+  await expect(
+    sessions.fs("sandbox-a", workspaceId, {
+      op: "mkdir",
+      path: "must-not-start",
+      recursive: true,
+    }),
+  ).rejects.toMatchObject({
+    code: REMOTE_WORKER_ERROR_CODES_V1.sandboxDisposed,
+  });
+  await expect(
+    sessions.exec("sandbox-a", workspaceId, {
+      ...execRequest,
+      invocationId: "must-not-start",
+    }),
+  ).rejects.toMatchObject({
+    code: REMOTE_WORKER_ERROR_CODES_V1.sandboxDisposed,
+  });
+}
+
 describe("runsc explicit-dispose operation ownership", () => {
   test("does not start an ordinary recovery replacement after dispose owns a delayed remove", async () => {
     const remove = deferred<DockerCommandResult>();
@@ -450,6 +482,145 @@ describe("runsc explicit-dispose operation ownership", () => {
     });
     await disposal;
     expect(invocationCalls).toBe(0);
+  });
+
+  test.each(["throw", "nonzero"] as const)(
+    "retires and joins cleanup when replacement remove returns %s",
+    async (failureMode) => {
+      const finalRemoval = deferred<DockerCommandResult>();
+      let removeCalls = 0;
+      let runCalls = 0;
+      const runner = {
+        run: vi.fn(async (input: DockerCommandInput) => {
+          const mode = commandMode(input);
+          if (mode === "workspace") return success({ openat2: true });
+          if (mode === "invoke") return success(helperResult(false));
+          if (mode === "run") runCalls += 1;
+          if (mode === "rm") {
+            removeCalls += 1;
+            if (removeCalls === 4) return await finalRemoval.promise;
+            if (failureMode === "throw")
+              throw new Error("injected remove transport failure");
+            return { ...success(), exitCode: 1 };
+          }
+          if (mode === "ps" && removeCalls <= 3)
+            return success("container-id\n");
+          return success("container-id\n");
+        }),
+      } satisfies DockerCommandRunner & { run: ReturnType<typeof vi.fn> };
+      const sessions = testRuntime(runner);
+      await sessions.create(createInput);
+
+      await expect(
+        sessions.exec("sandbox-a", workspaceId, execRequest),
+      ).rejects.toMatchObject({
+        code: REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+      });
+      expect(removeCalls).toBe(3);
+      await expectRetiringOperations(sessions);
+
+      const firstDisposal = sessions.dispose("sandbox-a", workspaceId);
+      const secondDisposal = sessions.dispose("sandbox-a", workspaceId);
+      await vi.waitFor(() => expect(removeCalls).toBe(4));
+      finalRemoval.resolve(success());
+      await Promise.all([firstDisposal, secondDisposal]);
+
+      expect(removeCalls).toBe(4);
+      expect(runCalls).toBe(1);
+      await expect(
+        sessions.renew("sandbox-a", workspaceId, 10_000),
+      ).rejects.toMatchObject({
+        code: REMOTE_WORKER_ERROR_CODES_V1.sandboxNotFound,
+      });
+    },
+  );
+
+  test("proves after-effect removal absence while disposal joins cleanup", async () => {
+    const absenceLookup = deferred<DockerCommandResult>();
+    let removeCalls = 0;
+    let runCalls = 0;
+    const runner = {
+      run: vi.fn(async (input: DockerCommandInput) => {
+        const mode = commandMode(input);
+        if (mode === "workspace") return success({ openat2: true });
+        if (mode === "invoke") return success(helperResult(false));
+        if (mode === "run") runCalls += 1;
+        if (mode === "rm") {
+          removeCalls += 1;
+          if (removeCalls === 1)
+            throw new Error("remove accepted before transport failed");
+          return { ...success(), exitCode: 1 };
+        }
+        if (mode === "ps") return await absenceLookup.promise;
+        return success("container-id\n");
+      }),
+    } satisfies DockerCommandRunner & { run: ReturnType<typeof vi.fn> };
+    const sessions = testRuntime(runner);
+    await sessions.create(createInput);
+
+    const execution = sessions.exec("sandbox-a", workspaceId, execRequest);
+    await waitForCall(runner.run, (input) => commandMode(input) === "ps");
+    await expectRetiringOperations(sessions);
+    const firstDisposal = sessions.dispose("sandbox-a", workspaceId);
+    const secondDisposal = sessions.dispose("sandbox-a", workspaceId);
+    absenceLookup.resolve(success(""));
+
+    await expect(execution).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+    });
+    await Promise.all([firstDisposal, secondDisposal]);
+    expect(removeCalls).toBe(2);
+    expect(runCalls).toBe(1);
+  });
+
+  test("retires the old runtime when replacement id allocation throws", async () => {
+    const retirementRemoval = deferred<DockerCommandResult>();
+    let factoryCalls = 0;
+    let removeCalls = 0;
+    let runCalls = 0;
+    const removedNames: string[] = [];
+    const runner = {
+      run: vi.fn(async (input: DockerCommandInput) => {
+        const mode = commandMode(input);
+        if (mode === "workspace") return success({ openat2: true });
+        if (mode === "invoke") return success(helperResult(false));
+        if (mode === "run") runCalls += 1;
+        if (mode === "rm") {
+          removeCalls += 1;
+          removedNames.push(input.argv.at(-1) ?? "");
+          if (removeCalls === 2) return await retirementRemoval.promise;
+        }
+        return success("container-id\n");
+      }),
+    } satisfies DockerCommandRunner & { run: ReturnType<typeof vi.fn> };
+    const sessions = new RunscSessionRuntimeV1({
+      runner,
+      quota: { apply: vi.fn(), check: vi.fn() },
+      runtimeIdFactory: () => {
+        factoryCalls += 1;
+        if (factoryCalls === 2) throw new Error("injected id failure");
+        return factoryCalls.toString(16).padStart(32, "0");
+      },
+    });
+    await sessions.create(createInput);
+
+    const execution = sessions.exec("sandbox-a", workspaceId, execRequest);
+    await vi.waitFor(() => expect(removeCalls).toBe(2));
+    await expectRetiringOperations(sessions);
+    const disposal = sessions.dispose("sandbox-a", workspaceId);
+    retirementRemoval.resolve(success());
+
+    await expect(execution).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+    });
+    await disposal;
+    expect(factoryCalls).toBe(2);
+    expect(removeCalls).toBe(2);
+    expect(removedNames).toEqual([
+      `boring-sbx-${"1".padStart(32, "0")}`,
+      `boring-sbx-${"1".padStart(32, "0")}`,
+    ]);
+    expect(runCalls).toBe(1);
   });
 
   test("joins concurrent disposal and never binds or starts after disposal succeeds", async () => {

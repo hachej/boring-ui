@@ -733,19 +733,24 @@ export class RunscSessionRuntimeV1 {
     record: SessionRecordV1,
     workspaceReadOnly = false,
   ): Promise<void> {
-    this.requireOperationOwner(record);
-    await runDockerChecked(this.options.runner, {
-      argv: buildDockerRemoveArgv(record.runtimeId),
-      timeoutMs: RUNSC_RUNTIME_LIMITS_V1.disposeTimeoutMs,
-      maxOutputBytes: 64 * 1024,
-    });
-    this.requireOperationOwner(record);
-    record.runtimeId = this.nextRuntimeId();
     try {
+      this.requireOperationOwner(record);
+      await runDockerChecked(this.options.runner, {
+        argv: buildDockerRemoveArgv(record.runtimeId),
+        timeoutMs: RUNSC_RUNTIME_LIMITS_V1.disposeTimeoutMs,
+        maxOutputBytes: 64 * 1024,
+      });
+      this.requireOperationOwner(record);
+      const replacementRuntimeId = this.nextRuntimeId();
+      record.runtimeId = replacementRuntimeId;
       await this.startContainer(record, workspaceReadOnly, true);
       this.requireOperationOwner(record);
     } catch (error) {
-      if (!record.retirement) await this.retire(record, "cleanup");
+      try {
+        await this.retire(record, "cleanup");
+      } catch {
+        // Retirement retains the record and schedules retry-safe cleanup.
+      }
       throw runscRuntimeError(
         REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
         "remote-worker clean container replacement failed",

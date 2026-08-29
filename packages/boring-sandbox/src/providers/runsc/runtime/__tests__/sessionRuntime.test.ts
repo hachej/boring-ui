@@ -376,9 +376,16 @@ describe("warm runsc session runtime", () => {
             input.argv[0] === "exec" && input.argv.at(-1) === "invoke",
         ),
       ).toHaveLength(1);
-      expect(removeAttempts).toBe(4);
+      expect(removeAttempts).toBe(3);
 
       await vi.advanceTimersByTimeAsync(100);
+      expect(removeAttempts).toBe(4);
+      await expect(
+        sessions.renew("sandbox-a", workspaceId, 100),
+      ).rejects.toMatchObject({
+        code: REMOTE_WORKER_ERROR_CODES_V1.sandboxDisposed,
+      });
+      await vi.advanceTimersByTimeAsync(200);
       expect(removeAttempts).toBe(5);
       await expect(
         sessions.renew("sandbox-a", workspaceId, 100),
