@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType } from "react"
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType } from "react"
 import { IconButton, LoadingState, ResizeHandle as UiResizeHandle } from "@hachej/boring-ui-kit"
 import { Maximize2, MessageSquare, Minimize2, PanelRightClose, PanelRightOpen } from "lucide-react"
 import { cn } from "../lib/utils"
@@ -150,8 +150,14 @@ export function ChatLayout(props: ChatLayoutProps) {
   // in their own persistent chrome (e.g. the plugin-tabs shell's app-left
   // rail/pane) consume some of that width before ChatLayout's own row ever
   // starts, so `viewport` overstates how much room the chat+workbench row
-  // actually has — `rowWidth` (measured off this component's own root,
-  // populated below) is the real figure and is preferred once available.
+  // actually has. `rowWidth` is the real figure: it prefers a live
+  // measurement of ChatLayout's own chat+workbench row (`rowRef`, attached
+  // below to the flex row that actually holds `<main>`/`<aside>` — NOT the
+  // outer shell, which also contains the session/workbench-left drawers and
+  // so overstates the row just as much as `viewport` did) and falls back,
+  // before that measurement lands, to `viewport` minus this component's own
+  // known drawer widths (nav + workbench-left), which are already known
+  // synchronously from persisted state on the very first render.
   // `surfaceMax`/`effectiveSurfaceWidth` used to size the workbench purely
   // off `viewport`, so on medium desktop widths a wide persisted workbench
   // could consume the entire real row, squeezing the chat column (and any
@@ -161,7 +167,10 @@ export function ChatLayout(props: ChatLayoutProps) {
   // is active, so the overlay's flex wrapper was the thing left computing
   // to ~0 width. See #1451.
   const [measuredRowWidth, setMeasuredRowWidth] = useState<number | null>(null)
-  const rowWidth = measuredRowWidth ?? viewport
+  const rowWidthEstimate = mobileShell
+    ? viewport
+    : Math.max(0, viewport - (navOpen ? effectiveNavWidth : 0) - (sidebarOpen ? effectiveSidebarWidth : 0))
+  const rowWidth = measuredRowWidth ?? rowWidthEstimate
   const MIN_CHAT_OVERLAY_WIDTH = 280
   const chatOverlayReserve = !mobileShell && props.chatOverlay && surfaceOpen && !chatCollapsed
     ? MIN_CHAT_OVERLAY_WIDTH
@@ -188,25 +197,46 @@ export function ChatLayout(props: ChatLayoutProps) {
     ? chatPanes.find((pane) => pane.id === props.activeChatPaneId) ?? chatPanes[0]
     : undefined
   const shellRef = useRef<HTMLDivElement | null>(null)
+  const rowRef = useRef<HTMLDivElement | null>(null)
   const navDrawerRef = useRef<HTMLElement | null>(null)
   const sidebarDrawerRef = useRef<HTMLElement | null>(null)
   const scheduleLocalComposerFocus = useCallback(() => {
     const shell = shellRef.current
     if (shell) scheduleComposerFocus(shell)
   }, [])
-  // Feeds `measuredRowWidth` above with this component's own real content
-  // width — see the #1451 note at its declaration for why `viewport` alone
-  // is not a safe basis for sizing the workbench column.
-  useEffect(() => {
-    const el = shellRef.current
-    if (!el || typeof ResizeObserver === "undefined") return
-    const observer = new ResizeObserver((entries) => {
-      const width = entries[0]?.contentRect.width
-      if (typeof width !== "number") return
+  // Feeds `measuredRowWidth` above with the chat+workbench row's real
+  // content width — see the #1451 note at its declaration. Attached to
+  // `rowRef` (the flex row that directly holds `<main>`/`<aside>` below),
+  // not `shellRef` (the outer shell, which also contains the session and
+  // workbench-left drawers and so overstates the row width by however much
+  // of those is open).
+  //
+  // `useLayoutEffect`, not `useEffect`: this measurement feeds a width that
+  // is itself rendered as a fixed CSS px value a few lines down, so reading
+  // it after paint (as a passive effect would) can let the browser paint one
+  // frame at the stale/estimated width before snapping to the measured one
+  // — most visible on first mount with a wide persisted workbench width and
+  // an overlay already open. Layout effects run synchronously after DOM
+  // mutations but before the browser paints, so the corrected width is what
+  // actually reaches the screen.
+  useLayoutEffect(() => {
+    const el = rowRef.current
+    if (!el) return
+    const measure = () => {
+      const width = el.getBoundingClientRect().width
+      // A real, mounted, visible row is never legitimately 0px wide. Treat 0
+      // as "no usable measurement yet" (environments with no real layout —
+      // jsdom's ResizeObserver polyfill is a no-op that never calls back, and
+      // `getBoundingClientRect` always reports zeros — or a momentarily
+      // display:none ancestor) rather than let it override `rowWidthEstimate`
+      // with a value that would floor every width computation below at 200.
+      if (width <= 0) return
       setMeasuredRowWidth((previous) => (previous === width ? previous : width))
-    })
+    }
+    measure()
+    if (typeof ResizeObserver === "undefined") return
+    const observer = new ResizeObserver(() => measure())
     observer.observe(el)
-    setMeasuredRowWidth(el.getBoundingClientRect().width)
     return () => observer.disconnect()
   }, [])
   const navIsTopDrawer = navOpen && (mobileShell || !sidebarOpen)
@@ -621,7 +651,7 @@ export function ChatLayout(props: ChatLayoutProps) {
         ) : null}
       </aside>
 
-      <div className="relative flex h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
+      <div ref={rowRef} data-boring-workspace-part="chat-workbench-row" className="relative flex h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
         <main
           data-boring-workspace-part="chat-stage"
           data-boring-state={chatHidden ? "collapsed" : "expanded"}

@@ -846,6 +846,87 @@ describe("ChatLayout component", () => {
     expect(screen.queryByRole("button", { name: "Close workbench" })).not.toBeInTheDocument()
   })
 
+  // #1457 review findings 1 & 2. jsdom has no real layout: the vitest-wide
+  // `ResizeObserver` polyfill (vitest.setup.ts) is a no-op that never calls
+  // back, and `getBoundingClientRect` always reports zeros, which ChatLayout
+  // now treats as "no usable measurement yet" rather than letting it zero
+  // out sizing. That makes jsdom exercise exactly the pre-measurement
+  // fallback path (`rowWidthEstimate`) end to end — never a value the
+  // ResizeObserver later corrects — which is the right target for both
+  // findings: (1) the estimate must account for ChatLayout's own open
+  // drawers (not just the raw viewport), and (2) that estimate must already
+  // be the safe, reserved value on the very first render, with no
+  // intermediate frame at the old unclamped width.
+  it("reserves room for a chat overlay on first render, accounting for an open workbench-left drawer (#1451/#1457)", () => {
+    setViewport(1024)
+    const storageKey = "chat-layout-1457-initial-reserve"
+    window.localStorage.setItem(`${storageKey}:surfaceWidth`, "680")
+
+    renderWithRegistry(
+      <ChatLayout
+        center="chat"
+        nav={null}
+        storageKey={storageKey}
+        surface="artifact-surface"
+        surfaceParams={{ onClose: vi.fn() }}
+        sidebar="workbench-left"
+        sidebarParams={{ onClose: vi.fn() }}
+        chatOverlay={<div>Tasks overlay</div>}
+      />,
+      ["chat", "artifact-surface", "workbench-left"],
+    )
+
+    // Reproduces finding 1's example: nav closed, a 280px workbench-left
+    // drawer open, 1024px viewport → a 744px row. Pre-fix, the width budget
+    // was computed off the *outer shell* (or, before that, the raw
+    // viewport), which does not subtract the open workbench-left drawer —
+    // so the workbench could be sized as if it owned the whole row and the
+    // chat/overlay column got squeezed to near 0. Post-fix the estimate
+    // subtracts the drawer, so the workbench is capped well under its
+    // persisted 680px width, leaving the reserved 280px for the overlay.
+    const workbench = screen.getByRole("complementary", { name: "Workbench" })
+    const width = Number(workbench.style.width.replace("px", ""))
+    expect(Number.isFinite(width)).toBe(true)
+    expect(width).toBeLessThan(680) // shrank off the persisted width
+    expect(width).toBeLessThanOrEqual(744 - 280) // left >= the overlay reserve
+    expect(workbench.style.width).toBe(workbench.style.minWidth)
+    expect(workbench.style.width).toBe(workbench.style.maxWidth)
+
+    // No later correction changes it: this IS the first-render value (no
+    // `act`/`waitFor` beyond what `render` itself flushes), so there was no
+    // intermediate frame at the old, unclamped width for the browser to
+    // paint before a passive effect fixed it up.
+    expect(screen.getByRole("complementary", { name: "Workbench" }).style.width).toBe(workbench.style.width)
+  })
+
+  it("does not widen the workbench to fill the whole row when no chat overlay is open (#1457)", () => {
+    // Wide enough (>= CHAT_AUTOCOLLAPSE_MAX_WIDTH) that ChatLayout's separate
+    // narrow-viewport auto-collapse effect does not also kick in here — this
+    // test is only about the reserve/estimate math, not that unrelated
+    // behavior (which the 1024px-viewport test above deliberately keeps
+    // out of play by supplying a chatOverlay).
+    setViewport(1280)
+    const storageKey = "chat-layout-1457-no-overlay"
+    window.localStorage.setItem(`${storageKey}:surfaceWidth`, "680")
+
+    renderWithRegistry(
+      <ChatLayout
+        center="chat"
+        nav={null}
+        storageKey={storageKey}
+        surface="artifact-surface"
+        surfaceParams={{ onClose: vi.fn() }}
+      />,
+      ["chat", "artifact-surface"],
+    )
+
+    // No sidebar drawer open and no chatOverlay: the persisted 680px width
+    // fits inside the row untouched — the reserve/estimate logic must not
+    // shrink the workbench when nothing needs the room.
+    const workbench = screen.getByRole("complementary", { name: "Workbench" })
+    expect(workbench.style.width).toBe("680px")
+  })
+
   it("owns collapsed, split, fullscreen, restore, and collapse transitions at the ChatLayout host", async () => {
     const panelRegistry = new PanelRegistry()
     panelRegistry.register("chat", { title: "Chat", lazy: false, component: DummyPanel })
