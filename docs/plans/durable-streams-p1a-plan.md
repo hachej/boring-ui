@@ -2,7 +2,7 @@
 program: durable-streams (canonical tracker: docs/plans/multiagent-shell/programs.md — no umbrella issue by owner triage 2026-08-27)
 acceptance-issue: https://github.com/hachej/boring-ui/issues/1348
 issue: 1348
-state: r3 — fresh-eyes (Opus, 10 P1 / 9 P2) and Sol xhigh cross-model pass (2 P0 / 12 P1 / 1 P2, verdict REVISE) folded; second fresh-eyes pass clean (1 P1 + line-anchor drift, folded) 2026-08-29; **awaiting owner gate 1**
+state: **RATIFIED — owner gate 1 passed 2026-08-29** (all nine decisions as recommended; DoR one-session waiver granted for A2/A1/A4). Review ladder: fresh-eyes (Opus, 10 P1 / 9 P2) → Sol xhigh cross-model (2 P0 / 12 P1 / 1 P2, REVISE) → folds → second fresh-eyes pass clean. Next action: `/skill:exec wt-391-forward-9p50.3` (A2).
 updated: 2026-08-29
 flag: flag:BORING_CHAT_DURABLE_STREAM (existing; A1–A4 preserve its off-path byte-identical; P1-C flips it)
 track: owner
@@ -81,7 +81,7 @@ Per-section numbering maps below are superseded by this table.
 | A4's restart e2e and A5's journeys both need a kill/respawn host helper on a fixed port | **One helper** (`hostProcess.ts` + `port` option on `spawnBackend`), same rule. |
 | A1 corrected DIRECTION §Lane reality: the `userId` slot is already empty on all addressed routes | Recorded in A1; DIRECTION gets a one-line errata in the PR that lands A1. |
 
-## Decisions (owner, minimal)
+## Decisions (owner — all RULED 2026-08-29 as recommended)
 
 1. **Session key = `(workspaceScopeId, sessionId)`; `agentTypeId` a required attribute, not a key** (A1). Alternative — key on agent too — contradicts §9a's multi-Seat projection.
 2. **v1 rows migrate in place (schema_version 1→2, quarantine-never-drop)** (A1), vs discard-behind-flag.
@@ -89,7 +89,7 @@ Per-section numbering maps below are superseded by this table.
 4. **Effect classes on tools (`observe · propose · mutate · external-effect · pause`), unknown = external-effect (fail-closed)** (A3).
 5. **Graceful drain never cancels a gate; only owner cancel / expiry / supersede write terminal attention states** (A3) — this is the #1348 fix.
 6. **Restart proofs use process SIGKILL + respawn, never in-process teardown** (A5).
-7. **DoR waiver requested** for A2 (2 sessions), A1 (1.5), A4 (2) — or instruct further splits.
+7. **DoR waiver GRANTED** for A2 (2 sessions), A1 (1.5), A4 (2) — explicit owner waiver of `bead-ready.md` "fits one session"; the two-bounce rule still applies.
 8. **Additive optional field on a shared gateway DTO** (`AgentSessionSummary.attention`, A4): precedent `turnCount?`/`archived?`, but Sol is right that optional fields are still contract changes. Recommended: allow, pinned in conformance; alternative: keep it HTTP-header/internal only and let the UI read attention from the ask-user ui-state hint as today.
 9. **Pi rule 4 (Boring-owned BYOK/model authority) is NOT satisfied by P1-A** and is recorded as an open blocker owned by the BYOK lane (#1145/#1164 injection seam), not claimed by A2.
 
