@@ -164,13 +164,14 @@ describe('createVercelSandboxProvider', () => {
       create: vi.fn(async () => harness.sandbox),
       get: vi.fn(),
     }
+    const logger = { info: vi.fn(), warn: vi.fn() }
     const provider = createVercelSandboxProvider({
       store,
       vercelClient: client,
       lifecycle: 'disposable',
       getEnvVar,
       snapshotScheduler: scheduler,
-      logger: { info: vi.fn() },
+      logger,
     })
 
     expectDisposableProviderProfile(provider, 'vercel-sandbox')
@@ -182,6 +183,10 @@ describe('createVercelSandboxProvider', () => {
     expect(client.create).toHaveBeenCalledWith(expect.objectContaining({
       name: expect.stringMatching(/^boring-lease-[a-f0-9]{40}$/),
     }))
+    const logged = JSON.stringify(logger.info.mock.calls)
+    expect(logged).not.toContain('workspace-setup-failure')
+    expect(logged).not.toContain('session-setup-failure')
+    expect(logged).not.toContain('sb-setup-failure')
     await expect(pair.checkHealth?.()).rejects.toMatchObject({
       code: 'VERCEL_API_ERROR',
       message: 'workspace root setup failed',

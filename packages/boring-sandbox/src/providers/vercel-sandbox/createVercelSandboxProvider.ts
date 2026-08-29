@@ -111,6 +111,22 @@ function sandboxTelemetryProperties(
   }
 }
 
+function createRedactedLifecycleLogger(logger: ModeLogger): ModeLogger {
+  const properties = (metadata: Record<string, unknown> = {}): Record<string, unknown> => {
+    const output: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(metadata)) {
+      if (typeof value === 'number' || typeof value === 'boolean' || value === null) output[key] = value
+      else if (typeof value === 'string' && ['reason', 'sourceType', 'status'].includes(key)) output[key] = value
+      else if (typeof value === 'string') output[`${key}Digest`] = telemetryDigest(value)
+    }
+    return output
+  }
+  return {
+    info(message, metadata) { logger.info(message, properties(metadata)) },
+    warn(message, metadata) { logger.warn?.(message, properties(metadata)) },
+  }
+}
+
 function captureSandboxSetupEvent(
   telemetry: TelemetrySink | undefined,
   ctx: SandboxProviderCreateContextV1 | undefined,
@@ -541,6 +557,7 @@ export function createVercelSandboxProvider(
   const store = opts.store ?? new FileHandleStore()
   const getEnvVar = opts.getEnvVar ?? getEnv
   const logger = opts.logger ?? DEFAULT_MODE_LOGGER
+  const lifecycleLogger = createRedactedLifecycleLogger(logger)
   // @vercel/sandbox@beta persistent sandboxes auto-snapshot when their
   // session stops and auto-resume on the next command. Do not run the old
   // periodic snapshotter here: sandbox.snapshot() stops the active session.
@@ -691,7 +708,7 @@ export function createVercelSandboxProvider(
                 {
                   sourceSnapshotId,
                   tarballUrl,
-                  logger,
+                  logger: lifecycleLogger,
                   maxIdleMs: opts.orphanGuardMaxIdleMs === null
                     ? undefined
                     : opts.orphanGuardMaxIdleMs ?? ORPHAN_GUARD_MAX_IDLE_MS,
@@ -728,7 +745,7 @@ export function createVercelSandboxProvider(
 
         workspace = createVercelSandboxWorkspace(resolvedSandboxHandle, {
           onMutation: markDirty,
-          logger,
+          logger: lifecycleLogger,
         })
         sandbox = createVercelSandboxExec(resolvedSandboxHandle, {
           onMutation: markDirty,
