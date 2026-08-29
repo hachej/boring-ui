@@ -29,11 +29,16 @@ import {
   ShieldAlert,
   Trash2,
 } from 'lucide-react'
-import { useCurrentWorkspace, useWorkspaceRole } from '../WorkspaceAuthProvider.js'
+import {
+  useCurrentWorkspace,
+  useWorkspaceRole,
+  useWorkspaceRouteStatus,
+} from '../WorkspaceAuthProvider.js'
 import { WORKSPACES_QUERY_KEY, workspaceQueryKey } from '../WorkspaceAuthProvider.js'
 import { useOptionalConfig } from '../ConfigProvider.js'
 import { apiFetch, apiFetchJson, getHttpErrorDetail } from '../utils.js'
 import type { WorkspaceRuntime } from '../../shared/types.js'
+import { WorkspaceRouteErrorPage } from './WorkspaceRouteErrorPage.js'
 
 export interface WorkspaceSettingsPageProps {
   topBar?: ReactNode
@@ -147,6 +152,7 @@ type WorkspaceFileSettings = {
 export function WorkspaceSettingsPage({ topBar }: WorkspaceSettingsPageProps = {}) {
   const workspace = useCurrentWorkspace()
   const role = useWorkspaceRole()
+  const routeStatus = useWorkspaceRouteStatus()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
 
@@ -315,7 +321,9 @@ export function WorkspaceSettingsPage({ topBar }: WorkspaceSettingsPageProps = {
   const fileSettingsChanged = imageUploadDirValue !== null && imageUploadDirValue.trim() !== currentImageUploadDir
   const nameChanged = nameValue !== null && nameValue.trim() !== workspace?.name
   const canEditName = role !== 'viewer'
-  const canDeleteWorkspace = role === 'owner' || role === null
+  // Destructive controls must never render "enabled by default" while role is
+  // unresolved: only an explicitly confirmed owner may delete a workspace.
+  const canDeleteWorkspace = role === 'owner'
   const workspaceName = workspace?.name ?? 'Workspace'
   const workspaceInitial = (workspace?.name?.trim()?.[0] ?? 'W').toUpperCase()
   const topBarNode = topBar === undefined
@@ -326,6 +334,32 @@ export function WorkspaceSettingsPage({ topBar }: WorkspaceSettingsPageProps = {
     if (item.href === '#files') return hasFileSettings
     return true
   })
+
+  // Same membership guard as the other workspace routes (/workspace/:id,
+  // /members): a non-member (or a not-found/switch-failed workspace) never
+  // sees the settings shell — including its destructive Delete control.
+  if (
+    routeStatus.status === 'not-found'
+    || routeStatus.status === 'forbidden'
+    || routeStatus.status === 'switch-failed'
+  ) {
+    return <WorkspaceRouteErrorPage status={routeStatus.status} message={routeStatus.message} />
+  }
+
+  // Role/workspace still resolving: render nothing interactive (in
+  // particular, no Delete button) until membership is confirmed.
+  if (routeStatus.status !== 'matched') {
+    return (
+      <main className="boring-settings-shell" data-testid="workspace-settings-loading">
+        {topBarNode}
+        <div className="boring-settings-scroll">
+          <div className="flex min-h-[40vh] items-center justify-center px-6">
+            <p className="text-sm text-muted-foreground">Loading workspace settings…</p>
+          </div>
+        </div>
+      </main>
+    )
+  }
 
   return (
     <main className="boring-settings-shell">

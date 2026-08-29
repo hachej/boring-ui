@@ -10,6 +10,7 @@ import {
   useCurrentWorkspace,
   useSession,
   useWorkspaceRouteStatus,
+  WorkspaceRouteErrorPage,
   type CoreFrontAuthPagesOverride,
   type CoreFrontCompanyAdminOptions,
 } from '../../front/index.js'
@@ -226,22 +227,6 @@ function HomeRedirect<TSession extends WorkspaceAgentSession = WorkspaceAgentSes
   }
   if (!workspace) return <>{resolvedLoadingFallback}</>
   return <Navigate to={workspaceHref(workspace.id)} replace />
-}
-
-function WorkspaceRouteErrorPage({ status, message }: { status: 'not-found' | 'forbidden' | 'switch-failed'; message: string }) {
-  const title = status === 'not-found'
-    ? 'Workspace not found'
-    : status === 'forbidden'
-      ? 'Workspace unavailable'
-      : 'Workspace failed to open'
-  return (
-    <div className="flex h-screen min-h-0 items-center justify-center bg-background px-6 text-foreground">
-      <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
-        <h1 className="text-lg font-semibold">{title}</h1>
-        <p className="mt-2 text-sm text-muted-foreground">{message}</p>
-      </div>
-    </div>
-  )
 }
 
 function WorkspaceRoute<

@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -24,7 +25,11 @@ import {
   LoadingState,
   Notice,
 } from '@hachej/boring-ui-kit'
-import { useCurrentWorkspace, useWorkspaceRole } from '../WorkspaceAuthProvider.js'
+import {
+  useCurrentWorkspace,
+  useWorkspaceRole,
+  WORKSPACES_QUERY_KEY,
+} from '../WorkspaceAuthProvider.js'
 import { useSession } from '../auth/AuthProvider.js'
 import { useWorkspaceMembers } from '../hooks/useWorkspaceMembers.js'
 import type { EnrichedMember } from '../hooks/useWorkspaceMembers.js'
@@ -38,6 +43,7 @@ export function MembersPage() {
   const myRole = useWorkspaceRole()
   const session = useSession()
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
 
   const workspaceId = workspace?.id ?? ''
   const currentUserId = session.data?.user?.id ?? ''
@@ -84,10 +90,23 @@ export function MembersPage() {
         `/api/v1/workspaces/${encodedWorkspaceId}/members/${encodeURIComponent(userId)}`,
         { method: 'DELETE' },
       )
+      return { userId }
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['members', workspaceId] })
+    onSuccess: ({ userId }) => {
       setConfirmTarget(null)
+      if (userId === currentUserId) {
+        // We just removed ourselves: there is nothing left to show on this
+        // page, and this workspace's members list is now forbidden to us.
+        // Leave immediately instead of refetching it — invalidating (rather
+        // than removing) the cache means an observer still mounted for one
+        // more tick won't trigger a doomed refetch. Invalidate the
+        // workspaces list too, so the picker on "/" resolves the next
+        // available workspace instead of a stale/removed one.
+        queryClient.invalidateQueries({ queryKey: WORKSPACES_QUERY_KEY })
+        navigate('/', { replace: true })
+        return
+      }
+      queryClient.invalidateQueries({ queryKey: ['members', workspaceId] })
     },
     onError: (err: unknown) => {
       const detail = getHttpErrorDetail(err)

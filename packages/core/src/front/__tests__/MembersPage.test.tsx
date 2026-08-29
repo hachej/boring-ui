@@ -68,6 +68,7 @@ const mockSession = {
 vi.mock('../WorkspaceAuthProvider.js', () => ({
   useCurrentWorkspace: () => mockWorkspace.current,
   useWorkspaceRole: () => mockRole.current,
+  WORKSPACES_QUERY_KEY: ['workspaces'],
 }))
 
 vi.mock('../auth/AuthProvider.js', () => ({
@@ -86,6 +87,7 @@ function Wrapper({ children, qc }: { children: ReactNode; qc: QueryClient }) {
       <MemoryRouter initialEntries={[`/w/${WS_ID}/members`]}>
         <Routes>
           <Route path="/w/:id/members" element={children} />
+          <Route path="/" element={<div data-testid="home-route">home</div>} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>
@@ -322,8 +324,65 @@ describe('MembersPage', () => {
       fireEvent.click(screen.getByTestId('confirm-remove'))
 
       await waitFor(() => expect(deletedUserId).toBe(EDITOR_ID))
+      await waitFor(() => expect(screen.getByTestId('home-route')).toBeTruthy())
 
       assertionPassed('leave-workspace-self')
+      qc.clear()
+    }),
+  )
+
+  it(
+    'leave workspace as non-owner: navigates away and does not refetch the now-forbidden members list',
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
+      const qc = createQueryClient()
+      mockRole.current = 'editor'
+      mockSession.current = {
+        data: { user: { id: EDITOR_ID, email: 'editor@test.dev' } },
+        isPending: false,
+        error: null,
+      }
+      let membersFetchCount = 0
+
+      useMswHandler(async (input, init) => {
+        const url = extractUrl(input)
+        if (url.endsWith(`/api/v1/workspaces/${WS_ID}/members`)) {
+          membersFetchCount += 1
+          return new Response(JSON.stringify({ members: [OWNER_MEMBER, EDITOR_MEMBER] }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+        const deleteMatch = url.match(/\/members\/(user-[^/]+)$/)
+        if (deleteMatch && init?.method === 'DELETE') {
+          return new Response(JSON.stringify({ removed: true }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+        return undefined
+      })
+
+      render(
+        <Wrapper qc={qc}>
+          <MembersPage />
+        </Wrapper>,
+      )
+
+      await waitFor(() => expect(screen.getByTestId('members-list')).toBeTruthy())
+      const fetchCountAfterInitialLoad = membersFetchCount
+
+      fireEvent.click(screen.getByTestId(`remove-${EDITOR_ID}`))
+      await waitFor(() => expect(screen.getByTestId('confirm-remove')).toBeTruthy())
+      fireEvent.click(screen.getByTestId('confirm-remove'))
+
+      // Navigates to "/" instead of staying on a page whose data (and Leave
+      // button) is now stale/forbidden.
+      await waitFor(() => expect(screen.getByTestId('home-route')).toBeTruthy())
+      expect(screen.queryByText('Failed to load members.')).toBeNull()
+      // The now-forbidden members query must not be refetched after leaving.
+      expect(membersFetchCount).toBe(fetchCountAfterInitialLoad)
+
+      assertionPassed('leave-workspace-navigates-no-stale-refetch')
       qc.clear()
     }),
   )
