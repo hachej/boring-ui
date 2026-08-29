@@ -66,6 +66,12 @@ function controllerStateEqual<TSession extends WorkspaceAgentSession>(
     && current.loading === next.loading
     && current.loadingMore === next.loadingMore
     && current.hasMore === next.hasMore
+    // Capability PRESENCE, not just its paging state: a controller can gain or
+    // lose archive support without any other compared field moving, and the
+    // fleet's own capability (and therefore the pane's archived probe) is
+    // computed from it (#1453).
+    && Boolean(current.setArchived) === Boolean(next.setArchived)
+    && Boolean(current.loadArchived) === Boolean(next.loadArchived)
     && current.archivedLoaded === next.archivedLoaded
     && current.archivedLoading === next.archivedLoading
     && current.hasMoreArchived === next.hasMoreArchived
