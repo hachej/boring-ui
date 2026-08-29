@@ -1,4 +1,22 @@
+import { readFile } from "node:fs/promises"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { expect, test } from "@playwright/test"
+
+// Matches playwright.config.ts's E2E_SESSION_ROOT default (this file's own
+// env has no BORING_AGENT_SESSION_ROOT — that var is only set on the
+// webServer child process's env via `env -i`).
+const E2E_SESSION_ROOT = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "sessions")
+const SHOWCASE_REGISTRY_PATH = join(E2E_SESSION_ROOT, ".playground-showcase-session-ids.json")
+
+function decodeRegistryEntry(entry: string): { agentKey: string; workspaceId: string; sessionId: string } | undefined {
+  const parts = entry.split(REGISTRY_KEY_SEPARATOR)
+  if (parts.length !== 3) return undefined
+  const [agentKey, workspaceId, sessionId] = parts
+  return { agentKey, workspaceId, sessionId }
+}
+// Must match SHOWCASE_REGISTRY_KEY_SEPARATOR in scriptedPiHarness.ts (U+0001).
+const REGISTRY_KEY_SEPARATOR = ""
 
 /**
  * Regression for gh-1452: `?showcase=1` pre-seeded a client-side session id
@@ -110,5 +128,55 @@ test.describe("workspace-playground showcase route", () => {
     const activeSessionId = await chat.getAttribute("data-pi-chat-session-id")
     expect(activeSessionId).not.toBe(placeholderId)
     expect(activeSessionId).not.toBe(bootSessionId)
+  })
+
+  // gh-1458 review round 6: createWorkspaceAgentServer accepts TWO different
+  // values for `x-boring-workspace-id` — the canonical workspace scope id
+  // and `basename(workspaceRoot)` — and always resolves either one to the
+  // SAME canonical scope before a session record is ever created
+  // (trustedWorkspaceScopeId in createWorkspaceAgentServer.ts). The wrapper
+  // route used to key the showcase provenance registry by whichever raw
+  // header the client presented, so an allowed basename-selector request
+  // would create a session scoped to canonical while marking the registry
+  // under the basename — a permanent mismatch the sweep's full-match rule
+  // would never resolve (it deliberately never prunes an entry it can't
+  // positively verify). This drives the wrapper route directly with the
+  // basename selector and reads the on-disk registry to prove the entry is
+  // keyed by the canonical id regardless.
+  test("provenance registry keys by the canonical workspace scope, not whichever selector the client presented", async ({ page }) => {
+    test.setTimeout(60_000)
+
+    const meta = await (await page.request.get("/api/v1/workspace/meta")).json() as { workspaceId: string; defaultAgentTypeId: string }
+    // In local (non-remote-worker) mode, meta.workspaceId reflects
+    // basename(workspaceRoot) — the OTHER allowed selector, distinct from
+    // the canonical "default" scope this server actually resolves to.
+    const basenameSelector = meta.workspaceId
+    expect(basenameSelector).toBeTruthy()
+    expect(basenameSelector).not.toBe("default")
+
+    const response = await page.request.post("/api/v1/playground/showcase-sessions", {
+      headers: {
+        "content-type": "application/json",
+        "x-boring-workspace-id": basenameSelector,
+      },
+      data: {
+        agentTypeId: meta.defaultAgentTypeId,
+        title: "Basename selector parity check",
+      },
+    })
+    expect(response.status(), await response.text()).toBe(201)
+    const payload = await response.json() as { sessionId?: string }
+    expect(payload.sessionId).toBeTruthy()
+
+    const registryText = await readFile(SHOWCASE_REGISTRY_PATH, "utf8")
+    const registry = JSON.parse(registryText) as string[]
+    const decoded = registry.map(decodeRegistryEntry).filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+    const matching = decoded.find((entry) => entry.sessionId === payload.sessionId)
+    expect(matching, `no registry entry found for session ${payload.sessionId}; decoded entries: ${JSON.stringify(decoded)}`).toBeTruthy()
+    // The registry key must be the canonical scope ("default"), never the
+    // basename selector the request presented — this is the belongsTo
+    // parity the review required.
+    expect(matching?.workspaceId).toBe("default")
+    expect(matching?.workspaceId).not.toBe(basenameSelector)
   })
 })

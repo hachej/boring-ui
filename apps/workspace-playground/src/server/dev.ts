@@ -147,19 +147,30 @@ export async function startPlaygroundServer(): Promise<void> {
     app.post(PLAYGROUND_SHOWCASE_SESSION_ROUTE, async (request, reply) => {
       const body = (request.body ?? {}) as { agentTypeId?: unknown; title?: unknown; requestId?: unknown; resumeSessionId?: unknown }
       const targetAgentTypeId = typeof body.agentTypeId === "string" && body.agentTypeId.trim() ? body.agentTypeId.trim() : defaultAgentTypeId
-      // The raw (unhashed) workspace id this exact request is scoped to.
-      // The scripted store's actual on-disk namespace additionally folds in
-      // a hash of the *internal* workspaceScopeId
-      // (sessionNamespaceForAgent in packages/agent), which this dev-only
-      // route has no business reproducing — a private algorithm in a
-      // different package. This raw id is what both this route and the
-      // store (via SessionCtx.workspaceId, the same field `belongsTo`
-      // scopes ordinary session visibility by) can derive identically
-      // without either side needing to know the hash: two different raw
-      // workspace ids always land in two different registry entries,
-      // tracking whichever partition the real hashed namespace produces.
+      // The registry must key by the CANONICAL workspace scope id
+      // (SessionCtx.workspaceId — what `belongsTo` actually compares
+      // against), not the raw header the client presented. createWorkspaceAgentServer
+      // accepts two DIFFERENT selectors for that same header —
+      // `workspaceScopeId` itself and `basename(workspaceRoot)`
+      // (createWorkspaceAgentServer.ts's `allowedWorkspaceSelectors`) — and
+      // `trustedWorkspaceScopeId` always resolves either one to the SAME
+      // canonical `workspaceScopeId` before it ever reaches a session
+      // record. Keying by the raw header instead would let an allowed
+      // basename-selector request create a session scoped to canonical
+      // while marking the registry under the basename, permanently
+      // orphaning that entry (the sweep's full-match rule intentionally
+      // never prunes a mismatch — see scriptedPiHarness.ts).
+      //
+      // Reproducing `trustedWorkspaceScopeId` itself isn't needed: for this
+      // server, `workspaceScopeId` is a SINGLE constant for the whole
+      // process lifetime — `opts.sessionId ?? "default"`
+      // (createWorkspaceAgentServer.ts) — computed once below from the
+      // exact same `remoteWorkerWorkspaceId` this file already passes as
+      // `sessionId` to `createWorkspaceAgentServer`. It does not vary per
+      // request, so it does not need to be derived from the header at all.
+      const canonicalWorkspaceScopeId = remoteWorkerWorkspaceId ?? "default"
+      const targetWorkspaceId = canonicalWorkspaceScopeId
       const workspaceIdHeader = request.headers["x-boring-workspace-id"]
-      const targetWorkspaceId = typeof workspaceIdHeader === "string" && workspaceIdHeader.trim() ? workspaceIdHeader.trim() : "default"
       const forwardBody: Record<string, unknown> = {}
       if (typeof body.title === "string") forwardBody.title = body.title
       if (typeof body.requestId === "string") forwardBody.requestId = body.requestId
