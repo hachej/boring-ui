@@ -471,6 +471,10 @@ export class RemoteWorkerProtocolClientV1 {
     const transportStream = stream;
     let lifetimeTimer: ReturnType<typeof setTimeout> | undefined;
     let closeStarted = false;
+    let settleLocalClose!: () => void;
+    const localClosed = new Promise<void>((resolve) => {
+      settleLocalClose = resolve;
+    });
     const cleanup = (): void => {
       if (lifetimeTimer) clearTimeout(lifetimeTimer);
       lifetimeTimer = undefined;
@@ -480,24 +484,26 @@ export class RemoteWorkerProtocolClientV1 {
       if (closeStarted) return;
       closeStarted = true;
       cleanup();
+      settleLocalClose();
       try {
         void Promise.resolve(transportStream.close()).catch(() => undefined);
       } catch {
         // Local stream cleanup cannot retain remote sandbox authority.
       }
     };
+    const transportClosed = transportStream.closed.catch((error: unknown) => {
+      const providerError = asRemoteWorkerProviderErrorV1(error);
+      throw (
+        providerError ??
+        new SandboxProviderError(
+          REMOTE_WORKER_ERROR_CODES_V1.unavailable,
+          "remote-worker event stream closed unexpectedly",
+        )
+      );
+    });
     stream = {
       close: closeStream,
-      closed: transportStream.closed.catch((error: unknown) => {
-        const providerError = asRemoteWorkerProviderErrorV1(error);
-        throw (
-          providerError ??
-          new SandboxProviderError(
-            REMOTE_WORKER_ERROR_CODES_V1.unavailable,
-            "remote-worker event stream closed unexpectedly",
-          )
-        );
-      }),
+      closed: Promise.race([transportClosed, localClosed]),
     };
     this.activeStreams.add(stream);
     const deadlineMs = Math.min(

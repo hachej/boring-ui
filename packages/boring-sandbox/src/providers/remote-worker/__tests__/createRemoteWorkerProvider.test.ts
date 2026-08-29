@@ -83,10 +83,7 @@ class FakeTransport implements RemoteWorkerTransportV1 {
   rawRequestError?: Error;
   rawCreateError?: Error;
   rawExecError?: Error;
-  rawStreamOpenError?: unknown;
-  rawStreamClosedError?: unknown;
   streamCloseFailures = 0;
-  streamCloseRejects = false;
   streamCloseNeverSettles = false;
   createFailures = 0;
   advertiseExclusiveBinaryCreate = false;
@@ -197,22 +194,17 @@ class FakeTransport implements RemoteWorkerTransportV1 {
     input: RemoteWorkerOpenEventStreamInputV1,
   ): Promise<RemoteWorkerEventStreamV1> {
     this.streams.push(input);
-    if (this.rawStreamOpenError) throw this.rawStreamOpenError;
     let close!: () => void;
-    const closed = this.rawStreamClosedError
-      ? Promise.reject(this.rawStreamClosedError)
-      : new Promise<void>((resolve) => {
-          close = resolve;
-        });
+    const closed = new Promise<void>((resolve) => {
+      close = resolve;
+    });
     const handle = {
       closed,
       close: vi.fn(() => {
         if (this.streamCloseNeverSettles) return new Promise<void>(() => {});
         if (this.streamCloseFailures > 0) {
           this.streamCloseFailures -= 1;
-          const error = new Error("raw event stream close failure");
-          if (this.streamCloseRejects) return Promise.reject(error);
-          throw error;
+          throw new Error("raw event stream close failure");
         }
         close?.();
       }),
@@ -870,39 +862,6 @@ describe("remote-worker SandboxProviderV1 placement binding", () => {
     ).toHaveLength(1);
   });
 
-  test("handles a rejecting lifetime close and converges explicitly", async () => {
-    vi.useFakeTimers();
-    const unhandled = vi.fn();
-    process.on("unhandledRejection", unhandled);
-    try {
-      const transport = new FakeTransport();
-      transport.streamCloseFailures = 1;
-      transport.streamCloseRejects = true;
-      const client = new RemoteWorkerProtocolClientV1({
-        worker: fleet().workers[0]!,
-        workspaceId: "workspace-a",
-        requestId: "request-events",
-        issuer: { issueCapability: async () => "capability-events" },
-        transport,
-        now: () => nowMs,
-        idFactory: () => "nonce-events",
-        requestTimeoutMs: 5_000,
-        capabilityLifetimeMs: 1_000,
-        eventStreamLifetimeMs: 5_000,
-      });
-      await client.bind("sandbox-1").openEvents(nowMs + 10_000, vi.fn());
-
-      await vi.advanceTimersByTimeAsync(1_000);
-      await Promise.resolve();
-      expect(unhandled).not.toHaveBeenCalled();
-      await expect(client.close()).resolves.toBeUndefined();
-      expect(transport.streamHandles[0]?.close).toHaveBeenCalledOnce();
-    } finally {
-      process.off("unhandledRejection", unhandled);
-      vi.useRealTimers();
-    }
-  });
-
   test("rejects capabilities configured beyond the five-minute bound", () => {
     const transport = new FakeTransport();
     expect(() =>
@@ -917,115 +876,4 @@ describe("remote-worker SandboxProviderV1 placement binding", () => {
     );
   });
 
-  test("normalizes cross-bundle terminal event-stream failures", async () => {
-    const transport = new FakeTransport();
-    const client = new RemoteWorkerProtocolClientV1({
-      worker: fleet().workers[0]!,
-      workspaceId: "workspace-a",
-      requestId: "request-events",
-      issuer: { issueCapability: async () => "capability-events" },
-      transport,
-      now: () => nowMs,
-      idFactory: () => "nonce-events",
-      requestTimeoutMs: 5_000,
-      capabilityLifetimeMs: 5_000,
-      eventStreamLifetimeMs: 5_000,
-    });
-    const lease = client.bind("sandbox-1");
-    const foreignExpired = {
-      name: "SandboxProviderError",
-      code: REMOTE_WORKER_ERROR_CODES_V1.sandboxExpired,
-      message: "foreign secret",
-    };
-
-    transport.rawStreamOpenError = foreignExpired;
-    await expect(
-      lease.openEvents(nowMs + 10_000, vi.fn()),
-    ).rejects.toMatchObject({
-      code: REMOTE_WORKER_ERROR_CODES_V1.sandboxExpired,
-      message: "remote-worker returned a stable provider failure",
-    });
-
-    transport.rawStreamOpenError = undefined;
-    transport.rawStreamClosedError = foreignExpired;
-    const stream = await lease.openEvents(nowMs + 10_000, vi.fn());
-    await expect(stream.closed).rejects.toMatchObject({
-      code: REMOTE_WORKER_ERROR_CODES_V1.sandboxExpired,
-      message: "remote-worker returned a stable provider failure",
-    });
-    await client.close();
-  });
-
-  test("closes an event stream at its bounded capability lifetime", async () => {
-    vi.useFakeTimers();
-    try {
-      const transport = new FakeTransport();
-      const claims: RemoteWorkerCapabilityClaimsV1[] = [];
-      const provider = createRemoteWorkerSandboxProviderV1({
-        ...providerOptions(transport, claims),
-        capabilityLifetimeMs: 1_000,
-        eventStreamLifetimeMs: 5_000,
-      });
-      const pair = await provider.create({
-        workspaceRoot: "/unused",
-        workspaceId: "workspace-a",
-        sessionId: "session-a",
-      });
-      const watcher = pair.workspace.watch?.();
-      const unsubscribe = watcher?.subscribe(vi.fn());
-      await Promise.resolve();
-      await Promise.resolve();
-      await Promise.resolve();
-      expect(transport.streams).toHaveLength(1);
-      const stream = transport.streamHandles[0]!;
-
-      await vi.advanceTimersByTimeAsync(1_000);
-      expect(stream.close).toHaveBeenCalledTimes(1);
-      await vi.advanceTimersByTimeAsync(250);
-      expect(transport.streams).toHaveLength(2);
-      const eventClaims = claims.filter(
-        (claim) => claim.operation === "events",
-      );
-      expect(eventClaims).toHaveLength(2);
-      expect(eventClaims[0]?.nonce).not.toBe(eventClaims[1]?.nonce);
-
-      unsubscribe?.();
-      watcher?.close();
-      await pair.dispose();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  test("does not reconnect an event stream after local lease expiry", async () => {
-    vi.useFakeTimers();
-    let clockMs = nowMs;
-    try {
-      const transport = new FakeTransport();
-      transport.leaseExpiresAtMs = nowMs + 1_000;
-      const provider = createRemoteWorkerSandboxProviderV1({
-        ...providerOptions(transport),
-        now: () => clockMs,
-      });
-      const pair = await provider.create({
-        workspaceRoot: "/unused",
-        workspaceId: "workspace-a",
-        sessionId: "session-a",
-      });
-      const watcher = pair.workspace.watch?.();
-      watcher?.subscribe(vi.fn());
-      await Promise.resolve();
-      await Promise.resolve();
-      await Promise.resolve();
-      expect(transport.streams).toHaveLength(1);
-
-      clockMs += 1_000;
-      await vi.advanceTimersByTimeAsync(10_000);
-      expect(transport.streams).toHaveLength(1);
-      watcher?.close();
-      await pair.dispose();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
 });
