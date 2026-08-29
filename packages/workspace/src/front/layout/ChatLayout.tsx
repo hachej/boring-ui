@@ -255,14 +255,28 @@ export function ChatLayout(props: ChatLayoutProps) {
   // is armed one frame *later*, in this separate effect — never in the same
   // commit as a width correction — so "transition turns on" and "width
   // changes" can never be the same style recalculation.
+  //
+  // The gate's source of truth is `surfaceTransitionEnabled` alone — no
+  // separate "armed" ref. An earlier version set a ref to `true` *before*
+  // scheduling the frame, then never reset it if that frame's schedule was
+  // cancelled (e.g. a second, distinct `measuredRowWidth` arrives before the
+  // first frame runs — the effect's cleanup cancels the pending callback,
+  // but the ref stayed `true`, so the next effect run bailed out at its
+  // first line and never rescheduled — `surfaceTransitionEnabled` then
+  // stayed `false` for the component's entire lifetime, permanently
+  // disabling this transition for every later legitimate change too:
+  // collapse/restore, fullscreen, drag-resize, a genuine host-chrome
+  // resize). Gating on the state value itself instead means every effect
+  // run that hasn't yet enabled it will (re)schedule a frame — including
+  // one whose predecessor's frame was cancelled — and once
+  // `surfaceTransitionEnabled` flips `true` the guard's own dependency stops
+  // any further scheduling. See #1457.
   const [surfaceTransitionEnabled, setSurfaceTransitionEnabled] = useState(false)
-  const surfaceTransitionArmedRef = useRef(false)
   useEffect(() => {
-    if (surfaceTransitionArmedRef.current) return
+    if (surfaceTransitionEnabled) return
     // No real measurement yet, and one is still possible — wait for it
     // rather than arming against the unmeasured estimate.
     if (measuredRowWidth === null && typeof ResizeObserver !== "undefined") return
-    surfaceTransitionArmedRef.current = true
     const raf = typeof requestAnimationFrame === "function"
       ? requestAnimationFrame(() => setSurfaceTransitionEnabled(true))
       : (setTimeout(() => setSurfaceTransitionEnabled(true), 0) as unknown as number)
@@ -270,7 +284,7 @@ export function ChatLayout(props: ChatLayoutProps) {
       if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(raf)
       else clearTimeout(raf as unknown as ReturnType<typeof setTimeout>)
     }
-  }, [measuredRowWidth])
+  }, [measuredRowWidth, surfaceTransitionEnabled])
   const navIsTopDrawer = navOpen && (mobileShell || !sidebarOpen)
   const sidebarIsTopDrawer = sidebarOpen && !navIsTopDrawer
   useModalDrawer({ active: navIsTopDrawer, containerRef: navDrawerRef, onDismiss: closeNav, focusFallback: scheduleLocalComposerFocus, lifecycleKey: sidebarOpen })

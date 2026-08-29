@@ -1040,6 +1040,94 @@ describe("ChatLayout component", () => {
     ro.restore()
   })
 
+  function workbenchTransitionClassPresent(): boolean {
+    return screen.getByRole("complementary", { name: "Workbench" }).className
+      .includes("transition-[flex-grow,flex-basis,width,min-width,max-width]")
+  }
+
+  it("arms the workbench width transition once the row settles (#1457 lifecycle)", async () => {
+    const ro = installControllableResizeObserver()
+    setViewport(1024)
+    const storageKey = "chat-layout-1457-transition-arm-basic"
+
+    const { container } = renderWithRegistry(
+      <ChatLayout
+        center="chat"
+        nav={null}
+        storageKey={storageKey}
+        surface="artifact-surface"
+        surfaceParams={{ onClose: vi.fn() }}
+      />,
+      ["chat", "artifact-surface"],
+    )
+
+    const row = container.querySelector('[data-boring-workspace-part="chat-workbench-row"]')
+    expect(row).toBeTruthy()
+
+    // Not armed yet: no real measurement has landed (jsdom's real
+    // `getBoundingClientRect` is always 0, guarded away by the 0-width
+    // check).
+    expect(workbenchTransitionClassPresent()).toBe(false)
+
+    vi.spyOn(row as Element, "getBoundingClientRect").mockReturnValue({ width: 900 } as DOMRect)
+    ro.fire()
+
+    // Still not armed the instant the value lands — arming is deliberately
+    // deferred to a later frame so "transition on" and "width changed" are
+    // never the same commit (see #1457 finding 2).
+    expect(workbenchTransitionClassPresent()).toBe(false)
+
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 100)) })
+    expect(workbenchTransitionClassPresent()).toBe(true)
+
+    ro.restore()
+  })
+
+  it("still arms the workbench width transition when an earlier schedule is cancelled by a superseding measurement (#1457 cleanup-safety)", async () => {
+    const ro = installControllableResizeObserver()
+    setViewport(1024)
+    const storageKey = "chat-layout-1457-transition-arm-reschedule"
+
+    const { container } = renderWithRegistry(
+      <ChatLayout
+        center="chat"
+        nav={null}
+        storageKey={storageKey}
+        surface="artifact-surface"
+        surfaceParams={{ onClose: vi.fn() }}
+      />,
+      ["chat", "artifact-surface"],
+    )
+
+    const row = container.querySelector('[data-boring-workspace-part="chat-workbench-row"]')
+    expect(row).toBeTruthy()
+    expect(workbenchTransitionClassPresent()).toBe(false)
+
+    // Reproduces the reported repro exactly: a *second, distinct*
+    // `measuredRowWidth` update lands before the first arming frame has a
+    // chance to run. The effect's cleanup cancels the first schedule — a
+    // buggy "armed" ref set *before* scheduling (rather than by the frame
+    // actually firing) would stay `true` from the first run and make the
+    // second effect run bail out without rescheduling, permanently
+    // disabling this transition (not just for the plugin-tabs case — for
+    // every later legitimate change too: collapse/restore, fullscreen,
+    // drag-resize, a genuine host-chrome resize).
+    vi.spyOn(row as Element, "getBoundingClientRect").mockReturnValue({ width: 900 } as DOMRect)
+    ro.fire()
+    vi.spyOn(row as Element, "getBoundingClientRect").mockReturnValue({ width: 901 } as DOMRect)
+    ro.fire()
+
+    expect(workbenchTransitionClassPresent()).toBe(false) // pre-settle, as above
+
+    // The rescheduled frame must still fire and arm the transition — it
+    // must not have been silently dropped by the first schedule's
+    // cancellation.
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 100)) })
+    expect(workbenchTransitionClassPresent()).toBe(true)
+
+    ro.restore()
+  })
+
   it("owns collapsed, split, fullscreen, restore, and collapse transitions at the ChatLayout host", async () => {
     const panelRegistry = new PanelRegistry()
     panelRegistry.register("chat", { title: "Chat", lazy: false, component: DummyPanel })
