@@ -356,7 +356,7 @@ export class RunscSessionRuntimeV1 {
     record.activeExec = true;
     this.activeExecs += 1;
     this.touch(record);
-    return await this.executeInvocation(
+    const operation = this.executeInvocation(
       record,
       request.invocationId,
       invocation,
@@ -364,6 +364,13 @@ export class RunscSessionRuntimeV1 {
       signal,
       credentialScope,
     );
+    record.activeOperation = operation;
+    try {
+      return await operation;
+    } finally {
+      if (record.activeOperation === operation)
+        record.activeOperation = undefined;
+    }
   }
   private async executeInvocation(
     record: SessionRecordV1,
@@ -387,13 +394,16 @@ export class RunscSessionRuntimeV1 {
           : { fields: [], leases: [] };
       credentialLeases = resolved.leases;
       secretExecutionStarted = resolved.leases.length > 0;
+      this.requireOperationOwner(record);
       envelope = prepareInvocationEnvelopeV1({
         workspaceId: record.workspaceId,
         request,
         resolvedCredentialFields: resolved.fields,
       });
       if (envelope.secretBearing) await this.replaceContainer(record, true);
+      this.requireOperationOwner(record);
       const result = await this.runInvocation(record, envelope, signal);
+      this.requireOperationOwner(record);
       if (envelope.secretBearing) {
         await this.replaceContainer(record, false);
         invocation.state = "secret-terminal";
@@ -461,6 +471,7 @@ export class RunscSessionRuntimeV1 {
     secretExecutionStarted: boolean,
     aborted: boolean,
   ): Promise<void> {
+    if (record.retirement) return;
     if (secretExecutionStarted) {
       invocation.state = "secret-terminal";
       if (this.state.sessions.get(this.state.sessionKey(record)) === record) {
@@ -520,12 +531,16 @@ export class RunscSessionRuntimeV1 {
       );
     }
     record.activeFs = true;
+    const activeOperation = this.workspace.execute(record.runtimeId, request);
+    record.activeOperation = activeOperation;
     try {
-      const result = await this.workspace.execute(record.runtimeId, request);
+      const result = await activeOperation;
       this.touch(record);
       return result;
     } finally {
       record.activeFs = false;
+      if (record.activeOperation === activeOperation)
+        record.activeOperation = undefined;
       await this.settleOperationExpiry(record);
     }
   }
@@ -571,6 +586,8 @@ export class RunscSessionRuntimeV1 {
             this.options.sandboxRoots !== undefined,
           );
     if (!record) return;
+    this.retirement.markRetiring(record, "cleanup", false);
+    await this.drainActiveOperation(record);
     await this.retire(record, "cleanup", false);
   }
   async shutdown(): Promise<void> {
@@ -693,6 +710,7 @@ export class RunscSessionRuntimeV1 {
   private async startContainer(
     record: SessionRecordV1,
     workspaceReadOnly = false,
+    replacement = false,
   ): Promise<void> {
     await runDockerChecked(this.options.runner, {
       argv: buildDockerRunArgv({
@@ -704,22 +722,27 @@ export class RunscSessionRuntimeV1 {
       timeoutMs: RUNSC_RUNTIME_LIMITS_V1.createTimeoutMs,
       maxOutputBytes: 64 * 1024,
     });
+    if (replacement) this.requireOperationOwner(record);
     await this.workspace.probe(record.runtimeId);
+    if (replacement) this.requireOperationOwner(record);
   }
   private async replaceContainer(
     record: SessionRecordV1,
     workspaceReadOnly = false,
   ): Promise<void> {
+    this.requireOperationOwner(record);
     await runDockerChecked(this.options.runner, {
       argv: buildDockerRemoveArgv(record.runtimeId),
       timeoutMs: RUNSC_RUNTIME_LIMITS_V1.disposeTimeoutMs,
       maxOutputBytes: 64 * 1024,
     });
+    this.requireOperationOwner(record);
     record.runtimeId = this.nextRuntimeId();
     try {
-      await this.startContainer(record, workspaceReadOnly);
+      await this.startContainer(record, workspaceReadOnly, true);
+      this.requireOperationOwner(record);
     } catch (error) {
-      await this.retire(record, "cleanup");
+      if (!record.retirement) await this.retire(record, "cleanup");
       throw runscRuntimeError(
         REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
         "remote-worker clean container replacement failed",
@@ -730,6 +753,7 @@ export class RunscSessionRuntimeV1 {
   private async replaceAfterUnprovenExecution(
     record: SessionRecordV1,
   ): Promise<boolean> {
+    if (record.retirement) return false;
     try {
       await this.replaceContainer(record);
       return true;
@@ -740,6 +764,7 @@ export class RunscSessionRuntimeV1 {
   private async resetOrRetireAfterUnknown(
     record: SessionRecordV1,
   ): Promise<void> {
+    if (record.retirement) return;
     if (!(await this.replaceAfterUnprovenExecution(record))) {
       await this.retire(record, "cleanup");
     }
@@ -839,6 +864,23 @@ export class RunscSessionRuntimeV1 {
       return;
     }
     this.touch(record);
+  }
+  private async drainActiveOperation(record: SessionRecordV1): Promise<void> {
+    await record.activeOperation?.then(
+      () => undefined,
+      () => undefined,
+    );
+  }
+  private requireOperationOwner(record: SessionRecordV1): void {
+    if (
+      record.retirement ||
+      this.state.sessions.get(this.state.sessionKey(record)) !== record
+    ) {
+      throw runscRuntimeError(
+        REMOTE_WORKER_ERROR_CODES_V1.sandboxDisposed,
+        "remote-worker sandbox retirement is in progress",
+      );
+    }
   }
 
   private nextRuntimeId(): string {

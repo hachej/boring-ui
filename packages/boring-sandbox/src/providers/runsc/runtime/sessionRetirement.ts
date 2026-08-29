@@ -57,20 +57,29 @@ export class RunscSessionRetirementManagerV1<
   RecordV1 extends RetirableRunscSessionRecordV1,
 > {
   private readonly cleanupInflight = new Map<RecordV1, Promise<void>>();
+  private readonly cleanupComplete = new WeakSet<RecordV1>();
   private readonly cleanupState = new WeakMap<RecordV1, CleanupStateV1>();
   private readonly notificationInflight = new Map<string, Promise<void>>();
   constructor(
     private readonly options: RunscSessionRetirementManagerOptionsV1<RecordV1>,
   ) {}
+  markRetiring(
+    record: RecordV1,
+    reason: RunscSessionRetirementReasonV1,
+    notify = true,
+  ): void {
+    clearTimeout(record.timer);
+    record.retirement ??= { reason, notify, attempts: 0 };
+  }
   async retire(
     record: RecordV1,
     reason: RunscSessionRetirementReasonV1,
     notify = true,
   ): Promise<void> {
+    if (this.cleanupComplete.has(record)) return;
+    this.markRetiring(record, reason, notify);
     const existing = this.cleanupInflight.get(record);
     if (existing) return await existing;
-    clearTimeout(record.timer);
-    record.retirement ??= { reason, notify, attempts: 0 };
     const operation = this.removeAndDetach(record);
     this.cleanupInflight.set(record, operation);
     try {
@@ -173,6 +182,7 @@ export class RunscSessionRetirementManagerV1<
       this.options.detach(record);
       this.cleanupState.delete(record);
     }
+    this.cleanupComplete.add(record);
   }
   private compositeFields(record: RecordV1): CompositeFieldsV1 | undefined {
     const candidate = record as RecordV1 & Partial<CompositeFieldsV1>;
