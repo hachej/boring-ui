@@ -21,6 +21,7 @@ import {
   type RemoteWorkerExecResponseV1,
   type RemoteWorkerFsEventEnvelopeV1,
   type RemoteWorkerHealthResponseV1,
+  type RemoteWorkerNegotiatedCapabilityV1,
   type RemoteWorkerOperationV1,
   type RemoteWorkerRenewRequestV1,
   type RemoteWorkerRenewResponseV1,
@@ -34,6 +35,31 @@ import type {
   RemoteWorkerEventStreamV1,
   RemoteWorkerTransportV1,
 } from "./transport";
+
+const remoteWorkerErrorCodes = new Set<string>(
+  Object.values(REMOTE_WORKER_ERROR_CODES_V1),
+);
+
+function asRemoteWorkerProviderError(
+  error: unknown,
+): SandboxProviderError | undefined {
+  if (error instanceof SandboxProviderError) return error;
+  if (
+    error &&
+    typeof error === "object" &&
+    "name" in error &&
+    error.name === "SandboxProviderError" &&
+    "code" in error &&
+    typeof error.code === "string" &&
+    remoteWorkerErrorCodes.has(error.code)
+  ) {
+    return new SandboxProviderError(
+      error.code as SandboxProviderError["code"],
+      "remote-worker returned a stable provider failure",
+    );
+  }
+  return undefined;
+}
 
 interface StrictParser<T> {
   parse(value: unknown): T;
@@ -78,6 +104,7 @@ export interface RemoteWorkerProtocolClientOptionsV1 {
   requestTimeoutMs: number;
   capabilityLifetimeMs: number;
   eventStreamLifetimeMs: number;
+  requestedHealthCapabilities?: readonly RemoteWorkerNegotiatedCapabilityV1[];
 }
 
 export function parseRemoteWorkerRequestV1<T>(
@@ -266,18 +293,19 @@ export class RemoteWorkerProtocolClientV1 {
             "remote-worker request timed out",
           );
         }
+        const providerError = asRemoteWorkerProviderError(error);
         if (
           input.operation === "exec" &&
-          (!(error instanceof SandboxProviderError) ||
-            error.code === REMOTE_WORKER_ERROR_CODES_V1.unavailable ||
-            error.code === "ABORTED")
+          (!providerError ||
+            providerError.code === REMOTE_WORKER_ERROR_CODES_V1.unavailable ||
+            providerError.code === "ABORTED")
         ) {
           throw new SandboxProviderError(
             REMOTE_WORKER_ERROR_CODES_V1.outcomeUnknown,
             "remote-worker exec outcome is unknown after transport loss",
           );
         }
-        if (error instanceof SandboxProviderError) throw error;
+        if (providerError) throw providerError;
         throw new SandboxProviderError(
           REMOTE_WORKER_ERROR_CODES_V1.unavailable,
           "remote-worker is unavailable",
@@ -297,8 +325,10 @@ export class RemoteWorkerProtocolClientV1 {
       method: "GET",
       path: "/internal/v1/health",
       headers: {
-        [REMOTE_WORKER_HEADERS_V1.requestedCapabilities]:
+        [REMOTE_WORKER_HEADERS_V1.requestedCapabilities]: [
           REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1,
+          ...(this.options.requestedHealthCapabilities ?? []),
+        ].join(","),
       },
       schema: RemoteWorkerHealthResponseSchemaV1,
     });
@@ -318,13 +348,17 @@ export class RemoteWorkerProtocolClientV1 {
     try {
       return await createOnce();
     } catch (error) {
+      const providerError = asRemoteWorkerProviderError(error);
       const recoverable =
-        error instanceof SandboxProviderError &&
-        (error.code === REMOTE_WORKER_ERROR_CODES_V1.unavailable ||
-          error.code === REMOTE_WORKER_ERROR_CODES_V1.timeout ||
-          error.code === REMOTE_WORKER_ERROR_CODES_V1.responseInvalid);
+        providerError !== undefined &&
+        (providerError.code === REMOTE_WORKER_ERROR_CODES_V1.unavailable ||
+          providerError.code === REMOTE_WORKER_ERROR_CODES_V1.timeout ||
+          providerError.code === REMOTE_WORKER_ERROR_CODES_V1.responseInvalid);
       if (!recoverable) {
-        throw error;
+        throw providerError ?? new SandboxProviderError(
+          REMOTE_WORKER_ERROR_CODES_V1.unavailable,
+          "remote-worker is unavailable",
+        );
       }
       return await createOnce();
     }

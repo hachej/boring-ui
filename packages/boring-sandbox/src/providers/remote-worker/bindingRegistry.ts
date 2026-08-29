@@ -68,6 +68,24 @@ export interface BindRemoteWorkerSandboxInputV1 {
   leaseExpiresAtMs: number;
 }
 
+const authorizedCreateBrand: unique symbol = Symbol("remote-worker-authorized-create");
+export interface RemoteWorkerAuthorizedCreateV1 {
+  readonly request: RemoteWorkerCreateRequestV1;
+  readonly requestDigest: `sha256:${string}`;
+  readonly [authorizedCreateBrand]: true;
+}
+
+export interface BindAuthorizedRemoteWorkerSandboxInputV1 {
+  readonly authorization: RemoteWorkerAuthorizedCreateV1;
+  readonly sandboxId: string;
+  readonly leaseExpiresAtMs: number;
+}
+
+export interface RemoteWorkerAuthorizedBindingV1 {
+  readonly workspaceId: string;
+  readonly sandboxId: string;
+}
+
 type RemoteWorkerBoundOperationV1 = Exclude<
   RemoteWorkerOperationV1,
   "health" | "create"
@@ -86,6 +104,10 @@ export interface AuthorizeRemoteWorkerSandboxInputV1<
 export interface RemoteWorkerAuthorizedEventStreamV1 {
   closed: Promise<void>;
   close(): void;
+}
+
+function bindingKey(workspaceId: string, sandboxId: string): string {
+  return `${workspaceId}\u0000${sandboxId}`;
 }
 
 function bindingError(
@@ -145,6 +167,10 @@ function bindingRequestDigest(value: unknown): `sha256:${string}` {
  */
 export class RemoteWorkerSandboxBindingRegistryV1 {
   private readonly records = new Map<
+    string,
+    RemoteWorkerSandboxBindingRecordV1
+  >();
+  private readonly createBindings = new Map<
     string,
     RemoteWorkerSandboxBindingRecordV1
   >();
@@ -273,22 +299,83 @@ export class RemoteWorkerSandboxBindingRegistryV1 {
     }
   }
 
-  async bind(
-    input: BindRemoteWorkerSandboxInputV1,
-  ): Promise<RemoteWorkerBindingReceiptV1> {
+  get authorizedWorkerId(): string {
+    return this.workerId;
+  }
+
+  async authorizeHealth(input: {
+    capabilityToken: string;
+    requestBody?: unknown;
+  }): Promise<{ workspaceId: string }> {
+    const capability = await this.authenticateCapability(input.capabilityToken);
+    const requestDigest = bindingRequestDigest(input.requestBody ?? {});
+    if (
+      capability.operation !== "health" ||
+      capability.workerId !== this.workerId ||
+      capability.requestDigest !== requestDigest
+    ) {
+      throw bindingError(
+        REMOTE_WORKER_ERROR_CODES_V1.requestInvalid,
+        "remote-worker health authorization does not match the request",
+      );
+    }
+    return Object.freeze({ workspaceId: capability.workspaceId });
+  }
+
+  async authorizeCreate(input: {
+    request: unknown;
+    capabilityToken: string;
+  }): Promise<RemoteWorkerAuthorizedCreateV1> {
     const request = parseBindingInput(
       RemoteWorkerCreateRequestSchemaV1,
       input.request,
     );
+    const requestDigest = bindingRequestDigest(request);
+    const capability = await this.authenticateCapability(input.capabilityToken);
+    if (
+      capability.operation !== "create" ||
+      capability.workerId !== this.workerId ||
+      capability.workspaceId !== request.workspaceId ||
+      capability.requestDigest !== requestDigest
+    ) {
+      throw bindingError(
+        REMOTE_WORKER_ERROR_CODES_V1.requestInvalid,
+        "remote-worker create authorization does not match the request",
+      );
+    }
+    return Object.freeze({
+      request,
+      requestDigest,
+      [authorizedCreateBrand]: true as const,
+    });
+  }
+
+  async bind(
+    input: BindRemoteWorkerSandboxInputV1,
+  ): Promise<RemoteWorkerBindingReceiptV1> {
+    const authorization = await this.authorizeCreate(input);
+    return await this.bindAuthorized({
+      authorization,
+      sandboxId: input.sandboxId,
+      leaseExpiresAtMs: input.leaseExpiresAtMs,
+    });
+  }
+
+  async bindAuthorized(
+    input: BindAuthorizedRemoteWorkerSandboxInputV1,
+  ): Promise<RemoteWorkerBindingReceiptV1> {
+    if (input.authorization[authorizedCreateBrand] !== true) {
+      throw bindingError(
+        REMOTE_WORKER_ERROR_CODES_V1.requestInvalid,
+        "remote-worker create authorization is invalid",
+      );
+    }
     const sandboxId = parseBindingInput(
       RemoteWorkerOpaqueIdSchemaV1,
       input.sandboxId,
     );
-    const requestDigest = bindingRequestDigest(request);
     return await this.finishBind({
       ...input,
-      request,
-      requestDigest,
       sandboxId,
     });
   }
@@ -298,7 +385,18 @@ export class RemoteWorkerSandboxBindingRegistryV1 {
     request: RemoteWorkerCreateRequestV1,
     requestDigest: `sha256:${string}`,
   ): RemoteWorkerBindingReceiptV1 | undefined {
-    const existing = this.records.get(sandboxId);
+    const createKey = bindingKey(request.workspaceId, request.clientLeaseId);
+    const created = this.createBindings.get(createKey);
+    if (created) {
+      if (created.sandboxId === sandboxId && created.requestDigest === requestDigest) {
+        return created.bindingReceipt;
+      }
+      throw bindingError(
+        REMOTE_WORKER_ERROR_CODES_V1.sandboxWorkspaceMismatch,
+        "remote-worker create binding conflicts with its client lease",
+      );
+    }
+    const existing = this.records.get(bindingKey(request.workspaceId, sandboxId));
     if (!existing) return undefined;
     if (
       existing.workspaceId === request.workspaceId &&
@@ -313,27 +411,11 @@ export class RemoteWorkerSandboxBindingRegistryV1 {
     );
   }
 
-  private async finishBind(input: {
+  private async finishBind(input: BindAuthorizedRemoteWorkerSandboxInputV1 & {
     sandboxId: string;
-    request: RemoteWorkerCreateRequestV1;
-    requestDigest: `sha256:${string}`;
-    capabilityToken: string;
-    leaseExpiresAtMs: number;
   }): Promise<RemoteWorkerBindingReceiptV1> {
-    const capability = await this.authenticateCapability(input.capabilityToken);
-    const { request, requestDigest, sandboxId } = input;
-
-    if (
-      capability.operation !== "create" ||
-      capability.workerId !== this.workerId ||
-      capability.workspaceId !== request.workspaceId ||
-      capability.requestDigest !== requestDigest
-    ) {
-      throw bindingError(
-        REMOTE_WORKER_ERROR_CODES_V1.requestInvalid,
-        "remote-worker create authorization does not match the request",
-      );
-    }
+    const { request, requestDigest } = input.authorization;
+    const { sandboxId } = input;
     const hardExpiresAtMs = this.now() + this.maxLeaseLifetimeMs;
     if (
       !Number.isSafeInteger(input.leaseExpiresAtMs) ||
@@ -377,18 +459,20 @@ export class RemoteWorkerSandboxBindingRegistryV1 {
       requestDigest,
     );
     if (concurrentlyCreated) return concurrentlyCreated;
-    this.records.set(
+    const record = Object.freeze({
       sandboxId,
-      Object.freeze({
-        sandboxId,
-        workspaceId: request.workspaceId,
-        clientLeaseId: request.clientLeaseId,
-        workerId: this.workerId,
-        requestDigest,
-        expiresAtMs: input.leaseExpiresAtMs,
-        hardExpiresAtMs,
-        bindingReceipt: receipt,
-      }),
+      workspaceId: request.workspaceId,
+      clientLeaseId: request.clientLeaseId,
+      workerId: this.workerId,
+      requestDigest,
+      expiresAtMs: input.leaseExpiresAtMs,
+      hardExpiresAtMs,
+      bindingReceipt: receipt,
+    });
+    this.records.set(bindingKey(request.workspaceId, sandboxId), record);
+    this.createBindings.set(
+      bindingKey(request.workspaceId, request.clientLeaseId),
+      record,
     );
     return receipt;
   }
@@ -405,8 +489,23 @@ export class RemoteWorkerSandboxBindingRegistryV1 {
       input.sandboxId,
     );
     const requestDigest = bindingRequestDigest(input.requestBody);
-    const record = this.records.get(sandboxId);
+    const record = this.records.get(bindingKey(capability.workspaceId, sandboxId));
     if (!record) {
+      if ([...this.records.values()].some((candidate) => candidate.sandboxId === sandboxId)) {
+        try {
+          this.onSecurityViolation?.({
+            code: REMOTE_WORKER_ERROR_CODES_V1.sandboxWorkspaceMismatch,
+            workerId: this.workerId,
+            operation: input.operation,
+          });
+        } catch {
+          // Observability cannot replace the stable security failure.
+        }
+        throw bindingError(
+          REMOTE_WORKER_ERROR_CODES_V1.sandboxWorkspaceMismatch,
+          "remote-worker sandbox binding does not match the authorized workspace",
+        );
+      }
       throw bindingError(
         REMOTE_WORKER_ERROR_CODES_V1.sandboxNotFound,
         "remote-worker sandbox was not found",
@@ -445,18 +544,24 @@ export class RemoteWorkerSandboxBindingRegistryV1 {
 
   async authorize<T>(
     input: AuthorizeRemoteWorkerSandboxInputV1<"fs" | "exec">,
-    effect: () => T | Promise<T>,
+    effect: (binding: RemoteWorkerAuthorizedBindingV1) => T | Promise<T>,
   ): Promise<T> {
-    await this.authorizeInput(input);
-    return await effect();
+    const { record } = await this.authorizeInput(input);
+    return await effect({
+      workspaceId: record.workspaceId,
+      sandboxId: record.sandboxId,
+    });
   }
 
   async renew<T extends { leaseExpiresAtMs: number }>(
     input: AuthorizeRemoteWorkerSandboxInputV1<"renew">,
-    effect: () => T | Promise<T>,
+    effect: (binding: RemoteWorkerAuthorizedBindingV1) => T | Promise<T>,
   ): Promise<T> {
     const { record } = await this.authorizeInput(input);
-    const result = await effect();
+    const result = await effect({
+      workspaceId: record.workspaceId,
+      sandboxId: record.sandboxId,
+    });
     if (
       !Number.isSafeInteger(result.leaseExpiresAtMs) ||
       result.leaseExpiresAtMs <= this.now() ||
@@ -467,7 +572,8 @@ export class RemoteWorkerSandboxBindingRegistryV1 {
         "remote-worker renewed lease expiry is invalid",
       );
     }
-    const current = this.records.get(record.sandboxId);
+    const key = bindingKey(record.workspaceId, record.sandboxId);
+    const current = this.records.get(key);
     if (!current || current.bindingReceipt !== record.bindingReceipt) {
       throw new SandboxProviderError(
         REMOTE_WORKER_ERROR_CODES_V1.sandboxDisposed,
@@ -475,7 +581,7 @@ export class RemoteWorkerSandboxBindingRegistryV1 {
       );
     }
     this.records.set(
-      record.sandboxId,
+      key,
       Object.freeze({
         ...current,
         expiresAtMs: Math.max(current.expiresAtMs, result.leaseExpiresAtMs),
@@ -486,13 +592,19 @@ export class RemoteWorkerSandboxBindingRegistryV1 {
 
   async authorizeEventStream(
     input: AuthorizeRemoteWorkerSandboxInputV1<"events">,
-    effect: () =>
+    effect: (
+      binding: RemoteWorkerAuthorizedBindingV1,
+    ) =>
       | RemoteWorkerAuthorizedEventStreamV1
       | Promise<RemoteWorkerAuthorizedEventStreamV1>,
   ): Promise<RemoteWorkerAuthorizedEventStreamV1> {
     const { capability, record } = await this.authorizeInput(input);
-    const stream = await effect();
-    const current = this.records.get(record.sandboxId);
+    const key = bindingKey(record.workspaceId, record.sandboxId);
+    const stream = await effect({
+      workspaceId: record.workspaceId,
+      sandboxId: record.sandboxId,
+    });
+    const current = this.records.get(key);
     if (!current || current.bindingReceipt !== record.bindingReceipt) {
       stream.close();
       throw new SandboxProviderError(
@@ -514,9 +626,9 @@ export class RemoteWorkerSandboxBindingRegistryV1 {
         "remote-worker capability expired while opening events",
       );
     }
-    const streams = this.activeEventStreams.get(record.sandboxId) ?? new Set();
+    const streams = this.activeEventStreams.get(key) ?? new Set();
     streams.add(stream);
-    this.activeEventStreams.set(record.sandboxId, streams);
+    this.activeEventStreams.set(key, streams);
     const deadlineMs = Math.min(
       capability.expiresAtMs,
       current.expiresAtMs,
@@ -526,23 +638,41 @@ export class RemoteWorkerSandboxBindingRegistryV1 {
     const cleanup = (): void => {
       clearTimeout(timer);
       streams.delete(stream);
-      if (streams.size === 0) this.activeEventStreams.delete(record.sandboxId);
+      if (streams.size === 0) this.activeEventStreams.delete(key);
     };
     void stream.closed.then(cleanup, cleanup);
     return stream;
   }
 
+  retireBinding(workspaceId: string, sandboxId: string): void {
+    const key = bindingKey(workspaceId, sandboxId);
+    const record = this.records.get(key);
+    for (const stream of this.activeEventStreams.get(key) ?? []) stream.close();
+    this.activeEventStreams.delete(key);
+    this.records.delete(key);
+    if (record) {
+      this.createBindings.delete(bindingKey(workspaceId, record.clientLeaseId));
+    }
+  }
+
   async dispose<T>(
     input: AuthorizeRemoteWorkerSandboxInputV1<"delete">,
-    effect: () => T | Promise<T>,
+    effect: (binding: RemoteWorkerAuthorizedBindingV1) => T | Promise<T>,
   ): Promise<T> {
-    await this.authorizeInput(input);
-    const result = await effect();
-    for (const stream of this.activeEventStreams.get(input.sandboxId) ?? []) {
+    const { record } = await this.authorizeInput(input);
+    const key = bindingKey(record.workspaceId, record.sandboxId);
+    const result = await effect({
+      workspaceId: record.workspaceId,
+      sandboxId: record.sandboxId,
+    });
+    for (const stream of this.activeEventStreams.get(key) ?? []) {
       stream.close();
     }
-    this.activeEventStreams.delete(input.sandboxId);
-    this.records.delete(input.sandboxId);
+    this.activeEventStreams.delete(key);
+    this.records.delete(key);
+    this.createBindings.delete(
+      bindingKey(record.workspaceId, record.clientLeaseId),
+    );
     return result;
   }
 }

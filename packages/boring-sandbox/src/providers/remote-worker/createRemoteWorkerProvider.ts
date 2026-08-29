@@ -257,6 +257,7 @@ export function createRemoteWorkerSandboxProviderV1(
           requestTimeoutMs,
           capabilityLifetimeMs,
           eventStreamLifetimeMs,
+          requestedHealthCapabilities: worker.requiredCapabilities,
         });
 
         const request = parseRemoteWorkerRequestV1(
@@ -292,6 +293,9 @@ export function createRemoteWorkerSandboxProviderV1(
             health.capabilities.includes(
               capability as (typeof health.capabilities)[number],
             ),
+          ) ||
+          !(worker.requiredCapabilities ?? []).every((capability) =>
+            health.negotiatedCapabilities?.includes(capability),
           )
         ) {
           await client.close();

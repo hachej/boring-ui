@@ -65,6 +65,7 @@
     "qualify:bundle:build": "node ./scripts/build-qualification-bundle.mjs",
     "qualify:fleet:verify": "node ./scripts/verify-fleet-admission-evidence.mjs",
     "test:runsc:integration": "node ./scripts/integrate-docker-runsc-runtime.mjs",
+    "test:remote-worker:multi-lease": "node ./scripts/integrate-remote-worker-runsc-multi-lease.mjs",
     "measure:coldstart:latency": "node ./scripts/measure-cold-start-latency.mjs",
     "test": "vitest run --passWithNoTests",
     "test:blaxel:live": "node ../../scripts/blaxel-adapter-smoke.mjs",

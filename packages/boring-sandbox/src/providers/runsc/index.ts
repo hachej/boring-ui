@@ -138,6 +138,11 @@ export {
   type RunscSandboxRootLifecycleOptionsV1,
 } from "./runtime/sandboxRootLifecycle";
 export {
+  RemoteWorkerRunscHandlerV1,
+  type RemoteWorkerRunscHandlerOptionsV1,
+  type RemoteWorkerRunscQualificationV1,
+} from "./runtime/remoteWorkerHandler";
+export {
   RunscSessionRuntimeV1,
   type CreateRunscSessionInputV1,
   type RunscSessionLeaseV1,
