@@ -798,13 +798,15 @@ describe("runsc multi-root and legacy compatibility", () => {
   );
 
   test.each([
-    { kind: "exec", hardExpiry: false },
-    { kind: "fs", hardExpiry: false },
-    { kind: "exec", hardExpiry: true },
-    { kind: "fs", hardExpiry: true },
+    { kind: "exec", hardExpiry: false, expiryAdvanceMs: 100 },
+    { kind: "fs", hardExpiry: false, expiryAdvanceMs: 100 },
+    { kind: "exec", hardExpiry: true, expiryAdvanceMs: 100 },
+    { kind: "fs", hardExpiry: true, expiryAdvanceMs: 100 },
+    { kind: "exec", hardExpiry: true, expiryAdvanceMs: 101 },
+    { kind: "fs", hardExpiry: true, expiryAdvanceMs: 101 },
   ] as const)(
-    "pins an active $kind through $hardExpiry hard-expiry mode",
-    async ({ kind, hardExpiry }) => {
+    "pins an active $kind through hard-expiry=$hardExpiry at +$expiryAdvanceMs ms",
+    async ({ kind, hardExpiry, expiryAdvanceMs }) => {
       vi.useFakeTimers();
       try {
         let nowMs = 1_000;
@@ -834,11 +836,12 @@ describe("runsc multi-root and legacy compatibility", () => {
           runner: docker,
           now: () => nowMs,
         });
-        await sessions.createComposite({
+        const lease = await sessions.createComposite({
           ...createInput,
           idleTtlMs: hardExpiry ? 500 : 100,
           hardLifetimeMs: hardExpiry ? 100 : 500,
         });
+        const leaseBeforeExpiry = { ...lease };
         block = true;
         const operation =
           kind === "fs"
@@ -861,12 +864,40 @@ describe("runsc multi-root and legacy compatibility", () => {
           ([input]) => input.argv[0] === "rm",
         ).length;
 
-        nowMs = 1_100;
-        await vi.advanceTimersByTimeAsync(100);
+        nowMs = 1_000 + expiryAdvanceMs;
+        await vi.advanceTimersByTimeAsync(expiryAdvanceMs);
         expect(
           docker.run.mock.calls.filter(([input]) => input.argv[0] === "rm"),
         ).toHaveLength(removalsBeforeExpiry);
         expect(roots.dispose).not.toHaveBeenCalled();
+
+        if (hardExpiry) {
+          await expect(
+            sessions.renew("sandbox-a", workspaceId, 1_000),
+          ).rejects.toMatchObject({
+            code: REMOTE_WORKER_ERROR_CODES_V1.sandboxExpired,
+          });
+          await expect(
+            sessions.fs("sandbox-a", workspaceId, mkdirRequest),
+          ).rejects.toMatchObject({
+            code: REMOTE_WORKER_ERROR_CODES_V1.sandboxExpired,
+          });
+          await expect(
+            sessions.exec("sandbox-a", workspaceId, {
+              invocationId: "invocation-after-hard-expiry",
+              command: "printf late",
+              timeoutMs: 30_000,
+              maxOutputBytes: 1_024,
+            }),
+          ).rejects.toMatchObject({
+            code: REMOTE_WORKER_ERROR_CODES_V1.sandboxExpired,
+          });
+          expect(lease).toEqual(leaseBeforeExpiry);
+          expect(
+            docker.run.mock.calls.filter(([input]) => input.argv[0] === "rm"),
+          ).toHaveLength(removalsBeforeExpiry);
+          expect(roots.dispose).not.toHaveBeenCalled();
+        }
 
         release?.();
         await operation;

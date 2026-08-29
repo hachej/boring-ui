@@ -794,11 +794,11 @@ export class RunscSessionRuntimeV1 {
         record.expiryPending = reason;
       } else {
         await this.retire(record, reason);
-        throw runscRuntimeError(
-          REMOTE_WORKER_ERROR_CODES_V1.sandboxExpired,
-          "remote-worker sandbox expired",
-        );
       }
+      throw runscRuntimeError(
+        REMOTE_WORKER_ERROR_CODES_V1.sandboxExpired,
+        "remote-worker sandbox expired",
+      );
     }
     return record;
   }
