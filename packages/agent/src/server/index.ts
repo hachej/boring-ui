@@ -25,6 +25,17 @@ export type {
   SandboxLeaseErrorCode,
   SandboxLeaseServiceOptions,
 } from './sandbox/leases/sandboxLease'
+export { SandboxLeaseServiceFactoryRegistry } from './sandbox/leases/sandboxLeaseServiceFactoryRegistry'
+export {
+  SANDBOX_LEASE_PROVIDER_PROFILE_VERSION_V1,
+  createSandboxLeaseServiceFromProfileV1,
+  normalizeSandboxLeaseProviderProfileV1,
+  sandboxLeaseProviderProfileDigestV1,
+} from './sandbox/leases/sandboxLeaseProfileIdentity'
+export type {
+  SandboxLeaseProviderProfileIdentityV1,
+  SandboxLeaseProviderProfileV1,
+} from './sandbox/leases/sandboxLeaseProfileIdentity'
 export { createRemoteWorkerModeAdapter } from './runtime/modes/remote-worker'
 export type { RemoteWorkerModeAdapterOptions } from './runtime/modes/remote-worker'
 export { createRemoteWorkerWorkspace } from './workspace/createRemoteWorkerWorkspace'

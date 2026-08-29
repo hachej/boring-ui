@@ -53,6 +53,12 @@ return {
 }
 ```
 
+Multi-provider hosts should call `SandboxLeaseServiceFactoryRegistry.getOrCreate`
+with the canonical profile digest and construct through
+`createSandboxLeaseServiceFromProfileV1`. Concurrent bindings then share one
+service/provider/timer; failed construction is retryable, while a conflicting
+preconstructed service is rejected without disposing either candidate.
+
 The model cannot supply provider, snapshot, image, repository, environment,
 credentials, resources, network policy, TTL, quotas, host paths, or owner ID.
 Ownership is derived by the host from workspace scope, Agent type, and exact
