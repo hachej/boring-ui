@@ -8,7 +8,7 @@ import { diagramPlugin } from "@hachej/boring-diagram/front"
 import { createTasksPlugin } from "@hachej/boring-tasks/front"
 import { SHOWCASE_SESSION_ID } from "./showcaseMessages"
 import { LoadingStatesShowcase, type LoadingStateMode } from "./LoadingStatesShowcase"
-import { SHOWCASE_SESSION_TITLE_TAG } from "../shared/showcaseSession"
+import { PLAYGROUND_SHOWCASE_SESSION_ROUTE } from "../shared/showcaseSession"
 
 function isShowcaseRoute(): boolean {
   if (typeof window === "undefined") return false
@@ -204,8 +204,8 @@ export function WorkspaceShell() {
   // bounded by two other layers: the pagehide cleanup below (best-effort,
   // same boot) and the scripted dev server's boot-time sweep in
   // scriptedPiHarness.ts (authoritative backstop — deletes every
-  // showcase-tagged session left empty by a *previous* boot, regardless of
-  // which tab/context created it). See SHOWCASE_SESSION_TITLE_TAG.
+  // showcase-created session left empty by a *previous* boot, regardless of
+  // which tab/context created it). See ../shared/showcaseSession.ts.
   const showcaseBootStorageKey = "boring-ui-v2:showcase:boot-session-id"
   const requestNewShowcaseSession = useCallback(async (
     title: string,
@@ -216,20 +216,20 @@ export function WorkspaceShell() {
       ? setTimeout(() => controller.abort(), options.timeoutMs)
       : undefined
     try {
-      const response = await fetch(`/api/v1/agents/${encodeURIComponent(defaultAgentTypeId)}/sessions`, {
+      // Every showcase session is created through this dev-only wrapper
+      // route, never the ordinary create-session endpoint directly — that
+      // is what marks a session as showcase-originated for the server's
+      // boot-time sweep (provenance-by-route, not by title content; see
+      // ../shared/showcaseSession.ts for why title tagging was dropped).
+      const response = await fetch(PLAYGROUND_SHOWCASE_SESSION_ROUTE, {
         method: "POST",
         headers: {
           "content-type": "application/json",
           "x-boring-workspace-id": "default",
         },
         body: JSON.stringify({
-          // The backend-stored title is tagged and never surfaced — this UI
-          // only ever renders the `title` this function returns below, taken
-          // from the controlled `sessions` prop it builds client-side (see
-          // ../shared/showcaseSession.ts). The tag lets the scripted dev
-          // server's boot-time sweep find and delete stale, still-empty
-          // showcase sessions without touching unrelated ones.
-          title: `${SHOWCASE_SESSION_TITLE_TAG}${title}`,
+          agentTypeId: defaultAgentTypeId,
+          title,
           ...(options.requestId ? { requestId: options.requestId } : {}),
           ...(options.resumeSessionId ? { resumeSessionId: options.resumeSessionId } : {}),
         }),

@@ -1,13 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, appendFile, readFile, readdir, unlink, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { setTimeout as sleep } from 'node:timers/promises'
 import type { AgentSessionEvent } from '@mariozechner/pi-coding-agent'
 import { CURRENT_SESSION_VERSION } from '@mariozechner/pi-coding-agent'
 import type { AgentCoreHarnessFactory, AgentHarness, RunContext, AgentSendInput } from '@hachej/boring-agent/shared'
 import type { SessionCtx, SessionDetail, SessionStore, SessionSummary } from '@hachej/boring-agent/shared'
-import { SHOWCASE_SESSION_TITLE_TAG } from '../../shared/showcaseSession'
 
 type RequiredAgentHarnessFactoryInput = Parameters<AgentCoreHarnessFactory>[0]
 type AgentHarnessFactoryInput = Omit<RequiredAgentHarnessFactoryInput, 'tools'> & {
@@ -138,12 +137,14 @@ class ScriptedSessionStore implements SessionStore {
   private readonly records = new Map<string, ScriptedSessionRecord>()
   private createCount = 0
   private readonly sessionDir: string
+  private readonly explicitSessionRoot: string | undefined
   private hydration: Promise<void> | undefined
 
   constructor(input: AgentHarnessFactoryInput) {
     this.sessionDir = input.sessionDir ?? (input.sessionNamespace
       ? join(sessionBaseDir(input.sessionRoot), input.sessionNamespace)
       : defaultSessionDir(input.cwd, input.sessionRoot))
+    this.explicitSessionRoot = input.sessionRoot
   }
 
   async ensure(sessionId: string, ctx: SessionCtx): Promise<SessionSummary> {
@@ -300,27 +301,49 @@ class ScriptedSessionStore implements SessionStore {
     this.createCount = 0
     // Boot-time retention sweep: everything just loaded above came from
     // *before* this process started (this method only ever runs once per
-    // store, memoized by `ensureHydrated`/`this.hydration`). Delete any
-    // showcase-tagged session left empty by a prior boot — a real turn was
-    // never sent, so there is nothing to lose — instead of letting
-    // `?showcase=1` visits (one durable session per boot/tab/e2e context)
-    // accumulate on disk indefinitely. Non-showcase sessions and anything
-    // created during *this* boot are untouched (see SHOWCASE_SESSION_TITLE_TAG).
+    // store, memoized by `ensureHydrated`/`this.hydration`), and the
+    // provenance registry (below) is read before this boot ever appends to
+    // it — so this only ever sweeps sessions the showcase route created on
+    // a *prior* boot and never sent a turn to. Delete those — there is
+    // nothing to lose — instead of letting `?showcase=1` visits (one
+    // durable session per boot/tab/e2e context) accumulate on disk
+    // indefinitely. Anything not in the registry (ordinary sessions, no
+    // matter what their title says) and anything created during *this*
+    // boot are untouched.
     await this.sweepStaleShowcaseSessions()
   }
 
   private async sweepStaleShowcaseSessions(): Promise<void> {
-    for (const record of [...this.records.values()]) {
-      if (record.turnCount !== 0 || !record.title.startsWith(SHOWCASE_SESSION_TITLE_TAG)) continue
-      this.records.delete(record.id)
+    const registry = await readShowcaseRegistry(this.explicitSessionRoot)
+    if (registry.size === 0) return
+    let registryChanged = false
+    for (const id of registry) {
+      const record = this.records.get(id)
+      // Not one of this store's sessions — could belong to a different
+      // agent type/namespace sharing the same registry file, or already
+      // deleted by an earlier sweep/pagehide cleanup. Never guess; leave
+      // it for whichever store (if any) actually owns it, rather than
+      // pruning an entry this store cannot positively verify.
+      if (!record) continue
+      if (record.turnCount !== 0) {
+        // Got a real turn since being marked — it's an ordinary session now
+        // (kept like any other) and no longer needs tracking.
+        registry.delete(id)
+        registryChanged = true
+        continue
+      }
+      this.records.delete(id)
+      registry.delete(id)
+      registryChanged = true
       try {
         const names = await readdir(this.sessionDir)
-        const match = names.find((name) => name === `${record.id}.jsonl` || name.endsWith(`_${record.id}.jsonl`))
+        const match = names.find((name) => name === `${id}.jsonl` || name.endsWith(`_${id}.jsonl`))
         if (match) await unlink(join(this.sessionDir, match))
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       }
     }
+    if (registryChanged) await writeShowcaseRegistry(this.explicitSessionRoot, registry)
   }
 
   private takeNextSessionId(): string {
@@ -406,6 +429,65 @@ function defaultSessionDir(cwd: string, explicitRoot?: string): string {
   if (explicitRoot && cwd.trim().length === 0) return sessionBaseDir(explicitRoot)
   const safePath = `--${cwd.replace(/^[/\\]/, '').replace(/[/\\:]/g, '-')}--`
   return join(sessionBaseDir(explicitRoot), safePath)
+}
+
+// --- Showcase session provenance registry -----------------------------
+//
+// The playground's `?showcase=1` route needs a boot-time sweep of stale,
+// still-empty sessions it created (gh-1452 PR #1458 review). An earlier
+// version of this marked provenance with a fixed title prefix
+// (`SHOWCASE_SESSION_TITLE_TAG`) — but the create/rename HTTP schemas
+// accept any nonempty title up to 200 chars and forward it unchanged, so
+// an ordinary session a developer happened to title starting with that
+// exact prefix would be swept too. Title text is user-controlled data,
+// not durable provenance.
+//
+// Provenance now lives in a sidecar registry file instead: a plain JSON
+// array of session ids, written ONLY by the dev-only wrapper route
+// (`POST /api/v1/playground/showcase-sessions` in dev.ts) that the
+// showcase route's own session-creation calls go through — no title
+// content is ever inspected, so nothing an ordinary session's title says
+// can cause it to be swept. The file lives at a fixed, well-known path
+// derived the same way `sessionBaseDir` resolves the session root, so
+// both dev.ts (writer) and this store (reader/pruner) agree on its
+// location without needing to share a live object reference across the
+// HTTP boundary.
+const SHOWCASE_REGISTRY_FILENAME = '.playground-showcase-session-ids.json'
+
+function showcaseRegistryPath(explicitRoot?: string): string {
+  return join(sessionBaseDir(explicitRoot), SHOWCASE_REGISTRY_FILENAME)
+}
+
+async function readShowcaseRegistry(explicitRoot?: string): Promise<Set<string>> {
+  try {
+    const text = await readFile(showcaseRegistryPath(explicitRoot), 'utf8')
+    const parsed: unknown = JSON.parse(text)
+    return new Set(Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === 'string') : [])
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return new Set()
+    // A corrupt registry file must never crash session hydration — treat
+    // it as empty and let the next successful write repair it.
+    return new Set()
+  }
+}
+
+async function writeShowcaseRegistry(explicitRoot: string | undefined, ids: ReadonlySet<string>): Promise<void> {
+  const path = showcaseRegistryPath(explicitRoot)
+  await mkdir(dirname(path), { recursive: true })
+  await writeFile(path, JSON.stringify([...ids].sort()), 'utf8')
+}
+
+/**
+ * Records that `sessionId` was created by the showcase route. Called only
+ * from the dev-only wrapper route, never reachable from the ordinary
+ * session-creation UI — that is what makes this provenance (as opposed to
+ * the old title tag) immune to collision with a normal session.
+ */
+export async function markPlaygroundShowcaseSession(explicitRoot: string | undefined, sessionId: string): Promise<void> {
+  const ids = await readShowcaseRegistry(explicitRoot)
+  if (ids.has(sessionId)) return
+  ids.add(sessionId)
+  await writeShowcaseRegistry(explicitRoot, ids)
 }
 
 class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {

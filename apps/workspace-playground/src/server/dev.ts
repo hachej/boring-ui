@@ -4,7 +4,8 @@ import { basename, dirname, resolve } from "node:path"
 import { createRemoteWorkerModeAdapter } from "@hachej/boring-agent/server"
 import { createReadonlyProjectionOperations } from "@hachej/boring-bash/server"
 import { createNodeWorkspace } from "@hachej/boring-sandbox/providers/node-workspace"
-import { createPersistedScriptedPiHarness } from "./testing/scriptedPiHarness"
+import { createPersistedScriptedPiHarness, markPlaygroundShowcaseSession } from "./testing/scriptedPiHarness"
+import { PLAYGROUND_SHOWCASE_SESSION_ROUTE } from "../shared/showcaseSession"
 import {
   SCRIPTED_ONE_AGENT,
   SCRIPTED_ONE_AGENT_CAPABILITY_PLUGINS,
@@ -132,6 +133,48 @@ export async function startPlaygroundServer(): Promise<void> {
         workspaceRoot,
         defaultAgentTypeId,
       }
+    })
+    // Dev-only wrapper the `?showcase=1` route creates every one of its
+    // sessions through (see PLAYGROUND_SHOWCASE_SESSION_ROUTE). It forwards
+    // to the ordinary create-session endpoint unchanged via `app.inject`
+    // (no extra network hop, no duplicated auth/validation logic) and then
+    // records the resulting id in the showcase provenance registry that
+    // scriptedPiHarness.ts's boot-time sweep reads. Provenance lives in
+    // *which route created the session*, not in title text — the ordinary
+    // session-creation UI never calls this route, so nothing a user types
+    // into a title can mark (or accidentally un-mark) a session here. See
+    // apps/workspace-playground/src/shared/showcaseSession.ts.
+    app.post(PLAYGROUND_SHOWCASE_SESSION_ROUTE, async (request, reply) => {
+      const body = (request.body ?? {}) as { agentTypeId?: unknown; title?: unknown; requestId?: unknown; resumeSessionId?: unknown }
+      const targetAgentTypeId = typeof body.agentTypeId === "string" && body.agentTypeId.trim() ? body.agentTypeId.trim() : defaultAgentTypeId
+      const forwardBody: Record<string, unknown> = {}
+      if (typeof body.title === "string") forwardBody.title = body.title
+      if (typeof body.requestId === "string") forwardBody.requestId = body.requestId
+      if (typeof body.resumeSessionId === "string") forwardBody.resumeSessionId = body.resumeSessionId
+      const workspaceIdHeader = request.headers["x-boring-workspace-id"]
+      const injected = await app.inject({
+        method: "POST",
+        url: `/api/v1/agents/${encodeURIComponent(targetAgentTypeId)}/sessions`,
+        headers: {
+          "content-type": "application/json",
+          ...(typeof workspaceIdHeader === "string" ? { "x-boring-workspace-id": workspaceIdHeader } : {}),
+        },
+        payload: JSON.stringify(forwardBody),
+      })
+      reply.code(injected.statusCode)
+      reply.header("content-type", injected.headers["content-type"] ?? "application/json")
+      if (injected.statusCode === 201) {
+        try {
+          const payload = JSON.parse(injected.body) as { sessionId?: unknown }
+          if (typeof payload.sessionId === "string") {
+            await markPlaygroundShowcaseSession(process.env.BORING_AGENT_SESSION_ROOT, payload.sessionId)
+          }
+        } catch {
+          // Response wasn't the expected shape — forward it as-is below;
+          // provenance just doesn't get recorded for this one.
+        }
+      }
+      return reply.send(injected.body)
     })
     await app.listen({ port: AGENT_API_PORT, host: "127.0.0.1" })
   })()
