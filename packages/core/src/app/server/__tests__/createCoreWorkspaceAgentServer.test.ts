@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { noopTelemetry } from '../../../shared/telemetry.js'
 import {
   createCoreWorkspaceAgentServer,
+  registerFrontendAuthPages,
   registerFrontendFallback,
   resolveCoreLoadConfigOptions,
   type CoreFrontendRootHandler,
@@ -88,5 +89,35 @@ describe('createCoreWorkspaceAgentServer', () => {
     expect(await requestPath(rootOnly, '/workspace')).toEqual(baseline)
     expect(rootOnly).not.toHaveBeenCalled()
     expect(baseline).toEqual({ body: '<!doctype html><p>spa shell</p>', contentType: 'text/html; charset=utf-8', cache: 'no-store' })
+  })
+
+  it('redirects the legacy /auth/reset-password/:token shape to the SPA query-string route', async () => {
+    const appRoot = await mkdtemp(`${tmpdir()}/boring-core-reset-redirect-`)
+    await mkdir(resolve(appRoot, 'dist/front'), { recursive: true })
+    await writeFile(resolve(appRoot, 'dist/front/index.html'), '<!doctype html><p>spa shell</p>')
+
+    const app = Fastify()
+    await registerFrontendAuthPages(app, appRoot, noopTelemetry)
+
+    const response = await app.inject({ method: 'GET', url: '/auth/reset-password/abc123' })
+    await app.close()
+
+    expect(response.statusCode).toBe(302)
+    expect(response.headers.location).toBe('/auth/reset-password?token=abc123')
+  })
+
+  it('URL-encodes the token when redirecting the legacy reset-password shape', async () => {
+    const appRoot = await mkdtemp(`${tmpdir()}/boring-core-reset-redirect-`)
+    await mkdir(resolve(appRoot, 'dist/front'), { recursive: true })
+    await writeFile(resolve(appRoot, 'dist/front/index.html'), '<!doctype html><p>spa shell</p>')
+
+    const app = Fastify()
+    await registerFrontendAuthPages(app, appRoot, noopTelemetry)
+
+    const response = await app.inject({ method: 'GET', url: '/auth/reset-password/a%20b%26c' })
+    await app.close()
+
+    expect(response.statusCode).toBe(302)
+    expect(response.headers.location).toBe('/auth/reset-password?token=a%20b%26c')
   })
 })

@@ -1,6 +1,6 @@
 import { Suspense, useCallback, useEffect, useMemo } from 'react'
 import type { ReactNode } from 'react'
-import { BrowserRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Helmet, HelmetProvider } from 'react-helmet-async'
 
@@ -58,6 +58,16 @@ const CSP_NONCE_META_NAME = 'boring-csp-nonce'
 
 function PlaceholderPage({ name }: { name: string }) {
   return <div data-testid={`placeholder-${name}`}>{name} (not yet implemented)</div>
+}
+
+// Compatibility redirect for better-auth's default path-token reset-password
+// link shape (/auth/reset-password/<token>), which pre-dates this app's SPA
+// route sending the token as a query param instead. Keeps already-sent
+// emails working after the link-generation fix.
+function ResetPasswordLegacyRedirect() {
+  const { token } = useParams<{ token: string }>()
+  const target = token ? `${routes.resetPassword}?token=${encodeURIComponent(token)}` : routes.resetPassword
+  return <Navigate to={target} replace />
 }
 
 function readCspNonceFromDom(): string | undefined {
@@ -179,6 +189,7 @@ export function CoreFront({ children, authPages, cspNonce, workspaceRoute, works
                               <Route path={routes.signup} element={<SignUpPage />} />
                               <Route path={routes.forgotPassword} element={<ForgotPasswordPage />} />
                               <Route path={routes.resetPassword} element={<ResetPasswordPage />} />
+                              <Route path="/auth/reset-password/:token" element={<ResetPasswordLegacyRedirect />} />
                               <Route path={routes.verifyEmail} element={<VerifyEmailPage />} />
                               <Route path={routes.authError} element={<AuthErrorPage />} />
                               <Route path={routes.callbackGithub} element={<PlaceholderPage name="github-callback" />} />

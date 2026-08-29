@@ -972,8 +972,8 @@ function registerTelemetryHooks(app: CoreWorkspaceAgentServer, telemetry: Teleme
   })
 }
 
-async function registerFrontendAuthPages(
-  app: CoreWorkspaceAgentServer,
+export async function registerFrontendAuthPages(
+  app: FastifyInstance,
   appRoot: string,
   telemetry: TelemetrySink,
 ) {
@@ -983,6 +983,16 @@ async function registerFrontendAuthPages(
   for (const pagePath of FRONTEND_AUTH_PAGES) {
     app.get(pagePath, async (request, reply) => serveFrontendShell(request, reply, indexPath, telemetry))
   }
+
+  // Compatibility redirect for better-auth's default path-token reset-password
+  // link shape (/auth/reset-password/<token>). createAuth.ts now emails the
+  // SPA's query-string shape (/auth/reset-password?token=...) directly, but
+  // already-sent emails still use the old path form — keep them working.
+  app.get('/auth/reset-password/:token', async (request, reply) => {
+    const { token } = request.params as { token: string }
+    reply.header('cache-control', 'no-store')
+    return reply.redirect(`/auth/reset-password?token=${encodeURIComponent(token)}`, 302)
+  })
 }
 
 export async function registerFrontendFallback(

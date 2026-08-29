@@ -231,6 +231,20 @@ describe('CoreFront', () => {
   )
 
   it(
+    'redirects the legacy /auth/reset-password/:token link shape to the query-string route',
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
+      setupAll()
+      window.history.pushState({}, '', '/auth/reset-password/legacy-token-123')
+
+      render(<CoreFront />)
+
+      await waitFor(() => expect(window.location.pathname).toBe('/auth/reset-password'))
+      expect(window.location.search).toBe('?token=legacy-token-123')
+      assertionPassed('legacy-reset-password-redirect')
+    }),
+  )
+
+  it(
     'threads csp nonce into Helmet script tags',
     withTaskId(TASK_ID, async ({ assertionPassed }) => {
       setupAll()

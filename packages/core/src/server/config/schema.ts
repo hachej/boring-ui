@@ -85,6 +85,7 @@ export const coreConfigSchema = z.object({
   auth: z.object({
     secret: z.string().min(1),
     url: z.string().url(),
+    frontUrl: z.string().url().optional(),
     github: z
       .object({
         clientId: z.string().min(1),
