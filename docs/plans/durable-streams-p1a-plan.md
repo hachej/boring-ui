@@ -264,6 +264,8 @@ Failing-first assertions in `harnessBackendConformance`: (1) `watchEvents(cursor
 - Legacy: `core/createAgent.ts` / `AgentLiveEventBuffer` untouched (no production consumers).
 - Consumers: `workspace`, `core`, `cli`, `agent-playground` composition roots (`check-alignment-invariants.mjs:38-56`) keep passing only `harnessFactory`; the new consumer-reference invariant proves none references the seam.
 
+- **Exceptions, stated (confirming fresh-eyes 2026-08-29):** no other file under `shared/**` changes besides the two relocation files and `shared/chat/index.ts`. Two adapter-side error-shape completions exist and are deliberate: (a) `readSnapshot` on an unknown session now carries `statusCode: 404` (the service's `normalizeSessionAccessError` emits code only) so `projectStableServiceError` projects it — the only observable difference is a narrow `connectSession`-without-cursor race that previously surfaced as a Fastify 500; (b) the unsupported-`rename` path throws `BRIDGE_COMMAND_INVALID` (409, service code) where the gateway previously threw `AGENT_COMMAND_INVALID_STATE` (409, gateway code) — same HTTP status, no in-repo store lacks `rename`.
+
 ### Migration / flag strategy
 
 None for A2: pure structural refactor, single production backend, existing `BORING_CHAT_DURABLE_STREAM` semantics preserved verbatim. P1-B uses that same flag to select the Boring backend; P1-C flips its default. Rollback of A2 is a plain revert.
