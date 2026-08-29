@@ -88,6 +88,8 @@ export interface BlaxelRemoteVolume {
 export interface BlaxelClient {
   getSandbox(name: string): Promise<BlaxelRemoteSandbox>
   createSandbox(config: SandboxCreateConfiguration): Promise<BlaxelRemoteSandbox>
+  createFreshSandbox(config: SandboxCreateConfiguration): Promise<BlaxelRemoteSandbox>
+  deleteSandbox(name: string): Promise<void>
   getVolume(name: string): Promise<BlaxelRemoteVolume>
   createVolume(config: VolumeCreateConfiguration): Promise<BlaxelRemoteVolume>
   getVolumeAttachment(name: string): Promise<string | undefined>
@@ -118,6 +120,12 @@ export function createBlaxelClient(): BlaxelClient {
     },
     async createSandbox(config) {
       return toSandbox(await SandboxInstance.createIfNotExists(config))
+    },
+    async createFreshSandbox(config) {
+      return toSandbox(await SandboxInstance.create(config, { safe: true, createIfNotExist: false }))
+    },
+    async deleteSandbox(name) {
+      await SandboxInstance.delete(name)
     },
     async getVolume(name) {
       return toVolume(await VolumeInstance.get(name))

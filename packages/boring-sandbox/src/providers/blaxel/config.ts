@@ -10,6 +10,7 @@ export const BLAXEL_DEFAULT_MEMORY_MB = 4096
 export const BLAXEL_DEFAULT_VOLUME_SIZE_MB = 2048
 
 export interface BlaxelSandboxProviderOptions {
+  leaseMode?: 'disposable'
   image?: string
   memoryMb?: number
   region?: string

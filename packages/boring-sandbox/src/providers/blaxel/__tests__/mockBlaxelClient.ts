@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { mkdir, readFile, readdir, stat, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rm, stat, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -47,12 +47,16 @@ export async function createMockBlaxelClient(): Promise<BlaxelClient & {
     readonly watchState: typeof watchState
     failGuestStagingMoveOn: number | undefined
   }
-  const mapPath = (path: string) => path === '/workspace'
-    ? root
-    : join(root, path.replace(/^\/workspace\/?/, ''))
-  const mapCommand = (command: string) => command.replaceAll('/workspace', root)
-
-  function remote(name: string, config: Parameters<BlaxelClient['createSandbox']>[0]): BlaxelRemoteSandbox {
+  function remote(
+    name: string,
+    config: Parameters<BlaxelClient['createSandbox']>[0],
+    isolated = false,
+  ): BlaxelRemoteSandbox {
+    const workspaceRoot = isolated ? join(root, name) : root
+    const mapPath = (path: string) => path === '/workspace'
+      ? workspaceRoot
+      : join(workspaceRoot, path.replace(/^\/workspace\/?/, ''))
+    const mapCommand = (command: string) => command.replaceAll('/workspace', workspaceRoot)
     const spec = {
       region: config.region,
       runtime: { image: config.image, memory: config.memory, ttl: config.ttl },
@@ -67,10 +71,8 @@ export async function createMockBlaxelClient(): Promise<BlaxelClient & {
       async readBinary(path: string) { return new Blob([await readFile(mapPath(path))]) },
       async rm(path: string, recursive?: boolean) {
         const target = mapPath(path)
-        if (recursive) {
-          const { rm } = await import('node:fs/promises')
-          await rm(target, { recursive: true })
-        } else await unlink(target)
+        if (recursive) await rm(target, { recursive: true })
+        else await unlink(target)
       },
       async ls(path: string) {
         const entries = await readdir(mapPath(path), { withFileTypes: true })
@@ -169,6 +171,17 @@ export async function createMockBlaxelClient(): Promise<BlaxelClient & {
       const value = remote(name, config)
       sandboxes.set(name, value)
       return value
+    },
+    async createFreshSandbox(config) {
+      const name = config.name!
+      if (sandboxes.has(name)) throw Object.assign(new Error('sandbox exists'), { status: 409 })
+      const value = remote(name, config, true)
+      sandboxes.set(name, value)
+      return value
+    },
+    async deleteSandbox(name) {
+      if (!sandboxes.delete(name)) throw notFound('sandbox not found')
+      await rm(join(root, name), { recursive: true, force: true })
     },
     async getVolume(name) {
       const value = volumes.get(name)
