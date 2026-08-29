@@ -137,13 +137,6 @@ const createInput = {
 };
 
 const mkdirRequest = { op: "mkdir" as const, path: "dir", recursive: true };
-const execRequest = {
-  invocationId: "invocation-a",
-  command: "printf ok",
-  timeoutMs: 30_000,
-  maxOutputBytes: 1024,
-};
-
 describe("runsc multi-root and legacy compatibility", () => {
   test.each([
     { roots: false, admitted: undefined, expected: false },
@@ -220,10 +213,8 @@ describe("runsc multi-root and legacy compatibility", () => {
     await sessions.create(legacyInput);
 
     await expect(
-      sessions.exec("sandbox-a", workspaceId, execRequest),
-    ).rejects.toMatchObject({
-      code: REMOTE_WORKER_ERROR_CODES_V1.sandboxWorkspaceMismatch,
-    });
+      sessions.renew("sandbox-a", workspaceId, 1_000),
+    ).resolves.toMatchObject({ sandboxId: "sandbox-a" });
     const fsResult: Awaited<ReturnType<RunscSessionRuntimeV1["fs"]>> =
       await sessions.fs("sandbox-a", mkdirRequest);
     expect(fsResult).toEqual({ ok: true });
@@ -231,8 +222,8 @@ describe("runsc multi-root and legacy compatibility", () => {
       sandboxId: "sandbox-a",
     });
     await expect(sessions.dispose("sandbox-a")).resolves.toBeUndefined();
-    expect(apply).toHaveBeenCalledWith(legacyWorkspaceId);
-    expect(check).toHaveBeenCalledWith(legacyWorkspaceId);
+    expect(apply).toHaveBeenCalledWith(workspaceId);
+    expect(check).toHaveBeenCalledWith(workspaceId);
   });
 
   test("preserves legacy workspace, sandbox, and client-lease collision behavior", async () => {
@@ -308,6 +299,27 @@ describe("runsc multi-root and legacy compatibility", () => {
     await expect(Promise.all([first, second])).resolves.toHaveLength(2);
     expect(apply.mock.calls).toEqual([[workspaceId]]);
     expect(check.mock.calls).toEqual([[workspaceId]]);
+  });
+
+  test("retries root lifecycle shutdown until pending cleanup converges", async () => {
+    const roots = multiSandboxRoots();
+    let attempts = 0;
+    vi.mocked(roots.close).mockImplementation(async () => {
+      attempts += 1;
+      expect(roots.dispose).toHaveBeenCalledTimes(1);
+      if (attempts === 1) {
+        throw Object.assign(new Error("cleanup pending"), {
+          code: REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+        });
+      }
+    });
+    const sessions = runtime({ roots, admitted: true });
+    await sessions.create(createInput);
+    await expect(sessions.shutdown()).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+    });
+    await expect(sessions.shutdown()).resolves.toBeUndefined();
+    expect(roots.close).toHaveBeenCalledTimes(2);
   });
 
   test("requires canonical composite authority for every admitted multi-root operation", async () => {

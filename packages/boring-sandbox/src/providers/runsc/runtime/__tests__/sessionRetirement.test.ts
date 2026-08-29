@@ -27,7 +27,13 @@ function result(
   };
 }
 
-function record(): RetirableRunscSessionRecordV1 {
+type CompositeRecord = RetirableRunscSessionRecordV1 & {
+  readonly workspaceId: string;
+  readonly workspaceMountSource: ReturnType<typeof trustedWorkspaceMountSource>;
+  readonly ownsWorkspaceMountSource: true;
+};
+
+function record(): CompositeRecord {
   return {
     workspaceId,
     sandboxId: "sandbox-a",

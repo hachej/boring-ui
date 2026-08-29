@@ -124,6 +124,48 @@ describe("runsc per-sandbox root lifecycle", () => {
     },
   );
 
+  test("converges when retry observes ENOENT after an after-effect removal failure", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "boring-runsc-roots-"));
+    const root = join(parent, "sandboxes");
+    await mkdir(root, { mode: 0o750 });
+    let removeAttempts = 0;
+    const roots = new RunscSandboxRootLifecycleV1({
+      sandboxRoot: root,
+      prepareOwnership: async () => undefined,
+      removeSandboxRoot: async (path) => {
+        removeAttempts += 1;
+        await rm(path, { recursive: true, force: true });
+        throw new Error("response lost after removal");
+      },
+      trustedOwnerUid: process.getuid?.() ?? 0,
+    });
+    const quota = {
+      workspaceRoot: root,
+      apply: vi.fn(async () => undefined),
+      check: vi.fn(async () => undefined),
+    };
+    const source = await roots.prepare(workspaceA, "sandbox-a", quota);
+    await expect(roots.dispose(source)).rejects.toMatchObject({
+      code: "REMOTE_WORKER_INCOMPLETE_CLEANUP",
+    });
+    await expect(roots.dispose(source)).resolves.toBeUndefined();
+    expect(removeAttempts).toBe(1);
+
+    const pendingRoots = new RunscSandboxRootLifecycleV1({
+      sandboxRoot: root,
+      prepareOwnership: async () => { throw new Error("ownership failed"); },
+      removeSandboxRoot: async (path) => {
+        await rm(path, { recursive: true, force: true });
+        throw new Error("response lost after removal");
+      },
+      trustedOwnerUid: process.getuid?.() ?? 0,
+    });
+    await expect(
+      pendingRoots.prepare(workspaceB, "sandbox-b", quota),
+    ).rejects.toMatchObject({ code: "REMOTE_WORKER_INCOMPLETE_CLEANUP" });
+    await expect(pendingRoots.retryPendingCleanup()).resolves.toBe(1);
+  });
+
   test("bounded startup sweep removes owned leaves beneath the dedicated root", async () => {
     const { roots, quota } = await lifecycle();
     const sourceA = await roots.prepare(workspaceA, "sandbox-a", quota);

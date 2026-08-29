@@ -222,8 +222,17 @@ describe("warm runsc session runtime", () => {
     const sessions = runtime(runner);
     const first = await sessions.create(createInput);
     const second = await sessions.create(createInput);
-    expect(first.newlyAllocated).toBe(true);
-    expect(second).toEqual({ ...first, newlyAllocated: false });
+    expect(first).toEqual({
+      sandboxId: "sandbox-a",
+      leaseExpiresAtMs: expect.any(Number),
+      hardExpiresAtMs: expect.any(Number),
+    });
+    expect(Object.keys(first).sort()).toEqual([
+      "hardExpiresAtMs",
+      "leaseExpiresAtMs",
+      "sandboxId",
+    ]);
+    expect(second).toEqual(first);
     const one = await sessions.exec("sandbox-a", workspaceId, execRequest);
     const replay = await sessions.exec("sandbox-a", workspaceId, execRequest);
     expect(replay).toEqual(one);
@@ -676,7 +685,6 @@ describe("warm runsc session runtime", () => {
         code: REMOTE_WORKER_ERROR_CODES_V1.sandboxNotFound,
       });
       expect(retire).toHaveBeenCalledWith({
-        workspaceId,
         sandboxId: "sandbox-a",
         reason: "idle",
       });
@@ -736,7 +744,6 @@ describe("warm runsc session runtime", () => {
       expect(removeAttempts).toBe(2);
       expect(retire).toHaveBeenCalledTimes(1);
       expect(retire).toHaveBeenCalledWith({
-        workspaceId,
         sandboxId: "sandbox-a",
         reason: "idle",
       });
@@ -853,7 +860,6 @@ describe("warm runsc session runtime", () => {
       expect(removeAttempts).toBe(2);
       expect(onRetire).toHaveBeenCalledTimes(1);
       expect(onRetire).toHaveBeenCalledWith({
-        workspaceId: secondWorkspaceId,
         sandboxId: "sandbox-b",
         reason: "shutdown",
       });
@@ -862,7 +868,6 @@ describe("warm runsc session runtime", () => {
       expect(removeAttempts).toBe(3);
       expect(onRetire).toHaveBeenCalledTimes(2);
       expect(onRetire).toHaveBeenCalledWith({
-        workspaceId,
         sandboxId: "sandbox-a",
         reason: "shutdown",
       });
@@ -922,7 +927,6 @@ describe("warm runsc session runtime", () => {
     const missing = sessions.renew("sandbox-a", workspaceId, 100);
     await vi.waitFor(() =>
       expect(onRetire).toHaveBeenCalledWith({
-        workspaceId,
         sandboxId: "sandbox-a",
         reason: "missing",
       }),
@@ -974,7 +978,6 @@ describe("warm runsc session runtime", () => {
       code: REMOTE_WORKER_ERROR_CODES_V1.sandboxExpired,
     });
     expect(retire).toHaveBeenCalledWith({
-      workspaceId,
       sandboxId: "sandbox-a",
       reason: "history",
     });
