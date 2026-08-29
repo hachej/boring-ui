@@ -140,16 +140,24 @@ export function useChatModelSelection({
         setAvailableModels(models)
         setSelection((current) => {
           const selected = current.pendingOverride ?? sessionModel ?? current.localDefault
-          if (availableModel(models, selected)) return current
-          if (sessionModel) return { ...current, pendingOverride: undefined }
-          if (sessionId && !sessionIsNew) return { ...current, pendingOverride: undefined, localDefault: null }
-          const firstAvailable = models.find((candidate) => candidate.available)
-          return {
-            ...current,
-            pendingOverride: undefined,
-            localDefault: payload.defaultModel
-              ?? (firstAvailable ? { provider: firstAvailable.provider, id: firstAvailable.id } : null),
+          if (sessionModel) {
+            if (availableModel(models, selected)) return current
+            return { ...current, pendingOverride: undefined }
           }
+          const firstAvailable = models.find((candidate) => candidate.available)
+          const serverDefault = payload.defaultModel
+            ?? (firstAvailable ? { provider: firstAvailable.provider, id: firstAvailable.id } : null)
+          if (sessionId && !sessionIsNew) {
+            // An existing session without a stored model (pre-seeded/directly-created
+            // sessions) has no authoritative model of its own. Never trust a leftover
+            // browser-storage default here even if it happens to still be "available" —
+            // a stale/uncoordinated local choice surviving discovery would let this
+            // session submit with the wrong model. Always resolve exclusively from the
+            // server's own default/first-available model instead (#1469 review finding).
+            return { ...current, pendingOverride: undefined, localDefault: serverDefault }
+          }
+          if (availableModel(models, selected)) return current
+          return { ...current, pendingOverride: undefined, localDefault: serverDefault }
         })
         setLoadedDiscoveryKey(discoveryKey)
         setLoaded(true)
@@ -180,7 +188,13 @@ export function useChatModelSelection({
     && selection.storageScope === storageScope
   const pendingOverride = selectionBelongsToSession ? selection.pendingOverride : undefined
   const isOverride = Boolean(pendingOverride && sessionModel && !sameModel(pendingOverride, sessionModel))
-  const sessionAuthorityReady = !sessionId || (sessionHydrated && (sessionModel !== undefined || sessionIsNew))
+  // Discovery must have actually run (not just be vacuously "loaded" because
+  // it's disabled) before we trust localDefault as an existing session's
+  // resolved model — otherwise an untouched/stale browser-storage default
+  // could leak into a session that never selected one.
+  const discoveryVetted = enabled && currentDiscoveryLoaded
+  const sessionAuthorityReady = !sessionId
+    || (sessionHydrated && (sessionModel !== undefined || sessionIsNew || discoveryVetted))
   const model = currentDiscoveryLoaded && sessionAuthorityReady
     ? pendingOverride ?? sessionModel ?? selection.localDefault
     : null
