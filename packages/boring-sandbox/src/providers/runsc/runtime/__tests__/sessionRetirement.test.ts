@@ -33,6 +33,14 @@ type CompositeRecord = RetirableRunscSessionRecordV1 & {
   readonly ownsWorkspaceMountSource: true;
 };
 
+function legacyRecord(): RetirableRunscSessionRecordV1 {
+  return {
+    sandboxId: "legacy-sandbox",
+    runtimeId: "b".repeat(32),
+    timer: setTimeout(() => undefined, 60_000),
+  };
+}
+
 function record(): CompositeRecord {
   return {
     workspaceId,
@@ -83,6 +91,35 @@ describe("runsc session retirement", () => {
       expect(detach).toHaveBeenCalledWith(session);
     },
   );
+
+  test("preserves legacy detach-before-notify without retrying callback failure", async () => {
+    vi.useFakeTimers();
+    try {
+      const runner = { run: vi.fn(async () => result()) };
+      const detach = vi.fn();
+      const raw = "unlink /srv/private/workspace: TOKEN=host-secret";
+      const onRetire = vi.fn(async () => {
+        throw new Error(raw);
+      });
+      const retirement = new RunscSessionRetirementManagerV1({
+        runner,
+        detach,
+        onRetire,
+      });
+      const session = legacyRecord();
+
+      await expect(retirement.retire(session, "cleanup")).rejects.toMatchObject({
+        code: REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+      });
+      expect(detach).toHaveBeenCalledOnce();
+      expect(onRetire).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(runner.run).toHaveBeenCalledOnce();
+      expect(onRetire).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
   test("retains retirement ownership when the exact owned container remains", async () => {
     const runner = {
