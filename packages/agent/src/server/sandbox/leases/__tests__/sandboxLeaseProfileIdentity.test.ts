@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { DisposableSandboxProviderV1, SandboxProviderV1 } from '@hachej/boring-sandbox/shared'
 import {
   SANDBOX_LEASE_PROVIDER_PROFILE_VERSION_V1,
+  createSandboxLeaseServiceFromProfileV1,
   normalizeSandboxLeaseProviderProfileV1,
   sandboxLeaseProviderProfileDigestV1,
   type SandboxLeaseProviderProfileV1,
@@ -55,6 +56,39 @@ describe('sandbox lease provider profile identity', () => {
     expect(sandboxLeaseProviderProfileDigestV1(normalized.identity)).toBe(
       sandboxLeaseProviderProfileDigestV1(normalized.identity),
     )
+  })
+
+  it('constructs a service bound to the complete profile identity', async () => {
+    const normalized = normalizeSandboxLeaseProviderProfileV1(profile(), 'workspace-a')
+    const digest = sandboxLeaseProviderProfileDigestV1(normalized.identity)
+    const service = createSandboxLeaseServiceFromProfileV1({
+      profile: normalized,
+      verifiedWorkspaceScopeId: 'workspace-a',
+      expectedDigest: digest,
+    })
+    expect(() => service.assertProfileBinding({
+      digest,
+      provider: normalized.provider,
+      workspaceRoot: normalized.identity.leaseRoot,
+      providerWorkspaceId: normalized.identity.providerWorkspaceId,
+      templatePath: normalized.templatePath,
+      ttlMs: normalized.identity.ttlMs,
+      reapIntervalMs: normalized.identity.reapIntervalMs,
+      drainTimeoutMs: normalized.identity.drainTimeoutMs,
+      maxActiveLeasesPerOwner: normalized.identity.maxActiveLeasesPerOwner,
+      maxActiveLeasesTotal: normalized.identity.maxActiveLeasesTotal,
+    })).not.toThrow()
+    expect(() => service.assertProfileBinding({
+      digest, provider: normalized.provider,
+      workspaceRoot: '/other-root',
+      providerWorkspaceId: normalized.identity.providerWorkspaceId,
+      ttlMs: normalized.identity.ttlMs,
+      reapIntervalMs: normalized.identity.reapIntervalMs,
+      drainTimeoutMs: normalized.identity.drainTimeoutMs,
+      maxActiveLeasesPerOwner: normalized.identity.maxActiveLeasesPerOwner,
+      maxActiveLeasesTotal: normalized.identity.maxActiveLeasesTotal,
+    })).toThrow('does not match')
+    await service.dispose()
   })
 
   it('rejects cross-workspace reuse before provider use', () => {

@@ -142,6 +142,31 @@ export class SandboxLeaseService {
     this.timer.unref?.()
   }
 
+  assertProfileBinding(input: {
+    readonly digest: string
+    readonly provider: SandboxProviderV1
+    readonly workspaceRoot: string
+    readonly providerWorkspaceId: string
+    readonly templatePath?: string
+    readonly ttlMs: number
+    readonly reapIntervalMs: number
+    readonly drainTimeoutMs: number
+    readonly maxActiveLeasesPerOwner: number
+    readonly maxActiveLeasesTotal: number
+  }): void {
+    const matches = this.options.serviceDigest === input.digest
+      && this.options.provider === input.provider
+      && this.options.workspaceRoot === input.workspaceRoot
+      && this.options.providerWorkspaceId === input.providerWorkspaceId
+      && this.options.templatePath === input.templatePath
+      && this.options.ttlMs === input.ttlMs
+      && this.options.reapIntervalMs === input.reapIntervalMs
+      && this.options.drainTimeoutMs === input.drainTimeoutMs
+      && this.options.maxActiveLeasesPerOwner === input.maxActiveLeasesPerOwner
+      && this.options.maxActiveLeasesTotal === input.maxActiveLeasesTotal
+    if (!matches) throw new TypeError('sandbox lease service does not match its profile identity')
+  }
+
   async acquire(ownerId: string, signal?: AbortSignal): Promise<SandboxLease> {
     this.assertOpen()
     this.assertOwner(ownerId)

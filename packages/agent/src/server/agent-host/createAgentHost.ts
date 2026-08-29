@@ -490,9 +490,22 @@ function createRuntime(
           resolved.sandboxTools.profile,
           claim.workspaceScopeId,
         )
-        if (sandboxLeaseProviderProfileDigestV1(profile.identity) !== resolved.sandboxTools.digest) {
+        const digest = sandboxLeaseProviderProfileDigestV1(profile.identity)
+        if (digest !== resolved.sandboxTools.digest) {
           throw new TypeError('sandbox lease profile digest does not match capability')
         }
+        resolved.sandboxTools.leases.assertProfileBinding({
+          digest,
+          provider: profile.provider,
+          workspaceRoot: profile.identity.leaseRoot,
+          providerWorkspaceId: profile.identity.providerWorkspaceId,
+          templatePath: profile.templatePath,
+          ttlMs: profile.identity.ttlMs,
+          reapIntervalMs: profile.identity.reapIntervalMs,
+          drainTimeoutMs: profile.identity.drainTimeoutMs,
+          maxActiveLeasesPerOwner: profile.identity.maxActiveLeasesPerOwner,
+          maxActiveLeasesTotal: profile.identity.maxActiveLeasesTotal,
+        })
       }
       if (resolved.sandboxTools) sandboxLeaseServices.register(resolved.sandboxTools)
       const key = JSON.stringify([
