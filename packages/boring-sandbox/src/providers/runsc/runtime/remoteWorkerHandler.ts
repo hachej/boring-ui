@@ -110,13 +110,6 @@ export class RemoteWorkerRunscHandlerV1 {
   private readonly multiSandboxRootsQualified: boolean;
   private readonly credentialScopeForWorkspace: RemoteWorkerRunscHandlerOptionsV1["credentialScopeForWorkspace"];
   private readonly openEvents: RemoteWorkerRunscHandlerOptionsV1["openEvents"];
-  private readonly createTransactions = new Map<
-    string,
-    {
-      requestDigest: `sha256:${string}`;
-      promise: Promise<RemoteWorkerCreateResponseV1>;
-    }
-  >();
 
   constructor(options: RemoteWorkerRunscHandlerOptionsV1) {
     this.registry = options.registry;
@@ -189,68 +182,53 @@ export class RemoteWorkerRunscHandlerV1 {
     capabilityToken: string;
     request: RemoteWorkerCreateRequestV1;
   }): Promise<RemoteWorkerCreateResponseV1> {
-    const authorization = await this.registry.authorizeCreate({
-      request: input.request,
-      capabilityToken: input.capabilityToken,
-    });
-    const request = authorization.request;
-    this.assertCanonicalWorkspace(request.workspaceId);
-    this.assertQualification(request);
-    const transactionKey = JSON.stringify([
-      request.workspaceId,
-      request.clientLeaseId,
-    ]);
-    const existing = this.createTransactions.get(transactionKey);
-    if (existing) {
-      if (existing.requestDigest !== authorization.requestDigest) {
-        throw new SandboxProviderError(
-          REMOTE_WORKER_ERROR_CODES_V1.idempotencyConflict,
-          "remote-worker create conflicts with an in-flight client lease",
-        );
-      }
-      return await existing.promise;
-    }
-
-    const transaction = (async (): Promise<RemoteWorkerCreateResponseV1> => {
-      const lease = await this.runtime.createComposite({
-        clientLeaseId: request.clientLeaseId,
-        workspaceId: request.workspaceId,
-        image: this.workloadImage,
-        idleTtlMs: request.idleTimeoutMs,
-      });
-      try {
-        const bindingReceipt = await this.registry.bindAuthorized({
-          authorization,
-          sandboxId: lease.sandboxId,
-          leaseExpiresAtMs: lease.leaseExpiresAtMs,
-        });
-        return RemoteWorkerCreateResponseSchemaV1.parse({
-          protocolVersion: REMOTE_WORKER_PROTOCOL_VERSION,
-          providerContractVersion: PROVIDER_CONTRACT_VERSION,
-          workerId: this.registry.authorizedWorkerId,
-          sandboxId: lease.sandboxId,
-          runtimeCwd: REMOTE_WORKER_RUNTIME_CWD,
-          leaseExpiresAtMs: bindingReceipt.payload.expiresAtMs,
-          bindingReceipt,
-        });
-      } catch (error) {
-        if (lease.newlyAllocated) {
-          await this.runtime.dispose(lease.sandboxId, request.workspaceId);
+    let allocated:
+      | {
+          workspaceId: string;
+          sandboxId: string;
+          newlyAllocated: boolean;
         }
-        throw error;
-      }
-    })();
-    const publication = {
-      requestDigest: authorization.requestDigest,
-      promise: transaction,
-    };
-    this.createTransactions.set(transactionKey, publication);
+      | undefined;
     try {
-      return await transaction;
-    } finally {
-      if (this.createTransactions.get(transactionKey) === publication) {
-        this.createTransactions.delete(transactionKey);
+      const bound = await this.registry.createBinding(
+        input,
+        async ({ request }) => {
+          this.assertCanonicalWorkspace(request.workspaceId);
+          this.assertQualification(request);
+          const lease = await this.runtime.createComposite({
+            clientLeaseId: request.clientLeaseId,
+            workspaceId: request.workspaceId,
+            image: this.workloadImage,
+            idleTtlMs: request.idleTimeoutMs,
+          });
+          allocated = {
+            workspaceId: request.workspaceId,
+            sandboxId: lease.sandboxId,
+            newlyAllocated: lease.newlyAllocated,
+          };
+          return {
+            sandboxId: lease.sandboxId,
+            leaseExpiresAtMs: lease.leaseExpiresAtMs,
+            value: lease,
+          };
+        },
+      );
+      const lease = bound.value;
+      return RemoteWorkerCreateResponseSchemaV1.parse({
+        protocolVersion: REMOTE_WORKER_PROTOCOL_VERSION,
+        providerContractVersion: PROVIDER_CONTRACT_VERSION,
+        workerId: this.registry.authorizedWorkerId,
+        sandboxId: lease.sandboxId,
+        runtimeCwd: REMOTE_WORKER_RUNTIME_CWD,
+        leaseExpiresAtMs: bound.bindingReceipt.payload.expiresAtMs,
+        bindingReceipt: bound.bindingReceipt,
+      });
+    } catch (error) {
+      if (allocated?.newlyAllocated) {
+        this.registry.retireBinding(allocated.workspaceId, allocated.sandboxId);
+        await this.runtime.dispose(allocated.sandboxId, allocated.workspaceId);
       }
+      throw error;
     }
   }
   async fs(input: {
