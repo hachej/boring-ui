@@ -4,6 +4,10 @@ set -euo pipefail
 PREFIX="[invariants]"
 ROOT_INPUT="${1:-packages/agent}"
 ROOT_DIR="$(cd "$ROOT_INPUT" 2>/dev/null && pwd || true)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+NEGATIVE_FIXTURES_ONLY="${2:-}"
+PI_RUNTIME_IMPORT_PATTERN="from\s+['\"](@mariozechner/pi-|@earendil-works/pi-)"
+HARNESS_SERVICE_IMPORT_PATTERN="from\s+['\"][^'\"]*pi-chat/harnessPiChatService(?:\.[^'\"]+)?['\"]"
 
 if [[ -z "$ROOT_DIR" || ! -d "$ROOT_DIR" ]]; then
   echo "$PREFIX ERR invalid target root: $ROOT_INPUT"
@@ -111,6 +115,20 @@ run_check_with_glob \
   "!**/logging.ts" \
   "src/server"
 
+run_check_with_glob \
+  "No pi runtime imports in src/server/agent-host/**" \
+  "$PI_RUNTIME_IMPORT_PATTERN" \
+  "Keep the D29 gateway layer pi-free; adapt runtimes under harnessBackend/." \
+  "!**/__tests__/**" \
+  "src/server/agent-host"
+
+run_check_with_glob \
+  "Only harnessBackend/ may import HarnessPiChatService in agent-host" \
+  "$HARNESS_SERVICE_IMPORT_PATTERN" \
+  "Move concrete service access behind src/server/agent-host/harnessBackend/." \
+  "!**/harnessBackend/**" \
+  "src/server/agent-host"
+
 if [[ -d "$ROOT_DIR/src/server" ]]; then
   process_env_output="$(rg -n --no-heading --color never -e "process\\.env\\." "$ROOT_DIR/src/server" -g '!**/config/**' -g '!**/__tests__/**' || true)"
   print_matches \
@@ -172,6 +190,19 @@ if [[ -f "$ROOT_DIR/package.json" ]]; then
     echo "$PREFIX ERR package.json: @mariozechner/pi-coding-agent uses non-exact spec \"$pi_version\""
     echo "  Invariant: pi-coding-agent must be pinned to an exact version (no ^/~/>=), including npm aliases."
     echo "  Fix: Pin exact version, e.g. \"0.67.68\" or \"npm:@earendil-works/pi-coding-agent@0.75.5\". See upgrade protocol in packages/agent/scripts/pi-sdk-canary.sh."
+  fi
+fi
+
+if [[ "$NEGATIVE_FIXTURES_ONLY" != "--negative-fixtures-only" ]]; then
+  fixture_root="$SCRIPT_DIR/__fixtures__/check-invariants/agent-host-boundary"
+  if ! rg -q -e "$PI_RUNTIME_IMPORT_PATTERN" "$fixture_root/src/server/agent-host/piRuntimeLeak.ts" \
+    || ! rg -q -e "$HARNESS_SERVICE_IMPORT_PATTERN" "$fixture_root/src/server/agent-host/serviceLeak.ts"; then
+    failures=1
+    echo "$PREFIX ERR agent-host boundary negative fixtures did not match both invariants"
+    echo "  Invariant: invariant regexes must reject their checked-in negative fixtures."
+    echo "  Fix: Keep fixture paths and import forms aligned with both agent-host scans."
+  else
+    echo "$PREFIX OK agent-host boundary negative fixtures match both invariant scans"
   fi
 fi
 

@@ -1,0 +1,120 @@
+import { ErrorCode } from '../../../shared/error-codes'
+import type { PiSessionRequestContext } from '../../../core/piChatSessionService'
+import { codedError } from '../../codedError'
+import { HarnessPiChatService } from '../../pi-chat/harnessPiChatService'
+import type {
+  AgentHarnessBackend,
+  AgentHarnessBackendFactoryInput,
+  HarnessAgentScope,
+  HarnessRequestContext,
+  HarnessSessionAddress,
+} from './types'
+
+function toPiSessionRequestContext(
+  target: HarnessSessionAddress | HarnessAgentScope,
+  ctx: HarnessRequestContext,
+): PiSessionRequestContext {
+  return {
+    workspaceId: target.workspaceScopeId,
+    storageScope: target.workspaceScopeId,
+    authSubject: ctx.authSubjectId,
+    sessionAuthority: 'workspace-scope',
+    requestId: ctx.requestId,
+  }
+}
+
+export function createPiSessionHarnessBackend(
+  input: AgentHarnessBackendFactoryInput,
+): AgentHarnessBackend {
+  const service = new HarnessPiChatService(input)
+  let closed = false
+  let closing: Promise<void> | undefined
+  const assertOpen = () => {
+    if (closed) {
+      throw codedError(
+        'Pi chat service has been disposed.',
+        ErrorCode.enum.AGENT_BINDING_DISPOSED,
+      )
+    }
+  }
+
+  return {
+    id: 'pi-session',
+    async listSessions(scope, ctx, options) {
+      assertOpen()
+      return await service.listSessions(toPiSessionRequestContext(scope, ctx), options)
+    },
+    async createSession(scope, ctx, init) {
+      assertOpen()
+      return await service.createSession(toPiSessionRequestContext(scope, ctx), init)
+    },
+    async readSnapshot(address, ctx) {
+      assertOpen()
+      return await service.readState(toPiSessionRequestContext(address, ctx), address.ref.sessionId)
+    },
+    async watchEvents(address, ctx, cursor, subscriber) {
+      assertOpen()
+      return await service.subscribe(
+        toPiSessionRequestContext(address, ctx),
+        address.ref.sessionId,
+        cursor,
+        subscriber,
+      )
+    },
+    async submitPrompt(address, ctx, payload) {
+      assertOpen()
+      return await service.prompt(toPiSessionRequestContext(address, ctx), address.ref.sessionId, payload)
+    },
+    async submitFollowUp(address, ctx, payload) {
+      assertOpen()
+      return await service.followUp(toPiSessionRequestContext(address, ctx), address.ref.sessionId, payload)
+    },
+    async clearQueue(address, ctx, payload) {
+      assertOpen()
+      return await service.clearQueue(toPiSessionRequestContext(address, ctx), address.ref.sessionId, payload)
+    },
+    async interrupt(address, ctx, payload) {
+      assertOpen()
+      return await service.interrupt(toPiSessionRequestContext(address, ctx), address.ref.sessionId, payload)
+    },
+    async stop(address, ctx, payload) {
+      assertOpen()
+      return await service.stop(toPiSessionRequestContext(address, ctx), address.ref.sessionId, payload)
+    },
+    async renameSession(address, _ctx, title) {
+      assertOpen()
+      if (!input.sessionStore.rename) {
+        throw codedError(
+          'session repository does not support rename',
+          ErrorCode.enum.BRIDGE_COMMAND_INVALID,
+          409,
+        )
+      }
+      return await input.sessionStore.rename(
+        { workspaceId: address.workspaceScopeId },
+        address.ref.sessionId,
+        title,
+      )
+    },
+    async deleteSession(address, ctx) {
+      assertOpen()
+      await service.deleteSession(toPiSessionRequestContext(address, ctx), address.ref.sessionId)
+    },
+    async readAttachment(address, ctx, messageId, index) {
+      assertOpen()
+      return await service.readAttachment(
+        toPiSessionRequestContext(address, ctx),
+        address.ref.sessionId,
+        messageId,
+        index,
+      )
+    },
+    close() {
+      if (!closing) {
+        closed = true
+        closing = service.dispose()
+      }
+      return closing
+    },
+  }
+}

@@ -897,7 +897,7 @@ export async function createAgentHost(
     run: (binding: LeaseBoundWorkspaceAgent) => Promise<void>,
   ) => runWithWorkspaceAgentLease({ runtime, gateway, request: input, run })
 
-  const resolveProjectionPiChatService = async (
+  const resolveHarnessBackend = async (
     authorizeAgentRequest: (request: import('fastify').FastifyRequest) => Promise<AuthorizedAgentScope>,
     request: import('fastify').FastifyRequest,
     agentTypeId: string,
@@ -907,7 +907,7 @@ export async function createAgentHost(
     const binding = (await gateway.resolveHostSessionBinding(scope, { agentTypeId, sessionId })).binding
     return {
       scope,
-      service: binding.composition.service,
+      backend: binding.composition.backend,
     }
   }
 
@@ -928,8 +928,8 @@ export async function createAgentHost(
           const scope = await projectionOptions.authorizeAgentRequest(request)
           return (await runtime.verify(scope)).workspaceScopeId
         },
-        resolveAddressedPiChatService(request, agentTypeId, sessionId) {
-          return resolveProjectionPiChatService(projectionOptions.authorizeAgentRequest, request, agentTypeId, sessionId)
+        resolveHarnessBackend(request, agentTypeId, sessionId) {
+          return resolveHarnessBackend(projectionOptions.authorizeAgentRequest, request, agentTypeId, sessionId)
         },
       })
     },

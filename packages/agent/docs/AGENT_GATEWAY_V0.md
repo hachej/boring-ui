@@ -152,3 +152,32 @@ rejected. Future internal/external host tiers belong to #905, not here.
 
 `scripts/check-alignment-invariants.mjs` enforces that nothing outside an
 allowlist calls it.
+
+## Private backend seam
+
+The session-runtime path below `EmbeddedAgentGateway` is the server-only
+`AgentHarnessBackend`. It is private to the `createAgentHost()` construction
+funnel: consumers still inject only `harnessFactory`, and there is no public
+backend factory or second session path.
+
+`PiSessionHarnessBackend` is the sole production implementation today. It
+adapts the unchanged `HarnessPiChatService` and owns the mapping from the
+workspace-scoped backend address and attribution context into the legacy Pi
+request context. The backend carries no credentials, membership authority, or
+model catalog. Reload and slash-command host effects continue to use the
+composition harness directly; they are host capabilities, not session-runtime
+operations.
+
+The Gateway request ledger is the only idempotency authority. A backend method
+may be invoked again after a crash only through a ledger-admitted request; the
+backend itself promises no deduplication. P1-B substitutes the adapter-private
+replay source below `HarnessPiChatService`, not this interface. Later operations
+may extend the interface only in their named slices (`resumePausedToolCall` in
+A3b and `markTurnInterrupted` in A4); neither is part of the current seam.
+
+CI pins the boundary in three directions: Agent Host production code cannot
+import a Pi runtime, only `harnessBackend/**` can reference the concrete Pi chat
+service, and Workspace/Core/CLI/playground consumers cannot name the private
+backend interface or module path. Retire the legacy `PiChatSessionService` when
+the legacy `core/createAgent` path is removed; it is intentionally not widened
+or migrated here.

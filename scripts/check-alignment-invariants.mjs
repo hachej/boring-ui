@@ -270,7 +270,14 @@ function findCreateAgentHostCalls(sourceFile) {
 function findConsumerInternalReferences(sourceFile) {
   const references = [];
   const isConsumerInternalName = (name) =>
-    name === "HarnessPiChatService" || name === "PiSessionStore";
+    name === "HarnessPiChatService"
+    || name === "PiSessionStore"
+    || name === "AgentHarnessBackend";
+  for (const reference of moduleReferences(sourceFile)) {
+    if (/(^|\/)harnessBackend(?:\/|$)/.test(reference.specifier)) {
+      references.push({ line: reference.line, name: "harnessBackend/" });
+    }
+  }
   const visit = (node) => {
     if (ts.isIdentifier(node) && isConsumerInternalName(node.text)) {
       references.push({ line: lineFor(sourceFile, node), name: node.text });
@@ -341,10 +348,13 @@ function assertNegativeFixtures() {
 
   const consumerFixture = parseSource(
     "fixture.ts",
-    "import type { HarnessPiChatService, PiSessionStore } from './internal'",
+    [
+      "import type { HarnessPiChatService, PiSessionStore } from './internal'",
+      "import type { AgentHarnessBackend as Backend } from '@hachej/boring-agent/server/agent-host/harnessBackend/types'",
+    ].join("\n"),
   );
-  if (findConsumerInternalReferences(consumerFixture).length === 2) {
-    pass("fixture rejects consumer references even when they are type-only");
+  if (findConsumerInternalReferences(consumerFixture).length === 4) {
+    pass("fixture rejects concrete and harnessBackend references even when they are type-only");
   } else {
     fail("consumer internal-reference fixture mismatch");
   }
@@ -409,7 +419,7 @@ function main() {
     fail(`consumer references ${violation.name} in ${toRepoPath(violation.file)}:${violation.line}`);
   }
   if (consumerViolations.length === 0) {
-    pass(`consumers hold no HarnessPiChatService/PiSessionStore references (${consumerFiles.length} file(s))`);
+    pass(`consumers hold no HarnessPiChatService/PiSessionStore/AgentHarnessBackend/harnessBackend references (${consumerFiles.length} file(s))`);
   }
 
   const errors = [];

@@ -5,9 +5,21 @@ import {
   type AgentSessionRef,
   type AuthorizedAgentScope,
 } from '../../../shared/index'
-import type { PiChatEvent, PiChatSnapshot, QueuedUserMessage } from '../../../shared/chat'
-import type { PiChatEventSubscriber, PiChatSessionService, PiSessionRequestContext } from '../../../core/piChatSessionService'
+import type {
+  PiChatAttachmentResult,
+  PiChatEvent,
+  PiChatSnapshot,
+  QueuedUserMessage,
+} from '../../../shared/chat'
+import { ErrorCode } from '../../../shared/error-codes'
+import { codedError } from '../../codedError'
 import { EmbeddedAgentGateway } from '../embeddedGateway'
+import type {
+  AgentHarnessBackend,
+  HarnessAgentScope,
+  HarnessRequestContext,
+  HarnessSessionAddress,
+} from '../harnessBackend/types'
 import { InMemoryAgentRequestLedger } from '../requestLedger'
 import { AgentSessionActivityIndex } from '../sessionInventory'
 import type { AgentGatewayEffect, AgentHostAgentSpec } from '../types'
@@ -25,6 +37,7 @@ interface EmbeddedGatewayFixture extends GatewayConformanceFixture {
 
 interface RecordValue {
   id: string
+  workspaceScopeId: string
   title: string
   createdAt: string
   updatedAt: string
@@ -33,17 +46,27 @@ interface RecordValue {
   seq: number
   queue: QueuedUserMessage[]
   events: PiChatEvent[]
-  subscribers: Set<PiChatEventSubscriber>
+  subscribers: Set<(event: PiChatEvent) => void>
 }
 
 let globalCreated = 0
 
-class FakeService implements PiChatSessionService {
+export class FakeService implements AgentHarnessBackend {
+  readonly id = 'in-memory'
   readonly records = new Map<string, RecordValue>()
   nextPromptError: Error | undefined
+  private readonly createdByWorkspace = new Map<string, number>()
+  private closed = false
 
-  async listSessions(_ctx: PiSessionRequestContext, options?: { includeId?: string; archived?: 'active' | 'archived' | 'all' }) {
+  constructor(
+    private readonly replayMaxEvents = 5,
+    private readonly reuseIdsAcrossWorkspaces = false,
+  ) {}
+
+  async listSessions(scope: HarnessAgentScope, _ctx: HarnessRequestContext, options?: { includeId?: string; archived?: 'active' | 'archived' | 'all' }) {
+    this.assertOpen()
     const rows = [...this.records.values()]
+      .filter((record) => record.workspaceScopeId === scope.workspaceScopeId)
       .filter((record) => options?.archived === undefined
         || options.archived === 'all'
         || record.archived === (options.archived === 'archived'))
@@ -52,12 +75,17 @@ class FakeService implements PiChatSessionService {
     return rows
   }
 
-  async createSession(ctx: PiSessionRequestContext, init?: { title?: string }) {
-    const created = ++globalCreated
+  async createSession(scope: HarnessAgentScope, _ctx: HarnessRequestContext, init?: { title?: string }) {
+    this.assertOpen()
+    const created = this.reuseIdsAcrossWorkspaces
+      ? (this.createdByWorkspace.get(scope.workspaceScopeId) ?? 0) + 1
+      : ++globalCreated
+    if (this.reuseIdsAcrossWorkspaces) this.createdByWorkspace.set(scope.workspaceScopeId, created)
     const id = `session-${created}`
     const now = new Date(1_000 + created).toISOString()
     const record: RecordValue = {
       id,
+      workspaceScopeId: scope.workspaceScopeId,
       title: init?.title ?? 'New session',
       createdAt: now,
       updatedAt: now,
@@ -68,16 +96,19 @@ class FakeService implements PiChatSessionService {
       events: [],
       subscribers: new Set(),
     }
-    this.records.set(id, record)
+    this.records.set(this.recordKey(scope.workspaceScopeId, id), record)
     return this.summary(record)
   }
 
-  async deleteSession(_ctx: PiSessionRequestContext, sessionId: string) {
-    this.records.delete(sessionId)
+  async deleteSession(address: HarnessSessionAddress, _ctx: HarnessRequestContext) {
+    this.assertOpen()
+    this.records.delete(this.recordKey(address.workspaceScopeId, address.ref.sessionId))
   }
 
-  async readState(_ctx: PiSessionRequestContext, sessionId: string): Promise<PiChatSnapshot> {
-    const record = this.get(sessionId)
+  async readSnapshot(address: HarnessSessionAddress, _ctx: HarnessRequestContext): Promise<PiChatSnapshot> {
+    this.assertOpen()
+    const sessionId = address.ref.sessionId
+    const record = this.get(address)
     return {
       protocolVersion: 1,
       sessionId,
@@ -89,9 +120,10 @@ class FakeService implements PiChatSessionService {
     }
   }
 
-  async subscribe(_ctx: PiSessionRequestContext, sessionId: string, cursor: number, subscriber: PiChatEventSubscriber) {
-    const record = this.get(sessionId)
-    const minReplaySeq = Math.max(0, record.seq - 4)
+  async watchEvents(address: HarnessSessionAddress, _ctx: HarnessRequestContext, cursor: number, subscriber: (event: PiChatEvent) => void) {
+    this.assertOpen()
+    const record = this.get(address)
+    const minReplaySeq = Math.max(0, record.seq - this.replayMaxEvents)
     if (cursor < minReplaySeq) return { type: 'replay_gap' as const, latestSeq: record.seq, minReplaySeq }
     if (cursor > record.seq) return { type: 'cursor_ahead' as const, latestSeq: record.seq, minReplaySeq }
     for (const event of record.events.filter((event) => event.seq > cursor)) subscriber(event)
@@ -99,13 +131,14 @@ class FakeService implements PiChatSessionService {
     return { type: 'ok' as const, unsubscribe: () => record.subscribers.delete(subscriber) }
   }
 
-  async prompt(_ctx: PiSessionRequestContext, sessionId: string, payload: { clientNonce: string }) {
+  async submitPrompt(address: HarnessSessionAddress, _ctx: HarnessRequestContext, payload: { clientNonce: string }) {
+    this.assertOpen()
     if (this.nextPromptError) {
       const error = this.nextPromptError
       this.nextPromptError = undefined
       throw error
     }
-    const record = this.get(sessionId)
+    const record = this.get(address)
     if (record.status === 'running' || record.status === 'aborting') {
       throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE, 'prompt is invalid while active')
     }
@@ -114,15 +147,17 @@ class FakeService implements PiChatSessionService {
     return { accepted: true as const, cursor: event.seq, clientNonce: payload.clientNonce }
   }
 
-  async followUp(_ctx: PiSessionRequestContext, sessionId: string, payload: { clientNonce: string; clientSeq: number; message: string }) {
-    const record = this.get(sessionId)
+  async submitFollowUp(address: HarnessSessionAddress, _ctx: HarnessRequestContext, payload: { clientNonce: string; clientSeq: number; message: string }) {
+    this.assertOpen()
+    const record = this.get(address)
     record.queue.push({ id: `${payload.clientNonce}:${payload.clientSeq}`, kind: 'followup', clientNonce: payload.clientNonce, clientSeq: payload.clientSeq, displayText: payload.message })
     const event = this.publish(record, { type: 'queue-updated', seq: 0, queue: { followUps: [...record.queue] } })
     return { accepted: true as const, cursor: event.seq, clientNonce: payload.clientNonce, clientSeq: payload.clientSeq, queued: true as const }
   }
 
-  async clearQueue(_ctx: PiSessionRequestContext, sessionId: string, payload: { clientNonce?: string; clientSeq?: number }) {
-    const record = this.get(sessionId)
+  async clearQueue(address: HarnessSessionAddress, _ctx: HarnessRequestContext, payload: { clientNonce?: string; clientSeq?: number }) {
+    this.assertOpen()
+    const record = this.get(address)
     if (payload.clientNonce !== undefined && payload.clientSeq !== undefined) {
       const byNonce = record.queue.find((item) => item.clientNonce === payload.clientNonce)
       const bySeq = record.queue.find((item) => item.clientSeq === payload.clientSeq)
@@ -140,14 +175,16 @@ class FakeService implements PiChatSessionService {
     return { accepted: true as const, cursor: event.seq, cleared: before - record.queue.length }
   }
 
-  async interrupt(_ctx: PiSessionRequestContext, sessionId: string, payload: { queueAction?: 'hold' | 'resume' }) {
-    const record = this.get(sessionId)
+  async interrupt(address: HarnessSessionAddress, _ctx: HarnessRequestContext, payload: { queueAction?: 'hold' | 'resume' }) {
+    this.assertOpen()
+    const record = this.get(address)
     if (payload.queueAction !== 'resume' && record.status === 'running') record.status = 'aborting'
     return { accepted: true as const, cursor: record.seq }
   }
 
-  async stop(_ctx: PiSessionRequestContext, sessionId: string) {
-    const record = this.get(sessionId)
+  async stop(address: HarnessSessionAddress, _ctx: HarnessRequestContext) {
+    this.assertOpen()
+    const record = this.get(address)
     const stopped = record.status === 'running' || record.status === 'aborting'
     const clearedQueue = [...record.queue]
     record.status = 'idle'
@@ -155,39 +192,76 @@ class FakeService implements PiChatSessionService {
     return { accepted: true as const, cursor: record.seq, stopped, clearedQueue }
   }
 
-  async setArchived(sessionId: string, archived: boolean) {
-    const record = this.get(sessionId)
+  async renameSession(address: HarnessSessionAddress, _ctx: HarnessRequestContext, title: string) {
+    this.assertOpen()
+    return this.rename(address, title)
+  }
+
+  async readAttachment(
+    address: HarnessSessionAddress,
+    _ctx: HarnessRequestContext,
+    _messageId: string,
+    _index: number,
+  ): Promise<PiChatAttachmentResult> {
+    this.assertOpen()
+    this.get(address)
+    throw codedError('attachment not found', ErrorCode.enum.SESSION_NOT_FOUND, 404)
+  }
+
+  async close() {
+    this.closed = true
+  }
+
+  async setArchived(address: HarnessSessionAddress, archived: boolean) {
+    const record = this.get(address)
     record.archived = archived
     return this.summary(record)
   }
 
-  async rename(sessionId: string, title: string) {
-    const record = this.get(sessionId)
+  async rename(address: HarnessSessionAddress, title: string) {
+    const record = this.get(address)
     record.title = title
     record.updatedAt = new Date(Date.parse(record.updatedAt) + 1).toISOString()
     return this.summary(record)
   }
 
-  setActivity(sessionId: string, activity: AgentSessionActivity) {
-    this.get(sessionId).status = activity
+  hasSession(workspaceScopeId: string, sessionId: string) {
+    return this.records.has(this.recordKey(workspaceScopeId, sessionId))
   }
 
-  move(sessionId: string, updatedAt: number) {
-    this.get(sessionId).updatedAt = new Date(updatedAt).toISOString()
+  setActivity(workspaceScopeId: string, sessionId: string, activity: AgentSessionActivity) {
+    this.get({ workspaceScopeId, ref: { agentTypeId: 'fixture', sessionId } }).status = activity
+  }
+
+  move(workspaceScopeId: string, sessionId: string, updatedAt: number) {
+    this.get({ workspaceScopeId, ref: { agentTypeId: 'fixture', sessionId } }).updatedAt = new Date(updatedAt).toISOString()
   }
 
   private publish(record: RecordValue, event: PiChatEvent): PiChatEvent {
     const published = { ...event, seq: ++record.seq } as PiChatEvent
     record.events.push(published)
-    if (record.events.length > 4) record.events.shift()
+    if (record.events.length > this.replayMaxEvents) record.events.shift()
     for (const subscriber of record.subscribers) subscriber(published)
     return published
   }
 
-  private get(sessionId: string) {
-    const record = this.records.get(sessionId)
-    if (!record) throw new Error('not found')
+  private get(address: HarnessSessionAddress) {
+    const record = this.records.get(this.recordKey(address.workspaceScopeId, address.ref.sessionId))
+    if (!record) throw codedError('session not found', ErrorCode.enum.SESSION_NOT_FOUND, 404)
     return record
+  }
+
+  private recordKey(workspaceScopeId: string, sessionId: string) {
+    return JSON.stringify([workspaceScopeId, sessionId])
+  }
+
+  private assertOpen() {
+    if (this.closed) {
+      throw codedError(
+        'Pi chat service has been disposed.',
+        ErrorCode.enum.AGENT_BINDING_DISPOSED,
+      )
+    }
   }
 
   private summary = (record: RecordValue) => ({
@@ -203,7 +277,7 @@ class FakeService implements PiChatSessionService {
 export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFixture> {
   const issued = new WeakSet<object>()
   const revoked = new WeakSet<object>()
-  const services = new Map<string, FakeService>()
+  const backends = new Map<string, FakeService>()
   type AdmissionDisposition = 'strong-reject' | 'retryable' | {
     entered(): void
     wait: Promise<void>
@@ -213,14 +287,14 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
     { agentTypeId: 'alpha', definition: { instructions: 'alpha', label: 'Alpha' } },
     { agentTypeId: 'beta', definition: { instructions: 'beta', label: 'Beta' } },
   ]
-  const serviceFor = (workspaceScopeId: string, agentTypeId: string) => {
+  const backendFor = (workspaceScopeId: string, agentTypeId: string) => {
     const key = `${workspaceScopeId}:${agentTypeId}`
-    let service = services.get(key)
-    if (!service) {
-      service = new FakeService()
-      services.set(key, service)
+    let backend = backends.get(key)
+    if (!backend) {
+      backend = new FakeService()
+      backends.set(key, backend)
     }
-    return service
+    return backend
   }
   const activity = new AgentSessionActivityIndex()
   const runtime = {
@@ -230,13 +304,19 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
     ledger: new InMemoryAgentRequestLedger(),
     activity,
     async listSessionSummaries(agentTypeId: string, _scope: AuthorizedAgentScope, claim: { workspaceScopeId: string }, options?: { archived?: 'active' | 'archived' | 'all' }) {
-      return await serviceFor(claim.workspaceScopeId, agentTypeId).listSessions({
-        workspaceId: claim.workspaceScopeId,
+      return await backendFor(claim.workspaceScopeId, agentTypeId).listSessions({
+        workspaceScopeId: claim.workspaceScopeId,
+        agentTypeId,
+      }, {
+        authSubjectId: 'inventory',
         requestId: 'inventory-list',
       }, options)
     },
     async setSessionArchived(agentTypeId: string, _scope: AuthorizedAgentScope, claim: { workspaceScopeId: string }, sessionId: string, archived: boolean) {
-      return await serviceFor(claim.workspaceScopeId, agentTypeId).setArchived(sessionId, archived)
+      return await backendFor(claim.workspaceScopeId, agentTypeId).setArchived({
+        workspaceScopeId: claim.workspaceScopeId,
+        ref: { agentTypeId, sessionId },
+      }, archived)
     },
     effectAdmission: {
       async admit({ operation }: { operation: AgentGatewayEffect }) {
@@ -265,7 +345,7 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
       return { workspaceScopeId: scope.workspaceScopeId, authSubjectId: scope.authSubjectId }
     },
     async resolveSessionRuntime(agentTypeId: string, _scope: AuthorizedAgentScope, claim: { workspaceScopeId: string }, sessionId: string) {
-      return serviceFor(claim.workspaceScopeId, agentTypeId).records.has(sessionId)
+      return backendFor(claim.workspaceScopeId, agentTypeId).hasSession(claim.workspaceScopeId, sessionId)
         ? { identity: 'shared-runtime' }
         : undefined
     },
@@ -273,16 +353,13 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
       return { identity: 'shared-runtime' }
     },
     async resolveBinding(agentTypeId: string, _scope: AuthorizedAgentScope, claim: { workspaceScopeId: string }) {
-      const service = serviceFor(claim.workspaceScopeId, agentTypeId)
+      const backend = backendFor(claim.workspaceScopeId, agentTypeId)
       return {
         key: `${claim.workspaceScopeId}:${agentTypeId}`,
         scope: { identity: 'shared-runtime' },
         environmentLease: { bundle: {}, release() {} },
         composition: {
-          service,
-          sessionStore: {
-            rename: async (_ctx: unknown, sessionId: string, title: string) => service.rename(sessionId, title),
-          },
+          backend,
         },
       }
     },
@@ -308,25 +385,30 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
     issueScope,
     revoke(scope) { revoked.add(scope as object) },
     setActivity(ref: AgentSessionRef, activity: AgentSessionActivity) {
-      for (const [key, service] of services) {
-        if (!key.endsWith(`:${ref.agentTypeId}`) || !service.records.has(ref.sessionId)) continue
+      for (const [key, backend] of backends) {
+        if (!key.endsWith(`:${ref.agentTypeId}`)) continue
         const workspaceScopeId = key.slice(0, -(ref.agentTypeId.length + 1))
-        service.setActivity(ref.sessionId, activity)
+        if (!backend.hasSession(workspaceScopeId, ref.sessionId)) continue
+        backend.setActivity(workspaceScopeId, ref.sessionId, activity)
         embedded.setActivityForTesting(workspaceScopeId, ref, activity)
       }
     },
     moveSession(ref, updatedAt) {
-      for (const service of services.values()) if (service.records.has(ref.sessionId)) service.move(ref.sessionId, updatedAt)
+      for (const [key, backend] of backends) {
+        if (!key.endsWith(`:${ref.agentTypeId}`)) continue
+        const workspaceScopeId = key.slice(0, -(ref.agentTypeId.length + 1))
+        if (backend.hasSession(workspaceScopeId, ref.sessionId)) backend.move(workspaceScopeId, ref.sessionId, updatedAt)
+      }
     },
     rejectNextPrompt(error) {
-      for (const service of services.values()) service.nextPromptError = error
+      for (const backend of backends.values()) backend.nextPromptError = error
     },
     disableArchiveCapability() {
       Reflect.deleteProperty(runtime, 'setSessionArchived')
     },
     modelLoopStarts(ref) {
-      for (const service of services.values()) {
-        const record = service.records.get(ref.sessionId)
+      for (const backend of backends.values()) {
+        const record = [...backend.records.values()].find((candidate) => candidate.id === ref.sessionId)
         if (record) return record.events.filter((event) => event.type === 'agent-start').length
       }
       return 0

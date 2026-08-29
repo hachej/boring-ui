@@ -9,7 +9,6 @@ import type { AgentTool } from '../../shared/tool'
 import type { SessionStore } from '../../shared/session'
 import { withPiHarnessDefaults, type ResolvedPiHarnessOptions } from '../harness/pi-coding-agent/createHarness'
 import { parseEncodedModelSelection } from '../models/modelConfig'
-import { HarnessPiChatService } from '../pi-chat/harnessPiChatService'
 import type { ReadyStatusTracker } from '../runtime/readyStatus'
 import { createRuntimeReadyStatusTracker } from '../runtime/modeReadiness'
 import { getOptionalRuntimeBundleStorageRoot, type RuntimeBundle, type RuntimeFilesystemBinding } from '../runtime/mode'
@@ -27,6 +26,8 @@ import {
 import type { EnvironmentProvisioningSnapshot } from './environmentLease'
 import { sessionNamespaceForAgent } from './sessionInventory'
 import { locateHostWorkspaceSkill, projectRuntimeSkillPathToHost } from './skillPathProjection'
+import type { AgentHarnessBackend } from './harnessBackend/types'
+import { createPiSessionHarnessBackend } from './harnessBackend/piSessionHarnessBackend'
 
 /**
  * Flag-gated durable event streaming. When set (`1`/`true`), production
@@ -132,7 +133,7 @@ export interface BuildAgentCompositionInput {
 export interface BuiltAgentComposition {
   readonly harness: AgentHarness
   readonly sessionStore: SessionStore
-  readonly service: HarnessPiChatService
+  readonly backend: AgentHarnessBackend
   readonly tools: readonly AgentTool[]
   readonly pi: ResolvedPiHarnessOptions
   readonly runtimeBundle: RuntimeBundle
@@ -315,7 +316,7 @@ export async function buildAgentComposition(
         telemetry: options.telemetry,
       })
     : undefined
-  const service = new HarnessPiChatService({
+  const backend = createPiSessionHarnessBackend({
     harness,
     sessionStore,
     workdir: runtimeBundle.workspace.root,
@@ -331,13 +332,13 @@ export async function buildAgentComposition(
   return {
     harness,
     sessionStore,
-    service,
+    backend,
     tools,
     pi,
     runtimeBundle,
     readyTracker,
     dispose() {
-      disposed ??= service.dispose().finally(() => durableEventStore?.close())
+      disposed ??= backend.close().finally(() => durableEventStore?.close())
       return disposed
     },
   }
