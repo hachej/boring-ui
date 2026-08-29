@@ -33,6 +33,38 @@ const execRequest: RemoteWorkerExecRequestV1 = {
   timeoutMs: 30_000,
   maxOutputBytes: 1024,
 };
+const secretRequest: RemoteWorkerExecRequestV1 = {
+  ...execRequest,
+  credentialRefs: [
+    {
+      deliveryAttemptId: "delivery-a",
+      ref: {
+        contractVersion: "boring.provider-credential-ref.v1",
+        providerId: "provider-a",
+        executionId: "invocation-a",
+        bindingId: "tool-a",
+      },
+      fields: [{ name: "TOOL_API_KEY", fieldId: "api-key" }],
+    },
+  ],
+};
+
+function secretFieldsWithoutLeases(): RunscInvocationCredentialResolverV1 {
+  return {
+    contractVersion: "boring.runsc-invocation-credential-resolver.v1",
+    resolve: vi.fn(async () => ({
+      fields: [
+        {
+          bindingId: "tool-a",
+          fieldId: "api-key",
+          name: "TOOL_API_KEY",
+          value: new TextEncoder().encode("secret"),
+        },
+      ],
+      leases: [],
+    })),
+  };
+}
 
 function success(stdout: unknown = ""): DockerCommandResult {
   return {
@@ -148,37 +180,8 @@ describe("runsc explicit-dispose operation ownership", () => {
         return success("container-id\n");
       }),
     } satisfies DockerCommandRunner & { run: ReturnType<typeof vi.fn> };
-    const invocationCredentials: RunscInvocationCredentialResolverV1 = {
-      contractVersion: "boring.runsc-invocation-credential-resolver.v1",
-      resolve: vi.fn(async () => ({
-        fields: [
-          {
-            bindingId: "tool-a",
-            fieldId: "api-key",
-            name: "TOOL_API_KEY",
-            value: new TextEncoder().encode("secret"),
-          },
-        ],
-        leases: [],
-      })),
-    };
-    const sessions = testRuntime(runner, invocationCredentials);
+    const sessions = testRuntime(runner, secretFieldsWithoutLeases());
     await sessions.create(createInput);
-    const secretRequest: RemoteWorkerExecRequestV1 = {
-      ...execRequest,
-      credentialRefs: [
-        {
-          deliveryAttemptId: "delivery-a",
-          ref: {
-            contractVersion: "boring.provider-credential-ref.v1",
-            providerId: "provider-a",
-            executionId: "invocation-a",
-            bindingId: "tool-a",
-          },
-          fields: [{ name: "TOOL_API_KEY", fieldId: "api-key" }],
-        },
-      ],
-    };
 
     const execution = sessions.exec(
       "sandbox-a",
@@ -201,6 +204,116 @@ describe("runsc explicit-dispose operation ownership", () => {
         ([input]) => commandMode(input as DockerCommandInput) === "workspace",
       ),
     ).toHaveLength(1);
+  });
+
+  test("replaces a timed-out secret container when resolved fields have no lease handles", async () => {
+    let runCalls = 0;
+    let removeCalls = 0;
+    const modes: string[] = [];
+    const runner = {
+      run: vi.fn(async (input: DockerCommandInput) => {
+        const mode = commandMode(input);
+        modes.push(mode);
+        if (mode === "ps") return success("");
+        if (mode === "workspace") {
+          const request = JSON.parse(new TextDecoder().decode(input.stdin));
+          return success(request.op === "probe" ? { openat2: true } : { ok: true });
+        }
+        if (mode === "invoke") {
+          return success({ ...helperResult(), timedOut: true, exitCode: 124 });
+        }
+        if (mode === "run") runCalls += 1;
+        if (mode === "rm") removeCalls += 1;
+        return success("container-id\n");
+      }),
+    } satisfies DockerCommandRunner & { run: ReturnType<typeof vi.fn> };
+    const sessions = testRuntime(runner, secretFieldsWithoutLeases());
+    await sessions.create(createInput);
+
+    await expect(
+      sessions.exec(
+        "sandbox-a",
+        workspaceId,
+        secretRequest,
+        undefined,
+        {} as AuthorizedWorkspaceCredentialScopeV1,
+      ),
+    ).rejects.toMatchObject({ code: REMOTE_WORKER_ERROR_CODES_V1.timeout });
+
+    expect(runCalls).toBe(3);
+    expect(removeCalls).toBe(2);
+    expect(modes).toEqual([
+      "run",
+      "workspace",
+      "rm",
+      "run",
+      "workspace",
+      "invoke",
+      "rm",
+      "run",
+      "workspace",
+    ]);
+    await expect(
+      sessions.fs("sandbox-a", workspaceId, {
+        op: "mkdir",
+        path: "after-secret-replacement",
+        recursive: true,
+      }),
+    ).resolves.toEqual({ ok: true });
+    expect(modes.at(-1)).toBe("workspace");
+    await sessions.dispose("sandbox-a", workspaceId);
+  });
+
+  test("retires a timed-out secret container when clean replacement fails", async () => {
+    let runCalls = 0;
+    let removeCalls = 0;
+    let workspaceCalls = 0;
+    const runner = {
+      run: vi.fn(async (input: DockerCommandInput) => {
+        const mode = commandMode(input);
+        if (mode === "ps") return success("");
+        if (mode === "workspace") {
+          workspaceCalls += 1;
+          return success({ openat2: true });
+        }
+        if (mode === "invoke") {
+          return success({ ...helperResult(), timedOut: true, exitCode: 124 });
+        }
+        if (mode === "run" && ++runCalls === 3) {
+          return { ...success(), exitCode: 1 };
+        }
+        if (mode === "rm") removeCalls += 1;
+        return success("container-id\n");
+      }),
+    } satisfies DockerCommandRunner & { run: ReturnType<typeof vi.fn> };
+    const sessions = testRuntime(runner, secretFieldsWithoutLeases());
+    await sessions.create(createInput);
+
+    await expect(
+      sessions.exec(
+        "sandbox-a",
+        workspaceId,
+        secretRequest,
+        undefined,
+        {} as AuthorizedWorkspaceCredentialScopeV1,
+      ),
+    ).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+    });
+
+    expect(runCalls).toBe(3);
+    expect(removeCalls).toBe(3);
+    expect(workspaceCalls).toBe(2);
+    await expect(
+      sessions.fs("sandbox-a", workspaceId, {
+        op: "mkdir",
+        path: "must-not-run",
+        recursive: true,
+      }),
+    ).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.sandboxNotFound,
+    });
+    expect(workspaceCalls).toBe(2);
   });
 
   test("does not start abort recovery after dispose marks an in-flight invocation", async () => {

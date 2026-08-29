@@ -393,7 +393,6 @@ export class RunscSessionRuntimeV1 {
             )
           : { fields: [], leases: [] };
       credentialLeases = resolved.leases;
-      secretExecutionStarted = resolved.leases.length > 0;
       this.requireOperationOwner(record);
       envelope = prepareInvocationEnvelopeV1({
         workspaceId: record.workspaceId,
@@ -402,6 +401,7 @@ export class RunscSessionRuntimeV1 {
       });
       if (envelope.secretBearing) await this.replaceContainer(record, true);
       this.requireOperationOwner(record);
+      secretExecutionStarted = envelope.secretBearing;
       const result = await this.runInvocation(record, envelope, signal);
       this.requireOperationOwner(record);
       if (envelope.secretBearing) {
