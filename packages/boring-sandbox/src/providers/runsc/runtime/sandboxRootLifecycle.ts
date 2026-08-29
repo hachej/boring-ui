@@ -15,6 +15,7 @@ export interface RunscSandboxRootLifecycleOptionsV1 {
   readonly sandboxRoot: string; readonly trustedOwnerUid?: number;
   readonly prepareOwnership?: (path: string) => void | Promise<void>;
   readonly removeSandboxRoot?: (path: string) => void | Promise<void>;
+  readonly removeWorkspaceRoot?: (path: string) => void | Promise<void>;
 }
 function invalidRoot(message: string, cause?: unknown): never {
   throw runscRuntimeError(REMOTE_WORKER_ERROR_CODES_V1.pathUnsafe, message, cause); }
@@ -61,7 +62,7 @@ export class RunscSandboxRootLifecycleV1 {
     this.pendingRoots.set(sandboxRoot, pending);
     let workspaceReady = false;
     try {
-      pending.workspaceCreated = await this.ensureWorkspace(workspace, workspaceRoot, quota);
+      await this.ensureWorkspace(workspace, workspaceRoot, quota, pending);
       workspaceReady = true;
       await mkdir(sandboxRoot, { mode: 0o770 });
       pending.created = true;
@@ -74,12 +75,16 @@ export class RunscSandboxRootLifecycleV1 {
       return source;
     } catch (error) {
       if (!workspaceReady) {
-        this.pendingRoots.delete(sandboxRoot);
+        if (!pending.workspaceCreated) this.pendingRoots.delete(sandboxRoot);
+        else try { await this.cleanupPendingRoot(pending); }
+          catch (cleanupError) { throw runscRuntimeError(REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+            "remote-worker sandbox root cleanup is incomplete", cleanupError); }
         throw error;
       }
       if (!pending.created) {
-        this.pendingRoots.delete(sandboxRoot);
-        if (pending.workspaceCreated) await this.removeEmptyWorkspace(workspace, workspaceRoot);
+        try { await this.cleanupPendingRoot(pending); }
+        catch (cleanupError) { throw runscRuntimeError(REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+          "remote-worker sandbox root cleanup is incomplete", cleanupError); }
         invalidRoot("remote-worker sandbox root could not be prepared", error);
       }
       try {
@@ -95,7 +100,7 @@ export class RunscSandboxRootLifecycleV1 {
     let cleaned = 0;
     let firstFailure: unknown;
     for (const pending of [...this.pendingRoots.values()]) {
-      if (!pending.created) continue;
+      if (!pending.created && !pending.workspaceCreated) continue;
       try {
         await this.cleanupPendingRoot(pending);
         cleaned += 1;
@@ -173,37 +178,43 @@ export class RunscSandboxRootLifecycleV1 {
   }
   private async cleanupPendingRoot(pending: PendingRoot): Promise<void> {
     await this.assertTrustedRoot();
-    await this.assertExactDirectory(pending.workspaceRoot, true);
-    try {
+    try { await this.assertExactDirectory(pending.workspaceRoot, true); }
+    catch (error) {
+      if (!errorCode(error, "ENOENT")) throw error;
+      this.readyWorkspaces.delete(pending.workspace);
+      this.pendingRoots.delete(pending.sandboxRoot);
+      return;
+    }
+    if (pending.created) try {
       await this.assertExactDirectory(pending.sandboxRoot, false);
       await this.removeSandboxRoot(pending.sandboxRoot);
     } catch (error) {
       if (!errorCode(error, "ENOENT")) throw error;
     }
-    this.pendingRoots.delete(pending.sandboxRoot);
     if (pending.workspaceCreated) {
       await this.removeEmptyWorkspace(pending.workspace, pending.workspaceRoot);
     }
+    this.pendingRoots.delete(pending.sandboxRoot);
   }
   private async removeSandboxRoot(path: string): Promise<void> {
     if (this.options.removeSandboxRoot) await this.options.removeSandboxRoot(path);
     else await rm(path, { recursive: true, force: true });
   }
   private async ensureWorkspace(
-    workspace: string, workspaceRoot: string, quota: QuotaManager,
-  ): Promise<boolean> {
+    workspace: string, workspaceRoot: string, quota: QuotaManager, pending: PendingRoot,
+  ): Promise<void> {
     const existing = this.workspaceInflight.get(workspace);
     if (existing) {
       await existing;
       await quota.check(workspace);
-      return false;
+      return;
     }
     let created = false;
     const operation = (async () => {
       if (!this.readyWorkspaces.has(workspace)) {
         try {
           await mkdir(workspaceRoot, { mode: 0o750 });
-          created = true;
+          created = true; pending.workspaceCreated = true;
         } catch (error) {
           if (!errorCode(error, "EEXIST")) throw error;
         }
@@ -219,9 +230,7 @@ export class RunscSandboxRootLifecycleV1 {
     this.workspaceInflight.set(workspace, operation);
     try {
       await operation;
-      return created;
     } catch (error) {
-      if (created) await this.removeEmptyWorkspace(workspace, workspaceRoot);
       throw error;
     } finally {
       this.workspaceInflight.delete(workspace);
@@ -229,10 +238,12 @@ export class RunscSandboxRootLifecycleV1 {
   }
   private async removeEmptyWorkspace(workspace: string, workspaceRoot: string): Promise<void> {
     try {
-      await rmdir(workspaceRoot);
+      if (this.options.removeWorkspaceRoot) await this.options.removeWorkspaceRoot(workspaceRoot);
+      else await rmdir(workspaceRoot);
       this.readyWorkspaces.delete(workspace);
-    } catch {
-      // A concurrent sibling owns the workspace parent.
+    } catch (error) {
+      if (errorCode(error, "ENOENT")) this.readyWorkspaces.delete(workspace);
+      else if (!errorCode(error, "ENOTEMPTY") && !errorCode(error, "EEXIST")) throw error;
     }
   }
   private async assertTrustedRoot(): Promise<void> {

@@ -107,10 +107,12 @@ function runtime(options: {
     check(workspaceId: string): Promise<void>;
   };
   readonly runtimeIdFactory?: () => string;
+  readonly runner?: DockerCommandRunner;
+  readonly now?: () => number;
 } = {}) {
   let id = 0;
   return new RunscSessionRuntimeV1({
-    runner: fakeRunner(),
+    runner: options.runner ?? fakeRunner(),
     quota: options.quota ?? {
       ...(options.roots ? { workspaceRoot: options.roots.sandboxRoot } : {}),
       apply: vi.fn(async () => undefined),
@@ -119,6 +121,7 @@ function runtime(options: {
     runtimeIdFactory:
       options.runtimeIdFactory ?? (() => (++id).toString(16).padStart(32, "0")),
     sandboxRoots: options.roots,
+    ...(options.now ? { now: options.now } : {}),
     ...(options.admitted === undefined
       ? {}
       : { multiSandboxRootsAdmitted: options.admitted }),
@@ -156,6 +159,57 @@ describe("runsc multi-root and legacy compatibility", () => {
     },
   );
 
+  test("exposes distinct legacy and qualified composite create gates", async () => {
+    const roots = multiSandboxRoots();
+    const dormant = runtime({ roots, admitted: false });
+    expect(() => dormant.create(createInput)).toThrowError(
+      expect.objectContaining({ code: REMOTE_WORKER_ERROR_CODES_V1.requestInvalid }),
+    );
+    expect(() => dormant.createComposite(createInput)).toThrowError(
+      expect.objectContaining({ code: REMOTE_WORKER_ERROR_CODES_V1.unqualified }),
+    );
+    const legacy = runtime();
+    expect(() => legacy.createComposite(createInput)).toThrowError(
+      expect.objectContaining({ code: REMOTE_WORKER_ERROR_CODES_V1.unqualified }),
+    );
+  });
+
+  test("starts composite deadlines after delayed quota and container setup", async () => {
+    let nowMs = 100;
+    let releaseQuota: (() => void) | undefined;
+    let releaseRun: (() => void) | undefined;
+    const quotaGate = new Promise<void>((resolve) => { releaseQuota = resolve; });
+    const runGate = new Promise<void>((resolve) => { releaseRun = resolve; });
+    const roots = multiSandboxRoots();
+    const docker = fakeRunner();
+    const originalRun = docker.run.getMockImplementation() as (
+      input: DockerCommandInput,
+    ) => Promise<DockerCommandResult>;
+    docker.run.mockImplementation(async (input) => {
+      if (input.argv[0] === "run") await runGate;
+      return await originalRun(input);
+    });
+    const apply = vi.fn(async () => await quotaGate);
+    const sessions = runtime({
+      roots, admitted: true, runner: docker, now: () => nowMs,
+      quota: { workspaceRoot: roots.sandboxRoot, apply, check: vi.fn() },
+    });
+    const creating = sessions.createComposite({
+      ...createInput, idleTtlMs: 1_000, hardLifetimeMs: 5_000,
+    });
+    await vi.waitFor(() => expect(apply).toHaveBeenCalledTimes(1));
+    nowMs = 500; releaseQuota?.();
+    await vi.waitFor(() => expect(docker.run).toHaveBeenCalledWith(
+      expect.objectContaining({ argv: expect.arrayContaining(["run"]) }),
+    ));
+    nowMs = 900; releaseRun?.();
+    await expect(creating).resolves.toEqual({
+      sandboxId: "sandbox-a", leaseExpiresAtMs: 1_900,
+      hardExpiresAtMs: 5_900, newlyAllocated: true,
+    });
+    await sessions.dispose("sandbox-a", workspaceId);
+  });
+
   test("validates runtime identity before preparing a lease root", async () => {
     const roots = multiSandboxRoots();
     let validRuntimeId = false;
@@ -166,14 +220,14 @@ describe("runsc multi-root and legacy compatibility", () => {
         validRuntimeId ? "1".repeat(32) : "invalid-runtime-id",
     });
 
-    await expect(sessions.create(createInput)).rejects.toMatchObject({
+    await expect(sessions.createComposite(createInput)).rejects.toMatchObject({
       code: REMOTE_WORKER_ERROR_CODES_V1.configInvalid,
     });
     expect(roots.prepare).not.toHaveBeenCalled();
     expect(roots.dispose).not.toHaveBeenCalled();
 
     validRuntimeId = true;
-    await expect(sessions.create(createInput)).resolves.toMatchObject({
+    await expect(sessions.createComposite(createInput)).resolves.toMatchObject({
       newlyAllocated: true,
     });
     await sessions.dispose("sandbox-a", workspaceId);
@@ -183,8 +237,8 @@ describe("runsc multi-root and legacy compatibility", () => {
 
   test("keys same-named sandboxes and create replays by authorized workspace", async () => {
     const sessions = runtime({ roots: multiSandboxRoots(), admitted: true });
-    await sessions.create(createInput);
-    await sessions.create({ ...createInput, workspaceId: secondWorkspaceId });
+    await sessions.createComposite(createInput);
+    await sessions.createComposite({ ...createInput, workspaceId: secondWorkspaceId });
 
     await sessions.dispose("sandbox-a", workspaceId);
     await expect(
@@ -288,8 +342,8 @@ describe("runsc multi-root and legacy compatibility", () => {
       admitted: true,
       quota: { workspaceRoot: roots.sandboxRoot, apply, check },
     });
-    const first = sessions.create(createInput);
-    const second = sessions.create({
+    const first = sessions.createComposite(createInput);
+    const second = sessions.createComposite({
       ...createInput,
       sandboxId: "sandbox-b",
       clientLeaseId: "lease-b",
@@ -299,6 +353,34 @@ describe("runsc multi-root and legacy compatibility", () => {
     await expect(Promise.all([first, second])).resolves.toHaveLength(2);
     expect(apply.mock.calls).toEqual([[workspaceId]]);
     expect(check.mock.calls).toEqual([[workspaceId]]);
+  });
+
+  test("coalesces concurrent failed shutdown cleanup before one retry", async () => {
+    const roots = multiSandboxRoots();
+    let releaseClose: (() => void) | undefined;
+    const closeGate = new Promise<void>((resolve) => { releaseClose = resolve; });
+    let closeAttempts = 0;
+    vi.mocked(roots.close).mockImplementation(async () => {
+      closeAttempts += 1;
+      if (closeAttempts === 1) {
+        await closeGate;
+        throw Object.assign(new Error("cleanup pending"), {
+          code: REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+        });
+      }
+    });
+    const sessions = runtime({ roots, admitted: true });
+    await sessions.createComposite(createInput);
+    const first = sessions.shutdown();
+    const second = sessions.shutdown();
+    await vi.waitFor(() => expect(roots.close).toHaveBeenCalledTimes(1));
+    releaseClose?.();
+    const outcomes = await Promise.allSettled([first, second]);
+    expect(outcomes.map(({ status }) => status)).toEqual(["rejected", "rejected"]);
+    expect(roots.dispose).toHaveBeenCalledTimes(1);
+    await expect(sessions.shutdown()).resolves.toBeUndefined();
+    expect(roots.close).toHaveBeenCalledTimes(2);
+    expect(roots.dispose).toHaveBeenCalledTimes(1);
   });
 
   test("retries root lifecycle shutdown until pending cleanup converges", async () => {
@@ -314,7 +396,7 @@ describe("runsc multi-root and legacy compatibility", () => {
       }
     });
     const sessions = runtime({ roots, admitted: true });
-    await sessions.create(createInput);
+    await sessions.createComposite(createInput);
     await expect(sessions.shutdown()).rejects.toMatchObject({
       code: REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
     });
@@ -326,7 +408,7 @@ describe("runsc multi-root and legacy compatibility", () => {
     const roots = multiSandboxRoots();
     const sessions = runtime({ roots, admitted: true });
     expect(() =>
-      sessions.create({
+      sessions.createComposite({
         ...createInput,
         workspaceId: aliasWorkspaceId.toUpperCase(),
       }),
@@ -335,7 +417,7 @@ describe("runsc multi-root and legacy compatibility", () => {
     }));
     expect(roots.prepare).not.toHaveBeenCalled();
 
-    await sessions.create(createInput);
+    await sessions.createComposite(createInput);
     await expect(sessions.fs("sandbox-a", mkdirRequest)).rejects.toMatchObject({
       code: REMOTE_WORKER_ERROR_CODES_V1.requestInvalid,
     });

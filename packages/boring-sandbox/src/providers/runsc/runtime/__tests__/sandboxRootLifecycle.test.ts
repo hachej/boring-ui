@@ -4,6 +4,7 @@ import {
   readFile,
   rename,
   rm,
+  rmdir,
   symlink,
   writeFile,
 } from "node:fs/promises";
@@ -123,6 +124,57 @@ describe("runsc per-sandbox root lifecycle", () => {
       await expect(lstat(sandboxRoot)).rejects.toMatchObject({ code: "ENOENT" });
     },
   );
+
+  test("retains pending authority through ambiguous parent cleanup then ENOENT retry", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "boring-runsc-roots-"));
+    const root = join(parent, "sandboxes");
+    await mkdir(root, { mode: 0o750 });
+    let parentAttempts = 0;
+    const roots = new RunscSandboxRootLifecycleV1({
+      sandboxRoot: root,
+      prepareOwnership: async () => { throw new Error("ownership failed"); },
+      removeWorkspaceRoot: async (path) => {
+        parentAttempts += 1;
+        await rmdir(path);
+        if (parentAttempts === 1) throw new Error("parent response lost");
+      },
+      trustedOwnerUid: process.getuid?.() ?? 0,
+    });
+    const quota = {
+      workspaceRoot: root,
+      apply: vi.fn(async () => undefined), check: vi.fn(async () => undefined),
+    };
+    await expect(roots.prepare(workspaceA, "sandbox-a", quota)).rejects.toMatchObject({
+      code: "REMOTE_WORKER_INCOMPLETE_CLEANUP",
+    });
+    await expect(lstat(join(root, workspaceA, "sandbox-a"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(roots.retryPendingCleanup()).resolves.toBe(1);
+    expect(parentAttempts).toBe(1);
+  });
+
+  test("converges when an owned parent is already absent", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "boring-runsc-roots-"));
+    const root = join(parent, "sandboxes");
+    await mkdir(root, { mode: 0o750 });
+    const roots = new RunscSandboxRootLifecycleV1({
+      sandboxRoot: root,
+      prepareOwnership: async () => { throw new Error("ownership failed"); },
+      removeWorkspaceRoot: async (path) => {
+        await rmdir(path);
+        throw Object.assign(new Error("already absent"), { code: "ENOENT" });
+      },
+      trustedOwnerUid: process.getuid?.() ?? 0,
+    });
+    const quota = {
+      workspaceRoot: root,
+      apply: vi.fn(async () => undefined), check: vi.fn(async () => undefined),
+    };
+    await expect(roots.prepare(workspaceA, "sandbox-a", quota)).rejects.toMatchObject({
+      code: "REMOTE_WORKER_PATH_UNSAFE",
+    });
+    await expect(roots.retryPendingCleanup()).resolves.toBe(0);
+    await expect(lstat(join(root, workspaceA))).rejects.toMatchObject({ code: "ENOENT" });
+  });
 
   test("converges when retry observes ENOENT after an after-effect removal failure", async () => {
     const parent = await mkdtemp(join(tmpdir(), "boring-runsc-roots-"));

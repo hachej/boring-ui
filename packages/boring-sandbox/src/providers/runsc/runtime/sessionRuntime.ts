@@ -76,7 +76,7 @@ export interface CreateRunscSessionInputV1 {
   readonly workspaceMountSource: TrustedWorkspaceMountSource;
   readonly image: string; readonly idleTtlMs?: number; readonly hardLifetimeMs?: number;
 }
-export interface CreateMultiRootRunscSessionInputV1 {
+export interface CreateCompositeRunscSessionInputV1 {
   readonly sandboxId?: string; readonly clientLeaseId: string;
   readonly createDigest?: `sha256:${string}`; readonly workspaceId: string;
   readonly workspaceMountSource?: TrustedWorkspaceMountSource;
@@ -86,11 +86,11 @@ export interface RunscSessionLeaseV1 {
   readonly sandboxId: string; readonly leaseExpiresAtMs: number;
   readonly hardExpiresAtMs: number;
 }
-export interface MultiRootRunscSessionLeaseV1 extends RunscSessionLeaseV1 {
+export interface CompositeRunscSessionLeaseV1 extends RunscSessionLeaseV1 {
   readonly newlyAllocated: boolean;
 }
-type AnyCreateInputV1 = CreateRunscSessionInputV1 | CreateMultiRootRunscSessionInputV1;
-type AnySessionLeaseV1 = RunscSessionLeaseV1 | MultiRootRunscSessionLeaseV1;
+type AnyCreateInputV1 = CreateRunscSessionInputV1 | CreateCompositeRunscSessionInputV1;
+type AnySessionLeaseV1 = RunscSessionLeaseV1 | CompositeRunscSessionLeaseV1;
 interface InvocationRecordV1 {
   readonly digest: `sha256:${string}`;
   state: "running" | "complete" | "secret-terminal"; result?: RemoteWorkerExecResponseV1;
@@ -100,7 +100,7 @@ interface SessionRecordV1 {
   readonly createDigest: `sha256:${string}`; readonly workspaceId: string;
   readonly workspaceMountSource: TrustedWorkspaceMountSource;
   readonly ownsWorkspaceMountSource: boolean; readonly image: string;
-  readonly createdAtMs: number; readonly hardExpiresAtMs: number;
+  createdAtMs: number; hardExpiresAtMs: number;
   readonly idleTtlMs: number; runtimeId: string; leaseExpiresAtMs: number;
   timer: ReturnType<typeof setTimeout>;
   activeExec: boolean; activeFs: boolean;
@@ -137,6 +137,7 @@ export class RunscSessionRuntimeV1 {
   private activeExecs = 0;
   private closed = false;
   private shutdownComplete = false;
+  private shutdownOperation?: Promise<void>;
   constructor(private readonly options: RunscSessionRuntimeOptionsV1) {
     this.workspace = new RunscWorkspaceHelperClientV1(options.runner);
     this.retirement = new RunscSessionRetirementManagerV1({
@@ -197,36 +198,37 @@ export class RunscSessionRuntimeV1 {
     }
     await this.options.sandboxRoots?.startupSweep();
   }
-  create(input: CreateRunscSessionInputV1): Promise<RunscSessionLeaseV1>;
-  create(
-    input: CreateMultiRootRunscSessionInputV1,
-  ): Promise<MultiRootRunscSessionLeaseV1>;
-  create(input: AnyCreateInputV1): Promise<AnySessionLeaseV1> {
-    if (this.closed) this.unavailable();
-    if (this.options.sandboxRoots && !this.supportsMultiSandboxRoots) {
+  create(input: CreateRunscSessionInputV1): Promise<RunscSessionLeaseV1> {
+    if (this.options.sandboxRoots) this.compositeAuthorityRequired();
+    return this.createForMode(input, false) as Promise<RunscSessionLeaseV1>;
+  }
+  createComposite(
+    input: CreateCompositeRunscSessionInputV1,
+  ): Promise<CompositeRunscSessionLeaseV1> {
+    if (!this.supportsMultiSandboxRoots) {
       throw runscRuntimeError(
         REMOTE_WORKER_ERROR_CODES_V1.unqualified,
         "remote-worker multi-root runtime is not admitted",
       );
     }
-    return this.state.create(
-      input,
-      this.supportsMultiSandboxRoots,
-      this.maxConcurrentCreates,
-      (normalized, digest) => this.track(this.createNew(normalized, digest)),
-    );
+    return this.createForMode(input, true) as Promise<CompositeRunscSessionLeaseV1>;
+  }
+  private createForMode(input: AnyCreateInputV1, multiRoot: boolean): Promise<AnySessionLeaseV1> {
+    if (this.closed) this.unavailable();
+    return this.state.create(input, multiRoot, this.maxConcurrentCreates,
+      (normalized, digest) => this.track(this.createNew(normalized, digest, multiRoot)));
   }
   private async createNew(
     input: AnyCreateInputV1,
     digest: `sha256:${string}`,
+    multiRoot: boolean,
   ): Promise<AnySessionLeaseV1> {
     const sandboxId = safeOpaqueId(
       input.sandboxId ?? this.sandboxIdFactory(),
       "sandbox id",
     );
-    const sessionKey = this.supportsMultiSandboxRoots
-      ? compositeSessionKey(input.workspaceId, sandboxId)
-      : sandboxId;
+    const sessionKey = multiRoot
+      ? compositeSessionKey(input.workspaceId, sandboxId) : sandboxId;
     if (this.state.sessions.has(sessionKey)) this.idempotencyConflict();
     const idleTtlMs = boundedPositiveInteger(
       input.idleTtlMs ?? RUNSC_RUNTIME_LIMITS_V1.idleTtlMs,
@@ -240,7 +242,6 @@ export class RunscSessionRuntimeV1 {
     );
     // All host-supplied identity factories run before a lease-owned root exists.
     const runtimeId = this.nextRuntimeId();
-    const createdAtMs = this.now();
     const timer = setTimeout(() => undefined, 1);
     clearTimeout(timer);
     let workspaceMountSource: TrustedWorkspaceMountSource | undefined;
@@ -269,14 +270,11 @@ export class RunscSessionRuntimeV1 {
       workspaceMountSource,
       ownsWorkspaceMountSource: this.options.sandboxRoots !== undefined,
       image: input.image,
-      createdAtMs,
-      hardExpiresAtMs: createdAtMs + hardLifetimeMs,
+      createdAtMs: 0,
+      hardExpiresAtMs: 0,
       idleTtlMs,
       runtimeId,
-      leaseExpiresAtMs: Math.min(
-        createdAtMs + idleTtlMs,
-        createdAtMs + hardLifetimeMs,
-      ),
+      leaseExpiresAtMs: 0,
       timer,
       activeExec: false,
       activeFs: false,
@@ -285,6 +283,11 @@ export class RunscSessionRuntimeV1 {
     try {
       await this.startContainer(record);
       if (this.closed) this.unavailable();
+      record.createdAtMs = this.now();
+      record.hardExpiresAtMs = record.createdAtMs + hardLifetimeMs;
+      record.leaseExpiresAtMs = Math.min(
+        record.createdAtMs + idleTtlMs, record.hardExpiresAtMs,
+      );
       this.state.bind(record);
       this.armTimer(record);
     } catch (error) {
@@ -554,26 +557,27 @@ export class RunscSessionRuntimeV1 {
   async shutdown(): Promise<void> {
     if (this.shutdownComplete) return;
     this.closed = true;
+    const existing = this.shutdownOperation;
+    if (existing) return await existing;
+    const operation = this.shutdownOnce();
+    this.shutdownOperation = operation;
+    try { await operation; this.shutdownComplete = true; }
+    finally { this.shutdownOperation = undefined; }
+  }
+  private async shutdownOnce(): Promise<void> {
     for (const record of this.state.sessions.values()) clearTimeout(record.timer);
-    const drain = Promise.allSettled([...this.pendingOperations]);
     await Promise.race([
-      drain,
-      new Promise<void>((resolve) =>
-        setTimeout(resolve, RUNSC_RUNTIME_LIMITS_V1.shutdownDrainMs),
-      ),
+      Promise.allSettled([...this.pendingOperations]),
+      new Promise<void>((resolve) => setTimeout(resolve, RUNSC_RUNTIME_LIMITS_V1.shutdownDrainMs)),
     ]);
-    const records = [...this.state.sessions.values()];
-    const cleanup = await Promise.allSettled(
-      records.map(async (record) => await this.retire(record, "shutdown")),
-    );
-    let rootFailure: unknown; try { await this.options.sandboxRoots?.close(); }
-    catch (error) { rootFailure = error; }
+    const cleanup = await Promise.allSettled([...this.state.sessions.values()]
+      .map(async (record) => await this.retire(record, "shutdown")));
+    let rootFailure: unknown;
+    try { await this.options.sandboxRoots?.close(); } catch (error) { rootFailure = error; }
     const failure = cleanup.find(
-      (result): result is PromiseRejectedResult => result.status === "rejected",
-    );
+      (result): result is PromiseRejectedResult => result.status === "rejected");
     if (failure) throw failure.reason;
     if (rootFailure) throw rootFailure;
-    this.shutdownComplete = true;
   }
   private async runInvocation(
     record: SessionRecordV1,

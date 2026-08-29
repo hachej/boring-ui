@@ -12,7 +12,9 @@ import type {
 } from "../dockerRunner";
 import {
   RunscSessionRuntimeV1,
+  type CreateCompositeRunscSessionInputV1,
   type CreateRunscSessionInputV1,
+  type CompositeRunscSessionLeaseV1,
   type RunscSessionLeaseV1,
   type RunscSessionRuntimeOptionsV1,
   type RunscSessionRetirementV1,
@@ -56,12 +58,22 @@ type LegacyRetirement = {
 const inputShape: Assert<Equal<CreateRunscSessionInputV1, LegacyInput>> = true;
 const leaseShape: Assert<Equal<RunscSessionLeaseV1, LegacyLease>> = true;
 const retirementShape: Assert<Equal<RunscSessionRetirementV1, LegacyRetirement>> = true;
+type LegacyCreateReturn = Assert<Equal<
+  ReturnType<RunscSessionRuntimeV1["create"]>, Promise<RunscSessionLeaseV1>
+>>;
+type CompositeCreateReturn = Assert<Equal<
+  ReturnType<RunscSessionRuntimeV1["createComposite"]>,
+  Promise<CompositeRunscSessionLeaseV1>
+>>;
+const compositeInput: CreateCompositeRunscSessionInputV1 = {
+  clientLeaseId: "lease-composite", workspaceId, image,
+};
 const callbackShape: NonNullable<RunscSessionRuntimeOptionsV1["onRetire"]> =
   async (_value: LegacyRetirement) => undefined;
-void inputShape;
-void leaseShape;
-void retirementShape;
-void callbackShape;
+const legacyCreateReturn: LegacyCreateReturn = true;
+const compositeCreateReturn: CompositeCreateReturn = true;
+void inputShape; void leaseShape; void retirementShape; void callbackShape;
+void legacyCreateReturn; void compositeCreateReturn; void compositeInput;
 
 function result(stdout: unknown = ""): DockerCommandResult {
   return {
@@ -101,6 +113,42 @@ function runtime(
 }
 
 describe("runsc legacy runtime compatibility", () => {
+  test("starts lease deadlines after delayed quota and container setup", async () => {
+    let nowMs = 100;
+    let releaseQuota: (() => void) | undefined;
+    let releaseRun: (() => void) | undefined;
+    const quotaGate = new Promise<void>((resolve) => { releaseQuota = resolve; });
+    const runGate = new Promise<void>((resolve) => { releaseRun = resolve; });
+    const docker = runner();
+    const originalRun = docker.run.getMockImplementation() as (
+      input: DockerCommandInput,
+    ) => Promise<DockerCommandResult>;
+    docker.run.mockImplementation(async (input) => {
+      if (input.argv[0] === "run") await runGate;
+      return await originalRun(input);
+    });
+    const apply = vi.fn(async () => await quotaGate);
+    const sessions = new RunscSessionRuntimeV1({
+      runner: docker,
+      quota: { apply, check: vi.fn(async () => undefined) },
+      now: () => nowMs,
+      runtimeIdFactory: () => "1".repeat(32),
+    });
+    const creating = sessions.create({
+      ...createInput, idleTtlMs: 1_000, hardLifetimeMs: 5_000,
+    });
+    await vi.waitFor(() => expect(apply).toHaveBeenCalledTimes(1));
+    nowMs = 500; releaseQuota?.();
+    await vi.waitFor(() => expect(docker.run).toHaveBeenCalledWith(
+      expect.objectContaining({ argv: expect.arrayContaining(["run"]) }),
+    ));
+    nowMs = 900; releaseRun?.();
+    await expect(creating).resolves.toEqual({
+      sandboxId: "sandbox-a", leaseExpiresAtMs: 1_900, hardExpiresAtMs: 5_900,
+    });
+    await sessions.dispose("sandbox-a");
+  });
+
   test("emits exact legacy lease and retirement payloads", async () => {
     const onRetire = vi.fn();
     const sessions = runtime(runner(), { onRetire });
