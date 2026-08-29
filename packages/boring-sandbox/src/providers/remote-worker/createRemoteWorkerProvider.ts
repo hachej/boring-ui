@@ -7,6 +7,7 @@ import {
 import {
   REMOTE_WORKER_ERROR_CODES_V1,
   REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1,
+  REMOTE_WORKER_MULTI_SANDBOX_ROOTS_CAPABILITY_V1,
   REMOTE_WORKER_MAX_CAPABILITY_LIFETIME_MS,
   REMOTE_WORKER_PROTOCOL_VERSION,
   REMOTE_WORKER_RUNTIME_CWD,
@@ -14,9 +15,12 @@ import {
   RemoteWorkerOpaqueIdSchemaV1,
   type RemoteWorkerBindingReceiptV1,
   type RemoteWorkerCreateRequestV1,
+  type RemoteWorkerCreateResponseV1,
 } from "../../shared/remoteWorkerProtocolV1";
 import {
+  DISPOSABLE_SANDBOX_PROVIDER_PROFILE_V1,
   SandboxProviderError,
+  type DisposableSandboxProviderV1,
   type SandboxProviderV1,
   type WorkspaceSandboxPairV1,
 } from "../../shared/providerV1";
@@ -75,6 +79,7 @@ export interface RemoteWorkerSandboxProviderV1 extends SandboxProviderV1 {
 }
 
 export interface RemoteWorkerSandboxProviderOptionsV1 {
+  leaseMode?: 'disposable';
   fleet: RemoteWorkerFleetConfigV1;
   capabilityIssuer: RemoteWorkerCapabilityIssuerV1;
   bindingReceiptVerifier: RemoteWorkerBindingReceiptVerifierV1;
@@ -151,12 +156,25 @@ async function deleteRemoteSandboxV1(
 }
 
 export function createRemoteWorkerSandboxProviderV1(
+  options: RemoteWorkerSandboxProviderOptionsV1 & { leaseMode: 'disposable' },
+): RemoteWorkerSandboxProviderV1 & DisposableSandboxProviderV1
+export function createRemoteWorkerSandboxProviderV1(
+  options: RemoteWorkerSandboxProviderOptionsV1,
+): RemoteWorkerSandboxProviderV1
+export function createRemoteWorkerSandboxProviderV1(
   options: RemoteWorkerSandboxProviderOptionsV1,
 ): RemoteWorkerSandboxProviderV1 {
   const fleet = parseRemoteWorkerFleetConfigV1(options.fleet, {
     allowInsecureLoopback: options.allowInsecureLoopback,
   });
   const providerConfigDigest = remoteWorkerFleetConfigDigestV1(fleet);
+  if (options.leaseMode === 'disposable' && fleet.workers.some((worker) =>
+    !(worker.requiredCapabilities ?? []).includes(REMOTE_WORKER_MULTI_SANDBOX_ROOTS_CAPABILITY_V1))) {
+    throw new SandboxProviderError(
+      REMOTE_WORKER_ERROR_CODES_V1.configInvalid,
+      'disposable remote-worker requires the qualified multi-sandbox root capability',
+    );
+  }
   const transport = options.transport;
   const now = options.now ?? Date.now;
   const idFactory = options.idFactory ?? randomUUID;
@@ -231,6 +249,14 @@ export function createRemoteWorkerSandboxProviderV1(
     providerId: "remote-worker",
     providerConfigDigest,
     capabilities: PROVIDER_CAPABILITIES["remote-worker"],
+    ...(options.leaseMode === 'disposable' ? {
+      disposableProfile: {
+        contractVersion: DISPOSABLE_SANDBOX_PROVIDER_PROFILE_V1,
+        resume: false as const,
+        publishedCleanupOwner: 'returned-pair' as const,
+        ambiguousCreate: 'correlated-reconciliation' as const,
+      },
+    } : {}),
     resolveRuntimeRoot() {
       return REMOTE_WORKER_RUNTIME_CWD;
     },
@@ -327,15 +353,16 @@ export function createRemoteWorkerSandboxProviderV1(
         }
 
         const requestDigest = remoteWorkerRequestDigestV1(request);
-        const createResponse = await client.create(request);
+        let createResponse: RemoteWorkerCreateResponseV1 | undefined;
         let provisionalDeleteConfirmed = false;
         let provisionalDeleteInFlight: Promise<void> | undefined;
         unpublishedCleanup = async (): Promise<void> => {
           if (provisionalDeleteConfirmed) return;
           if (provisionalDeleteInFlight) return await provisionalDeleteInFlight;
           const operation = (async () => {
+            createResponse ??= await client.create(request);
             const error = await deleteRemoteSandboxV1(
-              () => client.provisionalDelete(createResponse.sandboxId),
+              () => client.provisionalDelete(createResponse!.sandboxId),
               disposeAttempts,
             );
             if (error !== undefined) {
@@ -356,7 +383,27 @@ export function createRemoteWorkerSandboxProviderV1(
               provisionalDeleteInFlight = undefined;
           }
         };
-        unregisterUnpublished = registerCleanup(workspaceId, unpublishedCleanup);
+        if (options.leaseMode === 'disposable') {
+          unregisterUnpublished = registerCleanup(workspaceId, unpublishedCleanup);
+        }
+        try {
+          createResponse = await client.create(request);
+        } catch (error) {
+          const ambiguous = error instanceof SandboxProviderError && [
+            REMOTE_WORKER_ERROR_CODES_V1.timeout,
+            REMOTE_WORKER_ERROR_CODES_V1.unavailable,
+            REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+          ].includes(error.code as never);
+          if (!ambiguous) {
+            unregisterUnpublished?.();
+            unpublishedCleanup = undefined;
+            void client.close().catch(() => undefined);
+          }
+          throw error;
+        }
+        if (options.leaseMode !== 'disposable') {
+          unregisterUnpublished = registerCleanup(workspaceId, unpublishedCleanup);
+        }
         let receiptIsValid = false;
         try {
           receiptIsValid =
@@ -437,8 +484,10 @@ export function createRemoteWorkerSandboxProviderV1(
           }
         };
 
-        unregisterUnpublished();
-        unregisterPair = registerCleanup(workspaceId, dispose);
+        unregisterUnpublished?.();
+        if (options.leaseMode !== 'disposable') {
+          unregisterPair = registerCleanup(workspaceId, dispose);
+        }
         unpublishedCleanup = undefined;
 
         return {

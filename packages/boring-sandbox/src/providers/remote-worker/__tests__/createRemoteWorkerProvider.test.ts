@@ -14,6 +14,7 @@ import {
 } from "../../../shared/remoteWorkerProtocolV1";
 import { PROVIDER_CONTRACT_VERSION } from "../../../shared/providerMatrix";
 import { SandboxProviderError } from "../../../shared/providerV1";
+import { expectDisposableProviderProfile } from "../../__tests__/conformance/disposableProvider";
 import { createStaticSandboxProvidersV1 } from "../../static";
 import {
   createRemoteWorkerSandboxProviderV1,
@@ -240,6 +241,28 @@ function providerOptions(
 }
 
 describe("remote-worker SandboxProviderV1 placement binding", () => {
+  test("requires qualified multi-root placement for disposable mode", async () => {
+    const unavailable = new FakeTransport();
+    expect(() => createRemoteWorkerSandboxProviderV1({
+      ...providerOptions(unavailable), leaseMode: 'disposable',
+    })).toThrow('requires the qualified multi-sandbox root capability');
+    expect(unavailable.requests).toHaveLength(0);
+
+    const transport = new FakeTransport();
+    transport.advertiseMultiSandboxRoots = true;
+    const provider = createRemoteWorkerSandboxProviderV1({
+      ...providerOptions(transport, [], true), leaseMode: 'disposable',
+    });
+    expectDisposableProviderProfile(provider, 'remote-worker');
+    const pair = await provider.create({
+      workspaceRoot: '/unused', workspaceId: 'workspace-a',
+      sessionId: 'session-a', requestId: 'request-a',
+    });
+    await pair.dispose();
+    await provider.close?.();
+    expect(transport.requests.filter((request) => request.method === 'DELETE')).toHaveLength(1);
+  });
+
   test("acquires one receipt-bound pair and performs lifecycle operations", async () => {
     const transport = new FakeTransport();
     const claims: RemoteWorkerCapabilityClaimsV1[] = [];
