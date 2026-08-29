@@ -72,6 +72,11 @@ function strictParse<T>(
 }
 export class RemoteWorkerRunscHandlerV1 {
   readonly runtime: RunscSessionRuntimeV1;
+  private readonly createTransactions = new Map<
+    string,
+    Promise<RemoteWorkerCreateResponseV1>
+  >();
+
   constructor(private readonly options: RemoteWorkerRunscHandlerOptionsV1) {
     if (!options.workloadImage.endsWith(`@${options.qualification.imageDigest}`)) {
       throw new SandboxProviderError(
@@ -143,33 +148,51 @@ export class RemoteWorkerRunscHandlerV1 {
     const request = authorization.request;
     this.assertCanonicalWorkspace(request.workspaceId);
     this.assertQualification(request);
-    const lease = await this.runtime.create({
-      clientLeaseId: request.clientLeaseId,
-      createDigest: authorization.requestDigest,
-      workspaceId: request.workspaceId,
-      image: this.options.workloadImage,
-      idleTtlMs: request.idleTimeoutMs,
-    });
-    try {
-      const bindingReceipt = await this.options.registry.bindAuthorized({
-        authorization,
-        sandboxId: lease.sandboxId,
-        leaseExpiresAtMs: lease.leaseExpiresAtMs,
+    const transactionKey = JSON.stringify([
+      request.workspaceId,
+      request.clientLeaseId,
+      authorization.requestDigest,
+    ]);
+    const existing = this.createTransactions.get(transactionKey);
+    if (existing) return await existing;
+
+    const transaction = (async (): Promise<RemoteWorkerCreateResponseV1> => {
+      const lease = await this.runtime.create({
+        clientLeaseId: request.clientLeaseId,
+        createDigest: authorization.requestDigest,
+        workspaceId: request.workspaceId,
+        image: this.options.workloadImage,
+        idleTtlMs: request.idleTimeoutMs,
       });
-      return RemoteWorkerCreateResponseSchemaV1.parse({
-        protocolVersion: REMOTE_WORKER_PROTOCOL_VERSION,
-        providerContractVersion: PROVIDER_CONTRACT_VERSION,
-        workerId: this.options.registry.authorizedWorkerId,
-        sandboxId: lease.sandboxId,
-        runtimeCwd: REMOTE_WORKER_RUNTIME_CWD,
-        leaseExpiresAtMs: bindingReceipt.payload.expiresAtMs,
-        bindingReceipt,
-      });
-    } catch (error) {
-      if (lease.newlyAllocated) {
-        await this.runtime.dispose(lease.sandboxId, request.workspaceId);
+      try {
+        const bindingReceipt = await this.options.registry.bindAuthorized({
+          authorization,
+          sandboxId: lease.sandboxId,
+          leaseExpiresAtMs: lease.leaseExpiresAtMs,
+        });
+        return RemoteWorkerCreateResponseSchemaV1.parse({
+          protocolVersion: REMOTE_WORKER_PROTOCOL_VERSION,
+          providerContractVersion: PROVIDER_CONTRACT_VERSION,
+          workerId: this.options.registry.authorizedWorkerId,
+          sandboxId: lease.sandboxId,
+          runtimeCwd: REMOTE_WORKER_RUNTIME_CWD,
+          leaseExpiresAtMs: bindingReceipt.payload.expiresAtMs,
+          bindingReceipt,
+        });
+      } catch (error) {
+        if (lease.newlyAllocated) {
+          await this.runtime.dispose(lease.sandboxId, request.workspaceId);
+        }
+        throw error;
       }
-      throw error;
+    })();
+    this.createTransactions.set(transactionKey, transaction);
+    try {
+      return await transaction;
+    } finally {
+      if (this.createTransactions.get(transactionKey) === transaction) {
+        this.createTransactions.delete(transactionKey);
+      }
     }
   }
   async fs(input: {

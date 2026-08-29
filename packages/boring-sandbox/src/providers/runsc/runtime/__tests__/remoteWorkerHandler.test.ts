@@ -182,7 +182,7 @@ function harness(root: string, multiSandboxRootsQualified = true) {
       sandboxRoots: roots,
     },
   });
-  return { handler, token, runner, roots, apply, check, openEvents };
+  return { handler, token, runner, roots, apply, check, openEvents, registry };
 }
 
 describe("authenticated remote-worker runsc handler", () => {
@@ -389,6 +389,67 @@ describe("authenticated remote-worker runsc handler", () => {
       }),
     ).resolves.toEqual({ content: "" });
     expect(runner.run.mock.calls.filter(([input]) => input.argv[0] === "rm")).toHaveLength(0);
+  });
+
+  test("coalesces allocation and receipt binding for concurrent identical creates", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "boring-handler-create-race-"));
+    const root = join(parent, "sandboxes");
+    await mkdir(root, { mode: 0o750 });
+    const { handler, token, runner, registry } = harness(root);
+    const create = request("lease-create-race");
+    const originalBind = registry.bindAuthorized.bind(registry);
+    let enterFirst!: () => void;
+    const firstEntered = new Promise<void>((resolve) => {
+      enterFirst = resolve;
+    });
+    let releaseFirst!: () => void;
+    const firstReleased = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let bindCalls = 0;
+    const bind = vi
+      .spyOn(registry, "bindAuthorized")
+      .mockImplementation(async (input) => {
+        bindCalls += 1;
+        if (bindCalls === 1) {
+          enterFirst();
+          await firstReleased;
+          throw new Error("delayed receipt authentication failure");
+        }
+        return await originalBind(input);
+      });
+
+    const first = handler.create({
+      capabilityToken: token("create", create),
+      request: create,
+    });
+    await firstEntered;
+    const replay = handler.create({
+      capabilityToken: token("create", create),
+      request: create,
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    releaseFirst();
+
+    const results = await Promise.allSettled([first, replay]);
+    expect(results.every((result) => result.status === "rejected")).toBe(true);
+    expect(bind).toHaveBeenCalledTimes(1);
+    expect(runner.mounts.size).toBe(0);
+
+    bind.mockRestore();
+    const retry = await handler.create({
+      capabilityToken: token("create", create),
+      request: create,
+    });
+    expect(retry.sandboxId).toBe("sandbox-2");
+    const read = { op: "readFile" as const, path: "state" };
+    await expect(
+      handler.fs({
+        capabilityToken: token("fs", read, retry.sandboxId),
+        sandboxId: retry.sandboxId,
+        request: read,
+      }),
+    ).resolves.toEqual({ content: "" });
   });
 
   test("health advertises an installed events operation and rejects noncanonical workspace authority", async () => {
