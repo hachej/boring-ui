@@ -153,17 +153,22 @@ export async function startPlaygroundServer(): Promise<void> {
       // `resumeSessionId` travels through the client's writable
       // sessionStorage (App.tsx) — a stale or manipulated value could
       // otherwise name an ordinary session this wrapper never created and
-      // marked, and the gateway would happily hand that session's ref back
+      // marked (or a showcase session belonging to a *different* agent
+      // type — scripted session ids are only unique within one agent
+      // namespace, so 'scripted-main' under `targetAgentTypeId` is a
+      // different session than 'scripted-main' under any other agent), and
+      // the gateway would happily hand that session's ref back
       // (embeddedGateway.ts createSession resumes any empty session it can
       // resolve, regardless of who created it). Only ever forward it when
-      // it already names a session this wrapper itself previously marked —
-      // an unrecognized id is silently dropped, not forwarded, so the boot
-      // flow just creates a brand-new (still perfectly valid) session
-      // instead. This is what keeps "which route created it" a guarantee
-      // instead of a suggestion.
+      // it already names a session this wrapper itself previously marked
+      // for THIS EXACT `targetAgentTypeId` — an unrecognized (agent, id)
+      // pair is silently dropped, not forwarded, so the boot flow just
+      // creates a brand-new (still perfectly valid) session instead. This
+      // is what keeps "which route created it, for which agent" a
+      // guarantee instead of a suggestion.
       if (
         typeof body.resumeSessionId === "string"
-        && await isPlaygroundShowcaseSession(process.env.BORING_AGENT_SESSION_ROOT, body.resumeSessionId)
+        && await isPlaygroundShowcaseSession(process.env.BORING_AGENT_SESSION_ROOT, targetAgentTypeId, body.resumeSessionId)
       ) {
         forwardBody.resumeSessionId = body.resumeSessionId
       }
@@ -183,7 +188,7 @@ export async function startPlaygroundServer(): Promise<void> {
         try {
           const payload = JSON.parse(injected.body) as { sessionId?: unknown }
           if (typeof payload.sessionId === "string") {
-            await markPlaygroundShowcaseSession(process.env.BORING_AGENT_SESSION_ROOT, payload.sessionId)
+            await markPlaygroundShowcaseSession(process.env.BORING_AGENT_SESSION_ROOT, targetAgentTypeId, payload.sessionId)
           }
         } catch {
           // Response wasn't the expected shape — forward it as-is below;

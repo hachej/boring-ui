@@ -7,7 +7,14 @@ import {
   isPlaygroundShowcaseSession,
   markPlaygroundShowcaseSession,
   readPlaygroundShowcaseRegistryForTest,
+  sessionNamespaceAgentKey,
 } from './scriptedPiHarness'
+
+// Matches what ScriptedSessionStore itself computes when no `sessionNamespace`
+// is passed (every existing test below, which predates agent-scoped
+// provenance) — keeping tests honest against the real derivation instead of
+// hardcoding the '(unscoped)' fallback string.
+const UNSCOPED_AGENT_KEY = sessionNamespaceAgentKey(undefined)
 
 const runContext = (workdir: string) => ({
   abortSignal: new AbortController().signal,
@@ -128,7 +135,7 @@ describe('scripted Pi browser harness persistence', () => {
 
       const first = createScriptedPiHarness(input)
       const showcaseSession = await first.sessions!.create(ctx, { title: 'Navigation polish review' })
-      await markPlaygroundShowcaseSession(sessionRoot, showcaseSession.id)
+      await markPlaygroundShowcaseSession(sessionRoot, UNSCOPED_AGENT_KEY, showcaseSession.id)
 
       // A developer's own ordinary session, never marked, whose title
       // happens to spell out the exact string the old (removed) title-tag
@@ -156,7 +163,7 @@ describe('scripted Pi browser harness persistence', () => {
 
       const first = createScriptedPiHarness(input)
       const session = await first.sessions!.create(ctx, { title: 'Navigation polish review' })
-      await markPlaygroundShowcaseSession(sessionRoot, session.id)
+      await markPlaygroundShowcaseSession(sessionRoot, UNSCOPED_AGENT_KEY, session.id)
       const adapter = await first.getPiSessionAdapter(
         { sessionId: session.id, ctx },
         runContext(workspaceRoot),
@@ -177,7 +184,7 @@ describe('scripted Pi browser harness persistence', () => {
       // Mark an id that no session in this sessionRoot will ever create —
       // standing in for an id that belongs to a different agent
       // type/namespace's store sharing the same registry file.
-      await markPlaygroundShowcaseSession(sessionRoot, 'scripted-belongs-elsewhere')
+      await markPlaygroundShowcaseSession(sessionRoot, UNSCOPED_AGENT_KEY, 'scripted-belongs-elsewhere')
 
       const harness = createScriptedPiHarness({ cwd: workspaceRoot, sessionRoot })
       // Hydration must not throw, and creating a real session must still
@@ -205,12 +212,14 @@ describe('scripted Pi browser harness persistence', () => {
       const first = createScriptedPiHarness(input)
       const showcaseSession = await first.sessions!.create(ctx, { title: 'Navigation polish review' })
       expect(showcaseSession.id).toBe('scripted-main')
-      await markPlaygroundShowcaseSession(sessionRoot, showcaseSession.id)
-      await expect(readPlaygroundShowcaseRegistryForTest(sessionRoot)).resolves.toEqual(new Set(['scripted-main']))
+      await markPlaygroundShowcaseSession(sessionRoot, UNSCOPED_AGENT_KEY, showcaseSession.id)
+      await expect(isPlaygroundShowcaseSession(sessionRoot, UNSCOPED_AGENT_KEY, showcaseSession.id)).resolves.toBe(true)
+      await expect(readPlaygroundShowcaseRegistryForTest(sessionRoot)).resolves.toHaveProperty('size', 1)
       await first.sessions!.delete(ctx, showcaseSession.id)
 
       // Deletion must unmark immediately — not wait for a future sweep.
-      await expect(readPlaygroundShowcaseRegistryForTest(sessionRoot)).resolves.toEqual(new Set())
+      await expect(isPlaygroundShowcaseSession(sessionRoot, UNSCOPED_AGENT_KEY, showcaseSession.id)).resolves.toBe(false)
+      await expect(readPlaygroundShowcaseRegistryForTest(sessionRoot)).resolves.toHaveProperty('size', 0)
 
       // Boot 2: createCount resets on hydrate, so an ordinary (unmarked)
       // session recycles the now-free 'scripted-main' id.
@@ -229,18 +238,82 @@ describe('scripted Pi browser harness persistence', () => {
     it('serializes concurrent marks so two overlapping requests both land in the registry', async () => {
       const sessionRoot = await mkdtemp(join(tmpdir(), 'scripted-pi-showcase-concurrent-sessions-'))
       await Promise.all(
-        Array.from({ length: 20 }, (_, index) => markPlaygroundShowcaseSession(sessionRoot, `scripted-concurrent-${index}`)),
+        Array.from({ length: 20 }, (_, index) => markPlaygroundShowcaseSession(sessionRoot, UNSCOPED_AGENT_KEY, `scripted-concurrent-${index}`)),
       )
       const registry = await readPlaygroundShowcaseRegistryForTest(sessionRoot)
-      expect(registry).toEqual(new Set(Array.from({ length: 20 }, (_, index) => `scripted-concurrent-${index}`)))
+      expect(registry.size).toBe(20)
+      for (let index = 0; index < 20; index += 1) {
+        await expect(isPlaygroundShowcaseSession(sessionRoot, UNSCOPED_AGENT_KEY, `scripted-concurrent-${index}`)).resolves.toBe(true)
+      }
     })
 
     it('isPlaygroundShowcaseSession only recognizes ids this wrapper actually marked', async () => {
       const sessionRoot = await mkdtemp(join(tmpdir(), 'scripted-pi-showcase-known-sessions-'))
-      await expect(isPlaygroundShowcaseSession(sessionRoot, 'scripted-unmarked')).resolves.toBe(false)
-      await markPlaygroundShowcaseSession(sessionRoot, 'scripted-marked')
-      await expect(isPlaygroundShowcaseSession(sessionRoot, 'scripted-marked')).resolves.toBe(true)
-      await expect(isPlaygroundShowcaseSession(sessionRoot, 'scripted-unmarked')).resolves.toBe(false)
+      await expect(isPlaygroundShowcaseSession(sessionRoot, UNSCOPED_AGENT_KEY, 'scripted-unmarked')).resolves.toBe(false)
+      await markPlaygroundShowcaseSession(sessionRoot, UNSCOPED_AGENT_KEY, 'scripted-marked')
+      await expect(isPlaygroundShowcaseSession(sessionRoot, UNSCOPED_AGENT_KEY, 'scripted-marked')).resolves.toBe(true)
+      await expect(isPlaygroundShowcaseSession(sessionRoot, UNSCOPED_AGENT_KEY, 'scripted-unmarked')).resolves.toBe(false)
+    })
+
+    // gh-1458 review round 4: scripted session ids are only unique WITHIN
+    // one namespaced store — 'alpha--<hash>' and 'beta--<hash>' each
+    // independently allocate their own 'scripted-main'. A bare-id registry
+    // would let a mark for one agent's session be read as provenance for
+    // an unrelated session of the same id under a different agent. This is
+    // the review's deterministic repro, reproduced directly: mark an empty
+    // session under the 'alpha' namespace, create an ordinary (unmarked,
+    // same-id) session under the 'beta' namespace sharing the same
+    // sessionRoot (and therefore the same registry file), rehydrate the
+    // beta store, and confirm beta's unrelated draft survives — the sweep
+    // must never touch a different agent's records, no matter what bare id
+    // they share.
+    it('does not let a mark for one agent namespace sweep a same-id session in a different agent namespace', async () => {
+      const sessionRoot = await mkdtemp(join(tmpdir(), 'scripted-pi-showcase-cross-namespace-sessions-'))
+      const alphaWorkspaceRoot = await mkdtemp(join(tmpdir(), 'scripted-pi-showcase-cross-namespace-alpha-workspace-'))
+      const betaWorkspaceRoot = await mkdtemp(join(tmpdir(), 'scripted-pi-showcase-cross-namespace-beta-workspace-'))
+      const ctx = { workspaceId: 'workspace-a' }
+
+      const alphaHarness = createScriptedPiHarness({
+        cwd: alphaWorkspaceRoot,
+        sessionRoot,
+        sessionNamespace: 'alpha--scopehash',
+      })
+      const alphaSession = await alphaHarness.sessions!.create(ctx, { title: 'Navigation polish review' })
+      expect(alphaSession.id).toBe('scripted-main')
+      await markPlaygroundShowcaseSession(sessionRoot, 'alpha', alphaSession.id)
+
+      const betaHarness = createScriptedPiHarness({
+        cwd: betaWorkspaceRoot,
+        sessionRoot,
+        sessionNamespace: 'beta--scopehash',
+      })
+      // Ordinary, never-marked session that happens to independently
+      // allocate the exact same bare id as alpha's marked one.
+      const betaSession = await betaHarness.sessions!.create(ctx, { title: "Beta's real draft" })
+      expect(betaSession.id).toBe('scripted-main')
+
+      const betaRestarted = createScriptedPiHarness({
+        cwd: betaWorkspaceRoot,
+        sessionRoot,
+        sessionNamespace: 'beta--scopehash',
+      })
+      const betaAfterRestart = await betaRestarted.sessions!.list(ctx, { includeEmpty: true })
+      expect(betaAfterRestart).toContainEqual(expect.objectContaining({ id: betaSession.id, title: "Beta's real draft" }))
+
+      // The alpha mark is untouched by beta's hydration/sweep — it belongs
+      // to a different agent key and beta's store never even looks at it.
+      await expect(isPlaygroundShowcaseSession(sessionRoot, 'alpha', alphaSession.id)).resolves.toBe(true)
+      await expect(isPlaygroundShowcaseSession(sessionRoot, 'beta', betaSession.id)).resolves.toBe(false)
+    })
+
+    it('resumeSessionId validation is scoped per agent key: a mark under one agent is not recognized under another', async () => {
+      const sessionRoot = await mkdtemp(join(tmpdir(), 'scripted-pi-showcase-cross-namespace-resume-'))
+      await markPlaygroundShowcaseSession(sessionRoot, 'alpha', 'scripted-main')
+      await expect(isPlaygroundShowcaseSession(sessionRoot, 'alpha', 'scripted-main')).resolves.toBe(true)
+      // Same bare session id, different agent key: must not be recognized —
+      // this is exactly what dev.ts's wrapper route checks before ever
+      // forwarding a client-supplied resumeSessionId for `targetAgentTypeId`.
+      await expect(isPlaygroundShowcaseSession(sessionRoot, 'beta', 'scripted-main')).resolves.toBe(false)
     })
   })
 })
