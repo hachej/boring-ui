@@ -33,10 +33,15 @@ const mockWorkspace = {
 }
 
 const mockNavigate = vi.fn()
+const mockRole = { current: 'owner' as string | null }
+const mockRouteStatus = {
+  current: { status: 'matched', workspaceId: WS_ID, workspace: mockWorkspace.current } as any,
+}
 
 vi.mock('../WorkspaceAuthProvider.js', () => ({
   useCurrentWorkspace: () => mockWorkspace.current,
-  useWorkspaceRole: () => 'owner',
+  useWorkspaceRole: () => mockRole.current,
+  useWorkspaceRouteStatus: () => mockRouteStatus.current,
   WORKSPACES_QUERY_KEY: ['workspaces'],
   workspaceQueryKey: (id: string) => ['workspace', id],
 }))
@@ -96,6 +101,8 @@ afterEach(() => {
     deletedAt: null,
     isDefault: true,
   }
+  mockRole.current = 'owner'
+  mockRouteStatus.current = { status: 'matched', workspaceId: WS_ID, workspace: mockWorkspace.current }
   mockNavigate.mockReset()
   vi.restoreAllMocks()
 })
@@ -486,6 +493,76 @@ describe('WorkspaceSettingsPage', () => {
       expect(mockNavigate).not.toHaveBeenCalled()
 
       assertionPassed('delete-failure-inline-error')
+      qc.clear()
+    }),
+  )
+
+  it(
+    'non-member (forbidden route status): shows access-denied screen, no settings shell',
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
+      const qc = createQueryClient()
+      mockRouteStatus.current = {
+        status: 'forbidden',
+        workspaceId: WS_ID,
+        message: 'Not a member of this workspace',
+      }
+
+      render(
+        <Wrapper qc={qc}>
+          <WorkspaceSettingsPage />
+        </Wrapper>,
+      )
+
+      await waitFor(() => expect(screen.getByText('Workspace unavailable')).toBeTruthy())
+      expect(screen.getByText('Not a member of this workspace')).toBeTruthy()
+      expect(screen.queryByTestId('delete-workspace')).toBeNull()
+      expect(screen.queryByTestId('danger-zone')).toBeNull()
+
+      assertionPassed('forbidden-shows-access-denied')
+      qc.clear()
+    }),
+  )
+
+  it(
+    'route status not yet matched (loading role): no settings shell, no Delete button',
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
+      const qc = createQueryClient()
+      mockRouteStatus.current = { status: 'loading', workspaceId: WS_ID }
+      mockRole.current = null
+
+      render(
+        <Wrapper qc={qc}>
+          <WorkspaceSettingsPage />
+        </Wrapper>,
+      )
+
+      await waitFor(() => expect(screen.getByTestId('workspace-settings-loading')).toBeTruthy())
+      expect(screen.queryByTestId('delete-workspace')).toBeNull()
+      expect(screen.queryByTestId('danger-zone')).toBeNull()
+
+      assertionPassed('loading-hides-delete-button')
+      qc.clear()
+    }),
+  )
+
+  it(
+    'matched but role not owner: Delete button rendered but disabled',
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
+      const qc = createQueryClient()
+      mockRole.current = 'editor'
+      setupRuntimeHandler(null)
+
+      render(
+        <Wrapper qc={qc}>
+          <WorkspaceSettingsPage />
+        </Wrapper>,
+      )
+
+      await waitFor(() => expect(screen.getByTestId('danger-zone')).toBeTruthy())
+      const deleteBtn = screen.getByTestId('delete-workspace') as HTMLButtonElement
+      expect(deleteBtn.disabled).toBe(true)
+
+      assertionPassed('non-owner-delete-disabled')
       qc.clear()
     }),
   )

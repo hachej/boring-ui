@@ -13,6 +13,13 @@ import {
   type CoreFrontAuthPagesOverride,
   type CoreFrontCompanyAdminOptions,
 } from '../../front/index.js'
+// Imported directly from its module (not the `../../front/index.js` barrel):
+// this is a pure presentational component with no hooks/context, and
+// CoreWorkspaceAgentFront.test.tsx replaces the whole barrel with a manual
+// mock. Routing it through the barrel would silently render `undefined`
+// under that mock instead of the real terminal-route screen the test
+// (added by #1435) asserts on.
+import { WorkspaceRouteErrorPage } from '../../front/workspace/WorkspaceRouteErrorPage.js'
 import {
   parseFullPagePanelLocation,
   WorkspaceAgentFront,
@@ -226,22 +233,6 @@ function HomeRedirect<TSession extends WorkspaceAgentSession = WorkspaceAgentSes
   }
   if (!workspace) return <>{resolvedLoadingFallback}</>
   return <Navigate to={workspaceHref(workspace.id)} replace />
-}
-
-function WorkspaceRouteErrorPage({ status, message }: { status: 'not-found' | 'forbidden' | 'switch-failed'; message: string }) {
-  const title = status === 'not-found'
-    ? 'Workspace not found'
-    : status === 'forbidden'
-      ? 'Workspace unavailable'
-      : 'Workspace failed to open'
-  return (
-    <div className="flex h-screen min-h-0 items-center justify-center bg-background px-6 text-foreground">
-      <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
-        <h1 className="text-lg font-semibold">{title}</h1>
-        <p className="mt-2 text-sm text-muted-foreground">{message}</p>
-      </div>
-    </div>
-  )
 }
 
 function WorkspaceRoute<
