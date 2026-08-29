@@ -222,6 +222,16 @@ describe("warm runsc session runtime", () => {
     const sessions = runtime(runner);
     const first = await sessions.create(createInput);
     const second = await sessions.create(createInput);
+    expect(first).toEqual({
+      sandboxId: "sandbox-a",
+      leaseExpiresAtMs: expect.any(Number),
+      hardExpiresAtMs: expect.any(Number),
+    });
+    expect(Object.keys(first).sort()).toEqual([
+      "hardExpiresAtMs",
+      "leaseExpiresAtMs",
+      "sandboxId",
+    ]);
     expect(second).toEqual(first);
     const one = await sessions.exec("sandbox-a", workspaceId, execRequest);
     const replay = await sessions.exec("sandbox-a", workspaceId, execRequest);
@@ -370,7 +380,9 @@ describe("warm runsc session runtime", () => {
 
       await vi.advanceTimersByTimeAsync(100);
       expect(removeAttempts).toBe(5);
-      await expect(sessions.renew("sandbox-a", 100)).rejects.toMatchObject({
+      await expect(
+        sessions.renew("sandbox-a", workspaceId, 100),
+      ).rejects.toMatchObject({
         code: REMOTE_WORKER_ERROR_CODES_V1.sandboxNotFound,
       });
     } finally {
@@ -671,7 +683,9 @@ describe("warm runsc session runtime", () => {
       await sessions.create({ ...createInput, idleTtlMs: 100 });
       clock = 1_100;
       await vi.advanceTimersByTimeAsync(100);
-      await expect(sessions.renew("sandbox-a", 100)).rejects.toMatchObject({
+      await expect(
+        sessions.renew("sandbox-a", workspaceId, 100),
+      ).rejects.toMatchObject({
         code: REMOTE_WORKER_ERROR_CODES_V1.sandboxNotFound,
       });
       expect(retire).toHaveBeenCalledWith({
@@ -715,7 +729,9 @@ describe("warm runsc session runtime", () => {
       clock = 1_100;
       await vi.advanceTimersByTimeAsync(100);
 
-      await expect(sessions.renew("sandbox-a", 100)).rejects.toMatchObject({
+      await expect(
+        sessions.renew("sandbox-a", workspaceId, 100),
+      ).rejects.toMatchObject({
         code: REMOTE_WORKER_ERROR_CODES_V1.sandboxDisposed,
       });
       expect(() =>
@@ -735,7 +751,9 @@ describe("warm runsc session runtime", () => {
         sandboxId: "sandbox-a",
         reason: "idle",
       });
-      await expect(sessions.renew("sandbox-a", 100)).rejects.toMatchObject({
+      await expect(
+        sessions.renew("sandbox-a", workspaceId, 100),
+      ).rejects.toMatchObject({
         code: REMOTE_WORKER_ERROR_CODES_V1.sandboxNotFound,
       });
     } finally {
@@ -744,7 +762,7 @@ describe("warm runsc session runtime", () => {
   });
 
   test.each(["nonzero", "throw"] as const)(
-    "retains failed-create ownership when docker rm returns %s",
+    "preserves create failure and ownership when docker rm returns %s",
     async (failureMode) => {
       vi.useFakeTimers();
       try {
@@ -785,7 +803,7 @@ describe("warm runsc session runtime", () => {
         const sessions = runtime(runner);
 
         await expect(sessions.create(createInput)).rejects.toMatchObject({
-          code: REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+          code: REMOTE_WORKER_ERROR_CODES_V1.dockerCommandFailed,
         });
         expect(() => sessions.create(createInput)).toThrowError(
           expect.objectContaining({
@@ -882,6 +900,7 @@ describe("warm runsc session runtime", () => {
       try {
         await sessions.renew(
           scenario === "expired" ? "sandbox-a" : "sandbox-missing",
+          workspaceId,
           100,
         );
       } catch (error) {
@@ -909,7 +928,7 @@ describe("warm runsc session runtime", () => {
     const runner = fakeRunner();
     const sessions = runtime(runner, { onRetire });
 
-    const missing = sessions.renew("sandbox-a", 100);
+    const missing = sessions.renew("sandbox-a", workspaceId, 100);
     await vi.waitFor(() =>
       expect(onRetire).toHaveBeenCalledWith({
         sandboxId: "sandbox-a",
@@ -917,7 +936,7 @@ describe("warm runsc session runtime", () => {
       }),
     );
     await sessions.create(createInput);
-    await sessions.dispose("sandbox-a");
+    await sessions.dispose("sandbox-a", workspaceId);
 
     expect(
       runner.run.mock.calls.filter(([input]) => input.argv[0] === "rm"),
@@ -941,47 +960,6 @@ describe("warm runsc session runtime", () => {
       "--force",
       "a".repeat(64),
     ]);
-  });
-
-  test("serializes quota application against every session for one workspace", async () => {
-    let releaseApply: (() => void) | undefined;
-    const apply = vi.fn(
-      async () =>
-        await new Promise<void>((resolve) => {
-          releaseApply = resolve;
-        }),
-    );
-    const runner = fakeRunner();
-    const sessions = runtime(runner, {
-      quota: { apply, check: vi.fn(async () => undefined) },
-    });
-    const first = sessions.create(createInput);
-    await vi.waitFor(() => expect(apply).toHaveBeenCalledOnce());
-    expect(() =>
-      sessions.create({
-        ...createInput,
-        sandboxId: "sandbox-b",
-        clientLeaseId: "lease-b",
-      }),
-    ).toThrowError(
-      expect.objectContaining({
-        code: REMOTE_WORKER_ERROR_CODES_V1.idempotencyConflict,
-      }),
-    );
-    releaseApply?.();
-    await first;
-    expect(() =>
-      sessions.create({
-        ...createInput,
-        sandboxId: "sandbox-c",
-        clientLeaseId: "lease-c",
-      }),
-    ).toThrowError(
-      expect.objectContaining({
-        code: REMOTE_WORKER_ERROR_CODES_V1.idempotencyConflict,
-      }),
-    );
-    expect(apply).toHaveBeenCalledOnce();
   });
 
   test("retires instead of dropping invocation replay markers at its bound", async () => {

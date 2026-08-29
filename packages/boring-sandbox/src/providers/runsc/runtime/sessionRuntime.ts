@@ -1,10 +1,8 @@
 import { randomBytes } from "node:crypto";
-
 import type {
   AuthorizedWorkspaceCredentialScopeV1,
   SandboxCredentialSecretPayloadLeaseV1,
 } from "@hachej/boring-agent/shared";
-
 import {
   REMOTE_WORKER_ERROR_CODES_V1,
   RemoteWorkerExecRequestSchemaV1,
@@ -15,7 +13,6 @@ import {
   type RemoteWorkerWorkspaceResultV1,
 } from "../../../shared/remoteWorkerProtocolV1";
 import { remoteWorkerRequestDigestV1 } from "../../remote-worker/requestDigest";
-
 import {
   buildDockerOwnedContainerListArgv,
   buildDockerRemoveArgv,
@@ -24,154 +21,87 @@ import {
   buildDockerExecArgv,
   type TrustedWorkspaceMountSource,
 } from "./dockerArgv";
-import type { DockerCommandResult, DockerCommandRunner } from "./dockerRunner";
+import type { DockerCommandResult } from "./dockerRunner";
 import { runDockerChecked } from "./dockerRunner";
 import { runscRuntimeError } from "./errors";
 import { prepareInvocationEnvelopeV1 } from "./invocationEnvelope";
-import type {
-  ResolvedRunscInvocationCredentialsV1,
-  RunscInvocationCredentialResolverV1,
-} from "./invocationCredentials";
+import type { ResolvedRunscInvocationCredentialsV1 } from "./invocationCredentials";
 import { decodeBoundedJson } from "./jsonEnvelope";
 import { RUNSC_RUNTIME_LIMITS_V1, boundedPositiveInteger } from "./limits";
-import type { FixedProjectQuotaManagerV1 } from "./quota";
+import { validateQuotaWorkspaceId } from "./quota";
 import {
   RunscSessionRetirementManagerV1,
   type RunscSessionRetirementReasonV1,
-  type RunscSessionRetirementV1,
 } from "./sessionRetirement";
+import {
+  isInvocationHelperResponseV1,
+  type InvocationRecordV1,
+  type SessionRecordV1,
+} from "./sessionRecord";
+import {
+  RunscSessionStateV1,
+  compositeSessionKey,
+  safeOpaqueId,
+  sessionStateError,
+} from "./sessionState";
+import type {
+  CompositeRunscSessionLeaseV1,
+  CreateCompositeRunscSessionInputV1,
+  CreateRunscSessionInputV1,
+  RunscSessionLeaseV1,
+  RunscSessionRuntimeOptionsV1,
+} from "./sessionTypes";
 import { RunscWorkspaceHelperClientV1 } from "./workspaceHelperClient";
-
 const MAX_INVOCATION_RECORDS = 256;
-export type { RunscSessionRetirementV1 } from "./sessionRetirement";
-
-export interface RunscSessionRuntimeOptionsV1 {
-  readonly runner: DockerCommandRunner;
-  readonly quota: Pick<FixedProjectQuotaManagerV1, "apply" | "check">;
-  readonly maxConcurrentCreates?: number;
-  readonly maxConcurrentExecs?: number;
-  readonly now?: () => number;
-  readonly runtimeIdFactory?: () => string;
-  readonly invocationCredentials?: RunscInvocationCredentialResolverV1;
-  readonly onRetire?: (
-    retirement: RunscSessionRetirementV1,
-  ) => void | Promise<void>;
-}
-
-export interface CreateRunscSessionInputV1 {
-  readonly sandboxId: string;
-  readonly clientLeaseId: string;
-  readonly workspaceId: string;
-  readonly workspaceMountSource: TrustedWorkspaceMountSource;
-  readonly image: string;
-  readonly idleTtlMs?: number;
-  readonly hardLifetimeMs?: number;
-}
-
-export interface RunscSessionLeaseV1 {
-  readonly sandboxId: string;
-  readonly leaseExpiresAtMs: number;
-  readonly hardExpiresAtMs: number;
-}
-
-interface InvocationRecordV1 {
-  readonly digest: `sha256:${string}`;
-  state: "running" | "complete" | "secret-terminal";
-  result?: RemoteWorkerExecResponseV1;
-}
-
-interface SessionRecordV1 {
-  readonly sandboxId: string;
-  readonly clientLeaseId: string;
-  readonly createDigest: `sha256:${string}`;
-  readonly workspaceId: string;
-  readonly workspaceMountSource: TrustedWorkspaceMountSource;
-  readonly image: string;
-  readonly createdAtMs: number;
-  readonly hardExpiresAtMs: number;
-  readonly idleTtlMs: number;
-  runtimeId: string;
-  leaseExpiresAtMs: number;
-  timer: ReturnType<typeof setTimeout>;
-  activeExec: boolean;
-  activeFs: boolean;
-  invocations: Map<string, InvocationRecordV1>;
-  retirement?: {
-    readonly reason: RunscSessionRetirementReasonV1;
-    readonly notify: boolean;
-    attempts: number;
-  };
-}
-
-interface InvocationHelperResponseV1 {
-  readonly ok: true;
-  readonly stdoutBase64: string;
-  readonly stderrBase64: string;
-  readonly exitCode: number;
-  readonly durationMs: number;
-  readonly truncated: boolean;
-  readonly timedOut: boolean;
-  readonly cleanupProven: boolean;
-}
-
-function isHelperResponse(value: unknown): value is InvocationHelperResponseV1 {
-  if (!value || typeof value !== "object") return false;
-  const result = value as Partial<InvocationHelperResponseV1>;
-  return (
-    result.ok === true &&
-    typeof result.stdoutBase64 === "string" &&
-    typeof result.stderrBase64 === "string" &&
-    Number.isInteger(result.exitCode) &&
-    typeof result.durationMs === "number" &&
-    typeof result.truncated === "boolean" &&
-    typeof result.timedOut === "boolean" &&
-    typeof result.cleanupProven === "boolean"
-  );
-}
-
+export type {
+  CompositeRunscSessionRetirementV1,
+  RunscSessionRetirementV1,
+} from "./sessionRetirement";
+export type {
+  CompositeRunscSessionLeaseV1,
+  CreateCompositeRunscSessionInputV1,
+  CreateRunscSessionInputV1,
+  RunscSessionLeaseV1,
+  RunscSessionRuntimeOptionsV1,
+} from "./sessionTypes";
+type AnyCreateInputV1 =
+  CreateRunscSessionInputV1 | CreateCompositeRunscSessionInputV1;
+type AnySessionLeaseV1 = RunscSessionLeaseV1 | CompositeRunscSessionLeaseV1;
 function runtimeId(): string {
   return randomBytes(16).toString("hex");
 }
-
-function safeOpaqueId(value: string, label: string): string {
-  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(value)) {
-    throw runscRuntimeError(
-      REMOTE_WORKER_ERROR_CODES_V1.requestInvalid,
-      `remote-worker ${label} is invalid`,
-    );
-  }
-  return value;
-}
-
 export class RunscSessionRuntimeV1 {
-  private readonly sessions = new Map<string, SessionRecordV1>();
-  private readonly leaseBindings = new Map<string, SessionRecordV1>();
-  private readonly workspaceBindings = new Map<string, SessionRecordV1>();
-  private readonly pendingWorkspaceCreates = new Set<string>();
-  private readonly pendingCreates = new Map<
-    string,
-    { digest: `sha256:${string}`; promise: Promise<RunscSessionLeaseV1> }
-  >();
+  private readonly state = new RunscSessionStateV1<SessionRecordV1>();
   private readonly pendingOperations = new Set<Promise<unknown>>();
+  private readonly pendingCreates = new Set<Promise<unknown>>();
   private readonly workspace: RunscWorkspaceHelperClientV1;
   private readonly retirement: RunscSessionRetirementManagerV1<SessionRecordV1>;
   private readonly now: () => number;
   private readonly runtimeIdFactory: () => string;
+  private readonly sandboxIdFactory: () => string;
   private readonly maxConcurrentCreates: number;
   private readonly maxConcurrentExecs: number;
-  private activeCreates = 0;
   private activeExecs = 0;
   private closed = false;
-
+  private shutdownComplete = false;
+  private startupComplete = false;
+  private startupCleanupPending = false;
+  private shutdownOperation?: Promise<void>;
+  private startupOperation?: Promise<void>;
   constructor(private readonly options: RunscSessionRuntimeOptionsV1) {
     this.workspace = new RunscWorkspaceHelperClientV1(options.runner);
     this.retirement = new RunscSessionRetirementManagerV1({
       runner: options.runner,
-      detach: (record) => this.detach(record),
+      detach: (record) => this.state.detach(record),
       onRetire: options.onRetire,
+      onCompositeRetire: options.onCompositeRetire,
+      disposeMountSource: async (source) => {
+        await options.sandboxRoots?.dispose(source);
+      },
     });
     this.now = options.now ?? Date.now;
     this.runtimeIdFactory = options.runtimeIdFactory ?? runtimeId;
+    this.sandboxIdFactory = options.sandboxIdFactory ?? runtimeId;
     this.maxConcurrentCreates = boundedPositiveInteger(
       options.maxConcurrentCreates ?? 4,
       1_000,
@@ -183,9 +113,34 @@ export class RunscSessionRuntimeV1 {
       "exec concurrency",
     );
   }
-
-  async startupSweep(): Promise<void> {
+  get supportsMultiSandboxRoots(): boolean {
+    return Boolean(
+      this.options.sandboxRoots &&
+      this.options.multiSandboxRootsAdmitted === true,
+    );
+  }
+  startupSweep(): Promise<void> {
     if (this.closed) this.unavailable();
+    if (this.startupComplete) return Promise.resolve();
+    if (this.startupOperation) return this.startupOperation;
+    this.state.beginSweep();
+    const operation = this.track(async () => {
+      try {
+        await this.startupSweepOnce();
+        this.startupComplete = true;
+        this.startupCleanupPending = false;
+      } catch (error) {
+        this.startupCleanupPending = true;
+        throw error;
+      } finally {
+        this.startupOperation = undefined;
+        this.state.endSweep();
+      }
+    });
+    this.startupOperation = operation;
+    return operation;
+  }
+  private async startupSweepOnce(): Promise<void> {
     const listed = await runDockerChecked(this.options.runner, {
       argv: buildDockerOwnedContainerListArgv(),
       timeoutMs: RUNSC_RUNTIME_LIMITS_V1.disposeTimeoutMs,
@@ -211,65 +166,55 @@ export class RunscSessionRuntimeV1 {
         maxOutputBytes: 64 * 1024,
       });
     }
+    await this.options.sandboxRoots?.startupSweep();
   }
-
   create(input: CreateRunscSessionInputV1): Promise<RunscSessionLeaseV1> {
     if (this.closed) this.unavailable();
-    safeOpaqueId(input.sandboxId, "sandbox id");
-    safeOpaqueId(input.clientLeaseId, "client lease id");
-    const digest = remoteWorkerRequestDigestV1({
-      sandboxId: input.sandboxId,
-      clientLeaseId: input.clientLeaseId,
-      workspaceId: input.workspaceId,
-      workspaceMountSource: input.workspaceMountSource,
-      image: input.image,
-      idleTtlMs: input.idleTtlMs,
-      hardLifetimeMs: input.hardLifetimeMs,
-    });
-    const existing = this.leaseBindings.get(input.clientLeaseId);
-    if (existing) {
-      if (existing.createDigest !== digest) this.idempotencyConflict();
-      if (existing.retirement) this.incompleteCleanup();
-      return Promise.resolve(this.lease(existing));
-    }
-    const pending = this.pendingCreates.get(input.clientLeaseId);
-    if (pending) {
-      if (pending.digest !== digest) this.idempotencyConflict();
-      return pending.promise;
-    }
-    if (
-      this.workspaceBindings.has(input.workspaceId) ||
-      this.pendingWorkspaceCreates.has(input.workspaceId)
-    ) {
-      this.idempotencyConflict();
-    }
-    if (this.activeCreates >= this.maxConcurrentCreates) {
+    if (this.options.sandboxRoots) this.compositeAuthorityRequired();
+    return this.createForMode(input, false) as Promise<RunscSessionLeaseV1>;
+  }
+  createComposite(
+    input: CreateCompositeRunscSessionInputV1,
+  ): Promise<CompositeRunscSessionLeaseV1> {
+    if (this.closed) this.unavailable();
+    if (!this.supportsMultiSandboxRoots) {
       throw runscRuntimeError(
-        REMOTE_WORKER_ERROR_CODES_V1.createConcurrencyExhausted,
-        "remote-worker create concurrency is exhausted",
+        REMOTE_WORKER_ERROR_CODES_V1.unqualified,
+        "remote-worker multi-root runtime is not admitted",
       );
     }
-    this.activeCreates += 1;
-    this.pendingWorkspaceCreates.add(input.workspaceId);
-    const operation = this.track(this.createNew(input, digest));
-    this.pendingCreates.set(input.clientLeaseId, {
-      digest,
-      promise: operation,
-    });
-    const finishCreate = (): void => {
-      this.activeCreates -= 1;
-      this.pendingCreates.delete(input.clientLeaseId);
-      this.pendingWorkspaceCreates.delete(input.workspaceId);
-    };
-    void operation.then(finishCreate, finishCreate);
-    return operation;
+    return this.createForMode(
+      input,
+      true,
+    ) as Promise<CompositeRunscSessionLeaseV1>;
   }
-
+  private createForMode(
+    input: AnyCreateInputV1,
+    multiRoot: boolean,
+  ): Promise<AnySessionLeaseV1> {
+    return this.state.create(
+      input,
+      multiRoot,
+      this.maxConcurrentCreates,
+      RUNSC_RUNTIME_LIMITS_V1.maxStartupSweepContainers,
+      () => safeOpaqueId(this.sandboxIdFactory(), "sandbox id"),
+      (normalized, digest) =>
+        this.track(
+          () => this.createNew(normalized, digest, multiRoot),
+          this.pendingCreates,
+        ),
+    );
+  }
   private async createNew(
-    input: CreateRunscSessionInputV1,
+    input: AnyCreateInputV1 & { readonly sandboxId: string },
     digest: `sha256:${string}`,
-  ): Promise<RunscSessionLeaseV1> {
-    if (this.sessions.has(input.sandboxId)) this.idempotencyConflict();
+    multiRoot: boolean,
+  ): Promise<AnySessionLeaseV1> {
+    const sandboxId = input.sandboxId;
+    const sessionKey = multiRoot
+      ? compositeSessionKey(input.workspaceId, sandboxId)
+      : sandboxId;
+    if (this.state.sessions.has(sessionKey)) this.idempotencyConflict();
     const idleTtlMs = boundedPositiveInteger(
       input.idleTtlMs ?? RUNSC_RUNTIME_LIMITS_V1.idleTtlMs,
       RUNSC_RUNTIME_LIMITS_V1.idleTtlMs,
@@ -280,59 +225,92 @@ export class RunscSessionRuntimeV1 {
       RUNSC_RUNTIME_LIMITS_V1.hardLifetimeMs,
       "hard lifetime",
     );
-    await this.options.quota.apply(input.workspaceId);
-    await this.options.quota.check(input.workspaceId);
-    const createdAtMs = this.now();
+    // All host-supplied identity factories run before a lease-owned root exists.
+    const runtimeId = this.nextRuntimeId();
+    const timer = setTimeout(() => undefined, 1);
+    clearTimeout(timer);
+    let workspaceMountSource: TrustedWorkspaceMountSource | undefined;
+    if (this.options.sandboxRoots) {
+      workspaceMountSource = await this.options.sandboxRoots.prepare(
+        input.workspaceId,
+        sandboxId,
+        this.options.quota,
+      );
+    } else {
+      await this.options.quota.apply(input.workspaceId);
+      if (this.closed) this.unavailable();
+      await this.options.quota.check(input.workspaceId);
+      workspaceMountSource = (
+        input as CreateRunscSessionInputV1
+      ).workspaceMountSource;
+    }
+    if (!workspaceMountSource) {
+      throw runscRuntimeError(
+        REMOTE_WORKER_ERROR_CODES_V1.configInvalid,
+        "remote-worker workspace mount source is unavailable",
+      );
+    }
     const record: SessionRecordV1 = {
-      sandboxId: input.sandboxId,
+      sandboxId,
       clientLeaseId: input.clientLeaseId,
       createDigest: digest,
       workspaceId: input.workspaceId,
-      workspaceMountSource: input.workspaceMountSource,
+      workspaceMountSource,
+      ownsWorkspaceMountSource: this.options.sandboxRoots !== undefined,
       image: input.image,
-      createdAtMs,
-      hardExpiresAtMs: createdAtMs + hardLifetimeMs,
+      createdAtMs: 0,
+      hardExpiresAtMs: 0,
       idleTtlMs,
-      runtimeId: this.nextRuntimeId(),
-      leaseExpiresAtMs: Math.min(
-        createdAtMs + idleTtlMs,
-        createdAtMs + hardLifetimeMs,
-      ),
-      timer: setTimeout(() => undefined, 1),
+      runtimeId,
+      leaseExpiresAtMs: 0,
+      timer,
       activeExec: false,
       activeFs: false,
       invocations: new Map(),
     };
-    clearTimeout(record.timer);
     try {
+      if (this.closed) this.unavailable();
       await this.startContainer(record);
+      if (this.closed) this.unavailable();
+      record.createdAtMs = this.now();
+      record.hardExpiresAtMs = record.createdAtMs + hardLifetimeMs;
+      record.leaseExpiresAtMs = Math.min(
+        record.createdAtMs + idleTtlMs,
+        record.hardExpiresAtMs,
+      );
+      this.state.bind(record);
+      this.armTimer(record);
     } catch (error) {
-      await this.retireFailedCreate(record);
-      throw error;
+      await this.retireFailedCreatePreservingError(record, error);
     }
-    if (this.closed) {
-      await this.retireFailedCreate(record);
-      this.unavailable();
-    }
-    this.bind(record);
-    this.armTimer(record);
-    return this.lease(record);
+    return this.state.lease(record, true);
   }
-
-  async exec(
+  exec(
     sandboxId: string,
     workspaceId: string,
     requestInput: RemoteWorkerExecRequestV1,
     signal?: AbortSignal,
     credentialScope?: AuthorizedWorkspaceCredentialScopeV1,
   ): Promise<RemoteWorkerExecResponseV1> {
-    const record = await this.activeSession(sandboxId);
-    if (record.workspaceId !== workspaceId) {
-      throw runscRuntimeError(
-        REMOTE_WORKER_ERROR_CODES_V1.sandboxWorkspaceMismatch,
-        "remote-worker sandbox binding does not match the authorized workspace",
-      );
-    }
+    if (this.closed) this.unavailable();
+    return this.track(() =>
+      this.execOnce(
+        sandboxId,
+        workspaceId,
+        requestInput,
+        signal,
+        credentialScope,
+      ),
+    );
+  }
+  private async execOnce(
+    sandboxId: string,
+    workspaceId: string,
+    requestInput: RemoteWorkerExecRequestV1,
+    signal?: AbortSignal,
+    credentialScope?: AuthorizedWorkspaceCredentialScopeV1,
+  ): Promise<RemoteWorkerExecResponseV1> {
+    const record = await this.activeSession(sandboxId, workspaceId);
     const parsedRequest =
       RemoteWorkerExecRequestSchemaV1.safeParse(requestInput);
     if (!parsedRequest.success) {
@@ -370,26 +348,23 @@ export class RunscSessionRuntimeV1 {
         "remote-worker exec concurrency is exhausted",
       );
     }
-    await this.requireInvocationCapacity(record);
+    if (record.invocations.size >= MAX_INVOCATION_RECORDS) {
+      await this.requireInvocationCapacity(record);
+    }
     const invocation: InvocationRecordV1 = { digest, state: "running" };
     record.invocations.set(request.invocationId, invocation);
     record.activeExec = true;
     this.activeExecs += 1;
     this.touch(record);
-
-    const operation = this.track(
-      this.executeInvocation(
-        record,
-        request.invocationId,
-        invocation,
-        request,
-        signal,
-        credentialScope,
-      ),
+    return await this.executeInvocation(
+      record,
+      request.invocationId,
+      invocation,
+      request,
+      signal,
+      credentialScope,
     );
-    return await operation;
   }
-
   private async executeInvocation(
     record: SessionRecordV1,
     invocationId: string,
@@ -453,10 +428,9 @@ export class RunscSessionRuntimeV1 {
       }
       record.activeExec = false;
       this.activeExecs -= 1;
-      if (this.sessions.get(record.sandboxId) === record) this.touch(record);
+      await this.settleOperationExpiry(record);
     }
   }
-
   private async resolveInvocationCredentials(
     record: SessionRecordV1,
     request: RemoteWorkerExecRequestV1,
@@ -480,7 +454,6 @@ export class RunscSessionRuntimeV1 {
       nowMs: this.now(),
     });
   }
-
   private async recoverInvocationFailure(
     record: SessionRecordV1,
     invocationId: string,
@@ -490,7 +463,7 @@ export class RunscSessionRuntimeV1 {
   ): Promise<void> {
     if (secretExecutionStarted) {
       invocation.state = "secret-terminal";
-      if (this.sessions.get(record.sandboxId) === record) {
+      if (this.state.sessions.get(this.state.sessionKey(record)) === record) {
         const cleaned = await this.replaceAfterUnprovenExecution(record);
         if (!cleaned) {
           try {
@@ -511,12 +484,35 @@ export class RunscSessionRuntimeV1 {
       if (!cleaned) this.incompleteCleanup();
     }
   }
-
   async fs(
     sandboxId: string,
     operation: RemoteWorkerWorkspaceOperationV1,
+  ): Promise<RemoteWorkerWorkspaceResultV1>;
+  async fs(
+    sandboxId: string,
+    workspaceId: string,
+    operation: RemoteWorkerWorkspaceOperationV1,
+  ): Promise<RemoteWorkerWorkspaceResultV1>;
+  fs(
+    sandboxId: string,
+    workspaceOrOperation: string | RemoteWorkerWorkspaceOperationV1,
+    operation?: RemoteWorkerWorkspaceOperationV1,
   ): Promise<RemoteWorkerWorkspaceResultV1> {
-    const record = await this.activeSession(sandboxId);
+    if (this.closed) this.unavailable();
+    return this.track(() =>
+      this.fsOnce(sandboxId, workspaceOrOperation, operation),
+    );
+  }
+  private async fsOnce(
+    sandboxId: string,
+    workspaceOrOperation: string | RemoteWorkerWorkspaceOperationV1,
+    operation?: RemoteWorkerWorkspaceOperationV1,
+  ): Promise<RemoteWorkerWorkspaceResultV1> {
+    const record = operation
+      ? await this.activeSession(sandboxId, workspaceOrOperation as string)
+      : await this.activeLegacySession(sandboxId);
+    const request =
+      operation ?? (workspaceOrOperation as RemoteWorkerWorkspaceOperationV1);
     if (record.activeExec || record.activeFs) {
       throw runscRuntimeError(
         REMOTE_WORKER_ERROR_CODES_V1.execInProgress,
@@ -525,21 +521,34 @@ export class RunscSessionRuntimeV1 {
     }
     record.activeFs = true;
     try {
-      const result = await this.workspace.execute(record.runtimeId, operation);
+      const result = await this.workspace.execute(record.runtimeId, request);
       this.touch(record);
       return result;
     } finally {
       record.activeFs = false;
+      await this.settleOperationExpiry(record);
     }
   }
-
   async renew(
     sandboxId: string,
     idleTtlMs: number,
+  ): Promise<RunscSessionLeaseV1>;
+  async renew(
+    sandboxId: string,
+    workspaceId: string,
+    idleTtlMs: number,
+  ): Promise<RunscSessionLeaseV1>;
+  async renew(
+    sandboxId: string,
+    workspaceOrIdleTtlMs: string | number,
+    idleTtlMs?: number,
   ): Promise<RunscSessionLeaseV1> {
-    const record = await this.activeSession(sandboxId);
+    const record =
+      typeof workspaceOrIdleTtlMs === "string"
+        ? await this.activeSession(sandboxId, workspaceOrIdleTtlMs)
+        : await this.activeLegacySession(sandboxId);
     const bounded = boundedPositiveInteger(
-      idleTtlMs,
+      idleTtlMs ?? (workspaceOrIdleTtlMs as number),
       RUNSC_RUNTIME_LIMITS_V1.idleTtlMs,
       "idle TTL",
     );
@@ -548,38 +557,67 @@ export class RunscSessionRuntimeV1 {
       record.hardExpiresAtMs,
     );
     this.armTimer(record);
-    return this.lease(record);
+    return this.state.lease(record, false);
   }
-
-  async dispose(sandboxId: string): Promise<void> {
-    const record = this.sessions.get(sandboxId);
+  async dispose(sandboxId: string): Promise<void>;
+  async dispose(sandboxId: string, workspaceId: string): Promise<void>;
+  async dispose(sandboxId: string, workspaceId?: string): Promise<void> {
+    const record =
+      workspaceId === undefined
+        ? this.findLegacySession(sandboxId)
+        : this.state.findSession(
+            sandboxId,
+            workspaceId,
+            this.options.sandboxRoots !== undefined,
+          );
     if (!record) return;
     await this.retire(record, "cleanup", false);
   }
-
   async shutdown(): Promise<void> {
-    if (this.closed) return;
+    if (this.shutdownComplete) return;
     this.closed = true;
-    for (const record of this.sessions.values()) clearTimeout(record.timer);
-    const drain = Promise.allSettled([...this.pendingOperations]);
-    await Promise.race([
-      drain,
-      new Promise<void>((resolve) =>
-        setTimeout(resolve, RUNSC_RUNTIME_LIMITS_V1.shutdownDrainMs),
-      ),
-    ]);
-    const records = [...this.sessions.values()];
-    const retirements = await Promise.allSettled(
-      records.map(async (record) => await this.retire(record, "shutdown")),
-    );
-    const failure = retirements.find(
-      (result): result is PromiseRejectedResult => result.status === "rejected",
-    );
-    if (failure) {
-      throw failure.reason;
+    const existing = this.shutdownOperation;
+    if (existing) return await existing;
+    const operation = this.shutdownOnce();
+    this.shutdownOperation = operation;
+    try {
+      await operation;
+      this.shutdownComplete = true;
+    } finally {
+      this.shutdownOperation = undefined;
     }
   }
-
+  private async shutdownOnce(): Promise<void> {
+    for (const record of this.state.sessions.values())
+      clearTimeout(record.timer);
+    await Promise.allSettled([...this.pendingCreates]);
+    await Promise.allSettled([...this.pendingOperations]);
+    const cleanup = await Promise.allSettled(
+      [...this.state.sessions.values()].map(
+        async (record) => await this.retire(record, "shutdown"),
+      ),
+    );
+    let rootFailure: unknown;
+    if (this.startupCleanupPending) {
+      try {
+        await this.startupSweepOnce();
+        this.startupCleanupPending = false;
+        this.startupComplete = true;
+      } catch (error) {
+        rootFailure = error;
+      }
+    }
+    try {
+      await this.options.sandboxRoots?.close();
+    } catch (error) {
+      rootFailure ??= error;
+    }
+    const failure = cleanup.find(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
+    if (failure) throw failure.reason;
+    if (rootFailure) throw rootFailure;
+  }
   private async runInvocation(
     record: SessionRecordV1,
     envelope: ReturnType<typeof prepareInvocationEnvelopeV1>,
@@ -619,7 +657,7 @@ export class RunscSessionRuntimeV1 {
       );
     }
     const parsed = decodeBoundedJson(dockerResult.stdout, 8 * 1024 * 1024);
-    if (!isHelperResponse(parsed) || !parsed.cleanupProven) {
+    if (!isInvocationHelperResponseV1(parsed) || !parsed.cleanupProven) {
       await this.resetOrRetireAfterUnknown(record);
       this.incompleteCleanup();
     }
@@ -652,7 +690,6 @@ export class RunscSessionRuntimeV1 {
     }
     return response;
   }
-
   private async startContainer(
     record: SessionRecordV1,
     workspaceReadOnly = false,
@@ -669,7 +706,6 @@ export class RunscSessionRuntimeV1 {
     });
     await this.workspace.probe(record.runtimeId);
   }
-
   private async replaceContainer(
     record: SessionRecordV1,
     workspaceReadOnly = false,
@@ -691,7 +727,6 @@ export class RunscSessionRuntimeV1 {
       );
     }
   }
-
   private async replaceAfterUnprovenExecution(
     record: SessionRecordV1,
   ): Promise<boolean> {
@@ -702,7 +737,6 @@ export class RunscSessionRuntimeV1 {
       return false;
     }
   }
-
   private async resetOrRetireAfterUnknown(
     record: SessionRecordV1,
   ): Promise<void> {
@@ -710,17 +744,42 @@ export class RunscSessionRuntimeV1 {
       await this.retire(record, "cleanup");
     }
   }
-
-  private async activeSession(sandboxId: string): Promise<SessionRecordV1> {
+  private async activeSession(
+    sandboxId: string,
+    workspaceId: string,
+  ): Promise<SessionRecordV1> {
     if (this.closed) this.unavailable();
-    const record = this.sessions.get(sandboxId);
-    if (!record) {
-      await this.notifyMissing(sandboxId);
-      throw runscRuntimeError(
-        REMOTE_WORKER_ERROR_CODES_V1.sandboxNotFound,
-        "remote-worker sandbox was not found",
-      );
+    if (!this.options.sandboxRoots) {
+      const canonicalWorkspaceId = validateQuotaWorkspaceId(workspaceId);
+      const legacy = this.findLegacySession(sandboxId);
+      if (!legacy) {
+        await this.retirement.notifyMissing(sandboxId);
+        this.sandboxNotFound();
+      }
+      if (legacy.workspaceId !== canonicalWorkspaceId) this.workspaceMismatch();
+      return await this.requireActive(legacy);
     }
+    const record = this.state.findSession(sandboxId, workspaceId, true);
+    if (!record) {
+      await this.notifyMissing(workspaceId, sandboxId);
+      this.sandboxNotFound();
+    }
+    return await this.requireActive(record);
+  }
+  private async activeLegacySession(
+    sandboxId: string,
+  ): Promise<SessionRecordV1> {
+    if (this.closed) this.unavailable();
+    const record = this.findLegacySession(sandboxId);
+    if (!record) {
+      await this.retirement.notifyMissing(sandboxId);
+      this.sandboxNotFound();
+    }
+    return await this.requireActive(record);
+  }
+  private async requireActive(
+    record: SessionRecordV1,
+  ): Promise<SessionRecordV1> {
     if (record.retirement) {
       throw runscRuntimeError(
         REMOTE_WORKER_ERROR_CODES_V1.sandboxDisposed,
@@ -729,8 +788,13 @@ export class RunscSessionRuntimeV1 {
     }
     const nowMs = this.now();
     if (record.hardExpiresAtMs <= nowMs || record.leaseExpiresAtMs <= nowMs) {
-      const hard = record.hardExpiresAtMs <= nowMs;
-      await this.retire(record, hard ? "hard-expiry" : "idle");
+      const reason: "idle" | "hard-expiry" =
+        record.hardExpiresAtMs <= nowMs ? "hard-expiry" : "idle";
+      if (record.activeExec || record.activeFs) {
+        record.expiryPending = reason;
+      } else {
+        await this.retire(record, reason);
+      }
       throw runscRuntimeError(
         REMOTE_WORKER_ERROR_CODES_V1.sandboxExpired,
         "remote-worker sandbox expired",
@@ -738,36 +802,43 @@ export class RunscSessionRuntimeV1 {
     }
     return record;
   }
-
   private armTimer(record: SessionRecordV1): void {
     clearTimeout(record.timer);
     if (record.retirement) return;
     const deadline = Math.min(record.leaseExpiresAtMs, record.hardExpiresAtMs);
     record.timer = setTimeout(
       () => {
-        const reason: RunscSessionRetirementReasonV1 =
+        const reason: "idle" | "hard-expiry" =
           record.hardExpiresAtMs <= this.now() ? "hard-expiry" : "idle";
+        if (record.activeExec || record.activeFs) {
+          record.expiryPending = reason;
+          return;
+        }
         void this.retire(record, reason).catch(() => undefined);
       },
       Math.max(0, deadline - this.now()),
     );
   }
-
   private touch(record: SessionRecordV1): void {
     if (record.retirement) return;
+    record.expiryPending = undefined;
     record.leaseExpiresAtMs = Math.min(
       this.now() + record.idleTtlMs,
       record.hardExpiresAtMs,
     );
     this.armTimer(record);
   }
-
-  private lease(record: SessionRecordV1): RunscSessionLeaseV1 {
-    return Object.freeze({
-      sandboxId: record.sandboxId,
-      leaseExpiresAtMs: record.leaseExpiresAtMs,
-      hardExpiresAtMs: record.hardExpiresAtMs,
-    });
+  private async settleOperationExpiry(record: SessionRecordV1): Promise<void> {
+    if (this.state.sessions.get(this.state.sessionKey(record)) !== record) return;
+    if (record.retirement) return;
+    if (
+      record.expiryPending === "hard-expiry" ||
+      record.hardExpiresAtMs <= this.now()
+    ) {
+      await this.retire(record, "hard-expiry");
+      return;
+    }
+    this.touch(record);
   }
 
   private nextRuntimeId(): string {
@@ -780,7 +851,6 @@ export class RunscSessionRuntimeV1 {
     }
     return value;
   }
-
   private async requireInvocationCapacity(
     record: SessionRecordV1,
   ): Promise<void> {
@@ -791,30 +861,26 @@ export class RunscSessionRuntimeV1 {
       "remote-worker sandbox invocation history is exhausted",
     );
   }
-
-  private detach(record: SessionRecordV1): void {
-    clearTimeout(record.timer);
-    this.sessions.delete(record.sandboxId);
-    if (this.leaseBindings.get(record.clientLeaseId) === record) {
-      this.leaseBindings.delete(record.clientLeaseId);
-    }
-    if (this.workspaceBindings.get(record.workspaceId) === record) {
-      this.workspaceBindings.delete(record.workspaceId);
-    }
-    record.invocations.clear();
+  private findLegacySession(sandboxId: string): SessionRecordV1 | undefined {
+    if (this.options.sandboxRoots) this.compositeAuthorityRequired();
+    safeOpaqueId(sandboxId, "sandbox id");
+    return this.state.findLegacySession(sandboxId);
   }
-
-  private bind(record: SessionRecordV1): void {
-    this.sessions.set(record.sandboxId, record);
-    this.leaseBindings.set(record.clientLeaseId, record);
-    this.workspaceBindings.set(record.workspaceId, record);
-  }
-
   private async retireFailedCreate(record: SessionRecordV1): Promise<void> {
-    this.bind(record);
+    this.state.bind(record);
     await this.retire(record, "cleanup", false);
   }
-
+  private async retireFailedCreatePreservingError(
+    record: SessionRecordV1,
+    originalError: unknown,
+  ): Promise<never> {
+    try {
+      await this.retireFailedCreate(record);
+    } catch {
+      // Retirement retains the bound record and schedules retry-safe cleanup.
+    }
+    throw originalError;
+  }
   private async retire(
     record: SessionRecordV1,
     reason: RunscSessionRetirementReasonV1,
@@ -822,39 +888,41 @@ export class RunscSessionRuntimeV1 {
   ): Promise<void> {
     await this.retirement.retire(record, reason, notify);
   }
-
-  private async notifyMissing(sandboxId: string): Promise<void> {
+  private async notifyMissing(
+    workspaceId: string,
+    sandboxId: string,
+  ): Promise<void> {
     safeOpaqueId(sandboxId, "sandbox id");
-    await this.retirement.notifyMissing(sandboxId);
+    await this.retirement.notifyMissingComposite(workspaceId, sandboxId);
   }
-
-  private track<T>(operation: Promise<T>): Promise<T> {
-    this.pendingOperations.add(operation);
+  private track<T>(
+    start: () => Promise<T>,
+    operations = this.pendingOperations,
+  ): Promise<T> {
+    const operation = Promise.resolve().then(start);
+    operations.add(operation);
     const cleanup = (): void => {
-      this.pendingOperations.delete(operation);
+      operations.delete(operation);
     };
     void operation.then(cleanup, cleanup);
     return operation;
   }
-
   private unavailable(): never {
-    throw runscRuntimeError(
-      REMOTE_WORKER_ERROR_CODES_V1.unavailable,
-      "remote-worker runtime is unavailable",
-    );
+    return sessionStateError("unavailable");
   }
-
+  private compositeAuthorityRequired(): never {
+    return sessionStateError("composite-authority");
+  }
+  private sandboxNotFound(): never {
+    return sessionStateError("not-found");
+  }
+  private workspaceMismatch(): never {
+    return sessionStateError("workspace-mismatch");
+  }
   private idempotencyConflict(): never {
-    throw runscRuntimeError(
-      REMOTE_WORKER_ERROR_CODES_V1.idempotencyConflict,
-      "remote-worker idempotency key conflicts with an existing request",
-    );
+    return sessionStateError("conflict");
   }
-
   private incompleteCleanup(): never {
-    throw runscRuntimeError(
-      REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
-      "remote-worker invocation cleanup could not be proven",
-    );
+    return sessionStateError("incomplete-cleanup");
   }
 }

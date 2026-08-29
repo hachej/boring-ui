@@ -138,10 +138,12 @@ export {
   RunscSandboxRootLifecycleV1,
   type RunscSandboxRootLifecycleOptionsV1,
 } from "./runtime/sandboxRootLifecycle";
-export type { CompositeRunscSessionRetirementV1 } from "./runtime/sessionRetirement";
 export {
   RunscSessionRuntimeV1,
+  type CompositeRunscSessionRetirementV1,
+  type CreateCompositeRunscSessionInputV1,
   type CreateRunscSessionInputV1,
+  type CompositeRunscSessionLeaseV1,
   type RunscSessionLeaseV1,
   type RunscSessionRetirementV1,
   type RunscSessionRuntimeOptionsV1,
