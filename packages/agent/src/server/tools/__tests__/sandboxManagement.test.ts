@@ -80,6 +80,16 @@ describe('sandbox management tool', () => {
     }
     expect(text).toContain('create')
     expect(text).toContain('release')
+    expect(tool.parameters).toMatchObject({
+      type: 'object',
+      required: ['op'],
+      additionalProperties: false,
+      properties: {
+        op: { type: 'string', enum: ['create', 'list', 'status', 'release'] },
+        sandbox: { type: 'string' },
+      },
+    })
+    expect(tool.parameters).not.toHaveProperty('oneOf')
   })
 
   it('fails closed through ordinary public execution', async () => {

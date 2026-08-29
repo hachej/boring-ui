@@ -677,20 +677,25 @@ export class EmbeddedAgentGateway implements AgentGateway {
     const claim = await this.verify(input.scope)
     await this.assertAgentAccess(input.ref.agentTypeId, input.scope, claim, 'session.mutate')
     const binding = await this.bindingForSession(input.scope, claim, input.ref)
+    const sandboxOwnerId = binding.scope.sandboxTools
+      ? sandboxLeaseOwnerIdForSession({
+          workspaceScopeId: claim.workspaceScopeId,
+          agentTypeId: input.ref.agentTypeId,
+        }, input.ref.sessionId)
+      : undefined
     await this.sessionEffect(input.ref, input.scope, claim, 'session.delete', input.requestId, {}, async () => {
       await binding.composition.service.deleteSession!(
         context(claim, input.requestId), input.ref.sessionId,
       )
-      if (binding.scope.sandboxTools) {
-        const ownerId = sandboxLeaseOwnerIdForSession({
-          workspaceScopeId: claim.workspaceScopeId,
-          agentTypeId: input.ref.agentTypeId,
-        }, input.ref.sessionId)
-        await binding.scope.sandboxTools.leases.releaseOwner(ownerId)
-      }
       this.runtime.activity.delete(claim.workspaceScopeId, input.ref)
       return null
     }, { bindingKey: binding.key })
+    if (sandboxOwnerId) {
+      // Session deletion is already durably settled. Lease cleanup is separate,
+      // idempotent host maintenance and remains retryable through the reaper.
+      try { await binding.scope.sandboxTools!.leases.releaseOwner(sandboxOwnerId) }
+      catch { /* cleanup-pending state remains registered */ }
+    }
   }
 
   private async *authorizedEvents(

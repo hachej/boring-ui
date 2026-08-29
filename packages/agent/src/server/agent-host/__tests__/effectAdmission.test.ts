@@ -98,6 +98,26 @@ describe('Embedded Agent Gateway strong effect admission', () => {
     }, ref.sessionId))
   })
 
+  it('keeps completed session deletion settled when lease cleanup fails', async () => {
+    const fixture = await createEmbeddedGatewayFixture()
+    const releaseOwner = vi.fn(async () => { throw new Error('cleanup unavailable') })
+    fixture.setSandboxTools('alpha', { releaseOwner } as unknown as SandboxLeaseService)
+    const scope = fixture.issueScope()
+    const ref = await fixture.gateway.createSession({
+      scope,
+      agentTypeId: 'alpha',
+      requestId: 'create-with-failing-cleanup',
+    })
+
+    await expect(fixture.gateway.deleteSession({
+      scope, ref, requestId: 'delete-with-failing-cleanup',
+    })).resolves.toBeUndefined()
+    await expect(fixture.gateway.readSessionState({ scope, ref })).rejects.toMatchObject({
+      code: AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND,
+    })
+    expect(releaseOwner).toHaveBeenCalledOnce()
+  })
+
   it('executes archive through inventory with replay and digest-conflict semantics', async () => {
     const { fixture, scope, ref } = await createSession()
     const input = { scope, ref, requestId: 'archive-once', archived: true }

@@ -217,20 +217,12 @@ export function createSandboxManagementTool(options: SandboxManagementToolOption
     description: 'Create, inspect, list, or release disposable remote coding sandboxes. Use the returned sandbox handle with ordinary bash and file tools.',
     parameters: {
       type: 'object',
-      oneOf: [
-        { properties: { op: { const: 'create' } }, required: ['op'], additionalProperties: false },
-        { properties: { op: { const: 'list' } }, required: ['op'], additionalProperties: false },
-        {
-          properties: { op: { const: 'status' }, sandbox: { type: 'string', pattern: HANDLE_PATTERN } },
-          required: ['op', 'sandbox'],
-          additionalProperties: false,
-        },
-        {
-          properties: { op: { const: 'release' }, sandbox: { type: 'string', pattern: HANDLE_PATTERN } },
-          required: ['op', 'sandbox'],
-          additionalProperties: false,
-        },
-      ],
+      properties: {
+        op: { type: 'string', enum: ['create', 'list', 'status', 'release'] },
+        sandbox: { type: 'string', pattern: HANDLE_PATTERN },
+      },
+      required: ['op'],
+      additionalProperties: false,
     },
     async execute(params, ctx) {
       return await executeObservation(options, params, ctx)
