@@ -15,6 +15,7 @@ import { EnvironmentLeaseManager, type EnvironmentLease } from './environmentLea
 import { getOptionalRuntimeBundleStorageRoot } from '../runtime/mode'
 import { mergeRuntimeFilesystemBindings } from '../runtime/filesystemBindings'
 import { SandboxLeaseServiceRegistry } from '../sandbox/leases/sandboxLeaseServiceRegistry'
+import { assertSandboxToolCatalogAuthority } from '../tools/sandboxTargeting'
 import { createAgentHostRoutes } from './httpProjection'
 import { InMemoryAgentRequestLedger } from './requestLedger'
 import { resolveRequestLedgerPath } from './requestLedgerPath'
@@ -479,6 +480,7 @@ function createRuntime(
         `binding:${agentTypeId}`,
       )
       validateResolvedRuntimeScope(resolved)
+      assertSandboxToolCatalogAuthority(resolved)
       if (resolved.sandboxTools) sandboxLeaseServices.register(resolved.sandboxTools)
       const key = JSON.stringify([
         agentTypeId,

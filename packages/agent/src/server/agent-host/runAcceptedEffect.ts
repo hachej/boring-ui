@@ -171,6 +171,11 @@ export async function runAcceptedEffect(options: RunAcceptedEffectOptions): Prom
             await preflight()
             runtime.assertOpen()
           } catch (error) {
+            const safeFailure = classifySafeActionFailure?.(error)
+            if (safeFailure) {
+              await runtime.ledger.reject(key, safeFailure).catch(() => {})
+              throw failure(safeFailure)
+            }
             if (error instanceof AgentGatewayError) {
               await runtime.ledger.reject(key, { kind: 'gateway', error: error.toJSON() }).catch(() => {})
               throw error

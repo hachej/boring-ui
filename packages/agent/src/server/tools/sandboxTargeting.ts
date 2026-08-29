@@ -73,14 +73,28 @@ function owner(options: SandboxTargetingOptions, ctx: ToolExecContext): string {
   return sandboxLeaseOwnerId(options, ctx)
 }
 
-/** Wraps only the canonical standard tools; custom/plugin/MCP/UI tools never receive lease access. */
-export function assertNoSandboxToolCollisions(
-  extraTools: readonly AgentTool[],
-  includeUploadTools: boolean,
-): void {
-  const reserved = new Set(sandboxReservedToolNames(includeUploadTools))
-  const collision = extraTools.find((tool) => reserved.has(tool.name))
-  if (collision) throw new Error(`sandbox capability reserves tool name: ${collision.name}`)
+/**
+ * Pure authority preflight shared by Host binding resolution and composition.
+ * Keeping the stable failure and reserved-name policy here prevents an early
+ * Host check from drifting from the composition defense in depth.
+ */
+export function assertSandboxToolCatalogAuthority(input: {
+  readonly sandboxTools?: unknown
+  readonly extraTools?: readonly AgentTool[]
+  readonly includeUploadTools?: boolean
+}): void {
+  if (!input.sandboxTools) return
+  const reserved = new Set(sandboxReservedToolNames(input.includeUploadTools === true))
+  const collision = input.extraTools?.find((tool) => reserved.has(tool.name))
+  if (!collision) return
+  throw Object.assign(
+    new Error(`sandbox capability reserves tool name: ${collision.name}`),
+    {
+      code: ErrorCode.enum.AUTHORED_AGENT_TOOL_COLLISION,
+      statusCode: 409,
+      retryable: false,
+    },
+  )
 }
 
 export function addSandboxTargeting(

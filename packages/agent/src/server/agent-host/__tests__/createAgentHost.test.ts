@@ -12,6 +12,7 @@ import { createTestRuntimeModeAdapter } from '@agent-test-host'
 import { getEnv, restoreEnvForTest, setEnvForTest } from '../../config/env'
 import { createScriptedPiHarness } from '../../testing/scriptedPiHarness'
 import { SandboxLeaseService } from '../../sandbox/leases/sandboxLease'
+import { sandboxReservedToolNames } from '../../tools/sandboxTargeting'
 import { InMemorySessionChangesTracker } from '../../http/sessionChangesTracker'
 import type { RuntimeFilesystemBinding } from '../../runtime/mode'
 import { InMemoryAgentRequestLedger } from '../requestLedger'
@@ -740,6 +741,80 @@ describe('createAgentHost', () => {
 
     await expect(created.host.close()).resolves.toBeUndefined()
     expect(remoteDispose).toHaveBeenCalledTimes(2)
+  })
+
+  it('rejects every sandbox-reserved authored tool before environment, provider, or harness creation', async () => {
+    const sessionRoot = await root()
+    const baseAdapter = createTestRuntimeModeAdapter('direct')
+    const createEnvironment = vi.fn(baseAdapter.create.bind(baseAdapter))
+    const createSandbox = vi.fn(async () => {
+      throw new Error('sandbox provider must not run while composing a catalog')
+    })
+    const leases = new SandboxLeaseService({
+      workspaceRoot: sessionRoot,
+      provider: { create: createSandbox } as unknown as SandboxProviderV1,
+      serviceDigest: 'catalog-authority',
+      ttlMs: 60_000,
+      reapIntervalMs: 60_000,
+      drainTimeoutMs: 100,
+      maxActiveLeasesPerOwner: 1,
+      maxActiveLeasesTotal: 1,
+      createHandle: () => 'lease-handle-0001',
+    })
+    const harnessFactory = vi.fn(createScriptedPiHarness)
+    let toolName = 'sandbox'
+    const extraTool = () => ({
+      name: toolName,
+      description: 'authored collision probe',
+      parameters: {},
+      async execute() {
+        return { content: [{ type: 'text' as const, text: 'probe' }] }
+      },
+    })
+    const created = await createAgentHost({
+      ...options(sessionRoot),
+      runtimeModeAdapter: { ...baseAdapter, create: createEnvironment },
+      harnessFactory,
+      resolveAuthorizedAgentRuntimeScope: vi.fn(async () => ({
+        identity: `catalog-authority:${toolName}`,
+        physicalBindingIdentity: `catalog-authority:${toolName}`,
+        resourceInputDigest: `catalog-authority:${toolName}`,
+        sessionNamespace: 'catalog-authority',
+        sandboxTools: { digest: 'catalog-authority', leases },
+        includeFilesystemTools: true,
+        includeUploadTools: true,
+        extraTools: [extraTool()],
+      })),
+    })
+
+    const reserved = sandboxReservedToolNames(true)
+    expect(reserved).toEqual(['sandbox', 'bash', 'read', 'write', 'edit', 'find', 'grep', 'ls', 'upload_file'])
+    try {
+      for (const reservedName of reserved) {
+        toolName = reservedName
+        await expect(created.gateway.createSession({
+          scope,
+          agentTypeId: 'alpha',
+          requestId: `catalog-collision-${reservedName}`,
+        })).rejects.toMatchObject({ code: ErrorCode.enum.AUTHORED_AGENT_TOOL_COLLISION })
+        expect(createEnvironment).not.toHaveBeenCalled()
+        expect(createSandbox).not.toHaveBeenCalled()
+        expect(harnessFactory).not.toHaveBeenCalled()
+      }
+
+      toolName = 'worker_custom_tool'
+      await expect(created.gateway.createSession({
+        scope,
+        agentTypeId: 'alpha',
+        requestId: 'catalog-no-collision',
+      })).resolves.toMatchObject({ agentTypeId: 'alpha' })
+      expect(createEnvironment).toHaveBeenCalledOnce()
+      expect(createSandbox).not.toHaveBeenCalled()
+      expect(harnessFactory).toHaveBeenCalledOnce()
+    } finally {
+      await created.host.close().catch(() => {})
+      await leases.dispose().catch(() => {})
+    }
   })
 
   it('force-revokes a never-settling callback operation at shutdown grace and publishes no late continuation', async () => {

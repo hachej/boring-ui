@@ -5,7 +5,7 @@ import { ErrorCode } from '../../../shared/error-codes'
 import type { AgentTool, ToolExecContext } from '../../../shared/tool'
 import type { Sandbox, Workspace } from '../../../shared/index'
 import type { SandboxLeaseService } from '../../sandbox/leases/sandboxLease'
-import { addSandboxTargeting, assertNoSandboxToolCollisions } from '../sandboxTargeting'
+import { addSandboxTargeting, assertSandboxToolCatalogAuthority } from '../sandboxTargeting'
 
 const encoder = new TextEncoder()
 const ENOENT_CODE = 'ENOENT'
@@ -101,10 +101,19 @@ function fixture() {
 describe('native sandbox targeting', () => {
   it('reserves every canonical target name only when the capability is composed', () => {
     for (const name of ['sandbox', 'bash', 'read', 'write', 'edit', 'find', 'grep', 'ls', 'upload_file']) {
-      expect(() => assertNoSandboxToolCollisions([primary(name)], true)).toThrow(`reserves tool name: ${name}`)
+      expect(() => assertSandboxToolCatalogAuthority({
+        sandboxTools: {}, extraTools: [primary(name)], includeUploadTools: true,
+      })).toThrow(`reserves tool name: ${name}`)
     }
-    expect(() => assertNoSandboxToolCollisions([primary('upload_file')], false)).not.toThrow()
-    expect(() => assertNoSandboxToolCollisions([primary('custom')], true)).not.toThrow()
+    expect(() => assertSandboxToolCatalogAuthority({
+      sandboxTools: {}, extraTools: [primary('upload_file')], includeUploadTools: false,
+    })).not.toThrow()
+    expect(() => assertSandboxToolCatalogAuthority({
+      sandboxTools: {}, extraTools: [primary('custom')], includeUploadTools: true,
+    })).not.toThrow()
+    expect(() => assertSandboxToolCatalogAuthority({
+      extraTools: [primary('sandbox')], includeUploadTools: true,
+    })).not.toThrow()
   })
 
   it('preserves the primary delegate when sandbox is omitted and excludes isolated-code', async () => {

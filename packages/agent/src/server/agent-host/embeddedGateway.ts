@@ -423,6 +423,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
         preflight: async () => {
           binding = await this.runtime.resolveBinding(input.agentTypeId, input.scope, claim)
         },
+        classifySafeActionFailure: stableServiceActionFailure,
       },
     ) as AgentSessionRef
   }

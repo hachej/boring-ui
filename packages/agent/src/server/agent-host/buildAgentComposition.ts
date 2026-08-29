@@ -31,7 +31,7 @@ import type { AgentHostRuntime } from './createAgentHost'
 import { createSandboxManagementTool } from '../tools/sandboxManagement'
 import {
   addSandboxTargeting,
-  assertNoSandboxToolCollisions,
+  assertSandboxToolCatalogAuthority,
 } from '../tools/sandboxTargeting'
 
 /**
@@ -234,15 +234,9 @@ export async function buildAgentComposition(
   ]
   const sandboxCapability = runtimeScope.sandboxTools
   const extraTools = runtimeScope.extraTools ?? []
-  if (sandboxCapability) {
-    try {
-      assertNoSandboxToolCollisions(extraTools, runtimeScope.includeUploadTools === true)
-    } catch (error) {
-      throw Object.assign(error instanceof Error ? error : new Error('sandbox tool collision'), {
-        code: ErrorCode.enum.AUTHORED_AGENT_TOOL_COLLISION,
-      })
-    }
-  }
+  // Defense in depth: Host binding resolution runs this pure preflight before
+  // acquiring resources, and the assembly funnel reasserts the same policy.
+  assertSandboxToolCatalogAuthority(runtimeScope)
   const standardTools = sandboxCapability
     ? addSandboxTargeting(primaryStandardTools, {
         leases: sandboxCapability.leases,
