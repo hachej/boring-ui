@@ -40,7 +40,7 @@ const remoteWorkerErrorCodes = new Set<string>(
   Object.values(REMOTE_WORKER_ERROR_CODES_V1),
 );
 
-function asRemoteWorkerProviderError(
+export function asRemoteWorkerProviderErrorV1(
   error: unknown,
 ): SandboxProviderError | undefined {
   if (error instanceof SandboxProviderError) return error;
@@ -293,7 +293,7 @@ export class RemoteWorkerProtocolClientV1 {
             "remote-worker request timed out",
           );
         }
-        const providerError = asRemoteWorkerProviderError(error);
+        const providerError = asRemoteWorkerProviderErrorV1(error);
         if (
           input.operation === "exec" &&
           (!providerError ||
@@ -348,7 +348,7 @@ export class RemoteWorkerProtocolClientV1 {
     try {
       return await createOnce();
     } catch (error) {
-      const providerError = asRemoteWorkerProviderError(error);
+      const providerError = asRemoteWorkerProviderErrorV1(error);
       const recoverable =
         providerError !== undefined &&
         (providerError.code === REMOTE_WORKER_ERROR_CODES_V1.unavailable ||
@@ -435,7 +435,8 @@ export class RemoteWorkerProtocolClientV1 {
           "remote-worker event stream connection timed out",
         );
       }
-      if (error instanceof SandboxProviderError) throw error;
+      const providerError = asRemoteWorkerProviderErrorV1(error);
+      if (providerError) throw providerError;
       throw new SandboxProviderError(
         REMOTE_WORKER_ERROR_CODES_V1.unavailable,
         "remote-worker event stream is unavailable",
@@ -444,6 +445,20 @@ export class RemoteWorkerProtocolClientV1 {
       clearTimeout(timer);
       this.activeControllers.delete(controller);
     }
+    const transportStream = stream;
+    stream = {
+      close: () => transportStream.close(),
+      closed: transportStream.closed.catch((error: unknown) => {
+        const providerError = asRemoteWorkerProviderErrorV1(error);
+        throw (
+          providerError ??
+          new SandboxProviderError(
+            REMOTE_WORKER_ERROR_CODES_V1.unavailable,
+            "remote-worker event stream closed unexpectedly",
+          )
+        );
+      }),
+    };
     this.activeStreams.add(stream);
     const deadlineMs = Math.min(
       capability.claims.expiresAtMs,

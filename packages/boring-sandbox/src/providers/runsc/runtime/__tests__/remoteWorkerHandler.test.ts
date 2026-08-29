@@ -14,6 +14,7 @@ import {
   type RemoteWorkerCapabilityClaimsV1,
   type RemoteWorkerCreateRequestV1,
   type RemoteWorkerOperationV1,
+  type RemoteWorkerWorkspaceOperationV1,
 } from "../../../../shared/remoteWorkerProtocolV1";
 import { RemoteWorkerSandboxBindingRegistryV1 } from "../../../remote-worker/bindingRegistry";
 import { remoteWorkerRequestDigestV1 } from "../../../remote-worker/requestDigest";
@@ -116,6 +117,7 @@ function harness(
     payload: RemoteWorkerBindingReceiptPayloadV1,
   ) => string | Promise<string> = (payload) =>
     `authenticated:${remoteWorkerRequestDigestV1(payload)}`,
+  now: () => number = () => nowMs,
 ) {
   let tokenSequence = 0;
   const tokens = new Map<string, RemoteWorkerCapabilityClaimsV1>();
@@ -126,6 +128,7 @@ function harness(
     authorizedWorkspaceId = workspaceId,
   ): string => {
     const value = `token-${(tokenSequence += 1)}`;
+    const issuedAtMs = now();
     tokens.set(
       value,
       RemoteWorkerCapabilityClaimsSchemaV1.parse({
@@ -135,8 +138,8 @@ function harness(
         ...(sandboxId ? { sandboxId } : {}),
         operation,
         requestDigest: remoteWorkerRequestDigestV1(requestBody),
-        issuedAtMs: nowMs,
-        expiresAtMs: nowMs + 5_000,
+        issuedAtMs,
+        expiresAtMs: issuedAtMs + 5_000,
         nonce: `nonce-${tokenSequence}`,
       }),
     );
@@ -144,7 +147,7 @@ function harness(
   };
   const registry = new RemoteWorkerSandboxBindingRegistryV1({
     workerId: "worker-1",
-    now: () => nowMs,
+    now,
     capabilityAuthenticator: {
       authenticate: ({ token: value }) => tokens.get(value),
     },
@@ -164,30 +167,41 @@ function harness(
     closed: new Promise<void>(() => undefined),
     close: () => undefined,
   }));
+  const qualification = {
+    evidenceDigest: digest,
+    qualificationBundleDigest: digest,
+    providerCohortDigest: digest,
+    imageDigest: digest,
+    qualificationRunId: "qualification-1",
+    qualifiedAtMs: nowMs,
+  };
   const handler = new RemoteWorkerRunscHandlerV1({
     registry,
     workloadImage,
     multiSandboxRootsQualified,
-    qualification: {
-      evidenceDigest: digest,
-      qualificationBundleDigest: digest,
-      providerCohortDigest: digest,
-      imageDigest: digest,
-      qualificationRunId: "qualification-1",
-      qualifiedAtMs: nowMs,
-    },
+    qualification,
     openEvents,
     runtime: {
       runner,
       quota: { workspaceRoot: root, apply, check },
-      now: () => nowMs,
+      now,
       runtimeIdFactory: () =>
         (++runtimeSequence).toString(16).padStart(32, "0"),
       sandboxIdFactory: () => `sandbox-${++sandboxSequence}`,
       sandboxRoots: roots,
     },
   });
-  return { handler, token, runner, roots, apply, check, openEvents, registry };
+  return {
+    handler,
+    token,
+    runner,
+    roots,
+    apply,
+    check,
+    openEvents,
+    registry,
+    qualification,
+  };
 }
 
 describe("authenticated remote-worker runsc handler", () => {
@@ -215,6 +229,75 @@ describe("authenticated remote-worker runsc handler", () => {
         request: createB,
       }),
     ).rejects.toMatchObject({ code: REMOTE_WORKER_ERROR_CODES_V1.unqualified });
+  });
+
+  test("snapshots qualification facts before advertising health", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "boring-handler-snapshot-"));
+    const root = join(parent, "sandboxes");
+    await mkdir(root, { mode: 0o750 });
+    const { handler, token, qualification } = harness(root);
+    const changedDigest = `sha256:${"b".repeat(64)}` as const;
+    Object.assign(qualification, {
+      evidenceDigest: changedDigest,
+      imageDigest: changedDigest,
+      qualificationRunId: "changed-run",
+    });
+
+    const health = await handler.health({
+      capabilityToken: token("health", {}),
+    });
+    expect(health.evidenceDigest).toBe(digest);
+    expect(health.imageDigest).toBe(digest);
+    expect(health.qualificationRunId).toBe("qualification-1");
+  });
+
+  test("authenticates capabilities before parsing untrusted request bodies", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "boring-handler-auth-order-"));
+    const root = join(parent, "sandboxes");
+    await mkdir(root, { mode: 0o750 });
+    const { handler } = harness(root);
+    const reads = vi.fn();
+    const malformed = new Proxy(
+      {},
+      {
+        ownKeys() {
+          reads();
+          throw new Error("request body must not be inspected");
+        },
+      },
+    );
+    const expected = {
+      code: REMOTE_WORKER_ERROR_CODES_V1.unauthenticated,
+    };
+
+    await expect(
+      handler.create({
+        capabilityToken: "invalid-capability",
+        request: malformed as RemoteWorkerCreateRequestV1,
+      }),
+    ).rejects.toMatchObject(expected);
+    await expect(
+      handler.fs({
+        capabilityToken: "invalid-capability",
+        sandboxId: "sandbox-a",
+        request: malformed as RemoteWorkerWorkspaceOperationV1,
+      }),
+    ).rejects.toMatchObject(expected);
+    await expect(
+      handler.exec({
+        capabilityToken: "invalid-capability",
+        sandboxId: "sandbox-a",
+        request: malformed as never,
+      }),
+    ).rejects.toMatchObject(expected);
+    await expect(
+      handler.renew({
+        capabilityToken: "invalid-capability",
+        sandboxId: "sandbox-a",
+        request: malformed as never,
+      }),
+    ).rejects.toMatchObject(expected);
+    expect(reads).not.toHaveBeenCalled();
   });
 
   test("retains exact binding authority across a transient root cleanup failure", async () => {
@@ -464,6 +547,63 @@ describe("authenticated remote-worker runsc handler", () => {
         request: read,
       }),
     ).resolves.toEqual({ content: "" });
+  });
+
+  test("does not publish a lease that expires during receipt signing", async () => {
+    vi.useFakeTimers();
+    let clock = nowMs;
+    try {
+      const parent = await mkdtemp(join(tmpdir(), "boring-handler-expired-bind-"));
+      const root = join(parent, "sandboxes");
+      await mkdir(root, { mode: 0o750 });
+      let enterSigner!: () => void;
+      const signerEntered = new Promise<void>((resolve) => {
+        enterSigner = resolve;
+      });
+      let releaseSigner!: () => void;
+      const signerReleased = new Promise<void>((resolve) => {
+        releaseSigner = resolve;
+      });
+      const { handler, token, runner } = harness(
+        root,
+        true,
+        async (payload) => {
+          enterSigner();
+          await signerReleased;
+          return `authenticated:${remoteWorkerRequestDigestV1(payload)}`;
+        },
+        () => clock,
+      );
+      const create = request("lease-expired-signing");
+      const creating = handler.create({
+        capabilityToken: token("create", create),
+        request: create,
+      });
+      await signerEntered;
+
+      clock += create.idleTimeoutMs + 1;
+      await vi.advanceTimersByTimeAsync(create.idleTimeoutMs + 1);
+      releaseSigner();
+      await expect(creating).rejects.toMatchObject({
+        code: REMOTE_WORKER_ERROR_CODES_V1.requestInvalid,
+      });
+      expect(runner.mounts.size).toBe(0);
+      await expect(
+        lstat(join(root, workspaceId, "sandbox-1")),
+      ).rejects.toMatchObject({ code: "ENOENT" });
+      const read = { op: "readFile" as const, path: "state" };
+      await expect(
+        handler.fs({
+          capabilityToken: token("fs", read, "sandbox-1"),
+          sandboxId: "sandbox-1",
+          request: read,
+        }),
+      ).rejects.toMatchObject({
+        code: REMOTE_WORKER_ERROR_CODES_V1.sandboxNotFound,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("shutdown prevents a delayed receipt signer from publishing a binding", async () => {

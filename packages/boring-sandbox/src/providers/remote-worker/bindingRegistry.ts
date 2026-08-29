@@ -167,6 +167,14 @@ function bindingRequestDigest(value: unknown): `sha256:${string}` {
   }
 }
 
+function freezeRequest<T>(value: T): Readonly<T> {
+  if (!value || typeof value !== "object") return value;
+  for (const nested of Object.values(value as Record<string, unknown>)) {
+    freezeRequest(nested);
+  }
+  return Object.isFrozen(value) ? value : Object.freeze(value);
+}
+
 /**
  * Adapter-facing H5 guard for the future worker daemon.
  *
@@ -190,6 +198,7 @@ export class RemoteWorkerSandboxBindingRegistryV1 {
   >();
   private readonly workerId: string;
   private readonly acceptedCapabilityNonces: SingleUseNonceStoreV1;
+  private readonly authorizedCreates = new WeakSet<object>();
   private readonly capabilityAuthenticator: RemoteWorkerCapabilityAuthenticatorV1;
   private readonly receiptAuthenticator: RemoteWorkerBindingReceiptAuthenticatorV1;
   private readonly eventStreamLifetimeMs: number;
@@ -348,12 +357,11 @@ export class RemoteWorkerSandboxBindingRegistryV1 {
     request: unknown;
     capabilityToken: string;
   }): Promise<RemoteWorkerAuthorizedCreateV1> {
-    const request = parseBindingInput(
-      RemoteWorkerCreateRequestSchemaV1,
-      input.request,
-    );
-    const requestDigest = bindingRequestDigest(request);
     const capability = await this.authenticateCapability(input.capabilityToken);
+    const request = freezeRequest(
+      parseBindingInput(RemoteWorkerCreateRequestSchemaV1, input.request),
+    ) as RemoteWorkerCreateRequestV1;
+    const requestDigest = bindingRequestDigest(request);
     if (
       capability.operation !== "create" ||
       capability.workerId !== this.workerId ||
@@ -365,11 +373,13 @@ export class RemoteWorkerSandboxBindingRegistryV1 {
         "remote-worker create authorization does not match the request",
       );
     }
-    return Object.freeze({
+    const authorization = Object.freeze({
       request,
       requestDigest,
       [authorizedCreateBrand]: true as const,
     });
+    this.authorizedCreates.add(authorization);
+    return authorization;
   }
 
   async bind(
@@ -386,10 +396,23 @@ export class RemoteWorkerSandboxBindingRegistryV1 {
   async bindAuthorized(
     input: BindAuthorizedRemoteWorkerSandboxInputV1,
   ): Promise<RemoteWorkerBindingReceiptV1> {
-    if (input.authorization[authorizedCreateBrand] !== true) {
+    if (
+      input.authorization[authorizedCreateBrand] !== true ||
+      !this.authorizedCreates.has(input.authorization)
+    ) {
       throw bindingError(
         REMOTE_WORKER_ERROR_CODES_V1.requestInvalid,
         "remote-worker create authorization is invalid",
+      );
+    }
+    const request = parseBindingInput(
+      RemoteWorkerCreateRequestSchemaV1,
+      input.authorization.request,
+    );
+    if (bindingRequestDigest(request) !== input.authorization.requestDigest) {
+      throw bindingError(
+        REMOTE_WORKER_ERROR_CODES_V1.requestInvalid,
+        "remote-worker create authorization changed after authentication",
       );
     }
     const sandboxId = parseBindingInput(
@@ -485,6 +508,12 @@ export class RemoteWorkerSandboxBindingRegistryV1 {
       );
     }
     this.requireOpen();
+    if (input.leaseExpiresAtMs <= this.now()) {
+      throw bindingError(
+        REMOTE_WORKER_ERROR_CODES_V1.requestInvalid,
+        "remote-worker lease expired while authenticating its receipt",
+      );
+    }
     const receipt = parseBindingInput(
       RemoteWorkerBindingReceiptSchemaV1,
       Object.freeze({ payload: Object.freeze(payload), authenticator }),

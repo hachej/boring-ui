@@ -70,8 +70,46 @@ function strictParse<T>(
     );
   }
 }
+
+function snapshotQualification(
+  workerId: string,
+  qualification: RemoteWorkerRunscQualificationV1,
+): Readonly<RemoteWorkerRunscQualificationV1> {
+  let parsed: ReturnType<typeof RemoteWorkerHealthResponseSchemaV1.parse>;
+  try {
+    parsed = RemoteWorkerHealthResponseSchemaV1.parse({
+      ...qualification,
+      protocolVersion: REMOTE_WORKER_PROTOCOL_VERSION,
+      providerContractVersion: PROVIDER_CONTRACT_VERSION,
+      workerId,
+      isolation: "docker-runsc-systrap",
+      capabilities: ["fs", "events", "exec", "renew", "delete"],
+    });
+  } catch (error) {
+    throw new SandboxProviderError(
+      REMOTE_WORKER_ERROR_CODES_V1.configInvalid,
+      "remote-worker qualification is invalid",
+      { cause: error },
+    );
+  }
+  return Object.freeze({
+    evidenceDigest: parsed.evidenceDigest,
+    qualificationBundleDigest: parsed.qualificationBundleDigest,
+    providerCohortDigest: parsed.providerCohortDigest,
+    imageDigest: parsed.imageDigest,
+    qualificationRunId: parsed.qualificationRunId,
+    qualifiedAtMs: parsed.qualifiedAtMs,
+  }) as Readonly<RemoteWorkerRunscQualificationV1>;
+}
+
 export class RemoteWorkerRunscHandlerV1 {
-  readonly runtime: RunscSessionRuntimeV1;
+  private readonly runtime: RunscSessionRuntimeV1;
+  private readonly registry: RemoteWorkerSandboxBindingRegistryV1;
+  private readonly workloadImage: string;
+  private readonly qualification: Readonly<RemoteWorkerRunscQualificationV1>;
+  private readonly multiSandboxRootsQualified: boolean;
+  private readonly credentialScopeForWorkspace: RemoteWorkerRunscHandlerOptionsV1["credentialScopeForWorkspace"];
+  private readonly openEvents: RemoteWorkerRunscHandlerOptionsV1["openEvents"];
   private readonly createTransactions = new Map<
     string,
     {
@@ -80,17 +118,24 @@ export class RemoteWorkerRunscHandlerV1 {
     }
   >();
 
-  constructor(private readonly options: RemoteWorkerRunscHandlerOptionsV1) {
-    if (!options.workloadImage.endsWith(`@${options.qualification.imageDigest}`)) {
+  constructor(options: RemoteWorkerRunscHandlerOptionsV1) {
+    this.registry = options.registry;
+    this.workloadImage = options.workloadImage;
+    this.qualification = snapshotQualification(
+      this.registry.authorizedWorkerId,
+      options.qualification,
+    );
+    this.multiSandboxRootsQualified =
+      options.multiSandboxRootsQualified === true;
+    this.credentialScopeForWorkspace = options.credentialScopeForWorkspace;
+    this.openEvents = options.openEvents;
+    if (!this.workloadImage.endsWith(`@${this.qualification.imageDigest}`)) {
       throw new SandboxProviderError(
         REMOTE_WORKER_ERROR_CODES_V1.configInvalid,
         "remote-worker workload image does not match its qualification",
       );
     }
-    if (
-      options.multiSandboxRootsQualified === true &&
-      !options.runtime.sandboxRoots
-    ) {
+    if (this.multiSandboxRootsQualified && !options.runtime.sandboxRoots) {
       throw new SandboxProviderError(
         REMOTE_WORKER_ERROR_CODES_V1.configInvalid,
         "remote-worker multi-root qualification has no root lifecycle",
@@ -100,9 +145,9 @@ export class RemoteWorkerRunscHandlerV1 {
       ...options.runtime,
       multiSandboxRootsAdmitted:
         options.runtime.sandboxRoots !== undefined &&
-        options.multiSandboxRootsQualified === true,
+        this.multiSandboxRootsQualified,
       onCompositeRetire: async (retirement) => {
-        options.registry.retireBinding(
+        this.registry.retireBinding(
           retirement.workspaceId,
           retirement.sandboxId,
         );
@@ -113,7 +158,7 @@ export class RemoteWorkerRunscHandlerV1 {
     capabilityToken: string;
     requestedCapabilities?: string;
   }): Promise<RemoteWorkerHealthResponseV1> {
-    const authorization = await this.options.registry.authorizeHealth({
+    const authorization = await this.registry.authorizeHealth({
       capabilityToken: input.capabilityToken,
       requestBody: {},
     });
@@ -123,15 +168,15 @@ export class RemoteWorkerRunscHandlerV1 {
     ];
     if (
       this.runtime.supportsMultiSandboxRoots &&
-      this.options.multiSandboxRootsQualified === true
+      this.multiSandboxRootsQualified
     ) {
       supported.push(REMOTE_WORKER_MULTI_SANDBOX_ROOTS_CAPABILITY_V1);
     }
     return RemoteWorkerHealthResponseSchemaV1.parse({
       protocolVersion: REMOTE_WORKER_PROTOCOL_VERSION,
       providerContractVersion: PROVIDER_CONTRACT_VERSION,
-      workerId: this.options.registry.authorizedWorkerId,
-      ...this.options.qualification,
+      workerId: this.registry.authorizedWorkerId,
+      ...this.qualification,
       isolation: "docker-runsc-systrap",
       capabilities: ["fs", "events", "exec", "renew", "delete"],
       ...negotiateRemoteWorkerHealthCapabilitiesV1(
@@ -144,7 +189,7 @@ export class RemoteWorkerRunscHandlerV1 {
     capabilityToken: string;
     request: RemoteWorkerCreateRequestV1;
   }): Promise<RemoteWorkerCreateResponseV1> {
-    const authorization = await this.options.registry.authorizeCreate({
+    const authorization = await this.registry.authorizeCreate({
       request: input.request,
       capabilityToken: input.capabilityToken,
     });
@@ -170,11 +215,11 @@ export class RemoteWorkerRunscHandlerV1 {
       const lease = await this.runtime.createComposite({
         clientLeaseId: request.clientLeaseId,
         workspaceId: request.workspaceId,
-        image: this.options.workloadImage,
+        image: this.workloadImage,
         idleTtlMs: request.idleTimeoutMs,
       });
       try {
-        const bindingReceipt = await this.options.registry.bindAuthorized({
+        const bindingReceipt = await this.registry.bindAuthorized({
           authorization,
           sandboxId: lease.sandboxId,
           leaseExpiresAtMs: lease.leaseExpiresAtMs,
@@ -182,7 +227,7 @@ export class RemoteWorkerRunscHandlerV1 {
         return RemoteWorkerCreateResponseSchemaV1.parse({
           protocolVersion: REMOTE_WORKER_PROTOCOL_VERSION,
           providerContractVersion: PROVIDER_CONTRACT_VERSION,
-          workerId: this.options.registry.authorizedWorkerId,
+          workerId: this.registry.authorizedWorkerId,
           sandboxId: lease.sandboxId,
           runtimeCwd: REMOTE_WORKER_RUNTIME_CWD,
           leaseExpiresAtMs: bindingReceipt.payload.expiresAtMs,
@@ -213,15 +258,18 @@ export class RemoteWorkerRunscHandlerV1 {
     sandboxId: string;
     request: RemoteWorkerWorkspaceOperationV1;
   }): Promise<RemoteWorkerWorkspaceResultV1> {
-    const request = strictParse(RemoteWorkerWorkspaceOperationSchemaV1, input.request);
-    return await this.options.registry.authorize(
+    return await this.registry.authorize(
       {
         sandboxId: input.sandboxId,
         operation: "fs",
-        requestBody: request,
+        requestBody: input.request,
         capabilityToken: input.capabilityToken,
       },
       async (binding) => {
+        const request = strictParse(
+          RemoteWorkerWorkspaceOperationSchemaV1,
+          input.request,
+        );
         this.assertCanonicalWorkspace(binding.workspaceId);
         return await this.runtime.fs(
           binding.sandboxId,
@@ -237,22 +285,22 @@ export class RemoteWorkerRunscHandlerV1 {
     request: RemoteWorkerExecRequestV1;
     signal?: AbortSignal;
   }): Promise<RemoteWorkerExecResponseV1> {
-    const request = strictParse(RemoteWorkerExecRequestSchemaV1, input.request);
-    return await this.options.registry.authorize(
+    return await this.registry.authorize(
       {
         sandboxId: input.sandboxId,
         operation: "exec",
-        requestBody: request,
+        requestBody: input.request,
         capabilityToken: input.capabilityToken,
       },
       async (binding) => {
+        const request = strictParse(RemoteWorkerExecRequestSchemaV1, input.request);
         this.assertCanonicalWorkspace(binding.workspaceId);
         return await this.runtime.exec(
           binding.sandboxId,
           binding.workspaceId,
           request,
           input.signal,
-          this.options.credentialScopeForWorkspace?.(binding.workspaceId),
+          this.credentialScopeForWorkspace?.(binding.workspaceId),
         );
       },
     );
@@ -262,15 +310,15 @@ export class RemoteWorkerRunscHandlerV1 {
     sandboxId: string;
     request: RemoteWorkerRenewRequestV1;
   }): Promise<RemoteWorkerRenewResponseV1> {
-    const request = strictParse(RemoteWorkerRenewRequestSchemaV1, input.request);
-    return await this.options.registry.renew(
+    return await this.registry.renew(
       {
         sandboxId: input.sandboxId,
         operation: "renew",
-        requestBody: request,
+        requestBody: input.request,
         capabilityToken: input.capabilityToken,
       },
       async (binding) => {
+        const request = strictParse(RemoteWorkerRenewRequestSchemaV1, input.request);
         this.assertCanonicalWorkspace(binding.workspaceId);
         const lease = await this.runtime.renew(
           binding.sandboxId,
@@ -287,7 +335,7 @@ export class RemoteWorkerRunscHandlerV1 {
     capabilityToken: string;
     sandboxId: string;
   }): Promise<RemoteWorkerDeleteResponseV1> {
-    return await this.options.registry.dispose(
+    return await this.registry.dispose(
       {
         sandboxId: input.sandboxId,
         operation: "delete",
@@ -305,7 +353,7 @@ export class RemoteWorkerRunscHandlerV1 {
     capabilityToken: string;
     sandboxId: string;
   }): Promise<RemoteWorkerAuthorizedEventStreamV1> {
-    return await this.options.registry.authorizeEventStream(
+    return await this.registry.authorizeEventStream(
       {
         sandboxId: input.sandboxId,
         operation: "events",
@@ -314,7 +362,7 @@ export class RemoteWorkerRunscHandlerV1 {
       },
       async (binding) => {
         this.assertCanonicalWorkspace(binding.workspaceId);
-        return await this.options.openEvents(binding);
+        return await this.openEvents(binding);
       },
     );
   }
@@ -322,7 +370,7 @@ export class RemoteWorkerRunscHandlerV1 {
     await this.runtime.startupSweep();
   }
   async shutdown(): Promise<void> {
-    this.options.registry.close();
+    this.registry.close();
     await this.runtime.shutdown();
   }
   private assertCanonicalWorkspace(workspaceId: string): void {
@@ -330,7 +378,7 @@ export class RemoteWorkerRunscHandlerV1 {
   }
 
   private assertQualification(request: RemoteWorkerCreateRequestV1): void {
-    const expected = this.options.qualification;
+    const expected = this.qualification;
     if (
       request.expectedEvidenceDigest !== expected.evidenceDigest ||
       request.expectedQualificationBundleDigest !== expected.qualificationBundleDigest ||

@@ -19,6 +19,7 @@ import {
   type RemoteWorkerSandboxProviderOptionsV1,
 } from "../createRemoteWorkerProvider";
 import { parseRemoteWorkerFleetConfigV1 } from "../fleetConfig";
+import { RemoteWorkerProtocolClientV1 } from "../protocolClient";
 import { remoteWorkerRequestDigestV1 } from "../requestDigest";
 import type {
   RemoteWorkerEventStreamV1,
@@ -81,6 +82,8 @@ class FakeTransport implements RemoteWorkerTransportV1 {
   rawRequestError?: Error;
   rawCreateError?: Error;
   rawExecError?: Error;
+  rawStreamOpenError?: unknown;
+  rawStreamClosedError?: unknown;
   createFailures = 0;
   advertiseExclusiveBinaryCreate = false;
   advertiseMultiSandboxRoots = false;
@@ -186,11 +189,14 @@ class FakeTransport implements RemoteWorkerTransportV1 {
     input: RemoteWorkerOpenEventStreamInputV1,
   ): Promise<RemoteWorkerEventStreamV1> {
     this.streams.push(input);
+    if (this.rawStreamOpenError) throw this.rawStreamOpenError;
     let close!: () => void;
-    const closed = new Promise<void>((resolve) => {
-      close = resolve;
-    });
-    const handle = { closed, close: vi.fn(close) };
+    const closed = this.rawStreamClosedError
+      ? Promise.reject(this.rawStreamClosedError)
+      : new Promise<void>((resolve) => {
+          close = resolve;
+        });
+    const handle = { closed, close: vi.fn(() => close?.()) };
     this.streamHandles.push(handle);
     return handle;
   }
@@ -628,6 +634,45 @@ describe("remote-worker SandboxProviderV1 placement binding", () => {
         code: REMOTE_WORKER_ERROR_CODES_V1.configInvalid,
       }),
     );
+  });
+
+  test("normalizes cross-bundle terminal event-stream failures", async () => {
+    const transport = new FakeTransport();
+    const client = new RemoteWorkerProtocolClientV1({
+      worker: fleet().workers[0]!,
+      workspaceId: "workspace-a",
+      requestId: "request-events",
+      issuer: { issueCapability: async () => "capability-events" },
+      transport,
+      now: () => nowMs,
+      idFactory: () => "nonce-events",
+      requestTimeoutMs: 5_000,
+      capabilityLifetimeMs: 5_000,
+      eventStreamLifetimeMs: 5_000,
+    });
+    const lease = client.bind("sandbox-1");
+    const foreignExpired = {
+      name: "SandboxProviderError",
+      code: REMOTE_WORKER_ERROR_CODES_V1.sandboxExpired,
+      message: "foreign secret",
+    };
+
+    transport.rawStreamOpenError = foreignExpired;
+    await expect(
+      lease.openEvents(nowMs + 10_000, vi.fn()),
+    ).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.sandboxExpired,
+      message: "remote-worker returned a stable provider failure",
+    });
+
+    transport.rawStreamOpenError = undefined;
+    transport.rawStreamClosedError = foreignExpired;
+    const stream = await lease.openEvents(nowMs + 10_000, vi.fn());
+    await expect(stream.closed).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.sandboxExpired,
+      message: "remote-worker returned a stable provider failure",
+    });
+    await client.close();
   });
 
   test("closes an event stream at its bounded capability lifetime", async () => {

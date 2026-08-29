@@ -16,6 +16,7 @@ import {
 } from "../../shared/remoteWorkerProtocolV1";
 import { SandboxProviderError } from "../../shared/providerV1";
 import {
+  asRemoteWorkerProviderErrorV1,
   parseRemoteWorkerRequestV1,
   type RemoteWorkerLeaseClientV1,
 } from "./protocolClient";
@@ -59,11 +60,11 @@ function expectEntries(result: RemoteWorkerWorkspaceResultV1): Entry[] {
 }
 
 function isTerminalStreamError(error: unknown): boolean {
+  const providerError = asRemoteWorkerProviderErrorV1(error);
   return (
-    error instanceof SandboxProviderError &&
-    (error.code === REMOTE_WORKER_ERROR_CODES_V1.sandboxNotFound ||
-      error.code === REMOTE_WORKER_ERROR_CODES_V1.sandboxExpired ||
-      error.code === REMOTE_WORKER_ERROR_CODES_V1.sandboxDisposed)
+    providerError?.code === REMOTE_WORKER_ERROR_CODES_V1.sandboxNotFound ||
+    providerError?.code === REMOTE_WORKER_ERROR_CODES_V1.sandboxExpired ||
+    providerError?.code === REMOTE_WORKER_ERROR_CODES_V1.sandboxDisposed
   );
 }
 

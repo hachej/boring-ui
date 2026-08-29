@@ -185,6 +185,70 @@ describe("H5 sandboxId <-> authorized workspaceId tenant binding", () => {
     });
   });
 
+  test("keeps authorized create tickets immutable and registry-local", async () => {
+    const { registry, tokenFor } = authenticatedRegistry();
+    const request = createRequest("workspace-a", "lease-a");
+    const authorization = await registry.authorizeCreate({
+      request,
+      capabilityToken: tokenFor(
+        capability({
+          workspaceId: request.workspaceId,
+          operation: "create",
+          requestDigest: remoteWorkerRequestDigestV1(request),
+        }),
+      ),
+    });
+    expect(Object.isFrozen(authorization)).toBe(true);
+    expect(Object.isFrozen(authorization.request)).toBe(true);
+
+    const forged = {
+      ...authorization,
+      request: createRequest("workspace-b", "lease-b"),
+    } as typeof authorization;
+    await expect(
+      registry.bindAuthorized({
+        authorization: forged,
+        sandboxId: "sandbox-forged",
+        leaseExpiresAtMs: nowMs + 60_000,
+      }),
+    ).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.requestInvalid,
+    });
+
+    const foreignAuthenticator = vi.fn(() => {
+      throw new Error("foreign registry authenticator must not run");
+    });
+    const foreignRegistry = new RemoteWorkerSandboxBindingRegistryV1({
+      workerId: "worker-2",
+      now: () => nowMs,
+      capabilityAuthenticator: { authenticate: foreignAuthenticator },
+      receiptAuthenticator: {
+        authenticate: (payload) =>
+          `authenticated:${remoteWorkerRequestDigestV1(payload)}`,
+      },
+    });
+    await expect(
+      foreignRegistry.bindAuthorized({
+        authorization,
+        sandboxId: "sandbox-foreign",
+        leaseExpiresAtMs: nowMs + 60_000,
+      }),
+    ).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.requestInvalid,
+    });
+    expect(foreignAuthenticator).not.toHaveBeenCalled();
+
+    await expect(
+      registry.bindAuthorized({
+        authorization,
+        sandboxId: "sandbox-a",
+        leaseExpiresAtMs: nowMs + 60_000,
+      }),
+    ).resolves.toMatchObject({
+      payload: { workspaceId: "workspace-a", sandboxId: "sandbox-a" },
+    });
+  });
+
   test("tenant A's exec cannot address tenant B's sandbox before the exec adapter", async () => {
     const securityCounter = vi.fn(() => {
       throw new Error("observer must not replace the stable mismatch");
