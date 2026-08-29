@@ -111,11 +111,13 @@ export class RunscSessionRetirementManagerV1<
   }
   private async removeAndDetach(record: RecordV1): Promise<void> {
     const composite = this.compositeFields(record);
+    const ownsRoot = composite?.ownsWorkspaceMountSource === true;
     const state = this.cleanupState.get(record) ?? {
       containerRemoved: false,
-      rootRemoved: !composite?.ownsWorkspaceMountSource,
+      rootRemoved: !ownsRoot,
     };
     this.cleanupState.set(record, state);
+    let legacyDetached = false;
     try {
       if (!state.containerRemoved) {
         await this.removeContainerOrProveAbsent(record.runtimeId);
@@ -131,11 +133,16 @@ export class RunscSessionRetirementManagerV1<
         await this.options.disposeMountSource(composite.workspaceMountSource);
         state.rootRemoved = true;
       }
+      if (!ownsRoot) {
+        this.options.detach(record);
+        this.cleanupState.delete(record);
+        legacyDetached = true;
+      }
       if (record.retirement!.notify) {
         await this.notify(
-          composite?.ownsWorkspaceMountSource
+          ownsRoot
             ? {
-                workspaceId: composite.workspaceId,
+                workspaceId: composite!.workspaceId,
                 sandboxId: record.sandboxId,
                 reason: record.retirement!.reason,
               }
@@ -146,6 +153,7 @@ export class RunscSessionRetirementManagerV1<
         );
       }
     } catch (error) {
+      if (legacyDetached) throw error;
       record.retirement!.attempts += 1;
       this.scheduleRetry(record);
       if (
@@ -161,8 +169,10 @@ export class RunscSessionRetirementManagerV1<
         error,
       );
     }
-    this.options.detach(record);
-    this.cleanupState.delete(record);
+    if (ownsRoot) {
+      this.options.detach(record);
+      this.cleanupState.delete(record);
+    }
   }
   private compositeFields(record: RecordV1): CompositeFieldsV1 | undefined {
     const candidate = record as RecordV1 & Partial<CompositeFieldsV1>;

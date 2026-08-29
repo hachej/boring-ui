@@ -2,12 +2,13 @@ import {
   chown,
   lstat,
   mkdir,
-  readdir,
+  opendir,
   realpath,
   rm,
   rmdir,
 } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { SandboxProviderError } from "../../../shared/providerV1";
 import { REMOTE_WORKER_ERROR_CODES_V1 } from "../../../shared/remoteWorkerProtocolV1";
 import {
   trustedSandboxMountSource,
@@ -73,7 +74,7 @@ export class RunscSandboxRootLifecycleV1 {
   private readonly trustedOwnerUid: number;
   private trustedRootIdentity?: RootIdentity;
   private readonly readyWorkspaces = new Set<string>();
-  private readonly workspaceInflight = new Map<string, Promise<void>>();
+  private startupReady = false;
   /** Every root this process owns: preparing, active, or retained for cleanup. */
   private readonly pendingRoots = new Map<string, PendingRoot>();
   private ownershipOperation: Promise<unknown> = Promise.resolve();
@@ -121,7 +122,12 @@ export class RunscSandboxRootLifecycleV1 {
     quota: QuotaManager,
   ): Promise<TrustedWorkspaceMountSource> {
     return this.withOwnershipLock(
-      async () => await this.prepareOnce(workspaceId, sandboxId, quota),
+      async () =>
+        await this.withStableError(
+          async () => await this.prepareOnce(workspaceId, sandboxId, quota),
+          REMOTE_WORKER_ERROR_CODES_V1.pathUnsafe,
+          "remote-worker sandbox root could not be prepared",
+        ),
     );
   }
 
@@ -136,6 +142,7 @@ export class RunscSandboxRootLifecycleV1 {
       invalidRoot("remote-worker quota and sandbox roots do not match");
     }
     await this.assertTrustedRoot();
+    await this.ensureStartupAdmission();
     const workspaceRoot = join(this.sandboxRoot, workspace);
     const sandboxRoot = join(workspaceRoot, sandbox);
     const source = trustedSandboxMountSource(
@@ -194,7 +201,14 @@ export class RunscSandboxRootLifecycleV1 {
     }
   }
   retryPendingCleanup(): Promise<number> {
-    return this.withOwnershipLock(async () => await this.retryPendingCleanupOnce());
+    return this.withOwnershipLock(
+      async () =>
+        await this.withStableError(
+          async () => await this.retryPendingCleanupOnce(),
+          REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+          "remote-worker sandbox root cleanup is incomplete",
+        ),
+    );
   }
 
   private async retryPendingCleanupOnce(): Promise<number> {
@@ -222,7 +236,14 @@ export class RunscSandboxRootLifecycleV1 {
     await this.retryPendingCleanup();
   }
   dispose(source: TrustedWorkspaceMountSource): Promise<void> {
-    return this.withOwnershipLock(async () => await this.disposeOnce(source));
+    return this.withOwnershipLock(
+      async () =>
+        await this.withStableError(
+          async () => await this.disposeOnce(source),
+          REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+          "remote-worker sandbox root cleanup is incomplete",
+        ),
+    );
   }
 
   private async disposeOnce(source: TrustedWorkspaceMountSource): Promise<void> {
@@ -250,16 +271,24 @@ export class RunscSandboxRootLifecycleV1 {
     }
   }
   startupSweep(): Promise<number> {
-    return this.withOwnershipLock(async () => await this.startupSweepOnce());
+    return this.withOwnershipLock(
+      async () =>
+        await this.withStableError(
+          async () => await this.startupSweepOnce(),
+          REMOTE_WORKER_ERROR_CODES_V1.pathUnsafe,
+          "remote-worker startup root cleanup failed",
+        ),
+    );
   }
 
   private async startupSweepOnce(): Promise<number> {
+    this.startupReady = false;
     const retried = await this.retryPendingCleanupOnce();
     await this.assertTrustedRoot();
-    const entries = await readdir(this.sandboxRoot, { withFileTypes: true });
     let discovered = 0;
-    const roots: TrustedWorkspaceMountSource[] = [];
-    for (const workspace of entries) {
+    let cleaned = 0;
+    const entries = await opendir(this.sandboxRoot);
+    for await (const workspace of entries) {
       if (workspace.name === RUNSC_QUOTA_LOCK_NAME) {
         await this.assertQuotaMetadata(join(this.sandboxRoot, workspace.name));
         continue;
@@ -273,14 +302,16 @@ export class RunscSandboxRootLifecycleV1 {
       validateCanonicalQuotaWorkspaceId(workspace.name);
       const workspaceRoot = join(this.sandboxRoot, workspace.name);
       await this.assertExactDirectory(workspaceRoot, true);
-      const sandboxes = await readdir(workspaceRoot, { withFileTypes: true });
-      for (const sandbox of sandboxes) {
-        if (
-          ++discovered > RUNSC_RUNTIME_LIMITS_V1.maxStartupSweepContainers ||
-          sandbox.isSymbolicLink() ||
-          !sandbox.isDirectory()
-        ) {
-          invalidRoot("remote-worker startup root cleanup exceeds its bound");
+      const roots: TrustedWorkspaceMountSource[] = [];
+      let overflow = false;
+      const sandboxes = await opendir(workspaceRoot);
+      for await (const sandbox of sandboxes) {
+        if (++discovered > RUNSC_RUNTIME_LIMITS_V1.maxStartupSweepContainers) {
+          overflow = true;
+          break;
+        }
+        if (sandbox.isSymbolicLink() || !sandbox.isDirectory()) {
+          invalidRoot("remote-worker sandbox root contains an unowned entry");
         }
         normalizedSandboxId(sandbox.name);
         roots.push(
@@ -291,10 +322,17 @@ export class RunscSandboxRootLifecycleV1 {
           ),
         );
       }
-      if (sandboxes.length === 0) await rmdir(workspaceRoot);
+      for (const root of roots) {
+        await this.disposeOnce(root);
+        cleaned += 1;
+      }
+      if (roots.length === 0) await rmdir(workspaceRoot);
+      if (overflow) {
+        invalidRoot("remote-worker startup root cleanup exceeds its bound");
+      }
     }
-    for (const root of roots) await this.disposeOnce(root);
-    return retried + roots.length;
+    this.startupReady = true;
+    return retried + cleaned;
   }
   private async cleanupFailedPrepare(pending: PendingRoot): Promise<void> {
     try {
@@ -340,37 +378,23 @@ export class RunscSandboxRootLifecycleV1 {
     quota: QuotaManager,
     pending: PendingRoot,
   ): Promise<void> {
-    const existing = this.workspaceInflight.get(workspace);
-    if (existing) {
-      await existing;
-      await quota.check(workspace);
+    if (!this.readyWorkspaces.has(workspace)) {
+      let created = false;
+      try {
+        await mkdir(workspaceRoot, { mode: 0o750 });
+        created = true;
+        pending.workspaceCreated = true;
+      } catch (error) {
+        if (!errorCode(error, "EEXIST")) throw error;
+      }
+      await this.assertExactDirectory(workspaceRoot, true);
+      if (created) await quota.apply(workspace);
+      else await quota.check(workspace);
+      this.readyWorkspaces.add(workspace);
       return;
     }
-    let created = false;
-    const operation = (async () => {
-      if (!this.readyWorkspaces.has(workspace)) {
-        try {
-          await mkdir(workspaceRoot, { mode: 0o750 });
-          created = true;
-          pending.workspaceCreated = true;
-        } catch (error) {
-          if (!errorCode(error, "EEXIST")) throw error;
-        }
-        await this.assertExactDirectory(workspaceRoot, true);
-        if (created) await quota.apply(workspace);
-        else await quota.check(workspace);
-        this.readyWorkspaces.add(workspace);
-      } else {
-        await this.assertExactDirectory(workspaceRoot, true);
-        await quota.check(workspace);
-      }
-    })();
-    this.workspaceInflight.set(workspace, operation);
-    try {
-      await operation;
-    } finally {
-      this.workspaceInflight.delete(workspace);
-    }
+    await this.assertExactDirectory(workspaceRoot, true);
+    await quota.check(workspace);
   }
   private async removeEmptyWorkspace(
     workspace: string,
@@ -387,6 +411,19 @@ export class RunscSandboxRootLifecycleV1 {
         throw error;
     }
   }
+  private async ensureStartupAdmission(): Promise<void> {
+    if (this.startupReady) return;
+    const entries = await opendir(this.sandboxRoot);
+    for await (const entry of entries) {
+      if (entry.name === RUNSC_QUOTA_LOCK_NAME) {
+        await this.assertQuotaMetadata(join(this.sandboxRoot, entry.name));
+        continue;
+      }
+      invalidRoot("remote-worker startup root cleanup is required");
+    }
+    this.startupReady = true;
+  }
+
   private withOwnershipLock<T>(operation: () => Promise<T>): Promise<T> {
     const result = this.ownershipOperation.then(operation, operation);
     this.ownershipOperation = result.then(
@@ -394,6 +431,19 @@ export class RunscSandboxRootLifecycleV1 {
       () => undefined,
     );
     return result;
+  }
+
+  private async withStableError<T>(
+    operation: () => Promise<T>,
+    code: Parameters<typeof runscRuntimeError>[0],
+    message: string,
+  ): Promise<T> {
+    try {
+      return await operation();
+    } catch (error) {
+      if (error instanceof SandboxProviderError) throw error;
+      throw runscRuntimeError(code, message, error);
+    }
   }
 
   private async assertTrustedRoot(): Promise<void> {

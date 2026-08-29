@@ -3,6 +3,7 @@ import {
   lstat,
   mkdir,
   readFile,
+  readdir,
   rename,
   rm,
   rmdir,
@@ -48,6 +49,31 @@ async function lifecycle() {
 }
 
 describe("runsc per-sandbox root lifecycle", () => {
+  test.each(["prepare", "startup"] as const)(
+    "sanitizes inaccessible-root filesystem failures at the %s boundary",
+    async (operation) => {
+      const { root, roots, quota } = await lifecycle();
+      await chmod(root, 0o000);
+      let failure: unknown;
+      try {
+        if (operation === "prepare") {
+          await roots.prepare(workspaceA, "sandbox-a", quota);
+        } else {
+          await roots.startupSweep();
+        }
+      } catch (error) {
+        failure = error;
+      } finally {
+        await chmod(root, 0o750);
+      }
+      expect(failure).toMatchObject({
+        code: REMOTE_WORKER_ERROR_CODES_V1.pathUnsafe,
+      });
+      expect(String(failure)).not.toContain(root);
+      expect(JSON.stringify(failure)).not.toContain(root);
+    },
+  );
+
   test("creates exact workspace+sandbox children and removes only one", async () => {
     const { root, roots, quota } = await lifecycle();
     const sourceA = await roots.prepare(workspaceA, "sandbox-a", quota);
@@ -460,11 +486,12 @@ describe("runsc per-sandbox root lifecycle", () => {
       prepareOwnership: async () => undefined,
       trustedOwnerUid: process.getuid?.() ?? 0,
     });
+    await restarted.startupSweep();
     await restarted.prepare(workspaceA, "sandbox-c", quota);
     expect(run.mock.calls.map(([input]) => input.argv[0])).toEqual([
       "apply",
       "check",
-      "check",
+      "apply",
     ]);
   });
 
@@ -477,15 +504,37 @@ describe("runsc per-sandbox root lifecycle", () => {
       }),
       check: vi.fn(async () => undefined),
     };
-    await expect(roots.prepare(workspaceA, "sandbox-a", quota)).rejects.toThrow(
-      "quota unavailable",
-    );
+    await expect(
+      roots.prepare(workspaceA, "sandbox-a", quota),
+    ).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.pathUnsafe,
+      message: "remote-worker sandbox root could not be prepared",
+    });
     await expect(lstat(join(root, workspaceA))).rejects.toMatchObject({
       code: "ENOENT",
     });
   });
 
-  test("bounds workspace parents as well as sandbox leaves during startup", async () => {
+  test("requires startup cleanup before restart admission", async () => {
+    const { root, roots, quota } = await lifecycle();
+    const existing = await roots.prepare(workspaceA, "sandbox-a", quota);
+    const restarted = new RunscSandboxRootLifecycleV1({
+      sandboxRoot: root,
+      prepareOwnership: async () => undefined,
+      trustedOwnerUid: process.getuid?.() ?? 0,
+    });
+
+    await expect(
+      restarted.prepare(workspaceB, "sandbox-b", quota),
+    ).rejects.toMatchObject({ code: REMOTE_WORKER_ERROR_CODES_V1.pathUnsafe });
+    await expect(lstat(String(existing))).resolves.toMatchObject({});
+    await expect(restarted.startupSweep()).resolves.toBe(1);
+    await expect(
+      restarted.prepare(workspaceB, "sandbox-b", quota),
+    ).resolves.toEqual(expect.stringContaining("sandbox-b"));
+  });
+
+  test("streams bounded startup cleanup so repeated sweeps converge", async () => {
     const { root, roots } = await lifecycle();
     for (
       let index = 1;
@@ -498,9 +547,11 @@ describe("runsc per-sandbox root lifecycle", () => {
       });
     }
     await expect(roots.startupSweep()).rejects.toMatchObject({
-      code: "REMOTE_WORKER_PATH_UNSAFE",
+      code: REMOTE_WORKER_ERROR_CODES_V1.pathUnsafe,
     });
-  });
+    await expect(roots.startupSweep()).resolves.toBe(0);
+    await expect(readdir(root)).resolves.toEqual([]);
+  }, 30_000);
 
   test("rejects a replaced trusted root and a symlink swapped before cleanup", async () => {
     const { root, roots, quota } = await lifecycle();
