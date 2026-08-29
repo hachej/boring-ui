@@ -8,6 +8,7 @@ import { diagramPlugin } from "@hachej/boring-diagram/front"
 import { createTasksPlugin } from "@hachej/boring-tasks/front"
 import { SHOWCASE_SESSION_ID } from "./showcaseMessages"
 import { LoadingStatesShowcase, type LoadingStateMode } from "./LoadingStatesShowcase"
+import { SHOWCASE_SESSION_TITLE_TAG } from "../shared/showcaseSession"
 
 function isShowcaseRoute(): boolean {
   if (typeof window === "undefined") return false
@@ -196,11 +197,15 @@ export function WorkspaceShell() {
   const liveShowcaseSessionIds = useRef(new Set<string>())
   // Tab-scoped reuse key: bounds session accumulation from repeated boots in
   // the same browser tab (reload, HMR) to one durable session instead of one
-  // per mount. sessionStorage (not localStorage) so it never outlives the
-  // tab. Cleared automatically once the reused session picks up its first
-  // turn — createSession only resumes empty (turnCount === 0) sessions
-  // server-side (embeddedGateway.ts), so a used session naturally falls
-  // through to creating a fresh one on the next reload.
+  // per mount. sessionStorage (not localStorage) so the *pointer* never
+  // outlives the tab. This alone does not bound the durable backend session
+  // itself — closing the tab discards only this reuse pointer, and a new
+  // tab/e2e context still creates its own session. Actual retention is
+  // bounded by two other layers: the pagehide cleanup below (best-effort,
+  // same boot) and the scripted dev server's boot-time sweep in
+  // scriptedPiHarness.ts (authoritative backstop — deletes every
+  // showcase-tagged session left empty by a *previous* boot, regardless of
+  // which tab/context created it). See SHOWCASE_SESSION_TITLE_TAG.
   const showcaseBootStorageKey = "boring-ui-v2:showcase:boot-session-id"
   const requestNewShowcaseSession = useCallback(async (
     title: string,
@@ -218,7 +223,13 @@ export function WorkspaceShell() {
           "x-boring-workspace-id": "default",
         },
         body: JSON.stringify({
-          title,
+          // The backend-stored title is tagged and never surfaced — this UI
+          // only ever renders the `title` this function returns below, taken
+          // from the controlled `sessions` prop it builds client-side (see
+          // ../shared/showcaseSession.ts). The tag lets the scripted dev
+          // server's boot-time sweep find and delete stale, still-empty
+          // showcase sessions without touching unrelated ones.
+          title: `${SHOWCASE_SESSION_TITLE_TAG}${title}`,
           ...(options.requestId ? { requestId: options.requestId } : {}),
           ...(options.resumeSessionId ? { resumeSessionId: options.resumeSessionId } : {}),
         }),
@@ -309,8 +320,20 @@ export function WorkspaceShell() {
   }, [])
   // Decorative rows (padding from `?sessions=N`) start with no backend
   // session behind them. Selecting one materializes a real session first —
-  // keyed by a stable per-row request id so a double-click can't create two
-  // — instead of ever handing the chat pane an id that will 404 (gh-1452).
+  // guarded against a double-click by the in-memory
+  // `materializingShowcaseSessionIds` set below — instead of ever handing
+  // the chat pane an id that will 404 (gh-1452).
+  //
+  // The request id is freshly random per attempt, NOT derived from the
+  // (fixed, deterministic) placeholder row id. A stable "showcase-row-<id>"
+  // request id looked idempotent-safe, but the placeholder id is the exact
+  // same string on every future page load/e2e run against this server —
+  // so a *second* click across a completely unrelated later visit would
+  // replay the ledger's very first receipt for it, handing back a stale
+  // session that a previous visit's pagehide cleanup may have already
+  // deleted. The `materializingShowcaseSessionIds` guard already prevents
+  // a genuine double-click within one page's lifetime, so no cross-visit
+  // request id is needed for that.
   const materializingShowcaseSessionIds = useRef(new Set<string>())
   const handleActiveSessionIdChange = useCallback(
     (sessionId: string | null) => {
@@ -322,7 +345,7 @@ export function WorkspaceShell() {
       if (materializingShowcaseSessionIds.current.has(sessionId)) return
       materializingShowcaseSessionIds.current.add(sessionId)
       const placeholderTitle = showcaseSessions.find((session) => session.id === sessionId)?.title ?? "New chat"
-      void requestNewShowcaseSession(placeholderTitle, { requestId: `showcase-row-${sessionId}`, timeoutMs: 8_000 })
+      void requestNewShowcaseSession(placeholderTitle, { requestId: randomId(), timeoutMs: 8_000 })
         .then((session) => {
           liveShowcaseSessionIds.current.add(session.id)
           setShowcaseSessions((current) => current.map((existing) => (existing.id === sessionId ? session : existing)))
@@ -338,6 +361,49 @@ export function WorkspaceShell() {
     },
     [requestNewShowcaseSession, showcase, showcaseSessions],
   )
+
+  // Best-effort client-side cleanup, layered on top of the server's
+  // boot-time sweep (scriptedPiHarness.ts): when the tab goes away, delete
+  // any showcase session this tab created that never got a real turn.
+  // `showcaseUsedSessionIds` is populated from `onPromptSubmitStarted`
+  // (wired below via chatParams) so a session the visitor actually used is
+  // never touched. `navigator.sendBeacon` cannot express this — it only
+  // ever sends a POST and cannot set the workspace header the delete route
+  // requires — so this uses `fetch` with `keepalive: true`, the documented
+  // sendBeacon-equivalent for non-POST/authenticated pagehide requests.
+  //
+  // `pagehide` fires on an in-tab reload too, not just a real tab close —
+  // deleting the reusable boot session here would race the *next* load's
+  // resumeSessionId lookup and defeat the reload-reuse behavior above,
+  // deleting a session the very next request expects to still exist. Skip
+  // whichever session id is currently the sessionStorage reuse pointer;
+  // its retention is already handled by that reuse path plus the server's
+  // boot-time sweep, so only the *other* (non-resumable) live sessions —
+  // decorative-row materializations, unused "New chat" clicks — need this
+  // pagehide sweep at all.
+  const showcaseUsedSessionIds = useRef(new Set<string>())
+  useEffect(() => {
+    if (!showcase) return
+    const handlePageHide = () => {
+      let resumePointerId: string | undefined
+      try {
+        resumePointerId = window.sessionStorage.getItem(showcaseBootStorageKey) ?? undefined
+      } catch {
+        /* sessionStorage unavailable — nothing to preserve for reuse */
+      }
+      for (const sessionId of liveShowcaseSessionIds.current) {
+        if (sessionId === resumePointerId) continue
+        if (showcaseUsedSessionIds.current.has(sessionId)) continue
+        void fetch(`/api/v1/agents/${encodeURIComponent(defaultAgentTypeId)}/sessions/${encodeURIComponent(sessionId)}`, {
+          method: "DELETE",
+          headers: { "x-boring-workspace-id": "default" },
+          keepalive: true,
+        }).catch(() => { /* best-effort — the boot-time sweep is the real backstop */ })
+      }
+    }
+    window.addEventListener("pagehide", handlePageHide)
+    return () => window.removeEventListener("pagehide", handlePageHide)
+  }, [defaultAgentTypeId, showcase])
 
   useEffect(() => {
     if (loadingShowcase) return
@@ -430,7 +496,12 @@ export function WorkspaceShell() {
       onCreateSession={showcase ? createShowcaseSession : undefined}
       onRenameSession={showcase ? renameShowcaseSession : undefined}
       plugins={workspacePlugins}
-      chatParams={{ thinkingControl: true }}
+      chatParams={showcase ? {
+        thinkingControl: true,
+        onPromptSubmitStarted: ({ sessionId }: { sessionId: string }) => {
+          showcaseUsedSessionIds.current.add(sessionId)
+        },
+      } : { thinkingControl: true }}
     />
   )
 }

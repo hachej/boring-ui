@@ -83,16 +83,32 @@ test.describe("workspace-playground showcase route", () => {
     const chat = page.locator('[data-boring-agent-part="chat"]')
     await chat.waitFor({ state: "visible", timeout: 40_000 })
     await expect(chat).toHaveAttribute("data-pi-chat-connection", "connected", { timeout: 15_000 })
+    // Captured before the click: the pre-existing boot session is already
+    // connected/enabled/error-free, so asserting only those properties after
+    // the click can pass while the row's async materialization POST is still
+    // in flight and the pane hasn't switched onto it at all. Waiting for the
+    // session id to actually change (and the placeholder row to disappear)
+    // proves the switch happened, not just that the old session was fine.
+    const bootSessionId = await chat.getAttribute("data-pi-chat-session-id")
+    expect(bootSessionId).toBeTruthy()
 
-    const decorativeRow = page.locator('[data-boring-workspace-part="app-session-row"][data-boring-session-id="__showcase__-2"]')
+    const placeholderId = "__showcase__-2"
+    const decorativeRow = page.locator(`[data-boring-workspace-part="app-session-row"][data-boring-session-id="${placeholderId}"]`)
     await decorativeRow.waitFor({ state: "visible", timeout: 10_000 })
     await decorativeRow.locator("button").first().click()
+
+    await expect.poll(
+      () => chat.getAttribute("data-pi-chat-session-id"),
+      { timeout: 15_000 },
+    ).not.toBe(bootSessionId)
+    await expect(page.locator(`[data-boring-workspace-part="app-session-row"][data-boring-session-id="${placeholderId}"]`)).toHaveCount(0)
 
     await expect(page.getByText("session was not found")).toHaveCount(0)
     await expect(chat).toHaveAttribute("data-pi-chat-connection", "connected", { timeout: 15_000 })
     await expect(page.getByRole("textbox", { name: "Agent prompt" })).toBeEnabled()
 
     const activeSessionId = await chat.getAttribute("data-pi-chat-session-id")
-    expect(activeSessionId).not.toBe("__showcase__-2")
+    expect(activeSessionId).not.toBe(placeholderId)
+    expect(activeSessionId).not.toBe(bootSessionId)
   })
 })

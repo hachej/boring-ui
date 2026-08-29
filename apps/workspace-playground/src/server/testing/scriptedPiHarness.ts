@@ -7,6 +7,7 @@ import type { AgentSessionEvent } from '@mariozechner/pi-coding-agent'
 import { CURRENT_SESSION_VERSION } from '@mariozechner/pi-coding-agent'
 import type { AgentCoreHarnessFactory, AgentHarness, RunContext, AgentSendInput } from '@hachej/boring-agent/shared'
 import type { SessionCtx, SessionDetail, SessionStore, SessionSummary } from '@hachej/boring-agent/shared'
+import { SHOWCASE_SESSION_TITLE_TAG } from '../../shared/showcaseSession'
 
 type RequiredAgentHarnessFactoryInput = Parameters<AgentCoreHarnessFactory>[0]
 type AgentHarnessFactoryInput = Omit<RequiredAgentHarnessFactoryInput, 'tools'> & {
@@ -297,6 +298,29 @@ class ScriptedSessionStore implements SessionStore {
       })
     }
     this.createCount = 0
+    // Boot-time retention sweep: everything just loaded above came from
+    // *before* this process started (this method only ever runs once per
+    // store, memoized by `ensureHydrated`/`this.hydration`). Delete any
+    // showcase-tagged session left empty by a prior boot — a real turn was
+    // never sent, so there is nothing to lose — instead of letting
+    // `?showcase=1` visits (one durable session per boot/tab/e2e context)
+    // accumulate on disk indefinitely. Non-showcase sessions and anything
+    // created during *this* boot are untouched (see SHOWCASE_SESSION_TITLE_TAG).
+    await this.sweepStaleShowcaseSessions()
+  }
+
+  private async sweepStaleShowcaseSessions(): Promise<void> {
+    for (const record of [...this.records.values()]) {
+      if (record.turnCount !== 0 || !record.title.startsWith(SHOWCASE_SESSION_TITLE_TAG)) continue
+      this.records.delete(record.id)
+      try {
+        const names = await readdir(this.sessionDir)
+        const match = names.find((name) => name === `${record.id}.jsonl` || name.endsWith(`_${record.id}.jsonl`))
+        if (match) await unlink(join(this.sessionDir, match))
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
+    }
   }
 
   private takeNextSessionId(): string {
