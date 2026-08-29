@@ -153,6 +153,8 @@ export class RemoteWorkerProtocolClientV1 {
   private readonly activeControllers = new Set<AbortController>();
   private readonly pending = new Set<Promise<unknown>>();
   private closed = false;
+  private closeComplete = false;
+  private closeInFlight?: Promise<void>;
 
   constructor(private readonly options: RemoteWorkerProtocolClientOptionsV1) {}
 
@@ -446,8 +448,32 @@ export class RemoteWorkerProtocolClientV1 {
       this.activeControllers.delete(controller);
     }
     const transportStream = stream;
+    let lifetimeTimer: ReturnType<typeof setTimeout> | undefined;
+    let streamCloseComplete = false;
+    let streamCloseInFlight: Promise<void> | undefined;
+    const cleanup = (): void => {
+      if (lifetimeTimer) clearTimeout(lifetimeTimer);
+      lifetimeTimer = undefined;
+      this.activeStreams.delete(stream);
+    };
+    const closeStream = (): Promise<void> => {
+      if (lifetimeTimer) clearTimeout(lifetimeTimer);
+      lifetimeTimer = undefined;
+      if (streamCloseComplete) return Promise.resolve();
+      if (streamCloseInFlight) return streamCloseInFlight;
+      const operation = Promise.resolve().then(async () => {
+        await transportStream.close();
+        streamCloseComplete = true;
+        cleanup();
+      });
+      streamCloseInFlight = operation;
+      void operation.finally(() => {
+        if (streamCloseInFlight === operation) streamCloseInFlight = undefined;
+      }).catch(() => undefined);
+      return operation;
+    };
     stream = {
-      close: () => transportStream.close(),
+      close: closeStream,
       closed: transportStream.closed.catch((error: unknown) => {
         const providerError = asRemoteWorkerProviderErrorV1(error);
         throw (
@@ -465,24 +491,45 @@ export class RemoteWorkerProtocolClientV1 {
       leaseExpiresAtMs,
       this.options.now() + this.options.eventStreamLifetimeMs,
     );
-    const lifetimeTimer = setTimeout(
-      () => stream.close(),
-      Math.max(0, deadlineMs - this.options.now()),
-    );
-    const cleanup = (): void => {
-      clearTimeout(lifetimeTimer);
-      this.activeStreams.delete(stream);
-    };
+    lifetimeTimer = setTimeout(() => {
+      void closeStream().catch(() => undefined);
+    }, Math.max(0, deadlineMs - this.options.now()));
     void stream.closed.then(cleanup, cleanup);
     return stream;
   }
 
+  async closeEventStreams(): Promise<void> {
+    const streamResults = await Promise.allSettled(
+      [...this.activeStreams].map(async (stream) => await stream.close()),
+    );
+    if (streamResults.some((result) => result.status === "rejected")) {
+      throw new SandboxProviderError(
+        REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+        "remote-worker event stream cleanup could not be confirmed",
+      );
+    }
+  }
+
   async close(): Promise<void> {
-    if (this.closed) return;
+    if (this.closeComplete) return;
     this.closed = true;
-    for (const controller of this.activeControllers) controller.abort();
-    for (const stream of this.activeStreams) stream.close();
-    await Promise.allSettled([...this.pending]);
+    if (this.closeInFlight) return await this.closeInFlight;
+    const operation = (async () => {
+      for (const controller of this.activeControllers) controller.abort();
+      const streamResult = await this.closeEventStreams().then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      await Promise.allSettled([...this.pending]);
+      if (streamResult !== undefined) throw streamResult;
+      this.closeComplete = true;
+    })();
+    this.closeInFlight = operation;
+    try {
+      await operation;
+    } finally {
+      if (this.closeInFlight === operation) this.closeInFlight = undefined;
+    }
   }
 }
 
@@ -546,6 +593,10 @@ export class RemoteWorkerLeaseClientV1 {
     onEvent: (event: RemoteWorkerFsEventEnvelopeV1) => void,
   ): Promise<RemoteWorkerEventStreamV1> {
     return this.client.openEvents(this.sandboxId, leaseExpiresAtMs, onEvent);
+  }
+
+  closeEventStreams(): Promise<void> {
+    return this.client.closeEventStreams();
   }
 
   close(): Promise<void> {

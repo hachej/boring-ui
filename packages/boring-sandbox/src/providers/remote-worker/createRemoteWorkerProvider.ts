@@ -357,25 +357,41 @@ export function createRemoteWorkerSandboxProviderV1(
           idFactory,
         });
         let disposed = false;
+        let deleteConfirmed = false;
         let disposeInFlight: Promise<void> | undefined;
         const dispose = async (): Promise<void> => {
           if (disposed) return;
           if (disposeInFlight) return await disposeInFlight;
           const operation = (async () => {
             remoteWorkspace.closeWatcher();
-            const lastError = await deleteRemoteSandboxV1(
-              () => leaseClient.delete(),
-              disposeAttempts,
-            );
-            if (lastError !== undefined) {
+            await leaseClient.closeEventStreams().catch(() => undefined);
+            let deleteError: unknown;
+            if (!deleteConfirmed) {
+              deleteError = await deleteRemoteSandboxV1(
+                () => leaseClient.delete(),
+                disposeAttempts,
+              );
+              deleteConfirmed = deleteError === undefined;
+            }
+            const clientCloseError = deleteConfirmed
+              ? await leaseClient.close().then(
+                  () => undefined,
+                  (error: unknown) => error,
+                )
+              : undefined;
+            if (deleteError !== undefined) {
               throw new SandboxProviderError(
                 REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
                 "remote-worker sandbox cleanup could not be confirmed",
-                { cause: lastError },
+              );
+            }
+            if (clientCloseError !== undefined) {
+              throw new SandboxProviderError(
+                REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+                "remote-worker event stream cleanup could not be confirmed",
               );
             }
             disposed = true;
-            await leaseClient.close();
             activePairs.get(workspaceId)?.delete(dispose);
             if (activePairs.get(workspaceId)?.size === 0)
               activePairs.delete(workspaceId);
@@ -433,9 +449,15 @@ export function createRemoteWorkerSandboxProviderV1(
       }
     },
     async invalidate({ workspaceId }) {
-      await Promise.allSettled(
+      const cleanup = await Promise.allSettled(
         [...(activePairs.get(workspaceId) ?? [])].map((dispose) => dispose()),
       );
+      if (cleanup.some((result) => result.status === "rejected")) {
+        throw new SandboxProviderError(
+          REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+          "remote-worker sandbox cleanup could not be confirmed",
+        );
+      }
     },
     async close() {
       closed = true;
@@ -443,7 +465,15 @@ export function createRemoteWorkerSandboxProviderV1(
       const disposers = [...activePairs.values()].flatMap((entries) => [
         ...entries,
       ]);
-      await Promise.allSettled(disposers.map((dispose) => dispose()));
+      const cleanup = await Promise.allSettled(
+        disposers.map((dispose) => dispose()),
+      );
+      if (cleanup.some((result) => result.status === "rejected")) {
+        throw new SandboxProviderError(
+          REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+          "remote-worker sandbox cleanup could not be confirmed",
+        );
+      }
     },
   };
 }

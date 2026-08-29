@@ -84,6 +84,8 @@ class FakeTransport implements RemoteWorkerTransportV1 {
   rawExecError?: Error;
   rawStreamOpenError?: unknown;
   rawStreamClosedError?: unknown;
+  streamCloseFailures = 0;
+  streamCloseRejects = false;
   createFailures = 0;
   advertiseExclusiveBinaryCreate = false;
   advertiseMultiSandboxRoots = false;
@@ -196,7 +198,18 @@ class FakeTransport implements RemoteWorkerTransportV1 {
       : new Promise<void>((resolve) => {
           close = resolve;
         });
-    const handle = { closed, close: vi.fn(() => close?.()) };
+    const handle = {
+      closed,
+      close: vi.fn(() => {
+        if (this.streamCloseFailures > 0) {
+          this.streamCloseFailures -= 1;
+          const error = new Error("raw event stream close failure");
+          if (this.streamCloseRejects) return Promise.reject(error);
+          throw error;
+        }
+        close?.();
+      }),
+    };
     this.streamHandles.push(handle);
     return handle;
   }
@@ -620,6 +633,121 @@ describe("remote-worker SandboxProviderV1 placement binding", () => {
     expect(
       transport.requests.filter((request) => request.method === "DELETE"),
     ).toHaveLength(4);
+  });
+
+  test("keeps DELETE authoritative when event stream close throws", async () => {
+    const transport = new FakeTransport();
+    transport.streamCloseFailures = 1;
+    const provider = createRemoteWorkerSandboxProviderV1(providerOptions(transport));
+    const pair = await provider.create({
+      workspaceRoot: "/unused",
+      workspaceId: "workspace-a",
+      sessionId: "session-a",
+    });
+    pair.workspace.watch?.().subscribe(vi.fn());
+    await vi.waitFor(() => expect(transport.streamHandles).toHaveLength(1));
+
+    await expect(pair.dispose()).resolves.toBeUndefined();
+    expect(transport.streamHandles[0]?.close).toHaveBeenCalledTimes(2);
+    expect(
+      transport.requests.filter((request) => request.method === "DELETE"),
+    ).toHaveLength(1);
+  });
+
+  test("provider close retries DELETE after stream close and delete both fail", async () => {
+    const transport = new FakeTransport();
+    transport.streamCloseFailures = 2;
+    transport.deleteFailures = 3;
+    const provider = createRemoteWorkerSandboxProviderV1(providerOptions(transport));
+    const pair = await provider.create({
+      workspaceRoot: "/unused",
+      workspaceId: "workspace-a",
+      sessionId: "session-a",
+    });
+    pair.workspace.watch?.().subscribe(vi.fn());
+    await vi.waitFor(() => expect(transport.streamHandles).toHaveLength(1));
+
+    await expect(provider.close!()).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+      message: "remote-worker sandbox cleanup could not be confirmed",
+    });
+    await expect(provider.close!()).resolves.toBeUndefined();
+    expect(
+      transport.requests.filter((request) => request.method === "DELETE"),
+    ).toHaveLength(4);
+  });
+
+  test("memoizes successful DELETE while stream cleanup retries", async () => {
+    const transport = new FakeTransport();
+    transport.streamCloseFailures = 2;
+    const provider = createRemoteWorkerSandboxProviderV1(providerOptions(transport));
+    const pair = await provider.create({
+      workspaceRoot: "/unused",
+      workspaceId: "workspace-a",
+      sessionId: "session-a",
+    });
+    pair.workspace.watch?.().subscribe(vi.fn());
+    await vi.waitFor(() => expect(transport.streamHandles).toHaveLength(1));
+
+    await expect(pair.dispose()).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+      message: "remote-worker event stream cleanup could not be confirmed",
+    });
+    await expect(pair.dispose()).resolves.toBeUndefined();
+    expect(
+      transport.requests.filter((request) => request.method === "DELETE"),
+    ).toHaveLength(1);
+  });
+
+  test("joins concurrent pair disposal and stream close", async () => {
+    const transport = new FakeTransport();
+    const provider = createRemoteWorkerSandboxProviderV1(providerOptions(transport));
+    const pair = await provider.create({
+      workspaceRoot: "/unused",
+      workspaceId: "workspace-a",
+      sessionId: "session-a",
+    });
+    pair.workspace.watch?.().subscribe(vi.fn());
+    await vi.waitFor(() => expect(transport.streamHandles).toHaveLength(1));
+
+    await Promise.all([pair.dispose(), pair.dispose()]);
+    expect(transport.streamHandles[0]?.close).toHaveBeenCalledTimes(1);
+    expect(
+      transport.requests.filter((request) => request.method === "DELETE"),
+    ).toHaveLength(1);
+  });
+
+  test("handles a rejecting lifetime close and converges explicitly", async () => {
+    vi.useFakeTimers();
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    try {
+      const transport = new FakeTransport();
+      transport.streamCloseFailures = 1;
+      transport.streamCloseRejects = true;
+      const client = new RemoteWorkerProtocolClientV1({
+        worker: fleet().workers[0]!,
+        workspaceId: "workspace-a",
+        requestId: "request-events",
+        issuer: { issueCapability: async () => "capability-events" },
+        transport,
+        now: () => nowMs,
+        idFactory: () => "nonce-events",
+        requestTimeoutMs: 5_000,
+        capabilityLifetimeMs: 1_000,
+        eventStreamLifetimeMs: 5_000,
+      });
+      await client.bind("sandbox-1").openEvents(nowMs + 10_000, vi.fn());
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      await Promise.resolve();
+      expect(unhandled).not.toHaveBeenCalled();
+      await expect(client.close()).resolves.toBeUndefined();
+      expect(transport.streamHandles[0]?.close).toHaveBeenCalledTimes(2);
+    } finally {
+      process.off("unhandledRejection", unhandled);
+      vi.useRealTimers();
+    }
   });
 
   test("rejects capabilities configured beyond the five-minute bound", () => {

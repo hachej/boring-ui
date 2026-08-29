@@ -37,6 +37,13 @@ function responseError(label: string): SandboxProviderError {
   );
 }
 
+function requestStreamClose(stream: RemoteWorkerEventStreamV1 | undefined): void {
+  if (!stream) return;
+  void Promise.resolve()
+    .then(async () => await stream.close())
+    .catch(() => undefined);
+}
+
 function expectContent(result: RemoteWorkerWorkspaceResultV1): string {
   if ("content" in result && typeof result.content === "string")
     return result.content;
@@ -148,7 +155,7 @@ export function createRemoteWorkspaceV1(options: {
           },
         );
         if (watcherClosed || listeners.size === 0) {
-          opened.close();
+          requestStreamClose(opened);
           return;
         }
         stream = opened;
@@ -186,7 +193,7 @@ export function createRemoteWorkspaceV1(options: {
             if (listeners.size === 0) {
               if (reconnectTimer) clearTimeout(reconnectTimer);
               reconnectTimer = undefined;
-              stream?.close();
+              requestStreamClose(stream);
               stream = undefined;
             }
           };
@@ -196,7 +203,7 @@ export function createRemoteWorkspaceV1(options: {
           listeners.clear();
           if (reconnectTimer) clearTimeout(reconnectTimer);
           reconnectTimer = undefined;
-          stream?.close();
+          requestStreamClose(stream);
           stream = undefined;
         },
       };
