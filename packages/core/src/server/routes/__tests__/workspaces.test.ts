@@ -927,6 +927,52 @@ describe('Provisioner integration', () => {
       expect(runtime?.lastError).toBe('disk full')
       expect(runtime?.lastErrorOp).toBe('provision')
     })
+
+    it('#1463: if the DB delete+recreate fails AFTER the sandbox was already destroyed, the surviving workspace is marked recoverable via the existing retry contract — never left live-looking but silently broken', async () => {
+      const ws = provSeedWorkspace('DestroyedThenDbFails', OWNER_ID, { isDefault: true })
+
+      // Simulate a genuine post-destroy DB failure (e.g. the replacement
+      // insert failing inside deleteAndRecreateDefaultIfEmpty's transaction):
+      // patch the store method to throw for exactly this one call, then
+      // restore it. The mock never mutates pWorkspaces before throwing,
+      // mirroring a real Postgres ROLLBACK leaving the row untouched.
+      const store = provApp.workspaceStore as unknown as {
+        deleteAndRecreateDefaultIfEmpty: WorkspaceStore['deleteAndRecreateDefaultIfEmpty']
+      }
+      const original = store.deleteAndRecreateDefaultIfEmpty
+      store.deleteAndRecreateDefaultIfEmpty = async () => {
+        throw new Error('replacement insert failed')
+      }
+
+      try {
+        const res = await provInject('DELETE', `/api/v1/workspaces/${ws.id}`, OWNER_ID)
+
+        // Honest failure — not deleted, not silently fine.
+        expect(res.statusCode).toBe(500)
+        expect(res.json().deleted).toBeUndefined()
+
+        // The sandbox WAS already destroyed (irreversible, ran before the DB
+        // step) — this is exactly the dangerous case: a row that looks like
+        // an ordinary active workspace but has no working runtime under it.
+        expect(destroyFn).toHaveBeenCalledWith(ws.id)
+
+        // The DB row itself survives (rolled back / never mutated) — the
+        // account is not workspace-less.
+        expect(pWorkspaces.get(ws.id)?.deletedAt).toBeFalsy()
+
+        // It is honestly marked recoverable via the SAME contract
+        // POST /runtime/retry already accepts (state=error,
+        // lastErrorOp=provision) — proven directly against that endpoint's
+        // guard in settings.ts and exercised end-to-end in
+        // e2e/v7-platform.test.ts's "destroy-then-DB-failure" recovery case.
+        const runtime = runtimes.get(ws.id)
+        expect(runtime?.state).toBe('error')
+        expect(runtime?.lastErrorOp).toBe('provision')
+        expect(runtime?.lastError).toContain('replacement insert failed')
+      } finally {
+        store.deleteAndRecreateDefaultIfEmpty = original
+      }
+    })
   })
 
   describe('No-provisioner mode', () => {

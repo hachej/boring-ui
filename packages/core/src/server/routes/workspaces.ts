@@ -250,14 +250,40 @@ const workspaceRoutesPlugin: FastifyPluginAsync = async (app) => {
       // workspace, and if not create a replacement" run as ONE database
       // transaction (see PostgresWorkspaceStore.deleteAndRecreateDefaultIfEmpty).
       // If the replacement insert fails for any reason, the whole transaction
-      // rolls back — including the original soft-delete — so this either
-      // fully succeeds or the workspace is left exactly as it was. We never
-      // report `deleted: true` while the account is committed at zero active
-      // workspaces: a DB-layer failure here propagates as a 500, honestly.
-      const result = await store.deleteAndRecreateDefaultIfEmpty(id, request.user!.id, {
-        name: DEFAULT_WORKSPACE_NAME,
-        defaultAgentTypeId,
-      })
+      // rolls back — including the original soft-delete — so the DB row is
+      // left exactly as it was. But by this point `provisioner.destroy(id)`
+      // above has already irreversibly torn down the real sandbox/filesystem
+      // — that can't be part of the DB transaction and can't be undone. So a
+      // DB-layer failure here would otherwise leave a live-looking workspace
+      // row with no working runtime and no path back to one. Mark it
+      // recoverable through the SAME contract POST /runtime/retry already
+      // understands (state=error, lastErrorOp=provision) instead of leaving
+      // it silently broken — the workspace genuinely does need a fresh
+      // sandbox provisioned, exactly like a failed creation would.
+      let result: Awaited<ReturnType<typeof store.deleteAndRecreateDefaultIfEmpty>>
+      try {
+        result = await store.deleteAndRecreateDefaultIfEmpty(id, request.user!.id, {
+          name: DEFAULT_WORKSPACE_NAME,
+          defaultAgentTypeId,
+        })
+      } catch (err) {
+        if (provisioner) {
+          const message = err instanceof Error ? err.message : String(err)
+          try {
+            await store.putWorkspaceRuntime(id, {
+              state: 'error',
+              lastError: message,
+              lastErrorOp: 'provision',
+            })
+          } catch (markErr) {
+            // Even the recovery marking failed — surface it but don't let it
+            // mask the original DB error, which is what actually caused this.
+            request.log.error({ workspaceId: id, markErr }, 'workspace.delete.recovery_mark.failed')
+          }
+        }
+        request.log.error({ workspaceId: id, err }, 'workspace.delete.db_failed_after_destroy')
+        throw err
+      }
 
       if (!result.removed) {
         throw new HttpError({

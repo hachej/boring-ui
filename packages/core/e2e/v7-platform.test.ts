@@ -459,4 +459,106 @@ describe('v7 platform E2E', () => {
       expect(res.json()).toEqual({ deleted: true })
     })
   })
+
+  // ===========================================================================
+  // Scenario C — #1463 destroy-succeeded-then-DB-failed recovery contract
+  // ===========================================================================
+  // Thermo-gate finding: the sandbox destroy in DELETE runs BEFORE the DB
+  // transaction and can't be rolled back with it. If the DB step then fails
+  // (transaction rolls back, workspace row survives), the workspace looks
+  // like an ordinary active workspace but its real sandbox is gone. This
+  // proves, end-to-end against real routes (workspace + settings) and a
+  // real LocalWorkspaceStore, that the surviving workspace is honestly
+  // marked recoverable and POST /runtime/retry actually brings it back —
+  // not just that DELETE returns 500.
+  describe('Scenario C: destroy-succeeded-then-DB-failed recovery', () => {
+    let app: FastifyInstance
+    let inject: ReturnType<typeof createInjector>
+    let workspaceStore: LocalWorkspaceStore
+    const provisionFn = vi.fn<WorkspaceProvisioner['provision']>()
+    const destroyFn = vi.fn<WorkspaceProvisioner['destroy']>()
+    let workspaceId: string
+
+    beforeAll(async () => {
+      const userStore = new LocalUserStore()
+      workspaceStore = new LocalWorkspaceStore(userStore)
+      userStore.seed({ id: 'carol', email: 'carol@test.dev', name: 'Carol', emailVerified: true, image: null })
+
+      provisionFn.mockResolvedValue({ volumePath: '/volumes/carol-ws' })
+      destroyFn.mockResolvedValue(undefined)
+
+      const provisioner: WorkspaceProvisioner = { provision: provisionFn, destroy: destroyFn }
+
+      app = Fastify({ logger: false })
+      app.decorate('config', { appId: 'test-app', defaultAgentTypeId: 'default', auth: { mail: null, url: 'http://localhost:3000' }, features: { inviteTtlDays: 7 } } as any)
+      app.decorate('workspaceStore', workspaceStore)
+      app.decorate('provisioner', provisioner)
+      registerErrorHandler(app)
+
+      app.addHook('onRequest', async (request) => {
+        const userId = request.headers['x-test-user'] as string | undefined
+        request.user = userId ? { id: userId, email: `${userId}@test.dev`, name: null } : null
+      })
+
+      await app.register(registerWorkspaceRoutes)
+      await app.register(registerSettingsRoutes)
+      await app.ready()
+
+      inject = createInjector(app)
+    })
+
+    afterAll(async () => {
+      await app.close()
+    })
+
+    it('Carol creates her only workspace', async () => {
+      const res = await inject('POST', '/api/v1/workspaces', 'carol', { name: 'Carol WS' })
+      expect(res.statusCode).toBe(201)
+      workspaceId = res.json().workspace.id
+    })
+
+    it('delete fails after the sandbox is already destroyed → 500, but the surviving workspace is marked recoverable', async () => {
+      // Force a genuine post-destroy DB failure: patch the real
+      // LocalWorkspaceStore's deleteAndRecreateDefaultIfEmpty to throw for
+      // exactly this one call (simulating, e.g., a real Postgres error mid-
+      // transaction), then restore it immediately after.
+      const original = workspaceStore.deleteAndRecreateDefaultIfEmpty.bind(workspaceStore)
+      workspaceStore.deleteAndRecreateDefaultIfEmpty = async () => {
+        throw new Error('simulated replacement insert failure')
+      }
+
+      try {
+        const res = await inject('DELETE', `/api/v1/workspaces/${workspaceId}`, 'carol')
+        expect(res.statusCode).toBe(500)
+      } finally {
+        workspaceStore.deleteAndRecreateDefaultIfEmpty = original
+      }
+
+      // Destroy genuinely ran (irreversible) before the DB step failed.
+      expect(destroyFn).toHaveBeenCalledWith(workspaceId)
+
+      // The workspace row survives — the account is not workspace-less.
+      const ws = await workspaceStore.get(workspaceId)
+      expect(ws).not.toBeNull()
+
+      // It's honestly marked recoverable via the same contract
+      // POST /runtime/retry already understands.
+      const runtime = await workspaceStore.getWorkspaceRuntime(workspaceId)
+      expect(runtime?.state).toBe('error')
+      expect(runtime?.lastErrorOp).toBe('provision')
+      expect(runtime?.lastError).toContain('simulated replacement insert failure')
+    })
+
+    it('POST /runtime/retry actually recovers it — the workspace becomes usable again, not just honestly-broken', async () => {
+      const res = await inject('POST', `/api/v1/workspaces/${workspaceId}/runtime/retry`, 'carol')
+      expect(res.statusCode).toBe(200)
+      expect(res.json().runtime.state).toBe('ready')
+      expect(res.json().runtime.volumePath).toBe('/volumes/carol-ws')
+      expect(provisionFn).toHaveBeenCalledWith(expect.objectContaining({ workspaceId }))
+
+      // Still exactly one workspace for Carol — the failed delete didn't
+      // leave her with zero, and the recovery didn't create a duplicate.
+      expect(await workspaceStore.list('carol', 'test-app')).toHaveLength(1)
+    })
+  })
 })
