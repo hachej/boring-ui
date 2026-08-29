@@ -5,8 +5,8 @@ PREFIX="[invariants]"
 ROOT_INPUT="${1:-packages/agent}"
 ROOT_DIR="$(cd "$ROOT_INPUT" 2>/dev/null && pwd || true)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PI_RUNTIME_IMPORT_PATTERN="(from\s+|import\(|require\()['\"](@mariozechner/pi-|@earendil-works/pi-)"
-HARNESS_SERVICE_IMPORT_PATTERN="from\s+['\"][^'\"]*pi-chat/harnessPiChatService(?:\.[^'\"]+)?['\"]"
+PI_RUNTIME_IMPORT_PATTERN="(from\s+|import\s+|import\s*\(\s*|require\s*\(\s*)['\"](@mariozechner/pi-|@earendil-works/pi-)"
+HARNESS_SERVICE_IMPORT_PATTERN="(from\s+|import\s+|import\s*\(\s*|require\s*\(\s*)['\"][^'\"]*pi-chat/harnessPiChatService(?:\.[^'\"]+)?['\"]"
 
 if [[ -z "$ROOT_DIR" || ! -d "$ROOT_DIR" ]]; then
   echo "$PREFIX ERR invalid target root: $ROOT_INPUT"
@@ -193,14 +193,35 @@ if [[ -f "$ROOT_DIR/package.json" ]]; then
 fi
 
 fixture_root="$SCRIPT_DIR/__fixtures__/check-invariants/agent-host-boundary"
-if ! rg -q -e "$PI_RUNTIME_IMPORT_PATTERN" "$fixture_root/src/server/agent-host/piRuntimeLeak.ts" \
-  || ! rg -q -e "$HARNESS_SERVICE_IMPORT_PATTERN" "$fixture_root/src/server/agent-host/serviceLeak.ts"; then
-  failures=1
-  echo "$PREFIX ERR agent-host boundary negative fixtures did not match both invariants"
-  echo "  Invariant: invariant regexes must reject their checked-in negative fixtures."
-  echo "  Fix: Keep fixture paths and import forms aligned with both agent-host scans."
-else
+fixture_matches=1
+for fixture in \
+  piRuntimeLeak.ts \
+  piRuntimeSideEffectLeak.ts \
+  piRuntimeDynamicImportLeak.ts \
+  piRuntimeRequireLeak.ts \
+  piRuntimeImportEqualsLeak.ts; do
+  if ! rg -q -e "$PI_RUNTIME_IMPORT_PATTERN" "$fixture_root/src/server/agent-host/$fixture"; then
+    fixture_matches=0
+    echo "$PREFIX ERR agent-host Pi-runtime fixture did not match: $fixture"
+  fi
+done
+for fixture in \
+  serviceLeak.ts \
+  serviceSideEffectLeak.ts \
+  serviceDynamicImportLeak.ts \
+  serviceRequireLeak.ts \
+  serviceImportEqualsLeak.ts; do
+  if ! rg -q -e "$HARNESS_SERVICE_IMPORT_PATTERN" "$fixture_root/src/server/agent-host/$fixture"; then
+    fixture_matches=0
+    echo "$PREFIX ERR agent-host harness-service fixture did not match: $fixture"
+  fi
+done
+if [[ "$fixture_matches" -eq 1 ]]; then
   echo "$PREFIX OK agent-host boundary negative fixtures match both invariant scans"
+else
+  failures=1
+  echo "  Invariant: invariant regexes must reject every checked-in import-form fixture."
+  echo "  Fix: Keep fixture paths and import forms aligned with both agent-host scans."
 fi
 
 if [[ "$failures" -ne 0 ]]; then

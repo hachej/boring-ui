@@ -42,7 +42,6 @@ export type HarnessWatchResult =
  * authority; callers may retry only after ledger admission.
  */
 export interface AgentHarnessBackend {
-  readonly id: string
   listSessions(
     scope: HarnessAgentScope,
     ctx: HarnessRequestContext,

@@ -169,7 +169,7 @@ Introduce one private, server-side interface — `AgentHarnessBackend` — as th
 
 A funnel-private backend seam: `AgentGateway` (D29, frozen) → `EmbeddedAgentGateway` → **`AgentHarnessBackend`** → {`PiSessionHarnessBackend` today | P1-B's Boring event backend | a future pi-v2 substitute}. Satisfies Pi rules 1 and 3 structurally and gives rule 2 (reconciliation) a named contract point (the crash matrix itself is A3). **Rule 4 is not satisfied by A2**: the unchanged pi harness still creates pi-owned `AuthStorage`/`ModelRegistry` (`createHarness.ts:594`); A2 only guarantees the seam carries no credentials, and rule 4 stays an open blocker for the BYOK injection seam (header decision 9).
 
-#### Interface sketch (`packages/agent/src/server/agent-host/harnessBackend/types.ts`, server-only)
+#### Interface sketch (`packages/agent/src/server/agent-host/harnessBackend/types.ts`, server-only; Pi construction input lives beside the adapter)
 
 ```ts
 import type { AgentSessionRef } from '../../../shared/gateway/types'
@@ -189,7 +189,6 @@ export type HarnessWatchResult =
   | { readonly type: 'replay_gap' | 'cursor_ahead'; readonly latestSeq: number; readonly minReplaySeq: number }
 
 export interface AgentHarnessBackend {
-  readonly id: string                                    // 'pi-session' | 'boring-event-stream' (P1-B)
   listSessions(scope: HarnessAgentScope, ctx: HarnessRequestContext, options?: SessionListOptions): Promise<SessionSummary[]>
   createSession(scope: HarnessAgentScope, ctx: HarnessRequestContext, init?: { title?: string }): Promise<SessionSummary>
   readSnapshot(address: HarnessSessionAddress, ctx: HarnessRequestContext): Promise<PiChatSnapshot>
@@ -206,7 +205,7 @@ export interface AgentHarnessBackend {
   close(): Promise<void>
 }
 
-/** Built once per RuntimeBinding by buildAgentComposition. Deliberately carries NO credentials, model catalog, or membership. */
+/** Lives beside the Pi adapter. Built once per RuntimeBinding; carries NO credentials, model catalog, or membership. */
 export interface AgentHarnessBackendFactoryInput {
   readonly harness: AgentHarness; readonly sessionStore: SessionStore
   readonly workdir: string; readonly workspace?: Workspace
@@ -227,17 +226,18 @@ Mapping to the removal-map sketch (`pi-v2-removal-map.md:80-85`): openSession = 
 **Add**
 - `packages/agent/src/server/agent-host/harnessBackend/types.ts` — the interface above.
 - `packages/agent/src/server/agent-host/harnessBackend/piSessionHarnessBackend.ts` — `createPiSessionHarnessBackend(input)`: constructs `HarnessPiChatService` exactly as `buildAgentComposition.ts:318-328` does; one private `toPiSessionRequestContext(address|scope, ctx)` that reproduces `embeddedGateway.ts:72-83` byte-for-byte (the single A1 touchpoint — which is why A1 is serialized after A2); `renameSession` delegates to `sessionStore.rename` with the `AGENT_COMMAND_INVALID_STATE`-equivalent coded error when absent (today `:626-628`).
-- `packages/agent/src/shared/chat/` — relocate `AgentPromptPayload` and `PiChatAttachmentResult` out of `core/piChatSessionService.ts` (re-export from the old location for the legacy path).
+- `packages/agent/src/shared/chat/` — relocate `AgentPromptPayload` and `PiChatAttachmentResult` out of `core/piChatSessionService.ts` (re-export from the old location for the legacy path). `AgentPromptPayload` remains a type-only export: its “server-only” doc comment means browser schemas never accept `requireIdle`.
 - `packages/agent/src/server/agent-host/testing/harnessBackendConformance.ts` — `harnessBackendConformance({ createBackend })`, sibling of `gatewayConformance.ts`.
-- `packages/agent/src/server/agent-host/__tests__/harnessBackend.piSession.test.ts` (scripted pi harness, `testing/scriptedPiHarness.ts`) and `harnessBackend.inMemory.test.ts` (the fixture fake).
+- `packages/agent/src/server/agent-host/testing/inMemoryHarnessBackend.ts` — focused service-coded in-memory implementation shared by backend conformance and the gateway fixture.
+- `packages/agent/src/server/agent-host/__tests__/harnessBackend.piSession.test.ts` (scripted pi harness, `testing/scriptedPiHarness.ts`) and `harnessBackend.inMemory.test.ts` (the focused in-memory backend).
 - Doc section "Private backend seam" in `packages/agent/docs/AGENT_GATEWAY_V0.md`; invariant 10 in `docs/procedures/coding-invariants.md`.
 
 **Change**
 - `buildAgentComposition.ts`: `BuiltAgentComposition.service` → `backend: AgentHarnessBackend`; construct via `createPiSessionHarnessBackend`; `dispose()` calls `backend.close()`. `harness`, `sessionStore`, `pi`, `tools`, `readyTracker`, `runtimeBundle` stay (consumed by `runtimeCapabilityProjection.ts:237-283, 358-372, 483-495` for reload/slash commands — a host-effect path, not a session path; out of scope).
 - `embeddedGateway.ts`: every `composition.service.*` and `composition.sessionStore.rename` call → `backend.*`; delete `context()` and the `PiChatSessionService` import; `loadSummary`/`queueClearAdmission`/`promptAdmission` take `AgentHarnessBackend`.
 - `createAgentHost.ts:900-912` → `resolveHarnessBackend`; `httpProjection.ts:37, 376-387` types accordingly (route body unchanged).
-- `__tests__/embeddedGatewayFixture.ts`: `FakeService implements AgentHarnessBackend`; `resolveBinding` returns `composition: { backend }`.
-- `scripts/check-invariants.sh`: add `run_check` "No pi runtime imports in src/server/agent-host/** (excluding `__tests__/**`)" (pattern `from\s+['"]@mariozechner/pi-|@earendil-works/pi-`, path `src/server/agent-host`, `-g '!**/__tests__/**'`) and "Only harnessBackend/ may import HarnessPiChatService in agent-host" (`-g '!**/harnessBackend/**'`). Stated limit: the legacy consumers outside `agent-host/` (`core/piChatSessionService.ts`, the dead trusted binding) are not covered — the enforcement is narrower than the WHAT's "only thing" claim until the legacy path is deleted.
+- `__tests__/embeddedGatewayFixture.ts`: use `InMemoryHarnessBackend`; `resolveBinding` returns `composition: { backend }`.
+- `scripts/check-invariants.sh`: add `run_check` "No pi runtime imports in src/server/agent-host/** (excluding `__tests__/**`)" and "Only harnessBackend/ may import HarnessPiChatService in agent-host" (`-g '!**/harnessBackend/**'`); both patterns cover `from`, side-effect, dynamic, `require`, and import-equals forms. Stated limit: the legacy consumers outside `agent-host/` (`core/piChatSessionService.ts`, the dead trusted binding) are not covered — the enforcement is narrower than the WHAT's "only thing" claim until the legacy path is deleted.
 - `scripts/check-alignment-invariants.mjs`: extend `findConsumerInternalReferences` (`:270`) so consumer roots (`:8-13`) fail on any reference to `harnessBackend/` or the identifier `AgentHarnessBackend`, **type-only included** — note the existing `findWorkspaceImportViolations` (`:194-199`) filters type-only imports *out*, so this check must not reuse that filter; the "even when type-only" fixture precedent is at `:346-347`.
 
 **Not added:** no `harnessBackendFactory` on `CreateAgentHostOptions`. Injection stays `harnessFactory` (pi harness, `types.ts:402`); a public backend injection point would be exactly the parallel session path rule 1 forbids. P1-B selects its backend inside `buildAgentComposition` by the existing flag.
@@ -254,12 +254,12 @@ pnpm test:agenthost-compositions
 pnpm typecheck
 ```
 
-Failing-first assertions in `harnessBackendConformance`: (1) `watchEvents(cursor=0)` after 6 published events over a 5-event buffer returns `{type:'replay_gap', minReplaySeq, latestSeq}` and `readSnapshot().seq === latestSeq` — **runs against the in-memory backend only in A2**: the pi-session buffer size is not configurable without editing `harnessPiChatService.ts` (`new PiChatReplayBuffer()` at `:1314-1363`, no option on `HarnessPiChatServiceOptions:100-125`), which A2's negative proof forbids; A4 adds `replayBufferMaxEvents` and re-enables the case for the pi backend there; (2) *(dropped — see reconcile semantics; idempotency is asserted at the gateway level by the existing Level B conformance and by A3a's crash matrix)*; (3) `readSnapshot` on an unknown session rejects with a coded error whose `code === ErrorCode.enum.SESSION_NOT_FOUND` — **not** an `AgentGatewayError`; (4) the same `sessionId` under two `workspaceScopeId`s resolves two independent streams (today's `harnessPiChatService.eventStore.test.ts:192` isolates on workspace *and* auth-subject — A2 asserts the workspace half only, since A1 removes the subject from the key); (5) after `close()` every method rejects. The pi-session test additionally asserts the `PiSessionRequestContext` the adapter hands `HarnessPiChatService` deep-equals what `embeddedGateway.ts:72-83` produced (snapshot fixture), so identity/key grammar is provably untouched. Invariant proof: a fixture under `scripts/__fixtures__` importing `@mariozechner/pi-coding-agent` into `agent-host/` must make `lint:invariants` exit non-zero (negative-fixture mode: `check-alignment-invariants.mjs:33`, `:356`).
+Failing-first assertions in `harnessBackendConformance`: (1) `watchEvents(cursor=0)` after 6 published events over a 5-event buffer returns `{type:'replay_gap', minReplaySeq, latestSeq}` and `readSnapshot().seq === latestSeq` — **runs against the in-memory backend only in A2**: the pi-session buffer size is not configurable without editing `harnessPiChatService.ts` (`new PiChatReplayBuffer()` at `:1314-1363`, no option on `HarnessPiChatServiceOptions:100-125`), which A2's negative proof forbids; A4 adds `replayBufferMaxEvents` and re-enables the case for the pi backend there; (2) *(dropped — see reconcile semantics; idempotency is asserted at the gateway level by the existing Level B conformance and by A3a's crash matrix)*; (3) `readSnapshot` on an unknown session rejects with a coded error whose `code === ErrorCode.enum.SESSION_NOT_FOUND`, `statusCode === 404`, and identity is **not** `AgentGatewayError`; (3b) injected `submitPrompt` and `submitFollowUp` failures preserve exact service `code`, `statusCode`, and `retryable` through `stableServiceActionFailure` on both backends; (4) the same `sessionId` under two `workspaceScopeId`s resolves two independent streams (today's `harnessPiChatService.eventStore.test.ts:192` isolates on workspace *and* auth-subject — A2 asserts the workspace half only, since A1 removes the subject from the key); (5) after `close()` every method rejects. The pi-session test additionally asserts the `PiSessionRequestContext` the adapter hands `HarnessPiChatService` deep-equals what `embeddedGateway.ts:72-83` produced (snapshot fixture), so identity/key grammar is provably untouched. Invariant proof: checked-in fixtures under `scripts/__fixtures__` exercise every forbidden import form during normal invariant lint.
 
 ### Negative proof
 
-- `git diff --stat` shows **zero changes** to `harnessPiChatService.ts`, `createHarness.ts`, `eventStreamStore.ts`, `piChatReplayBuffer.ts`, `core/createAgent.ts`, `shared/**`, `front/**`, `http/routes/**`, and `testing/gatewayConformance.ts`. The Level D skips at `gatewayConformance.ts:674-677` stay skipped; `replayLevel` stays `'B'`.
-- Wire: no route, DTO, error code (`AGENT_GATEWAY_ERROR_CODES` list at `gatewayConformance.ts:110`), or HTTP status changes; `httpProjection.test.ts` green unchanged.
+- `git diff --stat` shows **zero changes** to `harnessPiChatService.ts`, `createHarness.ts`, `eventStreamStore.ts`, `piChatReplayBuffer.ts`, `core/createAgent.ts`, `shared/gateway/**`, `front/**`, `http/routes/**`, and `testing/gatewayConformance.ts`. Under `shared/chat/**`, the only changes are exactly the two additive type relocations `packages/agent/src/shared/chat/agentPromptPayload.ts` and `packages/agent/src/shared/chat/piChatAttachment.ts`, plus their type-only exports from `packages/agent/src/shared/chat/index.ts`; browser schemas never accept `AgentPromptPayload.requireIdle`. The Level D skips at `gatewayConformance.ts:674-677` stay skipped; `replayLevel` stays `'B'`.
+- Wire: no route, DTO, error code (`AGENT_GATEWAY_ERROR_CODES` list at `gatewayConformance.ts:110`), or HTTP status changes; `httpProjection.test.ts` pins the attachment address/context tuple and remains green apart from sandbox socket-listen `EPERM`.
 - Flag: `buildAgentComposition.durableStream.test.ts` green unchanged; flag-off remains byte-identical composition; flag-on still injects the same `SqliteEventStreamStore` into the same service.
 - Legacy: `core/createAgent.ts` / `AgentLiveEventBuffer` untouched (no production consumers).
 - Consumers: `workspace`, `core`, `cli`, `agent-playground` composition roots (`check-alignment-invariants.mjs:38-56`) keep passing only `harnessFactory`; the new consumer-reference invariant proves none references the seam.

@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { AgentGatewayError } from '../../../shared/gateway/errors'
 import { ErrorCode } from '../../../shared/error-codes'
+import { codedError } from '../../codedError'
 import type { AgentHarnessBackend } from '../harnessBackend/types'
+import { stableServiceActionFailure } from '../stableServiceError'
+
+type HarnessBackendAction = 'submitPrompt' | 'submitFollowUp'
 
 export interface HarnessBackendConformanceFixture {
   readonly backend: AgentHarnessBackend
+  injectActionFailure(action: HarnessBackendAction, error: Error): void | Promise<void>
 }
 
 export interface HarnessBackendConformanceOptions<Fixture extends HarnessBackendConformanceFixture> {
@@ -67,8 +72,71 @@ export function harnessBackendConformance<Fixture extends HarnessBackendConforma
         } catch (error) {
           observed = error
         }
-        expect(observed).toMatchObject({ code: ErrorCode.enum.SESSION_NOT_FOUND })
+        expect(observed).toMatchObject({
+          code: ErrorCode.enum.SESSION_NOT_FOUND,
+          statusCode: 404,
+        })
         expect(observed).not.toBeInstanceOf(AgentGatewayError)
+      })
+    })
+
+    it('case 3b: preserves stable service failures from prompt and follow-up submission', async () => {
+      await withBackend(options, async (fixture) => {
+        const created = await fixture.backend.createSession(scope('workspace-action-failure'), ctx('create-action-failure'))
+        const target = address('workspace-action-failure', created.id)
+        const actions: ReadonlyArray<{
+          name: HarnessBackendAction
+          run(): Promise<unknown>
+        }> = [
+          {
+            name: 'submitPrompt',
+            run: () => fixture.backend.submitPrompt(target, ctx('failing-prompt'), {
+              message: 'prompt',
+              clientNonce: 'failing-prompt',
+            }),
+          },
+          {
+            name: 'submitFollowUp',
+            run: () => fixture.backend.submitFollowUp(target, ctx('failing-followup'), {
+              message: 'followup',
+              clientNonce: 'failing-followup',
+              clientSeq: 1,
+            }),
+          },
+        ]
+
+        for (const action of actions) {
+          const injected = codedError(
+            `${action.name} is temporarily locked`,
+            ErrorCode.enum.SESSION_LOCKED,
+            409,
+            { retryable: true },
+          )
+          await fixture.injectActionFailure(action.name, injected)
+          let observed: unknown
+          try {
+            await action.run()
+          } catch (error) {
+            observed = error
+          }
+          expect(observed).toMatchObject({
+            code: ErrorCode.enum.SESSION_LOCKED,
+            statusCode: 409,
+            retryable: true,
+          })
+          expect(observed).not.toBeInstanceOf(AgentGatewayError)
+          expect(stableServiceActionFailure(observed)).toEqual({
+            kind: 'service',
+            error: {
+              statusCode: 409,
+              error: {
+                code: ErrorCode.enum.SESSION_LOCKED,
+                message: `${action.name} is temporarily locked`,
+                retryable: true,
+              },
+            },
+          })
+        }
       })
     })
 

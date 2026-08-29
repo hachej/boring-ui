@@ -149,9 +149,14 @@ class DeferredConnectGateway extends FakeGateway {
   }
 }
 
-function sessionBackend(): AgentHarnessBackend {
+function sessionBackend(
+  readAttachment: AgentHarnessBackend['readAttachment'] = async () => ({
+    data: new TextEncoder().encode('image-bytes'),
+    mediaType: 'image/png',
+    filename: 'image.png',
+  }),
+): AgentHarnessBackend {
   return {
-    id: 'fixture',
     async listSessions() {
       return [{ id: 'session-1', title: 'Legacy', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:01.000Z', turnCount: 1 }]
     },
@@ -159,9 +164,7 @@ function sessionBackend(): AgentHarnessBackend {
       return { id: 'session-new', title: 'New', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', turnCount: 0 }
     },
     async deleteSession() {},
-    async readAttachment() {
-      return { data: new TextEncoder().encode('image-bytes'), mediaType: 'image/png', filename: 'image.png' }
-    },
+    readAttachment,
     async readSnapshot() {
       return snapshot.state
     },
@@ -259,7 +262,19 @@ describe('addressed Agent Host HTTP projection', () => {
   })
 
   it('projects catalog and every addressed session/command route onto typed Gateway inputs', async () => {
-    const { app, gateway } = await buildApp()
+    const readAttachment = vi.fn<AgentHarnessBackend['readAttachment']>(async () => ({
+      data: new TextEncoder().encode('image-bytes'),
+      mediaType: 'image/png',
+      filename: 'image.png',
+    }))
+    const backend = sessionBackend(readAttachment)
+    let attachmentRequestId: string | undefined
+    const { app, gateway } = await buildApp({
+      async resolveHarnessBackend(request) {
+        attachmentRequestId = request.id
+        return { scope, backend }
+      },
+    })
 
     expect((await app.inject({ method: 'GET', url: '/api/v1/agents' })).json()).toEqual([
       { agentTypeId: 'alpha', label: 'Alpha' },
@@ -293,6 +308,20 @@ describe('addressed Agent Host HTTP projection', () => {
       'cache-control': 'private, max-age=300',
       'x-content-type-options': 'nosniff',
     })
+    expect(attachmentRequestId).toBeTypeOf('string')
+    expect(readAttachment).toHaveBeenCalledOnce()
+    expect(readAttachment).toHaveBeenCalledWith(
+      {
+        workspaceScopeId: 'workspace-a',
+        ref: { agentTypeId: 'alpha', sessionId: 'session-1' },
+      },
+      {
+        authSubjectId: 'subject-a',
+        requestId: attachmentRequestId,
+      },
+      'message-1',
+      0,
+    )
     expect((await app.inject({
       method: 'POST',
       url: '/api/v1/agents/alpha/sessions/session-1/rename',

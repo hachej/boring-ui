@@ -160,6 +160,10 @@ The session-runtime path below `EmbeddedAgentGateway` is the server-only
 funnel: consumers still inject only `harnessFactory`, and there is no public
 backend factory or second session path.
 
+`AgentPromptPayload` is exposed from the shared chat barrel as a type only. Its
+“server-only” contract means browser schemas never accept the `requireIdle`
+selector.
+
 `PiSessionHarnessBackend` is the sole production implementation today. It
 adapts the unchanged `HarnessPiChatService` and owns the mapping from the
 workspace-scoped backend address and attribution context into the legacy Pi

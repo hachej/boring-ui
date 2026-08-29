@@ -28,6 +28,19 @@ function toPiSessionRequestContext(
   }
 }
 
+function rethrowSnapshotServiceError(error: unknown): never {
+  const candidate = error as Error & { code?: unknown; statusCode?: unknown }
+  if (
+    error instanceof Error
+    && candidate.code === ErrorCode.enum.SESSION_NOT_FOUND
+    && candidate.statusCode === undefined
+  ) {
+    // Preserve the service error identity while completing its stable shape.
+    Object.assign(candidate, { statusCode: 404 })
+  }
+  throw error
+}
+
 /** Built once per runtime binding; deliberately carries no credentials or membership. */
 export interface AgentHarnessBackendFactoryInput {
   readonly harness: AgentHarness
@@ -56,7 +69,6 @@ export function createPiSessionHarnessBackend(
   }
 
   return {
-    id: 'pi-session',
     async listSessions(scope, ctx, options) {
       assertOpen()
       return await service.listSessions(toPiSessionRequestContext(scope, ctx), options)
@@ -67,7 +79,11 @@ export function createPiSessionHarnessBackend(
     },
     async readSnapshot(address, ctx) {
       assertOpen()
-      return await service.readState(toPiSessionRequestContext(address, ctx), address.ref.sessionId)
+      try {
+        return await service.readState(toPiSessionRequestContext(address, ctx), address.ref.sessionId)
+      } catch (error) {
+        rethrowSnapshotServiceError(error)
+      }
     },
     async watchEvents(address, ctx, cursor, subscriber) {
       assertOpen()

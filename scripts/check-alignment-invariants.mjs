@@ -30,7 +30,6 @@ const skippedDirs = new Set([
   "node_modules",
   "out",
 ]);
-const negativeFixturesOnly = process.argv.includes("--negative-fixtures-only");
 const pass = (message) => console.log(`[alignment invariant] PASS ${message}`);
 const fail = (message) => {
   console.error(`[alignment invariant] FAIL ${message}`);
@@ -161,6 +160,9 @@ function moduleReferences(sourceFile) {
       && node.moduleReference.expression) {
       const specifier = literalText(node.moduleReference.expression);
       if (specifier) add(node, specifier, "import equals", node.isTypeOnly);
+    } else if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument)) {
+      const specifier = literalText(node.argument.literal);
+      if (specifier) add(node, specifier, "import type", true);
     } else if (ts.isCallExpression(node)) {
       const expression = unwrapTransparentExpression(node.expression);
       const dynamicImport = expression?.kind === ts.SyntaxKind.ImportKeyword;
@@ -351,10 +353,11 @@ function assertNegativeFixtures() {
     [
       "import type { HarnessPiChatService, PiSessionStore } from './internal'",
       "import type { AgentHarnessBackend as Backend } from '@hachej/boring-agent/server/agent-host/harnessBackend/types'",
+      "type BackendModule = typeof import('@hachej/boring-agent/server/agent-host/harnessBackend/types')",
     ].join("\n"),
   );
-  if (findConsumerInternalReferences(consumerFixture).length === 4) {
-    pass("fixture rejects concrete and harnessBackend references even when they are type-only");
+  if (findConsumerInternalReferences(consumerFixture).length === 5) {
+    pass("fixture rejects concrete, import-type, and harnessBackend references even when they are type-only");
   } else {
     fail("consumer internal-reference fixture mismatch");
   }
@@ -363,7 +366,6 @@ function assertNegativeFixtures() {
 function main() {
   console.log(`[alignment invariant] repo=${repoRoot}`);
   assertNegativeFixtures();
-  if (negativeFixturesOnly) return;
 
   const allProductionFiles = walk(repoRoot)
     .filter((file) => !isTestPath(file) && !isNonProductionSourcePath(file));

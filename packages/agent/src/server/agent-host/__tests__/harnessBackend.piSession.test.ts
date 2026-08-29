@@ -2,6 +2,7 @@ import { expect } from 'vitest'
 import type { AgentCoreHarness } from '../../../shared/harness'
 import type { SessionCtx, SessionStore } from '../../../shared/session'
 import { createScriptedPiHarness } from '../../testing/scriptedPiHarness'
+import type { AgentMeteringSink } from '../../pi-chat/metering'
 import { captureReadStateRequestContexts } from '../harnessBackend/__tests__/requestContextCapture'
 import { createPiSessionHarnessBackend } from '../harnessBackend/piSessionHarnessBackend'
 import { harnessBackendConformance } from '../testing/harnessBackendConformance'
@@ -33,16 +34,42 @@ function createWorkspaceScopedScriptedHarness(): AgentCoreHarness {
   }
 }
 
+function createActionFailureMetering() {
+  const nextErrors = new Map<'prompt' | 'followup', Error>()
+  const metering: AgentMeteringSink = {
+    async reserveRun(input) {
+      const error = nextErrors.get(input.kind)
+      if (error) {
+        nextErrors.delete(input.kind)
+        throw error
+      }
+      return {}
+    },
+    async recordUsage() { return { billedMicros: 0 } },
+    async settleRun() {},
+    async releaseRun() {},
+  }
+  return {
+    metering,
+    inject(action: 'submitPrompt' | 'submitFollowUp', error: Error) {
+      nextErrors.set(action === 'submitPrompt' ? 'prompt' : 'followup', error)
+    },
+  }
+}
+
 harnessBackendConformance({
   name: 'pi-session',
   createBackend() {
     const harness = createWorkspaceScopedScriptedHarness()
+    const actionFailures = createActionFailureMetering()
     return {
       backend: createPiSessionHarnessBackend({
         harness,
         sessionStore: harness.sessions,
         workdir: '/workspace',
+        metering: actionFailures.metering,
       }),
+      injectActionFailure: actionFailures.inject,
     }
   },
   async assertRequestContextSnapshot(fixture) {
