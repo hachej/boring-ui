@@ -618,6 +618,14 @@ test('core/full-app grants addressed tools only to the selected agent type', asy
     const charlotte = await resolveFor('charlotteledoux')
     macroSearchDescription = 'macro search v2'
     const changedMacroContract = await resolveFor('macro')
+    const userBScope = await projection.authorizeAgentRequest(fakeRequest('workspace-a', 'user-b'))
+    const macroForUserB = await hostOptions.resolveAuthorizedAgentRuntimeScope({
+      authorizedScope: userBScope,
+      verifiedClaim: { workspaceScopeId: 'workspace-a', authSubjectId: 'user-b' },
+      agentTypeId: 'macro',
+      environment,
+      intent: { kind: 'agent-binding', operation: 'new-binding', requestId: 'request-macro-user-b' },
+    })
     expect(macro.extraTools.map((entry: { name: string }) => entry.name)).toEqual([
       'shared_tool',
       'macro_search',
@@ -632,13 +640,70 @@ test('core/full-app grants addressed tools only to the selected agent type', asy
     expect(changedMacroContract.identity).not.toBe(macro.identity)
     expect(changedMacroContract.physicalBindingIdentity).toBe(macro.physicalBindingIdentity)
     expect(changedMacroContract.resourceInputDigest).not.toBe(macro.resourceInputDigest)
-    expect(seenAgentTypes).toEqual(['macro', 'charlotteledoux', 'macro'])
+    expect(macroForUserB.identity).not.toBe(changedMacroContract.identity)
+    expect(macroForUserB.physicalBindingIdentity).not.toBe(macro.physicalBindingIdentity)
+    expect(seenAgentTypes).toEqual(['macro', 'charlotteledoux', 'macro', 'macro'])
     expect(seenWorkspaceIds).toEqual([
       'runtime-workspace-a',
       'runtime-workspace-a',
       'runtime-workspace-a',
+      'runtime-workspace-a',
     ])
-    expect(seenPiAgentTypes).toEqual(['macro', 'charlotteledoux', 'macro'])
+    expect(seenPiAgentTypes).toEqual(['macro', 'charlotteledoux', 'macro', 'macro'])
+  } finally {
+    await app.close()
+  }
+}, 15_000)
+
+test('core/full-app keeps one physical slot across empty and non-empty addressed grants', async () => {
+  mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
+    runtimePlugins: [],
+    provisioningContributions: [],
+    agentOptions: {
+      extraTools: [],
+      pi: { additionalSkillPaths: [], packages: [] },
+      systemPromptAppend: undefined,
+    },
+    preservedUiStateKeys: [],
+    routeContributions: [],
+  })
+  const tool = (name: string): AgentTool => ({
+    name,
+    description: name,
+    parameters: { type: 'object', properties: {} },
+    execute: vi.fn(async () => ({ content: [{ type: 'text' as const, text: 'ok' }] })),
+  })
+  let grantEnabled = false
+  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
+  const app = await createCoreWorkspaceAgentServer({
+    config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+    workspaceRoot: '/tmp/full-app-workspaces',
+    getAgentExtraTools: async () => grantEnabled ? [tool('addressed_tool')] : [],
+    serveFrontend: false,
+  })
+
+  try {
+    const hostOptions = (mocks.createAgentHost as any).mock.calls[0]?.[0]
+    const projection = (mocks.hostRegisterDirectRoutes as any).mock.calls[0]?.[0]
+    const scope = await projection.authorizeAgentRequest(fakeRequest('workspace-a', 'user-a'))
+    const input = {
+      authorizedScope: scope,
+      verifiedClaim: { workspaceScopeId: 'workspace-a', authSubjectId: 'user-a' },
+      agentTypeId: 'macro',
+      environment: {
+        runtimeWorkspaceId: 'workspace-a',
+        workspaceRoot: '/tmp/full-app-workspaces/workspace-a',
+        placementIdentity: 'workspace-a',
+        provisioningFingerprint: 'test-provisioning',
+      },
+    }
+    const emptyGrant = await hostOptions.resolveAuthorizedAgentRuntimeScope(input)
+    grantEnabled = true
+    const populatedGrant = await hostOptions.resolveAuthorizedAgentRuntimeScope(input)
+
+    expect(populatedGrant.identity).not.toBe(emptyGrant.identity)
+    expect(populatedGrant.physicalBindingIdentity).toBe(emptyGrant.physicalBindingIdentity)
+    expect(populatedGrant.extraTools.map((entry: AgentTool) => entry.name)).toContain('addressed_tool')
   } finally {
     await app.close()
   }
@@ -691,12 +756,18 @@ test('core/full-app keeps the physical slot stable when only addressed Pi change
       intent: { kind: 'agent-binding', operation: 'new-binding', requestId: 'same-request' },
     }
     const first = await hostOptions.resolveAuthorizedAgentRuntimeScope(input)
+    await expect(first.revalidateResourceInputs()).resolves.toBeUndefined()
+    await writeFile(join(firstSkillPath, 'SKILL.md'), '---\nname: first\ndescription: Mutated identity input.\n---\n')
+    await expect(first.revalidateResourceInputs()).rejects.toMatchObject({
+      code: 'AGENT_REQUEST_CONFLICT',
+    })
+
     addressedSkillPath = secondSkillPath
     const second = await hostOptions.resolveAuthorizedAgentRuntimeScope(input)
 
-    expect.soft(second.identity).not.toBe(first.identity)
-    expect.soft(second.physicalBindingIdentity).toBe(first.physicalBindingIdentity)
-    expect.soft(second.resourceInputDigest).not.toBe(first.resourceInputDigest)
+    expect(second.identity).not.toBe(first.identity)
+    expect(second.physicalBindingIdentity).toBe(first.physicalBindingIdentity)
+    expect(second.resourceInputDigest).not.toBe(first.resourceInputDigest)
   } finally {
     await app.close()
     await rm(workspaceRoot, { recursive: true, force: true })
@@ -924,9 +995,7 @@ test('core/full-app fences Pi extension and prompt content through reload revali
     config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
     workspaceRoot,
     getWorkspaceRoot: async () => workspaceRoot,
-    getAgentPi: async ({ agentTypeId }) => agentTypeId === 'factory-orchestrator'
-      ? { extensionPaths: [extensionPath] }
-      : undefined,
+    getPi: async () => ({ extensionPaths: [extensionPath] }),
     getRuntimeScopeContribution: async () => ({
       identity: 'dynamic-prompt',
       loadSystemPromptAppend: async () => dynamicPrompt,
@@ -1122,6 +1191,71 @@ test.each(['vercel-sandbox', 'blaxel', 'remote-worker'] as const)(
       })).resolves.toMatchObject({ pi: { noExtensions: true } })
     } finally {
       await app.close()
+    }
+  },
+  30_000,
+)
+
+test.each(['vercel-sandbox', 'blaxel', 'remote-worker'] as const)(
+  'core/full-app rejects explicit host extension paths in %s mode',
+  async (runtimeMode) => {
+    mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
+      runtimePlugins: [],
+      provisioningContributions: [],
+      agentOptions: {
+        extraTools: [],
+        pi: { additionalSkillPaths: [], packages: [] },
+        systemPromptAppend: undefined,
+      },
+      preservedUiStateKeys: [],
+      routeContributions: [],
+    })
+    const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
+    const runtimeModeAdapter = {
+      id: runtimeMode,
+      getRuntimeLayoutRoot: () => '/workspace',
+      runtimeHost: mocks.runtimeHost as any,
+      create: vi.fn(),
+    }
+    const baseApp = await createCoreWorkspaceAgentServer({
+      config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+      workspaceRoot: '/tmp/full-app-workspaces',
+      runtimeModeAdapter,
+      getPi: async () => ({ extensionPaths: ['/host/forbidden-base-extension.ts'] }),
+      serveFrontend: false,
+    })
+    try {
+      const projection = (mocks.hostRegisterDirectRoutes as any).mock.calls.at(-1)?.[0]
+      await expect(projection.authorizeAgentRequest(fakeRequest('workspace-a', 'user-a')))
+        .rejects.toThrow(`resolved Core Pi options cannot grant host Pi extensions in ${runtimeMode} mode`)
+    } finally {
+      await baseApp.close()
+    }
+
+    const addressedApp = await createCoreWorkspaceAgentServer({
+      config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+      workspaceRoot: '/tmp/full-app-workspaces',
+      runtimeModeAdapter,
+      getAgentPi: async () => ({ extensionPaths: ['/host/forbidden-addressed-extension.ts'] }),
+      serveFrontend: false,
+    })
+    try {
+      const hostOptions = (mocks.createAgentHost as any).mock.calls.at(-1)?.[0]
+      const projection = (mocks.hostRegisterDirectRoutes as any).mock.calls.at(-1)?.[0]
+      const scope = await projection.authorizeAgentRequest(fakeRequest('workspace-a', 'user-a'))
+      await expect(hostOptions.resolveAuthorizedAgentRuntimeScope({
+        authorizedScope: scope,
+        verifiedClaim: { workspaceScopeId: 'workspace-a', authSubjectId: 'user-a' },
+        agentTypeId: 'remote-agent',
+        environment: {
+          runtimeWorkspaceId: 'workspace-a',
+          workspaceRoot: '/tmp/full-app-workspaces/workspace-a',
+          placementIdentity: 'workspace-a',
+          provisioningFingerprint: 'test-provisioning',
+        },
+      })).rejects.toThrow(`getAgentPi cannot grant host Pi extensions in ${runtimeMode} mode`)
+    } finally {
+      await addressedApp.close()
     }
   },
   30_000,

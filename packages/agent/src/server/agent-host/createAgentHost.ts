@@ -247,6 +247,24 @@ function validateEnvironmentScope(resolved: AgentHostEnvironmentScope): void {
   if (!resolved.workspaceRoot.trim()) throw new TypeError('resolved environment workspaceRoot must be non-empty')
 }
 
+function assertPublishedBindingMatchesResolvedScope(
+  binding: RuntimeBinding,
+  resolved: ResolvedAgentRuntimeScope,
+): void {
+  const currentPhysicalBindingIdentity = binding.scope.physicalBindingIdentity ?? binding.scope.identity
+  const candidatePhysicalBindingIdentity = resolved.physicalBindingIdentity ?? resolved.identity
+  if (
+    binding.scope.identity !== resolved.identity
+    || binding.scope.environment.provisioningFingerprint !== resolved.environment.provisioningFingerprint
+    || currentPhysicalBindingIdentity !== candidatePhysicalBindingIdentity
+  ) {
+    throw new AgentGatewayError(
+      AgentGatewayErrorCode.AGENT_RUNTIME_RESTART_REQUIRED,
+      'Agent runtime identity changed; process restart is required',
+    )
+  }
+}
+
 /**
  * Durable ledger file this host will open, or `undefined` when it was given
  * neither an explicit path nor a session root.
@@ -486,11 +504,18 @@ function createRuntime(
       const useCanonicalCurrent = options.resolveAuthorizedAgentRuntimeScope !== undefined
       if (useCanonicalCurrent) {
         const current = publishedCurrentBindings.get(currentKey)
-        if (current) return current
+        if (current) {
+          assertPublishedBindingMatchesResolvedScope(current, resolved)
+          return current
+        }
         const reservedKey = currentBindingReservations.get(currentKey)
         if (reservedKey && reservedKey !== key) {
           const reserved = bindings.get(reservedKey)
-          if (reserved) return await reserved
+          if (reserved) {
+            const binding = await reserved
+            assertPublishedBindingMatchesResolvedScope(binding, resolved)
+            return binding
+          }
         } else if (!reservedKey) {
           currentBindingReservations.set(currentKey, key)
         }

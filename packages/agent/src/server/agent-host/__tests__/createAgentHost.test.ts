@@ -1112,14 +1112,28 @@ describe('createAgentHost', () => {
     expect(reloadSession).toHaveBeenCalledTimes(2)
     expect(applyReload).toHaveBeenCalledTimes(3)
 
-    // A candidate identity observed by another sessionless capability route
-    // must neither replace nor bypass the Host generation's current binding.
+    // Every route fails closed once the resolved semantic identity drifts from
+    // the one canonical published binding. A new session must not silently run
+    // the retired grant set or publish a parallel generation.
     activeRuntimeIdentity = 'direct-route-runtime-v2'
     const bindingCountBeforeCandidate = harnessFactory.mock.calls.length
-    expect((await app.inject({
+    const driftedTools = await app.inject({
       method: 'GET',
       url: '/api/v1/agents/alpha/tools',
-    })).statusCode).toBe(200)
+    })
+    expect(driftedTools.statusCode).toBe(409)
+    expect(driftedTools.json()).toMatchObject({
+      error: { code: AgentGatewayErrorCode.AGENT_RUNTIME_RESTART_REQUIRED },
+    })
+    const driftedSessionCreate = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/alpha/sessions',
+      payload: { requestId: 'create-after-runtime-identity-drift' },
+    })
+    expect(driftedSessionCreate.statusCode).toBe(409)
+    expect(driftedSessionCreate.json()).toMatchObject({
+      error: { code: AgentGatewayErrorCode.AGENT_RUNTIME_RESTART_REQUIRED },
+    })
     expect(harnessFactory).toHaveBeenCalledTimes(bindingCountBeforeCandidate)
     const candidateWasPublished = await app.inject({
       method: 'POST',
@@ -1160,6 +1174,57 @@ describe('createAgentHost', () => {
     await duplicateApp.register(projection)
     await expect(duplicateApp.register(projection)).rejects.toMatchObject({ code: ErrorCode.enum.CONFIG_INVALID })
     await duplicateApp.close()
+  })
+
+  it('fails a concurrent mismatched semantic candidate closed behind the reserved physical slot', async () => {
+    const workspaceRoot = await root()
+    let releaseHarness!: () => void
+    let markHarnessStarted!: () => void
+    const harnessStarted = new Promise<void>((resolve) => { markHarnessStarted = resolve })
+    const harnessGate = new Promise<void>((resolve) => { releaseHarness = resolve })
+    let identity = 'reserved-runtime-v1'
+    const harnessFactory = vi.fn(async (input: Parameters<AgentHarnessFactory>[0]) => {
+      markHarnessStarted()
+      await harnessGate
+      return createScriptedPiHarness(input)
+    })
+    const created = await createAgentHost({
+      ...options(workspaceRoot),
+      inMemoryRequestLedgerMode: 'test',
+      harnessFactory,
+      resolveAuthorizedEnvironmentScope: async () => ({
+        placementIdentity: 'reserved-environment',
+        workspaceRoot,
+        provisioningFingerprint: 'reserved-environment-v1',
+      }),
+      resolveAuthorizedAgentRuntimeScope: async () => ({
+        identity,
+        physicalBindingIdentity: 'reserved-physical-slot',
+        resourceInputDigest: `resources:${identity}`,
+        sessionNamespace: 'reserved-race',
+      }),
+    })
+    const app = Fastify({ logger: false })
+    await app.register(created.registerDirectRoutes({ authorizeAgentRequest: async () => scope }))
+
+    const first = app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/alpha/sessions',
+      payload: { requestId: 'reserve-runtime-v1' },
+    })
+    await harnessStarted
+    identity = 'reserved-runtime-v2'
+    const drifted = app.inject({ method: 'GET', url: '/api/v1/agents/alpha/tools' })
+    releaseHarness()
+
+    expect((await first).statusCode).toBe(201)
+    const driftedResponse = await drifted
+    expect(driftedResponse.statusCode).toBe(409)
+    expect(driftedResponse.json()).toMatchObject({
+      error: { code: AgentGatewayErrorCode.AGENT_RUNTIME_RESTART_REQUIRED },
+    })
+    expect(harnessFactory).toHaveBeenCalledOnce()
+    await app.close()
   })
 
   it('durably replays insufficient-credit rejection instead of reporting an unknown outcome', async () => {
