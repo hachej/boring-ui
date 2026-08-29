@@ -2022,6 +2022,17 @@ export function WorkspaceAgentFront<
         if (createdAgentTypeId) rawSwitch(id, createdAgentTypeId)
         else rawSwitch(id)
       }
+      // A fleet create can target an Agent OTHER than the one currently
+      // addressed (#1470: the New chat Agent picker retargets independently
+      // of the addressed selection). The pane-reconciliation effect below
+      // resolves its desired session from the ADDRESSED Agent's own session
+      // API, so without this the new pane got immediately stomped back to
+      // whatever the previously addressed chat was — created, but never
+      // shown. Address the created Agent so every creation entry point (the
+      // rail "+", the card, and the picker alike) opens on what it just made.
+      if (fleetModeEnabled && createdAgentTypeId && createdAgentTypeId !== addressedAgents.selectedAgentTypeId) {
+        addressedAgents.selectAgentTypeId(createdAgentTypeId)
+      }
       scheduleActiveAgentComposerFocus()
     }).catch(() => {
       settleIfOwner()
@@ -2029,7 +2040,7 @@ export function WorkspaceAgentFront<
       // transaction only owns clearing its pending state.
     })
     return created
-  }, [chatSessionKey, rawSwitch, resolvedCreate, resolvedSessions, selectedAgentTypeId, sessionApi, workspaceId])
+  }, [addressedAgents.selectAgentTypeId, addressedAgents.selectedAgentTypeId, chatSessionKey, fleetModeEnabled, rawSwitch, resolvedCreate, resolvedSessions, selectedAgentTypeId, sessionApi, workspaceId])
 
   useEffect(() => {
     const pending = pendingCreatePaneRef.current

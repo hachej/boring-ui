@@ -788,6 +788,78 @@ describe("WorkspaceAgentFront", () => {
     expect(within(unifiedDetailsOverlay as HTMLElement).queryByRole("tab")).not.toBeInTheDocument()
   }, 30_000)
 
+  // #1470: "Start new chat with <Agent>" (the New chat Agent picker) creates
+  // the session but must land the main pane on it too, exactly like the
+  // per-Agent card's "New chat with <Agent>" button does.
+  it("focuses the session created via the New chat Agent picker", async () => {
+    const user = userEvent.setup()
+    const agents = [
+      { agentTypeId: "alpha", label: "Alpha" },
+      { agentTypeId: "beta", label: "Beta" },
+    ]
+    const useAgentSelection = () => {
+      const [selectedAgentTypeId, setSelectedAgentTypeId] = useState("alpha")
+      return {
+        agents,
+        selectedAgentTypeId,
+        loading: false,
+        error: undefined,
+        selectAgentTypeId: setSelectedAgentTypeId,
+      }
+    }
+    const useFleetSessions: AttestedWorkspaceAgentFrontProps<WorkspaceAgentSession>["useSessions"] = (options) => {
+      const owner = options.agentTypeId
+      const [owned, setOwned] = useState(() => [{
+        id: `${owner}-one`,
+        agentTypeId: owner,
+        title: `${owner} one`,
+        updatedAt: 1,
+      }])
+      return {
+        sessions: owned,
+        loading: false,
+        activeSessionId: owned[0]?.id,
+        activeSessionAgentTypeId: owner,
+        activeSession: owned[0],
+        workspaceId: options.workspaceId,
+        switch: vi.fn(),
+        create: async () => {
+          const session = { id: `${owner}-new`, agentTypeId: owner, title: `${owner} new`, updatedAt: 2 }
+          setOwned((current) => [session, ...current])
+          return session
+        },
+        delete: vi.fn(),
+      }
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="picker-focus"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        addressedAgentSelection
+        useAddressedAgentSelection={useAgentSelection}
+        useSessions={useFleetSessions}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-agent-type-id", "alpha")
+      expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-session-id", "alpha-one")
+    })
+
+    // Retarget the picker to Beta without ever addressing/opening a Beta chat.
+    await user.click(await screen.findByRole("button", { name: "Choose Agent for new chat" }))
+    await user.click(await screen.findByRole("menuitem", { name: "Beta" }))
+    await user.click(await screen.findByRole("button", { name: "Start new chat with Beta" }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-agent-type-id", "beta")
+      expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-session-id", "beta-new")
+    })
+  })
+
   it("initializes a controlled colliding id to its explicit active owner", () => {
     localStorage.setItem("boring-workspace:chat-panes:explicit-active-owner", JSON.stringify({
       version: 2,
