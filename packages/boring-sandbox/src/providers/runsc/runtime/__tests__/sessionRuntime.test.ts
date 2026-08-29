@@ -101,6 +101,8 @@ function runtime(
       check(workspaceId: string): Promise<void>;
     };
     sandboxRoots?: RunscSandboxRootLifecycleV1;
+    multiSandboxRootsAdmitted?: boolean;
+    runtimeIdFactory?: () => string;
   } = {},
 ) {
   let id = 0;
@@ -193,11 +195,17 @@ function runtime(
         options.sandboxRoots?.sandboxRoot ?? "/srv/boring/workspaces",
       ...(options.quota ?? { apply: vi.fn(), check: vi.fn() }),
     },
-    runtimeIdFactory: () => (++id).toString(16).padStart(32, "0"),
+    runtimeIdFactory:
+      options.runtimeIdFactory ?? (() => (++id).toString(16).padStart(32, "0")),
     now: options.now,
     onRetire: options.onRetire,
     sandboxRoots: options.sandboxRoots,
-    multiSandboxRootsAdmitted: options.sandboxRoots !== undefined,
+    multiSandboxRootsAdmitted: Object.prototype.hasOwnProperty.call(
+      options,
+      "multiSandboxRootsAdmitted",
+    )
+      ? options.multiSandboxRootsAdmitted
+      : options.sandboxRoots !== undefined,
     invocationCredentials: createRunscInvocationCredentialResolverV1({
       bindings,
       providers,
@@ -267,6 +275,52 @@ const execRequest = {
 };
 
 describe("warm runsc session runtime", () => {
+  test.each([
+    { roots: false, admitted: undefined, expected: false },
+    { roots: false, admitted: false, expected: false },
+    { roots: false, admitted: true, expected: false },
+    { roots: true, admitted: undefined, expected: false },
+    { roots: true, admitted: false, expected: false },
+    { roots: true, admitted: true, expected: true },
+  ])(
+    "reports multi-root support only for configured and admitted roots %#",
+    ({ roots, admitted, expected }) => {
+      const sessions = runtime(fakeRunner(), {
+        sandboxRoots: roots ? multiSandboxRoots() : undefined,
+        multiSandboxRootsAdmitted: admitted,
+      });
+      expect(sessions.supportsMultiSandboxRoots).toBe(expected);
+    },
+  );
+
+  test("validates runtime identity before preparing a lease root", async () => {
+    const runner = fakeRunner();
+    const sandboxRoots = multiSandboxRoots();
+    let validRuntimeId = false;
+    const sessions = runtime(runner, {
+      sandboxRoots,
+      runtimeIdFactory: () =>
+        validRuntimeId ? "1".repeat(32) : "invalid-runtime-id",
+    });
+
+    await expect(sessions.create(createInput)).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.configInvalid,
+    });
+    expect(sandboxRoots.prepare).not.toHaveBeenCalled();
+    expect(sandboxRoots.dispose).not.toHaveBeenCalled();
+    expect(
+      runner.run.mock.calls.filter(([input]) => input.argv[0] === "run"),
+    ).toHaveLength(0);
+
+    validRuntimeId = true;
+    await expect(sessions.create(createInput)).resolves.toMatchObject({
+      newlyAllocated: true,
+    });
+    await sessions.dispose("sandbox-a", workspaceId);
+    expect(sandboxRoots.prepare).toHaveBeenCalledTimes(1);
+    expect(sandboxRoots.dispose).toHaveBeenCalledTimes(1);
+  });
+
   test("creates once, reuses one container, and replays only non-secret output", async () => {
     const runner = fakeRunner();
     const sessions = runtime(runner);
@@ -801,7 +855,7 @@ describe("warm runsc session runtime", () => {
   });
 
   test.each(["nonzero", "throw"] as const)(
-    "retains failed-create ownership when docker rm returns %s",
+    "preserves create failure and ownership when docker rm returns %s",
     async (failureMode) => {
       vi.useFakeTimers();
       try {
@@ -842,7 +896,7 @@ describe("warm runsc session runtime", () => {
         const sessions = runtime(runner);
 
         await expect(sessions.create(createInput)).rejects.toMatchObject({
-          code: REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+          code: REMOTE_WORKER_ERROR_CODES_V1.dockerCommandFailed,
         });
         expect(() => sessions.create(createInput)).toThrowError(
           expect.objectContaining({

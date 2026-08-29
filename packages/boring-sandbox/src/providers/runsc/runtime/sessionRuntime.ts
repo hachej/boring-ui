@@ -214,7 +214,10 @@ export class RunscSessionRuntimeV1 {
   }
 
   get supportsMultiSandboxRoots(): boolean {
-    return this.options.sandboxRoots !== undefined;
+    return (
+      this.options.sandboxRoots !== undefined &&
+      this.options.multiSandboxRootsAdmitted === true
+    );
   }
 
   async startupSweep(): Promise<void> {
@@ -332,6 +335,11 @@ export class RunscSessionRuntimeV1 {
       RUNSC_RUNTIME_LIMITS_V1.hardLifetimeMs,
       "hard lifetime",
     );
+    // All host-supplied identity factories run before a lease-owned root exists.
+    const runtimeId = this.nextRuntimeId();
+    const createdAtMs = this.now();
+    const timer = setTimeout(() => undefined, 1);
+    clearTimeout(timer);
     let workspaceMountSource: TrustedWorkspaceMountSource | undefined;
     if (this.options.sandboxRoots) {
       workspaceMountSource = await this.options.sandboxRoots.prepare(
@@ -350,7 +358,6 @@ export class RunscSessionRuntimeV1 {
         "remote-worker workspace mount source is unavailable",
       );
     }
-    const createdAtMs = this.now();
     const record: SessionRecordV1 = {
       sandboxId,
       clientLeaseId: input.clientLeaseId,
@@ -362,29 +369,24 @@ export class RunscSessionRuntimeV1 {
       createdAtMs,
       hardExpiresAtMs: createdAtMs + hardLifetimeMs,
       idleTtlMs,
-      runtimeId: this.nextRuntimeId(),
+      runtimeId,
       leaseExpiresAtMs: Math.min(
         createdAtMs + idleTtlMs,
         createdAtMs + hardLifetimeMs,
       ),
-      timer: setTimeout(() => undefined, 1),
+      timer,
       activeExec: false,
       activeFs: false,
       invocations: new Map(),
     };
-    clearTimeout(record.timer);
     try {
       await this.startContainer(record);
+      if (this.closed) this.unavailable();
+      this.bind(record);
+      this.armTimer(record);
     } catch (error) {
-      await this.retireFailedCreate(record);
-      throw error;
+      await this.retireFailedCreatePreservingError(record, error);
     }
-    if (this.closed) {
-      await this.retireFailedCreate(record);
-      this.unavailable();
-    }
-    this.bind(record);
-    this.armTimer(record);
     return this.lease(record, true);
   }
 
@@ -904,6 +906,18 @@ export class RunscSessionRuntimeV1 {
   private async retireFailedCreate(record: SessionRecordV1): Promise<void> {
     this.bind(record);
     await this.retire(record, "cleanup", false);
+  }
+
+  private async retireFailedCreatePreservingError(
+    record: SessionRecordV1,
+    originalError: unknown,
+  ): Promise<never> {
+    try {
+      await this.retireFailedCreate(record);
+    } catch {
+      // Retirement retains the bound record and schedules retry-safe cleanup.
+    }
+    throw originalError;
   }
 
   private async retire(
