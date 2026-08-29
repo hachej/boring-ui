@@ -248,20 +248,34 @@ default this to the sibling `/data/pi-sessions` path when the env var is absent.
 
 ## Adding a custom runtime mode
 
-A boring-bash-active mode is a `RuntimeModeAdapter` (defined in
-`src/server/runtime/mode.ts`). There is no registry to edit: pass your adapter
-as the `runtimeModeAdapter` option to `createAgentApp(opts)` or
-`registerAgentRoutes(app, opts)` — it takes precedence over
-`mode`/auto-detection (`createAgentApp.ts`, `registerAgentRoutes.ts`).
-`resolveMode()` only knows the three built-ins and throws for unknown ids,
-telling you to pass `runtimeModeAdapter`.
+A built-in sandbox mode is declared by a provider-owned
+`SandboxRuntimeModeDescriptorV1` in `@hachej/boring-sandbox`. The descriptor
+owns the mode id, capabilities, error-code namespace, host policy, and one
+factory for the complete Workspace + Sandbox pair. The sandbox registry is the
+only built-in selection table; Agent imports that registry once and composes
+every descriptor through the same adapter.
+
+Adding a built-in provider therefore changes only `packages/boring-sandbox`:
+add its implementation and descriptor, then register that descriptor in
+`src/providers/registry/index.ts`. Do not add a provider switch or a standalone
+mode adapter under Agent.
+
+Provider-specific configuration is closed into a typed descriptor factory in
+`@hachej/boring-sandbox` before Agent composition. Call
+`createSandboxRuntimeDescriptorAdapter(descriptor)` for a configured descriptor;
+do not pass an untyped provider option bag beside a mode string.
+
+Callers can still pass a one-off `RuntimeModeAdapter` through
+`runtimeModeAdapter`. That explicit adapter takes precedence over mode
+auto-detection and does not need to be registered.
 
 Each adapter provides a workspace, filesystem/search, and sandbox/execution
 substrate as one runtime bundle.
 
 ```ts
 interface RuntimeModeAdapter {
-  id: string                                  // built-ins: 'direct' | 'local' | 'blaxel' | 'vercel-sandbox'
+  id: string
+  runtimeHostPolicy?: SandboxRuntimeHostPolicyV1
   workspaceFsCapability?: Workspace['fsCapability']
                                               // describes how much host-side fs access exists before create();
                                               // remote backends must not claim strong host visibility
@@ -285,10 +299,12 @@ interface RuntimeBundle {
 }
 ```
 
-Reference composition to copy: `packages/workspace/src/app/server/sandboxRuntimeHost.ts`,
-which creates package-owned providers and injects host operations into the
-generic Agent mode factories. Tests to extend:
-`src/server/runtime/__tests__/resolveMode.test.ts`.
+Reference composition lives in
+`packages/agent/src/server/runtime/modes/providerAdapter.ts`. The acceptance
+fixture in
+`packages/boring-sandbox/src/providers/registry/__tests__/fixtureProvider.test.ts`
+proves that a descriptor created entirely inside the sandbox package can be
+registered, resolved, and composed without a host mode edit.
 
 Rules that must hold: the adapter owns path validation (reject `../`,
 absolute, symlink escapes — see `@hachej/boring-sandbox/providers/node-workspace`); Workspace +

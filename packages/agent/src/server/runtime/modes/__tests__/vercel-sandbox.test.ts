@@ -1,24 +1,25 @@
-import { expect, test } from 'vitest'
+import { afterEach, expect, test, vi } from 'vitest'
 
-import {
-  createVercelSandboxProvider,
-  testRuntimeHostOperations,
-  VERCEL_SANDBOX_REMOTE_ROOT,
-  VERCEL_SANDBOX_WORKSPACE_ROOT,
-} from '@agent-test-host'
-import { createVercelSandboxModeAdapter } from '../vercel-sandbox'
+import { createSandboxRuntimeModeAdapter } from '../../sandboxRuntimeHost'
 
-function createAdapter(getEnvVar: (name: string) => string | undefined) {
-  return createVercelSandboxModeAdapter({
-    provider: createVercelSandboxProvider({ getEnvVar }),
-    runtimeHost: testRuntimeHostOperations,
-    remoteRoot: VERCEL_SANDBOX_REMOTE_ROOT,
-    workspaceRoot: VERCEL_SANDBOX_WORKSPACE_ROOT,
-  })
+const VERCEL_AUTH_ENV_NAMES = [
+  'VERCEL_OIDC_TOKEN',
+  'VERCEL_ACCESS_TOKEN',
+  'VERCEL_TOKEN',
+  'VERCEL_TEAM_ID',
+] as const
+
+function createAdapter(env: Readonly<Record<string, string>> = {}) {
+  for (const name of VERCEL_AUTH_ENV_NAMES) vi.stubEnv(name, env[name] ?? '')
+  return createSandboxRuntimeModeAdapter('vercel-sandbox')
 }
 
+afterEach(() => {
+  vi.unstubAllEnvs()
+})
+
 test('mode preserves the missing-auth error', async () => {
-  const adapter = createAdapter((name) => name === 'VERCEL_TEAM_ID' ? 'team-1' : undefined)
+  const adapter = createAdapter({ VERCEL_TEAM_ID: 'team-1' })
 
   await expect(adapter.create({ workspaceRoot: 'workspace-a', sessionId: 'session-a' }))
     .rejects.toThrow(
@@ -27,7 +28,7 @@ test('mode preserves the missing-auth error', async () => {
 })
 
 test('mode preserves the missing-team error', async () => {
-  const adapter = createAdapter((name) => name === 'VERCEL_OIDC_TOKEN' ? 'token-1' : undefined)
+  const adapter = createAdapter({ VERCEL_OIDC_TOKEN: 'token-1' })
 
   await expect(adapter.create({ workspaceRoot: 'workspace-a', sessionId: 'session-a' }))
     .rejects.toThrow('VERCEL_TEAM_ID is required for vercel-sandbox mode')

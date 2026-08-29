@@ -13,7 +13,8 @@ export type ExtractedSandboxProviderIdV1 =
   | "bwrap"
   | "blaxel"
   | "vercel-sandbox"
-  | "remote-worker";
+  | "remote-worker"
+  | (string & {});
 
 export type SandboxRuntimeModeIdV1 =
   | "direct"

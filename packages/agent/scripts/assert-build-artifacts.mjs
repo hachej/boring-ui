@@ -185,6 +185,7 @@ async function analyzeBundleClosure(entryPoint, { externalSandbox = false } = {}
   const result = await esbuild({
     absWorkingDir: packageRoot,
     bundle: true,
+    conditions: ['boring-source'],
     entryPoints: [entryPoint],
     ...(externalSandbox ? { external: SANDBOX_EXTERNALS } : {}),
     format: 'esm',

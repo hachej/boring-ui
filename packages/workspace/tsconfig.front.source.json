@@ -1,5 +1,5 @@
 {
-  "extends": "./tsconfig.front.json",
+  "extends": ["../../tsconfig.base.json", "./tsconfig.front.json"],
   "compilerOptions": {
     "composite": false,
     "incremental": true,
@@ -8,9 +8,7 @@
       "@/*": ["./src/*"],
       "@hachej/boring-workspace": ["./src/index.ts"],
       "@hachej/boring-agent/shared": ["../agent/src/shared/index.ts"],
-      "@hachej/boring-bash/server": ["../boring-bash/src/server/index.ts"],
-      "@hachej/boring-sandbox/shared": ["../boring-sandbox/src/shared/index.ts"],
-      "@hachej/boring-sandbox/providers/node-workspace": ["../boring-sandbox/src/providers/node-workspace/index.ts"]
+      "@hachej/boring-bash/server": ["../boring-bash/src/server/index.ts"]
     }
   }
 }

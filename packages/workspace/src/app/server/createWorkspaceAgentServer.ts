@@ -1301,7 +1301,10 @@ export async function createWorkspaceAgentServer(
   }
   const bridge = createInMemoryBridge()
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
-  const modeAdapter = opts.runtimeModeAdapter ?? createSandboxRuntimeModeAdapter(resolvedMode)
+  const modeAdapter = opts.runtimeModeAdapter ?? createSandboxRuntimeModeAdapter(
+    resolvedMode,
+  )
+  const runtimeHostPolicy = modeAdapter.runtimeHostPolicy
   const runtimeHost = opts.runtimeHost ?? modeAdapter.runtimeHost ?? sandboxRuntimeHostOperations
   const workspaceFsCapability = modeAdapter.workspaceFsCapability ?? "best-effort"
   const validateUiPaths = opts.validateUiPaths ?? workspaceFsCapability === "strong"
@@ -1456,7 +1459,9 @@ export async function createWorkspaceAgentServer(
       ...pluginCollection.runtimePlugins,
       ...scanned,
     ])
-    if (resolvedMode === "direct") return omitPluginAuthoringProvisioning(inputs)
+    if (runtimeHostPolicy?.includePluginAuthoringProvisioning === false) {
+      return omitPluginAuthoringProvisioning(inputs)
+    }
     return inputs
   }
   let currentRuntimeProvisioning = opts.runtimeProvisioning

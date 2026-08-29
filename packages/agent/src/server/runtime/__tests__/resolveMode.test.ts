@@ -10,6 +10,7 @@ import {
   resolveMode,
 } from '../resolveMode'
 import { createTestRuntimeModeAdapter } from '@agent-test-host'
+import type { BuiltinRuntimeModeId } from '../../../shared/runtime-mode'
 
 const tempDirs: string[] = []
 const ORIGINAL_MODE = getEnv('BORING_AGENT_MODE')
@@ -37,7 +38,7 @@ async function makeContext() {
   return { workspaceRoot, sessionId: 'session-1' as const }
 }
 
-function resolveTestMode(mode: 'direct' | 'local' | 'blaxel' | 'vercel-sandbox') {
+function resolveTestMode(mode: BuiltinRuntimeModeId) {
   const adapter = createTestRuntimeModeAdapter(mode)
   return resolveMode(mode, {
     adapters: {

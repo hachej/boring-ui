@@ -1,5 +1,5 @@
 {
-  "extends": "./tsconfig.server.json",
+  "extends": ["../../tsconfig.base.json", "./tsconfig.server.json"],
   "compilerOptions": {
     "composite": false,
     "incremental": true,
@@ -11,12 +11,6 @@
       "@hachej/boring-agent/server/agent-host/testing/compositionRouteProof": ["../agent/src/server/agent-host/testing/compositionRouteProof.ts"],
       "@hachej/boring-bash/agent": ["../boring-bash/src/agent/index.ts"],
       "@hachej/boring-bash/server": ["../boring-bash/src/server/index.ts"],
-      "@hachej/boring-sandbox/shared": ["../boring-sandbox/src/shared/index.ts"],
-      "@hachej/boring-sandbox/providers/bwrap": ["../boring-sandbox/src/providers/bwrap/index.ts"],
-      "@hachej/boring-sandbox/providers/direct": ["../boring-sandbox/src/providers/direct/index.ts"],
-      "@hachej/boring-sandbox/providers/node-workspace": ["../boring-sandbox/src/providers/node-workspace/index.ts"],
-      "@hachej/boring-sandbox/providers/vercel-sandbox": ["../boring-sandbox/src/providers/vercel-sandbox/index.ts"],
-      "@hachej/boring-sandbox/providers/blaxel": ["../boring-sandbox/src/providers/blaxel/index.ts"],
       "@hachej/boring-ui-plugin-cli/plugin-sources": ["../plugin-cli/src/server/pluginSources.ts"],
       "@hachej/boring-workspace/runtime-server": ["./src/server/runtimeBackend/defineRuntimeServerPlugin.ts"],
       "@hachej/boring-workspace/server": ["./src/server/index.ts"]

@@ -21,6 +21,7 @@ RUN pnpm install --frozen-lockfile
 # ── Stage 3: build ───────────────────────────────────────────────
 # Copy source and build all packages in dependency order.
 FROM deps AS build
+COPY tsconfig.base.json tsconfig.base.json
 COPY packages/ packages/
 # Child apps add their own COPY here:
 # COPY apps/<name>/ apps/<name>/

@@ -80,3 +80,34 @@ test('remote watcher reconnects after the worker event stream closes', async () 
   unsubscribe?.()
   expect(handles[1]?.closed).toBe(true)
 })
+
+test('closing the remote workspace watcher is idempotent and cancels reconnects', async () => {
+  vi.useFakeTimers()
+
+  const handles: Array<{
+    onError?: (error: Error) => void
+    closed: boolean
+  }> = []
+  const client = {
+    watch(_onEvent: (event: WorkspaceChangeEvent) => void, onError?: (error: Error) => void) {
+      const handle = { onError, closed: false }
+      handles.push(handle)
+      return {
+        close() {
+          handle.closed = true
+        },
+      }
+    },
+  } as unknown as RemoteWorkerClient
+  const workspace = createRemoteWorkerWorkspace(client)
+  workspace.watch?.().subscribe(() => {})
+  expect(handles).toHaveLength(1)
+
+  workspace.closeWatcher()
+  workspace.closeWatcher()
+  expect(handles[0]?.closed).toBe(true)
+  handles[0]?.onError?.(new Error('stream closed after disposal'))
+
+  await vi.advanceTimersByTimeAsync(1_000)
+  expect(handles).toHaveLength(1)
+})

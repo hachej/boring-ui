@@ -142,6 +142,12 @@ function isForbiddenAgentRuntimeSpecifier(specifier) {
     || specifier.startsWith("@hachej/boring-sandbox/");
 }
 
+function isAllowedAgentRuntimeValueReference(file, specifier) {
+  return relative(repoRoot, resolve(file)).replaceAll("\\", "/")
+      === "packages/agent/src/shared/runtime-mode.ts"
+    && specifier === "@hachej/boring-sandbox/runtime-modes";
+}
+
 function isAgentPackageSpecifier(specifier) {
   return specifier === "@hachej/boring-agent"
     || specifier.startsWith("@hachej/boring-agent/");
@@ -152,7 +158,9 @@ function findAgentRuntimeValueImports(file, text) {
   return {
     parseErrors: parsed.parseErrors,
     violations: parsed.references.filter(({ specifier, typeOnly }) =>
-      !typeOnly && isForbiddenAgentRuntimeSpecifier(specifier)),
+      !typeOnly
+      && isForbiddenAgentRuntimeSpecifier(specifier)
+      && !isAllowedAgentRuntimeValueReference(file, specifier)),
   };
 }
 
@@ -266,6 +274,26 @@ function assertNegativeFixtures() {
       violations: transparentExpressionActual,
     })}`);
   }
+
+  const catalogBridgeFixture = findAgentRuntimeValueImports(
+    join(repoRoot, "packages", "agent", "src", "shared", "runtime-mode.ts"),
+    "export { BUILTIN_RUNTIME_MODE_IDS } from '@hachej/boring-sandbox/runtime-modes'",
+  );
+  const misplacedCatalogFixture = findAgentRuntimeValueImports(
+    join(repoRoot, "packages", "agent", "src", "server", "runtime-modes.ts"),
+    "export { BUILTIN_RUNTIME_MODE_IDS } from '@hachej/boring-sandbox/runtime-modes'",
+  );
+  if (catalogBridgeFixture.parseErrors.length === 0
+    && catalogBridgeFixture.violations.length === 0
+    && misplacedCatalogFixture.parseErrors.length === 0
+    && misplacedCatalogFixture.violations.length === 1) {
+    pass("agent runtime-package fixture permits only the exact immutable mode-catalog bridge");
+  } else {
+    fail(`agent runtime-package catalog-bridge fixture mismatch: ${JSON.stringify({
+      allowed: catalogBridgeFixture,
+      misplaced: misplacedCatalogFixture,
+    })}`);
+  }
 }
 
 assertNegativeFixtures();
@@ -328,7 +356,7 @@ if (!negativeFixturesOnly) {
       fail(`agent runtime-package scan: ${violation.kind} ${violation.specifier} found in ${relative(repoRoot, violation.file)}:${violation.line}`);
     }
     if (parseErrors.length === 0 && violations.length === 0) {
-      pass(`agent runtime-package scan: no boring-sandbox value imports in ${agentFiles.length} file(s)`);
+      pass(`agent runtime-package scan: only the immutable mode-catalog bridge is present in ${agentFiles.length} file(s)`);
     }
   }
 

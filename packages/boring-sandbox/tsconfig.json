@@ -9,7 +9,9 @@
     "skipLibCheck": true,
     "baseUrl": ".",
     "paths": {
-      "@hachej/boring-agent/shared": ["../agent/src/shared/index.ts"]
+      "@hachej/boring-agent/shared": ["../agent/src/shared/index.ts"],
+      "@hachej/boring-sandbox/shared": ["src/shared/index.ts"],
+      "@hachej/boring-sandbox/runtime-modes": ["src/runtime-modes/index.ts"]
     },
     "forceConsistentCasingInFileNames": true,
     "noEmit": true,

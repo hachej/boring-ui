@@ -13,8 +13,11 @@ export type { RuntimeFilesystemCapability } from '../../shared/workspace'
 import type { CapabilityReadinessDetail, ReadyStatusTracker } from './readyStatus'
 import type { AgentRuntimeHostOperations } from './runtimeHost'
 import type { WorkspaceProvisioningAdapter } from '../workspace/provisioning'
+import type { BuiltinRuntimeModeId } from '../../shared/runtime-mode'
+import type { SandboxRuntimeHostPolicyV1 } from '@hachej/boring-sandbox/shared'
 
-export type BuiltinRuntimeModeId = 'direct' | 'local' | 'blaxel' | 'vercel-sandbox'
+export type { BuiltinRuntimeModeId } from '../../shared/runtime-mode'
+export type { SandboxRuntimeHostPolicyV1 } from '@hachej/boring-sandbox/shared'
 export type RuntimeModeId = BuiltinRuntimeModeId | (string & {})
 
 export interface RuntimeModeReadinessHooks {
@@ -50,6 +53,8 @@ export type RuntimeFilesystemStrategy =
 
 export interface RuntimeModeAdapter {
   readonly id: RuntimeModeId
+  /** Host composition policy explicitly owned by this adapter. */
+  readonly runtimeHostPolicy?: SandboxRuntimeHostPolicyV1
   readonly runtimeHost?: AgentRuntimeHostOperations
   /**
    * Declares whether the workspace files are strongly available on the host
