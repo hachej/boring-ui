@@ -5,7 +5,6 @@ import { z } from "zod";
 
 import {
   REMOTE_WORKER_ERROR_CODES_V1,
-  REMOTE_WORKER_MULTI_SANDBOX_ROOTS_CAPABILITY_V1,
   REMOTE_WORKER_PROTOCOL_VERSION,
   RemoteWorkerSha256DigestSchemaV1,
 } from "../../shared/remoteWorkerProtocolV1";
@@ -37,10 +36,6 @@ const RemoteWorkerFleetWorkerConfigSchemaV1 = z
     expectedQualificationBundleDigest: RemoteWorkerSha256DigestSchemaV1,
     expectedProviderCohortDigest: RemoteWorkerSha256DigestSchemaV1,
     expectedImageDigest: RemoteWorkerSha256DigestSchemaV1,
-    requiredCapabilities: z
-      .array(z.literal(REMOTE_WORKER_MULTI_SANDBOX_ROOTS_CAPABILITY_V1))
-      .max(1)
-      .optional(),
     buckets: z
       .array(
         z
@@ -71,7 +66,6 @@ export interface RemoteWorkerFleetWorkerConfigV1 {
   readonly expectedQualificationBundleDigest: `sha256:${string}`;
   readonly expectedProviderCohortDigest: `sha256:${string}`;
   readonly expectedImageDigest: `sha256:${string}`;
-  readonly requiredCapabilities?: readonly (typeof REMOTE_WORKER_MULTI_SANDBOX_ROOTS_CAPABILITY_V1)[];
   readonly buckets: readonly number[];
 }
 
@@ -187,9 +181,6 @@ export function parseRemoteWorkerFleetConfigV1(
         worker.baseUrl,
         options.allowInsecureLoopback === true,
       ),
-      requiredCapabilities: worker.requiredCapabilities
-        ? Object.freeze([...worker.requiredCapabilities])
-        : undefined,
       buckets: Object.freeze([...worker.buckets]),
     });
   });

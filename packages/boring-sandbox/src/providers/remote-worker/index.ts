@@ -18,13 +18,13 @@ export {
 export {
   RemoteWorkerSandboxBindingRegistryV1,
   type AuthorizeRemoteWorkerSandboxInputV1,
-  type BindAuthorizedRemoteWorkerSandboxInputV1,
   type BindRemoteWorkerSandboxInputV1,
   type RemoteWorkerBindingReceiptAuthenticatorV1,
   type RemoteWorkerBindingSecurityEventV1,
   type RemoteWorkerCapabilityAuthenticatorV1,
   type RemoteWorkerAuthorizedBindingV1,
-  type RemoteWorkerAuthorizedCreateV1,
+  type RemoteWorkerBoundCreateV1,
+  type RemoteWorkerCreateAllocationV1,
   type RemoteWorkerAuthorizedEventStreamV1,
   type RemoteWorkerSandboxBindingRegistryOptionsV1,
 } from "./bindingRegistry";

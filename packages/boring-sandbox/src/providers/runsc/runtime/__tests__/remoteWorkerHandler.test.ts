@@ -483,9 +483,6 @@ describe("authenticated remote-worker runsc handler", () => {
     const parent = await mkdtemp(join(tmpdir(), "boring-handler-create-race-"));
     const root = join(parent, "sandboxes");
     await mkdir(root, { mode: 0o750 });
-    const { handler, token, runner, registry } = harness(root);
-    const create = request("lease-create-race");
-    const originalBind = registry.bindAuthorized.bind(registry);
     let enterFirst!: () => void;
     const firstEntered = new Promise<void>((resolve) => {
       enterFirst = resolve;
@@ -494,19 +491,21 @@ describe("authenticated remote-worker runsc handler", () => {
     const firstReleased = new Promise<void>((resolve) => {
       releaseFirst = resolve;
     });
-    let bindCalls = 0;
-    const bind = vi
-      .spyOn(registry, "bindAuthorized")
-      .mockImplementation(async (input) => {
-        bindCalls += 1;
-        if (bindCalls === 1) {
+    let signingCalls = 0;
+    const { handler, token, runner } = harness(
+      root,
+      true,
+      async (payload) => {
+        signingCalls += 1;
+        if (signingCalls === 1) {
           enterFirst();
           await firstReleased;
           throw new Error("delayed receipt authentication failure");
         }
-        return await originalBind(input);
-      });
-
+        return `authenticated:${remoteWorkerRequestDigestV1(payload)}`;
+      },
+    );
+    const create = request("lease-create-race");
     const first = handler.create({
       capabilityToken: token("create", create),
       request: create,
@@ -530,10 +529,9 @@ describe("authenticated remote-worker runsc handler", () => {
 
     const results = await Promise.allSettled([first, replay]);
     expect(results.every((result) => result.status === "rejected")).toBe(true);
-    expect(bind).toHaveBeenCalledTimes(1);
+    expect(signingCalls).toBe(1);
     expect(runner.mounts.size).toBe(0);
 
-    bind.mockRestore();
     const retry = await handler.create({
       capabilityToken: token("create", create),
       request: create,
