@@ -43,6 +43,7 @@ describe("UI review spec registry", () => {
     const automationSpec = uiReviewSpecs.get("automation-pane-popover")
     expect(automationSpec.target.root).toBe("tools/ui-review/fixtures/workspace-components")
     expect(automationSpec.checkpoints).toHaveLength(4)
+    expect(uiReviewSpecs.get("workspace-command-palette").viewports.find((viewport) => viewport.name === "mobile")?.hasTouch).toBe(true)
     for (const id of uiReviewSpecs.ids()) {
       expect(uiReviewSpecs.get(id).target.serverCommand.slice(-3)).toEqual(["--host", "127.0.0.1", "--strictPort"])
     }
@@ -58,7 +59,7 @@ describe("UI review spec registry", () => {
     expect(registry.get("full-app-smoke").target.root).toBe("apps/full-app")
   })
 
-  it("selects a painted command-palette Wait for replay", () => {
+  it("selects the shortest painted command-palette state for replay", () => {
     const select = uiReviewSpecs.get("workspace-command-palette").exploration!.selectReplayState
     const states = [
       { ordinal: 19, viewport: { name: "desktop" }, action: "Wait", screenshotDigest: "painted", screenshotBytes: 80, screenshotPHash: "ffffffffffffffff", normalizedState: { palette: { dialogVisible: true, mode: "Commands" } } },
@@ -78,6 +79,20 @@ describe("UI review spec registry", () => {
     ] as unknown as UiReviewExplorationState[]
     expect(select(firstSettledWaitPath)).toBe(firstSettledWaitPath[3])
 
+    const desktopHydratingActionPath = [
+      { ordinal: 2, viewport: { name: "desktop" }, action: "Wait", screenshotDigest: "closed", screenshotBytes: 100, screenshotPHash: "ffffffffffffffff", normalizedState: { palette: { dialogVisible: false, mode: "none" } } },
+      { ordinal: 3, viewport: { name: "desktop" }, action: { Click: {} }, screenshotDigest: "hydrating", screenshotBytes: 120, screenshotPHash: "213f213f3f3f3f21", normalizedState: { palette: { dialogVisible: true, mode: "Chats" } } },
+      { ordinal: 15, viewport: { name: "desktop" }, action: "Wait", screenshotDigest: "settled", screenshotBytes: 120, screenshotPHash: "0000003c3c000000", normalizedState: { palette: { dialogVisible: true, mode: "Chats" } } },
+    ] as unknown as UiReviewExplorationState[]
+    expect(select(desktopHydratingActionPath)).toBe(desktopHydratingActionPath[2])
+
+    const shortestPaintedPath = [
+      { ordinal: 5, viewport: { name: "mobile" }, action: "Wait", screenshotDigest: "closed", screenshotBytes: 100, screenshotPHash: "fefefefefefefefe", normalizedState: { palette: { dialogVisible: false, mode: "none" } } },
+      { ordinal: 10, viewport: { name: "mobile" }, action: { TypeText: { text: ">" } }, screenshotDigest: "painted-action", screenshotBytes: 120, screenshotPHash: "ffbfff0000000000", normalizedState: { palette: { dialogVisible: true, mode: "Commands" } } },
+      { ordinal: 62, viewport: { name: "mobile" }, action: "Wait", screenshotDigest: "painted-wait", screenshotBytes: 120, screenshotPHash: "ffffff0000000000", normalizedState: { palette: { dialogVisible: true, mode: "Chats" } } },
+    ] as unknown as UiReviewExplorationState[]
+    expect(select(shortestPaintedPath)).toBe(shortestPaintedPath[1])
+
     const mobileStates = [
       { ordinal: 17, viewport: { name: "mobile" }, action: "Wait", screenshotDigest: "painted", screenshotBytes: 80, screenshotPHash: "ffffffffffffffff", normalizedState: { palette: { dialogVisible: true, mode: null } } },
       { ordinal: 14, viewport: { name: "mobile" }, action: "Wait", screenshotDigest: "closed", screenshotBytes: 100, screenshotPHash: "0000000000000000", normalizedState: { palette: { dialogVisible: false, mode: null } } },
@@ -85,6 +100,18 @@ describe("UI review spec registry", () => {
       { ordinal: 16, viewport: { name: "mobile" }, action: "Wait", screenshotDigest: "jitter", screenshotBytes: 100, screenshotPHash: "0000000000000001", normalizedState: { palette: { dialogVisible: true, mode: null } } },
     ] as unknown as UiReviewExplorationState[]
     expect(select(mobileStates)).toBe(mobileStates[0])
+
+    const mobileClickOnlyPath = [
+      { ordinal: 14, viewport: { name: "mobile" }, action: "Wait", screenshotDigest: "closed", screenshotBytes: 100, screenshotPHash: "0000000000000000", normalizedState: { palette: { dialogVisible: false, mode: null } } },
+      { ordinal: 15, viewport: { name: "mobile" }, action: { Click: {} }, screenshotDigest: "painted", screenshotBytes: 80, screenshotPHash: "0000000000000001", normalizedState: { palette: { dialogVisible: true, mode: null } } },
+    ] as unknown as UiReviewExplorationState[]
+    expect(select(mobileClickOnlyPath)).toBe(mobileClickOnlyPath[1])
+
+    const mobileJitterClickOnlyPath = [
+      { ordinal: 14, viewport: { name: "mobile" }, action: "Wait", screenshotDigest: "closed", screenshotBytes: 100, screenshotPHash: "0000000000000000", normalizedState: { palette: { dialogVisible: false, mode: null } } },
+      { ordinal: 15, viewport: { name: "mobile" }, action: { Click: {} }, screenshotDigest: "closed", screenshotBytes: 100, screenshotPHash: "0000000000000001", normalizedState: { palette: { dialogVisible: true, mode: null } } },
+    ] as unknown as UiReviewExplorationState[]
+    expect(select(mobileJitterClickOnlyPath)).toBeUndefined()
   })
 
   it("normalizes transient command-palette orchestration out of replay identity", () => {
@@ -97,6 +124,7 @@ describe("UI review spec registry", () => {
         query: "",
         workspaceReady: false,
         lastActionWasPaletteOpen: true,
+        lastActionWasNavigationOpen: false,
         lastActionWasInitial: false,
         controls: [{ name: "open-command-palette", point: { x: 10.25, y: 20.5 } }],
       },
@@ -107,6 +135,7 @@ describe("UI review spec registry", () => {
         ...durable.palette,
         workspaceReady: true,
         lastActionWasPaletteOpen: false,
+        lastActionWasNavigationOpen: true,
         lastActionWasInitial: true,
         controls: [{ name: "open-command-palette", point: { x: 11.75, y: 20.5 } }],
       },

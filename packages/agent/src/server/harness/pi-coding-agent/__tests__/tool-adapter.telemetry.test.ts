@@ -123,7 +123,12 @@ vi.mock('@mariozechner/pi-coding-agent', () => {
     getSkills() { return { diagnostics: [] } }
     getExtensions() { return { runtime: { getCommands: () => [{ name: this.commandName, source: 'extension' }] }, errors: [] } }
   },
-  SettingsManager: { create: () => ({ getDefaultProvider: () => undefined, getDefaultModel: () => undefined }) },
+  SettingsManager: {
+    create: () => ({
+      getDefaultProvider: () => undefined,
+      getDefaultModel: () => undefined,
+    }),
+  },
   getAgentDir: () => '/tmp/mock-agent-dir',
   loadSkills: () => ({ skills: [], diagnostics: [] }),
   }

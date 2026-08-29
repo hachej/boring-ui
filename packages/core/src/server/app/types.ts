@@ -4,6 +4,8 @@ import type {
   CapabilitiesResponse,
   User,
   Workspace,
+  WorkspaceAgentSeat,
+  WorkspaceAgentSeatSource,
   WorkspaceMember,
   WorkspaceInvite,
   WorkspaceRuntime,
@@ -39,20 +41,47 @@ export interface UserStore {
 }
 
 export interface WorkspaceStoreCreateOptions {
+  /** Required real application-fleet Agent; stores validate but never select it. */
+  readonly defaultAgentTypeId: string
   readonly workspaceTypeId?: string
+  /** Defaults to generic-default and is inserted atomically with the workspace. */
+  readonly initialAgentSeatSource?: WorkspaceAgentSeatSource
+  readonly enrolledByUserId?: string
   isDefault?: boolean
   id?: string
   managedBy?: string
-  /**
-   * Persisted default Agent seat (Decision 28). Applied only at workspace
-   * initialization; an existing workspace's value is never rewritten.
-   */
-  readonly defaultAgentTypeId?: string
 }
 
 export interface WorkspaceStore {
-  create(userId: string, name: string, appId: string, opts?: WorkspaceStoreCreateOptions): Promise<Workspace>
+  create(userId: string, name: string, appId: string, opts: WorkspaceStoreCreateOptions): Promise<Workspace>
   list(userId: string, appId: string): Promise<Workspace[]>
+  listAgentSeats(workspaceId: string): Promise<WorkspaceAgentSeat[]>
+  hasAgentSeat(workspaceId: string, agentTypeId: string): Promise<boolean>
+  addAgentSeat(
+    workspaceId: string,
+    agentTypeId: string,
+    source: WorkspaceAgentSeatSource,
+    enrolledByUserId?: string,
+  ): Promise<WorkspaceAgentSeat>
+  /** Count rolling-migration rows that still lack a persisted default Agent. */
+  countNullDefaultAgentTypeIds(appId: string): Promise<number>
+  /** Idempotent compare-and-set backfill: only rows still NULL may change. */
+  compareAndSetNullDefaultAgentTypeId(appId: string, defaultAgentTypeId: string): Promise<number>
+  /**
+   * Explicit user-driven repin of one workspace's default Agent (gh-1402).
+   * This is the ONLY write that may overwrite a non-NULL persisted value, so
+   * it must never be reached from an automated/reconciliation path — the
+   * NULL-only compare-and-set above stays the automated one.
+   *
+   * Compare-and-set on `expectedDefaultAgentTypeId`: `null` means the row is
+   * gone or someone else already repinned it, so a stale tab can never
+   * overwrite a newer successful recovery.
+   */
+  setDefaultAgentTypeId(
+    id: string,
+    expectedDefaultAgentTypeId: string,
+    defaultAgentTypeId: string,
+  ): Promise<Workspace | null>
   get(id: string): Promise<Workspace | null>
   getIncludingDeleted(id: string): Promise<Workspace | null>
   restore(id: string): Promise<Workspace | null>

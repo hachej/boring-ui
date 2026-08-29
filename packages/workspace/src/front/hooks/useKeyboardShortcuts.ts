@@ -7,6 +7,21 @@ export interface ShortcutBinding {
   mod?: boolean
   shift?: boolean
   allowInEditable?: boolean
+  /**
+   * Evaluated at keydown time (not at binding-creation time) once the key
+   * combo otherwise matches. Return false to skip this binding entirely —
+   * no preventDefault/stopPropagation, no handler call — so the event keeps
+   * propagating to whatever should actually own it.
+   *
+   * This matters for keys like Escape: this hook listens on `document` in
+   * the capture phase, which typically mounts before an on-demand overlay
+   * (a Radix dropdown/dialog/popover) does. Radix's own DismissableLayer
+   * also listens on `document` in the capture phase and checks
+   * `event.defaultPrevented` before dismissing — so an unconditional
+   * `preventDefault()` here, fired first because it mounted first, silently
+   * blocks the overlay from ever closing on Escape. See #1391.
+   */
+  shouldHandle?: (e: KeyboardEvent) => boolean
   handler: () => void
 }
 
@@ -51,6 +66,7 @@ export function useKeyboardShortcuts({ shortcuts, enabled = true }: UseKeyboardS
       for (const binding of shortcutsRef.current) {
         if (inEditable && !binding.allowInEditable) continue
         if (matchesShortcut(e, binding)) {
+          if (binding.shouldHandle && !binding.shouldHandle(e)) continue
           e.preventDefault()
           e.stopPropagation()
           binding.handler()

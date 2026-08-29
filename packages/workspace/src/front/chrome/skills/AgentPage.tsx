@@ -257,7 +257,7 @@ function SkillsSection({
               <li
                 key={`${skill.resource
                   ? uiFileResourceKey(skill.resource)
-                  : `${skill.name} ${skill.source ?? ""} ${skill.description ?? ""}`} ${index}`}
+                  : `${skill.name}\u0000${skill.source ?? ""}\u0000${skill.description ?? ""}`}\u0000${index}`}
                 className="min-w-0"
               >
                 {resource ? (
@@ -338,7 +338,7 @@ function ToolsSection({
           {tools.map((tool, index) => {
             // The server may report duplicate names; a name-only key collides
             // AND makes both rows expand together.
-            const toolKey = `${tool.name} ${index}`
+            const toolKey = `${tool.name}\u0000${index}`
             const expanded = expandedTool === toolKey
             return (
               <li key={toolKey} className="min-w-0">

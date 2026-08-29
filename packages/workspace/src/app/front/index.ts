@@ -18,6 +18,7 @@ export {
   ChatSessionTransitionState,
   WorkbenchWarmupOverlay,
 } from "./WorkspaceAgentStatusStates"
+export { DEFAULT_BOOT_PRELOAD_PATHS } from "./workspacePreload"
 export type { WorkspaceWarmupStatus } from "./workspacePreload"
 export {
   createLocalStorageSessions,

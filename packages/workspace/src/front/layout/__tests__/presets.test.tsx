@@ -736,7 +736,8 @@ describe("ChatLayout component", () => {
       ["chat", "session-list"],
     )
 
-    expect(screen.getByLabelText("Chat session First")).toHaveAttribute("data-boring-state", "inactive")
+    // The dockview stage is code-split and mounts after its chunk resolves.
+    expect(await screen.findByLabelText("Chat session First")).toHaveAttribute("data-boring-state", "inactive")
     expect(screen.getByLabelText("Chat session Second")).toHaveAttribute("data-boring-state", "active")
     expect(document.querySelector(".dv-chat-stage")).not.toBeNull()
     expect(screen.getByRole("button", { name: "New chat" })).toBeInTheDocument()
@@ -774,7 +775,7 @@ describe("ChatLayout component", () => {
       ["chat", "session-list"],
     )
 
-    await user.click(screen.getByLabelText("Close First pane"))
+    await user.click(await screen.findByLabelText("Close First pane"))
     expect(closePane).toHaveBeenCalledWith("s1")
     expect(setActive).not.toHaveBeenCalled()
 
@@ -1453,5 +1454,115 @@ describe("ChatLayout component", () => {
     expect(document.body.style.overflow).toBe(previousOverflow)
 
     result.unmount()
+  })
+})
+
+describe("ChatLayout compact shell", () => {
+  afterEach(() => {
+    setViewport(1280)
+  })
+
+  it("sizes the mobile drawers from CSS insets, never from window.innerWidth", () => {
+    setViewport(320)
+    renderWithRegistry(
+      <ChatLayout
+        mobileShellEnabled
+        nav="session-list"
+        navParams={{ onClose: vi.fn() }}
+        center="chat"
+        sidebar="workbench-left"
+        sidebarParams={{ onClose: vi.fn() }}
+      />,
+      ["session-list", "chat", "workbench-left"],
+    )
+
+    // A JS pixel width both fought the drawer's own right inset and hard-floored
+    // the nav drawer at 280px, overflowing anything narrower by construction.
+    const nav = screen.getByRole("dialog", { name: "Session browser" })
+    expect(nav.style.width).toBe("")
+    expect(nav.style.minWidth).toBe("")
+    expect(nav.style.willChange).toBe("")
+    expect(nav.className).toContain("w-[min(86%,360px)]")
+
+    const sidebar = screen.getByRole("dialog", { name: "Workbench left panel" })
+    expect(sidebar.style.width).toBe("")
+    expect(sidebar.className).toContain("inset-0")
+  })
+
+  it("animates the compact drawers on transform, not on layout properties", () => {
+    setViewport(375)
+    renderWithRegistry(
+      <ChatLayout
+        mobileShellEnabled
+        nav="session-list"
+        navParams={{ onClose: vi.fn() }}
+        center="chat"
+      />,
+      ["session-list", "chat"],
+    )
+
+    const nav = screen.getByRole("dialog", { name: "Session browser" })
+    // `visibility` rides the same transition so the drawer stays painted while
+    // it slides out and is hidden (not merely translated) once off-screen.
+    expect(nav.className).toContain("transition-[transform,visibility]")
+    expect(nav.className).not.toContain("transition-[width,min-width,max-width]")
+  })
+
+  it("keeps the desktop drawers on explicit widths", () => {
+    setViewport(1280)
+    renderWithRegistry(
+      <ChatLayout
+        nav="session-list"
+        navParams={{ onClose: vi.fn() }}
+        center="chat"
+      />,
+      ["session-list", "chat"],
+    )
+
+    const nav = screen.getByRole("dialog", { name: "Session browser" })
+    expect(nav).toHaveStyle({ width: "260px" })
+    expect(nav.className).toContain("transition-[width,min-width,max-width]")
+  })
+
+  it("renders exactly one mobile bar, carrying the real session title", () => {
+    setViewport(375)
+    renderWithRegistry(
+      <ChatLayout
+        mobileShellEnabled
+        center="chat"
+        nav={null}
+        onOpenNav={vi.fn()}
+        chatPanes={[{ id: "pane-a", title: "Planning" }, { id: "pane-b", title: "Review" }]}
+        activeChatPaneId="pane-a"
+      />,
+      ["session-list", "chat"],
+    )
+
+    expect(document.querySelectorAll('[data-boring-workspace-part="mobile-chat-bar"]').length).toBe(1)
+    expect(screen.getByText("Planning")).toBeInTheDocument()
+    expect(screen.queryByText("Chat")).toBeNull()
+    expect(document.querySelector('[data-boring-workspace-part="mobile-chat-pane-count"]')?.textContent).toContain("1/2")
+  })
+
+  it("insets the full-bleed workbench takeover for the home indicator", () => {
+    setViewport(375)
+    renderWithRegistry(
+      <ChatLayout
+        mobileShellEnabled
+        center="chat"
+        nav={null}
+        surface="empty"
+        surfaceParams={{ onClose: vi.fn() }}
+      />,
+      ["session-list", "chat", "empty"],
+    )
+
+    const bar = document.querySelector('[data-boring-workspace-part="mobile-workspace-bar"]')
+    const content = bar?.nextElementSibling
+    // Bottom inset includes the keyboard inset so iOS (whose layout viewport
+    // never shrinks for the keyboard) keeps workbench content above it.
+    expect(content?.className).toContain("pb-[calc(var(--sa-bottom,0px)+var(--keyboard-inset,0px))]")
+    expect(content?.className).toContain("pl-[var(--sa-left,0px)]")
+    expect(content?.className).toContain("pr-[var(--sa-right,0px)]")
   })
 })

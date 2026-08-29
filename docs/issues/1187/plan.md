@@ -181,7 +181,13 @@ roster sized for an imagined factory is process porn (AGENTS.md hard rule 8),
 and a seat that differs from its neighbour only in which model it calls is not a
 seat at all — it is a dispatch parameter wearing a persona.
 
-**S0 boots three seats: `triage` · `orchestrator` · `worker`.**
+**S0 boots three authored factory seats: `triage` · `orchestrator` · `worker`.**
+
+> **2026-08-26 clarification (#1386):** this ruling sizes the authored factory
+> persona roster. Generic hosts also compose one platform-owned, regular
+> `agentTypeId: default` Agent so every Workspace has a real default and
+> historical `default` sessions remain reachable. It is visible and validated
+> like every other fleet member, but it is not a fourth factory persona.
 
 | Seat | `agentTypeId` | Posture | Role |
 | --- | --- | --- | --- |

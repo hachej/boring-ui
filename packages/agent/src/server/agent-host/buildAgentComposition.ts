@@ -7,7 +7,7 @@ import {
 import type { AgentCoreHarnessFactory, AgentHarness, AgentHarnessFactory } from '../../shared/harness'
 import type { AgentTool } from '../../shared/tool'
 import type { SessionStore } from '../../shared/session'
-import { withPiHarnessDefaults } from '../harness/pi-coding-agent/createHarness'
+import { withPiHarnessDefaults, type ResolvedPiHarnessOptions } from '../harness/pi-coding-agent/createHarness'
 import { parseEncodedModelSelection } from '../models/modelConfig'
 import { HarnessPiChatService } from '../pi-chat/harnessPiChatService'
 import type { ReadyStatusTracker } from '../runtime/readyStatus'
@@ -19,13 +19,14 @@ import { openDatabase, type OpenDatabaseResult } from '../events/sqlStorage'
 import { SqliteEventStreamStore, type EventStreamStore } from '../events/eventStreamStore'
 import { safeCapture, type TelemetrySink } from '../../shared/telemetry'
 import { ErrorCode } from '../../shared/error-codes'
-import type {
-  CompiledAgentHostAgentSpec,
-  CreateAgentHostOptions,
-  ResolvedAgentRuntimeScope,
+import {
+  type CompiledAgentHostAgentSpec,
+  type CreateAgentHostOptions,
+  type ResolvedAgentRuntimeScope,
 } from './types'
 import type { EnvironmentProvisioningSnapshot } from './environmentLease'
 import { sessionNamespaceForAgent } from './sessionInventory'
+import { locateHostWorkspaceSkill, projectRuntimeSkillPathToHost } from './skillPathProjection'
 
 /**
  * Flag-gated durable event streaming. When set (`1`/`true`), production
@@ -133,9 +134,18 @@ export interface BuiltAgentComposition {
   readonly sessionStore: SessionStore
   readonly service: HarnessPiChatService
   readonly tools: readonly AgentTool[]
+  readonly pi: ResolvedPiHarnessOptions
   readonly runtimeBundle: RuntimeBundle
   readonly readyTracker: ReadyStatusTracker
   dispose(): Promise<void>
+}
+
+/** Environment skill roots require an ordinary trusted host provisioning grant. */
+export function provisionedSkillPathsForAgent(
+  agent: CompiledAgentHostAgentSpec,
+  provisioning: EnvironmentProvisioningSnapshot | undefined,
+): readonly string[] {
+  return agent.provisioning?.inheritSkillPaths ? provisioning?.skillPaths ?? [] : []
 }
 
 /**
@@ -148,6 +158,9 @@ export async function buildAgentComposition(
 ): Promise<BuiltAgentComposition> {
   const { runtimeScope, options } = input
   const runtimeBundle = input.runtimeBundle
+  // Resource loading is host authority: only the mode adapter's explicit
+  // storageRoot proves that guest workspace bytes are mirrored on this host.
+  const hostStorageRoot = runtimeBundle.storageRoot
   const bashRuntimeBundle = {
     ...runtimeBundle,
     storageRoot: getOptionalRuntimeBundleStorageRoot(runtimeBundle),
@@ -158,9 +171,7 @@ export async function buildAgentComposition(
   // gets it without per-host wiring, and sibling agents never see it. A
   // declared-but-unmountable knowledge folder fails this agent's composition
   // closed.
-  const knowledgeRootDir = 'legacyDefault' in input.agent
-    ? undefined
-    : input.agent.knowledge?.rootDir
+  const knowledgeRootDir = input.agent.knowledge?.rootDir
   let knowledgeBinding: RuntimeFilesystemBinding | undefined
   if (knowledgeRootDir !== undefined) {
     const runtimeHostOperations = options.runtimeHost ?? runtimeBundle.runtimeHost
@@ -217,31 +228,56 @@ export async function buildAgentComposition(
   const tools = [...standardTools, ...(runtimeScope.extraTools ?? [])]
 
   const readyTracker = createRuntimeReadyStatusTracker(options.runtimeModeAdapter, { harnessReady: true })
-  const encodedPreferredModel = 'legacyDefault' in input.agent
-    ? undefined
-    : input.agent.model?.preferred
-  const pi = withPiHarnessDefaults({
+  const encodedPreferredModel = input.agent.model?.preferred
+  const unprojectedPi = withPiHarnessDefaults({
     ...runtimeScope.pi,
     defaultModel: parseEncodedModelSelection(encodedPreferredModel) ?? runtimeScope.pi?.defaultModel,
     strictModelResolution: encodedPreferredModel === undefined
       ? runtimeScope.pi?.strictModelResolution
       : true,
     additionalSkillPaths: [
-      ...(input.environmentProvisioning?.skillPaths ?? []),
+      ...provisionedSkillPathsForAgent(input.agent, input.environmentProvisioning),
       ...(runtimeScope.pi?.additionalSkillPaths ?? []),
     ],
   })
+  const projectSkillPaths = (skillPaths: readonly string[]) => skillPaths.flatMap((skillPath) => {
+    const projected = projectRuntimeSkillPathToHost({
+      skillPath,
+      runtimeWorkspaceRoot: runtimeBundle.workspace.root,
+      hostStorageRoot,
+    })
+    return projected === undefined ? [] : [projected]
+  })
+  const getUnprojectedHotResources = unprojectedPi.getHotReloadableResources
+  const pi = {
+    ...unprojectedPi,
+    additionalSkillPaths: projectSkillPaths(unprojectedPi.additionalSkillPaths ?? []),
+    ...(getUnprojectedHotResources
+      ? {
+          getHotReloadableResources: () => {
+            const resources = getUnprojectedHotResources()
+            return {
+              ...resources,
+              additionalSkillPaths: projectSkillPaths(resources.additionalSkillPaths ?? []),
+            }
+          },
+        }
+      : {}),
+    locateSkillResource: (filePath: string) =>
+      unprojectedPi.locateSkillResource?.(filePath)
+      ?? locateHostWorkspaceSkill({
+        filePath,
+        runtimeWorkspaceRoot: runtimeBundle.workspace.root,
+        hostStorageRoot,
+      }),
+  }
   const baseHarnessFactory = options.harnessFactory
-  const configured = !('legacyDefault' in input.agent)
   const configuredNamespace = sessionNamespaceForAgent(
     input.agent,
     input.workspaceScopeId,
     runtimeScope.sessionNamespace,
   )
-  const authoredInstructions = configured
-    ? input.agent.definition.instructions
-    : undefined
-  const staticPromptAppend = [authoredInstructions, runtimeScope.systemPromptAppend]
+  const staticPromptAppend = [input.agent.definition.instructions, runtimeScope.systemPromptAppend]
     .filter((part): part is string => Boolean(part))
     .join('\n\n') || undefined
 
@@ -297,6 +333,7 @@ export async function buildAgentComposition(
     sessionStore,
     service,
     tools,
+    pi,
     runtimeBundle,
     readyTracker,
     dispose() {

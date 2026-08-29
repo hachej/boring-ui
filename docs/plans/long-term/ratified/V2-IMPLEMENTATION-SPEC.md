@@ -8,7 +8,8 @@ ARCHITECTURE-PLAN v3 (frozen engineering spec).
 
 Locked decisions: single-package repo, folders-as-modules, dependency-cruiser
 DAG (packages extracted only on publish pressure) · shard = per-thread records +
-workspace envelope/kernel DBs · first vertical = creator growth · repo =
+workspace envelope/kernel DBs *(shard shape suspended pending the
+thread-storage spike, RECONCILIATION §8)* · first vertical = creator growth · repo =
 `hachej/boring-v2` private · M1 = headless `runtime.run()`.
 
 ---
@@ -120,6 +121,9 @@ Seat             { seatId; workspaceId; agentId; role?; budget?; permissions?; b
                  // grants participation, NOT identity (invariant 5); type is kernel-level,
                  // lifecycle is workspace-level (ratified Q4)
 Thread           { threadId; workspaceId; title; participants; workingSet }  // = session
+                 // storage-shape note 2026-08-26: the per-session one-record backing
+                 // shape is suspended pending the thread-storage spike (RECONCILIATION §8);
+                 // the noun and this interface stand
 Activity         // what happened: runs, delegations, approvals, interventions
                  // (envelope projection — no second event system)
 SessionCatalog   // host-authoritative ownership/placement (C7); seats ledger;

@@ -5,7 +5,8 @@ import { join, resolve } from 'node:path'
 
 import { afterEach, describe, expect, test, vi } from 'vitest'
 
-import { LEGACY_DEFAULT_AGENT_FLEET, resolveDefaultAgentFleet } from '../resolveDefaultAgentFleet'
+import { resolveAgentInstructionFileRefs } from '../instructionFileRefs'
+import { DEFAULT_AGENT_FLEET, resolveDefaultAgentFleet } from '../resolveDefaultAgentFleet'
 import type { DiscoveredAgentPackageDescriptor } from '../loadConfiguredAgentFleet'
 
 const REPOSITORY_ROOT = resolve(import.meta.dirname, '../../../../../..')
@@ -40,9 +41,13 @@ describe('resolveDefaultAgentFleet (BORING_AGENT_FLEET gate, gh-1106 slice 3)', 
     loggerMocks.error.mockClear()
   })
 
-  test('flag absent: byte-identical legacy single-default-agent boot', async () => {
-    const agents = await resolveDefaultAgentFleet({ repositoryRoot: REPOSITORY_ROOT, workspaceRoot: REPOSITORY_ROOT, env: {} })
-    expect(agents).toEqual(LEGACY_DEFAULT_AGENT_FLEET)
+  test('flag absent: boots one real regular default Agent', async () => {
+    const agents = await resolveDefaultAgentFleet({ repositoryRoot: REPOSITORY_ROOT, env: {} })
+    expect(agents).toEqual(DEFAULT_AGENT_FLEET)
+    expect(agents[0]).toMatchObject({
+      agentTypeId: 'default',
+      definition: { label: 'Agent' },
+    })
     expect(Object.isFrozen(agents)).toBe(true)
   })
 
@@ -53,17 +58,16 @@ describe('resolveDefaultAgentFleet (BORING_AGENT_FLEET gate, gh-1106 slice 3)', 
         return Reflect.get(target, property, receiver)
       },
     })
-    await expect(resolveDefaultAgentFleet(options)).resolves.toBe(LEGACY_DEFAULT_AGENT_FLEET)
+    await expect(resolveDefaultAgentFleet(options)).resolves.toBe(DEFAULT_AGENT_FLEET)
   })
 
   test('flag=1: composes the default agent plus the repository factory seats', async () => {
     const agents = await resolveDefaultAgentFleet({
       repositoryRoot: REPOSITORY_ROOT,
       discoveredPackages: FACTORY_PACKAGES,
-      workspaceRoot: REPOSITORY_ROOT,
       env: { BORING_AGENT_FLEET: '1', ANTHROPIC_API_KEY: 'test-key' },
     })
-    expect(agents[0]).toEqual({ agentTypeId: 'default', legacyDefault: true })
+    expect(agents[0]).toEqual(DEFAULT_AGENT_FLEET[0])
     // The ratified 3-seat roster (gh-1187 S0). Deferred grow-on-demand seats
     // (concierge, reviewer, ...) may still be discovered as packages but hold
     // no fleet.yaml entry, so they must NOT compose.
@@ -74,38 +78,45 @@ describe('resolveDefaultAgentFleet (BORING_AGENT_FLEET gate, gh-1106 slice 3)', 
     ])
   })
 
-  test('links persona instructions only when the served workspace IS the fleet repository', async () => {
+  test('records absolute persona instruction sources, addressable from any served root', async () => {
     const env = { BORING_AGENT_FLEET: '1', ANTHROPIC_API_KEY: 'test-key' }
-    const sameRoot = await resolveDefaultAgentFleet({
+    const fleet = await resolveDefaultAgentFleet({
       repositoryRoot: REPOSITORY_ROOT,
       discoveredPackages: FACTORY_PACKAGES,
-      workspaceRoot: REPOSITORY_ROOT,
       env,
     })
-    const orchestrator = sameRoot.find((agent) => agent.agentTypeId === 'boring-orchestrator')
-    if (!orchestrator || 'legacyDefault' in orchestrator) throw new Error('expected the orchestrator seat')
-    expect(orchestrator.instructionFiles).toEqual([
-      { filesystem: 'user', path: '.agents/personas/orchestrator/instructions.md', role: 'persona' },
-    ])
+    const orchestrator = fleet.find((agent) => agent.agentTypeId === 'boring-orchestrator')
+    if (!orchestrator) throw new Error('expected the orchestrator seat')
+    expect(orchestrator.instructionSources).toEqual([{
+      absolutePath: resolve(REPOSITORY_ROOT, '.agents', 'personas', 'orchestrator', 'instructions.md'),
+      role: 'persona',
+    }])
 
-    // The multi-workspace shape: personas come from the repository, the
-    // `user` filesystem serves somewhere else entirely. Publishing a
-    // repository-relative path here would render a live "Open" button that
-    // opens nothing, so nothing is published.
-    const otherRoot = await resolveDefaultAgentFleet({
-      repositoryRoot: REPOSITORY_ROOT,
-      discoveredPackages: FACTORY_PACKAGES,
-      workspaceRoot: tmpdir(),
-      env,
+    // gh-1189: composition no longer decides linkability, so the CLI hub — one
+    // fleet, a different root per registered workspace — is no longer
+    // structurally linkless. The real repository personas address cleanly
+    // against a request served from the repository...
+    await expect(resolveAgentInstructionFileRefs({
+      sources: orchestrator.instructionSources,
+      workspaceRoot: REPOSITORY_ROOT,
+    })).resolves.toMatchObject({
+      refs: [{ filesystem: 'user', path: '.agents/personas/orchestrator/instructions.md', role: 'persona' }],
     })
-    const detached = otherRoot.find((agent) => agent.agentTypeId === 'boring-orchestrator')
-    if (!detached || 'legacyDefault' in detached) throw new Error('expected the orchestrator seat')
-    expect(detached.instructionFiles).toBeUndefined()
-    // Reported as a missing LINK, not an excluded seat: the seat is right
-    // there in the fleet above.
-    expect(loggerMocks.warn).toHaveBeenCalledWith(
-      'fleet seat instructions not linkable',
-      expect.objectContaining({ code: ErrorCode.enum.AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE }),
+
+    // ...and are withheld, not guessed, for a request served from elsewhere.
+    const detached = await resolveAgentInstructionFileRefs({
+      sources: orchestrator.instructionSources,
+      workspaceRoot: tmpdir(),
+    })
+    expect(detached.refs).toEqual([])
+    expect(detached.withheld).toEqual([expect.objectContaining({
+      code: ErrorCode.enum.AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE,
+    })])
+
+    // Composition itself stays quiet about links: nothing is unlinkable yet.
+    expect(loggerMocks.warn).not.toHaveBeenCalledWith(
+      expect.stringContaining('instructions'),
+      expect.anything(),
     )
   })
 
@@ -121,7 +132,6 @@ describe('resolveDefaultAgentFleet (BORING_AGENT_FLEET gate, gh-1106 slice 3)', 
       await expect(resolveDefaultAgentFleet({
         repositoryRoot: root,
         discoveredPackages: [],
-        workspaceRoot: root,
         env: { BORING_AGENT_FLEET: '1' },
       })).rejects.toMatchObject({
         name: 'FleetConfigError',
@@ -137,7 +147,6 @@ describe('resolveDefaultAgentFleet (BORING_AGENT_FLEET gate, gh-1106 slice 3)', 
       await expect(resolveDefaultAgentFleet({
         repositoryRoot: root,
         discoveredPackages: [],
-        workspaceRoot: root,
         env: { BORING_AGENT_FLEET: '1' },
       })).rejects.toMatchObject({
         name: 'FleetConfigError',

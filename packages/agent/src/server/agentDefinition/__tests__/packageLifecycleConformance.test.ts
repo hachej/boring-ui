@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test } from 'vitest'
 import { createTestRuntimeModeAdapter } from '@agent-test-host'
 
 import { createAgentHost } from '../../agent-host/createAgentHost'
-import { LEGACY_DEFAULT_AGENT_FLEET } from '../resolveDefaultAgentFleet'
+import { DEFAULT_AGENT_FLEET } from '../resolveDefaultAgentFleet'
 import { loadConfiguredAgentFleet, type DiscoveredAgentPackageDescriptor } from '../loadConfiguredAgentFleet'
 import type { AuthorizedAgentScope } from '../../../shared/gateway/types'
 import { ErrorCode } from '../../../shared/error-codes'
@@ -29,6 +29,8 @@ async function createFixture() {
   const packageRoot = join(root, 'package')
   const fleetConfigPath = join(root, 'fleet.yaml')
   await mkdir(packageRoot, { recursive: true })
+  await mkdir(join(root, 'skills'), { recursive: true })
+  await writeFile(join(root, 'policy.yaml'), 'models:\n  seats:\n    lifecycle: T3\n')
   const writePackage = async (version: string, instructions: string) => {
     await writeFile(join(packageRoot, 'package.json'), JSON.stringify({
       name: '@fixture/lifecycle',
@@ -61,7 +63,6 @@ async function boot(input: {
 }) {
   const loaded = await loadConfiguredAgentFleet({
     discoveredPackages: input.discoveredPackages,
-    workspaceRoot: input.root,
     fleetConfigPath: input.fleetConfigPath,
     policyPath: join(input.root, 'policy.yaml'),
     skillsRoot: join(input.root, 'skills'),
@@ -69,7 +70,7 @@ async function boot(input: {
   })
   const sessionRoot = join(input.root, `sessions-${Math.random().toString(16).slice(2)}`)
   const host = await createAgentHost({
-    agents: [...LEGACY_DEFAULT_AGENT_FLEET, ...loaded.agents],
+    agents: [...DEFAULT_AGENT_FLEET, ...loaded.agents],
     fleetCompiler: { compile: async ({ agents }) => agents },
     scopeVerifier: { verify: async (scope) => ({ workspaceScopeId: scope.workspaceScopeId, authSubjectId: scope.authSubjectId }) },
     runtimeModeAdapter: createTestRuntimeModeAdapter('direct'),

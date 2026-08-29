@@ -44,8 +44,8 @@ That evidence resolves the hardware-viability question for today's commodity
 VPS baseline. It does not waive the provider implementation, exact-artifact,
 per-box admission, or cutover gates in this plan.
 
-The controlling architecture is the own-cloud data-plane section of
-[`../391/AGENT-CLOUD-VISION.md`](../391/AGENT-CLOUD-VISION.md):
+The background vision (explicitly non-binding) is the own-cloud data-plane section of
+[`../391/AGENT-CLOUD-VISION.md`](../../plans/agent-runtime/cloud-vision/AGENT-CLOUD-VISION.md):
 
 ```text
 placement = remote-worker executor on owner-operated VPSes

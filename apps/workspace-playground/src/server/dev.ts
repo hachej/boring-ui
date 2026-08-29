@@ -71,7 +71,7 @@ export async function startPlaygroundServer(): Promise<void> {
     // Same `workspaceRoot` value that is handed to createWorkspaceAgentServer
     // below: the fleet's instruction refs are addressed against the filesystem
     // this server actually serves, so they resolve or are not published.
-    const factoryAgents = agentMode === "factory" ? await loadBoringFactoryAgents({ workspaceRoot }) : undefined
+    const factoryAgents = agentMode === "factory" ? await loadBoringFactoryAgents({}) : undefined
     const scriptedAgents = agentMode === "scripted-multi" ? SCRIPTED_TWO_AGENT_FLEET : SCRIPTED_ONE_AGENT
     const agents = factoryAgents ?? scriptedAgents
     const defaultAgentTypeId = resolvePlaygroundDefaultAgentTypeId(agents)

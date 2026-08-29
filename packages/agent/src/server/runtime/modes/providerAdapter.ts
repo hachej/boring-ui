@@ -5,18 +5,18 @@ import type {
 
 import { createServerFileSearch } from '../createServerFileSearch'
 import type {
-  BuiltinRuntimeModeId,
   ModeContext,
   RuntimeBashStrategy,
   RuntimeBundle,
   RuntimeFilesystemStrategy,
   RuntimeModeAdapter,
+  RuntimeModeId,
 } from '../mode'
 import type { WorkspaceProvisioningAdapter } from '../../workspace/provisioning'
 import type { AgentRuntimeHostOperations } from '../runtimeHost'
 
 interface ProviderRuntimeModeAdapterOptions {
-  id: BuiltinRuntimeModeId
+  id: RuntimeModeId
   provider: SandboxProviderV1
   runtimeHost: AgentRuntimeHostOperations
   workspaceFsCapability: 'strong' | 'best-effort'

@@ -29,6 +29,7 @@ export function createTestCoreConfig(
     staticDir: null,
     databaseUrl: null,
     stores: 'local',
+    defaultAgentTypeId: 'default',
     cors: {
       origins: ['http://localhost:5173'],
       credentials: true,

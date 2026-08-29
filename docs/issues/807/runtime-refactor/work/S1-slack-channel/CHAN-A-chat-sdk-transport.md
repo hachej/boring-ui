@@ -1,5 +1,5 @@
 > **Status: historical snapshot/evidence; non-dispatchable.**
-> Decision 26 and `docs/issues/391/plan.md` govern current sequencing. Any work
+> Decision 26 and `docs/plans/agent-runtime/fleet-and-environments/plan.md` govern current sequencing. Any work
 > discussed here requires its child canonical plan and Bead graph to be recut.
 
 # WORK-ORDER PACK — Stream A: Multichannel "channel plug" (Chat SDK transport, Slack first) — v6 (FINAL)

@@ -14,6 +14,7 @@ export default defineConfig({
       ...baseResolve.alias,
       { find: "@hachej/boring-workspace/globals.css", replacement: resolve(__dirname, "../workspace/src/globals.css") },
       { find: "@hachej/boring-agent/front/styles.css", replacement: resolve(__dirname, "../agent/src/front/styles/globals.css") },
+      { find: "@hachej/boring-workspace/loading", replacement: resolve(__dirname, "../workspace/src/loading.ts") },
       { find: /^@hachej\/boring-workspace$/, replacement: resolve(__dirname, "../workspace/src/index.ts") },
       { find: /^@hachej\/boring-workspace\/events$/, replacement: resolve(__dirname, "../workspace/src/front/events/index.ts") },
       { find: /^@hachej\/boring-workspace\/plugin$/, replacement: resolve(__dirname, "../workspace/src/plugin.ts") },
@@ -22,6 +23,8 @@ export default defineConfig({
       { find: /^@hachej\/boring-ask-user\/server$/, replacement: resolve(__dirname, "../../plugins/ask-user/src/server/index.ts") },
       { find: /^@hachej\/boring-ask-user\/shared$/, replacement: resolve(__dirname, "../../plugins/ask-user/src/shared/index.ts") },
       { find: /^@hachej\/boring-automation\/front$/, replacement: resolve(__dirname, "../../plugins/boring-automation/src/front/index.tsx") },
+      { find: /^@hachej\/boring-automation\/front\/descriptor$/, replacement: resolve(__dirname, "../../plugins/boring-automation/src/front/descriptor.tsx") },
+      { find: /^@hachej\/boring-tasks\/front\/descriptor$/, replacement: resolve(__dirname, "../../plugins/tasks/src/front/descriptor.tsx") },
       { find: /^@hachej\/boring-diagram\/front$/, replacement: resolve(__dirname, "../../plugins/diagram/src/front/index.tsx") },
       { find: /^@hachej\/boring-diagram\/shared$/, replacement: resolve(__dirname, "../../plugins/diagram/src/shared/index.ts") },
       { find: /^@hachej\/boring-transcription\/front$/, replacement: resolve(__dirname, "../../plugins/live-transcription/src/front/index.tsx") },
@@ -35,5 +38,23 @@ export default defineConfig({
   build: {
     outDir: "public",
     emptyOutDir: true,
+    manifest: true,
+    modulePreload: {
+      // The entry discovers its direct imports in one parse. Preload only the
+      // framework/runtime chunks needed to execute that first paint; optional
+      // surfaces remain behind their dynamic import boundaries.
+      resolveDependencies(_filename, dependencies, context) {
+        if (context.hostType !== "html") return dependencies
+        return dependencies.filter((dependency) => /(?:rolldown-runtime|jsx-runtime|jsx-dev-runtime)-/.test(dependency))
+      },
+    },
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("/react-dom/") || id.includes("/react/")) return "vendor-react"
+          if (id.includes("dockview")) return "vendor-dockview"
+        },
+      },
+    },
   },
 })

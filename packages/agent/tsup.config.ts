@@ -1,7 +1,23 @@
 import { defineConfig } from "tsup";
+import { spawnSync } from "node:child_process";
 
 const EXTERNALS = ["react", "react-dom", "node:sqlite"];
 const DEV_BUNDLE_EXTERNALS = ["@vitejs/plugin-react", "@babel/core", "vitest"];
+
+// dist/front/styles.css is produced by a separate PostCSS/Tailwind script
+// (scripts/build-front-css.mjs), not by tsup itself. tsup's `clean: true`
+// wipes the whole dist/ dir first, so any bare `tsup` invocation (JS-only
+// rebuild, watch mode, etc.) silently deletes styles.css unless we
+// regenerate it here. Mirrors the onSuccess CSS-copy idiom in
+// packages/core/tsup.config.ts.
+function buildFrontCss() {
+  const result = spawnSync(process.execPath, ["./scripts/build-front-css.mjs"], {
+    stdio: "inherit",
+  });
+  if (result.status !== 0) {
+    throw new Error("build-front-css.mjs failed");
+  }
+}
 
 export default defineConfig({
   entry: {
@@ -24,4 +40,7 @@ export default defineConfig({
   target: "es2022",
   removeNodeProtocol: false,
   external: [...EXTERNALS, ...DEV_BUNDLE_EXTERNALS],
+  async onSuccess() {
+    buildFrontCss();
+  },
 });

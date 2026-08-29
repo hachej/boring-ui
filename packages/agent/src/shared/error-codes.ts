@@ -87,6 +87,7 @@ export const ErrorCode = z.enum([
   // Billing / metering
   'PAYMENT_REQUIRED',
   'MODEL_BUDGET_EXCEEDED',
+  'MODEL_CONTEXT_WINDOW_EXCEEDED',
   'METERING_UNSUPPORTED_COMMAND',
 
   // Session / bridge

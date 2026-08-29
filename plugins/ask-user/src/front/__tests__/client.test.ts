@@ -71,6 +71,16 @@ describe("ask-user front client", () => {
     })
   })
 
+  it("forwards cancellation to pending bridge requests", async () => {
+    const controller = new AbortController()
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => Response.json({ ok: true, output: { pending: null } }))
+    vi.stubGlobal("fetch", fetchMock)
+
+    await createQuestionsClient().pending("default", controller.signal)
+
+    expect(fetchMock.mock.calls[0]![1]!.signal).toBe(controller.signal)
+  })
+
   it("cancels through the bridge when crypto.subtle is unavailable", async () => {
     vi.stubGlobal("crypto", {})
     const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => Response.json({ ok: true, output: { ok: true, status: "cancelled" } }))

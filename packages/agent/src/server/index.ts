@@ -115,7 +115,14 @@ export type {
   ModelTierCandidate,
 } from './agentDefinition/loadConfiguredAgentFleet'
 export {
-  LEGACY_DEFAULT_AGENT_FLEET,
+  resolveAgentInstructionFileRefs,
+} from './agentDefinition/instructionFileRefs'
+export type {
+  ResolvedInstructionFileRefs,
+  WithheldInstructionRef,
+} from './agentDefinition/instructionFileRefs'
+export {
+  DEFAULT_AGENT_FLEET,
   resolveDefaultAgentFleet,
 } from './agentDefinition/resolveDefaultAgentFleet'
 export type {
@@ -167,6 +174,11 @@ export type { AgentHostEnvironmentHttpProjectionOptions } from './agent-host/env
 export { createAuthMiddleware as createAgentAuthMiddleware } from './http/middleware'
 export { createAgentHost } from './agent-host/createAgentHost'
 export { SqliteAgentRequestLedger } from './agent-host/sqliteRequestLedger'
+export { resolveRequestLedgerPath } from './agent-host/requestLedgerPath'
+export type {
+  LegacyRequestLedgerLocation,
+  ResolveRequestLedgerPathInput,
+} from './agent-host/requestLedgerPath'
 export {
   AgentFleetCompilationError,
   AgentFleetCompilationErrorCode,
@@ -182,6 +194,7 @@ export {
   createEnvironmentProvisioningFingerprint,
   createResolvedRuntimeScopeIdentity,
 } from './agent-host/runtimeScopeIdentity'
+export { DEFAULT_AGENT_TYPE_ID } from './agent-host/types'
 export type {
   AgentEffectAdmission,
   AgentFleetCompiler,
@@ -198,18 +211,22 @@ export type {
   AgentRequestLedgerPrepareResult,
   AgentRequestLedgerRecord,
   AgentInstructionFileRef,
+  AgentInstructionSource,
   CompiledAgentHostAgentSpec,
   ConfiguredAgentHostAgentSpec,
   CreateAgentHostOptions,
   CreatedAgentHost,
   AuthorizedEnvironmentIntent,
-  LegacyDefaultAgentHostSpec,
   ResolvedAgentRuntimeScope,
   ResolvedEnvironmentScope,
 } from './agent-host/types'
 export type { LeaseBoundWorkspaceAgent } from '../shared/workspaceAgentDispatcher'
 export type {
+  AgentAccessDecision,
+  AgentAccessOperation,
   AuthorizedAgentScope,
+  ResolveAgentAccess,
+  ResolveAgentAccessInput,
   VerifiedAgentScopeClaim,
 } from '../shared/gateway/types'
 export type { AgentHarnessFactory, AgentHarnessFactoryInput } from '../shared/harness'

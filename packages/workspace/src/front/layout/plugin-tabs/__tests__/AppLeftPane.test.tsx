@@ -1,4 +1,4 @@
-import { useEffect } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
@@ -983,5 +983,187 @@ describe("AppLeftPane", () => {
     expect(badge).toBeInTheDocument()
     expect(badge?.closest('[data-boring-workspace-part="app-session-row"]')).toHaveTextContent("Second session")
     expect(screen.getByText("question")).toBeInTheDocument()
+  })
+
+  describe("archived chats", () => {
+    function renderWithArchived(overrides: Partial<Parameters<typeof AppLeftPane>[0]> = {}) {
+      return render(
+        <WorkspaceAttentionProvider>
+          <AppLeftPane
+            appTitle="Test"
+            sessions={[
+              { id: "s1", title: "First session" },
+              { id: "s2", title: "Second session", archived: true },
+            ]}
+            activeSessionId="s1"
+            openSessionIds={["s1"]}
+            pinnedSessionIds={[]}
+            onCreateSession={vi.fn()}
+            navigationEntries={testNavigationEntries()}
+            onSwitchSession={vi.fn()}
+            onOpenSessionAsPane={vi.fn()}
+            onToggleSessionPinned={vi.fn()}
+            {...overrides}
+          />
+        </WorkspaceAttentionProvider>,
+      )
+    }
+
+    it("keeps archived chats out of the default list but one click away", async () => {
+      renderWithArchived()
+
+      expect(screen.getByText("First session")).toBeInTheDocument()
+      expect(screen.queryByText("Second session")).not.toBeInTheDocument()
+
+      const disclosure = screen.getByRole("button", { name: /Archived/ })
+      expect(disclosure).toHaveTextContent("1")
+      expect(disclosure).toHaveAttribute("aria-expanded", "false")
+
+      await userEvent.click(disclosure)
+      expect(screen.getByRole("button", { name: /Archived/ })).toHaveAttribute("aria-expanded", "true")
+      expect(screen.getByText("Second session")).toBeInTheDocument()
+    })
+
+    it("loads and exposes archived pages beyond the first 50", async () => {
+      const onLoadArchived = vi.fn()
+      const onSetSessionArchived = vi.fn()
+      renderWithArchived({
+        sessions: Array.from({ length: 51 }, (_, index) => ({
+          id: `archived-${index}`,
+          title: `Archived session ${index}`,
+          archived: true,
+        })),
+        archivedLoaded: true,
+        hasMoreArchived: true,
+        onLoadArchived,
+        onSetSessionArchived,
+      })
+
+      await userEvent.click(screen.getByRole("button", { name: /Archived/ }))
+      expect(screen.getByText("Archived session 50")).toBeInTheDocument()
+      await userEvent.click(screen.getByRole("button", { name: "Load more archived chats" }))
+      expect(onLoadArchived).toHaveBeenCalledTimes(1)
+
+      const row = screen.getByText("Archived session 50").closest('[data-boring-workspace-part="app-session-row"]')
+      await userEvent.click(within(row as HTMLElement).getByRole("button", { name: "Chat actions for Archived session 50" }))
+      await userEvent.click(screen.getByText("Unarchive session"))
+      expect(onSetSessionArchived).toHaveBeenCalledWith("archived-50", false, undefined)
+    })
+
+    it("shows no Archived section when nothing is archived", () => {
+      renderWithArchived({ sessions: [{ id: "s1", title: "First session" }] })
+      expect(screen.queryByRole("button", { name: /Archived/ })).not.toBeInTheDocument()
+    })
+
+    // #1429: a session API always wires up `onLoadArchived`, so the control
+    // used to render on every screen — including at zero archived chats —
+    // because the render check was `archivedSessions.length > 0 ||
+    // onLoadArchived` and the second half is true unconditionally. This is
+    // the shape production actually renders: a handler is present, nothing
+    // is archived yet, and the pager has not resolved. The disclosure must
+    // stay hidden, and the component probes silently in the background
+    // (never expanding) to learn that the count is zero.
+    it("stays hidden at zero archived chats even though onLoadArchived is wired up", async () => {
+      const onLoadArchived = vi.fn()
+      renderWithArchived({
+        sessions: [{ id: "s1", title: "First session" }],
+        onLoadArchived,
+      })
+
+      await waitFor(() => expect(onLoadArchived).toHaveBeenCalledTimes(1))
+      expect(screen.queryByRole("button", { name: /Archived/ })).not.toBeInTheDocument()
+      expect(screen.queryByRole("button", { name: "Archived" })).not.toBeInTheDocument()
+    })
+
+    // #1429 thermo-review follow-up: a bare `vi.fn()` never drives the real
+    // loading/error state transitions, so it could not catch the retry-storm
+    // bug. `usePiSessions.loadArchived`'s failure path leaves `archivedLoaded`
+    // false and resets `archivedLoading` to false in a `finally` — exactly
+    // the transition that used to re-satisfy the background probe's own
+    // trigger condition (and `loadArchived`'s identity also changes with
+    // `archivedLoading`), so a persistent failure turned the "one-shot"
+    // probe into an unbounded sequential fetch loop. This harness owns
+    // `archivedLoaded`/`archivedLoading` state exactly the way the real hook
+    // does, rejects every call, and proves the probe attempts exactly once.
+    it("does not retry the background probe after it rejects", async () => {
+      const onLoadArchivedImpl = vi.fn(() => Promise.reject(new Error("network down")))
+
+      function ArchiveFailureHarness() {
+        const [archivedLoaded, setArchivedLoaded] = useState(false)
+        const [archivedLoading, setArchivedLoading] = useState(false)
+        // Mirrors usePiSessions.loadArchived's real shape: loading flips on,
+        // the request rejects, `archivedLoaded` never becomes true, and
+        // `finally` resets loading back to false. The callback's identity
+        // also changes with `archivedLoading`, like the real hook's
+        // `useCallback` dep list.
+        const onLoadArchived = useCallback(async () => {
+          setArchivedLoading(true)
+          try {
+            await onLoadArchivedImpl()
+            setArchivedLoaded(true)
+          } catch {
+            // left unloaded, exactly like a rejected fetch in production
+          } finally {
+            setArchivedLoading(false)
+          }
+        }, [archivedLoading])
+        return (
+          <WorkspaceAttentionProvider>
+            <AppLeftPane
+              appTitle="Test"
+              sessions={[{ id: "s1", title: "First session" }]}
+              activeSessionId="s1"
+              openSessionIds={["s1"]}
+              pinnedSessionIds={[]}
+              onCreateSession={vi.fn()}
+              navigationEntries={testNavigationEntries()}
+              onSwitchSession={vi.fn()}
+              onOpenSessionAsPane={vi.fn()}
+              onToggleSessionPinned={vi.fn()}
+              archivedLoaded={archivedLoaded}
+              archivedLoading={archivedLoading}
+              onLoadArchived={onLoadArchived}
+            />
+          </WorkspaceAttentionProvider>
+        )
+      }
+
+      render(<ArchiveFailureHarness />)
+
+      await waitFor(() => expect(onLoadArchivedImpl).toHaveBeenCalledTimes(1))
+      // Let every re-render triggered by the loading->false transition (and
+      // any consequent effect re-run) play out before asserting there was no
+      // second call.
+      await waitFor(() => expect(screen.queryByRole("button", { name: /Archived/ })).not.toBeInTheDocument())
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      })
+      expect(onLoadArchivedImpl).toHaveBeenCalledTimes(1)
+    })
+
+    // #1429: the disclosure is a full-width text row, not an icon slot, so it
+    // gets its own coarse-pointer rule (`.app-left-pane-archived-toggle` in
+    // globals.css) rather than joining the fixed 44x44px block the icon
+    // controls share. Pin the class so the CSS contract cannot silently drift
+    // off the button the way the row shortcuts' sizing utility once did.
+    it("carries the coarse-pointer touch-target class when it renders", () => {
+      renderWithArchived()
+      const disclosure = screen.getByRole("button", { name: /Archived/ })
+      expect(disclosure.className).toContain("app-left-pane-archived-toggle")
+    })
+
+    it("routes the row's archive action back to the host with the chat's owner", async () => {
+      const onSetSessionArchived = vi.fn()
+      renderWithArchived({
+        sessions: [{ id: "s1", title: "First session", agentTypeId: "alpha" }],
+        onSetSessionArchived,
+      })
+
+      const sessionRow = screen.getByText("First session").closest('[data-boring-workspace-part="app-session-row"]')
+      await userEvent.click(within(sessionRow as HTMLElement).getByRole("button", { name: "Chat actions for First session" }))
+      await userEvent.click(screen.getByText("Archive session"))
+
+      expect(onSetSessionArchived).toHaveBeenCalledWith("s1", true, "alpha")
+    })
   })
 })

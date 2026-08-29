@@ -111,10 +111,16 @@ export function Toaster({ position = 'bottom-right', className }: ToasterProps) 
       data-testid="toaster"
       className={cn(
         'pointer-events-none fixed z-[1000] flex w-[340px] max-w-[calc(100vw-2rem)] flex-col gap-2',
-        position === 'bottom-right' && 'bottom-4 right-4 items-end',
-        position === 'bottom-left' && 'bottom-4 left-4 items-start',
-        position === 'top-right' && 'top-4 right-4 items-end',
-        position === 'top-left' && 'top-4 left-4 items-start',
+        // Offsets stack on top of the safe area so toasts never sit in the home-indicator
+        // gesture strip, where a dismiss swipe would hit the OS instead of the toast.
+        position === 'bottom-right' &&
+          'bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] right-[calc(1rem+env(safe-area-inset-right,0px))] items-end',
+        position === 'bottom-left' &&
+          'bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] left-[calc(1rem+env(safe-area-inset-left,0px))] items-start',
+        position === 'top-right' &&
+          'top-[calc(1rem+env(safe-area-inset-top,0px))] right-[calc(1rem+env(safe-area-inset-right,0px))] items-end',
+        position === 'top-left' &&
+          'top-[calc(1rem+env(safe-area-inset-top,0px))] left-[calc(1rem+env(safe-area-inset-left,0px))] items-start',
         className,
       )}
     >

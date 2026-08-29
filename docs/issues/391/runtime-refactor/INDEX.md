@@ -1,6 +1,6 @@
 # #391 runtime-refactor index
 
-> Decision 28 and [`../plan.md`](../plan.md) are current. Decision 26's typed
+> Decision 28 and [`../plan.md`](../../../plans/agent-runtime/fleet-and-environments/plan.md) are current. Decision 26's typed
 > Workspace product topology and the old #805 R1–R6 graph are historical.
 
 ## Current sequence

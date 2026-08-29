@@ -1,14 +1,14 @@
 import { lstat, readFile, realpath } from 'node:fs/promises'
-import { basename, isAbsolute, relative, resolve, sep } from 'node:path'
+import { basename, resolve } from 'node:path'
 
 import { parse as parseYaml } from 'yaml'
 
+import { isCanonicalPathInside } from './instructionFileRefs'
 import { materializeAgentDirectory } from './materializeAgentDirectory'
 import { createConfiguredAgentHostAgentSpec } from './createConfiguredAgentHostAgentSpec'
 import { sha256 } from '../../shared/digest'
 import { ErrorCode, type ErrorCode as AgentErrorCode } from '../../shared/error-codes'
-import { AGENT_USER_FILESYSTEM_ID } from '../agent-host/types'
-import type { AgentInstructionFileRef, ConfiguredAgentHostAgentSpec } from '../agent-host/types'
+import type { AgentInstructionSource, ConfiguredAgentHostAgentSpec } from '../agent-host/types'
 import type { Sha256Digest } from '../../shared/digest'
 
 export interface ModelTierCandidate {
@@ -53,22 +53,6 @@ export interface DiscoveredAgentPackageDescriptor {
 export interface LoadConfiguredAgentFleetOptions {
   /** Plugin-manager scan descriptors injected by the workspace/CLI boot layer. */
   readonly discoveredPackages: readonly DiscoveredAgentPackageDescriptor[]
-  /**
-   * Root of the workspace the `user` filesystem serves, or `null` when the
-   * host resolves a DIFFERENT root per request (core, the CLI hub) and so has
-   * no single one at fleet-composition time.
-   *
-   * Required, because published `instructionFiles` are addressed relative to
-   * it and only the caller knows it. It is NOT derivable from the discovered
-   * package roots: a fleet can be composed from packages that live outside
-   * the workspace root, and guessing produced well-formed paths that
-   * resolved to nothing.
-   *
-   * `null` is not a soft option — it makes the host structurally unable to
-   * publish a ref it cannot guarantee, which is the honest answer for
-   * per-workspace roots.
-   */
-  readonly workspaceRoot: string | null
   /** Path to `.agents/factory/fleet.yaml`. */
   readonly fleetConfigPath: string
   /** Path to `.agents/factory/policy.yaml` (read for `models.seats` tiers). */
@@ -82,35 +66,12 @@ export interface LoadConfiguredAgentFleetOptions {
   readonly env?: NodeJS.ProcessEnv
 }
 
-/**
- * Whether a workspace-relative path is safe to publish to a client.
- *
- * Deliberately the SAME shape as the browser-side guard every openable
- * resource passes through (`isSafePluginRelativePath` +
- * `openableFileResource` in @hachej/boring-workspace): no NUL, no backslash,
- * percent-encoded dot/slash/backslash, scheme prefix, absolute path, or
- * `..`/empty/bare-dot segment. An allowlist regex here was stricter than the
- * guard downstream, so an ordinary seat name containing a space permanently
- * lost its link for no security reason.
- */
-function isPublishableWorkspacePath(value: string): boolean {
-  return value.length > 0
-    && !value.includes('\0')
-    && !value.includes('\\')
-    && !value.startsWith('/')
-    && !/^[A-Za-z]:[\\/]/.test(value)
-    && !/%(?:2e|2f|5c)/i.test(value)
-    && !/^[A-Za-z][A-Za-z0-9+.-]*:/.test(value)
-    && !value.split('/').some((segment) => segment === '' || segment === '.' || segment === '..')
-}
-
 export type FleetLoaderDiagnosticCode = Extract<
   AgentErrorCode,
   | 'AGENT_FLEET_SEAT_PERSONA_INVALID'
   | 'AGENT_FLEET_SEAT_SKILL_DIGEST_MISMATCH'
   | 'AGENT_DEFINITION_ID_CONFLICT'
   | 'AGENT_DEFINITION_UNSEATED'
-  | 'AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE'
 >
 
 export interface FleetLoaderDiagnostic {
@@ -126,9 +87,9 @@ export interface LoadConfiguredAgentFleetResult {
 }
 
 /**
- * A roster-authorized package is part of host configuration, not optional
- * discovery. Invalid configured seats therefore abort boot instead of being
- * silently omitted from the fleet.
+ * Legacy lifecycle error shape retained for callers that classify a single
+ * configured seat failure. Current fleet loading reports fatal seat failures
+ * through {@link FleetConfigError} after collecting the fleet diagnostics.
  */
 export class ConfiguredFleetSeatError extends Error {
   readonly code: FleetLoaderDiagnosticCode
@@ -163,11 +124,6 @@ export class FleetConfigError extends Error {
     this.code = ErrorCode.enum.AGENT_FLEET_CONFIG_FILE_INVALID
     this.field = input.field
   }
-}
-
-function isCanonicalPathInside(root: string, target: string): boolean {
-  const fromRoot = relative(root, target)
-  return fromRoot === '' || (fromRoot !== '..' && !fromRoot.startsWith(`..${sep}`) && !isAbsolute(fromRoot))
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -249,15 +205,28 @@ export function parseModelTierCandidates(raw: unknown, path: string): ModelTierC
   return Object.freeze(result)
 }
 
-function parseSeatTiers(raw: unknown): Readonly<Record<string, string>> {
-  if (!isRecord(raw)) return Object.freeze({})
+function parseSeatTiers(raw: unknown, path: string): Readonly<Record<string, string>> {
+  const name = basename(path)
+  if (!isRecord(raw)) {
+    throw new FleetConfigError({ field: 'policy', message: `${name} must be an object` })
+  }
   const models = raw.models
-  if (!isRecord(models)) return Object.freeze({})
+  if (!isRecord(models)) {
+    throw new FleetConfigError({ field: 'models', message: `${name} must declare a "models" object` })
+  }
   const seats = models.seats
-  if (!isRecord(seats)) return Object.freeze({})
+  if (!isRecord(seats)) {
+    throw new FleetConfigError({ field: 'models.seats', message: `${name} must declare a "models.seats" object` })
+  }
   const result: Record<string, string> = {}
   for (const [seat, tier] of Object.entries(seats)) {
-    if (typeof tier === 'string') result[seat] = tier
+    if (!isNonBlankString(seat) || !isNonBlankString(tier)) {
+      throw new FleetConfigError({
+        field: `models.seats.${seat}`,
+        message: `${name} models.seats entries must map non-empty seat names to non-empty tier names`,
+      })
+    }
+    result[seat] = tier
   }
   return Object.freeze(result)
 }
@@ -351,11 +320,10 @@ async function packageSkillContent(packageRoot: string, skill: FleetSkillBinding
  * descriptors, `.agents/factory/policy.yaml` `models.seats` tiers, and the
  * priority-ordered `models.tiers` candidates declared in fleet.yaml.
  *
- * Invalid unseated discovery remains optional and is excluded with a stable
- * diagnostic. Once a roster seat names a package, however, schema,
- * preflight, conflict, materialization, and digest failures throw
- * `ConfiguredFleetSeatError` and abort host boot. Whole-fleet config errors
- * (an unreadable/malformed fleet.yaml or policy.yaml) throw `FleetConfigError`.
+ * Fails startup when any configured seat cannot materialize or verify. Only
+ * genuinely unseated discovered packages remain nonfatal diagnostics. Whole-
+ * fleet config errors (including unreadable/malformed fleet or policy YAML)
+ * throw `FleetConfigError`.
  */
 export async function loadConfiguredAgentFleet(
   options: LoadConfiguredAgentFleetOptions,
@@ -365,22 +333,11 @@ export async function loadConfiguredAgentFleet(
   const seats = parseFleetConfig(fleetRaw, options.fleetConfigPath)
   const modelTierCandidates = parseModelTierCandidates(fleetRaw, options.fleetConfigPath)
 
-  let seatTiers: Readonly<Record<string, string>> = Object.freeze({})
-  try {
-    seatTiers = parseSeatTiers(await readYamlFile(options.policyPath, 'policyPath'))
-  } catch {
-    // Model-tier resolution is best-effort: an unreadable/malformed policy
-    // file omits preferred models for every seat rather than failing boot.
-    seatTiers = Object.freeze({})
-  }
+  const seatTiers = parseSeatTiers(
+    await readYamlFile(options.policyPath, 'policyPath'),
+    options.policyPath,
+  )
   validateSeatTierCandidates(seatTiers, modelTierCandidates, options.fleetConfigPath, options.policyPath)
-
-  // Resolve the served root once, but keep failure per-seat and fail-closed:
-  // composition can still proceed while publication reports the existing
-  // stable unpublishable diagnostic.
-  const canonicalWorkspaceRoot = options.workspaceRoot === null
-    ? null
-    : await realpath(resolve(options.workspaceRoot)).catch(() => null)
 
   const agents: ConfiguredAgentHostAgentSpec[] = []
   const diagnostics: FleetLoaderDiagnostic[] = []
@@ -392,17 +349,10 @@ export async function loadConfiguredAgentFleet(
     packagesByDefinitionId.set(definitionId, existing)
   }
   const seatedDefinitionIds = new Set(seats.map((seat) => seat.agentTypeId))
+  const conflictedDefinitionIds = new Set<string>()
   for (const [definitionId, descriptors] of packagesByDefinitionId) {
     if (descriptors.length > 1) {
-      const configuredSeat = seats.find((seat) => seat.agentTypeId === definitionId)
-      if (configuredSeat) {
-        throw new ConfiguredFleetSeatError({
-          code: ErrorCode.enum.AGENT_DEFINITION_ID_CONFLICT,
-          seat: configuredSeat.seat,
-          agentTypeId: definitionId,
-          message: `configured agent definition "${definitionId}" is claimed by multiple discovered packages`,
-        })
-      }
+      conflictedDefinitionIds.add(definitionId)
       for (const _descriptor of descriptors) {
         diagnostics.push({
           agentTypeId: definitionId,
@@ -425,8 +375,10 @@ export async function loadConfiguredAgentFleet(
   }
 
   for (const binding of seats) {
+    let recorded = false
     try {
       const descriptors = packagesByDefinitionId.get(binding.agentTypeId) ?? []
+      if (conflictedDefinitionIds.has(binding.agentTypeId)) continue
       const descriptor = descriptors[0]
       if (!descriptor || !descriptor.preflight.ok) throw new Error(`seat "${binding.seat}" has no valid discovered agent package`)
       // Canonicalize the discovered package root once: everything after this
@@ -449,12 +401,14 @@ export async function loadConfiguredAgentFleet(
         declaredSet.size !== pinnedSet.size ||
         [...declaredSet].some((name) => !pinnedSet.has(name))
       ) {
-        throw new ConfiguredFleetSeatError({
+        recorded = true
+        diagnostics.push({
           seat: binding.seat,
           agentTypeId: binding.agentTypeId,
           code: ErrorCode.enum.AGENT_FLEET_SEAT_SKILL_DIGEST_MISMATCH,
           message: `seat "${binding.seat}" skill pins do not exactly match its package pi.skills declarations`,
         })
+        continue
       }
 
       const instructionAppendices: { name: string; digest: Sha256Digest; content: string }[] = []
@@ -465,13 +419,14 @@ export async function loadConfiguredAgentFleet(
             ? await packageSkillContent(personaSource, skill)
             : await canonicalSkillContent(options.skillsRoot, skill)
         } catch (error) {
-          throw new ConfiguredFleetSeatError({
+          recorded = true
+          diagnostics.push({
             seat: binding.seat,
             agentTypeId: binding.agentTypeId,
             code: ErrorCode.enum.AGENT_FLEET_SEAT_SKILL_DIGEST_MISMATCH,
             message: error instanceof Error ? error.message : `skill "${skill.name}" is unavailable`,
-            cause: error,
           })
+          throw error
         }
         const appendixName = skill.name.includes('/')
           ? `package-${instructionAppendices.length + 1}-${skill.digest.slice('sha256:'.length, 'sha256:'.length + 12)}`
@@ -480,69 +435,55 @@ export async function loadConfiguredAgentFleet(
       }
 
       const preferredModel = resolveSeatModel(seatTiers[binding.seat], env, modelTierCandidates)
-      // The loader is the only place that knows seat -> persona directory;
-      // publishing it here keeps clients from inverting the mapping.
-      let instructionFiles: AgentInstructionFileRef[] | undefined
-      const personaIsInsideWorkspace = canonicalWorkspaceRoot !== null
-        && isCanonicalPathInside(canonicalWorkspaceRoot, personaSource)
-      const publishedInstructionPath = canonicalWorkspaceRoot === null
-        ? ''
-        : relative(canonicalWorkspaceRoot, resolve(personaSource, 'instructions.md')).split(sep).join('/')
-      // EXISTENCE is already proven and is deliberately not re-checked: this
-      // seat only got here because `materializeAgentDirectory` read
+      // The loader is the only place that knows seat -> persona directory, so
+      // it records the authored SOURCE as a canonical host absolute path.
+      // Addressing that source against the root the `user` filesystem serves
+      // is a per-request concern: a multi-workspace host (the CLI hub, core)
+      // serves a DIFFERENT root per request and has none at composition time,
+      // so a ref frozen here is structurally absent for every host but the
+      // single-root one (gh-1189). `describe` does the addressing, reusing the
+      // same realpath-based confinement, and fails closed with the stable
+      // `AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE` code.
+      //
+      // EXISTENCE is proven here and deliberately not re-asserted: this seat
+      // only got here because `materializeAgentDirectory` read
       // `<personasDir>/<seat>/instructions.md` and rejected it if absent or
-      // blank. A `stat` here would re-assert what composition just did.
-      //
-      // REACHABILITY is the only open question, and it is pure path algebra
-      // against the served root — no I/O, no per-request probe. ONE honest
-      // failure path covers both ways a ref can be unreachable: personas
-      // outside the served workspace, and a composed path the client-side
-      // guard would reject anyway.
-      //
-      // Together those two make publication deterministic: a published ref
-      // names a file that exists, under the root the client reads through.
-      const unpublishableReason = options.workspaceRoot === null
-        ? `this host resolves a workspace root per request, so persona instructions have no single "${AGENT_USER_FILESYSTEM_ID}" path to be addressed against`
-        : canonicalWorkspaceRoot === null || !personaIsInsideWorkspace
-        ? `persona source for seat ${JSON.stringify(binding.seat)} resolves outside the workspace root ${JSON.stringify(options.workspaceRoot)} that the "${AGENT_USER_FILESYSTEM_ID}" filesystem serves`
-        : !isPublishableWorkspacePath(publishedInstructionPath)
-          ? `seat "${binding.seat}" composes an unsafe workspace-relative path (${JSON.stringify(publishedInstructionPath)})`
-          : undefined
-      if (unpublishableReason) {
-        // Fails loud, not silent: the seat still composes, but the overlay
-        // gets no instruction row and the operator gets a stable code.
-        diagnostics.push({
-          seat: binding.seat,
-          agentTypeId: binding.agentTypeId,
-          code: ErrorCode.enum.AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE,
-          message: `${unpublishableReason}; its persona instructions will not be linkable`,
-        })
-      } else {
-        instructionFiles = [{
-          filesystem: AGENT_USER_FILESYSTEM_ID,
-          path: publishedInstructionPath,
-          role: 'persona',
-        }]
-      }
+      // blank.
+      const instructionSources: readonly AgentInstructionSource[] = [{
+        absolutePath: resolve(personaSource, 'instructions.md'),
+        role: 'persona',
+      }]
       const spec = await createConfiguredAgentHostAgentSpec({
         source,
         policy: {
           instructionAppendices,
-          ...(instructionFiles ? { instructionFiles } : {}),
+          instructionSources,
           ...(preferredModel ? { preferredModel } : {}),
         },
       })
       agents.push(spec)
     } catch (error) {
-      if (error instanceof ConfiguredFleetSeatError) throw error
-      throw new ConfiguredFleetSeatError({
-        seat: binding.seat,
-        agentTypeId: binding.agentTypeId,
-        code: ErrorCode.enum.AGENT_FLEET_SEAT_PERSONA_INVALID,
-        message: error instanceof Error ? error.message : `seat "${binding.seat}" persona is invalid`,
-        cause: error,
-      })
+      if (!recorded) {
+        diagnostics.push({
+          seat: binding.seat,
+          agentTypeId: binding.agentTypeId,
+          code: ErrorCode.enum.AGENT_FLEET_SEAT_PERSONA_INVALID,
+          message: error instanceof Error ? error.message : `seat "${binding.seat}" persona is invalid`,
+        })
+      }
     }
+  }
+
+  const fatalDiagnostics = diagnostics.filter((diagnostic) =>
+    diagnostic.seat !== undefined || seatedDefinitionIds.has(diagnostic.agentTypeId),
+  )
+  if (fatalDiagnostics.length > 0) {
+    throw new FleetConfigError({
+      field: 'seats',
+      message: `configured Agent fleet is invalid: ${fatalDiagnostics
+        .map((diagnostic) => `${diagnostic.agentTypeId}: ${diagnostic.message}`)
+        .join('; ')}`,
+    })
   }
 
   return Object.freeze({ agents: Object.freeze(agents), diagnostics: Object.freeze(diagnostics) })

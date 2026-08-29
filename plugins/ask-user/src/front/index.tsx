@@ -26,13 +26,14 @@ import { QuestionCancelButton, QuestionFields, QuestionForm, QuestionFormProvide
 import { InboxOverlay } from "./inbox/InboxOverlay"
 import { isInboxAttentionBlocker } from "./inbox/attentionBlockerAdapter"
 
-function AskUserProvider({ agentTypeId, apiBaseUrl, authHeaders, authScopeKey, activeSessionId, openSessionIds, children }: PluginProviderProps) {
+function AskUserProvider({ agentTypeId, apiBaseUrl, authHeaders, authScopeKey, activeSessionId, openSessionIds, sessionRefs, children }: PluginProviderProps) {
   const workspaceId = useWorkspaceContextOptional()?.workspaceId
   const authIdentity = useMemo(
     () => authScopeKey ?? JSON.stringify(Object.entries(authHeaders ?? {}).sort(([left], [right]) => left.localeCompare(right))),
     [authHeaders, authScopeKey],
   )
   const store = useMemo(() => createQuestionsStore(), [agentTypeId, apiBaseUrl, authIdentity, workspaceId])
+  const requestPendingRefresh = useAskUserPendingRefresh(store, { activeSessionId, apiBaseUrl, authHeaders })
   const runtime = useMemo<QuestionsRuntime>(() => ({
     ...store,
     agentTypeId,
@@ -40,17 +41,18 @@ function AskUserProvider({ agentTypeId, apiBaseUrl, authHeaders, authScopeKey, a
     authHeaders,
     activeSessionId,
     openSessionIds,
-    async refreshPending(sessionId) {
-      const pending = await createQuestionsClient({ apiBaseUrl, headers: authHeaders }).pending(sessionId)
-      store.setPending(pending, sessionId)
-      return pending
+    agentTypeIdForSession(sessionId) {
+      if (!sessionRefs) return agentTypeId
+      const matches = sessionRefs.filter((session) => session.sessionId === sessionId)
+      if (matches.length === 1) return matches[0]?.agentTypeId
+      return activeSessionId === sessionId ? agentTypeId : undefined
     },
-  }), [activeSessionId, agentTypeId, apiBaseUrl, authHeaders, openSessionIds, store])
+    requestPendingRefresh,
+  }), [activeSessionId, agentTypeId, apiBaseUrl, authHeaders, openSessionIds, requestPendingRefresh, sessionRefs, store])
   const pendingSnapshot = useSyncExternalStore(runtime.subscribe, () => pendingQuestionSnapshot(runtime), () => "none")
   useAskUserAttentionBlockers(runtime, pendingSnapshot)
   useAskUserAttentionActions(runtime)
   useAskUserComposerStopCancel(runtime)
-  useAskUserPendingRefresh(runtime, { activeSessionId, apiBaseUrl, authHeaders })
   return <QuestionsRuntimeContext.Provider value={runtime}>{children}</QuestionsRuntimeContext.Provider>
 }
 
@@ -136,10 +138,11 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
   const question = hasExplicitTarget(params)
     ? (pending?.questionId === params.questionId ? pending : null)
     : pending
+  const explicitQuestionId = hasExplicitTarget(params) ? params.questionId : undefined
   useEffect(() => {
     if (!sessionId) return
-    if (!pending || (hasExplicitTarget(params) && pending.questionId !== params.questionId)) void runtime.refreshPending(sessionId).catch(() => undefined)
-  }, [params, pending, runtime, sessionId])
+    if (!pending || (explicitQuestionId && pending.questionId !== explicitQuestionId)) runtime.requestPendingRefresh(sessionId)
+  }, [explicitQuestionId, runtime.requestPendingRefresh, sessionId])
   useEffect(() => {
     const onStop = (event: Event) => {
       const detail = (event as CustomEvent<unknown>).detail
@@ -219,11 +222,38 @@ function InlineQuestion({ part }: { part: unknown }) {
   </section>
 }
 
+/**
+ * The Inbox is the single triage surface, so its badge is THE "a human is
+ * blocking" signal in the app-left rail — and it says the same thing, the same
+ * way, as the attention rollups on the pane's collapsed group headers: amber
+ * dot plus a count of SESSIONS, not of items.
+ *
+ * It counted raw blockers before, which double-counts a chat that asked two
+ * questions and disagrees with every other attention count on the surface. It
+ * was also accent blue, which in this palette reads as "selected/active" —
+ * the wrong register for something waiting on you.
+ */
 function InboxCountBadge() {
   const { blockers } = useWorkspaceAttention()
-  const count = blockers.filter(isInboxAttentionBlocker).length
+  const sessions = new Set<string>()
+  for (const blocker of blockers) {
+    if (!isInboxAttentionBlocker(blocker)) continue
+    // A blocker with no session still needs a human; key it by its own id so
+    // it counts once rather than collapsing every session-less item into one.
+    sessions.add(blocker.sessionId ? `session:${blocker.agentTypeId ?? ""}\u0000${blocker.sessionId}` : `blocker:${blocker.id}`)
+  }
+  const count = sessions.size
   if (count === 0) return null
-  return <span data-boring-workspace-part="app-left-inbox-count" aria-label={`${count} inbox item${count === 1 ? "" : "s"}`} className="inline-flex min-w-5 items-center justify-center rounded-full bg-[color:var(--accent)] px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white shadow-sm">{count > 99 ? "99+" : String(count)}</span>
+  return (
+    <span
+      data-boring-workspace-part="app-left-inbox-count"
+      aria-label={`${count} chat${count === 1 ? "" : "s"} waiting for you`}
+      className="inline-flex items-center gap-1 text-[10px] font-medium tabular-nums leading-4 text-[color:var(--attention)]"
+    >
+      <span aria-hidden="true" className="size-1.5 rounded-full bg-[color:var(--attention)]" />
+      {count > 99 ? "99+" : String(count)}
+    </span>
+  )
 }
 function AskUserInboxOverlay({ onClose, params }: BoringFrontAppLeftOverlayProps) {
   const { workspaceId } = useWorkspaceContext()

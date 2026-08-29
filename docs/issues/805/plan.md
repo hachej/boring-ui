@@ -13,7 +13,7 @@ updated: 2026-07-21
 ## Canonical entry
 
 #805 owns reusable package implementation under Decision 28. Product sequence
-and final rollout remain in [`../391/plan.md`](../391/plan.md).
+and final rollout remain in [`../../plans/agent-runtime/fleet-and-environments/plan.md`](../../plans/agent-runtime/fleet-and-environments/plan.md).
 
 Active package plan:
 

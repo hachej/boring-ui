@@ -94,7 +94,7 @@ describe('createInvite TTL from config', () => {
   it(
     'honors ttlDays = 3 from config',
     withTaskId(TASK_ID, async ({ assertionPassed }) => {
-      const ws = await store.create('alice', 'TestWS', 'test-app')
+      const ws = await store.create('alice', 'TestWS', 'test-app', { defaultAgentTypeId: 'default' })
       const before = Date.now()
       const { invite } = await store.createInvite(ws.id, 'bob@test.dev', 'editor', 'alice', { ttlDays: 3 })
       const after = Date.now()
@@ -113,7 +113,7 @@ describe('createInvite TTL from config', () => {
   it(
     'defaults to 7 days when ttlDays not provided',
     withTaskId(TASK_ID, async ({ assertionPassed }) => {
-      const ws = await store.create('alice', 'TestWS', 'test-app')
+      const ws = await store.create('alice', 'TestWS', 'test-app', { defaultAgentTypeId: 'default' })
       const before = Date.now()
       const { invite } = await store.createInvite(ws.id, 'bob@test.dev', 'editor', 'alice')
       const after = Date.now()

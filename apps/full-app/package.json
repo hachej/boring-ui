@@ -4,8 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-sandbox build && pnpm --filter @hachej/boring-bash build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-automation build && pnpm --filter @hachej/boring-mcp build && pnpm --filter @hachej/boring-governance build && NODE_ENV=development tsx src/server/migrate.ts && NODE_ENV=development tsx src/server/dev.ts",
-    "build": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-sandbox build && pnpm --filter @hachej/boring-bash build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-automation build && pnpm --filter @hachej/boring-mcp build && pnpm --filter @hachej/boring-governance build && tsx ../../packages/workspace/scripts/build-app.mts",
+    "build:deps": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-sandbox build && pnpm --filter @hachej/boring-bash build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-automation build && pnpm --filter @hachej/boring-mcp build && pnpm --filter @hachej/boring-governance build",
+    "dev": "pnpm run build:deps && pnpm run dev:app",
+    "dev:app": "NODE_ENV=development tsx src/server/migrate.ts && NODE_ENV=development tsx src/server/dev.ts",
+    "build": "pnpm run build:deps && tsx ../../packages/workspace/scripts/build-app.mts",
     "start": "NODE_ENV=production node dist/server/main.js",
     "start:worker": "NODE_ENV=production node dist/server/agent-worker.js",
     "migrate": "tsx src/server/migrate.ts",
@@ -29,7 +31,7 @@
     "@hachej/boring-ui-kit": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
     "@modelcontextprotocol/sdk": "1.30.0",
-    "fastify": "^5.11.3",
+    "fastify": "^5.12.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },

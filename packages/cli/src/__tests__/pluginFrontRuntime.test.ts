@@ -42,6 +42,24 @@ async function writeRuntimePlugin(root: string, files: Record<string, string>): 
 }
 
 describe("pluginFrontRuntime", () => {
+  test("workspace plugin virtual module exports postUiCommand through the host singleton", async () => {
+    const code = __testingRuntimeSingletonModuleCode("@hachej/boring-workspace/plugin") ?? ""
+    const postUiCommand = (command: unknown) => ({ delivered: command })
+    const runtimeGlobal = globalThis as typeof globalThis & { __BORING_RUNTIME_SINGLETONS__?: Record<string, unknown> }
+    const previous = runtimeGlobal.__BORING_RUNTIME_SINGLETONS__
+    runtimeGlobal.__BORING_RUNTIME_SINGLETONS__ = {
+      "@hachej/boring-workspace/plugin": { postUiCommand },
+    }
+
+    try {
+      expect(code).toContain("export const postUiCommand = normalized")
+      const module = await import(`data:text/javascript;base64,${Buffer.from(code).toString("base64")}`)
+      expect(module.postUiCommand({ kind: "test-command" })).toEqual({ delivered: { kind: "test-command" } })
+    } finally {
+      runtimeGlobal.__BORING_RUNTIME_SINGLETONS__ = previous
+    }
+  })
+
   // QUARANTINED: this full-runtime-graph Vite transform genuinely HANGS in CI —
   // it stalls past even the 600s timeout from #126, so a timeout bump can't fix it.
   // Skipped to keep CI deterministic; needs a real fix for the underlying hang

@@ -1,9 +1,24 @@
-import { ERROR_CODES, HttpError } from '../shared/errors.js'
+import { ERROR_CODES } from '../shared/errors.js'
+
+type DefaultAgentTypeErrorCode =
+  | typeof ERROR_CODES.INVALID_DEFAULT_AGENT_TYPE_ID
+  | typeof ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT
+
+/** Transport-neutral failure raised by default-Agent validation and resolution. */
+export class DefaultAgentTypeError extends Error {
+  readonly code: DefaultAgentTypeErrorCode
+
+  constructor(code: DefaultAgentTypeErrorCode, message: string) {
+    super(message)
+    this.name = 'DefaultAgentTypeError'
+    this.code = code
+  }
+}
 
 /**
- * Decision 28: every initialized Workspace durably persists its
- * `defaultAgentTypeId`. This module owns the trusted write-path validation and
- * the read-path resolution preference order.
+ * Decision 28: every initialized Workspace durably persists a regular Agent's
+ * `defaultAgentTypeId`. NULL exists only as a rolling-schema migration state.
+ * This module owns trusted write validation and fail-closed runtime resolution.
  *
  * Agent type ids share the workspace-type slug grammar (lowercase slug,
  * <= 63 chars), matching the `workspaces_default_agent_type_id_check`
@@ -15,64 +30,85 @@ export function isAgentTypeId(value: unknown): value is string {
   return typeof value === 'string' && AGENT_TYPE_ID_PATTERN.test(value)
 }
 
-/**
- * Validates a server-controlled default agent type id at workspace
- * initialization. `undefined` means "no persisted default" and maps to NULL.
- */
 export function parseTrustedDefaultAgentTypeId(value: unknown): string | null {
   if (value === undefined || value === null) return null
   if (!isAgentTypeId(value)) {
-    throw new HttpError({
-      status: 400,
-      code: ERROR_CODES.INVALID_DEFAULT_AGENT_TYPE_ID,
-      message: 'Invalid default agent type ID',
-    })
+    throw new DefaultAgentTypeError(
+      ERROR_CODES.INVALID_DEFAULT_AGENT_TYPE_ID,
+      'Invalid default agent type ID',
+    )
   }
   return value
 }
 
+/** Validates call sites that require an explicit configured regular Agent. */
+export function parseRequiredDefaultAgentTypeId(value: unknown): string {
+  const parsed = parseTrustedDefaultAgentTypeId(value)
+  if (parsed === null) {
+    throw new DefaultAgentTypeError(
+      ERROR_CODES.INVALID_DEFAULT_AGENT_TYPE_ID,
+      'A default agent type ID is required',
+    )
+  }
+  return parsed
+}
+
+function validateApplicationAgentTypeIds(agentTypeIds: readonly string[]): void {
+  const unique = new Set<string>()
+  for (const agentTypeId of agentTypeIds) {
+    if (!isAgentTypeId(agentTypeId) || unique.has(agentTypeId)) {
+      throw new DefaultAgentTypeError(
+        ERROR_CODES.INVALID_DEFAULT_AGENT_TYPE_ID,
+        'Application Agent fleet identities must be unique valid IDs',
+      )
+    }
+    unique.add(agentTypeId)
+  }
+}
+
+/** Resolves one required Workspace default from the validated application fleet. */
+export function resolveApplicationDefaultAgentTypeId(input: {
+  readonly configuredDefaultAgentTypeId: string
+  readonly regularAgentTypeIds: readonly string[]
+}): string {
+  validateApplicationAgentTypeIds(input.regularAgentTypeIds)
+  const candidate = parseRequiredDefaultAgentTypeId(input.configuredDefaultAgentTypeId)
+  if (!input.regularAgentTypeIds.includes(candidate)) {
+    throw new DefaultAgentTypeError(
+      ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT,
+      'Configured application default Agent is not an available regular fleet member',
+    )
+  }
+  return candidate
+}
+
 export interface ResolveWorkspaceDefaultAgentTypeIdInput {
-  /** Persisted per-workspace value (`workspaces.default_agent_type_id`). */
   readonly persistedDefaultAgentTypeId: string | null | undefined
-  /** Boot-time host option (`defaultAgentTypeId`). */
-  readonly bootDefaultAgentTypeId: string | undefined
-  /** Validated fleet seats compiled at boot. */
-  readonly availableAgentTypeIds: readonly string[]
-  /** Diagnostic sink for the fail-closed fallback; stable error code attached. */
+  /** The application's required configured regular Agent. */
+  readonly applicationDefaultAgentTypeId: string
+  readonly regularAgentTypeIds: readonly string[]
   readonly onUnknownPersistedSeat?: (diagnostic: {
     readonly code: typeof ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT
     readonly persistedDefaultAgentTypeId: string
-    readonly fallbackAgentTypeId: string
   }) => void
 }
 
-export const LEGACY_DEFAULT_AGENT_TYPE_ID = 'default'
-
 /**
- * Read-path preference order (Decision 28):
- *   1. the workspace's persisted `defaultAgentTypeId`, iff it names a
- *      validated fleet seat;
- *   2. the boot-time host `defaultAgentTypeId` option;
- *   3. the first validated fleet seat;
- *   4. the legacy `'default'` agent.
- *
- * Fails closed to the fallback chain — never throws — when the persisted
- * value names an unknown seat; the caller receives a
- * `default_agent_type_unknown_seat` diagnostic instead.
+ * Resolves the persisted Workspace default after explicit NULL backfill.
+ * NULL resolves to the required application default during rolling migration.
+ * A non-NULL value is authoritative: an unavailable value fails stably and is
+ * never silently reinterpreted.
  */
-export function resolveWorkspaceDefaultAgentTypeId(
-  input: ResolveWorkspaceDefaultAgentTypeIdInput,
-): string {
-  const fallback = input.bootDefaultAgentTypeId
-    ?? input.availableAgentTypeIds[0]
-    ?? LEGACY_DEFAULT_AGENT_TYPE_ID
+export function resolveWorkspaceDefaultAgentTypeId(input: ResolveWorkspaceDefaultAgentTypeIdInput): string {
   const persisted = input.persistedDefaultAgentTypeId ?? null
-  if (persisted === null) return fallback
-  if (input.availableAgentTypeIds.includes(persisted)) return persisted
+  if (persisted === null) return input.applicationDefaultAgentTypeId
+  if (input.regularAgentTypeIds.includes(persisted)) return persisted
   input.onUnknownPersistedSeat?.({
     code: ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT,
     persistedDefaultAgentTypeId: persisted,
-    fallbackAgentTypeId: fallback,
   })
-  return fallback
+  throw new DefaultAgentTypeError(
+    ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT,
+    'Workspace default Agent is unavailable',
+  )
 }

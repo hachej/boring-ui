@@ -134,6 +134,45 @@ describe("PiAgentSessionAdapter", () => {
     adapter.clearFollowUp({ clientNonce: "other" });
   });
 
+  it("shares selective-clear metadata across wrappers for the same native session", async () => {
+    const nativeFollowUps: string[] = [];
+    const { session } = createFakeSession({
+      getFollowUpMessages: vi.fn(() => nativeFollowUps),
+      followUp: vi.fn(async (text: string) => { nativeFollowUps.push(text); }),
+    });
+    Object.assign(session, { _followUpMessages: nativeFollowUps });
+
+    const postingAdapter = createPiAgentSessionAdapter(session);
+    const clearingAdapter = createPiAgentSessionAdapter(session);
+    await postingAdapter.followUp("held", { clientNonce: "n-cross-wrapper", clientSeq: 7 });
+
+    clearingAdapter.clearFollowUp({ clientNonce: "n-cross-wrapper", clientSeq: 7 });
+
+    expect(nativeFollowUps).toEqual([]);
+  });
+
+  it("allows a cross-wrapper nonce retry after native enqueue rejection", async () => {
+    const nativeFollowUps: string[] = [];
+    let attempts = 0;
+    const { session } = createFakeSession({
+      getFollowUpMessages: vi.fn(() => nativeFollowUps),
+      followUp: vi.fn(async (text: string) => {
+        attempts += 1;
+        if (attempts === 1) throw new Error("enqueue rejected");
+        nativeFollowUps.push(text);
+      }),
+    });
+    Object.assign(session, { _followUpMessages: nativeFollowUps });
+
+    const first = createPiAgentSessionAdapter(session);
+    const retry = createPiAgentSessionAdapter(session);
+    await expect(first.followUp("held", { clientNonce: "retry-nonce", clientSeq: 4 })).rejects.toThrow("enqueue rejected");
+    await expect(retry.followUp("held", { clientNonce: "retry-nonce", clientSeq: 4 })).resolves.toBeUndefined();
+
+    expect(nativeFollowUps).toEqual(["held"]);
+    expect(session.followUp).toHaveBeenCalledTimes(2);
+  });
+
   it("omits abortRetry when the installed Pi session does not expose it", () => {
     const { session } = createFakeSession({ abortRetry: undefined });
     const adapter = createPiAgentSessionAdapter(session);

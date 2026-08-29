@@ -3,7 +3,6 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { loadConfiguredAgentFleet } from "@hachej/boring-agent/server"
-import { ErrorCode } from "@hachej/boring-agent/shared"
 import { afterEach, describe, expect, test } from "vitest"
 
 import { discoverRepositoryAgentPackages } from "../discoverAgentPackages"
@@ -52,7 +51,6 @@ async function loadFleet() {
   const discoveredPackages = await discoverRepositoryAgentPackages(root)
   const result = loadConfiguredAgentFleet({
     discoveredPackages,
-    workspaceRoot: root,
     fleetConfigPath: join(root, ".agents", "factory", "fleet.yaml"),
     policyPath: join(root, ".agents", "factory", "policy.yaml"),
     skillsRoot: join(root, ".agents", "skills"),
@@ -62,7 +60,7 @@ async function loadFleet() {
 }
 
 describe("agent package discovery → fleet loader conflict detection", () => {
-  test("a malformed duplicate claimant still fails the valid claimant closed", async () => {
+  test("a malformed duplicate claimant fails configured fleet startup", async () => {
     root = await mkdtemp(join(tmpdir(), "agent-pkg-conflict-"))
     await writePersona("valid", {
       definitionId: "boring-dup",
@@ -79,21 +77,15 @@ describe("agent package discovery → fleet loader conflict detection", () => {
     await writeFactory([{ seat: "dup-seat", agentTypeId: "boring-dup" }])
 
     const { discoveredPackages, result } = await loadFleet()
-
     expect(discoveredPackages.map((pkg) => pkg.manifest.boring.agent.definitionId).sort()).toEqual([
       "boring-dup",
       "boring-dup",
     ])
     expect(discoveredPackages.some((pkg) => !pkg.preflight.ok)).toBe(true)
-    await expect(result).rejects.toMatchObject({
-      name: "ConfiguredFleetSeatError",
-      code: ErrorCode.enum.AGENT_DEFINITION_ID_CONFLICT,
-      seat: "dup-seat",
-      agentTypeId: "boring-dup",
-    })
+    await expect(result).rejects.toMatchObject({ name: "FleetConfigError", field: "seats" })
   })
 
-  test("a malformed pi.skills duplicate claimant also conflicts", async () => {
+  test("a malformed pi.skills duplicate claimant also fails configured fleet startup", async () => {
     root = await mkdtemp(join(tmpdir(), "agent-pkg-conflict-"))
     await writePersona("valid", {
       definitionId: "boring-dup",
@@ -108,13 +100,7 @@ describe("agent package discovery → fleet loader conflict detection", () => {
     await writeFactory([{ seat: "dup-seat", agentTypeId: "boring-dup" }])
 
     const { result } = await loadFleet()
-
-    await expect(result).rejects.toMatchObject({
-      name: "ConfiguredFleetSeatError",
-      code: ErrorCode.enum.AGENT_DEFINITION_ID_CONFLICT,
-      seat: "dup-seat",
-      agentTypeId: "boring-dup",
-    })
+    await expect(result).rejects.toMatchObject({ name: "FleetConfigError", field: "seats" })
   })
 
   test("a single valid claimant still seats normally", async () => {
