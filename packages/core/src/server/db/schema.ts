@@ -57,9 +57,13 @@ export const workspaces = pgTable(
   },
   (table) => [
     index('workspaces_created_by_idx').on(table.createdBy),
+    // Partial on deleted_at IS NULL too: a soft-deleted default row must not
+    // block the auto-recreate insert when a user deletes their only workspace
+    // (issue #1463 — the old index let a tombstoned default collide with the
+    // fresh one, bricking the account with zero active workspaces).
     uniqueIndex('idx_workspaces_default_per_user_app')
       .on(table.createdBy, table.appId)
-      .where(sql`${table.isDefault} = true`),
+      .where(sql`${table.isDefault} = true AND ${table.deletedAt} IS NULL`),
     check(
       'workspaces_workspace_type_id_check',
       sql`${table.workspaceTypeId} ~ '^[a-z][a-z0-9-]{0,62}$'`,

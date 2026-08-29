@@ -250,6 +250,25 @@ const workspaceRoutesPlugin: FastifyPluginAsync = async (app) => {
 
       if (result.removed) {
         request.log.info({ workspaceId: id }, 'workspace.delete.complete')
+
+        // #1463: never leave the deleting user with zero active workspaces.
+        // The old unpartitioned index made this recreate collide with the
+        // just-tombstoned default (duplicate key → 500, account bricked);
+        // the migration scopes the index to deleted_at IS NULL, so this now
+        // succeeds cleanly. Recreate synchronously, in this same operation,
+        // instead of relying on the next GET /workspaces to notice and repair it.
+        const remaining = await store.list(request.user!.id, workspace.appId)
+        if (remaining.length === 0) {
+          try {
+            await createWorkspaceForUser(request.user!.id, DEFAULT_WORKSPACE_NAME, true, request)
+          } catch (err) {
+            // The delete itself already succeeded — don't fail the response
+            // over a best-effort replacement default. Worst case, the next
+            // GET /api/v1/workspaces recreate-on-list still fixes it up.
+            request.log.error({ userId: request.user!.id, err }, 'workspace.delete.recreate_default.failed')
+          }
+        }
+
         return { deleted: true }
       }
 

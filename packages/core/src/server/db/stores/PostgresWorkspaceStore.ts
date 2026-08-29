@@ -386,6 +386,10 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
     return rows.length > 0 ? toWorkspace(rows[0]) : null
   }
 
+  // Kept a plain, unconditional soft-delete: the "don't leave the user with
+  // zero active workspaces" business rule (#1463) is enforced one layer up,
+  // in the workspace-delete route, which recreates a default in the same
+  // operation when the deleting user would otherwise be left with none.
   async delete(
     id: string,
   ): Promise<{

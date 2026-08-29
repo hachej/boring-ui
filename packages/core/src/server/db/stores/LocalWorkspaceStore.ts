@@ -223,6 +223,10 @@ export class LocalWorkspaceStore implements WorkspaceStore {
     return toWorkspace(updated)
   }
 
+  // Plain, unconditional soft-delete — see the matching comment on
+  // PostgresWorkspaceStore.delete(): the #1463 "never zero active workspaces"
+  // rule is enforced by the route, which recreates a default in the same
+  // operation when the deleting user would otherwise be left with none.
   async delete(id: string): Promise<{ removed: boolean; code?: typeof ERROR_CODES.NOT_FOUND }> {
     const ws = this.workspaces.get(id)
     if (!ws || ws.deletedAt) return { removed: false, code: ERROR_CODES.NOT_FOUND }

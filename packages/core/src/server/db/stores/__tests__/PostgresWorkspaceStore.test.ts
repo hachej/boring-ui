@@ -579,6 +579,30 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
       expect(result).toEqual({ removed: false, code: ERROR_CODES.NOT_FOUND })
     })
 
+    it('#1463: deleting the only default workspace then recreating one does not collide on idx_workspaces_default_per_user_app', async () => {
+      const userId = await seedUser()
+      const original = await createWorkspace(userId, 'Default WS', APP_ID, { isDefault: true })
+      expect(original.isDefault).toBe(true)
+
+      // Simulate the DELETE /api/v1/workspaces/:id route's soft-delete step.
+      const result = await store.delete(original.id)
+      expect(result).toEqual({ removed: true })
+      expect(await store.list(userId, APP_ID)).toHaveLength(0)
+
+      // Simulate the auto-recreate on the next GET /api/v1/workspaces: before
+      // the migration this insert failed with a duplicate-key error against
+      // idx_workspaces_default_per_user_app because the old tombstoned
+      // default row still satisfied the (unpartitioned-by-deleted_at) index.
+      const recreated = await createWorkspace(userId, 'Default workspace', APP_ID, { isDefault: true })
+      expect(recreated.isDefault).toBe(true)
+      expect(recreated.id).not.toBe(original.id)
+
+      // The user ends up with exactly one active default — never zero, never two.
+      const active = await store.list(userId, APP_ID)
+      expect(active).toHaveLength(1)
+      expect(active[0].id).toBe(recreated.id)
+      expect(active[0].isDefault).toBe(true)
+    })
   })
 
   describe('isMember / getMemberRole', () => {

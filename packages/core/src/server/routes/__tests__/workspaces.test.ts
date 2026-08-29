@@ -393,6 +393,34 @@ describe('DELETE /api/v1/workspaces/:id', () => {
     expect(res.json().code).toBe(ERROR_CODES.FORBIDDEN)
     expect(workspaces.get(ws.id)?.deletedAt).toBeNull()
   })
+
+  it('#1463: deleting the only (default) workspace recreates a fresh default in the same operation, leaving exactly one active workspace', async () => {
+    const ws = seedWorkspaceWithMembers('Only Default', OWNER_ID)
+    workspaces.set(ws.id, { ...ws, isDefault: true })
+
+    const res = await inject('DELETE', `/api/v1/workspaces/${ws.id}`, OWNER_ID)
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ deleted: true })
+
+    // The original is gone, but the user is never left with zero: a
+    // replacement default was created transactionally, in this same request.
+    const active = [...workspaces.values()].filter(
+      (w) => !w.deletedAt && w.createdBy === OWNER_ID && w.appId === APP_ID,
+    )
+    expect(active).toHaveLength(1)
+    expect(active[0].id).not.toBe(ws.id)
+    expect(active[0].isDefault).toBe(true)
+  })
+
+  it('#1463: does not recreate a default when the deleting owner still has other active workspaces', async () => {
+    seedWorkspaceWithMembers('Kept', OWNER_ID)
+    const ws = seedWorkspaceWithMembers('Delete', OWNER_ID)
+    storeCalls.length = 0
+
+    const res = await inject('DELETE', `/api/v1/workspaces/${ws.id}`, OWNER_ID)
+    expect(res.statusCode).toBe(200)
+    expect(storeCalls.filter((c) => c === 'create')).toHaveLength(0)
+  })
 })
 
 describe('request-scoped workspace authority', () => {
@@ -763,6 +791,23 @@ describe('Provisioner integration', () => {
       expect(second.statusCode).toBe(200)
       expect(second.json()).toEqual({ deleted: true })
       expect(pWorkspaces.get(ws.id)?.deletedAt).toBeTruthy()
+    })
+
+    it('#1463: deleting the only workspace provisions a fresh default in the same operation', async () => {
+      const ws = provSeedWorkspace('OnlyOne', OWNER_ID, { isDefault: true })
+
+      const res = await provInject('DELETE', `/api/v1/workspaces/${ws.id}`, OWNER_ID)
+      expect(res.statusCode).toBe(200)
+      expect(res.json()).toEqual({ deleted: true })
+      expect(destroyFn).toHaveBeenCalledWith(ws.id)
+      expect(pWorkspaces.get(ws.id)?.deletedAt).toBeTruthy()
+
+      const active = [...pWorkspaces.values()].filter((w) => !w.deletedAt && w.createdBy === OWNER_ID)
+      expect(active).toHaveLength(1)
+      expect(active[0].id).not.toBe(ws.id)
+      expect(active[0].isDefault).toBe(true)
+      // The replacement was provisioned too, not just inserted as a bare row.
+      expect(provisionFn).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: active[0].id }))
     })
   })
 
