@@ -147,6 +147,19 @@ export async function startPlaygroundServer(): Promise<void> {
     app.post(PLAYGROUND_SHOWCASE_SESSION_ROUTE, async (request, reply) => {
       const body = (request.body ?? {}) as { agentTypeId?: unknown; title?: unknown; requestId?: unknown; resumeSessionId?: unknown }
       const targetAgentTypeId = typeof body.agentTypeId === "string" && body.agentTypeId.trim() ? body.agentTypeId.trim() : defaultAgentTypeId
+      // The raw (unhashed) workspace id this exact request is scoped to.
+      // The scripted store's actual on-disk namespace additionally folds in
+      // a hash of the *internal* workspaceScopeId
+      // (sessionNamespaceForAgent in packages/agent), which this dev-only
+      // route has no business reproducing — a private algorithm in a
+      // different package. This raw id is what both this route and the
+      // store (via SessionCtx.workspaceId, the same field `belongsTo`
+      // scopes ordinary session visibility by) can derive identically
+      // without either side needing to know the hash: two different raw
+      // workspace ids always land in two different registry entries,
+      // tracking whichever partition the real hashed namespace produces.
+      const workspaceIdHeader = request.headers["x-boring-workspace-id"]
+      const targetWorkspaceId = typeof workspaceIdHeader === "string" && workspaceIdHeader.trim() ? workspaceIdHeader.trim() : "default"
       const forwardBody: Record<string, unknown> = {}
       if (typeof body.title === "string") forwardBody.title = body.title
       if (typeof body.requestId === "string") forwardBody.requestId = body.requestId
@@ -154,25 +167,25 @@ export async function startPlaygroundServer(): Promise<void> {
       // sessionStorage (App.tsx) — a stale or manipulated value could
       // otherwise name an ordinary session this wrapper never created and
       // marked (or a showcase session belonging to a *different* agent
-      // type — scripted session ids are only unique within one agent
-      // namespace, so 'scripted-main' under `targetAgentTypeId` is a
-      // different session than 'scripted-main' under any other agent), and
+      // type or workspace scope — scripted session ids are only unique
+      // within one full storage namespace, so 'scripted-main' under
+      // `targetAgentTypeId`+`targetWorkspaceId` is a different session
+      // than 'scripted-main' under any other agent type or workspace), and
       // the gateway would happily hand that session's ref back
       // (embeddedGateway.ts createSession resumes any empty session it can
       // resolve, regardless of who created it). Only ever forward it when
       // it already names a session this wrapper itself previously marked
-      // for THIS EXACT `targetAgentTypeId` — an unrecognized (agent, id)
-      // pair is silently dropped, not forwarded, so the boot flow just
-      // creates a brand-new (still perfectly valid) session instead. This
-      // is what keeps "which route created it, for which agent" a
+      // for THIS EXACT (agent, workspace) pair — an unrecognized triple is
+      // silently dropped, not forwarded, so the boot flow just creates a
+      // brand-new (still perfectly valid) session instead. This is what
+      // keeps "which route created it, for which agent and workspace" a
       // guarantee instead of a suggestion.
       if (
         typeof body.resumeSessionId === "string"
-        && await isPlaygroundShowcaseSession(process.env.BORING_AGENT_SESSION_ROOT, targetAgentTypeId, body.resumeSessionId)
+        && await isPlaygroundShowcaseSession(process.env.BORING_AGENT_SESSION_ROOT, targetAgentTypeId, targetWorkspaceId, body.resumeSessionId)
       ) {
         forwardBody.resumeSessionId = body.resumeSessionId
       }
-      const workspaceIdHeader = request.headers["x-boring-workspace-id"]
       const injected = await app.inject({
         method: "POST",
         url: `/api/v1/agents/${encodeURIComponent(targetAgentTypeId)}/sessions`,
@@ -188,7 +201,7 @@ export async function startPlaygroundServer(): Promise<void> {
         try {
           const payload = JSON.parse(injected.body) as { sessionId?: unknown }
           if (typeof payload.sessionId === "string") {
-            await markPlaygroundShowcaseSession(process.env.BORING_AGENT_SESSION_ROOT, targetAgentTypeId, payload.sessionId)
+            await markPlaygroundShowcaseSession(process.env.BORING_AGENT_SESSION_ROOT, targetAgentTypeId, targetWorkspaceId, payload.sessionId)
           }
         } catch {
           // Response wasn't the expected shape — forward it as-is below;
