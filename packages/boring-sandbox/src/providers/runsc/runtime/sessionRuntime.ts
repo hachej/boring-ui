@@ -134,8 +134,8 @@ export class RunscSessionRuntimeV1 {
   private readonly maxConcurrentExecs: number;
   private activeExecs = 0;
   private closed = false;
-  private shutdownComplete = false;
-  private shutdownOperation?: Promise<void>;
+  private shutdownComplete = false; private startupComplete = false;
+  private shutdownOperation?: Promise<void>; private startupOperation?: Promise<void>;
   constructor(private readonly options: RunscSessionRuntimeOptionsV1) {
     this.workspace = new RunscWorkspaceHelperClientV1(options.runner);
     this.retirement = new RunscSessionRetirementManagerV1({
@@ -166,7 +166,15 @@ export class RunscSessionRuntimeV1 {
   }
   startupSweep(): Promise<void> {
     if (this.closed) this.unavailable();
-    return this.track(() => this.startupSweepOnce());
+    if (this.startupComplete) return Promise.resolve();
+    if (this.startupOperation) return this.startupOperation;
+    this.state.beginSweep();
+    const operation = this.track(async () => {
+      try { await this.startupSweepOnce(); this.startupComplete = true; }
+      finally { this.startupOperation = undefined; this.state.endSweep(); }
+    });
+    this.startupOperation = operation;
+    return operation;
   }
   private async startupSweepOnce(): Promise<void> {
     const listed = await runDockerChecked(this.options.runner, {
@@ -213,6 +221,7 @@ export class RunscSessionRuntimeV1 {
   }
   private createForMode(input: AnyCreateInputV1, multiRoot: boolean): Promise<AnySessionLeaseV1> {
     return this.state.create(input, multiRoot, this.maxConcurrentCreates,
+      Math.floor(RUNSC_RUNTIME_LIMITS_V1.maxStartupSweepContainers / 2),
       () => safeOpaqueId(this.sandboxIdFactory(), "sandbox id"),
       (normalized, digest) => this.track(() => this.createNew(normalized, digest, multiRoot), this.pendingCreates));
   }

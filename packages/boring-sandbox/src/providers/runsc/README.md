@@ -8,7 +8,7 @@ This slice adds a dormant runtime mechanism for hosting several sandboxes under 
 <trusted sandbox root>/<workspaceId>/<sandboxId> -> /workspace
 ```
 
-Workspace identity remains the authorization and aggregate-quota key. Sandbox identity only selects an isolated runtime beneath it. Legacy construction without the root lifecycle retains one active runtime per workspace.
+Workspace identity remains the authorization and aggregate-quota key. Sandbox identity only selects an isolated runtime beneath it. Legacy construction without the root lifecycle retains one active runtime per workspace. Owned and pending sessions are capped by the startup recovery ceiling; startup sweep is single-flight and runs only while the runtime owns no session or create reservation.
 
 The runtime fails closed unless multi-root use is explicitly admitted by trusted composition. This slice does not add the authenticated remote-worker handler, protocol negotiation, provider wiring, or a worker capability advertisement.
 
