@@ -7,6 +7,7 @@ import {
   FixedProjectQuotaManagerV1,
   assertHostReserveWritable,
   requiredHostReserveBytes,
+  validateCanonicalQuotaWorkspaceId,
 } from "../quota";
 
 const workspaceId = "00000000-0000-4000-8000-000000000001";
@@ -28,8 +29,6 @@ describe("fixed project quota contract", () => {
     "/srv/workspace",
     "$(id)",
     "workspace-a",
-    "ABCDEF00-0000-4000-8000-000000000001",
-    ` ${workspaceId}`,
   ])(
     "rejects arbitrary path/shell input: %s",
     async (untrusted) => {
@@ -42,6 +41,21 @@ describe("fixed project quota contract", () => {
       expect(run).not.toHaveBeenCalled();
     },
   );
+
+  test("preserves legacy normalization and optional-root runner inputs", async () => {
+    const run = vi.fn(async () => ({ exitCode: 0, timedOut: false }));
+    const upper = `  ${workspaceId.toUpperCase()}  `;
+    await new FixedProjectQuotaManagerV1({ run }).apply(upper);
+    expect(run).toHaveBeenCalledWith({
+      argv: ["apply", workspaceId, RUNSC_WORKSPACE_QUOTA_PROFILE_V1.profileId],
+      timeoutMs: 120_000,
+    });
+    expect(() => validateCanonicalQuotaWorkspaceId(upper)).toThrowError(
+      expect.objectContaining({
+        code: REMOTE_WORKER_ERROR_CODES_V1.requestInvalid,
+      }),
+    );
+  });
 
   test("maps all quota exhaustion to one stable failure", async () => {
     await expect(

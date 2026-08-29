@@ -35,6 +35,7 @@ import type {
 import { decodeBoundedJson } from "./jsonEnvelope";
 import { RUNSC_RUNTIME_LIMITS_V1, boundedPositiveInteger } from "./limits";
 import {
+  validateCanonicalQuotaWorkspaceId,
   validateQuotaWorkspaceId,
   type FixedProjectQuotaManagerV1,
 } from "./quota";
@@ -51,10 +52,9 @@ export type { RunscSessionRetirementV1 } from "./sessionRetirement";
 
 export interface RunscSessionRuntimeOptionsV1 {
   readonly runner: DockerCommandRunner;
-  readonly quota: Pick<
-    FixedProjectQuotaManagerV1,
-    "workspaceRoot" | "apply" | "check"
-  >;
+  readonly quota: Pick<FixedProjectQuotaManagerV1, "apply" | "check"> & {
+    readonly workspaceRoot?: string;
+  };
   readonly maxConcurrentCreates?: number;
   readonly maxConcurrentExecs?: number;
   readonly now?: () => number;
@@ -263,7 +263,11 @@ export class RunscSessionRuntimeV1 {
     }
     if (input.sandboxId !== undefined) safeOpaqueId(input.sandboxId, "sandbox id");
     safeOpaqueId(input.clientLeaseId, "client lease id");
-    validateQuotaWorkspaceId(input.workspaceId);
+    if (this.supportsMultiSandboxRoots) {
+      validateCanonicalQuotaWorkspaceId(input.workspaceId);
+    } else {
+      validateQuotaWorkspaceId(input.workspaceId);
+    }
     const digest = input.createDigest ?? remoteWorkerRequestDigestV1({
       sandboxId: input.sandboxId,
       clientLeaseId: input.clientLeaseId,
@@ -274,7 +278,9 @@ export class RunscSessionRuntimeV1 {
       hardLifetimeMs: input.hardLifetimeMs,
     });
     if (!/^sha256:[a-f0-9]{64}$/.test(digest)) this.idempotencyConflict();
-    const createKey = compositeKey(input.workspaceId, input.clientLeaseId);
+    const createKey = this.supportsMultiSandboxRoots
+      ? compositeKey(input.workspaceId, input.clientLeaseId)
+      : input.clientLeaseId;
     const existing = this.leaseBindings.get(createKey);
     if (existing) {
       if (existing.createDigest !== digest) this.idempotencyConflict();
@@ -322,9 +328,10 @@ export class RunscSessionRuntimeV1 {
       input.sandboxId ?? this.sandboxIdFactory(),
       "sandbox id",
     );
-    if (this.sessions.has(compositeKey(input.workspaceId, sandboxId))) {
-      this.idempotencyConflict();
-    }
+    const sessionKey = this.supportsMultiSandboxRoots
+      ? compositeKey(input.workspaceId, sandboxId)
+      : sandboxId;
+    if (this.sessions.has(sessionKey)) this.idempotencyConflict();
     const idleTtlMs = boundedPositiveInteger(
       input.idleTtlMs ?? RUNSC_RUNTIME_LIMITS_V1.idleTtlMs,
       RUNSC_RUNTIME_LIMITS_V1.idleTtlMs,
@@ -579,10 +586,22 @@ export class RunscSessionRuntimeV1 {
 
   async fs(
     sandboxId: string,
+    operation: RemoteWorkerWorkspaceOperationV1,
+  ): Promise<RemoteWorkerWorkspaceResultV1>;
+  async fs(
+    sandboxId: string,
     workspaceId: string,
-    request: RemoteWorkerWorkspaceOperationV1,
+    operation: RemoteWorkerWorkspaceOperationV1,
+  ): Promise<RemoteWorkerWorkspaceResultV1>;
+  async fs(
+    sandboxId: string,
+    workspaceOrOperation: string | RemoteWorkerWorkspaceOperationV1,
+    operation?: RemoteWorkerWorkspaceOperationV1,
   ): Promise<RemoteWorkerWorkspaceResultV1> {
-    const record = await this.activeSession(sandboxId, workspaceId);
+    const record = operation
+      ? await this.activeSession(sandboxId, workspaceOrOperation as string)
+      : await this.activeLegacySession(sandboxId);
+    const request = operation ?? (workspaceOrOperation as RemoteWorkerWorkspaceOperationV1);
     if (record.activeExec || record.activeFs) {
       throw runscRuntimeError(
         REMOTE_WORKER_ERROR_CODES_V1.execInProgress,
@@ -601,12 +620,23 @@ export class RunscSessionRuntimeV1 {
 
   async renew(
     sandboxId: string,
+    idleTtlMs: number,
+  ): Promise<RunscSessionLeaseV1>;
+  async renew(
+    sandboxId: string,
     workspaceId: string,
     idleTtlMs: number,
+  ): Promise<RunscSessionLeaseV1>;
+  async renew(
+    sandboxId: string,
+    workspaceOrIdleTtlMs: string | number,
+    idleTtlMs?: number,
   ): Promise<RunscSessionLeaseV1> {
-    const record = await this.activeSession(sandboxId, workspaceId);
+    const record = typeof workspaceOrIdleTtlMs === "string"
+      ? await this.activeSession(sandboxId, workspaceOrIdleTtlMs)
+      : await this.activeLegacySession(sandboxId);
     const bounded = boundedPositiveInteger(
-      idleTtlMs,
+      idleTtlMs ?? (workspaceOrIdleTtlMs as number),
       RUNSC_RUNTIME_LIMITS_V1.idleTtlMs,
       "idle TTL",
     );
@@ -618,8 +648,12 @@ export class RunscSessionRuntimeV1 {
     return this.lease(record, false);
   }
 
-  async dispose(sandboxId: string, workspaceId: string): Promise<void> {
-    const record = this.findSession(sandboxId, workspaceId);
+  async dispose(sandboxId: string): Promise<void>;
+  async dispose(sandboxId: string, workspaceId: string): Promise<void>;
+  async dispose(sandboxId: string, workspaceId?: string): Promise<void> {
+    const record = workspaceId === undefined
+      ? this.findLegacySession(sandboxId)
+      : this.findSession(sandboxId, workspaceId);
     if (!record) return;
     await this.retire(record, "cleanup", false);
   }
@@ -783,14 +817,37 @@ export class RunscSessionRuntimeV1 {
     workspaceId: string,
   ): Promise<SessionRecordV1> {
     if (this.closed) this.unavailable();
+    if (!this.options.sandboxRoots) {
+      validateQuotaWorkspaceId(workspaceId);
+      const legacy = this.findLegacySession(sandboxId);
+      if (!legacy) {
+        await this.notifyMissing(workspaceId, sandboxId);
+        this.sandboxNotFound();
+      }
+      if (legacy.workspaceId !== workspaceId) this.workspaceMismatch();
+      return await this.requireActive(legacy);
+    }
     const record = this.findSession(sandboxId, workspaceId);
     if (!record) {
       await this.notifyMissing(workspaceId, sandboxId);
-      throw runscRuntimeError(
-        REMOTE_WORKER_ERROR_CODES_V1.sandboxNotFound,
-        "remote-worker sandbox was not found",
-      );
+      this.sandboxNotFound();
     }
+    return await this.requireActive(record);
+  }
+
+  private async activeLegacySession(
+    sandboxId: string,
+  ): Promise<SessionRecordV1> {
+    if (this.closed) this.unavailable();
+    const record = this.findLegacySession(sandboxId);
+    if (!record) {
+      await this.retirement.notifyMissingLegacy(sandboxId);
+      this.sandboxNotFound();
+    }
+    return await this.requireActive(record);
+  }
+
+  private async requireActive(record: SessionRecordV1): Promise<SessionRecordV1> {
     if (record.retirement) {
       throw runscRuntimeError(
         REMOTE_WORKER_ERROR_CODES_V1.sandboxDisposed,
@@ -869,7 +926,7 @@ export class RunscSessionRuntimeV1 {
   private detach(record: SessionRecordV1): void {
     clearTimeout(record.timer);
     this.sessions.delete(this.sessionKey(record));
-    const leaseKey = compositeKey(record.workspaceId, record.clientLeaseId);
+    const leaseKey = this.leaseKey(record);
     if (this.leaseBindings.get(leaseKey) === record) {
       this.leaseBindings.delete(leaseKey);
     }
@@ -881,17 +938,32 @@ export class RunscSessionRuntimeV1 {
 
   private bind(record: SessionRecordV1): void {
     this.sessions.set(this.sessionKey(record), record);
-    this.leaseBindings.set(
-      compositeKey(record.workspaceId, record.clientLeaseId),
-      record,
-    );
+    this.leaseBindings.set(this.leaseKey(record), record);
     if (!record.ownsWorkspaceMountSource) {
       this.legacyWorkspaceBindings.set(record.workspaceId, record);
     }
   }
 
-  private sessionKey(record: Pick<SessionRecordV1, "workspaceId" | "sandboxId">): string {
-    return compositeKey(record.workspaceId, record.sandboxId);
+  private sessionKey(
+    record: Pick<
+      SessionRecordV1,
+      "workspaceId" | "sandboxId" | "ownsWorkspaceMountSource"
+    >,
+  ): string {
+    return record.ownsWorkspaceMountSource
+      ? compositeKey(record.workspaceId, record.sandboxId)
+      : record.sandboxId;
+  }
+
+  private leaseKey(
+    record: Pick<
+      SessionRecordV1,
+      "workspaceId" | "clientLeaseId" | "ownsWorkspaceMountSource"
+    >,
+  ): string {
+    return record.ownsWorkspaceMountSource
+      ? compositeKey(record.workspaceId, record.clientLeaseId)
+      : record.clientLeaseId;
   }
 
   private findSession(
@@ -899,8 +971,19 @@ export class RunscSessionRuntimeV1 {
     workspaceId: string,
   ): SessionRecordV1 | undefined {
     safeOpaqueId(sandboxId, "sandbox id");
+    if (this.options.sandboxRoots) {
+      validateCanonicalQuotaWorkspaceId(workspaceId);
+      return this.sessions.get(compositeKey(workspaceId, sandboxId));
+    }
     validateQuotaWorkspaceId(workspaceId);
-    return this.sessions.get(compositeKey(workspaceId, sandboxId));
+    const record = this.sessions.get(sandboxId);
+    return record?.workspaceId === workspaceId ? record : undefined;
+  }
+
+  private findLegacySession(sandboxId: string): SessionRecordV1 | undefined {
+    if (this.options.sandboxRoots) this.compositeAuthorityRequired();
+    safeOpaqueId(sandboxId, "sandbox id");
+    return this.sessions.get(sandboxId);
   }
 
   private async retireFailedCreate(record: SessionRecordV1): Promise<void> {
@@ -949,6 +1032,27 @@ export class RunscSessionRuntimeV1 {
     throw runscRuntimeError(
       REMOTE_WORKER_ERROR_CODES_V1.unavailable,
       "remote-worker runtime is unavailable",
+    );
+  }
+
+  private compositeAuthorityRequired(): never {
+    throw runscRuntimeError(
+      REMOTE_WORKER_ERROR_CODES_V1.requestInvalid,
+      "remote-worker workspace authority is required",
+    );
+  }
+
+  private sandboxNotFound(): never {
+    throw runscRuntimeError(
+      REMOTE_WORKER_ERROR_CODES_V1.sandboxNotFound,
+      "remote-worker sandbox was not found",
+    );
+  }
+
+  private workspaceMismatch(): never {
+    throw runscRuntimeError(
+      REMOTE_WORKER_ERROR_CODES_V1.sandboxWorkspaceMismatch,
+      "remote-worker sandbox binding does not match the authorized workspace",
     );
   }
 

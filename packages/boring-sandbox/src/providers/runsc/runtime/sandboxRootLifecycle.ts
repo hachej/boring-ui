@@ -17,7 +17,7 @@ import { runscRuntimeError } from "./errors";
 import { RUNSC_RUNTIME_LIMITS_V1 } from "./limits";
 import {
   RUNSC_QUOTA_LOCK_NAME,
-  validateQuotaWorkspaceId,
+  validateCanonicalQuotaWorkspaceId,
   type FixedProjectQuotaManagerV1,
 } from "./quota";
 
@@ -31,6 +31,7 @@ type RootIdentity = Readonly<{ dev: bigint; ino: bigint }>;
 export interface RunscSandboxRootLifecycleOptionsV1 {
   readonly sandboxRoot: string;
   readonly prepareOwnership?: (path: string) => void | Promise<void>;
+  readonly removeSandboxRoot?: (path: string) => void | Promise<void>;
   /** Test/development roots may be owned by the daemon uid; production defaults to root. */
   readonly trustedOwnerUid?: number;
 }
@@ -56,6 +57,16 @@ export class RunscSandboxRootLifecycleV1 {
   private trustedRootIdentity?: RootIdentity;
   private readonly readyWorkspaces = new Set<string>();
   private readonly workspaceInflight = new Map<string, Promise<void>>();
+  private readonly pendingRoots = new Map<
+    string,
+    {
+      readonly workspace: string;
+      readonly workspaceRoot: string;
+      readonly sandboxRoot: string;
+      workspaceCreated: boolean;
+      created: boolean;
+    }
+  >();
 
   constructor(private readonly options: RunscSandboxRootLifecycleOptionsV1) {
     const normalized = resolve(options.sandboxRoot);
@@ -79,19 +90,39 @@ export class RunscSandboxRootLifecycleV1 {
     sandboxId: string,
     quota: QuotaManager,
   ): Promise<TrustedWorkspaceMountSource> {
-    const workspace = validateQuotaWorkspaceId(workspaceId);
+    const workspace = validateCanonicalQuotaWorkspaceId(workspaceId);
     const sandbox = normalizedSandboxId(sandboxId);
     if (quota.workspaceRoot !== this.sandboxRoot) {
       invalidRoot("remote-worker quota and sandbox roots do not match");
     }
     await this.assertTrustedRoot();
     const workspaceRoot = join(this.sandboxRoot, workspace);
-    const workspaceCreated = await this.ensureWorkspace(workspace, workspaceRoot, quota);
     const sandboxRoot = join(workspaceRoot, sandbox);
-    let sandboxCreated = false;
+    const source = trustedSandboxMountSource(this.sandboxRoot, workspace, sandbox);
+    if (
+      this.pendingRoots.has(sandboxRoot) ||
+      this.pendingRoots.size >= RUNSC_RUNTIME_LIMITS_V1.maxStartupSweepContainers
+    ) {
+      invalidRoot("remote-worker sandbox root cleanup capacity is exhausted");
+    }
+    const pending = {
+      workspace,
+      workspaceRoot,
+      sandboxRoot,
+      workspaceCreated: false,
+      created: false,
+    };
+    this.pendingRoots.set(sandboxRoot, pending);
+    let workspaceReady = false;
     try {
+      pending.workspaceCreated = await this.ensureWorkspace(
+        workspace,
+        workspaceRoot,
+        quota,
+      );
+      workspaceReady = true;
       await mkdir(sandboxRoot, { mode: 0o770 });
-      sandboxCreated = true;
+      pending.created = true;
       if (this.options.prepareOwnership) {
         await this.options.prepareOwnership(sandboxRoot);
       } else {
@@ -100,16 +131,57 @@ export class RunscSandboxRootLifecycleV1 {
       await this.assertTrustedRoot();
       await this.assertExactDirectory(workspaceRoot, true);
       await this.assertExactDirectory(sandboxRoot, false);
-      return trustedSandboxMountSource(this.sandboxRoot, workspace, sandbox);
+      this.pendingRoots.delete(sandboxRoot);
+      return source;
     } catch (error) {
-      if (sandboxCreated) {
-        await rm(sandboxRoot, { recursive: true, force: true }).catch(
-          () => undefined,
+      if (!workspaceReady) {
+        this.pendingRoots.delete(sandboxRoot);
+        throw error;
+      }
+      if (!pending.created) {
+        this.pendingRoots.delete(sandboxRoot);
+        if (pending.workspaceCreated) {
+          await this.removeEmptyWorkspace(workspace, workspaceRoot);
+        }
+        invalidRoot("remote-worker sandbox root could not be prepared", error);
+      }
+      try {
+        await this.cleanupPendingRoot(pending);
+      } catch (cleanupError) {
+        throw runscRuntimeError(
+          REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+          "remote-worker sandbox root cleanup is incomplete",
+          cleanupError,
         );
       }
-      if (workspaceCreated) await this.removeEmptyWorkspace(workspace, workspaceRoot);
       invalidRoot("remote-worker sandbox root could not be prepared", error);
     }
+  }
+
+  async retryPendingCleanup(): Promise<number> {
+    let cleaned = 0;
+    let firstFailure: unknown;
+    for (const pending of [...this.pendingRoots.values()]) {
+      if (!pending.created) continue;
+      try {
+        await this.cleanupPendingRoot(pending);
+        cleaned += 1;
+      } catch (error) {
+        firstFailure ??= error;
+      }
+    }
+    if (firstFailure) {
+      throw runscRuntimeError(
+        REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+        "remote-worker sandbox root cleanup is incomplete",
+        firstFailure,
+      );
+    }
+    return cleaned;
+  }
+
+  async close(): Promise<void> {
+    await this.retryPendingCleanup();
   }
 
   async dispose(source: TrustedWorkspaceMountSource): Promise<void> {
@@ -120,7 +192,7 @@ export class RunscSandboxRootLifecycleV1 {
       await this.assertTrustedRoot();
       await this.assertExactDirectory(workspaceRoot, true);
       await this.assertExactDirectory(sandboxRoot, false);
-      await rm(sandboxRoot, { recursive: true, force: true });
+      await this.removeSandboxRoot(sandboxRoot);
       await this.assertTrustedRoot();
       try {
         await rmdir(workspaceRoot);
@@ -138,6 +210,7 @@ export class RunscSandboxRootLifecycleV1 {
   }
 
   async startupSweep(): Promise<number> {
+    const retried = await this.retryPendingCleanup();
     await this.assertTrustedRoot();
     const entries = await readdir(this.sandboxRoot, { withFileTypes: true });
     let discovered = 0;
@@ -154,7 +227,7 @@ export class RunscSandboxRootLifecycleV1 {
       if (workspace.isSymbolicLink() || !workspace.isDirectory()) {
         invalidRoot("remote-worker sandbox root contains an unowned entry");
       }
-      validateQuotaWorkspaceId(workspace.name);
+      validateCanonicalQuotaWorkspaceId(workspace.name);
       const workspaceRoot = join(this.sandboxRoot, workspace.name);
       await this.assertExactDirectory(workspaceRoot, true);
       const sandboxes = await readdir(workspaceRoot, { withFileTypes: true });
@@ -181,7 +254,37 @@ export class RunscSandboxRootLifecycleV1 {
       }
     }
     for (const root of roots) await this.dispose(root);
-    return roots.length;
+    return retried + roots.length;
+  }
+
+  private async cleanupPendingRoot(
+    pending: {
+      readonly workspace: string;
+      readonly workspaceRoot: string;
+      readonly sandboxRoot: string;
+      readonly workspaceCreated: boolean;
+    },
+  ): Promise<void> {
+    await this.assertTrustedRoot();
+    await this.assertExactDirectory(pending.workspaceRoot, true);
+    try {
+      await this.assertExactDirectory(pending.sandboxRoot, false);
+      await this.removeSandboxRoot(pending.sandboxRoot);
+    } catch (error) {
+      if (!this.isNotFound(error)) throw error;
+    }
+    this.pendingRoots.delete(pending.sandboxRoot);
+    if (pending.workspaceCreated) {
+      await this.removeEmptyWorkspace(pending.workspace, pending.workspaceRoot);
+    }
+  }
+
+  private async removeSandboxRoot(path: string): Promise<void> {
+    if (this.options.removeSandboxRoot) {
+      await this.options.removeSandboxRoot(path);
+      return;
+    }
+    await rm(path, { recursive: true, force: true });
   }
 
   private async ensureWorkspace(
@@ -318,7 +421,7 @@ export class RunscSandboxRootLifecycleV1 {
       child.startsWith("..") ||
       isAbsolute(child) ||
       parts.length !== 2 ||
-      validateQuotaWorkspaceId(parts[0] ?? "") !== parts[0] ||
+      validateCanonicalQuotaWorkspaceId(parts[0] ?? "") !== parts[0] ||
       normalizedSandboxId(parts[1] ?? "") !== parts[1]
     ) {
       invalidRoot("remote-worker sandbox mount is outside its trusted root");
@@ -332,6 +435,15 @@ export class RunscSandboxRootLifecycleV1 {
         typeof error === "object" &&
         "code" in error &&
         error.code === "EEXIST",
+    );
+  }
+
+  private isNotFound(error: unknown): boolean {
+    return Boolean(
+      error &&
+        typeof error === "object" &&
+        "code" in error &&
+        error.code === "ENOENT",
     );
   }
 }

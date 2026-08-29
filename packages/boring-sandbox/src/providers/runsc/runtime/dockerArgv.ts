@@ -1,6 +1,7 @@
 import { REMOTE_WORKER_ERROR_CODES_V1 } from "../../../shared/remoteWorkerProtocolV1";
 
 import { runscRuntimeError } from "./errors";
+import { validateCanonicalQuotaWorkspaceId } from "./quota";
 
 export const RUNSC_RUNTIME_DOCKER_LABELS_V1 = Object.freeze({
   owner: "com.hachej.boring.runsc-runtime",
@@ -56,6 +57,7 @@ export function trustedSandboxMountSource(
   workspaceId: string,
   sandboxId: string,
 ): TrustedWorkspaceMountSource {
+  validateCanonicalQuotaWorkspaceId(workspaceId);
   const workspaceSource = trustedWorkspaceMountSource(sandboxRoot, workspaceId);
   if (!sandboxIdPattern.test(sandboxId)) invalidDockerInput("sandbox id");
   const source = `${workspaceSource}/${sandboxId}`;

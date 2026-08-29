@@ -19,6 +19,7 @@ import { RunscSandboxRootLifecycleV1 } from "../sandboxRootLifecycle";
 
 const workspaceA = "00000000-0000-4000-8000-000000000001";
 const workspaceB = "00000000-0000-4000-8000-000000000002";
+const aliasWorkspace = "abcdef00-0000-4000-8000-000000000003";
 
 async function lifecycle() {
   const parent = await mkdtemp(join(tmpdir(), "boring-runsc-roots-"));
@@ -55,8 +56,14 @@ describe("runsc per-sandbox root lifecycle", () => {
     await expect(lstat(root)).resolves.toMatchObject({});
   });
 
-  test("fails closed on existing leaves and symlinked workspace parents", async () => {
+  test("fails closed on aliased identities, existing leaves, and symlinked parents", async () => {
     const { root, roots, quota } = await lifecycle();
+    await expect(
+      roots.prepare(aliasWorkspace.toUpperCase(), "sandbox-upper", quota),
+    ).rejects.toMatchObject({ code: "REMOTE_WORKER_REQUEST_INVALID" });
+    await expect(
+      roots.prepare(` ${workspaceA}`, "sandbox-spaced", quota),
+    ).rejects.toMatchObject({ code: "REMOTE_WORKER_REQUEST_INVALID" });
     await roots.prepare(workspaceA, "sandbox-a", quota);
     await expect(roots.prepare(workspaceA, "sandbox-a", quota)).rejects.toMatchObject({
       code: "REMOTE_WORKER_PATH_UNSAFE",
@@ -70,6 +77,52 @@ describe("runsc per-sandbox root lifecycle", () => {
       code: "REMOTE_WORKER_PATH_UNSAFE",
     });
   });
+
+  test.each(["retry", "close", "startup"] as const)(
+    "retains failed prepare cleanup authority until %s converges",
+    async (convergence) => {
+      const parent = await mkdtemp(join(tmpdir(), "boring-runsc-roots-"));
+      const root = join(parent, "sandboxes");
+      await mkdir(root, { mode: 0o750 });
+      let removeAttempts = 0;
+      const roots = new RunscSandboxRootLifecycleV1({
+        sandboxRoot: root,
+        prepareOwnership: async () => {
+          throw new Error("ownership failed");
+        },
+        removeSandboxRoot: async (path) => {
+          removeAttempts += 1;
+          if (removeAttempts === 1) throw new Error("injected remove failure");
+          await rm(path, { recursive: true, force: true });
+        },
+        trustedOwnerUid: process.getuid?.() ?? 0,
+      });
+      const quota = {
+        workspaceRoot: root,
+        apply: vi.fn(async () => undefined),
+        check: vi.fn(async () => undefined),
+      };
+      const sandboxRoot = join(root, workspaceA, "sandbox-a");
+
+      await expect(
+        roots.prepare(workspaceA, "sandbox-a", quota),
+      ).rejects.toMatchObject({
+        code: "REMOTE_WORKER_INCOMPLETE_CLEANUP",
+        message: "remote-worker sandbox root cleanup is incomplete",
+      });
+      await expect(lstat(sandboxRoot)).resolves.toMatchObject({});
+
+      if (convergence === "retry") {
+        await expect(roots.retryPendingCleanup()).resolves.toBe(1);
+      } else if (convergence === "close") {
+        await expect(roots.close()).resolves.toBeUndefined();
+      } else {
+        await expect(roots.startupSweep()).resolves.toBe(1);
+      }
+      expect(removeAttempts).toBe(2);
+      await expect(lstat(sandboxRoot)).rejects.toMatchObject({ code: "ENOENT" });
+    },
+  );
 
   test("bounded startup sweep removes owned leaves beneath the dedicated root", async () => {
     const { roots, quota } = await lifecycle();

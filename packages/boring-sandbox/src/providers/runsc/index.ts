@@ -128,6 +128,7 @@ export {
   FixedQuotaHelperCommandRunnerV1,
   assertHostReserveWritable,
   requiredHostReserveBytes,
+  validateCanonicalQuotaWorkspaceId,
   validateQuotaWorkspaceId,
   type QuotaHelperCommandResultV1,
   type QuotaHelperCommandRunnerV1,

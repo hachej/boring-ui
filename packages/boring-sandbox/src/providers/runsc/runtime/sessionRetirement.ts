@@ -17,7 +17,8 @@ export type RunscSessionRetirementReasonV1 =
   "idle" | "hard-expiry" | "missing" | "cleanup" | "history" | "shutdown";
 
 export interface RunscSessionRetirementV1 {
-  readonly workspaceId: string;
+  /** Absent only for the legacy sandbox-only missing-session callback. */
+  readonly workspaceId?: string;
   readonly sandboxId: string;
   readonly reason: RunscSessionRetirementReasonV1;
 }
@@ -86,10 +87,27 @@ export class RunscSessionRetirementManagerV1<
   }
 
   async notifyMissing(workspaceId: string, sandboxId: string): Promise<void> {
-    const key = `${workspaceId}\u0000${sandboxId}`;
+    await this.notifyMissingWithKey(`${workspaceId}\u0000${sandboxId}`, {
+      workspaceId,
+      sandboxId,
+      reason: "missing",
+    });
+  }
+
+  async notifyMissingLegacy(sandboxId: string): Promise<void> {
+    await this.notifyMissingWithKey(`legacy\u0000${sandboxId}`, {
+      sandboxId,
+      reason: "missing",
+    });
+  }
+
+  private async notifyMissingWithKey(
+    key: string,
+    value: RunscSessionRetirementV1,
+  ): Promise<void> {
     const existing = this.notificationInflight.get(key);
     if (existing) return await existing;
-    const retirement = this.notify({ workspaceId, sandboxId, reason: "missing" });
+    const retirement = this.notify(value);
     this.notificationInflight.set(key, retirement);
     try {
       await retirement;
