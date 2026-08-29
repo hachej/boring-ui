@@ -429,6 +429,15 @@ describe("authenticated remote-worker runsc handler", () => {
       request: create,
     });
     await firstEntered;
+    const conflict = { ...create, sessionId: "session-conflicting-in-flight" };
+    await expect(
+      handler.create({
+        capabilityToken: token("create", conflict),
+        request: conflict,
+      }),
+    ).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.idempotencyConflict,
+    });
     const replay = handler.create({
       capabilityToken: token("create", create),
       request: create,

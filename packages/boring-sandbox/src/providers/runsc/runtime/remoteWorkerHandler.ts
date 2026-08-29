@@ -74,7 +74,10 @@ export class RemoteWorkerRunscHandlerV1 {
   readonly runtime: RunscSessionRuntimeV1;
   private readonly createTransactions = new Map<
     string,
-    Promise<RemoteWorkerCreateResponseV1>
+    {
+      requestDigest: `sha256:${string}`;
+      promise: Promise<RemoteWorkerCreateResponseV1>;
+    }
   >();
 
   constructor(private readonly options: RemoteWorkerRunscHandlerOptionsV1) {
@@ -151,10 +154,17 @@ export class RemoteWorkerRunscHandlerV1 {
     const transactionKey = JSON.stringify([
       request.workspaceId,
       request.clientLeaseId,
-      authorization.requestDigest,
     ]);
     const existing = this.createTransactions.get(transactionKey);
-    if (existing) return await existing;
+    if (existing) {
+      if (existing.requestDigest !== authorization.requestDigest) {
+        throw new SandboxProviderError(
+          REMOTE_WORKER_ERROR_CODES_V1.idempotencyConflict,
+          "remote-worker create conflicts with an in-flight client lease",
+        );
+      }
+      return await existing.promise;
+    }
 
     const transaction = (async (): Promise<RemoteWorkerCreateResponseV1> => {
       const lease = await this.runtime.createComposite({
@@ -185,11 +195,15 @@ export class RemoteWorkerRunscHandlerV1 {
         throw error;
       }
     })();
-    this.createTransactions.set(transactionKey, transaction);
+    const publication = {
+      requestDigest: authorization.requestDigest,
+      promise: transaction,
+    };
+    this.createTransactions.set(transactionKey, publication);
     try {
       return await transaction;
     } finally {
-      if (this.createTransactions.get(transactionKey) === transaction) {
+      if (this.createTransactions.get(transactionKey) === publication) {
         this.createTransactions.delete(transactionKey);
       }
     }
