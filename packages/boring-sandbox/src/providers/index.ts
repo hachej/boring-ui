@@ -21,11 +21,13 @@ export {
   type RemoteWorkerCapabilityIssuerInputV1,
   type RemoteWorkerCapabilityIssuerV1,
   type RemoteWorkerSandboxProviderOptionsV1,
+  type RemoteWorkerSandboxProviderV1,
 } from './remote-worker/createRemoteWorkerProvider'
 export {
   REMOTE_WORKER_BUCKET_COUNT_V1,
   parseRemoteWorkerFleetConfigV1,
   remoteWorkerBucketForWorkspaceV1,
+  remoteWorkerFleetConfigDigestV1,
   resolveRemoteWorkerPlacementV1,
   type ParseRemoteWorkerFleetConfigOptionsV1,
   type RemoteWorkerFleetConfigV1,
