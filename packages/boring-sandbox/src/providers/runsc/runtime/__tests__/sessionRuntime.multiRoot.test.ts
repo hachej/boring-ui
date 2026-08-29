@@ -355,6 +355,97 @@ describe("runsc multi-root and legacy compatibility", () => {
     expect(check.mock.calls).toEqual([[workspaceId]]);
   });
 
+  test("shutdown waits for delayed quota before revoking legacy create", async () => {
+    let releaseQuota: (() => void) | undefined;
+    const quotaGate = new Promise<void>((resolve) => { releaseQuota = resolve; });
+    const docker = fakeRunner();
+    const quota = {
+      apply: vi.fn(async () => await quotaGate),
+      check: vi.fn(async () => undefined),
+    };
+    const sessions = runtime({ runner: docker, quota });
+    const creating = sessions.create(createInput);
+    await vi.waitFor(() => expect(quota.apply).toHaveBeenCalledTimes(1));
+    let closed = false;
+    const closing = sessions.shutdown().then(() => { closed = true; });
+    await Promise.resolve();
+    expect(closed).toBe(false);
+    releaseQuota?.();
+    await expect(creating).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.unavailable,
+    });
+    await closing;
+    expect(quota.check).not.toHaveBeenCalled();
+    expect(docker.run).not.toHaveBeenCalled();
+  });
+
+  test("shutdown waits for delayed root preparation and compensates it", async () => {
+    let releaseRoot: (() => void) | undefined;
+    const rootGate = new Promise<void>((resolve) => { releaseRoot = resolve; });
+    const roots = multiSandboxRoots();
+    vi.mocked(roots.prepare).mockImplementationOnce(async (
+      authorizedWorkspaceId: string,
+      sandboxId: string,
+    ) => {
+      await rootGate;
+      return `${trustedWorkspaceMountSource(
+        "/srv/boring/workspaces",
+        authorizedWorkspaceId,
+      )}/${sandboxId}` as TrustedWorkspaceMountSource;
+    });
+    const docker = fakeRunner();
+    const sessions = runtime({ roots, admitted: true, runner: docker });
+    const creating = sessions.createComposite(createInput);
+    await vi.waitFor(() => expect(roots.prepare).toHaveBeenCalledTimes(1));
+    let closed = false;
+    const closing = sessions.shutdown().then(() => { closed = true; });
+    await Promise.resolve();
+    expect(closed).toBe(false);
+    releaseRoot?.();
+    await expect(creating).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.unavailable,
+    });
+    await closing;
+    expect(roots.dispose).toHaveBeenCalledTimes(1);
+    expect(roots.close).toHaveBeenCalledTimes(1);
+    expect(docker.run.mock.calls.some(([input]) => input.argv[0] === "run")).toBe(false);
+  });
+
+  test("concurrent shutdown waits for accepted container create and retirement", async () => {
+    let releaseRun: (() => void) | undefined;
+    const runGate = new Promise<void>((resolve) => { releaseRun = resolve; });
+    const roots = multiSandboxRoots();
+    const docker = fakeRunner();
+    const baseRun = docker.run.getMockImplementation() as (
+      input: DockerCommandInput,
+    ) => Promise<DockerCommandResult>;
+    docker.run.mockImplementation(async (input) => {
+      if (input.argv[0] === "run") await runGate;
+      return await baseRun(input);
+    });
+    const sessions = runtime({ roots, admitted: true, runner: docker });
+    const creating = sessions.createComposite(createInput);
+    await vi.waitFor(() => expect(
+      docker.run.mock.calls.some(([input]) => input.argv[0] === "run"),
+    ).toBe(true));
+    let closed = 0;
+    const first = sessions.shutdown().then(() => { closed += 1; });
+    const second = sessions.shutdown().then(() => { closed += 1; });
+    await Promise.resolve();
+    expect(closed).toBe(0);
+    releaseRun?.();
+    await expect(creating).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.unavailable,
+    });
+    await Promise.all([first, second]);
+    expect(roots.dispose).toHaveBeenCalledTimes(1);
+    expect(roots.close).toHaveBeenCalledTimes(1);
+    expect(docker.run.mock.calls.filter(([input]) => input.argv[0] === "rm")).toHaveLength(1);
+    const callsAfterClose = docker.run.mock.calls.length;
+    await Promise.resolve();
+    expect(docker.run).toHaveBeenCalledTimes(callsAfterClose);
+  });
+
   test("coalesces concurrent failed shutdown cleanup before one retry", async () => {
     const roots = multiSandboxRoots();
     let releaseClose: (() => void) | undefined;

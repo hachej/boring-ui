@@ -86,9 +86,7 @@ export interface RunscSessionLeaseV1 {
   readonly sandboxId: string; readonly leaseExpiresAtMs: number;
   readonly hardExpiresAtMs: number;
 }
-export interface CompositeRunscSessionLeaseV1 extends RunscSessionLeaseV1 {
-  readonly newlyAllocated: boolean;
-}
+export interface CompositeRunscSessionLeaseV1 extends RunscSessionLeaseV1 { readonly newlyAllocated: boolean; }
 type AnyCreateInputV1 = CreateRunscSessionInputV1 | CreateCompositeRunscSessionInputV1;
 type AnySessionLeaseV1 = RunscSessionLeaseV1 | CompositeRunscSessionLeaseV1;
 interface InvocationRecordV1 {
@@ -126,7 +124,7 @@ function isHelperResponse(value: unknown): value is InvocationHelperResponseV1 {
 function runtimeId(): string { return randomBytes(16).toString("hex"); }
 export class RunscSessionRuntimeV1 {
   private readonly state = new RunscSessionStateV1<SessionRecordV1>();
-  private readonly pendingOperations = new Set<Promise<unknown>>();
+  private readonly pendingOperations = new Set<Promise<unknown>>(); private readonly pendingCreates = new Set<Promise<unknown>>();
   private readonly workspace: RunscWorkspaceHelperClientV1;
   private readonly retirement: RunscSessionRetirementManagerV1<SessionRecordV1>;
   private readonly now: () => number;
@@ -164,10 +162,7 @@ export class RunscSessionRuntimeV1 {
     );
   }
   get supportsMultiSandboxRoots(): boolean {
-    return (
-      this.options.sandboxRoots !== undefined &&
-      this.options.multiSandboxRootsAdmitted === true
-    );
+    return Boolean(this.options.sandboxRoots && this.options.multiSandboxRootsAdmitted === true);
   }
   async startupSweep(): Promise<void> {
     if (this.closed) this.unavailable();
@@ -203,9 +198,7 @@ export class RunscSessionRuntimeV1 {
     if (this.options.sandboxRoots) this.compositeAuthorityRequired();
     return this.createForMode(input, false) as Promise<RunscSessionLeaseV1>;
   }
-  createComposite(
-    input: CreateCompositeRunscSessionInputV1,
-  ): Promise<CompositeRunscSessionLeaseV1> {
+  createComposite(input: CreateCompositeRunscSessionInputV1): Promise<CompositeRunscSessionLeaseV1> {
     if (this.closed) this.unavailable();
     if (!this.supportsMultiSandboxRoots) {
       throw runscRuntimeError(
@@ -217,7 +210,7 @@ export class RunscSessionRuntimeV1 {
   }
   private createForMode(input: AnyCreateInputV1, multiRoot: boolean): Promise<AnySessionLeaseV1> {
     return this.state.create(input, multiRoot, this.maxConcurrentCreates,
-      (normalized, digest) => this.track(this.createNew(normalized, digest, multiRoot)));
+      (normalized, digest) => this.track(this.createNew(normalized, digest, multiRoot), this.pendingCreates));
   }
   private async createNew(
     input: AnyCreateInputV1,
@@ -254,6 +247,7 @@ export class RunscSessionRuntimeV1 {
       );
     } else {
       await this.options.quota.apply(input.workspaceId);
+      if (this.closed) this.unavailable();
       await this.options.quota.check(input.workspaceId);
       workspaceMountSource = input.workspaceMountSource;
     }
@@ -282,6 +276,7 @@ export class RunscSessionRuntimeV1 {
       invocations: new Map(),
     };
     try {
+      if (this.closed) this.unavailable();
       await this.startContainer(record);
       if (this.closed) this.unavailable();
       record.createdAtMs = this.now();
@@ -567,6 +562,7 @@ export class RunscSessionRuntimeV1 {
   }
   private async shutdownOnce(): Promise<void> {
     for (const record of this.state.sessions.values()) clearTimeout(record.timer);
+    await Promise.allSettled([...this.pendingCreates]);
     await Promise.race([
       Promise.allSettled([...this.pendingOperations]),
       new Promise<void>((resolve) => setTimeout(resolve, RUNSC_RUNTIME_LIMITS_V1.shutdownDrainMs)),
@@ -832,10 +828,10 @@ export class RunscSessionRuntimeV1 {
     safeOpaqueId(sandboxId, "sandbox id");
     await this.retirement.notifyMissingComposite(workspaceId, sandboxId);
   }
-  private track<T>(operation: Promise<T>): Promise<T> {
-    this.pendingOperations.add(operation);
+  private track<T>(operation: Promise<T>, operations = this.pendingOperations): Promise<T> {
+    operations.add(operation);
     const cleanup = (): void => {
-      this.pendingOperations.delete(operation);
+      operations.delete(operation);
     };
     void operation.then(cleanup, cleanup);
     return operation;

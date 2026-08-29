@@ -33,7 +33,7 @@ function normalizeCreateInput(input: SessionCreateStateInputV1, multiRoot: boole
     : validateQuotaWorkspaceId(input.workspaceId);
   const normalized: SessionCreateStateInputV1 = workspaceId === input.workspaceId
     ? input : { ...input, workspaceId };
-  const supplied = "createDigest" in normalized ? normalized.createDigest : undefined;
+  const supplied = multiRoot && "createDigest" in normalized ? normalized.createDigest : undefined;
   const digest = supplied ?? remoteWorkerRequestDigestV1({
     sandboxId: normalized.sandboxId, clientLeaseId: normalized.clientLeaseId, workspaceId,
     workspaceMountSource: normalized.workspaceMountSource, image: normalized.image,

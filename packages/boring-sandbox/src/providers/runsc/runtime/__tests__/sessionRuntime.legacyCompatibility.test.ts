@@ -204,13 +204,14 @@ describe("runsc legacy runtime compatibility", () => {
       return await run(input);
     });
     const concurrent = runtime(docker);
-    const lower = concurrent.create(createInput);
+    const ignoredDigest = `sha256:${"a".repeat(64)}` as const;
+    const pendingInput = { ...createInput, createDigest: ignoredDigest };
+    const lower = concurrent.create(pendingInput);
     await vi.waitFor(() => expect(docker.run).toHaveBeenCalled());
-    const replay = concurrent.create({ ...createInput, workspaceId: alias });
+    const replay = concurrent.create({ ...pendingInput, workspaceId: alias });
     expect(() => concurrent.create({
-      ...createInput,
+      ...pendingInput,
       sandboxId: "sandbox-alias",
-      clientLeaseId: "lease-alias",
       workspaceId: alias,
     })).toThrowError(expect.objectContaining({
       code: REMOTE_WORKER_ERROR_CODES_V1.idempotencyConflict,
@@ -221,5 +222,7 @@ describe("runsc legacy runtime compatibility", () => {
     expect(
       docker.run.mock.calls.filter(([input]) => input.argv[0] === "run"),
     ).toHaveLength(1);
+    await concurrent.dispose("sandbox-a");
+    expect(docker.run.mock.calls.filter(([input]) => input.argv[0] === "rm")).toHaveLength(1);
   });
 });
