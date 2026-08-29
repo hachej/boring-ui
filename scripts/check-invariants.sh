@@ -5,8 +5,7 @@ PREFIX="[invariants]"
 ROOT_INPUT="${1:-packages/agent}"
 ROOT_DIR="$(cd "$ROOT_INPUT" 2>/dev/null && pwd || true)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-NEGATIVE_FIXTURES_ONLY="${2:-}"
-PI_RUNTIME_IMPORT_PATTERN="from\s+['\"](@mariozechner/pi-|@earendil-works/pi-)"
+PI_RUNTIME_IMPORT_PATTERN="(from\s+|import\(|require\()['\"](@mariozechner/pi-|@earendil-works/pi-)"
 HARNESS_SERVICE_IMPORT_PATTERN="from\s+['\"][^'\"]*pi-chat/harnessPiChatService(?:\.[^'\"]+)?['\"]"
 
 if [[ -z "$ROOT_DIR" || ! -d "$ROOT_DIR" ]]; then
@@ -193,17 +192,15 @@ if [[ -f "$ROOT_DIR/package.json" ]]; then
   fi
 fi
 
-if [[ "$NEGATIVE_FIXTURES_ONLY" != "--negative-fixtures-only" ]]; then
-  fixture_root="$SCRIPT_DIR/__fixtures__/check-invariants/agent-host-boundary"
-  if ! rg -q -e "$PI_RUNTIME_IMPORT_PATTERN" "$fixture_root/src/server/agent-host/piRuntimeLeak.ts" \
-    || ! rg -q -e "$HARNESS_SERVICE_IMPORT_PATTERN" "$fixture_root/src/server/agent-host/serviceLeak.ts"; then
-    failures=1
-    echo "$PREFIX ERR agent-host boundary negative fixtures did not match both invariants"
-    echo "  Invariant: invariant regexes must reject their checked-in negative fixtures."
-    echo "  Fix: Keep fixture paths and import forms aligned with both agent-host scans."
-  else
-    echo "$PREFIX OK agent-host boundary negative fixtures match both invariant scans"
-  fi
+fixture_root="$SCRIPT_DIR/__fixtures__/check-invariants/agent-host-boundary"
+if ! rg -q -e "$PI_RUNTIME_IMPORT_PATTERN" "$fixture_root/src/server/agent-host/piRuntimeLeak.ts" \
+  || ! rg -q -e "$HARNESS_SERVICE_IMPORT_PATTERN" "$fixture_root/src/server/agent-host/serviceLeak.ts"; then
+  failures=1
+  echo "$PREFIX ERR agent-host boundary negative fixtures did not match both invariants"
+  echo "  Invariant: invariant regexes must reject their checked-in negative fixtures."
+  echo "  Fix: Keep fixture paths and import forms aligned with both agent-host scans."
+else
+  echo "$PREFIX OK agent-host boundary negative fixtures match both invariant scans"
 fi
 
 if [[ "$failures" -ne 0 ]]; then

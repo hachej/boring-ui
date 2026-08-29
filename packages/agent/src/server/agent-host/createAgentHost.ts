@@ -897,7 +897,7 @@ export async function createAgentHost(
     run: (binding: LeaseBoundWorkspaceAgent) => Promise<void>,
   ) => runWithWorkspaceAgentLease({ runtime, gateway, request: input, run })
 
-  const resolveHarnessBackend = async (
+  const resolveHarnessBackendForRequest = async (
     authorizeAgentRequest: (request: import('fastify').FastifyRequest) => Promise<AuthorizedAgentScope>,
     request: import('fastify').FastifyRequest,
     agentTypeId: string,
@@ -929,7 +929,7 @@ export async function createAgentHost(
           return (await runtime.verify(scope)).workspaceScopeId
         },
         resolveHarnessBackend(request, agentTypeId, sessionId) {
-          return resolveHarnessBackend(projectionOptions.authorizeAgentRequest, request, agentTypeId, sessionId)
+          return resolveHarnessBackendForRequest(projectionOptions.authorizeAgentRequest, request, agentTypeId, sessionId)
         },
       })
     },

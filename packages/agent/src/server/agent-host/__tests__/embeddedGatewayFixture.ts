@@ -59,7 +59,7 @@ export class FakeService implements AgentHarnessBackend {
   private closed = false
 
   constructor(
-    private readonly replayMaxEvents = 5,
+    private readonly replayMaxEvents = 4,
     private readonly reuseIdsAcrossWorkspaces = false,
   ) {}
 

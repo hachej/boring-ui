@@ -1,10 +1,15 @@
 import { ErrorCode } from '../../../shared/error-codes'
 import type { PiSessionRequestContext } from '../../../core/piChatSessionService'
 import { codedError } from '../../codedError'
-import { HarnessPiChatService } from '../../pi-chat/harnessPiChatService'
+import { HarnessPiChatService, type HarnessPiChatServiceOptions } from '../../pi-chat/harnessPiChatService'
+import type { AgentHarness } from '../../../shared/harness'
+import type { SessionStore } from '../../../shared/session'
+import type { Workspace } from '../../../shared/workspace'
+import type { PiChatEvent } from '../../../shared/chat'
+import type { EventStreamStore } from '../../events/eventStreamStore'
+import type { AgentMeteringSink } from '../../pi-chat/metering'
 import type {
   AgentHarnessBackend,
-  AgentHarnessBackendFactoryInput,
   HarnessAgentScope,
   HarnessRequestContext,
   HarnessSessionAddress,
@@ -21,6 +26,18 @@ function toPiSessionRequestContext(
     sessionAuthority: 'workspace-scope',
     requestId: ctx.requestId,
   }
+}
+
+/** Built once per runtime binding; deliberately carries no credentials or membership. */
+export interface AgentHarnessBackendFactoryInput {
+  readonly harness: AgentHarness
+  readonly sessionStore: SessionStore
+  readonly workdir: string
+  readonly workspace?: Workspace
+  readonly eventStore?: EventStreamStore
+  readonly metering?: AgentMeteringSink
+  readonly onEvent?: (sessionId: string, event: PiChatEvent) => void
+  readonly attachmentUrl?: HarnessPiChatServiceOptions['attachmentUrl']
 }
 
 export function createPiSessionHarnessBackend(

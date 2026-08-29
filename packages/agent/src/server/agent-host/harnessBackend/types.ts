@@ -14,12 +14,7 @@ import type {
   StopReceipt,
 } from '../../../shared/chat'
 import type { AgentSessionRef } from '../../../shared/gateway/types'
-import type { AgentHarness } from '../../../shared/harness'
-import type { SessionListOptions, SessionStore, SessionSummary } from '../../../shared/session'
-import type { Workspace } from '../../../shared/workspace'
-import type { EventStreamStore } from '../../events/eventStreamStore'
-import type { HarnessPiChatServiceOptions } from '../../pi-chat/harnessPiChatService'
-import type { AgentMeteringSink } from '../../pi-chat/metering'
+import type { SessionListOptions, SessionSummary } from '../../../shared/session'
 
 /** Workspace-scoped addressing. Pi-native identities remain adapter-private. */
 export interface HarnessSessionAddress {
@@ -103,16 +98,4 @@ export interface AgentHarnessBackend {
     index: number,
   ): Promise<PiChatAttachmentResult>
   close(): Promise<void>
-}
-
-/** Built once per runtime binding; deliberately carries no credentials or membership. */
-export interface AgentHarnessBackendFactoryInput {
-  readonly harness: AgentHarness
-  readonly sessionStore: SessionStore
-  readonly workdir: string
-  readonly workspace?: Workspace
-  readonly eventStore?: EventStreamStore
-  readonly metering?: AgentMeteringSink
-  readonly onEvent?: (sessionId: string, event: PiChatEvent) => void
-  readonly attachmentUrl?: HarnessPiChatServiceOptions['attachmentUrl']
 }
