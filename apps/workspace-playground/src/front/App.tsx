@@ -6,12 +6,17 @@ import { WorkspaceAgentFront, WorkspaceFullPagePanel, parseFullPagePanelLocation
 import { createAskUserPlugin } from "@hachej/boring-ask-user/front"
 import { diagramPlugin } from "@hachej/boring-diagram/front"
 import { createTasksPlugin } from "@hachej/boring-tasks/front"
-import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
+import { SHOWCASE_SESSION_ID } from "./showcaseMessages"
 import { LoadingStatesShowcase, type LoadingStateMode } from "./LoadingStatesShowcase"
 
 function isShowcaseRoute(): boolean {
   if (typeof window === "undefined") return false
   return new URLSearchParams(window.location.search).get("showcase") === "1"
+}
+
+function randomId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID()
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 }
 
 const showcaseSessionTitles = [
@@ -53,10 +58,11 @@ function showcaseSessionCount(): number {
   return Number.isFinite(requested) ? Math.min(100, Math.max(1, Math.floor(requested))) : 1
 }
 
-// Decorative-only entries used to pad the session list when `?sessions=N`
-// is requested (session-list volume/scroll demos). These never back a real
-// server session — only the boot-created session (below) is ever selected
-// by default, so they are never connected to.
+// Decorative padding entries for the session list when `?sessions=N` is
+// requested (session-list volume/scroll demos). They start with no backend
+// session behind them — selecting one materializes a real session on demand
+// (see handleActiveSessionIdChange) instead of ever connecting the chat pane
+// to this placeholder id directly.
 function createInitialShowcaseSessions() {
   const count = showcaseSessionCount()
   const now = Date.now()
@@ -178,90 +184,159 @@ export function WorkspaceShell() {
   const [metaError, setMetaError] = useState<string | null>(null)
   const [showcaseActiveSessionId, setShowcaseActiveSessionId] = useState<string | undefined>(undefined)
   const [showcaseSessions, setShowcaseSessions] = useState(createInitialShowcaseSessions)
-  // The showcase route pre-seeds a client-side session id, but the chat pane
-  // always talks to a real backend session (see packages/workspace's chat
-  // pane, which requires params.sessionId and hydrates it over the network).
-  // A session that only ever exists in localStorage 404s on hydrate, which is
-  // what previously produced the permanent "session was not found" banner
-  // and a disabled composer (gh-1452). `showcaseBootState` gates rendering
-  // the chat panel until a real backend session has been created.
+  // The showcase route used to pre-seed a client-side session id, but the
+  // chat pane always talks to a real backend session (see packages/
+  // workspace's chat pane, which requires params.sessionId and hydrates it
+  // over the network). A session that only ever existed client-side 404'd on
+  // hydrate, which is what produced the permanent "session was not found"
+  // banner and a disabled composer (gh-1452). `showcaseBootState` gates
+  // rendering the chat panel until a real backend session has been created.
   const [showcaseBootState, setShowcaseBootState] = useState<"pending" | "ready" | "error">(showcase ? "pending" : "ready")
   const sessions = showcase ? showcaseSessions : undefined
   const liveShowcaseSessionIds = useRef(new Set<string>())
-  const requestNewShowcaseSession = useCallback(async (title: string) => {
-    const response = await fetch(`/api/v1/agents/${encodeURIComponent(defaultAgentTypeId)}/sessions`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-boring-workspace-id": "default",
-      },
-      body: JSON.stringify({ title }),
-    })
-    if (!response.ok) throw new Error(`showcase session create failed (${response.status})`)
-    const payload = await response.json() as { agentTypeId?: string; sessionId?: string }
-    if (!payload.sessionId) throw new Error("showcase session create returned no session id")
-    return {
-      id: payload.sessionId,
-      agentTypeId: payload.agentTypeId ?? defaultAgentTypeId,
-      title,
-      updatedAt: Date.now(),
+  // Tab-scoped reuse key: bounds session accumulation from repeated boots in
+  // the same browser tab (reload, HMR) to one durable session instead of one
+  // per mount. sessionStorage (not localStorage) so it never outlives the
+  // tab. Cleared automatically once the reused session picks up its first
+  // turn — createSession only resumes empty (turnCount === 0) sessions
+  // server-side (embeddedGateway.ts), so a used session naturally falls
+  // through to creating a fresh one on the next reload.
+  const showcaseBootStorageKey = "boring-ui-v2:showcase:boot-session-id"
+  const requestNewShowcaseSession = useCallback(async (
+    title: string,
+    options: { requestId?: string; resumeSessionId?: string; timeoutMs?: number } = {},
+  ) => {
+    const controller = new AbortController()
+    const timeoutId = options.timeoutMs !== undefined
+      ? setTimeout(() => controller.abort(), options.timeoutMs)
+      : undefined
+    try {
+      const response = await fetch(`/api/v1/agents/${encodeURIComponent(defaultAgentTypeId)}/sessions`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-boring-workspace-id": "default",
+        },
+        body: JSON.stringify({
+          title,
+          ...(options.requestId ? { requestId: options.requestId } : {}),
+          ...(options.resumeSessionId ? { resumeSessionId: options.resumeSessionId } : {}),
+        }),
+        signal: controller.signal,
+      })
+      if (!response.ok) throw new Error(`showcase session create failed (${response.status})`)
+      const payload = await response.json() as { agentTypeId?: string; sessionId?: string }
+      if (!payload.sessionId) throw new Error("showcase session create returned no session id")
+      return {
+        id: payload.sessionId,
+        agentTypeId: payload.agentTypeId ?? defaultAgentTypeId,
+        title,
+        updatedAt: Date.now(),
+      }
+    } finally {
+      if (timeoutId !== undefined) clearTimeout(timeoutId)
     }
   }, [defaultAgentTypeId])
   const createShowcaseSession = useCallback(async () => {
-    const session = await requestNewShowcaseSession("New chat")
+    const session = await requestNewShowcaseSession("New chat", { requestId: randomId(), timeoutMs: 8_000 })
     liveShowcaseSessionIds.current.add(session.id)
     setShowcaseSessions((current) => [...current, session])
     setShowcaseActiveSessionId(session.id)
     return session
   }, [requestNewShowcaseSession])
-  // Boot the initial showcase session: create it on the real backend (with
-  // retries to ride out a cold dev-server boot) before the composer is ever
-  // shown, instead of pre-seeding a session id that never materializes
-  // server-side.
+  // Boot the initial showcase session: create it on the real backend (with a
+  // bounded, abort-timed retry to ride out a cold dev-server boot) before the
+  // composer is ever shown, instead of pre-seeding a session id that never
+  // materializes server-side. The request id is generated once and reused
+  // across every retry attempt so a committed-but-lost response can't create
+  // a second durable session (createSession is idempotent per requestId —
+  // embeddedGateway.ts replays the original receipt for a repeated id).
   const showcaseBootStartedRef = useRef(false)
+  const showcaseBootRequestIdRef = useRef<string | null>(null)
+  const showcaseBootCancelRef = useRef(false)
+  const bootShowcaseSession = useCallback(async () => {
+    showcaseBootCancelRef.current = false
+    showcaseBootStartedRef.current = true
+    setShowcaseBootState("pending")
+    if (!showcaseBootRequestIdRef.current) showcaseBootRequestIdRef.current = randomId()
+    const requestId = showcaseBootRequestIdRef.current
+    let resumeSessionId: string | undefined
+    try {
+      resumeSessionId = window.sessionStorage.getItem(showcaseBootStorageKey) ?? undefined
+    } catch {
+      /* sessionStorage unavailable (private mode, disabled storage) — always create fresh */
+    }
+    const maxAttempts = 5
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      if (showcaseBootCancelRef.current) return
+      try {
+        const session = await requestNewShowcaseSession(showcaseSessionTitles[0] ?? "New chat", {
+          requestId,
+          resumeSessionId,
+          timeoutMs: 8_000,
+        })
+        if (showcaseBootCancelRef.current) return
+        liveShowcaseSessionIds.current.add(session.id)
+        try { window.sessionStorage.setItem(showcaseBootStorageKey, session.id) } catch { /* noop */ }
+        setShowcaseSessions((current) => [session, ...current.filter((existing) => existing.id !== session.id)])
+        setShowcaseActiveSessionId(session.id)
+        setShowcaseBootState("ready")
+        return
+      } catch {
+        if (showcaseBootCancelRef.current) return
+        if (attempt === maxAttempts) {
+          setShowcaseBootState("error")
+          return
+        }
+        await new Promise((resolve) => setTimeout(resolve, 300 * attempt))
+      }
+    }
+  }, [requestNewShowcaseSession])
   useEffect(() => {
     if (!showcase || !metaLoaded || !defaultAgentTypeId) return
     if (showcaseBootStartedRef.current) return
-    showcaseBootStartedRef.current = true
-    let cancelled = false
-    const maxAttempts = 5
-    const boot = async () => {
-      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-        try {
-          const session = await requestNewShowcaseSession(showcaseSessionTitles[0] ?? "New chat")
-          if (cancelled) return
-          liveShowcaseSessionIds.current.add(session.id)
-          seedShowcase(session.id)
-          setShowcaseSessions((current) => [session, ...current])
-          setShowcaseActiveSessionId(session.id)
-          setShowcaseBootState("ready")
-          return
-        } catch {
-          if (cancelled) return
-          if (attempt === maxAttempts) {
-            setShowcaseBootState("error")
-            return
-          }
-          await new Promise((resolve) => setTimeout(resolve, 300 * attempt))
-        }
-      }
-    }
-    void boot()
-    return () => { cancelled = true }
-  }, [defaultAgentTypeId, metaLoaded, requestNewShowcaseSession, showcase])
+    void bootShowcaseSession()
+    return () => { showcaseBootCancelRef.current = true }
+  }, [bootShowcaseSession, defaultAgentTypeId, metaLoaded, showcase])
+  const retryShowcaseBoot = useCallback(() => {
+    showcaseBootStartedRef.current = false
+    void bootShowcaseSession()
+  }, [bootShowcaseSession])
   const renameShowcaseSession = useCallback((sessionId: string, title: string) => {
     setShowcaseSessions((current) => current.map((session) => (
       session.id === sessionId ? { ...session, title, updatedAt: Date.now() } : session
     )))
   }, [])
+  // Decorative rows (padding from `?sessions=N`) start with no backend
+  // session behind them. Selecting one materializes a real session first —
+  // keyed by a stable per-row request id so a double-click can't create two
+  // — instead of ever handing the chat pane an id that will 404 (gh-1452).
+  const materializingShowcaseSessionIds = useRef(new Set<string>())
   const handleActiveSessionIdChange = useCallback(
     (sessionId: string | null) => {
-      if (showcase && sessionId) {
-        if (!liveShowcaseSessionIds.current.has(sessionId)) seedShowcase(sessionId)
+      if (!showcase || !sessionId) return
+      if (liveShowcaseSessionIds.current.has(sessionId)) {
         setShowcaseActiveSessionId(sessionId)
+        return
       }
+      if (materializingShowcaseSessionIds.current.has(sessionId)) return
+      materializingShowcaseSessionIds.current.add(sessionId)
+      const placeholderTitle = showcaseSessions.find((session) => session.id === sessionId)?.title ?? "New chat"
+      void requestNewShowcaseSession(placeholderTitle, { requestId: `showcase-row-${sessionId}`, timeoutMs: 8_000 })
+        .then((session) => {
+          liveShowcaseSessionIds.current.add(session.id)
+          setShowcaseSessions((current) => current.map((existing) => (existing.id === sessionId ? session : existing)))
+          setShowcaseActiveSessionId(session.id)
+        })
+        .catch(() => {
+          // Leave the active session untouched rather than switching into a
+          // placeholder id that is guaranteed to 404.
+        })
+        .finally(() => {
+          materializingShowcaseSessionIds.current.delete(sessionId)
+        })
     },
-    [showcase],
+    [requestNewShowcaseSession, showcase, showcaseSessions],
   )
 
   useEffect(() => {
@@ -311,10 +386,17 @@ export function WorkspaceShell() {
   if (showcase && showcaseBootState !== "ready") {
     if (showcaseBootState === "error") {
       return (
-        <div className="flex h-screen w-screen items-center justify-center bg-background p-6">
+        <div className="flex h-screen w-screen flex-col items-center justify-center gap-4 bg-background p-6">
           <p role="alert" className="max-w-md text-center text-sm text-destructive">
-            The showcase could not start its session. Reload to try again.
+            The showcase could not start its session.
           </p>
+          <button
+            type="button"
+            onClick={retryShowcaseBoot}
+            className="rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted"
+          >
+            Retry
+          </button>
         </div>
       )
     }
