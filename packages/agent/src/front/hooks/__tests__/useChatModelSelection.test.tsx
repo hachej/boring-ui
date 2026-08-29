@@ -147,6 +147,37 @@ describe('useChatModelSelection', () => {
     expect(result.current.model).toBeNull()
   })
 
+  it('resolves the agent default model for a pre-seeded/directly-created session with no stored model (#1469)', async () => {
+    // Sessions created outside the primary new-chat flow (pre-seeded scripted
+    // sessions, sessions created via a direct POST .../sessions call) hydrate
+    // with no session.currentModel and are never "new" (sessionIsNew is false
+    // once the session already carries history/queue state or was created
+    // out of band). Composer authority must still resolve a model from the
+    // agent's server-side default so the composer isn't disabled forever.
+    const defaultModel = { provider: 'anthropic', id: 'claude-sonnet' } as const
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      models: [
+        { provider: 'anthropic', id: 'claude-sonnet', label: 'Sonnet', available: true },
+      ],
+      defaultModel,
+    }))) as unknown as typeof fetch
+
+    const store = storage()
+    const { result } = renderHook(() => useChatModelSelection({
+      sessionId: 'pre-seeded-no-model',
+      sessionHydrated: true,
+      sessionIsNew: false,
+      storageScope: 'scope-a',
+      storage: store,
+      fetch: fetchImpl,
+      enabled: true,
+    }))
+
+    await waitFor(() => expect(result.current.loaded).toBe(true))
+    await waitFor(() => expect(result.current.model).toEqual(defaultModel))
+    expect(result.current.sessionModel).toBeUndefined()
+  })
+
   it('normalizes discovered model metadata before storing a prompt selection', async () => {
     const store = storage()
     const { result } = renderHook(() => useChatModelSelection({

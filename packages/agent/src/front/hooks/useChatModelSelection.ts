@@ -142,7 +142,12 @@ export function useChatModelSelection({
           const selected = current.pendingOverride ?? sessionModel ?? current.localDefault
           if (availableModel(models, selected)) return current
           if (sessionModel) return { ...current, pendingOverride: undefined }
-          if (sessionId && !sessionIsNew) return { ...current, pendingOverride: undefined, localDefault: null }
+          // An existing session without a stored model (pre-seeded/directly-created
+          // sessions) has no authoritative model of its own. Resolve one from the
+          // server's discovery response (agent default, or first available) instead
+          // of leaving localDefault null forever — a null default here is what kept
+          // sessionAuthorityReady from ever becoming true for such sessions, which
+          // permanently disabled the composer (#1469).
           const firstAvailable = models.find((candidate) => candidate.available)
           return {
             ...current,
@@ -180,7 +185,13 @@ export function useChatModelSelection({
     && selection.storageScope === storageScope
   const pendingOverride = selectionBelongsToSession ? selection.pendingOverride : undefined
   const isOverride = Boolean(pendingOverride && sessionModel && !sameModel(pendingOverride, sessionModel))
-  const sessionAuthorityReady = !sessionId || (sessionHydrated && (sessionModel !== undefined || sessionIsNew))
+  // Discovery must have actually run (not just be vacuously "loaded" because
+  // it's disabled) before we trust localDefault as an existing session's
+  // resolved model — otherwise an untouched/stale browser-storage default
+  // could leak into a session that never selected one.
+  const discoveryVetted = enabled && currentDiscoveryLoaded
+  const sessionAuthorityReady = !sessionId
+    || (sessionHydrated && (sessionModel !== undefined || sessionIsNew || discoveryVetted))
   const model = currentDiscoveryLoaded && sessionAuthorityReady
     ? pendingOverride ?? sessionModel ?? selection.localDefault
     : null
