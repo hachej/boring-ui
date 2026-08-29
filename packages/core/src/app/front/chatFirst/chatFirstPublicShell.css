@@ -202,15 +202,40 @@
    dock is the ONLY sign-in/sign-up entry point (the workspace top bar's Sign in
    button lives in the app-left pane, which is collapsed on the public shell). */
 @media (max-width: 1100px) {
+  /* ONE number owns the sheet: the shell reserves exactly this much at its
+     bottom edge, and the sheet can never exceed it. `reserve >= sheet height`
+     therefore holds by construction — in both sign-in and sign-up mode, at
+     every viewport height, and with the software keyboard open — instead of
+     depending on the card's content height, which is what broke short
+     landscape phones.
+     `100dvh` follows collapsing browser chrome; `--keyboard-inset` (published
+     on <html> by `useKeyboardInset()`, see
+     packages/workspace/src/front/layout/useKeyboardInset.ts) is the strip the
+     keyboard covers on iOS, where the layout viewport never shrinks. 45% keeps
+     the majority of a short landscape viewport for the hero + composer. */
+  .public-chat-first-shell {
+    --public-auth-dock-height: min(320px, calc((100dvh - var(--keyboard-inset, 0px)) * 0.45));
+  }
+
   .public-auth-dock {
     right: 0;
-    bottom: 0;
+    /* Ride above the keyboard rather than under it. */
+    bottom: var(--keyboard-inset, 0px);
     left: 0;
     width: auto;
   }
 
   .public-auth-dock .public-auth-card {
+    /* The sheet is content-sized but never taller than the reserved band, so
+       `reserve >= sheet height` holds by construction and the sheet cannot
+       reach the hero column's visible window. */
+    max-height: var(--public-auth-dock-height);
     max-width: none;
+    /* The band is capped, so on a short landscape phone (or with the keyboard
+       open) the form scrolls INSIDE the sheet instead of growing over the
+       composer. */
+    overflow-y: auto;
+    overscroll-behavior: contain;
     border-right: 0;
     border-bottom: 0;
     border-left: 0;
@@ -228,15 +253,12 @@
     min-height: 44px;
   }
 
-  /* Reserve the sheet's band at the bottom of the shell so the hero and the
-     composer lay out above it instead of behind it. `dvh` keeps the reserve
-     honest when the mobile browser chrome collapses; the dock is fixed, so it
-     sits inside the reserved band. */
+  /* Reserve the sheet's band (plus the keyboard strip the sheet sits above) at
+     the bottom of the shell, so the hero and the composer lay out above the
+     sheet instead of behind it. */
   .public-chat-first-shell:has(.public-auth-dock) {
     height: 100dvh;
-    /* Cap the reserve on short/landscape viewports: there the sheet overlaps
-       the hero rather than squeezing the composer out of existence. */
-    padding-bottom: min(268px, 40dvh);
+    padding-bottom: calc(var(--public-auth-dock-height) + var(--keyboard-inset, 0px));
   }
 
   /* The sheet spans the viewport, but the form itself stays a readable column
@@ -246,6 +268,14 @@
     margin-left: auto;
     max-width: 420px;
   }
+}
+
+/* The composer's "sign in to send" modal is centred rather than docked, so it
+   only needs to stay inside the viewport the keyboard leaves behind. */
+.public-auth-modal .public-auth-card {
+  max-height: calc(100dvh - 2rem - var(--keyboard-inset, 0px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 /* The composer's model/thinking picker menu expands upward over the hero. It
