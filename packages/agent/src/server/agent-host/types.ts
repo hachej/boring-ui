@@ -31,6 +31,7 @@ import type {
 } from '../../shared/workspaceAgentDispatcher'
 import type { AgentSkillResourceSnapshot } from '../http/routes/skills'
 import type { SandboxLeaseService } from '../sandbox/leases/sandboxLease'
+import type { SandboxLeaseProviderProfileV1 } from '../sandbox/leases/sandboxLeaseProfileIdentity'
 
 export type { LeaseBoundWorkspaceAgent } from '../../shared/workspaceAgentDispatcher'
 
@@ -255,6 +256,8 @@ export interface ResolvedSandboxToolCapability {
   /** Host-owned profile/cache/quota identity; callers must include changes in runtime identity. */
   readonly digest: string
   readonly leases: SandboxLeaseService
+  /** Optional structured identity for hosts composing multi-provider leases. */
+  readonly profile?: SandboxLeaseProviderProfileV1
 }
 
 export interface ResolvedAgentRuntimeScope {

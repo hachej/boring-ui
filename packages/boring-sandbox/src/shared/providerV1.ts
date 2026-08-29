@@ -94,6 +94,9 @@ export type WorkspaceSandboxPairV1 = Readonly<{
   dispose(): Promise<void>;
 }>;
 
+export const DISPOSABLE_SANDBOX_PROVIDER_PROFILE_V1 =
+  'boring-sandbox.disposable-provider.v1' as const;
+
 export interface SandboxProviderV1 {
   readonly contractVersion: typeof PROVIDER_CONTRACT_VERSION;
   readonly providerId: ExtractedSandboxProviderIdV1;
@@ -106,6 +109,26 @@ export interface SandboxProviderV1 {
     context: SandboxProviderInvalidateContextV1,
   ): Promise<void> | void;
   close?(): Promise<void>;
+}
+
+/** Host-only refinement required by mutable lease composition. */
+export interface DisposableSandboxProviderV1 extends SandboxProviderV1 {
+  readonly disposableProfile: Readonly<{
+    contractVersion: typeof DISPOSABLE_SANDBOX_PROVIDER_PROFILE_V1;
+    resume: false;
+    publishedCleanupOwner: 'returned-pair';
+    ambiguousCreate: 'correlated-reconciliation';
+  }>;
+}
+
+export function isDisposableSandboxProviderV1(
+  provider: SandboxProviderV1,
+): provider is DisposableSandboxProviderV1 {
+  const profile = (provider as Partial<DisposableSandboxProviderV1>).disposableProfile;
+  return profile?.contractVersion === DISPOSABLE_SANDBOX_PROVIDER_PROFILE_V1
+    && profile.resume === false
+    && profile.publishedCleanupOwner === 'returned-pair'
+    && profile.ambiguousCreate === 'correlated-reconciliation';
 }
 
 export class SandboxProviderError extends Error {

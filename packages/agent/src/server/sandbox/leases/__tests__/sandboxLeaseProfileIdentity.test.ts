@@ -1,0 +1,60 @@
+import { describe, expect, it } from 'vitest'
+
+import { createDirectSandboxProvider } from '@hachej/boring-sandbox/providers/direct'
+import {
+  SANDBOX_LEASE_PROVIDER_PROFILE_VERSION_V1,
+  normalizeSandboxLeaseProviderProfileV1,
+  sandboxLeaseProviderProfileDigestV1,
+  type SandboxLeaseProviderProfileV1,
+} from '../sandboxLeaseProfileIdentity'
+
+const sha = `sha256:${'a'.repeat(64)}` as const
+
+function profile(scope = 'workspace-a'): SandboxLeaseProviderProfileV1 {
+  return {
+    provider: createDirectSandboxProvider({ leaseMode: 'disposable' }),
+    identity: {
+      contractVersion: SANDBOX_LEASE_PROVIDER_PROFILE_VERSION_V1,
+      workspaceScopeId: scope,
+      placementIdentity: 'local-trusted',
+      providerWorkspaceId: 'physical-workspace-a',
+      leaseRoot: '/host/sandbox-leases',
+      providerId: 'direct',
+      providerConfigDigest: sha,
+      credentialVersionRefs: ['credential-b@2', 'credential-a@1', 'credential-a@1'],
+      ttlMs: 60_000,
+      reapIntervalMs: 10_000,
+      drainTimeoutMs: 5_000,
+      maxActiveLeasesPerOwner: 2,
+      maxActiveLeasesTotal: 4,
+    },
+  }
+}
+
+describe('sandbox lease provider profile identity', () => {
+  it('normalizes serializable identity and produces a stable digest', () => {
+    const normalized = normalizeSandboxLeaseProviderProfileV1(profile(), 'workspace-a')
+    expect(normalized.identity.credentialVersionRefs).toEqual(['credential-a@1', 'credential-b@2'])
+    expect(sandboxLeaseProviderProfileDigestV1(normalized.identity)).toMatch(/^sha256:[a-f0-9]{64}$/)
+    expect(sandboxLeaseProviderProfileDigestV1(normalized.identity)).toBe(
+      sandboxLeaseProviderProfileDigestV1(normalized.identity),
+    )
+  })
+
+  it('rejects cross-workspace reuse before provider use', () => {
+    expect(() => normalizeSandboxLeaseProviderProfileV1(profile('workspace-a'), 'workspace-b'))
+      .toThrow('profile scope is unauthorized')
+  })
+
+  it('rejects normal providers and provider identity mismatch', () => {
+    const value = profile()
+    expect(() => normalizeSandboxLeaseProviderProfileV1({
+      ...value,
+      provider: createDirectSandboxProvider() as never,
+    }, 'workspace-a')).toThrow('provider is not disposable')
+    expect(() => normalizeSandboxLeaseProviderProfileV1({
+      ...value,
+      identity: { ...value.identity, providerId: 'bwrap' },
+    }, 'workspace-a')).toThrow('provider identity does not match')
+  })
+})

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import { createDirectSandboxProvider } from '@hachej/boring-sandbox/providers/direct'
 import type { SandboxProviderV1, WorkspaceSandboxPairV1 } from '@hachej/boring-sandbox/shared'
 import type { Sandbox, Workspace } from '../../../../shared/index'
 import {
@@ -8,6 +9,13 @@ import {
   SandboxLeaseService,
 } from '../sandboxLease'
 import { SandboxLeaseServiceRegistry } from '../sandboxLeaseServiceRegistry'
+
+const disposableProfile = {
+  contractVersion: 'boring-sandbox.disposable-provider.v1',
+  resume: false,
+  publishedCleanupOwner: 'returned-pair',
+  ambiguousCreate: 'correlated-reconciliation',
+} as const
 
 interface FakePair {
   pair: WorkspaceSandboxPairV1
@@ -58,7 +66,7 @@ function createService(input: {
   }))
   const service = new SandboxLeaseService({
     workspaceRoot: '/host/leases',
-    provider: { create: providerCreate, close: input.close } as unknown as SandboxProviderV1,
+    provider: { disposableProfile, create: providerCreate, close: input.close } as unknown as SandboxProviderV1,
     serviceDigest: 'profile-v1',
     ttlMs: 60_000,
     reapIntervalMs: 60_000,
@@ -78,6 +86,22 @@ async function deferred<T>() {
 }
 
 describe('SandboxLeaseService lifecycle registry', () => {
+  it('rejects a resumable provider before starting its reaper', () => {
+    vi.useFakeTimers()
+    expect(() => new SandboxLeaseService({
+      workspaceRoot: '/host/leases',
+      provider: createDirectSandboxProvider(),
+      serviceDigest: 'persistent-profile',
+      ttlMs: 60_000,
+      reapIntervalMs: 60_000,
+      drainTimeoutMs: 100,
+      maxActiveLeasesPerOwner: 1,
+      maxActiveLeasesTotal: 1,
+    })).toThrow('provider must implement the disposable sandbox profile')
+    expect(vi.getTimerCount()).toBe(0)
+    vi.useRealTimers()
+  })
+
   it('creates several owner-bound leases and lists only the owner records', async () => {
     const { service, providerCreate } = createService()
     const first = await service.acquire('owner-a')
@@ -91,6 +115,7 @@ describe('SandboxLeaseService lifecycle registry', () => {
     expect(providerCreate).toHaveBeenNthCalledWith(1, {
       workspaceRoot: `/host/leases/${first.handle}`,
       sessionId: first.handle,
+      requestId: expect.stringMatching(/^[a-f0-9]{64}$/),
     })
     expect(() => service.status('owner-b', first.handle)).toThrow('sandbox lease is unavailable')
     await service.dispose()
@@ -343,6 +368,29 @@ describe('SandboxLeaseService lifecycle registry', () => {
     await service.dispose()
   })
 
+  it('drains and sanitizes a lease whose health check throws', async () => {
+    const unhealthy = fakePair('health-throw')
+    let checks = 0
+    unhealthy.pair = {
+      ...unhealthy.pair,
+      checkHealth: async () => {
+        checks += 1
+        if (checks === 1) return { state: 'ok' }
+        throw new Error('provider secret detail')
+      },
+    }
+    const { service } = createService({ create: async () => unhealthy.pair })
+    const lease = await service.acquire('owner-a')
+    await expect(service.withPair('owner-a', lease.handle, async () => undefined))
+      .rejects.toMatchObject({
+        code: SANDBOX_LEASE_ERROR_CODES.LEASE_EXPIRED,
+        message: 'sandbox lease is unavailable',
+      })
+    await vi.waitFor(() => expect(service.listOwn('owner-a')).toEqual([]))
+    expect(unhealthy.dispose).toHaveBeenCalledOnce()
+    await service.dispose()
+  })
+
   it('projects expiry without observing side effects and reaps every expired lease', async () => {
     const now = { value: 100 }
     const { service, pairs } = createService({ now })
@@ -381,7 +429,7 @@ describe('SandboxLeaseService lifecycle registry', () => {
     const telemetry = { capture: vi.fn() }
     const service = new SandboxLeaseService({
       workspaceRoot: '/host/leases',
-      provider: { create: async () => pair.pair } as unknown as SandboxProviderV1,
+      provider: { disposableProfile, create: async () => pair.pair } as unknown as SandboxProviderV1,
       serviceDigest: 'scheduled-profile',
       ttlMs: 1_000,
       reapIntervalMs: 1_000,

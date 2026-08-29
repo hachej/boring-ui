@@ -1,9 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto'
+import { lstat } from 'node:fs/promises'
 import { join } from 'node:path'
 
-import type {
-  SandboxProviderV1,
-  WorkspaceSandboxPairV1,
+import {
+  isDisposableSandboxProviderV1,
+  type SandboxProviderV1,
+  type WorkspaceSandboxPairV1,
 } from '@hachej/boring-sandbox/shared'
 
 const LEASE_HANDLE_PATTERN = /^[A-Za-z0-9_-]{16,128}$/
@@ -47,6 +49,9 @@ export interface SandboxLeaseServiceOptions {
   provider: SandboxProviderV1
   /** Immutable profile/capability identity; never exposed to the model. */
   serviceDigest: string
+  /** Host-authorized physical provider scope; never derived from model input. */
+  providerWorkspaceId?: string
+  templatePath?: string
   ttlMs: number
   reapIntervalMs: number
   drainTimeoutMs: number
@@ -120,6 +125,9 @@ export class SandboxLeaseService {
   private disposal: Promise<void> | undefined
 
   constructor(private readonly options: SandboxLeaseServiceOptions) {
+    if (options.provider.contractVersion && !isDisposableSandboxProviderV1(options.provider)) {
+      this.invalid('provider must implement the disposable sandbox profile')
+    }
     if (!Number.isFinite(options.ttlMs) || options.ttlMs <= 0) this.invalid('ttlMs must be greater than zero')
     if (!Number.isFinite(options.reapIntervalMs) || options.reapIntervalMs < 1_000 || options.reapIntervalMs > Math.min(options.ttlMs, 60_000)) {
       this.invalid('reapIntervalMs must be between 1000 and min(ttlMs, 60000)')
@@ -151,9 +159,23 @@ export class SandboxLeaseService {
       this.pendingAcquisitions.add(pending)
 
       this.assertCreationPublishable(signal)
+      const workspaceRoot = join(this.options.workspaceRoot, handle)
+      if (this.options.provider.contractVersion) {
+        try {
+          await lstat(workspaceRoot)
+          throw this.creationAborted('sandbox lease root already exists')
+        } catch (error) {
+          if ((error as { code?: unknown }).code !== 'ENOENT') throw error
+        }
+      }
       pair = await this.options.provider.create({
-        workspaceRoot: join(this.options.workspaceRoot, handle),
+        workspaceRoot,
         sessionId: handle,
+        ...(this.options.providerWorkspaceId ? { workspaceId: this.options.providerWorkspaceId } : {}),
+        ...(this.options.templatePath ? { templatePath: this.options.templatePath } : {}),
+        requestId: createHash('sha256')
+          .update(`${this.options.serviceDigest}:${handle}:provider-create`)
+          .digest('hex'),
       })
       this.assertCreationPublishable(signal)
       const health = await pair.checkHealth?.()
@@ -219,7 +241,15 @@ export class SandboxLeaseService {
     lease.activeOperations += 1
     let cleanupAfterUnpin = false
     try {
-      const health = await lease.pair.checkHealth?.()
+      let health: Awaited<ReturnType<NonNullable<WorkspaceSandboxPairV1['checkHealth']>>> | undefined
+      try {
+        health = await lease.pair.checkHealth?.()
+      } catch {
+        lease.state = 'draining'
+        lease.cleanupReason = 'expiry'
+        cleanupAfterUnpin = true
+        throw new SandboxLeaseError(SANDBOX_LEASE_ERROR_CODES.LEASE_EXPIRED, 'sandbox lease is unavailable')
+      }
       if (health?.state === 'recreate') {
         lease.state = 'draining'
         lease.cleanupReason = 'expiry'

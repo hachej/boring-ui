@@ -15,6 +15,10 @@ import { EnvironmentLeaseManager, type EnvironmentLease } from './environmentLea
 import { getOptionalRuntimeBundleStorageRoot } from '../runtime/mode'
 import { mergeRuntimeFilesystemBindings } from '../runtime/filesystemBindings'
 import { SandboxLeaseServiceRegistry } from '../sandbox/leases/sandboxLeaseServiceRegistry'
+import {
+  normalizeSandboxLeaseProviderProfileV1,
+  sandboxLeaseProviderProfileDigestV1,
+} from '../sandbox/leases/sandboxLeaseProfileIdentity'
 import { assertSandboxToolCatalogAuthority } from '../tools/sandboxTargeting'
 import { createAgentHostRoutes } from './httpProjection'
 import { InMemoryAgentRequestLedger } from './requestLedger'
@@ -481,6 +485,15 @@ function createRuntime(
       )
       validateResolvedRuntimeScope(resolved)
       assertSandboxToolCatalogAuthority(resolved)
+      if (resolved.sandboxTools?.profile) {
+        const profile = normalizeSandboxLeaseProviderProfileV1(
+          resolved.sandboxTools.profile,
+          claim.workspaceScopeId,
+        )
+        if (sandboxLeaseProviderProfileDigestV1(profile.identity) !== resolved.sandboxTools.digest) {
+          throw new TypeError('sandbox lease profile digest does not match capability')
+        }
+      }
       if (resolved.sandboxTools) sandboxLeaseServices.register(resolved.sandboxTools)
       const key = JSON.stringify([
         agentTypeId,
