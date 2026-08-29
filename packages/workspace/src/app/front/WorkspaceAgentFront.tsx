@@ -1807,12 +1807,28 @@ export function WorkspaceAgentFront<
       if (remoteSessionsPending && current.ids.length > 0 && !pendingCreatedId) return current
       const currentActiveRef = current.activeId ? workspaceSessionRefFromKey(current.activeId) : undefined
       const activeOwnerIsExplicit = Boolean(effectiveActiveSessionAgentTypeId)
-      const currentMatchesControlledSession = activeOwnerIsExplicit
+      // #1472 review: a fleet create's addressed-Agent switch and its pane
+      // update land in the same tick, but the newly addressed Agent's OWN
+      // session snapshot (`addressedFleetSessions.tsx`'s `snapshots` map)
+      // only catches up a render or two later, via that Agent's session
+      // source publishing through its own passive effect. In the gap,
+      // `chatSessionKey` still names the Agent's PREVIOUS active session, so
+      // without this the optimistic pane got judged "uncontrolled" and
+      // replaced by that stale session — a `new → stale → new` visible stomp.
+      // Trust an optimistically-created pane over the (possibly stale)
+      // controlled session until its own key is cleared from the ref above
+      // (once the real session list actually contains it).
+      const currentIsOptimisticCreate = Boolean(current.activeId && optimisticCreatedPaneKeysRef.current.has(current.activeId))
+      const currentMatchesControlledSession = currentIsOptimisticCreate || (activeOwnerIsExplicit
         ? current.activeId === chatSessionKey
-        : currentActiveRef?.sessionId === chatSessionId
+        : currentActiveRef?.sessionId === chatSessionId)
       const resolvedDesiredSessionId = !pendingCreatedId
         && current.activeId
-        && (!canPruneMissingSessions || resolvedSessionsByKey.has(current.activeId))
+        // An optimistic create bypasses the "known session" gate too: it is
+        // by definition not in `resolvedSessionsByKey` yet (that is what
+        // "optimistic" means here), so requiring membership would undo the
+        // protection `currentMatchesControlledSession` just granted it.
+        && (!canPruneMissingSessions || resolvedSessionsByKey.has(current.activeId) || currentIsOptimisticCreate)
         && currentMatchesControlledSession
         ? current.activeId
         : desiredSessionId
