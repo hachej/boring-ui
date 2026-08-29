@@ -13,7 +13,7 @@ export interface RemoteWorkerTransportRequestV1 {
 
 export interface RemoteWorkerEventStreamV1 {
   readonly closed: Promise<void>;
-  close(): void;
+  close(): void | Promise<void>;
 }
 
 export interface RemoteWorkerOpenEventStreamInputV1 extends RemoteWorkerTransportRequestV1 {

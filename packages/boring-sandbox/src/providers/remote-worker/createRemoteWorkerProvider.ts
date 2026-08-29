@@ -204,8 +204,20 @@ export function createRemoteWorkerSandboxProviderV1(
     );
   }
 
-  const activePairs = new Map<string, Set<() => Promise<void>>>();
+  const ownedCleanups = new Map<string, Set<() => Promise<void>>>();
   const pendingCreates = new Set<Promise<void>>();
+  const registerCleanup = (
+    workspaceId: string,
+    cleanup: () => Promise<void>,
+  ): (() => void) => {
+    const entries = ownedCleanups.get(workspaceId) ?? new Set();
+    entries.add(cleanup);
+    ownedCleanups.set(workspaceId, entries);
+    return () => {
+      entries.delete(cleanup);
+      if (entries.size === 0) ownedCleanups.delete(workspaceId);
+    };
+  };
   let closed = false;
 
   return {
@@ -221,6 +233,8 @@ export function createRemoteWorkerSandboxProviderV1(
         finishCreate = resolve;
       });
       pendingCreates.add(pendingCreate);
+      let unpublishedCleanup: (() => Promise<void>) | undefined;
+      let unregisterUnpublished: (() => void) | undefined;
       try {
         if (closed) {
           throw new SandboxProviderError(
@@ -257,6 +271,7 @@ export function createRemoteWorkerSandboxProviderV1(
           requestTimeoutMs,
           capabilityLifetimeMs,
           eventStreamLifetimeMs,
+          requestedHealthCapabilities: worker.requiredCapabilities,
         });
 
         const request = parseRemoteWorkerRequestV1(
@@ -292,6 +307,9 @@ export function createRemoteWorkerSandboxProviderV1(
             health.capabilities.includes(
               capability as (typeof health.capabilities)[number],
             ),
+          ) ||
+          !(worker.requiredCapabilities ?? []).every((capability) =>
+            health.negotiatedCapabilities?.includes(capability),
           )
         ) {
           await client.close();
@@ -303,6 +321,35 @@ export function createRemoteWorkerSandboxProviderV1(
 
         const requestDigest = remoteWorkerRequestDigestV1(request);
         const createResponse = await client.create(request);
+        let provisionalDeleteConfirmed = false;
+        let provisionalDeleteInFlight: Promise<void> | undefined;
+        unpublishedCleanup = async (): Promise<void> => {
+          if (provisionalDeleteConfirmed) return;
+          if (provisionalDeleteInFlight) return await provisionalDeleteInFlight;
+          const operation = (async () => {
+            const error = await deleteRemoteSandboxV1(
+              () => client.provisionalDelete(createResponse.sandboxId),
+              disposeAttempts,
+            );
+            if (error !== undefined) {
+              throw new SandboxProviderError(
+                REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+                "remote-worker provisional cleanup could not be confirmed",
+              );
+            }
+            provisionalDeleteConfirmed = true;
+            unregisterUnpublished?.();
+            void client.close().catch(() => undefined);
+          })();
+          provisionalDeleteInFlight = operation;
+          try {
+            await operation;
+          } finally {
+            if (provisionalDeleteInFlight === operation)
+              provisionalDeleteInFlight = undefined;
+          }
+        };
+        unregisterUnpublished = registerCleanup(workspaceId, unpublishedCleanup);
         let receiptIsValid = false;
         try {
           receiptIsValid =
@@ -324,11 +371,6 @@ export function createRemoteWorkerSandboxProviderV1(
           receiptIsValid = false;
         }
         if (!receiptIsValid) {
-          await deleteRemoteSandboxV1(
-            () => client.provisionalDelete(createResponse.sandboxId),
-            disposeAttempts,
-          );
-          await client.close();
           throw new SandboxProviderError(
             REMOTE_WORKER_ERROR_CODES_V1.bindingReceiptInvalid,
             "remote-worker create binding receipt is invalid",
@@ -353,28 +395,32 @@ export function createRemoteWorkerSandboxProviderV1(
           idFactory,
         });
         let disposed = false;
+        let deleteConfirmed = false;
         let disposeInFlight: Promise<void> | undefined;
+        let unregisterPair = (): void => {};
         const dispose = async (): Promise<void> => {
           if (disposed) return;
           if (disposeInFlight) return await disposeInFlight;
           const operation = (async () => {
             remoteWorkspace.closeWatcher();
-            const lastError = await deleteRemoteSandboxV1(
-              () => leaseClient.delete(),
-              disposeAttempts,
-            );
-            if (lastError !== undefined) {
+            leaseClient.closeEventStreams();
+            let deleteError: unknown;
+            if (!deleteConfirmed) {
+              deleteError = await deleteRemoteSandboxV1(
+                () => leaseClient.delete(),
+                disposeAttempts,
+              );
+              deleteConfirmed = deleteError === undefined;
+            }
+            if (deleteError !== undefined) {
               throw new SandboxProviderError(
                 REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
                 "remote-worker sandbox cleanup could not be confirmed",
-                { cause: lastError },
               );
             }
+            void leaseClient.close().catch(() => undefined);
             disposed = true;
-            await leaseClient.close();
-            activePairs.get(workspaceId)?.delete(dispose);
-            if (activePairs.get(workspaceId)?.size === 0)
-              activePairs.delete(workspaceId);
+            unregisterPair();
           })();
           disposeInFlight = operation;
           try {
@@ -384,10 +430,9 @@ export function createRemoteWorkerSandboxProviderV1(
           }
         };
 
-        const pairSet =
-          activePairs.get(workspaceId) ?? new Set<() => Promise<void>>();
-        pairSet.add(dispose);
-        activePairs.set(workspaceId, pairSet);
+        unregisterUnpublished();
+        unregisterPair = registerCleanup(workspaceId, dispose);
+        unpublishedCleanup = undefined;
 
         return {
           workspace: remoteWorkspace.workspace,
@@ -423,23 +468,42 @@ export function createRemoteWorkerSandboxProviderV1(
           },
           dispose,
         };
+      } catch (error) {
+        if (unpublishedCleanup) {
+          await unpublishedCleanup().catch(() => undefined);
+        }
+        throw error;
       } finally {
         finishCreate();
         pendingCreates.delete(pendingCreate);
       }
     },
     async invalidate({ workspaceId }) {
-      await Promise.allSettled(
-        [...(activePairs.get(workspaceId) ?? [])].map((dispose) => dispose()),
+      const cleanup = await Promise.allSettled(
+        [...(ownedCleanups.get(workspaceId) ?? [])].map((dispose) => dispose()),
       );
+      if (cleanup.some((result) => result.status === "rejected")) {
+        throw new SandboxProviderError(
+          REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+          "remote-worker sandbox cleanup could not be confirmed",
+        );
+      }
     },
     async close() {
       closed = true;
       await Promise.allSettled([...pendingCreates]);
-      const disposers = [...activePairs.values()].flatMap((entries) => [
+      const disposers = [...ownedCleanups.values()].flatMap((entries) => [
         ...entries,
       ]);
-      await Promise.allSettled(disposers.map((dispose) => dispose()));
+      const cleanup = await Promise.allSettled(
+        disposers.map((dispose) => dispose()),
+      );
+      if (cleanup.some((result) => result.status === "rejected")) {
+        throw new SandboxProviderError(
+          REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+          "remote-worker sandbox cleanup could not be confirmed",
+        );
+      }
     },
   };
 }

@@ -21,6 +21,7 @@ import {
   type RemoteWorkerExecResponseV1,
   type RemoteWorkerFsEventEnvelopeV1,
   type RemoteWorkerHealthResponseV1,
+  type RemoteWorkerNegotiatedCapabilityV1,
   type RemoteWorkerOperationV1,
   type RemoteWorkerRenewRequestV1,
   type RemoteWorkerRenewResponseV1,
@@ -34,6 +35,31 @@ import type {
   RemoteWorkerEventStreamV1,
   RemoteWorkerTransportV1,
 } from "./transport";
+
+const remoteWorkerErrorCodes = new Set<string>(
+  Object.values(REMOTE_WORKER_ERROR_CODES_V1),
+);
+
+export function asRemoteWorkerProviderErrorV1(
+  error: unknown,
+): SandboxProviderError | undefined {
+  if (error instanceof SandboxProviderError) return error;
+  if (
+    error &&
+    typeof error === "object" &&
+    "name" in error &&
+    error.name === "SandboxProviderError" &&
+    "code" in error &&
+    typeof error.code === "string" &&
+    remoteWorkerErrorCodes.has(error.code)
+  ) {
+    return new SandboxProviderError(
+      error.code as SandboxProviderError["code"],
+      "remote-worker returned a stable provider failure",
+    );
+  }
+  return undefined;
+}
 
 interface StrictParser<T> {
   parse(value: unknown): T;
@@ -78,6 +104,7 @@ export interface RemoteWorkerProtocolClientOptionsV1 {
   requestTimeoutMs: number;
   capabilityLifetimeMs: number;
   eventStreamLifetimeMs: number;
+  requestedHealthCapabilities?: readonly RemoteWorkerNegotiatedCapabilityV1[];
 }
 
 export function parseRemoteWorkerRequestV1<T>(
@@ -126,6 +153,8 @@ export class RemoteWorkerProtocolClientV1 {
   private readonly activeControllers = new Set<AbortController>();
   private readonly pending = new Set<Promise<unknown>>();
   private closed = false;
+  private closeComplete = false;
+  private closeInFlight?: Promise<void>;
 
   constructor(private readonly options: RemoteWorkerProtocolClientOptionsV1) {}
 
@@ -266,18 +295,19 @@ export class RemoteWorkerProtocolClientV1 {
             "remote-worker request timed out",
           );
         }
+        const providerError = asRemoteWorkerProviderErrorV1(error);
         if (
           input.operation === "exec" &&
-          (!(error instanceof SandboxProviderError) ||
-            error.code === REMOTE_WORKER_ERROR_CODES_V1.unavailable ||
-            error.code === "ABORTED")
+          (!providerError ||
+            providerError.code === REMOTE_WORKER_ERROR_CODES_V1.unavailable ||
+            providerError.code === "ABORTED")
         ) {
           throw new SandboxProviderError(
             REMOTE_WORKER_ERROR_CODES_V1.outcomeUnknown,
             "remote-worker exec outcome is unknown after transport loss",
           );
         }
-        if (error instanceof SandboxProviderError) throw error;
+        if (providerError) throw providerError;
         throw new SandboxProviderError(
           REMOTE_WORKER_ERROR_CODES_V1.unavailable,
           "remote-worker is unavailable",
@@ -297,8 +327,10 @@ export class RemoteWorkerProtocolClientV1 {
       method: "GET",
       path: "/internal/v1/health",
       headers: {
-        [REMOTE_WORKER_HEADERS_V1.requestedCapabilities]:
+        [REMOTE_WORKER_HEADERS_V1.requestedCapabilities]: [
           REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1,
+          ...(this.options.requestedHealthCapabilities ?? []),
+        ].join(","),
       },
       schema: RemoteWorkerHealthResponseSchemaV1,
     });
@@ -318,13 +350,17 @@ export class RemoteWorkerProtocolClientV1 {
     try {
       return await createOnce();
     } catch (error) {
+      const providerError = asRemoteWorkerProviderErrorV1(error);
       const recoverable =
-        error instanceof SandboxProviderError &&
-        (error.code === REMOTE_WORKER_ERROR_CODES_V1.unavailable ||
-          error.code === REMOTE_WORKER_ERROR_CODES_V1.timeout ||
-          error.code === REMOTE_WORKER_ERROR_CODES_V1.responseInvalid);
+        providerError !== undefined &&
+        (providerError.code === REMOTE_WORKER_ERROR_CODES_V1.unavailable ||
+          providerError.code === REMOTE_WORKER_ERROR_CODES_V1.timeout ||
+          providerError.code === REMOTE_WORKER_ERROR_CODES_V1.responseInvalid);
       if (!recoverable) {
-        throw error;
+        throw providerError ?? new SandboxProviderError(
+          REMOTE_WORKER_ERROR_CODES_V1.unavailable,
+          "remote-worker is unavailable",
+        );
       }
       return await createOnce();
     }
@@ -401,7 +437,8 @@ export class RemoteWorkerProtocolClientV1 {
           "remote-worker event stream connection timed out",
         );
       }
-      if (error instanceof SandboxProviderError) throw error;
+      const providerError = asRemoteWorkerProviderErrorV1(error);
+      if (providerError) throw providerError;
       throw new SandboxProviderError(
         REMOTE_WORKER_ERROR_CODES_V1.unavailable,
         "remote-worker event stream is unavailable",
@@ -410,30 +447,68 @@ export class RemoteWorkerProtocolClientV1 {
       clearTimeout(timer);
       this.activeControllers.delete(controller);
     }
+    const transportStream = stream;
+    let lifetimeTimer: ReturnType<typeof setTimeout> | undefined;
+    let closeStarted = false;
+    const cleanup = (): void => {
+      if (lifetimeTimer) clearTimeout(lifetimeTimer);
+      lifetimeTimer = undefined;
+      this.activeStreams.delete(stream);
+    };
+    const closeStream = (): void => {
+      if (closeStarted) return;
+      closeStarted = true;
+      cleanup();
+      try {
+        void Promise.resolve(transportStream.close()).catch(() => undefined);
+      } catch {
+        // Local stream cleanup cannot retain remote sandbox authority.
+      }
+    };
+    stream = {
+      close: closeStream,
+      closed: transportStream.closed.catch((error: unknown) => {
+        const providerError = asRemoteWorkerProviderErrorV1(error);
+        throw (
+          providerError ??
+          new SandboxProviderError(
+            REMOTE_WORKER_ERROR_CODES_V1.unavailable,
+            "remote-worker event stream closed unexpectedly",
+          )
+        );
+      }),
+    };
     this.activeStreams.add(stream);
     const deadlineMs = Math.min(
       capability.claims.expiresAtMs,
       leaseExpiresAtMs,
       this.options.now() + this.options.eventStreamLifetimeMs,
     );
-    const lifetimeTimer = setTimeout(
-      () => stream.close(),
-      Math.max(0, deadlineMs - this.options.now()),
-    );
-    const cleanup = (): void => {
-      clearTimeout(lifetimeTimer);
-      this.activeStreams.delete(stream);
-    };
+    lifetimeTimer = setTimeout(closeStream, Math.max(0, deadlineMs - this.options.now()));
     void stream.closed.then(cleanup, cleanup);
     return stream;
   }
 
-  async close(): Promise<void> {
-    if (this.closed) return;
-    this.closed = true;
-    for (const controller of this.activeControllers) controller.abort();
+  closeEventStreams(): void {
     for (const stream of this.activeStreams) stream.close();
-    await Promise.allSettled([...this.pending]);
+  }
+
+  async close(): Promise<void> {
+    if (this.closeComplete) return;
+    this.closed = true;
+    if (this.closeInFlight) return await this.closeInFlight;
+    const operation = (async () => {
+      for (const controller of this.activeControllers) controller.abort();
+      this.closeEventStreams();
+      await Promise.allSettled([...this.pending]);
+      this.closeComplete = true;
+    })();
+    this.closeInFlight = operation;
+    try {
+      await operation;
+    } finally {
+      if (this.closeInFlight === operation) this.closeInFlight = undefined;
+    }
   }
 }
 
@@ -497,6 +572,10 @@ export class RemoteWorkerLeaseClientV1 {
     onEvent: (event: RemoteWorkerFsEventEnvelopeV1) => void,
   ): Promise<RemoteWorkerEventStreamV1> {
     return this.client.openEvents(this.sandboxId, leaseExpiresAtMs, onEvent);
+  }
+
+  closeEventStreams(): void {
+    this.client.closeEventStreams();
   }
 
   close(): Promise<void> {

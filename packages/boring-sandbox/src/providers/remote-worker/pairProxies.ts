@@ -16,6 +16,7 @@ import {
 } from "../../shared/remoteWorkerProtocolV1";
 import { SandboxProviderError } from "../../shared/providerV1";
 import {
+  asRemoteWorkerProviderErrorV1,
   parseRemoteWorkerRequestV1,
   type RemoteWorkerLeaseClientV1,
 } from "./protocolClient";
@@ -34,6 +35,13 @@ function responseError(label: string): SandboxProviderError {
     REMOTE_WORKER_ERROR_CODES_V1.responseInvalid,
     `remote-worker returned an invalid ${label} response`,
   );
+}
+
+function requestStreamClose(stream: RemoteWorkerEventStreamV1 | undefined): void {
+  if (!stream) return;
+  void Promise.resolve()
+    .then(async () => await stream.close())
+    .catch(() => undefined);
 }
 
 function expectContent(result: RemoteWorkerWorkspaceResultV1): string {
@@ -59,11 +67,11 @@ function expectEntries(result: RemoteWorkerWorkspaceResultV1): Entry[] {
 }
 
 function isTerminalStreamError(error: unknown): boolean {
+  const providerError = asRemoteWorkerProviderErrorV1(error);
   return (
-    error instanceof SandboxProviderError &&
-    (error.code === REMOTE_WORKER_ERROR_CODES_V1.sandboxNotFound ||
-      error.code === REMOTE_WORKER_ERROR_CODES_V1.sandboxExpired ||
-      error.code === REMOTE_WORKER_ERROR_CODES_V1.sandboxDisposed)
+    providerError?.code === REMOTE_WORKER_ERROR_CODES_V1.sandboxNotFound ||
+    providerError?.code === REMOTE_WORKER_ERROR_CODES_V1.sandboxExpired ||
+    providerError?.code === REMOTE_WORKER_ERROR_CODES_V1.sandboxDisposed
   );
 }
 
@@ -147,7 +155,7 @@ export function createRemoteWorkspaceV1(options: {
           },
         );
         if (watcherClosed || listeners.size === 0) {
-          opened.close();
+          requestStreamClose(opened);
           return;
         }
         stream = opened;
@@ -185,7 +193,7 @@ export function createRemoteWorkspaceV1(options: {
             if (listeners.size === 0) {
               if (reconnectTimer) clearTimeout(reconnectTimer);
               reconnectTimer = undefined;
-              stream?.close();
+              requestStreamClose(stream);
               stream = undefined;
             }
           };
@@ -195,7 +203,7 @@ export function createRemoteWorkspaceV1(options: {
           listeners.clear();
           if (reconnectTimer) clearTimeout(reconnectTimer);
           reconnectTimer = undefined;
-          stream?.close();
+          requestStreamClose(stream);
           stream = undefined;
         },
       };
