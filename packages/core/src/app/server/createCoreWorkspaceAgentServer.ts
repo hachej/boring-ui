@@ -972,8 +972,8 @@ function registerTelemetryHooks(app: CoreWorkspaceAgentServer, telemetry: Teleme
   })
 }
 
-async function registerFrontendAuthPages(
-  app: CoreWorkspaceAgentServer,
+export async function registerFrontendAuthPages(
+  app: FastifyInstance,
   appRoot: string,
   telemetry: TelemetrySink,
 ) {
@@ -983,6 +983,18 @@ async function registerFrontendAuthPages(
   for (const pagePath of FRONTEND_AUTH_PAGES) {
     app.get(pagePath, async (request, reply) => serveFrontendShell(request, reply, indexPath, telemetry))
   }
+
+  // No route is registered here for better-auth's default path-token
+  // reset-password shape (/auth/reset-password/<token>): that path is a real
+  // better-auth endpoint (`resetPasswordCallback` in
+  // better-auth/dist/api/routes/password.mjs) that validates the token's
+  // existence/expiry against the DB and redirects to callbackURL. Shadowing
+  // it here — as an earlier version of this change did — would silently
+  // "succeed" for invalid/expired tokens and discard callbackURL. Leave it to
+  // registerAuthProxy's /auth/* proxy so better-auth's own validated
+  // redirect runs. The Vite-dev-only compatibility redirect for this shape
+  // lives client-side instead (CoreFront.tsx's ResetPasswordLegacyRedirect),
+  // where it never intercepts a real server-validated request.
 }
 
 export async function registerFrontendFallback(

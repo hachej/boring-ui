@@ -15,6 +15,7 @@ import {
   renderResetPassword,
   renderMagicLink,
 } from '../mail/templates/index.js'
+import { buildResetPasswordUrl } from '../mail/links.js'
 import { createPostSignupHook, type ResolveInitialAgentSeat } from './postSignupHook.js'
 import { isCoreEmailVerificationEnabled } from '../../shared/authPolicy.js'
 import { safeCapture, noopTelemetry, type TelemetrySink } from '../../shared/telemetry.js'
@@ -178,7 +179,10 @@ export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOp
     ? async (data: any) => {
         const email = await renderResetPassword({
           to: data.user.email,
-          resetUrl: data.url,
+          // better-auth's own `data.url` is its default path-token shape
+          // (/auth/reset-password/<token>), which doesn't match the SPA's
+          // query-string route. Build the SPA link from the raw token instead.
+          resetUrl: buildResetPasswordUrl(config, data.token),
           appName: config.appName,
           expiresInHours: 1,
         })

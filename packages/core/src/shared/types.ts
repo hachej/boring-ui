@@ -212,6 +212,10 @@ export interface CoreConfig {
   auth: {
     secret: string
     url: string
+    /** Public origin of the SPA front-end used to build user-facing email links
+     * (invite accept, password reset). Falls back to `url` when the front is
+     * served from the same origin as the API (the default in production). */
+    frontUrl?: string
     github?: { clientId: string; clientSecret: string }
     google?: { clientId: string; clientSecret: string }
     mail?: { from: string; transportUrl: string }

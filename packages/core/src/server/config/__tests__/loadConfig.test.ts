@@ -484,6 +484,35 @@ name = 123
     ])
   })
 
+  it('leaves auth.frontUrl undefined when FRONTEND_URL is unset', async () => {
+    const config = await loadConfig({ tomlPath: TOML_PATH, env: VALID_ENV })
+
+    expect(config.auth.frontUrl).toBeUndefined()
+  })
+
+  it('wires auth.frontUrl from FRONTEND_URL when set to a bare origin', async () => {
+    const config = await loadConfig({
+      tomlPath: TOML_PATH,
+      env: { ...VALID_ENV, FRONTEND_URL: 'http://localhost:5173' },
+    })
+
+    expect(config.auth.frontUrl).toBe('http://localhost:5173')
+  })
+
+  it.each([
+    ['a path', 'http://localhost:5173/app'],
+    ['a query string', 'http://localhost:5173/?x=1'],
+    ['a fragment', 'http://localhost:5173/#frag'],
+    ['userinfo', 'http://user:pass@localhost:5173'],
+    ['a non-http(s) scheme', 'ftp://localhost:5173'],
+    ['a relative value', '/auth/reset-password'],
+    ['garbage', 'not-a-url'],
+  ])('rejects FRONTEND_URL with %s', async (_label, value) => {
+    await expect(
+      loadConfig({ tomlPath: TOML_PATH, env: { ...VALID_ENV, FRONTEND_URL: value } }),
+    ).rejects.toBeInstanceOf(ConfigValidationError)
+  })
+
   it('sets stores=local when CORE_STORES=local', async () => {
     const config = await loadConfig({
       tomlPath: TOML_PATH,
