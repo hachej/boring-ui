@@ -984,15 +984,17 @@ export async function registerFrontendAuthPages(
     app.get(pagePath, async (request, reply) => serveFrontendShell(request, reply, indexPath, telemetry))
   }
 
-  // Compatibility redirect for better-auth's default path-token reset-password
-  // link shape (/auth/reset-password/<token>). createAuth.ts now emails the
-  // SPA's query-string shape (/auth/reset-password?token=...) directly, but
-  // already-sent emails still use the old path form — keep them working.
-  app.get('/auth/reset-password/:token', async (request, reply) => {
-    const { token } = request.params as { token: string }
-    reply.header('cache-control', 'no-store')
-    return reply.redirect(`/auth/reset-password?token=${encodeURIComponent(token)}`, 302)
-  })
+  // No route is registered here for better-auth's default path-token
+  // reset-password shape (/auth/reset-password/<token>): that path is a real
+  // better-auth endpoint (`resetPasswordCallback` in
+  // better-auth/dist/api/routes/password.mjs) that validates the token's
+  // existence/expiry against the DB and redirects to callbackURL. Shadowing
+  // it here — as an earlier version of this change did — would silently
+  // "succeed" for invalid/expired tokens and discard callbackURL. Leave it to
+  // registerAuthProxy's /auth/* proxy so better-auth's own validated
+  // redirect runs. The Vite-dev-only compatibility redirect for this shape
+  // lives client-side instead (CoreFront.tsx's ResetPasswordLegacyRedirect),
+  // where it never intercepts a real server-validated request.
 }
 
 export async function registerFrontendFallback(

@@ -16,8 +16,13 @@ type EmailLinkConfig = {
 }
 
 function frontOrigin(config: EmailLinkConfig): string {
-  const origin = config.auth.frontUrl ?? config.auth.url
-  return origin.replace(/\/+$/, '')
+  const base = config.auth.frontUrl ?? config.auth.url
+  // Parse and take `.origin` rather than string-trimming: this reliably
+  // strips any path/query/fragment/userinfo the configured value might carry
+  // (frontUrl is schema-validated to be a bare origin, but auth.url is not —
+  // and a naive trailing-slash strip would otherwise silently root the link
+  // under a stray path segment instead of the actual origin).
+  return new URL(base).origin
 }
 
 /** SPA invite-accept link: /invites/:token */

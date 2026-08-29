@@ -27,6 +27,11 @@ describe('buildInviteAcceptUrl', () => {
       'http://localhost:3000/invites/a%20b%2Fc',
     )
   })
+
+  it('strips a path, query, or fragment on the configured front origin (defense in depth beyond schema validation)', () => {
+    const config = { auth: { url: 'http://localhost:3000', frontUrl: 'http://localhost:5173/base/path?x=1#frag' } }
+    expect(buildInviteAcceptUrl(config, 'tok')).toBe('http://localhost:5173/invites/tok')
+  })
 })
 
 describe('buildResetPasswordUrl', () => {

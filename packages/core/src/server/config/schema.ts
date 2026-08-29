@@ -39,6 +39,33 @@ const mailTransportUrlSchema = z.string().refine(
   },
 )
 
+// Used for auth.frontUrl: the SPA's public origin, which email links are built
+// against by appending a literal, known-safe path (e.g. `/invites/:token`).
+// Must be an absolute http(s) *origin* with nothing else — a path, query,
+// fragment, or userinfo component would either get silently discarded (if we
+// only used `.origin`) or, worse, get concatenated into the emitted link in a
+// way the operator didn't intend. Reject anything but a bare origin so a
+// misconfigured value fails fast at boot instead of producing a subtly wrong
+// link.
+const originSchema = z.string().refine((value) => {
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    return false
+  }
+  return (
+    (url.protocol === 'http:' || url.protocol === 'https:')
+    && url.pathname === '/'
+    && url.search === ''
+    && url.hash === ''
+    && url.username === ''
+    && url.password === ''
+  )
+}, {
+  message: 'must be an absolute http(s) origin with no path, query, fragment, or userinfo (e.g. "https://app.example.com")',
+})
+
 export const coreConfigSchema = z.object({
   appId: z.string().min(1),
   appName: z.string().min(1),
@@ -85,7 +112,7 @@ export const coreConfigSchema = z.object({
   auth: z.object({
     secret: z.string().min(1),
     url: z.string().url(),
-    frontUrl: z.string().url().optional(),
+    frontUrl: originSchema.optional(),
     github: z
       .object({
         clientId: z.string().min(1),

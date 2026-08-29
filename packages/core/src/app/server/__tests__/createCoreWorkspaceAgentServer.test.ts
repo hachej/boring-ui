@@ -91,7 +91,24 @@ describe('createCoreWorkspaceAgentServer', () => {
     expect(baseline).toEqual({ body: '<!doctype html><p>spa shell</p>', contentType: 'text/html; charset=utf-8', cache: 'no-store' })
   })
 
-  it('redirects the legacy /auth/reset-password/:token shape to the SPA query-string route', async () => {
+  it('does not register a route for the legacy /auth/reset-password/:token shape (route ownership)', async () => {
+    // This is a regression test for a defect caught in review: an earlier
+    // version of this fix registered a redirect here for better-auth's
+    // default path-token reset-password shape. That path is a *real*
+    // better-auth endpoint (`resetPasswordCallback` in
+    // better-auth/dist/api/routes/password.mjs, GET /reset-password/:token
+    // under the `/auth` basePath) which validates the token's existence and
+    // expiry against the DB before redirecting to `callbackURL`. A blanket
+    // redirect here shadowed that endpoint: it would "succeed" for
+    // nonexistent/expired tokens and silently discard `callbackURL`.
+    //
+    // registerFrontendAuthPages must own only the exact static
+    // FRONTEND_AUTH_PAGES paths, never the parametrized legacy shape — that
+    // request has to keep falling through to the real auth proxy /
+    // better-auth handler. Assert both halves: the exact page is served
+    // (proving the registrar is wired correctly) and the parametrized legacy
+    // path is untouched (404, not intercepted — nothing else is mounted in
+    // this harness to claim it).
     const appRoot = await mkdtemp(`${tmpdir()}/boring-core-reset-redirect-`)
     await mkdir(resolve(appRoot, 'dist/front'), { recursive: true })
     await writeFile(resolve(appRoot, 'dist/front/index.html'), '<!doctype html><p>spa shell</p>')
@@ -99,25 +116,13 @@ describe('createCoreWorkspaceAgentServer', () => {
     const app = Fastify()
     await registerFrontendAuthPages(app, appRoot, noopTelemetry)
 
-    const response = await app.inject({ method: 'GET', url: '/auth/reset-password/abc123' })
+    const exactPage = await app.inject({ method: 'GET', url: '/auth/reset-password' })
+    expect(exactPage.statusCode).toBe(200)
+    expect(exactPage.body).toContain('spa shell')
+
+    const legacyShape = await app.inject({ method: 'GET', url: '/auth/reset-password/abc123' })
     await app.close()
 
-    expect(response.statusCode).toBe(302)
-    expect(response.headers.location).toBe('/auth/reset-password?token=abc123')
-  })
-
-  it('URL-encodes the token when redirecting the legacy reset-password shape', async () => {
-    const appRoot = await mkdtemp(`${tmpdir()}/boring-core-reset-redirect-`)
-    await mkdir(resolve(appRoot, 'dist/front'), { recursive: true })
-    await writeFile(resolve(appRoot, 'dist/front/index.html'), '<!doctype html><p>spa shell</p>')
-
-    const app = Fastify()
-    await registerFrontendAuthPages(app, appRoot, noopTelemetry)
-
-    const response = await app.inject({ method: 'GET', url: '/auth/reset-password/a%20b%26c' })
-    await app.close()
-
-    expect(response.statusCode).toBe(302)
-    expect(response.headers.location).toBe('/auth/reset-password?token=a%20b%26c')
+    expect(legacyShape.statusCode).toBe(404)
   })
 })

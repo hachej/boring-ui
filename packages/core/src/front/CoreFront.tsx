@@ -62,8 +62,16 @@ function PlaceholderPage({ name }: { name: string }) {
 
 // Compatibility redirect for better-auth's default path-token reset-password
 // link shape (/auth/reset-password/<token>), which pre-dates this app's SPA
-// route sending the token as a query param instead. Keeps already-sent
-// emails working after the link-generation fix.
+// route sending the token as a query param instead. Client-side only and
+// deliberately NOT mirrored server-side: /auth/reset-password/:token is a
+// real better-auth endpoint (`resetPasswordCallback`) that validates the
+// token's existence/expiry against the DB before redirecting — a server
+// redirect here would shadow that and "succeed" for invalid tokens. This
+// route only ever runs once the browser already has the SPA shell (e.g. the
+// two-origin dev setup, where Vite serves index.html for any /auth/* html
+// GET); it does not intercept a server-validated request, and the actual
+// password change still goes through server-side token validation on
+// submit (POST /auth/reset-password).
 function ResetPasswordLegacyRedirect() {
   const { token } = useParams<{ token: string }>()
   const target = token ? `${routes.resetPassword}?token=${encodeURIComponent(token)}` : routes.resetPassword
