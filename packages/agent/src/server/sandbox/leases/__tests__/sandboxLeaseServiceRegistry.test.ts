@@ -162,29 +162,33 @@ describe('SandboxLeaseServiceRegistry', () => {
     expect(leases.dispose).toHaveBeenCalledOnce()
   })
 
-  it('disposes registered services before a stuck factory settles and retries late cleanup debt', async () => {
+  it('retries registered cleanup while an unrelated factory remains stuck', async () => {
+    const registeredDispose = vi.fn()
+      .mockRejectedValueOnce(new Error('registered provider delete failed'))
+      .mockResolvedValue(undefined)
+    const registry = new SandboxLeaseServiceRegistry()
+    registry.register({ digest: 'registered', leases: service(registeredDispose) })
+    void registry.getOrCreate('pending', () => new Promise(() => {})).catch(() => undefined)
+
+    await expect(registry.disposeUntil(Date.now() + 40)).resolves.toEqual([
+      expect.objectContaining({ status: 'rejected' }),
+    ])
+    expect(registeredDispose).toHaveBeenCalledTimes(2)
+  })
+
+  it('runs another debt pass when a late factory fails its first cleanup', async () => {
     let resolveFactory!: (value: SandboxLeaseService) => void
-    let registeredDisposed = false
-    const registeredDispose = vi.fn(async () => { registeredDisposed = true })
     const lateDispose = vi.fn()
       .mockRejectedValueOnce(new Error('late provider delete failed'))
       .mockResolvedValue(undefined)
     const registry = new SandboxLeaseServiceRegistry()
-    registry.register({ digest: 'registered', leases: service(registeredDispose) })
     const acquiring = registry.getOrCreate('pending', () => new Promise((resolve) => { resolveFactory = resolve }))
     await vi.waitFor(() => expect(resolveFactory).toBeTypeOf('function'))
 
-    const timedOut = await registry.disposeUntil(Date.now() + 20)
-    expect(registeredDispose).toHaveBeenCalledOnce()
-    expect(registeredDisposed).toBe(true)
-    expect(timedOut).toEqual([expect.objectContaining({ status: 'rejected' })])
-
+    const draining = registry.dispose()
     resolveFactory(service(lateDispose))
     await expect(acquiring).rejects.toThrow('late provider delete failed')
-    expect(lateDispose).toHaveBeenCalledOnce()
-    await expect(registry.disposeUntil(Date.now() + 100)).resolves.toEqual([
-      { status: 'fulfilled', value: undefined },
-    ])
+    await expect(draining).resolves.toEqual([{ status: 'fulfilled', value: undefined }])
     expect(lateDispose).toHaveBeenCalledTimes(2)
     await expect(registry.dispose()).resolves.toEqual([])
   })

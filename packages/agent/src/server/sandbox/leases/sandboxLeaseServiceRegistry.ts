@@ -52,15 +52,14 @@ export class SandboxLeaseServiceRegistry {
     if (this.digestByProvider.has(provider) || this.providerClaims.has(provider)) {
       throw new TypeError('sandbox provider is already owned or claimed')
     }
+    this.providerClaims.set(provider, digest)
     if (this.draining) {
-      this.providerClaims.set(provider, digest)
       const error = new TypeError('sandbox lease service registry is draining')
       try { await provider.close?.() }
       catch (cleanupError) { throw new AggregateError([error, cleanupError], 'sandbox profile claim cleanup failed') }
       finally { this.providerClaims.delete(provider) }
       throw error
     }
-    this.providerClaims.set(provider, digest)
     return () => { if (this.providerClaims.get(provider) === digest) this.providerClaims.delete(provider) }
   }
 
@@ -89,8 +88,7 @@ export class SandboxLeaseServiceRegistry {
 
   private async disposeUnpublished(service: SandboxLeaseService): Promise<void> {
     this.drainingServices.add(service)
-    await service.dispose()
-    this.drainingServices.delete(service)
+    await service.dispose().then(() => this.drainingServices.delete(service))
   }
 
   private evict(digest: string, service: SandboxLeaseService): void {
@@ -99,38 +97,38 @@ export class SandboxLeaseServiceRegistry {
     if (this.digestByProvider.get(service.providerIdentity) === digest) this.digestByProvider.delete(service.providerIdentity)
   }
 
+  private async disposeCurrent(): Promise<readonly PromiseSettledResult<void>[]> {
+    return await Promise.allSettled([
+      ...[...this.serviceByDigest].map(async ([digest, service]) => {
+        await service.dispose(); this.evict(digest, service)
+      }),
+      ...[...this.drainingServices].map((service) => this.disposeUnpublished(service)),
+    ])
+  }
+
   async dispose(): Promise<readonly PromiseSettledResult<void>[]> {
     this.draining = true
-    const pendingResults = Promise.allSettled([...this.pendingByDigest.values()])
-    const serviceResults = await Promise.allSettled([...this.serviceByDigest].map(async ([digest, service]) => {
-      await service.dispose()
-      this.evict(digest, service)
-    }))
-    const debtResults = await Promise.allSettled([...this.drainingServices].map(
-      async (service) => await this.disposeUnpublished(service),
-    ))
-    for (const [digest, service] of this.serviceByDigest) if (service.isDisposed) this.evict(digest, service)
-    return [...(await pendingResults).map((result): PromiseSettledResult<void> => result.status === 'fulfilled'
-      ? { status: 'fulfilled', value: undefined }
-      : result), ...serviceResults, ...debtResults]
+    const current = this.disposeCurrent()
+    const pending = Promise.allSettled([...this.pendingByDigest.values()])
+    return [...(await current).filter((result) => result.status === 'fulfilled'), ...await pending.then(() => this.disposeCurrent())]
   }
 
   async disposeUntil(deadline: number): Promise<readonly PromiseSettledResult<void>[]> {
+    this.draining = true
     for (;;) {
       const remaining = deadline - Date.now()
-      if (remaining <= 0) return [{ status: 'rejected', reason: new Error('sandbox lease registry drain deadline exceeded') }]
-      const attempt = this.dispose()
+      const failure = { status: 'rejected' as const, reason: new Error('sandbox lease registry drain deadline exceeded') }
+      if (remaining <= 0) return [failure]
+      const pass = this.disposeCurrent()
       let timer: number | undefined
       const results = await Promise.race([
-        attempt,
+        pass,
         new Promise<undefined>((resolve) => { timer = setTimeout(resolve, remaining) }),
       ])
       if (timer) clearTimeout(timer)
-      if (!results) {
-        void attempt.catch(() => { /* late factory cleanup remains registry-owned */ })
-        return [{ status: 'rejected', reason: new Error('sandbox lease registry drain deadline exceeded') }]
-      }
-      if (results.every((result) => result.status === 'fulfilled')) return results
+      if (!results) { void pass.catch(() => undefined); return [failure] }
+      const workRemains = this.pendingByDigest.size || this.serviceByDigest.size || this.drainingServices.size
+      if (!workRemains && results.every((result) => result.status === 'fulfilled')) return results
       await new Promise<void>((resolve) => setTimeout(resolve, Math.min(10, deadline - Date.now())))
     }
   }
