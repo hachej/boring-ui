@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import type { DisposableSandboxProviderV1, SandboxProviderV1 } from '@hachej/boring-sandbox/shared'
+import { SandboxLeaseService } from '../sandboxLease'
+import { SandboxLeaseServiceRegistry } from '../sandboxLeaseServiceRegistry'
 import {
   SANDBOX_LEASE_PROVIDER_PROFILE_VERSION_V1,
   createSandboxLeaseServiceFromProfileV1,
@@ -77,40 +79,22 @@ describe('sandbox lease provider profile identity', () => {
       expectedDigest: sandboxLeaseProviderProfileDigestV1(
         normalizeSandboxLeaseProviderProfileV1(mismatched, 'workspace-a').identity,
       ),
+      registry: new SandboxLeaseServiceRegistry(),
     })).rejects.toThrow('registration does not match trusted profile')
   })
 
   it('constructs a service bound to the complete profile identity', async () => {
     const normalized = normalizeSandboxLeaseProviderProfileV1(profile(), 'workspace-a')
     const digest = sandboxLeaseProviderProfileDigestV1(normalized.identity)
+    const registry = new SandboxLeaseServiceRegistry()
     const service = await createSandboxLeaseServiceFromProfileV1({
       profile: normalized,
       verifiedWorkspaceScopeId: 'workspace-a',
       expectedDigest: digest,
+      registry,
     })
-    const provider = await normalized.providerFactory()
-    expect(() => service.assertProfileBinding({
-      digest,
-      provider,
-      workspaceRoot: normalized.identity.leaseRoot,
-      providerWorkspaceId: normalized.identity.providerWorkspaceId,
-      ttlMs: normalized.identity.ttlMs,
-      reapIntervalMs: normalized.identity.reapIntervalMs,
-      drainTimeoutMs: normalized.identity.drainTimeoutMs,
-      maxActiveLeasesPerOwner: normalized.identity.maxActiveLeasesPerOwner,
-      maxActiveLeasesTotal: normalized.identity.maxActiveLeasesTotal,
-    })).not.toThrow()
-    expect(() => service.assertProfileBinding({
-      digest, provider,
-      workspaceRoot: '/other-root',
-      providerWorkspaceId: normalized.identity.providerWorkspaceId,
-      ttlMs: normalized.identity.ttlMs,
-      reapIntervalMs: normalized.identity.reapIntervalMs,
-      drainTimeoutMs: normalized.identity.drainTimeoutMs,
-      maxActiveLeasesPerOwner: normalized.identity.maxActiveLeasesPerOwner,
-      maxActiveLeasesTotal: normalized.identity.maxActiveLeasesTotal,
-    })).toThrow('does not match')
-    await service.dispose()
+    expect(service.providerIdentity).toBe(await normalized.providerFactory())
+    await registry.dispose()
   })
 
   it('validates constructor intervals before provider effects and closes on construction failure', async () => {
@@ -120,6 +104,7 @@ describe('sandbox lease provider profile identity', () => {
     await expect(createSandboxLeaseServiceFromProfileV1({
       profile: invalid, verifiedWorkspaceScopeId: 'workspace-a',
       expectedDigest: sandboxLeaseProviderProfileDigestV1(invalid.identity),
+      registry: new SandboxLeaseServiceRegistry(),
     })).rejects.toThrow('outside the supported interval')
     expect(providerFactory).not.toHaveBeenCalled()
 
@@ -132,6 +117,7 @@ describe('sandbox lease provider profile identity', () => {
         expectedDigest: sandboxLeaseProviderProfileDigestV1(
           normalizeSandboxLeaseProviderProfileV1(valid, 'workspace-a').identity,
         ),
+        registry: new SandboxLeaseServiceRegistry(),
       }).catch((error: unknown) => error)
       expect(failure).toBeInstanceOf(AggregateError)
       expect((failure as AggregateError).errors.map(String)).toEqual([
@@ -139,6 +125,78 @@ describe('sandbox lease provider profile identity', () => {
       ])
       expect(close).toHaveBeenCalledOnce()
     } finally { interval.mockRestore() }
+  })
+
+  it('claims provider ownership before validation cleanup', async () => {
+    const close = vi.fn(async () => {})
+    const provider = { ...disposableProvider(), close }
+    const owner = new SandboxLeaseService({
+      workspaceRoot: '/host/legacy-leases', provider, serviceDigest: 'legacy',
+      ttlMs: 60_000, reapIntervalMs: 10_000, drainTimeoutMs: 100,
+      maxActiveLeasesPerOwner: 1, maxActiveLeasesTotal: 1,
+    })
+    const registry = new SandboxLeaseServiceRegistry()
+    registry.register({ digest: 'legacy', leases: owner })
+    const value = profile()
+    const invalid = {
+      ...value,
+      providerFactory: () => provider,
+      identity: { ...value.identity, providerConfigDigest: `sha256:${'b'.repeat(64)}` as const },
+    }
+
+    await expect(createSandboxLeaseServiceFromProfileV1({
+      profile: invalid, verifiedWorkspaceScopeId: 'workspace-a',
+      expectedDigest: sandboxLeaseProviderProfileDigestV1(
+        normalizeSandboxLeaseProviderProfileV1(invalid, 'workspace-a').identity,
+      ),
+      registry,
+    })).rejects.toThrow('already owned or claimed')
+    expect(close).not.toHaveBeenCalled()
+    await registry.dispose()
+    expect(close).toHaveBeenCalledOnce()
+  })
+
+  it('keeps a draining provider claim atomic while closing its fresh provider once', async () => {
+    let finishClose!: () => void
+    const close = vi.fn(async () => await new Promise<void>((resolve) => { finishClose = resolve }))
+    const provider = { ...disposableProvider(), close }
+    const value = profile()
+    const digest = sandboxLeaseProviderProfileDigestV1(
+      normalizeSandboxLeaseProviderProfileV1(value, 'workspace-a').identity,
+    )
+    const registry = new SandboxLeaseServiceRegistry()
+    await registry.dispose()
+    const input = { profile: { ...value, providerFactory: () => provider }, verifiedWorkspaceScopeId: 'workspace-a', expectedDigest: digest, registry }
+
+    const first = createSandboxLeaseServiceFromProfileV1(input)
+    await vi.waitFor(() => expect(close).toHaveBeenCalledOnce())
+    await expect(createSandboxLeaseServiceFromProfileV1(input)).rejects.toThrow('already owned or claimed')
+    finishClose()
+    await expect(first).rejects.toThrow('registry is draining')
+    expect(close).toHaveBeenCalledOnce()
+  })
+
+  it('closes a fresh invalid claimed provider once and releases its claim', async () => {
+    const close = vi.fn(async () => {})
+    const provider = { ...disposableProvider(), close }
+    const value = profile()
+    const invalid = {
+      ...value,
+      providerFactory: () => provider,
+      identity: { ...value.identity, providerConfigDigest: `sha256:${'b'.repeat(64)}` as const },
+    }
+    const registry = new SandboxLeaseServiceRegistry()
+
+    await expect(createSandboxLeaseServiceFromProfileV1({
+      profile: invalid, verifiedWorkspaceScopeId: 'workspace-a',
+      expectedDigest: sandboxLeaseProviderProfileDigestV1(
+        normalizeSandboxLeaseProviderProfileV1(invalid, 'workspace-a').identity,
+      ),
+      registry,
+    })).rejects.toThrow('registration does not match trusted profile')
+    expect(close).toHaveBeenCalledOnce()
+    const release = await registry.claimProfileProvider('profile-next', provider)
+    release()
   })
 
   it('rejects caller-asserted generic template aliases', () => {
@@ -169,12 +227,14 @@ describe('sandbox lease provider profile identity', () => {
       },
       verifiedWorkspaceScopeId: 'workspace-a',
       expectedDigest: digest,
+      registry: new SandboxLeaseServiceRegistry(),
     })).rejects.toThrow('registration does not match trusted profile')
     const mismatch = { ...value, identity: { ...value.identity, providerId: 'bwrap' as const } }
     await expect(createSandboxLeaseServiceFromProfileV1({
       profile: mismatch,
       verifiedWorkspaceScopeId: 'workspace-a',
       expectedDigest: sandboxLeaseProviderProfileDigestV1(mismatch.identity),
+      registry: new SandboxLeaseServiceRegistry(),
     })).rejects.toThrow('provider identity does not match')
   })
 })

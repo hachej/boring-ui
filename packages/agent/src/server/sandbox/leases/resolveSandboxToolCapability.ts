@@ -29,6 +29,7 @@ export async function resolveSandboxToolCapability(input: {
       profile,
       verifiedWorkspaceScopeId: workspaceScopeId,
       expectedDigest: digest,
+      registry,
     }))
   return Object.freeze({ digest, profile, leases })
 }

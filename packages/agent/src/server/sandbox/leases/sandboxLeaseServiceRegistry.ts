@@ -6,6 +6,7 @@ export class SandboxLeaseServiceRegistry {
   private readonly pendingByDigest = new Map<string, Promise<SandboxLeaseService>>()
   private readonly digestByService = new WeakMap<SandboxLeaseService, string>()
   private readonly digestByProvider = new WeakMap<object, string>()
+  private readonly providerClaims = new WeakMap<object, string>()
   private readonly profileFactoryServices = new WeakSet<SandboxLeaseService>()
   private readonly drainingServices = new Set<SandboxLeaseService>()
   private draining = false
@@ -25,22 +26,15 @@ export class SandboxLeaseServiceRegistry {
     if (pending) return await pending
     const creation = Promise.resolve().then(factory).then(async (service) => {
       if (this.draining) {
-        this.drainingServices.add(service)
-        try { await service.dispose(); this.drainingServices.delete(service) }
-        catch (error) {
-          throw new AggregateError([error], 'sandbox lease service registry drain cleanup failed')
-        }
+        await this.disposeUnpublished(service)
         throw new TypeError('sandbox lease service registry drained during construction')
       }
       try {
-        this.bind({ digest, leases: service })
+        this.bind(digest, service)
         this.profileFactoryServices.add(service)
         return service
       } catch (error) {
-        if (!this.digestByService.has(service)) {
-          if (this.digestByProvider.has(service.providerIdentity)) service.abandonUnregistered()
-          else await service.dispose()
-        }
+        if (!this.digestByService.has(service)) service.abandonUnregistered()
         throw error
       }
     })
@@ -51,54 +45,71 @@ export class SandboxLeaseServiceRegistry {
 
   register(capability: { readonly digest: string; readonly leases: SandboxLeaseService }): void {
     if (this.pendingByDigest.has(capability.digest)) throw new TypeError('sandbox profile digest is reserved by a pending factory')
-    this.bind(capability)
+    this.bind(capability.digest, capability.leases)
   }
 
-  private bind(capability: { readonly digest: string; readonly leases: SandboxLeaseService }): void {
+  async claimProfileProvider(digest: string, provider: { close?(): Promise<void> }): Promise<() => void> {
+    if (this.digestByProvider.has(provider) || this.providerClaims.has(provider)) {
+      throw new TypeError('sandbox provider is already owned or claimed')
+    }
+    if (this.draining) {
+      this.providerClaims.set(provider, digest)
+      const error = new TypeError('sandbox lease service registry is draining')
+      try { await provider.close?.() }
+      catch (cleanupError) { throw new AggregateError([error, cleanupError], 'sandbox profile claim cleanup failed') }
+      finally { this.providerClaims.delete(provider) }
+      throw error
+    }
+    this.providerClaims.set(provider, digest)
+    return () => { if (this.providerClaims.get(provider) === digest) this.providerClaims.delete(provider) }
+  }
+
+  promoteProfileProvider(digest: string, leases: SandboxLeaseService): void {
+    if (this.providerClaims.get(leases.providerIdentity) !== digest) throw new TypeError('sandbox profile provider claim is not owned by this digest')
+    this.bind(digest, leases, true)
+    this.profileFactoryServices.add(leases)
+  }
+
+  private bind(digest: string, leases: SandboxLeaseService, acceptClaim = false): void {
     if (this.draining) throw new TypeError('sandbox lease service registry is draining')
-    if (capability.leases.isDisposed) throw new TypeError('disposed sandbox lease service cannot be registered')
-    const existingService = this.serviceByDigest.get(capability.digest)
-    if (existingService && existingService !== capability.leases) {
-      throw new TypeError('sandbox capability digest is already bound to another lease service')
-    }
-    const existingDigest = this.digestByService.get(capability.leases)
-    if (existingDigest && existingDigest !== capability.digest) {
-      throw new TypeError('sandbox lease service is already bound to another capability digest')
-    }
-    const provider = capability.leases.providerIdentity
+    if (leases.isDisposed) throw new TypeError('disposed sandbox lease service cannot be registered')
+    const existingService = this.serviceByDigest.get(digest)
+    if (existingService && existingService !== leases) throw new TypeError('sandbox capability digest is already bound to another lease service')
+    const existingDigest = this.digestByService.get(leases)
+    if (existingDigest && existingDigest !== digest) throw new TypeError('sandbox lease service is already bound to another capability digest')
+    const provider = leases.providerIdentity
     const providerDigest = this.digestByProvider.get(provider)
-    if (providerDigest && providerDigest !== capability.digest) {
-      throw new TypeError('sandbox provider is already owned by another lease service')
-    }
-    this.serviceByDigest.set(capability.digest, capability.leases)
-    this.digestByService.set(capability.leases, capability.digest)
-    this.digestByProvider.set(provider, capability.digest)
+    const providerClaim = this.providerClaims.get(provider)
+    if ((providerDigest && providerDigest !== digest) || (providerClaim && (!acceptClaim || providerClaim !== digest))) throw new TypeError('sandbox provider is already owned by another lease service')
+    this.serviceByDigest.set(digest, leases)
+    this.digestByService.set(leases, digest)
+    this.digestByProvider.set(provider, digest)
+    this.providerClaims.delete(provider)
+  }
+
+  private async disposeUnpublished(service: SandboxLeaseService): Promise<void> {
+    this.drainingServices.add(service)
+    await service.dispose()
+    this.drainingServices.delete(service)
   }
 
   private evict(digest: string, service: SandboxLeaseService): void {
     if (this.serviceByDigest.get(digest) === service) this.serviceByDigest.delete(digest)
     this.digestByService.delete(service)
-    if (this.digestByProvider.get(service.providerIdentity) === digest) {
-      this.digestByProvider.delete(service.providerIdentity)
-    }
+    if (this.digestByProvider.get(service.providerIdentity) === digest) this.digestByProvider.delete(service.providerIdentity)
   }
 
   async dispose(): Promise<readonly PromiseSettledResult<void>[]> {
     this.draining = true
-    const pending = [...this.pendingByDigest.values()]
-    const pendingResults = await Promise.allSettled(pending)
-    const entries = [...this.serviceByDigest.entries()]
-    const serviceResults = await Promise.allSettled(entries.map(async ([digest, service]) => {
+    const pendingResults = await Promise.allSettled([...this.pendingByDigest.values()])
+    const serviceResults = await Promise.allSettled([...this.serviceByDigest].map(async ([digest, service]) => {
       await service.dispose()
       this.evict(digest, service)
     }))
-    const debtResults = await Promise.allSettled([...this.drainingServices].map(async (service) => {
-      await service.dispose()
-      this.drainingServices.delete(service)
-    }))
-    for (const [digest, service] of this.serviceByDigest) {
-      if (service.isDisposed) this.evict(digest, service)
-    }
+    const debtResults = await Promise.allSettled([...this.drainingServices].map(
+      async (service) => await this.disposeUnpublished(service),
+    ))
+    for (const [digest, service] of this.serviceByDigest) if (service.isDisposed) this.evict(digest, service)
     return [...pendingResults.map((result): PromiseSettledResult<void> => result.status === 'fulfilled'
       ? { status: 'fulfilled', value: undefined }
       : result), ...serviceResults, ...debtResults]

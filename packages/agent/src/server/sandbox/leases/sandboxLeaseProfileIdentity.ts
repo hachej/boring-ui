@@ -6,6 +6,7 @@ import type {
   ExtractedSandboxProviderIdV1,
 } from '@hachej/boring-sandbox/shared'
 import { SandboxLeaseService } from './sandboxLease'
+import type { SandboxLeaseServiceRegistry } from './sandboxLeaseServiceRegistry'
 import {
   isDisposableLeaseProvider,
   registerTrustedDisposableLeaseProvider,
@@ -101,16 +102,14 @@ export function normalizeSandboxLeaseProviderProfileV1(
     maxActiveLeasesPerOwner: positiveInteger(identity.maxActiveLeasesPerOwner, 'maxActiveLeasesPerOwner'),
     maxActiveLeasesTotal: positiveInteger(identity.maxActiveLeasesTotal, 'maxActiveLeasesTotal'),
   })
-  return Object.freeze({
-    identity: normalizedIdentity,
-    providerFactory: profile.providerFactory,
-  })
+  return Object.freeze({ identity: normalizedIdentity, providerFactory: profile.providerFactory })
 }
 
 export async function createSandboxLeaseServiceFromProfileV1(input: {
   readonly profile: SandboxLeaseProviderProfileV1
   readonly verifiedWorkspaceScopeId: string
   readonly expectedDigest: string
+  readonly registry: SandboxLeaseServiceRegistry
 }): Promise<SandboxLeaseService> {
   const profile = normalizeSandboxLeaseProviderProfileV1(
     input.profile,
@@ -120,11 +119,13 @@ export async function createSandboxLeaseServiceFromProfileV1(input: {
   if (digest !== input.expectedDigest) throw new TypeError('sandbox lease profile digest does not match capability')
   const identity = profile.identity
   const provider = await profile.providerFactory()
+  const releaseClaim = await input.registry.claimProfileProvider(digest, provider)
+  let service: SandboxLeaseService | undefined
   try {
     registerTrustedDisposableLeaseProvider(provider, identity.providerConfigDigest)
     if (!isDisposableLeaseProvider(provider)) throw new TypeError('sandbox lease provider is not factory-registered')
     if (provider.providerId !== identity.providerId) throw new TypeError('sandbox lease provider identity does not match')
-    return new SandboxLeaseService({
+    service = new SandboxLeaseService({
       workspaceRoot: identity.leaseRoot, provider, serviceDigest: digest,
       providerWorkspaceId: identity.providerWorkspaceId,
       ttlMs: identity.ttlMs, reapIntervalMs: identity.reapIntervalMs,
@@ -132,11 +133,14 @@ export async function createSandboxLeaseServiceFromProfileV1(input: {
       maxActiveLeasesPerOwner: identity.maxActiveLeasesPerOwner,
       maxActiveLeasesTotal: identity.maxActiveLeasesTotal,
     })
+    input.registry.promoteProfileProvider(digest, service)
+    return service
   } catch (error) {
+    service?.abandonUnregistered()
     try { await provider.close?.() }
     catch (cleanupError) {
       throw new AggregateError([error, cleanupError], 'sandbox lease provider composition cleanup failed')
-    }
+    } finally { releaseClaim() }
     throw error
   }
 }

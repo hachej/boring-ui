@@ -357,6 +357,32 @@ describe('SandboxLeaseService lifecycle registry', () => {
     expect(service.listOwn('owner-a')).toEqual([])
   })
 
+  it('keeps a timed-out pending acquisition registered until its late cleanup debt converges', async () => {
+    const gate = await deferred<WorkspaceSandboxPairV1>()
+    const pair = fakePair('late-shutdown-debt')
+    pair.dispose.mockRejectedValueOnce(new Error('delete acknowledgement lost'))
+    const { service } = createService({ create: async () => await gate.promise, drainTimeoutMs: 5 })
+    const registry = new SandboxLeaseServiceRegistry()
+    registry.register({ digest: 'pending-profile', leases: service })
+    const acquiring = service.acquire('owner-a')
+    await Promise.resolve()
+
+    await expect(registry.disposeUntil(Date.now() + 15)).resolves.toEqual([
+      expect.objectContaining({ status: 'rejected' }),
+    ])
+    expect(service.isDisposed).toBe(false)
+    gate.resolve(pair.pair)
+    await expect(acquiring).rejects.toMatchObject({ code: SANDBOX_LEASE_ERROR_CODES.LEASE_CLEANUP_FAILED })
+    expect(service.listOwn('owner-a')).toEqual([
+      expect.objectContaining({ state: 'cleanup-pending' }),
+    ])
+    await expect(registry.disposeUntil(Date.now() + 100)).resolves.toEqual([
+      { status: 'fulfilled', value: undefined },
+    ])
+    expect(pair.dispose).toHaveBeenCalledTimes(2)
+    expect(service.listOwn('owner-a')).toEqual([])
+  })
+
   it('retains cleanup authority when readiness and the first compensation delete both fail', async () => {
     const pair = fakePair('setup-delete-ambiguous')
     pair.pair = { ...pair.pair, checkHealth: async () => { throw new Error('setup failed') } }

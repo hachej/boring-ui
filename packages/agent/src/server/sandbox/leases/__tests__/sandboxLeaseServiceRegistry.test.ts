@@ -103,6 +103,21 @@ describe('SandboxLeaseServiceRegistry', () => {
     expect(owner.dispose).toHaveBeenCalledOnce()
   })
 
+  it('claims one pending provider across digests and promotes the claim on binding', async () => {
+    const provider = {}
+    const leases = service(vi.fn(async () => {}), provider)
+    const registry = new SandboxLeaseServiceRegistry()
+    const release = await registry.claimProfileProvider('profile-a', provider)
+
+    await expect(registry.claimProfileProvider('profile-b', provider)).rejects.toThrow('already owned or claimed')
+    expect(() => registry.register({ digest: 'profile-a', leases })).toThrow('provider is already owned')
+    registry.promoteProfileProvider('profile-a', leases)
+    await expect(registry.getOrCreate('profile-a', () => service())).resolves.toBe(leases)
+    release()
+    await expect(registry.claimProfileProvider('profile-b', provider)).rejects.toThrow('already owned or claimed')
+    await registry.dispose()
+  })
+
   it('coalesces concurrent factories only within the profile namespace', async () => {
     let resolveFactory!: (value: SandboxLeaseService) => void
     const leases = service()
