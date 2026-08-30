@@ -399,6 +399,7 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
       const candidateIdentity = canonicalDigest(candidate.identity)
       const candidateFingerprint = canonicalDigest(candidate.environment.provisioningFingerprint)
       const candidatePhysicalBinding = canonicalDigest(candidate.physicalBindingIdentity ?? candidate.identity)
+      const candidateInputDigest = canonicalDigest(candidate.resourceInputDigest)
       const target = { kind: 'agent' as const, agentTypeId }
       const reloadSessionId = sessionId ?? options.defaultSessionId ?? 'default'
       let binding: RuntimeBinding | undefined
@@ -413,7 +414,7 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
           candidateIdentity,
           candidateFingerprint,
           candidatePhysicalBinding,
-          candidateInputDigest: candidate.resourceInputDigest,
+          candidateInputDigest,
         },
         classify: async () => {
           const current = runtime.findPublishedCurrentBinding(
