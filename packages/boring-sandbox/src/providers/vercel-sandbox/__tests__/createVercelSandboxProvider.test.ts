@@ -258,10 +258,17 @@ describe('createVercelSandboxProvider', () => {
       get: vi.fn(async () => Object.assign(unrelated.sandbox, { name: 'wrong-name' })),
     }
     const provider = createVercelSandboxProvider({ vercelClient: client, lifecycle: 'disposable', getEnvVar })
-    await expect(provider.create({
+    const failure = await provider.create({
       workspaceRoot: 'workspace-mismatch', workspaceId: 'workspace-mismatch',
       sessionId: 'session-mismatch', requestId: 'request-mismatch',
-    })).rejects.toMatchObject({ code: 'CONFIG_INVALID' })
+    }).catch((caught: unknown) => caught) as Error & {
+      sandboxProviderCleanupDebt: { retry(): Promise<void> }
+    }
+    expect(failure).toMatchObject({ code: 'CONFIG_INVALID' })
+    expect(failure.sandboxProviderCleanupDebt.retry).toBeTypeOf('function')
+    expect(returnedDelete).toHaveBeenCalledOnce()
+    expect(unrelatedDelete).not.toHaveBeenCalled()
+    await expect(failure.sandboxProviderCleanupDebt.retry()).rejects.toMatchObject({ code: 'CONFIG_INVALID' })
     expect(returnedDelete).toHaveBeenCalledOnce()
     expect(unrelatedDelete).not.toHaveBeenCalled()
     await expect(provider.close!()).rejects.toBeTruthy()

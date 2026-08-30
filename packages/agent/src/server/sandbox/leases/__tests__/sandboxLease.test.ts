@@ -225,8 +225,18 @@ describe('SandboxLeaseService lifecycle registry', () => {
     await service.dispose()
   })
 
-  it('retains ambiguous create cleanup debt under owner and global quota until retry settles', async () => {
-    const retry = vi.fn().mockRejectedValueOnce(new Error('still ambiguous')).mockResolvedValue(undefined)
+  it('retains joined correlation cleanup debt under owner and global quota until release retry settles', async () => {
+    const cleanupOrder: string[] = []
+    let returnedObjectPending = true
+    let correlationAttempts = 0
+    const retry = vi.fn(async () => {
+      if (returnedObjectPending) {
+        cleanupOrder.push('returned-object')
+        returnedObjectPending = false
+      }
+      cleanupOrder.push('correlation')
+      if (++correlationAttempts === 1) throw new Error('correlation mismatch remains')
+    })
     const error = Object.assign(new Error('create outcome unknown'), {
       sandboxProviderCleanupDebt: { retry },
     })
@@ -235,6 +245,7 @@ describe('SandboxLeaseService lifecycle registry', () => {
     await expect(service.acquire('owner-a')).rejects.toMatchObject({
       code: SANDBOX_LEASE_ERROR_CODES.LEASE_CLEANUP_FAILED,
     })
+    expect(cleanupOrder).toEqual(['returned-object', 'correlation'])
     expect(service.listOwn('owner-a')).toEqual([
       { handle: 'lease-handle-0001', expiresAt: 60_100, state: 'cleanup-pending' },
     ])
@@ -243,6 +254,7 @@ describe('SandboxLeaseService lifecycle registry', () => {
     })
     await service.release('owner-a', 'lease-handle-0001')
     expect(retry).toHaveBeenCalledTimes(2)
+    expect(cleanupOrder).toEqual(['returned-object', 'correlation', 'correlation'])
     expect(service.listOwn('owner-a')).toEqual([])
     await service.dispose()
   })

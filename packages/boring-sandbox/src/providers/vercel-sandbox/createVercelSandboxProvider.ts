@@ -639,7 +639,6 @@ export function createVercelSandboxProvider(
       let sandbox: ReturnType<typeof createVercelSandboxExec> | undefined
       let disposableCleanup: (() => Promise<void>) | undefined
       let ambiguityCleanup: (() => Promise<void>) | undefined
-      let disposableCreateSettled = false
       let workspaceDisposed = false
       let localSandboxDisposed = false
       let setupFailureCaptured = false
@@ -697,12 +696,11 @@ export function createVercelSandboxProvider(
             } catch (error) {
               const status = extractHttpStatus(error)
               if (status !== 404 && status !== 410) throw normalizeVercelProviderError(error)
-              if (!disposableCreateSettled) {
+              if (!disposableCleanup) {
                 throw new SandboxProviderError('VERCEL_API_ERROR', 'disposable Vercel create reconciliation remains pending')
               }
             }
             reservedDisposableNames.delete(disposableName)
-            publishedDisposableNames.delete(disposableName)
             unpublishedDisposableCleanups.delete(ambiguityCleanup!)
           }
           unpublishedDisposableCleanups.add(ambiguityCleanup)
@@ -734,7 +732,6 @@ export function createVercelSandboxProvider(
                 },
               ),
         })
-        disposableCreateSettled = true
         if (disposable && disposableName) {
           const disposeRemote = createDisposableSandboxDisposer({ sandbox: resolvedSandboxHandle, disposeLocal })
           disposableCleanup = async () => {
@@ -915,26 +912,27 @@ export function createVercelSandboxProvider(
           if (setup.state === 'failed') throw setup.error
         }
         if (closed) throw new SandboxProviderError('VERCEL_API_ERROR', 'Vercel sandbox provider closed during create')
-        if (disposable && disposableCleanup) {
-          // From this point the returned pair is the sole cleanup owner. The
-          // provider retains authority only for failures before publication.
+        if (disposableCleanup && disposableName) {
           unpublishedDisposableCleanups.delete(disposableCleanup)
-          if (disposableName) {
-            reservedDisposableNames.delete(disposableName)
-            publishedDisposableNames.add(disposableName)
-          }
+          reservedDisposableNames.delete(disposableName)
+          publishedDisposableNames.add(disposableName)
         }
         return pair
       } catch (error) {
-        if (!disposableCreateSettled && ambiguityCleanup && isDefinitiveVercelCreateRejection(error)) {
+        if (!disposableCleanup && ambiguityCleanup && isDefinitiveVercelCreateRejection(error)) {
           unpublishedDisposableCleanups.delete(ambiguityCleanup)
           if (disposableName) reservedDisposableNames.delete(disposableName)
           ambiguityCleanup = undefined
         }
-        const cleanup = disposableCleanup ?? ambiguityCleanup
-        if (cleanup) {
+        const cleanups = [disposableCleanup, ambiguityCleanup] as const
+        const cleanup = async () => {
+          for (const candidate of cleanups) {
+            if (candidate && unpublishedDisposableCleanups.has(candidate)) await settleUnpublishedDisposableCleanup(candidate)
+          }
+        }
+        if (cleanups.some(Boolean)) {
           try {
-            await settleUnpublishedDisposableCleanup(cleanup)
+            await cleanup()
           } catch (cleanupError) {
             logger.warn?.('[vercel-sandbox:mode] disposable setup cleanup failed', {
               workspaceDigest: telemetryDigest(workspaceId, telemetrySalt),
@@ -957,7 +955,7 @@ export function createVercelSandboxProvider(
           errorCode: normalizedLifecycleErrorCode(error),
         })
         const normalized = normalizeVercelProviderError(error)
-        throw cleanup && unpublishedDisposableCleanups.has(cleanup)
+        throw cleanups.some((candidate) => candidate && unpublishedDisposableCleanups.has(candidate))
           ? attachSandboxProviderCleanupDebt(normalized, cleanup)
           : normalized
       }
