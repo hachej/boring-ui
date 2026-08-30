@@ -17,6 +17,7 @@ import {
 } from '../../shared/immutableCacheV1'
 import { PROVIDER_CAPABILITIES, PROVIDER_CONTRACT_VERSION } from '../../shared/providerMatrix'
 import {
+  attachSandboxProviderCleanupDebt,
   SandboxProviderError,
   type DisposableSandboxProviderV1,
   type SandboxProviderCreateContextV1,
@@ -930,8 +931,8 @@ export function createVercelSandboxProvider(
           if (disposableName) reservedDisposableNames.delete(disposableName)
           ambiguityCleanup = undefined
         }
-        if (disposableCleanup || ambiguityCleanup) {
-          const cleanup = disposableCleanup ?? ambiguityCleanup!
+        const cleanup = disposableCleanup ?? ambiguityCleanup
+        if (cleanup) {
           try {
             await settleUnpublishedDisposableCleanup(cleanup)
           } catch (cleanupError) {
@@ -955,7 +956,10 @@ export function createVercelSandboxProvider(
           durationMs: Date.now() - totalStartedAt,
           errorCode: normalizedLifecycleErrorCode(error),
         })
-        throw normalizeVercelProviderError(error)
+        const normalized = normalizeVercelProviderError(error)
+        throw cleanup && unpublishedDisposableCleanups.has(cleanup)
+          ? attachSandboxProviderCleanupDebt(normalized, cleanup)
+          : normalized
       }
       } finally {
         finishCreate()

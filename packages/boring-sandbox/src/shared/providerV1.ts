@@ -94,6 +94,15 @@ export type WorkspaceSandboxPairV1 = Readonly<{
   dispose(): Promise<void>;
 }>;
 
+export interface SandboxProviderCreateCleanupDebtV1 {
+  readonly sandboxProviderCleanupDebt: Readonly<{ retry(): Promise<void> }>;
+}
+
+export function attachSandboxProviderCleanupDebt<T extends Error>(error: T, retry: () => Promise<void>): T {
+  Object.defineProperty(error, "sandboxProviderCleanupDebt", { value: Object.freeze({ retry }) });
+  return error;
+}
+
 export const DISPOSABLE_SANDBOX_PROVIDER_PROFILE_V1 =
   'boring-sandbox.disposable-provider.v1' as const;
 

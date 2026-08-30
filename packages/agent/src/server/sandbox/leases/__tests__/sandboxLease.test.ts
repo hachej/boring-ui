@@ -225,6 +225,28 @@ describe('SandboxLeaseService lifecycle registry', () => {
     await service.dispose()
   })
 
+  it('retains ambiguous create cleanup debt under owner and global quota until retry settles', async () => {
+    const retry = vi.fn().mockRejectedValueOnce(new Error('still ambiguous')).mockResolvedValue(undefined)
+    const error = Object.assign(new Error('create outcome unknown'), {
+      sandboxProviderCleanupDebt: { retry },
+    })
+    const { service } = createService({ maxOwner: 1, maxTotal: 1, create: async () => { throw error } })
+
+    await expect(service.acquire('owner-a')).rejects.toMatchObject({
+      code: SANDBOX_LEASE_ERROR_CODES.LEASE_CLEANUP_FAILED,
+    })
+    expect(service.listOwn('owner-a')).toEqual([
+      { handle: 'lease-handle-0001', expiresAt: 60_100, state: 'cleanup-pending' },
+    ])
+    await expect(service.acquire('owner-a')).rejects.toMatchObject({
+      code: SANDBOX_LEASE_ERROR_CODES.LEASE_QUOTA_EXCEEDED,
+    })
+    await service.release('owner-a', 'lease-handle-0001')
+    expect(retry).toHaveBeenCalledTimes(2)
+    expect(service.listOwn('owner-a')).toEqual([])
+    await service.dispose()
+  })
+
   it('releases quota and pending-handle ownership when the handle generator is invalid', async () => {
     let attempts = 0
     const created = fakePair('valid-after-invalid')

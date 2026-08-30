@@ -3,6 +3,7 @@ import { lstat } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import type {
+  SandboxProviderCreateCleanupDebtV1,
   SandboxProviderV1,
   WorkspaceSandboxPairV1,
 } from '@hachej/boring-sandbox/shared'
@@ -66,7 +67,8 @@ type CleanupReason = 'release' | 'expiry' | 'owner-end' | 'host-shutdown' | 'cre
 
 interface ActiveLease extends SandboxLease {
   readonly ownerId: string
-  readonly pair: WorkspaceSandboxPairV1
+  readonly pair?: WorkspaceSandboxPairV1
+  readonly dispose: () => Promise<void>
   readonly cleanupRegistration: {
     readonly operationId: typeof SANDBOX_REMOTE_DISPOSE_OPERATION_ID
     readonly keyDigest: string
@@ -223,8 +225,10 @@ export class SandboxLeaseService {
       published = true
       return { handle, expiresAt: lease.expiresAt }
     } catch (error) {
-      if (pair && handle && !published) {
-        const compensation = this.createLease(ownerId, handle, pair, 'cleanup-pending')
+      const debt = (error as Partial<SandboxProviderCreateCleanupDebtV1>)?.sandboxProviderCleanupDebt
+      const retry = pair ? () => pair!.dispose() : typeof debt?.retry === 'function' ? () => debt.retry() : undefined
+      if (retry && handle && !published) {
+        const compensation = this.createLease(ownerId, handle, pair, 'cleanup-pending', retry)
         compensation.cleanupReason = 'create-compensation'
         try {
           await this.runRegisteredCleanup(compensation, this.deadlineAfterDrain())
@@ -268,6 +272,8 @@ export class SandboxLeaseService {
     this.assertOpen()
     const lease = this.requireOwned(ownerId, handle)
     if (lease.state !== 'active') throw this.unavailableForState(lease.state)
+    const pair = lease.pair
+    if (!pair) throw this.unavailableForState('cleanup-pending')
     if (lease.expiresAt <= this.now()) {
       lease.state = 'draining'
       lease.cleanupReason = 'expiry'
@@ -279,7 +285,7 @@ export class SandboxLeaseService {
     try {
       let health: Awaited<ReturnType<NonNullable<WorkspaceSandboxPairV1['checkHealth']>>> | undefined
       try {
-        health = await lease.pair.checkHealth?.()
+        health = await pair.checkHealth?.()
       } catch {
         lease.state = 'draining'
         lease.cleanupReason = 'expiry'
@@ -292,7 +298,7 @@ export class SandboxLeaseService {
         cleanupAfterUnpin = true
         throw new SandboxLeaseError(SANDBOX_LEASE_ERROR_CODES.LEASE_EXPIRED, 'sandbox lease is unavailable')
       }
-      return await action(lease.pair)
+      return await action(pair)
     } finally {
       lease.activeOperations -= 1
       if (lease.activeOperations === 0) {
@@ -468,13 +474,15 @@ export class SandboxLeaseService {
   private createLease(
     ownerId: string,
     handle: string,
-    pair: WorkspaceSandboxPairV1,
+    pair: WorkspaceSandboxPairV1 | undefined,
     state: ActiveLease['state'],
+    dispose = (): Promise<void> => pair!.dispose(),
   ): ActiveLease {
     return {
       handle,
       ownerId,
       pair,
+      dispose,
       expiresAt: this.now() + this.options.ttlMs,
       cleanupRegistration: {
         operationId: SANDBOX_REMOTE_DISPOSE_OPERATION_ID,
@@ -491,7 +499,7 @@ export class SandboxLeaseService {
     const registration = lease.cleanupRegistration
     registration.attempts += 1
     if (!registration.inFlight) {
-      const effect = Promise.resolve().then(async () => await lease.pair.dispose())
+      const effect = Promise.resolve().then(lease.dispose)
       const tracked = effect.finally(() => {
         if (registration.inFlight === tracked) registration.inFlight = undefined
       })

@@ -18,6 +18,7 @@ import {
   type RemoteWorkerCreateResponseV1,
 } from "../../shared/remoteWorkerProtocolV1";
 import {
+  attachSandboxProviderCleanupDebt,
   SandboxProviderError,
   type DisposableSandboxProviderV1,
   type SandboxProviderV1,
@@ -407,6 +408,8 @@ export function createRemoteWorkerSandboxProviderV1(
             REMOTE_WORKER_ERROR_CODES_V1.timeout,
             REMOTE_WORKER_ERROR_CODES_V1.unavailable,
             REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+            REMOTE_WORKER_ERROR_CODES_V1.protocolMismatch,
+            REMOTE_WORKER_ERROR_CODES_V1.responseInvalid,
           ].includes(error.code as never);
           if (!ambiguous) {
             unregisterUnpublished?.();
@@ -546,7 +549,13 @@ export function createRemoteWorkerSandboxProviderV1(
         };
       } catch (error) {
         if (unpublishedCleanup) {
-          await unpublishedCleanup().catch(() => undefined);
+          try { await unpublishedCleanup(); }
+          catch {
+            const normalized = error instanceof Error ? error : new SandboxProviderError(
+              REMOTE_WORKER_ERROR_CODES_V1.unavailable, "remote-worker create outcome is unknown",
+            );
+            throw attachSandboxProviderCleanupDebt(normalized, unpublishedCleanup);
+          }
         }
         throw error;
       } finally {

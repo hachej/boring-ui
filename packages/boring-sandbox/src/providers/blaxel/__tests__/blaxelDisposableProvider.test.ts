@@ -182,10 +182,11 @@ describe('disposable Blaxel provider', () => {
         leaseMode: 'disposable', client, region: 'eu-fra-1',
         volume: { enabled: false, sizeMb: 2048 },
       })
-      await expect(provider.create({
+      const failure = await provider.create({
         workspaceRoot: '/host/lease-ambiguous', workspaceId: 'workspace-a',
         sessionId: `session-${status}`, requestId: `request-${status}`,
-      })).rejects.toBeTruthy()
+      }).catch((caught: unknown) => caught) as { sandboxProviderCleanupDebt?: { retry(): Promise<void> } }
+      expect(failure.sandboxProviderCleanupDebt?.retry).toBeTypeOf('function')
       await expect(provider.close!()).rejects.toBeTruthy()
     },
   )

@@ -40,8 +40,8 @@ must not grant a profile whose live row is not qualified for its tenant policy.
 | Proof | Exact command | Result at delivery head |
 | --- | --- | --- |
 | Disposable 13-law pair surface | `pnpm -C packages/boring-sandbox exec vitest run src/providers/__tests__/dualTargetParity.test.ts src/providers/remote-worker/__tests__/createRemoteWorkerProvider.test.ts` | PASS: the shared seven Workspace plus six Sandbox law helper runs against direct, bwrap, Blaxel, Vercel, and remote-worker disposable pairs |
-| Provider lifecycle/ambiguity | `pnpm -C packages/boring-sandbox exec vitest run --passWithNoTests --maxWorkers=4` | PASS: 69 files / 809 tests |
-| Agent authority/registry/strict adapter | `pnpm --filter @hachej/boring-agent test` | PASS: 2,350 passed / 18 skipped |
+| Provider lifecycle/ambiguity | `pnpm -C packages/boring-sandbox exec vitest run --passWithNoTests --maxWorkers=4` | PASS: 69 files / 810 tests |
+| Agent authority/registry/strict adapter | `pnpm -C packages/agent exec vitest run --maxWorkers=4` | PASS: 2,352 passed / 18 skipped |
 | Canonical wrappers | `pnpm --filter @hachej/boring-bash test` | PASS: 90 tests |
 | Direct/bwrap exact roots | `pnpm -C packages/boring-sandbox exec vitest run src/providers/__tests__/disposableLocalProviders.test.ts` | PASS: provider removes the exact owned child, sibling/parent survive, ancestor aliases and root swaps fail closed, default roots remain |
 | Remote worker | `RUN_RUNSC_INTEGRATION=1 pnpm --filter @hachej/boring-sandbox test:remote-worker:multi-lease` | PASS evidence, `qualified:false`, capability unadvertised (`openat2` ENOSYS) |

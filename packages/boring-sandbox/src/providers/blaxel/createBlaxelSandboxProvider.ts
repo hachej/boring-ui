@@ -4,7 +4,7 @@ import type { SandboxHandleStore } from '@hachej/boring-agent/shared'
 
 import { PROVIDER_CAPABILITIES, PROVIDER_CONTRACT_VERSION } from '../../shared/providerMatrix'
 import type { DisposableSandboxProviderV1, SandboxProviderV1 } from '../../shared/providerV1'
-import { SandboxProviderError } from '../../shared/providerV1'
+import { attachSandboxProviderCleanupDebt, SandboxProviderError } from '../../shared/providerV1'
 import {
   disposableProviderConfigDigestV1,
   registerDisposableSandboxProviderV1,
@@ -320,6 +320,7 @@ export function createBlaxelSandboxProvider(
       let finishCreate!: () => void
       const pendingCreate = new Promise<void>((resolve) => { finishCreate = resolve })
       pendingCreates.add(pendingCreate)
+      let cleanupRemote: (() => Promise<void>) | undefined
       try {
       if (!options.client) assertBlaxelCredentials()
       const config = disposableConfig ?? resolveBlaxelConfig(options)
@@ -328,7 +329,6 @@ export function createBlaxelSandboxProvider(
       if (options.leaseMode === 'disposable' && (config.volume.enabled || options.handleStore)) {
         throw new SandboxProviderError('CONFIG_INVALID', 'disposable Blaxel forbids volumes and handle persistence')
       }
-      let cleanupRemote: (() => Promise<void>) | undefined
       let remoteCleanupPhase: 'creating' | 'created' | 'returned' | undefined
       let remote
       if (options.leaseMode === 'disposable') {
@@ -512,6 +512,11 @@ export function createBlaxelSandboxProvider(
         remoteCleanupPhase = 'returned'
       }
       return pair
+      } catch (error) {
+        const normalized = error instanceof SandboxProviderError ? error : normalizeBlaxelError(error)
+        throw cleanupRemote && unpublished.has(cleanupRemote)
+          ? attachSandboxProviderCleanupDebt(normalized, cleanupRemote)
+          : normalized
       } finally {
         finishCreate()
         pendingCreates.delete(pendingCreate)

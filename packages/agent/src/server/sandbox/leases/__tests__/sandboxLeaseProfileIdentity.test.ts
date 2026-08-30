@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import type { DisposableSandboxProviderV1, SandboxProviderV1 } from '@hachej/boring-sandbox/shared'
 import {
@@ -111,6 +111,34 @@ describe('sandbox lease provider profile identity', () => {
       maxActiveLeasesTotal: normalized.identity.maxActiveLeasesTotal,
     })).toThrow('does not match')
     await service.dispose()
+  })
+
+  it('validates constructor intervals before provider effects and closes on construction failure', async () => {
+    const value = profile()
+    const providerFactory = vi.fn(value.providerFactory)
+    const invalid = { ...value, providerFactory, identity: { ...value.identity, reapIntervalMs: 999 } }
+    await expect(createSandboxLeaseServiceFromProfileV1({
+      profile: invalid, verifiedWorkspaceScopeId: 'workspace-a',
+      expectedDigest: sandboxLeaseProviderProfileDigestV1(invalid.identity),
+    })).rejects.toThrow('outside the supported interval')
+    expect(providerFactory).not.toHaveBeenCalled()
+
+    const close = vi.fn(async () => { throw new Error('close failed') })
+    const valid = { ...value, providerFactory: () => ({ ...disposableProvider(), close }) }
+    const interval = vi.spyOn(globalThis, 'setInterval').mockImplementationOnce(() => { throw new Error('timer failed') })
+    try {
+      const failure = await createSandboxLeaseServiceFromProfileV1({
+        profile: valid, verifiedWorkspaceScopeId: 'workspace-a',
+        expectedDigest: sandboxLeaseProviderProfileDigestV1(
+          normalizeSandboxLeaseProviderProfileV1(valid, 'workspace-a').identity,
+        ),
+      }).catch((error: unknown) => error)
+      expect(failure).toBeInstanceOf(AggregateError)
+      expect((failure as AggregateError).errors.map(String)).toEqual([
+        'Error: timer failed', 'Error: close failed',
+      ])
+      expect(close).toHaveBeenCalledOnce()
+    } finally { interval.mockRestore() }
   })
 
   it('rejects caller-asserted generic template aliases', () => {

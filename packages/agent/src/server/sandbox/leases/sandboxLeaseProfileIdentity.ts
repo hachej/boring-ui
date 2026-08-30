@@ -37,6 +37,7 @@ export interface SandboxLeaseProviderProfileV1 {
 }
 
 const SHA256 = /^sha256:[a-f0-9]{64}$/
+const PROVIDER_IDS = new Set(['direct', 'bwrap', 'blaxel', 'vercel-sandbox', 'remote-worker'])
 const PROFILE_KEYS = new Set(['identity', 'providerFactory'])
 const IDENTITY_KEYS = new Set([
   'contractVersion', 'workspaceScopeId', 'placementIdentity', 'providerWorkspaceId',
@@ -80,7 +81,11 @@ export function normalizeSandboxLeaseProviderProfileV1(
     throw new TypeError('sandbox lease root must be an absolute non-root path')
   }
   if (!SHA256.test(identity.providerConfigDigest)) throw new TypeError('providerConfigDigest must be sha256')
+  if (!PROVIDER_IDS.has(identity.providerId)) throw new TypeError('providerId is unsupported')
   const credentialVersionRefs = [...new Set(identity.credentialVersionRefs.map((value) => nonEmpty(value, 'credentialVersionRef')))].sort()
+  const ttlMs = positiveInteger(identity.ttlMs, 'ttlMs')
+  const reapIntervalMs = positiveInteger(identity.reapIntervalMs, 'reapIntervalMs')
+  if (reapIntervalMs < 1_000 || reapIntervalMs > Math.min(ttlMs, 60_000)) throw new TypeError('reapIntervalMs is outside the supported interval')
   const normalizedIdentity: SandboxLeaseProviderProfileIdentityV1 = Object.freeze({
     contractVersion: SANDBOX_LEASE_PROVIDER_PROFILE_VERSION_V1,
     workspaceScopeId,
@@ -90,8 +95,8 @@ export function normalizeSandboxLeaseProviderProfileV1(
     providerId: identity.providerId,
     providerConfigDigest: identity.providerConfigDigest,
     credentialVersionRefs: Object.freeze(credentialVersionRefs),
-    ttlMs: positiveInteger(identity.ttlMs, 'ttlMs'),
-    reapIntervalMs: positiveInteger(identity.reapIntervalMs, 'reapIntervalMs'),
+    ttlMs,
+    reapIntervalMs,
     drainTimeoutMs: positiveInteger(identity.drainTimeoutMs, 'drainTimeoutMs'),
     maxActiveLeasesPerOwner: positiveInteger(identity.maxActiveLeasesPerOwner, 'maxActiveLeasesPerOwner'),
     maxActiveLeasesTotal: positiveInteger(identity.maxActiveLeasesTotal, 'maxActiveLeasesTotal'),
@@ -119,24 +124,21 @@ export async function createSandboxLeaseServiceFromProfileV1(input: {
     registerTrustedDisposableLeaseProvider(provider, identity.providerConfigDigest)
     if (!isDisposableLeaseProvider(provider)) throw new TypeError('sandbox lease provider is not factory-registered')
     if (provider.providerId !== identity.providerId) throw new TypeError('sandbox lease provider identity does not match')
+    return new SandboxLeaseService({
+      workspaceRoot: identity.leaseRoot, provider, serviceDigest: digest,
+      providerWorkspaceId: identity.providerWorkspaceId,
+      ttlMs: identity.ttlMs, reapIntervalMs: identity.reapIntervalMs,
+      drainTimeoutMs: identity.drainTimeoutMs,
+      maxActiveLeasesPerOwner: identity.maxActiveLeasesPerOwner,
+      maxActiveLeasesTotal: identity.maxActiveLeasesTotal,
+    })
   } catch (error) {
     try { await provider.close?.() }
     catch (cleanupError) {
-      throw new AggregateError([error, cleanupError], 'sandbox lease provider attestation cleanup failed')
+      throw new AggregateError([error, cleanupError], 'sandbox lease provider composition cleanup failed')
     }
     throw error
   }
-  return new SandboxLeaseService({
-    workspaceRoot: identity.leaseRoot,
-    provider,
-    serviceDigest: digest,
-    providerWorkspaceId: identity.providerWorkspaceId,
-    ttlMs: identity.ttlMs,
-    reapIntervalMs: identity.reapIntervalMs,
-    drainTimeoutMs: identity.drainTimeoutMs,
-    maxActiveLeasesPerOwner: identity.maxActiveLeasesPerOwner,
-    maxActiveLeasesTotal: identity.maxActiveLeasesTotal,
-  })
 }
 
 export function sandboxLeaseProviderProfileDigestV1(

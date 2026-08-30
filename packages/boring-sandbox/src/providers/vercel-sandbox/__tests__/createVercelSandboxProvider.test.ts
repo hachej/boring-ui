@@ -291,10 +291,11 @@ describe('createVercelSandboxProvider', () => {
         get: vi.fn(async () => { throw Object.assign(new Error('not found'), { status: 404 }) }),
       }
       const provider = createVercelSandboxProvider({ vercelClient: client, lifecycle: 'disposable', getEnvVar })
-      await expect(provider.create({
+      const failure = await provider.create({
         workspaceRoot: 'workspace-ambiguous', workspaceId: 'workspace-ambiguous',
         sessionId: `session-${status}`, requestId: `request-${status}`,
-      })).rejects.toBeTruthy()
+      }).catch((caught: unknown) => caught) as { sandboxProviderCleanupDebt?: { retry(): Promise<void> } }
+      expect(failure.sandboxProviderCleanupDebt?.retry).toBeTypeOf('function')
       await expect(provider.close!()).rejects.toBeTruthy()
     },
   )

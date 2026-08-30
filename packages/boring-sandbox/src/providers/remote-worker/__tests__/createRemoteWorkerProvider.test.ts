@@ -92,6 +92,7 @@ class FakeTransport implements RemoteWorkerTransportV1 {
   streamCloseFailures = 0;
   streamCloseNeverSettles = false;
   createFailures = 0;
+  createProtocolMismatches = 0;
   createGate?: Promise<void>;
   advertiseExclusiveBinaryCreate = false;
   advertiseMultiSandboxRoots = false;
@@ -152,8 +153,11 @@ class FakeTransport implements RemoteWorkerTransportV1 {
         requestDigest: remoteWorkerRequestDigestV1(request),
         expiresAtMs: this.leaseExpiresAtMs,
       };
+      const createProtocolVersion = this.createProtocolMismatches > 0
+        ? (this.createProtocolMismatches -= 1, 'boring.remote-worker.v0')
+        : REMOTE_WORKER_PROTOCOL_VERSION;
       return {
-        protocolVersion: REMOTE_WORKER_PROTOCOL_VERSION,
+        protocolVersion: createProtocolVersion,
         providerContractVersion: PROVIDER_CONTRACT_VERSION,
         workerId: this.createResponseWorkerId,
         sandboxId: "sandbox-1",
@@ -761,6 +765,26 @@ describe("remote-worker SandboxProviderV1 placement binding", () => {
     ).rejects.toMatchObject({
       code: REMOTE_WORKER_ERROR_CODES_V1.protocolMismatch,
     });
+  });
+
+  test('retains deterministic cleanup debt for malformed accepted create responses', async () => {
+    const transport = new FakeTransport();
+    transport.createProtocolMismatches = 2;
+    const provider = createRemoteWorkerSandboxProviderV1(providerOptions(transport));
+
+    const failure = await provider.create({
+      workspaceRoot: '/unused', workspaceId: 'workspace-a', sessionId: 'session-a', requestId: 'request-a',
+    }).catch((error: unknown) => error) as Error & {
+      sandboxProviderCleanupDebt: { retry(): Promise<void> };
+    };
+    expect(failure).toMatchObject({ code: REMOTE_WORKER_ERROR_CODES_V1.protocolMismatch });
+    expect(failure.sandboxProviderCleanupDebt.retry).toBeTypeOf('function');
+    await failure.sandboxProviderCleanupDebt.retry();
+    const creates = transport.requests.filter((request) => request.path === '/internal/v1/sandboxes');
+    expect(new Set(creates.map((request) => (request.body as RemoteWorkerCreateRequestV1).clientLeaseId)).size).toBe(1);
+    expect(creates).toHaveLength(3);
+    expect(transport.requests.filter((request) => request.method === 'DELETE')).toHaveLength(1);
+    await provider.close?.();
   });
 
   test("sanitizes an unknown transport failure", async () => {
