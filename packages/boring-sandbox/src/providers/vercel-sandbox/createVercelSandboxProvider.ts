@@ -171,24 +171,18 @@ function createDefaultVercelClient(
       }
       if (params?.source?.type === 'snapshot') {
         const { runtime: _runtime, ...snapshotBase } = base
-        const handle = await VercelSandbox.create({
+        return await VercelSandbox.create({
           ...snapshotBase,
           source: { type: 'snapshot', snapshotId: params.source.snapshotId },
         })
-        return Object.assign(handle, {
-          ...(params.name ? { name: params.name } : {}),
-          sourceSnapshotId: params.source.snapshotId,
-        })
       }
       if (params?.source?.type === 'tarball') {
-        const handle = await VercelSandbox.create({
+        return await VercelSandbox.create({
           ...base,
           source: { type: 'tarball', url: params.source.url },
         })
-        return Object.assign(handle, params.name ? { name: params.name } : {})
       }
-      const handle = await VercelSandbox.create(base)
-      return Object.assign(handle, params?.name ? { name: params.name } : {})
+      return await VercelSandbox.create(base)
     },
     async get(params) {
       const getParams = {
@@ -196,8 +190,7 @@ function createDefaultVercelClient(
         name: params.name ?? params.sandboxId ?? '',
         resume: params.resume ?? true,
       } as unknown as Parameters<typeof VercelSandbox.get>[0] & { name?: string }
-      const handle = await VercelSandbox.get(getParams)
-      return Object.assign(handle, params.name ? { name: params.name } : {})
+      return await VercelSandbox.get(getParams)
     },
   }
 }
