@@ -33,16 +33,18 @@ Only the app-owned verifier returns identity facts, as
 `VerifiedAgentScopeClaim`. `AgentSessionRef` deliberately carries **no
 `hostId`** — session refs are `{ agentTypeId, sessionId }` and nothing else.
 
-## The 7 methods (+ close)
+## The 8 methods (+ close, plus optional authorization hook)
 
 ```ts
 interface AgentGateway {
+  authorizeAgentAccess?(input: { scope; agentTypeId; operation }): Promise<void>
   listAgents(input: ListAgentsInput): Promise<readonly AgentSummary[]>
   listSessions(input: AuthorizedAgentSessionQuery): Promise<AgentSessionPage>
   createSession(input: CreateAgentSessionInput): Promise<AgentSessionRef>
   connectSession(input: ConnectAgentSessionInput): Promise<AgentSessionConnection>
   readSessionState(input: ReadAgentSessionStateInput): Promise<AgentSessionStateSnapshot>
   renameSession(input: RenameAgentSessionInput): Promise<AgentSessionSummary>
+  setSessionArchived(input: SetAgentSessionArchivedInput): Promise<AgentSessionSummary>
   deleteSession(input: DeleteAgentSessionInput): Promise<void>
   close(): Promise<void>
 }
@@ -61,6 +63,7 @@ interface CreateAgentSessionInput    { scope; agentTypeId; requestId; title? }
 interface ConnectAgentSessionInput   { scope; ref; cursor? }
 interface ReadAgentSessionStateInput { scope; ref }
 interface RenameAgentSessionInput    { scope; ref; requestId; title }
+interface SetAgentSessionArchivedInput { scope; ref; requestId; archived }
 interface DeleteAgentSessionInput    { scope; ref; requestId }
 ```
 
@@ -97,10 +100,12 @@ shorthand. Prompts add `displayContent?`, `model?`, `thinkingLevel?`,
 
 ## Error codes
 
-Fourteen, exhaustive, order-stable, exported as both a const map and
+Seventeen, exhaustive, order-stable, exported as both a const map and
 `AGENT_GATEWAY_ERROR_CODES`:
 
 `AGENT_TYPE_UNKNOWN` · `AGENT_SESSION_NOT_FOUND` · `AGENT_SCOPE_DENIED` ·
+`AGENT_ENTITLEMENT_REQUIRED` · `AGENT_ACCESS_FORBIDDEN` ·
+`AGENT_ACCESS_POLICY_UNAVAILABLE` ·
 `AGENT_SESSION_REPLAY_GAP` · `AGENT_SESSION_CURSOR_AHEAD` ·
 `AGENT_SESSION_CURSOR_EXPIRED` · `AGENT_SESSION_CURSOR_INVALID` ·
 `AGENT_REQUEST_CONFLICT` · `AGENT_REQUEST_IN_PROGRESS` ·

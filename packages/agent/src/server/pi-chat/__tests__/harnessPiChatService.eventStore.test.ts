@@ -9,6 +9,7 @@ import {
   type EventStreamReadResult,
   type EventStreamStore,
   type CreateSessionStreamAttributes,
+  type OwnedSessionStream,
   type SessionStreamOwner,
   SqliteEventStreamStore,
 } from '../../events/eventStreamStore'
@@ -379,8 +380,8 @@ describe('HarnessPiChatService event store tap', () => {
     const db = openDatabase(':memory:')
     try {
       const store = new SqliteEventStreamStore(db.sql, db.runTransaction)
-      await store.createStream(streamPathFor(ctx, 's1'))
-      await store.appendAgentEvent('s1', { type: 'agent-start', seq: 9, turnId: 'old-turn' }, { streamPath: streamPathFor(ctx, 's1') })
+      const sessionStream = await store.createSessionStream(streamIdentityFor(ctx, 's1'), { agentTypeId: 'alpha' })
+      await store.appendAgentEvent(sessionStream, { type: 'agent-start', seq: 9, turnId: 'old-turn' })
 
       const restarted = createService(store)
       const live: PiChatEvent[] = []
@@ -404,12 +405,12 @@ describe('HarnessPiChatService event store tap', () => {
     try {
       const store = new SqliteEventStreamStore(db.sql, db.runTransaction)
       const path = streamPathFor(ctx, 's1')
-      await store.createStream(path)
+      const sessionStream = await store.createSessionStream(streamIdentityFor(ctx, 's1'), { agentTypeId: 'alpha' })
       // Seed 1005 durable envelopes directly (seq 0..1004), well past the
       // 1000-entry hydration window, so restart hydration must trim to the
       // most recent 1000: seq 5..1004.
       for (let seq = 0; seq <= 1004; seq += 1) {
-        await store.appendAgentEvent('s1', { type: 'agent-start', seq, turnId: `turn-${seq}` }, { streamPath: path })
+        await store.appendAgentEvent(sessionStream, { type: 'agent-start', seq, turnId: `turn-${seq}` })
       }
 
       const restarted = createService(store)
@@ -439,8 +440,8 @@ describe('HarnessPiChatService event store tap', () => {
     const db = openDatabase(':memory:')
     try {
       const store = new SqliteEventStreamStore(db.sql, db.runTransaction)
-      await store.createStream(streamPathFor(ctx, 's1'))
-      await store.appendAgentEvent('s1', { type: 'agent-start', seq: 9, turnId: 'old-turn' }, { streamPath: streamPathFor(ctx, 's1') })
+      const sessionStream = await store.createSessionStream(streamIdentityFor(ctx, 's1'), { agentTypeId: 'alpha' })
+      await store.appendAgentEvent(sessionStream, { type: 'agent-start', seq: 9, turnId: 'old-turn' })
 
       const persistedStore: SessionStore & {
         loadEntries(ctx: { workspaceId?: string; userId?: string }, sessionId: string): Promise<{ id: string; messages: unknown[] }>
@@ -474,7 +475,7 @@ class DelayedEventStreamStore implements EventStreamStore {
     return this.inner.createStream(path)
   }
 
-  async createSessionStream(identity: SessionStreamIdentity, attrs: CreateSessionStreamAttributes): Promise<void> {
+  async createSessionStream(identity: SessionStreamIdentity, attrs: CreateSessionStreamAttributes): Promise<OwnedSessionStream> {
     if (this.creationFailure) {
       this.creationFailure.started()
       await this.creationFailure.gate
@@ -487,10 +488,6 @@ class DelayedEventStreamStore implements EventStreamStore {
     return this.inner.readStreamOwner(path)
   }
 
-  backfillStreamOwner(path: string, agentTypeId: string): Promise<void> {
-    return this.inner.backfillStreamOwner(path, agentTypeId)
-  }
-
   appendEvent(path: string, event: unknown): Promise<string> {
     return this.inner.appendEvent(path, event)
   }
@@ -499,11 +496,11 @@ class DelayedEventStreamStore implements EventStreamStore {
     return this.inner.appendEventOnce(path, key, event)
   }
 
-  async appendAgentEvent(sessionId: string, chunk: PiChatEvent, opts: { idempotencyKey?: string; streamPath: string }): Promise<string> {
+  async appendAgentEvent(stream: OwnedSessionStream, chunk: PiChatEvent, opts?: { idempotencyKey?: string }): Promise<string> {
     this.appendStarted.push(chunk.seq)
     await this.gates.get(chunk.seq)
     if (this.failingSeqs.has(chunk.seq)) throw new Error(`append failed for seq ${chunk.seq}`)
-    return this.inner.appendAgentEvent(sessionId, chunk, opts)
+    return this.inner.appendAgentEvent(stream, chunk, opts)
   }
 
   readEvents(path: string, opts?: { offset?: string; limit?: number }): Promise<EventStreamReadResult> {
@@ -524,12 +521,16 @@ class DelayedEventStreamStore implements EventStreamStore {
 }
 
 function streamPathFor(ctx: PiSessionRequestContext, sessionId: string): string {
-  return sessionStreamPath({
+  return sessionStreamPath(streamIdentityFor(ctx, sessionId))
+}
+
+function streamIdentityFor(ctx: PiSessionRequestContext, sessionId: string): SessionStreamIdentity {
+  return {
     workspaceScopeId: ctx.sessionAuthority === 'workspace-scope'
       ? ctx.storageScope ?? ctx.workspaceId ?? ''
       : ctx.workspaceId ?? '',
     sessionId,
-  })
+  }
 }
 
 function emitSimpleTurn(adapter: FakeAdapter, turnId = 'turn-1'): void {

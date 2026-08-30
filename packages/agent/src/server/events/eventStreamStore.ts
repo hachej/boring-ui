@@ -1,5 +1,5 @@
 import type { PiChatEvent } from '../../shared/chat'
-import { sessionStreamPath, type AgentEvent, type SessionStreamIdentity } from '../../shared/events'
+import { parseSessionStreamPath, sessionStreamPath, type AgentEvent, type SessionStreamIdentity } from '../../shared/events'
 import type { TelemetrySink } from '../../shared/telemetry'
 import { migrateEventStreamSqlSchema } from './schemaVersion'
 import type { RunTransaction, SqlStorage } from './sqlStorage'
@@ -45,14 +45,21 @@ export interface CreateSessionStreamAttributes {
   readonly authSubjectId?: string
 }
 
+const ownedSessionStreamBrand: unique symbol = Symbol('OwnedSessionStream')
+
+export interface OwnedSessionStream {
+  readonly [ownedSessionStreamBrand]: true
+  readonly path: string
+  readonly identity: SessionStreamIdentity
+}
+
 export interface EventStreamStore {
   createStream(path: string): Promise<void>
-  createSessionStream(identity: SessionStreamIdentity, attrs: CreateSessionStreamAttributes): Promise<void>
+  createSessionStream(identity: SessionStreamIdentity, attrs: CreateSessionStreamAttributes): Promise<OwnedSessionStream>
   readStreamOwner(path: string): Promise<SessionStreamOwner | null>
-  backfillStreamOwner(path: string, agentTypeId: string): Promise<void>
   appendEvent(path: string, event: unknown): Promise<string>
   appendEventOnce(path: string, key: string, event: unknown): Promise<string>
-  appendAgentEvent(sessionId: string, chunk: PiChatEvent, opts: { idempotencyKey?: string; streamPath: string }): Promise<string>
+  appendAgentEvent(stream: OwnedSessionStream, chunk: PiChatEvent, opts?: { idempotencyKey?: string }): Promise<string>
   readEvents(path: string, opts?: { offset?: string; limit?: number }): Promise<EventStreamReadResult>
   closeStream(path: string): Promise<void>
   getStreamMeta(path: string): Promise<EventStreamMeta | null>
@@ -158,65 +165,33 @@ export class SqliteEventStreamStore implements EventStreamStore {
   }
 
   async createStream(path: string): Promise<void> {
+    if (parseSessionStreamPath(path)) {
+      throw new EventStreamStoreError('Canonical session streams must be opened with createSessionStream().')
+    }
     await this.retryBusy(() => {
       this.sql.exec(`INSERT OR IGNORE INTO boring_event_streams (path) VALUES (?)`, path)
     })
   }
 
-  async createSessionStream(identity: SessionStreamIdentity, attrs: CreateSessionStreamAttributes): Promise<void> {
+  async createSessionStream(identity: SessionStreamIdentity, attrs: CreateSessionStreamAttributes): Promise<OwnedSessionStream> {
     const path = sessionStreamPath(identity)
     if (typeof attrs.agentTypeId !== 'string' || attrs.agentTypeId.length === 0) {
       throw new EventStreamStoreError('Session stream agentTypeId must be a non-empty string.')
     }
     await this.retryBusy(() => {
       this.runTransaction(() => {
-        this.sql.exec(`INSERT OR IGNORE INTO boring_event_streams (path) VALUES (?)`, path)
-        this.sql.exec(`
-          INSERT OR IGNORE INTO boring_event_stream_owners (
-            path, workspace_scope_id, session_id, agent_type_id, auth_subject_id,
-            seat_id, thread_id, key_version, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, 2, ?)
-        `,
-        path,
-        identity.workspaceScopeId,
-        identity.sessionId,
-        attrs.agentTypeId,
-        attrs.authSubjectId ?? null,
-        null,
-        null,
-        Date.now())
-        this.sql.exec(`
-          UPDATE boring_event_stream_owners
-          SET agent_type_id = ?
-          WHERE path = ? AND agent_type_id IS NULL
-        `, attrs.agentTypeId, path)
-        this.assertOwnerIdentity(path, identity, attrs.agentTypeId)
+        this.claimSessionStreamOwner(path, identity, attrs)
       }, 'immediate')
+    })
+    return Object.freeze({
+      [ownedSessionStreamBrand]: true as const,
+      path,
+      identity: Object.freeze({ ...identity }),
     })
   }
 
   async readStreamOwner(path: string): Promise<SessionStreamOwner | null> {
     return this.readStreamOwnerSync(path)
-  }
-
-  async backfillStreamOwner(path: string, agentTypeId: string): Promise<void> {
-    if (typeof agentTypeId !== 'string' || agentTypeId.length === 0) {
-      throw new EventStreamStoreError('Session stream agentTypeId must be a non-empty string.')
-    }
-    await this.retryBusy(() => {
-      this.runTransaction(() => {
-        this.sql.exec(`
-          UPDATE boring_event_stream_owners
-          SET agent_type_id = ?
-          WHERE path = ? AND agent_type_id IS NULL
-        `, agentTypeId, path)
-        const owner = this.readStreamOwnerSync(path)
-        if (!owner) throw new EventStreamStoreError(`Event stream owner "${path}" does not exist.`)
-        if (owner.agentTypeId !== agentTypeId) {
-          throw new EventStreamStoreError(`Event stream "${path}" belongs to agent type "${owner.agentTypeId}".`)
-        }
-      }, 'immediate')
-    })
   }
 
   async appendEvent(path: string, event: unknown): Promise<string> {
@@ -283,11 +258,11 @@ export class SqliteEventStreamStore implements EventStreamStore {
     }
   }
 
-  async appendAgentEvent(sessionId: string, chunk: PiChatEvent, opts: { idempotencyKey?: string; streamPath: string }): Promise<string> {
-    const path = opts?.streamPath
-    if (typeof path !== 'string' || path.length === 0) {
-      throw new EventStreamStoreError('appendAgentEvent requires an explicit streamPath.')
+  async appendAgentEvent(stream: OwnedSessionStream, chunk: PiChatEvent, opts: { idempotencyKey?: string } = {}): Promise<string> {
+    if (stream?.[ownedSessionStreamBrand] !== true) {
+      throw new EventStreamStoreError('appendAgentEvent requires an owned session stream handle.')
     }
+    const { path, identity: { sessionId } } = stream
     let inserted = false
     try {
       // Same read-then-write shape as appendEventOnce — BEGIN IMMEDIATE required.
@@ -487,6 +462,34 @@ export class SqliteEventStreamStore implements EventStreamStore {
       keyVersion: Number(row.key_version),
       createdAt: Number(row.created_at),
     }
+  }
+
+  private claimSessionStreamOwner(
+    path: string,
+    identity: SessionStreamIdentity,
+    attrs: CreateSessionStreamAttributes,
+  ): void {
+    this.sql.exec(`INSERT OR IGNORE INTO boring_event_streams (path) VALUES (?)`, path)
+    this.sql.exec(`
+      INSERT OR IGNORE INTO boring_event_stream_owners (
+        path, workspace_scope_id, session_id, agent_type_id, auth_subject_id,
+        seat_id, thread_id, key_version, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 2, ?)
+    `,
+    path,
+    identity.workspaceScopeId,
+    identity.sessionId,
+    attrs.agentTypeId,
+    attrs.authSubjectId ?? null,
+    null,
+    null,
+    Date.now())
+    this.sql.exec(`
+      UPDATE boring_event_stream_owners
+      SET agent_type_id = ?
+      WHERE path = ? AND agent_type_id IS NULL
+    `, attrs.agentTypeId, path)
+    this.assertOwnerIdentity(path, identity, attrs.agentTypeId)
   }
 
   private assertOwnerIdentity(path: string, identity: SessionStreamIdentity, agentTypeId: string): void {

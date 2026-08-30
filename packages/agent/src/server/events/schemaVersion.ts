@@ -1,5 +1,6 @@
 import {
   quarantineV1EventStreamPath,
+  quarantineV1EventStreamRowidPath,
   SESSION_STREAM_PREFIX,
   sessionStreamPath,
   type SessionStreamIdentity,
@@ -11,7 +12,7 @@ export const BORING_EVENT_STREAM_SCHEMA_VERSION = 2
 const MIGRATION_BUSY_TIMEOUT_MS = 5_000
 const MIGRATION_TABLE = 'boring_event_stream_migration_v2'
 
-type CollisionClass = 'single-target' | 'empty-user-wins' | 'multi-user-only' | 'garbage-path'
+type CollisionClass = 'single-target' | 'empty-user-wins' | 'multi-user-only' | 'ambiguous-empty-user-collision' | 'garbage-path'
 
 interface MigrationOptions {
   readonly runTransaction: RunTransaction
@@ -24,12 +25,24 @@ interface LegacySessionIdentity extends SessionStreamIdentity {
 }
 
 interface ManifestRow {
-  readonly oldPath: string
+  readonly oldRowid: number
+  readonly oldPath: unknown
+  readonly oldPathType: string
+  readonly originalNextOffset: number
+  readonly originalClosed: number
   readonly newPath: string
   readonly stagingPath: string
   readonly disposition: 'rekey' | 'quarantine'
   readonly reason: string
   readonly identity?: LegacySessionIdentity
+}
+
+interface ParentRow {
+  readonly rowid: number
+  readonly path: unknown
+  readonly pathType: string
+  readonly nextOffset: number
+  readonly closed: number
 }
 
 export class EventStreamSchemaVersionError extends Error {
@@ -109,6 +122,7 @@ export function migrateEventStreamSqlSchema(sql: SqlStorage, options: MigrationO
     'single-target',
     'empty-user-wins',
     'multi-user-only',
+    'ambiguous-empty-user-collision',
     'garbage-path',
   ] as const) {
     safeCapture(options.telemetry, {
@@ -125,7 +139,11 @@ function migrateV1ToV2(sql: SqlStorage): Record<CollisionClass, number> {
   sql.exec(`DROP TABLE IF EXISTS ${MIGRATION_TABLE}`)
   sql.exec(`
     CREATE TABLE ${MIGRATION_TABLE} (
-      old_path TEXT PRIMARY KEY,
+      old_rowid INTEGER PRIMARY KEY,
+      old_path,
+      old_path_type TEXT NOT NULL,
+      original_next_offset INTEGER NOT NULL,
+      original_closed INTEGER NOT NULL,
       new_path TEXT NOT NULL,
       staging_path TEXT NOT NULL UNIQUE,
       disposition TEXT NOT NULL,
@@ -140,28 +158,54 @@ function migrateV1ToV2(sql: SqlStorage): Record<CollisionClass, number> {
     )
   `)
 
-  const oldPaths = sql.exec('SELECT path FROM boring_event_streams ORDER BY path').toArray()
-    .map((row) => String(row.path))
-  const stagingPrefix = selectUnusedStagingPrefix(oldPaths)
+  const parents: ParentRow[] = sql.exec(`
+    SELECT rowid, path, typeof(path) AS path_type, next_offset, closed
+    FROM boring_event_streams
+    ORDER BY rowid
+  `).toArray().map((row) => ({
+    rowid: Number(row.rowid),
+    path: row.path,
+    pathType: String(row.path_type),
+    nextOffset: Number(row.next_offset),
+    closed: Number(row.closed),
+  }))
+  const textPaths = parents
+    .filter((row) => row.pathType === 'text')
+    .map((row) => row.path as string)
+  const stagingPrefix = selectUnusedStagingPrefix(textPaths)
   const counts: Record<CollisionClass, number> = {
     'single-target': 0,
     'empty-user-wins': 0,
     'multi-user-only': 0,
+    'ambiguous-empty-user-collision': 0,
     'garbage-path': 0,
   }
-  const validGroups = new Map<string, Array<{ oldPath: string; identity: LegacySessionIdentity }>>()
+  const validGroups = new Map<string, Array<{ parent: ParentRow; identity: LegacySessionIdentity }>>()
   const manifest: ManifestRow[] = []
 
-  for (const oldPath of oldPaths) {
+  for (const parent of parents) {
+    if (parent.pathType !== 'text') {
+      counts['garbage-path'] += 1
+      manifest.push(quarantineManifestRow(parent, stagingPrefix, manifest.length, 'non-text-path'))
+      continue
+    }
+    const oldPath = parent.path as string
     const identity = parseLegacyV1Identity(oldPath)
     if (!identity) {
       counts['garbage-path'] += 1
-      manifest.push(quarantineManifestRow(oldPath, stagingPrefix, manifest.length, 'garbage-path'))
+      manifest.push(quarantineManifestRow(parent, stagingPrefix, manifest.length, 'garbage-path'))
       continue
     }
-    const newPath = sessionStreamPath(identity)
+    let newPath: string
+    try {
+      newPath = sessionStreamPath(identity)
+    } catch {
+      counts['garbage-path'] += 1
+      manifest.push(quarantineManifestRow(parent, stagingPrefix, manifest.length, 'unencodable-identity'))
+      continue
+    }
     const group = validGroups.get(newPath) ?? []
-    group.push({ oldPath, identity })
+    group.push({ parent, identity })
     validGroups.set(newPath, group)
   }
 
@@ -170,7 +214,7 @@ function migrateV1ToV2(sql: SqlStorage): Record<CollisionClass, number> {
       const only = group[0]
       if (!only) throw new EventStreamSchemaMigrationError('single-target group was empty')
       counts['single-target'] += 1
-      manifest.push(rekeyManifestRow(only.oldPath, newPath, stagingPrefix, manifest.length, only.identity, 'single-target'))
+      manifest.push(rekeyManifestRow(only.parent, newPath, stagingPrefix, manifest.length, only.identity, 'single-target'))
       continue
     }
     const emptyUsers = group.filter((candidate) => candidate.identity.authSubjectId === '')
@@ -178,28 +222,28 @@ function migrateV1ToV2(sql: SqlStorage): Record<CollisionClass, number> {
       counts['empty-user-wins'] += group.length
       const winner = emptyUsers[0]
       if (!winner) throw new EventStreamSchemaMigrationError('empty-user winner was missing')
-      manifest.push(rekeyManifestRow(winner.oldPath, newPath, stagingPrefix, manifest.length, winner.identity, 'empty-user-winner'))
+      manifest.push(rekeyManifestRow(winner.parent, newPath, stagingPrefix, manifest.length, winner.identity, 'empty-user-winner'))
       for (const candidate of group) {
         if (candidate === winner) continue
-        manifest.push(quarantineManifestRow(candidate.oldPath, stagingPrefix, manifest.length, 'empty-user-collision-loser'))
+        manifest.push(quarantineManifestRow(candidate.parent, stagingPrefix, manifest.length, 'empty-user-collision-loser'))
       }
       continue
     }
     if (emptyUsers.length === 0) {
       counts['multi-user-only'] += group.length
       for (const candidate of group) {
-        manifest.push(quarantineManifestRow(candidate.oldPath, stagingPrefix, manifest.length, 'multi-user-only-collision'))
+        manifest.push(quarantineManifestRow(candidate.parent, stagingPrefix, manifest.length, 'multi-user-only-collision'))
       }
       continue
     }
-    counts['garbage-path'] += group.length
+    counts['ambiguous-empty-user-collision'] += group.length
     for (const candidate of group) {
-      manifest.push(quarantineManifestRow(candidate.oldPath, stagingPrefix, manifest.length, 'ambiguous-empty-user-collision'))
+      manifest.push(quarantineManifestRow(candidate.parent, stagingPrefix, manifest.length, 'ambiguous-empty-user-collision'))
     }
   }
 
   for (const row of manifest) insertManifestRow(sql, row)
-  validatePreflight(sql, oldPaths.length)
+  validatePreflight(sql, parents.length)
   swapPaths(sql)
   insertMigratedOwners(sql)
   validateSwap(sql)
@@ -225,18 +269,30 @@ function parseLegacyV1Identity(path: string): LegacySessionIdentity | null {
   }
 }
 
-function quarantineManifestRow(oldPath: string, stagingPrefix: string, index: number, reason: string): ManifestRow {
+function quarantineManifestRow(parent: ParentRow, stagingPrefix: string, index: number, reason: string): ManifestRow {
+  let newPath: string
+  let finalReason = reason
+  if (parent.pathType === 'text' && reason !== 'unencodable-identity') {
+    try {
+      newPath = quarantineV1EventStreamPath(parent.path as string)
+    } catch {
+      newPath = quarantineV1EventStreamRowidPath(parent.rowid)
+      finalReason = 'unencodable-identity'
+    }
+  } else {
+    newPath = quarantineV1EventStreamRowidPath(parent.rowid)
+  }
   return {
-    oldPath,
-    newPath: quarantineV1EventStreamPath(oldPath),
+    ...manifestParent(parent),
+    newPath,
     stagingPath: stagingPath(stagingPrefix, index),
     disposition: 'quarantine',
-    reason,
+    reason: finalReason,
   }
 }
 
 function rekeyManifestRow(
-  oldPath: string,
+  parent: ParentRow,
   newPath: string,
   stagingPrefix: string,
   index: number,
@@ -244,12 +300,22 @@ function rekeyManifestRow(
   reason: string,
 ): ManifestRow {
   return {
-    oldPath,
+    ...manifestParent(parent),
     newPath,
     stagingPath: stagingPath(stagingPrefix, index),
     disposition: 'rekey',
     reason,
     identity,
+  }
+}
+
+function manifestParent(parent: ParentRow): Pick<ManifestRow, 'oldRowid' | 'oldPath' | 'oldPathType' | 'originalNextOffset' | 'originalClosed'> {
+  return {
+    oldRowid: parent.rowid,
+    oldPath: parent.path,
+    oldPathType: parent.pathType,
+    originalNextOffset: parent.nextOffset,
+    originalClosed: parent.closed,
   }
 }
 
@@ -268,21 +334,26 @@ function stagingPath(prefix: string, index: number): string {
 
 function insertManifestRow(sql: SqlStorage, row: ManifestRow): void {
   const entries = sql.exec(
-    'SELECT COUNT(*) AS count, MAX(seq) AS max_seq FROM boring_event_stream_entries WHERE path = ?',
+    'SELECT COUNT(*) AS count, MAX(seq) AS max_seq FROM boring_event_stream_entries WHERE path IS ?',
     row.oldPath,
   ).toArray()[0]
   const keys = sql.exec(
-    'SELECT COUNT(*) AS count, MAX(seq) AS max_seq FROM boring_event_stream_keys WHERE path = ?',
+    'SELECT COUNT(*) AS count, MAX(seq) AS max_seq FROM boring_event_stream_keys WHERE path IS ?',
     row.oldPath,
   ).toArray()[0]
   sql.exec(`
     INSERT INTO ${MIGRATION_TABLE} (
-      old_path, new_path, staging_path, disposition, reason,
+      old_rowid, old_path, old_path_type, original_next_offset, original_closed,
+      new_path, staging_path, disposition, reason,
       workspace_scope_id, session_id, auth_subject_id,
       entry_count, entry_max_seq, key_count, key_max_seq
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `,
+  row.oldRowid,
   row.oldPath,
+  row.oldPathType,
+  row.originalNextOffset,
+  row.originalClosed,
   row.newPath,
   row.stagingPath,
   row.disposition,
@@ -322,8 +393,9 @@ function validatePreflight(sql: SqlStorage, expectedStreamCount: number): void {
   for (const childTable of ['boring_event_stream_entries', 'boring_event_stream_keys']) {
     const unaccounted = sql.exec(`
       SELECT child.path FROM ${childTable} child
-      LEFT JOIN ${MIGRATION_TABLE} manifest ON manifest.old_path = child.path
-      WHERE manifest.old_path IS NULL
+      LEFT JOIN ${MIGRATION_TABLE} manifest
+        ON manifest.old_path_type = 'text' AND manifest.old_path = child.path
+      WHERE manifest.old_rowid IS NULL
       LIMIT 1
     `).toArray()[0]
     if (unaccounted) throw new EventStreamSchemaMigrationError(`unaccounted ${childTable} path ${String(unaccounted.path)}`)
@@ -335,11 +407,11 @@ function validatePreflight(sql: SqlStorage, expectedStreamCount: number): void {
     LEFT JOIN (
       SELECT path, COUNT(*) AS entry_count, MAX(seq) AS entry_max_seq
       FROM boring_event_stream_entries GROUP BY path
-    ) entries ON entries.path = manifest.old_path
+    ) entries ON manifest.old_path_type = 'text' AND entries.path = manifest.old_path
     LEFT JOIN (
       SELECT path, COUNT(*) AS key_count, MAX(seq) AS key_max_seq
       FROM boring_event_stream_keys GROUP BY path
-    ) keys ON keys.path = manifest.old_path
+    ) keys ON manifest.old_path_type = 'text' AND keys.path = manifest.old_path
     WHERE manifest.entry_count <> COALESCE(entries.entry_count, 0)
        OR NOT (manifest.entry_max_seq IS entries.entry_max_seq)
        OR manifest.key_count <> COALESCE(keys.key_count, 0)
@@ -347,19 +419,52 @@ function validatePreflight(sql: SqlStorage, expectedStreamCount: number): void {
     LIMIT 1
   `).toArray()[0]
   if (mismatched) throw new EventStreamSchemaMigrationError(`preflight counts changed for ${String(mismatched.old_path)}`)
+
+  const changedParent = sql.exec(`
+    SELECT manifest.old_rowid
+    FROM ${MIGRATION_TABLE} manifest
+    LEFT JOIN boring_event_streams parent ON parent.rowid = manifest.old_rowid
+    WHERE parent.rowid IS NULL
+       OR typeof(parent.path) <> manifest.old_path_type
+       OR NOT (parent.path IS manifest.old_path)
+       OR parent.next_offset <> manifest.original_next_offset
+       OR parent.closed <> manifest.original_closed
+    LIMIT 1
+  `).toArray()[0]
+  if (changedParent) {
+    throw new EventStreamSchemaMigrationError(`parent row changed before swap: rowid ${String(changedParent.old_rowid)}`)
+  }
 }
 
 function swapPaths(sql: SqlStorage): void {
-  for (const table of ['boring_event_stream_entries', 'boring_event_stream_keys', 'boring_event_streams']) {
+  for (const table of ['boring_event_stream_entries', 'boring_event_stream_keys']) {
     sql.exec(`
       UPDATE ${table}
-      SET path = (SELECT staging_path FROM ${MIGRATION_TABLE} WHERE old_path = ${table}.path)
+      SET path = (
+        SELECT staging_path FROM ${MIGRATION_TABLE}
+        WHERE old_path_type = 'text' AND old_path = ${table}.path
+      )
+      WHERE EXISTS (
+        SELECT 1 FROM ${MIGRATION_TABLE}
+        WHERE old_path_type = 'text' AND old_path = ${table}.path
+      )
     `)
     sql.exec(`
       UPDATE ${table}
       SET path = (SELECT new_path FROM ${MIGRATION_TABLE} WHERE staging_path = ${table}.path)
+      WHERE EXISTS (SELECT 1 FROM ${MIGRATION_TABLE} WHERE staging_path = ${table}.path)
     `)
   }
+  sql.exec(`
+    UPDATE boring_event_streams
+    SET path = (SELECT staging_path FROM ${MIGRATION_TABLE} WHERE old_rowid = boring_event_streams.rowid)
+    WHERE EXISTS (SELECT 1 FROM ${MIGRATION_TABLE} WHERE old_rowid = boring_event_streams.rowid)
+  `)
+  sql.exec(`
+    UPDATE boring_event_streams
+    SET path = (SELECT new_path FROM ${MIGRATION_TABLE} WHERE old_rowid = boring_event_streams.rowid)
+    WHERE EXISTS (SELECT 1 FROM ${MIGRATION_TABLE} WHERE old_rowid = boring_event_streams.rowid)
+  `)
 }
 
 function insertMigratedOwners(sql: SqlStorage): void {
@@ -376,6 +481,21 @@ function insertMigratedOwners(sql: SqlStorage): void {
 }
 
 function validateSwap(sql: SqlStorage): void {
+  const badParent = sql.exec(`
+    SELECT manifest.old_rowid
+    FROM ${MIGRATION_TABLE} manifest
+    LEFT JOIN boring_event_streams parent ON parent.rowid = manifest.old_rowid
+    WHERE parent.rowid IS NULL
+       OR typeof(parent.path) <> 'text'
+       OR parent.path <> manifest.new_path
+       OR parent.next_offset <> manifest.original_next_offset
+       OR parent.closed <> manifest.original_closed
+    LIMIT 1
+  `).toArray()[0]
+  if (badParent) {
+    throw new EventStreamSchemaMigrationError(`swapped parent is invalid: rowid ${String(badParent.old_rowid)}`)
+  }
+
   for (const childTable of ['boring_event_stream_entries', 'boring_event_stream_keys']) {
     const unaccounted = sql.exec(`
       SELECT child.path FROM ${childTable} child
@@ -404,13 +524,34 @@ function validateSwap(sql: SqlStorage): void {
   `).toArray()[0]
   if (mismatched) throw new EventStreamSchemaMigrationError(`swapped counts changed for ${String(mismatched.new_path)}`)
 
-  const missingOwner = sql.exec(`
+  const invalidOwner = sql.exec(`
     SELECT manifest.new_path FROM ${MIGRATION_TABLE} manifest
     LEFT JOIN boring_event_stream_owners owner ON owner.path = manifest.new_path
-    WHERE manifest.disposition = 'rekey' AND owner.path IS NULL
+    WHERE manifest.disposition = 'rekey'
+      AND (
+        owner.path IS NULL
+        OR owner.workspace_scope_id <> manifest.workspace_scope_id
+        OR owner.session_id <> manifest.session_id
+        OR owner.agent_type_id IS NOT NULL
+        OR NOT (owner.auth_subject_id IS manifest.auth_subject_id)
+        OR owner.seat_id IS NOT NULL
+        OR owner.thread_id IS NOT NULL
+        OR owner.key_version <> 1
+        OR typeof(owner.created_at) <> 'integer'
+      )
     LIMIT 1
   `).toArray()[0]
-  if (missingOwner) throw new EventStreamSchemaMigrationError(`owner missing for ${String(missingOwner.new_path)}`)
+  if (invalidOwner) throw new EventStreamSchemaMigrationError(`owner invalid for ${String(invalidOwner.new_path)}`)
+
+  const unexpectedOwner = sql.exec(`
+    SELECT owner.path
+    FROM boring_event_stream_owners owner
+    LEFT JOIN ${MIGRATION_TABLE} manifest
+      ON manifest.disposition = 'rekey' AND manifest.new_path = owner.path
+    WHERE manifest.old_rowid IS NULL
+    LIMIT 1
+  `).toArray()[0]
+  if (unexpectedOwner) throw new EventStreamSchemaMigrationError(`unexpected owner for ${String(unexpectedOwner.path)}`)
 }
 
 function scalarNumber(sql: SqlStorage, query: string): number {

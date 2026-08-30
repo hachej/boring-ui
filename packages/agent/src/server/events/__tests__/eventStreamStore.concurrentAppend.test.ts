@@ -241,13 +241,17 @@ describe('SqliteEventStreamStore write-path transaction mode wiring', () => {
       await store.createStream('p')
       await store.appendEvent('p', { a: 1 })
       await store.appendEventOnce('p', 'key-1', { a: 2 })
-      await store.appendAgentEvent('s1', { type: 'agent-start', seq: 0, turnId: 't' }, { streamPath: 'p' })
+      const sessionStream = await store.createSessionStream(
+        { workspaceScopeId: 'scope', sessionId: 's1' },
+        { agentTypeId: 'alpha' },
+      )
+      await store.appendAgentEvent(sessionStream, { type: 'agent-start', seq: 0, turnId: 't' })
 
       // Each of the three write paths must request 'immediate' — a
       // read-then-write transaction under the default 'deferred' mode is
       // exactly the bug this fix closes (see the concurrent-write tests
       // above for the real-contention proof).
-      expect(modes).toEqual(['immediate', 'immediate', 'immediate', 'immediate'])
+      expect(modes).toEqual(['immediate', 'immediate', 'immediate', 'immediate', 'immediate'])
     } finally {
       db.close()
     }

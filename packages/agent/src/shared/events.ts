@@ -92,10 +92,35 @@ export function quarantineV1EventStreamPath(oldPath: string): string {
   return `${V1_QUARANTINE_STREAM_PREFIX}${encodeIdentitySegment(oldPath)}`
 }
 
+/** Migration-only destination when a legacy SQL path has no encodable text identity. */
+export function quarantineV1EventStreamRowidPath(rowid: number): string {
+  if (!Number.isSafeInteger(rowid) || rowid <= 0) {
+    throw new TypeError('Legacy event stream rowid must be a positive safe integer.')
+  }
+  return `${V1_QUARANTINE_STREAM_PREFIX}rowid-${rowid}`
+}
+
 function assertIdentitySegment(name: keyof SessionStreamIdentity, value: unknown): asserts value is string {
   if (typeof value !== 'string' || value.length === 0) {
     throw new TypeError(`Session stream ${name} must be a non-empty string.`)
   }
+  if (!isWellFormedUnicode(value)) {
+    throw new TypeError(`Session stream ${name} must contain well-formed Unicode.`)
+  }
+}
+
+function isWellFormedUnicode(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index)
+    if (code >= 0xD800 && code <= 0xDBFF) {
+      const next = value.charCodeAt(index + 1)
+      if (!(next >= 0xDC00 && next <= 0xDFFF)) return false
+      index += 1
+    } else if (code >= 0xDC00 && code <= 0xDFFF) {
+      return false
+    }
+  }
+  return true
 }
 
 function encodeIdentitySegment(value: string): string {

@@ -9,9 +9,10 @@ const { dbPath, sharedBuf } = workerData as {
   sharedBuf: SharedArrayBuffer
 }
 const sync = new Int32Array(sharedBuf)
+Atomics.add(sync, 0, 1)
+Atomics.notify(sync, 0)
+Atomics.wait(sync, 1, 0)
 const opened = openDatabase(dbPath)
-opened.db.exec('PRAGMA busy_timeout=5000')
-Atomics.wait(sync, 0, 0)
 
 let migrationTelemetryEvents = 0
 new SqliteEventStreamStore(opened.sql, opened.runTransaction, {

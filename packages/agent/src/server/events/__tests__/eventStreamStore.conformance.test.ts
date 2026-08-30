@@ -127,25 +127,25 @@ export function runEventStreamStoreConformance(makeStore: StoreFactory): void {
 
   it('deduplicates appendAgentEvent by idempotency key without allocating another eventIndex', async () => {
     const store = await useStore()
-    const path = sessionStreamPath({ workspaceScopeId: 'workspace-a', sessionId: 'session-a' })
-    await store.createSessionStream(
+    const stream = await store.createSessionStream(
       { workspaceScopeId: 'workspace-a', sessionId: 'session-a' },
       { agentTypeId: 'alpha' },
     )
+    const { path } = stream
     const chunk = piEvent(7)
 
-    const first = await store.appendAgentEvent('session-a', chunk, { idempotencyKey: String(chunk.seq), streamPath: path })
-    const retry = await store.appendAgentEvent('session-a', chunk, { idempotencyKey: String(chunk.seq), streamPath: path })
+    const first = await store.appendAgentEvent(stream, chunk, { idempotencyKey: String(chunk.seq) })
+    const retry = await store.appendAgentEvent(stream, chunk, { idempotencyKey: String(chunk.seq) })
     const [concurrentA, concurrentB] = await Promise.all([
-      store.appendAgentEvent('session-a', chunk, { idempotencyKey: String(chunk.seq), streamPath: path }),
-      store.appendAgentEvent('session-a', chunk, { idempotencyKey: String(chunk.seq), streamPath: path }),
+      store.appendAgentEvent(stream, chunk, { idempotencyKey: String(chunk.seq) }),
+      store.appendAgentEvent(stream, chunk, { idempotencyKey: String(chunk.seq) }),
     ])
 
     expect(retry).toBe(first)
     expect(concurrentA).toBe(first)
     expect(concurrentB).toBe(first)
     await expect(
-      store.appendAgentEvent('session-a', piEvent(8), { idempotencyKey: String(chunk.seq), streamPath: path }),
+      store.appendAgentEvent(stream, piEvent(8), { idempotencyKey: String(chunk.seq) }),
     ).rejects.toThrow(/conflicting payload/)
 
     const result = await store.readEvents(path, { offset: '-1' })
@@ -164,21 +164,21 @@ export function runEventStreamStoreConformance(makeStore: StoreFactory): void {
 
   it('rolls back appendAgentEvent when envelope serialization throws', async () => {
     const store = await useStore()
-    const path = sessionStreamPath({ workspaceScopeId: 'workspace-a', sessionId: 'atomic' })
-    await store.createSessionStream(
+    const stream = await store.createSessionStream(
       { workspaceScopeId: 'workspace-a', sessionId: 'atomic' },
       { agentTypeId: 'alpha' },
     )
+    const { path } = stream
     const badChunk = { ...piEvent(1), bad: 1n } as unknown as PiChatEvent
 
-    await expect(store.appendAgentEvent('atomic', badChunk, { streamPath: path })).rejects.toThrow(/serialize a BigInt/)
+    await expect(store.appendAgentEvent(stream, badChunk)).rejects.toThrow(/serialize a BigInt/)
     await expect(store.getStreamMeta(path)).resolves.toEqual({ nextOffset: '-1', closed: false })
     await expect(store.readEvents(path, { offset: '-1' })).resolves.toMatchObject({
       events: [],
       nextOffset: '-1',
     })
 
-    const offset = await store.appendAgentEvent('atomic', piEvent(2), { streamPath: path })
+    const offset = await store.appendAgentEvent(stream, piEvent(2))
     expect(offset).toBe(formatOffset(0))
     const result = await store.readEvents(path, { offset: '-1' })
     expect((result.events[0]?.data as AgentEvent).eventIndex).toBe(0)
@@ -197,6 +197,14 @@ export function runEventStreamStoreConformance(makeStore: StoreFactory): void {
     unsubscribe()
     await store.appendEvent(path, { two: true })
     expect(listener).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects canonical session paths through the generic stream API', async () => {
+    const store = await useStore()
+    const path = sessionStreamPath({ workspaceScopeId: 'workspace-a', sessionId: 'session-a' })
+
+    await expect(store.createStream(path)).rejects.toThrow(/createSessionStream/)
+    await expect(store.getStreamMeta(path)).resolves.toBeNull()
   })
 }
 

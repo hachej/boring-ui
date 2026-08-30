@@ -4,7 +4,7 @@ import type { Workspace } from '../../shared/workspace'
 import { chatErrorFromUnknown, type BoringChatMessage, type BoringChatPart, type ChatError, type ChatModelSelection, type FollowUpPayload, type FollowUpReceipt, type InterruptPayload, type PiChatEvent, type PiChatSnapshot, type PromptPayload, type PromptReceipt, type QueuedUserMessage, type QueueClearPayload, type QueueClearReceipt, type StopPayload, type StopReceipt } from '../../shared/chat'
 import { sessionStreamPath, type AgentEvent, type SessionStreamIdentity } from '../../shared/events'
 import { ErrorCode } from '../../shared/error-codes'
-import { formatOffset, parseOffset, MAX_READ_LIMIT, type EventStreamStore } from '../events/eventStreamStore'
+import { formatOffset, parseOffset, MAX_READ_LIMIT, type EventStreamStore, type OwnedSessionStream } from '../events/eventStreamStore'
 import type {
   PiChatEventStreamResult,
   PiChatEventSubscriber,
@@ -45,7 +45,7 @@ type PiSessionStoreLike = SessionStore & {
 
 interface LiveSessionChannel {
   sessionKey: string
-  streamPath: string
+  sessionStream?: OwnedSessionStream
   buffer: PiChatReplayBuffer
   adapter: PiAgentSessionAdapter
   unsubscribe: () => void
@@ -417,23 +417,28 @@ export class HarnessPiChatService implements PiChatSessionService {
 
   private async readPersistedState(ctx: PiSessionRequestContext, sessionId: string): Promise<PiChatSnapshot | null> {
     if (!this.sessionStore.loadEntries) return null
+    let persisted: Awaited<ReturnType<NonNullable<PiSessionStoreLike['loadEntries']>>>
     try {
-      const { id, messages, currentModel } = await this.sessionStore.loadEntries(toSessionCtx(ctx), sessionId)
-      return {
-        protocolVersion: 1,
-        sessionId: id,
-        seq: await this.readDurableLatestPiChatSeq(sessionStreamPath(this.sessionIdentity(ctx, id))),
-        status: 'idle',
-        currentModel,
-        messages: buildPiChatHistory(messages, {
-          sessionId: id,
-          attachmentUrl: this.attachmentUrlFor(id),
-        }),
-        queue: { followUps: [] },
-        followUpMode: 'one-at-a-time',
-      }
+      persisted = await this.sessionStore.loadEntries(toSessionCtx(ctx), sessionId)
     } catch {
       return null
+    }
+    const { id, messages, currentModel } = persisted
+    const seq = this.eventStore
+      ? await this.readDurableLatestPiChatSeq(sessionStreamPath(this.sessionIdentity(ctx, id)))
+      : 0
+    return {
+      protocolVersion: 1,
+      sessionId: id,
+      seq,
+      status: 'idle',
+      currentModel,
+      messages: buildPiChatHistory(messages, {
+        sessionId: id,
+        attachmentUrl: this.attachmentUrlFor(id),
+      }),
+      queue: { followUps: [] },
+      followUpMode: 'one-at-a-time',
     }
   }
 
@@ -1049,12 +1054,15 @@ export class HarnessPiChatService implements PiChatSessionService {
       return
     }
 
+    const eventStore = this.eventStore
     const next = channel.publishQueue.then(async () => {
       const publishedEvents: PiChatEvent[] = []
       for (const event of events) {
         const enriched = this.messageMetadata.enrichEvent(channel.sessionKey, event)
         publishedEvents.push(enriched)
-        await this.eventStore?.appendAgentEvent(sessionId, enriched, { idempotencyKey: String(enriched.seq), streamPath: channel.streamPath })
+        const stream = channel.sessionStream
+        if (!stream) throw new Error('Durable event store channel is missing its owned session stream.')
+        await eventStore.appendAgentEvent(stream, enriched, { idempotencyKey: String(enriched.seq) })
         this.publishChannelEventSync(sessionId, channel, enriched)
       }
       afterPublish?.(publishedEvents)
@@ -1244,14 +1252,16 @@ export class HarnessPiChatService implements PiChatSessionService {
     const existing = this.channels.get(sessionKey)
     if (existing) return existing
     const { sessionId } = identity
-    const streamPath = sessionStreamPath(identity)
-    let buffer: PiChatReplayBuffer
+    let sessionStream: OwnedSessionStream | undefined
+    let buffer = new PiChatReplayBuffer()
     try {
-      await this.eventStore?.createSessionStream(identity, {
-        agentTypeId: this.agentTypeId,
-        ...(authSubjectId ? { authSubjectId } : {}),
-      })
-      buffer = await this.hydrateDurableReplayBuffer(streamPath)
+      if (this.eventStore) {
+        sessionStream = await this.eventStore.createSessionStream(identity, {
+          agentTypeId: this.agentTypeId,
+          ...(authSubjectId ? { authSubjectId } : {}),
+        })
+        buffer = await this.hydrateDurableReplayBuffer(sessionStream.path)
+      }
     } catch (error) {
       if (this.lifecycle.isClosing) await this.lifecycle.rejectLateAdapter(adapter, error)
       throw error
@@ -1268,7 +1278,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     closed.promise.catch(() => {})
     const channel: LiveSessionChannel = {
       sessionKey,
-      streamPath,
+      ...(sessionStream ? { sessionStream } : {}),
       buffer,
       adapter,
       unsubscribe: () => {},

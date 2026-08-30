@@ -30,8 +30,6 @@ export type {
 export {
   AGENT_NOT_IMPLEMENTED_UNTIL_T1,
   AgentNotImplementedError,
-  parseSessionStreamPath,
-  sessionStreamPath,
 } from './events'
 export type {
   LeaseBoundWorkspaceAgent,
