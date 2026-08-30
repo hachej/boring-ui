@@ -175,6 +175,28 @@ describe('disposable Blaxel provider', () => {
     expect(client.sandboxes.size).toBe(0)
   })
 
+  test('retains ambiguous create debt through 404 and deletes a late appearance on close retry', async () => {
+    const client = await createMockBlaxelClient()
+    const createFresh = client.createFreshSandbox.bind(client)
+    let pending: Parameters<typeof createFresh>[0] | undefined
+    client.createFreshSandbox = async (config) => {
+      pending = config
+      throw Object.assign(new Error('create acknowledgement lost'), { status: 503 })
+    }
+    const provider = createBlaxelSandboxProvider({
+      leaseMode: 'disposable', client, region: 'eu-fra-1',
+      volume: { enabled: false, sizeMb: 2048 },
+    })
+    await expect(provider.create({
+      workspaceRoot: '/host/lease-late', workspaceId: 'workspace-a',
+      sessionId: 'session-late', requestId: 'request-late',
+    })).rejects.toBeTruthy()
+    await expect(provider.close!()).rejects.toBeTruthy()
+    await createFresh(pending!)
+    await expect(provider.close!()).resolves.toBeUndefined()
+    expect(client.sandboxes.size).toBe(0)
+  })
+
   test('provider close drains a concurrent create without publishing or leaking', async () => {
     const client = await createMockBlaxelClient()
     const createFresh = client.createFreshSandbox.bind(client)

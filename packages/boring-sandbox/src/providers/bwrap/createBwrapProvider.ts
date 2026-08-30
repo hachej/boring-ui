@@ -121,8 +121,9 @@ export function createBwrapSandboxProvider(
         disposableProviderConfigDigestV1('bwrap', {
           leaseMode: 'disposable',
           network: options.sandbox?.network ?? 'shared',
-          dropAllCapabilities: options.sandbox?.dropAllCapabilities ?? true,
-          namespaceProfile: options.sandbox?.namespaceProfile ?? null,
+          dropAllCapabilities: options.sandbox?.namespaceProfile === 'docker'
+            || options.sandbox?.dropAllCapabilities === true,
+          namespaceProfile: options.sandbox?.namespaceProfile ?? 'full',
           resourceLimits: options.sandbox?.resourceLimits ?? null,
         }),
       )

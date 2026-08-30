@@ -83,6 +83,12 @@ export function normalizeSandboxLeaseProviderProfileV1(
   }
   if (!SHA256.test(identity.providerConfigDigest)) throw new TypeError('providerConfigDigest must be sha256')
   if (identity.templateFingerprint && !SHA256.test(identity.templateFingerprint)) throw new TypeError('templateFingerprint must be sha256')
+  const templatePath = profile.templatePath === undefined
+    ? undefined
+    : nonEmpty(profile.templatePath, 'templatePath')
+  if (Boolean(templatePath) !== Boolean(identity.templateFingerprint)) {
+    throw new TypeError('templatePath and templateFingerprint must be supplied together')
+  }
   const credentialVersionRefs = [...new Set(identity.credentialVersionRefs.map((value) => nonEmpty(value, 'credentialVersionRef')))].sort()
   const normalizedIdentity: SandboxLeaseProviderProfileIdentityV1 = Object.freeze({
     contractVersion: SANDBOX_LEASE_PROVIDER_PROFILE_VERSION_V1,
@@ -103,7 +109,7 @@ export function normalizeSandboxLeaseProviderProfileV1(
   return Object.freeze({
     identity: normalizedIdentity,
     providerFactory: profile.providerFactory,
-    ...(profile.templatePath ? { templatePath: profile.templatePath } : {}),
+    ...(templatePath ? { templatePath } : {}),
   })
 }
 

@@ -298,6 +298,31 @@ describe('createVercelSandboxProvider', () => {
     await provider.close?.()
   })
 
+  test('retains ambiguous create debt through 404 and deletes a late appearance on close retry', async () => {
+    const harness = await createMockVercelSandboxHarness()
+    cleanups.push(harness.cleanup)
+    const { deleteSandbox } = addDurableHandleMetadata(harness.sandbox, 'sb-late-response')
+    let appeared = false
+    const client: VercelSandboxClient = {
+      create: vi.fn(async () => { throw Object.assign(new Error('response lost'), { status: 503 }) }),
+      get: vi.fn(async (params) => {
+        if (!appeared) throw Object.assign(new Error('not found'), { status: 404 })
+        return Object.assign(harness.sandbox, { name: params.name })
+      }),
+    }
+    const provider = createVercelSandboxProvider({
+      vercelClient: client, lifecycle: 'disposable', getEnvVar, logger: { info: vi.fn() },
+    })
+    await expect(provider.create({
+      workspaceRoot: 'workspace-late', workspaceId: 'workspace-late',
+      sessionId: 'session-late', requestId: 'request-late',
+    })).rejects.toBeTruthy()
+    await expect(provider.close!()).rejects.toBeTruthy()
+    appeared = true
+    await expect(provider.close!()).resolves.toBeUndefined()
+    expect(deleteSandbox).toHaveBeenCalledOnce()
+  })
+
   test('retains cleanup authority when post-create adaptation fails and deletion needs retry', async () => {
     const harness = await createMockVercelSandboxHarness()
     cleanups.push(harness.cleanup)

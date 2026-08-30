@@ -22,15 +22,18 @@ async function exists(path: string): Promise<boolean> {
   try { await access(path); return true } catch { return false }
 }
 
-test('bwrap config digest changes with trusted network policy', () => {
-  const shared = createBwrapSandboxProvider({
-    leaseMode: 'disposable', sandbox: { network: 'shared' },
-  })
-  const isolated = createBwrapSandboxProvider({
-    leaseMode: 'disposable', sandbox: { network: 'isolated' },
-  })
-  expect(shared.disposableProfile.providerConfigDigest)
-    .not.toBe(isolated.disposableProfile.providerConfigDigest)
+test('bwrap config digest hashes effective network and capability policy', () => {
+  const digest = (sandbox?: NonNullable<Parameters<typeof createBwrapSandboxProvider>[0]>['sandbox']) =>
+    createBwrapSandboxProvider({ leaseMode: 'disposable', sandbox })
+      .disposableProfile.providerConfigDigest
+  expect(digest({ network: 'shared' })).not.toBe(digest({ network: 'isolated' }))
+  expect(digest()).toBe(digest({ dropAllCapabilities: false }))
+  expect(digest()).toBe(digest({ namespaceProfile: 'full', dropAllCapabilities: false }))
+  expect(digest()).not.toBe(digest({ dropAllCapabilities: true }))
+  expect(digest({ namespaceProfile: 'docker' }))
+    .toBe(digest({ namespaceProfile: 'docker', dropAllCapabilities: false }))
+  expect(digest({ namespaceProfile: 'docker' }))
+    .toBe(digest({ namespaceProfile: 'docker', dropAllCapabilities: true }))
 })
 
 describe.each([

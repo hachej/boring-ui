@@ -640,6 +640,7 @@ export function createVercelSandboxProvider(
       let sandbox: ReturnType<typeof createVercelSandboxExec> | undefined
       let disposableCleanup: (() => Promise<void>) | undefined
       let ambiguityCleanup: (() => Promise<void>) | undefined
+      let disposableCreateSettled = false
       let workspaceDisposed = false
       let localSandboxDisposed = false
       let setupFailureCaptured = false
@@ -695,7 +696,10 @@ export function createVercelSandboxProvider(
               await candidate.delete()
             } catch (error) {
               const status = extractHttpStatus(error)
-              if (status !== 404 && status !== 410) throw error
+              if (status !== 404 && status !== 410) throw normalizeVercelProviderError(error)
+              if (!disposableCreateSettled) {
+                throw new SandboxProviderError('VERCEL_API_ERROR', 'disposable Vercel create reconciliation remains pending')
+              }
             }
             reservedDisposableNames.delete(disposableName)
             publishedDisposableNames.delete(disposableName)
@@ -730,6 +734,7 @@ export function createVercelSandboxProvider(
                 },
               ),
         })
+        disposableCreateSettled = true
         if (disposable && disposableName) {
           try {
             assertDisposableVercelIdentity({

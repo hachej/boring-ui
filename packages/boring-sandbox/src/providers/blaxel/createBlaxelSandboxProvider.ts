@@ -352,8 +352,9 @@ export function createBlaxelSandboxProvider(
               }
               await client.deleteSandbox(identity.name)
             } catch (error) {
-              if (!isBlaxelNotFound(error)) throw normalizeBlaxelError(error)
-              if (remoteCleanupPhase === 'creating') return
+              if (!isBlaxelNotFound(error) || remoteCleanupPhase === 'creating') {
+                throw normalizeBlaxelError(error)
+              }
             }
             deleted = true
             reservedDisposableNames.delete(identity.name)
