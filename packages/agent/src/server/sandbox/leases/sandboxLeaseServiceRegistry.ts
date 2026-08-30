@@ -101,7 +101,7 @@ export class SandboxLeaseServiceRegistry {
 
   async dispose(): Promise<readonly PromiseSettledResult<void>[]> {
     this.draining = true
-    const pendingResults = await Promise.allSettled([...this.pendingByDigest.values()])
+    const pendingResults = Promise.allSettled([...this.pendingByDigest.values()])
     const serviceResults = await Promise.allSettled([...this.serviceByDigest].map(async ([digest, service]) => {
       await service.dispose()
       this.evict(digest, service)
@@ -110,7 +110,7 @@ export class SandboxLeaseServiceRegistry {
       async (service) => await this.disposeUnpublished(service),
     ))
     for (const [digest, service] of this.serviceByDigest) if (service.isDisposed) this.evict(digest, service)
-    return [...pendingResults.map((result): PromiseSettledResult<void> => result.status === 'fulfilled'
+    return [...(await pendingResults).map((result): PromiseSettledResult<void> => result.status === 'fulfilled'
       ? { status: 'fulfilled', value: undefined }
       : result), ...serviceResults, ...debtResults]
   }

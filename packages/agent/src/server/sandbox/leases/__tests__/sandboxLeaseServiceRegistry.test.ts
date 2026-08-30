@@ -162,6 +162,33 @@ describe('SandboxLeaseServiceRegistry', () => {
     expect(leases.dispose).toHaveBeenCalledOnce()
   })
 
+  it('disposes registered services before a stuck factory settles and retries late cleanup debt', async () => {
+    let resolveFactory!: (value: SandboxLeaseService) => void
+    let registeredDisposed = false
+    const registeredDispose = vi.fn(async () => { registeredDisposed = true })
+    const lateDispose = vi.fn()
+      .mockRejectedValueOnce(new Error('late provider delete failed'))
+      .mockResolvedValue(undefined)
+    const registry = new SandboxLeaseServiceRegistry()
+    registry.register({ digest: 'registered', leases: service(registeredDispose) })
+    const acquiring = registry.getOrCreate('pending', () => new Promise((resolve) => { resolveFactory = resolve }))
+    await vi.waitFor(() => expect(resolveFactory).toBeTypeOf('function'))
+
+    const timedOut = await registry.disposeUntil(Date.now() + 20)
+    expect(registeredDispose).toHaveBeenCalledOnce()
+    expect(registeredDisposed).toBe(true)
+    expect(timedOut).toEqual([expect.objectContaining({ status: 'rejected' })])
+
+    resolveFactory(service(lateDispose))
+    await expect(acquiring).rejects.toThrow('late provider delete failed')
+    expect(lateDispose).toHaveBeenCalledOnce()
+    await expect(registry.disposeUntil(Date.now() + 100)).resolves.toEqual([
+      { status: 'fulfilled', value: undefined },
+    ])
+    expect(lateDispose).toHaveBeenCalledTimes(2)
+    await expect(registry.dispose()).resolves.toEqual([])
+  })
+
   it('retains failed services and retries them to terminal disposal within a deadline', async () => {
     const dispose = vi.fn()
       .mockRejectedValueOnce(new Error('remote deletion acknowledgement lost'))
