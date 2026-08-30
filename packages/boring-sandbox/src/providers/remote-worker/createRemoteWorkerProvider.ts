@@ -247,6 +247,7 @@ export function createRemoteWorkerSandboxProviderV1(
   }
 
   const ownedCleanups = new Map<string, Set<() => Promise<void>>>();
+  const ownedClientLeaseIds = new Set<string>();
   const pendingCreates = new Set<Promise<void>>();
   const registerCleanup = (
     workspaceId: string,
@@ -278,6 +279,7 @@ export function createRemoteWorkerSandboxProviderV1(
       pendingCreates.add(pendingCreate);
       let unpublishedCleanup: (() => Promise<void>) | undefined;
       let unregisterUnpublished: (() => void) | undefined;
+      let releaseClientLeaseId = (): void => {};
       try {
         if (closed) {
           throw new SandboxProviderError(
@@ -322,6 +324,12 @@ export function createRemoteWorkerSandboxProviderV1(
           .update(`${providerConfigDigest}:${correlation}`)
           .digest('hex')
           .slice(0, 48)}`;
+        if (ownedClientLeaseIds.has(clientLeaseId)) {
+          void client.close().catch(() => undefined);
+          throw new SandboxProviderError(REMOTE_WORKER_ERROR_CODES_V1.configInvalid, "remote-worker create identity is already owned");
+        }
+        ownedClientLeaseIds.add(clientLeaseId);
+        releaseClientLeaseId = () => { ownedClientLeaseIds.delete(clientLeaseId); };
         const request = parseRemoteWorkerRequestV1(
           RemoteWorkerCreateRequestSchemaV1,
           {
@@ -388,6 +396,7 @@ export function createRemoteWorkerSandboxProviderV1(
             }
             provisionalDeleteConfirmed = true;
             unregisterUnpublished?.();
+            releaseClientLeaseId();
             void client.close().catch(() => undefined);
           })();
           provisionalDeleteInFlight = operation;
@@ -498,6 +507,7 @@ export function createRemoteWorkerSandboxProviderV1(
             void leaseClient.close().catch(() => undefined);
             disposed = true;
             unregisterPair();
+            releaseClientLeaseId();
           })();
           disposeInFlight = operation;
           try {
@@ -556,7 +566,7 @@ export function createRemoteWorkerSandboxProviderV1(
             );
             throw attachSandboxProviderCleanupDebt(normalized, unpublishedCleanup);
           }
-        }
+        } else releaseClientLeaseId();
         throw error;
       } finally {
         finishCreate();

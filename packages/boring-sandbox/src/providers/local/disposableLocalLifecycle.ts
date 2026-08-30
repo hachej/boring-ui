@@ -6,7 +6,10 @@ import {
 import { rm } from 'node:fs/promises'
 import { dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path'
 
-import { SandboxProviderError, type WorkspaceSandboxPairV1 } from '../../shared/providerV1'
+import {
+  attachSandboxProviderCleanupDebt,
+  SandboxProviderError,
+} from '../../shared/providerV1'
 
 interface RootIdentity {
   readonly workspaceRoot: string
@@ -18,10 +21,8 @@ interface RootIdentity {
 }
 
 function invalidRoot(): never {
-  throw new SandboxProviderError(
-    'CONFIG_INVALID',
-    'disposable workspace root must be one canonical non-symlinked child of a trusted local root',
-  )
+  throw new SandboxProviderError('CONFIG_INVALID',
+    'disposable workspace root must be one canonical non-symlinked child of a trusted local root')
 }
 
 function assertNoSymlinkAncestors(path: string): void {
@@ -131,20 +132,37 @@ export function createDisposableLocalDisposer(input: {
   }
 }
 
-/** Owns only the exact provider context root; failed steps remain retryable. */
-export function createDisposableLocalPair(input: {
-  workspaceRoot: string
-  pair: Omit<WorkspaceSandboxPairV1, 'dispose'>
-  disposeWorkspace(): void
-  disposeSandbox(): Promise<void>
-}): WorkspaceSandboxPairV1 {
-  return { ...input.pair, dispose: createDisposableLocalDisposer(input) }
-}
-
-export async function cleanupDisposableLocalCreateFailure(input: {
-  workspaceRoot: string
-  disposeWorkspace(): void
-  disposeSandbox(): Promise<void>
-}): Promise<void> {
-  await createDisposableLocalDisposer(input)()
+export function createDisposableLocalProviderLifecycle(providerId: 'direct' | 'bwrap') {
+  const cleanups = new Set<() => Promise<void>>()
+  const creates = new Set<Promise<void>>()
+  let closed = false
+  const settle = async (cleanup: () => Promise<void>): Promise<void> => {
+    await cleanup(); cleanups.delete(cleanup)
+  }
+  return {
+    get closed() { return closed },
+    beginCreate(): () => void {
+      let finish!: () => void
+      const pending = new Promise<void>((resolve) => { finish = resolve })
+      creates.add(pending)
+      return () => { finish(); creates.delete(pending) }
+    },
+    own(cleanup: () => Promise<void>): void { cleanups.add(cleanup) },
+    publish(cleanup: () => Promise<void>): void { cleanups.delete(cleanup) },
+    async compensate(error: unknown, cleanup: () => Promise<void>): Promise<unknown> {
+      try { await settle(cleanup) }
+      catch (cleanupError) {
+        throw attachSandboxProviderCleanupDebt(
+          new AggregateError([error, cleanupError], `${providerId} sandbox creation cleanup failed`), () => settle(cleanup))
+      }
+      return error
+    },
+    async close(): Promise<void> {
+      closed = true
+      await Promise.allSettled([...creates])
+      const failures = (await Promise.allSettled([...cleanups].map(settle))).filter(
+        (result): result is PromiseRejectedResult => result.status === 'rejected')
+      if (failures.length) throw new AggregateError(failures.map((failure) => failure.reason))
+    },
+  }
 }

@@ -225,7 +225,7 @@ describe('SandboxLeaseService lifecycle registry', () => {
     await service.dispose()
   })
 
-  it('retains joined correlation cleanup debt under owner and global quota until release retry settles', async () => {
+  it('retains provider cleanup debt and its causes under owner and global quota until release retry settles', async () => {
     const cleanupOrder: string[] = []
     let returnedObjectPending = true
     let correlationAttempts = 0
@@ -237,9 +237,12 @@ describe('SandboxLeaseService lifecycle registry', () => {
       cleanupOrder.push('correlation')
       if (++correlationAttempts === 1) throw new Error('correlation mismatch remains')
     })
-    const error = Object.assign(new Error('create outcome unknown'), {
+    const originalError = new Error('create outcome unknown')
+    const cleanupError = new Error('provider-local cleanup failed')
+    const error = Object.assign(new AggregateError([originalError, cleanupError], 'create compensation failed'), {
       sandboxProviderCleanupDebt: { retry },
     })
+    expect(error.errors).toEqual([originalError, cleanupError])
     const { service } = createService({ maxOwner: 1, maxTotal: 1, create: async () => { throw error } })
 
     await expect(service.acquire('owner-a')).rejects.toMatchObject({

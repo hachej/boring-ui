@@ -275,6 +275,36 @@ describe('createVercelSandboxProvider', () => {
     expect(unrelatedDelete).not.toHaveBeenCalled()
   })
 
+  test.each(['create', 'get'] as const)(
+    'rejects a missing correlation name from %s without deleting the unverified lookup handle',
+    async (phase) => {
+      const returned = await createMockVercelSandboxHarness()
+      const lookup = await createMockVercelSandboxHarness()
+      cleanups.push(returned.cleanup, lookup.cleanup)
+      const returnedDelete = addDurableHandleMetadata(returned.sandbox, 'sb-returned-missing-name').deleteSandbox
+      const lookupDelete = addDurableHandleMetadata(lookup.sandbox, 'sb-lookup-missing-name').deleteSandbox
+      const client: VercelSandboxClient = {
+        create: vi.fn(async (params) => Object.assign(returned.sandbox, {
+          name: phase === 'create' ? undefined : params?.name,
+        })),
+        get: vi.fn(async () => Object.assign(lookup.sandbox, { name: undefined })),
+      }
+      const provider = createVercelSandboxProvider({ vercelClient: client, lifecycle: 'disposable', getEnvVar })
+      const failure = await provider.create({
+        workspaceRoot: `workspace-missing-${phase}`, workspaceId: `workspace-missing-${phase}`,
+        sessionId: `session-missing-${phase}`, requestId: `request-missing-${phase}`,
+      }).catch((caught: unknown) => caught) as Error & {
+        sandboxProviderCleanupDebt: { retry(): Promise<void> }
+      }
+      expect(failure).toMatchObject({ code: 'CONFIG_INVALID' })
+      expect(failure.sandboxProviderCleanupDebt.retry).toBeTypeOf('function')
+      expect(returnedDelete).toHaveBeenCalledOnce()
+      expect(lookupDelete).not.toHaveBeenCalled()
+      await expect(failure.sandboxProviderCleanupDebt.retry()).rejects.toMatchObject({ code: 'CONFIG_INVALID' })
+      expect(lookupDelete).not.toHaveBeenCalled()
+    },
+  )
+
   test('a definitive create rejection has no reconciliation debt', async () => {
     const client: VercelSandboxClient = {
       create: vi.fn(async () => { throw Object.assign(new Error('invalid request'), { status: 422 }) }),

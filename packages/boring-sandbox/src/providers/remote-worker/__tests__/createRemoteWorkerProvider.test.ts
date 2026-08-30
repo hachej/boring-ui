@@ -327,6 +327,38 @@ describe("remote-worker SandboxProviderV1 placement binding", () => {
     await Promise.all([firstPair.dispose(), secondPair.dispose()])
   })
 
+  test('reserves one deterministic create identity through concurrency and pair ownership', async () => {
+    const transport = new FakeTransport(); transport.advertiseMultiSandboxRoots = true
+    let releaseCreate!: () => void
+    transport.createGate = new Promise<void>((resolve) => { releaseCreate = resolve })
+    const provider = createRemoteWorkerSandboxProviderV1({
+      ...providerOptions(transport, [], true), leaseMode: 'disposable',
+    })
+    const context = {
+      workspaceRoot: '/unused', workspaceId: 'workspace-a',
+      sessionId: 'session-duplicate', requestId: 'request-duplicate',
+    }
+    const first = provider.create(context)
+    await vi.waitFor(() => expect(
+      transport.requests.filter((request) => request.path === '/internal/v1/sandboxes'),
+    ).toHaveLength(1))
+    await expect(provider.create(context)).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.configInvalid,
+    })
+    releaseCreate()
+    const pair = await first
+    await expect(provider.create(context)).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.configInvalid,
+    })
+    expect(transport.requests.filter((request) => request.path === '/internal/v1/sandboxes')).toHaveLength(1)
+
+    await pair.dispose()
+    transport.createGate = undefined
+    const retryPair = await provider.create(context)
+    expect(transport.requests.filter((request) => request.path === '/internal/v1/sandboxes')).toHaveLength(2)
+    await retryPair.dispose()
+  })
+
   test("requires qualified multi-root placement for disposable mode", async () => {
     const unavailable = new FakeTransport();
     expect(() => createRemoteWorkerSandboxProviderV1({
@@ -779,11 +811,19 @@ describe("remote-worker SandboxProviderV1 placement binding", () => {
     };
     expect(failure).toMatchObject({ code: REMOTE_WORKER_ERROR_CODES_V1.protocolMismatch });
     expect(failure.sandboxProviderCleanupDebt.retry).toBeTypeOf('function');
+    const context = {
+      workspaceRoot: '/unused', workspaceId: 'workspace-a', sessionId: 'session-a', requestId: 'request-a',
+    };
+    await expect(provider.create(context)).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.configInvalid,
+    });
     await failure.sandboxProviderCleanupDebt.retry();
+    const replacement = await provider.create(context);
+    await replacement.dispose();
     const creates = transport.requests.filter((request) => request.path === '/internal/v1/sandboxes');
     expect(new Set(creates.map((request) => (request.body as RemoteWorkerCreateRequestV1).clientLeaseId)).size).toBe(1);
-    expect(creates).toHaveLength(3);
-    expect(transport.requests.filter((request) => request.method === 'DELETE')).toHaveLength(1);
+    expect(creates).toHaveLength(4);
+    expect(transport.requests.filter((request) => request.method === 'DELETE')).toHaveLength(2);
     await provider.close?.();
   });
 

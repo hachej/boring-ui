@@ -59,6 +59,33 @@ describe('SandboxLeaseServiceRegistry', () => {
     expect(leases.dispose).toHaveBeenCalledOnce()
   })
 
+  it('never adopts a same-digest legacy service into the profile namespace', async () => {
+    const legacy = service()
+    const factory = vi.fn(() => service())
+    const registry = new SandboxLeaseServiceRegistry()
+    registry.register({ digest: 'profile-a', leases: legacy })
+
+    await expect(registry.getOrCreate('profile-a', factory)).rejects.toThrow('owned by a legacy service')
+    expect(factory).not.toHaveBeenCalled()
+    await registry.dispose()
+    expect(legacy.dispose).toHaveBeenCalledOnce()
+  })
+
+  it('coalesces concurrent factories only within the profile namespace', async () => {
+    let resolveFactory!: (value: SandboxLeaseService) => void
+    const leases = service()
+    const factory = vi.fn(() => new Promise<SandboxLeaseService>((resolve) => { resolveFactory = resolve }))
+    const registry = new SandboxLeaseServiceRegistry()
+    const first = registry.getOrCreate('profile-a', factory)
+    const second = registry.getOrCreate('profile-a', factory)
+    await vi.waitFor(() => expect(factory).toHaveBeenCalledOnce())
+    resolveFactory(leases)
+
+    await expect(first).resolves.toBe(leases)
+    await expect(second).resolves.toBe(leases)
+    await registry.dispose()
+  })
+
   it('drains a pending factory without publishing and rejects later acquisition', async () => {
     let resolveFactory!: (value: SandboxLeaseService) => void
     const pending = new Promise<SandboxLeaseService>((resolve) => { resolveFactory = resolve })

@@ -6,6 +6,7 @@ export class SandboxLeaseServiceRegistry {
   private readonly pendingByDigest = new Map<string, Promise<SandboxLeaseService>>()
   private readonly digestByService = new WeakMap<SandboxLeaseService, string>()
   private readonly digestByProvider = new WeakMap<object, string>()
+  private readonly profileFactoryServices = new WeakSet<SandboxLeaseService>()
   private readonly drainingServices = new Set<SandboxLeaseService>()
   private draining = false
 
@@ -15,7 +16,10 @@ export class SandboxLeaseServiceRegistry {
   ): Promise<SandboxLeaseService> {
     if (this.draining) throw new TypeError('sandbox lease service registry is draining')
     const current = this.serviceByDigest.get(digest)
-    if (current && !current.isDisposed) return current
+    if (current && !current.isDisposed) {
+      if (!this.profileFactoryServices.has(current)) throw new TypeError('sandbox profile digest is owned by a legacy service')
+      return current
+    }
     if (current?.isDisposed) this.evict(digest, current)
     const pending = this.pendingByDigest.get(digest)
     if (pending) return await pending
@@ -29,9 +33,11 @@ export class SandboxLeaseServiceRegistry {
         throw new TypeError('sandbox lease service registry drained during construction')
       }
       try {
+        this.profileFactoryServices.add(service)
         this.register({ digest, leases: service })
         return service
       } catch (error) {
+        this.profileFactoryServices.delete(service)
         service.abandonUnregistered()
         throw error
       }

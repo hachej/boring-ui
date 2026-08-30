@@ -14,6 +14,7 @@ import {
 import {
   assertDisposableLocalRoot,
   createDisposableLocalDisposer,
+  createDisposableLocalProviderLifecycle,
 } from '../local/disposableLocalLifecycle'
 import { createNodeWorkspace, disposeNodeWorkspace } from '../node-workspace/createNodeWorkspace'
 import { createDirectSandbox, type CreateDirectSandboxOptions } from './createDirectSandbox'
@@ -32,9 +33,7 @@ export function createDirectSandboxProvider(
 export function createDirectSandboxProvider(
   options: DirectSandboxProviderOptions = {},
 ): SandboxProviderV1 {
-  const pendingCleanup = new Set<() => Promise<void>>()
-  const pendingCreates = new Set<Promise<void>>()
-  let closed = false
+  const lifecycle = createDisposableLocalProviderLifecycle('direct')
   const provider: SandboxProviderV1 = {
     contractVersion: PROVIDER_CONTRACT_VERSION,
     providerId: 'direct',
@@ -43,10 +42,8 @@ export function createDirectSandboxProvider(
       return context.workspaceRoot
     },
     async create(context): Promise<WorkspaceSandboxPairV1> {
-      if (closed) throw new SandboxProviderError('CONFIG_INVALID', 'direct provider is closed')
-      let finishCreate!: () => void
-      const pendingCreate = new Promise<void>((resolve) => { finishCreate = resolve })
-      pendingCreates.add(pendingCreate)
+      if (lifecycle.closed) throw new SandboxProviderError('CONFIG_INVALID', 'direct provider is closed')
+      const finishCreate = lifecycle.beginCreate()
       try {
       const workspaceRoot = options.leaseMode === 'disposable'
         ? assertDisposableLocalRoot(context.workspaceRoot)
@@ -62,15 +59,13 @@ export function createDirectSandboxProvider(
             disposeSandbox: async () => { await sandbox.dispose?.() },
           })
         : undefined
-      if (cleanup) pendingCleanup.add(cleanup)
+      if (cleanup) lifecycle.own(cleanup)
 
       try {
         await sandbox.init?.({ workspace, sessionId: context.sessionId })
       } catch (error) {
-        if (cleanup) {
-          try { await cleanup(); pendingCleanup.delete(cleanup) }
-          catch (cleanupError) { throw new AggregateError([error, cleanupError], 'direct sandbox creation cleanup failed') }
-        } else {
+        if (cleanup) await lifecycle.compensate(error, cleanup)
+        else {
           disposeNodeWorkspace(workspace)
           await sandbox.dispose?.()
         }
@@ -78,11 +73,9 @@ export function createDirectSandboxProvider(
       }
 
       if (cleanup) {
-        if (closed) {
-          await cleanup(); pendingCleanup.delete(cleanup)
-          throw new SandboxProviderError('CONFIG_INVALID', 'direct provider closed during create')
-        }
-        pendingCleanup.delete(cleanup)
+        if (lifecycle.closed) throw await lifecycle.compensate(
+          new SandboxProviderError('CONFIG_INVALID', 'direct provider closed during create'), cleanup)
+        lifecycle.publish(cleanup)
         return { workspace, sandbox, dispose: cleanup }
       }
       let disposed = false
@@ -96,22 +89,10 @@ export function createDirectSandboxProvider(
           await sandbox.dispose?.()
         },
       }
-      } finally {
-        finishCreate()
-        pendingCreates.delete(pendingCreate)
-      }
+      } finally { finishCreate() }
     },
     ...(options.leaseMode === 'disposable' ? {
-      async close() {
-        closed = true
-        await Promise.allSettled([...pendingCreates])
-        const results = await Promise.allSettled([...pendingCleanup].map(async (cleanup) => {
-          await cleanup()
-          pendingCleanup.delete(cleanup)
-        }))
-        const failures = results.filter((result) => result.status === 'rejected')
-        if (failures.length) throw new AggregateError(failures.map((failure) => failure.reason))
-      },
+      async close() { await lifecycle.close() },
     } : {}),
   }
   return options.leaseMode === 'disposable'

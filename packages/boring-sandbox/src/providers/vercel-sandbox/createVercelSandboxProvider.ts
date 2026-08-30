@@ -109,7 +109,7 @@ function assertDisposableVercelIdentity(input: {
   expectedSandboxId?: string
 }): void {
   if (
-    (input.handle.name !== undefined && input.handle.name !== input.expectedName)
+    input.handle.name !== input.expectedName
     || (input.expectedSnapshotId !== undefined
       && input.handle.sourceSnapshotId !== undefined
       && input.handle.sourceSnapshotId !== input.expectedSnapshotId)
