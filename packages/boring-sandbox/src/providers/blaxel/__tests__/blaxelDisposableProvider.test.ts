@@ -217,6 +217,12 @@ describe('disposable Blaxel provider', () => {
     ['region', (remote) => { Object.assign(remote.spec, { region: 'us-drift-1' }) }],
     ['image', (remote) => { Object.assign(remote.spec.runtime!, { image: 'image:drift' }) }],
     ['memory', (remote) => { Object.assign(remote.spec.runtime!, { memory: 123 }) }],
+    ['ttl', (remote) => { Object.assign(remote.spec.runtime!, { ttl: '3h' }) }],
+    ['missing lifecycle', (remote) => { Object.assign(remote.spec, { lifecycle: undefined }) }],
+    ['additional lifecycle policy', (remote) => {
+      remote.spec.lifecycle!.expirationPolicies!.push({ action: 'delete', type: 'ttl-max-age', value: '4h' })
+    }],
+    ['lifecycle drift', (remote) => { Object.assign(remote.spec.lifecycle!, { terminatedRetention: '2h' }) }],
     ['volumes', (remote) => { Object.assign(remote.spec, { volumes: [{ name: 'unexpected', mountPath: '/workspace' }] }) }],
   ]
   test.each(configurationDrifts)('rejects and cleans disposable %s drift before publication', async (_field, mutate) => {
@@ -229,7 +235,11 @@ describe('disposable Blaxel provider', () => {
     }
     client.deleteSandbox = vi.fn(client.deleteSandbox.bind(client))
     const provider = createBlaxelSandboxProvider({
-      leaseMode: 'disposable', client, region: 'eu-fra-1', image: 'image:v1', memoryMb: 4096,
+      leaseMode: 'disposable', client, region: 'eu-fra-1', image: 'image:v1', memoryMb: 4096, ttl: '2h',
+      lifecycle: {
+        expirationPolicies: [{ action: 'delete', type: 'ttl-idle', value: '30m' }],
+        terminatedRetention: '1h',
+      },
       volume: { enabled: false, sizeMb: 2048 },
     })
     await expect(provider.create({

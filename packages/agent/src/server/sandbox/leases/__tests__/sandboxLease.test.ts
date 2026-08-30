@@ -176,6 +176,24 @@ describe('SandboxLeaseService lifecycle registry', () => {
     await service.dispose()
   })
 
+  it('retains quota when relocated-root cleanup fails until retry settles', async () => {
+    const pair = fakePair('relocated-root')
+    pair.dispose.mockRejectedValueOnce(new Error('owned root is absent at its bound path'))
+    const { service } = createService({ maxOwner: 1, maxTotal: 1, create: async () => pair.pair })
+    const lease = await service.acquire('owner-a')
+
+    await expect(service.release('owner-a', lease.handle)).rejects.toMatchObject({
+      code: SANDBOX_LEASE_ERROR_CODES.LEASE_CLEANUP_FAILED,
+    })
+    expect(service.status('owner-a', lease.handle).state).toBe('cleanup-pending')
+    await expect(service.acquire('owner-a')).rejects.toMatchObject({
+      code: SANDBOX_LEASE_ERROR_CODES.LEASE_QUOTA_EXCEEDED,
+    })
+    await expect(service.release('owner-a', lease.handle)).resolves.toBeUndefined()
+    expect(pair.dispose).toHaveBeenCalledTimes(2)
+    await service.dispose()
+  })
+
   it('does not let provider close delete a published pair while an operation is pinned', async () => {
     const providerClose = vi.fn(async () => {})
     const { service, pairs } = createService({ drainTimeoutMs: 5, close: providerClose })

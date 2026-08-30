@@ -61,7 +61,7 @@ export async function createMockBlaxelClient(): Promise<BlaxelClient & {
       region: config.region,
       runtime: { image: config.image, memory: config.memory, ttl: config.ttl },
       volumes: config.volumes,
-      lifecycle: config.lifecycle,
+      lifecycle: config.lifecycle ? structuredClone(config.lifecycle) : undefined,
     }
     const fs = {
       async mkdir(path: string) { await mkdir(mapPath(path)) },

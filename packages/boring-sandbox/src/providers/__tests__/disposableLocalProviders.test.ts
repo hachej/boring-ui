@@ -118,7 +118,7 @@ describe.each([
     })).rejects.toMatchObject({ code: 'CONFIG_INVALID' })
   })
 
-  test('fails closed if the owned root is swapped before recursive deletion', async () => {
+  test('retains cleanup debt if the owned root is relocated or swapped before deletion', async () => {
     const parent = await mkdtemp(join(tmpdir(), 'boring-disposable-swap-'))
     cleanupRoots.push(parent)
     const root = join(parent, 'lease-aaaaaaaaaaaaaaaa')
@@ -128,14 +128,18 @@ describe.each([
     await writeFile(join(outside, 'preserved'), 'yes')
     const provider = factory({ leaseMode: 'disposable' })
     const pair = await provider.create({ workspaceRoot: root, sessionId: 'swap' })
+    await writeFile(join(root, 'owned'), 'still-owned')
     await rename(root, moved)
-    await symlink(outside, root)
 
+    await expect(pair.dispose()).rejects.toThrow('disposable local sandbox cleanup failed')
+    expect(await exists(join(moved, 'owned'))).toBe(true)
+    await symlink(outside, root)
     await expect(pair.dispose()).rejects.toThrow('disposable local sandbox cleanup failed')
     expect(await exists(join(outside, 'preserved'))).toBe(true)
     await unlink(root)
     await rename(moved, root)
     await expect(pair.dispose()).resolves.toBeUndefined()
+    expect(await exists(root)).toBe(false)
   })
 
   test('keeps the primary root when disposable mode is omitted', async () => {

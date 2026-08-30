@@ -111,10 +111,8 @@ function assertDisposableVercelIdentity(input: {
   if (
     input.handle.name !== input.expectedName
     || (input.expectedSnapshotId !== undefined
-      && input.handle.sourceSnapshotId !== undefined
       && input.handle.sourceSnapshotId !== input.expectedSnapshotId)
     || (input.expectedSandboxId !== undefined
-      && input.handle.sandboxId !== undefined
       && input.handle.sandboxId !== input.expectedSandboxId)
   ) {
     throw new SandboxProviderError('CONFIG_INVALID', 'disposable Vercel correlation identity does not match')
@@ -632,6 +630,7 @@ export function createVercelSandboxProvider(
       let sandbox: ReturnType<typeof createVercelSandboxExec> | undefined
       let disposableCleanup: (() => Promise<void>) | undefined
       let ambiguityCleanup: (() => Promise<void>) | undefined
+      let returnedSandboxId: string | undefined
       let workspaceDisposed = false
       let localSandboxDisposed = false
       let setupFailureCaptured = false
@@ -684,6 +683,7 @@ export function createVercelSandboxProvider(
                 handle: candidate,
                 expectedName: disposableName,
                 expectedSnapshotId: sourceSnapshotId,
+                expectedSandboxId: returnedSandboxId,
               })
               await candidate.delete()
             } catch (error) {
@@ -726,6 +726,7 @@ export function createVercelSandboxProvider(
               ),
         })
         if (disposable && disposableName) {
+          returnedSandboxId = resolvedSandboxHandle.sandboxId
           const disposeRemote = createDisposableSandboxDisposer({ sandbox: resolvedSandboxHandle, disposeLocal })
           disposableCleanup = async () => {
             await disposeRemote()

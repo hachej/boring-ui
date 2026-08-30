@@ -1,6 +1,7 @@
 import type { SandboxHandleRecord, SandboxHandleStore } from '@hachej/boring-agent/shared'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 
+import type { BlaxelRemoteSandbox } from '../client'
 import { resolveBlaxelConfig } from '../config'
 import { createBlaxelSandboxProvider } from '../createBlaxelSandboxProvider'
 import {
@@ -57,6 +58,33 @@ describe('Blaxel durable handle resolution', () => {
       config: resolveBlaxelConfig({ region: 'eu-fra-1', volume: { enabled: false, sizeMb: 2048 } }, {}),
     })).rejects.toMatchObject({ code: 'BLAXEL_CONFIG_DRIFT' })
     expect(blaxelExternalId('workspace')).not.toBe('another-workspace')
+  })
+
+  test.each([
+    ['ttl', (remote: BlaxelRemoteSandbox) => { Object.assign(remote.spec.runtime!, { ttl: '3h' }) }],
+    ['missing lifecycle', (remote: BlaxelRemoteSandbox) => { Object.assign(remote.spec, { lifecycle: undefined }) }],
+    ['additional lifecycle', (remote: BlaxelRemoteSandbox) => {
+      remote.spec.lifecycle!.expirationPolicies!.push({ action: 'delete', type: 'ttl-max-age', value: '4h' })
+    }],
+  ])('rejects persistent %s policy drift', async (_field, mutate) => {
+    const client = await createMockBlaxelClient()
+    const name = blaxelSandboxName('policy-workspace')
+    const lifecycle = {
+      expirationPolicies: [{ action: 'delete' as const, type: 'ttl-idle' as const, value: '30m' }],
+      terminatedRetention: '1h',
+    }
+    const remote = await client.createSandbox({
+      name, externalId: blaxelExternalId('policy-workspace'), image: 'image:v1', memory: 4096,
+      region: 'eu-fra-1', ttl: '2h', lifecycle,
+    })
+    mutate(remote)
+    await expect(createBlaxelSandboxHandleResolver().resolve({
+      workspaceId: 'policy-workspace', client, store: new MemoryStore(),
+      config: resolveBlaxelConfig({
+        region: 'eu-fra-1', image: 'image:v1', memoryMb: 4096, ttl: '2h', lifecycle,
+        volume: { enabled: false, sizeMb: 2048 },
+      }, {}),
+    })).rejects.toMatchObject({ code: 'BLAXEL_CONFIG_DRIFT' })
   })
 
   test('keeps caches provider-scoped and refreshes lastUsedAt on a cache hit', async () => {

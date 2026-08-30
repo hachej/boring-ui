@@ -36,11 +36,7 @@ function assertNoSymlinkAncestors(path: string): void {
   }
 }
 
-/**
- * Local disposable mode is for trusted host work, not hostile multi-tenant
- * containment. It fails closed on every detectable ancestor/target alias and
- * revalidates inode identity immediately before recursive deletion.
- */
+/** Trusted-host local mode fails closed on aliases and revalidates inode identity before recursive deletion. */
 export function assertDisposableLocalRoot(workspaceRoot: string): string {
   const canonical = resolve(workspaceRoot)
   if (
@@ -120,8 +116,7 @@ export function createDisposableLocalDisposer(input: {
           await rm(identity.workspaceRoot, { recursive: true, force: false })
           rootRemoved = true
         } catch (error) {
-          if ((error as NodeJS.ErrnoException).code === 'ENOENT') rootRemoved = true
-          else failures.push(error)
+          failures.push(error)
         }
       }
       if (failures.length) throw new AggregateError(failures, 'disposable local sandbox cleanup failed')

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { isDeepStrictEqual } from 'node:util'
 
 import type { SandboxHandleRecord, SandboxHandleStore } from '@hachej/boring-agent/shared'
 
@@ -40,6 +41,7 @@ export function assertCompatible(
   expectedExternalId: string,
   volumeName: string,
 ): void {
+  const normalizedLifecycle = (value: unknown): unknown => JSON.parse(JSON.stringify(value ?? {}))
   const runtime = remote.spec.runtime
   const attachment = remote.spec.volumes?.find((volume) => volume.mountPath === config.workspaceRoot)
   const mismatch = remote.name !== expectedName
@@ -47,10 +49,12 @@ export function assertCompatible(
     || remote.spec.region !== config.region
     || runtime?.image !== config.image
     || runtime?.memory !== config.memoryMb
+    || runtime?.ttl !== config.ttl
+    || !isDeepStrictEqual(normalizedLifecycle(remote.spec.lifecycle), normalizedLifecycle(config.lifecycle))
     || (config.volume.enabled && (attachment?.name !== volumeName || attachment.readOnly === true))
     || (!config.volume.enabled && (remote.spec.volumes?.length ?? 0) > 0)
   if (mismatch) {
-    throw normalizeBlaxelError(new Error('existing sandbox configuration does not match requested region, image, memory, or Volume'), 'BLAXEL_CONFIG_DRIFT')
+    throw normalizeBlaxelError(new Error('existing sandbox configuration does not match requested runtime or lifecycle policy'), 'BLAXEL_CONFIG_DRIFT')
   }
 }
 
