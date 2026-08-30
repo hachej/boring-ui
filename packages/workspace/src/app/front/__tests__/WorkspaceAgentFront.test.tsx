@@ -11,6 +11,7 @@ import { requestAppLeftOverlay } from "../../../shared/plugins/appLeftOverlay"
 import { definePlugin } from "../../../shared/plugins/frontFactory"
 import type { PluginProviderProps } from "../../../shared/plugins/types"
 import {
+  OPTIMISTIC_CREATE_ACK_WINDOW_MS,
   WorkspaceAgentFront as RawWorkspaceAgentFront,
   type UseWorkspaceAgentSessions,
   type WorkspaceAgentFrontProps,
@@ -70,6 +71,20 @@ function TextareaChatPanel(props: WorkspaceChatPanelProps) {
 
 function visibleChatSessionIds(): string[] {
   return screen.getAllByTestId("chat-pane").map((node) => node.getAttribute("data-session-id") ?? "")
+}
+
+/** Records every distinct (agentTypeId, sessionId) the single active chat
+ * pane renders with, across every commit — not just the final settled one.
+ * A `waitFor` on the end state cannot see a value that appears and then gets
+ * corrected before the assertion runs; this catches it. */
+function makeObservingChatPanel() {
+  const observed: string[] = []
+  function ObservingChatPanel(props: WorkspaceChatPanelProps) {
+    const key = `${props.agentTypeId}:${props.sessionId}`
+    if (observed[observed.length - 1] !== key) observed.push(key)
+    return <div data-testid="chat-pane" data-agent-type-id={props.agentTypeId} data-session-id={props.sessionId}>Chat pane {props.sessionId}</div>
+  }
+  return { ObservingChatPanel, observed }
 }
 
 function addressedSession(sessionId: string, title: string) {
@@ -787,6 +802,222 @@ describe("WorkspaceAgentFront", () => {
     expect(unifiedDetailsOverlay).not.toHaveTextContent("Runtime plugins explicitly bound")
     expect(within(unifiedDetailsOverlay as HTMLElement).queryByRole("tab")).not.toBeInTheDocument()
   }, 30_000)
+
+  // #1470: "Start new chat with <Agent>" (the New chat Agent picker) creates
+  // the session but must land the main pane on it too, exactly like the
+  // per-Agent card's "New chat with <Agent>" button does.
+  it("focuses the session created via the New chat Agent picker", async () => {
+    const user = userEvent.setup()
+    const agents = [
+      { agentTypeId: "alpha", label: "Alpha" },
+      { agentTypeId: "beta", label: "Beta" },
+    ]
+    const useAgentSelection = () => {
+      const [selectedAgentTypeId, setSelectedAgentTypeId] = useState("alpha")
+      return {
+        agents,
+        selectedAgentTypeId,
+        loading: false,
+        error: undefined,
+        selectAgentTypeId: setSelectedAgentTypeId,
+      }
+    }
+    const { ObservingChatPanel, observed } = makeObservingChatPanel()
+    // Deliberately decouples "the create() promise the transaction awaits
+    // resolves" from "Beta's OWN session snapshot catches up" — exactly the
+    // ordering `addressedFleetSessions.tsx` cannot guarantee: its per-Agent
+    // `FleetSessionSource` only republishes an updated controller from a
+    // passive effect, a render or more after this hook's own state update,
+    // while `createChatPaneTransaction`'s success callback (which flips the
+    // addressed Agent) runs off the SAME resolved promise. Holding this gate
+    // open reproduces the worst case deterministically instead of hoping a
+    // microtask-count race lands the same way twice.
+    let releaseBetaSnapshot: (() => void) | undefined
+    const betaSnapshotGate = new Promise<void>((resolve) => { releaseBetaSnapshot = resolve })
+    const useFleetSessions: AttestedWorkspaceAgentFrontProps<WorkspaceAgentSession>["useSessions"] = (options) => {
+      const owner = options.agentTypeId
+      const [owned, setOwned] = useState(() => [{
+        id: `${owner}-one`,
+        agentTypeId: owner,
+        title: `${owner} one`,
+        updatedAt: 1,
+      }])
+      return {
+        sessions: owned,
+        loading: false,
+        activeSessionId: owned[0]?.id,
+        activeSessionAgentTypeId: owner,
+        activeSession: owned[0],
+        workspaceId: options.workspaceId,
+        switch: vi.fn(),
+        create: async () => {
+          const session = { id: `${owner}-new`, agentTypeId: owner, title: `${owner} new`, updatedAt: 2 }
+          if (owner === "beta") {
+            // The transaction sees the created session and addresses Beta
+            // immediately; Beta's own controller only reflects it once this
+            // gate is released, below.
+            void betaSnapshotGate.then(() => setOwned((current) => [session, ...current]))
+          } else {
+            setOwned((current) => [session, ...current])
+          }
+          return session
+        },
+        delete: vi.fn(),
+      }
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="picker-focus"
+        workspaceLayout="plugin-tabs"
+        chatPanel={ObservingChatPanel}
+        addressedAgentSelection
+        useAddressedAgentSelection={useAgentSelection}
+        useSessions={useFleetSessions}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-agent-type-id", "alpha")
+      expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-session-id", "alpha-one")
+    })
+
+    // Retarget the picker to Beta without ever addressing/opening a Beta chat.
+    // Beta already owns an untouched "beta-one" session at this point — the
+    // ONLY way it can appear below is the addressed-Agent switch racing
+    // ahead of Beta's own session snapshot and getting judged "uncontrolled".
+    await user.click(await screen.findByRole("button", { name: "Choose Agent for new chat" }))
+    await user.click(await screen.findByRole("menuitem", { name: "Beta" }))
+    await user.click(await screen.findByRole("button", { name: "Start new chat with Beta" }))
+
+    // Mid-race: the addressed Agent has already flipped to Beta and the
+    // create() promise has resolved, but Beta's own snapshot is still
+    // deliberately held back (gate not yet released). This is the exact
+    // frame the reviewer flagged — assert it directly, not just the eventual
+    // settled state a `waitFor` would otherwise paper over.
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-agent-type-id", "beta")
+    })
+    expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-session-id", "beta-new")
+
+    await act(async () => {
+      releaseBetaSnapshot?.()
+      await betaSnapshotGate
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-agent-type-id", "beta")
+      expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-session-id", "beta-new")
+    })
+
+    // Sequence-sensitive: the picker's Beta chat must never have painted as
+    // "beta-one" (Beta's PREVIOUS session) on its way to "beta-new". A final
+    // waitFor on the settled state alone cannot catch a corrected frame.
+    expect(observed).not.toContain("beta:beta-one")
+    expect(observed).toEqual(["alpha:alpha-one", "beta:beta-new"])
+  })
+
+  // #1472 review: optimisticCreatedPaneKeysRef's ONLY removal path used to be
+  // "the owning Agent's session snapshot contains the key" — the normal,
+  // fast-acknowledgment case the previous test covers. If the created
+  // session is instead deleted before that ever happens (or a provider
+  // returns an id that never materializes — indistinguishable from
+  // reconciliation's point of view: the key just never appears in
+  // resolvedSessionsByKey), the key never cleared, the stale flag kept
+  // bypassing both the controlled-session and inventory gates forever, and
+  // the nonexistent optimistic pane stayed active indefinitely — the phantom
+  // pane suppressed legitimate reconciliation to the real session sitting
+  // right there. This proves the bounded ack-window fallback actually fires
+  // and hands the pane back to a real, authoritative session.
+  it("ages out a never-acknowledged optimistic create and falls back to a real session", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const user = userEvent.setup({ delay: null, advanceTimers: vi.advanceTimersByTime })
+      const agents = [
+        { agentTypeId: "alpha", label: "Alpha" },
+        { agentTypeId: "beta", label: "Beta" },
+      ]
+      const useAgentSelection = () => {
+        const [selectedAgentTypeId, setSelectedAgentTypeId] = useState("alpha")
+        return {
+          agents,
+          selectedAgentTypeId,
+          loading: false,
+          error: undefined,
+          selectAgentTypeId: setSelectedAgentTypeId,
+        }
+      }
+      const { ObservingChatPanel } = makeObservingChatPanel()
+      const useFleetSessions: AttestedWorkspaceAgentFrontProps<WorkspaceAgentSession>["useSessions"] = (options) => {
+        const owner = options.agentTypeId
+        const [owned] = useState(() => (
+          owner === "alpha" ? [{ id: "alpha-one", agentTypeId: "alpha", title: "alpha one", updatedAt: 1 }] : []
+        ))
+        return {
+          sessions: owned,
+          loading: false,
+          activeSessionId: owned[0]?.id,
+          activeSessionAgentTypeId: owner,
+          activeSession: owned[0],
+          workspaceId: options.workspaceId,
+          switch: vi.fn(),
+          create: async () => (
+            // Beta's create() resolves — the transaction gets a real id and
+            // addresses Beta — but Beta's OWN session list never comes to
+            // include it: a session deleted (in app or out of band) before
+            // its first acknowledgment, or a phantom id a provider never
+            // materializes, looks IDENTICAL from here.
+            { id: "beta-phantom", agentTypeId: "beta", title: "beta phantom", updatedAt: 2 }
+          ),
+          delete: vi.fn(),
+        }
+      }
+
+      render(
+        <WorkspaceAgentFront
+          workspaceId="picker-phantom"
+          workspaceLayout="plugin-tabs"
+          chatPanel={ObservingChatPanel}
+          addressedAgentSelection
+          useAddressedAgentSelection={useAgentSelection}
+          useSessions={useFleetSessions}
+          persistenceEnabled={false}
+        />,
+      )
+
+      await waitFor(() => {
+        expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-session-id", "alpha-one")
+      })
+
+      await user.click(await screen.findByRole("button", { name: "Choose Agent for new chat" }))
+      await user.click(await screen.findByRole("menuitem", { name: "Beta" }))
+      await user.click(await screen.findByRole("button", { name: "Start new chat with Beta" }))
+
+      // Optimistic protection holds: the phantom pane is shown and stays put
+      // well within the ack window, since nothing ever acknowledges it.
+      await waitFor(() => {
+        expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-session-id", "beta-phantom")
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(OPTIMISTIC_CREATE_ACK_WINDOW_MS - 1_000)
+      })
+      expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-session-id", "beta-phantom")
+
+      // Past the ack window: the never-acknowledged key ages out and
+      // reconciliation falls back to the real authoritative session
+      // (Alpha's, the only one that actually exists) instead of leaving the
+      // phantom pane active forever.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2_000)
+      })
+      await waitFor(() => {
+        expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-session-id", "alpha-one")
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 
   it("initializes a controlled colliding id to its explicit active owner", () => {
     localStorage.setItem("boring-workspace:chat-panes:explicit-active-owner", JSON.stringify({

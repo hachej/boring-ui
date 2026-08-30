@@ -463,6 +463,14 @@ function useStoredNullableStringState(
 const EMPTY_HEADERS: Record<string, string> = {}
 const EMPTY_STRING_LIST: string[] = []
 const PREPARING_WARMUP_STATUS: WorkspaceWarmupStatus = { status: "preparing" }
+// An optimistically-created pane loses its protection once its owning
+// Agent's session snapshot acknowledges it (the normal, fast path). This is
+// the terminal fallback for the abnormal one: the session was deleted (in
+// app or out of band) or a provider returned an id that never materializes,
+// so no snapshot will EVER acknowledge it. Past this window the key is
+// dropped and reconciliation falls back to the real authoritative session
+// instead of protecting a pane that may no longer exist.
+export const OPTIMISTIC_CREATE_ACK_WINDOW_MS = 10_000
 const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect
 
 function sessionCreateProtocolError(message: string): SessionCreateProtocolError {
@@ -1485,7 +1493,28 @@ export function WorkspaceAgentFront<
   const autoCreateSessionRef = useRef(false)
   const pendingLastSessionDeleteRef = useRef<Set<string>>(new Set())
   const pendingCreatePaneRef = useRef<PendingCreatePane | null>(null)
-  const optimisticCreatedPaneKeysRef = useRef<Set<string>>(new Set())
+  // Maps an optimistically-created pane key to the time it was created, so a
+  // never-acknowledged create (deleted before its Agent's first snapshot
+  // observed it, or a phantom id a provider never materializes) can be aged
+  // out instead of protecting a pane forever. See OPTIMISTIC_CREATE_ACK_WINDOW_MS.
+  const optimisticCreatedPaneKeysRef = useRef<Map<string, number>>(new Map())
+  // Nothing else re-renders once a create's ack window merely elapses (no
+  // session list changed, no user action happened) — this tick forces the
+  // reconciliation effect below to re-run so the aged-out key is actually
+  // dropped and reconciliation falls back to the real session.
+  const [optimisticCreateAckTick, setOptimisticCreateAckTick] = useState(0)
+  const optimisticCreateAckTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
+  useEffect(() => () => {
+    for (const timer of optimisticCreateAckTimersRef.current) clearTimeout(timer)
+    optimisticCreateAckTimersRef.current.clear()
+  }, [])
+  // A workspace/source switch resets chatPaneState to empty (see the
+  // chatPaneSourceIdentity effect above) and abandons whatever pane a create
+  // was protecting — any leftover optimistic keys belong to a pane that no
+  // longer exists on screen, so nothing should still be aging them out.
+  useEffect(() => {
+    optimisticCreatedPaneKeysRef.current.clear()
+  }, [chatPaneSourceIdentity, workspaceId])
   const surfaceOpenRef = useRef(surfaceOpen)
   const surfaceKeyRef = useRef(resolvedSurfaceStorageKey)
   const surfaceRef = useRef<{ key: string; api: SurfaceShellApi } | null>(null)
@@ -1765,8 +1794,15 @@ export function WorkspaceAgentFront<
       pendingCreatePaneRef.current = null
       if (ownedPendingCreatePane.placementDirection) setChatPaneSplitPending(false)
     }
-    for (const key of optimisticCreatedPaneKeysRef.current) {
-      if (resolvedSessionsByKey.has(key)) optimisticCreatedPaneKeysRef.current.delete(key)
+    const optimisticCreateDeadline = Date.now() - OPTIMISTIC_CREATE_ACK_WINDOW_MS
+    for (const [key, createdAt] of optimisticCreatedPaneKeysRef.current) {
+      // Acknowledged (the normal path): the owning Agent's session snapshot
+      // now contains it. Aged out (the abnormal path this review flagged):
+      // deleted before ever being observed, or a phantom id that never
+      // materializes — stop protecting a pane that may no longer exist.
+      if (resolvedSessionsByKey.has(key) || createdAt <= optimisticCreateDeadline) {
+        optimisticCreatedPaneKeysRef.current.delete(key)
+      }
     }
     const newlyObservedSession = pendingCreatePane
       ? resolvedSessions.find((session) => !pendingCreatePane.knownIds.has(workspaceSessionKeyFor(session)))
@@ -1807,12 +1843,28 @@ export function WorkspaceAgentFront<
       if (remoteSessionsPending && current.ids.length > 0 && !pendingCreatedId) return current
       const currentActiveRef = current.activeId ? workspaceSessionRefFromKey(current.activeId) : undefined
       const activeOwnerIsExplicit = Boolean(effectiveActiveSessionAgentTypeId)
-      const currentMatchesControlledSession = activeOwnerIsExplicit
+      // #1472 review: a fleet create's addressed-Agent switch and its pane
+      // update land in the same tick, but the newly addressed Agent's OWN
+      // session snapshot (`addressedFleetSessions.tsx`'s `snapshots` map)
+      // only catches up a render or two later, via that Agent's session
+      // source publishing through its own passive effect. In the gap,
+      // `chatSessionKey` still names the Agent's PREVIOUS active session, so
+      // without this the optimistic pane got judged "uncontrolled" and
+      // replaced by that stale session — a `new → stale → new` visible stomp.
+      // Trust an optimistically-created pane over the (possibly stale)
+      // controlled session until its own key is cleared from the ref above
+      // (once the real session list actually contains it).
+      const currentIsOptimisticCreate = Boolean(current.activeId && optimisticCreatedPaneKeysRef.current.has(current.activeId))
+      const currentMatchesControlledSession = currentIsOptimisticCreate || (activeOwnerIsExplicit
         ? current.activeId === chatSessionKey
-        : currentActiveRef?.sessionId === chatSessionId
+        : currentActiveRef?.sessionId === chatSessionId)
       const resolvedDesiredSessionId = !pendingCreatedId
         && current.activeId
-        && (!canPruneMissingSessions || resolvedSessionsByKey.has(current.activeId))
+        // An optimistic create bypasses the "known session" gate too: it is
+        // by definition not in `resolvedSessionsByKey` yet (that is what
+        // "optimistic" means here), so requiring membership would undo the
+        // protection `currentMatchesControlledSession` just granted it.
+        && (!canPruneMissingSessions || resolvedSessionsByKey.has(current.activeId) || currentIsOptimisticCreate)
         && currentMatchesControlledSession
         ? current.activeId
         : desiredSessionId
@@ -1848,7 +1900,7 @@ export function WorkspaceAgentFront<
       ) return previous
       return { workspaceId, ids: nextIds, activeId: nextActiveId }
     })
-  }, [autoSubmitSessionId, chatSessionId, chatSessionKey, effectiveActiveSessionAgentTypeId, remoteSessionsPending, remoteSessionsTransitioning, resolvedSessions, resolvedSessionsByKey, sessionListAuthoritative, workspaceId])
+  }, [autoSubmitSessionId, chatSessionId, chatSessionKey, effectiveActiveSessionAgentTypeId, optimisticCreateAckTick, remoteSessionsPending, remoteSessionsTransitioning, resolvedSessions, resolvedSessionsByKey, sessionListAuthoritative, workspaceId])
   const [initialHydrationPromptStarted, setInitialHydrationPromptStarted] = useState<{ workspaceId: string; ids: Set<string> }>(() => ({
     workspaceId,
     ids: new Set(),
@@ -2009,7 +2061,17 @@ export function WorkspaceAgentFront<
       const nextState = { workspaceId, ids: nextIds, activeId: createdKey }
 
       if (!settleIfOwner()) return
-      optimisticCreatedPaneKeysRef.current.add(createdKey)
+      optimisticCreatedPaneKeysRef.current.set(createdKey, Date.now())
+      if (typeof window !== "undefined") {
+        const timer = setTimeout(() => {
+          optimisticCreateAckTimersRef.current.delete(timer)
+          // Force the reconciliation effect to re-evaluate even if nothing
+          // else changed in the meantime — that is exactly the abnormal case
+          // (deleted/never-materialized) this window exists to catch.
+          setOptimisticCreateAckTick((tick) => tick + 1)
+        }, OPTIMISTIC_CREATE_ACK_WINDOW_MS)
+        optimisticCreateAckTimersRef.current.add(timer)
+      }
       chatPaneStateRef.current = nextState
       setChatPaneState(nextState)
       if (placementDirection) {
@@ -2022,6 +2084,17 @@ export function WorkspaceAgentFront<
         if (createdAgentTypeId) rawSwitch(id, createdAgentTypeId)
         else rawSwitch(id)
       }
+      // A fleet create can target an Agent OTHER than the one currently
+      // addressed (#1470: the New chat Agent picker retargets independently
+      // of the addressed selection). The pane-reconciliation effect below
+      // resolves its desired session from the ADDRESSED Agent's own session
+      // API, so without this the new pane got immediately stomped back to
+      // whatever the previously addressed chat was — created, but never
+      // shown. Address the created Agent so every creation entry point (the
+      // rail "+", the card, and the picker alike) opens on what it just made.
+      if (fleetModeEnabled && createdAgentTypeId && createdAgentTypeId !== addressedAgents.selectedAgentTypeId) {
+        addressedAgents.selectAgentTypeId(createdAgentTypeId)
+      }
       scheduleActiveAgentComposerFocus()
     }).catch(() => {
       settleIfOwner()
@@ -2029,7 +2102,7 @@ export function WorkspaceAgentFront<
       // transaction only owns clearing its pending state.
     })
     return created
-  }, [chatSessionKey, rawSwitch, resolvedCreate, resolvedSessions, selectedAgentTypeId, sessionApi, workspaceId])
+  }, [addressedAgents.selectAgentTypeId, addressedAgents.selectedAgentTypeId, chatSessionKey, fleetModeEnabled, rawSwitch, resolvedCreate, resolvedSessions, selectedAgentTypeId, sessionApi, workspaceId])
 
   useEffect(() => {
     const pending = pendingCreatePaneRef.current
@@ -2074,6 +2147,10 @@ export function WorkspaceAgentFront<
 
   const deleteSessionAndPane = useCallback((sessionId: string, sessionAgentTypeId?: string) => {
     const sessionKey = workspaceSessionKey(sessionId, sessionAgentTypeId)
+    // We know FOR CERTAIN this session is gone — no need to wait out the ack
+    // window. Deleting an optimistic key we never created is a harmless
+    // no-op, so this is safe to call unconditionally.
+    optimisticCreatedPaneKeysRef.current.delete(sessionKey)
     const current = chatPaneState.workspaceId === workspaceId
       ? chatPaneState
       : { workspaceId, ids: [chatSessionKey], activeId: chatSessionKey }
