@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
+import { useEffect } from 'react'
 import type { ReactNode } from 'react'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockSessionState = vi.hoisted(() => ({
@@ -134,6 +135,37 @@ function renderWithRouter(
   )
 }
 
+/** Mirrors CoreFront.tsx's real composition: WorkspaceAuthProvider is mounted ONCE, above
+ * `<Routes>`, wrapping the whole router — not per-route inside a `<Route element>` (that's
+ * why the component parses `location.pathname` itself via `workspaceIdFromPath` rather than
+ * relying solely on `useParams`, which only populates inside a matched `<Route>` element).
+ * Consequently route navigation, and — since AuthProvider's `client` is a stable `useMemo`
+ * keyed only on `baseURL` and `client.useSession()` is better-auth's reactive store hook —
+ * a real sign-out/sign-in, never remounts this tree; it only re-renders in place. This
+ * harness exposes `navigate` so a test can drive that same in-place transition. */
+function NavCapture({ onReady }: { onReady: (navigate: (path: string) => void) => void }) {
+  const navigate = useNavigate()
+  useEffect(() => {
+    onReady(navigate)
+  }, [navigate, onReady])
+  return null
+}
+
+function renderTopLevelProvider(initialPath: string, queryClient: QueryClient) {
+  let navigateFn: (path: string) => void = () => {}
+  const utils = render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[initialPath]}>
+        <WorkspaceAuthProvider>
+          <NavCapture onReady={(nav) => { navigateFn = nav }} />
+          <Probe />
+        </WorkspaceAuthProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  )
+  return { ...utils, navigate: (path: string) => navigateFn(path) }
+}
+
 function mockWorkspaceDetail(ws: Workspace, role: MemberRole) {
   useMswHandler(async (input) => {
     const url =
@@ -198,12 +230,19 @@ function mockDeferredWorkspaceDetail(
   })
 }
 
-beforeEach(() => {
-  mockSessionState.current = {
+const USER_1_ID = 'user-1'
+const USER_2_ID = 'user-2'
+
+function lastWorkspaceStorageKey(userId: string): string {
+  return `boring-core:last-workspace:${userId}`
+}
+
+function sessionFor(userId: string) {
+  return {
     data: {
       user: {
-        id: 'user-1',
-        email: 'user-1@test.dev',
+        id: userId,
+        email: `${userId}@test.dev`,
         name: null,
         emailVerified: true,
         image: null,
@@ -215,6 +254,11 @@ beforeEach(() => {
     isPending: false,
     error: null,
   }
+}
+
+beforeEach(() => {
+  window.localStorage.clear()
+  mockSessionState.current = sessionFor(USER_1_ID)
 })
 
 function setUnauthenticatedSession() {
@@ -567,6 +611,211 @@ describe('WorkspaceAuthProvider', () => {
       )
       expect(screen.getByTestId('ws-role').textContent).toBe('owner')
       assertionPassed('workspace-loading-resolves')
+      qc.clear()
+    }),
+  )
+
+  it(
+    'restores the last-selected workspace on / after visiting it via route, surviving sign-out/in',
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
+      const qc = createQueryClient()
+      mockWorkspacesList([WS_1, WS_2])
+      mockWorkspaceDetail(WS_1, 'owner')
+      mockWorkspaceDetail(WS_2, 'editor')
+
+      // Visit the non-default workspace explicitly — this records it as "last selected".
+      const first = renderWithRouter(`/workspace/${WS_2.id}`, qc)
+      await waitFor(() =>
+        expect(screen.getByTestId('ws-name').textContent).toBe('Second WS'),
+      )
+      expect(window.localStorage.getItem(lastWorkspaceStorageKey(USER_1_ID))).toBe(WS_2.id)
+      first.unmount()
+      qc.clear()
+
+      // Simulate sign-out/in: query cache clears (as AuthProvider.signOut does), but
+      // localStorage persists. Landing on `/` afresh should restore WS_2, not the default.
+      const qc2 = createQueryClient()
+      mockWorkspacesList([WS_1, WS_2])
+      mockWorkspaceDetail(WS_1, 'owner')
+      mockWorkspaceDetail(WS_2, 'editor')
+
+      renderWithRouter('/', qc2)
+      await waitFor(() =>
+        expect(screen.getByTestId('ws-name').textContent).toBe('Second WS'),
+      )
+      expect(screen.getByTestId('ws-role').textContent).toBe('editor')
+      assertionPassed('workspace-restored-last-selected')
+      qc2.clear()
+    }),
+  )
+
+  it(
+    'falls back to the default workspace when the remembered id is stale (no longer a member)',
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
+      const qc = createQueryClient()
+      window.localStorage.setItem(
+        lastWorkspaceStorageKey(USER_1_ID),
+        'ws-deleted-or-not-a-member',
+      )
+      mockWorkspacesList([WS_2, WS_1])
+      mockWorkspaceDetail(WS_1, 'owner')
+
+      renderWithRouter('/', qc)
+
+      await waitFor(() =>
+        expect(screen.getByTestId('ws-name').textContent).toBe('Default workspace'),
+      )
+      expect(screen.getByTestId('ws-role').textContent).toBe('owner')
+      assertionPassed('workspace-stale-last-selected-falls-back-to-default')
+      qc.clear()
+    }),
+  )
+
+  it(
+    'does not steer a second user to the first user\'s remembered workspace on a shared browser, even when both are members of it',
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
+      // User A (user-1) visits the shared, non-default workspace WS_2 — recorded as
+      // user-1's last-selected workspace.
+      const qcA = createQueryClient()
+      mockWorkspacesList([WS_1, WS_2])
+      mockWorkspaceDetail(WS_1, 'owner')
+      mockWorkspaceDetail(WS_2, 'editor')
+
+      const rendered = renderWithRouter(`/workspace/${WS_2.id}`, qcA)
+      await waitFor(() =>
+        expect(screen.getByTestId('ws-name').textContent).toBe('Second WS'),
+      )
+      expect(window.localStorage.getItem(lastWorkspaceStorageKey(USER_1_ID))).toBe(WS_2.id)
+      expect(window.localStorage.getItem(lastWorkspaceStorageKey(USER_2_ID))).toBeNull()
+      rendered.unmount()
+      qcA.clear()
+
+      // User B (user-2) — a shared browser, same localStorage — signs in. B is also a
+      // member of WS_2, but has never selected it. B must land on their own default
+      // (WS_1), not on A's remembered WS_2.
+      mockSessionState.current = sessionFor(USER_2_ID)
+      const qcB = createQueryClient()
+      mockWorkspacesList([WS_1, WS_2])
+      mockWorkspaceDetail(WS_1, 'viewer')
+      mockWorkspaceDetail(WS_2, 'viewer')
+
+      renderWithRouter('/', qcB)
+      await waitFor(() =>
+        expect(screen.getByTestId('ws-name').textContent).toBe('Default workspace'),
+      )
+      expect(screen.getByTestId('ws-role').textContent).toBe('viewer')
+      assertionPassed('workspace-second-user-not-steered-by-first-user-shared-membership')
+      qcB.clear()
+    }),
+  )
+
+  it(
+    'does not steer a second user (not a member of the first user\'s workspace) to a forbidden workspace',
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
+      // User A (user-1) visits WS_2 — recorded as user-1's last-selected workspace.
+      const qcA = createQueryClient()
+      mockWorkspacesList([WS_1, WS_2])
+      mockWorkspaceDetail(WS_1, 'owner')
+      mockWorkspaceDetail(WS_2, 'editor')
+
+      const rendered = renderWithRouter(`/workspace/${WS_2.id}`, qcA)
+      await waitFor(() =>
+        expect(screen.getByTestId('ws-name').textContent).toBe('Second WS'),
+      )
+      expect(window.localStorage.getItem(lastWorkspaceStorageKey(USER_1_ID))).toBe(WS_2.id)
+      rendered.unmount()
+      qcA.clear()
+
+      // User B signs in on the same browser but is NOT a member of WS_2 at all — their
+      // workspace list only contains WS_1. B must land on WS_1, never on WS_2.
+      mockSessionState.current = sessionFor(USER_2_ID)
+      const qcB = createQueryClient()
+      mockWorkspacesList([WS_1])
+      mockWorkspaceDetail(WS_1, 'owner')
+
+      renderWithRouter('/', qcB)
+      await waitFor(() =>
+        expect(screen.getByTestId('ws-name').textContent).toBe('Default workspace'),
+      )
+      expect(screen.getByTestId('ws-role').textContent).toBe('owner')
+      assertionPassed('workspace-second-user-not-a-member-falls-back-to-own-default')
+      qcB.clear()
+    }),
+  )
+
+  it(
+    'in-place identity change (same mounted tree, no unmount): B lands on B\'s default, never leaked from A, when B is also a member of A\'s remembered workspace',
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
+      const qc = createQueryClient()
+      mockWorkspacesList([WS_1, WS_2])
+      mockWorkspaceDetail(WS_1, 'owner')
+      mockWorkspaceDetail(WS_2, 'editor')
+
+      const { navigate } = renderTopLevelProvider(`/workspace/${WS_2.id}`, qc)
+      await waitFor(() =>
+        expect(screen.getByTestId('ws-name').textContent).toBe('Second WS'),
+      )
+      expect(window.localStorage.getItem(lastWorkspaceStorageKey(USER_1_ID))).toBe(WS_2.id)
+
+      // In-place transition A -> B on the SAME mounted WorkspaceAuthProvider instance: no
+      // unmount anywhere in this test. Mutate the mocked session (standing in for
+      // better-auth's reactive session store flipping in place) and register B's mocked
+      // membership/detail responses (last-registered handler wins — see useMswHandler's
+      // LIFO scan in ./_setup.ts), then clear the SAME QueryClient instance (exactly what
+      // AuthProvider.signOut() does — it never creates a new client) and navigate within
+      // the same tree from /workspace/ws-002 to / to force a re-render that observes the
+      // new session.
+      mockSessionState.current = sessionFor(USER_2_ID)
+      qc.clear()
+      mockWorkspacesList([WS_1, WS_2]) // B is also a member of the shared workspace WS_2
+      mockWorkspaceDetail(WS_1, 'viewer')
+      mockWorkspaceDetail(WS_2, 'viewer')
+
+      act(() => navigate('/'))
+
+      await waitFor(() =>
+        expect(screen.getByTestId('ws-name').textContent).toBe('Default workspace'),
+      )
+      expect(screen.getByTestId('ws-role').textContent).toBe('viewer')
+      // A's own preference is untouched by B's transition.
+      expect(window.localStorage.getItem(lastWorkspaceStorageKey(USER_1_ID))).toBe(WS_2.id)
+      // A's remembered workspace id never leaked into B's key.
+      expect(window.localStorage.getItem(lastWorkspaceStorageKey(USER_2_ID))).not.toBe(WS_2.id)
+      assertionPassed('workspace-inplace-identity-change-member-variant')
+      qc.clear()
+    }),
+  )
+
+  it(
+    'in-place identity change (same mounted tree, no unmount): B lands on B\'s default, never leaked from A, when B is NOT a member of A\'s remembered workspace',
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
+      const qc = createQueryClient()
+      mockWorkspacesList([WS_1, WS_2])
+      mockWorkspaceDetail(WS_1, 'owner')
+      mockWorkspaceDetail(WS_2, 'editor')
+
+      const { navigate } = renderTopLevelProvider(`/workspace/${WS_2.id}`, qc)
+      await waitFor(() =>
+        expect(screen.getByTestId('ws-name').textContent).toBe('Second WS'),
+      )
+      expect(window.localStorage.getItem(lastWorkspaceStorageKey(USER_1_ID))).toBe(WS_2.id)
+
+      // Same in-place transition as above, but B's membership list does not include WS_2
+      // at all — B is not a member of A's remembered workspace.
+      mockSessionState.current = sessionFor(USER_2_ID)
+      qc.clear()
+      mockWorkspacesList([WS_1])
+      mockWorkspaceDetail(WS_1, 'owner')
+
+      act(() => navigate('/'))
+
+      await waitFor(() =>
+        expect(screen.getByTestId('ws-name').textContent).toBe('Default workspace'),
+      )
+      expect(screen.getByTestId('ws-role').textContent).toBe('owner')
+      expect(window.localStorage.getItem(lastWorkspaceStorageKey(USER_1_ID))).toBe(WS_2.id)
+      expect(window.localStorage.getItem(lastWorkspaceStorageKey(USER_2_ID))).not.toBe(WS_2.id)
+      assertionPassed('workspace-inplace-identity-change-non-member-variant')
       qc.clear()
     }),
   )
