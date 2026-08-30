@@ -169,6 +169,7 @@ ingress is hardcoded off in every released host.
 `sessions/<sessionId>` — `agentTypeId` is in the URL but in neither. Not a
 live defect (ids are minted unique; cross-agent addressing is rejected), but
 durable rows would bake the omission in.
+*A1 errata (2026-08-30): the `userId` slot is already empty on every addressed route.*
 
 **Bookkeeping correction:** bead `0jpy.15` ("duplicate AgentLiveEventBuffer")
 has a false premise — there is one such class with no external consumers. The

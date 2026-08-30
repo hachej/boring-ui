@@ -61,8 +61,58 @@ export interface AgentEvent {
   chunk: PiChatEvent
 }
 
-export function sessionStreamPath(sessionId: string): string {
-  return `sessions/${sessionId}`
+export interface SessionStreamIdentity {
+  readonly workspaceScopeId: string
+  readonly sessionId: string
+}
+
+/** Kept here so every durable session path grammar has one source of truth. */
+export const SESSION_STREAM_PREFIX = 'sessions/'
+const V1_QUARANTINE_STREAM_PREFIX = 'quarantine/v1/'
+
+export function sessionStreamPath(identity: SessionStreamIdentity): string {
+  assertIdentitySegment('workspaceScopeId', identity?.workspaceScopeId)
+  assertIdentitySegment('sessionId', identity?.sessionId)
+  return `${SESSION_STREAM_PREFIX}${encodeIdentitySegment(identity.workspaceScopeId)}/${encodeIdentitySegment(identity.sessionId)}`
+}
+
+/** Total parser: malformed or non-canonical paths return null, never throw. */
+export function parseSessionStreamPath(path: string): SessionStreamIdentity | null {
+  if (typeof path !== 'string' || !path.startsWith(SESSION_STREAM_PREFIX)) return null
+  const segments = path.slice(SESSION_STREAM_PREFIX.length).split('/')
+  if (segments.length !== 2) return null
+  const workspaceScopeId = decodeIdentitySegment(segments[0] ?? '')
+  const sessionId = decodeIdentitySegment(segments[1] ?? '')
+  if (workspaceScopeId === null || sessionId === null) return null
+  return { workspaceScopeId, sessionId }
+}
+
+/** Migration-only destination for v1 paths that cannot safely claim a v2 key. */
+export function quarantineV1EventStreamPath(oldPath: string): string {
+  return `${V1_QUARANTINE_STREAM_PREFIX}${encodeIdentitySegment(oldPath)}`
+}
+
+function assertIdentitySegment(name: keyof SessionStreamIdentity, value: unknown): asserts value is string {
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new TypeError(`Session stream ${name} must be a non-empty string.`)
+  }
+}
+
+function encodeIdentitySegment(value: string): string {
+  return encodeURIComponent(value).replace(/[!'()*~]/g, (character) => (
+    `%${character.charCodeAt(0).toString(16).toUpperCase()}`
+  ))
+}
+
+function decodeIdentitySegment(value: string): string | null {
+  if (value.length === 0) return null
+  try {
+    const decoded = decodeURIComponent(value)
+    if (decoded.length === 0 || encodeIdentitySegment(decoded) !== value) return null
+    return decoded
+  } catch {
+    return null
+  }
 }
 
 export interface AgentResolveInputResponse {

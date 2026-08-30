@@ -64,6 +64,7 @@ harnessBackendConformance({
     const actionFailures = createActionFailureMetering()
     return {
       backend: createPiSessionHarnessBackend({
+        agentTypeId: 'alpha',
         harness,
         sessionStore: harness.sessions,
         workdir: '/workspace',

@@ -43,6 +43,7 @@ function rethrowSnapshotServiceError(error: unknown): never {
 
 /** Built once per runtime binding; deliberately carries no credentials or membership. */
 export interface AgentHarnessBackendFactoryInput {
+  readonly agentTypeId: string
   readonly harness: AgentHarness
   readonly sessionStore: SessionStore
   readonly workdir: string

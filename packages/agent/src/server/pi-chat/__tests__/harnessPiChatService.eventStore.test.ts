@@ -2,12 +2,14 @@ import { describe, expect, it, vi } from 'vitest'
 import type { AgentSessionEvent } from '@mariozechner/pi-coding-agent'
 import type { AgentHarness, AgentSendInput, RunContext } from '../../../shared/harness'
 import type { PiChatEvent } from '../../../shared/chat'
-import { sessionStreamPath, type AgentEvent } from '../../../shared/events'
+import { sessionStreamPath, type AgentEvent, type SessionStreamIdentity } from '../../../shared/events'
 import type { SessionStore } from '../../../shared/session'
 import {
   type EventStreamMeta,
   type EventStreamReadResult,
   type EventStreamStore,
+  type CreateSessionStreamAttributes,
+  type SessionStreamOwner,
   SqliteEventStreamStore,
 } from '../../events/eventStreamStore'
 import { openDatabase } from '../../events/sqlStorage'
@@ -19,6 +21,7 @@ const ctx: PiSessionRequestContext = {
   workspaceId: 'workspace-a',
   storageScope: 'scope-a',
   authSubject: 'user-a',
+  sessionAuthority: 'workspace-scope',
   requestId: 'request-a',
 }
 
@@ -87,6 +90,7 @@ function createHarness(adapter: PiAgentSessionAdapter): AgentHarness & {
 
 function createService(eventStore: EventStreamStore, adapter = createAdapter(), store: SessionStore = sessionStore) {
   const service = new HarnessPiChatService({
+    agentTypeId: 'alpha',
     harness: createHarness(adapter),
     sessionStore: store,
     workdir: '/workspace',
@@ -189,7 +193,7 @@ describe('HarnessPiChatService event store tap', () => {
     }
   })
 
-  it('isolates durable event streams by workspace and auth subject for the same public session id', async () => {
+  it('isolates durable event streams by workspace storage scope for the same public session id', async () => {
     const db = openDatabase(':memory:')
     try {
       const store = new SqliteEventStreamStore(db.sql, db.runTransaction)
@@ -206,7 +210,7 @@ describe('HarnessPiChatService event store tap', () => {
         hasPiSession: vi.fn(() => false),
         getPiSessionAdapter: vi.fn(async (_input, runCtx) => runCtx.workspaceId === ctxB.workspaceId ? adapterB : adapterA),
       }
-      const service = new HarnessPiChatService({ harness, sessionStore, workdir: '/workspace', eventStore: store })
+      const service = new HarnessPiChatService({ agentTypeId: 'alpha', harness, sessionStore, workdir: '/workspace', eventStore: store })
 
       const liveA: PiChatEvent[] = []
       const liveB: PiChatEvent[] = []
@@ -222,7 +226,7 @@ describe('HarnessPiChatService event store tap', () => {
 
       const streamA = await store.readEvents(streamPathFor(ctx, 's1'), { offset: '-1' })
       const streamB = await store.readEvents(streamPathFor(ctxB, 's1'), { offset: '-1' })
-      await expect(store.readEvents(sessionStreamPath('s1'), { offset: '-1' })).resolves.toMatchObject({ events: [] })
+      await expect(store.readEvents(sessionStreamPath({ workspaceScopeId: 'workspace-a', sessionId: 's1' }), { offset: '-1' })).resolves.toMatchObject({ events: [] })
       expect(streamA.events.map((event) => ((event.data as AgentEvent).chunk as { turnId?: string }).turnId)).toEqual(['turn-a'])
       expect(streamB.events.map((event) => ((event.data as AgentEvent).chunk as { turnId?: string }).turnId)).toEqual(['turn-b'])
 
@@ -467,12 +471,24 @@ class DelayedEventStreamStore implements EventStreamStore {
   ) {}
 
   async createStream(path: string): Promise<void> {
+    return this.inner.createStream(path)
+  }
+
+  async createSessionStream(identity: SessionStreamIdentity, attrs: CreateSessionStreamAttributes): Promise<void> {
     if (this.creationFailure) {
       this.creationFailure.started()
       await this.creationFailure.gate
       throw this.creationFailure.error
     }
-    return this.inner.createStream(path)
+    return this.inner.createSessionStream(identity, attrs)
+  }
+
+  readStreamOwner(path: string): Promise<SessionStreamOwner | null> {
+    return this.inner.readStreamOwner(path)
+  }
+
+  backfillStreamOwner(path: string, agentTypeId: string): Promise<void> {
+    return this.inner.backfillStreamOwner(path, agentTypeId)
   }
 
   appendEvent(path: string, event: unknown): Promise<string> {
@@ -483,7 +499,7 @@ class DelayedEventStreamStore implements EventStreamStore {
     return this.inner.appendEventOnce(path, key, event)
   }
 
-  async appendAgentEvent(sessionId: string, chunk: PiChatEvent, opts?: { idempotencyKey?: string; streamPath?: string }): Promise<string> {
+  async appendAgentEvent(sessionId: string, chunk: PiChatEvent, opts: { idempotencyKey?: string; streamPath: string }): Promise<string> {
     this.appendStarted.push(chunk.seq)
     await this.gates.get(chunk.seq)
     if (this.failingSeqs.has(chunk.seq)) throw new Error(`append failed for seq ${chunk.seq}`)
@@ -508,7 +524,12 @@ class DelayedEventStreamStore implements EventStreamStore {
 }
 
 function streamPathFor(ctx: PiSessionRequestContext, sessionId: string): string {
-  return sessionStreamPath(JSON.stringify([sessionId, ctx.workspaceId ?? '', ctx.authSubject ?? '']))
+  return sessionStreamPath({
+    workspaceScopeId: ctx.sessionAuthority === 'workspace-scope'
+      ? ctx.storageScope ?? ctx.workspaceId ?? ''
+      : ctx.workspaceId ?? '',
+    sessionId,
+  })
 }
 
 function emitSimpleTurn(adapter: FakeAdapter, turnId = 'turn-1'): void {

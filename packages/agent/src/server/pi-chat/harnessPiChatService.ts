@@ -2,7 +2,7 @@ import type { AgentHarness, RunContext, AgentSendInput } from '../../shared/harn
 import type { SessionCtx, SessionListOptions, SessionStore } from '../../shared/session'
 import type { Workspace } from '../../shared/workspace'
 import { chatErrorFromUnknown, type BoringChatMessage, type BoringChatPart, type ChatError, type ChatModelSelection, type FollowUpPayload, type FollowUpReceipt, type InterruptPayload, type PiChatEvent, type PiChatSnapshot, type PromptPayload, type PromptReceipt, type QueuedUserMessage, type QueueClearPayload, type QueueClearReceipt, type StopPayload, type StopReceipt } from '../../shared/chat'
-import { sessionStreamPath, type AgentEvent } from '../../shared/events'
+import { sessionStreamPath, type AgentEvent, type SessionStreamIdentity } from '../../shared/events'
 import { ErrorCode } from '../../shared/error-codes'
 import { formatOffset, parseOffset, MAX_READ_LIMIT, type EventStreamStore } from '../events/eventStreamStore'
 import type {
@@ -98,6 +98,8 @@ interface SendNowTransaction {
 }
 
 export interface HarnessPiChatServiceOptions {
+  /** Required attribute on durable owner rows; it is deliberately not part of the stream key. */
+  agentTypeId: string
   harness: AgentHarness
   sessionStore: SessionStore
   workdir: string
@@ -131,6 +133,7 @@ export class HarnessPiChatService implements PiChatSessionService {
   private readonly workdir: string
   private readonly workspace?: Workspace
   private readonly eventStore?: EventStreamStore
+  private readonly agentTypeId: string
   private readonly onEvent?: (sessionId: string, event: PiChatEvent) => void
   private readonly attachmentUrl?: HarnessPiChatServiceOptions['attachmentUrl']
   private readonly channels = new Map<string, LiveSessionChannel>()
@@ -155,6 +158,7 @@ export class HarnessPiChatService implements PiChatSessionService {
   private disposePromise?: Promise<void>
 
   constructor(options: HarnessPiChatServiceOptions) {
+    this.agentTypeId = options.agentTypeId
     this.harness = options.harness as PiNativeHarness
     this.sessionStore = options.sessionStore
     this.workdir = options.workdir
@@ -251,7 +255,7 @@ export class HarnessPiChatService implements PiChatSessionService {
 
   private async deleteSessionBeforeDispose(ctx: PiSessionRequestContext, sessionId: string): Promise<void> {
     const sessionCtx = toSessionCtx(ctx)
-    const sessionKey = sessionCacheKey(sessionId, sessionCtx)
+    const sessionKey = sessionCacheKey(this.sessionIdentity(ctx, sessionId), sessionCtx)
     try {
       await this.sessionStore.load(sessionCtx, sessionId)
     } catch (error) {
@@ -418,7 +422,7 @@ export class HarnessPiChatService implements PiChatSessionService {
       return {
         protocolVersion: 1,
         sessionId: id,
-        seq: await this.readDurableLatestPiChatSeq(sessionStreamPath(this.sessionKey(ctx, id))),
+        seq: await this.readDurableLatestPiChatSeq(sessionStreamPath(this.sessionIdentity(ctx, id))),
         status: 'idle',
         currentModel,
         messages: buildPiChatHistory(messages, {
@@ -1168,28 +1172,31 @@ export class HarnessPiChatService implements PiChatSessionService {
   }
 
   private async getChannel(ctx: PiSessionRequestContext, sessionId: string): Promise<LiveSessionChannel> {
-    const sessionKey = this.sessionKey(ctx, sessionId)
+    const identity = this.sessionIdentity(ctx, sessionId)
+    const sessionKey = sessionCacheKey(identity, toSessionCtx(ctx))
     // Pin the incarnation before authorization: the entire cold open belongs
     // to the session generation that existed when the caller arrived.
     const generation = this.generationOf(sessionKey)
     await this.assertCanAccessSession(ctx, sessionId)
     const existing = this.channels.get(sessionKey)
     if (existing) return existing
-    return this.createChannelOnce(sessionKey, sessionId, generation, () => this.getAdapter(ctx, sessionId, '', { authorize: false }))
+    return this.createChannelOnce(identity, sessionKey, ctx.authSubject, generation, () => this.getAdapter(ctx, sessionId, '', { authorize: false }))
   }
 
   private async ensureChannel(ctx: PiSessionRequestContext, sessionId: string, adapter: PiAgentSessionAdapter): Promise<LiveSessionChannel> {
-    const sessionKey = this.sessionKey(ctx, sessionId)
+    const identity = this.sessionIdentity(ctx, sessionId)
+    const sessionKey = sessionCacheKey(identity, toSessionCtx(ctx))
     const generation = this.generationOf(sessionKey)
     const existing = this.channels.get(sessionKey)
     if (existing) return existing
-    return this.createChannelOnce(sessionKey, sessionId, generation, async () => adapter)
+    return this.createChannelOnce(identity, sessionKey, ctx.authSubject, generation, async () => adapter)
   }
 
   /** Coalesce concurrent cold callers so only one adapter subscription wins. */
   private async createChannelOnce(
+    identity: SessionStreamIdentity,
     sessionKey: string,
-    sessionId: string,
+    authSubjectId: string | undefined,
     generation: number,
     resolveAdapter: () => Promise<PiAgentSessionAdapter>,
   ): Promise<LiveSessionChannel> {
@@ -1201,7 +1208,7 @@ export class HarnessPiChatService implements PiChatSessionService {
       const adapter = await resolveAdapter()
       await this.lifecycle.assertAdapterOwned(adapter)
       await this.assertSessionIncarnation(sessionKey, generation, adapter)
-      return this.buildChannel(sessionKey, sessionId, adapter, generation)
+      return this.buildChannel(identity, sessionKey, authSubjectId, adapter, generation)
     })()
     this.channelCreations.set(sessionKey, creation)
     try {
@@ -1228,17 +1235,22 @@ export class HarnessPiChatService implements PiChatSessionService {
   }
 
   private async buildChannel(
+    identity: SessionStreamIdentity,
     sessionKey: string,
-    sessionId: string,
+    authSubjectId: string | undefined,
     adapter: PiAgentSessionAdapter,
     generation: number,
   ): Promise<LiveSessionChannel> {
     const existing = this.channels.get(sessionKey)
     if (existing) return existing
-    const streamPath = sessionStreamPath(sessionKey)
+    const { sessionId } = identity
+    const streamPath = sessionStreamPath(identity)
     let buffer: PiChatReplayBuffer
     try {
-      await this.eventStore?.createStream(streamPath)
+      await this.eventStore?.createSessionStream(identity, {
+        agentTypeId: this.agentTypeId,
+        ...(authSubjectId ? { authSubjectId } : {}),
+      })
       buffer = await this.hydrateDurableReplayBuffer(streamPath)
     } catch (error) {
       if (this.lifecycle.isClosing) await this.lifecycle.rejectLateAdapter(adapter, error)
@@ -1388,7 +1400,15 @@ export class HarnessPiChatService implements PiChatSessionService {
   }
 
   private sessionKey(ctx: PiSessionRequestContext, sessionId: string): string {
-    return sessionCacheKey(sessionId, toSessionCtx(ctx))
+    const identity = this.sessionIdentity(ctx, sessionId)
+    return sessionCacheKey(identity, toSessionCtx(ctx))
+  }
+
+  private sessionIdentity(ctx: PiSessionRequestContext, sessionId: string): SessionStreamIdentity {
+    return {
+      workspaceScopeId: toSessionCtx(ctx).workspaceId ?? '',
+      sessionId,
+    }
   }
 
 }
@@ -1625,6 +1645,6 @@ function attachmentBytes(data: string | undefined): Uint8Array | undefined {
   }
 }
 
-function sessionCacheKey(sessionId: string, ctx: SessionCtx): string {
-  return JSON.stringify([sessionId, ctx.workspaceId ?? '', ctx.userId ?? ''])
+function sessionCacheKey(identity: SessionStreamIdentity, ctx: SessionCtx): string {
+  return JSON.stringify([identity.sessionId, identity.workspaceScopeId, ctx.userId ?? ''])
 }

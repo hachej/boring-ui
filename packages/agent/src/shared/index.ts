@@ -25,10 +25,12 @@ export type {
   AgentRuntimeAdapter,
   AgentStartReceipt,
   AgentStreamOptions,
+  SessionStreamIdentity,
 } from './events'
 export {
   AGENT_NOT_IMPLEMENTED_UNTIL_T1,
   AgentNotImplementedError,
+  parseSessionStreamPath,
   sessionStreamPath,
 } from './events'
 export type {

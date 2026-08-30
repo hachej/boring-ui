@@ -247,7 +247,7 @@ describe('SqliteEventStreamStore write-path transaction mode wiring', () => {
       // read-then-write transaction under the default 'deferred' mode is
       // exactly the bug this fix closes (see the concurrent-write tests
       // above for the real-contention proof).
-      expect(modes).toEqual(['immediate', 'immediate', 'immediate'])
+      expect(modes).toEqual(['immediate', 'immediate', 'immediate', 'immediate'])
     } finally {
       db.close()
     }
