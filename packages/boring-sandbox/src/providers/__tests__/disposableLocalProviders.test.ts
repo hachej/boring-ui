@@ -70,6 +70,18 @@ describe.each([
     await pairB.dispose()
   })
 
+  test('close fences a concurrent create and removes its unpublished root', async () => {
+    const parent = await mkdtemp(join(tmpdir(), 'boring-disposable-close-'))
+    cleanupRoots.push(parent)
+    const root = join(parent, 'lease-aaaaaaaaaaaaaaaa')
+    const provider = factory({ leaseMode: 'disposable' })
+    const creation = provider.create({ workspaceRoot: root, sessionId: 'closing' })
+    const closing = provider.close!()
+    await expect(creation).rejects.toMatchObject({ code: 'CONFIG_INVALID' })
+    await expect(closing).resolves.toBeUndefined()
+    expect(await exists(root)).toBe(false)
+  })
+
   test('rejects root aliases and pre-existing directory or symlink roots before effects', async () => {
     const provider = factory({ leaseMode: 'disposable' })
     for (const workspaceRoot of ['//', '/./', '/tmp/..', '/tmp/../']) {

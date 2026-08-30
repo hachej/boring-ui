@@ -22,7 +22,6 @@ export interface SandboxLeaseProviderProfileIdentityV1 {
   readonly leaseRoot: string
   readonly providerId: ExtractedSandboxProviderIdV1
   readonly providerConfigDigest: `sha256:${string}`
-  readonly templateFingerprint?: `sha256:${string}`
   readonly credentialVersionRefs: readonly string[]
   readonly ttlMs: number
   readonly reapIntervalMs: number
@@ -35,14 +34,13 @@ export interface SandboxLeaseProviderProfileV1 {
   readonly identity: SandboxLeaseProviderProfileIdentityV1
   /** Trusted host factory. The lifecycle registry invokes it at most once per digest. */
   readonly providerFactory: () => DisposableSandboxProviderV1 | Promise<DisposableSandboxProviderV1>
-  readonly templatePath?: string
 }
 
 const SHA256 = /^sha256:[a-f0-9]{64}$/
-const PROFILE_KEYS = new Set(['identity', 'providerFactory', 'templatePath'])
+const PROFILE_KEYS = new Set(['identity', 'providerFactory'])
 const IDENTITY_KEYS = new Set([
   'contractVersion', 'workspaceScopeId', 'placementIdentity', 'providerWorkspaceId',
-  'leaseRoot', 'providerId', 'providerConfigDigest', 'templateFingerprint',
+  'leaseRoot', 'providerId', 'providerConfigDigest',
   'credentialVersionRefs', 'ttlMs', 'reapIntervalMs', 'drainTimeoutMs',
   'maxActiveLeasesPerOwner', 'maxActiveLeasesTotal',
 ])
@@ -82,13 +80,6 @@ export function normalizeSandboxLeaseProviderProfileV1(
     throw new TypeError('sandbox lease root must be an absolute non-root path')
   }
   if (!SHA256.test(identity.providerConfigDigest)) throw new TypeError('providerConfigDigest must be sha256')
-  if (identity.templateFingerprint && !SHA256.test(identity.templateFingerprint)) throw new TypeError('templateFingerprint must be sha256')
-  const templatePath = profile.templatePath === undefined
-    ? undefined
-    : nonEmpty(profile.templatePath, 'templatePath')
-  if (Boolean(templatePath) !== Boolean(identity.templateFingerprint)) {
-    throw new TypeError('templatePath and templateFingerprint must be supplied together')
-  }
   const credentialVersionRefs = [...new Set(identity.credentialVersionRefs.map((value) => nonEmpty(value, 'credentialVersionRef')))].sort()
   const normalizedIdentity: SandboxLeaseProviderProfileIdentityV1 = Object.freeze({
     contractVersion: SANDBOX_LEASE_PROVIDER_PROFILE_VERSION_V1,
@@ -98,7 +89,6 @@ export function normalizeSandboxLeaseProviderProfileV1(
     leaseRoot,
     providerId: identity.providerId,
     providerConfigDigest: identity.providerConfigDigest,
-    ...(identity.templateFingerprint ? { templateFingerprint: identity.templateFingerprint } : {}),
     credentialVersionRefs: Object.freeze(credentialVersionRefs),
     ttlMs: positiveInteger(identity.ttlMs, 'ttlMs'),
     reapIntervalMs: positiveInteger(identity.reapIntervalMs, 'reapIntervalMs'),
@@ -109,7 +99,6 @@ export function normalizeSandboxLeaseProviderProfileV1(
   return Object.freeze({
     identity: normalizedIdentity,
     providerFactory: profile.providerFactory,
-    ...(templatePath ? { templatePath } : {}),
   })
 }
 
@@ -142,7 +131,6 @@ export async function createSandboxLeaseServiceFromProfileV1(input: {
     provider,
     serviceDigest: digest,
     providerWorkspaceId: identity.providerWorkspaceId,
-    templatePath: profile.templatePath,
     ttlMs: identity.ttlMs,
     reapIntervalMs: identity.reapIntervalMs,
     drainTimeoutMs: identity.drainTimeoutMs,
@@ -162,7 +150,6 @@ export function sandboxLeaseProviderProfileDigestV1(
     leaseRoot: identity.leaseRoot,
     providerId: identity.providerId,
     providerConfigDigest: identity.providerConfigDigest,
-    templateFingerprint: identity.templateFingerprint ?? null,
     credentialVersionRefs: [...identity.credentialVersionRefs],
     ttlMs: identity.ttlMs,
     reapIntervalMs: identity.reapIntervalMs,

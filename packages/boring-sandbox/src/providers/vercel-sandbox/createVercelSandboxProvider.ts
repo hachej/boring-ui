@@ -430,12 +430,10 @@ function extractHttpStatus(error: unknown): number | null {
   return typeof responseStatus === 'number' ? responseStatus : null
 }
 
-function isDefinitiveVercelCreateConflict(error: unknown): boolean {
-  const code = (error as { code?: unknown; json?: { error?: { code?: unknown } } } | null)
-  return extractHttpStatus(error) === 409
-    || code?.code === 'conflict'
-    || code?.json?.error?.code === 'conflict'
-    || /already exists|conflict/i.test(error instanceof Error ? error.message : String(error))
+function isDefinitiveVercelCreateRejection(error: unknown): boolean {
+  const status = extractHttpStatus(error)
+  return status !== null && status >= 400 && status < 500
+    && status !== 408 && status !== 409 && status !== 429
 }
 
 function isExpiredSandboxRuntimeError(error: unknown): boolean {
@@ -678,14 +676,15 @@ export function createVercelSandboxProvider(
           }
         }
 
-        let disposableCleanupVerified = true
         if (disposable && disposableName) {
           if (reservedDisposableNames.has(disposableName) || publishedDisposableNames.has(disposableName)) {
             throw new SandboxProviderError('CONFIG_INVALID', 'disposable Vercel request identity is already owned')
           }
           reservedDisposableNames.add(disposableName)
           ambiguityCleanup = async () => {
-            if (!disposableCleanupVerified) return
+            if (disposableCleanup && unpublishedDisposableCleanups.has(disposableCleanup)) {
+              throw new SandboxProviderError('VERCEL_API_ERROR', 'returned Vercel sandbox cleanup remains pending')
+            }
             try {
               const candidate = await vercelClient.get({ name: disposableName, resume: false })
               assertDisposableVercelIdentity({
@@ -736,38 +735,29 @@ export function createVercelSandboxProvider(
         })
         disposableCreateSettled = true
         if (disposable && disposableName) {
-          try {
-            assertDisposableVercelIdentity({
-              handle: resolvedSandboxHandle,
-              expectedName: disposableName,
-              expectedSnapshotId: sourceSnapshotId,
-            })
-            const lookedUp = await vercelClient.get({ name: disposableName, resume: false })
-            assertDisposableVercelIdentity({
-              handle: lookedUp,
-              expectedName: disposableName,
-              expectedSnapshotId: sourceSnapshotId,
-              expectedSandboxId: resolvedSandboxHandle.sandboxId,
-            })
-          } catch (error) {
-            disposableCleanupVerified = false
-            if (ambiguityCleanup) unpublishedDisposableCleanups.delete(ambiguityCleanup)
-            reservedDisposableNames.delete(disposableName)
-            throw error
-          }
-          const disposeRemote = createDisposableSandboxDisposer({
-            sandbox: resolvedSandboxHandle,
-            disposeLocal,
-          })
+          const disposeRemote = createDisposableSandboxDisposer({ sandbox: resolvedSandboxHandle, disposeLocal })
           disposableCleanup = async () => {
             await disposeRemote()
-            if (disposableName) {
+            if (!ambiguityCleanup) {
               reservedDisposableNames.delete(disposableName)
               publishedDisposableNames.delete(disposableName)
             }
           }
           unpublishedDisposableCleanups.add(disposableCleanup)
+          assertDisposableVercelIdentity({
+            handle: resolvedSandboxHandle,
+            expectedName: disposableName,
+            expectedSnapshotId: sourceSnapshotId,
+          })
+          const lookedUp = await vercelClient.get({ name: disposableName, resume: false })
+          assertDisposableVercelIdentity({
+            handle: lookedUp,
+            expectedName: disposableName,
+            expectedSnapshotId: sourceSnapshotId,
+            expectedSandboxId: resolvedSandboxHandle.sandboxId,
+          })
           if (ambiguityCleanup) unpublishedDisposableCleanups.delete(ambiguityCleanup)
+          ambiguityCleanup = undefined
         }
 
         const sandboxId = resolvedSandboxHandle.name ?? resolvedSandboxHandle.sandboxId ?? 'unknown-sandbox'
@@ -935,7 +925,7 @@ export function createVercelSandboxProvider(
         }
         return pair
       } catch (error) {
-        if (!disposableCleanup && ambiguityCleanup && isDefinitiveVercelCreateConflict(error)) {
+        if (!disposableCreateSettled && ambiguityCleanup && isDefinitiveVercelCreateRejection(error)) {
           unpublishedDisposableCleanups.delete(ambiguityCleanup)
           if (disposableName) reservedDisposableNames.delete(disposableName)
           ambiguityCleanup = undefined

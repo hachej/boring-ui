@@ -247,26 +247,76 @@ describe('createVercelSandboxProvider', () => {
       .not.toBe(second.disposableProfile.providerConfigDigest)
   })
 
-  test('rejects a mismatched correlation response without deleting it', async () => {
-    const harness = await createMockVercelSandboxHarness()
-    cleanups.push(harness.cleanup)
-    const { deleteSandbox } = addDurableHandleMetadata(harness.sandbox, 'sb-mismatch')
+  test('cleans the exact returned object but retains mismatched correlation debt', async () => {
+    const returned = await createMockVercelSandboxHarness()
+    const unrelated = await createMockVercelSandboxHarness()
+    cleanups.push(returned.cleanup, unrelated.cleanup)
+    const returnedDelete = addDurableHandleMetadata(returned.sandbox, 'sb-returned').deleteSandbox
+    const unrelatedDelete = addDurableHandleMetadata(unrelated.sandbox, 'sb-unrelated').deleteSandbox
     const client: VercelSandboxClient = {
-      create: vi.fn(async () => Object.assign(harness.sandbox, { name: 'wrong-name' })),
-      get: vi.fn(async () => Object.assign(harness.sandbox, { name: 'wrong-name' })),
+      create: vi.fn(async (params) => Object.assign(returned.sandbox, { name: params?.name })),
+      get: vi.fn(async () => Object.assign(unrelated.sandbox, { name: 'wrong-name' })),
     }
-    const provider = createVercelSandboxProvider({
-      vercelClient: client,
-      lifecycle: 'disposable',
-      getEnvVar,
-    })
+    const provider = createVercelSandboxProvider({ vercelClient: client, lifecycle: 'disposable', getEnvVar })
     await expect(provider.create({
       workspaceRoot: 'workspace-mismatch', workspaceId: 'workspace-mismatch',
       sessionId: 'session-mismatch', requestId: 'request-mismatch',
     })).rejects.toMatchObject({ code: 'CONFIG_INVALID' })
-    expect(deleteSandbox).not.toHaveBeenCalled()
-    await provider.close?.()
-    expect(deleteSandbox).not.toHaveBeenCalled()
+    expect(returnedDelete).toHaveBeenCalledOnce()
+    expect(unrelatedDelete).not.toHaveBeenCalled()
+    await expect(provider.close!()).rejects.toBeTruthy()
+    expect(unrelatedDelete).not.toHaveBeenCalled()
+  })
+
+  test('a definitive create rejection has no reconciliation debt', async () => {
+    const client: VercelSandboxClient = {
+      create: vi.fn(async () => { throw Object.assign(new Error('invalid request'), { status: 422 }) }),
+      get: vi.fn(),
+    }
+    const provider = createVercelSandboxProvider({ vercelClient: client, lifecycle: 'disposable', getEnvVar })
+    await expect(provider.create({
+      workspaceRoot: 'workspace-rejected', workspaceId: 'workspace-rejected',
+      sessionId: 'session-rejected', requestId: 'request-rejected',
+    })).rejects.toBeTruthy()
+    await expect(provider.close!()).resolves.toBeUndefined()
+    expect(client.get).not.toHaveBeenCalled()
+  })
+
+  test.each([408, 409, 429, 503, undefined])(
+    'retains ambiguous create debt for status %s',
+    async (status) => {
+      const error = Object.assign(new Error('create outcome unknown'), status === undefined ? {} : { status })
+      const client: VercelSandboxClient = {
+        create: vi.fn(async () => { throw error }),
+        get: vi.fn(async () => { throw Object.assign(new Error('not found'), { status: 404 }) }),
+      }
+      const provider = createVercelSandboxProvider({ vercelClient: client, lifecycle: 'disposable', getEnvVar })
+      await expect(provider.create({
+        workspaceRoot: 'workspace-ambiguous', workspaceId: 'workspace-ambiguous',
+        sessionId: `session-${status}`, requestId: `request-${status}`,
+      })).rejects.toBeTruthy()
+      await expect(provider.close!()).rejects.toBeTruthy()
+    },
+  )
+
+  test('retains correlation reconciliation when post-create verification throws', async () => {
+    const harness = await createMockVercelSandboxHarness()
+    cleanups.push(harness.cleanup)
+    const { deleteSandbox } = addDurableHandleMetadata(harness.sandbox, 'sb-verification-error')
+    const client: VercelSandboxClient = {
+      create: vi.fn(async (params) => Object.assign(harness.sandbox, { name: params?.name })),
+      get: vi.fn()
+        .mockRejectedValueOnce(Object.assign(new Error('lookup unavailable'), { status: 503 }))
+        .mockRejectedValueOnce(Object.assign(new Error('not found'), { status: 404 })),
+    }
+    const provider = createVercelSandboxProvider({ vercelClient: client, lifecycle: 'disposable', getEnvVar })
+    await expect(provider.create({
+      workspaceRoot: 'workspace-verification', workspaceId: 'workspace-verification',
+      sessionId: 'session-verification', requestId: 'request-verification',
+    })).rejects.toBeTruthy()
+    expect(deleteSandbox).toHaveBeenCalledOnce()
+    await expect(provider.close!()).resolves.toBeUndefined()
+    expect(client.get).toHaveBeenCalledTimes(2)
   })
 
   test('reconciles a disposable create whose acknowledgement is lost', async () => {

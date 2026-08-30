@@ -2,6 +2,7 @@ import { mkdir } from 'node:fs/promises'
 
 import { PROVIDER_CAPABILITIES, PROVIDER_CONTRACT_VERSION } from '../../shared/providerMatrix'
 import {
+  SandboxProviderError,
   type DisposableSandboxProviderV1,
   type SandboxProviderV1,
   type WorkspaceSandboxPairV1,
@@ -32,6 +33,8 @@ export function createDirectSandboxProvider(
   options: DirectSandboxProviderOptions = {},
 ): SandboxProviderV1 {
   const pendingCleanup = new Set<() => Promise<void>>()
+  const pendingCreates = new Set<Promise<void>>()
+  let closed = false
   const provider: SandboxProviderV1 = {
     contractVersion: PROVIDER_CONTRACT_VERSION,
     providerId: 'direct',
@@ -40,6 +43,11 @@ export function createDirectSandboxProvider(
       return context.workspaceRoot
     },
     async create(context): Promise<WorkspaceSandboxPairV1> {
+      if (closed) throw new SandboxProviderError('CONFIG_INVALID', 'direct provider is closed')
+      let finishCreate!: () => void
+      const pendingCreate = new Promise<void>((resolve) => { finishCreate = resolve })
+      pendingCreates.add(pendingCreate)
+      try {
       const workspaceRoot = options.leaseMode === 'disposable'
         ? assertDisposableLocalRoot(context.workspaceRoot)
         : context.workspaceRoot
@@ -70,6 +78,10 @@ export function createDirectSandboxProvider(
       }
 
       if (cleanup) {
+        if (closed) {
+          await cleanup(); pendingCleanup.delete(cleanup)
+          throw new SandboxProviderError('CONFIG_INVALID', 'direct provider closed during create')
+        }
         pendingCleanup.delete(cleanup)
         return { workspace, sandbox, dispose: cleanup }
       }
@@ -84,9 +96,15 @@ export function createDirectSandboxProvider(
           await sandbox.dispose?.()
         },
       }
+      } finally {
+        finishCreate()
+        pendingCreates.delete(pendingCreate)
+      }
     },
     ...(options.leaseMode === 'disposable' ? {
       async close() {
+        closed = true
+        await Promise.allSettled([...pendingCreates])
         const results = await Promise.allSettled([...pendingCleanup].map(async (cleanup) => {
           await cleanup()
           pendingCleanup.delete(cleanup)

@@ -92,12 +92,22 @@ export class SandboxLeaseServiceRegistry {
   }
 
   async disposeUntil(deadline: number): Promise<readonly PromiseSettledResult<void>[]> {
-    let results = await this.dispose()
-    while (results.some((result) => result.status === 'rejected') && Date.now() < deadline) {
+    for (;;) {
       const remaining = deadline - Date.now()
-      await new Promise<void>((resolve) => setTimeout(resolve, Math.min(10, remaining)))
-      results = await this.dispose()
+      if (remaining <= 0) return [{ status: 'rejected', reason: new Error('sandbox lease registry drain deadline exceeded') }]
+      const attempt = this.dispose()
+      let timer: number | undefined
+      const results = await Promise.race([
+        attempt,
+        new Promise<undefined>((resolve) => { timer = setTimeout(resolve, remaining) }),
+      ])
+      if (timer) clearTimeout(timer)
+      if (!results) {
+        void attempt.catch(() => { /* late factory cleanup remains registry-owned */ })
+        return [{ status: 'rejected', reason: new Error('sandbox lease registry drain deadline exceeded') }]
+      }
+      if (results.every((result) => result.status === 'fulfilled')) return results
+      await new Promise<void>((resolve) => setTimeout(resolve, Math.min(10, deadline - Date.now())))
     }
-    return results
   }
 }

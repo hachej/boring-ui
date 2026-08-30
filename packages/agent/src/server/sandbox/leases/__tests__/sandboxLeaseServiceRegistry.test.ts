@@ -75,6 +75,19 @@ describe('SandboxLeaseServiceRegistry', () => {
     expect(() => registry.register({ digest: 'profile-b', leases: service() })).toThrow('registry is draining')
   })
 
+  it('bounds a stuck factory and owns its late service cleanup', async () => {
+    let resolveFactory!: (value: SandboxLeaseService) => void
+    const leases = service()
+    const registry = new SandboxLeaseServiceRegistry()
+    const acquiring = registry.getOrCreate('profile-a', () => new Promise((resolve) => { resolveFactory = resolve }))
+
+    const results = await registry.disposeUntil(Date.now() + 20)
+    expect(results).toEqual([expect.objectContaining({ status: 'rejected' })])
+    resolveFactory(leases)
+    await expect(acquiring).rejects.toThrow('drained during construction')
+    expect(leases.dispose).toHaveBeenCalledOnce()
+  })
+
   it('retains failed services and retries them to terminal disposal within a deadline', async () => {
     const dispose = vi.fn()
       .mockRejectedValueOnce(new Error('remote deletion acknowledgement lost'))

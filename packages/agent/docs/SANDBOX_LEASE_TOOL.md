@@ -24,10 +24,12 @@ use several leases concurrently.
 The embedding host supplies a trusted provider factory in a versioned
 `SandboxLeaseProviderProfileV1`; AgentHost's lifecycle registry invokes it once
 per authorized digest and owns the resulting service/provider/timer. The
-canonical digest binds workspace
-scope, placement, physical provider workspace, lease root, provider/template
-fingerprints, credential-version references, TTL, drain policy, and quotas.
-Live clients and secret bytes are excluded from that identity. Scope and digest
+canonical digest binds workspace scope, placement, physical provider workspace,
+lease root, provider-attested behavior configuration, credential-version
+references, TTL, drain policy, and quotas. Generic caller-supplied template
+paths or fingerprints are rejected; immutable snapshots/images/templates must
+be bound by the provider configuration digest. Live clients and secret bytes
+are excluded from that identity. Scope and digest
 validation run before environment, provider, or harness acquisition.
 
 Hosts return `sandboxTools: { digest, profile }`; they do not preconstruct a

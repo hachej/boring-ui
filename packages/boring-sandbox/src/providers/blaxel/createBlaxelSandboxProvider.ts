@@ -269,12 +269,11 @@ rm -rf -- "$lock"`
   }
 }
 
-function isBlaxelCreateConflict(error: unknown): boolean {
+function isDefinitiveBlaxelCreateRejection(error: unknown): boolean {
   const status = (error as { status?: unknown; statusCode?: unknown } | null)?.status
     ?? (error as { statusCode?: unknown } | null)?.statusCode
-  const code = (error as { code?: unknown } | null)?.code
-  const message = error instanceof Error ? error.message : String(error)
-  return status === 409 || code === 409 || code === 'conflict' || /already exists|conflict/i.test(message)
+  return typeof status === 'number' && status >= 400 && status < 500
+    && status !== 408 && status !== 409 && status !== 429
 }
 
 function disposableBlaxelIdentity(context: { workspaceId?: string; sessionId: string; requestId?: string }) {
@@ -377,7 +376,12 @@ export function createBlaxelSandboxProvider(
             labels: { owner: 'boring-ui', lease: identity.externalId.slice(-32) },
           })
         } catch (error) {
-          try { await cleanupRemote() } catch { /* retained for provider close reconciliation */ }
+          if (isDefinitiveBlaxelCreateRejection(error)) {
+            unpublished.delete(cleanupRemote)
+            reservedDisposableNames.delete(identity.name)
+            cleanupRemote = undefined
+            remoteCleanupPhase = undefined
+          } else try { await cleanupRemote() } catch { /* retained for provider close reconciliation */ }
           throw normalizeBlaxelError(error)
         }
         remoteCleanupPhase = 'created'

@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 
 import {
   expectDisposablePairSurfaceLaws,
@@ -153,6 +153,62 @@ describe('disposable Blaxel provider', () => {
     await deleteSandbox(name!)
     await expect(pair.dispose()).resolves.toBeUndefined()
     expect(client.sandboxes.size).toBe(0)
+  })
+
+  test('a definitive create rejection has no reconciliation debt', async () => {
+    const client = await createMockBlaxelClient()
+    client.createFreshSandbox = async () => { throw Object.assign(new Error('invalid request'), { status: 422 }) }
+    client.getSandbox = vi.fn(client.getSandbox.bind(client))
+    const provider = createBlaxelSandboxProvider({
+      leaseMode: 'disposable', client, region: 'eu-fra-1',
+      volume: { enabled: false, sizeMb: 2048 },
+    })
+    await expect(provider.create({
+      workspaceRoot: '/host/lease-rejected', workspaceId: 'workspace-a',
+      sessionId: 'session-rejected', requestId: 'request-rejected',
+    })).rejects.toBeTruthy()
+    await expect(provider.close!()).resolves.toBeUndefined()
+    expect(client.getSandbox).not.toHaveBeenCalled()
+  })
+
+  test.each([408, 409, 429, 503, undefined])(
+    'retains ambiguous create debt for status %s',
+    async (status) => {
+      const client = await createMockBlaxelClient()
+      client.createFreshSandbox = async () => {
+        throw Object.assign(new Error('create outcome unknown'), status === undefined ? {} : { status })
+      }
+      const provider = createBlaxelSandboxProvider({
+        leaseMode: 'disposable', client, region: 'eu-fra-1',
+        volume: { enabled: false, sizeMb: 2048 },
+      })
+      await expect(provider.create({
+        workspaceRoot: '/host/lease-ambiguous', workspaceId: 'workspace-a',
+        sessionId: `session-${status}`, requestId: `request-${status}`,
+      })).rejects.toBeTruthy()
+      await expect(provider.close!()).rejects.toBeTruthy()
+    },
+  )
+
+  test('a correlation mismatch remains debt and never deletes the wrong remote', async () => {
+    const client = await createMockBlaxelClient()
+    const createFresh = client.createFreshSandbox.bind(client)
+    client.createFreshSandbox = async (config) => {
+      const remote = await createFresh(config)
+      ;(remote as { externalId?: string }).externalId = 'unrelated'
+      return remote
+    }
+    client.deleteSandbox = vi.fn(client.deleteSandbox.bind(client))
+    const provider = createBlaxelSandboxProvider({
+      leaseMode: 'disposable', client, region: 'eu-fra-1',
+      volume: { enabled: false, sizeMb: 2048 },
+    })
+    await expect(provider.create({
+      workspaceRoot: '/host/lease-mismatch', workspaceId: 'workspace-a',
+      sessionId: 'session-mismatch', requestId: 'request-mismatch',
+    })).rejects.toMatchObject({ code: 'BLAXEL_CONFIG_DRIFT' })
+    await expect(provider.close!()).rejects.toBeTruthy()
+    expect(client.deleteSandbox).not.toHaveBeenCalled()
   })
 
   test('reconciles an acknowledged create whose response is lost', async () => {

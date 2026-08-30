@@ -94,7 +94,6 @@ describe('sandbox lease provider profile identity', () => {
       provider,
       workspaceRoot: normalized.identity.leaseRoot,
       providerWorkspaceId: normalized.identity.providerWorkspaceId,
-      templatePath: normalized.templatePath,
       ttlMs: normalized.identity.ttlMs,
       reapIntervalMs: normalized.identity.reapIntervalMs,
       drainTimeoutMs: normalized.identity.drainTimeoutMs,
@@ -114,20 +113,15 @@ describe('sandbox lease provider profile identity', () => {
     await service.dispose()
   })
 
-  it('requires template paths and fingerprints together and binds template authority', () => {
+  it('rejects caller-asserted generic template aliases', () => {
     const value = profile()
-    expect(() => normalizeSandboxLeaseProviderProfileV1({ ...value, templatePath: '/templates/a' }, 'workspace-a'))
-      .toThrow('must be supplied together')
     expect(() => normalizeSandboxLeaseProviderProfileV1({
-      ...value, identity: { ...value.identity, templateFingerprint: sha },
-    }, 'workspace-a')).toThrow('must be supplied together')
-    const digest = (fingerprint: `sha256:${string}`) => sandboxLeaseProviderProfileDigestV1(
-      normalizeSandboxLeaseProviderProfileV1({
-        ...value, templatePath: '/templates/a',
-        identity: { ...value.identity, templateFingerprint: fingerprint },
-      }, 'workspace-a').identity,
-    )
-    expect(digest(sha)).not.toBe(digest(`sha256:${'b'.repeat(64)}`))
+      ...value, templatePath: '/templates/a',
+    } as SandboxLeaseProviderProfileV1, 'workspace-a')).toThrow('unsupported fields')
+    expect(() => normalizeSandboxLeaseProviderProfileV1({
+      ...value,
+      identity: { ...value.identity, templateFingerprint: sha },
+    } as SandboxLeaseProviderProfileV1, 'workspace-a')).toThrow('unsupported fields')
   })
 
   it('rejects cross-workspace reuse before provider use', () => {
