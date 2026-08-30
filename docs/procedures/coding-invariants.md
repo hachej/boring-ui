@@ -14,3 +14,7 @@ Critical architectural invariants:
 8. Every error has a stable code from the canonical enum.
 9. Pi-tools migration stays locked: shell/file tools flow through pi factories
    plus Operations adapters.
+10. The D29 Agent Host gateway layer is Pi-free: non-test files under
+    `packages/agent/src/server/agent-host/**` do not import Pi runtimes, only
+    `harnessBackend/**` may reference `HarnessPiChatService`, and consumer
+    composition roots never reference `AgentHarnessBackend` or its module path.

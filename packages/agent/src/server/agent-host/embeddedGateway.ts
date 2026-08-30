@@ -18,16 +18,18 @@ import {
   type VerifiedAgentScopeClaim,
 } from '../../shared/index'
 import type { PiChatEvent, PiChatSnapshot } from '../../shared/chat'
-import {
-  type PiChatSessionService,
-  type PiSessionRequestContext,
-} from '../../core/piChatSessionService'
 import { AgentSessionEventQueue } from './agentSessionEventQueue'
 import { agentSessionKey } from './agentSessionKey'
 import { canonicalDigest } from './canonical'
 import { SessionInventoryPager } from './sessionInventoryPagination'
 import { stableServiceActionFailure } from './stableServiceError'
 import type { AgentHostRuntime } from './createAgentHost'
+import type {
+  AgentHarnessBackend,
+  HarnessAgentScope,
+  HarnessRequestContext,
+  HarnessSessionAddress,
+} from './harnessBackend/types'
 import type {
   AgentGatewayEffect,
   AgentRequestFailure,
@@ -69,17 +71,22 @@ function sessionTarget(ref: AgentSessionRef): AgentRequestTarget {
   return { kind: 'session', ref }
 }
 
-function context(
+function harnessContext(
   claim: VerifiedAgentScopeClaim,
   requestId: string,
-): PiSessionRequestContext {
+): HarnessRequestContext {
   return {
-    workspaceId: claim.workspaceScopeId,
-    storageScope: claim.workspaceScopeId,
-    authSubject: claim.authSubjectId,
-    sessionAuthority: 'workspace-scope',
+    authSubjectId: claim.authSubjectId,
     requestId,
   }
+}
+
+function harnessScope(claim: VerifiedAgentScopeClaim, agentTypeId: string): HarnessAgentScope {
+  return { workspaceScopeId: claim.workspaceScopeId, agentTypeId }
+}
+
+function harnessAddress(claim: VerifiedAgentScopeClaim, ref: AgentSessionRef): HarnessSessionAddress {
+  return { workspaceScopeId: claim.workspaceScopeId, ref }
 }
 
 function summaryFromLegacy(
@@ -403,10 +410,11 @@ export class EmbeddedAgentGateway implements AgentGateway {
               input.resumeSessionId,
             ).catch(() => undefined)
             if (resolved) {
-              const rows = await preparedBinding.composition.service.listSessions?.(
-                context(claim, input.requestId),
+              const rows = await preparedBinding.composition.backend.listSessions(
+                harnessScope(claim, input.agentTypeId),
+                harnessContext(claim, input.requestId),
                 { includeId: input.resumeSessionId, includeEmpty: true },
-              ) ?? []
+              )
               const candidate = rows.find((row) => row.id === input.resumeSessionId)
               if (candidate?.turnCount === 0) {
                 this.knownSessions.add(agentSessionKey(claim.workspaceScopeId, candidateRef))
@@ -416,8 +424,9 @@ export class EmbeddedAgentGateway implements AgentGateway {
             }
           }
 
-          const created = await preparedBinding.composition.service.createSession!(
-            context(claim, input.requestId),
+          const created = await preparedBinding.composition.backend.createSession(
+            harnessScope(claim, input.agentTypeId),
+            harnessContext(claim, input.requestId),
             { title: input.title },
           )
           const ref = { agentTypeId: input.agentTypeId, sessionId: created.id }
@@ -439,13 +448,13 @@ export class EmbeddedAgentGateway implements AgentGateway {
     const binding = await this.bindingForSession(input.scope, claim, input.ref)
     let state: PiChatSnapshot
     try {
-      state = await binding.composition.service.readState(
-        context(claim, randomUUID()), input.ref.sessionId,
+      state = await binding.composition.backend.readSnapshot(
+        harnessAddress(claim, input.ref), harnessContext(claim, randomUUID()),
       )
     } catch {
       throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND, 'session was not found')
     }
-    const loaded = await this.loadSummary(binding.composition.service, claim, input.ref)
+    const loaded = await this.loadSummary(binding.composition.backend, claim, input.ref)
     const status = this.runtime.activity.get(claim.workspaceScopeId, input.ref)
     return {
       ref: input.ref,
@@ -458,15 +467,15 @@ export class EmbeddedAgentGateway implements AgentGateway {
   async connectSession(input: Parameters<AgentGateway['connectSession']>[0]): Promise<AgentSessionConnection> {
     const claim = await this.verify(input.scope)
     const binding = await this.bindingForSession(input.scope, claim, input.ref)
-    await this.loadSummary(binding.composition.service, claim, input.ref)
+    await this.loadSummary(binding.composition.backend, claim, input.ref)
     const queue = new AgentSessionEventQueue()
-    const initialCursor = input.cursor ?? (await binding.composition.service.readState(
-      context(claim, randomUUID()),
-      input.ref.sessionId,
+    const initialCursor = input.cursor ?? (await binding.composition.backend.readSnapshot(
+      harnessAddress(claim, input.ref),
+      harnessContext(claim, randomUUID()),
     )).seq
-    const subscribed = await binding.composition.service.subscribe(
-      context(claim, randomUUID()),
-      input.ref.sessionId,
+    const subscribed = await binding.composition.backend.watchEvents(
+      harnessAddress(claim, input.ref),
+      harnessContext(claim, randomUUID()),
       initialCursor,
       (event) => {
         this.runtime.activity.observe(claim.workspaceScopeId, input.ref, event)
@@ -515,8 +524,8 @@ export class EmbeddedAgentGateway implements AgentGateway {
         const currentBinding = await this.bindingForSession(input.scope, current, input.ref)
         const payload: Record<string, never> | { queueAction: 'hold' | 'resume' } = queueAction === undefined ? {} : { queueAction }
         return await this.sessionEffect(input.ref, input.scope, current, 'session.interrupt', requestId, payload, async () => {
-          const receipt = await currentBinding.composition.service.interrupt(
-            context(current, requestId), input.ref.sessionId, payload,
+          const receipt = await currentBinding.composition.backend.interrupt(
+            harnessAddress(current, input.ref), harnessContext(current, requestId), payload,
           )
           if (queueAction !== 'resume' && this.runtime.activity.get(current.workspaceScopeId, input.ref) === 'running') {
             this.runtime.activity.set(current.workspaceScopeId, input.ref, 'aborting')
@@ -529,8 +538,8 @@ export class EmbeddedAgentGateway implements AgentGateway {
         await this.assertAgentAccess(input.ref.agentTypeId, input.scope, current, 'session.mutate')
         const currentBinding = await this.bindingForSession(input.scope, current, input.ref)
         return await this.sessionEffect(input.ref, input.scope, current, 'session.stop', requestId, {}, async () => {
-          const receipt = await currentBinding.composition.service.stop(
-            context(current, requestId), input.ref.sessionId, {},
+          const receipt = await currentBinding.composition.backend.stop(
+            harnessAddress(current, input.ref), harnessContext(current, requestId), {},
           )
           this.runtime.activity.set(current.workspaceScopeId, input.ref, 'idle')
           return receipt
@@ -543,15 +552,15 @@ export class EmbeddedAgentGateway implements AgentGateway {
         return await this.sessionEffect(input.ref, input.scope, current, 'session.queue.clear', requestId, {
           clientNonce: clientNonce ?? null,
           clientSeq: clientSeq ?? null,
-        }, () => currentBinding.composition.service.clearQueue(
-          context(current, requestId),
-          input.ref.sessionId,
+        }, () => currentBinding.composition.backend.clearQueue(
+          harnessAddress(current, input.ref),
+          harnessContext(current, requestId),
           { ...(clientNonce ? { clientNonce } : {}), ...(clientSeq === undefined ? {} : { clientSeq }) },
         ), {
           bindingKey: currentBinding.key,
           serializedClassify: async () => {
             const error = await this.queueClearAdmission(
-              currentBinding.composition.service,
+              currentBinding.composition.backend,
               current,
               input.ref,
               requestId,
@@ -574,10 +583,10 @@ export class EmbeddedAgentGateway implements AgentGateway {
   ) {
     await this.assertAgentAccess(ref.agentTypeId, scope, claim, 'session.mutate')
     const binding = await this.bindingForSession(scope, claim, ref)
-    const service = binding.composition.service
+    const backend = binding.composition.backend
     if (command.kind === 'prompt') {
       return await this.sessionEffect(ref, scope, claim, 'session.prompt', command.requestId, command as unknown as JsonValue, async () => {
-        const receipt = await service.prompt(context(claim, command.requestId), ref.sessionId, {
+        const receipt = await backend.submitPrompt(harnessAddress(claim, ref), harnessContext(claim, command.requestId), {
           message: command.content,
           displayMessage: command.displayContent,
           clientNonce: command.clientNonce,
@@ -601,7 +610,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
       })
     }
     return await this.sessionEffect(ref, scope, claim, 'session.followup', command.requestId, command as unknown as JsonValue, async () => {
-      const receipt = await service.followUp(context(claim, command.requestId), ref.sessionId, {
+      const receipt = await backend.submitFollowUp(harnessAddress(claim, ref), harnessContext(claim, command.requestId), {
         message: command.content,
         displayMessage: command.displayContent,
         clientNonce: command.clientNonce,
@@ -620,14 +629,8 @@ export class EmbeddedAgentGateway implements AgentGateway {
     await this.assertAgentAccess(input.ref.agentTypeId, input.scope, claim, 'session.mutate')
     const binding = await this.bindingForSession(input.scope, claim, input.ref)
     return await this.sessionEffect(input.ref, input.scope, claim, 'session.rename', input.requestId, { title: input.title }, async () => {
-      const repository = binding.composition.sessionStore as typeof binding.composition.sessionStore & {
-        rename?: (ctx: { workspaceId?: string }, sessionId: string, title: string) => Promise<{ title: string; createdAt: string; updatedAt: string }>
-      }
-      if (!repository.rename) {
-        throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE, 'session repository does not support rename')
-      }
-      const renamed = await repository.rename!(
-        { workspaceId: claim.workspaceScopeId }, input.ref.sessionId, input.title,
+      const renamed = await binding.composition.backend.renameSession(
+        harnessAddress(claim, input.ref), harnessContext(claim, input.requestId), input.title,
       )
       return summaryFromLegacy(input.ref, renamed, this.runtime.activity.get(claim.workspaceScopeId, input.ref))
     }, { bindingKey: binding.key }) as AgentSessionSummary
@@ -684,8 +687,8 @@ export class EmbeddedAgentGateway implements AgentGateway {
     await this.assertAgentAccess(input.ref.agentTypeId, input.scope, claim, 'session.mutate')
     const binding = await this.bindingForSession(input.scope, claim, input.ref)
     await this.sessionEffect(input.ref, input.scope, claim, 'session.delete', input.requestId, {}, async () => {
-      await binding.composition.service.deleteSession!(
-        context(claim, input.requestId), input.ref.sessionId,
+      await binding.composition.backend.deleteSession(
+        harnessAddress(claim, input.ref), harnessContext(claim, input.requestId),
       )
       this.runtime.activity.delete(claim.workspaceScopeId, input.ref)
       return null
@@ -742,14 +745,15 @@ export class EmbeddedAgentGateway implements AgentGateway {
   }
 
   private async loadSummary(
-    service: PiChatSessionService,
+    backend: AgentHarnessBackend,
     claim: VerifiedAgentScopeClaim,
     ref: AgentSessionRef,
   ) {
-    const list = await service.listSessions?.(
-      context(claim, randomUUID()),
+    const list = await backend.listSessions(
+      harnessScope(claim, ref.agentTypeId),
+      harnessContext(claim, randomUUID()),
       { includeId: ref.sessionId, includeEmpty: true },
-    ) ?? []
+    )
     const summary = list.find((item) => item.id === ref.sessionId)
     if (!summary) throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND, 'session was not found')
     return summary
@@ -1024,9 +1028,9 @@ export class EmbeddedAgentGateway implements AgentGateway {
     requireIdle: boolean,
   ): Promise<AgentGatewayErrorDTO | undefined> {
     const binding = await this.bindingForSession(scope, claim, ref)
-    const snapshot = await binding.composition.service.readState(
-      context(claim, requestId),
-      ref.sessionId,
+    const snapshot = await binding.composition.backend.readSnapshot(
+      harnessAddress(claim, ref),
+      harnessContext(claim, requestId),
     )
     const admissible = requireIdle
       ? snapshot.status === 'idle'
@@ -1040,7 +1044,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
   }
 
   private async queueClearAdmission(
-    service: PiChatSessionService,
+    backend: AgentHarnessBackend,
     claim: VerifiedAgentScopeClaim,
     ref: AgentSessionRef,
     requestId: string,
@@ -1048,8 +1052,8 @@ export class EmbeddedAgentGateway implements AgentGateway {
     clientSeq?: number,
   ): Promise<AgentGatewayErrorDTO | undefined> {
     if (clientNonce === undefined || clientSeq === undefined) return undefined
-    const snapshot = await service.readState(
-      context(claim, requestId), ref.sessionId,
+    const snapshot = await backend.readSnapshot(
+      harnessAddress(claim, ref), harnessContext(claim, requestId),
     )
     const byNonce = snapshot.queue.followUps.find((item) => item.clientNonce === clientNonce)
     const bySeq = snapshot.queue.followUps.find((item) => item.clientSeq === clientSeq)

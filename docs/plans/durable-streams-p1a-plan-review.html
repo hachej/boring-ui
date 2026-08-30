@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Durable Streams P1-A</title>
+<style>
+:root{color-scheme:light dark;--bg:#f3f5f8;--card:#ffffff;--ink:#172033;--muted:#647084;--line:#d9dee8;--blue:#2456d6;--green:#137a52;--amber:#916500;--red:#b42318;--pillbg:#fff0c7;--pillink:#6b4900}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f131b;--card:#181e29;--ink:#eef3fa;--muted:#a9b4c5;--line:#303a4b;--blue:#8cadff;--green:#65d7a5;--amber:#efc75f;--red:#ff8f85;--pillbg:#3a2f0a;--pillink:#efc75f}}
+:root[data-theme="dark"]{--bg:#0f131b;--card:#181e29;--ink:#eef3fa;--muted:#a9b4c5;--line:#303a4b;--blue:#8cadff;--green:#65d7a5;--amber:#efc75f;--red:#ff8f85;--pillbg:#3a2f0a;--pillink:#efc75f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+.wrap{max-width:1080px;margin:auto;padding:20px}
+.hero,.card{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 8px 28px #0000000d}
+.hero{padding:22px 24px;border-top:5px solid var(--blue)}
+.eyebrow{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.09em}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+h1{font-size:clamp(23px,4vw,36px);line-height:1.12;margin:6px 0;text-wrap:balance}
+.pill{padding:4px 9px;border-radius:999px;background:var(--pillbg);color:var(--pillink);font-weight:700;font-size:12px}
+.meta,.small{color:var(--muted)}
+.tldr{font-size:17px;max-width:900px}
+.card{padding:20px 22px;margin-top:16px}
+h2{margin:0 0 12px;font-size:20px}
+h3{margin:18px 0 8px;font-size:15.5px}
+table{border-collapse:collapse;width:100%;display:block;overflow:auto;font-variant-numeric:tabular-nums}
+th,td{border:1px solid var(--line);padding:9px 11px;text-align:left;vertical-align:top;font-size:14px}
+th{background:color-mix(in srgb,var(--blue) 8%,var(--card))}
+.two td{width:50%}
+ul{margin:5px 0;padding-left:20px}
+code{background:color-mix(in srgb,var(--muted) 13%,transparent);padding:1px 5px;border-radius:5px;font-size:.92em}
+.low{background:color-mix(in srgb,var(--green) 14%,var(--card))}
+.med{background:color-mix(in srgb,var(--amber) 15%,var(--card))}
+.high{background:color-mix(in srgb,var(--red) 14%,var(--card))}
+.callout{border-left:4px solid var(--blue);padding:4px 0 4px 14px;margin-top:10px}
+.warn{border-left:4px solid var(--amber);padding:4px 0 4px 14px;margin-top:10px}
+a{color:var(--blue)}
+pre.mermaid{background:color-mix(in srgb,var(--muted) 5%,var(--card));border:1px solid var(--line);border-radius:10px;padding:10px;overflow-x:auto}
+.dgcap{color:var(--muted);font-size:12.5px;margin:2px 0 0}
+.who{display:inline-block;padding:1px 7px;border-radius:6px;background:color-mix(in srgb,var(--blue) 12%,var(--card));font-size:12px;font-weight:700}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+<script type="module">import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";mermaid.initialize({startOnLoad:true,theme:matchMedia("(prefers-color-scheme: dark)").matches?"dark":"default"});</script>
+</head><body>
+<div class="wrap">
+<section class="hero">
+  <div class="eyebrow">Owner gate 1 · plan approval · durable-streams program</div>
+  <h1>Durable Streams P1-A — the substrate-neutral layer</h1>
+  <div class="row"><span class="pill">DRAFT r3 · awaiting owner gate</span><span class="meta">Steward: Fable 5 · 2026-08-29 · epic <code>wt-391-forward-9p50</code> · beads <code>.3 .1 .4 .8 .5 .6 .9</code> (+ <code>.7</code> P1-B, <code>.2</code> P1-C)</span></div>
+  <p class="tldr"><b>TL;DR.</b> Seven beads, strictly ordered, that make a hub restart survivable without touching the D29 gateway contract: a private harness seam, a ratified session key, a ledger that records what a model turn was doing, activity that rebuilds from it, and two falsifiable restart journeys. Reviewed by fresh-eyes (Opus) and a Sol cross-model pass — two P0s found and folded (the ledger did not record turn lifetime; the headless proof leaned on a store that deletes it). Nine decisions need your ruling; two change durable bytes.</p>
+  <p class="small">Plan: <code>docs/plans/durable-streams-p1a-plan.md</code> · Program: <code>docs/plans/multiagent-shell/programs.md</code> · Acceptance bug #1348 · Ratified basis RECONCILIATION §8–§10, Pi rules 1–4.</p>
+</section>
+
+<section class="card">
+  <h2>Goals / Non-goals</h2>
+  <table class="two"><tr><th>Goals</th><th>Non-goals</th></tr><tr><td>
+  <ul>
+    <li>Gateway consumers depend on a <b>private</b> <code>AgentHarnessBackend</code> seam, never on pi (Pi rules 1, 3).</li>
+    <li>One durable session key — <code>(workspaceScopeId, sessionId)</code> — with a real v1→v2 migration.</li>
+    <li>A hub restart keeps pending owner gates <b>ready</b> and routes the answer once (#1348, #1413).</li>
+    <li>After restart the UI tells the truth: interrupted turns say so, paused turns show attention.</li>
+    <li>Two named proofs run as SIGKILL e2e journeys in <b>both</b> playground and full-app.</li>
+  </ul></td><td>
+  <ul>
+    <li>Store-backed replay, retention, real mid-turn transcript survival — <b>P1-B</b>.</li>
+    <li>Un-skipping Level D cases, flipping the flag, D29 addendum — <b>P1-C</b>.</li>
+    <li>Thread storage or ids (P2 shape spike), <code>seatId</code> semantics (P3).</li>
+    <li>Automation-run continuation across restart (its reconciler terminalizes orphans by design).</li>
+    <li>Pi rule 4 (Boring-owned model/credential authority) — BYOK lane, recorded as an open blocker.</li>
+  </ul></td></tr></table>
+</section>
+
+<section class="card">
+  <h2>Proposed architecture</h2>
+  <pre class="mermaid">
+flowchart LR
+  subgraph consumers[Consumers — unchanged]
+    W[workspace] --> G
+    C[core / CLI / playground] --> G
+  end
+  G["AgentGateway (D29, frozen)"] --> EG[EmbeddedAgentGateway]
+  EG -->|"A2: private seam"| HB["AgentHarnessBackend\n+ resumePausedToolCall (A3b)\n+ markTurnInterrupted (A4)"]
+  HB --> PA["PiSessionHarnessBackend\n(adapter over unchanged\nHarnessPiChatService)"]
+  PA --> RS["PiChatReplaySource (A4)\nadapter-private\nring today · store-backed in P1-B"]
+  PA -.-> PI["pi harness"]
+  EG --> L[("Request ledger (SQLite)\nA3a: + Turn · Effect · Attention\n+ incarnation")]
+  L --> AR["activityReconstruction (A4)\nseeds AgentSessionActivityIndex\nfrom Turn rows"]
+  AU["ask-user plugin"] -->|"A3a: LedgerAskUserStore\n(injected capability)"| L
+  ES[("event stream store\nA1: sessions/&lt;ws&gt;/&lt;sid&gt;\n+ owners table, schema v2")] --- PA
+  classDef new fill:#dfe8ff,stroke:#2456d6,color:#172033;
+  class HB,RS,AR new;
+  </pre>
+  <p class="dgcap">Blue = new seams. The gateway still speaks only to the seam; P1-B substitutes below it (replay source), a future substrate substitute would implement the seam itself.</p>
+</section>
+
+<section class="card">
+  <h2>Bead / dependency graph</h2>
+  <pre class="mermaid">
+graph LR
+  A2["9p50.3 · A2 seam · 2 sessions"] --> A1["9p50.1 · A1 identity + migration · 1.5"]
+  A1 --> A3a["9p50.4 · A3a ledger + gates survive (#1348) · 2"]
+  A2 --> A3a
+  A3a --> A3b["9p50.8 · A3b resume (#1413) · 1"]
+  A3a --> A4["9p50.5 · A4 activity + resume protocol · 2"]
+  A1 --> A4
+  A2 --> A5a["9p50.6 · A5a journeys red-by-name · 2"]
+  A5a --> A5b["9p50.9 · A5b journeys green + controls · 1"]
+  A3b --> A5b
+  A4 --> A5b
+  A2 --> P1B["9p50.7 · P1-B Boring event backend"]
+  A4 --> P1B
+  P1B --> P1C["9p50.2 · P1-C Level D + default-on + D29"]
+  A5b --> P1C
+  classDef now fill:#dff5ea,stroke:#137a52,color:#172033;
+  class A2 now;
+  </pre>
+  <p class="dgcap">Green = dispatchable now. A2 → A1 is strictly serial (they share <code>buildAgentComposition.ts:318-328</code>). Bead graph is live in beads; <code>br dep cycles</code> clean.</p>
+</section>
+
+<section class="card">
+  <h2>Key flow — the paused-human restart (journey 1)</h2>
+  <pre class="mermaid">
+sequenceDiagram
+  participant B as Browser
+  participant G as Gateway + ledger
+  participant P as pi adapter
+  participant Q as ask-user (ledger-backed)
+  B->>G: prompt (requestId R)
+  G->>G: Request R accepted → Turn R started (A3a)
+  G->>P: submitPrompt
+  P->>Q: ask_user tool → Attention Q ready (paused effect, runKey R)
+  Note over G,P: SIGKILL — no tool result returned, no cancel persisted
+  Note over G: boot: new incarnation · Turn R stays paused (A3a reconcile) · activity seeded (A4)
+  B->>G: reattach /events?cursor=n (no reload)
+  G-->>B: contiguous replay + headers latestSeq/minReplaySeq/incarnation (A4)
+  B->>G: /state → idle + attention input-required
+  B->>Q: answer Q (answerToken)
+  Q->>G: CAS ready→answered · resume request attention:Q:resume (idempotent)
+  G->>P: backend.resumePausedToolCall (A3b)
+  P-->>B: exactly one tool result + one assistant turn · Turn R ended
+  </pre>
+</section>
+
+<section class="card">
+  <h2>Decisions for the owner</h2>
+  <table><tr><th>#</th><th>Decision</th><th>Options</th><th>Recommended</th><th>Why</th></tr>
+  <tr><td>1</td><td>Durable session key</td><td>(workspaceScopeId, sessionId) · or also agentTypeId in the key</td><td><b>(workspaceScopeId, sessionId)</b>; agentTypeId a required attribute</td><td>§9a Threads project across Seats; P2 must read Session streams without knowing the agent first</td></tr>
+  <tr><td>2</td><td>Existing v1 rows</td><td>in-place 1→2 migration with quarantine · discard behind flag</td><td><b>Migrate in place</b>, shadow-table preflight, quarantine-never-drop</td><td>P1-C makes this store load-bearing; the discipline must exist now. Rollback = unset flag <i>then</i> revert binary</td></tr>
+  <tr><td>3</td><td>Seam visibility</td><td>private to the D29 funnel · public <code>harnessBackendFactory</code></td><td><b>Private</b></td><td>a public injection point is the parallel session path Pi rule 1 forbids</td></tr>
+  <tr><td>4</td><td>Tool effect classes</td><td>observe / propose / mutate / external-effect / pause; unknown = external-effect</td><td><b>Adopt; deny unless the per-Run capability authorizes</b></td><td>classification alone enforces nothing; a separate child-effect admission carries a gateway-minted capability</td></tr>
+  <tr><td>5</td><td>Graceful drain and gates</td><td>drain cancels gates (today) · drain parks without any tool result</td><td><b>Park, no result</b></td><td>the #1348 root cause; returning <code>cancelled</code> risks two results after resume</td></tr>
+  <tr><td>6</td><td>Restart proof mechanism</td><td>process SIGKILL + respawn · in-process teardown</td><td><b>SIGKILL</b></td><td>in-process keeps singletons alive and can pass falsely</td></tr>
+  <tr><td>7</td><td>Definition-of-Ready waiver</td><td>waive "one session" for A2 (2), A1 (1.5), A4 (2) · split further</td><td><b>Waive</b>; A3/A5 already split</td><td>artificial splits would cut across single seams</td></tr>
+  <tr><td>8</td><td>Optional field on a gateway DTO</td><td>allow <code>AgentSessionSummary.attention?</code> pinned in conformance · headers/ui-state hint only</td><td><b>Allow, pinned</b></td><td>precedent <code>turnCount?</code>/<code>archived?</code>; Sol correctly notes it is still a contract change</td></tr>
+  <tr><td>9</td><td>Pi rule 4 status</td><td>claim satisfied · record as open blocker (BYOK lane)</td><td><b>Open blocker</b></td><td>the pi harness still creates its own AuthStorage/ModelRegistry (<code>createHarness.ts:591</code>)</td></tr>
+  </table>
+</section>
+
+<section class="card">
+  <h2>Risks</h2>
+  <table><tr><th>Risk</th><th>Likelihood</th><th>Impact</th><th>Mitigation</th></tr>
+  <tr><td>pi's behavior on a transcript with a dangling tool call is unverified; resume may need a transcript rewrite</td><td class="high">High</td><td class="high">High</td><td>A3b in-slice spike first; hermetic real-<code>SessionManager</code> continuation test gates; split, don't retry</td></tr>
+  <tr><td>Unknown v1 row population in deployed stores</td><td class="med">Medium</td><td class="med">Medium</td><td>fixture-driven migrator; every collision class defined; quarantine never drops; validate-then-swap</td></tr>
+  <tr><td>Kill/respawn on a fixed port is flaky in Playwright</td><td class="med">Medium</td><td class="low">Low</td><td>one shared helper, retries only in CI, journeys in their own config</td></tr>
+  <tr><td>Fixture-scoped assertions read as product proof (F3)</td><td class="med">Medium</td><td class="med">Medium</td><td>F3 removed from the named-proof set; live-model smoke reports real state; mutation controls red-by-design</td></tr>
+  <tr><td>Scope creep from A2 into P1-B ("serve replay from SQLite while here")</td><td class="med">Medium</td><td class="low">Low</td><td>A2 changes no replay source; negative proof = zero diff in the service</td></tr>
+  <tr><td>Legacy ask-user rows without a resolvable agent</td><td class="low">Low</td><td class="med">Medium</td><td>import as visible-but-non-routable until owner repair; never guessed</td></tr>
+  </table>
+</section>
+
+<section class="card">
+  <h2>Open questions</h2>
+  <ul>
+    <li><span class="who">owner</span> Decisions 1–2 (durable bytes), 7–9 above.</li>
+    <li><span class="who">A3b spike</span> pi dangling-call behavior on reopen; transcript-rewrite path or not.</li>
+    <li><span class="who">A4 worker</span> whether the front's zod schemas are strict for the additive summary field (falls back to header-only).</li>
+    <li><span class="who">BYOK lane</span> when the injected credential/model resolver lands so Pi rule 4 can be closed.</li>
+  </ul>
+  <div class="warn"><b>Bookkeeping.</b> The bead export in <code>.beads/issues.jsonl</code> lands via the routine sync commit; the live graph already has the seven P1 beads with the dependencies shown above.</div>
+</section>
+
+<section class="card">
+  <h2>Proof path &amp; references</h2>
+  <ul>
+    <li><b>A2</b> <code>pnpm --filter @hachej/boring-agent run test -- src/server/agent-host</code> · <code>lint:invariants</code> · <code>lint:alignment-invariants</code> · zero diff in <code>harnessPiChatService.ts</code></li>
+    <li><b>A1</b> migrator fixtures (rekey / collision classes / garbage) · <code>vitest run src/server/events …</code> · playground smoke then <code>sqlite3 … 'select path from boring_event_streams'</code> shows only v2 paths</li>
+    <li><b>A3a</b> <code>packages/agent/e2e/paused-human-restart.spec.ts</code> — SIGTERM and SIGKILL keep the gate <code>ready</code>, answer routed once · one ledger file only</li>
+    <li><b>A3b</b> #1413 resume idempotent across a second restart · hermetic real-pi continuation test</li>
+    <li><b>A4</b> Level-D activity case behind <code>fixture.restart()</code> · <code>pi-native-restart-resume.spec.ts</code> (kill mid-turn, reconnect without reload) · forced-gap reload</li>
+    <li><b>A5</b> <code>playwright test -c playwright.journeys.config.ts p1a5-</code> in playground and full-app · mutation controls: in-memory ledger mode must fail F1/F2/F6 · evidence bundles for P1-C's D29 addendum</li>
+  </ul>
+  <p class="small">Review ladder: fresh-eyes (Opus) 10 P1 / 9 P2 → folded · Sol xhigh cross-model 2 P0 / 12 P1 / 1 P2, verdict REVISE → folded as recommended · second fresh-eyes pass on r3. Full plan and reconciliation table: <code>docs/plans/durable-streams-p1a-plan.md</code>.</p>
+</section>
+</div>
+</body></html>
