@@ -33,7 +33,7 @@ async function waitForVolumeAvailable(client: BlaxelClient, name: string): Promi
   throw normalizeBlaxelError(new Error('persistent Volume is still attached'), 'BLAXEL_VOLUME_BUSY')
 }
 
-function assertCompatible(
+export function assertCompatible(
   remote: BlaxelRemoteSandbox,
   config: ResolvedBlaxelConfig,
   expectedName: string,

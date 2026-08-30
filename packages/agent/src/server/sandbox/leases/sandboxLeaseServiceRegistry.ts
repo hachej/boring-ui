@@ -33,12 +33,14 @@ export class SandboxLeaseServiceRegistry {
         throw new TypeError('sandbox lease service registry drained during construction')
       }
       try {
+        this.bind({ digest, leases: service })
         this.profileFactoryServices.add(service)
-        this.register({ digest, leases: service })
         return service
       } catch (error) {
-        this.profileFactoryServices.delete(service)
-        service.abandonUnregistered()
+        if (!this.digestByService.has(service)) {
+          if (this.digestByProvider.has(service.providerIdentity)) service.abandonUnregistered()
+          else await service.dispose()
+        }
         throw error
       }
     })
@@ -48,6 +50,11 @@ export class SandboxLeaseServiceRegistry {
   }
 
   register(capability: { readonly digest: string; readonly leases: SandboxLeaseService }): void {
+    if (this.pendingByDigest.has(capability.digest)) throw new TypeError('sandbox profile digest is reserved by a pending factory')
+    this.bind(capability)
+  }
+
+  private bind(capability: { readonly digest: string; readonly leases: SandboxLeaseService }): void {
     if (this.draining) throw new TypeError('sandbox lease service registry is draining')
     if (capability.leases.isDisposed) throw new TypeError('disposed sandbox lease service cannot be registered')
     const existingService = this.serviceByDigest.get(capability.digest)

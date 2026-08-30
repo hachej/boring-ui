@@ -7,7 +7,7 @@ import type {
   SandboxProviderV1,
   WorkspaceSandboxPairV1,
 } from '@hachej/boring-sandbox/shared'
-import { isDisposableLeaseProvider } from './disposableProvider'
+import { hasDisposableLeaseProviderShape } from './disposableProvider'
 
 const LEASE_HANDLE_PATTERN = /^[A-Za-z0-9_-]{16,128}$/
 export const SANDBOX_REMOTE_DISPOSE_OPERATION_ID = 'sandbox.remote.dispose.v1' as const
@@ -127,9 +127,7 @@ export class SandboxLeaseService {
   private disposal: Promise<void> | undefined
 
   constructor(private readonly options: SandboxLeaseServiceOptions) {
-    if (!isDisposableLeaseProvider(options.provider)) {
-      this.invalid('provider must implement the disposable sandbox profile')
-    }
+    if (!hasDisposableLeaseProviderShape(options.provider)) this.invalid('provider must implement the disposable sandbox profile')
     if (!Number.isFinite(options.ttlMs) || options.ttlMs <= 0) this.invalid('ttlMs must be greater than zero')
     if (!Number.isFinite(options.reapIntervalMs) || options.reapIntervalMs < 1_000 || options.reapIntervalMs > Math.min(options.ttlMs, 60_000)) {
       this.invalid('reapIntervalMs must be between 1000 and min(ttlMs, 60000)')

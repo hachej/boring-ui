@@ -78,6 +78,8 @@ class FakeTransport implements RemoteWorkerTransportV1 {
     RemoteWorkerEventStreamV1 & { close: ReturnType<typeof vi.fn> }
   > = [];
   swappedWorkspaceId?: string;
+  swappedWorkspaceResponses = Number.POSITIVE_INFINITY;
+  readonly createResponseSandboxIds: string[] = [];
   createResponseWorkerId = "worker-1";
   protocolVersion: string = REMOTE_WORKER_PROTOCOL_VERSION;
   deleteFailures = 0;
@@ -144,9 +146,11 @@ class FakeTransport implements RemoteWorkerTransportV1 {
         throw new Error("ambiguous create response loss");
       }
       const request = input.body as RemoteWorkerCreateRequestV1;
+      const responseSandboxId = this.createResponseSandboxIds.shift() ?? "sandbox-1";
       const payload: RemoteWorkerBindingReceiptPayloadV1 = {
         protocolVersion: REMOTE_WORKER_PROTOCOL_VERSION,
-        workspaceId: this.swappedWorkspaceId ?? request.workspaceId,
+        workspaceId: this.swappedWorkspaceId && this.swappedWorkspaceResponses-- > 0
+          ? this.swappedWorkspaceId : request.workspaceId,
         clientLeaseId: request.clientLeaseId,
         workerId: "worker-1",
         sandboxId: "sandbox-1",
@@ -160,7 +164,7 @@ class FakeTransport implements RemoteWorkerTransportV1 {
         protocolVersion: createProtocolVersion,
         providerContractVersion: PROVIDER_CONTRACT_VERSION,
         workerId: this.createResponseWorkerId,
-        sandboxId: "sandbox-1",
+        sandboxId: responseSandboxId,
         runtimeCwd: "/workspace",
         leaseExpiresAtMs: this.leaseExpiresAtMs,
         bindingReceipt: {
@@ -694,30 +698,26 @@ describe("remote-worker SandboxProviderV1 placement binding", () => {
     expect(transport.requests).toHaveLength(0);
   });
 
-  test("refuses a validly authenticated but swapped create receipt", async () => {
+  test("never deletes a sibling ID from an unattested response and cleans a verified replay", async () => {
     const transport = new FakeTransport();
-    transport.swappedWorkspaceId = "workspace-b";
-    const provider = createRemoteWorkerSandboxProviderV1(
-      providerOptions(transport),
-    );
+    transport.createResponseSandboxIds.push("sibling-sandbox", "sandbox-1");
+    const provider = createRemoteWorkerSandboxProviderV1(providerOptions(transport));
 
-    await expect(
-      provider.create({
-        workspaceRoot: "/unused",
-        workspaceId: "workspace-a",
-        sessionId: "session-a",
-      }),
-    ).rejects.toMatchObject({
+    await expect(provider.create({
+      workspaceRoot: "/unused", workspaceId: "workspace-a", sessionId: "session-a",
+    })).rejects.toMatchObject({
       code: REMOTE_WORKER_ERROR_CODES_V1.bindingReceiptInvalid,
     } satisfies Partial<SandboxProviderError>);
-    expect(
-      transport.requests.filter((request) => request.method === "DELETE"),
-    ).toHaveLength(1);
+    const deletes = transport.requests.filter((request) => request.method === "DELETE");
+    expect(deletes).toHaveLength(1);
+    expect(deletes[0]!.path).toContain("/sandbox-1");
+    expect(deletes[0]!.path).not.toContain("sibling-sandbox");
   });
 
   test("retains invalid-attestation cleanup for provider reconciliation", async () => {
     const transport = new FakeTransport();
     transport.swappedWorkspaceId = "workspace-b";
+    transport.swappedWorkspaceResponses = 1;
     transport.deleteFailures = 3;
     const provider = createRemoteWorkerSandboxProviderV1(providerOptions(transport));
 
@@ -742,6 +742,7 @@ describe("remote-worker SandboxProviderV1 placement binding", () => {
   test("retries retained invalid-attestation cleanup across provider close", async () => {
     const transport = new FakeTransport();
     transport.swappedWorkspaceId = "workspace-b";
+    transport.swappedWorkspaceResponses = 1;
     transport.deleteFailures = 6;
     const provider = createRemoteWorkerSandboxProviderV1(providerOptions(transport));
 
@@ -770,14 +771,16 @@ describe("remote-worker SandboxProviderV1 placement binding", () => {
       providerOptions(transport),
     );
 
-    await expect(
-      provider.create({
-        workspaceRoot: "/unused",
-        workspaceId: "workspace-a",
-        sessionId: "session-a",
-      }),
-    ).rejects.toMatchObject({
-      code: REMOTE_WORKER_ERROR_CODES_V1.bindingReceiptInvalid,
+    const failure = await provider.create({
+      workspaceRoot: "/unused", workspaceId: "workspace-a", sessionId: "session-a",
+    }).catch((error: unknown) => error) as SandboxProviderError & {
+      sandboxProviderCleanupDebt?: { retry(): Promise<void> }
+    };
+    expect(failure).toMatchObject({ code: REMOTE_WORKER_ERROR_CODES_V1.bindingReceiptInvalid });
+    expect(failure.sandboxProviderCleanupDebt?.retry).toBeTypeOf("function");
+    expect(transport.requests.filter((request) => request.method === "DELETE")).toHaveLength(0);
+    await expect(provider.close!()).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
     });
   });
 

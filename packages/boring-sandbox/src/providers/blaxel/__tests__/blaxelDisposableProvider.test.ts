@@ -5,6 +5,7 @@ import {
   expectDisposableProviderProfile,
   expectPublishedPairLifecycle,
 } from '../../__tests__/conformance/disposableProvider'
+import type { BlaxelRemoteSandbox } from '../client'
 import { createBlaxelSandboxProvider } from '../createBlaxelSandboxProvider'
 import { createMockBlaxelClient } from './mockBlaxelClient'
 
@@ -210,6 +211,58 @@ describe('disposable Blaxel provider', () => {
     })).rejects.toMatchObject({ code: 'BLAXEL_CONFIG_DRIFT' })
     await expect(provider.close!()).rejects.toBeTruthy()
     expect(client.deleteSandbox).not.toHaveBeenCalled()
+  })
+
+  const configurationDrifts: Array<[string, (remote: BlaxelRemoteSandbox) => void]> = [
+    ['region', (remote) => { Object.assign(remote.spec, { region: 'us-drift-1' }) }],
+    ['image', (remote) => { Object.assign(remote.spec.runtime!, { image: 'image:drift' }) }],
+    ['memory', (remote) => { Object.assign(remote.spec.runtime!, { memory: 123 }) }],
+    ['volumes', (remote) => { Object.assign(remote.spec, { volumes: [{ name: 'unexpected', mountPath: '/workspace' }] }) }],
+  ]
+  test.each(configurationDrifts)('rejects and cleans disposable %s drift before publication', async (_field, mutate) => {
+    const client = await createMockBlaxelClient()
+    const createFresh = client.createFreshSandbox.bind(client)
+    client.createFreshSandbox = async (config) => {
+      const remote = await createFresh(config)
+      mutate(remote)
+      return remote
+    }
+    client.deleteSandbox = vi.fn(client.deleteSandbox.bind(client))
+    const provider = createBlaxelSandboxProvider({
+      leaseMode: 'disposable', client, region: 'eu-fra-1', image: 'image:v1', memoryMb: 4096,
+      volume: { enabled: false, sizeMb: 2048 },
+    })
+    await expect(provider.create({
+      workspaceRoot: '/host/lease-drift', workspaceId: 'workspace-a',
+      sessionId: 'session-drift', requestId: 'request-drift',
+    })).rejects.toMatchObject({ code: 'BLAXEL_CONFIG_DRIFT' })
+    expect(client.deleteSandbox).toHaveBeenCalledOnce()
+    expect(client.sandboxes.size).toBe(0)
+  })
+
+  test('retains config-drift cleanup debt when correlated deletion fails', async () => {
+    const client = await createMockBlaxelClient()
+    const createFresh = client.createFreshSandbox.bind(client)
+    const deleteSandbox = client.deleteSandbox.bind(client)
+    client.createFreshSandbox = async (config) => {
+      const remote = await createFresh(config)
+      Object.assign(remote.spec.runtime!, { image: 'image:drift' })
+      return remote
+    }
+    client.deleteSandbox = vi.fn(async () => { throw new Error('delete unavailable') })
+    const provider = createBlaxelSandboxProvider({
+      leaseMode: 'disposable', client, region: 'eu-fra-1', image: 'image:v1',
+      volume: { enabled: false, sizeMb: 2048 },
+    })
+    const failure = await provider.create({
+      workspaceRoot: '/host/lease-drift-debt', workspaceId: 'workspace-a',
+      sessionId: 'session-drift-debt', requestId: 'request-drift-debt',
+    }).catch((error: unknown) => error) as { code?: string; sandboxProviderCleanupDebt?: { retry(): Promise<void> } }
+    expect(failure.code).toBe('BLAXEL_CONFIG_DRIFT')
+    expect(failure.sandboxProviderCleanupDebt?.retry).toBeTypeOf('function')
+    client.deleteSandbox = deleteSandbox
+    await expect(failure.sandboxProviderCleanupDebt!.retry()).resolves.toBeUndefined()
+    expect(client.sandboxes.size).toBe(0)
   })
 
   test('reconciles an acknowledged create whose response is lost', async () => {

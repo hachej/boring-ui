@@ -71,6 +71,38 @@ describe('SandboxLeaseServiceRegistry', () => {
     expect(legacy.dispose).toHaveBeenCalledOnce()
   })
 
+  it('reserves a pending profile digest against legacy registration and keeps one cleanup owner', async () => {
+    let resolveFactory!: (value: SandboxLeaseService) => void
+    const profileService = service()
+    const rejectedLegacy = service()
+    const factory = vi.fn(() => new Promise<SandboxLeaseService>((resolve) => { resolveFactory = resolve }))
+    const registry = new SandboxLeaseServiceRegistry()
+    const acquiring = registry.getOrCreate('profile-a', factory)
+    await vi.waitFor(() => expect(factory).toHaveBeenCalledOnce())
+
+    expect(() => registry.register({ digest: 'profile-a', leases: rejectedLegacy }))
+      .toThrow('reserved by a pending factory')
+    resolveFactory(profileService)
+    await expect(acquiring).resolves.toBe(profileService)
+    await registry.dispose()
+    expect(profileService.dispose).toHaveBeenCalledOnce()
+    expect(rejectedLegacy.dispose).not.toHaveBeenCalled()
+  })
+
+  it('abandons only a new service wrapper when its provider is already owned', async () => {
+    const provider = {}
+    const owner = service(vi.fn(async () => {}), provider)
+    const alias = service(vi.fn(async () => {}), provider)
+    const registry = new SandboxLeaseServiceRegistry()
+    registry.register({ digest: 'legacy-a', leases: owner })
+
+    await expect(registry.getOrCreate('profile-b', () => alias)).rejects.toThrow('provider is already owned')
+    expect(alias.abandonUnregistered).toHaveBeenCalledOnce()
+    expect(alias.dispose).not.toHaveBeenCalled()
+    await registry.dispose()
+    expect(owner.dispose).toHaveBeenCalledOnce()
+  })
+
   it('coalesces concurrent factories only within the profile namespace', async () => {
     let resolveFactory!: (value: SandboxLeaseService) => void
     const leases = service()

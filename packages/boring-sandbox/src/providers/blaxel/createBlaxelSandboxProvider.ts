@@ -25,9 +25,7 @@ import {
   fingerprintBlaxelHostTree,
   type BlaxelProvisioningAdapter,
 } from './provisioningAdapter'
-import {
-  createBlaxelSandboxHandleResolver,
-} from './resolveSandboxHandle'
+import { assertCompatible, createBlaxelSandboxHandleResolver } from './resolveSandboxHandle'
 import { shellQuote } from './runtimeHelpers'
 
 const PROVISIONING_ROOT = '.boring/provisioning'
@@ -385,9 +383,7 @@ export function createBlaxelSandboxProvider(
           throw normalizeBlaxelError(error)
         }
         remoteCleanupPhase = 'created'
-        if (remote.name !== identity.name || remote.externalId !== identity.externalId) {
-          throw new SandboxProviderError('BLAXEL_CONFIG_DRIFT', 'Blaxel create identity does not match')
-        }
+        assertCompatible(remote, config, identity.name, identity.externalId, '')
       } else {
         remote = await handles.resolve({
           workspaceId,
@@ -513,6 +509,7 @@ export function createBlaxelSandboxProvider(
       }
       return pair
       } catch (error) {
+        if (cleanupRemote && unpublished.has(cleanupRemote)) try { await cleanupRemote() } catch { /* retained as debt */ }
         const normalized = error instanceof SandboxProviderError ? error : normalizeBlaxelError(error)
         throw cleanupRemote && unpublished.has(cleanupRemote)
           ? attachSandboxProviderCleanupDebt(normalized, cleanupRemote)

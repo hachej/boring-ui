@@ -376,16 +376,31 @@ export function createRemoteWorkerSandboxProviderV1(
         }
 
         const requestDigest = remoteWorkerRequestDigestV1(request);
-        let createResponse: RemoteWorkerCreateResponseV1 | undefined;
+        let verifiedCreateResponse: RemoteWorkerCreateResponseV1 | undefined;
+        const verifyCreateResponse = async (response: RemoteWorkerCreateResponseV1) => {
+          try {
+            if (response.workerId === worker.workerId && receiptMatchesCreate({
+              receipt: response.bindingReceipt, request, requestDigest,
+              workerId: worker.workerId, sandboxId: response.sandboxId,
+              leaseExpiresAtMs: response.leaseExpiresAtMs, nowMs: now(),
+            }) && await options.bindingReceiptVerifier.verifyBindingReceipt({
+              worker, receipt: response.bindingReceipt,
+            })) return response;
+          } catch { /* projected to the stable binding error below */ }
+          throw new SandboxProviderError(
+            REMOTE_WORKER_ERROR_CODES_V1.bindingReceiptInvalid,
+            "remote-worker create binding receipt is invalid",
+          );
+        };
         let provisionalDeleteConfirmed = false;
         let provisionalDeleteInFlight: Promise<void> | undefined;
         unpublishedCleanup = async (): Promise<void> => {
           if (provisionalDeleteConfirmed) return;
           if (provisionalDeleteInFlight) return await provisionalDeleteInFlight;
           const operation = (async () => {
-            createResponse ??= await client.create(request);
+            verifiedCreateResponse ??= await verifyCreateResponse(await client.create(request));
             const error = await deleteRemoteSandboxV1(
-              () => client.provisionalDelete(createResponse!.sandboxId),
+              () => client.provisionalDelete(verifiedCreateResponse!.sandboxId),
               disposeAttempts,
             );
             if (error !== undefined) {
@@ -407,11 +422,9 @@ export function createRemoteWorkerSandboxProviderV1(
               provisionalDeleteInFlight = undefined;
           }
         };
-        if (options.leaseMode === 'disposable') {
-          unregisterUnpublished = registerCleanup(workspaceId, unpublishedCleanup);
-        }
+        unregisterUnpublished = registerCleanup(workspaceId, unpublishedCleanup);
         try {
-          createResponse = await client.create(request);
+          verifiedCreateResponse = await verifyCreateResponse(await client.create(request));
         } catch (error) {
           const ambiguous = error instanceof SandboxProviderError && [
             REMOTE_WORKER_ERROR_CODES_V1.timeout,
@@ -419,6 +432,7 @@ export function createRemoteWorkerSandboxProviderV1(
             REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
             REMOTE_WORKER_ERROR_CODES_V1.protocolMismatch,
             REMOTE_WORKER_ERROR_CODES_V1.responseInvalid,
+            REMOTE_WORKER_ERROR_CODES_V1.bindingReceiptInvalid,
           ].includes(error.code as never);
           if (!ambiguous) {
             unregisterUnpublished?.();
@@ -427,35 +441,6 @@ export function createRemoteWorkerSandboxProviderV1(
           }
           throw error;
         }
-        if (options.leaseMode !== 'disposable') {
-          unregisterUnpublished = registerCleanup(workspaceId, unpublishedCleanup);
-        }
-        let receiptIsValid = false;
-        try {
-          receiptIsValid =
-            createResponse.workerId === worker.workerId &&
-            receiptMatchesCreate({
-              receipt: createResponse.bindingReceipt,
-              request,
-              requestDigest,
-              workerId: worker.workerId,
-              sandboxId: createResponse.sandboxId,
-              leaseExpiresAtMs: createResponse.leaseExpiresAtMs,
-              nowMs: now(),
-            }) &&
-            (await options.bindingReceiptVerifier.verifyBindingReceipt({
-              worker,
-              receipt: createResponse.bindingReceipt,
-            }));
-        } catch {
-          receiptIsValid = false;
-        }
-        if (!receiptIsValid) {
-          throw new SandboxProviderError(
-            REMOTE_WORKER_ERROR_CODES_V1.bindingReceiptInvalid,
-            "remote-worker create binding receipt is invalid",
-          );
-        }
         if (closed) {
           throw new SandboxProviderError(
             REMOTE_WORKER_ERROR_CODES_V1.unavailable,
@@ -463,8 +448,8 @@ export function createRemoteWorkerSandboxProviderV1(
           );
         }
 
-        let leaseExpiresAtMs = createResponse.leaseExpiresAtMs;
-        const leaseClient = client.bind(createResponse.sandboxId);
+        let leaseExpiresAtMs = verifiedCreateResponse.leaseExpiresAtMs;
+        const leaseClient = client.bind(verifiedCreateResponse.sandboxId);
         const remoteWorkspace = createRemoteWorkspaceV1({
           client: leaseClient,
           leaseExpiresAtMs: () => leaseExpiresAtMs,

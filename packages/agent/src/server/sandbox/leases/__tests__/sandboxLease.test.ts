@@ -47,6 +47,7 @@ function createService(input: {
   maxTotal?: number
   drainTimeoutMs?: number
   create?: () => Promise<WorkspaceSandboxPairV1>
+  provider?: SandboxProviderV1
   close?: () => Promise<void>
   createHandle?: () => string
 } = {}) {
@@ -59,7 +60,7 @@ function createService(input: {
   }))
   const service = new SandboxLeaseService({
     workspaceRoot: '/host/leases',
-    provider: fakeDisposableProvider({ create: providerCreate, close: input.close }),
+    provider: input.provider ?? fakeDisposableProvider({ create: providerCreate, close: input.close }),
     serviceDigest: 'profile-v1',
     ttlMs: 60_000,
     reapIntervalMs: 60_000,
@@ -71,6 +72,14 @@ function createService(input: {
   })
   return { service, pairs, providerCreate }
 }
+
+it('preserves the trusted legacy preconstructed service seam without Agent-private branding', async () => {
+  const branded = fakeDisposableProvider({ create: async () => fakePair('legacy').pair })
+  const legacyProvider = { ...branded } as SandboxProviderV1
+  const { service } = createService({ provider: legacyProvider })
+  await expect(service.acquire('owner-a')).resolves.toMatchObject({ handle: expect.any(String) })
+  await expect(service.dispose()).resolves.toBeUndefined()
+})
 
 async function deferred<T>() {
   let resolve!: (value: T) => void
@@ -93,16 +102,6 @@ describe('SandboxLeaseService lifecycle registry', () => {
       drainTimeoutMs: 100,
       maxActiveLeasesPerOwner: 1,
       maxActiveLeasesTotal: 1,
-    })).toThrow('provider must implement the disposable sandbox profile')
-    const registered = fakeDisposableProvider({ create: async () => fakePair('registered').pair })
-    const forged = {
-      ...registered,
-      disposableProfile: (registered as SandboxProviderV1 & { disposableProfile: unknown }).disposableProfile,
-    } as SandboxProviderV1
-    expect(() => new SandboxLeaseService({
-      workspaceRoot: '/host/leases', provider: forged, serviceDigest: 'forged-profile',
-      ttlMs: 60_000, reapIntervalMs: 60_000, drainTimeoutMs: 100,
-      maxActiveLeasesPerOwner: 1, maxActiveLeasesTotal: 1,
     })).toThrow('provider must implement the disposable sandbox profile')
     expect(vi.getTimerCount()).toBe(0)
     vi.useRealTimers()
