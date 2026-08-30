@@ -12,8 +12,7 @@ import {
 const sha = `sha256:${'a'.repeat(64)}` as const
 
 function disposableProvider(providerConfigDigest: `sha256:${string}` = sha): DisposableSandboxProviderV1 {
-  let provider!: DisposableSandboxProviderV1
-  provider = {
+  return {
     contractVersion: 'boring-sandbox.provider.v1',
     providerId: 'direct',
     capabilities: {} as never,
@@ -23,14 +22,10 @@ function disposableProvider(providerConfigDigest: `sha256:${string}` = sha): Dis
       publishedCleanupOwner: 'returned-pair',
       ambiguousCreate: 'correlated-reconciliation',
       providerConfigDigest,
-      assertProvider(candidate) {
-        if (candidate !== provider) throw new TypeError('registration mismatch')
-      },
     },
     resolveRuntimeRoot: (context) => context.workspaceRoot,
     async create() { throw new Error('not used') },
   }
-  return provider
 }
 
 function profile(scope = 'workspace-a'): SandboxLeaseProviderProfileV1 {
@@ -82,7 +77,7 @@ describe('sandbox lease provider profile identity', () => {
       expectedDigest: sandboxLeaseProviderProfileDigestV1(
         normalizeSandboxLeaseProviderProfileV1(mismatched, 'workspace-a').identity,
       ),
-    })).rejects.toThrow('configuration identity does not match')
+    })).rejects.toThrow('registration does not match trusted profile')
   })
 
   it('constructs a service bound to the complete profile identity', async () => {
@@ -136,7 +131,7 @@ describe('sandbox lease provider profile identity', () => {
       },
       verifiedWorkspaceScopeId: 'workspace-a',
       expectedDigest: digest,
-    })).rejects.toThrow('factory-registered')
+    })).rejects.toThrow('registration does not match trusted profile')
     const mismatch = { ...value, identity: { ...value.identity, providerId: 'bwrap' as const } }
     await expect(createSandboxLeaseServiceFromProfileV1({
       profile: mismatch,

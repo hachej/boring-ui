@@ -6,7 +6,10 @@ import {
   type SandboxProviderV1,
   type WorkspaceSandboxPairV1,
 } from '../../shared/providerV1'
-import { registerDisposableSandboxProviderV1 } from '../disposableProviderRegistration'
+import {
+  disposableProviderConfigDigestV1,
+  registerDisposableSandboxProviderV1,
+} from '../disposableProviderRegistration'
 import {
   assertDisposableLocalRoot,
   createDisposableLocalDisposer,
@@ -17,7 +20,6 @@ import { createDirectSandbox, type CreateDirectSandboxOptions } from './createDi
 export interface DirectSandboxProviderOptions {
   sandbox?: Omit<CreateDirectSandboxOptions, 'runtimeContext'>
   leaseMode?: 'disposable'
-  providerConfigDigest?: `sha256:${string}`
 }
 
 export function createDirectSandboxProvider(
@@ -97,8 +99,10 @@ export function createDirectSandboxProvider(
   return options.leaseMode === 'disposable'
     ? registerDisposableSandboxProviderV1(
         provider,
-        options.providerConfigDigest
-          ?? 'sha256:76208b7f908e519027ef456c2ae52c8d951b2a246a1c33d9e2ce7ecb63450198',
+        disposableProviderConfigDigestV1('direct', {
+          leaseMode: 'disposable',
+          runtime: 'host-process',
+        }),
       )
     : provider
 }

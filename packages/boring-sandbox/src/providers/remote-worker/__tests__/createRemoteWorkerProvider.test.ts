@@ -15,6 +15,7 @@ import {
 import { PROVIDER_CONTRACT_VERSION } from "../../../shared/providerMatrix";
 import { SandboxProviderError } from "../../../shared/providerV1";
 import {
+  expectDisposablePairSurfaceLaws,
   expectDisposableProviderProfile,
   expectPublishedPairLifecycle,
 } from "../../__tests__/conformance/disposableProvider";
@@ -95,6 +96,9 @@ class FakeTransport implements RemoteWorkerTransportV1 {
   advertiseExclusiveBinaryCreate = false;
   advertiseMultiSandboxRoots = false;
   negotiatedCapabilitiesOverride?: unknown;
+  readonly files = new Map<string, string>();
+  readonly deletedPaths = new Set<string>();
+  readonly directories = new Set<string>(['']);
 
   async request(input: RemoteWorkerTransportRequestV1): Promise<unknown> {
     this.requests.push(input);
@@ -163,20 +167,63 @@ class FakeTransport implements RemoteWorkerTransportV1 {
     }
     if (input.path.endsWith("/fs")) {
       const operation = input.body as RemoteWorkerWorkspaceOperationV1;
-      if (operation.op === "readFile") return { content: "tenant-file" };
+      const op = operation as RemoteWorkerWorkspaceOperationV1 & Record<string, unknown>;
+      for (const value of [op.path, op.from, op.to]) {
+        if (typeof value === 'string' && (value.startsWith('/') || value.includes('\0') || value.split('/').includes('..'))) {
+          throw new Error('invalid path');
+        }
+      }
+      if (op.op === 'writeFile') { this.files.set(String(op.path), String(op.data)); this.deletedPaths.delete(String(op.path)); return { ok: true }; }
+      if (op.op === 'writeBinaryFile') { this.files.set(String(op.path), Buffer.from(String(op.dataBase64), 'base64').toString()); this.deletedPaths.delete(String(op.path)); return { ok: true }; }
+      if (op.op === 'readFile') {
+        if (this.deletedPaths.has(String(op.path))) throw new Error('not found');
+        return { content: this.files.get(String(op.path)) ?? 'tenant-file' };
+      }
+      if (op.op === 'readBinaryFile') {
+        if (!this.files.has(String(op.path))) throw new Error('not found');
+        return { dataBase64: Buffer.from(this.files.get(String(op.path))!).toString('base64') };
+      }
+      if (op.op === 'mkdir') { this.directories.add(String(op.path)); return { ok: true }; }
+      if (op.op === 'unlink') { this.files.delete(String(op.path)); this.deletedPaths.add(String(op.path)); return { ok: true }; }
+      if (op.op === 'rename') {
+        const value = this.files.get(String(op.from));
+        if (value === undefined) throw new Error('not found');
+        this.files.delete(String(op.from)); this.files.set(String(op.to), value); return { ok: true };
+      }
+      if (op.op === 'stat') {
+        const path = String(op.path);
+        if (this.files.has(path)) return { stat: { kind: 'file', size: Buffer.byteLength(this.files.get(path)!), mtimeMs: 1 } };
+        if (this.directories.has(path)) return { stat: { kind: 'dir', size: 0, mtimeMs: 1 } };
+        throw new Error('not found');
+      }
+      if (op.op === 'readdir') {
+        const prefix = String(op.path) ? `${String(op.path)}/` : '';
+        const names = new Map<string, 'file' | 'dir'>();
+        for (const path of this.files.keys()) if (path.startsWith(prefix)) names.set(path.slice(prefix.length).split('/')[0]!, 'file');
+        for (const path of this.directories) if (path.startsWith(prefix) && path !== String(op.path)) names.set(path.slice(prefix.length).split('/')[0]!, 'dir');
+        return { entries: [...names].map(([name, kind]) => ({ name, kind })) };
+      }
       return { ok: true };
     }
     if (input.path.endsWith("/exec")) {
       if (this.rawExecError) throw this.rawExecError;
       const request = input.body as RemoteWorkerExecRequestV1;
+      let stdout = this.execStdout || `ran:${request.command}`;
+      let exitCode = 0;
+      let durationMs = 2;
+      let truncated = false;
+      if (request.command === 'echo hello') stdout = 'hello\n';
+      else if (request.command === 'exit 7') { stdout = ''; exitCode = 7; }
+      else if (request.command === 'pwd && cat note.txt') stdout = `${request.cwd}\ncwd-ok`;
+      else if (request.command.includes('setInterval')) { stdout = ''; exitCode = 124; durationMs = 500; }
+      else if (request.command.includes("repeat(2_000_000)")) { stdout = 'x'.repeat(request.maxOutputBytes); truncated = true; }
+      else if (request.command.includes('setTimeout')) { await new Promise((resolve) => setTimeout(resolve, 2_100)); stdout = ''; durationMs = 2_100; }
       return {
-        stdoutBase64: Buffer.from(
-          this.execStdout || `ran:${request.command}`,
-        ).toString("base64"),
+        stdoutBase64: Buffer.from(stdout).toString("base64"),
         stderrBase64: "",
-        exitCode: 0,
-        durationMs: 2,
-        truncated: false,
+        exitCode,
+        durationMs,
+        truncated,
         stdoutEncoding: "utf-8",
         stderrEncoding: "utf-8",
       };
@@ -253,6 +300,29 @@ function providerOptions(
 }
 
 describe("remote-worker SandboxProviderV1 placement binding", () => {
+  test('derives a deterministic client lease identity from trusted request correlation', async () => {
+    const firstTransport = new FakeTransport(); firstTransport.advertiseMultiSandboxRoots = true
+    const secondTransport = new FakeTransport(); secondTransport.advertiseMultiSandboxRoots = true
+    const context = {
+      workspaceRoot: '/unused', workspaceId: 'workspace-a',
+      sessionId: 'session-a', requestId: 'request-a',
+    }
+    const first = createRemoteWorkerSandboxProviderV1({
+      ...providerOptions(firstTransport, [], true), leaseMode: 'disposable',
+    })
+    const second = createRemoteWorkerSandboxProviderV1({
+      ...providerOptions(secondTransport, [], true), leaseMode: 'disposable',
+    })
+    const firstPair = await first.create(context)
+    const secondPair = await second.create(context)
+    await expectDisposablePairSurfaceLaws(firstPair)
+    const firstRequest = firstTransport.requests.find((request) => request.path === '/internal/v1/sandboxes')?.body as RemoteWorkerCreateRequestV1
+    const secondRequest = secondTransport.requests.find((request) => request.path === '/internal/v1/sandboxes')?.body as RemoteWorkerCreateRequestV1
+    expect(firstRequest.clientLeaseId).toBe(secondRequest.clientLeaseId)
+    expect(firstRequest.clientLeaseId).toMatch(/^lease-[a-f0-9]{48}$/)
+    await Promise.all([firstPair.dispose(), secondPair.dispose()])
+  })
+
   test("requires qualified multi-root placement for disposable mode", async () => {
     const unavailable = new FakeTransport();
     expect(() => createRemoteWorkerSandboxProviderV1({

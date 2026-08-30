@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest'
 
 import {
+  expectDisposablePairSurfaceLaws,
   expectDisposableProviderProfile,
   expectPublishedPairLifecycle,
 } from '../../__tests__/conformance/disposableProvider'
@@ -8,6 +9,19 @@ import { createBlaxelSandboxProvider } from '../createBlaxelSandboxProvider'
 import { createMockBlaxelClient } from './mockBlaxelClient'
 
 describe('disposable Blaxel provider', () => {
+  test('derives configuration identity from the resolved image and policy', async () => {
+    const client = await createMockBlaxelClient()
+    const first = createBlaxelSandboxProvider({
+      leaseMode: 'disposable', client, region: 'eu-fra-1', image: 'image:v1',
+      volume: { enabled: false, sizeMb: 2048 },
+    })
+    const second = createBlaxelSandboxProvider({
+      leaseMode: 'disposable', client, region: 'eu-fra-1', image: 'image:v2',
+      volume: { enabled: false, sizeMb: 2048 },
+    })
+    expect(first.disposableProfile.providerConfigDigest)
+      .not.toBe(second.disposableProfile.providerConfigDigest)
+  })
   test('creates fresh no-volume pairs and deletes the remote on dispose', async () => {
     const client = await createMockBlaxelClient()
     const provider = createBlaxelSandboxProvider({
@@ -33,6 +47,7 @@ describe('disposable Blaxel provider', () => {
     await sibling.workspace.writeFile('marker.txt', 'b')
     expect(await pair.workspace.readFile('marker.txt')).toBe('a')
     expect(await sibling.workspace.readFile('marker.txt')).toBe('b')
+    await expectDisposablePairSurfaceLaws(pair)
     expect(client.sandboxes.size).toBe(2)
     expect(client.volumes.size).toBe(0)
     await Promise.all([pair.dispose(), pair.dispose()])
@@ -155,7 +170,7 @@ describe('disposable Blaxel provider', () => {
       workspaceRoot: '/host/lease-a', workspaceId: 'workspace-a',
       sessionId: 'session-a', requestId: 'request-a',
     })).rejects.toBeTruthy()
-    expect(client.sandboxes.size).toBe(1)
+    expect(client.sandboxes.size).toBe(0)
     await provider.close?.()
     expect(client.sandboxes.size).toBe(0)
   })

@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto'
+
 import type {
   DisposableSandboxProviderProfileV1,
   DisposableSandboxProviderV1,
@@ -6,8 +8,26 @@ import type {
 
 const PROFILE_VERSION = 'boring-sandbox.disposable-provider.v1' as const
 const SHA256_DIGEST = /^sha256:[a-f0-9]{64}$/
-const disposableProviders = new WeakMap<SandboxProviderV1, DisposableSandboxProviderProfileV1>()
 
+function canonical(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonical)
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+      .filter(([, entry]) => entry !== undefined && typeof entry !== 'function')
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => [key, canonical(entry)]))
+  }
+  if (typeof value === 'bigint') return value.toString()
+  return value
+}
+
+export function disposableProviderConfigDigestV1(
+  providerId: string,
+  behavior: Record<string, unknown>,
+): `sha256:${string}` {
+  const bytes = JSON.stringify(canonical({ providerId, behavior }))
+  return `sha256:${createHash('sha256').update(bytes).digest('hex')}`
+}
 /** Internal factory registration; intentionally absent from public package exports. */
 export function registerDisposableSandboxProviderV1<T extends SandboxProviderV1>(
   provider: T,
@@ -22,11 +42,6 @@ export function registerDisposableSandboxProviderV1<T extends SandboxProviderV1>
     publishedCleanupOwner: 'returned-pair',
     ambiguousCreate: 'correlated-reconciliation',
     providerConfigDigest,
-    assertProvider(candidate: SandboxProviderV1) {
-      if (candidate !== provider || disposableProviders.get(candidate) !== profile) {
-        throw new TypeError('disposable provider registration does not match')
-      }
-    },
   })
   Object.defineProperty(provider, 'disposableProfile', {
     configurable: false,
@@ -34,6 +49,5 @@ export function registerDisposableSandboxProviderV1<T extends SandboxProviderV1>
     value: profile,
     writable: false,
   })
-  disposableProviders.set(provider, profile)
   return provider as T & DisposableSandboxProviderV1
 }

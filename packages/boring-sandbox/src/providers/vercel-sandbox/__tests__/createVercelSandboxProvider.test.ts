@@ -86,6 +86,16 @@ function createScheduler() {
   }
 }
 
+function correlatedDisposableClient(
+  sandbox: VercelSandbox,
+  createImpl?: VercelSandboxClient['create'],
+): VercelSandboxClient {
+  return {
+    create: vi.fn(createImpl ?? (async (params) => Object.assign(sandbox, { name: params?.name }))),
+    get: vi.fn(async (params) => Object.assign(sandbox, { name: params.name })),
+  }
+}
+
 function addDurableHandleMetadata(sandbox: VercelSandbox, sandboxId: string) {
   const stop = vi.fn(async () => {})
   const snapshot = vi.fn(async () => ({ snapshotId: 'unexpected-snapshot' }))
@@ -161,14 +171,11 @@ describe('createVercelSandboxProvider', () => {
     vi.spyOn((harness.sandbox as unknown as { fs: { mkdir(): Promise<void> } }).fs, 'mkdir')
       .mockRejectedValueOnce(Object.assign(
         new Error('workspace root setup failed'),
-        { code: 'ECONNRESET' },
+        { code: 'https://provider.invalid/sandbox/sb-secret' },
       ))
     const scheduler = createScheduler()
     const { store, deleteRecord } = createStore()
-    const client: VercelSandboxClient = {
-      create: vi.fn(async () => harness.sandbox),
-      get: vi.fn(),
-    }
+    const client = correlatedDisposableClient(harness.sandbox)
     const logger = { info: vi.fn(), warn: vi.fn() }
     const telemetry = { capture: vi.fn() }
     const provider = createVercelSandboxProvider({
@@ -205,6 +212,7 @@ describe('createVercelSandboxProvider', () => {
     for (const raw of [
       'workspace-setup-failure', 'session-setup-failure', 'request-setup-failure',
       'sb-setup-failure', 'token-1', 'team-1', 'project-1', 'test-host-telemetry-salt',
+      'https://provider.invalid/sandbox/sb-secret',
     ]) expect(logged).not.toContain(raw)
     expect(logged).toContain(
       createHmac('sha256', 'test-host-telemetry-salt').update('workspace-setup-failure').digest('hex'),
@@ -220,13 +228,54 @@ describe('createVercelSandboxProvider', () => {
     expect(deleteRecord).not.toHaveBeenCalled()
   })
 
+  test('derives configuration identity from immutable cache and runtime policy', () => {
+    const first = createVercelSandboxProvider({
+      lifecycle: 'disposable', getEnvVar,
+      immutableCacheSource: {
+        contractVersion: IMMUTABLE_SANDBOX_CACHE_SOURCE_VERSION_V1,
+        providerId: 'vercel-sandbox', opaqueRef: 'snap_a',
+      },
+    })
+    const second = createVercelSandboxProvider({
+      lifecycle: 'disposable', getEnvVar,
+      immutableCacheSource: {
+        contractVersion: IMMUTABLE_SANDBOX_CACHE_SOURCE_VERSION_V1,
+        providerId: 'vercel-sandbox', opaqueRef: 'snap_b',
+      },
+    })
+    expect(first.disposableProfile.providerConfigDigest)
+      .not.toBe(second.disposableProfile.providerConfigDigest)
+  })
+
+  test('rejects a mismatched correlation response without deleting it', async () => {
+    const harness = await createMockVercelSandboxHarness()
+    cleanups.push(harness.cleanup)
+    const { deleteSandbox } = addDurableHandleMetadata(harness.sandbox, 'sb-mismatch')
+    const client: VercelSandboxClient = {
+      create: vi.fn(async () => Object.assign(harness.sandbox, { name: 'wrong-name' })),
+      get: vi.fn(async () => Object.assign(harness.sandbox, { name: 'wrong-name' })),
+    }
+    const provider = createVercelSandboxProvider({
+      vercelClient: client,
+      lifecycle: 'disposable',
+      getEnvVar,
+    })
+    await expect(provider.create({
+      workspaceRoot: 'workspace-mismatch', workspaceId: 'workspace-mismatch',
+      sessionId: 'session-mismatch', requestId: 'request-mismatch',
+    })).rejects.toMatchObject({ code: 'CONFIG_INVALID' })
+    expect(deleteSandbox).not.toHaveBeenCalled()
+    await provider.close?.()
+    expect(deleteSandbox).not.toHaveBeenCalled()
+  })
+
   test('reconciles a disposable create whose acknowledgement is lost', async () => {
     const harness = await createMockVercelSandboxHarness()
     cleanups.push(harness.cleanup)
     const { deleteSandbox } = addDurableHandleMetadata(harness.sandbox, 'sb-response-loss')
     const client: VercelSandboxClient = {
       create: vi.fn(async () => { throw Object.assign(new Error('response lost'), { status: 503 }) }),
-      get: vi.fn(async () => harness.sandbox),
+      get: vi.fn(async (params) => Object.assign(harness.sandbox, { name: params.name })),
     }
     const provider = createVercelSandboxProvider({
       vercelClient: client,
@@ -255,10 +304,7 @@ describe('createVercelSandboxProvider', () => {
     const { deleteSandbox } = addDurableHandleMetadata(harness.sandbox, 'sb-post-create-failure')
     deleteSandbox.mockRejectedValueOnce(new Error('first delete acknowledgement lost'))
     const { store, deleteRecord } = createStore()
-    const client: VercelSandboxClient = {
-      create: vi.fn(async () => harness.sandbox),
-      get: vi.fn(),
-    }
+    const client = correlatedDisposableClient(harness.sandbox)
     const logger = {
       info: vi.fn()
         .mockImplementationOnce(() => {})
@@ -296,10 +342,7 @@ describe('createVercelSandboxProvider', () => {
     localSandboxInit.mockRejectedValueOnce(new Error('sandbox init failed'))
     localSandboxDispose.mockRejectedValueOnce(new Error('local dispose failed'))
     const { store, deleteRecord } = createStore()
-    const client: VercelSandboxClient = {
-      create: vi.fn(async () => harness.sandbox),
-      get: vi.fn(),
-    }
+    const client = correlatedDisposableClient(harness.sandbox)
     const logger = { info: vi.fn(), warn: vi.fn() }
     const provider = createVercelSandboxProvider({
       store,
@@ -336,10 +379,7 @@ describe('createVercelSandboxProvider', () => {
     const { stop, snapshot } = addDurableHandleMetadata(harness.sandbox, 'sb-durable')
     const scheduler = createScheduler()
     const { store, deleteRecord } = createStore()
-    const client: VercelSandboxClient = {
-      create: vi.fn(async () => harness.sandbox),
-      get: vi.fn(),
-    }
+    const client = correlatedDisposableClient(harness.sandbox)
     const provider = createVercelSandboxProvider({
       store,
       vercelClient: client,
@@ -376,10 +416,7 @@ describe('createVercelSandboxProvider', () => {
     cleanups.push(harness.cleanup)
     const { deleteSandbox } = addDurableHandleMetadata(harness.sandbox, 'sb-disposable')
     const { store, deleteRecord } = createStore()
-    const client: VercelSandboxClient = {
-      create: vi.fn(async () => harness.sandbox),
-      get: vi.fn(),
-    }
+    const client = correlatedDisposableClient(harness.sandbox)
     const provider = createVercelSandboxProvider({
       store,
       vercelClient: client,
@@ -414,7 +451,7 @@ describe('createVercelSandboxProvider', () => {
       persistent: true,
       source: { type: 'snapshot', snapshotId: 'snap_trusted_main' },
     }))
-    expect(client.get).not.toHaveBeenCalled()
+    expect(client.get).toHaveBeenCalledTimes(2)
     deleteSandbox.mockRejectedValueOnce(Object.assign(new Error('sandbox not found'), { status: 404 }))
     await expect(secondPair.dispose()).resolves.toBeUndefined()
     expect(deleteSandbox).toHaveBeenCalledTimes(3)
@@ -427,10 +464,10 @@ describe('createVercelSandboxProvider', () => {
     const { deleteSandbox } = addDurableHandleMetadata(harness.sandbox, 'sb-create-close-race')
     let release!: () => void
     const gate = new Promise<void>((resolve) => { release = resolve })
-    const client: VercelSandboxClient = {
-      create: vi.fn(async () => { await gate; return harness.sandbox }),
-      get: vi.fn(),
-    }
+    const client = correlatedDisposableClient(harness.sandbox, async (params) => {
+      await gate
+      return Object.assign(harness.sandbox, { name: params?.name })
+    })
     const provider = createVercelSandboxProvider({
       vercelClient: client, lifecycle: 'disposable', getEnvVar,
       logger: { info: vi.fn() },
@@ -450,10 +487,7 @@ describe('createVercelSandboxProvider', () => {
     const harness = await createMockVercelSandboxHarness()
     cleanups.push(harness.cleanup)
     const { deleteSandbox } = addDurableHandleMetadata(harness.sandbox, 'sb-duplicate-owner')
-    const client: VercelSandboxClient = {
-      create: vi.fn(async () => harness.sandbox),
-      get: vi.fn(),
-    }
+    const client = correlatedDisposableClient(harness.sandbox)
     const provider = createVercelSandboxProvider({
       vercelClient: client,
       lifecycle: 'disposable',
@@ -480,10 +514,7 @@ describe('createVercelSandboxProvider', () => {
     cleanups.push(harness.cleanup)
     const { deleteSandbox } = addDurableHandleMetadata(harness.sandbox, 'sb-published-owner')
     const { store } = createStore()
-    const client: VercelSandboxClient = {
-      create: vi.fn(async () => harness.sandbox),
-      get: vi.fn(),
-    }
+    const client = correlatedDisposableClient(harness.sandbox)
     const provider = createVercelSandboxProvider({
       store,
       vercelClient: client,
@@ -564,10 +595,7 @@ describe('createVercelSandboxProvider', () => {
 
     const scheduler = createScheduler()
     const { store } = createStore()
-    const client: VercelSandboxClient = {
-      create: vi.fn(async () => harness.sandbox),
-      get: vi.fn(),
-    }
+    const client = correlatedDisposableClient(harness.sandbox)
     const provider = createVercelSandboxProvider({
       store,
       vercelClient: client,

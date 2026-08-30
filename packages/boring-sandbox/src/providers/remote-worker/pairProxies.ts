@@ -322,7 +322,17 @@ export function createRemoteSandboxV1(options: {
         },
         "exec request",
       );
-      const response = await options.client.exec(body, execOptions.signal);
+      const startedAt = Date.now();
+      const heartbeat = execOptions.onHeartbeat
+        ? setInterval(() => execOptions.onHeartbeat?.(Date.now() - startedAt), 1_000)
+        : undefined;
+      heartbeat?.unref?.();
+      let response;
+      try {
+        response = await options.client.exec(body, execOptions.signal);
+      } finally {
+        if (heartbeat) clearInterval(heartbeat);
+      }
       const stdout = new Uint8Array(
         Buffer.from(response.stdoutBase64, "base64"),
       );

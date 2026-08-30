@@ -6,6 +6,7 @@ import { SandboxLeaseServiceRegistry } from '../sandboxLeaseServiceRegistry'
 function service(dispose = vi.fn(async () => {}), providerIdentity: object = {}) {
   return {
     dispose,
+    abandonUnregistered: vi.fn(),
     isDisposed: false,
     providerIdentity,
   } as unknown as SandboxLeaseService
@@ -56,6 +57,22 @@ describe('SandboxLeaseServiceRegistry', () => {
       .toThrow('service is already bound to another capability digest')
     await registry.dispose()
     expect(leases.dispose).toHaveBeenCalledOnce()
+  })
+
+  it('drains a pending factory without publishing and rejects later acquisition', async () => {
+    let resolveFactory!: (value: SandboxLeaseService) => void
+    const pending = new Promise<SandboxLeaseService>((resolve) => { resolveFactory = resolve })
+    const leases = service()
+    const registry = new SandboxLeaseServiceRegistry()
+    const acquiring = registry.getOrCreate('profile-a', async () => await pending)
+    const draining = registry.disposeUntil(Date.now() + 500)
+    resolveFactory(leases)
+
+    await expect(acquiring).rejects.toThrow('drained during construction')
+    await expect(draining).resolves.toEqual([])
+    expect(leases.dispose).toHaveBeenCalledOnce()
+    await expect(registry.getOrCreate('profile-b', () => service())).rejects.toThrow('registry is draining')
+    expect(() => registry.register({ digest: 'profile-b', leases: service() })).toThrow('registry is draining')
   })
 
   it('retains failed services and retries them to terminal disposal within a deadline', async () => {

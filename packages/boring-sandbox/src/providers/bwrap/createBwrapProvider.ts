@@ -7,7 +7,10 @@ import {
   type SandboxProviderV1,
   type WorkspaceSandboxPairV1,
 } from '../../shared/providerV1'
-import { registerDisposableSandboxProviderV1 } from '../disposableProviderRegistration'
+import {
+  disposableProviderConfigDigestV1,
+  registerDisposableSandboxProviderV1,
+} from '../disposableProviderRegistration'
 import {
   assertDisposableLocalRoot,
   createDisposableLocalDisposer,
@@ -21,7 +24,6 @@ import {
 export interface BwrapSandboxProviderOptions {
   sandbox?: Omit<CreateBwrapSandboxOptions, 'hostWorkspaceRoot' | 'runtimeContext'>
   leaseMode?: 'disposable'
-  providerConfigDigest?: `sha256:${string}`
 }
 
 export function createBwrapSandboxProvider(
@@ -116,8 +118,13 @@ export function createBwrapSandboxProvider(
   return options.leaseMode === 'disposable'
     ? registerDisposableSandboxProviderV1(
         provider,
-        options.providerConfigDigest
-          ?? 'sha256:1abc44c5c6195bac525222dd44c3620de2725f62e56df35220f977cebfd56fef',
+        disposableProviderConfigDigestV1('bwrap', {
+          leaseMode: 'disposable',
+          network: options.sandbox?.network ?? 'shared',
+          dropAllCapabilities: options.sandbox?.dropAllCapabilities ?? true,
+          namespaceProfile: options.sandbox?.namespaceProfile ?? null,
+          resourceLimits: options.sandbox?.resourceLimits ?? null,
+        }),
       )
     : provider
 }

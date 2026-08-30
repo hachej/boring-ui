@@ -6,23 +6,33 @@ import type {
 const DISPOSABLE_PROFILE_VERSION = 'boring-sandbox.disposable-provider.v1'
 const SHA256 = /^sha256:[a-f0-9]{64}$/
 
-/** Agent invokes the factory-bound assertion without value-importing the sandbox package. */
+const trustedProviders = new WeakMap<SandboxProviderV1, `sha256:${string}`>()
+
+function hasDisposableShape(provider: SandboxProviderV1): provider is DisposableSandboxProviderV1 {
+  const profile = (provider as Partial<DisposableSandboxProviderV1>).disposableProfile
+  return profile?.contractVersion === DISPOSABLE_PROFILE_VERSION
+    && profile.resume === false
+    && profile.publishedCleanupOwner === 'returned-pair'
+    && profile.ambiguousCreate === 'correlated-reconciliation'
+    && SHA256.test(profile.providerConfigDigest)
+}
+
+/** Minted only by Agent's trusted host profile factory after exact digest verification. */
+export function registerTrustedDisposableLeaseProvider(
+  provider: SandboxProviderV1,
+  expectedDigest: `sha256:${string}`,
+): asserts provider is DisposableSandboxProviderV1 {
+  if (!hasDisposableShape(provider) || provider.disposableProfile.providerConfigDigest !== expectedDigest) {
+    throw new TypeError('sandbox lease provider registration does not match trusted profile')
+  }
+  trustedProviders.set(provider, expectedDigest)
+}
+
 export function isDisposableLeaseProvider(
   provider: SandboxProviderV1,
 ): provider is DisposableSandboxProviderV1 {
-  const profile = (provider as Partial<DisposableSandboxProviderV1>).disposableProfile
-  if (
-    profile?.contractVersion !== DISPOSABLE_PROFILE_VERSION
-    || profile.resume !== false
-    || profile.publishedCleanupOwner !== 'returned-pair'
-    || profile.ambiguousCreate !== 'correlated-reconciliation'
-    || !SHA256.test(profile.providerConfigDigest)
-    || typeof profile.assertProvider !== 'function'
-  ) return false
-  try {
-    profile.assertProvider(provider)
-    return true
-  } catch {
-    return false
-  }
+  const digest = trustedProviders.get(provider)
+  return digest !== undefined
+    && hasDisposableShape(provider)
+    && provider.disposableProfile.providerConfigDigest === digest
 }

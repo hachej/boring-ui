@@ -6,7 +6,10 @@ import type {
   ExtractedSandboxProviderIdV1,
 } from '@hachej/boring-sandbox/shared'
 import { SandboxLeaseService } from './sandboxLease'
-import { isDisposableLeaseProvider } from './disposableProvider'
+import {
+  isDisposableLeaseProvider,
+  registerTrustedDisposableLeaseProvider,
+} from './disposableProvider'
 
 export const SANDBOX_LEASE_PROVIDER_PROFILE_VERSION_V1 =
   'boring-agent.sandbox-lease-profile.v1' as const
@@ -118,11 +121,9 @@ export async function createSandboxLeaseServiceFromProfileV1(input: {
   const identity = profile.identity
   const provider = await profile.providerFactory()
   try {
+    registerTrustedDisposableLeaseProvider(provider, identity.providerConfigDigest)
     if (!isDisposableLeaseProvider(provider)) throw new TypeError('sandbox lease provider is not factory-registered')
     if (provider.providerId !== identity.providerId) throw new TypeError('sandbox lease provider identity does not match')
-    if (provider.disposableProfile.providerConfigDigest !== identity.providerConfigDigest) {
-      throw new TypeError('sandbox lease provider configuration identity does not match')
-    }
   } catch (error) {
     try { await provider.close?.() }
     catch (cleanupError) {

@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import {
   PROVIDER_CAPABILITIES,
@@ -23,10 +23,12 @@ import {
   type SandboxProviderV1,
   type WorkspaceSandboxPairV1,
 } from "../../shared/providerV1";
-import { registerDisposableSandboxProviderV1 } from '../disposableProviderRegistration';
+import {
+  disposableProviderConfigDigestV1,
+  registerDisposableSandboxProviderV1,
+} from '../disposableProviderRegistration';
 import {
   parseRemoteWorkerFleetConfigV1,
-  remoteWorkerFleetConfigDigestV1,
   resolveRemoteWorkerPlacementV1,
   type RemoteWorkerFleetConfigV1,
   type RemoteWorkerFleetWorkerConfigV1,
@@ -167,7 +169,6 @@ export function createRemoteWorkerSandboxProviderV1(
   const fleet = parseRemoteWorkerFleetConfigV1(options.fleet, {
     allowInsecureLoopback: options.allowInsecureLoopback,
   });
-  const providerConfigDigest = remoteWorkerFleetConfigDigestV1(fleet);
   if (options.leaseMode === 'disposable' && fleet.workers.some((worker) =>
     !(worker.requiredCapabilities ?? []).includes(REMOTE_WORKER_MULTI_SANDBOX_ROOTS_CAPABILITY_V1))) {
     throw new SandboxProviderError(
@@ -218,6 +219,22 @@ export function createRemoteWorkerSandboxProviderV1(
     DEFAULT_DISPOSE_ATTEMPTS,
     "disposeAttempts",
   );
+  const providerConfigDigest = disposableProviderConfigDigestV1('remote-worker', {
+    fleet,
+    leaseMode: options.leaseMode ?? null,
+    requestTimeoutMs,
+    execTimeoutMs,
+    idleTimeoutMs,
+    maxOutputBytes,
+    capabilityLifetimeMs,
+    eventStreamLifetimeMs,
+    qualificationMaxAgeMs,
+    disposeAttempts,
+    allowInsecureLoopback: options.allowInsecureLoopback === true,
+    transport: 'host-transport-v1',
+    capabilityIssuer: 'host-issuer-v1',
+    bindingReceiptVerifier: 'host-verifier-v1',
+  });
   if (
     capabilityLifetimeMs > REMOTE_WORKER_MAX_CAPABILITY_LIFETIME_MS ||
     eventStreamLifetimeMs > REMOTE_WORKER_MAX_CAPABILITY_LIFETIME_MS
@@ -299,6 +316,11 @@ export function createRemoteWorkerSandboxProviderV1(
           requiredCapabilities: worker.requiredCapabilities,
         });
 
+        const correlation = context.requestId ?? `${workspaceId}:${sessionId}`;
+        const clientLeaseId = `lease-${createHash('sha256')
+          .update(`${providerConfigDigest}:${correlation}`)
+          .digest('hex')
+          .slice(0, 48)}`;
         const request = parseRemoteWorkerRequestV1(
           RemoteWorkerCreateRequestSchemaV1,
           {
@@ -306,7 +328,7 @@ export function createRemoteWorkerSandboxProviderV1(
             providerContractVersion: PROVIDER_CONTRACT_VERSION,
             workspaceId,
             sessionId,
-            clientLeaseId: idFactory(),
+            clientLeaseId,
             idleTimeoutMs,
             maxOutputBytes,
             expectedEvidenceDigest: worker.expectedEvidenceDigest,

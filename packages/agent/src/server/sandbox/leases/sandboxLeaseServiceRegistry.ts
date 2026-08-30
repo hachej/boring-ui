@@ -6,17 +6,28 @@ export class SandboxLeaseServiceRegistry {
   private readonly pendingByDigest = new Map<string, Promise<SandboxLeaseService>>()
   private readonly digestByService = new WeakMap<SandboxLeaseService, string>()
   private readonly digestByProvider = new WeakMap<object, string>()
+  private readonly drainingServices = new Set<SandboxLeaseService>()
+  private draining = false
 
   async getOrCreate(
     digest: string,
     factory: () => SandboxLeaseService | Promise<SandboxLeaseService>,
   ): Promise<SandboxLeaseService> {
+    if (this.draining) throw new TypeError('sandbox lease service registry is draining')
     const current = this.serviceByDigest.get(digest)
     if (current && !current.isDisposed) return current
     if (current?.isDisposed) this.evict(digest, current)
     const pending = this.pendingByDigest.get(digest)
     if (pending) return await pending
-    const creation = Promise.resolve().then(factory).then((service) => {
+    const creation = Promise.resolve().then(factory).then(async (service) => {
+      if (this.draining) {
+        this.drainingServices.add(service)
+        try { await service.dispose(); this.drainingServices.delete(service) }
+        catch (error) {
+          throw new AggregateError([error], 'sandbox lease service registry drain cleanup failed')
+        }
+        throw new TypeError('sandbox lease service registry drained during construction')
+      }
       try {
         this.register({ digest, leases: service })
         return service
@@ -31,6 +42,7 @@ export class SandboxLeaseServiceRegistry {
   }
 
   register(capability: { readonly digest: string; readonly leases: SandboxLeaseService }): void {
+    if (this.draining) throw new TypeError('sandbox lease service registry is draining')
     if (capability.leases.isDisposed) throw new TypeError('disposed sandbox lease service cannot be registered')
     const existingService = this.serviceByDigest.get(capability.digest)
     if (existingService && existingService !== capability.leases) {
@@ -59,11 +71,24 @@ export class SandboxLeaseServiceRegistry {
   }
 
   async dispose(): Promise<readonly PromiseSettledResult<void>[]> {
+    this.draining = true
+    const pending = [...this.pendingByDigest.values()]
+    const pendingResults = await Promise.allSettled(pending)
     const entries = [...this.serviceByDigest.entries()]
-    return await Promise.allSettled(entries.map(async ([digest, service]) => {
+    const serviceResults = await Promise.allSettled(entries.map(async ([digest, service]) => {
       await service.dispose()
       this.evict(digest, service)
     }))
+    const debtResults = await Promise.allSettled([...this.drainingServices].map(async (service) => {
+      await service.dispose()
+      this.drainingServices.delete(service)
+    }))
+    for (const [digest, service] of this.serviceByDigest) {
+      if (service.isDisposed) this.evict(digest, service)
+    }
+    return [...pendingResults.map((result): PromiseSettledResult<void> => result.status === 'fulfilled'
+      ? { status: 'fulfilled', value: undefined }
+      : result), ...serviceResults, ...debtResults]
   }
 
   async disposeUntil(deadline: number): Promise<readonly PromiseSettledResult<void>[]> {

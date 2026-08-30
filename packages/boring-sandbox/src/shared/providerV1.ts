@@ -118,7 +118,6 @@ export interface DisposableSandboxProviderProfileV1 {
   readonly publishedCleanupOwner: 'returned-pair';
   readonly ambiguousCreate: 'correlated-reconciliation';
   readonly providerConfigDigest: `sha256:${string}`;
-  assertProvider(provider: SandboxProviderV1): void;
 }
 
 export interface DisposableSandboxProviderV1 extends SandboxProviderV1 {
@@ -134,14 +133,9 @@ export function isDisposableSandboxProviderV1(
     profile.resume !== false ||
     profile.publishedCleanupOwner !== 'returned-pair' ||
     profile.ambiguousCreate !== 'correlated-reconciliation' ||
-    typeof profile.assertProvider !== 'function'
+    !/^sha256:[a-f0-9]{64}$/.test(profile.providerConfigDigest)
   ) return false;
-  try {
-    profile.assertProvider(provider);
-    return true;
-  } catch {
-    return false;
-  }
+  return true;
 }
 
 export class SandboxProviderError extends Error {

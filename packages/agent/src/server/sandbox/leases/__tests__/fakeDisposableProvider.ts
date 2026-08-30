@@ -1,3 +1,5 @@
+import { registerTrustedDisposableLeaseProvider } from '../disposableProvider'
+
 import type {
   DisposableSandboxProviderV1,
   SandboxProviderV1,
@@ -30,5 +32,9 @@ export function fakeDisposableProvider(input: {
       },
     },
   } as SandboxProviderV1
+  registerTrustedDisposableLeaseProvider(
+    provider,
+    (provider as DisposableSandboxProviderV1).disposableProfile.providerConfigDigest,
+  )
   return provider as DisposableSandboxProviderV1
 }

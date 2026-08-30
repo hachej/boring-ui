@@ -93,6 +93,27 @@ describe('sandbox management tool', () => {
     expect(tool.parameters).not.toHaveProperty('oneOf')
   })
 
+  it('passes the actual OpenAI Responses strict tool adapter', async () => {
+    const { tool } = fixture()
+    const codingAgentUrl = import.meta.resolve('@mariozechner/pi-coding-agent')
+    const adapterUrl = import.meta.resolve(
+      '@earendil-works/pi-ai/api/openai-responses-shared',
+      codingAgentUrl,
+    )
+    const adapter = await import(adapterUrl) as {
+      convertResponsesTools(tools: unknown[], options: unknown): Array<Record<string, unknown>>
+    }
+    const [converted] = adapter.convertResponsesTools([{
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters,
+    }], { strict: true, supportsStrictMode: true })
+    expect(converted).toMatchObject({
+      type: 'function', name: 'sandbox', strict: true,
+      parameters: tool.parameters,
+    })
+  })
+
   it.each([
     {},
     { op: 'unknown' },

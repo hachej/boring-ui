@@ -5,7 +5,10 @@ import type { SandboxHandleStore } from '@hachej/boring-agent/shared'
 import { PROVIDER_CAPABILITIES, PROVIDER_CONTRACT_VERSION } from '../../shared/providerMatrix'
 import type { DisposableSandboxProviderV1, SandboxProviderV1 } from '../../shared/providerV1'
 import { SandboxProviderError } from '../../shared/providerV1'
-import { registerDisposableSandboxProviderV1 } from '../disposableProviderRegistration'
+import {
+  disposableProviderConfigDigestV1,
+  registerDisposableSandboxProviderV1,
+} from '../disposableProviderRegistration'
 import { createBlaxelClient } from './client'
 import {
   assertBlaxelCredentials,
@@ -303,6 +306,9 @@ export function createBlaxelSandboxProvider(
   const reservedDisposableNames = new Set<string>()
   const publishedDisposableNames = new Set<string>()
   const pendingCreates = new Set<Promise<void>>()
+  const disposableConfig = options.leaseMode === 'disposable'
+    ? resolveBlaxelConfig(options)
+    : undefined
   let closed = false
 
   const provider: SandboxProviderV1 = {
@@ -317,13 +323,14 @@ export function createBlaxelSandboxProvider(
       pendingCreates.add(pendingCreate)
       try {
       if (!options.client) assertBlaxelCredentials()
-      const config = resolveBlaxelConfig(options)
+      const config = disposableConfig ?? resolveBlaxelConfig(options)
       const workspaceId = context.workspaceId?.trim() || context.workspaceRoot.trim()
       if (!workspaceId) throw new SandboxProviderError('CONFIG_INVALID', 'workspaceId is required for blaxel mode')
       if (options.leaseMode === 'disposable' && (config.volume.enabled || options.handleStore)) {
         throw new SandboxProviderError('CONFIG_INVALID', 'disposable Blaxel forbids volumes and handle persistence')
       }
       let cleanupRemote: (() => Promise<void>) | undefined
+      let remoteCleanupPhase: 'creating' | 'created' | 'returned' | undefined
       let remote
       if (options.leaseMode === 'disposable') {
         const identity = disposableBlaxelIdentity(context)
@@ -331,6 +338,7 @@ export function createBlaxelSandboxProvider(
           throw new SandboxProviderError('BLAXEL_CONFIG_DRIFT', 'disposable Blaxel request identity is already owned')
         }
         reservedDisposableNames.add(identity.name)
+        remoteCleanupPhase = 'creating'
         let deleted = false
         let deletion: Promise<void> | undefined
         cleanupRemote = async () => {
@@ -345,6 +353,7 @@ export function createBlaxelSandboxProvider(
               await client.deleteSandbox(identity.name)
             } catch (error) {
               if (!isBlaxelNotFound(error)) throw normalizeBlaxelError(error)
+              if (remoteCleanupPhase === 'creating') return
             }
             deleted = true
             reservedDisposableNames.delete(identity.name)
@@ -367,13 +376,10 @@ export function createBlaxelSandboxProvider(
             labels: { owner: 'boring-ui', lease: identity.externalId.slice(-32) },
           })
         } catch (error) {
-          if (isBlaxelCreateConflict(error)) {
-            unpublished.delete(cleanupRemote)
-            reservedDisposableNames.delete(identity.name)
-            cleanupRemote = undefined
-          }
+          try { await cleanupRemote() } catch { /* retained for provider close reconciliation */ }
           throw normalizeBlaxelError(error)
         }
+        remoteCleanupPhase = 'created'
         if (remote.name !== identity.name || remote.externalId !== identity.externalId) {
           throw new SandboxProviderError('BLAXEL_CONFIG_DRIFT', 'Blaxel create identity does not match')
         }
@@ -433,7 +439,6 @@ export function createBlaxelSandboxProvider(
         if (disposed) return
         if (disposeInFlight) return await disposeInFlight
         const operation = (async () => {
-          await readiness
           const attempts: Promise<void>[] = []
           if (!workspaceDisposed) attempts.push(Promise.resolve().then(() => {
             workspace.dispose()
@@ -499,6 +504,7 @@ export function createBlaxelSandboxProvider(
         unpublished.delete(cleanupRemote)
         reservedDisposableNames.delete(remote.name)
         publishedDisposableNames.add(remote.name)
+        remoteCleanupPhase = 'returned'
       }
       return pair
       } finally {
@@ -522,8 +528,17 @@ export function createBlaxelSandboxProvider(
   return options.leaseMode === 'disposable'
     ? registerDisposableSandboxProviderV1(
         provider,
-        options.providerConfigDigest
-          ?? 'sha256:8a29722f47b8b03b484890933995c5f12a462a5e0fb3292e3d193fe77771c783',
+        disposableProviderConfigDigestV1('blaxel', {
+          leaseMode: 'disposable',
+          image: disposableConfig!.image,
+          memoryMb: disposableConfig!.memoryMb,
+          region: disposableConfig!.region,
+          ttl: disposableConfig!.ttl ?? null,
+          lifecycle: disposableConfig!.lifecycle ?? null,
+          volume: disposableConfig!.volume,
+          workspaceRoot: disposableConfig!.workspaceRoot,
+          client: options.client ? 'host-injected-v1' : 'sdk-default-v1',
+        }),
       )
     : provider
 }

@@ -110,6 +110,49 @@ async function makeBlaxelHarness(): Promise<TargetHarness> {
   }
 }
 
+async function makeDisposableHarness(providerCase: ProviderCase): Promise<TargetHarness> {
+  if (providerCase === 'vercel-sandbox') {
+    const mock = await createMockVercelSandboxHarness()
+    const handle = Object.assign(mock.sandbox, {
+      sandboxId: `sandbox-disposable-${TARGET}`,
+      persistent: true,
+      delete: async () => {},
+    })
+    const client: VercelSandboxClient = {
+      async create(params) { return Object.assign(handle, { name: params?.name }) },
+      async get(params) { return Object.assign(handle, { name: params.name }) },
+    }
+    return {
+      provider: createVercelSandboxProvider({
+        vercelClient: client,
+        lifecycle: 'disposable',
+        getEnvVar: (name) => ({
+          VERCEL_OIDC_TOKEN: 'test-token',
+          VERCEL_TEAM_ID: 'test-team',
+          BORING_SANDBOX_TELEMETRY_SALT: 'conformance-telemetry-salt',
+        })[name],
+      }),
+      cleanup: mock.cleanup,
+    }
+  }
+  if (providerCase === 'blaxel') {
+    const client = await createMockBlaxelClient()
+    return {
+      provider: createBlaxelSandboxProvider({
+        leaseMode: 'disposable', client, region: 'eu-fra-1',
+        volume: { enabled: false, sizeMb: 2048 },
+      }),
+      async cleanup() {},
+    }
+  }
+  return {
+    provider: providerCase === 'direct'
+      ? createDirectSandboxProvider({ leaseMode: 'disposable' })
+      : createBwrapSandboxProvider({ leaseMode: 'disposable' }),
+    async cleanup() {},
+  }
+}
+
 async function makeHarness(providerCase: ProviderCase): Promise<TargetHarness> {
   if (providerCase === 'vercel-sandbox') return await makeVercelHarness()
   if (providerCase === 'blaxel') return await makeBlaxelHarness()
@@ -204,6 +247,42 @@ for (const providerCase of ['direct', 'bwrap', 'blaxel', 'vercel-sandbox'] as co
       }
     }, { skip, skipReason })
   }
+}
+
+for (const providerCase of ['direct', 'bwrap', 'blaxel', 'vercel-sandbox'] as const) {
+  const id = `${TARGET}:${providerCase}:disposable-13-law`
+  const skip = providerCase === 'bwrap' && !bwrapAvailable
+  const make = async () => {
+    const targetHarness = await makeDisposableHarness(providerCase)
+    const parent = await mkdtemp(join(tmpdir(), `boring-disposable-13-${providerCase}-`))
+    const workspaceRoot = join(parent, 'lease-aaaaaaaaaaaaaaaa')
+    const pair = await targetHarness.provider.create({
+      workspaceRoot,
+      workspaceId: `${providerCase}-${TARGET}-disposable`,
+      sessionId: 'session-disposable-conformance',
+      requestId: 'request-disposable-conformance',
+    })
+    return {
+      pair,
+      async cleanup() {
+        await pair.dispose()
+        await targetHarness.cleanup()
+        await rm(parent, { recursive: true, force: true })
+      },
+    }
+  }
+  workspaceConformance(`${id}:workspace`, async () => {
+    const harness = await make()
+    return { workspace: harness.pair.workspace, cleanup: harness.cleanup }
+  })
+  sandboxConformance(`${id}:sandbox`, async () => {
+    const harness = await make()
+    return {
+      workspace: harness.pair.workspace,
+      sandbox: harness.pair.sandbox,
+      cleanup: harness.cleanup,
+    }
+  }, { skip, skipReason: skip ? 'bubblewrap is unavailable on this runner' : undefined })
 }
 
 const tempDirs: string[] = []
