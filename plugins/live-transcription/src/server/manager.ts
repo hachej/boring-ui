@@ -20,6 +20,7 @@ import { KyutaiDiarizedConnection } from "./kyutaiDiarized"
 import { groupKyutaiTranscriptSnapshot } from "./kyutaiTranscript"
 import { WhisperLiveKitConnection, type WhisperLiveKitSnapshot } from "./whisperLiveKit"
 import { LiveReviewBroker } from "./reviewBroker"
+import { LocalAudioRecorder } from "./audioRecorder"
 
 interface UpstreamConnection {
   connect(): Promise<void>
@@ -31,6 +32,8 @@ interface UpstreamConnection {
 interface LiveSession {
   id: string
   transcriptPath: string
+  audioPath?: string
+  audioRecorder?: LocalAudioRecorder
   originatingSessionId: string
   startedAt: string
   title: string
@@ -70,6 +73,9 @@ export interface LiveTranscriptManagerOptions {
   maxDurationMs?: number
   maxTranscriptBytes?: number
   maxUpstreamMessages?: number
+  /** Optional trusted local directory for streaming AAC/M4A consultation recordings. */
+  audioRecordingDirectory?: string
+  audioRecordingFfmpegPath?: string
   now?: () => number
   reviewIntervalMs?: number
   reviewRetryMs?: number
@@ -206,7 +212,9 @@ export class LiveTranscriptManager {
     }
     const title = cleanTitle(inputTitle)
     const startedAt = new Date(this.now()).toISOString()
-    const path = `live-transcripts/${startedAt.slice(0, 10)}-${randomBytes(12).toString("hex")}.md`
+    const stem = `${startedAt.slice(0, 10)}-${randomBytes(12).toString("hex")}`
+    const path = `live-transcripts/${stem}.md`
+    const audioPath = this.options.audioRecordingDirectory ? `live-transcripts/${stem}.m4a` : undefined
     await workspace.mkdir("live-transcripts", { recursive: true })
     const initialDocument: TranscriptDocument = {
       title,
@@ -222,6 +230,7 @@ export class LiveTranscriptManager {
     const session: LiveSession = {
       id,
       transcriptPath: path,
+      audioPath,
       originatingSessionId: sessionId,
       startedAt,
       title,
@@ -260,6 +269,7 @@ export class LiveTranscriptManager {
     return {
       liveSessionId: id,
       transcriptPath: path,
+      ...(audioPath ? { audioPath } : {}),
       socketNonce,
       reviewIntervalMs: this.options.reviewIntervalMs ?? 60_000,
       state: "setup",
@@ -273,6 +283,7 @@ export class LiveTranscriptManager {
         active: session.phase !== "terminal",
         liveSessionId: session.id,
         transcriptPath: session.transcriptPath,
+        ...(session.audioPath ? { audioPath: session.audioPath } : {}),
         originatingSessionId: session.originatingSessionId,
         state: session.phase === "terminal" ? "interrupted" : session.phase,
         projectionRevision: session.projector.projectionRevision,
@@ -361,6 +372,15 @@ export class LiveTranscriptManager {
           session.upstream = this.options.createUpstreamForTest?.(callbacks) ?? this.createUpstream(callbacks)
           try {
             await session.upstream.connect()
+            if (session.audioPath && this.options.audioRecordingDirectory) {
+              session.audioRecorder = new LocalAudioRecorder({
+                directory: this.options.audioRecordingDirectory,
+                filename: session.audioPath.slice("live-transcripts/".length),
+                sampleRate: this.options.upstreamProvider === "kyutai" ? 24_000 : 16_000,
+                ffmpegPath: this.options.audioRecordingFfmpegPath,
+              })
+              await session.audioRecorder.start()
+            }
           } catch {
             await this.terminate(session, "interrupted", "live_transcript_upstream_failed")
             return
@@ -388,6 +408,7 @@ export class LiveTranscriptManager {
           return
         }
         try {
+          await session.audioRecorder?.write(data)
           await session.upstream?.sendPcm(data)
           await sendAck(socket)
         } catch (error) {
@@ -505,12 +526,24 @@ export class LiveTranscriptManager {
         finalState = "interrupted"
         finalOutcome = error instanceof LiveTranscriptError ? error.code : "live_transcript_upstream_failed"
       }
+      let audioStored = false
+      if (session.audioRecorder) {
+        try {
+          await session.audioRecorder.finalize()
+          audioStored = true
+        } catch {
+          finalState = "interrupted"
+          finalOutcome = "live_transcript_upstream_failed"
+          await session.audioRecorder.abort()
+        }
+      }
       if (finalState === "complete") await session.reviewBroker?.final()
       else session.reviewBroker?.interrupt()
       session.upstream?.close()
       const result: LiveTranscriptTerminalResponse = {
         liveSessionId: session.id,
         transcriptPath: session.transcriptPath,
+        ...(audioStored && session.audioPath ? { audioPath: session.audioPath } : {}),
         state: finalState,
         ...(finalOutcome ? { outcome: finalOutcome } : {}),
         projectionRevision: session.projector.projectionRevision,
