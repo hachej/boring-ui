@@ -14,7 +14,10 @@ import {
 } from "../../../shared/remoteWorkerProtocolV1";
 import { PROVIDER_CONTRACT_VERSION } from "../../../shared/providerMatrix";
 import { SandboxProviderError } from "../../../shared/providerV1";
-import { expectDisposableProviderProfile } from "../../__tests__/conformance/disposableProvider";
+import {
+  expectDisposableProviderProfile,
+  expectPublishedPairLifecycle,
+} from "../../__tests__/conformance/disposableProvider";
 import { createStaticSandboxProvidersV1 } from "../../static";
 import {
   createRemoteWorkerSandboxProviderV1,
@@ -77,6 +80,7 @@ class FakeTransport implements RemoteWorkerTransportV1 {
   createResponseWorkerId = "worker-1";
   protocolVersion: string = REMOTE_WORKER_PROTOCOL_VERSION;
   deleteFailures = 0;
+  deleteNotFound = false;
   execStdout = "";
   qualifiedAtMs = nowMs - 1;
   leaseExpiresAtMs = nowMs + 60_000;
@@ -87,6 +91,7 @@ class FakeTransport implements RemoteWorkerTransportV1 {
   streamCloseFailures = 0;
   streamCloseNeverSettles = false;
   createFailures = 0;
+  createGate?: Promise<void>;
   advertiseExclusiveBinaryCreate = false;
   advertiseMultiSandboxRoots = false;
   negotiatedCapabilitiesOverride?: unknown;
@@ -127,6 +132,7 @@ class FakeTransport implements RemoteWorkerTransportV1 {
       };
     }
     if (input.path === "/internal/v1/sandboxes") {
+      await this.createGate;
       if (this.rawCreateError) throw this.rawCreateError;
       if (this.createFailures > 0) {
         this.createFailures -= 1;
@@ -179,6 +185,12 @@ class FakeTransport implements RemoteWorkerTransportV1 {
       return { leaseExpiresAtMs: this.renewLeaseExpiresAtMs };
     }
     if (input.method === "DELETE") {
+      if (this.deleteNotFound) {
+        throw new SandboxProviderError(
+          REMOTE_WORKER_ERROR_CODES_V1.sandboxNotFound,
+          'fake already absent',
+        );
+      }
       if (this.deleteFailures > 0) {
         this.deleteFailures -= 1;
         throw new SandboxProviderError(
@@ -258,8 +270,51 @@ describe("remote-worker SandboxProviderV1 placement binding", () => {
       workspaceRoot: '/unused', workspaceId: 'workspace-a',
       sessionId: 'session-a', requestId: 'request-a',
     });
-    await pair.dispose();
-    await provider.close?.();
+    await expectPublishedPairLifecycle({
+      provider,
+      pair,
+      assertUsableAfterProviderClose: async () => {
+        await expect(pair.workspace.readFile('hello.txt')).resolves.toBe('tenant-file');
+      },
+      assertTerminalCleanup: async () => {
+        expect(transport.requests.filter((request) => request.method === 'DELETE')).toHaveLength(1);
+      },
+    });
+  });
+
+  test('disposable deletion treats an already-absent remote as terminal success', async () => {
+    const transport = new FakeTransport();
+    transport.advertiseMultiSandboxRoots = true;
+    const provider = createRemoteWorkerSandboxProviderV1({
+      ...providerOptions(transport, [], true), leaseMode: 'disposable',
+    });
+    const pair = await provider.create({
+      workspaceRoot: '/unused', workspaceId: 'workspace-a',
+      sessionId: 'session-absent', requestId: 'request-absent',
+    });
+    transport.deleteNotFound = true;
+    await expect(pair.dispose()).resolves.toBeUndefined();
+  });
+
+  test('provider close drains an in-flight disposable create without publishing or leaking', async () => {
+    const transport = new FakeTransport();
+    transport.advertiseMultiSandboxRoots = true;
+    let release!: () => void;
+    transport.createGate = new Promise<void>((resolve) => { release = resolve; });
+    const provider = createRemoteWorkerSandboxProviderV1({
+      ...providerOptions(transport, [], true), leaseMode: 'disposable',
+    });
+    const creation = provider.create({
+      workspaceRoot: '/unused', workspaceId: 'workspace-a',
+      sessionId: 'session-race', requestId: 'request-race',
+    });
+    await vi.waitFor(() => {
+      expect(transport.requests.some((request) => request.path === '/internal/v1/sandboxes')).toBe(true);
+    });
+    const closing = provider.close!();
+    release();
+    await expect(creation).rejects.toMatchObject({ code: REMOTE_WORKER_ERROR_CODES_V1.unavailable });
+    await expect(closing).resolves.toBeUndefined();
     expect(transport.requests.filter((request) => request.method === 'DELETE')).toHaveLength(1);
   });
 

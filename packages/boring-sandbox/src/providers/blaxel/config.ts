@@ -11,6 +11,7 @@ export const BLAXEL_DEFAULT_VOLUME_SIZE_MB = 2048
 
 export interface BlaxelSandboxProviderOptions {
   leaseMode?: 'disposable'
+  providerConfigDigest?: `sha256:${string}`
   image?: string
   memoryMb?: number
   region?: string

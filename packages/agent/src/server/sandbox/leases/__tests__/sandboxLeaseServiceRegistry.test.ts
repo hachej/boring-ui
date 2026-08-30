@@ -3,8 +3,12 @@ import { describe, expect, it, vi } from 'vitest'
 import type { SandboxLeaseService } from '../sandboxLease'
 import { SandboxLeaseServiceRegistry } from '../sandboxLeaseServiceRegistry'
 
-function service() {
-  return { dispose: vi.fn(async () => {}) } as unknown as SandboxLeaseService
+function service(dispose = vi.fn(async () => {}), providerIdentity: object = {}) {
+  return {
+    dispose,
+    isDisposed: false,
+    providerIdentity,
+  } as unknown as SandboxLeaseService
 }
 
 describe('SandboxLeaseServiceRegistry', () => {
@@ -32,6 +36,17 @@ describe('SandboxLeaseServiceRegistry', () => {
     expect(conflict.dispose).not.toHaveBeenCalled()
   })
 
+  it('rejects one provider instance owned by services under different digests', async () => {
+    const provider = {}
+    const first = service(vi.fn(async () => {}), provider)
+    const alias = service(vi.fn(async () => {}), provider)
+    const registry = new SandboxLeaseServiceRegistry()
+    registry.register({ digest: 'profile-a', leases: first })
+    expect(() => registry.register({ digest: 'profile-b', leases: alias }))
+      .toThrow('provider is already owned')
+    await registry.dispose()
+  })
+
   it('rejects the same service bound to different digests', async () => {
     const leases = service()
     const registry = new SandboxLeaseServiceRegistry()
@@ -47,7 +62,7 @@ describe('SandboxLeaseServiceRegistry', () => {
     const dispose = vi.fn()
       .mockRejectedValueOnce(new Error('remote deletion acknowledgement lost'))
       .mockResolvedValue(undefined)
-    const leases = { dispose } as unknown as SandboxLeaseService
+    const leases = service(dispose)
     const registry = new SandboxLeaseServiceRegistry()
     registry.register({ digest: 'profile-a', leases })
 

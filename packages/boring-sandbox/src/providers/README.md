@@ -22,6 +22,19 @@ qualification: direct/bwrap remain unsuitable for hostile tenants, Blaxel live
 qualification is profile-specific, and the current local gVisor profile cannot
 advertise remote-worker multi-root support because `openat2` is unavailable.
 
+## #1459 qualification status
+
+| Provider | Lifecycle proof at this head | Live status |
+| --- | --- | --- |
+| direct | real create/execute/two-root isolation/exact cleanup/default retention | PASS locally |
+| bwrap | real Linux bubblewrap create/execute/isolation/exact cleanup/default retention | PASS locally |
+| Blaxel | mock fresh create, conflict ownership, create/close race, retry/not-found, no Volume/store | LIVE NOT RUN — no D31-qualified profile credentials |
+| Vercel | named create, conflict ownership, ambiguity reconciliation, retry/not-found, keyed redaction | LIVE PASS on the exact reviewed working tree via Vault-backed credentials: create/readiness/read-write/exec/provider-close ownership/remote deletion |
+| remote-worker | authenticated mock protocol, ownership races, retry/not-found, capability fail-closed | LIVE NOT QUALIFIED — installed gVisor returns `ENOSYS` for `openat2`; capability remains unadvertised |
+
+Mock proof is mandatory but is not represented as live qualification. A host
+must not grant a profile whose live row is not qualified for its tenant policy.
+
 `resolveMode()` itself is owned by `@hachej/boring-bash/modes`. It resolves a
 mode id to one of these provider values; providers do not resolve modes.
 

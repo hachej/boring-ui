@@ -1,4 +1,4 @@
-import { access, mkdtemp, mkdir, rm } from 'node:fs/promises'
+import { access, mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -7,6 +7,7 @@ import { afterEach, describe, expect, test } from 'vitest'
 import {
   expectDisposableProviderProfile,
   expectPersistentProviderDefault,
+  expectPublishedPairLifecycle,
 } from './conformance/disposableProvider'
 import { createBwrapSandboxProvider } from '../bwrap/createBwrapProvider'
 import { createDirectSandboxProvider } from '../direct/createDirectProvider'
@@ -38,12 +39,47 @@ describe.each([
     expect(Buffer.from((await pairA.sandbox.exec('cat marker.txt')).stdout).toString()).toBe('a')
     expect(Buffer.from((await pairB.sandbox.exec('cat marker.txt')).stdout).toString()).toBe('b')
 
-    await Promise.all([pairA.dispose(), pairA.dispose()])
-    expect(await exists(rootA)).toBe(false)
+    await expectPublishedPairLifecycle({
+      provider,
+      pair: pairA,
+      assertUsableAfterProviderClose: async () => {
+        expect(await pairA.workspace.readFile('marker.txt')).toBe('a')
+        await rm(rootA, { recursive: true })
+      },
+      assertTerminalCleanup: async () => {
+        expect(await exists(rootA)).toBe(false)
+      },
+    })
     expect(await exists(rootB)).toBe(true)
     expect(await pairB.workspace.readFile('marker.txt')).toBe('b')
     await pairB.dispose()
-    await provider.close?.()
+  })
+
+  test('rejects root aliases and pre-existing directory or symlink roots before effects', async () => {
+    const provider = factory({ leaseMode: 'disposable' })
+    for (const workspaceRoot of ['//', '/./', '/tmp/..', '/tmp/../']) {
+      await expect(provider.create({ workspaceRoot, sessionId: 'unsafe' })).rejects.toMatchObject({
+        code: 'CONFIG_INVALID',
+      })
+    }
+
+    const parent = await mkdtemp(join(tmpdir(), 'boring-disposable-guard-'))
+    cleanupRoots.push(parent)
+    const existing = join(parent, 'existing')
+    await mkdir(existing)
+    await expect(provider.create({ workspaceRoot: existing, sessionId: 'existing' })).rejects.toMatchObject({
+      code: 'EEXIST',
+    })
+
+    const target = join(parent, 'target')
+    const linked = join(parent, 'linked')
+    await mkdir(target)
+    await writeFile(join(target, 'marker'), 'preserved')
+    await symlink(target, linked)
+    await expect(provider.create({ workspaceRoot: linked, sessionId: 'linked' })).rejects.toMatchObject({
+      code: 'EEXIST',
+    })
+    expect(await exists(join(target, 'marker'))).toBe(true)
   })
 
   test('keeps the primary root when disposable mode is omitted', async () => {

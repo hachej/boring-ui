@@ -2,11 +2,11 @@ import { mkdir } from 'node:fs/promises'
 
 import { PROVIDER_CAPABILITIES, PROVIDER_CONTRACT_VERSION } from '../../shared/providerMatrix'
 import {
-  DISPOSABLE_SANDBOX_PROVIDER_PROFILE_V1,
   type DisposableSandboxProviderV1,
   type SandboxProviderV1,
   type WorkspaceSandboxPairV1,
 } from '../../shared/providerV1'
+import { registerDisposableSandboxProviderV1 } from '../disposableProviderRegistration'
 import {
   assertDisposableLocalRoot,
   createDisposableLocalDisposer,
@@ -17,6 +17,7 @@ import { createDirectSandbox, type CreateDirectSandboxOptions } from './createDi
 export interface DirectSandboxProviderOptions {
   sandbox?: Omit<CreateDirectSandboxOptions, 'runtimeContext'>
   leaseMode?: 'disposable'
+  providerConfigDigest?: `sha256:${string}`
 }
 
 export function createDirectSandboxProvider(
@@ -29,30 +30,24 @@ export function createDirectSandboxProvider(
   options: DirectSandboxProviderOptions = {},
 ): SandboxProviderV1 {
   const pendingCleanup = new Set<() => Promise<void>>()
-  return {
+  const provider: SandboxProviderV1 = {
     contractVersion: PROVIDER_CONTRACT_VERSION,
     providerId: 'direct',
     capabilities: PROVIDER_CAPABILITIES.direct,
-    ...(options.leaseMode === 'disposable' ? {
-      disposableProfile: {
-        contractVersion: DISPOSABLE_SANDBOX_PROVIDER_PROFILE_V1,
-        resume: false as const,
-        publishedCleanupOwner: 'returned-pair' as const,
-        ambiguousCreate: 'correlated-reconciliation' as const,
-      },
-    } : {}),
     resolveRuntimeRoot(context) {
       return context.workspaceRoot
     },
     async create(context): Promise<WorkspaceSandboxPairV1> {
-      if (options.leaseMode === 'disposable') assertDisposableLocalRoot(context.workspaceRoot)
-      await mkdir(context.workspaceRoot, { recursive: true })
-      const runtimeContext = { runtimeCwd: context.workspaceRoot }
-      const workspace = createNodeWorkspace(context.workspaceRoot, { runtimeContext })
+      const workspaceRoot = options.leaseMode === 'disposable'
+        ? assertDisposableLocalRoot(context.workspaceRoot)
+        : context.workspaceRoot
+      await mkdir(workspaceRoot, { recursive: options.leaseMode !== 'disposable' })
+      const runtimeContext = { runtimeCwd: workspaceRoot }
+      const workspace = createNodeWorkspace(workspaceRoot, { runtimeContext })
       const sandbox = createDirectSandbox({ ...options.sandbox, runtimeContext })
       const cleanup = options.leaseMode === 'disposable'
         ? createDisposableLocalDisposer({
-            workspaceRoot: context.workspaceRoot,
+            workspaceRoot,
             disposeWorkspace: () => disposeNodeWorkspace(workspace),
             disposeSandbox: async () => { await sandbox.dispose?.() },
           })
@@ -99,4 +94,11 @@ export function createDirectSandboxProvider(
       },
     } : {}),
   }
+  return options.leaseMode === 'disposable'
+    ? registerDisposableSandboxProviderV1(
+        provider,
+        options.providerConfigDigest
+          ?? 'sha256:76208b7f908e519027ef456c2ae52c8d951b2a246a1c33d9e2ce7ecb63450198',
+      )
+    : provider
 }

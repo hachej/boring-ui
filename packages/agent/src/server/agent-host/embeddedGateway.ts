@@ -693,7 +693,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
     if (sandboxOwnerId) {
       // Session deletion is already durably settled. Lease cleanup is separate,
       // idempotent host maintenance and remains retryable through the reaper.
-      try { await binding.scope.sandboxTools!.leases.releaseOwner(sandboxOwnerId) }
+      try { await binding.scope.sandboxTools!.leases?.releaseOwner(sandboxOwnerId) }
       catch { /* cleanup-pending state remains registered */ }
     }
   }

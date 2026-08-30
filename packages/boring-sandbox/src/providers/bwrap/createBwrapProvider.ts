@@ -2,12 +2,12 @@ import { mkdir } from 'node:fs/promises'
 
 import { PROVIDER_CAPABILITIES, PROVIDER_CONTRACT_VERSION } from '../../shared/providerMatrix'
 import {
-  DISPOSABLE_SANDBOX_PROVIDER_PROFILE_V1,
   SandboxProviderError,
   type DisposableSandboxProviderV1,
   type SandboxProviderV1,
   type WorkspaceSandboxPairV1,
 } from '../../shared/providerV1'
+import { registerDisposableSandboxProviderV1 } from '../disposableProviderRegistration'
 import {
   assertDisposableLocalRoot,
   createDisposableLocalDisposer,
@@ -21,6 +21,7 @@ import {
 export interface BwrapSandboxProviderOptions {
   sandbox?: Omit<CreateBwrapSandboxOptions, 'hostWorkspaceRoot' | 'runtimeContext'>
   leaseMode?: 'disposable'
+  providerConfigDigest?: `sha256:${string}`
 }
 
 export function createBwrapSandboxProvider(
@@ -33,23 +34,17 @@ export function createBwrapSandboxProvider(
   options: BwrapSandboxProviderOptions = {},
 ): SandboxProviderV1 {
   const pendingCleanup = new Set<() => Promise<void>>()
-  return {
+  const provider: SandboxProviderV1 = {
     contractVersion: PROVIDER_CONTRACT_VERSION,
     providerId: 'bwrap',
     capabilities: PROVIDER_CAPABILITIES.bwrap,
-    ...(options.leaseMode === 'disposable' ? {
-      disposableProfile: {
-        contractVersion: DISPOSABLE_SANDBOX_PROVIDER_PROFILE_V1,
-        resume: false as const,
-        publishedCleanupOwner: 'returned-pair' as const,
-        ambiguousCreate: 'correlated-reconciliation' as const,
-      },
-    } : {}),
     resolveRuntimeRoot() {
       return '/workspace'
     },
     async create(context): Promise<WorkspaceSandboxPairV1> {
-      if (options.leaseMode === 'disposable') assertDisposableLocalRoot(context.workspaceRoot)
+      const workspaceRoot = options.leaseMode === 'disposable'
+        ? assertDisposableLocalRoot(context.workspaceRoot)
+        : context.workspaceRoot
       if (process.platform !== 'linux') {
         throw new SandboxProviderError(
           'BWRAP_UNAVAILABLE',
@@ -57,17 +52,17 @@ export function createBwrapSandboxProvider(
         )
       }
 
-      await mkdir(context.workspaceRoot, { recursive: true })
+      await mkdir(workspaceRoot, { recursive: options.leaseMode !== 'disposable' })
       const runtimeContext = { runtimeCwd: '/workspace' }
-      const workspace = createNodeWorkspace(context.workspaceRoot, { runtimeContext })
+      const workspace = createNodeWorkspace(workspaceRoot, { runtimeContext })
       const sandbox = createBwrapSandbox({
         ...options.sandbox,
-        hostWorkspaceRoot: context.workspaceRoot,
+        hostWorkspaceRoot: workspaceRoot,
         runtimeContext,
       })
       const cleanup = options.leaseMode === 'disposable'
         ? createDisposableLocalDisposer({
-            workspaceRoot: context.workspaceRoot,
+            workspaceRoot,
             disposeWorkspace: () => disposeNodeWorkspace(workspace),
             disposeSandbox: async () => { await sandbox.dispose?.() },
           })
@@ -118,4 +113,11 @@ export function createBwrapSandboxProvider(
       },
     } : {}),
   }
+  return options.leaseMode === 'disposable'
+    ? registerDisposableSandboxProviderV1(
+        provider,
+        options.providerConfigDigest
+          ?? 'sha256:1abc44c5c6195bac525222dd44c3620de2725f62e56df35220f977cebfd56fef',
+      )
+    : provider
 }

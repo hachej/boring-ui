@@ -233,13 +233,16 @@ export async function buildAgentComposition(
     ...(runtimeScope.includeUploadTools ? buildUploadAgentTools(bashRuntimeBundle) : []),
   ]
   const sandboxCapability = runtimeScope.sandboxTools
+  if (sandboxCapability && !sandboxCapability.leases) {
+    throw new TypeError('sandbox provider profile was not resolved by the host registry')
+  }
   const extraTools = runtimeScope.extraTools ?? []
   // Defense in depth: Host binding resolution runs this pure preflight before
   // acquiring resources, and the assembly funnel reasserts the same policy.
   assertSandboxToolCatalogAuthority(runtimeScope)
   const standardTools = sandboxCapability
     ? addSandboxTargeting(primaryStandardTools, {
-        leases: sandboxCapability.leases,
+        leases: sandboxCapability.leases!,
         workspaceScopeId: input.workspaceScopeId,
         agentTypeId: input.agent.agentTypeId,
         includeFilesystemTools: runtimeScope.includeFilesystemTools !== false,
@@ -251,7 +254,7 @@ export async function buildAgentComposition(
     ...(sandboxCapability
       ? [createSandboxManagementTool({
           runtime: input.hostRuntime,
-          leases: sandboxCapability.leases,
+          leases: sandboxCapability.leases!,
           workspaceScopeId: input.workspaceScopeId,
           agentTypeId: input.agent.agentTypeId,
         })]

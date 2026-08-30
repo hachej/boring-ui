@@ -4,10 +4,8 @@ import type { SandboxHandleStore } from '@hachej/boring-agent/shared'
 
 import { PROVIDER_CAPABILITIES, PROVIDER_CONTRACT_VERSION } from '../../shared/providerMatrix'
 import type { DisposableSandboxProviderV1, SandboxProviderV1 } from '../../shared/providerV1'
-import {
-  DISPOSABLE_SANDBOX_PROVIDER_PROFILE_V1,
-  SandboxProviderError,
-} from '../../shared/providerV1'
+import { SandboxProviderError } from '../../shared/providerV1'
+import { registerDisposableSandboxProviderV1 } from '../disposableProviderRegistration'
 import { createBlaxelClient } from './client'
 import {
   assertBlaxelCredentials,
@@ -268,6 +266,14 @@ rm -rf -- "$lock"`
   }
 }
 
+function isBlaxelCreateConflict(error: unknown): boolean {
+  const status = (error as { status?: unknown; statusCode?: unknown } | null)?.status
+    ?? (error as { statusCode?: unknown } | null)?.statusCode
+  const code = (error as { code?: unknown } | null)?.code
+  const message = error instanceof Error ? error.message : String(error)
+  return status === 409 || code === 409 || code === 'conflict' || /already exists|conflict/i.test(message)
+}
+
 function disposableBlaxelIdentity(context: { workspaceId?: string; sessionId: string; requestId?: string }) {
   if (!context.workspaceId?.trim() || !context.requestId?.trim()) {
     throw new SandboxProviderError('CONFIG_INVALID', 'disposable Blaxel requires host workspace and request identity')
@@ -294,21 +300,22 @@ export function createBlaxelSandboxProvider(
   const handles = createBlaxelSandboxHandleResolver()
   const seeds = new Map<string, { fingerprint: string; promise: Promise<void> }>()
   const unpublished = new Set<() => Promise<void>>()
+  const reservedDisposableNames = new Set<string>()
+  const publishedDisposableNames = new Set<string>()
+  const pendingCreates = new Set<Promise<void>>()
+  let closed = false
 
-  return {
+  const provider: SandboxProviderV1 = {
     contractVersion: PROVIDER_CONTRACT_VERSION,
     providerId: 'blaxel',
     capabilities: PROVIDER_CAPABILITIES.blaxel,
-    ...(options.leaseMode === 'disposable' ? {
-      disposableProfile: {
-        contractVersion: DISPOSABLE_SANDBOX_PROVIDER_PROFILE_V1,
-        resume: false as const,
-        publishedCleanupOwner: 'returned-pair' as const,
-        ambiguousCreate: 'correlated-reconciliation' as const,
-      },
-    } : {}),
     resolveRuntimeRoot: () => BLAXEL_WORKSPACE_ROOT,
     async create(context) {
+      if (closed) throw new SandboxProviderError('BLAXEL_API_ERROR', 'Blaxel provider is closed')
+      let finishCreate!: () => void
+      const pendingCreate = new Promise<void>((resolve) => { finishCreate = resolve })
+      pendingCreates.add(pendingCreate)
+      try {
       if (!options.client) assertBlaxelCredentials()
       const config = resolveBlaxelConfig(options)
       const workspaceId = context.workspaceId?.trim() || context.workspaceRoot.trim()
@@ -320,6 +327,10 @@ export function createBlaxelSandboxProvider(
       let remote
       if (options.leaseMode === 'disposable') {
         const identity = disposableBlaxelIdentity(context)
+        if (reservedDisposableNames.has(identity.name) || publishedDisposableNames.has(identity.name)) {
+          throw new SandboxProviderError('BLAXEL_CONFIG_DRIFT', 'disposable Blaxel request identity is already owned')
+        }
+        reservedDisposableNames.add(identity.name)
         let deleted = false
         let deletion: Promise<void> | undefined
         cleanupRemote = async () => {
@@ -336,6 +347,8 @@ export function createBlaxelSandboxProvider(
               if (!isBlaxelNotFound(error)) throw normalizeBlaxelError(error)
             }
             deleted = true
+            reservedDisposableNames.delete(identity.name)
+            publishedDisposableNames.delete(identity.name)
             unpublished.delete(cleanupRemote!)
           })()
           deletion = operation
@@ -354,6 +367,11 @@ export function createBlaxelSandboxProvider(
             labels: { owner: 'boring-ui', lease: identity.externalId.slice(-32) },
           })
         } catch (error) {
+          if (isBlaxelCreateConflict(error)) {
+            unpublished.delete(cleanupRemote)
+            reservedDisposableNames.delete(identity.name)
+            cleanupRemote = undefined
+          }
           throw normalizeBlaxelError(error)
         }
         if (remote.name !== identity.name || remote.externalId !== identity.externalId) {
@@ -368,13 +386,6 @@ export function createBlaxelSandboxProvider(
           now: options.now,
         })
       }
-      if (!config.volume.enabled) {
-        try { await remote.fs.mkdir(BLAXEL_WORKSPACE_ROOT) }
-        catch (error) {
-          if (!isBlaxelAlreadyExists(error)) throw normalizeBlaxelError(error)
-        }
-      }
-
       let disposed = false
       let workspaceDisposed = false
       let sandboxDisposed = false
@@ -383,7 +394,15 @@ export function createBlaxelSandboxProvider(
       const sandbox = createBlaxelSandboxExec(remote, {
         onMutation: workspace.invalidateMetadataCache,
       })
-      try {
+      const provisioning = createBlaxelProvisioningAdapter({ workspace, sandbox })
+      let setupError: unknown
+      const readiness = (async () => {
+        if (!config.volume.enabled) {
+          try { await remote.fs.mkdir(BLAXEL_WORKSPACE_ROOT) }
+          catch (error) {
+            if (!isBlaxelAlreadyExists(error)) throw normalizeBlaxelError(error)
+          }
+        }
         const preflight = await sandbox.exec(
           `set -eu; export LC_ALL=C; command -v sh >/dev/null; command -v stat >/dev/null; command -v mv >/dev/null; command -v mkdir >/dev/null; command -v realpath >/dev/null; command -v mktemp >/dev/null; command -v rm >/dev/null; command -v sed >/dev/null; command -v flock >/dev/null; test -d ${shellQuote(BLAXEL_WORKSPACE_ROOT)}; d=$(mktemp -d /tmp/boring-blaxel-preflight.XXXXXX); volume_lock=$(mktemp ${shellQuote(`${BLAXEL_WORKSPACE_ROOT}/.boring-blaxel-flock-preflight.XXXXXX`)}); trap 'rm -rf -- "$d"; rm -f -- "$volume_lock"' EXIT; mkdir -p -- "$d/a"; printf x >"$d/a/f"; stat -Lc '%s|%Y|%F' -- "$d/a/f" >/dev/null; realpath "$d/a/f" >/dev/null; realpath "$d/a/missing" >/dev/null; mv -T -- "$d/a/f" "$d/a/g"; flock -x -n "$volume_lock" true`,
           { timeoutMs: 10_000, maxOutputBytes: 8 * 1024 },
@@ -391,7 +410,6 @@ export function createBlaxelSandboxProvider(
         if (preflight.exitCode !== 0) {
           throw new SandboxProviderError('BLAXEL_RUNTIME_UNQUALIFIED', 'Blaxel runtime image failed workspace/tool preflight')
         }
-        const provisioning = createBlaxelProvisioningAdapter({ workspace, sandbox })
         if (context.templatePath) {
           const fingerprint = await fingerprintBlaxelHostTree(context.templatePath)
           const seedKey = options.leaseMode === 'disposable' ? remote.name : workspaceId
@@ -410,51 +428,90 @@ export function createBlaxelSandboxProvider(
             if (seeds.get(seedKey)?.promise === seed) seeds.delete(seedKey)
           }
         }
-        if (cleanupRemote) unpublished.delete(cleanupRemote)
-        return {
-          workspace,
-          sandbox,
-          provisioning,
-          async checkHealth() {
-            try {
-              const current = await client.getSandbox(remote.name)
-              return /failed|terminated|deleted/i.test(current.status ?? '')
-                ? { state: 'recreate' as const, error: normalizeBlaxelError(new Error(`sandbox status ${current.status}`)) }
-                : { state: 'ok' as const }
-            } catch (error) {
-              if (isBlaxelNotFound(error)) return { state: 'recreate' as const, error: normalizeBlaxelError(error) }
-              throw normalizeBlaxelError(error)
-            }
-          },
-          async dispose() {
-            if (disposed) return
-            if (disposeInFlight) return await disposeInFlight
-            const operation = (async () => {
-              if (!workspaceDisposed) { workspace.dispose(); workspaceDisposed = true }
-              if (!sandboxDisposed) { await sandbox.dispose(); sandboxDisposed = true }
-              await cleanupRemote?.()
-              disposed = true
-            })()
-            disposeInFlight = operation
-            try { await operation } finally { if (disposeInFlight === operation) disposeInFlight = undefined }
-          },
+      })().catch((error: unknown) => { setupError = error })
+      const disposePair = async (): Promise<void> => {
+        if (disposed) return
+        if (disposeInFlight) return await disposeInFlight
+        const operation = (async () => {
+          await readiness
+          const attempts: Promise<void>[] = []
+          if (!workspaceDisposed) attempts.push(Promise.resolve().then(() => {
+            workspace.dispose()
+            workspaceDisposed = true
+          }))
+          if (!sandboxDisposed) attempts.push(Promise.resolve().then(async () => {
+            await sandbox.dispose()
+            sandboxDisposed = true
+          }))
+          if (cleanupRemote) attempts.push(cleanupRemote())
+          const results = await Promise.allSettled(attempts)
+          const failures = results.flatMap((result) => result.status === 'rejected' ? [result.reason] : [])
+          if (failures.length) throw new AggregateError(failures, 'Blaxel sandbox cleanup failed')
+          disposed = true
+        })()
+        disposeInFlight = operation
+        try { await operation } finally { if (disposeInFlight === operation) disposeInFlight = undefined }
+      }
+      const pair = {
+        workspace,
+        sandbox,
+        provisioning,
+        async checkHealth() {
+          await readiness
+          if (setupError) {
+            if (setupError instanceof SandboxProviderError) throw setupError
+            throw normalizeBlaxelError(setupError)
+          }
+          try {
+            const current = await client.getSandbox(remote.name)
+            return /failed|terminated|deleted/i.test(current.status ?? '')
+              ? { state: 'recreate' as const, error: normalizeBlaxelError(new Error(`sandbox status ${current.status}`)) }
+              : { state: 'ok' as const }
+          } catch (error) {
+            if (isBlaxelNotFound(error)) return { state: 'recreate' as const, error: normalizeBlaxelError(error) }
+            throw normalizeBlaxelError(error)
+          }
+        },
+        dispose: disposePair,
+      }
+      if (options.leaseMode !== 'disposable') {
+        await readiness
+        if (setupError) {
+          try { await disposePair() }
+          catch (cleanupError) {
+            throw new AggregateError([setupError, cleanupError], 'Blaxel sandbox creation cleanup failed')
+          }
+          if (setupError instanceof SandboxProviderError) throw setupError
+          throw normalizeBlaxelError(setupError)
         }
-      } catch (error) {
-        workspace.dispose()
-        const cleanupFailures: unknown[] = []
-        try { await sandbox.dispose() } catch (cleanupError) { cleanupFailures.push(cleanupError) }
-        if (cleanupRemote) {
-          try { await cleanupRemote() } catch (cleanupError) { cleanupFailures.push(cleanupError) }
+      }
+      if (closed) {
+        try { await disposePair() }
+        catch (cleanupError) {
+          throw new AggregateError([
+            new SandboxProviderError('BLAXEL_API_ERROR', 'Blaxel provider closed during create'),
+            cleanupError,
+          ], 'Blaxel sandbox creation cleanup failed')
         }
-        if (cleanupFailures.length) throw new AggregateError([error, ...cleanupFailures], 'Blaxel sandbox creation cleanup failed')
-        if (error instanceof SandboxProviderError) throw error
-        throw normalizeBlaxelError(error)
+        throw new SandboxProviderError('BLAXEL_API_ERROR', 'Blaxel provider closed during create')
+      }
+      if (cleanupRemote) {
+        unpublished.delete(cleanupRemote)
+        reservedDisposableNames.delete(remote.name)
+        publishedDisposableNames.add(remote.name)
+      }
+      return pair
+      } finally {
+        finishCreate()
+        pendingCreates.delete(pendingCreate)
       }
     },
     invalidate({ workspaceId }) {
       if (options.leaseMode !== 'disposable') handles.invalidate(workspaceId)
     },
     async close() {
+      closed = true
+      await Promise.allSettled([...pendingCreates])
       if (options.leaseMode !== 'disposable') handles.clear()
       seeds.clear()
       const results = await Promise.allSettled([...unpublished].map(async (cleanup) => await cleanup()))
@@ -462,6 +519,13 @@ export function createBlaxelSandboxProvider(
       if (failures.length) throw new AggregateError(failures.map((failure) => failure.reason))
     },
   }
+  return options.leaseMode === 'disposable'
+    ? registerDisposableSandboxProviderV1(
+        provider,
+        options.providerConfigDigest
+          ?? 'sha256:8a29722f47b8b03b484890933995c5f12a462a5e0fb3292e3d193fe77771c783',
+      )
+    : provider
 }
 
 export type { BlaxelSandboxProviderOptions }

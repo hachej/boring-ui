@@ -18,12 +18,12 @@ import {
   type RemoteWorkerCreateResponseV1,
 } from "../../shared/remoteWorkerProtocolV1";
 import {
-  DISPOSABLE_SANDBOX_PROVIDER_PROFILE_V1,
   SandboxProviderError,
   type DisposableSandboxProviderV1,
   type SandboxProviderV1,
   type WorkspaceSandboxPairV1,
 } from "../../shared/providerV1";
+import { registerDisposableSandboxProviderV1 } from '../disposableProviderRegistration';
 import {
   parseRemoteWorkerFleetConfigV1,
   remoteWorkerFleetConfigDigestV1,
@@ -244,19 +244,11 @@ export function createRemoteWorkerSandboxProviderV1(
   };
   let closed = false;
 
-  return {
+  const provider: RemoteWorkerSandboxProviderV1 = {
     contractVersion: PROVIDER_CONTRACT_VERSION,
     providerId: "remote-worker",
     providerConfigDigest,
     capabilities: PROVIDER_CAPABILITIES["remote-worker"],
-    ...(options.leaseMode === 'disposable' ? {
-      disposableProfile: {
-        contractVersion: DISPOSABLE_SANDBOX_PROVIDER_PROFILE_V1,
-        resume: false as const,
-        publishedCleanupOwner: 'returned-pair' as const,
-        ambiguousCreate: 'correlated-reconciliation' as const,
-      },
-    } : {}),
     resolveRuntimeRoot() {
       return REMOTE_WORKER_RUNTIME_CWD;
     },
@@ -430,6 +422,12 @@ export function createRemoteWorkerSandboxProviderV1(
             "remote-worker create binding receipt is invalid",
           );
         }
+        if (closed) {
+          throw new SandboxProviderError(
+            REMOTE_WORKER_ERROR_CODES_V1.unavailable,
+            "remote-worker provider closed during create",
+          );
+        }
 
         let leaseExpiresAtMs = createResponse.leaseExpiresAtMs;
         const leaseClient = client.bind(createResponse.sandboxId);
@@ -562,4 +560,7 @@ export function createRemoteWorkerSandboxProviderV1(
       }
     },
   };
+  return options.leaseMode === 'disposable'
+    ? registerDisposableSandboxProviderV1(provider, providerConfigDigest)
+    : provider;
 }

@@ -112,23 +112,36 @@ export interface SandboxProviderV1 {
 }
 
 /** Host-only refinement required by mutable lease composition. */
+export interface DisposableSandboxProviderProfileV1 {
+  readonly contractVersion: typeof DISPOSABLE_SANDBOX_PROVIDER_PROFILE_V1;
+  readonly resume: false;
+  readonly publishedCleanupOwner: 'returned-pair';
+  readonly ambiguousCreate: 'correlated-reconciliation';
+  readonly providerConfigDigest: `sha256:${string}`;
+  assertProvider(provider: SandboxProviderV1): void;
+}
+
 export interface DisposableSandboxProviderV1 extends SandboxProviderV1 {
-  readonly disposableProfile: Readonly<{
-    contractVersion: typeof DISPOSABLE_SANDBOX_PROVIDER_PROFILE_V1;
-    resume: false;
-    publishedCleanupOwner: 'returned-pair';
-    ambiguousCreate: 'correlated-reconciliation';
-  }>;
+  readonly disposableProfile: DisposableSandboxProviderProfileV1;
 }
 
 export function isDisposableSandboxProviderV1(
   provider: SandboxProviderV1,
 ): provider is DisposableSandboxProviderV1 {
   const profile = (provider as Partial<DisposableSandboxProviderV1>).disposableProfile;
-  return profile?.contractVersion === DISPOSABLE_SANDBOX_PROVIDER_PROFILE_V1
-    && profile.resume === false
-    && profile.publishedCleanupOwner === 'returned-pair'
-    && profile.ambiguousCreate === 'correlated-reconciliation';
+  if (
+    profile?.contractVersion !== DISPOSABLE_SANDBOX_PROVIDER_PROFILE_V1 ||
+    profile.resume !== false ||
+    profile.publishedCleanupOwner !== 'returned-pair' ||
+    profile.ambiguousCreate !== 'correlated-reconciliation' ||
+    typeof profile.assertProvider !== 'function'
+  ) return false;
+  try {
+    profile.assertProvider(provider);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export class SandboxProviderError extends Error {

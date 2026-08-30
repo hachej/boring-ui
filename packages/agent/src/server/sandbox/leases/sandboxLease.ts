@@ -125,7 +125,7 @@ export class SandboxLeaseService {
   private disposal: Promise<void> | undefined
 
   constructor(private readonly options: SandboxLeaseServiceOptions) {
-    if (options.provider.contractVersion && !isDisposableLeaseProvider(options.provider)) {
+    if (!isDisposableLeaseProvider(options.provider)) {
       this.invalid('provider must implement the disposable sandbox profile')
     }
     if (!Number.isFinite(options.ttlMs) || options.ttlMs <= 0) this.invalid('ttlMs must be greater than zero')
@@ -140,6 +140,17 @@ export class SandboxLeaseService {
     this.createHandle = options.createHandle ?? randomUUID
     this.timer = setInterval(() => { void this.runScheduledReap() }, options.reapIntervalMs)
     this.timer.unref?.()
+  }
+
+  get isClosed(): boolean { return this.closed }
+  get isDisposed(): boolean { return this.providerClosed && this.leases.size === 0 }
+  get providerIdentity(): SandboxProviderV1 { return this.options.provider }
+
+  /** Registry compensation before publication; no lease or provider cleanup authority was transferred. */
+  abandonUnregistered(): void {
+    if (this.leases.size || this.pendingTotal) throw new TypeError('active sandbox lease service cannot be abandoned')
+    this.closed = true
+    clearInterval(this.timer)
   }
 
   assertProfileBinding(input: {
@@ -185,7 +196,7 @@ export class SandboxLeaseService {
 
       this.assertCreationPublishable(signal)
       const workspaceRoot = join(this.options.workspaceRoot, handle)
-      if (this.options.provider.contractVersion) {
+      {
         try {
           await lstat(workspaceRoot)
           throw this.creationAborted('sandbox lease root already exists')
@@ -358,7 +369,11 @@ export class SandboxLeaseService {
   }
 
   private closeProvider(): Promise<void> {
-    if (!this.options.provider.close || this.providerClosed) return Promise.resolve()
+    if (this.providerClosed) return Promise.resolve()
+    if (!this.options.provider.close) {
+      this.providerClosed = true
+      return Promise.resolve()
+    }
     if (!this.providerCloseInFlight) {
       const effect = Promise.resolve().then(async () => { await this.options.provider.close?.() })
       const tracked = effect

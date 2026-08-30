@@ -21,43 +21,23 @@ use several leases concurrently.
 
 ## Host authority
 
-The embedding host constructs one shared `SandboxLeaseService` for an authorized
-profile and passes it only after Agent authorization. Multi-provider hosts use a
-versioned `SandboxLeaseProviderProfileV1`; its canonical digest binds workspace
+The embedding host supplies a trusted provider factory in a versioned
+`SandboxLeaseProviderProfileV1`; AgentHost's lifecycle registry invokes it once
+per authorized digest and owns the resulting service/provider/timer. The
+canonical digest binds workspace
 scope, placement, physical provider workspace, lease root, provider/template
 fingerprints, credential-version references, TTL, drain policy, and quotas.
 Live clients and secret bytes are excluded from that identity. Scope and digest
 validation run before environment, provider, or harness acquisition.
 
-For simple Vercel-only composition:
-
-```ts
-const provider = createVercelSandboxProvider({
-  lifecycle: 'disposable',
-  immutableCacheSource: hostResolvedCacheSource,
-})
-const leases = new SandboxLeaseService({
-  provider,
-  workspaceRoot: '/host/verification-sandboxes',
-  serviceDigest: hostPolicyDigest,
-  ttlMs: 10 * 60_000,
-  reapIntervalMs: 30_000,
-  drainTimeoutMs: 30_000,
-  maxActiveLeasesPerOwner: 3,
-  maxActiveLeasesTotal: 12,
-})
-
-return {
-  ...runtimeScope,
-  sandboxTools: { digest: hostPolicyDigest, leases },
-}
-```
-
-Multi-provider hosts should call `SandboxLeaseServiceFactoryRegistry.getOrCreate`
-with the canonical profile digest and construct through
-`createSandboxLeaseServiceFromProfileV1`. Concurrent bindings then share one
-service/provider/timer; failed construction is retryable, while a conflicting
-preconstructed service is rejected without disposing either candidate.
+Hosts return `sandboxTools: { digest, profile }`; they do not preconstruct a
+service for the profile path. `profile.providerFactory` must return a
+factory-registered disposable provider whose immutable `providerConfigDigest`
+matches the profile identity. Concurrent bindings are canonicalized by
+`SandboxLeaseServiceRegistry.getOrCreate`; the same provider object cannot be
+owned by two service digests, disposed entries are evicted, and failed
+construction remains retryable. The legacy `{ digest, leases }` form remains
+only for the already-reviewed Vercel-only #1441 composition path.
 
 The model cannot supply provider, snapshot, image, repository, environment,
 credentials, resources, network policy, TTL, quotas, host paths, or owner ID.
@@ -142,6 +122,21 @@ outcome-unknown external-effect receipt. Host shutdown clears the timer and
 awaits bounded service disposal. Creation rechecks cancellation and closure
 after provider creation and health checks; failed unpublished-pair compensation
 is retained as cleanup-pending maintenance.
+
+## Review dispositions and current proof
+
+The model schema is deliberately one strict flat object (`op`, optional
+`sandbox`, `additionalProperties:false`); runtime parsing remains the authority
+for per-operation combinations. Tests cover every valid/invalid combination and
+the OpenAI-compatible strict declaration shape. Health-check throws drain and
+reconcile; session deletion settles before owner cleanup.
+
+Bounded follow-ups are explicit rather than silently implemented: canonical
+delegate thrown-error projection, measured per-operation health cadence,
+accepted-work tool-call identity hardening, and multi-author Send-now
+provenance. Live provider status is recorded in
+`@hachej/boring-sandbox/providers/README.md`; mock proof is never called live
+qualification.
 
 ## Current boundaries
 

@@ -8,13 +8,7 @@ import {
   SandboxLeaseService,
 } from '../sandboxLease'
 import { SandboxLeaseServiceRegistry } from '../sandboxLeaseServiceRegistry'
-
-const disposableProfile = {
-  contractVersion: 'boring-sandbox.disposable-provider.v1',
-  resume: false,
-  publishedCleanupOwner: 'returned-pair',
-  ambiguousCreate: 'correlated-reconciliation',
-} as const
+import { fakeDisposableProvider } from './fakeDisposableProvider'
 
 interface FakePair {
   pair: WorkspaceSandboxPairV1
@@ -65,7 +59,7 @@ function createService(input: {
   }))
   const service = new SandboxLeaseService({
     workspaceRoot: '/host/leases',
-    provider: { disposableProfile, create: providerCreate, close: input.close } as unknown as SandboxProviderV1,
+    provider: fakeDisposableProvider({ create: providerCreate, close: input.close }),
     serviceDigest: 'profile-v1',
     ttlMs: 60_000,
     reapIntervalMs: 60_000,
@@ -99,6 +93,16 @@ describe('SandboxLeaseService lifecycle registry', () => {
       drainTimeoutMs: 100,
       maxActiveLeasesPerOwner: 1,
       maxActiveLeasesTotal: 1,
+    })).toThrow('provider must implement the disposable sandbox profile')
+    const registered = fakeDisposableProvider({ create: async () => fakePair('registered').pair })
+    const forged = {
+      ...registered,
+      disposableProfile: (registered as SandboxProviderV1 & { disposableProfile: unknown }).disposableProfile,
+    } as SandboxProviderV1
+    expect(() => new SandboxLeaseService({
+      workspaceRoot: '/host/leases', provider: forged, serviceDigest: 'forged-profile',
+      ttlMs: 60_000, reapIntervalMs: 60_000, drainTimeoutMs: 100,
+      maxActiveLeasesPerOwner: 1, maxActiveLeasesTotal: 1,
     })).toThrow('provider must implement the disposable sandbox profile')
     expect(vi.getTimerCount()).toBe(0)
     vi.useRealTimers()
@@ -258,7 +262,7 @@ describe('SandboxLeaseService lifecycle registry', () => {
     await expect(service.acquire('owner-b')).rejects.toMatchObject({
       code: SANDBOX_LEASE_ERROR_CODES.INVALID_LEASE_REQUEST,
     })
-    expect(providerCreate).toHaveBeenCalledOnce()
+    await vi.waitFor(() => expect(providerCreate).toHaveBeenCalledOnce())
     firstGate.resolve(firstPair.pair)
     const lease = await first
     await expect(service.acquire('owner-b')).rejects.toMatchObject({
@@ -431,7 +435,7 @@ describe('SandboxLeaseService lifecycle registry', () => {
     const telemetry = { capture: vi.fn() }
     const service = new SandboxLeaseService({
       workspaceRoot: '/host/leases',
-      provider: { disposableProfile, create: async () => pair.pair } as unknown as SandboxProviderV1,
+      provider: fakeDisposableProvider({ create: async () => pair.pair }),
       serviceDigest: 'scheduled-profile',
       ttlMs: 1_000,
       reapIntervalMs: 1_000,

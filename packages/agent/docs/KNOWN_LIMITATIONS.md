@@ -1,10 +1,12 @@
 # Known Limitations
 
-## Abandoned Vercel sandboxes (xzr)
+## Persistent Vercel runtime abandonment (xzr)
 
-`@hachej/boring-agent` v1 intentionally does **not** implement a session-close release hook.
-If a process crashes or a client disappears before cleanup, the sandbox may remain
-alive until Vercel timeout/TTL.
+This limitation applies to the legacy persistent primary-runtime path. Native
+disposable leases do implement owner/session cleanup, TTL reaping, host-shutdown
+drain, pair-owned deletion, and retryable reconciliation. A process crash before
+an unpublished cleanup task becomes durable can still leave a remote until its
+provider timeout; cross-host durable cleanup remains deferred.
 
 ### Failure modes that can orphan a sandbox
 
@@ -33,8 +35,8 @@ volume but become expensive if idle lifetimes grow.
 - Set Vercel spend/budget alerts on the team account (monthly threshold chosen
   by owner; start low and tighten with observed traffic).
 - Use `[sandbox]` logs for daily create/stop drift checks.
-  - Create log: `"[sandbox] created"` with `workspaceId`, `sandboxId`,
-    `estimatedAbandonedSessionCostUsd`.
+  - Create log: `"[sandbox] created"` with redacted/keyed correlation fields and
+    `estimatedAbandonedSessionCostUsd`; raw workspace/sandbox identifiers are forbidden.
   - Stop log (orphan guard): `"[sandbox] stopped"` with
     `reason: "orphan-guard-idle"`.
 - Compare create vs stop counts in logs:
@@ -53,7 +55,7 @@ vercel sandbox stop <sandbox-id> --team <team-id>
 
 ### Trigger to build full mitigation
 
-Implement release-on-close lifecycle when either trigger is hit:
+Implement persistent-primary release-on-close lifecycle when either trigger is hit:
 
 1. First user reports unexpected Vercel bill attributable to orphaned sandboxes.
 2. Monitoring shows `> 10` apparently abandoned sandboxes at peak.
@@ -64,7 +66,9 @@ Implement release-on-close lifecycle when either trigger is hit:
 2. Backend idle timer (`~10 min`) that calls `sandbox.stop()` when no traffic.
 3. Explicit CLI/server flag for forced idle-stop policy.
 
-v1 status: **accepted risk**, documented and monitored.
+Persistent-primary status: **accepted risk**, documented and monitored. Native
+disposable leases use the stronger lifecycle documented in
+[SANDBOX_LEASE_TOOL.md](./SANDBOX_LEASE_TOOL.md).
 
 ## GitHub Connect + `/api/v1/git/*` deferred to v1.x (nfx)
 

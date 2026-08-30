@@ -255,8 +255,9 @@ export interface ResolvedEnvironmentScope {
 export interface ResolvedSandboxToolCapability {
   /** Host-owned profile/cache/quota identity; callers must include changes in runtime identity. */
   readonly digest: string
-  readonly leases: SandboxLeaseService
-  /** Optional structured identity for hosts composing multi-provider leases. */
+  /** Legacy preconstructed capability. New multi-provider composition uses profile-only factories. */
+  readonly leases?: SandboxLeaseService
+  /** Structured identity and trusted provider factory for registry-owned construction. */
   readonly profile?: SandboxLeaseProviderProfileV1
 }
 

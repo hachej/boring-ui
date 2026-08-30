@@ -15,10 +15,7 @@ import { EnvironmentLeaseManager, type EnvironmentLease } from './environmentLea
 import { getOptionalRuntimeBundleStorageRoot } from '../runtime/mode'
 import { mergeRuntimeFilesystemBindings } from '../runtime/filesystemBindings'
 import { SandboxLeaseServiceRegistry } from '../sandbox/leases/sandboxLeaseServiceRegistry'
-import {
-  normalizeSandboxLeaseProviderProfileV1,
-  sandboxLeaseProviderProfileDigestV1,
-} from '../sandbox/leases/sandboxLeaseProfileIdentity'
+import { resolveSandboxToolCapability } from '../sandbox/leases/resolveSandboxToolCapability'
 import { assertSandboxToolCatalogAuthority } from '../tools/sandboxTargeting'
 import { createAgentHostRoutes } from './httpProjection'
 import { InMemoryAgentRequestLedger } from './requestLedger'
@@ -476,7 +473,7 @@ function createRuntime(
       await assertAgentAccess(agentTypeId, scope, claim, 'runtime.bind')
       const agent = compiledById.get(agentTypeId)
       if (!agent) throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN, 'agent type is not available')
-      const resolved = resolvedRuntimeScope ?? await runtime.resolveAgentRuntimeScope(
+      let resolved = resolvedRuntimeScope ?? await runtime.resolveAgentRuntimeScope(
         agentTypeId,
         scope,
         claim,
@@ -485,29 +482,16 @@ function createRuntime(
       )
       validateResolvedRuntimeScope(resolved)
       assertSandboxToolCatalogAuthority(resolved)
-      if (resolved.sandboxTools?.profile) {
-        const profile = normalizeSandboxLeaseProviderProfileV1(
-          resolved.sandboxTools.profile,
-          claim.workspaceScopeId,
-        )
-        const digest = sandboxLeaseProviderProfileDigestV1(profile.identity)
-        if (digest !== resolved.sandboxTools.digest) {
-          throw new TypeError('sandbox lease profile digest does not match capability')
-        }
-        resolved.sandboxTools.leases.assertProfileBinding({
-          digest,
-          provider: profile.provider,
-          workspaceRoot: profile.identity.leaseRoot,
-          providerWorkspaceId: profile.identity.providerWorkspaceId,
-          templatePath: profile.templatePath,
-          ttlMs: profile.identity.ttlMs,
-          reapIntervalMs: profile.identity.reapIntervalMs,
-          drainTimeoutMs: profile.identity.drainTimeoutMs,
-          maxActiveLeasesPerOwner: profile.identity.maxActiveLeasesPerOwner,
-          maxActiveLeasesTotal: profile.identity.maxActiveLeasesTotal,
+      if (resolved.sandboxTools) {
+        resolved = Object.freeze({
+          ...resolved,
+          sandboxTools: await resolveSandboxToolCapability({
+            capability: resolved.sandboxTools,
+            workspaceScopeId: claim.workspaceScopeId,
+            registry: sandboxLeaseServices,
+          }),
         })
       }
-      if (resolved.sandboxTools) sandboxLeaseServices.register(resolved.sandboxTools)
       const key = JSON.stringify([
         agentTypeId,
         claim.workspaceScopeId,

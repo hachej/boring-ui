@@ -7,13 +7,14 @@ import type { AgentHostRuntime } from '../../agent-host/createAgentHost'
 import { InMemoryAgentRequestLedger } from '../../agent-host/requestLedger'
 import { acceptedExternalEffectExecutor } from '../../agent-host/acceptedWork'
 import type { AgentRequestKey } from '../../agent-host/types'
-import type { SandboxProviderV1, WorkspaceSandboxPairV1 } from '@hachej/boring-sandbox/shared'
+import type { WorkspaceSandboxPairV1 } from '@hachej/boring-sandbox/shared'
 import {
   SANDBOX_LEASE_ERROR_CODES,
   SandboxLeaseError,
   SandboxLeaseService,
 } from '../../sandbox/leases/sandboxLease'
 import { sandboxLeaseOwnerId } from '../../sandbox/leases/sandboxLeaseOwner'
+import { fakeDisposableProvider } from '../../sandbox/leases/__tests__/fakeDisposableProvider'
 import { createSandboxManagementTool } from '../sandboxManagement'
 
 const parentKey: AgentRequestKey = {
@@ -90,6 +91,46 @@ describe('sandbox management tool', () => {
       },
     })
     expect(tool.parameters).not.toHaveProperty('oneOf')
+  })
+
+  it.each([
+    {},
+    { op: 'unknown' },
+    { op: 1 },
+    { op: 'create', sandbox: 'lease-handle-0001' },
+    { op: 'list', sandbox: 'lease-handle-0001' },
+    { op: 'status' },
+    { op: 'status', sandbox: '' },
+    { op: 'status', sandbox: 'short' },
+    { op: 'status', sandbox: 'lease-handle-0001', extra: true },
+    { op: 'release' },
+    { op: 'release', sandbox: 'lease-handle-0001', provider: 'direct' },
+  ])('runtime parser rejects invalid operation/handle combination %#', async (input) => {
+    const { tool } = fixture()
+    const execute = acceptedExternalEffectExecutor(tool, input)
+    const response = execute
+      ? await execute(input, ctx, { ...invocation, toolCallId: `invalid-${JSON.stringify(input)}` })
+      : await tool.execute(input, ctx)
+    expect(response).toMatchObject({
+      isError: true,
+      details: { code: SANDBOX_LEASE_ERROR_CODES.INVALID_LEASE_REQUEST },
+    })
+  })
+
+  it('accepts exactly the four valid operation shapes through their proper execution paths', async () => {
+    for (const input of [
+      { op: 'create' },
+      { op: 'list' },
+      { op: 'status', sandbox: 'lease-handle-0001' },
+      { op: 'release', sandbox: 'lease-handle-0001' },
+    ]) {
+      const { tool } = fixture()
+      const execute = acceptedExternalEffectExecutor(tool, input)
+      const response = execute
+        ? await execute(input, ctx, { ...invocation, toolCallId: `valid-${input.op}` })
+        : await tool.execute(input, ctx)
+      expect(response.isError).toBe(false)
+    }
   })
 
   it('fails closed through ordinary public execution', async () => {
@@ -171,9 +212,7 @@ describe('sandbox management tool', () => {
       sandbox: {},
       dispose,
     } as unknown as WorkspaceSandboxPairV1
-    const provider = {
-      create: vi.fn(async () => pair),
-    } as unknown as SandboxProviderV1
+    const provider = fakeDisposableProvider({ create: vi.fn(async () => pair) })
     const leases = new SandboxLeaseService({
       workspaceRoot: '/host/sandboxes',
       provider,

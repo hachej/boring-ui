@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import Fastify from 'fastify'
-import type { SandboxProviderV1, WorkspaceSandboxPairV1 } from '@hachej/boring-sandbox/shared'
+import type { WorkspaceSandboxPairV1 } from '@hachej/boring-sandbox/shared'
 import { AgentGatewayError, AgentGatewayErrorCode, type AuthorizedAgentScope } from '../../../shared/index'
 import { ErrorCode } from '../../../shared/error-codes'
 import type { AgentHarnessFactory } from '../../../shared/harness'
@@ -12,6 +12,12 @@ import { createTestRuntimeModeAdapter } from '@agent-test-host'
 import { getEnv, restoreEnvForTest, setEnvForTest } from '../../config/env'
 import { createScriptedPiHarness } from '../../testing/scriptedPiHarness'
 import { SandboxLeaseService } from '../../sandbox/leases/sandboxLease'
+import { fakeDisposableProvider } from '../../sandbox/leases/__tests__/fakeDisposableProvider'
+import {
+  SANDBOX_LEASE_PROVIDER_PROFILE_VERSION_V1,
+  sandboxLeaseProviderProfileDigestV1,
+  type SandboxLeaseProviderProfileV1,
+} from '../../sandbox/leases/sandboxLeaseProfileIdentity'
 import { sandboxReservedToolNames } from '../../tools/sandboxTargeting'
 import { InMemorySessionChangesTracker } from '../../http/sessionChangesTracker'
 import type { RuntimeFilesystemBinding } from '../../runtime/mode'
@@ -701,6 +707,47 @@ describe('createAgentHost', () => {
     await created.host.close()
   })
 
+  it('constructs a profile-only sandbox service once through the host lifecycle registry', async () => {
+    const sessionRoot = await root()
+    const providerClose = vi.fn(async () => {})
+    const providerFactory = vi.fn(() => fakeDisposableProvider({
+      create: async () => { throw new Error('not used') },
+      close: providerClose,
+    }))
+    const identity = {
+      contractVersion: SANDBOX_LEASE_PROVIDER_PROFILE_VERSION_V1,
+      workspaceScopeId: scope.workspaceScopeId,
+      placementIdentity: 'local-qualified',
+      providerWorkspaceId: 'provider-workspace-a',
+      leaseRoot: join(sessionRoot, 'sandbox-leases'),
+      providerId: 'direct' as const,
+      providerConfigDigest: `sha256:${'a'.repeat(64)}` as const,
+      credentialVersionRefs: [],
+      ttlMs: 60_000,
+      reapIntervalMs: 60_000,
+      drainTimeoutMs: 100,
+      maxActiveLeasesPerOwner: 2,
+      maxActiveLeasesTotal: 4,
+    }
+    const profile: SandboxLeaseProviderProfileV1 = { identity, providerFactory }
+    const digest = sandboxLeaseProviderProfileDigestV1(identity)
+    const created = await createAgentHost({
+      ...options(sessionRoot),
+      resolveAuthorizedAgentRuntimeScope: vi.fn(async () => ({
+        identity: 'runtime-profile-only',
+        physicalBindingIdentity: 'runtime-profile-only',
+        resourceInputDigest: 'runtime-profile-only',
+        sessionNamespace: 'profile-only',
+        sandboxTools: { digest, profile },
+      })),
+    })
+    await created.gateway.createSession({ scope, agentTypeId: 'alpha', requestId: 'profile-only-a' })
+    await created.gateway.createSession({ scope, agentTypeId: 'alpha', requestId: 'profile-only-b' })
+    expect(providerFactory).toHaveBeenCalledOnce()
+    await created.host.close()
+    expect(providerClose).toHaveBeenCalledOnce()
+  })
+
   it('retries fail-once sandbox deletion during host shutdown until it settles', async () => {
     const sessionRoot = await root()
     const remoteDispose = vi.fn()
@@ -708,11 +755,11 @@ describe('createAgentHost', () => {
       .mockResolvedValue(undefined)
     const leases = new SandboxLeaseService({
       workspaceRoot: sessionRoot,
-      provider: {
+      provider: fakeDisposableProvider({
         async create() {
           return { dispose: remoteDispose } as unknown as WorkspaceSandboxPairV1
         },
-      } as unknown as SandboxProviderV1,
+      }),
       serviceDigest: 'host-shutdown-retry',
       ttlMs: 60_000,
       reapIntervalMs: 60_000,
@@ -752,7 +799,7 @@ describe('createAgentHost', () => {
     })
     const leases = new SandboxLeaseService({
       workspaceRoot: sessionRoot,
-      provider: { create: createSandbox } as unknown as SandboxProviderV1,
+      provider: fakeDisposableProvider({ create: createSandbox }),
       serviceDigest: 'catalog-authority',
       ttlMs: 60_000,
       reapIntervalMs: 60_000,

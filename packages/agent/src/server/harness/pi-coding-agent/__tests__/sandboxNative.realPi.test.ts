@@ -10,7 +10,7 @@ import {
 } from '@mariozechner/pi-coding-agent'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { SandboxProviderV1, WorkspaceSandboxPairV1 } from '@hachej/boring-sandbox/shared'
+import type { WorkspaceSandboxPairV1 } from '@hachej/boring-sandbox/shared'
 import { buildFilesystemAgentTools, buildHarnessAgentTools } from '@hachej/boring-bash/agent'
 import type { RuntimeBundle } from '../../../runtime/mode'
 import type { RunContext } from '../../../../shared/harness'
@@ -21,6 +21,7 @@ import type { AgentRequestKey } from '../../../agent-host/types'
 import { attachAcceptedWorkProvenance } from '../../../agent-host/acceptedWork'
 import { SqliteAgentRequestLedger } from '../../../agent-host/sqliteRequestLedger'
 import { SandboxLeaseService } from '../../../sandbox/leases/sandboxLease'
+import { fakeDisposableProvider } from '../../../sandbox/leases/__tests__/fakeDisposableProvider'
 import { createScriptedPiHarness } from '../../../testing/scriptedPiHarness'
 import { buildAgentComposition } from '../../../agent-host/buildAgentComposition'
 import { adaptToolsForPi } from '../tool-adapter'
@@ -109,7 +110,7 @@ describe('native sandbox tools through real Pi', () => {
     const remote = pair()
     const providerCreate = vi.fn(async () => remote.value)
     const leases = new SandboxLeaseService({
-      workspaceRoot: '/host/leases', provider: { create: providerCreate } as unknown as SandboxProviderV1,
+      workspaceRoot: '/host/leases', provider: fakeDisposableProvider({ create: providerCreate }),
       serviceDigest: 'default-pi-composition', ttlMs: 60_000, reapIntervalMs: 60_000, drainTimeoutMs: 100,
       maxActiveLeasesPerOwner: 1, maxActiveLeasesTotal: 1,
       createHandle: () => 'lease-handle-0001',
@@ -164,7 +165,7 @@ describe('native sandbox tools through real Pi', () => {
       const remote = pair()
       const providerCreate = vi.fn(async () => remote.value)
       const leases = new SandboxLeaseService({
-        workspaceRoot: '/host/leases', provider: { create: providerCreate } as unknown as SandboxProviderV1,
+        workspaceRoot: '/host/leases', provider: fakeDisposableProvider({ create: providerCreate }),
         serviceDigest: `collision-${reserved}`, ttlMs: 60_000, reapIntervalMs: 60_000, drainTimeoutMs: 100,
         maxActiveLeasesPerOwner: 1, maxActiveLeasesTotal: 1,
         createHandle: () => 'lease-handle-0001',
@@ -223,7 +224,7 @@ describe('native sandbox tools through real Pi', () => {
     const remote = pair()
     const providerCreate = vi.fn(async () => remote.value)
     const leases = new SandboxLeaseService({
-      workspaceRoot: '/host/leases', provider: { create: providerCreate } as unknown as SandboxProviderV1,
+      workspaceRoot: '/host/leases', provider: fakeDisposableProvider({ create: providerCreate }),
       serviceDigest: 'native-test', ttlMs: 60_000, reapIntervalMs: 60_000, drainTimeoutMs: 100,
       maxActiveLeasesPerOwner: 2, maxActiveLeasesTotal: 2,
       createHandle: () => 'lease-handle-0001',

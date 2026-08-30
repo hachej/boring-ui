@@ -1,15 +1,22 @@
 import { rm } from 'node:fs/promises'
-import { isAbsolute, parse } from 'node:path'
+import { isAbsolute, parse, resolve } from 'node:path'
 
 import { SandboxProviderError, type WorkspaceSandboxPairV1 } from '../../shared/providerV1'
 
-export function assertDisposableLocalRoot(workspaceRoot: string): void {
-  if (!workspaceRoot || !isAbsolute(workspaceRoot) || parse(workspaceRoot).root === workspaceRoot) {
+export function assertDisposableLocalRoot(workspaceRoot: string): string {
+  const canonical = resolve(workspaceRoot)
+  if (
+    !workspaceRoot
+    || !isAbsolute(workspaceRoot)
+    || workspaceRoot !== canonical
+    || parse(canonical).root === canonical
+  ) {
     throw new SandboxProviderError(
       'CONFIG_INVALID',
-      'disposable workspace root must be an absolute non-root path',
+      'disposable workspace root must be one canonical absolute non-root path',
     )
   }
+  return canonical
 }
 
 export function createDisposableLocalDisposer(input: {
@@ -17,7 +24,7 @@ export function createDisposableLocalDisposer(input: {
   disposeWorkspace(): void
   disposeSandbox(): Promise<void>
 }): () => Promise<void> {
-  assertDisposableLocalRoot(input.workspaceRoot)
+  const workspaceRoot = assertDisposableLocalRoot(input.workspaceRoot)
   let workspaceDisposed = false
   let sandboxDisposed = false
   let rootRemoved = false
@@ -35,7 +42,7 @@ export function createDisposableLocalDisposer(input: {
         try { await input.disposeSandbox(); sandboxDisposed = true } catch (error) { failures.push(error) }
       }
       if (!rootRemoved) {
-        try { await rm(input.workspaceRoot, { recursive: true, force: true }); rootRemoved = true }
+        try { await rm(workspaceRoot, { recursive: true, force: true }); rootRemoved = true }
         catch (error) { failures.push(error) }
       }
       if (failures.length) throw new AggregateError(failures, 'disposable local sandbox cleanup failed')

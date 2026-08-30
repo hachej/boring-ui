@@ -1,3 +1,4 @@
+import { createHash, createHmac } from 'node:crypto'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -11,7 +12,10 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
 import { IMMUTABLE_SANDBOX_CACHE_SOURCE_VERSION_V1 } from '../../../shared/immutableCacheV1'
 import type { SandboxProviderCreateContextV1 } from '../../../shared/providerV1'
-import { expectDisposableProviderProfile } from '../../__tests__/conformance/disposableProvider'
+import {
+  expectDisposableProviderProfile,
+  expectPublishedPairLifecycle,
+} from '../../__tests__/conformance/disposableProvider'
 import { createMockVercelSandboxHarness } from '../../__tests__/mockVercelSandbox'
 import { createVercelSandboxProvider } from '../createVercelSandboxProvider'
 import {
@@ -69,6 +73,7 @@ function getEnvVar(name: string): string | undefined {
   return ({
     VERCEL_TOKEN: 'token-1',
     VERCEL_TEAM_ID: 'team-1',
+    BORING_SANDBOX_TELEMETRY_SALT: 'test-host-telemetry-salt',
   })[name]
 }
 
@@ -165,6 +170,7 @@ describe('createVercelSandboxProvider', () => {
       get: vi.fn(),
     }
     const logger = { info: vi.fn(), warn: vi.fn() }
+    const telemetry = { capture: vi.fn() }
     const provider = createVercelSandboxProvider({
       store,
       vercelClient: client,
@@ -179,14 +185,12 @@ describe('createVercelSandboxProvider', () => {
       workspaceRoot: 'workspace-setup-failure',
       workspaceId: 'workspace-setup-failure',
       sessionId: 'session-setup-failure',
+      requestId: 'request-setup-failure',
+      telemetry,
     })
     expect(client.create).toHaveBeenCalledWith(expect.objectContaining({
       name: expect.stringMatching(/^boring-lease-[a-f0-9]{40}$/),
     }))
-    const logged = JSON.stringify(logger.info.mock.calls)
-    expect(logged).not.toContain('workspace-setup-failure')
-    expect(logged).not.toContain('session-setup-failure')
-    expect(logged).not.toContain('sb-setup-failure')
     await expect(pair.checkHealth?.()).rejects.toMatchObject({
       code: 'VERCEL_API_ERROR',
       message: 'workspace root setup failed',
@@ -194,6 +198,20 @@ describe('createVercelSandboxProvider', () => {
     await expect(pair.dispose()).rejects.toThrow('disposable sandbox cleanup failed')
     await expect(pair.dispose()).resolves.toBeUndefined()
 
+    const logged = JSON.stringify({
+      logger: [logger.info.mock.calls, logger.warn.mock.calls],
+      telemetry: telemetry.capture.mock.calls,
+    })
+    for (const raw of [
+      'workspace-setup-failure', 'session-setup-failure', 'request-setup-failure',
+      'sb-setup-failure', 'token-1', 'team-1', 'project-1', 'test-host-telemetry-salt',
+    ]) expect(logged).not.toContain(raw)
+    expect(logged).toContain(
+      createHmac('sha256', 'test-host-telemetry-salt').update('workspace-setup-failure').digest('hex'),
+    )
+    expect(logged).not.toContain(
+      createHash('sha256').update('workspace-setup-failure').digest('hex'),
+    )
     expect(scheduler.trackWorkspace).not.toHaveBeenCalled()
     expect(scheduler.stopWorkspace).toHaveBeenCalledOnce()
     expect(stop).not.toHaveBeenCalled()
@@ -403,6 +421,60 @@ describe('createVercelSandboxProvider', () => {
     expect(deleteRecord).not.toHaveBeenCalled()
   })
 
+  test('provider close drains a concurrent create without publishing or leaking', async () => {
+    const harness = await createMockVercelSandboxHarness()
+    cleanups.push(harness.cleanup)
+    const { deleteSandbox } = addDurableHandleMetadata(harness.sandbox, 'sb-create-close-race')
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const client: VercelSandboxClient = {
+      create: vi.fn(async () => { await gate; return harness.sandbox }),
+      get: vi.fn(),
+    }
+    const provider = createVercelSandboxProvider({
+      vercelClient: client, lifecycle: 'disposable', getEnvVar,
+      logger: { info: vi.fn() },
+    })
+    const creation = provider.create({
+      workspaceRoot: 'workspace-create-close-race', workspaceId: 'workspace-create-close-race',
+      sessionId: 'session-create-close-race', requestId: 'request-create-close-race',
+    })
+    const closing = provider.close!()
+    release()
+    await expect(creation).rejects.toMatchObject({ code: 'VERCEL_API_ERROR' })
+    await expect(closing).resolves.toBeUndefined()
+    expect(deleteSandbox).toHaveBeenCalledOnce()
+  })
+
+  test('a duplicate disposable request cannot delete an already-published pair', async () => {
+    const harness = await createMockVercelSandboxHarness()
+    cleanups.push(harness.cleanup)
+    const { deleteSandbox } = addDurableHandleMetadata(harness.sandbox, 'sb-duplicate-owner')
+    const client: VercelSandboxClient = {
+      create: vi.fn(async () => harness.sandbox),
+      get: vi.fn(),
+    }
+    const provider = createVercelSandboxProvider({
+      vercelClient: client,
+      lifecycle: 'disposable',
+      getEnvVar,
+      logger: { info: vi.fn() },
+    })
+    const context = {
+      workspaceRoot: 'workspace-duplicate-owner',
+      workspaceId: 'workspace-duplicate-owner',
+      sessionId: 'session-duplicate-owner',
+      requestId: 'request-duplicate-owner',
+    }
+    const pair = await provider.create(context)
+    await expect(provider.create(context)).rejects.toMatchObject({ code: 'CONFIG_INVALID' })
+    await provider.close?.()
+    expect(deleteSandbox).not.toHaveBeenCalled()
+    await expect(pair.checkHealth?.()).resolves.toEqual({ state: 'ok' })
+    await pair.dispose()
+    expect(deleteSandbox).toHaveBeenCalledOnce()
+  })
+
   test('provider close leaves a published disposable pair under caller cleanup authority', async () => {
     const harness = await createMockVercelSandboxHarness()
     cleanups.push(harness.cleanup)
@@ -427,13 +499,19 @@ describe('createVercelSandboxProvider', () => {
     })
     await expect(pair.checkHealth?.()).resolves.toEqual({ state: 'ok' })
 
-    await expect(provider.close!()).resolves.toBeUndefined()
-    expect(deleteSandbox).not.toHaveBeenCalled()
-    expect(localSandboxDispose).not.toHaveBeenCalled()
-
-    await expect(pair.dispose()).resolves.toBeUndefined()
-    expect(deleteSandbox).toHaveBeenCalledOnce()
-    expect(localSandboxDispose).toHaveBeenCalledOnce()
+    await expectPublishedPairLifecycle({
+      provider,
+      pair,
+      assertUsableAfterProviderClose: async () => {
+        expect(deleteSandbox).not.toHaveBeenCalled()
+        expect(localSandboxDispose).not.toHaveBeenCalled()
+        await expect(pair.checkHealth?.()).resolves.toEqual({ state: 'ok' })
+      },
+      assertTerminalCleanup: async () => {
+        expect(deleteSandbox).toHaveBeenCalledOnce()
+        expect(localSandboxDispose).toHaveBeenCalledOnce()
+      },
+    })
   })
 
   test('invalidate evicts only the process cache and reacquires the persisted handle', async () => {
