@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises"
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
@@ -13,10 +13,23 @@ describe("LocalAudioRecorder", () => {
   it("streams PCM into a finalized M4A without retaining the source", async () => {
     const root = await mkdtemp(join(tmpdir(), "boring-live-audio-"))
     roots.push(root)
+    const encoderPath = join(root, "fake-ffmpeg.mjs")
+    await writeFile(encoderPath, `#!/usr/bin/env node
+import { writeFileSync } from "node:fs"
+const chunks = []
+process.stdin.on("data", (chunk) => chunks.push(chunk))
+process.stdin.on("end", () => {
+  const input = Buffer.concat(chunks)
+  const header = Buffer.concat([Buffer.from([0, 0, 0, 24]), Buffer.from("ftyp"), Buffer.alloc(120)])
+  writeFileSync(process.argv.at(-1), Buffer.concat([header, input.subarray(0, 16)]))
+})
+`)
+    await chmod(encoderPath, 0o755)
     const recorder = new LocalAudioRecorder({
       directory: root,
       filename: "session.m4a",
       sampleRate: 24_000,
+      ffmpegPath: encoderPath,
     })
     await recorder.start()
     await recorder.write(new Uint8Array(4_800))
