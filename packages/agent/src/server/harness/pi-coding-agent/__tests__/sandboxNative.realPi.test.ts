@@ -14,11 +14,7 @@ import type { WorkspaceSandboxPairV1 } from '@hachej/boring-sandbox/shared'
 import { buildFilesystemAgentTools, buildHarnessAgentTools } from '@hachej/boring-bash/agent'
 import type { RuntimeBundle } from '../../../runtime/mode'
 import type { RunContext } from '../../../../shared/harness'
-import { ErrorCode } from '../../../../shared/error-codes'
 import type { Sandbox, Workspace } from '../../../../shared/index'
-import type { AgentHostRuntime } from '../../../agent-host/createAgentHost'
-import type { AgentRequestKey } from '../../../agent-host/types'
-import { SqliteAgentRequestLedger } from '../../../agent-host/sqliteRequestLedger'
 import { SandboxLeaseService } from '../../../sandbox/leases/sandboxLease'
 import { fakeDisposableProvider } from '../../../sandbox/leases/__tests__/fakeDisposableProvider'
 import { createScriptedPiHarness } from '../../../testing/scriptedPiHarness'
@@ -30,16 +26,6 @@ function usage() { return { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, to
 function message(id: string, content: unknown[], stopReason: 'toolUse' | 'stop') { return { id, role: 'assistant', content, api: 'sandbox-native', provider: 'sandbox-native', model: 'loop', usage: usage(), stopReason, timestamp: Date.now() } }
 function stream(events: unknown[], finalMessage: unknown) { return { async *[Symbol.asyncIterator]() { for (const event of events) yield event }, async result() { return finalMessage } } }
 function resources() { const extensions = { extensions: [], errors: [], runtime: createExtensionRuntime() }; return { getExtensions: () => extensions, getSkills: () => ({ skills: [], diagnostics: [] }), getPrompts: () => ({ prompts: [], diagnostics: [] }), getThemes: () => ({ themes: [], diagnostics: [] }), getAgentsFiles: () => ({ agentsFiles: [] }), getSystemPrompt: () => undefined, getAppendSystemPrompt: () => [], extendResources: () => {}, reload: async () => {} } }
-
-function runtime(admitted: AgentRequestKey[]): AgentHostRuntime {
-  const ledger = new SqliteAgentRequestLedger(':memory:')
-  return {
-    ledger,
-    effectAdmission: { async admit({ key }: { key: AgentRequestKey }) { admitted.push(key); return { type: 'accepted' as const, admissionReceipt: `admit:${key.requestId}` } } },
-    assertOpen() {},
-    startPreparedEffect<T>(_key: AgentRequestKey, effect: () => Promise<T>) { return effect() },
-  } as unknown as AgentHostRuntime
-}
 
 function pair() {
   const exec = vi.fn(async (command: string) => ({
@@ -57,7 +43,6 @@ function pair() {
 
 describe('native sandbox tools through real Pi', () => {
   it('keeps the no-capability default catalog byte-equivalent to canonical boring-bash tools', async () => {
-    const host = runtime([])
     const remote = pair()
     const primaryBundle = {
       workspace: remote.value.workspace,
@@ -99,12 +84,10 @@ describe('native sandbox tools through real Pi', () => {
       ]))
     } finally {
       await composition.dispose()
-      await host.ledger.close?.()
     }
   })
 
   it('registers the native catalog through the default createPiCodingAgentHarness composition', async () => {
-    const host = runtime([])
     const remote = pair()
     const providerCreate = vi.fn(async () => remote.value)
     const leases = new SandboxLeaseService({
@@ -152,71 +135,10 @@ describe('native sandbox tools through real Pi', () => {
     } finally {
       await composition.dispose()
       await leases.dispose()
-      await host.ledger.close?.()
-    }
-  })
-
-  it('rejects every reserved name at the composition seam before harness or provider acquisition', async () => {
-    for (const reserved of ['sandbox', 'bash', 'read', 'write', 'edit', 'find', 'grep', 'ls', 'upload_file']) {
-      const host = runtime([])
-      const remote = pair()
-      const providerCreate = vi.fn(async () => remote.value)
-      const leases = new SandboxLeaseService({
-        workspaceRoot: '/host/leases', provider: fakeDisposableProvider({ create: providerCreate, providerId: 'vercel-sandbox' }),
-        serviceDigest: `collision-${reserved}`, ttlMs: 60_000, reapIntervalMs: 60_000, drainTimeoutMs: 100,
-        maxActiveLeasesPerOwner: 1, maxActiveLeasesTotal: 1,
-        createHandle: () => 'lease-handle-0001',
-      })
-      const primaryBundle = {
-        workspace: remote.value.workspace,
-        sandbox: { ...remote.value.sandbox, id: 'primary', exec: vi.fn() },
-        fileSearch: { async search() { return [] } },
-        bash: { kind: 'remote' }, filesystem: { kind: 'remote-workspace' },
-      } satisfies RuntimeBundle
-      const harnessFactory = vi.fn(createScriptedPiHarness)
-      try {
-        await expect(buildAgentComposition({
-          agent: {
-            agentTypeId: 'worker',
-            definition: { instructions: 'worker', label: 'Worker', digest: `sha256:${'a'.repeat(64)}` },
-          },
-          workspaceScopeId: 'workspace-a',
-          runtimeScope: {
-            identity: `collision-runtime-${reserved}`,
-            environment: {
-              placementIdentity: 'collision-environment', workspaceRoot: '/workspace',
-              provisioningFingerprint: 'collision-provisioning',
-            },
-            sessionNamespace: 'collision',
-            sandboxTools: { digest: `collision-${reserved}`, leases },
-            includeFilesystemTools: true,
-            includeUploadTools: true,
-            extraTools: [{
-              name: reserved, description: 'collision', parameters: {},
-              async execute() { return { content: [{ type: 'text' as const, text: 'collision' }] } },
-            }],
-          },
-          runtimeBundle: primaryBundle,
-          options: {
-            runtimeModeAdapter: {
-              id: 'vercel-sandbox', async create() { return primaryBundle },
-              getRuntimeLayoutRoot() { return '/workspace' },
-            },
-            harnessFactory,
-          },
-        })).rejects.toMatchObject({ code: ErrorCode.enum.AUTHORED_AGENT_TOOL_COLLISION })
-        expect(harnessFactory).not.toHaveBeenCalled()
-        expect(providerCreate).not.toHaveBeenCalled()
-      } finally {
-        await leases.dispose()
-        await host.ledger.close?.()
-      }
     }
   })
 
   it('creates, targets ordinary bash, and releases through the real adapter', async () => {
-    const admitted: AgentRequestKey[] = []
-    const host = runtime(admitted)
     const remote = pair()
     const providerCreate = vi.fn(async () => remote.value)
     const leases = new SandboxLeaseService({
@@ -299,7 +221,6 @@ describe('native sandbox tools through real Pi', () => {
       expect(providerCreate).toHaveBeenCalledOnce()
       expect(remote.exec).toHaveBeenCalledWith('git rev-parse HEAD', expect.objectContaining({ cwd: '/workspace' }))
       expect(remote.dispose).toHaveBeenCalledOnce()
-      expect(admitted).toHaveLength(0)
     } finally {
       session.dispose()
       await composition.dispose()

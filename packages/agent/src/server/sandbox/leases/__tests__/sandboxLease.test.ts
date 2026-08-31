@@ -526,7 +526,6 @@ describe('SandboxLeaseService lifecycle registry', () => {
     const gate = await deferred<void>()
     const pair = fakePair('scheduled')
     pair.dispose.mockImplementationOnce(async () => await gate.promise)
-    const telemetry = { capture: vi.fn() }
     const service = new SandboxLeaseService({
       workspaceRoot: '/host/leases',
       provider: fakeDisposableProvider({ create: async () => pair.pair }),
@@ -536,7 +535,6 @@ describe('SandboxLeaseService lifecycle registry', () => {
       drainTimeoutMs: 5_000,
       maxActiveLeasesPerOwner: 1,
       maxActiveLeasesTotal: 1,
-      telemetry,
       createHandle: () => 'lease-handle-0001',
     })
     await service.acquire('owner-a')
@@ -545,16 +543,6 @@ describe('SandboxLeaseService lifecycle registry', () => {
     expect(pair.dispose).toHaveBeenCalledOnce()
     gate.resolve()
     await vi.advanceTimersByTimeAsync(0)
-    expect(telemetry.capture).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'sandbox.lease.cleanup.reconciliation',
-      properties: expect.objectContaining({
-        operationId: 'sandbox.remote.dispose.v1',
-        attemptedCount: 1,
-        outcome: 'settled',
-      }),
-    }))
-    expect(telemetry.capture).toHaveBeenCalledWith(expect.objectContaining({ name: 'sandbox.lease.cleanup' }))
-    expect(JSON.stringify(telemetry.capture.mock.calls)).not.toContain('lease-handle-0001')
     await service.dispose()
     vi.useRealTimers()
   })
@@ -574,6 +562,33 @@ describe('SandboxLeaseService lifecycle registry', () => {
     gate.resolve()
     await Promise.all(operations)
     await service.dispose()
+  })
+
+  it('bounds an existing cleanup join by the shorter host shutdown deadline', async () => {
+    const { service, pairs } = createService({ drainTimeoutMs: 5_000 })
+    const lease = await service.acquire('owner-a')
+    const gate = await deferred<void>()
+    const operation = service.withPair('owner-a', lease.handle, async () => await gate.promise)
+    await Promise.resolve()
+    const releasing = service.release('owner-a', lease.handle)
+    await Promise.resolve()
+    const registry = new SandboxLeaseServiceRegistry()
+    registry.register({ digest: 'host-deadline', leases: service })
+
+    const startedAt = Date.now()
+    await expect(registry.disposeUntil(Date.now() + 20)).resolves.toEqual([
+      expect.objectContaining({ status: 'rejected' }),
+    ])
+    expect(Date.now() - startedAt).toBeLessThan(250)
+    expect(service.listOwn('owner-a')).toHaveLength(1)
+
+    gate.resolve()
+    await operation
+    await releasing
+    await expect(registry.disposeUntil(Date.now() + 100)).resolves.toEqual([
+      { status: 'fulfilled', value: undefined },
+    ])
+    expect(pairs[0]?.dispose).toHaveBeenCalledOnce()
   })
 
   it('joins a provider-close attempt that outlives the first shutdown deadline', async () => {

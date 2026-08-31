@@ -105,8 +105,9 @@ and host shutdown atomically enter draining, reject new pins, wait a bounded
 time for existing operations, then delete. A pre-provider drain timeout has its
 own safely retryable error; provider cleanup ambiguity remains
 `cleanup-pending` and continues counting against quota. Session deletion joins
-owner cleanup. Host shutdown uses one service-wide drain deadline, including
-pending creations and provider close.
+owner cleanup. Host shutdown passes one authoritative deadline through pending
+creation, lease cleanup, and provider close; the service's shorter drain bound
+still applies.
 
 Disposable Vercel forks never enter the persistent/resumable handle store. The
 provider returns a cleanup-capable pair immediately after remote creation and
@@ -115,26 +116,16 @@ retains that unpublished pair as cleanup-pending until idempotent deletion
 converges. Persistent non-disposable runtimes keep their existing resumable
 handle lifecycle.
 
-Remote deletion is separate registered host maintenance:
-
-```text
-operationId: sandbox.remote.dispose.v1
-key: sha256(serviceDigest + ":" + opaqueLease)
-```
-
 The service-owned unref'ed timer reaps expired and cleanup-pending leases without
-overlapping ticks. Every attempt is routed through the closed internal
-registration and emits redacted append-only reconciliation telemetry containing
-the registration-key digest, attempt count, reason, outcome, and stable failure
-code. Retrying this qualified idempotent cleanup does not replay a model-requested
+overlapping ticks. Remote deletion remains one joined in-flight operation across
+local timeout and retry, so retrying cleanup does not replay a model-requested
 lifecycle operation. Host shutdown clears the timer and awaits bounded service
-disposal. Creation rechecks cancellation and closure
-after provider creation and health checks; failed unpublished-pair compensation
-is retained as cleanup-pending maintenance.
+disposal. Creation rechecks cancellation and closure after provider creation and
+health checks; failed unpublished-pair compensation remains cleanup-pending.
 
 ## Live smoke
 
-With D31-qualified Vercel credentials supplied through the environment, the
+With live Vercel credentials supplied through the environment, the
 credential-gated smoke creates one immutable snapshot, forks two disposable
 leases, proves inherited and isolated bytes, executes inside a targeted lease,
 proves release waits for an active pin, verifies remote deletion, proves active
@@ -156,11 +147,8 @@ The command emits only redacted digests and a bounded boolean/timing receipt.
 - Plugin, MCP, UI, custom tools, and `execute_isolated_code` cannot resolve leases.
 - The registry is process-local. Tool-call receipts and handles are not
   replayable across process restart, and a manually repeated `create` may
-  allocate another lease. A SIGKILL can lose local cleanup ownership, but every
-  disposable Vercel sandbox has required provider-enforced execution and snapshot expirations.
-  Stopped state may remain resumable for at most the configured snapshot-retention window (24 hours by default), so abrupt-host cleanup still needs an operator sweep for earlier reclamation.
-  Durable nested tool-effect admission/settlement and a durable lease registry
-  remain future work.
+  allocate another lease. Durable nested tool-effect admission/settlement and a
+  durable lease registry remain future work.
 - Trusted main CI cache publication, cache registry/retention, affected-package
   planning, brokered credentials, and Seneca Worker-only policy remain separate
   slices.

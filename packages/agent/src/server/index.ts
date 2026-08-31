@@ -16,7 +16,6 @@ export {
   SandboxLeaseCleanupError,
   SandboxLeaseError,
   SandboxLeaseService,
-  SANDBOX_REMOTE_DISPOSE_OPERATION_ID,
 } from './sandbox/leases/sandboxLease'
 export type {
   SandboxLease,

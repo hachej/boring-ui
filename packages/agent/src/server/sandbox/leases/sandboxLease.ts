@@ -10,7 +10,6 @@ import type {
 import { isDisposableLeaseProvider } from './disposableProvider'
 
 const LEASE_HANDLE_PATTERN = /^[A-Za-z0-9_-]{16,128}$/
-export const SANDBOX_REMOTE_DISPOSE_OPERATION_ID = 'sandbox.remote.dispose.v1' as const
 
 export const SANDBOX_LEASE_ERROR_CODES = Object.freeze({
   INVALID_LEASE_REQUEST: 'SANDBOX_LEASE_INVALID',
@@ -38,13 +37,6 @@ export interface SandboxLeaseStatus extends SandboxLease {
   readonly state: SandboxLeaseState
 }
 
-export interface SandboxLeaseCleanupTelemetry {
-  capture(event: {
-    name: 'sandbox.lease.cleanup' | 'sandbox.lease.cleanup.reconciliation'
-    properties: Readonly<Record<string, string | number | boolean>>
-  }): void
-}
-
 export interface SandboxLeaseServiceOptions {
   workspaceRoot: string
   provider: SandboxProviderV1
@@ -60,24 +52,15 @@ export interface SandboxLeaseServiceOptions {
   maxActiveLeasesTotal: number
   now?: () => number
   createHandle?: () => string
-  telemetry?: SandboxLeaseCleanupTelemetry
 }
-
-type CleanupReason = 'release' | 'expiry' | 'owner-end' | 'host-shutdown' | 'create-compensation'
 
 interface ActiveLease extends SandboxLease {
   readonly ownerId: string
   readonly pair?: WorkspaceSandboxPairV1
   readonly dispose: () => Promise<void>
-  readonly cleanupRegistration: {
-    readonly operationId: typeof SANDBOX_REMOTE_DISPOSE_OPERATION_ID
-    readonly keyDigest: string
-    attempts: number
-    inFlight?: Promise<void>
-  }
+  cleanupInFlight?: Promise<void>
   state: 'active' | 'draining' | 'cleanup-pending'
   activeOperations: number
-  cleanupReason?: CleanupReason
   cleanupPromise?: Promise<void>
   zeroActiveWaiters: Set<() => void>
 }
@@ -194,7 +177,6 @@ export class SandboxLeaseService {
       const retry = pair ? () => pair!.dispose() : typeof debt?.retry === 'function' ? () => debt.retry() : undefined
       if (retry && handle && !published) {
         const compensation = this.createLease(ownerId, handle, pair, 'cleanup-pending', retry)
-        compensation.cleanupReason = 'create-compensation'
         try {
           await this.runRegisteredCleanup(compensation, this.deadlineAfterDrain())
         } catch (cleanupError) {
@@ -242,7 +224,6 @@ export class SandboxLeaseService {
     if (!pair) throw this.unavailableForState('cleanup-pending')
     if (lease.expiresAt <= this.now()) {
       lease.state = 'draining'
-      lease.cleanupReason = 'expiry'
       void this.startCleanup(lease).catch(() => undefined)
       throw new SandboxLeaseError(SANDBOX_LEASE_ERROR_CODES.LEASE_EXPIRED, 'sandbox lease has expired')
     }
@@ -254,13 +235,11 @@ export class SandboxLeaseService {
         health = await pair.checkHealth?.()
       } catch {
         lease.state = 'draining'
-        lease.cleanupReason = 'expiry'
         cleanupAfterUnpin = true
         throw new SandboxLeaseError(SANDBOX_LEASE_ERROR_CODES.LEASE_EXPIRED, 'sandbox lease is unavailable')
       }
       if (health?.state === 'recreate') {
         lease.state = 'draining'
-        lease.cleanupReason = 'expiry'
         cleanupAfterUnpin = true
         throw new SandboxLeaseError(SANDBOX_LEASE_ERROR_CODES.LEASE_EXPIRED, 'sandbox lease is unavailable')
       }
@@ -277,14 +256,13 @@ export class SandboxLeaseService {
 
   async release(ownerId: string, handle: string): Promise<void> {
     const lease = this.requireOwned(ownerId, handle)
-    await this.transitionAndCleanup(lease, 'release')
+    await this.transitionAndCleanup(lease)
   }
 
   async releaseOwner(ownerId: string): Promise<number> {
     this.assertOwner(ownerId)
     return await this.cleanupMany(
       [...this.leases.values()].filter((lease) => lease.ownerId === ownerId),
-      'owner-end',
       'release-owner',
     )
   }
@@ -292,14 +270,14 @@ export class SandboxLeaseService {
   async reapExpired(): Promise<number> {
     return await this.cleanupMany(
       [...this.leases.values()].filter((lease) => lease.expiresAt <= this.now() || lease.state === 'cleanup-pending'),
-      'expiry',
       'reap-expired',
     )
   }
 
-  dispose(): Promise<void> {
+  dispose(hostDeadline?: number): Promise<void> {
     if (!this.disposal) {
-      const wrapped = this.disposeOnce().catch((error: unknown) => {
+      const deadline = Math.min(hostDeadline ?? Number.POSITIVE_INFINITY, this.deadlineAfterDrain())
+      const wrapped = this.disposeOnce(deadline).catch((error: unknown) => {
         if (this.disposal === wrapped) this.disposal = undefined
         throw error
       })
@@ -308,10 +286,9 @@ export class SandboxLeaseService {
     return this.disposal
   }
 
-  private async disposeOnce(): Promise<void> {
+  private async disposeOnce(deadline: number): Promise<void> {
     this.closed = true
     clearInterval(this.timer)
-    const deadline = this.deadlineAfterDrain()
     const failures: unknown[] = []
     if (this.reapInFlight) {
       try {
@@ -328,7 +305,7 @@ export class SandboxLeaseService {
       }
     }
     try {
-      await this.cleanupMany([...this.leases.values()], 'host-shutdown', 'dispose', deadline)
+      await this.cleanupMany([...this.leases.values()], 'dispose', deadline)
     } catch (error) {
       failures.push(error)
     }
@@ -360,41 +337,23 @@ export class SandboxLeaseService {
 
   private async runScheduledReap(): Promise<void> {
     if (this.reapInFlight || this.closed) return
-    const startedAt = this.now()
     this.reapInFlight = this.reapExpired()
     try {
-      const released = await this.reapInFlight
-      this.captureCleanup(released, 0, this.now() - startedAt)
-    } catch (error) {
-      const failures = error instanceof SandboxLeaseCleanupError ? error.failures.length : 1
-      const released = error instanceof SandboxLeaseCleanupError ? error.releasedCount : 0
-      this.captureCleanup(released, failures, this.now() - startedAt)
+      await this.reapInFlight
+    } catch {
+      // Cleanup debt remains quota-counted and is retried by the next reap.
     } finally {
       this.reapInFlight = undefined
     }
   }
 
-  private captureCleanup(released: number, failed: number, durationMs: number): void {
-    this.options.telemetry?.capture({
-      name: 'sandbox.lease.cleanup',
-      properties: {
-        serviceDigest: createHash('sha256').update(this.options.serviceDigest).digest('hex'),
-        operationId: SANDBOX_REMOTE_DISPOSE_OPERATION_ID,
-        released,
-        failed,
-        durationMs,
-      },
-    })
-  }
-
   private async cleanupMany(
     leases: readonly ActiveLease[],
-    reason: CleanupReason,
     operation: SandboxLeaseCleanupError['operation'],
     deadline = this.deadlineAfterDrain(),
   ): Promise<number> {
     const results = await Promise.allSettled(leases.map(async (lease) => {
-      await this.transitionAndCleanup(lease, reason, deadline)
+      await this.transitionAndCleanup(lease, deadline)
       return lease
     }))
     const releasedCount = results.filter((result) => result.status === 'fulfilled').length
@@ -405,17 +364,16 @@ export class SandboxLeaseService {
     return releasedCount
   }
 
-  private async transitionAndCleanup(lease: ActiveLease, reason: CleanupReason, deadline = this.deadlineAfterDrain()): Promise<void> {
+  private async transitionAndCleanup(lease: ActiveLease, deadline = this.deadlineAfterDrain()): Promise<void> {
     if (!this.leases.has(lease.handle)) return
-    if (lease.state === 'active') {
-      lease.state = 'draining'
-      lease.cleanupReason = reason
-    }
+    if (lease.state === 'active') lease.state = 'draining'
     await this.startCleanup(lease, deadline)
   }
 
   private startCleanup(lease: ActiveLease, deadline = this.deadlineAfterDrain()): Promise<void> {
-    if (lease.cleanupPromise) return lease.cleanupPromise
+    if (lease.cleanupPromise) {
+      return this.withDeadline(lease.cleanupPromise, deadline, 'sandbox cleanup did not settle')
+    }
     lease.cleanupPromise = this.drainAndDispose(lease, deadline).finally(() => { lease.cleanupPromise = undefined })
     return lease.cleanupPromise
   }
@@ -450,11 +408,6 @@ export class SandboxLeaseService {
       pair,
       dispose,
       expiresAt: this.now() + this.options.ttlMs,
-      cleanupRegistration: {
-        operationId: SANDBOX_REMOTE_DISPOSE_OPERATION_ID,
-        keyDigest: createHash('sha256').update(`${this.options.serviceDigest}:${handle}`).digest('hex'),
-        attempts: 0,
-      },
       state,
       activeOperations: 0,
       zeroActiveWaiters: new Set(),
@@ -462,22 +415,18 @@ export class SandboxLeaseService {
   }
 
   private async runRegisteredCleanup(lease: ActiveLease, deadline: number): Promise<void> {
-    const registration = lease.cleanupRegistration
-    registration.attempts += 1
-    if (!registration.inFlight) {
+    if (!lease.cleanupInFlight) {
       const effect = Promise.resolve().then(lease.dispose)
       const tracked = effect.finally(() => {
-        if (registration.inFlight === tracked) registration.inFlight = undefined
+        if (lease.cleanupInFlight === tracked) lease.cleanupInFlight = undefined
       })
-      registration.inFlight = tracked
+      lease.cleanupInFlight = tracked
     }
     try {
-      await this.withDeadline(registration.inFlight, deadline, 'sandbox cleanup timed out')
+      await this.withDeadline(lease.cleanupInFlight, deadline, 'sandbox cleanup timed out')
       this.leases.delete(lease.handle)
-      this.captureReconciliation(lease, 'settled')
     } catch (error) {
       lease.state = 'cleanup-pending'
-      this.captureReconciliation(lease, 'failed', error)
       throw new SandboxLeaseError(
         SANDBOX_LEASE_ERROR_CODES.LEASE_CLEANUP_FAILED,
         'sandbox cleanup failed',
@@ -485,21 +434,6 @@ export class SandboxLeaseService {
         { cause: error },
       )
     }
-  }
-
-  private captureReconciliation(lease: ActiveLease, outcome: 'settled' | 'failed', error?: unknown): void {
-    this.options.telemetry?.capture({
-      name: 'sandbox.lease.cleanup.reconciliation',
-      properties: {
-        serviceDigest: createHash('sha256').update(this.options.serviceDigest).digest('hex'),
-        operationId: lease.cleanupRegistration.operationId,
-        registrationKeyDigest: lease.cleanupRegistration.keyDigest,
-        attemptedCount: lease.cleanupRegistration.attempts,
-        reason: lease.cleanupReason ?? 'release',
-        outcome,
-        failureCode: error instanceof SandboxLeaseError ? error.code : error ? SANDBOX_LEASE_ERROR_CODES.LEASE_CLEANUP_FAILED : 'none',
-      },
-    })
   }
 
   private deadlineAfterDrain(): number {

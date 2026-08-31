@@ -24,7 +24,7 @@ export function sandboxLeaseOwnerId(
   scope: SandboxLeaseOwnerScope,
   ctx: ToolExecContext,
 ): string {
-  if (ctx.workspaceId !== undefined && ctx.workspaceId !== scope.workspaceScopeId) {
+  if (ctx.workspaceId !== scope.workspaceScopeId) {
     throw new SandboxLeaseError(SANDBOX_LEASE_ERROR_CODES.INVALID_LEASE_REQUEST, 'sandbox management request is invalid')
   }
   return sandboxLeaseOwnerIdForSession(scope, ctx.sessionId ?? '')

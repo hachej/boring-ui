@@ -55,6 +55,18 @@ describe('sandbox management tool', () => {
     expect(leases.acquire).toHaveBeenCalledWith(expect.any(String), ctx.abortSignal)
   })
 
+  it.each([
+    ['missing', { ...ctx, workspaceId: undefined }],
+    ['mismatched', { ...ctx, workspaceId: 'workspace-b' }],
+  ])('rejects %s workspace identity before lease acquisition', async (_label, invalidCtx) => {
+    const { tool, leases } = fixture()
+    await expect(tool.execute({ op: 'create' }, invalidCtx)).resolves.toMatchObject({
+      isError: true,
+      details: { code: SANDBOX_LEASE_ERROR_CODES.INVALID_LEASE_REQUEST, retryable: false },
+    })
+    expect(leases.acquire).not.toHaveBeenCalled()
+  })
+
   it('does not claim durable per-tool replay before the durable execution lane lands', async () => {
     const { tool, leases } = fixture()
     await tool.execute({ op: 'create' }, ctx)

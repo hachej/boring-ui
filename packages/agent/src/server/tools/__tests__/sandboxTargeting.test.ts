@@ -4,7 +4,10 @@ import type { WorkspaceSandboxPairV1 } from '@hachej/boring-sandbox/shared'
 import { ErrorCode } from '../../../shared/error-codes'
 import type { AgentTool, ToolExecContext } from '../../../shared/tool'
 import type { Sandbox, Workspace } from '../../../shared/index'
-import type { SandboxLeaseService } from '../../sandbox/leases/sandboxLease'
+import {
+  SANDBOX_LEASE_ERROR_CODES,
+  type SandboxLeaseService,
+} from '../../sandbox/leases/sandboxLease'
 import { addSandboxTargeting, assertSandboxToolCatalogAuthority } from '../sandboxTargeting'
 
 const encoder = new TextEncoder()
@@ -124,6 +127,19 @@ describe('native sandbox targeting', () => {
     await expect(tool('execute_isolated_code').execute({ code: ISOLATED_SOURCE, language: 'python', sandbox: 'lease-handle-0001' }, ctx))
       .resolves.toMatchObject({ content: [{ text: 'primary:execute_isolated_code' }] })
     expect(primaries.find((entry) => entry.name === 'bash')!.execute).toHaveBeenCalledOnce()
+    expect(withPair).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['missing', { ...ctx, workspaceId: undefined }],
+    ['mismatched', { ...ctx, workspaceId: 'workspace-b' }],
+  ])('rejects %s workspace identity before pinning a target', async (_label, invalidCtx) => {
+    const { tool, withPair } = fixture()
+    await expect(tool('bash').execute({ command: 'pwd', sandbox: 'lease-handle-0001' }, invalidCtx))
+      .resolves.toMatchObject({
+        isError: true,
+        details: { code: SANDBOX_LEASE_ERROR_CODES.INVALID_LEASE_REQUEST, retryable: false },
+      })
     expect(withPair).not.toHaveBeenCalled()
   })
 
