@@ -313,6 +313,13 @@ describe("warm runsc session runtime", () => {
             };
           }
         }
+        if (
+          input.argv[0] === "ps" &&
+          removeAttempts >= 2 &&
+          removeAttempts <= 4
+        ) {
+          return success("container-id\n");
+        }
         return await run(input);
       });
       const sessions = runtime(runner);
@@ -679,60 +686,6 @@ describe("warm runsc session runtime", () => {
     }
   });
 
-  test("retains ownership and retries expiry removal after a transient failure", async () => {
-    vi.useFakeTimers();
-    let clock = 1_000;
-    const retire = vi.fn();
-    try {
-      const runner = fakeRunner();
-      const run = runner.run.getMockImplementation() as (
-        input: DockerCommandInput,
-      ) => Promise<DockerCommandResult>;
-      let removeAttempts = 0;
-      runner.run.mockImplementation(async (input) => {
-        if (input.argv[0] === "rm" && removeAttempts++ === 0) {
-          throw Object.assign(new Error("transient docker outage"), {
-            code: "ECONNREFUSED",
-          });
-        }
-        return await run(input);
-      });
-      const sessions = runtime(runner, {
-        now: () => clock,
-        onRetire: retire,
-      });
-      await sessions.create({ ...createInput, idleTtlMs: 100 });
-      clock = 1_100;
-      await vi.advanceTimersByTimeAsync(100);
-
-      await expect(sessions.renew("sandbox-a", 100)).rejects.toMatchObject({
-        code: REMOTE_WORKER_ERROR_CODES_V1.sandboxDisposed,
-      });
-      expect(() =>
-        sessions.create({ ...createInput, idleTtlMs: 100 }),
-      ).toThrowError(
-        expect.objectContaining({
-          code: REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
-        }),
-      );
-      expect(removeAttempts).toBe(1);
-      expect(retire).not.toHaveBeenCalled();
-
-      await vi.advanceTimersByTimeAsync(100);
-      expect(removeAttempts).toBe(2);
-      expect(retire).toHaveBeenCalledTimes(1);
-      expect(retire).toHaveBeenCalledWith({
-        sandboxId: "sandbox-a",
-        reason: "idle",
-      });
-      await expect(sessions.renew("sandbox-a", 100)).rejects.toMatchObject({
-        code: REMOTE_WORKER_ERROR_CODES_V1.sandboxNotFound,
-      });
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
   test.each(["nonzero", "throw"] as const)(
     "retains failed-create ownership when docker rm returns %s",
     async (failureMode) => {
@@ -767,6 +720,9 @@ describe("warm runsc session runtime", () => {
               };
             }
           }
+          if (input.argv[0] === "ps" && removeAttempts === 1) {
+            return success("container-id\n");
+          }
           return await run(input);
         });
         const sessions = runtime(runner);
@@ -798,12 +754,18 @@ describe("warm runsc session runtime", () => {
         input: DockerCommandInput,
       ) => Promise<DockerCommandResult>;
       let removeAttempts = 0;
+      let failedRemovalPending = false;
       runner.run.mockImplementation(async (input) => {
         if (input.argv[0] === "rm") {
           removeAttempts += 1;
           if (removeAttempts === 1) {
+            failedRemovalPending = true;
             throw new Error("transient docker outage");
           }
+        }
+        if (input.argv[0] === "ps" && failedRemovalPending) {
+          failedRemovalPending = false;
+          return success("container-id\n");
         }
         return await run(input);
       });

@@ -128,11 +128,17 @@ export {
   FixedQuotaHelperCommandRunnerV1,
   assertHostReserveWritable,
   requiredHostReserveBytes,
+  validateCanonicalQuotaWorkspaceId,
   validateQuotaWorkspaceId,
   type QuotaHelperCommandResultV1,
   type QuotaHelperCommandRunnerV1,
   type QuotaHelperOperationV1,
 } from "./runtime/quota";
+export {
+  RunscSandboxRootLifecycleV1,
+  type RunscSandboxRootLifecycleOptionsV1,
+} from "./runtime/sandboxRootLifecycle";
+export type { CompositeRunscSessionRetirementV1 } from "./runtime/sessionRetirement";
 export {
   RunscSessionRuntimeV1,
   type CreateRunscSessionInputV1,
