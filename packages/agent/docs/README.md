@@ -83,6 +83,7 @@ the agent ↔ workspace boundary is in
 
 **Contracts & operations**
 
+- [SESSION_IDENTITY](./SESSION_IDENTITY.md) — durable session stream key, owner attributes, and v1→v2 migration contract.
 - [ERROR_CODES](./ERROR_CODES.md) — the stable API error-code registry.
 - [CSP](./CSP.md) — Content-Security-Policy compatibility.
 - [ACCESSIBILITY](./ACCESSIBILITY.md) — a11y coverage and known gaps.

@@ -25,11 +25,11 @@ export type {
   AgentRuntimeAdapter,
   AgentStartReceipt,
   AgentStreamOptions,
+  SessionStreamIdentity,
 } from './events'
 export {
   AGENT_NOT_IMPLEMENTED_UNTIL_T1,
   AgentNotImplementedError,
-  sessionStreamPath,
 } from './events'
 export type {
   LeaseBoundWorkspaceAgent,

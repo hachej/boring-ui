@@ -85,7 +85,7 @@ function createGatedService() {
       return adapter
     }),
   }
-  const service = new HarnessPiChatService({ harness, sessionStore, workdir: '/workspace' })
+  const service = new HarnessPiChatService({ agentTypeId: 'test', harness, sessionStore, workdir: '/workspace' })
   return {
     service,
     adapter,

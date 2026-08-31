@@ -85,6 +85,7 @@ async function createRuntime(
     harness,
     sessionStore,
     service: new HarnessPiChatService({
+      agentTypeId: 'default',
       harness,
       sessionStore,
       workdir: options.service?.workdir ?? config.workdir ?? DEFAULT_WORKDIR,
