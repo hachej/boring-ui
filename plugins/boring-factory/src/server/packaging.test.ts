@@ -15,7 +15,10 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 
-import { compileAgentDirectory } from '@hachej/boring-agent/server'
+import {
+  compileAgentDirectory,
+  compilePersonaPackageDirectory,
+} from '@hachej/boring-agent/server'
 import { describe, expect, it } from 'vitest'
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
@@ -93,6 +96,10 @@ describe('private Boring Factory tarball', () => {
       await expect(compileAgentDirectory(resources.agentSources['factory-orchestrator']))
         .resolves.toMatchObject({ definition: { definitionId: 'factory-orchestrator' } })
       await expect(compileAgentDirectory(resources.agentSources['factory-worker']))
+        .resolves.toMatchObject({ definition: { definitionId: 'factory-worker' } })
+      await expect(compilePersonaPackageDirectory(resources.agentSources['factory-orchestrator']))
+        .resolves.toMatchObject({ definition: { definitionId: 'factory-orchestrator' } })
+      await expect(compilePersonaPackageDirectory(resources.agentSources['factory-worker']))
         .resolves.toMatchObject({ definition: { definitionId: 'factory-worker' } })
 
       const presentPrSkill = path.join(resources.skillRoot, 'exec/.agents/skills/present-pr/SKILL.md')

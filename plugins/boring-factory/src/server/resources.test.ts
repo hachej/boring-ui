@@ -151,12 +151,20 @@ describe('Boring Factory resource artifact', () => {
       FACTORY_WORKER_AGENT_TYPE_ID,
     ] as const) {
       const source = resources.agentSources[agentTypeId]
-      const manifest = JSON.parse(await readFile(path.join(source, 'agent.json'), 'utf8')) as {
-        definitionId?: string
-        instructionsRef?: string
-      }
-      expect(manifest.definitionId).toBe(agentTypeId)
-      expect(manifest.instructionsRef).toBe('instructions.md')
+      const compatibilityManifest = JSON.parse(
+        await readFile(path.join(source, 'agent.json'), 'utf8'),
+      ) as { definitionId?: string; version?: string; label?: string; instructionsRef?: string }
+      const packageManifest = JSON.parse(
+        await readFile(path.join(source, 'package.json'), 'utf8'),
+      ) as { boring?: { agent?: typeof compatibilityManifest } }
+      expect(packageManifest.boring?.agent).toEqual({
+        definitionId: compatibilityManifest.definitionId,
+        version: compatibilityManifest.version,
+        label: compatibilityManifest.label,
+        instructionsRef: compatibilityManifest.instructionsRef,
+      })
+      expect(compatibilityManifest.definitionId).toBe(agentTypeId)
+      expect(compatibilityManifest.instructionsRef).toBe('instructions.md')
       expect((await readFile(path.join(source, 'instructions.md'), 'utf8')).trim()).not.toBe('')
     }
   })
