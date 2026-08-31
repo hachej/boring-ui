@@ -1,4 +1,4 @@
-import { getAgentDir, SettingsManager, type ModelRegistry } from '@mariozechner/pi-coding-agent'
+import { getAgentDir, SettingsManager, type ModelRuntime } from '@mariozechner/pi-coding-agent'
 import { getEnv } from '../config/env.js'
 
 export interface AgentModelSelection {
@@ -6,7 +6,7 @@ export interface AgentModelSelection {
   id: string
 }
 
-type ProviderConfigInput = Parameters<ModelRegistry['registerProvider']>[1]
+type ProviderConfigInput = Parameters<ModelRuntime['registerProvider']>[1]
 
 const INFOMANIAK_PROVIDER = 'infomaniak'
 const INFOMANIAK_API_BASE = 'https://api.infomaniak.com'
@@ -106,7 +106,7 @@ function buildOpenAICompatibleProviderConfig(opts: {
 }): ProviderConfigInput {
   return {
     baseUrl: opts.baseUrl,
-    // pi-coding-agent 0.80.7 resolves `$ENV_VAR` config references through
+    // Pi resolves `$ENV_VAR` config references through
     // the provider environment. A bare name is a literal API key, which would
     // send "INFOMANIAK_API_TOKEN" as the bearer token and cause provider 401s.
     apiKey: `$${opts.apiKeyEnv}`,
@@ -229,7 +229,7 @@ function readCustomProvider(): {
 }
 
 export function registerConfiguredModelProviders(
-  registry: Pick<ModelRegistry, 'registerProvider'>,
+  registry: Pick<ModelRuntime, 'registerProvider'>,
 ): AgentModelSelection[] {
   const registered: AgentModelSelection[] = []
   const seen = new Set<string>()

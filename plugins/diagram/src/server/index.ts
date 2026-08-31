@@ -3,7 +3,7 @@ import { lstat, open } from "node:fs/promises"
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path"
 import type { FastifyPluginAsync } from "fastify"
 import { defineServerPlugin, type WorkspaceServerPlugin } from "@hachej/boring-workspace/server"
-import { AuthStorage } from "@mariozechner/pi-coding-agent"
+import { ModelRuntime } from "@mariozechner/pi-coding-agent"
 import { generateImages, getImageModels, getImageProviders, getEnvApiKey, type ImagesModel, type ImagesApi } from "@earendil-works/pi-ai/compat"
 import { DIAGRAM_PLUGIN_ID, renderTargetFor } from "../shared"
 
@@ -56,13 +56,13 @@ export default function defaultDiagramServerPlugin(
 }
 
 export function createDiagramServerPlugin(options: { workspaceRoot: string }): WorkspaceServerPlugin {
-  const authStorage = AuthStorage.create()
   const routes: FastifyPluginAsync = async (app) => {
+    const modelRuntime = await ModelRuntime.create()
     app.get("/api/v1/plugins/diagram/render/models", async (): Promise<RenderModelsResponse> => {
       const models = listRenderableImageModels()
       const defaultModel = resolveDefaultModel(models)
       const responseModels = await Promise.all(models.map(async (model) => {
-        const configured = Boolean(await resolveImageApiKey(authStorage, model.provider))
+        const configured = Boolean(await resolveImageApiKey(modelRuntime, model.provider))
         return {
           provider: model.provider,
           id: model.id,
@@ -93,7 +93,7 @@ export function createDiagramServerPlugin(options: { workspaceRoot: string }): W
       const models = listRenderableImageModels()
       const model = resolveRequestedModel(models, body.model)
       if (!model) return sendRenderError(reply, 500, "render_model_unavailable", "no image models are available") as never
-      const apiKey = await resolveImageApiKey(authStorage, model.provider)
+      const apiKey = await resolveImageApiKey(modelRuntime, model.provider)
       if (!apiKey) return sendRenderError(reply, 400, "render_auth_unconfigured", `${model.provider} image rendering is not configured`) as never
 
       try {
@@ -200,11 +200,15 @@ function resolveRequestedModel(models: Array<ImagesModel<ImagesApi>>, requested:
     ?? models[0]
 }
 
-async function resolveImageApiKey(authStorage: Pick<ReturnType<typeof AuthStorage.create>, "getApiKey">, provider: string): Promise<string | undefined> {
+async function resolveImageApiKey(modelRuntime: Pick<ModelRuntime, "getAuth">, provider: string): Promise<string | undefined> {
   const suffix = String(provider).toUpperCase().replace(/[^A-Z0-9]+/g, "_")
-  const envName = `BORING_DIAGRAM_${suffix}_API_KEY`
-  const legacyEnvName = `BORING_EXCALIDRAW_${suffix}_API_KEY`
-  return process.env[envName] || process.env[legacyEnvName] || await authStorage.getApiKey(provider) || getEnvApiKey(provider) || (provider === "openrouter" ? process.env.OPENROUTER_API_KEY : undefined)
+  const explicitEnv = process.env[`BORING_DIAGRAM_${suffix}_API_KEY`]
+  const legacyEnv = process.env[`BORING_EXCALIDRAW_${suffix}_API_KEY`]
+  if (explicitEnv || legacyEnv) return explicitEnv || legacyEnv
+  const runtimeAuth = await modelRuntime.getAuth(provider)
+  return runtimeAuth?.auth.apiKey
+    || getEnvApiKey(provider)
+    || (provider === "openrouter" ? process.env.OPENROUTER_API_KEY : undefined)
 }
 
 function renderPrompt(prompt: string): string {
