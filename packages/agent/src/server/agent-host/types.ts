@@ -17,6 +17,7 @@ import type {
   RuntimeBundle,
   RuntimeFilesystemBinding,
   RuntimeModeAdapter,
+  RuntimeTrustedServiceLeaseV1,
 } from '../runtime/mode'
 import type { AgentRuntimeHostOperations } from '../runtime/runtimeHost'
 import type { WorkspaceProvisioningResult } from '../workspace/provisioning'
@@ -321,6 +322,18 @@ export interface AgentHostEnvironmentScope extends ResolvedEnvironmentScope {
   }) => Promise<readonly RuntimeFilesystemBinding[] | undefined>
 }
 
+export interface AgentHostSessionEnvironmentLease {
+  readonly environmentGenerationId: string
+  readonly bindingGeneration: number
+  readonly signal: AbortSignal
+  acquireTrustedService(input: {
+    readonly leaseId: string
+    readonly idleTtlMs: number
+    readonly absoluteTtlMs: number
+  }): Promise<RuntimeTrustedServiceLeaseV1>
+  release(): void
+}
+
 export interface AgentHostEnvironmentLease {
   readonly workspace: Workspace
   readonly gitWorkspace: Workspace
@@ -410,6 +423,12 @@ export interface CreatedAgentHost {
     readonly authorizedScope: AuthorizedAgentScope
     readonly intent: AuthorizedEnvironmentIntent
   }): Promise<AgentHostEnvironmentLease>
+  /** Trusted composition-only acquisition of the addressed session's exact Environment generation. */
+  acquireSessionEnvironment(input: {
+    readonly authorizedScope: AuthorizedAgentScope
+    readonly ref: AgentSessionRef
+    readonly requestId: string
+  }): Promise<AgentHostSessionEnvironmentLease>
   runWithWorkspaceAgent(
     input: AgentHostDispatcherRunInput,
     run: (binding: LeaseBoundWorkspaceAgent) => Promise<void>,
