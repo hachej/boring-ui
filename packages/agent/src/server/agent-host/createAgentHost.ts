@@ -14,8 +14,10 @@ import { EmbeddedAgentGateway } from './embeddedGateway'
 import { EnvironmentLeaseManager, type EnvironmentLease } from './environmentLease'
 import { getOptionalRuntimeBundleStorageRoot } from '../runtime/mode'
 import { mergeRuntimeFilesystemBindings } from '../runtime/filesystemBindings'
-import { SandboxLeaseServiceRegistry } from '../sandbox/leases/sandboxLeaseServiceRegistry'
-import { assertSandboxToolCatalogAuthority } from '../tools/sandboxTargeting'
+import {
+  HostSandboxCapabilities,
+  matchesSandboxToolCapability,
+} from './hostSandboxCapabilities'
 import { createAgentHostRoutes } from './httpProjection'
 import { InMemoryAgentRequestLedger } from './requestLedger'
 import { resolveRequestLedgerPath } from './requestLedgerPath'
@@ -61,13 +63,7 @@ export interface RuntimeBinding {
   readonly composition: BuiltAgentComposition
 }
 
-/** Capability identity is exact: absence cannot reuse a sandbox-capable binding. */
-export function matchesSandboxToolCapability(
-  binding: Pick<RuntimeBinding, 'scope'>,
-  sandboxToolsDigest: string | undefined,
-): boolean {
-  return binding.scope.sandboxTools?.digest === sandboxToolsDigest
-}
+export { matchesSandboxToolCapability } from './hostSandboxCapabilities'
 
 export interface AgentHostRuntime {
   readonly options: CreateAgentHostOptions
@@ -260,25 +256,6 @@ function validateEnvironmentScope(resolved: AgentHostEnvironmentScope): void {
   if (!resolved.workspaceRoot.trim()) throw new TypeError('resolved environment workspaceRoot must be non-empty')
 }
 
-function assertPublishedBindingMatchesResolvedScope(
-  binding: RuntimeBinding,
-  resolved: ResolvedAgentRuntimeScope,
-): void {
-  const currentPhysicalBindingIdentity = binding.scope.physicalBindingIdentity ?? binding.scope.identity
-  const candidatePhysicalBindingIdentity = resolved.physicalBindingIdentity ?? resolved.identity
-  if (
-    binding.scope.identity !== resolved.identity
-    || binding.scope.environment.provisioningFingerprint !== resolved.environment.provisioningFingerprint
-    || currentPhysicalBindingIdentity !== candidatePhysicalBindingIdentity
-    || !matchesSandboxToolCapability(binding, resolved.sandboxTools?.digest)
-  ) {
-    throw new AgentGatewayError(
-      AgentGatewayErrorCode.AGENT_RUNTIME_RESTART_REQUIRED,
-      'Agent runtime identity changed; process restart is required',
-    )
-  }
-}
-
 /**
  * Durable ledger file this host will open, or `undefined` when it was given
  * neither an explicit path nor a session root.
@@ -394,7 +371,7 @@ function createRuntime(
   )
   const activity = new AgentSessionActivityIndex()
   const bindings = new Map<string, Promise<RuntimeBinding>>()
-  const sandboxLeaseServices = new SandboxLeaseServiceRegistry()
+  const sandboxCapabilities = new HostSandboxCapabilities()
   const publishedCurrentBindings = new Map<string, RuntimeBinding>()
   const currentBindingReservations = new Map<string, string>()
   const nextBindingGeneration = new Map<string, number>()
@@ -507,28 +484,14 @@ function createRuntime(
         `binding:${agentTypeId}`,
       )
       validateResolvedRuntimeScope(resolved)
-      assertSandboxToolCatalogAuthority(resolved)
-      if (resolved.sandboxTools) sandboxLeaseServices.register(resolved.sandboxTools)
-      const key = JSON.stringify([
-        agentTypeId,
-        claim.workspaceScopeId,
-        resolved.identity,
-        resolved.environment.provisioningFingerprint,
-        resolved.physicalBindingIdentity ?? resolved.identity,
-        resolved.sandboxTools?.digest ?? null,
-      ])
-      const physicalBindingIdentity = resolved.physicalBindingIdentity ?? resolved.identity
-      const currentKey = JSON.stringify([
-        agentTypeId,
-        claim.workspaceScopeId,
-        physicalBindingIdentity,
-        resolved.sandboxTools?.digest ?? null,
-      ])
+      sandboxCapabilities.register(resolved)
+      const key = sandboxCapabilities.bindingKey(agentTypeId, claim.workspaceScopeId, resolved)
+      const currentKey = sandboxCapabilities.currentBindingKey(agentTypeId, claim.workspaceScopeId, resolved)
       const useCanonicalCurrent = options.resolveAuthorizedAgentRuntimeScope !== undefined
       if (useCanonicalCurrent) {
         const current = publishedCurrentBindings.get(currentKey)
         if (current) {
-          assertPublishedBindingMatchesResolvedScope(current, resolved)
+          sandboxCapabilities.assertBindingMatches(current, resolved)
           return current
         }
         const reservedKey = currentBindingReservations.get(currentKey)
@@ -536,7 +499,7 @@ function createRuntime(
           const reserved = bindings.get(reservedKey)
           if (reserved) {
             const binding = await reserved
-            assertPublishedBindingMatchesResolvedScope(binding, resolved)
+            sandboxCapabilities.assertBindingMatches(binding, resolved)
             return binding
           }
         } else if (!reservedKey) {
@@ -560,7 +523,6 @@ function createRuntime(
               workspaceScopeId: claim.workspaceScopeId,
               runtimeScope: resolved,
               runtimeBundle,
-              hostRuntime: runtime,
               environmentProvisioning: environmentLease.provisioning,
               options,
               observeSessionEvent: (sessionId, event) => {
@@ -639,14 +601,14 @@ function createRuntime(
         sandboxToolsDigest ?? null,
       ]))
       if (exact) return exact
-      const matches = [...publishedCurrentBindings.values()].filter((binding) =>
-        binding.agentTypeId === agentTypeId
-        && binding.workspaceScopeId === workspaceScopeId
-        && matchesSandboxToolCapability(binding, sandboxToolsDigest)
-        && (!bindingIdentity || binding.scope.identity === bindingIdentity)
-        && (!provisioningFingerprint
-          || binding.scope.environment.provisioningFingerprint === provisioningFingerprint))
-      return matches.length === 1 ? matches[0] : undefined
+      return sandboxCapabilities.findPublished(publishedCurrentBindings.values(), {
+        agentTypeId,
+        workspaceScopeId,
+        physicalBindingIdentity,
+        bindingIdentity,
+        provisioningFingerprint,
+        sandboxToolsDigest,
+      })
     },
     startDrain() {
       if (draining) return
@@ -765,7 +727,7 @@ function createRuntime(
           )
           if (failed) firstError ??= failed.reason
         }
-        const sandboxCleanup = await sandboxLeaseServices.disposeUntil(Date.now() + graceMs)
+        const sandboxCleanup = await sandboxCapabilities.disposeUntil(Date.now() + graceMs)
         const failedSandboxCleanup = sandboxCleanup.find(
           (result): result is PromiseRejectedResult => result.status === 'rejected',
         )

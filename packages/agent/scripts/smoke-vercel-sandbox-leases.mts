@@ -7,7 +7,8 @@ import { Sandbox, Snapshot } from '@vercel/sandbox'
 
 import { SandboxLeaseService } from '../src/server/sandbox/leases/sandboxLease'
 import { addSandboxTargeting } from '../src/server/tools/sandboxTargeting'
-import { sandboxLeaseOwnerId } from '../src/server/tools/sandboxManagement'
+import { createSandboxManagementTool } from '../src/server/tools/sandboxManagement'
+import { sandboxLeaseOwnerId } from '../src/server/sandbox/leases/sandboxLeaseOwner'
 import type { ToolExecContext } from '../src/shared/tool'
 import type { RuntimeBundle } from '../src/server/runtime/mode'
 import { buildHarnessAgentTools } from '@hachej/boring-bash/agent'
@@ -74,12 +75,15 @@ async function main(): Promise<void> {
   } as ToolExecContext
   const ownerId = sandboxLeaseOwnerId({ workspaceScopeId: workspaceId, agentTypeId: AGENT_TYPE_ID }, toolContext)
   const handles = ['lease-smoke-handle-0001', 'lease-smoke-handle-0002']
+  const deadlineHandle = 'lease-timeout-proof-0001'
   const remoteNames = handles.map((handle) => disposableName(workspaceId, handle))
+  const allRemoteNames = [...remoteNames, disposableName(workspaceId, deadlineHandle)]
   const startedAt = Date.now()
 
   let seed: Sandbox | undefined
   let snapshot: Snapshot | undefined
   let service: SandboxLeaseService | undefined
+  let deadlineService: SandboxLeaseService | undefined
   let sequence = 0
   const cleanupFailures: unknown[] = []
   let phase = 'seed-create'
@@ -101,6 +105,8 @@ async function main(): Promise<void> {
 
     const provider = createVercelSandboxProvider({
       lifecycle: 'disposable',
+      timeoutMs: 10 * 60 * 1000,
+      snapshotExpirationMs: 24 * 60 * 60 * 1000,
       telemetrySalt,
       store,
       immutableCacheSource: {
@@ -122,10 +128,40 @@ async function main(): Promise<void> {
       createHandle: () => handles[sequence++]!,
     })
 
+    const managementTool = createSandboxManagementTool({
+      leases: service,
+      workspaceScopeId: workspaceId,
+      agentTypeId: AGENT_TYPE_ID,
+    })
+    const createLease = async (toolCallId: string) => {
+      const response = await managementTool.execute(
+        { op: 'create' },
+        { ...toolContext, toolCallId },
+      )
+      if (response.isError) {
+        const code = (response.details as { code?: unknown } | undefined)?.code
+        throw Object.assign(new Error('sandbox create tool failed'), {
+          code: typeof code === 'string' ? code : 'SANDBOX_CREATE_FAILED',
+        })
+      }
+      const details = response.details as { sandbox?: unknown; expiresAt?: unknown }
+      if (typeof details.sandbox !== 'string' || typeof details.expiresAt !== 'number') {
+        throw new Error('sandbox create tool returned an invalid receipt')
+      }
+      return { handle: details.sandbox, expiresAt: details.expiresAt }
+    }
+    const releaseLease = async (handle: string, toolCallId: string) => {
+      const response = await managementTool.execute(
+        { op: 'release', sandbox: handle },
+        { ...toolContext, toolCallId },
+      )
+      if (response.isError) throw new Error(`sandbox release tool failed: ${JSON.stringify(response.details)}`)
+    }
+
     phase = 'lease-acquire-first'
-    const first = await service.acquire(ownerId)
+    const first = await createLease('vercel-live-create-first')
     phase = 'lease-acquire-second'
-    const second = await service.acquire(ownerId)
+    const second = await createLease('vercel-live-create-second')
     if (first.handle === second.handle) throw new Error('Vercel leases reused an opaque handle')
     if ((await store.list()).length !== 0) throw new Error('disposable leases polluted the persistent handle store')
 
@@ -186,13 +222,13 @@ async function main(): Promise<void> {
     const pinned = service.withPair(ownerId, first.handle, async () => await pin)
     await Promise.resolve()
     let released = false
-    const release = service.release(ownerId, first.handle).then(() => { released = true })
+    const release = releaseLease(first.handle, 'vercel-live-release-first').then(() => { released = true })
     await new Promise((resolve) => setTimeout(resolve, 100))
     if (released) throw new Error('release deleted a Vercel lease beneath an active operation')
     unblock()
     await pinned
     await release
-    await service.release(ownerId, second.handle)
+    await releaseLease(second.handle, 'vercel-live-release-second')
 
     for (const handle of handles) {
       await service.withPair(ownerId, handle, async () => undefined)
@@ -214,6 +250,61 @@ async function main(): Promise<void> {
       }
     }
 
+    phase = 'provider-deadline-create'
+    const deadlineProvider = createVercelSandboxProvider({
+      lifecycle: 'disposable',
+      timeoutMs: 10_000,
+      snapshotExpirationMs: 24 * 60 * 60 * 1000,
+      telemetrySalt,
+      store,
+      immutableCacheSource: {
+        contractVersion: IMMUTABLE_SANDBOX_CACHE_SOURCE_VERSION_V1,
+        providerId: 'vercel-sandbox',
+        opaqueRef: snapshot.snapshotId,
+      },
+    })
+    deadlineService = new SandboxLeaseService({
+      workspaceRoot: join(tempDir, 'deadline-lease'),
+      provider: deadlineProvider,
+      providerWorkspaceId: workspaceId,
+      serviceDigest: SERVICE_DIGEST,
+      ttlMs: 60_000,
+      reapIntervalMs: 60_000,
+      drainTimeoutMs: 30_000,
+      maxActiveLeasesPerOwner: 1,
+      maxActiveLeasesTotal: 1,
+      createHandle: () => deadlineHandle,
+    })
+    const deadlineTool = createSandboxManagementTool({
+      leases: deadlineService,
+      workspaceScopeId: workspaceId,
+      agentTypeId: AGENT_TYPE_ID,
+    })
+    const deadlineCreate = await deadlineTool.execute(
+      { op: 'create' },
+      { ...toolContext, toolCallId: 'vercel-live-deadline-create' },
+    )
+    if (deadlineCreate.isError) throw new Error(`deadline create failed: ${JSON.stringify(deadlineCreate.details)}`)
+    phase = 'provider-compute-deadline-check'
+    const deadlineAt = Date.now() + 45_000
+    let deadlineStatus: string | undefined
+    while (Date.now() < deadlineAt) {
+      const candidate = await Sandbox.get({ ...credentials, name: allRemoteNames[2]!, resume: false })
+      deadlineStatus = candidate.status
+      if (deadlineStatus === 'stopped') break
+      await new Promise((resolve) => setTimeout(resolve, 2_000))
+    }
+    if (deadlineStatus !== 'stopped') {
+      throw Object.assign(new Error('Vercel sandbox remained active after its provider deadline'), {
+        code: 'PROVIDER_DEADLINE_ACTIVE',
+      })
+    }
+    const deadlineRelease = await deadlineTool.execute(
+      { op: 'release', sandbox: deadlineHandle },
+      { ...toolContext, toolCallId: 'vercel-live-deadline-release' },
+    )
+    if (deadlineRelease.isError) throw new Error(`deadline release failed: ${JSON.stringify(deadlineRelease.details)}`)
+
     phase = 'completed'
     console.log(JSON.stringify({
       ok: true,
@@ -224,6 +315,8 @@ async function main(): Promise<void> {
       releaseWaitedForPin: true,
       releasedLeasesUnavailable: true,
       remoteDeletionConfirmed: true,
+      providerComputeDeadlineEnforced: true,
+      providerSnapshotExpirationMs: 86_400_000,
       persistentHandleRecords: 0,
       durationMs: Date.now() - startedAt,
     }))
@@ -231,10 +324,13 @@ async function main(): Promise<void> {
     if (error && typeof error === 'object') Object.defineProperty(error, 'smokePhase', { value: phase })
     throw error
   } finally {
+    if (deadlineService) {
+      try { await deadlineService.dispose() } catch (error) { cleanupFailures.push(error) }
+    }
     if (service) {
       try { await service.dispose() } catch (error) { cleanupFailures.push(error) }
     }
-    for (const name of remoteNames) {
+    for (const name of allRemoteNames) {
       try {
         const candidate = await Sandbox.get({ ...credentials, name, resume: false })
         await candidate.delete()

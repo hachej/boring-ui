@@ -28,7 +28,6 @@ import { sessionNamespaceForAgent } from './sessionInventory'
 import { locateHostWorkspaceSkill, projectRuntimeSkillPathToHost } from './skillPathProjection'
 import type { AgentHarnessBackend } from './harnessBackend/types'
 import { createPiSessionHarnessBackend } from './harnessBackend/piSessionHarnessBackend'
-import type { AgentHostRuntime } from './createAgentHost'
 import { createSandboxManagementTool } from '../tools/sandboxManagement'
 import {
   addSandboxTargeting,
@@ -132,7 +131,6 @@ export interface BuildAgentCompositionInput {
   readonly workspaceScopeId: string
   readonly runtimeScope: ResolvedAgentRuntimeScope
   readonly runtimeBundle: RuntimeBundle
-  readonly hostRuntime: AgentHostRuntime
   readonly environmentProvisioning?: EnvironmentProvisioningSnapshot
   readonly options: Pick<
     CreateAgentHostOptions,

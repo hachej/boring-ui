@@ -24,6 +24,7 @@ import {
   type RuntimeBinding,
 } from '../createAgentHost'
 import { registerAgentHostEnvironmentRoutes } from '../environmentHttpProjection'
+import { HostSandboxCapabilities } from '../hostSandboxCapabilities'
 
 const roots: string[] = []
 afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))))
@@ -717,6 +718,29 @@ describe('createAgentHost', () => {
     expect(matchesSandboxToolCapability(binding('sandbox-tools-a'), 'sandbox-tools-b')).toBe(false)
     expect(matchesSandboxToolCapability(binding('sandbox-tools-a'), undefined)).toBe(false)
     expect(matchesSandboxToolCapability(binding(), undefined)).toBe(true)
+  })
+
+  it('never falls back across physical binding identities', () => {
+    const capabilities = new HostSandboxCapabilities()
+    const binding = {
+      agentTypeId: 'worker',
+      workspaceScopeId: 'workspace-a',
+      scope: {
+        identity: 'semantic-a',
+        physicalBindingIdentity: 'physical-a',
+        environment: { provisioningFingerprint: 'provisioning-a' },
+      },
+    } as unknown as RuntimeBinding
+
+    expect(() => capabilities.findPublished([binding], {
+      agentTypeId: 'worker',
+      workspaceScopeId: 'workspace-a',
+      physicalBindingIdentity: 'physical-b',
+      bindingIdentity: 'semantic-a',
+      provisioningFingerprint: 'provisioning-a',
+    })).toThrow(expect.objectContaining({
+      code: AgentGatewayErrorCode.AGENT_RUNTIME_RESTART_REQUIRED,
+    }))
   })
 
   it('retries fail-once sandbox deletion during host shutdown until it settles', async () => {

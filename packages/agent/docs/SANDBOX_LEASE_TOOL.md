@@ -27,6 +27,8 @@ profile and passes it only after Agent authorization:
 ```ts
 const provider = createVercelSandboxProvider({
   lifecycle: 'disposable',
+  timeoutMs: 10 * 60_000,
+  snapshotExpirationMs: 24 * 60 * 60_000,
   immutableCacheSource: hostResolvedCacheSource,
   telemetrySalt: hostTelemetrySalt,
 })
@@ -88,7 +90,14 @@ and reconciles ambiguous Vercel creation before separately keyed cleanup.
 However, the process-local lease registry does not durably deduplicate a
 manually repeated tool call after its result was lost. Repeating `create` is a
 new request and may create another bounded lease; quotas, TTL, owner cleanup,
-and provider cleanup remain the interim containment. While the process remains
+and the required provider-enforced timeout remain the interim containment. A
+SIGKILL loses the process-local handle, quota record, and cleanup owner.
+Disposable Vercel requests still carry a bounded execution timeout and a bounded
+auto-snapshot expiration (Vercel's minimum and this implementation's default is
+24 hours). Compute stops at the execution deadline, but the stopped sandbox may
+remain resumable until its snapshot expires; an operator sweep remains required
+for earlier reclamation after an ungraceful host death; the 24-hour stale-handle
+backstop is the existing policy in `VERCEL_COSTS.md`. While the process remains
 alive, `sandbox.list` exposes successfully published owned leases.
 
 Operational tools pin the pair through `withPair`. Release, expiry, owner-end,
@@ -128,8 +137,9 @@ is retained as cleanup-pending maintenance.
 With D31-qualified Vercel credentials supplied through the environment, the
 credential-gated smoke creates one immutable snapshot, forks two disposable
 leases, proves inherited and isolated bytes, executes inside a targeted lease,
-proves release waits for an active pin, verifies remote deletion, and cleans the
-snapshot plus every sandbox:
+proves release waits for an active pin, verifies remote deletion, proves active
+compute stops after the provider deadline, and cleans the snapshot plus every
+sandbox:
 
 ```bash
 RUN_VERCEL_SANDBOX_LEASE_SMOKE=1 \
@@ -144,8 +154,11 @@ The command emits only redacted digests and a bounded boolean/timing receipt.
   remote-worker/runsc, direct, and bwrap disposable profiles are excluded.
 - Only canonical `bash`, file tools, and enabled `upload_file` are targetable.
 - Plugin, MCP, UI, custom tools, and `execute_isolated_code` cannot resolve leases.
-- The registry is process-local. Tool-call receipts are not replayable across
-  process restart, and a manually repeated `create` may allocate another lease.
+- The registry is process-local. Tool-call receipts and handles are not
+  replayable across process restart, and a manually repeated `create` may
+  allocate another lease. A SIGKILL can lose local cleanup ownership, but every
+  disposable Vercel sandbox has required provider-enforced execution and snapshot expirations.
+  Stopped state may remain resumable for at most the configured snapshot-retention window (24 hours by default), so abrupt-host cleanup still needs an operator sweep for earlier reclamation.
   Durable nested tool-effect admission/settlement and a durable lease registry
   remain future work.
 - Trusted main CI cache publication, cache registry/retention, affected-package

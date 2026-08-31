@@ -2,14 +2,22 @@ import type {
   VercelSandboxClient,
   VercelSandboxHandle,
 } from './resolveSandboxHandle'
+import { extractHttpStatus } from './httpError'
 
 export async function createDisposableSandboxHandle(input: {
   readonly vercel: VercelSandboxClient
   readonly sourceSnapshotId?: string
   readonly tarballUrl?: string
   readonly name?: string
+  readonly timeoutMs: number
+  readonly snapshotExpirationMs: number
 }): Promise<VercelSandboxHandle> {
-  const base = { persistent: true, snapshotExpiration: 0, ...(input.name ? { name: input.name } : {}) }
+  const base = {
+    persistent: true,
+    snapshotExpiration: input.snapshotExpirationMs,
+    timeoutMs: input.timeoutMs,
+    ...(input.name ? { name: input.name } : {}),
+  }
   if (input.sourceSnapshotId) {
     return await input.vercel.create({
       ...base,
@@ -23,15 +31,6 @@ export async function createDisposableSandboxHandle(input: {
     })
   }
   return await input.vercel.create(base)
-}
-
-function extractHttpStatus(error: unknown): number | null {
-  const statusCode = (error as { statusCode?: unknown } | null)?.statusCode
-  if (typeof statusCode === 'number') return statusCode
-  const status = (error as { status?: unknown } | null)?.status
-  if (typeof status === 'number') return status
-  const responseStatus = (error as { response?: { status?: unknown } } | null)?.response?.status
-  return typeof responseStatus === 'number' ? responseStatus : null
 }
 
 function isAlreadyAbsent(error: unknown): boolean {

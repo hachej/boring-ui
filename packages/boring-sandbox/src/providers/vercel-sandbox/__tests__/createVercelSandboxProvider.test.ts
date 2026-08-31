@@ -73,6 +73,7 @@ function getEnvVar(name: string): string | undefined {
   return ({
     VERCEL_TOKEN: 'token-1',
     VERCEL_TEAM_ID: 'team-1',
+    BORING_AGENT_VERCEL_SANDBOX_TIMEOUT_MS: '600000',
     BORING_SANDBOX_TELEMETRY_SALT: 'test-host-telemetry-salt',
   })[name]
 }
@@ -164,6 +165,22 @@ describe('createVercelSandboxProvider', () => {
       workspaceRoot: 'workspace-persistent-cache',
       sessionId: 'session-persistent-cache',
     })).rejects.toMatchObject({ code: 'CONFIG_INVALID' })
+  })
+
+  test('requires a provider-enforced timeout for disposable leases', () => {
+    expect(() => createVercelSandboxProvider({
+      lifecycle: 'disposable',
+      getEnvVar(name) {
+        if (name === 'BORING_SANDBOX_TELEMETRY_SALT') return 'test-host-telemetry-salt'
+        return undefined
+      },
+    })).toThrowError(expect.objectContaining({ code: 'CONFIG_INVALID' }))
+    expect(() => createVercelSandboxProvider({
+      lifecycle: 'disposable',
+      timeoutMs: 10_000,
+      snapshotExpirationMs: 10_000,
+      telemetrySalt: 'test-host-telemetry-salt',
+    })).toThrowError(expect.objectContaining({ code: 'CONFIG_INVALID' }))
   })
 
   test('cleans provider-local state when setup fails after handle acquisition', async () => {
@@ -618,6 +635,8 @@ describe('createVercelSandboxProvider', () => {
     expect(client.create).toHaveBeenCalledTimes(2)
     expect(client.create).toHaveBeenNthCalledWith(1, expect.objectContaining({
       persistent: true,
+      snapshotExpiration: 86_400_000,
+      timeoutMs: 600_000,
       source: { type: 'snapshot', snapshotId: 'snap_trusted_main' },
     }))
     expect(client.get).toHaveBeenCalledTimes(2)

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { SandboxProviderV1, WorkspaceSandboxPairV1 } from '@hachej/boring-sandbox/shared'
 import type { Sandbox, Workspace } from '../../../../shared/index'
+import { ErrorCode } from '../../../../shared/error-codes'
 import {
   SANDBOX_LEASE_ERROR_CODES,
   SandboxLeaseCleanupError,
@@ -196,7 +197,7 @@ describe('SandboxLeaseService lifecycle registry', () => {
 
   it('does not let provider close delete a published pair while an operation is pinned', async () => {
     const providerClose = vi.fn(async () => {})
-    const { service, pairs } = createService({ drainTimeoutMs: 5, close: providerClose })
+    const { service, pairs } = createService({ drainTimeoutMs: 100, close: providerClose })
     const lease = await service.acquire('owner-a')
     const gate = await deferred<void>()
     const operation = service.withPair('owner-a', lease.handle, async () => await gate.promise)
@@ -275,6 +276,19 @@ describe('SandboxLeaseService lifecycle registry', () => {
     await service.release('owner-a', 'lease-handle-0001')
     expect(retry).toHaveBeenCalledTimes(2)
     expect(cleanupOrder).toEqual(['returned-object', 'correlation', 'correlation'])
+    expect(service.listOwn('owner-a')).toEqual([])
+    await service.dispose()
+  })
+
+  it('normalizes definitive provider rejection without claiming cleanup ambiguity', async () => {
+    const providerError = Object.assign(new Error('credential detail'), { code: ErrorCode.enum.VERCEL_AUTH_FAILED })
+    const { service } = createService({ create: async () => { throw providerError } })
+
+    await expect(service.acquire('owner-a')).rejects.toMatchObject({
+      code: SANDBOX_LEASE_ERROR_CODES.LEASE_CREATION_ABORTED,
+      message: 'sandbox provider rejected lease creation',
+      retryable: false,
+    })
     expect(service.listOwn('owner-a')).toEqual([])
     await service.dispose()
   })

@@ -81,7 +81,6 @@ describe('native sandbox tools through real Pi', () => {
         sessionNamespace: 'default-catalog',
       },
       runtimeBundle: primaryBundle,
-      hostRuntime: host,
       options: {
         runtimeModeAdapter: {
           id: 'vercel-sandbox',
@@ -137,7 +136,6 @@ describe('native sandbox tools through real Pi', () => {
         includeFilesystemTools: false,
       },
       runtimeBundle: primaryBundle,
-      hostRuntime: host,
       options: {
         runtimeModeAdapter: {
           id: 'vercel-sandbox', async create() { return primaryBundle },
@@ -199,7 +197,6 @@ describe('native sandbox tools through real Pi', () => {
             }],
           },
           runtimeBundle: primaryBundle,
-          hostRuntime: host,
           options: {
             runtimeModeAdapter: {
               id: 'vercel-sandbox', async create() { return primaryBundle },
@@ -252,7 +249,6 @@ describe('native sandbox tools through real Pi', () => {
         includeFilesystemTools: false,
       },
       runtimeBundle: primaryBundle,
-      hostRuntime: host,
       options: {
         runtimeModeAdapter: {
           id: 'vercel-sandbox',

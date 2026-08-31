@@ -6,8 +6,6 @@ import {
   type SandboxLeaseStatus,
 } from '../sandbox/leases/sandboxLease'
 import { sandboxLeaseOwnerId } from '../sandbox/leases/sandboxLeaseOwner'
-export { sandboxLeaseOwnerId } from '../sandbox/leases/sandboxLeaseOwner'
-
 const HANDLE_PATTERN = '^[A-Za-z0-9_-]{16,128}$'
 
 export interface SandboxManagementToolOptions {

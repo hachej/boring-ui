@@ -14,7 +14,7 @@ import {
   SandboxLeaseError,
   type SandboxLeaseService,
 } from '../sandbox/leases/sandboxLease'
-import { sandboxLeaseOwnerId } from './sandboxManagement'
+import { sandboxLeaseOwnerId } from '../sandbox/leases/sandboxLeaseOwner'
 
 const TARGETABLE_NAMES = new Set(['bash', 'read', 'write', 'edit', 'find', 'grep', 'ls', 'upload_file'])
 

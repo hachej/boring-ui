@@ -7,7 +7,7 @@ import type {
   SandboxProviderV1,
   WorkspaceSandboxPairV1,
 } from '@hachej/boring-sandbox/shared'
-import { hasDisposableLeaseProviderShape } from './disposableProvider'
+import { isDisposableLeaseProvider } from './disposableProvider'
 
 const LEASE_HANDLE_PATTERN = /^[A-Za-z0-9_-]{16,128}$/
 export const SANDBOX_REMOTE_DISPOSE_OPERATION_ID = 'sandbox.remote.dispose.v1' as const
@@ -127,7 +127,7 @@ export class SandboxLeaseService {
   private disposal: Promise<void> | undefined
 
   constructor(private readonly options: SandboxLeaseServiceOptions) {
-    if (!hasDisposableLeaseProviderShape(options.provider)) this.invalid('provider must implement the disposable sandbox profile')
+    if (!isDisposableLeaseProvider(options.provider)) this.invalid('provider must implement the disposable sandbox profile')
     if (!Number.isFinite(options.ttlMs) || options.ttlMs <= 0) this.invalid('ttlMs must be greater than zero')
     if (!Number.isFinite(options.reapIntervalMs) || options.reapIntervalMs < 1_000 || options.reapIntervalMs > Math.min(options.ttlMs, 60_000)) {
       this.invalid('reapIntervalMs must be between 1000 and min(ttlMs, 60000)')
@@ -144,14 +144,6 @@ export class SandboxLeaseService {
 
   get isClosed(): boolean { return this.closed }
   get isDisposed(): boolean { return this.providerClosed && this.leases.size === 0 && this.pendingTotal === 0 }
-  get providerIdentity(): SandboxProviderV1 { return this.options.provider }
-
-  /** Registry compensation before publication; no lease or provider cleanup authority was transferred. */
-  abandonUnregistered(): void {
-    if (this.leases.size || this.pendingTotal) throw new TypeError('active sandbox lease service cannot be abandoned')
-    this.closed = true
-    clearInterval(this.timer)
-  }
 
   async acquire(ownerId: string, signal?: AbortSignal): Promise<SandboxLease> {
     this.assertOpen()
@@ -214,8 +206,9 @@ export class SandboxLeaseService {
             { cause: new AggregateError([error, cleanupError]) },
           )
         }
-        if (!(error instanceof SandboxLeaseError)) throw this.creationAborted()
+        if (!(error instanceof SandboxLeaseError)) throw this.creationFailed(error)
       }
+      if (!(error instanceof SandboxLeaseError)) throw this.creationFailed(error)
       throw error
     } finally {
       if (handle) this.pendingHandles.delete(handle)
@@ -598,6 +591,17 @@ export class SandboxLeaseService {
 
   private creationAborted(message = 'sandbox creation was aborted'): SandboxLeaseError {
     return new SandboxLeaseError(SANDBOX_LEASE_ERROR_CODES.LEASE_CREATION_ABORTED, message, true)
+  }
+
+  private creationFailed(error: unknown): SandboxLeaseError {
+    const code = (error as { code?: unknown } | null)?.code
+    const retryable = code !== 'CONFIG_INVALID' && code !== 'VERCEL_AUTH_FAILED'
+    return new SandboxLeaseError(
+      SANDBOX_LEASE_ERROR_CODES.LEASE_CREATION_ABORTED,
+      retryable ? 'sandbox provider creation failed' : 'sandbox provider rejected lease creation',
+      retryable,
+      { cause: error },
+    )
   }
 
   private invalid(message: string): never {
