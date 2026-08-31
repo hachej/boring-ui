@@ -35,13 +35,21 @@ function readManifest(resourceRoot: string): {
   readonly bytes: string
   readonly manifest: BoringFactoryResourceManifestV1
 } {
-  const bytes = readFileSync(path.join(resourceRoot, 'resource-manifest.json'), 'utf8')
+  const manifestPath = path.join(resourceRoot, 'resource-manifest.json')
+  const manifestInfo = lstatSync(manifestPath)
+  if (manifestInfo.isSymbolicLink() || !manifestInfo.isFile()) {
+    throw new Error('Boring Factory resource manifest must be a regular file')
+  }
+  const bytes = readFileSync(manifestPath, 'utf8')
   const parsed = JSON.parse(bytes) as Partial<BoringFactoryResourceManifestV1>
   if (
     parsed.contractVersion !== BORING_FACTORY_RESOURCE_CONTRACT_VERSION
     || !parsed.files
     || typeof parsed.files !== 'object'
     || Array.isArray(parsed.files)
+    || !parsed.sources
+    || typeof parsed.sources !== 'object'
+    || Array.isArray(parsed.sources)
   ) {
     throw new Error('invalid Boring Factory resource manifest')
   }
@@ -73,11 +81,28 @@ function listResourceFiles(
   return files
 }
 
-function verifyResources(resourceRoot: string, manifest: BoringFactoryResourceManifestV1): void {
+function verifyResources(
+  distRoot: string,
+  resourceRoot: string,
+  manifest: BoringFactoryResourceManifestV1,
+): void {
+  const rootInfo = lstatSync(resourceRoot)
+  if (rootInfo.isSymbolicLink() || !rootInfo.isDirectory()) {
+    throw new Error('Boring Factory resource root must be a regular directory')
+  }
+  const canonicalDistRoot = realpathSync(distRoot)
   const canonicalRoot = realpathSync(resourceRoot)
+  const relativeToDist = path.relative(canonicalDistRoot, canonicalRoot)
+  if (relativeToDist.startsWith('..') || path.isAbsolute(relativeToDist)) {
+    throw new Error('Boring Factory resource root escapes installed artifact')
+  }
   const manifestFiles = Object.keys(manifest.files).sort()
+  const sourceFiles = Object.keys(manifest.sources).sort()
   const actualFiles = listResourceFiles(resourceRoot)
-  if (JSON.stringify(actualFiles) !== JSON.stringify(manifestFiles)) {
+  if (
+    JSON.stringify(actualFiles) !== JSON.stringify(manifestFiles)
+    || JSON.stringify(sourceFiles) !== JSON.stringify(manifestFiles)
+  ) {
     throw new Error('Boring Factory resource file set does not match manifest')
   }
   for (const [relativePath, expectedDigest] of Object.entries(manifest.files)) {
@@ -86,6 +111,9 @@ function verifyResources(resourceRoot: string, manifest: BoringFactoryResourceMa
       || path.isAbsolute(relativePath)
       || relativePath.split('/').includes('..')
       || !SHA256.test(expectedDigest)
+      || !manifest.sources[relativePath]
+      || path.isAbsolute(manifest.sources[relativePath])
+      || manifest.sources[relativePath].split('/').includes('..')
     ) {
       throw new Error(`invalid Boring Factory resource entry: ${relativePath}`)
     }
@@ -112,7 +140,7 @@ export function resolveBoringFactoryResources(): BoringFactoryResources {
   const distRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
   const resourceRoot = path.join(distRoot, 'resources')
   const { bytes, manifest } = readManifest(resourceRoot)
-  verifyResources(resourceRoot, manifest)
+  verifyResources(distRoot, resourceRoot, manifest)
 
   return Object.freeze({
     resourceRoot,

@@ -32,6 +32,7 @@
     "clean": "rm -rf dist .tsbuildinfo"
   },
   "devDependencies": {
+    "@hachej/boring-agent": "workspace:*",
     "@types/node": "^22.20.0",
     "tsup": "^8.4.0",
     "typescript": "~6.0.3",

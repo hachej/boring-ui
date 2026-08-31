@@ -8,6 +8,8 @@ export type FactoryAgentTypeId = (typeof FACTORY_AGENT_TYPE_IDS)[number]
 export interface BoringFactoryResourceManifestV1 {
   readonly contractVersion: typeof BORING_FACTORY_RESOURCE_CONTRACT_VERSION
   readonly files: Readonly<Record<string, string>>
+  /** Packaged path -> canonical repository-relative source path. */
+  readonly sources: Readonly<Record<string, string>>
 }
 
 export interface BoringFactoryResources {

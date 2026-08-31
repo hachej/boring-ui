@@ -1242,6 +1242,9 @@ importers:
 
   plugins/boring-factory:
     devDependencies:
+      '@hachej/boring-agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
       '@types/node':
         specifier: ^22.20.0
         version: 22.20.1

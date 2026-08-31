@@ -12,9 +12,12 @@ Pi extension, skill, tool, provider, credential, or dispatch authority.
 - Procedure companions: `.agents/skill-references/plan` and
   `.agents/skill-references/exec`.
 
-`pnpm build` copies those procedure resources byte-for-byte into `dist/resources`
-and writes a SHA-256 manifest. Generated resources are package output and must not
-be edited directly.
+`pnpm build` copies those procedures, their direct read-only procedure/reference
+closure, and both profiles byte-for-byte into `dist/resources`. The manifest maps
+every packaged path to its canonical repository source and SHA-256. Generated
+resources are package output and must not be edited directly. Only the top-level
+`skills/plan` and `skills/exec` directories are projected as discoverable Worker
+skills; bundled support skills and documents remain references, not extra grants.
 
 ## Trusted host composition
 

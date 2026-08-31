@@ -19,10 +19,63 @@ const sources = [
     source: path.join(repositoryRoot, '.agents/skill-references/exec'),
     target: 'skill-references/exec',
   },
+  ...[
+    'boring-loop.md',
+    'MODEL-CARD.md',
+    'issue-plans.md',
+    'bead-ready.md',
+  ].map((name) => ({
+    source: path.join(repositoryRoot, 'docs/procedures', name),
+    target: path.posix.join('skills/plan/docs/procedures', name),
+  })),
+  {
+    source: path.join(repositoryRoot, '.agents/skills/fresh-eyes'),
+    target: 'skills/plan/.agents/skills/fresh-eyes',
+  },
+  ...[
+    'boring-loop.md',
+    'MODEL-CARD.md',
+    'worktree-agent.md',
+    'proof-of-work.md',
+    'visual-review.md',
+    'owner-review-card.md',
+  ].map((name) => ({
+    source: path.join(repositoryRoot, 'docs/procedures', name),
+    target: path.posix.join('skills/exec/docs/procedures', name),
+  })),
+  {
+    source: path.join(repositoryRoot, '.agents/factory/README.md'),
+    target: 'skills/exec/.agents/factory/README.md',
+  },
+  {
+    source: path.join(repositoryRoot, '.agents/skills/present-pr'),
+    target: 'skills/exec/.agents/skills/present-pr',
+  },
+  {
+    source: path.join(repositoryRoot, '.agents/skills/show-me'),
+    target: 'skills/exec/.agents/skills/show-me',
+  },
+  {
+    source: path.join(repositoryRoot, 'scripts/present-pr.mjs'),
+    target: 'skills/exec/scripts/present-pr.mjs',
+  },
+  ...[
+    'present-pr-context.mjs',
+    'present-pr-files.mjs',
+    'present-pr-html.mjs',
+    'present-pr-links.mjs',
+    'present-pr-theme.mjs',
+    'render-mermaid.mjs',
+  ].map((name) => ({
+    source: path.join(repositoryRoot, 'scripts/lib', name),
+    target: path.posix.join('skills/exec/scripts/lib', name),
+  })),
 ]
 
 /** @type {Record<string, string>} */
 const files = {}
+/** @type {Record<string, string>} */
+const sourceFiles = {}
 
 function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex')
@@ -53,6 +106,10 @@ async function copyTree(sourceRoot, targetRelative, relative = '') {
   await mkdir(path.dirname(destination), { recursive: true })
   await copyFile(source, destination)
   files[destinationRelative] = sha256(await readFile(destination))
+  sourceFiles[destinationRelative] = path.posix.join(
+    path.relative(repositoryRoot, sourceRoot).split(path.sep).join(path.posix.sep),
+    relative.split(path.sep).join(path.posix.sep),
+  )
 }
 
 await rm(outputRoot, { recursive: true, force: true })
@@ -63,7 +120,8 @@ for (const entry of sources) {
 
 const manifest = {
   contractVersion: 'boring.factory.resources.v1',
-  files: Object.fromEntries(Object.entries(files).sort(([a], [b]) => a.localeCompare(b))),
+  files: Object.fromEntries(Object.entries(files).sort()),
+  sources: Object.fromEntries(Object.entries(sourceFiles).sort()),
 }
 await writeFile(
   path.join(outputRoot, 'resource-manifest.json'),
