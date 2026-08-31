@@ -188,7 +188,9 @@ this is event-driven recovery, not a periodic polling path.
 configuration; vendor SDK types, VMM specs, and storage mechanics do not escape
 the adapter. Its v1 capability matrix includes:
 
-- idempotent create with one sandbox per user session;
+- idempotent create keyed by `(workspaceId, clientLeaseId)`, with one sandbox
+  per explicit lease and several bounded concurrent leases permitted for one
+  authorized Agent session;
 - tenant plus `externalId`/session tagging;
 - bounded exec and filesystem operations;
 - zip copy-in and artifact copy-out;
@@ -202,6 +204,16 @@ the adapter. Its v1 capability matrix includes:
 These patterns are provider-independent lessons from getnao/BoxLite and Blaxel
 operating guidance. Boring adopts BoxLite's pool/TTL/copy-in/optional-runtime
 patterns, not its libkrun engine.
+
+**Owner amendment (2026-08-31):** lease multiplicity does not weaken the
+boundary: every explicit lease still owns one hardware microVM, one independent
+sandbox-scoped mutable SeaweedFS prefix under workspace authority, and per-lease
+`/scratch`. Leases never share mutable backing; the primary durable Workspace
+prefix changes only through explicit publication. Canonical tools name the
+lease they operate on; omission preserves the primary Workspace. Request-bound
+authority, accepted-effect receipts, pin-before-use/drain-before-delete, and
+visible single-owner cleanup debt are part of the provider contract. The
+complete invariants and proof live in the design and build plan.
 
 Network is off by default. The v1 allowlist contains only the selected
 SeaweedFS storage endpoint. If the configured runtime is missing or unhealthy,
