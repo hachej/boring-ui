@@ -195,6 +195,42 @@ describe('SignInPage', () => {
   )
 
   it(
+    'forwards redirect and invite_token query params through the Sign-up link',
+    withTaskId(EMAIL_AUTH_TASK_ID, async ({ assertionPassed }) => {
+      window.history.pushState(
+        {},
+        '',
+        '/auth/signin?redirect=%2Finvites%2Ftok-123&invite_token=tok-123',
+      )
+
+      render(<SignInPage />, { wrapper: Wrapper })
+
+      expect(screen.getByText(/sign up/i).closest('a')?.getAttribute('href')).toBe(
+        '/auth/signup?redirect=%2Finvites%2Ftok-123&invite_token=tok-123',
+      )
+      assertionPassed('signin-forwards-invite-context')
+    }),
+  )
+
+  it(
+    'derives invite_token for the Sign-up link from an invite-accept redirect path',
+    withTaskId(EMAIL_AUTH_TASK_ID, async ({ assertionPassed }) => {
+      window.history.pushState(
+        {},
+        '',
+        `/auth/signin?redirect=${encodeURIComponent('/invites/3fa85f64-5717-4562-b3fc-2c963f66afa6')}`,
+      )
+
+      render(<SignInPage />, { wrapper: Wrapper })
+
+      expect(screen.getByText(/sign up/i).closest('a')?.getAttribute('href')).toBe(
+        `/auth/signup?redirect=${encodeURIComponent('/invites/3fa85f64-5717-4562-b3fc-2c963f66afa6')}&invite_token=3fa85f64-5717-4562-b3fc-2c963f66afa6`,
+      )
+      assertionPassed('signin-derives-invite-token')
+    }),
+  )
+
+  it(
     'shows a helpful error when Google redirects back with an OAuth error',
     withTaskId(GOOGLE_AUTH_TASK_ID, async ({ assertionPassed }) => {
       window.history.pushState({}, '', '/auth/signin?error=access_denied&error_description=cancelled')

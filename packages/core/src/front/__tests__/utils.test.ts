@@ -11,6 +11,8 @@ import {
   getHttpErrorDetail,
   routes,
   routeHref,
+  extractInviteTokenFromRedirect,
+  withForwardedAuthParams,
 } from '../utils'
 import { HttpError } from '../../shared/errors'
 
@@ -217,5 +219,94 @@ describe('routes + routeHref', () => {
 
   it('routeHref substitutes params', () => {
     expect(routeHref('me', {})).toBe('/me')
+  })
+})
+
+describe('extractInviteTokenFromRedirect', () => {
+  const UUID_TOKEN = '3fa85f64-5717-4562-b3fc-2c963f66afa6'
+  const B64URL_TOKEN = 'dXaVMYAMLyQ_u2TWe6lSES-bxIX50QiETMxWiGl7CKE'
+
+  it('accepts a UUID invite token (LocalWorkspaceStore shape)', () => {
+    expect(extractInviteTokenFromRedirect(`/invites/${UUID_TOKEN}`)).toBe(UUID_TOKEN)
+  })
+
+  it('accepts a base64url invite token (PostgresWorkspaceStore shape)', () => {
+    expect(extractInviteTokenFromRedirect(`/invites/${B64URL_TOKEN}`)).toBe(B64URL_TOKEN)
+  })
+
+  it('accepts a percent-encoded-but-still-valid token unchanged after single decode', () => {
+    // '_' and '-' need no encoding, but a client could still send %5F/%2D for them.
+    const encoded = B64URL_TOKEN.replace(/_/g, '%5F').replace(/-/g, '%2D')
+    expect(extractInviteTokenFromRedirect(`/invites/${encoded}`)).toBe(B64URL_TOKEN)
+  })
+
+  const HOSTILE_CASES: Array<[string, string | null]> = [
+    ['null input', null],
+    ['empty string', ''],
+    ['bare route with no token', '/invites/'],
+    ['trailing segment appended', `/invites/${'a'.repeat(43)}/trailing`],
+    ['unrelated trailing path', `/invites/${'a'.repeat(43)}/../../admin`],
+    ['leading unrelated segment', `/foo/invites/${'a'.repeat(43)}`],
+    ['absolute URL, http', `http://evil.example/invites/${'a'.repeat(43)}`],
+    ['absolute URL, https', `https://evil.example/invites/${'a'.repeat(43)}`],
+    ['protocol-relative URL', `//evil.example/invites/${'a'.repeat(43)}`],
+    ['encoded separator smuggling a slash', '/invites/tok%2Fseparator-etc-etc-etc-etc-etc-x'],
+    ['double-encoded separator', '/invites/tok%252Fseparator-etc-etc-etc-etc-etc'],
+    ['malformed percent-escape', '/invites/%E0%A4%A'],
+    ['lone percent sign', '/invites/tok%en-not-a-real-escape-etc-etc-etc-x'],
+    ['query string smuggled into the segment', `/invites/${'a'.repeat(43)}?x=1`],
+    ['hash smuggled into the segment', `/invites/${'a'.repeat(43)}#frag`],
+    ['plausible-length but wrong alphabet', `/invites/${'!'.repeat(43)}`],
+    ['too-short base64url-looking token', `/invites/${'a'.repeat(20)}`],
+    ['too-long base64url-looking token', `/invites/${'a'.repeat(44)}`],
+    ['UUID missing a hyphen', '3fa85f645717-4562-b3fc-2c963f66afa6'.replace(/^/, '/invites/')],
+    // randomUUID() can only emit version 4 with an RFC 4122 variant nibble. A
+    // syntactically UUID-shaped string with the wrong version or variant nibble is not a
+    // value randomUUID() can ever produce and must not be extracted as a token.
+    ['UUID with wrong version nibble (v1, not v4)', '/invites/3fa85f64-5717-1562-73fc-2c963f66afa6'],
+    ['UUID with wrong version nibble (v5, not v4)', '/invites/3fa85f64-5717-5562-b3fc-2c963f66afa6'],
+    ['UUID with wrong variant nibble (7, not 8/9/a/b)', '/invites/3fa85f64-5717-4562-73fc-2c963f66afa6'],
+    ['UUID with wrong variant nibble (c, not 8/9/a/b)', '/invites/3fa85f64-5717-4562-c3fc-2c963f66afa6'],
+    ['whitespace padding', ` /invites/${'a'.repeat(43)} `],
+    ['non-invite redirect target', '/w/some-workspace/settings'],
+  ]
+
+  it.each(HOSTILE_CASES)('rejects: %s', (_label, input) => {
+    expect(extractInviteTokenFromRedirect(input)).toBeNull()
+  })
+})
+
+describe('withForwardedAuthParams', () => {
+  it('forwards redirect only when invite_token is absent and not derivable', () => {
+    expect(withForwardedAuthParams('/auth/signin', '?redirect=%2Fw%2Fsome-workspace%2Fsettings')).toBe(
+      '/auth/signin?redirect=%2Fw%2Fsome-workspace%2Fsettings',
+    )
+  })
+
+  it('forwards redirect only (reverse direction, sign-up -> sign-in)', () => {
+    expect(withForwardedAuthParams('/auth/signup', '?redirect=%2Fw%2Fsome-workspace%2Fsettings')).toBe(
+      '/auth/signup?redirect=%2Fw%2Fsome-workspace%2Fsettings',
+    )
+  })
+
+  it('derives and forwards invite_token from a redirect=/invites/:token path', () => {
+    const token = '3fa85f64-5717-4562-b3fc-2c963f66afa6'
+    const href = withForwardedAuthParams('/auth/signup', `?redirect=${encodeURIComponent(`/invites/${token}`)}`)
+    const params = new URLSearchParams(href.split('?')[1])
+    expect(params.get('redirect')).toBe(`/invites/${token}`)
+    expect(params.get('invite_token')).toBe(token)
+  })
+
+  it('does not fabricate an invite_token from a hostile redirect', () => {
+    const href = withForwardedAuthParams(
+      '/auth/signin',
+      `?redirect=${encodeURIComponent(`/invites/${'a'.repeat(43)}/trailing`)}`,
+    )
+    const params = new URLSearchParams(href.split('?')[1])
+    expect(params.get('invite_token')).toBeNull()
+  })
+
+  it('returns the bare path when neither param is present', () => {
+    expect(withForwardedAuthParams('/auth/signin', '')).toBe('/auth/signin')
   })
 })
