@@ -115,27 +115,21 @@ describe('addressed Agent runtime composition', () => {
   )
 
   it.each(['vercel-sandbox', 'blaxel', 'remote-worker', 'runsc-remote'] as const)(
-    'admits only the addressed host-installed pi-mono-loop entry in %s mode',
+    'admits absolute extensions from addressed trusted app composition in %s mode',
     (runtimeMode) => {
-      const loopPath = '/app/node_modules/pi-mono-loop/index.ts'
-      expect(normalizeAgentPiCapabilityOptions({ extensionPaths: [loopPath] }, runtimeMode, [loopPath])).toEqual({
+      const pluginExtensionPath = '/app/plugins/trusted-loop/index.ts'
+      expect(normalizeAgentPiCapabilityOptions({ extensionPaths: [pluginExtensionPath] }, runtimeMode)).toEqual({
         additionalSkillPaths: [],
         packages: [],
-        extensionPaths: [loopPath],
+        extensionPaths: [pluginExtensionPath],
       })
       expect(() => normalizeAgentPiCapabilityOptions({
-        extensionPaths: [loopPath, '/app/node_modules/other-extension/index.ts'],
-      }, runtimeMode, [loopPath])).toThrow(`getAgentPi cannot grant host Pi extensions in ${runtimeMode} mode`)
-      expect(() => normalizeAgentPiCapabilityOptions({
-        extensionPaths: ['node_modules/pi-mono-loop/index.ts'],
-      }, runtimeMode, [loopPath])).toThrow(`getAgentPi cannot grant host Pi extensions in ${runtimeMode} mode`)
-      expect(() => normalizeAgentPiCapabilityOptions({
-        extensionPaths: ['/workspace/node_modules/pi-mono-loop/index.ts'],
-      }, runtimeMode, [loopPath])).toThrow(`getAgentPi cannot grant host Pi extensions in ${runtimeMode} mode`)
+        extensionPaths: ['plugins/trusted-loop/index.ts'],
+      }, runtimeMode)).toThrow(`getAgentPi must grant absolute trusted app extension paths in ${runtimeMode} mode`)
 
-      // The same entry remains forbidden in static/ambient composition. Only
-      // the addressed trusted-host callback may admit it.
-      expect(() => applyRuntimePiExtensionIsolation({ extensionPaths: [loopPath] }, runtimeMode))
+      // The same app plugin remains forbidden in static/ambient composition.
+      // Only the addressed trusted-host callback may admit it.
+      expect(() => applyRuntimePiExtensionIsolation({ extensionPaths: [pluginExtensionPath] }, runtimeMode))
         .toThrow(`Pi options cannot grant host Pi extensions in ${runtimeMode} mode`)
     },
   )

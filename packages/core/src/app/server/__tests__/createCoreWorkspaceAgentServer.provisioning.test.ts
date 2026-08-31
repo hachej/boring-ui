@@ -1,6 +1,6 @@
 import { AgentGatewayErrorCode, ErrorCode, type AgentTool, type AuthorizedAgentScope } from '@hachej/boring-agent/shared'
 import { randomUUID } from 'node:crypto'
-import { access, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test, vi } from 'vitest'
@@ -1197,7 +1197,7 @@ test.each(['vercel-sandbox', 'blaxel', 'remote-worker'] as const)(
 )
 
 test.each(['vercel-sandbox', 'blaxel', 'remote-worker'] as const)(
-  'core/full-app rejects explicit host extension paths in %s mode',
+  'core/full-app rejects static and unauthorized addressed host extension paths in %s mode',
   async (runtimeMode) => {
     mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
       runtimePlugins: [],
@@ -1253,7 +1253,7 @@ test.each(['vercel-sandbox', 'blaxel', 'remote-worker'] as const)(
           placementIdentity: 'workspace-a',
           provisioningFingerprint: 'test-provisioning',
         },
-      })).rejects.toThrow(`getAgentPi cannot grant host Pi extensions in ${runtimeMode} mode`)
+      })).rejects.toThrow('Pi resource path is outside authorized roots')
     } finally {
       await addressedApp.close()
     }
@@ -1261,7 +1261,7 @@ test.each(['vercel-sandbox', 'blaxel', 'remote-worker'] as const)(
   30_000,
 )
 
-test('core/full-app admits only the addressed trusted loop entry while Blaxel keeps ambient extensions disabled', async () => {
+test('core/full-app admits an addressed trusted app plugin while Blaxel keeps ambient extensions disabled', async () => {
   mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
     runtimePlugins: [],
     provisioningContributions: [],
@@ -1273,22 +1273,15 @@ test('core/full-app admits only the addressed trusted loop entry while Blaxel ke
     preservedUiStateKeys: [],
     routeContributions: [],
   })
-  const appRoot = await mkdtemp(join(tmpdir(), 'boring-trusted-loop-'))
-  const packageRoot = join(
-    appRoot,
-    'node_modules',
-    '.pnpm',
-    'pi-mono-loop@1.7.3',
-    'node_modules',
-    'pi-mono-loop',
-  )
+  const appRoot = await mkdtemp(join(tmpdir(), 'boring-trusted-plugin-'))
+  const packageRoot = join(appRoot, 'plugins', 'trusted-loop')
+  const extensionPath = join(packageRoot, 'index.ts')
   await mkdir(packageRoot, { recursive: true })
-  await writeFile(join(packageRoot, 'index.ts'), 'export default function loop() {}\n')
-  await symlink(
-    join('.pnpm', 'pi-mono-loop@1.7.3', 'node_modules', 'pi-mono-loop'),
-    join(appRoot, 'node_modules', 'pi-mono-loop'),
-  )
-  const loopPath = await realpath(join(appRoot, 'node_modules', 'pi-mono-loop', 'index.ts'))
+  await writeFile(join(packageRoot, 'package.json'), JSON.stringify({
+    name: '@app/trusted-loop',
+    pi: { extensions: ['./index.ts'] },
+  }))
+  await writeFile(extensionPath, 'export default function loop() {}\n')
 
   const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
   const app = await createCoreWorkspaceAgentServer({
@@ -1303,7 +1296,7 @@ test('core/full-app admits only the addressed trusted loop entry while Blaxel ke
     },
     piResourceAuthorizedRoots: [appRoot],
     getAgentPi: async ({ agentTypeId }) => agentTypeId === 'factory-orchestrator'
-      ? { extensionPaths: [loopPath] }
+      ? { extensionPaths: [extensionPath] }
       : undefined,
     serveFrontend: false,
   })
@@ -1323,7 +1316,7 @@ test('core/full-app admits only the addressed trusted loop entry while Blaxel ke
         provisioningFingerprint: 'test-provisioning',
       },
     })).resolves.toMatchObject({
-      pi: { noExtensions: true, extensionPaths: [loopPath] },
+      pi: { noExtensions: true, extensionPaths: [extensionPath] },
     })
     await expect(hostOptions.resolveAuthorizedAgentRuntimeScope({
       authorizedScope: scope,
