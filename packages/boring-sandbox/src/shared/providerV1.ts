@@ -40,15 +40,17 @@ export interface SandboxProviderInvalidateContextV1 {
   workspaceId: string;
 }
 
-export interface SandboxRuntimePreviewRequestV1 {
-  workspaceId: string;
+export interface SandboxRuntimeProjectionRequestV1 {
+  /** Host-only pair-local endpoint. Never expose this request to plugins or clients. */
   port: number;
   path?: string;
 }
 
-export interface SandboxRuntimePreviewV1 {
-  url: string;
-  expiresAt: string;
+export interface SandboxRuntimeProjectionLeaseV1 {
+  /** Sealed upstream consumed only by the same-origin Host broker. */
+  readonly url: string;
+  readonly expiresAt: string;
+  revoke(): Promise<void>;
 }
 
 export type SandboxPairHealthV1 =
@@ -102,6 +104,10 @@ export type WorkspaceSandboxPairV1 = Readonly<{
   sandbox: Sandbox;
   provisioning?: SandboxProvisioningOperationsV1;
   checkHealth?(): Promise<SandboxPairHealthV1>;
+  /** Pair-owned projection authority; disposal fences all future leases. */
+  createRuntimeProjection?(
+    request: SandboxRuntimeProjectionRequestV1,
+  ): Promise<SandboxRuntimeProjectionLeaseV1>;
   dispose(): Promise<void>;
 }>;
 
@@ -116,10 +122,6 @@ export interface SandboxProviderV1 {
   invalidate?(
     context: SandboxProviderInvalidateContextV1,
   ): Promise<void> | void;
-  /** Creates an expiring browser URL for an already-active sandbox port. */
-  createRuntimePreview?(
-    request: SandboxRuntimePreviewRequestV1,
-  ): Promise<SandboxRuntimePreviewV1>;
   close?(): Promise<void>;
 }
 

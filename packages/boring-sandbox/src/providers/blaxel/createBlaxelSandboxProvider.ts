@@ -272,7 +272,6 @@ export function createBlaxelSandboxProvider(
   const client = options.client ?? createBlaxelClient()
   const handles = createBlaxelSandboxHandleResolver()
   const seeds = new Map<string, { fingerprint: string; promise: Promise<void> }>()
-  const activeRemotes = new Map<string, { remote: Awaited<ReturnType<typeof handles.resolve>>; owner: symbol }>()
 
   return {
     contractVersion: PROVIDER_CONTRACT_VERSION,
@@ -299,7 +298,7 @@ export function createBlaxelSandboxProvider(
       }
 
       let disposed = false
-      const activeOwner = Symbol(workspaceId)
+      const projectionLeases = new Set<{ revoked: boolean }>()
       const workspace = createBlaxelSandboxWorkspace(remote)
       const sandbox = createBlaxelSandboxExec(remote, {
         onMutation: workspace.invalidateMetadataCache,
@@ -330,7 +329,6 @@ export function createBlaxelSandboxProvider(
             if (seeds.get(workspaceId)?.promise === seed) seeds.delete(workspaceId)
           }
         }
-        activeRemotes.set(workspaceId, { remote, owner: activeOwner })
         return {
           workspace,
           sandbox,
@@ -346,10 +344,43 @@ export function createBlaxelSandboxProvider(
               throw normalizeBlaxelError(error)
             }
           },
+          async createRuntimeProjection({ port, path }) {
+            if (disposed) {
+              throw new SandboxProviderError('SANDBOX_NOT_READY', 'sandbox pair is disposed')
+            }
+            if (!Number.isInteger(port) || port < 1024 || port > 65_535) {
+              throw new SandboxProviderError('CONFIG_INVALID', 'projection port must be an integer from 1024 to 65535')
+            }
+            if (path !== undefined && (!path.startsWith('/') || path.includes('\\') || path.length > 2_048)) {
+              throw new SandboxProviderError('CONFIG_INVALID', 'projection path must be an absolute URL path of at most 2048 characters')
+            }
+            const state = { revoked: false }
+            projectionLeases.add(state)
+            const tokenExpiresAt = new Date(Date.now() + 15 * 60 * 1_000)
+            const projection = await remote.createPreview({
+              name: `boring-projection-${randomUUID()}`,
+              port,
+              path,
+              ttl: '1h',
+              tokenExpiresAt,
+            })
+            return Object.freeze({
+              ...projection,
+              async revoke() {
+                if (state.revoked) return
+                state.revoked = true
+                projectionLeases.delete(state)
+                // The pinned SDK has no preview-token deletion primitive. The
+                // same-origin broker is the synchronous revocation boundary;
+                // this token remains sealed server-side until its short TTL.
+              },
+            })
+          },
           async dispose() {
             if (disposed) return
             disposed = true
-            if (activeRemotes.get(workspaceId)?.owner === activeOwner) activeRemotes.delete(workspaceId)
+            for (const lease of projectionLeases) lease.revoked = true
+            projectionLeases.clear()
             workspace.dispose()
             await sandbox.dispose()
           },
@@ -362,31 +393,9 @@ export function createBlaxelSandboxProvider(
       }
     },
     invalidate({ workspaceId }) {
-      activeRemotes.delete(workspaceId)
       handles.invalidate(workspaceId)
     },
-    async createRuntimePreview({ workspaceId, port, path }) {
-      if (!Number.isInteger(port) || port < 1024 || port > 65_535) {
-        throw new SandboxProviderError('CONFIG_INVALID', 'preview port must be an integer from 1024 to 65535')
-      }
-      if (path !== undefined && (!path.startsWith('/') || path.includes('\\') || path.length > 2_048)) {
-        throw new SandboxProviderError('CONFIG_INVALID', 'preview path must be an absolute URL path of at most 2048 characters')
-      }
-      const active = activeRemotes.get(workspaceId)
-      if (!active) {
-        throw new SandboxProviderError('SANDBOX_NOT_READY', 'workspace sandbox is not active')
-      }
-      const tokenExpiresAt = new Date(Date.now() + 15 * 60 * 1_000)
-      return await active.remote.createPreview({
-        name: `boring-preview-${port}`,
-        port,
-        path,
-        ttl: '1h',
-        tokenExpiresAt,
-      })
-    },
     async close() {
-      activeRemotes.clear()
       handles.clear()
       seeds.clear()
     },

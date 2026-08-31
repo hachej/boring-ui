@@ -61,11 +61,6 @@ export function createProviderRuntimeModeAdapter(
     evictCachedRuntime: async ({ workspaceId }) => {
       await options.provider.invalidate?.({ workspaceId })
     },
-    ...(options.provider.createRuntimePreview
-      ? {
-          createRuntimePreview: (request) => options.provider.createRuntimePreview!(request),
-        }
-      : {}),
     async dispose() {
       await options.provider.close?.()
     },
@@ -84,6 +79,9 @@ export function createProviderRuntimeModeAdapter(
           runtimeHost: options.runtimeHost,
           bash: options.bash,
           filesystem: options.filesystem,
+          ...(pair.createRuntimeProjection
+            ? { createRuntimeProjection: (request) => pair.createRuntimeProjection!(request) }
+            : {}),
           provisioningAdapter: options.provisioningAdapter?.(context, pair)
             ?? pair.provisioning,
           disposeRuntime: () => pair.dispose(),

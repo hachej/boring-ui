@@ -63,47 +63,39 @@ describe('Blaxel adapter policies', () => {
     expect(resolveBlaxelConfig({ region: 'eu-lon-1' }, {}).region).toBe('eu-lon-1')
   })
 
-  test('projects only an active workspace sandbox to an expiring HTTPS preview', async () => {
+  test('projects only through the acquired pair and fences disposal', async () => {
     const value = await harness()
-    await expect(value.provider.createRuntimePreview!({
-      workspaceId: value.context.workspaceId,
-      port: 8_000,
-      path: '/demo',
-    })).resolves.toMatchObject({
+    const first = await value.pair.createRuntimeProjection!({ port: 8_000, path: '/demo' })
+    expect(first).toMatchObject({
       url: expect.stringMatching(/^https:\/\/.*-8000\.preview\.test\/demo$/),
       expiresAt: expect.any(String),
     })
-    await expect(value.provider.createRuntimePreview!({
-      workspaceId: value.context.workspaceId,
+    const second = await value.pair.createRuntimeProjection!({
       port: 6_080,
       path: '/vnc.html?autoconnect=1&resize=remote',
-    })).resolves.toMatchObject({
-      url: expect.stringMatching(/\/vnc\.html\?autoconnect=1&resize=remote$/),
     })
-    await expect(value.provider.createRuntimePreview!({
-      workspaceId: 'other-workspace',
-      port: 8_000,
-    })).rejects.toMatchObject({ code: 'SANDBOX_NOT_READY' })
-    await expect(value.provider.createRuntimePreview!({
-      workspaceId: value.context.workspaceId,
-      port: 80,
-    })).rejects.toMatchObject({ code: 'CONFIG_INVALID' })
+    expect(second.url).toMatch(/\/vnc\.html\?autoconnect=1&resize=remote$/)
+    expect(second.url).not.toBe(first.url)
+    await expect(value.pair.createRuntimeProjection!({ port: 80 }))
+      .rejects.toMatchObject({ code: 'CONFIG_INVALID' })
+    await first.revoke()
+    await first.revoke()
     await value.pair.dispose()
-    await expect(value.provider.createRuntimePreview!({
-      workspaceId: value.context.workspaceId,
-      port: 8_000,
-    })).rejects.toMatchObject({ code: 'SANDBOX_NOT_READY' })
+    await expect(value.pair.createRuntimeProjection!({ port: 8_000 }))
+      .rejects.toMatchObject({ code: 'SANDBOX_NOT_READY' })
   })
 
-  test('disposing an old generation does not remove the current preview binding', async () => {
+  test('keeps projection authority local to each provider pair generation', async () => {
     const client = await createMockBlaxelClient()
     const provider = createBlaxelSandboxProvider({ client, handleStore: new MemoryStore(), region: 'eu-fra-1' })
     const context = { workspaceRoot: '/ignored', workspaceId: 'same-workspace', sessionId: 'session' }
     const oldPair = await provider.create(context)
     const currentPair = await provider.create(context)
     await oldPair.dispose()
-    await expect(provider.createRuntimePreview!({ workspaceId: context.workspaceId, port: 8_000 }))
+    await expect(currentPair.createRuntimeProjection!({ port: 8_000 }))
       .resolves.toMatchObject({ url: expect.stringContaining('-8000.preview.test') })
+    await expect(oldPair.createRuntimeProjection!({ port: 8_000 }))
+      .rejects.toMatchObject({ code: 'SANDBOX_NOT_READY' })
     await currentPair.dispose()
   })
 
