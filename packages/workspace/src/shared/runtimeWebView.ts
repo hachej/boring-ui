@@ -95,6 +95,6 @@ export function resolveRuntimeWebViewProjection(
 export function runtimeWebViewRefreshDelay(expiresAt: string | undefined, now = Date.now()): number | null {
   if (!expiresAt) return null
   const expiry = Date.parse(expiresAt)
-  if (!Number.isFinite(expiry)) return null
+  if (!Number.isFinite(expiry) || expiry <= now + 1_000) return null
   return Math.max(1_000, expiry - now - 30_000)
 }

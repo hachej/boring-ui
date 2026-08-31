@@ -63,18 +63,21 @@ type Session = {
   absoluteExpiry: number;
   released: boolean;
   environment: BrowserEnvironmentHandle;
+  ready?: Promise<void>;
   active?: AbortController;
   expiryTimer?: ReturnType<typeof setTimeout>;
   error?: string;
 };
 export class BrowserController {
   readonly #sessions = new Map<string, Session>();
+  readonly #pendingStarts = new Map<string, Promise<BrowserSessionView>>();
   readonly #exec: BrowserExec;
   readonly #admitPlan: BrowserPlanAdmission;
   readonly #admit: BrowserAdmission;
   readonly #audit: BrowserAudit;
   readonly #acquire: (scope: BrowserScope) => Promise<BrowserEnvironmentHandle>;
   readonly #revokeView: (scope: BrowserScope, sessionId: string) => void | Promise<void>;
+  readonly #redactText: (value: string, field: "title" | "role" | "element-text") => string | undefined;
   readonly #now: () => number;
   constructor(options: {
     exec: BrowserExec;
@@ -83,6 +86,7 @@ export class BrowserController {
     audit?: BrowserAudit;
     acquire: (scope: BrowserScope) => Promise<BrowserEnvironmentHandle>;
     revokeView: (scope: BrowserScope, sessionId: string) => void | Promise<void>;
+    redactText: (value: string, field: "title" | "role" | "element-text") => string | undefined;
     now?: () => number;
   }) {
     this.#exec = options.exec;
@@ -91,15 +95,24 @@ export class BrowserController {
     this.#audit = options.audit ?? (() => {});
     this.#acquire = options.acquire;
     this.#revokeView = options.revokeView;
+    this.#redactText = options.redactText;
     this.#now = options.now ?? Date.now;
   }
-  async start(scope: BrowserScope): Promise<BrowserSessionView> {
+  start(scope: BrowserScope): Promise<BrowserSessionView> {
+    const key = `${scope.workspaceId}\u0000${scope.userId}\u0000${scope.agentId}\u0000${scope.agentSessionId}`;
+    const pending = this.#pendingStarts.get(key);
+    if (pending) return pending;
+    const started = this.startOwned(scope).finally(() => { if (this.#pendingStarts.get(key) === started) this.#pendingStarts.delete(key); });
+    this.#pendingStarts.set(key, started);
+    return started;
+  }
+  private async startOwned(scope: BrowserScope): Promise<BrowserSessionView> {
     await this.cleanup();
     const active = [...this.#sessions.values()].filter(
-      (s) => !["stopped", "error"].includes(s.state),
+      (s) => s.state !== "stopped" || !s.released,
     );
     const existing = active.find((s) => sameScope(s.scope, scope));
-    if (existing) return this.view(existing);
+    if (existing) { await existing.ready; return this.view(existing); }
     if (active.length > 0)
       throw new Error("Browser runtime quota is already in use");
     const now = this.#now();
@@ -117,23 +130,8 @@ export class BrowserController {
     };
     this.#sessions.set(session.id, session);
     this.scheduleExpiry(session);
-    let result: BrowserExecResult;
-    try {
-      result = await this.#exec({ intent: "ensure", sessionId: session.id, controlEpoch: 0 });
-    } catch {
-      result = { ok: false };
-    }
-    if (!result.ok) {
-      session.state = "error";
-      session.error = "Browser runtime could not start.";
-      const cleanup = await this.#exec({ intent: "stop", sessionId: session.id, controlEpoch: 1 }).catch(() => ({ ok: false }));
-      if (cleanup.ok) await this.finish(session);
-      else session.error = "Browser cleanup requires reconciliation.";
-      return this.view(session);
-    }
-    session.state = "agent-controlled";
-    session.owner = "agent";
-    await this.event(session, "started");
+    session.ready = this.launch(session);
+    await session.ready;
     return this.view(session);
   }
   status(scope: BrowserScope, id: string): BrowserSessionView {
@@ -151,9 +149,10 @@ export class BrowserController {
       sessionId: id,
       controlEpoch: epoch,
     });
+    this.requireAgent(scope, id, epoch);
     if (!result.ok) throw new Error("Browser observation failed");
     return {
-      observation: parseObservation(result.stdout ?? ""),
+      observation: parseObservation(result.stdout ?? "", this.#redactText),
       controlEpoch: s.epoch,
     };
   }
@@ -170,19 +169,16 @@ export class BrowserController {
     s.active = active;
     const abort = () => active.abort();
     signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) active.abort();
+    try {
     const planHash = createHash("sha256")
       .update(canonicalPlan(plan))
       .digest("hex");
     const planAdmission = await this.#admitPlan({ scope, identity, planHash, plan });
-    if (!planAdmission.admitted) {
-      signal?.removeEventListener("abort", abort);
-      s.active = undefined;
-      throw new Error("Browser action plan was not admitted");
-    }
+    if (!planAdmission.admitted) throw new Error("Browser action plan was not admitted");
     const identityFields = { toolCallId: identity.toolCallId, ...(identity.requestId ? { requestId: identity.requestId } : {}) };
     await this.event(s, "plan-admitted", { planHash, approvalRef: planAdmission.approvalRef, ...identityFields });
     const results: string[] = [];
-    try {
       for (let index = 0; index < plan.actions.length; index++) {
         if (active.signal.aborted) throw new Error("Browser action aborted");
         this.requireAgent(scope, s.id, plan.controlEpoch);
@@ -255,9 +251,10 @@ export class BrowserController {
     try { result = await this.#exec({ intent: "takeover", sessionId: id, controlEpoch: s.epoch }); }
     catch { result = { ok: false }; }
     if (!result.ok) {
-      s.owner = "agent";
-      s.state = "agent-controlled";
-      throw new Error("Browser takeover failed");
+      s.owner = undefined;
+      s.state = "error";
+      s.error = "Browser takeover outcome requires reconciliation.";
+      throw new Error("Browser takeover outcome requires reconciliation");
     }
     s.owner = "human";
     s.state = "human-controlled";
@@ -295,7 +292,7 @@ export class BrowserController {
   }
   async stop(scope: BrowserScope, id: string): Promise<BrowserSessionView> {
     const s = this.require(scope, id);
-    if (s.state === "stopped") return this.view(s);
+    if (s.state === "stopped") { await this.finish(s); return this.view(s); }
     if (s.state === "stopping") throw new Error("Browser is already stopping");
     s.state = "stopping";
     s.epoch++;
@@ -313,9 +310,11 @@ export class BrowserController {
     return this.view(s);
   }
   async shutdown(): Promise<void> {
-    for (const s of this.#sessions.values()) {
-      if (!["stopped", "stopping"].includes(s.state)) await this.stop(s.scope, s.id);
-    }
+    const pending = [...this.#sessions.values()]
+      .filter((s) => s.state !== "stopping" && (s.state !== "stopped" || !s.released))
+      .map((s) => this.stop(s.scope, s.id));
+    const results = await Promise.allSettled(pending);
+    if (results.some((result) => result.status === "rejected")) throw new Error("One or more browser sessions require cleanup reconciliation");
   }
   async cleanup(): Promise<void> {
     const now = this.#now();
@@ -325,6 +324,28 @@ export class BrowserController {
         (now - s.touched >= IDLE_TTL_MS || now >= s.absoluteExpiry)
       )
         await this.stop(s.scope, s.id);
+  }
+  private async launch(session: Session): Promise<void> {
+    let result: BrowserExecResult;
+    try { result = await this.#exec({ intent: "ensure", sessionId: session.id, controlEpoch: 0 }); }
+    catch { result = { ok: false }; }
+    if (!result.ok) {
+      session.state = "error";
+      session.error = "Browser runtime could not start.";
+      const cleanup = await this.#exec({ intent: "stop", sessionId: session.id, controlEpoch: 1 }).catch(() => ({ ok: false }));
+      if (cleanup.ok) await this.finish(session);
+      else session.error = "Browser cleanup requires reconciliation.";
+      return;
+    }
+    if (session.state !== "starting" || session.epoch !== 0) {
+      session.state = "error";
+      session.owner = undefined;
+      session.error = "Browser startup was superseded and requires reconciliation.";
+      return;
+    }
+    session.state = "agent-controlled";
+    session.owner = "agent";
+    await this.event(session, "started").catch(() => undefined);
   }
   private require(scope: BrowserScope, id: string): Session {
     const s = this.#sessions.get(id);
@@ -412,7 +433,7 @@ function sanitize(value: string): string {
     .replace(/(?:wss?|https?):\/\/[^\s]+/gi, "[redacted-url]")
     .slice(0, 1_024);
 }
-function parseObservation(stdout: string): BrowserObservation {
+function parseObservation(stdout: string, redactText: (value: string, field: "title" | "role" | "element-text") => string | undefined): BrowserObservation {
   let value: unknown;
   try { value = JSON.parse(stdout); } catch { throw new Error("Browser returned an invalid observation"); }
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Browser returned an invalid observation");
@@ -421,13 +442,15 @@ function parseObservation(stdout: string): BrowserObservation {
   if (typeof record.url === "string") {
     try { const parsed = new URL(record.url); if (["http:", "https:"].includes(parsed.protocol)) origin = parsed.origin; } catch { /* omit malformed URLs */ }
   }
-  const title = typeof record.title === "string" ? sanitize(record.title).slice(0, 256) : undefined;
+  const title = typeof record.title === "string" ? redactText(record.title, "title")?.slice(0, 256) : undefined;
   const rawElements = Array.isArray(record.elements) ? record.elements : [];
   const elements = rawElements.slice(0, 200).flatMap((entry) => {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
     const item = entry as Record<string, unknown>;
     if (!Number.isInteger(item.index) || (item.index as number) < 0 || (item.index as number) > 10_000) return [];
-    return [Object.freeze({ index: item.index as number, ...(typeof item.role === "string" ? { role: sanitize(item.role).slice(0, 64) } : {}), ...(typeof item.text === "string" ? { text: sanitize(item.text) } : {}) })];
+    const role = typeof item.role === "string" ? redactText(item.role, "role") : undefined;
+    const text = typeof item.text === "string" ? redactText(item.text, "element-text") : undefined;
+    return [Object.freeze({ index: item.index as number, ...(role ? { role: role.slice(0, 64) } : {}), ...(text ? { text: text.slice(0, 1_024) } : {}) })];
   });
   return Object.freeze({ ...(origin ? { origin } : {}), ...(title ? { title } : {}), elements: Object.freeze(elements) });
 }

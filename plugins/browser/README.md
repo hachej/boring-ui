@@ -8,7 +8,7 @@ An **unwired, refusal-only local tracer package**, not a usable browser feature.
 
 ## Browser-Use supply-chain review
 
-Provenance metadata pins Browser-Use **0.13.8** from official tag/commit `eb4126921bea3373f91afc49fb4b59d6eda7fed6`. The PyPI universal wheel SHA-256, unmodified official skill SHA-256, bounded Host adaptation SHA-256, and vendored MIT license SHA-256 are in `browser-use.lock.json`. The unmodified skill is retained for provenance; because it advertises raw Bash/eval/cookie/cloud surfaces forbidden here, Agent composition contributes only the reviewed bounded adaptation that permits the two native Boring tools. Sources reviewed: GitHub release API, official tagged `SKILL.md`/`LICENSE`, and PyPI release JSON. MIT is compatible with this repository; retain the vendored notice. `node src/runtime/verify-lock.mjs` verifies only checked-in provenance files, not an installed wheel. A future Host-owned image must enforce the wheel hash during installation and pass a real same-Chromium compatibility smoke before composition. Browser-Use's Agent/model/cloud, raw MCP catalog, eval/cookie/CDP surfaces, and cloud credentials are not used.
+Provenance metadata pins Browser-Use **0.13.8** from official tag/commit `eb4126921bea3373f91afc49fb4b59d6eda7fed6`. The PyPI universal wheel SHA-256, unmodified official skill SHA-256, bounded Host adaptation SHA-256, and vendored MIT license SHA-256 are in `browser-use.provenance.json`. The unmodified skill is retained for provenance; because it advertises raw Bash/eval/cookie/cloud surfaces forbidden here, Agent composition contributes only the reviewed bounded adaptation that permits the two native Boring tools. Sources reviewed: GitHub release API, official tagged `SKILL.md`/`LICENSE`, and PyPI release JSON. MIT is compatible with this repository; retain the vendored notice. `node src/runtime/verify-provenance.mjs` verifies only checked-in provenance files, not an installed wheel. A future Host-owned image must enforce the wheel hash during installation and pass a real same-Chromium compatibility smoke before composition. Browser-Use's Agent/model/cloud, raw MCP catalog, eval/cookie/CDP surfaces, and cloud credentials are not used.
 
 ## Honest local-tracer boundary
 
@@ -22,5 +22,5 @@ Upload/download actions are absent until Host resource resolution and quarantine
 pnpm --filter @hachej/boring-browser typecheck
 pnpm --filter @hachej/boring-browser test
 pnpm --filter @hachej/boring-browser build
-node plugins/browser/src/runtime/verify-lock.mjs
+node plugins/browser/src/runtime/verify-provenance.mjs
 ```

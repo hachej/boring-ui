@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 const root = new URL("./", import.meta.url);
 const lock = JSON.parse(
-  await readFile(new URL("browser-use.lock.json", root), "utf8"),
+  await readFile(new URL("browser-use.provenance.json", root), "utf8"),
 );
 for (const item of [lock.officialSkill, lock.boundedSkill, lock.license]) {
   const bytes = await readFile(new URL(item.path, root));

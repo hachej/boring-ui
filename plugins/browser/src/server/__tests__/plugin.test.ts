@@ -15,7 +15,7 @@ describe("browser server plugin", () => {
       enabled: false,
       exec: async () => ({ ok: true }),
       acquire: async () => ({ generationId: "g", release: async () => {} }),
-      revokeView: async () => {},
+      revokeView: async () => {}, redactText: (value: string) => value.replace(/CANARY/g, "[redacted]").replace(/(token|password)[:=]\s*\[redacted\]/gi, "$1=[redacted]"),
       admitPlan: async () => ({ admitted: true }),
       admit: async () => ({ admitted: true }),
       resolveScope: () => scope,
@@ -30,14 +30,14 @@ describe("browser server plugin", () => {
     ).not.toMatch(/command|cdp|mcp|provider|runtime|password|credential/i);
   });
   it("refuses attempted enablement until Host security seams exist", () => {
-    expect(() => createBrowserServerPlugin({ enabled: true, exec: async () => ({ ok: true }), acquire: async () => ({ generationId: "g", release: async () => {} }), revokeView: async () => {}, admitPlan: async () => ({ admitted: true }), admit: async () => ({ admitted: true }), resolveScope: () => scope, resolveToolScope: () => scope })).toThrow("not security-qualified");
+    expect(() => createBrowserServerPlugin({ enabled: true, exec: async () => ({ ok: true }), acquire: async () => ({ generationId: "g", release: async () => {} }), revokeView: async () => {}, redactText: (value: string) => value.replace(/CANARY/g, "[redacted]").replace(/(token|password)[:=]\s*\[redacted\]/gi, "$1=[redacted]"), admitPlan: async () => ({ admitted: true }), admit: async () => ({ admitted: true }), resolveScope: () => scope, resolveToolScope: () => scope })).toThrow("not security-qualified");
   });
   it("fails tools closed when flag is disabled", async () => {
     const plugin = createBrowserServerPlugin({
       enabled: false,
       exec: async () => ({ ok: true }),
       acquire: async () => ({ generationId: "g", release: async () => {} }),
-      revokeView: async () => {},
+      revokeView: async () => {}, redactText: (value: string) => value.replace(/CANARY/g, "[redacted]").replace(/(token|password)[:=]\s*\[redacted\]/gi, "$1=[redacted]"),
       admitPlan: async () => ({ admitted: true }),
       admit: async () => ({ admitted: true }),
       resolveScope: () => scope,

@@ -47,7 +47,9 @@ describe("resolveRuntimeWebViewProjection", () => {
 describe("runtimeWebViewRefreshDelay", () => {
   it("refreshes thirty seconds before expiry without creating a tight loop", () => {
     expect(runtimeWebViewRefreshDelay("2027-01-01T00:02:00.000Z", Date.parse("2027-01-01T00:00:00.000Z"))).toBe(90_000)
-    expect(runtimeWebViewRefreshDelay("2027-01-01T00:00:01.000Z", Date.parse("2027-01-01T00:00:00.000Z"))).toBe(1_000)
+    expect(runtimeWebViewRefreshDelay("2027-01-01T00:00:02.000Z", Date.parse("2027-01-01T00:00:00.000Z"))).toBe(1_000)
+    expect(runtimeWebViewRefreshDelay("2027-01-01T00:00:01.000Z", Date.parse("2027-01-01T00:00:00.000Z"))).toBeNull()
+    expect(runtimeWebViewRefreshDelay("2026-12-31T23:59:00.000Z", Date.parse("2027-01-01T00:00:00.000Z"))).toBeNull()
     expect(runtimeWebViewRefreshDelay("not-a-date", 0)).toBeNull()
   })
 })

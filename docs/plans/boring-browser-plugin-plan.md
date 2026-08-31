@@ -2,6 +2,10 @@
 
 **State:** `owner-directed single-PR implementation` in PR #1493. Slice 1 was consolidated from #1499; the browser package is an unwired/refusal-only local tracer because the required Host-issued environment-generation exec/projection/revocation capability does not exist. Production and live-use claims remain blocked by the rollout gates below.
 
+## Current implementation versus future design
+
+Everything below describes the approved **future design** unless explicitly marked current. Current in PR #1493: shared `RuntimeWebView` and tested domain/tracer code exist; hosted preview composition and browser app composition are disabled; browser enablement throws; vendored Browser-Use files are provenance-only; no installed dependency, live launcher, same-Chromium proof, revocable bearer, generation-bound preview, structural CDP/VNC isolation, or production rollout exists. Issues #1489 and #1498 remain open because refusal-only code does not satisfy their live acceptance.
+
 ## Problem Statement
 
 Add `plugins/browser` as a trusted, statically composed shared app/internal plugin. It must let Boring's Agent observe and act in a Chromium session that the user can watch and exclusively take over through noVNC, without creating a second agent loop or a browser-specific runtime layer.
@@ -342,9 +346,9 @@ No open architecture/product question blocks Slice 1. Exact compatible dependenc
 - A local demo alone would not validate runtime neutrality -> added hosted proof with unchanged plugin bytes and fail-closed qualification rather than provider branches.
 - Rollback language did not fully prove cleanup -> added a drill for revocation, fixed stop, exactly-once environment release, and no host-global fallback.
 
-**Remaining non-blocking risks:** Browser-Use/Chromium compatibility and supply-chain churn; availability of durable approval/audit and enforceable egress in production; #1493 merge shape; hosted noVNC WSS behavior. Each is assigned to a lock, slice gate, or rollout blocker rather than widening plugin architecture.
+**Current blocking risks:** Browser-Use/Chromium compatibility and supply-chain verification; unavailable durable approval/audit and enforceable egress; no Host generation-bound/revocable preview capability; no structurally isolated CDP/VNC; hosted noVNC WSS behavior. These block live composition rather than permitting weaker fallback architecture.
 
-**Verdict:** revised plan is internally consistent, contains all final decisions, and is `ready-for-agent` for Slice 1. Independent reviewer gate is still required before implementation.
+**Historical verdict (superseded):** the plan was previously marked `ready-for-agent` for Slice 1. Slice 1 is now integrated, while later live composition is blocked/refusal-only as stated above.
 
 ## Next Action
 

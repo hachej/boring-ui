@@ -35,6 +35,7 @@ export interface BrowserServerPluginOptions {
   audit?: BrowserAudit;
   acquire: (scope: BrowserScope) => Promise<BrowserEnvironmentHandle>;
   revokeView: (scope: BrowserScope, sessionId: string) => void | Promise<void>;
+  redactText: (value: string, field: "title" | "role" | "element-text") => string | undefined;
   now?: () => number;
 }
 export function createBrowserServerPlugin(
