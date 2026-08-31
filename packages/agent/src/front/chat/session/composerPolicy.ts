@@ -86,10 +86,24 @@ export type PiComposerSubmitResult =
 export class PiComposerSubmissionCoordinator {
   private readonly tails = new Map<string, Promise<void>>()
 
-  run<T>(identity: string, task: () => Promise<T>): Promise<T> {
+  run<T>(identity: string, task: (release: () => void) => Promise<T>): Promise<T> {
     const previous = this.tails.get(identity) ?? Promise.resolve()
-    const pending = previous.then(task)
-    const tail = pending.then(() => undefined, () => undefined)
+    let releaseGate!: () => void
+    const gate = new Promise<void>((resolve) => { releaseGate = resolve })
+    let released = false
+    const release = () => {
+      if (released) return
+      released = true
+      releaseGate()
+    }
+    const pending = previous.then(async () => {
+      try {
+        return await task(release)
+      } finally {
+        release()
+      }
+    })
+    const tail = previous.then(async () => await gate)
     this.tails.set(identity, tail)
     void tail.finally(() => {
       if (this.tails.get(identity) === tail) this.tails.delete(identity)
@@ -110,11 +124,11 @@ export class PiComposerPolicyController {
   submit(input: PiComposerSubmitInput): Promise<PiComposerSubmitResult> {
     return this.submissionCoordinator.run(
       this.options.submissionIdentity ?? 'default',
-      async () => await this.submitInOrder(input),
+      async (release) => await this.submitInOrder(input, release),
     )
   }
 
-  private async submitInOrder(input: PiComposerSubmitInput): Promise<PiComposerSubmitResult> {
+  private async submitInOrder(input: PiComposerSubmitInput, release: () => void): Promise<PiComposerSubmitResult> {
     const files = input.files ?? []
     const source = input.source ?? 'composer'
 
@@ -148,9 +162,9 @@ export class PiComposerPolicyController {
     if (parsed) {
       const command = this.options.registry.get(parsed.name)
       if (command?.kind === 'skill') {
-        return this.submitExpandedText(skillCommandText(parsed.name, parsed.args), files, source)
+        return this.submitExpandedText(skillCommandText(parsed.name, parsed.args), files, source, release)
       }
-      if (command) return this.runLocalCommand(parsed.name, parsed.args, source)
+      if (command) return this.runLocalCommand(parsed.name, parsed.args, source, release)
     }
 
     if (isPiChatBusy(this.options.session.getState().status) && files.length > 0) {
@@ -171,13 +185,15 @@ export class PiComposerPolicyController {
       return this.stale()
     }
 
-    const result = await this.queueController.submit({
+    const admission = this.queueController.submit({
       text: serverMessage,
       displayText: finalDisplayText,
       attachments,
       model: this.options.model ?? undefined,
       ...(this.options.thinkingControl ? { thinkingLevel: this.options.thinkingLevel ?? DEFAULT_THINKING } : {}),
     })
+    release()
+    const result = await admission
     if (result.type !== 'blocked') this.options.onMentionedFilesConsumed?.()
     return this.fromQueueResult(result)
   }
@@ -206,16 +222,19 @@ export class PiComposerPolicyController {
     text: string,
     files: PromptInputFilePart[],
     source: PiComposerSubmitInput['source'],
+    release: () => void,
   ): Promise<PiComposerSubmitResult> {
     const transformed = await this.runPromptTransform(text, files, source)
     if (this.options.isActiveSession && !this.options.isActiveSession()) return this.stale()
-    return this.fromQueueResult(await this.queueController.submit({
+    const admission = this.queueController.submit({
       text: transformed?.replacement.text ?? text,
       ...(transformed?.replacement.displayText ? { displayText: transformed.replacement.displayText } : {}),
       kind: 'expanded-text',
       model: this.options.model ?? undefined,
       ...(this.options.thinkingControl ? { thinkingLevel: this.options.thinkingLevel ?? DEFAULT_THINKING } : {}),
-    }))
+    })
+    release()
+    return this.fromQueueResult(await admission)
   }
 
   private async runPromptTransform(
@@ -232,7 +251,12 @@ export class PiComposerPolicyController {
     }
   }
 
-  private async runLocalCommand(commandName: string, args: string, source?: PiComposerSubmitInput['source']): Promise<PiComposerSubmitResult> {
+  private async runLocalCommand(
+    commandName: string,
+    args: string,
+    source: PiComposerSubmitInput['source'],
+    release: () => void,
+  ): Promise<PiComposerSubmitResult> {
     const command = this.options.registry.get(commandName)
     if (isPiChatBusy(this.options.session.getState().status) && command?.allowWhileBusy?.(args) !== true) {
       return this.block('busy-slash-command', 'Slash commands are not queued while the agent is responding.')
@@ -255,8 +279,9 @@ export class PiComposerPolicyController {
       // onPromptSubmitStarted, stale-rejection dismissal, local-submitted
       // cursor cleanup — exactly as they would for a plain prompt. The
       // human-facing notice above stays a side effect.
-      return await this.submitExpandedText(modelMessage, [], source)
+      return await this.submitExpandedText(modelMessage, [], source, release)
     }
+    release()
     return { type: 'command', command: commandName, ...(message ? { result: message } : {}), preserveDraft }
   }
 
