@@ -3,9 +3,16 @@
  *
  * Renders one hand-crafted thread covering every message variant + tool
  * state + markdown pattern so we can iterate visual design without an LLM
- * in the loop. Hydrated into the Pi-native chat panel via localStorage.
- * picks it up on mount because the cache key matches the showcase
- * session id.
+ * in the loop.
+ *
+ * NOTE: `showcaseMessages` is not currently wired into the live chat panel.
+ * The Pi-native chat pane always hydrates a real backend session over the
+ * network (see App.tsx's boot flow), so there is no local-only render path
+ * left to feed this fixture into — a previous `localStorage` seeding
+ * mechanism that fed it was dead code (nothing read the key) and produced
+ * the gh-1452 "session was not found" regression, and has been removed.
+ * Kept here for reuse if/when the chat pane grows a local-fixture render
+ * mode again.
  *
  * Ported from the original agent shadcn showcase fixture.
  */
@@ -244,16 +251,3 @@ export const showcaseMessages = [
     ],
   },
 ] as const
-
-/**
- * Pre-seed the old showcase cache for archived demos.
- * Call once on mount in showcase mode; the fixture remains display-only
- * with no network round-trip.
- */
-export function seedShowcase(sessionId = SHOWCASE_SESSION_ID) {
-  try {
-    localStorage.setItem(`boring-agent:messages:${sessionId}`, JSON.stringify(showcaseMessages))
-  } catch {
-    /* noop — quota or disabled storage */
-  }
-}

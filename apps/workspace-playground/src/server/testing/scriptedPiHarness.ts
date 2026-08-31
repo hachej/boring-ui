@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, appendFile, readFile, readdir, unlink, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { setTimeout as sleep } from 'node:timers/promises'
 import type { AgentSessionEvent } from '@mariozechner/pi-coding-agent'
@@ -37,6 +37,24 @@ const SAFE_NATIVE_SESSION_ID = /^[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)*$/
 interface SessionListOptions { includeId?: string; includeEmpty?: boolean }
 
 const persistedHarnesses = new Map<string, ScriptedPiHarness>()
+
+// Scripted session ids ('scripted-main', 'scripted-1', ...) are unique only
+// WITHIN one namespaced ScriptedSessionStore — each agent type gets its own
+// sessionDir and independently allocates the same short ids (gh-1458 review
+// round 4: 'alpha--<hash>/scripted-main' and 'beta--<hash>/scripted-main'
+// are different sessions that happen to share a bare id). Both this
+// response-marker text and the showcase provenance registry key below need
+// to identify "which agent type", so both derive it the same way: the
+// namespace's leading segment before the first '--' is always the raw
+// agentTypeId verbatim (see sessionNamespaceForAgent in
+// packages/agent/src/server/agent-host/sessionInventory.ts — the namespace
+// is built as `[agentTypeId, hash(workspaceScopeId), ns].join('--')` for
+// every agent type this app ever configures, none of which use the
+// DEFAULT_AGENT_TYPE_ID short-circuit).
+export function sessionNamespaceAgentKey(sessionNamespace?: string): string {
+  const agentTypeId = sessionNamespace?.split('--')[0]?.trim()
+  return agentTypeId || '(unscoped)'
+}
 
 function scriptedResponseMarker(sessionNamespace?: string): string {
   const agentTypeId = sessionNamespace?.split('--')[0]?.trim()
@@ -137,12 +155,16 @@ class ScriptedSessionStore implements SessionStore {
   private readonly records = new Map<string, ScriptedSessionRecord>()
   private createCount = 0
   private readonly sessionDir: string
+  private readonly explicitSessionRoot: string | undefined
+  private readonly provenanceAgentKey: string
   private hydration: Promise<void> | undefined
 
   constructor(input: AgentHarnessFactoryInput) {
     this.sessionDir = input.sessionDir ?? (input.sessionNamespace
       ? join(sessionBaseDir(input.sessionRoot), input.sessionNamespace)
       : defaultSessionDir(input.cwd, input.sessionRoot))
+    this.explicitSessionRoot = input.sessionRoot
+    this.provenanceAgentKey = sessionNamespaceAgentKey(input.sessionNamespace)
   }
 
   async ensure(sessionId: string, ctx: SessionCtx): Promise<SessionSummary> {
@@ -192,6 +214,13 @@ class ScriptedSessionStore implements SessionStore {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
     }
+    // Deletion is the actual "no longer needs tracking" event for the
+    // showcase provenance registry — not just a future boot's sweep. This
+    // is what closes the id-reuse hole: the pagehide cleanup path deletes a
+    // session through this exact method (via the ordinary DELETE route), so
+    // by the time its numeric id could ever be reused by an unrelated
+    // ordinary session, the registry no longer references it at all.
+    await unmarkPlaygroundShowcaseSession(this.explicitSessionRoot, this.provenanceAgentKey, record.workspaceId ?? '', sessionId)
   }
 
   async rename(_ctx: SessionCtx, sessionId: string, title: string): Promise<SessionSummary> {
@@ -297,6 +326,75 @@ class ScriptedSessionStore implements SessionStore {
       })
     }
     this.createCount = 0
+    // Boot-time retention sweep: everything just loaded above came from
+    // *before* this process started (this method only ever runs once per
+    // store, memoized by `ensureHydrated`/`this.hydration`), and the
+    // provenance registry (below) is read before this boot ever appends to
+    // it — so this only ever sweeps sessions the showcase route created on
+    // a *prior* boot and never sent a turn to. Delete those — there is
+    // nothing to lose — instead of letting `?showcase=1` visits (one
+    // durable session per boot/tab/e2e context) accumulate on disk
+    // indefinitely. Anything not in the registry (ordinary sessions, no
+    // matter what their title says) and anything created during *this*
+    // boot are untouched.
+    await this.sweepStaleShowcaseSessions()
+  }
+
+  private sweepStaleShowcaseSessions(): Promise<void> {
+    // The whole read-modify-write goes through the same queue mark/unmark
+    // use, as ONE task — not a read followed by a separately-queued write —
+    // so a mark/unmark landing between this sweep's read and its write
+    // can't be silently overwritten by the sweep's own (now stale) copy of
+    // the registry.
+    return queueShowcaseRegistry(async () => {
+      const registry = await readShowcaseRegistryUnsafe(this.explicitSessionRoot)
+      if (registry.size === 0) return
+      let registryChanged = false
+      for (const entry of registry) {
+        const decoded = decodeShowcaseRegistryEntry(entry)
+        // Bare session ids collide across namespaces — 'alpha--hashA' and
+        // 'alpha--hashB' (same agent type, different workspace scope) each
+        // independently allocate their own 'scripted-main', exactly like
+        // two different agent types do. The agent key AND workspace id are
+        // both explicit in every entry now, so this is a definitive
+        // ownership check, not a guess: an entry for a different agent key
+        // is never this store's business, full stop — leave it untouched
+        // for whichever store owns that key.
+        if (!decoded || decoded.agentKey !== this.provenanceAgentKey) continue
+        const { workspaceId, sessionId } = decoded
+        const record = this.records.get(sessionId)
+        // A record must exist under this exact id AND workspace id before
+        // this store treats the entry as its own. Critically, an entry that
+        // doesn't resolve here is left ALONE (never pruned) — it might
+        // belong to a *different* store that happens to share this agent
+        // key but a different workspace-scope hash (round 5's exact bug:
+        // 'alpha--hashA' and 'alpha--hashB' are different stores, and
+        // hashB's sweep must never guess about hashA's entries just
+        // because it also has a same-id record, or has none at all). The
+        // owning store's own `delete()` is what unmarks an entry once it's
+        // actually gone — sweep-time pruning here would risk deleting a
+        // still-valid mark for a store this one has no visibility into.
+        if (!record || record.workspaceId !== workspaceId) continue
+        if (record.turnCount !== 0) {
+          // Got a real turn since being marked — it's an ordinary session now
+          // (kept like any other) and no longer needs tracking.
+          registry.delete(entry)
+          registryChanged = true
+          continue
+        }
+        this.records.delete(sessionId)
+        registry.delete(entry)
+        registryChanged = true
+        try {
+          const names = await readdir(this.sessionDir)
+          const match = names.find((name) => name === `${sessionId}.jsonl` || name.endsWith(`_${sessionId}.jsonl`))
+          if (match) await unlink(join(this.sessionDir, match))
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+        }
+      }
+      if (registryChanged) await writeShowcaseRegistryUnsafe(this.explicitSessionRoot, registry)
+    })
   }
 
   private takeNextSessionId(): string {
@@ -382,6 +480,181 @@ function defaultSessionDir(cwd: string, explicitRoot?: string): string {
   if (explicitRoot && cwd.trim().length === 0) return sessionBaseDir(explicitRoot)
   const safePath = `--${cwd.replace(/^[/\\]/, '').replace(/[/\\:]/g, '-')}--`
   return join(sessionBaseDir(explicitRoot), safePath)
+}
+
+// --- Showcase session provenance registry -----------------------------
+//
+// The playground's `?showcase=1` route needs a boot-time sweep of stale,
+// still-empty sessions it created (gh-1452 PR #1458 review). An earlier
+// version of this marked provenance with a fixed title prefix
+// (`SHOWCASE_SESSION_TITLE_TAG`) — but the create/rename HTTP schemas
+// accept any nonempty title up to 200 chars and forward it unchanged, so
+// an ordinary session a developer happened to title starting with that
+// exact prefix would be swept too. Title text is user-controlled data,
+// not durable provenance.
+//
+// Provenance now lives in a sidecar registry file instead: a plain JSON
+// array of entries, written ONLY by the dev-only wrapper route
+// (`POST /api/v1/playground/showcase-sessions` in dev.ts) that the
+// showcase route's own session-creation calls go through — no title
+// content is ever inspected, so nothing an ordinary session's title says
+// can cause it to be swept. The file lives at a fixed, well-known path
+// derived the same way `sessionBaseDir` resolves the session root, so
+// both dev.ts (writer) and this store (reader/pruner) agree on its
+// location without needing to share a live object reference across the
+// HTTP boundary.
+//
+// Each entry is keyed by (agent key, workspace id, session id), NOT bare
+// session id — round 4 review: scripted session ids ('scripted-main',
+// 'scripted-1', ...) are only unique WITHIN one namespaced store; two
+// different agent types each allocate their own 'scripted-main'
+// independently, so a bare-id registry let a mark for one agent's session
+// be read as provenance for an unrelated session of the same id under a
+// different agent. Agent-key scoping alone still wasn't enough (round 5):
+// the store is scoped by the FULL storage namespace
+// `<agentTypeId>--<hash(workspaceScopeId)>--...`
+// (sessionNamespaceForAgent in packages/agent/.../sessionInventory.ts), so
+// the SAME agent type under two different workspace scopes
+// ('alpha--hashA' vs 'alpha--hashB') is still two independent stores that
+// each allocate their own 'scripted-main'. Reproducing that hash here
+// would require duplicating a private algorithm from a different package
+// (sha256 of an internal workspaceScopeId this store never even sees) —
+// fragile coupling for no real benefit. Instead, the workspace id
+// dimension is carried by the plain, unhashed id both sides already have
+// firsthand: this store receives it per-call as `SessionCtx.workspaceId`
+// (the same field `belongsTo` already scopes ordinary session visibility
+// by), and the dev-only wrapper route already has the raw
+// `x-boring-workspace-id` header it forwards on every request. Two
+// different raw workspace ids always land in two different registry
+// entries, exactly tracking whichever partition the real (hashed)
+// namespace would have produced — without ever needing to know the hash.
+const SHOWCASE_REGISTRY_FILENAME = '.playground-showcase-session-ids.json'
+// Neither an agent type id, a raw workspace id, nor a scripted session id
+// can ever contain this character (session ids match SAFE_NATIVE_SESSION_ID;
+// agent type ids and workspace ids are restricted identifier charsets
+// upstream), so it is a collision-proof separator for the composite key.
+const SHOWCASE_REGISTRY_KEY_SEPARATOR = ''
+
+function encodeShowcaseRegistryEntry(agentKey: string, workspaceId: string, sessionId: string): string {
+  return `${agentKey}${SHOWCASE_REGISTRY_KEY_SEPARATOR}${workspaceId}${SHOWCASE_REGISTRY_KEY_SEPARATOR}${sessionId}`
+}
+
+function decodeShowcaseRegistryEntry(entry: string): { agentKey: string; workspaceId: string; sessionId: string } | undefined {
+  const firstSeparator = entry.indexOf(SHOWCASE_REGISTRY_KEY_SEPARATOR)
+  if (firstSeparator < 0) return undefined
+  const secondSeparator = entry.indexOf(SHOWCASE_REGISTRY_KEY_SEPARATOR, firstSeparator + 1)
+  if (secondSeparator < 0) return undefined
+  return {
+    agentKey: entry.slice(0, firstSeparator),
+    workspaceId: entry.slice(firstSeparator + 1, secondSeparator),
+    sessionId: entry.slice(secondSeparator + 1),
+  }
+}
+
+function showcaseRegistryPath(explicitRoot?: string): string {
+  return join(sessionBaseDir(explicitRoot), SHOWCASE_REGISTRY_FILENAME)
+}
+
+async function readShowcaseRegistryUnsafe(explicitRoot?: string): Promise<Set<string>> {
+  try {
+    const text = await readFile(showcaseRegistryPath(explicitRoot), 'utf8')
+    const parsed: unknown = JSON.parse(text)
+    return new Set(Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === 'string') : [])
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return new Set()
+    // A corrupt registry file must never crash session hydration — treat
+    // it as empty and let the next successful write repair it.
+    return new Set()
+  }
+}
+
+async function writeShowcaseRegistryUnsafe(explicitRoot: string | undefined, entries: ReadonlySet<string>): Promise<void> {
+  const path = showcaseRegistryPath(explicitRoot)
+  await mkdir(dirname(path), { recursive: true })
+  await writeFile(path, JSON.stringify([...entries].sort()), 'utf8')
+}
+
+// Every read-modify-write of the registry file — mark, unmark, and the
+// boot-time sweep's own read+prune — is chained through this single
+// process-wide queue. `markPlaygroundShowcaseSession` is called from the
+// dev-only HTTP route handler (dev.ts), where two POSTs can genuinely
+// overlap (two tabs booting at once, a retry racing the original attempt);
+// an unlocked read-modify-write of the JSON file would let the second
+// write silently clobber the first write's addition. Node is
+// single-threaded, so serializing every access through one promise chain
+// is sufficient — no OS-level file lock needed for a same-process,
+// dev-only sidecar file.
+let showcaseRegistryQueue: Promise<unknown> = Promise.resolve()
+
+function queueShowcaseRegistry<T>(task: () => Promise<T>): Promise<T> {
+  const result = showcaseRegistryQueue.then(task, task)
+  // Never let one failed task poison the queue for later, unrelated calls.
+  showcaseRegistryQueue = result.catch(() => undefined)
+  return result
+}
+
+/**
+ * Records that `sessionId` (under `agentKey`, e.g. the requested
+ * `agentTypeId`, and `workspaceId`, the raw `x-boring-workspace-id`) was
+ * created by the showcase route. Called only from the dev-only wrapper
+ * route, never reachable from the ordinary session-creation UI — that is
+ * what makes this provenance (as opposed to the old title tag) immune to
+ * collision with a normal session. Keyed by (agentKey, workspaceId,
+ * sessionId), not bare sessionId — see the registry comment above for why
+ * bare ids collide across agent/workspace-scope namespaces.
+ */
+export function markPlaygroundShowcaseSession(explicitRoot: string | undefined, agentKey: string, workspaceId: string, sessionId: string): Promise<void> {
+  return queueShowcaseRegistry(async () => {
+    const entries = await readShowcaseRegistryUnsafe(explicitRoot)
+    const entry = encodeShowcaseRegistryEntry(agentKey, workspaceId, sessionId)
+    if (entries.has(entry)) return
+    entries.add(entry)
+    await writeShowcaseRegistryUnsafe(explicitRoot, entries)
+  })
+}
+
+/**
+ * Removes the (agentKey, workspaceId, sessionId) entry from the registry,
+ * if present. Called by `ScriptedSessionStore.delete` for every deletion
+ * (showcase-originated or not — a no-op if the entry was never registered)
+ * so a session no longer needs tracking the moment it stops existing,
+ * instead of waiting for a future boot's sweep to notice. This is what
+ * prevents a stale registry entry from surviving long enough for its
+ * numeric id to be recycled by an unrelated ordinary session (in the same,
+ * or without this scoping, even a different agent/workspace namespace).
+ */
+export function unmarkPlaygroundShowcaseSession(explicitRoot: string | undefined, agentKey: string, workspaceId: string, sessionId: string): Promise<void> {
+  return queueShowcaseRegistry(async () => {
+    const entries = await readShowcaseRegistryUnsafe(explicitRoot)
+    const entry = encodeShowcaseRegistryEntry(agentKey, workspaceId, sessionId)
+    if (!entries.has(entry)) return
+    entries.delete(entry)
+    await writeShowcaseRegistryUnsafe(explicitRoot, entries)
+  })
+}
+
+/**
+ * True only if (agentKey, workspaceId, sessionId) was previously marked by
+ * `markPlaygroundShowcaseSession` and hasn't since been unmarked. Used by
+ * the dev-only wrapper route to validate a client-supplied
+ * `resumeSessionId` before ever forwarding it to the real create-session
+ * endpoint, scoped to the REQUESTED `agentTypeId` and the raw
+ * `x-boring-workspace-id` of the current request: `resumeSessionId`
+ * travels through writable `sessionStorage` (App.tsx), so a stale or
+ * manipulated value could otherwise name an ordinary session (or a
+ * showcase session belonging to a *different* agent type or workspace
+ * scope) the wrapper never created for this exact request. Refusing to
+ * honor (and thus never marking) an unrecognized (agentKey, workspaceId,
+ * id) triple closes that off — the wrapper can only ever resume an id it
+ * already vouched for itself, for that exact agent type and workspace.
+ */
+export function isPlaygroundShowcaseSession(explicitRoot: string | undefined, agentKey: string, workspaceId: string, sessionId: string): Promise<boolean> {
+  return queueShowcaseRegistry(async () => (await readShowcaseRegistryUnsafe(explicitRoot)).has(encodeShowcaseRegistryEntry(agentKey, workspaceId, sessionId)))
+}
+
+/** Test-only: the registry's current on-disk (agentKey, workspaceId, sessionId) entries, for asserting boundedness/scoping directly. */
+export function readPlaygroundShowcaseRegistryForTest(explicitRoot?: string): Promise<Set<string>> {
+  return queueShowcaseRegistry(() => readShowcaseRegistryUnsafe(explicitRoot))
 }
 
 class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
