@@ -61,6 +61,14 @@ export interface RuntimeBinding {
   readonly composition: BuiltAgentComposition
 }
 
+/** Capability identity is exact: absence cannot reuse a sandbox-capable binding. */
+export function matchesSandboxToolCapability(
+  binding: Pick<RuntimeBinding, 'scope'>,
+  sandboxToolsDigest: string | undefined,
+): boolean {
+  return binding.scope.sandboxTools?.digest === sandboxToolsDigest
+}
+
 export interface AgentHostRuntime {
   readonly options: CreateAgentHostOptions
   readonly compiledAgents: readonly CompiledAgentHostAgentSpec[]
@@ -633,6 +641,7 @@ function createRuntime(
       const matches = [...publishedCurrentBindings.values()].filter((binding) =>
         binding.agentTypeId === agentTypeId
         && binding.workspaceScopeId === workspaceScopeId
+        && matchesSandboxToolCapability(binding, sandboxToolsDigest)
         && (!bindingIdentity || binding.scope.identity === bindingIdentity)
         && (!provisioningFingerprint
           || binding.scope.environment.provisioningFingerprint === provisioningFingerprint))

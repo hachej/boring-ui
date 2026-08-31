@@ -18,7 +18,11 @@ import { InMemorySessionChangesTracker } from '../../http/sessionChangesTracker'
 import type { RuntimeFilesystemBinding } from '../../runtime/mode'
 import { InMemoryAgentRequestLedger } from '../requestLedger'
 import { assertComposedAgentHostRouteTable } from '../testing/compositionRouteProof'
-import { createAgentHost } from '../createAgentHost'
+import {
+  createAgentHost,
+  matchesSandboxToolCapability,
+  type RuntimeBinding,
+} from '../createAgentHost'
 import { registerAgentHostEnvironmentRoutes } from '../environmentHttpProjection'
 
 const roots: string[] = []
@@ -700,6 +704,19 @@ describe('createAgentHost', () => {
     await run
     expect(writeCompleted).toBe(true)
     await created.host.close()
+  })
+
+  it('never falls back across sandbox capability identities', () => {
+    const binding = (digest?: string): Pick<RuntimeBinding, 'scope'> => ({
+      scope: {
+        ...(digest ? { sandboxTools: { digest, leases: {} } } : {}),
+      } as RuntimeBinding['scope'],
+    })
+
+    expect(matchesSandboxToolCapability(binding('sandbox-tools-a'), 'sandbox-tools-a')).toBe(true)
+    expect(matchesSandboxToolCapability(binding('sandbox-tools-a'), 'sandbox-tools-b')).toBe(false)
+    expect(matchesSandboxToolCapability(binding('sandbox-tools-a'), undefined)).toBe(false)
+    expect(matchesSandboxToolCapability(binding(), undefined)).toBe(true)
   })
 
   it('retries fail-once sandbox deletion during host shutdown until it settles', async () => {
