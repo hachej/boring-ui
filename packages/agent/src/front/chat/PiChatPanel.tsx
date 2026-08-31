@@ -483,6 +483,10 @@ export function PiChatPanel<
   const activeChatIdentityRef = useRef(activeChatIdentity)
   selectedPiSessionRef.current = selectedPiSession
   activeChatIdentityRef.current = activeChatIdentity
+  const isPolicySessionActive = useCallback(() => (
+    selectedPiSessionRef.current === selectedPiSession &&
+    activeChatIdentityRef.current === activeChatIdentity
+  ), [activeChatIdentity, selectedPiSession])
   const resumeQueuedPending = Boolean(activeChatSessionId && resumeQueuedPendingSessionIds.has(activeChatSessionId))
   const resumeQueuedError = activeChatSessionId ? resumeQueuedErrorsBySessionId.get(activeChatSessionId) : undefined
   // Resume-queued pending/error/in-flight state is keyed by bare session id.
@@ -837,10 +841,7 @@ export function PiChatPanel<
       getDraft: () => draftRef.current,
       onDraftChange: setComposerDraft,
       allowPromptDuringInitialHydration,
-      isActiveSession: () => (
-        selectedPiSessionRef.current === selectedPiSession &&
-        activeChatIdentityRef.current === activeChatIdentity
-      ),
+      isActiveSession: isPolicySessionActive,
       onQueueMutationPending: setQueueMutationPending,
       onPromptSubmitStarted: () => {
         markLocalSubmitted(activeChatSessionId)
@@ -866,7 +867,7 @@ export function PiChatPanel<
         onMentionedFilesConsumed?.()
       },
     })
-  }, [activeChatIdentity, activeChatSessionId, addLocalNotice, allowPromptDuringInitialHydration, clearMentionedFiles, composerBlocked, composerBlockerLabel, effectiveMentionedFiles, markLocalSubmitted, onBeforeSubmit, onCommandResult, onComposerWarning, onMentionedFilesConsumed, onPromptSubmitStarted, openModelPicker, openThinkingPicker, registry, reloadAgentPlugins, resetSession, runPluginUpdate, selectComposerModel, selectComposerThinking, selectedModel, selectedPiSession, selectedThinking, serverModelSelectionReady, setComposerDraft, submitThinkingControl, suppressPreSubmitCancelledWarning])
+  }, [activeChatIdentity, activeChatSessionId, addLocalNotice, allowPromptDuringInitialHydration, clearMentionedFiles, composerBlocked, composerBlockerLabel, effectiveMentionedFiles, isPolicySessionActive, markLocalSubmitted, onBeforeSubmit, onCommandResult, onComposerWarning, onMentionedFilesConsumed, onPromptSubmitStarted, openModelPicker, openThinkingPicker, registry, reloadAgentPlugins, resetSession, runPluginUpdate, selectComposerModel, selectComposerThinking, selectedModel, selectedPiSession, selectedThinking, serverModelSelectionReady, setComposerDraft, submitThinkingControl, suppressPreSubmitCancelledWarning])
 
   // Turn a rejected send (prompt/follow-up/auto-submit) into the single run-rejected
   // notice, carrying the stable server error code so a host can attach a recovery
@@ -930,6 +931,7 @@ export function PiChatPanel<
       }
       return undefined
     } catch (error) {
+      if (!isPolicySessionActive()) return false
       clearLocalSubmitted(activeChatSessionId)
       restoreSubmittedDraft()
       // Single normalization point for rejected sends: surface as one stable
@@ -939,7 +941,7 @@ export function PiChatPanel<
       surfaceRunRejected(error)
       return false
     }
-  }, [activeChatSessionId, clearLocalSubmitted, dropLocalNotice, markLocalSubmitted, onPromptSubmitStarted, policy, selectedPiSession, setComposerDraft, surfaceHandledSubmit, surfaceRunRejected])
+  }, [activeChatSessionId, clearLocalSubmitted, dropLocalNotice, isPolicySessionActive, markLocalSubmitted, onPromptSubmitStarted, policy, selectedPiSession, setComposerDraft, surfaceHandledSubmit, surfaceRunRejected])
 
   const availableAssistantSlashCommands = useMemo(
     () => policy ? actionableSlashCommands : actionableSlashCommands.filter((command) => command.clickBehavior === 'insert'),
@@ -1140,6 +1142,7 @@ export function PiChatPanel<
         settlePendingAutoSubmit(activeSessionId)
       }
     }).catch((error) => {
+      if (!isPolicySessionActive()) return
       clearLocalSubmitted(activeSessionId)
       restoreSubmittedDraft()
       settlePendingAutoSubmit(activeSessionId)
@@ -1148,7 +1151,7 @@ export function PiChatPanel<
       // of an inert generic error.
       surfaceRunRejected(error)
     })
-  }, [activeSessionId, autoSubmitInitialDraft, clearLocalSubmitted, composerBlocked, dropLocalNotice, initialDraft, markLocalSubmitted, onAutoSubmitInitialDraftAccepted, onPromptSubmitStarted, policy, selectedPiSession, setComposerDraft, settlePendingAutoSubmit, surfaceHandledSubmit, surfaceRunRejected])
+  }, [activeSessionId, autoSubmitInitialDraft, clearLocalSubmitted, composerBlocked, dropLocalNotice, initialDraft, isPolicySessionActive, markLocalSubmitted, onAutoSubmitInitialDraftAccepted, onPromptSubmitStarted, policy, selectedPiSession, setComposerDraft, settlePendingAutoSubmit, surfaceHandledSubmit, surfaceRunRejected])
 
   useEffect(() => {
     if (workspaceWarmupStatus?.status === 'ready') {

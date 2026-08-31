@@ -371,6 +371,30 @@ describe('PiComposerPolicyController submit policy', () => {
     expect(onWarning).not.toHaveBeenCalled()
   })
 
+  it('converts a rejected pre-submit hook to stale after the active session changes', async () => {
+    const session = new FakeComposerSession('idle')
+    let active = true
+    let fail!: (error: Error) => void
+    const beforeSubmit = new Promise<never>((_resolve, reject) => { fail = reject })
+    const policy = createPiComposerPolicyController({
+      session,
+      registry: createCommandRegistry(builtinCommands),
+      slashContext: context(),
+      isActiveSession: () => active,
+      onBeforeSubmit: async () => await beforeSubmit,
+    })
+
+    const pending = policy.submit({ text: 'large context' })
+    active = false
+    fail(new Error('upload failed'))
+
+    await expect(pending).resolves.toEqual({
+      type: 'stale',
+      reason: 'inactive-session',
+      preserveDraft: false,
+    })
+  })
+
   it('runs local slash commands when idle and blocks executable slash while streaming', async () => {
     const reset = vi.fn()
     const idlePolicy = createPiComposerPolicyController({

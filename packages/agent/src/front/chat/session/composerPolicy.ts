@@ -94,7 +94,13 @@ export class PiComposerPolicyController {
       return this.block('composer-blocked', this.options.blockerMessage ?? 'Composer is not ready yet.')
     }
 
-    const beforeSubmit = await this.runBeforeSubmit(input.text, files, source)
+    let beforeSubmit: PiComposerBeforeSubmitResult
+    try {
+      beforeSubmit = await this.runBeforeSubmit(input.text, files, source)
+    } catch (error) {
+      if (this.options.isActiveSession && !this.options.isActiveSession()) return this.stale()
+      throw error
+    }
     if (this.options.isActiveSession && !this.options.isActiveSession()) {
       return this.stale()
     }
