@@ -47,6 +47,17 @@ describe('spillLargePrompt', () => {
     expect(upload).toHaveBeenCalledTimes(1)
   })
 
+  it('does not reuse receipts across upload destinations', async () => {
+    const cache = new LargePromptSpillCache()
+    const upload = vi.fn(async () => ({ path: 'assets/uploads/prompt.md', url: '/raw/prompt.md' }))
+    const shared = { sessionId: 'same-session', thresholdChars: 10, cache, upload }
+
+    await spillLargePrompt('x'.repeat(20), { ...shared, destinationIdentity: 'workspace-a' })
+    await spillLargePrompt('x'.repeat(20), { ...shared, destinationIdentity: 'workspace-b' })
+
+    expect(upload).toHaveBeenCalledTimes(2)
+  })
+
   it('can be disabled by the host', async () => {
     const upload = vi.fn()
 

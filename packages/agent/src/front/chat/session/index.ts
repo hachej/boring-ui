@@ -17,6 +17,7 @@ export {
 } from './piSessionSearch'
 export {
   InitialDraftAutoSubmitGuard,
+  PiComposerSubmissionCoordinator,
   createPiComposerPolicyController,
   readPiComposerSettings,
   scopedComposerStorageKey,

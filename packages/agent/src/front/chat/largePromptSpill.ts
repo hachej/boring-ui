@@ -8,8 +8,8 @@ export class LargePromptSpillCache {
 
   constructor(private readonly maxEntries = 4) {}
 
-  getOrUpload(sessionId: string, text: string, upload: () => Promise<UploadFileResult>): Promise<UploadFileResult> {
-    const key = `${sessionId}\u0000${text}`
+  getOrUpload(destinationIdentity: string, sessionId: string, text: string, upload: () => Promise<UploadFileResult>): Promise<UploadFileResult> {
+    const key = `${destinationIdentity}\u0000${sessionId}\u0000${text}`
     const existing = this.receipts.get(key)
     if (existing) return existing
 
@@ -35,6 +35,7 @@ export interface SpillLargePromptOptions {
   requestHeaders?: Record<string, string | undefined>
   fetch?: typeof globalThis.fetch
   sessionId: string
+  destinationIdentity?: string
   cache?: LargePromptSpillCache
   upload?: (file: File) => Promise<UploadFileResult>
 }
@@ -59,7 +60,7 @@ export async function spillLargePrompt(
     { type: 'text/markdown' },
   ))
   const receipt = await (options.cache
-    ? options.cache.getOrUpload(options.sessionId, text, uploadPrompt)
+    ? options.cache.getOrUpload(options.destinationIdentity ?? '', options.sessionId, text, uploadPrompt)
     : uploadPrompt())
 
   return largePromptReference(receipt.path, text.length)

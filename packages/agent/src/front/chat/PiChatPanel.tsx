@@ -37,6 +37,7 @@ import { piChatErrorCode, type RemotePiSession, type RemotePiSessionOptions } fr
 import type { PiChatRuntimeNotice } from './pi/piChatReducer'
 import {
   InitialDraftAutoSubmitGuard,
+  PiComposerSubmissionCoordinator,
   createPiComposerPolicyController,
   modelOptionsForSelection,
   readPiComposerSettings,
@@ -494,6 +495,7 @@ export function PiChatPanel<
   const selectedPiSessionRef = useRef(selectedPiSession)
   const activeChatIdentityRef = useRef(activeChatIdentity)
   const largePromptSpillCacheRef = useRef(new LargePromptSpillCache())
+  const submissionCoordinatorRef = useRef(new PiComposerSubmissionCoordinator())
   selectedPiSessionRef.current = selectedPiSession
   activeChatIdentityRef.current = activeChatIdentity
   const isPolicySessionActive = useCallback(() => (
@@ -855,6 +857,8 @@ export function PiChatPanel<
       onDraftChange: setComposerDraft,
       allowPromptDuringInitialHydration,
       isActiveSession: isPolicySessionActive,
+      submissionCoordinator: submissionCoordinatorRef.current,
+      submissionIdentity: activeChatIdentity,
       onQueueMutationPending: setQueueMutationPending,
       onPromptSubmitStarted: () => {
         markLocalSubmitted(activeChatSessionId)
@@ -868,6 +872,7 @@ export function PiChatPanel<
         : undefined,
       onTransformPrompt: async (text) => await spillLargePrompt(text, {
         sessionId: activeChatSessionId,
+        destinationIdentity: `${apiBaseUrl ?? ''}\u0000${workspaceId ?? ''}\u0000${headersContentKey(requestHeaders)}`,
         cache: largePromptSpillCacheRef.current,
         enabled: spillLargePrompts,
         thresholdChars: largePromptThresholdChars,
@@ -890,7 +895,7 @@ export function PiChatPanel<
         onMentionedFilesConsumed?.()
       },
     })
-  }, [activeChatIdentity, activeChatSessionId, addLocalNotice, allowPromptDuringInitialHydration, apiBaseUrl, clearMentionedFiles, composerBlocked, composerBlockerLabel, effectiveMentionedFiles, fetch, isPolicySessionActive, largePromptThresholdChars, markLocalSubmitted, onBeforeSubmit, onCommandResult, onComposerWarning, onMentionedFilesConsumed, onPromptSubmitStarted, openModelPicker, openThinkingPicker, registry, reloadAgentPlugins, requestHeaders, resetSession, runPluginUpdate, selectComposerModel, selectComposerThinking, selectedModel, selectedPiSession, selectedThinking, serverModelSelectionReady, setComposerDraft, spillLargePrompts, submitThinkingControl, suppressPreSubmitCancelledWarning])
+  }, [activeChatIdentity, activeChatSessionId, addLocalNotice, allowPromptDuringInitialHydration, apiBaseUrl, clearMentionedFiles, composerBlocked, composerBlockerLabel, effectiveMentionedFiles, fetch, isPolicySessionActive, largePromptThresholdChars, markLocalSubmitted, onBeforeSubmit, onCommandResult, onComposerWarning, onMentionedFilesConsumed, onPromptSubmitStarted, openModelPicker, openThinkingPicker, registry, reloadAgentPlugins, requestHeaders, resetSession, runPluginUpdate, selectComposerModel, selectComposerThinking, selectedModel, selectedPiSession, selectedThinking, serverModelSelectionReady, setComposerDraft, spillLargePrompts, submitThinkingControl, suppressPreSubmitCancelledWarning, workspaceId])
 
   // Turn a rejected send (prompt/follow-up/auto-submit) into the single run-rejected
   // notice, carrying the stable server error code so a host can attach a recovery

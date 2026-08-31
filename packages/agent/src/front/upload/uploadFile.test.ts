@@ -48,17 +48,21 @@ describe('uploadFile', () => {
 
     await uploadFile(file(), {
       workspaceRequestId: 'ws-1',
-      requestHeaders: { Authorization: 'Bearer test-token', 'x-custom-scope': 'clinic' },
+      requestHeaders: {
+        Authorization: 'Bearer test-token',
+        'x-custom-scope': 'clinic',
+        'content-type': 'text/plain',
+        'X-Boring-Workspace-Id': 'stale-workspace',
+      },
       fetch: fetch as typeof globalThis.fetch,
     })
 
     const request = fetch.mock.calls[0] as unknown as [RequestInfo | URL, RequestInit]
-    expect(request[1].headers).toMatchObject({
-      Authorization: 'Bearer test-token',
-      'x-custom-scope': 'clinic',
-      'Content-Type': 'application/json',
-      'x-boring-workspace-id': 'ws-1',
-    })
+    const headers = new Headers(request[1].headers)
+    expect(headers.get('authorization')).toBe('Bearer test-token')
+    expect(headers.get('x-custom-scope')).toBe('clinic')
+    expect(headers.get('content-type')).toBe('application/json')
+    expect(headers.get('x-boring-workspace-id')).toBe('ws-1')
   })
 
   it('returns a raw workspace URL when requested', async () => {

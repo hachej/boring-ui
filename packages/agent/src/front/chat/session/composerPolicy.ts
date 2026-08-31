@@ -63,6 +63,8 @@ export interface PiComposerPolicyOptions extends PiQueueControllerOptions {
   onBeforeSubmit?: (draft: string, context: { files: PromptInputFilePart[]; source: PiComposerSubmitInput['source'] }) => PiComposerBeforeSubmitResult | Promise<PiComposerBeforeSubmitResult>
   /** Transform only final model-bound text, after local command dispatch and skill expansion. */
   onTransformPrompt?: (text: string, context: { files: PromptInputFilePart[]; source: PiComposerSubmitInput['source'] }) => PiComposerReplacementSubmit | void | Promise<PiComposerReplacementSubmit | void>
+  submissionCoordinator?: PiComposerSubmissionCoordinator
+  submissionIdentity?: string
   onCommandResult?: (message: string) => void
   onMentionedFilesConsumed?: () => void
   allowPromptDuringInitialHydration?: boolean
@@ -81,18 +83,35 @@ export type PiComposerSubmitResult =
   | { type: 'stale'; reason: 'inactive-session'; preserveDraft: false }
   | { type: 'blocked'; reason: PiComposerBlockedReason; message: string; preserveDraft: true }
 
+export class PiComposerSubmissionCoordinator {
+  private readonly tails = new Map<string, Promise<void>>()
+
+  run<T>(identity: string, task: () => Promise<T>): Promise<T> {
+    const previous = this.tails.get(identity) ?? Promise.resolve()
+    const pending = previous.then(task)
+    const tail = pending.then(() => undefined, () => undefined)
+    this.tails.set(identity, tail)
+    void tail.finally(() => {
+      if (this.tails.get(identity) === tail) this.tails.delete(identity)
+    })
+    return pending
+  }
+}
+
 export class PiComposerPolicyController {
   private readonly queueController
-  private submissionTail: Promise<void> = Promise.resolve()
+  private readonly submissionCoordinator: PiComposerSubmissionCoordinator
 
   constructor(private readonly options: PiComposerPolicyOptions) {
     this.queueController = createPiFollowUpQueueController(options.session, options)
+    this.submissionCoordinator = options.submissionCoordinator ?? new PiComposerSubmissionCoordinator()
   }
 
   submit(input: PiComposerSubmitInput): Promise<PiComposerSubmitResult> {
-    const pending = this.submissionTail.then(async () => await this.submitInOrder(input))
-    this.submissionTail = pending.then(() => undefined, () => undefined)
-    return pending
+    return this.submissionCoordinator.run(
+      this.options.submissionIdentity ?? 'default',
+      async () => await this.submitInOrder(input),
+    )
   }
 
   private async submitInOrder(input: PiComposerSubmitInput): Promise<PiComposerSubmitResult> {

@@ -32,12 +32,12 @@ export async function uploadFile(
   const comma = dataUrl.indexOf(',')
   const contentBase64 = comma >= 0 ? dataUrl.slice(comma + 1) : ''
 
-  const headers: Record<string, string> = {}
+  const headers = new Headers()
   for (const [name, value] of Object.entries(requestHeaders ?? {})) {
-    if (value !== undefined) headers[name] = value
+    if (value !== undefined) headers.set(name, value)
   }
-  headers['Content-Type'] = 'application/json'
-  if (workspaceRequestId) headers['x-boring-workspace-id'] = workspaceRequestId
+  headers.set('content-type', 'application/json')
+  if (workspaceRequestId) headers.set('x-boring-workspace-id', workspaceRequestId)
 
   const base = apiBaseUrl.replace(/\/$/, '')
   const res = await fetchImpl(`${base}/api/v1/files/upload`, {

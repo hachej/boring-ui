@@ -9,6 +9,7 @@ import {
   buildPromptPolicyPayload,
   createPiComposerPolicyController,
   InitialDraftAutoSubmitGuard,
+  PiComposerSubmissionCoordinator,
   readPiComposerSettings,
   scopedComposerStorageKey,
   selectComposerHistoryFromCanonicalUsers,
@@ -438,20 +439,24 @@ describe('PiComposerPolicyController submit policy', () => {
     const session = new FakeComposerSession('idle')
     const releases: Array<() => void> = []
     const transformed: string[] = []
-    const policy = createPiComposerPolicyController({
+    const coordinator = new PiComposerSubmissionCoordinator()
+    const transform = async (text: string) => {
+      transformed.push(text)
+      await new Promise<void>((resolve) => releases.push(resolve))
+      return { replacement: { text: `stored:${text}` } }
+    }
+    const createPolicy = () => createPiComposerPolicyController({
       session,
       registry: createCommandRegistry(builtinCommands),
       slashContext: context(),
       createClientNonce: nonceFactory(),
-      onTransformPrompt: async (text) => {
-        transformed.push(text)
-        await new Promise<void>((resolve) => releases.push(resolve))
-        return { replacement: { text: `stored:${text}` } }
-      },
+      submissionCoordinator: coordinator,
+      submissionIdentity: 'workspace-a/session-1',
+      onTransformPrompt: transform,
     })
 
-    const first = policy.submit({ text: 'first' })
-    const second = policy.submit({ text: 'second' })
+    const first = createPolicy().submit({ text: 'first' })
+    const second = createPolicy().submit({ text: 'second' })
     await vi.waitFor(() => expect(transformed).toEqual(['first']))
     releases.shift()?.()
     await expect(first).resolves.toMatchObject({ type: 'prompt' })
