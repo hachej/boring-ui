@@ -4,7 +4,8 @@ import type { WorkspaceStore } from '../app/types.js'
 import type { MailTransport } from '../mail/transport.js'
 import { renderWelcome } from '../mail/templates/index.js'
 import { REQUEST_SCOPE_WORKSPACE_HEADER } from './requestWorkspaceScope.js'
-import { parseRequiredDefaultAgentTypeId } from '../defaultAgentType.js'
+import { DefaultAgentTypeError, parseRequiredDefaultAgentTypeId } from '../defaultAgentType.js'
+import { ERROR_CODES } from '../../shared/errors.js'
 import {
   normalizeSignupHostname,
   resolveSignupDefaultAgentTypeId,
@@ -35,30 +36,27 @@ type InviteFailureCode =
   | 'invite_already_accepted'
   | 'invite_email_mismatch'
 
-export interface InitialAgentSeatResolution {
-  agentTypeId: string
-  source: 'signup-intent' | 'generic-default'
-}
-
 export interface ResolveInitialAgentSeatInput {
   user: PostSignupUser
   context: PostSignupContext | null
-  applicationDefaultAgentTypeId: string
 }
 
+/** Resolves the specialist Agent type ID added beside the application Default. */
 export type ResolveInitialAgentSeat = (
   input: ResolveInitialAgentSeatInput,
-) => InitialAgentSeatResolution | undefined | Promise<InitialAgentSeatResolution | undefined>
+) => string | undefined | Promise<string | undefined>
 
 export interface PostSignupHookDeps {
   config: CoreConfig
   /** Boot-compiled, fleet-validated map. Raw CoreConfig is never consumed. */
   signupAgentDefaults?: ValidatedSignupAgentDefaults
+  /** Required when a trusted app resolver is installed. */
+  applicationAgentTypeIds?: readonly string[]
   workspaceStore: WorkspaceStore
   transport: MailTransport | null
   logger?: { warn: (obj: Record<string, unknown>, msg: string) => void }
   disableDefaultWorkspaceCreation?: boolean
-  /** Trusted app resolver for a server-issued signup intent. */
+  /** Trusted app resolver for a server-issued specialist signup intent. */
   resolveInitialAgentSeat?: ResolveInitialAgentSeat
 }
 
@@ -86,6 +84,7 @@ export function createPostSignupHook(deps: PostSignupHookDeps) {
   const {
     config,
     signupAgentDefaults,
+    applicationAgentTypeIds,
     workspaceStore,
     transport,
     logger,
@@ -93,6 +92,12 @@ export function createPostSignupHook(deps: PostSignupHookDeps) {
     resolveInitialAgentSeat,
   } = deps
   const applicationDefaultAgentTypeId = parseRequiredDefaultAgentTypeId(config.defaultAgentTypeId)
+  if (resolveInitialAgentSeat && !applicationAgentTypeIds) {
+    throw new DefaultAgentTypeError(
+      ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT,
+      'Initial Agent Seat resolution requires the validated application fleet',
+    )
+  }
 
   return async function postSignupHook(
     user: PostSignupUser & Record<string, unknown>,
@@ -131,31 +136,34 @@ export function createPostSignupHook(deps: PostSignupHookDeps) {
     }
 
     if (!inviteAccepted && !disableDefaultWorkspaceCreation) {
-      // Decision 28 hook: an exact trusted signup-domain mapping may
-      // initialize the default Agent and its authorization Seat atomically.
-      // The hostname is read once and matched exactly against boot-validated
-      // trusted host configuration; only the resolved Agent id and source are
-      // persisted.
-      const resolvedIntent = await resolveInitialAgentSeat?.({
-        user,
-        context: ctx,
-        applicationDefaultAgentTypeId,
-      })
+      // A trusted creator/vertical signup intent adds a specialist Seat; it
+      // never replaces the application's general Default Agent. Both Seats
+      // are inserted atomically with the workspace and owner membership.
+      const resolvedIntent = await resolveInitialAgentSeat?.({ user, context: ctx })
       const signupHostname = normalizeSignupHostname(
         readHeader(ctx, TRUSTED_SIGNUP_HOSTNAME_HEADER),
       )
       const signupSeat = resolveSignupDefaultAgentTypeId(signupAgentDefaults, signupHostname)
-      const initialSeat = parseRequiredDefaultAgentTypeId(
-        resolvedIntent?.agentTypeId ?? signupSeat ?? applicationDefaultAgentTypeId,
-      )
-      const initialSeatSource = resolvedIntent?.source
-        ?? (signupSeat ? 'signup-intent' : 'generic-default')
+      const additionalAgentTypeId = resolvedIntent ?? signupSeat
+      const parsedAdditionalAgentTypeId = additionalAgentTypeId !== undefined
+        ? parseRequiredDefaultAgentTypeId(additionalAgentTypeId)
+        : undefined
+      if (
+        resolvedIntent !== undefined
+        && (parsedAdditionalAgentTypeId === undefined
+          || !applicationAgentTypeIds?.includes(parsedAdditionalAgentTypeId))
+      ) {
+        throw new DefaultAgentTypeError(
+          ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT,
+          'Resolved initial Agent Seat is not an available fleet member',
+        )
+      }
       await workspaceStore.create(user.id, 'Default workspace', config.appId, {
         isDefault: true,
-        // Decision 28: every initialized Workspace persists a real default.
-        defaultAgentTypeId: initialSeat,
-        initialAgentSeatSource: initialSeatSource,
-        enrolledByUserId: user.id,
+        defaultAgentTypeId: applicationDefaultAgentTypeId,
+        ...(parsedAdditionalAgentTypeId && parsedAdditionalAgentTypeId !== applicationDefaultAgentTypeId
+          ? { additionalAgentSeat: { agentTypeId: parsedAdditionalAgentTypeId, source: 'signup-intent' } }
+          : {}),
       })
     }
 

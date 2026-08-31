@@ -1,7 +1,8 @@
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
-import { AuthStorage, ModelRegistry } from '@mariozechner/pi-coding-agent'
+import { ModelRuntime } from '@mariozechner/pi-coding-agent'
+import { InMemoryCredentialStore } from '@earendil-works/pi-ai'
 import { parse as parseYaml } from 'yaml'
 import { beforeAll, describe, expect, test } from 'vitest'
 
@@ -18,22 +19,27 @@ const FLEET_CONFIG_PATH = resolve(import.meta.dirname, '../../../../../../.agent
 // strictModelResolution — exactly what happened with T1's 'claude-fable'
 // (catalog has 'claude-fable-5'). This test catches that class of drift in
 // CI by loading fleet.yaml and resolving every candidate against a real
-// ModelRegistry.
+// ModelRuntime.
 describe('fleet model tier candidates', () => {
-  const registry = ModelRegistry.create(AuthStorage.create())
+  let modelRuntime: ModelRuntime
   let candidates: ReturnType<typeof parseModelTierCandidates>
 
   beforeAll(async () => {
+    modelRuntime = await ModelRuntime.create({
+      credentials: new InMemoryCredentialStore(),
+      modelsPath: null,
+      refreshOnCreate: false,
+    })
     candidates = parseModelTierCandidates(
       parseYaml(await readFile(FLEET_CONFIG_PATH, 'utf8')),
       FLEET_CONFIG_PATH,
     )
   })
 
-  test('every configured candidate exists in ModelRegistry', () => {
+  test('every configured candidate exists in ModelRuntime', () => {
     for (const [tier, tierCandidates] of Object.entries(candidates)) {
       for (const candidate of tierCandidates) {
-        const model = registry.find(candidate.provider, candidate.id)
+        const model = modelRuntime.getModel(candidate.provider, candidate.id)
         expect(model, `${candidate.provider}:${candidate.id} (tier ${tier}) is not a known pi model — ` +
           'update .agents/factory/fleet.yaml to a real catalog id').toBeDefined()
       }

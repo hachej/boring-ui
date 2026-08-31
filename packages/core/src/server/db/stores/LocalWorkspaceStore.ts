@@ -44,6 +44,12 @@ export class LocalWorkspaceStore implements WorkspaceStore {
   async create(userId: string, name: string, appId: string, opts: WorkspaceStoreCreateOptions): Promise<Workspace> {
     const workspaceTypeId = parseTrustedWorkspaceTypeId(opts?.workspaceTypeId)
     const defaultAgentTypeId = parseRequiredDefaultAgentTypeId(opts?.defaultAgentTypeId)
+    const additionalAgentSeat = opts.additionalAgentSeat
+      ? {
+          agentTypeId: parseRequiredDefaultAgentTypeId(opts.additionalAgentSeat.agentTypeId),
+          source: opts.additionalAgentSeat.source,
+        }
+      : undefined
     const id = opts.id ?? randomUUID()
     const existing = opts.id ? this.workspaces.get(id) : undefined
     if (existing) {
@@ -92,6 +98,16 @@ export class LocalWorkspaceStore implements WorkspaceStore {
       enrolledByUserId: opts.enrolledByUserId ?? userId,
       createdAt: now,
     })
+    if (additionalAgentSeat && additionalAgentSeat.agentTypeId !== defaultAgentTypeId) {
+      this.agentSeats.set(`${ws.id}:${additionalAgentSeat.agentTypeId}`, {
+        seatId: randomUUID(),
+        workspaceId: ws.id,
+        agentTypeId: additionalAgentSeat.agentTypeId,
+        source: additionalAgentSeat.source,
+        enrolledByUserId: opts.enrolledByUserId ?? userId,
+        createdAt: now,
+      })
+    }
     this.runtimes.set(ws.id, {
       workspaceId: ws.id,
       spriteUrl: null,

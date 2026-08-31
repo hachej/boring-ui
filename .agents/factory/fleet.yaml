@@ -57,7 +57,7 @@ models:
         id: claude-sonnet-4-6
         envVar: ANTHROPIC_API_KEY
       - provider: google
-        id: gemini-3-pro-preview
+        id: gemini-3.1-pro-preview
         envVar: GEMINI_API_KEY
     T4:
       - provider: anthropic

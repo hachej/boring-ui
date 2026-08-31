@@ -39,7 +39,7 @@
     "clean": "rm -rf dist .tsbuildinfo"
   },
   "dependencies": {
-    "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.80.7"
+    "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.84.3"
   },
   "peerDependencies": {
     "@hachej/boring-agent": "workspace:*",

@@ -440,7 +440,7 @@ describe("createPiCodingAgentHarness", () => {
 });
 
 describe("pi extension path hot reload", () => {
-  it("reloads changed extension source from Pi extension paths instead of using inline factories", async () => {
+  it("reloads an explicit host extension path while ambient extensions remain disabled", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "pi-extension-cwd-"));
     const agentDir = await mkdtemp(join(tmpdir(), "pi-extension-agent-"));
     const extensionPath = join(cwd, "plugin-agent.ts");
@@ -465,6 +465,7 @@ describe("pi extension path hot reload", () => {
         cwd,
         agentDir,
         additionalExtensionPaths: [extensionPath],
+        noExtensions: true,
         noSkills: true,
         noPromptTemplates: true,
         noThemes: true,
