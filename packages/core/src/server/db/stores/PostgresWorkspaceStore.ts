@@ -191,6 +191,12 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
   async create(userId: string, name: string, appId: string, opts: WorkspaceStoreCreateOptions): Promise<Workspace> {
     const workspaceTypeId = parseTrustedWorkspaceTypeId(opts?.workspaceTypeId)
     const defaultAgentTypeId = parseRequiredDefaultAgentTypeId(opts?.defaultAgentTypeId)
+    const additionalAgentSeat = opts.additionalAgentSeat
+      ? {
+          agentTypeId: parseRequiredDefaultAgentTypeId(opts.additionalAgentSeat.agentTypeId),
+          source: opts.additionalAgentSeat.source,
+        }
+      : undefined
     return this.db.transaction(async (tx) => {
       const insert = tx
         .insert(workspaces)
@@ -221,12 +227,22 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
           userId,
           role: 'owner',
         })
-        await tx.insert(workspaceAgentSeats).values({
-          workspaceId: row.id,
-          agentTypeId: defaultAgentTypeId,
-          source: opts.initialAgentSeatSource ?? 'generic-default',
-          enrolledByUserId: opts.enrolledByUserId ?? userId,
-        })
+        await tx.insert(workspaceAgentSeats).values([
+          {
+            workspaceId: row.id,
+            agentTypeId: defaultAgentTypeId,
+            source: opts.initialAgentSeatSource ?? 'generic-default',
+            enrolledByUserId: opts.enrolledByUserId ?? userId,
+          },
+          ...(additionalAgentSeat && additionalAgentSeat.agentTypeId !== defaultAgentTypeId
+            ? [{
+                workspaceId: row.id,
+                agentTypeId: additionalAgentSeat.agentTypeId,
+                source: additionalAgentSeat.source,
+                enrolledByUserId: opts.enrolledByUserId ?? userId,
+              }]
+            : []),
+        ])
       }
 
       return toWorkspace(row)

@@ -70,12 +70,13 @@ the platform.
 - `BETTER_AUTH_URL` sets the canonical base URL; secure-cookie and
   CSP-upgrade-insecure flip on automatically when it is https; `CORS_ORIGINS`
   must include the served origins (`loadConfig.ts` security projection).
-- Signup default agent: `BORING_SIGNUP_AGENT_DEFAULTS_JSON` maps **exact**
-  lowercase hostnames (no wildcards) to an initial `defaultAgentTypeId` for a
-  newly created default workspace only — boot-validated
-  (`packages/core/src/server/schema.ts` config schema), applied through the
-  signup post-hook (`packages/core/src/server/signupAgentDefaults.ts`,
-  `postSignupHook.ts`; Decision 28). Exact match is load-bearing: hostname
+- Signup specialist: `BORING_SIGNUP_AGENT_DEFAULTS_JSON` (historical option
+  name) maps **exact** lowercase hostnames (no wildcards) to one additional
+  specialist Agent Seat for a newly created default workspace. The application
+  Default Agent remains primary. The mapping is boot/fleet-validated
+  (`packages/core/src/server/schema.ts` config schema) and applied atomically
+  through the signup post-hook (`packages/core/src/server/signupAgentDefaults.ts`,
+  `postSignupHook.ts`; Decision 32). Exact match is load-bearing: hostname
   never grants authority beyond this initialization.
 - Presentation-only landing per hostname may be declared statically (Decision
   30, `docs/DECISIONS.md` §30): hostname selects pixels, never routing,
@@ -89,8 +90,9 @@ pnpm --filter full-app smoke:remote-worker       # remote-worker contract/isolat
 pnpm --filter full-app e2e                       # Playwright incl. e2e/smoke spec
 ```
 
-Manual checks after first deploy: sign-up flow lands on the expected default
-agent (per §4 mapping); chat transcript persists across restart under
+Manual checks after first deploy: general signup exposes only the application
+Default Agent; mapped signup exposes Default plus the expected specialist Seat
+(per §4); chat transcript persists across restart under
 `/data/pi-sessions/<workspaceId>`; `/health` passes container healthcheck;
 sandbox files appear in Vercel `/workspace`, not `/data/workspaces/<id>`
 (`apps/full-app/README.md` § Container reference).

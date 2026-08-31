@@ -179,7 +179,11 @@ describe('post-signup hook — domain mapping is initialization-only', () => {
     const userId = JSON.parse(signup.body)?.user?.id
     const initialized = await workspaceStore.list(userId, 'test-app')
     expect(initialized).toHaveLength(1)
-    expect(initialized[0]).toMatchObject({ defaultAgentTypeId: 'legal', isDefault: true })
+    expect(initialized[0]).toMatchObject({ defaultAgentTypeId: 'boring-v2', isDefault: true })
+    expect(await workspaceStore.listAgentSeats(initialized[0].id)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ agentTypeId: 'boring-v2', source: 'generic-default' }),
+      expect.objectContaining({ agentTypeId: 'legal', source: 'signup-intent' }),
+    ]))
 
     const login = await app.inject({
       method: 'POST',
@@ -193,9 +197,10 @@ describe('post-signup hook — domain mapping is initialization-only', () => {
     expect(afterLogin).toHaveLength(1)
     expect(afterLogin[0]).toMatchObject({
       id: initialized[0].id,
-      defaultAgentTypeId: 'legal',
+      defaultAgentTypeId: 'boring-v2',
       isDefault: true,
     })
+    expect(await workspaceStore.listAgentSeats(initialized[0].id)).toHaveLength(2)
   })
 })
 

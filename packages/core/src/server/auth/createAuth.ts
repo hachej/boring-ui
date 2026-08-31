@@ -118,6 +118,8 @@ export interface CreateAuthOptions {
   workspaceStore?: WorkspaceStore
   /** Boot-compiled, fleet-validated signup map from the full server composer. */
   signupAgentDefaults?: ValidatedSignupAgentDefaults
+  /** Boot-compiled fleet required by an initial specialist resolver. */
+  applicationAgentTypeIds?: readonly string[]
   logger?: { warn: (obj: Record<string, unknown>, msg: string) => void }
   /** Telemetry sink for auth.signed_up / auth.session_started (defaults to noop). */
   telemetry?: TelemetrySink
@@ -210,6 +212,7 @@ export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOp
       ? createPostSignupHook({
         config,
         signupAgentDefaults: opts.signupAgentDefaults,
+        applicationAgentTypeIds: opts.applicationAgentTypeIds,
         workspaceStore: opts.workspaceStore,
         transport,
         logger: opts.logger,

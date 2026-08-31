@@ -316,7 +316,7 @@ export interface CreateCoreWorkspaceAgentServerOptions {
   appRoot?: string
   /** Opt into host-local auth callback URLs for an exact host allowlist. */
   authBaseURL?: CoreDynamicAuthBaseURL
-  /** Trusted app-owned server resolver for initial signup Seat intent. */
+  /** Trusted app-owned resolver for an additional specialist signup Seat. */
   resolveInitialAgentSeat?: ResolveInitialAgentSeat
   config?: CoreConfig
   loadConfigOptions?: LoadConfigOptions
@@ -1002,6 +1002,7 @@ export async function registerFrontendFallback(
 async function createCoreRuntime(
   config: CoreConfig,
   signupAgentDefaults: ValidatedSignupAgentDefaults,
+  applicationAgentTypeIds: readonly string[],
   customTelemetry?: TelemetrySink,
   requestScopeResolver?: CoreRequestScopeResolver,
   authBaseURL?: CoreDynamicAuthBaseURL,
@@ -1039,6 +1040,7 @@ async function createCoreRuntime(
     baseURL: authBaseURL,
     workspaceStore,
     signupAgentDefaults,
+    applicationAgentTypeIds,
     logger: app.log,
     telemetry,
     disableDefaultWorkspaceCreation: requestScopeResolver !== undefined,
@@ -1132,9 +1134,9 @@ export async function createCoreWorkspaceAgentServer(
     agentTypeIds,
     rawConfig.security?.trustedProxy,
   )
-  // Decision 28 hook: validate all trusted signup/default config before
-  // allocating DB or HTTP resources. Every initialized Workspace persists a
-  // real regular Agent as its default.
+  // Validate trusted signup/default config before allocating DB or HTTP
+  // resources. Every Workspace persists the application default; a mapped
+  // signup intent adds a specialist Seat without replacing it.
   const config: CoreConfig = {
     ...rawConfig,
     defaultAgentTypeId: applicationDefaultAgentTypeId,
@@ -1143,6 +1145,7 @@ export async function createCoreWorkspaceAgentServer(
   const { app, sql, db, userStore, workspaceStore, telemetry } = await createCoreRuntime(
     config,
     signupAgentDefaults,
+    agentTypeIds,
     options.telemetry,
     options.requestScopeResolver,
     options.authBaseURL,
