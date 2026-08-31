@@ -15,6 +15,7 @@ export function statusForGatewayError(code: string): number {
     code === AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT
     || code === AgentGatewayErrorCode.AGENT_REQUEST_IN_PROGRESS
     || code === AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN
+    || code === AgentGatewayErrorCode.AGENT_ACCEPTED_WORK_UNAVAILABLE
     || code === AgentGatewayErrorCode.AGENT_RUNTIME_RESTART_REQUIRED
     || code === AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE
     || code.includes('CURSOR')

@@ -148,6 +148,22 @@ export async function createMockVercelSandboxHarness(): Promise<MockVercelSandbo
 
       const normalizedScript = script.replace(/^'([^']+)'\s+/, '$1 ')
 
+      if (normalizedScript === 'exit 7') return emitResult(7, '', '')
+      if (normalizedScript.includes('pwd && cat note.txt')) {
+        return emitResult(0, '/workspace/nested\ncwd-ok', '')
+      }
+      if (normalizedScript.includes('setInterval(() => {}, 1000)')) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 550))
+        return emitResult(124, '', 'timed out')
+      }
+      if (normalizedScript.includes("process.stdout.write('x'.repeat(2_000_000))")) {
+        return emitResult(0, 'x'.repeat(2_000_000), '')
+      }
+      if (normalizedScript.includes('setTimeout(() => {}, 2100)')) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 2_100))
+        return emitResult(0, '', '')
+      }
+
       if (normalizedScript.startsWith('cat ')) {
         const targetPath = normalizedScript.slice(4).trim().replace(/^'(.*)'$/, '$1')
         try {

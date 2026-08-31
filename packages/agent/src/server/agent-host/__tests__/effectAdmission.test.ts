@@ -1,6 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { AgentGatewayErrorCode } from '../../../shared/index'
 import type { AgentGatewayEffect } from '../types'
+import type { SandboxLeaseService } from '../../sandbox/leases/sandboxLease'
+import { sandboxLeaseOwnerIdForSession } from '../../sandbox/leases/sandboxLeaseOwner'
 import { createEmbeddedGatewayFixture } from './embeddedGatewayFixture'
 
 const denied = { code: AgentGatewayErrorCode.AGENT_SCOPE_DENIED }
@@ -75,6 +77,25 @@ describe('Embedded Agent Gateway strong effect admission', () => {
       requestId: 'denied-delete',
     })).rejects.toMatchObject(denied)
     await expect(fixture.gateway.readSessionState({ scope, ref })).resolves.toMatchObject({ ref })
+  })
+
+  it('drains the exact session-owned sandbox leases after successful deletion', async () => {
+    const fixture = await createEmbeddedGatewayFixture()
+    const releaseOwner = vi.fn(async () => 1)
+    fixture.setSandboxTools('alpha', { releaseOwner } as unknown as SandboxLeaseService)
+    const scope = fixture.issueScope()
+    const ref = await fixture.gateway.createSession({
+      scope,
+      agentTypeId: 'alpha',
+      requestId: 'create-with-sandbox',
+    })
+
+    await fixture.gateway.deleteSession({ scope, ref, requestId: 'delete-with-sandbox' })
+
+    expect(releaseOwner).toHaveBeenCalledWith(sandboxLeaseOwnerIdForSession({
+      workspaceScopeId: scope.workspaceScopeId,
+      agentTypeId: 'alpha',
+    }, ref.sessionId))
   })
 
   it('executes archive through inventory with replay and digest-conflict semantics', async () => {

@@ -35,8 +35,10 @@ import {
 } from "../../piPackages.js";
 import { createResourceSettingsManager } from "./resourceSettingsManager.js";
 
-interface PiRunContextState {
+export interface PiRunContextState {
   queuedFollowUpContexts: WeakMap<object, RunContext>;
+  /** Explicit current Pi turn; required because queued drains cross ALS continuations. */
+  currentTurnContext?: RunContext;
 }
 
 interface PiSessionHandle {
@@ -406,7 +408,7 @@ type PiAgentWithFollowUp = {
 // AsyncLocalStorage scope, so the submitting run's auth context would be lost.
 // We capture it per queued message here and re-activate it when Pi starts
 // processing that message (message_start), keyed weakly on the message object.
-function rememberQueuedFollowUpRunContexts(
+export function rememberQueuedFollowUpRunContexts(
   piSession: AgentSession,
   state: PiRunContextState,
   getRunContext: () => RunContext | undefined,
@@ -425,18 +427,30 @@ function rememberQueuedFollowUpRunContexts(
   };
 }
 
-function updateRunContextStateFromPiEvent(
+export function updateRunContextStateFromPiEvent(
   state: PiRunContextState,
   event: unknown,
-  activateRunContext: (ctx: RunContext) => void,
 ): void {
-  if ((event as { type?: unknown }).type !== "message_start") return;
-  const message = (event as { message?: unknown }).message;
-  if (!message || typeof message !== "object") return;
-  const ctx = state.queuedFollowUpContexts.get(message);
-  if (!ctx) return;
-  state.queuedFollowUpContexts.delete(message);
-  activateRunContext(ctx);
+  const type = (event as { type?: unknown }).type;
+  if (type === "message_start") {
+    const message = (event as { message?: unknown }).message;
+    if (!message || typeof message !== "object") return;
+    const ctx = state.queuedFollowUpContexts.get(message);
+    if (!ctx) return;
+    state.queuedFollowUpContexts.delete(message);
+    // Retain through the assistant/tool events for this turn. The next queued
+    // user message replaces it, and agent_end clears it.
+    state.currentTurnContext = ctx;
+    return;
+  }
+  if (type === "agent_end") state.currentTurnContext = undefined;
+}
+
+export function resolvePiRunContext(
+  state: PiRunContextState,
+  ambient: RunContext | undefined,
+): RunContext | undefined {
+  return state.currentTurnContext ?? ambient;
 }
 
 export function createPiCodingAgentHarness(opts: {
@@ -700,7 +714,12 @@ export function createPiCodingAgentHarness(opts: {
       // adapted tool catalog active. Do NOT pass an explicit empty tool-name
       // allowlist: in the current Pi SDK that disables custom tools too.
       noTools: "builtin",
-      customTools: adaptToolsForPi(opts.tools, sessionId, opts.telemetry, () => runContextStorage.getStore()),
+      customTools: adaptToolsForPi(
+        opts.tools,
+        sessionId,
+        opts.telemetry,
+        () => resolvePiRunContext(runContextState, runContextStorage.getStore()),
+      ),
       model,
       thinkingLevel: input.thinkingLevel ?? "off",
       sessionManager,
@@ -711,7 +730,7 @@ export function createPiCodingAgentHarness(opts: {
     });
 
     const restoreFollowUpContextWrapper = rememberQueuedFollowUpRunContexts(piSession, runContextState, () => runContextStorage.getStore());
-    const unsubscribePiRunContextListener = piSession.subscribe((event) => updateRunContextStateFromPiEvent(runContextState, event, (ctx) => runContextStorage.enterWith(ctx)));
+    const unsubscribePiRunContextListener = piSession.subscribe((event) => updateRunContextStateFromPiEvent(runContextState, event));
     const unsubscribeRunContextListener = () => {
       unsubscribePiRunContextListener();
       restoreFollowUpContextWrapper();

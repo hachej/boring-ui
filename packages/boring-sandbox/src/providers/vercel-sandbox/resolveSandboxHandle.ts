@@ -329,6 +329,8 @@ async function createFresh(
 }
 
 export interface ResolveSandboxHandleOptions {
+  /** Host-resolved immutable base used only when creating a fresh handle. */
+  sourceSnapshotId?: string
   tarballUrl?: string
   maxIdleMs?: number
   now?: () => number
@@ -349,6 +351,7 @@ export async function resolveSandboxHandle(
   const expiredSandboxPolicy = opts?.expiredSandboxPolicy ?? 'recreate'
 
   const inProcess = sandboxesByWorkspaceId.get(workspaceKey)
+  const inFlightResolution = inFlightResolutionsByWorkspaceId.get(workspaceKey)
   if (inProcess && !isSandboxExpired(inProcess)) {
     return inProcess
   }
@@ -356,7 +359,6 @@ export async function resolveSandboxHandle(
     sandboxesByWorkspaceId.delete(workspaceKey)
   }
 
-  const inFlightResolution = inFlightResolutionsByWorkspaceId.get(workspaceKey)
   if (inFlightResolution) {
     return await inFlightResolution
   }
@@ -509,7 +511,7 @@ export async function resolveSandboxHandle(
 
     return await createFresh(
       workspaceKey,
-      persisted?.snapshotId,
+      persisted?.snapshotId ?? opts?.sourceSnapshotId,
       opts?.tarballUrl,
       persisted,
       store,

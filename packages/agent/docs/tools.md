@@ -26,6 +26,7 @@ selected runtime mode (see [runtime.md](./runtime.md)):
 | `execute_isolated_code` | Run code in an isolated sandbox capability |
 | `upload_file` | Upload a workspace file to blob storage |
 | `plugin_diagnostics` | Report loaded plugins and any load errors |
+| `sandbox` | When host-authorized, create/list/status/release disposable remote coding sandboxes |
 
 ## UI-bridge tools (workspace-owned)
 
@@ -92,6 +93,14 @@ resources declared in `package.json#pi` (`extensions`, `skills`, `prompts`, and
 `systemPrompt`). Those participate in the `/reload` path and are the right
 place for tools/skills that should update without restarting the workspace
 server.
+
+## Disposable sandbox targeting
+
+A host-authorized Worker may receive an optional `sandbox` argument on ordinary
+`bash`, filesystem, and enabled `upload_file` tools. Omit it for the primary
+user workspace; supply the opaque handle returned by the `sandbox` management
+tool for an explicitly targeted disposable remote workspace. See
+[SANDBOX_LEASE_TOOL.md](./SANDBOX_LEASE_TOOL.md).
 
 ## Runtime modes
 

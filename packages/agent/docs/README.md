@@ -79,6 +79,7 @@ the agent ↔ workspace boundary is in
 
 - [runtime](./runtime.md) — the three modes, the cwd invariant, and `.boring-agent/` layout.
 - [runtime-provisioning](./runtime-provisioning.md) — when provisioning runs, package-authoring shape, trusted server provisioning.
+- [leased verification sandboxes](./SANDBOX_LEASE_TOOL.md) — host-owned opaque leases over disposable verification targets.
 
 **Contracts & operations**
 

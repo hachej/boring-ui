@@ -135,11 +135,17 @@ vi.mock('@mariozechner/pi-coding-agent', () => {
 })
 
 import { ErrorCode } from '../../../../shared/error-codes'
+import { AgentGatewayErrorCode } from '../../../../shared/gateway/errors'
 import type { RunContext } from '../../../../shared/harness'
 import type { AgentTool } from '../../../../shared/tool'
 import type { TelemetryEvent, TelemetrySink } from '../../../../shared/telemetry'
 import { createPiCodingAgentHarness } from '../createHarness'
 import { adaptToolForPi, unmarkToolResultErrorDetails } from '../tool-adapter'
+import {
+  attachAcceptedWorkProvenance,
+  defineAcceptedExternalEffectTool,
+} from '../../../agent-host/acceptedWork'
+import type { AgentRequestKey } from '../../../agent-host/types'
 
 function createTelemetryRecorder(): { telemetry: TelemetrySink; events: TelemetryEvent[] } {
   const events: TelemetryEvent[] = []
@@ -333,6 +339,75 @@ describe('tool adapter telemetry', () => {
         requestId: 'req-beta',
       },
     ])
+  })
+
+  it('restores exact accepted-work provenance when Pi drains a queued follow-up outside ALS', async () => {
+    const publicExecute = vi.fn<AgentTool['execute']>()
+    const seenParents: string[] = []
+    const tool = defineAcceptedExternalEffectTool(createTool({ execute: publicExecute }), async (_params, ctx, invocation) => {
+      seenParents.push(invocation.provenance.parentKey.requestId)
+      expect(invocation.toolCallId).toBe(ctx.toolCallId)
+      expect(JSON.stringify(ctx)).not.toContain(invocation.provenance.parentKey.requestId)
+      return { content: [{ type: 'text', text: 'accepted' }] }
+    })
+    const acceptedContext = (userId: string, parentRequestId: string) => {
+      const ctx = makeRunContext(userId)
+      const parentKey: AgentRequestKey = {
+        workspaceScopeId: 'workspace-a',
+        authSubjectId: userId,
+        operation: 'session.prompt',
+        target: { kind: 'session', ref: { agentTypeId: 'worker', sessionId: 'session-a' } },
+        requestId: parentRequestId,
+      }
+      return attachAcceptedWorkProvenance(ctx, {
+        parentKey,
+        claim: { workspaceScopeId: 'workspace-a', authSubjectId: userId },
+      })
+    }
+    const recorder = createTelemetryRecorder()
+    const harness = createPiCodingAgentHarness({
+      tools: [tool],
+      cwd: '/tmp/test-workspace',
+      telemetry: recorder.telemetry,
+    })
+    const created = await harness.sessions.create({ workspaceId: 'workspace-a' })
+    const initial = acceptedContext('alpha', 'parent-initial')
+    const queued = acceptedContext('beta', 'parent-queued')
+
+    const initialAdapter = await harness.getPiSessionAdapter({ sessionId: created.id, message: 'start' }, initial)
+    const promptPromise = initialAdapter.prompt('start')
+    await Promise.resolve()
+    const queuedAdapter = await harness.getPiSessionAdapter({ sessionId: created.id, message: '' }, queued)
+    await queuedAdapter.followUp('follow beta')
+
+    await promptGate.releaseToolCall()
+    promptGate.resolve()
+    await Promise.resolve()
+    await promptGate.releaseToolCall()
+    promptGate.resolve()
+    await promptPromise
+
+    expect(seenParents).toEqual(['parent-initial', 'parent-queued'])
+    expect(publicExecute).not.toHaveBeenCalled()
+    expect(JSON.stringify(recorder.events)).not.toContain('parent-initial')
+    expect(JSON.stringify(recorder.events)).not.toContain('parent-queued')
+  })
+
+  it('fails a private accepted-effect tool before public execution when provenance is missing', async () => {
+    const publicExecute = vi.fn<AgentTool['execute']>()
+    const privateExecute = vi.fn(async () => ({ content: [{ type: 'text' as const, text: 'accepted' }] }))
+    const tool = defineAcceptedExternalEffectTool(createTool({ execute: publicExecute }), privateExecute)
+    const adapted = adaptToolForPi(tool, 'session-a', undefined, () => makeRunContext('alpha'))
+
+    await expect(adapted.execute(
+      'tool-call-missing',
+      {},
+      new AbortController().signal,
+      undefined,
+      {} as never,
+    )).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_ACCEPTED_WORK_UNAVAILABLE })
+    expect(privateExecute).not.toHaveBeenCalled()
+    expect(publicExecute).not.toHaveBeenCalled()
   })
 
   it('shares slash command session identity across subjects in one workspace', async () => {

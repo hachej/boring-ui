@@ -1,3 +1,5 @@
+export type { ImmutableSandboxCacheSourceV1 } from './immutableCacheV1'
+export { IMMUTABLE_SANDBOX_CACHE_SOURCE_VERSION_V1 } from './immutableCacheV1'
 export type {
   ProviderCapabilities,
   ProviderCapabilityErrorCode,
@@ -73,8 +75,10 @@ export {
   QUALIFICATION_BUNDLE_SCHEMA_VERSION,
 } from "./qualificationBundle";
 export type {
+  DisposableSandboxProviderV1,
   ExtractedSandboxProviderIdV1,
   SandboxPairHealthV1,
+  SandboxProviderCreateCleanupDebtV1,
   SandboxProviderCreateContextV1,
   SandboxProviderInvalidateContextV1,
   SandboxProviderV1,
@@ -86,7 +90,11 @@ export type {
   SandboxRuntimeModeIdV1,
   WorkspaceSandboxPairV1,
 } from "./providerV1";
-export { SandboxProviderError } from "./providerV1";
+export {
+  DISPOSABLE_SANDBOX_PROVIDER_PROFILE_V1,
+  SandboxProviderError,
+  isDisposableSandboxProviderV1,
+} from "./providerV1";
 export type {
   RemoteWorkerBindingReceiptPayloadV1,
   RemoteWorkerBindingReceiptV1,
