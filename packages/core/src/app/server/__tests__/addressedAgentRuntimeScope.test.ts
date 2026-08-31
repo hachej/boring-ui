@@ -114,6 +114,26 @@ describe('addressed Agent runtime composition', () => {
     },
   )
 
+  it.each(['vercel-sandbox', 'blaxel', 'remote-worker', 'runsc-remote'] as const)(
+    'admits absolute extensions from addressed trusted app composition in %s mode',
+    (runtimeMode) => {
+      const pluginExtensionPath = '/app/plugins/trusted-loop/index.ts'
+      expect(normalizeAgentPiCapabilityOptions({ extensionPaths: [pluginExtensionPath] }, runtimeMode)).toEqual({
+        additionalSkillPaths: [],
+        packages: [],
+        extensionPaths: [pluginExtensionPath],
+      })
+      expect(() => normalizeAgentPiCapabilityOptions({
+        extensionPaths: ['plugins/trusted-loop/index.ts'],
+      }, runtimeMode)).toThrow(`getAgentPi must grant absolute trusted app extension paths in ${runtimeMode} mode`)
+
+      // The same app plugin remains forbidden in static/ambient composition.
+      // Only the addressed trusted-host callback may admit it.
+      expect(() => applyRuntimePiExtensionIsolation({ extensionPaths: [pluginExtensionPath] }, runtimeMode))
+        .toThrow(`Pi options cannot grant host Pi extensions in ${runtimeMode} mode`)
+    },
+  )
+
   it.each(['direct', 'local'] as const)('preserves explicit trusted extensions in %s mode', (runtimeMode) => {
     const pi = { extensionPaths: ['/host/trusted-extension.ts'] }
     expect(applyRuntimePiExtensionIsolation(pi, runtimeMode)).toBe(pi)

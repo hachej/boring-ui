@@ -267,8 +267,10 @@ export interface CreateCoreWorkspaceAgentServerOptions {
    * Paths must remain under the workspace, plugin roots, or an explicitly
    * configured `piResourceAuthorizedRoots` entry. Grant changes alter semantic
    * identity and therefore require a Host process restart once a binding has
-   * been published. Remote modes reject explicit host extension paths; scoped
-   * skills and packages remain supported.
+   * been published. In isolated modes, static, authored, and hot-reloaded host
+   * extensions remain blocked; explicit resources returned here are trusted
+   * app composition for this addressed seat. Scoped skills and packages remain
+   * supported.
    */
   getAgentPi?: (
     ctx: AddressedAgentCapabilityContext,

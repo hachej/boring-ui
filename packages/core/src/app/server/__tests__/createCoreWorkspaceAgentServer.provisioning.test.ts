@@ -1197,7 +1197,7 @@ test.each(['vercel-sandbox', 'blaxel', 'remote-worker'] as const)(
 )
 
 test.each(['vercel-sandbox', 'blaxel', 'remote-worker'] as const)(
-  'core/full-app rejects explicit host extension paths in %s mode',
+  'core/full-app rejects static and unauthorized addressed host extension paths in %s mode',
   async (runtimeMode) => {
     mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
       runtimePlugins: [],
@@ -1253,13 +1253,87 @@ test.each(['vercel-sandbox', 'blaxel', 'remote-worker'] as const)(
           placementIdentity: 'workspace-a',
           provisioningFingerprint: 'test-provisioning',
         },
-      })).rejects.toThrow(`getAgentPi cannot grant host Pi extensions in ${runtimeMode} mode`)
+      })).rejects.toThrow('Pi resource path is outside authorized roots')
     } finally {
       await addressedApp.close()
     }
   },
   30_000,
 )
+
+test('core/full-app admits an addressed trusted app plugin while Blaxel keeps ambient extensions disabled', async () => {
+  mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
+    runtimePlugins: [],
+    provisioningContributions: [],
+    agentOptions: {
+      extraTools: [],
+      pi: { additionalSkillPaths: [], packages: [] },
+      systemPromptAppend: undefined,
+    },
+    preservedUiStateKeys: [],
+    routeContributions: [],
+  })
+  const appRoot = await mkdtemp(join(tmpdir(), 'boring-trusted-plugin-'))
+  const packageRoot = join(appRoot, 'plugins', 'trusted-loop')
+  const extensionPath = join(packageRoot, 'index.ts')
+  await mkdir(packageRoot, { recursive: true })
+  await writeFile(join(packageRoot, 'package.json'), JSON.stringify({
+    name: '@app/trusted-loop',
+    pi: { extensions: ['./index.ts'] },
+  }))
+  await writeFile(extensionPath, 'export default function loop() {}\n')
+
+  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
+  const app = await createCoreWorkspaceAgentServer({
+    config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+    appRoot,
+    workspaceRoot: '/tmp/full-app-workspaces',
+    runtimeModeAdapter: {
+      id: 'blaxel',
+      getRuntimeLayoutRoot: () => '/workspace',
+      runtimeHost: mocks.runtimeHost as any,
+      create: vi.fn(),
+    },
+    piResourceAuthorizedRoots: [appRoot],
+    getAgentPi: async ({ agentTypeId }) => agentTypeId === 'factory-orchestrator'
+      ? { extensionPaths: [extensionPath] }
+      : undefined,
+    serveFrontend: false,
+  })
+
+  try {
+    const hostOptions = (mocks.createAgentHost as any).mock.calls.at(-1)?.[0]
+    const projection = (mocks.hostRegisterDirectRoutes as any).mock.calls.at(-1)?.[0]
+    const scope = await projection.authorizeAgentRequest(fakeRequest('workspace-a', 'user-a'))
+    await expect(hostOptions.resolveAuthorizedAgentRuntimeScope({
+      authorizedScope: scope,
+      verifiedClaim: { workspaceScopeId: 'workspace-a', authSubjectId: 'user-a' },
+      agentTypeId: 'factory-orchestrator',
+      environment: {
+        runtimeWorkspaceId: 'workspace-a',
+        workspaceRoot: '/tmp/full-app-workspaces/workspace-a',
+        placementIdentity: 'workspace-a',
+        provisioningFingerprint: 'test-provisioning',
+      },
+    })).resolves.toMatchObject({
+      pi: { noExtensions: true, extensionPaths: [extensionPath] },
+    })
+    await expect(hostOptions.resolveAuthorizedAgentRuntimeScope({
+      authorizedScope: scope,
+      verifiedClaim: { workspaceScopeId: 'workspace-a', authSubjectId: 'user-a' },
+      agentTypeId: 'factory-worker',
+      environment: {
+        runtimeWorkspaceId: 'workspace-a',
+        workspaceRoot: '/tmp/full-app-workspaces/workspace-a',
+        placementIdentity: 'workspace-a',
+        provisioningFingerprint: 'test-provisioning',
+      },
+    })).resolves.toMatchObject({ pi: { noExtensions: true } })
+  } finally {
+    await app.close()
+    await rm(appRoot, { recursive: true, force: true })
+  }
+}, 30_000)
 
 test('core/full-app composition honors BORING_AGENT_WORKSPACE_ROOT for workspace provisioning while keeping plugin collection rooted at cwd', async () => {
   mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({

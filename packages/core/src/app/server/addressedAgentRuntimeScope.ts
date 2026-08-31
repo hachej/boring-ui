@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { isAbsolute } from 'node:path'
 
 import {
   compactPiPackages,
@@ -113,7 +114,18 @@ export function normalizeAgentPiCapabilityOptions(
   runtimeMode: RuntimeModeId,
 ): AgentPiCapabilityOptions | undefined {
   if (!pi) return undefined
-  assertNoExplicitExtensions(pi.extensionPaths, undefined, runtimeMode, 'getAgentPi')
+  // `getAgentPi` is trusted app composition for one already-authorized seat.
+  // Its explicit paths are loaded while ambient extension discovery remains
+  // disabled. Static, authored, and hot-reloaded paths still pass through the
+  // isolated-runtime rejection above. Isolated app composition must use the
+  // absolute paths emitted by trusted package scanning, never cwd-relative
+  // workspace inputs.
+  if (isolatesHostExtensions(runtimeMode) && pi.extensionPaths?.some((entry) => !isAbsolute(entry))) {
+    throw Object.assign(
+      new Error(`getAgentPi must grant absolute trusted app extension paths in ${runtimeMode} mode`),
+      { code: ErrorCode.enum.CONFIG_INVALID, statusCode: 500 },
+    )
+  }
   const normalized = {
     additionalSkillPaths: dedupeStrings(pi.additionalSkillPaths ?? []),
     packages: compactPiPackages(pi.packages ?? []),
