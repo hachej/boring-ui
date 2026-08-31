@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { AgentGatewayErrorCode } from '../../../shared/index'
 import { InMemoryAgentRequestLedger } from '../requestLedger'
 import { SqliteAgentRequestLedger } from '../sqliteRequestLedger'
+import { AsyncSqliteLedgerWriter } from '../sqliteTurnLedgerWriter'
 import type { AgentRequestKey } from '../types'
 
 const require = createRequire(import.meta.url)
@@ -105,6 +106,106 @@ describe('InMemoryAgentRequestLedger', () => {
 })
 
 describe('SqliteAgentRequestLedger', () => {
+  it('prioritizes authoritative writes ahead of the bounded observation backlog', async () => {
+    const { DatabaseSync } = require('node:sqlite') as typeof import('node:sqlite')
+    const database = new DatabaseSync(':memory:')
+    const writer = new AsyncSqliteLedgerWriter(database)
+    const order: string[] = []
+    const observations = Array.from({ length: 256 }, (_, index) => writer.observe(() => {
+      order.push(`observation-${index}`)
+    }))
+    await expect(writer.observe(() => {})).rejects.toThrow('ledger write buffer is full')
+
+    await writer.execute(() => { order.push('authoritative') })
+    expect(order[0]).toBe('authoritative')
+    await Promise.all(observations)
+    await writer.close()
+    database.close()
+  })
+
+  it('keeps ordered request, effect, and attention writes off the event loop under contention', async () => {
+    const path = join(tmpdir(), `agent-request-ledger-${randomUUID()}.sqlite`)
+    const ledger = new SqliteAgentRequestLedger(path)
+    await ledger.claimIncarnation()
+    const { DatabaseSync } = require('node:sqlite') as typeof import('node:sqlite')
+    const blocker = new DatabaseSync(path)
+    blocker.exec('BEGIN IMMEDIATE')
+    const now = Date.now()
+    const startedAt = Date.now()
+
+    const writes = [
+      ledger.prepare(runKey, 'digest-run'),
+      ledger.acceptAdmission(runKey, 'admission-run'),
+      ledger.beginEffect(runKey),
+      ledger.admitEffect({
+        runRequestKey: runKey,
+        effectId: 'tool-pause',
+        effectClass: 'pause',
+        idempotent: false,
+      }),
+      ledger.pauseChildEffect(runKey, 'tool-pause'),
+      ledger.attention.create({
+        attentionId: 'question-ready',
+        runRequestKey: runKey,
+        toolCallId: 'tool-pause',
+        workspaceScopeId: 'workspace-a',
+        sessionRef: { agentTypeId: 'alpha', sessionId: 'session-a' },
+        kind: 'question',
+        status: 'ready',
+        ownerPrincipalId: 'subject-a',
+        payload: { questionId: 'question-ready' },
+        resume: { state: 'pending', resumeRequestId: 'attention:question-ready:resume' },
+        transcriptEvents: [],
+        createdAt: now,
+        updatedAt: now,
+      }),
+    ]
+
+    let timerElapsed = Number.POSITIVE_INFINITY
+    await new Promise<void>((resolve) => setTimeout(() => {
+      timerElapsed = Date.now() - startedAt
+      blocker.exec('COMMIT')
+      resolve()
+    }, 50))
+    expect(timerElapsed).toBeLessThan(150)
+    await Promise.all(writes)
+
+    expect(await ledger.read(runKey)).toMatchObject({ state: 'in-flight' })
+    expect(await ledger.listNonTerminal({
+      states: ['paused'],
+      operations: ['session.prompt'],
+    })).toEqual([
+      expect.objectContaining({ kind: 'effect', record: expect.objectContaining({ effectId: 'tool-pause' }) }),
+    ])
+    expect(await ledger.attention.get('question-ready')).toMatchObject({ status: 'ready', toolCallId: 'tool-pause' })
+    blocker.close()
+    await ledger.close()
+  })
+
+  it('flushes an accepted authoritative write before closing under contention', async () => {
+    const path = join(tmpdir(), `agent-request-ledger-${randomUUID()}.sqlite`)
+    const ledger = new SqliteAgentRequestLedger(path)
+    await ledger.claimIncarnation()
+    const { DatabaseSync } = require('node:sqlite') as typeof import('node:sqlite')
+    const blocker = new DatabaseSync(path)
+    blocker.exec('BEGIN IMMEDIATE')
+
+    const write = ledger.prepare(runKey, 'digest-before-close')
+    const close = ledger.close()
+    await new Promise<void>((resolve) => setTimeout(() => {
+      blocker.exec('COMMIT')
+      resolve()
+    }, 50))
+
+    await expect(write).resolves.toMatchObject({ ownership: 'created' })
+    await expect(close).resolves.toBeUndefined()
+    blocker.close()
+
+    const reopened = new SqliteAgentRequestLedger(path)
+    expect(await reopened.read(runKey)).toMatchObject({ digest: 'digest-before-close', state: 'pending-admission' })
+    await reopened.close()
+  })
+
   it('keeps Turn writes off the event loop while another process holds the SQLite writer lock', async () => {
     const path = join(tmpdir(), `agent-request-ledger-${randomUUID()}.sqlite`)
     const ledger = new SqliteAgentRequestLedger(path)

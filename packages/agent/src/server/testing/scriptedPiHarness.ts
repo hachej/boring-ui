@@ -17,6 +17,7 @@ interface ScriptedFollowUp {
   text: string
   clientNonce?: string
   clientSeq?: number
+  runContext?: RunContext
 }
 
 interface ScriptedRun {
@@ -251,7 +252,10 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
 
   async prompt(input: PiAgentPromptInput): Promise<void> {
     const text = typeof input === 'string' ? input : input.text
-    await this.runScriptedTurn(text)
+    // Capture the prompting request's RunContext: this.runContext is a shared
+    // field that any later getAdapter call (state polls, subscribes) clobbers
+    // mid-turn, which would strip the child-effect capability from the tool.
+    await this.runScriptedTurn(text, undefined, this.runContext)
   }
 
   async followUp(text: string, options?: PiFollowUpQueueOptions): Promise<void> {
@@ -259,6 +263,7 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
       text,
       clientNonce: options?.clientNonce,
       clientSeq: options?.clientSeq,
+      runContext: this.runContext,
     })
     this.emit({
       type: 'queue_update',
@@ -308,7 +313,7 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
     await this.startNextQueuedFollowUp()
   }
 
-  private async runScriptedTurn(text: string, followUp?: ScriptedFollowUp): Promise<void> {
+  private async runScriptedTurn(text: string, followUp?: ScriptedFollowUp, runCtx?: RunContext): Promise<void> {
     this.turn += 1
     const suffix = this.turn === 1 ? '' : `-${this.turn}`
     const turnId = `turn${suffix || '-1'}`
@@ -397,9 +402,9 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
     }
     if (executeRealAskUser) {
       const tool = this.tools.find((candidate) => candidate.name === 'ask_user')
-      if (!tool || !this.runContext) throw new Error('ASK_USER_E2E requires the registered ask_user tool and RunContext')
-      const adapted = adaptToolForPi(tool, this.sessionId, undefined, () => this.runContext)
-      await adapted.execute(toolCallId, toolPart.arguments, this.runContext.abortSignal, undefined, {} as ExtensionContext)
+      if (!tool || !runCtx) throw new Error('ASK_USER_E2E requires the registered ask_user tool and the prompting RunContext')
+      const adapted = adaptToolForPi(tool, this.sessionId, undefined, () => runCtx)
+      await adapted.execute(toolCallId, toolPart.arguments, runCtx.abortSignal, undefined, {} as ExtensionContext)
       if (this.activeRun !== run || run.cancelled) return
     }
     toolPart.state = 'output-available'
@@ -432,7 +437,7 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
     if (this.streaming) return
     const next = this.followUps.shift()
     if (!next) return
-    await this.runScriptedTurn(next.text, next)
+    await this.runScriptedTurn(next.text, next, next.runContext)
   }
 
   private followUpTexts(): string[] {

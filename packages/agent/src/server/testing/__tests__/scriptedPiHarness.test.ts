@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest'
 import { restoreEnvForTest, setEnvForTest } from '../../config/env'
 import { PiChatEventMapper } from '../../pi-chat/piChatEvents'
 import { createScriptedPiHarness } from '../scriptedPiHarness'
+import type { ChildEffectRunCapability, RunContext } from '../../../shared/harness'
+import type { AgentTool } from '../../../shared/tool'
 
 describe('createScriptedPiHarness', () => {
   it('tracks the requested model as addressed session authority', async () => {
@@ -227,5 +229,50 @@ describe('createScriptedPiHarness', () => {
     })
     expect(adapter.readSnapshot().followUpMessages).toEqual([])
     expect(JSON.stringify(adapter.readSnapshot().messages)).toContain('next queued')
+  })
+
+  it('keeps the queued follow-up run context when a later adapter lookup replaces the shared context', async () => {
+    const effectCalls: string[] = []
+    const toolRequestIds: Array<string | undefined> = []
+    const capability = {
+      agentTypeId: 'scripted-agent',
+      runOperation: 'session.followup',
+      async admit() { effectCalls.push('admit') },
+      async begin() { effectCalls.push('begin') },
+      async pause() { effectCalls.push('pause') },
+      async settle() { effectCalls.push('settle') },
+      async markOutcomeUnknown() { effectCalls.push('unknown') },
+    } as unknown as ChildEffectRunCapability
+    const askUser: AgentTool = {
+      name: 'ask_user',
+      description: 'Ask a test question',
+      effect: 'pause',
+      parameters: { type: 'object' },
+      async execute(_params, ctx) {
+        toolRequestIds.push(ctx.requestId)
+        return { content: [{ type: 'text', text: 'ready' }] }
+      },
+    }
+    const harness = createScriptedPiHarness({ tools: [askUser], cwd: '/workspace' })
+    const queuedContext: RunContext = {
+      abortSignal: new AbortController().signal,
+      workdir: '/workspace',
+      workspaceId: 'workspace-a',
+      requestId: 'queued-request',
+      childEffectCapability: capability,
+    }
+    const adapter = await harness.getPiSessionAdapter({ sessionId: 's1', content: '' }, queuedContext)
+    await adapter.followUp('ASK_USER_E2E', { displayText: 'question', clientNonce: 'queued-ask', clientSeq: 1 })
+
+    await harness.getPiSessionAdapter({ sessionId: 's1', content: '' }, {
+      abortSignal: new AbortController().signal,
+      workdir: '/workspace',
+      workspaceId: 'workspace-a',
+      requestId: 'state-poll',
+    })
+    await adapter.continueQueuedFollowUp?.()
+
+    expect(toolRequestIds).toEqual(['queued-request'])
+    expect(effectCalls).toEqual(['admit', 'pause', 'settle'])
   })
 })

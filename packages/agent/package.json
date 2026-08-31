@@ -74,7 +74,7 @@
     "build:assert": "node ./scripts/assert-build-artifacts.mjs",
     "dev": "tsx src/server/dev.ts",
     "test": "vitest run",
-    "test:e2e": "playwright test -c e2e/playwright.config.ts",
+    "test:e2e": "pnpm --filter @hachej/boring-agent... --filter @hachej/boring-workspace... --filter @hachej/boring-ask-user --workspace-concurrency=4 run build && playwright test -c e2e/playwright.config.ts",
     "test:chat-baseline": "node ./scripts/run-chat-baseline.mjs",
     "test:bombadil:chat": "node ./scripts/run-bombadil-chat.mjs",
     "test:bombadil:chat:nightly": "BOMBADIL_TIME_LIMIT=5m node ./scripts/run-bombadil-chat.mjs",
