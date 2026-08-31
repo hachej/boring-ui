@@ -10,10 +10,10 @@ the workspace and without a `localhost:5xxx` line pasted into chat.
 | --- | --- |
 | Plugin id | `url-pane` (built-in, registered by `captureWorkspaceFrontPlugins`) |
 | Panel component id | `url-pane.panel` |
-| Params | `{ url: string; title?: string }` |
+| Params | `{ url: string; title?: string }` or `{ runtimePreview: { port; path? }; title? }` |
 | Policy source | `GET /api/v1/ui/url-pane/policy` → `{ origins: string[] }` |
 | Config | `BORING_URL_PANE_ALLOWED_ORIGINS` |
-| Decision code | `packages/workspace/src/shared/urlPane.ts` |
+| Decision code | `packages/workspace/src/shared/urlPane.ts`, composed through central `RuntimeWebView` |
 
 ## Opening it
 
@@ -35,6 +35,10 @@ sandbox. Ask the host to project the active runtime port instead:
     "component": "url-pane.panel",
     "params": { "runtimePreview": { "port": 5173, "path": "/" }, "title": "remote demo" } } }
 ```
+
+The pane delegates iframe and runtime-projection behavior to the shared
+[`RuntimeWebView`](./RUNTIME_WEB_VIEW.md); it no longer owns a second projection
+implementation.
 
 The current provider implementation creates a private, 15-minute Blaxel preview
 token over HTTPS; the underlying preview has a one-hour TTL. The pane resolves

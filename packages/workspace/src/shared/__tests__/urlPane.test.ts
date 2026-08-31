@@ -8,8 +8,9 @@ import {
 } from "../urlPane"
 
 describe("resolveRuntimePreviewUrl", () => {
-  it("accepts only credential-free HTTPS provider projections", () => {
+  it("accepts credential-free HTTPS or bounded HTTP loopback projections", () => {
     expect(resolveRuntimePreviewUrl("https://preview.example/demo")).toMatchObject({ ok: true })
+    expect(resolveRuntimePreviewUrl("http://localhost:6080/demo")).toMatchObject({ ok: true })
     expect(resolveRuntimePreviewUrl("http://preview.example/demo")).toMatchObject({
       ok: false,
       reason: "protocol-not-allowed",

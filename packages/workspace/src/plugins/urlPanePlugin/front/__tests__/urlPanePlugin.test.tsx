@@ -49,9 +49,22 @@ describe("UrlPane", () => {
       "https://sandbox-preview.test/demo?bl_preview_token=short-lived",
     )
     expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining("/api/v1/ui/url-pane/runtime-preview"),
+      expect.stringContaining("/api/v1/ui/runtime-web-view/preview"),
       expect.objectContaining({ method: "POST", credentials: "include" }),
     )
+  })
+
+  it("sanitizes projection failures instead of rendering server details", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("provider-secret-host failed", { status: 502 })))
+    const { container } = render(
+      <WorkspacePluginClientProvider agentTypeId="default" apiBaseUrl="" workspaceId="workspace-a">
+        <UrlPane runtimePreview={{ port: 8_000 }} />
+      </WorkspacePluginClientProvider>,
+    )
+    await screen.findByText("URL pane unavailable")
+    expect(container.querySelector("iframe")).toBeNull()
+    expect(screen.getByText("Could not create the runtime preview.")).toBeInTheDocument()
+    expect(screen.queryByText(/provider-secret-host/)).toBeNull()
   })
 
   it("renders a blocked state naming the allowlist instead of an iframe", () => {
