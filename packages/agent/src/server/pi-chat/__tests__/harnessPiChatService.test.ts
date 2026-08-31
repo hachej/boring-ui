@@ -148,7 +148,7 @@ describe('HarnessPiChatService', () => {
   it('promotes Send-now with the queued submission context instead of the interrupt context', async () => {
     const adapter = createAdapter()
     const harness = createHarness(adapter)
-    const service = new HarnessPiChatService({ harness, sessionStore, workdir: '/workspace' })
+    const service = new HarnessPiChatService({ agentTypeId: 'test', harness, sessionStore, workdir: '/workspace' })
     const queuedContext = {
       ...ctx,
       authSubject: 'queued-subject',
