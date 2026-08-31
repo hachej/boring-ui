@@ -931,7 +931,7 @@ export function PiChatPanel<
       }
       return undefined
     } catch (error) {
-      if (!isPolicySessionActive()) return false
+      if (!isPolicySessionActive()) return undefined
       clearLocalSubmitted(activeChatSessionId)
       restoreSubmittedDraft()
       // Single normalization point for rejected sends: surface as one stable
