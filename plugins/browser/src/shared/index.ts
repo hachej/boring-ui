@@ -1,9 +1,5 @@
 export const BROWSER_PLUGIN_ID = "browser";
 export const BROWSER_BASE_PATH = "/api/v1/browser";
-export const BROWSER_NOVNC_TARGET = Object.freeze({
-  port: 6080,
-  path: "/vnc.html?autoconnect=1&resize=remote",
-});
 export const BROWSER_TOOL_NAMES = Object.freeze([
   "browser_observe",
   "browser_act",
@@ -44,7 +40,7 @@ export type BrowserSessionView = Readonly<{
   controlEpoch: number;
   createdAt: string;
   expiresAt: string;
-  view?: typeof BROWSER_NOVNC_TARGET;
+  view?: Readonly<{ url: string; expiresAt: string }>;
   error?: string;
 }>;
 

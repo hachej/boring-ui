@@ -1,7 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
   ABSOLUTE_TTL_MS,
-  BROWSER_NOVNC_TARGET,
   IDLE_TTL_MS,
   canonicalPlan,
   parseActionPlan,
@@ -31,9 +30,21 @@ export type BrowserExecResult = Readonly<{
   stdout?: string;
   error?: string;
 }>;
-export type BrowserExec = (
-  request: BrowserExecRequest,
-) => Promise<BrowserExecResult>;
+export interface BrowserViewLease {
+  readonly url: string;
+  readonly expiresAt: string;
+  revoke(): Promise<void>;
+}
+export interface BrowserSessionEnvironment {
+  readonly generationId: string;
+  readonly signal: AbortSignal;
+  invoke(request: BrowserExecRequest): Promise<BrowserExecResult>;
+  createView(input: { readonly mode: "observe" | "control"; readonly controlEpoch: number }): Promise<BrowserViewLease>;
+  release(): Promise<void>;
+}
+export interface BrowserHostCapability {
+  acquire(scope: BrowserScope): Promise<BrowserSessionEnvironment>;
+}
 export type BrowserExecutionIdentity = Readonly<{ toolCallId: string; requestId?: string }>;
 export type BrowserPlanAdmission = (
   request: Readonly<{ scope: BrowserScope; identity: BrowserExecutionIdentity; planHash: string; plan: BrowserActionPlan }>,
@@ -50,8 +61,6 @@ export type BrowserAdmission = (
 export type BrowserAudit = (
   event: Readonly<Record<string, unknown>>,
 ) => void | Promise<void>;
-export type BrowserEnvironmentHandle = Readonly<{ generationId: string; release(): Promise<void> }>;
-
 type Session = {
   id: string;
   scope: BrowserScope;
@@ -62,39 +71,35 @@ type Session = {
   touched: number;
   absoluteExpiry: number;
   released: boolean;
-  environment: BrowserEnvironmentHandle;
+  environment: BrowserSessionEnvironment;
+  viewLease?: BrowserViewLease;
   ready?: Promise<void>;
   active?: AbortController;
   expiryTimer?: ReturnType<typeof setTimeout>;
   error?: string;
+  onEnvironmentAbort?: () => void;
 };
 export class BrowserController {
   readonly #sessions = new Map<string, Session>();
   readonly #pendingStarts = new Map<string, Promise<BrowserSessionView>>();
-  readonly #exec: BrowserExec;
+  readonly #host: BrowserHostCapability;
   readonly #admitPlan: BrowserPlanAdmission;
   readonly #admit: BrowserAdmission;
   readonly #audit: BrowserAudit;
-  readonly #acquire: (scope: BrowserScope) => Promise<BrowserEnvironmentHandle>;
-  readonly #revokeView: (scope: BrowserScope, sessionId: string) => void | Promise<void>;
   readonly #redactText: (value: string, field: "title" | "role" | "element-text") => string | undefined;
   readonly #now: () => number;
   constructor(options: {
-    exec: BrowserExec;
+    host: BrowserHostCapability;
     admitPlan: BrowserPlanAdmission;
     admit: BrowserAdmission;
     audit?: BrowserAudit;
-    acquire: (scope: BrowserScope) => Promise<BrowserEnvironmentHandle>;
-    revokeView: (scope: BrowserScope, sessionId: string) => void | Promise<void>;
     redactText: (value: string, field: "title" | "role" | "element-text") => string | undefined;
     now?: () => number;
   }) {
-    this.#exec = options.exec;
+    this.#host = options.host;
     this.#admitPlan = options.admitPlan;
     this.#admit = options.admit;
     this.#audit = options.audit ?? (() => {});
-    this.#acquire = options.acquire;
-    this.#revokeView = options.revokeView;
     this.#redactText = options.redactText;
     this.#now = options.now ?? Date.now;
   }
@@ -116,7 +121,7 @@ export class BrowserController {
     if (active.length > 0)
       throw new Error("Browser runtime quota is already in use");
     const now = this.#now();
-    const environment = await this.#acquire(scope);
+    const environment = await this.#host.acquire(scope);
     const session: Session = {
       id: randomUUID(),
       scope,
@@ -129,6 +134,10 @@ export class BrowserController {
       environment,
     };
     this.#sessions.set(session.id, session);
+    session.onEnvironmentAbort = () => {
+      void this.stop(session.scope, session.id).catch(() => this.revokeView(session));
+    };
+    environment.signal.addEventListener("abort", session.onEnvironmentAbort, { once: true });
     this.scheduleExpiry(session);
     session.ready = this.launch(session);
     await session.ready;
@@ -144,7 +153,7 @@ export class BrowserController {
   ): Promise<{ observation: BrowserObservation; controlEpoch: number }> {
     const s = this.requireAgent(scope, id, epoch);
     this.touch(s);
-    const result = await this.#exec({
+    const result = await s.environment.invoke({
       intent: "observe",
       sessionId: id,
       controlEpoch: epoch,
@@ -215,7 +224,7 @@ export class BrowserController {
         this.requireAgent(scope, s.id, plan.controlEpoch);
         let result: BrowserExecResult;
         try {
-          result = await this.#exec({ intent: "act", sessionId: s.id, controlEpoch: s.epoch, payload: JSON.stringify(action), signal: active.signal });
+          result = await s.environment.invoke({ intent: "act", sessionId: s.id, controlEpoch: s.epoch, payload: JSON.stringify(action), signal: active.signal });
         } catch { result = { ok: false }; }
         if (!result.ok) {
           await this.event(s, "action-unknown", {
@@ -246,9 +255,9 @@ export class BrowserController {
     s.owner = undefined;
     s.state = "starting";
     s.active?.abort();
-    await this.#revokeView(s.scope, s.id);
+    await this.revokeView(s);
     let result: BrowserExecResult;
-    try { result = await this.#exec({ intent: "takeover", sessionId: id, controlEpoch: s.epoch }); }
+    try { result = await s.environment.invoke({ intent: "takeover", sessionId: id, controlEpoch: s.epoch }); }
     catch { result = { ok: false }; }
     if (!result.ok) {
       s.owner = undefined;
@@ -256,6 +265,7 @@ export class BrowserController {
       s.error = "Browser takeover outcome requires reconciliation.";
       throw new Error("Browser takeover outcome requires reconciliation");
     }
+    s.viewLease = await s.environment.createView({ mode: "control", controlEpoch: s.epoch });
     s.owner = "human";
     s.state = "human-controlled";
     this.touch(s);
@@ -270,20 +280,21 @@ export class BrowserController {
     const s = this.require(scope, id);
     if (s.state !== "human-controlled" || consent !== true)
       throw new Error("Informed return consent is required");
-    const result = await this.#exec({
+    const result = await s.environment.invoke({
       intent: "return",
       sessionId: id,
       controlEpoch: s.epoch + 1,
     });
     if (!result.ok) throw new Error("Human input could not be revoked");
-    await this.#revokeView(s.scope, s.id);
-    const fresh = await this.#exec({
+    await this.revokeView(s);
+    const fresh = await s.environment.invoke({
       intent: "observe",
       sessionId: id,
       controlEpoch: s.epoch + 1,
     });
     if (!fresh.ok) throw new Error("Fresh return observation failed");
     s.epoch++;
+    s.viewLease = await s.environment.createView({ mode: "observe", controlEpoch: s.epoch });
     s.owner = "agent";
     s.state = "agent-controlled";
     this.touch(s);
@@ -298,8 +309,8 @@ export class BrowserController {
     s.epoch++;
     s.active?.abort();
     let cleanupFailed = false;
-    try { await this.#revokeView(s.scope, s.id); } catch { cleanupFailed = true; }
-    try { const result = await this.#exec({ intent: "stop", sessionId: id, controlEpoch: s.epoch }); if (!result.ok) cleanupFailed = true; }
+    try { await this.revokeView(s); } catch { cleanupFailed = true; }
+    try { const result = await s.environment.invoke({ intent: "stop", sessionId: id, controlEpoch: s.epoch }); if (!result.ok) cleanupFailed = true; }
     catch { cleanupFailed = true; }
     s.state = cleanupFailed ? "error" : "stopped";
     s.error = cleanupFailed ? "Browser cleanup requires reconciliation." : undefined;
@@ -327,12 +338,12 @@ export class BrowserController {
   }
   private async launch(session: Session): Promise<void> {
     let result: BrowserExecResult;
-    try { result = await this.#exec({ intent: "ensure", sessionId: session.id, controlEpoch: 0 }); }
+    try { result = await session.environment.invoke({ intent: "ensure", sessionId: session.id, controlEpoch: 0 }); }
     catch { result = { ok: false }; }
     if (!result.ok) {
       session.state = "error";
       session.error = "Browser runtime could not start.";
-      const cleanup = await this.#exec({ intent: "stop", sessionId: session.id, controlEpoch: 1 }).catch(() => ({ ok: false }));
+      const cleanup = await session.environment.invoke({ intent: "stop", sessionId: session.id, controlEpoch: 1 }).catch(() => ({ ok: false }));
       if (cleanup.ok) await this.finish(session);
       else session.error = "Browser cleanup requires reconciliation.";
       return;
@@ -343,6 +354,7 @@ export class BrowserController {
       session.error = "Browser startup was superseded and requires reconciliation.";
       return;
     }
+    session.viewLease = await session.environment.createView({ mode: "observe", controlEpoch: 0 });
     session.state = "agent-controlled";
     session.owner = "agent";
     await this.event(session, "started").catch(() => undefined);
@@ -392,14 +404,18 @@ export class BrowserController {
       expiresAt: new Date(
         Math.min(s.touched + IDLE_TTL_MS, s.absoluteExpiry),
       ).toISOString(),
-      ...(["agent-controlled", "human-controlled"].includes(s.state)
-        ? { view: BROWSER_NOVNC_TARGET }
-        : {}),
+      ...(s.viewLease ? { view: { url: s.viewLease.url, expiresAt: s.viewLease.expiresAt } } : {}),
       ...(s.error ? { error: s.error } : {}),
     });
   }
+  private async revokeView(s: Session): Promise<void> {
+    const lease = s.viewLease;
+    s.viewLease = undefined;
+    await lease?.revoke();
+  }
   private async finish(s: Session): Promise<void> {
     clearTimeout(s.expiryTimer);
+    if (s.onEnvironmentAbort) s.environment.signal.removeEventListener("abort", s.onEnvironmentAbort);
     if (s.released) return;
     await s.environment.release();
     s.released = true;

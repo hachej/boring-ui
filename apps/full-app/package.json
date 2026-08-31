@@ -24,6 +24,7 @@
     "@hachej/boring-agent": "workspace:*",
     "@hachej/boring-automation": "workspace:*",
     "@hachej/boring-bash": "workspace:*",
+    "@hachej/boring-browser": "workspace:*",
     "@hachej/boring-core": "workspace:*",
     "@hachej/boring-governance": "workspace:*",
     "@hachej/boring-mcp": "workspace:*",

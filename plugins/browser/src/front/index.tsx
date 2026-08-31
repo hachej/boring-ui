@@ -11,7 +11,6 @@ import {
   PaneTitle,
 } from "@hachej/boring-ui-kit";
 import {
-  RuntimeWebView,
   useWorkspacePluginClient,
   type PaneProps,
 } from "@hachej/boring-workspace";
@@ -134,11 +133,13 @@ export function BrowserPanel({
         ) : null}
         {session?.view ? (
           <div className="h-full min-h-[320px]">
-            <RuntimeWebView
+            <iframe
               key={session.controlEpoch}
-              source={{ kind: "runtime", ...session.view }}
+              src={session.view.url}
               title="Browser session"
-              loadingLabel="Connecting to browser…"
+              className="h-full w-full border-0 bg-white"
+              sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
+              referrerPolicy="no-referrer"
             />
           </div>
         ) : null}

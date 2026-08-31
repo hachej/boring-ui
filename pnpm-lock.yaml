@@ -86,6 +86,9 @@ importers:
       '@hachej/boring-bash':
         specifier: workspace:*
         version: link:../../packages/boring-bash
+      '@hachej/boring-browser':
+        specifier: workspace:*
+        version: link:../../plugins/browser
       '@hachej/boring-core':
         specifier: workspace:*
         version: link:../../packages/core

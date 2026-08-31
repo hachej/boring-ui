@@ -9,19 +9,19 @@ import {
   BrowserController,
   type BrowserAdmission,
   type BrowserAudit,
-  type BrowserExec,
-  type BrowserEnvironmentHandle,
+  type BrowserHostCapability,
   type BrowserPlanAdmission,
   type BrowserScope,
 } from "./controller";
 export * from "./controller";
+export * from "./hostCapability";
 
 export type BrowserScopeResolver = (
   request: FastifyRequest,
 ) => Promise<BrowserScope> | BrowserScope;
 export interface BrowserServerPluginOptions {
-  enabled?: boolean;
-  exec: BrowserExec;
+  enabled: boolean;
+  host: BrowserHostCapability;
   admitPlan: BrowserPlanAdmission;
   admit: BrowserAdmission;
   resolveScope: BrowserScopeResolver;
@@ -33,22 +33,16 @@ export interface BrowserServerPluginOptions {
     }>,
   ) => Promise<BrowserScope> | BrowserScope;
   audit?: BrowserAudit;
-  acquire: (scope: BrowserScope) => Promise<BrowserEnvironmentHandle>;
-  revokeView: (scope: BrowserScope, sessionId: string) => void | Promise<void>;
   redactText: (value: string, field: "title" | "role" | "element-text") => string | undefined;
   now?: () => number;
 }
 export function createBrowserServerPlugin(
   options: BrowserServerPluginOptions,
 ): WorkspaceServerPlugin {
-  if (options.enabled === true || process.env.BORING_BROWSER_PLUGIN_ENABLED === "1") {
-    throw new Error("Browser integration is not security-qualified; production remains disabled");
+  if (!options.enabled) {
+    return defineServerPlugin({ id: "browser", label: "Browser" });
   }
-  const enabled = false;
   const controller = new BrowserController(options);
-  const requireEnabled = () => {
-    if (!enabled) throw new Error("Browser plugin is disabled");
-  };
   return defineServerPlugin({
     id: "browser",
     label: "Browser",
@@ -83,7 +77,6 @@ export function createBrowserServerPlugin(
         },
         async execute(params, ctx) {
           try {
-            requireEnabled();
             const scope = await options.resolveToolScope(ctx);
             return ok(
               await controller.observe(
@@ -103,7 +96,6 @@ export function createBrowserServerPlugin(
         parameters: actionPlanSchema,
         async execute(params, ctx) {
           try {
-            requireEnabled();
             const scope = await options.resolveToolScope(ctx);
             return ok(await controller.act(scope, params, ctx.abortSignal, { toolCallId: ctx.toolCallId, ...(ctx.requestId ? { requestId: ctx.requestId } : {}) }));
           } catch (error) {
@@ -117,28 +109,23 @@ export function createBrowserServerPlugin(
         await controller.shutdown();
       });
       app.post(`${BROWSER_BASE_PATH}/start`, async (request) => {
-        requireEnabled();
         const scope = await options.resolveScope(request);
         assertScopeBody(request.body, scope);
         return controller.start(scope);
       });
       app.post(`${BROWSER_BASE_PATH}/status`, async (request) => {
-        requireEnabled();
         const scope = await options.resolveScope(request);
         return controller.status(scope, sessionId(request.body));
       });
       app.post(`${BROWSER_BASE_PATH}/stop`, async (request) => {
-        requireEnabled();
         const scope = await options.resolveScope(request);
         return controller.stop(scope, sessionId(request.body));
       });
       app.post(`${BROWSER_BASE_PATH}/takeover`, async (request) => {
-        requireEnabled();
         const scope = await options.resolveScope(request);
         return controller.takeover(scope, sessionId(request.body));
       });
       app.post(`${BROWSER_BASE_PATH}/return`, async (request) => {
-        requireEnabled();
         const scope = await options.resolveScope(request);
         const body = strict(request.body, ["sessionId", "consent"]);
         if (body.consent !== true)
@@ -146,7 +133,6 @@ export function createBrowserServerPlugin(
         return controller.return(scope, String(body.sessionId), true);
       });
       app.post(`${BROWSER_BASE_PATH}/view`, async (request) => {
-        requireEnabled();
         const scope = await options.resolveScope(request);
         return controller.status(scope, sessionId(request.body));
       });
