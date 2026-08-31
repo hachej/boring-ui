@@ -25,6 +25,7 @@ import { ASK_USER_ERROR_CODES } from "../shared/error-codes"
 import type { AskUserQuestion, AskUserTranscriptEvent } from "../shared/types"
 import { AskUserRuntime, AskUserRuntimeError } from "./askUserRuntime"
 import { AskUserStoreError, type AskUserStore } from "./askUserStore"
+import { LedgerAskUserStore } from "./ledgerAskUserStore"
 import { QuestionsBridge, QuestionsBridgeError } from "./questionsBridge"
 
 export interface AskUserBridgeHandlersOptions {
@@ -84,6 +85,20 @@ export function createAskUserBridgeHandlers(
       idempotencyPolicy: "required",
       handler: cancelHandler(options),
     })),
+    contribution(defineTrustedDomainBridgeHandler<AskUserBridgeCancelInput, { ok: true; status: string }>({
+      op: ASK_USER_BRIDGE_OPS.restore,
+      version: 1,
+      owner: ASK_USER_PLUGIN_ID,
+      callerClassesAllowed: ["browser", "server"],
+      requiredCapabilities: [ASK_USER_BRIDGE_CAPABILITIES.restore],
+      inputSchema: { type: "object" },
+      outputSchema: { type: "object" },
+      timeoutMs: MUTATION_TIMEOUT_MS,
+      maxInputBytes: MAX_QUESTION_BYTES,
+      maxOutputBytes: 1024,
+      idempotencyPolicy: "required",
+      handler: restoreHandler(options),
+    })),
     contribution(defineTrustedDomainBridgeHandler<AskUserBridgePendingInput, AskUserBridgePendingOutput>({
       op: ASK_USER_BRIDGE_OPS.pending,
       version: 1,
@@ -124,12 +139,12 @@ function contribution<TInput, TOutput>(
   }
 }
 
-function requestHandler({ runtime }: AskUserBridgeHandlersOptions) {
+function requestHandler({ runtime, store }: AskUserBridgeHandlersOptions) {
   return async ({ input, context, signal }: { input: AskUserBridgeRequestInput; context: WorkspaceBridgeCallContext; signal: AbortSignal }) => {
     assertRequestInput(input)
     assertRequestSessionScope(input.sessionId, context)
     try {
-      return await runtime.ask({
+      return await withStoreScope(store, context, async () => await runtime.ask({
         sessionId: input.sessionId,
         title: input.title,
         context: input.context,
@@ -137,7 +152,7 @@ function requestHandler({ runtime }: AskUserBridgeHandlersOptions) {
         artifacts: input.artifacts,
         timeoutMs: input.timeoutMs,
         ownerPrincipalId: ownerPrincipalIdFromRuntimeContext(context),
-      }, signal)
+      }, signal))
     } catch (error) {
       throw mapAskUserError(error)
     }
@@ -175,6 +190,24 @@ function cancelHandler(options: AskUserBridgeHandlersOptions) {
   }
 }
 
+function restoreHandler(options: AskUserBridgeHandlersOptions) {
+  return async ({ input, context }: { input: AskUserBridgeCancelInput; context: WorkspaceBridgeCallContext }) => {
+    assertMutationBase(input, "restore")
+    assertBrowserSessionScope(input.sessionId, context)
+    const auth = commandAuthSessionId(input.sessionId, context)
+    const bridge = new QuestionsBridge({
+      runtime: options.runtime,
+      store: options.store,
+      getAuthContext: () => auth,
+    })
+    try {
+      return await withStoreScope(options.store, context, async () => await bridge.restoreAbandoned(input.questionId, input.sessionId, input.answerToken))
+    } catch (error) {
+      throw mapAskUserError(error)
+    }
+  }
+}
+
 function pendingHandler({ store }: AskUserBridgeHandlersOptions) {
   return async ({ input, context }: { input: AskUserBridgePendingInput; context: WorkspaceBridgeCallContext }): Promise<AskUserBridgePendingOutput> => {
     if (!input || typeof input.sessionId !== "string" || input.sessionId.length === 0) {
@@ -182,7 +215,7 @@ function pendingHandler({ store }: AskUserBridgeHandlersOptions) {
     }
     assertBrowserSessionScope(input.sessionId, context)
     try {
-      const pending = await store.getPending(input.sessionId)
+      const pending = await withStoreScope(store, context, async () => await store.getPending(input.sessionId))
       assertQuestionOwner(context, pending)
       return { pending }
     } catch (error) {
@@ -192,12 +225,12 @@ function pendingHandler({ store }: AskUserBridgeHandlersOptions) {
 }
 
 function transcriptHandler({ store }: AskUserBridgeHandlersOptions) {
-  return async ({ input }: { input: AskUserBridgeTranscriptInput }): Promise<AskUserBridgeTranscriptOutput> => {
+  return async ({ input, context }: { input: AskUserBridgeTranscriptInput; context: WorkspaceBridgeCallContext }): Promise<AskUserBridgeTranscriptOutput> => {
     if (!input || typeof input.sessionId !== "string" || input.sessionId.length === 0) {
       throw invalid("ask-user transcript requires sessionId")
     }
     try {
-      return { events: await store.listTranscriptEvents(input.sessionId) as AskUserTranscriptEvent[] }
+      return { events: await withStoreScope(store, context, async () => await store.listTranscriptEvents(input.sessionId)) as AskUserTranscriptEvent[] }
     } catch (error) {
       throw mapAskUserError(error)
     }
@@ -216,10 +249,23 @@ async function runQuestionsBridge(
     getAuthContext: () => auth,
   })
   try {
-    return await bridge.handle(command)
+    return await withStoreScope(store, context, async () => await bridge.handle(command))
   } catch (error) {
     throw mapAskUserError(error)
   }
+}
+
+async function withStoreScope<T>(
+  store: AskUserStore,
+  context: WorkspaceBridgeCallContext,
+  run: () => Promise<T>,
+): Promise<T> {
+  if (!(store instanceof LedgerAskUserStore)) return await run()
+  return await store.withRunContext({
+    workspaceScopeId: context.workspaceId,
+    authSubjectId: principalIdFromContext(context),
+    sessionId: context.sessionId,
+  }, run)
 }
 
 function assertRequestInput(input: AskUserBridgeRequestInput): void {

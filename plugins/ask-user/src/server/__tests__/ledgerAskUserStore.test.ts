@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest"
-import { fromLedger, toLedger } from "../ledgerAskUserStore"
+import { describe, expect, it, vi } from "vitest"
+import { LedgerAskUserStore, fromLedger, toLedger, type AskUserAttentionCapability } from "../ledgerAskUserStore"
 import type { AskUserQuestion } from "../../shared/types"
 
 describe("LedgerAskUserStore mapping", () => {
@@ -22,5 +22,21 @@ describe("LedgerAskUserStore mapping", () => {
     }
 
     expect(fromLedger(toLedger(question))).toEqual(question)
+  })
+
+  it("maps host attention subscription changes to the AskUserStore vocabulary", () => {
+    let notify: ((change: Parameters<Parameters<AskUserAttentionCapability["subscribe"]>[0]>[0]) => void) | undefined
+    const attention = {
+      subscribe(listener: Parameters<AskUserAttentionCapability["subscribe"]>[0]) {
+        notify = listener
+        return () => undefined
+      },
+    } as unknown as AskUserAttentionCapability
+    const listener = vi.fn()
+    new LedgerAskUserStore(attention).subscribe(listener)
+
+    notify?.({ sessionId: "session-1", attentionId: "q-1", reason: "supersede" })
+
+    expect(listener).toHaveBeenCalledWith({ sessionId: "session-1", questionId: "q-1", reason: "abandon" })
   })
 })

@@ -15,6 +15,7 @@ export default function (
     agentTools: [
       {
         name: "<snake_case_tool_name>",
+        effect: "observe", // classify: observe | propose | mutate | external-effect | pause
         description: "<what the tool does>",
         parameters: { type: "object", properties: {} },
         async execute() {

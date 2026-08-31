@@ -130,6 +130,19 @@ export class AskUserRuntime {
 
   async reconcileTranscripts(): Promise<{ synthesized: string[] }> {
     const synthesized: string[] = []
+    for (const question of await this.store.listPending()) {
+      const created = await this.store.appendTranscriptEventIfMissing(
+        question.questionId,
+        (events) => events.some((event) => event.type === "created"),
+        () => ({ type: "created", question, at: question.createdAt }),
+      )
+      const ready = question.schema && await this.store.appendTranscriptEventIfMissing(
+        question.questionId,
+        (events) => events.some((event) => event.type === "ready"),
+        () => ({ type: "ready", questionId: question.questionId, sessionId: question.sessionId, schema: question.schema!, at: this.isoNow() }),
+      )
+      if (created || ready) synthesized.push(question.questionId)
+    }
     for (const question of await this.store.listResolved()) {
       const appended = await this.store.appendTranscriptEventIfMissing(
         question.questionId,
@@ -182,7 +195,7 @@ export class AskUserRuntime {
       await this.store.createPending(question)
       await this.store.appendTranscriptEvent({ type: "created", question, at: this.isoNow() })
       await this.store.appendTranscriptEvent({ type: "ready", questionId: question.questionId, sessionId: question.sessionId, schema: parsed.data, at: this.isoNow() })
-      if (signal?.aborted) {
+      if (signal?.aborted && !this.isDraining()) {
         await this.cancelQuestion(question.questionId, question.sessionId, "aborted")
         return await pendingAnswer
       }
@@ -243,10 +256,9 @@ export class AskUserRuntime {
       void this.cancelQuestion(question.questionId, question.sessionId, reason).catch(() => undefined)
     }
     const onAbort = () => cancel("aborted")
-    const draining = () => "isDraining" in this.store && typeof this.store.isDraining === "function" && this.store.isDraining()
-    const onAbortWhileAwareOfDrain = () => { if (!draining()) onAbort() }
+    const onAbortWhileAwareOfDrain = () => { if (!this.isDraining()) onAbort() }
     signal?.addEventListener("abort", onAbortWhileAwareOfDrain, { once: true })
-    if (signal?.aborted && !draining()) cancel("aborted")
+    if (signal?.aborted && !this.isDraining()) cancel("aborted")
     const timeout = timeoutMs ? setTimeout(() => cancel("timeout"), timeoutMs) : undefined
     try {
       const result = await pendingAnswer
@@ -257,6 +269,12 @@ export class AskUserRuntime {
       signal?.removeEventListener("abort", onAbortWhileAwareOfDrain)
       if (timeout) clearTimeout(timeout)
     }
+  }
+
+  private isDraining(): boolean {
+    return "isDraining" in this.store
+      && typeof this.store.isDraining === "function"
+      && this.store.isDraining()
   }
 
   private async resolveCancelledUnlessAnswered(questionId: string, reason: AskUserCancelReason): Promise<void> {

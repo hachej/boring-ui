@@ -71,6 +71,7 @@ export interface BoringAutomationToolDependencies {
 export function createBoringAutomationTool(deps: BoringAutomationToolDependencies): AgentTool {
   return {
     name: BORING_AUTOMATION_TOOL_NAME,
+    effect: "mutate",
     description: [
       "Manage scheduled automations in the active workspace.",
       "Supports list, get, create, update, pause, resume, run, list_runs, and delete.",

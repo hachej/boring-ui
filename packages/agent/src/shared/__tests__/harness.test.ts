@@ -1,7 +1,7 @@
 import { expectTypeOf, test } from 'vitest'
 
 import type { AgentConfig } from '../events'
-import type { AgentCoreHarnessFactory, AgentHarness, AgentHarnessFactory, RunContext, AgentSendInput, MessageAttachment } from '../harness'
+import type { AgentCoreHarnessFactory, AgentHarness, AgentHarnessFactory, ChildEffectRunCapability, RunContext, AgentSendInput, MessageAttachment } from '../harness'
 import type { SessionStore } from '../session'
 
 test('AgentHarness contract', () => {
@@ -50,6 +50,7 @@ test('RunContext contract', () => {
     workdir: string
     workspaceId?: string
     requestId?: string
+    childEffectCapability?: ChildEffectRunCapability
     userId?: string
     userEmail?: string
     userEmailVerified?: boolean
@@ -65,6 +66,7 @@ test('RunContext contract', () => {
   expectTypeOf<RunContext['userEmailVerified']>().toEqualTypeOf<boolean | undefined>()
   expectTypeOf<RunContext['workspaceId']>().toEqualTypeOf<string | undefined>()
   expectTypeOf<RunContext['requestId']>().toEqualTypeOf<string | undefined>()
+  expectTypeOf<RunContext['childEffectCapability']>().toEqualTypeOf<ChildEffectRunCapability | undefined>()
   expectTypeOf<RunContext['sessionCtx']>().toEqualTypeOf<{
     workspaceId?: string
     userId?: string

@@ -167,6 +167,7 @@ export function createManageTasksTool(
 ): AgentTool {
   return {
     name: "manage_tasks",
+    effect: "mutate",
     description: "List, inspect, move, and explicitly bind or unlink workspace tasks and native Pi sessions.",
     promptSnippet: "Use `manage_tasks` for explicit task operations. Bind only when the user/workflow identifies the exact task. Never infer a binding from a task number, title, prompt, branch, or session title. After `list`, use the returned adapterId and taskId verbatim; never guess source IDs. Use session `current` for this native Pi session; use `{ id }` only for an exact already-known authorized native session ID.",
     parameters: manageTasksParameters,

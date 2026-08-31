@@ -1,6 +1,6 @@
 import { expectTypeOf, test } from 'vitest'
 
-import type { AgentTool, JSONSchema, ToolExecContext, ToolReadinessRequirement, ToolResult } from '../tool'
+import type { AgentTool, AgentToolEffectClass, JSONSchema, ToolExecContext, ToolReadinessRequirement, ToolResult } from '../tool'
 
 test('AgentTool contract', () => {
   expectTypeOf<AgentTool>().toEqualTypeOf<{
@@ -8,6 +8,8 @@ test('AgentTool contract', () => {
     description: string
     promptSnippet?: string
     readinessRequirements?: ToolReadinessRequirement[]
+    effect?: AgentToolEffectClass
+    idempotent?: boolean
     parameters: JSONSchema
     execute: (
       params: Record<string, unknown>,
@@ -27,6 +29,8 @@ test('ToolExecContext contract', () => {
     userEmailVerified?: boolean
     workspaceId?: string
     requestId?: string
+    agentTypeId?: string
+    runOperation?: 'session.prompt' | 'session.followup'
   }>()
 
   expectTypeOf<ToolExecContext['onUpdate']>().toEqualTypeOf<
@@ -38,6 +42,8 @@ test('ToolExecContext contract', () => {
   expectTypeOf<ToolExecContext['userEmailVerified']>().toEqualTypeOf<boolean | undefined>()
   expectTypeOf<ToolExecContext['workspaceId']>().toEqualTypeOf<string | undefined>()
   expectTypeOf<ToolExecContext['requestId']>().toEqualTypeOf<string | undefined>()
+  expectTypeOf<ToolExecContext['agentTypeId']>().toEqualTypeOf<string | undefined>()
+  expectTypeOf<ToolExecContext['runOperation']>().toEqualTypeOf<'session.prompt' | 'session.followup' | undefined>()
 })
 
 test('ToolResult contract', () => {

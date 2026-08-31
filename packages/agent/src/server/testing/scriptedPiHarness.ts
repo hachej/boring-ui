@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { appendFile, readFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
-import type { AgentSessionEvent } from '@mariozechner/pi-coding-agent'
+import type { AgentSessionEvent, ExtensionContext } from '@mariozechner/pi-coding-agent'
 import type { AgentHarness, AgentHarnessFactoryInput, RunContext, AgentSendInput } from '../../shared/harness.js'
 import type { PiFollowUpQueueOptions, PiFollowUpSelector } from '../harness/pi-coding-agent/piFollowUpQueueCompat.js'
 import type { SessionCtx, SessionDetail, SessionStore, SessionSummary } from '../../shared/session.js'
@@ -399,7 +399,7 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
       const tool = this.tools.find((candidate) => candidate.name === 'ask_user')
       if (!tool || !this.runContext) throw new Error('ASK_USER_E2E requires the registered ask_user tool and RunContext')
       const adapted = adaptToolForPi(tool, this.sessionId, undefined, () => this.runContext)
-      await adapted.execute(toolCallId, toolPart.arguments, this.runContext.abortSignal, undefined, undefined)
+      await adapted.execute(toolCallId, toolPart.arguments, this.runContext.abortSignal, undefined, {} as ExtensionContext)
       if (this.activeRun !== run || run.cancelled) return
     }
     toolPart.state = 'output-available'

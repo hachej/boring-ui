@@ -129,10 +129,11 @@ export function createPiSessionHarnessBackend(
     async submitPrompt(address, ctx, payload) {
       assertOpen()
       const pending = pendingRuns.get(address.ref.sessionId) ?? []
-      pending.push({ ...ctx, runOperation: 'session.prompt' })
+      const runContext = { ...ctx, runOperation: 'session.prompt' as const }
+      pending.push(runContext)
       pendingRuns.set(address.ref.sessionId, pending)
       try {
-        return await service.prompt(toPiSessionRequestContext(address, ctx), address.ref.sessionId, payload)
+        return await service.prompt(toPiSessionRequestContext(address, runContext), address.ref.sessionId, payload)
       } catch (error) {
         const index = pending.findIndex((candidate) => candidate.requestId === ctx.requestId)
         if (index >= 0) pending.splice(index, 1)
@@ -142,10 +143,11 @@ export function createPiSessionHarnessBackend(
     async submitFollowUp(address, ctx, payload) {
       assertOpen()
       const pending = pendingRuns.get(address.ref.sessionId) ?? []
-      pending.push({ ...ctx, runOperation: 'session.followup' })
+      const runContext = { ...ctx, runOperation: 'session.followup' as const }
+      pending.push(runContext)
       pendingRuns.set(address.ref.sessionId, pending)
       try {
-        return await service.followUp(toPiSessionRequestContext(address, ctx), address.ref.sessionId, payload)
+        return await service.followUp(toPiSessionRequestContext(address, runContext), address.ref.sessionId, payload)
       } catch (error) {
         const matching = pending.findIndex((candidate) => candidate.requestId === ctx.requestId)
         if (matching >= 0) pending.splice(matching, 1)

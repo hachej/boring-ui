@@ -51,6 +51,21 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
     compiledById: new Map(agents.map((agent) => [agent.agentTypeId, agent])),
     ledger: new InMemoryAgentRequestLedger(),
     activity,
+    mintChildEffectCapability(key: import('../types').AgentRequestKey) {
+      if (key.operation !== 'session.prompt' && key.operation !== 'session.followup') {
+        throw new TypeError(`unexpected child-effect operation: ${key.operation}`)
+      }
+      if (key.target.kind !== 'session') throw new TypeError('child-effect capability requires a session')
+      return {
+        agentTypeId: key.target.ref.agentTypeId,
+        runOperation: key.operation,
+        async admit() {},
+        async begin() {},
+        async pause() {},
+        async settle() {},
+        async markOutcomeUnknown() {},
+      }
+    },
     async listSessionSummaries(agentTypeId: string, _scope: AuthorizedAgentScope, claim: { workspaceScopeId: string }, options?: { archived?: 'active' | 'archived' | 'all' }) {
       return await backendFor(claim.workspaceScopeId, agentTypeId).listSessions({
         workspaceScopeId: claim.workspaceScopeId,

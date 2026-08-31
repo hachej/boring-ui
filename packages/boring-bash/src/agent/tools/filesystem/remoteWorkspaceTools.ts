@@ -45,12 +45,14 @@ function isTextContent(
 
 function adaptPiTool<TParams extends Record<string, unknown>>(
   piTool: PiToolLike<TParams>,
+  effect: AgentTool['effect'],
 ): AgentTool {
   return {
     name: piTool.name,
     readinessRequirements: ['workspace-fs'],
     description: piTool.description,
     promptSnippet: piTool.promptSnippet,
+    effect,
     parameters: piTool.parameters as Record<string, unknown>,
     async execute(params, ctx) {
       const result = await piTool.execute(
@@ -86,11 +88,11 @@ export function buildRemoteWorkspaceFilesystemAgentTools(
 ): AgentTool[] {
   const cwd = bundle.workspace.root
   return [
-    adaptPiTool(createReadToolDefinition(cwd, { operations: remoteWorkspaceReadOps(bundle.workspace, pathOptions) })),
-    adaptPiTool(createWriteToolDefinition(cwd, { operations: remoteWorkspaceWriteOps(bundle.workspace, pathOptions) })),
-    adaptPiTool(createEditToolDefinition(cwd, { operations: remoteWorkspaceEditOps(bundle.workspace, pathOptions) })),
-    adaptPiTool(createFindToolDefinition(cwd, { operations: remoteWorkspaceFindOps(bundle.sandbox, bundle.workspace, pathOptions) })),
-    { ...remoteWorkspaceGrepTool(bundle.sandbox, cwd, pathOptions), readinessRequirements: ['workspace-fs'] },
-    adaptPiTool(createLsToolDefinition(cwd, { operations: remoteWorkspaceLsOps(bundle.workspace, pathOptions) })),
+    adaptPiTool(createReadToolDefinition(cwd, { operations: remoteWorkspaceReadOps(bundle.workspace, pathOptions) }), 'observe'),
+    adaptPiTool(createWriteToolDefinition(cwd, { operations: remoteWorkspaceWriteOps(bundle.workspace, pathOptions) }), 'mutate'),
+    adaptPiTool(createEditToolDefinition(cwd, { operations: remoteWorkspaceEditOps(bundle.workspace, pathOptions) }), 'mutate'),
+    adaptPiTool(createFindToolDefinition(cwd, { operations: remoteWorkspaceFindOps(bundle.sandbox, bundle.workspace, pathOptions) }), 'observe'),
+    { ...remoteWorkspaceGrepTool(bundle.sandbox, cwd, pathOptions), effect: 'observe', readinessRequirements: ['workspace-fs'] },
+    adaptPiTool(createLsToolDefinition(cwd, { operations: remoteWorkspaceLsOps(bundle.workspace, pathOptions) }), 'observe'),
   ]
 }

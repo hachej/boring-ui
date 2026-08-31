@@ -97,6 +97,7 @@ export function createDataCatalogAgentTool(
 
   return {
     name,
+    effect: "observe",
     description: `Search the ${label}. Use this before opening data visualizations or asking for a specific dataset.`,
     parameters: {
       type: "object",

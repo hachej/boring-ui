@@ -55,6 +55,35 @@ describe('InMemoryAgentRequestLedger', () => {
     expect(await ledger.read(key)).toMatchObject({ state: 'rejected' })
   })
 
+  it('mirrors attention transition notifications and rejects new abandoned writes', async () => {
+    const ledger = new InMemoryAgentRequestLedger()
+    const now = Date.now()
+    const changes: string[] = []
+    ledger.attention.subscribe((change) => changes.push(change.reason))
+    const record = {
+      attentionId: 'question-memory',
+      runRequestKey: runKey,
+      toolCallId: 'tool-memory',
+      workspaceScopeId: 'workspace-a',
+      sessionRef: { agentTypeId: 'alpha', sessionId: 'session-a' },
+      kind: 'question' as const,
+      status: 'ready' as const,
+      ownerPrincipalId: 'subject-a',
+      payload: { questionId: 'question-memory' },
+      resume: { state: 'pending' as const, resumeRequestId: 'attention:question-memory:resume' },
+      transcriptEvents: [],
+      createdAt: now,
+      updatedAt: now,
+    }
+    await ledger.attention.create(record)
+    await ledger.attention.transition(record.attentionId, ['ready'], (current) => ({ ...current, status: 'answered', updatedAt: Date.now() }))
+    await ledger.attention.appendTranscriptEventIfMissing(record.attentionId, { type: 'answered' }, () => false)
+    expect(changes).toEqual(['create', 'answer', 'transcript'])
+    await expect(ledger.attention.create({ ...record, attentionId: 'legacy-write', status: 'abandoned' })).rejects.toMatchObject({
+      code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT,
+    })
+  })
+
   it('permits outcome-unknown only from in-flight', async () => {
     const ledger = new InMemoryAgentRequestLedger()
     await ledger.prepare(key, 'digest-a')
@@ -157,6 +186,13 @@ describe('SqliteAgentRequestLedger', () => {
       idempotent: false,
     })
     await before.pauseChildEffect(runKey, 'tool-a')
+    await before.admitEffect({
+      runRequestKey: runKey,
+      effectId: 'tool-without-attention',
+      effectClass: 'pause',
+      idempotent: false,
+    })
+    await before.pauseChildEffect(runKey, 'tool-without-attention')
     const now = Date.now()
     await before.attention.create({
       attentionId: 'question-a',
@@ -177,8 +213,14 @@ describe('SqliteAgentRequestLedger', () => {
 
     const after = new SqliteAgentRequestLedger(path)
     const reconciled = await after.reconcileAfterRestart(await after.claimIncarnation())
-    expect(reconciled).toMatchObject({ parked: 1, requestsOutcomeUnknown: 0 })
+    expect(reconciled).toMatchObject({ parked: 1, requestsOutcomeUnknown: 0, effectsOutcomeUnknown: 1 })
     expect(await after.read(runKey)).toMatchObject({ state: 'in-flight' })
+    expect(await after.listNonTerminal({
+      states: ['outcome-unknown'],
+      operations: ['session.prompt'],
+    })).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'effect', record: expect.objectContaining({ effectId: 'tool-without-attention' }) }),
+    ]))
     after.close()
   })
 

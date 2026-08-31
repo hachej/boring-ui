@@ -6,6 +6,7 @@ import { noopTelemetry, safeCapture, type TelemetrySink } from "../../../shared/
 import { ErrorCode } from "../../../shared/error-codes.js";
 
 const BORING_TOOL_ERROR_MARKER = '__boringToolError'
+const EFFECT_CLASSES = new Set(['observe', 'propose', 'mutate', 'external-effect', 'pause'])
 
 export function markToolResultErrorDetails(details: unknown): Record<string, unknown> {
   return details && typeof details === 'object' && !Array.isArray(details)
@@ -55,7 +56,8 @@ export function adaptToolForPi(tool: AgentTool, sessionId?: string, telemetry: T
       const startedAt = Date.now();
       let emittedFailure = false;
       let beganEffect = false;
-      const effectClass = tool.effect ?? 'external-effect'
+      const declaredEffect = typeof tool.effect === 'string' && EFFECT_CLASSES.has(tool.effect)
+      const effectClass = declaredEffect ? tool.effect! : 'external-effect'
       const runContext = getRunContext?.();
       try {
         if (effectClass !== 'observe' && getRunContext) {
@@ -65,9 +67,10 @@ export function adaptToolForPi(tool: AgentTool, sessionId?: string, telemetry: T
               code: ErrorCode.enum.UNAUTHORIZED,
             })
           }
-          await capability.admit(toolCallId, effectClass, tool.idempotent, tool.effect !== undefined)
+          await capability.admit(toolCallId, effectClass, tool.idempotent, declaredEffect)
           if (effectClass === 'pause') {
             await capability.pause(toolCallId)
+            beganEffect = true
           } else {
             await capability.begin(toolCallId)
             beganEffect = true
@@ -85,8 +88,10 @@ export function adaptToolForPi(tool: AgentTool, sessionId?: string, telemetry: T
           userEmailVerified: runContext?.userEmailVerified,
           workspaceId: runContext?.workspaceId,
           requestId: runContext?.requestId,
+          agentTypeId: runContext?.childEffectCapability?.agentTypeId,
+          runOperation: runContext?.childEffectCapability?.runOperation,
         });
-        if (effectClass !== 'observe' && effectClass !== 'pause' && getRunContext) {
+        if (effectClass !== 'observe' && getRunContext) {
           const receipt = { content: result.content, ...(result.isError === undefined ? {} : { isError: result.isError }) }
           const digest = createHash('sha256').update(JSON.stringify(receipt)).digest('hex')
           await runContext!.childEffectCapability!.settle(toolCallId, digest, receipt)

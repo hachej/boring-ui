@@ -67,7 +67,7 @@ export function createAskUserServerPlugin(options: AskUserServerPluginOptions): 
         ensurePublisher()
         const execute = () => askUserTool.execute(ctx.toolCallId, params, ctx.abortSignal, ctx.sessionId, undefined)
         return store instanceof LedgerAskUserStore
-          ? store.withRunContext({ workspaceScopeId: ctx.workspaceId, authSubjectId: ctx.userId, requestId: ctx.requestId, sessionId: ctx.sessionId, toolCallId: ctx.toolCallId }, execute)
+          ? store.withRunContext({ workspaceScopeId: ctx.workspaceId, agentTypeId: ctx.agentTypeId, authSubjectId: ctx.userId, requestId: ctx.requestId, runOperation: ctx.runOperation, sessionId: ctx.sessionId, toolCallId: ctx.toolCallId }, execute)
           : execute()
       },
     }],

@@ -313,14 +313,14 @@ describe("AskUserRuntime", () => {
     await expect(store.getByQuestionId(question.questionId)).resolves.toMatchObject({ status: "answered" })
   })
 
-  it("abandons if cancel discovers a missing waiter", async () => {
+  it("persists explicit cancellation even if the waiter is missing", async () => {
     const store = await makeStore()
     const question = makeQuestion()
     await store.createPending(question)
 
     const restarted = new AskUserRuntime({ store })
     await restarted.cancelQuestion(question.questionId, "s1")
-    await expect(store.getByQuestionId(question.questionId)).resolves.toMatchObject({ status: "abandoned" })
+    await expect(store.getByQuestionId(question.questionId)).resolves.toMatchObject({ status: "cancelled" })
   })
 
   it("reports runtime unavailable", () => {

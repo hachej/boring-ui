@@ -8,10 +8,12 @@ const {
   mockCreateAgentSession,
   mockAbort,
   mockDispose,
+  smokeToolResults,
 } = vi.hoisted(() => ({
   mockCreateAgentSession: vi.fn(),
   mockAbort: vi.fn().mockResolvedValue(undefined),
   mockDispose: vi.fn(),
+  smokeToolResults: [] as Array<{ content: Array<{ type: string; text: string }> }>,
 }));
 
 vi.mock("@mariozechner/pi-coding-agent", async () => {
@@ -33,6 +35,7 @@ vi.mock("@mariozechner/pi-coding-agent", async () => {
 
 import { loadPlugins, flattenPluginTools, type ImportFn } from "../pluginLoader.js";
 import { createPiCodingAgentHarness } from "../createHarness.js";
+import type { ChildEffectRunCapability } from "../../../../shared/harness.js";
 
 describe("Plugin extension smoke test", () => {
   let tempDir: string;
@@ -44,6 +47,7 @@ describe("Plugin extension smoke test", () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    smokeToolResults.length = 0;
 
     tempDir = await mkdtemp(join(tmpdir(), "plugin-extension-smoke-"));
     const extDir = join(tempDir, ".pi", "extensions");
@@ -67,6 +71,14 @@ describe("Plugin extension smoke test", () => {
             };
           },
           prompt: async () => {
+            const toolResult = await opts.customTools?.[0]?.execute(
+              "tool-call-1",
+              { name: "Ada" },
+              new AbortController().signal,
+              undefined,
+              {},
+            );
+            if (toolResult) smokeToolResults.push(toolResult);
             for (const emit of subscribers) {
               emit({ type: "message_start" });
               emit({
@@ -120,10 +132,20 @@ describe("Plugin extension smoke test", () => {
 
     // Canonical store creation precedes the first exact native open.
     const created = await harness.sessions.create({});
-    await harness.getPiSessionAdapter(
+    const childEffectCapability = {
+      agentTypeId: "default",
+      runOperation: "session.prompt",
+      async admit() {},
+      async begin() {},
+      async pause() {},
+      async settle() {},
+      async markOutcomeUnknown() {},
+    } as unknown as ChildEffectRunCapability;
+    const adapter = await harness.getPiSessionAdapter(
       { sessionId: created.id, content: "run hello tool" },
-      { workdir: tempDir, abortSignal: new AbortController().signal },
+      { workdir: tempDir, abortSignal: new AbortController().signal, childEffectCapability },
     );
+    await adapter.prompt("run hello tool");
 
     expect(mockCreateAgentSession).toHaveBeenCalledTimes(1);
     const createArgs = mockCreateAgentSession.mock.calls[0]?.[0] as {
@@ -145,14 +167,7 @@ describe("Plugin extension smoke test", () => {
       (tool) => tool.name === "hello_world",
     );
     expect(helloTool).toBeDefined();
-    const toolResult = await helloTool!.execute(
-      "tool-call-1",
-      { name: "Ada" },
-      new AbortController().signal,
-      undefined,
-      {},
-    );
-    expect(toolResult.content[0]?.text).toBe(
+    expect(smokeToolResults[0]?.content[0]?.text).toBe(
       "Hello, Ada! (from synthetic extension)",
     );
   }, 15_000);

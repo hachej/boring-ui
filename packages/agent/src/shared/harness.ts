@@ -142,6 +142,8 @@ declare const childEffectRunCapabilityBrand: unique symbol
 
 export interface ChildEffectRunCapability {
   readonly [childEffectRunCapabilityBrand]: true
+  readonly agentTypeId: string
+  readonly runOperation: 'session.prompt' | 'session.followup'
   admit(
     toolCallId: string,
     effectClass: import('./tool').AgentToolEffectClass,

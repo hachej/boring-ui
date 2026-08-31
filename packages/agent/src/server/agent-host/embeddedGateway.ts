@@ -655,7 +655,8 @@ export class EmbeddedAgentGateway implements AgentGateway {
       if (key.authSubjectId !== claim.authSubjectId || key.target.kind !== 'session'
         || key.target.ref.agentTypeId !== ref.agentTypeId || key.target.ref.sessionId !== ref.sessionId) continue
       const payload = await this.runtime.ledger.readReplayPayload?.(key)
-      if (!payload || Array.isArray(payload) || typeof payload !== 'object' || payload.kind !== 'followup') continue
+      if (!payload || Array.isArray(payload) || typeof payload !== 'object') continue
+      if ((payload as { readonly kind?: JsonValue }).kind !== 'followup') continue
       try {
         await this.send(ref, scope, claim, payload as unknown as IdempotentAgentSend, true)
       } catch (error) {

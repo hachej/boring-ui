@@ -169,6 +169,36 @@ describe("plugin-owned ask-user WorkspaceBridge handlers", () => {
     })
   })
 
+  it("restores a salvaged abandoned question through the authenticated bridge", async () => {
+    const { store, registry } = fixture()
+    const controller = new AbortController()
+    controllers.push(controller)
+    void new AskUserRuntime({ store }).ask({
+      sessionId: "s1",
+      title: "Restore me",
+      schema,
+      ownerPrincipalId: "user-1",
+    }, controller.signal)
+    const question = await vi.waitFor(async () => {
+      const pending = await store.getPending("s1")
+      expect(pending).not.toBeNull()
+      return pending!
+    })
+    expect(await store.markAbandoned(question.questionId)).toBe(true)
+
+    const restored = await registry.call({
+      op: ASK_USER_BRIDGE_OPS.restore,
+      input: {
+        questionId: question.questionId,
+        sessionId: question.sessionId,
+        answerToken: question.answerToken,
+      },
+    }, browserContext("user-1", [ASK_USER_BRIDGE_CAPABILITIES.restore]))
+
+    expect(restored).toMatchObject({ ok: true, output: { status: "ready" } })
+    await expect(store.getPending("s1")).resolves.toMatchObject({ questionId: question.questionId })
+  })
+
   it("keeps pending questions scoped by session", async () => {
     const { store, registry } = fixture()
     const c1 = new AbortController()

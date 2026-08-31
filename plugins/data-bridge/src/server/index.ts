@@ -331,6 +331,7 @@ export function createDataBridgeQueryAgentTool(options: CreateDataBridgeServerPl
 
   return {
     name,
+    effect: "observe",
     description: "Run a small read-only data query through Boring Data Bridge. Use language=bsl for semantic-layer queries or language=sql for configured read-only SQL sources. Prefer this over shell, database clients, or ad hoc scripts for dashboard/reporting data.",
     parameters: {
       type: "object",

@@ -13,7 +13,7 @@ type AttentionStatus = AskUserQuestion["status"] | "expired" | "superseded"
 type RequestKey = {
   workspaceScopeId: string
   authSubjectId: string
-  operation: "session.prompt"
+  operation: "session.prompt" | "session.followup"
   target: { kind: "session"; ref: { agentTypeId: string; sessionId: string } }
   requestId: string
 }
@@ -23,6 +23,7 @@ export type AskUserAttentionRecord = {
   runRequestKey?: RequestKey
   toolCallId?: string
   workspaceScopeId?: string
+  agentTypeId?: string
   sessionRef?: { agentTypeId: string; sessionId: string }
   kind: "question"
   status: AttentionStatus
@@ -40,19 +41,29 @@ export type AskUserAttentionRecord = {
 export interface AskUserAttentionCapability {
   create(record: AskUserAttentionRecord): Promise<void>
   get(attentionId: string): Promise<AskUserAttentionRecord | undefined>
-  list(input?: { sessionId?: string; statuses?: readonly AttentionStatus[] }): Promise<AskUserAttentionRecord[]>
+  list(input?: { workspaceScopeId?: string; agentTypeId?: string; sessionId?: string; statuses?: readonly AttentionStatus[] }): Promise<AskUserAttentionRecord[]>
   transition(attentionId: string, expected: readonly AttentionStatus[], update: (record: AskUserAttentionRecord) => AskUserAttentionRecord): Promise<boolean>
   appendTranscriptEventIfMissing(attentionId: string, event: JsonValue, matches: (event: JsonValue) => boolean): Promise<boolean>
   resolveLegacySession(sessionId: string): Promise<readonly { workspaceScopeId: string; agentTypeId: string }[]>
   importOnce(records: readonly AskUserAttentionRecord[]): Promise<number>
-  subscribe(listener: (change: AskUserStoreChange) => void): () => void
+  subscribe(listener: (change: AskUserAttentionChange) => void): () => void
   isDraining(): boolean
+}
+
+type AskUserAttentionChange = {
+  sessionId: string
+  workspaceScopeId?: string
+  agentTypeId?: string
+  attentionId?: string
+  reason: "create" | "answer" | "cancel" | "expire" | "supersede" | "restore" | "transcript" | "import"
 }
 
 export type AskUserRunContext = {
   workspaceScopeId?: string
+  agentTypeId?: string
   authSubjectId?: string
   requestId?: string
+  runOperation?: "session.prompt" | "session.followup"
   sessionId?: string
   toolCallId?: string
 }
@@ -79,24 +90,45 @@ export class LedgerAskUserStore implements AskUserStore {
       if ((error as { code?: string }).code === "ENOENT") return await this.attention.importOnce([])
       throw error
     }
-    const parsed = JSON.parse(raw) as { version?: number; questions?: Record<string, AskUserQuestion>; answers?: Record<string, AskUserAnswer>; transcriptsBySession?: Record<string, AskUserTranscriptEvent[]> }
+    const parsed = JSON.parse(raw) as { version?: number; questions?: Record<string, unknown>; answers?: Record<string, unknown>; transcriptsBySession?: Record<string, unknown[]> }
     if ((parsed.version ?? 0) > 1) throw new AskUserStoreError(ASK_USER_ERROR_CODES.UNSUPPORTED_STORE_VERSION, `ask-user store version ${parsed.version} is newer than supported version 1`)
-    const records: AskUserAttentionRecord[] = []
-    for (const candidate of Object.values(parsed.questions ?? {})) {
+    if (!isRecord(parsed.questions ?? {}) || !isRecord(parsed.answers ?? {}) || !isRecord(parsed.transcriptsBySession ?? {})) {
+      throw invalidLegacy("legacy ask-user store collections must be objects")
+    }
+    const questions = new Map<string, AskUserQuestion>()
+    for (const [questionId, candidate] of Object.entries(parsed.questions ?? {})) {
       const validated = AskUserQuestionSchema.safeParse(candidate)
-      if (!validated.success) continue
-      const question = validated.data
+      if (!validated.success || validated.data.questionId !== questionId) throw invalidLegacy(`legacy question ${questionId} is invalid`)
+      questions.set(questionId, validated.data)
+    }
+    const answers = new Map<string, AskUserAnswer>()
+    for (const [questionId, candidate] of Object.entries(parsed.answers ?? {})) {
+      const validated = AskUserAnswerSchema.safeParse(candidate)
+      if (!validated.success || validated.data.questionId !== questionId || !questions.has(questionId)) {
+        throw invalidLegacy(`legacy answer ${questionId} is invalid or orphaned`)
+      }
+      answers.set(questionId, validated.data)
+    }
+    const transcriptsByQuestion = new Map<string, AskUserTranscriptEvent[]>()
+    for (const [sessionId, candidates] of Object.entries(parsed.transcriptsBySession ?? {})) {
+      if (!Array.isArray(candidates)) throw invalidLegacy(`legacy transcript ${sessionId} is not an array`)
+      for (const candidate of candidates) {
+        const validated = AskUserTranscriptEventSchema.safeParse(candidate)
+        if (!validated.success) throw invalidLegacy(`legacy transcript event in ${sessionId} is invalid`)
+        const questionId = transcriptQuestionId(validated.data)
+        const question = questions.get(questionId)
+        if (!question || question.sessionId !== sessionId) throw invalidLegacy(`legacy transcript event for ${questionId} is orphaned or cross-session`)
+        transcriptsByQuestion.set(questionId, [...(transcriptsByQuestion.get(questionId) ?? []), validated.data])
+      }
+    }
+    const records: AskUserAttentionRecord[] = []
+    for (const question of questions.values()) {
       const routes = await this.attention.resolveLegacySession(question.sessionId)
       const route = routes.length === 1 ? routes[0] : undefined
-      const answerResult = AskUserAnswerSchema.safeParse(parsed.answers?.[question.questionId])
-      const transcriptEvents = (parsed.transcriptsBySession?.[question.sessionId] ?? []).flatMap((event) => {
-        const result = AskUserTranscriptEventSchema.safeParse(event)
-        return result.success ? [result.data] : []
-      })
       records.push(toLedger(question, {
         route,
-        answer: answerResult.success ? answerResult.data : undefined,
-        transcriptEvents,
+        answer: answers.get(question.questionId),
+        transcriptEvents: transcriptsByQuestion.get(question.questionId),
         routable: Boolean(route),
       }))
     }
@@ -108,22 +140,32 @@ export class LedgerAskUserStore implements AskUserStore {
   }
 
   async listPending(): Promise<AskUserQuestion[]> {
-    return (await this.attention.list({ statuses: ["ready"] })).map(fromLedger)
+    const scope = this.runContexts.getStore()
+    return (await this.attention.list({ workspaceScopeId: scope?.workspaceScopeId, agentTypeId: scope?.agentTypeId, statuses: ["ready"] })).map(fromLedger)
   }
 
   async getByQuestionId(questionId: string): Promise<AskUserQuestion | null> {
     const record = await this.attention.get(questionId)
-    return record ? fromLedger(record) : null
+    return record && this.isInActiveScope(record) ? fromLedger(record) : null
   }
 
   async createPending(question: AskUserQuestion): Promise<void> {
     if (await this.getPending(question.sessionId)) throw new AskUserStoreError(ASK_USER_ERROR_CODES.PENDING_EXISTS, "a pending question already exists for this session")
     const route = await this.resolveRoute(question.sessionId)
     const ctx = this.runContexts.getStore()
-    const runRequestKey = route && ctx?.requestId && ctx.authSubjectId
-      ? { workspaceScopeId: route.workspaceScopeId, authSubjectId: ctx.authSubjectId, operation: "session.prompt" as const, target: { kind: "session" as const, ref: { agentTypeId: route.agentTypeId, sessionId: question.sessionId } }, requestId: ctx.requestId }
+    const runRequestKey = route && ctx?.requestId && ctx.authSubjectId && ctx.runOperation
+      ? { workspaceScopeId: route.workspaceScopeId, authSubjectId: ctx.authSubjectId, operation: ctx.runOperation, target: { kind: "session" as const, ref: { agentTypeId: route.agentTypeId, sessionId: question.sessionId } }, requestId: ctx.requestId }
       : undefined
-    await this.attention.create(toLedger(question, { route, runRequestKey, routable: Boolean(runRequestKey) }))
+    const transcriptEvents: AskUserTranscriptEvent[] = [
+      { type: "created", question, at: question.createdAt },
+      ...(question.schema ? [{ type: "ready" as const, questionId: question.questionId, sessionId: question.sessionId, schema: question.schema, at: question.createdAt }] : []),
+    ]
+    await this.attention.create(toLedger(question, {
+      route,
+      runRequestKey,
+      routable: Boolean(runRequestKey),
+      transcriptEvents,
+    }))
   }
 
   async answer(questionId: string, answer: AskUserAnswer): Promise<void> {
@@ -137,6 +179,7 @@ export class LedgerAskUserStore implements AskUserStore {
 
   async getAnswer(questionId: string): Promise<AskUserAnswer | null> {
     const record = await this.attention.get(questionId)
+    if (record && !this.isInActiveScope(record)) return null
     if (!record?.answer) return null
     const question = fromLedger(record)
     return { questionId, sessionId: question.sessionId, values: record.answer.values as AskUserAnswer["values"], submittedAt: record.answer.resolvedAt, riskTier: question.riskTier, resolvedBy: record.answer.resolvedBy }
@@ -150,7 +193,8 @@ export class LedgerAskUserStore implements AskUserStore {
   }
 
   async listResolved(): Promise<AskUserQuestion[]> {
-    return (await this.attention.list({ statuses: ["answered", "cancelled", "abandoned", "expired", "superseded"] })).map(fromLedger)
+    const scope = this.runContexts.getStore()
+    return (await this.attention.list({ workspaceScopeId: scope?.workspaceScopeId, statuses: ["answered", "cancelled", "abandoned", "expired", "superseded"] })).map(fromLedger)
   }
 
   async cancel(questionId: string): Promise<void> {
@@ -182,7 +226,11 @@ export class LedgerAskUserStore implements AskUserStore {
   }
 
   async appendTranscriptEvent(event: AskUserTranscriptEvent): Promise<void> {
-    await this.attention.appendTranscriptEventIfMissing(transcriptQuestionId(event), event as JsonValue, (candidate) => transcriptEventId(candidate) === transcriptEventId(event))
+    await this.attention.appendTranscriptEventIfMissing(
+      transcriptQuestionId(event),
+      event as JsonValue,
+      (candidate) => transcriptEventsMatch(candidate, event),
+    )
   }
 
   async appendTranscriptEventIfMissing(questionId: string, hasMatchingEvent: (events: AskUserTranscriptEvent[]) => boolean, buildEvent: () => AskUserTranscriptEvent): Promise<boolean> {
@@ -193,25 +241,44 @@ export class LedgerAskUserStore implements AskUserStore {
   }
 
   async listTranscriptEvents(sessionId: string): Promise<AskUserTranscriptEvent[]> {
-    return (await this.attention.list()).filter((record) => fromLedger(record).sessionId === sessionId)
+    const workspaceScopeId = this.runContexts.getStore()?.workspaceScopeId
+    return (await this.attention.list({ workspaceScopeId })).filter((record) => fromLedger(record).sessionId === sessionId)
       .flatMap((record) => record.transcriptEvents as AskUserTranscriptEvent[])
   }
 
   async getTranscriptEventsForQuestion(questionId: string): Promise<AskUserTranscriptEvent[]> {
-    return [...(((await this.attention.get(questionId))?.transcriptEvents ?? []) as AskUserTranscriptEvent[])]
+    const record = await this.attention.get(questionId)
+    return record && this.isInActiveScope(record) ? [...(record.transcriptEvents as AskUserTranscriptEvent[])] : []
   }
 
-  subscribe(listener: AskUserStoreListener): () => void { return this.attention.subscribe(listener) }
+  subscribe(listener: AskUserStoreListener): () => void {
+    return this.attention.subscribe((change) => listener({
+      sessionId: change.sessionId,
+      questionId: change.attentionId,
+      reason: change.reason === "expire" ? "cancel"
+        : change.reason === "supersede" ? "abandon"
+          : change.reason,
+    }))
+  }
 
   private async resolveRoute(sessionId: string): Promise<{ workspaceScopeId: string; agentTypeId: string } | undefined> {
-    const routes = await this.attention.resolveLegacySession(sessionId)
+    const workspaceScopeId = this.runContexts.getStore()?.workspaceScopeId
+    const agentTypeId = this.runContexts.getStore()?.agentTypeId
+    const routes = (await this.attention.resolveLegacySession(sessionId))
+      .filter((route) => (!workspaceScopeId || route.workspaceScopeId === workspaceScopeId)
+        && (!agentTypeId || route.agentTypeId === agentTypeId))
     return routes.length === 1 ? routes[0] : undefined
   }
 
   private async require(questionId: string): Promise<AskUserAttentionRecord> {
     const record = await this.attention.get(questionId)
-    if (!record) throw new AskUserStoreError(ASK_USER_ERROR_CODES.QUESTION_NOT_FOUND, `question ${questionId} not found`)
+    if (!record || !this.isInActiveScope(record)) throw new AskUserStoreError(ASK_USER_ERROR_CODES.QUESTION_NOT_FOUND, `question ${questionId} not found`)
     return record
+  }
+
+  private isInActiveScope(record: AskUserAttentionRecord): boolean {
+    const workspaceScopeId = this.runContexts.getStore()?.workspaceScopeId
+    return !workspaceScopeId || (record.workspaceScopeId ?? record.runRequestKey?.workspaceScopeId) === workspaceScopeId
   }
 }
 
@@ -238,8 +305,8 @@ export function toLedger(
     riskTier: question.riskTier,
     payload: question as unknown as JsonValue,
     answer: options.answer ? { values: options.answer.values as JsonValue, resolvedBy: options.answer.resolvedBy, resolvedAt: options.answer.submittedAt } : undefined,
-    resume: { state: options.routable ? "pending" : "unroutable", resumeRequestId: `attention:${question.questionId}` },
-    transcriptEvents: (options.transcriptEvents ?? []) as JsonValue[],
+    resume: { state: options.routable ? "pending" : "unroutable", resumeRequestId: `attention:${question.questionId}:resume` },
+    transcriptEvents: (options.transcriptEvents ?? []) as unknown as JsonValue[],
     createdAt: Date.parse(question.createdAt),
     updatedAt: Date.parse(question.updatedAt),
   }
@@ -271,4 +338,20 @@ function transcriptQuestionId(event: AskUserTranscriptEvent): string {
 function transcriptEventId(event: unknown): string {
   const value = event as AskUserTranscriptEvent
   return JSON.stringify([value.type, transcriptQuestionId(value), value.at])
+}
+
+function transcriptEventsMatch(candidate: unknown, expected: AskUserTranscriptEvent): boolean {
+  const event = candidate as AskUserTranscriptEvent
+  if ((expected.type === "created" || expected.type === "ready") && event.type === expected.type) {
+    return transcriptQuestionId(event) === transcriptQuestionId(expected)
+  }
+  return transcriptEventId(event) === transcriptEventId(expected)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
+}
+
+function invalidLegacy(message: string): AskUserStoreError {
+  return new AskUserStoreError(ASK_USER_ERROR_CODES.SCHEMA_INVALID, message)
 }

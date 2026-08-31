@@ -38,6 +38,8 @@ export interface ToolExecContext {
   userEmailVerified?: boolean
   workspaceId?: string
   requestId?: string
+  agentTypeId?: string
+  runOperation?: 'session.prompt' | 'session.followup'
 }
 
 export interface ToolResult {

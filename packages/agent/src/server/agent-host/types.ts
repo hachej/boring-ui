@@ -201,6 +201,8 @@ export interface AgentAttentionLedgerRecord {
 
 export type AgentAttentionLedgerChange = {
   readonly sessionId: string
+  readonly workspaceScopeId?: string
+  readonly agentTypeId?: string
   readonly attentionId?: string
   readonly reason: 'create' | 'answer' | 'cancel' | 'expire' | 'supersede' | 'restore' | 'transcript' | 'import'
 }
@@ -208,7 +210,7 @@ export type AgentAttentionLedgerChange = {
 export interface AgentAttentionLedger {
   create(record: AgentAttentionLedgerRecord): Promise<void>
   get(attentionId: string): Promise<AgentAttentionLedgerRecord | undefined>
-  list(input?: { sessionId?: string; statuses?: readonly AgentAttentionStatus[] }): Promise<AgentAttentionLedgerRecord[]>
+  list(input?: { workspaceScopeId?: string; agentTypeId?: string; sessionId?: string; statuses?: readonly AgentAttentionStatus[] }): Promise<AgentAttentionLedgerRecord[]>
   transition(
     attentionId: string,
     expected: readonly AgentAttentionStatus[],

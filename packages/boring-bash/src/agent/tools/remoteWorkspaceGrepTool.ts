@@ -216,6 +216,7 @@ export function remoteWorkspaceGrepTool(
 ): AgentTool {
   return {
     name: PI_GREP_TOOL.name,
+    effect: 'observe',
     description: PI_GREP_TOOL.description,
     promptSnippet: PI_GREP_TOOL.promptSnippet,
     parameters: PI_GREP_TOOL.parameters as unknown as Record<string, unknown>,

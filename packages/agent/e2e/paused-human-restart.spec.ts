@@ -33,7 +33,7 @@ test.describe('durable paused-human restart (#1348)', () => {
             data: { title: 'Paused human restart' },
           })
           expect(created.ok(), await created.text()).toBe(true)
-          sessionId = (await created.json() as { ref: { sessionId: string } }).ref.sessionId
+          sessionId = (await created.json() as { sessionId: string }).sessionId
         }
         expect(sessionId).toBeTruthy()
 
@@ -69,13 +69,13 @@ test.describe('durable paused-human restart (#1348)', () => {
           questionId: ready.questionId,
           sessionId,
           answerToken: ready.answerToken,
-          values: { choice: 'continue' },
+          values: { answer: 'continue' },
         }
         const idempotencyKey = createHash('sha256')
           .update(JSON.stringify(['ask-user.v1.answer', answerInput]))
           .digest('hex')
         const first = await callBridge(request, backend.apiUrl, sessionId!, 'ask-user.v1.answer', answerInput, idempotencyKey)
-        const second = await callBridge(request, backend.apiUrl, sessionId!, 'ask-user.v1.answer', answerInput, idempotencyKey)
+        const second = await callBridge(request, backend.apiUrl, sessionId!, 'ask-user.v1.answer', answerInput, `${idempotencyKey}-retry`)
         expect(first).toEqual({ ok: true, status: 'answered' })
         expect(second).toEqual(first)
 

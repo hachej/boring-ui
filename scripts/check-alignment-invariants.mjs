@@ -427,6 +427,7 @@ function main() {
   const fileAskUserStoreDefinition = "plugins/ask-user/src/server/askUserStore.ts";
   const fileAskUserProductionRefs = allProductionFiles.filter((file) =>
     toRepoPath(file) !== fileAskUserStoreDefinition
+    && toRepoPath(file) !== "scripts/check-alignment-invariants.mjs"
     && readFileSync(file, "utf8").includes("FileAskUserStore")
   );
   for (const file of fileAskUserProductionRefs) {

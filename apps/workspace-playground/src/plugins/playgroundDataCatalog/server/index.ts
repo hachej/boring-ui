@@ -174,6 +174,7 @@ export function createPlaygroundExecuteSqlTool(workspaceRoot: string): AgentTool
   const executeSql = createExecuteSqlRunner(workspaceRoot)
   return {
     name: "execute_sql",
+    effect: "observe",
     description: "Run read-only DuckDB SQL against the playground CSV data catalog.",
     parameters: executeSqlParameters(),
     async execute(params) {

@@ -56,7 +56,7 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
   readonly attention = {
     create: async (record: AgentAttentionLedgerRecord) => this.createAttention(record),
     get: async (attentionId: string) => this.readAttention(attentionId),
-    list: async (input?: { sessionId?: string; statuses?: readonly AgentAttentionStatus[] }) => this.listAttention(input),
+    list: async (input?: { workspaceScopeId?: string; agentTypeId?: string; sessionId?: string; statuses?: readonly AgentAttentionStatus[] }) => this.listAttention(input),
     transition: async (
       attentionId: string,
       expected: readonly AgentAttentionStatus[],
@@ -215,14 +215,7 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
           ;(result as { requestsReset: number }).requestsReset += 1
           continue
         }
-        const parked = this.database.prepare(`
-          SELECT 1 FROM agent_effect_ledger effect
-          JOIN agent_attention_ledger attention ON attention.run_key = effect.run_key
-          WHERE effect.run_key = ? AND effect.effect_class = 'pause' AND effect.state = 'paused'
-            AND attention.status IN ('ready', 'answered')
-          LIMIT 1
-        `).get(row.request_key)
-        if (parked) {
+        if (this.hasAnyParkedAttention(row.request_key)) {
           ;(result as { parked: number }).parked += 1
           continue
         }
@@ -255,16 +248,17 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
 
       const effects = this.database.prepare(`
         SELECT run_key, effect_id, record_json FROM agent_effect_ledger
-        WHERE state IN ('admitted', 'in-flight')
+        WHERE state IN ('admitted', 'in-flight', 'paused')
       `).all() as Array<{ run_key: string; effect_id: string; record_json: string }>
       for (const row of effects) {
         const record = JSON.parse(row.record_json) as AgentEffectLedgerRecord
+        if (record.state === 'paused' && this.hasParkedAttention(row.run_key, row.effect_id)) continue
         const next = record.idempotent
           ? { ...record, state: 'admitted' as const, updatedAt: Date.now() }
           : { ...record, state: 'outcome-unknown' as const, updatedAt: Date.now() }
         this.database.prepare(`
           UPDATE agent_effect_ledger SET state = ?, record_json = ?, updated_at = ?
-          WHERE run_key = ? AND effect_id = ? AND state IN ('admitted', 'in-flight')
+          WHERE run_key = ? AND effect_id = ? AND state IN ('admitted', 'in-flight', 'paused')
         `).run(next.state, JSON.stringify(next), next.updatedAt, row.run_key, row.effect_id)
         if (!record.idempotent) (result as { effectsOutcomeUnknown: number }).effectsOutcomeUnknown += 1
       }
@@ -382,13 +376,13 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
       if (existing.outcomeDigest !== outcomeDigest) conflict('effect settled with a conflicting outcome digest')
       return
     }
-    this.transitionEffect(runRequestKey, effectId, ['in-flight'], (record) => ({
+    this.transitionEffect(runRequestKey, effectId, ['in-flight', 'paused'], (record) => ({
       ...record, state: 'settled', outcomeDigest, receipt, updatedAt: Date.now(),
     }))
   }
 
   async markChildEffectOutcomeUnknown(runRequestKey: AgentRequestKey, effectId: string): Promise<void> {
-    this.transitionEffect(runRequestKey, effectId, ['in-flight'], (record) => ({ ...record, state: 'outcome-unknown', updatedAt: Date.now() }))
+    this.transitionEffect(runRequestKey, effectId, ['in-flight', 'paused'], (record) => ({ ...record, state: 'outcome-unknown', updatedAt: Date.now() }))
   }
 
   async countEffects(): Promise<number> {
@@ -564,6 +558,22 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
     return row ? JSON.parse(row.record_json) as AgentEffectLedgerRecord : undefined
   }
 
+  private hasParkedAttention(runKey: string, effectId: string): boolean {
+    const rows = this.database.prepare(`
+      SELECT record_json FROM agent_attention_ledger
+      WHERE run_key = ? AND status IN ('ready', 'answered')
+    `).all(runKey) as Array<{ record_json: string }>
+    return rows.some((row) => (JSON.parse(row.record_json) as AgentAttentionLedgerRecord).toolCallId === effectId)
+  }
+
+  private hasAnyParkedAttention(runKey: string): boolean {
+    const effects = this.database.prepare(`
+      SELECT effect_id FROM agent_effect_ledger
+      WHERE run_key = ? AND effect_class = 'pause' AND state = 'paused'
+    `).all(runKey) as Array<{ effect_id: string }>
+    return effects.some(({ effect_id }) => this.hasParkedAttention(runKey, effect_id))
+  }
+
   private transitionEffect(
     runRequestKey: AgentRequestKey,
     effectId: string,
@@ -582,6 +592,7 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
   }
 
   private createAttention(record: AgentAttentionLedgerRecord): void {
+    if (record.status === 'abandoned') conflict('abandoned attention is legacy-read-only')
     const inserted = this.database.prepare(`
       INSERT OR IGNORE INTO agent_attention_ledger
         (attention_id, run_key, workspace_scope_id, agent_type_id, session_id, status, record_json, updated_at)
@@ -597,7 +608,7 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
       record.updatedAt,
     )
     if (inserted.changes !== 1) conflict('attentionId already exists')
-    this.emitAttention({ sessionId: record.sessionRef?.sessionId ?? '', attentionId: record.attentionId, reason: 'create' })
+    this.emitAttention(attentionChange(record, 'create'))
   }
 
   private readAttention(attentionId: string): AgentAttentionLedgerRecord | undefined {
@@ -605,10 +616,12 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
     return row ? JSON.parse(row.record_json) as AgentAttentionLedgerRecord : undefined
   }
 
-  private listAttention(input?: { sessionId?: string; statuses?: readonly AgentAttentionStatus[] }): AgentAttentionLedgerRecord[] {
+  private listAttention(input?: { workspaceScopeId?: string; agentTypeId?: string; sessionId?: string; statuses?: readonly AgentAttentionStatus[] }): AgentAttentionLedgerRecord[] {
     const rows = this.database.prepare(`SELECT record_json FROM agent_attention_ledger ORDER BY updated_at`).all() as Array<{ record_json: string }>
     return rows.map((row) => JSON.parse(row.record_json) as AgentAttentionLedgerRecord)
-      .filter((record) => (!input?.sessionId || record.sessionRef?.sessionId === input.sessionId)
+      .filter((record) => (!input?.workspaceScopeId || (record.workspaceScopeId ?? record.runRequestKey?.workspaceScopeId) === input.workspaceScopeId)
+        && (!input?.agentTypeId || record.sessionRef?.agentTypeId === input.agentTypeId)
+        && (!input?.sessionId || record.sessionRef?.sessionId === input.sessionId)
         && (!input?.statuses || input.statuses.includes(record.status)))
   }
 
@@ -621,6 +634,7 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
       const current = this.readAttention(attentionId)
       if (!current || !expected.includes(current.status)) return false
       const next = update(current)
+      if (next.status === 'abandoned') conflict('abandoned attention is legacy-read-only')
       const placeholders = expected.map(() => '?').join(', ')
       const changed = this.database.prepare(`
         UPDATE agent_attention_ledger SET status = ?, record_json = ?, updated_at = ?
@@ -632,7 +646,7 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
           : next.status === 'expired' ? 'expire'
             : next.status === 'superseded' ? 'supersede'
               : 'cancel'
-      this.emitAttention({ sessionId: next.sessionRef?.sessionId ?? '', attentionId, reason })
+      this.emitAttention(attentionChange(next, reason))
       return true
     })
   }
@@ -651,7 +665,7 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
         UPDATE agent_attention_ledger SET record_json = ?, updated_at = ? WHERE attention_id = ? AND updated_at = ?
       `).run(JSON.stringify(next), next.updatedAt, attentionId, current.updatedAt)
       if (changed.changes !== 1) conflict('attention transcript append lost its compare-and-swap race')
-      this.emitAttention({ sessionId: next.sessionRef?.sessionId ?? '', attentionId, reason: 'transcript' })
+      this.emitAttention(attentionChange(next, 'transcript'))
       return true
     })
   }
@@ -705,4 +719,17 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
 
 function sessionKey(ref: import('../../shared/index').AgentSessionRef): string {
   return JSON.stringify([ref.agentTypeId, ref.sessionId])
+}
+
+function attentionChange(
+  record: AgentAttentionLedgerRecord,
+  reason: AgentAttentionLedgerChange['reason'],
+): AgentAttentionLedgerChange {
+  return {
+    sessionId: record.sessionRef?.sessionId ?? '',
+    workspaceScopeId: record.workspaceScopeId ?? record.runRequestKey?.workspaceScopeId,
+    agentTypeId: record.sessionRef?.agentTypeId,
+    attentionId: record.attentionId,
+    reason,
+  }
 }

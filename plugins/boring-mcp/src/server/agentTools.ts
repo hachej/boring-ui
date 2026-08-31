@@ -29,6 +29,7 @@ export function createBoringMcpAgentTools(options: CreateBoringMcpAgentToolsOpti
   const bridge = createBoringMcpAgentBridgeRegistry(handlers)
   return listBoringMcpAgentBridgeTools(bridge).map((tool): AgentTool => ({
     name: tool.name,
+    effect: "observe",
     description: tool.description,
     parameters: tool.inputSchema,
     promptSnippet: `${tool.name}: ${tool.description}`,

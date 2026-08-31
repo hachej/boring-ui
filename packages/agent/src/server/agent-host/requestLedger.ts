@@ -64,12 +64,15 @@ export class InMemoryAgentRequestLedger implements AgentRequestLedger {
   readonly attention = {
     create: async (record: AgentAttentionLedgerRecord) => {
       if (this.attentionRecords.has(record.attentionId)) conflict()
+      if (record.status === 'abandoned') conflict()
       this.attentionRecords.set(record.attentionId, record)
-      this.emitAttention({ sessionId: record.sessionRef?.sessionId ?? '', attentionId: record.attentionId, reason: 'create' })
+      this.emitAttention(attentionChange(record, 'create'))
     },
     get: async (attentionId: string) => this.attentionRecords.get(attentionId),
-    list: async (input?: { sessionId?: string; statuses?: readonly AgentAttentionStatus[] }) => [...this.attentionRecords.values()]
-      .filter((record) => (!input?.sessionId || record.sessionRef?.sessionId === input.sessionId)
+    list: async (input?: { workspaceScopeId?: string; agentTypeId?: string; sessionId?: string; statuses?: readonly AgentAttentionStatus[] }) => [...this.attentionRecords.values()]
+      .filter((record) => (!input?.workspaceScopeId || (record.workspaceScopeId ?? record.runRequestKey?.workspaceScopeId) === input.workspaceScopeId)
+        && (!input?.agentTypeId || record.sessionRef?.agentTypeId === input.agentTypeId)
+        && (!input?.sessionId || record.sessionRef?.sessionId === input.sessionId)
         && (!input?.statuses || input.statuses.includes(record.status))),
     transition: async (
       attentionId: string,
@@ -78,7 +81,10 @@ export class InMemoryAgentRequestLedger implements AgentRequestLedger {
     ) => {
       const current = this.attentionRecords.get(attentionId)
       if (!current || !expected.includes(current.status)) return false
-      this.attentionRecords.set(attentionId, update(current))
+      const next = update(current)
+      if (next.status === 'abandoned') conflict()
+      this.attentionRecords.set(attentionId, next)
+      this.emitAttention(attentionChange(next, attentionTransitionReason(next.status)))
       return true
     },
     appendTranscriptEventIfMissing: async (
@@ -89,11 +95,13 @@ export class InMemoryAgentRequestLedger implements AgentRequestLedger {
       const current = this.attentionRecords.get(attentionId)
       if (!current) conflict()
       if (current.transcriptEvents.some(matches)) return false
-      this.attentionRecords.set(attentionId, {
+      const next = {
         ...current,
         transcriptEvents: [...current.transcriptEvents, event],
         updatedAt: Date.now(),
-      })
+      }
+      this.attentionRecords.set(attentionId, next)
+      this.emitAttention(attentionChange(next, 'transcript'))
       return true
     },
     resolveLegacySession: async (sessionId: string) => {
@@ -112,6 +120,7 @@ export class InMemoryAgentRequestLedger implements AgentRequestLedger {
       for (const record of records) {
         if (this.attentionRecords.has(record.attentionId)) continue
         this.attentionRecords.set(record.attentionId, record)
+        this.emitAttention(attentionChange(record, 'import'))
         imported += 1
       }
       return imported
@@ -259,13 +268,13 @@ export class InMemoryAgentRequestLedger implements AgentRequestLedger {
       if (current.outcomeDigest !== outcomeDigest) conflict()
       return
     }
-    this.transitionChildEffect(runRequestKey, effectId, ['in-flight'], (record) => ({
+    this.transitionChildEffect(runRequestKey, effectId, ['in-flight', 'paused'], (record) => ({
       ...record, state: 'settled', outcomeDigest, receipt, updatedAt: Date.now(),
     }))
   }
 
   async markChildEffectOutcomeUnknown(runRequestKey: AgentRequestKey, effectId: string): Promise<void> {
-    this.transitionChildEffect(runRequestKey, effectId, ['in-flight'], (record) => ({ ...record, state: 'outcome-unknown', updatedAt: Date.now() }))
+    this.transitionChildEffect(runRequestKey, effectId, ['in-flight', 'paused'], (record) => ({ ...record, state: 'outcome-unknown', updatedAt: Date.now() }))
   }
 
   async countEffects(): Promise<number> {
@@ -301,7 +310,30 @@ export class InMemoryAgentRequestLedger implements AgentRequestLedger {
   }
 
   private emitAttention(change: AgentAttentionLedgerChange): void {
-    for (const listener of this.attentionListeners) listener(change)
+    for (const listener of this.attentionListeners) {
+      try { listener(change) } catch { /* Store observers cannot fail a committed transition. */ }
+    }
+  }
+}
+
+function attentionTransitionReason(status: AgentAttentionStatus): AgentAttentionLedgerChange['reason'] {
+  return status === 'answered' ? 'answer'
+    : status === 'ready' ? 'restore'
+      : status === 'expired' ? 'expire'
+        : status === 'superseded' ? 'supersede'
+          : 'cancel'
+}
+
+function attentionChange(
+  record: AgentAttentionLedgerRecord,
+  reason: AgentAttentionLedgerChange['reason'],
+): AgentAttentionLedgerChange {
+  return {
+    sessionId: record.sessionRef?.sessionId ?? '',
+    workspaceScopeId: record.workspaceScopeId ?? record.runRequestKey?.workspaceScopeId,
+    agentTypeId: record.sessionRef?.agentTypeId,
+    attentionId: record.attentionId,
+    reason,
   }
 }
 

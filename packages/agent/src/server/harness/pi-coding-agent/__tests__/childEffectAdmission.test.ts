@@ -46,4 +46,21 @@ describe('per-Run child-effect admission', () => {
     await expect(adapted.execute('unknown-1', {}, context.abortSignal, undefined, {} as never))
       .rejects.toThrow('gateway-minted child-effect capability')
   })
+
+  it('settles a pause effect only after the tool returns', async () => {
+    const calls: string[] = []
+    const capability = {
+      async admit() { calls.push('admit') },
+      async begin() { calls.push('begin') },
+      async pause() { calls.push('pause') },
+      async settle() { calls.push('settle') },
+      async markOutcomeUnknown() { calls.push('unknown') },
+    } as unknown as ChildEffectRunCapability
+    const context = { abortSignal: new AbortController().signal, workdir: '/tmp', childEffectCapability: capability } satisfies RunContext
+    const adapted = adaptToolForPi(tool('pause'), 'session-a', undefined, () => context)
+
+    await adapted.execute('pause-1', {}, context.abortSignal, undefined, {} as never)
+
+    expect(calls).toEqual(['admit', 'pause', 'settle'])
+  })
 })

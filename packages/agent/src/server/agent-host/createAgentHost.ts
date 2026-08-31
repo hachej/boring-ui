@@ -403,7 +403,9 @@ function createRuntime(
     ?? (options.inMemoryRequestLedgerMode || !durableLedgerPath
       ? new InMemoryAgentRequestLedger()
       : new SqliteAgentRequestLedger(durableLedgerPath))
-  const attention = ledger.attention ?? new InMemoryAgentRequestLedger().attention!
+  const attention = ledger.attention ?? (options.inMemoryRequestLedgerMode !== undefined
+    ? new InMemoryAgentRequestLedger().attention!
+    : (() => { throw new TypeError('durable AgentRequestLedger must provide the attention ledger capability') })())
 
   const disposeBinding = (binding: RuntimeBinding): Promise<void> => {
     let disposal = bindingDisposals.get(binding)
@@ -442,7 +444,15 @@ function createRuntime(
     shutdownGraceMs: graceMs,
     mintChildEffectCapability(key) {
       const ledger = runtime.ledger
+      if (key.operation !== 'session.prompt' && key.operation !== 'session.followup') {
+        throw new TypeError(`child-effect capability cannot be minted for ${key.operation}`)
+      }
+      if (key.target.kind !== 'session') {
+        throw new TypeError('child-effect capability requires a session target')
+      }
       return Object.freeze({
+        agentTypeId: key.target.ref.agentTypeId,
+        runOperation: key.operation,
         async admit(
           toolCallId: string,
           effectClass: import('../../shared/tool').AgentToolEffectClass,

@@ -1,4 +1,5 @@
 export type JSONSchema = Record<string, unknown>
+export type AgentToolEffectClass = 'observe' | 'propose' | 'mutate' | 'external-effect' | 'pause'
 
 export type ToolReadinessRequirement =
   | 'workspace-fs'
@@ -19,6 +20,8 @@ export interface ToolExecContext {
   userEmailVerified?: boolean
   workspaceId?: string
   requestId?: string
+  agentTypeId?: string
+  runOperation?: 'session.prompt' | 'session.followup'
 }
 
 export interface ToolResult {
@@ -37,6 +40,8 @@ export interface AgentTool {
   description: string
   promptSnippet?: string
   readinessRequirements?: ToolReadinessRequirement[]
+  effect?: AgentToolEffectClass
+  idempotent?: boolean
   parameters: JSONSchema
   execute(params: Record<string, unknown>, ctx: ToolExecContext): Promise<ToolResult>
 }

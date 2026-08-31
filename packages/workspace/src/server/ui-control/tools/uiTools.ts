@@ -126,6 +126,7 @@ async function validateExistingPath(
 export function createGetUiStateTool(workspaceBridge: WorkspaceBridge): AgentTool {
   return {
     name: "get_ui_state",
+    effect: "observe",
     readinessRequirements: ["ui-bridge"],
     description: [
       "Read the current workspace UI state. Returns a JSON object with:",
@@ -207,6 +208,7 @@ export function createExecUiTool(
   const verifyIntervalMs = opts.verifyIntervalMs ?? 250
   return {
     name: "exec_ui",
+    effect: "mutate",
     readinessRequirements: ["ui-bridge"],
     description: [
       "Execute a UI command in the workspace. Use this to open files, panels,",

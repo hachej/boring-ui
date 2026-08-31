@@ -11,6 +11,7 @@ export const ASK_USER_BRIDGE_OPS = {
   request: "ask-user.v1.request",
   answer: "ask-user.v1.answer",
   cancel: "ask-user.v1.cancel",
+  restore: "ask-user.v1.restore",
   pending: "ask-user.v1.pending",
   transcript: "ask-user.v1.transcript",
 } as const
@@ -19,6 +20,7 @@ export const ASK_USER_BRIDGE_CAPABILITIES = {
   request: "ask-user:request",
   answer: "ask-user:answer",
   cancel: "ask-user:cancel",
+  restore: "ask-user:restore",
   pending: "ask-user:pending",
   transcriptRead: "ask-user:transcript.read",
 } as const
@@ -69,4 +71,3 @@ export type AskUserBridgePendingOutput = {
 export type AskUserBridgeTranscriptOutput = {
   events: AskUserTranscriptEvent[]
 }
-

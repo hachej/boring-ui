@@ -1269,7 +1269,7 @@ test('direct standalone sends every addressed mutation through the built-in ledg
       payload: { requestId: 'prompt-ledger', content: 'hello', clientNonce: 'prompt-ledger' },
     }
     const firstPrompt = await app.inject(prompt)
-    expect(firstPrompt.statusCode).toBe(202)
+    expect(firstPrompt.statusCode, firstPrompt.body).toBe(202)
     expect((await app.inject(prompt)).json()).toEqual({ ...firstPrompt.json(), duplicate: true })
     expect(harness.sendInputs.some((input) => input.content === 'hello')).toBe(true)
     expect((await app.inject({ ...prompt, payload: { requestId: 'prompt-ledger', content: 'conflict', clientNonce: 'prompt-ledger' } })).statusCode).toBe(409)

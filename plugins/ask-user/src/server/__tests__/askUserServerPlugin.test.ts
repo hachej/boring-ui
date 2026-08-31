@@ -15,6 +15,7 @@ import type { AskUserStore } from "../askUserStore"
 import { AskUserRuntime } from "../askUserRuntime"
 import { createAskUserTool } from "../createAskUserTool"
 import { createAskUserServerPlugin } from "../askUserServerPlugin"
+import type { AskUserAttentionCapability } from "../ledgerAskUserStore"
 import { MemoryAskUserStore } from "./testAskUserStore"
 import { UI_STATE_INVALIDATION_COMMAND, createInMemoryBridge, uiRoutes, type UiBridge, type UiCommand, type UiState } from "@hachej/boring-workspace/server"
 import * as workspacePlugin from "@hachej/boring-workspace/plugin"
@@ -172,6 +173,7 @@ describe("createAskUserServerPlugin", () => {
       "ask-user.v1.request",
       "ask-user.v1.answer",
       "ask-user.v1.cancel",
+      "ask-user.v1.restore",
       "ask-user.v1.pending",
       "ask-user.v1.transcript",
     ])
@@ -443,7 +445,8 @@ describe("createAskUserServerPlugin", () => {
   it("creates default runtime/store/publisher from workspaceRoot and bridge", async () => {
     const dir = await mkdtemp(join(tmpdir(), "ask-user-plugin-defaults-"))
     const ui = bridge()
-    const plugin = createAskUserServerPlugin({ workspaceRoot: dir, bridge: ui })
+    const attention = {} as AskUserAttentionCapability
+    const plugin = createAskUserServerPlugin({ workspaceRoot: dir, bridge: ui, attention })
     expect(plugin.id).toBe("ask-user")
     expect(plugin.agentTools?.map((tool) => tool.name)).toEqual(["ask_user"])
     expect(existsSync(join(dir, ".boring", "ask-user.json"))).toBe(false)

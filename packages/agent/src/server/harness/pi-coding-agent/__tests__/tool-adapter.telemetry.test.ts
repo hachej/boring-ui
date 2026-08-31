@@ -157,6 +157,7 @@ function createTool(overrides: Partial<AgentTool> = {}): AgentTool {
   return {
     name: 'bash',
     description: 'test tool',
+    effect: 'observe',
     parameters: {},
     async execute() {
       return { content: [{ type: 'text', text: 'ok output' }] }
