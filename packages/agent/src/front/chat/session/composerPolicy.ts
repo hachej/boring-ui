@@ -95,30 +95,26 @@ export class PiComposerPolicyController {
     }
 
     const beforeSubmit = await this.runBeforeSubmit(input.text, files, source)
+    if (this.options.isActiveSession && !this.options.isActiveSession()) {
+      return this.block('inactive-session', 'The active session changed before the message was sent.')
+    }
     if (beforeSubmit === false) {
       return this.block('pre-submit-cancelled', 'Submit was cancelled before sending.')
     }
     if (typeof beforeSubmit === 'object' && 'handled' in beforeSubmit && beforeSubmit.handled) {
-      if (beforeSubmit.message) this.options.onCommandResult?.(beforeSubmit.message)
       return { type: 'handled', ...(beforeSubmit.message ? { message: beforeSubmit.message } : {}), preserveDraft: false }
     }
-    const submittedText = typeof beforeSubmit === 'object' && 'replacement' in beforeSubmit
-      ? beforeSubmit.replacement.text
-      : input.text
-    const text = submittedText.trim()
-    const displayText = typeof beforeSubmit === 'object' && 'replacement' in beforeSubmit
-      ? beforeSubmit.replacement.displayText ?? text
-      : text
+    const replacement = typeof beforeSubmit === 'object' && 'replacement' in beforeSubmit
+      ? beforeSubmit.replacement
+      : undefined
+    const text = (replacement?.text ?? input.text).trim()
+    const displayText = replacement?.displayText ?? text
 
-    if (this.options.isActiveSession && !this.options.isActiveSession()) {
-      return this.block('inactive-session', 'The active session changed before the message was sent.')
-    }
-
-    const parsed = parseSlashCommand(text)
+    const parsed = replacement ? null : parseSlashCommand(text)
     if (parsed) {
       const command = this.options.registry.get(parsed.name)
       if (command?.kind === 'skill') {
-        return this.submitExpandedText(skillCommandText(parsed.name, parsed.args), source, false)
+        return this.submitExpandedText(skillCommandText(parsed.name, parsed.args))
       }
       if (command) return this.runLocalCommand(parsed.name, parsed.args, source)
     }
@@ -167,15 +163,7 @@ export class PiComposerPolicyController {
     return this.queueController.stop()
   }
 
-  private async submitExpandedText(text: string, source: PiComposerSubmitInput['source'], runBeforeSubmit = true): Promise<PiComposerSubmitResult> {
-    if (runBeforeSubmit) {
-      const beforeSubmit = await this.runBeforeSubmit(text, [], source)
-      if (beforeSubmit === false) return this.block('pre-submit-cancelled', 'Submit was cancelled before sending.')
-      if (typeof beforeSubmit === 'object' && 'handled' in beforeSubmit && beforeSubmit.handled) {
-        if (beforeSubmit.message) this.options.onCommandResult?.(beforeSubmit.message)
-        return { type: 'handled', ...(beforeSubmit.message ? { message: beforeSubmit.message } : {}), preserveDraft: false }
-      }
-    }
+  private async submitExpandedText(text: string): Promise<PiComposerSubmitResult> {
     return this.fromQueueResult(await this.queueController.submit({
       text,
       kind: 'expanded-text',
@@ -207,7 +195,7 @@ export class PiComposerPolicyController {
       // onPromptSubmitStarted, stale-rejection dismissal, local-submitted
       // cursor cleanup — exactly as they would for a plain prompt. The
       // human-facing notice above stays a side effect.
-      return await this.submitExpandedText(modelMessage, source, false)
+      return await this.submitExpandedText(modelMessage)
     }
     return { type: 'command', command: commandName, ...(message ? { result: message } : {}), preserveDraft }
   }

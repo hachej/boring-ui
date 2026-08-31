@@ -478,6 +478,8 @@ export function PiChatPanel<
   )
 
   const activeChatSessionId = selectedChatState?.sessionId
+  const activeChatSessionIdRef = useRef(activeChatSessionId)
+  activeChatSessionIdRef.current = activeChatSessionId
   const resumeQueuedPending = Boolean(activeChatSessionId && resumeQueuedPendingSessionIds.has(activeChatSessionId))
   const resumeQueuedError = activeChatSessionId ? resumeQueuedErrorsBySessionId.get(activeChatSessionId) : undefined
   // Resume-queued pending/error/in-flight state is keyed by bare session id.
@@ -832,6 +834,7 @@ export function PiChatPanel<
       getDraft: () => draftRef.current,
       onDraftChange: setComposerDraft,
       allowPromptDuringInitialHydration,
+      isActiveSession: () => activeChatSessionIdRef.current === activeChatSessionId,
       onQueueMutationPending: setQueueMutationPending,
       onPromptSubmitStarted: () => {
         markLocalSubmitted(activeChatSessionId)
@@ -903,6 +906,14 @@ export function PiChatPanel<
       if (result.type === 'prompt' || result.type === 'followup') {
         dropLocalNotice(RUN_REJECTED_NOTICE_ID)
       }
+      if (result.type === 'handled' && result.message) {
+        addLocalNotice({
+          id: `handled-submit:${Date.now()}`,
+          level: 'info',
+          text: result.message,
+          dismissible: true,
+        })
+      }
       if (result.type === 'prompt' && activeChatSessionId) {
         onPromptSubmitStarted?.({ sessionId: activeChatSessionId, clientNonce: result.clientNonce })
         if (shouldHoldLocalSubmitted(selectedPiSession, result.cursor)) markLocalSubmitted(activeChatSessionId)
@@ -919,7 +930,7 @@ export function PiChatPanel<
       surfaceRunRejected(error)
       return false
     }
-  }, [activeChatSessionId, clearLocalSubmitted, dropLocalNotice, markLocalSubmitted, onPromptSubmitStarted, policy, selectedPiSession, setComposerDraft, surfaceRunRejected])
+  }, [activeChatSessionId, addLocalNotice, clearLocalSubmitted, dropLocalNotice, markLocalSubmitted, onPromptSubmitStarted, policy, selectedPiSession, setComposerDraft, surfaceRunRejected])
 
   const availableAssistantSlashCommands = useMemo(
     () => policy ? actionableSlashCommands : actionableSlashCommands.filter((command) => command.clickBehavior === 'insert'),

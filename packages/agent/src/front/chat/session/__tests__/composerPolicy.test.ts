@@ -294,7 +294,7 @@ describe('PiComposerPolicyController submit policy', () => {
     })
     expect(session.prompts).toEqual([])
     expect(session.followUps).toEqual([])
-    expect(onCommandResult).toHaveBeenCalledWith('Context stored.')
+    expect(onCommandResult).not.toHaveBeenCalled()
   })
 
   it('replaces model-facing and display text after asynchronous pre-submit work', async () => {
@@ -320,6 +320,52 @@ describe('PiComposerPolicyController submit policy', () => {
       message: '[stored-context artifact=ctx-123]',
       displayMessage: 'Clinical context stored',
     })])
+  })
+
+  it('treats replacement text as final model payload rather than local command syntax', async () => {
+    const reset = vi.fn()
+    const registry = createCommandRegistry(builtinCommands)
+    registry.register({ name: 'review', description: 'Review', kind: 'skill', handler: vi.fn() })
+    const session = new FakeComposerSession('idle')
+    const replacements = ['/reset', '/review source.ts']
+    const policy = createPiComposerPolicyController({
+      session,
+      registry,
+      slashContext: context({ resetSession: reset }),
+      createClientNonce: nonceFactory(),
+      onBeforeSubmit: vi.fn(async () => ({ replacement: { text: replacements.shift()! } })),
+    })
+
+    await policy.submit({ text: 'first raw input' })
+    await policy.submit({ text: 'second raw input' })
+
+    expect(reset).not.toHaveBeenCalled()
+    expect(session.prompts.map((prompt) => prompt.message)).toEqual(['/reset', '/review source.ts'])
+  })
+
+  it('rejects an asynchronous pre-submit result after the active session changes', async () => {
+    const session = new FakeComposerSession('idle')
+    let active = true
+    let finish!: (value: { handled: true; message: string }) => void
+    const beforeSubmit = new Promise<{ handled: true; message: string }>((resolve) => { finish = resolve })
+    const policy = createPiComposerPolicyController({
+      session,
+      registry: createCommandRegistry(builtinCommands),
+      slashContext: context(),
+      isActiveSession: () => active,
+      onBeforeSubmit: async () => await beforeSubmit,
+    })
+
+    const pending = policy.submit({ text: 'large context' })
+    active = false
+    finish({ handled: true, message: 'Context stored.' })
+
+    await expect(pending).resolves.toMatchObject({
+      type: 'blocked',
+      reason: 'inactive-session',
+      preserveDraft: true,
+    })
+    expect(session.prompts).toEqual([])
   })
 
   it('runs local slash commands when idle and blocks executable slash while streaming', async () => {
