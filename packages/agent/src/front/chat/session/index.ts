@@ -28,6 +28,7 @@ export {
   type PiComposerBlockedReason,
   type PiComposerHandledSubmit,
   type PiComposerPolicyOptions,
+  type PiComposerReplacementSubmit,
   type PiComposerSettings,
   type PiComposerSettingsStorageOptions,
   type PiComposerSubmitInput,

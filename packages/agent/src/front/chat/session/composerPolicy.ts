@@ -40,7 +40,14 @@ export interface PiComposerHandledSubmit {
   message?: string
 }
 
-export type PiComposerBeforeSubmitResult = boolean | void | PiComposerHandledSubmit
+export interface PiComposerReplacementSubmit {
+  replacement: {
+    text: string
+    displayText?: string
+  }
+}
+
+export type PiComposerBeforeSubmitResult = boolean | void | PiComposerHandledSubmit | PiComposerReplacementSubmit
 
 export interface PiComposerPolicyOptions extends PiQueueControllerOptions {
   session: PiQueueSessionLike
@@ -80,7 +87,6 @@ export class PiComposerPolicyController {
   }
 
   async submit(input: PiComposerSubmitInput): Promise<PiComposerSubmitResult> {
-    const text = input.text.trim()
     const files = input.files ?? []
     const source = input.source ?? 'composer'
 
@@ -92,10 +98,17 @@ export class PiComposerPolicyController {
     if (beforeSubmit === false) {
       return this.block('pre-submit-cancelled', 'Submit was cancelled before sending.')
     }
-    if (typeof beforeSubmit === 'object' && beforeSubmit.handled) {
+    if (typeof beforeSubmit === 'object' && 'handled' in beforeSubmit && beforeSubmit.handled) {
       if (beforeSubmit.message) this.options.onCommandResult?.(beforeSubmit.message)
       return { type: 'handled', ...(beforeSubmit.message ? { message: beforeSubmit.message } : {}), preserveDraft: false }
     }
+    const submittedText = typeof beforeSubmit === 'object' && 'replacement' in beforeSubmit
+      ? beforeSubmit.replacement.text
+      : input.text
+    const text = submittedText.trim()
+    const displayText = typeof beforeSubmit === 'object' && 'replacement' in beforeSubmit
+      ? beforeSubmit.replacement.displayText ?? text
+      : text
 
     if (this.options.isActiveSession && !this.options.isActiveSession()) {
       return this.block('inactive-session', 'The active session changed before the message was sent.')
@@ -125,7 +138,7 @@ export class PiComposerPolicyController {
 
     const result = await this.queueController.submit({
       text: serverMessage,
-      displayText: text,
+      displayText,
       attachments,
       model: this.options.model ?? undefined,
       ...(this.options.thinkingControl ? { thinkingLevel: this.options.thinkingLevel ?? DEFAULT_THINKING } : {}),
@@ -158,7 +171,7 @@ export class PiComposerPolicyController {
     if (runBeforeSubmit) {
       const beforeSubmit = await this.runBeforeSubmit(text, [], source)
       if (beforeSubmit === false) return this.block('pre-submit-cancelled', 'Submit was cancelled before sending.')
-      if (typeof beforeSubmit === 'object' && beforeSubmit.handled) {
+      if (typeof beforeSubmit === 'object' && 'handled' in beforeSubmit && beforeSubmit.handled) {
         if (beforeSubmit.message) this.options.onCommandResult?.(beforeSubmit.message)
         return { type: 'handled', ...(beforeSubmit.message ? { message: beforeSubmit.message } : {}), preserveDraft: false }
       }

@@ -297,6 +297,31 @@ describe('PiComposerPolicyController submit policy', () => {
     expect(onCommandResult).toHaveBeenCalledWith('Context stored.')
   })
 
+  it('replaces model-facing and display text after asynchronous pre-submit work', async () => {
+    const session = new FakeComposerSession('idle')
+    const policy = createPiComposerPolicyController({
+      session,
+      registry: createCommandRegistry(builtinCommands),
+      slashContext: context(),
+      createClientNonce: nonceFactory(),
+      onBeforeSubmit: vi.fn(async () => ({
+        replacement: {
+          text: '[stored-context artifact=ctx-123]',
+          displayText: 'Clinical context stored',
+        },
+      })),
+    })
+
+    await expect(policy.submit({ text: 'the large raw context' })).resolves.toMatchObject({
+      type: 'prompt',
+      preserveDraft: false,
+    })
+    expect(session.prompts).toEqual([expect.objectContaining({
+      message: '[stored-context artifact=ctx-123]',
+      displayMessage: 'Clinical context stored',
+    })])
+  })
+
   it('runs local slash commands when idle and blocks executable slash while streaming', async () => {
     const reset = vi.fn()
     const idlePolicy = createPiComposerPolicyController({
