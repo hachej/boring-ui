@@ -79,6 +79,7 @@ import {
   composeAddressedAgentRuntimeScope,
   mergePiOptions,
   normalizeAgentPiCapabilityOptions,
+  resolveTrustedPiMonoLoopExtensionPath,
   type AddressedAgentCapabilityContext,
   type AgentPiCapabilityOptions,
 } from './addressedAgentRuntimeScope.js'
@@ -261,8 +262,10 @@ export interface CreateCoreWorkspaceAgentServerOptions {
    * Paths must remain under the workspace, plugin roots, or an explicitly
    * configured `piResourceAuthorizedRoots` entry. Grant changes alter semantic
    * identity and therefore require a Host process restart once a binding has
-   * been published. Remote modes reject explicit host extension paths; scoped
-   * skills and packages remain supported.
+   * been published. In isolated modes, Core rejects every explicit extension
+   * except the exact realpath of the host-installed `pi-mono-loop` entry, and
+   * only when returned by this addressed policy. Scoped skills and packages
+   * remain supported.
    */
   getAgentPi?: (
     ctx: AddressedAgentCapabilityContext,
@@ -1125,6 +1128,15 @@ export async function createCoreWorkspaceAgentServer(
     options.resolveInitialAgentSeat,
   )
   const appRoot = options.appRoot
+  let trustedPiMonoLoopExtensionPath: string | undefined
+  if (appRoot) {
+    try {
+      trustedPiMonoLoopExtensionPath = resolveTrustedPiMonoLoopExtensionPath(appRoot)
+    } catch {
+      // Most apps do not install the optional Factory loop package. If an
+      // addressed policy requests it anyway, normalization remains fail-closed.
+    }
+  }
   const serveFrontend =
     options.serveFrontend ?? (process.env.NODE_ENV !== 'development' && Boolean(appRoot))
   const pluginWorkspaceRoot = process.cwd()
@@ -1782,7 +1794,11 @@ export async function createCoreWorkspaceAgentServer(
         options.getAgentExtraTools?.(context) ?? [],
         options.getAgentPi?.(context),
       ])
-      const addressedPi = normalizeAgentPiCapabilityOptions(agentPi, runtimeModeAdapter.id)
+      const addressedPi = normalizeAgentPiCapabilityOptions(
+        agentPi,
+        runtimeModeAdapter.id,
+        trustedPiMonoLoopExtensionPath ? [trustedPiMonoLoopExtensionPath] : [],
+      )
       const addressedResourceFence = addressedPi
         ? await createPiResourceDigestFence(async () => createPiResourceDigestInput({
             piCwd: environment.workspaceRoot,

@@ -5,6 +5,7 @@ export {
   type CoreFrontendRootHandler,
   type CreateCoreWorkspaceAgentServerOptions,
 } from './createCoreWorkspaceAgentServer.js'
+export { resolveTrustedPiMonoLoopExtensionPath } from './addressedAgentRuntimeScope.js'
 export type {
   AddressedAgentCapabilityContext,
   AgentPiCapabilityOptions,
