@@ -1359,6 +1359,23 @@ export async function createWorkspaceAgentServer(
         ...agents.slice(1),
       ]
     : agents
+  const humanKnowledgeBindingsPromise = Promise.all(hostAgents.flatMap((agent) => {
+    if (!("knowledge" in agent) || !agent.knowledge?.rootDir) return []
+    return [runtimeHost.createAgentResourceFilesystemBinding(
+      `agent_knowledge:${agent.agentTypeId}`,
+      [{ logicalRoot: "/", sourceRoot: agent.knowledge.rootDir }],
+    ).then((binding) => ({
+      ...binding,
+      catalog: {
+        visible: true,
+        label: agent.definition.label ?? agent.agentTypeId,
+        rootDir: "/" as const,
+      },
+      // Human routes expose this alias. Agent composition filters it and
+      // mounts only the addressed Agent's canonical `agent_knowledge` binding.
+      agentTypeIds: [] as readonly string[],
+    }))]
+  }))
   const defaultPluginPackagePaths = pluginCollection.defaultPluginPackagePaths
   const ctx: WorkspaceAgentServerPluginContext = { workspaceRoot, bridge }
   const allPluginEntries: WorkspacePluginEntry[] = pluginCollection.resolvedPluginArtifacts
@@ -1434,6 +1451,11 @@ export async function createWorkspaceAgentServer(
         ...discovered.additionalSkillPaths.filter((path) => !registry || !packageResourceHandlesPath(path, registry.handledPackageRoots)),
         ...(registry?.additionalSkillPaths ?? []),
       ]),
+      // Package-registry extensions are executable and selected per Agent
+      // below; never reintroduce them through the ambient discovery path.
+      extensionPaths: discovered.extensionPaths.filter((path) =>
+        !registry || !packageResourceHandlesPath(path, registry.handledPackageRoots),
+      ),
     }
   }
 
@@ -1761,6 +1783,7 @@ export async function createWorkspaceAgentServer(
             userId: verifiedClaim.authSubjectId,
             requestId,
           }) ?? []
+          const humanKnowledgeBindings = await humanKnowledgeBindingsPromise
           const packageRegistry = currentPackageResourceSnapshot?.registry
           const packageBinding = hostOwnedDefaultAgentTypeId && packageRegistry?.readonlyMounts.length
             ? await runtimeHost.createAgentResourceFilesystemBinding(
@@ -1768,7 +1791,7 @@ export async function createWorkspaceAgentServer(
                 packageRegistry.readonlyMounts,
               )
             : undefined
-          return [...callerBindings, ...(packageBinding ? [packageBinding] : [])]
+          return [...callerBindings, ...humanKnowledgeBindings, ...(packageBinding ? [packageBinding] : [])]
         },
       }
     },
@@ -1781,7 +1804,12 @@ export async function createWorkspaceAgentServer(
     }) {
       scopeIssuer.context(authorizedScope)
       const contribution = normalizedRuntimeContributions.get(agentTypeId)
-      if (!contribution) throw new Error(`Agent runtime contribution was not compiled: ${agentTypeId}`)
+      if (!contribution) {
+        throw new AgentGatewayError(
+          AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN,
+          `Unknown agent type: ${agentTypeId}`,
+        )
+      }
       // Reload resolves one immutable package candidate before admission. The
       // same candidate drives digest, prompt, locator, binding, and commit.
       const stagedPackageResourceSnapshot = intent.operation === "reload"
@@ -1875,6 +1903,7 @@ export async function createWorkspaceAgentServer(
               ]),
               extensionPaths: uniqueStrings([
                 ...(baseHot.extensionPaths ?? []),
+                ...(packageView?.extensionPaths ?? []),
                 ...discovered.extensionPaths,
               ]),
             }

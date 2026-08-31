@@ -66,10 +66,15 @@ function capabilitiesFor(binding: RuntimeFilesystemBinding): FilesystemCatalogCa
 
 function catalogEntry(binding: RuntimeFilesystemBinding): FilesystemCatalogEntry | undefined {
   if (!validFilesystem(binding.filesystem) || binding.filesystem === USER_FILESYSTEM_ID) return undefined
+  if (binding.catalog?.visible === false) return undefined
+  const label = binding.catalog?.label ?? binding.filesystem
+  const rootDir = binding.catalog?.rootDir ?? '/'
+  if (!isValidCatalogString(label, CATALOG_STRING_MAX_LENGTH)) return undefined
+  if (!isValidCatalogString(rootDir, CATALOG_STRING_MAX_LENGTH)) return undefined
   return {
     filesystem: binding.filesystem,
-    label: binding.filesystem,
-    rootDir: '/',
+    label,
+    rootDir,
     access: binding.access === 'readwrite' ? 'readwrite' : 'readonly',
     capabilities: capabilitiesFor(binding),
   }
