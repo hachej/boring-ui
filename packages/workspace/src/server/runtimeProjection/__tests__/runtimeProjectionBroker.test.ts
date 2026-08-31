@@ -53,6 +53,22 @@ describe("RuntimeProjectionBroker", () => {
     })).toBeUndefined()
   })
 
+  it("expires authority and active sockets at the upstream TTL", async () => {
+    const revoke = vi.fn(async () => {})
+    const broker = new RuntimeProjectionBroker()
+    const grant = broker.create({ identity, upstream: {
+      url: "https://sealed.example/view",
+      expiresAt: new Date(Date.now() + 30).toISOString(),
+      revoke,
+    } })
+    const consumed = broker.consumeGrant({ leaseId: grant.leaseId, grant: grant.grant, identity })!
+    const authorized = broker.authorize({ leaseId: grant.leaseId, cookie: cookieValue(consumed.cookie), identity })!
+    const socket = new PassThrough()
+    broker.track(authorized.record, socket)
+    await vi.waitFor(() => expect(socket.destroyed).toBe(true))
+    expect(revoke).toHaveBeenCalledOnce()
+  })
+
   it("immediately rejects the cookie and destroys active sockets on revocation", async () => {
     const { broker, grant, token, revoke } = grantFixture()
     const consumed = broker.consumeGrant({ leaseId: grant.leaseId, grant: token, identity })!

@@ -33,6 +33,7 @@ interface ProjectionRecord {
   readonly grantHash: string
   sessionHash: string
   readonly sockets: Set<RevocableConnection>
+  expiryTimer?: ReturnType<typeof setTimeout>
   grantConsumed: boolean
   revoked: boolean
 }
@@ -75,6 +76,8 @@ export class RuntimeProjectionBroker {
       revoked: false,
     }
     this.records.set(leaseId, record)
+    record.expiryTimer = setTimeout(() => { void this.revoke(leaseId).catch(() => undefined) }, Math.max(1, expiry - Date.now()))
+    record.expiryTimer.unref?.()
     return Object.freeze({
       leaseId,
       bootstrapPath: `/api/v1/runtime-projection/bootstrap/${leaseId}`,
@@ -128,6 +131,7 @@ export class RuntimeProjectionBroker {
     const record = this.records.get(leaseId)
     if (!record || record.revoked) return
     record.revoked = true
+    clearTimeout(record.expiryTimer)
     this.records.delete(leaseId)
     for (const socket of record.sockets) socket.destroy()
     record.sockets.clear()

@@ -97,8 +97,10 @@ export function runtimeProjectionRoutes(
       method: request.method,
       headers: requestHeaders(request.headers),
     }, (response) => {
-      const location = response.headers.location
-      if (location && new URL(location, target).origin !== target.origin) {
+      // Never forward an upstream Location: even a same-origin absolute
+      // redirect would disclose the sealed provider host/token. Fixed viewer
+      // services must use relative assets rather than redirects.
+      if (response.headers.location) {
         response.resume()
         reply.raw.writeHead(502, { "Cache-Control": "no-store" }).end()
         return
