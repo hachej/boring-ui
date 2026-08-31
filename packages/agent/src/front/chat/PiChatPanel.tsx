@@ -61,6 +61,7 @@ import type {
 } from './components/MessageMentions'
 import { PiChatComposerSurface } from './components/PiChatComposerSurface'
 import { useExternalRemotePiSession, useRemotePiSessionState } from './piChatPanelHooks'
+import { prepareLargePromptSubmission } from './largePromptSpill'
 import {
   errorMessage,
   headersContentKey,
@@ -86,6 +87,11 @@ const EMPTY_BLOCKERS: never[] = []
  * it rather than stacking, and the next admit can retract it). */
 const RUN_REJECTED_NOTICE_ID = 'run-rejected'
 const RESUME_QUEUED_ERROR_PREFIX = 'resume-queued-error:'
+
+function requestHeaderValue(headers: Record<string, string | undefined> | undefined, name: string): string | undefined {
+  const target = name.toLowerCase()
+  return Object.entries(headers ?? {}).find(([key]) => key.toLowerCase() === target)?.[1]
+}
 
 export type { ComposerBlocker, ComposerBlockerAction, PanelNotice }
 
@@ -180,6 +186,10 @@ export interface PiChatPanelProps<
   allowPromptDuringInitialHydration?: boolean
   workspaceWarmupStatus?: ChatPanelWorkspaceWarmupStatus
   onSessionReset?: () => void | Promise<void>
+  /** Persist oversized text prompts through the workspace upload route and send a compact path reference. Enabled by default. */
+  spillLargePrompts?: boolean
+  /** Character threshold for generic prompt spilling. Defaults to 12,000. */
+  largePromptThresholdChars?: number
   onBeforeSubmit?: (draft: string, context: ChatSubmitContext) => ChatBeforeSubmitResult | Promise<ChatBeforeSubmitResult>
   onReloadAgentPlugins?: () => Promise<AgentPluginReloadResult | string>
   onCommandResult?: (message: string) => void
@@ -246,6 +256,8 @@ export function PiChatPanel<
   allowPromptDuringInitialHydration = false,
   workspaceWarmupStatus,
   onSessionReset,
+  spillLargePrompts = true,
+  largePromptThresholdChars,
   onBeforeSubmit,
   onReloadAgentPlugins,
   onCommandResult,
@@ -846,13 +858,18 @@ export function PiChatPanel<
       onPromptSubmitStarted: () => {
         markLocalSubmitted(activeChatSessionId)
       },
-      onBeforeSubmit: onBeforeSubmit
-        ? async (draft, context) => await onBeforeSubmit(draft, {
-            ...context,
-            sessionId: activeChatSessionId,
-            source: context.source ?? 'composer',
-          })
-        : undefined,
+      onBeforeSubmit: async (draft, context) => await prepareLargePromptSubmission(draft, {
+        ...context,
+        sessionId: activeChatSessionId,
+        source: context.source ?? 'composer',
+      }, {
+        enabled: spillLargePrompts,
+        thresholdChars: largePromptThresholdChars,
+        apiBaseUrl,
+        workspaceRequestId: requestHeaderValue(requestHeaders, 'x-boring-workspace-id'),
+        fetch,
+        onBeforeSubmit,
+      }),
       onCommandResult: (message) => {
         onCommandResult?.(message)
         addLocalNotice({ id: `command:${Date.now()}`, level: 'info', text: message, dismissible: true })
@@ -867,7 +884,7 @@ export function PiChatPanel<
         onMentionedFilesConsumed?.()
       },
     })
-  }, [activeChatIdentity, activeChatSessionId, addLocalNotice, allowPromptDuringInitialHydration, clearMentionedFiles, composerBlocked, composerBlockerLabel, effectiveMentionedFiles, isPolicySessionActive, markLocalSubmitted, onBeforeSubmit, onCommandResult, onComposerWarning, onMentionedFilesConsumed, onPromptSubmitStarted, openModelPicker, openThinkingPicker, registry, reloadAgentPlugins, resetSession, runPluginUpdate, selectComposerModel, selectComposerThinking, selectedModel, selectedPiSession, selectedThinking, serverModelSelectionReady, setComposerDraft, submitThinkingControl, suppressPreSubmitCancelledWarning])
+  }, [activeChatIdentity, activeChatSessionId, addLocalNotice, allowPromptDuringInitialHydration, apiBaseUrl, clearMentionedFiles, composerBlocked, composerBlockerLabel, effectiveMentionedFiles, fetch, isPolicySessionActive, largePromptThresholdChars, markLocalSubmitted, onBeforeSubmit, onCommandResult, onComposerWarning, onMentionedFilesConsumed, onPromptSubmitStarted, openModelPicker, openThinkingPicker, registry, reloadAgentPlugins, requestHeaders, resetSession, runPluginUpdate, selectComposerModel, selectComposerThinking, selectedModel, selectedPiSession, selectedThinking, serverModelSelectionReady, setComposerDraft, spillLargePrompts, submitThinkingControl, suppressPreSubmitCancelledWarning])
 
   // Turn a rejected send (prompt/follow-up/auto-submit) into the single run-rejected
   // notice, carrying the stable server error code so a host can attach a recovery
