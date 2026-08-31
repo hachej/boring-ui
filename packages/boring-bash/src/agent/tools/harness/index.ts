@@ -132,7 +132,7 @@ function adaptPiTool(
                 }
               }
             : undefined,
-          {} as never,
+          undefined as never,
         )
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
