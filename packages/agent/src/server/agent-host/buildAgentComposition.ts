@@ -142,6 +142,7 @@ export interface BuiltAgentComposition {
   readonly pi: ResolvedPiHarnessOptions
   readonly runtimeBundle: RuntimeBundle
   readonly readyTracker: ReadyStatusTracker
+  readonly getFilesystemBindings?: (ctx: { sessionId?: string; userId?: string; requestId?: string }) => Promise<readonly RuntimeFilesystemBinding[]>
   dispose(): Promise<void>
 }
 
@@ -162,7 +163,12 @@ export async function buildAgentComposition(
   input: BuildAgentCompositionInput,
 ): Promise<BuiltAgentComposition> {
   const { runtimeScope, options } = input
-  const runtimeBundle = input.runtimeBundle
+  const bindingIsVisible = (binding: RuntimeFilesystemBinding) =>
+    binding.agentTypeIds === undefined || binding.agentTypeIds.includes(input.agent.agentTypeId)
+  const visibleBindings = input.runtimeBundle.filesystemBindings?.filter(bindingIsVisible)
+  const runtimeBundle = visibleBindings === input.runtimeBundle.filesystemBindings
+    ? input.runtimeBundle
+    : { ...input.runtimeBundle, filesystemBindings: visibleBindings }
   // Resource loading is host authority: only the mode adapter's explicit
   // storageRoot proves that guest workspace bytes are mirrored on this host.
   const hostStorageRoot = runtimeBundle.storageRoot
@@ -176,9 +182,10 @@ export async function buildAgentComposition(
   // gets it without per-host wiring, and sibling agents never see it. A
   // declared-but-unmountable knowledge folder fails this agent's composition
   // closed.
-  const knowledgeRootDir = input.agent.knowledge?.rootDir
+  const authoredAgent = input.agent
+  const knowledgeRootDir = authoredAgent.knowledge?.rootDir
   let knowledgeBinding: RuntimeFilesystemBinding | undefined
-  if (knowledgeRootDir !== undefined) {
+  if (knowledgeRootDir !== undefined && authoredAgent) {
     const runtimeHostOperations = options.runtimeHost ?? runtimeBundle.runtimeHost
     if (!runtimeHostOperations) {
       throw Object.assign(
@@ -191,6 +198,11 @@ export async function buildAgentComposition(
         AGENT_KNOWLEDGE_FILESYSTEM_ID,
         [{ logicalRoot: '/', sourceRoot: knowledgeRootDir }],
       ),
+      catalog: {
+        visible: true,
+        label: authoredAgent.definition.label,
+        rootDir: '/' as const,
+      },
     })
   }
   const scopedKnowledgeBinding = knowledgeBinding
@@ -200,7 +212,7 @@ export async function buildAgentComposition(
   // filesystem — same merge seam as origin/feat/1107-s1-discovery.
   const getFilesystemBindings = runtimeScope.getFilesystemBindings || scopedKnowledgeBinding
     ? async (ctx: { sessionId?: string; userId?: string; requestId?: string }) => [
-        ...mergeRuntimeFilesystemBindings(
+        ...(mergeRuntimeFilesystemBindings(
           runtimeBundle.filesystemBindings,
           [
             ...await runtimeScope.getFilesystemBindings?.({
@@ -213,7 +225,7 @@ export async function buildAgentComposition(
             }) ?? [],
             ...(scopedKnowledgeBinding ? [scopedKnowledgeBinding] : []),
           ],
-        ) ?? [],
+        ) ?? []).filter(bindingIsVisible),
       ]
     : undefined
   const standardTools: AgentTool[] = [
@@ -342,6 +354,7 @@ export async function buildAgentComposition(
     pi,
     runtimeBundle,
     readyTracker,
+    ...(getFilesystemBindings ? { getFilesystemBindings } : {}),
     dispose() {
       disposed ??= backend.close().finally(() => durableEventStore?.close())
       return disposed

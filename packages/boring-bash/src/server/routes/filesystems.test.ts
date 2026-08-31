@@ -111,6 +111,24 @@ describe('filesystemsRoutes', () => {
     await app.close()
   })
 
+  it('projects user-facing labels and hides internal-only bindings without renaming ids', async () => {
+    const app = Fastify()
+    await app.register(filesystemsRoutes, {
+      filesystemBindings: [
+        binding({ filesystem: 'agent_resources', catalog: { visible: false } }),
+        binding({ filesystem: 'agent_knowledge:author', catalog: { visible: true, label: 'Author', rootDir: '/' } }),
+      ],
+    })
+
+    const response = await app.inject({ method: 'GET', url: '/api/v1/filesystems' })
+    expect(response.json().filesystems).toEqual([
+      expect.objectContaining({ filesystem: 'user', label: 'Workspace', access: 'readwrite' }),
+      expect.objectContaining({ filesystem: 'agent_knowledge:author', label: 'Author', access: 'readonly' }),
+    ])
+    expect(response.body).not.toContain('agent_resources')
+    await app.close()
+  })
+
   it('uses first-binding identity semantics and ignores user shadows and invalid identities', async () => {
     const app = Fastify()
     await app.register(filesystemsRoutes, {

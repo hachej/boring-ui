@@ -35,7 +35,7 @@ export class WorkspacePackageResourceRegistryError extends Error {
 
 interface PackageManifest {
   name?: unknown
-  pi?: { skills?: unknown; systemPrompt?: unknown }
+  pi?: { extensions?: unknown; skills?: unknown; systemPrompt?: unknown }
 }
 
 function parseManifest(packageName: string, bytes: string): PackageManifest {
@@ -80,6 +80,7 @@ export interface ResolvedWorkspacePackageResourceRegistry {
   readonly handledPackageRoots: readonly string[]
   readonly readonlyMounts: readonly AgentResourceReadonlyMount[]
   readonly systemPrompts: readonly { readonly pluginIds: readonly string[]; readonly content: string }[]
+  readonly extensions: readonly { readonly pluginIds: readonly string[]; readonly path: string }[]
   locateSkill(filePath: string): AgentSkillResource | undefined
 }
 
@@ -90,6 +91,7 @@ export interface ResolvedAgentPackageResourceView {
   readonly additionalSkillPaths: readonly string[]
   readonly readonlyMounts: readonly AgentResourceReadonlyMount[]
   readonly systemPrompts: readonly string[]
+  readonly extensionPaths: readonly string[]
   locateSkill(filePath: string): AgentSkillResource | undefined
 }
 
@@ -127,6 +129,11 @@ export function selectAgentPackageResourceView(
     systemPrompts: registry.systemPrompts
       .filter((prompt) => policy.includeAll || prompt.pluginIds.some((pluginId) => policy.pluginIds.has(pluginId)))
       .map((prompt) => prompt.content),
+    extensionPaths: registry.extensions
+      // Executable extensions always require an explicit plugin grant. The
+      // legacy includeAll path is safe for shared prompt/skill resources, not code.
+      .filter((extension) => extension.pluginIds.some((pluginId) => policy.pluginIds.has(pluginId)))
+      .map((extension) => extension.path),
     locateSkill(filePath: string) {
       const resource = registry.locateSkill(filePath)
       return resource && selectedResourcePaths.has(resource.path) ? resource : undefined
@@ -364,6 +371,40 @@ async function resolvePackageSkills(
   return drafts
 }
 
+/** Resolve package-declared Pi extensions as canonical, contained files. */
+async function resolvePackageExtensions(
+  packageName: string,
+  canonicalRoot: string,
+  manifest: PackageManifest,
+): Promise<string[]> {
+  const declarations = manifest.pi?.extensions
+  if (declarations === undefined) return []
+  if (!Array.isArray(declarations) || declarations.some((entry) => typeof entry !== 'string')) {
+    throw invalid(packageName, 'pi.extensions must be an array of relative file paths')
+  }
+  const extensions: string[] = []
+  for (const declaration of [...new Set(declarations as string[])].sort()) {
+    if (!declaration || declaration.includes('\0') || declaration.includes('\\') || isAbsolute(declaration) || declaration.split('/').includes('..')) {
+      throw invalid(packageName, 'pi.extensions entries must be safe relative paths')
+    }
+    let extensionPath: string
+    try {
+      extensionPath = await realpath(resolve(canonicalRoot, declaration))
+      if (!(await stat(extensionPath)).isFile()) throw invalid(packageName, 'pi.extensions entries must be regular files')
+    } catch (error) {
+      if (error instanceof WorkspacePackageResourceRegistryError) throw error
+      if (!isExpectedPathAdmissionError(error)) throw error
+      throw invalid(packageName, `Pi extension is not readable: ${declaration}`)
+    }
+    const rel = relative(canonicalRoot, extensionPath)
+    if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+      throw invalid(packageName, `Pi extension escapes package root: ${declaration}`)
+    }
+    extensions.push(extensionPath)
+  }
+  return extensions
+}
+
 /** Resolve one shared skill. Never called more than once per entry. */
 async function resolveSharedSkill(shared: SharedSkillPath): Promise<ResolvedSkillDraft & { sourceFile: string }> {
   if (!shared.id || shared.id.includes('/') || shared.id.includes('\\') || shared.id === '.' || shared.id === '..') {
@@ -511,10 +552,14 @@ async function resolveWorkspacePackageResourcesWithDiagnostics(
   }
 
   const skills: ResolvedAgentPackageSkill[] = []
+  const extensions: Array<{ pluginIds: string[]; path: string }> = []
   for (const [packageName, record] of [...packageRecords.entries()].sort(([a], [b]) => a.localeCompare(b))) {
     const pluginIds = [...record.pluginIds].sort()
     for (const draft of draftsByPackage.get(packageKey(packageName, record.root)) ?? []) {
       skills.push({ ...draft, pluginIds })
+    }
+    for (const path of await resolvePackageExtensions(packageName, record.root, record.manifest)) {
+      extensions.push({ pluginIds, path })
     }
   }
 
@@ -567,6 +612,12 @@ async function resolveWorkspacePackageResourcesWithDiagnostics(
   const generationHash = createHash('sha256')
   generationHash.update(JSON.stringify(systemPrompts))
   generationHash.update('\0')
+  for (const extension of extensions) {
+    generationHash.update(JSON.stringify({ pluginIds: extension.pluginIds, path: extension.path }))
+    generationHash.update('\0')
+    generationHash.update(await readFile(extension.path))
+    generationHash.update('\0')
+  }
   const locatorByFile = new Map<string, AgentSkillResource>(sharedLocatorAliases)
   for (const skill of skills) {
     generationHash.update(JSON.stringify({
@@ -620,6 +671,7 @@ async function resolveWorkspacePackageResourcesWithDiagnostics(
         sourceRoot: skill.mountRoot,
       })),
       systemPrompts,
+      extensions,
       locateSkill(filePath) {
         return locatorByFile.get(resolve(filePath))
       },

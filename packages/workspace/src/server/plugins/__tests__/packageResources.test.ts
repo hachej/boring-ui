@@ -236,12 +236,49 @@ describe('resolveWorkspacePackageResources', () => {
     await expect(resolveOne(packageRoot)).rejects.toMatchObject({ code: PACKAGE_RESOURCE_INVALID_CODE })
   })
 
+  test('confines executable extension paths and fingerprints their bytes', async () => {
+    const root = await tempRoot()
+    const packageRoot = await packageFixture(root)
+    const extensionPath = join(packageRoot, 'extension.ts')
+    await writeFile(extensionPath, 'export default 1\n', 'utf8')
+    const writeManifest = async (extensions: string[]) => await writeFile(
+      join(packageRoot, 'package.json'),
+      JSON.stringify({ name: '@example/plugin', pi: { extensions, skills: ['skills/authoring'] } }),
+      'utf8',
+    )
+
+    await writeManifest(['extension.ts'])
+    const first = await resolveOne(packageRoot, { pluginId: 'owner' })
+    expect(first.extensions).toEqual([{ pluginIds: ['owner'], path: await realpath(extensionPath) }])
+    await writeFile(extensionPath, 'export default 2\n', 'utf8')
+    const changed = await resolveOne(packageRoot, { pluginId: 'owner' })
+    expect(changed.generation).not.toBe(first.generation)
+
+    for (const declaration of ['/tmp/escape.ts', '../escape.ts']) {
+      await writeManifest([declaration])
+      await expect(resolveOne(packageRoot, { pluginId: 'owner' }))
+        .rejects.toMatchObject({ code: PACKAGE_RESOURCE_INVALID_CODE })
+    }
+    const outside = join(root, 'outside-extension.ts')
+    await writeFile(outside, 'export default 3\n', 'utf8')
+    await symlink(outside, join(packageRoot, 'extension-link.ts'))
+    await writeManifest(['extension-link.ts'])
+    await expect(resolveOne(packageRoot, { pluginId: 'owner' }))
+      .rejects.toMatchObject({ code: PACKAGE_RESOURCE_INVALID_CODE })
+    await mkdir(join(packageRoot, 'extension-dir'))
+    await writeManifest(['extension-dir'])
+    await expect(resolveOne(packageRoot, { pluginId: 'owner' }))
+      .rejects.toMatchObject({ code: PACKAGE_RESOURCE_INVALID_CODE })
+  })
+
   test('adds enumerated shared skills and deduplicates exact manifest prompts', async () => {
     const root = await tempRoot()
     const packageRoot = await packageFixture(root)
+    const extensionPath = join(packageRoot, 'extension.ts')
+    await writeFile(extensionPath, 'export default function () {}\n', 'utf8')
     await writeFile(join(packageRoot, 'package.json'), JSON.stringify({
       name: '@example/plugin',
-      pi: { skills: ['skills/authoring'], systemPrompt: '  Use authoring.  ' },
+      pi: { extensions: ['extension.ts'], skills: ['skills/authoring'], systemPrompt: '  Use authoring.  ' },
     }), 'utf8')
     const sharedRoot = join(root, 'global-skills', 'shared-authoring')
     await mkdir(sharedRoot, { recursive: true })
@@ -281,11 +318,13 @@ describe('resolveWorkspacePackageResources', () => {
       filesystem: AGENT_RESOURCES_FILESYSTEM_ID,
       path: 'shared/pi-agent/shared-authoring/SKILL.md',
     })
+    expect(selected.extensionPaths).toEqual([await realpath(extensionPath)])
     const isolated = selectAgentPackageResourceView(registry, {
       pluginIds: new Set(['unrelated']),
       includeAll: false,
     })
     expect(isolated.skills.map((skill) => skill.packageName)).toEqual(['shared/pi-agent'])
+    expect(isolated.extensionPaths).toEqual([])
     expect(isolated.locateSkill(join(packageRoot, 'skills', 'authoring', 'SKILL.md'))).toBeUndefined()
     const catchAll = selectAgentPackageResourceView(registry, {
       pluginIds: new Set(),
@@ -293,6 +332,7 @@ describe('resolveWorkspacePackageResources', () => {
     })
     expect(catchAll.skills).toHaveLength(2)
     expect(catchAll.systemPrompts).toEqual(['Use authoring.'])
+    expect(catchAll.extensionPaths).toEqual([])
 
     await writeFile(join(packageRoot, 'package.json'), JSON.stringify({
       name: '@example/plugin',

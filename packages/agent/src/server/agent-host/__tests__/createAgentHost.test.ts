@@ -423,6 +423,8 @@ describe('createAgentHost', () => {
     const company = binding('company_context', 'company')
     const nutritionist = binding('nutritionist_context', 'nutritionist')
     const legal = binding('legal_context', 'legal')
+    const humanOnly = { ...binding('human_only_context', 'human'), agentTypeIds: [] as readonly string[] }
+    const dynamicSibling = { ...binding('dynamic_sibling_context', 'sibling'), agentTypeIds: ['other'] as readonly string[] }
     const toolsByAgent = new Map<string, Parameters<AgentHarnessFactory>[0]['tools']>()
     const harnessFactory: AgentHarnessFactory = async (input) => {
       toolsByAgent.set(input.systemPromptAppend!, input.tools)
@@ -431,6 +433,7 @@ describe('createAgentHost', () => {
     const resolveAgentBindings = vi.fn(async (agentTypeId: string) => [
       company,
       agentTypeId === 'nutritionist' ? nutritionist : legal,
+      dynamicSibling,
     ])
     const created = await createAgentHost({
       ...options(workspaceRoot),
@@ -443,7 +446,7 @@ describe('createAgentHost', () => {
         placementIdentity: 'context-catalog-environment',
         workspaceRoot,
         provisioningFingerprint: 'context-catalog-environment-v1',
-        resolveFilesystemBindings: async () => [company, nutritionist, legal],
+        resolveFilesystemBindings: async () => [company, nutritionist, legal, humanOnly],
       }),
       resolveAuthorizedAgentRuntimeScope: async ({ agentTypeId }) => ({
         identity: `context-runtime:${agentTypeId}`,
@@ -467,6 +470,7 @@ describe('createAgentHost', () => {
         'company_context',
         'nutritionist_context',
         'legal_context',
+        'human_only_context',
       ])
 
       await created.gateway.createSession({
@@ -501,6 +505,16 @@ describe('createAgentHost', () => {
         toolContext('nutritionist-foreign-read'),
       )).rejects.toThrow('No filesystem binding is available for legal_context')
       expect(legal.operations.read).not.toHaveBeenCalled()
+      await expect(nutritionistRead.execute(
+        { filesystem: 'human_only_context', path: 'knowledge.md' },
+        toolContext('nutritionist-human-only-read'),
+      )).rejects.toThrow('No filesystem binding is available for human_only_context')
+      expect(humanOnly.operations.read).not.toHaveBeenCalled()
+      await expect(nutritionistRead.execute(
+        { filesystem: 'dynamic_sibling_context', path: 'knowledge.md' },
+        toolContext('nutritionist-dynamic-sibling-read'),
+      )).rejects.toThrow('No filesystem binding is available for dynamic_sibling_context')
+      expect(dynamicSibling.operations.read).not.toHaveBeenCalled()
 
       const ownLegal = await legalRead.execute(
         { filesystem: 'legal_context', path: 'knowledge.md' },
@@ -509,6 +523,8 @@ describe('createAgentHost', () => {
       expect(ownLegal.isError).not.toBe(true)
       expect(legal.operations.read).toHaveBeenCalledOnce()
       expect(resolveAgentBindings.mock.calls.map(([agentTypeId]) => agentTypeId)).toEqual([
+        'nutritionist',
+        'nutritionist',
         'nutritionist',
         'nutritionist',
         'legal',
@@ -556,6 +572,7 @@ describe('createAgentHost', () => {
       created,
       authorizeAgentRequest: async () => scope,
     })
+    await app.register(created.registerDirectRoutes({ authorizeAgentRequest: async () => scope }))
 
     try {
       // The computed definition digest is surfaced as identity on describe().
@@ -569,9 +586,11 @@ describe('createAgentHost', () => {
       // Environment-level filesystem catalog.
       const catalog = await app.inject({ method: 'GET', url: '/api/v1/filesystems' })
       expect(catalog.statusCode).toBe(200)
-      expect(catalog.json().filesystems.map((entry: { filesystem: string }) => entry.filesystem))
-        .not.toContain('agent_knowledge')
-
+      expect(catalog.json().filesystems).toEqual([
+        expect.objectContaining({ filesystem: 'user', label: 'Workspace', access: 'readwrite' }),
+      ])
+      expect(catalog.body).not.toContain('agent_knowledge')
+      expect(catalog.body).not.toContain('agent_resources')
       await created.gateway.createSession({ scope, agentTypeId: 'scholar', requestId: 'scholar-knowledge-session' })
       await created.gateway.createSession({ scope, agentTypeId: 'plain', requestId: 'plain-knowledge-session' })
       const toolContext = (requestId: string) => ({
@@ -830,6 +849,10 @@ describe('createAgentHost', () => {
     }))
     const created = await createAgentHost({
       ...options(workspaceRoot),
+      agents: [
+        { agentTypeId: 'alpha', definition: { instructions: 'alpha', label: 'Alpha' } },
+        { agentTypeId: 'beta', definition: { instructions: 'beta', label: 'Beta' } },
+      ],
       inMemoryRequestLedgerMode: 'test',
       metering: {
         isEnabled: () => meteringEnabled,
@@ -934,6 +957,23 @@ describe('createAgentHost', () => {
       expect(missing.statusCode, url).toBe(404)
       expect(missing.json(), url).toMatchObject({ error: { code: AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND } })
     }
+    const betaSession = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/beta/sessions',
+      payload: { requestId: 'create-beta-direct' },
+    })
+    const betaSessionId = betaSession.json<{ sessionId: string }>().sessionId
+    const alphaCommands = await app.inject({
+      method: 'GET',
+      url: `/api/v1/agents/alpha/commands?sessionId=${sessionId}`,
+    })
+    const betaCommands = await app.inject({
+      method: 'GET',
+      url: `/api/v1/agents/beta/commands?sessionId=${betaSessionId}`,
+    })
+    expect(alphaCommands.json<{ commands: Array<{ name: string }> }>().commands.map(({ name }) => name)).toEqual(['check'])
+    expect(betaCommands.json<{ commands: Array<{ name: string }> }>().commands.map(({ name }) => name)).toEqual(['check'])
+
     const commandPayload = {
       requestId: 'command-direct',
       sessionId,
