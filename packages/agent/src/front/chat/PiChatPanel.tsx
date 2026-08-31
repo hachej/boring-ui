@@ -478,8 +478,11 @@ export function PiChatPanel<
   )
 
   const activeChatSessionId = selectedChatState?.sessionId
-  const activeChatSessionIdRef = useRef(activeChatSessionId)
-  activeChatSessionIdRef.current = activeChatSessionId
+  const activeChatIdentity = `${agentTypeId}\u0000${workspaceId ?? ''}\u0000${storageScope ?? ''}\u0000${activeChatSessionId ?? ''}`
+  const selectedPiSessionRef = useRef(selectedPiSession)
+  const activeChatIdentityRef = useRef(activeChatIdentity)
+  selectedPiSessionRef.current = selectedPiSession
+  activeChatIdentityRef.current = activeChatIdentity
   const resumeQueuedPending = Boolean(activeChatSessionId && resumeQueuedPendingSessionIds.has(activeChatSessionId))
   const resumeQueuedError = activeChatSessionId ? resumeQueuedErrorsBySessionId.get(activeChatSessionId) : undefined
   // Resume-queued pending/error/in-flight state is keyed by bare session id.
@@ -834,7 +837,10 @@ export function PiChatPanel<
       getDraft: () => draftRef.current,
       onDraftChange: setComposerDraft,
       allowPromptDuringInitialHydration,
-      isActiveSession: () => activeChatSessionIdRef.current === activeChatSessionId,
+      isActiveSession: () => (
+        selectedPiSessionRef.current === selectedPiSession &&
+        activeChatIdentityRef.current === activeChatIdentity
+      ),
       onQueueMutationPending: setQueueMutationPending,
       onPromptSubmitStarted: () => {
         markLocalSubmitted(activeChatSessionId)
@@ -860,11 +866,21 @@ export function PiChatPanel<
         onMentionedFilesConsumed?.()
       },
     })
-  }, [activeChatSessionId, addLocalNotice, allowPromptDuringInitialHydration, clearMentionedFiles, composerBlocked, composerBlockerLabel, effectiveMentionedFiles, markLocalSubmitted, onBeforeSubmit, onCommandResult, onComposerWarning, onMentionedFilesConsumed, onPromptSubmitStarted, openModelPicker, openThinkingPicker, registry, reloadAgentPlugins, resetSession, runPluginUpdate, selectComposerModel, selectComposerThinking, selectedModel, selectedPiSession, selectedThinking, serverModelSelectionReady, setComposerDraft, submitThinkingControl, suppressPreSubmitCancelledWarning])
+  }, [activeChatIdentity, activeChatSessionId, addLocalNotice, allowPromptDuringInitialHydration, clearMentionedFiles, composerBlocked, composerBlockerLabel, effectiveMentionedFiles, markLocalSubmitted, onBeforeSubmit, onCommandResult, onComposerWarning, onMentionedFilesConsumed, onPromptSubmitStarted, openModelPicker, openThinkingPicker, registry, reloadAgentPlugins, resetSession, runPluginUpdate, selectComposerModel, selectComposerThinking, selectedModel, selectedPiSession, selectedThinking, serverModelSelectionReady, setComposerDraft, submitThinkingControl, suppressPreSubmitCancelledWarning])
 
   // Turn a rejected send (prompt/follow-up/auto-submit) into the single run-rejected
   // notice, carrying the stable server error code so a host can attach a recovery
   // action for a specific code.
+  const surfaceHandledSubmit = useCallback((message?: string) => {
+    if (!message) return
+    addLocalNotice({
+      id: `handled-submit:${Date.now()}`,
+      level: 'info',
+      text: message,
+      dismissible: true,
+    })
+  }, [addLocalNotice])
+
   const surfaceRunRejected = useCallback((error: unknown) => {
     const errorCode = piChatErrorCode(error)
     // Un-dismiss first: if the user dismissed a prior rejection, the id sits in
@@ -906,14 +922,7 @@ export function PiChatPanel<
       if (result.type === 'prompt' || result.type === 'followup') {
         dropLocalNotice(RUN_REJECTED_NOTICE_ID)
       }
-      if (result.type === 'handled' && result.message) {
-        addLocalNotice({
-          id: `handled-submit:${Date.now()}`,
-          level: 'info',
-          text: result.message,
-          dismissible: true,
-        })
-      }
+      if (result.type === 'handled') surfaceHandledSubmit(result.message)
       if (result.type === 'prompt' && activeChatSessionId) {
         onPromptSubmitStarted?.({ sessionId: activeChatSessionId, clientNonce: result.clientNonce })
         if (shouldHoldLocalSubmitted(selectedPiSession, result.cursor)) markLocalSubmitted(activeChatSessionId)
@@ -930,7 +939,7 @@ export function PiChatPanel<
       surfaceRunRejected(error)
       return false
     }
-  }, [activeChatSessionId, addLocalNotice, clearLocalSubmitted, dropLocalNotice, markLocalSubmitted, onPromptSubmitStarted, policy, selectedPiSession, setComposerDraft, surfaceRunRejected])
+  }, [activeChatSessionId, clearLocalSubmitted, dropLocalNotice, markLocalSubmitted, onPromptSubmitStarted, policy, selectedPiSession, setComposerDraft, surfaceHandledSubmit, surfaceRunRejected])
 
   const availableAssistantSlashCommands = useMemo(
     () => policy ? actionableSlashCommands : actionableSlashCommands.filter((command) => command.clickBehavior === 'insert'),
@@ -1110,11 +1119,16 @@ export function PiChatPanel<
         }
         return
       }
+      if (result.type === 'stale') {
+        settlePendingAutoSubmit(activeSessionId)
+        return
+      }
       // Supersede a prior run-rejected CTA only on an admitted run (same rule as the
       // composer path — a local command admits nothing).
       if (result.type === 'prompt' || result.type === 'followup') {
         dropLocalNotice(RUN_REJECTED_NOTICE_ID)
       }
+      if (result.type === 'handled') surfaceHandledSubmit(result.message)
       if (result.type === 'prompt') {
         onPromptSubmitStarted?.({ sessionId: activeSessionId, clientNonce: result.clientNonce })
         if (shouldHoldLocalSubmitted(selectedPiSession, result.cursor)) markLocalSubmitted(activeSessionId)
@@ -1134,7 +1148,7 @@ export function PiChatPanel<
       // of an inert generic error.
       surfaceRunRejected(error)
     })
-  }, [activeSessionId, autoSubmitInitialDraft, clearLocalSubmitted, composerBlocked, dropLocalNotice, initialDraft, markLocalSubmitted, onAutoSubmitInitialDraftAccepted, onPromptSubmitStarted, policy, selectedPiSession, setComposerDraft, settlePendingAutoSubmit, surfaceRunRejected])
+  }, [activeSessionId, autoSubmitInitialDraft, clearLocalSubmitted, composerBlocked, dropLocalNotice, initialDraft, markLocalSubmitted, onAutoSubmitInitialDraftAccepted, onPromptSubmitStarted, policy, selectedPiSession, setComposerDraft, settlePendingAutoSubmit, surfaceHandledSubmit, surfaceRunRejected])
 
   useEffect(() => {
     if (workspaceWarmupStatus?.status === 'ready') {

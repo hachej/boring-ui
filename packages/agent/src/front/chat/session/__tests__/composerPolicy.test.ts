@@ -346,6 +346,7 @@ describe('PiComposerPolicyController submit policy', () => {
   it('rejects an asynchronous pre-submit result after the active session changes', async () => {
     const session = new FakeComposerSession('idle')
     let active = true
+    const onWarning = vi.fn()
     let finish!: (value: { handled: true; message: string }) => void
     const beforeSubmit = new Promise<{ handled: true; message: string }>((resolve) => { finish = resolve })
     const policy = createPiComposerPolicyController({
@@ -354,18 +355,20 @@ describe('PiComposerPolicyController submit policy', () => {
       slashContext: context(),
       isActiveSession: () => active,
       onBeforeSubmit: async () => await beforeSubmit,
+      onWarning,
     })
 
     const pending = policy.submit({ text: 'large context' })
     active = false
     finish({ handled: true, message: 'Context stored.' })
 
-    await expect(pending).resolves.toMatchObject({
-      type: 'blocked',
+    await expect(pending).resolves.toEqual({
+      type: 'stale',
       reason: 'inactive-session',
-      preserveDraft: true,
+      preserveDraft: false,
     })
     expect(session.prompts).toEqual([])
+    expect(onWarning).not.toHaveBeenCalled()
   })
 
   it('runs local slash commands when idle and blocks executable slash while streaming', async () => {

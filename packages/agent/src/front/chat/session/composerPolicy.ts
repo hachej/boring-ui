@@ -69,7 +69,6 @@ export interface PiComposerPolicyOptions extends PiQueueControllerOptions {
 export type PiComposerBlockedReason =
   | Extract<PiQueueSubmitResult, { type: 'blocked' }>['reason']
   | 'composer-blocked'
-  | 'inactive-session'
   | 'pre-submit-cancelled'
 
 export type PiComposerSubmitResult =
@@ -77,6 +76,7 @@ export type PiComposerSubmitResult =
   | { type: 'followup'; clientNonce: string; clientSeq: number; cursor?: number; preserveDraft: false }
   | { type: 'command'; command: string; result?: string; preserveDraft: boolean }
   | { type: 'handled'; message?: string; preserveDraft: false }
+  | { type: 'stale'; reason: 'inactive-session'; preserveDraft: false }
   | { type: 'blocked'; reason: PiComposerBlockedReason; message: string; preserveDraft: true }
 
 export class PiComposerPolicyController {
@@ -96,7 +96,7 @@ export class PiComposerPolicyController {
 
     const beforeSubmit = await this.runBeforeSubmit(input.text, files, source)
     if (this.options.isActiveSession && !this.options.isActiveSession()) {
-      return this.block('inactive-session', 'The active session changed before the message was sent.')
+      return this.stale()
     }
     if (beforeSubmit === false) {
       return this.block('pre-submit-cancelled', 'Submit was cancelled before sending.')
@@ -129,7 +129,7 @@ export class PiComposerPolicyController {
       mentionedFiles: this.getMentionedFiles(),
     })
     if (this.options.isActiveSession && !this.options.isActiveSession()) {
-      return this.block('inactive-session', 'The active session changed before the message was sent.')
+      return this.stale()
     }
 
     const result = await this.queueController.submit({
@@ -207,6 +207,10 @@ export class PiComposerPolicyController {
   private fromQueueResult(result: PiQueueSubmitResult): PiComposerSubmitResult {
     if (result.type === 'blocked') return { ...result, preserveDraft: true }
     return { ...result, preserveDraft: false }
+  }
+
+  private stale(): PiComposerSubmitResult {
+    return { type: 'stale', reason: 'inactive-session', preserveDraft: false }
   }
 
   private block(reason: Extract<PiComposerSubmitResult, { type: 'blocked' }>['reason'], message: string): PiComposerSubmitResult {
