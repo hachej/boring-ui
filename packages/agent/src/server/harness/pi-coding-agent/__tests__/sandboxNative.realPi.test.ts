@@ -1,15 +1,15 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 
 import {
-  AuthStorage,
   createAgentSession,
   createExtensionRuntime,
-  ModelRegistry,
+  ModelRuntime,
   SessionManager,
   type ToolDefinition,
 } from '@mariozechner/pi-coding-agent'
 import { describe, expect, it, vi } from 'vitest'
 
+import { InMemoryCredentialStore } from '@earendil-works/pi-ai'
 import type { WorkspaceSandboxPairV1 } from '@hachej/boring-sandbox/shared'
 import { buildFilesystemAgentTools, buildHarnessAgentTools } from '@hachej/boring-bash/agent'
 import type { RuntimeBundle } from '../../../runtime/mode'
@@ -184,9 +184,12 @@ describe('native sandbox tools through real Pi', () => {
     const tools = adaptToolsForPi([...composition.tools], 'session-a', undefined, () => runContextStorage.getStore())
 
     let turn = 0
-    const authStorage = AuthStorage.inMemory()
-    const registry = ModelRegistry.inMemory(authStorage)
-    registry.registerProvider('sandbox-native', {
+    const modelRuntime = await ModelRuntime.create({
+      credentials: new InMemoryCredentialStore(),
+      modelsPath: null,
+      refreshOnCreate: false,
+    })
+    modelRuntime.registerProvider('sandbox-native', {
       name: 'Sandbox Native', api: 'sandbox-native', baseUrl: 'https://example.invalid', apiKey: 'test',
       models: [{ id: 'loop', name: 'Loop', reasoning: false, input: ['text'], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 1_000_000, maxTokens: 128 }],
       streamSimple() {
@@ -204,8 +207,9 @@ describe('native sandbox tools through real Pi', () => {
         return stream([{ type: 'start', partial: message('done', [], 'stop') }, { type: 'text_delta', contentIndex: 0, delta: 'done', partial: final }, { type: 'text_end', contentIndex: 0, content: 'done', partial: final }, { type: 'done', reason: 'stop', message: final }], final) as any
       },
     })
+    await modelRuntime.refresh({ allowNetwork: false })
     const { session } = await createAgentSession({
-      cwd: process.cwd(), authStorage, modelRegistry: registry, model: registry.find('sandbox-native', 'loop')!,
+      cwd: process.cwd(), modelRuntime, model: modelRuntime.getModel('sandbox-native', 'loop')!,
       noTools: 'builtin', customTools: tools as ToolDefinition[], resourceLoader: resources() as any,
       sessionManager: SessionManager.inMemory(process.cwd()), thinkingLevel: 'off',
     })
