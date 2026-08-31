@@ -1,0 +1,70 @@
+{
+  "name": "@hachej/boring-browser",
+  "version": "0.1.106",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "description": "Trusted runtime-neutral browser control plugin for Boring.",
+  "boring": {
+    "id": "browser",
+    "label": "Browser",
+    "front": "dist/front/index.js",
+    "server": "dist/server/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/front/index.d.ts",
+      "import": "./dist/front/index.js"
+    },
+    "./front": {
+      "types": "./dist/front/index.d.ts",
+      "import": "./dist/front/index.js"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js"
+    },
+    "./shared": {
+      "types": "./dist/shared/index.d.ts",
+      "import": "./dist/shared/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup && cp -R src/runtime dist/runtime",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "pnpm run typecheck",
+    "clean": "rm -rf dist .tsbuildinfo"
+  },
+  "peerDependencies": {
+    "@hachej/boring-workspace": "workspace:*",
+    "fastify": "^5.12.1",
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0"
+  },
+  "dependencies": {
+    "@hachej/boring-ui-kit": "workspace:*",
+    "lucide-react": "^1.31.0"
+  },
+  "devDependencies": {
+    "@hachej/boring-workspace": "workspace:*",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^22.20.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "fastify": "^5.12.1",
+    "jsdom": "^30.0.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "tsup": "^8.4.0",
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.11"
+  }
+}
