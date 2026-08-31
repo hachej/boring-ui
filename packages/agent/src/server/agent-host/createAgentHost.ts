@@ -270,6 +270,7 @@ function assertPublishedBindingMatchesResolvedScope(
     binding.scope.identity !== resolved.identity
     || binding.scope.environment.provisioningFingerprint !== resolved.environment.provisioningFingerprint
     || currentPhysicalBindingIdentity !== candidatePhysicalBindingIdentity
+    || !matchesSandboxToolCapability(binding, resolved.sandboxTools?.digest)
   ) {
     throw new AgentGatewayError(
       AgentGatewayErrorCode.AGENT_RUNTIME_RESTART_REQUIRED,
