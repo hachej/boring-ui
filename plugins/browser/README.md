@@ -1,26 +1,22 @@
 # Boring Browser (trusted internal plugin)
 
-An **unwired, refusal-only local tracer package**, not a usable browser feature. No app statically composes it. A future Host integration would have to compose both front/server exports and inject authenticated scope resolution, existing selected-environment exec, exact effect admission, audit, and exactly-once environment-reference release. The package does not select a runtime or provider.
+A default-off trusted workspace plugin backed by the fixed `trusted-service-v1` Host capability. The plugin never receives a Sandbox, RuntimeBundle, provider ID, image, service selector, executable, port, or upstream URL. It registers exactly `browser_observe` and `browser_act` when the app passes `enabled: true`; disabled composition contributes no routes, tools, skills, or assets.
 
-## Proposed runtime contract (not integrated)
+## Authority boundary
 
-`BORING_BROWSER_PLUGIN_ENABLED=1` or `{ enabled: true }` is rejected by the server factory until the missing Host security seams exist; setting it cannot enable a feature. The injected `BrowserExec` maps the controller's closed intents to the bundled `src/runtime/launcher.sh` using the existing environment-generation exec lifecycle. No caller supplies executable, argv, environment, port, endpoint, provider, or runtime identity. The launcher starts one ephemeral Xvfb/Chromium/x11vnc/noVNC set and Browser-Use CLI attaches to that same Chromium at its loopback CDP endpoint. Agent control uses view-only VNC; takeover/return rotates the x11vnc process and the server's monotonic epoch is authoritative.
+Boring remains the only Agent/model/admission/audit authority. Browser-Use 0.13.8 supplies `BrowserSession` only; no Browser-Use Agent, model, cloud, MCP server, or generic catalog is instantiated. `BrowserHostCapability` retains the addressed Agent session's exact Environment generation and returns only closed operation and opaque same-origin view methods.
 
-## Browser-Use supply-chain review
+The runtime image uses a dedicated `boring-browser` UID and private container/network namespace. Its profile, X socket, VNC password, and Unix control socket are mode 0700/0600 and never mounted into the ordinary Agent namespace. Observer VNC is `-viewonly`; controller VNC accepts input; neither is passwordless. Browser-Use 0.13.8 requires loopback TCP CDP, so CDP is allowed only inside this private namespace, is never published/projected, and is unreachable from ordinary Agent bash. Hosted modes remain unsupported until they prove this exact isolation and image/protocol digest.
 
-Provenance metadata pins Browser-Use **0.13.8** from official tag/commit `eb4126921bea3373f91afc49fb4b59d6eda7fed6`. The PyPI universal wheel SHA-256, unmodified official skill SHA-256, bounded Host adaptation SHA-256, and vendored MIT license SHA-256 are in `browser-use.provenance.json`. The unmodified skill is retained for provenance; because it advertises raw Bash/eval/cookie/cloud surfaces forbidden here, Agent composition contributes only the reviewed bounded adaptation that permits the two native Boring tools. Sources reviewed: GitHub release API, official tagged `SKILL.md`/`LICENSE`, and PyPI release JSON. MIT is compatible with this repository; retain the vendored notice. `node src/runtime/verify-provenance.mjs` verifies only checked-in provenance files, not an installed wheel. A future Host-owned image must enforce the wheel hash during installation and pass a real same-Chromium compatibility smoke before composition. Browser-Use's Agent/model/cloud, raw MCP catalog, eval/cookie/CDP surfaces, and cloud credentials are not used.
+## Qualification
 
-## Honest local-tracer boundary
-
-The fixed launcher is executable when the selected runtime already contains exact Host-approved builds of Python, Chromium, Xvfb, x11vnc, noVNC/websockify, and the pinned Browser-Use wheel. This repository currently has no generic selected-environment exec callback exposed to trusted server plugins and no approved runtime image lock containing those prerequisites, so app composition cannot yet wire a real launcher without widening core runtime seams. The package therefore exposes the narrow injected `BrowserExec` contract and tests it with fakes; it does **not** fall back to host-global execution. Hosted/live same-Chromium proof and rollout remain blocked until that seam/image, authenticated WSS preview, and enforceable egress policy exist.
-
-Upload/download actions are absent until Host resource resolution and quarantine/publication contracts exist. The loopback CDP/VNC launcher is not structurally isolated from other processes in the same runtime and therefore must remain unwired; its epoch argument is not a security boundary. The launcher is tracer code, not deployment or production enablement.
-
-## Checks
+The Dockerfile pins its base by digest and verifies the exact Browser-Use wheel SHA-256 before installation. `qualification.json` pins the service protocol source digest; `qualify-image.sh` builds the image, records its local image ID, verifies identity/file/viewer isolation, proves an independently namespaced Agent cannot reach CDP or private bytes, and drives/observes one displayed Chromium through Browser-Use.
 
 ```sh
+node plugins/browser/src/runtime/verify-provenance.mjs
+plugins/browser/src/runtime/qualify-image.sh
 pnpm --filter @hachej/boring-browser typecheck
 pnpm --filter @hachej/boring-browser test
-pnpm --filter @hachej/boring-browser build
-node plugins/browser/src/runtime/verify-provenance.mjs
 ```
+
+An image registry digest and hosted-provider conformance proof are operator gates. This repository makes no production-readiness claim without them.

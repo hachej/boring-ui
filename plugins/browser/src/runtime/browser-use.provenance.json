@@ -22,9 +22,12 @@
     "sha256": "135c57671b0ee957669b05a0ca00cc06f645496d351e2e732832c6e276da9a5e"
   },
   "compatibility": {
-    "python": ">=3.11,<3.14",
-    "launcherProtocol": 1,
-    "chromium": "host-runtime-pinned prerequisite",
-    "novnc": "host-runtime-pinned prerequisite"
+    "python": "3.12.8 (digest-pinned base image)",
+    "serviceProtocol": "trusted-service-v1",
+    "protocolDigest": "sha256:8b2340169d26c8ca9c6a9fc0ccedd115ff32122060aea9e8f1bf1a01493cd707",
+    "chromium": "qualified-container package recorded by qualify-image.sh",
+    "novnc": "qualified-container package recorded by qualify-image.sh",
+    "isolation": "dedicated-uid-private-channel",
+    "cdpBoundary": "loopback-only-inside-private-trusted-service-namespace"
   }
 }

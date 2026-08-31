@@ -39,6 +39,8 @@
     "build": "tsup && cp -R src/runtime dist/runtime",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "qualify:image": "src/runtime/qualify-image.sh",
+    "verify:provenance": "node src/runtime/verify-provenance.mjs",
     "lint": "pnpm run typecheck",
     "clean": "rm -rf dist .tsbuildinfo"
   },
