@@ -2,7 +2,7 @@
 github: https://github.com/hachej/boring-ui/issues/1081
 issue: 1081
 state: needs-owner-approval
-updated: 2026-08-13
+updated: 2026-08-31
 revision: r6-sovereign-first
 flag: BORING_AGENT_MODE=remote-worker
 track: owner
@@ -14,9 +14,10 @@ track: owner
 
 The product is an operator-controlled sandbox fleet in an approved EU region.
 It runs untrusted customer agent code in one hardware-isolated micro-VM per
-sandbox and keeps each workspace's durable files in self-hosted SeaweedFS.
-SeaweedFS exposes the same plain tenant files through both a POSIX mount at
-`/workspace` and an S3 API. Ephemeral `/scratch` remains the local tier for
+sandbox and keeps the primary Workspace plus independent disposable lease
+namespaces in self-hosted SeaweedFS. A lease mounts its own plain-file namespace
+through POSIX at `/workspace`; S3 exposes both primary and lease prefixes under
+the same workspace authority. Ephemeral `/scratch` remains the local tier for
 SQLite and other fsync-heavy work; Gate 0 benchmarks decide how much general
 build work also uses it.
 
@@ -47,9 +48,10 @@ operator-controlled EU bare-metal KVM host
                                          |
                                          v
                               self-hosted EU SeaweedFS
-                              one tenant-scoped plain-file namespace
-                              +-- POSIX/FUSE at /workspace
-                              `-- S3 API + file events
+                              workspace-authorized plain-file prefixes
+                              +-- primary durable Workspace
+                              +-- independent lease A/B prefixes at /workspace
+                              `-- S3 API + file events/publication
 ```
 
 The governing rule is:
@@ -150,11 +152,16 @@ selected and proven.
 
 ## Storage and workspace semantics
 
-Self-hosted Apache-2.0 SeaweedFS is the durable data substrate. A tenant's
-`/workspace` is one tenant-scoped plain-file namespace visible through both:
+Self-hosted Apache-2.0 SeaweedFS is the durable data substrate. Each workspace
+has one primary plain-file prefix plus independent sandbox-lease prefixes under
+the same tenant/workspace authority. A lease mounts only its own prefix through:
 
-- an admitted SeaweedFS FUSE/POSIX mount inside the micro-VM at `/workspace`;
-- an S3 API for direct access, export, and product file-browsing surfaces.
+- an admitted SeaweedFS FUSE/POSIX mount inside its micro-VM at `/workspace`;
+- an S3 API used by trusted copy/publication and product file-browsing surfaces.
+
+The primary prefix is not mounted as the lease's writable `/workspace`. Selected
+inputs are copied into the lease prefix, and admitted outputs publish back
+explicitly.
 
 This preserves bring-your-own-data and take-your-data-out without hiding user
 files inside an opaque block image or chunk store. Short-lived credentials are
@@ -243,14 +250,81 @@ application. Its required semantics are:
 
 | Capability | Required behavior |
 | --- | --- |
-| create | Idempotent by request/session identity; one sandbox per authorized session; tenant and external/session tags |
+| create | Idempotent by `(workspaceId, clientLeaseId)`; one sandbox per explicit lease, with several bounded concurrent leases allowed for one authorized Agent session; tenant and external/session tags |
 | exec | Bounded command, cancellation, output, time, CPU, memory, PID, and disk behavior |
 | files | Bounded read/write/list/stat plus archive copy-in, explicit artifact publication, and unpublished-output state |
 | watch | Live guest inotify plus external S3 events, at-least-once delivery, monotonic cursor, dedupe, and gap reconciliation |
 | suspend/resume | Roughly 60-second idle policy and authorized resume without crossing a session key |
-| destroy | Idempotent teardown, credential expiry/revocation, control-plane-enforced protection against silent unpublished-output loss, scratch discard, and orphan recovery |
+| destroy | Idempotent teardown, credential expiry/revocation, control-plane-enforced protection against silent unpublished-output loss, scratch discard, orphan recovery, and visible retryable cleanup debt after ambiguous failure |
 | health/qualification | Stable unavailable/unqualified states and exact isolation/cohort facts |
 | usage | Active sandbox-seconds, lifecycle counts, storage, and egress tagged by tenant/session/provider in the protected ledger |
+
+### Native multi-lease lifecycle and authority
+
+One authorized Agent session may own several concurrent sandbox leases. Each
+lease is explicit and opaque; canonical bash/filesystem operations target a
+specific lease handle. Omitting a handle preserves the primary Workspace
+exactly. There is no mutable current sandbox, implicit redirection, caller- or
+model-selected provider, image, root, resource profile, credential, network
+policy, TTL, or qualification input.
+
+The provider contract preserves these invariants across Blaxel, the sovereign
+Firecracker cohort, and any later hardware-microVM implementation:
+
+1. Workspace identity is the tenant authorization and aggregate-quota key.
+   Sandbox identity selects one isolated runtime and sandbox-scoped mutable
+   SeaweedFS namespace beneath that authority; it never authorizes an operation
+   by itself. Leases do not share mutable backing.
+2. Create replay is keyed by `(workspaceId, clientLeaseId)`. Active operations,
+   status, pinning, retirement, and deletion are keyed by
+   `(workspaceId, sandboxId)`. A changed request digest under the same create
+   key is a conflict.
+3. Every effect, data, and authenticated internal-readiness request carries a
+   short-lived replay-protected capability bound to the exact provider/node
+   audience, workspace, sandbox where applicable, operation, canonical request
+   digest, and expiry. A bounded public process-liveness response carries no
+   provider facts or effects. Provider-reported identities are observations,
+   never authority.
+4. Owned leases, pending creates, and cleanup debt consume bounded tenant and
+   host quota. Create reserves capacity before acquisition and releases it on
+   every settled failure. Recovery and orphan sweeps cannot race an owned lease
+   or create reservation.
+5. Create and destroy are accepted external effects. An `outcome-unknown`
+   request is immutable and is never reinvoked by the model/tool path.
+   Reconciliation first observes provider state by the durable effect/create
+   key. If cleanup remains necessary, a separately keyed idempotent maintenance
+   operation may retry without rewriting or settling the original receipt.
+   Response fields are not trusted until authenticated against the original
+   request and selected provider.
+6. Active operations pin the exact lease. Retirement rejects new pins, drains
+   or aborts bounded active work, protects unpublished outputs, and only then
+   destroys compute and releases credentials/storage attachment. Shutdown must
+   not delete a published lease beneath active pins.
+7. Cleanup has exactly one owner. The provider owns unpublished resources;
+   authority transfers with a published lease. Stream closure is not delete
+   authority. Ambiguous cleanup remains listable, retryable, quota-counted
+   maintenance debt without rewriting the original effect receipt.
+
+The primary durable Workspace prefix and sandbox lease prefixes are distinct.
+Each lease receives its own SeaweedFS prefix mounted at `/workspace`, its own
+microVM, and its own `/scratch`. It is initialized from an admitted immutable
+snapshot or bounded copy of selected primary Workspace inputs.
+
+A trusted control-plane publication operation is the only path from a lease
+prefix to the primary Workspace. It is request-bound and idempotent by
+`(workspaceId, sandboxId, publicationId, sourceManifestDigest)`, names bounded
+source/destination paths, and compares the expected primary revision before any
+overwrite. It records durable `pending`, `published`, `conflicted`, or
+`outcome-unknown` state; ambiguous publication is observed/reconciled by key and
+never automatically replayed. Staged/partial bytes never become the primary
+revision. Successful publication emits ordinary primary-Workspace events.
+
+The lease service tracks changes from the admitted baseline. Release blocks and
+surfaces unpublished changes until publication settles or a separately
+host-authorized explicit discard is recorded. The model cannot mint discard
+authority. Only then may pin/drain cleanup delete the lease prefix. File-event
+cursors remain per lease. M0 may use bounded copy; snapshot/fork optimization
+remains scale work.
 
 A provider swap is a server configuration change, not an application-contract
 or customer-data-model change.
