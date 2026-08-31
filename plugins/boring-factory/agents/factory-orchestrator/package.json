@@ -1,0 +1,13 @@
+{
+  "name": "@hachej/boring-factory-orchestrator",
+  "private": true,
+  "version": "1.0.0",
+  "boring": {
+    "agent": {
+      "definitionId": "factory-orchestrator",
+      "version": "1.0.0",
+      "label": "Factory Orchestrator",
+      "instructionsRef": "instructions.md"
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "@hachej/boring-factory-worker",
+  "private": true,
+  "version": "1.0.0",
+  "boring": {
+    "agent": {
+      "definitionId": "factory-worker",
+      "version": "1.0.0",
+      "label": "Factory Worker",
+      "instructionsRef": "instructions.md"
+    }
+  }
+}
