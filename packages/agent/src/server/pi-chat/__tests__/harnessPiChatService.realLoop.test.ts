@@ -296,6 +296,7 @@ describe('HarnessPiChatService real Pi loop', () => {
     const { adapter, providerCalls, toolCalls } = await createRealPiAdapter()
     const harness = createHarness(adapter)
     const service = new HarnessPiChatService({
+      agentTypeId: 'test',
       harness,
       sessionStore,
       workdir: process.cwd(),
@@ -352,6 +353,7 @@ describe('HarnessPiChatService real Pi loop', () => {
     })
     const harness = createHarness(adapter)
     const service = new HarnessPiChatService({
+      agentTypeId: 'test',
       harness,
       sessionStore,
       workdir: process.cwd(),
@@ -411,6 +413,7 @@ describe('HarnessPiChatService real Pi loop', () => {
     })
     const harness = createHarness(adapter)
     const service = new HarnessPiChatService({
+      agentTypeId: 'test',
       harness,
       sessionStore,
       workdir: process.cwd(),
@@ -470,6 +473,7 @@ describe('HarnessPiChatService real Pi loop', () => {
     })
     const harness = createHarness(adapter)
     const service = new HarnessPiChatService({
+      agentTypeId: 'test',
       harness,
       sessionStore,
       workdir: process.cwd(),
@@ -525,6 +529,7 @@ describe('HarnessPiChatService real Pi loop', () => {
     })
     const harness = createHarness(adapter)
     const service = new HarnessPiChatService({
+      agentTypeId: 'test',
       harness,
       sessionStore,
       workdir: process.cwd(),
@@ -633,6 +638,7 @@ describe('HarnessPiChatService real Pi loop', () => {
     })
     const harness = createHarness(adapter)
     const service = new HarnessPiChatService({
+      agentTypeId: 'test',
       harness,
       sessionStore,
       workdir: process.cwd(),
@@ -752,6 +758,7 @@ describe('HarnessPiChatService real Pi loop', () => {
     })
     const harness = createHarness(adapter)
     const service = new HarnessPiChatService({
+      agentTypeId: 'test',
       harness,
       sessionStore,
       workdir: process.cwd(),
@@ -771,6 +778,7 @@ describe('HarnessPiChatService real Pi loop', () => {
     // This simulates browser/service reload over the same live Pi session. It
     // does not prove JSONL cold-restart persistence.
     const reloadedService = new HarnessPiChatService({
+      agentTypeId: 'test',
       harness,
       sessionStore,
       workdir: process.cwd(),

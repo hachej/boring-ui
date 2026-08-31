@@ -106,6 +106,7 @@ function createHarness(adapter: PiAgentSessionAdapter): AgentHarness & {
 function createService(adapter = createAdapter(), workspace?: Workspace) {
   const harness = createHarness(adapter)
   const service = new HarnessPiChatService({
+    agentTypeId: 'test',
     harness,
     sessionStore,
     workdir: '/workspace',
@@ -136,6 +137,7 @@ describe('HarnessPiChatService', () => {
   it('serves id-less live attachment bytes from the addressed event URL', async () => {
     const adapter = createAdapter()
     const service = new HarnessPiChatService({
+      agentTypeId: 'test',
       harness: createHarness(adapter),
       sessionStore,
       workdir: '/workspace',
@@ -176,7 +178,7 @@ describe('HarnessPiChatService', () => {
       if (input.model) currentModel = input.model
       return adapter
     })
-    const service = new HarnessPiChatService({ harness, sessionStore, workdir: '/workspace' })
+    const service = new HarnessPiChatService({ agentTypeId: 'test', harness, sessionStore, workdir: '/workspace' })
     const events: PiChatEvent[] = []
     const subscription = await service.subscribe(ctx, 's1', 0, (event) => events.push(event))
     if (subscription.type !== 'ok') throw new Error('expected live subscription')
@@ -207,6 +209,7 @@ describe('HarnessPiChatService', () => {
     adapter.abort = vi.fn(async () => run.resolve())
     const releaseRun = vi.fn(() => release.promise)
     const service = new HarnessPiChatService({
+      agentTypeId: 'test',
       harness: createHarness(adapter),
       sessionStore,
       workdir: '/workspace',
@@ -264,6 +267,7 @@ describe('HarnessPiChatService', () => {
         return { id: 's1' }
       })
     const service = new HarnessPiChatService({
+      agentTypeId: 'test',
       harness: createHarness(adapter),
       sessionStore: { ...sessionStore, load, delete: deleteSession },
       workdir: '/workspace',
@@ -297,6 +301,7 @@ describe('HarnessPiChatService', () => {
       }),
     }
     const service = new HarnessPiChatService({
+      agentTypeId: 'test',
       harness,
       sessionStore: { ...sessionStore, delete: deleteSession },
       workdir: '/workspace',
@@ -346,6 +351,7 @@ describe('HarnessPiChatService', () => {
       .mockRejectedValueOnce(new Error('Session not found: missing'))
     const deleteSession = vi.fn(async () => {})
     const service = new HarnessPiChatService({
+      agentTypeId: 'test',
       harness: createHarness(adapter),
       sessionStore: {
         ...sessionStore,
@@ -1172,6 +1178,7 @@ describe('HarnessPiChatService', () => {
     }
     const harness = createHarness(adapter)
     const service = new HarnessPiChatService({
+      agentTypeId: 'test',
       harness,
       sessionStore: persistedStore,
       workdir: '/workspace',
@@ -1220,6 +1227,7 @@ describe('HarnessPiChatService', () => {
       loadEntries: vi.fn(() => persisted.promise),
     }
     const service = new HarnessPiChatService({
+      agentTypeId: 'test',
       harness: createHarness(adapter),
       sessionStore: persistedStore,
       workdir: '/workspace',
@@ -1255,6 +1263,7 @@ describe('HarnessPiChatService', () => {
       loadEntries: vi.fn(async () => ({ id: 's1', messages: persistedMessages })),
     }
     const service = new HarnessPiChatService({
+      agentTypeId: 'test',
       harness: createHarness(adapter),
       sessionStore: persistedStore,
       workdir: '/workspace',
@@ -1298,6 +1307,7 @@ describe('HarnessPiChatService', () => {
       loadEntries: vi.fn(async () => ({ id: 's1', messages: [] })),
     }
     const service = new HarnessPiChatService({
+      agentTypeId: 'test',
       harness: createHarness(adapter),
       sessionStore: persistedStore,
       workdir: '/workspace',
@@ -1324,6 +1334,7 @@ describe('HarnessPiChatService', () => {
       })),
     }
     const service = new HarnessPiChatService({
+      agentTypeId: 'test',
       harness: createHarness(adapter),
       sessionStore: persistedStore,
       workdir: '/workspace',
@@ -1358,6 +1369,7 @@ describe('HarnessPiChatService', () => {
     const harness = createHarness(adapter)
     vi.mocked(harness.hasPiSession).mockReturnValue(true)
     const service = new HarnessPiChatService({
+      agentTypeId: 'test',
       harness,
       sessionStore: persistedStore,
       workdir: '/workspace',
@@ -1397,6 +1409,7 @@ describe('HarnessPiChatService', () => {
     const harness = createHarness(adapter)
     vi.mocked(harness.hasPiSession).mockReturnValue(true)
     const service = new HarnessPiChatService({
+      agentTypeId: 'test',
       harness,
       sessionStore: persistedStore,
       workdir: '/workspace',
@@ -1430,6 +1443,7 @@ describe('HarnessPiChatService', () => {
     const harness = createHarness(adapter)
     vi.mocked(harness.hasPiSession).mockImplementation((_sessionId, sessionCtx) => sessionCtx?.workspaceId === ctx.workspaceId)
     const service = new HarnessPiChatService({
+      agentTypeId: 'test',
       harness,
       sessionStore: scopedStore,
       workdir: '/workspace',
@@ -1570,6 +1584,7 @@ describe('HarnessPiChatService', () => {
     const settled = vi.fn(async () => {})
     const released = vi.fn(async () => {})
     const service = new HarnessPiChatService({
+      agentTypeId: 'test',
       harness: createHarness(adapter),
       sessionStore,
       workdir: '/workspace',
@@ -1608,6 +1623,7 @@ describe('HarnessPiChatService', () => {
     const settled = vi.fn(async () => {})
     const released = vi.fn(async () => {})
     const service = new HarnessPiChatService({
+      agentTypeId: 'test',
       harness: createHarness(adapter),
       sessionStore,
       workdir: '/workspace',
@@ -1678,6 +1694,7 @@ describe('HarnessPiChatService', () => {
     adapter.continueQueuedFollowUp = vi.fn(() => replacement.promise)
     const releaseRun = vi.fn(async () => {})
     const service = new HarnessPiChatService({
+      agentTypeId: 'test',
       harness: createHarness(adapter),
       sessionStore,
       workdir: '/workspace',
@@ -1844,6 +1861,7 @@ describe('HarnessPiChatService', () => {
     adapter.abort = vi.fn(async () => { throw new Error('abort failed') })
     const released = vi.fn(async () => {})
     const service = new HarnessPiChatService({
+      agentTypeId: 'test',
       harness: createHarness(adapter),
       sessionStore,
       workdir: '/workspace',
@@ -2044,6 +2062,7 @@ describe('HarnessPiChatService', () => {
     adapter.prompt = vi.fn(async () => { throw new Error('prompt rejected') })
     const released = vi.fn(async () => {})
     const service = new HarnessPiChatService({
+      agentTypeId: 'test',
       harness: createHarness(adapter),
       sessionStore,
       workdir: '/workspace',

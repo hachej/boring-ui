@@ -48,6 +48,7 @@
   "exclude": [
     "node_modules",
     "dist",
-    "src/server/events/__tests__/fixtures/concurrentAppendWorker.ts"
+    "src/server/events/__tests__/fixtures/concurrentAppendWorker.ts",
+    "src/server/events/__tests__/fixtures/concurrentMigrationWorker.ts"
   ]
 }

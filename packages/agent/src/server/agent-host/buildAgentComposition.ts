@@ -77,17 +77,21 @@ export function openDurableEventStore(input: {
     throw new DurableStreamUnavailableError('(no host-resolvable root)', reason)
   }
   const path = join(root, EVENT_STORE_FILE_NAME)
-  let opened: OpenDatabaseResult
+  let opened: OpenDatabaseResult | undefined
   try {
     opened = openDatabase(path)
+    const store = new SqliteEventStreamStore(opened.sql, opened.runTransaction, {
+      telemetry: input.telemetry,
+    })
+    return {
+      store,
+      close: () => opened?.db.close(),
+    }
   } catch (error) {
+    opened?.db.close()
     const reason = error instanceof Error ? error.message : String(error)
     reportEventStoreOpenFailure(input.telemetry, path, reason)
     throw new DurableStreamUnavailableError(path, reason, error)
-  }
-  return {
-    store: new SqliteEventStreamStore(opened.sql, opened.runTransaction),
-    close: () => opened.db.close(),
   }
 }
 
@@ -317,6 +321,7 @@ export async function buildAgentComposition(
       })
     : undefined
   const backend = createPiSessionHarnessBackend({
+    agentTypeId: input.agent.agentTypeId,
     harness,
     sessionStore,
     workdir: runtimeBundle.workspace.root,

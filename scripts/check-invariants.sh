@@ -7,6 +7,9 @@ ROOT_DIR="$(cd "$ROOT_INPUT" 2>/dev/null && pwd || true)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PI_RUNTIME_IMPORT_PATTERN="(from\s+|import\s+|import\s*\(\s*|require\s*\(\s*)['\"](@mariozechner/pi-|@earendil-works/pi-)"
 HARNESS_SERVICE_IMPORT_PATTERN="(from\s+|import\s+|import\s*\(\s*|require\s*\(\s*)['\"][^'\"]*pi-chat/harnessPiChatService(?:\.[^'\"]+)?['\"]"
+SESSION_STREAM_PATH_REFERENCE_PATTERN="\b(sessionStreamPath|parseSessionStreamPath)\b"
+SESSION_STREAM_LITERAL_PATTERN="['\"\\x60]sessions/"
+SESSION_STREAM_JSON_PATTERN="(?s)(streamPath|stream_path|stream-path).{0,300}JSON\.stringify[[:space:]]*\([[:space:]]*\[|JSON\.stringify[[:space:]]*\([[:space:]]*\[.{0,300}(streamPath|stream_path|stream-path)"
 
 if [[ -z "$ROOT_DIR" || ! -d "$ROOT_DIR" ]]; then
   echo "$PREFIX ERR invalid target root: $ROOT_INPUT"
@@ -128,6 +131,37 @@ run_check_with_glob \
   "!**/harnessBackend/**" \
   "src/server/agent-host"
 
+if [[ -d "$ROOT_DIR/src" ]]; then
+  session_path_calls="$(rg -n --no-heading --color never \
+    -e "$SESSION_STREAM_PATH_REFERENCE_PATTERN" "$ROOT_DIR/src" \
+    -g '!**/__tests__/**' \
+    -g '!**/shared/events.ts' \
+    -g '!**/server/events/eventStreamStore.ts' \
+    -g '!**/server/events/schemaVersion.ts' \
+    -g '!**/server/pi-chat/harnessPiChatService.ts' || true)"
+  print_matches \
+    "Session stream path helpers have one bounded call-site allowlist" \
+    "Build and parse durable session paths only in shared/events.ts, eventStreamStore.ts, schemaVersion.ts, or harnessPiChatService.ts." \
+    "$session_path_calls"
+
+  session_path_literals="$(rg -n --no-heading --color never \
+    -e "$SESSION_STREAM_LITERAL_PATTERN" "$ROOT_DIR/src" \
+    -g '!**/__tests__/**' \
+    -g '!**/shared/events.ts' || true)"
+  print_matches \
+    "No session stream path literals outside the identity module" \
+    "Use the typed identity helpers in src/shared/events.ts." \
+    "$session_path_literals"
+
+  session_path_json="$(rg -U -n --no-heading --color never \
+    -e "$SESSION_STREAM_JSON_PATTERN" "$ROOT_DIR/src" \
+    -g '!**/__tests__/**' || true)"
+  print_matches \
+    "No JSON tuple grammar inside stream-path expressions" \
+    "Use SessionStreamIdentity and sessionStreamPath instead of JSON.stringify([...])." \
+    "$session_path_json"
+fi
+
 if [[ -d "$ROOT_DIR/src/server" ]]; then
   process_env_output="$(rg -n --no-heading --color never -e "process\\.env\\." "$ROOT_DIR/src/server" -g '!**/config/**' -g '!**/__tests__/**' || true)"
   print_matches \
@@ -222,6 +256,42 @@ else
   failures=1
   echo "  Invariant: invariant regexes must reject every checked-in import-form fixture."
   echo "  Fix: Keep fixture paths and import forms aligned with both agent-host scans."
+fi
+
+session_fixture_root="$SCRIPT_DIR/__fixtures__/check-invariants/session-stream-identity"
+if [[ "$ROOT_DIR" != "$session_fixture_root" ]]; then
+  set +e
+  session_fixture_output="$(
+    (source "$SCRIPT_DIR/check-invariants.sh" "$session_fixture_root") 2>&1
+  )"
+  session_fixture_status=$?
+  set -e
+  session_fixture_matches=1
+  if [[ "$session_fixture_status" -ne 1 ]]; then
+    session_fixture_matches=0
+    echo "$PREFIX ERR session identity fixture scan exited $session_fixture_status (expected 1)"
+  fi
+  for fixture in \
+    aliasedImport.ts \
+    disallowedConstructorCall.ts \
+    disallowedParserCall.ts \
+    jsonTupleStreamPath.ts \
+    multilineJsonTupleStreamPath.ts \
+    prefixConcatenation.ts \
+    sessionLiteral.ts \
+    sessionTemplateLiteral.ts; do
+    if ! grep -Fq "$fixture" <<< "$session_fixture_output"; then
+      session_fixture_matches=0
+      echo "$PREFIX ERR session identity fixture scan did not list: $fixture"
+    fi
+  done
+  if [[ "$session_fixture_matches" -eq 1 ]]; then
+    echo "$PREFIX OK session stream identity negative fixture root exits 1 and lists every fixture"
+  else
+    failures=1
+    echo "  Invariant: the real invariant command must reject every checked-in session identity fixture."
+    echo "  Fix: Keep fixture paths and mutation forms aligned with the production scans."
+  fi
 fi
 
 if [[ "$failures" -ne 0 ]]; then
