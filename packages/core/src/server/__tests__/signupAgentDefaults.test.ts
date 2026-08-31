@@ -217,7 +217,7 @@ async function runSignup(opts: {
   return { create, acceptInvite }
 }
 
-describe('signup-domain default-agent initialization (Decision 28 hook)', () => {
+describe('signup-domain additive Agent Seat initialization', () => {
   it('does not consume an uncompiled mapping directly from CoreConfig', async () => {
     const config = makeConfig()
     const { store, create } = makeFakeStore()
@@ -233,13 +233,14 @@ describe('signup-domain default-agent initialization (Decision 28 hook)', () => 
     })
   })
 
-  it('initializes the new default workspace from the exact trusted host mapping', async () => {
+  it('keeps the general Default Agent and adds the exact trusted host Agent as a specialist Seat', async () => {
     const { create } = await runSignup({ headers: { [TRUSTED_SIGNUP_HOSTNAME_HEADER]: 'legal.example' } })
     expect(create).toHaveBeenCalledTimes(1)
     expect(create).toHaveBeenCalledWith(user.id, 'Default workspace', 'test-app', {
       isDefault: true,
-      defaultAgentTypeId: 'legal',
-      initialAgentSeatSource: 'signup-intent',
+      defaultAgentTypeId: 'boring-v2',
+      initialAgentSeatSource: 'generic-default',
+      additionalAgentSeats: [{ agentTypeId: 'legal', source: 'signup-intent' }],
       enrolledByUserId: user.id,
     })
   })
@@ -271,8 +272,9 @@ describe('signup-domain default-agent initialization (Decision 28 hook)', () => 
     expect(resolveInitialAgentSeat).toHaveBeenCalledOnce()
     expect(create).toHaveBeenCalledWith(user.id, 'Default workspace', 'test-app', {
       isDefault: true,
-      defaultAgentTypeId: 'charlotteledoux',
-      initialAgentSeatSource: 'signup-intent',
+      defaultAgentTypeId: 'boring-v2',
+      initialAgentSeatSource: 'generic-default',
+      additionalAgentSeats: [{ agentTypeId: 'charlotteledoux', source: 'signup-intent' }],
       enrolledByUserId: user.id,
     })
   })
@@ -295,8 +297,9 @@ describe('signup-domain default-agent initialization (Decision 28 hook)', () => 
     const { create } = await runSignup({ headers: { [TRUSTED_SIGNUP_HOSTNAME_HEADER]: 'Legal.Example:443' } })
     expect(create.mock.calls[0]![3]).toEqual({
       isDefault: true,
-      defaultAgentTypeId: 'legal',
-      initialAgentSeatSource: 'signup-intent',
+      defaultAgentTypeId: 'boring-v2',
+      initialAgentSeatSource: 'generic-default',
+      additionalAgentSeats: [{ agentTypeId: 'legal', source: 'signup-intent' }],
       enrolledByUserId: user.id,
     })
   })
@@ -348,6 +351,7 @@ describe('signup-domain default-agent initialization (Decision 28 hook)', () => 
     expect(name).toBe('Default workspace')
     expect(appId).toBe('test-app')
     expect(Object.keys(options as object).sort()).toEqual([
+      'additionalAgentSeats',
       'defaultAgentTypeId',
       'enrolledByUserId',
       'initialAgentSeatSource',

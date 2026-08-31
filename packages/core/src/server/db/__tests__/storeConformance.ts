@@ -382,7 +382,7 @@ export function describeWorkspaceStoreConformance(
     )
 
     it(
-      'creates exactly one initial Agent Seat atomically and adds Seats idempotently',
+      'creates initial Agent Seats atomically and adds Seats idempotently',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
         const workspace = await createWorkspace(
@@ -391,21 +391,34 @@ export function describeWorkspaceStoreConformance(
           'Seat conformance',
           appId,
           {
-            defaultAgentTypeId: 'charlotteledoux',
-            initialAgentSeatSource: 'signup-intent',
+            defaultAgentTypeId: 'boring-v2',
+            initialAgentSeatSource: 'generic-default',
+            additionalAgentSeats: [
+              { agentTypeId: 'charlotteledoux', source: 'signup-intent' },
+              { agentTypeId: 'charlotteledoux', source: 'signup-intent' },
+              { agentTypeId: 'boring-v2', source: 'signup-intent' },
+            ],
             enrolledByUserId: users.owner.id,
           },
         )
 
+        expect(await workspaceStore.hasAgentSeat(workspace.id, 'boring-v2')).toBe(true)
         expect(await workspaceStore.hasAgentSeat(workspace.id, 'charlotteledoux')).toBe(true)
-        expect(await workspaceStore.listAgentSeats(workspace.id)).toEqual([
+        expect(await workspaceStore.listAgentSeats(workspace.id)).toEqual(expect.arrayContaining([
+          expect.objectContaining({
+            workspaceId: workspace.id,
+            agentTypeId: 'boring-v2',
+            source: 'generic-default',
+            enrolledByUserId: users.owner.id,
+          }),
           expect.objectContaining({
             workspaceId: workspace.id,
             agentTypeId: 'charlotteledoux',
             source: 'signup-intent',
             enrolledByUserId: users.owner.id,
           }),
-        ])
+        ]))
+        expect(await workspaceStore.listAgentSeats(workspace.id)).toHaveLength(2)
 
         const first = await workspaceStore.addAgentSeat(
           workspace.id,
@@ -420,7 +433,7 @@ export function describeWorkspaceStoreConformance(
           users.other.id,
         )
         expect(repeated).toEqual(first)
-        expect(await workspaceStore.listAgentSeats(workspace.id)).toHaveLength(2)
+        expect(await workspaceStore.listAgentSeats(workspace.id)).toHaveLength(3)
         await expect(workspaceStore.addAgentSeat(
           workspace.id,
           'Macro Analyst',

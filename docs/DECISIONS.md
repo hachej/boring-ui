@@ -458,6 +458,10 @@ Each decision has four fields:
 
 ## 28. Application agent fleets, Workspace orchestration, and shared execution environments
 
+> **Signup-default clause superseded by Decision 31.** A trusted creator or
+> vertical signup now adds a specialist Seat while the application Default
+> Agent remains primary. The rest of Decision 28 remains in force.
+
 | Field | |
 |---|---|
 | **Status** | **Accepted (2026-07-21).** Owner-directed #391/#805 realignment after reviewing the domain/type implementation and restating the platform as a fleet of agent applications. |
@@ -502,6 +506,19 @@ Each decision has four fields:
 | **Re-evaluate when** | Firecracker cannot meet a required capability (GPU passthrough class, nested virt hosts unavailable) or the managed provider proves the better sovereign path at equal isolation class — re-evaluation must keep the hardware-virtualization isolation floor. |
 | **Addendum (2026-08-12, recorded 2026-08-26)** | Same-date companion ruling: **no S3 object versioning in v1** of the sandbox service — rejected as cost/complexity without a consumer; revisit only with a named restore/audit requirement. Source: `direction/state/` sandbox-service-architecture notes. |
 | **Addendum (2026-08-31)** | One authorized Agent session may own several bounded concurrent **explicit sandbox leases**; "one sandbox per user session" is superseded. Each lease remains one hardware microVM with an independent sandbox-scoped mutable SeaweedFS namespace under workspace authority and per-lease `/scratch`; leases never share mutable backing. The primary durable Workspace prefix remains separate and changes only through a trusted, request-bound, idempotent publication operation. Release may delete a changed lease prefix only after publication settles or separately authorized explicit discard; unpublished changes are never lost silently. Create replay is keyed by `(workspaceId, clientLeaseId)` and operations by `(workspaceId, sandboxId)`; sandbox identity never grants authority alone. Canonical tools target an opaque lease explicitly, omission preserves the primary Workspace, and there is no mutable current sandbox or caller-selected provider/profile. Every effect/data/internal-readiness endpoint uses request-bound short-lived authority. Create/destroy follow accepted-effect semantics; outcome-unknown is immutable and never replayed by the model/tool path. Reconciliation observes by durable effect/create key before any separately keyed idempotent maintenance cleanup. Active work pins before use, retirement drains before delete, and ambiguous cleanup remains single-owner, visible, retryable, and quota-counted without rewriting the original receipt. This changes lease multiplicity, namespace scope, and lifecycle proof only; the Firecracker/Kata hardware boundary and SeaweedFS data plane remain unchanged. Owner-directed Factory/sandbox reconciliation; implementation proof is specified in `issues/1081/sandbox-sovereign-design.md` and `sandbox-sovereign-build.md`. |
+
+## 31. Creator and vertical signup adds a specialist Seat
+
+| Field | |
+|---|---|
+| **Status** | **Accepted (2026-08-31).** Owner-directed additive signup correction for #1488. |
+| **What** | General signup creates one Seat for the application Default Agent. A trusted creator/vertical signup intent creates the same Default Agent Seat **plus** the resolved specialist Agent Seat, atomically in the new default Workspace. The Default Agent remains primary. For an existing authenticated user, the same product intent uses the add-only, idempotent workspace Seat enrollment path; adding the second Seat upgrades presentation to multi-Agent without replacing the default. |
+| **Why** | A creator Agent is purchased expertise, not a replacement platform identity. Keeping the general Agent makes workspace growth additive and lets one user later compose multiple vertical Agents without migration. |
+| **Rationale** | This uses the existing deployment-static fleet, durable `workspace_agent_seats`, entitlement checks, and AgentGateway addressing. The trusted hostname or app-issued intent selects only the requested specialist; membership and enrollment policy still authorize the mutation. Existing users reuse the same Seat relation and idempotent add operation. |
+| **Supersedes / retains** | Supersedes only Decision 28's narrow statement that a signup-domain mapping initializes `defaultAgentTypeId`. Retains D28's application fleet, Workspace-owned default, no continuing hostname routing/authorization, and no implicit rewrite of an existing default. |
+| **Re-evaluate when** | A product needs a non-default primary composer, multiple specialists installed as one bundle, or removal/downgrade semantics. Any change must preserve explicit workspace authority and Agent identity. |
+
+---
 
 ## Process
 

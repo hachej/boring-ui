@@ -315,7 +315,7 @@ export interface CreateCoreWorkspaceAgentServerOptions {
   appRoot?: string
   /** Opt into host-local auth callback URLs for an exact host allowlist. */
   authBaseURL?: CoreDynamicAuthBaseURL
-  /** Trusted app-owned server resolver for initial signup Seat intent. */
+  /** Trusted app-owned resolver for an additional specialist signup Seat. */
   resolveInitialAgentSeat?: ResolveInitialAgentSeat
   config?: CoreConfig
   loadConfigOptions?: LoadConfigOptions
@@ -1131,9 +1131,9 @@ export async function createCoreWorkspaceAgentServer(
     agentTypeIds,
     rawConfig.security?.trustedProxy,
   )
-  // Decision 28 hook: validate all trusted signup/default config before
-  // allocating DB or HTTP resources. Every initialized Workspace persists a
-  // real regular Agent as its default.
+  // Validate trusted signup/default config before allocating DB or HTTP
+  // resources. Every Workspace persists the application default; a mapped
+  // signup intent adds a specialist Seat without replacing it.
   const config: CoreConfig = {
     ...rawConfig,
     defaultAgentTypeId: applicationDefaultAgentTypeId,

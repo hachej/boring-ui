@@ -46,6 +46,11 @@ export interface WorkspaceStoreCreateOptions {
   readonly workspaceTypeId?: string
   /** Defaults to generic-default and is inserted atomically with the workspace. */
   readonly initialAgentSeatSource?: WorkspaceAgentSeatSource
+  /** Additional initial Seats inserted in the same workspace transaction. */
+  readonly additionalAgentSeats?: readonly {
+    readonly agentTypeId: string
+    readonly source: WorkspaceAgentSeatSource
+  }[]
   readonly enrolledByUserId?: string
   isDefault?: boolean
   id?: string
