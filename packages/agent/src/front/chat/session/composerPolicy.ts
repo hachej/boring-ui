@@ -35,6 +35,20 @@ export interface PiComposerSubmitInput {
   source?: 'composer' | 'suggestion' | 'auto-submit'
 }
 
+export interface PiComposerHandledSubmit {
+  handled: true
+  message?: string
+}
+
+export interface PiComposerReplacementSubmit {
+  replacement: {
+    text: string
+    displayText?: string
+  }
+}
+
+export type PiComposerBeforeSubmitResult = boolean | void | PiComposerHandledSubmit | PiComposerReplacementSubmit
+
 export interface PiComposerPolicyOptions extends PiQueueControllerOptions {
   session: PiQueueSessionLike
   registry: CommandRegistry
@@ -46,7 +60,11 @@ export interface PiComposerPolicyOptions extends PiQueueControllerOptions {
   composerBlocked?: boolean
   blockerMessage?: string
   isActiveSession?: () => boolean
-  onBeforeSubmit?: (draft: string, context: { files: PromptInputFilePart[]; source: PiComposerSubmitInput['source'] }) => boolean | Promise<boolean>
+  onBeforeSubmit?: (draft: string, context: { files: PromptInputFilePart[]; source: PiComposerSubmitInput['source'] }) => PiComposerBeforeSubmitResult | Promise<PiComposerBeforeSubmitResult>
+  /** Transform only final model-bound text, after local command dispatch and skill expansion. */
+  onTransformPrompt?: (text: string, context: { files: PromptInputFilePart[]; source: PiComposerSubmitInput['source'] }) => PiComposerReplacementSubmit | void | Promise<PiComposerReplacementSubmit | void>
+  submissionCoordinator?: PiComposerSubmissionCoordinator
+  submissionIdentity?: string
   onCommandResult?: (message: string) => void
   onMentionedFilesConsumed?: () => void
   allowPromptDuringInitialHydration?: boolean
@@ -55,24 +73,62 @@ export interface PiComposerPolicyOptions extends PiQueueControllerOptions {
 export type PiComposerBlockedReason =
   | Extract<PiQueueSubmitResult, { type: 'blocked' }>['reason']
   | 'composer-blocked'
-  | 'inactive-session'
   | 'pre-submit-cancelled'
 
 export type PiComposerSubmitResult =
   | { type: 'prompt'; clientNonce: string; cursor?: number; preserveDraft: false }
   | { type: 'followup'; clientNonce: string; clientSeq: number; cursor?: number; preserveDraft: false }
   | { type: 'command'; command: string; result?: string; preserveDraft: boolean }
+  | { type: 'handled'; message?: string; preserveDraft: false }
+  | { type: 'stale'; reason: 'inactive-session'; preserveDraft: false }
   | { type: 'blocked'; reason: PiComposerBlockedReason; message: string; preserveDraft: true }
+
+export class PiComposerSubmissionCoordinator {
+  private readonly tails = new Map<string, Promise<void>>()
+
+  run<T>(identity: string, task: (release: () => void) => Promise<T>): Promise<T> {
+    const previous = this.tails.get(identity) ?? Promise.resolve()
+    let releaseGate!: () => void
+    const gate = new Promise<void>((resolve) => { releaseGate = resolve })
+    let released = false
+    const release = () => {
+      if (released) return
+      released = true
+      releaseGate()
+    }
+    const pending = previous.then(async () => {
+      try {
+        return await task(release)
+      } finally {
+        release()
+      }
+    })
+    const tail = previous.then(async () => await gate)
+    this.tails.set(identity, tail)
+    void tail.finally(() => {
+      if (this.tails.get(identity) === tail) this.tails.delete(identity)
+    })
+    return pending
+  }
+}
 
 export class PiComposerPolicyController {
   private readonly queueController
+  private readonly submissionCoordinator: PiComposerSubmissionCoordinator
 
   constructor(private readonly options: PiComposerPolicyOptions) {
     this.queueController = createPiFollowUpQueueController(options.session, options)
+    this.submissionCoordinator = options.submissionCoordinator ?? new PiComposerSubmissionCoordinator()
   }
 
-  async submit(input: PiComposerSubmitInput): Promise<PiComposerSubmitResult> {
-    const text = input.text.trim()
+  submit(input: PiComposerSubmitInput): Promise<PiComposerSubmitResult> {
+    return this.submissionCoordinator.run(
+      this.options.submissionIdentity ?? 'default',
+      async (release) => await this.submitInOrder(input, release),
+    )
+  }
+
+  private async submitInOrder(input: PiComposerSubmitInput, release: () => void): Promise<PiComposerSubmitResult> {
     const files = input.files ?? []
     const source = input.source ?? 'composer'
 
@@ -80,43 +136,64 @@ export class PiComposerPolicyController {
       return this.block('composer-blocked', this.options.blockerMessage ?? 'Composer is not ready yet.')
     }
 
-    if (!(await this.runBeforeSubmit(input.text, files, source))) {
+    let beforeSubmit: PiComposerBeforeSubmitResult
+    try {
+      beforeSubmit = await this.runBeforeSubmit(input.text, files, source)
+    } catch (error) {
+      if (this.options.isActiveSession && !this.options.isActiveSession()) return this.stale()
+      throw error
+    }
+    if (this.options.isActiveSession && !this.options.isActiveSession()) {
+      return this.stale()
+    }
+    if (beforeSubmit === false) {
       return this.block('pre-submit-cancelled', 'Submit was cancelled before sending.')
     }
-
-    if (this.options.isActiveSession && !this.options.isActiveSession()) {
-      return this.block('inactive-session', 'The active session changed before the message was sent.')
+    if (typeof beforeSubmit === 'object' && 'handled' in beforeSubmit && beforeSubmit.handled) {
+      return { type: 'handled', ...(beforeSubmit.message ? { message: beforeSubmit.message } : {}), preserveDraft: false }
     }
+    const replacement = typeof beforeSubmit === 'object' && 'replacement' in beforeSubmit
+      ? beforeSubmit.replacement
+      : undefined
+    const text = (replacement?.text ?? input.text).trim()
+    const displayText = replacement?.displayText ?? text
 
-    const parsed = parseSlashCommand(text)
+    const parsed = replacement ? null : parseSlashCommand(text)
     if (parsed) {
       const command = this.options.registry.get(parsed.name)
       if (command?.kind === 'skill') {
-        return this.submitExpandedText(skillCommandText(parsed.name, parsed.args), source, false)
+        return this.submitExpandedText(skillCommandText(parsed.name, parsed.args), files, source, release)
       }
-      if (command) return this.runLocalCommand(parsed.name, parsed.args, source)
+      if (command) return this.runLocalCommand(parsed.name, parsed.args, source, release)
     }
 
     if (isPiChatBusy(this.options.session.getState().status) && files.length > 0) {
       return this.fromQueueResult(await this.queueController.submit({ text, attachments: this.toAttachmentPayloads(files) }))
     }
 
+    const transformed = await this.runPromptTransform(text, files, source)
+    if (this.options.isActiveSession && !this.options.isActiveSession()) return this.stale()
+    const finalText = transformed?.replacement.text ?? text
+    const finalDisplayText = transformed?.replacement.displayText ?? displayText
+
     const { serverMessage, attachments } = await createEnrichedSubmitPayload({
-      text,
+      text: finalText,
       files,
       mentionedFiles: this.getMentionedFiles(),
     })
     if (this.options.isActiveSession && !this.options.isActiveSession()) {
-      return this.block('inactive-session', 'The active session changed before the message was sent.')
+      return this.stale()
     }
 
-    const result = await this.queueController.submit({
+    const admission = this.queueController.submit({
       text: serverMessage,
-      displayText: text,
+      displayText: finalDisplayText,
       attachments,
       model: this.options.model ?? undefined,
       ...(this.options.thinkingControl ? { thinkingLevel: this.options.thinkingLevel ?? DEFAULT_THINKING } : {}),
     })
+    release()
+    const result = await admission
     if (result.type !== 'blocked') this.options.onMentionedFilesConsumed?.()
     return this.fromQueueResult(result)
   }
@@ -141,19 +218,45 @@ export class PiComposerPolicyController {
     return this.queueController.stop()
   }
 
-  private async submitExpandedText(text: string, source: PiComposerSubmitInput['source'], runBeforeSubmit = true): Promise<PiComposerSubmitResult> {
-    if (runBeforeSubmit && !(await this.runBeforeSubmit(text, [], source))) {
-      return this.block('pre-submit-cancelled', 'Submit was cancelled before sending.')
-    }
-    return this.fromQueueResult(await this.queueController.submit({
-      text,
+  private async submitExpandedText(
+    text: string,
+    files: PromptInputFilePart[],
+    source: PiComposerSubmitInput['source'],
+    release: () => void,
+  ): Promise<PiComposerSubmitResult> {
+    const transformed = await this.runPromptTransform(text, files, source)
+    if (this.options.isActiveSession && !this.options.isActiveSession()) return this.stale()
+    const admission = this.queueController.submit({
+      text: transformed?.replacement.text ?? text,
+      ...(transformed?.replacement.displayText ? { displayText: transformed.replacement.displayText } : {}),
       kind: 'expanded-text',
       model: this.options.model ?? undefined,
       ...(this.options.thinkingControl ? { thinkingLevel: this.options.thinkingLevel ?? DEFAULT_THINKING } : {}),
-    }))
+    })
+    release()
+    return this.fromQueueResult(await admission)
   }
 
-  private async runLocalCommand(commandName: string, args: string, source?: PiComposerSubmitInput['source']): Promise<PiComposerSubmitResult> {
+  private async runPromptTransform(
+    text: string,
+    files: PromptInputFilePart[],
+    source: PiComposerSubmitInput['source'],
+  ): Promise<PiComposerReplacementSubmit | undefined> {
+    try {
+      const transformed = await this.options.onTransformPrompt?.(text, { files, source })
+      return transformed || undefined
+    } catch (error) {
+      if (this.options.isActiveSession && !this.options.isActiveSession()) return undefined
+      throw error
+    }
+  }
+
+  private async runLocalCommand(
+    commandName: string,
+    args: string,
+    source: PiComposerSubmitInput['source'],
+    release: () => void,
+  ): Promise<PiComposerSubmitResult> {
     const command = this.options.registry.get(commandName)
     if (isPiChatBusy(this.options.session.getState().status) && command?.allowWhileBusy?.(args) !== true) {
       return this.block('busy-slash-command', 'Slash commands are not queued while the agent is responding.')
@@ -176,19 +279,23 @@ export class PiComposerPolicyController {
       // onPromptSubmitStarted, stale-rejection dismissal, local-submitted
       // cursor cleanup — exactly as they would for a plain prompt. The
       // human-facing notice above stays a side effect.
-      return await this.submitExpandedText(modelMessage, source, false)
+      return await this.submitExpandedText(modelMessage, [], source, release)
     }
+    release()
     return { type: 'command', command: commandName, ...(message ? { result: message } : {}), preserveDraft }
   }
 
-  private async runBeforeSubmit(draft: string, files: PromptInputFilePart[], source: PiComposerSubmitInput['source']): Promise<boolean> {
-    const result = await this.options.onBeforeSubmit?.(draft, { files, source })
-    return result !== false
+  private async runBeforeSubmit(draft: string, files: PromptInputFilePart[], source: PiComposerSubmitInput['source']): Promise<PiComposerBeforeSubmitResult> {
+    return await this.options.onBeforeSubmit?.(draft, { files, source })
   }
 
   private fromQueueResult(result: PiQueueSubmitResult): PiComposerSubmitResult {
     if (result.type === 'blocked') return { ...result, preserveDraft: true }
     return { ...result, preserveDraft: false }
+  }
+
+  private stale(): PiComposerSubmitResult {
+    return { type: 'stale', reason: 'inactive-session', preserveDraft: false }
   }
 
   private block(reason: Extract<PiComposerSubmitResult, { type: 'blocked' }>['reason'], message: string): PiComposerSubmitResult {
