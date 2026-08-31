@@ -78,6 +78,15 @@ describe("QuestionsBridge", () => {
     await expect(store.getByQuestionId(question.questionId)).resolves.toMatchObject({ status: "answered" })
   }, 15_000)
 
+  it("restores a legacy abandoned question through the authenticated bridge", async () => {
+    const { store, runtime, question } = await fixture()
+    await store.markAbandoned(question.questionId)
+    const bridge = new QuestionsBridge({ store, runtime, getAuthContext: () => ({ sessionId: "s1", principalId: "p1" }) })
+    await expect(bridge.restoreAbandoned(question.questionId, "s1", question.answerToken))
+      .resolves.toEqual({ ok: true, status: "ready" })
+    await expect(store.getPending("s1")).resolves.toMatchObject({ questionId: question.questionId, status: "ready" })
+  })
+
   it("rejects submit after cancel", async () => {
     const { store, runtime, question } = await fixture()
     const bridge = new QuestionsBridge({ store, runtime, getAuthContext: () => ({ sessionId: "s1", principalId: "p1" }) })
@@ -92,8 +101,7 @@ describe("QuestionsBridge", () => {
       bridge.handle({ kind: "questions.submit", params: { questionId: question.questionId, sessionId: "s1", answerToken: question.answerToken, values: { answer: "a" } } }),
       bridge.handle({ kind: "questions.submit", params: { questionId: question.questionId, sessionId: "s1", answerToken: question.answerToken, values: { answer: "b" } } }),
     ])
-    expect(first.status).toBe("fulfilled")
-    expect(second.status).toBe("fulfilled")
+    expect([first.status, second.status].sort()).toEqual(["fulfilled", "rejected"])
     await expect(result).resolves.toMatchObject({ status: "answered" })
     await expect(store.getByQuestionId(question.questionId)).resolves.toMatchObject({ status: "answered" })
     const answers = await store.getTranscriptEventsForQuestion(question.questionId)

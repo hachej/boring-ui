@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import type { RunContext } from "../../../shared/harness.js";
 import type { AgentTool, ToolResult } from "../../../shared/tool.js";
@@ -53,8 +54,25 @@ export function adaptToolForPi(tool: AgentTool, sessionId?: string, telemetry: T
     async execute(toolCallId, params, signal, onUpdate, _ctx) {
       const startedAt = Date.now();
       let emittedFailure = false;
+      let beganEffect = false;
+      const effectClass = tool.effect ?? 'external-effect'
+      const runContext = getRunContext?.();
       try {
-        const runContext = getRunContext?.();
+        if (effectClass !== 'observe' && getRunContext) {
+          const capability = runContext?.childEffectCapability
+          if (!capability) {
+            throw Object.assign(new Error(`tool ${tool.name} requires a gateway-minted child-effect capability`), {
+              code: ErrorCode.enum.UNAUTHORIZED,
+            })
+          }
+          await capability.admit(toolCallId, effectClass, tool.idempotent, tool.effect !== undefined)
+          if (effectClass === 'pause') {
+            await capability.pause(toolCallId)
+          } else {
+            await capability.begin(toolCallId)
+            beganEffect = true
+          }
+        }
         const result = await tool.execute(params as Record<string, unknown>, {
           toolCallId,
           abortSignal: signal ?? new AbortController().signal,
@@ -68,6 +86,11 @@ export function adaptToolForPi(tool: AgentTool, sessionId?: string, telemetry: T
           workspaceId: runContext?.workspaceId,
           requestId: runContext?.requestId,
         });
+        if (effectClass !== 'observe' && effectClass !== 'pause' && getRunContext) {
+          const receipt = { content: result.content, ...(result.isError === undefined ? {} : { isError: result.isError }) }
+          const digest = createHash('sha256').update(JSON.stringify(receipt)).digest('hex')
+          await runContext!.childEffectCapability!.settle(toolCallId, digest, receipt)
+        }
         safeCapture(telemetry, {
           name: result.isError ? 'agent.tool.failed' : 'agent.tool.completed',
           properties: toolTelemetryProperties(
@@ -90,6 +113,9 @@ export function adaptToolForPi(tool: AgentTool, sessionId?: string, telemetry: T
           details: result.details,
         };
       } catch (error) {
+        if (beganEffect) {
+          await runContext?.childEffectCapability?.markOutcomeUnknown(toolCallId).catch(() => {})
+        }
         if (!emittedFailure) {
           safeCapture(telemetry, {
             name: 'agent.tool.failed',

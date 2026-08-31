@@ -28,6 +28,15 @@ export type QuestionsBridgeOptions = {
 export class QuestionsBridge {
   constructor(private readonly options: QuestionsBridgeOptions) {}
 
+  async restoreAbandoned(questionId: string, sessionId: string, answerToken: string): Promise<{ ok: true; status: string }> {
+    const auth = await this.resolveAuth()
+    const question = await this.requireQuestion(questionId)
+    this.assertSession(question, sessionId, auth)
+    this.assertToken(question.answerToken, answerToken)
+    await this.options.runtime.restoreAbandoned(questionId)
+    return { ok: true, status: "ready" }
+  }
+
   async handle(command: QuestionsCommand): Promise<{ ok: true; status: string }> {
     const auth = await this.resolveAuth()
     const question = await this.requireQuestion(command.params.questionId)
@@ -43,14 +52,23 @@ export class QuestionsBridge {
       return { ok: true, status: "cancelled" }
     }
 
-    if (question.status === "answered") return { ok: true, status: "answered" }
+    if (question.status === "answered") {
+      const existing = await this.options.store.getAnswer(question.questionId)
+      if (existing && stableJson(existing.values) === stableJson(command.params.values)
+        && (!existing.resolvedBy || existing.resolvedBy === auth.principalId)) return { ok: true, status: "answered" }
+      throw new QuestionsBridgeError(ASK_USER_ERROR_CODES.ALREADY_ANSWERED, "question already answered with a different decision", 409)
+    }
     if (question.status === "cancelled") throw new QuestionsBridgeError(ASK_USER_ERROR_CODES.ALREADY_CANCELLED, "question already cancelled", 409)
     if (question.status !== "ready" || !question.schema) throw new QuestionsBridgeError(ASK_USER_ERROR_CODES.ANSWER_INVALID, "question is not ready", 409)
     validateAnswerValues(question.schema.fields, command.params.values)
     try {
-      await this.options.runtime.submitAnswer(question.questionId, question.sessionId, command.params.values)
+      await this.options.runtime.submitAnswer(question.questionId, question.sessionId, command.params.values, auth.principalId)
     } catch (error) {
-      if (isCode(error, ASK_USER_ERROR_CODES.ALREADY_ANSWERED)) return { ok: true, status: "answered" }
+      if (isCode(error, ASK_USER_ERROR_CODES.ALREADY_ANSWERED)) {
+        const existing = await this.options.store.getAnswer(question.questionId)
+        if (existing && stableJson(existing.values) === stableJson(command.params.values)
+          && (!existing.resolvedBy || existing.resolvedBy === auth.principalId)) return { ok: true, status: "answered" }
+      }
       throw error
     }
     return { ok: true, status: "answered" }
@@ -91,6 +109,14 @@ export function constantTimeEqual(expected: string, actual: string): boolean {
   left.set(expectedBytes)
   right.set(actualBytes)
   return timingSafeEqual(left, right) && expectedBytes.length === actualBytes.length
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`
+  if (value && typeof value === "object") return `{${Object.entries(value as Record<string, unknown>)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, entry]) => `${JSON.stringify(key)}:${stableJson(entry)}`).join(",")}}`
+  return JSON.stringify(value)
 }
 
 export function validateAnswerValues(fields: AskUserField[], values: Record<string, AskUserAnswerValue>): void {

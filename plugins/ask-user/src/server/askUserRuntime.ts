@@ -114,6 +114,35 @@ export class AskUserRuntime {
     this.perPrincipalPerHour = options.limits?.perPrincipalPerHour ?? 30
   }
 
+  /** Reconcile persisted deadlines exactly once at startup; there are no retry/rearm loops. */
+  async reconcileExpiries(): Promise<{ expired: string[] }> {
+    const expired: string[] = []
+    for (const question of await this.store.listPending()) {
+      if (!question.expiresAt) continue
+      const deadline = Date.parse(question.expiresAt)
+      if (!Number.isFinite(deadline) || deadline <= this.now().getTime()) {
+        await this.cancelQuestion(question.questionId, question.sessionId, "timeout")
+        expired.push(question.questionId)
+      }
+    }
+    return { expired }
+  }
+
+  async reconcileTranscripts(): Promise<{ synthesized: string[] }> {
+    const synthesized: string[] = []
+    for (const question of await this.store.listResolved()) {
+      const appended = await this.store.appendTranscriptEventIfMissing(
+        question.questionId,
+        (events) => events.some((event) => (event.type === question.status)
+          || (event.type === "reconciled" && event.status === question.status)
+          || (question.status === "cancelled" && event.type === "cancelled")),
+        () => ({ type: "reconciled", questionId: question.questionId, sessionId: question.sessionId, status: question.status, synthetic: true, at: this.isoNow() }),
+      )
+      if (appended) synthesized.push(question.questionId)
+    }
+    return { synthesized }
+  }
+
   /**
    * Supersede a session's pending question when that same session asks a new one.
    * Only ever called from `ask()`: the store allows a single pending question per
@@ -170,10 +199,10 @@ export class AskUserRuntime {
    * owner's answer is still the durable outcome and must not become an
    * abandonment (#1348). Resolving the waiter is then a best-effort no-op.
    */
-  async submitAnswer(questionId: string, sessionId: string, values: AskUserAnswer["values"]): Promise<"answered"> {
+  async submitAnswer(questionId: string, sessionId: string, values: AskUserAnswer["values"], resolvedBy?: string): Promise<"answered"> {
     const question = await this.store.getByQuestionId(questionId)
     if (!question || question.sessionId !== sessionId) throw new AskUserRuntimeError(ASK_USER_ERROR_CODES.QUESTION_NOT_FOUND, "question not found")
-    const answer: AskUserAnswer = { questionId, sessionId, values, submittedAt: this.isoNow() }
+    const answer: AskUserAnswer = { questionId, sessionId, values, submittedAt: this.isoNow(), riskTier: question.riskTier, resolvedBy }
     let answerPersisted = false
     try {
       await this.store.answer(questionId, answer)
@@ -188,13 +217,10 @@ export class AskUserRuntime {
   async cancelQuestion(questionId: string, sessionId: string, reason: AskUserCancelReason = "user_cancelled"): Promise<void> {
     const question = await this.store.getByQuestionId(questionId)
     if (!question || question.sessionId !== sessionId) throw new AskUserRuntimeError(ASK_USER_ERROR_CODES.QUESTION_NOT_FOUND, "question not found")
-    if (!this.coordinator.hasWaiter(questionId)) {
-      await this.abandon(questionId, sessionId)
-      return
-    }
     let cancelPersisted = false
     try {
-      await this.store.cancel(questionId)
+      if (reason === "timeout" && this.store.expire) await this.store.expire(questionId)
+      else await this.store.cancel(questionId)
       cancelPersisted = true
       await this.store.appendTranscriptEvent({ type: "cancelled", questionId, sessionId, reason, at: this.isoNow() })
     } catch (error) {
@@ -217,8 +243,10 @@ export class AskUserRuntime {
       void this.cancelQuestion(question.questionId, question.sessionId, reason).catch(() => undefined)
     }
     const onAbort = () => cancel("aborted")
-    signal?.addEventListener("abort", onAbort, { once: true })
-    if (signal?.aborted) cancel("aborted")
+    const draining = () => "isDraining" in this.store && typeof this.store.isDraining === "function" && this.store.isDraining()
+    const onAbortWhileAwareOfDrain = () => { if (!draining()) onAbort() }
+    signal?.addEventListener("abort", onAbortWhileAwareOfDrain, { once: true })
+    if (signal?.aborted && !draining()) cancel("aborted")
     const timeout = timeoutMs ? setTimeout(() => cancel("timeout"), timeoutMs) : undefined
     try {
       const result = await pendingAnswer
@@ -226,7 +254,7 @@ export class AskUserRuntime {
       return result
     } finally {
       settled = true
-      signal?.removeEventListener("abort", onAbort)
+      signal?.removeEventListener("abort", onAbortWhileAwareOfDrain)
       if (timeout) clearTimeout(timeout)
     }
   }
@@ -238,12 +266,19 @@ export class AskUserRuntime {
   }
 
   private async abandon(questionId: string, sessionId: string): Promise<void> {
-    await this.store.markAbandoned(questionId)
+    if (!await this.store.markAbandoned(questionId)) return
     await this.store.appendTranscriptEvent({ type: "abandoned", questionId, sessionId, at: this.isoNow() })
     this.coordinator.resolveCancelled(questionId, "abandoned")
   }
 
-  private createQuestion(request: Pick<AskUserRequest, "sessionId" | "title" | "context" | "artifacts" | "toolCallId" | "ownerPrincipalId">): AskUserQuestion {
+  async restoreAbandoned(questionId: string): Promise<void> {
+    const question = await this.store.getByQuestionId(questionId)
+    if (!question) throw new AskUserRuntimeError(ASK_USER_ERROR_CODES.QUESTION_NOT_FOUND, "question not found")
+    if (!await this.store.restoreAbandoned(questionId)) return
+    await this.store.appendTranscriptEvent({ type: "restored", questionId, sessionId: question.sessionId, at: this.isoNow() })
+  }
+
+  private createQuestion(request: Pick<AskUserRequest, "sessionId" | "title" | "context" | "artifacts" | "toolCallId" | "ownerPrincipalId" | "riskTier" | "timeoutMs">): AskUserQuestion {
     const at = this.isoNow()
     return {
       questionId: randomUUID(),
@@ -257,6 +292,8 @@ export class AskUserRuntime {
       answerToken: randomBytes(32).toString("base64url"),
       createdAt: at,
       updatedAt: at,
+      riskTier: request.riskTier,
+      expiresAt: request.timeoutMs ? new Date(this.now().getTime() + request.timeoutMs).toISOString() : undefined,
     }
   }
 

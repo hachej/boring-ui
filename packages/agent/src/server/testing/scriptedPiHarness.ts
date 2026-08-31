@@ -9,6 +9,7 @@ import type { SessionCtx, SessionDetail, SessionStore, SessionSummary } from '..
 import { getEnv } from '../config/env.js'
 import type { PiAgentPromptInput, PiAgentSessionAdapter, PiAgentSessionSnapshot } from '../pi-chat/PiAgentSessionAdapter.js'
 import { PiSessionStore } from '../harness/pi-coding-agent/sessions.js'
+import { adaptToolForPi } from '../harness/pi-coding-agent/tool-adapter.js'
 
 type ScriptedMessage = Record<string, unknown>
 
@@ -118,12 +119,13 @@ export function createScriptedPiHarness(input: AgentHarnessFactoryInput): AgentH
   const toolDelayTicks = readToolDelayTicks()
   const reasoningPartCount = readReasoningPartCount()
 
-  const getAdapter = (sessionId: string): ScriptedPiSessionAdapter => {
+  const getAdapter = (sessionId: string, ctx: RunContext): ScriptedPiSessionAdapter => {
     let adapter = adapters.get(sessionId)
     if (!adapter) {
-      adapter = new ScriptedPiSessionAdapter(sessionId, tickMs, toolDelayTicks, reasoningPartCount)
+      adapter = new ScriptedPiSessionAdapter(sessionId, tickMs, toolDelayTicks, reasoningPartCount, input.tools)
       adapters.set(sessionId, adapter)
     }
+    adapter.setRunContext(ctx)
     return adapter
   }
 
@@ -131,10 +133,10 @@ export function createScriptedPiHarness(input: AgentHarnessFactoryInput): AgentH
     id: 'scripted-pi-e2e',
     placement: 'server',
     sessions,
-    async getPiSessionAdapter({ sessionId, model }: AgentSendInput) {
+    async getPiSessionAdapter({ sessionId, model }: AgentSendInput, ctx: RunContext) {
       if (!sessionId) throw new Error('sessionId is required')
       await sessions.ensure(sessionId)
-      const adapter = getAdapter(sessionId)
+      const adapter = getAdapter(sessionId, ctx)
       if (model) adapter.setCurrentModel(model)
       return adapter
     },
@@ -204,13 +206,17 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
   private turn = 0
   private activeRun: ScriptedRun | undefined
   private model: { provider: string; id: string } | undefined
+  private runContext: RunContext | undefined
 
   constructor(
     private readonly sessionId: string,
     private readonly tickMs: number,
     private readonly toolDelayTicks: number,
     private readonly reasoningPartCount: number,
+    private readonly tools: AgentHarnessFactoryInput['tools'],
   ) {}
+
+  setRunContext(ctx: RunContext): void { this.runContext = ctx }
 
   setCurrentModel(model: { provider: string; id: string }): void {
     this.model = model
@@ -360,11 +366,15 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
       this.emit({ type: 'message_update', assistantMessageEvent: { type: 'thinking_end', contentIndex: index, content: reasoningText, partial: { id: assistantId } } })
       if (!(await this.tick(run))) return
     }
+    const executeRealAskUser = text.includes('ASK_USER_E2E')
+    const toolName = executeRealAskUser ? 'ask_user' : 'grep'
     const toolPart = {
       type: 'toolCall',
       id: toolCallId,
-      name: 'grep',
-      arguments: { pattern: 'baseline' },
+      name: toolName,
+      arguments: executeRealAskUser
+        ? { title: 'Restart-safe question', schema: { wireVersion: 1, fields: [{ type: 'text', name: 'answer', label: 'Answer', required: true }] } }
+        : { pattern: 'baseline' },
       state: 'input-available',
     }
     assistantContent.push(toolPart)
@@ -377,13 +387,20 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
         partial: { id: assistantId },
         toolCall: {
           id: toolCallId,
-          name: 'grep',
-          arguments: { pattern: 'baseline' },
+          name: toolName,
+          arguments: toolPart.arguments,
         },
       },
     })
     for (let i = 0; i < this.toolDelayTicks; i += 1) {
       if (!(await this.tick(run))) return
+    }
+    if (executeRealAskUser) {
+      const tool = this.tools.find((candidate) => candidate.name === 'ask_user')
+      if (!tool || !this.runContext) throw new Error('ASK_USER_E2E requires the registered ask_user tool and RunContext')
+      const adapted = adaptToolForPi(tool, this.sessionId, undefined, () => this.runContext)
+      await adapted.execute(toolCallId, toolPart.arguments, this.runContext.abortSignal, undefined, undefined)
+      if (this.activeRun !== run || run.cancelled) return
     }
     toolPart.state = 'output-available'
     Object.assign(toolPart, { output: toolOutput })

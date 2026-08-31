@@ -50,6 +50,7 @@ import type {
 import {
   assertWorkspaceBridgeHandlersTrusted,
   collectWorkspaceAgentServerPlugins,
+  createDeferredHostCapability,
   createSandboxRuntimeModeAdapter,
   hasDirServerPlugin,
   omitPluginAuthoringProvisioning,
@@ -1227,6 +1228,7 @@ export async function createCoreWorkspaceAgentServer(
     agentTypeId: applicationDefaultAgentTypeId,
     availableAgentTypeIds: agentTypeIds,
   }
+  const attentionCapability = createDeferredHostCapability<object>('AgentHost attention capability')
   const defaultPluginActorResolver = async (request: FastifyRequest) => {
     const workspaceId = await resolveAuthorizedWorkspaceId(request, workspaceStore)
     const userId = request.user?.id
@@ -1253,6 +1255,7 @@ export async function createCoreWorkspaceAgentServer(
         && await userStore.getById(actor.userId),
       ),
       hostedAutomationTriggerToken: process.env.BORING_AUTOMATION_TRIGGER_TOKEN,
+      attention: attentionCapability.capability,
     },
   }
   const resolvedPlugins = await Promise.all(
@@ -1836,6 +1839,7 @@ export async function createCoreWorkspaceAgentServer(
       }
     },
   })
+  attentionCapability.bind(agentHost.attention)
 
   let hostMounted = false
   try {

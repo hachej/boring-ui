@@ -132,6 +132,7 @@ export interface BuildAgentCompositionInput {
     'runtimeModeAdapter' | 'runtimeHost' | 'sessionRoot' | 'telemetry' | 'metering' | 'harnessFactory'
   >
   readonly observeSessionEvent?: (sessionId: string, event: import('../../shared/chat').PiChatEvent) => void
+  readonly observeRunEvent?: import('./harnessBackend/piSessionHarnessBackend').AgentHarnessBackendFactoryInput['onRunEvent']
 }
 
 export interface BuiltAgentComposition {
@@ -327,6 +328,7 @@ export async function buildAgentComposition(
     workdir: runtimeBundle.workspace.root,
     workspace: runtimeBundle.workspace,
     onEvent: input.observeSessionEvent,
+    onRunEvent: input.observeRunEvent,
     attachmentUrl: ({ sessionId, messageId, index }) =>
       `/api/v1/agents/${encodeURIComponent(input.agent.agentTypeId)}/sessions/${encodeURIComponent(sessionId)}/attachments/${encodeURIComponent(messageId)}/${index}`,
     metering: options.metering,

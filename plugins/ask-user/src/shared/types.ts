@@ -1,5 +1,6 @@
 import type { HumanArtifact } from "@hachej/boring-workspace/shared"
 import type { ASK_USER_COMMAND_KINDS } from "./constants"
+import type { AskUserRiskTier } from "./constants"
 
 export type AskUserOption = {
   value: string
@@ -98,6 +99,7 @@ export type AskUserRequest = {
   toolCallId?: string
   /** Trusted server/runtime attribution. Not accepted from browser bridge inputs. */
   ownerPrincipalId?: string
+  riskTier?: AskUserRiskTier
 }
 
 export type AskUserToolInput = {
@@ -106,6 +108,7 @@ export type AskUserToolInput = {
   schema: AskUserFormSchema
   artifacts?: HumanArtifact[]
   timeoutMs?: number
+  riskTier?: AskUserRiskTier
 }
 
 export type AskUserQuestionStatus = "ready" | "answered" | "cancelled" | "abandoned"
@@ -124,6 +127,8 @@ export type AskUserQuestion = {
   answerToken: string
   createdAt: string
   updatedAt: string
+  riskTier?: AskUserRiskTier
+  expiresAt?: string
 }
 
 export type AskUserAnswerValue = string | string[] | boolean | number | null
@@ -133,6 +138,18 @@ export type AskUserAnswer = {
   sessionId: string
   values: Record<string, AskUserAnswerValue>
   submittedAt: string
+  riskTier?: AskUserRiskTier
+  resolvedBy?: string
+}
+
+export type AskUserDecisionRecord = {
+  questionId: string
+  sessionId: string
+  title?: string
+  values: Record<string, AskUserAnswerValue>
+  riskTier?: AskUserRiskTier
+  resolvedAt: string
+  resolvedBy?: string
 }
 
 export type AskUserCancelReason =
@@ -204,5 +221,19 @@ export type AskUserTranscriptEvent =
       type: "abandoned"
       questionId: string
       sessionId: string
+      at: string
+    }
+  | {
+      type: "restored"
+      questionId: string
+      sessionId: string
+      at: string
+    }
+  | {
+      type: "reconciled"
+      questionId: string
+      sessionId: string
+      status: AskUserQuestionStatus
+      synthetic: true
       at: string
     }

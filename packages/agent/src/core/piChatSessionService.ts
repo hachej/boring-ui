@@ -16,6 +16,7 @@ import type {
 } from '../shared/chat'
 export type { AgentPromptPayload, PiChatAttachmentResult } from '../shared/chat'
 import type { SessionListOptions, SessionSummary } from '../shared/session'
+import type { ChildEffectRunCapability } from '../shared/harness'
 
 export interface PiSessionRequestContext {
   workspaceId?: string
@@ -26,6 +27,7 @@ export interface PiSessionRequestContext {
   /** Addressed Gateway binds sessions to the verified workspace/storage scope. */
   sessionAuthority?: 'workspace-scope'
   requestId: string
+  childEffectCapability?: ChildEffectRunCapability
 }
 
 export interface PiSessionCreateInit {

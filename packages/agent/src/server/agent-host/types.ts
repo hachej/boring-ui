@@ -6,6 +6,7 @@ import type {
   ResolveAgentAccess,
   AgentSessionRef,
   AgentTool,
+  AgentToolEffectClass,
   AuthorizedAgentScope,
   JsonValue,
   VerifiedAgentScopeClaim,
@@ -45,6 +46,8 @@ export type AgentGatewayEffect =
   | 'session.queue.clear'
   | 'agent.reload'
   | 'session.command.execute'
+
+export type EffectClass = AgentToolEffectClass
 
 export type AgentRequestTarget =
   | { readonly kind: 'agent'; readonly agentTypeId: string }
@@ -101,7 +104,7 @@ export interface AgentRequestLedger {
   /** Direct production projections require transactional durable ownership. */
   readonly durability: 'durable-transactional' | 'in-memory'
   /** Atomic compare-and-create across every process sharing the durable store. */
-  prepare(key: AgentRequestKey, digest: string): Promise<AgentRequestLedgerPrepareResult>
+  prepare(key: AgentRequestKey, digest: string, replayPayload?: JsonValue): Promise<AgentRequestLedgerPrepareResult>
   /** All transitions are compare-and-swap against the exact allowed prior state. */
   acceptAdmission(key: AgentRequestKey, admissionReceipt: string): Promise<void>
   beginEffect(key: AgentRequestKey): Promise<void>
@@ -109,7 +112,139 @@ export interface AgentRequestLedger {
   complete(key: AgentRequestKey, receipt: JsonValue): Promise<void>
   markOutcomeUnknown(key: AgentRequestKey, error: AgentGatewayErrorDTO): Promise<void>
   read(key: AgentRequestKey): Promise<AgentRequestLedgerRecord | undefined>
+  readReplayPayload?(key: AgentRequestKey): Promise<JsonValue | undefined>
+  claimIncarnation?(): Promise<string>
+  reconcileAfterRestart?(incarnation: string): Promise<AgentLedgerRestartReconciliation>
+  listNonTerminal?(filter: AgentLedgerNonTerminalFilter): Promise<AgentLedgerNonTerminalRecord[]>
+  startTurn?(record: Omit<AgentTurnLedgerRecord, 'state' | 'startedAt' | 'updatedAt'>): Promise<void>
+  finishTurn?(
+    runRequestKey: AgentRequestKey,
+    sessionRef: AgentSessionRef,
+    input: { state: 'ended' | 'error'; endedSeq: number },
+  ): Promise<void>
+  admitEffect?(record: Omit<AgentEffectLedgerRecord, 'state' | 'updatedAt'>): Promise<void>
+  beginChildEffect?(runRequestKey: AgentRequestKey, effectId: string): Promise<void>
+  pauseChildEffect?(runRequestKey: AgentRequestKey, effectId: string): Promise<void>
+  settleChildEffect?(
+    runRequestKey: AgentRequestKey,
+    effectId: string,
+    outcomeDigest: string,
+    receipt: JsonValue,
+  ): Promise<void>
+  markChildEffectOutcomeUnknown?(runRequestKey: AgentRequestKey, effectId: string): Promise<void>
+  countEffects?(): Promise<number>
+  readonly attention?: AgentAttentionLedger
   close?(): void | Promise<void>
+}
+
+export type AgentTurnState = 'started' | 'ended' | 'error' | 'outcome-unknown'
+
+export interface AgentTurnLedgerRecord {
+  readonly runRequestKey: AgentRequestKey
+  readonly sessionRef: AgentSessionRef
+  readonly turnId: string
+  readonly incarnation: string
+  readonly state: AgentTurnState
+  readonly startedSeq: number
+  readonly endedSeq?: number
+  readonly startedAt: number
+  readonly updatedAt: number
+}
+
+export type AgentEffectState = 'admitted' | 'in-flight' | 'settled' | 'outcome-unknown' | 'paused'
+
+export interface AgentEffectLedgerRecord {
+  readonly runRequestKey: AgentRequestKey
+  readonly effectId: string
+  readonly effectClass: EffectClass
+  readonly idempotent: boolean
+  readonly state: AgentEffectState
+  readonly outcomeDigest?: string
+  readonly receipt?: JsonValue
+  readonly updatedAt: number
+}
+
+export type AgentAttentionStatus =
+  | 'ready'
+  | 'answered'
+  | 'cancelled'
+  | 'expired'
+  | 'superseded'
+  | 'abandoned'
+
+export interface AgentAttentionLedgerRecord {
+  readonly attentionId: string
+  readonly runRequestKey?: AgentRequestKey
+  readonly toolCallId?: string
+  readonly workspaceScopeId?: string
+  readonly sessionRef?: AgentSessionRef
+  readonly kind: 'question' | 'approval' | 'review' | 'notice'
+  readonly status: AgentAttentionStatus
+  readonly ownerPrincipalId: string
+  readonly expiresAt?: string
+  readonly riskTier?: string
+  readonly payload: JsonValue
+  readonly answer?: {
+    readonly values: JsonValue
+    readonly resolvedBy?: string
+    readonly resolvedAt: string
+  }
+  readonly resume: {
+    readonly state: 'pending' | 'resumed' | 'outcome-unknown' | 'unroutable'
+    readonly resumeRequestId: string
+    readonly error?: string
+  }
+  readonly transcriptEvents: readonly JsonValue[]
+  readonly createdAt: number
+  readonly updatedAt: number
+}
+
+export type AgentAttentionLedgerChange = {
+  readonly sessionId: string
+  readonly attentionId?: string
+  readonly reason: 'create' | 'answer' | 'cancel' | 'expire' | 'supersede' | 'restore' | 'transcript' | 'import'
+}
+
+export interface AgentAttentionLedger {
+  create(record: AgentAttentionLedgerRecord): Promise<void>
+  get(attentionId: string): Promise<AgentAttentionLedgerRecord | undefined>
+  list(input?: { sessionId?: string; statuses?: readonly AgentAttentionStatus[] }): Promise<AgentAttentionLedgerRecord[]>
+  transition(
+    attentionId: string,
+    expected: readonly AgentAttentionStatus[],
+    update: (record: AgentAttentionLedgerRecord) => AgentAttentionLedgerRecord,
+  ): Promise<boolean>
+  appendTranscriptEventIfMissing(
+    attentionId: string,
+    event: JsonValue,
+    matches: (event: JsonValue) => boolean,
+  ): Promise<boolean>
+  resolveLegacySession(sessionId: string): Promise<readonly { workspaceScopeId: string; agentTypeId: string }[]>
+  importOnce(records: readonly AgentAttentionLedgerRecord[]): Promise<number>
+  subscribe(listener: (change: AgentAttentionLedgerChange) => void): () => void
+}
+
+export interface AgentAttentionHostCapability extends AgentAttentionLedger {
+  isDraining(): boolean
+}
+
+export interface AgentLedgerNonTerminalFilter {
+  readonly states: readonly string[]
+  readonly operations: readonly AgentGatewayEffect[]
+  readonly workspaceScopeId?: string
+}
+
+export type AgentLedgerNonTerminalRecord =
+  | { readonly kind: 'request'; readonly record: AgentRequestLedgerRecord }
+  | { readonly kind: 'turn'; readonly record: AgentTurnLedgerRecord }
+  | { readonly kind: 'effect'; readonly record: AgentEffectLedgerRecord }
+
+export interface AgentLedgerRestartReconciliation {
+  readonly requestsOutcomeUnknown: number
+  readonly requestsReset: number
+  readonly turnsOutcomeUnknown: number
+  readonly effectsOutcomeUnknown: number
+  readonly parked: number
 }
 
 export interface AgentRequestLedgerPrepareResult {
@@ -131,6 +266,15 @@ export interface AgentEffectAdmission {
     readonly operation: AgentGatewayEffect
     readonly target: AgentRequestTarget
   }): Promise<AgentEffectAdmissionResult>
+}
+
+export interface ChildEffectAdmission {
+  admit(input: {
+    readonly runRequestKey: AgentRequestKey
+    readonly toolCallId: string
+    readonly effectClass: EffectClass
+    readonly declared: boolean
+  }): Promise<{ readonly type: 'accepted'; readonly idempotent?: boolean } | { readonly type: 'rejected' }>
 }
 
 /**
@@ -398,6 +542,7 @@ export interface CreateAgentHostOptions {
   readonly inMemoryRequestLedgerMode?: 'test' | 'development'
   readonly requestRetentionMs?: number
   readonly effectAdmission?: AgentEffectAdmission
+  readonly childEffectAdmission?: ChildEffectAdmission
   readonly shutdownGraceMs?: number
   readonly harnessFactory?: AgentHarnessFactory
 }
@@ -405,6 +550,7 @@ export interface CreateAgentHostOptions {
 export interface CreatedAgentHost {
   readonly host: AgentHostHandle
   readonly gateway: AgentGateway
+  readonly attention: AgentAttentionHostCapability
   registerDirectRoutes(options: AgentHostDirectProjectionOptions): FastifyPluginAsync
   acquireEnvironment(input: {
     readonly authorizedScope: AuthorizedAgentScope

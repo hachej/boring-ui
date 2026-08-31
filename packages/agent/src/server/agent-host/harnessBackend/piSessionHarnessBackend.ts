@@ -25,6 +25,7 @@ function toPiSessionRequestContext(
     authSubject: ctx.authSubjectId,
     sessionAuthority: 'workspace-scope',
     requestId: ctx.requestId,
+    childEffectCapability: ctx.childEffectCapability,
   }
 }
 
@@ -51,13 +52,43 @@ export interface AgentHarnessBackendFactoryInput {
   readonly eventStore?: EventStreamStore
   readonly metering?: AgentMeteringSink
   readonly onEvent?: (sessionId: string, event: PiChatEvent) => void
+  readonly onRunEvent?: (input: {
+    readonly sessionId: string
+    readonly context: HarnessRequestContext
+    readonly event: PiChatEvent
+  }) => void
   readonly attachmentUrl?: HarnessPiChatServiceOptions['attachmentUrl']
 }
 
 export function createPiSessionHarnessBackend(
   input: AgentHarnessBackendFactoryInput,
 ): AgentHarnessBackend {
-  const service = new HarnessPiChatService(input)
+  const pendingRuns = new Map<string, HarnessRequestContext[]>()
+  const activeRuns = new Map<string, HarnessRequestContext>()
+  const service = new HarnessPiChatService({
+    ...input,
+    onEvent(sessionId, event) {
+      input.onEvent?.(sessionId, event)
+      if (event.type === 'agent-start') {
+        const queued = pendingRuns.get(sessionId) ?? []
+        const context = queued.shift()
+        if (queued.length === 0) pendingRuns.delete(sessionId)
+        if (context) {
+          activeRuns.set(JSON.stringify([sessionId, event.turnId]), context)
+          input.onRunEvent?.({ sessionId, context, event })
+        }
+        return
+      }
+      if (event.type !== 'agent-end' && event.type !== 'error') return
+      const turnId = event.turnId
+      if (!turnId) return
+      const activeKey = JSON.stringify([sessionId, turnId])
+      const context = activeRuns.get(activeKey)
+      if (!context) return
+      input.onRunEvent?.({ sessionId, context, event })
+      if (event.type === 'agent-end' && event.willRetry !== true) activeRuns.delete(activeKey)
+    },
+  })
   let closed = false
   let closing: Promise<void> | undefined
   const assertOpen = () => {
@@ -97,15 +128,37 @@ export function createPiSessionHarnessBackend(
     },
     async submitPrompt(address, ctx, payload) {
       assertOpen()
-      return await service.prompt(toPiSessionRequestContext(address, ctx), address.ref.sessionId, payload)
+      const pending = pendingRuns.get(address.ref.sessionId) ?? []
+      pending.push({ ...ctx, runOperation: 'session.prompt' })
+      pendingRuns.set(address.ref.sessionId, pending)
+      try {
+        return await service.prompt(toPiSessionRequestContext(address, ctx), address.ref.sessionId, payload)
+      } catch (error) {
+        const index = pending.findIndex((candidate) => candidate.requestId === ctx.requestId)
+        if (index >= 0) pending.splice(index, 1)
+        throw error
+      }
     },
     async submitFollowUp(address, ctx, payload) {
       assertOpen()
-      return await service.followUp(toPiSessionRequestContext(address, ctx), address.ref.sessionId, payload)
+      const pending = pendingRuns.get(address.ref.sessionId) ?? []
+      pending.push({ ...ctx, runOperation: 'session.followup' })
+      pendingRuns.set(address.ref.sessionId, pending)
+      try {
+        return await service.followUp(toPiSessionRequestContext(address, ctx), address.ref.sessionId, payload)
+      } catch (error) {
+        const matching = pending.findIndex((candidate) => candidate.requestId === ctx.requestId)
+        if (matching >= 0) pending.splice(matching, 1)
+        throw error
+      }
     },
     async clearQueue(address, ctx, payload) {
       assertOpen()
-      return await service.clearQueue(toPiSessionRequestContext(address, ctx), address.ref.sessionId, payload)
+      const receipt = await service.clearQueue(toPiSessionRequestContext(address, ctx), address.ref.sessionId, payload)
+      const remaining = (pendingRuns.get(address.ref.sessionId) ?? []).filter((candidate) => candidate.runOperation !== 'session.followup')
+      if (remaining.length === 0) pendingRuns.delete(address.ref.sessionId)
+      else pendingRuns.set(address.ref.sessionId, remaining)
+      return receipt
     },
     async interrupt(address, ctx, payload) {
       assertOpen()
@@ -133,6 +186,10 @@ export function createPiSessionHarnessBackend(
     async deleteSession(address, ctx) {
       assertOpen()
       await service.deleteSession(toPiSessionRequestContext(address, ctx), address.ref.sessionId)
+      pendingRuns.delete(address.ref.sessionId)
+      for (const key of activeRuns.keys()) {
+        if ((JSON.parse(key) as [string, string])[0] === address.ref.sessionId) activeRuns.delete(key)
+      }
     },
     async readAttachment(address, ctx, messageId, index) {
       assertOpen()

@@ -86,6 +86,7 @@ import {
 } from "./pluginEntryResolver"
 import { rebuildServerPlugins, type PluginRebuildResult } from "./rebuildServerPlugins"
 import { resolveDefaultWorkspacePluginPackagePaths } from "./defaultPluginPackages"
+import { createDeferredHostCapability } from "./deferredHostCapability"
 export {
   createPiResourceDigestInput as createWorkspacePiResourceDigestInput,
   digestPiResourceInputs as digestWorkspacePiResourceInputs,
@@ -227,6 +228,8 @@ export interface WorkspaceAgentServerPluginContext {
     sql?: unknown
     actorVerifier?: (actor: { workspaceId: string; userId: string }) => Promise<boolean> | boolean
     hostedAutomationTriggerToken?: string
+    /** Durable attention ledger, structurally injected into trusted plugins. */
+    attention?: object
   }
 }
 
@@ -1309,6 +1312,7 @@ export async function createWorkspaceAgentServer(
   const uiTools = createWorkspaceUiTools(bridge, {
     workspaceRoot: validateUiPaths ? workspaceRoot : undefined,
   })
+  const attentionCapability = createDeferredHostCapability<object>("AgentHost attention capability")
   const pluginAuthoringEnabled = externalPluginsEnabled
     && (opts.installPluginAuthoring ?? workspaceFsCapability === "strong")
     && !(opts.excludeDefaults ?? []).includes("boring-ui-plugin-cli-package")
@@ -1338,6 +1342,7 @@ export async function createWorkspaceAgentServer(
         workspaceId: opts.sessionId ?? "default",
         userId: authenticatedRequestUserId(request) ?? "local",
       }),
+      attention: attentionCapability.capability,
     },
     ...opts,
     agentTypeId: opts.defaultAgentTypeId ?? agents[0]?.agentTypeId ?? "default",
@@ -2036,6 +2041,7 @@ export async function createWorkspaceAgentServer(
       }
     },
   })
+  attentionCapability.bind(agentHost.attention)
   const unregisterUiBridge = registerWorkspaceUiBridge(bridge)
   const app = Fastify({ logger: opts.logger ?? true, bodyLimit: 16 * 1024 * 1024 })
   let lifecycleTransferred = false

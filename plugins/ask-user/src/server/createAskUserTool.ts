@@ -78,6 +78,7 @@ export function createAskUserTool(options: AskUserToolOptions): AskUserToolDefin
           additionalProperties: true,
         },
         timeoutMs: { type: "number", description: "Optional timeout in milliseconds." },
+        riskTier: { type: "string", enum: ["observe", "reversible", "consequential", "sensitive"] },
       },
       required: ["title", "schema"],
       additionalProperties: false,
@@ -131,4 +132,3 @@ function formatAskUserResult(result: AskUserToolResult, input: AskUserToolInput)
     details: result,
   }
 }
-

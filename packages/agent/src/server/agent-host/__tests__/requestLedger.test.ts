@@ -15,6 +15,14 @@ const key: AgentRequestKey = {
   requestId: 'request-a',
 }
 
+const runKey: AgentRequestKey = {
+  workspaceScopeId: 'workspace-a',
+  authSubjectId: 'subject-a',
+  operation: 'session.prompt',
+  target: { kind: 'session', ref: { agentTypeId: 'alpha', sessionId: 'session-a' } },
+  requestId: 'run-a',
+}
+
 describe('InMemoryAgentRequestLedger', () => {
   it('implements pending → accepted → in-flight → completed and acknowledgement replay', async () => {
     const ledger = new InMemoryAgentRequestLedger()
@@ -100,6 +108,146 @@ describe('SqliteAgentRequestLedger', () => {
       ...key,
       target: { kind: 'session', ref: { agentTypeId: 'alpha', sessionId: 'session-a' } },
     }, 'digest-a')).rejects.toThrow('request ledger effect/target mismatch')
+    ledger.close()
+  })
+
+  it('reconciles prior-incarnation in-flight requests and started turns with separate store instances', async () => {
+    const path = join(tmpdir(), `agent-request-ledger-${randomUUID()}.sqlite`)
+    const before = new SqliteAgentRequestLedger(path)
+    const firstIncarnation = await before.claimIncarnation()
+    await before.prepare(runKey, 'digest-a')
+    await before.acceptAdmission(runKey, 'admission-a')
+    await before.beginEffect(runKey)
+    await before.startTurn({
+      runRequestKey: runKey,
+      sessionRef: { agentTypeId: 'alpha', sessionId: 'session-a' },
+      turnId: 'turn-a',
+      incarnation: firstIncarnation,
+      startedSeq: 7,
+    })
+    before.close()
+
+    const after = new SqliteAgentRequestLedger(path)
+    const secondIncarnation = await after.claimIncarnation()
+    const reconciled = await after.reconcileAfterRestart(secondIncarnation)
+    expect(reconciled).toMatchObject({ requestsOutcomeUnknown: 1, turnsOutcomeUnknown: 1 })
+    expect(await after.read(runKey)).toMatchObject({ state: 'outcome-unknown' })
+    expect(await after.listNonTerminal({
+      states: ['outcome-unknown'],
+      operations: ['session.prompt'],
+      workspaceScopeId: 'workspace-a',
+    })).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'request', record: expect.objectContaining({ state: 'outcome-unknown' }) }),
+      expect.objectContaining({ kind: 'turn', record: expect.objectContaining({ state: 'outcome-unknown' }) }),
+    ]))
+    after.close()
+  })
+
+  it('parks an in-flight request held by a pause effect and ready attention', async () => {
+    const path = join(tmpdir(), `agent-request-ledger-${randomUUID()}.sqlite`)
+    const before = new SqliteAgentRequestLedger(path)
+    await before.claimIncarnation()
+    await before.prepare(runKey, 'digest-a')
+    await before.acceptAdmission(runKey, 'admission-a')
+    await before.beginEffect(runKey)
+    await before.admitEffect({
+      runRequestKey: runKey,
+      effectId: 'tool-a',
+      effectClass: 'pause',
+      idempotent: false,
+    })
+    await before.pauseChildEffect(runKey, 'tool-a')
+    const now = Date.now()
+    await before.attention.create({
+      attentionId: 'question-a',
+      runRequestKey: runKey,
+      toolCallId: 'tool-a',
+      workspaceScopeId: 'workspace-a',
+      sessionRef: { agentTypeId: 'alpha', sessionId: 'session-a' },
+      kind: 'question',
+      status: 'ready',
+      ownerPrincipalId: 'subject-a',
+      payload: { questionId: 'question-a' },
+      resume: { state: 'pending', resumeRequestId: 'attention:question-a:resume' },
+      transcriptEvents: [],
+      createdAt: now,
+      updatedAt: now,
+    })
+    before.close()
+
+    const after = new SqliteAgentRequestLedger(path)
+    const reconciled = await after.reconcileAfterRestart(await after.claimIncarnation())
+    expect(reconciled).toMatchObject({ parked: 1, requestsOutcomeUnknown: 0 })
+    expect(await after.read(runKey)).toMatchObject({ state: 'in-flight' })
+    after.close()
+  })
+
+  it('replays a persisted follow-up before enqueue but never double-runs after enqueue begins', async () => {
+    const path = join(tmpdir(), `agent-request-ledger-${randomUUID()}.sqlite`)
+    const followUpKey: AgentRequestKey = { ...runKey, operation: 'session.followup', requestId: 'follow-up-a' }
+    const payload = { kind: 'followup', requestId: 'follow-up-a', clientNonce: 'nonce-a', clientSeq: 1, content: 'next' } as const
+    const first = new SqliteAgentRequestLedger(path)
+    await first.claimIncarnation()
+    await first.prepare(followUpKey, 'digest-follow-up', payload)
+    await first.acceptAdmission(followUpKey, 'admission-follow-up')
+    first.close()
+
+    const beforeEnqueue = new SqliteAgentRequestLedger(path)
+    await beforeEnqueue.reconcileAfterRestart(await beforeEnqueue.claimIncarnation())
+    expect(await beforeEnqueue.read(followUpKey)).toMatchObject({ state: 'pending-admission' })
+    expect(await beforeEnqueue.readReplayPayload(followUpKey)).toEqual(payload)
+    await beforeEnqueue.acceptAdmission(followUpKey, 'admission-replay')
+    await beforeEnqueue.beginEffect(followUpKey)
+    beforeEnqueue.close()
+
+    const afterEnqueue = new SqliteAgentRequestLedger(path)
+    await afterEnqueue.reconcileAfterRestart(await afterEnqueue.claimIncarnation())
+    expect(await afterEnqueue.read(followUpKey)).toMatchObject({ state: 'outcome-unknown' })
+    expect(await afterEnqueue.listNonTerminal({
+      states: ['pending-admission'],
+      operations: ['session.followup'],
+    })).toEqual([])
+    afterEnqueue.close()
+  })
+
+  it('uses CAS attention transitions and digest-idempotent effect settlement', async () => {
+    const ledger = new SqliteAgentRequestLedger(join(tmpdir(), `agent-request-ledger-${randomUUID()}.sqlite`))
+    await ledger.claimIncarnation()
+    await ledger.admitEffect({
+      runRequestKey: runKey,
+      effectId: 'tool-a',
+      effectClass: 'mutate',
+      idempotent: false,
+    })
+    await ledger.beginChildEffect(runKey, 'tool-a')
+    await ledger.settleChildEffect(runKey, 'tool-a', 'outcome-a', { ok: true })
+    await expect(ledger.settleChildEffect(runKey, 'tool-a', 'outcome-a', { ignored: true })).resolves.toBeUndefined()
+    await expect(ledger.settleChildEffect(runKey, 'tool-a', 'outcome-b', { ok: false })).rejects.toMatchObject({
+      code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT,
+    })
+
+    const now = Date.now()
+    await ledger.attention.create({
+      attentionId: 'question-a',
+      runRequestKey: runKey,
+      toolCallId: 'tool-a',
+      workspaceScopeId: 'workspace-a',
+      sessionRef: { agentTypeId: 'alpha', sessionId: 'session-a' },
+      kind: 'question',
+      status: 'ready',
+      ownerPrincipalId: 'subject-a',
+      payload: { questionId: 'question-a' },
+      resume: { state: 'pending', resumeRequestId: 'attention:question-a:resume' },
+      transcriptEvents: [],
+      createdAt: now,
+      updatedAt: now,
+    })
+    expect(await ledger.attention.transition('question-a', ['ready'], (record) => ({
+      ...record,
+      status: 'answered',
+      updatedAt: Date.now(),
+    }))).toBe(true)
+    expect(await ledger.attention.transition('question-a', ['ready'], (record) => record)).toBe(false)
     ledger.close()
   })
 })

@@ -15,6 +15,7 @@ import type {
 } from '../../../shared/chat'
 import type { AgentSessionRef } from '../../../shared/gateway/types'
 import type { SessionListOptions, SessionSummary } from '../../../shared/session'
+import type { ChildEffectRunCapability } from '../../../shared/harness'
 
 /** Workspace-scoped addressing. Pi-native identities remain adapter-private. */
 export interface HarnessSessionAddress {
@@ -31,6 +32,8 @@ export interface HarnessAgentScope {
 export interface HarnessRequestContext {
   readonly requestId: string
   readonly authSubjectId: string
+  readonly runOperation?: 'session.prompt' | 'session.followup'
+  readonly childEffectCapability?: ChildEffectRunCapability
 }
 
 export type HarnessWatchResult =

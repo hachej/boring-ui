@@ -38,6 +38,7 @@ export {
   type ResolveWorkspaceAgentServerPluginCollectionOptions,
   type ResolvedWorkspacePluginArtifact,
 } from "./createWorkspaceAgentServer"
+export { createDeferredHostCapability } from "./deferredHostCapability"
 export {
   resolveDefaultWorkspacePluginPackagePaths,
   type ResolveDefaultWorkspacePluginPackagePathsOptions,

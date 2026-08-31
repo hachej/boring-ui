@@ -65,7 +65,11 @@ export interface AgentHostRuntime {
   readonly compiledById: ReadonlyMap<string, CompiledAgentHostAgentSpec>
   readonly ledger: import('./types').AgentRequestLedger
   readonly effectAdmission: import('./types').AgentEffectAdmission
+  readonly childEffectAdmission: import('./types').ChildEffectAdmission
   readonly activity: AgentSessionActivityIndex
+  readonly attention: import('./types').AgentAttentionLedger
+  incarnation: string
+  mintChildEffectCapability(key: import('./types').AgentRequestKey): import('../../shared/harness').ChildEffectRunCapability
   readonly shutdownGraceMs: number
   listSessionSummaries(
     agentTypeId: string,
@@ -399,6 +403,7 @@ function createRuntime(
     ?? (options.inMemoryRequestLedgerMode || !durableLedgerPath
       ? new InMemoryAgentRequestLedger()
       : new SqliteAgentRequestLedger(durableLedgerPath))
+  const attention = ledger.attention ?? new InMemoryAgentRequestLedger().attention!
 
   const disposeBinding = (binding: RuntimeBinding): Promise<void> => {
     let disposal = bindingDisposals.get(binding)
@@ -421,13 +426,61 @@ function createRuntime(
     compiledAgents,
     compiledById,
     ledger,
+    attention,
     effectAdmission: options.effectAdmission ?? {
       async admit({ key }) {
         return { type: 'accepted', admissionReceipt: `trusted-local:${key.requestId}` }
       },
     },
+    childEffectAdmission: options.childEffectAdmission ?? {
+      async admit({ effectClass, declared }) {
+        return effectClass === 'external-effect' && !declared ? { type: 'rejected' } : { type: 'accepted' }
+      },
+    },
     activity,
+    incarnation: 'unclaimed',
     shutdownGraceMs: graceMs,
+    mintChildEffectCapability(key) {
+      const ledger = runtime.ledger
+      return Object.freeze({
+        async admit(
+          toolCallId: string,
+          effectClass: import('../../shared/tool').AgentToolEffectClass,
+          idempotent = false,
+          declared = false,
+        ) {
+          const decision = await runtime.childEffectAdmission.admit({ runRequestKey: key, toolCallId, effectClass, declared })
+          if (decision.type !== 'accepted') {
+            throw Object.assign(new Error(`child effect class ${effectClass} is not authorized for this Run`), {
+              code: AgentGatewayErrorCode.AGENT_ACCESS_FORBIDDEN,
+            })
+          }
+          if (!ledger.admitEffect) throw new Error('child effect ledger is unavailable')
+          await ledger.admitEffect({
+            runRequestKey: key,
+            effectId: toolCallId,
+            effectClass,
+            idempotent: decision.idempotent ?? idempotent,
+          })
+        },
+        async begin(toolCallId: string) {
+          if (!ledger.beginChildEffect) throw new Error('child effect ledger is unavailable')
+          await ledger.beginChildEffect(key, toolCallId)
+        },
+        async pause(toolCallId: string) {
+          if (!ledger.pauseChildEffect) throw new Error('child effect ledger is unavailable')
+          await ledger.pauseChildEffect(key, toolCallId)
+        },
+        async settle(toolCallId: string, outcomeDigest: string, receipt: import('../../shared/index').JsonValue) {
+          if (!ledger.settleChildEffect) throw new Error('child effect ledger is unavailable')
+          await ledger.settleChildEffect(key, toolCallId, outcomeDigest, receipt)
+        },
+        async markOutcomeUnknown(toolCallId: string) {
+          if (!ledger.markChildEffectOutcomeUnknown) throw new Error('child effect ledger is unavailable')
+          await ledger.markChildEffectOutcomeUnknown(key, toolCallId)
+        },
+      }) as import('../../shared/harness').ChildEffectRunCapability
+    },
     listSessionSummaries(agentTypeId, scope, claim, options) {
       runtime.assertOpen()
       return inventory.list(agentTypeId, scope, claim, options)
@@ -544,6 +597,42 @@ function createRuntime(
                   activity.observe(claim.workspaceScopeId, { agentTypeId, sessionId }, event)
                 }
               },
+              observeRunEvent: ({ sessionId, context, event }) => {
+                const operation = context.runOperation
+                if (!operation) return
+                const runRequestKey: import('./types').AgentRequestKey = {
+                  workspaceScopeId: claim.workspaceScopeId,
+                  authSubjectId: context.authSubjectId,
+                  operation,
+                  target: { kind: 'session', ref: { agentTypeId, sessionId } },
+                  requestId: context.requestId,
+                }
+                if (event.type === 'agent-start') {
+                  void runtime.ledger.startTurn?.({
+                    runRequestKey,
+                    sessionRef: { agentTypeId, sessionId },
+                    turnId: event.turnId,
+                    incarnation: runtime.incarnation,
+                    startedSeq: event.seq,
+                  }).catch(() => {})
+                  return
+                }
+                if (event.type === 'agent-end' && event.willRetry !== true) {
+                  void runtime.ledger.finishTurn?.(
+                    runRequestKey,
+                    { agentTypeId, sessionId },
+                    { state: event.status === 'error' ? 'error' : 'ended', endedSeq: event.seq },
+                  ).catch(() => {})
+                  return
+                }
+                if (event.type === 'error') {
+                  void runtime.ledger.finishTurn?.(
+                    runRequestKey,
+                    { agentTypeId, sessionId },
+                    { state: 'error', endedSeq: event.seq },
+                  ).catch(() => {})
+                }
+              },
             })
             const generation = (nextBindingGeneration.get(currentKey) ?? 0) + 1
             nextBindingGeneration.set(currentKey, generation)
@@ -656,6 +745,13 @@ function createRuntime(
         const terminalizations: Promise<void>[] = []
         for (const key of finiteEffects.values()) {
           terminalizations.push((async () => {
+            const paused = await runtime.ledger.listNonTerminal?.({
+              states: ['paused'],
+              operations: [key.operation],
+              workspaceScopeId: key.workspaceScopeId,
+            }) ?? []
+            if (paused.some((entry) => entry.kind === 'effect'
+              && JSON.stringify(entry.record.runRequestKey) === JSON.stringify(key))) return
             const record = await runtime.ledger.read(key)
             if (record?.state === 'pending-admission' || record?.state === 'admission-accepted') {
               await runtime.ledger.reject(key, { kind: 'gateway', error: closed.toJSON() })
@@ -802,6 +898,8 @@ export async function createAgentHost(
       + 'in-memory mode must be explicitly limited to test/development',
     )
   }
+  runtime.incarnation = await runtime.ledger.claimIncarnation?.() ?? randomUUID()
+  await runtime.ledger.reconcileAfterRestart?.(runtime.incarnation)
   const gateway = new EmbeddedAgentGateway(runtime)
   const assertStrongLedger = () => {
     if (
@@ -939,6 +1037,10 @@ export async function createAgentHost(
   const created = Object.freeze({
     host,
     gateway,
+    attention: Object.freeze({
+      ...runtime.attention,
+      isDraining: () => runtime.isDraining(),
+    }),
     acquireEnvironment: acquireAppEnvironment,
     runWithWorkspaceAgent,
     registerDirectRoutes(projectionOptions: AgentHostDirectProjectionOptions) {

@@ -56,6 +56,10 @@ interface EffectOptions {
   preflight?: () => Promise<void>
   /** Opt-in only when a rejected action promise proves no provider mutation began. */
   classifySafeActionFailure?: SafeActionFailureClassifier
+  mintChildEffectCapability?: boolean
+  onChildEffectCapability?: (capability: import('../../shared/harness').ChildEffectRunCapability) => void
+  /** Internal replay of a ledger-owned request after restart. */
+  allowExistingPending?: boolean
 }
 interface SessionEffectOptions extends Omit<EffectOptions, 'serialize'> {
   bindingKey?: string
@@ -74,10 +78,12 @@ function sessionTarget(ref: AgentSessionRef): AgentRequestTarget {
 function harnessContext(
   claim: VerifiedAgentScopeClaim,
   requestId: string,
+  childEffectCapability?: import('../../shared/harness').ChildEffectRunCapability,
 ): HarnessRequestContext {
   return {
     authSubjectId: claim.authSubjectId,
     requestId,
+    childEffectCapability,
   }
 }
 
@@ -468,6 +474,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
     const claim = await this.verify(input.scope)
     const binding = await this.bindingForSession(input.scope, claim, input.ref)
     await this.loadSummary(binding.composition.backend, claim, input.ref)
+    await this.replayPendingFollowUps(input.ref, input.scope, claim)
     const queue = new AgentSessionEventQueue()
     const initialCursor = input.cursor ?? (await binding.composition.backend.readSnapshot(
       harnessAddress(claim, input.ref),
@@ -580,13 +587,15 @@ export class EmbeddedAgentGateway implements AgentGateway {
     scope: AuthorizedAgentScope,
     claim: VerifiedAgentScopeClaim,
     command: IdempotentAgentSend,
+    restartReplay = false,
   ) {
     await this.assertAgentAccess(ref.agentTypeId, scope, claim, 'session.mutate')
     const binding = await this.bindingForSession(scope, claim, ref)
     const backend = binding.composition.backend
     if (command.kind === 'prompt') {
+      let childEffectCapability: import('../../shared/harness').ChildEffectRunCapability | undefined
       return await this.sessionEffect(ref, scope, claim, 'session.prompt', command.requestId, command as unknown as JsonValue, async () => {
-        const receipt = await backend.submitPrompt(harnessAddress(claim, ref), harnessContext(claim, command.requestId), {
+        const receipt = await backend.submitPrompt(harnessAddress(claim, ref), harnessContext(claim, command.requestId, childEffectCapability), {
           message: command.content,
           displayMessage: command.displayContent,
           clientNonce: command.clientNonce,
@@ -600,6 +609,8 @@ export class EmbeddedAgentGateway implements AgentGateway {
         duplicateReceipt: true,
         bindingKey: binding.key,
         classifySafeActionFailure: stableServiceActionFailure,
+        mintChildEffectCapability: true,
+        onChildEffectCapability(capability) { childEffectCapability = capability },
         guard: async () => await this.promptAdmission(
           scope,
           claim,
@@ -609,8 +620,9 @@ export class EmbeddedAgentGateway implements AgentGateway {
         ),
       })
     }
+    let childEffectCapability: import('../../shared/harness').ChildEffectRunCapability | undefined
     return await this.sessionEffect(ref, scope, claim, 'session.followup', command.requestId, command as unknown as JsonValue, async () => {
-      const receipt = await backend.submitFollowUp(harnessAddress(claim, ref), harnessContext(claim, command.requestId), {
+      const receipt = await backend.submitFollowUp(harnessAddress(claim, ref), harnessContext(claim, command.requestId, childEffectCapability), {
         message: command.content,
         displayMessage: command.displayContent,
         clientNonce: command.clientNonce,
@@ -621,7 +633,35 @@ export class EmbeddedAgentGateway implements AgentGateway {
       duplicateReceipt: true,
       bindingKey: binding.key,
       classifySafeActionFailure: stableServiceActionFailure,
+      mintChildEffectCapability: true,
+      onChildEffectCapability(capability) { childEffectCapability = capability },
+      allowExistingPending: restartReplay,
     })
+  }
+
+  private async replayPendingFollowUps(
+    ref: AgentSessionRef,
+    scope: AuthorizedAgentScope,
+    claim: VerifiedAgentScopeClaim,
+  ): Promise<void> {
+    const rows = await this.runtime.ledger.listNonTerminal?.({
+      states: ['pending-admission'],
+      operations: ['session.followup'],
+      workspaceScopeId: claim.workspaceScopeId,
+    }) ?? []
+    for (const row of rows) {
+      if (row.kind !== 'request') continue
+      const key = row.record.key
+      if (key.authSubjectId !== claim.authSubjectId || key.target.kind !== 'session'
+        || key.target.ref.agentTypeId !== ref.agentTypeId || key.target.ref.sessionId !== ref.sessionId) continue
+      const payload = await this.runtime.ledger.readReplayPayload?.(key)
+      if (!payload || Array.isArray(payload) || typeof payload !== 'object' || payload.kind !== 'followup') continue
+      try {
+        await this.send(ref, scope, claim, payload as unknown as IdempotentAgentSend, true)
+      } catch (error) {
+        if (!(error instanceof AgentGatewayError) || error.code !== AgentGatewayErrorCode.AGENT_REQUEST_IN_PROGRESS) throw error
+      }
+    }
   }
 
   async renameSession(input: Parameters<AgentGateway['renameSession']>[0]) {
@@ -819,6 +859,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
       serializedClassify,
       preflight,
       classifySafeActionFailure,
+      allowExistingPending = false,
     } = options
     const key: AgentRequestKey = {
       workspaceScopeId: claim.workspaceScopeId,
@@ -828,7 +869,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
       requestId,
     }
     const digest = canonicalDigest(payload)
-    const prepared = await this.runtime.ledger.prepare(key, digest)
+    const prepared = await this.runtime.ledger.prepare(key, digest, payload)
     const reauthorizeOrReject = async () => {
       try {
         await reauthorize()
@@ -860,7 +901,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
         requestId,
       },
     )
-    if (prepared.ownership === 'existing' && !guard) throw requestInProgress()
+    if (prepared.ownership === 'existing' && !guard && !allowExistingPending) throw requestInProgress()
 
     let effect: Promise<JsonValue>
     try {
@@ -923,6 +964,9 @@ export class EmbeddedAgentGateway implements AgentGateway {
             }
           }
           await this.runtime.ledger.beginEffect(key)
+          if (options.mintChildEffectCapability) {
+            options.onChildEffectCapability?.(this.runtime.mintChildEffectCapability(key))
+          }
           let actionResult: Promise<unknown>
           try {
             actionResult = action()

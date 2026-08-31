@@ -21,6 +21,7 @@ export interface SpawnedBackend {
   browserUrl: string
   port: number
   logs: BackendLogs
+  kill(signal: 'SIGTERM' | 'SIGKILL'): Promise<void>
   stop(): Promise<void>
 }
 
@@ -31,6 +32,8 @@ export interface SpawnBackendOptions {
   timeoutMs?: number
   mode?: 'direct' | 'local' | 'blaxel' | 'vercel-sandbox'
   env?: Record<string, string>
+  /** Test-only full workspace host (plugins + bridge); product flags stay unchanged. */
+  host?: 'agent' | 'workspace'
 }
 
 interface LineCollector {
@@ -90,7 +93,7 @@ async function probeHealthPort(port: number): Promise<boolean> {
       return false
     }
     const body = (await response.json()) as { version?: unknown }
-    return typeof body.version === 'string' && body.version.startsWith('@hachej/boring-agent@')
+    return typeof body.version === 'string' && body.version.length > 0
   } catch {
     return false
   }
@@ -211,7 +214,15 @@ export async function spawnBackend(
   // waitForHealthy() probes the same increment window to discover the actual API port.
   const child = spawn(
     'node',
-    [
+    options.host === 'workspace' ? [
+      '--import',
+      'tsx',
+      'e2e/helpers/workspace-backend.ts',
+      '--port',
+      String(port),
+      '--workspace',
+      options.workspaceRoot,
+    ] : [
       '--import',
       'tsx',
       'src/bin/boring-agent.ts',
@@ -272,6 +283,11 @@ export async function spawnBackend(
     browserUrl,
     port: apiPort,
     logs,
+    async kill(signal) {
+      if (child.exitCode !== null) return
+      child.kill(signal)
+      await waitForExit(child, PROCESS_EXIT_TIMEOUT_MS)
+    },
     async stop() {
       if (child.exitCode !== null) {
         return

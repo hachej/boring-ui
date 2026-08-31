@@ -2,8 +2,10 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { randomUUID } from "node:crypto"
 import { ASK_USER_ERROR_CODES } from "../shared/error-codes"
+import { AskUserAnswerSchema, AskUserQuestionSchema, AskUserTranscriptEventSchema } from "../shared/schema"
 import type {
   AskUserAnswer,
+  AskUserDecisionRecord,
   AskUserQuestion,
   AskUserTranscriptEvent,
 } from "../shared/types"
@@ -20,7 +22,7 @@ export class AskUserStoreError extends Error {
 export type AskUserStoreChange = {
   sessionId: string
   questionId?: string
-  reason: "create" | "answer" | "cancel" | "abandon" | "clear" | "transcript"
+  reason: "create" | "answer" | "cancel" | "abandon" | "clear" | "transcript" | "restore" | "import"
 }
 
 export type AskUserStoreListener = (change: AskUserStoreChange) => void
@@ -31,16 +33,27 @@ export interface AskUserStore {
   getByQuestionId(questionId: string): Promise<AskUserQuestion | null>
   createPending(question: AskUserQuestion): Promise<void>
   answer(questionId: string, answer: AskUserAnswer): Promise<void>
+  getAnswer(questionId: string): Promise<AskUserAnswer | null>
+  getDecisionRecord(questionId: string): Promise<AskUserDecisionRecord | null>
+  listResolved(): Promise<AskUserQuestion[]>
   cancel(questionId: string): Promise<void>
-  markAbandoned(questionId: string): Promise<void>
+  expire?(questionId: string): Promise<void>
+  markAbandoned(questionId: string): Promise<boolean>
+  restoreAbandoned(questionId: string): Promise<boolean>
   clearPending(sessionId: string): Promise<void>
   appendTranscriptEvent(event: AskUserTranscriptEvent): Promise<void>
+  appendTranscriptEventIfMissing(
+    questionId: string,
+    hasMatchingEvent: (events: AskUserTranscriptEvent[]) => boolean,
+    buildEvent: () => AskUserTranscriptEvent,
+  ): Promise<boolean>
   listTranscriptEvents(sessionId: string): Promise<AskUserTranscriptEvent[]>
   getTranscriptEventsForQuestion(questionId: string): Promise<AskUserTranscriptEvent[]>
   subscribe(listener: AskUserStoreListener): () => void
 }
 
 type StoredAskUserState = {
+  version?: number
   questions: Record<string, AskUserQuestion>
   pendingBySession: Record<string, string>
   answers: Record<string, AskUserAnswer>
@@ -48,6 +61,7 @@ type StoredAskUserState = {
 }
 
 const EMPTY_STATE: StoredAskUserState = {
+  version: 1,
   questions: {},
   pendingBySession: {},
   answers: {},
@@ -84,6 +98,31 @@ export class FileAskUserStore implements AskUserStore {
     return state.questions[questionId] ? clone(state.questions[questionId]) : null
   }
 
+  async getAnswer(questionId: string): Promise<AskUserAnswer | null> {
+    const state = await this.load()
+    return state.answers[questionId] ? clone(state.answers[questionId]) : null
+  }
+
+  async getDecisionRecord(questionId: string): Promise<AskUserDecisionRecord | null> {
+    const question = await this.getByQuestionId(questionId)
+    const answer = await this.getAnswer(questionId)
+    if (!question || !answer) return null
+    return {
+      questionId,
+      sessionId: question.sessionId,
+      title: question.title,
+      values: clone(answer.values),
+      riskTier: answer.riskTier ?? question.riskTier,
+      resolvedAt: answer.submittedAt,
+      resolvedBy: answer.resolvedBy,
+    }
+  }
+
+  async listResolved(): Promise<AskUserQuestion[]> {
+    const state = await this.load()
+    return Object.values(state.questions).filter((question) => question.status !== "ready").map(clone)
+  }
+
   async createPending(question: AskUserQuestion): Promise<void> {
     await this.mutate(async (state) => {
       const existing = state.pendingBySession[question.sessionId]
@@ -105,6 +144,9 @@ export class FileAskUserStore implements AskUserStore {
       if (question.status === "cancelled") throw new AskUserStoreError(ASK_USER_ERROR_CODES.ALREADY_CANCELLED, "question already cancelled")
       if (question.status === "answered") throw new AskUserStoreError(ASK_USER_ERROR_CODES.ALREADY_ANSWERED, "question already answered")
       if (question.status !== "ready") throw new AskUserStoreError(ASK_USER_ERROR_CODES.ANSWER_INVALID, "question is not ready")
+      if (question.expiresAt && Date.now() >= Date.parse(question.expiresAt)) {
+        throw new AskUserStoreError(ASK_USER_ERROR_CODES.QUESTION_EXPIRED, "question has expired")
+      }
       question.status = "answered"
       question.updatedAt = nowIso()
       state.answers[questionId] = clone(answer)
@@ -126,15 +168,39 @@ export class FileAskUserStore implements AskUserStore {
     })
   }
 
-  async markAbandoned(questionId: string): Promise<void> {
+  async expire(questionId: string): Promise<void> { await this.cancel(questionId) }
+
+  async markAbandoned(questionId: string): Promise<boolean> {
+    let changed = false
     await this.mutate(async (state) => {
       const question = requireQuestion(state, questionId)
       if (!isPending(question)) return
+      changed = true
       question.status = "abandoned"
       question.updatedAt = nowIso()
       delete state.pendingBySession[question.sessionId]
       this.emit({ sessionId: question.sessionId, questionId, reason: "abandon" })
     })
+    return changed
+  }
+
+  async restoreAbandoned(questionId: string): Promise<boolean> {
+    let changed = false
+    await this.mutate(async (state) => {
+      const question = requireQuestion(state, questionId)
+      if (question.status === "ready") return
+      if (question.status !== "abandoned") throw new AskUserStoreError(ASK_USER_ERROR_CODES.ANSWER_INVALID, "question is not abandoned")
+      const existing = state.pendingBySession[question.sessionId]
+      if (existing && existing !== questionId && isPending(state.questions[existing])) {
+        throw new AskUserStoreError(ASK_USER_ERROR_CODES.PENDING_EXISTS, "a pending question already exists for this session")
+      }
+      changed = true
+      question.status = "ready"
+      question.updatedAt = nowIso()
+      state.pendingBySession[question.sessionId] = questionId
+      this.emit({ sessionId: question.sessionId, questionId, reason: "restore" })
+    })
+    return changed
   }
 
   async clearPending(sessionId: string): Promise<void> {
@@ -152,6 +218,24 @@ export class FileAskUserStore implements AskUserStore {
       state.transcriptsBySession[sessionId] = [...(state.transcriptsBySession[sessionId] ?? []), clone(event)]
       this.emit({ sessionId, questionId: transcriptQuestionId(event), reason: "transcript" })
     })
+  }
+
+  async appendTranscriptEventIfMissing(
+    questionId: string,
+    hasMatchingEvent: (events: AskUserTranscriptEvent[]) => boolean,
+    buildEvent: () => AskUserTranscriptEvent,
+  ): Promise<boolean> {
+    let appended = false
+    await this.mutate(async (state) => {
+      const events = Object.values(state.transcriptsBySession).flat().filter((event) => transcriptQuestionId(event) === questionId)
+      if (hasMatchingEvent(events)) return
+      appended = true
+      const event = buildEvent()
+      const sessionId = transcriptSessionId(event)
+      state.transcriptsBySession[sessionId] = [...(state.transcriptsBySession[sessionId] ?? []), clone(event)]
+      this.emit({ sessionId, questionId, reason: "transcript" })
+    })
+    return appended
   }
 
   async listTranscriptEvents(sessionId: string): Promise<AskUserTranscriptEvent[]> {
@@ -186,7 +270,25 @@ export class FileAskUserStore implements AskUserStore {
       this.loadInFlight = (async () => {
         try {
           const raw = await readFile(this.filePath, "utf8")
-          this.state = { ...clone(EMPTY_STATE), ...JSON.parse(raw) }
+          const parsed = JSON.parse(raw) as StoredAskUserState
+          if ((parsed.version ?? 0) > 1) throw new AskUserStoreError(ASK_USER_ERROR_CODES.UNSUPPORTED_STORE_VERSION, `ask-user store version ${parsed.version} is newer than supported version 1`)
+          const questions = Object.fromEntries(Object.entries(parsed.questions ?? {}).flatMap(([id, value]) => {
+            const result = AskUserQuestionSchema.safeParse(value)
+            return result.success ? [[id, result.data]] : []
+          }))
+          const answers = Object.fromEntries(Object.entries(parsed.answers ?? {}).flatMap(([id, value]) => {
+            const result = AskUserAnswerSchema.safeParse(value)
+            return result.success ? [[id, result.data]] : []
+          }))
+          const transcriptsBySession = Object.fromEntries(Object.entries(parsed.transcriptsBySession ?? {}).map(([sessionId, events]) => [
+            sessionId,
+            events.flatMap((event) => {
+              const result = AskUserTranscriptEventSchema.safeParse(event)
+              return result.success ? [result.data] : []
+            }),
+          ]))
+          const pendingBySession = Object.fromEntries(Object.entries(parsed.pendingBySession ?? {}).filter(([, id]) => questions[id]?.status === "ready"))
+          this.state = { version: 1, questions, answers, transcriptsBySession, pendingBySession }
         } catch (error) {
           if ((error as { code?: string }).code !== "ENOENT") throw error
           this.state = clone(EMPTY_STATE)

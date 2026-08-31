@@ -1,5 +1,7 @@
 export type JSONSchema = Record<string, unknown>
 
+export type AgentToolEffectClass = 'observe' | 'propose' | 'mutate' | 'external-effect' | 'pause'
+
 export type ToolReadinessRequirement =
   | 'workspace-fs'
   | 'sandbox-exec'
@@ -13,6 +15,10 @@ export interface AgentTool {
   /** Optional one-line prompt entry. Pi-built tools should preserve pi's snippet verbatim. */
   promptSnippet?: string
   readinessRequirements?: ToolReadinessRequirement[]
+  /** Undeclared tools are treated as external effects and fail closed. */
+  effect?: AgentToolEffectClass
+  /** Allows restart reconciliation to return an interrupted child effect to admitted. */
+  idempotent?: boolean
   parameters: JSONSchema
   execute(
     params: Record<string, unknown>,

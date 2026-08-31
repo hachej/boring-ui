@@ -37,6 +37,7 @@ export interface PluginDiagnosticsToolDeps {
 export function createPluginDiagnosticsTool(deps: PluginDiagnosticsToolDeps): AgentTool {
   return {
     name: 'plugin_diagnostics',
+    effect: 'observe',
     description: [
       'Return current plugin/skill loading errors plus the diagnostics from the',
       'last /reload. Call this after asking the user to run /reload — or whenever a',

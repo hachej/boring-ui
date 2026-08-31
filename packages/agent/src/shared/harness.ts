@@ -127,6 +127,8 @@ export interface RunContext {
   workdir: string
   workspaceId?: string
   requestId?: string
+  /** Gateway-minted, per-Run child-effect authority. Not a transport DTO. */
+  childEffectCapability?: ChildEffectRunCapability
   userId?: string
   userEmail?: string
   userEmailVerified?: boolean
@@ -134,4 +136,20 @@ export interface RunContext {
   sessionCtx?: SessionCtx
   /** When false, slash-command fallback through native model prompt must fail closed. */
   allowPromptDispatch?: boolean
+}
+
+declare const childEffectRunCapabilityBrand: unique symbol
+
+export interface ChildEffectRunCapability {
+  readonly [childEffectRunCapabilityBrand]: true
+  admit(
+    toolCallId: string,
+    effectClass: import('./tool').AgentToolEffectClass,
+    idempotent?: boolean,
+    declared?: boolean,
+  ): Promise<void>
+  begin(toolCallId: string): Promise<void>
+  pause(toolCallId: string): Promise<void>
+  settle(toolCallId: string, outcomeDigest: string, receipt: import('./gateway/types').JsonValue): Promise<void>
+  markOutcomeUnknown(toolCallId: string): Promise<void>
 }

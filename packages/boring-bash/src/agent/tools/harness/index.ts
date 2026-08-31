@@ -82,6 +82,7 @@ function adaptPiTool(
   const template = createBashToolDefinition(bundle.workspace.root, bashOptionsForBundle(bundle, runtime))
   return {
     name: template.name,
+    effect: 'external-effect',
     description: template.description,
     promptSnippet: [
       'Run shell commands in the user runtime workspace.',
@@ -173,6 +174,7 @@ function adaptPiTool(
 function createExecuteIsolatedCodeTool(sandbox: Sandbox): AgentTool {
   return {
     name: 'execute_isolated_code',
+    effect: 'external-effect',
     description: 'Execute code in an isolated sandbox environment.',
     parameters: {
       type: 'object',

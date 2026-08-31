@@ -305,6 +305,7 @@ function withFilesystemRouting(
 function adaptPiTool<TParams extends Record<string, unknown>>(piTool: PiToolLike<TParams>): AgentTool {
   return {
     name: piTool.name,
+    effect: ['read', 'grep', 'find', 'ls', 'list'].includes(piTool.name) ? 'observe' : 'mutate',
     readinessRequirements: ['workspace-fs'],
     description: piTool.description,
     promptSnippet: piTool.promptSnippet,

@@ -424,6 +424,18 @@ function main() {
     pass(`consumers hold no HarnessPiChatService/PiSessionStore/AgentHarnessBackend/harnessBackend references (${consumerFiles.length} file(s))`);
   }
 
+  const fileAskUserStoreDefinition = "plugins/ask-user/src/server/askUserStore.ts";
+  const fileAskUserProductionRefs = allProductionFiles.filter((file) =>
+    toRepoPath(file) !== fileAskUserStoreDefinition
+    && readFileSync(file, "utf8").includes("FileAskUserStore")
+  );
+  for (const file of fileAskUserProductionRefs) {
+    fail(`FileAskUserStore remains referenced by production wiring in ${toRepoPath(file)}`);
+  }
+  if (fileAskUserProductionRefs.length === 0) {
+    pass("FileAskUserStore is unreferenced by production wiring");
+  }
+
   const errors = [];
   for (const [file, sourceFile] of parsedFiles) errors.push(...parseErrors(file, sourceFile));
   for (const error of errors) fail(`could not parse ${error}`);

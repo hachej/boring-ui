@@ -3,7 +3,9 @@ import {
   createAskUserServerPlugin,
   type AskUserServerPluginOptions,
 } from "./askUserServerPlugin"
+import type { AskUserAttentionCapability } from "./ledgerAskUserStore"
 export * from "./askUserStore"
+export * from "./ledgerAskUserStore"
 export * from "./askUserRuntime"
 export * from "./questionsBridge"
 export * from "./questionsRoutes"
@@ -23,11 +25,12 @@ export { ASK_USER_PLUGIN_ID } from "../shared"
  */
 export default function defaultAskUserServerPlugin(
   options: Partial<AskUserServerPluginOptions> | undefined,
-  ctx: { workspaceRoot: string; bridge: AskUserServerPluginOptions["bridge"] },
+  ctx: { workspaceRoot: string; bridge: AskUserServerPluginOptions["bridge"]; trusted?: { attention?: AskUserAttentionCapability } },
 ): WorkspaceServerPlugin {
   return createAskUserServerPlugin({
     ...(options ?? {}),
     workspaceRoot: options?.workspaceRoot ?? ctx.workspaceRoot,
     bridge: options?.bridge ?? ctx.bridge,
+    attention: options?.attention ?? ctx.trusted?.attention,
   })
 }

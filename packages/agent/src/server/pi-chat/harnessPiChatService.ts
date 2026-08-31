@@ -1170,6 +1170,7 @@ export class HarnessPiChatService implements PiChatSessionService {
       workdir: this.workdir,
       workspaceId: ctx.workspaceId,
       requestId: ctx.requestId,
+      childEffectCapability: ctx.childEffectCapability,
       userId: ctx.authSubject,
       sessionCtx: toSessionCtx(ctx),
       userEmail: ctx.authEmail,

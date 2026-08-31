@@ -5,6 +5,7 @@ import {
   ASK_USER_RESERVED_FIELD_NAMES,
   ASK_USER_SCHEMA_LIMITS,
   ASK_USER_COMMAND_KINDS,
+  ASK_USER_RISK_TIERS,
 } from "./constants"
 
 const isoStringSchema = z.string().min(1)
@@ -234,6 +235,7 @@ export const AskUserToolInputSchema = z
       .min(ASK_USER_SCHEMA_LIMITS.minTimeoutMs)
       .max(ASK_USER_SCHEMA_LIMITS.maxTimeoutMs)
       .optional(),
+    riskTier: z.enum(ASK_USER_RISK_TIERS).optional(),
   })
   .strict()
 
@@ -250,6 +252,7 @@ export const AskUserRequestSchema = z
       .min(ASK_USER_SCHEMA_LIMITS.minTimeoutMs)
       .max(ASK_USER_SCHEMA_LIMITS.maxTimeoutMs)
       .optional(),
+    riskTier: z.enum(ASK_USER_RISK_TIERS).optional(),
   })
   .strict()
 
@@ -267,8 +270,37 @@ export const AskUserAnswerSchema = z
     sessionId: z.string().min(1),
     values: z.record(fieldNameSchema, AskUserAnswerValueSchema),
     submittedAt: isoStringSchema,
+    riskTier: z.enum(ASK_USER_RISK_TIERS).optional(),
+    resolvedBy: z.string().min(1).optional(),
   })
   .strict()
+
+export const AskUserQuestionSchema = z.object({
+  questionId: z.string().min(1),
+  sessionId: z.string().min(1),
+  toolCallId: z.string().min(1).optional(),
+  ownerPrincipalId: z.string().min(1),
+  status: z.enum(["ready", "answered", "cancelled", "abandoned"]),
+  title: boundedString(ASK_USER_SCHEMA_LIMITS.maxTitleLength).optional(),
+  context: optionalBoundedString(ASK_USER_SCHEMA_LIMITS.maxContextLength),
+  schema: AskUserFormSchemaSchema.optional(),
+  artifacts: HumanArtifactListSchema,
+  answerToken: z.string().min(1),
+  createdAt: isoStringSchema,
+  updatedAt: isoStringSchema,
+  riskTier: z.enum(ASK_USER_RISK_TIERS).optional(),
+  expiresAt: z.string().datetime({ offset: true }).optional(),
+}).strict()
+
+export const AskUserTranscriptEventSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("created"), question: AskUserQuestionSchema, at: isoStringSchema }).strict(),
+  z.object({ type: z.literal("ready"), questionId: z.string().min(1), sessionId: z.string().min(1), schema: AskUserFormSchemaSchema, at: isoStringSchema }).strict(),
+  z.object({ type: z.literal("answered"), answer: AskUserAnswerSchema, at: isoStringSchema }).strict(),
+  z.object({ type: z.literal("cancelled"), questionId: z.string().min(1), sessionId: z.string().min(1), reason: z.enum(["user_cancelled", "timeout", "aborted", "ui_unavailable", "abandoned", "rate_limited", "runtime_unavailable"]), at: isoStringSchema }).strict(),
+  z.object({ type: z.literal("abandoned"), questionId: z.string().min(1), sessionId: z.string().min(1), at: isoStringSchema }).strict(),
+  z.object({ type: z.literal("restored"), questionId: z.string().min(1), sessionId: z.string().min(1), at: isoStringSchema }).strict(),
+  z.object({ type: z.literal("reconciled"), questionId: z.string().min(1), sessionId: z.string().min(1), status: z.enum(["ready", "answered", "cancelled", "abandoned"]), synthetic: z.literal(true), at: isoStringSchema }).strict(),
+])
 
 const commandParamsBase = {
   questionId: z.string().min(1),

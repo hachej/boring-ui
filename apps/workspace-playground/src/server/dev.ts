@@ -112,6 +112,8 @@ export async function startPlaygroundServer(): Promise<void> {
         },
         ...scriptedCapabilityPlugins,
       ],
+      // createWorkspaceAgentServer injects its AgentHost attention capability
+      // into trusted defaults, so ask-user shares the one request-ledger DB.
       defaultPluginPackages: ["@hachej/boring-ask-user", "@hachej/boring-diagram"],
       getFilesystemBindings: multiFilesystemPlayground
         ? async () => [{
