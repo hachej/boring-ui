@@ -491,7 +491,7 @@ The current-state tables are CAS projections. Every admission, start, pause, set
 ### Scope (files)
 
 - `packages/agent/src/server/agent-host/types.ts` — effect/attention record types, `EffectClass`, interface additions, `incarnation`.
-- `packages/agent/src/server/agent-host/sqliteRequestLedger.ts`, `requestLedger.ts` — two tables + `ledger_meta`, CAS transitions, `reconcileAfterRestart`, `listNonTerminal` (the scan API A4 consumes), and **follow-up queue replay**: pending `session.followup` records are re-enqueued after restart, with r3's guard (`durable-streams-plan.md:193-195`) as a test — a kill between queue-persist and harness-enqueue never double-runs.
+- `packages/agent/src/server/agent-host/sqliteRequestLedger.ts`, `requestLedger.ts` — Turn, Effect, Attention, immutable transition-history, and ledger-metadata tables/projections; CAS transitions; `reconcileAfterRestart`; `listNonTerminal` (the scan API A4 consumes); and **follow-up queue replay**: pending `session.followup` records are re-enqueued after restart, with r3's guard (`durable-streams-plan.md:193-195`) as a test — a kill between queue-persist and harness-enqueue never double-runs.
 - `packages/agent/src/server/agent-host/createAgentHost.ts` — incarnation claim + boot reconcile; `draining` flag; expose `attention`.
 - `packages/agent/src/server/agent-host/embeddedGateway.ts` — thread `runKey` into `RunContext`; `resumeTurn` through `runHostEffect`.
 - `packages/agent/src/server/harness/pi-coding-agent/tool-adapter.ts`, `packages/agent/src/shared/tool.ts` — effect classification + admission wrapper.
