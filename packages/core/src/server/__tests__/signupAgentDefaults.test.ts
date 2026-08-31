@@ -228,8 +228,6 @@ describe('signup-domain additive Agent Seat initialization', () => {
     expect(create.mock.calls[0]![3]).toEqual({
       isDefault: true,
       defaultAgentTypeId: 'boring-v2',
-      initialAgentSeatSource: 'generic-default',
-      enrolledByUserId: user.id,
     })
   })
 
@@ -239,9 +237,7 @@ describe('signup-domain additive Agent Seat initialization', () => {
     expect(create).toHaveBeenCalledWith(user.id, 'Default workspace', 'test-app', {
       isDefault: true,
       defaultAgentTypeId: 'boring-v2',
-      initialAgentSeatSource: 'generic-default',
       additionalAgentSeat: { agentTypeId: 'legal', source: 'signup-intent' },
-      enrolledByUserId: user.id,
     })
   })
 
@@ -250,7 +246,7 @@ describe('signup-domain additive Agent Seat initialization', () => {
     const { store, create } = makeFakeStore()
     const resolveInitialAgentSeat = vi.fn(async ({ context }: { context: PostSignupContext | null }) => {
       expect(context?.getHeader?.('cookie')).toBe('agent-intent=opaque')
-      return { agentTypeId: 'charlotteledoux' }
+      return 'charlotteledoux'
     })
     const hook = createPostSignupHook({
       config,
@@ -274,9 +270,7 @@ describe('signup-domain additive Agent Seat initialization', () => {
     expect(create).toHaveBeenCalledWith(user.id, 'Default workspace', 'test-app', {
       isDefault: true,
       defaultAgentTypeId: 'boring-v2',
-      initialAgentSeatSource: 'generic-default',
       additionalAgentSeat: { agentTypeId: 'charlotteledoux', source: 'signup-intent' },
-      enrolledByUserId: user.id,
     })
   })
 
@@ -288,7 +282,7 @@ describe('signup-domain additive Agent Seat initialization', () => {
       applicationAgentTypeIds: ['boring-v2', 'legal'],
       workspaceStore: store,
       transport: null,
-      resolveInitialAgentSeat: async () => ({ agentTypeId: 'boring-v2' }),
+      resolveInitialAgentSeat: async () => 'boring-v2',
     })
 
     await hook(user, null)
@@ -296,8 +290,6 @@ describe('signup-domain additive Agent Seat initialization', () => {
     expect(create.mock.calls[0]![3]).toEqual({
       isDefault: true,
       defaultAgentTypeId: 'boring-v2',
-      initialAgentSeatSource: 'generic-default',
-      enrolledByUserId: user.id,
     })
   })
 
@@ -309,7 +301,7 @@ describe('signup-domain additive Agent Seat initialization', () => {
       applicationAgentTypeIds: ['boring-v2', 'legal'],
       workspaceStore: store,
       transport: null,
-      resolveInitialAgentSeat: async () => ({ agentTypeId: 'ghost-agent' }),
+      resolveInitialAgentSeat: async () => 'ghost-agent',
     })
 
     await expect(hook(user, null)).rejects.toMatchObject({
@@ -338,9 +330,7 @@ describe('signup-domain additive Agent Seat initialization', () => {
     expect(create.mock.calls[0]![3]).toEqual({
       isDefault: true,
       defaultAgentTypeId: 'boring-v2',
-      initialAgentSeatSource: 'generic-default',
       additionalAgentSeat: { agentTypeId: 'legal', source: 'signup-intent' },
-      enrolledByUserId: user.id,
     })
   })
 
@@ -351,8 +341,6 @@ describe('signup-domain additive Agent Seat initialization', () => {
     expect(create.mock.calls[0]![3]).toEqual({
       isDefault: true,
       defaultAgentTypeId: 'boring-v2',
-      initialAgentSeatSource: 'generic-default',
-      enrolledByUserId: user.id,
     })
   })
 
@@ -380,8 +368,6 @@ describe('signup-domain additive Agent Seat initialization', () => {
     expect(create.mock.calls[0]![3]).toEqual({
       isDefault: true,
       defaultAgentTypeId: 'boring-v2',
-      initialAgentSeatSource: 'generic-default',
-      enrolledByUserId: user.id,
     })
   })
 
@@ -393,8 +379,6 @@ describe('signup-domain additive Agent Seat initialization', () => {
     expect(Object.keys(options as object).sort()).toEqual([
       'additionalAgentSeat',
       'defaultAgentTypeId',
-      'enrolledByUserId',
-      'initialAgentSeatSource',
       'isDefault',
     ])
     expect(JSON.stringify(create.mock.calls[0])).not.toContain('legal.example')

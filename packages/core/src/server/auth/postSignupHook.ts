@@ -36,20 +36,15 @@ type InviteFailureCode =
   | 'invite_already_accepted'
   | 'invite_email_mismatch'
 
-export interface InitialAgentSeatResolution {
-  /** Specialist Seat added alongside the application Default Agent. */
-  agentTypeId: string
-}
-
 export interface ResolveInitialAgentSeatInput {
   user: PostSignupUser
   context: PostSignupContext | null
-  applicationDefaultAgentTypeId: string
 }
 
+/** Resolves the specialist Agent type ID added beside the application Default. */
 export type ResolveInitialAgentSeat = (
   input: ResolveInitialAgentSeatInput,
-) => InitialAgentSeatResolution | undefined | Promise<InitialAgentSeatResolution | undefined>
+) => string | undefined | Promise<string | undefined>
 
 export interface PostSignupHookDeps {
   config: CoreConfig
@@ -144,21 +139,17 @@ export function createPostSignupHook(deps: PostSignupHookDeps) {
       // A trusted creator/vertical signup intent adds a specialist Seat; it
       // never replaces the application's general Default Agent. Both Seats
       // are inserted atomically with the workspace and owner membership.
-      const resolvedIntent = await resolveInitialAgentSeat?.({
-        user,
-        context: ctx,
-        applicationDefaultAgentTypeId,
-      })
+      const resolvedIntent = await resolveInitialAgentSeat?.({ user, context: ctx })
       const signupHostname = normalizeSignupHostname(
         readHeader(ctx, TRUSTED_SIGNUP_HOSTNAME_HEADER),
       )
       const signupSeat = resolveSignupDefaultAgentTypeId(signupAgentDefaults, signupHostname)
-      const additionalAgentTypeId = resolvedIntent?.agentTypeId ?? signupSeat
-      const parsedAdditionalAgentTypeId = additionalAgentTypeId
+      const additionalAgentTypeId = resolvedIntent ?? signupSeat
+      const parsedAdditionalAgentTypeId = additionalAgentTypeId !== undefined
         ? parseRequiredDefaultAgentTypeId(additionalAgentTypeId)
         : undefined
       if (
-        resolvedIntent
+        resolvedIntent !== undefined
         && (parsedAdditionalAgentTypeId === undefined
           || !applicationAgentTypeIds?.includes(parsedAdditionalAgentTypeId))
       ) {
@@ -170,11 +161,9 @@ export function createPostSignupHook(deps: PostSignupHookDeps) {
       await workspaceStore.create(user.id, 'Default workspace', config.appId, {
         isDefault: true,
         defaultAgentTypeId: applicationDefaultAgentTypeId,
-        initialAgentSeatSource: 'generic-default',
         ...(parsedAdditionalAgentTypeId && parsedAdditionalAgentTypeId !== applicationDefaultAgentTypeId
           ? { additionalAgentSeat: { agentTypeId: parsedAdditionalAgentTypeId, source: 'signup-intent' } }
           : {}),
-        enrolledByUserId: user.id,
       })
     }
 
