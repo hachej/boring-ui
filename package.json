@@ -7,7 +7,8 @@
     "build": "pnpm -r --workspace-concurrency=4 run build",
     "dev": "pnpm -r run dev",
     "typecheck": "pnpm run build:packages && pnpm -r --workspace-concurrency=4 run typecheck",
-    "lint": "pnpm check:agenthost-cutover-matrix && pnpm test:agenthost-compositions && pnpm check:generated-artifacts && pnpm check:agent-resources && pnpm test:present-pr-context && pnpm audit:imports",
+    "lint": "pnpm check:pi-legacy-apis && pnpm check:agenthost-cutover-matrix && pnpm test:agenthost-compositions && pnpm check:generated-artifacts && pnpm check:agent-resources && pnpm test:present-pr-context && pnpm audit:imports",
+    "check:pi-legacy-apis": "node scripts/check-pi-legacy-apis.mjs",
     "check:agenthost-cutover-matrix": "node scripts/check-agenthost-cutover-matrix.mjs",
     "test:agenthost-compositions": "node scripts/run-agenthost-composition-proofs.mjs",
     "test:present-pr-context": "node --test scripts/lib/present-pr-context.test.mjs scripts/lib/present-pr-files.test.mjs scripts/lib/present-pr-html.test.mjs scripts/lib/present-pr-links.test.mjs scripts/lib/present-pr-theme.test.mjs",
@@ -70,12 +71,17 @@
       "esbuild"
     ],
     "overrides": {
-      "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.80.7",
+      "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.84.3",
       "@perspective-dev/client": "4.5.2",
       "@perspective-dev/viewer": "4.4.1",
       "@perspective-dev/viewer-datagrid": "4.4.1",
       "@perspective-dev/viewer-d3fc": "4.4.1",
-      "better-auth": "1.6.27"
+      "better-auth": "1.6.27",
+      "@earendil-works/pi-agent-core": "0.84.3",
+      "@earendil-works/pi-ai": "0.84.3",
+      "@earendil-works/pi-client": "0.84.3",
+      "@earendil-works/pi-protocol": "0.84.3",
+      "@earendil-works/pi-tui": "0.84.3"
     }
   }
 }
