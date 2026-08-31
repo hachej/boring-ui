@@ -10,6 +10,7 @@ import {
   type BrowserAdmission,
   type BrowserAudit,
   type BrowserExec,
+  type BrowserEnvironmentHandle,
   type BrowserPlanAdmission,
   type BrowserScope,
 } from "./controller";
@@ -32,15 +33,17 @@ export interface BrowserServerPluginOptions {
     }>,
   ) => Promise<BrowserScope> | BrowserScope;
   audit?: BrowserAudit;
-  release?: (scope: BrowserScope) => void | Promise<void>;
+  acquire: (scope: BrowserScope) => Promise<BrowserEnvironmentHandle>;
   revokeView: (scope: BrowserScope, sessionId: string) => void | Promise<void>;
   now?: () => number;
 }
 export function createBrowserServerPlugin(
   options: BrowserServerPluginOptions,
 ): WorkspaceServerPlugin {
-  const enabled =
-    options.enabled ?? process.env.BORING_BROWSER_PLUGIN_ENABLED === "1";
+  if (options.enabled === true || process.env.BORING_BROWSER_PLUGIN_ENABLED === "1") {
+    throw new Error("Browser integration is not security-qualified; production remains disabled");
+  }
+  const enabled = false;
   const controller = new BrowserController(options);
   const requireEnabled = () => {
     if (!enabled) throw new Error("Browser plugin is disabled");
@@ -101,7 +104,7 @@ export function createBrowserServerPlugin(
           try {
             requireEnabled();
             const scope = await options.resolveToolScope(ctx);
-            return ok(await controller.act(scope, params, ctx.abortSignal));
+            return ok(await controller.act(scope, params, ctx.abortSignal, { toolCallId: ctx.toolCallId, ...(ctx.requestId ? { requestId: ctx.requestId } : {}) }));
           } catch (error) {
             return fail(error);
           }
@@ -187,8 +190,9 @@ function fail(error: unknown) {
     content: [
       {
         type: "text" as const,
-        text:
-          error instanceof Error ? error.message : "Browser operation failed",
+        text: error instanceof Error && error.message === "Browser plugin is disabled"
+          ? error.message
+          : "Browser operation was rejected.",
       },
     ],
     isError: true,
@@ -222,7 +226,7 @@ const actionPlanSchema = {
               url: { type: "string", maxLength: 2048 },
             },
           },
-          ...["click", "download"].map((kind) => ({
+          ...["click"].map((kind) => ({
             type: "object",
             additionalProperties: false,
             required: ["kind", "target"],
@@ -231,7 +235,6 @@ const actionPlanSchema = {
           ...[
             ["type", "text"],
             ["select", "value"],
-            ["upload", "resourceRef"],
           ].map(([kind, field]) => ({
             type: "object",
             additionalProperties: false,

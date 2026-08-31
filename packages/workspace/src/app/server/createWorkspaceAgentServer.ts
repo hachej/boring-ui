@@ -2162,15 +2162,9 @@ export async function createWorkspaceAgentServer(
     await app.register(uiRoutes, {
       bridge,
       preserveStateKeys: pluginCollection.preservedUiStateKeys,
-      ...(modeAdapter.createRuntimePreview
-        ? {
-            resolveRuntimePreview: async (_request, input) =>
-              await modeAdapter.createRuntimePreview!({
-                ...input,
-                workspaceId: opts.sessionId ?? input.workspaceId,
-              }),
-          }
-        : {}),
+      // Hosted runtime preview remains refusal-only until the Host can bind a
+      // projection to an authenticated session + environment generation and revoke it.
+
     })
     await app.register(workspaceBridgeHttpRoutes, {
       registry: workspaceBridgeRegistry,

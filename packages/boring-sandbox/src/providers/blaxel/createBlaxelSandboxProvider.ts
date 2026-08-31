@@ -272,7 +272,7 @@ export function createBlaxelSandboxProvider(
   const client = options.client ?? createBlaxelClient()
   const handles = createBlaxelSandboxHandleResolver()
   const seeds = new Map<string, { fingerprint: string; promise: Promise<void> }>()
-  const activeRemotes = new Map<string, Awaited<ReturnType<typeof handles.resolve>>>()
+  const activeRemotes = new Map<string, { remote: Awaited<ReturnType<typeof handles.resolve>>; owner: symbol }>()
 
   return {
     contractVersion: PROVIDER_CONTRACT_VERSION,
@@ -299,6 +299,7 @@ export function createBlaxelSandboxProvider(
       }
 
       let disposed = false
+      const activeOwner = Symbol(workspaceId)
       const workspace = createBlaxelSandboxWorkspace(remote)
       const sandbox = createBlaxelSandboxExec(remote, {
         onMutation: workspace.invalidateMetadataCache,
@@ -329,7 +330,7 @@ export function createBlaxelSandboxProvider(
             if (seeds.get(workspaceId)?.promise === seed) seeds.delete(workspaceId)
           }
         }
-        activeRemotes.set(workspaceId, remote)
+        activeRemotes.set(workspaceId, { remote, owner: activeOwner })
         return {
           workspace,
           sandbox,
@@ -348,6 +349,7 @@ export function createBlaxelSandboxProvider(
           async dispose() {
             if (disposed) return
             disposed = true
+            if (activeRemotes.get(workspaceId)?.owner === activeOwner) activeRemotes.delete(workspaceId)
             workspace.dispose()
             await sandbox.dispose()
           },
@@ -370,12 +372,12 @@ export function createBlaxelSandboxProvider(
       if (path !== undefined && (!path.startsWith('/') || path.includes('\\') || path.length > 2_048)) {
         throw new SandboxProviderError('CONFIG_INVALID', 'preview path must be an absolute URL path of at most 2048 characters')
       }
-      const remote = activeRemotes.get(workspaceId)
-      if (!remote) {
+      const active = activeRemotes.get(workspaceId)
+      if (!active) {
         throw new SandboxProviderError('SANDBOX_NOT_READY', 'workspace sandbox is not active')
       }
       const tokenExpiresAt = new Date(Date.now() + 15 * 60 * 1_000)
-      return await remote.createPreview({
+      return await active.remote.createPreview({
         name: `boring-preview-${port}`,
         port,
         path,

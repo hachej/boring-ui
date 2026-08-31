@@ -120,7 +120,12 @@ function toSandbox(instance: SandboxInstance): BlaxelRemoteSandbox {
       if (!preview.spec.url) throw new Error('Blaxel preview did not return a URL')
       const token = await preview.tokens.create(request.tokenExpiresAt)
       const url = new URL(preview.spec.url)
-      if (request.path) url.pathname = request.path
+      if (request.path) {
+        const target = new URL(request.path, 'http://runtime.invalid')
+        url.pathname = target.pathname
+        url.search = target.search
+        url.hash = target.hash
+      }
       url.searchParams.set('bl_preview_token', token.value)
       return { url: url.toString(), expiresAt: request.tokenExpiresAt.toISOString() }
     },

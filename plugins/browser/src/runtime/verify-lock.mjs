@@ -10,4 +10,4 @@ for (const item of [lock.officialSkill, lock.boundedSkill, lock.license]) {
   if (actual !== item.sha256)
     throw new Error(`integrity mismatch: ${item.path}`);
 }
-console.log(`browser-use ${lock.browserUse.version} lock verified`);
+console.log(`browser-use ${lock.browserUse.version} vendored provenance verified (installed wheel not verified)`);

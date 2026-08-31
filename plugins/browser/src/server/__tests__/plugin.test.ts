@@ -12,8 +12,9 @@ const scope = {
 describe("browser server plugin", () => {
   it("registers exactly two native tools and no lifecycle tool", () => {
     const plugin = createBrowserServerPlugin({
-      enabled: true,
+      enabled: false,
       exec: async () => ({ ok: true }),
+      acquire: async () => ({ generationId: "g", release: async () => {} }),
       revokeView: async () => {},
       admitPlan: async () => ({ admitted: true }),
       admit: async () => ({ admitted: true }),
@@ -28,10 +29,14 @@ describe("browser server plugin", () => {
       JSON.stringify(plugin.agentTools?.map((tool) => tool.parameters)),
     ).not.toMatch(/command|cdp|mcp|provider|runtime|password|credential/i);
   });
+  it("refuses attempted enablement until Host security seams exist", () => {
+    expect(() => createBrowserServerPlugin({ enabled: true, exec: async () => ({ ok: true }), acquire: async () => ({ generationId: "g", release: async () => {} }), revokeView: async () => {}, admitPlan: async () => ({ admitted: true }), admit: async () => ({ admitted: true }), resolveScope: () => scope, resolveToolScope: () => scope })).toThrow("not security-qualified");
+  });
   it("fails tools closed when flag is disabled", async () => {
     const plugin = createBrowserServerPlugin({
       enabled: false,
       exec: async () => ({ ok: true }),
+      acquire: async () => ({ generationId: "g", release: async () => {} }),
       revokeView: async () => {},
       admitPlan: async () => ({ admitted: true }),
       admit: async () => ({ admitted: true }),

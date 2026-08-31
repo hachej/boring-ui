@@ -7,6 +7,7 @@ import {
   parseActionPlan,
   type BrowserAction,
   type BrowserActionPlan,
+  type BrowserObservation,
   type BrowserSessionView,
 } from "../shared";
 
@@ -33,12 +34,14 @@ export type BrowserExecResult = Readonly<{
 export type BrowserExec = (
   request: BrowserExecRequest,
 ) => Promise<BrowserExecResult>;
+export type BrowserExecutionIdentity = Readonly<{ toolCallId: string; requestId?: string }>;
 export type BrowserPlanAdmission = (
-  request: Readonly<{ scope: BrowserScope; planHash: string; plan: BrowserActionPlan }>,
+  request: Readonly<{ scope: BrowserScope; identity: BrowserExecutionIdentity; planHash: string; plan: BrowserActionPlan }>,
 ) => Promise<Readonly<{ admitted: boolean; approvalRef?: string }>>;
 export type BrowserAdmission = (
   request: Readonly<{
     scope: BrowserScope;
+    identity: BrowserExecutionIdentity;
     planHash: string;
     action: BrowserAction;
     actionIndex: number;
@@ -47,6 +50,7 @@ export type BrowserAdmission = (
 export type BrowserAudit = (
   event: Readonly<Record<string, unknown>>,
 ) => void | Promise<void>;
+export type BrowserEnvironmentHandle = Readonly<{ generationId: string; release(): Promise<void> }>;
 
 type Session = {
   id: string;
@@ -58,6 +62,7 @@ type Session = {
   touched: number;
   absoluteExpiry: number;
   released: boolean;
+  environment: BrowserEnvironmentHandle;
   active?: AbortController;
   expiryTimer?: ReturnType<typeof setTimeout>;
   error?: string;
@@ -68,7 +73,7 @@ export class BrowserController {
   readonly #admitPlan: BrowserPlanAdmission;
   readonly #admit: BrowserAdmission;
   readonly #audit: BrowserAudit;
-  readonly #release: (scope: BrowserScope) => void | Promise<void>;
+  readonly #acquire: (scope: BrowserScope) => Promise<BrowserEnvironmentHandle>;
   readonly #revokeView: (scope: BrowserScope, sessionId: string) => void | Promise<void>;
   readonly #now: () => number;
   constructor(options: {
@@ -76,7 +81,7 @@ export class BrowserController {
     admitPlan: BrowserPlanAdmission;
     admit: BrowserAdmission;
     audit?: BrowserAudit;
-    release?: (scope: BrowserScope) => void | Promise<void>;
+    acquire: (scope: BrowserScope) => Promise<BrowserEnvironmentHandle>;
     revokeView: (scope: BrowserScope, sessionId: string) => void | Promise<void>;
     now?: () => number;
   }) {
@@ -84,7 +89,7 @@ export class BrowserController {
     this.#admitPlan = options.admitPlan;
     this.#admit = options.admit;
     this.#audit = options.audit ?? (() => {});
-    this.#release = options.release ?? (() => {});
+    this.#acquire = options.acquire;
     this.#revokeView = options.revokeView;
     this.#now = options.now ?? Date.now;
   }
@@ -98,6 +103,7 @@ export class BrowserController {
     if (active.length > 0)
       throw new Error("Browser runtime quota is already in use");
     const now = this.#now();
+    const environment = await this.#acquire(scope);
     const session: Session = {
       id: randomUUID(),
       scope,
@@ -107,18 +113,22 @@ export class BrowserController {
       touched: now,
       absoluteExpiry: now + ABSOLUTE_TTL_MS,
       released: false,
+      environment,
     };
     this.#sessions.set(session.id, session);
     this.scheduleExpiry(session);
-    const result = await this.#exec({
-      intent: "ensure",
-      sessionId: session.id,
-      controlEpoch: 0,
-    });
+    let result: BrowserExecResult;
+    try {
+      result = await this.#exec({ intent: "ensure", sessionId: session.id, controlEpoch: 0 });
+    } catch {
+      result = { ok: false };
+    }
     if (!result.ok) {
       session.state = "error";
       session.error = "Browser runtime could not start.";
-      await this.finish(session);
+      const cleanup = await this.#exec({ intent: "stop", sessionId: session.id, controlEpoch: 1 }).catch(() => ({ ok: false }));
+      if (cleanup.ok) await this.finish(session);
+      else session.error = "Browser cleanup requires reconciliation.";
       return this.view(session);
     }
     session.state = "agent-controlled";
@@ -133,7 +143,7 @@ export class BrowserController {
     scope: BrowserScope,
     id: string,
     epoch: number,
-  ): Promise<{ observation: string; controlEpoch: number }> {
+  ): Promise<{ observation: BrowserObservation; controlEpoch: number }> {
     const s = this.requireAgent(scope, id, epoch);
     this.touch(s);
     const result = await this.#exec({
@@ -143,14 +153,15 @@ export class BrowserController {
     });
     if (!result.ok) throw new Error("Browser observation failed");
     return {
-      observation: sanitize(result.stdout ?? ""),
+      observation: parseObservation(result.stdout ?? ""),
       controlEpoch: s.epoch,
     };
   }
   async act(
     scope: BrowserScope,
     input: unknown,
-    signal?: AbortSignal,
+    signal: AbortSignal | undefined,
+    identity: BrowserExecutionIdentity,
   ): Promise<{ planHash: string; results: readonly string[] }> {
     const plan = parseActionPlan(input);
     const s = this.requireAgent(scope, plan.sessionId, plan.controlEpoch);
@@ -162,13 +173,14 @@ export class BrowserController {
     const planHash = createHash("sha256")
       .update(canonicalPlan(plan))
       .digest("hex");
-    const planAdmission = await this.#admitPlan({ scope, planHash, plan });
+    const planAdmission = await this.#admitPlan({ scope, identity, planHash, plan });
     if (!planAdmission.admitted) {
       signal?.removeEventListener("abort", abort);
       s.active = undefined;
       throw new Error("Browser action plan was not admitted");
     }
-    await this.event(s, "plan-admitted", { planHash, approvalRef: planAdmission.approvalRef });
+    const identityFields = { toolCallId: identity.toolCallId, ...(identity.requestId ? { requestId: identity.requestId } : {}) };
+    await this.event(s, "plan-admitted", { planHash, approvalRef: planAdmission.approvalRef, ...identityFields });
     const results: string[] = [];
     try {
       for (let index = 0; index < plan.actions.length; index++) {
@@ -186,6 +198,7 @@ export class BrowserController {
         });
         const admission = await this.#admit({
           scope,
+          identity,
           planHash,
           action,
           actionIndex: index,
@@ -204,18 +217,15 @@ export class BrowserController {
           ...auditFields,
         });
         this.requireAgent(scope, s.id, plan.controlEpoch);
-        const result = await this.#exec({
-          intent: "act",
-          sessionId: s.id,
-          controlEpoch: s.epoch,
-          payload: JSON.stringify(action),
-          signal: active.signal,
-        });
+        let result: BrowserExecResult;
+        try {
+          result = await this.#exec({ intent: "act", sessionId: s.id, controlEpoch: s.epoch, payload: JSON.stringify(action), signal: active.signal });
+        } catch { result = { ok: false }; }
         if (!result.ok) {
           await this.event(s, "action-unknown", {
             planHash,
             actionIndex: index,
-          });
+          }).catch(() => undefined);
           throw new Error(`Browser action ${index} outcome is unknown`);
         }
         results.push(sanitize(result.stdout ?? "ok"));
@@ -223,7 +233,7 @@ export class BrowserController {
           planHash,
           actionIndex: index,
           approvalRef: admission.approvalRef,
-        });
+        }).catch(() => undefined);
       }
       this.touch(s);
       return { planHash, results: Object.freeze(results) };
@@ -237,15 +247,21 @@ export class BrowserController {
     if (s.state !== "agent-controlled")
       throw new Error("Browser is not agent-controlled");
     s.epoch++;
-    s.owner = "human";
-    s.state = "human-controlled";
+    s.owner = undefined;
+    s.state = "starting";
     s.active?.abort();
     await this.#revokeView(s.scope, s.id);
-    await this.#exec({
-      intent: "takeover",
-      sessionId: id,
-      controlEpoch: s.epoch,
-    });
+    let result: BrowserExecResult;
+    try { result = await this.#exec({ intent: "takeover", sessionId: id, controlEpoch: s.epoch }); }
+    catch { result = { ok: false }; }
+    if (!result.ok) {
+      s.owner = "agent";
+      s.state = "agent-controlled";
+      throw new Error("Browser takeover failed");
+    }
+    s.owner = "human";
+    s.state = "human-controlled";
+    this.touch(s);
     await this.event(s, "takeover");
     return this.view(s);
   }
@@ -284,12 +300,16 @@ export class BrowserController {
     s.state = "stopping";
     s.epoch++;
     s.active?.abort();
-    await this.#revokeView(s.scope, s.id);
-    await this.#exec({ intent: "stop", sessionId: id, controlEpoch: s.epoch });
-    s.state = "stopped";
+    let cleanupFailed = false;
+    try { await this.#revokeView(s.scope, s.id); } catch { cleanupFailed = true; }
+    try { const result = await this.#exec({ intent: "stop", sessionId: id, controlEpoch: s.epoch }); if (!result.ok) cleanupFailed = true; }
+    catch { cleanupFailed = true; }
+    s.state = cleanupFailed ? "error" : "stopped";
+    s.error = cleanupFailed ? "Browser cleanup requires reconciliation." : undefined;
     s.owner = undefined;
-    await this.finish(s);
-    await this.event(s, "stopped");
+    if (!cleanupFailed) await this.finish(s);
+    await this.event(s, cleanupFailed ? "cleanup-failed" : "stopped");
+    if (cleanupFailed) throw new Error("Browser cleanup requires reconciliation");
     return this.view(s);
   }
   async shutdown(): Promise<void> {
@@ -337,7 +357,7 @@ export class BrowserController {
       Math.min(s.touched + IDLE_TTL_MS, s.absoluteExpiry) - this.#now(),
     );
     s.expiryTimer = setTimeout(() => {
-      void this.stop(s.scope, s.id).catch(() => this.finish(s));
+      void this.stop(s.scope, s.id).catch(() => undefined);
     }, delay);
     s.expiryTimer.unref?.();
   }
@@ -360,8 +380,8 @@ export class BrowserController {
   private async finish(s: Session): Promise<void> {
     clearTimeout(s.expiryTimer);
     if (s.released) return;
+    await s.environment.release();
     s.released = true;
-    await this.#release(s.scope);
   }
   private async event(
     s: Session,
@@ -388,6 +408,26 @@ function sameScope(a: BrowserScope, b: BrowserScope): boolean {
 }
 function sanitize(value: string): string {
   return value
+    .replace(/(bearer|token|password|secret|authorization)\s*[:=]\s*\S+/gi, "$1=[redacted]")
     .replace(/(?:wss?|https?):\/\/[^\s]+/gi, "[redacted-url]")
-    .slice(0, 32_768);
+    .slice(0, 1_024);
+}
+function parseObservation(stdout: string): BrowserObservation {
+  let value: unknown;
+  try { value = JSON.parse(stdout); } catch { throw new Error("Browser returned an invalid observation"); }
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Browser returned an invalid observation");
+  const record = value as Record<string, unknown>;
+  let origin: string | undefined;
+  if (typeof record.url === "string") {
+    try { const parsed = new URL(record.url); if (["http:", "https:"].includes(parsed.protocol)) origin = parsed.origin; } catch { /* omit malformed URLs */ }
+  }
+  const title = typeof record.title === "string" ? sanitize(record.title).slice(0, 256) : undefined;
+  const rawElements = Array.isArray(record.elements) ? record.elements : [];
+  const elements = rawElements.slice(0, 200).flatMap((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+    const item = entry as Record<string, unknown>;
+    if (!Number.isInteger(item.index) || (item.index as number) < 0 || (item.index as number) > 10_000) return [];
+    return [Object.freeze({ index: item.index as number, ...(typeof item.role === "string" ? { role: sanitize(item.role).slice(0, 64) } : {}), ...(typeof item.text === "string" ? { text: sanitize(item.text) } : {}) })];
+  });
+  return Object.freeze({ ...(origin ? { origin } : {}), ...(title ? { title } : {}), elements: Object.freeze(elements) });
 }

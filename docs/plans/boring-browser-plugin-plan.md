@@ -1,6 +1,6 @@
 # Runtime-neutral browser plugin implementation plan
 
-**State:** `ready-for-agent` for Slice 1. Architecture and V0 product decisions are final; later rollout gates are explicit below.
+**State:** `owner-directed single-PR implementation` in PR #1493. Slice 1 was consolidated from #1499; the browser package is an unwired/refusal-only local tracer because the required Host-issued environment-generation exec/projection/revocation capability does not exist. Production and live-use claims remain blocked by the rollout gates below.
 
 ## Problem Statement
 
@@ -81,8 +81,9 @@ type BrowserAction =
   | { readonly kind: "click"; readonly target: BrowserTarget }
   | { readonly kind: "type"; readonly target: BrowserTarget; readonly text: string }
   | { readonly kind: "select"; readonly target: BrowserTarget; readonly value: string }
-  | { readonly kind: "upload"; readonly target: BrowserTarget; readonly resourceRef: string }
-  | { readonly kind: "download"; readonly target: BrowserTarget };
+  ;
+
+Upload/download are intentionally omitted from the unwired tracer until Host-owned resource resolution and quarantine/publication contracts exist.
 
 type BrowserActionPlan = {
   readonly sessionId: string;
@@ -164,7 +165,7 @@ Every observe/action verifies owner and current monotonic `controlEpoch`. Takeov
 ## Flag / Abstraction
 
 - **Needed?:** One Host-owned rollout flag; no new browser runtime/provider abstraction.
-- **Path:** trusted Host config `BORING_BROWSER_PLUGIN_ENABLED` -> static front/server composition -> narrow server-private callbacks over existing identity, environment, exec, and runtime-preview seams.
+- **Path (future only):** trusted Host config `BORING_BROWSER_PLUGIN_ENABLED` -> static front/server composition -> narrow server-private callbacks over Host-issued identity, environment-generation exec, and revocable runtime-preview capabilities. The current factory rejects enablement because those capabilities do not exist.
 - **Rollback:** disable flag, reject starts/tools, revoke projections/control, fixed-stop known sessions when reachable, release environment references, and hide panel/tools. Keep shared `RuntimeWebView`/URL-pane behavior. Never fall back to host-global Chromium or direct upstream access.
 
 ## Test Seams
@@ -347,4 +348,4 @@ No open architecture/product question blocks Slice 1. Exact compatible dependenc
 
 ## Next Action
 
-`ready-for-agent`: implement Slice 1 only after independent plan review. Do not scaffold browser tools/processes, generic MCP dispatch, child-event infrastructure, or provider/runtime abstractions in that slice.
+Keep all owner-approved work in PR #1493. Treat `plugins/browser` as an unwired/refusal-only tracer until a separately reviewed Host-issued environment-generation exec handle, session/generation-bound preview capability with revocation, structural CDP/VNC isolation, and exact runtime image lock exist. Do not claim a usable browser, compose it into an app, or enable production before those gates pass.

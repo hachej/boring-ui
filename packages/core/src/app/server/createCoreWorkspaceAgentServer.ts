@@ -2146,12 +2146,9 @@ export async function createCoreWorkspaceAgentServer(
       getWorkspaceId: resolveWorkspaceId,
       getBridge: async (request) => coreBridge.getBridge(await resolveWorkspaceId(request)),
       preserveStateKeys: pluginCollection.preservedUiStateKeys,
-      ...(runtimeModeAdapter.createRuntimePreview
-        ? {
-            resolveRuntimePreview: async (_request, input) =>
-              await runtimeModeAdapter.createRuntimePreview!(input),
-          }
-        : {}),
+      // Hosted runtime preview remains refusal-only until the Host can bind a
+      // projection to an authenticated session + environment generation and revoke it.
+
     })
 
     await coreBridge.registerHttpRoutes(app)

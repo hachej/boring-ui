@@ -26,13 +26,16 @@ export type BrowserAction =
   | Readonly<{ kind: "navigate"; url: string }>
   | Readonly<{ kind: "click"; target: BrowserTarget }>
   | Readonly<{ kind: "type"; target: BrowserTarget; text: string }>
-  | Readonly<{ kind: "select"; target: BrowserTarget; value: string }>
-  | Readonly<{ kind: "upload"; target: BrowserTarget; resourceRef: string }>
-  | Readonly<{ kind: "download"; target: BrowserTarget }>;
+  | Readonly<{ kind: "select"; target: BrowserTarget; value: string }>;
 export type BrowserActionPlan = Readonly<{
   sessionId: string;
   controlEpoch: number;
   actions: readonly BrowserAction[];
+}>;
+export type BrowserObservation = Readonly<{
+  origin?: string;
+  title?: string;
+  elements: readonly Readonly<{ index: number; role?: string; text?: string }>[];
 }>;
 export type BrowserSessionView = Readonly<{
   sessionId: string;
@@ -146,16 +149,6 @@ function freezeAction(value: unknown): BrowserAction {
         target: target(item.target),
         value: text(item.value, "value", 1_024),
       });
-    case "upload":
-      exact(item, ["kind", "target", "resourceRef"]);
-      return Object.freeze({
-        kind: "upload",
-        target: target(item.target),
-        resourceRef: text(item.resourceRef, "resourceRef", 512),
-      });
-    case "download":
-      exact(item, ["kind", "target"]);
-      return Object.freeze({ kind: "download", target: target(item.target) });
     default:
       throw new Error("unsupported browser action");
   }

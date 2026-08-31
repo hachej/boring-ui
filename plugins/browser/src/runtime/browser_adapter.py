@@ -18,8 +18,4 @@ if kind == "navigate": run(["open", a["url"]])
 elif kind == "click": run(["click", str(target)])
 elif kind == "type": run(["input", str(target), a["text"]])
 elif kind == "select": run(["select", str(target), a["value"]])
-elif kind == "upload":
-    # resourceRef must be resolved to an authorized quarantine path by Host before this adapter is enabled.
-    raise SystemExit("upload requires a Host resource resolver")
-elif kind == "download": run(["click", str(target)])
 else: raise SystemExit("unsupported action")

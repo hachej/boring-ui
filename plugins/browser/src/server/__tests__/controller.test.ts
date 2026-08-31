@@ -12,10 +12,10 @@ describe("BrowserController", () => {
     const release = vi.fn();
     const c = new BrowserController({
       exec,
+      acquire: async () => ({ generationId: "g", release }),
       revokeView: async () => {},
       admitPlan: async () => ({ admitted: true }),
       admit: async () => ({ admitted: true }),
-      release,
     });
     const started = await c.start(scope);
     await c.takeover(scope, started.sessionId);
@@ -39,7 +39,8 @@ describe("BrowserController", () => {
       admitted: true,
       approvalRef: "approved",
     }));
-    const c = new BrowserController({ exec, revokeView: async () => {},
+    const c = new BrowserController({ exec, acquire: async () => ({ generationId: "g", release: async () => {} }),
+      revokeView: async () => {},
       admitPlan: async () => ({ admitted: true }), admit });
     const s = await c.start(scope);
     await expect(
@@ -50,14 +51,48 @@ describe("BrowserController", () => {
           { kind: "click", target: { index: 1 } },
           { kind: "click", target: { index: 2 } },
         ],
-      }),
+      }, undefined, { toolCallId: "tool" }),
     ).rejects.toThrow("unknown");
     expect(admit).toHaveBeenCalledTimes(2);
     expect(acts).toBe(2);
   });
+  it("cleans up and releases a thrown partial start", async () => {
+    const release = vi.fn(async () => {});
+    const exec = vi.fn(async ({ intent }: { intent: string }) => { if (intent === "ensure") throw new Error("secret upstream"); return { ok: true }; });
+    const c = new BrowserController({ exec, acquire: async () => ({ generationId: "g", release }), revokeView: async () => {}, admitPlan: async () => ({ admitted: true }), admit: async () => ({ admitted: true }) });
+    const result = await c.start(scope);
+    expect(result.state).toBe("error");
+    expect(exec).toHaveBeenCalledWith(expect.objectContaining({ intent: "stop" }));
+    expect(release).toHaveBeenCalledOnce();
+  });
+  it("retains the environment handle when stop cannot prove cleanup", async () => {
+    const release = vi.fn(async () => {});
+    const exec = vi.fn(async ({ intent }: { intent: string }) => ({ ok: intent !== "stop" }));
+    const c = new BrowserController({ exec, acquire: async () => ({ generationId: "g", release }), revokeView: async () => {}, admitPlan: async () => ({ admitted: true }), admit: async () => ({ admitted: true }) });
+    const s = await c.start(scope);
+    await expect(c.stop(scope, s.sessionId)).rejects.toThrow("reconciliation");
+    expect(c.status(scope, s.sessionId)).toMatchObject({ state: "error" });
+    expect(release).not.toHaveBeenCalled();
+  });
+  it("rolls takeover back to agent authority when the launcher fails", async () => {
+    const exec = vi.fn(async ({ intent }: { intent: string }) => ({ ok: intent !== "takeover" }));
+    const c = new BrowserController({ exec, acquire: async () => ({ generationId: "g", release: async () => {} }), revokeView: async () => {}, admitPlan: async () => ({ admitted: true }), admit: async () => ({ admitted: true }) });
+    const s = await c.start(scope);
+    await expect(c.takeover(scope, s.sessionId)).rejects.toThrow("takeover failed");
+    expect(c.status(scope, s.sessionId)).toMatchObject({ state: "agent-controlled", owner: "agent", controlEpoch: 1 });
+  });
+  it("returns a bounded typed observation and redacts credential canaries", async () => {
+    const exec = vi.fn(async ({ intent }: { intent: string }) => ({ ok: true, stdout: intent === "observe" ? JSON.stringify({ url: "https://user:pass@example.com/private", title: "token=CANARY", elements: [{ index: 1, role: "textbox", text: "password: CANARY" }], cookies: "CANARY" }) : "" }));
+    const c = new BrowserController({ exec, acquire: async () => ({ generationId: "g", release: async () => {} }), revokeView: async () => {}, admitPlan: async () => ({ admitted: true }), admit: async () => ({ admitted: true }) });
+    const s = await c.start(scope);
+    const observed = await c.observe(scope, s.sessionId, 0);
+    expect(observed.observation).toEqual({ origin: "https://example.com", title: "token=[redacted]", elements: [{ index: 1, role: "textbox", text: "password=[redacted]" }] });
+    expect(JSON.stringify(observed)).not.toContain("CANARY");
+  });
   it("rejects cross-scope session replay", async () => {
     const c = new BrowserController({
       exec: async () => ({ ok: true }),
+      acquire: async () => ({ generationId: "g", release: async () => {} }),
       revokeView: async () => {},
       admitPlan: async () => ({ admitted: true }),
       admit: async () => ({ admitted: true }),

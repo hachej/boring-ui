@@ -54,6 +54,36 @@ describe("UrlPane", () => {
     )
   })
 
+  it("aborts an in-flight projection when the view unmounts", () => {
+    let signal: AbortSignal | undefined
+    vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => {
+      signal = init?.signal ?? undefined
+      return new Promise<Response>(() => {})
+    }))
+    const rendered = render(
+      <WorkspacePluginClientProvider agentTypeId="default" apiBaseUrl="" workspaceId="workspace-a">
+        <UrlPane runtimePreview={{ port: 8_000 }} />
+      </WorkspacePluginClientProvider>,
+    )
+    expect(signal?.aborted).toBe(false)
+    rendered.unmount()
+    expect(signal?.aborted).toBe(true)
+  })
+
+  it("rejects malformed or already-expired projection grants", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      url: "https://sandbox-preview.test/demo",
+      expiresAt: "2020-01-01T00:00:00.000Z",
+    }), { status: 200, headers: { "content-type": "application/json" } })))
+    const { container } = render(
+      <WorkspacePluginClientProvider agentTypeId="default" apiBaseUrl="" workspaceId="workspace-a">
+        <UrlPane runtimePreview={{ port: 8_000 }} />
+      </WorkspacePluginClientProvider>,
+    )
+    await screen.findByText("URL pane unavailable")
+    expect(container.querySelector("iframe")).toBeNull()
+  })
+
   it("sanitizes projection failures instead of rendering server details", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("provider-secret-host failed", { status: 502 })))
     const { container } = render(

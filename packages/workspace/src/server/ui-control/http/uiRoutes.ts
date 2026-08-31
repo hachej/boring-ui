@@ -221,8 +221,9 @@ export function uiRoutes(
     const body = request.body as z.infer<typeof runtimeWebViewTargetSchema>;
     const preview = await opts.resolveRuntimePreview(request, { workspaceId, ...body });
     const resolved = resolveRuntimeWebViewProjection(preview.url);
-    if (!resolved.ok) {
-      return reply.code(502).send({ error: "runtime_preview_invalid", message: resolved.message });
+    const expiry = preview.expiresAt === undefined ? undefined : Date.parse(preview.expiresAt);
+    if (!resolved.ok || (expiry !== undefined && (!Number.isFinite(expiry) || expiry <= Date.now() + 1_000))) {
+      return reply.code(502).send({ error: "runtime_preview_invalid", message: resolved.ok ? "The runtime preview returned an invalid expiry." : resolved.message });
     }
     reply.header("Cache-Control", "private, no-store");
     return { url: resolved.url, expiresAt: preview.expiresAt };

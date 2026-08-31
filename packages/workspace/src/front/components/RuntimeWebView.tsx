@@ -115,25 +115,26 @@ export function RuntimeWebView({
       return
     }
     let cancelled = false
+    const controller = new AbortController()
     setProjectionState({ status: "loading" })
     client
       .postJson<{ url?: unknown; expiresAt?: unknown }>(RUNTIME_WEB_VIEW_PREVIEW_PATH, {
         port: source.port,
         ...(source.path === undefined ? {} : { path: source.path }),
-      })
+      }, { signal: controller.signal })
       .then((body) => {
         if (cancelled) return
         if (typeof body?.url !== "string") throw new Error("invalid projection response")
-        setProjectionState({
-          status: "ready",
-          url: body.url,
-          ...(typeof body.expiresAt === "string" ? { expiresAt: body.expiresAt } : {}),
-        })
+        const expiresAt = typeof body.expiresAt === "string" ? body.expiresAt : undefined
+        if (expiresAt && (!Number.isFinite(Date.parse(expiresAt)) || Date.parse(expiresAt) <= Date.now() + 1_000)) {
+          throw new Error("invalid projection expiry")
+        }
+        setProjectionState({ status: "ready", url: body.url, ...(expiresAt ? { expiresAt } : {}) })
       })
       .catch(() => {
         if (!cancelled) setProjectionState({ status: "error", message: safeFailureMessage("projection") })
       })
-    return () => { cancelled = true }
+    return () => { cancelled = true; controller.abort() }
   }, [client, reloadToken, source.kind, source.kind === "runtime" ? source.path : undefined, source.kind === "runtime" ? source.port : undefined])
 
   useEffect(() => {
