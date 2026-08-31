@@ -40,7 +40,7 @@ export type BrowserSessionView = Readonly<{
   controlEpoch: number;
   createdAt: string;
   expiresAt: string;
-  view?: Readonly<{ url: string; expiresAt: string }>;
+  view?: Readonly<{ url: string; grant: string; expiresAt: string }>;
   error?: string;
 }>;
 

@@ -27,7 +27,8 @@ describe("createBrowserHostCapability", () => {
         expect(generationId).toBe("generation-exact");
         expect(upstream.url).toContain("provider.invalid");
         return {
-          bootstrapPath: "/api/v1/runtime-projection/bootstrap/opaque?grant=opaque",
+          bootstrapPath: "/api/v1/runtime-projection/bootstrap/opaque",
+          grant: "opaque",
           expiresAt: upstream.expiresAt,
           revoke: upstream.revoke,
         };
@@ -39,7 +40,8 @@ describe("createBrowserHostCapability", () => {
     expect(await environment.invoke({ intent: "observe", sessionId: "browser", controlEpoch: 0 }))
       .toEqual({ ok: true, stdout: "observed" });
     const view = await environment.createView({ mode: "observe", controlEpoch: 0 });
-    expect(view.url).toBe("/api/v1/runtime-projection/bootstrap/opaque?grant=opaque");
+    expect(view.url).toBe("/api/v1/runtime-projection/bootstrap/opaque");
+    expect(view.grant).toBe("opaque");
     expect(view.url).not.toContain("provider.invalid");
     await view.revoke();
     expect(revokeUpstream).toHaveBeenCalledOnce();

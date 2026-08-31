@@ -65,16 +65,17 @@ export function runtimeProjectionRoutes(
   opts: RuntimeProjectionRoutesOptions,
   done: (error?: Error) => void,
 ): void {
-  app.get(`${BOOTSTRAP_PREFIX}:leaseId`, async (request, reply) => {
+  app.post(`${BOOTSTRAP_PREFIX}:leaseId`, async (request, reply) => {
     const { leaseId } = request.params as { leaseId: string }
-    const grant = (request.query as { grant?: string }).grant ?? ""
+    const body = request.body as { grant?: unknown } | undefined
+    const grant = body && Object.keys(body).length === 1 && typeof body.grant === "string" ? body.grant : ""
     const identity = await opts.resolveIdentity(request)
     const consumed = opts.broker.consumeGrant({ leaseId, grant, identity })
     if (!consumed) return reply.code(403).send({ error: "projection_grant_rejected" })
     return reply
       .header("Cache-Control", "private, no-store")
       .header("Set-Cookie", consumed.cookie)
-      .redirect(consumed.location, 303)
+      .send({ url: consumed.location })
   })
 
   app.all(`${VIEW_PREFIX}:leaseId/*`, async (request, reply) => {

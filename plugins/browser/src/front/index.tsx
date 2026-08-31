@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Globe2, Hand, Play, RotateCcw, Square } from "lucide-react";
 import {
   Button,
@@ -29,6 +29,20 @@ export function BrowserPanel({
   const [session, setSession] = useState<BrowserSessionView | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [viewUrl, setViewUrl] = useState("");
+  useEffect(() => {
+    const view = session?.view;
+    if (!view) { setViewUrl(""); return; }
+    let cancelled = false;
+    client.postJson<{ url?: unknown }>(view.url, { grant: view.grant })
+      .then((result) => {
+        if (!cancelled && typeof result.url === "string" && result.url.startsWith("/api/v1/runtime-projection/view/")) {
+          setViewUrl(result.url);
+        }
+      })
+      .catch(() => { if (!cancelled) setError("The browser view could not be authorized."); });
+    return () => { cancelled = true; };
+  }, [client, session?.view?.grant, session?.view?.url]);
   const call = async (operation: "start" | "stop" | "takeover" | "return") => {
     setBusy(true);
     setError("");
@@ -131,11 +145,11 @@ export function BrowserPanel({
             }
           />
         ) : null}
-        {session?.view ? (
+        {session?.view && viewUrl ? (
           <div className="h-full min-h-[320px]">
             <iframe
               key={session.controlEpoch}
-              src={session.view.url}
+              src={viewUrl}
               title="Browser session"
               className="h-full w-full border-0 bg-white"
               sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"

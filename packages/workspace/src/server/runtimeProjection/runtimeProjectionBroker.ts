@@ -16,6 +16,7 @@ export interface RuntimeProjectionUpstreamLease {
 export interface RuntimeProjectionGrant {
   readonly leaseId: string
   readonly bootstrapPath: string
+  readonly grant: string
   readonly expiresAt: string
   revoke(): Promise<void>
 }
@@ -76,7 +77,8 @@ export class RuntimeProjectionBroker {
     this.records.set(leaseId, record)
     return Object.freeze({
       leaseId,
-      bootstrapPath: `/api/v1/runtime-projection/bootstrap/${leaseId}?grant=${grant}`,
+      bootstrapPath: `/api/v1/runtime-projection/bootstrap/${leaseId}`,
+      grant,
       expiresAt: input.upstream.expiresAt,
       revoke: () => this.revoke(leaseId),
     })

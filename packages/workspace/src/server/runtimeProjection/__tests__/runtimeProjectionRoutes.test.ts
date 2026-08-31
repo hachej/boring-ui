@@ -39,14 +39,15 @@ describe("runtimeProjectionRoutes", () => {
     })
     close.push(() => app.close())
 
-    const bootstrap = await app.inject({ method: "GET", url: grant.bootstrapPath })
-    expect(bootstrap.statusCode).toBe(303)
-    expect(bootstrap.headers.location).toBe(`/api/v1/runtime-projection/view/${grant.leaseId}/`)
+    const bootstrap = await app.inject({ method: "POST", url: grant.bootstrapPath, payload: { grant: grant.grant } })
+    expect(bootstrap.statusCode).toBe(200)
+    const location = bootstrap.json().url as string
+    expect(location).toBe(`/api/v1/runtime-projection/view/${grant.leaseId}/`)
     const cookie = bootstrap.headers["set-cookie"]
     expect(cookie).toContain("HttpOnly")
     const view = await app.inject({
       method: "GET",
-      url: bootstrap.headers.location!,
+      url: location,
       headers: { cookie: String(cookie).split(";")[0], authorization: "Bearer must-not-forward" },
     })
     expect(view.statusCode).toBe(200)
@@ -72,6 +73,6 @@ describe("runtimeProjectionRoutes", () => {
       resolveUpgradeIdentity: async () => ({ ...identity, generationId: "stale" }),
     })
     close.push(() => app.close())
-    expect((await app.inject({ method: "GET", url: grant.bootstrapPath })).statusCode).toBe(403)
+    expect((await app.inject({ method: "POST", url: grant.bootstrapPath, payload: { grant: grant.grant } })).statusCode).toBe(403)
   })
 })

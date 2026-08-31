@@ -9,7 +9,7 @@ const host: BrowserHostCapability = {
     generationId: "g",
     signal: new AbortController().signal,
     invoke: async () => ({ ok: true }),
-    createView: async () => ({ url: "/api/v1/runtime-projection/bootstrap/opaque?grant=opaque", expiresAt: new Date(Date.now() + 60_000).toISOString(), revoke: async () => {} }),
+    createView: async () => ({ url: "/api/v1/runtime-projection/bootstrap/opaque", grant: "opaque", expiresAt: new Date(Date.now() + 60_000).toISOString(), revoke: async () => {} }),
     release: async () => {},
   }),
 };

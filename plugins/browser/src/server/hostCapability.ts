@@ -36,7 +36,7 @@ export interface BrowserHostCapabilityFactoryOptions {
     readonly scope: BrowserScope;
     readonly generationId: string;
     readonly upstream: { readonly url: string; readonly expiresAt: string; revoke(): Promise<void> };
-  }): { readonly bootstrapPath: string; readonly expiresAt: string; revoke(): Promise<void> };
+  }): { readonly bootstrapPath: string; readonly grant: string; readonly expiresAt: string; revoke(): Promise<void> };
   readonly idleTtlMs: number;
   readonly absoluteTtlMs: number;
 }
@@ -93,7 +93,7 @@ export function createBrowserHostCapability(options: BrowserHostCapabilityFactor
               generationId: environment.environmentGenerationId,
               upstream,
             });
-            return Object.freeze({ url: grant.bootstrapPath, expiresAt: grant.expiresAt, revoke: () => grant.revoke() });
+            return Object.freeze({ url: grant.bootstrapPath, grant: grant.grant, expiresAt: grant.expiresAt, revoke: () => grant.revoke() });
           },
           async release() {
             if (released) return;

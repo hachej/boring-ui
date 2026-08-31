@@ -20,8 +20,7 @@ function grantFixture() {
       revoke,
     },
   })
-  const url = new URL(grant.bootstrapPath, "https://same-origin.test")
-  return { broker, grant, revoke, token: url.searchParams.get("grant")! }
+  return { broker, grant, revoke, token: grant.grant }
 }
 
 function cookieValue(value: string) {
@@ -33,6 +32,7 @@ describe("RuntimeProjectionBroker", () => {
     const { broker, grant, token } = grantFixture()
     expect(grant.bootstrapPath).not.toContain("sealed.example")
     expect(grant.bootstrapPath).not.toContain("secret")
+    expect(grant.bootstrapPath).not.toContain(grant.grant)
     const consumed = broker.consumeGrant({ leaseId: grant.leaseId, grant: token, identity })
     expect(consumed?.location).toBe(`/api/v1/runtime-projection/view/${grant.leaseId}/`)
     expect(consumed?.cookie).toContain("HttpOnly; SameSite=Strict")

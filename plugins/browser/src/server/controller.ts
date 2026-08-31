@@ -32,6 +32,7 @@ export type BrowserExecResult = Readonly<{
 }>;
 export interface BrowserViewLease {
   readonly url: string;
+  readonly grant: string;
   readonly expiresAt: string;
   revoke(): Promise<void>;
 }
@@ -404,7 +405,7 @@ export class BrowserController {
       expiresAt: new Date(
         Math.min(s.touched + IDLE_TTL_MS, s.absoluteExpiry),
       ).toISOString(),
-      ...(s.viewLease ? { view: { url: s.viewLease.url, expiresAt: s.viewLease.expiresAt } } : {}),
+      ...(s.viewLease ? { view: { url: s.viewLease.url, grant: s.viewLease.grant, expiresAt: s.viewLease.expiresAt } } : {}),
       ...(s.error ? { error: s.error } : {}),
     });
   }
