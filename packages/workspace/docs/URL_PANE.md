@@ -17,7 +17,7 @@ the workspace and without a `localhost:5xxx` line pasted into chat.
 
 ## Opening it
 
-From an agent session:
+From an agent session in local CLI mode:
 
 ```jsonc
 { "kind": "openPanel", "params": {
@@ -26,13 +26,31 @@ From an agent session:
     "params": { "url": "http://127.0.0.1:5173/", "title": "br-1187 demo" } } }
 ```
 
-via the `exec_ui` tool, the `openArtifact` shell capability
+In a hosted remote sandbox, browser loopback is the user's computer, not the
+sandbox. Ask the host to project the active runtime port instead:
+
+```jsonc
+{ "kind": "openPanel", "params": {
+    "id": "demo:remote",
+    "component": "url-pane.panel",
+    "params": { "runtimePreview": { "port": 5173, "path": "/" }, "title": "remote demo" } } }
+```
+
+The current provider implementation creates a private, 15-minute Blaxel preview
+token over HTTPS; the underlying preview has a one-hour TTL. The pane resolves
+that token through the authenticated workspace API and never treats an
+agent-authored public URL as a runtime projection.
+
+Open either form via the `exec_ui` tool, the `openArtifact` shell capability
 (`{ type: "panel", panelComponentId: "url-pane.panel", params: { url } }`), or a
 direct `POST /api/v1/ui/commands`.
 
 ## The security boundary
 
-Nothing is fetched server-side, so this is **not** an SSRF surface. The risk is
+Browser-direct `url` targets are not fetched server-side, so that form is **not**
+an SSRF surface. `runtimePreview` is a separate host-authorized provider
+projection: it accepts only a bounded port/path for the authenticated workspace,
+never an agent-supplied host or upstream URL. The risk for browser-direct URLs is
 that an agent — possibly prompt-injected — frames an arbitrary origin inside the
 owner's workspace. The mitigation is an origin allowlist plus a hard iframe
 sandbox:
@@ -41,7 +59,7 @@ sandbox:
   credentials in the URL, and requires the origin to match a configured pattern.
   Patterns are exact origins or `scheme://host:*` (a **port** wildcard only —
   host wildcards are deliberately unsupported).
-- **Default.** Unset config means loopback only: `http://localhost:*`,
+- **Default (browser-direct only).** Unset config means loopback only: `http://localhost:*`,
   `http://127.0.0.1:*`, `http://[::1]:*`. An explicitly empty
   `BORING_URL_PANE_ALLOWED_ORIGINS` means *closed* — nothing may be framed.
 - **Two enforcement points, same function.** The front re-resolves before it

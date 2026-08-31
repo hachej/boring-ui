@@ -48,6 +48,17 @@ export type RuntimeFilesystemStrategy =
   | { kind: 'host' }
   | { kind: 'remote-workspace'; pathOptions?: RuntimeRemoteWorkspacePathOptions }
 
+export interface RuntimePreviewRequest {
+  workspaceId: string
+  port: number
+  path?: string
+}
+
+export interface RuntimePreview {
+  url: string
+  expiresAt: string
+}
+
 export interface RuntimeModeAdapter {
   readonly id: RuntimeModeId
   readonly runtimeHost?: AgentRuntimeHostOperations
@@ -63,6 +74,8 @@ export interface RuntimeModeAdapter {
   /** Resolves the provider-owned workspace root in runtime coordinates. */
   getRuntimeLayoutRoot(ctx: ModeContext): string
   evictCachedRuntime?(ctx: { workspaceId: string }): void | Promise<void>
+  /** Projects an already-running sandbox port to an expiring browser URL. */
+  createRuntimePreview?(request: RuntimePreviewRequest): Promise<RuntimePreview>
   dispose?(): Promise<void>
 }
 

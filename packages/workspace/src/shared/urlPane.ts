@@ -125,7 +125,34 @@ export function resolveUrlPaneTarget(input: string | undefined | null, policy: U
   return { ok: true, url: parsed.toString(), origin: parsed.origin }
 }
 
+export interface RuntimePreviewTarget {
+  port: number
+  path?: string
+}
+
+/** Validates a host-resolved runtime preview before it reaches an iframe. */
+export function resolveRuntimePreviewUrl(input: string | undefined | null): UrlPaneResolution {
+  const trimmed = (input ?? "").trim()
+  if (!trimmed) return { ok: false, reason: "empty", message: "The runtime preview did not return a URL." }
+  let parsed: URL
+  try {
+    parsed = new URL(trimmed)
+  } catch {
+    return { ok: false, reason: "unparseable", message: "The runtime preview returned an invalid URL." }
+  }
+  if (parsed.protocol !== "https:") {
+    return { ok: false, reason: "protocol-not-allowed", message: "Runtime previews must use HTTPS." }
+  }
+  if (parsed.username || parsed.password) {
+    return { ok: false, reason: "credentials-not-allowed", message: "Runtime preview URLs may not carry URL credentials." }
+  }
+  return { ok: true, url: parsed.toString(), origin: parsed.origin }
+}
+
 export interface UrlPanePaneParams {
+  /** Browser-direct URL, used by local CLI and explicitly allowlisted hosts. */
   url?: string
+  /** Host-resolved port in the current workspace's active remote runtime. */
+  runtimePreview?: RuntimePreviewTarget
   title?: string
 }

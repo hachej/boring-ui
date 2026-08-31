@@ -40,6 +40,17 @@ export interface SandboxProviderInvalidateContextV1 {
   workspaceId: string;
 }
 
+export interface SandboxRuntimePreviewRequestV1 {
+  workspaceId: string;
+  port: number;
+  path?: string;
+}
+
+export interface SandboxRuntimePreviewV1 {
+  url: string;
+  expiresAt: string;
+}
+
 export type SandboxPairHealthV1 =
   | Readonly<{ state: "ok" }>
   | Readonly<{ state: "recreate"; message?: string; error?: unknown }>;
@@ -105,6 +116,10 @@ export interface SandboxProviderV1 {
   invalidate?(
     context: SandboxProviderInvalidateContextV1,
   ): Promise<void> | void;
+  /** Creates an expiring browser URL for an already-active sandbox port. */
+  createRuntimePreview?(
+    request: SandboxRuntimePreviewRequestV1,
+  ): Promise<SandboxRuntimePreviewV1>;
   close?(): Promise<void>;
 }
 

@@ -147,7 +147,20 @@ export async function createMockBlaxelClient(): Promise<BlaxelClient & {
         child.kill('SIGKILL')
       },
     }
-    return { name, externalId: config.externalId, status: 'DEPLOYED', spec, fs, process: processApi }
+    return {
+      name,
+      externalId: config.externalId,
+      status: 'DEPLOYED',
+      spec,
+      fs,
+      async createPreview(request) {
+        return {
+          url: `https://${name}-${request.port}.preview.test${request.path ?? '/'}`,
+          expiresAt: request.tokenExpiresAt.toISOString(),
+        }
+      },
+      process: processApi,
+    }
   }
 
   client = {

@@ -5,10 +5,16 @@ import { ErrorState, IconButton, Spinner } from "@hachej/boring-ui-kit"
 import { ExternalLink, RefreshCcw } from "lucide-react"
 import { cn } from "../../../front/lib/utils"
 import { useOptionalWorkspacePluginClient } from "../../../front/plugin/useWorkspacePluginClient"
-import { resolveUrlPaneTarget, type UrlPanePolicy } from "../../../shared/urlPane"
+import {
+  resolveRuntimePreviewUrl,
+  resolveUrlPaneTarget,
+  type RuntimePreviewTarget,
+  type UrlPanePolicy,
+} from "../../../shared/urlPane"
 
 export interface UrlPaneProps {
   url?: string
+  runtimePreview?: RuntimePreviewTarget
   title?: string
   className?: string
   /** Test seam: skip the policy fetch and decide against this policy directly. */
@@ -18,6 +24,12 @@ export interface UrlPaneProps {
 type PolicyState =
   | { status: "loading" }
   | { status: "ready"; policy: UrlPanePolicy }
+  | { status: "error"; message: string }
+
+type RuntimePreviewState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "ready"; url: string }
   | { status: "error"; message: string }
 
 const POLICY_PATH = "/api/v1/ui/url-pane/policy"
@@ -44,16 +56,18 @@ export function urlPaneSandbox(targetOrigin: string, hostOrigin: string | null):
   return `${BASE_SANDBOX} allow-same-origin`
 }
 
-export function UrlPane({ url, title, className, policyOverride }: UrlPaneProps) {
+export function UrlPane({ url, runtimePreview, title, className, policyOverride }: UrlPaneProps) {
   const client = useOptionalWorkspacePluginClient()
   const [policyState, setPolicyState] = useState<PolicyState>(
     policyOverride ? { status: "ready", policy: policyOverride } : { status: "loading" },
   )
+  const [runtimePreviewState, setRuntimePreviewState] = useState<RuntimePreviewState>({ status: "idle" })
   // Bumping this remounts the iframe, which is the only reliable cross-origin
   // reload — we cannot touch contentWindow.location on a sandboxed frame.
   const [reloadToken, setReloadToken] = useState(0)
 
   useEffect(() => {
+    if (runtimePreview) return
     if (policyOverride) {
       setPolicyState({ status: "ready", policy: policyOverride })
       return
@@ -88,12 +102,44 @@ export function UrlPane({ url, title, className, policyOverride }: UrlPaneProps)
     return () => {
       cancelled = true
     }
-  }, [client, policyOverride])
+  }, [client, policyOverride, runtimePreview])
 
-  const resolution = useMemo(
-    () => (policyState.status === "ready" ? resolveUrlPaneTarget(url, policyState.policy) : null),
-    [policyState, url],
-  )
+  useEffect(() => {
+    if (!runtimePreview) {
+      setRuntimePreviewState({ status: "idle" })
+      return
+    }
+    if (!client) {
+      setRuntimePreviewState({ status: "error", message: "Runtime previews need a workspace connection." })
+      return
+    }
+    let cancelled = false
+    setRuntimePreviewState({ status: "loading" })
+    client
+      .postJson<{ url?: unknown }>("/api/v1/ui/url-pane/runtime-preview", runtimePreview)
+      .then((body) => {
+        if (cancelled) return
+        if (typeof body?.url !== "string") throw new Error("The runtime preview did not return a URL.")
+        setRuntimePreviewState({ status: "ready", url: body.url })
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return
+        setRuntimePreviewState({
+          status: "error",
+          message: error instanceof Error ? error.message : "Could not create the runtime preview.",
+        })
+      })
+    return () => { cancelled = true }
+  }, [client, runtimePreview?.path, runtimePreview?.port])
+
+  const resolution = useMemo(() => {
+    if (runtimePreview) {
+      return runtimePreviewState.status === "ready"
+        ? resolveRuntimePreviewUrl(runtimePreviewState.url)
+        : null
+    }
+    return policyState.status === "ready" ? resolveUrlPaneTarget(url, policyState.policy) : null
+  }, [policyState, runtimePreview, runtimePreviewState, url])
 
   const sandbox = useMemo(
     () => (resolution?.ok ? urlPaneSandbox(resolution.origin, workspaceOrigin()) : BASE_SANDBOX),
@@ -104,8 +150,8 @@ export function UrlPane({ url, title, className, policyOverride }: UrlPaneProps)
     <div className={cn("flex h-full min-h-0 w-full flex-col bg-background", className)}>
       <div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
         <span className="truncate text-xs font-medium text-foreground">{title ?? "Live demo"}</span>
-        <span className="truncate font-mono text-[11px] text-muted-foreground" title={url}>
-          {url ?? "no URL"}
+        <span className="truncate font-mono text-[11px] text-muted-foreground" title={resolution?.ok ? resolution.url : url}>
+          {runtimePreview ? `sandbox port ${runtimePreview.port}` : url ?? "no URL"}
         </span>
         <div className="ml-auto flex items-center gap-1">
           <IconButton
@@ -138,14 +184,21 @@ export function UrlPane({ url, title, className, policyOverride }: UrlPaneProps)
       </div>
 
       <div className="relative min-h-0 flex-1">
-        {policyState.status === "loading" ? (
+        {(runtimePreview
+          ? runtimePreviewState.status === "idle" || runtimePreviewState.status === "loading"
+          : policyState.status === "loading") ? (
           <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
             <Spinner className="size-3.5" />
             <span>Loading demo...</span>
           </div>
-        ) : policyState.status === "error" ? (
+        ) : (runtimePreview ? runtimePreviewState.status === "error" : policyState.status === "error") ? (
           <div className="flex h-full items-center justify-center p-6">
-            <ErrorState title="URL pane unavailable" description={policyState.message} />
+            <ErrorState
+              title="URL pane unavailable"
+              description={runtimePreviewState.status === "error"
+                ? runtimePreviewState.message
+                : policyState.status === "error" ? policyState.message : "URL pane unavailable"}
+            />
           </div>
         ) : resolution?.ok ? (
           <iframe
@@ -160,9 +213,11 @@ export function UrlPane({ url, title, className, policyOverride }: UrlPaneProps)
           <div className="flex h-full items-center justify-center p-6">
             <ErrorState
               title="URL blocked"
-              description={`${resolution?.message ?? "This URL cannot be embedded."} Allowed origins: ${
-                policyState.policy.origins.join(", ") || "(none configured)"
-              }`}
+              description={runtimePreview
+                ? resolution?.message ?? "This runtime preview cannot be embedded."
+                : `${resolution?.message ?? "This URL cannot be embedded."} Allowed origins: ${
+                    policyState.status === "ready" ? policyState.policy.origins.join(", ") || "(none configured)" : "(unavailable)"
+                  }`}
             />
           </div>
         )}

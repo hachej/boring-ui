@@ -395,6 +395,16 @@ describe("uiRoutes", () => {
     })
     expect(allowed.statusCode).toBe(200)
 
+    const unavailableRuntime = await app.inject({
+      method: "POST",
+      url: "/api/v1/ui/commands",
+      payload: {
+        kind: "openPanel",
+        params: { id: "runtime", component: URL_PANE_PANEL_ID, params: { runtimePreview: { port: 8_000 } } },
+      },
+    })
+    expect(unavailableRuntime.statusCode).toBe(400)
+
     // Unrelated panels are untouched by the url-pane rule.
     const other = await app.inject({
       method: "POST",
@@ -402,6 +412,55 @@ describe("uiRoutes", () => {
       payload: { kind: "openPanel", params: { id: "f", component: "filesystem.html-viewer", params: { path: "a.html" } } },
     })
     expect(other.statusCode).toBe(200)
+    await app.close()
+  })
+
+  test("resolves a validated runtime preview within the request workspace", async () => {
+    const app = Fastify({ logger: false })
+    const resolveRuntimePreview = vi.fn(async (_request, input) => ({
+      url: `https://preview.test${input.path ?? "/"}`,
+      expiresAt: "2030-01-01T00:00:00.000Z",
+    }))
+    await app.register(uiRoutes, {
+      bridge: createInMemoryBridge(),
+      getWorkspaceId: async () => "workspace-a",
+      resolveRuntimePreview,
+    })
+    await app.ready()
+
+    const command = await app.inject({
+      method: "POST",
+      url: "/api/v1/ui/commands",
+      payload: {
+        kind: "openPanel",
+        params: { id: "runtime", component: URL_PANE_PANEL_ID, params: { runtimePreview: { port: 8_000, path: "/demo" } } },
+      },
+    })
+    expect(command.statusCode).toBe(200)
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/ui/url-pane/runtime-preview",
+      payload: { port: 8_000, path: "/demo" },
+    })
+    expect(response.statusCode).toBe(200)
+    expect(response.headers["cache-control"]).toBe("private, no-store")
+    expect(response.json()).toEqual({
+      url: "https://preview.test/demo",
+      expiresAt: "2030-01-01T00:00:00.000Z",
+    })
+    expect(resolveRuntimePreview).toHaveBeenCalledWith(expect.anything(), {
+      workspaceId: "workspace-a",
+      port: 8_000,
+      path: "/demo",
+    })
+
+    const invalid = await app.inject({
+      method: "POST",
+      url: "/api/v1/ui/url-pane/runtime-preview",
+      payload: { port: 80 },
+    })
+    expect(invalid.statusCode).toBe(400)
     await app.close()
   })
 })

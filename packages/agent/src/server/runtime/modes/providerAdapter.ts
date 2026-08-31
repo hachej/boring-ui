@@ -61,6 +61,11 @@ export function createProviderRuntimeModeAdapter(
     evictCachedRuntime: async ({ workspaceId }) => {
       await options.provider.invalidate?.({ workspaceId })
     },
+    ...(options.provider.createRuntimePreview
+      ? {
+          createRuntimePreview: (request) => options.provider.createRuntimePreview!(request),
+        }
+      : {}),
     async dispose() {
       await options.provider.close?.()
     },

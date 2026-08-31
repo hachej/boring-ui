@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest"
-import { render, screen } from "@testing-library/react"
+import { afterEach, describe, expect, it, vi } from "vitest"
+import { render, screen, waitFor } from "@testing-library/react"
 import { captureFrontPlugin } from "../../../../shared/plugins/frontFactory"
 import { URL_PANE_PANEL_ID } from "../../../../shared/urlPane"
 import urlPaneFront, { UrlPane, urlPanePlugin } from "../index"
 import { urlPaneSandbox } from "../UrlPane"
+import { WorkspacePluginClientProvider } from "../../../../front/plugin/useWorkspacePluginClient"
 
 describe("urlPanePlugin", () => {
   const registrations = captureFrontPlugin(urlPanePlugin).registrations
@@ -19,6 +20,8 @@ describe("urlPanePlugin", () => {
 })
 
 describe("UrlPane", () => {
+  afterEach(() => vi.unstubAllGlobals())
+
   it("embeds an allowed origin in a sandboxed iframe that cannot reach the workspace origin", () => {
     const { container } = render(
       <UrlPane url="http://127.0.0.1:5210/workspace/factory" policyOverride={{ origins: ["http://127.0.0.1:*"] }} />,
@@ -29,6 +32,26 @@ describe("UrlPane", () => {
     const sandbox = iframe?.getAttribute("sandbox") ?? ""
     expect(sandbox).toContain("allow-scripts")
     expect(iframe?.getAttribute("referrerpolicy")).toBe("no-referrer")
+  })
+
+  it("resolves a hosted runtime port before embedding it", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      url: "https://sandbox-preview.test/demo?bl_preview_token=short-lived",
+    }), { status: 200, headers: { "content-type": "application/json" } }))
+    vi.stubGlobal("fetch", fetchMock)
+    const { container } = render(
+      <WorkspacePluginClientProvider agentTypeId="default" apiBaseUrl="" workspaceId="workspace-a">
+        <UrlPane runtimePreview={{ port: 8_000, path: "/demo" }} />
+      </WorkspacePluginClientProvider>,
+    )
+    await waitFor(() => expect(container.querySelector("iframe")).not.toBeNull())
+    expect(container.querySelector("iframe")?.getAttribute("src")).toBe(
+      "https://sandbox-preview.test/demo?bl_preview_token=short-lived",
+    )
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/api/v1/ui/url-pane/runtime-preview"),
+      expect.objectContaining({ method: "POST", credentials: "include" }),
+    )
   })
 
   it("renders a blocked state naming the allowlist instead of an iframe", () => {

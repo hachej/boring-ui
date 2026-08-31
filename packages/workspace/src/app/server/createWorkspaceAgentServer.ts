@@ -2159,7 +2159,19 @@ export async function createWorkspaceAgentServer(
     refreshBoringPluginDirs()
     await boringAssetManager.load()
     await runtimeBackendRegistry.reloadFromLoadedPlugins(boringAssetManager.inspectLoaded())
-    await app.register(uiRoutes, { bridge, preserveStateKeys: pluginCollection.preservedUiStateKeys })
+    await app.register(uiRoutes, {
+      bridge,
+      preserveStateKeys: pluginCollection.preservedUiStateKeys,
+      ...(modeAdapter.createRuntimePreview
+        ? {
+            resolveRuntimePreview: async (_request, input) =>
+              await modeAdapter.createRuntimePreview!({
+                ...input,
+                workspaceId: opts.sessionId ?? input.workspaceId,
+              }),
+          }
+        : {}),
+    })
     await app.register(workspaceBridgeHttpRoutes, {
       registry: workspaceBridgeRegistry,
       runtimeTokenSecret: opts.workspaceBridge?.runtimeTokenSecret,

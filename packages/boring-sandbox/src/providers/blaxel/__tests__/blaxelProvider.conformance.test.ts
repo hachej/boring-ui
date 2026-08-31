@@ -63,6 +63,27 @@ describe('Blaxel adapter policies', () => {
     expect(resolveBlaxelConfig({ region: 'eu-lon-1' }, {}).region).toBe('eu-lon-1')
   })
 
+  test('projects only an active workspace sandbox to an expiring HTTPS preview', async () => {
+    const value = await harness()
+    await expect(value.provider.createRuntimePreview!({
+      workspaceId: value.context.workspaceId,
+      port: 8_000,
+      path: '/demo',
+    })).resolves.toMatchObject({
+      url: expect.stringMatching(/^https:\/\/.*-8000\.preview\.test\/demo$/),
+      expiresAt: expect.any(String),
+    })
+    await expect(value.provider.createRuntimePreview!({
+      workspaceId: 'other-workspace',
+      port: 8_000,
+    })).rejects.toMatchObject({ code: 'SANDBOX_NOT_READY' })
+    await expect(value.provider.createRuntimePreview!({
+      workspaceId: value.context.workspaceId,
+      port: 80,
+    })).rejects.toMatchObject({ code: 'CONFIG_INVALID' })
+    await value.pair.dispose()
+  })
+
   test('caps terminal UTF-8 output locally with stdout-first allocation', () => {
     const result = capUtf8Outputs('éé', 'stderr', 5)
     expect(result.stdout.byteLength).toBe(4)
