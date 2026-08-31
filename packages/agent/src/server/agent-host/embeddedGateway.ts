@@ -25,10 +25,6 @@ import { SessionInventoryPager } from './sessionInventoryPagination'
 import { stableServiceActionFailure } from './stableServiceError'
 import type { AgentHostRuntime } from './createAgentHost'
 import {
-  attachAcceptedWorkProvenance,
-  type AcceptedWorkProvenance,
-} from './acceptedWork'
-import {
   runAcceptedEffect,
   type RunAcceptedEffectOptions,
 } from './runAcceptedEffect'
@@ -64,13 +60,11 @@ function sessionTarget(ref: AgentSessionRef): AgentRequestTarget {
 function harnessContext(
   claim: VerifiedAgentScopeClaim,
   requestId: string,
-  provenance?: AcceptedWorkProvenance,
 ): HarnessRequestContext {
-  const value: HarnessRequestContext = {
+  return {
     authSubjectId: claim.authSubjectId,
     requestId,
   }
-  return provenance ? attachAcceptedWorkProvenance(value, provenance) : value
 }
 
 function harnessScope(claim: VerifiedAgentScopeClaim, agentTypeId: string): HarnessAgentScope {
@@ -123,7 +117,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
     readonly target: AgentRequestTarget
     readonly requestId: string
     readonly payload: JsonValue
-    readonly action: (provenance: AcceptedWorkProvenance) => Promise<JsonValue>
+    readonly action: () => Promise<JsonValue>
     readonly classify?: () => Promise<
       | { readonly kind: 'execute' }
       | { readonly kind: 'reject'; readonly error: AgentGatewayErrorDTO }
@@ -579,10 +573,10 @@ export class EmbeddedAgentGateway implements AgentGateway {
     const binding = await this.bindingForSession(scope, claim, ref)
     const backend = binding.composition.backend
     if (command.kind === 'prompt') {
-      return await this.sessionEffect(ref, scope, claim, 'session.prompt', command.requestId, command as unknown as JsonValue, async (provenance) => {
+      return await this.sessionEffect(ref, scope, claim, 'session.prompt', command.requestId, command as unknown as JsonValue, async () => {
         const receipt = await backend.submitPrompt(
           harnessAddress(claim, ref),
-          harnessContext(claim, command.requestId, provenance),
+          harnessContext(claim, command.requestId),
           {
             message: command.content,
             displayMessage: command.displayContent,
@@ -607,10 +601,10 @@ export class EmbeddedAgentGateway implements AgentGateway {
         ),
       })
     }
-    return await this.sessionEffect(ref, scope, claim, 'session.followup', command.requestId, command as unknown as JsonValue, async (provenance) => {
+    return await this.sessionEffect(ref, scope, claim, 'session.followup', command.requestId, command as unknown as JsonValue, async () => {
       const receipt = await backend.submitFollowUp(
         harnessAddress(claim, ref),
-        harnessContext(claim, command.requestId, provenance),
+        harnessContext(claim, command.requestId),
         {
           message: command.content,
           displayMessage: command.displayContent,
@@ -775,7 +769,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
     operation: AgentGatewayEffect,
     requestId: string,
     payload: JsonValue,
-    action: (provenance: AcceptedWorkProvenance) => Promise<unknown>,
+    action: () => Promise<unknown>,
     options: SessionEffectOptions = {},
   ): Promise<unknown> {
     const { bindingKey, ...effectOptions } = options
@@ -805,7 +799,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
     target: AgentRequestTarget,
     requestId: string,
     payload: JsonValue,
-    action: (provenance: AcceptedWorkProvenance) => Promise<unknown>,
+    action: () => Promise<unknown>,
     options: EffectOptions = {},
   ): Promise<unknown> {
     const agentTypeId = target.kind === 'agent' ? target.agentTypeId : target.ref.agentTypeId
@@ -830,7 +824,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
       claim,
       key,
       payload,
-      action: async (provenance) => await action(provenance) as JsonValue,
+      action: async () => await action() as JsonValue,
       authorize: reauthorize,
       ...options,
     })

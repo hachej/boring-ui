@@ -10,11 +10,6 @@ import { selectMessagesForRender } from '../../../front/chat/pi/selectors'
 import type { PiAgentSessionAdapter, PiAgentSessionSnapshot } from '../PiAgentSessionAdapter'
 import { HarnessPiChatService } from '../harnessPiChatService'
 import type { PiSessionRequestContext } from '../piSessionIdentity'
-import {
-  attachAcceptedWorkProvenance,
-  readAcceptedWorkProvenance,
-} from '../../agent-host/acceptedWork'
-import type { AgentRequestKey } from '../../agent-host/types'
 
 const ctx: PiSessionRequestContext = {
   workspaceId: 'workspace-a',
@@ -138,46 +133,33 @@ function renderMessagesFromEvents(events: PiChatEvent[]) {
 }
 
 describe('HarnessPiChatService', () => {
-  it('projects accepted parent provenance into the concrete harness RunContext without serializing it', async () => {
+  it('projects the request identity into the concrete harness RunContext', async () => {
     const { service, harness } = createService()
-    const parentKey: AgentRequestKey = {
-      workspaceScopeId: 'workspace-a',
-      authSubjectId: 'user-a',
-      operation: 'session.prompt',
-      target: { kind: 'session', ref: { agentTypeId: 'worker', sessionId: 's1' } },
-      requestId: 'accepted-parent-request',
-    }
-    const acceptedContext = attachAcceptedWorkProvenance({ ...ctx }, {
-      parentKey,
-      claim: { workspaceScopeId: 'workspace-a', authSubjectId: 'user-a' },
-    })
 
-    await service.prompt(acceptedContext, 's1', { message: 'hello', clientNonce: 'accepted-parent' })
+    await service.prompt(ctx, 's1', { message: 'hello', clientNonce: 'request-context' })
 
     const getAdapter = harness.getPiSessionAdapter as ReturnType<typeof vi.fn>
     const runContext = getAdapter.mock.calls[0]?.[1] as RunContext
-    expect(readAcceptedWorkProvenance(runContext)?.parentKey).toEqual(parentKey)
-    expect(JSON.stringify(runContext)).not.toContain('accepted-parent-request')
+    expect(runContext.userId).toBe('user-a')
+    expect(runContext.requestId).toBe('request-a')
   })
 
-  it('promotes Send-now with the queued submission context instead of interrupt provenance', async () => {
+  it('promotes Send-now with the queued submission context instead of the interrupt context', async () => {
     const adapter = createAdapter()
     const harness = createHarness(adapter)
     const service = new HarnessPiChatService({ harness, sessionStore, workdir: '/workspace' })
-    const queuedKey: AgentRequestKey = {
-      workspaceScopeId: 'workspace-a', authSubjectId: 'queued-subject', operation: 'session.followup',
-      target: { kind: 'session', ref: { agentTypeId: 'worker', sessionId: 's1' } }, requestId: 'queued-request',
+    const queuedContext = {
+      ...ctx,
+      authSubject: 'queued-subject',
+      requestId: 'queued-request',
+      sessionAuthority: 'workspace-scope' as const,
     }
-    const interruptKey: AgentRequestKey = {
-      workspaceScopeId: 'workspace-a', authSubjectId: 'interrupt-subject', operation: 'session.command.execute',
-      target: { kind: 'session', ref: { agentTypeId: 'worker', sessionId: 's1' } }, requestId: 'interrupt-request',
+    const interruptContext = {
+      ...ctx,
+      authSubject: 'interrupt-subject',
+      requestId: 'interrupt-request',
+      sessionAuthority: 'workspace-scope' as const,
     }
-    const queuedContext = attachAcceptedWorkProvenance({
-      ...ctx, authSubject: 'queued-subject', requestId: 'queued-request', sessionAuthority: 'workspace-scope' as const,
-    }, { parentKey: queuedKey, claim: { workspaceScopeId: 'workspace-a', authSubjectId: 'queued-subject' } })
-    const interruptContext = attachAcceptedWorkProvenance({
-      ...ctx, authSubject: 'interrupt-subject', requestId: 'interrupt-request', sessionAuthority: 'workspace-scope' as const,
-    }, { parentKey: interruptKey, claim: { workspaceScopeId: 'workspace-a', authSubjectId: 'interrupt-subject' } })
 
     await service.followUp(queuedContext, 's1', { message: 'send now', clientNonce: 'queued-nonce', clientSeq: 1 })
     await service.interrupt(interruptContext, 's1', { queueAction: 'resume' })
@@ -185,33 +167,7 @@ describe('HarnessPiChatService', () => {
     const getAdapter = harness.getPiSessionAdapter as ReturnType<typeof vi.fn>
     const promotedRunContext = getAdapter.mock.calls.at(-1)?.[1] as RunContext
     expect(promotedRunContext.userId).toBe('queued-subject')
-    expect(readAcceptedWorkProvenance(promotedRunContext)?.parentKey).toEqual(queuedKey)
-    expect(readAcceptedWorkProvenance(promotedRunContext)?.parentKey).not.toEqual(interruptKey)
-    await service.dispose()
-  })
-
-  it('does not borrow interrupt provenance when a promoted queue item has none', async () => {
-    const adapter = createAdapter()
-    const harness = createHarness(adapter)
-    const service = new HarnessPiChatService({ harness, sessionStore, workdir: '/workspace' })
-    const queuedContext = {
-      ...ctx, authSubject: 'queued-subject', requestId: 'queued-request', sessionAuthority: 'workspace-scope' as const,
-    }
-    const interruptKey: AgentRequestKey = {
-      workspaceScopeId: 'workspace-a', authSubjectId: 'interrupt-subject', operation: 'session.command.execute',
-      target: { kind: 'session', ref: { agentTypeId: 'worker', sessionId: 's1' } }, requestId: 'interrupt-request',
-    }
-    const interruptContext = attachAcceptedWorkProvenance({
-      ...ctx, authSubject: 'interrupt-subject', requestId: 'interrupt-request', sessionAuthority: 'workspace-scope' as const,
-    }, { parentKey: interruptKey, claim: { workspaceScopeId: 'workspace-a', authSubjectId: 'interrupt-subject' } })
-
-    await service.followUp(queuedContext, 's1', { message: 'plain send now', clientNonce: 'plain-nonce', clientSeq: 1 })
-    await service.interrupt(interruptContext, 's1', { queueAction: 'resume' })
-
-    const getAdapter = harness.getPiSessionAdapter as ReturnType<typeof vi.fn>
-    const promotedRunContext = getAdapter.mock.calls.at(-1)?.[1] as RunContext
-    expect(promotedRunContext.userId).toBe('queued-subject')
-    expect(readAcceptedWorkProvenance(promotedRunContext)).toBeUndefined()
+    expect(promotedRunContext.requestId).toBe('queued-request')
     await service.dispose()
   })
 

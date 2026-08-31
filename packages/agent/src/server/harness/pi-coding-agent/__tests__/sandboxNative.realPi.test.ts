@@ -18,7 +18,6 @@ import { ErrorCode } from '../../../../shared/error-codes'
 import type { Sandbox, Workspace } from '../../../../shared/index'
 import type { AgentHostRuntime } from '../../../agent-host/createAgentHost'
 import type { AgentRequestKey } from '../../../agent-host/types'
-import { attachAcceptedWorkProvenance } from '../../../agent-host/acceptedWork'
 import { SqliteAgentRequestLedger } from '../../../agent-host/sqliteRequestLedger'
 import { SandboxLeaseService } from '../../../sandbox/leases/sandboxLease'
 import { fakeDisposableProvider } from '../../../sandbox/leases/__tests__/fakeDisposableProvider'
@@ -292,21 +291,19 @@ describe('native sandbox tools through real Pi', () => {
       noTools: 'builtin', customTools: tools as ToolDefinition[], resourceLoader: resources() as any,
       sessionManager: SessionManager.inMemory(process.cwd()), thinkingLevel: 'off',
     })
-    const parentKey: AgentRequestKey = {
-      workspaceScopeId: 'workspace-a', authSubjectId: 'subject-a', operation: 'session.prompt',
-      target: { kind: 'session', ref: { agentTypeId: 'worker', sessionId: 'session-a' } }, requestId: 'parent-a',
+    const ctx: RunContext = {
+      abortSignal: new AbortController().signal,
+      workdir: '/workspace',
+      workspaceId: 'workspace-a',
+      requestId: 'parent-a',
     }
-    const ctx = attachAcceptedWorkProvenance({
-      abortSignal: new AbortController().signal, workdir: '/workspace', workspaceId: 'workspace-a', requestId: 'parent-a',
-    }, { parentKey, claim: { workspaceScopeId: 'workspace-a', authSubjectId: 'subject-a' } })
 
     try {
       await runContextStorage.run(ctx, async () => await session.prompt('verify remotely'))
       expect(providerCreate).toHaveBeenCalledOnce()
       expect(remote.exec).toHaveBeenCalledWith('git rev-parse HEAD', expect.objectContaining({ cwd: '/workspace' }))
       expect(remote.dispose).toHaveBeenCalledOnce()
-      expect(admitted).toHaveLength(2)
-      expect(admitted.map((key) => key.operation)).toEqual(['session.tool.external-effect', 'session.tool.external-effect'])
+      expect(admitted).toHaveLength(0)
     } finally {
       session.dispose()
       await composition.dispose()

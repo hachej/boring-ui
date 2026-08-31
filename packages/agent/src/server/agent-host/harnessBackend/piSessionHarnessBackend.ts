@@ -8,10 +8,6 @@ import type { Workspace } from '../../../shared/workspace'
 import type { PiChatEvent } from '../../../shared/chat'
 import type { EventStreamStore } from '../../events/eventStreamStore'
 import type { AgentMeteringSink } from '../../pi-chat/metering'
-import {
-  attachAcceptedWorkProvenance,
-  readAcceptedWorkProvenance,
-} from '../acceptedWork'
 import type {
   AgentHarnessBackend,
   HarnessAgentScope,
@@ -23,15 +19,13 @@ function toPiSessionRequestContext(
   target: HarnessSessionAddress | HarnessAgentScope,
   ctx: HarnessRequestContext,
 ): PiSessionRequestContext {
-  const value: PiSessionRequestContext = {
+  return {
     workspaceId: target.workspaceScopeId,
     storageScope: target.workspaceScopeId,
     authSubject: ctx.authSubjectId,
     sessionAuthority: 'workspace-scope',
     requestId: ctx.requestId,
   }
-  const provenance = readAcceptedWorkProvenance(ctx)
-  return provenance ? attachAcceptedWorkProvenance(value, provenance) : value
 }
 
 function rethrowSnapshotServiceError(error: unknown): never {

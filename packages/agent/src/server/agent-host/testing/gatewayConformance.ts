@@ -121,7 +121,6 @@ export function gatewayConformance(options: GatewayConformanceOptions): void {
         'AGENT_REQUEST_CONFLICT',
         'AGENT_REQUEST_IN_PROGRESS',
         'AGENT_REQUEST_OUTCOME_UNKNOWN',
-        'AGENT_ACCEPTED_WORK_UNAVAILABLE',
         'AGENT_RUNTIME_RESTART_REQUIRED',
         'AGENT_COMMAND_INVALID_STATE',
         'AGENT_SHARED_ENVIRONMENT_UNAVAILABLE',

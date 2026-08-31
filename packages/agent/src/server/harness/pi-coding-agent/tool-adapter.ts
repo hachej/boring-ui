@@ -3,10 +3,6 @@ import type { RunContext } from "../../../shared/harness.js";
 import type { AgentTool, ToolResult } from "../../../shared/tool.js";
 import { noopTelemetry, safeCapture, type TelemetrySink } from "../../../shared/telemetry.js";
 import { ErrorCode } from "../../../shared/error-codes.js";
-import {
-  acceptedExternalEffectExecutor,
-  acceptedWorkForRunContext,
-} from "../../agent-host/acceptedWork.js";
 
 const BORING_TOOL_ERROR_MARKER = '__boringToolError'
 
@@ -72,13 +68,7 @@ export function adaptToolForPi(tool: AgentTool, sessionId?: string, telemetry: T
           workspaceId: runContext?.workspaceId,
           requestId: runContext?.requestId,
         };
-        const executeAccepted = acceptedExternalEffectExecutor(tool, params as Record<string, unknown>);
-        const result = executeAccepted
-          ? await executeAccepted(params as Record<string, unknown>, publicContext, {
-              provenance: acceptedWorkForRunContext(runContext),
-              toolCallId,
-            })
-          : await tool.execute(params as Record<string, unknown>, publicContext);
+        const result = await tool.execute(params as Record<string, unknown>, publicContext);
         safeCapture(telemetry, {
           name: result.isError ? 'agent.tool.failed' : 'agent.tool.completed',
           properties: toolTelemetryProperties(

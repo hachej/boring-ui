@@ -7,7 +7,6 @@ import {
 } from '../../shared/index'
 import { canonicalDigest } from './canonical'
 import type { AgentHostRuntime } from './createAgentHost'
-import type { AcceptedWorkProvenance } from './acceptedWork'
 import type {
   AgentRequestFailure,
   AgentRequestKey,
@@ -25,7 +24,7 @@ export interface RunAcceptedEffectOptions {
   readonly claim: VerifiedAgentScopeClaim
   readonly key: AgentRequestKey
   readonly payload: JsonValue
-  readonly action: (provenance: AcceptedWorkProvenance) => Promise<JsonValue>
+  readonly action: () => Promise<JsonValue>
   readonly duplicateReceipt?: boolean
   readonly serialize?: EffectSerializer
   readonly guard?: () => Promise<AgentGatewayErrorDTO | undefined>
@@ -192,7 +191,7 @@ export async function runAcceptedEffect(options: RunAcceptedEffectOptions): Prom
         await runtime.ledger.beginEffect(key)
         let receipt: JsonValue
         try {
-          receipt = await action({ parentKey: key, claim })
+          receipt = await action()
         } catch (error) {
           const safeFailure = classifySafeActionFailure?.(error)
           if (safeFailure) {

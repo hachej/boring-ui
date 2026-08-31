@@ -251,7 +251,6 @@ export async function buildAgentComposition(
     ...standardTools,
     ...(sandboxCapability
       ? [createSandboxManagementTool({
-          runtime: input.hostRuntime,
           leases: sandboxCapability.leases,
           workspaceScopeId: input.workspaceScopeId,
           agentTypeId: input.agent.agentTypeId,

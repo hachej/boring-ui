@@ -289,7 +289,6 @@ describe('AgentRequestLedger exact state machine (process-lifetime Level B fake)
       'session.stop',
       'session.queue.clear',
       'session.command.execute',
-      'session.tool.external-effect',
     ] as const) {
       await expect(ledger.prepare(requestKey(effect, agentTarget, { requestId: effect }), 'digest')).rejects.toThrow('effect/target mismatch')
       await expect(ledger.prepare(requestKey(effect, sessionTarget, { requestId: effect }), 'digest')).resolves.toMatchObject({ record: { state: 'pending-admission' } })

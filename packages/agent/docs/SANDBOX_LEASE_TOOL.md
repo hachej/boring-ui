@@ -74,13 +74,22 @@ tools inherit neither the primary runtime environment, host storage root,
 filesystem bindings, nor secrets. `sandbox` plus a named `filesystem` is
 rejected; `filesystem: "user"` means the leased user workspace.
 
-## Lifecycle and accepted work
+## Lifecycle and interim tool execution
 
-`sandbox.create` and `sandbox.release` are external effects. They run through
-the AgentHost accepted-work ledger shipped in this feature. Completed requests
-replay their receipts; outcome-unknown requests never
-reinvoke the model-requested effect. `sandbox.list` and `sandbox.status` are
-observations and execute without accepted-work provenance.
+All four operations use one ordinary `AgentTool`. `sandbox.create` and
+`sandbox.release` call the lease service directly; `sandbox.list` and
+`sandbox.status` are observations over that same service. This delivery does
+not introduce a private nested-effect protocol ahead of the durable tool
+execution work in `docs/plans/durable-streams-p1a-plan.md` P1-A3.
+
+The current Agent recovery contract never automatically resumes an interrupted
+model turn. Provider creation still uses a host-minted deterministic request ID
+and reconciles ambiguous Vercel creation before separately keyed cleanup.
+However, the process-local lease registry does not durably deduplicate a
+manually repeated tool call after its result was lost. Repeating `create` is a
+new request and may create another bounded lease; quotas, TTL, owner cleanup,
+and provider cleanup remain the interim containment. While the process remains
+alive, `sandbox.list` exposes successfully published owned leases.
 
 Operational tools pin the pair through `withPair`. Release, expiry, owner-end,
 and host shutdown atomically enter draining, reject new pins, wait a bounded
@@ -108,9 +117,9 @@ The service-owned unref'ed timer reaps expired and cleanup-pending leases withou
 overlapping ticks. Every attempt is routed through the closed internal
 registration and emits redacted append-only reconciliation telemetry containing
 the registration-key digest, attempt count, reason, outcome, and stable failure
-code. Retrying this qualified idempotent cleanup never rewrites an
-outcome-unknown external-effect receipt. Host shutdown clears the timer and
-awaits bounded service disposal. Creation rechecks cancellation and closure
+code. Retrying this qualified idempotent cleanup does not replay a model-requested
+lifecycle operation. Host shutdown clears the timer and awaits bounded service
+disposal. Creation rechecks cancellation and closure
 after provider creation and health checks; failed unpublished-pair compensation
 is retained as cleanup-pending maintenance.
 
@@ -135,8 +144,10 @@ The command emits only redacted digests and a bounded boolean/timing receipt.
   remote-worker/runsc, direct, and bwrap disposable profiles are excluded.
 - Only canonical `bash`, file tools, and enabled `upload_file` are targetable.
 - Plugin, MCP, UI, custom tools, and `execute_isolated_code` cannot resolve leases.
-- The registry is process-local. Broad multi-host automation still requires a
-  durable lease registry and reconciler.
+- The registry is process-local. Tool-call receipts are not replayable across
+  process restart, and a manually repeated `create` may allocate another lease.
+  Durable nested tool-effect admission/settlement and a durable lease registry
+  remain future work.
 - Trusted main CI cache publication, cache registry/retention, affected-package
   planning, brokered credentials, and Seneca Worker-only policy remain separate
   slices.
