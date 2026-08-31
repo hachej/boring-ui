@@ -73,6 +73,40 @@ function mockWorkspaceStore(): WorkspaceStore {
       ws.deletedAt = new Date().toISOString()
       return { removed: true }
     },
+    deleteAndRecreateDefaultIfEmpty: async (
+      id: string,
+      actingUserId: string,
+      recreate: { name: string; defaultAgentTypeId: string },
+    ) => {
+      storeCalls.push(`deleteAndRecreateDefaultIfEmpty:${id}`)
+      const ws = workspaces.get(id)
+      if (!ws || ws.deletedAt) return { removed: false as const, code: ERROR_CODES.NOT_FOUND, recreated: null }
+      ws.deletedAt = new Date().toISOString()
+
+      const remaining = [...workspaces.values()].filter(
+        (w) => !w.deletedAt && w.appId === ws.appId && members.get(w.id)?.has(actingUserId),
+      )
+      if (remaining.length > 0) return { removed: true as const, recreated: null }
+
+      storeCalls.push('create')
+      const newId = `ws-${nextWsId++}`
+      const recreated: Workspace = {
+        id: newId,
+        appId: ws.appId,
+        workspaceTypeId: 'default',
+        name: recreate.name,
+        createdBy: actingUserId,
+        createdAt: new Date().toISOString(),
+        deletedAt: null,
+        isDefault: true,
+        defaultAgentTypeId: recreate.defaultAgentTypeId,
+      }
+      workspaces.set(newId, recreated)
+      const wsMembers = members.get(newId) ?? new Map()
+      wsMembers.set(actingUserId, 'owner')
+      members.set(newId, wsMembers)
+      return { removed: true as const, recreated }
+    },
     getMemberRole: async (wsId: string, userId: string) => {
       storeCalls.push(`role:${wsId}:${userId}`)
       return members.get(wsId)?.get(userId) ?? null
@@ -393,6 +427,67 @@ describe('DELETE /api/v1/workspaces/:id', () => {
     expect(res.json().code).toBe(ERROR_CODES.FORBIDDEN)
     expect(workspaces.get(ws.id)?.deletedAt).toBeNull()
   })
+
+  // Mirrors the mock store's own list() filter: what the deleting user would
+  // actually see from GET /api/v1/workspaces (the user-visible invariant),
+  // not an internal createdBy-only slice.
+  function activeForUser(userId: string) {
+    return [...workspaces.values()].filter(
+      (w) => !w.deletedAt && w.appId === APP_ID && members.get(w.id)?.has(userId),
+    )
+  }
+
+  it('#1463: deleting the only (default) workspace recreates a fresh default in the same operation, leaving exactly one active workspace', async () => {
+    const ws = seedWorkspaceWithMembers('Only Default', OWNER_ID)
+    workspaces.set(ws.id, { ...ws, isDefault: true })
+
+    const res = await inject('DELETE', `/api/v1/workspaces/${ws.id}`, OWNER_ID)
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ deleted: true })
+
+    // The original is gone, but the user is never left with zero: a
+    // replacement default was created transactionally, in this same request.
+    const active = activeForUser(OWNER_ID)
+    expect(active).toHaveLength(1)
+    expect(active[0].id).not.toBe(ws.id)
+    expect(active[0].isDefault).toBe(true)
+    expect(active[0].createdBy).toBe(OWNER_ID)
+  })
+
+  it('#1463: does not recreate a default when the deleting owner still has other active workspaces', async () => {
+    seedWorkspaceWithMembers('Kept', OWNER_ID)
+    const ws = seedWorkspaceWithMembers('Delete', OWNER_ID)
+    storeCalls.length = 0
+
+    const res = await inject('DELETE', `/api/v1/workspaces/${ws.id}`, OWNER_ID)
+    expect(res.statusCode).toBe(200)
+    expect(storeCalls.filter((c) => c === 'create')).toHaveLength(0)
+    expect(activeForUser(OWNER_ID)).toHaveLength(1)
+  })
+
+  it('#1463: a non-creator owner (promoted via invite, Bob-style) deleting the last shared workspace becomes the creator of the replacement — the original creator is unaffected', async () => {
+    // Alice creates the workspace; Bob is later promoted to owner (mirrors
+    // e2e/v7-platform.test.ts's "Bob deletes workspace" flow) and is the one
+    // who deletes it while it's the only workspace either of them has.
+    const ALICE_ID = 'u-alice-000'
+    const ws = seedWorkspaceWithMembers('Shared', ALICE_ID, { [OWNER_ID]: 'owner' })
+
+    const res = await inject('DELETE', `/api/v1/workspaces/${ws.id}`, OWNER_ID)
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ deleted: true })
+
+    // Bob (the acting/deleting user) ends up owning the replacement — not Alice.
+    const bobActive = activeForUser(OWNER_ID)
+    expect(bobActive).toHaveLength(1)
+    expect(bobActive[0].id).not.toBe(ws.id)
+    expect(bobActive[0].createdBy).toBe(OWNER_ID)
+    expect(members.get(bobActive[0].id)?.get(OWNER_ID)).toBe('owner')
+
+    // Alice loses access to the deleted shared workspace and gets nothing
+    // automatically in its place — she is not a member of Bob's replacement.
+    expect(activeForUser(ALICE_ID)).toHaveLength(0)
+    expect(members.get(bobActive[0].id)?.has(ALICE_ID)).toBe(false)
+  })
 })
 
 describe('request-scoped workspace authority', () => {
@@ -537,6 +632,32 @@ describe('Provisioner integration', () => {
         if (!ws || ws.deletedAt) return { removed: false, code: ERROR_CODES.NOT_FOUND }
         ws.deletedAt = new Date().toISOString()
         return { removed: true }
+      },
+      deleteAndRecreateDefaultIfEmpty: async (
+        id: string,
+        actingUserId: string,
+        recreate: { name: string; defaultAgentTypeId: string },
+      ) => {
+        const ws = pWorkspaces.get(id)
+        if (!ws || ws.deletedAt) return { removed: false as const, code: ERROR_CODES.NOT_FOUND, recreated: null }
+        ws.deletedAt = new Date().toISOString()
+
+        const remaining = [...pWorkspaces.values()].filter(
+          (w) => !w.deletedAt && w.appId === ws.appId && pMembers.get(w.id)?.has(actingUserId),
+        )
+        if (remaining.length > 0) return { removed: true as const, recreated: null }
+
+        const newId = `ws-${pNextWsId++}`
+        const recreated: Workspace = {
+          id: newId, appId: ws.appId, workspaceTypeId: 'default', name: recreate.name, createdBy: actingUserId,
+          createdAt: new Date().toISOString(), deletedAt: null,
+          isDefault: true, defaultAgentTypeId: recreate.defaultAgentTypeId,
+        }
+        pWorkspaces.set(newId, recreated)
+        const wsMembers = pMembers.get(newId) ?? new Map()
+        wsMembers.set(actingUserId, 'owner')
+        pMembers.set(newId, wsMembers)
+        return { removed: true as const, recreated }
       },
       getMemberRole: async (wsId: string, userId: string) => {
         return pMembers.get(wsId)?.get(userId) ?? null
@@ -763,6 +884,94 @@ describe('Provisioner integration', () => {
       expect(second.statusCode).toBe(200)
       expect(second.json()).toEqual({ deleted: true })
       expect(pWorkspaces.get(ws.id)?.deletedAt).toBeTruthy()
+    })
+
+    it('#1463: deleting the only workspace provisions a fresh default in the same operation', async () => {
+      const ws = provSeedWorkspace('OnlyOne', OWNER_ID, { isDefault: true })
+
+      const res = await provInject('DELETE', `/api/v1/workspaces/${ws.id}`, OWNER_ID)
+      expect(res.statusCode).toBe(200)
+      expect(res.json()).toEqual({ deleted: true })
+      expect(destroyFn).toHaveBeenCalledWith(ws.id)
+      expect(pWorkspaces.get(ws.id)?.deletedAt).toBeTruthy()
+
+      const active = [...pWorkspaces.values()].filter((w) => !w.deletedAt && w.createdBy === OWNER_ID)
+      expect(active).toHaveLength(1)
+      expect(active[0].id).not.toBe(ws.id)
+      expect(active[0].isDefault).toBe(true)
+      // The replacement was provisioned too, not just inserted as a bare row.
+      expect(provisionFn).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: active[0].id }))
+    })
+
+    it('#1463: if provisioning the replacement default fails, DELETE reports it honestly (500 provision_failed) instead of a false "deleted: true" — the DB layer already committed, so the account is not workspace-less', async () => {
+      provisionFn.mockRejectedValue(new Error('disk full'))
+      const ws = provSeedWorkspace('OnlyOneProvFails', OWNER_ID, { isDefault: true })
+
+      const res = await provInject('DELETE', `/api/v1/workspaces/${ws.id}`, OWNER_ID)
+
+      // Honest failure, not a silently-swallowed success.
+      expect(res.statusCode).toBe(500)
+      expect(res.json().code).toBe('provision_failed')
+
+      // But the DB side of #1463 already ran and committed atomically: the
+      // original is gone AND its replacement row exists — the account is
+      // never at zero active workspaces, it's just unprovisioned/retryable,
+      // exactly like a failed POST /api/v1/workspaces.
+      expect(pWorkspaces.get(ws.id)?.deletedAt).toBeTruthy()
+      const active = [...pWorkspaces.values()].filter((w) => !w.deletedAt && w.createdBy === OWNER_ID)
+      expect(active).toHaveLength(1)
+      expect(active[0].id).not.toBe(ws.id)
+
+      const runtime = runtimes.get(active[0].id)
+      expect(runtime?.state).toBe('error')
+      expect(runtime?.lastError).toBe('disk full')
+      expect(runtime?.lastErrorOp).toBe('provision')
+    })
+
+    it('#1463: if the DB delete+recreate fails AFTER the sandbox was already destroyed, the surviving workspace is marked recoverable via the existing retry contract — never left live-looking but silently broken', async () => {
+      const ws = provSeedWorkspace('DestroyedThenDbFails', OWNER_ID, { isDefault: true })
+
+      // Simulate a genuine post-destroy DB failure (e.g. the replacement
+      // insert failing inside deleteAndRecreateDefaultIfEmpty's transaction):
+      // patch the store method to throw for exactly this one call, then
+      // restore it. The mock never mutates pWorkspaces before throwing,
+      // mirroring a real Postgres ROLLBACK leaving the row untouched.
+      const store = provApp.workspaceStore as unknown as {
+        deleteAndRecreateDefaultIfEmpty: WorkspaceStore['deleteAndRecreateDefaultIfEmpty']
+      }
+      const original = store.deleteAndRecreateDefaultIfEmpty
+      store.deleteAndRecreateDefaultIfEmpty = async () => {
+        throw new Error('replacement insert failed')
+      }
+
+      try {
+        const res = await provInject('DELETE', `/api/v1/workspaces/${ws.id}`, OWNER_ID)
+
+        // Honest failure — not deleted, not silently fine.
+        expect(res.statusCode).toBe(500)
+        expect(res.json().deleted).toBeUndefined()
+
+        // The sandbox WAS already destroyed (irreversible, ran before the DB
+        // step) — this is exactly the dangerous case: a row that looks like
+        // an ordinary active workspace but has no working runtime under it.
+        expect(destroyFn).toHaveBeenCalledWith(ws.id)
+
+        // The DB row itself survives (rolled back / never mutated) — the
+        // account is not workspace-less.
+        expect(pWorkspaces.get(ws.id)?.deletedAt).toBeFalsy()
+
+        // It is honestly marked recoverable via the SAME contract
+        // POST /runtime/retry already accepts (state=error,
+        // lastErrorOp=provision) — proven directly against that endpoint's
+        // guard in settings.ts and exercised end-to-end in
+        // e2e/v7-platform.test.ts's "destroy-then-DB-failure" recovery case.
+        const runtime = runtimes.get(ws.id)
+        expect(runtime?.state).toBe('error')
+        expect(runtime?.lastErrorOp).toBe('provision')
+        expect(runtime?.lastError).toContain('replacement insert failed')
+      } finally {
+        store.deleteAndRecreateDefaultIfEmpty = original
+      }
     })
   })
 

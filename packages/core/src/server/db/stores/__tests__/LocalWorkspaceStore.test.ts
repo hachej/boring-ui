@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { LocalUserStore } from '../LocalUserStore'
 import { LocalWorkspaceStore } from '../LocalWorkspaceStore'
 import { ERROR_CODES, HttpError } from '../../../../shared/errors'
@@ -104,6 +104,97 @@ describe('LocalWorkspaceStore', () => {
       const result = await store.delete('nonexistent')
       expect(result.removed).toBe(false)
       expect(result.code).toBe(ERROR_CODES.NOT_FOUND)
+    })
+
+    it('#1463: create() mirrors idx_workspaces_default_per_user_app — rejects a second live default for the same (createdBy, appId)', async () => {
+      await createWorkspace('u1', 'First', 'app1', { isDefault: true })
+      await expect(createWorkspace('u1', 'Second', 'app1', { isDefault: true })).rejects.toThrow(
+        /idx_workspaces_default_per_user_app/,
+      )
+    })
+
+    it('#1463: create() allows a new live default once the old one is soft-deleted (mirrors the migration)', async () => {
+      const first = await createWorkspace('u1', 'First', 'app1', { isDefault: true })
+      await store.delete(first.id)
+      const second = await createWorkspace('u1', 'Second', 'app1', { isDefault: true })
+      expect(second.isDefault).toBe(true)
+      expect(await store.list('u1', 'app1')).toHaveLength(1)
+    })
+  })
+
+  describe('deleteAndRecreateDefaultIfEmpty', () => {
+    it('happy path: soft-deletes the only workspace and installs a replacement default with owner membership + seat', async () => {
+      const ws = await createWorkspace('u1', 'Solo', 'app1', { isDefault: true })
+
+      const result = await store.deleteAndRecreateDefaultIfEmpty(ws.id, 'u1', {
+        name: 'Default workspace',
+        defaultAgentTypeId: 'default',
+      })
+
+      expect(result.removed).toBe(true)
+      expect(result.recreated).not.toBeNull()
+      expect(result.recreated!.id).not.toBe(ws.id)
+      expect(result.recreated!.isDefault).toBe(true)
+      expect(result.recreated!.createdBy).toBe('u1')
+
+      expect(await store.get(ws.id)).toBeNull()
+      expect(await store.list('u1', 'app1')).toHaveLength(1)
+      expect(await store.getMemberRole(result.recreated!.id, 'u1')).toBe('owner')
+      expect(await store.hasAgentSeat(result.recreated!.id, 'default')).toBe(true)
+    })
+
+    it('does not recreate when the acting user still has another active workspace', async () => {
+      await createWorkspace('u1', 'Kept', 'app1')
+      const ws = await createWorkspace('u1', 'Delete Me', 'app1')
+
+      const result = await store.deleteAndRecreateDefaultIfEmpty(ws.id, 'u1', {
+        name: 'Default workspace',
+        defaultAgentTypeId: 'default',
+      })
+
+      expect(result.removed).toBe(true)
+      expect(result.recreated).toBeNull()
+      expect(await store.list('u1', 'app1')).toHaveLength(1)
+    })
+
+    it('returns NOT_FOUND for an unknown or already-deleted id', async () => {
+      const result = await store.deleteAndRecreateDefaultIfEmpty('nonexistent', 'u1', {
+        name: 'x',
+        defaultAgentTypeId: 'default',
+      })
+      expect(result).toEqual({ removed: false, code: ERROR_CODES.NOT_FOUND, recreated: null })
+    })
+
+    it('#1463 all-or-nothing: rolls back the soft-delete if the replacement create() throws', async () => {
+      const ws = await createWorkspace('u1', 'Solo', 'app1', { isDefault: true })
+
+      // Force the replacement insert to fail the same way Postgres's unique
+      // index would: seed an existing live default with the SAME id we're
+      // about to recreate isn't possible (ids are random), so instead force
+      // it via the parity guard above by pre-planting a live default for
+      // the acting user under a workspace the delete target itself is
+      // unaware of — the guard fires when create() runs inside the call.
+      const collidingId = randomUUID()
+      ;(store as unknown as { workspaces: Map<string, { id: string; appId: string; createdBy: string; isDefault: boolean; deletedAt: string | null }> })
+        .workspaces.set(collidingId, {
+          id: collidingId, appId: 'app1', createdBy: 'u1', isDefault: true, deletedAt: null,
+        })
+      // But that pre-planted workspace has no membership row, so it won't be
+      // counted as "remaining" for u1 (list() is membership-based) — the
+      // recreate WILL be attempted, and create()'s idx_workspaces_default_per_user_app
+      // guard (createdBy + appId + isDefault, independent of membership) will
+      // reject it.
+
+      await expect(
+        store.deleteAndRecreateDefaultIfEmpty(ws.id, 'u1', {
+          name: 'Replacement',
+          defaultAgentTypeId: 'default',
+        }),
+      ).rejects.toThrow(/idx_workspaces_default_per_user_app/)
+
+      // Rolled back: the original is exactly as it was, not deleted with no
+      // usable replacement.
+      expect(await store.get(ws.id)).not.toBeNull()
     })
   })
 

@@ -246,19 +246,70 @@ const workspaceRoutesPlugin: FastifyPluginAsync = async (app) => {
         }
       }
 
-      const result = await store.delete(id)
-
-      if (result.removed) {
-        request.log.info({ workspaceId: id }, 'workspace.delete.complete')
-        return { deleted: true }
+      // #1463: soft-delete + "does the acting user still have an active
+      // workspace, and if not create a replacement" run as ONE database
+      // transaction (see PostgresWorkspaceStore.deleteAndRecreateDefaultIfEmpty).
+      // If the replacement insert fails for any reason, the whole transaction
+      // rolls back — including the original soft-delete — so the DB row is
+      // left exactly as it was. But by this point `provisioner.destroy(id)`
+      // above has already irreversibly torn down the real sandbox/filesystem
+      // — that can't be part of the DB transaction and can't be undone. So a
+      // DB-layer failure here would otherwise leave a live-looking workspace
+      // row with no working runtime and no path back to one. Mark it
+      // recoverable through the SAME contract POST /runtime/retry already
+      // understands (state=error, lastErrorOp=provision) instead of leaving
+      // it silently broken — the workspace genuinely does need a fresh
+      // sandbox provisioned, exactly like a failed creation would.
+      let result: Awaited<ReturnType<typeof store.deleteAndRecreateDefaultIfEmpty>>
+      try {
+        result = await store.deleteAndRecreateDefaultIfEmpty(id, request.user!.id, {
+          name: DEFAULT_WORKSPACE_NAME,
+          defaultAgentTypeId,
+        })
+      } catch (err) {
+        if (provisioner) {
+          const message = err instanceof Error ? err.message : String(err)
+          try {
+            await store.putWorkspaceRuntime(id, {
+              state: 'error',
+              lastError: message,
+              lastErrorOp: 'provision',
+            })
+          } catch (markErr) {
+            // Even the recovery marking failed — surface it but don't let it
+            // mask the original DB error, which is what actually caused this.
+            request.log.error({ workspaceId: id, markErr }, 'workspace.delete.recovery_mark.failed')
+          }
+        }
+        request.log.error({ workspaceId: id, err }, 'workspace.delete.db_failed_after_destroy')
+        throw err
       }
 
-      throw new HttpError({
-        status: 404,
-        code: ERROR_CODES.NOT_FOUND,
-        message: 'Workspace not found',
-        requestId: request.id,
-      })
+      if (!result.removed) {
+        throw new HttpError({
+          status: 404,
+          code: ERROR_CODES.NOT_FOUND,
+          message: 'Workspace not found',
+          requestId: request.id,
+        })
+      }
+
+      request.log.info({ workspaceId: id }, 'workspace.delete.complete')
+
+      // Provisioning (filesystem/sandbox) can't join the DB transaction above,
+      // so it's driven here, after the DB state has durably committed. On
+      // failure this throws PROVISION_FAILED (same contract as POST
+      // /api/v1/workspaces): the replacement workspace row already exists —
+      // the account is not workspace-less — and the runtime is left in
+      // 'error' state, retryable via POST /runtime/retry, exactly like a
+      // failed creation. We do NOT swallow this: silently returning
+      // `deleted: true` over an unprovisioned, error-state replacement would
+      // misreport what actually happened.
+      if (result.recreated) {
+        await provisionWorkspace(result.recreated, result.recreated.createdBy, request)
+      }
+
+      return { deleted: true }
     },
   )
 }

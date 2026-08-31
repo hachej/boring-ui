@@ -386,6 +386,11 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
     return rows.length > 0 ? toWorkspace(rows[0]) : null
   }
 
+  // Plain, unconditional soft-delete primitive — used directly by callers
+  // (tests, admin tooling) that don't need the #1463 "never zero active
+  // workspaces" guarantee. The workspace-delete route uses
+  // deleteAndRecreateDefaultIfEmpty() below instead, which wraps the
+  // equivalent soft-delete in one atomic transaction with the replacement.
   async delete(
     id: string,
   ): Promise<{
@@ -401,6 +406,114 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
       .where(eq(workspaces.id, id))
 
     return { removed: true }
+  }
+
+  // #1463: see the interface doc on WorkspaceStore.deleteAndRecreateDefaultIfEmpty.
+  // Everything here runs in ONE transaction: the soft-delete, the "does the
+  // acting user still have an active workspace" lock+count, and (if not) the
+  // replacement workspace + owner member + initial Agent seat inserts. If any
+  // insert fails (including a unique-constraint collision on the replacement
+  // default), Postgres rolls back the whole transaction — the original
+  // workspace is NOT deleted. The route surfaces that as a 500 instead of a
+  // false "deleted: true", so the account can never end up committed at zero
+  // active workspaces.
+  async deleteAndRecreateDefaultIfEmpty(
+    id: string,
+    actingUserId: string,
+    recreate: {
+      name: string
+      defaultAgentTypeId: string
+      initialAgentSeatSource?: WorkspaceAgentSeatSource
+      enrolledByUserId?: string
+    },
+  ): Promise<{
+    removed: boolean
+    code?: typeof ERROR_CODES.NOT_FOUND
+    recreated: Workspace | null
+  }> {
+    return this.db.transaction(async (tx) => {
+      const wsRows = await tx
+        .select()
+        .from(workspaces)
+        .where(and(eq(workspaces.id, id), isNull(workspaces.deletedAt)))
+        .limit(1)
+      const ws = wsRows[0]
+      if (!ws) return { removed: false, code: ERROR_CODES.NOT_FOUND, recreated: null }
+
+      // Lock every active workspace the acting user is a member of in this
+      // app — in a stable order (ORDER BY id), and BEFORE mutating anything —
+      // so two concurrent deletes for the same user's workspace set serialize
+      // on this lock instead of deadlocking on each other's delete target.
+      // (An earlier version locked this set AFTER soft-deleting the target,
+      // which meant two concurrent deletes of two different workspaces
+      // belonging to the same user each held their own target row locked via
+      // UPDATE and then blocked wanting the other's — a real deadlock. Locking
+      // the whole ordered set first means whichever transaction gets there
+      // first acquires every row it needs before the other can start.)
+      await tx.execute(sql`
+        SELECT w.id
+        FROM workspaces w
+        JOIN workspace_members m ON m.workspace_id = w.id
+        WHERE m.user_id = ${actingUserId}
+          AND w.app_id = ${ws.appId}
+          AND w.deleted_at IS NULL
+        ORDER BY w.id
+        FOR UPDATE OF w
+      `)
+
+      // Re-check under lock: another transaction we were blocked behind may
+      // have already deleted this exact workspace.
+      const stillActive = await tx
+        .select({ id: workspaces.id })
+        .from(workspaces)
+        .where(and(eq(workspaces.id, id), isNull(workspaces.deletedAt)))
+        .limit(1)
+      if (stillActive.length === 0) return { removed: false, code: ERROR_CODES.NOT_FOUND, recreated: null }
+
+      await tx
+        .update(workspaces)
+        .set({ deletedAt: new Date() })
+        .where(eq(workspaces.id, id))
+
+      const remaining = await tx
+        .select({ id: workspaces.id })
+        .from(workspaces)
+        .innerJoin(workspaceMembers, eq(workspaceMembers.workspaceId, workspaces.id))
+        .where(and(
+          eq(workspaceMembers.userId, actingUserId),
+          eq(workspaces.appId, ws.appId),
+          isNull(workspaces.deletedAt),
+        ))
+
+      let recreated: Workspace | null = null
+      if (remaining.length === 0) {
+        const parsedAgentTypeId = parseRequiredDefaultAgentTypeId(recreate.defaultAgentTypeId)
+        const [row] = await tx
+          .insert(workspaces)
+          .values({
+            appId: ws.appId,
+            name: recreate.name,
+            createdBy: actingUserId,
+            isDefault: true,
+            defaultAgentTypeId: parsedAgentTypeId,
+          })
+          .returning()
+        await tx.insert(workspaceMembers).values({
+          workspaceId: row.id,
+          userId: actingUserId,
+          role: 'owner',
+        })
+        await tx.insert(workspaceAgentSeats).values({
+          workspaceId: row.id,
+          agentTypeId: parsedAgentTypeId,
+          source: recreate.initialAgentSeatSource ?? 'generic-default',
+          enrolledByUserId: recreate.enrolledByUserId ?? actingUserId,
+        })
+        recreated = toWorkspace(row)
+      }
+
+      return { removed: true, recreated }
+    })
   }
 
   // ---------------------------------------------------------------------------

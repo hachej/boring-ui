@@ -51,6 +51,18 @@ export class LocalWorkspaceStore implements WorkspaceStore {
       return toWorkspace(existing)
     }
 
+    // Mirror idx_workspaces_default_per_user_app (#1463): at most one active
+    // default per (createdBy, appId). Lets Local/e2e-backed tests catch the
+    // same duplicate-default collisions Postgres's partial unique index does,
+    // instead of silently allowing what production would reject.
+    if (opts?.isDefault) {
+      const collision = [...this.workspaces.values()].some((w) =>
+        !w.deletedAt && w.createdBy === userId && w.appId === appId && w.isDefault)
+      if (collision) {
+        throw new Error('duplicate key value violates unique constraint "idx_workspaces_default_per_user_app"')
+      }
+    }
+
     const now = new Date().toISOString()
     const ws: Workspace = {
       id,
@@ -223,12 +235,64 @@ export class LocalWorkspaceStore implements WorkspaceStore {
     return toWorkspace(updated)
   }
 
+  // Plain, unconditional soft-delete primitive — see the matching comment on
+  // PostgresWorkspaceStore.delete(). Callers that need the #1463 guarantee
+  // use deleteAndRecreateDefaultIfEmpty() below.
   async delete(id: string): Promise<{ removed: boolean; code?: typeof ERROR_CODES.NOT_FOUND }> {
     const ws = this.workspaces.get(id)
     if (!ws || ws.deletedAt) return { removed: false, code: ERROR_CODES.NOT_FOUND }
     ws.deletedAt = new Date().toISOString()
     this.workspaces.set(id, ws)
     return { removed: true }
+  }
+
+  // #1463: single-process mirror of PostgresWorkspaceStore's transactional
+  // version — see the interface doc on WorkspaceStore.deleteAndRecreateDefaultIfEmpty.
+  // LocalWorkspaceStore has no real concurrency, but it still honors the
+  // all-or-nothing contract: if the replacement create() throws (for example
+  // the idx_workspaces_default_per_user_app mirror above rejecting a
+  // duplicate live default), the soft-delete is rolled back in-memory rather
+  // than left committed with no replacement.
+  async deleteAndRecreateDefaultIfEmpty(
+    id: string,
+    actingUserId: string,
+    recreate: {
+      name: string
+      defaultAgentTypeId: string
+      initialAgentSeatSource?: WorkspaceAgentSeatSource
+      enrolledByUserId?: string
+    },
+  ): Promise<{
+    removed: boolean
+    code?: typeof ERROR_CODES.NOT_FOUND
+    recreated: Workspace | null
+  }> {
+    const ws = this.workspaces.get(id)
+    if (!ws || ws.deletedAt) return { removed: false, code: ERROR_CODES.NOT_FOUND, recreated: null }
+
+    ws.deletedAt = new Date().toISOString()
+    this.workspaces.set(id, ws)
+
+    const remaining = [...this.workspaces.values()].filter((w) =>
+      !w.deletedAt && w.appId === ws.appId && this.members.has(`${w.id}:${actingUserId}`))
+
+    if (remaining.length > 0) return { removed: true, recreated: null }
+
+    try {
+      const recreated = await this.create(actingUserId, recreate.name, ws.appId, {
+        isDefault: true,
+        defaultAgentTypeId: recreate.defaultAgentTypeId,
+        initialAgentSeatSource: recreate.initialAgentSeatSource,
+        enrolledByUserId: recreate.enrolledByUserId,
+      })
+      return { removed: true, recreated }
+    } catch (err) {
+      // Roll back the soft-delete: never leave a committed delete with no
+      // replacement when the replacement insert itself failed.
+      ws.deletedAt = null
+      this.workspaces.set(id, ws)
+      throw err
+    }
   }
 
   async getWorkspacesWhereSoleOwner(userId: string): Promise<Workspace[]> {

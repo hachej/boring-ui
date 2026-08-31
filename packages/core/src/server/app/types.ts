@@ -87,6 +87,31 @@ export interface WorkspaceStore {
   restore(id: string): Promise<Workspace | null>
   update(id: string, updates: Partial<Pick<Workspace, 'name'>>): Promise<Workspace | null>
   delete(id: string): Promise<{ removed: boolean; code?: typeof ERROR_CODES.NOT_FOUND }>
+  /**
+   * #1463: atomically soft-deletes `id` and, only if that leaves `actingUserId`
+   * with zero active workspaces in the deleted workspace's app, creates a
+   * replacement default (workspace + owner member + initial Agent seat) in the
+   * SAME database transaction. Any failure — including a unique-constraint
+   * collision on the replacement insert — rolls back the whole operation, so
+   * the original workspace is never left deleted without its replacement:
+   * the account can never end up committed at zero active workspaces.
+   * Provisioning (filesystem/sandbox) is NOT part of this transaction and
+   * must be driven by the caller against the returned `recreated` workspace.
+   */
+  deleteAndRecreateDefaultIfEmpty(
+    id: string,
+    actingUserId: string,
+    recreate: {
+      name: string
+      defaultAgentTypeId: string
+      initialAgentSeatSource?: WorkspaceAgentSeatSource
+      enrolledByUserId?: string
+    },
+  ): Promise<{
+    removed: boolean
+    code?: typeof ERROR_CODES.NOT_FOUND
+    recreated: Workspace | null
+  }>
   getWorkspacesWhereSoleOwner(userId: string): Promise<Workspace[]>
   isMember(workspaceId: string, userId: string): Promise<boolean>
   getMemberRole(workspaceId: string, userId: string): Promise<MemberRole | null>
