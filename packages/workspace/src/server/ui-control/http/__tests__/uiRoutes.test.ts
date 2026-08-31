@@ -440,7 +440,7 @@ describe("uiRoutes", () => {
 
     const response = await app.inject({
       method: "POST",
-      url: "/api/v1/ui/url-pane/runtime-preview",
+      url: "/api/v1/ui/runtime-web-view/preview",
       payload: { port: 8_000, path: "/demo" },
     })
     expect(response.statusCode).toBe(200)
@@ -457,10 +457,24 @@ describe("uiRoutes", () => {
 
     const invalid = await app.inject({
       method: "POST",
-      url: "/api/v1/ui/url-pane/runtime-preview",
+      url: "/api/v1/ui/runtime-web-view/preview",
       payload: { port: 80 },
     })
     expect(invalid.statusCode).toBe(400)
+
+    const injectedUpstream = await app.inject({
+      method: "POST",
+      url: "/api/v1/ui/runtime-web-view/preview",
+      payload: { port: 8_000, upstream: "https://attacker.test" },
+    })
+    expect(injectedUpstream.statusCode).toBe(400)
+
+    const legacy = await app.inject({
+      method: "POST",
+      url: "/api/v1/ui/url-pane/runtime-preview",
+      payload: { port: 8_000 },
+    })
+    expect(legacy.statusCode).toBe(200)
     await app.close()
   })
 })
