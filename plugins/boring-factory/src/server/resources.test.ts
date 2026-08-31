@@ -26,34 +26,56 @@ async function expectExactFile(source: string, packaged: string): Promise<void> 
   expect(packagedBytes).toEqual(sourceBytes)
 }
 
-function referencedMarkdownPaths(relativePath: string, content: string): string[] {
-  const references = Array.from(
-    content.matchAll(/\[[^\]]*\]\(([^)#]+\.md)(?:#[^)]+)?\)/g),
-  ).filter((match) => {
-    if (match[1]!.includes('://')) return false
-    const context = content.slice(Math.max(0, (match.index ?? 0) - 160), match.index)
-    return /\b(?:read|follow|required|requires|per|governed|together|guidance)\b/i.test(context)
-  }).map((match) => match[1]!)
+const HOST_OWNED_MARKDOWN_REFERENCES = new Set([
+  '.agents/factory/README.md -> AGENTS.md',
+  '.agents/factory/README.md -> docs/factory/TODO.md',
+  '.agents/factory/README.md -> docs/factory/VISION.md',
+  '.agents/factory/README.md -> issue-plans.md',
+  '.agents/factory/tools.md -> .agents/skills/owner-gate/SKILL.md',
+  '.agents/factory/tools.md -> docs/factory/VISION.md',
+  '.agents/skill-references/show-me/humanlayer-show-me/SOURCE.md -> plugins/show-me/skills/show-me/SKILL.md',
+  '.agents/skills/present-pr/SKILL.md -> packages/workspace/docs/URL_PANE.md',
+  'docs/procedures/MODEL-CARD.md -> documentation-refresh-tasks.md',
+  'docs/procedures/boring-loop.md -> .agents/factory/README.md',
+  'docs/procedures/visual-review-doc.md -> .agents/skills/ui/visual-report-bundle.md',
+])
 
-  if (relativePath === 'SKILL.md') {
-    references.push(...Array.from(
-      content.matchAll(/`((?:\.{1,2}\/|docs\/|\.agents\/)[A-Za-z0-9_./-]+\.md)`/g),
+function referencedMarkdownPaths(content: string): string[] {
+  const references = [
+    ...Array.from(
+      content.matchAll(/\[[^\]]*\]\(([^)#]+\.md)(?:#[^)]+)?\)/g),
       (match) => match[1]!,
-    ))
-  }
-  if (relativePath.endsWith('/index.md')) {
-    references.push(...Array.from(
-      content.matchAll(/\*\*Read:\*\* `([^`]+\.md)`/g),
+    ),
+    ...Array.from(
+      content.matchAll(/`((?:\.{1,2}\/|[A-Za-z0-9_.-]+\/)*[A-Za-z0-9_.-]+\.md)`/g),
       (match) => match[1]!,
-    ))
-  }
-  if (relativePath.startsWith('docs/procedures/')) {
-    references.push(...Array.from(
-      content.matchAll(/`((?:docs\/|\.agents\/)[A-Za-z0-9_./-]+\.md)`/g),
-      (match) => match[1]!,
-    ))
-  }
+    ),
+  ].filter((reference) => !reference.includes('://'))
   return [...new Set(references)]
+}
+
+function resolvePackagedReference(
+  skillPrefix: string,
+  packagedPath: string,
+  skillRelativePath: string,
+  reference: string,
+): string {
+  if (/^(?:docs|\.agents|packages|plugins)\//.test(reference) || reference === 'AGENTS.md') {
+    return path.posix.join(skillPrefix, reference)
+  }
+  if (
+    (skillRelativePath === 'SKILL.md' || skillRelativePath === '.agents/factory/README.md')
+    && !reference.includes('/')
+  ) {
+    return path.posix.join(skillPrefix, 'docs/procedures', reference)
+  }
+  if (skillRelativePath === 'docs/procedures/session-handoff.md' && reference === 'CONTRACT.md') {
+    return path.posix.join(skillPrefix, '.agents/skills/handoff/CONTRACT.md')
+  }
+  if (skillRelativePath.startsWith('docs/procedures/') && reference.startsWith('procedures/')) {
+    return path.posix.join(skillPrefix, 'docs', reference)
+  }
+  return path.posix.normalize(path.posix.join(path.posix.dirname(packagedPath), reference))
 }
 
 describe('Boring Factory resource artifact', () => {
@@ -96,6 +118,7 @@ describe('Boring Factory resource artifact', () => {
     const resources = resolveBoringFactoryResources()
     const packagedFiles = new Set(Object.keys(resources.manifest.files))
 
+    const unresolved: string[] = []
     for (const skillName of ['plan', 'exec']) {
       const skillPrefix = `skills/${skillName}/`
       const markdownFiles = [...packagedFiles]
@@ -104,18 +127,20 @@ describe('Boring Factory resource artifact', () => {
       for (const packagedPath of markdownFiles) {
         const skillRelativePath = packagedPath.slice(skillPrefix.length)
         const content = await readFile(path.join(resources.resourceRoot, packagedPath), 'utf8')
-        for (const reference of referencedMarkdownPaths(skillRelativePath, content)) {
-          const target = reference.startsWith('docs/') || reference.startsWith('.agents/')
-            ? path.posix.join(skillPrefix, reference)
-            : path.posix.normalize(path.posix.join(path.posix.dirname(packagedPath), reference))
-          expect(
-            target.startsWith('skills/') || target.startsWith('skill-references/'),
-            `${packagedPath} reference escapes the packaged runtime root: ${reference}`,
-          ).toBe(true)
-          expect(packagedFiles.has(target), `${packagedPath} -> ${reference} (${target})`).toBe(true)
+        for (const reference of referencedMarkdownPaths(content)) {
+          const edge = `${skillRelativePath} -> ${reference}`
+          if (HOST_OWNED_MARKDOWN_REFERENCES.has(edge)) continue
+          const target = resolvePackagedReference(
+            skillPrefix,
+            packagedPath,
+            skillRelativePath,
+            reference,
+          )
+          if (!packagedFiles.has(target)) unresolved.push(`${packagedPath} -> ${reference} (${target})`)
         }
       }
     }
+    expect(unresolved).toEqual([])
   })
 
   it('keeps profile manifests aligned with their addressed directory identities', async () => {

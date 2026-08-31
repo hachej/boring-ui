@@ -33,21 +33,10 @@ const sources = [
     target: path.posix.join('skills/plan/docs/procedures', name),
   })),
   {
-    source: path.join(repositoryRoot, '.agents/factory/README.md'),
-    target: 'skills/plan/.agents/factory/README.md',
-  },
-  {
     source: path.join(repositoryRoot, '.agents/skills/fresh-eyes'),
     target: 'skills/plan/.agents/skills/fresh-eyes',
   },
-  {
-    source: path.join(repositoryRoot, '.agents/skills/ui/visual-report-bundle.md'),
-    target: 'skills/plan/.agents/skills/ui/visual-report-bundle.md',
-  },
-  {
-    source: path.join(repositoryRoot, '.agents/skills/ui/visual-report-bundle'),
-    target: 'skills/plan/.agents/skills/ui/visual-report-bundle',
-  },
+
   ...[
     'boring-loop.md',
     'MODEL-CARD.md',
@@ -58,6 +47,7 @@ const sources = [
     'visual-review-doc.md',
     'owner-review-card.md',
     'rolling-small-fixes.md',
+    'session-handoff.md',
   ].map((name) => ({
     source: path.join(repositoryRoot, 'docs/procedures', name),
     target: path.posix.join('skills/exec/docs/procedures', name),
@@ -75,12 +65,8 @@ const sources = [
     target: 'skills/exec/.agents/skills/present-pr',
   },
   {
-    source: path.join(repositoryRoot, '.agents/skills/ui/visual-report-bundle.md'),
-    target: 'skills/exec/.agents/skills/ui/visual-report-bundle.md',
-  },
-  {
-    source: path.join(repositoryRoot, '.agents/skills/ui/visual-report-bundle'),
-    target: 'skills/exec/.agents/skills/ui/visual-report-bundle',
+    source: path.join(repositoryRoot, '.agents/skills/handoff'),
+    target: 'skills/exec/.agents/skills/handoff',
   },
   {
     source: path.join(repositoryRoot, '.agents/skills/show-me'),
