@@ -24,6 +24,7 @@ function primary(name: string): AgentTool {
   return {
     name,
     description: `primary ${name}`,
+    readinessRequirements: ['sandbox-exec'],
     parameters: { type: 'object', properties: {}, additionalProperties: true },
     execute: vi.fn(async () => ({ content: [{ type: 'text' as const, text: `primary:${name}` }] })),
   }
@@ -126,7 +127,11 @@ describe('native sandbox targeting', () => {
     })
     await expect(tool('execute_isolated_code').execute({ code: ISOLATED_SOURCE, language: 'python', sandbox: 'lease-handle-0001' }, ctx))
       .resolves.toMatchObject({ content: [{ text: 'primary:execute_isolated_code' }] })
-    expect(primaries.find((entry) => entry.name === 'bash')!.execute).toHaveBeenCalledOnce()
+    const primaryBash = primaries.find((entry) => entry.name === 'bash')!
+    expect(primaryBash.execute).toHaveBeenCalledWith({ command: 'pwd' }, ctx)
+    expect(tool('bash').readinessRequirements).toBe(primaryBash.readinessRequirements)
+    expect((tool('bash').parameters.properties as Record<string, unknown>).sandbox)
+      .toMatchObject({ type: 'string' })
     expect(withPair).not.toHaveBeenCalled()
   })
 
@@ -164,6 +169,7 @@ describe('native sandbox targeting', () => {
 
     expect(target.files.get('a.txt')).toBe('after needle')
     expect(target.files.get('b.txt')).toBe('created')
+    expect(target.exec).toHaveBeenCalledWith('printf ok', expect.not.objectContaining({ sandbox: expect.anything() }))
     expect(withPair).toHaveBeenCalledTimes(8)
     const owners = new Set(withPair.mock.calls.map((call) => call[0]))
     expect([...owners]).toEqual([expect.stringMatching(/^[a-f0-9]{64}$/)])
@@ -190,6 +196,8 @@ describe('native sandbox targeting', () => {
     await expect(read.execute({ path: 'marker.txt', sandbox: 'lease-handle-0002' }, ctx))
       .resolves.toMatchObject({ content: [{ text: expect.stringContaining('two') }] })
     await expect(read.execute({ path: 'a.txt', filesystem: 'knowledge', sandbox: 'lease-handle-0001' }, ctx))
+      .resolves.toMatchObject({ isError: true, details: { code: ErrorCode.enum.SANDBOX_TARGET_INVALID } })
+    await expect(read.execute({ path: 'a.txt', sandbox: '../escape' }, ctx))
       .resolves.toMatchObject({ isError: true, details: { code: ErrorCode.enum.SANDBOX_TARGET_INVALID } })
     expect(withPair).toHaveBeenCalledTimes(4)
   })

@@ -3,7 +3,6 @@ import {
   buildFilesystemAgentTools,
   buildHarnessAgentTools,
   buildUploadAgentTools,
-  withSandboxTarget,
   type RuntimeBundle,
 } from '@hachej/boring-bash/agent'
 
@@ -17,6 +16,7 @@ import {
 import { sandboxLeaseOwnerId } from '../sandbox/leases/sandboxLeaseOwner'
 
 const TARGETABLE_NAMES = new Set(['bash', 'read', 'write', 'edit', 'find', 'grep', 'ls', 'upload_file'])
+const SANDBOX_HANDLE_PATTERN = /^[A-Za-z0-9_-]{16,128}$/
 
 const SANDBOX_ALWAYS_RESERVED_TOOL_NAMES = Object.freeze([
   'sandbox', 'bash', 'read', 'write', 'edit', 'find', 'grep', 'ls',
@@ -36,6 +36,48 @@ export interface SandboxTargetingOptions {
   readonly includeUploadTools: boolean
 }
 
+function targetedTool(
+  primary: AgentTool,
+  executeTargeted: (sandbox: string, params: Record<string, unknown>, ctx: ToolExecContext) => Promise<ToolResult>,
+): AgentTool {
+  const properties = primary.parameters.properties && typeof primary.parameters.properties === 'object'
+    ? { ...(primary.parameters.properties as Record<string, unknown>) }
+    : {}
+  return {
+    ...primary,
+    description: primary.name === 'upload_file'
+      ? 'Copy a workspace file within artifact storage. When sandbox is supplied, both source and returned path remain lease-local and are deleted on release; omit sandbox for stable primary-workspace artifacts.'
+      : `${primary.description} When sandbox is supplied, the operation targets that disposable lease; lease-targeted outputs are not durable after release.`,
+    promptSnippet: [
+      primary.promptSnippet,
+      'Optional sandbox targets an explicitly leased disposable remote workspace; omit it for the primary user workspace.',
+    ].filter(Boolean).join('\n'),
+    parameters: {
+      ...primary.parameters,
+      properties: {
+        ...properties,
+        sandbox: {
+          type: 'string',
+          pattern: SANDBOX_HANDLE_PATTERN.source,
+          description: 'Opaque disposable sandbox lease. Omit to use the primary user workspace.',
+        },
+      },
+    },
+    async execute(params, ctx) {
+      const sandbox = params.sandbox
+      if (sandbox === undefined) return await primary.execute(params, ctx)
+      if (typeof sandbox !== 'string' || !SANDBOX_HANDLE_PATTERN.test(sandbox)) {
+        return invalidTarget('sandbox lease is invalid')
+      }
+      if (typeof params.filesystem === 'string' && params.filesystem !== '' && params.filesystem !== 'user') {
+        return invalidTarget('named filesystems cannot be combined with a sandbox lease')
+      }
+      const { sandbox: _sandbox, ...targetParams } = params
+      return await executeTargeted(sandbox, targetParams, ctx)
+    },
+  }
+}
+
 function leasedBundle(pair: WorkspaceSandboxPairV1): RuntimeBundle {
   return {
     workspace: pair.workspace,
@@ -52,6 +94,14 @@ function toolsForBundle(bundle: RuntimeBundle, options: SandboxTargetingOptions)
     ...(options.includeFilesystemTools ? buildFilesystemAgentTools(bundle) : []),
     ...(options.includeUploadTools ? buildUploadAgentTools(bundle) : []),
   ]
+}
+
+function invalidTarget(message: string): ToolResult {
+  return {
+    content: [{ type: 'text', text: message }],
+    isError: true,
+    details: { code: ErrorCode.enum.SANDBOX_TARGET_INVALID, retryable: false },
+  }
 }
 
 function errorResult(error: unknown): ToolResult {
@@ -112,24 +162,22 @@ export function addSandboxTargeting(
 
   return primaryTools.map((primary) => {
     if (!TARGETABLE_NAMES.has(primary.name)) return primary
-    return withSandboxTarget(primary, {
-      async executeTargeted(sandbox, params, ctx) {
-        try {
-          return await options.leases.withPair(owner(options, ctx), sandbox, async (pair) => {
-            const target = delegatesFor(pair).get(primary.name)
-            if (!target) {
-              return {
-                content: [{ type: 'text', text: 'tool is not available in the leased sandbox' }],
-                isError: true,
-                details: { code: ErrorCode.enum.TOOL_NOT_FOUND, retryable: false },
-              }
+    return targetedTool(primary, async (sandbox, params, ctx) => {
+      try {
+        return await options.leases.withPair(owner(options, ctx), sandbox, async (pair) => {
+          const target = delegatesFor(pair).get(primary.name)
+          if (!target) {
+            return {
+              content: [{ type: 'text', text: 'tool is not available in the leased sandbox' }],
+              isError: true,
+              details: { code: ErrorCode.enum.TOOL_NOT_FOUND, retryable: false },
             }
-            return await target.execute(params, ctx)
-          })
-        } catch (error) {
-          return errorResult(error)
-        }
-      },
+          }
+          return await target.execute(params, ctx)
+        })
+      } catch (error) {
+        return errorResult(error)
+      }
     })
   })
 }
