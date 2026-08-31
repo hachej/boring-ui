@@ -66,6 +66,12 @@ function controllerStateEqual<TSession extends WorkspaceAgentSession>(
     && current.loading === next.loading
     && current.loadingMore === next.loadingMore
     && current.hasMore === next.hasMore
+    // Capability PRESENCE, not just its paging state: a controller can gain or
+    // lose archive support without any other compared field moving, and the
+    // fleet's own capability (and therefore the pane's archived probe) is
+    // computed from it (#1453).
+    && Boolean(current.setArchived) === Boolean(next.setArchived)
+    && Boolean(current.loadArchived) === Boolean(next.loadArchived)
     && current.archivedLoaded === next.archivedLoaded
     && current.archivedLoading === next.archivedLoading
     && current.hasMoreArchived === next.hasMoreArchived
@@ -224,7 +230,16 @@ export function useAddressedFleetSessions<TSession extends WorkspaceAgentSession
     const allFailed = statuses.length > 0 && statuses.every((status) => status === "error")
     const error = discoveryError ?? (allFailed ? controllers.map((controller) => controller.error).find(Boolean) : undefined)
     const hasMore = controllers.some((controller) => controller.hasMore)
-    const archiveCapable = controllers.length === agents.length
+    // A capability, never a vacuous truth. `every` over an empty list is true,
+    // so with no Agent discovered yet (`agents` is [] while discovery runs)
+    // this used to claim full archive support and hand the pane a `loadArchived`
+    // that resolves without loading anything. The pane probes for archived
+    // chats exactly once, latches on that no-op, and never asks again once the
+    // real controllers arrive — the Archived section then stays hidden even
+    // when archived chats exist, which is the one and only way back from
+    // Archive (#1453).
+    const archiveCapable = agents.length > 0
+      && controllers.length === agents.length
       && controllers.every((controller) => controller.setArchived && controller.loadArchived)
     return {
       sourceIdentity: fleetSourceIdentity,

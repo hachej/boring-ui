@@ -1046,8 +1046,60 @@ describe("AppLeftPane", () => {
 
       const row = screen.getByText("Archived session 50").closest('[data-boring-workspace-part="app-session-row"]')
       await userEvent.click(within(row as HTMLElement).getByRole("button", { name: "Chat actions for Archived session 50" }))
-      await userEvent.click(screen.getByText("Unarchive session"))
+      await userEvent.click(screen.getByText("Restore session"))
       expect(onSetSessionArchived).toHaveBeenCalledWith("archived-50", false, undefined)
+    })
+
+    // #1453: archiving was a one-way door in the UI. The way back is the same
+    // kebab, in the same place, on the archived row itself — and the restored
+    // chat must rejoin the active list (count included) with no reload.
+    it("restores an archived chat to the active list from the row's own menu", async () => {
+      const setArchived = vi.fn()
+
+      function RestoreHarness() {
+        const [archived, setArchivedState] = useState(true)
+        return (
+          <WorkspaceAttentionProvider>
+            <AppLeftPane
+              appTitle="Test"
+              sessions={[
+                { id: "s1", title: "First session" },
+                { id: "s2", title: "Second session", archived },
+              ]}
+              activeSessionId="s1"
+              openSessionIds={["s1"]}
+              pinnedSessionIds={[]}
+              onCreateSession={vi.fn()}
+              navigationEntries={testNavigationEntries()}
+              onSwitchSession={vi.fn()}
+              onOpenSessionAsPane={vi.fn()}
+              onToggleSessionPinned={vi.fn()}
+              archivedLoaded
+              onLoadArchived={vi.fn()}
+              onSetSessionArchived={(id, next) => {
+                setArchived(id, next)
+                setArchivedState(next)
+              }}
+            />
+          </WorkspaceAttentionProvider>
+        )
+      }
+
+      render(<RestoreHarness />)
+
+      const disclosure = screen.getByRole("button", { name: /Archived/ })
+      expect(disclosure).toHaveTextContent("1")
+      await userEvent.click(disclosure)
+
+      const row = screen.getByText("Second session").closest('[data-boring-workspace-part="app-session-row"]')
+      await userEvent.click(within(row as HTMLElement).getByRole("button", { name: "Chat actions for Second session" }))
+      await userEvent.click(screen.getByText("Restore session"))
+      expect(setArchived).toHaveBeenCalledWith("s2", false)
+
+      // The count is the section: at zero archived chats the disclosure goes
+      // away entirely, and the chat is back in the list above it.
+      await waitFor(() => expect(screen.queryByRole("button", { name: /Archived/ })).not.toBeInTheDocument())
+      expect(screen.getByText("Second session")).toBeInTheDocument()
     })
 
     it("shows no Archived section when nothing is archived", () => {

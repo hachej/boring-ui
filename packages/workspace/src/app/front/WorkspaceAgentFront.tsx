@@ -2890,6 +2890,10 @@ export function WorkspaceAgentFront<
           archivedLoading={sessionApi?.archivedLoading}
           hasMoreArchived={sessionApi?.hasMoreArchived}
           onLoadArchived={sessionApi?.loadArchived}
+          // The cohort that owns those archived rows. When the source changes
+          // the pane is looking at a different inventory and probes it once
+          // more, instead of trusting a latch from the previous one (#1453).
+          archivedInventoryKey={sessionApi?.sourceIdentity ?? undefined}
         />
       )}
     >

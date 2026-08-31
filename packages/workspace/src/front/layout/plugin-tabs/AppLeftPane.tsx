@@ -180,6 +180,13 @@ export interface AppLeftPaneProps {
   hasMoreArchived?: boolean
   onLoadArchived?: () => void | Promise<unknown>
   /**
+   * Identity of the archived inventory behind `onLoadArchived` — the source /
+   * controller cohort that owns those rows. The one-shot background probe is
+   * scoped to it: a new cohort is a new inventory and gets its own single
+   * probe (#1453).
+   */
+  archivedInventoryKey?: string
+  /**
    * single-project: workspace shown below the app-title logo, no Workspaces
    * section — just the session list. multi-project: the Workspaces/projects
    * tree (PR2). Defaults to single-project.
@@ -279,6 +286,7 @@ export function AppLeftPane({
   archivedLoading = false,
   hasMoreArchived = false,
   onLoadArchived,
+  archivedInventoryKey,
   layoutMode = "single-project",
 }: AppLeftPaneProps) {
   const primaryNavigationEntries = navigationEntries.filter((entry) => entry.kind === "primary")
@@ -414,13 +422,34 @@ export function AppLeftPane({
   // never rearms — a stuck failure just means the control stays hidden until
   // the user archives a chat directly (which populates `sessions` without
   // going through this probe at all).
-  const archivedProbeAttemptedRef = useRef(false)
+  //
+  // Once-ever is the wrong scope, though: the latch lives for the pane's
+  // lifetime while the inventory it stands for belongs to a source /
+  // controller cohort that can go away and come back (an addressed Agent's
+  // controller drops, or the session source changes, and a replacement
+  // publishes with a fresh, unloaded archived pager). A lifetime latch would
+  // leave that replacement inventory unprobed forever — the same
+  // never-shows-the-Archived-section outcome, one flap later. So the latch is
+  // keyed on the cohort: exactly one probe per inventory, and the ref is
+  // cleared the moment the capability is withdrawn, because what comes back
+  // is a different inventory. A REJECTED probe is not a withdrawal — the
+  // handler is still there, the key is unchanged, and the latch holds — so
+  // this keeps the retry storm closed (#1453).
+  const archivedProbeCohort = archivedInventoryKey ?? "default"
+  const archivedProbedCohortRef = useRef<string | undefined>(undefined)
   useEffect(() => {
-    if (archivedProbeAttemptedRef.current) return
-    if (!onLoadArchived || archivedLoaded || archivedLoading) return
-    archivedProbeAttemptedRef.current = true
+    if (!onLoadArchived) {
+      archivedProbedCohortRef.current = undefined
+      return
+    }
+    if (archivedProbedCohortRef.current === archivedProbeCohort) return
+    if (archivedLoaded || archivedLoading) return
+    // Set before the call, never in a then/catch: StrictMode replays this
+    // effect immediately, and the second pass must see the latch already
+    // closed for this cohort.
+    archivedProbedCohortRef.current = archivedProbeCohort
     void onLoadArchived()
-  }, [onLoadArchived, archivedLoaded, archivedLoading])
+  }, [onLoadArchived, archivedProbeCohort, archivedLoaded, archivedLoading])
   // One pass, three numbers. These used to be a memoized count plus two full
   // `sessions` scans re-run per Agent per render one line below it.
   const agentStats = useMemo(() => {
