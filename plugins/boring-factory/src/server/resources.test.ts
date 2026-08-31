@@ -69,12 +69,16 @@ describe('Boring Factory resource artifact', () => {
     for (const required of [
       'skills/plan/docs/procedures/boring-loop.md',
       'skills/plan/docs/procedures/MODEL-CARD.md',
+      'skills/plan/docs/procedures/visual-review-doc.md',
       'skills/plan/.agents/skills/fresh-eyes/SKILL.md',
       'skills/exec/docs/procedures/worktree-agent.md',
       'skills/exec/docs/procedures/proof-of-work.md',
       'skills/exec/.agents/factory/README.md',
       'skills/exec/.agents/skills/present-pr/SKILL.md',
       'skills/exec/.agents/skills/show-me/SKILL.md',
+      'skills/exec/.agents/skill-references/show-me/humanlayer-show-me/SOURCE.md',
+      'skills/exec/.agents/skill-references/show-me/humanlayer-show-me/SKILL.md',
+      'skills/exec/.agents/skill-references/show-me/humanlayer-show-me/LICENSE.txt',
       'skills/exec/scripts/present-pr.mjs',
       'skills/exec/scripts/lib/render-mermaid.mjs',
     ]) {

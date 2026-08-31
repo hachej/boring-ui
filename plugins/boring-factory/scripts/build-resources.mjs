@@ -24,6 +24,7 @@ const sources = [
     'MODEL-CARD.md',
     'issue-plans.md',
     'bead-ready.md',
+    'visual-review-doc.md',
   ].map((name) => ({
     source: path.join(repositoryRoot, 'docs/procedures', name),
     target: path.posix.join('skills/plan/docs/procedures', name),
@@ -54,6 +55,10 @@ const sources = [
   {
     source: path.join(repositoryRoot, '.agents/skills/show-me'),
     target: 'skills/exec/.agents/skills/show-me',
+  },
+  {
+    source: path.join(repositoryRoot, '.agents/skill-references/show-me'),
+    target: 'skills/exec/.agents/skill-references/show-me',
   },
   {
     source: path.join(repositoryRoot, 'scripts/present-pr.mjs'),

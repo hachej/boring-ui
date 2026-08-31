@@ -32,9 +32,12 @@ canonical contracts: `docs/procedures/{boring-loop.md,MODEL-CARD.md}` and
   proof path, file scope, fits one session), and set bead priority at plan time.
 - Before Beads handoff run `br dep cycles` and `bv --robot-insights`; never bare
   `bv`.
-- Use `/skill:fresh-eyes` as tier 1, then continue the required Model Card ladder.
-  Use `ask_user` for unresolved intent, risk, or approval. A plan-approval
-  intention links the visual plan doc from `docs/procedures/visual-review-doc.md`.
+- Request tier-1 fresh-eyes review through the host-provided independent-review
+  mechanism (`/skill:fresh-eyes` when that command is explicitly granted), then
+  continue the required Model Card ladder. If no independent-review mechanism is
+  available, stop rather than self-certifying. Use `ask_user` for unresolved
+  intent, risk, or approval. A plan-approval intention links the visual plan doc
+  from `docs/procedures/visual-review-doc.md`.
 - **The Steward never self-certifies: an adversarial plan review
   (cross-model per the Model Card) runs BEFORE the owner gate, always** — even
   when every design decision was pre-ratified by the owner via grill. Grill →

@@ -86,7 +86,7 @@ seats:
     agentTypeId: boring-orchestrator
     skills:
       - name: plan
-        digest: sha256:c348aabea4210bba37068e20cffc0a0cb600dcde8e21f3826ee3ee36cf1c0108
+        digest: sha256:5d5c2b0f796967eaf4b18c47eb921dfdaeddbda43d1b2a206d90425ba3221ac1
       - name: feedback
         digest: sha256:707ae8fd12ace225be7d6de8c345c7d73cf9aa07763f138419f6d6b26b92a9af
       - name: owner-gate
