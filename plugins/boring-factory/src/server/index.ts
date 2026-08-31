@@ -8,6 +8,10 @@ import {
   FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
   FACTORY_WORKER_AGENT_TYPE_ID,
 } from '../shared/constants'
+import {
+  BORING_FACTORY_RESOURCE_ERROR_CODES,
+  BoringFactoryResourceError,
+} from '../shared/errors'
 import type {
   BoringFactoryResourceManifestV1,
   BoringFactoryResources,
@@ -19,6 +23,11 @@ export {
   FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
   FACTORY_WORKER_AGENT_TYPE_ID,
 } from '../shared/constants'
+export {
+  BORING_FACTORY_RESOURCE_ERROR_CODES,
+  BoringFactoryResourceError,
+} from '../shared/errors'
+export type { BoringFactoryResourceErrorCode } from '../shared/errors'
 export type {
   BoringFactoryResourceManifestV1,
   BoringFactoryResources,
@@ -38,10 +47,22 @@ function readManifest(resourceRoot: string): {
   const manifestPath = path.join(resourceRoot, 'resource-manifest.json')
   const manifestInfo = lstatSync(manifestPath)
   if (manifestInfo.isSymbolicLink() || !manifestInfo.isFile()) {
-    throw new Error('Boring Factory resource manifest must be a regular file')
+    throw new BoringFactoryResourceError(
+      BORING_FACTORY_RESOURCE_ERROR_CODES.MANIFEST_INVALID,
+      'Boring Factory resource manifest must be a regular file',
+    )
   }
   const bytes = readFileSync(manifestPath, 'utf8')
-  const parsed = JSON.parse(bytes) as Partial<BoringFactoryResourceManifestV1>
+  let parsed: Partial<BoringFactoryResourceManifestV1>
+  try {
+    parsed = JSON.parse(bytes) as Partial<BoringFactoryResourceManifestV1>
+  } catch (cause) {
+    throw new BoringFactoryResourceError(
+      BORING_FACTORY_RESOURCE_ERROR_CODES.MANIFEST_INVALID,
+      'invalid Boring Factory resource manifest',
+      { cause },
+    )
+  }
   if (
     parsed.contractVersion !== BORING_FACTORY_RESOURCE_CONTRACT_VERSION
     || !parsed.files
@@ -51,7 +72,10 @@ function readManifest(resourceRoot: string): {
     || typeof parsed.sources !== 'object'
     || Array.isArray(parsed.sources)
   ) {
-    throw new Error('invalid Boring Factory resource manifest')
+    throw new BoringFactoryResourceError(
+      BORING_FACTORY_RESOURCE_ERROR_CODES.MANIFEST_INVALID,
+      'invalid Boring Factory resource manifest',
+    )
   }
   return { bytes, manifest: parsed as BoringFactoryResourceManifestV1 }
 }
@@ -68,14 +92,20 @@ function listResourceFiles(
     const absolutePath = path.join(resourceRoot, relativePath)
     const info = lstatSync(absolutePath)
     if (info.isSymbolicLink()) {
-      throw new Error(`Boring Factory resource must not be a symlink: ${relativePath}`)
+      throw new BoringFactoryResourceError(
+        BORING_FACTORY_RESOURCE_ERROR_CODES.ENTRY_INVALID,
+        `Boring Factory resource must not be a symlink: ${relativePath}`,
+      )
     }
     if (info.isDirectory()) {
       files.push(...listResourceFiles(resourceRoot, relativePath))
     } else if (info.isFile()) {
       files.push(relativePath)
     } else {
-      throw new Error(`Boring Factory resource must be a regular file: ${relativePath}`)
+      throw new BoringFactoryResourceError(
+        BORING_FACTORY_RESOURCE_ERROR_CODES.ENTRY_INVALID,
+        `Boring Factory resource must be a regular file: ${relativePath}`,
+      )
     }
   }
   return files
@@ -88,22 +118,31 @@ function verifyResources(
 ): void {
   const rootInfo = lstatSync(resourceRoot)
   if (rootInfo.isSymbolicLink() || !rootInfo.isDirectory()) {
-    throw new Error('Boring Factory resource root must be a regular directory')
+    throw new BoringFactoryResourceError(
+      BORING_FACTORY_RESOURCE_ERROR_CODES.ROOT_INVALID,
+      'Boring Factory resource root must be a regular directory',
+    )
   }
   const canonicalDistRoot = realpathSync(distRoot)
   const canonicalRoot = realpathSync(resourceRoot)
   const relativeToDist = path.relative(canonicalDistRoot, canonicalRoot)
   if (relativeToDist.startsWith('..') || path.isAbsolute(relativeToDist)) {
-    throw new Error('Boring Factory resource root escapes installed artifact')
+    throw new BoringFactoryResourceError(
+      BORING_FACTORY_RESOURCE_ERROR_CODES.ROOT_INVALID,
+      'Boring Factory resource root escapes installed artifact',
+    )
   }
   const manifestFiles = Object.keys(manifest.files).sort()
   const sourceFiles = Object.keys(manifest.sources).sort()
-  const actualFiles = listResourceFiles(resourceRoot)
+  const actualFiles = listResourceFiles(resourceRoot).sort()
   if (
     JSON.stringify(actualFiles) !== JSON.stringify(manifestFiles)
     || JSON.stringify(sourceFiles) !== JSON.stringify(manifestFiles)
   ) {
-    throw new Error('Boring Factory resource file set does not match manifest')
+    throw new BoringFactoryResourceError(
+      BORING_FACTORY_RESOURCE_ERROR_CODES.FILE_SET_INVALID,
+      'Boring Factory resource file set does not match manifest',
+    )
   }
   for (const [relativePath, expectedDigest] of Object.entries(manifest.files)) {
     if (
@@ -115,18 +154,30 @@ function verifyResources(
       || path.isAbsolute(manifest.sources[relativePath])
       || manifest.sources[relativePath].split('/').includes('..')
     ) {
-      throw new Error(`invalid Boring Factory resource entry: ${relativePath}`)
+      throw new BoringFactoryResourceError(
+        BORING_FACTORY_RESOURCE_ERROR_CODES.ENTRY_INVALID,
+        `invalid Boring Factory resource entry: ${relativePath}`,
+      )
     }
     const absolutePath = realpathSync(path.resolve(resourceRoot, relativePath))
     const relativeToRoot = path.relative(canonicalRoot, absolutePath)
     if (relativeToRoot.startsWith('..') || path.isAbsolute(relativeToRoot)) {
-      throw new Error(`Boring Factory resource escapes package root: ${relativePath}`)
+      throw new BoringFactoryResourceError(
+        BORING_FACTORY_RESOURCE_ERROR_CODES.ENTRY_INVALID,
+        `Boring Factory resource escapes package root: ${relativePath}`,
+      )
     }
     if (!statSync(absolutePath).isFile()) {
-      throw new Error(`Boring Factory resource is not a file: ${relativePath}`)
+      throw new BoringFactoryResourceError(
+        BORING_FACTORY_RESOURCE_ERROR_CODES.ENTRY_INVALID,
+        `Boring Factory resource is not a file: ${relativePath}`,
+      )
     }
     if (sha256(readFileSync(absolutePath)) !== expectedDigest) {
-      throw new Error(`Boring Factory resource digest mismatch: ${relativePath}`)
+      throw new BoringFactoryResourceError(
+        BORING_FACTORY_RESOURCE_ERROR_CODES.DIGEST_MISMATCH,
+        `Boring Factory resource digest mismatch: ${relativePath}`,
+      )
     }
   }
 }
@@ -137,27 +188,36 @@ function verifyResources(
  * addressed runtimes receive them; this function grants no executable authority.
  */
 export function resolveBoringFactoryResources(): BoringFactoryResources {
-  const distRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-  const resourceRoot = path.join(distRoot, 'resources')
-  const { bytes, manifest } = readManifest(resourceRoot)
-  verifyResources(distRoot, resourceRoot, manifest)
+  try {
+    const distRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+    const resourceRoot = path.join(distRoot, 'resources')
+    const { bytes, manifest } = readManifest(resourceRoot)
+    verifyResources(distRoot, resourceRoot, manifest)
 
-  return Object.freeze({
-    resourceRoot,
-    skillRoot: path.join(resourceRoot, 'skills'),
-    resourceDigest: `sha256:${sha256(bytes)}`,
-    manifest,
-    agentSources: Object.freeze({
-      [FACTORY_ORCHESTRATOR_AGENT_TYPE_ID]: path.join(
-        resourceRoot,
-        'agents',
-        FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
-      ),
-      [FACTORY_WORKER_AGENT_TYPE_ID]: path.join(
-        resourceRoot,
-        'agents',
-        FACTORY_WORKER_AGENT_TYPE_ID,
-      ),
-    }),
-  })
+    return Object.freeze({
+      resourceRoot,
+      skillRoot: path.join(resourceRoot, 'skills'),
+      resourceDigest: `sha256:${sha256(bytes)}`,
+      manifest,
+      agentSources: Object.freeze({
+        [FACTORY_ORCHESTRATOR_AGENT_TYPE_ID]: path.join(
+          resourceRoot,
+          'agents',
+          FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
+        ),
+        [FACTORY_WORKER_AGENT_TYPE_ID]: path.join(
+          resourceRoot,
+          'agents',
+          FACTORY_WORKER_AGENT_TYPE_ID,
+        ),
+      }),
+    })
+  } catch (cause) {
+    if (cause instanceof BoringFactoryResourceError) throw cause
+    throw new BoringFactoryResourceError(
+      BORING_FACTORY_RESOURCE_ERROR_CODES.RESOLUTION_FAILED,
+      'Boring Factory resources could not be resolved',
+      { cause },
+    )
+  }
 }

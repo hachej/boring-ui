@@ -26,10 +26,15 @@
   "sideEffects": false,
   "scripts": {
     "build": "tsup && node scripts/build-resources.mjs",
+    "prepack": "pnpm run build",
     "typecheck": "pnpm run build && tsc --noEmit",
     "test": "pnpm run build && vitest run",
     "lint": "pnpm run typecheck",
     "clean": "rm -rf dist .tsbuildinfo"
+  },
+  "dependencies": {
+    "@playwright/test": "^1.62.1",
+    "mermaid": "11.16.1"
   },
   "devDependencies": {
     "@hachej/boring-agent": "workspace:*",

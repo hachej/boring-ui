@@ -26,6 +26,36 @@ async function expectExactFile(source: string, packaged: string): Promise<void> 
   expect(packagedBytes).toEqual(sourceBytes)
 }
 
+function referencedMarkdownPaths(relativePath: string, content: string): string[] {
+  const references = Array.from(
+    content.matchAll(/\[[^\]]*\]\(([^)#]+\.md)(?:#[^)]+)?\)/g),
+  ).filter((match) => {
+    if (match[1]!.includes('://')) return false
+    const context = content.slice(Math.max(0, (match.index ?? 0) - 160), match.index)
+    return /\b(?:read|follow|required|requires|per|governed|together|guidance)\b/i.test(context)
+  }).map((match) => match[1]!)
+
+  if (relativePath === 'SKILL.md') {
+    references.push(...Array.from(
+      content.matchAll(/`((?:\.{1,2}\/|docs\/|\.agents\/)[A-Za-z0-9_./-]+\.md)`/g),
+      (match) => match[1]!,
+    ))
+  }
+  if (relativePath.endsWith('/index.md')) {
+    references.push(...Array.from(
+      content.matchAll(/\*\*Read:\*\* `([^`]+\.md)`/g),
+      (match) => match[1]!,
+    ))
+  }
+  if (relativePath.startsWith('docs/procedures/')) {
+    references.push(...Array.from(
+      content.matchAll(/`((?:docs\/|\.agents\/)[A-Za-z0-9_./-]+\.md)`/g),
+      (match) => match[1]!,
+    ))
+  }
+  return [...new Set(references)]
+}
+
 describe('Boring Factory resource artifact', () => {
   it('resolves verified addressed profiles and only the canonical plan/exec skill root', async () => {
     const resources = resolveBoringFactoryResources()
@@ -62,27 +92,29 @@ describe('Boring Factory resource artifact', () => {
     }
   })
 
-  it('packages the direct read-only reference closure without discovering support skills', () => {
+  it('resolves the packaged Markdown dependency graph from each runtime skill directory', async () => {
     const resources = resolveBoringFactoryResources()
-    const files = new Set(Object.keys(resources.manifest.files))
+    const packagedFiles = new Set(Object.keys(resources.manifest.files))
 
-    for (const required of [
-      'skills/plan/docs/procedures/boring-loop.md',
-      'skills/plan/docs/procedures/MODEL-CARD.md',
-      'skills/plan/docs/procedures/visual-review-doc.md',
-      'skills/plan/.agents/skills/fresh-eyes/SKILL.md',
-      'skills/exec/docs/procedures/worktree-agent.md',
-      'skills/exec/docs/procedures/proof-of-work.md',
-      'skills/exec/.agents/factory/README.md',
-      'skills/exec/.agents/skills/present-pr/SKILL.md',
-      'skills/exec/.agents/skills/show-me/SKILL.md',
-      'skills/exec/.agents/skill-references/show-me/humanlayer-show-me/SOURCE.md',
-      'skills/exec/.agents/skill-references/show-me/humanlayer-show-me/SKILL.md',
-      'skills/exec/.agents/skill-references/show-me/humanlayer-show-me/LICENSE.txt',
-      'skills/exec/scripts/present-pr.mjs',
-      'skills/exec/scripts/lib/render-mermaid.mjs',
-    ]) {
-      expect(files.has(required), required).toBe(true)
+    for (const skillName of ['plan', 'exec']) {
+      const skillPrefix = `skills/${skillName}/`
+      const markdownFiles = [...packagedFiles]
+        .filter((relativePath) => relativePath.startsWith(skillPrefix) && relativePath.endsWith('.md'))
+        .sort()
+      for (const packagedPath of markdownFiles) {
+        const skillRelativePath = packagedPath.slice(skillPrefix.length)
+        const content = await readFile(path.join(resources.resourceRoot, packagedPath), 'utf8')
+        for (const reference of referencedMarkdownPaths(skillRelativePath, content)) {
+          const target = reference.startsWith('docs/') || reference.startsWith('.agents/')
+            ? path.posix.join(skillPrefix, reference)
+            : path.posix.normalize(path.posix.join(path.posix.dirname(packagedPath), reference))
+          expect(
+            target.startsWith('skills/') || target.startsWith('skill-references/'),
+            `${packagedPath} reference escapes the packaged runtime root: ${reference}`,
+          ).toBe(true)
+          expect(packagedFiles.has(target), `${packagedPath} -> ${reference} (${target})`).toBe(true)
+        }
+      }
     }
   })
 

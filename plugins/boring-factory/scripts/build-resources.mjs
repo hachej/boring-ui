@@ -24,22 +24,40 @@ const sources = [
     'MODEL-CARD.md',
     'issue-plans.md',
     'bead-ready.md',
+    'proof-of-work.md',
     'visual-review-doc.md',
+    'owner-review-card.md',
+    'rolling-small-fixes.md',
   ].map((name) => ({
     source: path.join(repositoryRoot, 'docs/procedures', name),
     target: path.posix.join('skills/plan/docs/procedures', name),
   })),
   {
+    source: path.join(repositoryRoot, '.agents/factory/README.md'),
+    target: 'skills/plan/.agents/factory/README.md',
+  },
+  {
     source: path.join(repositoryRoot, '.agents/skills/fresh-eyes'),
     target: 'skills/plan/.agents/skills/fresh-eyes',
+  },
+  {
+    source: path.join(repositoryRoot, '.agents/skills/ui/visual-report-bundle.md'),
+    target: 'skills/plan/.agents/skills/ui/visual-report-bundle.md',
+  },
+  {
+    source: path.join(repositoryRoot, '.agents/skills/ui/visual-report-bundle'),
+    target: 'skills/plan/.agents/skills/ui/visual-report-bundle',
   },
   ...[
     'boring-loop.md',
     'MODEL-CARD.md',
     'worktree-agent.md',
+    'bead-ready.md',
     'proof-of-work.md',
     'visual-review.md',
+    'visual-review-doc.md',
     'owner-review-card.md',
+    'rolling-small-fixes.md',
   ].map((name) => ({
     source: path.join(repositoryRoot, 'docs/procedures', name),
     target: path.posix.join('skills/exec/docs/procedures', name),
@@ -49,8 +67,20 @@ const sources = [
     target: 'skills/exec/.agents/factory/README.md',
   },
   {
+    source: path.join(repositoryRoot, '.agents/factory/tools.md'),
+    target: 'skills/exec/.agents/factory/tools.md',
+  },
+  {
     source: path.join(repositoryRoot, '.agents/skills/present-pr'),
     target: 'skills/exec/.agents/skills/present-pr',
+  },
+  {
+    source: path.join(repositoryRoot, '.agents/skills/ui/visual-report-bundle.md'),
+    target: 'skills/exec/.agents/skills/ui/visual-report-bundle.md',
+  },
+  {
+    source: path.join(repositoryRoot, '.agents/skills/ui/visual-report-bundle'),
+    target: 'skills/exec/.agents/skills/ui/visual-report-bundle',
   },
   {
     source: path.join(repositoryRoot, '.agents/skills/show-me'),

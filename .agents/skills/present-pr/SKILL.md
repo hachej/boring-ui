@@ -155,10 +155,14 @@ already reviewed, and state the open questions.
    lane (never the canonical checkout or live hub) with
    `pnpm exec playwright install chromium`.
 
+   Resolve `<present-pr-skill-dir>` as the directory containing this `SKILL.md`;
+   skill-relative support files belong to the skill and never to the current repository.
+   Omit `--repo` so `gh` resolves the repository from the current workspace. Pass it only
+   when the PR intentionally belongs to a different repository.
+
    ```bash
    mkdir -p .handoff
-   node scripts/present-pr.mjs <pr-number> \
-     --repo hachej/boring-ui \
+   node <present-pr-skill-dir>/../../../scripts/present-pr.mjs <pr-number> \
      --context <scratchpad>/pr-<n>-context.md \
      --audit "deep audit <date>: N findings closed, M deferred" \
      --out .handoff/pr-<n>-presentation.html
