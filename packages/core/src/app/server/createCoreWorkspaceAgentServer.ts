@@ -65,6 +65,7 @@ import {
 import {
   createWorkspaceUiTools,
   discoverRepositoryAgentPackages,
+  runtimeProjectionRoutes,
   uiRoutes,
   type WorkspaceBridge,
   type WorkspaceBridgeCallRequest,
@@ -73,6 +74,7 @@ import {
   type WorkspaceBridgeOperationDefinition,
   type WorkspaceBridgeRuntimeEnvOptions,
   type WorkspaceServerPlugin,
+  type RuntimeProjectionRoutesOptions,
 } from '@hachej/boring-workspace/server'
 import {
   applyRuntimePiExtensionIsolation,
@@ -235,6 +237,8 @@ export interface CreateCoreWorkspaceAgentServerOptions {
   mode?: RuntimeModeId
   runtimeModeAdapter?: RuntimeModeAdapter
   runtimeHost?: AgentRuntimeHostOperations
+  /** Explicit Host-owned same-origin projection authority; absent by default. */
+  runtimeProjection?: RuntimeProjectionRoutesOptions
   extraTools?: AgentTool[]
   systemPromptAppend?: string
   harnessFactory?: AgentHarnessFactory
@@ -2146,10 +2150,10 @@ export async function createCoreWorkspaceAgentServer(
       getWorkspaceId: resolveWorkspaceId,
       getBridge: async (request) => coreBridge.getBridge(await resolveWorkspaceId(request)),
       preserveStateKeys: pluginCollection.preservedUiStateKeys,
-      // Hosted runtime preview remains refusal-only until the Host can bind a
-      // projection to an authenticated session + environment generation and revoke it.
-
     })
+    if (options.runtimeProjection) {
+      await app.register(runtimeProjectionRoutes, options.runtimeProjection)
+    }
 
     await coreBridge.registerHttpRoutes(app)
 

@@ -96,6 +96,10 @@ import { registerWorkspaceUiBridge } from "../../shared/plugins/uiBridgeRegistry
 import { createWorkspaceUiTools } from "../../server/ui-control/tools/uiTools"
 import { uiRoutes } from "../../server/ui-control/http/uiRoutes"
 import {
+  runtimeProjectionRoutes,
+  type RuntimeProjectionRoutesOptions,
+} from "../../server/runtimeProjection/runtimeProjectionRoutes"
+import {
   createLocalCliBridgeAuthPolicy,
   createWorkspaceBridgeRuntimeCore,
   InMemoryWorkspaceBridgeIdempotencyStore,
@@ -272,6 +276,8 @@ export interface CreateWorkspaceAgentServerOptions
    * when explicitly marked `trust: "internal"`.
    */
   plugins?: WorkspacePluginEntry[]
+  /** Explicit Host-owned same-origin projection authority; absent by default. */
+  runtimeProjection?: RuntimeProjectionRoutesOptions
   provisionWorkspace?: boolean
   workspaceProvisioning?: { force?: boolean }
   validateUiPaths?: boolean
@@ -2162,10 +2168,10 @@ export async function createWorkspaceAgentServer(
     await app.register(uiRoutes, {
       bridge,
       preserveStateKeys: pluginCollection.preservedUiStateKeys,
-      // Hosted runtime preview remains refusal-only until the Host can bind a
-      // projection to an authenticated session + environment generation and revoke it.
-
     })
+    if (opts.runtimeProjection) {
+      await app.register(runtimeProjectionRoutes, opts.runtimeProjection)
+    }
     await app.register(workspaceBridgeHttpRoutes, {
       registry: workspaceBridgeRegistry,
       runtimeTokenSecret: opts.workspaceBridge?.runtimeTokenSecret,
