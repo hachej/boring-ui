@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto'
+import { realpathSync } from 'node:fs'
+import path from 'node:path'
 
 import {
   compactPiPackages,
@@ -26,6 +28,21 @@ export interface AddressedAgentCapabilityContext {
 }
 
 const HOST_EXTENSION_RUNTIME_MODES = new Set<RuntimeModeId>(['direct', 'local'])
+const TRUSTED_PI_MONO_LOOP_ENTRY = path.join('node_modules', 'pi-mono-loop', 'index.ts')
+
+/** Resolve the sole host-installed extension entry admitted in isolated modes. */
+export function resolveTrustedPiMonoLoopExtensionPath(appRoot: string): string {
+  return realpathSync(path.resolve(appRoot, TRUSTED_PI_MONO_LOOP_ENTRY))
+}
+
+function isTrustedIsolatedAddressedExtension(
+  extensionPath: string,
+  trustedExtensionPaths: readonly string[],
+): boolean {
+  if (!path.isAbsolute(extensionPath)) return false
+  const normalized = path.resolve(extensionPath)
+  return trustedExtensionPaths.some((trustedPath) => normalized === path.resolve(trustedPath))
+}
 
 function isolatesHostExtensions(runtimeMode: RuntimeModeId): boolean {
   // Custom modes fail closed until their adapter contract grows an explicit
@@ -43,9 +60,13 @@ function assertNoExplicitExtensions(
   extensionFactories: readonly unknown[] | undefined,
   runtimeMode: RuntimeModeId,
   source: string,
+  trustedExtensionPaths: readonly string[] = [],
 ): void {
   if (!isolatesHostExtensions(runtimeMode)) return
-  if ((extensionPaths?.length ?? 0) > 0 || (extensionFactories?.length ?? 0) > 0) {
+  const forbiddenPaths = (extensionPaths ?? []).filter(
+    (extensionPath) => !isTrustedIsolatedAddressedExtension(extensionPath, trustedExtensionPaths),
+  )
+  if (forbiddenPaths.length > 0 || (extensionFactories?.length ?? 0) > 0) {
     throw Object.assign(
       new Error(`${source} cannot grant host Pi extensions in ${runtimeMode} mode`),
       { code: ErrorCode.enum.CONFIG_INVALID, statusCode: 500 },
@@ -111,9 +132,13 @@ export function mergePiOptions(
 export function normalizeAgentPiCapabilityOptions(
   pi: AgentPiCapabilityOptions | undefined,
   runtimeMode: RuntimeModeId,
+  trustedExtensionPaths: readonly string[] = [],
 ): AgentPiCapabilityOptions | undefined {
   if (!pi) return undefined
-  assertNoExplicitExtensions(pi.extensionPaths, undefined, runtimeMode, 'getAgentPi')
+  // The initial Factory slice admits only the exact host-resolved loop entry
+  // supplied by Core. Static, ambient, hot-reloaded, authored, and every other
+  // addressed extension remain blocked by the isolated-runtime policy.
+  assertNoExplicitExtensions(pi.extensionPaths, undefined, runtimeMode, 'getAgentPi', trustedExtensionPaths)
   const normalized = {
     additionalSkillPaths: dedupeStrings(pi.additionalSkillPaths ?? []),
     packages: compactPiPackages(pi.packages ?? []),
