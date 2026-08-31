@@ -191,15 +191,12 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
   async create(userId: string, name: string, appId: string, opts: WorkspaceStoreCreateOptions): Promise<Workspace> {
     const workspaceTypeId = parseTrustedWorkspaceTypeId(opts?.workspaceTypeId)
     const defaultAgentTypeId = parseRequiredDefaultAgentTypeId(opts?.defaultAgentTypeId)
-    const additionalAgentSeats = [...new Map(
-      (opts.additionalAgentSeats ?? [])
-        .map((seat) => ({
-          agentTypeId: parseRequiredDefaultAgentTypeId(seat.agentTypeId),
-          source: seat.source,
-        }))
-        .filter((seat) => seat.agentTypeId !== defaultAgentTypeId)
-        .map((seat) => [seat.agentTypeId, seat] as const),
-    ).values()]
+    const additionalAgentSeat = opts.additionalAgentSeat
+      ? {
+          agentTypeId: parseRequiredDefaultAgentTypeId(opts.additionalAgentSeat.agentTypeId),
+          source: opts.additionalAgentSeat.source,
+        }
+      : undefined
     return this.db.transaction(async (tx) => {
       const insert = tx
         .insert(workspaces)
@@ -237,12 +234,14 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
             source: opts.initialAgentSeatSource ?? 'generic-default',
             enrolledByUserId: opts.enrolledByUserId ?? userId,
           },
-          ...additionalAgentSeats.map((seat) => ({
-            workspaceId: row.id,
-            agentTypeId: seat.agentTypeId,
-            source: seat.source,
-            enrolledByUserId: opts.enrolledByUserId ?? userId,
-          })),
+          ...(additionalAgentSeat && additionalAgentSeat.agentTypeId !== defaultAgentTypeId
+            ? [{
+                workspaceId: row.id,
+                agentTypeId: additionalAgentSeat.agentTypeId,
+                source: additionalAgentSeat.source,
+                enrolledByUserId: opts.enrolledByUserId ?? userId,
+              }]
+            : []),
         ])
       }
 

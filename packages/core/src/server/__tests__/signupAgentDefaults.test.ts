@@ -240,7 +240,7 @@ describe('signup-domain additive Agent Seat initialization', () => {
       isDefault: true,
       defaultAgentTypeId: 'boring-v2',
       initialAgentSeatSource: 'generic-default',
-      additionalAgentSeats: [{ agentTypeId: 'legal', source: 'signup-intent' }],
+      additionalAgentSeat: { agentTypeId: 'legal', source: 'signup-intent' },
       enrolledByUserId: user.id,
     })
   })
@@ -250,7 +250,7 @@ describe('signup-domain additive Agent Seat initialization', () => {
     const { store, create } = makeFakeStore()
     const resolveInitialAgentSeat = vi.fn(async ({ context }: { context: PostSignupContext | null }) => {
       expect(context?.getHeader?.('cookie')).toBe('agent-intent=opaque')
-      return { agentTypeId: 'charlotteledoux', source: 'signup-intent' as const }
+      return { agentTypeId: 'charlotteledoux' }
     })
     const hook = createPostSignupHook({
       config,
@@ -259,6 +259,7 @@ describe('signup-domain additive Agent Seat initialization', () => {
         ['boring-v2', 'legal', 'charlotteledoux'],
         config.security?.trustedProxy,
       ),
+      applicationAgentTypeIds: ['boring-v2', 'legal', 'charlotteledoux'],
       workspaceStore: store,
       transport: null,
       resolveInitialAgentSeat,
@@ -274,9 +275,47 @@ describe('signup-domain additive Agent Seat initialization', () => {
       isDefault: true,
       defaultAgentTypeId: 'boring-v2',
       initialAgentSeatSource: 'generic-default',
-      additionalAgentSeats: [{ agentTypeId: 'charlotteledoux', source: 'signup-intent' }],
+      additionalAgentSeat: { agentTypeId: 'charlotteledoux', source: 'signup-intent' },
       enrolledByUserId: user.id,
     })
+  })
+
+  it('does not duplicate the application Default when the resolved specialist matches it', async () => {
+    const config = makeConfig()
+    const { store, create } = makeFakeStore()
+    const hook = createPostSignupHook({
+      config,
+      applicationAgentTypeIds: ['boring-v2', 'legal'],
+      workspaceStore: store,
+      transport: null,
+      resolveInitialAgentSeat: async () => ({ agentTypeId: 'boring-v2' }),
+    })
+
+    await hook(user, null)
+
+    expect(create.mock.calls[0]![3]).toEqual({
+      isDefault: true,
+      defaultAgentTypeId: 'boring-v2',
+      initialAgentSeatSource: 'generic-default',
+      enrolledByUserId: user.id,
+    })
+  })
+
+  it('rejects an app-resolved specialist outside the compiled fleet before workspace creation', async () => {
+    const config = makeConfig()
+    const { store, create } = makeFakeStore()
+    const hook = createPostSignupHook({
+      config,
+      applicationAgentTypeIds: ['boring-v2', 'legal'],
+      workspaceStore: store,
+      transport: null,
+      resolveInitialAgentSeat: async () => ({ agentTypeId: 'ghost-agent' }),
+    })
+
+    await expect(hook(user, null)).rejects.toMatchObject({
+      code: ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT,
+    })
+    expect(create).not.toHaveBeenCalled()
   })
 
   it('fails closed before workspace creation when the trusted intent resolver fails', async () => {
@@ -284,6 +323,7 @@ describe('signup-domain additive Agent Seat initialization', () => {
     const { store, create } = makeFakeStore()
     const hook = createPostSignupHook({
       config,
+      applicationAgentTypeIds: ['boring-v2', 'legal'],
       workspaceStore: store,
       transport: null,
       resolveInitialAgentSeat: async () => { throw new Error('intent store unavailable') },
@@ -299,7 +339,7 @@ describe('signup-domain additive Agent Seat initialization', () => {
       isDefault: true,
       defaultAgentTypeId: 'boring-v2',
       initialAgentSeatSource: 'generic-default',
-      additionalAgentSeats: [{ agentTypeId: 'legal', source: 'signup-intent' }],
+      additionalAgentSeat: { agentTypeId: 'legal', source: 'signup-intent' },
       enrolledByUserId: user.id,
     })
   })
@@ -351,7 +391,7 @@ describe('signup-domain additive Agent Seat initialization', () => {
     expect(name).toBe('Default workspace')
     expect(appId).toBe('test-app')
     expect(Object.keys(options as object).sort()).toEqual([
-      'additionalAgentSeats',
+      'additionalAgentSeat',
       'defaultAgentTypeId',
       'enrolledByUserId',
       'initialAgentSeatSource',

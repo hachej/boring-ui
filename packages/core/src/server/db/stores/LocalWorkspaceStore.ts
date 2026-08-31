@@ -44,15 +44,12 @@ export class LocalWorkspaceStore implements WorkspaceStore {
   async create(userId: string, name: string, appId: string, opts: WorkspaceStoreCreateOptions): Promise<Workspace> {
     const workspaceTypeId = parseTrustedWorkspaceTypeId(opts?.workspaceTypeId)
     const defaultAgentTypeId = parseRequiredDefaultAgentTypeId(opts?.defaultAgentTypeId)
-    const additionalAgentSeats = [...new Map(
-      (opts.additionalAgentSeats ?? [])
-        .map((seat) => ({
-          agentTypeId: parseRequiredDefaultAgentTypeId(seat.agentTypeId),
-          source: seat.source,
-        }))
-        .filter((seat) => seat.agentTypeId !== defaultAgentTypeId)
-        .map((seat) => [seat.agentTypeId, seat] as const),
-    ).values()]
+    const additionalAgentSeat = opts.additionalAgentSeat
+      ? {
+          agentTypeId: parseRequiredDefaultAgentTypeId(opts.additionalAgentSeat.agentTypeId),
+          source: opts.additionalAgentSeat.source,
+        }
+      : undefined
     const id = opts.id ?? randomUUID()
     const existing = opts.id ? this.workspaces.get(id) : undefined
     if (existing) {
@@ -101,12 +98,12 @@ export class LocalWorkspaceStore implements WorkspaceStore {
       enrolledByUserId: opts.enrolledByUserId ?? userId,
       createdAt: now,
     })
-    for (const initialSeat of additionalAgentSeats) {
-      this.agentSeats.set(`${ws.id}:${initialSeat.agentTypeId}`, {
+    if (additionalAgentSeat && additionalAgentSeat.agentTypeId !== defaultAgentTypeId) {
+      this.agentSeats.set(`${ws.id}:${additionalAgentSeat.agentTypeId}`, {
         seatId: randomUUID(),
         workspaceId: ws.id,
-        agentTypeId: initialSeat.agentTypeId,
-        source: initialSeat.source,
+        agentTypeId: additionalAgentSeat.agentTypeId,
+        source: additionalAgentSeat.source,
         enrolledByUserId: opts.enrolledByUserId ?? userId,
         createdAt: now,
       })

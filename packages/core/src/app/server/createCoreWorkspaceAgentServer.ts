@@ -1001,6 +1001,7 @@ export async function registerFrontendFallback(
 async function createCoreRuntime(
   config: CoreConfig,
   signupAgentDefaults: ValidatedSignupAgentDefaults,
+  applicationAgentTypeIds: readonly string[],
   customTelemetry?: TelemetrySink,
   requestScopeResolver?: CoreRequestScopeResolver,
   authBaseURL?: CoreDynamicAuthBaseURL,
@@ -1038,6 +1039,7 @@ async function createCoreRuntime(
     baseURL: authBaseURL,
     workspaceStore,
     signupAgentDefaults,
+    applicationAgentTypeIds,
     logger: app.log,
     telemetry,
     disableDefaultWorkspaceCreation: requestScopeResolver !== undefined,
@@ -1142,6 +1144,7 @@ export async function createCoreWorkspaceAgentServer(
   const { app, sql, db, userStore, workspaceStore, telemetry } = await createCoreRuntime(
     config,
     signupAgentDefaults,
+    agentTypeIds,
     options.telemetry,
     options.requestScopeResolver,
     options.authBaseURL,

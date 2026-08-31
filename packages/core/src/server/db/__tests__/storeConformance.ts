@@ -393,11 +393,10 @@ export function describeWorkspaceStoreConformance(
           {
             defaultAgentTypeId: 'boring-v2',
             initialAgentSeatSource: 'generic-default',
-            additionalAgentSeats: [
-              { agentTypeId: 'charlotteledoux', source: 'signup-intent' },
-              { agentTypeId: 'charlotteledoux', source: 'signup-intent' },
-              { agentTypeId: 'boring-v2', source: 'signup-intent' },
-            ],
+            additionalAgentSeat: {
+              agentTypeId: 'charlotteledoux',
+              source: 'signup-intent',
+            },
             enrolledByUserId: users.owner.id,
           },
         )
@@ -441,6 +440,30 @@ export function describeWorkspaceStoreConformance(
           users.owner.id,
         )).rejects.toMatchObject({ code: ERROR_CODES.INVALID_DEFAULT_AGENT_TYPE_ID })
         assertionPassed('workspace-agent-seats-atomic-and-idempotent')
+      }),
+    )
+
+    it(
+      'rejects an invalid specialist Seat before writing any workspace state',
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
+        const { workspaceStore, appId, users } = await setup()
+
+        await expect(createWorkspace(
+          workspaceStore,
+          users.owner.id,
+          'Invalid specialist',
+          appId,
+          {
+            defaultAgentTypeId: 'boring-v2',
+            additionalAgentSeat: {
+              agentTypeId: 'Invalid Specialist',
+              source: 'signup-intent',
+            },
+          },
+        )).rejects.toMatchObject({ code: ERROR_CODES.INVALID_DEFAULT_AGENT_TYPE_ID })
+
+        expect(await workspaceStore.list(users.owner.id, appId)).toHaveLength(0)
+        assertionPassed('workspace-agent-specialist-validation-is-atomic')
       }),
     )
 
