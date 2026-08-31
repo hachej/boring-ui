@@ -35,6 +35,13 @@ export interface PiComposerSubmitInput {
   source?: 'composer' | 'suggestion' | 'auto-submit'
 }
 
+export interface PiComposerHandledSubmit {
+  handled: true
+  message?: string
+}
+
+export type PiComposerBeforeSubmitResult = boolean | void | PiComposerHandledSubmit
+
 export interface PiComposerPolicyOptions extends PiQueueControllerOptions {
   session: PiQueueSessionLike
   registry: CommandRegistry
@@ -46,7 +53,7 @@ export interface PiComposerPolicyOptions extends PiQueueControllerOptions {
   composerBlocked?: boolean
   blockerMessage?: string
   isActiveSession?: () => boolean
-  onBeforeSubmit?: (draft: string, context: { files: PromptInputFilePart[]; source: PiComposerSubmitInput['source'] }) => boolean | Promise<boolean>
+  onBeforeSubmit?: (draft: string, context: { files: PromptInputFilePart[]; source: PiComposerSubmitInput['source'] }) => PiComposerBeforeSubmitResult | Promise<PiComposerBeforeSubmitResult>
   onCommandResult?: (message: string) => void
   onMentionedFilesConsumed?: () => void
   allowPromptDuringInitialHydration?: boolean
@@ -62,6 +69,7 @@ export type PiComposerSubmitResult =
   | { type: 'prompt'; clientNonce: string; cursor?: number; preserveDraft: false }
   | { type: 'followup'; clientNonce: string; clientSeq: number; cursor?: number; preserveDraft: false }
   | { type: 'command'; command: string; result?: string; preserveDraft: boolean }
+  | { type: 'handled'; message?: string; preserveDraft: false }
   | { type: 'blocked'; reason: PiComposerBlockedReason; message: string; preserveDraft: true }
 
 export class PiComposerPolicyController {
@@ -80,8 +88,13 @@ export class PiComposerPolicyController {
       return this.block('composer-blocked', this.options.blockerMessage ?? 'Composer is not ready yet.')
     }
 
-    if (!(await this.runBeforeSubmit(input.text, files, source))) {
+    const beforeSubmit = await this.runBeforeSubmit(input.text, files, source)
+    if (beforeSubmit === false) {
       return this.block('pre-submit-cancelled', 'Submit was cancelled before sending.')
+    }
+    if (typeof beforeSubmit === 'object' && beforeSubmit.handled) {
+      if (beforeSubmit.message) this.options.onCommandResult?.(beforeSubmit.message)
+      return { type: 'handled', ...(beforeSubmit.message ? { message: beforeSubmit.message } : {}), preserveDraft: false }
     }
 
     if (this.options.isActiveSession && !this.options.isActiveSession()) {
@@ -142,8 +155,13 @@ export class PiComposerPolicyController {
   }
 
   private async submitExpandedText(text: string, source: PiComposerSubmitInput['source'], runBeforeSubmit = true): Promise<PiComposerSubmitResult> {
-    if (runBeforeSubmit && !(await this.runBeforeSubmit(text, [], source))) {
-      return this.block('pre-submit-cancelled', 'Submit was cancelled before sending.')
+    if (runBeforeSubmit) {
+      const beforeSubmit = await this.runBeforeSubmit(text, [], source)
+      if (beforeSubmit === false) return this.block('pre-submit-cancelled', 'Submit was cancelled before sending.')
+      if (typeof beforeSubmit === 'object' && beforeSubmit.handled) {
+        if (beforeSubmit.message) this.options.onCommandResult?.(beforeSubmit.message)
+        return { type: 'handled', ...(beforeSubmit.message ? { message: beforeSubmit.message } : {}), preserveDraft: false }
+      }
     }
     return this.fromQueueResult(await this.queueController.submit({
       text,
@@ -181,9 +199,8 @@ export class PiComposerPolicyController {
     return { type: 'command', command: commandName, ...(message ? { result: message } : {}), preserveDraft }
   }
 
-  private async runBeforeSubmit(draft: string, files: PromptInputFilePart[], source: PiComposerSubmitInput['source']): Promise<boolean> {
-    const result = await this.options.onBeforeSubmit?.(draft, { files, source })
-    return result !== false
+  private async runBeforeSubmit(draft: string, files: PromptInputFilePart[], source: PiComposerSubmitInput['source']): Promise<PiComposerBeforeSubmitResult> {
+    return await this.options.onBeforeSubmit?.(draft, { files, source })
   }
 
   private fromQueueResult(result: PiQueueSubmitResult): PiComposerSubmitResult {

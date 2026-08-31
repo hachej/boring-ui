@@ -44,6 +44,7 @@ import {
   writePiComposerShowThoughts,
   writePiComposerThinking,
   type ActiveSessionStorageLike,
+  type PiComposerBeforeSubmitResult,
 } from './session'
 import { SessionList, usePiSessions, type UsePiSessionsOptions } from './session'
 import {
@@ -97,6 +98,8 @@ export interface ChatSubmitContext {
   sessionId: string
   source: ChatSubmitSource
 }
+
+export type ChatBeforeSubmitResult = PiComposerBeforeSubmitResult
 
 interface ComposerSendPayload {
   text: string
@@ -177,7 +180,7 @@ export interface PiChatPanelProps<
   allowPromptDuringInitialHydration?: boolean
   workspaceWarmupStatus?: ChatPanelWorkspaceWarmupStatus
   onSessionReset?: () => void | Promise<void>
-  onBeforeSubmit?: (draft: string, context: ChatSubmitContext) => false | void | boolean | Promise<false | void | boolean>
+  onBeforeSubmit?: (draft: string, context: ChatSubmitContext) => ChatBeforeSubmitResult | Promise<ChatBeforeSubmitResult>
   onReloadAgentPlugins?: () => Promise<AgentPluginReloadResult | string>
   onCommandResult?: (message: string) => void
   onComposerWarning?: (message: string) => void
@@ -834,10 +837,11 @@ export function PiChatPanel<
         markLocalSubmitted(activeChatSessionId)
       },
       onBeforeSubmit: onBeforeSubmit
-        ? async (draft, context) => {
-            const result = await onBeforeSubmit(draft, { ...context, sessionId: activeChatSessionId, source: context.source ?? 'composer' })
-            return result !== false
-          }
+        ? async (draft, context) => await onBeforeSubmit(draft, {
+            ...context,
+            sessionId: activeChatSessionId,
+            source: context.source ?? 'composer',
+          })
         : undefined,
       onCommandResult: (message) => {
         onCommandResult?.(message)

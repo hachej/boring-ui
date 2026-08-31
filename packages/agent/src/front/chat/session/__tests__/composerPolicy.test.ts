@@ -273,6 +273,30 @@ describe('PiComposerPolicyController submit policy', () => {
     expect(warnings).toEqual(['Preparing workspace…'])
   })
 
+  it('accepts a handled pre-submit result without invoking the agent', async () => {
+    const session = new FakeComposerSession('idle')
+    const onCommandResult = vi.fn()
+    const policy = createPiComposerPolicyController({
+      session,
+      registry: createCommandRegistry(builtinCommands),
+      slashContext: context(),
+      onBeforeSubmit: vi.fn(async () => ({
+        handled: true as const,
+        message: 'Context stored.',
+      })),
+      onCommandResult,
+    })
+
+    await expect(policy.submit({ text: 'large context' })).resolves.toEqual({
+      type: 'handled',
+      message: 'Context stored.',
+      preserveDraft: false,
+    })
+    expect(session.prompts).toEqual([])
+    expect(session.followUps).toEqual([])
+    expect(onCommandResult).toHaveBeenCalledWith('Context stored.')
+  })
+
   it('runs local slash commands when idle and blocks executable slash while streaming', async () => {
     const reset = vi.fn()
     const idlePolicy = createPiComposerPolicyController({
