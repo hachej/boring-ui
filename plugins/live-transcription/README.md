@@ -9,8 +9,11 @@ V0 provides a microphone button in the composer for short in-memory dictation;
 stopping inserts the returned French text into the editable draft. The same
 short-dictation control becomes a stop button with an elapsed-time counter while
 capturing. Live mode streams microphone PCM to the
-loopback service and writes only a Markdown transcript. It intentionally does
-not retain audio. Anonymous `Speaker N`
+loopback service and writes a Markdown transcript. By default it does not
+retain audio. Trusted local hosts may opt into private AAC/M4A recording by
+passing an absolute `audioRecordingDirectory` (and optionally
+`audioRecordingFfmpegPath`) to `createLiveTranscriptServerPlugin`; PCM is piped
+directly through FFmpeg and never accumulated in memory. Anonymous `Speaker N`
 labels and French text may be inaccurate. Kyutai word events are grouped into
 readable pause-bounded transcript paragraphs. While capture is active, the live
 process is the only supported transcript writer: byte/mtime conflict checks are
@@ -54,8 +57,9 @@ setup/runtime failures do not interrupt capture. See
 `services/sortformer/README.md` for the PoC service contract. See
 `services/lifecycle/README.md` for secure on-demand GPU operation.
 With Kyutai selected, the composer microphone streams each `Word` event directly
-into the editable draft without creating a transcript file. `/live start` keeps
-the separate Markdown transcript and agent-review sink.
+into the editable draft without creating a transcript or recording file.
+`/live start` keeps the separate Markdown transcript and agent-review sink, and
+creates a matching `.m4a` only when local recording is explicitly configured.
 
 ## Robustness gates
 

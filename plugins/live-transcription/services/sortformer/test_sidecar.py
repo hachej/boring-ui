@@ -2,7 +2,9 @@ import json
 import unittest
 from types import SimpleNamespace
 
-from sidecar import Segment, append_segments, parse_start, parse_stop
+import numpy as np
+
+from sidecar import Segment, TwoSpeakerStabilizer, append_segments, parse_start, parse_stop
 
 
 class ProtocolTests(unittest.TestCase):
@@ -31,6 +33,37 @@ class ProtocolTests(unittest.TestCase):
             SimpleNamespace(speaker=1, start=1.2, end=2.5),
         ], 2.0)
         self.assertEqual(segments, [Segment(0, 0.0, 1.2), Segment(1, 1.2, 2.0)])
+
+    def test_ignores_short_false_speaker_spikes(self):
+        stabilizer = TwoSpeakerStabilizer()
+        scores = np.array([
+            [0.90, 0.10, 0.05, 0.05],
+            [0.82, 0.12, 0.05, 0.05],
+            [0.30, 0.75, 0.05, 0.05],
+            [0.28, 0.78, 0.05, 0.05],
+            [0.88, 0.08, 0.05, 0.05],
+        ])
+        self.assertEqual(stabilizer.assign(scores), [0, 0, 0, 0, 0])
+
+    def test_admits_only_one_sustained_second_speaker(self):
+        stabilizer = TwoSpeakerStabilizer()
+        first = np.tile([0.90, 0.10, 0.05, 0.05], (3, 1))
+        second = np.tile([0.10, 0.90, 0.05, 0.05], (6, 1))
+        third_channel = np.tile([0.05, 0.10, 0.92, 0.05], (6, 1))
+        labels = stabilizer.assign(np.vstack([first, second, third_channel]))
+        self.assertEqual(labels[:3], [0, 0, 0])
+        self.assertEqual(labels[3:7], [0, 0, 0, 0])
+        self.assertEqual(labels[7:9], [1, 1])
+        self.assertEqual(set(labels), {0, 1})
+        self.assertEqual(labels[-1], 1)
+
+    def test_marks_low_confidence_frames_as_silence(self):
+        stabilizer = TwoSpeakerStabilizer()
+        labels = stabilizer.assign(np.array([
+            [0.90, 0.10, 0.05, 0.05],
+            [0.20, 0.20, 0.20, 0.20],
+        ]))
+        self.assertEqual(labels, [0, -1])
 
 
 if __name__ == "__main__":

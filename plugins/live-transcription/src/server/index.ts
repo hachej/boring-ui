@@ -1,5 +1,6 @@
 import fastifyWebsocket from "@fastify/websocket"
 import type { FastifyReply, FastifyRequest } from "fastify"
+import { isAbsolute } from "node:path"
 import type { WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/server"
 import { defineServerPlugin, type WorkspaceServerPlugin } from "@hachej/boring-workspace/server"
 import { LIVE_TRANSCRIPT_BASE_PATH } from "../shared"
@@ -30,6 +31,9 @@ export interface LiveTranscriptServerPluginOptions {
   maxDurationMs?: number
   maxTranscriptBytes?: number
   maxUpstreamMessages?: number
+  /** Trusted absolute local directory where `/live` audio is saved as AAC/M4A. */
+  audioRecordingDirectory?: string
+  audioRecordingFfmpegPath?: string
   reviewIntervalMs?: number
   reviewRetryMs?: number
   createUpstreamForTest?: LiveTranscriptManagerOptions["createUpstreamForTest"]
@@ -39,6 +43,7 @@ export interface LiveTranscriptServerPluginOptions {
 export function createLiveTranscriptServerPlugin(options: LiveTranscriptServerPluginOptions): WorkspaceServerPlugin {
   validateLocalAuthority(options.authority, options.upstreamUrl, options.upstreamProvider)
   if (options.diarizerUrl) validateLocalAuthority(options.authority, options.diarizerUrl, "sortformer")
+  if (options.audioRecordingDirectory && !isAbsolute(options.audioRecordingDirectory)) throw new LiveTranscriptError("live_transcript_local_only", "Audio recording directory must be absolute.", 500)
   if (options.lifecycleUrl && (!options.lifecycleBearerToken || options.lifecycleBearerToken.length < 32)) throw new LiveTranscriptError("live_transcript_local_only", "Lifecycle bearer token must contain at least 32 characters.", 500)
   const lifecycle = new ComputeLifecycleCoordinator(options.lifecycleUrl
     ? new ComputeLifecycleClient(validateLifecycleUrl(options.lifecycleUrl), options.lifecycleBearerToken!)
@@ -57,6 +62,8 @@ export function createLiveTranscriptServerPlugin(options: LiveTranscriptServerPl
     maxDurationMs: options.maxDurationMs,
     maxTranscriptBytes: options.maxTranscriptBytes,
     maxUpstreamMessages: options.maxUpstreamMessages,
+    audioRecordingDirectory: options.audioRecordingDirectory,
+    audioRecordingFfmpegPath: options.audioRecordingFfmpegPath,
     reviewIntervalMs: options.reviewIntervalMs,
     reviewRetryMs: options.reviewRetryMs,
     createUpstreamForTest: options.createUpstreamForTest,
