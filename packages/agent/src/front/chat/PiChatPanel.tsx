@@ -61,7 +61,7 @@ import type {
 } from './components/MessageMentions'
 import { PiChatComposerSurface } from './components/PiChatComposerSurface'
 import { useExternalRemotePiSession, useRemotePiSessionState } from './piChatPanelHooks'
-import { prepareLargePromptSubmission } from './largePromptSpill'
+import { LargePromptSpillCache, spillLargePrompt } from './largePromptSpill'
 import {
   errorMessage,
   headersContentKey,
@@ -493,6 +493,7 @@ export function PiChatPanel<
   const activeChatIdentity = `${agentTypeId}\u0000${workspaceId ?? ''}\u0000${storageScope ?? ''}\u0000${activeChatSessionId ?? ''}`
   const selectedPiSessionRef = useRef(selectedPiSession)
   const activeChatIdentityRef = useRef(activeChatIdentity)
+  const largePromptSpillCacheRef = useRef(new LargePromptSpillCache())
   selectedPiSessionRef.current = selectedPiSession
   activeChatIdentityRef.current = activeChatIdentity
   const isPolicySessionActive = useCallback(() => (
@@ -858,17 +859,22 @@ export function PiChatPanel<
       onPromptSubmitStarted: () => {
         markLocalSubmitted(activeChatSessionId)
       },
-      onBeforeSubmit: async (draft, context) => await prepareLargePromptSubmission(draft, {
-        ...context,
+      onBeforeSubmit: onBeforeSubmit
+        ? async (draft, context) => await onBeforeSubmit(draft, {
+            ...context,
+            sessionId: activeChatSessionId,
+            source: context.source ?? 'composer',
+          })
+        : undefined,
+      onTransformPrompt: async (text) => await spillLargePrompt(text, {
         sessionId: activeChatSessionId,
-        source: context.source ?? 'composer',
-      }, {
+        cache: largePromptSpillCacheRef.current,
         enabled: spillLargePrompts,
         thresholdChars: largePromptThresholdChars,
         apiBaseUrl,
         workspaceRequestId: requestHeaderValue(requestHeaders, 'x-boring-workspace-id'),
+        requestHeaders,
         fetch,
-        onBeforeSubmit,
       }),
       onCommandResult: (message) => {
         onCommandResult?.(message)

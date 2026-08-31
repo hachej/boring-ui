@@ -1,25 +1,20 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   DEFAULT_LARGE_PROMPT_THRESHOLD_CHARS,
+  LargePromptSpillCache,
   largePromptReference,
-  prepareLargePromptSubmission,
+  spillLargePrompt,
 } from '../largePromptSpill'
 
-const context = {
-  files: [],
-  sessionId: 'session-1',
-  source: 'composer' as const,
-}
-
-describe('prepareLargePromptSubmission', () => {
+describe('spillLargePrompt', () => {
   it('leaves ordinary prompts inline', async () => {
     const upload = vi.fn()
 
-    await expect(prepareLargePromptSubmission('short prompt', context, { upload })).resolves.toBeUndefined()
+    await expect(spillLargePrompt('short prompt', { sessionId: 'session-1', upload })).resolves.toBeUndefined()
     expect(upload).not.toHaveBeenCalled()
   })
 
-  it('stores oversized prompts through the attachment upload path and returns a compact reference', async () => {
+  it('stores oversized final model text through the attachment upload path', async () => {
     const upload = vi.fn(async (file: File) => {
       expect(file.name).toBe('composer-input-session-1.md')
       expect(file.type).toBe('text/markdown')
@@ -30,7 +25,8 @@ describe('prepareLargePromptSubmission', () => {
       }
     })
 
-    await expect(prepareLargePromptSubmission('x'.repeat(20), context, {
+    await expect(spillLargePrompt('x'.repeat(20), {
+      sessionId: 'session-1',
       thresholdChars: 10,
       upload,
     })).resolves.toEqual(largePromptReference(
@@ -40,22 +36,22 @@ describe('prepareLargePromptSubmission', () => {
     expect(upload).toHaveBeenCalledTimes(1)
   })
 
-  it('lets a host policy handle the prompt before generic spilling', async () => {
-    const upload = vi.fn()
-    const handled = { handled: true as const, message: 'Stored by the host.' }
+  it('reuses a successful workspace receipt when the same submission is retried', async () => {
+    const cache = new LargePromptSpillCache()
+    const upload = vi.fn(async () => ({ path: 'assets/uploads/prompt.md', url: '/raw/prompt.md' }))
+    const options = { sessionId: 'session-1', thresholdChars: 10, cache, upload }
 
-    await expect(prepareLargePromptSubmission('x'.repeat(20), context, {
-      thresholdChars: 10,
-      onBeforeSubmit: async () => handled,
-      upload,
-    })).resolves.toBe(handled)
-    expect(upload).not.toHaveBeenCalled()
+    await spillLargePrompt('x'.repeat(20), options)
+    await spillLargePrompt('x'.repeat(20), options)
+
+    expect(upload).toHaveBeenCalledTimes(1)
   })
 
   it('can be disabled by the host', async () => {
     const upload = vi.fn()
 
-    await expect(prepareLargePromptSubmission('x'.repeat(DEFAULT_LARGE_PROMPT_THRESHOLD_CHARS + 1), context, {
+    await expect(spillLargePrompt('x'.repeat(DEFAULT_LARGE_PROMPT_THRESHOLD_CHARS + 1), {
+      sessionId: 'session-1',
       enabled: false,
       upload,
     })).resolves.toBeUndefined()

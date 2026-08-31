@@ -434,6 +434,69 @@ describe('PiComposerPolicyController submit policy', () => {
     expect(control).toHaveBeenCalledTimes(1)
   })
 
+  it('serializes asynchronous final prompt transforms in submission order', async () => {
+    const session = new FakeComposerSession('idle')
+    const releases: Array<() => void> = []
+    const transformed: string[] = []
+    const policy = createPiComposerPolicyController({
+      session,
+      registry: createCommandRegistry(builtinCommands),
+      slashContext: context(),
+      createClientNonce: nonceFactory(),
+      onTransformPrompt: async (text) => {
+        transformed.push(text)
+        await new Promise<void>((resolve) => releases.push(resolve))
+        return { replacement: { text: `stored:${text}` } }
+      },
+    })
+
+    const first = policy.submit({ text: 'first' })
+    const second = policy.submit({ text: 'second' })
+    await vi.waitFor(() => expect(transformed).toEqual(['first']))
+    releases.shift()?.()
+    await expect(first).resolves.toMatchObject({ type: 'prompt' })
+    await vi.waitFor(() => expect(transformed).toEqual(['first', 'second']))
+    releases.shift()?.()
+    await expect(second).resolves.toMatchObject({ type: 'prompt' })
+    expect(session.prompts.map((prompt) => prompt.message)).toEqual(['stored:first', 'stored:second'])
+  })
+
+  it('treats a true host pre-submit result as allow and still transforms final text', async () => {
+    const session = new FakeComposerSession('idle')
+    const transform = vi.fn(async () => ({ replacement: { text: 'stored prompt' } }))
+    const policy = createPiComposerPolicyController({
+      session,
+      registry: createCommandRegistry(builtinCommands),
+      slashContext: context(),
+      onBeforeSubmit: () => true,
+      onTransformPrompt: transform,
+    })
+
+    await expect(policy.submit({ text: 'x'.repeat(20) })).resolves.toMatchObject({ type: 'prompt' })
+    expect(transform).toHaveBeenCalledWith('x'.repeat(20), expect.objectContaining({ source: 'composer' }))
+    expect(session.prompts[0]?.message).toBe('stored prompt')
+  })
+
+  it('expands skill slash commands before transforming oversized model-bound text', async () => {
+    const session = new FakeComposerSession('idle')
+    const registry = createCommandRegistry(builtinCommands)
+    registry.register({ name: 'review', description: 'Review diff', kind: 'skill', handler: vi.fn() })
+    const transform = vi.fn(async () => ({ replacement: { text: 'stored skill prompt', displayText: 'Large skill input saved' } }))
+    const policy = createPiComposerPolicyController({
+      session,
+      registry,
+      slashContext: context({ listCommands: () => registry.list() }),
+      onTransformPrompt: transform,
+    })
+
+    await expect(policy.submit({ text: `/review ${'x'.repeat(20)}` })).resolves.toMatchObject({ type: 'prompt' })
+    expect(transform).toHaveBeenCalledWith(`skill: review\n\n${'x'.repeat(20)}`, expect.any(Object))
+    expect(session.prompts[0]).toMatchObject({
+      message: 'stored skill prompt',
+      displayMessage: 'Large skill input saved',
+    })
+  })
+
   it('expands skill slash commands to Pi text so streaming follow-up queueing is explicit and safe', async () => {
     const session = new FakeComposerSession('streaming')
     const registry = createCommandRegistry(builtinCommands)

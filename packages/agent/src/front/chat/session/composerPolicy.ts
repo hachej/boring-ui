@@ -61,6 +61,8 @@ export interface PiComposerPolicyOptions extends PiQueueControllerOptions {
   blockerMessage?: string
   isActiveSession?: () => boolean
   onBeforeSubmit?: (draft: string, context: { files: PromptInputFilePart[]; source: PiComposerSubmitInput['source'] }) => PiComposerBeforeSubmitResult | Promise<PiComposerBeforeSubmitResult>
+  /** Transform only final model-bound text, after local command dispatch and skill expansion. */
+  onTransformPrompt?: (text: string, context: { files: PromptInputFilePart[]; source: PiComposerSubmitInput['source'] }) => PiComposerReplacementSubmit | void | Promise<PiComposerReplacementSubmit | void>
   onCommandResult?: (message: string) => void
   onMentionedFilesConsumed?: () => void
   allowPromptDuringInitialHydration?: boolean
@@ -81,12 +83,19 @@ export type PiComposerSubmitResult =
 
 export class PiComposerPolicyController {
   private readonly queueController
+  private submissionTail: Promise<void> = Promise.resolve()
 
   constructor(private readonly options: PiComposerPolicyOptions) {
     this.queueController = createPiFollowUpQueueController(options.session, options)
   }
 
-  async submit(input: PiComposerSubmitInput): Promise<PiComposerSubmitResult> {
+  submit(input: PiComposerSubmitInput): Promise<PiComposerSubmitResult> {
+    const pending = this.submissionTail.then(async () => await this.submitInOrder(input))
+    this.submissionTail = pending.then(() => undefined, () => undefined)
+    return pending
+  }
+
+  private async submitInOrder(input: PiComposerSubmitInput): Promise<PiComposerSubmitResult> {
     const files = input.files ?? []
     const source = input.source ?? 'composer'
 
@@ -120,7 +129,7 @@ export class PiComposerPolicyController {
     if (parsed) {
       const command = this.options.registry.get(parsed.name)
       if (command?.kind === 'skill') {
-        return this.submitExpandedText(skillCommandText(parsed.name, parsed.args))
+        return this.submitExpandedText(skillCommandText(parsed.name, parsed.args), files, source)
       }
       if (command) return this.runLocalCommand(parsed.name, parsed.args, source)
     }
@@ -129,8 +138,13 @@ export class PiComposerPolicyController {
       return this.fromQueueResult(await this.queueController.submit({ text, attachments: this.toAttachmentPayloads(files) }))
     }
 
+    const transformed = await this.runPromptTransform(text, files, source)
+    if (this.options.isActiveSession && !this.options.isActiveSession()) return this.stale()
+    const finalText = transformed?.replacement.text ?? text
+    const finalDisplayText = transformed?.replacement.displayText ?? displayText
+
     const { serverMessage, attachments } = await createEnrichedSubmitPayload({
-      text,
+      text: finalText,
       files,
       mentionedFiles: this.getMentionedFiles(),
     })
@@ -140,7 +154,7 @@ export class PiComposerPolicyController {
 
     const result = await this.queueController.submit({
       text: serverMessage,
-      displayText,
+      displayText: finalDisplayText,
       attachments,
       model: this.options.model ?? undefined,
       ...(this.options.thinkingControl ? { thinkingLevel: this.options.thinkingLevel ?? DEFAULT_THINKING } : {}),
@@ -169,13 +183,34 @@ export class PiComposerPolicyController {
     return this.queueController.stop()
   }
 
-  private async submitExpandedText(text: string): Promise<PiComposerSubmitResult> {
+  private async submitExpandedText(
+    text: string,
+    files: PromptInputFilePart[],
+    source: PiComposerSubmitInput['source'],
+  ): Promise<PiComposerSubmitResult> {
+    const transformed = await this.runPromptTransform(text, files, source)
+    if (this.options.isActiveSession && !this.options.isActiveSession()) return this.stale()
     return this.fromQueueResult(await this.queueController.submit({
-      text,
+      text: transformed?.replacement.text ?? text,
+      ...(transformed?.replacement.displayText ? { displayText: transformed.replacement.displayText } : {}),
       kind: 'expanded-text',
       model: this.options.model ?? undefined,
       ...(this.options.thinkingControl ? { thinkingLevel: this.options.thinkingLevel ?? DEFAULT_THINKING } : {}),
     }))
+  }
+
+  private async runPromptTransform(
+    text: string,
+    files: PromptInputFilePart[],
+    source: PiComposerSubmitInput['source'],
+  ): Promise<PiComposerReplacementSubmit | undefined> {
+    try {
+      const transformed = await this.options.onTransformPrompt?.(text, { files, source })
+      return transformed || undefined
+    } catch (error) {
+      if (this.options.isActiveSession && !this.options.isActiveSession()) return undefined
+      throw error
+    }
   }
 
   private async runLocalCommand(commandName: string, args: string, source?: PiComposerSubmitInput['source']): Promise<PiComposerSubmitResult> {
@@ -201,7 +236,7 @@ export class PiComposerPolicyController {
       // onPromptSubmitStarted, stale-rejection dismissal, local-submitted
       // cursor cleanup — exactly as they would for a plain prompt. The
       // human-facing notice above stays a side effect.
-      return await this.submitExpandedText(modelMessage)
+      return await this.submitExpandedText(modelMessage, [], source)
     }
     return { type: 'command', command: commandName, ...(message ? { result: message } : {}), preserveDraft }
   }
