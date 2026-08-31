@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import type { DatabaseSync } from 'node:sqlite'
 import { AgentGatewayError, AgentGatewayErrorCode } from '../../shared/index'
+import { AsyncSqliteTurnLedgerWriter } from './sqliteTurnLedgerWriter'
 
 const require = createRequire(import.meta.url)
 import type {
@@ -50,7 +51,9 @@ function validateTarget(key: AgentRequestKey): void {
 export class SqliteAgentRequestLedger implements AgentRequestLedger {
   readonly durability = 'durable-transactional' as const
   private readonly database: DatabaseSync
+  private readonly turnWriter: AsyncSqliteTurnLedgerWriter
   private incarnation = 'unclaimed'
+  private ledgerClosePromise: Promise<void> | undefined
   private readonly attentionListeners = new Set<(change: AgentAttentionLedgerChange) => void>()
 
   readonly attention = {
@@ -80,6 +83,7 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
     this.database = new SqliteDatabaseSync(path)
     this.database.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;')
     this.migrate()
+    this.turnWriter = new AsyncSqliteTurnLedgerWriter(this.database)
   }
 
   async prepare(key: AgentRequestKey, digest: string, replayPayload?: import('../../shared/index').JsonValue): Promise<AgentRequestLedgerPrepareResult> {
@@ -300,21 +304,15 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
   async startTurn(record: Omit<AgentTurnLedgerRecord, 'state' | 'startedAt' | 'updatedAt'>): Promise<void> {
     const now = Date.now()
     const next: AgentTurnLedgerRecord = { ...record, state: 'started', startedAt: now, updatedAt: now }
-    this.database.prepare(`
-      INSERT INTO agent_turn_ledger
-        (run_key, session_key, operation, workspace_scope_id, incarnation, state, record_json, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(run_key, session_key) DO NOTHING
-    `).run(
-      keyString(record.runRequestKey),
-      sessionKey(record.sessionRef),
-      record.runRequestKey.operation,
-      record.runRequestKey.workspaceScopeId,
-      record.incarnation,
-      next.state,
-      JSON.stringify(next),
-      now,
-    )
+    await this.turnWriter.start({
+      runKey: keyString(record.runRequestKey),
+      sessionKey: sessionKey(record.sessionRef),
+      operation: record.runRequestKey.operation,
+      workspaceScopeId: record.runRequestKey.workspaceScopeId,
+      incarnation: record.incarnation,
+      recordJson: JSON.stringify(next),
+      updatedAt: now,
+    })
   }
 
   async finishTurn(
@@ -322,19 +320,13 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
     sessionRef: import('../../shared/index').AgentSessionRef,
     input: { state: 'ended' | 'error'; endedSeq: number },
   ): Promise<void> {
-    const runKey = keyString(runRequestKey)
-    const id = sessionKey(sessionRef)
-    const row = this.database.prepare(`
-      SELECT record_json FROM agent_turn_ledger WHERE run_key = ? AND session_key = ?
-    `).get(runKey, id) as { record_json: string } | undefined
-    if (!row) conflict('turn ledger record is missing')
-    const record = JSON.parse(row.record_json) as AgentTurnLedgerRecord
-    const next = { ...record, state: input.state, endedSeq: input.endedSeq, updatedAt: Date.now() }
-    const changed = this.database.prepare(`
-      UPDATE agent_turn_ledger SET state = ?, record_json = ?, updated_at = ?
-      WHERE run_key = ? AND session_key = ? AND state = 'started'
-    `).run(next.state, JSON.stringify(next), next.updatedAt, runKey, id)
-    if (changed.changes !== 1) conflict('turn ledger transition lost its compare-and-swap race')
+    await this.turnWriter.finish({
+      runKey: keyString(runRequestKey),
+      sessionKey: sessionKey(sessionRef),
+      state: input.state,
+      endedSeq: input.endedSeq,
+      updatedAt: Date.now(),
+    })
   }
 
   async admitEffect(record: Omit<AgentEffectLedgerRecord, 'state' | 'updatedAt'>): Promise<void> {
@@ -390,8 +382,12 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
     return Number(row.count)
   }
 
-  close(): void {
-    this.database.close()
+  close(): Promise<void> {
+    this.ledgerClosePromise ??= (async () => {
+      await this.turnWriter.close()
+      this.database.close()
+    })()
+    return this.ledgerClosePromise
   }
 
   private readSync(key: AgentRequestKey): AgentRequestLedgerRecord | undefined {

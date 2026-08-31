@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
@@ -6,6 +7,8 @@ import { AgentGatewayErrorCode } from '../../../shared/index'
 import { InMemoryAgentRequestLedger } from '../requestLedger'
 import { SqliteAgentRequestLedger } from '../sqliteRequestLedger'
 import type { AgentRequestKey } from '../types'
+
+const require = createRequire(import.meta.url)
 
 const key: AgentRequestKey = {
   workspaceScopeId: 'workspace-a',
@@ -102,6 +105,62 @@ describe('InMemoryAgentRequestLedger', () => {
 })
 
 describe('SqliteAgentRequestLedger', () => {
+  it('keeps Turn writes off the event loop while another process holds the SQLite writer lock', async () => {
+    const path = join(tmpdir(), `agent-request-ledger-${randomUUID()}.sqlite`)
+    const ledger = new SqliteAgentRequestLedger(path)
+    const incarnation = await ledger.claimIncarnation()
+    const { DatabaseSync } = require('node:sqlite') as typeof import('node:sqlite')
+    const blocker = new DatabaseSync(path)
+    blocker.exec('BEGIN IMMEDIATE')
+
+    const calledAt = Date.now()
+    const write = ledger.startTurn({
+      runRequestKey: runKey,
+      sessionRef: { agentTypeId: 'alpha', sessionId: 'session-a' },
+      turnId: 'turn-a',
+      incarnation,
+      startedSeq: 1,
+    })
+    expect(Date.now() - calledAt).toBeLessThan(100)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    blocker.exec('COMMIT')
+
+    await expect(write).resolves.toBeUndefined()
+    expect(await ledger.listNonTerminal({
+      states: ['started'],
+      operations: ['session.prompt'],
+    })).toEqual([
+      expect.objectContaining({ kind: 'turn', record: expect.objectContaining({ turnId: 'turn-a' }) }),
+    ])
+    blocker.close()
+    await ledger.close()
+  })
+
+  it('flushes queued Turn writes before closing the SQLite connection', async () => {
+    const path = join(tmpdir(), `agent-request-ledger-${randomUUID()}.sqlite`)
+    const ledger = new SqliteAgentRequestLedger(path)
+    const incarnation = await ledger.claimIncarnation()
+    const write = ledger.startTurn({
+      runRequestKey: runKey,
+      sessionRef: { agentTypeId: 'alpha', sessionId: 'session-a' },
+      turnId: 'turn-before-close',
+      incarnation,
+      startedSeq: 1,
+    })
+
+    await ledger.close()
+    await expect(write).resolves.toBeUndefined()
+
+    const reopened = new SqliteAgentRequestLedger(path)
+    expect(await reopened.listNonTerminal({
+      states: ['started'],
+      operations: ['session.prompt'],
+    })).toEqual([
+      expect.objectContaining({ kind: 'turn', record: expect.objectContaining({ turnId: 'turn-before-close' }) }),
+    ])
+    await reopened.close()
+  })
+
   it('atomically elects one owner across instances and durably replays the terminal record', async () => {
     const path = join(tmpdir(), `agent-request-ledger-${randomUUID()}.sqlite`)
     const first = new SqliteAgentRequestLedger(path)
