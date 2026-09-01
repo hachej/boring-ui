@@ -222,8 +222,53 @@ async function installWorkspaceLifecycleMocks(page: Page, baseURL: string | unde
       return route.fulfill(json({ error: 'not_found' }, 404))
     }
 
+    // The workbench file tree resolves its roots from the filesystem catalog.
+    if (path === '/api/v1/filesystems') {
+      return route.fulfill(json({
+        filesystems: [{
+          filesystem: 'user',
+          label: 'Workspace',
+          rootDir: '.',
+          access: 'readwrite',
+          capabilities: { read: true, list: true, search: true, write: true, delete: true, move: true, mkdir: true },
+        }],
+      }))
+    }
+
+    // Boot batch (gh-1402): /api/v1/workspace/meta rides along with the tree +
+    // ready-status warmup, and the addressed-agent fleet selection reads
+    // /api/v1/agents before WorkspaceBackgroundBoot mounts. Leaving any of them
+    // unmocked pins the workspace on "Preparing workspace..." and keeps the
+    // workbench overlay up.
+    if (path === '/api/v1/workspace/meta') {
+      const workspaceId = workspaceIdFromRequest(route)
+      return route.fulfill(json({
+        workspaceId,
+        workspaceRoot: `/workspaces/${workspaceId}`,
+        projectName: workspaces.find((item) => item.id === workspaceId)?.name ?? workspaceId,
+        defaultAgentTypeId: 'default',
+      }))
+    }
+
+    if (path === '/api/v1/agents') {
+      return route.fulfill(json([{ agentTypeId: 'default', label: 'Default' }]))
+    }
+
+    if (path === '/api/v1/agents/default/ready-status') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: 'event: status\ndata: {"state":"ready","sandboxReady":true,"harnessReady":true,"capabilities":{"chat":{"state":"ready"},"workspace":{"state":"ready"}}}\n\n',
+      })
+    }
+
+    // The composer is gated on an authorized discovered model (#1469): an empty
+    // model list leaves the prompt permanently disabled.
     if (path === '/api/v1/agents/default/models') {
-      return route.fulfill(json({ models: [] }))
+      return route.fulfill(json({
+        models: [{ provider: 'anthropic', id: 'claude-sonnet-4', label: 'Claude Sonnet 4', available: true }],
+        defaultModel: { provider: 'anthropic', id: 'claude-sonnet-4' },
+      }))
     }
 
     if (path === '/api/v1/agents/default/sessions' && method === 'GET') {
@@ -337,16 +382,22 @@ async function switchWorkspace(page: Page, name: string, id: string) {
     .toBeVisible({ timeout: 10_000 })
 }
 
+// The workbench is the right-hand surface region; its sources rail carries the
+// file tree. "Open workbench" is the rail toggle that mounts it.
+function workbenchRegion(page: Page) {
+  return page.getByRole('complementary', { name: 'Workbench', exact: true })
+}
+
 async function openWorkbench(page: Page) {
-  const leftPane = page.getByLabel('Workbench left pane')
-  const button = page.getByRole('button', { name: 'Workbench' })
+  const workbench = workbenchRegion(page)
+  const button = page.getByRole('button', { name: 'Open workbench' })
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    if (await leftPane.isVisible().catch(() => false)) return
+    if (await workbench.isVisible().catch(() => false)) return
     await expect(button).toBeVisible({ timeout: 10_000 })
     await button.click()
     try {
-      await expect(leftPane).toBeVisible({ timeout: 1_500 })
+      await expect(workbench).toBeVisible({ timeout: 1_500 })
       return
     } catch {
       // The route can swap the floating button during workspace creation.
@@ -355,7 +406,32 @@ async function openWorkbench(page: Page) {
     }
   }
 
-  await expect(leftPane).toBeVisible({ timeout: 10_000 })
+  await expect(workbench).toBeVisible({ timeout: 10_000 })
+}
+
+// The sources rail starts collapsed to category icons; the Files category
+// expands the pane that hosts the file tree.
+async function openWorkbenchFiles(page: Page) {
+  await openWorkbench(page)
+  // "Refresh files" is part of the expanded Files pane chrome, so it marks the
+  // pane open whether or not the workspace has any files yet.
+  const filesPane = page.getByRole('button', { name: 'Refresh files' })
+  const filesCategory = page.getByRole('button', { name: 'Files', exact: true })
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (await filesPane.isVisible().catch(() => false)) return
+    await expect(filesCategory).toBeVisible({ timeout: 10_000 })
+    await filesCategory.click()
+    try {
+      await expect(filesPane).toBeVisible({ timeout: 2_000 })
+      return
+    } catch {
+      // A workspace switch remounts the rail collapsed; a click that lands
+      // mid-remount is lost. Retry after a full visibility wait.
+    }
+  }
+
+  await expect(filesPane).toBeVisible({ timeout: 10_000 })
 }
 
 test('agent openFile command opens a closed workbench and focuses the file', async ({ page, baseURL }) => {
@@ -368,7 +444,7 @@ test('agent openFile command opens a closed workbench and focuses the file', asy
   await expect(page.getByRole('button', { name: /Workspace menu: Alpha Workspace/ }))
     .toBeVisible({ timeout: 10_000 })
 
-  await expect(page.getByLabel('Surface')).toBeVisible({ timeout: 10_000 })
+  await expect(workbenchRegion(page)).toBeVisible({ timeout: 10_000 })
   await expect(page.getByText('Nothing open yet')).toBeHidden({ timeout: 10_000 })
   await expect(page.locator('.cm-content')).toContainText('export const alpha = 1', { timeout: 10_000 })
 })
@@ -386,7 +462,7 @@ test('new chat in additional workspace preserves the first session and stays wor
   const firstSession = state.sessionsByWorkspace.get('ws-beta')?.[0]
   expect(firstSession?.id).toMatch(/^ws-beta-session-/)
 
-  await page.getByRole('button', { name: 'New chat' }).click()
+  await page.getByRole('button', { name: 'New chat', exact: true }).click()
 
   await expect.poll(() => state.sessionsByWorkspace.get('ws-beta')?.length ?? 0, {
     timeout: 10_000,
@@ -396,10 +472,9 @@ test('new chat in additional workspace preserves the first session and stays wor
   expect(betaSessionIds.every((id) => id.startsWith('ws-beta-session-'))).toBe(true)
 
   const betaCreates = state.sessionCreates.filter((create) => create.workspaceId === 'ws-beta')
-  expect(betaCreates.map((create) => create.body)).toEqual([
-    { title: 'New session' },
-    {},
-  ])
+  // "New session" is a presentation fallback, not a durable title, so neither
+  // create sends one (automaticSessionCreateInput).
+  expect(betaCreates.map((create) => create.body)).toEqual([{}, {}])
   expect(state.sessionsByWorkspace.get('ws-alpha') ?? []).toHaveLength(0)
   expect(state.piChatRequests.some((request) => request.workspaceId === 'ws-beta' && request.sessionId === 'default')).toBe(false)
 
@@ -417,13 +492,13 @@ test('workspace create and switch keeps files and sessions scoped per workspace'
   await expect(page.getByRole('button', { name: /Workspace menu: Alpha Workspace/ }))
     .toBeVisible({ timeout: 10_000 })
 
-  await openWorkbench(page)
+  await openWorkbenchFiles(page)
   await expect(page.getByRole('treeitem', { name: /alpha\.md/ })).toBeVisible()
   await page.getByRole('treeitem', { name: /alpha\.md/ }).click()
   await expect(page.getByText('Nothing open yet')).toBeHidden({ timeout: 10_000 })
 
   await switchWorkspace(page, 'Beta Workspace', 'ws-beta')
-  await openWorkbench(page)
+  await openWorkbenchFiles(page)
   await expect(page.getByRole('treeitem', { name: /beta\.md/ })).toBeVisible()
   await expect(page.getByRole('treeitem', { name: /alpha\.md/ })).toHaveCount(0)
 
@@ -435,10 +510,10 @@ test('workspace create and switch keeps files and sessions scoped per workspace'
   await expect(page).toHaveURL(/\/workspace\/ws-gamma-workspace$/)
   await expect(page.getByRole('button', { name: /Workspace menu: Gamma Workspace/ }))
     .toBeVisible({ timeout: 10_000 })
-  await openWorkbench(page)
+  await openWorkbenchFiles(page)
 
-  const leftPane = page.getByLabel('Workbench left pane')
-  await leftPane.click({ button: 'right', position: { x: 40, y: 110 } })
+  const sourcesRail = page.getByRole('complementary', { name: 'Workbench sources and activity rail' })
+  await sourcesRail.click({ button: 'right', position: { x: 40, y: 110 } })
   await page.getByRole('menuitem', { name: 'New file' }).click()
   await page.getByTestId('file-tree-edit-input').fill('notes.md')
   await page.getByTestId('file-tree-edit-input').press('Enter')
@@ -452,12 +527,12 @@ test('workspace create and switch keeps files and sessions scoped per workspace'
   })
 
   await switchWorkspace(page, 'Beta Workspace', 'ws-beta')
-  await openWorkbench(page)
+  await openWorkbenchFiles(page)
   await expect(page.getByRole('treeitem', { name: /beta\.md/ })).toBeVisible()
   await expect(page.getByRole('treeitem', { name: /notes\.md/ })).toHaveCount(0)
 
   await switchWorkspace(page, 'Gamma Workspace', 'ws-gamma-workspace')
-  await openWorkbench(page)
+  await openWorkbenchFiles(page)
   await expect(page.getByRole('treeitem', { name: /notes\.md/ })).toBeVisible()
 
   expect(new Set(state.sessionRequests)).toEqual(

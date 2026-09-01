@@ -46,10 +46,29 @@ test('authenticated workspace can submit chat while runtime dependencies are sti
     if (path === '/api/v1/workspaces') return route.fulfill(json({ workspaces: [WORKSPACE] }))
     if (path === `/api/v1/workspaces/${WORKSPACE.id}`) return route.fulfill(json({ workspace: WORKSPACE, role: 'owner' }))
     if (path === '/api/v1/tree') return route.fulfill(json({ entries: [] }))
+    // Boot batch (gh-1402): the workspace route preloads /api/v1/workspace/meta
+    // alongside the tree + ready-status warmup, and the addressed-agent fleet
+    // selection reads /api/v1/agents before WorkspaceBackgroundBoot mounts.
+    if (path === '/api/v1/workspace/meta') {
+      return route.fulfill(json({
+        workspaceId: WORKSPACE.id,
+        workspaceRoot: `/workspaces/${WORKSPACE.id}`,
+        projectName: WORKSPACE.name,
+        defaultAgentTypeId: 'default',
+      }))
+    }
+    if (path === '/api/v1/agents') return route.fulfill(json([{ agentTypeId: 'default', label: 'Default' }]))
     if (path === '/api/v1/agents/default/sessions' && request.method() === 'GET') return route.fulfill(json({ sessions: [{ ref: { agentTypeId: 'default', sessionId: 'runtime-readiness' }, title: 'Runtime Readiness', status: 'idle', createdAt: Date.now(), updatedAt: Date.now() }] }))
     if (path === '/api/v1/agents/default/sessions/runtime-readiness/state') return route.fulfill(json({ ref: { agentTypeId: 'default', sessionId: 'runtime-readiness' }, seq: 0, summary: { ref: { agentTypeId: 'default', sessionId: 'runtime-readiness' }, title: 'Runtime Readiness', status: 'idle', createdAt: Date.now(), updatedAt: Date.now() }, state: { protocolVersion: 1, sessionId: 'runtime-readiness', seq: 0, status: 'idle', messages: [], queue: { followUps: [] }, followUpMode: 'one-at-a-time' } }))
     if (path === '/api/v1/agents/default/sessions/runtime-readiness/events') return route.fulfill({ status: 200, contentType: 'application/x-ndjson', body: '{"type":"heartbeat","now":"2026-01-01T00:00:00.000Z"}\n' })
-    if (path === '/api/v1/agents/default/models') return route.fulfill(json({ models: [] }))
+    // The composer is gated on an authorized discovered model (#1469): an empty
+    // model list leaves the prompt permanently disabled.
+    if (path === '/api/v1/agents/default/models') {
+      return route.fulfill(json({
+        models: [{ provider: 'anthropic', id: 'claude-sonnet-4', label: 'Claude Sonnet 4', available: true }],
+        defaultModel: { provider: 'anthropic', id: 'claude-sonnet-4' },
+      }))
+    }
     if (path === '/api/v1/agents/default/ready-status') {
       return route.fulfill({
         status: 200,
@@ -69,8 +88,8 @@ test('authenticated workspace can submit chat while runtime dependencies are sti
   })
 
   await page.goto(`/workspace/${WORKSPACE.id}`)
-  await expect(page.getByPlaceholder('Message the agent…')).toBeVisible()
-  await page.getByPlaceholder('Message the agent…').fill('Can I chat before macro runtime is ready?')
+  await expect(page.getByPlaceholder('Ask anything…')).toBeVisible()
+  await page.getByPlaceholder('Ask anything…').fill('Can I chat before macro runtime is ready?')
   await page.getByLabel('Submit').click()
 
   await expect.poll(() => chatSubmitted ?? null, {

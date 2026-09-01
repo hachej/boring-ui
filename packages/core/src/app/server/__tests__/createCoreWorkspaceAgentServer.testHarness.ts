@@ -38,6 +38,12 @@ export const mocks = (() => {
     createDatabase,
     provisionWorkspaceRuntime: vi.fn(async () => ({ changed: false, env: {}, pathEntries: [], skillPaths: [] })),
     collectWorkspaceAgentServerPlugins: vi.fn(),
+    // Delegates to the real resolver (installed below) so boot-time plugin
+    // package resolution — including the anchorDir the host passes — is
+    // exercised for real, while staying observable from tests.
+    resolveDefaultWorkspacePluginPackagePaths: vi.fn<
+      (options: unknown) => string[]
+    >(() => []),
     createWorkspaceUiTools: vi.fn(() => []),
     isMember: vi.fn(async (_workspaceId: string, _userId: string) => true),
     getWorkspace: vi.fn(async (id: string): Promise<{
@@ -97,7 +103,7 @@ vi.doMock('@hachej/boring-workspace/app/server', async (importOriginal) => {
       systemPromptAppend: undefined,
     }),
     readWorkspacePluginPackageRuntimePlugins: () => [],
-    resolveDefaultWorkspacePluginPackagePaths: () => [],
+    resolveDefaultWorkspacePluginPackagePaths: mocks.resolveDefaultWorkspacePluginPackagePaths,
     resolveOnePluginEntry: async (entry: unknown, context: unknown) => {
       pluginContexts.push(context)
       return entry
@@ -193,6 +199,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   pluginContexts.length = 0
   mocks.provisionWorkspaceRuntime.mockResolvedValue({ changed: false, env: {}, pathEntries: [], skillPaths: [] })
+  mocks.resolveDefaultWorkspacePluginPackagePaths.mockImplementation(() => [])
   mocks.acquireEnvironment.mockReset()
   mocks.hostRunWithWorkspaceAgent.mockClear()
   mocks.gatewayReadSessionState.mockClear()
