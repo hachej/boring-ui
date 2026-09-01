@@ -53,13 +53,15 @@ if [ -f "$CONFIG_PATH" ] && grep -q '^\[features\]' "$CONFIG_PATH"; then
   exit 1
 fi
 
-printf '\n[features]\ngoogle_oauth = true\n' >> "$CONFIG_PATH"
-
 cd "$APP_DIR"
 pnpm --filter @hachej/boring-core exec tsup --no-dts
 pnpm --filter @hachej/boring-core exec sh -c "cp src/front/theme.css dist/front/theme.css"
 pnpm migrate
 pnpm build
+# Swap the config in only now that the (multi-minute) build is done, so the
+# tracked file is modified for seconds rather than for the whole run.
+printf '\n[features]\ngoogle_oauth = true\n' >> "$CONFIG_PATH"
+
 cd "$RUN_DIR"
 # Run the server as a child rather than exec'ing it, so the traps above still
 # fire when Playwright tears the webServer down and the tracked TOML always
