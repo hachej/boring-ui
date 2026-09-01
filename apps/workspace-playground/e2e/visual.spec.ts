@@ -55,10 +55,14 @@ test.describe("command palette visual chrome", () => {
 
   test("footer keyboard hints are present", async ({ page }) => {
     await openPalette(page)
-    // The footer hint strip — ↑↓ navigate · ↵ open · esc close
-    await expect(page.getByText(/navigate/i)).toBeVisible()
-    await expect(page.getByText(/open/i).last()).toBeVisible()
-    await expect(page.getByText(/close/i).last()).toBeVisible()
+    // The footer hint strip — ↑↓ navigate · ↵ open · esc close.
+    // Scope to the desktop hint group: the footer also renders a
+    // touch-only "Tap a result to open" span that is `hidden` at this
+    // viewport, and an unscoped /open/i .last() resolves to it.
+    const hints = page.locator(".command-palette-footer-desktop-hints")
+    await expect(hints.getByText(/navigate/i)).toBeVisible()
+    await expect(hints.getByText(/^open$/i)).toBeVisible()
+    await expect(hints.getByText(/^close$/i)).toBeVisible()
   })
 
   test("> prefix surfaces the command mode segment", async ({ page }) => {
