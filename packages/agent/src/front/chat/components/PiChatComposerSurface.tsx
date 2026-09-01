@@ -206,9 +206,10 @@ export function PiChatComposerSurface<
   const uploadAttachment = useCallback((file: File) => uploadFile(file, {
     apiBaseUrl,
     workspaceRequestId,
+    requestHeaders,
     responseUrl: 'raw',
     fetch,
-  }), [apiBaseUrl, fetch, workspaceRequestId])
+  }), [apiBaseUrl, fetch, requestHeaders, workspaceRequestId])
 
   const resizeTextarea = useCallback((node: HTMLTextAreaElement | null) => {
     if (!node) return

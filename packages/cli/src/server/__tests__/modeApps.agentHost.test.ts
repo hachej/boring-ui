@@ -178,6 +178,87 @@ async function fixtureApp(useConfiguredSessionRoot: boolean) {
 }
 
 describe.sequential("CLI Agent Host composition", () => {
+  it("folder mode activates a launched authored agent package with scoped skills and knowledge", async () => {
+    const home = await temporaryRoot("boring-cli-authored-home-")
+    const workspaceRoot = await temporaryRoot("boring-cli-authored-workspace-")
+    process.env.HOME = home
+    await mkdir(join(workspaceRoot, "knowledge"))
+    await mkdir(join(workspaceRoot, "plugin", "agent"), { recursive: true })
+    await mkdir(join(workspaceRoot, "plugin", "front"), { recursive: true })
+    await mkdir(join(workspaceRoot, "skills", "local"), { recursive: true })
+    await writeFile(join(workspaceRoot, "instructions.md"), "You are Alpha.\n")
+    await writeFile(join(workspaceRoot, "knowledge", "facts.md"), "alpha knowledge\n")
+    await writeFile(join(workspaceRoot, "skills", "local", "SKILL.md"), "---\nname: local\ndescription: Local skill\n---\n\nUse local knowledge.\n")
+    await writeFile(join(workspaceRoot, "plugin", "agent", "index.ts"), `export default function (pi: any) { pi.registerCommand("book-alpha", { description: "Book alpha", handler: async () => undefined }) }\n`)
+    await writeFile(join(workspaceRoot, "plugin", "front", "index.tsx"), `import { definePlugin } from "@hachej/boring-workspace/plugin"\nexport default definePlugin({ id: "alpha-agent" })\n`)
+    await writeFile(join(workspaceRoot, "package.json"), JSON.stringify({
+      name: "alpha-agent",
+      version: "1.0.0",
+      boring: {
+        agent: { definitionId: "alpha", version: "1.0.0", label: "Alpha", instructionsRef: "instructions.md" },
+        front: "plugin/front/index.tsx",
+      },
+      pi: { extensions: ["plugin/agent/index.ts"], skills: ["skills/local"] },
+    }))
+    const app = await createFolderModeApp({
+      workspaceRoot,
+      mode: "direct",
+      provisionWorkspace: false,
+      loadAmbientSkills: false,
+      loadAmbientContext: false,
+    })
+    try {
+      const meta = await app.inject({ method: "GET", url: "/api/v1/workspace/meta" })
+      expect(meta.json<{ defaultAgentTypeId: string }>().defaultAgentTypeId).toBe("alpha")
+      const agents = await app.inject({ method: "GET", url: "/api/v1/agents" })
+      expect(agents.json<Array<{ agentTypeId: string }>>().map(({ agentTypeId }) => agentTypeId)).toEqual(["alpha"])
+      const created = await app.inject({
+        method: "POST",
+        url: "/api/v1/agents/alpha/sessions",
+        payload: { requestId: "create-alpha" },
+      })
+      const sessionId = created.json<{ sessionId: string }>().sessionId
+      const commands = await app.inject({
+        method: "GET",
+        url: `/api/v1/agents/alpha/commands?sessionId=${sessionId}`,
+      })
+      expect(commands.json().commands).toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: "book-alpha", source: "extension" }),
+        expect.objectContaining({ name: "skill:local", source: "skill" }),
+      ]))
+      const commandResult = await app.inject({
+        method: "POST",
+        url: "/api/v1/agents/alpha/commands/execute",
+        payload: { requestId: "execute-alpha", sessionId, name: "book-alpha", args: "" },
+      })
+      expect(commandResult.json()).toEqual({ ok: true, sessionId, name: "book-alpha" })
+      const skills = await app.inject({ method: "GET", url: "/api/v1/agents/alpha/skills" })
+      expect(skills.json().skills).toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: "local" }),
+      ]))
+      expect((await app.inject({ method: "GET", url: "/api/v1/agents/default/skills" })).statusCode)
+        .toBeGreaterThanOrEqual(400)
+      const humanFilesystems = await app.inject({ method: "GET", url: "/api/v1/filesystems" })
+      expect(humanFilesystems.json().filesystems).toEqual(expect.arrayContaining([
+        expect.objectContaining({ filesystem: "user", access: "readwrite" }),
+        expect.objectContaining({ filesystem: "agent_knowledge:alpha", label: "Alpha", access: "readonly" }),
+      ]))
+      const humanKnowledge = await app.inject({
+        method: "GET",
+        url: "/api/v1/files?filesystem=agent_knowledge%3Aalpha&path=facts.md",
+      })
+      expect(humanKnowledge.json()).toMatchObject({ content: "alpha knowledge\n", access: "readonly" })
+      expect((await app.inject({ method: "GET", url: "/api/v1/agents/default/commands" })).statusCode).toBeGreaterThanOrEqual(400)
+      expect((await app.inject({
+        method: "POST",
+        url: "/api/v1/agents/default/commands/execute",
+        payload: { requestId: "wrong-agent-skill", sessionId, name: "skill:local", args: "" },
+      })).statusCode).toBeGreaterThanOrEqual(400)
+    } finally {
+      await app.close()
+    }
+  }, 30_000)
+
   it("folder mode resolves workspace AGENTS.md into Pi context by default", async () => {
     const home = await temporaryRoot("boring-cli-folder-context-home-")
     const workspaceRoot = await temporaryRoot("boring-cli-folder-context-workspace-")

@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "definitionId": "factory-orchestrator",
+  "version": "1.0.0",
+  "label": "Factory Orchestrator",
+  "instructionsRef": "instructions.md"
+}

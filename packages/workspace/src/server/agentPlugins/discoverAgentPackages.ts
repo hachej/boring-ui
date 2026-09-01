@@ -20,6 +20,17 @@ export interface DiscoverRepositoryAgentPackagesOptions {
  * the resulting plain descriptors across the package boundary; packages/agent
  * never depends on workspace discovery code.
  */
+export async function discoverAgentPackagesAtRoots(
+  packageRoots: readonly string[],
+): Promise<readonly DiscoveredBoringAgentPackage[]> {
+  const manager = new BoringPluginAssetManager({
+    pluginDirs: packageRoots.map((rootDir) => ({ rootDir: resolve(rootDir), kind: "internal" as const, registered: true })),
+    errorRoot: join(resolve(packageRoots[0] ?? process.cwd()), ".pi", "extensions"),
+  })
+  await manager.load()
+  return Object.freeze(manager.inspectAgentPackages())
+}
+
 export async function discoverRepositoryAgentPackages(
   repositoryRoot: string,
   options: DiscoverRepositoryAgentPackagesOptions = {},

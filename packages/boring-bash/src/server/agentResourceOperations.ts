@@ -42,7 +42,7 @@ export async function createAgentResourceFilesystemBinding(
       pathStyle: 'absolute',
       symlinks: 'confined',
     })
-    return { filesystem, access: 'readonly', operations }
+    return { filesystem, access: 'readonly', operations, catalog: { visible: false } }
   } catch (error) {
     if (error instanceof ReadonlyProjectionOperationError) throw error
     throw invalidMount(filesystem)

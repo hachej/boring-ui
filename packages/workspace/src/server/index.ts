@@ -192,7 +192,7 @@ export type {
 export { buildBoringSystemPrompt } from "./boringSystemPrompt"
 export { BoringPluginAssetManager } from "./agentPlugins/manager"
 export type { DiscoveredBoringAgentPackage } from "./agentPlugins/types"
-export { discoverRepositoryAgentPackages } from "./agentPlugins/discoverAgentPackages"
+export { discoverAgentPackagesAtRoots, discoverRepositoryAgentPackages } from "./agentPlugins/discoverAgentPackages"
 export type { DiscoverRepositoryAgentPackagesOptions } from "./agentPlugins/discoverAgentPackages"
 export { isRemoteMaterializedPiPackageRoot } from "./agentPlugins/settingsSources"
 export { boringPluginRoutes, collectRestartWarnings } from "./agentPlugins/routes"

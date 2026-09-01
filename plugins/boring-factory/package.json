@@ -1,0 +1,46 @@
+{
+  "name": "@hachej/boring-factory",
+  "version": "0.0.0",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "description": "Trusted portable Factory profiles and procedure resources for Boring applications.",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js"
+    },
+    "./shared": {
+      "types": "./dist/shared/index.d.ts",
+      "import": "./dist/shared/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup && node scripts/build-resources.mjs",
+    "prepack": "pnpm run build",
+    "typecheck": "pnpm run build && tsc --noEmit",
+    "test": "pnpm run build && vitest run",
+    "lint": "pnpm run typecheck",
+    "clean": "rm -rf dist .tsbuildinfo"
+  },
+  "dependencies": {
+    "@playwright/test": "^1.62.1",
+    "mermaid": "11.16.1"
+  },
+  "devDependencies": {
+    "@hachej/boring-agent": "workspace:*",
+    "@types/node": "^22.20.0",
+    "tsup": "^8.4.0",
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.11"
+  }
+}

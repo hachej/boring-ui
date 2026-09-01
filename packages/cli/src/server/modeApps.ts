@@ -442,11 +442,53 @@ export async function createFolderModeApp(opts: {
 }): Promise<FastifyInstance> {
   const workspaceRoot = resolve(opts.workspaceRoot)
   const projectName = opts.projectName ?? (basename(workspaceRoot) || "workspace")
-  const [{ createWorkspaceAgentServer, readWorkspacePluginPackageRuntimePlugins }, { createPluginFrontRuntimeHost }, pluginDiscovery] = await Promise.all([
+  const [
+    { createWorkspaceAgentServer, readWorkspacePluginPackageRuntimePlugins },
+    workspaceServer,
+    agentServer,
+    { createPluginFrontRuntimeHost },
+    pluginDiscovery,
+  ] = await Promise.all([
     import("@hachej/boring-workspace/app/server"),
+    import("@hachej/boring-workspace/server"),
+    import("@hachej/boring-agent/server"),
     import("./pluginFrontRuntime.js"),
     import("./pluginDiscovery.js"),
   ])
+  const rootAgentPackage = (await workspaceServer.discoverAgentPackagesAtRoots([workspaceRoot]))
+    .find((descriptor) => resolve(descriptor.rootDir) === workspaceRoot)
+  let authoredAgent: Awaited<ReturnType<typeof agentServer.createConfiguredAgentHostAgentSpec>> | undefined
+  let authoredAgentResourcePlugin: {
+    id: string
+    contentDigest: string
+    packageResources: Array<{ packageName: string; packageRoot: string }>
+  } | undefined
+  if (rootAgentPackage) {
+    if (!rootAgentPackage.preflight.ok) {
+      throw new Error(`authored agent package is invalid: ${rootAgentPackage.preflight.errors.map((entry) => entry.message).join('; ')}`)
+    }
+    const source = await agentServer.materializeAgentDirectory({
+      directory: workspaceRoot,
+      expectedAgentTypeId: rootAgentPackage.manifest.boring.agent.definitionId,
+      manifest: "package.json",
+    })
+    const packageName = packageNameAtRoot(workspaceRoot)
+    const resourcePluginId = rootAgentPackage.pluginId
+    authoredAgentResourcePlugin = packageName
+      ? {
+          id: resourcePluginId,
+          contentDigest: source.definitionDigest ?? `${resourcePluginId}:v1`,
+          packageResources: [{ packageName, packageRoot: workspaceRoot }],
+        }
+      : undefined
+    authoredAgent = await agentServer.createConfiguredAgentHostAgentSpec({
+      source,
+      policy: {
+        fallbackLabel: rootAgentPackage.manifest.boring.agent.label ?? projectName,
+        ...(authoredAgentResourcePlugin ? { plugins: [{ name: resourcePluginId }] } : {}),
+      },
+    })
+  }
   const liveTranscriptEnabled = opts.liveTranscripts?.enabled ?? process.env.BORING_LIVE_TRANSCRIPTS_ENABLED === "1"
   if (liveTranscriptEnabled && !opts.liveTranscripts) {
     throw new Error("live_transcript_local_only: folder-mode live transcripts require explicit listener and canonical browser authority")
@@ -465,7 +507,7 @@ export async function createFolderModeApp(opts: {
   const liveTranscriptPlugin = liveTranscriptEnabled && opts.liveTranscripts
     ? (await import("@hachej/boring-transcription/server")).createLiveTranscriptServerPlugin({
         dispatcherResolver: liveTranscriptDispatcherProxy,
-        agentTypeId: "default",
+        agentTypeId: authoredAgent?.agentTypeId ?? "default",
         actorResolver: () => ({ workspaceId: "default", userId: "local" }),
         authority: {
           listenerHost: opts.liveTranscripts.listenerHost,
@@ -482,7 +524,10 @@ export async function createFolderModeApp(opts: {
         reviewIntervalMs: opts.liveTranscripts.reviewIntervalMs,
       })
     : undefined
-  const pluginDirs = pluginDiscovery.resolveCliBoringPluginDirs(workspaceRoot, { includeFolderModeAutomation: true })
+  const pluginDirs = [
+    ...(authoredAgent ? [{ rootDir: workspaceRoot, kind: "internal" as const, registered: true }] : []),
+    ...pluginDiscovery.resolveCliBoringPluginDirs(workspaceRoot, { includeFolderModeAutomation: true }),
+  ]
   const defaultPluginPackagePaths = pluginDiscovery.resolveCliDefaultPluginPackagePaths({ includeFolderModeAutomation: true })
   const tasksPluginPackage = defaultPluginPackagePaths.find((packageRoot) => packageNameAtRoot(packageRoot) === "@hachej/boring-tasks")
   const taskProviders = await detectFolderModeTaskProviders(workspaceRoot)
@@ -505,6 +550,7 @@ export async function createFolderModeApp(opts: {
       workspaceRoot,
       mode: opts.mode,
       logger: false,
+      ...(authoredAgent ? { agents: [authoredAgent], defaultAgentTypeId: authoredAgent.agentTypeId } : {}),
       provisionWorkspace: false,
       runtimeProvisioning,
       // Agent governance lives in `.agents`: readable by agents, never writable
@@ -529,6 +575,7 @@ export async function createFolderModeApp(opts: {
       // leaving arbitrary/workspace-local plugins on the explicit binding path.
       workspaceScopedDefaultPluginAgentContributions: true,
       plugins: [
+        ...(authoredAgentResourcePlugin ? [authoredAgentResourcePlugin] : []),
         ...(tasksPluginPackage
           ? [{
               dir: tasksPluginPackage,
@@ -596,6 +643,7 @@ export async function createFolderModeApp(opts: {
     workspaceId: "default",
     workspaceRoot,
     projectName,
+    defaultAgentTypeId: authoredAgent?.agentTypeId ?? "default",
     version: CLI_VERSION,
     runtimePluginFrontLoadingEnabled: true,
     runtimePluginTrustLabel: RUNTIME_PLUGIN_TRUST_LABEL,
@@ -1377,6 +1425,7 @@ export async function createWorkspacesModeApp(opts: {
   app.get("/api/v1/workspace/meta", async () => ({
     projectName: "Boring UI",
     workspacesMode: true,
+    defaultAgentTypeId: "default",
     version: CLI_VERSION,
     runtimePluginFrontLoadingEnabled: true,
     runtimePluginTrustLabel: RUNTIME_PLUGIN_TRUST_LABEL,

@@ -1251,6 +1251,31 @@ importers:
         specifier: ^4.1.11
         version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.20.1)(jsdom@30.0.1(@noble/hashes@2.3.0))(vite@8.2.1(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))
 
+  plugins/boring-factory:
+    dependencies:
+      '@playwright/test':
+        specifier: ^1.62.1
+        version: 1.62.1
+      mermaid:
+        specifier: 11.16.1
+        version: 11.16.1
+    devDependencies:
+      '@hachej/boring-agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
+      '@types/node':
+        specifier: ^22.20.0
+        version: 22.20.1
+      tsup:
+        specifier: ^8.4.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.26)(tsx@4.23.12)(typescript@6.0.3)(yaml@2.9.0)
+      typescript:
+        specifier: ~6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: ^4.1.11
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.20.1)(jsdom@30.0.1(@noble/hashes@2.3.0))(vite@8.2.1(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))
+
   plugins/boring-governance:
     dependencies:
       proper-lockfile:

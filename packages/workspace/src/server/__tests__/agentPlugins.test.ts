@@ -122,6 +122,7 @@ describe("boring agent plugin assets", () => {
     expect(result.errors).toEqual([])
     expect(manager.inspectAgentPackages()).toEqual([{
       rootDir: root,
+      pluginId: "agent-package",
       manifest: {
         boring: { agent: expect.objectContaining({ definitionId: "fixture-persona" }) },
         pi: { skills: ["shared-skill"] },
