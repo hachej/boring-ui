@@ -12,4 +12,4 @@ test('invariant checker passes against the package source tree', () => {
       encoding: 'utf-8',
     }),
   ).not.toThrow()
-}, 15_000)
+})

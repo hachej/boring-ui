@@ -91,7 +91,6 @@
     "lint:invariants": "bash ../../scripts/check-invariants.sh .",
     "clean": "rm -rf dist .tsbuildinfo",
     "smoke:vercel-sandbox": "tsx ./scripts/smoke-vercel-sandbox.mts",
-    "smoke:vercel-sandbox-leases": "tsx ./scripts/smoke-vercel-sandbox-leases.mts",
     "smoke:capability-readiness": "tsx ./scripts/smoke-capability-readiness.mts",
     "smoke:capability-readiness:vercel": "tsx ./scripts/smoke-capability-readiness-vercel.mts"
   },

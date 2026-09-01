@@ -1551,7 +1551,7 @@ describe('PiChatPanel sandbox shell', () => {
     fireEvent.keyDown(window, { key: 'ArrowDown' })
     fireEvent.keyDown(window, { key: 'Enter' })
     await waitFor(() => expect(screen.getByRole('button', { name: 'Thinking level: High' })).toBeTruthy())
-  }, 15_000)
+  })
 
   test('excludes requested built-in slash commands', async () => {
     const remote = new FakeRemotePiSession(remoteState())

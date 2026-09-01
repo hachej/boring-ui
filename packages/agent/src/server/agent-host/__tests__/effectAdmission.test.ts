@@ -1,8 +1,6 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { AgentGatewayErrorCode } from '../../../shared/index'
 import type { AgentGatewayEffect } from '../types'
-import type { SandboxLeaseService } from '../../sandbox/leases/sandboxLease'
-import { sandboxLeaseOwnerIdForSession } from '../../sandbox/leases/sandboxLeaseOwner'
 import { createEmbeddedGatewayFixture } from './embeddedGatewayFixture'
 
 const denied = { code: AgentGatewayErrorCode.AGENT_SCOPE_DENIED }
@@ -79,23 +77,44 @@ describe('Embedded Agent Gateway strong effect admission', () => {
     await expect(fixture.gateway.readSessionState({ scope, ref })).resolves.toMatchObject({ ref })
   })
 
-  it('drains the exact session-owned sandbox leases after successful deletion', async () => {
-    const fixture = await createEmbeddedGatewayFixture()
-    const releaseOwner = vi.fn(async () => 1)
-    fixture.setSandboxTools('alpha', { releaseOwner } as unknown as SandboxLeaseService)
-    const scope = fixture.issueScope()
-    const ref = await fixture.gateway.createSession({
+  it('joins selected-plugin cleanup once after successful session deletion', async () => {
+    const { fixture, scope, ref } = await createSession()
+    const calls: unknown[] = []
+    fixture.setSessionDeleteHook(async (input) => { calls.push(input) })
+
+    await fixture.gateway.deleteSession({ scope, ref, requestId: 'delete-with-cleanup' })
+
+    expect(calls).toEqual([{
+      workspaceScopeId: 'workspace',
+      agentTypeId: 'alpha',
+      sessionId: ref.sessionId,
+    }])
+  })
+
+  it('does not run selected-plugin cleanup when deletion is denied', async () => {
+    const { fixture, scope, ref } = await createSession()
+    const calls: unknown[] = []
+    fixture.setSessionDeleteHook(async (input) => { calls.push(input) })
+    fixture.queueAdmission('session.delete', 'strong-reject')
+
+    await expect(fixture.gateway.deleteSession({
       scope,
-      agentTypeId: 'alpha',
-      requestId: 'create-with-sandbox',
-    })
+      ref,
+      requestId: 'denied-delete-cleanup',
+    })).rejects.toMatchObject(denied)
 
-    await fixture.gateway.deleteSession({ scope, ref, requestId: 'delete-with-sandbox' })
+    expect(calls).toEqual([])
+  })
 
-    expect(releaseOwner).toHaveBeenCalledWith(sandboxLeaseOwnerIdForSession({
-      workspaceScopeId: scope.workspaceScopeId,
-      agentTypeId: 'alpha',
-    }, ref.sessionId))
+  it('keeps selected-plugin cleanup failure visible instead of returning success', async () => {
+    const { fixture, scope, ref } = await createSession()
+    fixture.setSessionDeleteHook(async () => { throw new Error('cleanup failed') })
+
+    await expect(fixture.gateway.deleteSession({
+      scope,
+      ref,
+      requestId: 'failed-delete-cleanup',
+    })).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN })
   })
 
   it('executes archive through inventory with replay and digest-conflict semantics', async () => {

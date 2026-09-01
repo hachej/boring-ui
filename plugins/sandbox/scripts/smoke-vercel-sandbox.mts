@@ -5,17 +5,13 @@ import { join } from 'node:path'
 
 import { Sandbox, Snapshot } from '@vercel/sandbox'
 
-import { SandboxLeaseService } from '../src/server/sandbox/leases/sandboxLease'
-import { addSandboxTargeting } from '../src/server/tools/sandboxTargeting'
-import { createSandboxManagementTool } from '../src/server/tools/sandboxManagement'
-import { sandboxLeaseOwnerId } from '../src/server/sandbox/leases/sandboxLeaseOwner'
-import type { ToolExecContext } from '../src/shared/tool'
-import type { RuntimeBundle } from '../src/server/runtime/mode'
-import { buildHarnessAgentTools } from '@hachej/boring-bash/agent'
+import { SandboxLeaseService } from '../src/server/leaseService'
+import { createSandboxBashTool } from '../src/server/sandboxBashTool'
+import { createSandboxManagementTool } from '../src/server/sandboxManagementTool'
+import { sandboxLeaseOwnerId } from '../src/server/leaseOwner'
+import type { ToolExecContext } from '@hachej/boring-agent/shared'
+import { buildHarnessAgentTools, type RuntimeBundle } from '@hachej/boring-bash/agent'
 import { FileHandleStore, createVercelSandboxProvider } from '@hachej/boring-sandbox/providers/vercel-sandbox'
-import {
-  IMMUTABLE_SANDBOX_CACHE_SOURCE_VERSION_V1,
-} from '@hachej/boring-sandbox/shared'
 
 const SERVICE_DIGEST = 'vercel-live-smoke-v1'
 const AGENT_TYPE_ID = 'factory-worker-smoke'
@@ -109,11 +105,7 @@ async function main(): Promise<void> {
       snapshotExpirationMs: 24 * 60 * 60 * 1000,
       telemetrySalt,
       store,
-      immutableCacheSource: {
-        contractVersion: IMMUTABLE_SANDBOX_CACHE_SOURCE_VERSION_V1,
-        providerId: 'vercel-sandbox',
-        opaqueRef: snapshot.snapshotId,
-      },
+      immutableSnapshotId: snapshot.snapshotId,
     })
     service = new SandboxLeaseService({
       workspaceRoot: join(tempDir, 'leases'),
@@ -192,29 +184,45 @@ async function main(): Promise<void> {
       }
     })
 
-    phase = 'canonical-targeted-exec'
-    const primaryBash = await service.withPair(ownerId, first.handle, async (pair) => buildHarnessAgentTools({
-      workspace: pair.workspace,
-      sandbox: pair.sandbox,
-      fileSearch: { async search() { return [] } },
-      bash: { kind: 'remote' },
-      filesystem: { kind: 'remote-workspace' },
-    } as RuntimeBundle).filter((tool) => tool.name === 'bash'))
-    const targetedBash = addSandboxTargeting(primaryBash, {
+    phase = 'sandbox-bash-exec'
+    const canonicalBashContract = await service.withPair(ownerId, second.handle, async (pair) => {
+      const bash = buildHarnessAgentTools({
+        workspace: pair.workspace,
+        sandbox: pair.sandbox,
+        fileSearch: { async search() { return [] } },
+        bash: { kind: 'remote' },
+        filesystem: { kind: 'remote-workspace' },
+      } as RuntimeBundle).find((tool) => tool.name === 'bash')
+      if (!bash) throw new Error('canonical bash tool was not composed')
+      return JSON.stringify({ description: bash.description, parameters: bash.parameters })
+    })
+    const sandboxBash = createSandboxBashTool({
       leases: service,
       workspaceScopeId: workspaceId,
       agentTypeId: AGENT_TYPE_ID,
-      includeFilesystemTools: false,
-      includeUploadTools: false,
-    }).find((tool) => tool.name === 'bash')
-    if (!targetedBash) throw new Error('canonical bash tool was not composed')
-    const targetedResult = await targetedBash.execute(
-      { sandbox: second.handle, command: 'printf canonical-target' },
+    })
+    const sandboxBashResult = await sandboxBash.execute(
+      { sandbox: second.handle, command: 'printf sandbox-bash' },
       toolContext,
     )
-    if (targetedResult.isError || !targetedResult.content.some((part) => part.text.includes('canonical-target'))) {
-      throw new Error('canonical bash did not target the selected Vercel lease')
+    if (sandboxBashResult.isError || !sandboxBashResult.content.some((part) => part.text.includes('sandbox-bash'))) {
+      throw new Error('sandbox_bash did not target the selected Vercel lease')
     }
+    if ('sandbox' in (sandboxBash.parameters.properties as Record<string, unknown>)) {
+      const { sandbox: _sandbox, ...sandboxBashProperties } = sandboxBash.parameters.properties as Record<string, unknown>
+      if (!('command' in sandboxBashProperties)) throw new Error('sandbox_bash lost the canonical bash contract')
+    }
+    const canonicalBashAfter = await service.withPair(ownerId, second.handle, async (pair) => {
+      const bash = buildHarnessAgentTools({
+        workspace: pair.workspace,
+        sandbox: pair.sandbox,
+        fileSearch: { async search() { return [] } },
+        bash: { kind: 'remote' },
+        filesystem: { kind: 'remote-workspace' },
+      } as RuntimeBundle).find((tool) => tool.name === 'bash')
+      return JSON.stringify({ description: bash?.description, parameters: bash?.parameters })
+    })
+    if (canonicalBashAfter !== canonicalBashContract) throw new Error('sandbox plugin mutated canonical bash')
 
     phase = 'lease-pin-release'
     let unblock!: () => void
@@ -257,11 +265,7 @@ async function main(): Promise<void> {
       snapshotExpirationMs: 24 * 60 * 60 * 1000,
       telemetrySalt,
       store,
-      immutableCacheSource: {
-        contractVersion: IMMUTABLE_SANDBOX_CACHE_SOURCE_VERSION_V1,
-        providerId: 'vercel-sandbox',
-        opaqueRef: snapshot.snapshotId,
-      },
+      immutableSnapshotId: snapshot.snapshotId,
     })
     deadlineService = new SandboxLeaseService({
       workspaceRoot: join(tempDir, 'deadline-lease'),
@@ -311,7 +315,7 @@ async function main(): Promise<void> {
       leasesCreated: 2,
       immutableSnapshotInherited: true,
       isolatedMutableRoots: true,
-      targetedExec: true,
+      sandboxBashExec: true,
       releaseWaitedForPin: true,
       releasedLeasesUnavailable: true,
       remoteDeletionConfirmed: true,

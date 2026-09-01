@@ -156,6 +156,8 @@ export {
 export type {
   ServerBootstrapOptions,
   ServerBootstrapResult,
+  WorkspaceAgentSessionDeleteContext,
+  WorkspaceAgentToolFactoryContext,
   WorkspaceBridgeHandlerContribution,
   WorkspacePackageResourceContribution,
   WorkspacePackageResourceRecord,

@@ -11,10 +11,6 @@ import type {
   TelemetrySink,
 } from '@hachej/boring-agent/shared'
 
-import {
-  IMMUTABLE_SANDBOX_CACHE_SOURCE_VERSION_V1,
-  type ImmutableSandboxCacheSourceV1,
-} from '../../shared/immutableCacheV1'
 import { PROVIDER_CAPABILITIES, PROVIDER_CONTRACT_VERSION } from '../../shared/providerMatrix'
 import {
   attachSandboxProviderCleanupDebt,
@@ -86,8 +82,8 @@ export interface VercelSandboxProviderOptions {
   snapshotExpirationMs?: number
   /** Host-scoped secret used to make lifecycle identifier digests unlinkable across deployments. */
   telemetrySalt?: string
-  /** Host-resolved immutable base. Never project this option into Worker inputs. */
-  immutableCacheSource?: ImmutableSandboxCacheSourceV1
+  /** Host-resolved immutable Vercel base. Never project this option into Worker inputs. */
+  immutableSnapshotId?: string
   getEnvVar?: EnvGetter
   logger?: ModeLogger
   packageTemplateOpts?: PackageTemplateOptions
@@ -440,22 +436,18 @@ function normalizeVercelProviderError(error: unknown): Error {
   return new SandboxProviderError('VERCEL_API_ERROR', message, { cause: error })
 }
 
-function resolveImmutableCacheSnapshotId(
-  source: ImmutableSandboxCacheSourceV1 | undefined,
+function resolveImmutableSnapshotId(
+  snapshotId: string | undefined,
   disposable: boolean,
 ): string | undefined {
-  if (!source) return undefined
+  if (snapshotId === undefined) return undefined
   if (!disposable) {
-    throw new SandboxProviderError('CONFIG_INVALID', 'immutableCacheSource requires disposable lifecycle')
+    throw new SandboxProviderError('CONFIG_INVALID', 'immutableSnapshotId requires disposable lifecycle')
   }
-  if (
-    source.contractVersion !== IMMUTABLE_SANDBOX_CACHE_SOURCE_VERSION_V1
-    || source.providerId !== 'vercel-sandbox'
-    || source.opaqueRef.trim().length === 0
-  ) {
-    throw new SandboxProviderError('CONFIG_INVALID', 'immutableCacheSource is invalid for vercel-sandbox')
+  if (snapshotId.trim().length === 0) {
+    throw new SandboxProviderError('CONFIG_INVALID', 'immutableSnapshotId is invalid')
   }
-  return source.opaqueRef
+  return snapshotId
 }
 
 function requireEnvVar(name: string, getEnvVar: EnvGetter): string {
@@ -543,7 +535,7 @@ export function createVercelSandboxProvider(
   }
   const lifecycleLogger = createRedactedLifecycleLogger(logger, telemetrySalt)
   const disposableSourceSnapshotId = disposable
-    ? resolveImmutableCacheSnapshotId(opts.immutableCacheSource, true)
+    ? resolveImmutableSnapshotId(opts.immutableSnapshotId, true)
     : undefined
   const disposableLifecycle = disposable
     ? createDisposableVercelLifecycleManager({
@@ -602,7 +594,7 @@ export function createVercelSandboxProvider(
       const runtime = getEnvVar(VERCEL_SANDBOX_RUNTIME_ENV)?.trim() || DEFAULT_VERCEL_SANDBOX_RUNTIME
       const sourceSnapshotId = disposable
         ? disposableSourceSnapshotId
-        : resolveImmutableCacheSnapshotId(opts.immutableCacheSource, false)
+        : resolveImmutableSnapshotId(opts.immutableSnapshotId, false)
       const vercelClient = opts.vercelClient ?? createDefaultVercelClient({
         token: auth.token,
         teamId,
@@ -870,7 +862,7 @@ export function createVercelSandboxProvider(
         provider,
         disposableProviderConfigDigestV1('vercel-sandbox', {
           lifecycle: 'disposable',
-          immutableCacheSource: opts.immutableCacheSource ?? null,
+          immutableSnapshotId: opts.immutableSnapshotId ?? null,
           runtime: getEnvVar(VERCEL_SANDBOX_RUNTIME_ENV)?.trim() || DEFAULT_VERCEL_SANDBOX_RUNTIME,
           timeoutMs: disposableTimeoutMs ?? null,
           snapshotExpirationMs: disposableSnapshotExpirationMs,

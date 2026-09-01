@@ -14,10 +14,6 @@ import { EmbeddedAgentGateway } from './embeddedGateway'
 import { EnvironmentLeaseManager, type EnvironmentLease } from './environmentLease'
 import { getOptionalRuntimeBundleStorageRoot } from '../runtime/mode'
 import { mergeRuntimeFilesystemBindings } from '../runtime/filesystemBindings'
-import {
-  HostSandboxCapabilities,
-  matchesSandboxToolCapability,
-} from './hostSandboxCapabilities'
 import { createAgentHostRoutes } from './httpProjection'
 import { InMemoryAgentRequestLedger } from './requestLedger'
 import { resolveRequestLedgerPath } from './requestLedgerPath'
@@ -62,8 +58,6 @@ export interface RuntimeBinding {
   readonly environmentLease: EnvironmentLease
   readonly composition: BuiltAgentComposition
 }
-
-export { matchesSandboxToolCapability } from './hostSandboxCapabilities'
 
 export interface AgentHostRuntime {
   readonly options: CreateAgentHostOptions
@@ -141,7 +135,6 @@ export interface AgentHostRuntime {
     physicalBindingIdentity: string,
     bindingIdentity?: string,
     provisioningFingerprint?: string,
-    sandboxToolsDigest?: string,
   ): RuntimeBinding | undefined
   startDrain(): void
   drainRuntime(): Promise<void>
@@ -230,7 +223,6 @@ async function resolveHostId(options: CreateAgentHostOptions): Promise<string> {
 
 function validateResolvedRuntimeScope(resolved: ResolvedAgentRuntimeScope): void {
   if (!resolved.identity.trim()) throw new TypeError('resolved runtime scope identity must be non-empty')
-  if (resolved.sandboxTools && !resolved.sandboxTools.digest.trim()) throw new TypeError('sandbox tool capability digest must be non-empty')
   if (!resolved.environment.placementIdentity.trim() || !resolved.environment.provisioningFingerprint.trim()) {
     throw new TypeError('resolved environment identity must be non-empty')
   }
@@ -240,7 +232,6 @@ function validateDirectResolvedRuntimeScope(
   resolved: Omit<ResolvedAgentRuntimeScope, 'environment'>,
 ): void {
   if (!resolved.identity.trim()) throw new TypeError('resolved runtime scope identity must be non-empty')
-  if (resolved.sandboxTools && !resolved.sandboxTools.digest.trim()) throw new TypeError('sandbox tool capability digest must be non-empty')
   if (!resolved.resourceInputDigest?.trim()) {
     throw new TypeError('direct resolved runtime scope resourceInputDigest must be non-empty')
   }
@@ -254,6 +245,24 @@ function validateEnvironmentScope(resolved: AgentHostEnvironmentScope): void {
     throw new TypeError('resolved environment identity must be non-empty')
   }
   if (!resolved.workspaceRoot.trim()) throw new TypeError('resolved environment workspaceRoot must be non-empty')
+}
+
+function assertPublishedBindingMatchesResolvedScope(
+  binding: RuntimeBinding,
+  resolved: ResolvedAgentRuntimeScope,
+): void {
+  const currentPhysicalBindingIdentity = binding.scope.physicalBindingIdentity ?? binding.scope.identity
+  const candidatePhysicalBindingIdentity = resolved.physicalBindingIdentity ?? resolved.identity
+  if (
+    binding.scope.identity !== resolved.identity
+    || binding.scope.environment.provisioningFingerprint !== resolved.environment.provisioningFingerprint
+    || currentPhysicalBindingIdentity !== candidatePhysicalBindingIdentity
+  ) {
+    throw new AgentGatewayError(
+      AgentGatewayErrorCode.AGENT_RUNTIME_RESTART_REQUIRED,
+      'Agent runtime identity changed; process restart is required',
+    )
+  }
 }
 
 /**
@@ -371,7 +380,6 @@ function createRuntime(
   )
   const activity = new AgentSessionActivityIndex()
   const bindings = new Map<string, Promise<RuntimeBinding>>()
-  const sandboxCapabilities = new HostSandboxCapabilities()
   const publishedCurrentBindings = new Map<string, RuntimeBinding>()
   const currentBindingReservations = new Map<string, string>()
   const nextBindingGeneration = new Map<string, number>()
@@ -484,14 +492,20 @@ function createRuntime(
         `binding:${agentTypeId}`,
       )
       validateResolvedRuntimeScope(resolved)
-      sandboxCapabilities.register(resolved)
-      const key = sandboxCapabilities.bindingKey(agentTypeId, claim.workspaceScopeId, resolved)
-      const currentKey = sandboxCapabilities.currentBindingKey(agentTypeId, claim.workspaceScopeId, resolved)
+      const key = JSON.stringify([
+        agentTypeId,
+        claim.workspaceScopeId,
+        resolved.identity,
+        resolved.environment.provisioningFingerprint,
+        resolved.physicalBindingIdentity ?? resolved.identity,
+      ])
+      const physicalBindingIdentity = resolved.physicalBindingIdentity ?? resolved.identity
+      const currentKey = JSON.stringify([agentTypeId, claim.workspaceScopeId, physicalBindingIdentity])
       const useCanonicalCurrent = options.resolveAuthorizedAgentRuntimeScope !== undefined
       if (useCanonicalCurrent) {
         const current = publishedCurrentBindings.get(currentKey)
         if (current) {
-          sandboxCapabilities.assertBindingMatches(current, resolved)
+          assertPublishedBindingMatchesResolvedScope(current, resolved)
           return current
         }
         const reservedKey = currentBindingReservations.get(currentKey)
@@ -499,7 +513,7 @@ function createRuntime(
           const reserved = bindings.get(reservedKey)
           if (reserved) {
             const binding = await reserved
-            sandboxCapabilities.assertBindingMatches(binding, resolved)
+            assertPublishedBindingMatchesResolvedScope(binding, resolved)
             return binding
           }
         } else if (!reservedKey) {
@@ -592,23 +606,20 @@ function createRuntime(
       physicalBindingIdentity,
       bindingIdentity,
       provisioningFingerprint,
-      sandboxToolsDigest,
     ) {
       const exact = publishedCurrentBindings.get(JSON.stringify([
         agentTypeId,
         workspaceScopeId,
         physicalBindingIdentity,
-        sandboxToolsDigest ?? null,
       ]))
       if (exact) return exact
-      return sandboxCapabilities.findPublished(publishedCurrentBindings.values(), {
-        agentTypeId,
-        workspaceScopeId,
-        physicalBindingIdentity,
-        bindingIdentity,
-        provisioningFingerprint,
-        sandboxToolsDigest,
-      })
+      const matches = [...publishedCurrentBindings.values()].filter((binding) =>
+        binding.agentTypeId === agentTypeId
+        && binding.workspaceScopeId === workspaceScopeId
+        && (!bindingIdentity || binding.scope.identity === bindingIdentity)
+        && (!provisioningFingerprint
+          || binding.scope.environment.provisioningFingerprint === provisioningFingerprint))
+      return matches.length === 1 ? matches[0] : undefined
     },
     startDrain() {
       if (draining) return
@@ -701,8 +712,7 @@ function createRuntime(
       }
     },
     closeRuntime() {
-      if (closePromise) return closePromise
-      const attempt = (async () => {
+      closePromise ??= (async () => {
         let firstError: unknown
         try {
           await runtime.drainRuntime()
@@ -727,11 +737,6 @@ function createRuntime(
           )
           if (failed) firstError ??= failed.reason
         }
-        const sandboxCleanup = await sandboxCapabilities.disposeUntil(Date.now() + graceMs)
-        const failedSandboxCleanup = sandboxCleanup.find(
-          (result): result is PromiseRejectedResult => result.status === 'rejected',
-        )
-        if (failedSandboxCleanup) firstError ??= failedSandboxCleanup.reason
         try {
           await environments.close(graceMs)
         } catch (error) {
@@ -752,12 +757,7 @@ function createRuntime(
         }
         if (firstError !== undefined) throw firstError
       })()
-      const retryable = attempt.catch((error) => {
-        if (closePromise === retryable) closePromise = undefined
-        throw error
-      })
-      closePromise = retryable
-      return retryable
+      return closePromise
     },
   }
   return runtime
@@ -837,14 +837,8 @@ export async function createAgentHost(
     },
     close() {
       runtime.startDrain()
-      if (hostClose) return hostClose
-      const attempt = runtime.closeRuntime()
-      const retryable = attempt.catch((error) => {
-        if (hostClose === retryable) hostClose = undefined
-        throw error
-      })
-      hostClose = retryable
-      return retryable
+      hostClose ??= runtime.closeRuntime()
+      return hostClose
     },
   })
 

@@ -1,11 +1,11 @@
-import type { AgentTool, ToolExecContext, ToolResult } from '../../shared/tool'
+import type { AgentTool, ToolExecContext, ToolResult } from '@hachej/boring-agent/shared'
 import {
   SANDBOX_LEASE_ERROR_CODES,
   SandboxLeaseError,
   type SandboxLeaseService,
   type SandboxLeaseStatus,
-} from '../sandbox/leases/sandboxLease'
-import { sandboxLeaseOwnerId } from '../sandbox/leases/sandboxLeaseOwner'
+} from './leaseService'
+import { sandboxLeaseOwnerId } from './leaseOwner'
 const HANDLE_PATTERN = '^[A-Za-z0-9_-]{16,128}$'
 
 export interface SandboxManagementToolOptions {
@@ -94,7 +94,7 @@ async function executeManagement(
 export function createSandboxManagementTool(options: SandboxManagementToolOptions): AgentTool {
   return {
     name: 'sandbox',
-    description: 'Create, inspect, list, or release disposable remote coding sandboxes. Use the returned sandbox handle with ordinary bash and file tools.',
+    description: 'Create, inspect, list, or release disposable remote coding sandboxes. Use the returned handle only with sandbox_bash.',
     parameters: {
       type: 'object',
       oneOf: [

@@ -1,5 +1,3 @@
-export type { ImmutableSandboxCacheSourceV1 } from './immutableCacheV1'
-export { IMMUTABLE_SANDBOX_CACHE_SOURCE_VERSION_V1 } from './immutableCacheV1'
 export type {
   ProviderCapabilities,
   ProviderCapabilityErrorCode,

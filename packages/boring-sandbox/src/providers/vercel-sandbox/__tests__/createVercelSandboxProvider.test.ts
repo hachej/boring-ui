@@ -10,7 +10,6 @@ import type {
 } from '@hachej/boring-agent/shared'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
-import { IMMUTABLE_SANDBOX_CACHE_SOURCE_VERSION_V1 } from '../../../shared/immutableCacheV1'
 import type { SandboxProviderCreateContextV1 } from '../../../shared/providerV1'
 import {
   expectDisposableProviderProfile,
@@ -154,11 +153,7 @@ describe('createVercelSandboxProvider', () => {
     })).rejects.toMatchObject({ code: 'CONFIG_INVALID' })
 
     const persistentCacheConsumer = createVercelSandboxProvider({
-      immutableCacheSource: {
-        contractVersion: IMMUTABLE_SANDBOX_CACHE_SOURCE_VERSION_V1,
-        providerId: 'vercel-sandbox',
-        opaqueRef: 'snap_trusted_main',
-      },
+      immutableSnapshotId: 'snap_trusted_main',
       getEnvVar,
     })
     await expect(persistentCacheConsumer.create({
@@ -248,20 +243,14 @@ describe('createVercelSandboxProvider', () => {
     expect(deleteRecord).not.toHaveBeenCalled()
   })
 
-  test('derives configuration identity from immutable cache and runtime policy', () => {
+  test('derives configuration identity from immutable snapshot and runtime policy', () => {
     const first = createVercelSandboxProvider({
       lifecycle: 'disposable', getEnvVar,
-      immutableCacheSource: {
-        contractVersion: IMMUTABLE_SANDBOX_CACHE_SOURCE_VERSION_V1,
-        providerId: 'vercel-sandbox', opaqueRef: 'snap_a',
-      },
+      immutableSnapshotId: 'snap_a',
     })
     const second = createVercelSandboxProvider({
       lifecycle: 'disposable', getEnvVar,
-      immutableCacheSource: {
-        contractVersion: IMMUTABLE_SANDBOX_CACHE_SOURCE_VERSION_V1,
-        providerId: 'vercel-sandbox', opaqueRef: 'snap_b',
-      },
+      immutableSnapshotId: 'snap_b',
     })
     expect(first.disposableProfile.providerConfigDigest)
       .not.toBe(second.disposableProfile.providerConfigDigest)
@@ -330,10 +319,7 @@ describe('createVercelSandboxProvider', () => {
     }
     const provider = createVercelSandboxProvider({
       vercelClient: client, lifecycle: 'disposable', getEnvVar,
-      immutableCacheSource: {
-        contractVersion: IMMUTABLE_SANDBOX_CACHE_SOURCE_VERSION_V1,
-        providerId: 'vercel-sandbox', opaqueRef: 'snap_expected',
-      },
+      immutableSnapshotId: 'snap_expected',
     })
     const failure = await provider.create({
       workspaceRoot: 'workspace-missing-snapshot', workspaceId: 'workspace-missing-snapshot',
@@ -607,11 +593,7 @@ describe('createVercelSandboxProvider', () => {
       store,
       vercelClient: client,
       lifecycle: 'disposable',
-      immutableCacheSource: {
-        contractVersion: IMMUTABLE_SANDBOX_CACHE_SOURCE_VERSION_V1,
-        providerId: 'vercel-sandbox',
-        opaqueRef: 'snap_trusted_main',
-      },
+      immutableSnapshotId: 'snap_trusted_main',
       getEnvVar,
       logger: { info: vi.fn() },
     })

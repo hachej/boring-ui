@@ -1,15 +1,15 @@
 import type { WorkspaceSandboxPairV1 } from '@hachej/boring-sandbox/shared'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { ToolExecContext } from '../../../shared/tool'
+import type { ToolExecContext } from '@hachej/boring-agent/shared'
 import {
   SANDBOX_LEASE_ERROR_CODES,
   SandboxLeaseError,
   SandboxLeaseService,
-} from '../../sandbox/leases/sandboxLease'
-import { fakeDisposableProvider } from '../../sandbox/leases/__tests__/fakeDisposableProvider'
-import { sandboxLeaseOwnerId } from '../../sandbox/leases/sandboxLeaseOwner'
-import { createSandboxManagementTool } from '../sandboxManagement'
+} from '../leaseService'
+import { fakeDisposableProvider } from './fakeDisposableProvider'
+import { sandboxLeaseOwnerId } from '../leaseOwner'
+import { createSandboxManagementTool } from '../sandboxManagementTool'
 
 const ctx = {
   abortSignal: new AbortController().signal,

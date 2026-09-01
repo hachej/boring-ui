@@ -28,11 +28,6 @@ import { sessionNamespaceForAgent } from './sessionInventory'
 import { locateHostWorkspaceSkill, projectRuntimeSkillPathToHost } from './skillPathProjection'
 import type { AgentHarnessBackend } from './harnessBackend/types'
 import { createPiSessionHarnessBackend } from './harnessBackend/piSessionHarnessBackend'
-import { createSandboxManagementTool } from '../tools/sandboxManagement'
-import {
-  addSandboxTargeting,
-  assertSandboxToolCatalogAuthority,
-} from '../tools/sandboxTargeting'
 
 /**
  * Flag-gated durable event streaming. When set (`1`/`true`), production
@@ -221,7 +216,7 @@ export async function buildAgentComposition(
         ) ?? [],
       ]
     : undefined
-  const primaryStandardTools: AgentTool[] = [
+  const standardTools: AgentTool[] = [
     ...buildHarnessAgentTools(bashRuntimeBundle, input.environmentProvisioning
       ? {
           getCurrent: () => ({
@@ -235,31 +230,7 @@ export async function buildAgentComposition(
     })),
     ...(runtimeScope.includeUploadTools ? buildUploadAgentTools(bashRuntimeBundle) : []),
   ]
-  const sandboxCapability = runtimeScope.sandboxTools
-  const extraTools = runtimeScope.extraTools ?? []
-  // Defense in depth: Host binding resolution runs this pure preflight before
-  // acquiring resources, and the assembly funnel reasserts the same policy.
-  assertSandboxToolCatalogAuthority(runtimeScope)
-  const standardTools = sandboxCapability
-    ? addSandboxTargeting(primaryStandardTools, {
-        leases: sandboxCapability.leases,
-        workspaceScopeId: input.workspaceScopeId,
-        agentTypeId: input.agent.agentTypeId,
-        includeFilesystemTools: runtimeScope.includeFilesystemTools !== false,
-        includeUploadTools: runtimeScope.includeUploadTools === true,
-      })
-    : primaryStandardTools
-  const tools = [
-    ...standardTools,
-    ...(sandboxCapability
-      ? [createSandboxManagementTool({
-          leases: sandboxCapability.leases,
-          workspaceScopeId: input.workspaceScopeId,
-          agentTypeId: input.agent.agentTypeId,
-        })]
-      : []),
-    ...extraTools,
-  ]
+  const tools = [...standardTools, ...(runtimeScope.extraTools ?? [])]
 
   const readyTracker = createRuntimeReadyStatusTracker(options.runtimeModeAdapter, { harnessReady: true })
   const encodedPreferredModel = input.agent.model?.preferred

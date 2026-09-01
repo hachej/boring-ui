@@ -11,19 +11,6 @@ export type {
   DeploymentSnapshotStatus,
 } from './sandbox/snapshots/deploymentSnapshot'
 export { resolveWorkspaceRoot } from './config/workspaceRoot'
-export {
-  SANDBOX_LEASE_ERROR_CODES,
-  SandboxLeaseCleanupError,
-  SandboxLeaseError,
-  SandboxLeaseService,
-} from './sandbox/leases/sandboxLease'
-export type {
-  SandboxLease,
-  SandboxLeaseStatus,
-  SandboxLeaseState,
-  SandboxLeaseErrorCode,
-  SandboxLeaseServiceOptions,
-} from './sandbox/leases/sandboxLease'
 export { createRemoteWorkerModeAdapter } from './runtime/modes/remote-worker'
 export type { RemoteWorkerModeAdapterOptions } from './runtime/modes/remote-worker'
 export { createRemoteWorkerWorkspace } from './workspace/createRemoteWorkerWorkspace'
@@ -230,7 +217,6 @@ export type {
   CreatedAgentHost,
   AuthorizedEnvironmentIntent,
   ResolvedAgentRuntimeScope,
-  ResolvedSandboxToolCapability,
   ResolvedEnvironmentScope,
 } from './agent-host/types'
 export type { LeaseBoundWorkspaceAgent } from '../shared/workspaceAgentDispatcher'

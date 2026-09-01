@@ -4,27 +4,18 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import Fastify from 'fastify'
-import type { WorkspaceSandboxPairV1 } from '@hachej/boring-sandbox/shared'
 import { AgentGatewayError, AgentGatewayErrorCode, type AuthorizedAgentScope } from '../../../shared/index'
 import { ErrorCode } from '../../../shared/error-codes'
 import type { AgentHarnessFactory } from '../../../shared/harness'
 import { createTestRuntimeModeAdapter } from '@agent-test-host'
 import { getEnv, restoreEnvForTest, setEnvForTest } from '../../config/env'
 import { createScriptedPiHarness } from '../../testing/scriptedPiHarness'
-import { SandboxLeaseService } from '../../sandbox/leases/sandboxLease'
-import { fakeDisposableProvider } from '../../sandbox/leases/__tests__/fakeDisposableProvider'
-import { sandboxReservedToolNames } from '../../tools/sandboxTargeting'
 import { InMemorySessionChangesTracker } from '../../http/sessionChangesTracker'
 import type { RuntimeFilesystemBinding } from '../../runtime/mode'
 import { InMemoryAgentRequestLedger } from '../requestLedger'
 import { assertComposedAgentHostRouteTable } from '../testing/compositionRouteProof'
-import {
-  createAgentHost,
-  matchesSandboxToolCapability,
-  type RuntimeBinding,
-} from '../createAgentHost'
+import { createAgentHost } from '../createAgentHost'
 import { registerAgentHostEnvironmentRoutes } from '../environmentHttpProjection'
-import { HostSandboxCapabilities } from '../hostSandboxCapabilities'
 
 const roots: string[] = []
 afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))))
@@ -432,6 +423,8 @@ describe('createAgentHost', () => {
     const company = binding('company_context', 'company')
     const nutritionist = binding('nutritionist_context', 'nutritionist')
     const legal = binding('legal_context', 'legal')
+    const humanOnly = { ...binding('human_only_context', 'human'), agentTypeIds: [] as readonly string[] }
+    const dynamicSibling = { ...binding('dynamic_sibling_context', 'sibling'), agentTypeIds: ['other'] as readonly string[] }
     const toolsByAgent = new Map<string, Parameters<AgentHarnessFactory>[0]['tools']>()
     const harnessFactory: AgentHarnessFactory = async (input) => {
       toolsByAgent.set(input.systemPromptAppend!, input.tools)
@@ -440,6 +433,7 @@ describe('createAgentHost', () => {
     const resolveAgentBindings = vi.fn(async (agentTypeId: string) => [
       company,
       agentTypeId === 'nutritionist' ? nutritionist : legal,
+      dynamicSibling,
     ])
     const created = await createAgentHost({
       ...options(workspaceRoot),
@@ -452,7 +446,7 @@ describe('createAgentHost', () => {
         placementIdentity: 'context-catalog-environment',
         workspaceRoot,
         provisioningFingerprint: 'context-catalog-environment-v1',
-        resolveFilesystemBindings: async () => [company, nutritionist, legal],
+        resolveFilesystemBindings: async () => [company, nutritionist, legal, humanOnly],
       }),
       resolveAuthorizedAgentRuntimeScope: async ({ agentTypeId }) => ({
         identity: `context-runtime:${agentTypeId}`,
@@ -476,6 +470,7 @@ describe('createAgentHost', () => {
         'company_context',
         'nutritionist_context',
         'legal_context',
+        'human_only_context',
       ])
 
       await created.gateway.createSession({
@@ -510,6 +505,16 @@ describe('createAgentHost', () => {
         toolContext('nutritionist-foreign-read'),
       )).rejects.toThrow('No filesystem binding is available for legal_context')
       expect(legal.operations.read).not.toHaveBeenCalled()
+      await expect(nutritionistRead.execute(
+        { filesystem: 'human_only_context', path: 'knowledge.md' },
+        toolContext('nutritionist-human-only-read'),
+      )).rejects.toThrow('No filesystem binding is available for human_only_context')
+      expect(humanOnly.operations.read).not.toHaveBeenCalled()
+      await expect(nutritionistRead.execute(
+        { filesystem: 'dynamic_sibling_context', path: 'knowledge.md' },
+        toolContext('nutritionist-dynamic-sibling-read'),
+      )).rejects.toThrow('No filesystem binding is available for dynamic_sibling_context')
+      expect(dynamicSibling.operations.read).not.toHaveBeenCalled()
 
       const ownLegal = await legalRead.execute(
         { filesystem: 'legal_context', path: 'knowledge.md' },
@@ -518,6 +523,8 @@ describe('createAgentHost', () => {
       expect(ownLegal.isError).not.toBe(true)
       expect(legal.operations.read).toHaveBeenCalledOnce()
       expect(resolveAgentBindings.mock.calls.map(([agentTypeId]) => agentTypeId)).toEqual([
+        'nutritionist',
+        'nutritionist',
         'nutritionist',
         'nutritionist',
         'legal',
@@ -565,6 +572,7 @@ describe('createAgentHost', () => {
       created,
       authorizeAgentRequest: async () => scope,
     })
+    await app.register(created.registerDirectRoutes({ authorizeAgentRequest: async () => scope }))
 
     try {
       // The computed definition digest is surfaced as identity on describe().
@@ -578,9 +586,11 @@ describe('createAgentHost', () => {
       // Environment-level filesystem catalog.
       const catalog = await app.inject({ method: 'GET', url: '/api/v1/filesystems' })
       expect(catalog.statusCode).toBe(200)
-      expect(catalog.json().filesystems.map((entry: { filesystem: string }) => entry.filesystem))
-        .not.toContain('agent_knowledge')
-
+      expect(catalog.json().filesystems).toEqual([
+        expect.objectContaining({ filesystem: 'user', label: 'Workspace', access: 'readwrite' }),
+      ])
+      expect(catalog.body).not.toContain('agent_knowledge')
+      expect(catalog.body).not.toContain('agent_resources')
       await created.gateway.createSession({ scope, agentTypeId: 'scholar', requestId: 'scholar-knowledge-session' })
       await created.gateway.createSession({ scope, agentTypeId: 'plain', requestId: 'plain-knowledge-session' })
       const toolContext = (requestId: string) => ({
@@ -705,159 +715,6 @@ describe('createAgentHost', () => {
     await run
     expect(writeCompleted).toBe(true)
     await created.host.close()
-  })
-
-  it('never falls back across sandbox capability identities', () => {
-    const binding = (digest?: string): Pick<RuntimeBinding, 'scope'> => ({
-      scope: {
-        ...(digest ? { sandboxTools: { digest, leases: {} } } : {}),
-      } as RuntimeBinding['scope'],
-    })
-
-    expect(matchesSandboxToolCapability(binding('sandbox-tools-a'), 'sandbox-tools-a')).toBe(true)
-    expect(matchesSandboxToolCapability(binding('sandbox-tools-a'), 'sandbox-tools-b')).toBe(false)
-    expect(matchesSandboxToolCapability(binding('sandbox-tools-a'), undefined)).toBe(false)
-    expect(matchesSandboxToolCapability(binding(), undefined)).toBe(true)
-  })
-
-  it('never falls back across physical binding identities', () => {
-    const capabilities = new HostSandboxCapabilities()
-    const binding = {
-      agentTypeId: 'worker',
-      workspaceScopeId: 'workspace-a',
-      scope: {
-        identity: 'semantic-a',
-        physicalBindingIdentity: 'physical-a',
-        environment: { provisioningFingerprint: 'provisioning-a' },
-      },
-    } as unknown as RuntimeBinding
-
-    expect(() => capabilities.findPublished([binding], {
-      agentTypeId: 'worker',
-      workspaceScopeId: 'workspace-a',
-      physicalBindingIdentity: 'physical-b',
-      bindingIdentity: 'semantic-a',
-      provisioningFingerprint: 'provisioning-a',
-    })).toThrow(expect.objectContaining({
-      code: AgentGatewayErrorCode.AGENT_RUNTIME_RESTART_REQUIRED,
-    }))
-  })
-
-  it('retries fail-once sandbox deletion during host shutdown until it settles', async () => {
-    const sessionRoot = await root()
-    const remoteDispose = vi.fn()
-      .mockRejectedValueOnce(new Error('remote deletion acknowledgement lost'))
-      .mockResolvedValue(undefined)
-    const leases = new SandboxLeaseService({
-      workspaceRoot: sessionRoot,
-      provider: fakeDisposableProvider({
-        providerId: 'vercel-sandbox',
-        async create() {
-          return { dispose: remoteDispose } as unknown as WorkspaceSandboxPairV1
-        },
-      }),
-      serviceDigest: 'host-shutdown-retry',
-      ttlMs: 60_000,
-      reapIntervalMs: 60_000,
-      drainTimeoutMs: 100,
-      maxActiveLeasesPerOwner: 1,
-      maxActiveLeasesTotal: 1,
-      createHandle: () => 'lease-handle-0001',
-    })
-    await leases.acquire('owner-a')
-    const created = await createAgentHost({
-      ...options(sessionRoot),
-      shutdownGraceMs: 250,
-      resolveAuthorizedAgentRuntimeScope: vi.fn(async () => ({
-        identity: 'runtime-with-sandbox-cleanup',
-        physicalBindingIdentity: 'runtime-with-sandbox-cleanup',
-        resourceInputDigest: 'runtime-with-sandbox-cleanup',
-        sessionNamespace: 'alpha-sandbox-cleanup',
-        sandboxTools: { digest: 'host-shutdown-retry', leases },
-      })),
-    })
-    await created.gateway.createSession({
-      scope,
-      agentTypeId: 'alpha',
-      requestId: 'sandbox-shutdown-retry',
-    })
-
-    await expect(created.host.close()).resolves.toBeUndefined()
-    expect(remoteDispose).toHaveBeenCalledTimes(2)
-  })
-
-  it('rejects every sandbox-reserved authored tool before environment, provider, or harness creation', async () => {
-    const sessionRoot = await root()
-    const baseAdapter = createTestRuntimeModeAdapter('direct')
-    const createEnvironment = vi.fn(baseAdapter.create.bind(baseAdapter))
-    const createSandbox = vi.fn(async () => {
-      throw new Error('sandbox provider must not run while composing a catalog')
-    })
-    const leases = new SandboxLeaseService({
-      workspaceRoot: sessionRoot,
-      provider: fakeDisposableProvider({ create: createSandbox, providerId: 'vercel-sandbox' }),
-      serviceDigest: 'catalog-authority',
-      ttlMs: 60_000,
-      reapIntervalMs: 60_000,
-      drainTimeoutMs: 100,
-      maxActiveLeasesPerOwner: 1,
-      maxActiveLeasesTotal: 1,
-      createHandle: () => 'lease-handle-0001',
-    })
-    const harnessFactory = vi.fn(createScriptedPiHarness)
-    let toolName = 'sandbox'
-    const extraTool = () => ({
-      name: toolName,
-      description: 'authored collision probe',
-      parameters: {},
-      async execute() {
-        return { content: [{ type: 'text' as const, text: 'probe' }] }
-      },
-    })
-    const created = await createAgentHost({
-      ...options(sessionRoot),
-      runtimeModeAdapter: { ...baseAdapter, create: createEnvironment },
-      harnessFactory,
-      resolveAuthorizedAgentRuntimeScope: vi.fn(async () => ({
-        identity: `catalog-authority:${toolName}`,
-        physicalBindingIdentity: `catalog-authority:${toolName}`,
-        resourceInputDigest: `catalog-authority:${toolName}`,
-        sessionNamespace: 'catalog-authority',
-        sandboxTools: { digest: 'catalog-authority', leases },
-        includeFilesystemTools: true,
-        includeUploadTools: true,
-        extraTools: [extraTool()],
-      })),
-    })
-
-    const reserved = sandboxReservedToolNames(true)
-    expect(reserved).toEqual(['sandbox', 'bash', 'read', 'write', 'edit', 'find', 'grep', 'ls', 'upload_file'])
-    try {
-      for (const reservedName of reserved) {
-        toolName = reservedName
-        await expect(created.gateway.createSession({
-          scope,
-          agentTypeId: 'alpha',
-          requestId: `catalog-collision-${reservedName}`,
-        })).rejects.toMatchObject({ code: ErrorCode.enum.AUTHORED_AGENT_TOOL_COLLISION })
-        expect(createEnvironment).not.toHaveBeenCalled()
-        expect(createSandbox).not.toHaveBeenCalled()
-        expect(harnessFactory).not.toHaveBeenCalled()
-      }
-
-      toolName = 'worker_custom_tool'
-      await expect(created.gateway.createSession({
-        scope,
-        agentTypeId: 'alpha',
-        requestId: 'catalog-no-collision',
-      })).resolves.toMatchObject({ agentTypeId: 'alpha' })
-      expect(createEnvironment).toHaveBeenCalledOnce()
-      expect(createSandbox).not.toHaveBeenCalled()
-      expect(harnessFactory).toHaveBeenCalledOnce()
-    } finally {
-      await created.host.close().catch(() => {})
-      await leases.dispose().catch(() => {})
-    }
   })
 
   it('force-revokes a never-settling callback operation at shutdown grace and publishes no late continuation', async () => {
@@ -992,6 +849,10 @@ describe('createAgentHost', () => {
     }))
     const created = await createAgentHost({
       ...options(workspaceRoot),
+      agents: [
+        { agentTypeId: 'alpha', definition: { instructions: 'alpha', label: 'Alpha' } },
+        { agentTypeId: 'beta', definition: { instructions: 'beta', label: 'Beta' } },
+      ],
       inMemoryRequestLedgerMode: 'test',
       metering: {
         isEnabled: () => meteringEnabled,
@@ -1096,6 +957,23 @@ describe('createAgentHost', () => {
       expect(missing.statusCode, url).toBe(404)
       expect(missing.json(), url).toMatchObject({ error: { code: AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND } })
     }
+    const betaSession = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/beta/sessions',
+      payload: { requestId: 'create-beta-direct' },
+    })
+    const betaSessionId = betaSession.json<{ sessionId: string }>().sessionId
+    const alphaCommands = await app.inject({
+      method: 'GET',
+      url: `/api/v1/agents/alpha/commands?sessionId=${sessionId}`,
+    })
+    const betaCommands = await app.inject({
+      method: 'GET',
+      url: `/api/v1/agents/beta/commands?sessionId=${betaSessionId}`,
+    })
+    expect(alphaCommands.json<{ commands: Array<{ name: string }> }>().commands.map(({ name }) => name)).toEqual(['check'])
+    expect(betaCommands.json<{ commands: Array<{ name: string }> }>().commands.map(({ name }) => name)).toEqual(['check'])
+
     const commandPayload = {
       requestId: 'command-direct',
       sessionId,

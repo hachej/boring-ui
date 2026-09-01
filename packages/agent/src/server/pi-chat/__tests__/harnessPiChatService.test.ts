@@ -134,44 +134,6 @@ function renderMessagesFromEvents(events: PiChatEvent[]) {
 }
 
 describe('HarnessPiChatService', () => {
-  it('projects the request identity into the concrete harness RunContext', async () => {
-    const { service, harness } = createService()
-
-    await service.prompt(ctx, 's1', { message: 'hello', clientNonce: 'request-context' })
-
-    const getAdapter = harness.getPiSessionAdapter as ReturnType<typeof vi.fn>
-    const runContext = getAdapter.mock.calls[0]?.[1] as RunContext
-    expect(runContext.userId).toBe('user-a')
-    expect(runContext.requestId).toBe('request-a')
-  })
-
-  it('promotes Send-now with the queued submission context instead of the interrupt context', async () => {
-    const adapter = createAdapter()
-    const harness = createHarness(adapter)
-    const service = new HarnessPiChatService({ agentTypeId: 'test', harness, sessionStore, workdir: '/workspace' })
-    const queuedContext = {
-      ...ctx,
-      authSubject: 'queued-subject',
-      requestId: 'queued-request',
-      sessionAuthority: 'workspace-scope' as const,
-    }
-    const interruptContext = {
-      ...ctx,
-      authSubject: 'interrupt-subject',
-      requestId: 'interrupt-request',
-      sessionAuthority: 'workspace-scope' as const,
-    }
-
-    await service.followUp(queuedContext, 's1', { message: 'send now', clientNonce: 'queued-nonce', clientSeq: 1 })
-    await service.interrupt(interruptContext, 's1', { queueAction: 'resume' })
-
-    const getAdapter = harness.getPiSessionAdapter as ReturnType<typeof vi.fn>
-    const promotedRunContext = getAdapter.mock.calls.at(-1)?.[1] as RunContext
-    expect(promotedRunContext.userId).toBe('queued-subject')
-    expect(promotedRunContext.requestId).toBe('queued-request')
-    await service.dispose()
-  })
-
   it('serves id-less live attachment bytes from the addressed event URL', async () => {
     const adapter = createAdapter()
     const service = new HarnessPiChatService({

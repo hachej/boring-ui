@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 
-import type { ToolExecContext } from '../../../shared/tool'
-import { SANDBOX_LEASE_ERROR_CODES, SandboxLeaseError } from './sandboxLease'
+import type { ToolExecContext } from '@hachej/boring-agent/shared'
+import { SANDBOX_LEASE_ERROR_CODES, SandboxLeaseError } from './leaseService'
 
 export interface SandboxLeaseOwnerScope {
   readonly workspaceScopeId: string

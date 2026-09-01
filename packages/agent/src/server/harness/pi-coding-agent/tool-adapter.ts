@@ -55,11 +55,11 @@ export function adaptToolForPi(tool: AgentTool, sessionId?: string, telemetry: T
       let emittedFailure = false;
       try {
         const runContext = getRunContext?.();
-        const publicContext = {
+        const result = await tool.execute(params as Record<string, unknown>, {
           toolCallId,
           abortSignal: signal ?? new AbortController().signal,
           onUpdate: onUpdate
-            ? (partial: string) => onUpdate({ content: [{ type: "text", text: partial }], details: undefined })
+            ? (partial) => onUpdate({ content: [{ type: "text", text: partial }], details: undefined })
             : undefined,
           sessionId,
           userId: runContext?.userId,
@@ -67,8 +67,7 @@ export function adaptToolForPi(tool: AgentTool, sessionId?: string, telemetry: T
           userEmailVerified: runContext?.userEmailVerified,
           workspaceId: runContext?.workspaceId,
           requestId: runContext?.requestId,
-        };
-        const result = await tool.execute(params as Record<string, unknown>, publicContext);
+        });
         safeCapture(telemetry, {
           name: result.isError ? 'agent.tool.failed' : 'agent.tool.completed',
           properties: toolTelemetryProperties(

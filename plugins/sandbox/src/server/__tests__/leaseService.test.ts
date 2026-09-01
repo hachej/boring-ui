@@ -1,14 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import type { SandboxProviderV1, WorkspaceSandboxPairV1 } from '@hachej/boring-sandbox/shared'
-import type { Sandbox, Workspace } from '../../../../shared/index'
-import { ErrorCode } from '../../../../shared/error-codes'
+import type { Sandbox, Workspace } from '@hachej/boring-agent/shared'
 import {
   SANDBOX_LEASE_ERROR_CODES,
   SandboxLeaseCleanupError,
   SandboxLeaseService,
-} from '../sandboxLease'
-import { SandboxLeaseServiceRegistry } from '../sandboxLeaseServiceRegistry'
+} from '../leaseService'
+import { SandboxLeaseServiceRegistry } from '../leaseServiceRegistry'
 import { fakeDisposableProvider } from './fakeDisposableProvider'
 
 interface FakePair {
@@ -281,7 +280,7 @@ describe('SandboxLeaseService lifecycle registry', () => {
   })
 
   it('normalizes definitive provider rejection without claiming cleanup ambiguity', async () => {
-    const providerError = Object.assign(new Error('credential detail'), { code: ErrorCode.enum.VERCEL_AUTH_FAILED })
+    const providerError = Object.assign(new Error('credential detail'), { code: 'VERCEL_AUTH_FAILED' })
     const { service } = createService({ create: async () => { throw providerError } })
 
     await expect(service.acquire('owner-a')).rejects.toMatchObject({

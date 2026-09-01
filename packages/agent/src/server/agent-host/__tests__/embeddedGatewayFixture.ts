@@ -9,7 +9,6 @@ import { EmbeddedAgentGateway } from '../embeddedGateway'
 import { InMemoryAgentRequestLedger } from '../requestLedger'
 import { AgentSessionActivityIndex } from '../sessionInventory'
 import { InMemoryHarnessBackend } from '../testing/inMemoryHarnessBackend'
-import type { SandboxLeaseService } from '../../sandbox/leases/sandboxLease'
 import type { AgentGatewayEffect, AgentHostAgentSpec } from '../types'
 import type { GatewayConformanceFixture } from '../testing/gatewayConformance'
 
@@ -21,7 +20,11 @@ interface EmbeddedGatewayFixture extends GatewayConformanceFixture {
   }
   rejectNextPrompt(error: Error): void
   disableArchiveCapability(): void
-  setSandboxTools(agentTypeId: string, leases: SandboxLeaseService): void
+  setSessionDeleteHook(hook: (input: {
+    workspaceScopeId: string
+    agentTypeId: string
+    sessionId: string
+  }) => Promise<void>): void
 }
 
 export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFixture> {
@@ -47,7 +50,11 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
     return backend
   }
   const activity = new AgentSessionActivityIndex()
-  const sandboxToolsByAgent = new Map<string, SandboxLeaseService>()
+  let onSessionDelete: ((input: {
+    workspaceScopeId: string
+    agentTypeId: string
+    sessionId: string
+  }) => Promise<void>) | undefined
   const runtime = {
     options: {},
     compiledAgents: agents,
@@ -107,12 +114,7 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
       const backend = backendFor(claim.workspaceScopeId, agentTypeId)
       return {
         key: `${claim.workspaceScopeId}:${agentTypeId}`,
-        scope: {
-          identity: 'shared-runtime',
-          ...(sandboxToolsByAgent.has(agentTypeId)
-            ? { sandboxTools: { digest: 'fixture-sandbox-tools', leases: sandboxToolsByAgent.get(agentTypeId)! } }
-            : {}),
-        },
+        scope: { identity: 'shared-runtime', onSessionDelete },
         environmentLease: { bundle: {}, release() {} },
         composition: {
           backend,
@@ -162,8 +164,8 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
     disableArchiveCapability() {
       Reflect.deleteProperty(runtime, 'setSessionArchived')
     },
-    setSandboxTools(agentTypeId, leases) {
-      sandboxToolsByAgent.set(agentTypeId, leases)
+    setSessionDeleteHook(hook) {
+      onSessionDelete = hook
     },
     modelLoopStarts(ref) {
       for (const backend of backends.values()) {

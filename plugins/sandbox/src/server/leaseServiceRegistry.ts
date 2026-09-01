@@ -1,4 +1,4 @@
-import type { SandboxLeaseService } from './sandboxLease'
+import type { SandboxLeaseService } from './leaseService'
 
 /** Host-owned one-to-one identity registry for capability digest/service pairs. */
 export class SandboxLeaseServiceRegistry {

@@ -1306,7 +1306,7 @@ test('direct standalone sends every addressed mutation through the built-in ledg
   } finally {
     await app.close()
   }
-}, 15_000)
+})
 
 test('createStandaloneAgentHostApp awaits the Agent Host funnel and contains no local construction path', async () => {
   const source = await readFile(join(import.meta.dirname, '..', 'createStandaloneAgentHostApp.ts'), 'utf8')

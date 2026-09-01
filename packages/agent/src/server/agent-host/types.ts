@@ -30,7 +30,6 @@ import type {
   WorkspaceAgentDispatcherContext,
 } from '../../shared/workspaceAgentDispatcher'
 import type { AgentSkillResourceSnapshot } from '../http/routes/skills'
-import type { SandboxLeaseService } from '../sandbox/leases/sandboxLease'
 
 export type { LeaseBoundWorkspaceAgent } from '../../shared/workspaceAgentDispatcher'
 
@@ -250,12 +249,6 @@ export interface ResolvedEnvironmentScope {
   }) => Promise<WorkspaceProvisioningResult | undefined>
 }
 
-export interface ResolvedSandboxToolCapability {
-  /** Host-owned profile/cache/quota identity; callers must include changes in runtime identity. */
-  readonly digest: string
-  readonly leases: SandboxLeaseService
-}
-
 export interface ResolvedAgentRuntimeScope {
   /** Persisted semantic compatibility identity. */
   readonly identity: string
@@ -273,9 +266,13 @@ export interface ResolvedAgentRuntimeScope {
   readonly environment: ResolvedEnvironmentScope
   readonly sessionNamespace: string
   readonly pi?: PiHarnessOptions
-  /** Trusted host-only disposable sandbox capability. Authored agents cannot construct it. */
-  readonly sandboxTools?: ResolvedSandboxToolCapability
   readonly extraTools?: readonly AgentTool[]
+  /** Joined trusted-plugin cleanup invoked after backend session deletion succeeds. */
+  readonly onSessionDelete?: (input: {
+    readonly workspaceScopeId: string
+    readonly agentTypeId: string
+    readonly sessionId: string
+  }) => Promise<void>
   readonly includeFilesystemTools?: boolean
   readonly includeUploadTools?: boolean
   readonly sessionDir?: string

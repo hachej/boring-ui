@@ -1,0 +1,54 @@
+{
+  "name": "@hachej/boring-sandbox-plugin",
+  "version": "0.1.106",
+  "type": "module",
+  "private": false,
+  "license": "MIT",
+  "description": "Trusted additive disposable sandbox tools for Boring workspace hosts.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hachej/boring-ui"
+  },
+  "boring": {
+    "id": "sandbox",
+    "label": "Disposable sandbox",
+    "server": "dist/server/index.js"
+  },
+  "files": ["dist"],
+  "exports": {
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --no-file-parallelism",
+    "lint": "pnpm run typecheck",
+    "smoke:vercel": "tsx scripts/smoke-vercel-sandbox.mts",
+    "clean": "rm -rf dist .tsbuildinfo"
+  },
+  "dependencies": {
+    "@hachej/boring-bash": "workspace:*",
+    "@hachej/boring-sandbox": "workspace:*"
+  },
+  "peerDependencies": {
+    "@hachej/boring-agent": "workspace:*",
+    "@hachej/boring-workspace": "workspace:*",
+    "fastify": "^5.12.1"
+  },
+  "devDependencies": {
+    "@hachej/boring-agent": "workspace:*",
+    "@hachej/boring-workspace": "workspace:*",
+    "@types/node": "^22.20.0",
+    "@vercel/sandbox": "^1.6.0",
+    "fastify": "^5.12.1",
+    "tsx": "^4.21.0",
+    "tsup": "^8.4.0",
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.11"
+  }
+}
