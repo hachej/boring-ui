@@ -204,6 +204,13 @@ export function ChatLayout(props: ChatLayoutProps) {
     const shell = shellRef.current
     if (shell) scheduleComposerFocus(shell)
   }, [])
+  // Explicit "give the composer the keyboard" intent (the Focus Chat command),
+  // as opposed to the opportunistic focus fallbacks above: it must land even
+  // when something else currently holds focus. See #1391/focusChat below.
+  const forceLocalComposerFocus = useCallback(() => {
+    const shell = shellRef.current
+    if (shell) scheduleComposerFocus(shell, { force: true })
+  }, [])
   // Feeds `measuredRowWidth` above with the chat+workbench row's real
   // content width — see the #1451 note at its declaration. Attached to
   // `rowRef` (the flex row that directly holds `<main>`/`<aside>` below),
@@ -332,8 +339,18 @@ export function ChatLayout(props: ChatLayoutProps) {
     if (navOpen) closeNav?.()
     if (surfaceOpen) closeSurface?.()
     focusAgentComposer(shellRef.current)
-    scheduleLocalComposerFocus()
-  }, [chatCollapsed, closeNav, closeSurface, navOpen, scheduleLocalComposerFocus, setChatCollapsed, surfaceOpen])
+    // Deferred AND forced, not just the opportunistic `onlyFromBody` retry.
+    // When Focus Chat is run from the command palette the Radix dialog is
+    // still mounted and focus-trapped, so the synchronous focus above is
+    // yanked straight back into the palette by its FocusScope; then the
+    // dialog's close-auto-focus restores focus to whatever opened it (the
+    // app-left Search button in the smoke test). Both of those land after
+    // this callback returns and neither leaves focus on <body>, so the
+    // opportunistic retry declined to fire and the command silently did
+    // nothing. The forced retry re-claims the composer once the palette has
+    // finished closing.
+    forceLocalComposerFocus()
+  }, [chatCollapsed, closeNav, closeSurface, forceLocalComposerFocus, navOpen, setChatCollapsed, surfaceOpen])
   const suppressOverlayAutoExpandRef = useRef(false)
   const toggleChatCollapsed = useCallback(() => {
     const collapsing = !chatCollapsed
@@ -1079,11 +1096,18 @@ function focusAgentComposer(
   textarea?.focus()
 }
 
-function scheduleComposerFocus(root: HTMLElement | null = null): void {
+function scheduleComposerFocus(
+  root: HTMLElement | null = null,
+  options: { force?: boolean } = {},
+): void {
   if (typeof window === "undefined") return
+  // `onlyFromBody` keeps the opportunistic fallbacks (drawer dismiss, blocker
+  // clear) from stealing focus from wherever the user actually is. A forced
+  // schedule is the explicit-intent path and claims the composer regardless.
+  const focusOptions = { onlyFromBody: !options.force }
   window.requestAnimationFrame(() => {
-    focusAgentComposer(root, { onlyFromBody: true })
-    window.setTimeout(() => focusAgentComposer(root, { onlyFromBody: true }), 320)
+    focusAgentComposer(root, focusOptions)
+    window.setTimeout(() => focusAgentComposer(root, focusOptions), 320)
   })
 }
 
