@@ -547,6 +547,7 @@ describe.sequential("CLI Agent Host composition", () => {
       },
       gateway: {} as never,
       acquireEnvironment: vi.fn(async () => { throw new Error("unused") }),
+      acquireSessionEnvironment: vi.fn(async () => { throw new Error("unused") }),
       runWithWorkspaceAgent: vi.fn(async () => { throw new Error("unused") }),
       registerDirectRoutes: vi.fn(() => async (app: FastifyInstance) => {
         app.addHook("onClose", hostClose)
