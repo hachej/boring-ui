@@ -141,7 +141,13 @@ function resetPlaygroundStorageIfRequested(): void {
   window.history.replaceState(null, "", `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}${window.location.hash}`)
 }
 
-function WorkspaceFullPageShell({ agentTypeId }: { agentTypeId: string }) {
+// The full-page route talks to the SAME backend workspace as the main shell.
+// `workspaceId` becomes the `x-boring-workspace-id` header, and
+// createWorkspaceAgentServer 403s (WORKSPACE_UNINITIALIZED) every request whose
+// selector is neither the canonical workspace scope id nor the workspace root
+// basename — a synthetic id like "playground-full-page" made every file read
+// from a popped-out panel fail.
+function WorkspaceFullPageShell({ agentTypeId, workspaceId }: { agentTypeId: string; workspaceId: string }) {
   const parsed = parseFullPagePanelLocation(window.location.search)
 
   if (!parsed.componentId || parsed.error) {
@@ -164,7 +170,7 @@ function WorkspaceFullPageShell({ agentTypeId }: { agentTypeId: string }) {
       plugins={workspacePlugins}
       persistenceEnabled
       manageDocumentTitle={false}
-      workspaceId="playground-full-page"
+      workspaceId={workspaceId}
       fullPageBasePath="/full-page"
     >
       <WorkspaceFullPagePanel componentId={parsed.componentId} params={parsed.params} />
@@ -470,7 +476,7 @@ export function WorkspaceShell() {
   }
 
   if (fullPage) {
-    return <WorkspaceFullPageShell agentTypeId={defaultAgentTypeId} />
+    return <WorkspaceFullPageShell agentTypeId={defaultAgentTypeId} workspaceId={workspaceId} />
   }
 
   return (
