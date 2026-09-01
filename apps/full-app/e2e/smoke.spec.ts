@@ -4,7 +4,7 @@ const TASK_ID = 'boring-ui-v2-q4fo'
 const WORKSPACE_ID = 'ws-smoke'
 const USER = {
   id: 'user-dev-local',
-  email: 'dev@local',
+  email: 'dev@local.test',
   name: 'Dev Local',
 }
 
@@ -32,11 +32,12 @@ function json(body: unknown, status = 200) {
 }
 
 async function openWorkbench(page: import('@playwright/test').Page) {
-  const leftPane = page.getByLabel('Workbench left pane')
-  if (await leftPane.isVisible()) return
+  // The workbench is the right-hand surface region; the rail toggle opens it.
+  const workbench = page.getByRole('complementary', { name: 'Workbench', exact: true })
+  if (await workbench.isVisible()) return
 
-  await page.getByRole('button', { name: 'Workbench' }).click()
-  await expect(leftPane).toBeVisible({ timeout: 10_000 })
+  await page.getByRole('button', { name: 'Open workbench' }).click()
+  await expect(workbench).toBeVisible({ timeout: 10_000 })
 }
 
 test('smoke: sign in and land on /workspace/:id', async ({ page, baseURL }) => {
@@ -116,6 +117,31 @@ test('smoke: sign in and land on /workspace/:id', async ({ page, baseURL }) => {
 
     if (path === '/api/v1/tree' && request.method() === 'GET') {
       return route.fulfill(json({ entries: [] }))
+    }
+
+    // Boot batch (gh-1402): /api/v1/workspace/meta rides along with the tree +
+    // ready-status warmup, and the addressed-agent fleet selection reads
+    // /api/v1/agents before WorkspaceBackgroundBoot mounts. Leaving either
+    // unmocked pins the workspace on "Preparing workspace...".
+    if (path === '/api/v1/workspace/meta') {
+      return route.fulfill(json({
+        workspaceId: WORKSPACE_ID,
+        workspaceRoot: `/workspaces/${WORKSPACE_ID}`,
+        projectName: WORKSPACE.name,
+        defaultAgentTypeId: 'default',
+      }))
+    }
+
+    if (path === '/api/v1/agents') {
+      return route.fulfill(json([{ agentTypeId: 'default', label: 'Default' }]))
+    }
+
+    if (path === '/api/v1/agents/default/ready-status') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: 'event: status\ndata: {"state":"ready","sandboxReady":true,"harnessReady":true,"capabilities":{"chat":{"state":"ready"},"workspace":{"state":"ready"}}}\n\n',
+      })
     }
 
     if (path === '/api/v1/agents/default/models') {
