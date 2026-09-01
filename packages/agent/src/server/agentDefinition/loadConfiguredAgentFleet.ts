@@ -86,6 +86,31 @@ export interface LoadConfiguredAgentFleetResult {
   readonly diagnostics: readonly FleetLoaderDiagnostic[]
 }
 
+/**
+ * Legacy lifecycle error shape retained for callers that classify a single
+ * configured seat failure. Current fleet loading reports fatal seat failures
+ * through {@link FleetConfigError} after collecting the fleet diagnostics.
+ */
+export class ConfiguredFleetSeatError extends Error {
+  readonly code: FleetLoaderDiagnosticCode
+  readonly seat: string
+  readonly agentTypeId: string
+
+  constructor(input: {
+    code: FleetLoaderDiagnosticCode
+    seat: string
+    agentTypeId: string
+    message: string
+    cause?: unknown
+  }) {
+    super(input.message, input.cause === undefined ? undefined : { cause: input.cause })
+    this.name = 'ConfiguredFleetSeatError'
+    this.code = input.code
+    this.seat = input.seat
+    this.agentTypeId = input.agentTypeId
+  }
+}
+
 export type FleetConfigErrorCode = Extract<AgentErrorCode, 'AGENT_FLEET_CONFIG_FILE_INVALID'>
 
 /** Thrown for whole-fleet configuration failures (not per-seat, fail-closed). */

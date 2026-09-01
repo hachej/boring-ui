@@ -39,7 +39,12 @@ beforeAll(async () => {
 const agents = [
   {
     agentTypeId: 'concierge',
-    definition: { instructions: 'You are the concierge.', label: 'Concierge' },
+    definition: {
+      instructions: 'You are the concierge.',
+      label: 'Concierge',
+      version: '2026.08.15',
+      digest: `sha256:${'a'.repeat(64)}`,
+    },
     get instructionSources() {
       return [{ absolutePath: personaInstructionsPath, role: 'persona' as const }]
     },
@@ -105,6 +110,7 @@ describe('describeAgent', () => {
     const description = await projection.describeAgent({ request: {} as never, agentTypeId: 'concierge' })
     expect(description).toEqual({
       agentTypeId: 'concierge',
+      definition: { version: '2026.08.15', digest: `sha256:${'a'.repeat(64)}` },
       model: 'pi-large',
       mcpServers: [],
       // The seat directory is NOT derivable from the agent id; the Host is

@@ -120,31 +120,39 @@ describe('resolveDefaultAgentFleet (BORING_AGENT_FLEET gate, gh-1106 slice 3)', 
     )
   })
 
-  describe('flag=1 with a missing/malformed .agents tree', () => {
+  describe('flag=1 fail-closes missing or malformed configured fleet state', () => {
     let root: string
 
     afterEach(async () => {
       if (root) await rm(root, { recursive: true, force: true })
     })
 
-    test('fails boot when the requested fleet tree is missing', async () => {
-      root = await mkdtemp(join(tmpdir(), 'fleet-boot-failure-'))
+    test('rejects a missing configured fleet file', async () => {
+      root = await mkdtemp(join(tmpdir(), 'fleet-boot-reject-'))
       await expect(resolveDefaultAgentFleet({
         repositoryRoot: root,
         discoveredPackages: [],
         env: { BORING_AGENT_FLEET: '1' },
-      })).rejects.toThrow()
+      })).rejects.toMatchObject({
+        name: 'FleetConfigError',
+        code: ErrorCode.enum.AGENT_FLEET_CONFIG_FILE_INVALID,
+      })
+      expect(loggerMocks.error).not.toHaveBeenCalled()
     })
 
-    test('fails boot on malformed fleet.yaml', async () => {
-      root = await mkdtemp(join(tmpdir(), 'fleet-boot-failure-'))
+    test('rejects malformed configured fleet YAML', async () => {
+      root = await mkdtemp(join(tmpdir(), 'fleet-boot-reject-'))
       await mkdir(join(root, '.agents', 'factory'), { recursive: true })
       await writeFile(join(root, '.agents', 'factory', 'fleet.yaml'), 'not: [valid, seats, shape')
       await expect(resolveDefaultAgentFleet({
         repositoryRoot: root,
         discoveredPackages: [],
         env: { BORING_AGENT_FLEET: '1' },
-      })).rejects.toThrow()
+      })).rejects.toMatchObject({
+        name: 'FleetConfigError',
+        code: ErrorCode.enum.AGENT_FLEET_CONFIG_FILE_INVALID,
+      })
+      expect(loggerMocks.error).not.toHaveBeenCalled()
     })
   })
 })

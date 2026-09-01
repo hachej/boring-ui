@@ -36,10 +36,12 @@ export interface ResolveDefaultAgentFleetOptions {
 /**
  * Resolves one deployment-static fleet for Core, Workspace, and CLI hosts.
  *
+ * Invalid unseated discovery is diagnostic-only. Any invalid configured seat,
  * The built-in default is a regular configured Agent. When authored fleet
  * discovery is enabled it remains available alongside discovered seats so old
- * `default` session references stay routable. Invalid enabled fleet
- * composition fails boot; it never degrades to a pseudo-Agent.
+ * `default` session references stay routable. Invalid configured digests,
+ * conflicts, seats, or fleet files reject boot rather than publishing a fleet
+ * different from its declared roster.
  */
 export async function resolveDefaultAgentFleet(
   options: ResolveDefaultAgentFleetOptions,

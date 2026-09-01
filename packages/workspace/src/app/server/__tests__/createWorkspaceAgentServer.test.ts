@@ -137,8 +137,10 @@ import { resolveDefaultWorkspacePluginPackagePaths } from "../defaultPluginPacka
 import { RuntimeBackendRegistry } from "../../../server/runtimeBackend"
 
 const tempDirs: string[] = []
+const inheritedFleetFlag = process.env.BORING_AGENT_FLEET
 
 beforeEach(() => {
+  delete process.env.BORING_AGENT_FLEET
   agentServerMock.captureResolvedRuntimeScope.mockClear()
   agentServerMock.createAgentHost.mockClear()
   agentServerMock.hostClose.mockClear()
@@ -155,6 +157,8 @@ function mockResolvedRuntimeScopeOnce(factory: (resolved?: unknown) => Promise<u
 
 afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
+  if (inheritedFleetFlag === undefined) delete process.env.BORING_AGENT_FLEET
+  else process.env.BORING_AGENT_FLEET = inheritedFleetFlag
 })
 
 async function makeTempDir(prefix: string): Promise<string> {
@@ -1893,7 +1897,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     }
   })
 
-  test("workspace-local agent package boot covers install, seat, update, unseat, mismatch, and removal", async () => {
+  test("workspace-local agent package boot covers install, seat, update, rollback, unseat, mismatch, removal, and exact inventory", async () => {
     const workspaceRoot = await makeTempDir("boring-agent-local-install-")
     const fleetRoot = await makeTempDir("boring-agent-local-install-repo-")
     const packageRoot = join(workspaceRoot, "agents", "local-worker")
@@ -1903,27 +1907,21 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     await mkdir(join(workspaceRoot, ".pi"), { recursive: true })
     await mkdir(join(fleetRoot, ".agents", "factory"), { recursive: true })
     await writeFile(join(fleetRoot, ".agents", "factory", "policy.yaml"), EMPTY_POLICY_YAML, "utf8")
-    await writeFile(join(packageRoot, "instructions.md"), "Local worker instructions.\n", "utf8")
 
-    const writeManifest = async (version: string, skills: string[] = []) => {
+    const writeManifest = async (version: string, instructions: string, skills: string[] = []) => {
+      await writeFile(join(packageRoot, "instructions.md"), instructions, "utf8")
       await writeFile(join(packageRoot, "package.json"), JSON.stringify({
         name: "@fixture/local-worker",
         version,
-        boring: {
-          agent: {
-            definitionId: "fixture-local-worker",
-            version,
-            label: "Local Worker",
-            instructionsRef: "instructions.md",
-          },
-        },
+        boring: { agent: { definitionId: "fixture-local-worker", version, label: "Local Worker", instructionsRef: "instructions.md" } },
         pi: { skills },
       }), "utf8")
     }
     const writeFleet = async (seats: string) => {
-      await writeFile(fleetPath, `${MODEL_TIERS_YAML}${seats ? `seats:\n${seats}` : "seats: []\n"}`, "utf8")
+      await writeFile(fleetPath, `${MODEL_TIERS_YAML}${seats ? `seats:
+${seats}` : "seats: []\n"}`, "utf8")
     }
-    const bootAgentIds = async () => {
+    const bootInventory = async () => {
       const app = await createWorkspaceAgentServer({
         workspaceRoot,
         fleetRepositoryRoot: fleetRoot,
@@ -1933,11 +1931,13 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       })
       try {
         const hostOptions = agentServerMock.createAgentHost.mock.calls.at(-1)![0] as {
-          agents: readonly { agentTypeId: string; definition?: { version?: string } }[]
+          agents: readonly { agentTypeId: string; definition?: { version?: string; digest?: string } }[]
         }
         return hostOptions.agents.map((agent) => ({
           agentTypeId: agent.agentTypeId,
-          version: agent.definition?.version,
+          ...(agent.definition?.digest
+            ? { definition: { version: agent.definition.version, digest: agent.definition.digest } }
+            : {}),
         }))
       } finally {
         await app.close()
@@ -1947,45 +1947,46 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     const previousFlag = process.env.BORING_AGENT_FLEET
     process.env.BORING_AGENT_FLEET = "1"
     try {
-      await writeManifest("1.0.0")
+      await writeManifest("1.0.0", "Local worker v1.\n")
       await writeFile(settingsPath, JSON.stringify({ packages: ["../agents/local-worker"] }), "utf8")
-
-      // Installed means discoverable, not active: an empty roster keeps it inert.
       await writeFleet("")
-      expect(await bootAgentIds()).toEqual([{ agentTypeId: "default", version: "1" }])
+      expect(await bootInventory()).toEqual([{ agentTypeId: "default" }])
 
-      // Seating the definition activates the same local package on the next boot.
       await writeFleet("  - seat: local-worker\n    agentTypeId: fixture-local-worker\n    skills: []\n")
-      expect(await bootAgentIds()).toEqual([
-        { agentTypeId: "default", version: "1" },
-        { agentTypeId: "fixture-local-worker", version: "1.0.0" },
+      const installed = await bootInventory()
+      expect(installed).toEqual([
+        { agentTypeId: "default" },
+        { agentTypeId: "fixture-local-worker", definition: { version: "1.0.0", digest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/) } },
       ])
+      const v1Digest = installed[1]?.definition?.digest
 
-      // A package bump is observed only after reboot; no copied cache is involved.
-      await writeManifest("1.1.0")
-      expect(await bootAgentIds()).toEqual([
-        { agentTypeId: "default", version: "1" },
-        { agentTypeId: "fixture-local-worker", version: "1.1.0" },
-      ])
+      await writeManifest("1.1.0", "Local worker v2.\n")
+      const updated = await bootInventory()
+      expect(updated[1]?.definition?.version).toBe("1.1.0")
+      expect(updated[1]?.definition?.digest).not.toBe(v1Digest)
 
-      // A stale seat-scoped digest fails configured fleet startup.
+      await writeManifest("1.0.0", "Local worker v1.\n")
+      expect((await bootInventory())[1]?.definition).toEqual({ version: "1.0.0", digest: v1Digest })
       await mkdir(join(packageRoot, "skills", "local"), { recursive: true })
       await writeFile(join(packageRoot, "skills", "local", "SKILL.md"), "# Local skill\n", "utf8")
-      await writeManifest("1.2.0", ["skills/local/SKILL.md"])
+      await writeManifest("1.2.0", "Local worker v3.\n", ["skills/local/SKILL.md"])
       await writeFleet(
         "  - seat: local-worker\n" +
         "    agentTypeId: fixture-local-worker\n" +
         "    skills:\n" +
-        `      - name: skills/local/SKILL.md\n        digest: sha256:${"0".repeat(64)}\n`,
+        `      - name: skills/local/SKILL.md
+        digest: sha256:${"0".repeat(64)}
+`,
       )
-      await expect(bootAgentIds()).rejects.toMatchObject({ name: "FleetConfigError", field: "seats" })
+      await expect(bootInventory()).rejects.toMatchObject({ name: "FleetConfigError", field: "seats" })
 
-      // Unseating is inert; removing a still-seated package fails startup.
       await writeFleet("")
-      expect(await bootAgentIds()).toEqual([{ agentTypeId: "default", version: "1" }])
-      await writeFleet("  - seat: local-worker\n    agentTypeId: fixture-local-worker\n    skills: []\n")
+      expect(await bootInventory()).toEqual([{ agentTypeId: "default" }])
       await writeFile(settingsPath, JSON.stringify({ packages: [] }), "utf8")
-      await expect(bootAgentIds()).rejects.toMatchObject({ name: "FleetConfigError", field: "seats" })
+      expect(await bootInventory()).toEqual([{ agentTypeId: "default" }])
+
+      await writeFleet("  - seat: local-worker\n    agentTypeId: fixture-local-worker\n    skills: []\n")
+      await expect(bootInventory()).rejects.toMatchObject({ name: "FleetConfigError", field: "seats" })
     } finally {
       if (previousFlag === undefined) delete process.env.BORING_AGENT_FLEET
       else process.env.BORING_AGENT_FLEET = previousFlag
@@ -2129,10 +2130,12 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     expect(agentServerMock.captureResolvedRuntimeScope).not.toHaveBeenCalled()
   })
 
-  test("exports and fail-closes a configured default absent from the boot fleet", async () => {
+  test("exports the configured-default startup error through the public app/server surface", () => {
     expect(PublicConfiguredDefaultAgentError).toBe(ConfiguredDefaultAgentError)
     expect(PUBLIC_CONFIGURED_DEFAULT_AGENT_ERROR_CODE).toBe("CONFIG_INVALID")
+  })
 
+  test("rejects a configured defaultAgentTypeId that is absent from the boot fleet", async () => {
     await expect(createWorkspaceAgentServer({
       workspaceRoot: await makeTempDir("boring-agent-default-invalid-"),
       logger: false,
