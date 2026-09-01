@@ -19,6 +19,8 @@ export { compactPiPackages } from "./piPackages"
 export { definePluginAsset, resolvePluginAssetPath } from "./assets"
 export type {
   WorkspaceAgentReloadBlock,
+  WorkspaceAgentSessionDeleteContext,
+  WorkspaceAgentToolFactoryContext,
   WorkspaceBridgeHandlerContribution,
   WorkspacePackageResourceContribution,
   WorkspaceServerPlugin,
@@ -53,12 +55,24 @@ export type WorkspaceAgentReloadBlocker = {
   getBlock: NonNullable<WorkspaceServerPlugin["getAgentReloadBlock"]>
 }
 
+export type WorkspaceAgentToolFactoryContribution = {
+  id: string
+  createTools: NonNullable<WorkspaceServerPlugin["agentToolFactory"]>
+}
+
+export type WorkspaceAgentSessionDeleteContribution = {
+  id: string
+  onDelete: NonNullable<WorkspaceServerPlugin["onAgentSessionDelete"]>
+}
+
 export interface ServerBootstrapResult {
   registered: string[]
   systemPromptAppend: string
   piPackages: WorkspacePiPackageSource[]
   extensionPaths: string[]
   agentTools: AgentTool[]
+  agentToolFactories: WorkspaceAgentToolFactoryContribution[]
+  agentSessionDeleteContributions: WorkspaceAgentSessionDeleteContribution[]
   runtimePlugins: WorkspaceRuntimeProvisioningInput[]
   provisioningContributions: WorkspaceProvisioningContribution[]
   packageResources: WorkspacePackageResourceRecord[]
@@ -90,6 +104,14 @@ export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstra
       agentTools.push(tool)
     }
   }
+
+  const agentToolFactories = finalPlugins
+    .filter((plugin) => plugin.agentToolFactory)
+    .map((plugin) => ({ id: plugin.id, createTools: plugin.agentToolFactory! }))
+
+  const agentSessionDeleteContributions = finalPlugins
+    .filter((plugin) => plugin.onAgentSessionDelete)
+    .map((plugin) => ({ id: plugin.id, onDelete: plugin.onAgentSessionDelete! }))
 
   const systemPromptAppend = finalPlugins
     .filter((p) => p.systemPrompt && p.systemPrompt.trim())
@@ -136,6 +158,8 @@ export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstra
     piPackages,
     extensionPaths,
     agentTools,
+    agentToolFactories,
+    agentSessionDeleteContributions,
     runtimePlugins,
     provisioningContributions,
     packageResources,

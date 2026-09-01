@@ -45,7 +45,7 @@ The two tiers differ by **provenance and trust**, not just lifecycle:
 | Provenance | App-owned package, composed at boot | Workspace-local `.pi/extensions/`, often agent-generated |
 | Trust | Trusted app module | Trusted **only** as local developer/workspace code |
 | Front | Native React in the host tree | Native React (local trusted context) |
-| Server/routes/tools | Full power: Fastify routes, static `agentTools`, providers, domain APIs | Route-free; no `boring.server`; backend work goes through Pi tools |
+| Server/routes/tools | Full power: Fastify routes, static `agentTools`, selected-Agent `agentToolFactory`, providers, domain APIs | Route-free; no `boring.server`; backend work goes through Pi tools |
 | Reload | Restart/redeploy | `/reload` hot-swaps front + Pi resources |
 
 App-owned boot composition may inject narrowly scoped trusted host
@@ -110,6 +110,8 @@ resolve default plugin package dirs + explicit plugin entries
         ├─ bootstrapServer(...)          trusted boot-time server plugins
         │     ├─ routes                  Fastify app.register at boot
         │     ├─ agentTools              passed to createAgentApp at boot
+        │     ├─ agentToolFactory        invoked only for selected preflighted Agents
+        │     ├─ onAgentSessionDelete    joined cleanup for selected plugins
         │     ├─ systemPromptAppend      static prompt addendum
         │     ├─ pi packages/skills/exts static Pi resources
         │     └─ provisioning            runtime workspace materialization
@@ -261,6 +263,8 @@ the plugin's `defineServerPlugin({ agentConfigContract: { keys: [...] } })`.
 | `boring.front` panels/commands/catalogs/surface resolvers | `/reload` + SSE + browser dynamic import | `/reload` in dev when front URL is served by the app/Vite | Previous version stays live on import/register failure. |
 | `boring.server` routes/agentTools | Not supported for generated plugins | Boot-time only | `/reload` can warn `requiresRestart`. Restart process to apply. |
 | Providers/bindings from hot-loaded front factories | Skipped | Static composition only | Dynamic provider tree mounting is intentionally not implemented yet. |
+
+Selected-Agent factories and lifecycle hooks are trusted boot-time-only surfaces. `agentToolFactory({ agentTypeId })` runs only after the app has preflighted the artifact and selected it for that canonical fleet Agent. Generated tool names must not collide with existing selected tools. `onAgentSessionDelete({ workspaceScopeId, agentTypeId, sessionId })` is composed only from selected plugins and is awaited after backend session deletion. These hooks are not authored-config authority: sensitive plugins must enforce a separate host-owned allowlist/factory. The server-only sandbox plugin is the reference implementation.
 
 Partial-failure rule: a failed plugin scan/import/register must not abort the
 whole reload. Healthy plugins still update; failing plugins emit diagnostics,
