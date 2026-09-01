@@ -44,7 +44,7 @@
     "@hachej/boring-agent": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
     "@types/node": "^22.20.0",
-    "@vercel/sandbox": "^1.6.0",
+    "@vercel/sandbox": "3.0.0",
     "fastify": "^5.12.1",
     "tsx": "^4.21.0",
     "tsup": "^8.4.0",
