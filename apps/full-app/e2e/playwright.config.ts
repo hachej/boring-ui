@@ -34,6 +34,12 @@ const webServerEnv = Object.fromEntries(
     MAIL_TRANSPORT_URL: mailTransportUrl,
     PORT: String(apiPort),
     CSP_ENABLED: 'true',
+    // The harness boots the production bundle (NODE_ENV=production) but runs
+    // the agent in the local auto-detected direct mode on purpose — there is
+    // no vercel-sandbox/blaxel backend in a local or CI e2e run. Opt out of
+    // the production agent-mode gate (src/server/productionSafety.ts)
+    // explicitly; without this the webServer refuses to start at all.
+    BORING_ALLOW_UNSAFE_AGENT_MODE: '1',
   }).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
 )
 
@@ -56,7 +62,12 @@ export default defineConfig({
     command: webServerScript,
     env: webServerEnv,
     url: apiOrigin,
-    timeout: 360_000,
+    // The webServer script runs the whole dependency build chain (nine
+    // packages, declaration builds included — core's DTS pass alone is ~3
+    // minutes), migrates, and builds the app before listening. A cold run
+    // measured well past 15 minutes on a normal dev machine, so budget 30.
+    // CI does not run this suite, so this only bounds local runs.
+    timeout: 1_800_000,
     reuseExistingServer: false,
     stdout: 'pipe',
     stderr: 'pipe',
