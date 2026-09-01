@@ -41,7 +41,11 @@ export function useAskUserAttentionBlockers(runtime: QuestionsRuntime, pendingSn
         sessionBadge: { kind: "question", label: "question", tone: "attention", priority: 10 },
         pruneWhenSessionMissing: true,
         focus: { closeWorkbenchLeftPane: true },
-        composer: { visible: false },
+        // The inline chat card (rendered from the ask_user tool part) already
+        // carries Open/Cancel, so the composer bar would duplicate it. A
+        // requestless question has no tool call to render inline, so the
+        // composer bar is then the only in-chat affordance — keep it.
+        composer: { visible: !hydrated?.toolCallId },
         inbox: {
           kind: "question",
           sourceLabel: "question",
