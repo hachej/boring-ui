@@ -1179,6 +1179,10 @@ export async function createCoreWorkspaceAgentServer(
   const defaultPluginPackagePaths = resolveDefaultWorkspacePluginPackagePaths({
     workspaceRoot: pluginWorkspaceRoot,
     defaultPluginPackages: options.defaultPluginPackages,
+    // Anchor npm-name resolution on the host app's own root so plugin
+    // packages resolve through the app's node_modules regardless of the
+    // process cwd (production hosts often chdir before boot).
+    anchorDir: appRoot,
   })
   const defaultPackagePiSnapshot = readWorkspacePluginPackagePiSnapshot(defaultPluginPackagePaths)
   const defaultPackageRuntimePlugins = readWorkspacePluginPackageRuntimePlugins(defaultPluginPackagePaths)
