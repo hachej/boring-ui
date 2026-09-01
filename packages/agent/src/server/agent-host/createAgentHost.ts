@@ -6,6 +6,7 @@ import {
   AgentGatewayErrorCode,
   type AgentAccessDecision,
   type AgentAccessOperation,
+  type AgentSessionRef,
   type AuthorizedAgentScope,
   type VerifiedAgentScopeClaim,
 } from '../../shared/index'
@@ -39,6 +40,7 @@ import type {
   CreateAgentHostOptions,
   AgentHostDirectProjectionOptions,
   AgentHostEnvironmentLease,
+  AgentHostSessionEnvironmentLease,
   AgentHostEnvironmentScope,
   AuthorizedEnvironmentIntent,
   LeaseBoundWorkspaceAgent,
@@ -917,6 +919,62 @@ export async function createAgentHost(
     }
   }
 
+  const acquireSessionEnvironment = async (input: {
+    readonly authorizedScope: AuthorizedAgentScope
+    readonly ref: AgentSessionRef
+    readonly requestId: string
+  }): Promise<AgentHostSessionEnvironmentLease> => {
+    if (!input.requestId.trim()) throw new TypeError('requestId is required')
+    const { binding } = await gateway.resolveHostSessionBinding(input.authorizedScope, input.ref)
+    const providerLease = binding.environmentLease.retain()
+    const abort = new AbortController()
+    let active = true
+    let unregister = runtime.registerSubscription(() => release())
+    const onGenerationAbort = () => release()
+    providerLease.signal.addEventListener('abort', onGenerationAbort, { once: true })
+    function release() {
+      if (!active) return
+      active = false
+      abort.abort()
+      providerLease.signal.removeEventListener('abort', onGenerationAbort)
+      unregister()
+      unregister = () => {}
+      providerLease.release()
+    }
+    return Object.freeze({
+      environmentGenerationId: providerLease.generationId,
+      bindingGeneration: binding.generation,
+      signal: abort.signal,
+      async acquireTrustedService({ leaseId, idleTtlMs, absoluteTtlMs }: {
+        readonly leaseId: string
+        readonly idleTtlMs: number
+        readonly absoluteTtlMs: number
+      }) {
+        if (!active || abort.signal.aborted) throw bindingDisposedError()
+        if (!/^[A-Za-z0-9_-]{1,128}$/.test(leaseId)) throw new TypeError('leaseId is invalid')
+        if (!Number.isInteger(idleTtlMs) || idleTtlMs < 1_000 || idleTtlMs > 15 * 60_000) {
+          throw new TypeError('idleTtlMs must be between 1000 and 900000')
+        }
+        if (!Number.isInteger(absoluteTtlMs) || absoluteTtlMs < idleTtlMs || absoluteTtlMs > 60 * 60_000) {
+          throw new TypeError('absoluteTtlMs must be between idleTtlMs and 3600000')
+        }
+        const mechanism = providerLease.bundle.trustedServiceV1
+        if (!mechanism
+          || mechanism.qualification.serviceRef !== 'trusted-service-v1'
+          || mechanism.qualification.isolation !== 'dedicated-uid-private-channel'
+          || !/^sha256:[a-f0-9]{64}$/.test(mechanism.qualification.protocolDigest)
+          || !/^sha256:[a-f0-9]{64}$/.test(mechanism.qualification.imageDigest)) {
+          throw new AgentGatewayError(
+            AgentGatewayErrorCode.AGENT_SHARED_ENVIRONMENT_UNAVAILABLE,
+            'qualified trusted-service-v1 is unavailable for this Environment generation',
+          )
+        }
+        return await mechanism.acquire({ leaseId, idleTtlMs, absoluteTtlMs, signal: abort.signal })
+      },
+      release,
+    })
+  }
+
   const runWithWorkspaceAgent = (
     input: import('./types').AgentHostDispatcherRunInput,
     run: (binding: LeaseBoundWorkspaceAgent) => Promise<void>,
@@ -940,6 +998,7 @@ export async function createAgentHost(
     host,
     gateway,
     acquireEnvironment: acquireAppEnvironment,
+    acquireSessionEnvironment,
     runWithWorkspaceAgent,
     registerDirectRoutes(projectionOptions: AgentHostDirectProjectionOptions) {
       assertStrongLedger()

@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "browserUse": {
+    "version": "0.13.8",
+    "pypiWheel": "browser_use-0.13.8-py3-none-any.whl",
+    "sha256": "9ea4db1b79504f028b01eec49d15cd4674929395010023f09baca45b5dacb2df",
+    "sourceTag": "0.13.8",
+    "sourceCommit": "eb4126921bea3373f91afc49fb4b59d6eda7fed6"
+  },
+  "officialSkill": {
+    "path": "vendor/SKILL.md",
+    "sha256": "cbfac0b327e2fa5d1b6c3d535adb86e39980c7590bd9e240cef91cfe99aa3131"
+  },
+  "boundedSkill": {
+    "path": "skill/SKILL.md",
+    "derivedFrom": "officialSkill",
+    "sha256": "4e4554773557b9330627ae1a10737415030e7e058ea7c8f0248378b076b0f1da"
+  },
+  "license": {
+    "spdx": "MIT",
+    "path": "vendor/BROWSER_USE_LICENSE",
+    "sha256": "135c57671b0ee957669b05a0ca00cc06f645496d351e2e732832c6e276da9a5e"
+  },
+  "compatibility": {
+    "python": "3.12.8 (digest-pinned base image)",
+    "serviceProtocol": "trusted-service-v1",
+    "protocolDigest": "sha256:8b2340169d26c8ca9c6a9fc0ccedd115ff32122060aea9e8f1bf1a01493cd707",
+    "chromium": "qualified-container package recorded by qualify-image.sh",
+    "novnc": "qualified-container package recorded by qualify-image.sh",
+    "isolation": "dedicated-uid-private-channel",
+    "cdpBoundary": "loopback-only-inside-private-trusted-service-namespace"
+  }
+}

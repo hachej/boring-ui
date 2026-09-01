@@ -306,6 +306,58 @@ describe('createAgentHost', () => {
     expect(Buffer.from(renderedPrompts[0]!).equals(Buffer.from(renderedPrompts[1]!))).toBe(true)
   })
 
+  it('acquires trusted service from the addressed session exact Environment generation and revokes on Host close', async () => {
+    const workspaceRoot = await root()
+    const base = options(workspaceRoot)
+    const adapter = createTestRuntimeModeAdapter('direct')
+    const serviceClose = vi.fn(async () => {})
+    const serviceAcquire = vi.fn(async () => ({
+      qualification: {
+        serviceRef: 'trusted-service-v1' as const,
+        protocolDigest: `sha256:${'a'.repeat(64)}`,
+        imageDigest: `sha256:${'b'.repeat(64)}`,
+        isolation: 'dedicated-uid-private-channel' as const,
+      },
+      invoke: async () => ({ status: 'ok' as const }),
+      createProjection: async () => { throw new Error('unused') },
+      close: serviceClose,
+    }))
+    const created = await createAgentHost({
+      ...base,
+      inMemoryRequestLedgerMode: 'test',
+      runtimeModeAdapter: {
+        ...adapter,
+        async create(context) {
+          const bundle = await adapter.create(context)
+          return {
+            ...bundle,
+            trustedServiceV1: {
+              qualification: {
+                serviceRef: 'trusted-service-v1',
+                protocolDigest: `sha256:${'a'.repeat(64)}`,
+                imageDigest: `sha256:${'b'.repeat(64)}`,
+                isolation: 'dedicated-uid-private-channel',
+              },
+              acquire: serviceAcquire,
+            },
+          }
+        },
+      },
+    })
+    const ref = await created.gateway.createSession({ scope, agentTypeId: 'alpha', requestId: 'exact-env-session' })
+    const lease = await created.acquireSessionEnvironment({ authorizedScope: scope, ref, requestId: 'browser-acquire' })
+    expect(lease.environmentGenerationId).toMatch(/^[0-9a-f-]{36}$/)
+    expect(lease.bindingGeneration).toBeGreaterThan(0)
+    await lease.acquireTrustedService({ leaseId: 'browser-lease', idleTtlMs: 1_000, absoluteTtlMs: 2_000 })
+    expect(serviceAcquire).toHaveBeenCalledWith(expect.objectContaining({
+      leaseId: 'browser-lease',
+      signal: lease.signal,
+    }))
+    await created.host.close()
+    expect(lease.signal.aborted).toBe(true)
+    lease.release()
+  })
+
   it('separates verified Environment and per-Agent resolution and revokes app/dispatcher leases', async () => {
     const workspaceRoot = await root()
     const filesystemOperations = {

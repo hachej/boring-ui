@@ -79,6 +79,9 @@ export function createProviderRuntimeModeAdapter(
           runtimeHost: options.runtimeHost,
           bash: options.bash,
           filesystem: options.filesystem,
+          ...(pair.createRuntimeProjection
+            ? { createRuntimeProjection: (request) => pair.createRuntimeProjection!(request) }
+            : {}),
           provisioningAdapter: options.provisioningAdapter?.(context, pair)
             ?? pair.provisioning,
           disposeRuntime: () => pair.dispose(),

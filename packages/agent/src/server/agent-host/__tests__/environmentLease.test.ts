@@ -98,6 +98,53 @@ describe('EnvironmentLeaseManager', () => {
     await manager.close()
   })
 
+  it('retains the exact generation and disposes only after the final retained lease releases', async () => {
+    const workspaceRoot = await makeRoot()
+    const baseAdapter = createTestRuntimeModeAdapter('direct')
+    const disposeRuntime = vi.fn(async () => {})
+    const manager = new EnvironmentLeaseManager({
+      ...baseAdapter,
+      async create(ctx) {
+        return { ...await baseAdapter.create(ctx), disposeRuntime }
+      },
+    })
+    const lease = await manager.acquire('workspace-a', {
+      placementIdentity: 'direct:workspace',
+      workspaceRoot,
+      provisioningFingerprint: 'generation-a',
+    })
+    const retained = lease.retain()
+
+    expect(retained.generationId).toBe(lease.generationId)
+    expect(retained.bundle).toBe(lease.bundle)
+    expect(retained.signal).toBe(lease.signal)
+    await lease.retire()
+    expect(lease.signal.aborted).toBe(true)
+    expect(disposeRuntime).not.toHaveBeenCalled()
+    expect(() => lease.retain()).toThrow()
+    expect(() => retained.retain()).toThrow()
+
+    retained.release()
+    await vi.waitFor(() => expect(disposeRuntime).toHaveBeenCalledOnce())
+    expect(retained.signal.aborted).toBe(true)
+    retained.release()
+    expect(disposeRuntime).toHaveBeenCalledOnce()
+  })
+
+  it('rejects retaining a released lease without changing reference ownership', async () => {
+    const workspaceRoot = await makeRoot()
+    const baseAdapter = createTestRuntimeModeAdapter('direct')
+    const manager = new EnvironmentLeaseManager(baseAdapter)
+    const lease = await manager.acquire('workspace-a', {
+      placementIdentity: 'direct:workspace',
+      workspaceRoot,
+      provisioningFingerprint: 'generation-a',
+    })
+    lease.release()
+    expect(() => lease.retain()).toThrowError(/no longer available/)
+    await manager.close()
+  })
+
   it('reloads only after the final old-generation lease retires', async () => {
     const workspaceRoot = await makeRoot()
     const baseAdapter = createTestRuntimeModeAdapter('direct')

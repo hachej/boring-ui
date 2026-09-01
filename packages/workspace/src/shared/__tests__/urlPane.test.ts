@@ -3,8 +3,24 @@ import {
   defaultUrlPanePolicy,
   originMatchesPattern,
   parseUrlPaneOrigins,
+  resolveRuntimePreviewUrl,
   resolveUrlPaneTarget,
 } from "../urlPane"
+
+describe("resolveRuntimePreviewUrl", () => {
+  it("accepts credential-free HTTPS or bounded HTTP loopback projections", () => {
+    expect(resolveRuntimePreviewUrl("https://preview.example/demo")).toMatchObject({ ok: true })
+    expect(resolveRuntimePreviewUrl("http://localhost:6080/demo")).toMatchObject({ ok: true })
+    expect(resolveRuntimePreviewUrl("http://preview.example/demo")).toMatchObject({
+      ok: false,
+      reason: "protocol-not-allowed",
+    })
+    expect(resolveRuntimePreviewUrl("https://user:pass@preview.example/demo")).toMatchObject({
+      ok: false,
+      reason: "credentials-not-allowed",
+    })
+  })
+})
 
 describe("parseUrlPaneOrigins", () => {
   it("returns an empty list for unset input so callers choose the closed/default meaning", () => {

@@ -40,6 +40,19 @@ export interface SandboxProviderInvalidateContextV1 {
   workspaceId: string;
 }
 
+export interface SandboxRuntimeProjectionRequestV1 {
+  /** Host-only pair-local endpoint. Never expose this request to plugins or clients. */
+  port: number;
+  path?: string;
+}
+
+export interface SandboxRuntimeProjectionLeaseV1 {
+  /** Sealed upstream consumed only by the same-origin Host broker. */
+  readonly url: string;
+  readonly expiresAt: string;
+  revoke(): Promise<void>;
+}
+
 export type SandboxPairHealthV1 =
   | Readonly<{ state: "ok" }>
   | Readonly<{ state: "recreate"; message?: string; error?: unknown }>;
@@ -91,6 +104,10 @@ export type WorkspaceSandboxPairV1 = Readonly<{
   sandbox: Sandbox;
   provisioning?: SandboxProvisioningOperationsV1;
   checkHealth?(): Promise<SandboxPairHealthV1>;
+  /** Pair-owned projection authority; disposal fences all future leases. */
+  createRuntimeProjection?(
+    request: SandboxRuntimeProjectionRequestV1,
+  ): Promise<SandboxRuntimeProjectionLeaseV1>;
   dispose(): Promise<void>;
 }>;
 

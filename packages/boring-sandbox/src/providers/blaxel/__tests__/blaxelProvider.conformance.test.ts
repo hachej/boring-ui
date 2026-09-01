@@ -63,6 +63,42 @@ describe('Blaxel adapter policies', () => {
     expect(resolveBlaxelConfig({ region: 'eu-lon-1' }, {}).region).toBe('eu-lon-1')
   })
 
+  test('projects only through the acquired pair and fences disposal', async () => {
+    const value = await harness()
+    const first = await value.pair.createRuntimeProjection!({ port: 8_000, path: '/demo' })
+    expect(first).toMatchObject({
+      url: expect.stringMatching(/^https:\/\/.*-8000\.preview\.test\/demo$/),
+      expiresAt: expect.any(String),
+    })
+    const second = await value.pair.createRuntimeProjection!({
+      port: 6_080,
+      path: '/vnc.html?autoconnect=1&resize=remote',
+    })
+    expect(second.url).toMatch(/\/vnc\.html\?autoconnect=1&resize=remote$/)
+    expect(second.url).not.toBe(first.url)
+    await expect(value.pair.createRuntimeProjection!({ port: 80 }))
+      .rejects.toMatchObject({ code: 'CONFIG_INVALID' })
+    await first.revoke()
+    await first.revoke()
+    await value.pair.dispose()
+    await expect(value.pair.createRuntimeProjection!({ port: 8_000 }))
+      .rejects.toMatchObject({ code: 'SANDBOX_NOT_READY' })
+  })
+
+  test('keeps projection authority local to each provider pair generation', async () => {
+    const client = await createMockBlaxelClient()
+    const provider = createBlaxelSandboxProvider({ client, handleStore: new MemoryStore(), region: 'eu-fra-1' })
+    const context = { workspaceRoot: '/ignored', workspaceId: 'same-workspace', sessionId: 'session' }
+    const oldPair = await provider.create(context)
+    const currentPair = await provider.create(context)
+    await oldPair.dispose()
+    await expect(currentPair.createRuntimeProjection!({ port: 8_000 }))
+      .resolves.toMatchObject({ url: expect.stringContaining('-8000.preview.test') })
+    await expect(oldPair.createRuntimeProjection!({ port: 8_000 }))
+      .rejects.toMatchObject({ code: 'SANDBOX_NOT_READY' })
+    await currentPair.dispose()
+  })
+
   test('caps terminal UTF-8 output locally with stdout-first allocation', () => {
     const result = capUtf8Outputs('éé', 'stderr', 5)
     expect(result.stdout.byteLength).toBe(4)

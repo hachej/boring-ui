@@ -298,6 +298,7 @@ export function createBlaxelSandboxProvider(
       }
 
       let disposed = false
+      const projectionLeases = new Set<{ revoked: boolean }>()
       const workspace = createBlaxelSandboxWorkspace(remote)
       const sandbox = createBlaxelSandboxExec(remote, {
         onMutation: workspace.invalidateMetadataCache,
@@ -343,9 +344,43 @@ export function createBlaxelSandboxProvider(
               throw normalizeBlaxelError(error)
             }
           },
+          async createRuntimeProjection({ port, path }) {
+            if (disposed) {
+              throw new SandboxProviderError('SANDBOX_NOT_READY', 'sandbox pair is disposed')
+            }
+            if (!Number.isInteger(port) || port < 1024 || port > 65_535) {
+              throw new SandboxProviderError('CONFIG_INVALID', 'projection port must be an integer from 1024 to 65535')
+            }
+            if (path !== undefined && (!path.startsWith('/') || path.includes('\\') || path.length > 2_048)) {
+              throw new SandboxProviderError('CONFIG_INVALID', 'projection path must be an absolute URL path of at most 2048 characters')
+            }
+            const state = { revoked: false }
+            projectionLeases.add(state)
+            const tokenExpiresAt = new Date(Date.now() + 15 * 60 * 1_000)
+            const projection = await remote.createPreview({
+              name: `boring-projection-${randomUUID()}`,
+              port,
+              path,
+              ttl: '1h',
+              tokenExpiresAt,
+            })
+            return Object.freeze({
+              ...projection,
+              async revoke() {
+                if (state.revoked) return
+                state.revoked = true
+                projectionLeases.delete(state)
+                // The pinned SDK has no preview-token deletion primitive. The
+                // same-origin broker is the synchronous revocation boundary;
+                // this token remains sealed server-side until its short TTL.
+              },
+            })
+          },
           async dispose() {
             if (disposed) return
             disposed = true
+            for (const lease of projectionLeases) lease.revoked = true
+            projectionLeases.clear()
             workspace.dispose()
             await sandbox.dispose()
           },
@@ -357,7 +392,9 @@ export function createBlaxelSandboxProvider(
         throw normalizeBlaxelError(error)
       }
     },
-    invalidate({ workspaceId }) { handles.invalidate(workspaceId) },
+    invalidate({ workspaceId }) {
+      handles.invalidate(workspaceId)
+    },
     async close() {
       handles.clear()
       seeds.clear()

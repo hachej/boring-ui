@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "serviceRef": "trusted-service-v1",
+  "protocolDigest": "sha256:8b2340169d26c8ca9c6a9fc0ccedd115ff32122060aea9e8f1bf1a01493cd707",
+  "imageSourceDigest": "sha256:0cc2e9c510c1baadc7a69663e020f80f953827cde2d434c7ee072b1413330d45",
+  "imageDigest": null,
+  "localQualifiedImageDigest": "sha256:42789fa201cbf787026886296de405efe95cb7ed4d1c4eda78eba2f4491f6799",
+  "isolation": "dedicated-uid-private-channel",
+  "browserUse": "0.13.8",
+  "localQualifiedVersions": {
+    "chromium": "151.0.7922.173",
+    "novnc": "1:1.3.0-1",
+    "websockify": "0.10.0+dfsg1-4+b1",
+    "x11vnc": "0.9.16-9",
+    "xvfb": "2:21.1.7-3+deb12u13"
+  },
+  "viewerEndpoints": {
+    "observe": "view-only",
+    "control": "input-enabled"
+  },
+  "hostedSupport": "unsupported-until-provider-qualification",
+  "cdpBoundary": "loopback-only-inside-private-trusted-service-namespace"
+}

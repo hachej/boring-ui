@@ -1,3 +1,5 @@
+import type { RuntimeWebViewTarget } from "./runtimeWebView"
+
 /**
  * URL pane — the workspace surface that embeds a *running* demo (a worker's dev
  * server, the hub itself) in a sandboxed iframe.
@@ -125,7 +127,15 @@ export function resolveUrlPaneTarget(input: string | undefined | null, policy: U
   return { ok: true, url: parsed.toString(), origin: parsed.origin }
 }
 
+// Compatibility aliases for #1493 consumers. Runtime projection now belongs
+// to the central RuntimeWebView contract rather than this panel.
+export type { RuntimeWebViewTarget as RuntimePreviewTarget } from "./runtimeWebView"
+export { resolveRuntimeWebViewProjection as resolveRuntimePreviewUrl } from "./runtimeWebView"
+
 export interface UrlPanePaneParams {
+  /** Browser-direct URL, used by local CLI and explicitly allowlisted hosts. */
   url?: string
+  /** Host-resolved port in the current workspace's active remote runtime. */
+  runtimePreview?: RuntimeWebViewTarget
   title?: string
 }
