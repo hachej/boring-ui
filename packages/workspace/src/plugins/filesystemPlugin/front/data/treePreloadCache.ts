@@ -1,6 +1,12 @@
 import type { FileEntry } from "./types"
 
-const preloadedTrees = new Map<string, FileEntry[]>()
+interface PreloadedTree {
+  entries: FileEntry[]
+  /** When the snapshot was taken, so consumers can judge its age. */
+  updatedAt: number
+}
+
+const preloadedTrees = new Map<string, PreloadedTree>()
 
 function normalizeBase(apiBaseUrl: string | null | undefined): string {
   return (apiBaseUrl ?? "").replace(/\/$/, "")
@@ -20,7 +26,7 @@ export function setPreloadedTreeEntries(
   dir: string | null | undefined,
   entries: FileEntry[],
 ): void {
-  preloadedTrees.set(treeKey(apiBaseUrl, workspaceId, dir), entries)
+  preloadedTrees.set(treeKey(apiBaseUrl, workspaceId, dir), { entries, updatedAt: Date.now() })
 }
 
 export function getPreloadedTreeEntries(
@@ -28,5 +34,18 @@ export function getPreloadedTreeEntries(
   workspaceId: string | null | undefined,
   dir: string | null | undefined,
 ): FileEntry[] | undefined {
-  return preloadedTrees.get(treeKey(apiBaseUrl, workspaceId, dir))
+  return preloadedTrees.get(treeKey(apiBaseUrl, workspaceId, dir))?.entries
+}
+
+/**
+ * Age of the cached snapshot, for seeding a query's `initialDataUpdatedAt`.
+ * Without it a preload is treated as freshly fetched every time it is read,
+ * so a remount long after boot never refetches and shows a stale tree.
+ */
+export function getPreloadedTreeUpdatedAt(
+  apiBaseUrl: string | null | undefined,
+  workspaceId: string | null | undefined,
+  dir: string | null | undefined,
+): number | undefined {
+  return preloadedTrees.get(treeKey(apiBaseUrl, workspaceId, dir))?.updatedAt
 }
