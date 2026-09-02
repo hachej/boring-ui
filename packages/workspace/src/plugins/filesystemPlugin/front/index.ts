@@ -55,6 +55,7 @@ export {
 export type { UseFilePaneOptions, UseFilePaneReturn } from "./useFilePane"
 export type { UseAutoOpenAgentFilesOptions } from "./agentFileBridge"
 function FilesystemDataProvider({
+  agentTypeId,
   apiBaseUrl,
   authHeaders,
   authScopeKey,
@@ -71,7 +72,7 @@ function FilesystemDataProvider({
       onAuthError,
       timeout: apiTimeout,
       children: createElement(FilesystemRootsBinding, {
-        requestKey: `${apiBaseUrl}\n${headersKey}\n${authScopeKey ?? ""}`,
+        requestKey: `${apiBaseUrl}\n${headersKey}\n${authScopeKey ?? ""}\n${agentTypeId}`,
         children,
       }),
     },

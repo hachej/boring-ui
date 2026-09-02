@@ -1,4 +1,5 @@
 import { act, render, screen, waitFor } from "@testing-library/react"
+import { useState } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { WorkspaceProvider } from "../../../../front/provider/WorkspaceProvider"
 import { useFileTreeRoots } from "../file-tree/FileTreeRootsProvider"
@@ -10,12 +11,18 @@ function Probe() {
   return <div data-testid="roots">{roots.map((root) => root.filesystem).join(",")}</div>
 }
 
+let probeInstances = 0
+function StableProbe() {
+  const [instance] = useState(() => ++probeInstances)
+  return <><Probe /><div data-testid="probe-instance">{instance}</div></>
+}
+
 afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
 
-describe("filesystem data provider auth snapshots", () => {
+describe("filesystem data provider request scope", () => {
   it("snapshots in-place header mutations with the auth scope request key", async () => {
     let resolveSecond!: (response: Response) => void
     let catalogCalls = 0
@@ -54,5 +61,39 @@ describe("filesystem data provider auth snapshots", () => {
     await act(async () => resolveSecond(new Response(JSON.stringify({ filesystems: [
       { filesystem: "user", label: "Workspace", rootDir: ".", access: "readwrite", capabilities: { ...capabilities, write: true, delete: true, move: true, mkdir: true } },
     ] }), { status: 200 })))
+  })
+
+  it("reloads roots without remounting the workspace when the addressed Agent changes after enrollment", async () => {
+    probeInstances = 0
+    let catalogCalls = 0
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+      if (!String(input).endsWith("/api/v1/filesystems")) {
+        return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      }
+      catalogCalls += 1
+      const filesystems = [
+        { filesystem: "user", label: "Workspace", rootDir: ".", access: "readwrite", capabilities: { ...capabilities, write: true, delete: true, move: true, mkdir: true } },
+        ...(catalogCalls === 1 ? [] : [
+          { filesystem: "agent_knowledge:charlotteledoux", label: "Charlotte Ledoux", rootDir: "/", access: "readonly", capabilities },
+        ]),
+      ]
+      return new Response(JSON.stringify({ filesystems }), { status: 200 })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const renderWorkspace = (agentTypeId: string) => (
+      <WorkspaceProvider agentTypeId={agentTypeId} persistenceEnabled={false}>
+        <StableProbe />
+      </WorkspaceProvider>
+    )
+    const { rerender } = render(renderWorkspace("dummy"))
+    await waitFor(() => expect(catalogCalls).toBe(1))
+    expect(screen.getByTestId("roots")).toHaveTextContent("user")
+
+    rerender(renderWorkspace("charlotteledoux"))
+
+    await waitFor(() => expect(catalogCalls).toBe(2))
+    await waitFor(() => expect(screen.getByTestId("roots")).toHaveTextContent("agent_knowledge:charlotteledoux"))
+    expect(screen.getByTestId("probe-instance")).toHaveTextContent("1")
   })
 })

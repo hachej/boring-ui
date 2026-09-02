@@ -27,9 +27,12 @@ export interface FilesystemRootsBindingProps {
   children: ReactNode
 }
 
-function FilesystemRootsRequest({ children }: { children: ReactNode }) {
+function FilesystemRootsRequest({ requestKey, children }: FilesystemRootsBindingProps) {
   const client = useDataClient()
-  const [roots, setRoots] = useState<readonly FileTreeRootConfig[]>([PRIMARY_ROOT])
+  const [snapshot, setSnapshot] = useState<{
+    requestKey: string
+    roots: readonly FileTreeRootConfig[]
+  }>({ requestKey, roots: [PRIMARY_ROOT] })
 
   useEffect(() => {
     const controller = new AbortController()
@@ -37,25 +40,29 @@ function FilesystemRootsRequest({ children }: { children: ReactNode }) {
     void client.getFilesystems(controller.signal)
       .then((filesystems) => {
         if (controller.signal.aborted || !filesystems.some((entry) => entry.filesystem === "user")) return
-        setRoots(filesystems.map((entry) => ({
-          filesystem: entry.filesystem,
-          label: entry.label,
-          rootDir: entry.rootDir,
-          access: entry.access,
-          capabilities: entry.capabilities,
-        })))
+        setSnapshot({
+          requestKey,
+          roots: filesystems.map((entry) => ({
+            filesystem: entry.filesystem,
+            label: entry.label,
+            rootDir: entry.rootDir,
+            access: entry.access,
+            capabilities: entry.capabilities,
+          })),
+        })
       })
       .catch(() => {
         if (!controller.signal.aborted) console.error("Failed to load filesystem catalog")
       })
 
     return () => controller.abort()
-  }, [client])
+  }, [client, requestKey])
 
+  const roots = snapshot.requestKey === requestKey ? snapshot.roots : [PRIMARY_ROOT]
   return <FileTreeRootsProvider roots={roots}>{children}</FileTreeRootsProvider>
 }
 
 /** Loads request-visible roots from the server and fails closed to Workspace. */
 export function FilesystemRootsBinding({ requestKey, children }: FilesystemRootsBindingProps) {
-  return <FilesystemRootsRequest key={requestKey}>{children}</FilesystemRootsRequest>
+  return <FilesystemRootsRequest requestKey={requestKey}>{children}</FilesystemRootsRequest>
 }
