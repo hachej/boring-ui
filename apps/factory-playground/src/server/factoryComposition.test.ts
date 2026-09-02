@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
@@ -11,6 +12,7 @@ import { simulateFactoryFeature } from './simulateFeature'
 const appRoot = resolve(import.meta.dirname, '../..')
 const repositoryRoot = resolve(appRoot, '../..')
 const temporaryRoots: string[] = []
+const brAvailable = spawnSync('br', ['--version'], { stdio: 'ignore' }).status === 0
 
 afterEach(async () => {
   await Promise.all(temporaryRoots.splice(0).map(async (root) => await rm(root, { recursive: true, force: true })))
@@ -105,7 +107,7 @@ describe('native Factory composition', () => {
     }
   }, 30_000)
 
-  it('executes and cleans a two-Worker feature simulation through real sandbox tools', async () => {
+  it.runIf(brAvailable)('executes and cleans a two-Worker feature simulation through real sandbox tools', async () => {
     const root = await mkdtemp(resolve(tmpdir(), 'factory-feature-simulation-'))
     temporaryRoots.push(root)
     const events: string[] = []

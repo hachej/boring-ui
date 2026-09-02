@@ -20,7 +20,7 @@ pnpm --filter factory-playground dev
 
 Open <http://localhost:5220>. Start on **Boring Orchestrator** and enter `/loop` or use the seeded feature suggestion. Watch addressed Worker sessions in Agents, claims in Tasks, owner gates in Inbox, and dispatch runs in Automations.
 
-A deterministic tracer-bullet simulation is available without model or cloud credentials:
+A deterministic tracer-bullet simulation is available without model or cloud credentials. It requires the real `br` CLI on `PATH`; the simulation test skips rather than substituting a fake graph when `br` is unavailable:
 
 ```bash
 pnpm --filter factory-playground simulate
