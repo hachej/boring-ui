@@ -55,11 +55,38 @@ export interface ModelFilterContext {
   executionClass?: TrustedAgentExecutionClass
 }
 
-export type ModelCatalog = Awaited<ReturnType<typeof createConfiguredModelRuntime>>
+export interface ModelCatalogSnapshot {
+  /** Pi-free projection of the models visible to this actor. */
+  readonly models: readonly ModelSummary[]
+}
 
 export type ModelCatalogResolver = (
   actor: VerifiedModelRequestActor,
-) => ModelCatalog | Promise<ModelCatalog>
+) => ModelCatalogSnapshot | Promise<ModelCatalogSnapshot>
+
+/** Keep Pi runtime objects inside the HTTP adapter; Agent Host sees only the DTO. */
+function projectModelCatalog(
+  catalog: Awaited<ReturnType<typeof createConfiguredModelRuntime>>,
+): ModelCatalogSnapshot {
+  const { modelRuntime, configuredModels } = catalog
+  const configuredModelSet = new Set(
+    configuredModels.map((model) => `${model.provider}:${model.id}`),
+  )
+  const availableSet = new Set(
+    modelRuntime.getAvailableSnapshot().map((model) => `${model.provider}:${model.id}`),
+  )
+  const allModels = configuredModelSet.size > 0
+    ? modelRuntime.getModels().filter((model) => configuredModelSet.has(`${model.provider}:${model.id}`))
+    : modelRuntime.getModels()
+  return {
+    models: allModels.map((model) => ({
+      provider: model.provider,
+      id: model.id,
+      label: (model as unknown as { label?: string }).label ?? model.id,
+      available: availableSet.has(`${model.provider}:${model.id}`),
+    })),
+  }
+}
 
 export type ModelFilterResult = {
   models: readonly ModelSummary[]
@@ -89,7 +116,7 @@ export async function modelsRoutes(
   // actor-bound during route registration or denied authorization.
   const compatibilityCatalog = opts.resolveModelCatalog
     ? undefined
-    : await createConfiguredModelRuntime()
+    : projectModelCatalog(await createConfiguredModelRuntime())
 
   app.get(opts.path ?? '/api/v1/agents/:agentTypeId/models', async (request, reply) => {
     const actor = await opts.authorizeRequest?.(request)
@@ -99,32 +126,13 @@ export async function modelsRoutes(
         'actor-aware model catalog resolution requires a verified request actor',
       )
     }
-    const { modelRuntime, configuredModels } = opts.resolveModelCatalog
+    const catalog = opts.resolveModelCatalog
       ? await opts.resolveModelCatalog(actor as VerifiedModelRequestActor)
       : compatibilityCatalog!
-    const configuredModelSet = new Set(
-      configuredModels.map((model) => `${model.provider}:${model.id}`),
-    )
     // Availability is an advisory snapshot for display. Request-auth store
-    // resolution remains authoritative when a model call actually runs.
-    const availableModels = modelRuntime.getAvailableSnapshot()
-    const availableSet = new Set(
-      availableModels.map((m) => `${m.provider}:${m.id}`),
-    )
-    const allModels = configuredModelSet.size > 0
-      ? modelRuntime.getModels().filter((m) => configuredModelSet.has(`${m.provider}:${m.id}`))
-      : modelRuntime.getModels()
-    const models: ModelSummary[] = allModels.map((m) => ({
-      provider: m.provider,
-      id: m.id,
-      label: (m as unknown as { label?: string }).label ?? m.id,
-      // Keep this endpoint cheap: it is fetched on chat mount, so it must never
-      // block workspace load on deep provider auth resolution. ModelRuntime's
-      // available snapshot is already derived from configured auth sources. When
-      // hosts configure launch/custom providers, those configured models are an
-      // allowlist: do not leak the built-in registry's unavailable catalog.
-      available: availableSet.has(`${m.provider}:${m.id}`),
-    }))
+    // resolution remains authoritative when a model call actually runs. Clone
+    // the Pi-free snapshot because filters may mutate their input.
+    const models: ModelSummary[] = catalog.models.map((model) => ({ ...model }))
     // Stable order: available first, then alphabetically by (provider, id).
     models.sort((a, b) => {
       if (a.available !== b.available) return a.available ? -1 : 1

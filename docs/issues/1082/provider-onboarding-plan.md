@@ -420,10 +420,13 @@ a fresh bounded lease at Pi's one-at-a-time follow-up queue **drain boundary**,
 before Pi runs `prepareNextTurn` or automatic compaction for that queued turn. The
 lease is installed only on that Pi continuation's AsyncLocalStorage chain; a
 concurrent request operation establishes its own nested lease and cannot borrow or
-be overridden by the queued payer. The prior continuation lease is revoked at the
-next drain and the final lease is revoked at `agent_end` or handle cleanup/disposal,
-whichever comes first. Activation at `message_start` is forbidden because Pi may
-perform a provider-funded compaction before emitting that event. Whenever operation-scoped
+be overridden by the queued payer. The prior continuation lease is revoked at the next queue drain. A retrying
+`agent_end` (`willRetry=true`) is non-terminal: `auto_retry_start` re-enters the
+same queued actor lease so provider auth remains attributed to that actor across
+Pi's retry and backoff. Final retirement occurs at `agent_settled`, the next queue
+drain, abort/cancellation, or handle cleanup/disposal, whichever comes first.
+Activation at `message_start` is forbidden because Pi may perform a
+provider-funded compaction before emitting that event. Whenever operation-scoped
 credentials are composed, Boring forces Pi's actual native `followUpMode` to
 `one-at-a-time` through an in-memory settings overlay, guards the pinned queue
 seam with a published-package contract test, and rejects a runtime that does not

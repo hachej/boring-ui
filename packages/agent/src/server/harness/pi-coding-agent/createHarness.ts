@@ -504,12 +504,6 @@ export function createPiCodingAgentHarness(opts: {
   // fail while the key is present so delete cannot return with a replacement
   // native writer installed behind it.
   const piSessionDeletions = new Map<string, Promise<void>>();
-  // Session-incarnation fence, mirroring the chat service's. A delete that lands
-  // while createAgentSession is still running must not leave the late handle
-  // installed — it would keep a live AgentSession (and its transcript writer)
-  // for a session that no longer exists.
-  const sessionGenerations = new Map<string, number>();
-  const generationOf = (sessionKey: string): number => sessionGenerations.get(sessionKey) ?? 0;
   const sessionNotFoundError = (): Error & { code: string; statusCode: number } => Object.assign(
     new Error("session not found"),
     { code: ErrorCode.enum.SESSION_NOT_FOUND, statusCode: 404 },
@@ -539,13 +533,12 @@ export function createPiCodingAgentHarness(opts: {
       return handle;
     }
 
-    const generation = generationOf(sessionKey);
     // Allocate authority before cold creation. Deletion can therefore revoke
     // initial ModelRuntime/auth work before the late handle exists.
     const coordinator = createOperationContextCoordinator();
     const creation = coordinator.run(ctx, () =>
       createPiSession(sessionId, sessionCtx, input, ctx, coordinator)).then((handle) => {
-      if (generationOf(sessionKey) === generation && !piSessionDeletions.has(sessionKey)) return handle;
+      if (!piSessionDeletions.has(sessionKey)) return handle;
       disposeHandleAt(sessionKey, handle);
       throw sessionNotFoundError();
     }, (error) => {
@@ -832,7 +825,6 @@ export function createPiCodingAgentHarness(opts: {
       // Fence this key before authority revocation or any await. The fence stays
       // active through durable unlink, so a concurrent reopen cannot install a
       // replacement native writer while delete is in progress.
-      sessionGenerations.set(key, generationOf(key) + 1);
       const pending = piSessionCreations.get(key);
       pending?.coordinator.dispose();
       disposePiSession(sessionId, ctx);

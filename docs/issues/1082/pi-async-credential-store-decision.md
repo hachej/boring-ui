@@ -126,10 +126,14 @@ on remote I/O fail closed. Interactive follow-ups receive a fresh lease at Pi's
 one-at-a-time queue-drain boundary, before `prepareNextTurn` and automatic
 compaction; `message_start` is too late. That lease is bound only to the Pi
 continuation's AsyncLocalStorage chain, so concurrent request operations retain
-their own actor. It is revoked at the next drain, `agent_end`, or handle cleanup,
-whichever happens first. Handle disposal closes the coordinator, revokes all
-active/queued leases, clears captures, and rejects future calls through retained
-adapters before Pi listeners or the writer are disposed. Deleting a pending cold
+their own actor. The prior queued lease is revoked at the next queue drain. A
+retrying `agent_end` (`willRetry=true`) is non-terminal, and
+`auto_retry_start` re-enters the same queued actor lease across Pi's retry and
+backoff. Final retirement occurs at `agent_settled`, the next queue drain,
+abort/cancellation, or handle cleanup/disposal, whichever comes first. Handle
+disposal closes the coordinator, revokes all active/queued leases, clears
+captures, and rejects future calls through retained adapters before Pi listeners
+or the writer are disposed. Deleting a pending cold
 creation revokes its coordinator before awaiting the late result. Operation-scoped runtimes force native follow-up mode to
 `one-at-a-time` so one provider request has one payer. The runtime never caches an
 actor or accepts one from an untrusted browser field.

@@ -1,11 +1,13 @@
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import Fastify from 'fastify'
-import { InMemoryCredentialStore } from '@earendil-works/pi-ai'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CREDENTIAL_ERROR_CODES } from '../../../../shared/credentials/errors.js'
-import { createConfiguredModelRuntime } from '../../../models/modelRuntime.js'
-import { modelsRoutes, type VerifiedModelRequestActor } from '../models.js'
+import {
+  modelsRoutes,
+  type ModelCatalogSnapshot,
+  type VerifiedModelRequestActor,
+} from '../models.js'
 
 const ENV_KEYS = [
   'BORING_AGENT_DEFAULT_MODEL',
@@ -43,12 +45,15 @@ afterEach(() => {
 })
 
 describe('modelsRoutes', () => {
-  function actorCatalog() {
-    return createConfiguredModelRuntime({
-      credentials: new InMemoryCredentialStore(),
-      modelsPath: null,
-      refreshOnCreate: false,
-    })
+  function actorCatalog(): ModelCatalogSnapshot {
+    return {
+      models: [{
+        provider: 'openai-codex',
+        id: 'gpt-test',
+        label: 'GPT test',
+        available: true,
+      }],
+    }
   }
 
   function configureInfomaniakModels() {
