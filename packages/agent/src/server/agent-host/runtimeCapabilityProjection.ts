@@ -119,6 +119,7 @@ export interface AgentHostAgentDescription {
 
 export interface AgentHostRuntimeCapabilityProjection {
   readonly filterModels?: ModelsRoutesOptions['filterModels']
+  readonly resolveModelCatalog?: ModelsRoutesOptions['resolveModelCatalog']
   readonly sessionChangesTracker?: SessionChangesTracker
   readonly metering?: Pick<AgentMeteringSink, 'isEnabled'>
   registerSubscription(close: () => void | Promise<void>): () => void
@@ -158,7 +159,7 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
   readonly gateway: EmbeddedAgentGateway
   readonly options: Pick<
     AgentHostDirectProjectionOptions,
-    'authorizeAgentRequest' | 'defaultSessionId' | 'filterModels' | 'sessionChangesTracker'
+    'authorizeAgentRequest' | 'defaultSessionId' | 'filterModels' | 'resolveModelCatalog' | 'sessionChangesTracker'
   >
   readonly mcpGrants?: AgentHostRuntimeCapabilityMcpGrantsOptions
 }): AgentHostRuntimeCapabilityProjection {
@@ -211,6 +212,7 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
   }
   return {
     filterModels: options.filterModels,
+    resolveModelCatalog: options.resolveModelCatalog,
     sessionChangesTracker: options.sessionChangesTracker,
     metering: runtime.options.metering,
     registerSubscription: runtime.registerSubscription,
@@ -289,6 +291,7 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
           workspaceId: claim.workspaceScopeId,
           requestId: request.id,
           userId: claim.authSubjectId,
+          executionClass: 'request-attached-interactive',
           sessionCtx: {
             workspaceId: claim.workspaceScopeId,
           },
@@ -375,6 +378,7 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
             workspaceId: scope.workspaceScopeId,
             requestId,
             userId: scope.authSubjectId,
+            executionClass: 'request-attached-interactive',
             sessionCtx: {
               workspaceId: scope.workspaceScopeId,
               },
@@ -587,7 +591,15 @@ export function createAgentHostRuntimeCapabilityRoutes(
     await app.register(modelsRoutes, {
       path: '/api/v1/agents/:agentTypeId/models',
       filterModels: projection.filterModels,
-      authorizeRequest: async (request) => { await resolve(request, agentId(request)) },
+      resolveModelCatalog: projection.resolveModelCatalog,
+      authorizeRequest: async (request) => {
+        const { claim } = await resolve(request, agentId(request))
+        return Object.freeze({
+          workspaceId: claim.workspaceScopeId,
+          userId: claim.authSubjectId,
+          executionClass: 'request-attached-interactive' as const,
+        })
+      },
     })
     await app.register(skillsRoutes, {
       path: '/api/v1/agents/:agentTypeId/skills',

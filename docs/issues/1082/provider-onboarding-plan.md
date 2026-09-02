@@ -1,430 +1,699 @@
 ---
 github: https://github.com/hachej/boring-ui/issues/1082
-issue: 1082 (follow-on: pi provider onboarding)
-state: ready-for-human
+issue: 1082 (personal OpenAI Codex onboarding)
+state: ready-for-review
 updated: 2026-08-31
-revision: r3.2
+revision: r4
 track: owner
-depends: PR #1132 (vault crypto, merged), PR #1145 (durable Postgres persistence, branch 196d22bd9 — not yet on main), [`plan.md`](plan.md) r3 (PR #1137), [`pi-async-credential-store-decision.md`](pi-async-credential-store-decision.md)
+depends: [`pi-async-credential-store-decision.md`](pi-async-credential-store-decision.md), [`key-scope-decision.md`](key-scope-decision.md)
 ---
 
-# gh-1082 pi provider onboarding workflow — BYOK key → usable pi runtime provider
+# gh-1082 personal OpenAI Codex onboarding — implementation plan r4
 
-Goal: a workspace **member** connects an LLM provider for themselves
-(Anthropic / OpenAI / Gemini / OpenAI-compatible custom — via OAuth
-subscription login where the provider supports it, or an API key otherwise),
-the server validates the credential, stores it in the BYOK vault, and every
-subsequent pi session that member starts runs on their credential. A
-workspace **owner** can additionally set a workspace-wide credential per
-provider as the fallback for members without a personal one. Rotation/
-revocation and fail-closed semantics throughout.
+## Goal
 
-**Scope (owner directive 2026-08-08): user-specific onboarding first, with
-the possibility to set a credential workspace-wide.**
+A workspace member connects their own ChatGPT Plus/Pro subscription and uses
+Pi's `openai-codex` provider in interactive sessions inside that workspace.
+Only that authenticated member may list, refresh, disconnect, or use the
+credential, and only in the workspace where they connected it.
 
-## Ratified decisions (2026-08-08)
+Pi owns provider behavior: OAuth, expiry detection, refresh-token rotation,
+request authentication, model availability, and login/logout orchestration.
+Boring owns actor authorization, scope selection, durable encrypted custody,
+concurrency, audit, failure policy, and rollout. Seneca consumes the resulting
+published Boring packages after the upstream slices are green.
 
-Owner rulings folded into this revision; the rest of the plan is
-interpreted through them.
+## Controlling scope
 
-- **(a) Maximal pi reuse, amended 2026-08-31.** Upgrade the coordinated Pi
-  packages from 0.80.7 to 0.84.3 and use Pi's asynchronous `CredentialStore`
-  plus `ModelRuntime`. Net-new code is **only**: (1) an actor-bound vault
-  `CredentialStore` whose immutable scope contains `(workspaceId, userId)`,
-  (2) the personal → workspace → env scoping rule, and (3) the settings menu
-  (My providers / Workspace providers). Do not implement the earlier remote
-  `AuthStorageBackend` plan; its synchronous methods cannot correctly perform
-  Postgres/KMS I/O. See
-  [`pi-async-credential-store-decision.md`](pi-async-credential-store-decision.md).
-- **(b) Subscription posture.** **Subscriptions are interactive-only and
-  personal-only; anything that runs without the user present requires an
-  API key.** OAuth subscription tokens (Claude Pro/Max, Codex) are never
-  promotable to workspace scope and never fund background runs. An
-  automation whose creator lacks an API key for the needed provider
-  **pauses with an Inbox Human Intention prompt** ("connect an API key or
-  reassign") instead of running on a subscription.
-- **(c) v1 provider set.** Connectable in v1: **Anthropic** (API key +
-  Claude Pro/Max OAuth), **OpenAI** (API key + Codex OAuth), **Google**
-  (API key). The rest of the pi catalog (github-copilot, xai, radius,
-  openai-compatible custom, …) is **listed but not connectable** in v1 —
-  rows render from pi's registry with a "not yet available" state.
-- **(d) Funding-provenance chip.** The composer shows a small chip
-  indicating which credential funds the current session (personal /
-  workspace / provider label).
-- **(e) Picker model.** The model picker shows **provenance-labeled
-  provider rows** — workspace / personal / (platform credits, later) —
-  and **selecting a row = choosing the funding source**, not just a model.
+This document is the controlling delivery plan for the first personal Codex
+release. The broader plans in [`plan.md`](plan.md) and
+[`../820/byok-secret-vault-plan.md`](../820/byok-secret-vault-plan.md) remain
+long-term credential-platform roadmaps where they do not conflict with this
+bounded slice.
 
-This plan is the *onboarding-workflow* specialization of 1082 plan-r3 slices
-S3 (registry + routes) and S4 (credential UI), extended with the two pieces
-r3 leaves abstract: **credential validation** and **per-session resolution
-into Pi's actor-bound `ModelRuntime`**.
+### In scope
 
-**r2 principle (owner feedback on r1): leverage pi as much as possible per
-provider.** pi already owns credential typing (`api_key` | `oauth`), OAuth
-login/refresh machinery, provider registration, and auth-status enumeration.
-We do not hand-roll any of that; we supply pi a **vault-backed credential
-storage backend** and broker its interactive flows over our routes.
+- one Pi provider: `openai-codex`;
+- one auth kind: Pi-managed OAuth subscription;
+- one credential identity: `(workspaceId, userId, "openai-codex")`;
+- request-attached interactive sessions only;
+- actor-bound asynchronous Pi `CredentialStore`;
+- Postgres ciphertext and a per-workspace DEK protected by OVH KMS;
+- Pi-native device-code connect, metadata-only status, refresh, and disconnect;
+- actor-aware Codex model availability;
+- a minimal personal settings card and model-picker connection CTA;
+- one-workspace, feature-flagged canary rollout.
 
-## What pi provides (target verified against `@earendil-works/pi-coding-agent` / `pi-ai` 0.84.3)
+### Explicitly deferred
 
-- **Asynchronous `CredentialStore`.** `read`, `list`, `modify`, and `delete`
-  all return promises. `modify(providerId, fn)` is the only write path and
-  serializes the complete read-modify-write operation, allowing Pi's OAuth
-  refresh to execute under the store's cross-process lock.
-- **Injectable `ModelRuntime`.** `ModelRuntime.create({ credentials })`
-  accepts any Pi `CredentialStore`; production need not use `auth.json`.
-- **OAuth login flows ship with Pi.** `ModelRuntime.login()` uses provider
-  implementations including `openai-codex`; the host supplies an
-  `AuthInteraction` and brokers only safe auth URL/device/manual-code/progress
-  events to the browser.
-- **Token refresh remains Pi-owned.** Pi checks expiry, invokes the provider's
-  refresh implementation inside `CredentialStore.modify()`, derives request
-  auth, and persists rotated credentials through the injected store.
-- **Provider/model status remains Pi-owned.** `ModelRuntime` exposes provider
-  registration, auth status, available models, request auth, login, logout,
-  and catalog refresh.
-- **Scope remains Seneca-owned.** A store instance is closed over the verified
-  `(workspaceId, userId)`; Pi's `providerId` key is resolved only inside that
-  immutable scope. See the companion async-store decision for lock, AAD, and
-  migration requirements.
+- workspace-wide credentials, sharing, promotion, or fallback;
+- API-key onboarding and personal API-key/OAuth coexistence;
+- Anthropic, Google, custom OpenAI-compatible providers, or a generic provider UI;
+- automations, scheduled/queued/detached work, unattended agents, or background
+  agent workers funded by a subscription;
+- funding-source selection, provenance picker rows, fleet-tier integration, and
+  workspace billing policy;
+- MCP, search, transcription, plugins, and sandbox credential delivery;
+- dynamic KMS-key provisioning, DEK generation rotation, crypto-shred workflows,
+  legacy credential migration, and external rollback anchoring.
 
-## Today vs Delta
+The existing env/file behavior for non-Codex providers remains unchanged during
+this slice. `openai-codex` is intercepted by the personal actor store and never
+falls through to process env, a global `auth.json`, a workspace credential, or
+another user's credential.
 
-| Area | Today | Delta |
-|---|---|---|
-| Where credentials come from | Instance `process.env` only. `packages/agent/src/server/models/modelConfig.ts` reads `ANTHROPIC_API_KEY` etc. via `getEnv`, plus `BORING_AGENT_CUSTOM_MODEL_*` / Infomaniak env blocks; pi `AuthStorage.create()` reads pi's own env/settings/auth files (comment in `createHarness.ts`: "Auth/model credentials are Pi-owned"). | Vault credentials (API key **or** pi OAuth token) take precedence, resolved per actor: personal `(workspaceId, userId, providerId)` → workspace-wide → instance env, per Decision 27 tombstone semantics. |
-| Per-session runtime | `createPiSession` builds Pi 0.80.7 `AuthStorage` + `ModelRegistry`; all env-derived and workspace-blind. | Upgrade to Pi 0.84.3, build actor-bound `ModelRuntime.create({ credentials: vaultCredentialStore })`, and preserve verified `userId` in session/cache identity. |
-| OAuth | None (env keys only). | pi's built-in OAuth providers (anthropic Claude Pro/Max, openai-codex, github-copilot, …) become connectable per workspace: login brokered host-side, tokens vault-stored, refresh via pi's own machinery writing through the vault backend. |
-| Vault | Crypto core merged (#1132): `packages/agent/src/server/credentials/vault/` (envelopeCrypto, local-KEK KmsBackend, vaultStoreBackend, persistence port). #1145 adds Postgres persistence + versionAnchor (branch, not on main). | Consumed as-is. Onboarding writes through `CredentialStoreBackendV1.writeCredentialFields` (fresh `credentialVersion` each write — including pi-initiated OAuth refresh writes). |
-| Provider registry | `ProviderRegistryV1` / `ProviderDefinitionV1` contract exists in `packages/agent/src/shared/credentials/registry.ts` (category `"llm"`, api-key field defs, consumer bindings, sandboxEgressOrigins) but only test registries construct it. | Startup registry **derived from Pi**: LLM provider definitions generated from `ModelRuntime.getProviders()` and provider auth metadata, annotated with vault consumer binding `llm-model-call.v1` and egress origins — not a hand-maintained list. |
-| Routes/UI | No credential routes, no credential UI. | Member-scoped connect (OAuth broker + API-key), status, revoke routes for personal credentials; owner-only workspace-scope + promote; "My providers" and "Workspace providers" surfaces rendered from the pi-derived registry. |
-| Fleet tiers | `resolveSeatModel()` / `MODEL_TIER_CANDIDATES` in `loadConfiguredAgentFleet.ts` check instance env presence only. | Consult workspace credential presence via the resolver (r3 S5, bead wt-391-forward-703w). |
-| Validation | None. | OAuth: completing pi's login flow. API key: pi auth resolution + provider model-list probe before commit; re-probe on demand. |
-| Rotation/revocation | Vault supports versioning + KEK rewrap; no user-facing trigger. | Replace/re-login (new version), disable, revoke+tombstone actions in routes/UI; revoked credential suppresses instance fallback. OAuth refresh rotation handled by pi automatically. |
+## Completed prerequisite
 
-## Scope & resolution model (owner directive 2026-08-08)
+The coordinated Pi 0.84.3 compatibility migration is merged in
+[PR #1500](https://github.com/hachej/boring-ui/pull/1500) as commit
+`150465a03966ac316c609ceecd28bf487d9297c2`. Boring now constructs Pi through
+`ModelRuntime`, preserves existing provider behavior, and exposes the
+asynchronous `CredentialStore` injection seam. PR CI and post-merge main CI
+completed successfully in runs
+[`33417316976`](https://github.com/hachej/boring-ui/actions/runs/33417316976) and
+[`33418777339`](https://github.com/hachej/boring-ui/actions/runs/33418777339).
+A dirty or stale local checkout is not evidence that this upstream prerequisite
+is unmerged; implementation branches must start from the cited merge commit or a
+newer `origin/main`.
 
-**User-specific first, workspace-wide as fallback.**
+This plan must not reintroduce `AuthStorage`, `AuthStorageBackend`, or
+`ModelRegistry` in production source.
 
-- **Primary: per-user credentials.** Each member connects providers for
-  themselves ("My providers"); stored in the vault keyed `(workspaceId,
-  userId, providerId)` — the credential-profile pattern: additive rows, no
-  AAD/crypto changes (see [`key-scope-decision.md`](key-scope-decision.md)).
-- **Secondary: workspace-wide credential.** An owner can set one credential
-  per provider workspace-wide — either directly or by **promoting their own
-  personal credential** — as the fallback for members without a personal
-  one. Stored as `(workspaceId, "workspace", providerId)`.
-- **Resolution order, fail-closed and simple:** session actor's personal
-  credential → workspace-wide credential → instance env. A
-  revoked-tombstoned credential at any layer stops the chain for that layer
-  per Decision 27 semantics (revoke suppresses fallback).
-- **Automations/background runs** resolve with the **creator's** personal
-  credential (persist `creatorUserId` on the automation record), then the
-  same fallback chain — restricted to **API-key credentials only** per
-  ratified decision (b): subscription OAuth tokens never fund unattended
-  runs. If nothing API-key-backed resolves, the run **pauses** and an
-  Inbox Human Intention item is raised ("connect an API key or reassign").
-  An owner can reassign an automation's creator; that is the whole
-  reassignment story in v1.
-- **Offline liveness:** host-side pi-brokered OAuth refresh (vault-backed
-  backend below) keeps creator-funded automations alive while the creator
-  is offline — refresh needs no interactive session.
+## Ratified decisions
 
-**Deferred directions (explicitly out of scope, one paragraph, kept for the
-record):** agent-as-principal credential modeling, seat/tier credential
-profiles, and funding-transfer/offboarding machinery beyond the minimal
-"owner can reassign an automation's creator" above. None of these change
-the vault schema chosen here; they layer on the same scope key.
+1. **Personal and workspace-bound.** Credential identity is
+   `(workspaceId, subjectKind="user", subjectId=userId,
+   providerId="openai-codex")`.
+2. **Interactive only.** The store is available only to a currently authorized,
+   request-attached interactive execution. Automation, detached, queued,
+   scheduled, and background-worker construction never receives it.
+3. **No fallback for Codex.** Absent, disconnected, unreadable, or revoked means
+   Codex is unavailable. The resolver never tries workspace, env, or file auth.
+4. **Pi-native credential.** Persist the complete bounded Pi Codex credential
+   needed for restart-safe native refresh: `type`, `access`, `refresh`,
+   `expires`, and `accountId`.
+5. **Per-workspace DEK.** Authorization scope does not become encryption-key
+   scope. Personal records share the workspace DEK but use subject-bound AAD v2.
+6. **OVH production custody.** OVH KMS is the production KEK holder. The first
+   canary uses one manually provisioned, non-exportable regional wrapping key;
+   product traffic cannot create, rotate, or delete it.
+7. **Honest rollback boundary.** The MVP protects confidentiality, row binding,
+   ciphertext integrity, and stale application writes. It does not claim
+   cryptographic continuity against restoration of a complete internally
+   consistent historical database snapshot.
+8. **No plaintext delivery.** Tokens never enter browser responses, workspace
+   files, session/event payloads, transcripts, logs, traces, analytics, tool
+   arguments, sandbox processes, or automation records.
 
-## UX flow
+## Target architecture
 
-Two surfaces, same components:
+```text
+Authenticated member browser
+  │
+  │ Codex device-code connect / status / disconnect
+  ▼
+Actor-authorized host route
+  │ verified workspaceId + current userId + interactive execution
+  ▼
+Actor-bound ModelRuntime
+  │
+  ▼
+Composite CredentialStore
+  ├─ openai-codex ──> personal vault store (no fallback)
+  └─ other providers ──> existing compatibility store
+                         (unchanged env/file behavior)
+  │
+  ▼
+Postgres advisory lock + expected-version CAS
+  │
+  ▼
+Envelope vault
+  │ subject-bound AAD v2
+  ▼
+Postgres ciphertext + wrapped per-workspace DEK
+  │
+  ▼
+Manually provisioned OVH KMS regional wrapping key
+```
 
-- **Primary: "My providers" in user settings** — every member connects
-  providers for themselves. Personal credentials are visible/manageable
-  only by their owner (and existence-only metadata to workspace owners).
-- **Secondary: "Workspace providers" in workspace settings** — owner-only
-  (governance RBAC from boring-governance; non-owners see nothing, not a
-  disabled panel). Sets the workspace-wide fallback credential per
-  provider, directly or via **"Promote to workspace"** on one of the
-  owner's personal **API-key** credentials (copy, not move — mints a new
-  workspace-scoped credentialVersion). Subscription OAuth credentials are
-  never promotable (ratified decision (b)).
+The browser sees a verification URI and short-lived user code during device
+login. It never sees an OAuth access token, refresh token, provider auth header,
+plaintext DEK, wrapped DEK, ciphertext, or KMS reference.
 
-1. **Provider list** — rendered from the server's pi-derived provider
-   registry (`GET /api/credentials/providers`): display name (pi
-   `getProviderDisplayName`), supported auth methods (`oauth` and/or
-   `api_key`, from pi's provider auth contract), status per provider and
-   scope: `not-configured | active (kind: oauth|api-key, …last4/account,
-   vN, connected-at) | disabled | revoked | workspace-fallback |
-   instance-fallback` (status sourced from pi's `getProviderAuthStatus`
-   over the resolved AuthStorage plus vault metadata).
-2. **Connect (OAuth-capable provider — preferred path)** — "Sign in" starts
-   a host-brokered pi login: the server runs `authStorage.login(providerId,
-   callbacks)` against the workspace's vault-backed AuthStorage; the
-   `OAuthLoginCallbacks` events stream to the front over the authenticated
-   route (SSE/WS): `auth_url` opens the provider page in a new tab,
-   `device_code` renders user-code + verification URI, `prompt`/
-   `manual_code` render an input for the pasted callback code. On completion
-   pi hands the `OAuthCredential` to the backend, which envelopes it into
-   the vault. The login flow itself is the validation — no separate probe.
-3. **Connect (API key)** — for key-only providers (or as the alternate
-   method): write-only form (fields from `ProviderCredentialDefinitionV1`:
-   one secret `apiKey` field; custom provider additionally baseUrl + model
-   id, mirroring the `BORING_AGENT_CUSTOM_MODEL_*` shape). Paste key →
-   **Validate & save**. The front never stores the value: input state lives
-   only in the form, submitted once, then cleared.
-4. **Validation feedback** — server validates via pi (below). Success →
-   credential committed to the vault, row flips to `active` with
-   last-4/account + validated-at. Failure → typed error
-   (`CREDENTIAL_VALIDATION_FAILED` with provider-safe reason: unauthorized /
-   rate-limited / network), nothing stored. "Save anyway" is **not** offered
-   in v1 — invalid credentials are never persisted (fail-closed onboarding).
-5. **Post-connect** — the model picker in pi chat shows the provider's
-   models on the next session (pi `getAvailable()` over the actor-resolved
-   AuthStorage) as **provenance-labeled rows** (personal / workspace;
-   platform credits later) — selecting a row = choosing the funding source
-   (ratified decision (e)). The composer shows a small
-   **funding-provenance chip** for the current session (decision (d)). A
-   hint on the panel says "new sessions use this credential" (no
-   retroactive rebind of live sessions).
+## Credential identity, schema, and AAD
 
-   **Picker entry point (r3.1, owner-ratified):** the picker's
-   provenance-labeled provider rows end with an **"Add provider…"** action
-   that deep-links to the "My providers" settings surface, preserving
-   return context; connecting there runs the pi-native workflow (OAuth or
-   key + probe), and on success the user returns to their prior context
-   with the new provider row present and **selected as the funding
-   source**. Workspace owners see an equivalent **"Add workspace
-   provider"** entry in workspace settings only — not in the picker.
-6. **Manage** — per-provider actions: **Reconnect / Replace key** (rerun
-   login or key form, mints new credentialVersion), **Re-test**, **Disable**
-   (temporarily unusable, no fallback), **Revoke** (tombstone; suppresses
-   instance fallback per Decision 27; for OAuth also pi `logout` +
-   best-effort provider-side revocation where pi's provider exposes it),
-   **Delete** (owner confirmation; envelope deletion per r3 S1).
-7. **No plaintext read, ever** — no reveal button, no GET returns the value;
-   metadata only (last4/account label captured server-side at write time).
+### Logical identity
 
-## Validation — delegate to pi
+Use the future-compatible identity:
 
-No hand-rolled per-provider probe adapters. Two cases:
+```text
+(workspaceId, subjectKind, subjectId, providerId)
+```
 
-- **OAuth providers:** pi's `login()` flow completing successfully *is*
-  validation — pi exchanged codes with the provider and holds a working
-  token. No additional probe. Re-test = pi auth resolution
-  (`getApiKeyAndHeaders` on a cheap model of the provider), which exercises
-  refresh if the token is expired.
-- **API-key providers:** thin wrapper in `packages/agent/src/server/
-  credentials/validation/` that (a) constructs a throwaway Pi
-  `InMemoryCredentialStore` holding only the pending key, (b) injects it into
-  `ModelRuntime` so base URLs, headers, and custom-provider config come from
-  Pi's provider definitions, and (c) issues the provider's model-list request
-  with the resolved auth; providers whose gateway lacks a model-list endpoint
-  fall back to a 1-token completion probe flagged in the definition.
+For this release:
 
-Rules (unchanged from r1):
-- Probe/login runs **host-side only** (never in sandbox), egress restricted
-  to the provider definition's `sandboxEgressOrigins`/probe origin plus the
-  OAuth endpoints pi's provider declares.
-- 10s probe timeout (the OAuth login flow gets a longer, abortable window
-  via the callbacks' `signal`); result is `{ ok } | { ok:false, code,
-  retryable }` — the raw provider response body is never logged or returned
-  (may echo the key).
-- Validation happens on a **pending** (uncommitted) value: probe first,
-  write to vault only on success — invalid material never touches
-  persistence. (OAuth: pi's flow yields the credential only on success.)
-- Re-test runs via `withResolvedCredential` (leased, 60s TTL, zeroed after
-  use) and updates `validatedAt` metadata only.
+```text
+subjectKind = "user"
+subjectId   = verified authenticated userId
+providerId  = "openai-codex"
+```
 
-## Storage
+`userId` comes from current server-side authentication and membership
+verification. It is never accepted from a browser field or copied from an
+unverified session payload. Session resume and model-list requests re-authorize
+current membership and bind the runtime to the current acting user. A different
+workspace member opening the same resumable session receives a different runtime
+and cannot reuse the original member's Codex credential.
 
-Exactly the #1132/#1145 path, no new crypto:
+The complete identity appears in:
 
-- Write: the actor-bound async `CredentialStore` and the API-key route call
-  `vaultStoreBackend.writeCredentialFields(scope, providerId, fields)` →
-  fresh `credentialVersion`, AES-256-GCM field envelopes,
-  AAD-bound, DEK wrapped by the selected `WorkspaceKekProviderV1` (local-KEK
-  now; KMS backends later behind the same port). OAuth credentials store the
-  full pi `OAuthCredential` JSON (`access`, `refresh`, `expires`, provider
-  extras) as encrypted fields; kind (`oauth` vs `api_key`) is non-secret
-  metadata.
-- **OAuth refresh write path:** each pi-initiated refresh is a normal
-  versioned write — **new `credentialVersion` per refresh**, not a mutable
-  token row. Justification: (1) the #1132 envelope AAD binds
-  `credentialVersion`, so mutating in place would break AAD/anchor
-  semantics; (2) the #1145 version anchor already provides atomic
-  supersede + rollback detection — exactly the anti-double-refresh property
-  pi's file lock provides locally; (3) refresh cadence (hours-scale token
-  lifetimes) makes version churn negligible, and superseded envelopes are
-  deleted per r3 S1. The backend's `withLockAsync` maps to a
-  per-(workspace, provider) advisory lock around read-current-version →
-  refresh → write-new-version.
-- Persistence: Postgres impl from #1145 (`postgresPersistence.ts`,
-  `versionAnchor.ts`). **Hard dependency: land #1145 on main first** — the
-  onboarding UI must not ship against in-memory persistence.
-- Metadata sidecar (non-secret): kind, last4/account label, validatedAt,
-  status (active/disabled/revoked), createdBy — plain columns beside the
-  envelopes; last4 computed server-side before encryption, never derived by
-  decrypting later.
+- credential primary/unique keys and every query predicate;
+- advisory-lock derivation;
+- expected-version CAS;
+- credential lifecycle audit records;
+- session/runtime cache identity;
+- canonical credential-envelope AAD v2.
 
-## Provider registration → pi runtime resolution
+### AAD v2
 
-Two layers:
+Canonical, length-prefixed AAD v2 binds:
 
-**(a) Startup registry (r3 S3), derived from pi.**
-`packages/agent/src/server/credentials/startupRegistry.ts` builds
-`ProviderDefinitionV1` entries **from pi's provider surface** — the provider
-ids/display names/auth kinds that `ModelRuntime.getProviders()` and provider
-auth metadata expose, plus the workspace custom OpenAI-compatible definition — annotated with consumer binding
-`llm-model-call.v1` and egress origins, composed with the authority verifier
-+ vault backend into `createHostSideCredentialResolverV1` inside
-`buildAgentComposition.ts`. Adding a provider pi supports must not require a
-hand-edited list here. Env selection of the KMS backend
-(`BORING_CREDENTIAL_KMS_BACKEND=local-kek` + KEK file) stays explicit and
-fail-closed.
+```text
+credential-envelope.v2
+workspaceId
+subjectKind
+subjectId
+providerId
+fieldId
+credentialVersion
+dekGeneration
+```
 
-**(b) Per-session injection.** In `createPiSession` (createHarness.ts),
-replace the Pi 0.80.7 `AuthStorage` + `ModelRegistry` construction with an
-actor-bound Pi 0.84.3 `ModelRuntime`:
+Personal credentials are never written under workspace-only AAD v1. The wrapped
+DEK AAD remains workspace/generation/backend-bound; adding a credential subject
+does not require a per-user DEK or a wrapped-DEK format change.
 
-- **Actor-aware resolution.** Session creation resolves an actor first:
-  interactive → acting member's `userId`; background/automation → the
-  automation's persisted `creatorUserId`. The vault backend is constructed
-  for that actor and layers `(workspaceId, userId, providerId)` →
-  `(workspaceId, "workspace", providerId)` → instance env, with the
-  revoked-tombstone rule applying at each layer. If nothing resolves for
-  an automation run, it fails closed with `CREDENTIAL_UNRESOLVED`: the run
-  pauses and an Inbox Human Intention item is raised.
-- `createVaultCredentialStore(actorScope, resolver)` implements Pi's async
-  `CredentialStore` over the vault. Each instance is immutably bound to the
-  verified workspace/user. `modify()` holds a cross-process advisory/fenced
-  lock across decrypt → Pi refresh → encrypted versioned write, so rotated
-  OAuth credentials are durable before the caller continues. Compose via
-  `ModelRuntime.create({ credentials: vaultCredentialStore })`. Fallback
-  layering per provider is actor personal → workspace-wide → env-backed
-  instance credential, **unless** the chain reaches a revoked tombstone, in
-  which case it stops fail-closed with `CREDENTIAL_REVOKED`. This supersedes
-  both the r1 read-only wrapper and the r3.1 synchronous
-  `createVaultAuthStorageBackend` proposal.
-- `registerConfiguredModelProviders` gains a workspace-aware variant that
-  also registers the workspace's custom OpenAI-compatible provider through
-  `ModelRuntime.registerProvider` (base URL/model metadata from non-secret
-  credential metadata, key through the injected store).
-- Decrypted material is resolved lazily inside the backend under a
-  short-lived lease; plaintext lives only inside pi's auth path for that
-  session. Live sessions keep the credential they started with; rotation
-  applies to new sessions (documented in UI) — except pi-initiated OAuth
-  refresh, which updates the vault and the running session's in-memory
-  token (pi's normal behavior).
-- Model picker (`routes/models.ts`) becomes actor-aware by asking the
-  actor-bound `ModelRuntime` for available models over personal →
-  workspace-wide → non-suppressed instance fallback.
+### Stored secret
 
-Invariant compliance: all of this is server-side (`packages/agent/src/server`),
-shared contract stays `node:`-free and Uint8Array-only; routes receive
-Workspace-scoped context, not raw paths; every error has a stable code in the
-`CREDENTIAL_*` family (docs/ERROR_CODES.md parity test).
+Map Pi's Codex credential to one atomic encrypted field, for example
+`piCredential`. Before encryption and after decryption, validate the object
+against the pinned Pi 0.84.3 Codex schema:
 
-## Rotation / revocation touchpoints
+```ts
+type PersistedCodexCredentialV1 = Readonly<{
+  type: "oauth"
+  access: string
+  refresh: string
+  expires: number
+  accountId: string
+}>
+```
 
-- **Replace / Reconnect** = new write → new `credentialVersion`; version
-  anchor (#1145) makes the old version unreadable-current; superseded
-  envelopes deleted per r3 S1. New sessions pick it up immediately.
-- **OAuth refresh** = pi-automatic; versioned write through the backend as
-  above. No UI affordance needed.
-- **Disable/Revoke** = status flip + tombstone; the session-creation
-  resolver treats both as "no workspace credential"; revoke additionally
-  suppresses instance fallback (Decision 27) and, for OAuth, runs pi
-  `logout` (+ provider-side revoke where pi's provider supports it). Both
-  are metadata ops vault-side — no crypto required.
-- **DEK rotation / crypto-shred** (r3 S2) is out of scope here but the UI
-  reserves an "Advanced → rotate workspace encryption" affordance stub gated
-  on the key-scope owner decision.
-- **Creator credential death (automations):** if an automation's chain
-  resolves to nothing (creator credential revoked/expired/unrefreshable and
-  no workspace/instance fallback), the automation pauses and an Inbox Human
-  Intention item is raised; an owner can reassign the automation's creator.
-- Instance-env keys are untouched by all of the above (operator-owned).
+Apply per-property and aggregate byte limits. Reject unknown shapes, missing
+fields, non-finite expiry, oversized values, and unexpected credential kinds as
+`CREDENTIAL_SCHEMA_MISMATCH`. The entire object is secret; `accountId` is not
+returned by status APIs in the MVP.
 
-## Security constraints (fail-closed)
+Non-secret metadata contains only:
 
-- No secret in logs: routes and the login broker log provider id + error
-  code only; OAuth callback events forwarded to the front carry URLs/user
-  codes, never tokens; request-body logging disabled on credential routes;
-  test asserting key/token material absent from any log/route response/
-  broker event (extend #1132's no-secret-in-errors proofs).
-- No plaintext read API; front never holds a key outside the transient
-  API-key form; OAuth tokens never reach the client at all (flow is
-  brokered server-side).
-- Refresh happens host-side only, inside the vault-backed backend's lock;
-  the sandbox never sees Tier-1 keys or OAuth tokens (Tier-2 in-sandbox
-  delivery stays deferred per r3 non-goals).
-- Missing/unreadable KEK, failed AAD, stale version anchor → typed
-  `CREDENTIAL_*` error; **never** silent fallback to env for a workspace
-  that has (or had) a workspace credential in revoked state.
-- Scope RBAC on every credential route including the OAuth broker stream,
-  enforced server-side: members touch only their own credentials;
-  workspace-scope writes (including promote) are owner-only.
+- state: `connected | disconnected | needs_reauth`;
+- credential kind: `oauth`;
+- credential version and schema/AAD version;
+- connected/updated/last-refresh timestamps;
+- creating/updating actor IDs for audit;
+- selected KMS backend/key-reference metadata required for deterministic unwrap.
 
-## PR-sized slices
+Status queries use explicit metadata-only selects and do not decrypt credentials
+or call KMS.
 
-1. **PR-A — land #1145** (Postgres persistence + version anchor) on main.
-   Pre-existing branch; merge gate only.
-2. **PR-B — pi-derived startup registry + resolver composition** (r3 S3
-   server half): registry generated from pi's provider surface,
-   `llm-model-call.v1` binding, composition in `buildAgentComposition.ts`,
-   KMS backend env selection. Tests: registry mirrors pi's providers,
-   resolver end-to-end through vault, fail-closed on missing KEK.
-Trimmed per ratified decision (a): pi already provides auth storage
-semantics, OAuth flows, refresh, validation-by-resolution, and the model
-catalog — slices below build only the vault backend, the scoping rule, and
-the menu; everything else is wiring pi surfaces to routes/UI. Expected
-sizes shrink accordingly.
+## Actor-bound Pi CredentialStore
 
-3. **PR-C — Pi 0.84.3 compatibility migration:** upgrade the coordinated Pi
-   package family, replace `AuthStorage` + `ModelRegistry` construction with
-   `ModelRuntime`, and preserve existing env/file behavior before enabling the
-   vault. Tests: interactive streaming, tools, model selection, custom
-   providers, cancellation, and session resume.
-4. **PR-D — async vault store + actor wiring:** implement
-   `createVaultCredentialStore` with scope rows, versioned refresh writes,
-   advisory/fenced lock, actor resolution, and preserved `userId`; inject it
-   through `ModelRuntime.create({ credentials })`. Add thin connect/status/
-   disable/revoke/delete routes and the host-brokered Pi login event stream.
-   Tests: personal > workspace > env, subscription never funds unattended
-   runs, concurrent refresh produces one durable outcome, revoked stops the
-   chain, no secret in responses/logs/events, and keyless workspaces retain
-   today's behavior.
-5. **PR-E — settings menu + picker/chip**: "My providers" (all members) +
-   "Workspace providers" (owner-only) rendered from pi's registry with v1
-   connectable set (Anthropic, OpenAI, Google; rest listed as not yet
-   available), pi login flow states (auth-url/device-code/code-paste),
-   promote (API-key only), provenance-labeled picker rows + composer
-   funding chip, and the picker's "Add provider…" deep link into "My
-   providers" with return-context restore + auto-select of the new
-   provider ("Add workspace provider" equivalent in workspace settings
-   only). Tests: no credential value in any store/prop/response;
-   RBAC invisibility of the workspace panel; subscription rows show no
-   promote affordance. *Expected size: medium — UI only, no new server
-   concepts.*
-6. **PR-F — fleet tier integration** (r3 S5, bead wt-391-forward-703w):
-   `resolveSeatModel()` consults workspace credential presence. Tests per
-   r3. *Expected size: small.*
+Implement `createVaultCredentialStore()` as a server-only Pi `CredentialStore`
+closed over an immutable verified scope:
 
-Order: A → B → C → D → E → F. C establishes the async Pi seam before D
-adds remote credential custody. Each slice is green-gated and independently
-revertible; UI (E) ships only after C+D so the flow is real end-to-end.
+```ts
+createVaultCredentialStore({
+  authorizedWorkspaceScope,
+  verifiedAuthority,
+  providerId: "openai-codex",
+  executionMode: "interactive",
+})
+```
 
-## Open questions (owner)
+A composite store delegates only `openai-codex` to this personal vault store.
+All other provider IDs delegate to the existing compatibility store so the slice
+does not regress current env/file/custom-provider behavior. The delegation rule
+is fixed server policy, not caller input.
 
-- OVH KMS is the selected production KEK custody path. Exact regional API,
-  least-privilege IAM, `datakey`/`datakey-decrypt`, outage, deletion, and audit
-  behavior still require live qualification against disposable resources.
-- Fallback default for workspaces with an instance key but no workspace
-  credential at UI launch (show "instance fallback" chip vs hide) —
-  recommend show, it makes revoke semantics legible.
+The constructor does not trust `executionMode` as authority. It receives the
+Core-issued opaque authorized workspace scope and verified current authority
+used by the shipped `CredentialStoreBackendV1`/host-resolver path, plus a trusted
+request-attached execution classification from session composition. The personal
+store extends that existing backend/persistence path with subject-aware identity
+and AAD v2; it does not create a second crypto or authorization path to the same
+tables. A copied object, TypeScript cast, browser field, persisted job argument,
+or raw `"interactive"` string cannot construct the store.
 
-(Provider set, subscription posture, picker/chip model: answered by the
-ratified decisions above.)
+### `read(providerId)`
+
+- reject provider IDs other than `openai-codex` at the personal store boundary;
+- verify current interactive authority before selecting storage;
+- read the exact personal metadata row;
+- return `undefined` only when genuinely never configured/disconnected according
+  to the Pi contract;
+- fail closed on unreadable ciphertext, wrong AAD, unknown schema/backend,
+  missing KMS material, or inconsistent state;
+- unwrap/decrypt, validate the bounded Pi credential, and return it to Pi;
+- clear mutable byte buffers best-effort in `finally` without claiming guaranteed
+  JavaScript string zeroization.
+
+The MVP adds no application plaintext or DEK cache. Measure KMS latency during
+qualification before considering a bounded cache with explicit revocation
+semantics.
+
+### `list()`
+
+Return Pi `CredentialInfo` for Codex from metadata only when the actor's record is
+connected. Do not decrypt or expose account labels. Composite listing merges this
+with existing non-Codex compatibility information without allowing a global
+Codex credential to appear.
+
+### `modify(providerId, fn)`
+
+`modify()` is the only Codex write path and covers both initial Pi login and
+Pi-owned refresh-token rotation.
+
+1. Validate provider and immutable actor scope.
+2. Acquire a dedicated PostgreSQL session-level advisory lock derived from the
+   complete credential identity, with a bounded wait timeout.
+3. Read the canonical current version and decrypt it when present.
+4. Invoke and await Pi's callback while holding serialization. Pi may perform the
+   provider refresh network request inside this callback. Apply a bounded refresh
+   callback deadline and abort signal; device-code polling must be proved to occur
+   before `modify()` and must never hold a lock-pool connection for its 15-minute
+   user-interaction window.
+5. If the callback throws, make no secret-field write. An unrecoverable refresh
+   error may trigger the separately specified metadata-only `needs_reauth`
+   transition guarded by the exact credential version that failed.
+6. If it returns `undefined`, preserve and return the current credential, matching
+   Pi's contract.
+7. Otherwise validate and encrypt the complete returned credential as a fresh
+   credential version with fresh nonces and AAD v2.
+8. Re-check lock-connection health and commit with expected-version CAS.
+9. Delete superseded field ciphertext in the same durable transition and emit one
+   value-free lifecycle audit event; do not create a tombstone row per field.
+10. Release the advisory lock and clear temporary mutable buffers in `finally`.
+    Return the dedicated connection to its pool only after unlock is positively
+    confirmed. If unlock fails or its outcome is ambiguous, destroy the
+    connection so an idle pooled session cannot retain the lock indefinitely.
+
+The advisory lock serializes only while its database connection remains healthy;
+it is not called a fencing token. Tie the provider callback's abort signal to
+lock-connection health where the client supports cancellation. CAS prevents a
+stale local commit, but the plan does not claim exactly-once upstream refresh
+across PostgreSQL and OpenAI. Connection-loss ambiguity fails closed, is
+observable, and retries only from a fresh canonical read.
+
+Use a bounded dedicated lock pool. A lock-hash collision may safely
+overserialize unrelated credentials but must never select another credential's
+row. Do not hold a normal business transaction open across the provider network
+request.
+
+### `delete(providerId)`
+
+Serialize against `modify()`. `ModelRuntime.logout("openai-codex")` delegates to
+`CredentialStore.delete()`, which atomically fences future reads, deletes the
+encrypted credential fields, and leaves metadata state `disconnected`. The store
+never calls back into Pi. Pi 0.84.3's Codex logout path provides local deletion,
+not a provider-side revocation endpoint; UI and runbooks must not claim upstream
+revocation. A user who needs upstream invalidation is directed to their OpenAI
+account security controls. There is no lower Codex fallback to suppress.
+
+## Connect flow — Pi device code only
+
+Pi 0.84.3's OpenAI Codex OAuth implementation supports browser and device-code
+methods. Its browser method starts a localhost callback server intended for CLI
+use. The web MVP therefore always answers Pi's login-method selection prompt with
+`device_code`.
+
+An authenticated streaming connect route:
+
+1. verifies current workspace membership and the workspace canary flag;
+2. constructs the personal actor store and `ModelRuntime`;
+3. calls `runtime.login("openai-codex", "oauth", interaction)`;
+4. answers the interaction's method selection with `device_code`;
+5. forwards only `verificationUri`, `userCode`, expiry, and allowlisted progress
+   to the initiating browser;
+6. lets Pi poll, exchange, validate, and persist the credential through
+   `CredentialStore.modify()`;
+7. reports `connected` only after the encrypted write is durable.
+
+Use one authenticated streaming request over an existing server transport. No
+localhost callback server, pasted redirect URL, browser-delivered OAuth token,
+generic OAuth transaction table, or undecided SSE-vs-WebSocket framework is
+needed. Abort the Pi operation on client cancellation or the provider's bounded
+15-minute device-code expiry. Proxy buffering and request-body/event logging are
+disabled for this route.
+
+The verification URI, user code, authorization URLs, and provider errors are
+classified as ephemeral sensitive interaction data for logging and tracing even
+though the URI/code must be displayed to the initiating browser.
+
+Completing OAuth proves credential issuance and durable connection; it does not
+prove entitlement to every Codex model. Do not label local auth derivation as a
+provider validation probe. The first bounded model request may still return a
+sanitized entitlement/provider error.
+
+## Runtime and model availability
+
+Interactive session construction must resolve and verify the actor before it
+constructs the model runtime. The session/cache identity includes at least:
+
+```text
+workspaceId + actingUserId + executionMode + credential-policy-version
+```
+
+The personal Codex store is never injected into automation, scheduled, queued,
+detached, or background-worker runtime construction. Persisting a creator user ID
+is not authorization to use a subscription unattended.
+
+The actor-aware model route asks the actor-bound `ModelRuntime` for availability.
+Codex models appear only when that actor's personal record is connected and
+readable. Other providers continue using existing behavior.
+
+The store is consulted at Pi's request-auth seam. A credential replacement,
+refresh, disconnect, or `needs_reauth` transition affects the next provider-auth
+request, including a follow-up in an existing session. An already-sent OpenAI
+request may complete. The initial implementation does not intentionally retain
+credential plaintext across provider requests.
+
+When Pi reports an unrecoverable refresh failure such as `invalid_grant`, the
+host credential adapter classifies the pinned Pi error and performs a
+metadata-only `needs_reauth` transition under the same complete-scope lock or an
+expected-version CAS. The transition applies only if the failing credential
+version is still current, so a stale failed refresh cannot overwrite a newer
+successful reconnect. Fail the request with a stable redacted error and show
+Reconnect. Network/KMS/lock timeouts remain retryable operational failures and
+do not falsely mark the subscription revoked.
+
+## Routes and UI
+
+Route names are plan-level and should follow the repository's existing route
+composition conventions:
+
+- `GET .../me/providers/openai-codex` — metadata-only personal status with an
+  explicit DTO allowlist: `state`, `kind`, `connectedAt`, `updatedAt`, and
+  `lastRefreshAt`; KMS backend, region, and key reference never enter the DTO;
+- `POST .../me/providers/openai-codex/connect` — authenticated device-code
+  streaming flow;
+- `DELETE .../me/providers/openai-codex` — personal disconnect;
+- the existing model-availability route becomes actor-aware.
+
+Every route derives the workspace and user from authenticated server context.
+Members can act only on their own credential. Workspace owners receive no
+plaintext, no personal account identifier, and no special ability to use,
+refresh, or disconnect another member's subscription in this MVP.
+
+The UI is deliberately small:
+
+```text
+OpenAI Codex — ChatGPT Plus/Pro
+
+Disconnected        [Connect]
+Connecting          user code + Open verification page + [Cancel]
+Connected           connected-at + [Disconnect]
+Needs reauthentication                   [Reconnect]
+Temporarily unavailable                  [Retry]
+```
+
+The model picker keeps its current model-row structure. When Codex is not
+connected, it may show a small `Connect ChatGPT subscription` CTA deep-linking
+to the personal settings card. Connected Codex models may show a simple
+`Personal subscription` badge. There is no workspace provider panel, funding
+selector, promotion action, reveal action, or generic provider catalog.
+
+Browser component state may hold the short-lived device user code but never a
+credential token. Clear the code when the attempt succeeds, fails, expires, is
+cancelled, or the component unmounts.
+
+## OVH KMS custody and qualification
+
+The production adapter implements the existing `WorkspaceKekProviderV1` port.
+For the canary, manually provision one non-exportable OVH KMS wrapping key in the
+selected EU region. Store its opaque key reference and region alongside the
+wrapped workspace DEK for deterministic fail-closed routing.
+
+Product runtime permissions are limited to the exact data-key/decrypt operations
+required by the adapter. Product traffic cannot create, rotate, disable, export,
+or delete KMS keys. Operator credentials use sealed-file custody and never enter
+workspace configuration or logs.
+
+Before production canary, qualify with disposable resources:
+
+- exact regional endpoint and authentication mechanism;
+- `datakey` and `datakey/decrypt` request/response behavior and size bounds;
+- least-privilege allow and explicit denial of key administration;
+- context/AAD or opaque-payload integrity behavior;
+- wrong key, disabled key, malformed payload, IAM denial, timeout, rate limit,
+  and regional outage behavior;
+- connection pooling, retry guidance, quotas, observed latency, and actual KMS
+  unwrap/read calls per interactive session turn and agentic tool loop;
+- key version/retirement and audit-record behavior;
+- redaction of credentials, wrapped payloads, key references, certs, and provider
+  response bodies.
+
+Use bounded timeout, retry with jitter only where the operation is safe, and a
+circuit breaker. KMS failure makes credential-backed operations unavailable but
+does not fail application liveness or trigger fallback to local KEK, env,
+`auth.json`, or plaintext. Local KEK remains a development/self-host option and
+is not the production Codex canary path.
+
+One manually provisioned canary key does not claim independently retireable
+per-workspace crypto-shred. Deleting a live wrapped-DEK row is online retirement,
+not guaranteed erasure of database or key backups.
+
+## Rollback and deployment safety
+
+The feature has a global kill switch and a workspace allowlist/flag. Disabling
+the feature stops new Codex connects and use but leaves encrypted records intact
+for safe re-enable or explicit disconnect.
+
+Before enabling any workspace, production configuration is audited to prove the
+absence of global Codex env, file, and `auth.json` credentials. This is an
+operational precondition because an already-built older binary cannot understand
+future vault state. After enablement, the rollback runbook rechecks that absence
+before deploying an older binary; if it cannot be proved, rollback stops and the
+feature is disabled on the current binary instead. No rollback may change payer
+or authority.
+
+Schema changes are forward-compatible and are not destructively rolled back.
+Rollback never decrypts a credential into generic settings, clears a disconnect
+state, changes its subject, or routes it through global `auth.json`.
+
+The MVP uses AEAD identity binding plus expected-version CAS. A separate future
+decision is required before claiming protection against a complete historical
+Postgres snapshot restore. Do not implement the earlier single workspace-wide
+monotonic counter: it cannot independently authenticate multiple credentials,
+and OVH KMS metadata has not been shown to provide a replica-safe atomic CAS
+anchor.
+
+## Failure model
+
+Stable external errors reveal no token, account ID, credential existence outside
+the authorized actor, KMS key reference, ciphertext, provider response body, or
+cross-user distinction.
+
+| Condition | Behavior |
+|---|---|
+| never connected/disconnected | Codex unavailable; Connect CTA |
+| expired access token | Pi refreshes through serialized `modify()` |
+| `invalid_grant`/unrecoverable refresh | mark `needs_reauth`; fail closed |
+| KMS timeout/outage | retryable unavailable; no fallback |
+| lock wait timeout | retryable busy error; no provider call before lock |
+| lock connection lost during refresh | abort where possible; no stale commit; observable ambiguity |
+| CAS conflict | discard attempted local write; re-read before retry |
+| malformed schema/ciphertext/AAD | `CREDENTIAL_UNREADABLE`; no fallback |
+| current membership lost | forbidden before storage selection |
+| background/unattended construction | personal Codex store not provided |
+| disconnect during in-flight request | new auth requests fail; already-sent request may complete |
+
+## Security and privacy gates
+
+- No production personal Codex path reads or writes global `auth.json`.
+- No plaintext credential read/reveal/export endpoint exists.
+- Credential routes disable request/event body logging and session replay.
+- Secret canaries cover access/refresh tokens, authorization headers, account
+  identifiers, device codes, KMS payloads, and provider error echoes across HTTP
+  responses, logs, traces, analytics, sessions, events, errors, files, and
+  sandbox process inspection.
+- The complete subject identity is verified before decrypt and repeated in AAD.
+- Cross-user, cross-workspace, provider, field, version, and generation swaps fail
+  closed.
+- The sandbox and tools receive only normalized model output, never credential
+  material or a credential-resolving capability.
+- JavaScript strings cannot be reliably zeroized; mutable buffers are cleared
+  best-effort and the residual host-process compromise risk is documented.
+- A compromised authorized host process can ask KMS to unwrap active material;
+  KMS protects key custody and offline database disclosure, not a malicious
+  currently authorized process.
+
+## Performance and observability
+
+Do not add a plaintext/DEK cache before measuring OVH behavior. Status/list paths
+are metadata-only, so KMS latency affects only connect, refresh, and provider-auth
+resolution. Record qualification baselines and set budgets from observed data.
+
+Emit bounded-cardinality, value-free metrics for:
+
+- KMS operation latency, timeout, and error by backend operation;
+- credential read/decrypt failures by stable reason code;
+- advisory-lock wait, timeout, and connection loss;
+- refresh success, failure, CAS conflict, and ambiguous connection-loss outcome;
+- OAuth connect started/completed/failed/expired/cancelled;
+- `needs_reauth` transitions;
+- global/workspace feature-disable counts.
+
+Do not use workspace IDs, user IDs, account IDs, credential IDs, OAuth URLs or
+codes, key references, ciphertext, or token-derived data as metric labels or
+trace attributes. Lifecycle audit records may contain authorized actor/workspace
+identity and stable operation outcomes, but never secret-bearing values.
+
+Runbooks cover KMS regional outage, IAM denial, exhausted lock pool, refresh
+storm/invalid grant, unreadable credential, stuck device flow, emergency feature
+disablement, and database restore against newer application state.
+
+## Delivery slices
+
+### Completed — Pi 0.84.3 compatibility (#1500)
+
+`ModelRuntime` migration and the async injection seam are on `main` with green
+post-merge CI.
+
+### PR 1 — verified actor propagation
+
+- preserve current verified `userId` through interactive session and model-list
+  construction;
+- include actor and execution mode in session/runtime cache identity;
+- re-authorize current membership on resume;
+- prove a second workspace member cannot reuse another member's runtime;
+- no vault behavior enabled.
+
+### PR 2 — OVH KMS adapter and live qualification
+
+- implement `WorkspaceKekProviderV1` for the qualified OVH API;
+- use disposable qualification resources and one manually provisioned canary key;
+- add readiness, timeout, circuit-breaker, IAM-denial, region, and redaction
+  proofs;
+- keep credential feature disabled when OVH custody is not ready.
+
+### PR 3 — personal Codex CredentialStore
+
+- add a pinned published-Pi contract suite proving `CredentialStore.modify()`
+  undefined-preserve behavior, refresh recheck/serialization, credential shape,
+  login mutation timing, and stable classification of unrecoverable refresh;
+- add subject-aware persistence keys and personal AAD v2;
+- store one bounded encrypted Pi Codex credential field;
+- implement personal-only `read/list/modify/delete`;
+- add complete-scope advisory locking, expected-version CAS, and refresh tests;
+- compose Codex personal store with existing non-Codex compatibility behavior;
+- keep feature behind global and workspace flags.
+
+### PR 4 — Codex connect/status/disconnect and runtime use
+
+- extend the pinned published-Pi contract suite to prove the built-in
+  `openai-codex` device-code method and 15-minute expiry against intercepted
+  synthetic OAuth endpoints;
+- test route orchestration through a narrow fake login-runtime adapter that emits
+  device/progress events and persists a synthetic credential, while a separate
+  package-contract test exercises Pi's real provider implementation without a
+  live or billable OpenAI call;
+- implement device-code-only Pi login streaming;
+- add metadata-only status and fail-closed disconnect;
+- make Codex model availability actor-aware;
+- add the personal settings card and model-picker CTA/badge;
+- handle `needs_reauth` without exposing provider errors.
+
+### PR 5 — Seneca canary
+
+- publish and consume the coordinated Boring packages;
+- register schema/configuration and enable one workspace;
+- exercise real connect, model call, expiry/refresh, restart, disconnect, KMS
+  outage, and kill-switch behavior;
+- inspect browser/network/log/trace/session/file/sandbox artifacts for canaries;
+- expand only after the canary acceptance record is complete and a separate
+  decision defines KMS-key provisioning/retirement for more than the manually
+  provisioned canary scope.
+
+Each slice is green-gated. “Revertible” means behavior can be disabled safely;
+it does not mean an old binary may bypass personal custody or silently reactivate
+global Codex auth after vault state exists.
+
+## Acceptance gates
+
+### Authorization and isolation
+
+- Member A can connect and use their Codex credential only in workspace W.
+- Member B in W cannot list, decrypt, refresh, disconnect, or use A's credential.
+- A in workspace X cannot use the credential connected in W.
+- Session resume and cache reuse cannot cross acting user or workspace identity.
+- Automation, scheduled, queued, detached, and background-worker construction
+  cannot access the subscription.
+
+### Pi behavior
+
+- A contract suite runs against the exact published, lockfile-pinned Pi package;
+  it does not infer behavior from development docs or an unreleased branch.
+- Device-code login is Pi-owned and route success occurs only after durable
+  encrypted commit.
+- Expired credentials refresh through one serialized `modify()` outcome while
+  lock ownership remains healthy.
+- A rotated refresh token survives process restart and is used by the next call.
+- `modify()` preserves current credential when Pi returns `undefined` and writes
+  nothing when Pi throws.
+- Existing non-Codex streaming, tools, custom providers, cancellation, model
+  selection, and session resume remain green.
+
+### Storage and failure
+
+- Raw Postgres inspection finds no plaintext token, auth header, or DEK.
+- Subject/provider/field/version/generation swaps fail authentication.
+- Wrong/disabled key, IAM denial, malformed payload, lock timeout, connection
+  loss, CAS conflict, and KMS outage return stable redacted errors with no
+  fallback.
+- Concurrent refresh normally makes one provider refresh and one durable write;
+  the connection-loss upstream side-effect race is tested, fails closed locally,
+  and is observable rather than described as exactly once.
+- Status and disconnected UI work from metadata without KMS decrypt.
+
+### Leakage and operations
+
+- Canary material is absent from browser responses except the intended ephemeral
+  device URI/code, and absent from logs, traces, analytics, error objects,
+  transcripts, session events, workspace files, sandbox processes, and test
+  snapshots.
+- Device URI/code is visible only to the initiating browser and absent from
+  platform-controlled retained sinks.
+- Feature disablement stops Codex use without deleting ciphertext or restoring
+  global auth.
+- Non-credential application liveness remains healthy during OVH outage.
+- Runbooks and value-free dashboards exist before the production canary.
+
+## Later roadmap — requires separate approval
+
+After the personal Codex canary proves custody and usability, evaluate each
+expansion independently:
+
+1. personal API keys and multiple auth profiles per provider;
+2. workspace credentials and explicit payer/funding selection;
+3. Anthropic and Google onboarding under reviewed host policy entries;
+4. unattended API-key-only automation funding and reassignment;
+5. generic provider UI and provenance-aware picker;
+6. fleet-tier integration;
+7. first-party search/transcription proxies and MCP migration;
+8. dynamic KMS key lifecycle, DEK rotation, and honest crypto-shred runbooks;
+9. external rollback-resistant state continuity if a qualified atomic anchor and
+   recovery protocol justify the complexity;
+10. hostile-tested, red-teamed sandbox delivery only if a real tenant tool needs
+    it.
+
+None of these is a hidden dependency of the personal interactive Codex MVP.

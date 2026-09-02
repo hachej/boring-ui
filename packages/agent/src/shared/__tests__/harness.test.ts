@@ -51,6 +51,7 @@ test('RunContext contract', () => {
     workspaceId?: string
     requestId?: string
     userId?: string
+    executionClass?: 'request-attached-interactive'
     userEmail?: string
     userEmailVerified?: boolean
     sessionCtx?: { workspaceId?: string; userId?: string }
@@ -61,6 +62,7 @@ test('RunContext contract', () => {
   expectTypeOf<RunContext['workdir']>().toEqualTypeOf<string>()
   expectTypeOf<RunContext['workspaceId']>().toEqualTypeOf<string | undefined>()
   expectTypeOf<RunContext['userId']>().toEqualTypeOf<string | undefined>()
+  expectTypeOf<RunContext['executionClass']>().toEqualTypeOf<'request-attached-interactive' | undefined>()
   expectTypeOf<RunContext['userEmail']>().toEqualTypeOf<string | undefined>()
   expectTypeOf<RunContext['userEmailVerified']>().toEqualTypeOf<boolean | undefined>()
   expectTypeOf<RunContext['workspaceId']>().toEqualTypeOf<string | undefined>()

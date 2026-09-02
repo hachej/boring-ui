@@ -2,13 +2,21 @@
 github: https://github.com/hachej/boring-ui/issues/1082
 issue: 1082
 state: ready-for-human
-updated: 2026-08-07
-revision: r3
+updated: 2026-08-31
+revision: r3.1
 flag: not-needed
 track: owner
 ---
 
-# gh-1082 BYOK tenant keys — plan r3 (post-#1132)
+# gh-1082 BYOK tenant keys — plan r3.1 (post-#1132)
+
+> **Roadmap scope:** This document describes the broad generic credential-vault
+> roadmap. It is not the controlling delivery plan for the first personal
+> OpenAI Codex release. For that bounded slice,
+> [`provider-onboarding-plan.md`](provider-onboarding-plan.md) r4 and the
+> accepted asynchronous CredentialStore decision take precedence. Workspace
+> credentials, generic provider onboarding, fleet, MCP, proxy-tool, migration,
+> rotation, and sandbox work below are later roadmap slices.
 
 Revision of the r1 draft (branch `docs/1082-byok-plan`, commit `5ebcd2422`)
 now that **PR #1132 ([16f.2] KmsBackend + local-KEK envelope crypto) is open
@@ -67,8 +75,9 @@ Known, filed gaps from the #1132 crypto review (beads):
 |---|---|---|
 | Envelope crypto + local-KEK backend | Done (#1132) | — |
 | Persistence | In-memory port impl only | Postgres schema/store behind the same port (S1) |
-| Rollback prevention | AAD version binding only; current-version pointer unauthenticated | Monotonic authenticated current-version marker (S1, gh-1082-f1) |
-| DEK rotation | KEK rewrap only; `dekGeneration` frozen at 1 | Generation bump + field re-encrypt + old-generation destruction (S2, gh-1082-f2) |
+| Stale-write prevention | AAD version binding only | Complete-scope expected-version CAS (S1) |
+| Historical snapshot rollback | Not protected | Deferred pending a qualified complete-scope external anchor and recovery protocol |
+| DEK rotation | KEK rewrap only; `dekGeneration` frozen at 1 | Generation bump + field re-encrypt + online old-generation retirement (S2, gh-1082-f2) |
 | Provider registry wiring | Test-only registries constructed in tests | Startup registry (Anthropic + Tavily/Firecrawl/Deepgram), backend selector, server wiring (S3) |
 | Credential UI | None | Owner-only "Providers & credentials" surface, API-key write-only forms (S4, 16f.3 subset) |
 | Fleet/seat interaction | `resolveSeatModel()` reads instance `process.env` only | Workspace-scoped key presence in tier resolution (S5, 16f.8 / wt-391-forward-703w) |
@@ -78,56 +87,51 @@ Known, filed gaps from the #1132 crypto review (beads):
 
 ## Remaining slices (ordered)
 
-### S1 — Postgres persistence + external rollback anchor + envelope deletion
-**Beads:** new (Postgres pass) + `wt-391-forward-byok-version-rollback-0th`
+### S1 — Postgres persistence + CAS + envelope deletion
 **Blocked by:** #1132 merge.
-Implement `CredentialVaultPersistenceV1` on Postgres (3 tables matching the
-ratified model: credential record, wrapped DEK, field envelopes), plus two
-gaps the r2 review surfaced:
+Implement `CredentialVaultPersistenceV1` on Postgres using the ratified record,
+wrapped-DEK, and field-envelope model. Subject-scoped consumers extend the
+credential identity to `(workspaceId, subjectKind, subjectId, providerId)`.
 
-**Rollback prevention (gh-1082-f1).** A MAC-under-DEK current-version marker
-is *not* sufficient: an attacker with DB write access replays a full snapshot
-(old row + its validly-MACed marker together), and store-level monotonic
-checks are bypassed by direct DB writes. The anchor must live **outside
-attacker-writable storage**: a monotonic current-version counter per
-workspace held in the KEK-provider/KMS context (one integer per workspace —
-for local-KEK, in the operator-owned sealed mount beside the KEK; for a
-remote KMS backend, in KMS-side context/metadata). Reads verify the record's
-`credentialVersion` against the external counter; a snapshot replay then
-presents a stale counter value and fails as `CREDENTIAL_UNREADABLE`. No
-per-record MAC mini-envelope — with the external counter it is pure surface.
-**Honest framing:** the counter *narrows* the window (the current version is
-authenticated), but old ciphertext an attacker exfiltrated before rotation is
-only made cryptographically dead by S2's generation-destroy. S1 narrows;
-S2 closes.
+Every mutation uses expected-version CAS under the complete-scope lock. CAS
+prevents stale application writes; AEAD binds workspace, subject, provider,
+field, version, and generation. Do not claim these controls detect restoration
+of a complete internally consistent historical database snapshot.
 
-**Envelope deletion (r2 finding 2).** The #1132 port has no delete
-operations, so superseded field envelopes and old wrapped DEKs live forever —
-retained replay material, and S2's generation-destroy is impossible. Extend
-`CredentialVaultPersistenceV1` in this pass: delete/tombstone superseded
-credential-version field envelopes on successful rotation to a new version,
-and `deleteWrappedDek(workspaceId, dekGeneration)` for S2. Tombstones record
-metadata (version, deleted-at, reason) — never ciphertext.
+Delete superseded field ciphertext transactionally after the new version is
+durable. Retain one credential-scope authorization tombstone where product
+semantics require it and one value-free lifecycle audit event; do not create a
+per-field tombstone subsystem.
 
-**Proof:** #1132's conformance suite re-run against Postgres persistence;
-snapshot-replay test (old row + old marker restored wholesale → fail closed);
-superseded-version envelopes verified absent from the store after a
-successful new-version write.
+A future historical-rollback defense requires a separate `RollbackAnchorV1`
+keyed by the complete credential identity and authenticating all authoritative
+state. It must prove replica-safe external CAS, crash recovery, and
+restore-forward behavior. A workspace-wide integer, mutable Postgres row, sealed
+local file, or unqualified KMS metadata is not an accepted anchor.
 
-### S2 — DEK-generation rotation (crypto-shred lever)
+**Proof:** conformance suite against Postgres; concurrent expected-version CAS;
+subject/workspace/provider/field/version/generation swap rejection; interrupted
+write recovery; superseded ciphertext absent after successful replacement.
+
+### S2 — DEK-generation rotation and online retirement
 **Bead:** `wt-391-forward-byok-dek-rotation-fil`
-**Blocked by:** S1 (needs durable persistence + the authenticated marker so
-rotation state itself cannot be rolled back) **and the key-scope decision**
-(rotation machinery is per-key-scope; don't build it twice).
-Owner-triggered + operator-triggered `rotateWorkspaceDek(workspaceId)`:
-mint generation N+1, re-encrypt all live field envelopes under the new DEK
-(new AAD `dekGeneration`), atomically bump record `dekGeneration`, then
-destroy generation-N wrapped-DEK rows after verification. Crypto-shred =
-rotate-then-destroy without re-encrypting (deliberate data loss path, owner
-confirmation required).
-**Proof:** post-rotation reads succeed; generation-N ciphertext no longer
-decryptable via the store; interrupted-rotation recovery (idempotent resume);
-shred leaves `CREDENTIAL_UNREADABLE`, never a plaintext residue or fallback.
+**Blocked by:** S1 and the resolved per-workspace DEK decision.
+
+`rotateWorkspaceDek(workspaceId)` mints generation N+1, re-encrypts live field
+envelopes with fresh nonces and generation-bound AAD, verifies them, atomically
+switches current references, and then removes generation-N wrapped-DEK rows from
+the live store.
+
+Removing a live wrapped-DEK row is **online generation retirement**, not a claim
+of crypto-shredding database or key backups. “Crypto-shred” is reserved for a
+separately authorized operational workflow that proves permanent retirement of
+every KEK/key version capable of unwrapping the targeted EDKs and accounts for
+backup retention. If the selected backend cannot retire one generation
+independently, the product must not advertise that granularity.
+
+**Proof:** post-rotation reads succeed; generation-N is unavailable through the
+live store; interrupted rotation resumes idempotently; backup and KEK-retirement
+limits are stated accurately.
 
 ### S3 — Provider registry + backend selector wiring
 **Bead:** part of 16f.3 scope, server side.
@@ -184,10 +188,11 @@ r3 specifications:
 - **Authenticated store pointer.** The which-store-is-authoritative pointer
   is itself a downgrade lever: a DB-write attacker who flips it back to
   "legacy" re-routes reads through `WORKSPACE_SETTINGS_ENCRYPTION_KEY`
-  ciphertext. The pointer must be covered by S1's external rollback anchor
-  (fold pointer state into the per-workspace counter context), so a flipped
-  pointer fails `CREDENTIAL_UNREADABLE` rather than silently downgrading.
-  Legitimate rollback goes through the anchored path, not a raw DB write.
+  ciphertext. Pointer protection is blocked on the future complete-scope
+  `RollbackAnchorV1` decision described in S1 and owner decision 4; it must
+  authenticate the pointer and authoritative credential state together. The
+  rejected workspace-wide counter is not used. Legitimate rollback goes
+  through the qualified anchored path, not a raw DB write.
 - **Dual-read-window write rules.** Between re-encrypt and pointer switch,
   writes are forbidden on the legacy path: the migration marks the
   (workspace, provider) entry migration-locked before re-encrypting; a
@@ -204,8 +209,10 @@ r3 specifications:
   keys (#809/BL1, pending #819 metering).
 - Tier-2 in-sandbox credential delivery (16f.6) — still deferred behind the
   hostile-test harness + red-team pass.
-- OAuth provider flows (PKCE, refresh rotation) — deferred out of v1 with the
-  error codes already reserved (`CREDENTIAL_OAUTH_*`).
+- Generic OAuth provider flows remain deferred from this broad workspace-vault
+  roadmap. The separately bounded personal OpenAI Codex MVP is an explicit
+  carve-out and reuses Pi's device-code OAuth and refresh implementation; see
+  [`provider-onboarding-plan.md`](provider-onboarding-plan.md) r4.
 - Multi-profile-per-provider — one active credential per
   `(workspaceId, providerId)` stands; the key-scope memo shows how seat-tier
   profiles would extend this *without* a crypto change if ever ratified.
@@ -214,11 +221,19 @@ r3 specifications:
 - OVH-KMS backend implementation is **scheduled but not specced here** — it is
   a second `WorkspaceKekProviderV1` implementation, gated on owner Q1 (r1).
 
-## Owner decisions needed
+## Owner decisions needed for the broad roadmap
 
-1. **Key scope** — decide from [`key-scope-decision.md`](key-scope-decision.md)
-   (blocks S2).
-2. r1's Q1 (local-KEK-first vs OVH-KMS-first for production) and Q4
-   (instance-fallback default for existing workspaces at S8 migration time)
-   remain open; Q3 (OAuth) and Q5 (separate fleet bead) are resolved in this
-   revision (deferred; separate bead `wt-391-forward-703w`).
+1. **Key scope is resolved:** retain one DEK per workspace; subject identity is
+   an authorization/AAD boundary, not a DEK boundary. See
+   [`key-scope-decision.md`](key-scope-decision.md).
+2. **Production custody is resolved:** OVH KMS is the production target;
+   local-KEK remains development/self-host custody. Exact OVH API, IAM, outage,
+   retirement, and audit behavior still require live qualification.
+3. The instance-fallback default for a future workspace-credential launch
+   remains open. It does not apply to the personal Codex MVP, which has no
+   workspace/env/file fallback.
+4. The external rollback-anchor design in S1 is not accepted for personal
+   credentials as written: one workspace-wide integer cannot authenticate
+   multiple independently versioned records. Any future rollback-resistant
+   continuity feature requires a separate complete-scope anchor protocol and
+   qualified atomic external store.

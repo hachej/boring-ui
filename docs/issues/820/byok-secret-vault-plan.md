@@ -9,6 +9,21 @@ track: owner
 
 # gh-820 Generic per-workspace provider credentials and secret vault
 
+> **Roadmap scope and later amendment:** This document describes the long-term
+> generic workspace credential platform. It does not control the first personal
+> OpenAI Codex release. For that slice,
+> [`../1082/provider-onboarding-plan.md`](../1082/provider-onboarding-plan.md) r4
+> and the accepted async CredentialStore decision take precedence.
+>
+> Personal LLM credentials amend the workspace-only identity to
+> `(workspaceId, subjectKind, subjectId, providerId)` and include the subject in
+> persistence keys, locks, audit, and credential-envelope AAD v2 while retaining
+> one DEK per workspace. For Pi-managed OAuth, the complete bounded encrypted Pi
+> credential is persisted for restart-safe native refresh; this supersedes the
+> memory-only access-token rule for that integration. Workspace credentials,
+> generic provider UI, MCP, proxies, migration, rotation, and sandbox delivery
+> remain later roadmap work.
+
 ## Outcome
 
 Generalize Decision 27's single model-key policy into one workspace-scoped
@@ -95,12 +110,11 @@ OWNER RATIFY: Migrate only inventoried credential-bearing legacy settings into t
   and the two-workspace proof. Those tests remain required for LLM consumers;
   its proposed single setting and `WORKSPACE_SETTINGS_ENCRYPTION_KEY` storage are
   superseded by this plan after ratification.
-- [`docs/plans/agent-runtime/cloud-vision/AGENT-CLOUD-VISION.md`](../../plans/agent-runtime/cloud-vision/AGENT-CLOUD-VISION.md#4-hypothetical-step-3later-custom-tools)
+- [`docs/issues/391/AGENT-CLOUD-VISION.md`](../391/AGENT-CLOUD-VISION.md#4-custom-tools)
   splits a custom tool into control-plane declaration data and sandbox-only
-  tenant handler code. The (non-binding) cloud vision suggests per-invocation
-  secrets and default-deny egress; provider registration and credential
-  metadata stay on the control plane, and tenant handler code and any
-  deliberate untrusted delivery stay
+  tenant handler code. It requires per-invocation secrets and default-deny
+  egress. Provider registration and credential metadata therefore stay on the
+  control plane; tenant handler code and any deliberate untrusted delivery stay
   on the data plane.
 - The trust taxonomy in
   [`docs/issues/805/runtime-refactor/work/P3-routes-tools/DECISION-26-PLAN.md`](../805/runtime-refactor/work/P3-routes-tools/DECISION-26-PLAN.md#trust-taxonomy)
@@ -323,7 +337,7 @@ provider response bodies are untrusted.
 | Cross-tenant confused deputy | Resolver receives an authorized workspace object separately from a provider reference; storage queries include workspace and provider; AAD repeats that binding; consumer bindings are host-owned; external errors avoid existence oracles. Two-workspace × two-provider × two-execution negative tests are mandatory. | Same-workspace owners and approved consumers share that workspace credential by design. Agent/tool labels inside one workspace are not isolation. |
 | Browser/XSS/CSRF | TLS only; owner reauthentication for mutation; CSRF protection; no GET mutation; no value echo; secret fields disable analytics/session replay and password-manager/autocomplete where appropriate; OAuth uses one-use state, PKCE, exact redirect allowlists, and short expiry. | The pasted key exists in browser memory and can be stolen by an active same-origin XSS before submission. CSP, dependency hygiene, and minimizing time in component state remain necessary. |
 | Untrusted tenant sandbox | Only that authorized workspace's requested fields are delivered for one execution via pipe/FD or tmpfs; no environment/argv; clean-process baseline; no reuse; destroy/recreate after secret-bearing invocation when cleanup is uncertain; provider-specific egress allowlist. | Tenant code can read, print, or transmit its own delivered key. No sandbox API can prevent that while also allowing the code to use the key. Cross-tenant isolation is the promised boundary. |
-| Upstream provider/token theft | Prefer OAuth and short-lived access tokens; refresh server-side; rotate refresh tokens transactionally; revoke upstream; never persist access tokens in v1. A provider that cannot operate under that rule requires a new reviewed contract. | The provider necessarily receives its credential. A request already sent upstream, or an in-flight execution holding the old value, cannot be erased by a local tombstone. |
+| Upstream provider/token theft | Prefer OAuth and short-lived access tokens; refresh server-side; rotate refresh tokens transactionally; revoke upstream; never persist access tokens in generic v1 except the explicitly amended Pi-managed OAuth integration, which persists the complete bounded encrypted Pi credential for restart-safe native refresh. A provider that cannot operate under either reviewed contract requires a new contract. | The provider necessarily receives its credential. A request already sent upstream, or an in-flight execution holding the old value, cannot be erased by a local tombstone. |
 | Availability attack/Vault outage | Timeouts, bounded retry with jitter before plaintext exists, readiness signal, explicit backend selection, and fail-closed errors. No plaintext/DEK cache is used as an outage workaround. | Vault/KMS unavailability blocks credential-backed executions. This is an intentional security-over-availability choice. |
 
 ### Process-memory honesty

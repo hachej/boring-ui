@@ -341,6 +341,7 @@ export interface AgentHostDirectProjectionOptions {
     request: FastifyRequest,
   ) => Promise<AuthorizedAgentScope>
   readonly filterModels?: import('../http/routes/models').ModelsRoutesOptions['filterModels']
+  readonly resolveModelCatalog?: import('../http/routes/models').ModelsRoutesOptions['resolveModelCatalog']
   readonly sessionChangesTracker?: import('../http/sessionChangesTracker').SessionChangesTracker
   readonly defaultSessionId?: string
 }

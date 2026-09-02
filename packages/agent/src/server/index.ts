@@ -233,6 +233,8 @@ export { applyCspHeaders } from './http/csp'
 export { deepLinkRoutes } from './http/routes/deepLink'
 export type {
   PiExtensionFactory,
+  PiHarnessCredentialStore,
+  PiHarnessCredentialStoreFactory,
   PiHarnessOptions,
   PiPackageSource,
 } from './harness/pi-coding-agent/createHarness'

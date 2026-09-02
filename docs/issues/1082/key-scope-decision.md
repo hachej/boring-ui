@@ -1,5 +1,9 @@
 # Decision memo — DEK scope: per-workspace vs per-seat
 
+> This memo decides encryption-key scope, not credential authorization scope.
+> Personal credentials still require subject-aware persistence keys, locks,
+> audit, and credential-envelope AAD v2 under the shared workspace DEK.
+
 **Issue:** gh-1082 · **Date:** 2026-08-07 · **Decide before:** rotation slice (S2)
 **Context:** #1132 ships one DEK per workspace, keyed `(workspaceId, dekGeneration)`,
 shared across all providers/credentials in that workspace. Fleets (#1114) give each
@@ -43,10 +47,13 @@ That is pure operational cost with no matching data boundary.
 
 ### Interaction with AAD and dekGeneration
 
-The AAD (`workspaceId:credentialId:providerId:fieldId:credentialVersion:dekGeneration`)
+The original workspace credential AAD
+(`workspaceId:credentialId:providerId:fieldId:credentialVersion:dekGeneration`)
 contains **no seat identity**, and the wrapped-DEK AAD binds `(workspaceId,
-dekGeneration)`. Per-workspace scoping is therefore what the ciphertext already
-cryptographically asserts. Per-seat DEKs would require a seat component in both AAD
+dekGeneration)`. Personal credentials extend only the credential-envelope AAD
+with `(subjectKind, subjectId)`; the wrapped-DEK AAD and per-workspace DEK remain
+unchanged. Per-workspace DEK scoping is therefore compatible with personal
+credential authorization. Per-seat DEKs would require a seat component in both AAD
 contexts — a new AAD encoding version, a new wrapped-DEK context, and re-encryption
 of every existing envelope — and S2's rotation design would need per-seat generation
 tracking before it is even built. Deciding per-workspace *now* lets S2 proceed on the

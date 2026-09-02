@@ -122,12 +122,16 @@ export type SendMessageInput = AgentSendInput & {
   message: string
 }
 
+export type TrustedAgentExecutionClass = 'request-attached-interactive'
+
 export interface RunContext {
   abortSignal: AbortSignal
   workdir: string
   workspaceId?: string
   requestId?: string
   userId?: string
+  /** Server-derived operation classification; never copied from browser input. */
+  executionClass?: TrustedAgentExecutionClass
   userEmail?: string
   userEmailVerified?: boolean
   /** Canonical storage/live identity for commands and prompts sharing one Pi handle. */

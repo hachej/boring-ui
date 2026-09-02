@@ -16,8 +16,9 @@ the Seneca vault adapter as a scope-bound `CredentialStore`; do not implement
 the previously planned remote `AuthStorageBackend` adapter.
 
 This decision supersedes the `AuthStorage.fromStorage()` /
-`AuthStorageBackend { withLock, withLockAsync }` integration described in
-[`provider-onboarding-plan.md`](provider-onboarding-plan.md).
+`AuthStorageBackend { withLock, withLockAsync }` integration formerly described
+in [`provider-onboarding-plan.md`](provider-onboarding-plan.md) r3. The
+controlling r4 plan now forbids that legacy path.
 
 ## Why
 
@@ -92,20 +93,21 @@ therefore be closed over one verified actor and workspace:
 
 ```ts
 createVaultCredentialStore({
-  workspaceId,
-  userId,
-  interactive: true,
-  consumerBinding: "llm-model-call.v1",
+  authorizedWorkspaceScope,
+  verifiedAuthority,
+  executionMode: "interactive",
+  providerId: "openai-codex",
 });
 ```
 
-A `providerId` passed to that instance resolves within the immutable scope:
-
-1. personal `(workspaceId, userId, providerId)`;
-2. workspace `(workspaceId, "workspace", providerId)` when policy permits;
-3. non-suppressed instance fallback when policy permits.
-
-For the first OpenAI Codex slice, only step 1 is enabled. Subscription
+The Core-issued opaque workspace scope and freshly verified authority are the
+authorization inputs; a caller-provided workspace/user string or execution-mode
+string is not authority. For the first OpenAI Codex slice, the store resolves
+only personal `(workspaceId, userId, "openai-codex")` custody and has no
+workspace, env, file, or global-auth fallback. A server-policy composite store
+preserves existing behavior for non-Codex providers. Any future layered funding
+model requires a separate approved policy; it is not latent behavior in this
+constructor. Subscription
 credentials are personal and interactive-only. `userId` is derived from the
 authenticated request, retained in session context and session cache identity,
 and included in persistence keys, lock keys, audit records, and AAD v2. It is
@@ -130,14 +132,24 @@ The vault implementation must:
 5. await Pi's refresh/login mutation;
 6. encrypt and durably write the returned credential as a fresh credential
    version using CAS/fencing;
-7. update the external rollback anchor according to the vault protocol;
+7. delete superseded ciphertext and emit a value-free lifecycle audit event;
 8. release the lock in `finally` and best-effort clear temporary byte buffers.
 
-The initial Postgres implementation should use a dedicated connection with a
-session-level advisory lock or an equivalent fenced lock. Do not hold a normal
-business transaction open across the provider network request. Cancellation
-must stop waiting callers without abandoning a committed write or leaking a
-lock.
+For the personal Codex MVP, expected-version CAS is the stale-write fence. The
+plan does not depend on the earlier single workspace-wide rollback counter: that
+counter cannot authenticate multiple independently versioned personal records,
+and OVH KMS metadata has not been qualified as an atomic monotonic store.
+Rollback-resistant state continuity, if required later, needs a separate
+complete-scope protocol and recovery design.
+
+The initial Postgres implementation uses a dedicated connection with a
+session-level advisory lock plus expected-version CAS; the advisory lock is not
+called a fencing token. Do not hold a normal business transaction open across
+the provider network request. Apply a bounded refresh-callback deadline and tie
+its abort signal to lock-connection health where supported. Return a connection
+to the pool only after unlock is positively confirmed; destroy it after failed
+or ambiguous unlock. Cancellation must stop waiting callers without abandoning
+a committed write or leaking a lock.
 
 If `fn` returns `undefined`, preserve the current credential, matching Pi's
 contract. `delete()` serializes against `modify()` and writes Seneca's required
@@ -161,8 +173,10 @@ revocation/deletion state before making the credential unavailable.
 
 ## Package migration
 
-Seneca currently receives coding-agent 0.80.7 through
-`@hachej/boring-agent` 0.1.99. The installed 0.84.3 coding-agent release uses a
+Boring's coordinated Pi 0.84.3 migration is merged in PR #1500 at commit
+`150465a03966ac316c609ceecd28bf487d9297c2`. Seneca still consumes the older
+published `@hachej/boring-agent` release until the new coordinated Boring
+packages are published and adopted. The migrated Boring runtime uses this
 coordinated 0.84.3 family:
 
 - `@earendil-works/pi-coding-agent`;
@@ -172,42 +186,46 @@ coordinated 0.84.3 family:
 - `@earendil-works/pi-protocol`;
 - `@earendil-works/pi-tui` where applicable.
 
-Upgrade these as one tested set. Do not mix 0.80.x and 0.84.x runtime packages.
-The migration occurs upstream in Boring Agent, is published as a new
-`@hachej/boring-*` release, and only then is consumed by Seneca.
+These packages were upgraded as one tested set; 0.80.x and 0.84.x runtime
+packages are not mixed in Boring. PR #1500 replaced `AuthStorage` +
+`ModelRegistry` construction with `ModelRuntime`, adapted model and provider
+surfaces, and established the asynchronous injection seam while preserving
+existing env/file behavior. Actor propagation and production vault injection
+remain later slices. Seneca consumes the change only after coordinated Boring
+packages are published.
 
-Expected code changes include:
-
-- replace `AuthStorage` + `ModelRegistry` construction with `ModelRuntime`;
-- inject `CredentialStore` through `ModelRuntime.create({ credentials })`;
-- adapt model listing/status and provider registration to `ModelRuntime`;
-- preserve actor `userId` through session normalization and cache keys;
-- keep an in-memory store only for isolated tests, never production custody.
+In-memory stores remain isolated test tools and are never production custody.
 
 ## Delivery order
 
-1. **Pi compatibility PR:** upgrade to 0.84.3 and migrate existing env/file
-   behavior to `ModelRuntime` without enabling vault credentials.
-2. **Actor propagation PR:** preserve verified `userId` and bind interactive
-   session/model-list construction to the actor.
-3. **Vault store PR:** implement `CredentialStore` over scoped Postgres
-   persistence, distributed locking, envelope crypto, and the selected KEK
-   provider; add personal-scope AAD v2.
-4. **OpenAI Codex route PR:** broker Pi's native login, status, model
-   availability, and disconnect for personal interactive use only.
-5. **Seneca release PR:** consume the published Boring packages, register
-   migrations/configuration, and enable one-workspace canary access.
+1. **Completed — Pi compatibility PR #1500:** Pi 0.84.3 `ModelRuntime` migration
+   preserving existing env/file behavior is merged with green post-merge CI.
+2. **Actor propagation PR:** preserve verified `userId`, current membership,
+   execution mode, and actor-aware session/model-list cache identity.
+3. **OVH KMS qualification PR:** implement and live-qualify the production
+   `WorkspaceKekProviderV1` adapter against disposable resources and one
+   manually provisioned canary wrapping key.
+4. **Personal Codex store PR:** implement the subject-scoped `CredentialStore`,
+   personal AAD v2, complete-scope advisory locking, expected-version CAS, and
+   strict `openai-codex` no-fallback composition.
+5. **OpenAI Codex route/UI PR:** use Pi's device-code login, metadata status,
+   actor-aware model availability, needs-reauth handling, and disconnect for
+   personal interactive use only.
+6. **Seneca canary PR:** consume published Boring packages, register schema and
+   configuration, and enable one-workspace canary access.
 
-The OVH KMS provider and live qualification remain separate prerequisites for
-the production release, not for the Pi compatibility PR.
+The controlling detailed acceptance and deferrals are in
+[`provider-onboarding-plan.md`](provider-onboarding-plan.md) r4.
 
 ## Acceptance gates
 
 - Existing interactive streaming, tools, model selection, custom providers,
   cancellation, and session resume pass after the Pi upgrade.
 - No production path creates or reads global `auth.json`.
-- Two processes requesting an expired credential result in one serialized,
-  durably persisted refresh outcome.
+- Two processes requesting an expired credential normally produce one provider
+  refresh and one durable outcome while lock ownership remains healthy; a
+  lock-connection-loss race fails closed locally, is observable, and is not
+  falsely described as exactly once across PostgreSQL and the provider.
 - Restarting the app resolves the latest rotated credential.
 - Cross-user, cross-workspace, provider, field, version, and generation swaps
   fail closed.

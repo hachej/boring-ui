@@ -8,6 +8,7 @@ import {
   type PromptOptions,
   SessionManager,
   ModelRuntime,
+  type CreateModelRuntimeOptions,
   DefaultResourceLoader,
   getAgentDir,
   loadSkills,
@@ -92,6 +93,12 @@ function composeSystemPromptAppend(hostAppend: string | undefined): string {
     .join("\n\n");
 }
 
+export type PiHarnessCredentialStore = NonNullable<CreateModelRuntimeOptions["credentials"]>;
+
+export type PiHarnessCredentialStoreFactory = (
+  getRunContext: () => RunContext | undefined,
+) => PiHarnessCredentialStore;
+
 export interface PiHarnessOptions {
   noContextFiles?: boolean;
   /** Projects server-internal skill files to model-visible resource locators. */
@@ -125,6 +132,12 @@ export interface PiHarnessOptions {
   getHotReloadableResources?: () => HotReloadablePiResources;
   /** Reject an explicit unavailable/unknown model instead of silently falling back. */
   strictModelResolution?: boolean;
+  /**
+   * Server-only composition seam for one shared, operation-delegating Pi store.
+   * The factory must resolve actor policy from the live RunContext and fail
+   * closed when its policy requires verified interactive authority.
+   */
+  createCredentialStore?: PiHarnessCredentialStoreFactory;
 }
 
 /** Pi harness options with the discovery flags resolved to definite booleans. */
@@ -476,6 +489,9 @@ export function createPiCodingAgentHarness(opts: {
   });
   const piSessions = new Map<string, PiSessionHandle>();
   const runContextStorage = new AsyncLocalStorage<RunContext>();
+  // One delegating store is shared by every session runtime in this harness.
+  // Actor identity remains operation-scoped in ALS, never in the Pi handle key.
+  const credentialStore = pi.createCredentialStore?.(() => runContextStorage.getStore());
 
   // Effective Pi resources merge static caller-supplied fields with
   // getHotReloadableResources() output. Pi's DefaultResourceLoader keeps the
@@ -540,7 +556,9 @@ export function createPiCodingAgentHarness(opts: {
     }
 
     const generation = generationOf(sessionKey);
-    const creation = createPiSession(sessionId, sessionCtx, input, ctx).then((handle) => {
+    // ModelRuntime creation and its initial credential-store reads must observe
+    // the verified actor that caused this cold open.
+    const creation = bindRunContext(ctx, () => createPiSession(sessionId, sessionCtx, input, ctx)).then((handle) => {
       if (generationOf(sessionKey) === generation) return handle;
       disposeHandleAt(sessionKey, handle);
       throw Object.assign(new Error("session not found"), {
@@ -586,7 +604,9 @@ export function createPiCodingAgentHarness(opts: {
     // Auth/model credentials remain Pi-owned. The default runtime reads Pi's
     // normal environment/settings/auth sources; Boring does not pick a
     // provider credential itself.
-    const { modelRuntime } = await createConfiguredModelRuntime();
+    const { modelRuntime } = await createConfiguredModelRuntime(
+      credentialStore ? { credentials: credentialStore } : undefined,
+    );
     // Strict model validation must fail before native transcript creation.
     const resolvedModel = resolveRequestedModel(modelRuntime, input, { strict: pi.strictModelResolution });
     // Prefer an explicit available UI selection; otherwise use configured
