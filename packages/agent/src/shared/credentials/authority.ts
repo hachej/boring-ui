@@ -35,3 +35,14 @@ export interface WorkspaceCredentialAuthorityVerifierV1 {
     scope: AuthorizedWorkspaceCredentialScopeV1,
   ): Promise<VerifiedWorkspaceCredentialAuthorityV1>
 }
+
+/**
+ * Server-issued credential authority carried only on a live host operation.
+ * The opaque scope remains the capability; the verifier revalidates it at each
+ * credential access so copied request strings never become authority.
+ */
+export interface WorkspaceCredentialOperationAuthorityV1 {
+  readonly contractVersion: "boring.workspace-credential-operation-authority.v1"
+  readonly scope: AuthorizedWorkspaceCredentialScopeV1
+  readonly verifier: WorkspaceCredentialAuthorityVerifierV1
+}

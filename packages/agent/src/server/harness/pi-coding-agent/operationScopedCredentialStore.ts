@@ -1,9 +1,15 @@
 import type { RunContext, TrustedAgentExecutionClass } from '../../../shared/harness.js'
+import {
+  CREDENTIAL_ERROR_CODES,
+  CredentialResolutionError,
+} from '../../../shared/credentials/errors.js'
 import type { SessionCtx } from '../../../shared/session.js'
 import type { PiHarnessCredentialStore } from './createHarness.js'
 
-export const ACTOR_CREDENTIAL_CONTEXT_MISSING = 'CREDENTIAL_ACTOR_CONTEXT_MISSING'
-export const ACTOR_CREDENTIAL_DELIVERY_FORBIDDEN = 'CREDENTIAL_DELIVERY_FORBIDDEN'
+const ACTOR_SCOPED_PROVIDER_ID = 'openai-codex'
+
+export const ACTOR_CREDENTIAL_CONTEXT_MISSING = CREDENTIAL_ERROR_CODES.AUTHORITY_INVALID
+export const ACTOR_CREDENTIAL_DELIVERY_FORBIDDEN = CREDENTIAL_ERROR_CODES.DELIVERY_FORBIDDEN
 
 export interface VerifiedCredentialOperationActor {
   readonly workspaceId: string
@@ -13,57 +19,84 @@ export interface VerifiedCredentialOperationActor {
 
 export interface OperationScopedCredentialStoreOptions {
   readonly sessionCtx: Readonly<SessionCtx>
+  /** Returns only a currently active operation lease; detached descendants return undefined. */
   readonly getRunContext: () => RunContext | undefined
-  /** Providers governed by actor policy. They never fall through to compatibility storage. */
-  readonly actorScopedProviderIds: readonly string[]
   /** Existing Pi env/file-compatible behavior for providers outside actor policy. */
   readonly compatibilityStore: PiHarnessCredentialStore
-  /** Must return a store closed over the immutable actor supplied for this operation. */
+  /** Must return a store closed over the immutable, verifier-derived actor. */
   readonly resolveActorStore: (
     actor: Readonly<VerifiedCredentialOperationActor>,
   ) => PiHarnessCredentialStore | Promise<PiHarnessCredentialStore>
 }
 
-function codedError(code: string, message: string): Error & { code: string } {
-  return Object.assign(new Error(message), { code })
+function credentialError(
+  code: typeof CREDENTIAL_ERROR_CODES.AUTHORITY_INVALID | typeof CREDENTIAL_ERROR_CODES.DELIVERY_FORBIDDEN,
+  message: string,
+): CredentialResolutionError {
+  return new CredentialResolutionError(code, message)
 }
 
 /**
- * Delegates every actor-scoped credential operation from the live request ALS
- * context. No actor or inner actor store is cached on the shared Pi runtime.
+ * Delegates only OpenAI Codex credential operations from the live request lease.
+ * No actor or inner actor store is cached on the shared Pi runtime.
  */
 export function createOperationScopedCredentialStore(
   options: OperationScopedCredentialStoreOptions,
 ): PiHarnessCredentialStore {
-  const actorProviders = new Set(options.actorScopedProviderIds)
   const sessionWorkspaceId = options.sessionCtx.workspaceId
 
-  const actorForOperation = (): Readonly<VerifiedCredentialOperationActor> => {
+  const actorForOperation = async (): Promise<Readonly<VerifiedCredentialOperationActor>> => {
     const ctx = options.getRunContext()
-    const workspaceId = ctx?.workspaceId ?? ctx?.sessionCtx?.workspaceId
-    if (!ctx?.userId || !workspaceId || !sessionWorkspaceId) {
-      throw codedError(ACTOR_CREDENTIAL_CONTEXT_MISSING, 'verified credential actor context is missing')
+    const operationAuthority = ctx?.credentialAuthority
+    if (!ctx?.userId || !operationAuthority || !sessionWorkspaceId) {
+      throw credentialError(
+        CREDENTIAL_ERROR_CODES.AUTHORITY_INVALID,
+        'credential operation authority is missing or expired',
+      )
     }
+    if (ctx.executionClass !== 'request-attached-interactive') {
+      throw credentialError(
+        CREDENTIAL_ERROR_CODES.DELIVERY_FORBIDDEN,
+        'credential delivery is forbidden for this operation',
+      )
+    }
+
+    let authority
+    try {
+      authority = await operationAuthority.verifier.verifyCurrent(operationAuthority.scope)
+    } catch {
+      throw credentialError(
+        CREDENTIAL_ERROR_CODES.AUTHORITY_INVALID,
+        'credential operation authority is invalid',
+      )
+    }
+    const workspaceId = ctx.workspaceId ?? ctx.sessionCtx?.workspaceId
     if (
+      authority.workspaceId !== sessionWorkspaceId ||
       workspaceId !== sessionWorkspaceId ||
-      ctx.executionClass !== 'request-attached-interactive'
+      authority.principal.kind !== 'user' ||
+      authority.principal.userId !== ctx.userId
     ) {
-      throw codedError(ACTOR_CREDENTIAL_DELIVERY_FORBIDDEN, 'credential delivery is forbidden for this operation')
+      throw credentialError(
+        CREDENTIAL_ERROR_CODES.DELIVERY_FORBIDDEN,
+        'credential delivery is forbidden for this operation',
+      )
     }
+
     return Object.freeze({
-      workspaceId,
-      userId: ctx.userId,
+      workspaceId: authority.workspaceId,
+      userId: authority.principal.userId,
       executionClass: ctx.executionClass,
     })
   }
 
   const actorStore = async (): Promise<PiHarnessCredentialStore> => {
-    return options.resolveActorStore(actorForOperation())
+    return options.resolveActorStore(await actorForOperation())
   }
 
   return {
     async read(providerId, operationOptions) {
-      if (!actorProviders.has(providerId)) {
+      if (providerId !== ACTOR_SCOPED_PROVIDER_ID) {
         return options.compatibilityStore.read(providerId, operationOptions)
       }
       return (await actorStore()).read(providerId, operationOptions)
@@ -71,31 +104,34 @@ export function createOperationScopedCredentialStore(
 
     async list(operationOptions) {
       const compatibility = (await options.compatibilityStore.list(operationOptions))
-        .filter((entry) => !actorProviders.has(entry.providerId))
+        .filter((entry) => entry.providerId !== ACTOR_SCOPED_PROVIDER_ID)
       let actor: PiHarnessCredentialStore
       try {
         actor = await actorStore()
       } catch (error) {
-        const code = (error as { code?: unknown }).code
-        if (code === ACTOR_CREDENTIAL_CONTEXT_MISSING || code === ACTOR_CREDENTIAL_DELIVERY_FORBIDDEN) {
+        if (
+          error instanceof CredentialResolutionError &&
+          (error.code === CREDENTIAL_ERROR_CODES.AUTHORITY_INVALID ||
+            error.code === CREDENTIAL_ERROR_CODES.DELIVERY_FORBIDDEN)
+        ) {
           return compatibility
         }
         throw error
       }
       const actorEntries = (await actor.list(operationOptions))
-        .filter((entry) => actorProviders.has(entry.providerId))
+        .filter((entry) => entry.providerId === ACTOR_SCOPED_PROVIDER_ID)
       return [...compatibility, ...actorEntries]
     },
 
     async modify(providerId, modify, operationOptions) {
-      if (!actorProviders.has(providerId)) {
+      if (providerId !== ACTOR_SCOPED_PROVIDER_ID) {
         return options.compatibilityStore.modify(providerId, modify, operationOptions)
       }
       return (await actorStore()).modify(providerId, modify, operationOptions)
     },
 
     async delete(providerId, operationOptions) {
-      if (!actorProviders.has(providerId)) {
+      if (providerId !== ACTOR_SCOPED_PROVIDER_ID) {
         return options.compatibilityStore.delete(providerId, operationOptions)
       }
       return (await actorStore()).delete(providerId, operationOptions)

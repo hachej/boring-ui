@@ -11,6 +11,48 @@
       "name": "@blaxel/core",
       "version": "0.3.11",
       "reason": "Issue #1081 production-blocking Blaxel adapter requires the plan-qualified SDK version for EU-sovereign sandbox compute"
+    },
+    {
+      "file": "packages/agent/package.json",
+      "name": "@mariozechner/pi-coding-agent",
+      "version": "0.84.4",
+      "expiresAt": "2026-09-05T00:00:00.000Z",
+      "reason": "PR #1509 requires the latest coordinated Pi family; exact published-package contracts and the Pi canary gate this temporary exception"
+    },
+    {
+      "file": "packages/agent/package.json",
+      "name": "@earendil-works/pi-ai",
+      "version": "0.84.4",
+      "expiresAt": "2026-09-05T00:00:00.000Z",
+      "reason": "PR #1509 requires the latest coordinated Pi family; exact published-package contracts and the Pi canary gate this temporary exception"
+    },
+    {
+      "file": "packages/boring-bash/package.json",
+      "name": "@mariozechner/pi-coding-agent",
+      "version": "0.84.4",
+      "expiresAt": "2026-09-05T00:00:00.000Z",
+      "reason": "PR #1509 requires the latest coordinated Pi family; exact published-package contracts and the Pi canary gate this temporary exception"
+    },
+    {
+      "file": "packages/cli/package.json",
+      "name": "@mariozechner/pi-coding-agent",
+      "version": "0.84.4",
+      "expiresAt": "2026-09-05T00:00:00.000Z",
+      "reason": "PR #1509 requires the latest coordinated Pi family; exact published-package contracts and the Pi canary gate this temporary exception"
+    },
+    {
+      "file": "plugins/diagram/package.json",
+      "name": "@earendil-works/pi-ai",
+      "version": "0.84.4",
+      "expiresAt": "2026-09-05T00:00:00.000Z",
+      "reason": "PR #1509 requires the latest coordinated Pi family; exact published-package contracts and the Pi canary gate this temporary exception"
+    },
+    {
+      "file": "plugins/diagram/package.json",
+      "name": "@mariozechner/pi-coding-agent",
+      "version": "0.84.4",
+      "expiresAt": "2026-09-05T00:00:00.000Z",
+      "reason": "PR #1509 requires the latest coordinated Pi family; exact published-package contracts and the Pi canary gate this temporary exception"
     }
   ]
 }

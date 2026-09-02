@@ -91,12 +91,19 @@ function approvedExceptions() {
 }
 
 function isApprovedException(item, exceptions) {
-  return exceptions.some(
-    (exception) =>
-      exception?.file === item.file &&
-      exception?.name === item.name &&
-      exception?.version === item.version,
-  )
+  return exceptions.some((exception) => {
+    if (
+      exception?.file !== item.file ||
+      exception?.name !== item.name ||
+      exception?.version !== item.version
+    ) return false
+    if (exception.expiresAt === undefined) return true
+    const expiresAt = new Date(exception.expiresAt)
+    if (Number.isNaN(expiresAt.getTime())) {
+      throw new Error(`${exceptionsFile} has invalid expiresAt for ${item.file}:${item.name}@${item.version}`)
+    }
+    return now < expiresAt
+  })
 }
 
 function npmPublishedAt(packageName, version) {

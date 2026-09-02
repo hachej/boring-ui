@@ -49,8 +49,9 @@ bounded slice.
 - workspace-wide credentials, sharing, promotion, or fallback;
 - API-key onboarding and personal API-key/OAuth coexistence;
 - Anthropic, Google, custom OpenAI-compatible providers, or a generic provider UI;
-- automations, scheduled/queued/detached work, unattended agents, or background
-  agent workers funded by a subscription;
+- automations, scheduled/durable-job-queued/detached work, unattended agents, or
+  background agent workers funded by a subscription (interactive Pi follow-ups
+  remain in scope under the one-at-a-time actor lease below);
 - funding-source selection, provenance picker rows, fleet-tier integration, and
   workspace billing policy;
 - MCP, search, transcription, plugins, and sandbox credential delivery;
@@ -101,8 +102,9 @@ not silently retain an older release.
    `(workspaceId, subjectKind="user", subjectId=userId,
    providerId="openai-codex")`.
 2. **Interactive only.** The store is available only to a currently authorized,
-   request-attached interactive execution. Automation, detached, queued,
-   scheduled, and background-worker construction never receives it.
+   request-attached interactive execution. Automation, detached, durable-job
+   queue, scheduled, and background-worker construction never receives it;
+   interactive Pi follow-ups use a separately bounded one-at-a-time lease.
 3. **No fallback for Codex.** Absent, disconnected, unreadable, or revoked means
    Codex is unavailable. The resolver never tries workspace, env, or file auth.
 4. **Pi-native credential.** Persist the complete bounded Pi Codex credential
@@ -261,14 +263,17 @@ All other provider IDs delegate to the existing compatibility store so the slice
 does not regress current env/file/custom-provider behavior. The delegation rule
 is fixed server policy, not caller input.
 
-The constructor does not trust `executionMode` as authority. It receives the
-Core-issued opaque authorized workspace scope and verified current authority
-used by the shipped `CredentialStoreBackendV1`/host-resolver path, plus a trusted
-request-attached execution classification from session composition. The personal
-store extends that existing backend/persistence path with subject-aware identity
-and AAD v2; it does not create a second crypto or authorization path to the same
-tables. A copied object, TypeScript cast, browser field, persisted job argument,
-or raw `"interactive"` string cannot construct the store.
+The constructor does not trust `executionMode` as authority. Every live host
+operation carries the Core-issued opaque authorized workspace scope together with
+its current-authority verifier. The operation-scoped store calls
+`verifyCurrent(scope)` at each credential access and derives workspace/user from
+the verified authority; request strings are comparison inputs only. The trusted
+request-attached execution classification is an additional deny gate, never the
+capability. The personal store extends the shipped
+`CredentialStoreBackendV1`/host-resolver path with subject-aware identity and AAD
+v2; it does not create a second crypto or authorization path to the same tables.
+A copied scope object, TypeScript cast, browser field, persisted job argument, or
+raw `"interactive"` string cannot construct authority.
 
 ### `read(providerId)`
 
@@ -386,15 +391,26 @@ Interactive session construction must resolve and verify the actor before it
 constructs or resumes model operations. Pi handle/cache identity remains
 `(sessionId, workspaceId)`: one `AgentSession`, `SessionManager`, `ModelRuntime`,
 and transcript writer are shared by authorized members of that workspace
-session. Actor identity and trusted execution class live only in the
-per-operation request context. The shared runtime receives one delegating
-`CredentialStore`; for every actor-scoped operation it resolves a fresh immutable
-actor-bound inner store from that live context and never caches the actor.
-Missing actor context or a workspace/execution-class mismatch fails closed.
+session. Actor identity and authority live only in a revocable per-operation lease. The
+shared runtime receives one delegating `CredentialStore`; for every actor-scoped
+operation it verifies the opaque authority, resolves a fresh immutable actor-bound
+inner store, and never caches the actor. The lease is revoked in `finally` when
+the authorized prompt/command ends, so AsyncLocalStorage descendants such as
+detached timers cannot retain credential authority. Missing, expired, copied, or
+revoked authority and workspace/execution mismatches fail closed.
 
-The personal Codex store is never injected into automation, scheduled, queued,
-detached, or background-worker runtime construction. Persisting a creator user ID
-is not authorization to use a subscription unattended.
+Queued follow-ups capture the submitting operation's opaque authority but receive
+a fresh bounded lease only when Pi starts that queued user's turn. The prior
+lease is revoked when the next queued user starts and the final lease is revoked
+at `agent_end`. Whenever operation-scoped credentials are composed, Boring forces
+Pi's actual native `followUpMode` to `one-at-a-time` through an in-memory settings
+overlay and rejects a runtime that does not honor it. `all` is forbidden because
+it can combine several users into one provider request with one payer.
+
+The personal Codex store is never injected into automation, scheduled, detached,
+or background-worker runtime construction. Queued interactive follow-ups are
+permitted only under the one-at-a-time lease rule above. Persisting a creator user
+ID is not authorization to use a subscription unattended.
 
 The model route first re-authorizes the request, then resolves an actor-aware
 catalog for display. Its availability snapshot is advisory. The operation-scoped
@@ -594,9 +610,10 @@ post-merge CI.
 
 - preserve current verified `userId` through interactive session and model-list
   construction;
-- bind actor and trusted request-attached execution class into the live
-  per-operation context while keeping Pi handle/transcript identity
-  `(sessionId, workspaceId)`;
+- bind opaque verifier-backed authority into a revocable live-operation lease
+  while keeping Pi handle/transcript identity `(sessionId, workspaceId)`;
+- force native Pi follow-ups to one-at-a-time and prove detached descendants and
+  mixed-user queued turns cannot retain or combine payer authority;
 - re-authorize current membership on every request and resume;
 - prove two authorized members share one serialized runtime/transcript writer
   but cannot reuse one another's actor-scoped credential resolution;
@@ -660,8 +677,9 @@ global Codex auth after vault state exists.
 - Member B in W cannot list, decrypt, refresh, disconnect, or use A's credential.
 - A in workspace X cannot use the credential connected in W.
 - Session resume and cache reuse cannot cross acting user or workspace identity.
-- Automation, scheduled, queued, detached, and background-worker construction
-  cannot access the subscription.
+- Automation, scheduled, durable-job queued, detached, and background-worker
+  construction cannot access the subscription; interactive follow-ups resolve
+  one submitting actor per provider turn.
 
 ### Pi behavior
 

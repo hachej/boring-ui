@@ -3,6 +3,7 @@ import type { TelemetrySink } from './telemetry'
 import type { AgentTool } from './tool'
 import type { AgentSendInput, MessageAttachment } from './events'
 import type { AgentSessionEvent, PromptOptions } from '@mariozechner/pi-coding-agent'
+import type { WorkspaceCredentialOperationAuthorityV1 } from './credentials/authority'
 
 export interface AgentHarnessFactoryInput {
   tools: AgentTool[]
@@ -132,6 +133,8 @@ export interface RunContext {
   userId?: string
   /** Server-derived operation classification; never copied from browser input. */
   executionClass?: TrustedAgentExecutionClass
+  /** Opaque, verifier-backed authority supplied only by trusted host composition. */
+  credentialAuthority?: WorkspaceCredentialOperationAuthorityV1
   userEmail?: string
   userEmailVerified?: boolean
   /** Canonical storage/live identity for commands and prompts sharing one Pi handle. */

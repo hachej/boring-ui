@@ -7,21 +7,30 @@ import { describe, expect, it } from 'vitest'
 const TESTED_PI_VERSION = '0.84.4'
 
 function resolvedPackageManifest(specifier: string): { name: string; version: string } {
+  const rootNodeModules = join(process.cwd(), '..', '..', 'node_modules')
   return JSON.parse(
-    readFileSync(join(process.cwd(), 'node_modules', specifier, 'package.json'), 'utf8'),
+    readFileSync(join(rootNodeModules, specifier, 'package.json'), 'utf8'),
   ) as { name: string; version: string }
 }
 
 describe('published coordinated Pi contract', () => {
-  it('runs against the exact published coding-agent and pi-ai baseline', () => {
-    expect(resolvedPackageManifest('@mariozechner/pi-coding-agent')).toMatchObject({
-      name: '@earendil-works/pi-coding-agent',
-      version: TESTED_PI_VERSION,
-    })
-    expect(resolvedPackageManifest('@earendil-works/pi-ai')).toMatchObject({
-      name: '@earendil-works/pi-ai',
-      version: TESTED_PI_VERSION,
-    })
+  it('runs against the complete exact published Pi family', () => {
+    const installed = [
+      ['@mariozechner/pi-coding-agent', '@earendil-works/pi-coding-agent'],
+      ['@earendil-works/pi-agent-core', '@earendil-works/pi-agent-core'],
+      ['@earendil-works/pi-ai', '@earendil-works/pi-ai'],
+      ['@earendil-works/pi-client', '@earendil-works/pi-client'],
+      ['@earendil-works/pi-protocol', '@earendil-works/pi-protocol'],
+      ['@earendil-works/pi-telemetry', '@earendil-works/pi-telemetry'],
+      ['@earendil-works/pi-tui', '@earendil-works/pi-tui'],
+    ] as const
+
+    for (const [specifier, publishedName] of installed) {
+      expect(resolvedPackageManifest(specifier)).toMatchObject({
+        name: publishedName,
+        version: TESTED_PI_VERSION,
+      })
+    }
   })
 
   it('preserves modify(undefined) and accepts the tested Codex OAuth shape through ModelRuntime', async () => {

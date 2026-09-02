@@ -16,6 +16,7 @@ import type {
 } from '../shared/chat'
 export type { AgentPromptPayload, PiChatAttachmentResult } from '../shared/chat'
 import type { SessionListOptions, SessionSummary } from '../shared/session'
+import type { WorkspaceCredentialOperationAuthorityV1 } from '../shared/credentials/authority'
 
 export interface PiSessionRequestContext {
   workspaceId?: string
@@ -25,6 +26,8 @@ export interface PiSessionRequestContext {
   authEmailVerified?: boolean
   /** Addressed Gateway binds sessions to the verified workspace/storage scope. */
   sessionAuthority?: 'workspace-scope'
+  /** Trusted host-only credential authority; never accepted from transport JSON. */
+  credentialAuthority?: WorkspaceCredentialOperationAuthorityV1
   requestId: string
 }
 

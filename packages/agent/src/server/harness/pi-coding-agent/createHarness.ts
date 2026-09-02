@@ -18,6 +18,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import type { AgentHarness, AgentSlashCommandSummary, AgentSendInput, RunContext } from "../../../shared/harness.js";
 import { ErrorCode } from "../../../shared/error-codes.js";
+import { CREDENTIAL_ERROR_CODES, CredentialResolutionError } from "../../../shared/credentials/errors.js";
 import { createLogger } from "@hachej/boring-bash/server";
 import type { AgentTool } from "../../../shared/tool.js";
 import type { TelemetrySink } from "../../../shared/telemetry.js";
@@ -33,8 +34,14 @@ import {
 } from "../../piPackages.js";
 import { createResourceSettingsManager } from "./resourceSettingsManager.js";
 
+interface RunContextLease {
+  readonly context: RunContext;
+  active: boolean;
+}
+
 interface PiRunContextState {
   queuedFollowUpContexts: WeakMap<object, RunContext>;
+  activeQueuedLease?: RunContextLease;
 }
 
 interface PiSessionHandle {
@@ -45,6 +52,7 @@ interface PiSessionHandle {
   sessionId: string;
   sessionCtx: SessionCtx;
   runContextState: PiRunContextState;
+  operationScopedCredentials: boolean;
   unsubscribeRunContextListener: () => void;
 }
 
@@ -98,7 +106,7 @@ export type PiHarnessCredentialStore = NonNullable<CreateModelRuntimeOptions["cr
 export interface PiHarnessCredentialStoreFactoryInput {
   /** Immutable identity of the one shared Pi handle/transcript. */
   readonly sessionCtx: Readonly<SessionCtx>;
-  /** Live operation actor; implementations must not retain its return value. */
+  /** Live operation actor; detached async descendants and completed operations return undefined. */
   readonly getRunContext: () => RunContext | undefined;
 }
 
@@ -445,15 +453,22 @@ function rememberQueuedFollowUpRunContexts(
 function updateRunContextStateFromPiEvent(
   state: PiRunContextState,
   event: unknown,
-  activateRunContext: (ctx: RunContext) => void,
+  activateRunContext: (ctx: RunContext) => RunContextLease,
 ): void {
-  if ((event as { type?: unknown }).type !== "message_start") return;
+  const eventType = (event as { type?: unknown }).type;
+  if (eventType === "agent_end") {
+    if (state.activeQueuedLease) state.activeQueuedLease.active = false;
+    state.activeQueuedLease = undefined;
+    return;
+  }
+  if (eventType !== "message_start") return;
   const message = (event as { message?: unknown }).message;
   if (!message || typeof message !== "object") return;
   const ctx = state.queuedFollowUpContexts.get(message);
   if (!ctx) return;
   state.queuedFollowUpContexts.delete(message);
-  activateRunContext(ctx);
+  if (state.activeQueuedLease) state.activeQueuedLease.active = false;
+  state.activeQueuedLease = activateRunContext(ctx);
 }
 
 export function createPiCodingAgentHarness(opts: {
@@ -495,7 +510,11 @@ export function createPiCodingAgentHarness(opts: {
     storageCwd: opts.cwd,
   });
   const piSessions = new Map<string, PiSessionHandle>();
-  const runContextStorage = new AsyncLocalStorage<RunContext>();
+  const runContextStorage = new AsyncLocalStorage<RunContextLease>();
+  const getActiveRunContext = (): RunContext | undefined => {
+    const lease = runContextStorage.getStore();
+    return lease?.active ? lease.context : undefined;
+  };
 
   // Effective Pi resources merge static caller-supplied fields with
   // getHotReloadableResources() output. Pi's DefaultResourceLoader keeps the
@@ -580,18 +599,47 @@ export function createPiCodingAgentHarness(opts: {
   }
 
   async function bindRunContext<T>(ctx: RunContext, run: () => Promise<T>): Promise<T> {
-    return await runContextStorage.run(ctx, run);
+    const lease: RunContextLease = { context: ctx, active: true };
+    try {
+      return await runContextStorage.run(lease, run);
+    } finally {
+      // AsyncLocalStorage descendants retain object identity. Revoking the
+      // lease makes detached timers/tasks fail closed after this operation.
+      lease.active = false;
+    }
+  }
+
+  function activateQueuedRunContext(ctx: RunContext): RunContextLease {
+    const current = runContextStorage.getStore();
+    if (current) current.active = false;
+    const lease: RunContextLease = { context: ctx, active: true };
+    runContextStorage.enterWith(lease);
+    return lease;
   }
 
   function createRunBoundAdapter(handle: PiSessionHandle, sessionId: string, ctx: RunContext): PiAgentSessionAdapter {
+    const assertCredentialQueueMode = (): void => {
+      if (handle.operationScopedCredentials && handle.piSession.followUpMode !== "one-at-a-time") {
+        throw new CredentialResolutionError(
+          CREDENTIAL_ERROR_CODES.AUTHORITY_INVALID,
+          "operation-scoped credentials require one-at-a-time follow-up mode",
+        );
+      }
+    };
     // Pi 0.84 drains its native follow-up queue after an interrupted turn.
     // Supplying the older explicit agent.continue() compatibility hook would
     // submit the same queued follow-up a second time.
     const adapter = createPiAgentSessionAdapter(handle.piSession, { sessionId });
     return {
       ...adapter,
-      prompt: (promptInput) => bindRunContext(ctx, () => adapter.prompt(promptInput)),
-      followUp: (text, options) => bindRunContext(ctx, () => adapter.followUp(text, options)),
+      prompt: (promptInput) => {
+        assertCredentialQueueMode();
+        return bindRunContext(ctx, () => adapter.prompt(promptInput));
+      },
+      followUp: (text, options) => {
+        assertCredentialQueueMode();
+        return bindRunContext(ctx, () => adapter.followUp(text, options));
+      },
       clearFollowUp: (options) => adapter.clearFollowUp(options),
       ...(adapter.continueQueuedFollowUp
         ? { continueQueuedFollowUp: () => bindRunContext(ctx, () => adapter.continueQueuedFollowUp!()) }
@@ -610,8 +658,14 @@ export function createPiCodingAgentHarness(opts: {
     // handle key and is never retained on the runtime.
     const credentialStore = pi.createCredentialStore?.({
       sessionCtx: Object.freeze({ ...sessionCtx }),
-      getRunContext: () => runContextStorage.getStore(),
+      getRunContext: getActiveRunContext,
     });
+    if (pi.createCredentialStore && !credentialStore) {
+      throw new CredentialResolutionError(
+        CREDENTIAL_ERROR_CODES.AUTHORITY_INVALID,
+        "configured credential store factory returned no store",
+      );
+    }
     // Auth/model credentials remain Pi-owned. Without the explicit seam, the
     // compatibility runtime keeps Pi's normal environment/settings/auth sources.
     const { modelRuntime } = await createConfiguredModelRuntime(
@@ -682,6 +736,7 @@ export function createPiCodingAgentHarness(opts: {
       opts.cwd,
       agentDir,
       effectivePackages,
+      credentialStore ? { forceFollowUpMode: "one-at-a-time" } : {},
     )
     const resourceLoader = new DefaultResourceLoader({
       cwd: opts.cwd,
@@ -723,7 +778,7 @@ export function createPiCodingAgentHarness(opts: {
       // adapted tool catalog active. Do NOT pass an explicit empty tool-name
       // allowlist: in the current Pi SDK that disables custom tools too.
       noTools: "builtin",
-      customTools: adaptToolsForPi(opts.tools, sessionId, opts.telemetry, () => runContextStorage.getStore()),
+      customTools: adaptToolsForPi(opts.tools, sessionId, opts.telemetry, getActiveRunContext),
       model,
       thinkingLevel: input.thinkingLevel ?? "off",
       sessionManager,
@@ -732,8 +787,15 @@ export function createPiCodingAgentHarness(opts: {
       ...(resourceLoader ? { resourceLoader } : {}),
     });
 
-    const restoreFollowUpContextWrapper = rememberQueuedFollowUpRunContexts(piSession, runContextState, () => runContextStorage.getStore());
-    const unsubscribePiRunContextListener = piSession.subscribe((event) => updateRunContextStateFromPiEvent(runContextState, event, (ctx) => runContextStorage.enterWith(ctx)));
+    if (credentialStore && piSession.followUpMode !== "one-at-a-time") {
+      throw new CredentialResolutionError(
+        CREDENTIAL_ERROR_CODES.AUTHORITY_INVALID,
+        "operation-scoped credentials require one-at-a-time follow-up mode",
+      );
+    }
+    const restoreFollowUpContextWrapper = rememberQueuedFollowUpRunContexts(piSession, runContextState, getActiveRunContext);
+    const unsubscribePiRunContextListener = piSession.subscribe((event) =>
+      updateRunContextStateFromPiEvent(runContextState, event, activateQueuedRunContext));
     const unsubscribeRunContextListener = () => {
       unsubscribePiRunContextListener();
       restoreFollowUpContextWrapper();
@@ -746,6 +808,7 @@ export function createPiCodingAgentHarness(opts: {
       sessionId: sessionId,
       sessionCtx,
       runContextState,
+      operationScopedCredentials: Boolean(credentialStore),
       unsubscribeRunContextListener,
     };
     piSessions.set(sessionCacheKey(sessionId, sessionCtx), handle);

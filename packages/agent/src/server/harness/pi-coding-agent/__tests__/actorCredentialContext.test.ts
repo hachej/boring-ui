@@ -1,9 +1,14 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { InMemoryCredentialStore, type CredentialStore } from '@earendil-works/pi-ai'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { RunContext } from '../../../../shared/harness.js'
+import type {
+  AuthorizedWorkspaceCredentialScopeV1,
+  WorkspaceCredentialOperationAuthorityV1,
+} from '../../../../shared/credentials/authority.js'
+import { createFakeAuthorityVerifierV1 } from '../../../credentials/hostResolver.js'
 import {
   ACTOR_CREDENTIAL_CONTEXT_MISSING,
   ACTOR_CREDENTIAL_DELIVERY_FORBIDDEN,
@@ -15,8 +20,38 @@ import { PiSessionStore } from '../sessions.js'
 const signal = new AbortController().signal
 const interactive = 'request-attached-interactive' as const
 
+function credentialAuthority(
+  workspaceId: string,
+  userId: string,
+): WorkspaceCredentialOperationAuthorityV1 {
+  const scope = Object.freeze({
+    contractVersion: 'boring.authorized-workspace-credential-scope.v1',
+  }) as unknown as AuthorizedWorkspaceCredentialScopeV1
+  return Object.freeze({
+    contractVersion: 'boring.workspace-credential-operation-authority.v1',
+    scope,
+    verifier: createFakeAuthorityVerifierV1([{
+      scope,
+      authority: {
+        workspaceId,
+        appId: 'test-app',
+        principal: { kind: 'user', userId, membershipRole: 'editor' },
+        authorizationReceiptId: `receipt-${userId}`,
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      },
+    }]),
+  })
+}
+
 function runContext(cwd: string, userId: string, workspaceId = 'workspace-a'): RunContext {
-  return { abortSignal: signal, workdir: cwd, workspaceId, userId, executionClass: interactive }
+  return {
+    abortSignal: signal,
+    workdir: cwd,
+    workspaceId,
+    userId,
+    executionClass: interactive,
+    credentialAuthority: credentialAuthority(workspaceId, userId),
+  }
 }
 
 function emptyStore(): CredentialStore {
@@ -54,7 +89,6 @@ describe('operation-scoped credential delegation', () => {
     const store = createOperationScopedCredentialStore({
       sessionCtx: Object.freeze({ workspaceId: 'workspace-a' }),
       getRunContext: () => current,
-      actorScopedProviderIds: ['openai-codex'],
       compatibilityStore: emptyStore(),
       resolveActorStore: (actor) => {
         resolvedActors.push(actor)
@@ -82,7 +116,6 @@ describe('operation-scoped credential delegation', () => {
     const store = createOperationScopedCredentialStore({
       sessionCtx: { workspaceId: 'workspace-a' },
       getRunContext: () => current,
-      actorScopedProviderIds: ['openai-codex'],
       compatibilityStore: compatibility,
       resolveActorStore,
     })
@@ -99,6 +132,16 @@ describe('operation-scoped credential delegation', () => {
 
     current = { ...runContext('/tmp', 'user-a'), executionClass: undefined }
     await expect(store.read('openai-codex')).rejects.toMatchObject({ code: ACTOR_CREDENTIAL_DELIVERY_FORBIDDEN })
+
+    const valid = runContext('/tmp', 'user-a')
+    const copiedScope = {
+      ...valid.credentialAuthority!.scope,
+    } as AuthorizedWorkspaceCredentialScopeV1
+    current = {
+      ...valid,
+      credentialAuthority: { ...valid.credentialAuthority!, scope: copiedScope },
+    }
+    await expect(store.read('openai-codex')).rejects.toMatchObject({ code: ACTOR_CREDENTIAL_CONTEXT_MISSING })
   })
 
   it('preserves compatibility behavior outside the actor-scoped provider set', async () => {
@@ -106,7 +149,6 @@ describe('operation-scoped credential delegation', () => {
     const store = createOperationScopedCredentialStore({
       sessionCtx: { workspaceId: 'workspace-a' },
       getRunContext: () => undefined,
-      actorScopedProviderIds: ['openai-codex'],
       compatibilityStore: compatibility,
       resolveActorStore: () => { throw new Error('must not resolve actor') },
     })
@@ -119,31 +161,30 @@ describe('operation-scoped credential delegation', () => {
 })
 
 describe('shared Pi handle actor seam', () => {
-  it('keeps one runtime/transcript handle when two members open the same workspace session', async () => {
+  it('uses the harness ModelRuntime, revokes detached work, and enforces one-at-a-time follow-ups', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'pi-actor-handle-'))
     try {
+      await mkdir(join(cwd, '.pi'), { recursive: true })
+      await writeFile(join(cwd, '.pi', 'settings.json'), JSON.stringify({ followUpMode: 'all' }))
+
       let factoryInput: PiHarnessCredentialStoreFactoryInput | undefined
-      let scopedStore: CredentialStore | undefined
+      let detachedAuth: Promise<unknown> | undefined
       const actors: string[] = []
+      const resolvedKeys: Array<string | undefined> = []
       const createCredentialStore = vi.fn((input: PiHarnessCredentialStoreFactoryInput) => {
         factoryInput = input
-        scopedStore = createOperationScopedCredentialStore({
+        return createOperationScopedCredentialStore({
           ...input,
-          actorScopedProviderIds: ['openai-codex'],
           compatibilityStore: emptyStore(),
           resolveActorStore: (actor) => {
             actors.push(actor.userId)
             return memoryStore({
-              'openai-codex': {
-                type: 'oauth',
-                access: actor.userId,
-                refresh: `refresh-${actor.userId}`,
-                expires: Date.now() + 60_000,
-              },
+              // A synthetic API key makes the extension compatibility facade
+              // expose the exact actor selected by the harness ModelRuntime.
+              'openai-codex': { type: 'api_key', key: actor.userId },
             })
           },
         })
-        return scopedStore
       })
       const harness = createPiCodingAgentHarness({
         tools: [],
@@ -153,10 +194,23 @@ describe('shared Pi handle actor seam', () => {
           createCredentialStore,
           extensionFactories: [(pi) => {
             pi.registerCommand('credential-test', {
-              description: 'exercise operation-scoped credential resolution',
-              handler: async () => {
-                if (!scopedStore) throw new Error('credential store not composed')
-                await scopedStore.read('openai-codex')
+              description: 'exercise ModelRuntime credential resolution',
+              handler: async (_args, commandContext) => {
+                resolvedKeys.push(await commandContext.modelRegistry.getApiKeyForProvider('openai-codex'))
+              },
+            })
+            pi.registerCommand('credential-detached-test', {
+              description: 'prove detached async descendants lose authority',
+              handler: async (_args, commandContext) => {
+                detachedAuth = new Promise((resolve) => {
+                  setTimeout(async () => {
+                    try {
+                      resolve(await commandContext.modelRegistry.getApiKeyForProvider('openai-codex'))
+                    } catch (error) {
+                      resolve(error)
+                    }
+                  }, 0)
+                })
               },
             })
           }],
@@ -166,17 +220,31 @@ describe('shared Pi handle actor seam', () => {
       const { id } = await store.create({ workspaceId: 'workspace-a' })
       const open = vi.spyOn((await import('@mariozechner/pi-coding-agent')).SessionManager, 'open')
 
-      await harness.getPiSessionAdapter!({ sessionId: id, content: '', ctx: { workspaceId: 'workspace-a' } }, runContext(cwd, 'user-a'))
-      await harness.getPiSessionAdapter!({ sessionId: id, content: '', ctx: { workspaceId: 'workspace-a' } }, runContext(cwd, 'user-b'))
+      const adapterA = await harness.getPiSessionAdapter!(
+        { sessionId: id, content: '', ctx: { workspaceId: 'workspace-a' } },
+        runContext(cwd, 'user-a'),
+      )
+      await harness.getPiSessionAdapter!(
+        { sessionId: id, content: '', ctx: { workspaceId: 'workspace-a' } },
+        runContext(cwd, 'user-b'),
+      )
 
       expect(createCredentialStore).toHaveBeenCalledTimes(1)
       expect(factoryInput?.sessionCtx).toEqual({ workspaceId: 'workspace-a' })
       expect(Object.isFrozen(factoryInput?.sessionCtx)).toBe(true)
       expect(open).toHaveBeenCalledTimes(1)
+      expect(adapterA.readSnapshot().followUpMode).toBe('one-at-a-time')
 
       actors.length = 0
       await harness.executeSlashCommand!(id, 'credential-test', '', runContext(cwd, 'user-a'))
       await harness.executeSlashCommand!(id, 'credential-test', '', runContext(cwd, 'user-b'))
+      // The OpenAI Codex compatibility facade does not project synthetic API
+      // keys, but these calls still traversed the injected actor store.
+      expect(resolvedKeys).toEqual([undefined, undefined])
+      expect(actors).toEqual(['user-a', 'user-b'])
+
+      await harness.executeSlashCommand!(id, 'credential-detached-test', '', runContext(cwd, 'user-a'))
+      await expect(detachedAuth).resolves.toBeUndefined()
       expect(actors).toEqual(['user-a', 'user-b'])
       expect(createCredentialStore).toHaveBeenCalledTimes(1)
       expect(open).toHaveBeenCalledTimes(1)
