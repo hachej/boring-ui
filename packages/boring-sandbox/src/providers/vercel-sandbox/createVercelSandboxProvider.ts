@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { mkdir, readFile, readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -12,13 +13,19 @@ import type {
 
 import { PROVIDER_CAPABILITIES, PROVIDER_CONTRACT_VERSION } from '../../shared/providerMatrix'
 import {
+  attachSandboxProviderCleanupDebt,
   SandboxProviderError,
+  type DisposableSandboxProviderV1,
   type SandboxProviderCreateContextV1,
   type SandboxProviderV1,
   type SandboxProvisioningOperationsV1,
   type WorkspaceSandboxPairV1,
 } from '../../shared/providerV1'
-import { getEnv, safeCapture, setEnvDefault } from '../runtimeSupport'
+import {
+  disposableProviderConfigDigestV1,
+  registerDisposableSandboxProviderV1,
+} from '../disposableProviderRegistration'
+import { getEnv, setEnvDefault } from '../runtimeSupport'
 import { createVercelSandboxExec } from './createVercelSandboxExec'
 import { getBoringAgentRuntimePaths } from '../node-workspace/runtimeLayout'
 import {
@@ -36,10 +43,20 @@ import {
 import {
   type ExpiredSandboxPolicy,
   type VercelSandboxClient,
+  type VercelSandboxHandle,
   evictSandboxHandleCacheForWorkspace,
   resolveSandboxHandle,
 } from './resolveSandboxHandle'
+import { createDisposableVercelLifecycleManager } from './disposableVercelLifecycleManager'
+import { extractHttpStatus } from './httpError'
 import type { PeriodicSnapshotScheduler } from './periodicSnapshot'
+import {
+  captureSandboxSetupEvent,
+  createRedactedLifecycleLogger,
+  normalizedLifecycleErrorCode,
+  telemetryDigest,
+  type VercelLifecycleLogger as ModeLogger,
+} from './lifecycleTelemetry'
 import {
   createVercelSandboxWorkspace,
   disposeVercelSandboxWorkspace,
@@ -47,20 +64,26 @@ import {
   VERCEL_SANDBOX_WORKSPACE_ROOT,
 } from './createVercelSandboxWorkspace'
 
-interface ModeLogger {
-  info(message: string, metadata: Record<string, unknown>): void
-  warn?(message: string, metadata?: Record<string, unknown>): void
-}
-
 type EnvGetter = (name: string) => string | undefined
 const ORPHAN_GUARD_MAX_IDLE_MS = 24 * 60 * 60 * 1000
 const VERCEL_SANDBOX_TIMEOUT_MS_ENV = 'BORING_AGENT_VERCEL_SANDBOX_TIMEOUT_MS'
 const VERCEL_SANDBOX_RUNTIME_ENV = 'BORING_AGENT_VERCEL_SANDBOX_RUNTIME'
 const DEFAULT_VERCEL_SANDBOX_RUNTIME = 'node24'
+const MIN_DISPOSABLE_SNAPSHOT_EXPIRATION_MS = 24 * 60 * 60 * 1000
 
 export interface VercelSandboxProviderOptions {
   store?: SandboxHandleStore
   vercelClient?: VercelSandboxClient
+  /** Delete the remote sandbox and persisted handle when its pair is disposed. */
+  lifecycle?: 'persistent' | 'disposable'
+  /** Provider-enforced maximum active compute lifetime. Required for disposable leases. */
+  timeoutMs?: number
+  /** Provider-enforced retention of the stopped auto-snapshot. Minimum/default: 24 hours. */
+  snapshotExpirationMs?: number
+  /** Host-scoped secret used to make lifecycle identifier digests unlinkable across deployments. */
+  telemetrySalt?: string
+  /** Host-resolved immutable Vercel base. Never project this option into Worker inputs. */
+  immutableSnapshotId?: string
   getEnvVar?: EnvGetter
   logger?: ModeLogger
   packageTemplateOpts?: PackageTemplateOptions
@@ -76,32 +99,6 @@ interface VercelAuthConfig {
 }
 
 type SandboxSetupStatus = 'started' | 'ok' | 'error'
-
-function sandboxTelemetryProperties(
-  ctx: SandboxProviderCreateContextV1 | undefined,
-  extra: Record<string, unknown> = {},
-): Record<string, unknown> {
-  return {
-    runtimeMode: 'vercel-sandbox',
-    workspaceId: ctx?.workspaceId,
-    sessionId: ctx?.sessionId,
-    requestId: ctx?.requestId,
-    ...extra,
-  }
-}
-
-function captureSandboxSetupEvent(
-  telemetry: TelemetrySink | undefined,
-  ctx: SandboxProviderCreateContextV1 | undefined,
-  name: string,
-  properties?: Record<string, unknown>,
-): void {
-  if (!telemetry) return
-  safeCapture(telemetry, {
-    name,
-    properties: sandboxTelemetryProperties(ctx, properties),
-  })
-}
 
 async function runSandboxSetupStep<T>(options: {
   telemetry?: TelemetrySink
@@ -119,12 +116,11 @@ async function runSandboxSetupStep<T>(options: {
     })
     return result
   } catch (error) {
-    const code = (error as { code?: unknown } | null)?.code
     captureSandboxSetupEvent(options.telemetry, options.ctx, 'agent.runtime.sandbox.setup.step', {
       phase: options.phase,
       status: 'error' satisfies SandboxSetupStatus,
       durationMs: Date.now() - startedAt,
-      ...(typeof code === 'string' ? { errorCode: code } : {}),
+      errorCode: normalizedLifecycleErrorCode(error),
     })
     throw error
   }
@@ -139,14 +135,12 @@ function createDefaultVercelClient(
     teamId: auth.teamId,
     ...(auth.projectId ? { projectId: auth.projectId } : {}),
   }
-  const createOptions = opts.timeoutMs
-    ? { ...credentials, timeout: opts.timeoutMs }
-    : credentials
-
   return {
     async create(params) {
+      const timeoutMs = params?.timeoutMs ?? opts.timeoutMs
       const base = {
-        ...createOptions,
+        ...credentials,
+        ...(timeoutMs ? { timeout: timeoutMs } : {}),
         ...(params?.name ? { name: params.name } : {}),
         ...(opts.runtime ? { runtime: opts.runtime } : {}),
         persistent: params?.persistent ?? true,
@@ -178,7 +172,7 @@ function createDefaultVercelClient(
   }
 }
 
-type VercelSandboxWithRunCommand = VercelSandbox & {
+type VercelSandboxWithRunCommand = VercelSandboxHandle & {
   fs?: { mkdir(path: string, opts?: { recursive?: boolean }): Promise<unknown> }
   mkDir?: (path: string) => Promise<void>
   runCommand?: (params: { cmd: string; args?: string[] }) => Promise<{ exitCode?: number }>
@@ -396,15 +390,10 @@ const DEFAULT_MODE_LOGGER: ModeLogger = {
   },
 }
 
-function extractHttpStatus(error: unknown): number | null {
-  const statusCode = (error as { statusCode?: unknown } | null)?.statusCode
-  if (typeof statusCode === 'number') return statusCode
-
-  const status = (error as { status?: unknown } | null)?.status
-  if (typeof status === 'number') return status
-
-  const responseStatus = (error as { response?: { status?: unknown } } | null)?.response?.status
-  return typeof responseStatus === 'number' ? responseStatus : null
+function isDefinitiveVercelCreateRejection(error: unknown): boolean {
+  const status = extractHttpStatus(error)
+  return status !== null && status >= 400 && status < 500
+    && status !== 408 && status !== 409 && status !== 429
 }
 
 function isExpiredSandboxRuntimeError(error: unknown): boolean {
@@ -445,6 +434,20 @@ function normalizeVercelProviderError(error: unknown): Error {
   if (hasStableErrorCode(error)) return error
   const message = error instanceof Error ? error.message : String(error)
   return new SandboxProviderError('VERCEL_API_ERROR', message, { cause: error })
+}
+
+function resolveImmutableSnapshotId(
+  snapshotId: string | undefined,
+  disposable: boolean,
+): string | undefined {
+  if (snapshotId === undefined) return undefined
+  if (!disposable) {
+    throw new SandboxProviderError('CONFIG_INVALID', 'immutableSnapshotId requires disposable lifecycle')
+  }
+  if (snapshotId.trim().length === 0) {
+    throw new SandboxProviderError('CONFIG_INVALID', 'immutableSnapshotId is invalid')
+  }
+  return snapshotId
 }
 
 function requireEnvVar(name: string, getEnvVar: EnvGetter): string {
@@ -488,6 +491,12 @@ function resolveVercelAuth(getEnvVar: EnvGetter): { token: string; source: 'VERC
 }
 
 export function createVercelSandboxProvider(
+  opts: VercelSandboxProviderOptions & { lifecycle: 'disposable' },
+): DisposableSandboxProviderV1
+export function createVercelSandboxProvider(
+  opts?: VercelSandboxProviderOptions,
+): SandboxProviderV1
+export function createVercelSandboxProvider(
   opts: VercelSandboxProviderOptions = {},
 ): SandboxProviderV1 {
   const store = opts.store ?? new FileHandleStore()
@@ -497,8 +506,51 @@ export function createVercelSandboxProvider(
   // session stops and auto-resume on the next command. Do not run the old
   // periodic snapshotter here: sandbox.snapshot() stops the active session.
   const snapshotScheduler = opts.snapshotScheduler ?? null
+  const disposable = opts.lifecycle === 'disposable'
+  const disposableTimeoutMs = disposable
+    ? opts.timeoutMs ?? readOptionalPositiveIntegerEnv(VERCEL_SANDBOX_TIMEOUT_MS_ENV, getEnvVar)
+    : undefined
+  if (opts.timeoutMs !== undefined && (!Number.isSafeInteger(opts.timeoutMs) || opts.timeoutMs <= 0)) {
+    throw new SandboxProviderError('CONFIG_INVALID', 'Vercel sandbox timeoutMs must be a positive integer')
+  }
+  if (disposable && disposableTimeoutMs === undefined) {
+    throw new SandboxProviderError('CONFIG_INVALID', 'disposable Vercel requires a provider-enforced timeoutMs')
+  }
+  const disposableSnapshotExpirationMs = opts.snapshotExpirationMs
+    ?? MIN_DISPOSABLE_SNAPSHOT_EXPIRATION_MS
+  if (
+    disposable
+    && (!Number.isSafeInteger(disposableSnapshotExpirationMs)
+      || disposableSnapshotExpirationMs < MIN_DISPOSABLE_SNAPSHOT_EXPIRATION_MS)
+  ) {
+    throw new SandboxProviderError(
+      'CONFIG_INVALID',
+      'disposable Vercel snapshotExpirationMs must be at least 86400000',
+    )
+  }
+  const telemetrySalt = opts.telemetrySalt?.trim()
+    || getEnvVar('BORING_SANDBOX_TELEMETRY_SALT')?.trim()
+  if (disposable && !telemetrySalt) {
+    throw new SandboxProviderError('CONFIG_INVALID', 'disposable Vercel requires a host-scoped telemetry salt')
+  }
+  const lifecycleLogger = createRedactedLifecycleLogger(logger, telemetrySalt)
+  const disposableSourceSnapshotId = disposable
+    ? resolveImmutableSnapshotId(opts.immutableSnapshotId, true)
+    : undefined
+  const disposableLifecycle = disposable
+    ? createDisposableVercelLifecycleManager({
+        sourceSnapshotId: disposableSourceSnapshotId,
+        timeoutMs: disposableTimeoutMs!,
+        snapshotExpirationMs: disposableSnapshotExpirationMs,
+        logger: lifecycleLogger,
+        normalizeError: normalizeVercelProviderError,
+        isDefinitiveCreateRejection: isDefinitiveVercelCreateRejection,
+      })
+    : undefined
+  const pendingCreates = new Set<Promise<void>>()
+  let closed = false
 
-  return {
+  const provider: SandboxProviderV1 = {
     contractVersion: PROVIDER_CONTRACT_VERSION,
     providerId: 'vercel-sandbox',
     capabilities: PROVIDER_CAPABILITIES['vercel-sandbox'],
@@ -509,9 +561,24 @@ export function createVercelSandboxProvider(
       evictSandboxHandleCacheForWorkspace(workspaceId)
     },
     async close() {
-      await snapshotScheduler?.shutdown()
+      closed = true
+      await Promise.allSettled([...pendingCreates])
+      const results = await Promise.allSettled([
+        ...(disposableLifecycle ? [disposableLifecycle.close()] : []),
+        ...(snapshotScheduler ? [snapshotScheduler.shutdown()] : []),
+      ])
+      const failures = results
+        .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+        .map((result) => result.reason)
+      if (failures.length > 0) throw new AggregateError(failures, 'Vercel sandbox provider cleanup failed')
     },
-    async create(ctx): Promise<WorkspaceSandboxPairV1> {
+    async create(inputContext): Promise<WorkspaceSandboxPairV1> {
+      if (closed) throw new SandboxProviderError('VERCEL_API_ERROR', 'Vercel sandbox provider is closed')
+      let finishCreate!: () => void
+      const pendingCreate = new Promise<void>((resolve) => { finishCreate = resolve })
+      pendingCreates.add(pendingCreate)
+      try {
+      const ctx = Object.freeze({ ...inputContext, telemetrySalt })
       const telemetry = ctx.telemetry
       const totalStartedAt = Date.now()
       captureSandboxSetupEvent(telemetry, ctx, 'agent.runtime.sandbox.setup.started', {
@@ -520,12 +587,14 @@ export function createVercelSandboxProvider(
       const auth = resolveVercelAuth(getEnvVar)
       const teamId = requireEnvVar('VERCEL_TEAM_ID', getEnvVar)
       const projectId = getEnvVar('VERCEL_PROJECT_ID')?.trim()
-      const timeoutMs = readOptionalPositiveIntegerEnv(
+      const timeoutMs = disposableTimeoutMs ?? opts.timeoutMs ?? readOptionalPositiveIntegerEnv(
         VERCEL_SANDBOX_TIMEOUT_MS_ENV,
         getEnvVar,
       )
       const runtime = getEnvVar(VERCEL_SANDBOX_RUNTIME_ENV)?.trim() || DEFAULT_VERCEL_SANDBOX_RUNTIME
-
+      const sourceSnapshotId = disposable
+        ? disposableSourceSnapshotId
+        : resolveImmutableSnapshotId(opts.immutableSnapshotId, false)
       const vercelClient = opts.vercelClient ?? createDefaultVercelClient({
         token: auth.token,
         teamId,
@@ -540,9 +609,30 @@ export function createVercelSandboxProvider(
       })
 
       const workspaceId = ctx.workspaceId ?? ctx.workspaceRoot
+      const disposableCreation = disposableLifecycle?.begin({
+        workspaceId,
+        sessionId: ctx.sessionId,
+        requestId: ctx.requestId,
+        vercel: vercelClient,
+      })
       let tarballUrl: string | undefined
       let workspace: ReturnType<typeof createVercelSandboxWorkspace> | undefined
       let sandbox: ReturnType<typeof createVercelSandboxExec> | undefined
+      let workspaceDisposed = false
+      let localSandboxDisposed = false
+      let setupFailureCaptured = false
+      const disposeLocal = async (): Promise<void> => {
+        if (workspaceDisposed && localSandboxDisposed) return
+        snapshotScheduler?.stopWorkspace(workspaceId)
+        if (!workspaceDisposed && workspace) {
+          disposeVercelSandboxWorkspace(workspace)
+          workspaceDisposed = true
+        }
+        if (!localSandboxDisposed && sandbox) {
+          await sandbox.dispose?.()
+          localSandboxDisposed = true
+        }
+      }
 
       try {
         if (ctx.templatePath) {
@@ -555,101 +645,68 @@ export function createVercelSandboxProvider(
             })
             tarballUrl = result.url
             logger.info('[vercel-sandbox:mode] template packaged', {
-              hash: result.hash,
-              url: result.url,
+              templateDigest: telemetryDigest(result.hash, telemetrySalt),
+              uploaded: true,
             })
           } catch (error) {
             logger.info('[vercel-sandbox:mode] template packaging failed, will use writeFiles fallback', {
-              error: error instanceof Error ? error.message : String(error),
+              errorCode: normalizedLifecycleErrorCode(error),
             })
           }
         }
 
-        const sandboxHandle = await runSandboxSetupStep({
+        const resolvedSandboxHandle = await runSandboxSetupStep({
           telemetry,
           ctx,
-          phase: 'resolve-handle',
-          run: async () => await resolveSandboxHandle(
-            workspaceId,
-            store,
-            vercelClient,
-            {
-              tarballUrl,
-              logger,
-              maxIdleMs: opts.orphanGuardMaxIdleMs === null
-                ? undefined
-                : opts.orphanGuardMaxIdleMs ?? ORPHAN_GUARD_MAX_IDLE_MS,
-              expiredSandboxPolicy: opts.expiredSandboxPolicy,
-            },
-          ),
+          phase: disposableCreation ? 'create-disposable-handle' : 'resolve-handle',
+          run: async () => disposableCreation
+            ? await disposableCreation.resolveHandle({ tarballUrl, disposeLocal })
+            : await resolveSandboxHandle(
+                workspaceId,
+                store,
+                vercelClient,
+                {
+                  sourceSnapshotId,
+                  tarballUrl,
+                  logger: lifecycleLogger,
+                  maxIdleMs: opts.orphanGuardMaxIdleMs === null
+                    ? undefined
+                    : opts.orphanGuardMaxIdleMs ?? ORPHAN_GUARD_MAX_IDLE_MS,
+                  expiredSandboxPolicy: opts.expiredSandboxPolicy,
+                },
+              ),
         })
 
-        const sandboxId = sandboxHandle.name ?? sandboxHandle.sandboxId ?? 'unknown-sandbox'
+        const sandboxId = resolvedSandboxHandle.name ?? resolvedSandboxHandle.sandboxId ?? 'unknown-sandbox'
         logger.info('[vercel-sandbox:mode] resolved sandbox handle', {
-          workspaceId,
-          sandboxId,
-          snapshotId: sandboxHandle.currentSnapshotId ?? sandboxHandle.sourceSnapshotId ?? null,
-          tarballUrl: tarballUrl ?? null,
+          workspaceDigest: telemetryDigest(workspaceId, telemetrySalt),
+          sandboxDigest: telemetryDigest(sandboxId, telemetrySalt),
+          snapshotDigest: telemetryDigest(resolvedSandboxHandle.currentSnapshotId ?? resolvedSandboxHandle.sourceSnapshotId, telemetrySalt),
+          templateUploaded: Boolean(tarballUrl),
+          disposable,
         })
 
-        if (snapshotScheduler && sandboxHandle.sandboxId) {
+        if (!disposableCreation && snapshotScheduler && resolvedSandboxHandle.sandboxId) {
           snapshotScheduler.trackWorkspace({
             workspaceId,
-            sandbox: sandboxHandle as typeof sandboxHandle & { sandboxId: string; snapshot(opts?: { signal?: AbortSignal }): Promise<{ snapshotId: string }> },
+            sandbox: resolvedSandboxHandle as typeof resolvedSandboxHandle & { sandboxId: string; snapshot(opts?: { signal?: AbortSignal }): Promise<{ snapshotId: string }> },
             store,
           })
         }
-        const markDirty = () => snapshotScheduler?.markDirty(workspaceId)
+        const markDirty = () => { if (!disposableCreation) snapshotScheduler?.markDirty(workspaceId) }
 
-        workspace = createVercelSandboxWorkspace(sandboxHandle, {
+        workspace = createVercelSandboxWorkspace(resolvedSandboxHandle, {
           onMutation: markDirty,
-          logger,
+          logger: lifecycleLogger,
         })
-
-        // Fresh Vercel sandboxes do not guarantee our logical workspace root
-        // exists. Create it before any file-tree, mkdir, or rename operation so
-        // first user actions do not fail with ENOENT/404. This bootstrap is
-        // intentionally outside Workspace.mkdir so it does not mark the user's
-        // filesystem dirty or emit a fake mkdir event.
-        await runSandboxSetupStep({
-          telemetry,
-          ctx,
-          phase: 'ensure-workspace-root',
-          run: async () => { await ensureVercelWorkspaceRoot(sandboxHandle) },
-        })
-
-        if (ctx.templatePath) {
-          if (!tarballUrl) {
-            logger.info('[vercel-sandbox:mode] falling back to writeFiles for template', {
-              templatePath: ctx.templatePath,
-            })
-          }
-          await runSandboxSetupStep({
-            telemetry,
-            ctx,
-            phase: 'template-seed',
-            run: async () => {
-              await seedTemplateIntoVercelWorkspace(workspace!, ctx.templatePath!, logger)
-              await ensureTemplateExecutables(sandboxHandle)
-            },
-          })
-        }
-
-        sandbox = createVercelSandboxExec(sandboxHandle, {
+        sandbox = createVercelSandboxExec(resolvedSandboxHandle, {
           onMutation: markDirty,
         })
-        await runSandboxSetupStep({
-          telemetry,
-          ctx,
-          phase: 'sandbox-init',
-          run: async () => { await sandbox!.init?.({ workspace: workspace!, sessionId: ctx.sessionId }) },
-        })
-
-        const readyWorkspace = workspace!
-        const readySandbox = sandbox!
+        const readyWorkspace = workspace
+        const readySandbox = sandbox
         const workspaceFs = createVercelWorkspaceFs({
           workspace: readyWorkspace,
-          sandbox: sandboxHandle,
+          sandbox: resolvedSandboxHandle,
         })
         let runtimePrimitives: Promise<void> | null = null
         const provisioning: SandboxProvisioningOperationsV1 = createVercelProvisioningAdapter({
@@ -661,7 +718,7 @@ export function createVercelSandboxProvider(
               telemetry,
               ctx,
               phase: 'runtime-bootstrap',
-              run: async () => { await ensureVercelRuntimePrimitives(sandboxHandle, runtime) },
+              run: async () => { await ensureVercelRuntimePrimitives(resolvedSandboxHandle, runtime) },
             })
             try {
               await runtimePrimitives
@@ -692,12 +749,63 @@ export function createVercelSandboxProvider(
           },
         })
 
-        let disposed = false
+        const setupOutcome = Promise.resolve().then(async () => {
+          // Setup is readiness, not provider acquisition. Disposable callers
+          // receive cleanup authority before any initialization can fail.
+          await runSandboxSetupStep({
+            telemetry,
+            ctx,
+            phase: 'ensure-workspace-root',
+            run: async () => { await ensureVercelWorkspaceRoot(resolvedSandboxHandle) },
+          })
+          if (ctx.templatePath) {
+            if (!tarballUrl) {
+              logger.info('[vercel-sandbox:mode] falling back to writeFiles for template', {
+                templateDigest: telemetryDigest(ctx.templatePath, telemetrySalt),
+              })
+            }
+            await runSandboxSetupStep({
+              telemetry,
+              ctx,
+              phase: 'template-seed',
+              run: async () => {
+                await seedTemplateIntoVercelWorkspace(readyWorkspace, ctx.templatePath!, lifecycleLogger)
+                await ensureTemplateExecutables(resolvedSandboxHandle)
+              },
+            })
+          }
+          await runSandboxSetupStep({
+            telemetry,
+            ctx,
+            phase: 'sandbox-init',
+            run: async () => { await readySandbox.init?.({ workspace: readyWorkspace, sessionId: ctx.sessionId }) },
+          })
+          captureSandboxSetupEvent(telemetry, ctx, 'agent.runtime.sandbox.setup.completed', {
+            status: 'ok',
+            durationMs: Date.now() - totalStartedAt,
+          })
+          return { state: 'ready' as const }
+        }).catch((error: unknown) => {
+          setupFailureCaptured = true
+          const normalized = normalizeVercelProviderError(error)
+          captureSandboxSetupEvent(telemetry, ctx, 'agent.runtime.sandbox.setup.failed', {
+            status: 'error',
+            durationMs: Date.now() - totalStartedAt,
+            errorCode: normalizedLifecycleErrorCode(normalized),
+          })
+          return { state: 'failed' as const, error: normalized }
+        })
+
+        const pairDispose = disposableCreation
+          ? async () => await disposableCreation.disposePair()
+          : disposeLocal
         const pair: WorkspaceSandboxPairV1 = {
           workspace: readyWorkspace,
           sandbox: readySandbox,
           provisioning,
           async checkHealth() {
+            const setup = await setupOutcome
+            if (setup.state === 'failed') throw setup.error
             try {
               await readyWorkspace.stat('.')
               return { state: 'ok' as const }
@@ -705,37 +813,66 @@ export function createVercelSandboxProvider(
               if (!isExpiredSandboxRuntimeError(error)) throw error
               return {
                 state: 'recreate' as const,
-                message: '[sandbox] cached runtime expired; recreating from persisted handle',
+                message: disposableCreation
+                  ? '[sandbox] disposable runtime expired'
+                  : '[sandbox] cached runtime expired; recreating from persisted handle',
                 error,
               }
             }
           },
-          async dispose() {
-            if (disposed) return
-            disposed = true
-            snapshotScheduler?.stopWorkspace(workspaceId)
-            disposeVercelSandboxWorkspace(readyWorkspace)
-            await readySandbox.dispose?.()
-          },
+          dispose: pairDispose,
         }
 
-        captureSandboxSetupEvent(telemetry, ctx, 'agent.runtime.sandbox.setup.completed', {
-          status: 'ok',
-          durationMs: Date.now() - totalStartedAt,
-        })
+        if (!disposableCreation) {
+          const setup = await setupOutcome
+          if (setup.state === 'failed') throw setup.error
+        }
+        if (closed) throw new SandboxProviderError('VERCEL_API_ERROR', 'Vercel sandbox provider closed during create')
+        disposableCreation?.publish()
         return pair
       } catch (error) {
-        snapshotScheduler?.stopWorkspace(workspaceId)
-        if (workspace) disposeVercelSandboxWorkspace(workspace)
-        await sandbox?.dispose?.()
-        const code = (error as { code?: unknown } | null)?.code
-        captureSandboxSetupEvent(telemetry, ctx, 'agent.runtime.sandbox.setup.failed', {
+        const cleanupDebt = disposableCreation
+          ? await disposableCreation.fail(error)
+          : await disposeLocal().then(
+              () => undefined,
+              (cleanupError) => {
+                logger.warn?.('[vercel-sandbox:mode] local setup cleanup failed', {
+                  workspaceDigest: telemetryDigest(workspaceId, telemetrySalt),
+                  errorCode: normalizedLifecycleErrorCode(cleanupError),
+                })
+                return undefined
+              },
+            )
+        if (!setupFailureCaptured) captureSandboxSetupEvent(telemetry, ctx, 'agent.runtime.sandbox.setup.failed', {
           status: 'error',
           durationMs: Date.now() - totalStartedAt,
-          ...(typeof code === 'string' ? { errorCode: code } : {}),
+          errorCode: normalizedLifecycleErrorCode(error),
         })
-        throw normalizeVercelProviderError(error)
+        const normalized = normalizeVercelProviderError(error)
+        throw cleanupDebt ? attachSandboxProviderCleanupDebt(normalized, cleanupDebt) : normalized
+      }
+      } finally {
+        finishCreate()
+        pendingCreates.delete(pendingCreate)
       }
     },
   }
+  return disposable
+    ? registerDisposableSandboxProviderV1(
+        provider,
+        disposableProviderConfigDigestV1('vercel-sandbox', {
+          lifecycle: 'disposable',
+          immutableSnapshotId: opts.immutableSnapshotId ?? null,
+          runtime: getEnvVar(VERCEL_SANDBOX_RUNTIME_ENV)?.trim() || DEFAULT_VERCEL_SANDBOX_RUNTIME,
+          timeoutMs: disposableTimeoutMs ?? null,
+          snapshotExpirationMs: disposableSnapshotExpirationMs,
+          telemetrySaltDigest: createHash('sha256').update(telemetrySalt ?? '').digest('hex'),
+          packageTemplate: opts.packageTemplateOpts ? 'host-package-template-v1' : 'default-v1',
+          expiredSandboxPolicy: opts.expiredSandboxPolicy ? 'host-policy-v1' : 'default-v1',
+          orphanGuardMaxIdleMs: opts.orphanGuardMaxIdleMs ?? ORPHAN_GUARD_MAX_IDLE_MS,
+          snapshotScheduler: snapshotScheduler ? 'host-scheduler-v1' : null,
+          client: opts.vercelClient ? 'host-injected-v1' : 'sdk-default-v1',
+        }),
+      )
+    : provider
 }

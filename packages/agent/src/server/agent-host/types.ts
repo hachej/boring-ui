@@ -267,6 +267,12 @@ export interface ResolvedAgentRuntimeScope {
   readonly sessionNamespace: string
   readonly pi?: PiHarnessOptions
   readonly extraTools?: readonly AgentTool[]
+  /** Joined trusted-plugin cleanup invoked after backend session deletion succeeds. */
+  readonly onSessionDelete?: (input: {
+    readonly workspaceScopeId: string
+    readonly agentTypeId: string
+    readonly sessionId: string
+  }) => Promise<void>
   readonly includeFilesystemTools?: boolean
   readonly includeUploadTools?: boolean
   readonly sessionDir?: string

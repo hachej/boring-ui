@@ -606,6 +606,11 @@ export interface AgentSpecPluginArtifactProjection {
     WorkspaceAgentCreateOptions,
     "extraTools" | "systemPromptAppend" | "pi"
   >
+  readonly onSessionDelete?: (input: {
+    readonly workspaceScopeId: string
+    readonly agentTypeId: string
+    readonly sessionId: string
+  }) => Promise<void>
 }
 
 type IdentityJson = null | boolean | number | string | IdentityJson[] | { [key: string]: IdentityJson }
@@ -618,6 +623,7 @@ interface NormalizedAgentRuntimeContribution {
   readonly bindingInputs: IdentityJson
   readonly runtimePlugins: readonly WorkspaceRuntimeProvisioningInput[]
   readonly agentOptions: AgentSpecPluginArtifactProjection["agentOptions"]
+  readonly onSessionDelete?: AgentSpecPluginArtifactProjection["onSessionDelete"]
   readonly includeAllDiscoveredPluginResources: boolean
 }
 
@@ -690,6 +696,8 @@ function pluginHasAgentRuntimeContribution(plugin: WorkspaceServerPlugin): boole
   return Boolean(
     plugin.systemPrompt
     || plugin.agentTools?.length
+    || plugin.agentToolFactory
+    || plugin.onAgentSessionDelete
     || plugin.piPackages?.length
     || plugin.extensionPaths?.length
     || plugin.skills?.length
@@ -808,6 +816,7 @@ export function projectAgentSpecPluginArtifacts(
   artifacts: readonly ResolvedWorkspacePluginArtifact[],
   workspaceScopedArtifacts: readonly ResolvedWorkspacePluginArtifact[] = [],
   hostDefaults: Pick<ServerBootstrapOptions, "defaults" | "excludeDefaults"> = {},
+  existingTools: readonly AgentTool[] = [],
 ): AgentSpecPluginArtifactProjection {
   const byId = new Map<string, ResolvedWorkspacePluginArtifact>()
   for (const artifact of artifacts) {
@@ -853,17 +862,68 @@ export function projectAgentSpecPluginArtifacts(
     ...hostDefaults,
     plugins: selected.map((artifact) => artifact.plugin),
   })
+  const generatedTools = projected.agentToolFactories.flatMap(({ id, createTools }) => {
+    const tools = createTools({ agentTypeId: agent.agentTypeId })
+    if (!Array.isArray(tools)) {
+      throw new AgentSpecPluginProjectionError(`plugin "${id}" agentToolFactory must return an array`)
+    }
+    return tools.map((tool, index) => {
+      if (
+        !tool
+        || typeof tool !== "object"
+        || typeof tool.name !== "string"
+        || !tool.name
+        || typeof tool.description !== "string"
+        || !tool.parameters
+        || typeof tool.parameters !== "object"
+        || typeof tool.execute !== "function"
+      ) {
+        throw new AgentSpecPluginProjectionError(`plugin "${id}" agentToolFactory returned an invalid tool at index ${index}`)
+      }
+      return tool
+    })
+  })
+  const occupiedToolNames = new Set([
+    ...existingTools.map((tool) => tool.name),
+    ...projected.agentTools.map((tool) => tool.name),
+  ])
+  for (const tool of generatedTools) {
+    if (occupiedToolNames.has(tool.name)) {
+      throw new AgentSpecPluginProjectionError(`generated Agent tool collides with existing tool "${tool.name}"`)
+    }
+    occupiedToolNames.add(tool.name)
+  }
+  const deleteContributions = projected.agentSessionDeleteContributions
   return {
     artifacts: selected,
     runtimePlugins: projected.runtimePlugins,
     agentOptions: {
-      extraTools: projected.agentTools,
+      extraTools: [...projected.agentTools, ...generatedTools],
       systemPromptAppend: projected.systemPromptAppend || undefined,
       pi: {
         packages: projected.piPackages,
         extensionPaths: projected.extensionPaths,
       },
     },
+    ...(deleteContributions.length > 0
+      ? {
+          async onSessionDelete(input: {
+            readonly workspaceScopeId: string
+            readonly agentTypeId: string
+            readonly sessionId: string
+          }) {
+            const results = await Promise.allSettled(
+              deleteContributions.map(async (contribution) => await contribution.onDelete(input)),
+            )
+            const failures = results
+              .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+              .map((result) => result.reason)
+            if (failures.length > 0) {
+              throw new AggregateError(failures, "selected plugin session cleanup failed")
+            }
+          },
+        }
+      : {}),
   }
 }
 
@@ -1572,6 +1632,7 @@ export async function createWorkspaceAgentServer(
           receivesHostOwnedComposition
             ? { defaults: opts.defaults, excludeDefaults: opts.excludeDefaults }
             : undefined,
+          baseExtraTools,
         )
         const pluginIds = projection.artifacts.map((artifact) => artifact.id)
         const resolvedPolicy = {
@@ -1589,6 +1650,7 @@ export async function createWorkspaceAgentServer(
           }),
           runtimePlugins: projection.runtimePlugins,
           agentOptions: projection.agentOptions,
+          onSessionDelete: projection.onSessionDelete,
           includeAllDiscoveredPluginResources: receivesHostOwnedComposition,
         })
         return { ...agent, resolvedPolicy }
@@ -2021,6 +2083,7 @@ export async function createWorkspaceAgentServer(
           ...baseExtraTools,
           ...(contribution.agentOptions.extraTools ?? []),
         ],
+        onSessionDelete: contribution.onSessionDelete,
         includeFilesystemTools: opts.disableDefaultFileTools !== true,
         includeUploadTools: true,
         getFilesystemBindings: async ({ scope, sessionId, requestId }) => {

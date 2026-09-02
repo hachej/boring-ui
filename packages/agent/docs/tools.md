@@ -93,6 +93,10 @@ resources declared in `package.json#pi` (`extensions`, `skills`, `prompts`, and
 place for tools/skills that should update without restarting the workspace
 server.
 
+## Optional trusted plugin tools
+
+App hosts may add tools through trusted Workspace server plugins. Disposable lease support is additive: the optional sandbox plugin supplies `sandbox` and `sandbox_bash` without changing canonical bash or file-tool schemas. Agent-authored plugin selection alone cannot grant that host authority.
+
 ## Runtime modes
 
 See [runtime.md](./runtime.md) for how tool execution is sandboxed.

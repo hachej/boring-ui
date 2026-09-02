@@ -690,6 +690,11 @@ export class EmbeddedAgentGateway implements AgentGateway {
       await binding.composition.backend.deleteSession(
         harnessAddress(claim, input.ref), harnessContext(claim, input.requestId),
       )
+      await binding.scope.onSessionDelete?.({
+        workspaceScopeId: claim.workspaceScopeId,
+        agentTypeId: input.ref.agentTypeId,
+        sessionId: input.ref.sessionId,
+      })
       this.runtime.activity.delete(claim.workspaceScopeId, input.ref)
       return null
     }, { bindingKey: binding.key })

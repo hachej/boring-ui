@@ -21,6 +21,7 @@ export {
 } from "./hooks"
 export {
   getPreloadedTreeEntries,
+  getPreloadedTreeUpdatedAt,
   setPreloadedTreeEntries,
 } from "./treePreloadCache"
 export type { FileEntry, FileContent, FileStat, FetchClientOptions, GitUrlMetadata } from "./types"

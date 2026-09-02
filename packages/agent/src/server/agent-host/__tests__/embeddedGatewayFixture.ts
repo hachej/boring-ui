@@ -20,6 +20,11 @@ interface EmbeddedGatewayFixture extends GatewayConformanceFixture {
   }
   rejectNextPrompt(error: Error): void
   disableArchiveCapability(): void
+  setSessionDeleteHook(hook: (input: {
+    workspaceScopeId: string
+    agentTypeId: string
+    sessionId: string
+  }) => Promise<void>): void
 }
 
 export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFixture> {
@@ -45,6 +50,11 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
     return backend
   }
   const activity = new AgentSessionActivityIndex()
+  let onSessionDelete: ((input: {
+    workspaceScopeId: string
+    agentTypeId: string
+    sessionId: string
+  }) => Promise<void>) | undefined
   const runtime = {
     options: {},
     compiledAgents: agents,
@@ -104,7 +114,7 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
       const backend = backendFor(claim.workspaceScopeId, agentTypeId)
       return {
         key: `${claim.workspaceScopeId}:${agentTypeId}`,
-        scope: { identity: 'shared-runtime' },
+        scope: { identity: 'shared-runtime', onSessionDelete },
         environmentLease: { bundle: {}, release() {} },
         composition: {
           backend,
@@ -153,6 +163,9 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
     },
     disableArchiveCapability() {
       Reflect.deleteProperty(runtime, 'setSessionArchived')
+    },
+    setSessionDeleteHook(hook) {
+      onSessionDelete = hook
     },
     modelLoopStarts(ref) {
       for (const backend of backends.values()) {
