@@ -136,8 +136,8 @@ Authenticated member browser
 Actor-authorized host route
   │ verified workspaceId + current userId + interactive execution
   ▼
-Actor-bound ModelRuntime
-  │
+Shared actor-neutral ModelRuntime
+  │ current operation lease
   ▼
 Composite CredentialStore
   ├─ openai-codex ──> personal vault store (no fallback)
@@ -448,11 +448,22 @@ Supporting actor-bound steering later requires a pinned and canaried enqueue/dra
 seam equivalent to the qualified one-at-a-time follow-up boundary; it is not
 silently routed through the previous actor's active turn.
 
-The model route first re-authorizes the request, then resolves an actor-aware
-catalog for display. Its availability snapshot is advisory. The operation-scoped
-store at Pi's request-auth seam is authoritative, so a stale picker selection can
-fail as unavailable but can never reuse another actor's credential. Other
-providers continue using existing compatibility behavior.
+The shared Pi runtime's synchronous availability snapshot is actor-neutral:
+it always excludes `openai-codex` and reports that personal provider as
+unconfigured, regardless of which member cold-opened or last used the handle.
+Native synchronous Pi model selectors therefore cannot disclose or authorize a
+personal Codex connection. The model route first re-authorizes the request, then
+resolves Codex availability asynchronously for that actor for display. Explicit
+model selection and persisted-Codex resume perform the same asynchronous
+provider-scoped availability check under the current operation lease before
+calling `setModel` or transferring transcript ownership to Pi. Existing
+non-Codex compatibility providers continue using the shared snapshot.
+
+This availability result is advisory only. Pi performs credential resolution
+again at the request-auth boundary, so disconnect or revocation after listing or
+selection prevents the provider request. Missing/revoked actor context fails
+closed and never consults another actor's availability. Cold-open order cannot
+change these results.
 
 The store is consulted at Pi's request-auth seam. A credential replacement,
 refresh, disconnect, or `needs_reauth` transition affects the next provider-auth
@@ -650,6 +661,9 @@ post-merge CI.
   live-operation leases, recheck the same lease after async boundaries, and
   propagate its abort signal to actor-store commits while keeping Pi
   handle/transcript identity `(sessionId, workspaceId)`;
+- keep the shared synchronous Pi availability snapshot actor-neutral and resolve
+  personal Codex listing, selection, and resume asynchronously under the current
+  operation lease;
 - allocate the coordinator before cold creation, revoke all active/queued leases
   on handle deletion, and fence the session key through durable unlink so a
   concurrent reopen cannot install a replacement writer; reject stale adapters
@@ -720,6 +734,9 @@ global Codex auth after vault state exists.
 - Member B in W cannot list, decrypt, refresh, disconnect, or use A's credential.
 - A in workspace X cannot use the credential connected in W.
 - Session resume and cache reuse cannot cross acting user or workspace identity.
+- A member without Codex cannot list, select, restore, or invoke it when another
+  member cold-opened or previously used the shared handle; a connected later
+  member can select it after an unconnected member cold-opened the handle.
 - Automation, scheduled, durable-job queued, detached, and background-worker
   construction cannot access the subscription; interactive follow-ups resolve
   one submitting actor per provider turn.

@@ -190,8 +190,12 @@ revocation/deletion state before making the credential unavailable.
 - **Use:** interactive session construction injects a store bound to the
   verified funding user. Pi obtains request auth and refreshes an expired
   credential through `modify()`.
-- **List models:** use the actor-bound `ModelRuntime` availability surface;
-  never construct process-global, workspace-blind auth storage.
+- **List/select models:** keep the shared runtime's synchronous snapshot
+  actor-neutral by excluding personal Codex state. Re-authorize the actor and
+  use Pi's asynchronous provider-scoped availability surface under the current
+  operation lease for model-list, explicit selection, and persisted-Codex
+  resume. Never construct process-global, workspace-blind auth storage or use a
+  cold-opening actor's cached snapshot.
 - **Disconnect:** call Pi logout orchestration and persist the local
   revoke/tombstone semantics through the bound store. New sessions fail
   closed; behavior for already-running sessions must be explicit.

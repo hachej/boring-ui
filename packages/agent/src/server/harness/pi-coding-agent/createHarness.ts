@@ -25,7 +25,6 @@ import type { SessionCtx } from "../../../shared/session.js";
 import { adaptToolsForPi, unmarkToolResultErrorDetails } from "./tool-adapter.js";
 import { createPiAgentSessionAdapter, type PiAgentSessionAdapter } from "../../pi-chat/PiAgentSessionAdapter.js";
 import { PiSessionStore } from "./sessions.js";
-import { readConfiguredDefaultModel } from "../../models/modelConfig.js";
 import { createConfiguredModelRuntime } from "../../models/modelRuntime.js";
 import {
   mergePiPackageSources,
@@ -36,6 +35,12 @@ import {
   createOperationContextCoordinator,
   type PiHarnessCredentialOperationLease,
 } from "./operationContextCoordinator.js";
+import {
+  makeSharedAvailabilityActorNeutral,
+  OPERATION_SCOPED_MODEL_PROVIDER_ID,
+  resolveOperationScopedDefaultModel,
+  resolveOperationScopedModel,
+} from "./operationScopedModelAvailability.js";
 
 export type { PiHarnessCredentialOperationLease } from "./operationContextCoordinator.js";
 
@@ -258,14 +263,6 @@ function buildToolErrorResultExtension(): ExtensionFactory {
 }
 
 
-function modelUnavailableError(input: AgentSendInput): Error {
-  return Object.assign(new Error('Requested model is not available.'), {
-    statusCode: 400,
-    code: ErrorCode.enum.TOOL_INVALID_INPUT,
-    details: { provider: input.model?.provider, model: input.model?.id },
-  })
-}
-
 function meteredSlashCommandPromptError(command: string): Error {
   return Object.assign(new Error('Slash command prompt execution is disabled while metering is configured.'), {
     statusCode: 409,
@@ -283,41 +280,6 @@ function meteredExtensionCommandContext(ctx: ExtensionCommandContext, command: s
   guarded.navigateTree = async () => block()
   guarded.switchSession = async () => block()
   return guarded
-}
-
-function resolveRequestedModel(
-  modelRuntime: ModelRuntime,
-  input: AgentSendInput,
-  options: { strict?: boolean } = {},
-) {
-  const requestedId = input.model?.id;
-  if (!input.model || !requestedId) return undefined;
-  const model = modelRuntime.getModel(input.model.provider, requestedId);
-  const available = modelRuntime.getAvailableSnapshot();
-  const hasAuth = Boolean(model) && available.some(
-    (m) => m.provider === model!.provider && m.id === model!.id,
-  );
-  if (!model || !hasAuth) {
-    if (options.strict) throw modelUnavailableError(input)
-    return undefined
-  }
-  return model;
-}
-
-function resolveDefaultModel(
-  modelRuntime: ModelRuntime,
-  override?: { provider: string; id: string },
-  strict?: boolean,
-) {
-  if (override) {
-    return resolveRequestedModel(modelRuntime, { model: override }, { strict });
-  }
-  const configured = readConfiguredDefaultModel();
-  if (configured) {
-    const model = modelRuntime.getModel(configured.provider, configured.id);
-    if (model) return model;
-  }
-  return undefined;
 }
 
 function sessionCtxForInput(input: AgentSendInput, ctx: RunContext): SessionCtx {
@@ -346,7 +308,11 @@ async function applyRequestedSessionOptions(
   input: AgentSendInput,
   options: { strictModelResolution?: boolean } = {},
 ): Promise<void> {
-  const requestedModel = resolveRequestedModel(handle.modelRuntime, input, { strict: options.strictModelResolution });
+  const requestedModel = await resolveOperationScopedModel(handle.modelRuntime, input, {
+    strict: options.strictModelResolution,
+    enabled: handle.operationScopedCredentials,
+    getOperationLease: handle.operationContexts.getActiveLease,
+  });
   if (requestedModel) {
     const current = handle.piSession.model;
     if (
@@ -622,12 +588,18 @@ export function createPiCodingAgentHarness(opts: {
     const { modelRuntime } = await createConfiguredModelRuntime(
       credentialStore ? { credentials: credentialStore } : undefined,
     );
-    // Strict model validation must fail before native transcript creation.
-    const resolvedModel = resolveRequestedModel(modelRuntime, input, { strict: pi.strictModelResolution });
-    // Prefer an explicit available UI selection; otherwise use configured
-    // Boring/Pi default if present. Undefined is intentional: Pi/session owns
-    // the final fallback model selection.
-    const model = resolvedModel ?? resolveDefaultModel(modelRuntime, pi.defaultModel, pi.strictModelResolution);
+    if (credentialStore) makeSharedAvailabilityActorNeutral(modelRuntime)
+    const actorAvailability = {
+      strict: pi.strictModelResolution,
+      enabled: Boolean(credentialStore),
+      getOperationLease: operationContexts.getActiveLease,
+    }
+    // Preserve strict unknown-model rejection before touching transcript
+    // storage, while actor-bound availability still resolves under this lease.
+    const resolvedModel = await resolveOperationScopedModel(modelRuntime, input, actorAvailability)
+    const defaultModel = resolvedModel
+      ? undefined
+      : await resolveOperationScopedDefaultModel(modelRuntime, pi.defaultModel, actorAvailability)
 
     // Restore Boring-owned sessions as before: every session id is minted (and
     // its transcript written) server-side at create, so there is no id-less
@@ -659,6 +631,25 @@ export function createPiCodingAgentHarness(opts: {
         { code: ErrorCode.enum.SESSION_TRANSCRIPT_UNREADABLE, statusCode: 500, cause: error },
       );
     }
+    // A resumed Codex model is restored only when the current actor can use it;
+    // the shared snapshot stays neutral. Some narrow unit doubles predate Pi's
+    // buildSessionContext method and therefore have no resumable model.
+    const buildSessionContext = (sessionManager as Partial<SessionManager>).buildSessionContext
+    const restored = typeof buildSessionContext === 'function'
+      ? buildSessionContext.call(sessionManager).model
+      : undefined
+    const restoredActorModel = !resolvedModel && !defaultModel && credentialStore
+      && restored?.provider === OPERATION_SCOPED_MODEL_PROVIDER_ID
+      ? await resolveOperationScopedModel(
+          modelRuntime,
+          { model: { provider: restored.provider, id: restored.modelId } },
+          { ...actorAvailability, strict: false },
+        )
+      : undefined
+    // Prefer explicit/configured choices; otherwise let Pi own its normal
+    // non-Codex fallback. Personal Codex restore is resolved per current actor.
+    const model = resolvedModel ?? defaultModel ?? restoredActorModel
+
     // Hosts may extend pi's base prompt and/or isolate resource discovery.
     // We keep pi's default system prompt but always tack on a workspace-paths
     // guideline (relative-paths only) on top of whatever the host supplied —
