@@ -1,6 +1,10 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { AgentGatewayError, AgentGatewayErrorCode, type AgentAccessOperation } from '../../shared/index'
+import {
+  CREDENTIAL_ERROR_CODES,
+  CredentialResolutionError,
+} from '../../shared/credentials/errors'
 import { ErrorCode } from '../../shared/error-codes'
 import type { AgentHarness, RunContext } from '../../shared/harness'
 import type { AgentTool } from '../../shared/tool'
@@ -596,7 +600,10 @@ export function createAgentHostRuntimeCapabilityRoutes(
         const binding = await resolve(request, agentId(request))
         const { workspaceId, userId } = binding.runContext
         if (!workspaceId || !userId) {
-          throw new TypeError('authorized model request is missing verified actor identity')
+          throw new CredentialResolutionError(
+            CREDENTIAL_ERROR_CODES.AUTHORITY_INVALID,
+            'authorized model request is missing verified actor identity',
+          )
         }
         return Object.freeze({
           workspaceId,

@@ -22,7 +22,13 @@ type PiFollowUpQueue = {
   drain: () => unknown[]
 }
 
+type PiSessionWithSteeringBoundary = {
+  /** Private in Pi 0.84.4; guarded by the exact-version contract canary. */
+  _queueSteer?: (text: string, images?: unknown[]) => Promise<void>
+}
+
 type PiAgentWithFollowUp = {
+  steer?: (message: unknown) => unknown
   followUp?: (message: unknown) => unknown
   /** Private in Pi 0.84.4; guarded by the exact-version contract canary. */
   followUpQueue?: PiFollowUpQueue
@@ -116,13 +122,21 @@ export function createOperationContextCoordinator(): OperationContextCoordinator
     requireDrainBoundary: boolean,
   ): (() => void) => {
     if (closed) throw authorityExpiredError()
+    const nativeSession = session as unknown as PiSessionWithSteeringBoundary
     const agent = (session as unknown as { agent?: PiAgentWithFollowUp }).agent
     const queue = agent?.followUpQueue
-    if (!agent || typeof agent.followUp !== 'function') {
+    if (
+      !agent
+      || typeof agent.followUp !== 'function'
+      || (requireDrainBoundary && (
+        typeof agent.steer !== 'function'
+        || typeof nativeSession._queueSteer !== 'function'
+      ))
+    ) {
       if (requireDrainBoundary) {
         throw new CredentialResolutionError(
           CREDENTIAL_ERROR_CODES.AUTHORITY_INVALID,
-          'pinned Pi follow-up enqueue seam is unavailable',
+          'pinned Pi message-queue boundary is unavailable',
         )
       }
       return () => {}
@@ -131,6 +145,8 @@ export function createOperationContextCoordinator(): OperationContextCoordinator
     let queuedContexts = new WeakMap<object, RunContext>()
     let queuedLease: RevocableOperationLease | undefined
     let unbound = false
+    const originalQueueSteer = nativeSession._queueSteer
+    const originalSteer = agent.steer
     const originalFollowUp = agent.followUp
     const originalDrain = queue?.drain
 
@@ -153,6 +169,17 @@ export function createOperationContextCoordinator(): OperationContextCoordinator
       // enterWith affects only this continuation chain. Concurrent run(D)
       // calls use storage.run(D) and cannot borrow this queued actor.
       storage.enterWith(queuedLease)
+    }
+
+    const steeringDenied = (): CredentialResolutionError => new CredentialResolutionError(
+      CREDENTIAL_ERROR_CODES.DELIVERY_FORBIDDEN,
+      'steering is unavailable with operation-scoped credentials',
+    )
+    const wrappedQueueSteer = async function (): Promise<never> {
+      throw steeringDenied()
+    }
+    const wrappedSteer = function (this: PiAgentWithFollowUp, _message: unknown): never {
+      throw steeringDenied()
     }
 
     const wrappedFollowUp = function (this: PiAgentWithFollowUp, message: unknown) {
@@ -178,9 +205,15 @@ export function createOperationContextCoordinator(): OperationContextCoordinator
       return messages
     }
 
+    if (requireDrainBoundary) {
+      nativeSession._queueSteer = wrappedQueueSteer
+      agent.steer = wrappedSteer
+    }
     agent.followUp = wrappedFollowUp
     if (!queue || typeof originalDrain !== 'function') {
       if (requireDrainBoundary) {
+        if (nativeSession._queueSteer === wrappedQueueSteer) nativeSession._queueSteer = originalQueueSteer
+        if (agent.steer === wrappedSteer) agent.steer = originalSteer
         agent.followUp = originalFollowUp
         throw new CredentialResolutionError(
           CREDENTIAL_ERROR_CODES.AUTHORITY_INVALID,
@@ -214,6 +247,8 @@ export function createOperationContextCoordinator(): OperationContextCoordinator
       retireQueuedLease()
       queuedContexts = new WeakMap()
       unsubscribe()
+      if (nativeSession._queueSteer === wrappedQueueSteer) nativeSession._queueSteer = originalQueueSteer
+      if (agent.steer === wrappedSteer) agent.steer = originalSteer
       if (agent.followUp === wrappedFollowUp) agent.followUp = originalFollowUp
       if (queue && queue.drain === wrappedDrain && originalDrain) queue.drain = originalDrain
     }

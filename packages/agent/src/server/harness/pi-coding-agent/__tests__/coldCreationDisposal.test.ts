@@ -9,6 +9,7 @@ import type {
   WorkspaceCredentialOperationAuthorityV1,
 } from '../../../../shared/credentials/authority.js'
 import { CREDENTIAL_ERROR_CODES } from '../../../../shared/credentials/errors.js'
+import { ErrorCode } from '../../../../shared/error-codes.js'
 import { createFakeAuthorityVerifierV1 } from '../../../credentials/hostResolver.js'
 
 const nativeSessionControl = vi.hoisted(() => ({
@@ -36,6 +37,7 @@ vi.mock('@mariozechner/pi-coding-agent', async (importOriginal) => {
 })
 
 import { createPiCodingAgentHarness } from '../createHarness.js'
+import { PiSessionStore } from '../sessions.js'
 
 function deferred() {
   let resolve!: () => void
@@ -85,6 +87,97 @@ afterEach(() => {
 })
 
 describe('Pi cold-creation disposal', () => {
+  it('rejects reopen until durable delete settles and returns with no cached writer', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'pi-delete-reopen-fence-'))
+    const deleteStarted = deferred()
+    const releaseDelete = deferred()
+    const originalDelete = PiSessionStore.prototype.delete
+    vi.spyOn(PiSessionStore.prototype, 'delete').mockImplementation(async function (
+      this: PiSessionStore,
+      ctx,
+      sessionId,
+    ) {
+      deleteStarted.resolve()
+      await releaseDelete.promise
+      return originalDelete.call(this, ctx, sessionId)
+    })
+
+    try {
+      const harness = createPiCodingAgentHarness({
+        tools: [],
+        cwd,
+        sessionRoot: cwd,
+        pi: { createCredentialStore: () => new InMemoryCredentialStore() },
+      })
+      const sessionCtx = { workspaceId: 'workspace-a' }
+      const { id } = await harness.sessions.create(sessionCtx)
+      await harness.getPiSessionAdapter!(
+        { sessionId: id, content: '', ctx: sessionCtx },
+        runContext(cwd),
+      )
+
+      const deletion = harness.sessions.delete(sessionCtx, id)
+      await deleteStarted.promise
+      await expect(harness.getPiSessionAdapter!(
+        { sessionId: id, content: '', ctx: sessionCtx },
+        runContext(cwd),
+      )).rejects.toMatchObject({ code: ErrorCode.enum.SESSION_NOT_FOUND })
+      expect(nativeSessionControl.disposeCalls).toBe(1)
+
+      releaseDelete.resolve()
+      await deletion
+      expect(nativeSessionControl.disposeCalls).toBe(1)
+      expect(harness.hasPiSession!(id, sessionCtx)).toBe(false)
+    } finally {
+      await rm(cwd, { recursive: true, force: true })
+    }
+  }, 20_000)
+
+  it('clears a failed deletion fence so the intact session can reopen and deletion can retry', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'pi-delete-retry-fence-'))
+    const originalDelete = PiSessionStore.prototype.delete
+    let deleteCalls = 0
+    vi.spyOn(PiSessionStore.prototype, 'delete').mockImplementation(async function (
+      this: PiSessionStore,
+      ctx,
+      sessionId,
+    ) {
+      deleteCalls += 1
+      if (deleteCalls === 1) throw new Error('synthetic unlink failure')
+      return originalDelete.call(this, ctx, sessionId)
+    })
+
+    try {
+      const harness = createPiCodingAgentHarness({
+        tools: [],
+        cwd,
+        sessionRoot: cwd,
+        pi: { createCredentialStore: () => new InMemoryCredentialStore() },
+      })
+      const sessionCtx = { workspaceId: 'workspace-a' }
+      const { id } = await harness.sessions.create(sessionCtx)
+      await harness.getPiSessionAdapter!(
+        { sessionId: id, content: '', ctx: sessionCtx },
+        runContext(cwd),
+      )
+
+      await expect(harness.sessions.delete(sessionCtx, id)).rejects.toThrow('synthetic unlink failure')
+      expect(harness.hasPiSession!(id, sessionCtx)).toBe(false)
+      await expect(harness.getPiSessionAdapter!(
+        { sessionId: id, content: '', ctx: sessionCtx },
+        runContext(cwd),
+      )).resolves.toBeDefined()
+      expect(harness.hasPiSession!(id, sessionCtx)).toBe(true)
+
+      await harness.sessions.delete(sessionCtx, id)
+      expect(deleteCalls).toBe(2)
+      expect(nativeSessionControl.disposeCalls).toBe(2)
+      expect(harness.hasPiSession!(id, sessionCtx)).toBe(false)
+    } finally {
+      await rm(cwd, { recursive: true, force: true })
+    }
+  }, 20_000)
+
   it('disposes a native session created after its pending authority was revoked', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'pi-cold-native-disposal-'))
     try {

@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import Fastify from 'fastify'
 import { InMemoryCredentialStore } from '@earendil-works/pi-ai'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { CREDENTIAL_ERROR_CODES } from '../../../../shared/credentials/errors.js'
 import { createConfiguredModelRuntime } from '../../../models/modelRuntime.js'
 import { modelsRoutes, type VerifiedModelRequestActor } from '../models.js'
 
@@ -160,6 +161,25 @@ describe('modelsRoutes', () => {
         expect.objectContaining({ workspaceId: 'workspace-a', userId: 'user-a', executionClass: 'request-attached-interactive' }),
         expect.objectContaining({ workspaceId: 'workspace-a', userId: 'user-b', executionClass: 'request-attached-interactive' }),
       ])
+    } finally {
+      await app.close()
+    }
+  })
+
+  it('returns a stable authority code when actor-aware authorization yields no actor', async () => {
+    const resolveModelCatalog = vi.fn(async (_actor: VerifiedModelRequestActor) => actorCatalog())
+    const app = Fastify({ logger: false })
+    await app.register(modelsRoutes, {
+      authorizeRequest: async () => undefined,
+      resolveModelCatalog,
+    })
+    await app.ready()
+
+    try {
+      const response = await app.inject({ method: 'GET', url: '/api/v1/agents/default/models' })
+      expect(response.statusCode).toBe(500)
+      expect(response.json()).toMatchObject({ code: CREDENTIAL_ERROR_CODES.AUTHORITY_INVALID })
+      expect(resolveModelCatalog).not.toHaveBeenCalled()
     } finally {
       await app.close()
     }

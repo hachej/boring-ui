@@ -500,12 +500,20 @@ export function createPiCodingAgentHarness(opts: {
   // createAgentSession, and the loser's handle is overwritten — leaking a Pi
   // session and breaking the single-writer guarantee.
   const piSessionCreations = new Map<string, PendingPiSessionCreation>();
+  // A deletion owns the session key until durable unlink settles. Cold opens
+  // fail while the key is present so delete cannot return with a replacement
+  // native writer installed behind it.
+  const piSessionDeletions = new Map<string, Promise<void>>();
   // Session-incarnation fence, mirroring the chat service's. A delete that lands
   // while createAgentSession is still running must not leave the late handle
   // installed — it would keep a live AgentSession (and its transcript writer)
   // for a session that no longer exists.
   const sessionGenerations = new Map<string, number>();
   const generationOf = (sessionKey: string): number => sessionGenerations.get(sessionKey) ?? 0;
+  const sessionNotFoundError = (): Error & { code: string; statusCode: number } => Object.assign(
+    new Error("session not found"),
+    { code: ErrorCode.enum.SESSION_NOT_FOUND, statusCode: 404 },
+  );
 
   async function getOrCreatePiSession(
     sessionId: string,
@@ -514,6 +522,7 @@ export function createPiCodingAgentHarness(opts: {
   ): Promise<PiSessionHandle> {
     const sessionCtx = sessionCtxForInput(input, ctx);
     const sessionKey = sessionCacheKey(sessionId, sessionCtx);
+    if (piSessionDeletions.has(sessionKey)) throw sessionNotFoundError();
     const existing = piSessions.get(sessionKey);
     if (existing) {
       await existing.operationContexts.run(ctx, () =>
@@ -524,6 +533,7 @@ export function createPiCodingAgentHarness(opts: {
     const inFlight = piSessionCreations.get(sessionKey);
     if (inFlight) {
       const handle = await inFlight.promise;
+      if (piSessionDeletions.has(sessionKey)) throw sessionNotFoundError();
       await handle.operationContexts.run(ctx, () =>
         applyRequestedSessionOptions(handle, input, { strictModelResolution: pi.strictModelResolution }));
       return handle;
@@ -535,12 +545,9 @@ export function createPiCodingAgentHarness(opts: {
     const coordinator = createOperationContextCoordinator();
     const creation = coordinator.run(ctx, () =>
       createPiSession(sessionId, sessionCtx, input, ctx, coordinator)).then((handle) => {
-      if (generationOf(sessionKey) === generation) return handle;
+      if (generationOf(sessionKey) === generation && !piSessionDeletions.has(sessionKey)) return handle;
       disposeHandleAt(sessionKey, handle);
-      throw Object.assign(new Error("session not found"), {
-        code: ErrorCode.enum.SESSION_NOT_FOUND,
-        statusCode: 404,
-      });
+      throw sessionNotFoundError();
     }, (error) => {
       coordinator.dispose();
       throw error;
@@ -817,18 +824,31 @@ export function createPiCodingAgentHarness(opts: {
   const originalDelete = sessionStore.delete.bind(sessionStore);
   sessionStore.delete = async (ctx, sessionId) => {
     const key = sessionCacheKey(sessionId, ctx);
-    // Invalidate and revoke before awaiting a cold creation. The pending
-    // coordinator belongs only to this session incarnation.
-    sessionGenerations.set(key, generationOf(key) + 1);
-    const pending = piSessionCreations.get(key);
-    pending?.coordinator.dispose();
-    // Revoke an installed handle immediately; filesystem deletion must not
-    // extend credential authority. Recheck after the pending creation settles
-    // to dispose any late generation-fenced handle before deleting storage.
-    disposePiSession(sessionId, ctx);
-    await Promise.allSettled(pending ? [pending.promise] : []);
-    disposePiSession(sessionId, ctx);
-    await originalDelete(ctx, sessionId);
+    const activeDeletion = piSessionDeletions.get(key);
+    if (activeDeletion) return activeDeletion;
+
+    let deletion!: Promise<void>;
+    deletion = (async () => {
+      // Fence this key before authority revocation or any await. The fence stays
+      // active through durable unlink, so a concurrent reopen cannot install a
+      // replacement native writer while delete is in progress.
+      sessionGenerations.set(key, generationOf(key) + 1);
+      const pending = piSessionCreations.get(key);
+      pending?.coordinator.dispose();
+      disposePiSession(sessionId, ctx);
+      await Promise.allSettled(pending ? [pending.promise] : []);
+      disposePiSession(sessionId, ctx);
+      await originalDelete(ctx, sessionId);
+      // Defensive postcondition: deletion must never return with a cached
+      // handle, even if a future internal path bypasses the pre-open fence.
+      disposePiSession(sessionId, ctx);
+    })();
+    piSessionDeletions.set(key, deletion);
+    try {
+      await deletion;
+    } finally {
+      if (piSessionDeletions.get(key) === deletion) piSessionDeletions.delete(key);
+    }
   };
 
 

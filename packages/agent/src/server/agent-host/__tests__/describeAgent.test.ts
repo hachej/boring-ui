@@ -4,6 +4,7 @@ import { join } from 'node:path'
 
 import Fastify from 'fastify'
 import { beforeAll, describe, expect, test } from 'vitest'
+import { CREDENTIAL_ERROR_CODES } from '../../../shared/credentials/errors'
 import { ErrorCode } from '../../../shared/error-codes'
 import { AgentGatewayError, AgentGatewayErrorCode } from '../../../shared/index'
 import {
@@ -223,6 +224,24 @@ describe('describeAgent', () => {
     const projection = createProjection({ draining: true })
     await expect(projection.describeAgent({ request: {} as never, agentTypeId: 'concierge' }))
       .rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED })
+  })
+
+  test('model route returns a stable authority code when a binding lacks verified actor identity', async () => {
+    const app = Fastify({ logger: false })
+    await app.register(createAgentHostRuntimeCapabilityRoutes({
+      resolveBinding: async () => ({
+        runContext: {
+          abortSignal: new AbortController().signal,
+          workdir: workspaceWithPersona,
+          workspaceId: 'ws-1',
+        },
+      }),
+    } as never))
+
+    const response = await app.inject({ method: 'GET', url: '/api/v1/agents/concierge/models' })
+    expect(response.statusCode).toBe(500)
+    expect(response.json()).toMatchObject({ code: CREDENTIAL_ERROR_CODES.AUTHORITY_INVALID })
+    await app.close()
   })
 
   test('route serves the description and rejects unknown agents with a stable code', async () => {

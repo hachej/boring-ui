@@ -478,6 +478,24 @@ describe('shared Pi handle actor seam', () => {
             },
           }),
           extensionFactories: [(pi) => {
+            pi.registerCommand('native-user-steer', {
+              description: 'exercise Pi sendUserMessage steering boundary',
+              handler: async () => {
+                pi.sendUserMessage('B native user steer', { deliverAs: 'steer' })
+                await new Promise((resolve) => setTimeout(resolve, 0))
+              },
+            })
+            pi.registerCommand('native-custom-steer', {
+              description: 'exercise Pi sendMessage implicit steering boundary',
+              handler: async () => {
+                pi.sendMessage({
+                  customType: 'actor-steer-probe',
+                  content: 'B native custom steer',
+                  display: true,
+                }, { triggerTurn: true })
+                await new Promise((resolve) => setTimeout(resolve, 0))
+              },
+            })
             pi.registerProvider('openai-codex', {
               api: 'openai-completions',
               baseUrl: 'https://example.invalid',
@@ -521,8 +539,13 @@ describe('shared Pi handle actor seam', () => {
       })).rejects.toMatchObject({
         code: CREDENTIAL_ERROR_CODES.DELIVERY_FORBIDDEN,
       })
+      await harness.executeSlashCommand!(id, 'native-user-steer', '', runContext(cwd, 'B'))
+      await harness.executeSlashCommand!(id, 'native-custom-steer', '', runContext(cwd, 'B'))
+      await new Promise((resolve) => setTimeout(resolve, 0))
       expect(providerCall).toBe(1)
       expect(resolvedActors).not.toContain('B')
+      expect(adapterB.readSnapshot().steeringMessages).toEqual([])
+      expect(JSON.stringify(adapterB.readSnapshot().messages)).not.toContain('B native')
 
       releaseFirst.resolve()
       await running

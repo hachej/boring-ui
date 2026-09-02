@@ -409,8 +409,11 @@ fail closed. Handle disposal first closes its coordinator, revokes every active
 and queued lease, clears captured contexts, and prevents stale retained adapters
 from starting another operation; only then may Pi listeners and the transcript
 writer be disposed. A pending cold creation owns the same coordinator, so deletion
-revokes it before awaiting or accepting the late handle. Missing, expired, copied,
-or revoked authority and workspace/execution mismatches fail closed.
+revokes it before awaiting or accepting the late handle. A per-session deletion
+fence is installed before revocation and remains active through durable transcript
+unlink; cold reopen fails with `SESSION_NOT_FOUND` until deletion settles, and a
+failed unlink clears the fence so the still-durable session can be retried. Missing,
+expired, copied, or revoked authority and workspace/execution mismatches fail closed.
 
 Queued follow-ups capture the submitting operation's opaque authority and receive
 a fresh bounded lease at Pi's one-at-a-time follow-up queue **drain boundary**,
@@ -432,9 +435,12 @@ or background-worker runtime construction. Queued interactive follow-ups are
 permitted only under the one-at-a-time lease rule above. Persisting a creator user
 ID is not authorization to use a subscription unattended.
 
-Pi 0.84.4 steering is rejected with stable `CREDENTIAL_DELIVERY_FORBIDDEN` before
-provider authentication whenever the runtime has operation-scoped credentials.
-Compatibility runtimes without the personal store preserve existing steering.
+Pi 0.84.4 steering is rejected with stable `CREDENTIAL_DELIVERY_FORBIDDEN` at
+the shared native session/agent boundary before enqueueing or provider
+authentication whenever the runtime has operation-scoped credentials. This covers
+adapter prompts, extension `sendUserMessage`, custom `sendMessage` (including its
+implicit streaming-steer default), and direct native steering. Compatibility
+runtimes without the personal store preserve existing steering.
 Supporting actor-bound steering later requires a pinned and canaried enqueue/drain
 seam equivalent to the qualified one-at-a-time follow-up boundary; it is not
 silently routed through the previous actor's active turn.
@@ -641,9 +647,10 @@ post-merge CI.
   live-operation leases, recheck the same lease after async boundaries, and
   propagate its abort signal to actor-store commits while keeping Pi
   handle/transcript identity `(sessionId, workspaceId)`;
-- allocate the coordinator before cold creation and revoke all active/queued
-  leases on handle deletion, rejecting stale adapters without cancelling an
-  unrelated session;
+- allocate the coordinator before cold creation, revoke all active/queued leases
+  on handle deletion, and fence the session key through durable unlink so a
+  concurrent reopen cannot install a replacement writer; reject stale adapters
+  without cancelling an unrelated session;
 - force native Pi follow-ups to one-at-a-time, activate their actor at the pinned
   queue-drain boundary before `prepareNextTurn`/compaction, and prove detached,
   deferred, and mixed-user queued work cannot retain or combine payer authority;

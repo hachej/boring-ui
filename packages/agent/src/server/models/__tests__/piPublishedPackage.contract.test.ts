@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Agent } from '@earendil-works/pi-agent-core'
 import { InMemoryCredentialStore } from '@earendil-works/pi-ai'
-import { ModelRuntime } from '@mariozechner/pi-coding-agent'
+import { AgentSession, ModelRuntime } from '@mariozechner/pi-coding-agent'
 import { describe, expect, it } from 'vitest'
 
 const TESTED_PI_VERSION = '0.84.4'
@@ -34,7 +34,8 @@ describe('published coordinated Pi contract', () => {
     }
   })
 
-  it('exposes the guarded one-at-a-time follow-up drain seam before prepareNextTurn', () => {
+  it('exposes the guarded native steering boundary and one-at-a-time follow-up drain seam', () => {
+    expect(typeof (AgentSession.prototype as unknown as { _queueSteer?: unknown })._queueSteer).toBe('function')
     const agent = new Agent({
       streamFn: (() => { throw new Error('not called') }) as ConstructorParameters<typeof Agent>[0]['streamFn'],
       followUpMode: 'one-at-a-time',

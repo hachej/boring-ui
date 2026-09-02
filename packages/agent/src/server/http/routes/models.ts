@@ -23,6 +23,10 @@ import {
   readConfiguredDefaultModel,
   type AgentModelSelection,
 } from '../../models/modelConfig.js'
+import {
+  CREDENTIAL_ERROR_CODES,
+  CredentialResolutionError,
+} from '../../../shared/credentials/errors.js'
 import type { TrustedAgentExecutionClass } from '../../../shared/harness.js'
 import { createConfiguredModelRuntime } from '../../models/modelRuntime.js'
 
@@ -90,7 +94,10 @@ export async function modelsRoutes(
   app.get(opts.path ?? '/api/v1/agents/:agentTypeId/models', async (request, reply) => {
     const actor = await opts.authorizeRequest?.(request)
     if (opts.resolveModelCatalog && !actor) {
-      throw new TypeError('actor-aware model catalog resolution requires a verified request actor')
+      throw new CredentialResolutionError(
+        CREDENTIAL_ERROR_CODES.AUTHORITY_INVALID,
+        'actor-aware model catalog resolution requires a verified request actor',
+      )
     }
     const { modelRuntime, configuredModels } = opts.resolveModelCatalog
       ? await opts.resolveModelCatalog(actor as VerifiedModelRequestActor)
