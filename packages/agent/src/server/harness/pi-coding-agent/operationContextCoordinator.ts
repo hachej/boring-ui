@@ -226,7 +226,20 @@ export function createOperationContextCoordinator(): OperationContextCoordinator
 
     const activateAtMessageStart = !queue || typeof originalDrain !== 'function'
     const unsubscribe = session.subscribe((event) => {
-      if (event.type === 'agent_end') {
+      // Pi resumes post-agent retry handling on the async context that awaited
+      // the native agent call, not necessarily the context installed when its
+      // queue drained. Re-enter the same queued lease before that continuation.
+      if (
+        ((event.type === 'agent_end' && event.willRetry) || event.type === 'auto_retry_start')
+        && queuedLease
+      ) {
+        queuedLease.assertActive()
+        storage.enterWith(queuedLease)
+        return
+      }
+      // agent_settled is the first terminal boundary after all retries,
+      // compaction, and queued continuations for this run have finished.
+      if (event.type === 'agent_settled') {
         retireQueuedLease()
         storage.enterWith(undefined)
         return
