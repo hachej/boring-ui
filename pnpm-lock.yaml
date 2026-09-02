@@ -80,6 +80,76 @@ importers:
         specifier: ^4.1.11
         version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.20.1)(jsdom@30.0.1(@noble/hashes@2.3.0))(vite@8.2.1(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))
 
+  apps/factory-playground:
+    dependencies:
+      '@hachej/boring-agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
+      '@hachej/boring-ask-user':
+        specifier: workspace:*
+        version: link:../../plugins/ask-user
+      '@hachej/boring-automation':
+        specifier: workspace:*
+        version: link:../../plugins/boring-automation
+      '@hachej/boring-bash':
+        specifier: workspace:*
+        version: link:../../packages/boring-bash
+      '@hachej/boring-core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@hachej/boring-sandbox':
+        specifier: workspace:*
+        version: link:../../packages/boring-sandbox
+      '@hachej/boring-sandbox-plugin':
+        specifier: workspace:*
+        version: link:../../plugins/sandbox
+      '@hachej/boring-tasks':
+        specifier: workspace:*
+        version: link:../../plugins/tasks
+      '@hachej/boring-workspace':
+        specifier: workspace:*
+        version: link:../../packages/workspace
+      pi-mono-loop:
+        specifier: 1.7.3
+        version: 1.7.3(@earendil-works/pi-coding-agent@0.84.3)
+      react:
+        specifier: ^19.2.8
+        version: 19.2.8
+      react-dom:
+        specifier: ^19.2.8
+        version: 19.2.8(react@19.2.8)
+    devDependencies:
+      '@tailwindcss/vite':
+        specifier: ^4.3.3
+        version: 4.3.3(vite@8.2.1(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))
+      '@types/node':
+        specifier: ^22.20.0
+        version: 22.20.1
+      '@types/react':
+        specifier: ^19.2.18
+        version: 19.2.18
+      '@types/react-dom':
+        specifier: ^19.2.4
+        version: 19.2.4(@types/react@19.2.18)
+      '@vitejs/plugin-react':
+        specifier: ^4.0.0
+        version: 4.7.0(vite@8.2.1(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))
+      tailwindcss:
+        specifier: ^4.3.3
+        version: 4.3.3
+      tsx:
+        specifier: ^4.23.6
+        version: 4.23.12
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vite:
+        specifier: ^8.2.1
+        version: 8.2.1(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)
+      vitest:
+        specifier: ^4.1.11
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.20.1)(jsdom@30.0.1(@noble/hashes@2.3.0))(vite@8.2.1(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))
+
   apps/full-app:
     dependencies:
       '@hachej/boring-agent':
@@ -8583,6 +8653,11 @@ packages:
   perfect-freehand@1.2.0:
     resolution: {integrity: sha512-h/0ikF1M3phW7CwpZ5MMvKnfpHficWoOEyr//KVNTxV4F6deRK1eYMtHyBKEAKFK0aXIEUK9oBvlF6PNXMDsAw==}
 
+  pi-mono-loop@1.7.3:
+    resolution: {integrity: sha512-6/GSvc8bPcwc1xqZ2Ab4MYsz9w9SUCIAGgudmmcDqEM/xZBomN6CbEB9fsBZAvOYnVkeJZyZLlxrNqftPAu7VQ==}
+    peerDependencies:
+      '@earendil-works/pi-coding-agent': '*'
+
   pica@7.1.1:
     resolution: {integrity: sha512-WY73tMvNzXWEld2LicT9Y260L43isrZ85tPuqRyvtkljSDLmnNFQmZICt4xUJMVulmcc6L9O7jbBrtx3DOz/YQ==}
 
@@ -17032,6 +17107,10 @@ snapshots:
   perfect-debounce@2.1.0: {}
 
   perfect-freehand@1.2.0: {}
+
+  pi-mono-loop@1.7.3(@earendil-works/pi-coding-agent@0.84.3):
+    dependencies:
+      '@earendil-works/pi-coding-agent': 0.84.3
 
   pica@7.1.1:
     dependencies:
