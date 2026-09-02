@@ -58,11 +58,11 @@
     "react-dom": "^18.0.0 || ^19.0.0"
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "0.84.3",
+    "@earendil-works/pi-ai": "0.84.4",
     "@excalidraw/excalidraw": "^0.18.1",
     "@hachej/boring-agent": "workspace:*",
     "@hachej/boring-ui-kit": "workspace:*",
-    "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.84.3"
+    "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.84.4"
   },
   "devDependencies": {
     "@hachej/boring-workspace": "workspace:*",
