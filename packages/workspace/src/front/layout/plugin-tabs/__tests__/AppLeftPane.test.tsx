@@ -60,6 +60,178 @@ describe("AppLeftPane", () => {
     expect(newChat).toContainElement(screen.getByRole("button", { name: "New chat" }))
   })
 
+  it("switches the #1355 spike between Project, Agent, and flat Chat organization", async () => {
+    const user = userEvent.setup()
+    const onCreateSession = vi.fn()
+    const onScopedCreateSession = vi.fn()
+    render(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane
+          appTitle="Test"
+          consoleSpike
+          layoutMode="multi-project"
+          projects={[
+            {
+              id: "launch",
+              name: "Launch",
+              sessions: [
+                { id: "alpha-one", agentTypeId: "alpha", title: "Alpha launch" },
+                { id: "beta-one", agentTypeId: "beta", title: "Beta review" },
+              ],
+            },
+            {
+              id: "console",
+              name: "Agent Console",
+              sessions: [{ id: "alpha-two", agentTypeId: "alpha", title: "Console nav" }],
+            },
+          ]}
+          activeProjectId="workspace"
+          activeSessionRef={{ agentTypeId: "alpha", sessionId: "alpha-one" }}
+          agents={[
+            { agentTypeId: "alpha", label: "Boring Alpha", sessionsStatus: "loaded" },
+            { agentTypeId: "beta", label: "Boring Beta", sessionsStatus: "loaded" },
+          ]}
+          selectedAgentTypeId="beta"
+          sessions={[
+            { id: "alpha-one", agentTypeId: "alpha", title: "Alpha launch" },
+            { id: "beta-one", agentTypeId: "beta", title: "Beta review" },
+            { id: "alpha-two", agentTypeId: "alpha", title: "Console nav" },
+          ]}
+          onCreateSession={onCreateSession}
+          consoleSpikeCreateSession={onScopedCreateSession}
+          navigationEntries={testNavigationEntries()}
+          onSwitchSession={vi.fn()}
+          onOpenSessionAsPane={vi.fn()}
+          onToggleSessionPinned={vi.fn()}
+        />
+      </WorkspaceAttentionProvider>,
+    )
+
+    const switcher = screen.getByRole("group", { name: "Organize chats by" })
+    expect(within(switcher).getAllByRole("button").map((button) => button.textContent)).toEqual(["projects", "agents", "chats"])
+    expect(within(switcher).queryByRole("button", { name: "Tasks" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Collapse Launch" })).toHaveAttribute("aria-current", "page")
+    expect(screen.getByRole("button", { name: /Collapse Boring Alpha/ })).toBeInTheDocument()
+    expect(document.querySelector('[data-boring-agent-type-id="alpha"]')).toHaveAttribute("data-active", "true")
+    expect(screen.getByText("Alpha launch")).toBeInTheDocument()
+    expect(screen.queryByText("Beta review")).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Choose placement, Project, and Agent for new chat" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Choose target for new chat in Launch" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "New chat with Alpha in Launch" })).not.toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: /Expand Boring Beta/ }))
+    expect(screen.getByText("Beta review")).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Collapse Launch" }))
+    expect(screen.queryByText("Alpha launch")).not.toBeInTheDocument()
+
+    await user.click(within(switcher).getByRole("button", { name: "agents" }))
+    expect(screen.getByRole("button", { name: /Collapse Boring Alpha/ })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Choose target for new chat with Alpha" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Collapse Launch" })).toBeInTheDocument()
+    expect(screen.getByText("Alpha launch")).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: /Expand Boring Beta/ }))
+    await user.click(screen.getByRole("button", { name: "Expand Launch" }))
+    expect(screen.getByText("Beta review")).toBeInTheDocument()
+
+    await user.click(within(switcher).getByRole("button", { name: "chats" }))
+    expect(screen.getByText("Console nav").closest('[data-boring-workspace-part="app-session-row"]')).toHaveTextContent("Agent Console · Alpha")
+
+    await user.click(screen.getByRole("button", { name: "Choose placement, Project, and Agent for new chat" }))
+    fireEvent.click(screen.getByRole("menuitem", { name: "New chat" }))
+    fireEvent.click(screen.getByRole("menuitem", { name: "Agent Console" }))
+    fireEvent.click(screen.getByRole("menuitem", { name: "Agent Console · Beta" }))
+    expect(onScopedCreateSession.mock.calls.at(-1)).toEqual(["beta", "console", "default"])
+    expect(onCreateSession).not.toHaveBeenCalled()
+    expect(document.querySelector('[data-boring-workspace-part="app-left-fleet-new-chat"]')).toBeNull()
+  })
+
+  it("keeps colliding ownerless session ids unassigned instead of duplicating or misattributing them", async () => {
+    const user = userEvent.setup()
+    render(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane
+          appTitle="Test"
+          consoleSpike
+          projects={[{ id: "launch", name: "Launch", sessions: [{ id: "shared", title: "Owner unknown" }] }]}
+          agents={[
+            { agentTypeId: "alpha", label: "Boring Alpha" },
+            { agentTypeId: "beta", label: "Boring Beta" },
+          ]}
+          sessions={[
+            { id: "shared", agentTypeId: "alpha", title: "Shared alpha" },
+            { id: "shared", agentTypeId: "beta", title: "Shared beta" },
+          ]}
+          onCreateSession={vi.fn()}
+          navigationEntries={testNavigationEntries()}
+          onSwitchSession={vi.fn()}
+          onOpenSessionAsPane={vi.fn()}
+          onToggleSessionPinned={vi.fn()}
+        />
+      </WorkspaceAttentionProvider>,
+    )
+
+    await user.click(within(screen.getByRole("group", { name: "Organize chats by" })).getByRole("button", { name: "chats" }))
+    expect(screen.getAllByText(/Shared (alpha|beta)/)).toHaveLength(2)
+    expect(screen.getByText("Shared alpha").closest('[data-boring-workspace-part="app-session-row"]')).toHaveTextContent("Unassigned · Alpha")
+    expect(screen.getByText("Shared beta").closest('[data-boring-workspace-part="app-session-row"]')).toHaveTextContent("Unassigned · Beta")
+  })
+
+  it("keeps invalid Project rename input visible and restores disclosure focus after a valid rename", async () => {
+    const user = userEvent.setup()
+    const onRenameProject = vi.fn()
+    render(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane
+          appTitle="Test"
+          consoleSpike
+          projects={[{ id: "launch", name: "Launch", sessions: [] }]}
+          agents={[{ agentTypeId: "alpha", label: "Boring Alpha" }]}
+          sessions={[]}
+          onCreateSession={vi.fn()}
+          consoleSpikeRenameProject={onRenameProject}
+          navigationEntries={testNavigationEntries()}
+          onSwitchSession={vi.fn()}
+          onOpenSessionAsPane={vi.fn()}
+          onToggleSessionPinned={vi.fn()}
+        />
+      </WorkspaceAttentionProvider>,
+    )
+
+    await user.click(screen.getByRole("button", { name: "Launch options" }))
+    await user.click(screen.getByRole("menuitem", { name: "Rename project" }))
+    const input = screen.getByRole("textbox", { name: "Rename Launch" })
+    await user.clear(input)
+    await user.keyboard("{Enter}")
+    expect(input).toHaveAttribute("aria-invalid", "true")
+    expect(onRenameProject).not.toHaveBeenCalled()
+
+    await user.type(input, "Roadmap{Enter}")
+    expect(onRenameProject).toHaveBeenCalledWith("launch", "Roadmap")
+    await waitFor(() => expect(screen.getByRole("button", { name: "Collapse Launch" })).toHaveFocus())
+  })
+
+  it("omits the Agents grouping choice for a one-Agent spike", () => {
+    render(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane
+          appTitle="Test"
+          consoleSpike
+          projects={[]}
+          agents={[{ agentTypeId: "solo", label: "Boring Solo" }]}
+          selectedAgentTypeId="solo"
+          sessions={[]}
+          onCreateSession={vi.fn()}
+          navigationEntries={testNavigationEntries()}
+          onSwitchSession={vi.fn()}
+          onOpenSessionAsPane={vi.fn()}
+          onToggleSessionPinned={vi.fn()}
+        />
+      </WorkspaceAttentionProvider>,
+    )
+
+    const switcher = screen.getByRole("group", { name: "Organize chats by" })
+    expect(within(switcher).getAllByRole("button").map((button) => button.textContent)).toEqual(["projects", "chats"])
+  })
+
   function renderFleetPane(overrides: Partial<Parameters<typeof AppLeftPane>[0]> = {}) {
     const handlers = {
       onCreateSession: vi.fn(),

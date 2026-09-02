@@ -266,6 +266,9 @@ export interface WorkspaceAgentFrontProps<
   appLeftHeaderMode?: WorkspaceAgentAppLeftHeaderMode
   /** Optional cross-project overview rendered in the app-left workspace/project section. */
   appLeftProjects?: WorkspaceAgentAppLeftProject[]
+  /** Disposable #1355 mock creation seam; used only by ?consoleSpike=1. */
+  appLeftConsoleSpikeCreateSession?: (agentTypeId: string, projectId: string, placement: "default" | "split" | "quick") => void
+  appLeftConsoleSpikeRenameProject?: (projectId: string, name: string) => void
   appLeftActiveProjectId?: string | null
   onSwitchAppLeftProject?: (projectId: string) => void
   onOpenAppLeftProjectSession?: (projectId: string, sessionId: string) => void
@@ -725,6 +728,8 @@ export function WorkspaceAgentFront<
   appLeftLayoutMode = "single-project",
   appLeftHeaderMode = "full",
   appLeftProjects,
+  appLeftConsoleSpikeCreateSession,
+  appLeftConsoleSpikeRenameProject,
   appLeftActiveProjectId,
   onSwitchAppLeftProject,
   onOpenAppLeftProjectSession,
@@ -2640,6 +2645,8 @@ export function WorkspaceAgentFront<
           layoutMode={appLeftLayoutMode}
           headerMode={appLeftHeaderMode}
           projects={appLeftProjects}
+          consoleSpikeCreateSession={appLeftConsoleSpikeCreateSession}
+          consoleSpikeRenameProject={appLeftConsoleSpikeRenameProject}
           activeProjectId={appLeftActiveProjectId ?? workspaceId}
           onOpenProjectSession={onOpenAppLeftProjectSession}
           onShowMoreProjectSessions={onShowMoreAppLeftProjectSessions}

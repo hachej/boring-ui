@@ -9,6 +9,7 @@ import { AppLeftPaneAgentCard, shortAgentLabel, type AppLeftPaneAgentStats } fro
 import { ProjectOverview, usePinnedProjectIds } from "./AppLeftPaneProjects"
 import { AppSessionRow, type AppSessionRowState } from "./AppLeftPaneSessionRow"
 import { SessionSubSection } from "./AppLeftPaneSections"
+import { AppLeftPaneConsoleSpike } from "./AppLeftPaneConsoleSpike"
 import { useWorkspaceAttention, workspaceAttentionSessionBadgeForBlocker, type WorkspaceAttentionSessionBadge } from "../../attention/WorkspaceAttentionProvider"
 import { workspaceSessionKey, workspaceSessionKeyFor, type WorkspaceSessionRef } from "../../sessionIdentity"
 import { useWorkingSessionIds } from "../../sessionActivity"
@@ -176,6 +177,10 @@ export interface AppLeftPaneProps {
    * tree (PR2). Defaults to single-project.
    */
   layoutMode?: AppLeftPaneLayoutMode
+  /** Test override for the disposable #1355 route; hosts use ?consoleSpike=1. */
+  consoleSpike?: boolean
+  consoleSpikeCreateSession?: (agentTypeId: string, projectId: string, placement: "default" | "split" | "quick") => void
+  consoleSpikeRenameProject?: (projectId: string, name: string) => void
 }
 
 type SessionRowState = AppSessionRowState
@@ -266,7 +271,14 @@ export function AppLeftPane({
   onDeleteSession,
   onRenameSession,
   layoutMode = "single-project",
+  consoleSpike: consoleSpikeProp = false,
+  consoleSpikeCreateSession,
+  consoleSpikeRenameProject,
 }: AppLeftPaneProps) {
+  // Disposable #1355 frontend-only route. It reuses the real current-app
+  // component tree and leaves every unflagged host byte-for-byte unchanged.
+  const consoleSpike = consoleSpikeProp || (typeof window !== "undefined"
+    && new URLSearchParams(window.location.search).get("consoleSpike") === "1")
   const primaryNavigationEntries = navigationEntries.filter((entry) => entry.kind === "primary")
   const chatsNavigationEntry = navigationEntries.find((entry) => entry.kind === "chats")
   const normalizedActiveSessionId = activeSessionRef
@@ -443,7 +455,16 @@ export function AppLeftPane({
   )
   const headerVisible = headerMode !== "hidden" && (layoutMode !== "multi-project" || headerMode === "workspace")
   const headerShowsBrand = headerMode === "full" && layoutMode !== "multi-project"
-  const renderSession = (session: AppLeftPaneSession, pinned: boolean, projectId = activeProjectId ?? undefined, showOwnerLabel = pinned, nested = false) => {
+  const renderSession = (
+    session: AppLeftPaneSession,
+    pinned: boolean,
+    projectId = activeProjectId ?? undefined,
+    showOwnerLabel = pinned,
+    nested = false,
+    ownerLabelOverride?: string,
+    activeDotOverride?: boolean,
+    showPlacementShortcuts = true,
+  ) => {
     const isActiveProjectSession = !projectId || projectId === activeProjectId
     const sessionKey = workspaceSessionKeyFor(session)
     const state: SessionRowState = isActiveProjectSession && sessionKey === normalizedActiveSessionId && !muteActiveSession
@@ -465,11 +486,12 @@ export function AppLeftPane({
         canPin={isActiveProjectSession}
         working={working}
         attentionBadge={isActiveProjectSession ? sessionBadges.get(sessionKey) : undefined}
-        activeDot={agentRowsEnabled}
+        activeDot={activeDotOverride ?? agentRowsEnabled}
         // The accent dot marks the active chat (spike idiom) and any working one.
         activeDotActive={working || state === "active"}
         compact={agentRowsEnabled && (nested || !pinned)}
-        ownerLabel={showOwnerLabel && session.agentTypeId ? agentLabelById.get(session.agentTypeId) : undefined}
+        showPlacementShortcuts={showPlacementShortcuts}
+        ownerLabel={ownerLabelOverride ?? (showOwnerLabel && session.agentTypeId ? agentLabelById.get(session.agentTypeId) : undefined)}
         onSwitch={isActiveProjectSession
           ? session.agentTypeId
             ? () => onSwitchSession(session.id, session.agentTypeId)
@@ -760,20 +782,49 @@ export function AppLeftPane({
       <section
         data-boring-app-left-nav-key={chatsNavigationEntry?.key}
         className="flex min-h-24 flex-1 flex-col border-t border-border/40 pt-3"
-        aria-labelledby={fleetChromeEnabled ? undefined : "app-left-chats-heading"}
-        aria-label={fleetChromeEnabled ? "Agent navigation" : undefined}
+        aria-labelledby={!consoleSpike && !fleetChromeEnabled ? "app-left-chats-heading" : undefined}
+        aria-label={consoleSpike ? "Chat navigation" : fleetChromeEnabled ? "Agent navigation" : undefined}
       >
-        {!fleetChromeEnabled ? (
+        {consoleSpike ? (
+          <AppLeftPaneConsoleSpike
+            projects={projects ?? []}
+            sessions={sessions}
+            agents={agents}
+            activeSessionId={activeSessionRef?.sessionId ?? activeSessionId}
+            activeSessionAgentTypeId={activeSessionRef?.agentTypeId ?? sessions.find((session) => session.id === activeSessionId)?.agentTypeId}
+            onCreateSession={(agentTypeId, projectId, placement = "default") => {
+              if (agentTypeId && projectId && consoleSpikeCreateSession) consoleSpikeCreateSession(agentTypeId, projectId, placement)
+              else if (placement === "split") onCreateSplitSession?.(agentTypeId)
+              else if (placement === "quick") onCreatePopoverSession?.(agentTypeId)
+              else onCreateSession(agentTypeId)
+            }}
+            onRenameProject={consoleSpikeRenameProject}
+            isSessionPinned={(session) => pinnedSet.has(workspaceSessionKeyFor(session))}
+            renderSession={(session, contextLabel) => renderSession(
+              session,
+              pinnedSet.has(workspaceSessionKeyFor(session)),
+              // Collection labels are organization only in the spike. Every
+              // row still opens in the already-authorized Workspace scope.
+              undefined,
+              false,
+              true,
+              contextLabel,
+              false,
+              false,
+            )}
+          />
+        ) : null}
+        {!consoleSpike && !fleetChromeEnabled ? (
           <h2 id="app-left-chats-heading" className="shrink-0 px-4 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75">
             {chatsNavigationEntry?.label}
           </h2>
         ) : null}
-        {!fleetChromeEnabled ? (
+        {!consoleSpike && !fleetChromeEnabled ? (
           <div data-boring-workspace-part="app-left-new-chat" className="shrink-0 px-2 pb-2">
             <NewChatAction icon={<Plus className="h-4 w-4" strokeWidth={2} />} onCreateSession={onCreateSession} onCreateSplitSession={onCreateSplitSession} onCreatePopoverSession={onCreatePopoverSession} />
           </div>
         ) : null}
-        <div
+        {!consoleSpike ? <div
           data-boring-workspace-part="app-left-session-scroll"
           className="boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto px-2 pb-2 [mask-image:linear-gradient(to_bottom,transparent_0,black_8px,black_calc(100%_-_8px),transparent_100%)] motion-reduce:[mask-image:none]"
         >
@@ -841,7 +892,7 @@ export function AppLeftPane({
               )}
             </div>
           )}
-        </div>
+        </div> : null}
       </section>
 
       {bottomSlot ? <footer data-boring-workspace-part="app-left-footer" className="shrink-0 border-t border-border/40 p-2">{bottomSlot}</footer> : null}

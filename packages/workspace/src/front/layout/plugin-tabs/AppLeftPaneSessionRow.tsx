@@ -108,6 +108,7 @@ export function AppSessionRow({
   activeDot = false,
   activeDotActive = state === "active",
   compact = false,
+  showPlacementShortcuts = true,
   ownerLabel,
   onSwitch,
   onOpenAsPane,
@@ -126,6 +127,8 @@ export function AppSessionRow({
   activeDot?: boolean
   activeDotActive?: boolean
   compact?: boolean
+  /** Keep quick/split hover actions out of deeply nested or touch-constrained rows. */
+  showPlacementShortcuts?: boolean
   ownerLabel?: string
   onSwitch?: (id: string) => void
   onOpenAsPane?: (id: string) => void
@@ -139,14 +142,14 @@ export function AppSessionRow({
   const actionsAvailable = Boolean(onSwitch)
   const renameAvailable = Boolean(onRename) && session.nativeSessionId === session.id && session.hasAssistantReply === true
   const canCopy = session.ephemeral !== true
-  const splitAvailable = state === "normal" && actionsAvailable && canSplit && Boolean(onOpenAsPane)
+  const splitAvailable = showPlacementShortcuts && state === "normal" && actionsAvailable && canSplit && Boolean(onOpenAsPane)
   const pinAvailable = canPin && Boolean(onTogglePinned)
   // Split left the menu for its own hover shortcut, so it no longer justifies
   // opening one — a menu with only that entry would render empty.
   const showMenu = pinAvailable || canCopy || renameAvailable || Boolean(onDelete)
   // A chat already on stage has nothing to gain from the quick overlay —
   // placement shortcuts only apply to chats that are not open yet.
-  const detachAvailable = state === "normal" && actionsAvailable && Boolean(onOpenDetached)
+  const detachAvailable = showPlacementShortcuts && state === "normal" && actionsAvailable && Boolean(onOpenDetached)
   // Placement shortcuts surface directly on hover (owner spec); the menu keeps
   // the rest. One slot per visible action; the pixel size of a slot lives in
   // CSS (one number per breakpoint) instead of a hardcoded width ladder that
