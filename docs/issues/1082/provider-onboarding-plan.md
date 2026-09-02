@@ -55,6 +55,9 @@ bounded slice.
 - funding-source selection, provenance picker rows, fleet-tier integration, and
   workspace billing policy;
 - MCP, search, transcription, plugins, and sandbox credential delivery;
+- Pi steering turns while operation-scoped credentials are active; PR 1 supports
+  ordinary prompts and one-at-a-time follow-ups only, because Pi 0.84.4 uses a
+  separate steering queue without the actor-bound drain seam qualified here;
 - dynamic KMS-key provisioning, DEK generation rotation, crypto-shred workflows,
   legacy credential migration, and external rollback anchoring.
 
@@ -428,6 +431,13 @@ The personal Codex store is never injected into automation, scheduled, detached,
 or background-worker runtime construction. Queued interactive follow-ups are
 permitted only under the one-at-a-time lease rule above. Persisting a creator user
 ID is not authorization to use a subscription unattended.
+
+Pi 0.84.4 steering is rejected with stable `CREDENTIAL_DELIVERY_FORBIDDEN` before
+provider authentication whenever the runtime has operation-scoped credentials.
+Compatibility runtimes without the personal store preserve existing steering.
+Supporting actor-bound steering later requires a pinned and canaried enqueue/drain
+seam equivalent to the qualified one-at-a-time follow-up boundary; it is not
+silently routed through the previous actor's active turn.
 
 The model route first re-authorizes the request, then resolves an actor-aware
 catalog for display. Its availability snapshot is advisory. The operation-scoped

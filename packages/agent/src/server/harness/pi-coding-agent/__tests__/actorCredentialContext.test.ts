@@ -13,6 +13,7 @@ import type {
   VerifiedWorkspaceCredentialAuthorityV1,
   WorkspaceCredentialOperationAuthorityV1,
 } from '../../../../shared/credentials/authority.js'
+import { CREDENTIAL_ERROR_CODES } from '../../../../shared/credentials/errors.js'
 import { createFakeAuthorityVerifierV1 } from '../../../credentials/hostResolver.js'
 import {
   ACTOR_CREDENTIAL_CONTEXT_MISSING,
@@ -443,6 +444,89 @@ describe('shared Pi handle actor seam', () => {
       expect(actors).toEqual(['user-a', 'user-b'])
       expect(createCredentialStore).toHaveBeenCalledTimes(1)
       expect(open).toHaveBeenCalledTimes(1)
+    } finally {
+      await rm(cwd, { recursive: true, force: true })
+    }
+  }, 20_000)
+
+  it('rejects Pi steering before another actor can resolve credentials', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'pi-actor-steering-rejected-'))
+    try {
+      const firstStarted = deferred()
+      const releaseFirst = deferred()
+      const resolvedActors: string[] = []
+      let providerCall = 0
+      const harness = createPiCodingAgentHarness({
+        tools: [],
+        cwd,
+        sessionRoot: cwd,
+        pi: {
+          createCredentialStore: (input) => createOperationScopedCredentialStore({
+            ...input,
+            compatibilityStore: emptyStore(),
+            resolveActorStore: (actor) => {
+              resolvedActors.push(actor.userId)
+              return memoryStore({
+                'openai-codex': {
+                  type: 'oauth',
+                  access: codexAccessToken(actor.userId),
+                  refresh: `refresh-${actor.userId}`,
+                  expires: Date.now() + 3_600_000,
+                  accountId: `account-${actor.userId}`,
+                },
+              })
+            },
+          }),
+          extensionFactories: [(pi) => {
+            pi.registerProvider('openai-codex', {
+              api: 'openai-completions',
+              baseUrl: 'https://example.invalid',
+              models: [{
+                id: 'gpt-5.6-luna',
+                name: 'Actor steering probe',
+                api: 'openai-completions',
+                reasoning: false,
+                input: ['text'],
+                cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+                contextWindow: 50,
+                maxTokens: 16,
+              }],
+              streamSimple() {
+                providerCall += 1
+                firstStarted.resolve()
+                return providerStream('steering-probe', 'response', releaseFirst.promise)
+              },
+            })
+          }],
+        },
+      })
+      const sessionCtx = { workspaceId: 'workspace-a' }
+      const { id } = await harness.sessions.create(sessionCtx)
+      const model = { provider: 'openai-codex', id: 'gpt-5.6-luna' }
+      const adapterA = await harness.getPiSessionAdapter!(
+        { sessionId: id, content: '', model, ctx: sessionCtx },
+        runContext(cwd, 'A'),
+      )
+      const adapterB = await harness.getPiSessionAdapter!(
+        { sessionId: id, content: '', model, ctx: sessionCtx },
+        runContext(cwd, 'B'),
+      )
+
+      resolvedActors.length = 0
+      const running = adapterA.prompt('turn A')
+      await firstStarted.promise
+      await expect(adapterB.prompt({
+        text: 'steer as B',
+        options: { streamingBehavior: 'steer' },
+      })).rejects.toMatchObject({
+        code: CREDENTIAL_ERROR_CODES.DELIVERY_FORBIDDEN,
+      })
+      expect(providerCall).toBe(1)
+      expect(resolvedActors).not.toContain('B')
+
+      releaseFirst.resolve()
+      await running
+      await harness.sessions.delete(sessionCtx, id)
     } finally {
       await rm(cwd, { recursive: true, force: true })
     }

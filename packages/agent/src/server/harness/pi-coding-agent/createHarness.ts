@@ -570,9 +570,19 @@ export function createPiCodingAgentHarness(opts: {
     const adapter = createPiAgentSessionAdapter(handle.piSession, { sessionId });
     return {
       ...adapter,
-      prompt: (promptInput) => {
+      prompt: async (promptInput) => {
         assertCredentialQueueMode();
-        return handle.operationContexts.run(ctx, () => adapter.prompt(promptInput));
+        if (
+          handle.operationScopedCredentials
+          && typeof promptInput !== "string"
+          && promptInput.options?.streamingBehavior === "steer"
+        ) {
+          throw new CredentialResolutionError(
+            CREDENTIAL_ERROR_CODES.DELIVERY_FORBIDDEN,
+            "steering is unavailable with operation-scoped credentials",
+          );
+        }
+        await handle.operationContexts.run(ctx, () => adapter.prompt(promptInput));
       },
       followUp: (text, options) => {
         assertCredentialQueueMode();
@@ -727,25 +737,33 @@ export function createPiCodingAgentHarness(opts: {
       ...(resourceLoader ? { resourceLoader } : {}),
     });
 
-    if (credentialStore && piSession.followUpMode !== "one-at-a-time") {
-      throw new CredentialResolutionError(
-        CREDENTIAL_ERROR_CODES.AUTHORITY_INVALID,
-        "operation-scoped credentials require one-at-a-time follow-up mode",
-      );
+    // Native Pi now owns transcript/session resources. Until the returned
+    // handle is installed, every failure must dispose it here; the outer
+    // generation fence can only dispose successfully returned handles.
+    try {
+      if (credentialStore && piSession.followUpMode !== "one-at-a-time") {
+        throw new CredentialResolutionError(
+          CREDENTIAL_ERROR_CODES.AUTHORITY_INVALID,
+          "operation-scoped credentials require one-at-a-time follow-up mode",
+        );
+      }
+      operationContexts.bindQueuedFollowUps(piSession, Boolean(credentialStore));
+      const handle: PiSessionHandle = {
+        piSession,
+        modelRuntime,
+        sessionManager,
+        resourceLoader,
+        sessionId: sessionId,
+        sessionCtx,
+        operationScopedCredentials: Boolean(credentialStore),
+        operationContexts,
+      };
+      piSessions.set(sessionCacheKey(sessionId, sessionCtx), handle);
+      return handle;
+    } catch (error) {
+      piSession.dispose();
+      throw error;
     }
-    operationContexts.bindQueuedFollowUps(piSession, Boolean(credentialStore));
-    const handle: PiSessionHandle = {
-      piSession,
-      modelRuntime,
-      sessionManager,
-      resourceLoader,
-      sessionId: sessionId,
-      sessionCtx,
-      operationScopedCredentials: Boolean(credentialStore),
-      operationContexts,
-    };
-    piSessions.set(sessionCacheKey(sessionId, sessionCtx), handle);
-    return handle;
   }
 
   async function reloadPiSession(sessionId: string): Promise<boolean> {
