@@ -4,10 +4,8 @@ import {
   CredentialResolutionError,
 } from '../../../shared/credentials/errors.js'
 import type { SessionCtx } from '../../../shared/session.js'
-import type {
-  PiHarnessCredentialOperationLease,
-  PiHarnessCredentialStore,
-} from './createHarness.js'
+import type { PiHarnessCredentialStore } from './createHarness.js'
+import type { PiHarnessCredentialOperationLease } from './operationContextCoordinator.js'
 
 const ACTOR_SCOPED_PROVIDER_ID = 'openai-codex'
 
@@ -42,6 +40,12 @@ function credentialError(
   return new CredentialResolutionError(code, message)
 }
 
+function isActorContextError(error: unknown): boolean {
+  const code = (error as { code?: unknown } | undefined)?.code
+  return code === CREDENTIAL_ERROR_CODES.AUTHORITY_INVALID ||
+    code === CREDENTIAL_ERROR_CODES.DELIVERY_FORBIDDEN
+}
+
 function operationSignal(
   lease: PiHarnessCredentialOperationLease,
   callerSignal: AbortSignal | undefined,
@@ -50,17 +54,28 @@ function operationSignal(
   return AbortSignal.any([lease.signal, callerSignal])
 }
 
+function optionalActiveLease(
+  options: OperationScopedCredentialStoreOptions,
+): PiHarnessCredentialOperationLease | undefined {
+  const lease = options.getOperationLease()
+  try {
+    lease?.assertActive()
+    return lease
+  } catch {
+    return undefined
+  }
+}
+
 function activeLease(
   options: OperationScopedCredentialStoreOptions,
 ): PiHarnessCredentialOperationLease {
-  const lease = options.getOperationLease()
+  const lease = optionalActiveLease(options)
   if (!lease) {
     throw credentialError(
       CREDENTIAL_ERROR_CODES.AUTHORITY_INVALID,
       'credential operation authority is missing or expired',
     )
   }
-  lease.assertActive()
   return lease
 }
 
@@ -147,13 +162,15 @@ export function createOperationScopedCredentialStore(
     },
 
     async list(operationOptions) {
+      // Capture before the first await. A pending list may lose this lease, but
+      // it must never adopt a newer actor that arrives while compatibility I/O
+      // is in flight.
+      const lease = optionalActiveLease(options)
       const compatibility = (await options.compatibilityStore.list(operationOptions))
         .filter((entry) => entry.providerId !== ACTOR_SCOPED_PROVIDER_ID)
-      let lease: PiHarnessCredentialOperationLease
-      let actor: PiHarnessCredentialStore
+      if (!lease) return compatibility
       try {
-        lease = activeLease(options)
-        actor = await actorStore(lease)
+        const actor = await actorStore(lease)
         const actorEntries = (await actor.list({
           ...operationOptions,
           signal: operationSignal(lease, operationOptions?.signal),
@@ -161,13 +178,7 @@ export function createOperationScopedCredentialStore(
         lease.assertActive()
         return [...compatibility, ...actorEntries]
       } catch (error) {
-        if (
-          error instanceof CredentialResolutionError &&
-          (error.code === CREDENTIAL_ERROR_CODES.AUTHORITY_INVALID ||
-            error.code === CREDENTIAL_ERROR_CODES.DELIVERY_FORBIDDEN)
-        ) {
-          return compatibility
-        }
+        if (isActorContextError(error)) return compatibility
         throw error
       }
     },

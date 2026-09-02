@@ -122,9 +122,12 @@ passes its abort signal to actor-store writes so they can reject before commit.
 Completion revokes the lease, so detached descendants and lookups already waiting
 on remote I/O fail closed. Interactive follow-ups receive a fresh lease at Pi's
 one-at-a-time queue-drain boundary, before `prepareNextTurn` and automatic
-compaction; `message_start` is too late. Operation-scoped runtimes force native
-follow-up mode to `one-at-a-time` so one provider request has one payer. The
-runtime never caches an actor or accepts one from an untrusted browser field.
+compaction; `message_start` is too late. That lease is bound only to the Pi
+continuation's AsyncLocalStorage chain, so concurrent request operations retain
+their own actor. It is revoked at the next drain, `agent_end`, or handle cleanup,
+whichever happens first. Operation-scoped runtimes force native follow-up mode to
+`one-at-a-time` so one provider request has one payer. The runtime never caches an
+actor or accepts one from an untrusted browser field.
 
 No global `auth.json` is read or written. Tokens never enter the browser,
 workspace filesystem, session transcript, tool sandbox, or automation worker.

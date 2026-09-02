@@ -1,7 +1,11 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { InMemoryCredentialStore, type CredentialStore } from '@earendil-works/pi-ai'
+import {
+  InMemoryCredentialStore,
+  type AssistantMessageEventStream,
+  type CredentialStore,
+} from '@earendil-works/pi-ai'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { RunContext } from '../../../../shared/harness.js'
 import type {
@@ -88,10 +92,48 @@ function emptyStore(): CredentialStore {
   return new InMemoryCredentialStore()
 }
 
-function deferred<T>() {
+function deferred<T = void>() {
   let resolve!: (value: T) => void
   const promise = new Promise<T>((done) => { resolve = done })
   return { promise, resolve }
+}
+
+function codexAccessToken(userId: string): string {
+  const payload = Buffer.from(JSON.stringify({
+    'https://api.openai.com/auth': { chatgpt_account_id: `account-${userId}` },
+  })).toString('base64url')
+  return `header.${payload}.signature`
+}
+
+function providerStream(id: string, text: string, wait?: Promise<void>): AssistantMessageEventStream {
+  const message = {
+    id,
+    role: 'assistant' as const,
+    content: [{ type: 'text' as const, text }],
+    api: 'openai-completions' as const,
+    provider: 'openai-codex',
+    model: 'gpt-5.6-luna',
+    usage: {
+      input: 1,
+      output: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 2,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: 'stop' as const,
+    timestamp: Date.now(),
+  }
+  return {
+    async *[Symbol.asyncIterator]() {
+      await wait
+      yield { type: 'start', partial: { ...message, content: [] } }
+      yield { type: 'text_delta', contentIndex: 0, delta: text, partial: message }
+      yield { type: 'text_end', contentIndex: 0, content: text, partial: message }
+      yield { type: 'done', reason: 'stop', message }
+    },
+    async result() { return message },
+  } as unknown as AssistantMessageEventStream
 }
 
 function memoryStore(entries: Record<string, Awaited<ReturnType<CredentialStore['read']>>>): CredentialStore {
@@ -178,6 +220,50 @@ describe('operation-scoped credential delegation', () => {
       credentialAuthority: { ...valid.credentialAuthority!, scope: copiedScope },
     }).lease
     await expect(store.read('openai-codex')).rejects.toMatchObject({ code: ACTOR_CREDENTIAL_CONTEXT_MISSING })
+  })
+
+  it('retains the entry lease across a deferred compatibility list and never adopts a newer actor', async () => {
+    let current: PiHarnessCredentialOperationLease | undefined
+    const compatibilityStarted = deferred<void>()
+    const releaseCompatibility = deferred<void>()
+    const compatibility: CredentialStore = {
+      async read() { return undefined },
+      async list() {
+        compatibilityStarted.resolve()
+        await releaseCompatibility.promise
+        return [{ providerId: 'anthropic', type: 'api_key' }]
+      },
+      async modify(_providerId, modify) { return modify(undefined) },
+      async delete() {},
+    }
+    const resolvedActors: string[] = []
+    const store = createOperationScopedCredentialStore({
+      sessionCtx: { workspaceId: 'workspace-a' },
+      getOperationLease: () => current,
+      compatibilityStore: compatibility,
+      resolveActorStore: (actor) => {
+        resolvedActors.push(actor.userId)
+        return memoryStore({
+          'openai-codex': {
+            type: 'oauth',
+            access: actor.userId,
+            refresh: `refresh-${actor.userId}`,
+            expires: 1,
+          },
+        })
+      },
+    })
+
+    const actorA = operationLease(runContext('/tmp', 'user-a'))
+    current = actorA.lease
+    const pending = store.list()
+    await compatibilityStarted.promise
+    actorA.revoke()
+    current = operationLease(runContext('/tmp', 'user-b')).lease
+    releaseCompatibility.resolve()
+
+    await expect(pending).resolves.toEqual([{ providerId: 'anthropic', type: 'api_key' }])
+    expect(resolvedActors).toEqual([])
   })
 
   it('preserves compatibility behavior outside the actor-scoped provider set', async () => {
@@ -361,6 +447,150 @@ describe('shared Pi handle actor seam', () => {
       await rm(cwd, { recursive: true, force: true })
     }
   }, 20_000)
+
+  it('keeps a blocked queued Pi continuation isolated from concurrent and detached harness commands', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'pi-actor-concurrent-'))
+    try {
+      const firstStarted = deferred()
+      const releaseFirst = deferred()
+      const bStarted = deferred()
+      const releaseB = deferred()
+      const bReadStarted = deferred()
+      const releaseBRead = deferred()
+      let deferNextBRead = false
+      let bReadSignal: AbortSignal | undefined
+      let bReadReturnedAfterDispose = false
+      let providerCall = 0
+      let detachedAuth: Promise<unknown> | undefined
+      let queuedAuth: Promise<unknown> | undefined
+      let currentRegistry: { getApiKeyForProvider(providerId: string): Promise<string | undefined> } | undefined
+      const commandKeys: string[] = []
+      const resolvedActors: string[] = []
+
+      const harness = createPiCodingAgentHarness({
+        tools: [],
+        cwd,
+        sessionRoot: cwd,
+        pi: {
+          createCredentialStore: (input) => createOperationScopedCredentialStore({
+            ...input,
+            compatibilityStore: emptyStore(),
+            resolveActorStore: (actor): CredentialStore => ({
+              async read(_providerId, options) {
+                resolvedActors.push(actor.userId)
+                if (actor.userId === 'B' && deferNextBRead) {
+                  deferNextBRead = false
+                  bReadSignal = options?.signal
+                  bReadStarted.resolve()
+                  await releaseBRead.promise
+                  if (options?.signal?.aborted) throw new DOMException('aborted', 'AbortError')
+                  bReadReturnedAfterDispose = true
+                }
+                return {
+                  type: 'oauth',
+                  access: codexAccessToken(actor.userId),
+                  refresh: `refresh-${actor.userId}`,
+                  expires: Date.now() + 3_600_000,
+                  accountId: `account-${actor.userId}`,
+                }
+              },
+              async list() { return [{ providerId: 'openai-codex', type: 'oauth' }] },
+              async modify(_providerId, modify) { return modify(undefined) },
+              async delete() {},
+            }),
+          }),
+          extensionFactories: [(pi) => {
+            pi.registerProvider('openai-codex', {
+              api: 'openai-completions',
+              baseUrl: 'https://example.invalid',
+              models: [{
+                id: 'gpt-5.6-luna',
+                name: 'Actor probe',
+                api: 'openai-completions',
+                reasoning: false,
+                input: ['text'],
+                cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+                contextWindow: 50,
+                maxTokens: 16,
+              }],
+              streamSimple() {
+                providerCall += 1
+                if (providerCall === 1) firstStarted.resolve()
+                if (providerCall === 2) {
+                  bStarted.resolve()
+                  deferNextBRead = true
+                  queuedAuth = currentRegistry!.getApiKeyForProvider('openai-codex')
+                }
+                return providerStream(
+                  `assistant-${providerCall}`,
+                  `response-${providerCall}`,
+                  providerCall === 1 ? releaseFirst.promise : providerCall === 2 ? releaseB.promise : undefined,
+                )
+              },
+            })
+            pi.registerCommand('capture-detached-auth', {
+              description: 'capture a lookup whose command lease will expire',
+              handler: async (_args, commandContext) => {
+                currentRegistry = commandContext.modelRegistry
+                detachedAuth = (async () => {
+                  await bStarted.promise
+                  return commandContext.modelRegistry.getApiKeyForProvider('openai-codex')
+                })()
+              },
+            })
+            pi.registerCommand('resolve-current-auth', {
+              description: 'resolve the concurrent command actor',
+              handler: async (_args, commandContext) => {
+                currentRegistry = commandContext.modelRegistry
+                commandKeys.push((await commandContext.modelRegistry.getApiKeyForProvider('openai-codex')) ?? 'missing')
+              },
+            })
+          }],
+        },
+      })
+      const sessionCtx = { workspaceId: 'workspace-a' }
+      const { id } = await harness.sessions.create(sessionCtx)
+      const model = { provider: 'openai-codex', id: 'gpt-5.6-luna' }
+      const adapterA = await harness.getPiSessionAdapter!(
+        { sessionId: id, content: '', model, ctx: sessionCtx },
+        runContext(cwd, 'A'),
+      )
+      const adapterB = await harness.getPiSessionAdapter!(
+        { sessionId: id, content: '', model, ctx: sessionCtx },
+        runContext(cwd, 'B'),
+      )
+      await harness.executeSlashCommand!(id, 'capture-detached-auth', '', runContext(cwd, 'A'))
+
+      const running = adapterA.prompt('turn A')
+      await Promise.race([
+        firstStarted.promise,
+        running.then(() => { throw new Error(`turn A completed before the test provider started: ${JSON.stringify(adapterA.readSnapshot())}`) }),
+      ])
+      await adapterB.followUp('turn B')
+      releaseFirst.resolve()
+      await bStarted.promise
+      await bReadStarted.promise
+
+      await harness.executeSlashCommand!(id, 'resolve-current-auth', '', runContext(cwd, 'D'))
+      await expect(detachedAuth).resolves.toBeUndefined()
+      expect(commandKeys).toEqual([codexAccessToken('D')])
+
+      await harness.sessions.delete(sessionCtx, id)
+      expect(bReadSignal?.aborted).toBe(true)
+      releaseBRead.resolve()
+      await expect(queuedAuth).resolves.toBeUndefined()
+      expect(bReadReturnedAfterDispose).toBe(false)
+      releaseB.resolve()
+      await running
+
+      expect(resolvedActors).toContain('A')
+      expect(resolvedActors).toContain('B')
+      expect(resolvedActors).toContain('D')
+      expect(harness.hasPiSession!(id, sessionCtx)).toBe(false)
+    } finally {
+      await rm(cwd, { recursive: true, force: true })
+    }
+  }, 30_000)
 
   it('rechecks the same lease after deferred verifier and actor-store reads', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'pi-actor-revocation-'))

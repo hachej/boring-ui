@@ -391,8 +391,8 @@ Interactive session construction must resolve and verify the actor before it
 constructs or resumes model operations. Pi handle/cache identity remains
 `(sessionId, workspaceId)`: one `AgentSession`, `SessionManager`, `ModelRuntime`,
 and transcript writer are shared by authorized members of that workspace
-session. Actor identity and authority live only in a revocable per-operation lease. The
-shared runtime receives one delegating `CredentialStore`; for every actor-scoped
+session. Actor identity and authority live only in a revocable per-operation lease.
+The shared runtime receives one delegating `CredentialStore`; for every actor-scoped
 operation it retains the same lease, verifies opaque authority, resolves a fresh
 immutable actor-bound inner store, and never caches the actor. It calls
 `assertActive()` after every asynchronous verifier/store boundary and immediately
@@ -406,9 +406,12 @@ workspace/execution mismatches fail closed.
 Queued follow-ups capture the submitting operation's opaque authority and receive
 a fresh bounded lease at Pi's one-at-a-time follow-up queue **drain boundary**,
 before Pi runs `prepareNextTurn` or automatic compaction for that queued turn. The
-prior lease is revoked at the next drain and the final lease is revoked at
-`agent_end`. Activation at `message_start` is forbidden because Pi may perform a
-provider-funded compaction before emitting that event. Whenever operation-scoped
+lease is installed only on that Pi continuation's AsyncLocalStorage chain; a
+concurrent request operation establishes its own nested lease and cannot borrow or
+be overridden by the queued payer. The prior continuation lease is revoked at the
+next drain and the final lease is revoked at `agent_end` or handle cleanup/disposal,
+whichever comes first. Activation at `message_start` is forbidden because Pi may
+perform a provider-funded compaction before emitting that event. Whenever operation-scoped
 credentials are composed, Boring forces Pi's actual native `followUpMode` to
 `one-at-a-time` through an in-memory settings overlay, guards the pinned queue
 seam with a published-package contract test, and rejects a runtime that does not
