@@ -30,8 +30,9 @@ Companion decisions:
   scope.
 - [`pi-async-credential-store-decision.md`](pi-async-credential-store-decision.md)
   — accepted 2026-08-31: migrate from Pi 0.80.7's synchronous
-  `AuthStorageBackend` integration to Pi 0.84.3's asynchronous
-  `CredentialStore` + `ModelRuntime` before provider onboarding.
+  `AuthStorageBackend` integration to the latest tested published Pi
+  `CredentialStore` + `ModelRuntime` contract before provider onboarding.
+  PR #1500 historically established 0.84.3; the PR 1 baseline is exact 0.84.4.
 
 ## What #1132 already delivers (verified against the PR diff)
 

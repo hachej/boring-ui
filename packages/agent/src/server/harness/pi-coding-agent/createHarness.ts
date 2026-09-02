@@ -95,8 +95,15 @@ function composeSystemPromptAppend(hostAppend: string | undefined): string {
 
 export type PiHarnessCredentialStore = NonNullable<CreateModelRuntimeOptions["credentials"]>;
 
+export interface PiHarnessCredentialStoreFactoryInput {
+  /** Immutable identity of the one shared Pi handle/transcript. */
+  readonly sessionCtx: Readonly<SessionCtx>;
+  /** Live operation actor; implementations must not retain its return value. */
+  readonly getRunContext: () => RunContext | undefined;
+}
+
 export type PiHarnessCredentialStoreFactory = (
-  getRunContext: () => RunContext | undefined,
+  input: PiHarnessCredentialStoreFactoryInput,
 ) => PiHarnessCredentialStore;
 
 export interface PiHarnessOptions {
@@ -489,9 +496,6 @@ export function createPiCodingAgentHarness(opts: {
   });
   const piSessions = new Map<string, PiSessionHandle>();
   const runContextStorage = new AsyncLocalStorage<RunContext>();
-  // One delegating store is shared by every session runtime in this harness.
-  // Actor identity remains operation-scoped in ALS, never in the Pi handle key.
-  const credentialStore = pi.createCredentialStore?.(() => runContextStorage.getStore());
 
   // Effective Pi resources merge static caller-supplied fields with
   // getHotReloadableResources() output. Pi's DefaultResourceLoader keeps the
@@ -601,9 +605,15 @@ export function createPiCodingAgentHarness(opts: {
     input: AgentSendInput,
     ctx: RunContext,
   ): Promise<PiSessionHandle> {
-    // Auth/model credentials remain Pi-owned. The default runtime reads Pi's
-    // normal environment/settings/auth sources; Boring does not pick a
-    // provider credential itself.
+    // One operation-delegating store belongs to this shared runtime/handle.
+    // It resolves the live actor from ALS; actor identity never enters the Pi
+    // handle key and is never retained on the runtime.
+    const credentialStore = pi.createCredentialStore?.({
+      sessionCtx: Object.freeze({ ...sessionCtx }),
+      getRunContext: () => runContextStorage.getStore(),
+    });
+    // Auth/model credentials remain Pi-owned. Without the explicit seam, the
+    // compatibility runtime keeps Pi's normal environment/settings/auth sources.
     const { modelRuntime } = await createConfiguredModelRuntime(
       credentialStore ? { credentials: credentialStore } : undefined,
     );
@@ -865,13 +875,15 @@ export function createPiCodingAgentHarness(opts: {
     reloadSession: reloadPiSession,
 
     async getSlashCommands(sessionId: string, ctx: RunContext): Promise<ReadonlyArray<AgentSlashCommandSummary>> {
-      const handle = await getOrCreatePiSessionForCommand(sessionId, ctx);
-      return handle.resourceLoader.getExtensions().runtime.getCommands().map(normalizeSlashCommandInfo);
+      return bindRunContext(ctx, async () => {
+        const handle = await getOrCreatePiSessionForCommand(sessionId, ctx);
+        return handle.resourceLoader.getExtensions().runtime.getCommands().map(normalizeSlashCommandInfo);
+      });
     },
 
     async executeSlashCommand(sessionId: string, name: string, args: string, ctx: RunContext): Promise<void> {
-      const handle = await getOrCreatePiSessionForCommand(sessionId, ctx);
       await bindRunContext(ctx, async () => {
+        const handle = await getOrCreatePiSessionForCommand(sessionId, ctx);
         const command = handle.piSession.extensionRunner.getCommand(name);
         if (command) {
           const commandContext = handle.piSession.extensionRunner.createCommandContext();
@@ -892,8 +904,10 @@ export function createPiCodingAgentHarness(opts: {
 
     async getPiSessionAdapter(input: AgentSendInput, ctx: RunContext) {
       if (!input.sessionId) throw new Error("sessionId is required to create a Pi session adapter");
-      const handle = await getOrCreatePiSession(input.sessionId, input, ctx);
-      return createRunBoundAdapter(handle, input.sessionId, ctx);
+      return bindRunContext(ctx, async () => {
+        const handle = await getOrCreatePiSession(input.sessionId!, input, ctx);
+        return createRunBoundAdapter(handle, input.sessionId!, ctx);
+      });
     },
   } as AgentHarness & {
     getPiSessionAdapter(input: AgentSendInput, ctx: RunContext): Promise<PiAgentSessionAdapter>;

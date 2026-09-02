@@ -593,10 +593,14 @@ export function createAgentHostRuntimeCapabilityRoutes(
       filterModels: projection.filterModels,
       resolveModelCatalog: projection.resolveModelCatalog,
       authorizeRequest: async (request) => {
-        const { claim } = await resolve(request, agentId(request))
+        const binding = await resolve(request, agentId(request))
+        const { workspaceId, userId } = binding.runContext
+        if (!workspaceId || !userId) {
+          throw new TypeError('authorized model request is missing verified actor identity')
+        }
         return Object.freeze({
-          workspaceId: claim.workspaceScopeId,
-          userId: claim.authSubjectId,
+          workspaceId,
+          userId,
           executionClass: 'request-attached-interactive' as const,
         })
       },

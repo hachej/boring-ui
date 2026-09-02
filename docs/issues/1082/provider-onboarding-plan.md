@@ -2,13 +2,13 @@
 github: https://github.com/hachej/boring-ui/issues/1082
 issue: 1082 (personal OpenAI Codex onboarding)
 state: ready-for-review
-updated: 2026-08-31
-revision: r4
+updated: 2026-09-02
+revision: r4.1
 track: owner
 depends: [`pi-async-credential-store-decision.md`](pi-async-credential-store-decision.md), [`key-scope-decision.md`](key-scope-decision.md)
 ---
 
-# gh-1082 personal OpenAI Codex onboarding — implementation plan r4
+# gh-1082 personal OpenAI Codex onboarding — implementation plan r4.1
 
 ## Goal
 
@@ -78,6 +78,22 @@ newer `origin/main`.
 
 This plan must not reintroduce `AuthStorage`, `AuthStorageBackend`, or
 `ModelRegistry` in production source.
+
+## Forward Pi version policy
+
+PR #1500 remains the historical 0.84.3 prerequisite. It is not a version ceiling.
+At execution time on 2026-09-02, npm reported 0.84.4 as latest for the coordinated
+Pi family, and PR 1 moved the exact lockfile-pinned set to 0.84.4 after package
+contract, conformance, typecheck, build, and invariant validation.
+
+Every implementation slice must re-check npm for the latest published Pi release
+before coding. It must pin the complete coordinated family to exactly one tested
+version: `pi-coding-agent`, `pi-agent-core`, `pi-ai`, `pi-client`, `pi-protocol`,
+`pi-telemetry`, and `pi-tui`. Versions must never float and a family must never be
+mixed. Each slice runs published-package contract/conformance tests. If the
+latest release is incompatible, the slice records the exact failing contract,
+the pinned holdback version, and an intentional owner-approved holdback; it does
+not silently retain an older release.
 
 ## Ratified decisions
 
@@ -161,9 +177,9 @@ providerId  = "openai-codex"
 `userId` comes from current server-side authentication and membership
 verification. It is never accepted from a browser field or copied from an
 unverified session payload. Session resume and model-list requests re-authorize
-current membership and bind the runtime to the current acting user. A different
-workspace member opening the same resumable session receives a different runtime
-and cannot reuse the original member's Codex credential.
+current membership and bind each credential operation to the current acting
+user. Authorized members share one serialized Pi runtime and transcript writer
+for the workspace session, but cannot reuse one another's credential resolution.
 
 The complete identity appears in:
 
@@ -171,7 +187,7 @@ The complete identity appears in:
 - advisory-lock derivation;
 - expected-version CAS;
 - credential lifecycle audit records;
-- session/runtime cache identity;
+- the operation-scoped verified request context;
 - canonical credential-envelope AAD v2.
 
 ### AAD v2
@@ -197,7 +213,7 @@ does not require a per-user DEK or a wrapped-DEK format change.
 
 Map Pi's Codex credential to one atomic encrypted field, for example
 `piCredential`. Before encryption and after decryption, validate the object
-against the pinned Pi 0.84.3 Codex schema:
+against the lockfile-pinned, published Pi 0.84.4 Codex schema:
 
 ```ts
 type PersistedCodexCredentialV1 = Readonly<{
@@ -324,14 +340,14 @@ request.
 Serialize against `modify()`. `ModelRuntime.logout("openai-codex")` delegates to
 `CredentialStore.delete()`, which atomically fences future reads, deletes the
 encrypted credential fields, and leaves metadata state `disconnected`. The store
-never calls back into Pi. Pi 0.84.3's Codex logout path provides local deletion,
+never calls back into Pi. Pi 0.84.4's Codex logout path provides local deletion,
 not a provider-side revocation endpoint; UI and runbooks must not claim upstream
 revocation. A user who needs upstream invalidation is directed to their OpenAI
 account security controls. There is no lower Codex fallback to suppress.
 
 ## Connect flow — Pi device code only
 
-Pi 0.84.3's OpenAI Codex OAuth implementation supports browser and device-code
+Pi 0.84.4's OpenAI Codex OAuth implementation supports browser and device-code
 methods. Its browser method starts a localhost callback server intended for CLI
 use. The web MVP therefore always answers Pi's login-method selection prompt with
 `device_code`.
@@ -367,19 +383,24 @@ sanitized entitlement/provider error.
 ## Runtime and model availability
 
 Interactive session construction must resolve and verify the actor before it
-constructs the model runtime. The session/cache identity includes at least:
-
-```text
-workspaceId + actingUserId + executionMode + credential-policy-version
-```
+constructs or resumes model operations. Pi handle/cache identity remains
+`(sessionId, workspaceId)`: one `AgentSession`, `SessionManager`, `ModelRuntime`,
+and transcript writer are shared by authorized members of that workspace
+session. Actor identity and trusted execution class live only in the
+per-operation request context. The shared runtime receives one delegating
+`CredentialStore`; for every actor-scoped operation it resolves a fresh immutable
+actor-bound inner store from that live context and never caches the actor.
+Missing actor context or a workspace/execution-class mismatch fails closed.
 
 The personal Codex store is never injected into automation, scheduled, queued,
 detached, or background-worker runtime construction. Persisting a creator user ID
 is not authorization to use a subscription unattended.
 
-The actor-aware model route asks the actor-bound `ModelRuntime` for availability.
-Codex models appear only when that actor's personal record is connected and
-readable. Other providers continue using existing behavior.
+The model route first re-authorizes the request, then resolves an actor-aware
+catalog for display. Its availability snapshot is advisory. The operation-scoped
+store at Pi's request-auth seam is authoritative, so a stale picker selection can
+fail as unavailable but can never reuse another actor's credential. Other
+providers continue using existing compatibility behavior.
 
 The store is consulted at Pi's request-auth seam. A credential replacement,
 refresh, disconnect, or `needs_reauth` transition affects the next provider-auth
@@ -573,9 +594,12 @@ post-merge CI.
 
 - preserve current verified `userId` through interactive session and model-list
   construction;
-- include actor and execution mode in session/runtime cache identity;
-- re-authorize current membership on resume;
-- prove a second workspace member cannot reuse another member's runtime;
+- bind actor and trusted request-attached execution class into the live
+  per-operation context while keeping Pi handle/transcript identity
+  `(sessionId, workspaceId)`;
+- re-authorize current membership on every request and resume;
+- prove two authorized members share one serialized runtime/transcript writer
+  but cannot reuse one another's actor-scoped credential resolution;
 - no vault behavior enabled.
 
 ### PR 2 — OVH KMS adapter and live qualification

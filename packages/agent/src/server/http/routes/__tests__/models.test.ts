@@ -4,7 +4,7 @@ import Fastify from 'fastify'
 import { InMemoryCredentialStore } from '@earendil-works/pi-ai'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createConfiguredModelRuntime } from '../../../models/modelRuntime.js'
-import { modelsRoutes } from '../models.js'
+import { modelsRoutes, type VerifiedModelRequestActor } from '../models.js'
 
 const ENV_KEYS = [
   'BORING_AGENT_DEFAULT_MODEL',
@@ -133,7 +133,7 @@ describe('modelsRoutes', () => {
       Object.freeze({ workspaceId: 'workspace-a', userId: 'user-b', executionClass: 'request-attached-interactive' as const }),
     ]
     const authorizeRequest = vi.fn(async () => authorizedActors.shift()!)
-    const resolveModelCatalog = vi.fn(async () => actorCatalog())
+    const resolveModelCatalog = vi.fn(async (_actor: VerifiedModelRequestActor) => actorCatalog())
     const filterContexts: Array<{ workspaceId?: string; userId?: string; executionClass?: string }> = []
     const app = Fastify({ logger: false })
     await app.register(modelsRoutes, {
@@ -166,7 +166,7 @@ describe('modelsRoutes', () => {
   })
 
   it('does not construct an actor catalog when authorization is denied', async () => {
-    const resolveModelCatalog = vi.fn(async () => actorCatalog())
+    const resolveModelCatalog = vi.fn(async (_actor: VerifiedModelRequestActor) => actorCatalog())
     const app = Fastify({ logger: false })
     await app.register(modelsRoutes, {
       authorizeRequest: async () => { throw new Error('denied') },

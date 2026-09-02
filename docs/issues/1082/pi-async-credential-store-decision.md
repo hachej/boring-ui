@@ -2,12 +2,12 @@
 github: https://github.com/hachej/boring-ui/issues/1082
 issue: 1082
 state: accepted
-updated: 2026-08-31
-revision: r1
+updated: 2026-09-02
+revision: r1.1
 track: owner
 ---
 
-# Decision memo — adopt Pi's asynchronous CredentialStore API
+# Decision memo — adopt Pi's asynchronous CredentialStore API (r1.1)
 
 **Decision:** Upgrade the coordinated `@earendil-works/pi-*` packages from
 0.80.7 to a compatible release exposing the asynchronous `CredentialStore`
@@ -45,7 +45,8 @@ not the production path.
 
 ## The target Pi contract
 
-Pi 0.84.3's `@earendil-works/pi-ai` exports:
+The currently tested, lockfile-pinned Pi 0.84.4 `@earendil-works/pi-ai`
+package exports:
 
 ```ts
 interface CredentialStore {
@@ -107,11 +108,13 @@ only personal `(workspaceId, userId, "openai-codex")` custody and has no
 workspace, env, file, or global-auth fallback. A server-policy composite store
 preserves existing behavior for non-Codex providers. Any future layered funding
 model requires a separate approved policy; it is not latent behavior in this
-constructor. Subscription
-credentials are personal and interactive-only. `userId` is derived from the
-authenticated request, retained in session context and session cache identity,
-and included in persistence keys, lock keys, audit records, and AAD v2. It is
-never accepted from an untrusted browser field.
+constructor. Subscription credentials are personal and interactive-only.
+`userId` is derived from the authenticated request and retained only in the live
+operation context, then included in persistence keys, lock keys, audit records,
+and AAD v2. One shared runtime/transcript handle remains keyed by session and
+workspace; its delegating store resolves a fresh immutable actor-bound inner
+store for each operation. It never caches an actor or accepts one from an
+untrusted browser field.
 
 No global `auth.json` is read or written. Tokens never enter the browser,
 workspace filesystem, session transcript, tool sandbox, or automation worker.
@@ -194,6 +197,15 @@ existing env/file behavior. Actor propagation and production vault injection
 remain later slices. Seneca consumes the change only after coordinated Boring
 packages are published.
 
+PR #1500 is the historical prerequisite, not the forward version ceiling. On
+2026-09-02 npm reported 0.84.4 as latest, and PR 1 advanced the complete
+coordinated set (`pi-coding-agent`, `pi-agent-core`, `pi-ai`, `pi-client`,
+`pi-protocol`, `pi-telemetry`, and `pi-tui`) to exact 0.84.4 pins. Every later
+implementation slice re-checks npm, pins the full family to one exact version,
+and runs published-package contract/conformance tests. Any intentional holdback
+must record the latest version, failing contract, retained version, and owner
+approval; floating or mixed family versions are forbidden.
+
 In-memory stores remain isolated test tools and are never production custody.
 
 ## Delivery order
@@ -201,7 +213,9 @@ In-memory stores remain isolated test tools and are never production custody.
 1. **Completed — Pi compatibility PR #1500:** Pi 0.84.3 `ModelRuntime` migration
    preserving existing env/file behavior is merged with green post-merge CI.
 2. **Actor propagation PR:** preserve verified `userId`, current membership,
-   execution mode, and actor-aware session/model-list cache identity.
+   and trusted execution class in per-operation context; keep one shared
+   session/runtime/transcript handle and resolve actor-aware model catalogs only
+   after authorization.
 3. **OVH KMS qualification PR:** implement and live-qualify the production
    `WorkspaceKekProviderV1` adapter against disposable resources and one
    manually provisioned canary wrapping key.
