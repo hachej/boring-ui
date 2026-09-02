@@ -1,0 +1,15 @@
+{
+  "name": "@fixture/factory-smoke",
+  "version": "1.0.0",
+  "private": true,
+  "boring": {
+    "agent": {
+      "definitionId": "boring-factory-smoke",
+      "version": "1.0.0",
+      "label": "Factory Smoke",
+      "description": "Generated agent used by evals/factory/checks/01-boot.ts to verify compose + boot + trivial-turn.",
+      "instructionsRef": "instructions.md"
+    }
+  },
+  "pi": { "skills": [] }
+}

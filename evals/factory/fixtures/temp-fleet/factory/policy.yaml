@@ -1,0 +1,4 @@
+models:
+  seats:
+    factory-smoke: T3
+    creator-growth: T3
