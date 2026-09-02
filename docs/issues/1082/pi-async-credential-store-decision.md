@@ -116,11 +116,15 @@ operation context, then included in persistence keys, lock keys, audit records,
 and AAD v2. One shared runtime/transcript handle remains keyed by session and
 workspace; its delegating store resolves a fresh immutable actor-bound inner
 store for each operation. The live actor sits in a revocable operation lease,
-not raw AsyncLocalStorage data: completion revokes the lease so detached async
-descendants fail closed. Interactive follow-ups receive a fresh lease only when
-Pi starts that user's turn, and operation-scoped runtimes force native follow-up
-mode to `one-at-a-time` so one provider request has one payer. The runtime never
-caches an actor or accepts one from an untrusted browser field.
+not raw AsyncLocalStorage data. The delegating store rechecks the same lease after
+every asynchronous verifier/store boundary and before returning material, and
+passes its abort signal to actor-store writes so they can reject before commit.
+Completion revokes the lease, so detached descendants and lookups already waiting
+on remote I/O fail closed. Interactive follow-ups receive a fresh lease at Pi's
+one-at-a-time queue-drain boundary, before `prepareNextTurn` and automatic
+compaction; `message_start` is too late. Operation-scoped runtimes force native
+follow-up mode to `one-at-a-time` so one provider request has one payer. The
+runtime never caches an actor or accepts one from an untrusted browser field.
 
 No global `auth.json` is read or written. Tokens never enter the browser,
 workspace filesystem, session transcript, tool sandbox, or automation worker.
@@ -219,9 +223,11 @@ In-memory stores remain isolated test tools and are never production custody.
 1. **Completed — Pi compatibility PR #1500:** Pi 0.84.3 `ModelRuntime` migration
    preserving existing env/file behavior is merged with green post-merge CI.
 2. **Actor propagation PR:** preserve opaque verifier-backed credential authority
-   in revocable per-operation leases; keep one shared session/runtime/transcript
-   handle; enforce one-at-a-time interactive follow-ups; and resolve actor-aware
-   model catalogs only after authorization.
+   in revocable per-operation leases; recheck leases across remote I/O and pass
+   cancellation to writes; keep one shared session/runtime/transcript handle;
+   activate one-at-a-time follow-up actors at Pi's queue-drain boundary before
+   preparation/compaction; and resolve actor-aware model catalogs only after
+   authorization.
 3. **OVH KMS qualification PR:** implement and live-qualify the production
    `WorkspaceKekProviderV1` adapter against disposable resources and one
    manually provisioned canary wrapping key.

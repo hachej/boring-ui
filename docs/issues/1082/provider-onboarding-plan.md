@@ -393,19 +393,27 @@ constructs or resumes model operations. Pi handle/cache identity remains
 and transcript writer are shared by authorized members of that workspace
 session. Actor identity and authority live only in a revocable per-operation lease. The
 shared runtime receives one delegating `CredentialStore`; for every actor-scoped
-operation it verifies the opaque authority, resolves a fresh immutable actor-bound
-inner store, and never caches the actor. The lease is revoked in `finally` when
-the authorized prompt/command ends, so AsyncLocalStorage descendants such as
-detached timers cannot retain credential authority. Missing, expired, copied, or
-revoked authority and workspace/execution mismatches fail closed.
+operation it retains the same lease, verifies opaque authority, resolves a fresh
+immutable actor-bound inner store, and never caches the actor. It calls
+`assertActive()` after every asynchronous verifier/store boundary and immediately
+before returning credential material. The lease's abort signal is passed into the
+actor store; `modify()`/`delete()` implementations must check it before durable
+commit. The lease is revoked in `finally` when the authorized prompt/command ends,
+so detached AsyncLocalStorage descendants and already-started deferred lookups
+fail closed. Missing, expired, copied, or revoked authority and
+workspace/execution mismatches fail closed.
 
-Queued follow-ups capture the submitting operation's opaque authority but receive
-a fresh bounded lease only when Pi starts that queued user's turn. The prior
-lease is revoked when the next queued user starts and the final lease is revoked
-at `agent_end`. Whenever operation-scoped credentials are composed, Boring forces
-Pi's actual native `followUpMode` to `one-at-a-time` through an in-memory settings
-overlay and rejects a runtime that does not honor it. `all` is forbidden because
-it can combine several users into one provider request with one payer.
+Queued follow-ups capture the submitting operation's opaque authority and receive
+a fresh bounded lease at Pi's one-at-a-time follow-up queue **drain boundary**,
+before Pi runs `prepareNextTurn` or automatic compaction for that queued turn. The
+prior lease is revoked at the next drain and the final lease is revoked at
+`agent_end`. Activation at `message_start` is forbidden because Pi may perform a
+provider-funded compaction before emitting that event. Whenever operation-scoped
+credentials are composed, Boring forces Pi's actual native `followUpMode` to
+`one-at-a-time` through an in-memory settings overlay, guards the pinned queue
+seam with a published-package contract test, and rejects a runtime that does not
+honor it. `all` is forbidden because it can combine several users into one
+provider request with one payer.
 
 The personal Codex store is never injected into automation, scheduled, detached,
 or background-worker runtime construction. Queued interactive follow-ups are
@@ -610,10 +618,13 @@ post-merge CI.
 
 - preserve current verified `userId` through interactive session and model-list
   construction;
-- bind opaque verifier-backed authority into a revocable live-operation lease
-  while keeping Pi handle/transcript identity `(sessionId, workspaceId)`;
-- force native Pi follow-ups to one-at-a-time and prove detached descendants and
-  mixed-user queued turns cannot retain or combine payer authority;
+- bind opaque verifier-backed authority into a revocable live-operation lease,
+  recheck that same lease after async boundaries, and propagate its abort signal
+  to actor-store commits while keeping Pi handle/transcript identity
+  `(sessionId, workspaceId)`;
+- force native Pi follow-ups to one-at-a-time, activate their actor at the pinned
+  queue-drain boundary before `prepareNextTurn`/compaction, and prove detached,
+  deferred, and mixed-user queued work cannot retain or combine payer authority;
 - re-authorize current membership on every request and resume;
 - prove two authorized members share one serialized runtime/transcript writer
   but cannot reuse one another's actor-scoped credential resolution;

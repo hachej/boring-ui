@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { Agent } from '@earendil-works/pi-agent-core'
 import { InMemoryCredentialStore } from '@earendil-works/pi-ai'
 import { ModelRuntime } from '@mariozechner/pi-coding-agent'
 import { describe, expect, it } from 'vitest'
@@ -31,6 +32,15 @@ describe('published coordinated Pi contract', () => {
         version: TESTED_PI_VERSION,
       })
     }
+  })
+
+  it('exposes the guarded one-at-a-time follow-up drain seam before prepareNextTurn', () => {
+    const agent = new Agent({
+      streamFn: (() => { throw new Error('not called') }) as ConstructorParameters<typeof Agent>[0]['streamFn'],
+      followUpMode: 'one-at-a-time',
+    })
+    const queue = (agent as unknown as { followUpQueue?: { drain?: unknown } }).followUpQueue
+    expect(typeof queue?.drain).toBe('function')
   })
 
   it('preserves modify(undefined) and accepts the tested Codex OAuth shape through ModelRuntime', async () => {

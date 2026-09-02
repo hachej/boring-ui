@@ -34,13 +34,22 @@ import {
 } from "../../piPackages.js";
 import { createResourceSettingsManager } from "./resourceSettingsManager.js";
 
-interface RunContextLease {
+export interface PiHarnessCredentialOperationLease {
   readonly context: RunContext;
-  active: boolean;
+  /** Aborts when the originating operation ends or is superseded by a queued actor. */
+  readonly signal: AbortSignal;
+  /** Rechecks this exact lease; callers must use it after every async boundary. */
+  assertActive(): void;
+}
+
+interface RunContextLease extends PiHarnessCredentialOperationLease {
+  revoke(): void;
 }
 
 interface PiRunContextState {
   queuedFollowUpContexts: WeakMap<object, RunContext>;
+  /** True once Pi drains a follow-up, even when its actor context is missing. */
+  queuedTurnActive: boolean;
   activeQueuedLease?: RunContextLease;
 }
 
@@ -106,8 +115,11 @@ export type PiHarnessCredentialStore = NonNullable<CreateModelRuntimeOptions["cr
 export interface PiHarnessCredentialStoreFactoryInput {
   /** Immutable identity of the one shared Pi handle/transcript. */
   readonly sessionCtx: Readonly<SessionCtx>;
-  /** Live operation actor; detached async descendants and completed operations return undefined. */
-  readonly getRunContext: () => RunContext | undefined;
+  /**
+   * Returns the current operation's revocable authority lease. Consumers must
+   * retain and recheck the same lease across every asynchronous boundary.
+   */
+  readonly getOperationLease: () => PiHarnessCredentialOperationLease | undefined;
 }
 
 export type PiHarnessCredentialStoreFactory = (
@@ -423,30 +435,87 @@ function normalizeSlashCommandInfo(command: SlashCommandInfo): AgentSlashCommand
   };
 }
 
-type PiAgentWithFollowUp = {
-  followUp?: (message: unknown) => unknown;
+type PiFollowUpQueue = {
+  drain: () => unknown[];
 }
 
-// Queued follow-ups are drained by Pi's internal agent loop, outside any
-// AsyncLocalStorage scope, so the submitting run's auth context would be lost.
-// We capture it per queued message here and re-activate it when Pi starts
-// processing that message (message_start), keyed weakly on the message object.
-function rememberQueuedFollowUpRunContexts(
+type PiAgentWithFollowUp = {
+  followUp?: (message: unknown) => unknown;
+  /** Private in Pi 0.84.4; guarded by the exact-version contract canary. */
+  followUpQueue?: PiFollowUpQueue;
+}
+
+// Pi runs prepareNextTurn (including automatic compaction) after draining a
+// queued follow-up but before emitting message_start. Capture on enqueue and
+// activate at that exact one-at-a-time drain boundary so every provider-funded
+// part of the queued turn uses its submitter. This wraps one pinned Pi seam and
+// keeps one AgentSession/transcript writer.
+export function bindQueuedFollowUpRunContexts(
   piSession: AgentSession,
   state: PiRunContextState,
   getRunContext: () => RunContext | undefined,
-): () => void {
-  const agent = (piSession as { agent?: PiAgentWithFollowUp }).agent;
-  if (!agent || typeof agent.followUp !== "function") return () => {};
+  activateRunContext: (ctx: RunContext) => RunContextLease,
+  requireDrainBoundary: boolean,
+): { cleanup: () => void; activateAtMessageStart: boolean } {
+  const agent = (piSession as unknown as { agent?: PiAgentWithFollowUp }).agent;
+  const queue = agent?.followUpQueue;
+  if (!agent || typeof agent.followUp !== "function") {
+    if (requireDrainBoundary) {
+      throw new CredentialResolutionError(
+        CREDENTIAL_ERROR_CODES.AUTHORITY_INVALID,
+        "pinned Pi follow-up enqueue seam is unavailable",
+      );
+    }
+    return { cleanup: () => {}, activateAtMessageStart: true };
+  }
   const originalFollowUp = agent.followUp;
+  const originalDrain = queue?.drain;
   const wrappedFollowUp = function (this: PiAgentWithFollowUp, message: unknown) {
     const ctx = getRunContext();
     if (ctx && message && typeof message === "object") state.queuedFollowUpContexts.set(message, ctx);
     return originalFollowUp.call(this, message);
   };
+  const wrappedDrain = function (this: PiFollowUpQueue): unknown[] {
+    const messages = originalDrain!.call(this);
+    if (messages.length === 0) return messages;
+    if (state.activeQueuedLease) state.activeQueuedLease.revoke();
+    state.activeQueuedLease = undefined;
+    state.queuedTurnActive = true;
+    // Operation-scoped credentials force one-at-a-time mode. If Pi violates
+    // that contract, leave no actor active and fail closed on credential use.
+    if (messages.length === 1) {
+      const message = messages[0];
+      if (message && typeof message === "object") {
+        const ctx = state.queuedFollowUpContexts.get(message);
+        state.queuedFollowUpContexts.delete(message);
+        if (ctx) state.activeQueuedLease = activateRunContext(ctx);
+      }
+    }
+    return messages;
+  };
   agent.followUp = wrappedFollowUp;
-  return () => {
-    if (agent.followUp === wrappedFollowUp) agent.followUp = originalFollowUp;
+  if (!queue || typeof originalDrain !== "function") {
+    if (requireDrainBoundary) {
+      agent.followUp = originalFollowUp;
+      throw new CredentialResolutionError(
+        CREDENTIAL_ERROR_CODES.AUTHORITY_INVALID,
+        "pinned Pi follow-up drain seam is unavailable",
+      );
+    }
+    return {
+      cleanup: () => {
+        if (agent.followUp === wrappedFollowUp) agent.followUp = originalFollowUp;
+      },
+      activateAtMessageStart: true,
+    };
+  }
+  queue.drain = wrappedDrain;
+  return {
+    cleanup: () => {
+      if (agent.followUp === wrappedFollowUp) agent.followUp = originalFollowUp;
+      if (queue.drain === wrappedDrain) queue.drain = originalDrain;
+    },
+    activateAtMessageStart: false,
   };
 }
 
@@ -454,21 +523,24 @@ function updateRunContextStateFromPiEvent(
   state: PiRunContextState,
   event: unknown,
   activateRunContext: (ctx: RunContext) => RunContextLease,
+  activateAtMessageStart: boolean,
 ): void {
   const eventType = (event as { type?: unknown }).type;
   if (eventType === "agent_end") {
-    if (state.activeQueuedLease) state.activeQueuedLease.active = false;
+    if (state.activeQueuedLease) state.activeQueuedLease.revoke();
     state.activeQueuedLease = undefined;
+    state.queuedTurnActive = false;
     return;
   }
-  if (eventType !== "message_start") return;
+  if (!activateAtMessageStart || eventType !== "message_start") return;
   const message = (event as { message?: unknown }).message;
   if (!message || typeof message !== "object") return;
   const ctx = state.queuedFollowUpContexts.get(message);
   if (!ctx) return;
   state.queuedFollowUpContexts.delete(message);
-  if (state.activeQueuedLease) state.activeQueuedLease.active = false;
+  if (state.activeQueuedLease) state.activeQueuedLease.revoke();
   state.activeQueuedLease = activateRunContext(ctx);
+  state.queuedTurnActive = true;
 }
 
 export function createPiCodingAgentHarness(opts: {
@@ -511,10 +583,37 @@ export function createPiCodingAgentHarness(opts: {
   });
   const piSessions = new Map<string, PiSessionHandle>();
   const runContextStorage = new AsyncLocalStorage<RunContextLease>();
-  const getActiveRunContext = (): RunContext | undefined => {
-    const lease = runContextStorage.getStore();
-    return lease?.active ? lease.context : undefined;
+  const createRunContextLease = (context: RunContext): RunContextLease => {
+    const controller = new AbortController();
+    let active = true;
+    return {
+      context,
+      signal: controller.signal,
+      assertActive() {
+        if (!active || controller.signal.aborted) {
+          throw new CredentialResolutionError(
+            CREDENTIAL_ERROR_CODES.AUTHORITY_INVALID,
+            "credential operation authority is missing or expired",
+          );
+        }
+      },
+      revoke() {
+        if (!active) return;
+        active = false;
+        controller.abort();
+      },
+    };
   };
+  const getActiveRunContextLease = (): RunContextLease | undefined => {
+    const lease = runContextStorage.getStore();
+    try {
+      lease?.assertActive();
+      return lease;
+    } catch {
+      return undefined;
+    }
+  };
+  const getActiveRunContext = (): RunContext | undefined => getActiveRunContextLease()?.context;
 
   // Effective Pi resources merge static caller-supplied fields with
   // getHotReloadableResources() output. Pi's DefaultResourceLoader keeps the
@@ -599,22 +698,18 @@ export function createPiCodingAgentHarness(opts: {
   }
 
   async function bindRunContext<T>(ctx: RunContext, run: () => Promise<T>): Promise<T> {
-    const lease: RunContextLease = { context: ctx, active: true };
+    const lease = createRunContextLease(ctx);
     try {
       return await runContextStorage.run(lease, run);
     } finally {
       // AsyncLocalStorage descendants retain object identity. Revoking the
       // lease makes detached timers/tasks fail closed after this operation.
-      lease.active = false;
+      lease.revoke();
     }
   }
 
   function activateQueuedRunContext(ctx: RunContext): RunContextLease {
-    const current = runContextStorage.getStore();
-    if (current) current.active = false;
-    const lease: RunContextLease = { context: ctx, active: true };
-    runContextStorage.enterWith(lease);
-    return lease;
+    return createRunContextLease(ctx);
   }
 
   function createRunBoundAdapter(handle: PiSessionHandle, sessionId: string, ctx: RunContext): PiAgentSessionAdapter {
@@ -653,12 +748,21 @@ export function createPiCodingAgentHarness(opts: {
     input: AgentSendInput,
     ctx: RunContext,
   ): Promise<PiSessionHandle> {
+    const runContextState: PiRunContextState = {
+      queuedFollowUpContexts: new WeakMap(),
+      queuedTurnActive: false,
+    };
+    const getSessionOperationLease = (): RunContextLease | undefined =>
+      runContextState.queuedTurnActive
+        ? runContextState.activeQueuedLease
+        : getActiveRunContextLease();
+    const getSessionRunContext = (): RunContext | undefined => getSessionOperationLease()?.context;
     // One operation-delegating store belongs to this shared runtime/handle.
-    // It resolves the live actor from ALS; actor identity never enters the Pi
-    // handle key and is never retained on the runtime.
+    // It resolves the live actor from a revocable operation lease; actor
+    // identity never enters the Pi handle key or becomes runtime-global.
     const credentialStore = pi.createCredentialStore?.({
       sessionCtx: Object.freeze({ ...sessionCtx }),
-      getRunContext: getActiveRunContext,
+      getOperationLease: getSessionOperationLease,
     });
     if (pi.createCredentialStore && !credentialStore) {
       throw new CredentialResolutionError(
@@ -771,14 +875,13 @@ export function createPiCodingAgentHarness(opts: {
 
     await resourceLoader?.reload()
 
-    const runContextState: PiRunContextState = { queuedFollowUpContexts: new WeakMap() }
     const { session: piSession } = await createAgentSession({
       cwd: runtimeCwd,
       // Suppress Pi's built-in filesystem/shell tools while keeping Boring's
       // adapted tool catalog active. Do NOT pass an explicit empty tool-name
       // allowlist: in the current Pi SDK that disables custom tools too.
       noTools: "builtin",
-      customTools: adaptToolsForPi(opts.tools, sessionId, opts.telemetry, getActiveRunContext),
+      customTools: adaptToolsForPi(opts.tools, sessionId, opts.telemetry, getSessionRunContext),
       model,
       thinkingLevel: input.thinkingLevel ?? "off",
       sessionManager,
@@ -793,12 +896,23 @@ export function createPiCodingAgentHarness(opts: {
         "operation-scoped credentials require one-at-a-time follow-up mode",
       );
     }
-    const restoreFollowUpContextWrapper = rememberQueuedFollowUpRunContexts(piSession, runContextState, getActiveRunContext);
+    const queuedContextBinding = bindQueuedFollowUpRunContexts(
+      piSession,
+      runContextState,
+      getActiveRunContext,
+      activateQueuedRunContext,
+      Boolean(credentialStore),
+    );
     const unsubscribePiRunContextListener = piSession.subscribe((event) =>
-      updateRunContextStateFromPiEvent(runContextState, event, activateQueuedRunContext));
+      updateRunContextStateFromPiEvent(
+        runContextState,
+        event,
+        activateQueuedRunContext,
+        queuedContextBinding.activateAtMessageStart,
+      ));
     const unsubscribeRunContextListener = () => {
       unsubscribePiRunContextListener();
-      restoreFollowUpContextWrapper();
+      queuedContextBinding.cleanup();
     };
     const handle: PiSessionHandle = {
       piSession,
