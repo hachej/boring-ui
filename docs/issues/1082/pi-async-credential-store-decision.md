@@ -114,8 +114,10 @@ constructor. Subscription credentials are personal and interactive-only.
 `userId` is derived from the authenticated request and retained only in the live
 operation context, then included in persistence keys, lock keys, audit records,
 and AAD v2. One shared runtime/transcript handle remains keyed by session and
-workspace; its delegating store resolves a fresh immutable actor-bound inner
-store for each operation. The live actor sits in a revocable operation lease,
+workspace. Each handle incarnation, including pending cold creation, owns one
+coordinator that tracks every active and queued lease; coordinators are never
+shared across sessions. Its delegating store resolves a fresh immutable
+actor-bound inner store for each operation. The live actor sits in a revocable operation lease,
 not raw AsyncLocalStorage data. The delegating store rechecks the same lease after
 every asynchronous verifier/store boundary and before returning material, and
 passes its abort signal to actor-store writes so they can reject before commit.
@@ -125,7 +127,10 @@ one-at-a-time queue-drain boundary, before `prepareNextTurn` and automatic
 compaction; `message_start` is too late. That lease is bound only to the Pi
 continuation's AsyncLocalStorage chain, so concurrent request operations retain
 their own actor. It is revoked at the next drain, `agent_end`, or handle cleanup,
-whichever happens first. Operation-scoped runtimes force native follow-up mode to
+whichever happens first. Handle disposal closes the coordinator, revokes all
+active/queued leases, clears captures, and rejects future calls through retained
+adapters before Pi listeners or the writer are disposed. Deleting a pending cold
+creation revokes its coordinator before awaiting the late result. Operation-scoped runtimes force native follow-up mode to
 `one-at-a-time` so one provider request has one payer. The runtime never caches an
 actor or accepts one from an untrusted browser field.
 

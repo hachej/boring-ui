@@ -391,8 +391,10 @@ Interactive session construction must resolve and verify the actor before it
 constructs or resumes model operations. Pi handle/cache identity remains
 `(sessionId, workspaceId)`: one `AgentSession`, `SessionManager`, `ModelRuntime`,
 and transcript writer are shared by authorized members of that workspace
-session. Actor identity and authority live only in a revocable per-operation lease.
-The shared runtime receives one delegating `CredentialStore`; for every actor-scoped
+session. Each handle incarnation owns one operation coordinator allocated before
+cold creation; it is never shared with another session. Actor identity and
+authority live only in leases tracked by that coordinator. The shared runtime
+receives one delegating `CredentialStore`; for every actor-scoped
 operation it retains the same lease, verifies opaque authority, resolves a fresh
 immutable actor-bound inner store, and never caches the actor. It calls
 `assertActive()` after every asynchronous verifier/store boundary and immediately
@@ -400,8 +402,12 @@ before returning credential material. The lease's abort signal is passed into th
 actor store; `modify()`/`delete()` implementations must check it before durable
 commit. The lease is revoked in `finally` when the authorized prompt/command ends,
 so detached AsyncLocalStorage descendants and already-started deferred lookups
-fail closed. Missing, expired, copied, or revoked authority and
-workspace/execution mismatches fail closed.
+fail closed. Handle disposal first closes its coordinator, revokes every active
+and queued lease, clears captured contexts, and prevents stale retained adapters
+from starting another operation; only then may Pi listeners and the transcript
+writer be disposed. A pending cold creation owns the same coordinator, so deletion
+revokes it before awaiting or accepting the late handle. Missing, expired, copied,
+or revoked authority and workspace/execution mismatches fail closed.
 
 Queued follow-ups capture the submitting operation's opaque authority and receive
 a fresh bounded lease at Pi's one-at-a-time follow-up queue **drain boundary**,
@@ -621,10 +627,13 @@ post-merge CI.
 
 - preserve current verified `userId` through interactive session and model-list
   construction;
-- bind opaque verifier-backed authority into a revocable live-operation lease,
-  recheck that same lease after async boundaries, and propagate its abort signal
-  to actor-store commits while keeping Pi handle/transcript identity
-  `(sessionId, workspaceId)`;
+- bind opaque verifier-backed authority into handle-scoped, revocable
+  live-operation leases, recheck the same lease after async boundaries, and
+  propagate its abort signal to actor-store commits while keeping Pi
+  handle/transcript identity `(sessionId, workspaceId)`;
+- allocate the coordinator before cold creation and revoke all active/queued
+  leases on handle deletion, rejecting stale adapters without cancelling an
+  unrelated session;
 - force native Pi follow-ups to one-at-a-time, activate their actor at the pinned
   queue-drain boundary before `prepareNextTurn`/compaction, and prove detached,
   deferred, and mixed-user queued work cannot retain or combine payer authority;

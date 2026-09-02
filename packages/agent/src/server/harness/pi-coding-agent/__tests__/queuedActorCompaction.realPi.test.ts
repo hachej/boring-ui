@@ -196,7 +196,7 @@ describe('pinned Pi queued actor compaction boundary', () => {
         }),
         noTools: 'all',
       })
-      const cleanup = coordinator.bindQueuedFollowUps(session, true)
+      coordinator.bindQueuedFollowUps(session, true)
       const compactionActors: string[] = []
       const unsubscribe = session.subscribe((event) => {
         if (event.type === 'compaction_start') {
@@ -228,8 +228,9 @@ describe('pinned Pi queued actor compaction boundary', () => {
       expect(dCredential).toMatchObject({ access: 'D' })
       await expect(detachedLookup).resolves.toMatchObject({ code: CREDENTIAL_ERROR_CODES.AUTHORITY_INVALID })
 
-      // Mirror handle disposal: retire authority/listeners before Pi disposal.
-      cleanup()
+      // Mirror handle disposal: retire every handle operation and queued
+      // continuation before Pi removes listeners or disposes the writer.
+      coordinator.dispose()
       session.dispose()
       releaseSecondBRead.resolve()
       await expect(pendingBRead).resolves.toMatchObject({ name: 'AbortError' })

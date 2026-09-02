@@ -8,7 +8,7 @@ import {
 
 export interface PiHarnessCredentialOperationLease {
   readonly context: RunContext
-  /** Aborts when the originating operation ends or is superseded by a queued actor. */
+  /** Aborts when the originating operation ends or its Pi handle is disposed. */
   readonly signal: AbortSignal
   /** Rechecks this exact lease; callers must use it after every async boundary. */
   assertActive(): void
@@ -37,6 +37,8 @@ export interface OperationContextCoordinator {
    * continuation async chain before prepareNextTurn/automatic compaction.
    */
   bindQueuedFollowUps(session: AgentSession, requireDrainBoundary: boolean): () => void
+  /** Revokes this handle's operations, clears queue captures, and rejects future runs. */
+  dispose(): void
 }
 
 function authorityExpiredError(): CredentialResolutionError {
@@ -64,13 +66,31 @@ function createLease(context: RunContext): RevocableOperationLease {
 }
 
 /**
- * Owns operation-scoped authority for one harness. AsyncLocalStorage keeps
- * concurrent operations isolated while queue bindings keep state per Pi handle.
+ * Owns operation-scoped authority for one Pi handle/incarnation. The
+ * coordinator is allocated before cold creation and disposed with that handle,
+ * so stale adapters and late creations cannot retain or mint authority.
  */
 export function createOperationContextCoordinator(): OperationContextCoordinator {
   const storage = new AsyncLocalStorage<RevocableOperationLease | undefined>()
+  const activeLeases = new Set<RevocableOperationLease>()
+  const bindingCleanups = new Set<() => void>()
+  let closed = false
+
+  const trackLease = (context: RunContext): RevocableOperationLease => {
+    if (closed) throw authorityExpiredError()
+    const lease = createLease(context)
+    activeLeases.add(lease)
+    return lease
+  }
+
+  const retireLease = (lease: RevocableOperationLease | undefined): void => {
+    if (!lease) return
+    activeLeases.delete(lease)
+    lease.revoke()
+  }
 
   const activeLease = (): RevocableOperationLease | undefined => {
+    if (closed) return undefined
     const lease = storage.getStore()
     try {
       lease?.assertActive()
@@ -81,13 +101,13 @@ export function createOperationContextCoordinator(): OperationContextCoordinator
   }
 
   const run = async <T>(context: RunContext, operation: () => Promise<T>): Promise<T> => {
-    const lease = createLease(context)
+    const lease = trackLease(context)
     try {
       return await storage.run(lease, operation)
     } finally {
       // Descendants retain object identity. Revocation makes detached work fail
       // closed after the authorized operation ends.
-      lease.revoke()
+      retireLease(lease)
     }
   }
 
@@ -95,6 +115,7 @@ export function createOperationContextCoordinator(): OperationContextCoordinator
     session: AgentSession,
     requireDrainBoundary: boolean,
   ): (() => void) => {
+    if (closed) throw authorityExpiredError()
     const agent = (session as unknown as { agent?: PiAgentWithFollowUp }).agent
     const queue = agent?.followUpQueue
     if (!agent || typeof agent.followUp !== 'function') {
@@ -109,12 +130,12 @@ export function createOperationContextCoordinator(): OperationContextCoordinator
 
     let queuedContexts = new WeakMap<object, RunContext>()
     let queuedLease: RevocableOperationLease | undefined
-    let disposed = false
+    let unbound = false
     const originalFollowUp = agent.followUp
     const originalDrain = queue?.drain
 
     const retireQueuedLease = (): void => {
-      queuedLease?.revoke()
+      retireLease(queuedLease)
       queuedLease = undefined
     }
 
@@ -122,13 +143,13 @@ export function createOperationContextCoordinator(): OperationContextCoordinator
       // The ambient lease is the previous Pi turn on this async chain. Revoke
       // it before switching so detached descendants cannot keep spending it.
       const previousAmbient = storage.getStore()
-      previousAmbient?.revoke()
+      retireLease(previousAmbient)
       retireQueuedLease()
-      if (disposed || !context) {
+      if (closed || unbound || !context) {
         storage.enterWith(undefined)
         return
       }
-      queuedLease = createLease(context)
+      queuedLease = trackLease(context)
       // enterWith affects only this continuation chain. Concurrent run(D)
       // calls use storage.run(D) and cannot borrow this queued actor.
       storage.enterWith(queuedLease)
@@ -186,16 +207,30 @@ export function createOperationContextCoordinator(): OperationContextCoordinator
       installQueuedContext(context)
     })
 
-    return () => {
-      if (disposed) return
-      disposed = true
-      // Revoke before listener removal and before restoring private Pi methods.
+    const cleanup = (): void => {
+      if (unbound) return
+      unbound = true
+      bindingCleanups.delete(cleanup)
       retireQueuedLease()
       queuedContexts = new WeakMap()
       unsubscribe()
       if (agent.followUp === wrappedFollowUp) agent.followUp = originalFollowUp
       if (queue && queue.drain === wrappedDrain && originalDrain) queue.drain = originalDrain
     }
+    bindingCleanups.add(cleanup)
+    return cleanup
+  }
+
+  const dispose = (): void => {
+    if (closed) return
+    closed = true
+    // Revoke every active run/continuation before listener removal or Pi
+    // disposal. This also aborts durable-store signals before cleanup returns.
+    for (const lease of activeLeases) lease.revoke()
+    activeLeases.clear()
+    storage.disable()
+    for (const cleanup of [...bindingCleanups]) cleanup()
+    bindingCleanups.clear()
   }
 
   return {
@@ -203,5 +238,6 @@ export function createOperationContextCoordinator(): OperationContextCoordinator
     getActiveLease: activeLease,
     getActiveContext: () => activeLease()?.context,
     bindQueuedFollowUps,
+    dispose,
   }
 }
