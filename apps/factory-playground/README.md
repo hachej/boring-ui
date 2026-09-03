@@ -55,3 +55,21 @@ pnpm --filter factory-playground test
 pnpm --filter factory-playground build
 pnpm lint:invariants
 ```
+
+## Live epic acceptance run
+
+The real, model-driven run (credentials on the API process; `br` on `PATH`). It uses a throwaway epic worktree as the shared workspace so Worker commits and pushes land on a test branch:
+
+```bash
+git worktree add .worktrees/factory-live-epic -b test/factory-live-epic feat/<your-branch>
+BORING_FACTORY_WORKSPACE_ROOT=$PWD/.worktrees/factory-live-epic \
+BORING_FACTORY_EPIC_KEY=live-farewell \
+BORING_FACTORY_ORCHESTRATOR_MODEL=openai-codex:gpt-5.6-sol \
+BORING_FACTORY_WORKER_MODEL=openai-codex:gpt-5.4 \
+BORING_FACTORY_REVIEWER_MODEL=openai-codex:gpt-5.4 \
+  pnpm exec tsx apps/factory-playground/src/server/dev.ts &
+EPIC_WT=$PWD/.worktrees/factory-live-epic EPIC_KEY=live-farewell \
+  node apps/factory-playground/scripts/live-epic-acceptance.mjs
+```
+
+Expected end state, all read back from Bead and git end-states only: one Bead labelled `epic:<key>` created by the Orchestrator; the Worker (started through `dispatch_worker`) claimed it with its own session id, committed only the intended files on the epic branch, verified `git rev-parse HEAD` inside its exact-SHA sandbox, ran the tests there, obtained a `fresh_review` verdict bound to that SHA, pushed the epic branch, and recorded the full handoff as a Bead comment; the Orchestrator's `/loop` reported those facts and stopped; nothing merged, nothing closed. The receipt lands in `workspace/factory-runs/live-<key>.json` of the epic worktree. Recorded run: `docs/issues/1508/live-run-2026-09-03.md`.
