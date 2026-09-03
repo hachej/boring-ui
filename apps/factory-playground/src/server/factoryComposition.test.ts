@@ -136,6 +136,7 @@ describe('native Factory composition', () => {
 
       const header = { 'x-boring-workspace-id': 'factory-playground' }
       const createSession = async (agentTypeId: string) => {
+        let sawReplayUncertain = false
         for (let attempt = 0; attempt < 5; attempt += 1) {
           const response = await app.inject({
             method: 'POST',
@@ -146,9 +147,13 @@ describe('native Factory composition', () => {
           if (response.statusCode === 201) return response.json<{ sessionId: string }>().sessionId
           expect(response.statusCode, response.body).toBe(409)
           expect(response.json<{ error?: { code?: string } }>().error?.code, response.body).toBe('AGENT_REQUEST_OUTCOME_UNKNOWN')
+          sawReplayUncertain = true
           await new Promise((resolve) => setTimeout(resolve, 25 * (attempt + 1)))
         }
-        throw new Error(`failed to create ${agentTypeId} session after replay-uncertain retries`)
+        if (sawReplayUncertain) {
+          throw new Error(`failed to create ${agentTypeId} session after replay-uncertain retries`)
+        }
+        throw new Error(`failed to create ${agentTypeId} session`)
       }
       const workerSessionId = await createSession(FACTORY_WORKER_AGENT_TYPE_ID)
       const orchestratorSessionId = await createSession(FACTORY_ORCHESTRATOR_AGENT_TYPE_ID)
