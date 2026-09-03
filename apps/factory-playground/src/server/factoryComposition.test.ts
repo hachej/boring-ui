@@ -87,6 +87,15 @@ describe('native Factory composition', () => {
     expect(orchestrator.definition.instructions).toContain('`dispatch_worker`')
     expect(orchestrator.definition.instructions).toContain('`factory_status`')
     expect(orchestrator.definition.instructions).toContain('`demo_sandbox`')
+    expect(orchestrator.definition.instructions).toContain('After `close_epic` returns `overall: complete`, raise one final `ask_user` acknowledgement')
+    expect(orchestrator.definition.instructions).toContain('titled `[Feature Name] Done`')
+    expect(orchestrator.definition.instructions).toContain('its context first line must be one plain sentence without IDs')
+    expect(orchestrator.definition.instructions).toContain('PR URL, merge SHA, closed/already-closed Bead IDs, cleanup')
+    expect(orchestrator.definition.instructions).toContain('the calling session, and involved Worker session IDs')
+    expect(orchestrator.definition.instructions).toContain('exactly one required radio field named `acknowledgement` with two options:')
+    expect(orchestrator.definition.instructions).toContain('`acknowledge` labelled `Acknowledge — epic is complete`')
+    expect(orchestrator.definition.instructions).toContain('`follow_up` labelled `Acknowledge — follow-up needed`')
+    expect(orchestrator.definition.instructions).toContain('this is a completion acknowledgement, not merge permission.')
     expect(reviewer.definition.instructions).not.toContain('factory-precedence')
 
     // Naming convention (docs/procedures/naming-conventions.md): feature name flows into the

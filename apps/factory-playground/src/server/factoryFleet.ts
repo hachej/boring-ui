@@ -44,6 +44,13 @@ const FACTORY_PRECEDENCE_CONTENT = {
     'The `show-me` skill above is mandatory, not optional, at both gates: Gate 1 carries the',
     'show-me plan artifact and Gate 2\'s PR body carries a `## Show me` section, per',
     '`owner-gate`\'s SKILL.md.',
+    'After `close_epic` returns `overall: complete`, raise one final `ask_user` acknowledgement',
+    'titled `[Feature Name] Done`; its context first line must be one plain sentence without IDs,',
+    'followed by lines listing the PR URL, merge SHA, closed/already-closed Bead IDs, cleanup',
+    'performed/skipped, the calling session, and involved Worker session IDs. The form schema must',
+    'contain exactly one required radio field named `acknowledgement` with two options:',
+    '`acknowledge` labelled `Acknowledge — epic is complete` and `follow_up` labelled',
+    '`Acknowledge — follow-up needed`; this is a completion acknowledgement, not merge permission.',
   ].join(' '),
 } as const
 
