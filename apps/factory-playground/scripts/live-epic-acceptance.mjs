@@ -27,7 +27,6 @@ const lastText = s => { const a = s.state.messages.filter(m => m.role === 'assis
 const toolNames = s => s.state.messages.flatMap(m => m.parts || []).filter(p => p.type && p.type !== 'text').map(p => `${p.type}:${p.name ?? p.toolName ?? ''}`)
 const git = async (args) => (await exec('git', args, { cwd: EPIC_WT })).stdout.trim()
 const br = async (args) => { const out = JSON.parse((await exec('br', [...args, '--json', '--no-auto-flush'], { cwd: EPIC_WT })).stdout); return Array.isArray(out) ? out : out.issues ?? [] }
-const loop = (sid, args) => call('POST', '/boring-orchestrator/commands/execute', { requestId: randomUUID(), sessionId: sid, name: 'loop', args })
 
 const baseSha = await git(['rev-parse', 'HEAD'])
 console.log('epic worktree base', baseSha, 'epic', EPIC)
@@ -51,21 +50,21 @@ try {
   console.log('ready(epic):', JSON.stringify(receipt.readyAfterPlan))
   if (!ready.length) throw new Error('no ready epic-labelled beads after plan')
 
-  await loop(osid, `120s Supervise epic ${EPIC} only: inspect br (label epic:${EPIC}) and git end-states of the shared worktree. Verify pull-based claims, commits on the epic branch, exact-SHA sandbox test evidence, fresh_review provenance, handoff completeness, no merge. Report durable end-state facts only; never implement or assign Beads.`)
+  await prompt('boring-orchestrator', osid, `Start durable supervision now with the supervise tool (op start, intervalMs 120000) whose prompt tells you to run factory_status for epic ${EPIC} and enforce the recovery rule; report only that supervision is armed.`)
   loopOn = true
-  console.log('loop started')
+  console.log('supervision requested')
   await wait('boring-orchestrator', osid, 2)
 
   await prompt('boring-orchestrator', osid, `Dispatch exactly one Worker now with the dispatch_worker tool. The brief must name epic ${EPIC}, the shared worktree, the pull protocol (br ready --label epic:${EPIC} --unassigned, claim one with --claim --actor <session id>), implement + stage only intended files + commit on the epic branch, exact-SHA dedicated sandbox test via the sandbox tools, adversarial fresh_review of that SHA, then a complete handoff recorded in the Bead (SHA, test evidence, review provenance) and git push of the epic branch. It must never merge or close its own Bead. Do not name a specific Bead. When the tool returns, report the Worker's final answer and what the br/git end-states now show.`)
   let dispatched
   for (;;) { const ws = (await call('GET', '/boring-worker/sessions')).sessions ?? []; const mine = ws.filter(w => (w.title || '').includes(osid.slice(0, 8))); if (mine.length && mine.every(w => w.status === 'idle' && w.turnCount >= 1)) break; await new Promise(r => setTimeout(r, 5000)) }
   console.log('worker session(s) finished')
-  dispatched = await wait('boring-orchestrator', osid, 2)
+  dispatched = await wait('boring-orchestrator', osid, 3)
   console.log('\n=== ORCHESTRATOR AFTER DISPATCH ===\n' + lastText(dispatched))
   console.log('orchestrator tool parts:', JSON.stringify(toolNames(dispatched).slice(-12)))
 
-  await loop(osid, 'stop'); loopOn = false
-  const supervised = await wait('boring-orchestrator', osid, 3, 600000).catch(() => dispatched)
+  await prompt('boring-orchestrator', osid, 'Stop supervision now with the supervise tool (op stop) and report the final epic end-state from factory_status.'); loopOn = false
+  const supervised = await wait('boring-orchestrator', osid, 4, 600000).catch(() => dispatched)
   console.log('\n=== ORCHESTRATOR SUPERVISION (last) ===\n' + lastText(supervised))
 
   const workers = (await call('GET', '/boring-worker/sessions')).sessions ?? []
@@ -87,5 +86,5 @@ try {
   console.log('receipt:', out)
   console.log('\n=== RECEIPT ===\n' + JSON.stringify(receipt, null, 2))
 } finally {
-  if (loopOn && osid) await loop(osid, 'stop').catch(() => {})
+  if (loopOn && osid) await prompt('boring-orchestrator', osid, 'Stop supervision with the supervise tool (op stop).').catch(() => {})
 }
