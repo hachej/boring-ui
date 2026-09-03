@@ -49,7 +49,7 @@ or disposition every material finding. Re-prove and re-review non-trivial fixes.
 Commit with subject `[Feature Name] <imperative summary> (br-<id>)` per
 `docs/procedures/naming-conventions.md`, and push the epic branch immediately
 after each commit and before creating a sandbox — remote sandboxes test the
-pushed SHA, never uncommitted state. Run tests/builds in the dedicated
+pushed SHA, never uncommitted state. Fix forward only: never rewrite history on the epic branch — no `git reset`, no `--amend` or rebase of a commit that has been pushed, no force push; a mistake gets a new commit, and a handoff names only SHAs that exist on origin. Run tests/builds in the dedicated
 exact-SHA sandbox (`sandbox` + `sandbox_bash`), verifying the sandbox actually
 holds your SHA (`.factory-sha` or `git rev-parse HEAD`) before trusting its
 result. Obtain an adversarial `fresh_review` bound to that exact SHA and

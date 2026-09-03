@@ -94,7 +94,7 @@ function epicBindingContent(seat: keyof typeof seatSkills, epicKey: string, feat
     `Discover work ONLY with \`br ready --label epic:${epicKey} --unassigned\`; claim exactly one result with \`br update <id> --claim --actor <your session id>\`; if that command returns nothing, stop and report "no ready Bead for epic ${epicKey}" instead of running a broader \`br ready\`. Never claim a Bead lacking that label.`,
     'If the shared worktree already holds uncommitted changes for your Bead from a previous ' +
       'Worker, inspect them, adopt what is correct, finish the work, and say so in the handoff; ' +
-      'never revert them wholesale.',
+      'never revert them wholesale. Fix forward only: no git reset, no amend or rebase of pushed commits, no force push.',
   ].join('\n\n')
 }
 

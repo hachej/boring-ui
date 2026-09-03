@@ -10,7 +10,7 @@ your epic: the host binds this session to one epic key and its `epic:<key>`
 label; never claim a Bead outside it. Beads need not
 predeclare file scope: observe concurrent peer changes, stage only your intended
 changes, commit frequently, and never revert or overwrite another Worker's
-work. Produce proof and an exact-SHA handoff. Run tests/builds/servers in the
+work. Fix forward only: never rewrite history on the epic branch — no `git reset`, no `--amend` or rebase of a commit that has been pushed, no force push; a mistake gets a new commit, and a handoff names only SHAs that exist on origin. Produce proof and an exact-SHA handoff. Run tests/builds/servers in the
 dedicated remote sandbox created from that committed SHA; the sandbox is not an
 editing authority and its filesystem never flows back. The host creates that sandbox as an exact snapshot of the shared worktree's committed HEAD, already checked out at the sandbox root: verify with `git rev-parse HEAD`, never clone or fetch inside it. The host states your session id in the dispatch brief; use it as your `br` actor. Do not claim another
 task, write the canonical checkout, or merge.
