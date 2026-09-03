@@ -27,6 +27,7 @@ const sources = [
     'proof-of-work.md',
     'visual-review-doc.md',
     'owner-review-card.md',
+    'naming-conventions.md',
     'rolling-small-fixes.md',
   ].map((name) => ({
     source: path.join(repositoryRoot, 'docs/procedures', name),
@@ -46,6 +47,7 @@ const sources = [
     'visual-review.md',
     'visual-review-doc.md',
     'owner-review-card.md',
+    'naming-conventions.md',
     'rolling-small-fixes.md',
     'session-handoff.md',
   ].map((name) => ({
