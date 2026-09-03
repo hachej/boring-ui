@@ -1,7 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { resolve } from 'node:path'
+import { rm } from 'node:fs/promises'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { executeCloseEpic, lookupFactoryPrStatus, type EpicClosureDeps } from './epicClosure'
 import type { DemoEntry } from './demoPlugin'
@@ -12,10 +10,9 @@ vi.mock('node:child_process', async () => {
 })
 
 const mockedExecFile = vi.mocked(execFile)
-const temporaryRoots: string[] = []
 
 afterEach(async () => {
-  await Promise.all(temporaryRoots.splice(0).map(async (root) => await rm(root, { recursive: true, force: true })))
+  await rm('unused', { force: true }).catch(() => {})
   vi.restoreAllMocks()
   mockedExecFile.mockReset()
 })
@@ -80,7 +77,7 @@ describe('executeCloseEpic', () => {
     await expect(executeCloseEpic({ prNumber: 17 }, { abortSignal: new AbortController().signal, toolCallId: 'c2' }, base)).resolves.toMatchObject({ isError: true, details: { code: 'INVALID_INPUT' } })
   })
 
-  it('refuses when branch lookup is unavailable, mismatched, head-sha mismatched, or not merged', async () => {
+  it('refuses when branch lookup is unavailable, mismatched, PR head-sha mismatched, merge-sha mismatched, or not merged', async () => {
     createExecFileMock((file, args) => {
       if (file === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref') return { stdout: 'epic/epic-closure\n' }
       if (file === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD') return { stdout: 'a'.repeat(40) + '\n' }
@@ -102,7 +99,7 @@ describe('executeCloseEpic', () => {
       if (file === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref') return { stdout: 'epic/epic-closure\n' }
       if (file === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD') return { stdout: 'c'.repeat(40) + '\n' }
       if (args[2] === 'epic/epic-closure') return { stdout: JSON.stringify({ number: 17, url: 'x', state: 'MERGED', mergedAt: 'now' }) }
-      if (args[2] === '17') return { stdout: JSON.stringify({ number: 17, url: 'x', state: 'MERGED', mergedAt: 'now', mergeCommit: { oid: 'a'.repeat(40) }, headRefName: 'wrong-branch', headRefOid: 'b'.repeat(40), headRepository: { name: 'repo' }, headRepositoryOwner: { login: 'owner' }, isCrossRepository: false }) }
+      if (args[2] === '17') return { stdout: JSON.stringify({ number: 17, url: 'x', state: 'MERGED', mergedAt: 'now', mergeCommit: { oid: 'a'.repeat(40) }, headRefName: 'wrong-branch', headRefOid: 'c'.repeat(40), headRepository: { name: 'repo' }, headRepositoryOwner: { login: 'owner' }, isCrossRepository: false }) }
       return { stdout: JSON.stringify({ issues: [] }) }
     })
     await expect(executeCloseEpic({ prNumber: 17 }, { abortSignal: new AbortController().signal, toolCallId: 'c3', sessionId: 'orch' }, deps())).resolves.toMatchObject({ isError: true, details: { code: 'PR_HEAD_MISMATCH' } })
@@ -112,7 +109,7 @@ describe('executeCloseEpic', () => {
       if (file === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref') return { stdout: 'epic/epic-closure\n' }
       if (file === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD') return { stdout: 'c'.repeat(40) + '\n' }
       if (args[2] === 'epic/epic-closure') return { stdout: JSON.stringify({ number: 17, url: 'x', state: 'MERGED', mergedAt: 'now' }) }
-      if (args[2] === '17') return { stdout: JSON.stringify({ number: 17, url: 'x', state: 'MERGED', mergedAt: 'now', mergeCommit: { oid: 'd'.repeat(40) }, headRefName: 'epic/epic-closure', headRefOid: 'b'.repeat(40), headRepository: { name: 'repo' }, headRepositoryOwner: { login: 'owner' }, isCrossRepository: false }) }
+      if (args[2] === '17') return { stdout: JSON.stringify({ number: 17, url: 'x', state: 'MERGED', mergedAt: 'now', mergeCommit: { oid: 'c'.repeat(40) }, headRefName: 'epic/epic-closure', headRefOid: 'd'.repeat(40), headRepository: { name: 'repo' }, headRepositoryOwner: { login: 'owner' }, isCrossRepository: false }) }
       return { stdout: JSON.stringify({ issues: [] }) }
     })
     await expect(executeCloseEpic({ prNumber: 17 }, { abortSignal: new AbortController().signal, toolCallId: 'c3b', sessionId: 'orch' }, deps())).resolves.toMatchObject({ isError: true, details: { code: 'PR_HEAD_SHA_MISMATCH' } })
@@ -120,9 +117,19 @@ describe('executeCloseEpic', () => {
     mockedExecFile.mockReset()
     createExecFileMock((file, args) => {
       if (file === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref') return { stdout: 'epic/epic-closure\n' }
+      if (file === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD') return { stdout: 'c'.repeat(40) + '\n' }
+      if (args[2] === 'epic/epic-closure') return { stdout: JSON.stringify({ number: 17, url: 'x', state: 'MERGED', mergedAt: 'now' }) }
+      if (args[2] === '17') return { stdout: JSON.stringify({ number: 17, url: 'x', state: 'MERGED', mergedAt: 'now', mergeCommit: { oid: 'd'.repeat(40) }, headRefName: 'epic/epic-closure', headRefOid: 'c'.repeat(40), headRepository: { name: 'repo' }, headRepositoryOwner: { login: 'owner' }, isCrossRepository: false }) }
+      return { stdout: JSON.stringify({ issues: [] }) }
+    })
+    await expect(executeCloseEpic({ prNumber: 17 }, { abortSignal: new AbortController().signal, toolCallId: 'c3c', sessionId: 'orch' }, deps())).resolves.toMatchObject({ isError: true, details: { code: 'PR_MERGE_SHA_MISMATCH' } })
+
+    mockedExecFile.mockReset()
+    createExecFileMock((file, args) => {
+      if (file === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref') return { stdout: 'epic/epic-closure\n' }
       if (file === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD') return { stdout: 'a'.repeat(40) + '\n' }
       if (args[2] === 'epic/epic-closure') return { stdout: JSON.stringify({ number: 17, url: 'x', state: 'OPEN', mergedAt: null }) }
-      if (args[2] === '17') return { stdout: JSON.stringify({ number: 17, url: 'x', state: 'OPEN', mergedAt: null, mergeCommit: null, headRefName: 'epic/epic-closure', headRefOid: 'b'.repeat(40), headRepository: { name: 'repo' }, headRepositoryOwner: { login: 'owner' }, isCrossRepository: false }) }
+      if (args[2] === '17') return { stdout: JSON.stringify({ number: 17, url: 'x', state: 'OPEN', mergedAt: null, mergeCommit: null, headRefName: 'epic/epic-closure', headRefOid: 'a'.repeat(40), headRepository: { name: 'repo' }, headRepositoryOwner: { login: 'owner' }, isCrossRepository: false }) }
       return { stdout: JSON.stringify({ issues: [] }) }
     })
     await expect(executeCloseEpic({ prNumber: 17 }, { abortSignal: new AbortController().signal, toolCallId: 'c4', sessionId: 'orch' }, deps())).resolves.toMatchObject({ isError: true, details: { code: 'PR_NOT_MERGED' } })
@@ -133,7 +140,7 @@ describe('executeCloseEpic', () => {
       if (file === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref') return { stdout: 'epic/epic-closure\n' }
       if (file === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD') return { stdout: 'a'.repeat(40) + '\n' }
       if (file === 'gh' && args[2] === 'epic/epic-closure') return { stdout: JSON.stringify({ number: 17, url: 'x', state: 'MERGED', mergedAt: 'now' }) }
-      if (file === 'gh' && args[2] === '17') return { stdout: JSON.stringify({ number: 17, url: 'x', state: 'MERGED', mergedAt: 'now', mergeCommit: { oid: 'a'.repeat(40) }, headRefName: 'epic/epic-closure', headRefOid: 'b'.repeat(40), headRepository: { name: 'repo' }, headRepositoryOwner: { login: 'owner' }, isCrossRepository: false }) }
+      if (file === 'gh' && args[2] === '17') return { stdout: JSON.stringify({ number: 17, url: 'x', state: 'MERGED', mergedAt: 'now', mergeCommit: { oid: 'a'.repeat(40) }, headRefName: 'epic/epic-closure', headRefOid: 'a'.repeat(40), headRepository: { name: 'repo' }, headRepositoryOwner: { login: 'owner' }, isCrossRepository: false }) }
       return { stdout: JSON.stringify({ issues: [{ id: 'child-1', status: 'open' }] }) }
     })
     await expect(executeCloseEpic({ prNumber: 17 }, { abortSignal: new AbortController().signal, toolCallId: 'c5', sessionId: 'orch' }, deps())).resolves.toMatchObject({ isError: true, details: { code: 'EPIC_BEAD_NOT_UNIQUE' } })
@@ -148,7 +155,7 @@ describe('executeCloseEpic', () => {
       if (file === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref') return { stdout: 'epic/epic-closure\n' }
       if (file === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD') return { stdout: 'a'.repeat(40) + '\n' }
       if (file === 'gh' && args[2] === 'epic/epic-closure') return { stdout: JSON.stringify({ number: 17, url: 'https://example/pr/17', state: 'MERGED', mergedAt: 'now' }) }
-      if (file === 'gh' && args[2] === '17') return { stdout: JSON.stringify({ number: 17, url: 'https://example/pr/17', state: 'MERGED', mergedAt: 'now', mergeCommit: { oid: 'a'.repeat(40) }, headRefName: 'epic/epic-closure', headRefOid: 'b'.repeat(40), headRepository: { name: 'repo' }, headRepositoryOwner: { login: 'owner' }, isCrossRepository: false }) }
+      if (file === 'gh' && args[2] === '17') return { stdout: JSON.stringify({ number: 17, url: 'https://example/pr/17', state: 'MERGED', mergedAt: 'now', mergeCommit: { oid: 'a'.repeat(40) }, headRefName: 'epic/epic-closure', headRefOid: 'a'.repeat(40), headRepository: { name: 'repo' }, headRepositoryOwner: { login: 'owner' }, isCrossRepository: false }) }
       if (file === 'br' && args[0] === 'list') {
         return { stdout: JSON.stringify({ issues: [
           { id: 'factory-epic-closure', status: 'open', assignee: 'orch-a' },
@@ -199,7 +206,7 @@ describe('executeCloseEpic', () => {
       if (file === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref') return { stdout: 'epic/epic-closure\n' }
       if (file === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD') return { stdout: 'a'.repeat(40) + '\n' }
       if (file === 'gh' && args[2] === 'epic/epic-closure') return { stdout: JSON.stringify({ number: 17, url: 'https://example/pr/17', state: 'MERGED', mergedAt: 'now' }) }
-      if (file === 'gh' && args[2] === '17') return { stdout: JSON.stringify({ number: 17, url: 'https://example/pr/17', state: 'MERGED', mergedAt: 'now', mergeCommit: { oid: 'a'.repeat(40) }, headRefName: 'epic/epic-closure', headRefOid: 'b'.repeat(40), headRepository: { name: 'repo' }, headRepositoryOwner: { login: 'owner' }, isCrossRepository: false }) }
+      if (file === 'gh' && args[2] === '17') return { stdout: JSON.stringify({ number: 17, url: 'https://example/pr/17', state: 'MERGED', mergedAt: 'now', mergeCommit: { oid: 'a'.repeat(40) }, headRefName: 'epic/epic-closure', headRefOid: 'a'.repeat(40), headRepository: { name: 'repo' }, headRepositoryOwner: { login: 'owner' }, isCrossRepository: false }) }
       if (file === 'br' && args[0] === 'list') {
         return { stdout: JSON.stringify({ issues: [
           { id: 'factory-epic-closure', status: 'open', assignee: 'orch-a' },

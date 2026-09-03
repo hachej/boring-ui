@@ -213,8 +213,14 @@ export async function executeCloseEpic(
     if (verifiedPr.state !== 'MERGED' || !verifiedPr.mergedAt || !verifiedPr.mergeCommitSha) {
       return textResult({ code: 'PR_NOT_MERGED', message: `PR #${prNumber} is not merged`, callingSessionId }, true)
     }
+    if (!verifiedPr.headRefOid) {
+      return textResult({ code: 'PR_HEAD_REF_MISSING', message: `PR #${prNumber} is missing headRefOid`, callingSessionId }, true)
+    }
+    if (headSha !== verifiedPr.headRefOid) {
+      return textResult({ code: 'PR_HEAD_SHA_MISMATCH', message: `workspace HEAD ${headSha} does not match PR head SHA ${verifiedPr.headRefOid}`, callingSessionId }, true)
+    }
     if (headSha !== verifiedPr.mergeCommitSha) {
-      return textResult({ code: 'PR_HEAD_SHA_MISMATCH', message: `workspace HEAD ${headSha} does not match merged PR SHA ${verifiedPr.mergeCommitSha}`, callingSessionId }, true)
+      return textResult({ code: 'PR_MERGE_SHA_MISMATCH', message: `workspace HEAD ${headSha} does not match merged PR SHA ${verifiedPr.mergeCommitSha}`, callingSessionId }, true)
     }
 
     const beads = await loadAllEpicBeads(deps.workspaceRoot, deps.epicKey)
