@@ -20,6 +20,10 @@ branch name (`epic/farewell-api`). Never rename a feature mid-epic.
 | Bead handoff comment | `[Feature Name] handoff · <bead id> · <short sha>` | `[Farewell API] handoff · br-42 · a1b2c3d` |
 | Bead recovery comment | `[Feature Name] recovered stale claim from <session>` | `[Farewell API] recovered stale claim from sess-9f2` |
 | Session title | `[Feature Name] Orchestrator` / `Worker` / `Review @ <short sha>` | `[Farewell API] Review @ a1b2c3d` |
+| Show-me plan doc (Gate 1) | `docs/issues/<issue>/show-me-plan.md` | docs/issues/1508/show-me-plan.md |
+| Show-me PR doc (Gate 2) | `docs/issues/<issue>/show-me-<short sha>.md` | docs/issues/1508/show-me-a1b2c3d.md |
+| Show-me Gate 1 artifact title | `[Feature Name] Plan, visually` | `[Farewell API] Plan, visually` |
+| Show-me Gate 2 artifact title | `[Feature Name] What changed, visually` | `[Farewell API] What changed, visually` |
 
 **Inbox `context` field**: the first line is one plain sentence saying what
 this is about, with no ids in it. IDs (Bead id, PR number, SHA, URLs) come

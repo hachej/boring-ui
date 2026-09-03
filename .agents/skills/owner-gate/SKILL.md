@@ -20,18 +20,52 @@ approval` / `[Feature Name] Merge approval` — never lead with a bead id.
 
 ## The two gates
 
+The visual is mandatory at both gates, not optional — read `../show-me/SKILL.md`
+for its view-selection table before producing either artifact below.
+
 - **Gate 1 — plan approval** (Orchestrator). Raised after the Bead graph is
   materialized and the adversarial plan review is done, never before. Links
-  the plan doc.
+  the plan doc. Also write `docs/issues/<issue>/show-me-plan.md` with at most
+  three views selected from show-me's table: the structure view (a shallow
+  file tree or component tree of what the epic touches), the behavior view
+  (a call tree or mermaid sequence of the new flow), and a diff-shaped view
+  of what changes in the existing shape. Pass it as an `artifacts[]` entry:
+
+  ```json
+  {
+    "id": "show-me-plan",
+    "surfaceKind": "workspace.open.path",
+    "target": "docs/issues/<issue>/show-me-plan.md",
+    "title": "[Feature Name] Plan, visually"
+  }
+  ```
+
+  `context` still starts with the one-sentence line; the show-me artifact
+  adds to it, never replaces it.
 - **Gate 2 — merge approval** (Orchestrator). Raised once every epic Bead is
   handed off (per `factory_status` or its equivalent): open or update the
   epic PR (title `[Feature Name] <what changed>`, body = the Owner Review
-  card from `docs/procedures/owner-review-card.md` plus a `## Handover`
-  section), start a `demo_sandbox` at the exact SHA when that tool is
-  available, and put its URL on the card's `Artifact:` line and again in
-  `context` with its expiry. Must name the exact SHA and the expected target
-  head. **A seat may never approve its own request** — you raise it, the
-  owner answers it.
+  card from `docs/procedures/owner-review-card.md`, then a `## Show me`
+  section, then `## Handover`), start a `demo_sandbox` at the exact SHA when
+  that tool is available, and put its URL on the card's `Artifact:` line and
+  again in `context` with its expiry. Must name the exact SHA and the
+  expected target head. The `## Show me` section carries diff-shaped views
+  (component/call/file tree diff) plus one sequence diagram of the shipped
+  flow, derived from the actual commits — never from memory of the plan.
+  Write the same views to `docs/issues/<issue>/show-me-<short sha>.md` and
+  pass it as an artifact next to the present-pr artifact when one exists:
+
+  ```json
+  {
+    "id": "show-me-pr",
+    "surfaceKind": "workspace.open.path",
+    "target": "docs/issues/<issue>/show-me-<short sha>.md",
+    "title": "[Feature Name] What changed, visually"
+  }
+  ```
+
+  **A seat may never approve its own request** — you raise it, the owner
+  answers it.
 
 ## The call
 

@@ -37,6 +37,18 @@ const sources = [
     source: path.join(repositoryRoot, '.agents/skills/fresh-eyes'),
     target: 'skills/plan/.agents/skills/fresh-eyes',
   },
+  {
+    source: path.join(repositoryRoot, '.agents/skills/owner-gate'),
+    target: 'skills/plan/.agents/skills/owner-gate',
+  },
+  {
+    source: path.join(repositoryRoot, '.agents/skills/show-me'),
+    target: 'skills/plan/.agents/skills/show-me',
+  },
+  {
+    source: path.join(repositoryRoot, '.agents/skill-references/show-me'),
+    target: 'skills/plan/.agents/skill-references/show-me',
+  },
 
   ...[
     'boring-loop.md',
@@ -69,6 +81,10 @@ const sources = [
   {
     source: path.join(repositoryRoot, '.agents/skills/handoff'),
     target: 'skills/exec/.agents/skills/handoff',
+  },
+  {
+    source: path.join(repositoryRoot, '.agents/skills/owner-gate'),
+    target: 'skills/exec/.agents/skills/owner-gate',
   },
   {
     source: path.join(repositoryRoot, '.agents/skills/show-me'),

@@ -16,7 +16,7 @@ export const FACTORY_ORCHESTRATOR_AGENT_TYPE_ID = 'boring-orchestrator'
 export const FACTORY_REVIEWER_AGENT_TYPE_ID = 'boring-reviewer'
 
 const seatSkills = {
-  orchestrator: ['plan', 'feedback', 'owner-gate', 'handoff'],
+  orchestrator: ['plan', 'feedback', 'owner-gate', 'handoff', 'show-me'],
   worker: ['exec', 'fresh-eyes', 'handoff'],
   reviewer: ['fresh-eyes'],
 } as const
@@ -41,6 +41,9 @@ const FACTORY_PRECEDENCE_CONTENT = {
     '(read epic Bead/git/session state before every gate or recovery decision), `supervise`',
     '(arm the durable tick that replaces held-open sessions/timers), and `demo_sandbox` (Gate 2\'s',
     'exact-SHA live demo). Use each exactly where its matching skill step names it.',
+    'The `show-me` skill above is mandatory, not optional, at both gates: Gate 1 carries the',
+    'show-me plan artifact and Gate 2\'s PR body carries a `## Show me` section, per',
+    '`owner-gate`\'s SKILL.md.',
   ].join(' '),
 } as const
 

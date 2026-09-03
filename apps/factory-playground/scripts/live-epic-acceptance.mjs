@@ -12,7 +12,7 @@
 import { randomUUID } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 const exec = promisify(execFile)
 const EPIC_WT = process.env.EPIC_WT
@@ -74,6 +74,29 @@ function assertFirstContextLineIsPlainSentence(context, label) {
   }
 }
 
+// --- show-me mandatory-visual assertions (owner ruling: show-me is part of the handover process). ---
+const FENCED_BLOCK_RE = /```[a-zA-Z]*\n[\s\S]*?```/
+function assertHasFencedBlock(content, label) {
+  if (!FENCED_BLOCK_RE.test(content)) throw new Error(`${label} is missing a fenced code/diagram block`)
+}
+async function assertShowMePlanArtifact(gate1, epicWorktree) {
+  const artifacts = gate1.artifacts ?? []
+  const showMe = artifacts.find((a) => /show-me-plan\.md$/.test(a.target ?? ''))
+  if (!showMe) throw new Error(`gate 1 is missing a show-me-plan artifact; artifacts: ${JSON.stringify(artifacts)}`)
+  const filePath = resolve(epicWorktree, showMe.target)
+  const content = await readFile(filePath, 'utf8')
+  assertHasFencedBlock(content, `show-me plan file ${filePath}`)
+  console.log('\n=== show-me plan (first 40 lines of', filePath, ') ===')
+  console.log(content.split('\n').slice(0, 40).join('\n'))
+  return { artifact: showMe, path: filePath }
+}
+function assertShowMePrArtifact(gate2) {
+  const artifacts = gate2.artifacts ?? []
+  const showMe = artifacts.find((a) => /show-me-[0-9a-f]{7,40}\.md$/.test(a.target ?? ''))
+  if (!showMe) throw new Error(`gate 2 is missing a show-me-<sha> artifact; artifacts: ${JSON.stringify(artifacts)}`)
+  return showMe
+}
+
 const baseSha = await git(['rev-parse', 'HEAD'])
 console.log('epic worktree base', baseSha, 'epic', EPIC)
 let osid, loopOn = false
@@ -96,7 +119,9 @@ try {
   console.log('context:', gate1.context)
   assertGateTitle(GATE1_TITLE_RE, gate1.title, 'gate 1')
   assertFirstContextLineIsPlainSentence(gate1.context, 'gate 1')
-  receipt.gate1 = { title: gate1.title, context: gate1.context, decision: 'approve' }
+  const showMePlan = await assertShowMePlanArtifact(gate1, EPIC_WT)
+  console.log('gate 1 carries the show-me plan artifact:', showMePlan.artifact.target)
+  receipt.gate1 = { title: gate1.title, context: gate1.context, decision: 'approve', showMePlanArtifact: showMePlan.artifact }
   await answerGate(osid, gate1, { decision: 'approve', notes: 'approved by acceptance driver' })
   loopOn = true
   console.log('gate 1 approved')
@@ -123,7 +148,9 @@ try {
   console.log('context:', gate2.context)
   assertGateTitle(GATE2_TITLE_RE, gate2.title, 'gate 2')
   assertFirstContextLineIsPlainSentence(gate2.context, 'gate 2')
-  receipt.gate2 = { title: gate2.title, context: gate2.context, decision: 'approve' }
+  const showMePr = assertShowMePrArtifact(gate2)
+  console.log('gate 2 carries the show-me PR artifact:', showMePr.target)
+  receipt.gate2 = { title: gate2.title, context: gate2.context, decision: 'approve', showMePrArtifact: showMePr }
 
   const urls = urlsIn(gate2.context)
   const prUrl = urls.find((u) => u.includes('github.com') && u.includes('/pull/'))
@@ -137,9 +164,12 @@ try {
 
   const prBefore = JSON.parse((await exec('gh', ['pr', 'view', prUrl, '--json', 'url,title,body'])).stdout)
   if (!prBefore.body.includes('## Owner Review')) throw new Error('PR body is missing "## Owner Review"')
+  if (!prBefore.body.includes('## Show me')) throw new Error('PR body is missing "## Show me"')
   if (!prBefore.body.includes('## Handover')) throw new Error('PR body is missing "## Handover"')
+  const showMeSection = prBefore.body.split('## Show me')[1]?.split(/\n## /)[0] ?? ''
+  assertHasFencedBlock(showMeSection, 'PR body "## Show me" section')
   if (!prBefore.title.startsWith('[')) throw new Error(`PR title "${prBefore.title}" does not start with "["`)
-  console.log('PR body carries Owner Review + Handover sections; PR title:', prBefore.title)
+  console.log('PR body carries Owner Review + Show me + Handover sections; PR title:', prBefore.title)
 
   const demoResponse = await fetch(demoUrl)
   const demoBody = await demoResponse.text()

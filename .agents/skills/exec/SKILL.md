@@ -61,7 +61,9 @@ Your handoff is a Bead comment, not a PR: `[Feature Name] handoff · <bead id> �
 `ask_user`, never raise an owner card, and never close or merge your own
 bead — the epic PR, the owner demo, and both gates belong to the Orchestrator
 at Gate 2 (`/skill:owner-gate`), not to you. Keep the lease heartbeat sentence
-above in force until the handoff comment lands.
+above in force until the handoff comment lands. Follow
+`.agents/skills/handoff/SKILL.md`'s show-me rule: a multi-file Bead's handoff
+comment carries one diff-shaped show-me view of what changed.
 
 For a UI packet, validate it first and follow the complete round, stop, baseline,
 and Inbox rules in `visual-review.md`; the packet grants no edit or merge

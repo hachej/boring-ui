@@ -28,8 +28,10 @@ An empty, incomplete, or unknown branch returns this usage and stops:
 If a human owes the next decision, use
 `docs/procedures/owner-review-card.md` instead. When that handoff or decision is
 hard to understand in prose, read `../show-me/SKILL.md` and follow its visual
-composition guidance. Do not load `show-me` for a handoff that is already clear.
-For bead work, put the handoff
+composition guidance. Every Worker handoff comment for a Bead touching more
+than one file includes one diff-shaped show-me view (a fenced `text`/`diff`
+block) of what changed; a single-file Bead may skip it and say so in the
+handoff. For bead work, put the handoff
 artifact pointer and a one-line `friction` note on the bead.
 
 In the Factory, the "receiver" is never a person waiting in chat: the durable

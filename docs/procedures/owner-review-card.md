@@ -21,9 +21,19 @@ Artifact: <running UI demo or best non-UI proof file>
 Please test:
 1. <exact step>
 Decision: approve | request changes | defer | reject
+
+## Show me
+<diff-shaped views (component/call/file tree diff) plus one sequence diagram
+of the shipped flow, derived from the actual commits — see
+`.agents/skills/show-me/SKILL.md` and `.agents/skills/owner-gate/SKILL.md`>
 ```
 
 For UI, keep the playground/demo running and include desktop/mobile checks. For
 other work, attach the most useful artifact and validation steps. Request-changes
 resumes the same task/PR loop with a new artifact/revision; do not overwrite prior
 review evidence. Never merge without explicit approval.
+
+The `## Show me` section is mandatory (owner ruling), sits between the Owner
+Review card and `## Handover`, and is mirrored to
+`docs/issues/<issue>/show-me-<short sha>.md`, passed as an artifact per
+`docs/procedures/naming-conventions.md`.

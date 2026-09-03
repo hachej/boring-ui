@@ -46,7 +46,8 @@ canonical contracts: `docs/procedures/{boring-loop.md,MODEL-CARD.md}` and
   continue the required Model Card ladder. If no independent-review mechanism is
   available, stop rather than self-certifying. Use `ask_user` for unresolved
   intent, risk, or approval. A plan-approval intention links the visual plan doc
-  from `docs/procedures/visual-review-doc.md`.
+  from `docs/procedures/visual-review-doc.md`. Gate 1 also carries the
+  mandatory show-me plan artifact per `.agents/skills/owner-gate/SKILL.md`.
 - **The Steward never self-certifies: an adversarial plan review
   (cross-model per the Model Card) runs BEFORE the owner gate, always** — even
   when every design decision was pre-ratified by the owner via grill. Grill →

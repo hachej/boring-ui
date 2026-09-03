@@ -76,9 +76,9 @@ seats:
       - name: triage
         digest: sha256:c9931f981b0d2d55415026c25bc27dec3e24fd310bee405360eba57d6cf58766
       - name: owner-gate
-        digest: sha256:28555a0adbd26ece80a88490c0e4e2cae012da76b41e626707fee1736039184a
+        digest: sha256:7c09cb681037c763a27575eb558b0468a609530ac461ac52d2b201d2cdfb30d7
       - name: handoff
-        digest: sha256:cee3293c2a8acc36b91e501465670ebc411fb3e22b45c11ce286e08ac67a8de6
+        digest: sha256:884918c3e5dabd33302f82b494ccaa3e1228c4733e7e90f2649c2e8d2808d762
 
   # The owner's standing counterpart: pinned, conversational, full authority.
   # Dispatches work and reads bead END-STATES only.
@@ -86,13 +86,15 @@ seats:
     agentTypeId: boring-orchestrator
     skills:
       - name: plan
-        digest: sha256:191a4068223a3c236a17d68fdea4de271ca06fa1c37c376b02205047df288ab0
+        digest: sha256:6c28c19da113cafc0af58883fc352b21896ed784b911b0593f0ed6254801d709
       - name: feedback
         digest: sha256:707ae8fd12ace225be7d6de8c345c7d73cf9aa07763f138419f6d6b26b92a9af
       - name: owner-gate
-        digest: sha256:28555a0adbd26ece80a88490c0e4e2cae012da76b41e626707fee1736039184a
+        digest: sha256:7c09cb681037c763a27575eb558b0468a609530ac461ac52d2b201d2cdfb30d7
       - name: handoff
-        digest: sha256:cee3293c2a8acc36b91e501465670ebc411fb3e22b45c11ce286e08ac67a8de6
+        digest: sha256:884918c3e5dabd33302f82b494ccaa3e1228c4733e7e90f2649c2e8d2808d762
+      - name: show-me
+        digest: sha256:4ad15fdf99fa06a953ce4b8d2457c7afbce5bca2f1759daf5594b4cfc13d6c96
 
   # The single implementation seat. Claims a bead, works it in a lane worktree,
   # spawns its own fresh-context review subagents at gate time (`fresh-eyes`),
@@ -101,10 +103,10 @@ seats:
     agentTypeId: boring-worker
     skills:
       - name: exec
-        digest: sha256:5c4ff62a65daf34e2dd2c4908c41cb8d1a70ab4b4990043301e03405448f9459
+        digest: sha256:d7e83d524676b6caf02b8d8dcd09ea98115b704ae50d7ef4cfd4e8c3fbd56c81
       - name: fresh-eyes
         digest: sha256:58f6cfb66cc2a31238e5c033f42b69b7fbd6089d06c9f6d5108caa7035e5f565
       - name: owner-gate
-        digest: sha256:28555a0adbd26ece80a88490c0e4e2cae012da76b41e626707fee1736039184a
+        digest: sha256:7c09cb681037c763a27575eb558b0468a609530ac461ac52d2b201d2cdfb30d7
       - name: handoff
-        digest: sha256:cee3293c2a8acc36b91e501465670ebc411fb3e22b45c11ce286e08ac67a8de6
+        digest: sha256:884918c3e5dabd33302f82b494ccaa3e1228c4733e7e90f2649c2e8d2808d762

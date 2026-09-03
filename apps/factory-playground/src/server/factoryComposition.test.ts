@@ -57,6 +57,11 @@ describe('native Factory composition', () => {
     expect(worker.definition.instructions).not.toContain('boring-skill:start name=owner-gate')
     expect(orchestrator.definition.instructions).toContain('boring-skill:start name=owner-gate')
 
+    // show-me is attached to the Orchestrator seat only (owner ruling: mandatory at both gates).
+    expect(orchestrator.definition.instructions).toContain('boring-skill:start name=show-me')
+    expect(worker.definition.instructions).not.toContain('boring-skill:start name=show-me')
+    expect(orchestrator.definition.instructions).toContain('The `show-me` skill above is mandatory, not optional, at both gates')
+
     // Recovery rule (epic-binding appendix, orchestrator).
     expect(orchestrator.definition.instructions).toContain('Recovery: run `factory_status` on every supervision tick.')
     expect(orchestrator.definition.instructions).toContain('br update <id> --assignee "" --status open --actor <your session id>')
