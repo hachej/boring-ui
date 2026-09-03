@@ -225,3 +225,17 @@ export async function invalidateEpicSnapshot(
   delete file.entries[key]
   await writeRegistryFileAtomic(registryPath, file)
 }
+
+/** Removes every cached registry entry for `epicKey`. Used by epic closure cleanup so the next lease/demo rebuilds from a fresh snapshot after branch teardown or other durable closure work. */
+export async function invalidateAllEpicSnapshots(
+  stateRoot: string,
+  epicKey: string,
+): Promise<{ removedKeys: string[] }> {
+  const registryPath = resolve(stateRoot, 'snapshots.json')
+  const file = await readRegistryFile(registryPath)
+  const removedKeys = Object.keys(file.entries).filter((key) => file.entries[key]?.epicKey === epicKey)
+  if (removedKeys.length === 0) return { removedKeys: [] }
+  for (const key of removedKeys) delete file.entries[key]
+  await writeRegistryFileAtomic(registryPath, file)
+  return { removedKeys }
+}

@@ -471,6 +471,7 @@ function createCloseEpicTool(
       type: 'object',
       properties: {
         prNumber: { type: 'number', minimum: 1 },
+        cleanup: { type: 'boolean' },
       },
       required: ['prNumber'],
       additionalProperties: false,

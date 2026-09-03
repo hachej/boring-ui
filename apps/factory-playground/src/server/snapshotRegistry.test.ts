@@ -5,6 +5,7 @@ import { resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  invalidateAllEpicSnapshots,
   invalidateEpicSnapshot,
   peekEpicSnapshot,
   registryKey,
@@ -199,5 +200,27 @@ describe('peekEpicSnapshot / invalidateEpicSnapshot', () => {
     const second = await resolveEpicSnapshot({ epicKey: 'epic-a', workspaceRoot, stateRoot, auth: AUTH, createSnapshot })
     expect(second.reused).toBe(false)
     expect(createSnapshot).toHaveBeenCalledTimes(2)
+  })
+
+  it('invalidates every snapshot entry for an epic', async () => {
+    const workspaceRoot = await makeSelfOriginWorkspace()
+    const stateRoot = await makeTempDir('factory-registry-state-')
+    const createSnapshot = fakeCreateSnapshot()
+
+    const first = await resolveEpicSnapshot({ epicKey: 'epic-a', workspaceRoot, stateRoot, auth: AUTH, createSnapshot })
+    await writeFile(resolve(workspaceRoot, 'pnpm-lock.yaml'), 'lockfile-v2')
+    await execFileAsync('git', ['add', '.'], { cwd: workspaceRoot })
+    await execFileAsync('git', ['commit', '-q', '-m', 'bump lockfile'], { cwd: workspaceRoot })
+    await execFileAsync('git', ['push', '-q', 'origin', 'HEAD:refs/heads/main'], { cwd: workspaceRoot })
+    const second = await resolveEpicSnapshot({ epicKey: 'epic-a', workspaceRoot, stateRoot, auth: AUTH, createSnapshot })
+    await resolveEpicSnapshot({ epicKey: 'epic-b', workspaceRoot, stateRoot, auth: AUTH, createSnapshot })
+
+    const invalidated = await invalidateAllEpicSnapshots(stateRoot, 'epic-a')
+    expect(invalidated.removedKeys).toEqual(expect.arrayContaining([
+      registryKey('epic-a', first.lockfileSha256),
+      registryKey('epic-a', second.lockfileSha256),
+    ]))
+    expect(await peekEpicSnapshot(stateRoot, 'epic-a')).toBeUndefined()
+    expect(await peekEpicSnapshot(stateRoot, 'epic-b')).toBeDefined()
   })
 })

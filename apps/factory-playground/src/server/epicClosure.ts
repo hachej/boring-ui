@@ -4,6 +4,7 @@ import type { FastifyInstance } from 'fastify'
 import type { ToolExecContext, ToolResult } from '@hachej/boring-agent/shared'
 import type { DemoEntry, FactoryDemoPluginControl } from './demoPlugin'
 import type { FactorySupervisionPluginControl } from './supervisionPlugin'
+import { invalidateAllEpicSnapshots } from './snapshotRegistry'
 
 const execFileAsync = promisify(execFile)
 
@@ -64,6 +65,23 @@ export interface EpicClosureBeadOutcome {
   readonly error?: string
 }
 
+export interface EpicClosureCleanupOutcome {
+  cleanupRequested: boolean
+  snapshotRegistry?: {
+    status: 'invalidated' | 'skipped' | 'failed'
+    removedKeys?: string[]
+    error?: string
+  }
+  branchDeletion?: {
+    status: 'deleted' | 'already-absent' | 'skipped' | 'failed'
+    branch: string
+    headRefOid: string
+    remote?: string
+    reason?: string
+    error?: string
+  }
+}
+
 export interface EpicClosureReceipt {
   overall: 'complete' | 'partial'
   code?: string
@@ -75,6 +93,7 @@ export interface EpicClosureReceipt {
   alreadyClosedBeadIds: string[]
   demoOutcomes: EpicClosureDemoStopOutcome[]
   beadOutcomes: EpicClosureBeadOutcome[]
+  cleanup: EpicClosureCleanupOutcome
   epicBead?: EpicClosureBeadOutcome
   supervision?: { readonly status: 'stopped' | 'already-stopped' | 'failed'; readonly error?: string }
 }
@@ -87,6 +106,7 @@ export interface EpicClosureDeps {
   readonly workspaceScopeId: string
   readonly demoControl: FactoryDemoPluginControl
   readonly supervisionControl: FactorySupervisionPluginControl
+  readonly invalidateAllSnapshotsForEpic?: typeof invalidateAllEpicSnapshots
 }
 
 interface GhPrView {
@@ -101,6 +121,8 @@ interface GhPrView {
   readonly headRepositoryOwner?: { login?: string | null } | null
   readonly isCrossRepository?: boolean | null
 }
+
+const GIT_REF_RE = /^(?!\/)(?!.*\/\.)(?!.*\.\.)(?!.*\/\/)[A-Za-z0-9._\/-]+$/
 
 function textResult(details: Record<string, unknown>, isError: boolean): ToolResult {
   return { content: [{ type: 'text', text: JSON.stringify(details) }], details, isError }
@@ -173,6 +195,43 @@ async function closeBead(workspaceRoot: string, issueId: string, reason: string)
   await execFileAsync('br', ['close', issueId, '--reason', reason], { cwd: workspaceRoot, maxBuffer: 16 * 1024 * 1024 })
 }
 
+async function readRemoteOrigin(workspaceRoot: string): Promise<string> {
+  return await readGitValue(workspaceRoot, ['remote', 'get-url', 'origin'])
+}
+
+async function readDefaultBranch(workspaceRoot: string): Promise<string | null> {
+  try {
+    const ref = await readGitValue(workspaceRoot, ['symbolic-ref', 'refs/remotes/origin/HEAD'])
+    const prefix = 'refs/remotes/origin/'
+    return ref.startsWith(prefix) ? ref.slice(prefix.length) : null
+  } catch {
+    return null
+  }
+}
+
+async function remoteBranchExists(workspaceRoot: string, branch: string): Promise<boolean> {
+  const { stdout } = await execFileAsync('git', ['ls-remote', '--heads', 'origin', branch], { cwd: workspaceRoot, maxBuffer: 16 * 1024 * 1024 })
+  return stdout.trim().length > 0
+}
+
+function normalizeRemoteIdentity(remote: string): string | null {
+  const trimmed = remote.trim().replace(/\.git$/i, '')
+  const scpMatch = trimmed.match(/^[^@]+@([^:]+):(.+)$/)
+  if (scpMatch) return `${scpMatch[1]}/${scpMatch[2]}`.toLowerCase()
+  try {
+    const url = new URL(trimmed)
+    const path = url.pathname.replace(/^\/+/, '')
+    return `${url.hostname}/${path}`.toLowerCase()
+  } catch {
+    return null
+  }
+}
+
+function expectedPrRemote(pr: EpicClosurePullRequest): string | null {
+  if (!pr.headRepositoryOwnerLogin || !pr.headRepositoryName) return null
+  return `github.com/${pr.headRepositoryOwnerLogin}/${pr.headRepositoryName}`.toLowerCase()
+}
+
 export async function executeCloseEpic(
   params: Record<string, unknown>,
   ctx: ToolExecContext,
@@ -183,6 +242,10 @@ export async function executeCloseEpic(
   const prNumber = params.prNumber
   if (typeof prNumber !== 'number' || !Number.isInteger(prNumber) || prNumber <= 0) {
     return textResult({ code: 'INVALID_INPUT', message: 'prNumber must be a positive integer' }, true)
+  }
+  const cleanupRequested = params.cleanup === undefined ? true : params.cleanup === true
+  if (params.cleanup !== undefined && typeof params.cleanup !== 'boolean') {
+    return textResult({ code: 'INVALID_INPUT', message: 'cleanup must be a boolean when provided' }, true)
   }
   const callingSessionId = ctx.sessionId
   if (!callingSessionId) return textResult({ code: 'INVALID_INPUT', message: 'close_epic requires a known session id' }, true)
@@ -219,8 +282,17 @@ export async function executeCloseEpic(
     if (headSha !== verifiedPr.headRefOid) {
       return textResult({ code: 'PR_HEAD_SHA_MISMATCH', message: `workspace HEAD ${headSha} does not match PR head SHA ${verifiedPr.headRefOid}`, callingSessionId }, true)
     }
-    if (headSha !== verifiedPr.mergeCommitSha) {
-      return textResult({ code: 'PR_MERGE_SHA_MISMATCH', message: `workspace HEAD ${headSha} does not match merged PR SHA ${verifiedPr.mergeCommitSha}`, callingSessionId }, true)
+    const mergeCommitSha = verifiedPr.mergeCommitSha
+    if (verifiedPr.isCrossRepository) {
+      return textResult({ code: 'PR_CROSS_REPOSITORY', message: `PR #${prNumber} head repository is cross-repository`, callingSessionId }, true)
+    }
+    const originIdentity = normalizeRemoteIdentity(await readRemoteOrigin(deps.workspaceRoot))
+    const prIdentity = expectedPrRemote(verifiedPr)
+    if (!originIdentity || !prIdentity || originIdentity !== prIdentity) {
+      return textResult({ code: 'PR_REPOSITORY_MISMATCH', message: `PR #${prNumber} head repository does not match origin`, callingSessionId }, true)
+    }
+    if (!GIT_REF_RE.test(branch) || branch === '.' || branch === '..') {
+      return textResult({ code: 'INVALID_BRANCH_REF', message: `epic branch ${branch} is not eligible for remote cleanup`, callingSessionId }, true)
     }
 
     const beads = await loadAllEpicBeads(deps.workspaceRoot, deps.epicKey)
@@ -237,13 +309,14 @@ export async function executeCloseEpic(
         url: verifiedPr.url,
         state: verifiedPr.state,
         mergedAt: verifiedPr.mergedAt,
-        mergeCommitSha: verifiedPr.mergeCommitSha,
+        mergeCommitSha,
       },
       workerSessionIds: [...new Set(beads.map((issue) => issue.assignee).filter((v): v is string => typeof v === 'string' && v.length > 0 && v !== callingSessionId))],
       closedBeadIds: [],
       alreadyClosedBeadIds: [],
       demoOutcomes: [],
       beadOutcomes: [],
+      cleanup: { cleanupRequested },
     }
 
     const demos = await deps.demoControl.listDemos()
@@ -257,7 +330,7 @@ export async function executeCloseEpic(
     }
 
     const nonEpicBeads = beads.filter((issue) => issue.id !== `factory-${deps.epicKey}`)
-    const closeReason = `[${deps.featureName}] shipped in PR #${verifiedPr.number} (${verifiedPr.mergeCommitSha})`
+    const closeReason = `[${deps.featureName}] shipped in PR #${verifiedPr.number} (${mergeCommitSha})`
     for (const bead of nonEpicBeads) {
       const workerSessionId = typeof bead.assignee === 'string' ? bead.assignee : undefined
       if (bead.status === 'closed') {
@@ -283,6 +356,57 @@ export async function executeCloseEpic(
       receipt.message = 'close_epic stopped before epic close because a required earlier phase failed'
       receipt.epicBead = { id: epicBead.id, status: epicBead.status === 'closed' ? 'already-closed' : 'failed', error: 'blocked by failed demo stop or child Bead close' }
       receipt.supervision = { status: 'failed', error: 'blocked by failed demo stop or child Bead close' }
+      return textResult(receipt as unknown as Record<string, unknown>, false)
+    }
+
+    if (!cleanupRequested) {
+      receipt.cleanup.snapshotRegistry = { status: 'skipped' }
+      receipt.cleanup.branchDeletion = { status: 'skipped', branch, headRefOid: verifiedPr.headRefOid, reason: 'cleanup disabled' }
+    } else {
+      const invalidateAll = deps.invalidateAllSnapshotsForEpic ?? invalidateAllEpicSnapshots
+      try {
+        const stateRoot = `${deps.workspaceRoot}/apps/factory-playground/.factory-state`
+        const invalidated = await invalidateAll(stateRoot, deps.epicKey)
+        receipt.cleanup.snapshotRegistry = { status: 'invalidated', removedKeys: invalidated.removedKeys }
+      } catch (error) {
+        receipt.cleanup.snapshotRegistry = { status: 'failed', error: safeMessage(error) }
+      }
+
+      const defaultBranch = await readDefaultBranch(deps.workspaceRoot)
+      const protectedReason = (
+        branch === 'main' ? 'main branch is protected'
+          : defaultBranch && branch === defaultBranch ? 'default branch is protected'
+            : branch === deps.epicKey ? 'current app branch is protected'
+              : null
+      )
+      if (protectedReason) {
+        receipt.cleanup.branchDeletion = { status: 'skipped', branch, headRefOid: verifiedPr.headRefOid, reason: protectedReason }
+      } else {
+        try {
+          const exists = await remoteBranchExists(deps.workspaceRoot, branch)
+          if (!exists) {
+            receipt.cleanup.branchDeletion = { status: 'already-absent', branch, headRefOid: verifiedPr.headRefOid, remote: 'origin' }
+          } else {
+            await execFileAsync('git', ['push', `--force-with-lease=refs/heads/${branch}:${verifiedPr.headRefOid}`, 'origin', '--delete', branch], { cwd: deps.workspaceRoot, maxBuffer: 16 * 1024 * 1024 })
+            receipt.cleanup.branchDeletion = { status: 'deleted', branch, headRefOid: verifiedPr.headRefOid, remote: 'origin' }
+          }
+        } catch (error) {
+          receipt.cleanup.branchDeletion = { status: 'failed', branch, headRefOid: verifiedPr.headRefOid, remote: 'origin', error: safeMessage(error) }
+        }
+      }
+    }
+
+    if (cleanupRequested && receipt.cleanup.snapshotRegistry?.status === 'failed' && receipt.cleanup.branchDeletion === undefined) {
+      receipt.cleanup.branchDeletion = { status: 'skipped', branch, headRefOid: verifiedPr.headRefOid, reason: branch === deps.epicKey ? 'current app branch is protected' : 'cleanup blocked after snapshot failure' }
+    }
+
+    const cleanupFailure = receipt.cleanup.snapshotRegistry?.status === 'failed' || receipt.cleanup.branchDeletion?.status === 'failed'
+    if (cleanupFailure) {
+      receipt.overall = 'partial'
+      receipt.code = 'CLEANUP_FAILED'
+      receipt.message = 'close_epic stopped before epic close because cleanup failed'
+      receipt.epicBead = { id: epicBead.id, status: epicBead.status === 'closed' ? 'already-closed' : 'failed', error: 'blocked by failed cleanup' }
+      receipt.supervision = { status: 'failed', error: 'blocked by failed cleanup' }
       return textResult(receipt as unknown as Record<string, unknown>, false)
     }
 
