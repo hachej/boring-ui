@@ -136,19 +136,24 @@ describe('native Factory composition', () => {
 
       const header = { 'x-boring-workspace-id': 'factory-playground' }
       const createSession = async (agentTypeId: string) => {
-        for (let attempt = 0; attempt < 12; attempt += 1) {
-          const response = await app.inject({
-            method: 'POST',
-            url: `/api/v1/agents/${agentTypeId}/sessions`,
-            headers: header,
-            payload: { requestId: `create-${agentTypeId}-${crypto.randomUUID()}` },
-          })
-          if (response.statusCode === 201) return response.json<{ sessionId: string }>().sessionId
-          expect(response.statusCode, response.body).toBe(409)
-          expect(response.json<{ error?: { code?: string } }>().error?.code, response.body).toBe('AGENT_REQUEST_OUTCOME_UNKNOWN')
-          await new Promise((resolve) => setTimeout(resolve, 50 * (attempt + 1)))
-        }
-        throw new Error(`failed to create ${agentTypeId} session after replay-uncertain retries`)
+        const requestId = `create-${agentTypeId}-${crypto.randomUUID()}`
+        const send = async () => app.inject({
+          method: 'POST',
+          url: `/api/v1/agents/${agentTypeId}/sessions`,
+          headers: header,
+          payload: { requestId },
+        })
+        const response = await send()
+        if (response.statusCode === 201) return response.json<{ sessionId: string }>().sessionId
+        if (response.statusCode !== 409) expect(response.statusCode, response.body).toBe(201)
+        const body = response.json<{ error?: { code?: string }, existingSessionId?: string, sessionId?: string }>()
+        expect(body.error?.code, response.body).toBe('AGENT_REQUEST_OUTCOME_UNKNOWN')
+        const retry = await send()
+        expect(retry.statusCode, retry.body).toBe(200)
+        const retryBody = retry.json<{ existingSessionId?: string, sessionId?: string }>()
+        const sessionId = retryBody.existingSessionId ?? retryBody.sessionId ?? body.existingSessionId ?? body.sessionId
+        expect(sessionId).toBeTruthy()
+        return sessionId!
       }
       const workerSessionId = await createSession(FACTORY_WORKER_AGENT_TYPE_ID)
       const orchestratorSessionId = await createSession(FACTORY_ORCHESTRATOR_AGENT_TYPE_ID)
