@@ -79,13 +79,6 @@ export async function createFactoryPlayground(options: CreateFactoryPlaygroundOp
           beadsOperations,
           config: { providers: [{ provider: 'github', repo: 'auto' }, { provider: 'beads' }] },
         },
-        provisioning: {
-          templateDirs: [{
-            id: 'tasks-built-dist',
-            path: resolve(options.repositoryRoot, 'plugins/tasks/dist'),
-            target: 'plugins/tasks/dist',
-          }],
-        },
         trust: 'internal',
       },
       {
