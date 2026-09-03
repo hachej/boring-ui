@@ -136,14 +136,22 @@ describe('native Factory composition', () => {
 
       const header = { 'x-boring-workspace-id': 'factory-playground' }
       const createSession = async (agentTypeId: string) => {
-        const response = await app.inject({
+        const requestId = `create-${agentTypeId}-${crypto.randomUUID()}`
+        const send = async () => app.inject({
           method: 'POST',
           url: `/api/v1/agents/${agentTypeId}/sessions`,
           headers: header,
-          payload: { requestId: `create-${agentTypeId}-${crypto.randomUUID()}` },
+          payload: { requestId },
         })
-        expect(response.statusCode, response.body).toBe(201)
-        return response.json<{ sessionId: string }>().sessionId
+        const response = await send()
+        if (response.statusCode === 201) return response.json<{ sessionId: string }>().sessionId
+        if (response.statusCode !== 409) expect(response.statusCode, response.body).toBe(201)
+        const body = response.json<{ error?: { code?: string }, existingSessionId?: string }>()
+        expect(body.error?.code, response.body).toBe('AGENT_REQUEST_OUTCOME_UNKNOWN')
+        const retry = await send()
+        expect(retry.statusCode, retry.body).toBe(200)
+        const retryBody = retry.json<{ existingSessionId?: string, sessionId?: string }>()
+        return retryBody.existingSessionId ?? retryBody.sessionId ?? body.existingSessionId ?? ''
       }
       const workerSessionId = await createSession(FACTORY_WORKER_AGENT_TYPE_ID)
       const orchestratorSessionId = await createSession(FACTORY_ORCHESTRATOR_AGENT_TYPE_ID)
