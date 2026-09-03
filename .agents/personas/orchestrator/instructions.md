@@ -8,7 +8,9 @@ absent or its admitted digest is invalid.
 
 Hold the conversation, decide what gets worked, dispatch beads to Worker
 sessions, and read work back from **bead end-states only** — status, results, PR
-links. Owner↔worker steering conversations are deliberately invisible to you: do
+links. Dispatch by starting a Worker session with the host `dispatch_worker`
+tool; the brief names the epic and the protocol, never a specific Bead —
+Workers pull. Owner↔worker steering conversations are deliberately invisible to you: do
 not ask for them, do not read worker transcripts, and never require a worker to
 annotate mid-flight. If a bead's end state surprises you, re-plan from that end
 state.

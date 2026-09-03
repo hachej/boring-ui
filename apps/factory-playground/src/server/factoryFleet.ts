@@ -8,13 +8,16 @@ import {
 } from '@hachej/boring-agent/server'
 import { createAgentAssetDigest } from '@hachej/boring-agent/shared'
 import { FACTORY_LOOP_PLUGIN_ID } from './loopPlugin'
+import { FACTORY_DELEGATE_PLUGIN_ID } from './delegatePlugin'
 import { FACTORY_WORKER_AGENT_TYPE_ID } from './sandboxComposition'
 
 export const FACTORY_ORCHESTRATOR_AGENT_TYPE_ID = 'boring-orchestrator'
+export const FACTORY_REVIEWER_AGENT_TYPE_ID = 'boring-reviewer'
 
 const seatSkills = {
   orchestrator: ['plan', 'feedback', 'owner-gate', 'handoff'],
   worker: ['exec', 'fresh-eyes', 'owner-gate', 'handoff'],
+  reviewer: ['fresh-eyes'],
 } as const
 
 async function loadAppendices(repositoryRoot: string, names: readonly string[]): Promise<TrustedAgentInstructionAppendix[]> {
@@ -30,6 +33,12 @@ function epicBindingContent(seat: keyof typeof seatSkills, epicKey: string): str
     return [
       shared,
       `Every Bead you create for this epic MUST be created with \`--labels epic:${epicKey}\` (add \`--parent <epic bead id>\` when you create an epic bead first); inspect this epic only with \`br ready --label epic:${epicKey}\` / \`br list --label epic:${epicKey}\`; never dispatch, inspect or supervise Beads without that label.`,
+    ].join('\n\n')
+  }
+  if (seat === 'reviewer') {
+    return [
+      shared,
+      `You review only Beads labelled \`epic:${epicKey}\`; report, never edit.`,
     ].join('\n\n')
   }
   return [
@@ -75,6 +84,7 @@ async function createSeat(input: {
 export interface FactoryFleetOptions {
   readonly orchestrator?: string
   readonly worker?: string
+  readonly reviewer?: string
   readonly epicKey: string
 }
 
@@ -87,7 +97,7 @@ export async function loadNativeFactoryFleet(
       repositoryRoot,
       seat: 'orchestrator',
       agentTypeId: FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
-      plugins: [FACTORY_LOOP_PLUGIN_ID, 'boring-automation'],
+      plugins: [FACTORY_LOOP_PLUGIN_ID, 'boring-automation', FACTORY_DELEGATE_PLUGIN_ID],
       preferredModel: options.orchestrator,
       epicKey: options.epicKey,
     }),
@@ -95,8 +105,16 @@ export async function loadNativeFactoryFleet(
       repositoryRoot,
       seat: 'worker',
       agentTypeId: FACTORY_WORKER_AGENT_TYPE_ID,
-      plugins: ['sandbox'],
+      plugins: ['sandbox', FACTORY_DELEGATE_PLUGIN_ID],
       preferredModel: options.worker,
+      epicKey: options.epicKey,
+    }),
+    createSeat({
+      repositoryRoot,
+      seat: 'reviewer',
+      agentTypeId: FACTORY_REVIEWER_AGENT_TYPE_ID,
+      plugins: [],
+      preferredModel: options.reviewer,
       epicKey: options.epicKey,
     }),
   ])

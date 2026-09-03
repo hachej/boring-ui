@@ -7,6 +7,7 @@ import { createWorkspaceAgentServer } from '@hachej/boring-workspace/app/server'
 import { createWorkspaceBeadsOperations } from '@hachej/boring-tasks/server'
 import { loadNativeFactoryFleet, FACTORY_ORCHESTRATOR_AGENT_TYPE_ID } from './factoryFleet'
 import { createFactoryLoopPlugin } from './loopPlugin'
+import { createFactoryDelegatePlugin } from './delegatePlugin'
 import { createFactorySandboxPlugin, FACTORY_WORKSPACE_SCOPE_ID } from './sandboxComposition'
 
 export interface CreateFactoryPlaygroundOptions {
@@ -41,9 +42,11 @@ export async function createFactoryPlayground(options: CreateFactoryPlaygroundOp
   const agents = await loadNativeFactoryFleet(options.repositoryRoot, {
     orchestrator: env.BORING_FACTORY_ORCHESTRATOR_MODEL,
     worker: env.BORING_FACTORY_WORKER_MODEL,
+    reviewer: env.BORING_FACTORY_REVIEWER_MODEL,
     epicKey,
   })
   const beadsOperations = createWorkspaceBeadsOperations(createNodeWorkspace(workspaceRoot))
+  const delegate = createFactoryDelegatePlugin({ workspaceScopeId: FACTORY_WORKSPACE_SCOPE_ID })
 
   const app = await createWorkspaceAgentServer({
     workspaceRoot,
@@ -67,6 +70,7 @@ export async function createFactoryPlayground(options: CreateFactoryPlaygroundOp
     plugins: [
       createFactoryLoopPlugin(),
       createFactorySandboxPlugin(workspaceRoot, stateRoot, env),
+      delegate.plugin,
       {
         dir: resolve(options.repositoryRoot, 'plugins/tasks'),
         options: {
@@ -83,6 +87,8 @@ export async function createFactoryPlayground(options: CreateFactoryPlaygroundOp
     defaultPluginPackages: ['@hachej/boring-ask-user'],
     workspaceBridge: { allowInsecureLocalCliBrowserAuth: true },
   })
+
+  delegate.bind(app)
 
   app.get('/api/v1/workspace/meta', async () => ({
     projectName: 'Boring Factory',

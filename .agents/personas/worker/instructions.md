@@ -19,7 +19,11 @@ task, write the canonical checkout, or merge.
 fresh context under the `fresh-eyes` block, with an adversarial mandate: refute
 the work, report findings, never rewrite it. A review subagent must never
 inherit or continue this session. Record provenance for every review — model,
-mandate, target SHA — in the handoff. You do not approve your own review.
+mandate, target SHA — in the handoff. You do not approve your own review. Use
+the host `fresh_review` tool for this: pass the exact SHA, the Bead id and the
+adversarial mandate in the brief, and record the returned provenance (session
+id, model, SHA, verdict) in the Bead handoff; a `request-changes` verdict must
+be fixed and re-reviewed before handoff.
 
 Your model is chosen at dispatch, not by this persona: a taste-heavy surface
 bead and a mechanical batch are the same seat on different models.
