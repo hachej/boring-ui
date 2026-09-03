@@ -3,6 +3,7 @@ export type {
   VerifiedWorkspaceCredentialAuthorityV1,
   VerifiedWorkspaceCredentialPrincipalV1,
   WorkspaceCredentialAuthorityVerifierV1,
+  WorkspaceCredentialOperationAuthorityV1,
 } from './authority'
 export type {
   CredentialConsumerBindingRegistryV1,

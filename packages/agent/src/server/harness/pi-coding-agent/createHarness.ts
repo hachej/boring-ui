@@ -1,4 +1,3 @@
-import { AsyncLocalStorage } from "node:async_hooks";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { extname, join } from "node:path";
@@ -8,6 +7,7 @@ import {
   type PromptOptions,
   SessionManager,
   ModelRuntime,
+  type CreateModelRuntimeOptions,
   DefaultResourceLoader,
   getAgentDir,
   loadSkills,
@@ -17,6 +17,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import type { AgentHarness, AgentSlashCommandSummary, AgentSendInput, RunContext } from "../../../shared/harness.js";
 import { ErrorCode } from "../../../shared/error-codes.js";
+import { CREDENTIAL_ERROR_CODES, CredentialResolutionError } from "../../../shared/credentials/errors.js";
 import { createLogger } from "@hachej/boring-bash/server";
 import type { AgentTool } from "../../../shared/tool.js";
 import type { TelemetrySink } from "../../../shared/telemetry.js";
@@ -24,17 +25,24 @@ import type { SessionCtx } from "../../../shared/session.js";
 import { adaptToolsForPi, unmarkToolResultErrorDetails } from "./tool-adapter.js";
 import { createPiAgentSessionAdapter, type PiAgentSessionAdapter } from "../../pi-chat/PiAgentSessionAdapter.js";
 import { PiSessionStore } from "./sessions.js";
-import { readConfiguredDefaultModel } from "../../models/modelConfig.js";
 import { createConfiguredModelRuntime } from "../../models/modelRuntime.js";
 import {
   mergePiPackageSources,
   type PiPackageSource,
 } from "../../piPackages.js";
 import { createResourceSettingsManager } from "./resourceSettingsManager.js";
+import {
+  createOperationContextCoordinator,
+  type PiHarnessCredentialOperationLease,
+} from "./operationContextCoordinator.js";
+import {
+  makeSharedAvailabilityActorNeutral,
+  OPERATION_SCOPED_MODEL_PROVIDER_ID,
+  resolveOperationScopedDefaultModel,
+  resolveOperationScopedModel,
+} from "./operationScopedModelAvailability.js";
 
-interface PiRunContextState {
-  queuedFollowUpContexts: WeakMap<object, RunContext>;
-}
+export type { PiHarnessCredentialOperationLease } from "./operationContextCoordinator.js";
 
 interface PiSessionHandle {
   piSession: AgentSession;
@@ -43,8 +51,13 @@ interface PiSessionHandle {
   resourceLoader: DefaultResourceLoader;
   sessionId: string;
   sessionCtx: SessionCtx;
-  runContextState: PiRunContextState;
-  unsubscribeRunContextListener: () => void;
+  operationScopedCredentials: boolean;
+  operationContexts: ReturnType<typeof createOperationContextCoordinator>;
+}
+
+interface PendingPiSessionCreation {
+  coordinator: ReturnType<typeof createOperationContextCoordinator>;
+  promise: Promise<PiSessionHandle>;
 }
 
 export { mergePiPackageSources } from "../../piPackages.js";
@@ -92,6 +105,22 @@ function composeSystemPromptAppend(hostAppend: string | undefined): string {
     .join("\n\n");
 }
 
+export type PiHarnessCredentialStore = NonNullable<CreateModelRuntimeOptions["credentials"]>;
+
+export interface PiHarnessCredentialStoreFactoryInput {
+  /** Immutable identity of the one shared Pi handle/transcript. */
+  readonly sessionCtx: Readonly<SessionCtx>;
+  /**
+   * Returns the current operation's revocable authority lease. Consumers must
+   * retain and recheck the same lease across every asynchronous boundary.
+   */
+  readonly getOperationLease: () => PiHarnessCredentialOperationLease | undefined;
+}
+
+export type PiHarnessCredentialStoreFactory = (
+  input: PiHarnessCredentialStoreFactoryInput,
+) => PiHarnessCredentialStore;
+
 export interface PiHarnessOptions {
   noContextFiles?: boolean;
   /** Projects server-internal skill files to model-visible resource locators. */
@@ -125,6 +154,12 @@ export interface PiHarnessOptions {
   getHotReloadableResources?: () => HotReloadablePiResources;
   /** Reject an explicit unavailable/unknown model instead of silently falling back. */
   strictModelResolution?: boolean;
+  /**
+   * Server-only composition seam for one shared, operation-delegating Pi store.
+   * The factory must resolve actor policy from the live RunContext and fail
+   * closed when its policy requires verified interactive authority.
+   */
+  createCredentialStore?: PiHarnessCredentialStoreFactory;
 }
 
 /** Pi harness options with the discovery flags resolved to definite booleans. */
@@ -228,14 +263,6 @@ function buildToolErrorResultExtension(): ExtensionFactory {
 }
 
 
-function modelUnavailableError(input: AgentSendInput): Error {
-  return Object.assign(new Error('Requested model is not available.'), {
-    statusCode: 400,
-    code: ErrorCode.enum.TOOL_INVALID_INPUT,
-    details: { provider: input.model?.provider, model: input.model?.id },
-  })
-}
-
 function meteredSlashCommandPromptError(command: string): Error {
   return Object.assign(new Error('Slash command prompt execution is disabled while metering is configured.'), {
     statusCode: 409,
@@ -253,41 +280,6 @@ function meteredExtensionCommandContext(ctx: ExtensionCommandContext, command: s
   guarded.navigateTree = async () => block()
   guarded.switchSession = async () => block()
   return guarded
-}
-
-function resolveRequestedModel(
-  modelRuntime: ModelRuntime,
-  input: AgentSendInput,
-  options: { strict?: boolean } = {},
-) {
-  const requestedId = input.model?.id;
-  if (!input.model || !requestedId) return undefined;
-  const model = modelRuntime.getModel(input.model.provider, requestedId);
-  const available = modelRuntime.getAvailableSnapshot();
-  const hasAuth = Boolean(model) && available.some(
-    (m) => m.provider === model!.provider && m.id === model!.id,
-  );
-  if (!model || !hasAuth) {
-    if (options.strict) throw modelUnavailableError(input)
-    return undefined
-  }
-  return model;
-}
-
-function resolveDefaultModel(
-  modelRuntime: ModelRuntime,
-  override?: { provider: string; id: string },
-  strict?: boolean,
-) {
-  if (override) {
-    return resolveRequestedModel(modelRuntime, { model: override }, { strict });
-  }
-  const configured = readConfiguredDefaultModel();
-  if (configured) {
-    const model = modelRuntime.getModel(configured.provider, configured.id);
-    if (model) return model;
-  }
-  return undefined;
 }
 
 function sessionCtxForInput(input: AgentSendInput, ctx: RunContext): SessionCtx {
@@ -316,7 +308,11 @@ async function applyRequestedSessionOptions(
   input: AgentSendInput,
   options: { strictModelResolution?: boolean } = {},
 ): Promise<void> {
-  const requestedModel = resolveRequestedModel(handle.modelRuntime, input, { strict: options.strictModelResolution });
+  const requestedModel = await resolveOperationScopedModel(handle.modelRuntime, input, {
+    strict: options.strictModelResolution,
+    enabled: handle.operationScopedCredentials,
+    getOperationLease: handle.operationContexts.getActiveLease,
+  });
   if (requestedModel) {
     const current = handle.piSession.model;
     if (
@@ -395,47 +391,6 @@ function normalizeSlashCommandInfo(command: SlashCommandInfo): AgentSlashCommand
   };
 }
 
-type PiAgentWithFollowUp = {
-  followUp?: (message: unknown) => unknown;
-}
-
-// Queued follow-ups are drained by Pi's internal agent loop, outside any
-// AsyncLocalStorage scope, so the submitting run's auth context would be lost.
-// We capture it per queued message here and re-activate it when Pi starts
-// processing that message (message_start), keyed weakly on the message object.
-function rememberQueuedFollowUpRunContexts(
-  piSession: AgentSession,
-  state: PiRunContextState,
-  getRunContext: () => RunContext | undefined,
-): () => void {
-  const agent = (piSession as { agent?: PiAgentWithFollowUp }).agent;
-  if (!agent || typeof agent.followUp !== "function") return () => {};
-  const originalFollowUp = agent.followUp;
-  const wrappedFollowUp = function (this: PiAgentWithFollowUp, message: unknown) {
-    const ctx = getRunContext();
-    if (ctx && message && typeof message === "object") state.queuedFollowUpContexts.set(message, ctx);
-    return originalFollowUp.call(this, message);
-  };
-  agent.followUp = wrappedFollowUp;
-  return () => {
-    if (agent.followUp === wrappedFollowUp) agent.followUp = originalFollowUp;
-  };
-}
-
-function updateRunContextStateFromPiEvent(
-  state: PiRunContextState,
-  event: unknown,
-  activateRunContext: (ctx: RunContext) => void,
-): void {
-  if ((event as { type?: unknown }).type !== "message_start") return;
-  const message = (event as { message?: unknown }).message;
-  if (!message || typeof message !== "object") return;
-  const ctx = state.queuedFollowUpContexts.get(message);
-  if (!ctx) return;
-  state.queuedFollowUpContexts.delete(message);
-  activateRunContext(ctx);
-}
-
 export function createPiCodingAgentHarness(opts: {
   tools: AgentTool[];
   /** Host/storage cwd used for harness-owned resources (.pi settings, attachments, plugin discovery). */
@@ -475,7 +430,6 @@ export function createPiCodingAgentHarness(opts: {
     storageCwd: opts.cwd,
   });
   const piSessions = new Map<string, PiSessionHandle>();
-  const runContextStorage = new AsyncLocalStorage<RunContext>();
 
   // Effective Pi resources merge static caller-supplied fields with
   // getHotReloadableResources() output. Pi's DefaultResourceLoader keeps the
@@ -511,13 +465,15 @@ export function createPiCodingAgentHarness(opts: {
   // create. Without it both miss the `piSessions` cache, each run the ~seconds
   // createAgentSession, and the loser's handle is overwritten — leaking a Pi
   // session and breaking the single-writer guarantee.
-  const piSessionCreations = new Map<string, Promise<PiSessionHandle>>();
-  // Session-incarnation fence, mirroring the chat service's. A delete that lands
-  // while createAgentSession is still running must not leave the late handle
-  // installed — it would keep a live AgentSession (and its transcript writer)
-  // for a session that no longer exists.
-  const sessionGenerations = new Map<string, number>();
-  const generationOf = (sessionKey: string): number => sessionGenerations.get(sessionKey) ?? 0;
+  const piSessionCreations = new Map<string, PendingPiSessionCreation>();
+  // A deletion owns the session key until durable unlink settles. Cold opens
+  // fail while the key is present so delete cannot return with a replacement
+  // native writer installed behind it.
+  const piSessionDeletions = new Map<string, Promise<void>>();
+  const sessionNotFoundError = (): Error & { code: string; statusCode: number } => Object.assign(
+    new Error("session not found"),
+    { code: ErrorCode.enum.SESSION_NOT_FOUND, statusCode: 404 },
+  );
 
   async function getOrCreatePiSession(
     sessionId: string,
@@ -526,53 +482,81 @@ export function createPiCodingAgentHarness(opts: {
   ): Promise<PiSessionHandle> {
     const sessionCtx = sessionCtxForInput(input, ctx);
     const sessionKey = sessionCacheKey(sessionId, sessionCtx);
+    if (piSessionDeletions.has(sessionKey)) throw sessionNotFoundError();
     const existing = piSessions.get(sessionKey);
     if (existing) {
-      await applyRequestedSessionOptions(existing, input, { strictModelResolution: pi.strictModelResolution });
+      await existing.operationContexts.run(ctx, () =>
+        applyRequestedSessionOptions(existing, input, { strictModelResolution: pi.strictModelResolution }));
       return existing;
     }
 
     const inFlight = piSessionCreations.get(sessionKey);
     if (inFlight) {
-      const handle = await inFlight;
-      await applyRequestedSessionOptions(handle, input, { strictModelResolution: pi.strictModelResolution });
+      const handle = await inFlight.promise;
+      if (piSessionDeletions.has(sessionKey)) throw sessionNotFoundError();
+      await handle.operationContexts.run(ctx, () =>
+        applyRequestedSessionOptions(handle, input, { strictModelResolution: pi.strictModelResolution }));
       return handle;
     }
 
-    const generation = generationOf(sessionKey);
-    const creation = createPiSession(sessionId, sessionCtx, input, ctx).then((handle) => {
-      if (generationOf(sessionKey) === generation) return handle;
+    // Allocate authority before cold creation. Deletion can therefore revoke
+    // initial ModelRuntime/auth work before the late handle exists.
+    const coordinator = createOperationContextCoordinator();
+    const creation = coordinator.run(ctx, () =>
+      createPiSession(sessionId, sessionCtx, input, ctx, coordinator)).then((handle) => {
+      if (!piSessionDeletions.has(sessionKey)) return handle;
       disposeHandleAt(sessionKey, handle);
-      throw Object.assign(new Error("session not found"), {
-        code: ErrorCode.enum.SESSION_NOT_FOUND,
-        statusCode: 404,
-      });
+      throw sessionNotFoundError();
+    }, (error) => {
+      coordinator.dispose();
+      throw error;
     });
-    piSessionCreations.set(sessionKey, creation);
+    const pending = { coordinator, promise: creation };
+    piSessionCreations.set(sessionKey, pending);
     creation.catch(() => {});
     try {
       return await creation;
     } finally {
-      if (piSessionCreations.get(sessionKey) === creation) piSessionCreations.delete(sessionKey);
+      if (piSessionCreations.get(sessionKey) === pending) piSessionCreations.delete(sessionKey);
     }
   }
 
-  async function bindRunContext<T>(ctx: RunContext, run: () => Promise<T>): Promise<T> {
-    return await runContextStorage.run(ctx, run);
-  }
-
   function createRunBoundAdapter(handle: PiSessionHandle, sessionId: string, ctx: RunContext): PiAgentSessionAdapter {
+    const assertCredentialQueueMode = (): void => {
+      if (handle.operationScopedCredentials && handle.piSession.followUpMode !== "one-at-a-time") {
+        throw new CredentialResolutionError(
+          CREDENTIAL_ERROR_CODES.AUTHORITY_INVALID,
+          "operation-scoped credentials require one-at-a-time follow-up mode",
+        );
+      }
+    };
     // Pi 0.84 drains its native follow-up queue after an interrupted turn.
     // Supplying the older explicit agent.continue() compatibility hook would
     // submit the same queued follow-up a second time.
     const adapter = createPiAgentSessionAdapter(handle.piSession, { sessionId });
     return {
       ...adapter,
-      prompt: (promptInput) => bindRunContext(ctx, () => adapter.prompt(promptInput)),
-      followUp: (text, options) => bindRunContext(ctx, () => adapter.followUp(text, options)),
+      prompt: async (promptInput) => {
+        assertCredentialQueueMode();
+        if (
+          handle.operationScopedCredentials
+          && typeof promptInput !== "string"
+          && promptInput.options?.streamingBehavior === "steer"
+        ) {
+          throw new CredentialResolutionError(
+            CREDENTIAL_ERROR_CODES.DELIVERY_FORBIDDEN,
+            "steering is unavailable with operation-scoped credentials",
+          );
+        }
+        await handle.operationContexts.run(ctx, () => adapter.prompt(promptInput));
+      },
+      followUp: (text, options) => {
+        assertCredentialQueueMode();
+        return handle.operationContexts.run(ctx, () => adapter.followUp(text, options));
+      },
       clearFollowUp: (options) => adapter.clearFollowUp(options),
       ...(adapter.continueQueuedFollowUp
-        ? { continueQueuedFollowUp: () => bindRunContext(ctx, () => adapter.continueQueuedFollowUp!()) }
+        ? { continueQueuedFollowUp: () => handle.operationContexts.run(ctx, () => adapter.continueQueuedFollowUp!()) }
         : {}),
     };
   }
@@ -582,17 +566,40 @@ export function createPiCodingAgentHarness(opts: {
     sessionCtx: SessionCtx,
     input: AgentSendInput,
     ctx: RunContext,
+    operationContexts: ReturnType<typeof createOperationContextCoordinator>,
   ): Promise<PiSessionHandle> {
-    // Auth/model credentials remain Pi-owned. The default runtime reads Pi's
-    // normal environment/settings/auth sources; Boring does not pick a
-    // provider credential itself.
-    const { modelRuntime } = await createConfiguredModelRuntime();
-    // Strict model validation must fail before native transcript creation.
-    const resolvedModel = resolveRequestedModel(modelRuntime, input, { strict: pi.strictModelResolution });
-    // Prefer an explicit available UI selection; otherwise use configured
-    // Boring/Pi default if present. Undefined is intentional: Pi/session owns
-    // the final fallback model selection.
-    const model = resolvedModel ?? resolveDefaultModel(modelRuntime, pi.defaultModel, pi.strictModelResolution);
+    const getSessionOperationLease = operationContexts.getActiveLease;
+    const getSessionRunContext = operationContexts.getActiveContext;
+    // One operation-delegating store belongs to this shared runtime/handle.
+    // It resolves the live actor from a revocable operation lease; actor
+    // identity never enters the Pi handle key or becomes runtime-global.
+    const credentialStore = pi.createCredentialStore?.({
+      sessionCtx: Object.freeze({ ...sessionCtx }),
+      getOperationLease: getSessionOperationLease,
+    });
+    if (pi.createCredentialStore && !credentialStore) {
+      throw new CredentialResolutionError(
+        CREDENTIAL_ERROR_CODES.AUTHORITY_INVALID,
+        "configured credential store factory returned no store",
+      );
+    }
+    // Auth/model credentials remain Pi-owned. Without the explicit seam, the
+    // compatibility runtime keeps Pi's normal environment/settings/auth sources.
+    const { modelRuntime } = await createConfiguredModelRuntime(
+      credentialStore ? { credentials: credentialStore } : undefined,
+    );
+    if (credentialStore) makeSharedAvailabilityActorNeutral(modelRuntime)
+    const actorAvailability = {
+      strict: pi.strictModelResolution,
+      enabled: Boolean(credentialStore),
+      getOperationLease: operationContexts.getActiveLease,
+    }
+    // Preserve strict unknown-model rejection before touching transcript
+    // storage, while actor-bound availability still resolves under this lease.
+    const resolvedModel = await resolveOperationScopedModel(modelRuntime, input, actorAvailability)
+    const defaultModel = resolvedModel
+      ? undefined
+      : await resolveOperationScopedDefaultModel(modelRuntime, pi.defaultModel, actorAvailability)
 
     // Restore Boring-owned sessions as before: every session id is minted (and
     // its transcript written) server-side at create, so there is no id-less
@@ -624,6 +631,25 @@ export function createPiCodingAgentHarness(opts: {
         { code: ErrorCode.enum.SESSION_TRANSCRIPT_UNREADABLE, statusCode: 500, cause: error },
       );
     }
+    // A resumed Codex model is restored only when the current actor can use it;
+    // the shared snapshot stays neutral. Some narrow unit doubles predate Pi's
+    // buildSessionContext method and therefore have no resumable model.
+    const buildSessionContext = (sessionManager as Partial<SessionManager>).buildSessionContext
+    const restored = typeof buildSessionContext === 'function'
+      ? buildSessionContext.call(sessionManager).model
+      : undefined
+    const restoredActorModel = !resolvedModel && !defaultModel && credentialStore
+      && restored?.provider === OPERATION_SCOPED_MODEL_PROVIDER_ID
+      ? await resolveOperationScopedModel(
+          modelRuntime,
+          { model: { provider: restored.provider, id: restored.modelId } },
+          { ...actorAvailability, strict: false },
+        )
+      : undefined
+    // Prefer explicit/configured choices; otherwise let Pi own its normal
+    // non-Codex fallback. Personal Codex restore is resolved per current actor.
+    const model = resolvedModel ?? defaultModel ?? restoredActorModel
+
     // Hosts may extend pi's base prompt and/or isolate resource discovery.
     // We keep pi's default system prompt but always tack on a workspace-paths
     // guideline (relative-paths only) on top of whatever the host supplied —
@@ -652,6 +678,7 @@ export function createPiCodingAgentHarness(opts: {
       opts.cwd,
       agentDir,
       effectivePackages,
+      credentialStore ? { forceFollowUpMode: "one-at-a-time" } : {},
     )
     const resourceLoader = new DefaultResourceLoader({
       cwd: opts.cwd,
@@ -686,14 +713,13 @@ export function createPiCodingAgentHarness(opts: {
 
     await resourceLoader?.reload()
 
-    const runContextState: PiRunContextState = { queuedFollowUpContexts: new WeakMap() }
     const { session: piSession } = await createAgentSession({
       cwd: runtimeCwd,
       // Suppress Pi's built-in filesystem/shell tools while keeping Boring's
       // adapted tool catalog active. Do NOT pass an explicit empty tool-name
       // allowlist: in the current Pi SDK that disables custom tools too.
       noTools: "builtin",
-      customTools: adaptToolsForPi(opts.tools, sessionId, opts.telemetry, () => runContextStorage.getStore()),
+      customTools: adaptToolsForPi(opts.tools, sessionId, opts.telemetry, getSessionRunContext),
       model,
       thinkingLevel: input.thinkingLevel ?? "off",
       sessionManager,
@@ -702,24 +728,33 @@ export function createPiCodingAgentHarness(opts: {
       ...(resourceLoader ? { resourceLoader } : {}),
     });
 
-    const restoreFollowUpContextWrapper = rememberQueuedFollowUpRunContexts(piSession, runContextState, () => runContextStorage.getStore());
-    const unsubscribePiRunContextListener = piSession.subscribe((event) => updateRunContextStateFromPiEvent(runContextState, event, (ctx) => runContextStorage.enterWith(ctx)));
-    const unsubscribeRunContextListener = () => {
-      unsubscribePiRunContextListener();
-      restoreFollowUpContextWrapper();
-    };
-    const handle: PiSessionHandle = {
-      piSession,
-      modelRuntime,
-      sessionManager,
-      resourceLoader,
-      sessionId: sessionId,
-      sessionCtx,
-      runContextState,
-      unsubscribeRunContextListener,
-    };
-    piSessions.set(sessionCacheKey(sessionId, sessionCtx), handle);
-    return handle;
+    // Native Pi now owns transcript/session resources. Until the returned
+    // handle is installed, every failure must dispose it here; the outer
+    // generation fence can only dispose successfully returned handles.
+    try {
+      if (credentialStore && piSession.followUpMode !== "one-at-a-time") {
+        throw new CredentialResolutionError(
+          CREDENTIAL_ERROR_CODES.AUTHORITY_INVALID,
+          "operation-scoped credentials require one-at-a-time follow-up mode",
+        );
+      }
+      operationContexts.bindQueuedFollowUps(piSession, Boolean(credentialStore));
+      const handle: PiSessionHandle = {
+        piSession,
+        modelRuntime,
+        sessionManager,
+        resourceLoader,
+        sessionId: sessionId,
+        sessionCtx,
+        operationScopedCredentials: Boolean(credentialStore),
+        operationContexts,
+      };
+      piSessions.set(sessionCacheKey(sessionId, sessionCtx), handle);
+      return handle;
+    } catch (error) {
+      piSession.dispose();
+      throw error;
+    }
   }
 
   async function reloadPiSession(sessionId: string): Promise<boolean> {
@@ -731,7 +766,9 @@ export function createPiCodingAgentHarness(opts: {
   }
 
   function disposeHandleAt(key: string, handle: PiSessionHandle): void {
-    handle.unsubscribeRunContextListener();
+    // Revoke all actor operations and clear queued captures before Pi removes
+    // listeners or disposes the shared transcript writer.
+    handle.operationContexts.dispose();
     handle.piSession.dispose();
     if (piSessions.get(key) === handle) piSessions.delete(key);
   }
@@ -771,13 +808,30 @@ export function createPiCodingAgentHarness(opts: {
   const originalDelete = sessionStore.delete.bind(sessionStore);
   sessionStore.delete = async (ctx, sessionId) => {
     const key = sessionCacheKey(sessionId, ctx);
-    // Invalidate before the storage delete so a creation still inside
-    // createAgentSession is fenced out rather than installed afterwards, then
-    // settle it so this call returns with nothing live left behind.
-    sessionGenerations.set(key, generationOf(key) + 1);
-    await Promise.allSettled([piSessionCreations.get(key)]);
-    await originalDelete(ctx, sessionId);
-    disposePiSession(sessionId, ctx);
+    const activeDeletion = piSessionDeletions.get(key);
+    if (activeDeletion) return activeDeletion;
+
+    let deletion!: Promise<void>;
+    deletion = (async () => {
+      // Fence this key before authority revocation or any await. The fence stays
+      // active through durable unlink, so a concurrent reopen cannot install a
+      // replacement native writer while delete is in progress.
+      const pending = piSessionCreations.get(key);
+      pending?.coordinator.dispose();
+      disposePiSession(sessionId, ctx);
+      await Promise.allSettled(pending ? [pending.promise] : []);
+      disposePiSession(sessionId, ctx);
+      await originalDelete(ctx, sessionId);
+      // Defensive postcondition: deletion must never return with a cached
+      // handle, even if a future internal path bypasses the pre-open fence.
+      disposePiSession(sessionId, ctx);
+    })();
+    piSessionDeletions.set(key, deletion);
+    try {
+      await deletion;
+    } finally {
+      if (piSessionDeletions.get(key) === deletion) piSessionDeletions.delete(key);
+    }
   };
 
 
@@ -851,7 +905,7 @@ export function createPiCodingAgentHarness(opts: {
 
     async executeSlashCommand(sessionId: string, name: string, args: string, ctx: RunContext): Promise<void> {
       const handle = await getOrCreatePiSessionForCommand(sessionId, ctx);
-      await bindRunContext(ctx, async () => {
+      await handle.operationContexts.run(ctx, async () => {
         const command = handle.piSession.extensionRunner.getCommand(name);
         if (command) {
           const commandContext = handle.piSession.extensionRunner.createCommandContext();
@@ -872,8 +926,8 @@ export function createPiCodingAgentHarness(opts: {
 
     async getPiSessionAdapter(input: AgentSendInput, ctx: RunContext) {
       if (!input.sessionId) throw new Error("sessionId is required to create a Pi session adapter");
-      const handle = await getOrCreatePiSession(input.sessionId, input, ctx);
-      return createRunBoundAdapter(handle, input.sessionId, ctx);
+      const handle = await getOrCreatePiSession(input.sessionId!, input, ctx);
+      return createRunBoundAdapter(handle, input.sessionId!, ctx);
     },
   } as AgentHarness & {
     getPiSessionAdapter(input: AgentSendInput, ctx: RunContext): Promise<PiAgentSessionAdapter>;

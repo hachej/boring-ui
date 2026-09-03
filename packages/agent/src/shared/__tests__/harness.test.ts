@@ -3,6 +3,7 @@ import { expectTypeOf, test } from 'vitest'
 import type { AgentConfig } from '../events'
 import type { AgentCoreHarnessFactory, AgentHarness, AgentHarnessFactory, RunContext, AgentSendInput, MessageAttachment } from '../harness'
 import type { SessionStore } from '../session'
+import type { WorkspaceCredentialOperationAuthorityV1 } from '../credentials/authority'
 
 test('AgentHarness contract', () => {
   expectTypeOf<AgentHarness>().toMatchTypeOf<{
@@ -51,6 +52,8 @@ test('RunContext contract', () => {
     workspaceId?: string
     requestId?: string
     userId?: string
+    executionClass?: 'request-attached-interactive'
+    credentialAuthority?: WorkspaceCredentialOperationAuthorityV1
     userEmail?: string
     userEmailVerified?: boolean
     sessionCtx?: { workspaceId?: string; userId?: string }
@@ -61,6 +64,8 @@ test('RunContext contract', () => {
   expectTypeOf<RunContext['workdir']>().toEqualTypeOf<string>()
   expectTypeOf<RunContext['workspaceId']>().toEqualTypeOf<string | undefined>()
   expectTypeOf<RunContext['userId']>().toEqualTypeOf<string | undefined>()
+  expectTypeOf<RunContext['executionClass']>().toEqualTypeOf<'request-attached-interactive' | undefined>()
+  expectTypeOf<RunContext['credentialAuthority']>().toEqualTypeOf<WorkspaceCredentialOperationAuthorityV1 | undefined>()
   expectTypeOf<RunContext['userEmail']>().toEqualTypeOf<string | undefined>()
   expectTypeOf<RunContext['userEmailVerified']>().toEqualTypeOf<boolean | undefined>()
   expectTypeOf<RunContext['workspaceId']>().toEqualTypeOf<string | undefined>()

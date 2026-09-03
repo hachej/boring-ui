@@ -1,6 +1,10 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { AgentGatewayError, AgentGatewayErrorCode, type AgentAccessOperation } from '../../shared/index'
+import {
+  CREDENTIAL_ERROR_CODES,
+  CredentialResolutionError,
+} from '../../shared/credentials/errors'
 import { ErrorCode } from '../../shared/error-codes'
 import type { AgentHarness, RunContext } from '../../shared/harness'
 import type { AgentTool } from '../../shared/tool'
@@ -119,6 +123,7 @@ export interface AgentHostAgentDescription {
 
 export interface AgentHostRuntimeCapabilityProjection {
   readonly filterModels?: ModelsRoutesOptions['filterModels']
+  readonly resolveModelCatalog?: ModelsRoutesOptions['resolveModelCatalog']
   readonly sessionChangesTracker?: SessionChangesTracker
   readonly metering?: Pick<AgentMeteringSink, 'isEnabled'>
   registerSubscription(close: () => void | Promise<void>): () => void
@@ -158,7 +163,7 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
   readonly gateway: EmbeddedAgentGateway
   readonly options: Pick<
     AgentHostDirectProjectionOptions,
-    'authorizeAgentRequest' | 'defaultSessionId' | 'filterModels' | 'sessionChangesTracker'
+    'authorizeAgentRequest' | 'defaultSessionId' | 'filterModels' | 'resolveModelCatalog' | 'sessionChangesTracker'
   >
   readonly mcpGrants?: AgentHostRuntimeCapabilityMcpGrantsOptions
 }): AgentHostRuntimeCapabilityProjection {
@@ -211,6 +216,7 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
   }
   return {
     filterModels: options.filterModels,
+    resolveModelCatalog: options.resolveModelCatalog,
     sessionChangesTracker: options.sessionChangesTracker,
     metering: runtime.options.metering,
     registerSubscription: runtime.registerSubscription,
@@ -289,6 +295,7 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
           workspaceId: claim.workspaceScopeId,
           requestId: request.id,
           userId: claim.authSubjectId,
+          executionClass: 'request-attached-interactive',
           sessionCtx: {
             workspaceId: claim.workspaceScopeId,
           },
@@ -375,6 +382,7 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
             workspaceId: scope.workspaceScopeId,
             requestId,
             userId: scope.authSubjectId,
+            executionClass: 'request-attached-interactive',
             sessionCtx: {
               workspaceId: scope.workspaceScopeId,
               },
@@ -587,7 +595,22 @@ export function createAgentHostRuntimeCapabilityRoutes(
     await app.register(modelsRoutes, {
       path: '/api/v1/agents/:agentTypeId/models',
       filterModels: projection.filterModels,
-      authorizeRequest: async (request) => { await resolve(request, agentId(request)) },
+      resolveModelCatalog: projection.resolveModelCatalog,
+      authorizeRequest: async (request) => {
+        const binding = await resolve(request, agentId(request))
+        const { workspaceId, userId } = binding.runContext
+        if (!workspaceId || !userId) {
+          throw new CredentialResolutionError(
+            CREDENTIAL_ERROR_CODES.AUTHORITY_INVALID,
+            'authorized model request is missing verified actor identity',
+          )
+        }
+        return Object.freeze({
+          workspaceId,
+          userId,
+          executionClass: 'request-attached-interactive' as const,
+        })
+      },
     })
     await app.register(skillsRoutes, {
       path: '/api/v1/agents/:agentTypeId/skills',

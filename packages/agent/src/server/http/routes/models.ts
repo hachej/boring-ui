@@ -23,6 +23,11 @@ import {
   readConfiguredDefaultModel,
   type AgentModelSelection,
 } from '../../models/modelConfig.js'
+import {
+  CREDENTIAL_ERROR_CODES,
+  CredentialResolutionError,
+} from '../../../shared/credentials/errors.js'
+import type { TrustedAgentExecutionClass } from '../../../shared/harness.js'
 import { createConfiguredModelRuntime } from '../../models/modelRuntime.js'
 
 export interface ModelSummary {
@@ -37,9 +42,50 @@ export interface ModelsResponse {
   defaultModel?: AgentModelSelection
 }
 
+export interface VerifiedModelRequestActor {
+  readonly workspaceId: string
+  readonly userId: string
+  readonly executionClass: TrustedAgentExecutionClass
+}
+
 export interface ModelFilterContext {
   request: FastifyRequest
   workspaceId?: string
+  userId?: string
+  executionClass?: TrustedAgentExecutionClass
+}
+
+export interface ModelCatalogSnapshot {
+  /** Pi-free projection of the models visible to this actor. */
+  readonly models: readonly ModelSummary[]
+}
+
+export type ModelCatalogResolver = (
+  actor: VerifiedModelRequestActor,
+) => ModelCatalogSnapshot | Promise<ModelCatalogSnapshot>
+
+/** Keep Pi runtime objects inside the HTTP adapter; Agent Host sees only the DTO. */
+function projectModelCatalog(
+  catalog: Awaited<ReturnType<typeof createConfiguredModelRuntime>>,
+): ModelCatalogSnapshot {
+  const { modelRuntime, configuredModels } = catalog
+  const configuredModelSet = new Set(
+    configuredModels.map((model) => `${model.provider}:${model.id}`),
+  )
+  const availableSet = new Set(
+    modelRuntime.getAvailableSnapshot().map((model) => `${model.provider}:${model.id}`),
+  )
+  const allModels = configuredModelSet.size > 0
+    ? modelRuntime.getModels().filter((model) => configuredModelSet.has(`${model.provider}:${model.id}`))
+    : modelRuntime.getModels()
+  return {
+    models: allModels.map((model) => ({
+      provider: model.provider,
+      id: model.id,
+      label: (model as unknown as { label?: string }).label ?? model.id,
+      available: availableSet.has(`${model.provider}:${model.id}`),
+    })),
+  }
 }
 
 export type ModelFilterResult = {
@@ -49,7 +95,11 @@ export type ModelFilterResult = {
 
 export interface ModelsRoutesOptions {
   path?: string
-  authorizeRequest?: (request: FastifyRequest) => void | Promise<void>
+  authorizeRequest?: (
+    request: FastifyRequest,
+  ) => void | VerifiedModelRequestActor | Promise<void | VerifiedModelRequestActor>
+  /** Actor-aware catalogs are resolved only after authorizeRequest succeeds. */
+  resolveModelCatalog?: ModelCatalogResolver
   filterModels?: (
     ctx: ModelFilterContext,
     models: readonly ModelSummary[],
@@ -61,32 +111,28 @@ export async function modelsRoutes(
   app: FastifyInstance,
   opts: ModelsRoutesOptions,
 ): Promise<void> {
-  // Build one runtime per plugin registration — reads env +
-  // ~/.pi/agent/auth.json. Cached so repeated GETs don't re-scan auth.
-  const { modelRuntime, configuredModels } = await createConfiguredModelRuntime()
-  const configuredModelSet = new Set(
-    configuredModels.map((model) => `${model.provider}:${model.id}`),
-  )
+  // Preserve the compatibility runtime as the default. Actor-aware callers
+  // resolve a catalog per authorized request and therefore construct nothing
+  // actor-bound during route registration or denied authorization.
+  const compatibilityCatalog = opts.resolveModelCatalog
+    ? undefined
+    : projectModelCatalog(await createConfiguredModelRuntime())
+
   app.get(opts.path ?? '/api/v1/agents/:agentTypeId/models', async (request, reply) => {
-    await opts.authorizeRequest?.(request)
-    const availableModels = modelRuntime.getAvailableSnapshot()
-    const availableSet = new Set(
-      availableModels.map((m) => `${m.provider}:${m.id}`),
-    )
-    const allModels = configuredModelSet.size > 0
-      ? modelRuntime.getModels().filter((m) => configuredModelSet.has(`${m.provider}:${m.id}`))
-      : modelRuntime.getModels()
-    const models: ModelSummary[] = allModels.map((m) => ({
-      provider: m.provider,
-      id: m.id,
-      label: (m as unknown as { label?: string }).label ?? m.id,
-      // Keep this endpoint cheap: it is fetched on chat mount, so it must never
-      // block workspace load on deep provider auth resolution. ModelRuntime's
-      // available snapshot is already derived from configured auth sources. When
-      // hosts configure launch/custom providers, those configured models are an
-      // allowlist: do not leak the built-in registry's unavailable catalog.
-      available: availableSet.has(`${m.provider}:${m.id}`),
-    }))
+    const actor = await opts.authorizeRequest?.(request)
+    if (opts.resolveModelCatalog && !actor) {
+      throw new CredentialResolutionError(
+        CREDENTIAL_ERROR_CODES.AUTHORITY_INVALID,
+        'actor-aware model catalog resolution requires a verified request actor',
+      )
+    }
+    const catalog = opts.resolveModelCatalog
+      ? await opts.resolveModelCatalog(actor as VerifiedModelRequestActor)
+      : compatibilityCatalog!
+    // Availability is an advisory snapshot for display. Request-auth store
+    // resolution remains authoritative when a model call actually runs. Clone
+    // the Pi-free snapshot because filters may mutate their input.
+    const models: ModelSummary[] = catalog.models.map((model) => ({ ...model }))
     // Stable order: available first, then alphabetically by (provider, id).
     models.sort((a, b) => {
       if (a.available !== b.available) return a.available ? -1 : 1
@@ -100,7 +146,11 @@ export async function modelsRoutes(
       : undefined
     const filtered = opts.filterModels
       ? await opts.filterModels(
-        { request, workspaceId: request.workspaceContext?.workspaceId },
+        {
+          request,
+          workspaceId: actor?.workspaceId ?? request.workspaceContext?.workspaceId,
+          ...(actor ? { userId: actor.userId, executionClass: actor.executionClass } : {}),
+        },
         models.map((model) => ({ ...model })),
         defaultModel ? { provider: defaultModel.provider, id: defaultModel.id } : undefined,
       )

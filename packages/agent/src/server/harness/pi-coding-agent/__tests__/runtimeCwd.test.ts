@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const {
   mockSubscribers,
   promptHandle,
+  mockPrompt,
   mockCurrentModel,
   mockSetModel,
   mockSetThinkingLevel,
@@ -14,6 +15,12 @@ const {
 } = vi.hoisted(() => ({
   mockSubscribers: [] as Array<(event: any) => void>,
   promptHandle: { resolve: undefined as undefined | (() => void) },
+  mockPrompt: vi.fn().mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        promptHandle.resolve = resolve;
+      }),
+  ),
   mockCreateAgentSessionConfigs: [] as any[],
   mockSessionManagerCreate: vi.fn(() => ({ getSessionFile: () => null })),
   mockSessionManagerOpen: vi.fn(() => ({ getSessionFile: () => null })),
@@ -45,12 +52,7 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
         // prompt() resolves only when the test calls promptHandle.resolve().
         // This mirrors pi-coding-agent's real behaviour where prompt() waits
         // for agent_end before returning.
-        prompt: vi.fn().mockImplementation(
-          () =>
-            new Promise<void>((resolve) => {
-              promptHandle.resolve = resolve;
-            }),
-        ),
+        prompt: mockPrompt,
         abort: vi.fn().mockResolvedValue(undefined),
         dispose: vi.fn(),
         setModel: mockSetModel,
@@ -147,5 +149,25 @@ describe("runtime cwd separation", () => {
       "Current working directory: /workspace",
     ]);
     expect(systemPrompt).not.toContain("/tmp/host-storage-root");
+  });
+
+  it("preserves Pi steering for compatibility harnesses without operation-scoped credentials", async () => {
+    const harness = createPiCodingAgentHarness({
+      tools: [],
+      cwd: "/tmp/host-storage-root",
+      runtimeCwd: "/workspace",
+      sessionDir: "/tmp/pi-session-storage",
+    });
+    const ctx: RunContext = {
+      abortSignal: new AbortController().signal,
+      workdir: "/workspace",
+    };
+    const created = await harness.sessions.create({});
+    const adapter = await harness.getPiSessionAdapter({ sessionId: created.id, content: "" }, ctx);
+
+    const pending = adapter.prompt({ text: "steer", options: { streamingBehavior: "steer" } });
+    expect(mockPrompt).toHaveBeenCalledWith("steer", { streamingBehavior: "steer" });
+    promptHandle.resolve?.();
+    await pending;
   });
 });

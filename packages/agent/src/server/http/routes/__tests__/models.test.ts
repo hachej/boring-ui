@@ -2,7 +2,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import Fastify from 'fastify'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { modelsRoutes } from '../models.js'
+import { CREDENTIAL_ERROR_CODES } from '../../../../shared/credentials/errors.js'
+import {
+  modelsRoutes,
+  type ModelCatalogSnapshot,
+  type VerifiedModelRequestActor,
+} from '../models.js'
 
 const ENV_KEYS = [
   'BORING_AGENT_DEFAULT_MODEL',
@@ -31,6 +36,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.unstubAllGlobals()
   for (const key of ENV_KEYS) {
     const previous = previousEnv[key]
     if (typeof previous === 'string') process.env[key] = previous
@@ -39,6 +45,17 @@ afterEach(() => {
 })
 
 describe('modelsRoutes', () => {
+  function actorCatalog(): ModelCatalogSnapshot {
+    return {
+      models: [{
+        provider: 'openai-codex',
+        id: 'gpt-test',
+        label: 'GPT test',
+        available: true,
+      }],
+    }
+  }
+
   function configureInfomaniakModels() {
     process.env.BORING_AGENT_INFOMANIAK_PRODUCT_ID = '108321'
     process.env.BORING_AGENT_INFOMANIAK_MODEL = 'Qwen/Qwen3.5-122B-A10B-FP8'
@@ -110,6 +127,82 @@ describe('modelsRoutes', () => {
       expect(second.json().models).toHaveLength(1)
       expect(seenLengths.every((length) => length > 1)).toBe(true)
       expect(firstLabels.every((label) => !label.includes('mutated'))).toBe(true)
+    } finally {
+      await app.close()
+    }
+  })
+
+  it('resolves actor catalogs only after authorization with distinct verified users', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => { throw new Error('unexpected network access') }))
+    const authorizedActors = [
+      Object.freeze({ workspaceId: 'workspace-a', userId: 'user-a', executionClass: 'request-attached-interactive' as const }),
+      Object.freeze({ workspaceId: 'workspace-a', userId: 'user-b', executionClass: 'request-attached-interactive' as const }),
+    ]
+    const authorizeRequest = vi.fn(async () => authorizedActors.shift()!)
+    const resolveModelCatalog = vi.fn(async (_actor: VerifiedModelRequestActor) => actorCatalog())
+    const filterContexts: Array<{ workspaceId?: string; userId?: string; executionClass?: string }> = []
+    const app = Fastify({ logger: false })
+    await app.register(modelsRoutes, {
+      authorizeRequest,
+      resolveModelCatalog,
+      filterModels: async (ctx, models, defaultModel) => {
+        filterContexts.push(ctx)
+        return { models, defaultModel }
+      },
+    })
+    await app.ready()
+
+    try {
+      await app.inject({ method: 'GET', url: '/api/v1/agents/default/models' })
+      await app.inject({ method: 'GET', url: '/api/v1/agents/default/models' })
+
+      expect(resolveModelCatalog.mock.calls.map(([actor]) => actor)).toEqual([
+        expect.objectContaining({ workspaceId: 'workspace-a', userId: 'user-a', executionClass: 'request-attached-interactive' }),
+        expect.objectContaining({ workspaceId: 'workspace-a', userId: 'user-b', executionClass: 'request-attached-interactive' }),
+      ])
+      expect(resolveModelCatalog.mock.invocationCallOrder[0]).toBeGreaterThan(authorizeRequest.mock.invocationCallOrder[0]!)
+      expect(resolveModelCatalog.mock.invocationCallOrder[1]).toBeGreaterThan(authorizeRequest.mock.invocationCallOrder[1]!)
+      expect(filterContexts).toEqual([
+        expect.objectContaining({ workspaceId: 'workspace-a', userId: 'user-a', executionClass: 'request-attached-interactive' }),
+        expect.objectContaining({ workspaceId: 'workspace-a', userId: 'user-b', executionClass: 'request-attached-interactive' }),
+      ])
+    } finally {
+      await app.close()
+    }
+  })
+
+  it('returns a stable authority code when actor-aware authorization yields no actor', async () => {
+    const resolveModelCatalog = vi.fn(async (_actor: VerifiedModelRequestActor) => actorCatalog())
+    const app = Fastify({ logger: false })
+    await app.register(modelsRoutes, {
+      authorizeRequest: async () => undefined,
+      resolveModelCatalog,
+    })
+    await app.ready()
+
+    try {
+      const response = await app.inject({ method: 'GET', url: '/api/v1/agents/default/models' })
+      expect(response.statusCode).toBe(500)
+      expect(response.json()).toMatchObject({ code: CREDENTIAL_ERROR_CODES.AUTHORITY_INVALID })
+      expect(resolveModelCatalog).not.toHaveBeenCalled()
+    } finally {
+      await app.close()
+    }
+  })
+
+  it('does not construct an actor catalog when authorization is denied', async () => {
+    const resolveModelCatalog = vi.fn(async (_actor: VerifiedModelRequestActor) => actorCatalog())
+    const app = Fastify({ logger: false })
+    await app.register(modelsRoutes, {
+      authorizeRequest: async () => { throw new Error('denied') },
+      resolveModelCatalog,
+    })
+    await app.ready()
+
+    try {
+      const response = await app.inject({ method: 'GET', url: '/api/v1/agents/default/models' })
+      expect(response.statusCode).toBe(500)
+      expect(resolveModelCatalog).not.toHaveBeenCalled()
     } finally {
       await app.close()
     }

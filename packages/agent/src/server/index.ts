@@ -233,10 +233,22 @@ export { applyCspHeaders } from './http/csp'
 export { deepLinkRoutes } from './http/routes/deepLink'
 export type {
   PiExtensionFactory,
+  PiHarnessCredentialStore,
+  PiHarnessCredentialStoreFactory,
+  PiHarnessCredentialStoreFactoryInput,
   PiHarnessOptions,
   PiPackageSource,
 } from './harness/pi-coding-agent/createHarness'
 export { createResourceSettingsManager } from './harness/pi-coding-agent/createHarness'
+export {
+  ACTOR_CREDENTIAL_CONTEXT_MISSING,
+  ACTOR_CREDENTIAL_DELIVERY_FORBIDDEN,
+  createOperationScopedCredentialStore,
+} from './harness/pi-coding-agent/operationScopedCredentialStore'
+export type {
+  OperationScopedCredentialStoreOptions,
+  VerifiedCredentialOperationActor,
+} from './harness/pi-coding-agent/operationScopedCredentialStore'
 export { parseSkillMetadataFrontmatter } from './skillFrontmatter'
 export type { SkillMetadataFrontmatter } from './skillFrontmatter'
 export {

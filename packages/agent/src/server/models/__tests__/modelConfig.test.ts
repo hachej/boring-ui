@@ -112,7 +112,7 @@ describe('agent model env config', () => {
     })
   })
 
-  it('resolves the Infomaniak API key through Pi 0.84.3 ModelRuntime', async () => {
+  it('resolves the Infomaniak API key through Pi 0.84.4 ModelRuntime', async () => {
     process.env.BORING_AGENT_INFOMANIAK_PRODUCT_ID = '108321'
     process.env.BORING_AGENT_INFOMANIAK_MODEL = 'Qwen/Qwen3.5-122B-A10B-FP8'
     process.env.INFOMANIAK_API_TOKEN = 'super-secret-token'
@@ -128,7 +128,7 @@ describe('agent model env config', () => {
     })
   })
 
-  it('resolves a custom provider API key through Pi 0.84.3 ModelRuntime', async () => {
+  it('resolves a custom provider API key through Pi 0.84.4 ModelRuntime', async () => {
     process.env.BORING_AGENT_CUSTOM_MODEL_PROVIDER = 'custom'
     process.env.BORING_AGENT_CUSTOM_MODEL_ID = 'custom-model'
     process.env.BORING_AGENT_CUSTOM_MODEL_BASE_URL = 'https://models.example.test/v1'

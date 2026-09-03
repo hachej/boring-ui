@@ -83,16 +83,15 @@ vi.mock('@mariozechner/pi-coding-agent', () => {
         await createdCustomTools[0]?.execute('prompt-tool-call', {}, undefined, undefined, {} as never)
         toolCall.done()
         await promptGate.wait()
-        const followUp = followUpMessages.shift()
-        if (followUp) {
+        for (let followUp = followUpMessages.shift(); followUp; followUp = followUpMessages.shift()) {
           emit({ type: 'message_start', message: followUp })
           const followUpToolCall = promptGate.waitForToolCall()
           await followUpToolCall.released
           await createdCustomTools[0]?.execute('follow-up-tool-call', {}, undefined, undefined, {} as never)
           followUpToolCall.done()
           await promptGate.wait()
-          emit({ type: 'agent_end', messages: [] })
         }
+        emit({ type: 'agent_end', messages: [] })
       }),
       followUp: vi.fn(async (text: string) => {
         agent.followUp({ role: 'user', content: [{ type: 'text', text }], timestamp: Date.now() })
@@ -332,6 +331,38 @@ describe('tool adapter telemetry', () => {
         requestId: 'req-beta',
       },
     ])
+  })
+
+  it('activates one submitting actor for each queued follow-up turn', async () => {
+    const seenUsers: Array<string | undefined> = []
+    const tool = createTool({
+      async execute(_params, ctx) {
+        seenUsers.push(ctx.userId)
+        return { content: [{ type: 'text', text: ctx.userId ?? 'missing' }] }
+      },
+    })
+    const harness = createPiCodingAgentHarness({ tools: [tool], cwd: '/tmp/test-workspace' })
+    const created = await harness.sessions.create({ workspaceId: 'workspace-a' })
+    const adapterA = await harness.getPiSessionAdapter({ sessionId: created.id, message: 'start' }, makeRunContext('alpha'))
+    const promptPromiseA = adapterA.prompt('start')
+    await Promise.resolve()
+
+    const adapterB = await harness.getPiSessionAdapter({ sessionId: created.id, message: '' }, makeRunContext('beta'))
+    const adapterC = await harness.getPiSessionAdapter({ sessionId: created.id, message: '' }, makeRunContext('gamma'))
+    await adapterB.followUp('follow beta')
+    await adapterC.followUp('follow gamma')
+
+    await promptGate.releaseToolCall()
+    promptGate.resolve()
+    await Promise.resolve()
+    await promptGate.releaseToolCall()
+    promptGate.resolve()
+    await Promise.resolve()
+    await promptGate.releaseToolCall()
+    promptGate.resolve()
+    await promptPromiseA
+
+    expect(seenUsers).toEqual(['alpha', 'beta', 'gamma'])
   })
 
   it('shares slash command session identity across subjects in one workspace', async () => {

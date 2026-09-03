@@ -11,6 +11,7 @@ export type {
   MessageAttachment,
   RunContext,
   SendMessageInput,
+  TrustedAgentExecutionClass,
 } from './harness'
 export type {
   Agent,
