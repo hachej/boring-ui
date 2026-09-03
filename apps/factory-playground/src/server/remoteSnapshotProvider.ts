@@ -3,13 +3,24 @@ import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { promisify } from 'node:util'
-import type { DisposableSandboxProviderV1, SandboxProviderCreateContextV1 } from '@hachej/boring-sandbox/shared'
+import type {
+  DisposableSandboxProviderV1,
+  SandboxProviderCreateContextV1,
+  WorkspaceSandboxPairV1,
+} from '@hachej/boring-sandbox/shared'
 
 const execFileAsync = promisify(execFile)
+
+type SandboxHandle = WorkspaceSandboxPairV1['sandbox']
+type SandboxExecFn = SandboxHandle['exec']
+type SandboxExecOptions = Parameters<SandboxExecFn>[1]
+type SandboxExecResult = Awaited<ReturnType<SandboxExecFn>>
 
 function digest(value: string): `sha256:${string}` {
   return `sha256:${createHash('sha256').update(value).digest('hex')}`
 }
+
+export type ExactShaTemplateSource = 'archive' | 'fetch'
 
 export interface ExactShaTemplateProviderOptions {
   /** Underlying disposable provider whose `create` receives a `templatePath` pointing at the exported tree. */
@@ -18,14 +29,114 @@ export interface ExactShaTemplateProviderOptions {
   sourceRoot: string
   /** Scratch directory under which one randomly-named export is created and removed per `create` call. */
   scratchRoot: string
+  /**
+   * `'archive'` uploads/seeds the full tracked tree (`git archive`), which
+   * can take minutes for a large repo when the fast tarball-upload path is
+   * unavailable. `'fetch'` seeds only four tiny marker/bootstrap files and
+   * has the sandbox `git fetch` the exact SHA from `origin` itself on first
+   * use — seconds, but only works when that SHA has been pushed and is
+   * reachable on a public (or sandbox-credentialed) origin.
+   *
+   * Default: `'fetch'` when `sourceRoot` has a resolvable `origin` remote,
+   * else `'archive'`.
+   */
+  source?: ExactShaTemplateSource
 }
 
 /**
- * Wraps a disposable sandbox provider so every `create` first exports the exact
- * tracked tree at `sourceRoot`'s committed HEAD (via `git archive`, no `.git`,
- * no untracked files such as `node_modules`) into a fresh directory under
- * `scratchRoot`, writes `.factory-sha` (and `.factory-branch` when resolvable)
- * into that export, and passes it to `inner.create` as `templatePath`.
+ * Bootstrap script written into the sandbox in `'fetch'` mode. Reads the
+ * exact SHA and origin URL from the sibling marker files this provider also
+ * writes, initializes a git repo in place if needed, fetches that one commit
+ * (shallow first, falling back to a full fetch if the remote/host doesn't
+ * support shallow fetch of an arbitrary SHA), and verifies the checkout
+ * landed on the exact SHA.
+ */
+const FACTORY_BOOTSTRAP_SCRIPT = [
+  'set -e',
+  'sha=$(cat .factory-sha)',
+  'remote=$(cat .factory-remote)',
+  'if [ ! -d .git ]; then git init -q .; git remote add origin "$remote"; fi',
+  'git fetch -q --depth 1 origin "$sha" || git fetch -q origin "$sha"',
+  'git checkout -q --detach FETCH_HEAD',
+  'test "$(git rev-parse HEAD)" = "$sha"',
+  'echo "factory-bootstrap ok $sha"',
+].join('; ') + '\n'
+
+/** Single shell invocation: skip if already bootstrapped, else run + mark done. */
+const FACTORY_BOOTSTRAP_GUARDED_COMMAND = [
+  'if [ -f .factory-bootstrapped ]; then',
+  '  echo "factory-bootstrap already done"',
+  'else',
+  '  sh factory-bootstrap.sh && touch .factory-bootstrapped',
+  'fi',
+].join('\n')
+
+function decodeMaybe(value: Uint8Array | string | undefined): string {
+  if (value === undefined) return ''
+  return typeof value === 'string' ? value : Buffer.from(value).toString('utf8')
+}
+
+/**
+ * Wraps a sandbox handle so its first `exec()` call runs the guarded
+ * `factory-bootstrap.sh` invocation before the caller's own command. Only
+ * one bootstrap attempt is made per wrapped handle (matching "the FIRST exec
+ * on it"); if that attempt fails, every exec on this handle short-circuits
+ * with a clear, non-zero-exit result instead of ever reaching the sandbox
+ * again with the caller's command.
+ */
+function wrapExecWithFetchBootstrap(sandbox: SandboxHandle, sha: string): SandboxHandle {
+  let bootstrap: Promise<SandboxExecResult> | undefined
+
+  function ensureBootstrapped(): Promise<SandboxExecResult> {
+    if (!bootstrap) {
+      bootstrap = sandbox.exec(FACTORY_BOOTSTRAP_GUARDED_COMMAND)
+    }
+    return bootstrap
+  }
+
+  function bootstrapFailureResult(result: SandboxExecResult): SandboxExecResult {
+    const failureLine = `factory-bootstrap failed: push the epic branch so ${sha} is reachable on origin`
+    const stderr = `${decodeMaybe(result.stderr)}\n${failureLine}\n`
+    return {
+      ...result,
+      exitCode: result.exitCode !== 0 ? result.exitCode : 1,
+      stderr: new TextEncoder().encode(stderr),
+      stderrEncoding: 'utf-8',
+    }
+  }
+
+  return {
+    ...sandbox,
+    async exec(cmd: string, opts?: SandboxExecOptions): Promise<SandboxExecResult> {
+      const bootstrapResult = await ensureBootstrapped()
+      if (bootstrapResult.exitCode !== 0) {
+        return bootstrapFailureResult(bootstrapResult)
+      }
+      return await sandbox.exec(cmd, opts)
+    },
+  }
+}
+
+/**
+ * Wraps a disposable sandbox provider so every `create` first exports the
+ * exact tracked tree at `sourceRoot`'s committed HEAD into a fresh directory
+ * under `scratchRoot` and passes it to `inner.create` as `templatePath`.
+ *
+ * Two source modes (see `ExactShaTemplateProviderOptions.source`):
+ *
+ * - `'archive'`: the export is a full `git archive <sha> | tar -x` of the
+ *   tracked tree (no `.git`, no untracked files such as `node_modules`),
+ *   plus `.factory-sha` (and `.factory-branch` when resolvable). Correct
+ *   for any repo, but uploading/seeding the whole tree into the sandbox can
+ *   take minutes at real repo sizes when the provider's fast tarball-upload
+ *   path is unavailable.
+ * - `'fetch'`: the export contains only `.factory-sha`, `.factory-branch`,
+ *   `.factory-remote` (the origin URL, rewritten to plain https with no
+ *   embedded credentials), and `factory-bootstrap.sh`. The sandbox pair's
+ *   first `exec()` call runs that script (via a `.factory-bootstrapped`
+ *   idempotency guard) to `git fetch --depth 1` the exact SHA from origin
+ *   before running the caller's command — seconds instead of minutes, but
+ *   only works when that SHA is reachable on origin.
  *
  * If `inner.create` rejects, the export is removed immediately. If it
  * resolves, the export is kept until the returned pair is `dispose`d rather
@@ -43,8 +154,54 @@ export function createExactShaTemplateProvider(
 ): DisposableSandboxProviderV1 {
   const { inner, sourceRoot, scratchRoot } = options
 
-  async function exportExactShaTree(): Promise<{ exportPath: string; sha: string }> {
-    const sha = (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: sourceRoot })).stdout.trim()
+  async function gitRevParseHead(): Promise<string> {
+    return (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: sourceRoot })).stdout.trim()
+  }
+
+  async function resolveBranchBestEffort(): Promise<string | undefined> {
+    try {
+      const branch = (
+        await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: sourceRoot })
+      ).stdout.trim()
+      return branch || undefined
+    } catch {
+      return undefined
+    }
+  }
+
+  async function resolveSource(): Promise<ExactShaTemplateSource> {
+    if (options.source) return options.source
+    try {
+      const url = (await execFileAsync('git', ['remote', 'get-url', 'origin'], { cwd: sourceRoot })).stdout.trim()
+      return url ? 'fetch' : 'archive'
+    } catch {
+      return 'archive'
+    }
+  }
+
+  /** Strip embedded credentials and normalize SSH remotes to plain https. */
+  function normalizeRemoteUrl(rawUrl: string): string {
+    const url = rawUrl.trim()
+    const scpLike = /^(?:[\w.-]+@)?([\w.-]+):(.+)$/.exec(url)
+    if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(url) && scpLike) {
+      const [, host, path] = scpLike
+      return `https://${host}/${path.replace(/^\/+/, '')}`
+    }
+    try {
+      const parsed = new URL(url)
+      parsed.username = ''
+      parsed.password = ''
+      if (parsed.protocol === 'ssh:' || parsed.protocol === 'git:') {
+        return `https://${parsed.host}${parsed.pathname}`
+      }
+      return parsed.toString()
+    } catch {
+      return url
+    }
+  }
+
+  async function exportArchiveTemplate(): Promise<{ exportPath: string; sha: string }> {
+    const sha = await gitRevParseHead()
     const exportPath = resolve(scratchRoot, randomUUID())
     await mkdir(exportPath, { recursive: true })
     try {
@@ -78,14 +235,27 @@ export function createExactShaTemplateProvider(
         })
       })
       await writeFile(resolve(exportPath, '.factory-sha'), sha)
-      try {
-        const branch = (
-          await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: sourceRoot })
-        ).stdout.trim()
-        if (branch) await writeFile(resolve(exportPath, '.factory-branch'), branch)
-      } catch {
-        // Detached HEAD or an unresolvable branch name: `.factory-branch` is best-effort only.
-      }
+      const branch = await resolveBranchBestEffort()
+      if (branch) await writeFile(resolve(exportPath, '.factory-branch'), branch)
+    } catch (error) {
+      await rm(exportPath, { recursive: true, force: true })
+      throw error
+    }
+    return { exportPath, sha }
+  }
+
+  async function exportFetchTemplate(): Promise<{ exportPath: string; sha: string }> {
+    const sha = await gitRevParseHead()
+    const exportPath = resolve(scratchRoot, randomUUID())
+    await mkdir(exportPath, { recursive: true })
+    try {
+      const rawRemote = (await execFileAsync('git', ['remote', 'get-url', 'origin'], { cwd: sourceRoot })).stdout.trim()
+      const remote = normalizeRemoteUrl(rawRemote)
+      const branch = (await resolveBranchBestEffort()) ?? 'HEAD'
+      await writeFile(resolve(exportPath, '.factory-sha'), sha)
+      await writeFile(resolve(exportPath, '.factory-branch'), branch)
+      await writeFile(resolve(exportPath, '.factory-remote'), remote)
+      await writeFile(resolve(exportPath, 'factory-bootstrap.sh'), FACTORY_BOOTSTRAP_SCRIPT)
     } catch (error) {
       await rm(exportPath, { recursive: true, force: true })
       throw error
@@ -96,7 +266,10 @@ export function createExactShaTemplateProvider(
   return {
     ...inner,
     async create(context: SandboxProviderCreateContextV1) {
-      const { exportPath } = await exportExactShaTree()
+      const source = await resolveSource()
+      const { exportPath, sha } = source === 'fetch'
+        ? await exportFetchTemplate()
+        : await exportArchiveTemplate()
       let pair
       try {
         pair = await inner.create({ ...context, templatePath: exportPath })
@@ -122,6 +295,7 @@ export function createExactShaTemplateProvider(
       }
       return {
         ...pair,
+        sandbox: source === 'fetch' ? wrapExecWithFetchBootstrap(pair.sandbox, sha) : pair.sandbox,
         async dispose() {
           try {
             await pair.dispose()

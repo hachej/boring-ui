@@ -89,21 +89,44 @@ never blocked by Worker test/build load.
 
 ### How it works
 
-`createExactShaTemplateProvider({ inner, sourceRoot, scratchRoot })` wraps any
-disposable sandbox provider. On every `create()` it:
+`createExactShaTemplateProvider({ inner, sourceRoot, scratchRoot, source })`
+wraps any disposable sandbox provider. It supports two source modes for
+getting the exact-SHA tree into the sandbox:
 
-1. Reads `git rev-parse HEAD` of `sourceRoot` (the shared epic worktree).
-2. Exports the tracked tree at that SHA via `git archive <sha> | tar -x`
-   into a fresh directory under `scratchRoot` — **no `.git`, no untracked
-   files** (so no `node_modules`; the sandbox installs its own if a test
-   needs them).
-3. Writes `.factory-sha` (and `.factory-branch`, best-effort) into the
-   export so a Worker can verify which commit it is standing on the same way
-   on both providers.
-4. Calls `inner.create({ ...context, templatePath: exportPath })`.
-5. Keeps the export directory alive until the returned pair is `dispose`d,
-   not just until `create()` resolves — see **Timing and limits** below for
-   why.
+- **`'archive'`** — full tree upload. `git archive <sha> | tar -x` exports
+  the tracked tree (no `.git`, no untracked files, so no `node_modules`; the
+  sandbox installs its own if a test needs them) into a fresh directory
+  under `scratchRoot`, which is then packaged/seeded into the sandbox by the
+  inner provider. Works for any repo, including ones with no remote, but
+  seeding the whole tree can take minutes — see **Verified live** below.
+- **`'fetch'`** — the sandbox fetches its own tree. Only four tiny files are
+  exported: `.factory-sha`, `.factory-branch`, `.factory-remote` (the
+  `origin` URL, rewritten to plain `https://` with any embedded credentials
+  stripped), and `factory-bootstrap.sh`. The sandbox pair's first `exec()`
+  call transparently runs that script first — `git init` if needed, `git
+  fetch --depth 1 origin <sha>` (falling back to a full fetch), `git
+  checkout --detach FETCH_HEAD`, then verifies `git rev-parse HEAD` matches
+  — before running the caller's actual command. A `.factory-bootstrapped`
+  marker makes this idempotent (skipped on any exec after the first
+  succeeds). **Only works when `<sha>` has already been pushed and is
+  reachable on `origin`** — if not, the exec that would have triggered
+  bootstrap instead returns a non-zero exit with the output of the failed
+  `git fetch`/checkout plus a clear line:
+  `factory-bootstrap failed: push the epic branch so <sha> is reachable on origin`,
+  and the caller's command never runs.
+
+Default: `'fetch'` when `sourceRoot` has a resolvable `origin` remote (this
+repo is public, so no credentials are ever needed to fetch it), else
+`'archive'`. Override with `BORING_FACTORY_REMOTE_SOURCE` (see **Env vars**).
+
+Regardless of mode:
+
+1. Reads `git rev-parse HEAD` of `sourceRoot` (the shared epic worktree) for
+   the exact SHA.
+2. Calls `inner.create({ ...context, templatePath: exportPath })` with
+   whichever export was built.
+3. Keeps the export directory alive until the returned pair is `dispose`d,
+   not just until `create()` resolves — see **Verified live** below for why.
 
 `sandboxComposition.ts` wires this in automatically: when
 `BORING_FACTORY_SANDBOX_PROVIDER=vercel`, `createFactorySandboxPlugin` wraps
@@ -143,6 +166,11 @@ BORING_SANDBOX_TELEMETRY_SALT=...
 VERCEL_TOKEN=...    # or VERCEL_ACCESS_TOKEN / VERCEL_OIDC_TOKEN
 VERCEL_TEAM_ID=...
 VERCEL_PROJECT_ID=...
+
+# Optional override of the exact-SHA source mode (see How it works above).
+# Default is auto-detected from sourceRoot's origin remote.
+# BORING_FACTORY_REMOTE_SOURCE=fetch      # seconds; needs <sha> pushed to origin
+# BORING_FACTORY_REMOTE_SOURCE=archive    # minutes; full tree upload, any repo
 ```
 
 ### Verified live: timing and limits
@@ -171,16 +199,48 @@ credentials from Vault (`secret/agent/vercel`):
     epic worktree exactly; `apps/factory-playground/src/fixtures/demo-repo`
     was present, and its `npm test` (`node --test`) passed 2/2.
 - Reproduce with `scripts/vercel-lease-smoke.mts`
-  (`RUN_VERCEL_FACTORY_SMOKE=1`, credential-gated); it prints exit code,
-  the last 20 lines of sandbox output, and per-phase timings.
+  (`RUN_VERCEL_FACTORY_SMOKE=1`, credential-gated; `FACTORY_SMOKE_SOURCE=fetch`
+  or `archive` to force a mode, `FACTORY_SMOKE_EPIC_WORKTREE` to point at a
+  different worktree); it prints exit code, the last 20 lines of sandbox
+  output, and per-phase timings (including a dedicated `bootstrap` phase in
+  fetch mode, measured with a trivial `exec('true')` probe before the real
+  command).
+
+### Verified live: fetch mode (the fix for the 14-minute problem)
+
+This repo is public (`github.com/hachej/boring-ui`), so `'fetch'` mode needs
+no credentials to reach it. Run against `factory-live-epic-1508-r5` (HEAD
+`8ac95293`, pushed to `origin` as `test/1508-live-epic-r5`) with the same
+snapshot and Vault credentials as above, `FACTORY_SMOKE_SOURCE=fetch`:
+
+- `create()`: **764ms**.
+- `checkHealth()`/template-seed: **2.76s** — only 4 tiny marker files this
+  time (vs. 3,926 for archive mode on the r4 worktree), so no minutes-long
+  `writeFiles` fallback.
+- **`bootstrap` (first exec, `git fetch --depth 1 origin <sha>` +
+  checkout + verify): 3.55s.**
+- `exec()` (the real `.factory-sha` + fixture `npm test` check): **879ms**.
+- `dispose()`: **174ms**.
+- Total lease lifetime: **~8s**, vs. ~14 minutes for `'archive'` mode at
+  monorepo scale — this is the fix for the residual limit measured above.
+- `.factory-sha` inside the sandbox matched `git rev-parse HEAD` of the r5
+  worktree (`8ac95293322c2712214699d41ada1f7fa49710ad`) exactly; the fixture
+  `npm test` (`node --test`) passed 2/2.
 
 **Residual limits, as measured:**
 
-- **No Vercel Blob token in this environment** means every lease against a
-  repo this size pays the ~14-minute `writeFiles` seeding cost instead of a
-  single tarball upload. Provisioning `BLOB_READ_WRITE_TOKEN` (or passing
-  `packageTemplateOpts.blobToken`) is the fix; it was out of scope here
-  (host credential, not something this app owns).
+- **`'fetch'` mode requires the exact SHA to already be pushed to `origin`.**
+  A Worker's uncommitted or unpushed commits are invisible to it — this is
+  by design (the sandbox does its own `git fetch`, it never receives the
+  local tree), but it does mean `'fetch'` only isolates pushed work; use
+  `'archive'` (or push first) for anything still local-only.
+- **No Vercel Blob token in this environment** means `'archive'` mode
+  against a repo this size pays the ~14-minute `writeFiles` seeding cost
+  instead of a single tarball upload. Provisioning `BLOB_READ_WRITE_TOKEN`
+  (or passing `packageTemplateOpts.blobToken`) would fix `'archive'` mode
+  directly; it was out of scope here (host credential, not something this
+  app owns). `'fetch'` mode sidesteps this entirely for public/pushed repos,
+  which is why it is now the default when an origin remote is present.
 - **The export directory must outlive `create()`**, not just settle when it
   resolves: `createVercelSandboxProvider`'s disposable lifecycle defers
   template packaging/seeding to a background readiness promise that is only

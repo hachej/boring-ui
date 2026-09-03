@@ -69,10 +69,15 @@ async function main(): Promise<void> {
     timeoutMs: 10 * 60_000,
     telemetrySalt,
   })
+  const sourceOverride = process.env.FACTORY_SMOKE_SOURCE?.trim()
+  if (sourceOverride && sourceOverride !== 'fetch' && sourceOverride !== 'archive') {
+    throw new Error("FACTORY_SMOKE_SOURCE must be 'fetch' or 'archive'")
+  }
   const provider = createExactShaTemplateProvider({
     inner,
     sourceRoot: EPIC_WORKTREE,
     scratchRoot,
+    ...(sourceOverride ? { source: sourceOverride as 'fetch' | 'archive' } : {}),
   })
 
   const timings: Record<string, number> = {}
@@ -93,6 +98,19 @@ async function main(): Promise<void> {
     timings.healthMs = now() - healthStart
     if (health && health.state !== 'ok') {
       throw new Error(`sandbox pair unhealthy after create: ${JSON.stringify(health)}`)
+    }
+
+    // In 'fetch' mode, the pair's first exec() transparently runs
+    // factory-bootstrap.sh (git fetch of the exact SHA) before anything
+    // else. Run a trivial no-op exec first so that cost is measured and
+    // reported separately from the real verification command below; in
+    // 'archive' mode this is just an extra cheap exec.
+    const bootstrapStart = now()
+    const bootstrapProbe = await pair.sandbox.exec('true')
+    timings.bootstrapMs = now() - bootstrapStart
+    if (bootstrapProbe.exitCode !== 0) {
+      const stderr = Buffer.from(bootstrapProbe.stderr ?? '').toString('utf8')
+      throw new Error(`bootstrap probe failed (exit ${bootstrapProbe.exitCode}): ${stderr.trim()}`)
     }
 
     // Each step's output is followed by an explicit newline: `.factory-sha`
@@ -137,7 +155,7 @@ async function main(): Promise<void> {
       const disposeStart = now()
       await pair.dispose()
       timings.disposeMs = now() - disposeStart
-      console.error(`[lease-smoke] timings: create=${timings.createMs}ms health=${timings.healthMs}ms exec=${timings.execMs}ms dispose=${timings.disposeMs}ms`)
+      console.error(`[lease-smoke] timings: create=${timings.createMs}ms health=${timings.healthMs}ms bootstrap=${timings.bootstrapMs}ms exec=${timings.execMs}ms dispose=${timings.disposeMs}ms`)
     }
     await rm(scratchRoot, { recursive: true, force: true })
     await rm(workspaceRoot, { recursive: true, force: true })

@@ -31,7 +31,7 @@ const FACTORY_PRECEDENCE_CONTENT = {
     'Orchestrator/owner, never to you. You do not open PRs and you do not run `ask_user`',
     'owner gates; the `owner-gate` skill block does not apply to this seat. Your handoff is',
     'a Bead comment recording the exact SHA, your proof, the sandbox release, and the',
-    '`fresh_review` provenance. Push the epic branch after each commit. Never close or merge',
+    '`fresh_review` provenance. Push the epic branch immediately after each commit and before creating a sandbox (remote sandboxes fetch the pushed SHA). Never close or merge',
     'anything.',
   ].join(' '),
   orchestrator: [

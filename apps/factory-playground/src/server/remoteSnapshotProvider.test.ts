@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { promisify } from 'node:util'
@@ -24,6 +24,64 @@ async function createGitSourceRoot(): Promise<string> {
   await execFileAsync('git', ['add', 'tracked.txt'], { cwd: sourceRoot })
   await execFileAsync('git', ['commit', '--quiet', '-m', 'initial'], { cwd: sourceRoot })
   return sourceRoot
+}
+
+async function createGitSourceRootWithRemote(remoteUrl: string): Promise<string> {
+  const sourceRoot = await createGitSourceRoot()
+  await execFileAsync('git', ['remote', 'add', 'origin', remoteUrl], { cwd: sourceRoot })
+  return sourceRoot
+}
+
+interface FakeExecResult {
+  stdout: Uint8Array
+  stderr: Uint8Array
+  exitCode: number
+  durationMs: number
+  truncated: boolean
+}
+
+function fakeExecResult(exitCode: number, stdout = '', stderr = ''): FakeExecResult {
+  return {
+    stdout: new TextEncoder().encode(stdout),
+    stderr: new TextEncoder().encode(stderr),
+    exitCode,
+    durationMs: 1,
+    truncated: false,
+  }
+}
+
+function fakeInnerProviderWithSandboxExec(
+  execImpl: (cmd: string) => Promise<FakeExecResult>,
+): DisposableSandboxProviderV1 {
+  const sandbox = {
+    id: 'fake-sandbox',
+    placement: 'remote',
+    provider: 'fake',
+    capabilities: ['exec'],
+    runtimeContext: { runtimeCwd: '/workspace' },
+    exec: execImpl,
+  } as unknown as WorkspaceSandboxPairV1['sandbox']
+  const pair: WorkspaceSandboxPairV1 = {
+    workspace: {} as WorkspaceSandboxPairV1['workspace'],
+    sandbox,
+    async dispose() {},
+  }
+  return {
+    contractVersion: 'boring-sandbox-provider.v1' as never,
+    providerId: 'direct',
+    capabilities: {} as never,
+    resolveRuntimeRoot: (context) => context.workspaceRoot,
+    async create() {
+      return pair
+    },
+    disposableProfile: {
+      contractVersion: 'boring-sandbox.disposable-provider.v1',
+      resume: false,
+      publishedCleanupOwner: 'returned-pair',
+      ambiguousCreate: 'correlated-reconciliation',
+      providerConfigDigest: `sha256:${'0'.repeat(64)}`,
+    },
+  }
 }
 
 function fakeInnerProvider(
@@ -154,5 +212,128 @@ describe('createExactShaTemplateProvider', () => {
     const provider = createExactShaTemplateProvider({ inner, sourceRoot, scratchRoot })
     expect(provider.disposableProfile.providerConfigDigest).not.toBe(inner.disposableProfile.providerConfigDigest)
     expect(provider.disposableProfile.providerConfigDigest).toMatch(/^sha256:[a-f0-9]{64}$/)
+  })
+})
+
+
+describe('createExactShaTemplateProvider fetch mode', () => {
+  it('exports exactly the four marker/bootstrap files with the right SHA and a normalized https remote', async () => {
+    const sourceRoot = await createGitSourceRootWithRemote('git@github.com:hachej/boring-ui.git')
+    const expectedSha = (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: sourceRoot })).stdout.trim()
+    const scratchRoot = await mkdtemp(resolve(tmpdir(), 'factory-exact-sha-fetch-scratch-'))
+    temporaryRoots.push(scratchRoot)
+
+    let capturedTemplatePath: string | undefined
+    let entries: string[] = []
+    let observedSha: string | undefined
+    let observedRemote: string | undefined
+    let observedBranch: string | undefined
+    let observedBootstrapScript: string | undefined
+    const inner = fakeInnerProvider(async (context) => {
+      capturedTemplatePath = context.templatePath!
+      entries = (await readdir(capturedTemplatePath)).sort()
+      observedSha = (await readFile(resolve(capturedTemplatePath, '.factory-sha'), 'utf8')).trim()
+      observedRemote = (await readFile(resolve(capturedTemplatePath, '.factory-remote'), 'utf8')).trim()
+      observedBranch = (await readFile(resolve(capturedTemplatePath, '.factory-branch'), 'utf8')).trim()
+      observedBootstrapScript = await readFile(resolve(capturedTemplatePath, 'factory-bootstrap.sh'), 'utf8')
+    })
+    const provider = createExactShaTemplateProvider({ inner, sourceRoot, scratchRoot, source: 'fetch' })
+
+    const pair = await provider.create({ workspaceRoot: '/unused', sessionId: 'test-session' })
+
+    expect(entries).toEqual(['.factory-branch', '.factory-remote', '.factory-sha', 'factory-bootstrap.sh'])
+    expect(observedSha).toBe(expectedSha)
+    expect(observedRemote).toBe('https://github.com/hachej/boring-ui.git')
+    expect(observedBranch).toBe('main')
+    expect(observedBootstrapScript).toContain('git fetch -q --depth 1 origin "$sha"')
+    expect(observedBootstrapScript).toContain('test "$(git rev-parse HEAD)" = "$sha"')
+
+    await pair.dispose()
+    await expect(access(capturedTemplatePath!)).rejects.toThrow()
+  })
+
+  it('defaults to fetch mode when sourceRoot has a resolvable origin remote', async () => {
+    const sourceRoot = await createGitSourceRootWithRemote('git@github.com:hachej/boring-ui.git')
+    const scratchRoot = await mkdtemp(resolve(tmpdir(), 'factory-exact-sha-fetch-scratch-'))
+    temporaryRoots.push(scratchRoot)
+    let entries: string[] = []
+    const inner = fakeInnerProvider(async (context) => {
+      entries = (await readdir(context.templatePath!)).sort()
+    })
+    const provider = createExactShaTemplateProvider({ inner, sourceRoot, scratchRoot })
+    const pair = await provider.create({ workspaceRoot: '/unused', sessionId: 'test-session' })
+    expect(entries).toEqual(['.factory-branch', '.factory-remote', '.factory-sha', 'factory-bootstrap.sh'])
+    await pair.dispose()
+  })
+
+  it('defaults to archive mode when sourceRoot has no origin remote', async () => {
+    const sourceRoot = await createGitSourceRoot()
+    const scratchRoot = await mkdtemp(resolve(tmpdir(), 'factory-exact-sha-fetch-scratch-'))
+    temporaryRoots.push(scratchRoot)
+    let entries: string[] = []
+    const inner = fakeInnerProvider(async (context) => {
+      entries = (await readdir(context.templatePath!)).sort()
+    })
+    const provider = createExactShaTemplateProvider({ inner, sourceRoot, scratchRoot })
+    const pair = await provider.create({ workspaceRoot: '/unused', sessionId: 'test-session' })
+    expect(entries).toContain('tracked.txt')
+    expect(entries).not.toContain('factory-bootstrap.sh')
+    await pair.dispose()
+  })
+
+  it("runs factory-bootstrap.sh exactly once on the first exec, then passes the caller's command through", async () => {
+    const sourceRoot = await createGitSourceRootWithRemote('git@github.com:hachej/boring-ui.git')
+    const scratchRoot = await mkdtemp(resolve(tmpdir(), 'factory-exact-sha-fetch-scratch-'))
+    temporaryRoots.push(scratchRoot)
+
+    const calls: string[] = []
+    const inner = fakeInnerProviderWithSandboxExec(async (cmd) => {
+      calls.push(cmd)
+      if (cmd.includes('factory-bootstrap.sh')) return fakeExecResult(0, 'factory-bootstrap ok\n')
+      return fakeExecResult(0, `ran:${cmd}`)
+    })
+    const provider = createExactShaTemplateProvider({ inner, sourceRoot, scratchRoot, source: 'fetch' })
+    const pair = await provider.create({ workspaceRoot: '/unused', sessionId: 'test-session' })
+
+    const first = await pair.sandbox.exec('caller-cmd-1')
+    const second = await pair.sandbox.exec('caller-cmd-2')
+
+    const bootstrapCalls = calls.filter((cmd) => cmd.includes('factory-bootstrap.sh'))
+    expect(bootstrapCalls).toHaveLength(1)
+    expect(calls).toEqual([bootstrapCalls[0], 'caller-cmd-1', 'caller-cmd-2'])
+    expect(Buffer.from(first.stdout).toString('utf8')).toBe('ran:caller-cmd-1')
+    expect(Buffer.from(second.stdout).toString('utf8')).toBe('ran:caller-cmd-2')
+    expect(first.exitCode).toBe(0)
+    expect(second.exitCode).toBe(0)
+
+    await pair.dispose()
+  })
+
+  it('returns a clear failure and never runs the caller command when bootstrap fails', async () => {
+    const sourceRoot = await createGitSourceRootWithRemote('git@github.com:hachej/boring-ui.git')
+    const expectedSha = (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: sourceRoot })).stdout.trim()
+    const scratchRoot = await mkdtemp(resolve(tmpdir(), 'factory-exact-sha-fetch-scratch-'))
+    temporaryRoots.push(scratchRoot)
+
+    const calls: string[] = []
+    const inner = fakeInnerProviderWithSandboxExec(async (cmd) => {
+      calls.push(cmd)
+      if (cmd.includes('factory-bootstrap.sh')) {
+        return fakeExecResult(1, '', 'fatal: could not read from remote repository')
+      }
+      return fakeExecResult(0, 'should-never-run')
+    })
+    const provider = createExactShaTemplateProvider({ inner, sourceRoot, scratchRoot, source: 'fetch' })
+    const pair = await provider.create({ workspaceRoot: '/unused', sessionId: 'test-session' })
+
+    const result = await pair.sandbox.exec('caller-cmd')
+
+    expect(result.exitCode).not.toBe(0)
+    expect(Buffer.from(result.stderr).toString('utf8')).toContain(
+      `factory-bootstrap failed: push the epic branch so ${expectedSha} is reachable on origin`,
+    )
+    expect(calls).toHaveLength(1)
+
+    await pair.dispose()
   })
 })

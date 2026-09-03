@@ -40,10 +40,16 @@ function createProvider(workspaceRoot: string, stateRoot: string, env: NodeJS.Pr
     timeoutMs: positiveInteger(env.BORING_AGENT_VERCEL_SANDBOX_TIMEOUT_MS, 15 * 60_000),
     telemetrySalt: env.BORING_SANDBOX_TELEMETRY_SALT,
   })
+  const remoteSourceRaw = env.BORING_FACTORY_REMOTE_SOURCE?.trim()
+  if (remoteSourceRaw && remoteSourceRaw !== 'fetch' && remoteSourceRaw !== 'archive') {
+    throw new Error("BORING_FACTORY_REMOTE_SOURCE must be 'fetch' or 'archive'")
+  }
+  const remoteSource = remoteSourceRaw as 'fetch' | 'archive' | undefined
   return createExactShaTemplateProvider({
     inner,
     sourceRoot: workspaceRoot,
     scratchRoot: resolve(stateRoot, 'snapshots'),
+    ...(remoteSource ? { source: remoteSource } : {}),
   })
 }
 
@@ -58,6 +64,7 @@ export function createFactorySandboxPlugin(
   const authorityDigest = sha256(JSON.stringify({
     provider: env.BORING_FACTORY_SANDBOX_PROVIDER === 'vercel' ? 'vercel' : 'local-simulation',
     snapshot: env.BORING_FACTORY_VERCEL_SNAPSHOT_ID ? sha256(env.BORING_FACTORY_VERCEL_SNAPSHOT_ID) : null,
+    remoteSource: env.BORING_FACTORY_REMOTE_SOURCE?.trim() || null,
     ttlMs,
     maxPerWorker,
     maxTotal,
