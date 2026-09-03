@@ -146,14 +146,14 @@ describe('native Factory composition', () => {
         const response = await send()
         if (response.statusCode === 201) return response.json<{ sessionId: string }>().sessionId
         if (response.statusCode !== 409) expect(response.statusCode, response.body).toBe(201)
-        const body = response.json<{ error?: { code?: string }, existingSessionId?: string }>()
+        const body = response.json<{ error?: { code?: string }, existingSessionId?: string, sessionId?: string }>()
         expect(body.error?.code, response.body).toBe('AGENT_REQUEST_OUTCOME_UNKNOWN')
         const retry = await send()
         expect([200, 409], retry.body).toContain(retry.statusCode)
         const retryBody = retry.json<{ error?: { code?: string }, existingSessionId?: string, sessionId?: string }>()
         if (retry.statusCode === 409) expect(retryBody.error?.code, retry.body).toBe('AGENT_REQUEST_OUTCOME_UNKNOWN')
         const sessionId = retryBody.existingSessionId ?? retryBody.sessionId ?? body.existingSessionId ?? body.sessionId
-        expect(sessionId, { first: response.body, second: retry.body }).toEqual(expect.any(String))
+        expect(sessionId, `${response.body}\n---\n${retry.body}`).toEqual(expect.any(String))
         return sessionId!
       }
       const workerSessionId = await createSession(FACTORY_WORKER_AGENT_TYPE_ID)
