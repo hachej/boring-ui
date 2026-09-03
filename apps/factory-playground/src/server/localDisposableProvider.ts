@@ -11,12 +11,6 @@ const execFileAsync = promisify(execFile)
 /** Untracked dependency roots that are linked (never copied) into a snapshot so tests can resolve packages. */
 const LINKED_DEPENDENCY_ROOTS = ['node_modules'] as const
 
-const HOST_BUILD_OUTPUT_ROOTS = [
-  'apps/factory-playground/plugins/tasks/dist',
-  'apps/factory-playground/plugins/boring-automation/dist',
-  'apps/factory-playground/plugins/sandbox/dist',
-] as const
-
 function digest(value: string): `sha256:${string}` {
   return `sha256:${createHash('sha256').update(value).digest('hex')}`
 }
@@ -64,14 +58,6 @@ export async function snapshotCommittedHead(sourceRoot: string, targetRoot: stri
     if (await exists(target)) continue
     await mkdir(dirname(target), { recursive: true })
     await symlink(resolve(sourceRoot, relative), target, 'dir')
-  }
-  for (const path of HOST_BUILD_OUTPUT_ROOTS) {
-    const source = resolve(sourceRoot, path)
-    const target = resolve(targetRoot, path)
-    if (await exists(source)) {
-      await rm(target, { recursive: true, force: true })
-      await cp(source, target, { recursive: true })
-    }
   }
   // Workers verify the exact SHA the same way on both the local and remote providers.
   await writeFile(resolve(targetRoot, '.factory-sha'), sha)
