@@ -7,6 +7,7 @@ A dedicated local dogfood app that composes the Factory directly from this check
 - `boring-orchestrator`: canonical `.agents/personas/orchestrator` profile plus canonical `plan`, `feedback`, `owner-gate`, and `handoff` skill sources; receives `pi-mono-loop` and `boring-automation`.
 - `boring-worker`: canonical `.agents/personas/worker` profile plus canonical `exec`, `fresh-eyes`, `owner-gate`, and `handoff` skill sources; receives only the trusted `sandbox` plugin.
 - each seat may receive its own strict host-selected default model through `BORING_FACTORY_ORCHESTRATOR_MODEL` and `BORING_FACTORY_WORKER_MODEL`; users may still select another admitted model for a session/turn;
+- both seats receive a host-authored `epic-binding` instruction appendix that scopes them to exactly one epic (label `epic:<key>`); the key defaults to the epic branch name of the workspace root and can be overridden with `BORING_FACTORY_EPIC_KEY`;
 - all seats receive the workspace-scoped ask-user capability;
 - Tasks reads GitHub plus the checkout's Beads graph;
 - the standard Agents, sessions, Inbox, Tasks, and Automations surfaces provide the watch plane.

@@ -24,12 +24,32 @@ async function loadAppendices(repositoryRoot: string, names: readonly string[]):
   }))
 }
 
+function epicBindingContent(seat: keyof typeof seatSkills, epicKey: string): string {
+  const shared = `This session is bound by the host to epic \`${epicKey}\`: its shared worktree is the current workspace root, its branch is the epic branch, and its Beads carry the label \`epic:${epicKey}\`.`
+  if (seat === 'orchestrator') {
+    return [
+      shared,
+      `Every Bead you create for this epic MUST be created with \`--labels epic:${epicKey}\` (add \`--parent <epic bead id>\` when you create an epic bead first); inspect this epic only with \`br ready --label epic:${epicKey}\` / \`br list --label epic:${epicKey}\`; never dispatch, inspect or supervise Beads without that label.`,
+    ].join('\n\n')
+  }
+  return [
+    shared,
+    `Discover work ONLY with \`br ready --label epic:${epicKey} --unassigned\`; claim exactly one result with \`br update <id> --claim --actor <your session id>\`; if that command returns nothing, stop and report "no ready Bead for epic ${epicKey}" instead of running a broader \`br ready\`. Never claim a Bead lacking that label.`,
+  ].join('\n\n')
+}
+
+async function epicBindingAppendix(seat: keyof typeof seatSkills, epicKey: string): Promise<TrustedAgentInstructionAppendix> {
+  const content = epicBindingContent(seat, epicKey)
+  return { name: 'epic-binding', content, digest: await createAgentAssetDigest(content) }
+}
+
 async function createSeat(input: {
   repositoryRoot: string
   seat: keyof typeof seatSkills
   agentTypeId: string
   plugins: readonly string[]
   preferredModel?: string
+  epicKey: string
 }): Promise<AgentHostAgentSpec> {
   const directory = resolve(input.repositoryRoot, '.agents/personas', input.seat)
   const source = await materializeAgentDirectory({
@@ -41,7 +61,10 @@ async function createSeat(input: {
     source,
     policy: {
       instructionSources: [{ role: 'persona', absolutePath: resolve(directory, 'instructions.md') }],
-      instructionAppendices: await loadAppendices(input.repositoryRoot, seatSkills[input.seat]),
+      instructionAppendices: [
+        ...await loadAppendices(input.repositoryRoot, seatSkills[input.seat]),
+        await epicBindingAppendix(input.seat, input.epicKey),
+      ],
       plugins: input.plugins.map((name) => ({ name })),
       preferredModel: input.preferredModel,
     },
@@ -49,14 +72,15 @@ async function createSeat(input: {
 }
 
 /** Load canonical persona and skill sources from this checkout; no packaged or vendored copies. */
-export interface FactoryFleetModelDefaults {
+export interface FactoryFleetOptions {
   readonly orchestrator?: string
   readonly worker?: string
+  readonly epicKey: string
 }
 
 export async function loadNativeFactoryFleet(
   repositoryRoot: string,
-  models: FactoryFleetModelDefaults = {},
+  options: FactoryFleetOptions,
 ): Promise<readonly AgentHostAgentSpec[]> {
   return await Promise.all([
     createSeat({
@@ -64,14 +88,16 @@ export async function loadNativeFactoryFleet(
       seat: 'orchestrator',
       agentTypeId: FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
       plugins: [FACTORY_LOOP_PLUGIN_ID, 'boring-automation'],
-      preferredModel: models.orchestrator,
+      preferredModel: options.orchestrator,
+      epicKey: options.epicKey,
     }),
     createSeat({
       repositoryRoot,
       seat: 'worker',
       agentTypeId: FACTORY_WORKER_AGENT_TYPE_ID,
       plugins: ['sandbox'],
-      preferredModel: models.worker,
+      preferredModel: options.worker,
+      epicKey: options.epicKey,
     }),
   ])
 }

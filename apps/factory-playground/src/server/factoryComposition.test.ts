@@ -23,6 +23,7 @@ describe('native Factory composition', () => {
     const fleet = await loadNativeFactoryFleet(repositoryRoot, {
       orchestrator: 'openai-codex:gpt-5.6-sol',
       worker: 'anthropic:claude-sonnet-4-6',
+      epicKey: 'live-farewell',
     })
     expect(fleet.map((agent) => agent.agentTypeId)).toEqual([
       FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
@@ -37,6 +38,9 @@ describe('native Factory composition', () => {
     expect(orchestrator.definition.instructions).toContain('boring-skill:start name=plan')
     expect(worker.definition.instructions).toContain('boring-skill:start name=exec')
     expect(worker.definition.instructions).not.toContain('boring-skill:start name=plan')
+    expect(orchestrator.definition.instructions).toContain('epic:live-farewell')
+    expect(worker.definition.instructions).toContain('epic:live-farewell')
+    expect(worker.definition.instructions).toContain('br ready --label epic:live-farewell --unassigned')
 
     const loop = createFactoryLoopPlugin()
     expect(loop.extensionPaths).toEqual([expect.stringMatching(/pi-mono-loop\/index\.ts$/)])
@@ -66,6 +70,12 @@ describe('native Factory composition', () => {
       },
     })
     try {
+      const meta = await app.inject({ method: 'GET', url: '/api/v1/workspace/meta' })
+      expect(meta.statusCode).toBe(200)
+      const metaBody = meta.json<{ epicKey: string }>()
+      expect(typeof metaBody.epicKey).toBe('string')
+      expect(metaBody.epicKey.length).toBeGreaterThan(0)
+
       const header = { 'x-boring-workspace-id': 'factory-playground' }
       const createSession = async (agentTypeId: string) => {
         const response = await app.inject({

@@ -1,5 +1,7 @@
+import { execFile } from 'node:child_process'
 import { mkdir } from 'node:fs/promises'
 import { basename, resolve } from 'node:path'
+import { promisify } from 'node:util'
 import { createNodeWorkspace } from '@hachej/boring-sandbox/providers/node-workspace'
 import { createWorkspaceAgentServer } from '@hachej/boring-workspace/app/server'
 import { createWorkspaceBeadsOperations } from '@hachej/boring-tasks/server'
@@ -15,14 +17,31 @@ export interface CreateFactoryPlaygroundOptions {
   readonly env?: NodeJS.ProcessEnv
 }
 
+const execFileAsync = promisify(execFile)
+
+async function resolveEpicKey(workspaceRoot: string, env: NodeJS.ProcessEnv): Promise<string> {
+  const configured = env.BORING_FACTORY_EPIC_KEY?.trim()
+  if (configured) return configured
+  try {
+    const { stdout } = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: workspaceRoot })
+    const branch = stdout.trim()
+    if (branch) return branch
+  } catch {
+    // not a git repo (or git unavailable): fall back to the workspace directory name below.
+  }
+  return basename(workspaceRoot)
+}
+
 export async function createFactoryPlayground(options: CreateFactoryPlaygroundOptions) {
   const env = options.env ?? process.env
   const workspaceRoot = resolve(options.workspaceRoot ?? env.BORING_FACTORY_WORKSPACE_ROOT ?? options.repositoryRoot)
   const stateRoot = resolve(env.BORING_FACTORY_STATE_ROOT ?? resolve(options.appRoot, '.factory-state'))
   await mkdir(stateRoot, { recursive: true })
+  const epicKey = await resolveEpicKey(workspaceRoot, env)
   const agents = await loadNativeFactoryFleet(options.repositoryRoot, {
     orchestrator: env.BORING_FACTORY_ORCHESTRATOR_MODEL,
     worker: env.BORING_FACTORY_WORKER_MODEL,
+    epicKey,
   })
   const beadsOperations = createWorkspaceBeadsOperations(createNodeWorkspace(workspaceRoot))
 
@@ -70,6 +89,7 @@ export async function createFactoryPlayground(options: CreateFactoryPlaygroundOp
     workspaceId: FACTORY_WORKSPACE_SCOPE_ID,
     workspaceRoot,
     workspaceLabel: basename(workspaceRoot),
+    epicKey,
     defaultAgentTypeId: FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
     agentTypeIds: agents.map((agent) => agent.agentTypeId),
     sandboxProvider: env.BORING_FACTORY_SANDBOX_PROVIDER === 'vercel' ? 'vercel' : 'local-simulation',

@@ -5,7 +5,9 @@ Your trusted host attaches the exact canonical `exec`, `fresh-eyes`, and
 request; otherwise treat the request as arguments to `exec`. Follow the selected
 block completely and stop if it is absent or its admitted digest is invalid.
 
-Work only on the claimed Bead in the epic's shared worktree. Beads need not
+Work only on the claimed Bead in the epic's shared worktree. Pull only from
+your epic: the host binds this session to one epic key and its `epic:<key>`
+label; never claim a Bead outside it. Beads need not
 predeclare file scope: observe concurrent peer changes, stage only your intended
 changes, commit frequently, and never revert or overwrite another Worker's
 work. Produce proof and an exact-SHA handoff. Run tests/builds/servers in the
