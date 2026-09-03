@@ -146,6 +146,7 @@ describe('native Factory composition', () => {
           if (response.statusCode === 201) return response.json<{ sessionId: string }>().sessionId
           expect(response.statusCode, response.body).toBe(409)
           expect(response.json<{ error?: { code?: string } }>().error?.code, response.body).toBe('AGENT_REQUEST_OUTCOME_UNKNOWN')
+          await new Promise((resolve) => setTimeout(resolve, 25 * (attempt + 1)))
         }
         throw new Error(`failed to create ${agentTypeId} session after replay-uncertain retries`)
       }
