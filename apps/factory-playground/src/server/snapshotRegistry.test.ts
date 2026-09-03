@@ -223,4 +223,37 @@ describe('peekEpicSnapshot / invalidateEpicSnapshot', () => {
     expect(await peekEpicSnapshot(stateRoot, 'epic-a')).toBeUndefined()
     expect(await peekEpicSnapshot(stateRoot, 'epic-b')).toBeDefined()
   })
+
+  it('does not rewrite invalidated epic entries back into the registry when a resolve started before cleanup finishes later', async () => {
+    const workspaceRoot = await makeSelfOriginWorkspace()
+    const stateRoot = await makeTempDir('factory-registry-state-')
+    let releaseSnapshotBuild: (() => void) | undefined
+    const buildStarted = new Promise<void>((resolvePromise) => {
+      releaseSnapshotBuild = resolvePromise
+    })
+    const createSnapshot = vi.fn(async (): Promise<WarmSnapshotResult> => {
+      await buildStarted
+      return {
+        snapshotId: 'snap_race',
+        baseSha: 'deadbeef',
+        lockfileSha256: 'sha256:fixed-lock-hash',
+        builtAt: new Date().toISOString(),
+        durationMs: 1,
+      }
+    })
+
+    const pendingResolve = resolveEpicSnapshot({ epicKey: 'epic-a', workspaceRoot, stateRoot, auth: AUTH, createSnapshot })
+    while (createSnapshot.mock.calls.length === 0) await new Promise((resolvePromise) => setTimeout(resolvePromise, 10))
+    const invalidated = await invalidateAllEpicSnapshots(stateRoot, 'epic-a')
+    expect(invalidated.removedKeys).toEqual([])
+
+    releaseSnapshotBuild?.()
+    await pendingResolve
+
+    expect(await peekEpicSnapshot(stateRoot, 'epic-a')).toBeUndefined()
+    expect(createSnapshot).toHaveBeenCalledTimes(1)
+
+    const stored = JSON.parse(await readFile(resolve(stateRoot, 'snapshots.json'), 'utf8'))
+    expect(stored.invalidationEpochByEpic?.['epic-a']).toBe(1)
+  })
 })

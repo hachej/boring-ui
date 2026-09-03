@@ -21,17 +21,23 @@ export interface SnapshotRegistryEntry {
 
 interface SnapshotRegistryFile {
   entries: Record<string, SnapshotRegistryEntry>
+  invalidationEpochByEpic?: Record<string, number>
 }
 
 function emptyRegistryFile(): SnapshotRegistryFile {
-  return { entries: {} }
+  return { entries: {}, invalidationEpochByEpic: {} }
 }
 
 async function readRegistryFile(path: string): Promise<SnapshotRegistryFile> {
   try {
     const raw = await readFile(path, 'utf8')
     const parsed = JSON.parse(raw) as Partial<SnapshotRegistryFile>
-    return { entries: parsed.entries && typeof parsed.entries === 'object' ? parsed.entries : {} }
+    return {
+      entries: parsed.entries && typeof parsed.entries === 'object' ? parsed.entries : {},
+      invalidationEpochByEpic: parsed.invalidationEpochByEpic && typeof parsed.invalidationEpochByEpic === 'object'
+        ? parsed.invalidationEpochByEpic
+        : {},
+    }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return emptyRegistryFile()
     return emptyRegistryFile()
@@ -150,6 +156,7 @@ export async function resolveEpicSnapshot(options: ResolveEpicSnapshotOptions): 
     const lockfileSha256 = await sha256File(resolve(options.workspaceRoot, 'pnpm-lock.yaml'))
     const key = registryKey(options.epicKey, lockfileSha256)
     const file = await readRegistryFile(registryPath)
+    const epicEpochAtStart = file.invalidationEpochByEpic?.[options.epicKey] ?? 0
     const cached = file.entries[key]
     if (cached && new Date(cached.expiresAt).getTime() > now()) {
       return { ...cached, reused: true }
@@ -187,6 +194,10 @@ export async function resolveEpicSnapshot(options: ResolveEpicSnapshotOptions): 
     // Re-read before writing: another process may have written a different
     // key's entry concurrently. Merge rather than clobber.
     const latest = await readRegistryFile(registryPath)
+    const epicEpochBeforeWrite = latest.invalidationEpochByEpic?.[options.epicKey] ?? 0
+    if (epicEpochBeforeWrite !== epicEpochAtStart) {
+      return { ...entry, reused: false }
+    }
     latest.entries[key] = entry
     await writeRegistryFileAtomic(registryPath, latest)
 
@@ -233,8 +244,11 @@ export async function invalidateAllEpicSnapshots(
 ): Promise<{ removedKeys: string[] }> {
   const registryPath = resolve(stateRoot, 'snapshots.json')
   const file = await readRegistryFile(registryPath)
+  file.invalidationEpochByEpic = {
+    ...(file.invalidationEpochByEpic ?? {}),
+    [epicKey]: (file.invalidationEpochByEpic?.[epicKey] ?? 0) + 1,
+  }
   const removedKeys = Object.keys(file.entries).filter((key) => file.entries[key]?.epicKey === epicKey)
-  if (removedKeys.length === 0) return { removedKeys: [] }
   for (const key of removedKeys) delete file.entries[key]
   await writeRegistryFileAtomic(registryPath, file)
   return { removedKeys }

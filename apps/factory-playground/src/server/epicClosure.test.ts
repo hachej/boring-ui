@@ -344,6 +344,34 @@ describe('executeCloseEpic', () => {
     })
   })
 
+  it('uses the verified PR head branch for cleanup commands and receipts, not a mutable local branch alias after verification', async () => {
+    const gitCommands: string[] = []
+    createExecFileMock((file, args) => {
+      if (file === 'git') gitCommands.push(args.join(' '))
+      if (file === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref') return { stdout: 'release/closed-epic\n' }
+      if (file === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD') return { stdout: 'a'.repeat(40) + '\n' }
+      if (file === 'git' && args[0] === 'remote') return { stdout: 'git@github.com:owner/repo.git\n' }
+      if (file === 'git' && args[0] === 'symbolic-ref') throw new Error('no origin head')
+      if (file === 'git' && args[0] === 'ls-remote') return { stdout: 'a'.repeat(40) + '\trefs/heads/release/closed-epic\n' }
+      if (file === 'git' && args[0] === 'push') return { stdout: '' }
+      if (file === 'gh' && args[2] === 'release/closed-epic') return { stdout: JSON.stringify({ number: 17, url: 'https://example/pr/17', state: 'MERGED', mergedAt: 'now' }) }
+      if (file === 'gh' && args[2] === '17') return { stdout: JSON.stringify(mergedPr({ headRefName: 'release/closed-epic' })) }
+      if (file === 'br' && args[0] === 'list') return { stdout: JSON.stringify({ issues: [{ id: 'factory-epic-closure', status: 'closed' }] }) }
+      throw new Error(`unexpected ${file} ${args.join(' ')}`)
+    })
+
+    const result = await executeCloseEpic({ prNumber: 17 }, { abortSignal: new AbortController().signal, toolCallId: 'c8b', sessionId: 'orch-a' }, deps())
+    expect(result.details).toMatchObject({
+      overall: 'complete',
+      cleanup: {
+        branchDeletion: { status: 'deleted', branch: 'release/closed-epic', headRefOid: 'a'.repeat(40) },
+      },
+    })
+    expect(gitCommands).toContain('ls-remote --heads origin release/closed-epic')
+    expect(gitCommands).toContain(`push --force-with-lease=refs/heads/release/closed-epic:${'a'.repeat(40)} origin --delete release/closed-epic`)
+    expect(gitCommands).not.toContain('ls-remote --heads origin local-alias')
+  })
+
   it('returns partial and leaves epic/supervision untouched when a demo stop or child close fails, and reruns idempotently', async () => {
     const demoEntries: Record<string, DemoEntry> = {
       demo1: { sandboxId: 'sandbox-1', url: 'https://demo', sha: 'c'.repeat(40), port: 3000, command: 'node', startedAt: 's', expiresAt: 'e' },

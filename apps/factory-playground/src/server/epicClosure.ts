@@ -372,32 +372,33 @@ export async function executeCloseEpic(
         receipt.cleanup.snapshotRegistry = { status: 'failed', error: safeMessage(error) }
       }
 
+      const cleanupBranch = verifiedPr.headRefName
       const defaultBranch = await readDefaultBranch(deps.workspaceRoot)
       const protectedReason = (
-        branch === 'main' ? 'main branch is protected'
-          : defaultBranch && branch === defaultBranch ? 'default branch is protected'
+        cleanupBranch === 'main' ? 'main branch is protected'
+          : defaultBranch && cleanupBranch === defaultBranch ? 'default branch is protected'
             : branch === deps.epicKey ? 'current app branch is protected'
               : null
       )
       if (protectedReason) {
-        receipt.cleanup.branchDeletion = { status: 'skipped', branch, headRefOid: verifiedPr.headRefOid, reason: protectedReason }
+        receipt.cleanup.branchDeletion = { status: 'skipped', branch: cleanupBranch, headRefOid: verifiedPr.headRefOid, reason: protectedReason }
       } else {
         try {
-          const exists = await remoteBranchExists(deps.workspaceRoot, branch)
+          const exists = await remoteBranchExists(deps.workspaceRoot, cleanupBranch)
           if (!exists) {
-            receipt.cleanup.branchDeletion = { status: 'already-absent', branch, headRefOid: verifiedPr.headRefOid, remote: 'origin' }
+            receipt.cleanup.branchDeletion = { status: 'already-absent', branch: cleanupBranch, headRefOid: verifiedPr.headRefOid, remote: 'origin' }
           } else {
-            await execFileAsync('git', ['push', `--force-with-lease=refs/heads/${branch}:${verifiedPr.headRefOid}`, 'origin', '--delete', branch], { cwd: deps.workspaceRoot, maxBuffer: 16 * 1024 * 1024 })
-            receipt.cleanup.branchDeletion = { status: 'deleted', branch, headRefOid: verifiedPr.headRefOid, remote: 'origin' }
+            await execFileAsync('git', ['push', `--force-with-lease=refs/heads/${cleanupBranch}:${verifiedPr.headRefOid}`, 'origin', '--delete', cleanupBranch], { cwd: deps.workspaceRoot, maxBuffer: 16 * 1024 * 1024 })
+            receipt.cleanup.branchDeletion = { status: 'deleted', branch: cleanupBranch, headRefOid: verifiedPr.headRefOid, remote: 'origin' }
           }
         } catch (error) {
-          receipt.cleanup.branchDeletion = { status: 'failed', branch, headRefOid: verifiedPr.headRefOid, remote: 'origin', error: safeMessage(error) }
+          receipt.cleanup.branchDeletion = { status: 'failed', branch: cleanupBranch, headRefOid: verifiedPr.headRefOid, remote: 'origin', error: safeMessage(error) }
         }
       }
     }
 
     if (cleanupRequested && receipt.cleanup.snapshotRegistry?.status === 'failed' && receipt.cleanup.branchDeletion === undefined) {
-      receipt.cleanup.branchDeletion = { status: 'skipped', branch, headRefOid: verifiedPr.headRefOid, reason: branch === deps.epicKey ? 'current app branch is protected' : 'cleanup blocked after snapshot failure' }
+      receipt.cleanup.branchDeletion = { status: 'skipped', branch: verifiedPr.headRefName, headRefOid: verifiedPr.headRefOid, reason: branch === deps.epicKey ? 'current app branch is protected' : 'cleanup blocked after snapshot failure' }
     }
 
     const cleanupFailure = receipt.cleanup.snapshotRegistry?.status === 'failed' || receipt.cleanup.branchDeletion?.status === 'failed'
