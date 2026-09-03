@@ -20,12 +20,6 @@ afterEach(async () => {
   mockedExecFile.mockReset()
 })
 
-async function makeWorkspaceRoot(): Promise<string> {
-  const root = await mkdtemp(resolve(tmpdir(), 'factory-epic-closure-'))
-  temporaryRoots.push(root)
-  return root
-}
-
 function createExecFileMock(script: (file: string, args: readonly string[]) => unknown | Promise<unknown>) {
   mockedExecFile.mockImplementation(((file: string, args: readonly string[], options: unknown, callback?: (...cbArgs: unknown[]) => void) => {
     const cb = typeof options === 'function' ? options : callback
@@ -86,16 +80,18 @@ describe('executeCloseEpic', () => {
     await expect(executeCloseEpic({ prNumber: 17 }, { abortSignal: new AbortController().signal, toolCallId: 'c2' }, base)).resolves.toMatchObject({ isError: true, details: { code: 'INVALID_INPUT' } })
   })
 
-  it('refuses when branch lookup is unavailable, mismatched, or not merged', async () => {
-    createExecFileMock((file) => {
-      if (file === 'git') return { stdout: 'epic/epic-closure\n' }
+  it('refuses when branch lookup is unavailable, mismatched, head-sha mismatched, or not merged', async () => {
+    createExecFileMock((file, args) => {
+      if (file === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref') return { stdout: 'epic/epic-closure\n' }
+      if (file === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD') return { stdout: 'a'.repeat(40) + '\n' }
       throw Object.assign(new Error('spawn gh ENOENT'), { code: 'ENOENT' })
     })
     await expect(executeCloseEpic({ prNumber: 17 }, { abortSignal: new AbortController().signal, toolCallId: 'c1', sessionId: 'orch' }, deps())).resolves.toMatchObject({ isError: true, details: { code: 'PR_LOOKUP_UNAVAILABLE' } })
 
     mockedExecFile.mockReset()
     createExecFileMock((file, args) => {
-      if (file === 'git') return { stdout: 'epic/epic-closure\n' }
+      if (file === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref') return { stdout: 'epic/epic-closure\n' }
+      if (file === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD') return { stdout: 'a'.repeat(40) + '\n' }
       if (args[2] === 'epic/epic-closure') return { stdout: JSON.stringify({ number: 18, url: 'x', state: 'OPEN', mergedAt: null }) }
       return { stdout: JSON.stringify({ number: 18, url: 'x', state: 'OPEN', mergedAt: null, mergeCommit: null, headRefName: 'epic/epic-closure' }) }
     })
@@ -103,7 +99,8 @@ describe('executeCloseEpic', () => {
 
     mockedExecFile.mockReset()
     createExecFileMock((file, args) => {
-      if (file === 'git') return { stdout: 'epic/epic-closure\n' }
+      if (file === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref') return { stdout: 'epic/epic-closure\n' }
+      if (file === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD') return { stdout: 'c'.repeat(40) + '\n' }
       if (args[2] === 'epic/epic-closure') return { stdout: JSON.stringify({ number: 17, url: 'x', state: 'MERGED', mergedAt: 'now' }) }
       if (args[2] === '17') return { stdout: JSON.stringify({ number: 17, url: 'x', state: 'MERGED', mergedAt: 'now', mergeCommit: { oid: 'a'.repeat(40) }, headRefName: 'wrong-branch', headRefOid: 'b'.repeat(40), headRepository: { name: 'repo' }, headRepositoryOwner: { login: 'owner' }, isCrossRepository: false }) }
       return { stdout: JSON.stringify({ issues: [] }) }
@@ -112,7 +109,18 @@ describe('executeCloseEpic', () => {
 
     mockedExecFile.mockReset()
     createExecFileMock((file, args) => {
-      if (file === 'git') return { stdout: 'epic/epic-closure\n' }
+      if (file === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref') return { stdout: 'epic/epic-closure\n' }
+      if (file === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD') return { stdout: 'c'.repeat(40) + '\n' }
+      if (args[2] === 'epic/epic-closure') return { stdout: JSON.stringify({ number: 17, url: 'x', state: 'MERGED', mergedAt: 'now' }) }
+      if (args[2] === '17') return { stdout: JSON.stringify({ number: 17, url: 'x', state: 'MERGED', mergedAt: 'now', mergeCommit: { oid: 'd'.repeat(40) }, headRefName: 'epic/epic-closure', headRefOid: 'b'.repeat(40), headRepository: { name: 'repo' }, headRepositoryOwner: { login: 'owner' }, isCrossRepository: false }) }
+      return { stdout: JSON.stringify({ issues: [] }) }
+    })
+    await expect(executeCloseEpic({ prNumber: 17 }, { abortSignal: new AbortController().signal, toolCallId: 'c3b', sessionId: 'orch' }, deps())).resolves.toMatchObject({ isError: true, details: { code: 'PR_HEAD_SHA_MISMATCH' } })
+
+    mockedExecFile.mockReset()
+    createExecFileMock((file, args) => {
+      if (file === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref') return { stdout: 'epic/epic-closure\n' }
+      if (file === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD') return { stdout: 'a'.repeat(40) + '\n' }
       if (args[2] === 'epic/epic-closure') return { stdout: JSON.stringify({ number: 17, url: 'x', state: 'OPEN', mergedAt: null }) }
       if (args[2] === '17') return { stdout: JSON.stringify({ number: 17, url: 'x', state: 'OPEN', mergedAt: null, mergeCommit: null, headRefName: 'epic/epic-closure', headRefOid: 'b'.repeat(40), headRepository: { name: 'repo' }, headRepositoryOwner: { login: 'owner' }, isCrossRepository: false }) }
       return { stdout: JSON.stringify({ issues: [] }) }
@@ -122,7 +130,8 @@ describe('executeCloseEpic', () => {
 
   it('refuses when the epic Bead is not unique', async () => {
     createExecFileMock((file, args) => {
-      if (file === 'git') return { stdout: 'epic/epic-closure\n' }
+      if (file === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref') return { stdout: 'epic/epic-closure\n' }
+      if (file === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD') return { stdout: 'a'.repeat(40) + '\n' }
       if (file === 'gh' && args[2] === 'epic/epic-closure') return { stdout: JSON.stringify({ number: 17, url: 'x', state: 'MERGED', mergedAt: 'now' }) }
       if (file === 'gh' && args[2] === '17') return { stdout: JSON.stringify({ number: 17, url: 'x', state: 'MERGED', mergedAt: 'now', mergeCommit: { oid: 'a'.repeat(40) }, headRefName: 'epic/epic-closure', headRefOid: 'b'.repeat(40), headRepository: { name: 'repo' }, headRepositoryOwner: { login: 'owner' }, isCrossRepository: false }) }
       return { stdout: JSON.stringify({ issues: [{ id: 'child-1', status: 'open' }] }) }
@@ -136,7 +145,8 @@ describe('executeCloseEpic', () => {
       demo1: { sandboxId: 'sandbox-1', url: 'https://demo', sha: 'c'.repeat(40), port: 3000, command: 'node', startedAt: 's', expiresAt: 'e', sessionId: 'orch-a' },
     }
     createExecFileMock((file, args) => {
-      if (file === 'git') return { stdout: 'epic/epic-closure\n' }
+      if (file === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref') return { stdout: 'epic/epic-closure\n' }
+      if (file === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD') return { stdout: 'a'.repeat(40) + '\n' }
       if (file === 'gh' && args[2] === 'epic/epic-closure') return { stdout: JSON.stringify({ number: 17, url: 'https://example/pr/17', state: 'MERGED', mergedAt: 'now' }) }
       if (file === 'gh' && args[2] === '17') return { stdout: JSON.stringify({ number: 17, url: 'https://example/pr/17', state: 'MERGED', mergedAt: 'now', mergeCommit: { oid: 'a'.repeat(40) }, headRefName: 'epic/epic-closure', headRefOid: 'b'.repeat(40), headRepository: { name: 'repo' }, headRepositoryOwner: { login: 'owner' }, isCrossRepository: false }) }
       if (file === 'br' && args[0] === 'list') {
@@ -186,7 +196,8 @@ describe('executeCloseEpic', () => {
     let closeChildFails = true
     const operations: string[] = []
     createExecFileMock((file, args) => {
-      if (file === 'git') return { stdout: 'epic/epic-closure\n' }
+      if (file === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref') return { stdout: 'epic/epic-closure\n' }
+      if (file === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD') return { stdout: 'a'.repeat(40) + '\n' }
       if (file === 'gh' && args[2] === 'epic/epic-closure') return { stdout: JSON.stringify({ number: 17, url: 'https://example/pr/17', state: 'MERGED', mergedAt: 'now' }) }
       if (file === 'gh' && args[2] === '17') return { stdout: JSON.stringify({ number: 17, url: 'https://example/pr/17', state: 'MERGED', mergedAt: 'now', mergeCommit: { oid: 'a'.repeat(40) }, headRefName: 'epic/epic-closure', headRefOid: 'b'.repeat(40), headRepository: { name: 'repo' }, headRepositoryOwner: { login: 'owner' }, isCrossRepository: false }) }
       if (file === 'br' && args[0] === 'list') {

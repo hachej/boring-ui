@@ -189,6 +189,7 @@ export async function executeCloseEpic(
 
   try {
     const branch = await readGitValue(deps.workspaceRoot, ['rev-parse', '--abbrev-ref', 'HEAD'])
+    const headSha = await readGitValue(deps.workspaceRoot, ['rev-parse', 'HEAD'])
     const branchPrLookup = await lookupFactoryPrStatus(deps.workspaceRoot, branch)
     if (branchPrLookup.prLookup.status === 'gh-unavailable') {
       return textResult({ code: 'PR_LOOKUP_UNAVAILABLE', message: branchPrLookup.prLookup.message, callingSessionId }, true)
@@ -211,6 +212,9 @@ export async function executeCloseEpic(
     }
     if (verifiedPr.state !== 'MERGED' || !verifiedPr.mergedAt || !verifiedPr.mergeCommitSha) {
       return textResult({ code: 'PR_NOT_MERGED', message: `PR #${prNumber} is not merged`, callingSessionId }, true)
+    }
+    if (headSha !== verifiedPr.mergeCommitSha) {
+      return textResult({ code: 'PR_HEAD_SHA_MISMATCH', message: `workspace HEAD ${headSha} does not match merged PR SHA ${verifiedPr.mergeCommitSha}`, callingSessionId }, true)
     }
 
     const beads = await loadAllEpicBeads(deps.workspaceRoot, deps.epicKey)
