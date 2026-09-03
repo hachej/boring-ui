@@ -39,7 +39,7 @@ const bridgeCall = async (op, input, sessionId) => {
   const r = await fetch(bridgeUrl, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-csrf-token': 'browser', 'x-boring-session-id': sessionId, 'x-boring-workspace-id': WORKSPACE_ID },
-    body: JSON.stringify({ op, input }),
+    body: JSON.stringify({ op, input, idempotencyKey: randomUUID() }),
   })
   const t = await r.text()
   if (!r.ok) throw new Error(`bridge ${op}: ${r.status} ${t.slice(0, 500)}`)
