@@ -57,6 +57,9 @@ export async function createFactoryPlayground(options: CreateFactoryPlaygroundOp
     mode: 'direct',
     logger: options.logger ?? true,
     readonlyWorkspacePaths: ['.agents'],
+    // The seat extensions (pi-mono-loop) resolve from this checkout's node_modules even when the
+    // shared epic worktree is another checkout; authorize that root for Pi resource digests.
+    piResourceAuthorizedRoots: [options.repositoryRoot],
     agents,
     defaultAgentTypeId: FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
     externalPlugins: false,
