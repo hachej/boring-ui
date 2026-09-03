@@ -4,6 +4,9 @@ import { promisify } from 'node:util'
 import type { FastifyInstance } from 'fastify'
 import { defineServerPlugin } from '@hachej/boring-workspace/server'
 import type { AgentTool, ToolExecContext, ToolResult } from '@hachej/boring-agent/shared'
+import { executeCloseEpic, lookupFactoryPrStatus } from './epicClosure'
+import type { FactoryDemoPluginControl } from './demoPlugin'
+import type { FactorySupervisionPluginControl } from './supervisionPlugin'
 
 export const FACTORY_DELEGATE_PLUGIN_ID = 'factory-delegate'
 
@@ -31,8 +34,11 @@ const DELEGATE_GRANTS: Readonly<Record<string, { readonly toolName: string; read
 /** Seat granted the host status readback tool. Never derived from Agent-authored config. */
 const FACTORY_STATUS_AGENT_TYPE_ID = 'boring-orchestrator'
 const FACTORY_STATUS_WORKER_AGENT_TYPE_ID = 'boring-worker'
+const CLOSE_EPIC_AGENT_TYPE_ID = 'boring-orchestrator'
 
 export interface CreateFactoryDelegatePluginOptions {
+  readonly demoControl: FactoryDemoPluginControl
+  readonly supervisionControl: FactorySupervisionPluginControl
   /** Host-owned workspace identity used on every in-process `app.inject` call. */
   readonly workspaceScopeId: string
   /** Deadline for the child session to go idle after one turn. Default 15 minutes. */
@@ -414,6 +420,7 @@ function createFactoryStatusTool(
           loadEpicBeads(options.workspaceRoot, options.epicKey),
           listWorkerSessions(app, workspaceHeader),
         ])
+        const prDetails = await lookupFactoryPrStatus(options.workspaceRoot, git.branch)
         const workerStatusBySessionId = new Map(workerSessions.map((session) => [session.sessionId, session.status ?? 'idle']))
         const beadsWithComments = await Promise.all(beads.map(async (issue) => {
           const commentStats = await commentStatsFor(options.workspaceRoot, issue.id)
@@ -433,6 +440,7 @@ function createFactoryStatusTool(
           epicKey: options.epicKey,
           workspaceRoot: options.workspaceRoot,
           git,
+          ...prDetails,
           beads: beadsWithComments,
           workerSessions: workerSessions.map((session) => ({
             sessionId: session.sessionId,
@@ -447,6 +455,36 @@ function createFactoryStatusTool(
         const message = error instanceof Error ? error.message : 'factory_status failed'
         return textResult({ code: 'FACTORY_STATUS_FAILED', message }, true)
       }
+    },
+  }
+}
+
+function createCloseEpicTool(
+  getApp: () => FastifyInstance | undefined,
+  options: CreateFactoryDelegatePluginOptions,
+): AgentTool {
+  return {
+    name: 'close_epic',
+    description:
+      'Orchestrator-only host closure for a merged Factory epic. Re-validates the exact PR, stops demos, closes child Beads before the epic Bead, then stops only the calling session supervision and returns a retry-safe structured receipt.',
+    parameters: {
+      type: 'object',
+      properties: {
+        prNumber: { type: 'number', minimum: 1 },
+      },
+      required: ['prNumber'],
+      additionalProperties: false,
+    },
+    async execute(params: Record<string, unknown>, ctx: ToolExecContext): Promise<ToolResult> {
+      return await executeCloseEpic(params, ctx, {
+        workspaceRoot: options.workspaceRoot,
+        epicKey: options.epicKey,
+        featureName: options.featureName,
+        getApp,
+        workspaceScopeId: options.workspaceScopeId,
+        demoControl: options.demoControl,
+        supervisionControl: options.supervisionControl,
+      })
     },
   }
 }
@@ -472,6 +510,7 @@ export function createFactoryDelegatePlugin(
       const grant = DELEGATE_GRANTS[agentTypeId]
       if (grant) tools.push(createDelegateTool(grant.toolName, grant.targetAgentTypeId, getApp, options))
       if (agentTypeId === FACTORY_STATUS_AGENT_TYPE_ID) tools.push(createFactoryStatusTool(getApp, options))
+      if (agentTypeId === CLOSE_EPIC_AGENT_TYPE_ID) tools.push(createCloseEpicTool(getApp, options))
       return tools
     },
   })

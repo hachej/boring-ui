@@ -48,12 +48,18 @@ export interface CreateFactorySupervisionPluginOptions {
   readonly defaultIntervalMs?: number
 }
 
+export interface FactorySupervisionPluginControl {
+  stopSupervision(sessionId: string, app: FastifyInstance, workspaceScopeId: string): Promise<void>
+}
+
 export interface FactorySupervisionPluginHandle {
   readonly plugin: ReturnType<typeof defineServerPlugin>
   /** Wire the live fastify app once `createWorkspaceAgentServer` resolves, and register the onClose hook. */
   bind(app: FastifyInstance): void
   /** Read the state file and arm a timer for every persisted entry. Returns the count armed. */
   rearm(): Promise<number>
+  /** Host-only control surface for epic closure. */
+  readonly control: FactorySupervisionPluginControl
   /** Clear every armed timer. Idempotent. */
   close(): void
 }
@@ -311,6 +317,18 @@ export function createFactorySupervisionPlugin(
     },
   })
 
+  async function stopSupervision(sessionId: string, app: FastifyInstance, workspaceScopeId: string): Promise<void> {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/boring-orchestrator/tools/supervise/execute',
+      headers: { 'x-boring-workspace-id': workspaceScopeId },
+      payload: { params: { op: 'stop' }, sessionId },
+    })
+    if (response.statusCode !== 200) throw new Error(`stop supervision failed with ${response.statusCode}`)
+    const body = response.json<{ isError?: boolean; details?: { message?: string } }>()
+    if (body.isError) throw new Error(body.details?.message ?? 'stop supervision failed')
+  }
+
   return {
     plugin,
     bind(app: FastifyInstance) {
@@ -320,6 +338,7 @@ export function createFactorySupervisionPlugin(
       })
     },
     rearm,
+    control: { stopSupervision },
     close,
   }
 }

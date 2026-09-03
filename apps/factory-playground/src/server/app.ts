@@ -38,9 +38,16 @@ export async function createFactoryPlayground(options: CreateFactoryPlaygroundOp
     featureName,
   })
   const beadsOperations = createWorkspaceBeadsOperations(createNodeWorkspace(workspaceRoot))
-  const delegate = createFactoryDelegatePlugin({ workspaceScopeId: FACTORY_WORKSPACE_SCOPE_ID, epicKey, featureName, workspaceRoot })
   const supervision = createFactorySupervisionPlugin({ stateRoot })
   const demo = createFactoryDemoPlugin({ stateRoot, workspaceRoot, epicKey, env })
+  const delegate = createFactoryDelegatePlugin({
+    workspaceScopeId: FACTORY_WORKSPACE_SCOPE_ID,
+    epicKey,
+    featureName,
+    workspaceRoot,
+    demoControl: demo.control,
+    supervisionControl: supervision.control,
+  })
 
   const app = await createWorkspaceAgentServer({
     workspaceRoot,

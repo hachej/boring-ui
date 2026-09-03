@@ -9,7 +9,14 @@ import { createFactoryDelegatePlugin } from './delegatePlugin'
 import { createFactorySandboxPlugin, FACTORY_WORKER_AGENT_TYPE_ID } from './sandboxComposition'
 import { simulateFactoryFeature } from './simulateFeature'
 
-const DELEGATE_OPTIONS = { workspaceScopeId: 'factory-playground', epicKey: 'live-farewell', featureName: 'Farewell API', workspaceRoot: process.cwd() }
+const DELEGATE_OPTIONS = {
+  workspaceScopeId: 'factory-playground',
+  epicKey: 'live-farewell',
+  featureName: 'Farewell API',
+  workspaceRoot: process.cwd(),
+  demoControl: { listDemos: async () => ({}), stopDemo: async () => 'stopped' as const },
+  supervisionControl: { stopSupervision: async () => {} },
+}
 
 const appRoot = resolve(import.meta.dirname, '../..')
 const repositoryRoot = resolve(appRoot, '../..')
@@ -152,7 +159,7 @@ describe('native Factory composition', () => {
       expect(names(workerTools)).not.toContain('factory_status')
       expect(names(orchestratorTools)).toContain('boring_automation')
       expect(names(orchestratorTools)).not.toContain('sandbox')
-      expect(names(orchestratorTools)).toEqual(expect.arrayContaining(['supervise', 'factory_status', 'dispatch_worker', 'demo_sandbox']))
+      expect(names(orchestratorTools)).toEqual(expect.arrayContaining(['supervise', 'factory_status', 'close_epic', 'dispatch_worker', 'demo_sandbox']))
     } finally {
       await app.close()
     }
@@ -190,7 +197,7 @@ describe('factory delegate plugin', () => {
   it('grants dispatch_worker+factory_status to the orchestrator and fresh_review to the worker, and nothing to any other seat', () => {
     const { plugin } = createFactoryDelegatePlugin(DELEGATE_OPTIONS)
     expect(plugin.agentToolFactory?.({ agentTypeId: FACTORY_ORCHESTRATOR_AGENT_TYPE_ID }).map((tool) => tool.name))
-      .toEqual(['dispatch_worker', 'factory_status'])
+      .toEqual(['dispatch_worker', 'factory_status', 'close_epic'])
     expect(plugin.agentToolFactory?.({ agentTypeId: FACTORY_WORKER_AGENT_TYPE_ID }).map((tool) => tool.name))
       .toEqual(['fresh_review'])
     expect(plugin.agentToolFactory?.({ agentTypeId: FACTORY_REVIEWER_AGENT_TYPE_ID })).toEqual([])
