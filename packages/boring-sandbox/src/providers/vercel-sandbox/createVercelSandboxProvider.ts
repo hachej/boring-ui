@@ -69,6 +69,16 @@ const ORPHAN_GUARD_MAX_IDLE_MS = 24 * 60 * 60 * 1000
 const VERCEL_SANDBOX_TIMEOUT_MS_ENV = 'BORING_AGENT_VERCEL_SANDBOX_TIMEOUT_MS'
 const VERCEL_SANDBOX_RUNTIME_ENV = 'BORING_AGENT_VERCEL_SANDBOX_RUNTIME'
 const DEFAULT_VERCEL_SANDBOX_RUNTIME = 'node24'
+/**
+ * Vercel's default sandbox is 1 vCPU / 2048 MB. Verified live: a disposable
+ * lease at that default OOMs rebuilding several packages in a large
+ * monorepo (`tsup`'s DTS worker for `packages/agent`/`packages/boring-sandbox`
+ * needs meaningfully more headroom) even with `NODE_OPTIONS=--max-old-space-size`
+ * raised, because the ceiling is real machine memory, not just V8's heap
+ * flag. Host-configurable per Vercel's documented `resources.vcpus` knob
+ * (2048 MB per vCPU) rather than hardcoded, since most sandboxes never need it.
+ */
+const VERCEL_SANDBOX_VCPUS_ENV = 'BORING_AGENT_VERCEL_SANDBOX_VCPUS'
 const MIN_DISPOSABLE_SNAPSHOT_EXPIRATION_MS = 24 * 60 * 60 * 1000
 
 export interface VercelSandboxProviderOptions {
@@ -128,7 +138,7 @@ async function runSandboxSetupStep<T>(options: {
 
 function createDefaultVercelClient(
   auth: VercelAuthConfig,
-  opts: { timeoutMs?: number; runtime?: string } = {},
+  opts: { timeoutMs?: number; runtime?: string; vcpus?: number } = {},
 ): VercelSandboxClient {
   const credentials = {
     token: auth.token,
@@ -143,6 +153,7 @@ function createDefaultVercelClient(
         ...(timeoutMs ? { timeout: timeoutMs } : {}),
         ...(params?.name ? { name: params.name } : {}),
         ...(opts.runtime ? { runtime: opts.runtime } : {}),
+        ...(opts.vcpus ? { resources: { vcpus: opts.vcpus } } : {}),
         persistent: params?.persistent ?? true,
         snapshotExpiration: params?.snapshotExpiration ?? 0,
       }
@@ -592,6 +603,7 @@ export function createVercelSandboxProvider(
         getEnvVar,
       )
       const runtime = getEnvVar(VERCEL_SANDBOX_RUNTIME_ENV)?.trim() || DEFAULT_VERCEL_SANDBOX_RUNTIME
+      const vcpus = readOptionalPositiveIntegerEnv(VERCEL_SANDBOX_VCPUS_ENV, getEnvVar)
       const sourceSnapshotId = disposable
         ? disposableSourceSnapshotId
         : resolveImmutableSnapshotId(opts.immutableSnapshotId, false)
@@ -599,7 +611,7 @@ export function createVercelSandboxProvider(
         token: auth.token,
         teamId,
         projectId,
-      }, { timeoutMs, runtime })
+      }, { timeoutMs, runtime, ...(vcpus ? { vcpus } : {}) })
 
       logger.info('[vercel-sandbox:mode] auth resolved', {
         source: auth.source,

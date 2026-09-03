@@ -1,11 +1,12 @@
+import { createHash } from 'node:crypto'
 import { execFile } from 'node:child_process'
-import { access, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { access, chmod, lstat, mkdtemp, readFile, readdir, readlink, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { DisposableSandboxProviderV1, SandboxProviderCreateContextV1, WorkspaceSandboxPairV1 } from '@hachej/boring-sandbox/shared'
-import { createExactShaTemplateProvider } from './remoteSnapshotProvider'
+import { buildFactoryBootstrapScript, createExactShaTemplateProvider } from './remoteSnapshotProvider'
 
 const execFileAsync = promisify(execFile)
 const temporaryRoots: string[] = []
@@ -335,5 +336,158 @@ describe('createExactShaTemplateProvider fetch mode', () => {
     expect(calls).toHaveLength(1)
 
     await pair.dispose()
+  })
+})
+
+describe('buildFactoryBootstrapScript: warm-vs-cold selection', () => {
+  function sha256Hex(content: string): string {
+    return createHash('sha256').update(content).digest('hex')
+  }
+
+  async function makeFakePnpmBin(logPath: string): Promise<string> {
+    const binDir = await mkdtemp(resolve(tmpdir(), 'factory-bootstrap-fakebin-'))
+    temporaryRoots.push(binDir)
+    const script = [
+      '#!/bin/sh',
+      `echo "$@" >> "${logPath}"`,
+      'exit 0',
+    ].join('\n') + '\n'
+    const pnpmPath = resolve(binDir, 'pnpm')
+    await writeFile(pnpmPath, script)
+    await chmod(pnpmPath, 0o755)
+    return binDir
+  }
+
+  async function runBootstrap(
+    cwd: string,
+    warmRoot: string,
+    fakeBinDir: string,
+  ): Promise<{ stdout: string; stderr: string }> {
+    const script = buildFactoryBootstrapScript(warmRoot, resolve(cwd, 'workspace-link'))
+    return await execFileAsync('sh', ['-c', script], {
+      cwd,
+      env: { ...process.env, PATH: `${fakeBinDir}:${process.env.PATH}` },
+    })
+  }
+
+  async function makeOriginWithTwoCommits(
+    lockfileChanges: boolean,
+  ): Promise<{ originPath: string; baseSha: string; headSha: string; baseLockfileContent: string }> {
+    const originPath = await mkdtemp(resolve(tmpdir(), 'factory-bootstrap-origin-'))
+    temporaryRoots.push(originPath)
+    await execFileAsync('git', ['init', '--quiet', '--initial-branch=main'], { cwd: originPath })
+    await execFileAsync('git', ['config', 'user.email', 'test@example.com'], { cwd: originPath })
+    await execFileAsync('git', ['config', 'user.name', 'Test'], { cwd: originPath })
+    const baseLockfileContent = 'lockfile-v1\n'
+    await writeFile(resolve(originPath, 'pnpm-lock.yaml'), baseLockfileContent)
+    await writeFile(resolve(originPath, 'tracked.txt'), 'v1')
+    await execFileAsync('git', ['add', '.'], { cwd: originPath })
+    await execFileAsync('git', ['commit', '--quiet', '-m', 'base'], { cwd: originPath })
+    const baseSha = (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: originPath })).stdout.trim()
+
+    if (lockfileChanges) {
+      await writeFile(resolve(originPath, 'pnpm-lock.yaml'), 'lockfile-v2\n')
+    }
+    await writeFile(resolve(originPath, 'tracked.txt'), 'v2')
+    await execFileAsync('git', ['add', '.'], { cwd: originPath })
+    await execFileAsync('git', ['commit', '--quiet', '-m', 'next'], { cwd: originPath })
+    const headSha = (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: originPath })).stdout.trim()
+
+    return { originPath, baseSha, headSha, baseLockfileContent }
+  }
+
+  async function makeWarmRoot(
+    originPath: string,
+    baseSha: string,
+    lockfileSha256: string,
+  ): Promise<string> {
+    const warmRoot = await mkdtemp(resolve(tmpdir(), 'factory-bootstrap-warmroot-'))
+    temporaryRoots.push(warmRoot)
+    await execFileAsync('git', ['clone', '--quiet', originPath, warmRoot])
+    await execFileAsync('git', ['checkout', '--quiet', '--detach', baseSha], { cwd: warmRoot })
+    const manifest = {
+      baseSha,
+      lockfileSha256: `sha256:${lockfileSha256}`,
+      pnpmVersion: '10.33.2',
+      builtAt: new Date().toISOString(),
+      buildCommand: 'pnpm run build:packages',
+      repoRoot: warmRoot,
+    }
+    await writeFile(resolve(warmRoot, '.factory-snapshot.json'), JSON.stringify(manifest, null, 2))
+    return warmRoot
+  }
+
+  async function makeSandboxCwd(headSha: string, remote: string): Promise<string> {
+    const cwd = await mkdtemp(resolve(tmpdir(), 'factory-bootstrap-cwd-'))
+    temporaryRoots.push(cwd)
+    await writeFile(resolve(cwd, '.factory-sha'), headSha)
+    await writeFile(resolve(cwd, '.factory-remote'), remote)
+    return cwd
+  }
+
+  it('takes the warm path, installs when the lockfile hash moved, and symlinks the workspace root to the warm repo', async () => {
+    const { originPath, baseSha, headSha, baseLockfileContent } = await makeOriginWithTwoCommits(true)
+    const warmRoot = await makeWarmRoot(originPath, baseSha, sha256Hex(baseLockfileContent))
+    const cwd = await makeSandboxCwd(headSha, originPath)
+    const logPath = resolve(cwd, 'pnpm-calls.log')
+    const fakeBinDir = await makeFakePnpmBin(logPath)
+
+    const { stdout } = await runBootstrap(cwd, warmRoot, fakeBinDir)
+
+    expect(stdout).toContain(`factory-bootstrap ok ${headSha} (warm)`)
+    expect(stdout).toContain('factory-bootstrap-phase fetch')
+    expect(stdout).toContain('factory-bootstrap-phase install ')
+    expect(stdout).not.toContain('factory-bootstrap-phase install-skipped')
+    expect(stdout).toContain('factory-bootstrap-phase build')
+
+    const pnpmLog = await readFile(logPath, 'utf8')
+    expect(pnpmLog).toContain('install --frozen-lockfile --offline')
+    expect(pnpmLog).toContain(`--filter ...[${baseSha}] --filter !. --workspace-concurrency=1 build`)
+
+    const linkTarget = resolve(cwd, 'workspace-link')
+    expect(await readlink(linkTarget)).toBe(warmRoot)
+    const headInWarmRoot = (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: warmRoot })).stdout.trim()
+    expect(headInWarmRoot).toBe(headSha)
+  })
+
+  it('skips install on the warm path when the lockfile hash is unchanged', async () => {
+    const { originPath, baseSha, headSha, baseLockfileContent } = await makeOriginWithTwoCommits(false)
+    const warmRoot = await makeWarmRoot(originPath, baseSha, sha256Hex(baseLockfileContent))
+    const cwd = await makeSandboxCwd(headSha, originPath)
+    const logPath = resolve(cwd, 'pnpm-calls.log')
+    const fakeBinDir = await makeFakePnpmBin(logPath)
+
+    const { stdout } = await runBootstrap(cwd, warmRoot, fakeBinDir)
+
+    expect(stdout).toContain(`factory-bootstrap ok ${headSha} (warm)`)
+    expect(stdout).toContain('factory-bootstrap-phase install-skipped')
+
+    const pnpmLog = await readFile(logPath, 'utf8').catch(() => '')
+    expect(pnpmLog).not.toContain('--frozen-lockfile --offline')
+    expect(pnpmLog).toContain('build')
+  })
+
+  it('falls back to the cold path when no .factory-snapshot.json marker exists at the warm root', async () => {
+    const { originPath, headSha } = await makeOriginWithTwoCommits(false)
+    const warmRootWithoutMarker = await mkdtemp(resolve(tmpdir(), 'factory-bootstrap-no-warm-'))
+    temporaryRoots.push(warmRootWithoutMarker)
+    const cwd = await makeSandboxCwd(headSha, originPath)
+    const logPath = resolve(cwd, 'pnpm-calls.log')
+    const fakeBinDir = await makeFakePnpmBin(logPath)
+
+    const { stdout } = await runBootstrap(cwd, warmRootWithoutMarker, fakeBinDir)
+
+    expect(stdout).toContain(`factory-bootstrap ok ${headSha}`)
+    expect(stdout).not.toContain('(warm)')
+    expect(stdout).not.toContain('factory-bootstrap-phase install')
+    expect(stdout).not.toContain('factory-bootstrap-phase build')
+
+    // Cold path never touches pnpm, and never creates the workspace symlink.
+    const pnpmLog = await readFile(logPath, 'utf8').catch(() => '')
+    expect(pnpmLog).toBe('')
+    await expect(lstat(resolve(cwd, 'workspace-link'))).rejects.toThrow()
+
+    const headInCwd = (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd })).stdout.trim()
+    expect(headInCwd).toBe(headSha)
   })
 })

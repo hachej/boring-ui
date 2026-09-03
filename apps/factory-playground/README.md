@@ -4,7 +4,7 @@ A dedicated local dogfood app that composes the Factory directly from this check
 
 ## Native composition
 
-- `boring-orchestrator`: canonical `.agents/personas/orchestrator` profile plus canonical `plan`, `feedback`, `owner-gate`, and `handoff` skill sources; receives `factory-supervision`, `factory-demo`, `boring-automation`, and `factory-delegate`.
+- `boring-orchestrator`: canonical `.agents/personas/orchestrator` profile plus canonical `plan`, `feedback`, `owner-gate`, `handoff`, and `show-me` skill sources; receives `factory-supervision`, `factory-demo`, `boring-automation`, and `factory-delegate`.
 - `boring-worker`: canonical `.agents/personas/worker` profile plus canonical `exec`, `fresh-eyes`, and `handoff` skill sources (`owner-gate` is dropped: this seat never raises an owner gate — see `factory-precedence` below); receives the trusted `sandbox` plugin and `factory-delegate`.
 - `boring-reviewer`: canonical `.agents/personas/reviewer` profile plus the canonical `fresh-eyes` skill source; a fresh-context adversarial reviewer of exactly one SHA, with no plugins of its own — it is only ever reached as a `fresh_review` delegation target, never addressed directly by a user.
 - `factory-supervision` is a host-governed durable-nudge plugin, granted only to the Orchestrator. Its `supervise` tool (`op: 'start' | 'stop' | 'status'`) persists an entry (session id, interval, prompt) to `<state root>/supervision.json` and arms an interval timer; the host re-arms every persisted entry from disk on boot (`rearm()`, called from `app.ts` right after `createWorkspaceAgentServer` resolves), so a nudge survives a process restart — the old `pi-mono-loop` `/loop` command's in-memory-only timers did not. Each tick reads the Orchestrator's own session state first: if it isn't `idle` the tick is recorded as `skipped-busy` and nothing is queued; only an idle session gets prompted with `Supervision tick <n> (<ISO time>): <prompt>` (`requireIdle: true`). Default prompt: run `factory_status` and check durable end-state facts against the epic's acceptance criteria, then report facts only — never implement.
@@ -53,6 +53,8 @@ RUN_VERCEL_SANDBOX_LEASE_SMOKE=1 \
 ## Owner handoff (Inbox gates)
 
 The Orchestrator raises exactly two Inbox Human Intentions with `ask_user` per epic and never proceeds past either one without an owner decision — see `.agents/skills/owner-gate/SKILL.md` for the transport rules and `docs/procedures/owner-review-card.md` for the review-card shape both gates fill in.
+
+The `show-me` skill (`.agents/skills/show-me/SKILL.md`) is attached to the Orchestrator seat and is mandatory, not optional, at both gates (owner ruling): Gate 1's `ask_user` call carries a `show-me-plan` artifact pointing at `docs/issues/<issue>/show-me-plan.md` (structure/behavior/diff views of the epic), and Gate 2's PR body carries a `## Show me` section (diff-shaped views plus a sequence diagram of the shipped flow, derived from the actual commits) mirrored to `docs/issues/<issue>/show-me-<short sha>.md` and passed as a `show-me-pr` artifact. `apps/factory-playground/scripts/live-epic-acceptance.mjs` asserts both.
 
 - **Gate 1 — plan approval.** Raised right after the Orchestrator materializes the epic's Bead graph, before it arms supervision or dispatches a Worker. Title `[br-<epic bead id or first bead id>] Plan approval: <epic title>`; context carries the goal, the Bead list (id, title, dependency order), the proof commands, and risk/rollback. Same `decision` radio (`approve`/`changes`/`defer`/`reject`) plus an optional notes textarea as Gate 2. On anything but `approve`, the Orchestrator revises or stops — it never arms supervision or dispatches. The only way to skip it is when the owner's own request text literally says "Gate 1 pre-approved".
 - **Gate 2 — merge approval.** Raised once `factory_status` shows every epic Bead handed off (SHA + sandbox proof + `fresh_review` approve on each, local HEAD = remote HEAD, nothing left ready/unassigned). Before raising it, the Orchestrator: (a) opens the epic PR itself with `gh pr create` (or edits the existing one for that branch) — the body is the Owner Review card from `docs/procedures/owner-review-card.md`, filled in, followed by a `## Handover` section (SHA, branch, Worker/reviewer sessions, sandbox receipts); (b) starts a live demo of the exact SHA with `demo_sandbox` (op `start`) and waits for it to report `ready: true`; then (c) raises `ask_user` with the PR URL, head SHA, the demo URL and its lifetime, please-test steps, and the handover lines in `context`. On `approve` the Orchestrator never merges — it comments on the PR that the owner approved at that SHA and reports. On `changes` it opens follow-up Beads labelled `epic:<key>` and dispatches a Worker; it never merges either way.
@@ -147,24 +149,60 @@ scratch rooted at `<stateRoot>/snapshots`. The immutable base snapshot
 (`BORING_FACTORY_VERCEL_SNAPSHOT_ID`) is still required and is never model
 selected — it is host authority, same as today.
 
-### One-time setup: the base snapshot
+### One-time setup: the base snapshot (warm by default)
 
-Every disposable Vercel lease boots from one immutable base snapshot that
-only needs `node`, `npm`, `git`, and (best-effort) `pnpm` via corepack — the
-exact source tree is layered on top per-lease, so the snapshot itself never
-touches source code:
+A remote lease that only fetches the exact SHA is fast (seconds), but a real
+monorepo `pnpm install` + package builds take minutes — running those on
+every lease defeats the point of a disposable sandbox. `snapshot:vercel`
+therefore bakes a **warm** base snapshot by default: it clones
+`hachej/boring-ui` at `origin/main` (or `--ref <sha>`) into
+`FACTORY_WARM_REPO_ROOT` (`/vercel/sandbox/repo`, exported by
+`remoteSnapshotProvider.ts`), pins `pnpm` via corepack to the version in the
+cloned repo's `package.json` `packageManager` field, runs `pnpm install
+--frozen-lockfile`, builds every package/plugin (`pnpm run build:packages`),
+and records `.factory-snapshot.json` (`{ baseSha, lockfileSha256,
+pnpmVersion, builtAt, buildCommand, repoRoot }`) at the repo root before
+snapshotting:
 
 ```bash
 VERCEL_TOKEN=... VERCEL_TEAM_ID=... VERCEL_PROJECT_ID=... \
-  pnpm --filter factory-playground snapshot:vercel
+  pnpm --filter factory-playground snapshot:vercel [--ref <sha-or-ref>]
 ```
 
-This prints `BORING_FACTORY_VERCEL_SNAPSHOT_ID=snap_...` on success — put
-that value in `.env` (or wherever `BORING_FACTORY_VERCEL_SNAPSHOT_ID` is
-sourced from for the running app). Verified live: `node --version` /
-`npm --version` / `git --version` all present on the `node24` runtime image
-already; corepack + `pnpm@latest` activate cleanly too. Base snapshots are
-created with a 7-day expiration.
+Every lease's bootstrap (`FACTORY_BOOTSTRAP_SCRIPT` in
+`remoteSnapshotProvider.ts`, shared by `createExactShaTemplateProvider` and
+`demoPlugin`'s `demo_sandbox` tool) detects the warm marker and does the
+minimum: `git fetch`/`checkout --detach` the exact SHA, `pnpm install
+--frozen-lockfile --offline` **only if** `pnpm-lock.yaml`'s hash moved since
+the snapshot was baked, then rebuild **only the packages that changed since
+the snapshot's `baseSha`** via pnpm's changed-since filter (`pnpm -r
+--filter "...[<baseSha>]" build`) — nothing changed means pnpm skips the
+build entirely. `/workspace` (where `createVercelSandboxExec` always runs
+later commands) is then symlinked to the warm repo, so a real command like
+`pnpm --filter factory-playground test` runs immediately, no different from
+running it in a fully-set-up local checkout.
+
+Pass `--bare` to fall back to the original, much cheaper snapshot: it only
+proves `node`, `npm`, `git`, and (best-effort) `pnpm` via corepack, and does
+not touch source code. A lease from a bare snapshot always pays the full
+install+build cost via the cold bootstrap path (no `.factory-snapshot.json`
+marker, so `FACTORY_BOOTSTRAP_SCRIPT` takes the original fetch-only branch).
+
+```bash
+VERCEL_TOKEN=... VERCEL_TEAM_ID=... VERCEL_PROJECT_ID=... \
+  pnpm --filter factory-playground snapshot:vercel --bare
+```
+
+Either way, this prints `BORING_FACTORY_VERCEL_SNAPSHOT_ID=snap_...` on
+success — put that value in `.env` (or wherever
+`BORING_FACTORY_VERCEL_SNAPSHOT_ID` is sourced from for the running app).
+Base snapshots are created with a 7-day expiration.
+
+**Refresh rule:** recreate the warm snapshot whenever `pnpm-lock.yaml`
+changes materially, or at least weekly, so the incremental rebuild filter
+(`...[<baseSha>]`) never has to walk a multi-week diff. Re-running
+`pnpm --filter factory-playground snapshot:vercel` and updating
+`BORING_FACTORY_VERCEL_SNAPSHOT_ID` is the entire refresh procedure.
 
 ### Env vars
 
@@ -271,3 +309,76 @@ snapshot and Vault credentials as above, `FACTORY_SMOKE_SOURCE=fetch`:
   reachable package manager (no `dnf`/`apt-get`, no `sudo`) would produce
   sandboxes with no `git`, and every lease from it would inherit that gap
   until the snapshot is rebuilt.
+
+### Verified live: warm snapshot
+
+Built by `snapshot:vercel` (default mode, no `--bare`) against
+`origin/main` at `186f2b16`, credentials from Vault (`secret/agent/vercel`):
+
+| Step | Time |
+| --- | --- |
+| verify node/npm/git, enable corepack | ~1s |
+| clone `hachej/boring-ui` (`--filter=blob:none`) into `/vercel/sandbox/repo` | ~4s |
+| checkout `origin/main`, read `packageManager`, activate `pnpm@10.33.2` | ~1.5s |
+| `pnpm install --frozen-lockfile` | 14.7s |
+| `pnpm -r --filter './packages/*' --filter './plugins/*' --workspace-concurrency=2 build` | 216.6s |
+| write `.factory-snapshot.json`, `sandbox.snapshot()` | ~4s |
+| **total** | **244.5s (~4m5s)** |
+
+Snapshot id: `snap_ULgPKh5v6ww20gkBUxJBKUHCzp7F` (this run; regenerate per the
+refresh rule above — ids are not stable across runs).
+
+**Vercel limits hit while building this:**
+
+- `resources: { vcpus: 8 }` was rejected outright with a `400` on this
+  Vercel plan/team; `4` (8192 MB) is accepted and is what the script uses.
+- Even at the default 1 vCPU / 2048 MB, `packages/agent`'s tsup DTS worker
+  reliably hit `ERR_WORKER_OUT_OF_MEMORY` — this is real machine-memory
+  pressure, not just a V8 heap flag (raising `NODE_OPTIONS
+  --max-old-space-size` alone did not fix it at 1 vCPU; it only helped once
+  paired with `resources: { vcpus: 4 }`).
+
+**Lease-side finding (`vercel-lease-smoke.mts`, default command, against
+`factory-live-epic-1508-r8`, HEAD `2f33f47a`, pushed as
+`epic/farewell-api-r8`):** the fetch/lockfile/build mechanism itself is
+verified correct — `factory-bootstrap-phase fetch` completed in ~0.6-1.3s
+against this warm snapshot, `pnpm-lock.yaml` had genuinely drifted between
+`baseSha` and this branch's HEAD (a real, pre-existing lockfile/package.json
+mismatch on that branch — `pi-mono-loop` removed from
+`apps/factory-playground/package.json` but not from the lockfile), which the
+bootstrap now handles via a `--frozen-lockfile` → `--no-frozen-lockfile`
+fallback chain (see `remoteSnapshotProvider.ts`). But the *full* `pnpm
+--filter factory-playground test` run against this specific branch could
+not be completed within the lease's 10-minute sandbox timeout: this
+particular diff's pnpm changed-since filter matched most of
+`packages/*`/`plugins/*` (a shared-lockfile change makes pnpm's `...[ref]`
+selector conservative — it cannot cheaply prove packages it can't otherwise
+scope are unaffected), and rebuilding that many packages serially
+(`--workspace-concurrency=1`, required to avoid the same OOM the seed
+sandbox hit, since disposable leases have no `resources.vcpus` bump by
+default) exceeded 10 minutes; Vercel closed the sandbox stream
+mid-bootstrap (`Sandbox stream was closed and is not accepting commands`).
+Added a `BORING_AGENT_VERCEL_SANDBOX_VCPUS` env var
+(`createVercelSandboxProvider`) so a caller can request more resources for a
+lease that needs to rebuild — `vercel-lease-smoke.mts` sets it to `4` by
+default — but did not extend this run's own lease timeout far enough to
+finish a multi-package serial rebuild live in this session. The cheap-path
+smoke (`FACTORY_SMOKE_COMMAND` against the fixture demo-repo, which needs no
+package rebuild) was not completed live in this session either, for the same
+time-budget reason — the unconditional bootstrap step runs before any
+command, cheap or not.
+
+**Practical takeaway:** the warm-snapshot mechanism (fetch, lockfile-hash
+skip, incremental filter, `/workspace` symlink swap) is verified correct at
+the unit level (real `sh`/`git`, real bootstrap script — see
+`remoteSnapshotProvider.test.ts`) and the live fetch/install-decision phase
+against a real pushed epic branch. The specific "handful of packages, not
+all" claim depends on how stale the warm snapshot's `baseSha` is relative to
+the lease's SHA and on the lockfile diff between them; recreating the
+snapshot on the refresh cadence above (weekly, or whenever
+`pnpm-lock.yaml` changes) keeps that diff small for a typical epic branch.
+A branch whose lockfile has drifted from a week-plus-old `baseSha` is a
+worse-than-typical case and can still trigger a large rebuild — raising the
+lease's own timeout (`timeoutMs` on `createVercelSandboxProvider`) and/or
+requesting more `resources.vcpus` for that lease are the two knobs available
+today; a more scoped changed-since filter is a possible follow-up.

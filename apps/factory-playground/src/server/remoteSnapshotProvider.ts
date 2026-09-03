@@ -44,23 +44,153 @@ export interface ExactShaTemplateProviderOptions {
 }
 
 /**
+ * Fixed path a warm snapshot (built by `scripts/vercel-snapshot.mts`) clones
+ * the monorepo into. Chosen instead of `VERCEL_SANDBOX_WORKSPACE_ROOT`
+ * (`/workspace`) because the warm snapshot is baked with the raw
+ * `@vercel/sandbox` SDK (`Sandbox.create()` + `runCommand()`), whose default
+ * cwd/homeDir is `/vercel/sandbox` — the same default `demoPlugin` uses for
+ * its own (unwrapped) sandbox handle. Keeping the warm clone at a location
+ * both the raw SDK default and `createVercelSandboxExec`'s `/workspace`
+ * default can reach (the bootstrap script symlinks `/workspace` to this path
+ * once warm) means one bootstrap script serves both call sites.
+ */
+export const FACTORY_WARM_REPO_ROOT = '/vercel/sandbox/repo'
+
+/**
+ * Corepack's cache location, pinned outside the warm repo (so git operations
+ * on it never see or touch this directory). Verified live: without pinning
+ * this, a lease sandbox booted from the warm snapshot re-triggered corepack's
+ * network fetch of pnpm on its very first invocation, even though the seed
+ * sandbox had already `corepack prepare --activate`d the same version —
+ * corepack's default cache location isn't part of what survives from seed to
+ * lease. Both `scripts/vercel-snapshot.mts` (at bake time) and the warm
+ * branch of `FACTORY_BOOTSTRAP_SCRIPT` (at lease time) point `COREPACK_HOME`
+ * here, so the cache baked into the snapshot is reused offline.
+ */
+export const FACTORY_COREPACK_HOME = '/vercel/sandbox/.corepack-home'
+
+/** Bootstrap step's exec timeout: warm install/build can take minutes, far past the 30s exec default. */
+export const FACTORY_BOOTSTRAP_TIMEOUT_MS = 15 * 60 * 1000
+
+/**
  * Bootstrap script written into the sandbox in `'fetch'` mode. Reads the
  * exact SHA and origin URL from the sibling marker files this provider also
- * writes, initializes a git repo in place if needed, fetches that one commit
- * (shallow first, falling back to a full fetch if the remote/host doesn't
- * support shallow fetch of an arbitrary SHA), and verifies the checkout
- * landed on the exact SHA.
+ * writes, then takes one of two paths:
+ *
+ * - **Warm** (`FACTORY_WARM_REPO_ROOT/.factory-snapshot.json` exists — the
+ *   base snapshot was built by `scripts/vercel-snapshot.mts` in its default,
+ *   non-`--bare` mode): `cd` into the already-cloned, already-built repo,
+ *   `git fetch`/`checkout --detach` the exact SHA, reinstall only if
+ *   `pnpm-lock.yaml`'s hash moved since the snapshot was baked, then rebuild
+ *   only the packages that changed since the snapshot's `baseSha` via pnpm's
+ *   changed-since filter. Finally, since `createVercelSandboxExec` always
+ *   runs later commands with cwd `/workspace`, `/workspace` is replaced with
+ *   a symlink to the warm repo so the caller's own exec (e.g. `pnpm --filter
+ *   factory-playground test`) finds it without needing to know the warm
+ *   path.
+ * - **Cold** (no warm snapshot; the original, still-default path): git-init
+ *   in place if needed, fetch that one commit (shallow first, falling back
+ *   to a full fetch if the remote/host doesn't support shallow fetch of an
+ *   arbitrary SHA), and verify the checkout landed on the exact SHA. No
+ *   install/build — callers install/build themselves.
+ *
+ * Both paths end by verifying `git rev-parse HEAD` matches the requested SHA.
+ *
+ * `warmRepoRoot`/`workspaceRoot` default to the real, hardcoded production
+ * paths (`FACTORY_WARM_REPO_ROOT` / `/workspace`); tests override both to
+ * point at temp directories so the real script can be exercised end to end
+ * against a fake `sh`-executed sandbox without touching `/vercel` or
+ * `/workspace`.
  */
-export const FACTORY_BOOTSTRAP_SCRIPT = [
+export function buildFactoryBootstrapScript(
+  warmRepoRoot: string = FACTORY_WARM_REPO_ROOT,
+  workspaceRoot = '/workspace',
+): string {
+  return [
   'set -e',
   'sha=$(cat .factory-sha)',
   'remote=$(cat .factory-remote)',
-  'if [ ! -d .git ]; then git init -q .; git remote add origin "$remote"; fi',
-  'git fetch -q --depth 1 origin "$sha" || git fetch -q origin "$sha"',
-  'git checkout -q --detach FETCH_HEAD',
-  'test "$(git rev-parse HEAD)" = "$sha"',
-  'echo "factory-bootstrap ok $sha"',
-].join('; ') + '\n'
+  `warm_root=${warmRepoRoot}`,
+  `workspace_root=${workspaceRoot}`,
+  'phase_start=$(date +%s%N)',
+  'phase() {',
+  '  now=$(date +%s%N)',
+  '  echo "factory-bootstrap-phase $1 $(( (now - phase_start) / 1000000 ))ms"',
+  '  phase_start=$now',
+  '}',
+  'if [ -f "$warm_root/.factory-snapshot.json" ]; then',
+  '  cd "$warm_root"',
+  `  export COREPACK_HOME=${FACTORY_COREPACK_HOME}`,
+  '  git fetch -q origin "$sha"',
+  '  git checkout -q --detach FETCH_HEAD',
+  '  test "$(git rev-parse HEAD)" = "$sha"',
+  '  phase fetch',
+  '  base_sha=$(node -e "process.stdout.write(require(\'./.factory-snapshot.json\').baseSha)")',
+  '  expected_lock=$(node -e "process.stdout.write(require(\'./.factory-snapshot.json\').lockfileSha256)")',
+  '  current_lock="sha256:$(sha256sum pnpm-lock.yaml | cut -d\' \' -f1)"',
+  '  if [ "$current_lock" != "$expected_lock" ]; then',
+  // CI=1: a lockfile diff that adds/removes deps makes pnpm want to purge
+  // node_modules, which it refuses to do non-interactively without this —
+  // verified live as `ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY` otherwise.
+  // The final `--no-frozen-lockfile` fallback covers a branch whose
+  // `pnpm-lock.yaml` has genuinely drifted from `package.json` (verified
+  // live against a real epic branch with an uncommitted-lockfile-update
+  // bug) — installing what package.json actually asks for beats refusing
+  // to test the SHA at all; `--frozen-lockfile` is still tried first so the
+  // common case (an honestly updated lockfile) never silently skips
+  // verification.
+  '    CI=1 pnpm install --frozen-lockfile --offline \\',
+  '      || CI=1 pnpm install --frozen-lockfile \\',
+  '      || CI=1 pnpm install --no-frozen-lockfile',
+  '    phase install',
+  '  else',
+  '    phase install-skipped',
+  '  fi',
+  // `--filter '!.'` excludes the root workspace package: without it, a diff
+  // that touches root-level files (pnpm-lock.yaml, root package.json) makes
+  // the changed-since selector match the root package too, which recursively
+  // re-invokes the *root's own* `"build": "pnpm -r --workspace-concurrency=4
+  // run build"` script — verified live as an accidental full-monorepo
+  // rebuild instead of the intended incremental one. `--workspace-concurrency=2`
+  // matches the seed snapshot build for the same OOM-avoidance reason.
+  // NODE_OPTIONS: verified live that a disposable lease sandbox (default
+  // resources, no `resources.vcpus` bump — only the seed/snapshot-bake
+  // sandbox gets one) OOMs on `packages/agent`'s tsup DTS worker at the
+  // Node default heap size; raising it here fixes leases exactly the way
+  // `scripts/vercel-snapshot.mts` fixes the seed sandbox's own build. Verified
+  // live this alone is not enough: a default-resource lease (no `resources.vcpus`
+  // bump available on the disposable path today) can still OOM specifically on
+  // `packages/agent`'s tsup DTS worker even at --max-old-space-size=6144 with
+  // concurrency 1 — the seed sandbox's fix worked because it also had more
+  // actual machine memory (`resources: { vcpus: 4 }`), not just a bigger heap
+  // flag. Retry once excluding `@hachej/boring-agent` as a documented,
+  // degraded fallback (its dist stays at the snapshot's baseSha rather than
+  // the lease's exact SHA) rather than failing every lease whose diff happens
+  // to touch it; a real fix is a `resources`/`vcpus` passthrough on
+  // `createVercelSandboxProviderOptions` (tracked as a follow-up, out of
+  // scope here — that is a different package's public API).
+  '  NODE_OPTIONS=--max-old-space-size=6144 pnpm -r --filter "...[$base_sha]" --filter \'!.\' --workspace-concurrency=1 build \\',
+  '    || { echo "factory-bootstrap: incremental build failed (likely OOM on a memory-heavy package under default lease resources); retrying excluding @hachej/boring-agent" >&2; \\',
+  '         NODE_OPTIONS=--max-old-space-size=6144 pnpm -r --filter "...[$base_sha]" --filter \'!.\' --filter \'!@hachej/boring-agent\' --workspace-concurrency=1 build; }',
+  '  phase build',
+  '  echo "$sha" > .factory-sha',
+  '  echo "$remote" > .factory-remote',
+  '  if [ -e "$workspace_root" ] || [ -L "$workspace_root" ]; then rm -rf "$workspace_root"; fi',
+  '  ln -sfn "$warm_root" "$workspace_root"',
+  '  echo "factory-bootstrap ok $sha (warm)"',
+  'else',
+  '  if [ ! -d .git ]; then git init -q .; git remote add origin "$remote"; fi',
+  '  git fetch -q --depth 1 origin "$sha" || git fetch -q origin "$sha"',
+  '  git checkout -q --detach FETCH_HEAD',
+  '  test "$(git rev-parse HEAD)" = "$sha"',
+  '  phase fetch',
+  '  echo "factory-bootstrap ok $sha"',
+  'fi',
+  ].join('\n') + '\n'
+}
+
+/** Production bootstrap script (real `FACTORY_WARM_REPO_ROOT` / `/workspace`); this is what's written into every sandbox's `factory-bootstrap.sh`. */
+export const FACTORY_BOOTSTRAP_SCRIPT = buildFactoryBootstrapScript()
 
 /** Best-effort current branch name of `sourceRoot`; `undefined` when not resolvable (detached HEAD, not a git repo). */
 async function resolveBranchBestEffort(sourceRoot: string): Promise<string | undefined> {
@@ -135,6 +265,22 @@ function decodeMaybe(value: Uint8Array | string | undefined): string {
 }
 
 /**
+ * Decoded stdout of the guarded bootstrap invocation (including the
+ * `factory-bootstrap-phase <name> <ms>ms` lines `FACTORY_BOOTSTRAP_SCRIPT`
+ * emits), keyed by the wrapped sandbox handle it ran on. Bootstrap output is
+ * otherwise swallowed — the wrapper's `exec()` only returns the caller's own
+ * command result — so callers that want a phase breakdown (e.g.
+ * `vercel-lease-smoke.mts`) read it here after their first `exec()` call
+ * resolves.
+ */
+const bootstrapLogs = new WeakMap<SandboxHandle, string>()
+
+/** Reads back the bootstrap phase log recorded for a handle returned by `wrapExecWithFetchBootstrap`. `undefined` before bootstrap has run (or for a handle never wrapped). */
+export function getFactoryBootstrapLog(sandbox: SandboxHandle): string | undefined {
+  return bootstrapLogs.get(sandbox)
+}
+
+/**
  * Wraps a sandbox handle so its first `exec()` call runs the guarded
  * `factory-bootstrap.sh` invocation before the caller's own command. Only
  * one bootstrap attempt is made per wrapped handle (matching "the FIRST exec
@@ -144,13 +290,6 @@ function decodeMaybe(value: Uint8Array | string | undefined): string {
  */
 function wrapExecWithFetchBootstrap(sandbox: SandboxHandle, sha: string): SandboxHandle {
   let bootstrap: Promise<SandboxExecResult> | undefined
-
-  function ensureBootstrapped(): Promise<SandboxExecResult> {
-    if (!bootstrap) {
-      bootstrap = sandbox.exec(FACTORY_BOOTSTRAP_GUARDED_COMMAND)
-    }
-    return bootstrap
-  }
 
   function bootstrapFailureResult(result: SandboxExecResult): SandboxExecResult {
     const failureLine = `factory-bootstrap failed: push the epic branch so ${sha} is reachable on origin`
@@ -163,7 +302,7 @@ function wrapExecWithFetchBootstrap(sandbox: SandboxHandle, sha: string): Sandbo
     }
   }
 
-  return {
+  const wrapped: SandboxHandle = {
     ...sandbox,
     async exec(cmd: string, opts?: SandboxExecOptions): Promise<SandboxExecResult> {
       const bootstrapResult = await ensureBootstrapped()
@@ -173,6 +312,20 @@ function wrapExecWithFetchBootstrap(sandbox: SandboxHandle, sha: string): Sandbo
       return await sandbox.exec(cmd, opts)
     },
   }
+
+  function ensureBootstrapped(): Promise<SandboxExecResult> {
+    if (!bootstrap) {
+      bootstrap = sandbox
+        .exec(FACTORY_BOOTSTRAP_GUARDED_COMMAND, { timeoutMs: FACTORY_BOOTSTRAP_TIMEOUT_MS } as SandboxExecOptions)
+        .then((result: SandboxExecResult) => {
+          bootstrapLogs.set(wrapped, decodeMaybe(result.stdout))
+          return result
+        })
+    }
+    return bootstrap
+  }
+
+  return wrapped
 }
 
 /**
