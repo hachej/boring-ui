@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createFactoryPlayground } from './app'
-import { snapshotCommittedHead } from './localDisposableProvider'
 import { loadNativeFactoryFleet, FACTORY_ORCHESTRATOR_AGENT_TYPE_ID, FACTORY_REVIEWER_AGENT_TYPE_ID } from './factoryFleet'
 import { createFactoryDelegatePlugin } from './delegatePlugin'
 import { createFactorySandboxPlugin, FACTORY_WORKER_AGENT_TYPE_ID } from './sandboxComposition'
@@ -118,12 +117,11 @@ describe('native Factory composition', () => {
   it('boots the native app with supervise/factory_status only on the Orchestrator and sandbox only on the Worker', async () => {
     const root = await mkdtemp(resolve(tmpdir(), 'factory-native-app-'))
     temporaryRoots.push(root)
-    const workspaceRoot = resolve(root, 'workspace')
-    await snapshotCommittedHead(repositoryRoot, workspaceRoot)
+    const appRootPath = resolve(root, 'workspace')
     const app = await createFactoryPlayground({
       appRoot,
       repositoryRoot,
-      workspaceRoot,
+      workspaceRoot: appRootPath,
       logger: false,
       env: {
         BORING_AGENT_SESSION_ROOT: resolve(root, 'sessions'),
