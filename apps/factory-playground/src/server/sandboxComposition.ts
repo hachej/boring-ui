@@ -6,6 +6,7 @@ import { createVercelSandboxProvider } from '@hachej/boring-sandbox/providers/ve
 import type { SandboxProviderV1 } from '@hachej/boring-sandbox/shared'
 import { createSandboxServerPlugin, SandboxLeaseService } from '@hachej/boring-sandbox-plugin/server'
 import { createLocalDisposableProvider } from './localDisposableProvider'
+import { createExactShaTemplateProvider } from './remoteSnapshotProvider'
 
 export const FACTORY_WORKSPACE_SCOPE_ID = 'factory-playground'
 export const FACTORY_WORKER_AGENT_TYPE_ID = 'boring-worker'
@@ -25,7 +26,7 @@ function positiveInteger(value: string | undefined, fallback: number): number {
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback
 }
 
-function createProvider(workspaceRoot: string, env: NodeJS.ProcessEnv): SandboxProviderV1 {
+function createProvider(workspaceRoot: string, stateRoot: string, env: NodeJS.ProcessEnv): SandboxProviderV1 {
   if (env.BORING_FACTORY_SANDBOX_PROVIDER !== 'vercel') {
     return createLocalDisposableProvider(workspaceRoot)
   }
@@ -33,11 +34,16 @@ function createProvider(workspaceRoot: string, env: NodeJS.ProcessEnv): SandboxP
   if (!immutableSnapshotId) {
     throw new Error('BORING_FACTORY_VERCEL_SNAPSHOT_ID is required for the Vercel Factory provider')
   }
-  return createVercelSandboxProvider({
+  const inner = createVercelSandboxProvider({
     lifecycle: 'disposable',
     immutableSnapshotId,
     timeoutMs: positiveInteger(env.BORING_AGENT_VERCEL_SANDBOX_TIMEOUT_MS, 15 * 60_000),
     telemetrySalt: env.BORING_SANDBOX_TELEMETRY_SALT,
+  })
+  return createExactShaTemplateProvider({
+    inner,
+    sourceRoot: workspaceRoot,
+    scratchRoot: resolve(stateRoot, 'snapshots'),
   })
 }
 
@@ -56,7 +62,7 @@ export function createFactorySandboxPlugin(
     maxPerWorker,
     maxTotal,
   }))
-  const provider = createProvider(workspaceRoot, env)
+  const provider = createProvider(workspaceRoot, stateRoot, env)
 
   return createSandboxServerPlugin({
     workspaceScopeId: FACTORY_WORKSPACE_SCOPE_ID,

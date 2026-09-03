@@ -10,7 +10,8 @@
     "build": "pnpm run build:deps && vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "simulate": "tsx scripts/simulate-feature.mts"
+    "simulate": "tsx scripts/simulate-feature.mts",
+    "snapshot:vercel": "tsx scripts/vercel-snapshot.mts"
   },
   "dependencies": {
     "@hachej/boring-agent": "workspace:*",
@@ -22,7 +23,7 @@
     "@hachej/boring-sandbox-plugin": "workspace:*",
     "@hachej/boring-tasks": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
-    "pi-mono-loop": "1.7.3",
+    "@vercel/sandbox": "3.0.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },

@@ -75,3 +75,127 @@ EPIC_WT=$PWD/.worktrees/factory-live-epic EPIC_KEY=live-farewell \
 ```
 
 Expected end state, all read back from Bead and git end-states only: one Bead labelled `epic:<key>` created by the Orchestrator; the Worker (started through `dispatch_worker`) claimed it with its own session id, committed only the intended files on the epic branch, verified `git rev-parse HEAD` inside its exact-SHA sandbox, ran the tests there, obtained a `fresh_review` verdict bound to that SHA, pushed the epic branch, and recorded the full handoff as a Bead comment; the Orchestrator read those facts back with `factory_status` and stopped; nothing merged, nothing closed. The receipt lands in `workspace/factory-runs/live-<key>.json` of the epic worktree. Recorded run: `docs/issues/1508/live-run-2026-09-03.md`.
+
+## Remote sandboxes (Vercel)
+
+The `local-simulation` provider (`localDisposableProvider.ts`) proves exact-SHA
+lease isolation with a shared local git clone: the shared epic worktree stays
+the editing authority on this machine, and every lease is a `git clone
+--shared` + `checkout <HEAD>` of it. That still runs the actual test/build
+load on this machine. The Vercel provider (`remoteSnapshotProvider.ts`,
+wrapping `@hachej/boring-sandbox`'s `createVercelSandboxProvider`) does the
+same exact-SHA isolation but on Vercel Sandbox compute, so this machine is
+never blocked by Worker test/build load.
+
+### How it works
+
+`createExactShaTemplateProvider({ inner, sourceRoot, scratchRoot })` wraps any
+disposable sandbox provider. On every `create()` it:
+
+1. Reads `git rev-parse HEAD` of `sourceRoot` (the shared epic worktree).
+2. Exports the tracked tree at that SHA via `git archive <sha> | tar -x`
+   into a fresh directory under `scratchRoot` — **no `.git`, no untracked
+   files** (so no `node_modules`; the sandbox installs its own if a test
+   needs them).
+3. Writes `.factory-sha` (and `.factory-branch`, best-effort) into the
+   export so a Worker can verify which commit it is standing on the same way
+   on both providers.
+4. Calls `inner.create({ ...context, templatePath: exportPath })`.
+5. Keeps the export directory alive until the returned pair is `dispose`d,
+   not just until `create()` resolves — see **Timing and limits** below for
+   why.
+
+`sandboxComposition.ts` wires this in automatically: when
+`BORING_FACTORY_SANDBOX_PROVIDER=vercel`, `createFactorySandboxPlugin` wraps
+`createVercelSandboxProvider(...)` with `createExactShaTemplateProvider`,
+scratch rooted at `<stateRoot>/snapshots`. The immutable base snapshot
+(`BORING_FACTORY_VERCEL_SNAPSHOT_ID`) is still required and is never model
+selected — it is host authority, same as today.
+
+### One-time setup: the base snapshot
+
+Every disposable Vercel lease boots from one immutable base snapshot that
+only needs `node`, `npm`, `git`, and (best-effort) `pnpm` via corepack — the
+exact source tree is layered on top per-lease, so the snapshot itself never
+touches source code:
+
+```bash
+VERCEL_TOKEN=... VERCEL_TEAM_ID=... VERCEL_PROJECT_ID=... \
+  pnpm --filter factory-playground snapshot:vercel
+```
+
+This prints `BORING_FACTORY_VERCEL_SNAPSHOT_ID=snap_...` on success — put
+that value in `.env` (or wherever `BORING_FACTORY_VERCEL_SNAPSHOT_ID` is
+sourced from for the running app). Verified live: `node --version` /
+`npm --version` / `git --version` all present on the `node24` runtime image
+already; corepack + `pnpm@latest` activate cleanly too. Base snapshots are
+created with a 7-day expiration.
+
+### Env vars
+
+All documented in `.env.example`:
+
+```bash
+BORING_FACTORY_SANDBOX_PROVIDER=vercel
+BORING_FACTORY_VERCEL_SNAPSHOT_ID=snap_...        # from snapshot:vercel above
+BORING_AGENT_VERCEL_SANDBOX_TIMEOUT_MS=900000     # default 15 min
+BORING_SANDBOX_TELEMETRY_SALT=...
+VERCEL_TOKEN=...    # or VERCEL_ACCESS_TOKEN / VERCEL_OIDC_TOKEN
+VERCEL_TEAM_ID=...
+VERCEL_PROJECT_ID=...
+```
+
+### Verified live: timing and limits
+
+Run against the real `factory-live-epic-1508-r4` worktree (a full monorepo
+checkout: 3,926 tracked files, ~84 MB as a `git archive` tarball) with
+credentials from Vault (`secret/agent/vercel`):
+
+- **Snapshot creation** (`snapshot:vercel`, one-time): under a minute
+  end-to-end (node/npm/git verification + corepack/pnpm enablement +
+  `sandbox.snapshot()`).
+- **Lease create → healthy → exec → dispose**, one full lease against
+  `factory-live-epic-1508-r4`:
+  - `create()`: ~12s (sandbox boot from the immutable snapshot).
+  - **Template packaging fell back to per-file `writeFiles`**: at this
+    repo's size (3,926 files), the tarball-upload fast path
+    (`@vercel/blob`) failed because no `BLOB_READ_WRITE_TOKEN` is
+    provisioned in this environment, so every lease seeded file-by-file
+    instead. That fallback took **~847s (~14 minutes)** for this repo size —
+    this is the dominant cost of a Vercel lease today, not sandbox boot or
+    `git archive`/`tar` (both single-digit seconds).
+  - `exec()` (the `.factory-sha` + fixture `npm test` check below): under
+    1s once the sandbox was seeded.
+  - `dispose()`: ~0.5s.
+  - `.factory-sha` inside the sandbox matched `git rev-parse HEAD` of the
+    epic worktree exactly; `apps/factory-playground/src/fixtures/demo-repo`
+    was present, and its `npm test` (`node --test`) passed 2/2.
+- Reproduce with `scripts/vercel-lease-smoke.mts`
+  (`RUN_VERCEL_FACTORY_SMOKE=1`, credential-gated); it prints exit code,
+  the last 20 lines of sandbox output, and per-phase timings.
+
+**Residual limits, as measured:**
+
+- **No Vercel Blob token in this environment** means every lease against a
+  repo this size pays the ~14-minute `writeFiles` seeding cost instead of a
+  single tarball upload. Provisioning `BLOB_READ_WRITE_TOKEN` (or passing
+  `packageTemplateOpts.blobToken`) is the fix; it was out of scope here
+  (host credential, not something this app owns).
+- **The export directory must outlive `create()`**, not just settle when it
+  resolves: `createVercelSandboxProvider`'s disposable lifecycle defers
+  template packaging/seeding to a background readiness promise that is only
+  awaited by the pair's first `checkHealth()` (or exec) call, which can run
+  well after `create()` returns. `createExactShaTemplateProvider` accounts
+  for this — the export is removed on `dispose()`, not immediately after
+  `create()` — but any other direct caller of `templatePath`-based creation
+  must call `checkHealth()` (or otherwise force readiness) before assuming
+  the sandbox reflects the exported tree.
+- **No preview URL surface today.** This wiring only proves exec/test
+  isolation on exact-SHA source; it does not expose an HTTP preview of
+  anything running inside the sandbox.
+- **`git` availability inside a lease depends on the base snapshot's
+  bootstrap**, not on anything per-lease: `snapshot:vercel` verifies/installs
+  it once at snapshot-creation time. A base snapshot built without a
+  reachable package manager (no `dnf`/`apt-get`, no `sudo`) would produce
+  sandboxes with no `git`, and every lease from it would inherit that gap
+  until the snapshot is rebuilt.

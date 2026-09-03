@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { access, rm, symlink } from 'node:fs/promises'
+import { access, rm, symlink, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { createDirectSandboxProvider } from '@hachej/boring-sandbox/providers/direct'
@@ -38,6 +38,8 @@ export async function snapshotCommittedHead(sourceRoot: string, targetRoot: stri
     const source = resolve(sourceRoot, name)
     if (await exists(source)) await symlink(source, resolve(targetRoot, name), 'dir')
   }
+  // Workers verify the exact SHA the same way on both the local and remote providers.
+  await writeFile(resolve(targetRoot, '.factory-sha'), sha)
   return sha
 }
 
