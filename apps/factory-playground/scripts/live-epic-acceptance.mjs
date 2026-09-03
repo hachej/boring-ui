@@ -65,10 +65,10 @@ console.log('epic worktree base', baseSha, 'epic', EPIC)
 let osid, loopOn = false
 const receipt = { epic: EPIC, baseSha }
 try {
-  osid = await create('boring-orchestrator', `Epic ${EPIC}: Orchestrator`)
+  osid = process.env.ORCH_SESSION ?? await create('boring-orchestrator', `Epic ${EPIC}: Orchestrator`)
   receipt.orchestratorSessionId = osid
-  console.log('orchestrator', osid)
-  await prompt('boring-orchestrator', osid, [
+  console.log('orchestrator', osid, process.env.ORCH_SESSION ? '(resumed; skipping the planning prompt)' : '')
+  if (!process.env.ORCH_SESSION) await prompt('boring-orchestrator', osid, [
     `Host context: your session id is ${osid}.\nOwner request for epic ${EPIC} (shared worktree = this workspace, branch ${await git(['rev-parse', '--abbrev-ref', 'HEAD'])}).`,
     'Feature: in apps/factory-playground/src/fixtures/demo-repo, add an exported farewell(name) function to src/greeting.js returning exactly `Goodbye, ${name}.` (comma, trailing period), add a focused node:test case in test/greeting.test.js, and document import + usage in that fixture README.md. Proof: `npm test` inside the fixture directory.',
     'Materialize the smallest dependency-correct Bead graph with real br commands. Then raise Gate 1 (plan approval) now with ask_user, per the factory-precedence appendix — do not skip it and do not treat this message as a pre-approval. On approval, immediately start durable supervision with the supervise tool (op start, intervalMs 120000, a prompt naming factory_status and the recovery rule), then dispatch exactly one Worker with dispatch_worker.',
@@ -76,7 +76,7 @@ try {
     "When dispatch_worker returns, report the Worker's final answer and what the br/git end-states now show. On changes/defer/reject at Gate 1: revise and re-raise, or stop and report; do not arm supervision or dispatch.",
   ].join('\n'))
 
-  const gate1 = await pollPendingGate(osid, 600000)
+  const gate1 = await pollPendingGate(osid, Number(process.env.GATE_TIMEOUT_MS ?? 1800000))
   console.log('\n=== GATE 1 (plan approval) ===')
   console.log('title:', gate1.title)
   console.log('context:', gate1.context)

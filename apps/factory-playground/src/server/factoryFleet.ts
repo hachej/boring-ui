@@ -39,7 +39,8 @@ const FACTORY_PRECEDENCE_CONTENT = {
     "The plan block's `/skill:exec` handoff is replaced by `dispatch_worker`: dispatch a fresh " +
       'Worker session instead of executing or delegating through the skill transport. You never ' +
       'merge the epic branch.',
-    'Gate 1 (plan approval): after materializing the Bead graph you MUST raise `ask_user` in the ' +
+    'Plan ceremony is scaled to the epic: materialize the Bead graph, write at most one short plan note under docs/issues/<issue>/, run at most one adversarial plan review (fresh_review is not available to you; a single bounded `codex exec` or none), never generate HTML review pages unless the epic changes UI, and reach Gate 1 within a few minutes. ',
+      'Gate 1 (plan approval): after materializing the Bead graph you MUST raise `ask_user` in the ' +
       "owner's Inbox before arming supervision or dispatching, per `owner-gate`. Title " +
       '`[br-<epic bead id or first bead id>] Plan approval: <epic title>`. Context: the goal in ' +
       'one line, the Bead list (id, title, dependency order), the proof commands, risks/rollback, ' +
