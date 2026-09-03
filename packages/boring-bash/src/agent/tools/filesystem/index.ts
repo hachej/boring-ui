@@ -357,7 +357,11 @@ function buildHostFilesystemTools(
     adaptPiTool(createWriteToolDefinition(cwd, { operations: ops.write })),
     adaptPiTool(createEditToolDefinition(cwd, { operations: ops.edit })),
     adaptPiTool(createFindToolDefinition(cwd, { operations: ops.find })),
-    adaptPiTool(createGrepToolDefinition(cwd, { operations: ops.grep })),
+    // Pi's grep tool only routes isDirectory/readFile through `operations`;
+    // the ripgrep child process itself runs on the host. Anchor it at the
+    // storage root, otherwise every search targets the runtime path
+    // (e.g. /workspace/...) which does not exist outside the sandbox.
+    adaptPiTool(createGrepToolDefinition(storageRoot, { operations: ops.grep })),
     adaptPiTool(createLsToolDefinition(cwd, { operations: ops.ls })),
   ]
 }
