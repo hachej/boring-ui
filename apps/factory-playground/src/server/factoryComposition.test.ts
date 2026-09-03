@@ -128,6 +128,7 @@ describe('native Factory composition', () => {
       env: {
         BORING_AGENT_SESSION_ROOT: resolve(root, 'sessions'),
         BORING_FACTORY_STATE_ROOT: resolve(root, 'state'),
+        BORING_FACTORY_SANDBOX_PROVIDER: 'local',
       },
     })
     try {
