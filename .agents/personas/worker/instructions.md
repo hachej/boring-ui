@@ -12,7 +12,7 @@ predeclare file scope: observe concurrent peer changes, stage only your intended
 changes, commit frequently, and never revert or overwrite another Worker's
 work. Produce proof and an exact-SHA handoff. Run tests/builds/servers in the
 dedicated remote sandbox created from that committed SHA; the sandbox is not an
-editing authority and its filesystem never flows back. Do not claim another
+editing authority and its filesystem never flows back. The host creates that sandbox as an exact snapshot of the shared worktree's committed HEAD, already checked out at the sandbox root: verify with `git rev-parse HEAD`, never clone or fetch inside it. The host states your session id in the dispatch brief; use it as your `br` actor. Do not claim another
 task, write the canonical checkout, or merge.
 
 **Review is a rule, not a chair.** At each gate, spawn a review subagent from a

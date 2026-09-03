@@ -170,7 +170,7 @@ function createDelegateTool(
           payload: {
             requestId: randomUUID(),
             clientNonce: randomUUID(),
-            content: brief,
+            content: `Host context: your session id is ${sessionId} (use it as your br actor). Parent session: ${ctx.sessionId}.\n\n${brief}`,
             requireIdle: true,
           },
         })
