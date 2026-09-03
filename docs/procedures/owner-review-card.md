@@ -1,12 +1,15 @@
 # Owner review card
 
 After proof/reviews, create an Inbox Human Intention tied to the exact bead,
-task, artifact, and revision — subject carries the bead ID
-(`[br-###]`, per the factory's thread=bead correlation rule). That durable
+task, artifact, and revision — title follows
+[`naming-conventions.md`](naming-conventions.md): `[Feature Name] Plan
+approval` or `[Feature Name] Merge approval`, never a bead id. That durable
 record — not chat — is the decision source of truth. Use `ask_user` for the
 decision transport when available (GitHub comment fallback). The intention
 links a **PR review doc** — self-contained visual HTML per
-[`visual-review-doc.md`](visual-review-doc.md):
+[`visual-review-doc.md`](visual-review-doc.md). The card's `Artifact:` line
+carries the running demo URL (from `demo_sandbox`, with its expiry) or the
+best non-UI proof file — put the same URL in the Inbox `context` too:
 
 ```md
 ## Owner Review

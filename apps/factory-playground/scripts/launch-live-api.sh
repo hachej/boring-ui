@@ -11,6 +11,7 @@ export OPENAI_API_KEY="${OPENAI_API_KEY:-$(vault kv get -field=api_key secret/op
 export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-$(vault kv get -field=api_key secret/agent/anthropic)}"
 export BORING_FACTORY_WORKSPACE_ROOT=$EPIC_WT
 export BORING_FACTORY_EPIC_KEY=${EPIC_KEY:-live-farewell}
+export BORING_FACTORY_FEATURE_NAME=${FEATURE_NAME:-}
 export BORING_FACTORY_ORCHESTRATOR_MODEL=${ORCH_MODEL:-openai-codex:gpt-5.6-sol}
 export BORING_FACTORY_WORKER_MODEL=${WORKER_MODEL:-openai-codex:gpt-5.4}
 export BORING_FACTORY_REVIEWER_MODEL=${REVIEWER_MODEL:-openai-codex:gpt-5.4}

@@ -39,6 +39,8 @@ export interface CreateFactoryDelegatePluginOptions {
   readonly timeoutMs?: number
   /** Epic label (`epic:<epicKey>`) this Factory instance is bound to; read by `factory_status`. */
   readonly epicKey: string
+  /** Feature name per docs/procedures/naming-conventions.md, used to title delegated sessions. */
+  readonly featureName: string
   /** Shared epic worktree root; `git` and `br` for `factory_status` run here. */
   readonly workspaceRoot: string
 }
@@ -85,6 +87,29 @@ function parseBrief(params: Record<string, unknown>): { brief: string; title?: s
     return { error: 'title must be a string when provided' }
   }
   return { brief, title }
+}
+
+/** Session title label per docs/procedures/naming-conventions.md, keyed by the delegating tool. */
+const SESSION_TITLE_LABEL: Readonly<Record<string, string>> = Object.freeze({
+  dispatch_worker: 'Worker',
+  fresh_review: 'Review',
+})
+
+const SHA_RE = /\b[0-9a-f]{7,40}\b/i
+
+/**
+ * `[Feature Name] Worker ← <parent>` for a dispatched Worker, `[Feature Name] Review @ <sha>` for
+ * a `fresh_review` bound to a SHA found in its brief (falls back to `← <parent>` when no SHA is
+ * present in the brief). The host derives this; the agent-supplied `title` is ignored.
+ */
+function sessionTitleFor(toolName: string, featureName: string, brief: string, parentSessionId: string): string {
+  const label = SESSION_TITLE_LABEL[toolName] ?? toolName
+  const parentShort = parentSessionId.slice(0, 8)
+  if (toolName === 'fresh_review') {
+    const sha = brief.match(SHA_RE)?.[0]
+    if (sha) return `[${featureName}] ${label} @ ${sha}`
+  }
+  return `[${featureName}] ${label} ← ${parentShort}`
 }
 
 function lastAssistantText(messages: readonly { role: string; parts: readonly { type: string; text?: string }[] }[]): string {
@@ -144,7 +169,7 @@ function createDelegateTool(
         },
         title: {
           type: 'string',
-          description: 'Optional short session title. The host appends this session id for traceability.',
+          description: 'Ignored: the host titles the session per docs/procedures/naming-conventions.md.',
         },
       },
       required: ['brief'],
@@ -153,14 +178,14 @@ function createDelegateTool(
     async execute(params: Record<string, unknown>, ctx: ToolExecContext): Promise<ToolResult> {
       const parsed = parseBrief(params)
       if ('error' in parsed) return invalidInputResult(parsed.error)
-      const { brief, title } = parsed
+      const { brief } = parsed
 
       const app = getApp()
       if (!app) return unboundResult(toolName)
 
       const startedAt = new Date().toISOString()
       const parentSessionId = ctx.sessionId ?? 'unknown'
-      const sessionTitle = `${title ?? 'Delegated'} ← ${parentSessionId.slice(0, 8)}`
+      const sessionTitle = sessionTitleFor(toolName, options.featureName, brief, parentSessionId)
 
       try {
         const createResponse = await app.inject({
@@ -431,6 +456,7 @@ export function createFactoryDelegatePlugin(
 ): FactoryDelegatePluginHandle {
   if (!options.workspaceScopeId.trim()) throw new TypeError('factory-delegate workspaceScopeId is required')
   if (!options.epicKey.trim()) throw new TypeError('factory-delegate epicKey is required')
+  if (!options.featureName.trim()) throw new TypeError('factory-delegate featureName is required')
   if (!options.workspaceRoot.trim()) throw new TypeError('factory-delegate workspaceRoot is required')
 
   let boundApp: FastifyInstance | undefined

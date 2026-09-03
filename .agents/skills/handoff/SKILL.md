@@ -32,6 +32,13 @@ composition guidance. Do not load `show-me` for a handoff that is already clear.
 For bead work, put the handoff
 artifact pointer and a one-line `friction` note on the bead.
 
+In the Factory, the "receiver" is never a person waiting in chat: the durable
+handoff IS the Bead comment (`[Feature Name] handoff · <bead id> · <short
+sha>` per `docs/procedures/naming-conventions.md`), and the next Worker or
+Orchestrator that claims the bead reads it to re-prime — there is no other
+delivery step. Follow the naming convention for every title this skill
+produces (session titles, comments, artifacts).
+
 Return branch-specific evidence:
 
 - `create`: artifact reference/revision/digest, sender/intended receiver,

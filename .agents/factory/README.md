@@ -52,7 +52,8 @@ Escalations from any stage use the same surface.
 ## Lanes
 
 **Epic lane** — one epic = one GH issue = one shared `.worktrees/` worktree =
-one PR. Workers pull beads, edit that shared worktree, stage only intended
+one PR. Every issue/Bead/Inbox/PR/commit/session title in the epic follows
+`docs/procedures/naming-conventions.md`. Workers pull beads, edit that shared worktree, stage only intended
 changes, and commit frequently to the epic branch; beads need not predeclare
 file scope. Conflicts are handled in place without reverting peer work. Remote
 sandboxes test or serve exact committed SHAs and never become editing

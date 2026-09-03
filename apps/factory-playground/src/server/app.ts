@@ -5,7 +5,7 @@ import { promisify } from 'node:util'
 import { createNodeWorkspace } from '@hachej/boring-sandbox/providers/node-workspace'
 import { createWorkspaceAgentServer } from '@hachej/boring-workspace/app/server'
 import { createWorkspaceBeadsOperations } from '@hachej/boring-tasks/server'
-import { loadNativeFactoryFleet, FACTORY_ORCHESTRATOR_AGENT_TYPE_ID } from './factoryFleet'
+import { loadNativeFactoryFleet, deriveFeatureName, FACTORY_ORCHESTRATOR_AGENT_TYPE_ID } from './factoryFleet'
 import { createFactoryDelegatePlugin } from './delegatePlugin'
 import { createFactorySupervisionPlugin } from './supervisionPlugin'
 import { createFactoryDemoPlugin } from './demoPlugin'
@@ -40,14 +40,16 @@ export async function createFactoryPlayground(options: CreateFactoryPlaygroundOp
   const stateRoot = resolve(env.BORING_FACTORY_STATE_ROOT ?? resolve(options.appRoot, '.factory-state'))
   await mkdir(stateRoot, { recursive: true })
   const epicKey = await resolveEpicKey(workspaceRoot, env)
+  const featureName = deriveFeatureName(epicKey, env)
   const agents = await loadNativeFactoryFleet(options.repositoryRoot, {
     orchestrator: env.BORING_FACTORY_ORCHESTRATOR_MODEL,
     worker: env.BORING_FACTORY_WORKER_MODEL,
     reviewer: env.BORING_FACTORY_REVIEWER_MODEL,
     epicKey,
+    featureName,
   })
   const beadsOperations = createWorkspaceBeadsOperations(createNodeWorkspace(workspaceRoot))
-  const delegate = createFactoryDelegatePlugin({ workspaceScopeId: FACTORY_WORKSPACE_SCOPE_ID, epicKey, workspaceRoot })
+  const delegate = createFactoryDelegatePlugin({ workspaceScopeId: FACTORY_WORKSPACE_SCOPE_ID, epicKey, featureName, workspaceRoot })
   const supervision = createFactorySupervisionPlugin({ stateRoot })
   const demo = createFactoryDemoPlugin({ stateRoot, workspaceRoot, epicKey, env })
 
@@ -103,6 +105,7 @@ export async function createFactoryPlayground(options: CreateFactoryPlaygroundOp
     workspaceRoot,
     workspaceLabel: basename(workspaceRoot),
     epicKey,
+    featureName,
     defaultAgentTypeId: FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
     agentTypeIds: agents.map((agent) => agent.agentTypeId),
     sandboxProvider: env.BORING_FACTORY_SANDBOX_PROVIDER === 'vercel' ? 'vercel' : 'local-simulation',

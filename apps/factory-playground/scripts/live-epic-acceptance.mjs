@@ -60,6 +60,20 @@ const answerGate = (sessionId, question, values) =>
   bridgeCall('ask-user.v1.answer', { questionId: question.questionId, sessionId, answerToken: question.answerToken, values }, sessionId)
 const urlsIn = (text) => [...(text ?? '').matchAll(/https?:\/\/\S+/g)].map((m) => m[0].replace(/[.,)\]]+$/, ''))
 
+// --- Naming convention (docs/procedures/naming-conventions.md) assertions. ---
+const GATE1_TITLE_RE = /^\[[^\]]+\] Plan approval$/
+const GATE2_TITLE_RE = /^\[[^\]]+\] Merge approval$/
+const ID_LIKE_RE = /#\d+|\bbr-\d+\b|\b[0-9a-f]{7,40}\b|https?:\/\//i
+function assertGateTitle(re, title, label) {
+  if (!re.test(title)) throw new Error(`${label} title "${title}" does not match ${re}`)
+}
+function assertFirstContextLineIsPlainSentence(context, label) {
+  const firstLine = (context ?? '').split('\n')[0] ?? ''
+  if (ID_LIKE_RE.test(firstLine)) {
+    throw new Error(`${label} context's first line carries an id/URL, expected a plain sentence: "${firstLine}"`)
+  }
+}
+
 const baseSha = await git(['rev-parse', 'HEAD'])
 console.log('epic worktree base', baseSha, 'epic', EPIC)
 let osid, loopOn = false
@@ -70,7 +84,7 @@ try {
   console.log('orchestrator', osid, process.env.ORCH_SESSION ? '(resumed; skipping the planning prompt)' : '')
   if (!process.env.ORCH_SESSION) await prompt('boring-orchestrator', osid, [
     `Host context: your session id is ${osid}.\nOwner request for epic ${EPIC} (shared worktree = this workspace, branch ${await git(['rev-parse', '--abbrev-ref', 'HEAD'])}).`,
-    'Feature: in apps/factory-playground/src/fixtures/demo-repo, add an exported farewell(name) function to src/greeting.js returning exactly `Goodbye, ${name}.` (comma, trailing period), add a focused node:test case in test/greeting.test.js, and document import + usage in that fixture README.md. Proof: `npm test` inside the fixture directory.',
+    'Feature name: "Farewell API" (per docs/procedures/naming-conventions.md — lead every Bead, PR, commit, and Inbox title with `[Farewell API]`). In apps/factory-playground/src/fixtures/demo-repo, add an exported farewell(name) function to src/greeting.js returning exactly `Goodbye, ${name}.` (comma, trailing period), add a focused node:test case in test/greeting.test.js, and document import + usage in that fixture README.md. Proof: `npm test` inside the fixture directory.',
     'Materialize the smallest dependency-correct Bead graph with real br commands. Then raise Gate 1 (plan approval) now with ask_user, per the factory-precedence appendix — do not skip it and do not treat this message as a pre-approval. On approval, immediately start durable supervision with the supervise tool (op start, intervalMs 120000, a prompt naming factory_status and the recovery rule), then dispatch exactly one Worker with dispatch_worker.',
     `The Worker brief must name epic ${EPIC}, the shared worktree, the pull protocol (br ready --label epic:${EPIC} --unassigned, claim one with --claim --actor <session id>), implement + stage only intended files + commit on the epic branch, exact-SHA dedicated sandbox test via the sandbox tools, adversarial fresh_review of that SHA, then a complete handoff recorded in the Bead (SHA, test evidence, review provenance) and git push of the epic branch. It must never merge or close its own Bead. Do not name a specific Bead.`,
     "When dispatch_worker returns, report the Worker's final answer and what the br/git end-states now show. On changes/defer/reject at Gate 1: revise and re-raise, or stop and report; do not arm supervision or dispatch.",
@@ -80,6 +94,8 @@ try {
   console.log('\n=== GATE 1 (plan approval) ===')
   console.log('title:', gate1.title)
   console.log('context:', gate1.context)
+  assertGateTitle(GATE1_TITLE_RE, gate1.title, 'gate 1')
+  assertFirstContextLineIsPlainSentence(gate1.context, 'gate 1')
   receipt.gate1 = { title: gate1.title, context: gate1.context, decision: 'approve' }
   await answerGate(osid, gate1, { decision: 'approve', notes: 'approved by acceptance driver' })
   loopOn = true
@@ -105,6 +121,8 @@ try {
   console.log('\n=== GATE 2 (merge approval) ===')
   console.log('title:', gate2.title)
   console.log('context:', gate2.context)
+  assertGateTitle(GATE2_TITLE_RE, gate2.title, 'gate 2')
+  assertFirstContextLineIsPlainSentence(gate2.context, 'gate 2')
   receipt.gate2 = { title: gate2.title, context: gate2.context, decision: 'approve' }
 
   const urls = urlsIn(gate2.context)
@@ -120,7 +138,8 @@ try {
   const prBefore = JSON.parse((await exec('gh', ['pr', 'view', prUrl, '--json', 'url,title,body'])).stdout)
   if (!prBefore.body.includes('## Owner Review')) throw new Error('PR body is missing "## Owner Review"')
   if (!prBefore.body.includes('## Handover')) throw new Error('PR body is missing "## Handover"')
-  console.log('PR body carries Owner Review + Handover sections')
+  if (!prBefore.title.startsWith('[')) throw new Error(`PR title "${prBefore.title}" does not start with "["`)
+  console.log('PR body carries Owner Review + Handover sections; PR title:', prBefore.title)
 
   const demoResponse = await fetch(demoUrl)
   const demoBody = await demoResponse.text()

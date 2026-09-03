@@ -9,6 +9,7 @@ Active explicit-only skills live in `.agents/skills/`. Invoke with
 | models and review tiers | [`MODEL-CARD.md`](MODEL-CARD.md) |
 | factory seats, stages, gates, tools (wraps this loop) | [`../../.agents/factory/README.md`](../../.agents/factory/README.md), [`../factory/VISION.md`](../factory/VISION.md) |
 | bead definition-of-ready | [`bead-ready.md`](bead-ready.md) |
+| naming convention (issues, Beads, Inbox, PRs, commits, sessions) | [`naming-conventions.md`](naming-conventions.md) |
 | nightly documentation refresh | [`documentation-refresh.md`](documentation-refresh.md), [`documentation-refresh-tasks.md`](documentation-refresh-tasks.md) |
 | coding/invariants/commands | this directory |
 | proof | [`proof-of-work.md`](proof-of-work.md) |

@@ -6,7 +6,8 @@ feedback → triage → plan → exec
 
 Factory seats, gates, and lanes live in `.agents/factory/README.md`. This file
 owns the loop's states and quality bars — do not duplicate the factory stage
-table here.
+table here. Every durable/owner-facing title (issue, Bead, Inbox entry, PR,
+commit, session) follows [`naming-conventions.md`](naming-conventions.md).
 
 Use `/skill:ask-boring` when routing is unclear. The Boring Factory
 (`.agents/factory/README.md`) wraps this sequence with seats, dispatch, and

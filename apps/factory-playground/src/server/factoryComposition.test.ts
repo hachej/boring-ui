@@ -9,7 +9,7 @@ import { createFactoryDelegatePlugin } from './delegatePlugin'
 import { createFactorySandboxPlugin, FACTORY_WORKER_AGENT_TYPE_ID } from './sandboxComposition'
 import { simulateFactoryFeature } from './simulateFeature'
 
-const DELEGATE_OPTIONS = { workspaceScopeId: 'factory-playground', epicKey: 'live-farewell', workspaceRoot: process.cwd() }
+const DELEGATE_OPTIONS = { workspaceScopeId: 'factory-playground', epicKey: 'live-farewell', featureName: 'Farewell API', workspaceRoot: process.cwd() }
 
 const appRoot = resolve(import.meta.dirname, '../..')
 const repositoryRoot = resolve(appRoot, '../..')
@@ -27,6 +27,7 @@ describe('native Factory composition', () => {
       worker: 'anthropic:claude-sonnet-4-6',
       reviewer: 'openai-codex:gpt-5.4',
       epicKey: 'live-farewell',
+      featureName: 'Farewell API',
     })
     expect(fleet.map((agent) => agent.agentTypeId)).toEqual([
       FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
@@ -65,14 +66,21 @@ describe('native Factory composition', () => {
     expect(worker.definition.instructions).toContain('If the shared worktree already holds uncommitted changes for your Bead from a previous')
     expect(worker.definition.instructions).toContain('never revert them wholesale.')
 
-    // factory-precedence appendix reconciling exec/owner-gate with the one-epic-branch topology.
-    expect(worker.definition.instructions).toContain('the epic PR belongs to the')
-    expect(worker.definition.instructions).toContain('you do not run `ask_user`')
-    expect(orchestrator.definition.instructions).toContain("The plan block's `/skill:exec` handoff is replaced by `dispatch_worker`")
-    expect(orchestrator.definition.instructions).toContain('Gate 1 (plan approval): after materializing the Bead graph you MUST raise `ask_user`')
-    expect(orchestrator.definition.instructions).toContain('Gate 2 (merge approval): raise it once `factory_status` shows every epic Bead handed off')
-    expect(orchestrator.definition.instructions).toContain('start a demo with `demo_sandbox` (op start)')
+    // factory-precedence appendix: now only binds host tool names to steps the canonical
+    // exec/plan/owner-gate skill text already describes (that text is reconciled in the
+    // .agents/skills sources, not duplicated here).
+    expect(worker.definition.instructions).toContain("The `exec` skill above is this seat's full loop")
+    expect(worker.definition.instructions).toContain('The host tool that runs your adversarial review is `fresh_review`')
+    expect(orchestrator.definition.instructions).toContain("The `plan` and `owner-gate` skills above are this seat's full loop")
+    expect(orchestrator.definition.instructions).toContain('`dispatch_worker`')
+    expect(orchestrator.definition.instructions).toContain('`factory_status`')
+    expect(orchestrator.definition.instructions).toContain('`demo_sandbox`')
     expect(reviewer.definition.instructions).not.toContain('factory-precedence')
+
+    // Naming convention (docs/procedures/naming-conventions.md): feature name flows into the
+    // epic-binding appendix so Beads/sessions the agent creates lead with `[Feature Name]`.
+    expect(orchestrator.definition.instructions).toContain('(**Farewell API**)')
+    expect(orchestrator.definition.instructions).toContain('titled per docs/procedures/naming-conventions.md, i.e. `[Farewell API] <verb phrase>` (`[Farewell API] Epic`')
 
     const root = await mkdtemp(resolve(tmpdir(), 'factory-sandbox-composition-'))
     temporaryRoots.push(root)

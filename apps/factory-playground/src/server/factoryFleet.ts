@@ -22,50 +22,26 @@ const seatSkills = {
 } as const
 
 /**
- * Host appendix reconciling the canonical `exec`/`owner-gate` skill blocks (authored for
- * per-Bead PRs and blocking `ask_user` gates) with this Factory's actual topology: one shared
- * epic branch, one epic PR owned by the Orchestrator/owner, and Workers that never gate or merge.
+ * Host appendix naming which host tool implements which step of the canonical `exec`/`plan`/
+ * `owner-gate` skill text above (already reconciled with this Factory's topology: one shared
+ * epic branch, one epic PR owned by the Orchestrator/owner, Workers that never gate or merge).
+ * This appendix adds nothing the skills don't already say — it only binds tool names.
  */
 const FACTORY_PRECEDENCE_CONTENT = {
   worker: [
-    'In this Factory the epic branch is the only branch and the epic PR belongs to the',
-    'Orchestrator/owner, never to you. You do not open PRs and you do not run `ask_user`',
-    'owner gates; the `owner-gate` skill block does not apply to this seat. Your handoff is',
-    'a Bead comment recording the exact SHA, your proof, the sandbox release, and the',
-    '`fresh_review` provenance. Push the epic branch immediately after each commit and before creating a sandbox (remote sandboxes fetch the pushed SHA). Never close or merge',
-    'anything.',
+    'The `exec` skill above is this seat\'s full loop (pull, claim, commit, push, sandbox-test,',
+    '`fresh_review`, Bead-comment handoff — never a PR, never `ask_user`, never merge). The host',
+    'tool that runs your adversarial review is `fresh_review`; the tools that run your exact-SHA',
+    'tests/builds are `sandbox` and `sandbox_bash`.',
   ].join(' '),
   orchestrator: [
-    "The plan block's `/skill:exec` handoff is replaced by `dispatch_worker`: dispatch a fresh " +
-      'Worker session instead of executing or delegating through the skill transport. You never ' +
-      'merge the epic branch.',
-    'Plan ceremony is scaled to the epic: materialize the Bead graph, write at most one short plan note under docs/issues/<issue>/, run at most one adversarial plan review (fresh_review is not available to you; a single bounded `codex exec` or none), never generate HTML review pages unless the epic changes UI, and reach Gate 1 within a few minutes. ',
-      'Gate 1 (plan approval): after materializing the Bead graph you MUST raise `ask_user` in the ' +
-      "owner's Inbox before arming supervision or dispatching, per `owner-gate`. Title " +
-      '`[br-<epic bead id or first bead id>] Plan approval: <epic title>`. Context: the goal in ' +
-      'one line, the Bead list (id, title, dependency order), the proof commands, risks/rollback, ' +
-      'and what happens on approve (durable supervision armed + Worker dispatch begins). Schema: ' +
-      'radio `decision` (approve/changes/defer/reject) plus an optional notes textarea, exactly as ' +
-      '`owner-gate` prescribes. Skip this gate ONLY when the owner\'s request text literally says ' +
-      '"Gate 1 pre-approved". On changes/defer/reject: revise the plan or stop; never arm ' +
-      'supervision or dispatch.',
-    'Gate 2 (merge approval): raise it once `factory_status` shows every epic Bead handed off — a ' +
-      'handoff comment naming the SHA, sandbox proof and a `fresh_review` approve on each, local ' +
-      'HEAD equal to remote HEAD, and no ready/unassigned Beads left. First (a) open the epic PR ' +
-      'yourself with `gh pr create --base main --head <epic branch> --title "[br-<epic>] <title>" ' +
-      '--body-file <file>`, body = the Owner Review card from `docs/procedures/owner-review-card.md` ' +
-      'filled in (Bead/PR/issue, What changed/why, Risk/rollback, Proof/review links incl. ' +
-      '`fresh_review` provenance, Artifact = the demo URL, Please test steps, Decision line) ' +
-      'followed by a `## Handover` section (SHA, branch, Worker sessions, reviewer sessions, ' +
-      'sandbox receipts); if a PR already exists for the branch (`gh pr view <branch>`), edit its ' +
-      'body instead of opening a second one. Then (b) start a demo with `demo_sandbox` (op start) ' +
-      'serving the feature from the exact SHA and wait for `ready: true`. Then (c) raise ' +
-      '`ask_user`: title `[br-<epic>] Merge approval: <title>`, context = the PR URL, head SHA, ' +
-      'the demo URL and how long it lives, please-test steps, and the handover lines; same radio ' +
-      '`decision` schema as Gate 1. (d) On approve: do NOT merge — comment on the PR that the ' +
-      'owner approved at that SHA and report. On changes: create follow-up Beads labelled ' +
-      '`epic:<key>` and dispatch a Worker. Never merge, either way.',
-  ].join('\n\n'),
+    'The `plan` and `owner-gate` skills above are this seat\'s full loop (Bead graph, Gate 1,',
+    'dispatch, Gate 2, never merge). The host tools implementing those steps: `dispatch_worker`',
+    '(the plan block\'s "dispatch Workers" step — start a fresh Worker session), `factory_status`',
+    '(read epic Bead/git/session state before every gate or recovery decision), `supervise`',
+    '(arm the durable tick that replaces held-open sessions/timers), and `demo_sandbox` (Gate 2\'s',
+    'exact-SHA live demo). Use each exactly where its matching skill step names it.',
+  ].join(' '),
 } as const
 
 async function factoryPrecedenceAppendix(seat: 'worker' | 'orchestrator'): Promise<TrustedAgentInstructionAppendix> {
@@ -80,12 +56,21 @@ async function loadAppendices(repositoryRoot: string, names: readonly string[]):
   }))
 }
 
-function epicBindingContent(seat: keyof typeof seatSkills, epicKey: string): string {
-  const shared = `This session is bound by the host to epic \`${epicKey}\`: its shared worktree is the current workspace root, its branch is the epic branch, and its Beads carry the label \`epic:${epicKey}\`.`
+/** `BORING_FACTORY_FEATURE_NAME` when set, else the epic key's words title-cased. */
+export function deriveFeatureName(epicKey: string, env: NodeJS.ProcessEnv = process.env): string {
+  const configured = env.BORING_FACTORY_FEATURE_NAME?.trim()
+  if (configured) return configured
+  const words = epicKey.split(/[-_/]+/).filter((word) => word.length > 0)
+  if (words.length === 0) return epicKey
+  return words.map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
+}
+
+function epicBindingContent(seat: keyof typeof seatSkills, epicKey: string, featureName: string): string {
+  const shared = `This session is bound by the host to epic \`${epicKey}\` (**${featureName}**): its shared worktree is the current workspace root, its branch is the epic branch, and its Beads carry the label \`epic:${epicKey}\`.`
   if (seat === 'orchestrator') {
     return [
       shared,
-      `Every Bead you create for this epic MUST be created with \`--labels epic:${epicKey}\` (add \`--parent <epic bead id>\` when you create an epic bead first); inspect this epic only with \`br ready --label epic:${epicKey}\` / \`br list --label epic:${epicKey}\`; never dispatch, inspect or supervise Beads without that label.`,
+      `Every Bead you create for this epic MUST be created with \`--labels epic:${epicKey}\` (add \`--parent <epic bead id>\` when you create an epic bead first) and titled per docs/procedures/naming-conventions.md, i.e. \`[${featureName}] <verb phrase>\` (\`[${featureName}] Epic\` for the epic Bead itself); inspect this epic only with \`br ready --label epic:${epicKey}\` / \`br list --label epic:${epicKey}\`; never dispatch, inspect or supervise Beads without that label.`,
       'Recovery: run `factory_status` on every supervision tick. A Bead that is `in_progress` whose ' +
         'assignee session is `unknown` or `exists-idle` with no handoff comment and no new commit on ' +
         'the epic branch is STALE: release it with `br update <id> --assignee "" --status open --actor ' +
@@ -110,8 +95,8 @@ function epicBindingContent(seat: keyof typeof seatSkills, epicKey: string): str
   ].join('\n\n')
 }
 
-async function epicBindingAppendix(seat: keyof typeof seatSkills, epicKey: string): Promise<TrustedAgentInstructionAppendix> {
-  const content = epicBindingContent(seat, epicKey)
+async function epicBindingAppendix(seat: keyof typeof seatSkills, epicKey: string, featureName: string): Promise<TrustedAgentInstructionAppendix> {
+  const content = epicBindingContent(seat, epicKey, featureName)
   return { name: 'epic-binding', content, digest: await createAgentAssetDigest(content) }
 }
 
@@ -122,6 +107,7 @@ async function createSeat(input: {
   plugins: readonly string[]
   preferredModel?: string
   epicKey: string
+  featureName: string
 }): Promise<AgentHostAgentSpec> {
   const directory = resolve(input.repositoryRoot, '.agents/personas', input.seat)
   const source = await materializeAgentDirectory({
@@ -136,7 +122,7 @@ async function createSeat(input: {
       instructionAppendices: [
         ...await loadAppendices(input.repositoryRoot, seatSkills[input.seat]),
         ...(input.seat === 'worker' || input.seat === 'orchestrator' ? [await factoryPrecedenceAppendix(input.seat)] : []),
-        await epicBindingAppendix(input.seat, input.epicKey),
+        await epicBindingAppendix(input.seat, input.epicKey, input.featureName),
       ],
       plugins: input.plugins.map((name) => ({ name })),
       preferredModel: input.preferredModel,
@@ -150,6 +136,8 @@ export interface FactoryFleetOptions {
   readonly worker?: string
   readonly reviewer?: string
   readonly epicKey: string
+  /** Feature name per docs/procedures/naming-conventions.md; see `deriveFeatureName`. */
+  readonly featureName: string
 }
 
 export async function loadNativeFactoryFleet(
@@ -164,6 +152,7 @@ export async function loadNativeFactoryFleet(
       plugins: [FACTORY_SUPERVISION_PLUGIN_ID, FACTORY_DEMO_PLUGIN_ID, 'boring-automation', FACTORY_DELEGATE_PLUGIN_ID],
       preferredModel: options.orchestrator,
       epicKey: options.epicKey,
+      featureName: options.featureName,
     }),
     createSeat({
       repositoryRoot,
@@ -172,6 +161,7 @@ export async function loadNativeFactoryFleet(
       plugins: ['sandbox', FACTORY_DELEGATE_PLUGIN_ID],
       preferredModel: options.worker,
       epicKey: options.epicKey,
+      featureName: options.featureName,
     }),
     createSeat({
       repositoryRoot,
@@ -180,6 +170,7 @@ export async function loadNativeFactoryFleet(
       plugins: [],
       preferredModel: options.reviewer,
       epicKey: options.epicKey,
+      featureName: options.featureName,
     }),
   ])
 }
