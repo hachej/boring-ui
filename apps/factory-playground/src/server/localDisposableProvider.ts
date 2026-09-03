@@ -76,8 +76,10 @@ export function createLocalDisposableProvider(seedRoot: string): DisposableSandb
   return {
     ...direct,
     async create(context) {
-      await snapshotCommittedHead(seedRoot, context.workspaceRoot)
-      const pair = await direct.create(context)
+      const leaseRoot = context.workspaceRoot
+      const sandboxRoot = resolve(leaseRoot, 'workspace')
+      await snapshotCommittedHead(seedRoot, sandboxRoot)
+      const pair = await direct.create({ ...context, workspaceRoot: sandboxRoot })
       let disposed = false
       return {
         ...pair,
@@ -87,7 +89,7 @@ export function createLocalDisposableProvider(seedRoot: string): DisposableSandb
           try {
             await pair.dispose()
           } finally {
-            await rm(context.workspaceRoot, { recursive: true, force: true })
+            await rm(leaseRoot, { recursive: true, force: true })
           }
         },
       }
