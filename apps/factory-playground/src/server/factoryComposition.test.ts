@@ -36,7 +36,7 @@ describe('native Factory composition', () => {
     const orchestrator = fleet[0]!
     const worker = fleet[1]!
     const reviewer = fleet[2]!
-    expect(orchestrator.plugins?.map((plugin) => plugin.name)).toEqual(['factory-supervision', 'boring-automation', 'factory-delegate'])
+    expect(orchestrator.plugins?.map((plugin) => plugin.name)).toEqual(['factory-supervision', 'factory-demo', 'boring-automation', 'factory-delegate'])
     expect(orchestrator.model?.preferred).toBe('openai-codex:gpt-5.6-sol')
     expect(worker.plugins?.map((plugin) => plugin.name)).toEqual(['sandbox', 'factory-delegate'])
     expect(worker.model?.preferred).toBe('anthropic:claude-sonnet-4-6')
@@ -69,7 +69,9 @@ describe('native Factory composition', () => {
     expect(worker.definition.instructions).toContain('the epic PR belongs to the')
     expect(worker.definition.instructions).toContain('you do not run `ask_user`')
     expect(orchestrator.definition.instructions).toContain("The plan block's `/skill:exec` handoff is replaced by `dispatch_worker`")
-    expect(orchestrator.definition.instructions).toContain('Gate 2 (merge approval) is')
+    expect(orchestrator.definition.instructions).toContain('Gate 1 (plan approval): after materializing the Bead graph you MUST raise `ask_user`')
+    expect(orchestrator.definition.instructions).toContain('Gate 2 (merge approval): raise it once `factory_status` shows every epic Bead handed off')
+    expect(orchestrator.definition.instructions).toContain('start a demo with `demo_sandbox` (op start)')
     expect(reviewer.definition.instructions).not.toContain('factory-precedence')
 
     const root = await mkdtemp(resolve(tmpdir(), 'factory-sandbox-composition-'))
@@ -137,7 +139,7 @@ describe('native Factory composition', () => {
       expect(names(workerTools)).not.toContain('factory_status')
       expect(names(orchestratorTools)).toContain('boring_automation')
       expect(names(orchestratorTools)).not.toContain('sandbox')
-      expect(names(orchestratorTools)).toEqual(expect.arrayContaining(['supervise', 'factory_status', 'dispatch_worker']))
+      expect(names(orchestratorTools)).toEqual(expect.arrayContaining(['supervise', 'factory_status', 'dispatch_worker', 'demo_sandbox']))
     } finally {
       await app.close()
     }

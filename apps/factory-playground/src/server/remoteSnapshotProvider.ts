@@ -51,7 +51,7 @@ export interface ExactShaTemplateProviderOptions {
  * support shallow fetch of an arbitrary SHA), and verifies the checkout
  * landed on the exact SHA.
  */
-const FACTORY_BOOTSTRAP_SCRIPT = [
+export const FACTORY_BOOTSTRAP_SCRIPT = [
   'set -e',
   'sha=$(cat .factory-sha)',
   'remote=$(cat .factory-remote)',
@@ -61,6 +61,64 @@ const FACTORY_BOOTSTRAP_SCRIPT = [
   'test "$(git rev-parse HEAD)" = "$sha"',
   'echo "factory-bootstrap ok $sha"',
 ].join('; ') + '\n'
+
+/** Best-effort current branch name of `sourceRoot`; `undefined` when not resolvable (detached HEAD, not a git repo). */
+async function resolveBranchBestEffort(sourceRoot: string): Promise<string | undefined> {
+  try {
+    const branch = (
+      await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: sourceRoot })
+    ).stdout.trim()
+    return branch || undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** Strip embedded credentials and normalize SSH remotes to plain https. */
+function normalizeRemoteUrl(rawUrl: string): string {
+  const url = rawUrl.trim()
+  const scpLike = /^(?:[\w.-]+@)?([\w.-]+):(.+)$/.exec(url)
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(url) && scpLike) {
+    const [, host, path] = scpLike
+    return `https://${host}/${path.replace(/^\/+/, '')}`
+  }
+  try {
+    const parsed = new URL(url)
+    parsed.username = ''
+    parsed.password = ''
+    if (parsed.protocol === 'ssh:' || parsed.protocol === 'git:') {
+      return `https://${parsed.host}${parsed.pathname}`
+    }
+    return parsed.toString()
+  } catch {
+    return url
+  }
+}
+
+export interface FetchBootstrapFile {
+  readonly path: string
+  readonly content: string
+}
+
+/**
+ * Builds the marker/bootstrap file set for `'fetch'`-mode template seeding:
+ * `.factory-sha`, `.factory-branch`, `.factory-remote` (origin URL, stripped
+ * of embedded credentials and normalized to plain https), and
+ * `factory-bootstrap.sh`. Shared by `createExactShaTemplateProvider`'s own
+ * `'fetch'` export path and by any other caller (e.g. `demoPlugin`) that
+ * seeds a sandbox with the same exact-SHA-fetch bootstrap.
+ */
+export async function buildFetchBootstrapFiles(sourceRoot: string, sha: string): Promise<FetchBootstrapFile[]> {
+  const rawRemote = (await execFileAsync('git', ['remote', 'get-url', 'origin'], { cwd: sourceRoot })).stdout.trim()
+  const remote = normalizeRemoteUrl(rawRemote)
+  const branch = (await resolveBranchBestEffort(sourceRoot)) ?? 'HEAD'
+  return [
+    { path: '.factory-sha', content: sha },
+    { path: '.factory-branch', content: branch },
+    { path: '.factory-remote', content: remote },
+    { path: 'factory-bootstrap.sh', content: FACTORY_BOOTSTRAP_SCRIPT },
+  ]
+}
 
 /** Single shell invocation: skip if already bootstrapped, else run + mark done. */
 const FACTORY_BOOTSTRAP_GUARDED_COMMAND = [
@@ -158,17 +216,6 @@ export function createExactShaTemplateProvider(
     return (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: sourceRoot })).stdout.trim()
   }
 
-  async function resolveBranchBestEffort(): Promise<string | undefined> {
-    try {
-      const branch = (
-        await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: sourceRoot })
-      ).stdout.trim()
-      return branch || undefined
-    } catch {
-      return undefined
-    }
-  }
-
   async function resolveSource(): Promise<ExactShaTemplateSource> {
     if (options.source) return options.source
     try {
@@ -176,27 +223,6 @@ export function createExactShaTemplateProvider(
       return url ? 'fetch' : 'archive'
     } catch {
       return 'archive'
-    }
-  }
-
-  /** Strip embedded credentials and normalize SSH remotes to plain https. */
-  function normalizeRemoteUrl(rawUrl: string): string {
-    const url = rawUrl.trim()
-    const scpLike = /^(?:[\w.-]+@)?([\w.-]+):(.+)$/.exec(url)
-    if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(url) && scpLike) {
-      const [, host, path] = scpLike
-      return `https://${host}/${path.replace(/^\/+/, '')}`
-    }
-    try {
-      const parsed = new URL(url)
-      parsed.username = ''
-      parsed.password = ''
-      if (parsed.protocol === 'ssh:' || parsed.protocol === 'git:') {
-        return `https://${parsed.host}${parsed.pathname}`
-      }
-      return parsed.toString()
-    } catch {
-      return url
     }
   }
 
@@ -235,7 +261,7 @@ export function createExactShaTemplateProvider(
         })
       })
       await writeFile(resolve(exportPath, '.factory-sha'), sha)
-      const branch = await resolveBranchBestEffort()
+      const branch = await resolveBranchBestEffort(sourceRoot)
       if (branch) await writeFile(resolve(exportPath, '.factory-branch'), branch)
     } catch (error) {
       await rm(exportPath, { recursive: true, force: true })
@@ -249,13 +275,8 @@ export function createExactShaTemplateProvider(
     const exportPath = resolve(scratchRoot, randomUUID())
     await mkdir(exportPath, { recursive: true })
     try {
-      const rawRemote = (await execFileAsync('git', ['remote', 'get-url', 'origin'], { cwd: sourceRoot })).stdout.trim()
-      const remote = normalizeRemoteUrl(rawRemote)
-      const branch = (await resolveBranchBestEffort()) ?? 'HEAD'
-      await writeFile(resolve(exportPath, '.factory-sha'), sha)
-      await writeFile(resolve(exportPath, '.factory-branch'), branch)
-      await writeFile(resolve(exportPath, '.factory-remote'), remote)
-      await writeFile(resolve(exportPath, 'factory-bootstrap.sh'), FACTORY_BOOTSTRAP_SCRIPT)
+      const files = await buildFetchBootstrapFiles(sourceRoot, sha)
+      await Promise.all(files.map((file) => writeFile(resolve(exportPath, file.path), file.content)))
     } catch (error) {
       await rm(exportPath, { recursive: true, force: true })
       throw error

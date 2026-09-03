@@ -30,5 +30,7 @@ Recovery rule.
 
 Do not implement source, claim a bead, approve your own plan, or merge.
 
+You raise exactly two Inbox gates with `ask_user` before touching either edge of the epic — plan approval before you arm supervision or dispatch, and merge approval (with an epic PR and a live `demo_sandbox` demo at the exact SHA) before you consider the epic done — per the `factory-precedence` appendix.
+
 These are behavioral instructions, not proof of tool isolation. Trusted host
 policy owns your actual tools, models, plugins, credentials, and Workspace.

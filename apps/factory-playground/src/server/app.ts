@@ -8,6 +8,7 @@ import { createWorkspaceBeadsOperations } from '@hachej/boring-tasks/server'
 import { loadNativeFactoryFleet, FACTORY_ORCHESTRATOR_AGENT_TYPE_ID } from './factoryFleet'
 import { createFactoryDelegatePlugin } from './delegatePlugin'
 import { createFactorySupervisionPlugin } from './supervisionPlugin'
+import { createFactoryDemoPlugin } from './demoPlugin'
 import { createFactorySandboxPlugin, FACTORY_WORKSPACE_SCOPE_ID } from './sandboxComposition'
 
 export interface CreateFactoryPlaygroundOptions {
@@ -48,6 +49,7 @@ export async function createFactoryPlayground(options: CreateFactoryPlaygroundOp
   const beadsOperations = createWorkspaceBeadsOperations(createNodeWorkspace(workspaceRoot))
   const delegate = createFactoryDelegatePlugin({ workspaceScopeId: FACTORY_WORKSPACE_SCOPE_ID, epicKey, workspaceRoot })
   const supervision = createFactorySupervisionPlugin({ stateRoot })
+  const demo = createFactoryDemoPlugin({ stateRoot, workspaceRoot, epicKey, env })
 
   const app = await createWorkspaceAgentServer({
     workspaceRoot,
@@ -70,6 +72,7 @@ export async function createFactoryPlayground(options: CreateFactoryPlaygroundOp
     workspaceScopedDefaultPluginAgentContributions: true,
     plugins: [
       supervision.plugin,
+      demo.plugin,
       createFactorySandboxPlugin(workspaceRoot, stateRoot, env),
       delegate.plugin,
       {
@@ -92,6 +95,7 @@ export async function createFactoryPlayground(options: CreateFactoryPlaygroundOp
   delegate.bind(app)
   supervision.bind(app)
   await supervision.rearm()
+  await demo.rearm()
 
   app.get('/api/v1/workspace/meta', async () => ({
     projectName: 'Boring Factory',

@@ -9,6 +9,7 @@ import {
 import { createAgentAssetDigest } from '@hachej/boring-agent/shared'
 import { FACTORY_DELEGATE_PLUGIN_ID } from './delegatePlugin'
 import { FACTORY_SUPERVISION_PLUGIN_ID } from './supervisionPlugin'
+import { FACTORY_DEMO_PLUGIN_ID } from './demoPlugin'
 import { FACTORY_WORKER_AGENT_TYPE_ID } from './sandboxComposition'
 
 export const FACTORY_ORCHESTRATOR_AGENT_TYPE_ID = 'boring-orchestrator'
@@ -35,12 +36,35 @@ const FACTORY_PRECEDENCE_CONTENT = {
     'anything.',
   ].join(' '),
   orchestrator: [
-    "The plan block's `/skill:exec` handoff is replaced by `dispatch_worker`: you dispatch a",
-    'fresh Worker session instead of executing or delegating through the skill transport.',
-    'Gate 1 (plan approval) may already be satisfied by the owner\'s request text for a',
-    'playground run — do not manufacture a second gate for it. Gate 2 (merge approval) is',
-    'never yours to raise or answer: you do not merge the epic branch.',
-  ].join(' '),
+    "The plan block's `/skill:exec` handoff is replaced by `dispatch_worker`: dispatch a fresh " +
+      'Worker session instead of executing or delegating through the skill transport. You never ' +
+      'merge the epic branch.',
+    'Gate 1 (plan approval): after materializing the Bead graph you MUST raise `ask_user` in the ' +
+      "owner's Inbox before arming supervision or dispatching, per `owner-gate`. Title " +
+      '`[br-<epic bead id or first bead id>] Plan approval: <epic title>`. Context: the goal in ' +
+      'one line, the Bead list (id, title, dependency order), the proof commands, risks/rollback, ' +
+      'and what happens on approve (durable supervision armed + Worker dispatch begins). Schema: ' +
+      'radio `decision` (approve/changes/defer/reject) plus an optional notes textarea, exactly as ' +
+      '`owner-gate` prescribes. Skip this gate ONLY when the owner\'s request text literally says ' +
+      '"Gate 1 pre-approved". On changes/defer/reject: revise the plan or stop; never arm ' +
+      'supervision or dispatch.',
+    'Gate 2 (merge approval): raise it once `factory_status` shows every epic Bead handed off — a ' +
+      'handoff comment naming the SHA, sandbox proof and a `fresh_review` approve on each, local ' +
+      'HEAD equal to remote HEAD, and no ready/unassigned Beads left. First (a) open the epic PR ' +
+      'yourself with `gh pr create --base main --head <epic branch> --title "[br-<epic>] <title>" ' +
+      '--body-file <file>`, body = the Owner Review card from `docs/procedures/owner-review-card.md` ' +
+      'filled in (Bead/PR/issue, What changed/why, Risk/rollback, Proof/review links incl. ' +
+      '`fresh_review` provenance, Artifact = the demo URL, Please test steps, Decision line) ' +
+      'followed by a `## Handover` section (SHA, branch, Worker sessions, reviewer sessions, ' +
+      'sandbox receipts); if a PR already exists for the branch (`gh pr view <branch>`), edit its ' +
+      'body instead of opening a second one. Then (b) start a demo with `demo_sandbox` (op start) ' +
+      'serving the feature from the exact SHA and wait for `ready: true`. Then (c) raise ' +
+      '`ask_user`: title `[br-<epic>] Merge approval: <title>`, context = the PR URL, head SHA, ' +
+      'the demo URL and how long it lives, please-test steps, and the handover lines; same radio ' +
+      '`decision` schema as Gate 1. (d) On approve: do NOT merge — comment on the PR that the ' +
+      'owner approved at that SHA and report. On changes: create follow-up Beads labelled ' +
+      '`epic:<key>` and dispatch a Worker. Never merge, either way.',
+  ].join('\n\n'),
 } as const
 
 async function factoryPrecedenceAppendix(seat: 'worker' | 'orchestrator'): Promise<TrustedAgentInstructionAppendix> {
@@ -136,7 +160,7 @@ export async function loadNativeFactoryFleet(
       repositoryRoot,
       seat: 'orchestrator',
       agentTypeId: FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
-      plugins: [FACTORY_SUPERVISION_PLUGIN_ID, 'boring-automation', FACTORY_DELEGATE_PLUGIN_ID],
+      plugins: [FACTORY_SUPERVISION_PLUGIN_ID, FACTORY_DEMO_PLUGIN_ID, 'boring-automation', FACTORY_DELEGATE_PLUGIN_ID],
       preferredModel: options.orchestrator,
       epicKey: options.epicKey,
     }),
