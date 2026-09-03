@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>[Epic Closure] Plan review</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1020;--panel:#141b2d;--ink:#edf2ff;--muted:#a8b3cf;--cyan:#56d9e8;--green:#55d68b;--amber:#f5c76a;--red:#ff7b86;--line:#2a3551}*{box-sizing:border-box}body{margin:0;background:linear-gradient(145deg,#08101e,#11172a);color:var(--ink);font:15px/1.55 ui-sans-serif,system-ui,-apple-system,sans-serif}main{max-width:1040px;margin:auto;padding:24px}.hero,.card{background:rgba(20,27,45,.96);border:1px solid var(--line);border-radius:18px;padding:22px;margin-bottom:18px;box-shadow:0 18px 50px #0005}.strip{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.pill{padding:5px 10px;border-radius:999px;background:#173b38;color:#8ff0b5;font-weight:700}.eyebrow{color:var(--cyan);text-transform:uppercase;letter-spacing:.12em;font-weight:800}h1{font-size:clamp(28px,5vw,48px);line-height:1.05;margin:.35em 0}.lede{font-size:19px;color:#d9e3ff;max-width:780px}.meta{color:var(--muted)}h2{margin-top:0;font-size:22px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.mermaid{white-space:pre-wrap;background:#090f1d;border:1px solid var(--line);padding:18px;border-radius:12px;color:#c9f7ff;overflow:auto}table{width:100%;border-collapse:collapse}th,td{text-align:left;vertical-align:top;padding:10px;border-bottom:1px solid var(--line)}th{color:var(--cyan)}.low{color:var(--green)}.med{color:var(--amber)}.high{color:var(--red)}code{color:#9de7f1}ul{padding-left:20px}@media(max-width:720px){main{padding:12px}.grid{grid-template-columns:1fr}.hero,.card{padding:16px}}
+</style></head><body><main>
+<section class="hero"><div class="strip"><span class="eyebrow">Epic Closure</span><span class="pill">Ready for owner review</span></div><h1>Finish a Factory epic after its PR merges</h1><p class="lede">A guarded Orchestrator action turns a verified GitHub merge into closed Beads, stopped runtime resources, optional cleanup, and one final owner acknowledgement.</p><p class="meta">Author: Orchestrator · 2026-09-03 · Issue #1517 · Epic factory-epic-closure-jgcj</p></section>
+<section class="card"><h2>Proposed architecture</h2><pre class="mermaid">flowchart LR
+  T[Supervision tick] --> S[factory_status]
+  S -->|gh pr view branch| G[GitHub]
+  G -->|MERGED metadata| O[Orchestrator]
+  O --> C[close_epic preflight]
+  C --> D[Stop demos]
+  D -->|all children must succeed| B[Close/reuse Beads]
+  B --> X[Guarded branch + all snapshots]
+  X --> E[Close epic]
+  E --> U[Stop calling supervision last]
+  U --> R[Complete or partial receipt]
+  R -->|complete only| A[[Feature Name] Done]</pre></section>
+<section class="grid"><div class="card"><h2>Goals</h2><ul><li>Observe the epic PR without making ticks brittle.</li><li>Fail closed before any destructive action.</li><li>Close children before the epic.</li><li>Leave an auditable cleanup receipt.</li><li>Tell the owner the epic is done.</li></ul></div><div class="card"><h2>Non-goals</h2><ul><li>Merge PRs automatically.</li><li>Change Gate 2 approval.</li><li>Edit canonical <code>.agents/skills</code>.</li><li>Close unrelated Beads.</li><li>Delete local/current/main branches.</li></ul></div></section>
+<section class="card"><h2>Bead dependency graph</h2><pre class="mermaid">graph LR
+  E["Epic"]
+  S1[".1 Detect merge + close"]
+  S2[".2 Branch + snapshot cleanup"]
+  S3[".3 Owner Done summary"]
+  S1 --> S2
+  S1 --> S3
+  E -. parent .-> S1
+  E -. parent .-> S2
+  E -. parent .-> S3</pre><p class="meta">Slices 2 and 3 become ready together and have disjoint file ownership.</p></section>
+<section class="card"><h2>Key flow</h2><pre class="mermaid">sequenceDiagram
+  participant Tick
+  participant GH as GitHub
+  participant O as Orchestrator
+  participant C as close_epic
+  participant Owner
+  Tick->>GH: Query epic branch PR
+  GH-->>Tick: MERGED + merge SHA
+  Tick-->>O: factory_status.pr
+  O->>C: close_epic(PR, cleanup=true)
+  C->>GH: Verify same repo/head/OID/MERGED again
+  C->>C: Stop demos; require every child close/reuse
+  C->>C: Force-with-lease cleanup; close epic; stop supervision last
+  C-->>O: complete | partial receipt + sessions
+  O->>Owner: Done only when complete</pre></section>
+<section class="card"><h2>Decisions</h2><table><tr><th>Decision</th><th>Chosen</th><th>Why</th></tr><tr><td>Authority</td><td>GitHub branch PR</td><td>Local git cannot prove merge.</td></tr><tr><td>Unavailable <code>gh</code></td><td><code>pr: null</code> + lookup status; closure refuses</td><td>Observation stays live; mutation fails closed.</td></tr><tr><td>Retry safety</td><td>Preflight + idempotent phases</td><td>Partial failures can resume without duplicated damage.</td></tr><tr><td>Cleanup</td><td>Default true; same-repo/ref/force-with-lease guarded</td><td>Normal finish leaves no debt without risking reused refs.</td></tr><tr><td>Policy location</td><td>Host appendix only</td><td>Owner explicitly excludes canonical skills.</td></tr></table></section>
+<section class="card"><h2>Risks</h2><table><tr><th>Risk</th><th>Likelihood</th><th>Impact</th><th>Mitigation</th></tr><tr><td>False-positive closure</td><td class="low">Low</td><td class="high">High</td><td>Re-query exact PR/repo/head and require MERGED + SHA.</td></tr><tr><td>Partial close</td><td class="med">Medium</td><td class="med">Medium</td><td>Preflight, idempotent phases, partial receipt, epic/supervision last.</td></tr><tr><td>Unsafe branch deletion</td><td class="low">Low</td><td class="high">High</td><td>repo/ref/main/default/current/OID guards and fakes.</td></tr><tr><td>Concurrent edit collision</td><td class="low">Low</td><td class="med">Medium</td><td>Slice 3 owns only fleet appendix/tests.</td></tr></table></section>
+<section class="card"><h2>Proof path</h2><p>At each slice's exact committed SHA, in a dedicated sandbox from <code>apps/factory-playground</code>:</p><pre class="mermaid">flowchart LR
+  SHA[Exact SHA sandbox] --> T[pnpm exec tsc --noEmit]
+  T --> V[pnpm exec vitest run]
+  V --> F[fresh_review]
+  F --> H[Bead handoff + push]</pre><p>References: <a href="https://github.com/hachej/boring-ui/issues/1517" style="color:var(--cyan)">Issue #1517</a> · <code>docs/issues/1517/plan.md</code></p></section>
+<section class="card"><h2>Open questions</h2><p>None. Merge authority, dependency order, cleanup defaults, file boundaries, and proof are explicit.</p></section>
+</main></body></html>

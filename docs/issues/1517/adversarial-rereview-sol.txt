@@ -1,0 +1,7 @@
+Verdict: REVISE
+Material findings:
+- Slice 2’s deletion contract is still unsafe: the PR query omits head-repository identity, and rechecking before `git push origin --delete` is not an atomic exact-OID lease. Require repository metadata and `--force-with-lease=<ref>:<headRefOid>`.
+- Slice 1 gates epic closure only on successful demo cleanup, not successful/already-complete child-Bead closure. This leaves the prior partial-failure blocker unresolved in the live Bead contract.
+Residual risks:
+- Beads CLI access was lock-blocked; descriptions and dependencies were verified directly from `.beads/issues.jsonl`.
+- GitHub, Vercel, and remote permissions remain external failure points.
