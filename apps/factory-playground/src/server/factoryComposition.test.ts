@@ -117,16 +117,14 @@ describe('native Factory composition', () => {
   it('boots the native app with supervise/factory_status only on the Orchestrator and sandbox only on the Worker', async () => {
     const root = await mkdtemp(resolve(tmpdir(), 'factory-native-app-'))
     temporaryRoots.push(root)
-    const appRootPath = resolve(root, 'workspace')
     const app = await createFactoryPlayground({
       appRoot,
       repositoryRoot,
-      workspaceRoot: appRootPath,
+      workspaceRoot: repositoryRoot,
       logger: false,
       env: {
         BORING_AGENT_SESSION_ROOT: resolve(root, 'sessions'),
         BORING_FACTORY_STATE_ROOT: resolve(root, 'state'),
-        BORING_FACTORY_SANDBOX_PROVIDER: 'local',
       },
     })
     try {
