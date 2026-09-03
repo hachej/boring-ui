@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { access, rm, symlink, writeFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { access, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { dirname, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { createDirectSandboxProvider } from '@hachej/boring-sandbox/providers/direct'
 import type { DisposableSandboxProviderV1 } from '@hachej/boring-sandbox/shared'
@@ -30,6 +30,19 @@ async function exists(path: string): Promise<boolean> {
  * untracked trees such as `node_modules` are never copied; they are symlinked
  * read-through instead. Returns the snapshotted SHA.
  */
+/** Gitignored build outputs (`dist`, `public`) of workspace packages, relative to the root. */
+export async function ignoredBuildDirectories(sourceRoot: string): Promise<string[]> {
+  const { stdout } = await execFileAsync(
+    'git',
+    ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '--', 'packages', 'plugins', 'apps'],
+    { cwd: sourceRoot, maxBuffer: 64 * 1024 * 1024 },
+  )
+  return stdout
+    .split('\n')
+    .map((line) => line.trim().replace(/\/$/, ''))
+    .filter((line) => /^(packages|plugins|apps)\/[^/]+\/(dist|public)$/.test(line))
+}
+
 export async function snapshotCommittedHead(sourceRoot: string, targetRoot: string): Promise<string> {
   const sha = (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: sourceRoot })).stdout.trim()
   await execFileAsync('git', ['clone', '--quiet', '--shared', '--no-checkout', sourceRoot, targetRoot])
@@ -37,6 +50,14 @@ export async function snapshotCommittedHead(sourceRoot: string, targetRoot: stri
   for (const name of LINKED_DEPENDENCY_ROOTS) {
     const source = resolve(sourceRoot, name)
     if (await exists(source)) await symlink(source, resolve(targetRoot, name), 'dir')
+  }
+  // Built outputs of workspace packages (dist/, public/) are gitignored, so the clone has none; tests
+  // that import built plugins need them. Link every ignored build directory read-through as well.
+  for (const relative of await ignoredBuildDirectories(sourceRoot)) {
+    const target = resolve(targetRoot, relative)
+    if (await exists(target)) continue
+    await mkdir(dirname(target), { recursive: true })
+    await symlink(resolve(sourceRoot, relative), target, 'dir')
   }
   // Workers verify the exact SHA the same way on both the local and remote providers.
   await writeFile(resolve(targetRoot, '.factory-sha'), sha)
