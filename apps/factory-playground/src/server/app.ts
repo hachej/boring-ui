@@ -6,8 +6,8 @@ import { createNodeWorkspace } from '@hachej/boring-sandbox/providers/node-works
 import { createWorkspaceAgentServer } from '@hachej/boring-workspace/app/server'
 import { createWorkspaceBeadsOperations } from '@hachej/boring-tasks/server'
 import { loadNativeFactoryFleet, FACTORY_ORCHESTRATOR_AGENT_TYPE_ID } from './factoryFleet'
-import { createFactoryLoopPlugin } from './loopPlugin'
 import { createFactoryDelegatePlugin } from './delegatePlugin'
+import { createFactorySupervisionPlugin } from './supervisionPlugin'
 import { createFactorySandboxPlugin, FACTORY_WORKSPACE_SCOPE_ID } from './sandboxComposition'
 
 export interface CreateFactoryPlaygroundOptions {
@@ -46,7 +46,8 @@ export async function createFactoryPlayground(options: CreateFactoryPlaygroundOp
     epicKey,
   })
   const beadsOperations = createWorkspaceBeadsOperations(createNodeWorkspace(workspaceRoot))
-  const delegate = createFactoryDelegatePlugin({ workspaceScopeId: FACTORY_WORKSPACE_SCOPE_ID })
+  const delegate = createFactoryDelegatePlugin({ workspaceScopeId: FACTORY_WORKSPACE_SCOPE_ID, epicKey, workspaceRoot })
+  const supervision = createFactorySupervisionPlugin({ stateRoot })
 
   const app = await createWorkspaceAgentServer({
     workspaceRoot,
@@ -57,9 +58,6 @@ export async function createFactoryPlayground(options: CreateFactoryPlaygroundOp
     mode: 'direct',
     logger: options.logger ?? true,
     readonlyWorkspacePaths: ['.agents'],
-    // The seat extensions (pi-mono-loop) resolve from this checkout's node_modules even when the
-    // shared epic worktree is another checkout; authorize that root for Pi resource digests.
-    piResourceAuthorizedRoots: [options.repositoryRoot],
     agents,
     defaultAgentTypeId: FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
     externalPlugins: false,
@@ -71,7 +69,7 @@ export async function createFactoryPlayground(options: CreateFactoryPlaygroundOp
     },
     workspaceScopedDefaultPluginAgentContributions: true,
     plugins: [
-      createFactoryLoopPlugin(),
+      supervision.plugin,
       createFactorySandboxPlugin(workspaceRoot, stateRoot, env),
       delegate.plugin,
       {
@@ -92,6 +90,8 @@ export async function createFactoryPlayground(options: CreateFactoryPlaygroundOp
   })
 
   delegate.bind(app)
+  supervision.bind(app)
+  await supervision.rearm()
 
   app.get('/api/v1/workspace/meta', async () => ({
     projectName: 'Boring Factory',

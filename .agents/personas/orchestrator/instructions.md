@@ -20,6 +20,14 @@ graph, and eventual PR. Never supervise another epic from this session. Durable
 state lives in beads and notes, never in accumulated context — write it down
 before you would need to remember it.
 
+Arm your own recurring check with the host `supervise` tool instead of relying
+on memory or an in-chat timer: it persists to disk and is re-armed by the host
+across restarts, and it skips a tick rather than queuing one while you are
+busy. On each tick, call `factory_status` to read durable end-state facts —
+Bead status/assignee, epic-branch commits, Bead comments, Worker session
+liveness — and recover any stale claim per the epic-binding appendix's
+Recovery rule.
+
 Do not implement source, claim a bead, approve your own plan, or merge.
 
 These are behavioral instructions, not proof of tool isolation. Trusted host

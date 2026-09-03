@@ -5,10 +5,11 @@ import { resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createFactoryPlayground } from './app'
 import { loadNativeFactoryFleet, FACTORY_ORCHESTRATOR_AGENT_TYPE_ID, FACTORY_REVIEWER_AGENT_TYPE_ID } from './factoryFleet'
-import { createFactoryLoopPlugin } from './loopPlugin'
 import { createFactoryDelegatePlugin } from './delegatePlugin'
 import { createFactorySandboxPlugin, FACTORY_WORKER_AGENT_TYPE_ID } from './sandboxComposition'
 import { simulateFactoryFeature } from './simulateFeature'
+
+const DELEGATE_OPTIONS = { workspaceScopeId: 'factory-playground', epicKey: 'live-farewell', workspaceRoot: process.cwd() }
 
 const appRoot = resolve(import.meta.dirname, '../..')
 const repositoryRoot = resolve(appRoot, '../..')
@@ -20,7 +21,7 @@ afterEach(async () => {
 })
 
 describe('native Factory composition', () => {
-  it('loads canonical repo profiles and grants loop and sandbox to different seats', async () => {
+  it('loads canonical repo profiles and grants supervision and sandbox to different seats', async () => {
     const fleet = await loadNativeFactoryFleet(repositoryRoot, {
       orchestrator: 'openai-codex:gpt-5.6-sol',
       worker: 'anthropic:claude-sonnet-4-6',
@@ -35,7 +36,7 @@ describe('native Factory composition', () => {
     const orchestrator = fleet[0]!
     const worker = fleet[1]!
     const reviewer = fleet[2]!
-    expect(orchestrator.plugins?.map((plugin) => plugin.name)).toEqual(['factory-loop', 'boring-automation', 'factory-delegate'])
+    expect(orchestrator.plugins?.map((plugin) => plugin.name)).toEqual(['factory-supervision', 'boring-automation', 'factory-delegate'])
     expect(orchestrator.model?.preferred).toBe('openai-codex:gpt-5.6-sol')
     expect(worker.plugins?.map((plugin) => plugin.name)).toEqual(['sandbox', 'factory-delegate'])
     expect(worker.model?.preferred).toBe('anthropic:claude-sonnet-4-6')
@@ -51,8 +52,25 @@ describe('native Factory composition', () => {
     expect(worker.definition.instructions).toContain('epic:live-farewell')
     expect(worker.definition.instructions).toContain('br ready --label epic:live-farewell --unassigned')
 
-    const loop = createFactoryLoopPlugin()
-    expect(loop.extensionPaths).toEqual([expect.stringMatching(/pi-mono-loop\/index\.ts$/)])
+    // owner-gate is no longer part of the Worker's canonical skill set; only the Orchestrator keeps it.
+    expect(worker.definition.instructions).not.toContain('boring-skill:start name=owner-gate')
+    expect(orchestrator.definition.instructions).toContain('boring-skill:start name=owner-gate')
+
+    // Recovery rule (epic-binding appendix, orchestrator).
+    expect(orchestrator.definition.instructions).toContain('Recovery: run `factory_status` on every supervision tick.')
+    expect(orchestrator.definition.instructions).toContain('br update <id> --assignee "" --status open --actor <your session id>')
+    expect(orchestrator.definition.instructions).toContain('Never release a Bead whose assignee session is `exists-busy`.')
+
+    // Uncommitted-changes handoff rule (epic-binding appendix, worker).
+    expect(worker.definition.instructions).toContain('If the shared worktree already holds uncommitted changes for your Bead from a previous')
+    expect(worker.definition.instructions).toContain('never revert them wholesale.')
+
+    // factory-precedence appendix reconciling exec/owner-gate with the one-epic-branch topology.
+    expect(worker.definition.instructions).toContain('the epic PR belongs to the')
+    expect(worker.definition.instructions).toContain('you do not run `ask_user`')
+    expect(orchestrator.definition.instructions).toContain("The plan block's `/skill:exec` handoff is replaced by `dispatch_worker`")
+    expect(orchestrator.definition.instructions).toContain('Gate 2 (merge approval) is')
+    expect(reviewer.definition.instructions).not.toContain('factory-precedence')
 
     const root = await mkdtemp(resolve(tmpdir(), 'factory-sandbox-composition-'))
     temporaryRoots.push(root)
@@ -65,7 +83,7 @@ describe('native Factory composition', () => {
       .toThrow('sandbox host grant denied')
   })
 
-  it('boots the native app with /loop only on the Orchestrator and sandbox only on the Worker', async () => {
+  it('boots the native app with supervise/factory_status only on the Orchestrator and sandbox only on the Worker', async () => {
     const root = await mkdtemp(resolve(tmpdir(), 'factory-native-app-'))
     temporaryRoots.push(root)
     const app = await createFactoryPlayground({
@@ -108,24 +126,18 @@ describe('native Factory composition', () => {
         return response.json<{ commands: Array<{ name: string }> }>().commands.map(({ name }) => name)
       }
       expect(await commandsFor(FACTORY_WORKER_AGENT_TYPE_ID, workerSessionId)).toEqual([])
-      expect(await commandsFor(FACTORY_ORCHESTRATOR_AGENT_TYPE_ID, orchestratorSessionId)).toEqual(['loop'])
-
-      const loopList = await app.inject({
-        method: 'POST',
-        url: `/api/v1/agents/${FACTORY_ORCHESTRATOR_AGENT_TYPE_ID}/commands/execute`,
-        headers: header,
-        payload: { requestId: `loop-list-${crypto.randomUUID()}`, sessionId: orchestratorSessionId, name: 'loop', args: 'list' },
-      })
-      expect(loopList.statusCode).toBe(200)
-      expect(loopList.json()).toMatchObject({ ok: true, name: 'loop' })
+      expect(await commandsFor(FACTORY_ORCHESTRATOR_AGENT_TYPE_ID, orchestratorSessionId)).toEqual([])
 
       const workerTools = await app.inject({ method: 'GET', url: `/api/v1/agents/${FACTORY_WORKER_AGENT_TYPE_ID}/tools`, headers: header })
       const orchestratorTools = await app.inject({ method: 'GET', url: `/api/v1/agents/${FACTORY_ORCHESTRATOR_AGENT_TYPE_ID}/tools`, headers: header })
       const names = (response: typeof workerTools) => response.json<{ tools: Array<{ name: string }> }>().tools.map(({ name }) => name)
       expect(names(workerTools)).toEqual(expect.arrayContaining(['sandbox', 'sandbox_bash']))
       expect(names(workerTools)).not.toContain('boring_automation')
+      expect(names(workerTools)).not.toContain('supervise')
+      expect(names(workerTools)).not.toContain('factory_status')
       expect(names(orchestratorTools)).toContain('boring_automation')
       expect(names(orchestratorTools)).not.toContain('sandbox')
+      expect(names(orchestratorTools)).toEqual(expect.arrayContaining(['supervise', 'factory_status', 'dispatch_worker']))
     } finally {
       await app.close()
     }
@@ -160,10 +172,10 @@ describe('native Factory composition', () => {
 })
 
 describe('factory delegate plugin', () => {
-  it('grants dispatch_worker to the orchestrator and fresh_review to the worker, and nothing to any other seat', () => {
-    const { plugin } = createFactoryDelegatePlugin({ workspaceScopeId: 'factory-playground' })
+  it('grants dispatch_worker+factory_status to the orchestrator and fresh_review to the worker, and nothing to any other seat', () => {
+    const { plugin } = createFactoryDelegatePlugin(DELEGATE_OPTIONS)
     expect(plugin.agentToolFactory?.({ agentTypeId: FACTORY_ORCHESTRATOR_AGENT_TYPE_ID }).map((tool) => tool.name))
-      .toEqual(['dispatch_worker'])
+      .toEqual(['dispatch_worker', 'factory_status'])
     expect(plugin.agentToolFactory?.({ agentTypeId: FACTORY_WORKER_AGENT_TYPE_ID }).map((tool) => tool.name))
       .toEqual(['fresh_review'])
     expect(plugin.agentToolFactory?.({ agentTypeId: FACTORY_REVIEWER_AGENT_TYPE_ID })).toEqual([])
@@ -171,19 +183,27 @@ describe('factory delegate plugin', () => {
   })
 
   it('returns an isError result instead of throwing when the host has not bound a running app', async () => {
-    const { plugin } = createFactoryDelegatePlugin({ workspaceScopeId: 'factory-playground' })
-    const [tool] = plugin.agentToolFactory?.({ agentTypeId: FACTORY_ORCHESTRATOR_AGENT_TYPE_ID }) ?? []
-    expect(tool).toBeDefined()
-    const result = await tool!.execute(
+    const { plugin } = createFactoryDelegatePlugin(DELEGATE_OPTIONS)
+    const tools = plugin.agentToolFactory?.({ agentTypeId: FACTORY_ORCHESTRATOR_AGENT_TYPE_ID }) ?? []
+    const dispatchTool = tools.find((tool) => tool.name === 'dispatch_worker')
+    const statusTool = tools.find((tool) => tool.name === 'factory_status')
+    expect(dispatchTool).toBeDefined()
+    expect(statusTool).toBeDefined()
+
+    const result = await dispatchTool!.execute(
       { brief: 'This brief is definitely long enough to pass validation.' },
       { abortSignal: new AbortController().signal, toolCallId: 'call-1' },
     )
     expect(result.isError).toBe(true)
     expect(result.details).toMatchObject({ code: 'HOST_NOT_BOUND' })
+
+    const statusResult = await statusTool!.execute({}, { abortSignal: new AbortController().signal, toolCallId: 'call-1b' })
+    expect(statusResult.isError).toBe(true)
+    expect(statusResult.details).toMatchObject({ code: 'HOST_NOT_BOUND' })
   })
 
   it('rejects a brief that is too short before touching the host', async () => {
-    const { plugin } = createFactoryDelegatePlugin({ workspaceScopeId: 'factory-playground' })
+    const { plugin } = createFactoryDelegatePlugin(DELEGATE_OPTIONS)
     const [tool] = plugin.agentToolFactory?.({ agentTypeId: FACTORY_WORKER_AGENT_TYPE_ID }) ?? []
     const result = await tool!.execute(
       { brief: 'too short' },
