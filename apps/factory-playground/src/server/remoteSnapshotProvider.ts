@@ -1,4 +1,4 @@
-import { execFile, spawn } from 'node:child_process'
+import { execFile, execFileSync, spawn } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
@@ -41,6 +41,14 @@ export interface ExactShaTemplateProviderOptions {
    * else `'archive'`.
    */
   source?: ExactShaTemplateSource
+  /**
+   * Optional git access token used to authenticate the sandbox's own `git
+   * fetch` of `sourceRoot`'s origin in `'fetch'` mode (private repos). Passed
+   * to the sandbox only as an exec-scoped env var, never written to a file
+   * or embedded in a script's literal text. Ignored in `'archive'` mode
+   * (nothing is fetched by the sandbox there).
+   */
+  gitToken?: string
 }
 
 /**
@@ -71,6 +79,66 @@ export const FACTORY_COREPACK_HOME = '/vercel/sandbox/.corepack-home'
 
 /** Bootstrap step's exec timeout: warm install/build can take minutes, far past the 30s exec default. */
 export const FACTORY_BOOTSTRAP_TIMEOUT_MS = 15 * 60 * 1000
+
+/**
+ * Env var name a bootstrap/seed shell script reads an optional git access
+ * token from. Never interpolated into a script's literal text (which would
+ * leak it into `ps` output inside the sandbox); scripts reference it only as
+ * a shell variable expansion, and callers pass the value via `exec`'s `env`
+ * option, never via `cwd`-relative files or command-line args.
+ */
+export const FACTORY_GIT_TOKEN_ENV_VAR = 'FACTORY_GIT_TOKEN'
+
+/**
+ * Shell fragment computing a git Basic-auth header from `$FACTORY_GIT_TOKEN`
+ * (GitHub App / PAT convention: username `x-access-token`, password the
+ * token). Assign to a variable and pass to git via `-c
+ * http.extraheader="$var"` — never write the token to a file or echo it.
+ */
+export function gitAuthHeaderShellExpr(): string {
+  return `AUTHORIZATION: basic $(printf '%s' "x-access-token:$${FACTORY_GIT_TOKEN_ENV_VAR}" | base64 | tr -d '\\n')`
+}
+
+/**
+ * Shell lines defining a `git_fetch` function: when `$FACTORY_GIT_TOKEN` is
+ * set, every invocation carries a per-call `http.extraheader` Basic-auth
+ * header (never written to git config, never echoed); otherwise it's a
+ * plain `git fetch`. Callers use `git_fetch <args...>` wherever the original
+ * script called `git fetch` directly.
+ */
+export function gitFetchAuthShellSetup(): string {
+  return [
+    `if [ -n "\${${FACTORY_GIT_TOKEN_ENV_VAR}:-}" ]; then`,
+    `  factory_auth_header="${gitAuthHeaderShellExpr()}"`,
+    '  git_fetch() { git -c http.extraheader="$factory_auth_header" fetch "$@"; }',
+    'else',
+    '  git_fetch() { git fetch "$@"; }',
+    'fi',
+  ].join('\n')
+}
+
+/**
+ * Resolves the git token used to authenticate clones/fetches against a
+ * private origin in the Vercel sandbox path: `BORING_FACTORY_GIT_TOKEN` when
+ * set, else the output of `gh auth token` when the `gh` CLI is available and
+ * authenticated. Returns `undefined` (not an error) when neither is
+ * available — callers fall back to unauthenticated git, which still works
+ * for public repos. Never logs the resolved value.
+ */
+export function resolveFactoryGitToken(
+  env: NodeJS.ProcessEnv,
+  ghAuthToken: () => string | undefined = () => {
+    try {
+      return execFileSync('gh', ['auth', 'token'], { encoding: 'utf8' }).trim() || undefined
+    } catch {
+      return undefined
+    }
+  },
+): string | undefined {
+  const fromEnv = env.BORING_FACTORY_GIT_TOKEN?.trim()
+  if (fromEnv) return fromEnv
+  return ghAuthToken()
+}
 
 /**
  * Bootstrap script written into the sandbox in `'fetch'` mode. Reads the
@@ -118,10 +186,11 @@ export function buildFactoryBootstrapScript(
   '  echo "factory-bootstrap-phase $1 $(( (now - phase_start) / 1000000 ))ms"',
   '  phase_start=$now',
   '}',
+  gitFetchAuthShellSetup(),
   'if [ -f "$warm_root/.factory-snapshot.json" ]; then',
   '  cd "$warm_root"',
   `  export COREPACK_HOME=${FACTORY_COREPACK_HOME}`,
-  '  git fetch -q origin "$sha"',
+  '  git_fetch -q origin "$sha"',
   '  git checkout -q --detach FETCH_HEAD',
   '  test "$(git rev-parse HEAD)" = "$sha"',
   '  phase fetch',
@@ -197,7 +266,7 @@ export function buildFactoryBootstrapScript(
   '  echo "factory-bootstrap ok $sha (warm)"',
   'else',
   '  if [ ! -d .git ]; then git init -q .; git remote add origin "$remote"; fi',
-  '  git fetch -q --depth 1 origin "$sha" || git fetch -q origin "$sha"',
+  '  git_fetch -q --depth 1 origin "$sha" || git_fetch -q origin "$sha"',
   '  git checkout -q --detach FETCH_HEAD',
   '  test "$(git rev-parse HEAD)" = "$sha"',
   '  phase fetch',
@@ -325,7 +394,7 @@ export function isBootstrapRefreshNeeded(output: string): boolean {
  * with a clear, non-zero-exit result instead of ever reaching the sandbox
  * again with the caller's command.
  */
-function wrapExecWithFetchBootstrap(sandbox: SandboxHandle, sha: string): SandboxHandle {
+function wrapExecWithFetchBootstrap(sandbox: SandboxHandle, sha: string, gitToken?: string): SandboxHandle {
   let bootstrap: Promise<SandboxExecResult> | undefined
 
   function bootstrapFailureResult(result: SandboxExecResult): SandboxExecResult {
@@ -353,7 +422,10 @@ function wrapExecWithFetchBootstrap(sandbox: SandboxHandle, sha: string): Sandbo
   function ensureBootstrapped(): Promise<SandboxExecResult> {
     if (!bootstrap) {
       bootstrap = sandbox
-        .exec(FACTORY_BOOTSTRAP_GUARDED_COMMAND, { timeoutMs: FACTORY_BOOTSTRAP_TIMEOUT_MS } as SandboxExecOptions)
+        .exec(FACTORY_BOOTSTRAP_GUARDED_COMMAND, {
+          timeoutMs: FACTORY_BOOTSTRAP_TIMEOUT_MS,
+          ...(gitToken ? { env: { [FACTORY_GIT_TOKEN_ENV_VAR]: gitToken } } : {}),
+        } as SandboxExecOptions)
         .then((result: SandboxExecResult) => {
           bootstrapLogs.set(wrapped, `${decodeMaybe(result.stdout)}\n${decodeMaybe(result.stderr)}`)
           return result
@@ -506,7 +578,7 @@ export function createExactShaTemplateProvider(
       }
       return {
         ...pair,
-        sandbox: source === 'fetch' ? wrapExecWithFetchBootstrap(pair.sandbox, sha) : pair.sandbox,
+        sandbox: source === 'fetch' ? wrapExecWithFetchBootstrap(pair.sandbox, sha, options.gitToken) : pair.sandbox,
         async dispose() {
           try {
             await pair.dispose()

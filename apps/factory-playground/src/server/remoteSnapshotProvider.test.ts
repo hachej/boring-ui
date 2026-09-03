@@ -246,7 +246,7 @@ describe('createExactShaTemplateProvider fetch mode', () => {
     expect(observedSha).toBe(expectedSha)
     expect(observedRemote).toBe('https://github.com/hachej/boring-ui.git')
     expect(observedBranch).toBe('main')
-    expect(observedBootstrapScript).toContain('git fetch -q --depth 1 origin "$sha"')
+    expect(observedBootstrapScript).toContain('git_fetch -q --depth 1 origin "$sha"')
     expect(observedBootstrapScript).toContain('test "$(git rev-parse HEAD)" = "$sha"')
 
     await pair.dispose()

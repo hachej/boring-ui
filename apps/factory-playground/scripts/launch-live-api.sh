@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Launch the Factory playground API (127.0.0.1:5230) against EPIC_WT with per-seat models; creds from env or vault.
+# Launch the Factory playground API (127.0.0.1:${API_PORT:-5230}) against EPIC_WT with per-seat models; creds from env or vault.
 set -euo pipefail
 APP=$(cd "$(dirname "$0")/../../.." && pwd)
 EPIC_WT=${EPIC_WT:?EPIC_WT is required}
+API_PORT=${API_PORT:-5230}
 LOG=$APP/apps/factory-playground/.factory-state/live.log
-PID=$(ss -ltnp | awk '/127.0.0.1:5230/ {match($0,/pid=([0-9]+)/,a); print a[1]}' || true)
+PID=$(ss -ltnp | awk -v port=":$API_PORT" '$4 ~ "127.0.0.1"port"$" {match($0,/pid=([0-9]+)/,a); print a[1]}' || true)
 [ -n "${PID:-}" ] && kill "$PID" && sleep 1
 cd $APP
 export OPENAI_API_KEY="${OPENAI_API_KEY:-$(vault kv get -field=api_key secret/openai)}"
@@ -17,10 +18,11 @@ export BORING_FACTORY_WORKER_MODEL=${WORKER_MODEL:-openai-codex:gpt-5.4}
 export BORING_FACTORY_REVIEWER_MODEL=${REVIEWER_MODEL:-openai-codex:gpt-5.4}
 export BORING_AGENT_DEFAULT_MODEL=openai-codex:gpt-5.6-sol
 export BORING_AGENT_SESSION_ROOT=$APP/apps/factory-playground/.factory-state/sessions
+export AGENT_API_PORT=$API_PORT
 mkdir -p "$(dirname $LOG)"
 setsid pnpm exec tsx apps/factory-playground/src/server/dev.ts > $LOG 2>&1 < /dev/null &
 for i in $(seq 1 120); do
-  if curl -fsS http://127.0.0.1:5230/api/v1/workspace/meta 2>/dev/null; then echo; echo "up (log: $LOG)"; exit 0; fi
+  if curl -fsS http://127.0.0.1:$API_PORT/api/v1/workspace/meta 2>/dev/null; then echo; echo "up (log: $LOG)"; exit 0; fi
   sleep 1
 done
 echo "failed to start"; tail -40 $LOG; exit 1

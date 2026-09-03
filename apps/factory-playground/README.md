@@ -35,6 +35,124 @@ pnpm --filter factory-playground simulate
 
 It boots the native app, obtains one host-issued Orchestrator session and two host-issued Worker sessions, executes `/loop list`, then visibly streams intake → plan gate → two real `br ready`/claim operations → edits and commits in one shared epic worktree → exact-SHA snapshots in dedicated test sandboxes → deterministic host validation → final exact-SHA sandbox integration test → release. The full receipt is written to `apps/factory-playground/workspace/factory-runs/latest.json`. It never merges.
 
+## Launching your work threads
+
+`scripts/factory-epic.mjs` launches one Factory **instance per work thread** —
+an open PR or branch of this repo, or an epic in another repository — each
+with its own Inbox/Agents/Tasks UI, its own worktree, its own ports, and its
+own state root. Several instances run at once; none of them touch the
+`127.0.0.1:5230`/`5220` pair another live-epic process may already be using,
+and none of them delete or reuse another instance's worktree. Run all of the
+following from `apps/factory-playground/` (or via `pnpm --filter
+factory-playground epic -- <args>`).
+
+```bash
+node scripts/factory-epic.mjs intake
+```
+
+Lists every open PR on this repo (`gh pr list`) as a ready-to-paste `up`
+command, with a 2–4 word Title Case feature name derived from the PR title
+(leading `[bracket]`/`#issue`/`type(scope):` prefixes stripped). It never runs
+anything — copy the line you want, edit the feature name if you like, and run
+it.
+
+```bash
+# A PR of this repo:
+node scripts/factory-epic.mjs up --feature "Filesystem Roots Fix" --pr 1511 --provider local-simulation
+
+# A branch of this repo that isn't a PR yet:
+node scripts/factory-epic.mjs up --feature "Filesystem Roots Fix" --branch fix/1511-filesystem-roots
+
+# An epic in another repository (see "Multi-repo and private repos" below):
+node scripts/factory-epic.mjs up --feature "CDC Backfill" --repo https://github.com/hachej/boring-cdc --base main
+```
+
+`up`:
+
+1. Resolves (creating if needed) the epic's shared worktree — `git worktree
+   add .worktrees/epic-<slug>` off the PR's/branch's head for `--pr`/
+   `--branch`, or a clone plus a `git worktree add -B epic/<slug>` off
+   `--base` (default: the remote's default branch), pushed with `-u`, for
+   `--repo`. A branch that's already checked out elsewhere (e.g. your own
+   current worktree) falls back to a detached worktree at the same HEAD
+   rather than failing.
+2. Ensures a git identity and runs `br init --no-auto-flush` in that
+   worktree if `.beads` doesn't exist yet.
+3. Picks the next free `(5230 + 2k, 5220 + 2k)` API/UI port pair — see
+   **Port allocation** below — and a fresh per-epic state root under
+   `.factory-state/epics/<slug>/`.
+4. Launches `pnpm exec vite --port <ui>` from **this** checkout (so it reuses
+   already-built package `dist/`s; it never rebuilds them per epic) with
+   `BORING_FACTORY_WORKSPACE_ROOT` pointed at the epic's worktree,
+   `BORING_FACTORY_EPIC_KEY`/`BORING_FACTORY_FEATURE_NAME` set, per-seat model
+   overrides from `--models orch=...,worker=...,reviewer=...`, the sandbox
+   provider from `--provider` (default `local-simulation`), a fresh
+   telemetry salt, and no fixed snapshot id (so a `vercel` epic always gets
+   its own per-epic warm snapshot — see **Remote sandboxes** below). One
+   `vite` process serves both the UI (browser) and the API (Fastify,
+   `configureServer` hook) — a separate headless `dev.ts` process is not
+   also started, since it would try to bind the same API port a second time.
+5. Waits for `/api/v1/workspace/meta`, then prints the UI URL (and a
+   Tailscale IP variant when `tailscale ip -4` is available), plus the exact
+   `live-epic-acceptance.mjs` invocation to drive it headlessly instead.
+6. Records the instance in `.factory-state/epics.json`.
+
+```bash
+node scripts/factory-epic.mjs list
+```
+
+Tables every registered epic: key, live/down (an actual TCP probe of its API
+port, not just registry presence), ports, Bead counts (`br list --label
+epic:<key>`, split open/in_progress/closed), feature name, branch, and
+worktree root.
+
+```bash
+node scripts/factory-epic.mjs down <epic-key> [--keep-worktree]
+```
+
+Stops the instance's process(es) and removes its registry entry. Without
+`--keep-worktree` it also runs `git worktree remove` on the epic's worktree
+(refusing, safely, if it has uncommitted changes — pass `--keep-worktree` or
+clean it up manually in that case).
+
+### Port allocation
+
+`k = 1, 2, 3, …`; API port `5230 + 2k`, UI port `5220 + 2k`. `k = 0` (ports
+5230/5220) is reserved for the separate live-epic-acceptance process this app
+also supports and is never allocated here. The first `k` whose pair is both
+unused in the registry and actually free (a real bind probe, not just an
+absence check) wins — e.g. the first epic gets API 5232 / UI 5222, the second
+API 5234 / UI 5224, and so on.
+
+### Multi-repo and private repos
+
+The workspace root can be any git checkout — personas, skills, and the
+canonical `.agents/skills/*` appendices always load from **this** repo
+(`repositoryRoot` in `app.ts`), independent of `BORING_FACTORY_WORKSPACE_ROOT`.
+`.agents` is marked read-only relative to the workspace root regardless of
+whether that directory exists there, so an external repo with no `.agents` of
+its own is unaffected. Each workspace gets its own `.beads` (created by `br
+init` if missing), so multiple epics against the same external repo don't
+collide — `--repo` clones the repo once into
+`.worktrees/repos/<repo-slug>/` and adds a **separate** `git worktree` per
+epic at `.worktrees/repos/<repo-slug>-<feature-slug>/`, each on its own
+`epic/<feature-slug>` branch.
+
+We checked `hachej/boring-cdc` while writing this: `gh repo view
+hachej/boring-cdc --json isPrivate` reports `{"isPrivate":false}` — it's
+public, so the `fetch`-mode Vercel sandbox path (the default whenever the
+workspace root has a resolvable `origin`) needs no credentials for it today.
+
+For a genuinely **private** repo on the Vercel sandbox path, set
+`BORING_FACTORY_GIT_TOKEN` (or just have `gh auth login`'d — `factory-epic.mjs
+up --provider vercel` falls back to `gh auth token` automatically when the env
+var is unset). The token authenticates the sandbox's own `git clone`/`git
+fetch` of a private origin via a per-call `-c
+http.extraheader="AUTHORIZATION: basic <base64 x-access-token:TOKEN>"` — never
+written to git config, never embedded in a script's literal text (which would
+leak it to `ps` inside the sandbox), and never logged. See
+`resolveFactoryGitToken` in `remoteSnapshotProvider.ts`.
+
 ## Sandbox modes
 
 `local-simulation` is the default. The shared epic worktree is the editing authority. After each commit, the provider snapshots that exact SHA into a disposable root where the real `sandbox_bash` tool runs tests; sandbox changes are never copied back. The watch script invokes tools through a deterministic harness using host-issued session identities, so it proves host grants, ownership, routing, pull-based `br` claims, exact-SHA test isolation, cleanup, and integrated feature evidence. It does **not** claim security confinement, model-selected calls, or independent agent review.
@@ -132,6 +250,23 @@ getting the exact-SHA tree into the sandbox:
 Default: `'fetch'` when `sourceRoot` has a resolvable `origin` remote (this
 repo is public, so no credentials are ever needed to fetch it), else
 `'archive'`. Override with `BORING_FACTORY_REMOTE_SOURCE` (see **Env vars**).
+
+**Private repos:** when `sourceRoot`'s origin requires auth (e.g. a private
+repo launched via `factory-epic.mjs up --repo`), set
+`BORING_FACTORY_GIT_TOKEN` — or just have `gh auth login`'d, since
+`resolveFactoryGitToken` falls back to `gh auth token` when the env var is
+unset. The token is used exactly where the sandbox authenticates against a
+git remote: `warmSnapshot.ts`'s seed-sandbox clone of `remoteUrl`, and the
+`'fetch'`-mode bootstrap script's `git fetch` of the exact SHA (both the warm
+and cold paths). In both places it's injected as a per-call `-c
+http.extraheader="AUTHORIZATION: basic <base64 x-access-token:TOKEN>"` — never
+written to `~/.gitconfig`, never interpolated into a script's literal text
+(which `ps` inside the sandbox could read back), and passed to the sandbox
+only as an exec-scoped env var (`FACTORY_GIT_TOKEN`). Nothing that logs a
+bootstrap/clone step (`runStep` in `warmSnapshot.ts`, the bootstrap phase
+lines in `remoteSnapshotProvider.ts`) ever includes the token or the computed
+header. See `src/server/factoryGitToken.test.ts` for the header-format and
+no-token-in-logs assertions.
 
 Regardless of mode:
 

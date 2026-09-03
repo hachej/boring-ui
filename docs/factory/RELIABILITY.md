@@ -49,3 +49,12 @@ The Orchestrator contacts the owner through `ask_user`, which lands in the Works
 Both gates survive restarts: pending questions are persisted by the ask-user store and are not swept on boot.
 
 The visual is mandatory at both gates (owner ruling): `show-me` is attached to the Orchestrator seat, and Gate 1's `ask_user` call carries a `show-me-plan` artifact (`docs/issues/<issue>/show-me-plan.md`: structure, behavior, and diff views of what the epic touches) while Gate 2's PR body carries a `## Show me` section between the Owner Review card and `## Handover` (diff-shaped views plus one sequence diagram of the shipped flow, derived from the actual commits), mirrored to `docs/issues/<issue>/show-me-<short sha>.md` and passed as an artifact. `live-epic-acceptance.mjs` asserts both artifacts exist and carry a fenced view.
+
+## Operations
+
+Running several work threads at once is `apps/factory-playground/scripts/factory-epic.mjs` — see the app's README, "Launching your work threads", for the full command reference. Operational shape:
+
+- **One Factory instance per epic**, not one shared instance multiplexing epics: each has its own process, worktree, and browser UI, so an owner watches N Inboxes/Agents surfaces side by side instead of one surface juggling N epics' Beads and sessions.
+- **Ports**: deterministic and disjoint. API `5230 + 2k`, UI `5220 + 2k` for `k = 1, 2, 3, …` (the first free pair wins); `k = 0` (5230/5220) stays reserved for the separate `live-epic-acceptance.mjs` flow and is never allocated to an epic instance.
+- **State roots**: `.factory-state/epics/<epic-key>/` per instance — its own request ledger, session store, sandbox lease roots, and snapshot registry — so one epic's supervision timers, demos, or snapshot cache can never collide with another's. The shared `.factory-state/epics.json` is only a process registry (pids, ports, workspace root), not runtime state.
+- **Cost note**: each instance warms its own sandbox snapshot when running the Vercel provider (`snapshotRegistry.ts`'s per-epic registry) — N concurrent `vercel` epics means N warm-snapshot builds (a few minutes each, one-time per epic) and N sets of Vercel disposable-lease spend, not one shared amortized snapshot. `local-simulation` (the default) has no such per-epic build cost; prefer it unless an epic specifically needs sandboxed/untrusted execution.

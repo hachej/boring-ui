@@ -94,6 +94,8 @@ export interface ResolveEpicSnapshotOptions {
   /** Directory the registry file (`snapshots.json`) lives under. */
   readonly stateRoot: string
   readonly auth: WarmSnapshotAuth
+  /** Optional git access token for cloning a private `remoteUrl`. See `createWarmSnapshot`. */
+  readonly gitToken?: string
   readonly vcpus?: number
   readonly timeoutMs?: number
   readonly log?: (message: string) => void
@@ -160,6 +162,7 @@ export async function resolveEpicSnapshot(options: ResolveEpicSnapshotOptions): 
     const built = await createSnapshot({
       ref: headSha,
       auth: options.auth,
+      ...(options.gitToken ? { gitToken: options.gitToken } : {}),
       ...(options.vcpus !== undefined ? { vcpus: options.vcpus } : {}),
       ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
       ...(options.log ? { log: options.log } : {}),

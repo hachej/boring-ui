@@ -1,5 +1,5 @@
 import { Sandbox } from '@vercel/sandbox'
-import { FACTORY_COREPACK_HOME, FACTORY_WARM_REPO_ROOT } from './remoteSnapshotProvider'
+import { FACTORY_COREPACK_HOME, FACTORY_GIT_TOKEN_ENV_VAR, FACTORY_WARM_REPO_ROOT } from './remoteSnapshotProvider'
 
 const RUNTIME = 'node24'
 // `pnpm run build:packages` defaults to --workspace-concurrency=4; tsup's DTS
@@ -26,6 +26,13 @@ export interface CreateWarmSnapshotOptions {
   /** Remote to clone from. Default: `https://github.com/hachej/boring-ui.git`. */
   readonly remoteUrl?: string
   readonly auth: WarmSnapshotAuth
+  /**
+   * Optional git access token authenticating the clone of `remoteUrl` (private
+   * repos). Passed to the seed sandbox only as an exec-scoped env var — never
+   * embedded in the clone script's literal text (which would leak it to `ps`
+   * inside the sandbox) or logged.
+   */
+  readonly gitToken?: string
   /** Seed sandbox vCPUs. Default 4 (verified: 8 is rejected on this plan). */
   readonly vcpus?: number
   /** Seed sandbox timeout. Default 40 minutes. */
@@ -131,15 +138,20 @@ export async function createWarmSnapshot(options: CreateWarmSnapshotOptions): Pr
     const corepack = await runStep(seed, 'enable corepack', 'corepack enable 2>&1', log)
     if (!corepack.ok) log('corepack enable did not fully succeed; snapshot will still be created')
 
+    // The token (when present) is only ever passed as an exec-scoped env var
+    // and referenced by the script as a shell variable expansion — never
+    // interpolated into the script's literal text, which `runCommand` would
+    // otherwise expose via `ps` inside the sandbox, and never logged (`log`
+    // only sees this fixed label plus the command's stdout/stderr).
+    const cloneCommand = options.gitToken
+      ? `factory_auth_header="AUTHORIZATION: basic $(printf '%s' \"x-access-token:$${FACTORY_GIT_TOKEN_ENV_VAR}\" | base64 | tr -d '\\n')" && git -c http.extraheader="$factory_auth_header" clone --filter=blob:none ${remoteUrl} ${FACTORY_WARM_REPO_ROOT}`
+      : `git clone --filter=blob:none ${remoteUrl} ${FACTORY_WARM_REPO_ROOT}`
     const clone = await runStep(
       seed,
       `clone ${remoteUrl} into ${FACTORY_WARM_REPO_ROOT}`,
-      [
-        'mkdir -p /vercel/sandbox',
-        `rm -rf ${FACTORY_WARM_REPO_ROOT}`,
-        `git clone --filter=blob:none ${remoteUrl} ${FACTORY_WARM_REPO_ROOT}`,
-      ].join(' && '),
+      ['mkdir -p /vercel/sandbox', `rm -rf ${FACTORY_WARM_REPO_ROOT}`, cloneCommand].join(' && '),
       log,
+      options.gitToken ? { env: { [FACTORY_GIT_TOKEN_ENV_VAR]: options.gitToken } } : {},
     )
     if (!clone.ok) throw new Error('git clone into the seed sandbox failed')
 

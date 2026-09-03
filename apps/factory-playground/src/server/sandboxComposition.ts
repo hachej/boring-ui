@@ -13,6 +13,7 @@ import {
   createExactShaTemplateProvider,
   getFactoryBootstrapLog,
   isBootstrapRefreshNeeded,
+  resolveFactoryGitToken,
 } from './remoteSnapshotProvider'
 import { invalidateEpicSnapshot, peekEpicSnapshot, resolveEpicSnapshot } from './snapshotRegistry'
 import type { WarmSnapshotAuth } from './warmSnapshot'
@@ -85,6 +86,7 @@ interface VercelInnerProviderOptions {
   readonly sourceRoot: string
   readonly scratchRoot: string
   readonly remoteSource: 'fetch' | 'archive' | undefined
+  readonly gitToken?: string
 }
 
 function buildVercelInnerProvider(snapshotId: string, options: VercelInnerProviderOptions): DisposableSandboxProviderV1 {
@@ -99,6 +101,7 @@ function buildVercelInnerProvider(snapshotId: string, options: VercelInnerProvid
     sourceRoot: options.sourceRoot,
     scratchRoot: options.scratchRoot,
     ...(options.remoteSource ? { source: options.remoteSource } : {}),
+    ...(options.gitToken ? { gitToken: options.gitToken } : {}),
   })
 }
 
@@ -149,6 +152,7 @@ export function createPerEpicVercelProvider(options: CreatePerEpicVercelProvider
   const buildInnerProvider = options.buildInnerProvider ?? buildVercelInnerProvider
   const resolveSnapshotFn = options.resolveSnapshotFn ?? resolveEpicSnapshot
   const invalidateSnapshotFn = options.invalidateSnapshotFn ?? invalidateEpicSnapshot
+  const cachedGitToken = resolveFactoryGitToken(options.env)
 
   function getProviderForSnapshot(snapshotId: string): DisposableSandboxProviderV1 {
     let provider = providerCache.get(snapshotId)
@@ -159,6 +163,7 @@ export function createPerEpicVercelProvider(options: CreatePerEpicVercelProvider
         sourceRoot: options.workspaceRoot,
         scratchRoot: options.scratchRoot,
         remoteSource: options.remoteSource,
+        ...(cachedGitToken ? { gitToken: cachedGitToken } : {}),
       })
       providerCache.set(snapshotId, provider)
     }
@@ -174,6 +179,7 @@ export function createPerEpicVercelProvider(options: CreatePerEpicVercelProvider
       workspaceRoot: options.workspaceRoot,
       stateRoot: options.stateRoot,
       auth,
+      ...(cachedGitToken ? { gitToken: cachedGitToken } : {}),
       log: options.log,
     })
   }
@@ -253,12 +259,14 @@ export function createFactorySandboxProvider(
 
   const immutableSnapshotId = env.BORING_FACTORY_VERCEL_SNAPSHOT_ID?.trim()
   if (immutableSnapshotId) {
+    const gitToken = resolveFactoryGitToken(env)
     return buildVercelInnerProvider(immutableSnapshotId, {
       leaseTimeoutMs,
       telemetrySalt: env.BORING_SANDBOX_TELEMETRY_SALT,
       sourceRoot: workspaceRoot,
       scratchRoot,
       remoteSource,
+      ...(gitToken ? { gitToken } : {}),
     })
   }
   return createPerEpicVercelProvider({
