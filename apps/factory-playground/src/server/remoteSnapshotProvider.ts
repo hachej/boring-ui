@@ -146,6 +146,23 @@ export function buildFactoryBootstrapScript(
   '  else',
   '    phase install-skipped',
   '  fi',
+  // Bootstrap safety cap: a warm snapshot whose baseSha has drifted far from
+  // the epic branch's HEAD (e.g. it was taken from `main` while the epic
+  // diverges across most packages) makes this changed-since selector match
+  // nearly the whole monorepo — verified live as a rebuild that blows past
+  // the lease's timeout. Count the matched packages before ever starting a
+  // build; if it exceeds `BORING_FACTORY_MAX_INCREMENTAL_PACKAGES` (default
+  // 12), fail fast with a clear, greppable message instead of rebuilding
+  // serially. The host-side provider wrapper (`sandboxComposition.ts`)
+  // recognizes this exact failure, refreshes the epic's snapshot from HEAD,
+  // and retries the lease once.
+  '  changed_count=$(pnpm -r --filter "...[$base_sha]" --filter \'!.\' exec pwd 2>/dev/null | wc -l | tr -d \' \')',
+  '  max_packages=${BORING_FACTORY_MAX_INCREMENTAL_PACKAGES:-12}',
+  '  if [ "$changed_count" -gt "$max_packages" ]; then',
+  '    echo "factory-bootstrap: $changed_count packages changed since $base_sha; refresh the epic snapshot" >&2',
+  '    exit 1',
+  '  fi',
+  '  phase changed-count',
   // `--filter '!.'` excludes the root workspace package: without it, a diff
   // that touches root-level files (pnpm-lock.yaml, root package.json) makes
   // the changed-since selector match the root package too, which recursively
@@ -250,12 +267,24 @@ export async function buildFetchBootstrapFiles(sourceRoot: string, sha: string):
   ]
 }
 
-/** Single shell invocation: skip if already bootstrapped, else run + mark done. */
+/**
+ * Single shell invocation: skip if already bootstrapped, else run + mark
+ * done. Verified live: on the warm path, `factory-bootstrap.sh` `rm -rf`s
+ * `/workspace` and replaces it with a symlink to the warm repo — but this
+ * guarded command's own shell process was started with cwd `/workspace`
+ * (`createVercelSandboxExec`'s default), so removing that directory out from
+ * under a running process leaves its cwd pointing at nothing: a later
+ * relative `touch .factory-bootstrapped` in the *same* shell then fails with
+ * `ENOENT` even though `/workspace` now resolves fine again for any *new*
+ * process. `cd /` re-anchors this shell to a path that was never touched,
+ * and the trailing marker touch uses `/workspace/...` (absolute) rather than
+ * relying on a cwd that may have just been swapped out.
+ */
 const FACTORY_BOOTSTRAP_GUARDED_COMMAND = [
-  'if [ -f .factory-bootstrapped ]; then',
+  'if [ -f /workspace/.factory-bootstrapped ]; then',
   '  echo "factory-bootstrap already done"',
   'else',
-  '  sh factory-bootstrap.sh && touch .factory-bootstrapped',
+  '  sh factory-bootstrap.sh && cd / && touch /workspace/.factory-bootstrapped',
   'fi',
 ].join('\n')
 
@@ -278,6 +307,14 @@ const bootstrapLogs = new WeakMap<SandboxHandle, string>()
 /** Reads back the bootstrap phase log recorded for a handle returned by `wrapExecWithFetchBootstrap`. `undefined` before bootstrap has run (or for a handle never wrapped). */
 export function getFactoryBootstrapLog(sandbox: SandboxHandle): string | undefined {
   return bootstrapLogs.get(sandbox)
+}
+
+/** Matches the bootstrap script's `changed_count` guard failure line (`buildFactoryBootstrapScript`). A provider wrapper that sees this in a failed bootstrap's stdout/stderr should refresh the epic's warm snapshot and retry once, rather than treat it as an ordinary lease failure. */
+const BOOTSTRAP_REFRESH_NEEDED_RE = /factory-bootstrap: \d+ packages changed since \S+; refresh the epic snapshot/
+
+/** `true` when `output` (stdout+stderr of a failed bootstrap) is the "too many packages changed since baseSha" guard failure — i.e. the epic snapshot should be refreshed and the lease retried, rather than treated as an ordinary failure. */
+export function isBootstrapRefreshNeeded(output: string): boolean {
+  return BOOTSTRAP_REFRESH_NEEDED_RE.test(output)
 }
 
 /**
@@ -318,7 +355,7 @@ function wrapExecWithFetchBootstrap(sandbox: SandboxHandle, sha: string): Sandbo
       bootstrap = sandbox
         .exec(FACTORY_BOOTSTRAP_GUARDED_COMMAND, { timeoutMs: FACTORY_BOOTSTRAP_TIMEOUT_MS } as SandboxExecOptions)
         .then((result: SandboxExecResult) => {
-          bootstrapLogs.set(wrapped, decodeMaybe(result.stdout))
+          bootstrapLogs.set(wrapped, `${decodeMaybe(result.stdout)}\n${decodeMaybe(result.stderr)}`)
           return result
         })
     }

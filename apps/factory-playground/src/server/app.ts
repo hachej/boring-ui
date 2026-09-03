@@ -1,7 +1,5 @@
-import { execFile } from 'node:child_process'
 import { mkdir } from 'node:fs/promises'
 import { basename, resolve } from 'node:path'
-import { promisify } from 'node:util'
 import { createNodeWorkspace } from '@hachej/boring-sandbox/providers/node-workspace'
 import { createWorkspaceAgentServer } from '@hachej/boring-workspace/app/server'
 import { createWorkspaceBeadsOperations } from '@hachej/boring-tasks/server'
@@ -9,7 +7,13 @@ import { loadNativeFactoryFleet, deriveFeatureName, FACTORY_ORCHESTRATOR_AGENT_T
 import { createFactoryDelegatePlugin } from './delegatePlugin'
 import { createFactorySupervisionPlugin } from './supervisionPlugin'
 import { createFactoryDemoPlugin } from './demoPlugin'
-import { createFactorySandboxPlugin, FACTORY_WORKSPACE_SCOPE_ID } from './sandboxComposition'
+import {
+  createFactorySandboxPlugin,
+  getFactorySandboxSnapshotInfo,
+  resolveFactoryEpicKey,
+  warmUpFactorySandboxSnapshot,
+  FACTORY_WORKSPACE_SCOPE_ID,
+} from './sandboxComposition'
 
 export interface CreateFactoryPlaygroundOptions {
   readonly appRoot: string
@@ -19,27 +23,12 @@ export interface CreateFactoryPlaygroundOptions {
   readonly env?: NodeJS.ProcessEnv
 }
 
-const execFileAsync = promisify(execFile)
-
-async function resolveEpicKey(workspaceRoot: string, env: NodeJS.ProcessEnv): Promise<string> {
-  const configured = env.BORING_FACTORY_EPIC_KEY?.trim()
-  if (configured) return configured
-  try {
-    const { stdout } = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: workspaceRoot })
-    const branch = stdout.trim()
-    if (branch) return branch
-  } catch {
-    // not a git repo (or git unavailable): fall back to the workspace directory name below.
-  }
-  return basename(workspaceRoot)
-}
-
 export async function createFactoryPlayground(options: CreateFactoryPlaygroundOptions) {
   const env = options.env ?? process.env
   const workspaceRoot = resolve(options.workspaceRoot ?? env.BORING_FACTORY_WORKSPACE_ROOT ?? options.repositoryRoot)
   const stateRoot = resolve(env.BORING_FACTORY_STATE_ROOT ?? resolve(options.appRoot, '.factory-state'))
   await mkdir(stateRoot, { recursive: true })
-  const epicKey = await resolveEpicKey(workspaceRoot, env)
+  const epicKey = await resolveFactoryEpicKey(workspaceRoot, env)
   const featureName = deriveFeatureName(epicKey, env)
   const agents = await loadNativeFactoryFleet(options.repositoryRoot, {
     orchestrator: env.BORING_FACTORY_ORCHESTRATOR_MODEL,
@@ -75,7 +64,7 @@ export async function createFactoryPlayground(options: CreateFactoryPlaygroundOp
     plugins: [
       supervision.plugin,
       demo.plugin,
-      createFactorySandboxPlugin(workspaceRoot, stateRoot, env),
+      createFactorySandboxPlugin(workspaceRoot, stateRoot, env, epicKey),
       delegate.plugin,
       {
         dir: resolve(options.repositoryRoot, 'plugins/tasks'),
@@ -109,7 +98,15 @@ export async function createFactoryPlayground(options: CreateFactoryPlaygroundOp
     defaultAgentTypeId: FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
     agentTypeIds: agents.map((agent) => agent.agentTypeId),
     sandboxProvider: env.BORING_FACTORY_SANDBOX_PROVIDER === 'vercel' ? 'vercel' : 'local-simulation',
+    sandboxSnapshot: await getFactorySandboxSnapshotInfo({ stateRoot, epicKey, env }),
   }))
+
+  // Fire-and-forget: warms the per-epic snapshot registry so the first
+  // Worker lease doesn't pay the ~4-minute warm-snapshot build cost inline.
+  // Never awaited on the boot path — a failure here is logged and otherwise
+  // harmless, since `createPerEpicVercelProvider.create()` resolves the same
+  // snapshot (and shares the same in-flight build) lazily on first lease.
+  void warmUpFactorySandboxSnapshot({ workspaceRoot, stateRoot, epicKey, env })
 
   return app
 }

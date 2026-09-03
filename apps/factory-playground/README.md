@@ -145,9 +145,71 @@ Regardless of mode:
 `sandboxComposition.ts` wires this in automatically: when
 `BORING_FACTORY_SANDBOX_PROVIDER=vercel`, `createFactorySandboxPlugin` wraps
 `createVercelSandboxProvider(...)` with `createExactShaTemplateProvider`,
-scratch rooted at `<stateRoot>/snapshots`. The immutable base snapshot
-(`BORING_FACTORY_VERCEL_SNAPSHOT_ID`) is still required and is never model
-selected — it is host authority, same as today.
+scratch rooted at `<stateRoot>/snapshots`. The base snapshot is still never
+model-selected — it is host authority — but which one is used is now
+per-epic by default (see the next section) rather than always the single
+`BORING_FACTORY_VERCEL_SNAPSHOT_ID`.
+
+### One snapshot per epic (the fix for the drifted-baseline problem)
+
+**Problem observed live:** a warm snapshot built once from `main` and then
+reused as the single `BORING_FACTORY_VERCEL_SNAPSHOT_ID` for every Factory
+instance works fine right up until an epic branch diverges from `main`
+across most packages — at that point the bootstrap's changed-since selector
+(`pnpm -r --filter "...[<baseSha>]"`) matches nearly the whole monorepo, and
+rebuilding that serially (required to avoid the OOM a default-resource lease
+otherwise hits) blows past the lease's timeout.
+
+**Fix:** `snapshotRegistry.ts`'s `resolveEpicSnapshot` gives every epic its
+own warm snapshot, built from *that epic branch's own HEAD* — so a lease's
+changed-since diff is bounded by that epic's own commits since the snapshot
+was taken, never by however far the epic has diverged from wherever a fixed
+snapshot happened to be built from. This is the default the moment
+`BORING_FACTORY_VERCEL_SNAPSHOT_ID` is left unset:
+
+- **Registry**: `<stateRoot>/snapshots.json`, entries keyed by
+  `${epicKey}:${lockfileSha256}` (`epicKey` defaults to the workspace's git
+  branch name, `BORING_FACTORY_EPIC_KEY` overrides it). A cache hit reuses
+  the stored snapshot even if the epic's HEAD has advanced since it was
+  built — the bootstrap's own incremental rebuild handles those newer
+  commits on top of the cached `baseSha`. A miss (new epic, or the lockfile
+  changed) builds a fresh snapshot from the workspace's **current HEAD**,
+  which must already be pushed (`git ls-remote origin <branch>` must match;
+  otherwise `resolveEpicSnapshot` throws `push the epic branch first: ...`),
+  and stores it with a 7-day-minus-1-hour expiry.
+- **Refresh triggers** (any one rebuilds the snapshot): the `pnpm-lock.yaml`
+  hash changed, the entry expired, or a lease's bootstrap hits the
+  changed-package-count guard below.
+- **Bootstrap safety cap**: before ever starting the incremental rebuild,
+  `buildFactoryBootstrapScript` counts how many packages the changed-since
+  filter matched (`pnpm -r --filter "...[<baseSha>]" --filter '!.' exec pwd
+  | wc -l`). More than `BORING_FACTORY_MAX_INCREMENTAL_PACKAGES` (default
+  12) fails the bootstrap fast with a clear line:
+  `factory-bootstrap: <n> packages changed since <baseSha>; refresh the
+  epic snapshot` — instead of a serial rebuild that would blow the lease
+  timeout anyway. `sandboxComposition.ts`'s lazy per-epic provider
+  (`createPerEpicVercelProvider`) recognizes this exact failure via
+  `isBootstrapRefreshNeeded`, invalidates the stale registry entry, builds a
+  fresh snapshot from HEAD, and retries the lease once against it.
+- **Single-flight**: concurrent callers resolving the same epic's snapshot
+  (e.g. the host's boot-time warm-up racing a Worker's first lease) share
+  one build rather than racing two.
+- **Host warm-up**: `createFactoryPlayground` (`app.ts`) fires
+  `warmUpFactorySandboxSnapshot` in the background right after boot (never
+  awaited — logged, not fatal, on failure) so the epic's snapshot is usually
+  already resolved by the time the first Worker lease needs one.
+- **Exposed at** `GET /api/v1/workspace/meta` as `sandboxSnapshot: { mode:
+  'fixed' | 'per-epic', snapshotId?, baseSha? }` (`'fixed'` when
+  `BORING_FACTORY_VERCEL_SNAPSHOT_ID` is set; `'per-epic'` otherwise, with
+  `snapshotId`/`baseSha` populated once one has been resolved).
+- **`demoPlugin.ts`'s `demo_sandbox` tool** resolves through the same
+  registry when no fixed snapshot id is configured, so an owner-facing demo
+  also boots from a snapshot close to the epic's own `baseSha` rather than a
+  stale `main` build.
+
+A fixed `BORING_FACTORY_VERCEL_SNAPSHOT_ID` still works exactly as before
+(useful for a Factory instance intentionally pinned to one ref, e.g. CI); it
+simply skips the registry entirely.
 
 ### One-time setup: the base snapshot (warm by default)
 
@@ -382,3 +444,99 @@ worse-than-typical case and can still trigger a large rebuild — raising the
 lease's own timeout (`timeoutMs` on `createVercelSandboxProvider`) and/or
 requesting more `resources.vcpus` for that lease are the two knobs available
 today; a more scoped changed-since filter is a possible follow-up.
+
+**This is exactly the failure the per-epic snapshot registry above fixes.**
+The finding above used the epic branch's own drift from a `main`-baked
+snapshot as the `baseSha`; with a snapshot built from the epic branch's own
+HEAD instead, the changed-since diff is bounded by that epic's own commits
+since the snapshot was taken, not by the epic-vs-`main` distance.
+
+### Verified live: per-epic snapshot registry
+
+Run with **no `BORING_FACTORY_VERCEL_SNAPSHOT_ID` set** (forcing the
+per-epic path), `vercel-lease-smoke.mts` composed via
+`createFactorySandboxProvider` (the same call `sandboxComposition.ts` makes
+for real leases) against `factory-live-epic-1508-r8` (HEAD `2f33f47a`,
+pushed as `epic/farewell-api-r8`), credentials from Vault:
+
+**Run 1 — cold (builds the epic's snapshot from its own HEAD):**
+
+| Phase | Time |
+| --- | --- |
+| `resolveEpicSnapshot` (cache miss → `createWarmSnapshot` from this epic's HEAD) | ~253s (~4m13s) |
+| lease `create()` (boots from the just-built snapshot) | included above (snapshot build dominates) |
+| `seed`/`checkHealth` | 176ms |
+| `dispose` | 328ms |
+
+(This run's first bootstrap attempt also caught a real, separate bug —
+see **Fixes found live** below — so its `command`/`bootstrap` timings aren't
+representative; rerun after the fix for the numbers below.)
+
+**Run 2 — reuse (registry cache hit; `pnpm --filter factory-playground test`):**
+
+| Phase | Time |
+| --- | --- |
+| `create()` (boots from the cached snapshot) | 6,898ms |
+| `seed`/`checkHealth` | 176ms |
+| `bootstrap` (fetch + lockfile-hash check + changed-count guard + build) | 0ms (already bootstrapped by the eager probe inside `create()`) |
+| — `factory-bootstrap-phase fetch` | 793ms |
+| — `factory-bootstrap-phase install-skipped` | 147ms |
+| — `factory-bootstrap-phase changed-count` | 414ms |
+| — `factory-bootstrap-phase build` (0 packages matched — snapshot's own commit) | 349ms |
+| `verifySha` | — (folded into the exec below) |
+| `command` (`pnpm --filter factory-playground test`, 32 tests) | 6,604ms |
+| `dispose` | 328ms |
+| **total** | **~14.3s** |
+
+A third run (same cached snapshot, `pnpm --filter factory-playground exec
+vitest run src/server/factoryComposition.test.ts`) reproduced the same
+bootstrap timings (fetch 529ms / install-skipped 154ms / changed-count
+422ms / build 373ms) and a **12.5s** total lease lifetime — confirming the
+registry cache-hit path is fast and repeatable, not a one-off.
+
+A **cheap fixture command** (`node --version && echo cheap-fixture-ok`,
+same cached snapshot) completed in **7.2s** total (`create` 6,173ms / `seed`
+203ms / `bootstrap` 225ms / `verifySha` 231ms / `command` 174ms / `dispose`
+177ms) — proving the fast path holds even when the command itself is
+trivial.
+
+**Fixes found live while running this:**
+
+- **Seed-sandbox install needed the same lockfile-drift fallback as the
+  lease bootstrap.** `factory-live-epic-1508-r8`'s `pnpm-lock.yaml` has a
+  real, pre-existing drift from `package.json` (`pi-mono-loop` removed from
+  `apps/factory-playground/package.json` but not the lockfile) — the same
+  issue `FACTORY_BOOTSTRAP_SCRIPT` already tolerates at lease time.
+  `warmSnapshot.ts`'s own `pnpm install --frozen-lockfile` did not, and
+  failed outright building the epic's snapshot. Fixed by applying the same
+  `--frozen-lockfile || --no-frozen-lockfile` fallback to the seed install.
+- **The bootstrap's post-build marker touch used a cwd the same script had
+  just deleted.** On the warm path, `factory-bootstrap.sh` `rm -rf`s
+  `/workspace` and replaces it with a symlink to the warm repo — but the
+  guarded wrapper (`FACTORY_BOOTSTRAP_GUARDED_COMMAND`) that invokes it runs
+  in a shell whose cwd *was* `/workspace` (`createVercelSandboxExec`'s
+  default), so the directory it's sitting in gets removed out from under it
+  mid-script. The following `touch .factory-bootstrapped` then failed with
+  `ENOENT` even though the build itself had already succeeded — this was
+  never exercised before because it only triggers on the warm-snapshot +
+  `'fetch'`-mode combination together, and every prior live run here had hit
+  the drifted-baseline timeout before reaching this step. Fixed by having
+  the guarded command `cd /` and use an absolute path (`/workspace/...`)
+  after the script runs, rather than trusting the now-stale relative cwd.
+
+Both fixes are covered by the existing unit test suite's real-`sh`
+end-to-end coverage (`remoteSnapshotProvider.test.ts`) and the two smoke
+runs above, which passed after applying them.
+
+**One pre-existing, unrelated failure observed (not introduced by this
+work, out of scope to fix here):** `pnpm --filter factory-playground test`
+against `epic/farewell-api-r8`'s own checked-out source reproducibly fails
+one test — `factoryComposition.test.ts › boots the native app with
+supervise/factory_status only on the Orchestrator and sandbox only on the
+Worker` — with a `409` where `201` is expected creating the Orchestrator's
+session. This is application code entirely on that epic branch (a
+different, unrelated in-flight feature under that same epic key), unaffected
+by anything in this change; reproduced identically across two separate
+lease runs, ruling out a one-off flake. 44/45 tests in that run passed; all
+45 tests in *this* worktree's own suite (`apps/factory-playground`) pass —
+see the check output below.

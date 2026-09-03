@@ -6,6 +6,7 @@ import { promisify } from 'node:util'
 import { defineServerPlugin } from '@hachej/boring-workspace/server'
 import type { AgentTool, ToolExecContext, ToolResult } from '@hachej/boring-agent/shared'
 import { buildFetchBootstrapFiles, FACTORY_BOOTSTRAP_SCRIPT } from './remoteSnapshotProvider'
+import { resolveEpicSnapshot } from './snapshotRegistry'
 
 export const FACTORY_DEMO_PLUGIN_ID = 'factory-demo'
 
@@ -179,7 +180,40 @@ export interface FactoryDemoPluginHandle {
 }
 
 function isProviderConfigured(env: NodeJS.ProcessEnv): boolean {
-  return env.BORING_FACTORY_SANDBOX_PROVIDER === 'vercel' && Boolean(env.BORING_FACTORY_VERCEL_SNAPSHOT_ID?.trim())
+  if (env.BORING_FACTORY_SANDBOX_PROVIDER !== 'vercel') return false
+  if (env.BORING_FACTORY_VERCEL_SNAPSHOT_ID?.trim()) return true
+  // No fixed snapshot id: the per-epic registry can still resolve one, as
+  // long as credentials are present to build it if it's not cached yet.
+  const credentials = resolveVercelCredentials(env)
+  return Boolean(credentials.token && credentials.teamId && credentials.projectId)
+}
+
+/**
+ * Resolves the snapshot id a demo boots from: the fixed
+ * `BORING_FACTORY_VERCEL_SNAPSHOT_ID` when set, else the same per-epic
+ * snapshot registry `sandboxComposition.ts`'s lazy provider uses (so a demo
+ * always runs from a snapshot whose `baseSha` is close to the epic branch,
+ * never a stale `main` snapshot).
+ */
+async function resolveDemoSnapshotId(
+  env: NodeJS.ProcessEnv,
+  workspaceRoot: string,
+  stateRoot: string,
+  epicKey: string,
+): Promise<string> {
+  const fixed = env.BORING_FACTORY_VERCEL_SNAPSHOT_ID?.trim()
+  if (fixed) return fixed
+  const credentials = resolveVercelCredentials(env)
+  if (!credentials.token || !credentials.teamId || !credentials.projectId) {
+    throw new Error('VERCEL_TOKEN/VERCEL_TEAM_ID/VERCEL_PROJECT_ID are required to build a per-epic Factory snapshot')
+  }
+  const resolved = await resolveEpicSnapshot({
+    epicKey,
+    workspaceRoot,
+    stateRoot,
+    auth: { token: credentials.token, teamId: credentials.teamId, projectId: credentials.projectId },
+  })
+  return resolved.snapshotId
 }
 
 function positiveInteger(value: string | undefined, fallback: number): number {
@@ -223,6 +257,7 @@ export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions)
 
   const stateRoot = options.stateRoot
   const workspaceRoot = options.workspaceRoot
+  const epicKey = options.epicKey
   const env = options.env
   const statePath = resolve(stateRoot, 'demos.json')
   const fetchImpl = options.fetchImpl ?? fetch
@@ -395,7 +430,13 @@ export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions)
         ? params.sha
         : await gitRevParseHead(workspaceRoot)
 
-      const snapshotId = env.BORING_FACTORY_VERCEL_SNAPSHOT_ID!.trim()
+      let snapshotId: string
+      try {
+        snapshotId = await resolveDemoSnapshotId(env, workspaceRoot, stateRoot, epicKey)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'failed to resolve a Factory snapshot for this demo'
+        return jsonResult({ code: 'SNAPSHOT_UNAVAILABLE', message }, true)
+      }
       const credentials = resolveVercelCredentials(env)
       const id = randomUUID()
       const sandboxName = `factory-demo-${id}`
