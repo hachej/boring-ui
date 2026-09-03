@@ -25,9 +25,9 @@ function positiveInteger(value: string | undefined, fallback: number): number {
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback
 }
 
-function createProvider(appRoot: string, env: NodeJS.ProcessEnv): SandboxProviderV1 {
+function createProvider(workspaceRoot: string, env: NodeJS.ProcessEnv): SandboxProviderV1 {
   if (env.BORING_FACTORY_SANDBOX_PROVIDER !== 'vercel') {
-    return createLocalDisposableProvider(resolve(appRoot, 'src/fixtures/demo-repo'))
+    return createLocalDisposableProvider(workspaceRoot)
   }
   const immutableSnapshotId = env.BORING_FACTORY_VERCEL_SNAPSHOT_ID?.trim()
   if (!immutableSnapshotId) {
@@ -42,7 +42,7 @@ function createProvider(appRoot: string, env: NodeJS.ProcessEnv): SandboxProvide
 }
 
 export function createFactorySandboxPlugin(
-  appRoot: string,
+  workspaceRoot: string,
   stateRoot: string,
   env: NodeJS.ProcessEnv = process.env,
 ) {
@@ -56,7 +56,7 @@ export function createFactorySandboxPlugin(
     maxPerWorker,
     maxTotal,
   }))
-  const provider = createProvider(appRoot, env)
+  const provider = createProvider(workspaceRoot, env)
 
   return createSandboxServerPlugin({
     workspaceScopeId: FACTORY_WORKSPACE_SCOPE_ID,

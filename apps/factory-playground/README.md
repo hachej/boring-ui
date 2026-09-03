@@ -6,6 +6,7 @@ A dedicated local dogfood app that composes the Factory directly from this check
 
 - `boring-orchestrator`: canonical `.agents/personas/orchestrator` profile plus canonical `plan`, `feedback`, `owner-gate`, and `handoff` skill sources; receives `pi-mono-loop` and `boring-automation`.
 - `boring-worker`: canonical `.agents/personas/worker` profile plus canonical `exec`, `fresh-eyes`, `owner-gate`, and `handoff` skill sources; receives only the trusted `sandbox` plugin.
+- each seat may receive its own strict host-selected default model through `BORING_FACTORY_ORCHESTRATOR_MODEL` and `BORING_FACTORY_WORKER_MODEL`; users may still select another admitted model for a session/turn;
 - all seats receive the workspace-scoped ask-user capability;
 - Tasks reads GitHub plus the checkout's Beads graph;
 - the standard Agents, sessions, Inbox, Tasks, and Automations surfaces provide the watch plane.
@@ -26,11 +27,11 @@ A deterministic tracer-bullet simulation is available without model or cloud cre
 pnpm --filter factory-playground simulate
 ```
 
-It boots the native app, obtains one host-issued Orchestrator session and two host-issued Worker sessions, executes `/loop list`, then visibly streams intake → plan gate → two real `br ready`/claim operations → two independent sandbox leases → real edits/tests/git commits → deterministic host validation → integration test → release. The full receipt is written to `apps/factory-playground/workspace/factory-runs/latest.json`. It never merges.
+It boots the native app, obtains one host-issued Orchestrator session and two host-issued Worker sessions, executes `/loop list`, then visibly streams intake → plan gate → two real `br ready`/claim operations → edits and commits in one shared epic worktree → exact-SHA snapshots in dedicated test sandboxes → deterministic host validation → final exact-SHA sandbox integration test → release. The full receipt is written to `apps/factory-playground/workspace/factory-runs/latest.json`. It never merges.
 
 ## Sandbox modes
 
-`local-simulation` is the default. It executes the real `sandbox` and `sandbox_bash` tool implementations against independently copied disposable roots. The watch script invokes those tools through a deterministic harness using the host-issued session identities; it does not claim a model chose the calls. It proves host grants, ownership, routing, pull-based `br` claims, pin/drain, cleanup, and integrated feature evidence; it does **not** claim security confinement or independent agent review.
+`local-simulation` is the default. The shared epic worktree is the editing authority. After each commit, the provider snapshots that exact SHA into a disposable root where the real `sandbox_bash` tool runs tests; sandbox changes are never copied back. The watch script invokes tools through a deterministic harness using host-issued session identities, so it proves host grants, ownership, routing, pull-based `br` claims, exact-SHA test isolation, cleanup, and integrated feature evidence. It does **not** claim security confinement, model-selected calls, or independent agent review.
 
 To use the real Vercel disposable provider, set the variables documented in `.env.example`, including a host-selected immutable snapshot ID. The model cannot select provider, snapshot, credentials, TTL, quota, roots, or cleanup policy.
 

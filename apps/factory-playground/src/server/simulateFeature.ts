@@ -26,6 +26,7 @@ export interface FactoryWorkerReceipt {
   readonly beadId: string
   readonly sandbox: string
   readonly sha: string
+  readonly sandboxSourceSha: string
   readonly testExitCode: number
   readonly testOutputDigest: `sha256:${string}`
   readonly hostValidation: 'clean'
@@ -36,6 +37,7 @@ export interface FactorySimulationReceipt {
   readonly request: string
   readonly orchestratorSessionId: string
   readonly loopCommand: '/loop'
+  readonly sharedEpicWorktree: true
   readonly workers: readonly FactoryWorkerReceipt[]
   readonly integratedFeatureSha: string
   readonly integratedTestExitCode: 0
@@ -177,11 +179,27 @@ export async function simulateFactoryFeature(options: SimulateFeatureOptions): P
         workerSessionId,
         beadId: item.beadId,
       })
+      await execFileAsync('bash', ['-lc', item.command], { cwd: integrationRoot })
+      const changedOutput = (await execFileAsync('git', ['diff', '--name-only'], { cwd: integrationRoot })).stdout
+      const changedPaths = changedOutput.split('\n').map((path) => path.trim()).filter(Boolean).sort()
+      if (JSON.stringify(changedPaths) !== JSON.stringify([...item.expectedPaths].sort())) {
+        throw new Error(`validation rejected ${item.beadId}: expected ${item.expectedPaths.join(', ')}, got ${changedPaths.join(', ')}`)
+      }
+      await execFileAsync('git', ['add', '--', ...item.expectedPaths], { cwd: integrationRoot })
+      await execFileAsync('git', ['commit', '-qm', `${item.beadId} implement feature`], { cwd: integrationRoot })
+      const sha = (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: integrationRoot })).stdout.trim()
+      await emit({
+        stage: 'commit',
+        message: `Worker committed its Bead directly in the shared epic worktree at ${sha.slice(0, 12)}.`,
+        workerSessionId,
+        beadId: item.beadId,
+      })
+
       const createResult = await sandbox.execute({ op: 'create' }, context(workerSessionId, `${item.beadId}:create`))
       const handle = String(details(createResult).sandbox)
       await emit({
         stage: 'sandbox',
-        message: 'The simulation host issued an isolated disposable sandbox lease.',
+        message: `The host snapshotted committed SHA ${sha.slice(0, 12)} into a dedicated test sandbox.`,
         workerSessionId,
         beadId: item.beadId,
         sandbox: handle,
@@ -194,26 +212,15 @@ export async function simulateFactoryFeature(options: SimulateFeatureOptions): P
         testOutputText(result)
         return result
       }
-      await run("git config user.email factory@example.test && git config user.name 'Factory Worker'", 'identity')
-      await run(item.command, 'implement')
-      const test = await run('npm test', 'test')
-      const changed = await run("git diff --name-only | tr -d '\\r'", 'review-files')
-      const changedOutput = changedOutputText(changed)
-      const changedPaths = changedOutput.split('\n').map((path) => path.trim()).filter(Boolean).sort()
-      if (JSON.stringify(changedPaths) !== JSON.stringify([...item.expectedPaths].sort())) {
-        throw new Error(`validation rejected ${item.beadId}: expected ${item.expectedPaths.join(', ')}, got ${changedPaths.join(', ')}`)
+      const sandboxSha = changedOutputText(await run('git rev-parse HEAD', 'sha')).trim().split('\n').at(-1) ?? ''
+      if (sandboxSha !== sha) {
+        throw new Error(`sandbox source mismatch for ${item.beadId}: expected ${sha}, got ${sandboxSha}`)
       }
-      await run(`git add ${item.expectedPaths.join(' ')} && git commit -qm '${item.beadId} implement feature'`, 'commit')
-      const shaResult = await run('git rev-parse HEAD', 'sha')
-      const sha = changedOutputText(shaResult).trim().split('\n').at(-1) ?? ''
+      const test = await run('npm test', 'test')
       const testOutput = testOutputText(test)
-      const patch = await run('git format-patch -1 --stdout', 'patch')
-      const patchPath = resolve(workGraphRoot, `${item.beadId}.patch`)
-      await writeFile(patchPath, testOutputText(patch), 'utf8')
-      await execFileAsync('git', ['am', patchPath], { cwd: integrationRoot })
       await emit({
         stage: 'validation',
-        message: `Deterministic host validation passed at ${sha.slice(0, 12)}; this is not independent agent review.`,
+        message: `Dedicated sandbox test passed against exact committed SHA ${sha.slice(0, 12)}; this is not independent agent review.`,
         workerSessionId,
         beadId: item.beadId,
         sandbox: handle,
@@ -224,6 +231,7 @@ export async function simulateFactoryFeature(options: SimulateFeatureOptions): P
         beadId: item.beadId,
         sandbox: handle,
         sha,
+        sandboxSourceSha: sandboxSha,
         testExitCode: 0,
         testOutputDigest: digest(testOutput),
         hostValidation: 'clean',
@@ -237,11 +245,31 @@ export async function simulateFactoryFeature(options: SimulateFeatureOptions): P
         sandbox: handle,
       })
     }
-    await execFileAsync('npm', ['test'], { cwd: integrationRoot })
     integratedFeatureSha = (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: integrationRoot })).stdout.trim()
+    const integrationOwner = workerSessionIds[0]
+    const integratedLease = await sandbox.execute(
+      { op: 'create' },
+      context(integrationOwner, 'integrated:create'),
+    )
+    const integratedHandle = String(details(integratedLease).sandbox)
+    const integratedSandboxSha = changedOutputText(await bash.execute(
+      { sandbox: integratedHandle, command: 'git rev-parse HEAD' },
+      context(integrationOwner, 'integrated:sha'),
+    )).trim().split('\n').at(-1) ?? ''
+    if (integratedSandboxSha !== integratedFeatureSha) {
+      throw new Error(`integrated sandbox source mismatch: expected ${integratedFeatureSha}, got ${integratedSandboxSha}`)
+    }
+    testOutputText(await bash.execute(
+      { sandbox: integratedHandle, command: 'npm test' },
+      context(integrationOwner, 'integrated:test'),
+    ))
+    await sandbox.execute(
+      { op: 'release', sandbox: integratedHandle },
+      context(integrationOwner, 'integrated:release'),
+    )
     await emit({
       stage: 'integration',
-      message: `Both validated simulation commits compose and pass together at ${integratedFeatureSha.slice(0, 12)}.`,
+      message: `Both shared-worktree commits compose and pass in a dedicated sandbox at exact SHA ${integratedFeatureSha.slice(0, 12)}.`,
     })
   } finally {
     try {
@@ -255,6 +283,7 @@ export async function simulateFactoryFeature(options: SimulateFeatureOptions): P
     request: 'Add an excited greeting to the demo repository',
     orchestratorSessionId,
     loopCommand: '/loop',
+    sharedEpicWorktree: true,
     workers: receipts,
     integratedFeatureSha,
     integratedTestExitCode: 0,

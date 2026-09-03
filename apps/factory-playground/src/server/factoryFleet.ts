@@ -29,6 +29,7 @@ async function createSeat(input: {
   seat: keyof typeof seatSkills
   agentTypeId: string
   plugins: readonly string[]
+  preferredModel?: string
 }): Promise<AgentHostAgentSpec> {
   const directory = resolve(input.repositoryRoot, '.agents/personas', input.seat)
   const source = await materializeAgentDirectory({
@@ -42,24 +43,35 @@ async function createSeat(input: {
       instructionSources: [{ role: 'persona', absolutePath: resolve(directory, 'instructions.md') }],
       instructionAppendices: await loadAppendices(input.repositoryRoot, seatSkills[input.seat]),
       plugins: input.plugins.map((name) => ({ name })),
+      preferredModel: input.preferredModel,
     },
   })
 }
 
 /** Load canonical persona and skill sources from this checkout; no packaged or vendored copies. */
-export async function loadNativeFactoryFleet(repositoryRoot: string): Promise<readonly AgentHostAgentSpec[]> {
+export interface FactoryFleetModelDefaults {
+  readonly orchestrator?: string
+  readonly worker?: string
+}
+
+export async function loadNativeFactoryFleet(
+  repositoryRoot: string,
+  models: FactoryFleetModelDefaults = {},
+): Promise<readonly AgentHostAgentSpec[]> {
   return await Promise.all([
     createSeat({
       repositoryRoot,
       seat: 'orchestrator',
       agentTypeId: FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
       plugins: [FACTORY_LOOP_PLUGIN_ID, 'boring-automation'],
+      preferredModel: models.orchestrator,
     }),
     createSeat({
       repositoryRoot,
       seat: 'worker',
       agentTypeId: FACTORY_WORKER_AGENT_TYPE_ID,
       plugins: ['sandbox'],
+      preferredModel: models.worker,
     }),
   ])
 }

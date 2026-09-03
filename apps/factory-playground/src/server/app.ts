@@ -20,7 +20,10 @@ export async function createFactoryPlayground(options: CreateFactoryPlaygroundOp
   const workspaceRoot = resolve(options.workspaceRoot ?? env.BORING_FACTORY_WORKSPACE_ROOT ?? options.repositoryRoot)
   const stateRoot = resolve(env.BORING_FACTORY_STATE_ROOT ?? resolve(options.appRoot, '.factory-state'))
   await mkdir(stateRoot, { recursive: true })
-  const agents = await loadNativeFactoryFleet(options.repositoryRoot)
+  const agents = await loadNativeFactoryFleet(options.repositoryRoot, {
+    orchestrator: env.BORING_FACTORY_ORCHESTRATOR_MODEL,
+    worker: env.BORING_FACTORY_WORKER_MODEL,
+  })
   const beadsOperations = createWorkspaceBeadsOperations(createNodeWorkspace(workspaceRoot))
 
   const app = await createWorkspaceAgentServer({
@@ -44,7 +47,7 @@ export async function createFactoryPlayground(options: CreateFactoryPlaygroundOp
     workspaceScopedDefaultPluginAgentContributions: true,
     plugins: [
       createFactoryLoopPlugin(),
-      createFactorySandboxPlugin(options.appRoot, stateRoot, env),
+      createFactorySandboxPlugin(workspaceRoot, stateRoot, env),
       {
         dir: resolve(options.repositoryRoot, 'plugins/tasks'),
         options: {

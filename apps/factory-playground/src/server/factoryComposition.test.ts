@@ -20,7 +20,10 @@ afterEach(async () => {
 
 describe('native Factory composition', () => {
   it('loads canonical repo profiles and grants loop and sandbox to different seats', async () => {
-    const fleet = await loadNativeFactoryFleet(repositoryRoot)
+    const fleet = await loadNativeFactoryFleet(repositoryRoot, {
+      orchestrator: 'openai-codex:gpt-5.6-sol',
+      worker: 'anthropic:claude-sonnet-4-6',
+    })
     expect(fleet.map((agent) => agent.agentTypeId)).toEqual([
       FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
       FACTORY_WORKER_AGENT_TYPE_ID,
@@ -28,7 +31,9 @@ describe('native Factory composition', () => {
     const orchestrator = fleet[0]!
     const worker = fleet[1]!
     expect(orchestrator.plugins?.map((plugin) => plugin.name)).toEqual(['factory-loop', 'boring-automation'])
+    expect(orchestrator.model?.preferred).toBe('openai-codex:gpt-5.6-sol')
     expect(worker.plugins?.map((plugin) => plugin.name)).toEqual(['sandbox'])
+    expect(worker.model?.preferred).toBe('anthropic:claude-sonnet-4-6')
     expect(orchestrator.definition.instructions).toContain('boring-skill:start name=plan')
     expect(worker.definition.instructions).toContain('boring-skill:start name=exec')
     expect(worker.definition.instructions).not.toContain('boring-skill:start name=plan')
@@ -120,15 +125,17 @@ describe('native Factory composition', () => {
     })
 
     expect(receipt.loopCommand).toBe('/loop')
+    expect(receipt.sharedEpicWorktree).toBe(true)
     expect(receipt.workers).toHaveLength(2)
     expect(new Set(receipt.workers.map((worker) => worker.sandbox)).size).toBe(2)
     expect(receipt.workers.every((worker) => worker.hostValidation === 'clean' && worker.released)).toBe(true)
     expect(receipt.workers.every((worker) => /^[a-f0-9]{40}$/.test(worker.sha))).toBe(true)
-    expect(receipt.integratedFeatureSha).toMatch(/^[a-f0-9]{40}$/)
+    expect(receipt.workers.every((worker) => worker.sandboxSourceSha === worker.sha)).toBe(true)
+    expect(receipt.integratedFeatureSha).toBe(receipt.workers.at(-1)?.sha)
     expect(receipt.integratedTestExitCode).toBe(0)
     expect(receipt.cleanupDebt).toBe(0)
     expect(receipt.merged).toBe(false)
-    expect(events).toEqual(expect.arrayContaining(['intake', 'plan-gate', 'loop', 'claim', 'sandbox', 'validation', 'settled', 'integration', 'complete']))
+    expect(events).toEqual(expect.arrayContaining(['intake', 'plan-gate', 'loop', 'claim', 'commit', 'sandbox', 'validation', 'settled', 'integration', 'complete']))
     await expect(readdir(resolve(root, 'leases'))).resolves.toEqual([])
   }, 30_000)
 })

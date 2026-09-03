@@ -55,10 +55,15 @@ Agent Mail — adopted selectively; deviations are deliberate and listed below.
 6. **Intake (refine)**: raw ideas → Concierge conversation → Steward
    materializes beads → one plan-approval intention → autonomous until merge
    gates. Triage automation routes external intake into the same funnel.
-7. **Branching**: one worktree per epic (in `.worktrees/`); commit/branch
-   mechanics owned by `docs/procedures/worktree-agent.md`. Beadle
-   auto-rebases epic branches on main (thresholds in policy.yaml); conflicts
-   become blocking beads. 1 epic = 1 GH issue = 1 worktree = 1 PR.
+7. **Branching** (amended 2026-09-02): one shared worktree per epic (in
+   `.worktrees/`); commit/branch mechanics owned by
+   `docs/procedures/worktree-agent.md`. Beads need not declare file scope.
+   Workers edit the shared worktree, commit frequently to its epic branch, and
+   resolve visible conflicts in place without overwriting peer work. Dedicated
+   remote sandboxes test or serve exact committed SHAs; they are not editing
+   authorities. Beadle auto-rebases epic branches on main (thresholds in
+   policy.yaml); unresolved conflicts become blocking beads. 1 epic = 1 GH
+   issue = 1 shared worktree = 1 PR.
 8. **Bugfix lane**: one standing rolling worktree (`fix/rolling`). 1 fix =
    1 bead = 1 inbox intention, reviewed individually (surface by surface).
    Fixes accumulate; owner review flushes approved fixes to main (cherry-pick
@@ -70,10 +75,12 @@ Agent Mail — adopted selectively; deviations are deliberate and listed below.
    is exhausted. Seats need Anthropic runtimes; Sol runs via codex as
    ephemeral adversarial passes only, track cap per the T1 row in
    `docs/procedures/MODEL-CARD.md`.
-10. **Comms**: thread=bead everywhere — commit messages, session titles,
-    intention subjects, artifact names. Agent Mail only if >5 concurrent
-    workers collide in practice, and then as a provider behind the Agent
-    Communications adapter, never a peer control plane. Buzz pilot deferred.
+10. **Comms** (reaffirmed 2026-09-02): thread=bead everywhere — commit
+    messages, session titles, intention subjects, artifact names. Start shared-
+    worktree execution without Agent Mail, file reservations, or a second
+    coordination plane; conflicts are visible and resolved in the workspace.
+    Add Agent Mail only if observed collisions justify it, and then behind the
+    Agent Communications adapter. Buzz pilot deferred.
 
 ## Factory runs on boring-ui primitives
 
