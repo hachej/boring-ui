@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createFactoryPlayground } from './app'
-import { startFactoryHost } from '../../scripts/factory-host.mts.js'
+import { startFactoryHost } from './factoryHost'
 import {
   loadNativeFactoryFleet,
   FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
