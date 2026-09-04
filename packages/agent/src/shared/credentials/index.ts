@@ -1,4 +1,11 @@
 export type {
+  CredentialLifecycleStateV1,
+  CredentialMetadataListResponseV1,
+  CredentialMetadataV1,
+  CredentialRouteErrorV1,
+  CredentialWriteRequestV1,
+} from './admin'
+export type {
   AuthorizedWorkspaceCredentialScopeV1,
   VerifiedWorkspaceCredentialAuthorityV1,
   VerifiedWorkspaceCredentialPrincipalV1,

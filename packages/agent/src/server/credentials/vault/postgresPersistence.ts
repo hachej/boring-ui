@@ -13,7 +13,9 @@ import type {
   CommitCredentialVersionInputV1,
   CredentialFieldKeyV1,
   CredentialFieldTombstoneV1,
+  CredentialLifecycleStateV1,
   CredentialVaultPersistenceV1,
+  StoredCredentialMetadataV1,
   StoredCredentialRecordV1,
   WorkspaceDekRotationStateV1,
 } from './persistence'
@@ -25,6 +27,17 @@ type CredentialRecordRow = {
   credential_version: string | number
   dek_generation: string | number
   material_kind: StoredCredentialRecordV1['materialKind']
+}
+
+type CredentialMetadataRow = {
+  provider_id: ProviderId
+  display_label: string
+  credential_type: string
+  state: CredentialLifecycleStateV1
+  credential_version: string | number
+  masked_last_four_suffix: string | null
+  created_at: Date | string
+  updated_at: Date | string
 }
 
 type WrappedDekRow = {
@@ -105,6 +118,77 @@ implements CredentialVaultPersistenceV1 {
         .catch(() => undefined)
       reserved.release()
     }
+  }
+
+  private metadataFromRow(row: CredentialMetadataRow): StoredCredentialMetadataV1 {
+    return Object.freeze({
+      providerId: row.provider_id,
+      displayLabel: row.display_label,
+      credentialType: row.credential_type,
+      state: row.state,
+      credentialVersion: safeInteger(row.credential_version, 'credential version'),
+      ...(row.masked_last_four_suffix === null ? {} : { maskedLastFourSuffix: row.masked_last_four_suffix }),
+      createdAt: new Date(row.created_at).toISOString(),
+      updatedAt: new Date(row.updated_at).toISOString(),
+    })
+  }
+
+  async getCredentialMetadata(workspaceId: string, providerId: ProviderId) {
+    const rows = await this.sql<CredentialMetadataRow[]>`
+      SELECT provider_id, display_label, credential_type, state, credential_version,
+        masked_last_four_suffix, created_at, updated_at
+      FROM workspace_provider_credentials
+      WHERE workspace_id = ${workspaceId} AND provider_id = ${providerId}
+    `
+    return rows[0] ? this.metadataFromRow(rows[0]) : undefined
+  }
+
+  async listCredentialMetadata(workspaceId: string) {
+    const rows = await this.sql<CredentialMetadataRow[]>`
+      SELECT provider_id, display_label, credential_type, state, credential_version,
+        masked_last_four_suffix, created_at, updated_at
+      FROM workspace_provider_credentials
+      WHERE workspace_id = ${workspaceId}
+      ORDER BY provider_id
+    `
+    return Object.freeze(rows.map((row) => this.metadataFromRow(row)))
+  }
+
+  async updateCredentialMetadata(
+    workspaceId: string,
+    providerId: ProviderId,
+    update: Readonly<{
+      state: CredentialLifecycleStateV1
+      displayLabel?: string
+      credentialType?: string
+      maskedLastFourSuffix?: string | null
+    }>,
+  ) {
+    const displayLabel = update.displayLabel ?? null
+    const credentialType = update.credentialType ?? null
+    const suffix = update.maskedLastFourSuffix ?? null
+    const clearSuffix = update.maskedLastFourSuffix === null
+    const rows = await this.sql<CredentialMetadataRow[]>`
+      UPDATE workspace_provider_credentials
+      SET state = ${update.state},
+        display_label = COALESCE(${displayLabel}, display_label),
+        credential_type = COALESCE(${credentialType}, credential_type),
+        masked_last_four_suffix = CASE
+          WHEN ${clearSuffix} THEN NULL
+          ELSE COALESCE(${suffix}, masked_last_four_suffix)
+        END,
+        updated_at = NOW()
+      WHERE workspace_id = ${workspaceId} AND provider_id = ${providerId}
+      RETURNING provider_id, display_label, credential_type, state, credential_version,
+        masked_last_four_suffix, created_at, updated_at
+    `
+    if (!rows[0]) {
+      throw new CredentialResolutionError(
+        CREDENTIAL_ERROR_CODES.NOT_CONFIGURED,
+        'Credential material is not configured',
+      )
+    }
+    return this.metadataFromRow(rows[0])
   }
 
   async getCredentialRecord(

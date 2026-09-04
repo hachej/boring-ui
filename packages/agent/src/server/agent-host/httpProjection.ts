@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { PassThrough } from 'node:stream'
-import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify'
+import type { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import {
   AgentGatewayError,
@@ -42,6 +42,7 @@ interface ProjectionInput {
   readonly runtimeCapabilities?: AgentHostRuntimeCapabilityProjection
   readonly activity: AgentSessionActivityIndex
   readonly resolveActivityWorkspaceScope: (request: FastifyRequest) => Promise<string>
+  readonly registerAdditionalRoutes?: (app: FastifyInstance) => Promise<void>
 }
 
 const mountedHostsByServer = new WeakMap<object, WeakSet<object>>()
@@ -633,5 +634,6 @@ export function createAgentHostRoutes(input: ProjectionInput): FastifyPluginAsyn
     if (input.runtimeCapabilities) {
       await app.register(createAgentHostRuntimeCapabilityRoutes(input.runtimeCapabilities))
     }
+    await input.registerAdditionalRoutes?.(app)
   }
 }

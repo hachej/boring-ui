@@ -12,6 +12,7 @@ import type {
   CredentialFieldKeyV1,
   CredentialFieldTombstoneV1,
   CredentialVaultPersistenceV1,
+  StoredCredentialMetadataV1,
   StoredCredentialRecordV1,
   WorkspaceDekRotationStateV1,
 } from './persistence'
@@ -92,6 +93,7 @@ function fieldKey(key: CredentialFieldKeyV1): string {
 
 export function createInMemoryCredentialVaultPersistenceV1(): CredentialVaultPersistenceV1 {
   const records = new Map<string, StoredCredentialRecordV1>()
+  const metadata = new Map<string, StoredCredentialMetadataV1>()
   const wrappedDeks = new Map<string, WrappedWorkspaceDekV1>()
   const fields = new Map<string, CredentialEnvelopeV1>()
   const tombstones = new Map<string, CredentialFieldTombstoneV1>()
@@ -117,6 +119,44 @@ export function createInMemoryCredentialVaultPersistenceV1(): CredentialVaultPer
         if (workspaceQueues.get(workspaceId) === queued) workspaceQueues.delete(workspaceId)
       }
     },
+    async getCredentialMetadata(workspaceId, providerId) {
+      const stored = metadata.get(recordKey(workspaceId, providerId))
+      return stored ? Object.freeze({ ...stored }) : undefined
+    },
+    async listCredentialMetadata(workspaceId) {
+      const result: StoredCredentialMetadataV1[] = []
+      for (const [encodedKey, stored] of metadata) {
+        const [storedWorkspaceId] = JSON.parse(encodedKey) as [string, string]
+        if (storedWorkspaceId === workspaceId) result.push(Object.freeze({ ...stored }))
+      }
+      return Object.freeze(result.sort((a, b) => a.providerId.localeCompare(b.providerId)))
+    },
+    async updateCredentialMetadata(workspaceId, providerId, update) {
+      const key = recordKey(workspaceId, providerId)
+      const record = records.get(key)
+      if (!record) {
+        throw new CredentialResolutionError(
+          CREDENTIAL_ERROR_CODES.NOT_CONFIGURED,
+          'Credential material is not configured',
+        )
+      }
+      const now = new Date().toISOString()
+      const existing = metadata.get(key)
+      const next: StoredCredentialMetadataV1 = Object.freeze({
+        providerId,
+        displayLabel: update.displayLabel ?? existing?.displayLabel ?? providerId,
+        credentialType: update.credentialType ?? existing?.credentialType ?? 'field-set.v1',
+        state: update.state,
+        credentialVersion: record.credentialVersion,
+        ...(update.maskedLastFourSuffix === null
+          ? {}
+          : { maskedLastFourSuffix: update.maskedLastFourSuffix ?? existing?.maskedLastFourSuffix }),
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      })
+      metadata.set(key, next)
+      return Object.freeze({ ...next })
+    },
     async getCredentialRecord(
       workspaceId: string,
       providerId: ProviderId,
@@ -128,7 +168,22 @@ export function createInMemoryCredentialVaultPersistenceV1(): CredentialVaultPer
       providerId: ProviderId,
       record: StoredCredentialRecordV1,
     ): Promise<void> {
-      records.set(recordKey(workspaceId, providerId), Object.freeze({ ...record }))
+      const key = recordKey(workspaceId, providerId)
+      records.set(key, Object.freeze({ ...record }))
+      const now = new Date().toISOString()
+      const existing = metadata.get(key)
+      metadata.set(key, Object.freeze({
+        providerId,
+        displayLabel: existing?.displayLabel ?? providerId,
+        credentialType: existing?.credentialType ?? 'field-set.v1',
+        state: record.materialKind === 'none' ? 'intentionally_absent' : 'active',
+        credentialVersion: record.credentialVersion,
+        ...(record.materialKind === 'field-set' && existing?.maskedLastFourSuffix
+          ? { maskedLastFourSuffix: existing.maskedLastFourSuffix }
+          : {}),
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      }))
     },
     async commitCredentialVersion(
       input: CommitCredentialVersionInputV1,
@@ -188,7 +243,7 @@ export function createInMemoryCredentialVaultPersistenceV1(): CredentialVaultPer
         fields.set(key, copyEnvelope(envelope))
         tombstones.delete(key)
       }
-      records.set(encodedRecordKey, Object.freeze({ ...input.record }))
+      await persistence.putCredentialRecord(input.workspaceId, input.providerId, input.record)
       if (input.expectedCredentialVersion > 0 && input.supersededFieldsTombstone) {
         await persistence.tombstoneCredentialVersionFields(
           input.workspaceId,

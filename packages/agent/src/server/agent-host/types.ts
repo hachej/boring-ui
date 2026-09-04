@@ -30,7 +30,10 @@ import type {
   WorkspaceAgentDispatcherContext,
 } from '../../shared/workspaceAgentDispatcher'
 import type { AgentSkillResourceSnapshot } from '../http/routes/skills'
-import type { WorkspaceCredentialAuthorityVerifierV1 } from '../../shared/credentials'
+import type {
+  VerifiedWorkspaceCredentialAuthorityV1,
+  WorkspaceCredentialAuthorityVerifierV1,
+} from '../../shared/credentials'
 import type { CredentialVaultPersistenceV1 } from '../credentials/vault'
 
 export type { LeaseBoundWorkspaceAgent } from '../../shared/workspaceAgentDispatcher'
@@ -427,6 +430,10 @@ export interface AgentHostCredentialOptionsV1 {
   readonly vaultPersistence?: CredentialVaultPersistenceV1
   /** Core-owned authority verifier; pre-binds the credential resolver. */
   readonly authorityVerifier?: WorkspaceCredentialAuthorityVerifierV1
+  /** Host authentication adapter for owner-only credential HTTP routes. */
+  readonly authorizeOwnerRequest?: (
+    request: FastifyRequest,
+  ) => VerifiedWorkspaceCredentialAuthorityV1 | Promise<VerifiedWorkspaceCredentialAuthorityV1>
 }
 
 export interface CreatedAgentHost {

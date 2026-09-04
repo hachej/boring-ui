@@ -17,7 +17,9 @@ import {
   encryptCredentialFieldV1,
 } from './envelopeCrypto'
 import type {
+  CredentialLifecycleStateV1,
   CredentialVaultPersistenceV1,
+  StoredCredentialMetadataV1,
   StoredCredentialRecordV1,
 } from './persistence'
 import type { WorkspaceCredentialVersionAnchorV1 } from './versionAnchor'
@@ -47,6 +49,11 @@ export interface WriteCredentialFieldsInputV1 {
   readonly providerId: ProviderId
   readonly credentialId?: string
   readonly fields: ReadonlyMap<CredentialFieldId, Uint8Array>
+  readonly metadata?: Readonly<{
+    displayLabel?: string
+    credentialType?: string
+    maskedLastFourSuffix?: string
+  }>
 }
 
 export interface VaultCredentialStoreBackendV1 extends CredentialStoreBackendV1 {
@@ -62,6 +69,16 @@ export interface VaultCredentialStoreBackendV1 extends CredentialStoreBackendV1 
     workspaceId: string,
     providerId: ProviderId,
   ): Promise<StoredCredentialRecordV1>
+  getCredentialMetadata(
+    workspaceId: string,
+    providerId: ProviderId,
+  ): Promise<StoredCredentialMetadataV1 | undefined>
+  listCredentialMetadata(workspaceId: string): Promise<readonly StoredCredentialMetadataV1[]>
+  setCredentialLifecycleState(
+    workspaceId: string,
+    providerId: ProviderId,
+    state: CredentialLifecycleStateV1,
+  ): Promise<StoredCredentialMetadataV1>
   /** Rotates the KEK wrapping for one workspace DEK generation in place. */
   rewrapWorkspaceDek(workspaceId: string, dekGeneration: number): Promise<void>
   /** Re-encrypts all live workspace credentials under a fresh DEK generation. */
@@ -177,6 +194,22 @@ export function createVaultCredentialStoreBackendV1(
       assertWorkspaceId(workspaceId)
       await requireNotShredded(workspaceId)
       await requireReady()
+      const metadata = await persistence.getCredentialMetadata(workspaceId, providerId)
+      if (metadata?.state === 'disabled') {
+        throw new CredentialResolutionError(CREDENTIAL_ERROR_CODES.DISABLED, 'Credential is disabled')
+      }
+      if (
+        metadata?.state === 'revoked'
+        || (metadata?.state === 'intentionally_absent' && allowedFieldIds.length > 0)
+      ) {
+        throw new CredentialResolutionError(CREDENTIAL_ERROR_CODES.REVOKED, 'Credential is revoked')
+      }
+      if (metadata?.state === 'needs_reauth') {
+        notConfigured('Credential requires reauthentication')
+      }
+      if (metadata?.state === 'instance_fallback_enabled') {
+        notConfigured('Workspace credential uses instance fallback')
+      }
       const record = await persistence.getCredentialRecord(workspaceId, providerId)
       if (!record) {
         const anchoredVersion = (await versionAnchor.read(workspaceId))
@@ -344,6 +377,14 @@ export function createVaultCredentialStoreBackendV1(
               reason: 'superseded-version',
             } : undefined,
           })
+          if (input.metadata) {
+            await persistence.updateCredentialMetadata(workspaceId, providerId, {
+              state: 'active',
+              displayLabel: input.metadata.displayLabel,
+              credentialType: input.metadata.credentialType,
+              maskedLastFourSuffix: input.metadata.maskedLastFourSuffix,
+            })
+          }
           return {
             nextCredentialVersion: credentialVersion,
             nextCredentialMaterialKind: record.materialKind,
@@ -360,7 +401,7 @@ export function createVaultCredentialStoreBackendV1(
       assertWorkspaceId(workspaceId)
       await requireNotShredded(workspaceId)
       await requireReady()
-      return versionAnchor.withMutation(
+      const written = await versionAnchor.withMutation(
         workspaceId,
         providerId,
         async (anchorState) => {
@@ -400,6 +441,31 @@ export function createVaultCredentialStoreBackendV1(
           }
         },
       )
+      await persistence.updateCredentialMetadata(workspaceId, providerId, {
+        state: 'intentionally_absent',
+        maskedLastFourSuffix: null,
+      })
+      return written
+    },
+
+    async getCredentialMetadata(workspaceId: string, providerId: ProviderId) {
+      assertWorkspaceId(workspaceId)
+      return persistence.getCredentialMetadata(workspaceId, providerId)
+    },
+
+    async listCredentialMetadata(workspaceId: string) {
+      assertWorkspaceId(workspaceId)
+      return persistence.listCredentialMetadata(workspaceId)
+    },
+
+    async setCredentialLifecycleState(
+      workspaceId: string,
+      providerId: ProviderId,
+      state: CredentialLifecycleStateV1,
+    ) {
+      assertWorkspaceId(workspaceId)
+      await requireNotShredded(workspaceId)
+      return persistence.updateCredentialMetadata(workspaceId, providerId, { state })
     },
 
     async rewrapWorkspaceDek(

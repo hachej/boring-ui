@@ -6,6 +6,7 @@ import type { AgentHarnessFactory } from '../shared/harness'
 import type { TelemetrySink } from '../shared/telemetry'
 import type { AgentTool } from '../shared/tool'
 import { createAgentHost } from './agent-host/createAgentHost'
+import type { AgentHostCredentialOptionsV1 } from './agent-host/types'
 import { DEFAULT_AGENT_FLEET } from './agentDefinition/resolveDefaultAgentFleet'
 import { registerAgentHostEnvironmentRoutes } from './agent-host/environmentHttpProjection'
 import { resolveRequestLedgerPath } from './agent-host/requestLedgerPath'
@@ -55,6 +56,7 @@ export interface CreateStandaloneAgentHostAppOptions {
   sessionNamespace?: string
   telemetry?: TelemetrySink
   metering?: AgentMeteringSink
+  credentials?: AgentHostCredentialOptionsV1
   getFilesystemBindings?: (ctx: {
     request?: FastifyRequest
     sessionId?: string
@@ -216,6 +218,7 @@ export async function createStandaloneAgentHostApp(
       }),
       telemetry: options.telemetry,
       metering: options.metering,
+      credentials: options.credentials,
       harnessFactory: options.harnessFactory,
       async resolveAuthorizedEnvironmentScope() {
         return resolveEnvironment()

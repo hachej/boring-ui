@@ -17,6 +17,7 @@ import { EnvironmentLeaseManager, type EnvironmentLease } from './environmentLea
 import { getOptionalRuntimeBundleStorageRoot } from '../runtime/mode'
 import { mergeRuntimeFilesystemBindings } from '../runtime/filesystemBindings'
 import { createAgentHostRoutes } from './httpProjection'
+import { credentialsRoutes } from '../http/routes/credentials'
 import { InMemoryAgentRequestLedger } from './requestLedger'
 import { resolveRequestLedgerPath } from './requestLedgerPath'
 import { SqliteAgentRequestLedger } from './sqliteRequestLedger'
@@ -969,6 +970,19 @@ export async function createAgentHost(
         resolveHarnessBackend(request, agentTypeId, sessionId) {
           return resolveHarnessBackendForRequest(projectionOptions.authorizeAgentRequest, request, agentTypeId, sessionId)
         },
+        ...(
+          credentialComposition && options.credentials?.authorizeOwnerRequest
+            ? {
+                async registerAdditionalRoutes(app) {
+                  await app.register(credentialsRoutes, {
+                    providerRegistry: credentialComposition.providerRegistry,
+                    vaultBackend: credentialComposition.vaultBackend,
+                    authorizeRequest: options.credentials!.authorizeOwnerRequest!,
+                  })
+                },
+              }
+            : {}
+        ),
       })
     },
   })

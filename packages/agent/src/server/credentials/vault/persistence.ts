@@ -1,4 +1,5 @@
-import type { ProviderId } from '../../../shared/credentials'
+import type { CredentialLifecycleStateV1, ProviderId } from '../../../shared/credentials'
+export type { CredentialLifecycleStateV1 } from '../../../shared/credentials'
 import type {
   CredentialEnvelopeV1,
   WrappedWorkspaceDekV1,
@@ -19,6 +20,18 @@ import type {
  */
 
 export type CredentialMaterialKindV1 = 'field-set' | 'none'
+
+/** Metadata-only projection. Secret envelopes are deliberately unreachable here. */
+export interface StoredCredentialMetadataV1 {
+  readonly providerId: ProviderId
+  readonly displayLabel: string
+  readonly credentialType: string
+  readonly state: CredentialLifecycleStateV1
+  readonly credentialVersion: number
+  readonly maskedLastFourSuffix?: string
+  readonly createdAt: string
+  readonly updatedAt: string
+}
 
 export interface StoredCredentialRecordV1 {
   /** Stable per-(workspace, provider) credential identity, bound into AAD. */
@@ -82,6 +95,21 @@ export interface CredentialVaultPersistenceV1 {
     workspaceId: string,
     mutate: (locked: CredentialVaultPersistenceV1) => Promise<T>,
   ): Promise<T>
+  getCredentialMetadata(
+    workspaceId: string,
+    providerId: ProviderId,
+  ): Promise<StoredCredentialMetadataV1 | undefined>
+  listCredentialMetadata(workspaceId: string): Promise<readonly StoredCredentialMetadataV1[]>
+  updateCredentialMetadata(
+    workspaceId: string,
+    providerId: ProviderId,
+    update: Readonly<{
+      state: CredentialLifecycleStateV1
+      displayLabel?: string
+      credentialType?: string
+      maskedLastFourSuffix?: string | null
+    }>,
+  ): Promise<StoredCredentialMetadataV1>
   getCredentialRecord(
     workspaceId: string,
     providerId: ProviderId,
