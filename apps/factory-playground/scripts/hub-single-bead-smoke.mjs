@@ -32,7 +32,7 @@ async function main() {
     const hostEnv = {
       ...process.env,
       PATH: extendPath(appCwd),
-      BORING_FACTORY_WORKSPACE_ROOT: resolve(process.cwd(), root),
+      BORING_FACTORY_WORKSPACE_ROOT: root,
       BORING_FACTORY_EPIC_KEY: epicKey,
       BORING_FACTORY_FEATURE_NAME: featureName,
       BORING_FACTORY_STATE_ROOT: stateRoot,
@@ -52,7 +52,7 @@ async function main() {
       env: {
         ...process.env,
         PATH: extendPath(appCwd),
-        EPIC_WT: resolve(process.cwd(), root),
+        EPIC_WT: root,
         EPIC_KEY: epicKey,
         API_PORT: String(apiPort),
         RECEIPT_PATH: receiptPath,
