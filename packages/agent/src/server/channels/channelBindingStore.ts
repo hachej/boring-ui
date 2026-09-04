@@ -4,6 +4,7 @@ import type { RunTransaction, SqlStorage } from '../events/sqlStorage'
 
 export const SESSION_CREATE_TIMEOUT = ErrorCode.enum.SESSION_CREATE_TIMEOUT
 export const RESERVATION_TTL_MS = 30_000
+export const INBOUND_CLAIM_TTL_MS = 30_000
 
 export type ChannelBindingStatus = 'active' | 'revoked'
 export type ChannelInboundStatus = 'pending' | 'processing' | 'processed' | 'parked'
@@ -38,6 +39,7 @@ export interface QueuedChannelInbound extends InboundChannelMessage {
   readonly workspaceId: string
   readonly authSubjectId: string
   readonly bindingVersion: number
+  readonly claimOwner: string
   readonly attempts: number
   readonly status: ChannelInboundStatus
   readonly errorCode?: string
@@ -47,6 +49,11 @@ export type EnqueueInboundResult =
   | { readonly disposition: 'enqueued'; readonly binding: ChannelBinding; readonly queueId: number }
   | { readonly disposition: 'duplicate'; readonly binding?: ChannelBinding }
   | { readonly disposition: 'unknown_binding' }
+
+type NextInboundResult =
+  | { readonly disposition: 'claimed'; readonly inbound: QueuedChannelInbound }
+  | { readonly disposition: 'blocked'; readonly retryAt: number }
+  | { readonly disposition: 'empty' }
 
 interface CreationRow {
   state: 'creating' | 'admitting'
@@ -115,6 +122,8 @@ export class ChannelBindingStore {
       received_at INTEGER NOT NULL,
       attempts INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'pending',
+      claim_owner TEXT,
+      claim_expires_at INTEGER,
       error_code TEXT
     )`)
     this.sql.exec(`CREATE INDEX IF NOT EXISTS boring_channel_queue_binding
@@ -125,12 +134,16 @@ export class ChannelBindingStore {
     this.ensureColumn('boring_channel_inbound_queue', 'workspace_id', 'TEXT')
     this.ensureColumn('boring_channel_inbound_queue', 'auth_subject_id', 'TEXT')
     this.ensureColumn('boring_channel_inbound_queue', 'binding_version', 'INTEGER')
+    this.ensureColumn('boring_channel_inbound_queue', 'claim_owner', 'TEXT')
+    this.ensureColumn('boring_channel_inbound_queue', 'claim_expires_at', 'INTEGER')
     this.sql.exec(`UPDATE boring_channel_inbound_queue
       SET status='parked', error_code=?
       WHERE workspace_id IS NULL OR auth_subject_id IS NULL OR binding_version IS NULL`, ErrorCode.enum.CHANNEL_BINDING_REVOKED)
-    // A process may die after claiming a row. Delivery to the agent is
-    // idempotency-keyed by providerMessageId, so restart safely retries it.
-    this.sql.exec(`UPDATE boring_channel_inbound_queue SET status='pending' WHERE status='processing'`)
+    // Only pre-lease processing rows are safe to recover immediately. Live
+    // claims are reclaimed by nextPending only after their durable lease ends.
+    this.sql.exec(`UPDATE boring_channel_inbound_queue
+      SET status='pending', claim_owner=NULL, claim_expires_at=NULL
+      WHERE status='processing' AND (claim_owner IS NULL OR claim_expires_at IS NULL)`)
   }
 
   private ensureColumn(table: string, column: string, definition: string): void {
@@ -204,31 +217,60 @@ export class ChannelBindingStore {
       WHERE b.status='active' AND q.status IN ('pending', 'processing')`).toArray().map(bindingFromRow)
   }
 
-  nextPending(channel: string, conversationKey: string, agentTypeId: string): QueuedChannelInbound | undefined {
-    const row = this.runTransaction(() => {
+  nextPending(
+    channel: string,
+    conversationKey: string,
+    agentTypeId: string,
+    claimOwner: string,
+    claimTtlMs = INBOUND_CLAIM_TTL_MS,
+  ): NextInboundResult {
+    return this.runTransaction(() => {
+      const now = Date.now()
+      this.sql.exec(`UPDATE boring_channel_inbound_queue
+        SET status='pending', claim_owner=NULL, claim_expires_at=NULL
+        WHERE channel=? AND conversation_key=? AND agent_type_id=? AND status='processing'
+          AND claim_expires_at<=?`, channel, conversationKey, agentTypeId, now)
       // The oldest unfinished row is a binding-wide database lock. A second
-      // process cannot claim a later row while the first is processing it.
+      // process cannot claim a later row while the first owns a live lease.
       const candidate = this.sql.exec(`SELECT * FROM boring_channel_inbound_queue
         WHERE channel=? AND conversation_key=? AND agent_type_id=? AND status IN ('pending', 'processing')
         ORDER BY id LIMIT 1`, channel, conversationKey, agentTypeId).toArray()[0]
-      if (!candidate || candidate.status === 'processing') return undefined
-      this.sql.exec(`UPDATE boring_channel_inbound_queue SET status='processing', attempts=attempts+1
-        WHERE id=? AND status='pending'`, candidate.id)
-      return this.sql.exec(`SELECT * FROM boring_channel_inbound_queue WHERE id=?`, candidate.id).toArray()[0]
+      if (!candidate) return { disposition: 'empty' } as const
+      if (candidate.status === 'processing') {
+        return { disposition: 'blocked', retryAt: Number(candidate.claim_expires_at) } as const
+      }
+      const claimed = this.sql.exec(`UPDATE boring_channel_inbound_queue
+        SET status='processing', attempts=attempts+1, claim_owner=?, claim_expires_at=?
+        WHERE id=? AND status='pending' RETURNING *`, claimOwner, now + claimTtlMs, candidate.id).toArray()[0]
+      return claimed
+        ? { disposition: 'claimed', inbound: inboundFromRow(claimed) } as const
+        : { disposition: 'blocked', retryAt: now + claimTtlMs } as const
     }, 'immediate')
-    return row ? inboundFromRow(row) : undefined
   }
 
-  completeInbound(id: number): void {
-    this.sql.exec(`UPDATE boring_channel_inbound_queue SET status='processed', error_code=NULL WHERE id=?`, id)
+  renewInbound(id: number, claimOwner: string, claimTtlMs = INBOUND_CLAIM_TTL_MS): boolean {
+    return this.sql.exec(`UPDATE boring_channel_inbound_queue SET claim_expires_at=?
+      WHERE id=? AND status='processing' AND claim_owner=? RETURNING id`,
+    Date.now() + claimTtlMs, id, claimOwner).toArray().length === 1
   }
 
-  retryInbound(id: number, errorCode: string): void {
-    this.sql.exec(`UPDATE boring_channel_inbound_queue SET status='pending', error_code=? WHERE id=?`, errorCode, id)
+  completeInbound(id: number, claimOwner: string): void {
+    this.sql.exec(`UPDATE boring_channel_inbound_queue
+      SET status='processed', claim_owner=NULL, claim_expires_at=NULL, error_code=NULL
+      WHERE id=? AND status='processing' AND claim_owner=?`, id, claimOwner)
   }
 
-  parkInbound(id: number, errorCode: string): void {
-    this.sql.exec(`UPDATE boring_channel_inbound_queue SET status='parked', error_code=? WHERE id=?`, errorCode, id)
+  retryInbound(id: number, claimOwner: string, errorCode: string): void {
+    this.sql.exec(`UPDATE boring_channel_inbound_queue
+      SET status='pending', claim_owner=NULL, claim_expires_at=NULL, error_code=?
+      WHERE id=? AND status='processing' AND claim_owner=?`, errorCode, id, claimOwner)
+  }
+
+  parkInbound(id: number, errorCode: string, claimOwner?: string): void {
+    this.sql.exec(`UPDATE boring_channel_inbound_queue
+      SET status='parked', claim_owner=NULL, claim_expires_at=NULL, error_code=?
+      WHERE id=?${claimOwner ? " AND status='processing' AND claim_owner=?" : ''}`,
+    errorCode, id, ...(claimOwner ? [claimOwner] : []))
   }
 
   getInbound(id: number): QueuedChannelInbound | undefined {
@@ -354,6 +396,7 @@ function inboundFromRow(row: Record<string, unknown>): QueuedChannelInbound {
     workspaceId: String(row.workspace_id),
     authSubjectId: String(row.auth_subject_id),
     bindingVersion: Number(row.binding_version),
+    claimOwner: String(row.claim_owner),
     providerMessageId: String(row.provider_message_id),
     text: String(row.text),
     receivedAt: Number(row.received_at),

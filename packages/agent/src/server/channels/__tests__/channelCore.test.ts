@@ -235,8 +235,8 @@ describe('ChannelInboundService fake-channel path', () => {
     })
   })
 
-  test('database claim preserves order across concurrent service instances', async () => {
-    await withStores(async ({ first, second }) => {
+  test('a service starting during a live claim preserves cross-process order', async () => {
+    await withStores(async ({ first, secondDb }) => {
       first.provision({ ...bindingInput, sessionKey: 'session-1' })
       first.enqueueInbound(inbound('wamid.concurrent.1', 'first'), 'default')
       first.enqueueInbound(inbound('wamid.concurrent.2', 'second'), 'default')
@@ -257,13 +257,14 @@ describe('ChannelInboundService fake-channel path', () => {
         },
         followUp: vi.fn(),
       }
-      const firstService = new ChannelInboundService(first, invoker)
+      const firstService = new ChannelInboundService(first, invoker, { inboundClaimTtlMs: 30 })
       await started
-      const secondService = new ChannelInboundService(second, invoker)
-      await secondService.waitForIdle()
+      const lateStore = new ChannelBindingStore(secondDb.sql, secondDb.runTransaction)
+      const secondService = new ChannelInboundService(lateStore, invoker, { inboundClaimTtlMs: 30 })
+      await new Promise((resolve) => setTimeout(resolve, 10))
       expect(calls).toEqual(['first'])
       releaseFirst()
-      await firstService.waitForIdle()
+      await Promise.all([firstService.waitForIdle(), secondService.waitForIdle()])
       expect(calls).toEqual(['first', 'second'])
       expect(first.getInbound(1)?.status).toBe('processed')
       expect(first.getInbound(2)?.status).toBe('processed')

@@ -1,6 +1,7 @@
+import { randomUUID } from 'node:crypto'
 import type { OriginChannel } from '../../shared/channel'
 import { ErrorCode } from '../../shared/error-codes'
-import type { ChannelBinding, ChannelBindingStore, InboundChannelMessage } from './channelBindingStore'
+import { INBOUND_CLAIM_TTL_MS, type ChannelBinding, type ChannelBindingStore, type InboundChannelMessage } from './channelBindingStore'
 
 export const CHANNEL_UNKNOWN_BINDING = ErrorCode.enum.CHANNEL_UNKNOWN_BINDING
 export const CHANNEL_INBOUND_PARKED = ErrorCode.enum.CHANNEL_INBOUND_PARKED
@@ -48,11 +49,12 @@ export type ChannelInboundAck =
 
 export class ChannelInboundService {
   private readonly drains = new Map<string, Promise<void>>()
+  private readonly claimOwner = randomUUID()
 
   constructor(
     private readonly store: ChannelBindingStore,
     private readonly invoker: ChannelAgentInvoker,
-    private readonly options: { readonly maxAttempts?: number } = {},
+    private readonly options: { readonly maxAttempts?: number; readonly inboundClaimTtlMs?: number } = {},
   ) {
     // Durable acknowledgement must not depend on a provider replay. The store
     // recovers interrupted claims during migration; every new service resumes
@@ -97,16 +99,36 @@ export class ChannelInboundService {
   private async drain(initialBinding: ChannelBinding): Promise<void> {
     let binding = initialBinding
     for (;;) {
-      const queued = this.store.nextPending(binding.channel, binding.conversationKey, binding.agentTypeId)
-      if (!queued) return
+      const claimTtlMs = this.options.inboundClaimTtlMs ?? INBOUND_CLAIM_TTL_MS
+      const claimed = this.store.nextPending(
+        binding.channel,
+        binding.conversationKey,
+        binding.agentTypeId,
+        this.claimOwner,
+        claimTtlMs,
+      )
+      if (claimed.disposition === 'empty') return
+      if (claimed.disposition === 'blocked') {
+        await delay(Math.max(1, claimed.retryAt - Date.now()))
+        continue
+      }
+      const queued = claimed.inbound
       binding = this.store.getBinding(binding.channel, binding.conversationKey, binding.agentTypeId) ?? binding
       if (binding.status !== 'active' || binding.bindingVersion !== queued.bindingVersion
         || binding.workspaceId !== queued.workspaceId || binding.authSubjectId !== queued.authSubjectId) {
         // Queue rows are tenant snapshots. Re-provisioning creates a new
         // generation and can never redirect already accepted content.
-        this.store.parkInbound(queued.id, ErrorCode.enum.CHANNEL_BINDING_REVOKED)
+        this.store.parkInbound(queued.id, ErrorCode.enum.CHANNEL_BINDING_REVOKED, queued.claimOwner)
         continue
       }
+      const heartbeat = setInterval(() => {
+        try {
+          this.store.renewInbound(queued.id, queued.claimOwner, claimTtlMs)
+        } catch {
+          // A transient renewal failure leaves the durable expiry as the
+          // recovery boundary; invocation request IDs remain idempotent.
+        }
+      }, Math.max(1, Math.floor(claimTtlMs / 3)))
       try {
         const ensured = await this.store.ensureSession(binding, {
           allocate: () => this.invoker.createSession({
@@ -127,15 +149,17 @@ export class ChannelInboundService {
           })
           await (busy ? this.invoker.followUp(call) : this.invoker.prompt(call))
         }
-        this.store.completeInbound(queued.id)
+        this.store.completeInbound(queued.id, queued.claimOwner)
         binding = this.store.getBinding(binding.channel, binding.conversationKey, binding.agentTypeId) ?? binding
       } catch (error) {
         const code = stableErrorCode(error)
         if (queued.attempts < (this.options.maxAttempts ?? 3)) {
-          this.store.retryInbound(queued.id, code)
+          this.store.retryInbound(queued.id, queued.claimOwner, code)
         } else {
-          this.store.parkInbound(queued.id, code || CHANNEL_INBOUND_PARKED)
+          this.store.parkInbound(queued.id, code || CHANNEL_INBOUND_PARKED, queued.claimOwner)
         }
+      } finally {
+        clearInterval(heartbeat)
       }
     }
   }
@@ -158,6 +182,10 @@ function invocation(
 
 function bindingKey(binding: ChannelBinding): string {
   return JSON.stringify([binding.channel, binding.conversationKey, binding.agentTypeId])
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 function stableErrorCode(error: unknown): string {
