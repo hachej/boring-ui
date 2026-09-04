@@ -101,6 +101,7 @@ export function CredentialSettingsSurface({
 
   const submitApiKey = async (event: FormEvent<HTMLFormElement>, credential: CredentialMetadataV1) => {
     event.preventDefault()
+    if (credential.providerId === 'openai-codex' && oauthFlow?.status === 'pending') return
     const form = event.currentTarget
     const apiKey = String(new FormData(form).get('api-key') ?? '')
     form.reset()
@@ -125,6 +126,7 @@ export function CredentialSettingsSurface({
     credential: CredentialMetadataV1,
     action: 'disable' | 'revoke' | 'delete',
   ) => {
+    if (credential.providerId === 'openai-codex' && oauthFlow?.status === 'pending') return
     setError(null)
     setSuccess(null)
     setBusyProvider(credential.providerId)
@@ -168,8 +170,15 @@ export function CredentialSettingsSurface({
 
   const cancelCodex = async () => {
     if (!oauthFlow) return
-    await client.cancelCodexLogin(oauthFlow.flowId).catch(() => undefined)
-    setOauthFlow(null)
+    setBusyProvider('openai-codex')
+    try {
+      await client.cancelCodexLogin(oauthFlow.flowId)
+      setOauthFlow(null)
+    } catch {
+      setError('Could not cancel OpenAI Codex sign-in. The flow is still pending.')
+    } finally {
+      setBusyProvider(null)
+    }
   }
 
   return (
@@ -191,7 +200,9 @@ export function CredentialSettingsSurface({
             const connected = credential.state === 'active'
             const busy = busyProvider === credential.providerId
             const isCodex = credential.providerId === 'openai-codex'
-            const method = fundingMethods[credential.providerId] ?? 'api-key'
+            const codexPending = isCodex && oauthFlow?.status === 'pending'
+            const method = fundingMethods[credential.providerId]
+              ?? (isCodex && credential.credentialType === 'oauth' ? 'openai-codex' : 'api-key')
             return (
               <section key={credential.providerId} aria-labelledby={`credential-${credential.providerId}`} className="space-y-3 p-4">
                 <div className="flex flex-wrap items-start justify-between gap-2">
@@ -212,11 +223,11 @@ export function CredentialSettingsSurface({
                     <legend className="text-[12px] font-medium text-foreground">Workspace funding method</legend>
                     <div className="flex flex-wrap gap-3 text-[12px]">
                       <label className="flex items-center gap-1.5">
-                        <input type="radio" name={`funding-${credential.providerId}`} checked={method === 'api-key'} onChange={() => setFundingMethods((value) => ({ ...value, [credential.providerId]: 'api-key' }))} />
+                        <input type="radio" name={`funding-${credential.providerId}`} checked={method === 'api-key'} disabled={codexPending} onChange={() => setFundingMethods((value) => ({ ...value, [credential.providerId]: 'api-key' }))} />
                         API key
                       </label>
                       <label className="flex items-center gap-1.5">
-                        <input type="radio" name={`funding-${credential.providerId}`} checked={method === 'openai-codex'} onChange={() => setFundingMethods((value) => ({ ...value, [credential.providerId]: 'openai-codex' }))} />
+                        <input type="radio" name={`funding-${credential.providerId}`} checked={method === 'openai-codex'} disabled={codexPending} onChange={() => setFundingMethods((value) => ({ ...value, [credential.providerId]: 'openai-codex' }))} />
                         OpenAI Codex sign-in
                       </label>
                     </div>
@@ -229,11 +240,11 @@ export function CredentialSettingsSurface({
                       <Label htmlFor={`api-key-${credential.providerId}`} className="text-[12px]">API key</Label>
                       <Input id={`api-key-${credential.providerId}`} name="api-key" type="password" autoComplete="new-password" className="h-8 text-[13px]" placeholder={connected ? 'Enter a replacement key' : 'Paste API key'} />
                     </div>
-                    <Button type="submit" size="sm" disabled={busy}>{busy ? 'Saving…' : connected ? 'Replace key' : 'Connect'}</Button>
+                    <Button type="submit" size="sm" disabled={busy || codexPending}>{busy ? 'Saving…' : connected ? 'Replace key' : 'Connect'}</Button>
                   </form>
                 ) : (
                   <div>
-                    <Button type="button" size="sm" onClick={() => void startCodex()} disabled={busy || oauthFlow?.status === 'pending'}>
+                    <Button type="button" size="sm" onClick={() => void startCodex()} disabled={busy || codexPending}>
                       {oauthFlow?.status === 'pending' ? 'Sign-in pending…' : connected ? 'Sign in again' : 'Sign in with OpenAI Codex'}
                     </Button>
                   </div>
@@ -261,21 +272,21 @@ export function CredentialSettingsSurface({
                         <Button type="submit" size="sm">Continue</Button>
                       </form>
                     ) : null}
-                    {oauthFlow.status === 'pending' && <Button type="button" size="sm" variant="outline" onClick={() => void cancelCodex()}>Cancel sign-in</Button>}
+                    {oauthFlow.status === 'pending' && <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void cancelCodex()}>Cancel sign-in</Button>}
                   </div>
                 )}
 
                 {credential.state !== 'not_configured' && credential.state !== 'intentionally_absent' && (
                   <div className="flex flex-wrap gap-2 border-t border-border/40 pt-3">
-                    <Button type="button" size="sm" variant="outline" disabled={busy || credential.state === 'disabled'} onClick={() => void lifecycle(credential, 'disable')}>Disable</Button>
-                    <Button type="button" size="sm" variant="outline" disabled={busy || credential.state === 'revoked'} onClick={() => void lifecycle(credential, 'revoke')}>Revoke</Button>
+                    <Button type="button" size="sm" variant="outline" disabled={busy || codexPending || credential.state === 'disabled'} onClick={() => void lifecycle(credential, 'disable')}>Disable</Button>
+                    <Button type="button" size="sm" variant="outline" disabled={busy || codexPending || credential.state === 'revoked'} onClick={() => void lifecycle(credential, 'revoke')}>Revoke</Button>
                     {confirmDelete === credential.providerId ? (
                       <>
-                        <Button type="button" size="sm" variant="destructive" disabled={busy} onClick={() => void lifecycle(credential, 'delete')}>Confirm delete</Button>
+                        <Button type="button" size="sm" variant="destructive" disabled={busy || codexPending} onClick={() => void lifecycle(credential, 'delete')}>Confirm delete</Button>
                         <Button type="button" size="sm" variant="outline" onClick={() => setConfirmDelete(null)}>Cancel</Button>
                       </>
                     ) : (
-                      <Button type="button" size="sm" variant="destructive" disabled={busy} onClick={() => setConfirmDelete(credential.providerId)}>Delete</Button>
+                      <Button type="button" size="sm" variant="destructive" disabled={busy || codexPending} onClick={() => setConfirmDelete(credential.providerId)}>Delete</Button>
                     )}
                   </div>
                 )}

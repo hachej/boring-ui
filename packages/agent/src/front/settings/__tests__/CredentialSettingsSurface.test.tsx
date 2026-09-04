@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, test, vi } from 'vitest'
 import type { CredentialMetadataV1 } from '../../../shared/credentials'
 import { CredentialSettingsSurface } from '../CredentialSettingsSurface'
@@ -123,6 +123,39 @@ describe('CredentialSettingsSurface', () => {
     expect(respondToCodexLogin).toHaveBeenCalledWith('flow-codex', 'owner-code-canary')
     expect((prompt as HTMLInputElement).value).toBe('')
     expect(screen.queryByText('owner-code-canary')).toBeNull()
+  })
+
+  test('restores OAuth funding from metadata and keeps a failed cancellation visible', async () => {
+    const oauthCredential: CredentialMetadataV1 = {
+      ...codex,
+      credentialType: 'oauth',
+      state: 'active',
+    }
+    const pending: CredentialOAuthFlow = {
+      flowId: 'flow-pending',
+      providerId: 'openai-codex',
+      status: 'pending',
+      events: [],
+    }
+    const cancelCodexLogin = vi.fn(async () => { throw new Error('network') })
+    const api = client({
+      list: vi.fn(async () => [oauthCredential]),
+      startCodexLogin: vi.fn(async () => pending),
+      cancelCodexLogin,
+    })
+    render(<CredentialSettingsSurface isWorkspaceOwner client={api} />)
+
+    const oauthMethod = await screen.findByRole('radio', { name: 'OpenAI Codex sign-in' }) as HTMLInputElement
+    expect(oauthMethod.checked).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in again' }))
+    await waitFor(() => expect(oauthMethod.disabled).toBe(true))
+
+    const codexSection = screen.getByRole('heading', { name: 'OpenAI Codex' }).closest('section')!
+    expect((within(codexSection).getByRole('button', { name: 'Disable' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel sign-in' }))
+    expect(await screen.findByRole('alert')).not.toBeNull()
+    expect(screen.getByText('OpenAI Codex sign-in: pending')).not.toBeNull()
+    expect(cancelCodexLogin).toHaveBeenCalledWith('flow-pending')
   })
 
   test('requires confirmation before deleting metadata and credential material', async () => {
