@@ -124,6 +124,24 @@ describe('vault-backed Pi CredentialStore', () => {
       'workspace-a',
       'openai-codex' as ProviderId,
     )
+    const typeTamperedStore = createVaultCredentialStoreV1({
+      workspaceId: 'workspace-a',
+      vaultBackend: createVaultCredentialStoreBackendV1({
+        kmsBackend,
+        persistence: {
+          ...persistence,
+          async getCredentialMetadata() {
+            return activeMetadata && { ...activeMetadata, credentialType: 'tampered-type' }
+          },
+        },
+        versionAnchor,
+      }),
+      allowSubscriptionOAuth: true,
+    })
+    await expect(typeTamperedStore.read('openai-codex')).rejects.toMatchObject({
+      code: CREDENTIAL_ERROR_CODES.UNREADABLE,
+    })
+
     await backend().setCredentialLifecycleState(
       'workspace-a',
       'openai-codex' as ProviderId,

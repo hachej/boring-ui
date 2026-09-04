@@ -23,12 +23,14 @@ export interface WorkspaceCredentialVersionStateV1 {
   readonly credentialVersions: Readonly<Record<string, number>>
   readonly credentialMaterialKinds: Readonly<Record<string, CredentialMaterialKindV1>>
   readonly credentialLifecycleStates: Readonly<Record<string, CredentialLifecycleStateV1>>
+  readonly credentialTypes: Readonly<Record<string, string>>
 }
 
 export interface CredentialVersionMutationResultV1<T> {
   readonly nextCredentialVersion: number
   readonly nextCredentialMaterialKind: CredentialMaterialKindV1
   readonly nextCredentialLifecycleState: CredentialLifecycleStateV1
+  readonly nextCredentialType: string
   readonly nextDekGeneration: number
   readonly result: T
 }
@@ -84,6 +86,7 @@ type MutableAnchorStateV1 = {
     credentialVersions: Record<string, number>
     credentialMaterialKinds: Record<string, CredentialMaterialKindV1>
     credentialLifecycleStates: Record<string, CredentialLifecycleStateV1>
+    credentialTypes: Record<string, string>
   }>
 }
 
@@ -134,6 +137,7 @@ function copyWorkspaceState(
     credentialVersions: Object.freeze({ ...workspace.credentialVersions }),
     credentialMaterialKinds: Object.freeze({ ...workspace.credentialMaterialKinds }),
     credentialLifecycleStates: Object.freeze({ ...workspace.credentialLifecycleStates }),
+    credentialTypes: Object.freeze({ ...workspace.credentialTypes }),
   })
 }
 
@@ -154,6 +158,10 @@ function canonicalState(state: MutableAnchorStateV1): string {
         ),
         credentialLifecycleStates: Object.fromEntries(
           Object.entries(workspace.credentialLifecycleStates)
+            .sort(([left], [right]) => left.localeCompare(right)),
+        ),
+        credentialTypes: Object.fromEntries(
+          Object.entries(workspace.credentialTypes)
             .sort(([left], [right]) => left.localeCompare(right)),
         ),
       }]),
@@ -181,6 +189,8 @@ function validateState(value: unknown): MutableAnchorStateV1 {
       || typeof workspace.credentialMaterialKinds !== 'object'
       || !workspace.credentialLifecycleStates
       || typeof workspace.credentialLifecycleStates !== 'object'
+      || !workspace.credentialTypes
+      || typeof workspace.credentialTypes !== 'object'
     ) unreadable('Credential version anchor is malformed')
     for (const [providerId, version] of Object.entries(workspace.credentialVersions)) {
       const materialKind = workspace.credentialMaterialKinds[providerId]
@@ -190,6 +200,8 @@ function validateState(value: unknown): MutableAnchorStateV1 {
         || version < 1
         || (materialKind !== 'field-set' && materialKind !== 'none')
         || !['active', 'disabled', 'revoked', 'needs_reauth', 'intentionally_absent', 'instance_fallback_enabled'].includes(lifecycleState)
+        || typeof workspace.credentialTypes[providerId] !== 'string'
+        || workspace.credentialTypes[providerId].length === 0
       ) {
         unreadable('Credential version anchor is malformed')
       }
@@ -199,6 +211,9 @@ function validateState(value: unknown): MutableAnchorStateV1 {
         (providerId) => workspace.credentialVersions[providerId] === undefined,
       )
       || Object.keys(workspace.credentialLifecycleStates).some(
+        (providerId) => workspace.credentialVersions[providerId] === undefined,
+      )
+      || Object.keys(workspace.credentialTypes).some(
         (providerId) => workspace.credentialVersions[providerId] === undefined,
       )
     ) unreadable('Credential version anchor is malformed')
@@ -253,6 +268,10 @@ export function createInMemoryCredentialVersionAnchorV1(): WorkspaceCredentialVe
           credentialLifecycleStates: {
             ...current?.credentialLifecycleStates,
             [providerId]: mutation.nextCredentialLifecycleState,
+          },
+          credentialTypes: {
+            ...current?.credentialTypes,
+            [providerId]: mutation.nextCredentialType,
           },
         }
         state = next
@@ -507,6 +526,10 @@ export function createLocalFileCredentialVersionAnchorV1(
           credentialLifecycleStates: {
             ...currentWorkspace?.credentialLifecycleStates,
             [providerId]: mutation.nextCredentialLifecycleState,
+          },
+          credentialTypes: {
+            ...currentWorkspace?.credentialTypes,
+            [providerId]: mutation.nextCredentialType,
           },
         }
         await replaceSealedState(next, options)

@@ -319,6 +319,7 @@ describe('local-KEK credential version anchor', () => {
       nextCredentialVersion: 1,
       nextCredentialMaterialKind: 'field-set',
       nextCredentialLifecycleState: 'active',
+      nextCredentialType: 'oauth',
       nextDekGeneration: 1,
       result: undefined,
     }))
@@ -329,6 +330,7 @@ describe('local-KEK credential version anchor', () => {
         nextCredentialVersion: 1,
         nextCredentialMaterialKind: 'none',
         nextCredentialLifecycleState: 'intentionally_absent',
+        nextCredentialType: 'api-key',
         nextDekGeneration: 1,
         result: undefined,
       }
@@ -346,6 +348,10 @@ describe('local-KEK credential version anchor', () => {
       credentialLifecycleStates: {
         'provider-a': 'active',
         'provider-b': 'intentionally_absent',
+      },
+      credentialTypes: {
+        'provider-a': 'oauth',
+        'provider-b': 'api-key',
       },
     })
   })

@@ -194,6 +194,7 @@ function createVaultCredentialStoreBackendInternalV1(
     if (
       anchoredVersion !== metadata.credentialVersion
       || anchored?.credentialLifecycleStates[providerId] !== metadata.state
+      || anchored.credentialTypes[providerId] !== metadata.credentialType
     ) unreadable('Credential metadata failed rollback verification')
   }
 
@@ -433,10 +434,13 @@ function createVaultCredentialStoreBackendInternalV1(
               maskedLastFourSuffix: input.metadata.maskedLastFourSuffix,
             })
           }
+          const storedMetadata = await persistence.getCredentialMetadata(workspaceId, providerId)
+          if (!storedMetadata) unreadable('Credential metadata is missing after write')
           return {
             nextCredentialVersion: credentialVersion,
             nextCredentialMaterialKind: record.materialKind,
             nextCredentialLifecycleState: 'active',
+            nextCredentialType: storedMetadata.credentialType,
             nextDekGeneration: record.dekGeneration,
             result: record,
           }
@@ -491,10 +495,13 @@ function createVaultCredentialStoreBackendInternalV1(
               reason: 'credential-tombstone',
             } : undefined,
           })
+          const storedMetadata = await persistence.getCredentialMetadata(workspaceId, providerId)
+          if (!storedMetadata) unreadable('Credential metadata is missing after delete')
           return {
             nextCredentialVersion: record.credentialVersion,
             nextCredentialMaterialKind: record.materialKind,
             nextCredentialLifecycleState: 'intentionally_absent',
+            nextCredentialType: storedMetadata.credentialType,
             nextDekGeneration: record.dekGeneration,
             result: record,
           }
