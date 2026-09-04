@@ -205,6 +205,23 @@ describe('primary filesystem access projection', () => {
     expect(filesystemSchema.enum).toEqual(['user'])
   })
 
+  test('anchors host grep at the storage root when runtime and storage roots differ', async () => {
+    const user = binding()
+    const root = await mkdtemp(join(tmpdir(), 'boring-pi-grep-'))
+    await writeFile(join(root, 'needle.txt'), 'needle')
+    const bundle = {
+      storageRoot: root,
+      workspace: workspace('/workspace'),
+      sandbox: { placement: 'local' },
+      fileSearch: {},
+      filesystemBindings: [user],
+    } as unknown as RuntimeBundle
+    const grep = buildFilesystemAgentTools(bundle).find((tool) => tool.name === 'grep')!
+    const result = await grep.execute({ path: '.', pattern: 'needle' }, { abortSignal: new AbortController().signal, toolCallId: 'grep-test' })
+    expect(result).toMatchObject({ isError: false })
+    expect(String(result.content?.[0]?.text ?? '')).toContain('needle.txt')
+  })
+
   test('routes upload_file through primary binding policy', async () => {
     const user = binding()
     const root = await mkdtemp(join(tmpdir(), 'boring-upload-access-'))
