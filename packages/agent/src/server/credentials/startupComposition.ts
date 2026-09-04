@@ -1,5 +1,5 @@
 import { ModelRuntime } from '@mariozechner/pi-coding-agent'
-import { InMemoryCredentialStore } from '@earendil-works/pi-ai'
+import { InMemoryCredentialStore, type CredentialStore } from '@earendil-works/pi-ai'
 import {
   CREDENTIAL_ERROR_CODES,
   CredentialResolutionError,
@@ -28,6 +28,7 @@ import {
 } from './vault'
 import type { CredentialVaultPersistenceV1 } from './vault'
 import type { VaultCredentialStoreBackendV1 } from './vault'
+import { createVaultCredentialStoreV1 } from './vaultCredentialStore'
 
 /**
  * [1082 slice B] Startup credential registry + resolver composition.
@@ -279,6 +280,11 @@ export interface WorkspaceCredentialRuntimeViewV1 {
   readonly skippedProviderIds: readonly string[]
   /** Present when an authority verifier was supplied at composition time. */
   readonly resolver?: WorkspaceCredentialResolverV1
+  /** Actor-bound Pi credential store; workspace identity is fixed at construction. */
+  createPiCredentialStore(
+    workspaceId: string,
+    options: { readonly allowSubscriptionOAuth: boolean },
+  ): CredentialStore
 }
 
 export interface WorkspaceCredentialVaultCompositionV1 extends WorkspaceCredentialRuntimeViewV1 {
@@ -362,12 +368,22 @@ export async function resolveWorkspaceCredentialVaultCompositionFromEnvV1(
   const resolver = options.authorityVerifier
     ? createResolver(options.authorityVerifier)
     : undefined
+  const createPiCredentialStore = (
+    workspaceId: string,
+    storeOptions: { readonly allowSubscriptionOAuth: boolean },
+  ): CredentialStore => createVaultCredentialStoreV1({
+    workspaceId,
+    vaultBackend,
+    allowSubscriptionOAuth: storeOptions.allowSubscriptionOAuth,
+    allowedOAuthProviderIds: ['openai-codex'],
+  })
   const runtimeView: WorkspaceCredentialRuntimeViewV1 = Object.freeze({
     providerRegistry,
     bindingRegistry,
     catalog,
     skippedProviderIds,
     resolver,
+    createPiCredentialStore,
   })
 
   return Object.freeze({
@@ -379,5 +395,6 @@ export async function resolveWorkspaceCredentialVaultCompositionFromEnvV1(
     resolver,
     runtimeView,
     createResolver,
+    createPiCredentialStore,
   })
 }

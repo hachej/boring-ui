@@ -11,6 +11,7 @@ import {
 } from '../../shared/index'
 import { buildAgentComposition, type BuiltAgentComposition } from './buildAgentComposition'
 import { resolveWorkspaceCredentialVaultCompositionFromEnvV1 } from '../credentials/startupComposition'
+import { createOpenAiCodexOAuthBrokerV1 } from '../credentials/openAiCodexOAuthBroker'
 import type { WorkspaceCredentialVaultCompositionV1 } from '../credentials/startupComposition'
 import { EmbeddedAgentGateway } from './embeddedGateway'
 import { EnvironmentLeaseManager, type EnvironmentLease } from './environmentLease'
@@ -806,6 +807,12 @@ export async function createAgentHost(
     persistence: options.credentials?.vaultPersistence,
     authorityVerifier: options.credentials?.authorityVerifier,
   })
+  const oauthBroker = credentialComposition
+    ? createOpenAiCodexOAuthBrokerV1({
+        credentialStoreForWorkspace: (workspaceId) =>
+          credentialComposition.createPiCredentialStore(workspaceId, { allowSubscriptionOAuth: true }),
+      })
+    : undefined
   const runtime = createRuntime(options, compiledAgents, credentialComposition)
   if (
     runtime.ledger.durability !== 'durable-transactional'
@@ -977,6 +984,7 @@ export async function createAgentHost(
                   await app.register(credentialsRoutes, {
                     providerRegistry: credentialComposition.providerRegistry,
                     vaultBackend: credentialComposition.vaultBackend,
+                    oauthBroker,
                     authorizeRequest: options.credentials!.authorizeOwnerRequest!,
                   })
                 },

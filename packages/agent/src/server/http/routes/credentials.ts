@@ -11,7 +11,10 @@ import type {
   ProviderRegistryV1,
   VerifiedWorkspaceCredentialAuthorityV1,
 } from '../../../shared/credentials'
-import type { VaultCredentialStoreBackendV1 } from '../../credentials'
+import type {
+  OpenAiCodexOAuthBrokerV1,
+  VaultCredentialStoreBackendV1,
+} from '../../credentials'
 
 const ROUTE_PREFIX = '/api/v1/credentials'
 const MAX_DISPLAY_LABEL_LENGTH = 256
@@ -19,6 +22,8 @@ const MAX_DISPLAY_LABEL_LENGTH = 256
 export interface CredentialRoutesOptionsV1 {
   readonly providerRegistry: ProviderRegistryV1
   readonly vaultBackend: VaultCredentialStoreBackendV1
+  /** Pi-native OpenAI Codex login broker; absent keeps OAuth routes disabled. */
+  readonly oauthBroker?: OpenAiCodexOAuthBrokerV1
   /** Core-owned authentication boundary; request params/body are never authority. */
   readonly authorizeRequest: (
     request: FastifyRequest,
@@ -191,6 +196,44 @@ export async function credentialsRoutes(
     const providerId = providerIdFrom(request)
     const stored = await options.vaultBackend.getCredentialMetadata(workspaceId, providerId)
     return reply.code(200).send(metadataProjection(options.providerRegistry, providerId, stored))
+  })
+
+  app.post(`${ROUTE_PREFIX}/openai-codex/oauth`, async (request, reply) => {
+    const { workspaceId } = await requireOwner(request, options)
+    if (!options.oauthBroker) {
+      throw new CredentialResolutionError(CREDENTIAL_ERROR_CODES.NOT_CONFIGURED, 'Credential operation failed')
+    }
+    const flow = await options.oauthBroker.start(workspaceId)
+    return reply.code(202).send(flow)
+  })
+
+  app.get(`${ROUTE_PREFIX}/openai-codex/oauth/:flowId`, async (request, reply) => {
+    const { workspaceId } = await requireOwner(request, options)
+    const flowId = (request.params as { flowId?: unknown }).flowId
+    const flow = typeof flowId === 'string' ? options.oauthBroker?.get(workspaceId, flowId) : undefined
+    if (!flow) return reply.code(404).send({ error: { code: 'OAUTH_FLOW_NOT_FOUND', message: 'OAuth flow not found' } })
+    return reply.code(200).send(flow)
+  })
+
+  app.post(`${ROUTE_PREFIX}/openai-codex/oauth/:flowId/respond`, async (request, reply) => {
+    const { workspaceId } = await requireOwner(request, options)
+    const flowId = (request.params as { flowId?: unknown }).flowId
+    const body = request.body as { value?: unknown } | undefined
+    if (!options.oauthBroker || typeof flowId !== 'string' || typeof body?.value !== 'string') {
+      throw new CredentialResolutionError(CREDENTIAL_ERROR_CODES.SCHEMA_MISMATCH, 'Credential operation failed')
+    }
+    const flow = await options.oauthBroker.respond(workspaceId, flowId, body.value)
+    return reply.code(200).send(flow)
+  })
+
+  app.delete(`${ROUTE_PREFIX}/openai-codex/oauth/:flowId`, async (request, reply) => {
+    const { workspaceId } = await requireOwner(request, options)
+    const flowId = (request.params as { flowId?: unknown }).flowId
+    if (!options.oauthBroker || typeof flowId !== 'string') {
+      throw new CredentialResolutionError(CREDENTIAL_ERROR_CODES.SCHEMA_MISMATCH, 'Credential operation failed')
+    }
+    await options.oauthBroker.cancel(workspaceId, flowId)
+    return reply.code(204).send()
   })
 
   app.put(`${ROUTE_PREFIX}/:providerId`, async (request, reply) => {

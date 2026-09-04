@@ -166,6 +166,11 @@ export interface BuiltAgentComposition {
   dispose(): Promise<void>
 }
 
+/** Factory seats are unattended-capable and may never spend subscription OAuth. */
+export function allowsSubscriptionOAuthForAgentTypeV1(agentTypeId: string): boolean {
+  return !agentTypeId.startsWith('boring-')
+}
+
 /** Environment skill roots require an ordinary trusted host provisioning grant. */
 export function provisionedSkillPathsForAgent(
   agent: CompiledAgentHostAgentSpec,
@@ -288,6 +293,17 @@ export async function buildAgentComposition(
   const getUnprojectedHotResources = unprojectedPi.getHotReloadableResources
   const pi = {
     ...unprojectedPi,
+    ...(input.credentialComposition
+      ? {
+          credentialStore: input.credentialComposition.createPiCredentialStore(
+            input.workspaceScopeId,
+            // Factory seats are unattended-capable and must use API-key
+            // funding. Subscription OAuth remains available to normal
+            // interactive agents only.
+            { allowSubscriptionOAuth: allowsSubscriptionOAuthForAgentTypeV1(input.agent.agentTypeId) },
+          ),
+        }
+      : {}),
     additionalSkillPaths: projectSkillPaths(unprojectedPi.additionalSkillPaths ?? []),
     ...(getUnprojectedHotResources
       ? {
