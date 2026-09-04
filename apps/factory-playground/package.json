@@ -12,7 +12,9 @@
     "test": "vitest run",
     "simulate": "tsx scripts/simulate-feature.mts",
     "epic": "node scripts/factory-epic.mjs",
-    "snapshot:vercel": "tsx scripts/vercel-snapshot.mts"
+    "snapshot:vercel": "tsx scripts/vercel-snapshot.mts",
+    "sandbox:sweep": "tsx scripts/vercel-sweep.mts",
+    "snapshot:sweep": "tsx scripts/vercel-sweep-snapshots.mts"
   },
   "dependencies": {
     "@hachej/boring-agent": "workspace:*",
