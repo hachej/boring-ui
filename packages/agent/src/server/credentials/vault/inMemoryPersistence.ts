@@ -1,10 +1,16 @@
+import {
+  CREDENTIAL_ERROR_CODES,
+  CredentialResolutionError,
+} from '../../../shared/credentials'
 import type { ProviderId } from '../../../shared/credentials'
 import type {
   CredentialEnvelopeV1,
   WrappedWorkspaceDekV1,
 } from '../../../shared/credentials'
 import type {
+  CommitCredentialVersionInputV1,
   CredentialFieldKeyV1,
+  CredentialFieldTombstoneV1,
   CredentialVaultPersistenceV1,
   StoredCredentialRecordV1,
 } from './persistence'
@@ -87,6 +93,7 @@ export function createInMemoryCredentialVaultPersistenceV1(): CredentialVaultPer
   const records = new Map<string, StoredCredentialRecordV1>()
   const wrappedDeks = new Map<string, WrappedWorkspaceDekV1>()
   const fields = new Map<string, CredentialEnvelopeV1>()
+  const tombstones = new Map<string, CredentialFieldTombstoneV1>()
 
   const persistence: CredentialVaultPersistenceV1 = {
     async getCredentialRecord(
@@ -102,6 +109,37 @@ export function createInMemoryCredentialVaultPersistenceV1(): CredentialVaultPer
     ): Promise<void> {
       records.set(recordKey(workspaceId, providerId), Object.freeze({ ...record }))
     },
+    async commitCredentialVersion(
+      input: CommitCredentialVersionInputV1,
+    ): Promise<void> {
+      const encodedRecordKey = recordKey(input.workspaceId, input.providerId)
+      const currentVersion = records.get(encodedRecordKey)?.credentialVersion ?? 0
+      if (currentVersion !== input.expectedCredentialVersion) {
+        throw new CredentialResolutionError(
+          CREDENTIAL_ERROR_CODES.UNREADABLE,
+          'Credential record version changed concurrently',
+        )
+      }
+      for (const [fieldId, envelope] of input.fields) {
+        const key = fieldKey({
+          workspaceId: input.workspaceId,
+          providerId: input.providerId,
+          credentialVersion: input.record.credentialVersion,
+          fieldId,
+        })
+        fields.set(key, copyEnvelope(envelope))
+        tombstones.delete(key)
+      }
+      records.set(encodedRecordKey, Object.freeze({ ...input.record }))
+      if (input.expectedCredentialVersion > 0 && input.supersededFieldsTombstone) {
+        await persistence.tombstoneCredentialVersionFields(
+          input.workspaceId,
+          input.providerId,
+          input.expectedCredentialVersion,
+          input.supersededFieldsTombstone,
+        )
+      }
+    },
     async getWrappedDek(
       workspaceId: string,
       dekGeneration: number,
@@ -116,6 +154,12 @@ export function createInMemoryCredentialVaultPersistenceV1(): CredentialVaultPer
     ): Promise<void> {
       wrappedDeks.set(dekKey(workspaceId, dekGeneration), copyWrappedDek(wrapped))
     },
+    async deleteWrappedDek(
+      workspaceId: string,
+      dekGeneration: number,
+    ): Promise<void> {
+      wrappedDeks.delete(dekKey(workspaceId, dekGeneration))
+    },
     async getField(
       key: CredentialFieldKeyV1,
     ): Promise<CredentialEnvelopeV1 | undefined> {
@@ -126,7 +170,40 @@ export function createInMemoryCredentialVaultPersistenceV1(): CredentialVaultPer
       key: CredentialFieldKeyV1,
       envelope: CredentialEnvelopeV1,
     ): Promise<void> {
-      fields.set(fieldKey(key), copyEnvelope(envelope))
+      const encodedKey = fieldKey(key)
+      if (tombstones.has(encodedKey)) {
+        throw new CredentialResolutionError(
+          CREDENTIAL_ERROR_CODES.UNREADABLE,
+          'Credential field tombstone cannot be resurrected',
+        )
+      }
+      fields.set(encodedKey, copyEnvelope(envelope))
+    },
+    async tombstoneCredentialVersionFields(
+      workspaceId: string,
+      providerId: ProviderId,
+      credentialVersion: number,
+      tombstone: CredentialFieldTombstoneV1,
+    ): Promise<void> {
+      for (const [encodedKey] of fields) {
+        const [storedWorkspaceId, storedProviderId, storedVersion] = JSON.parse(
+          encodedKey,
+        ) as [string, string, number, string]
+        if (
+          storedWorkspaceId === workspaceId
+          && storedProviderId === providerId
+          && storedVersion === credentialVersion
+        ) {
+          fields.delete(encodedKey)
+          tombstones.set(encodedKey, Object.freeze({ ...tombstone }))
+        }
+      }
+    },
+    async getFieldTombstone(
+      key: CredentialFieldKeyV1,
+    ): Promise<CredentialFieldTombstoneV1 | undefined> {
+      const stored = tombstones.get(fieldKey(key))
+      return stored ? Object.freeze({ ...stored }) : undefined
     },
   }
   return Object.freeze(persistence)
