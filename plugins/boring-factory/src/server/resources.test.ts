@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
+  FACTORY_REVIEWER_AGENT_TYPE_ID,
   FACTORY_WORKER_AGENT_TYPE_ID,
   resolveBoringFactoryResources,
 } from '../../dist/server/index.js'
@@ -86,6 +87,7 @@ describe('Boring Factory resource artifact', () => {
     expect(await readdir(resources.skillRoot)).toEqual(['exec', 'plan'])
     expect(Object.keys(resources.agentSources).sort()).toEqual([
       FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
+      FACTORY_REVIEWER_AGENT_TYPE_ID,
       FACTORY_WORKER_AGENT_TYPE_ID,
     ])
 
@@ -149,6 +151,7 @@ describe('Boring Factory resource artifact', () => {
     for (const agentTypeId of [
       FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
       FACTORY_WORKER_AGENT_TYPE_ID,
+      FACTORY_REVIEWER_AGENT_TYPE_ID,
     ] as const) {
       const source = resources.agentSources[agentTypeId]
       const compatibilityManifest = JSON.parse(
@@ -166,6 +169,21 @@ describe('Boring Factory resource artifact', () => {
       expect(compatibilityManifest.definitionId).toBe(agentTypeId)
       expect(compatibilityManifest.instructionsRef).toBe('instructions.md')
       expect((await readFile(path.join(source, 'instructions.md'), 'utf8')).trim()).not.toBe('')
+    }
+  })
+
+  it('keeps canonical persona definitionIds aligned with every factory seat constant', async () => {
+    const constantsBySeat = {
+      orchestrator: FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
+      worker: FACTORY_WORKER_AGENT_TYPE_ID,
+      reviewer: FACTORY_REVIEWER_AGENT_TYPE_ID,
+    } as const
+
+    for (const [seat, agentTypeId] of Object.entries(constantsBySeat)) {
+      const packageManifest = JSON.parse(
+        await readFile(path.join(repositoryRoot, '.agents/personas', seat, 'package.json'), 'utf8'),
+      ) as { boring?: { agent?: { definitionId?: string } } }
+      expect(packageManifest.boring?.agent?.definitionId).toBe(agentTypeId)
     }
   })
 })

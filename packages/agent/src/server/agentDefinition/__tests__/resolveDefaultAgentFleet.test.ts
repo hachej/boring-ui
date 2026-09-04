@@ -15,7 +15,7 @@ const FACTORY_PACKAGES: readonly DiscoveredAgentPackageDescriptor[] = [
   // (concierge) that holds no fleet.yaml entry and must not compose.
   ['concierge', 'boring-concierge', ['feedback', 'triage', 'owner-gate', 'handoff']],
   ['triage', 'boring-triage', ['triage', 'owner-gate', 'handoff']],
-  ['orchestrator', 'boring-orchestrator', ['plan', 'feedback', 'owner-gate', 'handoff']],
+  ['orchestrator', 'boring-orchestrator', ['plan', 'feedback', 'owner-gate', 'handoff', 'show-me']],
   ['worker', 'boring-worker', ['exec', 'fresh-eyes', 'owner-gate', 'handoff']],
 ].map(([seat, definitionId, skills]) => ({
   rootDir: resolve(REPOSITORY_ROOT, '.agents', 'personas', seat as string),

@@ -1,0 +1,47 @@
+{
+  "name": "factory-playground",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:deps": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-sandbox build && pnpm --filter @hachej/boring-bash build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-pi build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-tasks build && pnpm --filter @hachej/boring-automation build && pnpm --filter @hachej/boring-sandbox-plugin build",
+    "dev": "pnpm run build:deps && pnpm run dev:app",
+    "dev:app": "vite",
+    "build": "pnpm run build:deps && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "simulate": "tsx scripts/simulate-feature.mts",
+    "epic": "node scripts/factory-epic.mjs",
+    "smoke:factory-single-bead": "node scripts/hub-single-bead-smoke.mjs",
+    "snapshot:vercel": "tsx scripts/vercel-snapshot.mts",
+    "sandbox:sweep": "tsx scripts/vercel-sweep.mts",
+    "snapshot:sweep": "tsx scripts/vercel-sweep-snapshots.mts"
+  },
+  "dependencies": {
+    "@hachej/boring-agent": "workspace:*",
+    "@hachej/boring-ask-user": "workspace:*",
+    "@hachej/boring-automation": "workspace:*",
+    "@hachej/boring-bash": "workspace:*",
+    "@hachej/boring-core": "workspace:*",
+    "@hachej/boring-sandbox": "workspace:*",
+    "@hachej/boring-sandbox-plugin": "workspace:*",
+    "@hachej/boring-tasks": "workspace:*",
+    "@hachej/boring-workspace": "workspace:*",
+    "@hachej/boring-factory": "workspace:*",
+    "@vercel/sandbox": "3.0.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^22.20.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^4.0.0",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.6",
+    "typescript": "^6.0.3",
+    "vite": "^8.2.1",
+    "vitest": "^4.1.11"
+  }
+}

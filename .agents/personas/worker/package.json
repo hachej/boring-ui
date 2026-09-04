@@ -1,14 +1,14 @@
 {
   "name": "@hachej/boring-persona-worker",
-  "version": "2026.08.04",
+  "version": "2026.09.02",
   "private": true,
-  "description": "Executes one claimed Bead in one assigned worktree.",
+  "description": "Executes one claimed Bead in its epic's shared worktree.",
   "boring": {
     "agent": {
       "definitionId": "boring-worker",
-      "version": "2026.08.04",
+      "version": "2026.09.02",
       "label": "Boring Worker",
-      "description": "Executes one claimed Bead in one assigned worktree.",
+      "description": "Executes one claimed Bead in its epic's shared worktree.",
       "instructionsRef": "instructions.md"
     }
   },

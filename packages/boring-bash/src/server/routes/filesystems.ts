@@ -86,6 +86,7 @@ export function filesystemsRoutes(
   done: (err?: Error) => void,
 ): void {
   app.get('/api/v1/filesystems', async (request, reply) => {
+    reply.header('Cache-Control', 'private, no-store')
     try {
       const bindings = opts.getFilesystemBindings
         ? await opts.getFilesystemBindings(request) ?? []

@@ -99,6 +99,8 @@ export interface PiHarnessOptions {
   noSkills?: boolean;
   /** Disable ambient Pi extensions (required when tools execute in a remote runtime). */
   noExtensions?: boolean;
+  /** Ignore packages from user/project Pi settings while preserving explicit host package grants. */
+  noAmbientPackages?: boolean;
   additionalSkillPaths?: string[];
   defaultModel?: { provider: string; id: string };
   /**
@@ -652,6 +654,7 @@ export function createPiCodingAgentHarness(opts: {
       opts.cwd,
       agentDir,
       effectivePackages,
+      { includeConfiguredPackages: pi.noAmbientPackages !== true },
     )
     const resourceLoader = new DefaultResourceLoader({
       cwd: opts.cwd,

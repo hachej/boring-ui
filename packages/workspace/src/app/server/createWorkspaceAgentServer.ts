@@ -151,6 +151,10 @@ interface WorkspaceReloadHookResult {
 
 export interface WorkspaceAgentPiOptions {
   noContextFiles?: boolean
+  /** Disable ambient Pi extensions while preserving explicitly composed package/extension grants. */
+  noExtensions?: boolean
+  /** Ignore packages from user/project Pi settings while preserving explicit host package grants. */
+  noAmbientPackages?: boolean
   noSkills?: boolean
   additionalSkillPaths?: string[]
   packages?: WorkspacePiPackageSource[]
@@ -1465,7 +1469,7 @@ export async function createWorkspaceAgentServer(
   const builtInBoringPiSkillPaths = pluginAuthoringEnabled ? resolveBoringPiSkillPaths(workspaceRoot) : []
   const baseStaticPiSkillPaths = [
     ...builtInBoringPiSkillPaths,
-    runtimeUserSkillsPath,
+    ...(opts.pi?.noSkills === true ? [] : [runtimeUserSkillsPath]),
     ...(opts.pi?.additionalSkillPaths ?? []),
   ]
   const baseStaticPiPackages = [workspacePackagePiPackage, ...(opts.pi?.packages ?? [])]
@@ -1932,6 +1936,8 @@ export async function createWorkspaceAgentServer(
         systemPromptAppend: baseSystemPromptAppend ?? null,
         piHarnessPolicy: {
           noContextFiles: resolvedBasePi.noContextFiles ?? null,
+          noExtensions: resolvedBasePi.noExtensions ?? null,
+          noAmbientPackages: resolvedBasePi.noAmbientPackages ?? null,
           noSkills: resolvedBasePi.noSkills ?? null,
         },
         toolContractOrder: baseExtraTools.map(toolContractDigest),
