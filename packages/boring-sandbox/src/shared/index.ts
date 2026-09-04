@@ -73,6 +73,7 @@ export {
   QUALIFICATION_BUNDLE_SCHEMA_VERSION,
 } from "./qualificationBundle";
 export type {
+  DisposableSandboxProviderProfileV1,
   DisposableSandboxProviderV1,
   ExtractedSandboxProviderIdV1,
   SandboxPairHealthV1,

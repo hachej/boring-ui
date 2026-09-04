@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { DisposableSandboxProviderV1, SandboxProviderCreateContextV1, WorkspaceSandboxPairV1 } from '@hachej/boring-sandbox/shared'
+import { isDisposableSandboxProviderV1 } from '@hachej/boring-sandbox/shared'
+import { SandboxLeaseService } from '@hachej/boring-sandbox-plugin/server'
 import { createPerEpicVercelProvider } from './sandboxComposition'
 import type { ResolvedEpicSnapshot } from './snapshotRegistry'
 
@@ -96,6 +98,77 @@ describe('createPerEpicVercelProvider', () => {
     expect(resolveSnapshotFn.mock.calls[0]![0]).toMatchObject({ epicKey: 'epic-a', workspaceRoot: '/ws', stateRoot: '/state' })
     expect(build).toHaveBeenCalledWith('snap_lazy', expect.anything())
     expect(pair).toBeDefined()
+  })
+
+  it('advertises a valid disposableProfile synchronously, before any snapshot is resolved', () => {
+    const resolveSnapshotFn = vi.fn(async () => resolvedSnapshot({ snapshotId: 'snap_never_reached' }))
+    const { build } = fakeBuildInnerProvider({})
+
+    const provider = createPerEpicVercelProvider({
+      workspaceRoot: '/ws',
+      stateRoot: '/state',
+      epicKey: 'epic-a',
+      env: AUTH_ENV,
+      leaseTimeoutMs: 1000,
+      telemetrySalt: undefined,
+      scratchRoot: '/scratch',
+      remoteSource: 'fetch',
+      log: () => {},
+      buildInnerProvider: build,
+      resolveSnapshotFn,
+    })
+
+    // The profile must be present on the object the moment it's constructed: no snapshot resolution,
+    // no async work, nothing gated behind create().
+    expect(resolveSnapshotFn).not.toHaveBeenCalled()
+    expect(isDisposableSandboxProviderV1(provider)).toBe(true)
+    expect(provider.disposableProfile).toMatchObject({
+      contractVersion: 'boring-sandbox.disposable-provider.v1',
+      resume: false,
+      publishedCleanupOwner: 'returned-pair',
+      ambiguousCreate: 'correlated-reconciliation',
+    })
+    expect(provider.disposableProfile.providerConfigDigest).toMatch(/^sha256:[a-f0-9]{64}$/)
+
+    // Same epic key + remote-source mode -> same digest; a different epic key changes it.
+    const sameConfig = createPerEpicVercelProvider({
+      workspaceRoot: '/ws', stateRoot: '/state', epicKey: 'epic-a', env: AUTH_ENV, leaseTimeoutMs: 1000,
+      telemetrySalt: undefined, scratchRoot: '/scratch', remoteSource: 'fetch', log: () => {}, buildInnerProvider: build, resolveSnapshotFn,
+    })
+    const differentEpic = createPerEpicVercelProvider({
+      workspaceRoot: '/ws', stateRoot: '/state', epicKey: 'epic-b', env: AUTH_ENV, leaseTimeoutMs: 1000,
+      telemetrySalt: undefined, scratchRoot: '/scratch', remoteSource: 'fetch', log: () => {}, buildInnerProvider: build, resolveSnapshotFn,
+    })
+    expect(sameConfig.disposableProfile.providerConfigDigest).toBe(provider.disposableProfile.providerConfigDigest)
+    expect(differentEpic.disposableProfile.providerConfigDigest).not.toBe(provider.disposableProfile.providerConfigDigest)
+  })
+
+  it('is accepted by SandboxLeaseService (the real consumer that rejected it before this fix)', () => {
+    const provider = createPerEpicVercelProvider({
+      workspaceRoot: '/ws',
+      stateRoot: '/state',
+      epicKey: 'epic-a',
+      env: AUTH_ENV,
+      leaseTimeoutMs: 1000,
+      telemetrySalt: undefined,
+      scratchRoot: '/scratch',
+      remoteSource: 'fetch',
+      log: () => {},
+      buildInnerProvider: fakeBuildInnerProvider({}).build,
+      resolveSnapshotFn: vi.fn(async () => resolvedSnapshot()),
+    })
+
+    expect(() => new SandboxLeaseService({
+      workspaceRoot: '/state/leases/boring-worker',
+      provider,
+      providerWorkspaceId: 'factory-playground',
+      serviceDigest: `sha256:${'0'.repeat(64)}`,
+      ttlMs: 60_000,
+      reapIntervalMs: 30_000,
+      drainTimeoutMs: 15_000,
+      maxActiveLeasesPerOwner: 2,
+      maxActiveLeasesTotal: 4,
+    })).not.toThrow()
   })
 
   it('caches the inner provider per snapshot id across multiple create() calls', async () => {

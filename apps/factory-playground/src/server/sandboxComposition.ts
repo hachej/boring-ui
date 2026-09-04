@@ -5,8 +5,8 @@ import { readFileSync } from 'node:fs'
 import { basename, dirname, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { createVercelSandboxProvider } from '@hachej/boring-sandbox/providers/vercel-sandbox'
-import { PROVIDER_CAPABILITIES, PROVIDER_CONTRACT_VERSION } from '@hachej/boring-sandbox/shared'
-import type { DisposableSandboxProviderV1, SandboxProviderV1 } from '@hachej/boring-sandbox/shared'
+import { DISPOSABLE_SANDBOX_PROVIDER_PROFILE_V1, PROVIDER_CAPABILITIES, PROVIDER_CONTRACT_VERSION } from '@hachej/boring-sandbox/shared'
+import type { DisposableSandboxProviderProfileV1, DisposableSandboxProviderV1, SandboxProviderV1 } from '@hachej/boring-sandbox/shared'
 import { createSandboxServerPlugin, SandboxLeaseService } from '@hachej/boring-sandbox-plugin/server'
 import { createLocalDisposableProvider } from './localDisposableProvider'
 import {
@@ -147,12 +147,24 @@ export interface CreatePerEpicVercelProviderOptions {
 }
 
 /** Exported for tests exercising the lazy-resolve + retry-on-refresh behavior with fakes; production callers go through `createFactorySandboxPlugin`. */
-export function createPerEpicVercelProvider(options: CreatePerEpicVercelProviderOptions): SandboxProviderV1 {
+export function createPerEpicVercelProvider(options: CreatePerEpicVercelProviderOptions): DisposableSandboxProviderV1 {
   const providerCache = new Map<string, DisposableSandboxProviderV1>()
   const buildInnerProvider = options.buildInnerProvider ?? buildVercelInnerProvider
   const resolveSnapshotFn = options.resolveSnapshotFn ?? resolveEpicSnapshot
   const invalidateSnapshotFn = options.invalidateSnapshotFn ?? invalidateEpicSnapshot
   const cachedGitToken = resolveFactoryGitToken(options.env)
+  // `SandboxLeaseService` requires every provider it wraps to advertise this profile *before* the
+  // first `create()` (see `isDisposableSandboxProviderV1`): the lazy per-epic snapshot resolution
+  // happening inside `create()` must not gate whether the provider is accepted as disposable at all.
+  // The epic key and remote-source mode are both known at construction time (or fall back to the same
+  // basename `resolveFactoryEpicKey` uses when it can't shell out to git), so the digest is static.
+  const disposableProfile: DisposableSandboxProviderProfileV1 = {
+    contractVersion: DISPOSABLE_SANDBOX_PROVIDER_PROFILE_V1,
+    resume: false,
+    publishedCleanupOwner: 'returned-pair',
+    ambiguousCreate: 'correlated-reconciliation',
+    providerConfigDigest: sha256(`per-epic-vercel:${options.epicKey ?? basename(options.workspaceRoot)}:${options.remoteSource ?? 'fetch'}`),
+  }
 
   function getProviderForSnapshot(snapshotId: string): DisposableSandboxProviderV1 {
     let provider = providerCache.get(snapshotId)
@@ -188,6 +200,7 @@ export function createPerEpicVercelProvider(options: CreatePerEpicVercelProvider
     contractVersion: PROVIDER_CONTRACT_VERSION,
     providerId: 'vercel-sandbox',
     capabilities: PROVIDER_CAPABILITIES['vercel-sandbox'],
+    disposableProfile,
     resolveRuntimeRoot: (context) => context.workspaceRoot,
     async create(context) {
       let resolved = await resolveSnapshot()
