@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { readFileSync } from "node:fs"
 import { describe, expect, it, vi } from "vitest"
 import { KyutaiDiarizedConnection, downsamplePcm24kTo16k, mergeKyutaiWordsWithSpeakers } from "../kyutaiDiarized"
 import type { WhisperLiveKitSnapshot } from "../whisperLiveKit"
@@ -96,3 +97,48 @@ function child(overrides: Partial<{
     close: overrides.close ?? (() => undefined),
   }
 }
+
+describe("Kyutai + Sortformer merge on a measured two-voice bench", () => {
+  // Recorded on the RTX 3080 Ti box (2026-09-04): Kyutai's public French
+  // sample cut into six 4 s turns, voice B pitch-shifted, streamed to both
+  // services in real time. Truth: speaker = turn index mod 2.
+  const bench = JSON.parse(readFileSync(new URL("./fixtures.sortformerTwoVoices.json", import.meta.url), "utf8")) as {
+    turnSeconds: number
+    words: WhisperLiveKitSnapshot["lines"]
+    segments: WhisperLiveKitSnapshot["lines"]
+  }
+  const truth = bench.words.map((word) => Math.floor(word.startSeconds / bench.turnSeconds) % 2)
+  const score = (lines: WhisperLiveKitSnapshot["lines"]) => {
+    const mappings = [{ 0: 0, 1: 1 }, { 0: 1, 1: 0 }] as Array<Record<number, number>>
+    const accuracy = Math.max(...mappings.map((map) => lines.filter((line, index) => line.speaker >= 0 && map[line.speaker] === truth[index]).length / lines.length))
+    const runs = lines.reduce((count, line, index) => count + (index > 0 && line.speaker !== lines[index - 1]!.speaker ? 1 : 0), 1)
+    return { accuracy, runs }
+  }
+
+  it("beats the uncompensated per-word merge on accuracy and turn count", () => {
+    const before = score(mergeKyutaiWordsWithSpeakers(snapshot(bench.words), snapshot(bench.segments), { lagSeconds: 0 }).lines)
+    const after = score(mergeKyutaiWordsWithSpeakers(snapshot(bench.words), snapshot(bench.segments)).lines)
+    expect(before.accuracy).toBeLessThan(0.95)
+    expect(after.accuracy).toBeGreaterThanOrEqual(0.95)
+    expect(after.runs).toBe(6)
+  })
+
+  it("carries the previous speaker over uncovered words and smooths one-word flickers", () => {
+    const merged = mergeKyutaiWordsWithSpeakers(
+      snapshot([
+        { text: "bonjour", startSeconds: 0, endSeconds: 0.4, speaker: -1 },
+        { text: "docteur", startSeconds: 0.4, endSeconds: 0.8, speaker: -1 },
+        { text: "je", startSeconds: 0.8, endSeconds: 0.9, speaker: -1 },
+        { text: "viens", startSeconds: 0.9, endSeconds: 1.3, speaker: -1 },
+        { text: "pour", startSeconds: 3.0, endSeconds: 3.3, speaker: -1 },
+      ]),
+      snapshot([
+        { text: "", startSeconds: 0.5, endSeconds: 1.3, speaker: 1 },
+        { text: "", startSeconds: 1.3, endSeconds: 1.4, speaker: 0 },
+        { text: "", startSeconds: 1.4, endSeconds: 1.8, speaker: 1 },
+      ]),
+      { lagSeconds: 0 },
+    )
+    expect(merged.lines.map((line) => line.speaker)).toEqual([-1, 1, 1, 1, 1])
+  })
+})

@@ -156,3 +156,28 @@ class LeaseControllerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WarmWindowTests(unittest.TestCase):
+    def test_parses_hours_and_days(self):
+        window = MODULE.WarmWindow.parse("08:00-19:00@mon-fri", 2700)
+        self.assertEqual((window.start_minute, window.end_minute), (480, 1140))
+        self.assertEqual(sorted(window.weekdays), [0, 1, 2, 3, 4])
+        self.assertTrue(window.active(time.struct_time((2026, 9, 4, 9, 30, 0, 4, 247, 0))))   # Friday 09:30
+        self.assertFalse(window.active(time.struct_time((2026, 9, 5, 9, 30, 0, 5, 248, 0))))  # Saturday
+        self.assertFalse(window.active(time.struct_time((2026, 9, 4, 19, 0, 0, 4, 247, 0))))  # closing minute
+
+    def test_rejects_empty_or_inverted_windows(self):
+        with self.assertRaises(ValueError):
+            MODULE.WarmWindow.parse("19:00-08:00", 60)
+
+    def test_controller_uses_long_grace_inside_the_window_only(self):
+        provider = FakeProvider()
+        window = MODULE.WarmWindow.parse("00:00-23:59@mon-sun", 2700)
+        controller = MODULE.LeaseController(provider, lambda: True, idle_grace=180, warm_window=window)
+        try:
+            self.assertEqual(controller.idle_grace, 2700)
+            controller.warm_window = MODULE.WarmWindow.parse("00:00-00:01@mon-sun", 2700)
+            self.assertEqual(controller.idle_grace, 180)
+        finally:
+            controller.close()

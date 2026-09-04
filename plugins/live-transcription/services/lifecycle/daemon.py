@@ -56,11 +56,44 @@ class ExoscaleProvider:
             return
 
 
+@dataclass(frozen=True)
+class WarmWindow:
+    """Local-time window (e.g. cabinet hours) during which the GPU stays warm between leases."""
+    start_minute: int
+    end_minute: int
+    weekdays: frozenset[int]
+    idle_grace: float
+
+    @staticmethod
+    def parse(spec: str, idle_grace: float) -> "WarmWindow":
+        # "08:00-19:00@mon-fri" ; days optional (default mon-fri)
+        hours, _, days = spec.partition("@")
+        start, _, end = hours.partition("-")
+        def minute(value: str) -> int:
+            hh, mm = value.strip().split(":")
+            return int(hh) * 60 + int(mm)
+        names = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+        chosen: set[int] = set()
+        for part in (days or "mon-fri").split(","):
+            first, _, last = part.strip().lower().partition("-")
+            lo, hi = names.index(first), names.index(last or first)
+            chosen.update(range(lo, hi + 1))
+        if not chosen or minute(start) >= minute(end):
+            raise ValueError("invalid warm window")
+        return WarmWindow(minute(start), minute(end), frozenset(chosen), idle_grace)
+
+    def active(self, now: "time.struct_time | None" = None) -> bool:
+        current = now or time.localtime()
+        return current.tm_wday in self.weekdays and self.start_minute <= current.tm_hour * 60 + current.tm_min < self.end_minute
+
+
 class LeaseController:
     def __init__(self, provider: ExoscaleProvider, ready: Callable[[], bool], *, lease_ttl: float = 90,
-                 idle_grace: float = 180, max_runtime: float = 4 * 3600, ready_timeout: float = 600):
+                 idle_grace: float = 180, max_runtime: float = 4 * 3600, ready_timeout: float = 600,
+                 warm_window: "WarmWindow | None" = None):
         self.provider, self.ready = provider, ready
-        self.lease_ttl, self.idle_grace = lease_ttl, idle_grace
+        self.lease_ttl, self._idle_grace = lease_ttl, idle_grace
+        self.warm_window = warm_window
         self.max_runtime, self.ready_timeout = max_runtime, ready_timeout
         self.lock = threading.RLock()
         self.condition = threading.Condition(self.lock)
@@ -73,6 +106,14 @@ class LeaseController:
         self.closed = False
         self.worker = threading.Thread(target=self._sweep, daemon=True)
         self.worker.start()
+
+    @property
+    def idle_grace(self) -> float:
+        """Between two patients the GPU must stay warm: inside the cabinet window the
+        grace is long; outside it the box stops quickly as before."""
+        if self.warm_window and self.warm_window.active():
+            return self.warm_window.idle_grace
+        return self._idle_grace
 
     def acquire(self, request_id: str) -> Lease:
         if not request_id or len(request_id) > 200:
@@ -88,14 +129,19 @@ class LeaseController:
             self.starting = True
             self.stop_after = None
         try:
-            deadline = time.monotonic() + self.ready_timeout
+            began = time.monotonic()
+            deadline = began + self.ready_timeout
             start_requested = False
             while time.monotonic() < deadline:
                 state = self.provider.state()
                 if state == "stopped" and not start_requested:
                     self.provider.start()
                     start_requested = True
+                    print("lifecycle: start requested", flush=True)
                 elif state == "running" and self.ready():
+                    elapsed = time.monotonic() - began
+                    if start_requested or elapsed > 5:
+                        print(f"lifecycle: ready after {elapsed:.0f}s (cold start: {start_requested})", flush=True)
                     with self.condition:
                         self.started_at = self.started_at or time.monotonic()
                         return self._new_lease(request_id)
@@ -282,6 +328,8 @@ def main() -> None:
     parser.add_argument("--exo-bin", default="/usr/local/bin/exo")
     parser.add_argument("--idle-grace", type=float, default=180)
     parser.add_argument("--max-runtime", type=float, default=4 * 3600)
+    parser.add_argument("--warm-window", help="local-time window during which the GPU stays warm, e.g. 08:00-19:00@mon-fri")
+    parser.add_argument("--warm-idle-grace", type=float, default=45 * 60, help="idle grace inside the warm window (seconds)")
     args = parser.parse_args()
     host, port_text = args.listen.rsplit(":", 1)
     if host != "127.0.0.1":
@@ -296,6 +344,7 @@ def main() -> None:
         tcp_ready_targets(ready_targets, ready_auth),
         idle_grace=args.idle_grace,
         max_runtime=args.max_runtime,
+        warm_window=WarmWindow.parse(args.warm_window, args.warm_idle_grace) if args.warm_window else None,
     )
     ApiHandler.controller = controller
     ApiHandler.bearer_token = token
