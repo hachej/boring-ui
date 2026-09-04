@@ -29,6 +29,7 @@ import {
   type SessionCtx,
   type SessionSummary,
   type SessionDetail,
+  type SessionCreateInit,
   type SessionListOptions,
   type SessionArchiveFilter,
 } from "../../../shared/session.js";
@@ -314,7 +315,7 @@ export class PiSessionStore implements SessionStore {
 
   async create(
     ctx: SessionCtx,
-    init?: { title?: string },
+    init?: SessionCreateInit,
   ): Promise<SessionSummary> {
     const manualTitle = init?.title !== undefined
       ? normalizeUserSessionTitle(init.title)
@@ -323,13 +324,15 @@ export class PiSessionStore implements SessionStore {
 
     const id = randomUUID();
     const now = new Date().toISOString();
-    const header: SessionHeader & { boringSessionCtx: SessionCtx } = {
+    const originChannel = init?.originChannel ?? 'web';
+    const header: SessionHeader & { boringSessionCtx: SessionCtx; boringOriginChannel: string } = {
       type: "session",
       version: CURRENT_SESSION_VERSION,
       id,
       timestamp: now,
       cwd: this.cwd,
       boringSessionCtx: normalizeSessionCtx(ctx) ?? {},
+      boringOriginChannel: originChannel,
     };
 
     const lines = [JSON.stringify(header)];
@@ -362,6 +365,7 @@ export class PiSessionStore implements SessionStore {
       turnCount: 0,
       nativeSessionId: id,
       hasAssistantReply: false,
+      originChannel,
     };
   }
 
@@ -407,6 +411,7 @@ export class PiSessionStore implements SessionStore {
             hasAssistantReply: resolved.transcriptSummary.hasAssistantReply,
           }
         : {}),
+      originChannel: readHeaderOriginChannel(resolved.header),
     }, await readArchivedSessionIds(this.sessionDir));
   }
 
@@ -892,6 +897,7 @@ export class PiSessionStore implements SessionStore {
               hasAssistantReply: transcript.hasAssistantReply,
             }
           : {}),
+        originChannel: readHeaderOriginChannel(header),
       };
       const stableForCache = sessionScan.stable
         && sameFileSnapshot(fileStat, sessionScan.stat)
@@ -1329,6 +1335,11 @@ function readHeaderSessionCtx(header: SessionHeader | undefined): StoredSessionC
   const raw = (header as { boringSessionCtx?: unknown }).boringSessionCtx;
   if (!raw || typeof raw !== "object") return {};
   return normalizeSessionCtx(raw as SessionCtx) ?? {};
+}
+
+function readHeaderOriginChannel(header: SessionHeader | undefined): import('../../../shared/channel').OriginChannel {
+  const raw = (header as { boringOriginChannel?: unknown } | undefined)?.boringOriginChannel;
+  return typeof raw === 'string' && raw.length > 0 ? raw : 'web';
 }
 
 function normalizeSessionCtx(ctx: SessionCtx | undefined): SessionCtx | undefined {

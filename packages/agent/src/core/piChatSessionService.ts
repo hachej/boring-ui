@@ -31,6 +31,7 @@ export interface PiSessionRequestContext {
 export interface PiSessionCreateInit {
   title?: string
   modelDefault?: ChatModelSelection
+  originChannel?: import('../shared/channel').OriginChannel
 }
 
 export type PiChatReplayRangeError =

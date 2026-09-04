@@ -28,6 +28,7 @@ import { sessionNamespaceForAgent } from './sessionInventory'
 import { locateHostWorkspaceSkill, projectRuntimeSkillPathToHost } from './skillPathProjection'
 import type { AgentHarnessBackend } from './harnessBackend/types'
 import { createPiSessionHarnessBackend } from './harnessBackend/piSessionHarnessBackend'
+import { assertChannelDurability } from '../channels'
 
 /**
  * Flag-gated durable event streaming. When set (`1`/`true`), production
@@ -162,6 +163,7 @@ export function provisionedSkillPathsForAgent(
 export async function buildAgentComposition(
   input: BuildAgentCompositionInput,
 ): Promise<BuiltAgentComposition> {
+  assertChannelDurability(isDurableStreamEnabled())
   const { runtimeScope, options } = input
   const bindingIsVisible = (binding: RuntimeFilesystemBinding) =>
     binding.agentTypeIds === undefined || binding.agentTypeIds.includes(input.agent.agentTypeId)

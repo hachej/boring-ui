@@ -167,6 +167,27 @@ export type {
   ShareEntryMcpResourceOptions,
 } from './mcp'
 export { createStandaloneAgentHostApp } from './createStandaloneAgentHostApp'
+export {
+  CHANNEL_DURABLE_STREAM_REQUIRED,
+  CHANNEL_INBOUND_PARKED,
+  CHANNEL_UNKNOWN_BINDING,
+  CHANNELS_ENV_FLAG,
+  ChannelBindingStore,
+  ChannelInboundService,
+  ChannelSessionCreateTimeoutError,
+  areChannelsEnabled,
+  assertChannelDurability,
+} from './channels'
+export type {
+  ChannelAdapter,
+  ChannelAgentInvocation,
+  ChannelAgentInvoker,
+  ChannelBinding,
+  ChannelInboundAck,
+  InboundChannelMessage,
+  ProvisionChannelBindingInput,
+  QueuedChannelInbound,
+} from './channels'
 export type { CreateStandaloneAgentHostAppOptions } from './createStandaloneAgentHostApp'
 export { registerAgentHostEnvironmentRoutes } from './agent-host/environmentHttpProjection'
 export type { AgentHostEnvironmentHttpProjectionOptions } from './agent-host/environmentHttpProjection'

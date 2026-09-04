@@ -22,9 +22,14 @@ function compareSessionIdentity(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0
 }
 
+export interface SessionCreateInit {
+  title?: string
+  originChannel?: import('./channel').OriginChannel
+}
+
 export interface SessionStore {
   list(ctx: SessionCtx, options?: SessionListOptions): Promise<SessionSummary[]>
-  create(ctx: SessionCtx, init?: { title?: string }): Promise<SessionSummary>
+  create(ctx: SessionCtx, init?: SessionCreateInit): Promise<SessionSummary>
   /** Native Pi transcripts can append a session_info title without a wrapper. */
   rename?(ctx: SessionCtx, sessionId: string, title: string): Promise<SessionSummary>
   /** Optional visibility capability; implementations must not alias it to delete. */
@@ -76,6 +81,8 @@ export interface SessionSummary {
   status?: 'idle' | 'running' | 'aborting' | 'error'
   /** Visibility flag only. Present (true) exactly while the session is archived. */
   archived?: boolean
+  /** External interaction surface that originated the session. Existing sessions default to web. */
+  originChannel?: import('./channel').OriginChannel
 }
 
 export type SessionDetail = SessionSummary
