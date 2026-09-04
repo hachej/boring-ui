@@ -9,7 +9,7 @@ import {
   buildFetchBootstrapFiles,
   FACTORY_BOOTSTRAP_SCRIPT,
   resolveEpicSnapshot,
-} from '@hachej/boring-factory/server/sandbox'
+} from '../sandbox'
 
 export const FACTORY_DEMO_PLUGIN_ID = 'factory-demo'
 
@@ -17,7 +17,7 @@ export const FACTORY_DEMO_PLUGIN_ID = 'factory-demo'
 const DEMO_PLUGIN_VERSION = 'factory-demo.v1.2026-09-03'
 
 /** The only seat allowed to open a live demo: the owner-facing seat that raises Gate 2. */
-const DEMO_AGENT_TYPE_ID = 'boring-orchestrator'
+const DEMO_AGENT_TYPE_ID = 'factory-orchestrator'
 
 const DEFAULT_TTL_MINUTES = 40
 /** Vercel hobby-plan sandbox lifetime cap. Real hard cap is host-configurable via `BORING_FACTORY_DEMO_MAX_MINUTES`. */
@@ -167,6 +167,8 @@ export interface CreateFactoryDemoPluginOptions {
   readonly workspaceRoot: string
   /** Epic label this Factory instance is bound to (unused today; kept for parity/future filtering). */
   readonly epicKey: string
+  /** Host-owned workspace identity paired with this epic. */
+  readonly workspaceScopeId: string
   readonly env: NodeJS.ProcessEnv
   /** Injected for tests. Defaults to the real `@vercel/sandbox` SDK. */
   readonly sandboxFactory?: DemoSandboxFactory

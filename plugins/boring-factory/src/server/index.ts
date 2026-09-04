@@ -20,7 +20,6 @@ import type {
 export {
   BORING_FACTORY_RESOURCE_CONTRACT_VERSION,
   FACTORY_AGENT_TYPE_IDS,
-  FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
   FACTORY_WORKER_AGENT_TYPE_ID,
 } from '../shared/constants'
 export {
@@ -61,6 +60,29 @@ export {
   snapshotCommittedHead,
   warmUpFactorySandboxSnapshot,
 } from './sandbox'
+export {
+  createFactoryHost,
+  createFactoryHostedApp,
+  deriveFactoryWorkspaceScopeId,
+} from './host'
+export {
+  loadNativeFactoryFleet,
+  deriveFeatureName,
+  FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
+  FACTORY_REVIEWER_AGENT_TYPE_ID,
+} from './host/factoryFleet'
+export {
+  createFactoryDelegatePlugin,
+  FACTORY_DELEGATE_PLUGIN_ID,
+} from './host/delegatePlugin'
+export {
+  createFactorySupervisionPlugin,
+  FACTORY_SUPERVISION_PLUGIN_ID,
+} from './host/supervisionPlugin'
+export {
+  createFactoryDemoPlugin,
+  FACTORY_DEMO_PLUGIN_ID,
+} from './host/demoPlugin'
 export type {
   CreatePerEpicVercelProviderOptions,
   FactorySandboxSnapshotInfo,

@@ -10,9 +10,9 @@ import { createAgentAssetDigest } from '@hachej/boring-agent/shared'
 import { FACTORY_DELEGATE_PLUGIN_ID } from './delegatePlugin'
 import { FACTORY_SUPERVISION_PLUGIN_ID } from './supervisionPlugin'
 import { FACTORY_DEMO_PLUGIN_ID } from './demoPlugin'
-import { FACTORY_WORKER_AGENT_TYPE_ID } from '@hachej/boring-factory/server/sandbox'
+import { FACTORY_WORKER_AGENT_TYPE_ID } from '../sandbox'
 
-export const FACTORY_ORCHESTRATOR_AGENT_TYPE_ID = 'boring-orchestrator'
+export const FACTORY_ORCHESTRATOR_AGENT_TYPE_ID = 'factory-orchestrator'
 export const FACTORY_REVIEWER_AGENT_TYPE_ID = 'boring-reviewer'
 
 const seatSkills = {

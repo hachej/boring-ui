@@ -11,10 +11,8 @@ export const FACTORY_SUPERVISION_PLUGIN_ID = 'factory-supervision'
 const SUPERVISION_PLUGIN_VERSION = 'factory-supervision.v1.2026-09-03'
 
 /** The only seat this plugin ever supervises: an Orchestrator may only supervise itself. */
-const SUPERVISED_AGENT_TYPE_ID = 'boring-orchestrator'
+const SUPERVISED_AGENT_TYPE_ID = 'factory-orchestrator'
 
-/** Host-owned workspace identity used on every in-process `app.inject` call. */
-const WORKSPACE_SCOPE_ID = 'factory-playground'
 
 export const SUPERVISION_MIN_INTERVAL_MS = 30_000
 export const SUPERVISION_MAX_INTERVAL_MS = 3_600_000
@@ -44,6 +42,8 @@ interface SupervisionState {
 export interface CreateFactorySupervisionPluginOptions {
   /** Directory holding `supervision.json`. Created if missing. */
   readonly stateRoot: string
+  /** Host-owned workspace identity used on every in-process `app.inject` call. */
+  readonly workspaceScopeId: string
   /** Default nudge interval for `start` calls that omit `intervalMs`. */
   readonly defaultIntervalMs?: number
 }
@@ -98,6 +98,7 @@ export function createFactorySupervisionPlugin(
 ): FactorySupervisionPluginHandle {
   if (!options.stateRoot.trim()) throw new TypeError('factory-supervision stateRoot is required')
   const stateRoot = options.stateRoot
+  const workspaceScopeId = options.workspaceScopeId
   const statePath = resolve(stateRoot, 'supervision.json')
   const defaultIntervalMs = options.defaultIntervalMs ?? SUPERVISION_DEFAULT_INTERVAL_MS
 
@@ -135,7 +136,7 @@ export function createFactorySupervisionPlugin(
       const stateResponse = await app.inject({
         method: 'GET',
         url: `/api/v1/agents/${entry.agentTypeId}/sessions/${entry.sessionId}/state`,
-        headers: { 'x-boring-workspace-id': WORKSPACE_SCOPE_ID },
+        headers: { 'x-boring-workspace-id': workspaceScopeId },
       })
       if (stateResponse.statusCode !== 200) {
         outcome = 'error'
@@ -148,7 +149,7 @@ export function createFactorySupervisionPlugin(
           const promptResponse = await app.inject({
             method: 'POST',
             url: `/api/v1/agents/${entry.agentTypeId}/sessions/${entry.sessionId}/prompt`,
-            headers: { 'x-boring-workspace-id': WORKSPACE_SCOPE_ID },
+            headers: { 'x-boring-workspace-id': workspaceScopeId },
             payload: {
               requestId: randomUUID(),
               clientNonce: randomUUID(),

@@ -4,12 +4,20 @@ import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createFactoryPlayground } from './app'
-import { loadNativeFactoryFleet, FACTORY_ORCHESTRATOR_AGENT_TYPE_ID, FACTORY_REVIEWER_AGENT_TYPE_ID } from './factoryFleet'
-import { createFactoryDelegatePlugin } from './delegatePlugin'
-import { createFactorySandboxPlugin, FACTORY_WORKER_AGENT_TYPE_ID } from '@hachej/boring-factory/server/sandbox'
+import {
+  loadNativeFactoryFleet,
+  FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
+  FACTORY_REVIEWER_AGENT_TYPE_ID,
+  createFactoryDelegatePlugin,
+  createFactorySandboxPlugin,
+  FACTORY_WORKER_AGENT_TYPE_ID,
+  deriveFactoryWorkspaceScopeId,
+} from '@hachej/boring-factory/server'
 import { simulateFactoryFeature } from './simulateFeature'
 
-const DELEGATE_OPTIONS = { workspaceScopeId: 'factory-playground', epicKey: 'live-farewell', featureName: 'Farewell API', workspaceRoot: process.cwd() }
+const EPIC_KEY = 'live-farewell'
+const WORKSPACE_SCOPE_ID = deriveFactoryWorkspaceScopeId(EPIC_KEY)
+const DELEGATE_OPTIONS = { workspaceScopeId: WORKSPACE_SCOPE_ID, epicKey: EPIC_KEY, featureName: 'Farewell API', workspaceRoot: process.cwd() }
 
 const appRoot = resolve(import.meta.dirname, '../..')
 const repositoryRoot = resolve(appRoot, '../..')
@@ -118,7 +126,7 @@ describe('native Factory composition', () => {
       expect(typeof metaBody.epicKey).toBe('string')
       expect(metaBody.epicKey.length).toBeGreaterThan(0)
 
-      const header = { 'x-boring-workspace-id': 'factory-playground' }
+      const header = { 'x-boring-workspace-id': deriveFactoryWorkspaceScopeId(metaBody.epicKey) }
       const createSession = async (agentTypeId: string) => {
         const response = await app.inject({
           method: 'POST',

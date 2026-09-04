@@ -21,7 +21,7 @@ import type { WarmSnapshotAuth } from './warmSnapshot'
 const execFileAsync = promisify(execFile)
 
 export const FACTORY_WORKSPACE_SCOPE_ID = 'factory-playground'
-export const FACTORY_WORKER_AGENT_TYPE_ID = 'boring-worker'
+export const FACTORY_WORKER_AGENT_TYPE_ID = 'factory-worker'
 
 /** Default Vercel disposable-lease timeout. Raised from 15 to 30 minutes: a warm snapshot whose baseSha has drifted from the epic branch (before the per-epic snapshot registry existed) blew past the old 15-minute cap on the incremental rebuild alone. Env override kept via `BORING_AGENT_VERCEL_SANDBOX_TIMEOUT_MS`. */
 const DEFAULT_VERCEL_LEASE_TIMEOUT_MS = 30 * 60_000
