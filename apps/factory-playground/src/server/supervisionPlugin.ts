@@ -317,17 +317,17 @@ export function createFactorySupervisionPlugin(
     },
   })
 
-  async function stopSupervision(sessionId: string, app: FastifyInstance, workspaceScopeId: string): Promise<void> {
-    const response = await app.inject({
-      method: 'POST',
-      url: '/api/v1/agents/boring-orchestrator/tools/supervise/execute',
-      headers: { 'x-boring-workspace-id': workspaceScopeId },
-      payload: { params: { op: 'stop' }, sessionId },
+  // In-process stop: the same path the `supervise` tool's "stop" op takes. No HTTP hop, no route literal.
+  async function stopSupervision(sessionId: string, _app: FastifyInstance, _workspaceScopeId: string): Promise<void> {
+    clearTimerFor(sessionId)
+    await mutateState((current) => {
+      if (!(sessionId in current.entries)) return current
+      const rest = { ...current.entries }
+      delete rest[sessionId]
+      return { entries: rest }
     })
-    if (response.statusCode !== 200) throw new Error(`stop supervision failed with ${response.statusCode}`)
-    const body = response.json<{ isError?: boolean; details?: { message?: string } }>()
-    if (body.isError) throw new Error(body.details?.message ?? 'stop supervision failed')
   }
+
 
   return {
     plugin,
