@@ -2,7 +2,8 @@ import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, test } from 'vitest'
-import { AuthStorage, ModelRegistry } from '@mariozechner/pi-coding-agent'
+import { ModelRuntime } from '@mariozechner/pi-coding-agent'
+import { InMemoryCredentialStore } from '@earendil-works/pi-ai'
 import { createFakeAuthorityVerifierV1 } from '../testing'
 import {
   createInMemoryCredentialVaultPersistenceV1,
@@ -79,14 +80,19 @@ async function expectCredentialError(
 }
 
 describe('pi-derived LLM provider catalog', () => {
-  test('mirrors pi ModelRegistry provider set and OAuth surface, no hand list', () => {
-    const { providers, skippedProviderIds } = derivePiLlmProviderCatalogV1()
+  test('mirrors pi ModelRuntime provider set and OAuth surface, no hand list', async () => {
+    const { providers, skippedProviderIds } = await derivePiLlmProviderCatalogV1()
 
-    const piAuth = AuthStorage.inMemory({})
-    const piRegistry = ModelRegistry.inMemory(piAuth)
+    const piRuntime = await ModelRuntime.create({
+      credentials: new InMemoryCredentialStore(),
+      modelsPath: null,
+      refreshOnCreate: false,
+    })
     const piProviderIds = new Set<string>([
-      ...piRegistry.getAll().map((model) => model.provider),
-      ...piAuth.getOAuthProviders().map((provider) => provider.id),
+      ...piRuntime.getModels().map((model) => model.provider),
+      ...piRuntime.getProviders()
+        .filter((provider) => provider.auth.oauth !== undefined)
+        .map((provider) => provider.id),
     ])
 
     const catalogIds = new Set(providers.map((provider) => provider.providerId as string))
@@ -103,7 +109,7 @@ describe('pi-derived LLM provider catalog', () => {
 
     const anthropic = providers.find((provider) => provider.providerId === 'anthropic')
     expect(anthropic).toBeDefined()
-    expect(anthropic!.displayName).toBe(piRegistry.getProviderDisplayName('anthropic'))
+    expect(anthropic!.displayName).toBe(piRuntime.getProvider('anthropic')?.name)
     expect(anthropic!.authKinds).toContain('oauth')
     expect(anthropic!.egressOrigins).toContain('https://api.anthropic.com')
 
@@ -119,9 +125,9 @@ describe('pi-derived LLM provider catalog', () => {
     }
   })
 
-  test('builds validating 16f.1 registries: every catalog entry resolvable', () => {
+  test('builds validating 16f.1 registries: every catalog entry resolvable', async () => {
     const { providerRegistry, bindingRegistry, catalog } =
-      createPiDerivedLlmProviderRegistryV1()
+      await createPiDerivedLlmProviderRegistryV1()
     expect(catalog.length).toBeGreaterThan(10)
     for (const entry of catalog) {
       const definition = providerRegistry.require(entry.providerId)
@@ -136,10 +142,10 @@ describe('pi-derived LLM provider catalog', () => {
 })
 
 describe('startup vault composition (env selection)', () => {
-  test('absent KMS backend env → composition absent (BYOK disabled)', () => {
-    expect(resolveWorkspaceCredentialVaultCompositionFromEnvV1({ env: {} }))
+  test('absent KMS backend env → composition absent (BYOK disabled)', async () => {
+    expect(await resolveWorkspaceCredentialVaultCompositionFromEnvV1({ env: {} }))
       .toBeUndefined()
-    expect(resolveWorkspaceCredentialVaultCompositionFromEnvV1({
+    expect(await resolveWorkspaceCredentialVaultCompositionFromEnvV1({
       env: { BORING_CREDENTIAL_KMS_BACKEND: '   ' },
     })).toBeUndefined()
   })
@@ -180,11 +186,11 @@ describe('startup vault composition (env selection)', () => {
     )
     // Explicit override flag re-enables it (dev-like production sandboxes).
     env.BORING_CREDENTIAL_ALLOW_MEMORY = '1'
-    expect(resolveWorkspaceCredentialVaultCompositionFromEnvV1({ env })).toBeDefined()
+    expect(await resolveWorkspaceCredentialVaultCompositionFromEnvV1({ env })).toBeDefined()
     // Injected durable persistence is never blocked by NODE_ENV.
     delete env.BORING_CREDENTIAL_ALLOW_MEMORY
     delete env.BORING_CREDENTIAL_PERSISTENCE
-    expect(resolveWorkspaceCredentialVaultCompositionFromEnvV1({
+    expect(await resolveWorkspaceCredentialVaultCompositionFromEnvV1({
       env,
       persistence: createInMemoryCredentialVaultPersistenceV1(),
     })).toBeDefined()
@@ -193,18 +199,18 @@ describe('startup vault composition (env selection)', () => {
   test('memory opt-in stays available outside production', async () => {
     const env = await localKekEnv()
     env.NODE_ENV = 'test'
-    expect(resolveWorkspaceCredentialVaultCompositionFromEnvV1({ env })).toBeDefined()
+    expect(await resolveWorkspaceCredentialVaultCompositionFromEnvV1({ env })).toBeDefined()
   })
 
   test('runtimeView narrows the per-binding surface: no vault backend, no resolver minting', async () => {
     const env = await localKekEnv()
     const scope = opaqueScope()
-    const composition = resolveWorkspaceCredentialVaultCompositionFromEnvV1({
+    const composition = (await resolveWorkspaceCredentialVaultCompositionFromEnvV1({
       env,
       authorityVerifier: createFakeAuthorityVerifierV1([
         { scope, authority: authority('ws-a') },
       ]),
-    })!
+    }))!
     const view = composition.runtimeView
     expect(view.providerRegistry).toBe(composition.providerRegistry)
     expect(view.bindingRegistry).toBe(composition.bindingRegistry)
@@ -217,12 +223,12 @@ describe('startup vault composition (env selection)', () => {
   test('one host-scope composition shared across bindings sees one vault, not per-binding forks', async () => {
     const env = await localKekEnv()
     const scope = opaqueScope()
-    const composition = resolveWorkspaceCredentialVaultCompositionFromEnvV1({
+    const composition = (await resolveWorkspaceCredentialVaultCompositionFromEnvV1({
       env,
       authorityVerifier: createFakeAuthorityVerifierV1([
         { scope, authority: authority('ws-a') },
       ]),
-    })!
+    }))!
     // Bindings receive the same narrowed view object (buildAgentComposition
     // attaches credentialComposition.runtimeView; it never re-resolves env).
     const bindingA = composition.runtimeView
@@ -255,7 +261,7 @@ describe('startup vault composition (env selection)', () => {
   test('injected persistence wins over the memory opt-in requirement', async () => {
     const env = await localKekEnv()
     delete env.BORING_CREDENTIAL_PERSISTENCE
-    const composition = resolveWorkspaceCredentialVaultCompositionFromEnvV1({
+    const composition = await resolveWorkspaceCredentialVaultCompositionFromEnvV1({
       env,
       persistence: createInMemoryCredentialVaultPersistenceV1(),
     })
@@ -268,12 +274,12 @@ describe('resolver end-to-end through the vault', () => {
   test('vault write → host resolver lease → plaintext only inside the lease', async () => {
     const env = await localKekEnv()
     const scope = opaqueScope()
-    const composition = resolveWorkspaceCredentialVaultCompositionFromEnvV1({
+    const composition = (await resolveWorkspaceCredentialVaultCompositionFromEnvV1({
       env,
       authorityVerifier: createFakeAuthorityVerifierV1([
         { scope, authority: authority('ws-a') },
       ]),
-    })!
+    }))!
     expect(composition.resolver).toBeDefined()
 
     const providerId = 'anthropic' as ProviderId
@@ -340,12 +346,12 @@ describe('resolver end-to-end through the vault', () => {
       'missing-kek',
     )
     const scope = opaqueScope()
-    const composition = resolveWorkspaceCredentialVaultCompositionFromEnvV1({
+    const composition = (await resolveWorkspaceCredentialVaultCompositionFromEnvV1({
       env,
       authorityVerifier: createFakeAuthorityVerifierV1([
         { scope, authority: authority('ws-a') },
       ]),
-    })!
+    }))!
 
     await expectCredentialError(
       () => composition.vaultBackend.writeCredentialFields({
@@ -371,12 +377,12 @@ describe('resolver end-to-end through the vault', () => {
   test('no secret material in catalog, registry, or error surfaces', async () => {
     const env = await localKekEnv()
     const scope = opaqueScope()
-    const composition = resolveWorkspaceCredentialVaultCompositionFromEnvV1({
+    const composition = (await resolveWorkspaceCredentialVaultCompositionFromEnvV1({
       env,
       authorityVerifier: createFakeAuthorityVerifierV1([
         { scope, authority: authority('ws-a') },
       ]),
-    })!
+    }))!
     await composition.vaultBackend.writeCredentialFields({
       workspaceId: 'ws-a',
       providerId: 'anthropic' as ProviderId,

@@ -800,7 +800,7 @@ export async function createAgentHost(
   // startup: misconfigured env fails host creation with a stable
   // CREDENTIAL_* error, and every runtime binding shares this one vault
   // composition (a per-binding vault would silently fork credential state).
-  const credentialComposition = resolveWorkspaceCredentialVaultCompositionFromEnvV1({
+  const credentialComposition = await resolveWorkspaceCredentialVaultCompositionFromEnvV1({
     env: options.credentials?.env ?? process.env,
     persistence: options.credentials?.vaultPersistence,
     authorityVerifier: options.credentials?.authorityVerifier,

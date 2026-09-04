@@ -1,4 +1,5 @@
-import { AuthStorage, ModelRegistry } from '@mariozechner/pi-coding-agent'
+import { ModelRuntime } from '@mariozechner/pi-coding-agent'
+import { InMemoryCredentialStore } from '@earendil-works/pi-ai'
 import {
   CREDENTIAL_ERROR_CODES,
   CredentialResolutionError,
@@ -38,7 +39,7 @@ import type { VaultCredentialStoreBackendV1 } from './vault'
  * from the vault instead of only instance env.
  *
  * The LLM provider registry is DERIVED from pi's own provider surface
- * (`ModelRegistry` provider set + `AuthStorage.getOAuthProviders()`), never a
+ * (`ModelRuntime` provider/model snapshots), never a
  * hand-maintained list: adding a provider pi supports requires no edit here.
  *
  * Fail-closed rules:
@@ -132,20 +133,25 @@ function toHttpsOrigin(rawBaseUrl: unknown): `https://${string}` | undefined {
 }
 
 /**
- * Derives the LLM provider catalog from pi's provider surface. Pure and
- * disk-free: pi's in-memory `AuthStorage`/`ModelRegistry` constructors only.
+ * Derives the LLM provider catalog from pi's provider surface. Disk-free and
+ * network-free: `ModelRuntime` uses an in-memory credential store and its
+ * built-in provider/model snapshot.
  */
-export function derivePiLlmProviderCatalogV1(): {
+export async function derivePiLlmProviderCatalogV1(): Promise<{
   readonly providers: readonly PiDerivedLlmProviderV1[]
   readonly skippedProviderIds: readonly string[]
-} {
-  const authStorage = AuthStorage.inMemory({})
-  const modelRegistry = ModelRegistry.inMemory(authStorage)
+}> {
+  const modelRuntime = await ModelRuntime.create({
+    credentials: new InMemoryCredentialStore(),
+    modelsPath: null,
+    refreshOnCreate: false,
+  })
+  const piProviders = modelRuntime.getProviders()
   const oauthProviderIds = new Set<string>(
-    authStorage.getOAuthProviders().map((provider) => provider.id),
+    piProviders.filter((provider) => provider.auth.oauth !== undefined).map((provider) => provider.id),
   )
   const originsByProvider = new Map<string, Set<`https://${string}`>>()
-  for (const model of modelRegistry.getAll()) {
+  for (const model of modelRuntime.getModels()) {
     if (typeof model.provider !== 'string' || model.provider.length === 0) continue
     let origins = originsByProvider.get(model.provider)
     if (!origins) {
@@ -175,7 +181,7 @@ export function derivePiLlmProviderCatalogV1(): {
     providers.push(Object.freeze({
       providerId: rawProviderId as ProviderId,
       displayName: sanitizeDisplayName(
-        modelRegistry.getProviderDisplayName(rawProviderId),
+        modelRuntime.getProvider(rawProviderId)?.name,
         rawProviderId,
       ),
       authKinds: Object.freeze(
@@ -237,8 +243,8 @@ function toConsumerBinding(provider: PiDerivedLlmProviderV1): CredentialConsumer
  * Builds the frozen 16f.1 registries from the pi-derived catalog. Registry
  * construction re-validates every definition/binding (schema fail-closed).
  */
-export function createPiDerivedLlmProviderRegistryV1(): PiDerivedLlmProviderRegistryV1 {
-  const { providers, skippedProviderIds } = derivePiLlmProviderCatalogV1()
+export async function createPiDerivedLlmProviderRegistryV1(): Promise<PiDerivedLlmProviderRegistryV1> {
+  const { providers, skippedProviderIds } = await derivePiLlmProviderCatalogV1()
   const providerRegistry = createProviderRegistryV1(providers.map(toProviderDefinition))
   const bindingRegistry = createCredentialConsumerBindingRegistryV1(
     providers.map(toConsumerBinding),
@@ -297,9 +303,9 @@ function notConfigured(message: string): never {
  * or invalid configuration throws a stable `CREDENTIAL_*` error instead of
  * silently running without the vault.
  */
-export function resolveWorkspaceCredentialVaultCompositionFromEnvV1(
+export async function resolveWorkspaceCredentialVaultCompositionFromEnvV1(
   options: WorkspaceCredentialVaultCompositionOptionsV1,
-): WorkspaceCredentialVaultCompositionV1 | undefined {
+): Promise<WorkspaceCredentialVaultCompositionV1 | undefined> {
   const selectedBackend = options.env[LOCAL_KEK_BACKEND_ENV_KEY_V1]?.trim()
   if (!selectedBackend) return undefined
   if (selectedBackend !== LOCAL_KEK_PROVIDER_ID_V1) {
@@ -342,7 +348,7 @@ export function resolveWorkspaceCredentialVaultCompositionFromEnvV1(
     versionAnchor,
   })
   const { providerRegistry, bindingRegistry, catalog, skippedProviderIds } =
-    createPiDerivedLlmProviderRegistryV1()
+    await createPiDerivedLlmProviderRegistryV1()
 
   const createResolver = (
     authorityVerifier: WorkspaceCredentialAuthorityVerifierV1,
