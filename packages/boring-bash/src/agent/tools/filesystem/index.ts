@@ -357,7 +357,7 @@ function buildHostFilesystemTools(
     adaptPiTool(createWriteToolDefinition(cwd, { operations: ops.write })),
     adaptPiTool(createEditToolDefinition(cwd, { operations: ops.edit })),
     adaptPiTool(createFindToolDefinition(cwd, { operations: ops.find })),
-    adaptPiTool(createGrepToolDefinition(cwd, { operations: ops.grep })),
+    adaptPiTool(createGrepToolDefinition(storageRoot, { operations: ops.grep })),
     adaptPiTool(createLsToolDefinition(cwd, { operations: ops.ls })),
   ]
 }
