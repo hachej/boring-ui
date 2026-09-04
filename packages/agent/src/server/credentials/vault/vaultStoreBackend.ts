@@ -20,6 +20,7 @@ import type {
   CredentialVaultPersistenceV1,
   StoredCredentialRecordV1,
 } from './persistence'
+import type { WorkspaceCredentialVersionAnchorV1 } from './versionAnchor'
 
 /**
  * Composes a `WorkspaceKekProviderV1` (KmsBackend) with AAD-bound AES-256-GCM
@@ -38,6 +39,7 @@ import type {
 export interface VaultCredentialStoreOptionsV1 {
   readonly kmsBackend: WorkspaceKekProviderV1
   readonly persistence: CredentialVaultPersistenceV1
+  readonly versionAnchor: WorkspaceCredentialVersionAnchorV1
 }
 
 export interface WriteCredentialFieldsInputV1 {
@@ -94,10 +96,11 @@ export function createVaultCredentialStoreBackendV1(
     !options?.kmsBackend
     || options.kmsBackend.contractVersion !== 'boring.workspace-kek-provider.v1'
     || !options.persistence
+    || !options.versionAnchor
   ) {
     notConfigured('Credential vault backend is misconfigured')
   }
-  const { kmsBackend, persistence } = options
+  const { kmsBackend, persistence, versionAnchor } = options
 
   async function requireReady(): Promise<void> {
     let readiness: Awaited<ReturnType<WorkspaceKekProviderV1['readiness']>>
@@ -127,6 +130,20 @@ export function createVaultCredentialStoreBackendV1(
     return { workspaceId, dekGeneration, requestId: randomUUID() }
   }
 
+  async function requireCurrentVersion(
+    workspaceId: string,
+    providerId: ProviderId,
+    record: StoredCredentialRecordV1,
+  ): Promise<void> {
+    const anchored = await versionAnchor.read(workspaceId)
+    if (
+      anchored?.credentialVersions[providerId] !== record.credentialVersion
+      || anchored.credentialMaterialKinds[providerId] !== record.materialKind
+    ) {
+      unreadable('Credential current state failed rollback verification')
+    }
+  }
+
   async function requireWrappedDek(
     workspaceId: string,
     dekGeneration: number,
@@ -150,8 +167,14 @@ export function createVaultCredentialStoreBackendV1(
       await requireReady()
       const record = await persistence.getCredentialRecord(workspaceId, providerId)
       if (!record) {
+        const anchoredVersion = (await versionAnchor.read(workspaceId))
+          ?.credentialVersions[providerId]
+        if (anchoredVersion !== undefined) {
+          unreadable('Credential current version failed rollback verification')
+        }
         notConfigured('Credential material is not configured')
       }
+      await requireCurrentVersion(workspaceId, providerId, record)
       if (record.materialKind === 'none') {
         if (allowedFieldIds.length !== 0) {
           notConfigured('Credential material is not configured')
@@ -179,10 +202,14 @@ export function createVaultCredentialStoreBackendV1(
             workspaceId,
             providerId,
             credentialVersion: record.credentialVersion,
+            dekGeneration: record.dekGeneration,
             fieldId,
           })
           if (!envelope) {
-            notConfigured('Required credential material is not configured')
+            // The anchored record asserts that this version is current. A
+            // missing current envelope is storage corruption/deletion, not an
+            // authenticated "not configured" state.
+            unreadable('Current credential field envelope is missing')
           }
           const plaintext = decryptCredentialFieldV1({
             plaintextDek,
@@ -222,61 +249,88 @@ export function createVaultCredentialStoreBackendV1(
       assertWorkspaceId(input?.workspaceId)
       await requireReady()
       const { workspaceId, providerId } = input
-      const existing = await persistence.getCredentialRecord(workspaceId, providerId)
-      const credentialId =
-        input.credentialId ?? existing?.credentialId ?? randomUUID()
-      const credentialVersion = (existing?.credentialVersion ?? 0) + 1
-      const dekGeneration = existing?.dekGeneration ?? 1
+      return versionAnchor.withMutation(
+        workspaceId,
+        providerId,
+        async (anchorState) => {
+          const existing = await persistence.getCredentialRecord(workspaceId, providerId)
+          const anchoredVersion = anchorState?.credentialVersions[providerId]
+          const anchoredMaterialKind = anchorState?.credentialMaterialKinds[providerId]
+          if (
+            (existing && (
+              anchoredVersion !== existing.credentialVersion
+              || anchoredMaterialKind !== existing.materialKind
+            ))
+            || (!existing && anchoredVersion !== undefined)
+          ) unreadable('Credential current state failed rollback verification')
+          const expectedCredentialVersion = existing?.credentialVersion ?? 0
+          const credentialVersion = expectedCredentialVersion + 1
+          const credentialId =
+            input.credentialId ?? existing?.credentialId ?? randomUUID()
+          const dekGeneration = existing?.dekGeneration ?? 1
+          const encryptedFields = new Map<string, ReturnType<typeof encryptCredentialFieldV1>>()
 
-      let plaintextDek: Uint8Array | undefined
-      try {
-        const storedDek = await persistence.getWrappedDek(workspaceId, dekGeneration)
-        if (storedDek) {
-          plaintextDek = await kmsBackend.unwrapDataKey(
-            context(workspaceId, dekGeneration),
-            storedDek,
-          )
-        } else {
-          const generated = await kmsBackend.generateDataKey(
-            context(workspaceId, dekGeneration),
-          )
-          plaintextDek = generated.plaintextDek
-          await persistence.putWrappedDek(
-            workspaceId,
+          let plaintextDek: Uint8Array | undefined
+          try {
+            const storedDek = await persistence.getWrappedDek(workspaceId, dekGeneration)
+            if (storedDek) {
+              plaintextDek = await kmsBackend.unwrapDataKey(
+                context(workspaceId, dekGeneration),
+                storedDek,
+              )
+            } else {
+              const generated = await kmsBackend.generateDataKey(
+                context(workspaceId, dekGeneration),
+              )
+              plaintextDek = generated.plaintextDek
+              await persistence.putWrappedDek(
+                workspaceId,
+                dekGeneration,
+                generated.wrappedDek,
+              )
+            }
+            for (const [fieldId, plaintext] of input.fields) {
+              encryptedFields.set(fieldId, encryptCredentialFieldV1({
+                plaintextDek,
+                plaintext,
+                aadContext: {
+                  workspaceId,
+                  credentialId,
+                  providerId,
+                  fieldId,
+                  credentialVersion,
+                  dekGeneration,
+                },
+              }))
+            }
+          } finally {
+            plaintextDek?.fill(0)
+          }
+
+          const record: StoredCredentialRecordV1 = Object.freeze({
+            credentialId,
+            credentialVersion,
             dekGeneration,
-            generated.wrappedDek,
-          )
-        }
-        for (const [fieldId, plaintext] of input.fields) {
-          const envelope = encryptCredentialFieldV1({
-            plaintextDek,
-            plaintext,
-            aadContext: {
-              workspaceId,
-              credentialId,
-              providerId,
-              fieldId,
-              credentialVersion,
-              dekGeneration,
-            },
+            materialKind: 'field-set',
           })
-          await persistence.putField(
-            { workspaceId, providerId, credentialVersion, fieldId },
-            envelope,
-          )
-        }
-      } finally {
-        plaintextDek?.fill(0)
-      }
-
-      const record: StoredCredentialRecordV1 = Object.freeze({
-        credentialId,
-        credentialVersion,
-        dekGeneration,
-        materialKind: 'field-set',
-      })
-      await persistence.putCredentialRecord(workspaceId, providerId, record)
-      return record
+          await persistence.commitCredentialVersion({
+            workspaceId,
+            providerId,
+            expectedCredentialVersion,
+            record,
+            fields: encryptedFields,
+            supersededFieldsTombstone: existing ? {
+              deletedAt: new Date().toISOString(),
+              reason: 'superseded-version',
+            } : undefined,
+          })
+          return {
+            nextCredentialVersion: credentialVersion,
+            nextCredentialMaterialKind: record.materialKind,
+            result: record,
+          }
+        },
+      )
     },
 
     async writeAbsentCredential(
@@ -284,15 +338,46 @@ export function createVaultCredentialStoreBackendV1(
       providerId: ProviderId,
     ): Promise<StoredCredentialRecordV1> {
       assertWorkspaceId(workspaceId)
-      const existing = await persistence.getCredentialRecord(workspaceId, providerId)
-      const record: StoredCredentialRecordV1 = Object.freeze({
-        credentialId: existing?.credentialId ?? randomUUID(),
-        credentialVersion: (existing?.credentialVersion ?? 0) + 1,
-        dekGeneration: existing?.dekGeneration ?? 1,
-        materialKind: 'none',
-      })
-      await persistence.putCredentialRecord(workspaceId, providerId, record)
-      return record
+      await requireReady()
+      return versionAnchor.withMutation(
+        workspaceId,
+        providerId,
+        async (anchorState) => {
+          const existing = await persistence.getCredentialRecord(workspaceId, providerId)
+          const anchoredVersion = anchorState?.credentialVersions[providerId]
+          const anchoredMaterialKind = anchorState?.credentialMaterialKinds[providerId]
+          if (
+            (existing && (
+              anchoredVersion !== existing.credentialVersion
+              || anchoredMaterialKind !== existing.materialKind
+            ))
+            || (!existing && anchoredVersion !== undefined)
+          ) unreadable('Credential current state failed rollback verification')
+          const expectedCredentialVersion = existing?.credentialVersion ?? 0
+          const record: StoredCredentialRecordV1 = Object.freeze({
+            credentialId: existing?.credentialId ?? randomUUID(),
+            credentialVersion: expectedCredentialVersion + 1,
+            dekGeneration: existing?.dekGeneration ?? 1,
+            materialKind: 'none',
+          })
+          await persistence.commitCredentialVersion({
+            workspaceId,
+            providerId,
+            expectedCredentialVersion,
+            record,
+            fields: new Map(),
+            supersededFieldsTombstone: existing ? {
+              deletedAt: new Date().toISOString(),
+              reason: 'credential-tombstone',
+            } : undefined,
+          })
+          return {
+            nextCredentialVersion: record.credentialVersion,
+            nextCredentialMaterialKind: record.materialKind,
+            result: record,
+          }
+        },
+      )
     },
 
     async rewrapWorkspaceDek(
