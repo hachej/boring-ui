@@ -2,12 +2,14 @@
  * Upward-only automatic gain for 16-bit PCM frames.
  *
  * Measured on the RTX 3080 Ti box with SimSAMU (French dispatch calls whose
- * audio peaks around -27 dBFS): Kyutai `stt-1b-en_fr` emitted *no words at
- * all* for a whole two-minute recording, while the same audio multiplied by
- * four transcribed normally. Browser AGC usually keeps a headset in range, but
- * a distant or badly configured microphone must not produce an empty
- * transcript, so the server raises quiet input towards a target peak before
- * it reaches the transcriber and the diarizer. Loud input is left untouched.
+ * 8 kHz phone-band audio peaks around -27 dBFS): Kyutai `stt-1b-en_fr`
+ * emitted no words for a two-minute recording at its native level, while the
+ * same file at 4x, 10x or 16x transcribed in French. The evidence is mixed,
+ * though: clean wideband audio transcribes fine at a 0.05 peak, and some
+ * narrowband files stay empty or drift into English at any gain, so the
+ * narrowband failure itself is not fixed by level. This guard covers the
+ * quiet-microphone case only. Loud input is left untouched and silence never
+ * raises the gain, so it is a no-op on a normally configured headset.
  */
 export interface LevelNormalizerOptions {
   /** Peak level (0..1) the envelope is raised towards. */
