@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { readFileSync } from "node:fs"
 import { describe, expect, it, vi } from "vitest"
-import { KyutaiDiarizedConnection, downsamplePcm24kTo16k, mergeKyutaiWordsWithSpeakers } from "../kyutaiDiarized"
+import { KyutaiDiarizedConnection, Pcm24kTo16kResampler, downsamplePcm24kTo16k, mergeKyutaiWordsWithSpeakers } from "../kyutaiDiarized"
 import type { WhisperLiveKitSnapshot } from "../whisperLiveKit"
 
 const snapshot = (lines: WhisperLiveKitSnapshot["lines"]): WhisperLiveKitSnapshot => ({ lines, remainingDiarizationSeconds: 0 })
@@ -73,14 +73,30 @@ describe("Kyutai + raw Sortformer diarization", () => {
   })
 })
 
-it("downsamples little-endian PCM deterministically", () => {
-  const input = new Uint8Array(12)
-  const view = new DataView(input.buffer)
-  ;[0, 1_000, 2_000, 3_000, 4_000, 5_000].forEach((value, index) => view.setInt16(index * 2, value, true))
-  const output = downsamplePcm24kTo16k(input)
-  expect(output).toHaveLength(8)
-  const result = new DataView(output.buffer)
-  expect(Array.from({ length: 4 }, (_, index) => result.getInt16(index * 2, true))).toEqual([0, 1_500, 3_000, 4_500])
+it("downsamples with an anti-aliasing filter: a 1 kHz tone survives, a 10 kHz tone is rejected", () => {
+  const frame = (frequency: number) => {
+    const bytes = new Uint8Array(4_800)
+    const view = new DataView(bytes.buffer)
+    for (let index = 0; index < 2_400; index += 1) view.setInt16(index * 2, Math.round(Math.sin(2 * Math.PI * frequency * index / 24_000) * 10_000), true)
+    return bytes
+  }
+  const rms = (bytes: Uint8Array) => {
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    let sum = 0
+    for (let index = 0; index < bytes.byteLength / 2; index += 1) sum += view.getInt16(index * 2, true) ** 2
+    return Math.sqrt(sum / (bytes.byteLength / 2))
+  }
+  const resampler = new Pcm24kTo16kResampler()
+  resampler.process(frame(1_000))
+  const low = resampler.process(frame(1_000))
+  expect(low).toHaveLength(3_200)
+  expect(rms(low)).toBeGreaterThan(10_000 / Math.SQRT2 * 0.9)
+  const aliasing = new Pcm24kTo16kResampler()
+  aliasing.process(frame(10_000))
+  const high = aliasing.process(frame(10_000))
+  expect(rms(high)).toBeLessThan(10_000 / Math.SQRT2 * 0.1)
+  // stateless helper keeps the legacy signature
+  expect(downsamplePcm24kTo16k(new Uint8Array(12))).toHaveLength(8)
 })
 
 type Callbacks = { onSnapshot: (snapshot: WhisperLiveKitSnapshot) => void; onFailure: (error: never) => void }

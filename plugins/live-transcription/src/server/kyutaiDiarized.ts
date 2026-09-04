@@ -26,6 +26,7 @@ export class KyutaiDiarizedConnection implements StreamingUpstream {
   private kyutaiSnapshot: WhisperLiveKitSnapshot | undefined
   private diarizerSnapshot: WhisperLiveKitSnapshot | undefined
   private closed = false
+  private readonly resampler = new Pcm24kTo16kResampler()
   // Both services see the same normalised audio, so speaker intervals line up with the words.
   private readonly normalizer = new LevelNormalizer()
 
@@ -90,7 +91,7 @@ export class KyutaiDiarizedConnection implements StreamingUpstream {
     const diarizer = this.diarizer
     if (!diarizer) return
     try {
-      await diarizer.sendPcm(downsamplePcm24kTo16k(levelled))
+      await diarizer.sendPcm(this.resampler.process(levelled))
     } catch {
       this.disableDiarizer()
     }
@@ -128,21 +129,69 @@ export class KyutaiDiarizedConnection implements StreamingUpstream {
   }
 }
 
-export function downsamplePcm24kTo16k(data: Uint8Array): Uint8Array {
-  if (data.byteLength === 0 || data.byteLength % 6 !== 0) throw new Error("24 kHz PCM frame must contain a whole number of 3-sample groups")
-  const input = new DataView(data.buffer, data.byteOffset, data.byteLength)
-  const inputSamples = data.byteLength / 2
-  const output = new Uint8Array(inputSamples * 2 / 3 * 2)
-  const view = new DataView(output.buffer)
-  for (let index = 0; index < output.byteLength / 2; index += 1) {
-    const position = index * 3 / 2
-    const left = Math.floor(position)
-    const right = Math.min(inputSamples - 1, left + 1)
-    const fraction = position - left
-    const sample = input.getInt16(left * 2, true) * (1 - fraction) + input.getInt16(right * 2, true) * fraction
-    view.setInt16(index * 2, Math.max(-32_768, Math.min(32_767, Math.round(sample))), true)
+/**
+ * 24 kHz to 16 kHz with anti-aliasing. Linear interpolation alone folds the
+ * 8 to 12 kHz band back into the diarizer's input; this uses a windowed-sinc
+ * interpolation kernel with an 8 kHz cutoff, keeping a short tail of input
+ * across frames so the filter is continuous at frame boundaries.
+ */
+export class Pcm24kTo16kResampler {
+  private static readonly HALF_TAPS = 12
+  private tail = new Int16Array(0)
+  private readonly kernel: Float32Array
+
+  constructor() {
+    // Windowed sinc, cutoff at fs_out/2 = 8 kHz expressed in input samples (24 kHz): 2*8/24 = 2/3.
+    const taps = Pcm24kTo16kResampler.HALF_TAPS * 2 + 1
+    this.kernel = new Float32Array(taps)
+    let sum = 0
+    for (let index = 0; index < taps; index += 1) {
+      const x = index - Pcm24kTo16kResampler.HALF_TAPS
+      const sinc = x === 0 ? 2 / 3 : Math.sin(Math.PI * x * 2 / 3) / (Math.PI * x)
+      const window = 0.54 + 0.46 * Math.cos(Math.PI * x / Pcm24kTo16kResampler.HALF_TAPS)
+      this.kernel[index] = sinc * window
+      sum += this.kernel[index]!
+    }
+    for (let index = 0; index < taps; index += 1) this.kernel[index]! /= sum
   }
-  return output
+
+  /** Consumes one frame of little-endian PCM16 and returns the resampled frame (2/3 of the samples). */
+  process(data: Uint8Array): Uint8Array {
+    if (data.byteLength === 0 || data.byteLength % 6 !== 0) throw new Error("24 kHz PCM frame must contain a whole number of 3-sample groups")
+    const half = Pcm24kTo16kResampler.HALF_TAPS
+    const incoming = new Int16Array(data.byteLength / 2)
+    const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
+    for (let index = 0; index < incoming.length; index += 1) incoming[index] = view.getInt16(index * 2, true)
+    // The filter is centred `half` samples behind the newest input, so output
+    // lags by half a kernel (0.5 ms); the tail carries the previous frame's end.
+    const buffer = new Int16Array(this.tail.length + incoming.length)
+    buffer.set(this.tail, 0)
+    buffer.set(incoming, this.tail.length)
+    const outputSamples = incoming.length * 2 / 3
+    const output = new Uint8Array(outputSamples * 2)
+    const outputView = new DataView(output.buffer)
+    const base = this.tail.length - half  // position of the first input sample of this frame, minus the filter delay
+    for (let index = 0; index < outputSamples; index += 1) {
+      const centre = base + index * 1.5
+      const left = Math.floor(centre)
+      const fraction = centre - left
+      let acc = 0
+      for (let tap = -half; tap <= half; tap += 1) {
+        const at = left + tap
+        const weight = this.kernel[tap + half]! * (1 - fraction) + (this.kernel[tap + half + 1] ?? 0) * fraction
+        const sample = at < 0 ? (this.tail.length ? buffer[0]! : 0) : at >= buffer.length ? buffer[buffer.length - 1]! : buffer[at]!
+        acc += sample * weight
+      }
+      outputView.setInt16(index * 2, Math.max(-32_768, Math.min(32_767, Math.round(acc))), true)
+    }
+    this.tail = buffer.slice(Math.max(0, buffer.length - 2 * half - 2))
+    return output
+  }
+}
+
+/** Stateless single-frame convenience used by tests and one-off callers. */
+export function downsamplePcm24kTo16k(data: Uint8Array): Uint8Array {
+  return new Pcm24kTo16kResampler().process(data)
 }
 
 /**

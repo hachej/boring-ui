@@ -473,7 +473,9 @@ export class LiveTranscriptBrowserController {
     onWord?: (word: string) => void
   }): Promise<void> {
     const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { channelCount: { ideal: 1 }, echoCancellation: true, noiseSuppression: true },
+      // autoGainControl is explicit: Kyutai and Sortformer both degrade on very
+      // quiet input and browsers do not all default it on for a constrained track.
+      audio: { channelCount: { ideal: 1 }, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       video: false,
     })
     try {
