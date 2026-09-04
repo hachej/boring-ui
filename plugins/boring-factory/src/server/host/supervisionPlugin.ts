@@ -11,7 +11,7 @@ export const FACTORY_SUPERVISION_PLUGIN_ID = 'factory-supervision'
 const SUPERVISION_PLUGIN_VERSION = 'factory-supervision.v1.2026-09-03'
 
 /** The only seat this plugin ever supervises: an Orchestrator may only supervise itself. */
-const SUPERVISED_AGENT_TYPE_ID = 'factory-orchestrator'
+const SUPERVISED_AGENT_TYPE_ID = 'boring-orchestrator'
 
 
 export const SUPERVISION_MIN_INTERVAL_MS = 30_000

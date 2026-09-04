@@ -1,12 +1,12 @@
 {
-  "name": "@hachej/boring-factory-orchestrator",
+  "name": "@hachej/boring-persona-worker",
   "private": true,
   "version": "1.0.0",
   "boring": {
     "agent": {
-      "definitionId": "factory-orchestrator",
+      "definitionId": "boring-worker",
       "version": "1.0.0",
-      "label": "Factory Orchestrator",
+      "label": "Boring Worker",
       "instructionsRef": "instructions.md"
     }
   }

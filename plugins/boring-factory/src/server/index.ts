@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import {
   BORING_FACTORY_RESOURCE_CONTRACT_VERSION,
   FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
+  FACTORY_REVIEWER_AGENT_TYPE_ID,
   FACTORY_WORKER_AGENT_TYPE_ID as FACTORY_RESOURCE_WORKER_AGENT_TYPE_ID,
 } from '../shared/constants'
 import {
@@ -287,6 +288,11 @@ export function resolveBoringFactoryResources(): BoringFactoryResources {
           resourceRoot,
           'agents',
           FACTORY_RESOURCE_WORKER_AGENT_TYPE_ID,
+        ),
+        [FACTORY_REVIEWER_AGENT_TYPE_ID]: path.join(
+          resourceRoot,
+          'agents',
+          FACTORY_REVIEWER_AGENT_TYPE_ID,
         ),
       }),
     })

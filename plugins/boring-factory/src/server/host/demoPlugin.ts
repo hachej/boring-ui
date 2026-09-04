@@ -17,7 +17,7 @@ export const FACTORY_DEMO_PLUGIN_ID = 'factory-demo'
 const DEMO_PLUGIN_VERSION = 'factory-demo.v1.2026-09-03'
 
 /** The only seat allowed to open a live demo: the owner-facing seat that raises Gate 2. */
-const DEMO_AGENT_TYPE_ID = 'factory-orchestrator'
+const DEMO_AGENT_TYPE_ID = 'boring-orchestrator'
 
 const DEFAULT_TTL_MINUTES = 40
 /** Vercel hobby-plan sandbox lifetime cap. Real hard cap is host-configurable via `BORING_FACTORY_DEMO_MAX_MINUTES`. */

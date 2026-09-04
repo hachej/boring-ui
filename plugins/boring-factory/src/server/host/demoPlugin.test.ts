@@ -102,7 +102,7 @@ function fakeFetch(status: number): typeof fetch {
 }
 
 describe('factory demo plugin', () => {
-  it('grants `demo_sandbox` only to factory-orchestrator', () => {
+  it('grants `demo_sandbox` only to boring-orchestrator', () => {
     const { plugin } = createFactoryDemoPlugin({
       stateRoot: '/tmp/does-not-matter',
       workspaceRoot: '/tmp/does-not-matter',
@@ -110,8 +110,8 @@ describe('factory demo plugin', () => {
       env: vercelEnv(),
       workspaceScopeId: 'factory-epic-1',
     })
-    expect(plugin.agentToolFactory?.({ agentTypeId: 'factory-orchestrator' }).map((tool) => tool.name)).toEqual(['demo_sandbox'])
-    expect(plugin.agentToolFactory?.({ agentTypeId: 'factory-worker' })).toEqual([])
+    expect(plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }).map((tool) => tool.name)).toEqual(['demo_sandbox'])
+    expect(plugin.agentToolFactory?.({ agentTypeId: 'boring-worker' })).toEqual([])
     expect(plugin.agentToolFactory?.({ agentTypeId: 'boring-reviewer' })).toEqual([])
   })
 
@@ -123,7 +123,7 @@ describe('factory demo plugin', () => {
       env: { BORING_FACTORY_SANDBOX_PROVIDER: 'local-simulation' } as NodeJS.ProcessEnv,
       workspaceScopeId: 'factory-epic-1',
     })
-    const [tool] = plugin.agentToolFactory?.({ agentTypeId: 'factory-orchestrator' }) ?? []
+    const [tool] = plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
     const result = await tool!.execute({ op: 'status' }, { abortSignal: new AbortController().signal, toolCallId: 'c1', sessionId: 's1' })
     expect(result.isError).toBe(true)
     expect(result.details).toMatchObject({ code: 'PROVIDER_NOT_CONFIGURED' })
@@ -142,7 +142,7 @@ describe('factory demo plugin', () => {
       fetchImpl: fakeFetch(200),
       workspaceScopeId: 'factory-epic-1',
     })
-    const [tool] = handle.plugin.agentToolFactory?.({ agentTypeId: 'factory-orchestrator' }) ?? []
+    const [tool] = handle.plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
 
     const result = await tool!.execute(
       { op: 'start', command: 'node server.js', port: 3000 },
@@ -181,7 +181,7 @@ describe('factory demo plugin', () => {
       fetchImpl: fakeFetch(200),
       workspaceScopeId: 'factory-epic-1',
     })
-    const [tool] = handle.plugin.agentToolFactory?.({ agentTypeId: 'factory-orchestrator' }) ?? []
+    const [tool] = handle.plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
 
     const badPort = await tool!.execute(
       { op: 'start', command: 'node server.js', port: 80 },
@@ -217,7 +217,7 @@ describe('factory demo plugin', () => {
       fetchImpl: fakeFetch(200),
       workspaceScopeId: 'factory-epic-1',
     })
-    const [tool] = handle.plugin.agentToolFactory?.({ agentTypeId: 'factory-orchestrator' }) ?? []
+    const [tool] = handle.plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
 
     const result = await tool!.execute(
       { op: 'start', command: 'node server.js', port: 3000 },
@@ -245,7 +245,7 @@ describe('factory demo plugin', () => {
       fetchImpl: fakeFetch(200),
       workspaceScopeId: 'factory-epic-1',
     })
-    const [tool] = handle.plugin.agentToolFactory?.({ agentTypeId: 'factory-orchestrator' }) ?? []
+    const [tool] = handle.plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
 
     const started = JSON.parse((await tool!.execute(
       { op: 'start', command: 'node server.js', port: 3000 },
@@ -284,7 +284,7 @@ describe('factory demo plugin', () => {
       sandboxFactory: factory,
       workspaceScopeId: 'factory-epic-1',
     })
-    const [tool] = handle.plugin.agentToolFactory?.({ agentTypeId: 'factory-orchestrator' }) ?? []
+    const [tool] = handle.plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
     const result = await tool!.execute({ op: 'stop', id: 'nope' }, { abortSignal: new AbortController().signal, toolCallId: 'c1', sessionId: 's1' })
     expect(result.isError).toBe(true)
     expect(result.details).toMatchObject({ code: 'NOT_FOUND' })

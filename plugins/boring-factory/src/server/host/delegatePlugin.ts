@@ -24,13 +24,13 @@ const execFileAsync = promisify(execFile)
  * what tool name. Never derived from Agent-authored config or tool input.
  */
 const DELEGATE_GRANTS: Readonly<Record<string, { readonly toolName: string; readonly targetAgentTypeId: string }>> = Object.freeze({
-  'factory-orchestrator': Object.freeze({ toolName: 'dispatch_worker', targetAgentTypeId: 'factory-worker' }),
-  'factory-worker': Object.freeze({ toolName: 'fresh_review', targetAgentTypeId: 'boring-reviewer' }),
+  'boring-orchestrator': Object.freeze({ toolName: 'dispatch_worker', targetAgentTypeId: 'boring-worker' }),
+  'boring-worker': Object.freeze({ toolName: 'fresh_review', targetAgentTypeId: 'boring-reviewer' }),
 })
 
 /** Seat granted the host status readback tool. Never derived from Agent-authored config. */
-const FACTORY_STATUS_AGENT_TYPE_ID = 'factory-orchestrator'
-const FACTORY_STATUS_WORKER_AGENT_TYPE_ID = 'factory-worker'
+const FACTORY_STATUS_AGENT_TYPE_ID = 'boring-orchestrator'
+const FACTORY_STATUS_WORKER_AGENT_TYPE_ID = 'boring-worker'
 
 export interface CreateFactoryDelegatePluginOptions {
   /** Host-owned workspace identity used on every in-process `app.inject` call. */

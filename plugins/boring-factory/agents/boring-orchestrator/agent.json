@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "definitionId": "factory-worker",
+  "definitionId": "boring-orchestrator",
   "version": "1.0.0",
-  "label": "Factory Worker",
+  "label": "Boring Orchestrator",
   "instructionsRef": "instructions.md"
 }
