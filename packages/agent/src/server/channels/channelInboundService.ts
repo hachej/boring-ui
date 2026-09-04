@@ -53,7 +53,12 @@ export class ChannelInboundService {
     private readonly store: ChannelBindingStore,
     private readonly invoker: ChannelAgentInvoker,
     private readonly options: { readonly maxAttempts?: number } = {},
-  ) {}
+  ) {
+    // Durable acknowledgement must not depend on a provider replay. The store
+    // recovers interrupted claims during migration; every new service resumes
+    // all active bindings with unfinished work.
+    for (const binding of this.store.pendingBindings()) this.scheduleDrain(binding)
+  }
 
   /** Durable enqueue is the acknowledgement boundary; agent work stays async. */
   accept(message: InboundChannelMessage, agentTypeId: string): ChannelInboundAck {
@@ -95,7 +100,10 @@ export class ChannelInboundService {
       const queued = this.store.nextPending(binding.channel, binding.conversationKey, binding.agentTypeId)
       if (!queued) return
       binding = this.store.getBinding(binding.channel, binding.conversationKey, binding.agentTypeId) ?? binding
-      if (binding.status !== 'active') {
+      if (binding.status !== 'active' || binding.bindingVersion !== queued.bindingVersion
+        || binding.workspaceId !== queued.workspaceId || binding.authSubjectId !== queued.authSubjectId) {
+        // Queue rows are tenant snapshots. Re-provisioning creates a new
+        // generation and can never redirect already accepted content.
         this.store.parkInbound(queued.id, ErrorCode.enum.CHANNEL_BINDING_REVOKED)
         continue
       }

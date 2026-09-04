@@ -14,12 +14,13 @@ export interface ChannelBinding {
   readonly agentTypeId: string
   readonly workspaceId: string
   readonly authSubjectId: string
+  readonly bindingVersion: number
   readonly status: ChannelBindingStatus
   readonly sessionKey?: string
   readonly lastInboundAt?: number
 }
 
-export interface ProvisionChannelBindingInput extends Omit<ChannelBinding, 'status' | 'lastInboundAt'> {
+export interface ProvisionChannelBindingInput extends Omit<ChannelBinding, 'bindingVersion' | 'status' | 'lastInboundAt'> {
   readonly status?: ChannelBindingStatus
 }
 
@@ -34,6 +35,9 @@ export interface InboundChannelMessage {
 export interface QueuedChannelInbound extends InboundChannelMessage {
   readonly id: number
   readonly agentTypeId: string
+  readonly workspaceId: string
+  readonly authSubjectId: string
+  readonly bindingVersion: number
   readonly attempts: number
   readonly status: ChannelInboundStatus
   readonly errorCode?: string
@@ -82,6 +86,7 @@ export class ChannelBindingStore {
       agent_type_id TEXT NOT NULL,
       workspace_id TEXT NOT NULL,
       auth_subject_id TEXT NOT NULL,
+      binding_version INTEGER NOT NULL DEFAULT 1,
       status TEXT NOT NULL,
       session_key TEXT,
       create_state TEXT,
@@ -102,6 +107,9 @@ export class ChannelBindingStore {
       channel TEXT NOT NULL,
       conversation_key TEXT NOT NULL,
       agent_type_id TEXT NOT NULL,
+      workspace_id TEXT NOT NULL,
+      auth_subject_id TEXT NOT NULL,
+      binding_version INTEGER NOT NULL,
       provider_message_id TEXT NOT NULL,
       text TEXT NOT NULL,
       received_at INTEGER NOT NULL,
@@ -111,18 +119,35 @@ export class ChannelBindingStore {
     )`)
     this.sql.exec(`CREATE INDEX IF NOT EXISTS boring_channel_queue_binding
       ON boring_channel_inbound_queue(channel, conversation_key, agent_type_id, id)`)
+    // Databases created by the first channel-core build lack tenant snapshots.
+    // Those legacy rows cannot be attributed safely, so fail closed.
+    this.ensureColumn('boring_channel_bindings', 'binding_version', 'INTEGER NOT NULL DEFAULT 1')
+    this.ensureColumn('boring_channel_inbound_queue', 'workspace_id', 'TEXT')
+    this.ensureColumn('boring_channel_inbound_queue', 'auth_subject_id', 'TEXT')
+    this.ensureColumn('boring_channel_inbound_queue', 'binding_version', 'INTEGER')
+    this.sql.exec(`UPDATE boring_channel_inbound_queue
+      SET status='parked', error_code=?
+      WHERE workspace_id IS NULL OR auth_subject_id IS NULL OR binding_version IS NULL`, ErrorCode.enum.CHANNEL_BINDING_REVOKED)
     // A process may die after claiming a row. Delivery to the agent is
     // idempotency-keyed by providerMessageId, so restart safely retries it.
     this.sql.exec(`UPDATE boring_channel_inbound_queue SET status='pending' WHERE status='processing'`)
   }
 
+  private ensureColumn(table: string, column: string, definition: string): void {
+    const columns = this.sql.exec(`PRAGMA table_info(${table})`).toArray()
+    if (!columns.some((entry) => entry.name === column)) {
+      this.sql.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`)
+    }
+  }
+
   provision(input: ProvisionChannelBindingInput): ChannelBinding {
     this.sql.exec(`INSERT INTO boring_channel_bindings
-      (channel, conversation_key, agent_type_id, workspace_id, auth_subject_id, status, session_key)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      (channel, conversation_key, agent_type_id, workspace_id, auth_subject_id, binding_version, status, session_key)
+      VALUES (?, ?, ?, ?, ?, 1, ?, ?)
       ON CONFLICT(channel, conversation_key, agent_type_id) DO UPDATE SET
         workspace_id=excluded.workspace_id,
         auth_subject_id=excluded.auth_subject_id,
+        binding_version=boring_channel_bindings.binding_version + 1,
         status=excluded.status,
         session_key=excluded.session_key,
         create_state=NULL,
@@ -136,7 +161,7 @@ export class ChannelBindingStore {
 
   getBinding(channel: string, conversationKey: string, agentTypeId: string): ChannelBinding | undefined {
     const row = this.sql.exec(`SELECT channel, conversation_key, agent_type_id, workspace_id,
-      auth_subject_id, status, session_key, last_inbound_at FROM boring_channel_bindings
+      auth_subject_id, binding_version, status, session_key, last_inbound_at FROM boring_channel_bindings
       WHERE channel=? AND conversation_key=? AND agent_type_id=?`, channel, conversationKey, agentTypeId).toArray()[0]
     return row ? bindingFromRow(row) : undefined
   }
@@ -159,9 +184,11 @@ export class ChannelBindingStore {
       if (!binding || binding.status !== 'active') return { disposition: 'unknown_binding' } as const
 
       const inserted = this.sql.exec(`INSERT INTO boring_channel_inbound_queue
-        (channel, conversation_key, agent_type_id, provider_message_id, text, received_at)
-        VALUES (?, ?, ?, ?, ?, ?) RETURNING id`, message.channel, message.conversationKey,
-      agentTypeId, message.providerMessageId, message.text, message.receivedAt).toArray()[0]
+        (channel, conversation_key, agent_type_id, workspace_id, auth_subject_id, binding_version,
+          provider_message_id, text, received_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`, message.channel, message.conversationKey,
+      agentTypeId, binding.workspaceId, binding.authSubjectId, binding.bindingVersion,
+      message.providerMessageId, message.text, message.receivedAt).toArray()[0]
       this.sql.exec(`UPDATE boring_channel_bindings SET last_inbound_at=?
         WHERE channel=? AND conversation_key=? AND agent_type_id=?`, message.receivedAt,
       message.channel, message.conversationKey, agentTypeId)
@@ -169,12 +196,22 @@ export class ChannelBindingStore {
     }, 'immediate')
   }
 
+  pendingBindings(): ChannelBinding[] {
+    return this.sql.exec(`SELECT DISTINCT b.channel, b.conversation_key, b.agent_type_id,
+      b.workspace_id, b.auth_subject_id, b.binding_version, b.status, b.session_key, b.last_inbound_at
+      FROM boring_channel_bindings b JOIN boring_channel_inbound_queue q
+        ON q.channel=b.channel AND q.conversation_key=b.conversation_key AND q.agent_type_id=b.agent_type_id
+      WHERE b.status='active' AND q.status IN ('pending', 'processing')`).toArray().map(bindingFromRow)
+  }
+
   nextPending(channel: string, conversationKey: string, agentTypeId: string): QueuedChannelInbound | undefined {
     const row = this.runTransaction(() => {
+      // The oldest unfinished row is a binding-wide database lock. A second
+      // process cannot claim a later row while the first is processing it.
       const candidate = this.sql.exec(`SELECT * FROM boring_channel_inbound_queue
-        WHERE channel=? AND conversation_key=? AND agent_type_id=? AND status='pending'
+        WHERE channel=? AND conversation_key=? AND agent_type_id=? AND status IN ('pending', 'processing')
         ORDER BY id LIMIT 1`, channel, conversationKey, agentTypeId).toArray()[0]
-      if (!candidate) return undefined
+      if (!candidate || candidate.status === 'processing') return undefined
       this.sql.exec(`UPDATE boring_channel_inbound_queue SET status='processing', attempts=attempts+1
         WHERE id=? AND status='pending'`, candidate.id)
       return this.sql.exec(`SELECT * FROM boring_channel_inbound_queue WHERE id=?`, candidate.id).toArray()[0]
@@ -209,7 +246,8 @@ export class ChannelBindingStore {
 
     while (cycles < maxCycles) {
       const currentBinding = this.getBinding(binding.channel, binding.conversationKey, binding.agentTypeId)
-      if (!currentBinding || currentBinding.status !== 'active') {
+      if (!currentBinding || currentBinding.status !== 'active' || currentBinding.bindingVersion !== binding.bindingVersion
+        || currentBinding.workspaceId !== binding.workspaceId || currentBinding.authSubjectId !== binding.authSubjectId) {
         throw Object.assign(new Error('Channel binding is revoked.'), { code: ErrorCode.enum.CHANNEL_BINDING_REVOKED })
       }
       if (currentBinding.sessionKey) return { sessionKey: currentBinding.sessionKey, created: false }
@@ -242,8 +280,8 @@ export class ChannelBindingStore {
 
   private readCreation(binding: ChannelBinding): CreationRow | undefined {
     const row = this.sql.exec(`SELECT create_state, create_owner, create_expires_at, create_session_key
-      FROM boring_channel_bindings WHERE channel=? AND conversation_key=? AND agent_type_id=?`,
-    binding.channel, binding.conversationKey, binding.agentTypeId).toArray()[0]
+      FROM boring_channel_bindings WHERE channel=? AND conversation_key=? AND agent_type_id=? AND binding_version=?`,
+    binding.channel, binding.conversationKey, binding.agentTypeId, binding.bindingVersion).toArray()[0]
     if (!row?.create_state || !row.create_owner || row.create_expires_at === null) return undefined
     return {
       state: row.create_state as CreationRow['state'],
@@ -256,32 +294,40 @@ export class ChannelBindingStore {
   private claimCreation(binding: ChannelBinding, expectedOwner: string | undefined, owner: string, expiresAt: number): boolean {
     const rows = expectedOwner === undefined
       ? this.sql.exec(`UPDATE boring_channel_bindings SET create_state='creating', create_owner=?, create_expires_at=?
-          WHERE channel=? AND conversation_key=? AND agent_type_id=? AND session_key IS NULL AND create_owner IS NULL
-          RETURNING channel`, owner, expiresAt, binding.channel, binding.conversationKey, binding.agentTypeId).toArray()
+          WHERE channel=? AND conversation_key=? AND agent_type_id=? AND binding_version=?
+            AND session_key IS NULL AND create_owner IS NULL
+          RETURNING channel`, owner, expiresAt, binding.channel, binding.conversationKey, binding.agentTypeId,
+        binding.bindingVersion).toArray()
       : this.sql.exec(`UPDATE boring_channel_bindings SET create_state='creating', create_owner=?, create_expires_at=?
-          WHERE channel=? AND conversation_key=? AND agent_type_id=? AND session_key IS NULL AND create_owner=? AND create_expires_at<=?
-          RETURNING channel`, owner, expiresAt, binding.channel, binding.conversationKey, binding.agentTypeId, expectedOwner, Date.now()).toArray()
+          WHERE channel=? AND conversation_key=? AND agent_type_id=? AND binding_version=?
+            AND session_key IS NULL AND create_owner=? AND create_expires_at<=?
+          RETURNING channel`, owner, expiresAt, binding.channel, binding.conversationKey, binding.agentTypeId,
+        binding.bindingVersion, expectedOwner, Date.now()).toArray()
     return rows.length === 1
   }
 
   private transitionCreation(binding: ChannelBinding, owner: string, state: CreationRow['state'], expiresAt: number, sessionKey: string): boolean {
     return this.sql.exec(`UPDATE boring_channel_bindings SET create_state=?, create_expires_at=?, create_session_key=?
-      WHERE channel=? AND conversation_key=? AND agent_type_id=? AND create_owner=? AND create_state='creating'
+      WHERE channel=? AND conversation_key=? AND agent_type_id=? AND binding_version=?
+        AND create_owner=? AND create_state='creating'
       RETURNING channel`, state, expiresAt, sessionKey, binding.channel, binding.conversationKey,
-    binding.agentTypeId, owner).toArray().length === 1
+    binding.agentTypeId, binding.bindingVersion, owner).toArray().length === 1
   }
 
   private finishCreation(binding: ChannelBinding, owner: string, sessionKey: string): boolean {
     return this.sql.exec(`UPDATE boring_channel_bindings SET session_key=?, create_state=NULL, create_owner=NULL, create_expires_at=NULL, create_session_key=NULL
-      WHERE channel=? AND conversation_key=? AND agent_type_id=? AND create_owner=? AND create_state='admitting'
-      RETURNING channel`, sessionKey, binding.channel, binding.conversationKey, binding.agentTypeId, owner).toArray().length === 1
+      WHERE channel=? AND conversation_key=? AND agent_type_id=? AND binding_version=?
+        AND create_owner=? AND create_state='admitting'
+      RETURNING channel`, sessionKey, binding.channel, binding.conversationKey, binding.agentTypeId,
+    binding.bindingVersion, owner).toArray().length === 1
   }
 
   private recoverAdmitting(binding: ChannelBinding, expectedOwner: string, sessionKey: string): boolean {
     return this.sql.exec(`UPDATE boring_channel_bindings SET session_key=?, create_state=NULL, create_owner=NULL, create_expires_at=NULL, create_session_key=NULL
-      WHERE channel=? AND conversation_key=? AND agent_type_id=? AND create_owner=? AND create_state='admitting' AND create_expires_at<=?
+      WHERE channel=? AND conversation_key=? AND agent_type_id=? AND binding_version=?
+        AND create_owner=? AND create_state='admitting' AND create_expires_at<=?
       RETURNING channel`, sessionKey, binding.channel, binding.conversationKey, binding.agentTypeId,
-    expectedOwner, Date.now()).toArray().length === 1
+    binding.bindingVersion, expectedOwner, Date.now()).toArray().length === 1
   }
 }
 
@@ -292,6 +338,7 @@ function bindingFromRow(row: Record<string, unknown>): ChannelBinding {
     agentTypeId: String(row.agent_type_id),
     workspaceId: String(row.workspace_id),
     authSubjectId: String(row.auth_subject_id),
+    bindingVersion: Number(row.binding_version),
     status: row.status as ChannelBindingStatus,
     ...(row.session_key ? { sessionKey: String(row.session_key) } : {}),
     ...(row.last_inbound_at === null || row.last_inbound_at === undefined ? {} : { lastInboundAt: Number(row.last_inbound_at) }),
@@ -304,6 +351,9 @@ function inboundFromRow(row: Record<string, unknown>): QueuedChannelInbound {
     channel: String(row.channel),
     conversationKey: String(row.conversation_key),
     agentTypeId: String(row.agent_type_id),
+    workspaceId: String(row.workspace_id),
+    authSubjectId: String(row.auth_subject_id),
+    bindingVersion: Number(row.binding_version),
     providerMessageId: String(row.provider_message_id),
     text: String(row.text),
     receivedAt: Number(row.received_at),

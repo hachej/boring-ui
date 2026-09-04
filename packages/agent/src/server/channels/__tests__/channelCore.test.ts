@@ -190,7 +190,7 @@ describe('ChannelInboundService fake-channel path', () => {
     })
   })
 
-  test('a provider replay after restart resumes committed but undrained work', async () => {
+  test('service startup resumes committed but undrained work without a provider replay', async () => {
     await withStores(async ({ first, second }) => {
       first.provision({ ...bindingInput, sessionKey: 'session-1' })
       expect(first.enqueueInbound(inbound('wamid.restart'), 'default').disposition).toBe('enqueued')
@@ -201,10 +201,72 @@ describe('ChannelInboundService fake-channel path', () => {
         prompt,
         followUp: vi.fn(),
       })
-      expect(service.accept(inbound('wamid.restart'), 'default')).toMatchObject({ accepted: true, duplicate: true })
       await service.waitForIdle()
       expect(prompt).toHaveBeenCalledOnce()
       expect(second.getInbound(1)?.status).toBe('processed')
+    })
+  })
+
+  test('re-provisioning parks queued content instead of crossing tenant boundaries', async () => {
+    await withStores(async ({ first, second }) => {
+      first.provision({ ...bindingInput, sessionKey: 'session-1' })
+      expect(first.enqueueInbound(inbound('wamid.tenant'), 'default').disposition).toBe('enqueued')
+      second.provision({
+        ...bindingInput,
+        workspaceId: 'workspace-2',
+        authSubjectId: 'user-2',
+        sessionKey: 'session-2',
+      })
+      const invoker = {
+        createSession: vi.fn(),
+        isSessionBusy: vi.fn(),
+        prompt: vi.fn(),
+        followUp: vi.fn(),
+      } as unknown as ChannelAgentInvoker
+      const service = new ChannelInboundService(second, invoker)
+      await service.waitForIdle()
+      expect(invoker.prompt).not.toHaveBeenCalled()
+      expect(second.getInbound(1)).toMatchObject({
+        status: 'parked',
+        errorCode: 'CHANNEL_BINDING_REVOKED',
+        workspaceId: 'workspace-1',
+        authSubjectId: 'user-1',
+      })
+    })
+  })
+
+  test('database claim preserves order across concurrent service instances', async () => {
+    await withStores(async ({ first, second }) => {
+      first.provision({ ...bindingInput, sessionKey: 'session-1' })
+      first.enqueueInbound(inbound('wamid.concurrent.1', 'first'), 'default')
+      first.enqueueInbound(inbound('wamid.concurrent.2', 'second'), 'default')
+      const calls: string[] = []
+      let releaseFirst!: () => void
+      let markStarted!: () => void
+      const started = new Promise<void>((resolve) => { markStarted = resolve })
+      const blocked = new Promise<void>((resolve) => { releaseFirst = resolve })
+      const invoker: ChannelAgentInvoker = {
+        createSession: vi.fn(),
+        isSessionBusy: vi.fn(async () => false),
+        async prompt(input) {
+          calls.push(input.text)
+          if (input.text === 'first') {
+            markStarted()
+            await blocked
+          }
+        },
+        followUp: vi.fn(),
+      }
+      const firstService = new ChannelInboundService(first, invoker)
+      await started
+      const secondService = new ChannelInboundService(second, invoker)
+      await secondService.waitForIdle()
+      expect(calls).toEqual(['first'])
+      releaseFirst()
+      await firstService.waitForIdle()
+      expect(calls).toEqual(['first', 'second'])
+      expect(first.getInbound(1)?.status).toBe('processed')
+      expect(first.getInbound(2)?.status).toBe('processed')
     })
   })
 
