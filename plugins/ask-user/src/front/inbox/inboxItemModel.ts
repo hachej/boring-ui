@@ -1,4 +1,6 @@
 import type { HumanArtifact, WorkspaceShellCapabilityResult, WorkspaceShellAnchorRect, WorkspaceShellSessionRef } from "@hachej/boring-workspace"
+import type { AskUserPendingSummary } from "../../shared/bridge"
+import { ASK_USER_PLUGIN_ID, ASK_USER_SURFACE_KIND } from "../../shared/constants"
 
 export type InboxItemKind = "question" | "review" | "approval" | "notice"
 export type InboxItemStatus = "open" | "resolved" | "dismissed"
@@ -92,4 +94,66 @@ export function mergeInboxPinnedState(
   pinnedIds: ReadonlySet<string>,
 ): WorkspaceInboxItemViewModel[] {
   return items.map((item) => ({ ...item, pinned: pinnedIds.has(item.id) }))
+}
+
+/** Blocker id shape shared with `useAskUserAttentionBlockers`, so the same
+ * question read from the workspace-wide list and from an attention blocker is
+ * one Inbox row rather than two. */
+export function inboxItemIdForQuestion(sessionId: string, questionId: string): string {
+  return `${ASK_USER_PLUGIN_ID}:${sessionId}:${questionId}`
+}
+
+/**
+ * Inbox row for a pending question read straight from the workspace-wide
+ * `ask-user.v1.pending-all` op. Attention blockers only exist for sessions the
+ * browser shell already knows about, so questions raised by background agent
+ * sessions (Orchestrator, Workers) reach the Inbox only through this path.
+ */
+export function pendingSummaryToInboxItem(
+  summary: AskUserPendingSummary,
+  options: { fallbackAgentTypeId?: string } = {},
+): WorkspaceInboxItem {
+  const title = summary.title ?? "Answer the question in Questions to continue"
+  const surfaceArtifact: HumanArtifact = {
+    id: `${inboxItemIdForQuestion(summary.sessionId, summary.questionId)}:surface`,
+    surfaceKind: ASK_USER_SURFACE_KIND,
+    target: summary.questionId,
+    title,
+  }
+  const artifacts = summary.artifacts ?? []
+  return {
+    id: inboxItemIdForQuestion(summary.sessionId, summary.questionId),
+    kind: "question",
+    status: "open",
+    title,
+    description: summary.context ?? "ask-user.question",
+    source: { type: "ask-user", label: "question" },
+    sessionId: summary.sessionId,
+    agentTypeId: options.fallbackAgentTypeId ?? null,
+    chatAvailable: !!options.fallbackAgentTypeId,
+    targetLabel: summary.questionId,
+    artifacts: [
+      surfaceArtifact,
+      ...artifacts.filter((artifact) => !(artifact.surfaceKind === ASK_USER_SURFACE_KIND && artifact.target === summary.questionId)),
+    ],
+    createdAt: summary.createdAt,
+    updatedAt: summary.updatedAt || summary.createdAt,
+    priority: 10,
+    actions: [],
+  }
+}
+
+/**
+ * Union of the session-scoped attention blockers and the workspace-wide pending
+ * list, keyed by question. Blocker items win on conflict because they carry the
+ * hydrated payload (actions, artifacts) for sessions the shell already tracks.
+ */
+export function mergeInboxItems(
+  blockerItems: readonly WorkspaceInboxItem[],
+  workspaceItems: readonly WorkspaceInboxItem[],
+): WorkspaceInboxItem[] {
+  const byId = new Map<string, WorkspaceInboxItem>()
+  for (const item of workspaceItems) byId.set(item.id, item)
+  for (const item of blockerItems) byId.set(item.id, item)
+  return [...byId.values()]
 }

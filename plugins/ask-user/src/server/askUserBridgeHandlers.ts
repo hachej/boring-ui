@@ -14,8 +14,11 @@ import {
   ASK_USER_BRIDGE_OPS,
   type AskUserBridgeAnswerInput,
   type AskUserBridgeCancelInput,
+  type AskUserBridgePendingAllInput,
+  type AskUserBridgePendingAllOutput,
   type AskUserBridgePendingInput,
   type AskUserBridgePendingOutput,
+  type AskUserPendingSummary,
   type AskUserBridgeRequestInput,
   type AskUserBridgeRequestOutput,
   type AskUserBridgeTranscriptInput,
@@ -97,6 +100,20 @@ export function createAskUserBridgeHandlers(
       maxOutputBytes: MAX_QUESTION_BYTES,
       idempotencyPolicy: "none",
       handler: pendingHandler(options),
+    })),
+    contribution(defineTrustedDomainBridgeHandler<AskUserBridgePendingAllInput, AskUserBridgePendingAllOutput>({
+      op: ASK_USER_BRIDGE_OPS.pendingAll,
+      version: 1,
+      owner: ASK_USER_PLUGIN_ID,
+      callerClassesAllowed: ["browser", "server"],
+      requiredCapabilities: [ASK_USER_BRIDGE_CAPABILITIES.pendingAll],
+      inputSchema: { type: "object" },
+      outputSchema: { type: "object" },
+      timeoutMs: READ_TIMEOUT_MS,
+      maxInputBytes: 1024,
+      maxOutputBytes: MAX_QUESTION_BYTES,
+      idempotencyPolicy: "none",
+      handler: pendingAllHandler(options),
     })),
     contribution(defineTrustedDomainBridgeHandler<AskUserBridgeTranscriptInput, AskUserBridgeTranscriptOutput>({
       op: ASK_USER_BRIDGE_OPS.transcript,
@@ -188,6 +205,42 @@ function pendingHandler({ store }: AskUserBridgeHandlersOptions) {
     } catch (error) {
       throw mapAskUserError(error)
     }
+  }
+}
+
+/** Workspace-wide pending list backing the Inbox. Deliberately not session
+ * scoped: a question raised by a background agent session (an Orchestrator, a
+ * Worker) is still the owner's to answer, and scoping this read to the browser
+ * chat session is what made those questions invisible. Ownership is still
+ * enforced per question, and answer tokens are never returned here. */
+function pendingAllHandler({ store }: AskUserBridgeHandlersOptions) {
+  return async ({ context }: { context: WorkspaceBridgeCallContext }): Promise<AskUserBridgePendingAllOutput> => {
+    try {
+      const pending = await store.listPending()
+      return { pending: pending.filter((question) => isVisibleToCaller(context, question)).map(toPendingSummary) }
+    } catch (error) {
+      throw mapAskUserError(error)
+    }
+  }
+}
+
+function isVisibleToCaller(context: WorkspaceBridgeCallContext, question: AskUserQuestion): boolean {
+  if (context.callerClass !== "browser") return true
+  if (question.ownerPrincipalId === "anonymous") return true
+  return context.actor.performedBy?.id === question.ownerPrincipalId
+}
+
+function toPendingSummary(question: AskUserQuestion): AskUserPendingSummary {
+  return {
+    questionId: question.questionId,
+    sessionId: question.sessionId,
+    ...(question.toolCallId ? { toolCallId: question.toolCallId } : {}),
+    status: question.status,
+    ...(question.title ? { title: question.title } : {}),
+    ...(question.context ? { context: question.context } : {}),
+    artifacts: question.artifacts ?? [],
+    createdAt: question.createdAt,
+    updatedAt: question.updatedAt,
   }
 }
 

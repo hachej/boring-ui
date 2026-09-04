@@ -2,6 +2,7 @@ import { HumanArtifactListSchema } from "@hachej/boring-workspace"
 import { ASK_USER_BRIDGE_OPS } from "../shared/bridge"
 import { ASK_USER_UI_STATE_SLOTS } from "../shared/constants"
 import { ASK_USER_ERROR_CODES } from "../shared/error-codes"
+import type { AskUserPendingSummary } from "../shared/bridge"
 import type { AskUserAnswerValue, AskUserFormSchema, AskUserQuestion } from "../shared/types"
 import { validateQuestionValues, type QuestionFormValues, type QuestionValidationResult } from "./primitives"
 
@@ -103,6 +104,18 @@ export function createQuestionsClient(options: QuestionsClientOptions = {}) {
       )
       return normalizeQuestion(output.pending)
     },
+    /** Every pending question in the workspace, across agent sessions. Backs the
+     * Inbox, which is one owner queue rather than a per-chat view. */
+    async pendingAll(signal?: AbortSignal): Promise<AskUserPendingSummary[]> {
+      const output = await callBridge<{ pending?: unknown }>(
+        ASK_USER_BRIDGE_OPS.pendingAll,
+        {},
+        undefined,
+        undefined,
+        signal,
+      )
+      return normalizePendingSummaries(output.pending)
+    },
     async cancel(question: AskUserQuestion) {
       ensureAnswerToken(question)
       return await callBridge<QuestionsClientResult>(
@@ -143,6 +156,26 @@ export function createQuestionsClient(options: QuestionsClientOptions = {}) {
       )
     },
   }
+}
+
+export function normalizePendingSummaries(value: unknown): AskUserPendingSummary[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((entry) => {
+    const question = normalizeQuestion(entry)
+    if (!question || question.status !== "ready") return []
+    const summary: AskUserPendingSummary = {
+      questionId: question.questionId,
+      sessionId: question.sessionId,
+      ...(question.toolCallId ? { toolCallId: question.toolCallId } : {}),
+      status: question.status,
+      ...(question.title ? { title: question.title } : {}),
+      ...(question.context ? { context: question.context } : {}),
+      artifacts: question.artifacts,
+      createdAt: question.createdAt,
+      updatedAt: question.updatedAt,
+    }
+    return [summary]
+  })
 }
 
 export function normalizeQuestion(value: unknown): AskUserQuestion | null {

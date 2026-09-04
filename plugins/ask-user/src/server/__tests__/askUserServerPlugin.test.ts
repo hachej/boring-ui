@@ -173,6 +173,7 @@ describe("createAskUserServerPlugin", () => {
       "ask-user.v1.answer",
       "ask-user.v1.cancel",
       "ask-user.v1.pending",
+      "ask-user.v1.pending-all",
       "ask-user.v1.transcript",
     ])
   })

@@ -9,7 +9,9 @@ import { InboxFilterBar } from "./InboxFilterBar"
 import { InboxSection } from "./InboxSection"
 import {
   filterInboxItems,
+  mergeInboxItems,
   mergeInboxPinnedState,
+  pendingSummaryToInboxItem,
   sortInboxItems,
   type InboxFilter,
   type WorkspaceInboxItemViewModel,
@@ -18,6 +20,7 @@ import { useWorkspaceInboxShell } from "./WorkspaceInboxShellContext"
 import { useRelatedTasks } from "./taskProvenanceClient"
 import { useQuestionsRuntime } from "../runtime"
 import { useInboxSessionTitles } from "./sessionTitleClient"
+import { useWorkspacePendingQuestions } from "./workspacePendingClient"
 import { RelatedTaskList } from "./RelatedTaskList"
 
 export interface InboxOverlayProps {
@@ -63,13 +66,27 @@ export function InboxOverlay({ onClose, pinStorageKey, initialItemId }: InboxOve
   useEffect(() => {
     if (initialItemId) setSelectedItemId(initialItemId)
   }, [initialItemId])
-  const sorted = useMemo(() => sortInboxItems(blockers.filter(isInboxAttentionBlocker).map(attentionBlockerToInboxItem)), [blockers])
+  // The workspace-wide pending list is what makes a question raised by a
+  // background agent session (Orchestrator, Worker) visible here: attention
+  // blockers only exist for sessions the browser shell already tracks.
+  const workspacePending = useWorkspacePendingQuestions({
+    apiBaseUrl: runtime.apiBaseUrl,
+    headers: runtime.authHeaders,
+  })
+  const workspaceItems = useMemo(
+    () => workspacePending.map((summary) => pendingSummaryToInboxItem(summary, { fallbackAgentTypeId: runtime.agentTypeId })),
+    [runtime.agentTypeId, workspacePending],
+  )
+  const sorted = useMemo(() => sortInboxItems(mergeInboxItems(
+    blockers.filter(isInboxAttentionBlocker).map(attentionBlockerToInboxItem),
+    workspaceItems,
+  )), [blockers, workspaceItems])
   const filtered = useMemo(() => filterInboxItems(sorted, filter), [filter, sorted])
   const items = useMemo(() => mergeInboxPinnedState(filtered, pinnedIds), [filtered, pinnedIds])
   const pinnedItems = useMemo(() => items.filter((item) => item.pinned), [items])
   const unpinnedItems = useMemo(() => items.filter((item) => !item.pinned), [items])
   const inboxSessionIds = useMemo(() => sorted.flatMap((item) => (
-    item.agentTypeId === runtime.agentTypeId && item.sessionId ? [item.sessionId] : []
+    (item.agentTypeId ?? runtime.agentTypeId) === runtime.agentTypeId && item.sessionId ? [item.sessionId] : []
   )), [runtime.agentTypeId, sorted])
   const relatedTasks = useRelatedTasks({
     apiBaseUrl: runtime.apiBaseUrl,

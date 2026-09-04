@@ -12,6 +12,7 @@ export const ASK_USER_BRIDGE_OPS = {
   answer: "ask-user.v1.answer",
   cancel: "ask-user.v1.cancel",
   pending: "ask-user.v1.pending",
+  pendingAll: "ask-user.v1.pending-all",
   transcript: "ask-user.v1.transcript",
 } as const
 
@@ -20,6 +21,7 @@ export const ASK_USER_BRIDGE_CAPABILITIES = {
   answer: "ask-user:answer",
   cancel: "ask-user:cancel",
   pending: "ask-user:pending",
+  pendingAll: "ask-user:pending-all",
   transcriptRead: "ask-user:transcript.read",
 } as const
 
@@ -53,6 +55,25 @@ export type AskUserBridgeTranscriptInput = {
   sessionId: string
 }
 
+/** Workspace-wide read: no session scope, because the Inbox is one owner queue
+ * across every agent session, not a per-chat view. */
+export type AskUserBridgePendingAllInput = Record<string, never>
+
+/** Answer tokens stay out of the workspace-wide listing: the Inbox only needs
+ * to show and route to a question, and answering re-reads the owning session's
+ * `pending` payload (which carries the token) before it mutates anything. */
+export type AskUserPendingSummary = {
+  questionId: string
+  sessionId: string
+  toolCallId?: string
+  status: AskUserQuestion["status"]
+  title?: string
+  context?: string
+  artifacts: AskUserQuestion["artifacts"]
+  createdAt: string
+  updatedAt: string
+}
+
 export type AskUserBridgeRequestOutput = AskUserToolResult
 
 export type AskUserBridgeMutationOutput = {
@@ -64,6 +85,10 @@ export type AskUserBridgeAnswerOutput = AskUserBridgeMutationOutput
 
 export type AskUserBridgePendingOutput = {
   pending: AskUserQuestion | null
+}
+
+export type AskUserBridgePendingAllOutput = {
+  pending: AskUserPendingSummary[]
 }
 
 export type AskUserBridgeTranscriptOutput = {

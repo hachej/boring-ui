@@ -254,3 +254,63 @@ describe("plugin-owned ask-user WorkspaceBridge handlers", () => {
     expect(denied).toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.ResourceScopeDenied } })
   })
 })
+
+describe("ask-user.v1.pending-all", () => {
+  it("lists every pending question in the workspace, not just the browser's own session", async () => {
+    const { store, registry } = fixture()
+    const c1 = new AbortController()
+    const c2 = new AbortController()
+    controllers.push(c1, c2)
+    void registry.call({
+      op: ASK_USER_BRIDGE_OPS.request,
+      input: { sessionId: "orchestrator-session", title: "[Factory Plugin] Merge approval", schema, timeoutMs: 60_000 },
+      requestId: "req-orchestrator",
+    }, runtimeContext({ sessionId: "orchestrator-session", signal: c1.signal }))
+    void registry.call({
+      op: ASK_USER_BRIDGE_OPS.request,
+      input: { sessionId: "worker-session", title: "[Factory Plugin] Review", schema, timeoutMs: 60_000 },
+      requestId: "req-worker",
+    }, runtimeContext({ sessionId: "worker-session", signal: c2.signal }))
+    await vi.waitFor(async () => {
+      expect(await store.listPending()).toHaveLength(2)
+    }, { timeout: 10_000 })
+
+    // Browser context is the shell session `s1`, which raised neither question.
+    const all = await registry.call(
+      { op: ASK_USER_BRIDGE_OPS.pendingAll, input: {} },
+      browserContext("user-1", [ASK_USER_BRIDGE_CAPABILITIES.pendingAll]),
+    )
+    expect(all.ok).toBe(true)
+    const output = (all as { output: { pending: Array<{ sessionId: string; title?: string; answerToken?: unknown }> } }).output
+    expect(output.pending.map((entry) => entry.sessionId).sort()).toEqual(["orchestrator-session", "worker-session"])
+    expect(output.pending.map((entry) => entry.title).sort()).toEqual(["[Factory Plugin] Merge approval", "[Factory Plugin] Review"])
+    // Answer tokens are never handed to a workspace-wide read.
+    for (const entry of output.pending) expect(entry.answerToken).toBeUndefined()
+  })
+
+  it("hides questions owned by another browser principal", async () => {
+    const { store, registry } = fixture()
+    const controller = new AbortController()
+    controllers.push(controller)
+    void registry.call({
+      op: ASK_USER_BRIDGE_OPS.request,
+      input: { sessionId: "orchestrator-session", title: "Owned elsewhere", schema, timeoutMs: 60_000 },
+      requestId: "req-owned",
+    }, runtimeContext({ sessionId: "orchestrator-session", signal: controller.signal }))
+    await vi.waitFor(async () => {
+      expect(await store.listPending()).toHaveLength(1)
+    }, { timeout: 10_000 })
+
+    const mine = await registry.call(
+      { op: ASK_USER_BRIDGE_OPS.pendingAll, input: {} },
+      browserContext("user-1", [ASK_USER_BRIDGE_CAPABILITIES.pendingAll]),
+    )
+    expect((mine as { output: { pending: unknown[] } }).output.pending).toHaveLength(1)
+
+    const other = await registry.call(
+      { op: ASK_USER_BRIDGE_OPS.pendingAll, input: {} },
+      browserContext("user-2", [ASK_USER_BRIDGE_CAPABILITIES.pendingAll]),
+    )
+    expect((other as { output: { pending: unknown[] } }).output.pending).toHaveLength(0)
+  })
+})
