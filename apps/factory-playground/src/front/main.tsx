@@ -5,6 +5,7 @@ import { createTasksPlugin } from '@hachej/boring-tasks/front'
 import { WorkspaceAgentFront } from '@hachej/boring-workspace/app/front'
 import '@hachej/boring-agent/front/styles.css'
 import '@hachej/boring-workspace/globals.css'
+import './app.css'
 
 const plugins = [
   createAskUserPlugin({ appLeftInbox: true }),

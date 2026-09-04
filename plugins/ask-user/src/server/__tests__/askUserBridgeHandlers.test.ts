@@ -254,3 +254,147 @@ describe("plugin-owned ask-user WorkspaceBridge handlers", () => {
     expect(denied).toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.ResourceScopeDenied } })
   })
 })
+
+describe("ask-user.v1.pending-all", () => {
+  it("lists every pending question in the workspace, not just the browser's own session", async () => {
+    const { store, registry } = fixture()
+    const c1 = new AbortController()
+    const c2 = new AbortController()
+    controllers.push(c1, c2)
+    void registry.call({
+      op: ASK_USER_BRIDGE_OPS.request,
+      input: { sessionId: "orchestrator-session", title: "[Factory Plugin] Merge approval", schema, timeoutMs: 60_000 },
+      requestId: "req-orchestrator",
+    }, runtimeContext({ sessionId: "orchestrator-session", signal: c1.signal }))
+    void registry.call({
+      op: ASK_USER_BRIDGE_OPS.request,
+      input: { sessionId: "worker-session", title: "[Factory Plugin] Review", schema, timeoutMs: 60_000 },
+      requestId: "req-worker",
+    }, runtimeContext({ sessionId: "worker-session", signal: c2.signal }))
+    await vi.waitFor(async () => {
+      expect(await store.listPending()).toHaveLength(2)
+    }, { timeout: 10_000 })
+
+    // Browser context is the shell session `s1`, which raised neither question.
+    const all = await registry.call(
+      { op: ASK_USER_BRIDGE_OPS.pendingAll, input: {} },
+      browserContext("user-1", [ASK_USER_BRIDGE_CAPABILITIES.pendingAll]),
+    )
+    expect(all.ok).toBe(true)
+    const output = (all as { output: { pending: Array<{ sessionId: string; title?: string; answerToken?: unknown }> } }).output
+    expect(output.pending.map((entry) => entry.sessionId).sort()).toEqual(["orchestrator-session", "worker-session"])
+    expect(output.pending.map((entry) => entry.title).sort()).toEqual(["[Factory Plugin] Merge approval", "[Factory Plugin] Review"])
+    // Answer tokens are never handed to a workspace-wide read.
+    for (const entry of output.pending) expect(entry.answerToken).toBeUndefined()
+  })
+
+  it("hides questions owned by another browser principal", async () => {
+    const { store, registry } = fixture()
+    const controller = new AbortController()
+    controllers.push(controller)
+    void registry.call({
+      op: ASK_USER_BRIDGE_OPS.request,
+      input: { sessionId: "orchestrator-session", title: "Owned elsewhere", schema, timeoutMs: 60_000 },
+      requestId: "req-owned",
+    }, runtimeContext({ sessionId: "orchestrator-session", signal: controller.signal }))
+    await vi.waitFor(async () => {
+      expect(await store.listPending()).toHaveLength(1)
+    }, { timeout: 10_000 })
+
+    const mine = await registry.call(
+      { op: ASK_USER_BRIDGE_OPS.pendingAll, input: {} },
+      browserContext("user-1", [ASK_USER_BRIDGE_CAPABILITIES.pendingAll]),
+    )
+    expect((mine as { output: { pending: unknown[] } }).output.pending).toHaveLength(1)
+
+    const other = await registry.call(
+      { op: ASK_USER_BRIDGE_OPS.pendingAll, input: {} },
+      browserContext("user-2", [ASK_USER_BRIDGE_CAPABILITIES.pendingAll]),
+    )
+    expect((other as { output: { pending: unknown[] } }).output.pending).toHaveLength(0)
+  })
+})
+
+describe("ask-user.v1.answered-all", () => {
+  async function answeredFixture(count: number) {
+    const { store, runtime, registry } = fixture()
+    const questionIds: string[] = []
+    for (let index = 0; index < count; index += 1) {
+      const controller = new AbortController()
+      controllers.push(controller)
+      const sessionId = `session-${index}`
+      void runtime.ask({
+        sessionId,
+        title: `[Farewell API] Gate ${index}`,
+        context: `Approve slice ${index}?\nSecond line is not the summary.`,
+        schema: {
+          wireVersion: 1 as const,
+          fields: [
+            { type: "radio" as const, name: "decision", label: "Decision", required: true, options: [{ value: "approve", label: "Approve" }, { value: "changes", label: "Request changes" }] },
+            { type: "textarea" as const, name: "notes", label: "Notes" },
+          ],
+        },
+        ownerPrincipalId: "anonymous",
+      }, controller.signal).catch(() => undefined)
+      const question = await vi.waitFor(async () => {
+        const pending = await store.getPending(sessionId)
+        expect(pending).not.toBeNull()
+        return pending!
+      }, { timeout: 10_000 })
+      questionIds.push(question.questionId)
+      await runtime.submitAnswer(question.questionId, sessionId, {
+        decision: index % 2 === 0 ? "approve" : "changes",
+        notes: `Reasoning ${index}`,
+      })
+    }
+    return { store, registry, questionIds }
+  }
+
+  const browser = () => browserContext("user-1", [ASK_USER_BRIDGE_CAPABILITIES.answeredAll])
+
+  it("returns the owner's decisions across sessions, newest first and token-free", async () => {
+    const { registry } = await answeredFixture(3)
+
+    const result = await registry.call({ op: ASK_USER_BRIDGE_OPS.answeredAll, input: {} }, browser())
+    expect(result.ok).toBe(true)
+    const { answered, nextCursor } = (result as { output: { answered: Array<Record<string, unknown>>; nextCursor?: string } }).output
+    expect(answered).toHaveLength(3)
+    expect(nextCursor).toBeUndefined()
+
+    const times = answered.map((entry) => Date.parse(entry.answeredAt as string))
+    expect([...times].sort((a, b) => b - a)).toEqual(times)
+
+    const first = answered[0]!
+    expect(first).toMatchObject({ status: "answered", decision: expect.stringMatching(/approve|changes/) })
+    expect(first.title).toMatch(/^\[Farewell API\] Gate /)
+    // Only the first line of the question context, so the row stays one line.
+    expect(first.contextFirstLine).toMatch(/^Approve slice \d\?$/)
+    expect(first.values).toMatchObject({ notes: expect.stringMatching(/^Reasoning /) })
+    expect(first.answerToken).toBeUndefined()
+    expect(first.askedAt).toEqual(expect.any(String))
+  })
+
+  it("paginates with limit and cursor without repeating or dropping an entry", async () => {
+    const { registry } = await answeredFixture(5)
+
+    const page1 = (await registry.call({ op: ASK_USER_BRIDGE_OPS.answeredAll, input: { limit: 2 } }, browser())) as { output: { answered: Array<{ questionId: string }>; nextCursor?: string } }
+    expect(page1.output.answered).toHaveLength(2)
+    expect(page1.output.nextCursor).toEqual(expect.any(String))
+
+    const page2 = (await registry.call({ op: ASK_USER_BRIDGE_OPS.answeredAll, input: { limit: 2, cursor: page1.output.nextCursor } }, browser())) as { output: { answered: Array<{ questionId: string }>; nextCursor?: string } }
+    expect(page2.output.answered).toHaveLength(2)
+
+    const page3 = (await registry.call({ op: ASK_USER_BRIDGE_OPS.answeredAll, input: { limit: 2, cursor: page2.output.nextCursor } }, browser())) as { output: { answered: Array<{ questionId: string }>; nextCursor?: string } }
+    expect(page3.output.answered).toHaveLength(1)
+    expect(page3.output.nextCursor).toBeUndefined()
+
+    const seen = [...page1.output.answered, ...page2.output.answered, ...page3.output.answered].map((entry) => entry.questionId)
+    expect(new Set(seen).size).toBe(5)
+  })
+
+  it("rejects a limit that is not a positive integer", async () => {
+    const { registry } = await answeredFixture(1)
+    const result = await registry.call({ op: ASK_USER_BRIDGE_OPS.answeredAll, input: { limit: 0 } }, browser())
+    expect(result).toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.InvalidRequest } })
+  })
+})

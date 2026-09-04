@@ -2,6 +2,7 @@ import { HumanArtifactListSchema } from "@hachej/boring-workspace"
 import { ASK_USER_BRIDGE_OPS } from "../shared/bridge"
 import { ASK_USER_UI_STATE_SLOTS } from "../shared/constants"
 import { ASK_USER_ERROR_CODES } from "../shared/error-codes"
+import type { AskUserAnsweredSummary, AskUserPendingSummary } from "../shared/bridge"
 import type { AskUserAnswerValue, AskUserFormSchema, AskUserQuestion } from "../shared/types"
 import { validateQuestionValues, type QuestionFormValues, type QuestionValidationResult } from "./primitives"
 
@@ -103,6 +104,32 @@ export function createQuestionsClient(options: QuestionsClientOptions = {}) {
       )
       return normalizeQuestion(output.pending)
     },
+    /** Every pending question in the workspace, across agent sessions. Backs the
+     * Inbox, which is one owner queue rather than a per-chat view. */
+    async pendingAll(signal?: AbortSignal): Promise<AskUserPendingSummary[]> {
+      const output = await callBridge<{ pending?: unknown }>(
+        ASK_USER_BRIDGE_OPS.pendingAll,
+        {},
+        undefined,
+        undefined,
+        signal,
+      )
+      return normalizePendingSummaries(output.pending)
+    },
+    /** One page of the owner's answered history, newest first, across sessions. */
+    async answeredAll(options: { limit?: number; cursor?: string } = {}, signal?: AbortSignal): Promise<{ answered: AskUserAnsweredSummary[]; nextCursor?: string }> {
+      const output = await callBridge<{ answered?: unknown; nextCursor?: unknown }>(
+        ASK_USER_BRIDGE_OPS.answeredAll,
+        { ...(options.limit ? { limit: options.limit } : {}), ...(options.cursor ? { cursor: options.cursor } : {}) },
+        undefined,
+        undefined,
+        signal,
+      )
+      return {
+        answered: normalizeAnsweredSummaries(output.answered),
+        ...(typeof output.nextCursor === "string" ? { nextCursor: output.nextCursor } : {}),
+      }
+    },
     async cancel(question: AskUserQuestion) {
       ensureAnswerToken(question)
       return await callBridge<QuestionsClientResult>(
@@ -143,6 +170,51 @@ export function createQuestionsClient(options: QuestionsClientOptions = {}) {
       )
     },
   }
+}
+
+export function normalizePendingSummaries(value: unknown): AskUserPendingSummary[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((entry) => {
+    const question = normalizeQuestion(entry)
+    if (!question || question.status !== "ready") return []
+    const summary: AskUserPendingSummary = {
+      questionId: question.questionId,
+      sessionId: question.sessionId,
+      ...(question.toolCallId ? { toolCallId: question.toolCallId } : {}),
+      status: question.status,
+      ...(question.title ? { title: question.title } : {}),
+      ...(question.context ? { context: question.context } : {}),
+      artifacts: question.artifacts,
+      createdAt: question.createdAt,
+      updatedAt: question.updatedAt,
+    }
+    return [summary]
+  })
+}
+
+export function normalizeAnsweredSummaries(value: unknown): AskUserAnsweredSummary[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return []
+    const raw = entry as Record<string, unknown>
+    if (typeof raw.questionId !== "string" || typeof raw.sessionId !== "string") return []
+    const status = raw.status === "answered" || raw.status === "cancelled" || raw.status === "abandoned" ? raw.status : "answered"
+    const answeredAt = typeof raw.answeredAt === "string" ? raw.answeredAt : new Date(0).toISOString()
+    const summary: AskUserAnsweredSummary = {
+      questionId: raw.questionId,
+      sessionId: raw.sessionId,
+      ...(typeof raw.agentTypeId === "string" ? { agentTypeId: raw.agentTypeId } : {}),
+      ...(typeof raw.sessionTitle === "string" ? { sessionTitle: raw.sessionTitle } : {}),
+      title: typeof raw.title === "string" ? raw.title : "Question",
+      ...(typeof raw.contextFirstLine === "string" ? { contextFirstLine: raw.contextFirstLine } : {}),
+      askedAt: typeof raw.askedAt === "string" ? raw.askedAt : answeredAt,
+      answeredAt,
+      ...(typeof raw.decision === "string" ? { decision: raw.decision } : {}),
+      values: raw.values && typeof raw.values === "object" && !Array.isArray(raw.values) ? raw.values as AskUserAnsweredSummary["values"] : {},
+      status,
+    }
+    return [summary]
+  })
 }
 
 export function normalizeQuestion(value: unknown): AskUserQuestion | null {

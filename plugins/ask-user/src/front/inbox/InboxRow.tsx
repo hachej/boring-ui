@@ -3,7 +3,7 @@
 import { ChevronDown, MessageSquare, Star } from "lucide-react"
 import type { ReactNode } from "react"
 import { cn } from "@hachej/boring-workspace"
-import { formatInboxTime, inboxItemDate, inboxItemSender, type WorkspaceInboxItemViewModel } from "./inboxItemModel"
+import { formatInboxTime, inboxDecisionBadgeStyle, inboxItemDate, inboxItemSender, type WorkspaceInboxItemViewModel } from "./inboxItemModel"
 
 function badgeTone(kind: WorkspaceInboxItemViewModel["kind"]): string {
   switch (kind) {
@@ -32,6 +32,7 @@ export function InboxRow({
   children?: ReactNode
 }) {
   const subtitle = item.sessionId ? sessionTitle ?? "Linked chat" : item.description
+  const resolved = item.status !== "open"
   return (
     <li>
       <div
@@ -47,7 +48,7 @@ export function InboxRow({
           onOpenArtifact(item)
         }}
       >
-        <span className="size-2 shrink-0 rounded-full bg-[color:var(--accent)]" />
+        <span className={cn("size-2 shrink-0 rounded-full", resolved ? "bg-muted-foreground/40" : "bg-[color:var(--accent)]")} />
         <span className="max-w-28 shrink-0 truncate font-semibold text-foreground">{inboxItemSender(item)}</span>
         <span className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden whitespace-nowrap text-foreground">
           <span className="truncate font-medium">{item.title}</span>
@@ -55,6 +56,9 @@ export function InboxRow({
           <span className="truncate text-muted-foreground">{subtitle || item.description}</span>
         </span>
         <span className="flex shrink-0 items-center gap-1.5">
+          {item.decision ? (
+            <span className="rounded-full px-2 py-0.5 text-[10px] font-medium" style={inboxDecisionBadgeStyle(item.decision)}>{item.decision}</span>
+          ) : null}
           <ChevronDown className={cn("size-3 text-muted-foreground transition-transform", expanded ? "rotate-0" : "-rotate-90")} aria-hidden="true" />
           <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", badgeTone(item.kind))}>{item.kind}</span>
           <span className="text-[11px] font-medium text-muted-foreground" title={inboxItemDate(item).toLocaleString()}>{formatInboxTime(item)}</span>

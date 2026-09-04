@@ -18,6 +18,7 @@ export function InboxFilterBar({
         ["all", "All", counts.all],
         ["questions", "Questions", counts.questions],
         ["reviews", "Reviews", counts.reviews],
+        ["answered", "Answered", counts.answered],
       ] as const).map(([id, label, count]) => (
         <button
           key={id}

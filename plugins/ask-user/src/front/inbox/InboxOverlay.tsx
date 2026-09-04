@@ -8,8 +8,11 @@ import { attentionBlockerToInboxItem, isInboxAttentionBlocker } from "./attentio
 import { InboxFilterBar } from "./InboxFilterBar"
 import { InboxSection } from "./InboxSection"
 import {
+  answeredSummaryToInboxItem,
   filterInboxItems,
+  mergeInboxItems,
   mergeInboxPinnedState,
+  pendingSummaryToInboxItem,
   sortInboxItems,
   type InboxFilter,
   type WorkspaceInboxItemViewModel,
@@ -18,6 +21,9 @@ import { useWorkspaceInboxShell } from "./WorkspaceInboxShellContext"
 import { useRelatedTasks } from "./taskProvenanceClient"
 import { useQuestionsRuntime } from "../runtime"
 import { useInboxSessionTitles } from "./sessionTitleClient"
+import { useWorkspacePendingQuestions } from "./workspacePendingClient"
+import { useWorkspaceAnsweredQuestions } from "./workspaceAnsweredClient"
+import { AnsweredDetail } from "./AnsweredDetail"
 import { RelatedTaskList } from "./RelatedTaskList"
 
 export interface InboxOverlayProps {
@@ -63,13 +69,36 @@ export function InboxOverlay({ onClose, pinStorageKey, initialItemId }: InboxOve
   useEffect(() => {
     if (initialItemId) setSelectedItemId(initialItemId)
   }, [initialItemId])
-  const sorted = useMemo(() => sortInboxItems(blockers.filter(isInboxAttentionBlocker).map(attentionBlockerToInboxItem)), [blockers])
+  // The workspace-wide pending list is what makes a question raised by a
+  // background agent session (Orchestrator, Worker) visible here: attention
+  // blockers only exist for sessions the browser shell already tracks.
+  const workspacePending = useWorkspacePendingQuestions({
+    apiBaseUrl: runtime.apiBaseUrl,
+    headers: runtime.authHeaders,
+  })
+  const workspaceItems = useMemo(
+    () => workspacePending.map((summary) => pendingSummaryToInboxItem(summary, { fallbackAgentTypeId: runtime.agentTypeId })),
+    [runtime.agentTypeId, workspacePending],
+  )
+  // The owner's decision log: what they already answered, across sessions.
+  const workspaceAnswered = useWorkspaceAnsweredQuestions({
+    apiBaseUrl: runtime.apiBaseUrl,
+    headers: runtime.authHeaders,
+  })
+  const answeredItems = useMemo(
+    () => workspaceAnswered.map((summary) => answeredSummaryToInboxItem(summary, { fallbackAgentTypeId: runtime.agentTypeId })),
+    [runtime.agentTypeId, workspaceAnswered],
+  )
+  const sorted = useMemo(() => sortInboxItems(mergeInboxItems(
+    blockers.filter(isInboxAttentionBlocker).map(attentionBlockerToInboxItem),
+    [...workspaceItems, ...answeredItems],
+  )), [answeredItems, blockers, workspaceItems])
   const filtered = useMemo(() => filterInboxItems(sorted, filter), [filter, sorted])
   const items = useMemo(() => mergeInboxPinnedState(filtered, pinnedIds), [filtered, pinnedIds])
   const pinnedItems = useMemo(() => items.filter((item) => item.pinned), [items])
   const unpinnedItems = useMemo(() => items.filter((item) => !item.pinned), [items])
   const inboxSessionIds = useMemo(() => sorted.flatMap((item) => (
-    item.agentTypeId === runtime.agentTypeId && item.sessionId ? [item.sessionId] : []
+    (item.agentTypeId ?? runtime.agentTypeId) === runtime.agentTypeId && item.sessionId ? [item.sessionId] : []
   )), [runtime.agentTypeId, sorted])
   const relatedTasks = useRelatedTasks({
     apiBaseUrl: runtime.apiBaseUrl,
@@ -83,9 +112,10 @@ export function InboxOverlay({ onClose, pinStorageKey, initialItemId }: InboxOve
     sessionIds: inboxSessionIds,
   })
   const counts = useMemo(() => ({
-    all: sorted.length,
+    all: filterInboxItems(sorted, "all").length,
     questions: filterInboxItems(sorted, "questions").length,
     reviews: filterInboxItems(sorted, "reviews").length,
+    answered: filterInboxItems(sorted, "answered").length,
   }), [sorted])
 
   const togglePinned = useCallback((id: string) => {
@@ -112,11 +142,13 @@ export function InboxOverlay({ onClose, pinStorageKey, initialItemId }: InboxOve
     const tasks = item.sessionId ? relatedTasks.get(item.sessionId) ?? [] : []
     return (
       <div className="px-4 py-3">
-        <HumanArtifactList artifacts={item.artifacts} onOpen={(artifact) => handleShellResult(shell.openInboxArtifact(item, artifact))} />
+        {item.status === "open"
+          ? <HumanArtifactList artifacts={item.artifacts} onOpen={(artifact) => handleShellResult(shell.openInboxArtifact(item, artifact))} />
+          : <AnsweredDetail item={item} onOpenChat={() => openChat(item)} />}
         <RelatedTaskList tasks={tasks} className="mt-3" />
       </div>
     )
-  }, [handleShellResult, relatedTasks, shell])
+  }, [handleShellResult, openChat, relatedTasks, shell])
   return (
     <div data-boring-workspace-part="inbox-overlay" className="flex h-full min-h-0 flex-col bg-background">
       <header className={cn(
@@ -147,8 +179,10 @@ export function InboxOverlay({ onClose, pinStorageKey, initialItemId }: InboxOve
           <div className="flex h-full min-h-[180px] items-center justify-center px-6 text-center text-sm text-muted-foreground">
             <div>
               <MailOpen className="mx-auto mb-3 size-8 text-muted-foreground/70" strokeWidth={1.75} />
-              <div className="font-medium text-foreground/80">Inbox zero</div>
-              <p className="mt-1 max-w-xs">When plugins or external harnesses ask for a decision, it appears here.</p>
+              <div className="font-medium text-foreground/80">{filter === "answered" ? "No answers yet" : "Inbox zero"}</div>
+              <p className="mt-1 max-w-xs">{filter === "answered"
+                ? "Decisions you make on questions from any agent session are kept here."
+                : "When plugins or external harnesses ask for a decision, it appears here."}</p>
             </div>
           </div>
         ) : (
@@ -164,7 +198,7 @@ export function InboxOverlay({ onClose, pinStorageKey, initialItemId }: InboxOve
               renderExpanded={renderExpandedItem}
             />
             <InboxSection
-              title="Inbox"
+              title={filter === "answered" ? "Answered" : "Inbox"}
               items={unpinnedItems}
               onTogglePinned={togglePinned}
               onOpenArtifact={openItem}

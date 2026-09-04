@@ -27,6 +27,8 @@ const bridgeUrl = `http://127.0.0.1:${API_PORT}/api/v1/workspace-bridge/call`
 const headers = { 'x-boring-workspace-id': WORKSPACE_ID, 'content-type': 'application/json' }
 const call = async (method, url, body) => { const r = await fetch(base + url, { method, headers, ...(body ? { body: JSON.stringify(body) } : {}) }); const t = await r.text(); if (!r.ok) throw new Error(`${method} ${url}: ${r.status} ${t.slice(0, 500)}`); return t ? JSON.parse(t) : undefined }
 const create = async (type, title) => (await call('POST', `/${type}/sessions`, { requestId: randomUUID(), title })).sessionId
+// Session titles lead with the feature name, per docs/procedures/naming-conventions.md.
+const featureName = async () => { const r = await fetch(`http://127.0.0.1:${API_PORT}/api/v1/workspace/meta`, { headers }); if (!r.ok) throw new Error(`workspace/meta: ${r.status}`); const meta = await r.json(); if (!meta.featureName) throw new Error('workspace/meta did not report a featureName'); return meta.featureName }
 const PROMPT_IDLE_RETRIES = Number(process.env.PROMPT_IDLE_RETRIES ?? 200) // a busy Orchestrator under a 120s supervision tick can stay non-idle for minutes at a time
 const prompt = async (type, sid, content) => { for (let i = 0; i < PROMPT_IDLE_RETRIES; i++) { try { return await call('POST', `/${type}/sessions/${sid}/prompt`, { requestId: randomUUID(), clientNonce: randomUUID(), content, requireIdle: true }) } catch (e) { if (!String(e.message).includes('not idle')) throw e; await new Promise(r => setTimeout(r, 5000)) } } throw new Error('session never idle for prompt') }
 const state = async (type, sid) => call('GET', `/${type}/sessions/${sid}/state`)
@@ -163,7 +165,7 @@ console.log('epic worktree base', baseSha, 'epic', EPIC, MULTI_MODE ? '(multi-Be
 let osid, loopOn = false
 const receipt = { epic: EPIC, baseSha, mode: MULTI_MODE ? 'multi' : 'single' }
 try {
-  osid = process.env.ORCH_SESSION ?? await create('boring-orchestrator', `Epic ${EPIC}: Orchestrator`)
+  osid = process.env.ORCH_SESSION ?? await create('boring-orchestrator', `[${await featureName()}] Orchestrator`)
   receipt.orchestratorSessionId = osid
   console.log('orchestrator', osid, process.env.ORCH_SESSION ? '(resumed; skipping the planning prompt)' : '')
   if (!process.env.ORCH_SESSION && MULTI_MODE) {

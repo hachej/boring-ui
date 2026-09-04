@@ -265,7 +265,10 @@ export function HtmlViewer({ path, filesystem, className }: HtmlViewerProps) {
   }
 
   return (
-    <div className={cn("flex h-full min-h-0 flex-col bg-background", className)}>
+    // `min-w-0` + `overflow-hidden`: an arbitrary preview document is as wide as
+    // it likes, and without a width floor the pane grows past its container and
+    // pushes the whole app sideways instead of scrolling inside the iframe.
+    <div className={cn("flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background", className)}>
       <div className="flex shrink-0 items-center justify-end gap-3 border-b border-border/60 px-3 py-2">
         <div className="flex items-center gap-1">
           <IconButton
@@ -297,7 +300,7 @@ export function HtmlViewer({ path, filesystem, className }: HtmlViewerProps) {
         srcDoc={html}
         title={filename(path)}
         sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
-        className="min-h-0 flex-1 border-0 bg-white"
+        className="min-h-0 w-full min-w-0 flex-1 border-0 bg-white"
       />
     </div>
   )
