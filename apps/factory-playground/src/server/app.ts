@@ -13,7 +13,7 @@ import {
   resolveFactoryEpicKey,
   warmUpFactorySandboxSnapshot,
   FACTORY_WORKSPACE_SCOPE_ID,
-} from './sandboxComposition'
+} from '@hachej/boring-factory/server/sandbox'
 
 export interface CreateFactoryPlaygroundOptions {
   readonly appRoot: string

@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createFactoryPlayground } from './app'
 import { loadNativeFactoryFleet, FACTORY_ORCHESTRATOR_AGENT_TYPE_ID, FACTORY_REVIEWER_AGENT_TYPE_ID } from './factoryFleet'
 import { createFactoryDelegatePlugin } from './delegatePlugin'
-import { createFactorySandboxPlugin, FACTORY_WORKER_AGENT_TYPE_ID } from './sandboxComposition'
+import { createFactorySandboxPlugin, FACTORY_WORKER_AGENT_TYPE_ID } from '@hachej/boring-factory/server/sandbox'
 import { simulateFactoryFeature } from './simulateFeature'
 
 const DELEGATE_OPTIONS = { workspaceScopeId: 'factory-playground', epicKey: 'live-farewell', featureName: 'Farewell API', workspaceRoot: process.cwd() }

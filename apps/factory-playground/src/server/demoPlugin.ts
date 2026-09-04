@@ -5,8 +5,11 @@ import { resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { defineServerPlugin } from '@hachej/boring-workspace/server'
 import type { AgentTool, ToolExecContext, ToolResult } from '@hachej/boring-agent/shared'
-import { buildFetchBootstrapFiles, FACTORY_BOOTSTRAP_SCRIPT } from './remoteSnapshotProvider'
-import { resolveEpicSnapshot } from './snapshotRegistry'
+import {
+  buildFetchBootstrapFiles,
+  FACTORY_BOOTSTRAP_SCRIPT,
+  resolveEpicSnapshot,
+} from '@hachej/boring-factory/server/sandbox'
 
 export const FACTORY_DEMO_PLUGIN_ID = 'factory-demo'
 

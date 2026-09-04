@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { createFactoryPlayground } from '../src/server/app'
 import { FACTORY_ORCHESTRATOR_AGENT_TYPE_ID } from '../src/server/factoryFleet'
-import { FACTORY_WORKER_AGENT_TYPE_ID } from '../src/server/sandboxComposition'
+import { FACTORY_WORKER_AGENT_TYPE_ID } from '@hachej/boring-factory/server/sandbox'
 import { simulateFactoryFeature } from '../src/server/simulateFeature'
 
 const appRoot = resolve(import.meta.dirname, '..')

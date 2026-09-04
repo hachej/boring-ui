@@ -17,6 +17,10 @@
       "types": "./dist/server/index.d.ts",
       "import": "./dist/server/index.js"
     },
+    "./server/sandbox": {
+      "types": "./dist/server/sandbox/index.d.ts",
+      "import": "./dist/server/sandbox/index.js"
+    },
     "./shared": {
       "types": "./dist/shared/index.d.ts",
       "import": "./dist/shared/index.js"
