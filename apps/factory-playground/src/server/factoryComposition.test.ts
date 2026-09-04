@@ -1,15 +1,24 @@
 import { spawnSync } from 'node:child_process'
-import { mkdtemp, readdir, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createFactoryPlayground } from './app'
-import { loadNativeFactoryFleet, FACTORY_ORCHESTRATOR_AGENT_TYPE_ID, FACTORY_REVIEWER_AGENT_TYPE_ID } from './factoryFleet'
-import { createFactoryDelegatePlugin } from './delegatePlugin'
-import { createFactorySandboxPlugin, FACTORY_WORKER_AGENT_TYPE_ID } from './sandboxComposition'
+import { startFactoryHost } from './factoryHost'
+import {
+  loadNativeFactoryFleet,
+  FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
+  FACTORY_REVIEWER_AGENT_TYPE_ID,
+  createFactoryDelegatePlugin,
+  createFactorySandboxPlugin,
+  FACTORY_WORKER_AGENT_TYPE_ID,
+  deriveFactoryWorkspaceScopeId,
+} from '@hachej/boring-factory/server'
 import { simulateFactoryFeature } from './simulateFeature'
 
-const DELEGATE_OPTIONS = { workspaceScopeId: 'factory-playground', epicKey: 'live-farewell', featureName: 'Farewell API', workspaceRoot: process.cwd() }
+const EPIC_KEY = 'live-farewell'
+const WORKSPACE_SCOPE_ID = deriveFactoryWorkspaceScopeId(EPIC_KEY)
+const DELEGATE_OPTIONS = { workspaceScopeId: WORKSPACE_SCOPE_ID, epicKey: EPIC_KEY, featureName: 'Farewell API', workspaceRoot: process.cwd() }
 
 const appRoot = resolve(import.meta.dirname, '../..')
 const repositoryRoot = resolve(appRoot, '../..')
@@ -89,7 +98,7 @@ describe('native Factory composition', () => {
 
     const root = await mkdtemp(resolve(tmpdir(), 'factory-sandbox-composition-'))
     temporaryRoots.push(root)
-    const sandbox = createFactorySandboxPlugin(root, root, {})
+    const sandbox = await createFactorySandboxPlugin(root, root, {})
     expect(sandbox.agentToolFactory?.({ agentTypeId: FACTORY_WORKER_AGENT_TYPE_ID }).map((tool) => tool.name))
       .toEqual(['sandbox', 'sandbox_bash'])
     expect(() => sandbox.agentToolFactory?.({ agentTypeId: FACTORY_ORCHESTRATOR_AGENT_TYPE_ID }))
@@ -118,7 +127,7 @@ describe('native Factory composition', () => {
       expect(typeof metaBody.epicKey).toBe('string')
       expect(metaBody.epicKey.length).toBeGreaterThan(0)
 
-      const header = { 'x-boring-workspace-id': 'factory-playground' }
+      const header = { 'x-boring-workspace-id': deriveFactoryWorkspaceScopeId(metaBody.epicKey) }
       const createSession = async (agentTypeId: string) => {
         const response = await app.inject({
           method: 'POST',
@@ -157,6 +166,49 @@ describe('native Factory composition', () => {
       await app.close()
     }
   }, 30_000)
+
+  it('starts a direct headless host from one registration tuple', async () => {
+    const root = await mkdtemp(resolve(tmpdir(), 'factory-headless-host-'))
+    temporaryRoots.push(root)
+    const stateRoot = resolve(root, 'state')
+    const workspaceRoot = resolve(root, 'workspace')
+    await mkdir(workspaceRoot, { recursive: true })
+    await writeFile(resolve(workspaceRoot, 'package.json'), JSON.stringify({ name: 'factory-headless-test', private: true }))
+
+    const registration = {
+      workspaceRoot,
+      epicKey: 'headless-proof',
+      featureName: 'Headless Proof',
+      stateRoot,
+      provider: 'local-simulation',
+      apiPort: 5640,
+      uiPort: 5641,
+      models: {
+        orchestrator: 'openai-codex:gpt-5.6-sol',
+        worker: 'anthropic:claude-sonnet-4-6',
+        reviewer: 'openai-codex:gpt-5.4',
+      },
+    } as const
+
+    const started = await startFactoryHost({
+      appRoot,
+      repositoryRoot,
+      registration,
+      logger: false,
+    })
+    try {
+      const response = await fetch(`http://127.0.0.1:${registration.apiPort}/api/v1/workspace/meta`)
+      expect(response.status).toBe(200)
+      const meta = await response.json() as { workspaceRoot: string; epicKey: string; featureName: string; workspaceId: string }
+      expect(meta.workspaceRoot).toBe(registration.workspaceRoot)
+      expect(meta.epicKey).toBe(registration.epicKey)
+      expect(meta.featureName).toBe(registration.featureName)
+      expect(meta.workspaceId).toBe(deriveFactoryWorkspaceScopeId(registration.epicKey))
+    } finally {
+      started.host.close()
+      await started.app.close()
+    }
+  })
 
   it.runIf(brAvailable)('executes and cleans a two-Worker feature simulation through real sandbox tools', async () => {
     const root = await mkdtemp(resolve(tmpdir(), 'factory-feature-simulation-'))

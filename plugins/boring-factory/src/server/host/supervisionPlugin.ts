@@ -13,8 +13,6 @@ const SUPERVISION_PLUGIN_VERSION = 'factory-supervision.v1.2026-09-03'
 /** The only seat this plugin ever supervises: an Orchestrator may only supervise itself. */
 const SUPERVISED_AGENT_TYPE_ID = 'boring-orchestrator'
 
-/** Host-owned workspace identity used on every in-process `app.inject` call. */
-const WORKSPACE_SCOPE_ID = 'factory-playground'
 
 export const SUPERVISION_MIN_INTERVAL_MS = 30_000
 export const SUPERVISION_MAX_INTERVAL_MS = 3_600_000
@@ -44,8 +42,14 @@ interface SupervisionState {
 export interface CreateFactorySupervisionPluginOptions {
   /** Directory holding `supervision.json`. Created if missing. */
   readonly stateRoot: string
+  /** Host-owned workspace identity used on every in-process `app.inject` call. */
+  readonly workspaceScopeId: string
   /** Default nudge interval for `start` calls that omit `intervalMs`. */
   readonly defaultIntervalMs?: number
+}
+
+export interface FactorySupervisionPluginControl {
+  stopSupervision(sessionId: string, app: FastifyInstance, workspaceScopeId: string): Promise<void>
 }
 
 export interface FactorySupervisionPluginHandle {
@@ -54,6 +58,8 @@ export interface FactorySupervisionPluginHandle {
   bind(app: FastifyInstance): void
   /** Read the state file and arm a timer for every persisted entry. Returns the count armed. */
   rearm(): Promise<number>
+  /** Host-only control surface for epic closure. */
+  readonly control: FactorySupervisionPluginControl
   /** Clear every armed timer. Idempotent. */
   close(): void
 }
@@ -98,6 +104,7 @@ export function createFactorySupervisionPlugin(
 ): FactorySupervisionPluginHandle {
   if (!options.stateRoot.trim()) throw new TypeError('factory-supervision stateRoot is required')
   const stateRoot = options.stateRoot
+  const workspaceScopeId = options.workspaceScopeId
   const statePath = resolve(stateRoot, 'supervision.json')
   const defaultIntervalMs = options.defaultIntervalMs ?? SUPERVISION_DEFAULT_INTERVAL_MS
 
@@ -135,7 +142,7 @@ export function createFactorySupervisionPlugin(
       const stateResponse = await app.inject({
         method: 'GET',
         url: `/api/v1/agents/${entry.agentTypeId}/sessions/${entry.sessionId}/state`,
-        headers: { 'x-boring-workspace-id': WORKSPACE_SCOPE_ID },
+        headers: { 'x-boring-workspace-id': workspaceScopeId },
       })
       if (stateResponse.statusCode !== 200) {
         outcome = 'error'
@@ -148,7 +155,7 @@ export function createFactorySupervisionPlugin(
           const promptResponse = await app.inject({
             method: 'POST',
             url: `/api/v1/agents/${entry.agentTypeId}/sessions/${entry.sessionId}/prompt`,
-            headers: { 'x-boring-workspace-id': WORKSPACE_SCOPE_ID },
+            headers: { 'x-boring-workspace-id': workspaceScopeId },
             payload: {
               requestId: randomUUID(),
               clientNonce: randomUUID(),
@@ -311,6 +318,17 @@ export function createFactorySupervisionPlugin(
     },
   })
 
+  // In-process stop: the same path the `supervise` tool's "stop" op takes. No HTTP hop, no route literal.
+  async function stopSupervision(sessionId: string, _app: FastifyInstance, _workspaceScopeId: string): Promise<void> {
+    clearTimerFor(sessionId)
+    await mutateState((current) => {
+      if (!(sessionId in current.entries)) return current
+      const rest = { ...current.entries }
+      delete rest[sessionId]
+      return { entries: rest }
+    })
+  }
+
   return {
     plugin,
     bind(app: FastifyInstance) {
@@ -320,6 +338,7 @@ export function createFactorySupervisionPlugin(
       })
     },
     rearm,
+    control: { stopSupervision },
     close,
   }
 }

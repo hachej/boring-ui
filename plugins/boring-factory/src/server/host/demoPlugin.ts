@@ -5,8 +5,11 @@ import { resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { defineServerPlugin } from '@hachej/boring-workspace/server'
 import type { AgentTool, ToolExecContext, ToolResult } from '@hachej/boring-agent/shared'
-import { buildFetchBootstrapFiles, FACTORY_BOOTSTRAP_SCRIPT } from './remoteSnapshotProvider'
-import { resolveEpicSnapshot } from './snapshotRegistry'
+import {
+  buildFetchBootstrapFiles,
+  FACTORY_BOOTSTRAP_SCRIPT,
+  resolveEpicSnapshot,
+} from '../sandbox'
 
 export const FACTORY_DEMO_PLUGIN_ID = 'factory-demo'
 
@@ -164,6 +167,8 @@ export interface CreateFactoryDemoPluginOptions {
   readonly workspaceRoot: string
   /** Epic label this Factory instance is bound to (unused today; kept for parity/future filtering). */
   readonly epicKey: string
+  /** Host-owned workspace identity paired with this epic. */
+  readonly workspaceScopeId: string
   readonly env: NodeJS.ProcessEnv
   /** Injected for tests. Defaults to the real `@vercel/sandbox` SDK. */
   readonly sandboxFactory?: DemoSandboxFactory
@@ -171,10 +176,18 @@ export interface CreateFactoryDemoPluginOptions {
   readonly fetchImpl?: typeof fetch
 }
 
+export interface FactoryDemoPluginControl {
+  listDemos(): Promise<Record<string, DemoEntry>>
+  stopDemo(id: string): Promise<'stopped' | 'already-stopped'>
+  listDemosForSession(sessionId: string): Promise<Record<string, DemoEntry>>
+}
+
 export interface FactoryDemoPluginHandle {
   readonly plugin: ReturnType<typeof defineServerPlugin>
   /** Best-effort cleanup of persisted entries already past `expiresAt`. Returns the count removed. */
   rearm(): Promise<number>
+  /** Host-only control surface for epic closure. */
+  readonly control: FactoryDemoPluginControl
   /** No recurring timers are owned by this plugin; provided for symmetry with the other host plugins. */
   close(): void
 }
@@ -301,6 +314,38 @@ export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions)
     return expired.length
   }
 
+  async function stopDemo(id: string): Promise<'stopped' | 'already-stopped'> {
+    const state = await readState(statePath)
+    const entry = state.demos[id]
+    if (!entry) return 'already-stopped'
+    if (isProviderConfigured(env)) {
+      const credentials = resolveVercelCredentials(env)
+      const factory = await getSandboxFactory()
+      try {
+        const sandbox = await factory.get({ name: entry.sandboxId, ...credentials })
+        await sandbox.stop()
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'failed to stop sandbox'
+        if (!/not found|no fake sandbox named/i.test(message)) throw error
+      }
+    }
+    await mutateState((current) => {
+      const rest = { ...current.demos }
+      delete rest[id]
+      return { demos: rest }
+    })
+    return 'stopped'
+  }
+
+  async function listDemos(): Promise<Record<string, DemoEntry>> {
+    return (await readState(statePath)).demos
+  }
+
+  async function listDemosForSession(sessionId: string): Promise<Record<string, DemoEntry>> {
+    const demos = await listDemos()
+    return Object.fromEntries(Object.entries(demos).filter(([, entry]) => entry.sessionId === sessionId))
+  }
+
   function close(): void {
     // No recurring timers owned by this plugin: expiry is enforced by the sandbox provider's
     // own `timeout`, and stale entries are swept by `rearm()` on the next boot.
@@ -378,20 +423,12 @@ export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions)
         const state = await readState(statePath)
         const entry = state.demos[id]
         if (!entry) return jsonResult({ code: 'NOT_FOUND', message: `no demo with id ${id}` }, true)
-        const credentials = resolveVercelCredentials(env)
         try {
-          const factory = await getSandboxFactory()
-          const sandbox = await factory.get({ name: entry.sandboxId, ...credentials })
-          await sandbox.stop()
+          await stopDemo(id)
         } catch (error) {
           const message = error instanceof Error ? error.message : 'failed to stop sandbox'
           return jsonResult({ code: 'STOP_FAILED', message }, true)
         }
-        await mutateState((current) => {
-          const rest = { ...current.demos }
-          delete rest[id]
-          return { demos: rest }
-        })
         return jsonResult({ id, stopped: true })
       }
 
@@ -517,5 +554,5 @@ export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions)
     },
   })
 
-  return { plugin, rearm, close }
+  return { plugin, rearm, control: { listDemos, stopDemo, listDemosForSession }, close }
 }

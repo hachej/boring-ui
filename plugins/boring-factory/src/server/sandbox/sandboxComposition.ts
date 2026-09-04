@@ -7,7 +7,6 @@ import { promisify } from 'node:util'
 import { createVercelSandboxProvider } from '@hachej/boring-sandbox/providers/vercel-sandbox'
 import { DISPOSABLE_SANDBOX_PROVIDER_PROFILE_V1, PROVIDER_CAPABILITIES, PROVIDER_CONTRACT_VERSION } from '@hachej/boring-sandbox/shared'
 import type { DisposableSandboxProviderProfileV1, DisposableSandboxProviderV1, SandboxProviderV1 } from '@hachej/boring-sandbox/shared'
-import { createSandboxServerPlugin, SandboxLeaseService } from '@hachej/boring-sandbox-plugin/server'
 import { createLocalDisposableProvider } from './localDisposableProvider'
 import {
   createExactShaTemplateProvider,
@@ -295,11 +294,12 @@ export function createFactorySandboxProvider(
   })
 }
 
-export function createFactorySandboxPlugin(
+export async function createFactorySandboxPlugin(
   workspaceRoot: string,
   stateRoot: string,
   env: NodeJS.ProcessEnv = process.env,
   epicKey?: string,
+  workspaceScopeId: string = FACTORY_WORKSPACE_SCOPE_ID,
 ) {
   const ttlMs = positiveInteger(env.BORING_FACTORY_SANDBOX_TTL_MS, 30 * 60_000)
   const maxPerWorker = positiveInteger(env.BORING_FACTORY_SANDBOX_MAX_PER_WORKER, 2)
@@ -314,15 +314,17 @@ export function createFactorySandboxPlugin(
   }))
   const provider = createFactorySandboxProvider(workspaceRoot, stateRoot, env, epicKey)
 
+  // Peer dependency provided by the composing host; loaded lazily so the packaged server entry imports without it.
+  const { createSandboxServerPlugin, SandboxLeaseService } = await import('@hachej/boring-sandbox-plugin/server')
   return createSandboxServerPlugin({
-    workspaceScopeId: FACTORY_WORKSPACE_SCOPE_ID,
+    workspaceScopeId,
     authorizedAgentTypeIds: [FACTORY_WORKER_AGENT_TYPE_ID],
     pluginContentDigest: sandboxPluginContentDigest(),
     authorityDigest,
     createLeaseService: ({ agentTypeId }) => new SandboxLeaseService({
       workspaceRoot: resolve(stateRoot, 'leases', agentTypeId),
       provider,
-      providerWorkspaceId: FACTORY_WORKSPACE_SCOPE_ID,
+      providerWorkspaceId: workspaceScopeId,
       serviceDigest: authorityDigest,
       ttlMs,
       reapIntervalMs: Math.min(60_000, ttlMs),

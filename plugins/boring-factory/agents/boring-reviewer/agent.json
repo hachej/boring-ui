@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "definitionId": "boring-reviewer",
+  "version": "2026.09.03",
+  "label": "Boring Reviewer",
+  "instructionsRef": "instructions.md"
+}

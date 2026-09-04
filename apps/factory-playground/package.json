@@ -12,6 +12,7 @@
     "test": "vitest run",
     "simulate": "tsx scripts/simulate-feature.mts",
     "epic": "node scripts/factory-epic.mjs",
+    "smoke:factory-single-bead": "node scripts/hub-single-bead-smoke.mjs",
     "snapshot:vercel": "tsx scripts/vercel-snapshot.mts",
     "sandbox:sweep": "tsx scripts/vercel-sweep.mts",
     "snapshot:sweep": "tsx scripts/vercel-sweep-snapshots.mts"
@@ -26,6 +27,7 @@
     "@hachej/boring-sandbox-plugin": "workspace:*",
     "@hachej/boring-tasks": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
+    "@hachej/boring-factory": "workspace:*",
     "@vercel/sandbox": "3.0.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"

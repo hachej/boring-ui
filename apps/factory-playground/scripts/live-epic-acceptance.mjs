@@ -14,12 +14,13 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
+import { deriveFactoryWorkspaceScopeId } from '@hachej/boring-factory/server'
 const exec = promisify(execFile)
 const EPIC_WT = process.env.EPIC_WT
 if (!EPIC_WT) throw new Error('EPIC_WT is required')
 const EPIC = process.env.EPIC_KEY
 if (!EPIC) throw new Error('EPIC_KEY is required')
-const WORKSPACE_ID = 'factory-playground'
+const WORKSPACE_ID = deriveFactoryWorkspaceScopeId(EPIC)
 const API_PORT = process.env.API_PORT || '5230'
 const base = `http://127.0.0.1:${API_PORT}/api/v1/agents`
 const bridgeUrl = `http://127.0.0.1:${API_PORT}/api/v1/workspace-bridge/call`
