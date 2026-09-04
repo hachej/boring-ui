@@ -14,6 +14,8 @@ import { loadNativeFactoryFleet, deriveFeatureName, FACTORY_ORCHESTRATOR_AGENT_T
 import { createFactoryDelegatePlugin } from './delegatePlugin'
 import { createFactorySupervisionPlugin } from './supervisionPlugin'
 import { createFactoryDemoPlugin } from './demoPlugin'
+import { createHash } from 'node:crypto'
+import { executeCloseEpic } from './epicClosure'
 
 export interface CreateFactoryHostOptions {
   readonly repositoryRoot: string
@@ -58,6 +60,31 @@ export async function createFactoryHost(options: CreateFactoryHostOptions): Prom
   const delegate = createFactoryDelegatePlugin({ workspaceScopeId, epicKey: options.epicKey, featureName, workspaceRoot })
   const supervision = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId })
   const demo = createFactoryDemoPlugin({ stateRoot, workspaceRoot, epicKey: options.epicKey, env, workspaceScopeId })
+  let appRef: FastifyInstance | undefined
+
+  const closeEpicTool = {
+    name: 'close_epic',
+    description:
+      'Close this epic after verifying the exact merged PR for the current branch and workspace HEAD, then stop demos, invalidate the epic snapshot registry entry, close child/epic Beads in order, and stop only the calling supervision. Returns one ordered complete/partial receipt and never merges or deletes remote branches/worktrees.',
+    parameters: {
+      type: 'object',
+      properties: {
+        prNumber: { type: 'number', description: 'Exact GitHub PR number for this epic branch; must be the merged PR that matches the current branch and HEAD.' },
+      },
+      required: ['prNumber'],
+      additionalProperties: false,
+    },
+    execute: (params: Record<string, unknown>, ctx: import('@hachej/boring-agent/shared').ToolExecContext) => executeCloseEpic(params, ctx, {
+      workspaceRoot,
+      stateRoot,
+      epicKey: options.epicKey,
+      featureName,
+      getApp: () => appRef,
+      workspaceScopeId,
+      demoControl: demo.control,
+      supervisionControl: supervision.control,
+    }),
+  }
   const sandboxPlugin = createFactorySandboxPlugin(workspaceRoot, stateRoot, env, options.epicKey, workspaceScopeId)
   const taskPlugin = {
     dir: resolve(options.repositoryRoot, 'plugins/tasks'),
@@ -66,10 +93,22 @@ export async function createFactoryHost(options: CreateFactoryHostOptions): Prom
   }
   const automationPlugin = { dir: resolve(options.repositoryRoot, 'plugins/boring-automation'), trust: 'internal' as const }
 
+  const closeEpicPlugin = {
+    id: 'factory-epic-closure',
+    label: 'Factory epic closure',
+    contentDigest: `sha256:${createHash('sha256').update('factory-epic-closure.v1.2026-09-04').digest('hex')}`,
+    agentConfigContract: { keys: [] },
+    agentToolFactory({ agentTypeId }: { agentTypeId: string }) {
+      if (agentTypeId !== FACTORY_ORCHESTRATOR_AGENT_TYPE_ID) return []
+      return [closeEpicTool]
+    },
+  }
+
   return {
     agents,
-    plugins: [supervision.plugin, demo.plugin, sandboxPlugin, delegate.plugin, taskPlugin, automationPlugin],
+    plugins: [supervision.plugin, demo.plugin, sandboxPlugin, delegate.plugin, closeEpicPlugin, taskPlugin, automationPlugin],
     bind(app) {
+      appRef = app
       delegate.bind(app)
       supervision.bind(app)
       app.get('/api/v1/workspace/meta', async () => ({

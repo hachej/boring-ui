@@ -66,6 +66,11 @@ export {
   deriveFactoryWorkspaceScopeId,
 } from './host'
 export {
+  executeCloseEpic,
+  formatFactoryStatusPr,
+  lookupFactoryPrStatus,
+} from './host/epicClosure'
+export {
   loadNativeFactoryFleet,
   deriveFeatureName,
   FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
@@ -94,6 +99,18 @@ export type {
   WarmSnapshotAuth,
   WarmSnapshotResult,
 } from './sandbox'
+export type {
+  EpicClosureBeadOutcome,
+  EpicClosureDemoStopOutcome,
+  EpicClosureDeps,
+  EpicClosureIssue,
+  EpicClosurePullRequest,
+  EpicClosureReceipt,
+  FactoryPrLookup,
+  FactoryPrStatus,
+  FactoryStatusPrDetails,
+  PrLookupStatus,
+} from './host/epicClosure'
 
 const SHA256 = /^[a-f0-9]{64}$/
 

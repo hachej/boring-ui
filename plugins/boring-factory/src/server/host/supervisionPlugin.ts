@@ -48,12 +48,18 @@ export interface CreateFactorySupervisionPluginOptions {
   readonly defaultIntervalMs?: number
 }
 
+export interface FactorySupervisionPluginControl {
+  stopSupervision(sessionId: string, app: FastifyInstance, workspaceScopeId: string): Promise<void>
+}
+
 export interface FactorySupervisionPluginHandle {
   readonly plugin: ReturnType<typeof defineServerPlugin>
   /** Wire the live fastify app once `createWorkspaceAgentServer` resolves, and register the onClose hook. */
   bind(app: FastifyInstance): void
   /** Read the state file and arm a timer for every persisted entry. Returns the count armed. */
   rearm(): Promise<number>
+  /** Host-only control surface for epic closure. */
+  readonly control: FactorySupervisionPluginControl
   /** Clear every armed timer. Idempotent. */
   close(): void
 }
@@ -312,6 +318,17 @@ export function createFactorySupervisionPlugin(
     },
   })
 
+  // In-process stop: the same path the `supervise` tool's "stop" op takes. No HTTP hop, no route literal.
+  async function stopSupervision(sessionId: string, _app: FastifyInstance, _workspaceScopeId: string): Promise<void> {
+    clearTimerFor(sessionId)
+    await mutateState((current) => {
+      if (!(sessionId in current.entries)) return current
+      const rest = { ...current.entries }
+      delete rest[sessionId]
+      return { entries: rest }
+    })
+  }
+
   return {
     plugin,
     bind(app: FastifyInstance) {
@@ -321,6 +338,7 @@ export function createFactorySupervisionPlugin(
       })
     },
     rearm,
+    control: { stopSupervision },
     close,
   }
 }
