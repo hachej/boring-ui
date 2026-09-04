@@ -3,7 +3,7 @@ import type {
   AskUserQuestion,
   AskUserTranscriptEvent,
 } from "../../shared/types"
-import { AskUserStoreError, type AskUserStore, type AskUserStoreChange, type AskUserStoreListener } from "../askUserStore"
+import { AskUserStoreError, type AskUserResolvedQuestion, type AskUserStore, type AskUserStoreChange, type AskUserStoreListener } from "../askUserStore"
 import { ASK_USER_ERROR_CODES } from "../../shared/error-codes"
 
 function clone<T>(value: T): T {
@@ -45,6 +45,12 @@ export class MemoryAskUserStore implements AskUserStore {
       .map((questionId) => this.questions.get(questionId))
       .filter((question): question is AskUserQuestion => question?.status === "ready")
       .map((question) => clone(question))
+  }
+
+  async listResolved(): Promise<AskUserResolvedQuestion[]> {
+    return [...this.questions.values()]
+      .filter((question) => question.status !== "ready")
+      .map((question) => ({ question: clone(question), answer: this.answers.get(question.questionId) ? clone(this.answers.get(question.questionId)!) : null }))
   }
 
   async getByQuestionId(questionId: string): Promise<AskUserQuestion | null> {

@@ -11,9 +11,13 @@ import { HUMAN_ARTIFACT_LIMITS } from "@hachej/boring-workspace/shared"
 import {
   ASK_USER_PLUGIN_ID,
   ASK_USER_BRIDGE_CAPABILITIES,
+  ASK_USER_ANSWERED_PAGE_LIMIT,
   ASK_USER_BRIDGE_OPS,
   type AskUserBridgeAnswerInput,
   type AskUserBridgeCancelInput,
+  type AskUserAnsweredSummary,
+  type AskUserBridgeAnsweredAllInput,
+  type AskUserBridgeAnsweredAllOutput,
   type AskUserBridgePendingAllInput,
   type AskUserBridgePendingAllOutput,
   type AskUserBridgePendingInput,
@@ -25,9 +29,9 @@ import {
   type AskUserBridgeTranscriptOutput,
 } from "../shared"
 import { ASK_USER_ERROR_CODES } from "../shared/error-codes"
-import type { AskUserQuestion, AskUserTranscriptEvent } from "../shared/types"
+import type { AskUserAnswer, AskUserQuestion, AskUserTranscriptEvent } from "../shared/types"
 import { AskUserRuntime, AskUserRuntimeError } from "./askUserRuntime"
-import { AskUserStoreError, type AskUserStore } from "./askUserStore"
+import { AskUserStoreError, type AskUserResolvedQuestion, type AskUserStore } from "./askUserStore"
 import { QuestionsBridge, QuestionsBridgeError } from "./questionsBridge"
 
 export interface AskUserBridgeHandlersOptions {
@@ -114,6 +118,20 @@ export function createAskUserBridgeHandlers(
       maxOutputBytes: MAX_QUESTION_BYTES,
       idempotencyPolicy: "none",
       handler: pendingAllHandler(options),
+    })),
+    contribution(defineTrustedDomainBridgeHandler<AskUserBridgeAnsweredAllInput, AskUserBridgeAnsweredAllOutput>({
+      op: ASK_USER_BRIDGE_OPS.answeredAll,
+      version: 1,
+      owner: ASK_USER_PLUGIN_ID,
+      callerClassesAllowed: ["browser", "server"],
+      requiredCapabilities: [ASK_USER_BRIDGE_CAPABILITIES.answeredAll],
+      inputSchema: { type: "object" },
+      outputSchema: { type: "object" },
+      timeoutMs: READ_TIMEOUT_MS,
+      maxInputBytes: 1024,
+      maxOutputBytes: MAX_QUESTION_BYTES,
+      idempotencyPolicy: "none",
+      handler: answeredAllHandler(options),
     })),
     contribution(defineTrustedDomainBridgeHandler<AskUserBridgeTranscriptInput, AskUserBridgeTranscriptOutput>({
       op: ASK_USER_BRIDGE_OPS.transcript,
@@ -242,6 +260,84 @@ function toPendingSummary(question: AskUserQuestion): AskUserPendingSummary {
     createdAt: question.createdAt,
     updatedAt: question.updatedAt,
   }
+}
+
+/** Workspace-wide answered history backing the Inbox's Answered tab. Like
+ * `pending-all` this is deliberately not session scoped — the owner's decision
+ * log spans every agent session — and it never returns answer tokens. */
+function answeredAllHandler({ store }: AskUserBridgeHandlersOptions) {
+  return async ({ input, context }: { input: AskUserBridgeAnsweredAllInput; context: WorkspaceBridgeCallContext }): Promise<AskUserBridgeAnsweredAllOutput> => {
+    const limit = answeredPageLimit(input?.limit)
+    try {
+      const resolved = await store.listResolved()
+      const ordered = resolved
+        .filter((entry) => isVisibleToCaller(context, entry.question))
+        .map(toAnsweredSummary)
+        .sort(compareAnsweredNewestFirst)
+      const start = input?.cursor ? cursorOffset(ordered, input.cursor) : 0
+      const page = ordered.slice(start, start + limit)
+      const next = ordered[start + limit]
+      return {
+        answered: page,
+        ...(next ? { nextCursor: encodeAnsweredCursor(next) } : {}),
+      }
+    } catch (error) {
+      throw mapAskUserError(error)
+    }
+  }
+}
+
+function answeredPageLimit(limit: unknown): number {
+  if (limit === undefined) return ASK_USER_ANSWERED_PAGE_LIMIT.default
+  if (typeof limit !== "number" || !Number.isInteger(limit) || limit <= 0) throw invalid("ask-user answered-all limit must be a positive integer")
+  return Math.min(limit, ASK_USER_ANSWERED_PAGE_LIMIT.max)
+}
+
+/** Keyset cursor over the (answeredAt, questionId) sort key, so a page boundary
+ * survives new answers landing while the owner reads the list. */
+function encodeAnsweredCursor(summary: AskUserAnsweredSummary): string {
+  return `${summary.answeredAt}|${summary.questionId}`
+}
+
+function cursorOffset(ordered: AskUserAnsweredSummary[], cursor: string): number {
+  const index = ordered.findIndex((entry) => encodeAnsweredCursor(entry) === cursor)
+  if (index === -1) throw invalid("ask-user answered-all cursor is no longer valid")
+  return index
+}
+
+function compareAnsweredNewestFirst(left: AskUserAnsweredSummary, right: AskUserAnsweredSummary): number {
+  const byTime = Date.parse(right.answeredAt) - Date.parse(left.answeredAt)
+  if (byTime !== 0 && Number.isFinite(byTime)) return byTime
+  return left.questionId.localeCompare(right.questionId)
+}
+
+function toAnsweredSummary({ question, answer }: AskUserResolvedQuestion): AskUserAnsweredSummary {
+  const contextFirstLine = firstLine(question.context)
+  return {
+    questionId: question.questionId,
+    sessionId: question.sessionId,
+    title: question.title ?? "Question",
+    ...(contextFirstLine ? { contextFirstLine } : {}),
+    askedAt: question.createdAt,
+    answeredAt: answer?.submittedAt ?? question.updatedAt,
+    ...(decisionValue(question, answer) ? { decision: decisionValue(question, answer)! } : {}),
+    values: answer?.values ?? {},
+    status: question.status === "answered" || question.status === "cancelled" ? question.status : "abandoned",
+  }
+}
+
+function firstLine(context: string | undefined): string | undefined {
+  const line = context?.split("\n").map((part) => part.trim()).find((part) => part.length > 0)
+  return line || undefined
+}
+
+/** The verdict is whatever the owner picked in the question's first single-choice
+ * field; free-text-only questions have no decision, only notes. */
+function decisionValue(question: AskUserQuestion, answer: AskUserAnswer | null): string | undefined {
+  if (!answer) return undefined
+  const field = question.schema?.fields.find((candidate) => candidate.type === "radio" || candidate.type === "select")
+  const value = field ? answer.values[field.name] : undefined
+  return typeof value === "string" && value.length > 0 ? value : undefined
 }
 
 function transcriptHandler({ store }: AskUserBridgeHandlersOptions) {

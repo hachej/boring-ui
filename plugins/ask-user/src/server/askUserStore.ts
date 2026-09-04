@@ -25,9 +25,18 @@ export type AskUserStoreChange = {
 
 export type AskUserStoreListener = (change: AskUserStoreChange) => void
 
+/** A question the owner has already dealt with, paired with the answer they
+ * submitted (absent for cancelled/abandoned questions). */
+export type AskUserResolvedQuestion = {
+  question: AskUserQuestion
+  answer: AskUserAnswer | null
+}
+
 export interface AskUserStore {
   getPending(sessionId: string): Promise<AskUserQuestion | null>
   listPending(): Promise<AskUserQuestion[]>
+  /** Every non-pending question in the workspace, across sessions. */
+  listResolved(): Promise<AskUserResolvedQuestion[]>
   getByQuestionId(questionId: string): Promise<AskUserQuestion | null>
   createPending(question: AskUserQuestion): Promise<void>
   answer(questionId: string, answer: AskUserAnswer): Promise<void>
@@ -77,6 +86,13 @@ export class FileAskUserStore implements AskUserStore {
       .map((questionId) => state.questions[questionId])
       .filter(isPending)
       .map((question) => clone(question))
+  }
+
+  async listResolved(): Promise<AskUserResolvedQuestion[]> {
+    const state = await this.load()
+    return Object.values(state.questions)
+      .filter((question) => question.status !== "ready")
+      .map((question) => ({ question: clone(question), answer: state.answers[question.questionId] ? clone(state.answers[question.questionId]) : null }))
   }
 
   async getByQuestionId(questionId: string): Promise<AskUserQuestion | null> {

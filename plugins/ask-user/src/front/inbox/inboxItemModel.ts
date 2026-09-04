@@ -1,10 +1,11 @@
 import type { HumanArtifact, WorkspaceShellCapabilityResult, WorkspaceShellAnchorRect, WorkspaceShellSessionRef } from "@hachej/boring-workspace"
-import type { AskUserPendingSummary } from "../../shared/bridge"
+import type { AskUserAnsweredSummary, AskUserPendingSummary } from "../../shared/bridge"
+import type { AskUserAnswerValue } from "../../shared/types"
 import { ASK_USER_PLUGIN_ID, ASK_USER_SURFACE_KIND } from "../../shared/constants"
 
 export type InboxItemKind = "question" | "review" | "approval" | "notice"
 export type InboxItemStatus = "open" | "resolved" | "dismissed"
-export type InboxFilter = "all" | "questions" | "reviews"
+export type InboxFilter = "all" | "questions" | "reviews" | "answered"
 
 export interface WorkspaceInboxItemAction {
   id: string
@@ -39,6 +40,10 @@ export interface WorkspaceInboxItem {
   updatedAt: string
   priority: number
   actions: WorkspaceInboxItemAction[]
+  /** Owner verdict on a resolved item — the first single-choice answer field. */
+  decision?: string
+  /** Every field the owner filled in, so the row can show their notes. */
+  answerValues?: Record<string, AskUserAnswerValue>
 }
 
 export type WorkspaceInboxItemViewModel = WorkspaceInboxItem & {
@@ -74,9 +79,13 @@ export function inboxItemSender(item: WorkspaceInboxItem): string {
   return item.source.label || item.source.type
 }
 
+/** Answered items live in their own tab: the open tabs are a to-do list, and a
+ * decision the owner already made must not sit in it. */
 export function filterInboxItems(items: readonly WorkspaceInboxItem[], filter: InboxFilter): WorkspaceInboxItem[] {
-  if (filter === "all") return [...items]
-  return items.filter((item) => filter === "questions" ? item.kind === "question" : item.kind === "review")
+  if (filter === "answered") return items.filter((item) => item.status !== "open")
+  const open = items.filter((item) => item.status === "open")
+  if (filter === "all") return open
+  return open.filter((item) => filter === "questions" ? item.kind === "question" : item.kind === "review")
 }
 
 export function sortInboxItems(items: readonly WorkspaceInboxItem[]): WorkspaceInboxItem[] {
@@ -156,4 +165,70 @@ export function mergeInboxItems(
   for (const item of workspaceItems) byId.set(item.id, item)
   for (const item of blockerItems) byId.set(item.id, item)
   return [...byId.values()]
+}
+
+export type InboxDecisionTone = "approve" | "changes" | "defer" | "reject" | "neutral"
+
+/**
+ * Badge colours come from the workspace token contract as inline styles, not
+ * from palette utilities (`bg-emerald-500/12` and friends). The host app's
+ * Tailwind build scans `@hachej/boring-workspace` sources, not this plugin's,
+ * so a palette class that workspace itself never writes is generated nowhere
+ * and renders transparent. Tokens are always defined.
+ */
+export function inboxDecisionBadgeStyle(decision: string | undefined): { backgroundColor: string; color: string } {
+  const token = {
+    approve: "--success",
+    changes: "--attention",
+    reject: "--destructive",
+    defer: "--muted-foreground",
+    neutral: "--muted-foreground",
+  }[inboxDecisionTone(decision)]
+  return {
+    backgroundColor: `color-mix(in oklab, var(${token}) 14%, transparent)`,
+    color: `var(${token})`,
+  }
+}
+
+/** Maps the owner's verdict onto the row badge tone. Unknown verdicts stay
+ * neutral rather than being guessed into a colour that implies a judgement. */
+export function inboxDecisionTone(decision: string | undefined): InboxDecisionTone {
+  const value = decision?.trim().toLowerCase() ?? ""
+  if (!value) return "neutral"
+  if (value.startsWith("approve") || value === "yes" || value === "accept") return "approve"
+  if (value.startsWith("change") || value.startsWith("revise") || value.startsWith("request")) return "changes"
+  if (value.startsWith("reject") || value === "no" || value.startsWith("decline")) return "reject"
+  if (value.startsWith("defer") || value.startsWith("later") || value.startsWith("snooze")) return "defer"
+  return "neutral"
+}
+
+/**
+ * Inbox row for a question the owner already resolved, read from
+ * `ask-user.v1.answered-all`. Same id shape as the pending row so a question
+ * that moves from pending to answered keeps its identity (and its pin).
+ */
+export function answeredSummaryToInboxItem(
+  summary: AskUserAnsweredSummary,
+  options: { fallbackAgentTypeId?: string } = {},
+): WorkspaceInboxItem {
+  const agentTypeId = summary.agentTypeId ?? options.fallbackAgentTypeId
+  return {
+    id: inboxItemIdForQuestion(summary.sessionId, summary.questionId),
+    kind: "question",
+    status: summary.status === "answered" ? "resolved" : "dismissed",
+    title: summary.title,
+    description: summary.contextFirstLine ?? "",
+    source: { type: "ask-user", label: summary.status === "answered" ? "answered" : summary.status },
+    sessionId: summary.sessionId,
+    agentTypeId: agentTypeId ?? null,
+    chatAvailable: !!agentTypeId,
+    targetLabel: summary.questionId,
+    artifacts: [],
+    createdAt: summary.askedAt,
+    updatedAt: summary.answeredAt,
+    priority: 0,
+    actions: [],
+    ...(summary.decision ? { decision: summary.decision } : {}),
+    answerValues: summary.values,
+  }
 }

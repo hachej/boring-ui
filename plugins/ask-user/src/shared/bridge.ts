@@ -13,6 +13,7 @@ export const ASK_USER_BRIDGE_OPS = {
   cancel: "ask-user.v1.cancel",
   pending: "ask-user.v1.pending",
   pendingAll: "ask-user.v1.pending-all",
+  answeredAll: "ask-user.v1.answered-all",
   transcript: "ask-user.v1.transcript",
 } as const
 
@@ -22,6 +23,7 @@ export const ASK_USER_BRIDGE_CAPABILITIES = {
   cancel: "ask-user:cancel",
   pending: "ask-user:pending",
   pendingAll: "ask-user:pending-all",
+  answeredAll: "ask-user:answered-all",
   transcriptRead: "ask-user:transcript.read",
 } as const
 
@@ -73,6 +75,36 @@ export type AskUserPendingSummary = {
   createdAt: string
   updatedAt: string
 }
+
+/** Workspace-wide answered history, newest first. Paginated because the owner's
+ * decision log grows without bound while the Inbox only ever shows a page. */
+export type AskUserBridgeAnsweredAllInput = {
+  limit?: number
+  cursor?: string
+}
+
+export type AskUserAnsweredSummary = {
+  questionId: string
+  sessionId: string
+  agentTypeId?: string
+  sessionTitle?: string
+  title: string
+  contextFirstLine?: string
+  askedAt: string
+  answeredAt: string
+  /** Value of the question's first radio/select field — the owner's verdict
+   * (approve / changes / defer / reject) when the question posed one. */
+  decision?: string
+  values: Record<string, AskUserAnswerValue>
+  status: "answered" | "cancelled" | "abandoned"
+}
+
+export type AskUserBridgeAnsweredAllOutput = {
+  answered: AskUserAnsweredSummary[]
+  nextCursor?: string
+}
+
+export const ASK_USER_ANSWERED_PAGE_LIMIT = { default: 50, max: 200 } as const
 
 export type AskUserBridgeRequestOutput = AskUserToolResult
 
