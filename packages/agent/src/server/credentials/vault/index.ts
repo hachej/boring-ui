@@ -51,6 +51,7 @@ export {
   initializeLocalFileCredentialVersionAnchorV1,
 } from './versionAnchor'
 export type {
+  CredentialLifecycleMutationResultV1,
   CredentialVersionMutationResultV1,
   DekGenerationMutationResultV1,
   LocalCredentialVersionAnchorOptionsV1,

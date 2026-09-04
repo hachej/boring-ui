@@ -16,6 +16,7 @@ import type { CredentialVaultPersistenceV1 } from '../persistence'
 const workspaceId = 'rotation-workspace'
 const providerA = 'provider-a' as ProviderId
 const providerB = 'provider-b' as ProviderId
+const providerC = 'provider-c' as ProviderId
 const apiKey = 'api-key' as CredentialFieldId
 const token = 'token' as CredentialFieldId
 
@@ -130,6 +131,26 @@ describe('workspace DEK lifecycle', () => {
       },
     })).toThrow(CredentialResolutionError)
     oldDek.fill(0)
+  })
+
+  test('new providers use the anchored current generation after rotation', async () => {
+    const persistence = createInMemoryCredentialVaultPersistenceV1()
+    const { backend } = harness(persistence)
+    await backend.writeCredentialFields({
+      workspaceId,
+      providerId: providerA,
+      fields: new Map([[apiKey, text('first-secret')]]),
+    })
+    await backend.rotateWorkspaceDek(workspaceId)
+
+    const added = await backend.writeCredentialFields({
+      workspaceId,
+      providerId: providerC,
+      fields: new Map([[apiKey, text('new-secret')]]),
+    })
+    expect(added.dekGeneration).toBe(2)
+    await expect(backend.read(workspaceId, providerC, [apiKey]))
+      .resolves.toMatchObject({ kind: 'field-set' })
   })
 
   test('rejects a complete generation-one persistence replay after DEK rotation', async () => {

@@ -10,10 +10,10 @@ import {
   CREDENTIAL_ERROR_CODES,
   CredentialResolutionError,
 } from '../../../shared/credentials'
-import type { ProviderId } from '../../../shared/credentials'
+import type { CredentialLifecycleStateV1, ProviderId } from '../../../shared/credentials'
 import type { CredentialMaterialKindV1 } from './persistence'
 
-const ANCHOR_FORMAT_V1 = 'boring.credential-version-anchor.v1' as const
+const ANCHOR_FORMAT_V2 = 'boring.credential-version-anchor.v2' as const
 const ANCHOR_MAC_INFO_V1 = 'boring.credential-version-anchor.mac.v1'
 
 export interface WorkspaceCredentialVersionStateV1 {
@@ -22,17 +22,24 @@ export interface WorkspaceCredentialVersionStateV1 {
   readonly dekGeneration: number
   readonly credentialVersions: Readonly<Record<string, number>>
   readonly credentialMaterialKinds: Readonly<Record<string, CredentialMaterialKindV1>>
+  readonly credentialLifecycleStates: Readonly<Record<string, CredentialLifecycleStateV1>>
 }
 
 export interface CredentialVersionMutationResultV1<T> {
   readonly nextCredentialVersion: number
   readonly nextCredentialMaterialKind: CredentialMaterialKindV1
+  readonly nextCredentialLifecycleState: CredentialLifecycleStateV1
   readonly nextDekGeneration: number
   readonly result: T
 }
 
 export interface DekGenerationMutationResultV1<T> {
   readonly nextDekGeneration: number
+  readonly result: T
+}
+
+export interface CredentialLifecycleMutationResultV1<T> {
+  readonly nextCredentialLifecycleState: CredentialLifecycleStateV1
   readonly result: T
 }
 
@@ -52,6 +59,14 @@ export interface WorkspaceCredentialVersionAnchorV1 {
       current: WorkspaceCredentialVersionStateV1 | undefined,
     ) => Promise<CredentialVersionMutationResultV1<T>>,
   ): Promise<T>
+  /** Authenticates a lifecycle-only state transition without minting a version. */
+  withLifecycleMutation<T>(
+    workspaceId: string,
+    providerId: ProviderId,
+    mutate: (
+      current: WorkspaceCredentialVersionStateV1 | undefined,
+    ) => Promise<CredentialLifecycleMutationResultV1<T>>,
+  ): Promise<T>
   /** Advances the authenticated workspace DEK fence exactly one generation. */
   withDekGenerationMutation<T>(
     workspaceId: string,
@@ -62,17 +77,18 @@ export interface WorkspaceCredentialVersionAnchorV1 {
 }
 
 type MutableAnchorStateV1 = {
-  format: typeof ANCHOR_FORMAT_V1
+  format: typeof ANCHOR_FORMAT_V2
   workspaces: Record<string, {
     counter: number
     dekGeneration: number
     credentialVersions: Record<string, number>
     credentialMaterialKinds: Record<string, CredentialMaterialKindV1>
+    credentialLifecycleStates: Record<string, CredentialLifecycleStateV1>
   }>
 }
 
 type SealedAnchorFileV1 = {
-  format: typeof ANCHOR_FORMAT_V1
+  format: typeof ANCHOR_FORMAT_V2
   state: MutableAnchorStateV1
   mac: string
 }
@@ -103,7 +119,7 @@ async function acquireMutationLock(lockPath: string) {
 }
 
 function emptyState(): MutableAnchorStateV1 {
-  return { format: ANCHOR_FORMAT_V1, workspaces: {} }
+  return { format: ANCHOR_FORMAT_V2, workspaces: {} }
 }
 
 function copyWorkspaceState(
@@ -117,6 +133,7 @@ function copyWorkspaceState(
     dekGeneration: workspace.dekGeneration,
     credentialVersions: Object.freeze({ ...workspace.credentialVersions }),
     credentialMaterialKinds: Object.freeze({ ...workspace.credentialMaterialKinds }),
+    credentialLifecycleStates: Object.freeze({ ...workspace.credentialLifecycleStates }),
   })
 }
 
@@ -135,15 +152,19 @@ function canonicalState(state: MutableAnchorStateV1): string {
           Object.entries(workspace.credentialMaterialKinds)
             .sort(([left], [right]) => left.localeCompare(right)),
         ),
+        credentialLifecycleStates: Object.fromEntries(
+          Object.entries(workspace.credentialLifecycleStates)
+            .sort(([left], [right]) => left.localeCompare(right)),
+        ),
       }]),
   )
-  return JSON.stringify({ format: ANCHOR_FORMAT_V1, workspaces })
+  return JSON.stringify({ format: ANCHOR_FORMAT_V2, workspaces })
 }
 
 function validateState(value: unknown): MutableAnchorStateV1 {
   if (!value || typeof value !== 'object') unreadable('Credential version anchor is malformed')
   const candidate = value as Partial<MutableAnchorStateV1>
-  if (candidate.format !== ANCHOR_FORMAT_V1 || !candidate.workspaces || typeof candidate.workspaces !== 'object') {
+  if (candidate.format !== ANCHOR_FORMAT_V2 || !candidate.workspaces || typeof candidate.workspaces !== 'object') {
     unreadable('Credential version anchor is malformed')
   }
   for (const workspace of Object.values(candidate.workspaces)) {
@@ -158,19 +179,26 @@ function validateState(value: unknown): MutableAnchorStateV1 {
       || typeof workspace.credentialVersions !== 'object'
       || !workspace.credentialMaterialKinds
       || typeof workspace.credentialMaterialKinds !== 'object'
+      || !workspace.credentialLifecycleStates
+      || typeof workspace.credentialLifecycleStates !== 'object'
     ) unreadable('Credential version anchor is malformed')
     for (const [providerId, version] of Object.entries(workspace.credentialVersions)) {
       const materialKind = workspace.credentialMaterialKinds[providerId]
+      const lifecycleState = workspace.credentialLifecycleStates[providerId]
       if (
         !Number.isSafeInteger(version)
         || version < 1
         || (materialKind !== 'field-set' && materialKind !== 'none')
+        || !['active', 'disabled', 'revoked', 'needs_reauth', 'intentionally_absent', 'instance_fallback_enabled'].includes(lifecycleState)
       ) {
         unreadable('Credential version anchor is malformed')
       }
     }
     if (
       Object.keys(workspace.credentialMaterialKinds).some(
+        (providerId) => workspace.credentialVersions[providerId] === undefined,
+      )
+      || Object.keys(workspace.credentialLifecycleStates).some(
         (providerId) => workspace.credentialVersions[providerId] === undefined,
       )
     ) unreadable('Credential version anchor is malformed')
@@ -221,6 +249,40 @@ export function createInMemoryCredentialVersionAnchorV1(): WorkspaceCredentialVe
           credentialMaterialKinds: {
             ...current?.credentialMaterialKinds,
             [providerId]: mutation.nextCredentialMaterialKind,
+          },
+          credentialLifecycleStates: {
+            ...current?.credentialLifecycleStates,
+            [providerId]: mutation.nextCredentialLifecycleState,
+          },
+        }
+        state = next
+        result = mutation.result
+      })
+      queue = operation.catch(() => undefined)
+      await operation
+      return result
+    },
+    async withLifecycleMutation<T>(
+      workspaceId: string,
+      providerId: ProviderId,
+      mutate: (
+        current: WorkspaceCredentialVersionStateV1 | undefined,
+      ) => Promise<CredentialLifecycleMutationResultV1<T>>,
+    ): Promise<T> {
+      let result!: T
+      const operation = queue.then(async () => {
+        const current = copyWorkspaceState(state, workspaceId)
+        if (!current?.credentialVersions[providerId]) {
+          unreadable('Credential lifecycle anchor is missing')
+        }
+        const mutation = await mutate(current)
+        const next = cloneState(state)
+        next.workspaces[workspaceId] = {
+          ...next.workspaces[workspaceId]!,
+          counter: current.counter + 1,
+          credentialLifecycleStates: {
+            ...current.credentialLifecycleStates,
+            [providerId]: mutation.nextCredentialLifecycleState,
           },
         }
         state = next
@@ -301,7 +363,7 @@ async function sealState(
   const macKey = await loadMacKey(options)
   try {
     const sealed: SealedAnchorFileV1 = {
-      format: ANCHOR_FORMAT_V1,
+      format: ANCHOR_FORMAT_V2,
       state,
       mac: createHmac('sha256', macKey)
         .update(canonicalState(state))
@@ -322,7 +384,7 @@ async function readSealedState(
   } catch {
     unreadable('Credential version anchor is unreadable')
   }
-  if (parsed.format !== ANCHOR_FORMAT_V1 || !parsed.state || typeof parsed.mac !== 'string') {
+  if (parsed.format !== ANCHOR_FORMAT_V2 || !parsed.state || typeof parsed.mac !== 'string') {
     unreadable('Credential version anchor is malformed')
   }
   const state = validateState(parsed.state)
@@ -441,6 +503,42 @@ export function createLocalFileCredentialVersionAnchorV1(
           credentialMaterialKinds: {
             ...currentWorkspace?.credentialMaterialKinds,
             [providerId]: mutation.nextCredentialMaterialKind,
+          },
+          credentialLifecycleStates: {
+            ...currentWorkspace?.credentialLifecycleStates,
+            [providerId]: mutation.nextCredentialLifecycleState,
+          },
+        }
+        await replaceSealedState(next, options)
+        return mutation.result
+      } finally {
+        await lock.close().catch(() => undefined)
+        await unlink(lockPath).catch(() => undefined)
+      }
+    },
+    async withLifecycleMutation<T>(
+      workspaceId: string,
+      providerId: ProviderId,
+      mutate: (
+        current: WorkspaceCredentialVersionStateV1 | undefined,
+      ) => Promise<CredentialLifecycleMutationResultV1<T>>,
+    ): Promise<T> {
+      const lockPath = `${options.anchorFilePath}.lock`
+      const lock = await acquireMutationLock(lockPath)
+      try {
+        const state = await readSealedState(options)
+        const current = copyWorkspaceState(state, workspaceId)
+        if (!current?.credentialVersions[providerId]) {
+          unreadable('Credential lifecycle anchor is missing')
+        }
+        const mutation = await mutate(current)
+        const next = cloneState(state)
+        next.workspaces[workspaceId] = {
+          ...next.workspaces[workspaceId]!,
+          counter: current.counter + 1,
+          credentialLifecycleStates: {
+            ...current.credentialLifecycleStates,
+            [providerId]: mutation.nextCredentialLifecycleState,
           },
         }
         await replaceSealedState(next, options)

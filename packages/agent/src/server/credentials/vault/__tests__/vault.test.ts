@@ -318,6 +318,7 @@ describe('local-KEK credential version anchor', () => {
     await anchor.withMutation('ws-a', providerId('provider-a'), async () => ({
       nextCredentialVersion: 1,
       nextCredentialMaterialKind: 'field-set',
+      nextCredentialLifecycleState: 'active',
       nextDekGeneration: 1,
       result: undefined,
     }))
@@ -327,6 +328,7 @@ describe('local-KEK credential version anchor', () => {
       return {
         nextCredentialVersion: 1,
         nextCredentialMaterialKind: 'none',
+        nextCredentialLifecycleState: 'intentionally_absent',
         nextDekGeneration: 1,
         result: undefined,
       }
@@ -340,6 +342,10 @@ describe('local-KEK credential version anchor', () => {
       credentialMaterialKinds: {
         'provider-a': 'field-set',
         'provider-b': 'none',
+      },
+      credentialLifecycleStates: {
+        'provider-a': 'active',
+        'provider-b': 'intentionally_absent',
       },
     })
   })

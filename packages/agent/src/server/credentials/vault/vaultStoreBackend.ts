@@ -178,6 +178,25 @@ function createVaultCredentialStoreBackendInternalV1(
     }
   }
 
+  async function requireCurrentMetadata(
+    workspaceId: string,
+    providerId: ProviderId,
+    metadata: StoredCredentialMetadataV1 | undefined,
+  ): Promise<void> {
+    const anchored = await versionAnchor.read(workspaceId)
+    const anchoredVersion = anchored?.credentialVersions[providerId]
+    if (!metadata) {
+      if (anchoredVersion !== undefined) {
+        unreadable('Credential metadata failed rollback verification')
+      }
+      return
+    }
+    if (
+      anchoredVersion !== metadata.credentialVersion
+      || anchored?.credentialLifecycleStates[providerId] !== metadata.state
+    ) unreadable('Credential metadata failed rollback verification')
+  }
+
   async function requireWrappedDek(
     workspaceId: string,
     dekGeneration: number,
@@ -215,6 +234,7 @@ function createVaultCredentialStoreBackendInternalV1(
       assertWorkspaceId(workspaceId)
       await requireNotShredded(workspaceId)
       const metadata = await persistence.getCredentialMetadata(workspaceId, providerId)
+      await requireCurrentMetadata(workspaceId, providerId, metadata)
       if (metadata?.state === 'disabled') {
         throw new CredentialResolutionError(CREDENTIAL_ERROR_CODES.DISABLED, 'Credential is disabled')
       }
@@ -345,7 +365,10 @@ function createVaultCredentialStoreBackendInternalV1(
           const credentialId =
             input.credentialId ?? existing?.credentialId ?? randomUUID()
           const rotation = await persistence.getDekRotationState(workspaceId)
-          const dekGeneration = rotation?.targetGeneration ?? existing?.dekGeneration ?? 1
+          const dekGeneration = rotation?.targetGeneration
+            ?? existing?.dekGeneration
+            ?? anchorState?.dekGeneration
+            ?? 1
           const encryptedFields = new Map<string, ReturnType<typeof encryptCredentialFieldV1>>()
 
           let plaintextDek: Uint8Array | undefined
@@ -413,6 +436,7 @@ function createVaultCredentialStoreBackendInternalV1(
           return {
             nextCredentialVersion: credentialVersion,
             nextCredentialMaterialKind: record.materialKind,
+            nextCredentialLifecycleState: 'active',
             nextDekGeneration: record.dekGeneration,
             result: record,
           }
@@ -450,7 +474,10 @@ function createVaultCredentialStoreBackendInternalV1(
           const record: StoredCredentialRecordV1 = Object.freeze({
             credentialId: existing?.credentialId ?? randomUUID(),
             credentialVersion: expectedCredentialVersion + 1,
-            dekGeneration: rotation?.targetGeneration ?? existing?.dekGeneration ?? 1,
+            dekGeneration: rotation?.targetGeneration
+              ?? existing?.dekGeneration
+              ?? anchorState?.dekGeneration
+              ?? 1,
             materialKind: 'none',
           })
           await persistence.commitCredentialVersion({
@@ -467,6 +494,7 @@ function createVaultCredentialStoreBackendInternalV1(
           return {
             nextCredentialVersion: record.credentialVersion,
             nextCredentialMaterialKind: record.materialKind,
+            nextCredentialLifecycleState: 'intentionally_absent',
             nextDekGeneration: record.dekGeneration,
             result: record,
           }
@@ -481,12 +509,23 @@ function createVaultCredentialStoreBackendInternalV1(
 
     async getCredentialMetadata(workspaceId: string, providerId: ProviderId) {
       assertWorkspaceId(workspaceId)
-      return persistence.getCredentialMetadata(workspaceId, providerId)
+      const metadata = await persistence.getCredentialMetadata(workspaceId, providerId)
+      await requireCurrentMetadata(workspaceId, providerId, metadata)
+      return metadata
     },
 
     async listCredentialMetadata(workspaceId: string) {
       assertWorkspaceId(workspaceId)
-      return persistence.listCredentialMetadata(workspaceId)
+      const listed = await persistence.listCredentialMetadata(workspaceId)
+      const anchored = await versionAnchor.read(workspaceId)
+      const providers = new Set(listed.map(({ providerId }) => providerId))
+      if (Object.keys(anchored?.credentialVersions ?? {}).some((providerId) => !providers.has(providerId as ProviderId))) {
+        unreadable('Credential metadata failed rollback verification')
+      }
+      for (const metadata of listed) {
+        await requireCurrentMetadata(workspaceId, metadata.providerId, metadata)
+      }
+      return listed
     },
 
     async setCredentialLifecycleState(
@@ -500,7 +539,22 @@ function createVaultCredentialStoreBackendInternalV1(
           locked.setCredentialLifecycleState(workspaceId, providerId, state))
       }
       await requireNotShredded(workspaceId)
-      return persistence.updateCredentialMetadata(workspaceId, providerId, { state })
+      return versionAnchor.withLifecycleMutation(
+        workspaceId,
+        providerId,
+        async (anchorState) => {
+          const record = await persistence.getCredentialRecord(workspaceId, providerId)
+          const metadata = await persistence.getCredentialMetadata(workspaceId, providerId)
+          if (
+            !record
+            || !metadata
+            || anchorState?.credentialVersions[providerId] !== record.credentialVersion
+            || anchorState.credentialLifecycleStates[providerId] !== metadata.state
+          ) unreadable('Credential lifecycle state failed rollback verification')
+          const result = await persistence.updateCredentialMetadata(workspaceId, providerId, { state })
+          return { nextCredentialLifecycleState: state, result }
+        },
+      )
     },
 
     async rewrapWorkspaceDek(

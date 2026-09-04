@@ -19,7 +19,7 @@ function setup() {
     loadKek: async () => new Uint8Array(32).fill(9),
   })
   const backend = () => createVaultCredentialStoreBackendV1({ persistence, versionAnchor, kmsBackend })
-  return { backend }
+  return { backend, kmsBackend, persistence, versionAnchor }
 }
 
 const initial: OAuthCredential = {
@@ -110,6 +110,44 @@ describe('vault-backed Pi CredentialStore', () => {
     await expect(store.read('openai-codex')).rejects.toMatchObject({
       code: CREDENTIAL_ERROR_CODES.REVOKED,
     })
+  })
+
+  test('fails closed when anchored metadata is missing or replayed before revocation', async () => {
+    const { backend, kmsBackend, persistence, versionAnchor } = setup()
+    const store = createVaultCredentialStoreV1({
+      workspaceId: 'workspace-a',
+      vaultBackend: backend(),
+      allowSubscriptionOAuth: true,
+    })
+    await store.modify('openai-codex', async () => initial)
+    const activeMetadata = await persistence.getCredentialMetadata(
+      'workspace-a',
+      'openai-codex' as ProviderId,
+    )
+    await backend().setCredentialLifecycleState(
+      'workspace-a',
+      'openai-codex' as ProviderId,
+      'revoked',
+    )
+
+    for (const replayedMetadata of [undefined, activeMetadata]) {
+      const replayedPersistence = {
+        ...persistence,
+        async getCredentialMetadata() { return replayedMetadata },
+      }
+      const replayedStore = createVaultCredentialStoreV1({
+        workspaceId: 'workspace-a',
+        vaultBackend: createVaultCredentialStoreBackendV1({
+          kmsBackend,
+          persistence: replayedPersistence,
+          versionAnchor,
+        }),
+        allowSubscriptionOAuth: true,
+      })
+      await expect(replayedStore.read('openai-codex')).rejects.toMatchObject({
+        code: CREDENTIAL_ERROR_CODES.UNREADABLE,
+      })
+    }
   })
 
   test.each(['revoked', 'deleted'] as const)(
