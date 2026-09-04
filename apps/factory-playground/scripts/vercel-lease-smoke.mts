@@ -27,8 +27,11 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
-import { createFactorySandboxProvider, resolveFactoryEpicKey } from '../src/server/sandboxComposition'
-import { getFactoryBootstrapLog } from '../src/server/remoteSnapshotProvider'
+import {
+  createFactorySandboxProvider,
+  getFactoryBootstrapLog,
+  resolveFactoryEpicKey,
+} from '@hachej/boring-factory/server/sandbox'
 
 const execFileAsync = promisify(execFile)
 

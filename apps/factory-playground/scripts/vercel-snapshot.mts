@@ -31,7 +31,7 @@
  * Prints `BORING_FACTORY_VERCEL_SNAPSHOT_ID=<id>` on success (last stdout line).
  */
 import { Sandbox } from '@vercel/sandbox'
-import { createWarmSnapshot } from '../src/server/warmSnapshot'
+import { createWarmSnapshot } from '@hachej/boring-factory/server/sandbox'
 
 const BARE_MODE = process.argv.includes('--bare')
 const REF = (() => {
@@ -122,7 +122,7 @@ async function main(): Promise<void> {
   const result = await createWarmSnapshot({
     ref: REF,
     auth: { token, teamId, projectId },
-    log: (message) => console.error(`[vercel-snapshot] ${message}`),
+    log: (message: string) => console.error(`[vercel-snapshot] ${message}`),
   })
   console.error(`[vercel-snapshot] result: ${JSON.stringify(result)}`)
   console.log(`BORING_FACTORY_VERCEL_SNAPSHOT_ID=${result.snapshotId}`)

@@ -66,7 +66,7 @@ async function waitFor(predicate: () => boolean | Promise<boolean>, timeoutMs = 
 
 describe('factory supervision plugin', () => {
   it('grants `supervise` only to boring-orchestrator', () => {
-    const { plugin } = createFactorySupervisionPlugin({ stateRoot: '/tmp/does-not-matter' })
+    const { plugin } = createFactorySupervisionPlugin({ stateRoot: '/tmp/does-not-matter', workspaceScopeId: 'factory-live-farewell' })
     expect(plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }).map((tool) => tool.name)).toEqual(['supervise'])
     expect(plugin.agentToolFactory?.({ agentTypeId: 'boring-worker' })).toEqual([])
     expect(plugin.agentToolFactory?.({ agentTypeId: 'boring-reviewer' })).toEqual([])
@@ -76,7 +76,7 @@ describe('factory supervision plugin', () => {
   it('start persists an entry to supervision.json, status reads it back, and stop removes it', async () => {
     const stateRoot = await makeStateRoot()
     const { app } = createFakeApp({ status: 'idle' })
-    const handle = createFactorySupervisionPlugin({ stateRoot })
+    const handle = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId: 'factory-live-farewell' })
     handle.bind(app as never)
     const [tool] = handle.plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
     expect(tool).toBeDefined()
@@ -111,7 +111,7 @@ describe('factory supervision plugin', () => {
 
   it('rejects an unknown op and an out-of-range intervalMs before touching the state file', async () => {
     const stateRoot = await makeStateRoot()
-    const { plugin } = createFactorySupervisionPlugin({ stateRoot })
+    const { plugin } = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId: 'factory-live-farewell' })
     const [tool] = plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
 
     const badOp = await tool!.execute({ op: 'pause' }, { abortSignal: new AbortController().signal, toolCallId: 'c1', sessionId: 's1' })
@@ -145,7 +145,7 @@ describe('factory supervision plugin', () => {
     })
 
     const { app, prompts } = createFakeApp({ status: 'idle' })
-    const handle = createFactorySupervisionPlugin({ stateRoot })
+    const handle = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId: 'factory-live-farewell' })
     handle.bind(app as never)
     const armedCount = await handle.rearm()
     expect(armedCount).toBe(1)
@@ -171,7 +171,7 @@ describe('factory supervision plugin', () => {
     })
 
     const { app, prompts, calls } = createFakeApp({ status: 'streaming' })
-    const handle = createFactorySupervisionPlugin({ stateRoot })
+    const handle = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId: 'factory-live-farewell' })
     handle.bind(app as never)
     await handle.rearm()
 
@@ -207,7 +207,7 @@ describe('factory supervision plugin', () => {
       },
     })
     const { app, prompts, triggerClose } = createFakeApp({ status: 'idle' })
-    const handle = createFactorySupervisionPlugin({ stateRoot })
+    const handle = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId: 'factory-live-farewell' })
     handle.bind(app as never)
     await handle.rearm()
 

@@ -9,8 +9,11 @@ import {
   createSandboxManagementTool,
   SandboxLeaseService,
 } from '@hachej/boring-sandbox-plugin/server'
-import { createLocalDisposableProvider } from './localDisposableProvider'
-import { FACTORY_WORKSPACE_SCOPE_ID, FACTORY_WORKER_AGENT_TYPE_ID } from './sandboxComposition'
+import {
+  createLocalDisposableProvider,
+  FACTORY_WORKSPACE_SCOPE_ID,
+  FACTORY_WORKER_AGENT_TYPE_ID,
+} from '@hachej/boring-factory/server/sandbox'
 
 export interface FactorySimulationEvent {
   readonly at: string

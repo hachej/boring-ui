@@ -108,6 +108,7 @@ describe('factory demo plugin', () => {
       workspaceRoot: '/tmp/does-not-matter',
       epicKey: 'epic-1',
       env: vercelEnv(),
+      workspaceScopeId: 'factory-epic-1',
     })
     expect(plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }).map((tool) => tool.name)).toEqual(['demo_sandbox'])
     expect(plugin.agentToolFactory?.({ agentTypeId: 'boring-worker' })).toEqual([])
@@ -120,6 +121,7 @@ describe('factory demo plugin', () => {
       workspaceRoot: '/tmp/does-not-matter',
       epicKey: 'epic-1',
       env: { BORING_FACTORY_SANDBOX_PROVIDER: 'local-simulation' } as NodeJS.ProcessEnv,
+      workspaceScopeId: 'factory-epic-1',
     })
     const [tool] = plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
     const result = await tool!.execute({ op: 'status' }, { abortSignal: new AbortController().signal, toolCallId: 'c1', sessionId: 's1' })
@@ -138,6 +140,7 @@ describe('factory demo plugin', () => {
       env: vercelEnv(),
       sandboxFactory: factory,
       fetchImpl: fakeFetch(200),
+      workspaceScopeId: 'factory-epic-1',
     })
     const [tool] = handle.plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
 
@@ -176,6 +179,7 @@ describe('factory demo plugin', () => {
       env: vercelEnv(),
       sandboxFactory: factory,
       fetchImpl: fakeFetch(200),
+      workspaceScopeId: 'factory-epic-1',
     })
     const [tool] = handle.plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
 
@@ -211,6 +215,7 @@ describe('factory demo plugin', () => {
       env: vercelEnv(),
       sandboxFactory: factory,
       fetchImpl: fakeFetch(200),
+      workspaceScopeId: 'factory-epic-1',
     })
     const [tool] = handle.plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
 
@@ -238,6 +243,7 @@ describe('factory demo plugin', () => {
       env: vercelEnv(),
       sandboxFactory: factory,
       fetchImpl: fakeFetch(200),
+      workspaceScopeId: 'factory-epic-1',
     })
     const [tool] = handle.plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
 
@@ -276,6 +282,7 @@ describe('factory demo plugin', () => {
       epicKey: 'epic-1',
       env: vercelEnv(),
       sandboxFactory: factory,
+      workspaceScopeId: 'factory-epic-1',
     })
     const [tool] = handle.plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
     const result = await tool!.execute({ op: 'stop', id: 'nope' }, { abortSignal: new AbortController().signal, toolCallId: 'c1', sessionId: 's1' })
@@ -319,6 +326,7 @@ describe('factory demo plugin', () => {
       epicKey: 'epic-1',
       env: vercelEnv(),
       sandboxFactory: factory,
+      workspaceScopeId: 'factory-epic-1',
     })
     const removed = await handle.rearm()
     expect(removed).toBe(1)
