@@ -31,6 +31,7 @@ describe('filesystemsRoutes', () => {
     const response = await app.inject({ method: 'GET', url: '/api/v1/filesystems' })
 
     expect(response.statusCode).toBe(200)
+    expect(response.headers['cache-control']).toBe('private, no-store')
     expect(response.json()).toEqual({
       filesystems: [{
         filesystem: 'user',

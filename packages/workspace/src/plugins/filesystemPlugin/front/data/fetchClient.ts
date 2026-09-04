@@ -73,6 +73,7 @@ export class FetchClient {
     parseResponse: (response: Response) => Promise<T> = async (response) => await response.json() as T,
     credentials?: RequestCredentials,
     maxRetries = this.maxRetries,
+    cache?: RequestCache,
   ): Promise<T> {
     const effectiveTimeout = requestTimeout ?? this.timeout
     let lastError: Error | null = null
@@ -97,6 +98,7 @@ export class FetchClient {
           body: hasBody ? JSON.stringify(body) : undefined,
           signal: controller.signal,
           ...(credentials ? { credentials } : {}),
+          ...(cache ? { cache } : {}),
         })
 
         clearTimeout(timer)
@@ -163,6 +165,7 @@ export class FetchClient {
       async (response) => parseFilesystemCatalog(await response.json()),
       "include",
       0,
+      "no-store",
     )
   }
 
