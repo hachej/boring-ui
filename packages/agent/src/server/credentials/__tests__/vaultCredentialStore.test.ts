@@ -66,6 +66,29 @@ describe('vault-backed Pi CredentialStore', () => {
     })
   })
 
+  test('serializes refresh modify across independent stores sharing durable persistence', async () => {
+    const { backend } = setup()
+    const one = createVaultCredentialStoreV1({ workspaceId: 'workspace-a', vaultBackend: backend(), allowSubscriptionOAuth: true })
+    const two = createVaultCredentialStoreV1({ workspaceId: 'workspace-a', vaultBackend: backend(), allowSubscriptionOAuth: true })
+    await one.modify('openai-codex', async () => initial)
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    let secondEntered = false
+    const firstRefresh = one.modify('openai-codex', async (current) => {
+      await gate
+      return { ...(current as OAuthCredential), expires: 2 }
+    })
+    const secondRefresh = two.modify('openai-codex', async (current) => {
+      secondEntered = true
+      return { ...(current as OAuthCredential), expires: 3 }
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(secondEntered).toBe(false)
+    release()
+    await Promise.all([firstRefresh, secondRefresh])
+    expect(await one.read('openai-codex')).toMatchObject({ expires: 3 })
+  })
+
   test('isolates workspace scope and hides subscription OAuth from unattended stores', async () => {
     const { backend } = setup()
     const interactive = createVaultCredentialStoreV1({

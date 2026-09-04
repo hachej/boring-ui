@@ -92,13 +92,17 @@ export function createVaultCredentialStoreV1(options: VaultCredentialStoreOption
     }
   }
 
-  const read = async (providerId: string, operation?: AuthOperationOptions): Promise<Credential | undefined> => {
+  const readFrom = async (
+    backend: VaultCredentialStoreBackendV1,
+    providerId: string,
+    operation?: AuthOperationOptions,
+  ): Promise<Credential | undefined> => {
     abortIfNeeded(operation)
-    const metadata = await options.vaultBackend.getCredentialMetadata(options.workspaceId, providerId as ProviderId)
+    const metadata = await backend.getCredentialMetadata(options.workspaceId, providerId as ProviderId)
     if (!metadata || metadata.state !== 'active') return undefined
     if (metadata.credentialType === 'oauth') {
       if (!options.allowSubscriptionOAuth || !oauthProviders.has(providerId)) return undefined
-      const resolved = await options.vaultBackend.read(
+      const resolved = await backend.read(
         options.workspaceId,
         providerId as ProviderId,
         [PI_OAUTH_CREDENTIAL_FIELD_ID_V1],
@@ -113,7 +117,7 @@ export function createVaultCredentialStoreV1(options: VaultCredentialStoreOption
       }
     }
     if (metadata.credentialType === 'api-key') {
-      const resolved = await options.vaultBackend.read(
+      const resolved = await backend.read(
         options.workspaceId,
         providerId as ProviderId,
         [LLM_API_KEY_FIELD_ID_V1],
@@ -129,6 +133,8 @@ export function createVaultCredentialStoreV1(options: VaultCredentialStoreOption
     }
     return undefined
   }
+  const read = (providerId: string, operation?: AuthOperationOptions) =>
+    readFrom(options.vaultBackend, providerId, operation)
 
   const store: CredentialStore = {
     read,
@@ -147,52 +153,55 @@ export function createVaultCredentialStoreV1(options: VaultCredentialStoreOption
       return result
     },
     modify(providerId, fn, operation) {
-      return enqueue(providerId, async () => {
-        abortIfNeeded(operation)
-        const current = await read(providerId, operation)
-        const next = await fn(cloneCredential(current))
-        abortIfNeeded(operation)
-        if (next === undefined) return current
-        if (next.type === 'oauth') {
-          if (!options.allowSubscriptionOAuth || !oauthProviders.has(providerId)) {
-            throw new CredentialResolutionError(
-              CREDENTIAL_ERROR_CODES.DELIVERY_FORBIDDEN,
-              'OAuth funding is not allowed for this agent runtime',
-            )
+      return enqueue(providerId, () => options.vaultBackend.withWorkspaceLock(
+        options.workspaceId,
+        async (lockedBackend) => {
+          abortIfNeeded(operation)
+          const current = await readFrom(lockedBackend, providerId, operation)
+          const next = await fn(cloneCredential(current))
+          abortIfNeeded(operation)
+          if (next === undefined) return current
+          if (next.type === 'oauth') {
+            if (!options.allowSubscriptionOAuth || !oauthProviders.has(providerId)) {
+              throw new CredentialResolutionError(
+                CREDENTIAL_ERROR_CODES.DELIVERY_FORBIDDEN,
+                'OAuth funding is not allowed for this agent runtime',
+              )
+            }
+            const encoded = encodeOAuthCredential(next)
+            try {
+              await lockedBackend.writeCredentialFields({
+                workspaceId: options.workspaceId,
+                providerId: providerId as ProviderId,
+                fields: new Map([[PI_OAUTH_CREDENTIAL_FIELD_ID_V1, encoded]]),
+                metadata: { displayLabel: 'OpenAI Codex', credentialType: 'oauth' },
+              })
+            } finally {
+              encoded.fill(0)
+            }
+          } else {
+            if (typeof next.key !== 'string' || next.key.length === 0) {
+              throw new CredentialResolutionError(CREDENTIAL_ERROR_CODES.SCHEMA_MISMATCH, 'API key credential is invalid')
+            }
+            const encoded = encoder.encode(next.key)
+            try {
+              await lockedBackend.writeCredentialFields({
+                workspaceId: options.workspaceId,
+                providerId: providerId as ProviderId,
+                fields: new Map([[LLM_API_KEY_FIELD_ID_V1, encoded]]),
+                metadata: {
+                  displayLabel: providerId,
+                  credentialType: 'api-key',
+                  maskedLastFourSuffix: next.key.slice(-4),
+                },
+              })
+            } finally {
+              encoded.fill(0)
+            }
           }
-          const encoded = encodeOAuthCredential(next)
-          try {
-            await options.vaultBackend.writeCredentialFields({
-              workspaceId: options.workspaceId,
-              providerId: providerId as ProviderId,
-              fields: new Map([[PI_OAUTH_CREDENTIAL_FIELD_ID_V1, encoded]]),
-              metadata: { displayLabel: 'OpenAI Codex', credentialType: 'oauth' },
-            })
-          } finally {
-            encoded.fill(0)
-          }
-        } else {
-          if (typeof next.key !== 'string' || next.key.length === 0) {
-            throw new CredentialResolutionError(CREDENTIAL_ERROR_CODES.SCHEMA_MISMATCH, 'API key credential is invalid')
-          }
-          const encoded = encoder.encode(next.key)
-          try {
-            await options.vaultBackend.writeCredentialFields({
-              workspaceId: options.workspaceId,
-              providerId: providerId as ProviderId,
-              fields: new Map([[LLM_API_KEY_FIELD_ID_V1, encoded]]),
-              metadata: {
-                displayLabel: providerId,
-                credentialType: 'api-key',
-                maskedLastFourSuffix: next.key.slice(-4),
-              },
-            })
-          } finally {
-            encoded.fill(0)
-          }
-        }
-        return cloneCredential(next)
-      })
+          return cloneCredential(next)
+        },
+      ))
     },
     delete(providerId, operation) {
       return enqueue(providerId, async () => {

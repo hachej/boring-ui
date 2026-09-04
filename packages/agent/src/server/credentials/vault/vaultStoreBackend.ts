@@ -57,6 +57,11 @@ export interface WriteCredentialFieldsInputV1 {
 }
 
 export interface VaultCredentialStoreBackendV1 extends CredentialStoreBackendV1 {
+  /** Cross-process workspace serialization for Pi CredentialStore.modify(). */
+  withWorkspaceLock<T>(
+    workspaceId: string,
+    mutate: (locked: VaultCredentialStoreBackendV1) => Promise<T>,
+  ): Promise<T>
   /**
    * Writes (or rotates to) a new credential version for a workspace/provider.
    * Every write mints a fresh credential version; nonces are never reused.
@@ -110,8 +115,9 @@ function assertWorkspaceId(workspaceId: unknown): asserts workspaceId is string 
   }
 }
 
-export function createVaultCredentialStoreBackendV1(
+function createVaultCredentialStoreBackendInternalV1(
   options: VaultCredentialStoreOptionsV1,
+  lockedWorkspaceId?: string,
 ): VaultCredentialStoreBackendV1 {
   if (
     !options?.kmsBackend
@@ -186,6 +192,20 @@ export function createVaultCredentialStoreBackendV1(
   }
 
   return Object.freeze({
+    async withWorkspaceLock<T>(
+      workspaceId: string,
+      mutate: (locked: VaultCredentialStoreBackendV1) => Promise<T>,
+    ): Promise<T> {
+      assertWorkspaceId(workspaceId)
+      if (lockedWorkspaceId === workspaceId) return mutate(this)
+      return persistence.withWorkspaceLock(workspaceId, (lockedPersistence) =>
+        mutate(createVaultCredentialStoreBackendInternalV1({
+          kmsBackend,
+          versionAnchor,
+          persistence: lockedPersistence,
+        }, workspaceId)))
+    },
+
     async read(
       workspaceId: string,
       providerId: ProviderId,
@@ -292,6 +312,10 @@ export function createVaultCredentialStoreBackendV1(
       input: WriteCredentialFieldsInputV1,
     ): Promise<StoredCredentialRecordV1> {
       assertWorkspaceId(input?.workspaceId)
+      if (lockedWorkspaceId !== input.workspaceId) {
+        return this.withWorkspaceLock(input.workspaceId, (locked) =>
+          locked.writeCredentialFields(input))
+      }
       if (input.fields.size === 0) {
         throw new CredentialResolutionError(
           CREDENTIAL_ERROR_CODES.SCHEMA_MISMATCH,
@@ -399,6 +423,10 @@ export function createVaultCredentialStoreBackendV1(
       providerId: ProviderId,
     ): Promise<StoredCredentialRecordV1> {
       assertWorkspaceId(workspaceId)
+      if (lockedWorkspaceId !== workspaceId) {
+        return this.withWorkspaceLock(workspaceId, (locked) =>
+          locked.writeAbsentCredential(workspaceId, providerId))
+      }
       await requireNotShredded(workspaceId)
       await requireReady()
       const written = await versionAnchor.withMutation(
@@ -682,4 +710,10 @@ export function createVaultCredentialStoreBackendV1(
       })
     },
   })
+}
+
+export function createVaultCredentialStoreBackendV1(
+  options: VaultCredentialStoreOptionsV1,
+): VaultCredentialStoreBackendV1 {
+  return createVaultCredentialStoreBackendInternalV1(options)
 }
