@@ -97,8 +97,26 @@ export function createInMemoryCredentialVaultPersistenceV1(): CredentialVaultPer
   const tombstones = new Map<string, CredentialFieldTombstoneV1>()
   const rotations = new Map<string, WorkspaceDekRotationStateV1>()
   const shreddedWorkspaces = new Set<string>()
+  const workspaceQueues = new Map<string, Promise<void>>()
 
   const persistence: CredentialVaultPersistenceV1 = {
+    async withWorkspaceLock<T>(
+      workspaceId: string,
+      mutate: (locked: CredentialVaultPersistenceV1) => Promise<T>,
+    ): Promise<T> {
+      const previous = workspaceQueues.get(workspaceId) ?? Promise.resolve()
+      let release!: () => void
+      const current = new Promise<void>((resolve) => { release = resolve })
+      const queued = previous.then(() => current)
+      workspaceQueues.set(workspaceId, queued)
+      await previous
+      try {
+        return await mutate(persistence)
+      } finally {
+        release()
+        if (workspaceQueues.get(workspaceId) === queued) workspaceQueues.delete(workspaceId)
+      }
+    },
     async getCredentialRecord(
       workspaceId: string,
       providerId: ProviderId,
@@ -129,7 +147,31 @@ export function createInMemoryCredentialVaultPersistenceV1(): CredentialVaultPer
         )
       }
       const encodedRecordKey = recordKey(input.workspaceId, input.providerId)
-      const currentVersion = records.get(encodedRecordKey)?.credentialVersion ?? 0
+      const currentRecord = records.get(encodedRecordKey)
+      const currentVersion = currentRecord?.credentialVersion ?? 0
+      if (
+        currentRecord
+        && currentRecord.dekGeneration !== input.record.dekGeneration
+        && input.record.dekGeneration !== rotation?.targetGeneration
+      ) {
+        throw new CredentialResolutionError(
+          CREDENTIAL_ERROR_CODES.UNREADABLE,
+          'Credential DEK generation changed concurrently',
+        )
+      }
+      if (!currentRecord && !rotation) {
+        const workspaceGenerations = new Set<number>()
+        for (const [key, record] of records) {
+          const [storedWorkspaceId] = JSON.parse(key) as [string, string]
+          if (storedWorkspaceId === input.workspaceId) workspaceGenerations.add(record.dekGeneration)
+        }
+        if (workspaceGenerations.size > 0 && !workspaceGenerations.has(input.record.dekGeneration)) {
+          throw new CredentialResolutionError(
+            CREDENTIAL_ERROR_CODES.UNREADABLE,
+            'Credential DEK generation changed concurrently',
+          )
+        }
+      }
       if (currentVersion !== input.expectedCredentialVersion) {
         throw new CredentialResolutionError(
           CREDENTIAL_ERROR_CODES.UNREADABLE,

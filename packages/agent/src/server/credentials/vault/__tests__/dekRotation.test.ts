@@ -71,6 +71,9 @@ describe('workspace DEK lifecycle', () => {
     let commits = 0
     const interrupted: CredentialVaultPersistenceV1 = {
       ...durable,
+      async withWorkspaceLock(_workspaceId, mutate) {
+        return mutate(interrupted)
+      },
       async commitDekRotationRecord(input) {
         commits += 1
         if (commits === 2) throw new Error('simulated process interruption')

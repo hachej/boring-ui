@@ -157,8 +157,9 @@ export function createVaultCredentialStoreBackendV1(
   async function requireWrappedDek(
     workspaceId: string,
     dekGeneration: number,
+    store: CredentialVaultPersistenceV1 = persistence,
   ): Promise<WrappedWorkspaceDekV1> {
-    const wrapped = await persistence.getWrappedDek(workspaceId, dekGeneration)
+    const wrapped = await store.getWrappedDek(workspaceId, dekGeneration)
     if (!wrapped) {
       // A record exists but its key generation does not: fail closed, do not
       // silently mint a new DEK and lose access to the existing ciphertext.
@@ -408,18 +409,24 @@ export function createVaultCredentialStoreBackendV1(
       assertWorkspaceId(workspaceId)
       await requireNotShredded(workspaceId)
       await requireReady()
-      if (typeof kmsBackend.rewrapDataKey !== 'function') {
+      const rewrapDataKey = kmsBackend.rewrapDataKey
+      if (typeof rewrapDataKey !== 'function') {
         throw new CredentialResolutionError(
           CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
           'Credential key backend does not support rewrap',
         )
       }
-      const wrapped = await requireWrappedDek(workspaceId, dekGeneration)
-      const rewrapped = await kmsBackend.rewrapDataKey(
-        context(workspaceId, dekGeneration),
-        wrapped,
-      )
-      await persistence.putWrappedDek(workspaceId, dekGeneration, rewrapped)
+      await persistence.withWorkspaceLock(workspaceId, async (locked) => {
+        if (await locked.isWorkspaceCryptoShredded(workspaceId)) {
+          unreadable('Workspace credential material was crypto-shredded')
+        }
+        const wrapped = await requireWrappedDek(workspaceId, dekGeneration, locked)
+        const rewrapped = await rewrapDataKey(
+          context(workspaceId, dekGeneration),
+          wrapped,
+        )
+        await locked.putWrappedDek(workspaceId, dekGeneration, rewrapped)
+      })
     },
 
     async rotateWorkspaceDek(workspaceId: string): Promise<number> {
@@ -427,9 +434,13 @@ export function createVaultCredentialStoreBackendV1(
       await requireNotShredded(workspaceId)
       await requireReady()
 
-      let rotation = await persistence.getDekRotationState(workspaceId)
+      return persistence.withWorkspaceLock(workspaceId, async (locked) => {
+        if (await locked.isWorkspaceCryptoShredded(workspaceId)) {
+          unreadable('Workspace credential material was crypto-shredded')
+        }
+      let rotation = await locked.getDekRotationState(workspaceId)
       if (!rotation) {
-        const records = await persistence.listCredentialRecords(workspaceId)
+        const records = await locked.listCredentialRecords(workspaceId)
         if (records.length === 0) notConfigured('Credential material is not configured')
         const generations = new Set(records.map(({ record }) => record.dekGeneration))
         if (generations.size !== 1) {
@@ -444,7 +455,7 @@ export function createVaultCredentialStoreBackendV1(
           context(workspaceId, targetGeneration),
         )
         try {
-          await persistence.putWrappedDek(
+          await locked.putWrappedDek(
             workspaceId,
             targetGeneration,
             generated.wrappedDek,
@@ -457,15 +468,16 @@ export function createVaultCredentialStoreBackendV1(
           targetGeneration,
           phase: 'reencrypting' as const,
         })
-        await persistence.putDekRotationState(workspaceId, rotation)
+        await locked.putDekRotationState(workspaceId, rotation)
       }
 
       if (rotation.phase === 'reencrypting') {
         const targetWrapped = await requireWrappedDek(
           workspaceId,
           rotation.targetGeneration,
+          locked,
         )
-        const records = await persistence.listCredentialRecords(workspaceId)
+        const records = await locked.listCredentialRecords(workspaceId)
         const sourceRecords = records.filter(
           ({ record }) => record.dekGeneration === rotation!.sourceGeneration,
         )
@@ -473,7 +485,7 @@ export function createVaultCredentialStoreBackendV1(
           ({ record }) => record.materialKind === 'field-set',
         )
         const sourceWrapped = requiresSourceKey
-          ? await requireWrappedDek(workspaceId, rotation.sourceGeneration)
+          ? await requireWrappedDek(workspaceId, rotation.sourceGeneration, locked)
           : undefined
         let sourceDek: Uint8Array | undefined
         let targetDek: Uint8Array | undefined
@@ -490,7 +502,7 @@ export function createVaultCredentialStoreBackendV1(
           )
           for (const { providerId, record } of sourceRecords) {
             const encryptedFields = new Map<string, ReturnType<typeof encryptCredentialFieldV1>>()
-            const storedFields = await persistence.listFields(
+            const storedFields = await locked.listFields(
               workspaceId,
               providerId,
               record.credentialVersion,
@@ -529,7 +541,7 @@ export function createVaultCredentialStoreBackendV1(
                 plaintext.fill(0)
               }
             }
-            await persistence.commitDekRotationRecord({
+            await locked.commitDekRotationRecord({
               workspaceId,
               providerId,
               expectedCredentialVersion: record.credentialVersion,
@@ -544,8 +556,12 @@ export function createVaultCredentialStoreBackendV1(
         }
 
         // Verify every live envelope under N+1 before making N undecryptable.
-        const migrated = await persistence.listCredentialRecords(workspaceId)
-        const verifyWrapped = await requireWrappedDek(workspaceId, rotation.targetGeneration)
+        const migrated = await locked.listCredentialRecords(workspaceId)
+        const verifyWrapped = await requireWrappedDek(
+          workspaceId,
+          rotation.targetGeneration,
+          locked,
+        )
         let verifyDek: Uint8Array | undefined
         try {
           verifyDek = await kmsBackend.unwrapDataKey(
@@ -556,7 +572,7 @@ export function createVaultCredentialStoreBackendV1(
             if (record.dekGeneration !== rotation.targetGeneration) {
               unreadable('Workspace credential DEK rotation is incomplete')
             }
-            const fields = await persistence.listFields(
+            const fields = await locked.listFields(
               workspaceId,
               providerId,
               record.credentialVersion,
@@ -584,17 +600,20 @@ export function createVaultCredentialStoreBackendV1(
           verifyDek?.fill(0)
         }
         rotation = Object.freeze({ ...rotation, phase: 'verified' as const })
-        await persistence.putDekRotationState(workspaceId, rotation)
+        await locked.putDekRotationState(workspaceId, rotation)
       }
 
-      await persistence.deleteWrappedDek(workspaceId, rotation.sourceGeneration)
-      await persistence.clearDekRotationState(workspaceId)
-      return rotation.targetGeneration
+      await locked.deleteWrappedDek(workspaceId, rotation.sourceGeneration)
+      await locked.clearDekRotationState(workspaceId)
+        return rotation.targetGeneration
+      })
     },
 
     async cryptoShredWorkspace(workspaceId: string): Promise<void> {
       assertWorkspaceId(workspaceId)
-      await persistence.cryptoShredWorkspace(workspaceId, new Date().toISOString())
+      await persistence.withWorkspaceLock(workspaceId, async (locked) => {
+        await locked.cryptoShredWorkspace(workspaceId, new Date().toISOString())
+      })
     },
   })
 }

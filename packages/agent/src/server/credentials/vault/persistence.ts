@@ -77,6 +77,11 @@ export interface CommitCredentialVersionInputV1 {
 }
 
 export interface CredentialVaultPersistenceV1 {
+  /** Serializes workspace-wide lifecycle mutations and supplies a scoped adapter. */
+  withWorkspaceLock<T>(
+    workspaceId: string,
+    mutate: (locked: CredentialVaultPersistenceV1) => Promise<T>,
+  ): Promise<T>
   getCredentialRecord(
     workspaceId: string,
     providerId: ProviderId,

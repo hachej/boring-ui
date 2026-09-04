@@ -106,7 +106,7 @@ export async function runCredentialVaultPostgresMigrationsV1(
             ) AND dek_generation IS NULL
               AND envelope_version IS NULL AND ciphertext IS NULL
               AND nonce IS NULL AND auth_tag IS NULL AND aad_context IS NULL)
-          );
+          ) NOT VALID;
       END IF;
     END $$
   `)
