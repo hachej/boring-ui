@@ -375,6 +375,40 @@ describe("createPiCodingAgentHarness", () => {
     }
   });
 
+  it("can isolate host-injected Pi packages from ambient settings packages", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "pi-settings-isolated-project-"));
+    const agentDir = await mkdtemp(join(tmpdir(), "pi-settings-isolated-agent-"));
+    try {
+      await mkdir(join(cwd, ".pi"), { recursive: true });
+      await writeFile(
+        join(cwd, ".pi", "settings.json"),
+        JSON.stringify({ theme: "still-visible", packages: ["npm:ambient-project"] }),
+        "utf8",
+      );
+      await writeFile(
+        join(agentDir, "settings.json"),
+        JSON.stringify({ packages: ["npm:ambient-global"] }),
+        "utf8",
+      );
+
+      const manager = createResourceSettingsManager(
+        cwd,
+        agentDir,
+        ["npm:host-granted"],
+        { includeConfiguredPackages: false },
+      );
+
+      expect(manager.getProjectSettings()).toMatchObject({
+        theme: "still-visible",
+        packages: ["npm:host-granted"],
+      });
+      expect(manager.getGlobalSettings().packages).toEqual([]);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+      await rm(agentDir, { recursive: true, force: true });
+    }
+  });
+
   it("ignores malformed package fields when injecting Pi packages", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "pi-settings-project-bad-packages-"));
     const agentDir = await mkdtemp(join(tmpdir(), "pi-settings-agent-bad-packages-"));

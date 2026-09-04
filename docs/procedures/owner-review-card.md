@@ -1,12 +1,15 @@
 # Owner review card
 
 After proof/reviews, create an Inbox Human Intention tied to the exact bead,
-task, artifact, and revision — subject carries the bead ID
-(`[br-###]`, per the factory's thread=bead correlation rule). That durable
+task, artifact, and revision — title follows
+[`naming-conventions.md`](naming-conventions.md): `[Feature Name] Plan
+approval` or `[Feature Name] Merge approval`, never a bead id. That durable
 record — not chat — is the decision source of truth. Use `ask_user` for the
 decision transport when available (GitHub comment fallback). The intention
 links a **PR review doc** — self-contained visual HTML per
-[`visual-review-doc.md`](visual-review-doc.md):
+[`visual-review-doc.md`](visual-review-doc.md). The card's `Artifact:` line
+carries the running demo URL (from `demo_sandbox`, with its expiry) or the
+best non-UI proof file — put the same URL in the Inbox `context` too:
 
 ```md
 ## Owner Review
@@ -18,9 +21,19 @@ Artifact: <running UI demo or best non-UI proof file>
 Please test:
 1. <exact step>
 Decision: approve | request changes | defer | reject
+
+## Show me
+<diff-shaped views (component/call/file tree diff) plus one sequence diagram
+of the shipped flow, derived from the actual commits — see
+`.agents/skills/show-me/SKILL.md` and `.agents/skills/owner-gate/SKILL.md`>
 ```
 
 For UI, keep the playground/demo running and include desktop/mobile checks. For
 other work, attach the most useful artifact and validation steps. Request-changes
 resumes the same task/PR loop with a new artifact/revision; do not overwrite prior
 review evidence. Never merge without explicit approval.
+
+The `## Show me` section is mandatory (owner ruling), sits between the Owner
+Review card and `## Handover`, and is mirrored to
+`docs/issues/<issue>/show-me-<short sha>.md`, passed as an artifact per
+`docs/procedures/naming-conventions.md`.

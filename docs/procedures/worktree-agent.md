@@ -8,11 +8,13 @@ Use this when `/exec` delegates implementation.
 - Never push directly to remote `main`.
 - Inspect branch, dirty state, and existing ownership before editing.
 - Do not overwrite another agent's work.
-- One epic = one GH issue = one worktree = one PR. Workers claim beads and commit
-  directly to the epic branch — no per-bead sub-branches. Coordinate ownership
-  and conflicts through bead file scope (`bead-ready.md`): concurrent beads in
-  one epic must not overlap files. No messaging or file-reservation system is
-  used (see `.agents/factory/tools.md`, "Not in the factory").
+- One epic = one GH issue = one shared worktree = one PR. Workers claim beads
+  and commit directly to the epic branch — no per-bead sub-branches or
+  worktrees. Beads need not predict file scope. Workers see concurrent changes
+  in the shared worktree, stage only their intended changes, commit frequently,
+  and resolve conflicts in place without reverting or overwriting another
+  Worker's work. Start without messaging or file reservations; add coordination
+  machinery only when observed collisions justify it.
 - The standing bugfix lane (`fix/rolling`) is the exception: see
   `rolling-small-fixes.md`.
 - Outside the factory, the orchestrator chooses branch/worktree topology and PR

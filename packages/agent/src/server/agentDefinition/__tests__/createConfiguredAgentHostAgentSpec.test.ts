@@ -21,8 +21,8 @@ const ROLES = [
   [DEFERRED_ROOT, 'concierge', 'boring-concierge', 'Boring Concierge', '2026.08.04'],
   [FACTORY_ROOT, 'triage', 'boring-triage', 'Boring Triage', '2026.08.04'],
   [DEFERRED_ROOT, 'steward', 'boring-steward', 'Boring Steward', '2026.08.04'],
-  [FACTORY_ROOT, 'orchestrator', 'boring-orchestrator', 'Boring Orchestrator', '2026.08.10'],
-  [FACTORY_ROOT, 'worker', 'boring-worker', 'Boring Worker', '2026.08.04'],
+  [FACTORY_ROOT, 'orchestrator', 'boring-orchestrator', 'Boring Orchestrator', '2026.09.02'],
+  [FACTORY_ROOT, 'worker', 'boring-worker', 'Boring Worker', '2026.09.02'],
   [DEFERRED_ROOT, 'reviewer', 'boring-reviewer', 'Boring Reviewer', '2026.08.04'],
 ] as const
 
