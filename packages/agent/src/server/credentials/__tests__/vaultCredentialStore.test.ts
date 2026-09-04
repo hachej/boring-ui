@@ -89,6 +89,72 @@ describe('vault-backed Pi CredentialStore', () => {
     expect(await one.read('openai-codex')).toMatchObject({ expires: 3 })
   })
 
+  test('non-active vault states throw instead of permitting Pi environment fallback', async () => {
+    const { backend } = setup()
+    const store = createVaultCredentialStoreV1({
+      workspaceId: 'workspace-a',
+      vaultBackend: backend(),
+      allowSubscriptionOAuth: true,
+    })
+    await store.modify('openai-codex', async () => initial)
+
+    await backend().setCredentialLifecycleState('workspace-a', 'openai-codex' as ProviderId, 'disabled')
+    await expect(store.read('openai-codex')).rejects.toMatchObject({
+      code: CREDENTIAL_ERROR_CODES.DISABLED,
+    })
+    await backend().setCredentialLifecycleState('workspace-a', 'openai-codex' as ProviderId, 'revoked')
+    await expect(store.read('openai-codex')).rejects.toMatchObject({
+      code: CREDENTIAL_ERROR_CODES.REVOKED,
+    })
+    await store.delete('openai-codex')
+    await expect(store.read('openai-codex')).rejects.toMatchObject({
+      code: CREDENTIAL_ERROR_CODES.REVOKED,
+    })
+  })
+
+  test.each(['revoked', 'deleted'] as const)(
+    '%s lifecycle update wins a race with an in-flight refresh',
+    async (outcome) => {
+      const { backend } = setup()
+      const store = createVaultCredentialStoreV1({
+        workspaceId: 'workspace-a',
+        vaultBackend: backend(),
+        allowSubscriptionOAuth: true,
+      })
+      const lifecycleStore = createVaultCredentialStoreV1({
+        workspaceId: 'workspace-a',
+        vaultBackend: backend(),
+        allowSubscriptionOAuth: true,
+      })
+      await store.modify('openai-codex', async () => initial)
+      let entered!: () => void
+      const refreshEntered = new Promise<void>((resolve) => { entered = resolve })
+      let release!: () => void
+      const refreshGate = new Promise<void>((resolve) => { release = resolve })
+      const refresh = store.modify('openai-codex', async (current) => {
+        entered()
+        await refreshGate
+        return { ...(current as OAuthCredential), access: 'raced-access' }
+      })
+      await refreshEntered
+      const lifecycle = outcome === 'revoked'
+        ? backend().setCredentialLifecycleState(
+          'workspace-a',
+          'openai-codex' as ProviderId,
+          'revoked',
+        )
+        : lifecycleStore.delete('openai-codex')
+      release()
+      await Promise.all([refresh, lifecycle])
+
+      expect(await backend().getCredentialMetadata('workspace-a', 'openai-codex' as ProviderId))
+        .toMatchObject({ state: outcome === 'revoked' ? 'revoked' : 'intentionally_absent' })
+      await expect(store.read('openai-codex')).rejects.toMatchObject({
+        code: CREDENTIAL_ERROR_CODES.REVOKED,
+      })
+    },
+  )
+
   test('isolates workspace scope and hides subscription OAuth from unattended stores', async () => {
     const { backend } = setup()
     const interactive = createVaultCredentialStoreV1({

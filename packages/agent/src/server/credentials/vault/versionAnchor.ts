@@ -18,6 +18,8 @@ const ANCHOR_MAC_INFO_V1 = 'boring.credential-version-anchor.mac.v1'
 
 export interface WorkspaceCredentialVersionStateV1 {
   readonly counter: number
+  /** Monotonic workspace-wide fence for replayed wrapped DEKs and records. */
+  readonly dekGeneration: number
   readonly credentialVersions: Readonly<Record<string, number>>
   readonly credentialMaterialKinds: Readonly<Record<string, CredentialMaterialKindV1>>
 }
@@ -25,6 +27,12 @@ export interface WorkspaceCredentialVersionStateV1 {
 export interface CredentialVersionMutationResultV1<T> {
   readonly nextCredentialVersion: number
   readonly nextCredentialMaterialKind: CredentialMaterialKindV1
+  readonly nextDekGeneration: number
+  readonly result: T
+}
+
+export interface DekGenerationMutationResultV1<T> {
+  readonly nextDekGeneration: number
   readonly result: T
 }
 
@@ -44,12 +52,20 @@ export interface WorkspaceCredentialVersionAnchorV1 {
       current: WorkspaceCredentialVersionStateV1 | undefined,
     ) => Promise<CredentialVersionMutationResultV1<T>>,
   ): Promise<T>
+  /** Advances the authenticated workspace DEK fence exactly one generation. */
+  withDekGenerationMutation<T>(
+    workspaceId: string,
+    mutate: (
+      current: WorkspaceCredentialVersionStateV1 | undefined,
+    ) => Promise<DekGenerationMutationResultV1<T>>,
+  ): Promise<T>
 }
 
 type MutableAnchorStateV1 = {
   format: typeof ANCHOR_FORMAT_V1
   workspaces: Record<string, {
     counter: number
+    dekGeneration: number
     credentialVersions: Record<string, number>
     credentialMaterialKinds: Record<string, CredentialMaterialKindV1>
   }>
@@ -98,6 +114,7 @@ function copyWorkspaceState(
   if (!workspace) return undefined
   return Object.freeze({
     counter: workspace.counter,
+    dekGeneration: workspace.dekGeneration,
     credentialVersions: Object.freeze({ ...workspace.credentialVersions }),
     credentialMaterialKinds: Object.freeze({ ...workspace.credentialMaterialKinds }),
   })
@@ -109,6 +126,7 @@ function canonicalState(state: MutableAnchorStateV1): string {
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([workspaceId, workspace]) => [workspaceId, {
         counter: workspace.counter,
+        dekGeneration: workspace.dekGeneration,
         credentialVersions: Object.fromEntries(
           Object.entries(workspace.credentialVersions)
             .sort(([left], [right]) => left.localeCompare(right)),
@@ -134,6 +152,8 @@ function validateState(value: unknown): MutableAnchorStateV1 {
       || typeof workspace !== 'object'
       || !Number.isSafeInteger(workspace.counter)
       || workspace.counter < 1
+      || !Number.isSafeInteger(workspace.dekGeneration)
+      || workspace.dekGeneration < 1
       || !workspace.credentialVersions
       || typeof workspace.credentialVersions !== 'object'
       || !workspace.credentialMaterialKinds
@@ -186,9 +206,14 @@ export function createInMemoryCredentialVersionAnchorV1(): WorkspaceCredentialVe
         if (mutation.nextCredentialVersion !== currentVersion + 1) {
           unreadable('Credential version anchor rejected a stale update')
         }
+        const currentDekGeneration = current?.dekGeneration ?? 1
+        if (mutation.nextDekGeneration !== currentDekGeneration) {
+          unreadable('Credential version anchor rejected a stale DEK generation')
+        }
         const next = cloneState(state)
         next.workspaces[workspaceId] = {
           counter: (current?.counter ?? 0) + 1,
+          dekGeneration: mutation.nextDekGeneration,
           credentialVersions: {
             ...current?.credentialVersions,
             [providerId]: mutation.nextCredentialVersion,
@@ -197,6 +222,33 @@ export function createInMemoryCredentialVersionAnchorV1(): WorkspaceCredentialVe
             ...current?.credentialMaterialKinds,
             [providerId]: mutation.nextCredentialMaterialKind,
           },
+        }
+        state = next
+        result = mutation.result
+      })
+      queue = operation.catch(() => undefined)
+      await operation
+      return result
+    },
+    async withDekGenerationMutation<T>(
+      workspaceId: string,
+      mutate: (
+        current: WorkspaceCredentialVersionStateV1 | undefined,
+      ) => Promise<DekGenerationMutationResultV1<T>>,
+    ): Promise<T> {
+      let result!: T
+      const operation = queue.then(async () => {
+        const current = copyWorkspaceState(state, workspaceId)
+        if (!current) unreadable('Credential DEK generation anchor is missing')
+        const mutation = await mutate(current)
+        if (mutation.nextDekGeneration !== current.dekGeneration + 1) {
+          unreadable('Credential version anchor rejected a stale DEK rotation')
+        }
+        const next = cloneState(state)
+        next.workspaces[workspaceId] = {
+          ...next.workspaces[workspaceId]!,
+          counter: current.counter + 1,
+          dekGeneration: mutation.nextDekGeneration,
         }
         state = next
         result = mutation.result
@@ -374,9 +426,14 @@ export function createLocalFileCredentialVersionAnchorV1(
         if (mutation.nextCredentialVersion !== currentVersion + 1) {
           unreadable('Credential version anchor rejected a stale update')
         }
+        const currentDekGeneration = current?.dekGeneration ?? 1
+        if (mutation.nextDekGeneration !== currentDekGeneration) {
+          unreadable('Credential version anchor rejected a stale DEK generation')
+        }
         const next = cloneState(state)
         next.workspaces[workspaceId] = {
           counter: (currentWorkspace?.counter ?? 0) + 1,
+          dekGeneration: mutation.nextDekGeneration,
           credentialVersions: {
             ...currentWorkspace?.credentialVersions,
             [providerId]: mutation.nextCredentialVersion,
@@ -385,6 +442,35 @@ export function createLocalFileCredentialVersionAnchorV1(
             ...currentWorkspace?.credentialMaterialKinds,
             [providerId]: mutation.nextCredentialMaterialKind,
           },
+        }
+        await replaceSealedState(next, options)
+        return mutation.result
+      } finally {
+        await lock.close().catch(() => undefined)
+        await unlink(lockPath).catch(() => undefined)
+      }
+    },
+    async withDekGenerationMutation<T>(
+      workspaceId: string,
+      mutate: (
+        current: WorkspaceCredentialVersionStateV1 | undefined,
+      ) => Promise<DekGenerationMutationResultV1<T>>,
+    ): Promise<T> {
+      const lockPath = `${options.anchorFilePath}.lock`
+      const lock = await acquireMutationLock(lockPath)
+      try {
+        const state = await readSealedState(options)
+        const current = copyWorkspaceState(state, workspaceId)
+        if (!current) unreadable('Credential DEK generation anchor is missing')
+        const mutation = await mutate(current)
+        if (mutation.nextDekGeneration !== current.dekGeneration + 1) {
+          unreadable('Credential version anchor rejected a stale DEK rotation')
+        }
+        const next = cloneState(state)
+        next.workspaces[workspaceId] = {
+          ...next.workspaces[workspaceId]!,
+          counter: current.counter + 1,
+          dekGeneration: mutation.nextDekGeneration,
         }
         await replaceSealedState(next, options)
         return mutation.result

@@ -172,6 +172,7 @@ function createVaultCredentialStoreBackendInternalV1(
     if (
       anchored?.credentialVersions[providerId] !== record.credentialVersion
       || anchored.credentialMaterialKinds[providerId] !== record.materialKind
+      || anchored.dekGeneration !== record.dekGeneration
     ) {
       unreadable('Credential current state failed rollback verification')
     }
@@ -213,7 +214,6 @@ function createVaultCredentialStoreBackendInternalV1(
     ): Promise<ResolvedCredentialMaterialV1 & { credentialVersion: number }> {
       assertWorkspaceId(workspaceId)
       await requireNotShredded(workspaceId)
-      await requireReady()
       const metadata = await persistence.getCredentialMetadata(workspaceId, providerId)
       if (metadata?.state === 'disabled') {
         throw new CredentialResolutionError(CREDENTIAL_ERROR_CODES.DISABLED, 'Credential is disabled')
@@ -230,6 +230,7 @@ function createVaultCredentialStoreBackendInternalV1(
       if (metadata?.state === 'instance_fallback_enabled') {
         notConfigured('Workspace credential uses instance fallback')
       }
+      await requireReady()
       const record = await persistence.getCredentialRecord(workspaceId, providerId)
       if (!record) {
         const anchoredVersion = (await versionAnchor.read(workspaceId))
@@ -412,6 +413,7 @@ function createVaultCredentialStoreBackendInternalV1(
           return {
             nextCredentialVersion: credentialVersion,
             nextCredentialMaterialKind: record.materialKind,
+            nextDekGeneration: record.dekGeneration,
             result: record,
           }
         },
@@ -465,6 +467,7 @@ function createVaultCredentialStoreBackendInternalV1(
           return {
             nextCredentialVersion: record.credentialVersion,
             nextCredentialMaterialKind: record.materialKind,
+            nextDekGeneration: record.dekGeneration,
             result: record,
           }
         },
@@ -492,6 +495,10 @@ function createVaultCredentialStoreBackendInternalV1(
       state: CredentialLifecycleStateV1,
     ) {
       assertWorkspaceId(workspaceId)
+      if (lockedWorkspaceId !== workspaceId) {
+        return this.withWorkspaceLock(workspaceId, (locked) =>
+          locked.setCredentialLifecycleState(workspaceId, providerId, state))
+      }
       await requireNotShredded(workspaceId)
       return persistence.updateCredentialMetadata(workspaceId, providerId, { state })
     },
@@ -528,7 +535,8 @@ function createVaultCredentialStoreBackendInternalV1(
       await requireNotShredded(workspaceId)
       await requireReady()
 
-      return persistence.withWorkspaceLock(workspaceId, async (locked) => {
+      return persistence.withWorkspaceLock(workspaceId, async (locked) =>
+        versionAnchor.withDekGenerationMutation(workspaceId, async (anchorState) => {
         if (await locked.isWorkspaceCryptoShredded(workspaceId)) {
           unreadable('Workspace credential material was crypto-shredded')
         }
@@ -563,6 +571,9 @@ function createVaultCredentialStoreBackendInternalV1(
           phase: 'reencrypting' as const,
         })
         await locked.putDekRotationState(workspaceId, rotation)
+      }
+      if (!anchorState || rotation.sourceGeneration !== anchorState.dekGeneration) {
+        unreadable('Workspace credential DEK generation failed rollback verification')
       }
 
       if (rotation.phase === 'reencrypting') {
@@ -699,8 +710,11 @@ function createVaultCredentialStoreBackendInternalV1(
 
       await locked.deleteWrappedDek(workspaceId, rotation.sourceGeneration)
       await locked.clearDekRotationState(workspaceId)
-        return rotation.targetGeneration
-      })
+        return {
+          nextDekGeneration: rotation.targetGeneration,
+          result: rotation.targetGeneration,
+        }
+      }))
     },
 
     async cryptoShredWorkspace(workspaceId: string): Promise<void> {

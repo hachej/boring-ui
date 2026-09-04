@@ -318,6 +318,7 @@ describe('local-KEK credential version anchor', () => {
     await anchor.withMutation('ws-a', providerId('provider-a'), async () => ({
       nextCredentialVersion: 1,
       nextCredentialMaterialKind: 'field-set',
+      nextDekGeneration: 1,
       result: undefined,
     }))
     await anchor.withMutation('ws-a', providerId('provider-b'), async (state) => {
@@ -326,6 +327,7 @@ describe('local-KEK credential version anchor', () => {
       return {
         nextCredentialVersion: 1,
         nextCredentialMaterialKind: 'none',
+        nextDekGeneration: 1,
         result: undefined,
       }
     })
@@ -333,6 +335,7 @@ describe('local-KEK credential version anchor', () => {
     const reloaded = createLocalFileCredentialVersionAnchorV1(options)
     expect(await reloaded.read('ws-a')).toEqual({
       counter: 2,
+      dekGeneration: 1,
       credentialVersions: { 'provider-a': 1, 'provider-b': 1 },
       credentialMaterialKinds: {
         'provider-a': 'field-set',

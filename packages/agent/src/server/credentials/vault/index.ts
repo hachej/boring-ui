@@ -52,6 +52,7 @@ export {
 } from './versionAnchor'
 export type {
   CredentialVersionMutationResultV1,
+  DekGenerationMutationResultV1,
   LocalCredentialVersionAnchorOptionsV1,
   WorkspaceCredentialVersionAnchorV1,
   WorkspaceCredentialVersionStateV1,

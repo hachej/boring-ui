@@ -99,7 +99,20 @@ export function createVaultCredentialStoreV1(options: VaultCredentialStoreOption
   ): Promise<Credential | undefined> => {
     abortIfNeeded(operation)
     const metadata = await backend.getCredentialMetadata(options.workspaceId, providerId as ProviderId)
-    if (!metadata || metadata.state !== 'active') return undefined
+    if (!metadata) return undefined
+    // A known non-active vault entry is an explicit deny, not absence. Ask the
+    // backend for its stable lifecycle error so Pi cannot fall through to an
+    // instance/environment credential.
+    if (metadata.state !== 'active') {
+      await backend.read(
+        options.workspaceId,
+        providerId as ProviderId,
+        metadata.credentialType === 'api-key'
+          ? [LLM_API_KEY_FIELD_ID_V1]
+          : [PI_OAUTH_CREDENTIAL_FIELD_ID_V1],
+      )
+      throw new CredentialResolutionError(CREDENTIAL_ERROR_CODES.UNREADABLE, 'Credential lifecycle state is invalid')
+    }
     if (metadata.credentialType === 'oauth') {
       if (!options.allowSubscriptionOAuth || !oauthProviders.has(providerId)) return undefined
       const resolved = await backend.read(

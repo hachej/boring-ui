@@ -132,6 +132,37 @@ describe('workspace DEK lifecycle', () => {
     oldDek.fill(0)
   })
 
+  test('rejects a complete generation-one persistence replay after DEK rotation', async () => {
+    const live = createInMemoryCredentialVaultPersistenceV1()
+    const snapshot = createInMemoryCredentialVaultPersistenceV1()
+    let selected = live
+    const switchable = new Proxy({} as CredentialVaultPersistenceV1, {
+      get(_target, property) {
+        const value = selected[property as keyof CredentialVaultPersistenceV1]
+        return typeof value === 'function' ? value.bind(selected) : value
+      },
+    })
+    const current = harness(switchable)
+    const replay = harness(snapshot)
+    await current.backend.writeCredentialFields({
+      workspaceId,
+      providerId: providerA,
+      fields: new Map([[apiKey, text('current-secret')]]),
+    })
+    await replay.backend.writeCredentialFields({
+      workspaceId,
+      providerId: providerA,
+      fields: new Map([[apiKey, text('replayed-secret')]]),
+    })
+
+    await expect(current.backend.rotateWorkspaceDek(workspaceId)).resolves.toBe(2)
+    expect(await current.versionAnchor.read(workspaceId)).toMatchObject({ dekGeneration: 2 })
+    selected = snapshot
+
+    await expect(current.backend.read(workspaceId, providerA, [apiKey]))
+      .rejects.toMatchObject({ code: CREDENTIAL_ERROR_CODES.UNREADABLE })
+  })
+
   test('crypto-shred is idempotent and permanently fails closed without plaintext fallback', async () => {
     const persistence = createInMemoryCredentialVaultPersistenceV1()
     const { backend } = harness(persistence)
