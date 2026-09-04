@@ -19,7 +19,12 @@ FRAME_BYTES = 3_200
 MAX_MESSAGE_BYTES = 1_000_000
 MAX_SEGMENTS = 2_000  # per message (deltas), see MAX_SESSION_SEGMENTS
 MAX_SESSION_SEGMENTS = 20_000
-MAX_SPEAKERS = 2
+# Three slots by default. Measured 2026-09-04: on two-person audio (SimSAMU 12
+# calls, SUMM-RE 2-speaker meetings) a third slot is never admitted and the
+# scores are unchanged; on SUMM-RE 3-speaker meetings per-word speaker accuracy
+# goes from 68 % (2 slots) to 90 %. An accompanying parent or partner is common
+# in a consultation.
+MAX_SPEAKERS = 3
 SPEECH_THRESHOLD = 0.50
 NEW_SPEAKER_THRESHOLD = 0.70
 SWITCH_MARGIN = 0.12
@@ -304,7 +309,7 @@ async def main() -> None:
     parser.add_argument("--model-path")
     parser.add_argument("--token", default=os.environ.get("BORING_SORTFORMER_TOKEN"))
     parser.add_argument("--max-speakers", type=int, default=int(os.environ.get("BORING_SORTFORMER_MAX_SPEAKERS", MAX_SPEAKERS)),
-                        help="session speaker slots (2 for a doctor-patient consultation, 3 when an accompanying person is expected)")
+                        help="session speaker slots (default 3: doctor, patient, accompanying person)")
     args = parser.parse_args()
     if args.host not in {"127.0.0.1", "::1", "localhost"}:
         raise SystemExit("Sortformer sidecar must bind to loopback")

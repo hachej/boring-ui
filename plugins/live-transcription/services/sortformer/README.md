@@ -44,8 +44,8 @@ diarizer URL and restart the app for immediate rollback.
    chunk, so a message carries one or two segments, not the whole session.
 5. Client sends `{ "type": "stop", "id": N }`; server replies `stopped`.
 
-Speaker slots are anonymous, arrival-ordered, session-local, and deliberately
-capped at two for clinic consultations. The sidecar applies confidence gating
+Speaker slots are anonymous, arrival-ordered, session-local, and capped at
+three for clinic consultations (`--max-speakers`, or `BORING_SORTFORMER_MAX_SPEAKERS`). The sidecar applies confidence gating
 and requires sustained evidence before changing speakers; this suppresses brief
 four-channel Sortformer fluctuations that would otherwise create false speaker
 turns. The follow-up LLM may infer conversational roles; the sidecar does not
