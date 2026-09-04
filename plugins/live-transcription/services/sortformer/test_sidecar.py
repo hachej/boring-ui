@@ -59,17 +59,19 @@ class ProtocolTests(unittest.TestCase):
         ])
         self.assertEqual(TwoSpeakerStabilizer().assign(turn), [0, 0, 1, 1])
 
-    def test_admits_only_one_sustained_second_speaker(self):
+    def test_admits_sustained_voices_up_to_the_slot_cap(self):
         stabilizer = TwoSpeakerStabilizer()
         first = np.tile([0.90, 0.10, 0.05, 0.05], (3, 1))
         second = np.tile([0.10, 0.90, 0.05, 0.05], (6, 1))
         third_channel = np.tile([0.05, 0.10, 0.92, 0.05], (6, 1))
-        labels = stabilizer.assign(np.vstack([first, second, third_channel]))
+        fourth_channel = np.tile([0.05, 0.05, 0.10, 0.93], (6, 1))
+        labels = stabilizer.assign(np.vstack([first, second, third_channel, fourth_channel]))
         self.assertEqual(labels[:3], [0, 0, 0])
         self.assertEqual(labels[3], 0)          # first frame of the new voice is pending
         self.assertEqual(labels[4:9], [1] * 5)  # admitted after two frames
-        self.assertEqual(set(labels), {0, 1})   # a third channel never gets a slot
-        self.assertEqual(labels[-1], 1)
+        self.assertEqual(labels[10:15], [2] * 5)  # third slot (accompanying person)
+        self.assertEqual(set(labels), {0, 1, 2})  # a fourth voice never gets a slot
+        self.assertEqual(labels[-1], 2)
 
     def test_marks_low_confidence_frames_as_silence(self):
         stabilizer = TwoSpeakerStabilizer()
