@@ -7,6 +7,7 @@ import {
   KYUTAI_PCM_FRAME_BYTES,
   LIVE_NONCE_BYTES,
   LIVE_PCM_FRAME_BYTES,
+  LIVE_SERVER_PENDING_FRAMES,
   LIVE_SOCKET_HIGH_WATER_BYTES,
   type LiveTranscriptErrorCode,
   type LiveTranscriptStartResponse,
@@ -341,15 +342,19 @@ export class LiveTranscriptManager {
       return
     }
     let redeemed = false
-    let processing = false
+    let pending = 0
+    let chain: Promise<void> = Promise.resolve()
     socket.on("message", (raw, isBinary) => {
-      if (processing) {
+      // Frames are processed strictly in order. The browser keeps several
+      // frames in flight, so a short queue is normal; only a sustained stall
+      // of the upstream send (about 3 s of audio) is backpressure.
+      if ((redeemed && pending >= LIVE_SERVER_PENDING_FRAMES) || (!redeemed && pending > 0)) {
         if (redeemed) void this.terminate(session, "interrupted", "live_transcript_backpressure")
         else socket.close(4401, "live_transcript_attachment_invalid")
         return
       }
-      processing = true
-      void (async () => {
+      pending += 1
+      chain = chain.then(async () => {
         if (!isBinary) {
           if (redeemed) await this.terminate(session, "interrupted", "live_transcript_invalid_audio")
           else socket.close(4401, "live_transcript_attachment_invalid")
@@ -415,10 +420,10 @@ export class LiveTranscriptManager {
           const code = error instanceof LiveTranscriptError ? error.code : "live_transcript_upstream_failed"
           await this.terminate(session, "interrupted", code)
         }
-      })().catch(() => {
+      }).catch(() => {
         void this.terminate(session, "interrupted", "live_transcript_upstream_failed")
       }).finally(() => {
-        processing = false
+        pending -= 1
       })
     })
     socket.on("close", () => {

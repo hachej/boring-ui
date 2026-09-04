@@ -61,6 +61,18 @@ into the editable draft without creating a transcript or recording file.
 `/live start` keeps the separate Markdown transcript and agent-review sink, and
 creates a matching `.m4a` only when local recording is explicitly configured.
 
+Input handling measured on real French two-speaker audio (SimSAMU): Kyutai
+returns no words at all for quiet input (peaks around -27 dBFS), so the server
+raises quiet frames towards a -6 dBFS peak before either service hears them
+(`levelNormalizer.ts`; loud audio passes through untouched). The browser keeps
+eight 100 ms frames in flight before requiring an ACK and the server queues up
+to 32 frames behind a slow upstream, so a doctor 800 ms away from the host
+still streams; previously one frame per round trip failed beyond 100 ms RTT.
+The sidecar decodes 0.5 s chunks and confirms a speaker switch over two frames
+(labels arrive a median 0.49 s after the turn, previously 0.92 s) and sends
+delta snapshots; `DIARIZATION_LAG_SECONDS` in `kyutaiDiarized.ts` carries the
+measured boundary offset for that cadence.
+
 ## Robustness gates
 
 The package-local systematic gate composes the real Fastify routes, a real

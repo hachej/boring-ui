@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from sidecar import Segment, TwoSpeakerStabilizer, append_segments, parse_start, parse_stop
+from sidecar import Segment, TwoSpeakerStabilizer, append_segments, delta_from_index, parse_start, parse_stop
 
 
 class ProtocolTests(unittest.TestCase):
@@ -33,6 +33,12 @@ class ProtocolTests(unittest.TestCase):
             SimpleNamespace(speaker=1, start=1.2, end=2.5),
         ], 2.0)
         self.assertEqual(segments, [Segment(0, 0.0, 1.2), Segment(1, 1.2, 2.0)])
+
+    def test_delta_restarts_at_the_last_segment_the_client_holds(self):
+        self.assertEqual(delta_from_index(0, 0), 0)
+        self.assertEqual(delta_from_index(0, 3), 0)
+        self.assertEqual(delta_from_index(3, 3), 2)  # last one may have been extended
+        self.assertEqual(delta_from_index(3, 5), 2)
 
     def test_ignores_short_false_speaker_spikes(self):
         stabilizer = TwoSpeakerStabilizer()

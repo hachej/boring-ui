@@ -3,7 +3,7 @@ import { EventEmitter } from "node:events"
 import type { FastifyRequest } from "fastify"
 import type { WorkspaceAgentDispatcherBinding, WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/server"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { LIVE_PCM_FRAME_BYTES } from "../../shared"
+import { LIVE_PCM_FRAME_BYTES, LIVE_SERVER_PENDING_FRAMES } from "../../shared"
 import { LiveTranscriptManager } from "../manager"
 import type { WhisperLiveKitSnapshot } from "../whisperLiveKit"
 import { MemoryWorkspace } from "./testWorkspace"
@@ -405,7 +405,10 @@ describe("LiveTranscriptManager", () => {
     socket.emit("message", Buffer.from(started.socketNonce), true)
     await vi.waitFor(() => expect(manager.status(started.liveSessionId).state).toBe("active"))
     const frame = Buffer.alloc(LIVE_PCM_FRAME_BYTES)
-    socket.emit("message", frame, true)
+    // A short queue behind a stalled upstream is normal (the browser keeps
+    // several frames in flight); only exceeding the bounded queue is backpressure.
+    for (let index = 0; index < LIVE_SERVER_PENDING_FRAMES; index += 1) socket.emit("message", frame, true)
+    expect(manager.status(started.liveSessionId).state).toBe("active")
     socket.emit("message", frame, true)
     await vi.waitFor(() => expect(manager.status(started.liveSessionId)).toMatchObject({
       active: false,

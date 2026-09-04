@@ -36,6 +36,30 @@ describe("SortformerConnection", () => {
     connection.close()
   })
 
+  it("applies delta snapshots from the sidecar's fromIndex onto the session list", async () => {
+    const server = new WebSocketServer({ host: "127.0.0.1", port: 0, path: "/v1/diarize" })
+    servers.push(server)
+    await new Promise<void>((resolve) => server.once("listening", resolve))
+    const address = server.address() as { port: number }
+    server.on("connection", (socket) => socket.on("message", (_data, binary) => {
+      if (!binary) return socket.send(JSON.stringify({ type: "ready", protocol: "boring.sortformer.v1" }))
+      socket.send(JSON.stringify({ type: "snapshot", revision: 1, throughSeconds: 1, fromIndex: 0, segments: [{ speaker: 0, startSeconds: 0, endSeconds: 0.6 }, { speaker: 1, startSeconds: 0.6, endSeconds: 1 }] }))
+      // second chunk extends the last segment and adds one
+      socket.send(JSON.stringify({ type: "snapshot", revision: 2, throughSeconds: 2, fromIndex: 1, segments: [{ speaker: 1, startSeconds: 0.6, endSeconds: 1.5 }, { speaker: 0, startSeconds: 1.5, endSeconds: 2 }] }))
+    }))
+    const onSnapshot = vi.fn()
+    const connection = new SortformerConnection(`ws://127.0.0.1:${address.port}/v1/diarize`, { onSnapshot, onFailure: vi.fn() })
+    await connection.connect()
+    await connection.sendPcm(new Uint8Array(3_200))
+    await vi.waitFor(() => expect(onSnapshot).toHaveBeenCalledTimes(2))
+    expect(onSnapshot.mock.calls[1]?.[0].lines).toEqual([
+      { speaker: 0, startSeconds: 0, endSeconds: 0.6, text: "" },
+      { speaker: 1, startSeconds: 0.6, endSeconds: 1.5, text: "" },
+      { speaker: 0, startSeconds: 1.5, endSeconds: 2, text: "" },
+    ])
+    connection.close()
+  })
+
   it("strictly parses known speaker segments", () => {
     expect(parseSortformerMessage(JSON.stringify({
       type: "snapshot",

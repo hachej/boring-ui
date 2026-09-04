@@ -10,7 +10,8 @@ describe("Kyutai + raw Sortformer diarization", () => {
   it("forks an unchanged native 24 kHz frame and an exact 16 kHz diarizer frame", async () => {
     const input = new Uint8Array(4_800)
     const inputView = new DataView(input.buffer)
-    for (let index = 0; index < 2_400; index += 1) inputView.setInt16(index * 2, index - 1_200, true)
+    // full-scale ramp: already at target level, so the level normaliser passes it through untouched
+    for (let index = 0; index < 2_400; index += 1) inputView.setInt16(index * 2, (index - 1_200) * 27, true)
     const kyutaiSend = vi.fn(async (_data: Uint8Array) => undefined)
     const diarizerSend = vi.fn(async (_data: Uint8Array) => undefined)
     const connection = new KyutaiDiarizedConnection("ws://kyutai", "ws://diarizer", { onSnapshot: vi.fn(), onFailure: vi.fn() }, {
@@ -116,8 +117,9 @@ describe("Kyutai + Sortformer merge on a measured two-voice bench", () => {
   }
 
   it("beats the uncompensated per-word merge on accuracy and turn count", () => {
+    // This bench was recorded with the earlier 1 s-chunk, five-frame sidecar, whose lag was 0.5 s.
     const before = score(mergeKyutaiWordsWithSpeakers(snapshot(bench.words), snapshot(bench.segments), { lagSeconds: 0 }).lines)
-    const after = score(mergeKyutaiWordsWithSpeakers(snapshot(bench.words), snapshot(bench.segments)).lines)
+    const after = score(mergeKyutaiWordsWithSpeakers(snapshot(bench.words), snapshot(bench.segments), { lagSeconds: 0.5 }).lines)
     expect(before.accuracy).toBeLessThan(0.95)
     expect(after.accuracy).toBeGreaterThanOrEqual(0.95)
     expect(after.runs).toBe(6)
@@ -140,5 +142,27 @@ describe("Kyutai + Sortformer merge on a measured two-voice bench", () => {
       { lagSeconds: 0 },
     )
     expect(merged.lines.map((line) => line.speaker)).toEqual([-1, 1, 1, 1, 1])
+  })
+})
+
+describe("Kyutai + Sortformer merge on a SimSAMU dispatch call", () => {
+  // Real French two-speaker audio with word-level speaker references; the
+  // intervals come from the production sidecar logic replayed offline with
+  // its current cadence (0.5 s chunks, two confirmation frames).
+  const bench = JSON.parse(readFileSync(new URL("./fixtures.simsamuTwoSpeakers.json", import.meta.url), "utf8")) as {
+    words: Array<WhisperLiveKitSnapshot["lines"][number] & { truth: string }>
+    segments: WhisperLiveKitSnapshot["lines"]
+  }
+  const accuracy = (lines: WhisperLiveKitSnapshot["lines"]) => {
+    const ids = [...new Set(bench.words.map((word) => word.truth))]
+    const mappings = [{ [ids[0]!]: 0, [ids[1]!]: 1 }, { [ids[0]!]: 1, [ids[1]!]: 0 }]
+    return Math.max(...mappings.map((map) => lines.filter((line, index) => map[bench.words[index]!.truth] === line.speaker).length / lines.length))
+  }
+
+  it("labels at least nine words in ten with the measured lag", () => {
+    // The 0.2 s lag was chosen on the 12-file aggregate (92.5 %); single
+    // files vary by a few points either way, so only the floor is asserted.
+    const lines = bench.words.map(({ truth: _truth, ...word }) => word)
+    expect(accuracy(mergeKyutaiWordsWithSpeakers(snapshot(lines), snapshot(bench.segments)).lines)).toBeGreaterThanOrEqual(0.9)
   })
 })
