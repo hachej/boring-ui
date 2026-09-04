@@ -10,6 +10,7 @@
 //
 // Run from apps/factory-playground/ (or from anywhere via `pnpm --filter factory-playground epic ...`).
 import { execFile, execFileSync, spawn } from 'node:child_process'
+import { once } from 'node:events'
 import { createServer } from 'node:net'
 import { openSync } from 'node:fs'
 import { mkdir, readFile, writeFile, rename, stat } from 'node:fs/promises'
@@ -375,30 +376,43 @@ async function cmdUp(flags) {
     if (ghToken) env.BORING_FACTORY_GIT_TOKEN = ghToken
   }
 
-  const viteLog = resolve(logsDir, 'vite.log')
-  const logFd = openSync(viteLog, 'a')
-  console.log(`[factory-epic] launching epic '${slug}' (feature: ${feature}) — API ${apiPort}, UI ${uiPort}`)
-  console.log(`[factory-epic]   workspaceRoot: ${worktree.workspaceRoot}`)
-  console.log(`[factory-epic]   log: ${viteLog}`)
-  const child = spawn('pnpm', ['exec', 'vite', '--port', String(uiPort)], {
+  const hostLog = resolve(logsDir, 'host.log')
+  const hostFd = openSync(hostLog, 'a')
+  const host = spawn('pnpm', ['exec', 'tsx', 'scripts/factory-host.mts'], {
     cwd: APP_ROOT,
     env,
     detached: true,
-    stdio: ['ignore', logFd, logFd],
+    stdio: ['ignore', hostFd, hostFd],
   })
-  child.unref()
+  host.unref()
+
+  const viteLog = resolve(logsDir, 'vite.log')
+  const viteFd = openSync(viteLog, 'a')
+  console.log(`[factory-epic] launching epic '${slug}' (feature: ${feature}) — API ${apiPort}, UI ${uiPort}`)
+  console.log(`[factory-epic]   workspaceRoot: ${worktree.workspaceRoot}`)
+  console.log(`[factory-epic]   host log: ${hostLog}`)
+  console.log(`[factory-epic]   vite log: ${viteLog}`)
+  const vite = spawn('pnpm', ['exec', 'vite', '--port', String(uiPort), '--host', '127.0.0.1'], {
+    cwd: APP_ROOT,
+    env: { ...env, BORING_FACTORY_VITE_FRONTEND_ONLY: '1' },
+    detached: true,
+    stdio: ['ignore', viteFd, viteFd],
+  })
+  vite.unref()
 
   let meta
   try {
     meta = await waitForMeta(apiPort)
   } catch (error) {
     console.error(`[factory-epic] ${error.message}`)
-    console.error(`[factory-epic] tail of ${viteLog}:`)
-    try {
-      const { stdout } = await exec('tail', ['-n', '60', viteLog])
-      console.error(stdout)
-    } catch {
-      // ignore
+    for (const logPath of [hostLog, viteLog]) {
+      console.error(`[factory-epic] tail of ${logPath}:`)
+      try {
+        const { stdout } = await exec('tail', ['-n', '60', logPath])
+        console.error(stdout)
+      } catch {
+        // ignore
+      }
     }
     throw error
   }
@@ -413,7 +427,7 @@ async function cmdUp(flags) {
     apiPort,
     uiPort,
     provider,
-    pids: [child.pid],
+    pids: [host.pid, vite.pid],
     startedAt: new Date().toISOString(),
     stateRoot: epicStateRoot,
   }
