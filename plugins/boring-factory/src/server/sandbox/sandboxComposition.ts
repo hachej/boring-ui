@@ -300,6 +300,7 @@ export function createFactorySandboxPlugin(
   stateRoot: string,
   env: NodeJS.ProcessEnv = process.env,
   epicKey?: string,
+  workspaceScopeId: string = FACTORY_WORKSPACE_SCOPE_ID,
 ) {
   const ttlMs = positiveInteger(env.BORING_FACTORY_SANDBOX_TTL_MS, 30 * 60_000)
   const maxPerWorker = positiveInteger(env.BORING_FACTORY_SANDBOX_MAX_PER_WORKER, 2)
@@ -315,14 +316,14 @@ export function createFactorySandboxPlugin(
   const provider = createFactorySandboxProvider(workspaceRoot, stateRoot, env, epicKey)
 
   return createSandboxServerPlugin({
-    workspaceScopeId: FACTORY_WORKSPACE_SCOPE_ID,
+    workspaceScopeId,
     authorizedAgentTypeIds: [FACTORY_WORKER_AGENT_TYPE_ID],
     pluginContentDigest: sandboxPluginContentDigest(),
     authorityDigest,
     createLeaseService: ({ agentTypeId }) => new SandboxLeaseService({
       workspaceRoot: resolve(stateRoot, 'leases', agentTypeId),
       provider,
-      providerWorkspaceId: FACTORY_WORKSPACE_SCOPE_ID,
+      providerWorkspaceId: workspaceScopeId,
       serviceDigest: authorityDigest,
       ttlMs,
       reapIntervalMs: Math.min(60_000, ttlMs),
