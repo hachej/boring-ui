@@ -1326,19 +1326,34 @@ importers:
 
   plugins/boring-factory:
     dependencies:
+      '@hachej/boring-agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
+      '@hachej/boring-sandbox':
+        specifier: workspace:*
+        version: link:../../packages/boring-sandbox
+      '@hachej/boring-tasks':
+        specifier: workspace:*
+        version: link:../tasks
+      '@hachej/boring-workspace':
+        specifier: workspace:*
+        version: link:../../packages/workspace
       '@playwright/test':
         specifier: ^1.62.1
         version: 1.62.1
       '@vercel/sandbox':
         specifier: 3.0.0
         version: 3.0.0
+      fastify:
+        specifier: '*'
+        version: 5.12.1
       mermaid:
         specifier: 11.16.1
         version: 11.16.1
     devDependencies:
-      '@hachej/boring-agent':
+      '@hachej/boring-sandbox-plugin':
         specifier: workspace:*
-        version: link:../../packages/agent
+        version: link:../sandbox
       '@types/node':
         specifier: ^22.20.0
         version: 22.20.1

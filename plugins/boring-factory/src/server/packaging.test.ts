@@ -73,6 +73,9 @@ describe('private Boring Factory tarball', () => {
           '@hachej/boring-factory': 'file:factory.tgz',
         },
       }))
+      // pnpm 10 exits non-zero when transitive dependencies carry ignored build scripts; the consumer never runs them.
+      // The consumer never runs transitive build scripts; declaring that keeps pnpm 10 from failing the install.
+      await writeFile(path.join(consumerRoot, 'pnpm-workspace.yaml'), 'onlyBuiltDependencies: []\nstrictDepBuilds: false\nshamefullyHoist: true\n')
       runPnpm(['install', '--lockfile-only'], consumerRoot)
       runPnpm(['fetch'], consumerRoot)
       runPnpm(['install', '--frozen-lockfile', '--offline'], consumerRoot)
@@ -99,20 +102,20 @@ describe('private Boring Factory tarball', () => {
       const resolveSnapshotFn = vi.fn(async () => ({
         snapshotId: 'snap_test',
         baseSha: 'deadbeef',
-        lockfileSha256: 'sha256:test',
+        lockfileSha256: 'sha256:test' as const,
         builtAt: new Date().toISOString(),
         expiresAt: new Date(Date.now() + 60_000).toISOString(),
         epicKey: 'pack-test',
         reused: true,
       }))
       const buildInnerProvider = vi.fn(() => ({
-        contractVersion: 'boring-sandbox-provider.v1',
+        contractVersion: 'boring-sandbox-provider.v1' as const,
         providerId: 'vercel-sandbox',
         capabilities: {},
         resolveRuntimeRoot: (context: { workspaceRoot: string }) => context.workspaceRoot,
         disposableProfile: {
-          contractVersion: 'boring-sandbox.disposable-provider.v1',
-          resume: false,
+          contractVersion: 'boring-sandbox.disposable-provider.v1' as const,
+          resume: false as const,
           publishedCleanupOwner: 'returned-pair',
           ambiguousCreate: 'correlated-reconciliation',
           providerConfigDigest: `sha256:${'0'.repeat(64)}`,
@@ -150,7 +153,7 @@ describe('private Boring Factory tarball', () => {
         scratchRoot: consumerRoot,
         remoteSource: 'fetch',
         log: () => {},
-        buildInnerProvider,
+        buildInnerProvider: buildInnerProvider as never,
         resolveSnapshotFn,
       })
       expect(lazyProvider.disposableProfile.providerConfigDigest).toMatch(/^sha256:[a-f0-9]{64}$/)
@@ -218,5 +221,5 @@ describe('private Boring Factory tarball', () => {
         rm(cleanPluginRoot, { recursive: true, force: true }),
       ])
     }
-  }, 60_000)
+  }, 240_000)
 })

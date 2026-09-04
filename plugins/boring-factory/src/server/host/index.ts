@@ -85,7 +85,7 @@ export async function createFactoryHost(options: CreateFactoryHostOptions): Prom
       supervisionControl: supervision.control,
     }),
   }
-  const sandboxPlugin = createFactorySandboxPlugin(workspaceRoot, stateRoot, env, options.epicKey, workspaceScopeId)
+  const sandboxPlugin = await createFactorySandboxPlugin(workspaceRoot, stateRoot, env, options.epicKey, workspaceScopeId)
   const taskPlugin = {
     dir: resolve(options.repositoryRoot, 'plugins/tasks'),
     options: { beadsOperations, config: { providers: [{ provider: 'github', repo: 'auto' }, { provider: 'beads' }] } },

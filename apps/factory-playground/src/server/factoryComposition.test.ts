@@ -98,7 +98,7 @@ describe('native Factory composition', () => {
 
     const root = await mkdtemp(resolve(tmpdir(), 'factory-sandbox-composition-'))
     temporaryRoots.push(root)
-    const sandbox = createFactorySandboxPlugin(root, root, {})
+    const sandbox = await createFactorySandboxPlugin(root, root, {})
     expect(sandbox.agentToolFactory?.({ agentTypeId: FACTORY_WORKER_AGENT_TYPE_ID }).map((tool) => tool.name))
       .toEqual(['sandbox', 'sandbox_bash'])
     expect(() => sandbox.agentToolFactory?.({ agentTypeId: FACTORY_ORCHESTRATOR_AGENT_TYPE_ID }))

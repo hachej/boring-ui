@@ -12,5 +12,6 @@ export default defineConfig({
   clean: true,
   outDir: 'dist',
   platform: 'node',
+  external: ['fastify', '@vercel/sandbox', /^@hachej\//],
   target: 'es2022',
 })
