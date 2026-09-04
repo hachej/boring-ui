@@ -33,12 +33,15 @@ export type {
 } from './kmsBackend'
 export type {
   CommitCredentialVersionInputV1,
+  CommitDekRotationRecordInputV1,
   CredentialFieldDeletionReasonV1,
   CredentialFieldKeyV1,
   CredentialFieldTombstoneV1,
   CredentialMaterialKindV1,
   CredentialVaultPersistenceV1,
   StoredCredentialRecordV1,
+  WorkspaceCredentialRecordV1,
+  WorkspaceDekRotationStateV1,
 } from './persistence'
 export {
   createInMemoryCredentialVersionAnchorV1,

@@ -15,6 +15,7 @@ import type {
   CredentialFieldTombstoneV1,
   CredentialVaultPersistenceV1,
   StoredCredentialRecordV1,
+  WorkspaceDekRotationStateV1,
 } from './persistence'
 
 type Sql = postgres.Sql | postgres.TransactionSql
@@ -40,11 +41,18 @@ type WrappedDekRow = {
 }
 
 type FieldRow = {
+  field_id?: string
   envelope_version: string
   ciphertext: Uint8Array
   nonce: Uint8Array
   auth_tag: Uint8Array
   aad_context: Uint8Array
+}
+
+type RotationRow = {
+  source_generation: string | number
+  target_generation: string | number
+  phase: WorkspaceDekRotationStateV1['phase']
 }
 
 type TombstoneRow = {
@@ -134,6 +142,19 @@ implements CredentialVaultPersistenceV1 {
           hashtextextended(${JSON.stringify([input.workspaceId, input.providerId])}, 0)
         )
       `
+      if (await scoped.isWorkspaceCryptoShredded(input.workspaceId)) {
+        throw new CredentialResolutionError(
+          CREDENTIAL_ERROR_CODES.UNREADABLE,
+          'Workspace credential material was crypto-shredded',
+        )
+      }
+      const rotation = await scoped.getDekRotationState(input.workspaceId)
+      if (rotation && input.record.dekGeneration === rotation.sourceGeneration) {
+        throw new CredentialResolutionError(
+          CREDENTIAL_ERROR_CODES.UNREADABLE,
+          'Credential write must retry against the active DEK generation',
+        )
+      }
       const current = await scoped.getCredentialRecord(
         input.workspaceId,
         input.providerId,
@@ -279,6 +300,154 @@ implements CredentialVaultPersistenceV1 {
       DELETE FROM workspace_credential_keys
       WHERE workspace_id = ${workspaceId} AND dek_generation = ${dekGeneration}
     `
+  }
+
+  async listCredentialRecords(workspaceId: string) {
+    const rows = await this.sql<(CredentialRecordRow & { provider_id: ProviderId })[]>`
+      SELECT provider_id, credential_id, credential_version, dek_generation, material_kind
+      FROM workspace_provider_credentials
+      WHERE workspace_id = ${workspaceId}
+      ORDER BY provider_id
+    `
+    return rows.map((row) => Object.freeze({
+      providerId: row.provider_id,
+      record: Object.freeze({
+        credentialId: row.credential_id,
+        credentialVersion: safeInteger(row.credential_version, 'credential version'),
+        dekGeneration: safeInteger(row.dek_generation, 'DEK generation'),
+        materialKind: row.material_kind,
+      }),
+    }))
+  }
+
+  async listFields(workspaceId: string, providerId: ProviderId, credentialVersion: number) {
+    const rows = await this.sql<FieldRow[]>`
+      SELECT field_id, envelope_version, ciphertext, nonce, auth_tag, aad_context
+      FROM workspace_provider_credential_fields
+      WHERE workspace_id = ${workspaceId} AND provider_id = ${providerId}
+        AND credential_version = ${credentialVersion} AND deleted_at IS NULL
+      ORDER BY field_id
+    `
+    const result = new Map<string, CredentialEnvelopeV1>()
+    for (const row of rows) {
+      if (!row.field_id || row.envelope_version !== CREDENTIAL_ENVELOPE_VERSION) {
+        unreadable('Malformed credential field row')
+      }
+      result.set(row.field_id, Object.freeze({
+        envelopeVersion: CREDENTIAL_ENVELOPE_VERSION,
+        ciphertext: bytes(row.ciphertext),
+        nonce: bytes(row.nonce),
+        authTag: bytes(row.auth_tag),
+        aadContext: bytes(row.aad_context),
+      }))
+    }
+    return result
+  }
+
+  async commitDekRotationRecord(input: import('./persistence').CommitDekRotationRecordInputV1) {
+    if (!('begin' in this.sql)) {
+      throw new CredentialResolutionError(
+        CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
+        'Credential persistence transaction is unavailable',
+      )
+    }
+    await this.sql.begin(async (transaction) => {
+      const scoped = new PostgresCredentialVaultPersistenceV1(transaction)
+      await transaction`
+        SELECT pg_advisory_xact_lock(
+          hashtextextended(${JSON.stringify([input.workspaceId, input.providerId])}, 0)
+        )
+      `
+      const current = await scoped.getCredentialRecord(input.workspaceId, input.providerId)
+      if (
+        !current
+        || current.credentialVersion !== input.expectedCredentialVersion
+        || current.dekGeneration !== input.sourceGeneration
+      ) unreadable('Credential record changed during DEK rotation')
+      for (const [fieldId, envelope] of input.fields) {
+        await scoped.putField({
+          workspaceId: input.workspaceId,
+          providerId: input.providerId,
+          credentialVersion: current.credentialVersion,
+          dekGeneration: input.targetGeneration,
+          fieldId,
+        }, envelope)
+      }
+      const updated = await transaction`
+        UPDATE workspace_provider_credentials
+        SET dek_generation = ${input.targetGeneration}, updated_at = NOW()
+        WHERE workspace_id = ${input.workspaceId} AND provider_id = ${input.providerId}
+          AND credential_version = ${input.expectedCredentialVersion}
+          AND dek_generation = ${input.sourceGeneration}
+      `
+      if (updated.count !== 1) unreadable('Credential record changed during DEK rotation')
+    })
+  }
+
+  async getDekRotationState(workspaceId: string) {
+    const rows = await this.sql<RotationRow[]>`
+      SELECT source_generation, target_generation, phase
+      FROM workspace_credential_dek_rotations WHERE workspace_id = ${workspaceId}
+    `
+    const row = rows[0]
+    return row ? Object.freeze({
+      sourceGeneration: safeInteger(row.source_generation, 'source DEK generation'),
+      targetGeneration: safeInteger(row.target_generation, 'target DEK generation'),
+      phase: row.phase,
+    }) : undefined
+  }
+
+  async putDekRotationState(workspaceId: string, state: WorkspaceDekRotationStateV1) {
+    await this.sql`
+      INSERT INTO workspace_credential_dek_rotations (
+        workspace_id, source_generation, target_generation, phase
+      ) VALUES (
+        ${workspaceId}, ${state.sourceGeneration}, ${state.targetGeneration}, ${state.phase}
+      )
+      ON CONFLICT (workspace_id) DO UPDATE SET
+        source_generation = EXCLUDED.source_generation,
+        target_generation = EXCLUDED.target_generation,
+        phase = EXCLUDED.phase,
+        updated_at = NOW()
+    `
+  }
+
+  async clearDekRotationState(workspaceId: string) {
+    await this.sql`DELETE FROM workspace_credential_dek_rotations WHERE workspace_id = ${workspaceId}`
+  }
+
+  async isWorkspaceCryptoShredded(workspaceId: string) {
+    const rows = await this.sql<{ exists: boolean }[]>`
+      SELECT EXISTS(
+        SELECT 1 FROM workspace_credential_shreds WHERE workspace_id = ${workspaceId}
+      ) AS exists
+    `
+    return rows[0]?.exists === true
+  }
+
+  async cryptoShredWorkspace(workspaceId: string, shreddedAt: string) {
+    if (!('begin' in this.sql)) {
+      throw new CredentialResolutionError(
+        CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
+        'Credential persistence transaction is unavailable',
+      )
+    }
+    await this.sql.begin(async (transaction) => {
+      await transaction`
+        INSERT INTO workspace_credential_shreds (workspace_id, shredded_at)
+        VALUES (${workspaceId}, ${shreddedAt})
+        ON CONFLICT (workspace_id) DO NOTHING
+      `
+      await transaction`
+        UPDATE workspace_provider_credential_fields
+        SET envelope_version = NULL, ciphertext = NULL, nonce = NULL,
+          auth_tag = NULL, aad_context = NULL, dek_generation = NULL,
+          deleted_at = ${shreddedAt}, deletion_reason = 'crypto-shred'
+        WHERE workspace_id = ${workspaceId} AND deleted_at IS NULL
+      `
+      await transaction`DELETE FROM workspace_credential_keys WHERE workspace_id = ${workspaceId}`
+      await transaction`DELETE FROM workspace_credential_dek_rotations WHERE workspace_id = ${workspaceId}`
+    })
   }
 
   async getField(key: CredentialFieldKeyV1): Promise<CredentialEnvelopeV1 | undefined> {

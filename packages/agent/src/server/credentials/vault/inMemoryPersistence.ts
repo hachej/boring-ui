@@ -13,6 +13,7 @@ import type {
   CredentialFieldTombstoneV1,
   CredentialVaultPersistenceV1,
   StoredCredentialRecordV1,
+  WorkspaceDekRotationStateV1,
 } from './persistence'
 
 /**
@@ -94,6 +95,8 @@ export function createInMemoryCredentialVaultPersistenceV1(): CredentialVaultPer
   const wrappedDeks = new Map<string, WrappedWorkspaceDekV1>()
   const fields = new Map<string, CredentialEnvelopeV1>()
   const tombstones = new Map<string, CredentialFieldTombstoneV1>()
+  const rotations = new Map<string, WorkspaceDekRotationStateV1>()
+  const shreddedWorkspaces = new Set<string>()
 
   const persistence: CredentialVaultPersistenceV1 = {
     async getCredentialRecord(
@@ -112,6 +115,19 @@ export function createInMemoryCredentialVaultPersistenceV1(): CredentialVaultPer
     async commitCredentialVersion(
       input: CommitCredentialVersionInputV1,
     ): Promise<void> {
+      if (shreddedWorkspaces.has(input.workspaceId)) {
+        throw new CredentialResolutionError(
+          CREDENTIAL_ERROR_CODES.UNREADABLE,
+          'Workspace credential material was crypto-shredded',
+        )
+      }
+      const rotation = rotations.get(input.workspaceId)
+      if (rotation && input.record.dekGeneration === rotation.sourceGeneration) {
+        throw new CredentialResolutionError(
+          CREDENTIAL_ERROR_CODES.UNREADABLE,
+          'Credential write must retry against the active DEK generation',
+        )
+      }
       const encodedRecordKey = recordKey(input.workspaceId, input.providerId)
       const currentVersion = records.get(encodedRecordKey)?.credentialVersion ?? 0
       if (currentVersion !== input.expectedCredentialVersion) {
@@ -159,6 +175,87 @@ export function createInMemoryCredentialVaultPersistenceV1(): CredentialVaultPer
       dekGeneration: number,
     ): Promise<void> {
       wrappedDeks.delete(dekKey(workspaceId, dekGeneration))
+    },
+    async listCredentialRecords(workspaceId: string) {
+      const result = []
+      for (const [encodedKey, record] of records) {
+        const [storedWorkspaceId, providerId] = JSON.parse(encodedKey) as [string, ProviderId]
+        if (storedWorkspaceId === workspaceId) {
+          result.push(Object.freeze({ providerId, record: Object.freeze({ ...record }) }))
+        }
+      }
+      return Object.freeze(result)
+    },
+    async listFields(workspaceId, providerId, credentialVersion) {
+      const result = new Map<string, CredentialEnvelopeV1>()
+      for (const [encodedKey, envelope] of fields) {
+        const [storedWorkspaceId, storedProviderId, storedVersion, fieldId] = JSON.parse(
+          encodedKey,
+        ) as [string, ProviderId, number, string]
+        if (
+          storedWorkspaceId === workspaceId
+          && storedProviderId === providerId
+          && storedVersion === credentialVersion
+        ) result.set(fieldId, copyEnvelope(envelope))
+      }
+      return result
+    },
+    async commitDekRotationRecord(input) {
+      const encodedRecordKey = recordKey(input.workspaceId, input.providerId)
+      const current = records.get(encodedRecordKey)
+      if (
+        !current
+        || current.credentialVersion !== input.expectedCredentialVersion
+        || current.dekGeneration !== input.sourceGeneration
+      ) {
+        throw new CredentialResolutionError(
+          CREDENTIAL_ERROR_CODES.UNREADABLE,
+          'Credential record changed during DEK rotation',
+        )
+      }
+      for (const [fieldId, envelope] of input.fields) {
+        fields.set(fieldKey({
+          workspaceId: input.workspaceId,
+          providerId: input.providerId,
+          credentialVersion: current.credentialVersion,
+          fieldId,
+        }), copyEnvelope(envelope))
+      }
+      records.set(encodedRecordKey, Object.freeze({
+        ...current,
+        dekGeneration: input.targetGeneration,
+      }))
+    },
+    async getDekRotationState(workspaceId) {
+      const state = rotations.get(workspaceId)
+      return state ? Object.freeze({ ...state }) : undefined
+    },
+    async putDekRotationState(workspaceId, state) {
+      rotations.set(workspaceId, Object.freeze({ ...state }))
+    },
+    async clearDekRotationState(workspaceId) {
+      rotations.delete(workspaceId)
+    },
+    async isWorkspaceCryptoShredded(workspaceId) {
+      return shreddedWorkspaces.has(workspaceId)
+    },
+    async cryptoShredWorkspace(workspaceId, shreddedAt) {
+      shreddedWorkspaces.add(workspaceId)
+      rotations.delete(workspaceId)
+      for (const [encodedKey] of wrappedDeks) {
+        const [storedWorkspaceId] = JSON.parse(encodedKey) as [string, number]
+        if (storedWorkspaceId === workspaceId) wrappedDeks.delete(encodedKey)
+      }
+      for (const [encodedKey] of fields) {
+        const [storedWorkspaceId] = JSON.parse(encodedKey) as [string, string, number, string]
+        if (storedWorkspaceId === workspaceId) {
+          fields.delete(encodedKey)
+          tombstones.set(encodedKey, Object.freeze({
+            deletedAt: shreddedAt,
+            reason: 'crypto-shred',
+          }))
+        }
+      }
     },
     async getField(
       key: CredentialFieldKeyV1,

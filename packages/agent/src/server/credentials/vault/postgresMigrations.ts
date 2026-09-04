@@ -76,7 +76,7 @@ export async function runCredentialVaultPostgresMigrationsV1(
           AND envelope_version IS NOT NULL AND ciphertext IS NOT NULL
           AND nonce IS NOT NULL AND auth_tag IS NOT NULL AND aad_context IS NOT NULL)
         OR
-        (deleted_at IS NOT NULL AND deletion_reason IN ('superseded-version', 'credential-tombstone')
+        (deleted_at IS NOT NULL AND deletion_reason IN ('superseded-version', 'credential-tombstone', 'crypto-shred')
           AND dek_generation IS NULL
           AND envelope_version IS NULL AND ciphertext IS NULL
           AND nonce IS NULL AND auth_tag IS NULL AND aad_context IS NULL)
@@ -84,8 +84,50 @@ export async function runCredentialVaultPostgresMigrationsV1(
     )
   `)
   await sql.unsafe(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'workspace_provider_credential_fields_tombstone_check'
+          AND conrelid = 'workspace_provider_credential_fields'::regclass
+          AND pg_get_constraintdef(oid) LIKE '%crypto-shred%'
+      ) THEN
+        ALTER TABLE workspace_provider_credential_fields
+          DROP CONSTRAINT IF EXISTS workspace_provider_credential_fields_tombstone_check;
+        ALTER TABLE workspace_provider_credential_fields
+          ADD CONSTRAINT workspace_provider_credential_fields_tombstone_check CHECK (
+            (deleted_at IS NULL AND deletion_reason IS NULL
+              AND dek_generation IS NOT NULL
+              AND envelope_version IS NOT NULL AND ciphertext IS NOT NULL
+              AND nonce IS NOT NULL AND auth_tag IS NOT NULL AND aad_context IS NOT NULL)
+            OR
+            (deleted_at IS NOT NULL AND deletion_reason IN (
+              'superseded-version', 'credential-tombstone', 'crypto-shred'
+            ) AND dek_generation IS NULL
+              AND envelope_version IS NULL AND ciphertext IS NULL
+              AND nonce IS NULL AND auth_tag IS NULL AND aad_context IS NULL)
+          );
+      END IF;
+    END $$
+  `)
+  await sql.unsafe(`
     CREATE INDEX IF NOT EXISTS workspace_provider_credential_fields_live_idx
       ON workspace_provider_credential_fields (workspace_id, provider_id, credential_version)
       WHERE deleted_at IS NULL
+  `)
+  await sql.unsafe(`
+    CREATE TABLE IF NOT EXISTS workspace_credential_dek_rotations (
+      workspace_id text PRIMARY KEY,
+      source_generation bigint NOT NULL CHECK (source_generation > 0),
+      target_generation bigint NOT NULL CHECK (target_generation = source_generation + 1),
+      phase text NOT NULL CHECK (phase IN ('reencrypting', 'verified')),
+      updated_at timestamptz NOT NULL DEFAULT NOW()
+    )
+  `)
+  await sql.unsafe(`
+    CREATE TABLE IF NOT EXISTS workspace_credential_shreds (
+      workspace_id text PRIMARY KEY,
+      shredded_at timestamptz NOT NULL
+    )
   `)
 }

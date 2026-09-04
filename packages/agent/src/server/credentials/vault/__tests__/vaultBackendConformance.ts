@@ -75,6 +75,27 @@ export function runVaultCredentialStoreConformanceV1(
       expect(resolved.fields.get(fieldId)).toEqual(secret)
     })
 
+    test('rotates live envelopes and permanently crypto-shreds the workspace', async () => {
+      const workspaceId = `ws-${randomUUID()}`
+      const { backend, persistence } = await harness()
+      const original = await backend.writeCredentialFields({
+        workspaceId,
+        providerId,
+        fields: new Map([[fieldId, new TextEncoder().encode('rotate-me')]]),
+      })
+
+      await expect(backend.rotateWorkspaceDek(workspaceId)).resolves.toBe(2)
+      expect(await persistence.getWrappedDek(workspaceId, original.dekGeneration))
+        .toBeUndefined()
+      const resolved = await backend.read(workspaceId, providerId, [fieldId])
+      if (resolved.kind !== 'field-set') throw new Error('expected field-set')
+      expect(new TextDecoder().decode(resolved.fields.get(fieldId))).toBe('rotate-me')
+
+      await backend.cryptoShredWorkspace(workspaceId)
+      await expect(backend.read(workspaceId, providerId, [fieldId]))
+        .rejects.toMatchObject({ code: CREDENTIAL_ERROR_CODES.UNREADABLE })
+    })
+
     test('rejects the same persisted material under a different KEK', async () => {
       const workspaceId = `ws-${randomUUID()}`
       const persistence = await createPersistence()
