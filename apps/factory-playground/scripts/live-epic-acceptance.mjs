@@ -295,6 +295,16 @@ try {
     console.log('demo is live and serves the feature at the exact SHA')
   }
 
+  if (process.env.OWNER_ANSWERS_GATE2 === '1') {
+    // Real epics: the driver validates the Gate 2 card but the owner answers it in the Inbox.
+    receipt.gate2.decision = 'left pending for the owner (OWNER_ANSWERS_GATE2=1)'
+    loopOn = false
+    const pendingOut = process.env.RECEIPT_PATH ?? resolve(EPIC_WT, 'apps/factory-playground/workspace/factory-runs', `live-${EPIC}.json`)
+    await mkdir(dirname(pendingOut), { recursive: true })
+    await writeFile(pendingOut, JSON.stringify(receipt, null, 2))
+    console.log('OWNER_ANSWERS_GATE2=1: Gate 2 validated and left pending in the Inbox for the owner; receipt at', pendingOut)
+    process.exit(0)
+  }
   await answerGate(osid, gate2, { decision: 'approve', notes: 'approved by acceptance driver' })
   console.log('gate 2 approved')
 
