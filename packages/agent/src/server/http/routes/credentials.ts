@@ -211,7 +211,9 @@ export async function credentialsRoutes(
     const { workspaceId } = await requireOwner(request, options)
     const flowId = (request.params as { flowId?: unknown }).flowId
     const flow = typeof flowId === 'string' ? options.oauthBroker?.get(workspaceId, flowId) : undefined
-    if (!flow) return reply.code(404).send({ error: { code: 'OAUTH_FLOW_NOT_FOUND', message: 'OAuth flow not found' } })
+    if (!flow) return reply.code(404).send({
+      error: { code: CREDENTIAL_ERROR_CODES.OAUTH_STATE_INVALID, message: 'OAuth flow not found' },
+    })
     return reply.code(200).send(flow)
   })
 

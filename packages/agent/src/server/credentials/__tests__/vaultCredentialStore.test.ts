@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import type { OAuthCredential } from '@earendil-works/pi-ai'
+import { CREDENTIAL_ERROR_CODES } from '../../../shared/credentials'
 import type { ProviderId } from '../../../shared/credentials'
 import {
   createInMemoryCredentialVaultPersistenceV1,
@@ -88,7 +89,7 @@ describe('vault-backed Pi CredentialStore', () => {
     expect(await unattended.read('openai-codex')).toBeUndefined()
     expect(await unattended.list()).toEqual([])
     await expect(unattended.modify('openai-codex', async () => initial)).rejects.toMatchObject({
-      code: 'CREDENTIAL_DELIVERY_FORBIDDEN',
+      code: CREDENTIAL_ERROR_CODES.DELIVERY_FORBIDDEN,
     })
   })
 })
