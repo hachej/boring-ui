@@ -24,6 +24,11 @@ export interface CreateFactoryHostOptions {
   readonly featureName?: string
   readonly stateRoot: string
   readonly env?: NodeJS.ProcessEnv
+  readonly models?: {
+    readonly orchestrator?: string
+    readonly worker?: string
+    readonly reviewer?: string
+  }
   readonly provider?: string
   readonly appRoot?: string
   readonly logger?: boolean
@@ -50,9 +55,9 @@ export async function createFactoryHost(options: CreateFactoryHostOptions): Prom
   await mkdir(stateRoot, { recursive: true })
 
   const agents = await loadNativeFactoryFleet(options.repositoryRoot, {
-    orchestrator: options.provider ?? env.BORING_FACTORY_ORCHESTRATOR_MODEL,
-    worker: options.provider ?? env.BORING_FACTORY_WORKER_MODEL,
-    reviewer: options.provider ?? env.BORING_FACTORY_REVIEWER_MODEL,
+    orchestrator: options.models?.orchestrator ?? env.BORING_FACTORY_ORCHESTRATOR_MODEL,
+    worker: options.models?.worker ?? env.BORING_FACTORY_WORKER_MODEL,
+    reviewer: options.models?.reviewer ?? env.BORING_FACTORY_REVIEWER_MODEL,
     epicKey: options.epicKey,
     featureName,
   })

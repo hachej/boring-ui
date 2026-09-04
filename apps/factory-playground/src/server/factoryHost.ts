@@ -56,6 +56,7 @@ export async function startFactoryHost(options: StartFactoryHostOptions) {
     featureName: registration.featureName,
     stateRoot,
     env: hostEnv,
+    models: registration.models,
     provider: registration.provider,
     logger: options.logger,
   })
