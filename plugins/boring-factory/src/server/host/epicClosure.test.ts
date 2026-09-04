@@ -38,7 +38,7 @@ function deps(overrides: Partial<EpicClosureDeps> = {}): EpicClosureDeps {
     featureName: 'Factory Plugin',
     workspaceScopeId: 'factory-playground',
     getApp: () => ({ inject: vi.fn(async () => ({ statusCode: 200, json: () => ({ isError: false }) })) }) as never,
-    demoControl: { listDemos: async () => ({}), stopDemo: async () => 'stopped' },
+    demoControl: { listDemos: async () => ({}), stopDemo: async () => 'stopped', listDemosForSession: async () => ({}) },
     supervisionControl: { stopSupervision: async () => {} },
     invalidateSnapshotFn: vi.fn(async () => {}),
     ...overrides,
@@ -170,6 +170,10 @@ describe('executeCloseEpic', () => {
         invalidateSnapshotFn,
         demoControl: {
           listDemos: async () => demoEntries,
+          listDemosForSession: async (sessionId) => {
+            operations.push(`list:${sessionId}`)
+            return Object.fromEntries(Object.entries(demoEntries).filter(([, entry]) => entry.sessionId === sessionId))
+          },
           stopDemo: async (id) => { operations.push(`demo:${id}`); delete demoEntries[id]; return 'stopped' },
         },
         supervisionControl: {
@@ -179,7 +183,7 @@ describe('executeCloseEpic', () => {
     )
 
     expect(result.isError).toBe(false)
-    expect(operations).toEqual(['invalidate:/state:factory-plugin-lqvd:' + 'a'.repeat(40), 'demo:demo1', 'close:factory-plugin-lqvd.3', 'close:factory-plugin-lqvd', 'supervision:orch-a'])
+    expect(operations).toEqual(['invalidate:/state:factory-plugin-lqvd:' + 'a'.repeat(40), 'list:orch-a', 'demo:demo1', 'close:factory-plugin-lqvd.3', 'close:factory-plugin-lqvd', 'supervision:orch-a'])
     expect(result.details).toMatchObject({
       overall: 'complete',
       callingSessionId: 'orch-a',
@@ -220,7 +224,7 @@ describe('executeCloseEpic', () => {
 
   it('returns partial and leaves epic/supervision untouched when a demo stop or child close fails, and reruns idempotently', async () => {
     const demoEntries: Record<string, DemoEntry> = {
-      demo1: { sandboxId: 'sandbox-1', url: 'https://demo', sha: 'c'.repeat(40), port: 3000, command: 'node', startedAt: 's', expiresAt: 'e' },
+      demo1: { sandboxId: 'sandbox-1', url: 'https://demo', sha: 'c'.repeat(40), port: 3000, command: 'node', startedAt: 's', expiresAt: 'e', sessionId: 'orch-a' },
     }
     let closeChildFails = true
     const operations: string[] = []
@@ -246,6 +250,10 @@ describe('executeCloseEpic', () => {
     const sharedDeps = deps({
       demoControl: {
         listDemos: async () => demoEntries,
+        listDemosForSession: async (sessionId) => {
+          operations.push(`list:${sessionId}`)
+          return Object.fromEntries(Object.entries(demoEntries).filter(([, entry]) => entry.sessionId === sessionId))
+        },
         stopDemo: async (id) => { operations.push(`demo:${id}`); delete demoEntries[id]; return 'stopped' },
       },
       supervisionControl: {
@@ -255,12 +263,12 @@ describe('executeCloseEpic', () => {
 
     const partial = await executeCloseEpic({ prNumber: 17 }, { abortSignal: new AbortController().signal, toolCallId: 'c7', sessionId: 'orch-a' }, sharedDeps)
     expect(partial.details).toMatchObject({ overall: 'partial', closedBeadIds: [], alreadyClosedBeadIds: [], supervision: { status: 'failed' } })
-    expect(operations).toEqual(['demo:demo1', 'close:factory-plugin-lqvd.3'])
+    expect(operations).toEqual(['list:orch-a', 'demo:demo1', 'close:factory-plugin-lqvd.3'])
 
     closeChildFails = false
     operations.length = 0
     const rerun = await executeCloseEpic({ prNumber: 17 }, { abortSignal: new AbortController().signal, toolCallId: 'c8', sessionId: 'orch-a' }, sharedDeps)
     expect(rerun.details).toMatchObject({ overall: 'complete', closedBeadIds: ['factory-plugin-lqvd.3', 'factory-plugin-lqvd'], supervision: { status: 'stopped' } })
-    expect(operations).toEqual(['close:factory-plugin-lqvd.3', 'close:factory-plugin-lqvd', 'supervision:orch-a'])
+    expect(operations).toEqual(['list:orch-a', 'close:factory-plugin-lqvd.3', 'close:factory-plugin-lqvd', 'supervision:orch-a'])
   })
 })

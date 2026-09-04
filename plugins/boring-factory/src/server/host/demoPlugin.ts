@@ -179,6 +179,7 @@ export interface CreateFactoryDemoPluginOptions {
 export interface FactoryDemoPluginControl {
   listDemos(): Promise<Record<string, DemoEntry>>
   stopDemo(id: string): Promise<'stopped' | 'already-stopped'>
+  listDemosForSession(sessionId: string): Promise<Record<string, DemoEntry>>
 }
 
 export interface FactoryDemoPluginHandle {
@@ -317,14 +318,16 @@ export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions)
     const state = await readState(statePath)
     const entry = state.demos[id]
     if (!entry) return 'already-stopped'
-    const credentials = resolveVercelCredentials(env)
-    const factory = await getSandboxFactory()
-    try {
-      const sandbox = await factory.get({ name: entry.sandboxId, ...credentials })
-      await sandbox.stop()
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'failed to stop sandbox'
-      if (!/not found|no fake sandbox named/i.test(message)) throw error
+    if (isProviderConfigured(env)) {
+      const credentials = resolveVercelCredentials(env)
+      const factory = await getSandboxFactory()
+      try {
+        const sandbox = await factory.get({ name: entry.sandboxId, ...credentials })
+        await sandbox.stop()
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'failed to stop sandbox'
+        if (!/not found|no fake sandbox named/i.test(message)) throw error
+      }
     }
     await mutateState((current) => {
       const rest = { ...current.demos }
@@ -336,6 +339,11 @@ export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions)
 
   async function listDemos(): Promise<Record<string, DemoEntry>> {
     return (await readState(statePath)).demos
+  }
+
+  async function listDemosForSession(sessionId: string): Promise<Record<string, DemoEntry>> {
+    const demos = await listDemos()
+    return Object.fromEntries(Object.entries(demos).filter(([, entry]) => entry.sessionId === sessionId))
   }
 
   function close(): void {
@@ -546,5 +554,5 @@ export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions)
     },
   })
 
-  return { plugin, rearm, control: { listDemos, stopDemo }, close }
+  return { plugin, rearm, control: { listDemos, stopDemo, listDemosForSession }, close }
 }

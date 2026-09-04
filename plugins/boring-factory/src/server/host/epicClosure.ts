@@ -267,7 +267,7 @@ export async function executeCloseEpic(
       }, false)
     }
 
-    const demos = await deps.demoControl.listDemos()
+    const demos = await deps.demoControl.listDemosForSession(callingSessionId)
     for (const [id, entry] of Object.entries(demos)) {
       try {
         const outcome = await deps.demoControl.stopDemo(id)
