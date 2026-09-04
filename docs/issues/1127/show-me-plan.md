@@ -68,7 +68,7 @@ Meta approval gates only the live pilot receipt; recorded fixtures keep adapter 
 | 24-hour rule | Free-form inside window, one approved utility template outside | Matches Cloud API constraints |
 | Approval | `ask_user` choices and exactly-once answer through channel | Owner can approve without opening Workspace |
 | Provider edge | Thin in-house adapter behind generic core | Keeps provider behavior out of session orchestration |
-| Scope | No self-serve signup, media, artifact drop, or human takeover | Those are phase 2/v2 |
+| Adopted execution subset | No self-serve signup, media, artifact drop, descriptor UI, or human takeover | Identity/takeover remain Phase 2/v2; media, artifact drop, and descriptor UI remain in the broader r4.1 design but are not dispatch authority for this epic |
 
 ## Proof and risk
 
