@@ -247,6 +247,12 @@ export function createVaultCredentialStoreBackendV1(
       input: WriteCredentialFieldsInputV1,
     ): Promise<StoredCredentialRecordV1> {
       assertWorkspaceId(input?.workspaceId)
+      if (input.fields.size === 0) {
+        throw new CredentialResolutionError(
+          CREDENTIAL_ERROR_CODES.SCHEMA_MISMATCH,
+          'Credential field set must not be empty',
+        )
+      }
       await requireReady()
       const { workspaceId, providerId } = input
       return versionAnchor.withMutation(

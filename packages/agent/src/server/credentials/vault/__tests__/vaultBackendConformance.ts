@@ -41,6 +41,18 @@ export function runVaultCredentialStoreConformanceV1(
       return { backend, persistence }
     }
 
+    test('rejects an empty field set without persisting a credential', async () => {
+      const workspaceId = `ws-${randomUUID()}`
+      const { backend, persistence } = await harness()
+
+      await expect(backend.writeCredentialFields({
+        workspaceId,
+        providerId,
+        fields: new Map(),
+      })).rejects.toMatchObject({ code: CREDENTIAL_ERROR_CODES.SCHEMA_MISMATCH })
+      expect(await persistence.getCredentialRecord(workspaceId, providerId)).toBeUndefined()
+    })
+
     test('round-trips ciphertext and rewraps its workspace DEK', async () => {
       const workspaceId = `ws-${randomUUID()}`
       const secret = new TextEncoder().encode('conformance-secret')
