@@ -212,6 +212,16 @@ try {
     if (depCount < EXPECT_DEPENDENCIES) throw new Error(`expected >= ${EXPECT_DEPENDENCIES} br dep relation(s) among epic Beads, found ${depCount}`)
   }
 
+  if (process.env.OWNER_ANSWERS_GATE1 === '1') {
+    // Planning epics: Gate 1 carries owner decisions, so the driver validates the card and leaves it pending.
+    receipt.gate1.decision = 'left pending for the owner (OWNER_ANSWERS_GATE1=1)'
+    loopOn = false
+    const pendingOut = process.env.RECEIPT_PATH ?? resolve(EPIC_WT, 'apps/factory-playground/workspace/factory-runs', `live-${EPIC}.json`)
+    await mkdir(dirname(pendingOut), { recursive: true })
+    await writeFile(pendingOut, JSON.stringify(receipt, null, 2))
+    console.log('OWNER_ANSWERS_GATE1=1: Gate 1 validated and left pending in the Inbox for the owner; receipt at', pendingOut)
+    process.exit(0)
+  }
   await answerGate(osid, gate1, { decision: 'approve', notes: 'approved by acceptance driver' })
   loopOn = true
   console.log('gate 1 approved')
