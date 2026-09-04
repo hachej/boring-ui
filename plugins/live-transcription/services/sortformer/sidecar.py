@@ -297,16 +297,22 @@ class Sidecar:
 
 
 async def main() -> None:
+    global MAX_SPEAKERS
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=18881)
     parser.add_argument("--model-path")
     parser.add_argument("--token", default=os.environ.get("BORING_SORTFORMER_TOKEN"))
+    parser.add_argument("--max-speakers", type=int, default=int(os.environ.get("BORING_SORTFORMER_MAX_SPEAKERS", MAX_SPEAKERS)),
+                        help="session speaker slots (2 for a doctor-patient consultation, 3 when an accompanying person is expected)")
     args = parser.parse_args()
     if args.host not in {"127.0.0.1", "::1", "localhost"}:
         raise SystemExit("Sortformer sidecar must bind to loopback")
     if not args.token:
         raise SystemExit("BORING_SORTFORMER_TOKEN or --token is required")
+    if not 2 <= args.max_speakers <= 4:
+        raise SystemExit("--max-speakers must be between 2 and 4")
+    MAX_SPEAKERS = args.max_speakers
     sidecar = Sidecar(args.model_path, args.token)
     await sidecar.warm_up()
     async with websockets.serve(sidecar.handle, args.host, args.port, max_size=MAX_MESSAGE_BYTES, max_queue=8):
