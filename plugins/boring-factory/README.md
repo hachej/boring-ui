@@ -6,14 +6,14 @@ Pi extension, skill, tool, provider, credential, or dispatch authority.
 
 ## Canonical sources
 
-- Profiles: `agents/factory-orchestrator` and `agents/factory-worker` in this package.
+- Profiles: `agents/boring-orchestrator`, `agents/boring-worker`, and `agents/boring-reviewer` in this package.
 - Worker procedures: repository-canonical `.agents/skills/plan` and
   `.agents/skills/exec`.
 - Procedure companions: `.agents/skill-references/plan` and
   `.agents/skill-references/exec`.
 
 `pnpm build` copies those procedures, their direct read-only procedure/reference
-closure, and both profiles byte-for-byte into `dist/resources`. The manifest maps
+closure, and all three profiles byte-for-byte into `dist/resources`. The manifest maps
 every packaged path to its canonical repository source and SHA-256. Generated
 resources are package output and must not be edited directly. Only the top-level
 `skills/plan` and `skills/exec` directories are projected as discoverable Worker
