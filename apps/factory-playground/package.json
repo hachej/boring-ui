@@ -27,6 +27,7 @@
     "@hachej/boring-sandbox-plugin": "workspace:*",
     "@hachej/boring-tasks": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
+    "@hachej/boring-factory": "workspace:*",
     "@vercel/sandbox": "3.0.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"

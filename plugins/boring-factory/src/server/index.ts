@@ -38,7 +38,6 @@ export {
   createFactorySandboxProvider,
   createLocalDisposableProvider,
   createExactShaTemplateProvider,
-  createPerEpicVercelProvider,
   buildFetchBootstrapFiles,
   buildFactoryBootstrapScript,
   FACTORY_BOOTSTRAP_SCRIPT,
@@ -61,11 +60,23 @@ export {
   snapshotCommittedHead,
   warmUpFactorySandboxSnapshot,
 } from './sandbox'
+export type {
+  CreatePerEpicVercelProviderOptions,
+  FactorySandboxSnapshotInfo,
+  FactorySandboxSnapshotMode,
+} from './sandbox/sandboxComposition'
 export {
   createFactoryHost,
   createFactoryHostedApp,
   deriveFactoryWorkspaceScopeId,
 } from './host'
+export type {
+  CreateFactoryDemoPluginOptions,
+  DemoSandboxFactory,
+  DemoSandboxHandle,
+  FactoryDemoPluginControl,
+  FactoryDemoPluginHandle,
+} from './host/demoPlugin'
 export {
   executeCloseEpic,
   formatFactoryStatusPr,
@@ -89,11 +100,6 @@ export {
   createFactoryDemoPlugin,
   FACTORY_DEMO_PLUGIN_ID,
 } from './host/demoPlugin'
-export type {
-  CreatePerEpicVercelProviderOptions,
-  FactorySandboxSnapshotInfo,
-  FactorySandboxSnapshotMode,
-} from './sandbox'
 export type {
   ExactShaTemplateProviderOptions,
   FetchBootstrapFile,
