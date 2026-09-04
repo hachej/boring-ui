@@ -23,6 +23,11 @@ export async function createFactoryPlayground(options: CreateFactoryPlaygroundOp
     epicKey,
     stateRoot,
     env,
+    models: {
+      orchestrator: env.BORING_FACTORY_ORCHESTRATOR_MODEL,
+      worker: env.BORING_FACTORY_WORKER_MODEL,
+      reviewer: env.BORING_FACTORY_REVIEWER_MODEL,
+    },
     provider: env.BORING_FACTORY_SANDBOX_PROVIDER,
     logger: options.logger,
   })
