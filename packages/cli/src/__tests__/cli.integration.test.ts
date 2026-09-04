@@ -8,9 +8,10 @@ import { fileURLToPath } from "node:url"
 import fastify from "fastify"
 import { afterEach, beforeAll, expect, test, vi } from "vitest"
 
+import { registerStatic } from "../server/cli.js"
+
 // Each case spawns the built CLI (~5s cold on CI runners); the default 5s budget is a coin flip.
 vi.setConfig({ testTimeout: 30_000 })
-import { registerStatic } from "../server/cli.js"
 
 const execFile = promisify(execFileCallback)
 const testDir = dirname(fileURLToPath(import.meta.url))
