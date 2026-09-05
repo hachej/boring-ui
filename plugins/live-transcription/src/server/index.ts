@@ -85,6 +85,7 @@ export function createLiveTranscriptServerPlugin(options: LiveTranscriptServerPl
     reviewIntervalMs: options.reviewIntervalMs,
     reviewRetryMs: options.reviewRetryMs,
     refiner,
+    onRefineError: (error) => console.error("[live-transcription] offline refine failed after session terminate:", error),
     createUpstreamForTest: options.createUpstreamForTest,
   })
   const composerManager = options.upstreamProvider === "kyutai"

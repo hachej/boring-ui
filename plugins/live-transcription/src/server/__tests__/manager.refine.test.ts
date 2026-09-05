@@ -176,4 +176,80 @@ describe("LiveTranscriptManager offline refinement", () => {
     expect(onRefineError.mock.calls[0]![0]).toBeInstanceOf(Error)
     expect(await workspace.readFile(started.transcriptPath)).toContain("- State: complete")
   })
+
+  it("releases the direct-resolver workspace lease only after the refiner settles, while stop() resolves before that", async () => {
+    const workspace = new MemoryWorkspace()
+    const audioRoot = await mkdtemp(join(tmpdir(), "boring-manager-refine-audio-"))
+    roots.push(audioRoot)
+    const ffmpegPath = await fakeFfmpeg()
+
+    let releaseRefine!: () => void
+    const refineGate = new Promise<void>((resolve) => { releaseRefine = resolve })
+    const refiner: Pick<TranscriptRefiner, "refine"> = {
+      refine: vi.fn(async () => {
+        await refineGate
+        return { markdown: "# Refined\n\n- State: complete\n", words: 1, speakers: 1, durationSeconds: 1 }
+      }),
+    }
+
+    const abort = new AbortController()
+    let callbackCompleted = false
+    const runWithWorkspaceAgent = vi.fn(async (_input: unknown, run: (binding: unknown) => Promise<void>) => {
+      await run({
+        workspace,
+        signal: abort.signal,
+        dispatch: vi.fn(async (dispatchInput: { requestId: string }, _onEvent: unknown, onAccepted?: (value: unknown) => Promise<void>) => {
+          const accepted = {
+            ref: { agentTypeId: "default", sessionId: "chat-1" },
+            receipt: { accepted: true as const, cursor: 1, disposition: "prompt" as const, clientNonce: dispatchInput.requestId },
+          }
+          await onAccepted?.(accepted)
+          return accepted
+        }),
+        interrupt: vi.fn(),
+        stop: vi.fn(),
+      })
+      callbackCompleted = true
+    })
+
+    const upstream = {
+      connect: vi.fn(async () => undefined),
+      sendPcm: vi.fn(async () => undefined),
+      drain: vi.fn(async () => undefined),
+      close: vi.fn(),
+    }
+    const manager = new LiveTranscriptManager({
+      dispatcherResolver: {
+        runWithWorkspaceAgent,
+        async resolve() { throw new Error("compatibility dispatcher must not be used") },
+      } as WorkspaceAgentDispatcherResolver,
+      agentTypeId: "default",
+      actorResolver: () => ({ workspaceId: "default", userId: "local" }),
+      upstreamUrl: "ws://127.0.0.1:18772/asr",
+      audioRecordingDirectory: audioRoot,
+      audioRecordingFfmpegPath: ffmpegPath,
+      refiner: refiner as TranscriptRefiner,
+      createUpstreamForTest: () => upstream,
+    })
+
+    const started = await manager.start(request, { sessionId: "chat-1" })
+    const socket = new FakeSocket()
+    manager.handleBrowserSocket(started.liveSessionId, socket as never)
+    socket.emit("message", Buffer.from(started.socketNonce), true)
+    await vi.waitFor(() => expect(manager.status(started.liveSessionId).state).toBe("active"))
+
+    const stopped = await manager.stop(started.liveSessionId)
+    expect(stopped.state).toBe("complete")
+
+    await vi.waitFor(() => expect(refiner.refine).toHaveBeenCalledOnce())
+    // stop() has already resolved above, but the workspace lease must still be held: the
+    // dispatcher's runWithWorkspaceAgent callback has not completed, because the refiner is
+    // still gated on refineGate.
+    expect(callbackCompleted).toBe(false)
+
+    releaseRefine()
+
+    await vi.waitFor(() => expect(callbackCompleted).toBe(true))
+    expect(await workspace.readFile(started.transcriptPath)).toBe("# Refined\n\n- State: complete\n")
+  })
 })

@@ -681,10 +681,16 @@ export class LiveTranscriptManager {
       if (this.active === session) this.active = undefined
       this.tombstone = result
       return result
-    })().finally(() => {
+    })()
+    const release = () => {
       session.removeWorkspaceAbortListener?.()
       session.releaseWorkspaceLease?.()
-    })
+    }
+    session.terminalPromise
+      .catch(() => undefined)
+      .then(() => {
+        void (session.refinePromise ?? Promise.resolve()).catch(() => undefined).then(release)
+      })
     return session.terminalPromise
   }
 
