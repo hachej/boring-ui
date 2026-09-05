@@ -29,8 +29,8 @@ async function signature(body: Uint8Array): Promise<string> {
 describe('WhatsApp Cloud webhook', () => {
   test('answers Meta challenge only for an exact constant-time token match', async () => {
     const handler = createWhatsAppWebhookHandler({ withCredentials, acceptInbound: vi.fn() })
-    await expect(handler({ method: 'GET', url: '/webhook?hub.mode=subscribe&hub.verify_token=verify-secret&hub.challenge=challenge-42' }))
-      .resolves.toEqual({ status: 200, body: 'challenge-42', contentType: 'text/plain' })
+    await expect(handler({ method: 'GET', url: fixture.challenge.url }))
+      .resolves.toEqual({ status: 200, body: fixture.challenge.expected, contentType: 'text/plain' })
     await expect(handler({ method: 'GET', url: '/webhook?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=nope' }))
       .resolves.toMatchObject({ status: 403 })
   })
@@ -70,11 +70,16 @@ describe('WhatsApp Cloud webhook', () => {
     expect(accept).toHaveBeenNthCalledWith(1, expect.objectContaining({ providerMessageId: 'wamid.text-1' }), 'default')
   })
 
-  test('rejects a signed malformed envelope so Meta can retry', async () => {
-    const body = new TextEncoder().encode('{"object":"whatsapp_business_account","entry":[{}]}')
+  test('rejects signed malformed envelopes and supported messages so Meta can retry', async () => {
     const handler = createWhatsAppWebhookHandler({ withCredentials, acceptInbound: vi.fn() })
-    await expect(handler({ method: 'POST', url: '/webhook', body, headers: { 'x-hub-signature-256': await signature(body) } }))
-      .resolves.toMatchObject({ status: 400, body: 'invalid envelope' })
+    for (const source of [
+      '{"object":"whatsapp_business_account","entry":[{}]}',
+      '{"object":"whatsapp_business_account","entry":[{"changes":[{"field":"messages","value":{"messages":[{"id":"wamid.bad","from":"1","type":"text"}]}}]}]}',
+    ]) {
+      const body = new TextEncoder().encode(source)
+      await expect(handler({ method: 'POST', url: '/webhook', body, headers: { 'x-hub-signature-256': await signature(body) } }))
+        .resolves.toMatchObject({ status: 400, body: 'invalid envelope' })
+    }
   })
 
   test('bounds a chunked fetch body before dispatch', async () => {
@@ -102,23 +107,23 @@ describe('WhatsApp Cloud outbound', () => {
     expect(unicode).toHaveLength(2)
     expect(unicode[0]!.text!.body.endsWith('\ud83d')).toBe(false)
     expect(unicode[1]!.text!.body.startsWith('\ude00')).toBe(false)
-    await adapter.send({ conversationKey: '41790000000', message: messages[0]! })
+    const fenced = adapter.renderOutbound({ turnId: 'turn-code', status: 'ok', text: `\`\`\`ts\n${'x'.repeat(4_200)}\n\`\`\`` })
+    expect(fenced).toHaveLength(2)
+    expect(fenced.every((message) => ((message.text!.body.match(/```/g) ?? []).length % 2) === 0)).toBe(true)
+    await adapter.send({ conversationKey: fixture.outbound.conversationKey, message: messages[0]! })
     expect(request).toHaveBeenCalledWith(
       'https://graph.facebook.com/v25.0/123456789/messages',
       expect.objectContaining({ method: 'POST', headers: expect.objectContaining({ authorization: 'Bearer secret-access-token' }) }),
     )
-    expect(JSON.parse(String(request.mock.calls[0]![1]!.body))).toMatchObject({ to: '41790000000', type: 'text' })
+    expect(JSON.parse(String(request.mock.calls[0]![1]!.body))).toMatchObject(fixture.outbound.text)
   })
 
   test('sends the approved fallback template outside the service window', async () => {
     const request = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response('{}', { status: 200 }))
     const adapter = new WhatsAppCloudAdapter({ withCredentials, fetch: request })
     expect(adapter.serviceWindowMs).toBe(86_400_000)
-    await adapter.sendWindowTemplate({ conversationKey: '41790000000' })
-    expect(JSON.parse(String(request.mock.calls[0]![1]!.body))).toMatchObject({
-      to: '41790000000', type: 'template',
-      template: { name: 'resume_request', language: { code: 'en_GB' } },
-    })
+    await adapter.sendWindowTemplate({ conversationKey: fixture.outbound.conversationKey })
+    expect(JSON.parse(String(request.mock.calls[0]![1]!.body))).toMatchObject(fixture.outbound.template)
   })
 
   test('classifies throttling as retryable and auth failures as permanent', async () => {

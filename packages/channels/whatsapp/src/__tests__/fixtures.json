@@ -1,4 +1,8 @@
 {
+  "challenge": {
+    "url": "/webhook?hub.mode=subscribe&hub.verify_token=verify-secret&hub.challenge=challenge-42",
+    "expected": "challenge-42"
+  },
   "inbound": {
     "object": "whatsapp_business_account",
     "entry": [{
@@ -12,5 +16,14 @@
         }
       }]
     }]
+  },
+  "outbound": {
+    "conversationKey": "41790000000",
+    "text": { "to": "41790000000", "type": "text", "messaging_product": "whatsapp" },
+    "template": {
+      "to": "41790000000",
+      "type": "template",
+      "template": { "name": "resume_request", "language": { "code": "en_GB" } }
+    }
   }
 }

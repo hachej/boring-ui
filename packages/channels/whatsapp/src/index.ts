@@ -236,9 +236,13 @@ export function parseWhatsAppInbound(payload: unknown, receivedAt = Date.now()):
         throw new Error('Invalid WhatsApp messages change')
       }
       for (const message of change.value.messages) {
-        if (!isRecord(message) || typeof message.id !== 'string' || typeof message.from !== 'string') continue
+        if (!isRecord(message) || typeof message.id !== 'string' || typeof message.from !== 'string'
+          || typeof message.type !== 'string') throw new Error('Invalid WhatsApp message')
         const text = inboundText(message)
-        if (text === undefined) continue
+        if (text === undefined) {
+          if (message.type === 'text' || message.type === 'interactive') throw new Error('Invalid supported WhatsApp message')
+          continue
+        }
         const timestamp = typeof message.timestamp === 'string' && /^\d+$/.test(message.timestamp)
           ? Number(message.timestamp) * 1_000
           : receivedAt
@@ -325,8 +329,20 @@ function shapeWhatsAppText(text: string, maxLength: number): string[] {
     if (split < Math.floor(maxLength / 2)) split = remaining.lastIndexOf('\n', maxLength)
     if (split < Math.floor(maxLength / 2)) split = maxLength
     if (split > 0 && isHighSurrogate(remaining.charCodeAt(split - 1))) split -= 1
-    chunks.push(remaining.slice(0, split))
+    let chunk = remaining.slice(0, split)
     remaining = remaining.slice(split).replace(/^\n+/, '')
+    if ((chunk.match(/```/g) ?? []).length % 2 === 1) {
+      const closeFence = '\n```'
+      if (chunk.length + closeFence.length > maxLength) {
+        let keep = maxLength - closeFence.length
+        if (keep > 0 && isHighSurrogate(chunk.charCodeAt(keep - 1))) keep -= 1
+        remaining = chunk.slice(keep) + remaining
+        chunk = chunk.slice(0, keep)
+      }
+      chunk += closeFence
+      remaining = `\`\`\`\n${remaining}`
+    }
+    chunks.push(chunk)
   }
   if (remaining.length > 0 || chunks.length === 0) chunks.push(remaining)
   return chunks
