@@ -99,6 +99,17 @@ function metadataProjection(
       state: 'not_configured',
     }
   }
+  if (stored.credentialType === 'api-key' && provider.credential.type !== 'api-key') {
+    return {
+      providerId,
+      displayName: provider.displayName,
+      credentialType: provider.credential.type,
+      state: 'needs_reauth',
+      credentialVersion: stored.credentialVersion,
+      createdAt: stored.createdAt,
+      updatedAt: stored.updatedAt,
+    }
+  }
   return {
     providerId,
     displayName: stored.displayLabel,

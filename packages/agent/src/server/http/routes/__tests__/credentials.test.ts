@@ -131,7 +131,7 @@ describe('owner credential routes', () => {
   })
 
   test('rejects API-key writes for Pi providers that do not advertise api-key auth', async () => {
-    const { app } = await setup('owner', undefined, true)
+    const { app, vaultBackend } = await setup('owner', undefined, true)
     const response = await app.inject({
       method: 'PUT',
       url: '/api/v1/credentials/openai-codex',
@@ -145,6 +145,26 @@ describe('owner credential routes', () => {
         message: 'Credential operation failed',
       },
     })
+
+    await vaultBackend.writeCredentialFields({
+      workspaceId: 'workspace-a',
+      providerId: 'openai-codex' as ProviderId,
+      fields: new Map([[FIELD, new TextEncoder().encode('legacy-key')]]),
+      metadata: {
+        displayLabel: 'Legacy Codex key',
+        credentialType: 'api-key',
+        maskedLastFourSuffix: '-key',
+      },
+    })
+    const legacy = await app.inject({ method: 'GET', url: '/api/v1/credentials/openai-codex' })
+    expect(legacy.json()).toMatchObject({
+      providerId: 'openai-codex',
+      displayName: 'OpenAI Codex',
+      credentialType: 'none',
+      state: 'needs_reauth',
+    })
+    expect(legacy.body).not.toContain('Legacy Codex key')
+    expect(legacy.body).not.toContain('-key')
     await app.close()
   })
 
