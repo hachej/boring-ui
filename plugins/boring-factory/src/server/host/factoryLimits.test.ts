@@ -304,7 +304,7 @@ describe('Factory host limits', () => {
         }
       }
       if (args[0] === 'update' && args[1] === 'br-changing') events.push('release')
-      return await baseBr.runBr(args, cwd)
+      return await baseBr.runBr(args)
     })
     const fake = fakeApp([{ sessionId: 'changing', status: 'idle', updatedAt: now - 11 * 60_000 }])
     const originalInject = fake.app.inject.bind(fake.app)
