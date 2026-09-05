@@ -1,3 +1,5 @@
+import { ModelRuntime } from '@mariozechner/pi-coding-agent'
+import { InMemoryCredentialStore } from '@earendil-works/pi-ai'
 import { describe, expect, test, vi } from 'vitest'
 import {
   CREDENTIAL_ERROR_CODES,
@@ -5,6 +7,7 @@ import {
 import type { ProviderId } from '../../../shared/credentials'
 import {
   createApiKeyValidatorV1,
+  piApiKeyProbeTransportV1,
 } from '../apiKeyValidation'
 import type { ApiKeyProbeTransportV1 } from '../apiKeyValidation'
 
@@ -15,6 +18,33 @@ function statusError(status: number, secret: string): Error & { status: number }
 }
 
 describe('API key validation', () => {
+  test('uses a provider request, not Pi remote-catalog refresh, for static providers', async () => {
+    const refresh = vi.fn(async () => ({ aborted: false, errors: new Map() }))
+    const completeSimple = vi.fn(async () => ({ stopReason: 'stop' }))
+    const staticModel = { provider: PROVIDER, id: 'model-a' }
+    const create = vi.spyOn(ModelRuntime, 'create').mockResolvedValue({
+      getProvider: () => ({ auth: { apiKey: {} }, refreshModels: vi.fn() }),
+      getModels: () => [staticModel],
+      refresh,
+      completeSimple,
+    } as unknown as ModelRuntime)
+    try {
+      await piApiKeyProbeTransportV1.probe({
+        providerId: PROVIDER,
+        credentials: new InMemoryCredentialStore(),
+        signal: new AbortController().signal,
+      })
+      expect(refresh).not.toHaveBeenCalled()
+      expect(completeSimple).toHaveBeenCalledOnce()
+      expect(completeSimple).toHaveBeenCalledWith(staticModel, expect.anything(), expect.objectContaining({
+        maxTokens: 1,
+        maxRetries: 0,
+      }))
+    } finally {
+      create.mockRestore()
+    }
+  })
+
   test('uses a throwaway in-memory Pi credential store and removes material after success', async () => {
     let capturedStore: Parameters<ApiKeyProbeTransportV1['probe']>[0]['credentials'] | undefined
     const probe = vi.fn<ApiKeyProbeTransportV1['probe']>(async ({ providerId, credentials }) => {

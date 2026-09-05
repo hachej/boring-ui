@@ -96,7 +96,13 @@ export const piApiKeyProbeTransportV1: ApiKeyProbeTransportV1 = Object.freeze({
     const provider = runtime.getProvider(providerId)
     if (!provider?.auth.apiKey) throw validationError('unsupported')
 
-    if (provider.refreshModels) {
+    const knownModels = runtime.getModels(providerId)
+    if (knownModels.length === 0 && provider.refreshModels) {
+      // A genuinely dynamic Pi definition (currently Radius) has no static
+      // models. Its provider-owned refresh is the authenticated model-list
+      // probe. Coding-agent also decorates static built-ins with an
+      // unauthenticated pi.dev catalog refresh; never mistake that for key
+      // validation just because refreshModels exists.
       const result = await runtime.refresh({
         providers: [providerId],
         force: true,
@@ -105,10 +111,15 @@ export const piApiKeyProbeTransportV1: ApiKeyProbeTransportV1 = Object.freeze({
       if (result.aborted) throw validationError('timeout')
       const error = result.errors.get(providerId)
       if (error) throw error
+      if (runtime.getModels(providerId).length === 0) {
+        throw validationError('network')
+      }
       return
     }
 
-    const model = runtime.getModels(providerId)[0]
+    // Static trusted Pi definitions cannot authenticate via a model-list
+    // refresh, so they alone use the bounded one-token provider request.
+    const model = knownModels[0]
     if (!model) throw validationError('unsupported')
     let responseStatus: number | undefined
     const response = await runtime.completeSimple(model, {
