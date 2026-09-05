@@ -24,8 +24,9 @@ describe('Agent Host channel runtime composition', () => {
     let storage: AgentHostChannelStorage = createAgentHostChannelStorage({ sessionRoot })
     let eventIndex = 0
     let turn = 0
+    let sessionCount = 0
     const createSession = vi.fn(async () => {
-      const sessionId = 'channel-session'
+      const sessionId = `channel-session-${++sessionCount}`
       await storage.events.createSessionStream(
         { workspaceScopeId: 'workspace-1', sessionId },
         { agentTypeId: 'default', authSubjectId: 'member-1' },
@@ -106,6 +107,23 @@ describe('Agent Host channel runtime composition', () => {
     }, 'default')).toMatchObject({ accepted: true, duplicate: false })
     await first.waitForIdle()
     expect(firstSent).toEqual(['reply:hello'])
+    // Model a hard crash after the durable acknowledgement boundary but before
+    // the in-process drain was scheduled: the next runtime must resume this row
+    // and notify outbound even though the binding has no session at startup.
+    storage.bindings.provision({
+      channel: 'fake',
+      conversationKey: 'pending-thread',
+      agentTypeId: 'default',
+      workspaceId: 'workspace-1',
+      authSubjectId: 'member-1',
+    })
+    expect(storage.bindings.enqueueInbound({
+      channel: 'fake',
+      conversationKey: 'pending-thread',
+      providerMessageId: 'provider-pending',
+      text: 'pending',
+      receivedAt: Date.now(),
+    }, 'default')).toMatchObject({ disposition: 'enqueued' })
     await first.close()
     storage.close()
 
@@ -138,8 +156,9 @@ describe('Agent Host channel runtime composition', () => {
     }, 'default')).toMatchObject({ accepted: true, duplicate: false })
     await restarted.waitForIdle()
 
-    expect(createSession).toHaveBeenCalledTimes(1)
-    expect(restartedSent).toEqual(['reply:again'])
+    expect(createSession).toHaveBeenCalledTimes(2)
+    expect(restartedSent).toEqual(expect.arrayContaining(['reply:pending', 'reply:again']))
+    expect(restartedSent).toHaveLength(2)
     await restarted.close()
     storage.close()
   })

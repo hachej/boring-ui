@@ -70,6 +70,8 @@ export class ChannelInboundService {
       readonly maxAttempts?: number
       readonly inboundClaimTtlMs?: number
       readonly drainRetryMs?: number
+      /** Called after durable completion, including work resumed at startup. */
+      readonly onInboundDelivered?: (binding: ChannelBinding) => void
     } = {},
   ) {
     // Durable acknowledgement must not depend on a provider replay. The store
@@ -198,6 +200,7 @@ export class ChannelInboundService {
           continue
         }
         binding = this.store.getBinding(binding.channel, binding.conversationKey, binding.agentTypeId) ?? binding
+        try { this.options.onInboundDelivered?.(binding) } catch {}
       } catch (error) {
         const code = stableErrorCode(error)
         if (queued.attempts < (this.options.maxAttempts ?? 3)) {

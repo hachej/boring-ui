@@ -91,6 +91,7 @@ export function createAgentHostChannelRuntime<Message>(
     }
   }
 
+  let notifyOutbound = (_binding: ChannelBinding): void => {}
   const inbound = new ChannelInboundService(options.storage.bindings, {
     async createSession(input) {
       const scope = await options.resolveAuthorizedScope(input)
@@ -116,6 +117,8 @@ export function createAgentHostChannelRuntime<Message>(
     followUp(input) {
       return sendToSession(input, 'followup')
     },
+  }, {
+    onInboundDelivered: (binding) => notifyOutbound(binding),
   })
 
   async function sendToSession(input: ChannelAgentInvocation, kind: 'prompt' | 'followup'): Promise<void> {
@@ -145,10 +148,17 @@ export function createAgentHostChannelRuntime<Message>(
     {
       async resolveStreamPath(binding) {
         if (!binding.sessionKey) return undefined
-        return await findSessionEventStream(options.storage.events, {
+        await options.resolveAuthorizedScope(binding)
+        const path = await findSessionEventStream(options.storage.events, {
           workspaceScopeId: binding.workspaceId,
           sessionId: binding.sessionKey,
         })
+        if (!path) return undefined
+        const owner = await options.storage.events.readStreamOwner(path)
+        if (owner?.agentTypeId !== binding.agentTypeId || owner.authSubjectId !== binding.authSubjectId) {
+          return undefined
+        }
+        return path
       },
       async createSession(binding) {
         const scope = await options.resolveAuthorizedScope(binding)
@@ -169,6 +179,7 @@ export function createAgentHostChannelRuntime<Message>(
     adapters,
     options.outbound,
   )
+  notifyOutbound = (binding) => outbound.notifyInbound(binding)
   outbound.start()
 
   return {
