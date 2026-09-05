@@ -230,6 +230,34 @@ describe('ChannelInboundService fake-channel path', () => {
     })
   })
 
+  test('heartbeat contention reclaims work without another inbound', async () => {
+    await withStores(async ({ first }) => {
+      first.provision({ ...bindingInput, sessionKey: 'session-1' })
+      first.enqueueInbound(inbound('wamid.heartbeat'), 'default')
+      const renewInbound = first.renewInbound.bind(first)
+      vi.spyOn(first, 'renewInbound')
+        .mockImplementationOnce(() => { throw new Error('transient heartbeat contention') })
+        .mockImplementation(renewInbound)
+      const delivered = new Set<string>()
+      const prompt = vi.fn(async (input: { requestId: string }) => {
+        if (!delivered.has(input.requestId)) {
+          delivered.add(input.requestId)
+          await new Promise((resolve) => setTimeout(resolve, 10))
+        }
+      })
+      const service = new ChannelInboundService(first, {
+        createSession: vi.fn(),
+        isSessionBusy: vi.fn(async () => false),
+        prompt,
+        followUp: vi.fn(),
+      }, { inboundClaimTtlMs: 15, drainRetryMs: 1 })
+      await service.waitForIdle()
+      expect(prompt).toHaveBeenCalledTimes(2)
+      expect(delivered).toEqual(new Set(['channel:whatsapp:wamid.heartbeat']))
+      expect(first.getInbound(1)?.status).toBe('processed')
+    })
+  })
+
   test('re-provisioning parks queued content instead of crossing tenant boundaries', async () => {
     await withStores(async ({ first, second }) => {
       first.provision({ ...bindingInput, sessionKey: 'session-1' })

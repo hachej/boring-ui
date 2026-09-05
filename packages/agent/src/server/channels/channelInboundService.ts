@@ -174,7 +174,12 @@ export class ChannelInboundService {
           })
           await (busy ? this.invoker.followUp(call) : this.invoker.prompt(call))
         }
-        if (claimLost || !this.store.completeInbound(queued.id, queued.claimOwner)) return
+        if (claimLost || !this.store.completeInbound(queued.id, queued.claimOwner)) {
+          // The row remains durably processing until its last possible lease
+          // expires. Stay alive and reclaim it without requiring new inbound.
+          await delay(claimTtlMs)
+          continue
+        }
         binding = this.store.getBinding(binding.channel, binding.conversationKey, binding.agentTypeId) ?? binding
       } catch (error) {
         const code = stableErrorCode(error)
