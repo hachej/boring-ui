@@ -103,7 +103,7 @@ but reserve the name so session records don't absorb it silently.
 7. Agents reason over semantic resources/views/artifacts, never renderer concepts; plugins are packaging, modules are semantics. (doc 4-6, 10-13)
 8. Promote existing seams; a seam ships owner+impl+consumer; old APIs live until replacements are proven; Rule of Three gates promotion. (doc 9-10, R-33-09, doc §30)
 9. Products configure workspaces; the cloud is extracted from repeated demand. (doc 8 + v3 §6)
-10. Docs never precede the implementations they describe. (v3 §6, the G16 lesson)
+10. Docs never precede the implementations they describe. (v3 §6, the G16 lesson; pending §11(g) clarifies that this governs implementation claims, not explicitly unbuilt plans.)
 
 ## 5. Open to the owner
 
@@ -437,6 +437,13 @@ preview, keep, compare, and undo versions. Adaptation should remove the
 founder's manual request relay. Successful arrangements persist; passive
 usage signals may suggest a change but do not themselves authorize one.
 
+**Clinic clarification (2026-09-05).** Its primary Experience is a French
+patient/document dashboard (**Documents médicaux**) with ambient assistance
+and optional contextual chat. Workspace is the governed world, not required
+visible chrome. This replaces the initial plan's split document/chat pilot.
+The first proof must work without a mounted chat or a Session created merely
+to open a domain record, then reuse the same document unit beside chat.
+
 **(b) A private branch is a versioned composition.** Resolve exact shared
 package versions plus workspace and personal overlays, behavior assets, and
 any private modules. Git can own custom source and lineage; ordinary
@@ -503,5 +510,56 @@ waits for its accepted-work/Level-D prerequisites. Thread shape is a dependency
 only when the slice consumes Job Threads; it is not imposed on every layout
 preference. DIRECTION explicitly classifies the new lane rather than silently
 reopening the former non-chrome or Wave-4 freezes. Pricing/GTM stay tenant-side.
+
+**(f) Composability is an Experience contract.** Make §§8–10 operational in
+the first Experience slice. Compose domain resources/operations, primary
+surfaces/navigation, agent presence, work initiation, and scoped context/state
+independently through the existing AppComposition/View boundaries. Chat-first,
+document-first, conventional SaaS, embedded, headless, and hybrid recipes must
+share governed operation and work semantics; they are not separate runtime
+stacks behind a global mode switch. The §10 presence vocabulary stays closed;
+an ambient Experience may open a temporary contextual drawer without changing
+its underlying domain or staffing. A layout/presence choice grants no new
+authority and enables no unattended trigger.
+
+Domain packages own patient, encounter, and document identity and authoritative
+state. Sessions optionally bind conversations to that work; they do not own
+domain records. Clinic's consultation document path is currently session-keyed;
+its live proof requires a trusted, compatible migration/adapter. Ambiguous identity mappings require explicit
+resolution. Thread remains a job root with 0..n Sessions, never a replacement
+name for every patient/document. Its storage-shape/attribution prerequisites
+apply when consumed by either a UI or headless job.
+
+Shared components expose supported mounts, typed bindings/intents, provider
+lifetimes, instance/state isolation, compatibility, and accessibility. Domain
+operations are shared by UI and agents. Independent views/jobs retain explicit
+subject and version context; an active-patient selection cannot retarget
+admitted work or authorize another resource. Presentation preferences are
+separate from document content. Late proposals must not overwrite concurrent
+human edits or conceal provenance, freshness, and review state.
+
+Admitted server work and its status/results/decisions survive chat closure and
+browser absence under accepted-work recovery. They remain accessible through
+non-chat projections of existing Activity/Approval/artifact state. Browser
+capture has an explicit consent/interruption lifecycle, not a promise to keep
+recording after the browser closes. Changing a composition neither duplicates
+effects nor silently loses a required decision or capture control.
+
+E0 proves rendering reuse in two contract fixtures with normalized synthetic
+domain references and a fixture-only adapter/extraction if needed. It does not
+prove that Clinic's current data path is Session-independent. E1a earns durable
+composition activation; E1b earns the live Clinic identity/lifecycle claim
+only after the migration, [thread-storage-spike], and [seat-audit-attribution]
+proofs. Both subproofs complete E1. Supported combinations need evidence;
+this amendment does not require all mode combinations, a universal UI DSL,
+a new scheduler, or a complete component-library rewrite before the pilot.
+
+**(g) Documentation truthfulness — named clarification.** VISION invariant
+14, ARCHITECTURE-PLAN §6, and §4 invariant 10 above prohibit claiming an
+implementation guarantee before it is demonstrated. Explicitly labeled
+plans/specifications may precede implementation and may be ratified as targets;
+they must separate proposed behavior, dependencies, and required evidence from
+shipped guarantees. This replaces the literal blanket reading of "docs never
+precede implementation" while preserving the G16 evidence requirement.
 
 Plan and milestone acceptance: [Workspace Evolution](../../workspace-evolution/README.md).

@@ -67,17 +67,19 @@ prove private adaptation, downstream maintenance, and approved reuse:
 
 | Milestone | Observable result | Key gate |
 |---|---|---|
-| E0 — request/preview preparation | One real request mapped to existing components and a fixture preview | Owner adoption; no production activation |
-| E1 — workspace revision | Request → immutable candidate → preview → activate/undo survives restart | E0 + P1-C accepted-work/recovery; saved semantic Views also need the View contract |
-| E2 — personal scope | Two users keep different settings over shared work | E1 + authenticated scope; Seat attribution where consumed |
+| E0 — request/preview preparation | Two contract fixtures reuse a rendering unit through normalized synthetic references and a fixture-only adapter; no live data-path claim | Owner adoption; no production activation; Clinic's session-keyed document path is a known gap |
+| E1 — workspace revision | E1a activation/undo survives restart and may land first; E1b proves live Clinic records and Job Thread independent of chat; both complete E1 | E1a: E0 + P1-C and any consumed premises; saved Views need the View contract. E1b: Clinic migration + mandatory [thread-storage-spike] and [seat-audit-attribution] |
+| E2 — personal scope | Two users keep different presentations over shared work; parallel subjects and personal state stay isolated | E1 + authenticated scope; Seat attribution where consumed |
 | E3 — behavior revision | Allowed personal behavior remains attributable and survives expert updates | E1/E2 + behavior evaluation and policy boundaries |
 | E4 — generated module | A new private component runs with scoped data and safe removal | E1/E2 + proven build/serving isolation in C4 |
-| E5 — upgrade reconciliation | Local intent survives an upstream update; a conflict stops activation | E1/E2 for configuration; E3/E4 only for their artifact classes |
+| E5 — upgrade reconciliation | Local intent survives an upstream update in both supported compositions; a binding/state conflict stops activation | E1/E2 for configuration; E3/E4 only for their artifact classes |
 | E6 — approved reuse | A second workspace adopts a useful optional package | E5 + export/maintainer authority and reuse evidence |
 
 E5's configuration proof runs before expanding the catalog; it does not wait
 for generated modules. Clinic is the first workflow and Seneca the target
-authenticated host. These are acceptance consumers, not a change to GTM order.
+authenticated host. The first journey opens on Documents médicaux with ambient
+assistance and optional chat; a full Meridian shell or multi-agent engine is
+not needed for the E0 fixture. These are acceptance consumers, not a change to GTM order.
 The [implementation-spec crosswalk](../plans/long-term/ratified/V2-IMPLEMENTATION-SPEC.md#workspace-evolution-milestone-extension--2026-09-05)
 relates E-slices to M0–M8 without reopening the new-repo freeze.
 

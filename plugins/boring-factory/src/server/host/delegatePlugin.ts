@@ -4,6 +4,12 @@ import { promisify } from 'node:util'
 import type { FastifyInstance } from 'fastify'
 import { defineServerPlugin } from '@hachej/boring-workspace/server'
 import type { AgentTool, ToolExecContext, ToolResult } from '@hachej/boring-agent/shared'
+import type { FactoryEpicRegistry } from './epicRegistry'
+import {
+  FactoryEpicResolutionError,
+  resolveFactoryEpic,
+  type FactorySessionBindings,
+} from './sessionBindings'
 
 export const FACTORY_DELEGATE_PLUGIN_ID = 'factory-delegate'
 
@@ -37,12 +43,8 @@ export interface CreateFactoryDelegatePluginOptions {
   readonly workspaceScopeId: string
   /** Deadline for the child session to go idle after one turn. Default 15 minutes. */
   readonly timeoutMs?: number
-  /** Epic label (`epic:<epicKey>`) this Factory instance is bound to; read by `factory_status`. */
-  readonly epicKey: string
-  /** Feature name per docs/procedures/naming-conventions.md, used to title delegated sessions. */
-  readonly featureName: string
-  /** Shared epic worktree root; `git` and `br` for `factory_status` run here. */
-  readonly workspaceRoot: string
+  readonly registry: FactoryEpicRegistry
+  readonly sessionBindings: FactorySessionBindings
 }
 
 export interface FactoryDelegatePluginHandle {
@@ -68,6 +70,20 @@ function textResult(details: Record<string, unknown>, isError: boolean): ToolRes
 
 function invalidInputResult(message: string): ToolResult {
   return textResult({ code: 'INVALID_INPUT', message }, true)
+}
+
+function epicResolutionResult(error: unknown): ToolResult {
+  if (error instanceof FactoryEpicResolutionError) {
+    return textResult({ code: error.code, message: error.message }, true)
+  }
+  const message = error instanceof Error ? error.message : 'failed to resolve Factory epic'
+  return textResult({ code: 'EPIC_RESOLUTION_FAILED', message }, true)
+}
+
+function modelSelection(encoded: string | undefined): { provider: string; id: string } | undefined {
+  const separator = encoded?.indexOf(':') ?? -1
+  if (!encoded || separator <= 0 || separator === encoded.length - 1) return undefined
+  return { provider: encoded.slice(0, separator), id: encoded.slice(separator + 1) }
 }
 
 function unboundResult(toolName: string): ToolResult {
@@ -161,6 +177,10 @@ function createDelegateTool(
     parameters: {
       type: 'object',
       properties: {
+        epicKey: {
+          type: 'string',
+          description: 'Optional explicit epic override. Normally the host resolves the epic from this session binding.',
+        },
         brief: {
           type: 'string',
           minLength: BRIEF_MIN_LENGTH,
@@ -183,9 +203,16 @@ function createDelegateTool(
       const app = getApp()
       if (!app) return unboundResult(toolName)
 
+      let epic
+      try {
+        epic = await resolveFactoryEpic(params, ctx, options.registry, options.sessionBindings)
+      } catch (error) {
+        return epicResolutionResult(error)
+      }
+
       const startedAt = new Date().toISOString()
       const parentSessionId = ctx.sessionId ?? 'unknown'
-      const sessionTitle = sessionTitleFor(toolName, options.featureName, brief, parentSessionId)
+      const sessionTitle = sessionTitleFor(toolName, epic.featureName, brief, parentSessionId)
 
       try {
         const createResponse = await app.inject({
@@ -201,6 +228,9 @@ function createDelegateTool(
           )
         }
         const { sessionId } = createResponse.json<{ sessionId: string }>()
+        await options.sessionBindings.bind(sessionId, epic.epicKey)
+
+        const selectedModel = modelSelection(toolName === 'dispatch_worker' ? epic.models?.worker : epic.models?.reviewer)
 
         const promptResponse = await app.inject({
           method: 'POST',
@@ -209,11 +239,13 @@ function createDelegateTool(
           payload: {
             requestId: randomUUID(),
             clientNonce: randomUUID(),
-            content: `Host context: your session id is ${sessionId} (use it as your br actor). Parent session: ${ctx.sessionId}.\n\n${brief}`,
+            content: `Host context: epic ${epic.epicKey} ([${epic.featureName}]) worktree ${epic.worktree} branch ${epic.branch}. Your session id is ${sessionId} (use it as your br actor). Parent session: ${ctx.sessionId}.\n\n${brief}`,
             requireIdle: true,
+            ...(selectedModel ? { model: selectedModel } : {}),
           },
         })
         if (promptResponse.statusCode !== 202) {
+          await options.sessionBindings.unbind(sessionId)
           return textResult(
             { code: 'PROMPT_FAILED', delegationId: sessionId, status: promptResponse.statusCode, body: promptResponse.body },
             true,
@@ -400,23 +432,31 @@ function createFactoryStatusTool(
       properties: {
         epicKey: {
           type: 'string',
-          description: 'Ignored: the epic key is fixed by the host for this Factory instance.',
+          description: 'Optional explicit epic override. Normally the host resolves the epic from this session binding.',
         },
       },
       additionalProperties: false,
     },
-    async execute(): Promise<ToolResult> {
+    async execute(params: Record<string, unknown>, ctx: ToolExecContext): Promise<ToolResult> {
       const app = getApp()
       if (!app) return unboundResult('factory_status')
+      let epic
       try {
-        const [git, beads, workerSessions] = await Promise.all([
-          readGitStatus(options.workspaceRoot),
-          loadEpicBeads(options.workspaceRoot, options.epicKey),
+        epic = await resolveFactoryEpic(params, ctx, options.registry, options.sessionBindings)
+      } catch (error) {
+        return epicResolutionResult(error)
+      }
+      try {
+        const [git, beads, allWorkerSessions, bindingMap] = await Promise.all([
+          readGitStatus(epic.worktree),
+          loadEpicBeads(epic.worktree, epic.epicKey),
           listWorkerSessions(app, workspaceHeader),
+          options.sessionBindings.load(),
         ])
+        const workerSessions = allWorkerSessions.filter((session) => bindingMap[session.sessionId] === epic.epicKey)
         const workerStatusBySessionId = new Map(workerSessions.map((session) => [session.sessionId, session.status ?? 'idle']))
         const beadsWithComments = await Promise.all(beads.map(async (issue) => {
-          const commentStats = await commentStatsFor(options.workspaceRoot, issue.id)
+          const commentStats = await commentStatsFor(epic.worktree, issue.id)
           return {
             id: issue.id,
             status: issue.status,
@@ -430,8 +470,10 @@ function createFactoryStatusTool(
           }
         }))
         const details = {
-          epicKey: options.epicKey,
-          workspaceRoot: options.workspaceRoot,
+          epicKey: epic.epicKey,
+          featureName: epic.featureName,
+          workspaceRoot: epic.worktree,
+          branch: epic.branch,
           git,
           beads: beadsWithComments,
           workerSessions: workerSessions.map((session) => ({
@@ -455,9 +497,6 @@ export function createFactoryDelegatePlugin(
   options: CreateFactoryDelegatePluginOptions,
 ): FactoryDelegatePluginHandle {
   if (!options.workspaceScopeId.trim()) throw new TypeError('factory-delegate workspaceScopeId is required')
-  if (!options.epicKey.trim()) throw new TypeError('factory-delegate epicKey is required')
-  if (!options.featureName.trim()) throw new TypeError('factory-delegate featureName is required')
-  if (!options.workspaceRoot.trim()) throw new TypeError('factory-delegate workspaceRoot is required')
 
   let boundApp: FastifyInstance | undefined
   const getApp = () => boundApp

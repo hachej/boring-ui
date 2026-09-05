@@ -113,6 +113,16 @@ an approved reusable part to a second workspace with different local choices.**
 The first workflow is Clinic; Seneca supplies the authenticated personal-scope
 proof. This is not a replacement for tenant-owned commercial ordering.
 
+**Clinic clarification — 2026-09-05:** begin with a French Documents médicaux
+dashboard and ambient assistance; chat is contextual and optional. Compose
+primary surfaces, domain capabilities, agent presence, work initiation, and
+scoped context independently. The same document unit must work in that
+dashboard and beside a chat-first expert. Domain records and admitted server
+work do not depend on a conversation or mounted UI; status, decisions, and
+recovery stay accessible outside chat. This makes §§8–10's existing product
+flexibility checkable rather than turning each product mode into another shell
+and runtime implementation.
+
 Normative amendment: [RECONCILIATION §11](../plans/long-term/ratified/RECONCILIATION.md#11-owner-requested-amendment--2026-09-05-workspace-evolution).
 Readable vision: [vision overview](../vision/README.md#personal-software-evolution-owner-requested-extension-2026-09-05).
 Milestones/proof: [Workspace Evolution](../plans/workspace-evolution/README.md).

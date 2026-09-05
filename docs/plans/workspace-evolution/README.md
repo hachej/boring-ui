@@ -19,12 +19,22 @@ Code generation alone does not close either loop.
 
 The promise: **tell the workspace how you want to work; it can change its
 interface and permitted behavior, retain that change, and keep benefiting
-from shared improvements.** Start with a usable minimal shell and optional
-domain starters. Support full Experience variation over a small trusted host
-surface, rather than requiring every vertical to adopt one layout.
+from shared improvements.** Start with a usable minimal Experience and optional
+domain starters. Workspace names the governed world underneath; it need not
+be the visible product metaphor. Support full Experience variation over a
+small trusted host surface.
 
-The first acceptance consumer is Clinic. The first request should rearrange
-existing document/chat components and select an existing presentation variant.
+The first acceptance consumer is Clinic: a French **Documents médicaux**
+dashboard, patient/encounter navigation, document review, and an ambient agent.
+Chat remains available on demand. The first request changes that document
+experience using registered components and existing presentation variants.
+Source inspection for this plan found that Clinic's current consultation
+document adapter is session-keyed. E0 therefore proves rendering/composition
+with normalized synthetic domain references and a fixture-only adapter; it
+does not prove that the current Clinic data path is Session-independent.
+E0/E1 cover French navigation, document actions, status/decision/error text,
+accessible labels, and locale-aware dates/numbers; generated prose follows an
+explicit requested locale without rewriting source documents.
 Seneca supplies the authenticated host for proving distinct personal choices.
 These are platform proof consumers, not pricing or commercial-order decisions.
 This public plan contains no private source, customer records, credentials,
@@ -91,6 +101,97 @@ components. A saved semantic composition consumes the ratified View contract
 as a set; it cannot introduce a substitute ViewDescriptor before that gate.
 Provider/binding lifetimes, dependencies, state namespaces, and removal are
 part of installation. Frontend hot reload alone does not supply that lifecycle.
+
+## Composable Experiences and ambient work
+
+The owner's Clinic clarification exposes a gap in the earlier draft: layout
+variation was promised, but the first journey still assumed document-plus-chat.
+RECONCILIATION §§8–10 already permit route-first SaaS, headless work, and
+ambient presence. This amendment makes those choices acceptance requirements
+for the first Experience slice; a hidden chat column is insufficient proof.
+
+Compose independent choices through the existing `AppComposition` boundary:
+
+| Choice | Contract and owner |
+|---|---|
+| Domain resources and operations | Domain package owns record meaning, authoritative storage, versioned queries/actions, and review rules. No Session, tab, or renderer identity is the domain primary key. |
+| Primary surfaces and navigation | Experience composes registered collections, records, documents, forms, dashboards, and optional conversations. Host translates semantic locations into URLs; a View can have several supported mounts. |
+| Agent presence | Keep §10's `hidden · ambient · drawer · page · roster` vocabulary. Ambient is Clinic's default; opening a temporary assistant drawer does not switch its domain model or staffing. |
+| Work initiation | Explicit UI commands, conversation requests, or admitted events/schedules call the same governed operations. Trigger policy is independent of layout and presence; showing/hiding a component never enables automation. |
+| Context and state | Each View/action has explicit subject/resource bindings, current authority, and version preconditions. Personal presentation state is distinct from shared domain data and durable work. |
+
+Chat-first, SaaS-first, document-first, and workbench are recipes of these
+choices, not a closed global `appMode` switch with separate data and runtime
+stacks. Recipes can be mixed within one product. The supported compatibility
+matrix is explicit: composable does not mean every component fits every mount.
+Publish only combinations with meaningful consumer evidence, not an exhaustive
+Cartesian product or a new universal UI language.
+
+| Reference recipe | Primary experience | Assistant and work |
+|---|---|---|
+| Clinic | Patients → Documents médicaux → document/detail/review | Ambient status and proposals; contextual drawer on request. |
+| Chat-first expert | Conversation with attached document/result surfaces | Page presence; the same resource and operation contracts. |
+| Conventional SaaS | Routes, collections, record forms, review queues | Ambient or hidden agent; decisions/results reachable without chat. |
+| Meridian | Search, Inbox, Work, Agents, Library and workbench | Roster presentation over the same governed work. |
+| Embedded or headless | A supported document/record mount, or no UI | Host-injected context; accepted work and delivery independent of a mounted browser. |
+
+**Reusable units must compose below the pane.** A document viewer/editor,
+block, source/provenance display, query-backed list, status indicator, review
+action, and assistant entry point can be assembled without importing an
+entire Clinic shell. Generic mechanics belong in shared components; patient
+identity, document classification, and clinical review semantics stay in the
+Clinic package. Do not extract a framework before the first two mounts expose
+the actual common contract.
+
+Extend catalog entries with supported mounts/slots, typed bindings and emitted
+intents, capability requirements, provider ownership/lifetime, instance keys,
+state namespace/schema, responsive variants, accessibility behavior, and
+unmount/reconnect semantics. Bindings pass semantic references, not arbitrary
+host callbacks or executable strings. Slot compatibility, missing providers,
+invalid bindings, and duplicate instance keys fail candidate validation.
+Sharing a provider does not imply sharing a selected patient. Product-specific
+props can prove two mounts now; persisting semantic layouts still consumes the
+complete ratified View contract. Resolve only the providers a composition
+needs; opening a document must not require mounting chat or starting inference.
+
+**Domain identity precedes the live ambient proof.** Patient, encounter, and
+document identities belong to the domain store. One patient may have multiple
+encounters and documents; a document may participate in several jobs and
+conversations. A Session is an optional conversation binding, never the record
+owner. Clinic's current session-keyed consultation document path needs an
+explicit trusted adapter/migration before the live E1b proof: preserve old
+links and records, map only known
+bindings, quarantine ambiguous/unbound records for resolution, and prove
+repeatable migration and compatible rollback. Do not guess patient identity or
+create synthetic chat sessions to satisfy a document API. This is consumer
+domain work, not a new kernel noun or a generated-UI migration.
+
+**Ambient work has an independent lifecycle.** Host admission captures the
+subject, input versions, behavior/release identity, trigger identity, and
+current scope. Thread remains the durable job root with zero or more Sessions;
+using that integration retains its storage/attribution gates. Retry/reconnect
+and duplicate event delivery settle through accepted-work identity, never
+through component mount effects. Layout switches, drawer closure, and loss of
+the browser do not cancel or duplicate admitted server work. Live browser
+capture is different: microphone consent, recording state, stop controls, and
+interruption must remain explicit; closing the browser cannot promise continued
+capture. A UI unmount must not silently stop or retarget an active capture.
+
+Status, pending decisions, failures, results, and supported stop/recovery
+controls are available outside chat through projections of existing
+Activity/Approval/artifact state. Hiding an agent cannot hide a required
+decision or imply permission for unattended effects. Source documents,
+agent-generated drafts/proposals, and approved records remain distinguishable
+with provenance and freshness. A new source or concurrent human edit makes an
+incompatible proposal stale; version-checked acceptance must not overwrite the
+edit or silently turn a generated suggestion into approved domain truth.
+
+Optional chat receives the explicitly bound, authorized working set for that
+interaction. It does not inherit every open patient or follow a mutable global
+selection mid-Run. Each pane, job, subscription, and cached result is isolated
+by its subject and current scope; revocation closes further delivery as well as
+new reads. Presentation preferences such as card density or collapse state
+must not increment a medical document's content version.
 
 ## Release contract
 
@@ -160,22 +261,29 @@ readiness, not a promised calendar. DIRECTION owns permission to dispatch.
 
 | Milestone | Working capability | Required acceptance evidence |
 |---|---|---|
-| E0 — request and preview preparation | Select one real layout request; inventory exact current packages, components, operations, and mutation scope; compare fixture previews. | Concrete selected request, explicit target IDs/props, baseline, missing seams, and a reviewable preview. No private records; no production activation claim. |
-| E1 — durable workspace revision | Request in app → candidate → preview → keep/undo, initially one workspace. | No founder source edit; exact digest evidence; stale-candidate rejection; refresh/new work/restart retain the choice; activation crash/lost-ACK retries settle once. |
-| E2 — personal scope | Personal and workspace layers resolve under authenticated host authority. | Two users retain different arrangements over shared records; cross-user/workspace candidate reads, previews, and writes fail; revocation denies further preview/data access; an unauthorized personal edit cannot alter shared policy. |
-| E3 — behavior revision | Version permitted profile/skill assets and their composition. | Effective behavior is attributable per Run; a shared expert update preserves the local preference; policy/grant expansion fails; required output and affected evaluations pass. |
+| E0 — request and preview preparation | Map the Clinic dashboard request to current components/operations; compare document-first and chat-first contract fixtures using normalized synthetic references and a fixture-only adapter. | Reuse the same registered rendering unit in two compositions, with the smallest fixture adapter/extraction if needed. Fixture navigation needs no chat or Session; explicitly record that live Clinic still needs its session-keyed data path migrated. No live data-path compatibility claim. |
+| E1 — durable workspace revision | E1a: request from the document experience → candidate → preview → keep/undo. E1b: live Clinic domain and background-work proof. | E1a: no founder source edit; exact digest evidence; stale-candidate rejection; refresh/new work/restart retain the choice; crash/lost-ACK retries settle once. E1b: migrated domain identity independent of Session and one bounded Job Thread whose result/decision is reachable after closing chat/browser. Both subproofs are required to complete E1. |
+| E2 — personal scope | Personal and workspace layers resolve under authenticated host authority. | Two users keep different presentations over shared records without mutating document content; two open subjects stay isolated; cross-user/workspace candidate reads, previews, and writes fail; revocation stops further access/delivery; personal edits cannot alter shared policy. |
+| E3 — behavior revision | Version permitted profile/skill assets and their composition for chat and ambient work. | Effective behavior is attributable per Run; a shared expert update preserves the local preference; policy/grant expansion fails; required output and affected evaluations pass. A presentation change neither enables a trigger nor approves a domain proposal. |
 | E4 — isolated private module | Generate a useful component absent from the catalog, with scoped operations. | Build and serving isolation are exercised; denied host-origin/grant access; install/removal/recovery work; novel component performs its intended task. |
-| E5 — upgrade and reconciliation | Adopt a real upstream package change, reconcile overlays, retain or replace private modules where supported. | An ordinary upgrade preserves local intent; an intentional conflict stops activation; supported undo preserves data; newly upstreamed fixes can replace local patches where verified. |
+| E5 — upgrade and reconciliation | Adopt a real upstream package change, reconcile overlays, retain or replace private modules where supported. | An ordinary upgrade preserves local intent in document-first and chat-first compositions; an intentional binding/state conflict stops activation; supported undo preserves data and admitted work; newly upstreamed fixes can replace local patches where verified. |
 | E6 — approved reuse and broader autonomy | Export approved portable material, publish an optional package, install in another private workspace. | Independent workspace adopts it with different local choices; private canaries stay out of export; no automatic publication/adoption; lower human repair burden supports the next autonomy class. |
 
 E5 starts with E1/E2 configuration and should precede catalog expansion; it
 does not depend on E4. E3/E4 extend upgrade evidence for their own artifact
 classes. No lane inherits another lane's permission to ship without its checks.
+E1a can land before E1b; it earns the durable configuration claim only.
+E1b has unconditional Clinic migration, [thread-storage-spike], and
+[seat-audit-attribution] gates. DIRECTION owns their dispatch and the E1 done-bar.
 
-First user journey: "For consultations, keep the document on the left, make
-the conversation narrower, and use compact cards." Select a preview, keep it,
-start another consultation, restart the app, then apply a supported shared
-update. All three persistence boundaries matter.
+First user journey: "Ouvre sur Documents médicaux, regroupe par patient,
+montre ce qui est à valider, et garde l'assistant à la demande." Select a
+preview, keep it, open another record, restart the app, then apply a supported
+shared update. The dashboard exposes useful documents and decisions immediately;
+the doctor does not need to start a conversation. A second fixture mounts the
+same document unit beside a chat-first expert, with the same operation semantics.
+The request establishes the target; a missing patient aggregate/review query is
+a named trusted domain prerequisite, never invented by generated UI.
 
 A later novel-component journey: aggregate proposed document blocks in a
 review pane. It may first require an authorized aggregate query; generated UI
@@ -186,8 +294,9 @@ patient identity and clinical approval meaning remain domain-owned.
 
 | Slice/claim | Gate |
 |---|---|
-| E0 fixture preparation | Existing registered components; no production activation, new Job Thread, or saved semantic descriptor. |
-| E1 durable agent-driven release | P1-C accepted-work/recovery and relevant paused-human proofs; durable activation store and current authorization. |
+| E0 fixture preparation | Registered rendering units plus a fixture-only compatibility adapter/extraction if needed; normalized synthetic references, no live Clinic data path, production activation, new Job Thread, or saved semantic descriptor. |
+| E1a durable agent-driven release | P1-C accepted-work/recovery; paused-human proofs when the workflow resumes a paused Run, not merely because a host preview has a Keep button. Durable activation/current authorization and any Job Thread premises actually consumed by the release workflow remain required. |
+| E1b live Clinic ambient acceptance | E1a plus the trusted Clinic domain identity/operation adapter and migration evidence; [thread-storage-spike] result and [seat-audit-attribution] are mandatory for the bounded Job Thread and its non-chat status/decision delivery. A fixture or hidden chat session does not satisfy them. |
 | Saved semantic layout/workflow | Complete [saved-views-kernel] View contract, in addition to E1 prerequisites. |
 | Personal ownership | Authenticated membership and scoped storage; audit-grade Seat attribution where a Seat authored the work. |
 | Job Thread integration | Thread storage-shape result and the existing Thread/attribution joins consumed by that integration. |
@@ -215,6 +324,25 @@ Public platform seams inspected at main 3db6a237d0ace94c83fb4967e43407d65202706e
 Keep the domain worker focused on its work. Direct customization dispatches a
 bounded builder function with relevant context; it does not inject engineering
 guidance into every clinical interaction or require a roster of agents.
+
+## Composability stress cases
+
+These are required acceptance scenarios for the named slices, not runtime
+results of this documentation PR. E0 inventories unmet seams using synthetic
+fixtures; it does not claim that background execution or migrations work.
+
+| Stress case | Passing behavior | Proof slice |
+|---|---|---|
+| Start with no chat mounted | Normalized fixture documents can be listed/opened and review navigation used without a Session/model. Repeat against the migrated Clinic data path before claiming live independence. | E0 contract fixture; E1b live domain adapter |
+| Reuse the same document unit in a dashboard/detail mount and beside chat | Composition changes; domain operation implementation and resource identity do not fork. Each mount honors its declared contract. | E0 fixture; E1 live |
+| Close chat/browser during admitted server work; reconnect elsewhere | Work retains its subject and release identity; status, results, and decisions reappear outside chat; no duplicate effect. | E1b with mandatory Thread/attribution premises |
+| Switch layout during capture or a pending decision | Capture remains visibly controlled or reports interruption; the decision remains reachable and is neither accepted nor lost by the switch. | E1 for supported live inputs |
+| Open patient A and patient B simultaneously | An action or late result for A cannot read, write, display in, or retarget B; optional chat binds one explicit working set. | E2 |
+| Human edits while agent drafts from an earlier version | Proposal shows its source versions; stale acceptance conflicts instead of overwriting the edit. A layout undo leaves both records intact. | E1 domain operations; E3 behavior |
+| Switch from ambient to chat-first and back | No new grant, automatic trigger, duplicated job, lost record, or new domain identity; personal settings stay personal. | E1/E2; E3 for behavior |
+| Compose a missing provider, incompatible slot, or two instances sharing a forbidden state key | Candidate fails validation; no blank live surface or cross-instance state leak. Missing optional chat requires no chat provider. | E1; E4 for private modules |
+| Upgrade a shared document component used in both recipes | Both supported mounts retain local bindings and intent, or expose a precise conflict before activation. | E5 |
+| Open at narrow width or use keyboard navigation | Document and review tasks remain usable; required status/decision controls remain reachable without forcing chat into the primary surface. | E0 fixture; E1 live |
 
 ## Comparison, upgrades, and reuse
 
@@ -271,7 +399,11 @@ runtime behavior by itself.
 
 Pilot measures include every attempted change: time to useful preview,
 founder relay minutes, correction/revert rate, retained use, model/build/runtime
-cost, upgrade success, and repair/conflict burden. E6 autonomy expansion needs
+cost, upgrade success, and repair/conflict burden. For Clinic also measure
+document-task completion without chat, time to find/review the intended
+document, missed or stale proposals, and unnecessary assistant interruptions.
+Set baselines on the selected workflow; chat engagement is not its success
+metric. E6 autonomy expansion needs
 retained-use and maintenance evidence for that change class, not only adoption
 of a shared component. Stop expanding a class if repair work exceeds the
 adaptation value or its checks cannot discriminate regressions.
@@ -282,11 +414,13 @@ adaptation value or its checks cannot discriminate regressions.
 |---|---|
 | RunId := RequestKey; host mints authority; Seat grants participation | Preserved; no second execution or ownership root. |
 | Semantic Views; full View contract before saved Views | Preserved; app props cannot become a lookalike descriptor. |
+| SaaS/headless Experiences (§8), Thread with 0..n Sessions (§9), ambient default (§10) | Preserved and made concrete in E0/E1. The earlier chat-layout pilot is replaced by document-first and second-mount proofs; domain identity and work outlive UI. |
 | Independent challenger checks; no live self-rewriting | Preserved through immutable candidates and host activation. |
 | Trusted composition immutable; untrusted tier isolated | Preserved; generated modules use admitted C4, never host imports. |
 | Universal app generator excluded | Narrowed explicitly in VISION/§11 to admit bounded workspace evolution. |
 | Only named preparation/chrome runnable before premises | DIRECTION adds E0 explicitly; E1 and later remain premise-gated. |
 | New-repo freeze/port doctrine; tenant-owned GTM | Preserved; no package rewrite or commercial reorder. |
+| Documentation never precedes implementation | Clarified by §11(g): implementation guarantees need evidence; explicitly unbuilt plans/specifications may precede implementation. |
 
 The docs-only PR records an owner-requested plan and reviewable scope. Runtime
 implementation, protected release proofs, and any required owner merge/review

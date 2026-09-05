@@ -45,6 +45,18 @@ Meridian remains the flagship workspace Experience. Personalization does not
 mutate a shared expert for every subscriber or require a measurable A/B result
 for every preference.
 
+For Clinic, the useful starting point is a French **Documents médicaux**
+dashboard with patient/document navigation, review actions, and an ambient
+agent. Chat opens when needed. Domain resources/operations, primary surfaces,
+presence, triggers, and scoped context are independent composition choices;
+chat-first, regular SaaS, embedded, and hybrid products are supported recipes.
+A reusable document unit must mount in the dashboard and beside chat without
+forking its domain operations. Records and admitted server work outlive
+conversations and browser views; status and decisions stay reachable outside
+chat. [Composition contracts and stress cases](../plans/workspace-evolution/README.md#composable-experiences-and-ambient-work)
+make this part of the first proof, including the migration needed by any
+session-keyed domain adapter.
+
 This is **specified future work, effective on owner merge**, grounded in
 [RECONCILIATION §11](../plans/long-term/ratified/RECONCILIATION.md#11-owner-requested-amendment--2026-09-05-workspace-evolution).
 [Workspace Evolution](../plans/workspace-evolution/README.md) defines the
@@ -91,9 +103,9 @@ interface-first. This is the part of the company that compounds.
 Detail: [`../plans/long-term/ratified/VISION.md`](../plans/long-term/ratified/VISION.md)
 (the merged ratified vision) and its implementation spec beside it.
 
-## Layer 3 — the product surface (specified, premise-gated)
+## Layer 3 — the product surfaces (specified, premise-gated)
 
-The **multi-agent workspace shell**: Search on top, then Inbox / Work /
+Meridian, the flagship **multi-agent workspace shell**: Search on top, then Inbox / Work /
 Agents / Library over one workspace. A **Thread is one job** — the durable
 job root, binding zero or more conversations (RECONCILIATION §9a). In
 Meridian it reads like a Slack thread: **one composer, explicit

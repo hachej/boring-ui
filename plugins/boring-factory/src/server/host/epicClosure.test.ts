@@ -36,10 +36,11 @@ function deps(overrides: Partial<EpicClosureDeps> = {}): EpicClosureDeps {
     stateRoot: '/state',
     epicKey: 'factory-plugin-lqvd',
     featureName: 'Factory Plugin',
-    workspaceScopeId: 'factory-playground',
+    workspaceScopeId: 'factory-hub',
     getApp: () => ({ inject: vi.fn(async () => ({ statusCode: 200, json: () => ({ isError: false }) })) }) as never,
-    demoControl: { listDemos: async () => ({}), stopDemo: async () => 'stopped', listDemosForSession: async () => ({}) },
+    demoControl: { listDemos: async () => ({}), stopDemo: async () => 'stopped', listDemosForSession: async () => ({}), listDemosForEpic: async () => ({}) },
     supervisionControl: { stopSupervision: async () => {} },
+    markRegistryClosed: async () => {},
     invalidateSnapshotFn: vi.fn(async () => {}),
     ...overrides,
   }
@@ -141,9 +142,9 @@ describe('executeCloseEpic', () => {
   it('invalidates the configured stateRoot, stops demos, closes child Beads, closes the epic Bead last, and then stops only the calling supervision', async () => {
     const operations: string[] = []
     const demoEntries: Record<string, DemoEntry> = {
-      demo1: { sandboxId: 'sandbox-1', url: 'https://demo', sha: 'c'.repeat(40), port: 3000, command: 'node', startedAt: 's', expiresAt: 'e', sessionId: 'orch-a' },
+      demo1: { epicKey: 'factory-plugin-lqvd', sandboxId: 'sandbox-1', url: 'https://demo', sha: 'c'.repeat(40), port: 3000, command: 'node', startedAt: 's', expiresAt: 'e', sessionId: 'orch-a' },
     }
-    const invalidateSnapshotFn = vi.fn(async () => { operations.push('invalidate:/state:factory-plugin-lqvd:' + 'a'.repeat(40)) })
+    const invalidateSnapshotFn = vi.fn(async () => { operations.push('invalidate:/state:factory-plugin-lqvd') })
     createExecFileMock((file, args) => {
       if (file === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref') return { stdout: 'epic/factory-plugin\n' }
       if (file === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD') return { stdout: 'a'.repeat(40) + '\n' }
@@ -174,8 +175,13 @@ describe('executeCloseEpic', () => {
             operations.push(`list:${sessionId}`)
             return Object.fromEntries(Object.entries(demoEntries).filter(([, entry]) => entry.sessionId === sessionId))
           },
+          listDemosForEpic: async (epicKey) => {
+            operations.push(`list-epic:${epicKey}`)
+            return Object.fromEntries(Object.entries(demoEntries).filter(([, entry]) => entry.epicKey === epicKey))
+          },
           stopDemo: async (id) => { operations.push(`demo:${id}`); delete demoEntries[id]; return 'stopped' },
         },
+        markRegistryClosed: async (epicKey) => { operations.push(`registry:${epicKey}`) },
         supervisionControl: {
           stopSupervision: async (sessionId) => { operations.push(`supervision:${sessionId}`) },
         },
@@ -183,7 +189,7 @@ describe('executeCloseEpic', () => {
     )
 
     expect(result.isError).toBe(false)
-    expect(operations).toEqual(['invalidate:/state:factory-plugin-lqvd:' + 'a'.repeat(40), 'list:orch-a', 'demo:demo1', 'close:factory-plugin-lqvd.3', 'close:factory-plugin-lqvd', 'supervision:orch-a'])
+    expect(operations).toEqual(['invalidate:/state:factory-plugin-lqvd', 'list-epic:factory-plugin-lqvd', 'demo:demo1', 'close:factory-plugin-lqvd.3', 'close:factory-plugin-lqvd', 'supervision:orch-a', 'registry:factory-plugin-lqvd'])
     expect(result.details).toMatchObject({
       overall: 'complete',
       callingSessionId: 'orch-a',
@@ -191,6 +197,7 @@ describe('executeCloseEpic', () => {
       alreadyClosedBeadIds: ['factory-plugin-lqvd.2'],
       workerSessionIds: ['worker-1', 'worker-2'],
       snapshotInvalidation: { status: 'invalidated' },
+      registry: { status: 'closed' },
       supervision: { status: 'stopped' },
     })
   })
@@ -224,7 +231,7 @@ describe('executeCloseEpic', () => {
 
   it('returns partial and leaves epic/supervision untouched when a demo stop or child close fails, and reruns idempotently', async () => {
     const demoEntries: Record<string, DemoEntry> = {
-      demo1: { sandboxId: 'sandbox-1', url: 'https://demo', sha: 'c'.repeat(40), port: 3000, command: 'node', startedAt: 's', expiresAt: 'e', sessionId: 'orch-a' },
+      demo1: { epicKey: 'factory-plugin-lqvd', sandboxId: 'sandbox-1', url: 'https://demo', sha: 'c'.repeat(40), port: 3000, command: 'node', startedAt: 's', expiresAt: 'e', sessionId: 'orch-a' },
     }
     let closeChildFails = true
     const operations: string[] = []
@@ -254,8 +261,13 @@ describe('executeCloseEpic', () => {
           operations.push(`list:${sessionId}`)
           return Object.fromEntries(Object.entries(demoEntries).filter(([, entry]) => entry.sessionId === sessionId))
         },
+        listDemosForEpic: async (epicKey) => {
+          operations.push(`list-epic:${epicKey}`)
+          return Object.fromEntries(Object.entries(demoEntries).filter(([, entry]) => entry.epicKey === epicKey))
+        },
         stopDemo: async (id) => { operations.push(`demo:${id}`); delete demoEntries[id]; return 'stopped' },
       },
+      markRegistryClosed: async (epicKey) => { operations.push(`registry:${epicKey}`) },
       supervisionControl: {
         stopSupervision: async (sessionId) => { operations.push(`supervision:${sessionId}`) },
       },
@@ -263,12 +275,12 @@ describe('executeCloseEpic', () => {
 
     const partial = await executeCloseEpic({ prNumber: 17 }, { abortSignal: new AbortController().signal, toolCallId: 'c7', sessionId: 'orch-a' }, sharedDeps)
     expect(partial.details).toMatchObject({ overall: 'partial', closedBeadIds: [], alreadyClosedBeadIds: [], supervision: { status: 'failed' } })
-    expect(operations).toEqual(['list:orch-a', 'demo:demo1', 'close:factory-plugin-lqvd.3'])
+    expect(operations).toEqual(['list-epic:factory-plugin-lqvd', 'demo:demo1', 'close:factory-plugin-lqvd.3'])
 
     closeChildFails = false
     operations.length = 0
     const rerun = await executeCloseEpic({ prNumber: 17 }, { abortSignal: new AbortController().signal, toolCallId: 'c8', sessionId: 'orch-a' }, sharedDeps)
     expect(rerun.details).toMatchObject({ overall: 'complete', closedBeadIds: ['factory-plugin-lqvd.3', 'factory-plugin-lqvd'], supervision: { status: 'stopped' } })
-    expect(operations).toEqual(['list:orch-a', 'close:factory-plugin-lqvd.3', 'close:factory-plugin-lqvd', 'supervision:orch-a'])
+    expect(operations).toEqual(['list-epic:factory-plugin-lqvd', 'close:factory-plugin-lqvd.3', 'close:factory-plugin-lqvd', 'supervision:orch-a', 'registry:factory-plugin-lqvd'])
   })
 })

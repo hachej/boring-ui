@@ -36,6 +36,12 @@ architecture.
 > changes can become optional reusable packages through an authorized export
 > and review. This extends controlled revision to the Experience itself;
 > it does not require an optimization Objective for every preference.
+> **Clinic clarification:** the starting Experience can be a French medical-
+> document dashboard with an ambient agent and optional chat. Workspace is the
+> governed world, not mandatory chrome. Domain resources, primary surfaces,
+> presence, triggers, and scoped context compose independently; records and
+> admitted work outlive any conversation or mounted UI. The first proof reuses
+> one document unit in both document-first and chat-first compositions.
 > Binding scope and amendments: [RECONCILIATION §11](RECONCILIATION.md#11-owner-requested-amendment--2026-09-05-workspace-evolution).
 
 ## 1. The decisive discovery: the three documents describe ONE system
@@ -184,7 +190,9 @@ stay outside the kernel; every platform investment is pulled by a real
 experiment or customer.
 13. Sovereignty: Boring owns memory, context, optimization history, policy,
 evaluation, recursive intelligence; model providers are replaceable compute.
-14. Docs never precede the implementations they describe.
+14. Documentation must not claim implementation guarantees before they are
+demonstrated. Explicitly unbuilt plans/specifications may precede implementation
+(2026-09-05 clarification, effective on owner merge; RECONCILIATION §11g).
 
 ## 5. Unified roadmap (V2's 14 steps collapsed into the frozen DAG + new work)
 
@@ -223,6 +231,11 @@ AR1-003/004 · result → runId + artifacts[] · P0.1–0.6 (RCE first) · P-1 �
 > 2026-08-27 §9 update: transcript presentation is now multi-author, and the
 > storage value-root is ruled — only the shape remains spiked.)*
 
+> **Scope reconciliation — 2026-09-05:** the 2026-08-27 ruling in
+> RECONCILIATION §8(a) scoped the shell sentence above to the Meridian flagship.
+> It does not require that shell for verticals. §10 defaults vertical SaaS to
+> ambient presence; §11 makes Clinic's document-first proof explicit.
+
 P1 (from reconciliation) interleaves: ViewDescriptor + artifact UX land with K2
 (candidates need Views to be inspected/approved).
 
@@ -230,7 +243,9 @@ P1 (from reconciliation) interleaves: ViewDescriptor + artifact UX land with K2
 product milestones in the [execution plan](../../workspace-evolution/README.md#milestones):
 request/preview preparation, durable workspace activation, personal scope,
 behavior revision, isolated generated modules, upgrade reconciliation, and
-approved reuse. Clinic is the named proving workflow; Seneca is the target
+approved reuse. Clinic's document dashboard and a second supported document
+mount are the first proofs; live acceptance requires domain identity and
+server work independent of chat. Seneca is the target
 authenticated host for the personal-scope proof. This does not replace the
 first-commercial-vertical decision or renumber K1–K9/M0–M8. The
 [implementation-spec crosswalk](V2-IMPLEMENTATION-SPEC.md#workspace-evolution-milestone-extension--2026-09-05)
