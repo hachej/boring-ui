@@ -1,0 +1,16 @@
+{
+  "inbound": {
+    "object": "whatsapp_business_account",
+    "entry": [{
+      "changes": [{
+        "field": "messages",
+        "value": {
+          "messages": [
+            { "id": "wamid.text-1", "from": "41790000000", "timestamp": "1710000000", "type": "text", "text": { "body": "hello" } },
+            { "id": "wamid.button-1", "from": "41790000000", "timestamp": "1710000001", "type": "interactive", "interactive": { "type": "button_reply", "button_reply": { "id": "approve:question-1", "title": "Approve" } } }
+          ]
+        }
+      }]
+    }]
+  }
+}

@@ -1,5 +1,6 @@
 packages:
   - "packages/*"
+  - "packages/channels/*"
   - "plugins/*"
   - "packages/agent/examples/*"
   - "packages/workspace/test-fixtures/*"

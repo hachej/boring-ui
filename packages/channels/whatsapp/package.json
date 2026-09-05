@@ -1,0 +1,28 @@
+{
+  "name": "@hachej/channel-whatsapp",
+  "version": "0.1.109",
+  "type": "module",
+  "license": "MIT",
+  "description": "Thin Meta WhatsApp Cloud API edge for Boring channels.",
+  "files": ["dist", "NOTICE"],
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check:invariants": "node ./scripts/check-invariants.mjs",
+    "lint": "pnpm run typecheck && pnpm run check:invariants",
+    "clean": "rm -rf dist .tsbuildinfo"
+  },
+  "peerDependencies": {
+    "@hachej/boring-agent": "workspace:*"
+  },
+  "devDependencies": {
+    "@hachej/boring-agent": "workspace:*",
+    "tsup": "^8.4.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.11"
+  }
+}

@@ -1,0 +1,4 @@
+Portions of the webhook verification design are derived from @flue/whatsapp,
+Copyright Astro Technology Company, licensed under Apache License 2.0.
+Cloud API behavior was cross-checked against NousResearch/hermes-agent,
+Copyright its contributors, licensed under the MIT License.
