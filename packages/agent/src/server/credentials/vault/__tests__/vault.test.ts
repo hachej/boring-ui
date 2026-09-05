@@ -559,6 +559,35 @@ describe('vault credential store backend', () => {
     expectNoSecretLeak(error)
   })
 
+  test('keeps a KEK outage retryable when the source disappears after readiness', async () => {
+    const anchorFilePath = join(await mkdtemp(join(tmpdir(), 'boring-anchor-kek-outage-')), 'anchor')
+    let loadCount = 0
+    const loadKek = async (): Promise<Uint8Array> => {
+      loadCount += 1
+      // Initialization and backend readiness succeed; the authenticated anchor
+      // reload then observes the simulated source outage.
+      if (loadCount === 3) throw new Error('simulated KEK source outage')
+      return new Uint8Array(KEK_A)
+    }
+    await initializeLocalFileCredentialVersionAnchorV1({ anchorFilePath, loadKek })
+    const backend = createVaultCredentialStoreBackendV1({
+      kmsBackend: createLocalKekWorkspaceKekProviderV1({
+        keyRef: 'disappearing',
+        keyVersion: 1,
+        loadKek,
+      }),
+      persistence: createInMemoryCredentialVaultPersistenceV1(),
+      versionAnchor: createLocalFileCredentialVersionAnchorV1({ anchorFilePath, loadKek }),
+    })
+
+    const error = await expectCredentialError(
+      () => backend.read('ws-a', PROVIDER_A, [FIELD_API_KEY]),
+      CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
+    )
+    expect(error.retryable).toBe(true)
+    expectNoSecretLeak(error)
+  })
+
   test('fails closed when the stored envelope was wrapped under another KEK', async () => {
     const persistence = createInMemoryCredentialVaultPersistenceV1()
     const { backend: writer } = vaultStore(KEK_A, persistence)

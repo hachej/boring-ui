@@ -100,6 +100,14 @@ function unreadable(message: string): never {
   throw new CredentialResolutionError(CREDENTIAL_ERROR_CODES.UNREADABLE, message)
 }
 
+function backendUnavailable(message: string): never {
+  throw new CredentialResolutionError(
+    CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
+    message,
+    { retryable: true },
+  )
+}
+
 async function acquireMutationLock(lockPath: string) {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     try {
@@ -362,11 +370,11 @@ async function loadMacKey(options: LocalCredentialVersionAnchorOptionsV1): Promi
   try {
     material = await options.loadKek()
   } catch {
-    unreadable('Credential version anchor KEK is unavailable')
+    backendUnavailable('Credential version anchor KEK is unavailable')
   }
   if (!(material instanceof Uint8Array) || material.byteLength !== 32) {
     material?.fill(0)
-    unreadable('Credential version anchor KEK is unavailable')
+    backendUnavailable('Credential version anchor KEK is unavailable')
   }
   try {
     return deriveMacKey(material)
