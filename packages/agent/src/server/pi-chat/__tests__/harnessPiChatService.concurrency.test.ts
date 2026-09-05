@@ -6,7 +6,7 @@ import type { PiChatEvent } from '../../../shared/chat'
 import { ErrorCode } from '../../../shared/error-codes'
 import type { PiAgentSessionAdapter, PiAgentSessionSnapshot } from '../PiAgentSessionAdapter'
 import { HarnessPiChatService } from '../harnessPiChatService'
-import type { PiSessionRequestContext } from '../piSessionIdentity'
+import type { PiSessionRequestContext } from '../../../core/piChatSessionService'
 
 const ctx: PiSessionRequestContext = {
   workspaceId: 'workspace-a',

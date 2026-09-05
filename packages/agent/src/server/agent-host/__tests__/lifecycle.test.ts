@@ -92,6 +92,56 @@ describe('Agent Host lifecycle', () => {
     })
   })
 
+  it('awaits later cleanup after an Environment failure and preserves the first error', async () => {
+    const fixture = await options()
+    const baseAdapter = fixture.value.runtimeModeAdapter
+    const firstError = new Error('Environment cleanup failed')
+    const disposeRuntime = vi.fn(async () => { throw firstError })
+    const disposeAdapter = vi.fn(async () => { throw new Error('adapter cleanup failed') })
+    const ledgerCloseStarted = deferred<void>()
+    const releaseLedgerClose = deferred<void>()
+    const closeLedger = vi.fn(async () => {
+      ledgerCloseStarted.resolve()
+      await releaseLedgerClose.promise
+      throw new Error('ledger cleanup failed')
+    })
+    const ledger = Object.assign(new InMemoryAgentRequestLedger(), { close: closeLedger })
+    const created = await createAgentHost({
+      ...fixture.value,
+      requestLedger: ledger,
+      inMemoryRequestLedgerMode: 'test',
+      runtimeModeAdapter: {
+        ...baseAdapter,
+        async create(ctx) {
+          const bundle = await baseAdapter.create(ctx)
+          return { ...bundle, disposeRuntime }
+        },
+        dispose: disposeAdapter,
+      },
+    })
+    await created.gateway.createSession({ scope, agentTypeId: 'alpha', requestId: 'cleanup-errors' })
+
+    const closing = created.host.close()
+    const rejection = expect(closing).rejects.toBe(firstError)
+    let settled = false
+    const settlement = closing.then(() => { settled = true }, () => { settled = true })
+    await ledgerCloseStarted.promise
+    try {
+      expect(settled).toBe(false)
+      expect(disposeRuntime).toHaveBeenCalledOnce()
+      expect(disposeAdapter).toHaveBeenCalledOnce()
+      expect(closeLedger).toHaveBeenCalledOnce()
+    } finally {
+      releaseLedgerClose.resolve()
+    }
+    await rejection
+    await settlement
+    await expect(created.host.close()).rejects.toBe(firstError)
+    expect(disposeRuntime).toHaveBeenCalledOnce()
+    expect(disposeAdapter).toHaveBeenCalledOnce()
+    expect(closeLedger).toHaveBeenCalledOnce()
+  })
+
   it('bounds a stuck admitted effect by shutdownGraceMs and fences late completion', async () => {
     let admitStarted!: () => void
     const started = new Promise<void>((resolve) => { admitStarted = resolve })

@@ -4,7 +4,7 @@ import type { AgentHarness, RunContext, AgentSendInput } from '../../../shared/h
 import type { SessionStore } from '../../../shared/session'
 import type { PiAgentSessionAdapter, PiAgentSessionSnapshot } from '../PiAgentSessionAdapter'
 import { HarnessPiChatService } from '../harnessPiChatService'
-import type { PiSessionRequestContext } from '../piSessionIdentity'
+import type { PiSessionRequestContext } from '../../../core/piChatSessionService'
 import type {
   AgentMeteringSink,
   MeteringReleaseInput,

@@ -145,15 +145,6 @@ export function appendFrontImportRevision(frontUrl: string, revision: number, ca
   return cacheBust === undefined ? withRevision : `${withRevision}&t=${encodeURIComponent(String(cacheBust))}`
 }
 
-async function defaultImportFront(frontUrl: string, revision: number): Promise<{ default?: BoringFrontFactoryWithId }> {
-  // Vite's browser module graph can retain stale dynamically imported
-  // .pi extension modules across dev-server restarts or repeated plugin
-  // revisions. Add a per-import salt so /reload always asks Vite for a
-  // fresh transform instead of reusing an old React-Refresh-instrumented
-  // module that may carry a stale hook dispatcher.
-  return await import(/* @vite-ignore */ appendFrontImportRevision(frontUrl, revision, Date.now())) as { default?: BoringFrontFactoryWithId }
-}
-
 // Wrap the default import in a 30-second timeout so a hung asset server
 // (slow CDN, unreachable Vite dev server) doesn't block the SSE handler indefinitely.
 // Dynamic import() cannot be aborted, so we race against a timer and let the

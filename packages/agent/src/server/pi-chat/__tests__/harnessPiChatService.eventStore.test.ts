@@ -16,7 +16,7 @@ import {
 import { openDatabase } from '../../events/sqlStorage'
 import type { PiAgentSessionAdapter, PiAgentSessionSnapshot } from '../PiAgentSessionAdapter'
 import { HarnessPiChatService } from '../harnessPiChatService'
-import type { PiSessionRequestContext } from '../piSessionIdentity'
+import type { PiSessionRequestContext } from '../../../core/piChatSessionService'
 
 const ctx: PiSessionRequestContext = {
   workspaceId: 'workspace-a',
