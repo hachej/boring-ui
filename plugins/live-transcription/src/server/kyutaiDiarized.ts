@@ -1,6 +1,5 @@
 import type { LiveTranscriptError } from "./errors"
 import { KyutaiConnection } from "./kyutai"
-import { LevelNormalizer } from "./levelNormalizer"
 import { SortformerConnection } from "./sortformer"
 import type { WhisperLiveKitLine, WhisperLiveKitSnapshot } from "./whisperLiveKit"
 
@@ -27,8 +26,6 @@ export class KyutaiDiarizedConnection implements StreamingUpstream {
   private diarizerSnapshot: WhisperLiveKitSnapshot | undefined
   private closed = false
   private readonly resampler = new Pcm24kTo16kResampler()
-  // Both services see the same normalised audio, so speaker intervals line up with the words.
-  private readonly normalizer = new LevelNormalizer()
 
   constructor(
     kyutaiUrl: string,
@@ -59,7 +56,7 @@ export class KyutaiDiarizedConnection implements StreamingUpstream {
     this.kyutai = options.createKyutaiForTest?.(kyutaiCallbacks) ?? new KyutaiConnection(
       kyutaiUrl,
       kyutaiCallbacks,
-      { apiKey: options.kyutaiApiKey, highWaterBytes: options.highWaterBytes, normalizeInput: false },
+      { apiKey: options.kyutaiApiKey, highWaterBytes: options.highWaterBytes },
     )
     this.diarizer = options.createDiarizerForTest?.(diarizerCallbacks) ?? new SortformerConnection(
       diarizerUrl,
@@ -86,12 +83,11 @@ export class KyutaiDiarizedConnection implements StreamingUpstream {
   }
 
   async sendPcm(data: Uint8Array): Promise<void> {
-    const levelled = this.normalizer.process(data)
-    await this.kyutai.sendPcm(levelled)
+    await this.kyutai.sendPcm(data)
     const diarizer = this.diarizer
     if (!diarizer) return
     try {
-      await diarizer.sendPcm(this.resampler.process(levelled))
+      await diarizer.sendPcm(this.resampler.process(data))
     } catch {
       this.disableDiarizer()
     }

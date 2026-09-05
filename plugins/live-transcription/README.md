@@ -62,9 +62,15 @@ into the editable draft without creating a transcript or recording file.
 creates a matching `.m4a` only when local recording is explicitly configured.
 
 Input handling measured on real French two-speaker audio (SimSAMU): Kyutai
-returns no words at all for quiet input (peaks around -27 dBFS), so the server
-raises quiet frames towards a -6 dBFS peak before either service hears them
-(`levelNormalizer.ts`; loud audio passes through untouched). The browser keeps
+returns no words at all for quiet input (peaks around -27 dBFS). The server
+previously raised quiet frames towards a -6 dBFS peak before either service
+heard them (`levelNormalizer.ts`), but stt-1b-en_fr was measured to drift
+into English when quiet input is amplified (a quiet clip at raw gain and 4x
+gain transcribed correctly in French; the same clip at 6x gain came out in
+English) — the deployed normaliser was capable of up to 16x gain on quiet
+microphones, well past that threshold. The normaliser has been removed from
+the audio path entirely; raw PCM16 goes to Kyutai (and to the diarizer)
+unmodified. The browser keeps
 eight 100 ms frames in flight before requiring an ACK and the server queues up
 to 32 frames behind a slow upstream, so a doctor 800 ms away from the host
 still streams; previously one frame per round trip failed beyond 100 ms RTT.

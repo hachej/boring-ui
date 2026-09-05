@@ -1,6 +1,5 @@
 import WebSocket from "ws"
 import { LiveTranscriptError } from "./errors"
-import { LevelNormalizer } from "./levelNormalizer"
 import type { WhisperLiveKitSnapshot } from "./whisperLiveKit"
 
 const KYUTAI_SAMPLE_RATE = 24_000
@@ -23,12 +22,8 @@ export class KyutaiConnection {
       onSnapshot: (snapshot: WhisperLiveKitSnapshot) => void
       onFailure: (error: LiveTranscriptError) => void
     },
-    private readonly options: { apiKey?: string; connectTimeoutMs?: number; highWaterBytes?: number; normalizeInput?: boolean } = {},
-  ) {
-    this.normalizer = options.normalizeInput === false ? undefined : new LevelNormalizer()
-  }
-
-  private readonly normalizer: LevelNormalizer | undefined
+    private readonly options: { apiKey?: string; connectTimeoutMs?: number; highWaterBytes?: number } = {},
+  ) {}
 
   async connect(): Promise<void> {
     const url = new URL(this.url)
@@ -67,7 +62,7 @@ export class KyutaiConnection {
     if (data.byteLength === 0 || data.byteLength % 2 !== 0) {
       throw new LiveTranscriptError("live_transcript_invalid_audio", "Kyutai PCM must contain complete 16-bit samples.", 400)
     }
-    await this.send(encodeMessage({ type: "Audio", pcm: pcm16ToFloat32(this.normalizer ? this.normalizer.process(data) : data) }))
+    await this.send(encodeMessage({ type: "Audio", pcm: pcm16ToFloat32(data) }))
   }
 
   async drain(timeoutMs: number): Promise<void> {
