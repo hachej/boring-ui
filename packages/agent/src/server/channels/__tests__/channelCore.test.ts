@@ -140,10 +140,10 @@ describe('ChannelBindingStore', () => {
   test('blocks reprovisioning while a generation owns outbound delivery', async () => {
     await withStores(async ({ first, second }) => {
       const binding = first.provision({ ...bindingInput, sessionKey: 'session-1' })
-      expect(first.claimOutbound(binding, 'outbound-owner', 5)).toBe(true)
+      expect(first.claimOutbound(binding, 'outbound-owner', 50)).toBe(true)
       expect(() => second.provision({ ...bindingInput, workspaceId: 'workspace-2', sessionKey: 'session-2' }))
         .toThrow(expect.objectContaining({ code: ErrorCode.enum.CHANNEL_BINDING_BUSY }))
-      await new Promise((resolve) => setTimeout(resolve, 10))
+      await new Promise((resolve) => setTimeout(resolve, 60))
       expect(second.provision({ ...bindingInput, workspaceId: 'workspace-2', sessionKey: 'session-2' }))
         .toMatchObject({ workspaceId: 'workspace-2', bindingVersion: 2, outboundCursor: '-1' })
       // The expired process cannot clear or mutate the replacement generation.
