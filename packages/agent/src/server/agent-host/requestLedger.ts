@@ -52,6 +52,11 @@ export class InMemoryAgentRequestLedger implements AgentRequestLedger {
     const existing = this.records.get(id)
     if (existing) {
       if (existing.digest !== digest) conflict()
+      if (existing.state === 'pending-admission' && existing.retryable) {
+        const record: AgentRequestLedgerRecord = { key, digest, state: 'pending-admission', updatedAt: Date.now() }
+        this.records.set(id, record)
+        return { ownership: 'reclaimed', record }
+      }
       return { ownership: 'existing', record: existing }
     }
     const record: AgentRequestLedgerRecord = {
@@ -64,9 +69,16 @@ export class InMemoryAgentRequestLedger implements AgentRequestLedger {
     return { ownership: 'created', record }
   }
 
+  async markAdmissionRetryable(key: AgentRequestKey): Promise<void> {
+    this.transition(key, 'retry admission', (record) => {
+      if (record.state !== 'pending-admission' || record.retryable) invalidTransition(record, 'retry admission')
+      return { ...record, retryable: true, updatedAt: Date.now() }
+    })
+  }
+
   async acceptAdmission(key: AgentRequestKey, admissionReceipt: string): Promise<void> {
     this.transition(key, 'accept admission', (record) => {
-      if (record.state !== 'pending-admission') invalidTransition(record, 'accept admission')
+      if (record.state !== 'pending-admission' || record.retryable) invalidTransition(record, 'accept admission')
       return { ...record, state: 'admission-accepted', admissionReceipt, updatedAt: Date.now() }
     })
   }
