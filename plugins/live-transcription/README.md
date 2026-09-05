@@ -73,6 +73,59 @@ The sidecar decodes 0.5 s chunks and confirms a speaker switch over two frames
 delta snapshots; `DIARIZATION_LAG_SECONDS` in `kyutaiDiarized.ts` carries the
 measured boundary offset for that cadence.
 
+## Refined transcript and file transcription
+
+An optional loopback GPU batch service can refine a completed recording
+offline (measured 5% WER vs. 9% for the live pass, at roughly one minute of
+processing per 45 minutes of audio). Configure it with:
+
+```ts
+refineUrl: "http://127.0.0.1:18884/v1",       // exact loopback /v1 authority, like lifecycleUrl
+refineBearerToken: "<refine service token>",  // required, at least 32 characters
+refineFetch: undefined,                       // test hook only
+```
+
+When `refineUrl` is set, `createLiveTranscriptServerPlugin` builds a
+`TranscriptRefiner` (`src/server/refine.ts`) that streams a recording to
+`POST {refineUrl}/refine` (multipart `file`, optional `language`, bearer
+auth), maps the returned words into diarized paragraphs with the same
+first-seen speaker numbering as the live pipeline, and renders Markdown with
+`renderTranscriptMarkdown`. If `lifecycleUrl`/`lifecycleBearerToken` are also
+configured, the refiner leases GPU compute from that same service
+(`acquire`/`heartbeat`/`release`) around each refine call, independently of
+the live/composer capture lease.
+
+Two ways to trigger it:
+
+- **Automatic, after `/live stop`.** When a live session completes with a
+  stored recording, `LiveTranscriptManager.terminate()` starts (without
+  awaiting) an offline refine pass in the background: it overwrites the
+  session's transcript file with the refined Markdown and, once done, sends
+  one visible chat message through the originating review target —
+  `Transcript refined with the offline pass: <transcriptPath>` — if that
+  target is idle. Refine errors are swallowed into an `onRefineError` plugin
+  hook and never surface from `/live stop`. The in-flight promise is exposed
+  on the session for tests as `session.refinePromise`.
+- **On demand, for an existing recording.** `POST
+  /api/v1/live-transcripts/transcribe-file` takes `{ path, title?,
+  overwrite? }`, where `path` is a workspace-relative audio file (extension
+  one of `m4a`, `mp3`, `wav`, `webm`, `ogg`, `mp4`, `aac`, `flac`; `..`,
+  absolute paths, and symlink escapes out of the workspace root are
+  rejected). It writes the refined transcript to `<path without
+  extension>.transcript.md` (refusing to overwrite an existing file unless
+  `overwrite: true`, which returns `live_transcript_revision_conflict`/409)
+  and responds `{ transcriptPath, words, speakers, durationSeconds }`. It
+  answers `503 live_transcript_disabled` when no refiner is configured and
+  `409 live_transcript_already_active` if another file transcription job is
+  already running. The front end exposes this as `/transcribe <workspace
+  path> [title]`, which opens the resulting transcript file afterward.
+
+The refine service's HTTP errors map onto existing `LiveTranscriptError`
+codes: `429` → `live_transcript_already_active` (409), `413` →
+`live_transcript_limit_exceeded` (413), anything else →
+`live_transcript_upstream_failed` (502). Recordings over 200 MB are refused
+locally before contacting the service.
+
 ## Robustness gates
 
 The package-local systematic gate composes the real Fastify routes, a real

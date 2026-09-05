@@ -22,6 +22,9 @@ import { groupKyutaiTranscriptSnapshot } from "./kyutaiTranscript"
 import { WhisperLiveKitConnection, type WhisperLiveKitSnapshot } from "./whisperLiveKit"
 import { LiveReviewBroker } from "./reviewBroker"
 import { LocalAudioRecorder } from "./audioRecorder"
+import type { TranscriptRefiner } from "./refine"
+import { isAbsolute, resolve as resolvePath } from "node:path"
+import { realpath } from "node:fs/promises"
 
 interface UpstreamConnection {
   connect(): Promise<void>
@@ -45,6 +48,8 @@ interface LiveSession {
   upstream?: UpstreamConnection
   projector: LiveTranscriptProjector
   reviewBroker?: LiveReviewBroker
+  reviewTarget?: PiSessionVisibleUserTurnTarget
+  workspace: Workspace
   lines: ProjectedTranscriptLine[]
   speakerLabels: Map<number, number>
   audioBytes: number
@@ -53,6 +58,7 @@ interface LiveSession {
   terminalPromise?: Promise<LiveTranscriptTerminalResponse>
   releaseWorkspaceLease?: () => void
   removeWorkspaceAbortListener?: () => void
+  refinePromise?: Promise<void>
 }
 
 type PiSessionVisibleUserTurnTarget = Awaited<
@@ -80,6 +86,10 @@ export interface LiveTranscriptManagerOptions {
   now?: () => number
   reviewIntervalMs?: number
   reviewRetryMs?: number
+  /** Optional offline GPU refine pass that replaces the live transcript once a session completes. */
+  refiner?: TranscriptRefiner
+  /** Swallows errors raised while refining a completed session; refinement must never throw from terminate(). */
+  onRefineError?: (error: unknown) => void
   createUpstreamForTest?: (callbacks: {
     onSnapshot: (snapshot: WhisperLiveKitSnapshot) => void
     onFailure: (error: LiveTranscriptError) => void
@@ -96,6 +106,7 @@ export class LiveTranscriptManager {
   private tombstone: LiveTranscriptTerminalResponse | undefined
   private closing = false
   private readonly reviewBrokers = new Set<LiveReviewBroker>()
+  private transcribeFileActive = false
 
   constructor(private readonly options: LiveTranscriptManagerOptions) {}
 
@@ -238,6 +249,8 @@ export class LiveTranscriptManager {
       phase: "setup",
       nonce: encoder.encode(socketNonce),
       projector: undefined as never,
+      reviewTarget,
+      workspace,
       lines: [],
       speakerLabels: new Map(),
       audioBytes: 0,
@@ -458,6 +471,109 @@ export class LiveTranscriptManager {
     await this.interruptForSessionReplacement()
   }
 
+  /** Refines a workspace-relative recording that already exists (not the live capture pipeline). */
+  async transcribeFile(
+    request: FastifyRequest,
+    input: { path: string; title?: string; overwrite?: boolean },
+  ): Promise<{ transcriptPath: string; words: number; speakers: number; durationSeconds: number }> {
+    const refiner = this.options.refiner
+    if (!refiner) throw new LiveTranscriptError("live_transcript_disabled", "Offline transcript refinement is not configured.", 503)
+    if (this.transcribeFileActive) {
+      throw new LiveTranscriptError("live_transcript_already_active", "A file transcription job is already running.", 409)
+    }
+    this.transcribeFileActive = true
+    try {
+      const actor = await this.options.actorResolver(request)
+      if (this.options.agentTypeId) {
+        type TranscribeFileResult = { transcriptPath: string; words: number; speakers: number; durationSeconds: number }
+        let settled = false
+        return await new Promise<TranscribeFileResult>((resolve, reject) => {
+          const run = this.options.dispatcherResolver.runWithWorkspaceAgent({
+            agentTypeId: this.options.agentTypeId!,
+            context: actor,
+            requestId: `live-transcript-file:${randomUUID()}`,
+            request,
+          }, async (binding: LeaseBoundWorkspaceAgent) => {
+            try {
+              const value = await this.runTranscribeFile(binding.workspace, refiner, input)
+              settled = true
+              resolve(value)
+            } catch (error) {
+              settled = true
+              reject(error)
+            }
+          })
+          run.catch((error) => { if (!settled) reject(error) })
+        })
+      }
+      if (!this.options.dispatcherResolver.resolveWithWorkspace) {
+        throw new LiveTranscriptError("live_transcript_disabled", "Trusted Workspace resolver is unavailable.", 503)
+      }
+      const binding = await this.options.dispatcherResolver.resolveWithWorkspace(actor, { request })
+      return await this.runTranscribeFile(binding.workspace, refiner, input)
+    } finally {
+      this.transcribeFileActive = false
+    }
+  }
+
+  private async runTranscribeFile(
+    workspace: Workspace,
+    refiner: TranscriptRefiner,
+    input: { path: string; title?: string; overwrite?: boolean },
+  ): Promise<{ transcriptPath: string; words: number; speakers: number; durationSeconds: number }> {
+    if (!workspace.writeFileWithStat) {
+      throw new LiveTranscriptError("live_transcript_disabled", "Workspace guarded file operations are unavailable.", 503)
+    }
+    const relPath = validateWorkspaceAudioPath(input.path)
+    const absolutePath = await resolveWorkspaceAbsolutePath(workspace.root, relPath)
+    const transcriptRelPath = `${relPath.replace(/\.[^./\\]+$/, "")}.transcript.md`
+    if (!input.overwrite) {
+      const exists = await workspace.stat(transcriptRelPath).then(() => true, () => false)
+      if (exists) {
+        throw new LiveTranscriptError("live_transcript_revision_conflict", "A transcript already exists for this recording.", 409)
+      }
+    }
+    const title = cleanTitle(input.title)
+    const startedAt = new Date(this.now()).toISOString()
+    const result = await refiner.refine({ audioAbsolutePath: absolutePath, title, startedAt })
+    await workspace.writeFileWithStat(transcriptRelPath, result.markdown)
+    return {
+      transcriptPath: transcriptRelPath,
+      words: result.words,
+      speakers: result.speakers,
+      durationSeconds: result.durationSeconds,
+    }
+  }
+
+  private refineCompletedSession(session: LiveSession): Promise<void> {
+    const refiner = this.options.refiner
+    const recorder = session.audioRecorder
+    const workspace = session.workspace
+    if (!refiner || !recorder || !workspace.writeFileWithStat) return Promise.resolve()
+    return (async () => {
+      try {
+        const result = await refiner.refine({
+          audioAbsolutePath: recorder.outputPath,
+          title: session.title,
+          startedAt: session.startedAt,
+        })
+        await workspace.writeFileWithStat!(session.transcriptPath, result.markdown)
+        if (session.reviewTarget) {
+          try {
+            await session.reviewTarget.sendIfIdle({
+              requestId: `refine:${session.id}`,
+              message: `Transcript refined with the offline pass: ${session.transcriptPath}`,
+            })
+          } catch {
+            // Best-effort notification only; the refined transcript is already on disk.
+          }
+        }
+      } catch (error) {
+        this.options.onRefineError?.(error)
+      }
+    })()
+  }
+
   private createUpstream(callbacks: {
     onSnapshot: (snapshot: WhisperLiveKitSnapshot) => void
     onFailure: (error: LiveTranscriptError) => void
@@ -544,6 +660,9 @@ export class LiveTranscriptManager {
       }
       if (finalState === "complete") await session.reviewBroker?.final()
       else session.reviewBroker?.interrupt()
+      if (finalState === "complete" && audioStored) {
+        session.refinePromise = this.refineCompletedSession(session)
+      }
       session.upstream?.close()
       const result: LiveTranscriptTerminalResponse = {
         liveSessionId: session.id,
@@ -634,6 +753,38 @@ function createLeaseReviewTarget(
       })
     },
   }
+}
+
+const ALLOWED_AUDIO_EXTENSIONS = new Set(["m4a", "mp3", "wav", "webm", "ogg", "mp4", "aac", "flac"])
+
+function validateWorkspaceAudioPath(raw: unknown): string {
+  if (typeof raw !== "string" || !raw.trim()) {
+    throw new LiveTranscriptError("live_transcript_attachment_invalid", "Recording path is required.", 400)
+  }
+  const path = raw.trim()
+  if (isAbsolute(path) || path.split(/[/\\]/).some((segment) => segment === "" || segment === "..")) {
+    throw new LiveTranscriptError("live_transcript_attachment_invalid", "Recording path must be a relative workspace path.", 400)
+  }
+  const extension = path.includes(".") ? path.split(".").pop()!.toLowerCase() : ""
+  if (!ALLOWED_AUDIO_EXTENSIONS.has(extension)) {
+    throw new LiveTranscriptError("live_transcript_attachment_invalid", "Recording file extension is unsupported.", 400)
+  }
+  return path
+}
+
+async function resolveWorkspaceAbsolutePath(root: string, relPath: string): Promise<string> {
+  const candidate = resolvePath(root, relPath)
+  let real: string
+  let realRoot: string
+  try {
+    ;[real, realRoot] = await Promise.all([realpath(candidate), realpath(root)])
+  } catch {
+    throw new LiveTranscriptError("live_transcript_attachment_invalid", "Recording file was not found or is inaccessible.", 400)
+  }
+  if (real !== realRoot && !real.startsWith(`${realRoot}/`)) {
+    throw new LiveTranscriptError("live_transcript_attachment_invalid", "Recording path escaped the workspace.", 400)
+  }
+  return real
 }
 
 function cleanTitle(value: string | undefined): string {

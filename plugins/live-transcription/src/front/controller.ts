@@ -65,6 +65,14 @@ export class LiveTranscriptBrowserController {
           ? await this.review()
           : "Usage: /review transcript",
       },
+      {
+        name: "transcribe",
+        description: "Refine an existing recording into a transcript",
+        kind: "local",
+        source: "local",
+        allowWhileBusy: () => true,
+        handler: async (args) => this.transcribeFile(args),
+      },
     ]
   }
 
@@ -423,6 +431,27 @@ export class LiveTranscriptBrowserController {
     }
     if (subcommand === "status" && !remainder) return await this.status()
     return "Usage: /live start [optional title] | /live stop | /live status"
+  }
+
+  private async transcribeFile(args: string): Promise<string> {
+    const trimmed = args.trim()
+    if (!trimmed) return "Usage: /transcribe <workspace path> [title]"
+    const separator = trimmed.indexOf(" ")
+    const path = separator < 0 ? trimmed : trimmed.slice(0, separator)
+    const title = separator < 0 ? undefined : trimmed.slice(separator + 1).trim() || undefined
+    try {
+      const result = await postJson<{ transcriptPath: string; words: number; speakers: number; durationSeconds: number }>(
+        `${LIVE_TRANSCRIPT_BASE_PATH}/transcribe-file`,
+        { path, ...(title ? { title } : {}) },
+      )
+      postUiCommand({
+        kind: "openSurface",
+        params: { kind: "workspace.open.path", target: result.transcriptPath },
+      })
+      return `Transcript refined: ${result.transcriptPath} (${result.words} words, ${result.speakers} speakers)`
+    } catch (error) {
+      return formatError(error, "File transcription failed.")
+    }
   }
 
   private async prepareCompute(kind: "live" | "composer", generation: number): Promise<string> {

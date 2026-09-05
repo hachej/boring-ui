@@ -1,0 +1,19 @@
+[Unit]
+Description=Boring Clinic batch refine transcription service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+EnvironmentFile=/etc/boring-refine.env
+ExecStart=/opt/WhisperLiveKit/.venv/bin/python /opt/boring-refine/refine_server.py \
+  --port 18884 \
+  --sidecar-path /opt/boring-sortformer-poc \
+  --model-path /opt/models/sortformer/diar_streaming_sortformer_4spk-v2.nemo
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

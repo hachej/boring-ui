@@ -13,6 +13,10 @@ export interface TranscriptDocument {
   state: "active" | "complete" | "interrupted"
   /** False for providers such as Kyutai that do not identify speakers. */
   showSpeakerLabels?: boolean
+  /** ISO timestamp of the offline refinement pass, when the transcript has been refined. */
+  refinedAt?: string
+  /** Parenthetical detail rendered next to `refinedAt` (e.g. model, word and speaker counts). */
+  refinedNote?: string
   lines: readonly ProjectedTranscriptLine[]
 }
 
@@ -25,6 +29,10 @@ export function renderTranscriptMarkdown(document: TranscriptDocument): string {
     `- Started: ${document.startedAt}`,
     `- State: ${document.state}`,
   ]
+  if (document.refinedAt) {
+    const suffix = document.refinedNote ? ` (${document.refinedNote})` : ""
+    lines.push(`- Refined: ${document.refinedAt}${suffix}`)
+  }
   for (const line of document.lines) {
     const text = line.text.replace(/[\r\n\t]+/g, " ").replace(/\s{2,}/g, " ").trim()
     if (!text) continue
