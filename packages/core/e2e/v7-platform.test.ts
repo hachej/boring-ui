@@ -15,16 +15,39 @@ import type { IdempotencyKeyStore } from '../src/server/middleware/idempotency'
 // In-memory idempotency store
 // ---------------------------------------------------------------------------
 function createInMemoryIdempotencyStore(): IdempotencyKeyStore {
-  const entries = new Map<string, { responseStatus: number; responseBody: unknown; scope: string; createdAt: Date }>()
+  const entries = new Map<string, {
+    requestHash: string
+    responseStatus: number | null
+    responseBody: unknown
+    scope: string
+    createdAt: Date
+  }>()
   return {
-    async sweep() { /* noop for tests */ },
-    async find(key: string) {
+    async sweep() { /* noop for this short scenario */ },
+    async find(key) {
       const entry = entries.get(key)
-      return entry ? { responseStatus: entry.responseStatus, responseBody: entry.responseBody } : null
+      return entry && entry.responseStatus !== null
+        ? { responseStatus: entry.responseStatus, responseBody: entry.responseBody }
+        : null
     },
-    async set(key: string, scope: string, status: number, body: unknown) {
-      if (entries.has(key)) return
-      entries.set(key, { responseStatus: status, responseBody: body, scope, createdAt: new Date() })
+    async claim(key, scope, requestHash) {
+      const entry = entries.get(key)
+      if (!entry) {
+        entries.set(key, { requestHash, responseStatus: null, responseBody: null, scope, createdAt: new Date() })
+        return { status: 'claimed' }
+      }
+      if (entry.scope !== scope || entry.requestHash !== requestHash) return { status: 'conflict' }
+      return entry.responseStatus === null ? { status: 'pending' } : {
+        status: 'replay',
+        entry: { responseStatus: entry.responseStatus, responseBody: entry.responseBody },
+      }
+    },
+    async set(key, scope, status, body) {
+      const entry = entries.get(key)
+      if (!entry || (entry.scope === scope && entry.responseStatus === null)) {
+        entries.set(key, { requestHash: '', scope, ...entry,
+          responseStatus: status, responseBody: body, createdAt: new Date() })
+      }
     },
   }
 }
@@ -92,7 +115,7 @@ describe('v7 platform E2E', () => {
       app.addHook('onRequest', async (request) => {
         const userId = request.headers['x-test-user'] as string | undefined
         if (userId) {
-          request.user = { id: userId, email: `${userId}@test.dev`, name: null }
+          request.user = { id: userId, email: `${userId}@test.dev`, name: null, emailVerified: true }
         } else {
           request.user = null
         }
@@ -182,8 +205,11 @@ describe('v7 platform E2E', () => {
       expect(res.statusCode).toBe(201)
 
       const body = res.json()
-      // The invite id should match the original (cached)
+      // The same persisted invite survives the replay, with no duplicate row.
       expect(body.invite.id).toBe(inviteId)
+      expect(await workspaceStore.listInvites(workspaceId)).toEqual([
+        expect.objectContaining({ id: inviteId, email: 'bob@test.dev', role: 'editor' }),
+      ])
     })
 
     // 5. Bob resolves invite — we need the rawToken.
@@ -371,7 +397,7 @@ describe('v7 platform E2E', () => {
       app.addHook('onRequest', async (request) => {
         const userId = request.headers['x-test-user'] as string | undefined
         if (userId) {
-          request.user = { id: userId, email: `${userId}@test.dev`, name: null }
+          request.user = { id: userId, email: `${userId}@test.dev`, name: null, emailVerified: true }
         } else {
           request.user = null
         }
@@ -497,7 +523,7 @@ describe('v7 platform E2E', () => {
 
       app.addHook('onRequest', async (request) => {
         const userId = request.headers['x-test-user'] as string | undefined
-        request.user = userId ? { id: userId, email: `${userId}@test.dev`, name: null } : null
+        request.user = userId ? { id: userId, email: `${userId}@test.dev`, name: null, emailVerified: true } : null
       })
 
       await app.register(registerWorkspaceRoutes)
