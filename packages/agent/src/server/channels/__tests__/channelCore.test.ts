@@ -331,14 +331,22 @@ describe('ChannelInboundService fake-channel path', () => {
         followUp: vi.fn(),
       } as unknown as ChannelAgentInvoker
       const service = new ChannelInboundService(first, invoker)
-      expect(service.accept(inbound('unknown'), 'default')).toEqual({
+      const expectedUnknown = {
         accepted: false,
         duplicate: false,
         code: CHANNEL_UNKNOWN_BINDING,
-      })
+      }
+      expect(service.accept(inbound('unknown'), 'default')).toEqual(expectedUnknown)
+      expect(service.accept(inbound('unknown'), 'default')).toEqual(expectedUnknown)
       await service.waitForIdle()
       expect(invoker.createSession).not.toHaveBeenCalled()
       expect(firstDb.sql.exec('SELECT * FROM boring_channel_inbound_queue').toArray()).toEqual([])
+      expect(firstDb.sql.exec('SELECT * FROM boring_channel_inbound_dedupe').toArray()).toEqual([])
+
+      first.provision({ ...bindingInput, sessionKey: 'session-after-provision' })
+      expect(service.accept(inbound('unknown'), 'default')).toMatchObject({ accepted: true, duplicate: false })
+      await service.waitForIdle()
+      expect(invoker.prompt).toHaveBeenCalledOnce()
     })
   })
 })

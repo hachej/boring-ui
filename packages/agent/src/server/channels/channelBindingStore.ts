@@ -192,9 +192,11 @@ export class ChannelBindingStore {
       }
 
       const binding = this.getBinding(message.channel, message.conversationKey, agentTypeId)
+      if (!binding || binding.status !== 'active') return { disposition: 'unknown_binding' } as const
+      // Unknown identities are not consumed: every retry remains fail-closed,
+      // and a later explicit provision can safely admit the same provider id.
       this.sql.exec(`INSERT INTO boring_channel_inbound_dedupe(channel, provider_message_id, seen_at)
         VALUES (?, ?, ?)`, message.channel, message.providerMessageId, message.receivedAt)
-      if (!binding || binding.status !== 'active') return { disposition: 'unknown_binding' } as const
 
       const inserted = this.sql.exec(`INSERT INTO boring_channel_inbound_queue
         (channel, conversation_key, agent_type_id, workspace_id, auth_subject_id, binding_version,
