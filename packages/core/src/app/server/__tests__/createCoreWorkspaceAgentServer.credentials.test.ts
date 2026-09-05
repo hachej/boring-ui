@@ -105,10 +105,12 @@ test('mounts configured owner credential metadata routes without exposing secret
       ]),
     })
     for (const credential of body.credentials) {
-      expect(credential).not.toHaveProperty('fields')
-      expect(credential).not.toHaveProperty('value')
-      expect(credential).not.toHaveProperty('accessToken')
-      expect(credential).not.toHaveProperty('refreshToken')
+      expect(Object.keys(credential).sort()).toEqual([
+        'credentialType',
+        'displayName',
+        'providerId',
+        'state',
+      ])
     }
 
     mocks.getMemberRole.mockResolvedValueOnce('member')
