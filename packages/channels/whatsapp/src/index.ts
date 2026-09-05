@@ -1,16 +1,8 @@
-import {
-  shapeChannelText,
-  type ChannelOutboundAdapter,
-  type ChannelOutboundTurn,
-  type InboundChannelMessage,
-  withResolvedCredential,
-} from '@hachej/boring-agent/server'
 import type {
-  AuthorizedWorkspaceCredentialScopeV1,
-  CredentialFieldId,
-  ProviderCredentialRefV1,
-  WorkspaceCredentialResolverV1,
-} from '@hachej/boring-agent/shared'
+  ChannelOutboundAdapter,
+  ChannelOutboundTurn,
+  InboundChannelMessage,
+} from '@hachej/boring-agent/server'
 
 export const WHATSAPP_CHANNEL_ID = 'whatsapp'
 export const WHATSAPP_WEBHOOK_BODY_LIMIT = 1_048_576
@@ -27,47 +19,10 @@ export interface WhatsAppCloudCredentials {
   readonly fallbackTemplateLanguage?: string
 }
 
-/** Host-owned resolver. Implement it with server/credentials; never environment reads in this package. */
-export type ResolveWhatsAppCloudCredentials = () => Promise<WhatsAppCloudCredentials>
-
-export interface WhatsAppCredentialFieldMap {
-  readonly accessToken: CredentialFieldId
-  readonly appSecret: CredentialFieldId
-  readonly verifyToken: CredentialFieldId
-  readonly phoneNumberId: CredentialFieldId
-  readonly apiVersion?: CredentialFieldId
-  readonly fallbackTemplateName: CredentialFieldId
-  readonly fallbackTemplateLanguage?: CredentialFieldId
-}
-
-/** Creates a short-lived provider resolver backed by the host credential lease. */
-export function createWhatsAppCloudCredentialResolver(input: {
-  readonly resolver: WorkspaceCredentialResolverV1
-  readonly workspace: AuthorizedWorkspaceCredentialScopeV1
-  readonly ref: ProviderCredentialRefV1
-  readonly fields: WhatsAppCredentialFieldMap
-}): ResolveWhatsAppCloudCredentials {
-  return () => withResolvedCredential(input.resolver, input.workspace, input.ref, (lease) => {
-    if (lease.material.kind !== 'field-set') throw new Error('WhatsApp credentials require field-set material')
-    const read = (field: CredentialFieldId, required: boolean): string | undefined => {
-      const value = lease.material.kind === 'field-set' ? lease.material.fields.get(field) : undefined
-      const decoded = value ? new TextDecoder().decode(value) : ''
-      if (required && decoded.length === 0) throw new Error(`Missing required WhatsApp credential field: ${field}`)
-      return decoded || undefined
-    }
-    return {
-      accessToken: read(input.fields.accessToken, true)!,
-      appSecret: read(input.fields.appSecret, true)!,
-      verifyToken: read(input.fields.verifyToken, true)!,
-      phoneNumberId: read(input.fields.phoneNumberId, true)!,
-      fallbackTemplateName: read(input.fields.fallbackTemplateName, true)!,
-      ...(input.fields.apiVersion ? { apiVersion: read(input.fields.apiVersion, false) } : {}),
-      ...(input.fields.fallbackTemplateLanguage
-        ? { fallbackTemplateLanguage: read(input.fields.fallbackTemplateLanguage, false) }
-        : {}),
-    }
-  })
-}
+/** Host-owned credential lease callback; secrets never escape its lifetime. */
+export type WithWhatsAppCloudCredentials = <T>(
+  use: (credentials: WhatsAppCloudCredentials) => T | Promise<T>,
+) => Promise<T>
 
 export interface WhatsAppCloudMessage {
   readonly messaging_product: 'whatsapp'
@@ -95,7 +50,7 @@ export interface WhatsAppWebhookResult {
 }
 
 export interface WhatsAppWebhookHandlerOptions {
-  readonly credentials: ResolveWhatsAppCloudCredentials
+  readonly withCredentials: WithWhatsAppCloudCredentials
   /** Must durably enqueue before resolving; the HTTP 200 is the acknowledgement boundary. */
   readonly acceptInbound: (message: InboundChannelMessage) => unknown | Promise<unknown>
   readonly bodyLimit?: number
@@ -103,7 +58,7 @@ export interface WhatsAppWebhookHandlerOptions {
 }
 
 export interface WhatsAppCloudAdapterOptions {
-  readonly credentials: ResolveWhatsAppCloudCredentials
+  readonly withCredentials: WithWhatsAppCloudCredentials
   readonly fetch?: typeof fetch
   readonly graphApiOrigin?: string
 }
@@ -121,7 +76,7 @@ export interface WhatsAppCloudEdgeOptions extends WhatsAppCloudAdapterOptions {
 export function createWhatsAppCloudEdge(options: WhatsAppCloudEdgeOptions) {
   const adapter = new WhatsAppCloudAdapter(options)
   const webhook = createWhatsAppFetchHandler({
-    credentials: options.credentials,
+    withCredentials: options.withCredentials,
     acceptInbound: (message) => options.inbound.accept(message, options.agentTypeId),
     ...(options.bodyLimit === undefined ? {} : { bodyLimit: options.bodyLimit }),
     ...(options.now === undefined ? {} : { now: options.now }),
@@ -152,7 +107,7 @@ export class WhatsAppCloudAdapter implements ChannelOutboundAdapter<WhatsAppClou
   }
 
   renderOutbound(turn: ChannelOutboundTurn): readonly WhatsAppCloudMessage[] {
-    return shapeChannelText(turn.text, 'whatsapp/markdown', 4_096).map((body) => ({
+    return shapeWhatsAppText(turn.text, 4_096).map((body) => ({
       messaging_product: 'whatsapp' as const,
       recipient_type: 'individual' as const,
       type: 'text' as const,
@@ -161,12 +116,12 @@ export class WhatsAppCloudAdapter implements ChannelOutboundAdapter<WhatsAppClou
   }
 
   async send(input: { readonly conversationKey: string; readonly message: WhatsAppCloudMessage }): Promise<void> {
-    await this.sendPayload({ ...input.message, to: input.conversationKey })
+    await this.options.withCredentials((credentials) =>
+      this.sendPayload({ ...input.message, to: input.conversationKey }, credentials))
   }
 
   async sendWindowTemplate(input: { readonly conversationKey: string }): Promise<void> {
-    const credentials = await this.options.credentials()
-    await this.sendPayload({
+    await this.options.withCredentials((credentials) => this.sendPayload({
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
       to: input.conversationKey,
@@ -175,11 +130,10 @@ export class WhatsAppCloudAdapter implements ChannelOutboundAdapter<WhatsAppClou
         name: credentials.fallbackTemplateName,
         language: { code: credentials.fallbackTemplateLanguage ?? 'en' },
       },
-    }, credentials)
+    }, credentials))
   }
 
-  private async sendPayload(message: WhatsAppCloudMessage, supplied?: WhatsAppCloudCredentials): Promise<void> {
-    const credentials = supplied ?? await this.options.credentials()
+  private async sendPayload(message: WhatsAppCloudMessage, credentials: WhatsAppCloudCredentials): Promise<void> {
     const apiVersion = credentials.apiVersion ?? 'v25.0'
     if (!/^v\d+\.\d+$/.test(apiVersion) || !/^\d+$/.test(credentials.phoneNumberId)) {
       throw new WhatsAppCloudApiError(0, false)
@@ -196,8 +150,21 @@ export class WhatsAppCloudAdapter implements ChannelOutboundAdapter<WhatsAppClou
       },
     )
     if (!response.ok) {
-      // Retry throttling and server errors. Auth, schema, and policy failures park immediately.
-      throw new WhatsAppCloudApiError(response.status, response.status === 408 || response.status === 429 || response.status >= 500)
+      let providerTransient = false
+      let providerCode: number | undefined
+      try {
+        const payload: unknown = await response.json()
+        if (isRecord(payload) && isRecord(payload.error)) {
+          providerTransient = payload.error.is_transient === true
+          providerCode = typeof payload.error.code === 'number' ? payload.error.code : undefined
+        }
+      } catch {
+        // A non-JSON failure still has reliable HTTP retry semantics.
+      }
+      const transientCodes = new Set([1, 2, 4, 17, 32, 613, 80007])
+      const retryable = providerTransient || (providerCode !== undefined && transientCodes.has(providerCode))
+        || response.status === 408 || response.status === 429 || response.status >= 500
+      throw new WhatsAppCloudApiError(response.status, retryable)
     }
   }
 }
@@ -210,7 +177,8 @@ export function createWhatsAppFetchHandler(options: WhatsAppWebhookHandlerOption
     const announcedLength = Number(request.headers.get('content-length') ?? 0)
     const limit = options.bodyLimit ?? WHATSAPP_WEBHOOK_BODY_LIMIT
     if (Number.isFinite(announcedLength) && announcedLength > limit) return new Response('payload too large', { status: 413 })
-    const body = method === 'POST' ? new Uint8Array(await request.arrayBuffer()) : undefined
+    const body = method === 'POST' ? await readRequestBody(request, limit) : undefined
+    if (body === undefined && method === 'POST') return new Response('payload too large', { status: 413 })
     const handled = await handle({
       method,
       url: request.url,
@@ -222,8 +190,7 @@ export function createWhatsAppFetchHandler(options: WhatsAppWebhookHandlerOption
 }
 
 export function createWhatsAppWebhookHandler(options: WhatsAppWebhookHandlerOptions) {
-  return async (input: WhatsAppWebhookInput): Promise<WhatsAppWebhookResult> => {
-    const credentials = await options.credentials()
+  return async (input: WhatsAppWebhookInput): Promise<WhatsAppWebhookResult> => options.withCredentials(async (credentials) => {
     if (input.method === 'GET') return verifyChallenge(input.url, credentials.verifyToken)
 
     const body = input.body ?? new Uint8Array()
@@ -241,19 +208,33 @@ export function createWhatsAppWebhookHandler(options: WhatsAppWebhookHandlerOpti
     } catch {
       return result(400, 'invalid json')
     }
-    const messages = parseWhatsAppInbound(payload, options.now?.() ?? Date.now())
+    let messages: InboundChannelMessage[]
+    try {
+      messages = parseWhatsAppInbound(payload, options.now?.() ?? Date.now())
+    } catch {
+      return result(400, 'invalid envelope')
+    }
     for (const message of messages) await options.acceptInbound(message)
     return result(200, JSON.stringify({ accepted: messages.length }), 'application/json')
-  }
+  })
 }
 
 export function parseWhatsAppInbound(payload: unknown, receivedAt = Date.now()): InboundChannelMessage[] {
-  if (!isRecord(payload) || payload.object !== 'whatsapp_business_account' || !Array.isArray(payload.entry)) return []
+  if (!isRecord(payload) || payload.object !== 'whatsapp_business_account' || !Array.isArray(payload.entry)) {
+    throw new Error('Invalid WhatsApp webhook envelope')
+  }
   const output: InboundChannelMessage[] = []
   for (const entry of payload.entry) {
-    if (!isRecord(entry) || !Array.isArray(entry.changes)) continue
+    if (!isRecord(entry) || !Array.isArray(entry.changes)) throw new Error('Invalid WhatsApp webhook entry')
     for (const change of entry.changes) {
-      if (!isRecord(change) || change.field !== 'messages' || !isRecord(change.value) || !Array.isArray(change.value.messages)) continue
+      if (!isRecord(change) || typeof change.field !== 'string' || !isRecord(change.value)) {
+        throw new Error('Invalid WhatsApp webhook change')
+      }
+      if (change.field !== 'messages') continue
+      if (!Array.isArray(change.value.messages)) {
+        if (Array.isArray(change.value.statuses)) continue
+        throw new Error('Invalid WhatsApp messages change')
+      }
       for (const message of change.value.messages) {
         if (!isRecord(message) || typeof message.id !== 'string' || typeof message.from !== 'string') continue
         const text = inboundText(message)
@@ -305,6 +286,69 @@ function inboundText(message: Record<string, unknown>): string | undefined {
     }
   }
   return undefined
+}
+
+async function readRequestBody(request: Request, limit: number): Promise<Uint8Array | undefined> {
+  if (!request.body) return new Uint8Array()
+  const reader = request.body.getReader()
+  const chunks: Uint8Array[] = []
+  let size = 0
+  try {
+    for (;;) {
+      const next = await reader.read()
+      if (next.done) break
+      size += next.value.byteLength
+      if (size > limit) {
+        await reader.cancel()
+        return undefined
+      }
+      chunks.push(next.value)
+    }
+  } finally {
+    reader.releaseLock()
+  }
+  const body = new Uint8Array(size)
+  let offset = 0
+  for (const chunk of chunks) {
+    body.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return body
+}
+
+function shapeWhatsAppText(text: string, maxLength: number): string[] {
+  const rendered = renderWhatsAppMarkdown(text)
+  const chunks: string[] = []
+  let remaining = rendered
+  while (remaining.length > maxLength) {
+    let split = remaining.lastIndexOf('\n\n', maxLength)
+    if (split < Math.floor(maxLength / 2)) split = remaining.lastIndexOf('\n', maxLength)
+    if (split < Math.floor(maxLength / 2)) split = maxLength
+    if (split > 0 && isHighSurrogate(remaining.charCodeAt(split - 1))) split -= 1
+    chunks.push(remaining.slice(0, split))
+    remaining = remaining.slice(split).replace(/^\n+/, '')
+  }
+  if (remaining.length > 0 || chunks.length === 0) chunks.push(remaining)
+  return chunks
+}
+
+function renderWhatsAppMarkdown(text: string): string {
+  let inFence = false
+  return text.split(/(```)/g).map((section) => {
+    if (section === '```') {
+      inFence = !inFence
+      return section
+    }
+    if (inFence) return section
+    return section
+      .replace(/^#{1,6}\s+/gm, '')
+      .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1_$2_')
+      .replace(/\*\*([^*\n]+)\*\*/g, '*$1*')
+  }).join('')
+}
+
+function isHighSurrogate(value: number): boolean {
+  return value >= 0xd800 && value <= 0xdbff
 }
 
 function constantTimeEqual(left: Uint8Array, right: Uint8Array): boolean {
