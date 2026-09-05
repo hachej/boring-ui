@@ -142,7 +142,7 @@ async function boundedWait<T>(
   pending: PromiseLike<T>,
   deadlineMs: number,
   signal?: AbortSignal,
-  cancel?: () => void,
+  cancel?: () => unknown,
 ): Promise<T> {
   if (signal?.aborted) throw lockUnavailable('cancelled')
   const remainingMs = Math.max(0, deadlineMs - Date.now())
@@ -166,7 +166,14 @@ async function boundedWait<T>(
       if (settled) return
       settled = true
       cleanup()
-      cancel?.()
+      try {
+        const cancellation = cancel?.()
+        if (cancellation && typeof (cancellation as PromiseLike<unknown>).then === 'function') {
+          void Promise.resolve(cancellation).catch(() => undefined)
+        }
+      } catch {
+        // Cancellation is best-effort; the stable lock error remains authoritative.
+      }
       reject(error)
     }
     function aborted(): void {
@@ -186,7 +193,7 @@ async function destroyReservedConnection(
   reserved: postgres.ReservedSql,
   backendPid?: number,
   probeToken?: string,
-): Promise<void> {
+): Promise<boolean> {
   // postgres.js has no public destroy method for one reserved connection.
   // Try both an out-of-band termination (works when its query is stalled) and
   // self-termination (works even when this is a max=1 pool and the connection
@@ -218,17 +225,13 @@ async function destroyReservedConnection(
       WHERE pid <> pg_backend_pid() AND query LIKE ${`%${probeToken}%`}
     `
     const rows = await boundedWait(terminate, evictionDeadlineMs, undefined, () => terminate.cancel())
-    if (rows.length === 0) {
-      // The PID-only probe never reached PostgreSQL, so it cannot hold an
-      // advisory lock. Mark the reservation for release; postgres.js defers
-      // reuse until the cancelled query reaches ReadyForQuery.
-      reserved.release()
-    }
+    if (rows.length === 0) return false
   } else {
     const terminate = reserved`SELECT pg_terminate_backend(pg_backend_pid())`
     await boundedWait(terminate, evictionDeadlineMs, undefined, () => terminate.cancel())
   }
   // Do not call release(): the confirmed connection-close path owns cleanup.
+  return true
 }
 
 /** Postgres implementation of the ciphertext-only credential vault port. */
@@ -284,19 +287,33 @@ implements CredentialVaultPersistenceV1 {
 
     let backendPid: number | undefined
     const probeToken = `credential_lock_probe_${randomUUID().replaceAll('-', '')}`
+    const pidQuery = reserved.unsafe<{ pid: number }[]>(
+      `SELECT pg_backend_pid() AS pid /* ${probeToken} */`,
+    )
     try {
-      const pidQuery = reserved.unsafe<{ pid: number }[]>(
-        `SELECT pg_backend_pid() AS pid /* ${probeToken} */`,
-      )
       const pidRows = await boundedWait(pidQuery, deadlineMs, lockOptions.signal, () => pidQuery.cancel())
       if (Number.isSafeInteger(pidRows[0]?.pid)) backendPid = pidRows[0]!.pid
     } catch (error) {
       try {
-        await destroyReservedConnection(this.options.evictionSql, reserved, undefined, probeToken)
+        const evicted = await destroyReservedConnection(
+          this.options.evictionSql,
+          reserved,
+          undefined,
+          probeToken,
+        )
+        if (!evicted) {
+          void Promise.resolve(pidQuery).then(
+            () => reserved.release(),
+            () => reserved.release(),
+          )
+        }
       } catch {
-        // This probe cannot have acquired an advisory lock. If the control pool
-        // is unavailable, deferred release is safe and prevents a permanent pin.
-        reserved.release()
+        // This probe cannot have acquired an advisory lock. Release only after
+        // the cancelling query settles; postgres.js release() itself is immediate.
+        void Promise.resolve(pidQuery).then(
+          () => reserved.release(),
+          () => reserved.release(),
+        )
         throw lockUnavailable('could not evict its connection')
       }
       throw stableLockError(error)
