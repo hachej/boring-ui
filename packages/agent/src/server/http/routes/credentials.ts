@@ -200,8 +200,14 @@ export async function credentialsRoutes(
       (await options.vaultBackend.listCredentialMetadata(workspaceId))
         .map((item) => [item.providerId, item]),
     )
-    const personalCodex = stored.get(actorCredentialProviderIdV1(userId, 'openai-codex'))
-    if (personalCodex) stored.set('openai-codex' as ProviderId, { ...personalCodex, providerId: 'openai-codex' as ProviderId })
+    const codexId = 'openai-codex' as ProviderId
+    const personalCodex = stored.get(actorCredentialProviderIdV1(userId, codexId))
+    const workspaceCodex = stored.get(codexId)
+    if (personalCodex) {
+      stored.set(codexId, { ...personalCodex, providerId: codexId })
+    } else if (workspaceCodex?.credentialType === 'oauth') {
+      stored.set(codexId, { ...workspaceCodex, state: 'needs_reauth' })
+    }
     const credentials = options.providerRegistry.list().map((provider) =>
       metadataProjection(options.providerRegistry, provider.id, stored.get(provider.id)))
     return reply.code(200).send({ credentials })
@@ -214,8 +220,13 @@ export async function credentialsRoutes(
     const storedId = providerId === 'openai-codex' && authority.principal.kind === 'user'
       ? actorCredentialProviderIdV1(authority.principal.userId, providerId)
       : providerId
-    const stored = await options.vaultBackend.getCredentialMetadata(workspaceId, storedId)
-      ?? (storedId === providerId ? undefined : await options.vaultBackend.getCredentialMetadata(workspaceId, providerId))
+    const personal = await options.vaultBackend.getCredentialMetadata(workspaceId, storedId)
+    const fallback = storedId === providerId
+      ? undefined
+      : await options.vaultBackend.getCredentialMetadata(workspaceId, providerId)
+    const stored = personal ?? (fallback?.credentialType === 'oauth'
+      ? { ...fallback, state: 'needs_reauth' as const }
+      : fallback)
     return reply.code(200).send(metadataProjection(options.providerRegistry, providerId, stored))
   })
 

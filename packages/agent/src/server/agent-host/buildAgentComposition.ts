@@ -128,6 +128,8 @@ function reportEventStoreOpenFailure(telemetry: TelemetrySink | undefined, path:
 export interface BuildAgentCompositionInput {
   readonly agent: CompiledAgentHostAgentSpec
   readonly workspaceScopeId: string
+  /** Verified claim subject; omitted only by direct test/dev composition. */
+  readonly actorUserId?: string
   readonly runtimeScope: ResolvedAgentRuntimeScope
   readonly runtimeBundle: RuntimeBundle
   readonly environmentProvisioning?: EnvironmentProvisioningSnapshot
@@ -297,11 +299,11 @@ export async function buildAgentComposition(
       ? {
           credentialStore: input.credentialComposition.createPiCredentialStore(
             input.workspaceScopeId,
-            undefined,
-            // This composition is workspace-shared and has no verified actor.
-            // It may consume only explicit workspace API-key fallback. A later
-            // invocation-bound composition may opt into personal OAuth.
-            { allowSubscriptionOAuth: false },
+            input.actorUserId,
+            {
+              allowSubscriptionOAuth: input.actorUserId !== undefined
+                && allowsSubscriptionOAuthForAgentTypeV1(input.agent.agentTypeId),
+            },
           ),
         }
       : {}),

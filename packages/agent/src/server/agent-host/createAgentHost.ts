@@ -57,6 +57,7 @@ export interface RuntimeBinding {
   readonly key: string
   readonly agentTypeId: string
   readonly workspaceScopeId: string
+  readonly authSubjectId: string
   readonly generation: number
   readonly scope: ResolvedAgentRuntimeScope
   readonly environmentLease: EnvironmentLease
@@ -136,6 +137,7 @@ export interface AgentHostRuntime {
   findPublishedCurrentBinding(
     agentTypeId: string,
     workspaceScopeId: string,
+    authSubjectId: string,
     physicalBindingIdentity: string,
     bindingIdentity?: string,
     provisioningFingerprint?: string,
@@ -500,12 +502,18 @@ function createRuntime(
       const key = JSON.stringify([
         agentTypeId,
         claim.workspaceScopeId,
+        claim.authSubjectId,
         resolved.identity,
         resolved.environment.provisioningFingerprint,
         resolved.physicalBindingIdentity ?? resolved.identity,
       ])
       const physicalBindingIdentity = resolved.physicalBindingIdentity ?? resolved.identity
-      const currentKey = JSON.stringify([agentTypeId, claim.workspaceScopeId, physicalBindingIdentity])
+      const currentKey = JSON.stringify([
+        agentTypeId,
+        claim.workspaceScopeId,
+        claim.authSubjectId,
+        physicalBindingIdentity,
+      ])
       const useCanonicalCurrent = options.resolveAuthorizedAgentRuntimeScope !== undefined
       if (useCanonicalCurrent) {
         const current = publishedCurrentBindings.get(currentKey)
@@ -540,6 +548,7 @@ function createRuntime(
             const composition = await buildAgentComposition({
               agent,
               workspaceScopeId: claim.workspaceScopeId,
+              actorUserId: claim.authSubjectId,
               runtimeScope: resolved,
               runtimeBundle,
               credentialComposition,
@@ -557,6 +566,7 @@ function createRuntime(
               key,
               agentTypeId,
               workspaceScopeId: claim.workspaceScopeId,
+              authSubjectId: claim.authSubjectId,
               generation,
               scope: resolved,
               environmentLease,
@@ -609,6 +619,7 @@ function createRuntime(
     findPublishedCurrentBinding(
       agentTypeId,
       workspaceScopeId,
+      authSubjectId,
       physicalBindingIdentity,
       bindingIdentity,
       provisioningFingerprint,
@@ -616,12 +627,14 @@ function createRuntime(
       const exact = publishedCurrentBindings.get(JSON.stringify([
         agentTypeId,
         workspaceScopeId,
+        authSubjectId,
         physicalBindingIdentity,
       ]))
       if (exact) return exact
       const matches = [...publishedCurrentBindings.values()].filter((binding) =>
         binding.agentTypeId === agentTypeId
         && binding.workspaceScopeId === workspaceScopeId
+        && binding.authSubjectId === authSubjectId
         && (!bindingIdentity || binding.scope.identity === bindingIdentity)
         && (!provisioningFingerprint
           || binding.scope.environment.provisioningFingerprint === provisioningFingerprint))

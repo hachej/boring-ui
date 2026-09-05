@@ -124,6 +124,10 @@ export function createVaultCredentialStoreV1(options: VaultCredentialStoreOption
     const metadata = personalMetadata
       ?? await backend.getCredentialMetadata(options.workspaceId, effectiveProviderId)
     if (!metadata) return undefined
+    // Before actor custody, OAuth rows were workspace-scoped. Never expose or
+    // refresh those ambiguous legacy rows: each user must authenticate again.
+    // Unprefixed API-key rows remain the explicit workspace fallback.
+    if (!personalMetadata && metadata.credentialType === 'oauth') return undefined
     // A known non-active vault entry is an explicit deny, not absence. Ask the
     // backend for its stable lifecycle error so Pi cannot fall through to an
     // instance/environment credential.

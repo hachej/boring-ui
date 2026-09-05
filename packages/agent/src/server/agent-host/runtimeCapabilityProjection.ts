@@ -420,6 +420,7 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
           const current = runtime.findPublishedCurrentBinding(
             agentTypeId,
             claim.workspaceScopeId,
+            claim.authSubjectId,
             candidate.physicalBindingIdentity ?? candidate.identity,
             candidate.identity,
             candidate.environment.provisioningFingerprint,

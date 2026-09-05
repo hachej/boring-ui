@@ -204,6 +204,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
     const binding = this.runtime.findPublishedCurrentBinding(
       ref.agentTypeId,
       claim.workspaceScopeId,
+      claim.authSubjectId,
       resolved.physicalBindingIdentity ?? resolved.identity,
       resolved.identity,
       resolved.environment.provisioningFingerprint,
