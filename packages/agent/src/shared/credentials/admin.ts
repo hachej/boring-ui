@@ -9,6 +9,13 @@ export type CredentialLifecycleStateV1 =
   | 'instance_fallback_enabled'
 
 /** Metadata-only HTTP contract. No secret-bearing property exists on response DTOs. */
+export interface OAuthRevocationReceiptV1 {
+  readonly localStatus: 'revoked'
+  /** Pending means Pi provided no verifiable upstream revocation confirmation. */
+  readonly upstreamStatus: 'pending' | 'confirmed'
+  readonly attemptedAt: string
+}
+
 export interface CredentialMetadataV1 {
   readonly providerId: string
   readonly displayName: string
@@ -18,6 +25,7 @@ export interface CredentialMetadataV1 {
   readonly maskedLastFourSuffix?: string
   readonly createdAt?: string
   readonly updatedAt?: string
+  readonly oauthRevocation?: OAuthRevocationReceiptV1
 }
 
 export interface CredentialMetadataListResponseV1 {

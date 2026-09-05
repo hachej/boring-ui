@@ -4,11 +4,13 @@ import { InMemoryCredentialStore } from '@earendil-works/pi-ai'
 import { createProviderRegistryV1 } from '../../../../shared/credentials'
 import type { ProviderId, VerifiedWorkspaceCredentialAuthorityV1 } from '../../../../shared/credentials'
 import {
+  actorCredentialProviderIdV1,
   createInMemoryCredentialVaultPersistenceV1,
   createOpenAiCodexOAuthBrokerV1,
   createInMemoryCredentialVersionAnchorV1,
   createLocalKekWorkspaceKekProviderV1,
   createVaultCredentialStoreBackendV1,
+  createVaultCredentialStoreV1,
 } from '../../../credentials'
 import type { OAuthFlowSnapshotV1, OpenAiCodexOAuthBrokerV1 } from '../../../credentials'
 import { credentialsRoutes } from '../credentials'
@@ -47,6 +49,7 @@ function setup() {
     events: [{ type: 'device_code', userCode: 'ABCD-EFGH', verificationUri: 'https://example.test/device' }],
     prompt: { type: 'manual_code' },
   }
+  const disconnects: Array<{ workspaceId: string; userId: string }> = []
   const oauthBroker: OpenAiCodexOAuthBrokerV1 = {
     async start() { return pending },
     get(workspaceId, userId, flowId) { return workspaceId === 'workspace-a' && userId === 'owner' && flowId === 'flow-a' ? pending : undefined },
@@ -55,6 +58,10 @@ function setup() {
       return { ...pending, status: 'succeeded', prompt: undefined, completedAt: new Date(1).toISOString() }
     },
     async cancel() {},
+    async disconnect(workspaceId, userId) {
+      disconnects.push({ workspaceId, userId })
+      return { logoutStatus: 'completed', upstreamStatus: 'pending' }
+    },
   }
   const app = Fastify({ logger: false })
   app.register(credentialsRoutes, {
@@ -67,7 +74,7 @@ function setup() {
       String(request.headers['x-user'] ?? 'owner'),
     ),
   })
-  return { app, secret }
+  return { app, secret, vaultBackend, disconnects }
 }
 
 describe('OpenAI Codex OAuth routes', () => {
@@ -76,6 +83,7 @@ describe('OpenAI Codex OAuth routes', () => {
     const broker = createOpenAiCodexOAuthBrokerV1({
       credentialStoreForActor: () => store,
       createRuntime: async (credentials) => ({
+        async logout() {},
         async login(provider, type, interaction) {
           expect([provider, type]).toEqual(['openai-codex', 'oauth'])
           interaction.notify({ type: 'info', message: 'provider-text-access-token-canary' })
@@ -106,6 +114,28 @@ describe('OpenAI Codex OAuth routes', () => {
     expect(await store.read('openai-codex')).toMatchObject({ type: 'oauth', refresh: 'refresh-secret' })
   })
 
+  test.each([
+    { fails: false, expected: 'completed' },
+    { fails: true, expected: 'failed' },
+  ] as const)('orchestrates Pi logout and reports unverifiable upstream revocation as pending ($expected)', async ({ fails, expected }) => {
+    const calls: string[] = []
+    const broker = createOpenAiCodexOAuthBrokerV1({
+      credentialStoreForActor: () => new InMemoryCredentialStore(),
+      createRuntime: async () => ({
+        async login() { throw new Error('not used') },
+        async logout(provider) {
+          calls.push(provider)
+          if (fails) throw new Error('logout failed with access-token-canary')
+        },
+      }),
+    })
+    await expect(broker.disconnect('workspace-a', 'owner')).resolves.toEqual({
+      logoutStatus: expected,
+      upstreamStatus: 'pending',
+    })
+    expect(calls).toEqual(['openai-codex'])
+  })
+
   test('brokers safe interaction state without returning submitted codes or tokens', async () => {
     const { app, secret } = setup()
     const started = await app.inject({ method: 'POST', url: '/api/v1/credentials/openai-codex/oauth' })
@@ -125,6 +155,43 @@ describe('OpenAI Codex OAuth routes', () => {
     expect(completed.json().status).toBe('succeeded')
     expect(completed.body).not.toContain(secret)
     expect(completed.body).not.toContain('access_token')
+    await app.close()
+  })
+
+  test('disconnects through Pi, persists a local revoked receipt, and denies cross-user revoke', async () => {
+    const { app, vaultBackend, disconnects } = setup()
+    const ownerStore = createVaultCredentialStoreV1({
+      workspaceId: 'workspace-a', userId: 'owner', vaultBackend,
+      allowSubscriptionOAuth: true,
+    })
+    await ownerStore.modify('openai-codex', async () => ({
+      type: 'oauth', refresh: 'refresh-canary', access: 'access-canary', expires: 123,
+    }))
+
+    const denied = await app.inject({
+      method: 'POST', url: '/api/v1/credentials/openai-codex/revoke', headers: { 'x-user': 'other-owner' },
+    })
+    expect(denied.statusCode).toBe(400)
+    expect(disconnects).toEqual([])
+
+    const revoked = await app.inject({ method: 'POST', url: '/api/v1/credentials/openai-codex/revoke' })
+    expect(revoked.statusCode).toBe(200)
+    expect(revoked.json()).toMatchObject({
+      providerId: 'openai-codex',
+      state: 'revoked',
+      oauthRevocation: { localStatus: 'revoked', upstreamStatus: 'pending' },
+    })
+    expect(revoked.body).not.toContain('refresh-canary')
+    expect(revoked.body).not.toContain('access-canary')
+    expect(disconnects).toEqual([{ workspaceId: 'workspace-a', userId: 'owner' }])
+    expect(await vaultBackend.getCredentialMetadata(
+      'workspace-a', actorCredentialProviderIdV1('owner', 'openai-codex'),
+    )).toMatchObject({ state: 'revoked' })
+
+    const status = await app.inject({ method: 'GET', url: '/api/v1/credentials/openai-codex' })
+    expect(status.json()).toMatchObject({
+      state: 'revoked', oauthRevocation: { localStatus: 'revoked', upstreamStatus: 'pending' },
+    })
     await app.close()
   })
 

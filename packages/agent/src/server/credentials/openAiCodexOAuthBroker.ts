@@ -29,16 +29,23 @@ export interface OAuthFlowSnapshotV1 {
   readonly completedAt?: string
 }
 
+export interface CodexDisconnectResultV1 {
+  /** Pi logout is local credential orchestration; it does not currently attest upstream revocation. */
+  readonly logoutStatus: 'completed' | 'failed'
+  readonly upstreamStatus: 'pending'
+}
+
 export interface OpenAiCodexOAuthBrokerV1 {
   start(workspaceId: string, userId: string): Promise<OAuthFlowSnapshotV1>
   get(workspaceId: string, userId: string, flowId: string): OAuthFlowSnapshotV1 | undefined
   respond(workspaceId: string, userId: string, flowId: string, value: string): Promise<OAuthFlowSnapshotV1>
   cancel(workspaceId: string, userId: string, flowId: string): Promise<void>
+  disconnect(workspaceId: string, userId: string): Promise<CodexDisconnectResultV1>
 }
 
 export interface OpenAiCodexOAuthBrokerOptionsV1 {
   readonly credentialStoreForActor: (workspaceId: string, userId: string) => CredentialStore
-  readonly createRuntime?: (credentials: CredentialStore) => Promise<Pick<ModelRuntime, 'login'>>
+  readonly createRuntime?: (credentials: CredentialStore) => Promise<Pick<ModelRuntime, 'login' | 'logout'>>
   readonly now?: () => number
 }
 
@@ -208,6 +215,18 @@ export function createOpenAiCodexOAuthBrokerV1(
       flow.prompt = undefined
       flow.status = 'cancelled'
       flow.completedAt = new Date(now()).toISOString()
+    },
+    async disconnect(workspaceId, userId) {
+      if (!workspaceId.trim() || !userId.trim()) throw new Error('OAuth actor is invalid')
+      try {
+        const runtime = await runtimeFactory(options.credentialStoreForActor(workspaceId, userId))
+        await runtime.logout('openai-codex')
+        return Object.freeze({ logoutStatus: 'completed', upstreamStatus: 'pending' })
+      } catch {
+        // Pi currently exposes local logout, but no upstream revocation receipt.
+        // The route still persists a fail-closed local revoked state.
+        return Object.freeze({ logoutStatus: 'failed', upstreamStatus: 'pending' })
+      }
     },
   }
   return Object.freeze(broker)

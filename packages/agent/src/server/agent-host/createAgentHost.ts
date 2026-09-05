@@ -851,7 +851,10 @@ export async function createAgentHost(
   const oauthBroker = credentialComposition
     ? createOpenAiCodexOAuthBrokerV1({
         credentialStoreForActor: (workspaceId, userId) =>
-          credentialComposition.createPiCredentialStore(workspaceId, userId, { allowSubscriptionOAuth: true }),
+          credentialComposition.createPiCredentialStore(workspaceId, userId, {
+            allowSubscriptionOAuth: true,
+            allowRevokedOAuthReplacement: true,
+          }),
       })
     : undefined
   const invocationFundingPolicy = new AsyncLocalStorage<AgentInvocationFundingPolicyV1>()

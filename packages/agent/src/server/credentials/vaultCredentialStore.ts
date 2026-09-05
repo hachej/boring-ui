@@ -31,6 +31,8 @@ export interface VaultCredentialStoreOptionsV1 {
   readonly vaultBackend: VaultCredentialStoreBackendV1
   /** Subscription OAuth is interactive-only; unattended seats set this false. */
   readonly allowSubscriptionOAuth: boolean
+  /** Login-only stores may replace an actor's revoked OAuth tombstone. */
+  readonly allowRevokedOAuthReplacement?: boolean
   readonly allowedOAuthProviderIds?: readonly string[]
 }
 
@@ -177,6 +179,19 @@ export function createVaultCredentialStoreV1(options: VaultCredentialStoreOption
   const read = (providerId: string, operation?: AuthOperationOptions) =>
     readFrom(options.vaultBackend, providerId, operation)
 
+  const readForModify = async (
+    backend: VaultCredentialStoreBackendV1,
+    providerId: string,
+    operation?: AuthOperationOptions,
+  ): Promise<Credential | undefined> => {
+    if (options.allowRevokedOAuthReplacement && oauthProviders.has(providerId)) {
+      abortIfNeeded(operation)
+      const metadata = await backend.getCredentialMetadata(options.workspaceId, personalProviderId(providerId))
+      if (metadata?.credentialType === 'oauth' && metadata.state === 'revoked') return undefined
+    }
+    return readFrom(backend, providerId, operation)
+  }
+
   const store: CredentialStore = {
     read,
     async list(operation?: AuthOperationOptions): Promise<readonly CredentialInfo[]> {
@@ -204,7 +219,7 @@ export function createVaultCredentialStoreV1(options: VaultCredentialStoreOption
         options.workspaceId,
         async (lockedBackend) => {
           abortIfNeeded(operation)
-          const current = await readFrom(lockedBackend, providerId, operation)
+          const current = await readForModify(lockedBackend, providerId, operation)
           const next = await fn(cloneCredential(current))
           abortIfNeeded(operation)
           if (next === undefined) return current

@@ -292,7 +292,10 @@ export interface WorkspaceCredentialRuntimeViewV1 {
   createPiCredentialStore(
     workspaceId: string,
     userId: string | undefined,
-    options: { readonly allowSubscriptionOAuth: boolean },
+    options: {
+      readonly allowSubscriptionOAuth: boolean
+      readonly allowRevokedOAuthReplacement?: boolean
+    },
   ): CredentialStore
 }
 
@@ -380,12 +383,16 @@ export async function resolveWorkspaceCredentialVaultCompositionFromEnvV1(
   const createPiCredentialStore = (
     workspaceId: string,
     userId: string | undefined,
-    storeOptions: { readonly allowSubscriptionOAuth: boolean },
+    storeOptions: {
+      readonly allowSubscriptionOAuth: boolean
+      readonly allowRevokedOAuthReplacement?: boolean
+    },
   ): CredentialStore => createVaultCredentialStoreV1({
     workspaceId,
     userId,
     vaultBackend,
     allowSubscriptionOAuth: storeOptions.allowSubscriptionOAuth,
+    allowRevokedOAuthReplacement: storeOptions.allowRevokedOAuthReplacement,
     allowedOAuthProviderIds: ['openai-codex'],
   })
   const runtimeView: WorkspaceCredentialRuntimeViewV1 = Object.freeze({

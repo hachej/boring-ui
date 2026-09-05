@@ -226,6 +226,15 @@ function metadataProjection(
       : {}),
     createdAt: stored.createdAt,
     updatedAt: stored.updatedAt,
+    ...(providerId === 'openai-codex' && stored.credentialType === 'oauth' && stored.state === 'revoked'
+      ? {
+          oauthRevocation: {
+            localStatus: 'revoked' as const,
+            upstreamStatus: 'pending' as const,
+            attemptedAt: stored.updatedAt,
+          },
+        }
+      : {}),
   }
 }
 
@@ -527,10 +536,21 @@ export async function credentialsRoutes(
       const personalId = providerId === 'openai-codex' && authority.principal.kind === 'user'
         ? actorCredentialProviderIdV1(authority.principal.userId, providerId)
         : undefined
-      const storedId = personalId
-        && await options.vaultBackend.getCredentialMetadata(workspaceId, personalId)
-        ? personalId
-        : providerId
+      const personal = personalId
+        ? await options.vaultBackend.getCredentialMetadata(workspaceId, personalId)
+        : undefined
+      if (providerId === 'openai-codex' && action === 'revoke') {
+        if (authority.principal.kind !== 'user' || !personalId || personal?.credentialType !== 'oauth' || !options.oauthBroker) {
+          throw new CredentialResolutionError(CREDENTIAL_ERROR_CODES.NOT_CONFIGURED, 'Credential operation failed')
+        }
+        // Pi logout owns local credential deletion. Regardless of whether that
+        // orchestration succeeds, persist a fail-closed actor tombstone. Pi does
+        // not currently provide an upstream revocation confirmation API.
+        await options.oauthBroker.disconnect(workspaceId, authority.principal.userId)
+        const revoked = await options.vaultBackend.setCredentialLifecycleState(workspaceId, personalId, 'revoked')
+        return reply.code(200).send(metadataProjection(options.providerRegistry, providerId, revoked))
+      }
+      const storedId = personalId && personal ? personalId : providerId
       const stored = await options.vaultBackend.setCredentialLifecycleState(workspaceId, storedId, action === 'disable' ? 'disabled' : 'revoked')
       return reply.code(200).send(metadataProjection(options.providerRegistry, providerId, stored))
     })

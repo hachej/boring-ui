@@ -61,6 +61,19 @@ export function credentialMetadataFromResponse(value: unknown): CredentialMetada
     || typeof input.state !== 'string'
     || !STATES.has(input.state)
   ) throw new Error('Credential service returned an invalid response')
+  const rawRevocation = input.oauthRevocation && typeof input.oauthRevocation === 'object'
+    ? asRecord(input.oauthRevocation)
+    : undefined
+  const oauthRevocation = rawRevocation
+    && rawRevocation.localStatus === 'revoked'
+    && ['pending', 'confirmed'].includes(String(rawRevocation.upstreamStatus))
+    && typeof rawRevocation.attemptedAt === 'string'
+    ? {
+        localStatus: 'revoked' as const,
+        upstreamStatus: rawRevocation.upstreamStatus as 'pending' | 'confirmed',
+        attemptedAt: rawRevocation.attemptedAt,
+      }
+    : undefined
   return {
     providerId: input.providerId,
     displayName: input.displayName,
@@ -70,6 +83,7 @@ export function credentialMetadataFromResponse(value: unknown): CredentialMetada
     ...(typeof input.maskedLastFourSuffix === 'string' ? { maskedLastFourSuffix: input.maskedLastFourSuffix.slice(-4) } : {}),
     ...(typeof input.createdAt === 'string' ? { createdAt: input.createdAt } : {}),
     ...(typeof input.updatedAt === 'string' ? { updatedAt: input.updatedAt } : {}),
+    ...(oauthRevocation ? { oauthRevocation } : {}),
   }
 }
 
