@@ -277,7 +277,7 @@ describe('Factory host limits', () => {
     const baseBr = fakeBr([{ id: 'br-1', status: 'in_progress', assignee: 'gone' }])
     const failingComments = vi.fn(async (args: readonly string[], cwd: string) => {
       if (args[0] === 'comments' && args[1] === 'list') throw new Error('comment store unavailable')
-      return await baseBr.runBr(args, cwd)
+      return await baseBr.runBr(args)
     })
     const healthyApp = fakeApp()
     const commentHost = createFactoryDelegatePlugin({
