@@ -353,12 +353,16 @@ export class ChannelBindingStore {
     binding: Pick<ChannelBinding, 'channel' | 'conversationKey' | 'agentTypeId' | 'bindingVersion'>,
     receivedAt: number,
   ): ChannelBinding | undefined {
-    const row = this.sql.exec(`UPDATE boring_channel_bindings SET last_inbound_at=?,
-        template_sent_for_inbound_at=NULL
+    const row = this.sql.exec(`UPDATE boring_channel_bindings SET
+        template_sent_for_inbound_at=CASE
+          WHEN last_inbound_at IS NULL OR ? > last_inbound_at THEN NULL
+          ELSE template_sent_for_inbound_at
+        END,
+        last_inbound_at=CASE WHEN last_inbound_at IS NULL OR ? > last_inbound_at THEN ? ELSE last_inbound_at END
       WHERE channel=? AND conversation_key=? AND agent_type_id=? AND binding_version=? AND status='active'
       RETURNING channel, conversation_key, agent_type_id, workspace_id, auth_subject_id,
         binding_version, status, session_key, last_inbound_at, outbound_cursor, outbound_status,
-        session_reset_pending, template_sent_for_inbound_at`, receivedAt, binding.channel,
+        session_reset_pending, template_sent_for_inbound_at`, receivedAt, receivedAt, receivedAt, binding.channel,
     binding.conversationKey, binding.agentTypeId, binding.bindingVersion).toArray()[0]
     return row ? bindingFromRow(row) : undefined
   }
