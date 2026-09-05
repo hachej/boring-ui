@@ -1172,6 +1172,13 @@ export async function createCoreWorkspaceAgentServer(
     options.resolveInitialAgentSeat,
     shredWorkspaceCredentials,
   )
+  // Credential advisory locks need an independently pooled control connection:
+  // it must remain available to terminate a reserved lock holder even when the
+  // application pool is saturated or its unlock query stalls.
+  const credentialEvictionSql = options.credentials ? createDatabase(config).sql : undefined
+  if (credentialEvictionSql) {
+    app.addHook('onClose', async () => { await credentialEvictionSql.end() })
+  }
   const appRoot = options.appRoot
   const serveFrontend =
     options.serveFrontend ?? (process.env.NODE_ENV !== 'development' && Boolean(appRoot))
@@ -1443,7 +1450,9 @@ export async function createCoreWorkspaceAgentServer(
   const credentialOptions: AgentHostCredentialOptionsV1 | undefined = options.credentials
     ? {
         env: process.env,
-        vaultPersistence: createPostgresCredentialVaultPersistenceV1(sql),
+        vaultPersistence: createPostgresCredentialVaultPersistenceV1(sql, {
+          evictionSql: credentialEvictionSql!,
+        }),
         onLifecycleReady(lifecycle) {
           credentialLifecycle = lifecycle
         },

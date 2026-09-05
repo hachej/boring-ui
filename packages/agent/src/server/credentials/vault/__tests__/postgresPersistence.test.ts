@@ -46,11 +46,11 @@ afterAll(async () => {
 
 runCredentialVaultPersistenceConformanceV1(
   'postgres',
-  async () => createPostgresCredentialVaultPersistenceV1(sql),
+  async () => createPostgresCredentialVaultPersistenceV1(sql, { evictionSql: adminSql }),
 )
 runVaultCredentialStoreConformanceV1(
   'postgres',
-  async () => createPostgresCredentialVaultPersistenceV1(sql),
+  async () => createPostgresCredentialVaultPersistenceV1(sql, { evictionSql: adminSql }),
 )
 
 describe('Postgres credential workspace lock lifecycle', () => {
@@ -68,6 +68,7 @@ describe('Postgres credential workspace lock lifecycle', () => {
     const workspaceId = `lock-timeout-${randomUUID()}`
     const releaseBlocker = await holdWorkspaceLock(workspaceId)
     const persistence = createPostgresCredentialVaultPersistenceV1(sql, {
+      evictionSql: adminSql,
       lockAcquireTimeoutMs: 40,
       lockPollIntervalMs: 5,
     })
@@ -99,6 +100,7 @@ describe('Postgres credential workspace lock lifecycle', () => {
     ])
     let blockersReleased = false
     const persistence = createPostgresCredentialVaultPersistenceV1(oneConnectionSql, {
+      evictionSql: adminSql,
       lockAcquireTimeoutMs: 40,
       lockPollIntervalMs: 5,
     })
@@ -126,7 +128,7 @@ describe('Postgres credential workspace lock lifecycle', () => {
   test('rejects a one-connection pool that cannot guarantee eviction', async () => {
     const oneConnectionSql = postgres(TEST_DB_URL, { max: 1 })
     try {
-      await expect(createPostgresCredentialVaultPersistenceV1(oneConnectionSql)
+      await expect(createPostgresCredentialVaultPersistenceV1(oneConnectionSql, { evictionSql: adminSql })
         .withWorkspaceLock(`lock-one-${randomUUID()}`, async () => undefined))
         .rejects.toMatchObject({
           code: CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
@@ -142,6 +144,7 @@ describe('Postgres credential workspace lock lifecycle', () => {
     const workspaceId = `lock-deadline-${randomUUID()}`
     const releaseBlocker = await holdWorkspaceLock(workspaceId)
     const persistence = createPostgresCredentialVaultPersistenceV1(sql, {
+      evictionSql: adminSql,
       lockAcquireTimeoutMs: 1_000,
       lockPollIntervalMs: 5,
     })
@@ -161,6 +164,7 @@ describe('Postgres credential workspace lock lifecycle', () => {
     const controller = new AbortController()
     let mutated = false
     const waiting = createPostgresCredentialVaultPersistenceV1(sql, {
+      evictionSql: adminSql,
       lockAcquireTimeoutMs: 1_000,
       lockPollIntervalMs: 100,
     }).withWorkspaceLock(workspaceId, async () => { mutated = true }, {
@@ -181,6 +185,7 @@ describe('Postgres credential workspace lock lifecycle', () => {
     const releaseBlocker = await holdWorkspaceLock(workspaceId)
     let mutated = false
     const waiting = createPostgresCredentialVaultPersistenceV1(sql, {
+      evictionSql: adminSql,
       lockAcquireTimeoutMs: 1_000,
       lockPollIntervalMs: 5,
     }).withWorkspaceLock(workspaceId, async () => {
@@ -221,6 +226,7 @@ describe('Postgres credential workspace lock lifecycle', () => {
       },
     }) as typeof sql
     const persistence = createPostgresCredentialVaultPersistenceV1(delayedSql, {
+      evictionSql: adminSql,
       lockAcquireTimeoutMs: 30,
       lockPollIntervalMs: 5,
     })
@@ -230,7 +236,7 @@ describe('Postgres credential workspace lock lifecycle', () => {
       code: CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
       retryable: true,
     })
-    await expect(createPostgresCredentialVaultPersistenceV1(sql)
+    await expect(createPostgresCredentialVaultPersistenceV1(sql, { evictionSql: adminSql })
       .withWorkspaceLock(workspaceId, async () => 'not-left-locked'))
       .resolves.toBe('not-left-locked')
   })
@@ -242,6 +248,7 @@ describe('Postgres credential workspace lock lifecycle', () => {
       connection: { search_path: schemaName },
     })
     const persistence = createPostgresCredentialVaultPersistenceV1(evictionSql, {
+      evictionSql: adminSql,
       lockAcquireTimeoutMs: 1_000,
       lockPollIntervalMs: 5,
     })
@@ -270,10 +277,16 @@ describe('Postgres credential workspace lock lifecycle', () => {
     }
   })
 
-  test('bounds a stalled unlock and evicts through an out-of-band connection', async () => {
+  test('bounds a stalled unlock and evicts when the primary pool is saturated', async () => {
     const workspaceId = `lock-stalled-unlock-${randomUUID()}`
+    const primarySql = postgres(TEST_DB_URL, {
+      max: 2,
+      connection: { search_path: schemaName },
+    })
+    const primaryBlocker = await primarySql.reserve()
+    let primaryBlockerReleased = false
     let stalled = false
-    const stalledSql = new Proxy(sql, {
+    const stalledSql = new Proxy(primarySql, {
       get(target, property, receiver) {
         if (property !== 'reserve') return Reflect.get(target, property, receiver)
         return async () => {
@@ -292,20 +305,28 @@ describe('Postgres credential workspace lock lifecycle', () => {
       },
     }) as typeof sql
     const persistence = createPostgresCredentialVaultPersistenceV1(stalledSql, {
+      evictionSql: adminSql,
       lockAcquireTimeoutMs: 1_000,
       lockReleaseTimeoutMs: 30,
     })
     const startedAt = Date.now()
-    await expect(persistence.withWorkspaceLock(workspaceId, async () => 'committed'))
-      .rejects.toMatchObject({
-        code: CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
-        retryable: true,
-        message: 'Credential workspace lock could not be released',
-      })
-    expect(Date.now() - startedAt).toBeLessThan(500)
-    await expect(createPostgresCredentialVaultPersistenceV1(sql)
-      .withWorkspaceLock(workspaceId, async () => 'replacement'))
-      .resolves.toBe('replacement')
+    try {
+      await expect(persistence.withWorkspaceLock(workspaceId, async () => 'committed'))
+        .rejects.toMatchObject({
+          code: CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
+          retryable: true,
+          message: 'Credential workspace lock could not be released',
+        })
+      expect(Date.now() - startedAt).toBeLessThan(500)
+      primaryBlocker.release()
+      primaryBlockerReleased = true
+      await expect(createPostgresCredentialVaultPersistenceV1(primarySql, { evictionSql: adminSql })
+        .withWorkspaceLock(workspaceId, async () => 'replacement'))
+        .resolves.toBe('replacement')
+    } finally {
+      if (!primaryBlockerReleased) primaryBlocker.release()
+      await primarySql.end({ timeout: 1 })
+    }
   })
 })
 
@@ -330,7 +351,7 @@ describe('Postgres credential rollback protection', () => {
   test('persists personal credential rows with immutable actor columns', async () => {
     const workspaceId = `actor-${randomUUID()}`
     const providerId = actorCredentialProviderIdV1('user-a', 'openai-codex')
-    const persistence = createPostgresCredentialVaultPersistenceV1(sql)
+    const persistence = createPostgresCredentialVaultPersistenceV1(sql, { evictionSql: adminSql })
     await persistence.putCredentialRecord(workspaceId, providerId, {
       credentialId: 'actor-credential', credentialVersion: 1, dekGeneration: 1, materialKind: 'none',
     })
@@ -348,7 +369,7 @@ describe('Postgres credential rollback protection', () => {
     const providerId = 'material-state-provider' as ProviderId
     const fieldId = 'api-key' as CredentialFieldId
     const backend = createVaultCredentialStoreBackendV1({
-      persistence: createPostgresCredentialVaultPersistenceV1(sql),
+      persistence: createPostgresCredentialVaultPersistenceV1(sql, { evictionSql: adminSql }),
       versionAnchor: createInMemoryCredentialVersionAnchorV1(),
       kmsBackend: createLocalKekWorkspaceKekProviderV1({
         keyRef: 'material-state-test',
@@ -377,7 +398,7 @@ describe('Postgres credential rollback protection', () => {
     const workspaceId = `ws-${randomUUID()}`
     const providerId = 'snapshot-provider' as ProviderId
     const fieldId = 'api-key' as CredentialFieldId
-    const persistence = createPostgresCredentialVaultPersistenceV1(sql)
+    const persistence = createPostgresCredentialVaultPersistenceV1(sql, { evictionSql: adminSql })
     const anchorFilePath = join(
       await mkdtemp(join(tmpdir(), 'boring-postgres-anchor-')),
       'credential-anchor',
@@ -490,7 +511,7 @@ describe('Postgres credential rollback protection', () => {
         keyVersion: 1,
         loadKek,
       })
-      const durable = createPostgresCredentialVaultPersistenceV1(sql)
+      const durable = createPostgresCredentialVaultPersistenceV1(sql, { evictionSql: adminSql })
       const anchor = createLocalFileCredentialVersionAnchorV1({ anchorFilePath, loadKek })
       const initial = createVaultCredentialStoreBackendV1({
         persistence: durable,
@@ -584,7 +605,7 @@ describe('Postgres credential rollback protection', () => {
       // A new backend/anchor instance models process restart. The same operation
       // id resumes N→N+1 and the durable receipt makes even post-finalize retry idempotent.
       const restarted = createVaultCredentialStoreBackendV1({
-        persistence: createPostgresCredentialVaultPersistenceV1(sql),
+        persistence: createPostgresCredentialVaultPersistenceV1(sql, { evictionSql: adminSql }),
         versionAnchor: createLocalFileCredentialVersionAnchorV1({ anchorFilePath, loadKek }),
         kmsBackend,
       })
@@ -646,7 +667,7 @@ describe('Postgres credential rollback protection', () => {
     const workspaceId = `rotation-forged-${randomUUID()}`
     const providerId = 'rotation-forged-provider' as ProviderId
     const fieldId = 'api-key' as CredentialFieldId
-    const persistence = createPostgresCredentialVaultPersistenceV1(sql)
+    const persistence = createPostgresCredentialVaultPersistenceV1(sql, { evictionSql: adminSql })
     const anchor = createInMemoryCredentialVersionAnchorV1()
     const kmsBackend = createLocalKekWorkspaceKekProviderV1({
       keyRef: 'rotation-forged-test',
@@ -705,7 +726,7 @@ describe('Postgres credential rollback protection', () => {
     const loadKek = async () => new Uint8Array(32).fill(0xa5)
     await initializeLocalFileCredentialVersionAnchorV1({ anchorFilePath, loadKek })
     const createBackend = () => createVaultCredentialStoreBackendV1({
-      persistence: createPostgresCredentialVaultPersistenceV1(sql),
+      persistence: createPostgresCredentialVaultPersistenceV1(sql, { evictionSql: adminSql }),
       versionAnchor: createLocalFileCredentialVersionAnchorV1({ anchorFilePath, loadKek }),
       kmsBackend: createLocalKekWorkspaceKekProviderV1({
         keyRef: 'shred-snapshot-test',

@@ -22,6 +22,8 @@ import type {
 } from './persistence'
 
 export interface PostgresCredentialVaultPersistenceOptionsV1 {
+  /** Independently pooled connection used only to evict an uncertain lock holder. */
+  readonly evictionSql: postgres.Sql
   /** Default bound for advisory-lock acquisition. */
   readonly lockAcquireTimeoutMs?: number
   /** Delay between non-blocking advisory-lock attempts. */
@@ -202,8 +204,8 @@ export class PostgresCredentialVaultPersistenceV1
 implements CredentialVaultPersistenceV1 {
   constructor(
     private readonly sql: Sql,
+    private readonly options: PostgresCredentialVaultPersistenceOptionsV1,
     private readonly lockedWorkspaceId?: string,
-    private readonly options: PostgresCredentialVaultPersistenceOptionsV1 = {},
   ) {}
 
   async withWorkspaceLock<T>(
@@ -273,7 +275,7 @@ implements CredentialVaultPersistenceV1 {
           rows = await boundedWait(query, deadlineMs, lockOptions.signal, () => query.cancel())
         } catch (error) {
           release = false
-          await destroyReservedConnection(pool, reserved, backendPid)
+          await destroyReservedConnection(this.options.evictionSql, reserved, backendPid)
           throw stableLockError(error)
         }
         acquired = rows[0]?.locked === true
@@ -293,8 +295,8 @@ implements CredentialVaultPersistenceV1 {
       }
       return await mutate(new PostgresCredentialVaultPersistenceV1(
         reserved,
-        workspaceId,
         this.options,
+        workspaceId,
       ))
     } finally {
       if (acquired) {
@@ -315,7 +317,7 @@ implements CredentialVaultPersistenceV1 {
         }
         if (!unlocked) {
           release = false
-          await destroyReservedConnection(pool, reserved, backendPid)
+          await destroyReservedConnection(this.options.evictionSql, reserved, backendPid)
           throw lockUnavailable('could not be released')
         }
       }
@@ -476,6 +478,7 @@ implements CredentialVaultPersistenceV1 {
       await this.sql.begin(async (transaction) => {
         await new PostgresCredentialVaultPersistenceV1(
           transaction,
+          this.options,
           this.lockedWorkspaceId,
         ).commitCredentialVersion(input)
       })
@@ -620,6 +623,7 @@ implements CredentialVaultPersistenceV1 {
       await this.sql.begin(async (transaction) => {
         await new PostgresCredentialVaultPersistenceV1(
           transaction,
+          this.options,
           this.lockedWorkspaceId,
         ).putWrappedDek(workspaceId, dekGeneration, wrapped)
       })
@@ -730,6 +734,7 @@ implements CredentialVaultPersistenceV1 {
       await this.sql.begin(async (transaction) => {
         await new PostgresCredentialVaultPersistenceV1(
           transaction,
+          this.options,
           this.lockedWorkspaceId,
         ).commitDekRotationRecord(input)
       })
@@ -820,6 +825,7 @@ implements CredentialVaultPersistenceV1 {
       await this.sql.begin(async (transaction) => {
         await new PostgresCredentialVaultPersistenceV1(
           transaction,
+          this.options,
           this.lockedWorkspaceId ?? workspaceId,
         ).finalizeDekRotation(workspaceId, state)
       })
@@ -870,6 +876,7 @@ implements CredentialVaultPersistenceV1 {
       await this.sql.begin(async (transaction) => {
         await new PostgresCredentialVaultPersistenceV1(
           transaction,
+          this.options,
           this.lockedWorkspaceId,
         ).cryptoShredWorkspace(workspaceId, shreddedAt)
       })
@@ -1007,7 +1014,7 @@ implements CredentialVaultPersistenceV1 {
 
 export function createPostgresCredentialVaultPersistenceV1(
   sql: Sql,
-  options: PostgresCredentialVaultPersistenceOptionsV1 = {},
+  options: PostgresCredentialVaultPersistenceOptionsV1,
 ): CredentialVaultPersistenceV1 {
-  return Object.freeze(new PostgresCredentialVaultPersistenceV1(sql, undefined, options))
+  return Object.freeze(new PostgresCredentialVaultPersistenceV1(sql, options))
 }
