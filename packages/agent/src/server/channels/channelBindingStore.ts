@@ -310,13 +310,14 @@ export class ChannelBindingStore {
       WHERE outbound_claim_owner=?`, owner)
   }
 
-  parkOutboundBinding(binding: ChannelBinding, errorCode: string): boolean {
+  parkOutboundBinding(binding: ChannelBinding, claimOwner: string, errorCode: string): boolean {
     return this.runTransaction(() => {
       const updated = this.sql.exec(`UPDATE boring_channel_bindings SET outbound_status='parked'
         WHERE channel=? AND conversation_key=? AND agent_type_id=? AND binding_version=?
-          AND status='active' AND session_key=? AND outbound_cursor=? RETURNING channel`,
+          AND status='active' AND session_key=? AND outbound_cursor=?
+          AND outbound_claim_owner=? AND outbound_claim_expires_at>? RETURNING channel`,
       binding.channel, binding.conversationKey, binding.agentTypeId, binding.bindingVersion,
-      binding.sessionKey ?? null, binding.outboundCursor).toArray()
+      binding.sessionKey ?? null, binding.outboundCursor, claimOwner, Date.now()).toArray()
       if (updated.length !== 1) return false
       this.sql.exec(`INSERT OR IGNORE INTO boring_channel_outbound_parked
         (channel, conversation_key, agent_type_id, binding_version, terminal_offset, error_code, parked_at)
@@ -326,32 +327,37 @@ export class ChannelBindingStore {
     }, 'immediate')
   }
 
-  compareAndSetOutboundCursor(binding: ChannelBinding, nextCursor: string): boolean {
+  compareAndSetOutboundCursor(binding: ChannelBinding, claimOwner: string, nextCursor: string): boolean {
     return this.sql.exec(`UPDATE boring_channel_bindings SET outbound_cursor=?, session_reset_pending=0
       WHERE channel=? AND conversation_key=? AND agent_type_id=? AND binding_version=?
         AND status='active' AND outbound_status='active' AND session_key=? AND outbound_cursor=?
+        AND outbound_claim_owner=? AND outbound_claim_expires_at>?
       RETURNING channel`, nextCursor, binding.channel, binding.conversationKey, binding.agentTypeId,
-    binding.bindingVersion, binding.sessionKey ?? null, binding.outboundCursor).toArray().length === 1
+    binding.bindingVersion, binding.sessionKey ?? null, binding.outboundCursor,
+    claimOwner, Date.now()).toArray().length === 1
   }
 
-  markTemplateSent(binding: ChannelBinding): boolean {
+  markTemplateSent(binding: ChannelBinding, claimOwner: string): boolean {
     if (binding.lastInboundAt === undefined) return false
     return this.sql.exec(`UPDATE boring_channel_bindings SET template_sent_for_inbound_at=?
       WHERE channel=? AND conversation_key=? AND agent_type_id=? AND binding_version=?
         AND status='active' AND outbound_status='active' AND last_inbound_at=?
-        AND template_sent_for_inbound_at IS NULL RETURNING channel`, binding.lastInboundAt,
+        AND template_sent_for_inbound_at IS NULL
+        AND outbound_claim_owner=? AND outbound_claim_expires_at>? RETURNING channel`, binding.lastInboundAt,
     binding.channel, binding.conversationKey, binding.agentTypeId, binding.bindingVersion,
-    binding.lastInboundAt).toArray().length === 1
+    binding.lastInboundAt, claimOwner, Date.now()).toArray().length === 1
   }
 
-  parkOutbound(binding: ChannelBinding, terminalOffset: string, errorCode: string): boolean {
+  parkOutbound(binding: ChannelBinding, claimOwner: string, terminalOffset: string, errorCode: string): boolean {
     return this.runTransaction(() => {
       const updated = this.sql.exec(`UPDATE boring_channel_bindings
         SET outbound_cursor=?
         WHERE channel=? AND conversation_key=? AND agent_type_id=? AND binding_version=?
           AND status='active' AND outbound_status='active' AND session_key=? AND outbound_cursor=?
-        RETURNING channel`, terminalOffset, binding.channel, binding.conversationKey,
-      binding.agentTypeId, binding.bindingVersion, binding.sessionKey ?? null, binding.outboundCursor).toArray()
+          AND outbound_claim_owner=? AND outbound_claim_expires_at>? RETURNING channel`,
+      terminalOffset, binding.channel, binding.conversationKey, binding.agentTypeId,
+      binding.bindingVersion, binding.sessionKey ?? null, binding.outboundCursor,
+      claimOwner, Date.now()).toArray()
       if (updated.length !== 1) return false
       this.sql.exec(`INSERT OR IGNORE INTO boring_channel_outbound_parked
         (channel, conversation_key, agent_type_id, binding_version, terminal_offset, error_code, parked_at)
@@ -361,24 +367,26 @@ export class ChannelBindingStore {
     }, 'immediate')
   }
 
-  acknowledgeSessionReset(binding: ChannelBinding): boolean {
+  acknowledgeSessionReset(binding: ChannelBinding, claimOwner: string): boolean {
     return this.sql.exec(`UPDATE boring_channel_bindings SET session_reset_pending=0
       WHERE channel=? AND conversation_key=? AND agent_type_id=? AND binding_version=?
-        AND status='active' AND session_key=? AND session_reset_pending=1 RETURNING channel`,
+        AND status='active' AND session_key=? AND session_reset_pending=1
+        AND outbound_claim_owner=? AND outbound_claim_expires_at>? RETURNING channel`,
     binding.channel, binding.conversationKey, binding.agentTypeId, binding.bindingVersion,
-    binding.sessionKey ?? null).toArray().length === 1
+    binding.sessionKey ?? null, claimOwner, Date.now()).toArray().length === 1
   }
 
-  markSessionGone(binding: ChannelBinding): boolean {
+  markSessionGone(binding: ChannelBinding, claimOwner: string): boolean {
     if (!binding.sessionKey) return false
     return this.sql.exec(`UPDATE boring_channel_bindings SET session_key=NULL,
         outbound_cursor='-1', outbound_status='active', session_reset_pending=1,
         template_sent_for_inbound_at=NULL, create_state=NULL, create_owner=NULL,
         create_expires_at=NULL, create_session_key=NULL
       WHERE channel=? AND conversation_key=? AND agent_type_id=? AND binding_version=?
-        AND status='active' AND session_key=? AND outbound_cursor=? RETURNING channel`,
+        AND status='active' AND session_key=? AND outbound_cursor=?
+        AND outbound_claim_owner=? AND outbound_claim_expires_at>? RETURNING channel`,
     binding.channel, binding.conversationKey, binding.agentTypeId, binding.bindingVersion,
-    binding.sessionKey, binding.outboundCursor).toArray().length === 1
+    binding.sessionKey, binding.outboundCursor, claimOwner, Date.now()).toArray().length === 1
   }
 
   pendingBindings(): ChannelBinding[] {

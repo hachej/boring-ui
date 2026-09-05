@@ -122,7 +122,9 @@ describe('ChannelBindingStore', () => {
   test('resets the outbound cursor on every composite identity change', async () => {
     await withStores(async ({ first }) => {
       const initial = first.provision({ ...bindingInput, sessionKey: 'same-session-id' })
-      expect(first.compareAndSetOutboundCursor(initial, 'offset-7')).toBe(true)
+      expect(first.claimOutbound(initial, 'cursor-owner')).toBe(true)
+      expect(first.compareAndSetOutboundCursor(initial, 'cursor-owner', 'offset-7')).toBe(true)
+      first.releaseOutbound('cursor-owner')
       const rebound = first.provision({
         ...bindingInput,
         workspaceId: 'workspace-2',
@@ -147,6 +149,21 @@ describe('ChannelBindingStore', () => {
       first.releaseOutbound('outbound-owner')
       expect(second.provision({ ...bindingInput, workspaceId: 'workspace-2', sessionKey: 'session-2' }))
         .toMatchObject({ workspaceId: 'workspace-2', bindingVersion: 2, outboundCursor: '-1' })
+    })
+  })
+
+  test('rejects state mutation from an expired outbound owner after takeover', async () => {
+    await withStores(async ({ first, second }) => {
+      const binding = first.provision({ ...bindingInput, sessionKey: 'session-1' })
+      expect(first.claimOutbound(binding, 'stale-owner', 5)).toBe(true)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      expect(second.claimOutbound(binding, 'current-owner', 1_000)).toBe(true)
+      expect(first.markSessionGone(binding, 'stale-owner')).toBe(false)
+      expect(first.compareAndSetOutboundCursor(binding, 'stale-owner', 'offset-lost')).toBe(false)
+      expect(first.getBinding('whatsapp', bindingInput.conversationKey, 'default')).toMatchObject({
+        sessionKey: 'session-1', outboundCursor: '-1',
+      })
+      second.releaseOutbound('current-owner')
     })
   })
 

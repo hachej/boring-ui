@@ -133,10 +133,10 @@ export class ChannelOutboundService<Message = unknown> {
     }, Math.max(1, Math.floor(claimTtlMs / 3)))
 
     try {
-      let streamPath = await this.runtime.resolveStreamPath(binding)
+      let streamPath = await this.resolveStreamPath(binding)
       if (claimLost) return
       if (!streamPath) {
-        if (!this.store.markSessionGone(binding)) return
+        if (!this.store.markSessionGone(binding, claimOwner)) return
         const cleared = this.current(binding)
         if (!cleared) return
         const ensured = await this.store.ensureSession(cleared, {
@@ -145,7 +145,7 @@ export class ChannelOutboundService<Message = unknown> {
         })
         binding = this.current(cleared)
         if (claimLost || !binding || binding.sessionKey !== ensured.sessionKey) return
-        streamPath = await this.runtime.resolveStreamPath(binding)
+        streamPath = await this.resolveStreamPath(binding)
         if (!streamPath || claimLost) return
       }
 
@@ -168,11 +168,11 @@ export class ChannelOutboundService<Message = unknown> {
             }, claimOwner)
           } catch (error) {
             if (!this.store.ownsOutboundClaim(claimOwner)) return
-            this.store.parkOutboundBinding(binding, stableErrorCode(error))
+            this.store.parkOutboundBinding(binding, claimOwner, stableErrorCode(error))
             return
           }
           if (claimLost || !this.store.ownsOutboundClaim(claimOwner)
-            || !this.store.acknowledgeSessionReset(binding)) return
+            || !this.store.acknowledgeSessionReset(binding, claimOwner)) return
           binding = this.current(binding) ?? binding
         }
         const unread = await this.readUnreadEvents(streamPath, binding.outboundCursor)
@@ -188,7 +188,7 @@ export class ChannelOutboundService<Message = unknown> {
             await this.sendWindowTemplate(adapter, binding, claimOwner)
           } catch (error) {
             if (!this.store.ownsOutboundClaim(claimOwner)) return
-            this.store.parkOutboundBinding(binding, stableErrorCode(error))
+            this.store.parkOutboundBinding(binding, claimOwner, stableErrorCode(error))
           }
           return
         }
@@ -198,15 +198,15 @@ export class ChannelOutboundService<Message = unknown> {
           await this.sendWithRetry(adapter, binding, assembled.turn, claimOwner)
         } catch (error) {
           if (!this.store.ownsOutboundClaim(claimOwner)) return
-          this.store.parkOutbound(binding, assembled.terminalOffset, stableErrorCode(error))
+          this.store.parkOutbound(binding, claimOwner, assembled.terminalOffset, stableErrorCode(error))
           continue
         }
         if (claimLost || !this.store.ownsOutboundClaim(claimOwner)) return
         if (assembled.turn.status === 'stalled') {
-          if (!this.store.parkOutbound(binding, assembled.terminalOffset, CHANNEL_TURN_STALLED)) return
+          if (!this.store.parkOutbound(binding, claimOwner, assembled.terminalOffset, CHANNEL_TURN_STALLED)) return
           continue
         }
-        if (!this.store.compareAndSetOutboundCursor(binding, assembled.terminalOffset)) return
+        if (!this.store.compareAndSetOutboundCursor(binding, claimOwner, assembled.terminalOffset)) return
       }
     } finally {
       clearInterval(heartbeat)
@@ -306,7 +306,7 @@ export class ChannelOutboundService<Message = unknown> {
         if (!this.store.ownsOutboundClaim(claimOwner)) throw lostClaimError()
         await adapter.sendWindowTemplate({ conversationKey: binding.conversationKey })
         if (!this.store.ownsOutboundClaim(claimOwner)) throw lostClaimError()
-        this.store.markTemplateSent(binding)
+        this.store.markTemplateSent(binding, claimOwner)
         return
       } catch (error) {
         const retryable = (error as { retryable?: unknown })?.retryable !== false
@@ -337,6 +337,15 @@ export class ChannelOutboundService<Message = unknown> {
           await delay(this.options.retryDelayMs ?? 25)
         }
       }
+    }
+  }
+
+  private async resolveStreamPath(binding: ChannelBinding): Promise<string | undefined> {
+    try {
+      return await this.runtime.resolveStreamPath(binding)
+    } catch (error) {
+      if ((error as { code?: unknown })?.code === ErrorCode.enum.SESSION_NOT_FOUND) return undefined
+      throw error
     }
   }
 
@@ -466,8 +475,13 @@ export function shapeChannelText(text: string, dialect: string, maxLength = 4_09
 }
 
 function renderWhatsAppMarkdown(text: string): string {
-  return text.split(/(```[\s\S]*?```)/g).map((section, index) => {
-    if (index % 2 === 1) return section
+  let inFence = false
+  return text.split(/(```)/g).map((section) => {
+    if (section === '```') {
+      inFence = !inFence
+      return section
+    }
+    if (inFence) return section
     return section
       .replace(/^#{1,6}\s+/gm, '')
       .split('\n')

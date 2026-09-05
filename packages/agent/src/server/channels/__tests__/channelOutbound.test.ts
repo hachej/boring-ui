@@ -471,11 +471,19 @@ describe('fake-channel conformance', () => {
         abort: vi.fn(async () => {}),
         abortRetry: vi.fn(),
       } as unknown as PiAgentSessionAdapter
+      let sessionExists = true
+      const sessionSummary = { id: bindingInput.sessionKey, title: 'Channel', createdAt: '', updatedAt: '', turnCount: 0 }
       const sessions: SessionStore = {
         list: vi.fn(async () => []),
-        create: vi.fn(async () => ({ id: bindingInput.sessionKey, title: 'Channel', createdAt: '', updatedAt: '', turnCount: 0 })),
-        load: vi.fn(async () => ({ id: bindingInput.sessionKey, title: 'Channel', createdAt: '', updatedAt: '', turnCount: 0 })),
-        delete: vi.fn(async () => {}),
+        create: vi.fn(async () => {
+          sessionExists = true
+          return { ...sessionSummary, id: 'session-replacement' }
+        }),
+        load: vi.fn(async () => {
+          if (!sessionExists) throw Object.assign(new Error('gone'), { code: ErrorCode.enum.SESSION_NOT_FOUND })
+          return sessionSummary
+        }),
+        delete: vi.fn(async () => { sessionExists = false }),
       }
       const harness = {
         id: 'fake-channel-harness',
@@ -501,7 +509,7 @@ describe('fake-channel conformance', () => {
       const sent: string[] = []
       const outbound = new ChannelOutboundService(bindings, events, {
         resolveStreamPath: (binding) => pi.resolveSessionStreamPath(ctx, binding.sessionKey!),
-        createSession: async () => bindingInput.sessionKey,
+        createSession: async () => (await pi.createSession(ctx, { originChannel: 'whatsapp' })).id,
       }, new Map([['whatsapp', fakeAdapter(sent)]]))
       outbound.start()
       const invoker: ChannelAgentInvoker = {
@@ -545,16 +553,26 @@ describe('fake-channel conformance', () => {
       }, 'default')).toMatchObject({ accepted: true })
       await inbound.waitForIdle()
       await eventually(() => sent.length === 2)
+      await outbound.waitForIdle()
       expect(sent[1]).toBe('I could not complete that request. Please try again.')
+
+      await pi.deleteSession(ctx, bindingInput.sessionKey)
+      outbound.start()
+      await eventually(() => sent.length === 3)
+      expect(sent[2]).toBe('The previous session is no longer available. I started a new conversation.')
 
       await outbound.dispose()
       const restarted = new ChannelOutboundService(bindings, events, {
-        resolveStreamPath: async () => path,
-        createSession: async () => bindingInput.sessionKey,
+        resolveStreamPath: (binding) => pi.resolveSessionStreamPath(ctx, binding.sessionKey!),
+        createSession: async () => (await pi.createSession(ctx, { originChannel: 'whatsapp' })).id,
       }, new Map([['whatsapp', fakeAdapter(sent)]]))
       restarted.start()
       await restarted.waitForIdle()
-      expect(sent).toEqual(['CONFORMANCE_OK', 'I could not complete that request. Please try again.'])
+      expect(sent).toEqual([
+        'CONFORMANCE_OK',
+        'I could not complete that request. Please try again.',
+        'The previous session is no longer available. I started a new conversation.',
+      ])
       await restarted.dispose()
       await pi.dispose()
     })
@@ -571,6 +589,8 @@ describe('channel shaping', () => {
     expect(chunks.join('\n')).not.toContain('| --- |')
     const closedFence = chunks.findIndex((chunk, index) => chunk.endsWith('```') && chunks[index + 1]?.startsWith('```'))
     expect(closedFence).toBeGreaterThanOrEqual(0)
+    expect(shapeChannelText('```md\n# literal heading\n*literal stars*', 'whatsapp/markdown', 100))
+      .toEqual(['```md\n# literal heading\n*literal stars*'])
   })
 })
 
