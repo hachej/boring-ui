@@ -66,6 +66,23 @@ failed kickoff leaves the registered, bound Orchestrator available for an explic
 `BORING_FACTORY_EPIC_KEY`/`BORING_FACTORY_FEATURE_NAME` values are accepted only as one-shot
 intake on boot and are logged as such; they are no longer host identity.
 
+### Gate 2 demos
+
+`demo_sandbox start` uses the configured Factory sandbox provider. With
+`BORING_FACTORY_SANDBOX_PROVIDER=local-simulation`, it clones the epic worktree at the
+requested commit into a disposable local lease, links the checkout's existing dependencies
+and build output, launches the command on `127.0.0.1`, and waits for `readyPath` to return
+HTTP 200. If the requested port is occupied, it selects a free port in `4300-4399`.
+Set `BORING_FACTORY_DEMO_HOST` to the owner-reachable host or Tailscale IP advertised in the
+returned URL; the process itself remains bound to loopback.
+
+When Vercel cannot create the demo lease (including quota failures), the tool automatically
+tries the local provider and returns `fallbackFrom: "vercel"` plus the original `reason`.
+Local process-group and lease details are persisted in `<stateRoot>/demos.json`; stop, TTL
+expiry, and boot reconciliation terminate or discard stale entries. Only one demo may run per
+epic. Both `/api/v1/workspace/meta` and `/api/v1/factory/epics` expose its
+`activeDemoUrl`.
+
 Do not add the skill root as a global package default and do not infer authority from
 these authored files.
 

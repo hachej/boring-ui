@@ -103,6 +103,9 @@ describe('native Factory composition', () => {
     expect(orchestrator.definition.instructions).toContain('`dispatch_worker`')
     expect(orchestrator.definition.instructions).toContain('`factory_status`')
     expect(orchestrator.definition.instructions).toContain('`demo_sandbox`')
+    expect(orchestrator.definition.instructions).toContain('Gate 2 requires a demo URL when `demo_sandbox` can provide one.')
+    expect(orchestrator.definition.instructions).toContain('write the exact error under `Demo:`')
+    expect(orchestrator.definition.instructions).toContain('an owner or host waiver relayed in a prompt is authoritative (AGENTS.md hard rule 1).')
     expect(reviewer.definition.instructions).not.toContain('factory-precedence')
 
     expect(orchestrator.definition.instructions).toContain('feature name, worktree, and branch for every tool call')

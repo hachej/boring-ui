@@ -53,6 +53,7 @@ export interface FactoryEpicLiveEntry extends FactoryEpicEntry {
   readonly pendingQuestion: { readonly questionId: string; readonly title?: string } | null
   readonly beads: { readonly open: number; readonly closed: number }
   readonly headSha: string | null
+  readonly activeDemoUrl?: string
   readonly sandboxSnapshot?: Awaited<ReturnType<typeof getFactorySandboxSnapshotInfo>>
 }
 
@@ -335,7 +336,7 @@ async function readPendingQuestions(app: FastifyInstance): Promise<Map<string, {
   }
 }
 
-async function liveEpicEntry(app: FastifyInstance, entry: FactoryEpicEntry, pendingBySession: ReadonlyMap<string, { questionId: string; title?: string }>, stateRoot: string, env: NodeJS.ProcessEnv): Promise<FactoryEpicLiveEntry> {
+async function liveEpicEntry(app: FastifyInstance, entry: FactoryEpicEntry, pendingBySession: ReadonlyMap<string, { questionId: string; title?: string }>, stateRoot: string, env: NodeJS.ProcessEnv, activeDemoUrl?: string): Promise<FactoryEpicLiveEntry> {
   const [headSha, beads, orchestratorStatus, sandboxSnapshot] = await Promise.all([
     gitOutput(entry.worktree, ['rev-parse', 'HEAD']).catch(() => null),
     execFileAsync('br', ['list', '--all', '--label', `epic:${entry.epicKey}`, '--json', '--no-auto-flush'], { cwd: entry.worktree, maxBuffer: 16 * 1024 * 1024 }).then(({ stdout }) => {
@@ -359,6 +360,7 @@ async function liveEpicEntry(app: FastifyInstance, entry: FactoryEpicEntry, pend
     pendingQuestion: entry.orchestratorSessionId ? pendingBySession.get(entry.orchestratorSessionId) ?? null : null,
     beads,
     headSha,
+    ...(activeDemoUrl ? { activeDemoUrl } : {}),
     ...(sandboxSnapshot ? { sandboxSnapshot } : {}),
   }
 }
@@ -533,8 +535,8 @@ export async function createFactoryHost(options: CreateFactoryHostOptions): Prom
       })
       app.get('/api/v1/factory/epics', async (_request, reply) => {
         try {
-          const pending = await readPendingQuestions(app)
-          return await Promise.all((await registry.list()).map(async (entry) => await liveEpicEntry(app, entry, pending, stateRoot, env)))
+          const [pending, activeDemoUrls] = await Promise.all([readPendingQuestions(app), demo.control.listActiveDemoUrls()])
+          return await Promise.all((await registry.list()).map(async (entry) => await liveEpicEntry(app, entry, pending, stateRoot, env, activeDemoUrls[entry.epicKey])))
         } catch (error) { return sendError(reply, error) }
       })
       app.post('/api/v1/factory/epics/:key/adopt', async (request, reply) => {
@@ -578,16 +580,22 @@ export async function createFactoryHost(options: CreateFactoryHostOptions): Prom
           return await markEpicClosed(key)
         } catch (error) { return sendError(reply, error) }
       })
-      app.get('/api/v1/workspace/meta', async () => ({
-        projectName: 'Boring Factory',
-        workspaceId: workspaceScopeId,
-        workspaceRoot,
-        workspaceLabel: basename(workspaceRoot),
-        epics: await registry.list(),
-        defaultAgentTypeId: FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
-        agentTypeIds: agents.map((agent) => agent.agentTypeId),
-        sandboxProvider: (options.provider ?? env.BORING_FACTORY_SANDBOX_PROVIDER) === 'vercel' ? 'vercel' : 'local-simulation',
-      }))
+      app.get('/api/v1/workspace/meta', async () => {
+        const activeDemoUrls = await demo.control.listActiveDemoUrls()
+        return {
+          projectName: 'Boring Factory',
+          workspaceId: workspaceScopeId,
+          workspaceRoot,
+          workspaceLabel: basename(workspaceRoot),
+          epics: (await registry.list()).map((entry) => ({
+            ...entry,
+            ...(activeDemoUrls[entry.epicKey] ? { activeDemoUrl: activeDemoUrls[entry.epicKey] } : {}),
+          })),
+          defaultAgentTypeId: FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
+          agentTypeIds: agents.map((agent) => agent.agentTypeId),
+          sandboxProvider: (options.provider ?? env.BORING_FACTORY_SANDBOX_PROVIDER) === 'vercel' ? 'vercel' : 'local-simulation',
+        }
+      })
     },
     async rearm() {
       if (options.epicKey && !(await registry.get(options.epicKey))) {

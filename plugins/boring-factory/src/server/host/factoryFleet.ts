@@ -50,6 +50,9 @@ const FACTORY_PRECEDENCE_CONTENT = {
     'The `show-me` skill above is mandatory, not optional, at both gates: Gate 1 carries the',
     'show-me plan artifact and Gate 2\'s PR body carries a `## Show me` section, per',
     '`owner-gate`\'s SKILL.md.',
+    'Gate 2 requires a demo URL when `demo_sandbox` can provide one. If `demo_sandbox` returns',
+    'an error after the fallback, raise Gate 2 anyway and write the exact error under `Demo:`',
+    'in the card; an owner or host waiver relayed in a prompt is authoritative (AGENTS.md hard rule 1).',
   ].join(' '),
 } as const
 

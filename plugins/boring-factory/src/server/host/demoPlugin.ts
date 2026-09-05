@@ -1,22 +1,27 @@
 import { execFile } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { isAbsolute, relative, resolve } from 'node:path'
 import { promisify } from 'node:util'
+import type { WorkspaceSandboxPairV1 } from '@hachej/boring-sandbox/shared'
 import { defineServerPlugin } from '@hachej/boring-workspace/server'
 import type { AgentTool, ToolExecContext, ToolResult } from '@hachej/boring-agent/shared'
 import {
   buildFetchBootstrapFiles,
+  createLocalDisposableProvider,
   FACTORY_BOOTSTRAP_SCRIPT,
   resolveEpicSnapshot,
 } from '../sandbox'
-import type { FactoryEpicRegistry } from './epicRegistry'
+import type { FactoryEpicEntry, FactoryEpicRegistry } from './epicRegistry'
+import { nodeLocalProcessRuntime, portIsAvailable, resolveLocalPort, type LocalDemoProcessRuntime } from './localDemoRuntime'
 import { FactoryEpicResolutionError, resolveFactoryEpic, type FactorySessionBindings } from './sessionBindings'
+
+export type { LocalDemoProcessRuntime } from './localDemoRuntime'
 
 export const FACTORY_DEMO_PLUGIN_ID = 'factory-demo'
 
 /** Bump when this file's demo behavior changes; hashed into the plugin's contentDigest. */
-const DEMO_PLUGIN_VERSION = 'factory-demo.v1.2026-09-03'
+const DEMO_PLUGIN_VERSION = 'factory-demo.v2.2026-09-05'
 
 /** The only seat allowed to open a live demo: the owner-facing seat that raises Gate 2. */
 const DEMO_AGENT_TYPE_ID = 'boring-orchestrator'
@@ -41,10 +46,6 @@ function jsonResult(details: unknown, isError = false): ToolResult {
 
 function invalidInputResult(message: string): ToolResult {
   return jsonResult({ code: 'INVALID_INPUT', message }, true)
-}
-
-function providerNotConfiguredResult(): ToolResult {
-  return jsonResult({ code: 'PROVIDER_NOT_CONFIGURED', message: 'demo_sandbox requires the vercel provider' }, true)
 }
 
 /**
@@ -131,6 +132,10 @@ async function createDefaultSandboxFactory(): Promise<DemoSandboxFactory> {
 export interface DemoEntry {
   readonly epicKey: string
   readonly sandboxId: string
+  readonly provider?: 'vercel' | 'local'
+  readonly leaseId?: string
+  readonly leaseRoot?: string
+  readonly processId?: number
   readonly url: string
   readonly sha: string
   readonly port: number
@@ -175,10 +180,15 @@ export interface CreateFactoryDemoPluginOptions {
   readonly sandboxFactory?: DemoSandboxFactory
   /** Injected for tests. Defaults to global `fetch`. */
   readonly fetchImpl?: typeof fetch
+  /** Injectable local process lifecycle. Production uses detached OS process groups. */
+  readonly localProcessRuntime?: LocalDemoProcessRuntime
+  /** Injectable port probe. Production binds loopback briefly to test availability. */
+  readonly localPortAvailable?: (port: number) => Promise<boolean>
 }
 
 export interface FactoryDemoPluginControl {
   listDemos(): Promise<Record<string, DemoEntry>>
+  listActiveDemoUrls(): Promise<Record<string, string>>
   stopDemo(id: string): Promise<'stopped' | 'already-stopped'>
   listDemosForSession(sessionId: string): Promise<Record<string, DemoEntry>>
   listDemosForEpic(epicKey: string): Promise<Record<string, DemoEntry>>
@@ -192,15 +202,6 @@ export interface FactoryDemoPluginHandle {
   readonly control: FactoryDemoPluginControl
   /** No recurring timers are owned by this plugin; provided for symmetry with the other host plugins. */
   close(): void
-}
-
-function isProviderConfigured(env: NodeJS.ProcessEnv): boolean {
-  if (env.BORING_FACTORY_SANDBOX_PROVIDER !== 'vercel') return false
-  if (env.BORING_FACTORY_VERCEL_SNAPSHOT_ID?.trim()) return true
-  // No fixed snapshot id: the per-epic registry can still resolve one, as
-  // long as credentials are present to build it if it's not cached yet.
-  const credentials = resolveVercelCredentials(env)
-  return Boolean(credentials.token && credentials.teamId && credentials.projectId)
 }
 
 /**
@@ -236,8 +237,8 @@ function positiveInteger(value: string | undefined, fallback: number): number {
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback
 }
 
-async function gitRevParseHead(workspaceRoot: string): Promise<string> {
-  return (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: workspaceRoot })).stdout.trim()
+async function gitResolveCommit(workspaceRoot: string, revision = 'HEAD'): Promise<string> {
+  return (await execFileAsync('git', ['rev-parse', '--verify', `${revision}^{commit}`], { cwd: workspaceRoot })).stdout.trim()
 }
 
 function parseOp(value: unknown): 'start' | 'stop' | 'status' | 'list' | undefined {
@@ -248,21 +249,43 @@ async function pollReady(
   url: string,
   readyPath: string,
   fetchImpl: typeof fetch,
+  shouldContinue: () => boolean = () => true,
 ): Promise<{ ready: boolean; lastStatus?: number }> {
   const deadline = Date.now() + READY_POLL_TIMEOUT_MS
   let lastStatus: number | undefined
   const target = `${url}${readyPath.startsWith('/') ? readyPath : `/${readyPath}`}`
   while (Date.now() < deadline) {
+    if (!shouldContinue()) break
     try {
       const response = await fetchImpl(target, { method: 'GET' })
       lastStatus = response.status
-      if (response.status < 500) return { ready: true, lastStatus }
+      if (response.status === 200) return { ready: true, lastStatus }
     } catch {
       // Connection refused / not up yet: keep polling until the deadline.
     }
     await new Promise((resolvePromise) => setTimeout(resolvePromise, READY_POLL_INTERVAL_MS))
   }
   return { ready: false, ...(lastStatus !== undefined ? { lastStatus } : {}) }
+}
+
+function demoProvider(entry: DemoEntry): 'vercel' | 'local' {
+  return entry.provider ?? 'vercel'
+}
+
+function advertisedLocalHost(env: NodeJS.ProcessEnv): string {
+  const configured = env.BORING_FACTORY_DEMO_HOST?.trim()
+  if (!configured) return '127.0.0.1'
+  return configured.includes(':') && !configured.startsWith('[') ? `[${configured}]` : configured
+}
+
+function localLeaseRoot(stateRoot: string, epicKey: string, leaseId: string): string {
+  const base = resolve(stateRoot, 'demo-leases')
+  const candidate = resolve(base, epicKey, leaseId)
+  const relativePath = relative(base, candidate)
+  if (!relativePath || relativePath.startsWith('..') || isAbsolute(relativePath)) {
+    throw new Error('persisted local demo lease path is invalid')
+  }
+  return candidate
 }
 
 export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions): FactoryDemoPluginHandle {
@@ -272,8 +295,13 @@ export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions)
   const env = options.env
   const statePath = resolve(stateRoot, 'demos.json')
   const fetchImpl = options.fetchImpl ?? fetch
+  const localProcessRuntime = options.localProcessRuntime ?? nodeLocalProcessRuntime
+  const localPortAvailable = options.localPortAvailable ?? portIsAvailable
   let sandboxFactoryPromise: Promise<DemoSandboxFactory> | undefined
   let stateMutations = Promise.resolve()
+  const localPairs = new Map<string, WorkspaceSandboxPairV1>()
+  const expiryTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  const startingEpics = new Set<string>()
   const getSandboxFactory = (): Promise<DemoSandboxFactory> => {
     if (options.sandboxFactory) return Promise.resolve(options.sandboxFactory)
     if (!sandboxFactoryPromise) sandboxFactoryPromise = createDefaultSandboxFactory()
@@ -293,46 +321,96 @@ export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions)
     return next
   }
 
+  function clearExpiry(id: string): void {
+    const timer = expiryTimers.get(id)
+    if (timer) clearTimeout(timer)
+    expiryTimers.delete(id)
+  }
+
+  function scheduleExpiry(id: string, entry: DemoEntry): void {
+    clearExpiry(id)
+    const delay = new Date(entry.expiresAt).getTime() - Date.now()
+    if (delay <= 0) return
+    const timer = setTimeout(() => {
+      expiryTimers.delete(id)
+      void stopDemo(id).catch((error) => {
+        console.error(`[factory-demo] failed to expire demo ${id}: ${error instanceof Error ? error.message : String(error)}`)
+      })
+    }, Math.min(delay, 2_147_483_647))
+    timer.unref?.()
+    expiryTimers.set(id, timer)
+  }
+
+  function localDemoIsAlive(id: string, entry: DemoEntry): boolean {
+    try {
+      return localProcessRuntime.isAlive(entry.processId, localLeaseRoot(stateRoot, entry.epicKey, entry.leaseId ?? id))
+    } catch {
+      return false
+    }
+  }
+
+  async function stopLocalDemo(id: string, entry: DemoEntry): Promise<void> {
+    const leaseRoot = localLeaseRoot(stateRoot, entry.epicKey, entry.leaseId ?? id)
+    await localProcessRuntime.stop(entry.processId, leaseRoot)
+    const pair = localPairs.get(id)
+    localPairs.delete(id)
+    if (pair) {
+      await pair.dispose()
+    } else {
+      await rm(leaseRoot, { recursive: true, force: true })
+    }
+  }
+
+  async function stopRemoteDemo(entry: DemoEntry): Promise<void> {
+    const credentials = resolveVercelCredentials(env)
+    const factory = await getSandboxFactory()
+    try {
+      const sandbox = await factory.get({ name: entry.sandboxId, ...credentials })
+      await sandbox.stop()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'failed to stop sandbox'
+      if (!/not found|no fake sandbox named/i.test(message)) throw error
+    }
+  }
+
   async function rearm(): Promise<number> {
     const state = await readState(statePath)
     const now = Date.now()
-    const expired = Object.entries(state.demos).filter(([, entry]) => new Date(entry.expiresAt).getTime() <= now)
-    if (expired.length === 0) return 0
-    const credentials = resolveVercelCredentials(env)
-    if (isProviderConfigured(env)) {
-      const factory = await getSandboxFactory()
-      await Promise.all(expired.map(async ([, entry]) => {
+    const dropped = Object.entries(state.demos).filter(([id, entry]) => {
+      if (new Date(entry.expiresAt).getTime() <= now) return true
+      return demoProvider(entry) === 'local' && !localDemoIsAlive(id, entry)
+    })
+    await Promise.all(dropped.map(async ([id, entry]) => {
+      clearExpiry(id)
+      if (demoProvider(entry) === 'local') {
+        await stopLocalDemo(id, entry).catch(() => undefined)
+      } else {
         try {
-          const sandbox = await factory.get({ name: entry.sandboxId, ...credentials })
-          await sandbox.stop()
+          await stopRemoteDemo(entry)
         } catch {
           // Best-effort: the sandbox may already be gone (Vercel's own timeout fired first).
         }
-      }))
+      }
+    }))
+    if (dropped.length > 0) {
+      await mutateState((currentState) => {
+        const rest = { ...currentState.demos }
+        for (const [id] of dropped) delete rest[id]
+        return { demos: rest }
+      })
     }
-    await mutateState((currentState) => {
-      const rest = { ...currentState.demos }
-      for (const [id] of expired) delete rest[id]
-      return { demos: rest }
-    })
-    return expired.length
+    const retained = await readState(statePath)
+    for (const [id, entry] of Object.entries(retained.demos)) scheduleExpiry(id, entry)
+    return dropped.length
   }
 
   async function stopDemo(id: string): Promise<'stopped' | 'already-stopped'> {
     const state = await readState(statePath)
     const entry = state.demos[id]
     if (!entry) return 'already-stopped'
-    if (isProviderConfigured(env)) {
-      const credentials = resolveVercelCredentials(env)
-      const factory = await getSandboxFactory()
-      try {
-        const sandbox = await factory.get({ name: entry.sandboxId, ...credentials })
-        await sandbox.stop()
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'failed to stop sandbox'
-        if (!/not found|no fake sandbox named/i.test(message)) throw error
-      }
-    }
+    if (demoProvider(entry) === 'local') await stopLocalDemo(id, entry)
+    else await stopRemoteDemo(entry)
+    clearExpiry(id)
     await mutateState((current) => {
       const rest = { ...current.demos }
       delete rest[id]
@@ -345,6 +423,15 @@ export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions)
     return (await readState(statePath)).demos
   }
 
+  async function listActiveDemoUrls(): Promise<Record<string, string>> {
+    const now = Date.now()
+    const demos = await listDemos()
+    return Object.fromEntries(Object.entries(demos)
+      .filter(([, entry]) => new Date(entry.expiresAt).getTime() > now)
+      .filter(([id, entry]) => demoProvider(entry) !== 'local' || localDemoIsAlive(id, entry))
+      .map(([, entry]) => [entry.epicKey, entry.url]))
+  }
+
   async function listDemosForSession(sessionId: string): Promise<Record<string, DemoEntry>> {
     const demos = await listDemos()
     return Object.fromEntries(Object.entries(demos).filter(([, entry]) => entry.sessionId === sessionId))
@@ -355,17 +442,111 @@ export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions)
     return Object.fromEntries(Object.entries(demos).filter(([, entry]) => entry.epicKey === epicKey))
   }
 
+  async function startLocalDemo(input: {
+    readonly id: string
+    readonly epic: FactoryEpicEntry
+    readonly command: string
+    readonly requestedPort: number
+    readonly sha: string
+    readonly ttlMinutes: number
+    readonly install?: string
+    readonly readyPath: string
+    readonly sessionId?: string
+    readonly fallbackFrom?: 'vercel'
+    readonly fallbackReason?: string
+  }): Promise<ToolResult> {
+    const leaseId = input.id
+    const leaseRoot = localLeaseRoot(stateRoot, input.epic.epicKey, leaseId)
+    let pair: WorkspaceSandboxPairV1 | undefined
+    let processId: number | undefined
+    let failureCode = 'LOCAL_START_FAILED'
+    try {
+      const port = await resolveLocalPort(input.requestedPort, localPortAvailable)
+      await mkdir(resolve(leaseRoot, '..'), { recursive: true })
+      pair = await createLocalDisposableProvider(input.epic.worktree, input.sha).create({
+        workspaceRoot: leaseRoot,
+        workspaceId: options.workspaceScopeId,
+        sessionId: leaseId,
+      })
+
+      if (input.install?.trim()) {
+        const installResult = await pair.sandbox.exec(input.install, { timeoutMs: READY_POLL_TIMEOUT_MS })
+        if (installResult.exitCode !== 0) {
+          failureCode = 'INSTALL_FAILED'
+          throw new Error(`install command exited ${installResult.exitCode}`)
+        }
+      }
+
+      processId = await localProcessRuntime.start(input.command, leaseRoot, port)
+
+      const probeUrl = `http://127.0.0.1:${port}`
+      const readiness = await pollReady(probeUrl, input.readyPath, fetchImpl, () => localProcessRuntime.isAlive(processId, leaseRoot))
+      if (!readiness.ready) {
+        failureCode = 'READY_FAILED'
+        throw new Error(
+          readiness.lastStatus === undefined
+            ? `demo command exited or ${input.readyPath} did not become ready`
+            : `${input.readyPath} did not return HTTP 200 (last status ${readiness.lastStatus})`,
+        )
+      }
+
+      const startedAt = new Date().toISOString()
+      const expiresAt = new Date(Date.now() + input.ttlMinutes * 60_000).toISOString()
+      const url = `http://${advertisedLocalHost(env)}:${port}`
+      const entry: DemoEntry = {
+        epicKey: input.epic.epicKey,
+        sandboxId: leaseId,
+        provider: 'local',
+        leaseId,
+        leaseRoot,
+        processId,
+        url,
+        sha: input.sha,
+        port,
+        command: input.command,
+        startedAt,
+        expiresAt,
+        ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+      }
+      await mutateState((current) => ({ demos: { ...current.demos, [leaseId]: entry } }))
+      localPairs.set(leaseId, pair)
+      scheduleExpiry(leaseId, entry)
+      return jsonResult({
+        id: leaseId,
+        leaseId,
+        url,
+        provider: 'local',
+        sha: input.sha,
+        port,
+        expiresAt,
+        ready: true,
+        ...(input.fallbackFrom ? { fallbackFrom: input.fallbackFrom, reason: input.fallbackReason } : {}),
+      })
+    } catch (error) {
+      await localProcessRuntime.stop(processId, leaseRoot).catch(() => undefined)
+      if (pair) await pair.dispose().catch(() => undefined)
+      else await rm(leaseRoot, { recursive: true, force: true }).catch(() => undefined)
+      const message = error instanceof Error ? error.message : 'failed to start local demo'
+      return jsonResult({
+        code: failureCode,
+        message,
+        provider: 'local',
+        ...(input.fallbackFrom ? { fallbackFrom: input.fallbackFrom, reason: input.fallbackReason } : {}),
+      }, true)
+    }
+  }
+
   function close(): void {
-    // No recurring timers owned by this plugin: expiry is enforced by the sandbox provider's
-    // own `timeout`, and stale entries are swept by `rearm()` on the next boot.
+    for (const timer of expiryTimers.values()) clearTimeout(timer)
+    expiryTimers.clear()
   }
 
   const demoTool: AgentTool = {
     name: 'demo_sandbox',
     description:
-      'Start, stop, or check a live demo of this epic at an exact SHA, served from a Vercel sandbox and reachable ' +
-      'at a public URL for the duration of its TTL (default 40 minutes, hard-capped by the host). Requires the ' +
-      'vercel Factory sandbox provider. Use this only to back Gate 2 (merge approval) with a real running demo ' +
+      'Start, stop, or check a live demo of this epic at an exact SHA, served from the configured Factory sandbox ' +
+      'provider with an automatic local fallback when Vercel cannot create a lease. Use this only to back Gate 2 ' +
+      '(merge approval) with a real running demo ' +
       'the owner can click through; it never affects the epic branch or git state.',
     parameters: {
       type: 'object',
@@ -422,18 +603,18 @@ export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions)
         return jsonResult({ code: 'EPIC_RESOLUTION_FAILED', message: error instanceof Error ? error.message : 'failed to resolve Factory epic' }, true)
       }
 
-      if (!isProviderConfigured(env)) return providerNotConfiguredResult()
-
       const op = parseOp(params.op)
       if (!op) return invalidInputResult('op must be one of "start", "stop", "status", "list"')
 
       if (op === 'status' || op === 'list') {
+        await rearm()
         const state = await readState(statePath)
         const now = Date.now()
         const demos = Object.entries(state.demos).filter(([, entry]) => entry.epicKey === epic.epicKey).map(([id, entry]) => ({
           id,
           ...entry,
           expired: new Date(entry.expiresAt).getTime() <= now,
+          running: demoProvider(entry) === 'vercel' || localDemoIsAlive(id, entry),
         }))
         return jsonResult({ demos })
       }
@@ -485,83 +666,131 @@ export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions)
       }
       const readyPath = (params.readyPath as string | undefined) ?? '/'
 
-      const sha = typeof params.sha === 'string' && params.sha.length > 0
-        ? params.sha
-        : await gitRevParseHead(epic.worktree)
-
-      let snapshotId: string
+      let sha: string
       try {
-        snapshotId = await resolveDemoSnapshotId(env, epic.worktree, stateRoot, epic.epicKey)
+        sha = await gitResolveCommit(epic.worktree, typeof params.sha === 'string' && params.sha.length > 0 ? params.sha : 'HEAD')
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'failed to resolve a Factory snapshot for this demo'
-        return jsonResult({ code: 'SNAPSHOT_UNAVAILABLE', message }, true)
+        const message = error instanceof Error ? error.message : 'failed to resolve the requested commit'
+        return jsonResult({ code: 'INVALID_SHA', message }, true)
       }
-      const credentials = resolveVercelCredentials(env)
+
+      await rearm()
+      const existing = Object.entries((await readState(statePath)).demos).find(([, entry]) => entry.epicKey === epic.epicKey)
+      if (existing || startingEpics.has(epic.epicKey)) {
+        const existingId = existing?.[0]
+        return jsonResult({
+          code: 'DEMO_ALREADY_RUNNING',
+          message: `epic ${epic.epicKey} already has a running demo${existingId ? ` (${existingId})` : ''}`,
+          ...(existingId ? { id: existingId } : {}),
+        }, true)
+      }
+
       const id = randomUUID()
-      const sandboxName = `factory-demo-${id}`
-      const startedAt = new Date().toISOString()
-      const expiresAt = new Date(Date.now() + ttlMinutes * 60_000).toISOString()
-
-      let sandbox: DemoSandboxHandle
+      startingEpics.add(epic.epicKey)
+      let remoteSandbox: DemoSandboxHandle | undefined
       try {
-        const factory = await getSandboxFactory()
-        sandbox = await factory.create({
-          name: sandboxName,
-          snapshotId,
-          port,
-          timeoutMs: ttlMinutes * 60_000,
-          ...credentials,
-        })
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'failed to create sandbox'
-        return jsonResult({ code: 'CREATE_FAILED', message }, true)
-      }
+        if (env.BORING_FACTORY_SANDBOX_PROVIDER !== 'vercel') {
+          return await startLocalDemo({
+            id,
+            epic,
+            command,
+            requestedPort: port,
+            sha,
+            ttlMinutes,
+            ...(typeof params.install === 'string' ? { install: params.install } : {}),
+            readyPath,
+            ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}),
+          })
+        }
 
-      try {
+        const sandboxName = `factory-demo-${id}`
+        const startedAt = new Date().toISOString()
+        const expiresAt = new Date(Date.now() + ttlMinutes * 60_000).toISOString()
+        try {
+          const snapshotId = await resolveDemoSnapshotId(env, epic.worktree, stateRoot, epic.epicKey)
+          const credentials = resolveVercelCredentials(env)
+          const factory = await getSandboxFactory()
+          remoteSandbox = await factory.create({
+            name: sandboxName,
+            snapshotId,
+            port,
+            timeoutMs: ttlMinutes * 60_000,
+            ...credentials,
+          })
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : 'Vercel failed to create a demo lease'
+          return await startLocalDemo({
+            id,
+            epic,
+            command,
+            requestedPort: port,
+            sha,
+            ttlMinutes,
+            ...(typeof params.install === 'string' ? { install: params.install } : {}),
+            readyPath,
+            ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}),
+            fallbackFrom: 'vercel',
+            fallbackReason: reason,
+          })
+        }
+
         const files = await buildFetchBootstrapFiles(epic.worktree, sha)
-        await sandbox.writeFiles(files.map((file) => ({ path: file.path, content: file.content })))
+        await remoteSandbox.writeFiles(files.map((file) => ({ path: file.path, content: file.content })))
 
-        const bootstrapResult = await sandbox.runCommand({ cmd: 'sh', args: ['-c', FACTORY_BOOTSTRAP_SCRIPT] }) as { exitCode: number }
+        const bootstrapResult = await remoteSandbox.runCommand({ cmd: 'sh', args: ['-c', FACTORY_BOOTSTRAP_SCRIPT] }) as { exitCode: number }
         if (bootstrapResult.exitCode !== 0) {
-          await sandbox.stop().catch(() => {})
+          await remoteSandbox.stop().catch(() => {})
           return jsonResult({ code: 'BOOTSTRAP_FAILED', message: `factory-bootstrap failed: push the epic branch so ${sha} is reachable on origin` }, true)
         }
 
         if (typeof params.install === 'string' && params.install.trim().length > 0) {
-          const installResult = await sandbox.runCommand({ cmd: 'sh', args: ['-c', params.install] }) as { exitCode: number }
+          const installResult = await remoteSandbox.runCommand({ cmd: 'sh', args: ['-c', params.install] }) as { exitCode: number }
           if (installResult.exitCode !== 0) {
-            await sandbox.stop().catch(() => {})
+            await remoteSandbox.stop().catch(() => {})
             return jsonResult({ code: 'INSTALL_FAILED', message: `install command exited ${installResult.exitCode}` }, true)
           }
         }
 
-        await sandbox.runCommand({ cmd: 'sh', args: ['-c', command], detached: true })
+        await remoteSandbox.runCommand({ cmd: 'sh', args: ['-c', command], detached: true })
 
-        const url = sandbox.domain(port)
+        const url = remoteSandbox.domain(port)
         const { ready, lastStatus } = await pollReady(url, readyPath, fetchImpl)
+        if (!ready) {
+          await remoteSandbox.stop().catch(() => {})
+          return jsonResult({
+            code: 'READY_FAILED',
+            message: lastStatus === undefined
+              ? `${readyPath} did not become reachable`
+              : `${readyPath} did not return HTTP 200 (last status ${lastStatus})`,
+            provider: 'vercel',
+          }, true)
+        }
 
+        const entry: DemoEntry = {
+          epicKey: epic.epicKey,
+          sandboxId: sandboxName,
+          provider: 'vercel',
+          leaseId: id,
+          url,
+          sha,
+          port,
+          command,
+          startedAt,
+          expiresAt,
+          ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}),
+        }
         await mutateState((current) => ({
-          demos: {
-            ...current.demos,
-            [id]: {
-              epicKey: epic.epicKey,
-              sandboxId: sandboxName,
-              url,
-              sha,
-              port,
-              command,
-              startedAt,
-              expiresAt,
-              ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}),
-            },
-          },
+          demos: { ...current.demos, [id]: entry },
         }))
+        scheduleExpiry(id, entry)
 
-        return jsonResult({ id, url, sha, port, expiresAt, ready, ...(lastStatus !== undefined ? { lastStatus } : {}) })
+        return jsonResult({ id, leaseId: id, url, provider: 'vercel', sha, port, expiresAt, ready, ...(lastStatus !== undefined ? { lastStatus } : {}) })
       } catch (error) {
-        await sandbox.stop().catch(() => {})
+        await remoteSandbox?.stop().catch(() => {})
         const message = error instanceof Error ? error.message : 'failed to start demo'
         return jsonResult({ code: 'START_FAILED', message }, true)
+      } finally {
+        startingEpics.delete(epic.epicKey)
       }
     },
   }
@@ -577,5 +806,5 @@ export function createFactoryDemoPlugin(options: CreateFactoryDemoPluginOptions)
     },
   })
 
-  return { plugin, rearm, control: { listDemos, stopDemo, listDemosForSession, listDemosForEpic }, close }
+  return { plugin, rearm, control: { listDemos, listActiveDemoUrls, stopDemo, listDemosForSession, listDemosForEpic }, close }
 }
