@@ -303,13 +303,25 @@ export class ChannelIntentionService {
           const binding = this.store.getBinding(claimed.channel, claimed.conversationKey, claimed.agentTypeId)
           if (adapter.serviceWindowMs !== undefined
             && (!binding?.lastInboundAt || Date.now() - binding.lastInboundAt > adapter.serviceWindowMs)) {
+            const outboundOwner = `intention:${this.owner}`
+            if (!binding || !this.store.claimOutbound(binding, outboundOwner, ttlMs)) {
+              retryAt = Date.now() + (this.options.retryDelayMs ?? 50)
+              continue
+            }
             try {
-              if (adapter.sendWindowTemplate) {
+              const templateAlreadySent = binding.templateSentForInboundAt === (binding.lastInboundAt ?? 0)
+              if (!templateAlreadySent && adapter.sendWindowTemplate) {
                 await adapter.sendWindowTemplate({ conversationKey: claimed.conversationKey })
+                if (!this.store.markTemplateSent(binding, outboundOwner)) {
+                  retryAt = Date.now() + ttlMs
+                  continue
+                }
               }
               this.store.holdIntentionForWindow(claimed.questionId, this.owner)
             } catch {
               retryAt = Date.now() + ttlMs
+            } finally {
+              this.store.releaseOutbound(outboundOwner)
             }
             continue
           }

@@ -219,6 +219,7 @@ describe('ChannelIntentionService', () => {
       await service.waitForIdle()
       expect(templates).toEqual([bindingInput.conversationKey])
       expect(sent).toEqual([])
+      expect(store.getBinding('whatsapp', bindingInput.conversationKey, 'default')?.templateSentForInboundAt).toBe(0)
 
       const accepted = store.enqueueInbound(inbound('wamid.window-open', 'hello'), 'default')
       expect(accepted.disposition).toBe('enqueued')

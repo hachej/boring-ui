@@ -680,14 +680,15 @@ export class ChannelBindingStore {
   }
 
   markTemplateSent(binding: ChannelBinding, claimOwner: string): boolean {
-    if (binding.lastInboundAt === undefined) return false
+    const marker = binding.lastInboundAt ?? 0
     return this.sql.exec(`UPDATE boring_channel_bindings SET template_sent_for_inbound_at=?
       WHERE channel=? AND conversation_key=? AND agent_type_id=? AND binding_version=?
-        AND status='active' AND outbound_status='active' AND last_inbound_at=?
+        AND status='active' AND outbound_status='active'
+        AND ((?=0 AND last_inbound_at IS NULL) OR last_inbound_at=?)
         AND template_sent_for_inbound_at IS NULL
-        AND outbound_claim_owner=? AND outbound_claim_expires_at>? RETURNING channel`, binding.lastInboundAt,
+        AND outbound_claim_owner=? AND outbound_claim_expires_at>? RETURNING channel`, marker,
     binding.channel, binding.conversationKey, binding.agentTypeId, binding.bindingVersion,
-    binding.lastInboundAt, claimOwner, Date.now()).toArray().length === 1
+    marker, marker, claimOwner, Date.now()).toArray().length === 1
   }
 
   parkOutbound(binding: ChannelBinding, claimOwner: string, terminalOffset: string, errorCode: string): boolean {
