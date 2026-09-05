@@ -41,9 +41,10 @@ import { createFactoryHost } from '@hachej/boring-factory/server'
 `{ agents, plugins, registry, sessionBindings, bind(app), rearm(), close() }` for trusted app
 composition. `workspaceRoot` is the canonical, read-mostly repository checkout. The host owns
 the persisted multi-epic registry (`<stateRoot>/epics.json`), session-to-epic bindings
-(`<stateRoot>/session-bindings.json`), seat specs and appendices, `dispatch_worker`,
-`fresh_review`, `factory_status`, durable supervision, `demo_sandbox`, and the Factory intake
-routes. The embedding app still owns the outer server and provider credentials/settings.
+(`<stateRoot>/session-bindings.json`), dispatch/review history
+(`<stateRoot>/dispatches.json`), seat specs and appendices, `dispatch_worker`, `fresh_review`,
+`factory_status`, `recover_stale_claims`, durable supervision, `demo_sandbox`, and the Factory
+intake routes. The embedding app still owns the outer server and provider credentials/settings.
 
 Every host uses the stable workspace scope `factory-hub`, giving all registered epics one
 sessions surface and one Inbox. Each tool resolves its epic from the calling session binding,
@@ -68,6 +69,32 @@ intake on boot and are logged as such; they are no longer host identity.
 
 Do not add the skill root as a global package default and do not infer authority from
 these authored files.
+
+## Host-enforced Factory limits
+
+The trusted host, rather than persona prose, enforces the Factory's recovery and retry
+limits:
+
+| Environment variable | Default | Host behavior |
+| --- | ---: | --- |
+| `BORING_FACTORY_STALE_IDLE_MS` | `600000` (10 min) | An in-progress claim whose assignee session is missing is stale immediately. An idle assignee with no canonical, Bead-specific handoff comment becomes stale after this duration, measured from the session's last activity. Busy claims are never stale. |
+| `BORING_FACTORY_MAX_CONCURRENT_WORKERS` | `2` | `dispatch_worker` refuses before session creation when this epic already has that many busy Workers. |
+| `BORING_FACTORY_MAX_DISPATCHES_PER_BEAD` | `2` | `dispatch_worker` refuses before session creation when the target Bead already has this many recorded dispatches. |
+| `BORING_FACTORY_MAX_REVIEW_ROUNDS` | `4` | `fresh_review` still runs at the cap, but returns `capReached: true` and directs the Worker to hand off at the current SHA and file remaining findings as follow-up Beads. |
+| `BORING_FACTORY_PLAN_BUDGET_MS` | `1200000` (20 min) | Intake persists a Gate 1 deadline and includes it in the kickoff. If supervision is armed and Gate 1 has not been raised by then, the next idle tick says `raise Gate 1 now with what you have`. It does not stop or kill the session. |
+
+`factory_status` reports each in-progress claim's session classification and `stale`
+flag, names `recover_stale_claims` as the recovery command, and returns the epic's
+busy-Worker, per-open-Bead dispatch, and review-round counters. Recovery re-reads live
+facts and releases only stale claims with `br update <id> --assignee "" --status open`,
+then adds a Bead comment naming the dead session and reason.
+
+Every admitted Worker dispatch and review round is written atomically to
+`dispatches.json` with its epic, target, child session, timestamp, and latest outcome.
+The file is read on every admission/status decision, so caps survive host restarts. At
+either dispatch cap the target Bead is marked `blocked`, a blocker comment is added,
+and the refusal tells the Orchestrator to raise an Inbox question with `ask_user`
+instead of retrying.
 
 ## Private vendoring
 

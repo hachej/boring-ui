@@ -10,7 +10,7 @@ import { FactoryEpicResolutionError, resolveFactoryEpic, type FactorySessionBind
 export const FACTORY_SUPERVISION_PLUGIN_ID = 'factory-supervision'
 
 /** Bump when this file's supervision behavior changes; hashed into the plugin's contentDigest. */
-const SUPERVISION_PLUGIN_VERSION = 'factory-supervision.v1.2026-09-03'
+const SUPERVISION_PLUGIN_VERSION = 'factory-supervision.v2.2026-09-05'
 
 /** The only seat this plugin ever supervises: an Orchestrator may only supervise itself. */
 const SUPERVISED_AGENT_TYPE_ID = 'boring-orchestrator'
@@ -23,7 +23,8 @@ export const SUPERVISION_DEFAULT_INTERVAL_MS = 120_000
 const DEFAULT_PROMPT =
   'Run factory_status and check the epic\'s durable end-state facts (Bead status/assignee, ' +
   'commits on the epic branch, Bead comments, sandbox releases, fresh_review provenance) ' +
-  'against the epic\'s acceptance criteria; recover any stale claim per the Recovery rule. ' +
+  'against the epic\'s acceptance criteria; when factory_status reports stale claims, call ' +
+  'recover_stale_claims. ' +
   'Report durable end-state facts only; never implement.'
 
 export interface SupervisionEntry {
@@ -117,6 +118,46 @@ interface SupervisedSessionState {
   readonly state?: { readonly status?: string }
 }
 
+async function gate1WasRaised(app: FastifyInstance, workspaceScopeId: string, sessionId: string): Promise<boolean> {
+  const headers = {
+    'content-type': 'application/json',
+    'x-csrf-token': 'factory-hub',
+    'x-boring-workspace-id': workspaceScopeId,
+  }
+  const isGate1 = (question: { sessionId?: string; title?: string }) => (
+    question.sessionId === sessionId && /\bplan approval\b/i.test(question.title ?? '')
+  )
+  const pendingResponse = await app.inject({
+    method: 'POST',
+    url: '/api/v1/workspace-bridge/call',
+    headers,
+    payload: { op: 'ask-user.v1.pending-all', input: {} },
+  })
+  if (pendingResponse.statusCode !== 200) throw new Error(`Gate 1 pending lookup failed: HTTP ${pendingResponse.statusCode}`)
+  const pending = pendingResponse.json<{ output?: { pending?: Array<{ sessionId?: string; title?: string }> } }>().output?.pending
+  if (!Array.isArray(pending)) throw new Error('Gate 1 pending lookup returned an invalid response')
+  if (pending.some(isGate1)) return true
+
+  let cursor: string | undefined
+  const seenCursors = new Set<string>()
+  for (;;) {
+    const answeredResponse = await app.inject({
+      method: 'POST',
+      url: '/api/v1/workspace-bridge/call',
+      headers,
+      payload: { op: 'ask-user.v1.answered-all', input: { limit: 100, ...(cursor ? { cursor } : {}) } },
+    })
+    if (answeredResponse.statusCode !== 200) throw new Error(`Gate 1 answered lookup failed: HTTP ${answeredResponse.statusCode}`)
+    const output = answeredResponse.json<{ output?: { answered?: Array<{ sessionId?: string; title?: string }>; nextCursor?: string } }>().output
+    if (!output || !Array.isArray(output.answered)) throw new Error('Gate 1 answered lookup returned an invalid response')
+    if (output.answered.some(isGate1)) return true
+    if (!output.nextCursor) return false
+    if (seenCursors.has(output.nextCursor)) throw new Error('Gate 1 answered lookup returned a repeated cursor')
+    seenCursors.add(output.nextCursor)
+    cursor = output.nextCursor
+  }
+}
+
 export function createFactorySupervisionPlugin(
   options: CreateFactorySupervisionPluginOptions,
 ): FactorySupervisionPluginHandle {
@@ -198,6 +239,12 @@ export function createFactorySupervisionPlugin(
         } else {
           const tickNumber = entry.ticks + 1
           const selectedModel = modelSelection(epic.models?.orchestrator)
+          const deadline = epic.planDeadlineAt ? Date.parse(epic.planDeadlineAt) : Number.NaN
+          const prompt = Number.isFinite(deadline)
+            && Date.now() >= deadline
+            && !(await gate1WasRaised(app, workspaceScopeId, entry.sessionId))
+            ? 'raise Gate 1 now with what you have'
+            : entry.prompt
           const promptResponse = await app.inject({
             method: 'POST',
             url: `/api/v1/agents/${entry.agentTypeId}/sessions/${entry.sessionId}/prompt`,
@@ -205,7 +252,7 @@ export function createFactorySupervisionPlugin(
             payload: {
               requestId: randomUUID(),
               clientNonce: randomUUID(),
-              content: `Supervision tick ${tickNumber} (${new Date().toISOString()}): ${entry.prompt}`,
+              content: `Supervision tick ${tickNumber} (${new Date().toISOString()}): ${prompt}`,
               requireIdle: true,
               ...(selectedModel ? { model: selectedModel } : {}),
             },
