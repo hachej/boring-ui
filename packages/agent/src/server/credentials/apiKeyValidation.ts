@@ -30,7 +30,21 @@ export interface ApiKeyValidatorV1 {
   validate(providerId: ProviderId, apiKey: Uint8Array): Promise<void>
 }
 
-type StatusLikeError = { status?: unknown; statusCode?: unknown; name?: unknown }
+type StatusLikeError = {
+  status?: unknown
+  statusCode?: unknown
+  name?: unknown
+  message?: unknown
+}
+
+function piProviderErrorStatus(error: StatusLikeError): number | undefined {
+  if (typeof error.message !== 'string') return undefined
+  // Radius currently exposes response status only in this stable Pi-owned
+  // prefix and appends a provider body. Read only the status capture; never
+  // propagate, log, or persist the message/body.
+  const match = /^Could not load Radius config from \S+: (\d{3}):/u.exec(error.message)
+  return match ? Number(match[1]) : undefined
+}
 
 function failureFrom(error: unknown, signal: AbortSignal): ApiKeyValidationFailureV1 {
   if (signal.aborted) return 'timeout'
@@ -40,7 +54,7 @@ function failureFrom(error: unknown, signal: AbortSignal): ApiKeyValidationFailu
     ? safe.status
     : typeof safe.statusCode === 'number'
       ? safe.statusCode
-      : undefined
+      : piProviderErrorStatus(safe)
   if (status === 401 || status === 403) return 'unauthorized'
   if (status === 429) return 'rate_limited'
   if (safe.name === 'AbortError') return 'timeout'

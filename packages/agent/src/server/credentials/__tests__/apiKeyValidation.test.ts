@@ -77,6 +77,27 @@ describe('API key validation', () => {
     expect(JSON.stringify(result)).not.toContain(secret)
   })
 
+  test.each([
+    [401, CREDENTIAL_ERROR_CODES.VALIDATION_UNAUTHORIZED],
+    [403, CREDENTIAL_ERROR_CODES.VALIDATION_UNAUTHORIZED],
+    [429, CREDENTIAL_ERROR_CODES.VALIDATION_RATE_LIMITED],
+  ] as const)('classifies Pi Radius status %s without returning its provider body', async (status, code) => {
+    const secret = `radius-provider-body-${status}`
+    const validator = createApiKeyValidatorV1({
+      transport: {
+        probe: async () => {
+          throw new Error(`Could not load Radius config from https://radius.pi.dev: ${status}: ${secret}`)
+        },
+      },
+    })
+
+    const result = await validator.validate('radius' as ProviderId, new TextEncoder().encode('pending-key'))
+      .then(() => undefined, (error: unknown) => error)
+
+    expect(result).toMatchObject({ code, message: 'API key validation failed' })
+    expect(JSON.stringify(result)).not.toContain(secret)
+  })
+
   test('aborts at the bounded timeout and returns no transport detail', async () => {
     const secret = 'timeout-secret-canary'
     const validator = createApiKeyValidatorV1({
