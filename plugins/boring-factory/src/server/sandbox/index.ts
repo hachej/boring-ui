@@ -41,6 +41,7 @@ export type {
 
 export {
   invalidateEpicSnapshot,
+  invalidateAllEpicSnapshots,
   peekEpicSnapshot,
   registryKey,
   resolveEpicSnapshot,

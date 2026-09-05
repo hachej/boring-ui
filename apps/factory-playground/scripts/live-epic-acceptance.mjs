@@ -5,8 +5,8 @@
 // PR, starts a live demo at the exact SHA with demo_sandbox, and raises the merge-approval question. This
 // driver answers both gates itself (as the owner would) and never merges.
 //
-// Usage (API already running on 127.0.0.1:5230 against EPIC_WT with BORING_FACTORY_EPIC_KEY=EPIC_KEY):
-//   EPIC_WT=/abs/path/to/epic-worktree EPIC_KEY=<epic key> node scripts/live-epic-acceptance.mjs
+// Usage (Factory Hub already running on 127.0.0.1:5230):
+//   EPIC_KEY=<registered-or-new-epic-key> [EPIC_WT=/abs/path/to/worktree] node scripts/live-epic-acceptance.mjs
 // Requires model credentials on the API process, the `br` and `gh` CLIs on PATH, and the Vercel Factory
 // sandbox provider configured on the API process (BORING_FACTORY_SANDBOX_PROVIDER=vercel) for Gate 2's demo.
 import { randomUUID } from 'node:crypto'
@@ -14,21 +14,38 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
-import { deriveFactoryWorkspaceScopeId } from '@hachej/boring-factory/server'
+import { buildEpicKickoffPrompt, deriveFactoryWorkspaceScopeId } from '@hachej/boring-factory/server'
 const exec = promisify(execFile)
-const EPIC_WT = process.env.EPIC_WT
-if (!EPIC_WT) throw new Error('EPIC_WT is required')
 const EPIC = process.env.EPIC_KEY
 if (!EPIC) throw new Error('EPIC_KEY is required')
 const WORKSPACE_ID = deriveFactoryWorkspaceScopeId(EPIC)
 const API_PORT = process.env.API_PORT || '5230'
+const hubBase = `http://127.0.0.1:${API_PORT}`
 const base = `http://127.0.0.1:${API_PORT}/api/v1/agents`
 const bridgeUrl = `http://127.0.0.1:${API_PORT}/api/v1/workspace-bridge/call`
 const headers = { 'x-boring-workspace-id': WORKSPACE_ID, 'content-type': 'application/json' }
 const call = async (method, url, body) => { const r = await fetch(base + url, { method, headers, ...(body ? { body: JSON.stringify(body) } : {}) }); const t = await r.text(); if (!r.ok) throw new Error(`${method} ${url}: ${r.status} ${t.slice(0, 500)}`); return t ? JSON.parse(t) : undefined }
-const create = async (type, title) => (await call('POST', `/${type}/sessions`, { requestId: randomUUID(), title })).sessionId
-// Session titles lead with the feature name, per docs/procedures/naming-conventions.md.
-const featureName = async () => { const r = await fetch(`http://127.0.0.1:${API_PORT}/api/v1/workspace/meta`, { headers }); if (!r.ok) throw new Error(`workspace/meta: ${r.status}`); const meta = await r.json(); if (!meta.featureName) throw new Error('workspace/meta did not report a featureName'); return meta.featureName }
+const hubCall = async (method, path, body) => { const r = await fetch(hubBase + path, { method, headers, ...(body ? { body: JSON.stringify(body) } : {}) }); const t = await r.text(); if (!r.ok) throw new Error(`${method} ${path}: ${r.status} ${t.slice(0, 500)}`); return t ? JSON.parse(t) : undefined }
+
+const registered = await hubCall('GET', '/api/v1/factory/epics')
+let epicEntry = registered.find((entry) => entry.epicKey === EPIC)
+let newlyRegistered = false
+if (!epicEntry) {
+  epicEntry = await hubCall('POST', '/api/v1/factory/epics', {
+    epicKey: EPIC,
+    featureName: process.env.FEATURE_NAME || EPIC.split('-').map((part) => part[0]?.toUpperCase() + part.slice(1)).join(' '),
+    ...(process.env.EPIC_WT ? { worktree: process.env.EPIC_WT } : {}),
+    ...(process.env.EPIC_BRANCH ? { branch: process.env.EPIC_BRANCH } : {}),
+    ...(process.env.EPIC_REQUEST_FILE ? { requestFile: process.env.EPIC_REQUEST_FILE } : {}),
+    start: false,
+  })
+  newlyRegistered = true
+}
+if (process.env.ORCH_SESSION && process.env.ORCH_SESSION !== epicEntry.orchestratorSessionId) {
+  epicEntry = await hubCall('POST', `/api/v1/factory/epics/${encodeURIComponent(EPIC)}/adopt`, { orchestratorSessionId: process.env.ORCH_SESSION })
+}
+const EPIC_WT = epicEntry.worktree
+const FEATURE_NAME = epicEntry.featureName
 const PROMPT_IDLE_RETRIES = Number(process.env.PROMPT_IDLE_RETRIES ?? 200) // a busy Orchestrator under a 120s supervision tick can stay non-idle for minutes at a time
 const prompt = async (type, sid, content) => { for (let i = 0; i < PROMPT_IDLE_RETRIES; i++) { try { return await call('POST', `/${type}/sessions/${sid}/prompt`, { requestId: randomUUID(), clientNonce: randomUUID(), content, requireIdle: true }) } catch (e) { if (!String(e.message).includes('not idle')) throw e; await new Promise(r => setTimeout(r, 5000)) } } throw new Error('session never idle for prompt') }
 const state = async (type, sid) => call('GET', `/${type}/sessions/${sid}/state`)
@@ -148,7 +165,9 @@ async function waitForAllHandoffs(beadIds, timeoutMs) {
   const end = Date.now() + timeoutMs
   let lastSummary = ''
   for (;;) {
-    const workerSessions = ((await call('GET', '/boring-worker/sessions')).sessions ?? []).map((w) => w.ref?.sessionId ?? w.sessionId)
+    const workerSessions = ((await call('GET', '/boring-worker/sessions')).sessions ?? [])
+      .filter((worker) => (worker.title ?? '').includes(osid.slice(0, 8)))
+      .map((worker) => worker.ref?.sessionId ?? worker.sessionId)
     const perBead = await Promise.all(beadIds.map(async (id) => ({ id, authors: await beadHandoffAuthors(id, workerSessions) })))
     const allHandedOff = perBead.every((b) => b.authors.size > 0)
     const distinctAuthors = new Set(perBead.flatMap((b) => [...b.authors]))
@@ -165,26 +184,17 @@ console.log('epic worktree base', baseSha, 'epic', EPIC, MULTI_MODE ? '(multi-Be
 let osid, loopOn = false
 const receipt = { epic: EPIC, baseSha, mode: MULTI_MODE ? 'multi' : 'single' }
 try {
-  osid = process.env.ORCH_SESSION ?? await create('boring-orchestrator', `[${await featureName()}] Orchestrator`)
+  osid = process.env.ORCH_SESSION ?? epicEntry.orchestratorSessionId
+  if (!osid) throw new Error(`registered epic ${EPIC} has no Orchestrator session`)
   receipt.orchestratorSessionId = osid
-  console.log('orchestrator', osid, process.env.ORCH_SESSION ? '(resumed; skipping the planning prompt)' : '')
-  if (!process.env.ORCH_SESSION && MULTI_MODE) {
-    const ownerRequest = await readFile(process.env.EPIC_REQUEST_FILE, 'utf8')
-    await prompt('boring-orchestrator', osid, [
-      `Host context: your session id is ${osid}.\nOwner request for epic ${EPIC} (shared worktree = this workspace, branch ${await git(['rev-parse', '--abbrev-ref', 'HEAD'])}).`,
-      ownerRequest.trim(),
-      `Materialize the full dependency-correct Bead graph with real br commands (an epic Bead plus every named slice, wired with real \`br dep add\` relations reflecting "Depends on" above). Then raise Gate 1 (plan approval) now with ask_user, per the factory-precedence appendix — do not skip it and do not treat this message as a pre-approval.`,
-      `On approval, immediately start durable supervision with the supervise tool (op start, intervalMs 120000, a prompt naming factory_status and the recovery rule). Then dispatch Workers as Beads become ready: use dispatch_worker for each ready, unclaimed, dependency-unblocked Bead, up to 2 concurrently (issue up to two dispatch_worker calls in the same turn when two Beads are simultaneously ready; otherwise dispatch one, wait for it, and dispatch the next as more Beads become ready). Keep supervising and keep dispatching — polling factory_status between rounds — until every non-epic Bead for this epic has a complete handoff comment recorded on it. Do not stop supervision until then.`,
-      `Each Worker brief must name epic ${EPIC}, the shared worktree, the pull protocol (br ready --label epic:${EPIC} --unassigned, claim one with --claim --actor <session id>), implement + stage only intended files + commit on the epic branch, exact-SHA dedicated sandbox test via the sandbox tools (proof commands from the owner request), adversarial fresh_review of that SHA, then a complete handoff recorded in the Bead (SHA, test evidence, review provenance) and git push of the epic branch. It must never merge or close its own Bead. Do not name a specific Bead in the brief — the Worker claims whichever ready Bead it picks up.`,
-      "Report progress each round: which Beads are handed off, which are in flight, and on which Worker sessions. On changes/defer/reject at Gate 1: revise and re-raise, or stop and report; do not arm supervision or dispatch.",
-    ].join('\n'))
-  } else if (!process.env.ORCH_SESSION) await prompt('boring-orchestrator', osid, [
-    `Host context: your session id is ${osid}.\nOwner request for epic ${EPIC} (shared worktree = this workspace, branch ${await git(['rev-parse', '--abbrev-ref', 'HEAD'])}).`,
-    'Feature name: "Farewell API" (per docs/procedures/naming-conventions.md — lead every Bead, PR, commit, and Inbox title with `[Farewell API]`). In apps/factory-playground/src/fixtures/demo-repo, add an exported farewell(name) function to src/greeting.js returning exactly `Goodbye, ${name}.` (comma, trailing period), add a focused node:test case in test/greeting.test.js, and document import + usage in that fixture README.md. Proof: `npm test` inside the fixture directory.',
-    'Materialize the smallest dependency-correct Bead graph with real br commands. Then raise Gate 1 (plan approval) now with ask_user, per the factory-precedence appendix — do not skip it and do not treat this message as a pre-approval. On approval, immediately start durable supervision with the supervise tool (op start, intervalMs 120000, a prompt naming factory_status and the recovery rule), then dispatch exactly one Worker with dispatch_worker.',
-    `The Worker brief must name epic ${EPIC}, the shared worktree, the pull protocol (br ready --label epic:${EPIC} --unassigned, claim one with --claim --actor <session id>), implement + stage only intended files + commit on the epic branch, exact-SHA dedicated sandbox test via the sandbox tools, adversarial fresh_review of that SHA, then a complete handoff recorded in the Bead (SHA, test evidence, review provenance) and git push of the epic branch. It must never merge or close its own Bead. Do not name a specific Bead.`,
-    "When dispatch_worker returns, report the Worker's final answer and what the br/git end-states now show. On changes/defer/reject at Gate 1: revise and re-raise, or stop and report; do not arm supervision or dispatch.",
-  ].join('\n'))
+  const shouldKickoff = newlyRegistered && !process.env.ORCH_SESSION
+  console.log('orchestrator', osid, shouldKickoff ? '' : '(registered/adopted session; skipping the planning prompt)')
+  if (shouldKickoff) {
+    const ownerRequest = MULTI_MODE
+      ? await readFile(process.env.EPIC_REQUEST_FILE, 'utf8')
+      : 'Feature name: "Farewell API". In apps/factory-playground/src/fixtures/demo-repo, add an exported farewell(name) function to src/greeting.js returning exactly `Goodbye, ${name}.` (comma, trailing period), add a focused node:test case in test/greeting.test.js, and document import + usage in that fixture README.md. Proof: `npm test` inside the fixture directory.'
+    await prompt('boring-orchestrator', osid, buildEpicKickoffPrompt(epicEntry, ownerRequest))
+  }
 
   // RESUME_STAGE=gate2 (with ORCH_SESSION set): gate 1 was already approved and every Bead already
   // handed off in a prior run of this driver against the same session; skip straight to Gate 2.
@@ -210,6 +220,16 @@ try {
     receipt.dependencyRelationCount = depCount
     console.log('dependency relations among epic Beads:', depCount)
     if (depCount < EXPECT_DEPENDENCIES) throw new Error(`expected >= ${EXPECT_DEPENDENCIES} br dep relation(s) among epic Beads, found ${depCount}`)
+  }
+
+  if (process.env.OWNER_ANSWERS_GATE1 === '1') {
+    receipt.gate1.decision = 'left pending for the owner (OWNER_ANSWERS_GATE1=1)'
+    loopOn = false
+    const pendingOut = process.env.RECEIPT_PATH ?? resolve(EPIC_WT, 'apps/factory-playground/workspace/factory-runs', `live-${EPIC}.json`)
+    await mkdir(dirname(pendingOut), { recursive: true })
+    await writeFile(pendingOut, JSON.stringify(receipt, null, 2))
+    console.log('OWNER_ANSWERS_GATE1=1: Gate 1 validated and left pending in the shared Inbox; receipt at', pendingOut)
+    process.exit(0)
   }
 
   await answerGate(osid, gate1, { decision: 'approve', notes: 'approved by acceptance driver' })
@@ -320,8 +340,8 @@ try {
   loopOn = false
   console.log('\n=== ORCHESTRATOR AFTER STOP ===\n' + lastText(stopped))
 
-  const workers = (await call('GET', '/boring-worker/sessions')).sessions ?? []
-  const reviewers = (await call('GET', '/boring-reviewer/sessions')).sessions ?? []
+  const workers = ((await call('GET', '/boring-worker/sessions')).sessions ?? []).filter((worker) => (worker.title ?? '').includes(osid.slice(0, 8)))
+  const reviewers = ((await call('GET', '/boring-reviewer/sessions')).sessions ?? []).filter((reviewer) => (reviewer.title ?? '').startsWith(`[${FEATURE_NAME}]`))
   receipt.workerSessions = workers.map(s => s.ref?.sessionId ?? s.sessionId)
   receipt.reviewerSessions = reviewers.map(s => s.ref?.sessionId ?? s.sessionId)
   for (const w of workers.slice(0, 3)) { const s = await state('boring-worker', w.ref?.sessionId ?? w.sessionId); console.log(`\n=== WORKER ${w.ref?.sessionId ?? w.sessionId} (${s.state.currentModel?.id ?? ''}) ===\n` + lastText(s)); console.log('worker tool parts:', JSON.stringify(toolNames(s))) }

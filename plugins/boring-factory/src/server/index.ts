@@ -50,6 +50,7 @@ export {
   getFactorySandboxSnapshotInfo,
   gitFetchAuthShellSetup,
   invalidateEpicSnapshot,
+  invalidateAllEpicSnapshots,
   isBootstrapRefreshNeeded,
   peekEpicSnapshot,
   registryKey,
@@ -61,6 +62,7 @@ export {
   warmUpFactorySandboxSnapshot,
 } from './sandbox'
 export type {
+  CreateFactorySandboxPluginOptions,
   CreatePerEpicVercelProviderOptions,
   FactorySandboxSnapshotInfo,
   FactorySandboxSnapshotMode,
@@ -70,6 +72,25 @@ export {
   createFactoryHostedApp,
   deriveFactoryWorkspaceScopeId,
 } from './host'
+export { buildEpicKickoffPrompt } from './host/epicKickoff'
+export {
+  createFactoryEpicRegistry,
+  FactoryEpicRegistryError,
+  validateFactoryEpicEntry,
+} from './host/epicRegistry'
+export type {
+  FactoryEpicEntry,
+  FactoryEpicModels,
+  FactoryEpicRegistry,
+} from './host/epicRegistry'
+export type { FactoryEpicLiveEntry } from './host/factoryHub'
+export {
+  createFactorySessionBindings,
+  FactoryEpicResolutionError,
+  FactorySessionBindingError,
+  resolveFactoryEpic,
+} from './host/sessionBindings'
+export type { FactorySessionBindings } from './host/sessionBindings'
 export type {
   CreateFactoryDemoPluginOptions,
   DemoSandboxFactory,

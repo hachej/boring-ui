@@ -1,8 +1,8 @@
 // Live Factory recovery acceptance: crash the API while a Worker is mid-Bead, restart, and verify the
 // re-armed supervision recovers the stale claim and the epic still completes. Never merges.
 //
-// Usage: EPIC_WT=<epic worktree> EPIC_KEY=<key> LAUNCH=<path to launch script> node scripts/live-epic-recovery.mjs
-// LAUNCH must (re)start the API on 127.0.0.1:5230 for EPIC_WT/EPIC_KEY and exit when it is up.
+// Usage: EPIC_WT=<epic worktree> EPIC_KEY=<key> LAUNCH=<hub launch script> node scripts/live-epic-recovery.mjs
+// Run against an isolated test hub: this driver deliberately kills and restarts the shared host.
 import { randomUUID } from 'node:crypto'
 import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -13,11 +13,9 @@ const EPIC_WT = process.env.EPIC_WT; const EPIC = process.env.EPIC_KEY; const LA
 if (!EPIC_WT || !EPIC || !LAUNCH) throw new Error('EPIC_WT, EPIC_KEY and LAUNCH are required')
 const STATE_ROOT = process.env.STATE_ROOT ?? resolve(EPIC_WT, '../issue-1508-factory-playground/apps/factory-playground/.factory-state')
 const base = 'http://127.0.0.1:5230/api/v1/agents'
-const headers = { 'x-boring-workspace-id': 'factory-playground', 'content-type': 'application/json' }
+const headers = { 'x-boring-workspace-id': 'factory-hub', 'content-type': 'application/json' }
 const call = async (method, url, body) => { const r = await fetch(base + url, { method, headers, ...(body ? { body: JSON.stringify(body) } : {}) }); const t = await r.text(); if (!r.ok) throw new Error(`${method} ${url}: ${r.status} ${t.slice(0, 500)}`); return t ? JSON.parse(t) : undefined }
-const create = async (type, title) => (await call('POST', `/${type}/sessions`, { requestId: randomUUID(), title })).sessionId
-// Session titles lead with the feature name, per docs/procedures/naming-conventions.md.
-const featureName = async () => { const r = await fetch('http://127.0.0.1:5230/api/v1/workspace/meta', { headers }); if (!r.ok) throw new Error(`workspace/meta: ${r.status}`); const meta = await r.json(); if (!meta.featureName) throw new Error('workspace/meta did not report a featureName'); return meta.featureName }
+const hubCall = async (method, path, body) => { const r = await fetch(`http://127.0.0.1:5230${path}`, { method, headers, ...(body ? { body: JSON.stringify(body) } : {}) }); const t = await r.text(); if (!r.ok) throw new Error(`${method} ${path}: ${r.status} ${t.slice(0, 500)}`); return t ? JSON.parse(t) : undefined }
 const prompt = async (type, sid, content) => { for (let i = 0; i < 60; i++) { try { return await call('POST', `/${type}/sessions/${sid}/prompt`, { requestId: randomUUID(), clientNonce: randomUUID(), content, requireIdle: true }) } catch (e) { if (!String(e.message).includes('not idle')) throw e; await new Promise(r => setTimeout(r, 3000)) } } throw new Error('session never idle for prompt') }
 const state = async (type, sid) => call('GET', `/${type}/sessions/${sid}/state`)
 const sessions = async (type) => ((await call('GET', `/${type}/sessions`)).sessions ?? []).map(s => ({ sessionId: s.ref?.sessionId ?? s.sessionId, status: s.status, turnCount: s.turnCount, title: s.title }))
@@ -31,11 +29,14 @@ const relaunch = () => new Promise((res, rej) => { const p = spawn('bash', [LAUN
 
 const baseSha = await git(['rev-parse', 'HEAD'])
 const branch = await git(['rev-parse', '--abbrev-ref', 'HEAD'])
+const registered = await hubCall('GET', '/api/v1/factory/epics')
+let epicEntry = registered.find((entry) => entry.epicKey === EPIC)
+if (!epicEntry) epicEntry = await hubCall('POST', '/api/v1/factory/epics', { epicKey: EPIC, featureName: process.env.FEATURE_NAME || 'Farewell API', worktree: EPIC_WT, branch, start: false })
 const receipt = { epic: EPIC, baseSha, branch, phases: [] }
 const phase = (name, data) => { console.log(`\n### ${name}`, JSON.stringify(data)); receipt.phases.push({ name, at: new Date().toISOString(), ...data }) }
 let osid
 try {
-  osid = await create('boring-orchestrator', `[${await featureName()}] Orchestrator (recovery)`); receipt.orchestratorSessionId = osid
+  osid = epicEntry.orchestratorSessionId; if (!osid) throw new Error(`epic ${EPIC} has no Orchestrator session`); receipt.orchestratorSessionId = osid
   await prompt('boring-orchestrator', osid, [
     `Host context: your session id is ${osid}.`,
     `Owner request for epic ${EPIC} (shared worktree = this workspace, branch ${branch}).`,

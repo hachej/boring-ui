@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createFactorySupervisionPlugin, SUPERVISION_MIN_INTERVAL_MS, SUPERVISION_MAX_INTERVAL_MS } from './supervisionPlugin'
+import type { FactoryEpicEntry, FactoryEpicRegistry } from './epicRegistry'
+import type { FactorySessionBindings } from './sessionBindings'
 
 const temporaryRoots: string[] = []
 
@@ -19,6 +21,46 @@ async function makeStateRoot(): Promise<string> {
 async function writeSupervisionFile(stateRoot: string, entries: Record<string, unknown>): Promise<void> {
   await mkdir(stateRoot, { recursive: true })
   await writeFile(resolve(stateRoot, 'supervision.json'), JSON.stringify({ entries }, null, 2), 'utf8')
+}
+
+function epicDeps(): { registry: FactoryEpicRegistry; sessionBindings: FactorySessionBindings } {
+  const entry: FactoryEpicEntry = {
+    epicKey: 'live-farewell',
+    featureName: 'Live Farewell',
+    worktree: '/tmp/factory-live-farewell',
+    branch: 'epic/live-farewell',
+    repositoryRoot: '/tmp/repository',
+    createdAt: '2026-09-05T00:00:00.000Z',
+    status: 'active',
+  }
+  const bindings: Record<string, string> = {
+    s1: entry.epicKey,
+    'session-orch-1': entry.epicKey,
+    'session-restart': entry.epicKey,
+    'session-busy': entry.epicKey,
+    'session-close': entry.epicKey,
+  }
+  return {
+    registry: {
+      load: async () => [entry],
+      list: async () => [entry],
+      get: async (key) => key === entry.epicKey ? entry : undefined,
+      register: async () => entry,
+      setOrchestratorSession: async () => entry,
+      markClosed: async () => ({ ...entry, status: 'closed' }),
+    },
+    sessionBindings: {
+      load: async () => ({ ...bindings }),
+      get: async (sessionId) => bindings[sessionId],
+      bind: async (sessionId, key) => { bindings[sessionId] = key },
+      unbind: async (sessionId) => { delete bindings[sessionId] },
+      inherit: async (parentSessionId, childSessionId) => {
+        const key = bindings[parentSessionId]!
+        bindings[childSessionId] = key
+        return key
+      },
+    },
+  }
 }
 
 interface FakeInjectCall {
@@ -66,7 +108,7 @@ async function waitFor(predicate: () => boolean | Promise<boolean>, timeoutMs = 
 
 describe('factory supervision plugin', () => {
   it('grants `supervise` only to boring-orchestrator', () => {
-    const { plugin } = createFactorySupervisionPlugin({ stateRoot: '/tmp/does-not-matter', workspaceScopeId: 'factory-live-farewell' })
+    const { plugin } = createFactorySupervisionPlugin({ stateRoot: '/tmp/does-not-matter', workspaceScopeId: 'factory-hub', ...epicDeps() })
     expect(plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }).map((tool) => tool.name)).toEqual(['supervise'])
     expect(plugin.agentToolFactory?.({ agentTypeId: 'boring-worker' })).toEqual([])
     expect(plugin.agentToolFactory?.({ agentTypeId: 'boring-reviewer' })).toEqual([])
@@ -76,7 +118,7 @@ describe('factory supervision plugin', () => {
   it('start persists an entry to supervision.json, status reads it back, and stop removes it', async () => {
     const stateRoot = await makeStateRoot()
     const { app } = createFakeApp({ status: 'idle' })
-    const handle = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId: 'factory-live-farewell' })
+    const handle = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId: 'factory-hub', ...epicDeps() })
     handle.bind(app as never)
     const [tool] = handle.plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
     expect(tool).toBeDefined()
@@ -111,7 +153,7 @@ describe('factory supervision plugin', () => {
 
   it('rejects an unknown op and an out-of-range intervalMs before touching the state file', async () => {
     const stateRoot = await makeStateRoot()
-    const { plugin } = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId: 'factory-live-farewell' })
+    const { plugin } = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId: 'factory-hub', ...epicDeps() })
     const [tool] = plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
 
     const badOp = await tool!.execute({ op: 'pause' }, { abortSignal: new AbortController().signal, toolCallId: 'c1', sessionId: 's1' })
@@ -135,6 +177,7 @@ describe('factory supervision plugin', () => {
     const stateRoot = await makeStateRoot()
     await writeSupervisionFile(stateRoot, {
       'session-restart': {
+        epicKey: 'live-farewell',
         agentTypeId: 'boring-orchestrator',
         sessionId: 'session-restart',
         intervalMs: 50,
@@ -145,7 +188,7 @@ describe('factory supervision plugin', () => {
     })
 
     const { app, prompts } = createFakeApp({ status: 'idle' })
-    const handle = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId: 'factory-live-farewell' })
+    const handle = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId: 'factory-hub', ...epicDeps() })
     handle.bind(app as never)
     const armedCount = await handle.rearm()
     expect(armedCount).toBe(1)
@@ -161,6 +204,7 @@ describe('factory supervision plugin', () => {
     const stateRoot = await makeStateRoot()
     await writeSupervisionFile(stateRoot, {
       'session-busy': {
+        epicKey: 'live-farewell',
         agentTypeId: 'boring-orchestrator',
         sessionId: 'session-busy',
         intervalMs: 50,
@@ -171,7 +215,7 @@ describe('factory supervision plugin', () => {
     })
 
     const { app, prompts, calls } = createFakeApp({ status: 'streaming' })
-    const handle = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId: 'factory-live-farewell' })
+    const handle = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId: 'factory-hub', ...epicDeps() })
     handle.bind(app as never)
     await handle.rearm()
 
@@ -198,6 +242,7 @@ describe('factory supervision plugin', () => {
     const stateRoot = await makeStateRoot()
     await writeSupervisionFile(stateRoot, {
       'session-close': {
+        epicKey: 'live-farewell',
         agentTypeId: 'boring-orchestrator',
         sessionId: 'session-close',
         intervalMs: 50,
@@ -207,7 +252,7 @@ describe('factory supervision plugin', () => {
       },
     })
     const { app, prompts, triggerClose } = createFakeApp({ status: 'idle' })
-    const handle = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId: 'factory-live-farewell' })
+    const handle = createFactorySupervisionPlugin({ stateRoot, workspaceScopeId: 'factory-hub', ...epicDeps() })
     handle.bind(app as never)
     await handle.rearm()
 

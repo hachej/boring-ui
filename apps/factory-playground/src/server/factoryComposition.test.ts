@@ -13,12 +13,27 @@ import {
   createFactorySandboxPlugin,
   FACTORY_WORKER_AGENT_TYPE_ID,
   deriveFactoryWorkspaceScopeId,
+  type FactoryEpicEntry,
+  type FactoryEpicRegistry,
+  type FactorySessionBindings,
 } from '@hachej/boring-factory/server'
 import { simulateFactoryFeature } from './simulateFeature'
 
 const EPIC_KEY = 'live-farewell'
 const WORKSPACE_SCOPE_ID = deriveFactoryWorkspaceScopeId(EPIC_KEY)
-const DELEGATE_OPTIONS = { workspaceScopeId: WORKSPACE_SCOPE_ID, epicKey: EPIC_KEY, featureName: 'Farewell API', workspaceRoot: process.cwd() }
+const EPIC_ENTRY: FactoryEpicEntry = {
+  epicKey: EPIC_KEY, featureName: 'Farewell API', worktree: process.cwd(), branch: 'epic/live-farewell',
+  repositoryRoot: process.cwd(), createdAt: '2026-09-05T00:00:00.000Z', status: 'active',
+}
+const EPIC_REGISTRY: FactoryEpicRegistry = {
+  load: async () => [EPIC_ENTRY], list: async () => [EPIC_ENTRY], get: async (key) => key === EPIC_KEY ? EPIC_ENTRY : undefined,
+  register: async () => EPIC_ENTRY, setOrchestratorSession: async () => EPIC_ENTRY, markClosed: async () => ({ ...EPIC_ENTRY, status: 'closed' }),
+}
+const SESSION_BINDINGS: FactorySessionBindings = {
+  load: async () => ({}), get: async () => undefined, bind: async () => {}, unbind: async () => {},
+  inherit: async () => EPIC_KEY,
+}
+const DELEGATE_OPTIONS = { workspaceScopeId: WORKSPACE_SCOPE_ID, registry: EPIC_REGISTRY, sessionBindings: SESSION_BINDINGS }
 
 const appRoot = resolve(import.meta.dirname, '../..')
 const repositoryRoot = resolve(appRoot, '../..')
@@ -35,8 +50,6 @@ describe('native Factory composition', () => {
       orchestrator: 'openai-codex:gpt-5.6-sol',
       worker: 'anthropic:claude-sonnet-4-6',
       reviewer: 'openai-codex:gpt-5.4',
-      epicKey: 'live-farewell',
-      featureName: 'Farewell API',
     })
     expect(fleet.map((agent) => agent.agentTypeId)).toEqual([
       FACTORY_ORCHESTRATOR_AGENT_TYPE_ID,
@@ -53,14 +66,14 @@ describe('native Factory composition', () => {
     expect(reviewer.plugins ?? []).toEqual([])
     expect(reviewer.model?.preferred).toBe('openai-codex:gpt-5.4')
     expect(reviewer.definition.instructions).toContain('boring-skill:start name=fresh-eyes')
-    expect(reviewer.definition.instructions).toContain('epic:live-farewell')
-    expect(reviewer.definition.instructions).toContain('You review only Beads labelled `epic:live-farewell`; report, never edit.')
+    expect(reviewer.definition.instructions).toContain('Your epic is given in the host context of your first message')
+    expect(reviewer.definition.instructions).toContain('Review only Beads labelled `epic:<key>` for the epic in host context')
     expect(orchestrator.definition.instructions).toContain('boring-skill:start name=plan')
     expect(worker.definition.instructions).toContain('boring-skill:start name=exec')
     expect(worker.definition.instructions).not.toContain('boring-skill:start name=plan')
-    expect(orchestrator.definition.instructions).toContain('epic:live-farewell')
-    expect(worker.definition.instructions).toContain('epic:live-farewell')
-    expect(worker.definition.instructions).toContain('br ready --label epic:live-farewell --unassigned')
+    expect(orchestrator.definition.instructions).toContain('epic:<key>')
+    expect(worker.definition.instructions).toContain('epic:<key>')
+    expect(worker.definition.instructions).toContain('br ready --label epic:<key> --unassigned')
 
     // owner-gate is no longer part of the Worker's canonical skill set; only the Orchestrator keeps it.
     expect(worker.definition.instructions).not.toContain('boring-skill:start name=owner-gate')
@@ -91,14 +104,11 @@ describe('native Factory composition', () => {
     expect(orchestrator.definition.instructions).toContain('`demo_sandbox`')
     expect(reviewer.definition.instructions).not.toContain('factory-precedence')
 
-    // Naming convention (docs/procedures/naming-conventions.md): feature name flows into the
-    // epic-binding appendix so Beads/sessions the agent creates lead with `[Feature Name]`.
-    expect(orchestrator.definition.instructions).toContain('(**Farewell API**)')
-    expect(orchestrator.definition.instructions).toContain('titled per docs/procedures/naming-conventions.md, i.e. `[Farewell API] <verb phrase>` (`[Farewell API] Epic`')
+    expect(orchestrator.definition.instructions).toContain('feature name, worktree, and branch for every tool call')
 
     const root = await mkdtemp(resolve(tmpdir(), 'factory-sandbox-composition-'))
     temporaryRoots.push(root)
-    const sandbox = await createFactorySandboxPlugin(root, root, {})
+    const sandbox = await createFactorySandboxPlugin({ stateRoot: root, env: {}, workspaceScopeId: 'factory-hub', registry: EPIC_REGISTRY, sessionBindings: SESSION_BINDINGS })
     expect(sandbox.agentToolFactory?.({ agentTypeId: FACTORY_WORKER_AGENT_TYPE_ID }).map((tool) => tool.name))
       .toEqual(['sandbox', 'sandbox_bash'])
     expect(() => sandbox.agentToolFactory?.({ agentTypeId: FACTORY_ORCHESTRATOR_AGENT_TYPE_ID }))
@@ -123,11 +133,11 @@ describe('native Factory composition', () => {
     try {
       const meta = await app.inject({ method: 'GET', url: '/api/v1/workspace/meta' })
       expect(meta.statusCode).toBe(200)
-      const metaBody = meta.json<{ epicKey: string }>()
-      expect(typeof metaBody.epicKey).toBe('string')
-      expect(metaBody.epicKey.length).toBeGreaterThan(0)
+      const metaBody = meta.json<{ workspaceId: string; epics: unknown[] }>()
+      expect(metaBody.workspaceId).toBe('factory-hub')
+      expect(metaBody.epics).toEqual([])
 
-      const header = { 'x-boring-workspace-id': deriveFactoryWorkspaceScopeId(metaBody.epicKey) }
+      const header = { 'x-boring-workspace-id': metaBody.workspaceId }
       const createSession = async (agentTypeId: string) => {
         const response = await app.inject({
           method: 'POST',
@@ -167,7 +177,7 @@ describe('native Factory composition', () => {
     }
   }, 30_000)
 
-  it('starts a direct headless host from one registration tuple', async () => {
+  it('starts a direct headless hub without binding an epic at boot', async () => {
     const root = await mkdtemp(resolve(tmpdir(), 'factory-headless-host-'))
     temporaryRoots.push(root)
     const stateRoot = resolve(root, 'state')
@@ -177,8 +187,6 @@ describe('native Factory composition', () => {
 
     const registration = {
       workspaceRoot,
-      epicKey: 'headless-proof',
-      featureName: 'Headless Proof',
       stateRoot,
       provider: 'local-simulation',
       apiPort: 5640,
@@ -195,19 +203,28 @@ describe('native Factory composition', () => {
       repositoryRoot,
       registration,
       logger: false,
+      listen: false,
     })
     try {
-      const response = await fetch(`http://127.0.0.1:${registration.apiPort}/api/v1/workspace/meta`)
-      expect(response.status).toBe(200)
-      const meta = await response.json() as { workspaceRoot: string; epicKey: string; featureName: string; workspaceId: string }
+      const response = await started.app.inject({ method: 'GET', url: '/api/v1/workspace/meta' })
+      expect(response.statusCode).toBe(200)
+      const meta = response.json() as { workspaceRoot: string; epics: unknown[]; workspaceId: string }
       expect(meta.workspaceRoot).toBe(registration.workspaceRoot)
-      expect(meta.epicKey).toBe(registration.epicKey)
-      expect(meta.featureName).toBe(registration.featureName)
-      expect(meta.workspaceId).toBe(deriveFactoryWorkspaceScopeId(registration.epicKey))
+      expect(meta.epics).toEqual([])
+      expect(meta.workspaceId).toBe('factory-hub')
     } finally {
       started.host.close()
       await started.app.close()
     }
+
+    await expect(startFactoryHost({
+      appRoot,
+      repositoryRoot,
+      registration: { ...registration, stateRoot: resolve(root, 'legacy-state') },
+      env: { BORING_FACTORY_EPIC_KEY: 'Not-A-Slug', BORING_FACTORY_FEATURE_NAME: 'Legacy Intake' },
+      logger: false,
+      listen: false,
+    })).rejects.toThrow('epicKey must be a lowercase slug')
   })
 
   it.runIf(brAvailable)('executes and cleans a two-Worker feature simulation through real sandbox tools', async () => {

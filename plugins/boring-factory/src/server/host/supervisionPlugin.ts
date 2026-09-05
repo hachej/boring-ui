@@ -4,6 +4,8 @@ import { resolve } from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { defineServerPlugin } from '@hachej/boring-workspace/server'
 import type { AgentTool, ToolExecContext, ToolResult } from '@hachej/boring-agent/shared'
+import type { FactoryEpicRegistry } from './epicRegistry'
+import { FactoryEpicResolutionError, resolveFactoryEpic, type FactorySessionBindings } from './sessionBindings'
 
 export const FACTORY_SUPERVISION_PLUGIN_ID = 'factory-supervision'
 
@@ -25,6 +27,7 @@ const DEFAULT_PROMPT =
   'Report durable end-state facts only; never implement.'
 
 export interface SupervisionEntry {
+  readonly epicKey: string
   readonly agentTypeId: string
   readonly sessionId: string
   readonly intervalMs: number
@@ -44,6 +47,8 @@ export interface CreateFactorySupervisionPluginOptions {
   readonly stateRoot: string
   /** Host-owned workspace identity used on every in-process `app.inject` call. */
   readonly workspaceScopeId: string
+  readonly registry: FactoryEpicRegistry
+  readonly sessionBindings: FactorySessionBindings
   /** Default nudge interval for `start` calls that omit `intervalMs`. */
   readonly defaultIntervalMs?: number
 }
@@ -74,6 +79,17 @@ function jsonResult(details: unknown, isError = false): ToolResult {
 
 function invalidInputResult(message: string): ToolResult {
   return jsonResult({ code: 'INVALID_INPUT', message }, true)
+}
+
+function epicResolutionResult(error: unknown): ToolResult {
+  if (error instanceof FactoryEpicResolutionError) return jsonResult({ code: error.code, message: error.message }, true)
+  return jsonResult({ code: 'EPIC_RESOLUTION_FAILED', message: error instanceof Error ? error.message : 'failed to resolve Factory epic' }, true)
+}
+
+function modelSelection(encoded: string | undefined): { provider: string; id: string } | undefined {
+  const separator = encoded?.indexOf(':') ?? -1
+  if (!encoded || separator <= 0 || separator === encoded.length - 1) return undefined
+  return { provider: encoded.slice(0, separator), id: encoded.slice(separator + 1) }
 }
 
 async function readState(statePath: string): Promise<SupervisionState> {
@@ -110,6 +126,7 @@ export function createFactorySupervisionPlugin(
 
   let boundApp: FastifyInstance | undefined
   const timers = new Map<string, ReturnType<typeof setInterval>>()
+  let stateMutations = Promise.resolve()
 
   function clearTimerFor(sessionId: string): void {
     const timer = timers.get(sessionId)
@@ -120,10 +137,15 @@ export function createFactorySupervisionPlugin(
   }
 
   async function mutateState(mutator: (current: SupervisionState) => SupervisionState): Promise<SupervisionState> {
-    await mkdir(stateRoot, { recursive: true })
-    const current = await readState(statePath)
-    const next = mutator(current)
-    await writeStateAtomic(statePath, next)
+    let next!: SupervisionState
+    const operation = stateMutations.then(async () => {
+      await mkdir(stateRoot, { recursive: true })
+      const current = await readState(statePath)
+      next = mutator(current)
+      await writeStateAtomic(statePath, next)
+    })
+    stateMutations = operation.catch(() => undefined)
+    await operation
     return next
   }
 
@@ -152,6 +174,12 @@ export function createFactorySupervisionPlugin(
           outcome = 'skipped-busy'
         } else {
           const tickNumber = entry.ticks + 1
+          const epic = await options.registry.get(entry.epicKey)
+          if (!epic || epic.status !== 'active') {
+            clearTimerFor(sessionId)
+            return
+          }
+          const selectedModel = modelSelection(epic.models?.orchestrator)
           const promptResponse = await app.inject({
             method: 'POST',
             url: `/api/v1/agents/${entry.agentTypeId}/sessions/${entry.sessionId}/prompt`,
@@ -161,6 +189,7 @@ export function createFactorySupervisionPlugin(
               clientNonce: randomUUID(),
               content: `Supervision tick ${tickNumber} (${new Date().toISOString()}): ${entry.prompt}`,
               requireIdle: true,
+              ...(selectedModel ? { model: selectedModel } : {}),
             },
           })
           outcome = promptResponse.statusCode === 202 ? 'sent' : 'error'
@@ -201,8 +230,10 @@ export function createFactorySupervisionPlugin(
 
   async function rearm(): Promise<number> {
     const state = await readState(statePath)
+    const activeKeys = new Set((await options.registry.list()).filter((entry) => entry.status === 'active').map((entry) => entry.epicKey))
     let count = 0
     for (const entry of Object.values(state.entries)) {
+      if (!entry.epicKey || !activeKeys.has(entry.epicKey)) continue
       arm(entry.sessionId, entry.intervalMs)
       count += 1
     }
@@ -242,6 +273,10 @@ export function createFactorySupervisionPlugin(
     parameters: {
       type: 'object',
       properties: {
+        epicKey: {
+          type: 'string',
+          description: 'Optional explicit epic override. Normally the host resolves the epic from this session binding.',
+        },
         op: {
           type: 'string',
           enum: ['start', 'stop', 'status'],
@@ -266,10 +301,17 @@ export function createFactorySupervisionPlugin(
       if (!op) return invalidInputResult('op must be one of "start", "stop", "status"')
       const sessionId = ctx.sessionId
       if (!sessionId) return invalidInputResult('supervise requires a known session id')
+      let epic
+      try {
+        epic = await resolveFactoryEpic(params, ctx, options.registry, options.sessionBindings)
+      } catch (error) {
+        return epicResolutionResult(error)
+      }
 
       if (op === 'status') {
         const state = await readState(statePath)
-        return jsonResult(state.entries[sessionId] ?? null)
+        const entry = state.entries[sessionId]
+        return jsonResult(entry?.epicKey === epic.epicKey ? entry : null)
       }
 
       if (op === 'stop') {
@@ -291,6 +333,7 @@ export function createFactorySupervisionPlugin(
       const next = await mutateState((current) => {
         const existing = current.entries[sessionId]
         const entry: SupervisionEntry = {
+          epicKey: epic.epicKey,
           agentTypeId: SUPERVISED_AGENT_TYPE_ID,
           sessionId,
           intervalMs,

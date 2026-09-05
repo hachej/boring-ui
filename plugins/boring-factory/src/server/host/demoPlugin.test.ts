@@ -9,6 +9,8 @@ import {
   type DemoSandboxFactory,
   type DemoSandboxHandle,
 } from './demoPlugin'
+import type { FactoryEpicEntry, FactoryEpicRegistry } from './epicRegistry'
+import type { FactorySessionBindings } from './sessionBindings'
 
 const execFileAsync = promisify(execFile)
 const temporaryRoots: string[] = []
@@ -101,14 +103,53 @@ function fakeFetch(status: number): typeof fetch {
   return vi.fn(async () => new Response('', { status })) as unknown as typeof fetch
 }
 
+function epicDeps(worktree: string): {
+  registry: FactoryEpicRegistry
+  sessionBindings: FactorySessionBindings
+} {
+  const entry: FactoryEpicEntry = {
+    epicKey: 'epic-1',
+    featureName: 'Epic One',
+    worktree,
+    branch: 'main',
+    repositoryRoot: worktree,
+    createdAt: '2026-09-05T00:00:00.000Z',
+    status: 'active',
+  }
+  const bindings: Record<string, string> = {
+    s1: entry.epicKey,
+    'session-orch-1': entry.epicKey,
+  }
+  return {
+    registry: {
+      load: async () => [entry],
+      list: async () => [entry],
+      get: async (epicKey) => epicKey === entry.epicKey ? entry : undefined,
+      register: async () => entry,
+      setOrchestratorSession: async () => entry,
+      markClosed: async () => ({ ...entry, status: 'closed' }),
+    },
+    sessionBindings: {
+      load: async () => ({ ...bindings }),
+      get: async (sessionId) => bindings[sessionId],
+      bind: async (sessionId, epicKey) => { bindings[sessionId] = epicKey },
+      unbind: async (sessionId) => { delete bindings[sessionId] },
+      inherit: async (parentSessionId, childSessionId) => {
+        const epicKey = bindings[parentSessionId]!
+        bindings[childSessionId] = epicKey
+        return epicKey
+      },
+    },
+  }
+}
+
 describe('factory demo plugin', () => {
   it('grants `demo_sandbox` only to boring-orchestrator', () => {
     const { plugin } = createFactoryDemoPlugin({
       stateRoot: '/tmp/does-not-matter',
-      workspaceRoot: '/tmp/does-not-matter',
-      epicKey: 'epic-1',
+      ...epicDeps('/tmp/does-not-matter'),
       env: vercelEnv(),
-      workspaceScopeId: 'factory-epic-1',
+      workspaceScopeId: 'factory-hub',
     })
     expect(plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }).map((tool) => tool.name)).toEqual(['demo_sandbox'])
     expect(plugin.agentToolFactory?.({ agentTypeId: 'boring-worker' })).toEqual([])
@@ -118,10 +159,9 @@ describe('factory demo plugin', () => {
   it('rejects every op when the vercel provider is not configured', async () => {
     const { plugin } = createFactoryDemoPlugin({
       stateRoot: '/tmp/does-not-matter',
-      workspaceRoot: '/tmp/does-not-matter',
-      epicKey: 'epic-1',
+      ...epicDeps('/tmp/does-not-matter'),
       env: { BORING_FACTORY_SANDBOX_PROVIDER: 'local-simulation' } as NodeJS.ProcessEnv,
-      workspaceScopeId: 'factory-epic-1',
+      workspaceScopeId: 'factory-hub',
     })
     const [tool] = plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
     const result = await tool!.execute({ op: 'status' }, { abortSignal: new AbortController().signal, toolCallId: 'c1', sessionId: 's1' })
@@ -135,12 +175,11 @@ describe('factory demo plugin', () => {
     const { factory, sandboxes } = createFakeFactory()
     const handle = createFactoryDemoPlugin({
       stateRoot,
-      workspaceRoot,
-      epicKey: 'epic-1',
+      ...epicDeps(workspaceRoot),
       env: vercelEnv(),
       sandboxFactory: factory,
       fetchImpl: fakeFetch(200),
-      workspaceScopeId: 'factory-epic-1',
+      workspaceScopeId: 'factory-hub',
     })
     const [tool] = handle.plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
 
@@ -174,12 +213,11 @@ describe('factory demo plugin', () => {
     const createSpy = vi.spyOn(factory, 'create')
     const handle = createFactoryDemoPlugin({
       stateRoot,
-      workspaceRoot,
-      epicKey: 'epic-1',
+      ...epicDeps(workspaceRoot),
       env: vercelEnv(),
       sandboxFactory: factory,
       fetchImpl: fakeFetch(200),
-      workspaceScopeId: 'factory-epic-1',
+      workspaceScopeId: 'factory-hub',
     })
     const [tool] = handle.plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
 
@@ -210,12 +248,11 @@ describe('factory demo plugin', () => {
     const { factory, sandboxes } = createFakeFactory({ bootstrapExitCode: 1 })
     const handle = createFactoryDemoPlugin({
       stateRoot,
-      workspaceRoot,
-      epicKey: 'epic-1',
+      ...epicDeps(workspaceRoot),
       env: vercelEnv(),
       sandboxFactory: factory,
       fetchImpl: fakeFetch(200),
-      workspaceScopeId: 'factory-epic-1',
+      workspaceScopeId: 'factory-hub',
     })
     const [tool] = handle.plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
 
@@ -238,12 +275,11 @@ describe('factory demo plugin', () => {
     const { factory, sandboxes } = createFakeFactory()
     const handle = createFactoryDemoPlugin({
       stateRoot,
-      workspaceRoot,
-      epicKey: 'epic-1',
+      ...epicDeps(workspaceRoot),
       env: vercelEnv(),
       sandboxFactory: factory,
       fetchImpl: fakeFetch(200),
-      workspaceScopeId: 'factory-epic-1',
+      workspaceScopeId: 'factory-hub',
     })
     const [tool] = handle.plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
 
@@ -278,11 +314,10 @@ describe('factory demo plugin', () => {
     const { factory } = createFakeFactory()
     const handle = createFactoryDemoPlugin({
       stateRoot,
-      workspaceRoot: '/tmp/does-not-matter',
-      epicKey: 'epic-1',
+      ...epicDeps('/tmp/does-not-matter'),
       env: vercelEnv(),
       sandboxFactory: factory,
-      workspaceScopeId: 'factory-epic-1',
+      workspaceScopeId: 'factory-hub',
     })
     const [tool] = handle.plugin.agentToolFactory?.({ agentTypeId: 'boring-orchestrator' }) ?? []
     const result = await tool!.execute({ op: 'stop', id: 'nope' }, { abortSignal: new AbortController().signal, toolCallId: 'c1', sessionId: 's1' })
@@ -300,6 +335,7 @@ describe('factory demo plugin', () => {
     await writeFile(resolve(stateRoot, 'demos.json'), JSON.stringify({
       demos: {
         'demo-expired': {
+          epicKey: 'epic-1',
           sandboxId: 'factory-demo-expired',
           url: 'https://expired.vercel.run',
           sha: 'a'.repeat(40),
@@ -309,6 +345,7 @@ describe('factory demo plugin', () => {
           expiresAt: new Date(Date.now() - 1000).toISOString(),
         },
         'demo-live': {
+          epicKey: 'epic-1',
           sandboxId: 'factory-demo-live',
           url: 'https://live.vercel.run',
           sha: 'b'.repeat(40),
@@ -322,11 +359,10 @@ describe('factory demo plugin', () => {
 
     const handle = createFactoryDemoPlugin({
       stateRoot,
-      workspaceRoot: '/tmp/does-not-matter',
-      epicKey: 'epic-1',
+      ...epicDeps('/tmp/does-not-matter'),
       env: vercelEnv(),
       sandboxFactory: factory,
-      workspaceScopeId: 'factory-epic-1',
+      workspaceScopeId: 'factory-hub',
     })
     const removed = await handle.rearm()
     expect(removed).toBe(1)

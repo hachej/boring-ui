@@ -7,10 +7,10 @@ A dedicated local dogfood app that composes the Factory directly from this check
 - `boring-orchestrator`: canonical `.agents/personas/orchestrator` profile plus canonical `plan`, `feedback`, `owner-gate`, `handoff`, and `show-me` skill sources; receives `factory-supervision`, `factory-demo`, `boring-automation`, and `factory-delegate`.
 - `boring-worker`: canonical `.agents/personas/worker` profile plus canonical `exec`, `fresh-eyes`, and `handoff` skill sources (`owner-gate` is dropped: this seat never raises an owner gate — see `factory-precedence` below); receives the trusted `sandbox` plugin and `factory-delegate`.
 - `boring-reviewer`: canonical `.agents/personas/reviewer` profile plus the canonical `fresh-eyes` skill source; a fresh-context adversarial reviewer of exactly one SHA, with no plugins of its own — it is only ever reached as a `fresh_review` delegation target, never addressed directly by a user.
-- `factory-supervision` is a host-governed durable-nudge plugin, granted only to the Orchestrator. Its `supervise` tool (`op: 'start' | 'stop' | 'status'`) persists an entry (session id, interval, prompt) to `<state root>/supervision.json` and arms an interval timer; the host re-arms every persisted entry from disk on boot (`rearm()`, called from `app.ts` right after `createWorkspaceAgentServer` resolves), so a nudge survives a process restart — the old `pi-mono-loop` `/loop` command's in-memory-only timers did not. Each tick reads the Orchestrator's own session state first: if it isn't `idle` the tick is recorded as `skipped-busy` and nothing is queued; only an idle session gets prompted with `Supervision tick <n> (<ISO time>): <prompt>` (`requireIdle: true`). Default prompt: run `factory_status` and check durable end-state facts against the epic's acceptance criteria, then report facts only — never implement.
-- `factory-delegate` is a host-governed in-process delegation tool, granted per seat from a static table: the Orchestrator's `dispatch_worker` starts a fresh Worker session, and the Worker's `fresh_review` starts a fresh Reviewer session; any other seat gets no delegation tool. Each call creates a brand-new child session (never resumes one), prompts it once, polls the host session-state API until it goes idle, and returns only the child's final assistant text plus `provenance: { sessionId, agentTypeId, model, briefDigest, startedAt, finishedAt }` — the child's tool calls and intermediate messages are never exposed to the caller. The child session's title records the parent session id for traceability. Calling a delegate tool before the host has finished booting returns an `isError` result (`HOST_NOT_BOUND`) instead of throwing. The same plugin also grants the Orchestrator a read-only `factory_status` tool: it reads the shared worktree's git branch/head/remote-head/dirty paths, every Bead labelled `epic:<key>` (status, assignee, labels, comment activity), and whether each Bead's assignee is a live Worker session (`none` / `unknown` / `exists-idle` / `exists-busy`) — the durable end-state the Orchestrator's `epic-binding` Recovery rule uses to release a stale claim (`in_progress` with an `unknown`/`exists-idle` assignee, no handoff comment, no new commit) and never a claim that is `exists-busy`.
+- `factory-supervision` is host-governed and Orchestrator-only. Every persisted entry in `<stateRoot>/supervision.json` carries its epic key; boot re-arms entries for every active registry epic. Busy sessions are skipped rather than queued.
+- `factory-delegate` resolves the calling session through `<stateRoot>/session-bindings.json`, creates a fresh Worker or Reviewer, binds the child to the same epic before its first prompt, and prefixes that prompt with the registry entry's feature, worktree, and branch. `factory_status` uses the same resolution and reports only that epic's Beads, sessions, and git facts. An unbound caller must pass the optional `epicKey` explicitly or receives `EPIC_BINDING_REQUIRED`.
 - each seat may receive its own strict host-selected default model through `BORING_FACTORY_ORCHESTRATOR_MODEL`, `BORING_FACTORY_WORKER_MODEL`, and `BORING_FACTORY_REVIEWER_MODEL`; users may still select another admitted model for a session/turn;
-- both seats receive a host-authored `epic-binding` instruction appendix that scopes them to exactly one epic (label `epic:<key>`); the key defaults to the epic branch name of the workspace root and can be overridden with `BORING_FACTORY_EPIC_KEY`;
+- every seat receives a generic host-authored `epic-binding` appendix: its concrete epic is supplied in the host context of its first message, and every `br` command/tool call stays on that registry entry. Fleet digest-pinned skill blocks are unchanged;
 - the Worker and Orchestrator also receive a `factory-precedence` appendix reconciling the canonical `exec`/`owner-gate` skill blocks (written for per-Bead PRs and blocking `ask_user` gates) with this Factory's actual topology: the epic branch is the only branch and the epic PR belongs to the Orchestrator/owner; Workers never open PRs or run `ask_user` gates and hand off through a Bead comment instead; the Orchestrator's plan-block `/skill:exec` handoff is replaced by `dispatch_worker`, and it raises exactly two Inbox gates itself — see [Owner handoff (Inbox gates)](#owner-handoff-inbox-gates) below;
 - `factory-demo` is a host-governed plugin, granted only to the Orchestrator, backing Gate 2 with a real running demo — see [Owner handoff (Inbox gates)](#owner-handoff-inbox-gates);
 - all seats receive the workspace-scoped ask-user capability;
@@ -25,7 +25,7 @@ The app is deliberately no-auth and local. It is an integration playground, not 
 pnpm --filter factory-playground dev
 ```
 
-Open <http://localhost:5220>. Start on **Boring Orchestrator**, ask it to arm supervision (it calls the host `supervise` tool) or use the seeded feature suggestion. Watch addressed Worker sessions in Agents, claims in Tasks, owner gates in Inbox, and dispatch runs in Automations.
+Open <http://localhost:5220>. Use **Epics** to register work, open an epic's Orchestrator, and watch all addressed Worker sessions and owner gates in the shared sessions list and Inbox.
 
 A deterministic tracer-bullet simulation is available without model or cloud credentials. It requires the real `br` CLI on `PATH`; the simulation test skips rather than substituting a fake graph when `br` is unavailable:
 
@@ -37,14 +37,18 @@ It boots the native app, obtains one host-issued Orchestrator session and two ho
 
 ## Launching your work threads
 
-`scripts/factory-epic.mjs` launches one Factory **instance per work thread** —
-an open PR or branch of this repo, or an epic in another repository — each
-with its own Inbox/Agents/Tasks UI, its own worktree, its own ports, and its
-own state root. Several instances run at once; none of them touch the
-`127.0.0.1:5230`/`5220` pair another live-epic process may already be using,
-and none of them delete or reuse another instance's worktree. Run all of the
-following from `apps/factory-playground/` (or via `pnpm --filter
-factory-playground epic -- <args>`).
+`scripts/factory-epic.mjs` manages work threads inside one Factory Hub. The
+hub owns one `factory-hub` workspace scope, sessions list, and Inbox while
+each epic retains its own worktree, branch, Orchestrator, Workers/reviewers,
+supervision, demos, and snapshots. Run from `apps/factory-playground/` or via
+`pnpm --filter factory-playground epic -- <args>`.
+
+Start the hub once (equivalent to running the app's `dev` command with the
+repository root/state root environment):
+
+```bash
+node scripts/factory-epic.mjs hub up
+```
 
 ```bash
 node scripts/factory-epic.mjs intake
@@ -57,101 +61,65 @@ anything — copy the line you want, edit the feature name if you like, and run
 it.
 
 ```bash
-# A PR of this repo:
-node scripts/factory-epic.mjs up --feature "Filesystem Roots Fix" --pr 1511 --provider local-simulation
+# A new epic branch from origin/main:
+node scripts/factory-epic.mjs up --feature "Filesystem Roots Fix" --request docs/issues/1511/request.md
 
-# A branch of this repo that isn't a PR yet:
+# Seed the epic branch from an existing PR or branch of this repo:
+node scripts/factory-epic.mjs up --feature "Filesystem Roots Fix" --pr 1511
 node scripts/factory-epic.mjs up --feature "Filesystem Roots Fix" --branch fix/1511-filesystem-roots
-
-# An epic in another repository (see "Multi-repo and private repos" below):
-node scripts/factory-epic.mjs up --feature "CDC Backfill" --repo https://github.com/hachej/boring-cdc --base main
 ```
 
 `up`:
 
-1. Resolves (creating if needed) the epic's shared worktree — `git worktree
-   add .worktrees/epic-<slug>` off the PR's/branch's head for `--pr`/
-   `--branch`, or a clone plus a `git worktree add -B epic/<slug>` off
-   `--base` (default: the remote's default branch), pushed with `-u`, for
-   `--repo`. A branch that's already checked out elsewhere (e.g. your own
-   current worktree) falls back to a detached worktree at the same HEAD
-   rather than failing.
-2. Ensures a git identity and runs `br init --no-auto-flush` in that
-   worktree if `.beads` doesn't exist yet.
-3. Picks the next free `(5230 + 2k, 5220 + 2k)` API/UI port pair — see
-   **Port allocation** below — and a fresh per-epic state root under
-   `.factory-state/epics/<slug>/`.
-4. Launches `pnpm exec vite --port <ui>` from **this** checkout (so it reuses
-   already-built package `dist/`s; it never rebuilds them per epic) with
-   `BORING_FACTORY_WORKSPACE_ROOT` pointed at the epic's worktree,
-   `BORING_FACTORY_EPIC_KEY`/`BORING_FACTORY_FEATURE_NAME` set, per-seat model
-   overrides from `--models orch=...,worker=...,reviewer=...`, the sandbox
-   provider from `--provider` (default `local-simulation`), a fresh
-   telemetry salt, and no fixed snapshot id (so a `vercel` epic always gets
-   its own per-epic warm snapshot — see **Remote sandboxes** below). One
-   `vite` process serves both the UI (browser) and the API (Fastify,
-   `configureServer` hook) — a separate headless `dev.ts` process is not
-   also started, since it would try to bind the same API port a second time.
-5. Waits for `/api/v1/workspace/meta`, then prints the UI URL (and a
-   Tailscale IP variant when `tailscale ip -4` is available), plus the exact
-   `live-epic-acceptance.mjs` invocation to drive it headlessly instead.
-6. Records the instance in `.factory-state/epics.json`.
+1. Creates or reuses `<repositoryRoot>/.worktrees/epic-<key>` on
+   `epic/<key>`. The branch starts from `origin/main`, or from the supplied
+   PR/branch head when `--pr`/`--branch` is used.
+2. Runs `pnpm install --offline --frozen-lockfile` and `pnpm build` in the
+   worktree. The host itself never installs or builds.
+3. Calls `POST /api/v1/factory/epics` with the worktree, branch, optional
+   request path and `--models orch=...,worker=...,reviewer=...`.
+4. The hub persists the registry entry, creates and binds `[Feature Name]
+   Orchestrator`, and starts it with the shared kickoff prompt unless
+   `--start false` is supplied. If kickoff is not accepted, intake keeps the
+   bound session usable, reports the failure, and the launcher tells you to retry it.
 
 ```bash
 node scripts/factory-epic.mjs list
 ```
 
-Tables every registered epic: key, live/down (an actual TCP probe of its API
-port, not just registry presence), ports, Bead counts (`br list --label
-epic:<key>`, split open/in_progress/closed), feature name, branch, and
-worktree root.
+Reads `GET /api/v1/factory/epics` and prints each registry entry with live
+Orchestrator status, pending gate, branch HEAD, Bead counts, feature, branch,
+and worktree.
 
 ```bash
-node scripts/factory-epic.mjs down <epic-key> [--keep-worktree]
+node scripts/factory-epic.mjs down <epic-key>
 ```
 
-Stops the instance's process(es) and removes its registry entry. Without
-`--keep-worktree` it also runs `git worktree remove` on the epic's worktree
-(refusing, safely, if it has uncommitted changes — pass `--keep-worktree` or
-clean it up manually in that case).
+Marks the registry entry closed. It never stops the shared hub and never
+deletes the epic worktree.
 
-### Port allocation
+### Host and state contract
 
-`k = 1, 2, 3, …`; API port `5230 + 2k`, UI port `5220 + 2k`. `k = 0` (ports
-5230/5220) is reserved for the separate live-epic-acceptance process this app
-also supports and is never allocated here. The first `k` whose pair is both
-unused in the registry and actually free (a real bind probe, not just an
-absence check) wins — e.g. the first epic gets API 5232 / UI 5222, the second
-API 5234 / UI 5224, and so on.
+The hub defaults to API `5230` and UI `5220`. `BORING_FACTORY_WORKSPACE_ROOT`
+is the canonical repository checkout, not an epic worktree;
+`BORING_FACTORY_STATE_ROOT` holds `epics.json`, `session-bindings.json`, the
+request ledger, supervision, demos, leases, and snapshots. Seat model and
+`BORING_FACTORY_SANDBOX_PROVIDER` variables remain host defaults; per-epic
+`models` override them at intake. `BORING_FACTORY_EPIC_KEY` and
+`BORING_FACTORY_FEATURE_NAME` are no longer boot identity: when present they
+perform a backwards-compatible one-shot intake and the host logs that fact.
+Adopting a legacy Orchestrator copies its native transcript from the former
+`<stateRoot>/epics/<key>/sessions` tree into the shared hub namespace without
+removing the source; sessions already owned by another epic are rejected.
 
-### Multi-repo and private repos
+### Multi-repository status
 
-The workspace root can be any git checkout — personas, skills, and the
-canonical `.agents/skills/*` appendices always load from **this** repo
-(`repositoryRoot` in `app.ts`), independent of `BORING_FACTORY_WORKSPACE_ROOT`.
-`.agents` is marked read-only relative to the workspace root regardless of
-whether that directory exists there, so an external repo with no `.agents` of
-its own is unaffected. Each workspace gets its own `.beads` (created by `br
-init` if missing), so multiple epics against the same external repo don't
-collide — `--repo` clones the repo once into
-`.worktrees/repos/<repo-slug>/` and adds a **separate** `git worktree` per
-epic at `.worktrees/repos/<repo-slug>-<feature-slug>/`, each on its own
-`epic/<feature-slug>` branch.
-
-We checked `hachej/boring-cdc` while writing this: `gh repo view
-hachej/boring-cdc --json isPrivate` reports `{"isPrivate":false}` — it's
-public, so the `fetch`-mode Vercel sandbox path (the default whenever the
-workspace root has a resolvable `origin`) needs no credentials for it today.
-
-For a genuinely **private** repo on the Vercel sandbox path, set
-`BORING_FACTORY_GIT_TOKEN` (or just have `gh auth login`'d — `factory-epic.mjs
-up --provider vercel` falls back to `gh auth token` automatically when the env
-var is unset). The token authenticates the sandbox's own `git clone`/`git
-fetch` of a private origin via a per-call `-c
-http.extraheader="AUTHORIZATION: basic <base64 x-access-token:TOKEN>"` — never
-written to git config, never embedded in a script's literal text (which would
-leak it to `ps` inside the sandbox), and never logged. See
-`resolveFactoryGitToken` in `remoteSnapshotProvider.ts`.
+Registry entries carry `repositoryRoot` separately from `worktree`, and no
+Factory tool assumes the host workspace equals an epic worktree. This keeps
+the future multi-repository boundary open. The current intake endpoint and
+launcher intentionally constrain new entries to the hub's canonical
+repository; `factory-epic.mjs --repo` fails clearly until repository
+registration is implemented.
 
 ## Sandbox modes
 
@@ -177,7 +145,7 @@ The `show-me` skill (`.agents/skills/show-me/SKILL.md`) is attached to the Orche
 - **Gate 1 — plan approval.** Raised right after the Orchestrator materializes the epic's Bead graph, before it arms supervision or dispatches a Worker. Title `[br-<epic bead id or first bead id>] Plan approval: <epic title>`; context carries the goal, the Bead list (id, title, dependency order), the proof commands, and risk/rollback. Same `decision` radio (`approve`/`changes`/`defer`/`reject`) plus an optional notes textarea as Gate 2. On anything but `approve`, the Orchestrator revises or stops — it never arms supervision or dispatches. The only way to skip it is when the owner's own request text literally says "Gate 1 pre-approved".
 - **Gate 2 — merge approval.** Raised once `factory_status` shows every epic Bead handed off (SHA + sandbox proof + `fresh_review` approve on each, local HEAD = remote HEAD, nothing left ready/unassigned). Before raising it, the Orchestrator: (a) opens the epic PR itself with `gh pr create` (or edits the existing one for that branch) — the body is the Owner Review card from `docs/procedures/owner-review-card.md`, filled in, followed by a `## Handover` section (SHA, branch, Worker/reviewer sessions, sandbox receipts); (b) starts a live demo of the exact SHA with `demo_sandbox` (op `start`) and waits for it to report `ready: true`; then (c) raises `ask_user` with the PR URL, head SHA, the demo URL and its lifetime, please-test steps, and the handover lines in `context`. On `approve` the Orchestrator never merges — it comments on the PR that the owner approved at that SHA and reports. On `changes` it opens follow-up Beads labelled `epic:<key>` and dispatches a Worker; it never merges either way.
 
-`demo_sandbox` (plugin `factory-demo`, tool granted only to the Orchestrator) is what backs Gate 2's live demo. It requires the Vercel Factory sandbox provider (`BORING_FACTORY_SANDBOX_PROVIDER=vercel` and `BORING_FACTORY_VERCEL_SNAPSHOT_ID`) and returns an `isError` result otherwise. `op: 'start'` takes `command` (a shell command that serves the demo, run detached), `port` (1024–65535), an optional `sha` (defaults to the workspace's current `HEAD`), an optional `ttlMinutes` (default and hard cap both `BORING_FACTORY_DEMO_MAX_MINUTES`, itself defaulting to 40 — Vercel's hobby-plan sandbox lifetime cap is 45 minutes), an optional `install` command run before `command`, and an optional `readyPath` (default `/`) polled after `command` starts until it answers with a sub-500 status or 120s elapse. It creates a fresh Vercel sandbox from the configured snapshot, seeds it with the same exact-SHA-fetch bootstrap files `remoteSnapshotProvider.ts` uses (`.factory-sha`, `.factory-branch`, `.factory-remote`, `factory-bootstrap.sh`), runs the bootstrap, then `install` if given, then `command` detached, and returns `{ id, url, sha, port, expiresAt, ready }`. `op: 'stop'` (`id`) tears one down; `op: 'status'`/`'list'` (alias) report every live demo, each flagged `expired` once past `expiresAt`. State persists to `<state root>/demos.json`; on boot the host sweeps (stops + forgets) any entry already past its `expiresAt` and leaves the rest armed — the sandbox's own `timeout` is the actual enforcement, this is just bookkeeping cleanup.
+`demo_sandbox` (plugin `factory-demo`, tool granted only to the Orchestrator) backs Gate 2's live demo. It resolves the caller's epic first and defaults `sha` to that epic worktree's `HEAD`. It requires the Vercel Factory sandbox provider and returns an error otherwise. Starts, status/list results, persisted records, and stops are isolated by epic key. State persists to `<stateRoot>/demos.json`; boot sweeps expired entries while leaving live demos recorded.
 
 `apps/factory-playground/scripts/live-epic-acceptance.mjs` answers both gates itself, exactly as an owner would: it polls the Orchestrator's pending question over the same WorkspaceBridge `ask-user.v1.pending`/`ask-user.v1.answer` ops the browser front uses (`POST /api/v1/workspace-bridge/call`, headers `x-csrf-token: browser` + `x-boring-session-id: <sessionId>`), prints the title/context, and answers `{ decision: 'approve', notes: '...' }`. At Gate 2 it additionally verifies the PR body (`## Owner Review` + `## Handover`) via `gh pr view` and fetches the demo URL to confirm it actually serves the feature, before answering and asserting the PR stays `OPEN` (never merged).
 
@@ -192,17 +160,16 @@ pnpm lint:invariants
 
 ## Live epic acceptance run
 
-The real, model-driven run (credentials on the API process; `br` on `PATH`). It uses a throwaway epic worktree as the shared workspace so Worker commits and pushes land on a test branch:
+The real, model-driven run requires credentials on the hub and `br` on `PATH`.
+Register a throwaway epic worktree in the running hub, then select it by key:
 
 ```bash
-git worktree add .worktrees/factory-live-epic -b test/factory-live-epic feat/<your-branch>
-BORING_FACTORY_WORKSPACE_ROOT=$PWD/.worktrees/factory-live-epic \
-BORING_FACTORY_EPIC_KEY=live-farewell \
+git worktree add .worktrees/epic-live-farewell -b epic/live-farewell origin/main
 BORING_FACTORY_ORCHESTRATOR_MODEL=openai-codex:gpt-5.6-sol \
 BORING_FACTORY_WORKER_MODEL=openai-codex:gpt-5.4 \
 BORING_FACTORY_REVIEWER_MODEL=openai-codex:gpt-5.4 \
-  pnpm exec tsx apps/factory-playground/src/server/dev.ts &
-EPIC_WT=$PWD/.worktrees/factory-live-epic EPIC_KEY=live-farewell \
+  apps/factory-playground/scripts/launch-live-api.sh
+EPIC_WT=$PWD/.worktrees/epic-live-farewell EPIC_KEY=live-farewell FEATURE_NAME="Farewell API" \
   node apps/factory-playground/scripts/live-epic-acceptance.mjs
 ```
 
@@ -303,8 +270,8 @@ snapshot happened to be built from. This is the default the moment
 `BORING_FACTORY_VERCEL_SNAPSHOT_ID` is left unset:
 
 - **Registry**: `<stateRoot>/snapshots.json`, entries keyed by
-  `${epicKey}:${lockfileSha256}` (`epicKey` defaults to the workspace's git
-  branch name, `BORING_FACTORY_EPIC_KEY` overrides it). A cache hit reuses
+  `${epicKey}:${lockfileSha256}`, where `epicKey` and the epic worktree come
+  from the host registry/session binding. A cache hit reuses
   the stored snapshot even if the epic's HEAD has advanced since it was
   built — the bootstrap's own incremental rebuild handles those newer
   commits on top of the cached `baseSha`. A miss (new epic, or the lockfile
@@ -329,22 +296,18 @@ snapshot happened to be built from. This is the default the moment
 - **Single-flight**: concurrent callers resolving the same epic's snapshot
   (e.g. the host's boot-time warm-up racing a Worker's first lease) share
   one build rather than racing two.
-- **Host warm-up**: `createFactoryPlayground` (`app.ts`) fires
-  `warmUpFactorySandboxSnapshot` in the background right after boot (never
-  awaited — logged, not fatal, on failure) so the epic's snapshot is usually
-  already resolved by the time the first Worker lease needs one.
-- **Exposed at** `GET /api/v1/workspace/meta` as `sandboxSnapshot: { mode:
-  'fixed' | 'per-epic', snapshotId?, baseSha? }` (`'fixed'` when
-  `BORING_FACTORY_VERCEL_SNAPSHOT_ID` is set; `'per-epic'` otherwise, with
-  `snapshotId`/`baseSha` populated once one has been resolved).
+- **Host warm-up**: Factory Hub fires `warmUpFactorySandboxSnapshot` for
+  every active registry entry after boot and after intake (never awaited —
+  logged, not fatal, on failure).
+- **Exposed at** `GET /api/v1/factory/epics` on each epic's optional
+  `sandboxSnapshot` live facts.
 - **`demoPlugin.ts`'s `demo_sandbox` tool** resolves through the same
   registry when no fixed snapshot id is configured, so an owner-facing demo
   also boots from a snapshot close to the epic's own `baseSha` rather than a
   stale `main` build.
 
-A fixed `BORING_FACTORY_VERCEL_SNAPSHOT_ID` still works exactly as before
-(useful for a Factory instance intentionally pinned to one ref, e.g. CI); it
-simply skips the registry entirely.
+A fixed `BORING_FACTORY_VERCEL_SNAPSHOT_ID` still works as a deliberate
+host-wide snapshot override; it skips per-epic snapshot resolution.
 
 ### One-time setup: the base snapshot (warm by default)
 
