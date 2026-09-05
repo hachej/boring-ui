@@ -2146,6 +2146,11 @@ export async function createCoreWorkspaceAgentServer(
       } satisfies WorkspaceDefaultAgentState
     })
 
+    if (channelStorage) {
+      // Fastify runs onClose hooks in reverse registration order. Register the
+      // root storage hook before Agent Host so Host shutdown completes first.
+      app.addHook('onClose', async () => channelStorage.close())
+    }
     await registerCoreAgentHostEnvironmentRoutes(app, {
       agentHost,
       authorizeAgentRequest: (request) => authorizeAgentRequest(request),
@@ -2158,10 +2163,6 @@ export async function createCoreWorkspaceAgentServer(
       filterModels: options.filterModels,
     }))
     hostMounted = true
-    if (channelStorage) {
-      // Agent Host's onClose hook was registered above; storage remains alive until it finishes.
-      app.addHook('onClose', async () => channelStorage.close())
-    }
 
     const directDispatcherResolver: WorkspaceAgentDispatcherResolver = {
       async runWithWorkspaceAgent(input, run) {
