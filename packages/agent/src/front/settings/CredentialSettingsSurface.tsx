@@ -45,7 +45,7 @@ function updatedLabel(value?: string): string | undefined {
   return Number.isNaN(date.getTime()) ? undefined : date.toLocaleString()
 }
 
-export function CredentialSettingsSurface({
+function CredentialSettingsSurfaceForWorkspace({
   isWorkspaceOwner,
   workspaceId,
   apiBaseUrl = '',
@@ -317,4 +317,10 @@ export function CredentialSettingsSurface({
       </div>
     </SettingsPanel>
   )
+}
+
+/** Workspace identity is also the state boundary: switching workspaces remounts
+ * the inner surface so metadata and pending OAuth/lifecycle state cannot cross. */
+export function CredentialSettingsSurface(props: CredentialSettingsSurfaceProps) {
+  return <CredentialSettingsSurfaceForWorkspace key={props.workspaceId ?? 'unscoped'} {...props} />
 }

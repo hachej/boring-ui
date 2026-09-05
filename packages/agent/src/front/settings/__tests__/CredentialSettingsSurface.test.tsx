@@ -190,6 +190,20 @@ describe('CredentialSettingsSurface', () => {
     }
   })
 
+  test('remounts state at the workspace boundary and ignores an old workspace load', async () => {
+    let finishOldLoad: ((items: readonly CredentialMetadataV1[]) => void) | undefined
+    const list = vi.fn()
+      .mockImplementationOnce(() => new Promise<readonly CredentialMetadataV1[]>((resolve) => { finishOldLoad = resolve }))
+      .mockResolvedValueOnce([{ ...codex, displayName: 'New workspace Codex' }])
+    const api = client({ list })
+    const view = render(<CredentialSettingsSurface isWorkspaceOwner workspaceId="workspace-old" client={api} />)
+
+    view.rerender(<CredentialSettingsSurface isWorkspaceOwner workspaceId="workspace-new" client={api} />)
+    expect(await screen.findByRole('heading', { name: 'New workspace Codex' })).not.toBeNull()
+    await act(async () => { finishOldLoad?.([{ ...anthropic, displayName: 'Old workspace Anthropic' }]) })
+    expect(screen.queryByRole('heading', { name: 'Old workspace Anthropic' })).toBeNull()
+  })
+
   test('requires confirmation before deleting metadata and credential material', async () => {
     const remove = vi.fn(async () => ({ ...anthropic, state: 'intentionally_absent' as const }))
     const api = client({ delete: remove })
