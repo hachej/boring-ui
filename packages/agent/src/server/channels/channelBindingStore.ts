@@ -341,11 +341,16 @@ export class ChannelBindingStore {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`, message.channel, message.conversationKey,
       agentTypeId, binding.workspaceId, binding.authSubjectId, binding.bindingVersion,
       message.providerMessageId, message.text, message.receivedAt).toArray()[0]
-      this.sql.exec(`UPDATE boring_channel_bindings SET last_inbound_at=?,
-          template_sent_for_inbound_at=NULL
+      this.sql.exec(`UPDATE boring_channel_bindings SET
+          template_sent_for_inbound_at=CASE
+            WHEN last_inbound_at IS NULL OR ? > last_inbound_at THEN NULL
+            ELSE template_sent_for_inbound_at
+          END,
+          last_inbound_at=CASE WHEN last_inbound_at IS NULL OR ? > last_inbound_at THEN ? ELSE last_inbound_at END
         WHERE channel=? AND conversation_key=? AND agent_type_id=?`, message.receivedAt,
-      message.channel, message.conversationKey, agentTypeId)
-      return { disposition: 'enqueued', binding: { ...binding, lastInboundAt: message.receivedAt }, queueId: Number(inserted!.id) } as const
+      message.receivedAt, message.receivedAt, message.channel, message.conversationKey, agentTypeId)
+      const updatedBinding = this.getBinding(message.channel, message.conversationKey, agentTypeId) ?? binding
+      return { disposition: 'enqueued', binding: updatedBinding, queueId: Number(inserted!.id) } as const
     }, 'immediate')
   }
 
