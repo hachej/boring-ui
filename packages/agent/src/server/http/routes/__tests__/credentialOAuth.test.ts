@@ -114,6 +114,29 @@ describe('OpenAI Codex OAuth routes', () => {
     expect(await store.read('openai-codex')).toMatchObject({ type: 'oauth', refresh: 'refresh-secret' })
   })
 
+  test('projects select prompts as opaque choices and translates the response internally', async () => {
+    const broker = createOpenAiCodexOAuthBrokerV1({
+      credentialStoreForActor: () => new InMemoryCredentialStore(),
+      createRuntime: async () => ({
+        async logout() {},
+        async login(_provider, _type, interaction) {
+          const selected = await interaction.prompt({
+            type: 'select', message: 'provider-message-token-canary',
+            options: [{ id: 'provider-id-token-canary', label: 'provider-label-token-canary' }],
+          })
+          expect(selected).toBe('provider-id-token-canary')
+          return { type: 'oauth', refresh: 'refresh-canary', access: 'access-canary', expires: 1 }
+        },
+      }),
+    })
+    const flow = await broker.start('workspace-a', 'owner')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const pending = broker.get('workspace-a', 'owner', flow.flowId)
+    expect(pending?.prompt).toEqual({ type: 'select', options: [{ id: '0', label: 'Option 1' }] })
+    expect(JSON.stringify(pending)).not.toContain('token-canary')
+    await broker.respond('workspace-a', 'owner', flow.flowId, '0')
+  })
+
   test('cancels and fences an in-flight login before disconnect returns', async () => {
     let releaseLogin!: () => void
     const loginGate = new Promise<void>((resolve) => { releaseLogin = resolve })

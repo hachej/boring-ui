@@ -51,6 +51,7 @@ export interface OpenAiCodexOAuthBrokerOptionsV1 {
 
 interface PendingPrompt {
   readonly projection: SafeOAuthPromptV1
+  readonly selectValues?: readonly string[]
   readonly resolve: (value: string) => void
   readonly reject: (error: Error) => void
   readonly signal?: AbortSignal
@@ -97,14 +98,20 @@ function safeEvent(event: AuthEvent): SafeOAuthEventV1 | undefined {
   return { type: 'progress' }
 }
 
-function safePrompt(prompt: AuthPrompt): SafeOAuthPromptV1 {
-  if (prompt.type !== 'select') return { type: prompt.type }
+function safePrompt(prompt: AuthPrompt): {
+  readonly projection: SafeOAuthPromptV1
+  readonly selectValues?: readonly string[]
+} {
+  if (prompt.type !== 'select') return { projection: { type: prompt.type } }
+  const options = prompt.options.slice(0, 32)
   return {
-    type: prompt.type,
-    options: prompt.options.slice(0, 32).map((option) => ({
-      id: option.id.slice(0, 128),
-      label: option.label.slice(0, 256),
-    })),
+    // Provider-authored option ids and labels are not safe response data. Use
+    // opaque positional ids and translate them back only inside the broker.
+    projection: {
+      type: prompt.type,
+      options: options.map((_, index) => ({ id: String(index), label: `Option ${index + 1}` })),
+    },
+    selectValues: options.map((option) => option.id),
   }
 }
 
@@ -186,8 +193,10 @@ export function createOpenAiCodexOAuthBrokerV1(
             prompt(prompt) {
               if (flow.prompt) return Promise.reject(new Error('OAuth prompt already pending'))
               return new Promise<string>((resolve, reject) => {
+                const safe = safePrompt(prompt)
                 const pending: PendingPrompt = {
-                  projection: safePrompt(prompt),
+                  projection: safe.projection,
+                  selectValues: safe.selectValues,
                   resolve,
                   reject,
                   signal: prompt.signal,
@@ -225,8 +234,12 @@ export function createOpenAiCodexOAuthBrokerV1(
         throw new Error('OAuth flow is not awaiting input')
       }
       const pending = flow.prompt
+      const selected = pending.selectValues
+        ? (/^(0|[1-9]\d*)$/.test(value) ? pending.selectValues[Number(value)] : undefined)
+        : value
+      if (selected === undefined) throw new Error('OAuth flow selection is invalid')
       flow.prompt = undefined
-      pending.resolve(value)
+      pending.resolve(selected)
       return snapshot(flow)
     },
     async cancel(workspaceId, userId, flowId) {
