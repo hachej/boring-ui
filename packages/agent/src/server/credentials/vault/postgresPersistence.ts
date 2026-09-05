@@ -217,7 +217,13 @@ async function destroyReservedConnection(
       FROM pg_stat_activity
       WHERE pid <> pg_backend_pid() AND query LIKE ${`%${probeToken}%`}
     `
-    await boundedWait(terminate, evictionDeadlineMs, undefined, () => terminate.cancel())
+    const rows = await boundedWait(terminate, evictionDeadlineMs, undefined, () => terminate.cancel())
+    if (rows.length === 0) {
+      // The PID-only probe never reached PostgreSQL, so it cannot hold an
+      // advisory lock. Mark the reservation for release; postgres.js defers
+      // reuse until the cancelled query reaches ReadyForQuery.
+      reserved.release()
+    }
   } else {
     const terminate = reserved`SELECT pg_terminate_backend(pg_backend_pid())`
     await boundedWait(terminate, evictionDeadlineMs, undefined, () => terminate.cancel())

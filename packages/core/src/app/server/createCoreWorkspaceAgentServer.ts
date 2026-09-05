@@ -1175,6 +1175,8 @@ export async function createCoreWorkspaceAgentServer(
   // Credential advisory locks need an independently pooled control connection:
   // it must remain available to terminate a reserved lock holder even when the
   // application pool is saturated or its unlock query stalls.
+  // postgres() is lazy: this allocates no socket/handle during startup, so a
+  // construction failure before first credential use has no live pool to leak.
   const credentialEvictionSql = options.credentials ? createDatabase(config).sql : undefined
   if (credentialEvictionSql) {
     app.addHook('onClose', async () => { await credentialEvictionSql.end() })
