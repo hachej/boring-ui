@@ -4,7 +4,10 @@ import type { WhisperLiveKitSnapshot } from "./whisperLiveKit"
 
 const PROTOCOL = "boring.sortformer.v1"
 const MAX_MESSAGE_BYTES = 1_000_000
+/** Segments per message. Snapshots are deltas, so a message carries only revised or new segments. */
 const MAX_SEGMENTS = 2_000
+/** Segments kept per session: a long consultation with a turn every few seconds stays far below this. */
+const MAX_SESSION_SEGMENTS = 20_000
 const FRAME_BYTES = 3_200
 
 export interface SortformerSnapshot {
@@ -24,6 +27,7 @@ export class SortformerConnection {
   private closing = false
   private ready = false
   private revision = 0
+  private segments: SortformerSnapshot["lines"] = []
   private stopId = 0
   private pendingStop: Promise<void> | undefined
   private resolveStop: (() => void) | undefined
@@ -68,7 +72,13 @@ export class SortformerConnection {
           } else if (message.type === "snapshot") {
             if (!this.ready || message.revision <= this.revision) return
             this.revision = message.revision
-            this.callbacks.onSnapshot({ lines: message.lines, remainingDiarizationSeconds: 0 })
+            // A delta replaces everything from `fromIndex` (the segment the
+            // sidecar may have extended plus new ones); a full snapshot has no index.
+            const kept = message.fromIndex === undefined ? [] : this.segments.slice(0, message.fromIndex)
+            if (message.fromIndex !== undefined && message.fromIndex > this.segments.length) throw failure("Sortformer delta skipped segments.")
+            this.segments = kept.concat(message.lines)
+            if (this.segments.length > MAX_SESSION_SEGMENTS) throw new LiveTranscriptError("live_transcript_limit_exceeded", "Sortformer session exceeded the segment limit.", 413)
+            this.callbacks.onSnapshot({ lines: this.segments.slice(), remainingDiarizationSeconds: 0 })
           } else if (message.type === "stopped" && message.id === this.stopId) {
             this.closing = true
             this.resolveStop?.()
@@ -137,7 +147,7 @@ export class SortformerConnection {
 
 export function parseSortformerMessage(raw: string):
   | { type: "ready"; protocol: string }
-  | { type: "snapshot"; revision: number; throughSeconds: number; lines: SortformerSnapshot["lines"] }
+  | { type: "snapshot"; revision: number; throughSeconds: number; fromIndex?: number; lines: SortformerSnapshot["lines"] }
   | { type: "stopped"; id: number } {
   if (new TextEncoder().encode(raw).byteLength > MAX_MESSAGE_BYTES) throw new LiveTranscriptError("live_transcript_limit_exceeded", "Sortformer message exceeded the size limit.", 413)
   let value: unknown
@@ -149,6 +159,7 @@ export function parseSortformerMessage(raw: string):
   if (record.type !== "snapshot" || !isInteger(record.revision) || record.revision < 1 || !isFiniteNumber(record.throughSeconds) || record.throughSeconds < 0 || !Array.isArray(record.segments) || record.segments.length > MAX_SEGMENTS) {
     throw failure("Sortformer snapshot was invalid.")
   }
+  if (record.fromIndex !== undefined && (!isInteger(record.fromIndex) || record.fromIndex < 0)) throw failure("Sortformer snapshot index was invalid.")
   const throughSeconds = record.throughSeconds
   const lines = record.segments.map((segment) => {
     if (!segment || typeof segment !== "object" || Array.isArray(segment)) throw failure("Sortformer segment was invalid.")
@@ -158,7 +169,7 @@ export function parseSortformerMessage(raw: string):
     }
     return { speaker: item.speaker, startSeconds: item.startSeconds, endSeconds: item.endSeconds, text: "" as const }
   })
-  return { type: "snapshot", revision: record.revision, throughSeconds, lines }
+  return { type: "snapshot", revision: record.revision, throughSeconds, ...(record.fromIndex !== undefined ? { fromIndex: record.fromIndex as number } : {}), lines }
 }
 
 function isInteger(value: unknown): value is number { return typeof value === "number" && Number.isInteger(value) }

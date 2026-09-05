@@ -1,0 +1,420 @@
+{
+ "turnSeconds": 4,
+ "words": [
+  {
+   "text": "nous",
+   "startSeconds": 0.32,
+   "endSeconds": 0.72,
+   "speaker": -1
+  },
+  {
+   "text": "allons",
+   "startSeconds": 0.72,
+   "endSeconds": 1.12,
+   "speaker": -1
+  },
+  {
+   "text": "préparer des",
+   "startSeconds": 1.12,
+   "endSeconds": 1.92,
+   "speaker": -1
+  },
+  {
+   "text": "crêpes. Pour",
+   "startSeconds": 1.92,
+   "endSeconds": 2.56,
+   "speaker": -1
+  },
+  {
+   "text": "cela, il vous",
+   "startSeconds": 2.56,
+   "endSeconds": 2.96,
+   "speaker": -1
+  },
+  {
+   "text": "fera",
+   "startSeconds": 2.96,
+   "endSeconds": 3.12,
+   "speaker": -1
+  },
+  {
+   "text": "de",
+   "startSeconds": 3.12,
+   "endSeconds": 3.28,
+   "speaker": -1
+  },
+  {
+   "text": "la",
+   "startSeconds": 3.28,
+   "endSeconds": 3.84,
+   "speaker": -1
+  },
+  {
+   "text": "farine,",
+   "startSeconds": 3.84,
+   "endSeconds": 4.32,
+   "speaker": -1
+  },
+  {
+   "text": "des",
+   "startSeconds": 4.32,
+   "endSeconds": 4.96,
+   "speaker": -1
+  },
+  {
+   "text": "oeufs, du",
+   "startSeconds": 4.96,
+   "endSeconds": 5.76,
+   "speaker": -1
+  },
+  {
+   "text": "lait,",
+   "startSeconds": 5.76,
+   "endSeconds": 6.16,
+   "speaker": -1
+  },
+  {
+   "text": "une",
+   "startSeconds": 6.16,
+   "endSeconds": 6.48,
+   "speaker": -1
+  },
+  {
+   "text": "pincée de",
+   "startSeconds": 6.48,
+   "endSeconds": 6.88,
+   "speaker": -1
+  },
+  {
+   "text": "sel,",
+   "startSeconds": 6.88,
+   "endSeconds": 7.52,
+   "speaker": -1
+  },
+  {
+   "text": "du",
+   "startSeconds": 7.52,
+   "endSeconds": 8.08,
+   "speaker": -1
+  },
+  {
+   "text": "sucre",
+   "startSeconds": 8.08,
+   "endSeconds": 8.4,
+   "speaker": -1
+  },
+  {
+   "text": "et",
+   "startSeconds": 8.4,
+   "endSeconds": 8.56,
+   "speaker": -1
+  },
+  {
+   "text": "du",
+   "startSeconds": 8.56,
+   "endSeconds": 9.28,
+   "speaker": -1
+  },
+  {
+   "text": "beurre.",
+   "startSeconds": 9.28,
+   "endSeconds": 10.08,
+   "speaker": -1
+  },
+  {
+   "text": "Pour",
+   "startSeconds": 10.08,
+   "endSeconds": 10.56,
+   "speaker": -1
+  },
+  {
+   "text": "commencer,",
+   "startSeconds": 10.56,
+   "endSeconds": 11.04,
+   "speaker": -1
+  },
+  {
+   "text": "mettez la",
+   "startSeconds": 11.04,
+   "endSeconds": 11.44,
+   "speaker": -1
+  },
+  {
+   "text": "farine dans",
+   "startSeconds": 11.44,
+   "endSeconds": 11.76,
+   "speaker": -1
+  },
+  {
+   "text": "un",
+   "startSeconds": 11.76,
+   "endSeconds": 12.24,
+   "speaker": -1
+  },
+  {
+   "text": "saladier.",
+   "startSeconds": 12.24,
+   "endSeconds": 12.64,
+   "speaker": -1
+  },
+  {
+   "text": "Avec",
+   "startSeconds": 12.64,
+   "endSeconds": 12.8,
+   "speaker": -1
+  },
+  {
+   "text": "le",
+   "startSeconds": 12.8,
+   "endSeconds": 12.96,
+   "speaker": -1
+  },
+  {
+   "text": "sel",
+   "startSeconds": 12.96,
+   "endSeconds": 13.12,
+   "speaker": -1
+  },
+  {
+   "text": "et",
+   "startSeconds": 13.12,
+   "endSeconds": 13.28,
+   "speaker": -1
+  },
+  {
+   "text": "le",
+   "startSeconds": 13.28,
+   "endSeconds": 13.92,
+   "speaker": -1
+  },
+  {
+   "text": "sucre.",
+   "startSeconds": 13.92,
+   "endSeconds": 15.36,
+   "speaker": -1
+  },
+  {
+   "text": "Faites",
+   "startSeconds": 15.36,
+   "endSeconds": 15.6,
+   "speaker": -1
+  },
+  {
+   "text": "un",
+   "startSeconds": 15.6,
+   "endSeconds": 15.84,
+   "speaker": -1
+  },
+  {
+   "text": "puits au",
+   "startSeconds": 15.84,
+   "endSeconds": 16.4,
+   "speaker": -1
+  },
+  {
+   "text": "milieu",
+   "startSeconds": 16.4,
+   "endSeconds": 16.64,
+   "speaker": -1
+  },
+  {
+   "text": "et",
+   "startSeconds": 16.64,
+   "endSeconds": 17.12,
+   "speaker": -1
+  },
+  {
+   "text": "versez-y les",
+   "startSeconds": 17.12,
+   "endSeconds": 17.92,
+   "speaker": -1
+  },
+  {
+   "text": "oeufs.",
+   "startSeconds": 17.92,
+   "endSeconds": 18.56,
+   "speaker": -1
+  },
+  {
+   "text": "Commencez à mélanger",
+   "startSeconds": 18.56,
+   "endSeconds": 19.36,
+   "speaker": -1
+  },
+  {
+   "text": "doucement.",
+   "startSeconds": 19.36,
+   "endSeconds": 19.68,
+   "speaker": -1
+  },
+  {
+   "text": "Quand",
+   "startSeconds": 19.68,
+   "endSeconds": 19.84,
+   "speaker": -1
+  },
+  {
+   "text": "le",
+   "startSeconds": 19.84,
+   "endSeconds": 20.16,
+   "speaker": -1
+  },
+  {
+   "text": "mélange devient",
+   "startSeconds": 20.16,
+   "endSeconds": 20.96,
+   "speaker": -1
+  },
+  {
+   "text": "épais,",
+   "startSeconds": 20.96,
+   "endSeconds": 21.44,
+   "speaker": -1
+  },
+  {
+   "text": "ajoutez le lait",
+   "startSeconds": 21.44,
+   "endSeconds": 22.0,
+   "speaker": -1
+  },
+  {
+   "text": "froid",
+   "startSeconds": 22.0,
+   "endSeconds": 22.32,
+   "speaker": -1
+  },
+  {
+   "text": "petit",
+   "startSeconds": 22.32,
+   "endSeconds": 22.48,
+   "speaker": -1
+  },
+  {
+   "text": "à",
+   "startSeconds": 22.48,
+   "endSeconds": 22.72,
+   "speaker": -1
+  },
+  {
+   "text": "petit.",
+   "startSeconds": 22.72,
+   "endSeconds": 23.44,
+   "speaker": -1
+  },
+  {
+   "text": "Quand",
+   "startSeconds": 23.44,
+   "endSeconds": 23.6,
+   "speaker": -1
+  },
+  {
+   "text": "tout le",
+   "startSeconds": 23.6,
+   "endSeconds": 23.84,
+   "speaker": -1
+  },
+  {
+   "text": "lait est mélangé.",
+   "startSeconds": 23.84,
+   "speaker": -1
+  }
+ ],
+ "segments": [
+  {
+   "text": "",
+   "startSeconds": 0.0,
+   "endSeconds": 1.8333333333333333,
+   "speaker": 0
+  },
+  {
+   "text": "",
+   "startSeconds": 2.0,
+   "endSeconds": 4.0,
+   "speaker": 0
+  },
+  {
+   "text": "",
+   "startSeconds": 4.083333333333333,
+   "endSeconds": 4.5,
+   "speaker": 0
+  },
+  {
+   "text": "",
+   "startSeconds": 4.5,
+   "endSeconds": 4.75,
+   "speaker": 1
+  },
+  {
+   "text": "",
+   "startSeconds": 5.0,
+   "endSeconds": 5.333333333333333,
+   "speaker": 1
+  },
+  {
+   "text": "",
+   "startSeconds": 5.333333333333333,
+   "endSeconds": 6.333333333333333,
+   "speaker": 0
+  },
+  {
+   "text": "",
+   "startSeconds": 6.333333333333333,
+   "endSeconds": 8.083333333333334,
+   "speaker": 1
+  },
+  {
+   "text": "",
+   "startSeconds": 8.333333333333334,
+   "endSeconds": 8.666666666666666,
+   "speaker": 1
+  },
+  {
+   "text": "",
+   "startSeconds": 8.666666666666666,
+   "endSeconds": 9.083333333333334,
+   "speaker": 0
+  },
+  {
+   "text": "",
+   "startSeconds": 10.0,
+   "endSeconds": 12.5,
+   "speaker": 0
+  },
+  {
+   "text": "",
+   "startSeconds": 12.5,
+   "endSeconds": 13.666666666666666,
+   "speaker": 1
+  },
+  {
+   "text": "",
+   "startSeconds": 14.583333333333334,
+   "endSeconds": 16.416666666666668,
+   "speaker": 1
+  },
+  {
+   "text": "",
+   "startSeconds": 16.416666666666668,
+   "endSeconds": 17.583333333333332,
+   "speaker": 0
+  },
+  {
+   "text": "",
+   "startSeconds": 18.0,
+   "endSeconds": 20.5,
+   "speaker": 0
+  },
+  {
+   "text": "",
+   "startSeconds": 20.5,
+   "endSeconds": 22.916666666666668,
+   "speaker": 1
+  },
+  {
+   "text": "",
+   "startSeconds": 23.25,
+   "endSeconds": 24.166666666666668,
+   "speaker": 1
+  }
+ ]
+}

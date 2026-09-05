@@ -1,6 +1,7 @@
 // @vitest-environment node
+import { readFileSync } from "node:fs"
 import { describe, expect, it, vi } from "vitest"
-import { KyutaiDiarizedConnection, downsamplePcm24kTo16k, mergeKyutaiWordsWithSpeakers } from "../kyutaiDiarized"
+import { KyutaiDiarizedConnection, Pcm24kTo16kResampler, downsamplePcm24kTo16k, mergeKyutaiWordsWithSpeakers } from "../kyutaiDiarized"
 import type { WhisperLiveKitSnapshot } from "../whisperLiveKit"
 
 const snapshot = (lines: WhisperLiveKitSnapshot["lines"]): WhisperLiveKitSnapshot => ({ lines, remainingDiarizationSeconds: 0 })
@@ -9,7 +10,8 @@ describe("Kyutai + raw Sortformer diarization", () => {
   it("forks an unchanged native 24 kHz frame and an exact 16 kHz diarizer frame", async () => {
     const input = new Uint8Array(4_800)
     const inputView = new DataView(input.buffer)
-    for (let index = 0; index < 2_400; index += 1) inputView.setInt16(index * 2, index - 1_200, true)
+    // full-scale ramp: already at target level, so the level normaliser passes it through untouched
+    for (let index = 0; index < 2_400; index += 1) inputView.setInt16(index * 2, (index - 1_200) * 27, true)
     const kyutaiSend = vi.fn(async (_data: Uint8Array) => undefined)
     const diarizerSend = vi.fn(async (_data: Uint8Array) => undefined)
     const connection = new KyutaiDiarizedConnection("ws://kyutai", "ws://diarizer", { onSnapshot: vi.fn(), onFailure: vi.fn() }, {
@@ -71,14 +73,30 @@ describe("Kyutai + raw Sortformer diarization", () => {
   })
 })
 
-it("downsamples little-endian PCM deterministically", () => {
-  const input = new Uint8Array(12)
-  const view = new DataView(input.buffer)
-  ;[0, 1_000, 2_000, 3_000, 4_000, 5_000].forEach((value, index) => view.setInt16(index * 2, value, true))
-  const output = downsamplePcm24kTo16k(input)
-  expect(output).toHaveLength(8)
-  const result = new DataView(output.buffer)
-  expect(Array.from({ length: 4 }, (_, index) => result.getInt16(index * 2, true))).toEqual([0, 1_500, 3_000, 4_500])
+it("downsamples with an anti-aliasing filter: a 1 kHz tone survives, a 10 kHz tone is rejected", () => {
+  const frame = (frequency: number) => {
+    const bytes = new Uint8Array(4_800)
+    const view = new DataView(bytes.buffer)
+    for (let index = 0; index < 2_400; index += 1) view.setInt16(index * 2, Math.round(Math.sin(2 * Math.PI * frequency * index / 24_000) * 10_000), true)
+    return bytes
+  }
+  const rms = (bytes: Uint8Array) => {
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    let sum = 0
+    for (let index = 0; index < bytes.byteLength / 2; index += 1) sum += view.getInt16(index * 2, true) ** 2
+    return Math.sqrt(sum / (bytes.byteLength / 2))
+  }
+  const resampler = new Pcm24kTo16kResampler()
+  resampler.process(frame(1_000))
+  const low = resampler.process(frame(1_000))
+  expect(low).toHaveLength(3_200)
+  expect(rms(low)).toBeGreaterThan(10_000 / Math.SQRT2 * 0.9)
+  const aliasing = new Pcm24kTo16kResampler()
+  aliasing.process(frame(10_000))
+  const high = aliasing.process(frame(10_000))
+  expect(rms(high)).toBeLessThan(10_000 / Math.SQRT2 * 0.1)
+  // stateless helper keeps the legacy signature
+  expect(downsamplePcm24kTo16k(new Uint8Array(12))).toHaveLength(8)
 })
 
 type Callbacks = { onSnapshot: (snapshot: WhisperLiveKitSnapshot) => void; onFailure: (error: never) => void }
@@ -96,3 +114,71 @@ function child(overrides: Partial<{
     close: overrides.close ?? (() => undefined),
   }
 }
+
+describe("Kyutai + Sortformer merge on a measured two-voice bench", () => {
+  // Recorded on the RTX 3080 Ti box (2026-09-04): Kyutai's public French
+  // sample cut into six 4 s turns, voice B pitch-shifted, streamed to both
+  // services in real time. Truth: speaker = turn index mod 2.
+  const bench = JSON.parse(readFileSync(new URL("./fixtures.sortformerTwoVoices.json", import.meta.url), "utf8")) as {
+    turnSeconds: number
+    words: WhisperLiveKitSnapshot["lines"]
+    segments: WhisperLiveKitSnapshot["lines"]
+  }
+  const truth = bench.words.map((word) => Math.floor(word.startSeconds / bench.turnSeconds) % 2)
+  const score = (lines: WhisperLiveKitSnapshot["lines"]) => {
+    const mappings = [{ 0: 0, 1: 1 }, { 0: 1, 1: 0 }] as Array<Record<number, number>>
+    const accuracy = Math.max(...mappings.map((map) => lines.filter((line, index) => line.speaker >= 0 && map[line.speaker] === truth[index]).length / lines.length))
+    const runs = lines.reduce((count, line, index) => count + (index > 0 && line.speaker !== lines[index - 1]!.speaker ? 1 : 0), 1)
+    return { accuracy, runs }
+  }
+
+  it("beats the uncompensated per-word merge on accuracy and turn count", () => {
+    // This bench was recorded with the earlier 1 s-chunk, five-frame sidecar, whose lag was 0.5 s.
+    const before = score(mergeKyutaiWordsWithSpeakers(snapshot(bench.words), snapshot(bench.segments), { lagSeconds: 0 }).lines)
+    const after = score(mergeKyutaiWordsWithSpeakers(snapshot(bench.words), snapshot(bench.segments), { lagSeconds: 0.5 }).lines)
+    expect(before.accuracy).toBeLessThan(0.95)
+    expect(after.accuracy).toBeGreaterThanOrEqual(0.95)
+    expect(after.runs).toBe(6)
+  })
+
+  it("carries the previous speaker over uncovered words and smooths one-word flickers", () => {
+    const merged = mergeKyutaiWordsWithSpeakers(
+      snapshot([
+        { text: "bonjour", startSeconds: 0, endSeconds: 0.4, speaker: -1 },
+        { text: "docteur", startSeconds: 0.4, endSeconds: 0.8, speaker: -1 },
+        { text: "je", startSeconds: 0.8, endSeconds: 0.9, speaker: -1 },
+        { text: "viens", startSeconds: 0.9, endSeconds: 1.3, speaker: -1 },
+        { text: "pour", startSeconds: 3.0, endSeconds: 3.3, speaker: -1 },
+      ]),
+      snapshot([
+        { text: "", startSeconds: 0.5, endSeconds: 1.3, speaker: 1 },
+        { text: "", startSeconds: 1.3, endSeconds: 1.4, speaker: 0 },
+        { text: "", startSeconds: 1.4, endSeconds: 1.8, speaker: 1 },
+      ]),
+      { lagSeconds: 0 },
+    )
+    expect(merged.lines.map((line) => line.speaker)).toEqual([-1, 1, 1, 1, 1])
+  })
+})
+
+describe("Kyutai + Sortformer merge on a SimSAMU dispatch call", () => {
+  // Real French two-speaker audio with word-level speaker references; the
+  // intervals come from the production sidecar logic replayed offline with
+  // its current cadence (0.5 s chunks, two confirmation frames).
+  const bench = JSON.parse(readFileSync(new URL("./fixtures.simsamuTwoSpeakers.json", import.meta.url), "utf8")) as {
+    words: Array<WhisperLiveKitSnapshot["lines"][number] & { truth: string }>
+    segments: WhisperLiveKitSnapshot["lines"]
+  }
+  const accuracy = (lines: WhisperLiveKitSnapshot["lines"]) => {
+    const ids = [...new Set(bench.words.map((word) => word.truth))]
+    const mappings = [{ [ids[0]!]: 0, [ids[1]!]: 1 }, { [ids[0]!]: 1, [ids[1]!]: 0 }]
+    return Math.max(...mappings.map((map) => lines.filter((line, index) => map[bench.words[index]!.truth] === line.speaker).length / lines.length))
+  }
+
+  it("labels at least nine words in ten with the measured lag", () => {
+    // The 0.2 s lag was chosen on the 12-file aggregate (92.5 %); single
+    // files vary by a few points either way, so only the floor is asserted.
+    const lines = bench.words.map(({ truth: _truth, ...word }) => word)
+    expect(accuracy(mergeKyutaiWordsWithSpeakers(snapshot(lines), snapshot(bench.segments)).lines)).toBeGreaterThanOrEqual(0.9)
+  })
+})
