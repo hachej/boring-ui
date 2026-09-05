@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { mkdtemp } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdtemp, writeFile } from 'node:fs/promises'
+import { hostname, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import postgres from 'postgres'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
@@ -290,12 +290,16 @@ describe('Postgres credential rollback protection', () => {
               requestedWorkspaceId: string,
               mutate: Parameters<typeof anchor.withDekGenerationMutation<T>>[1],
             ): Promise<T> {
-              const result = await anchor.withDekGenerationMutation(requestedWorkspaceId, mutate)
               if (!injected) {
                 injected = true
+                await writeFile(`${anchorFilePath}.lock`, JSON.stringify({
+                  token: 'dead-process-lock',
+                  hostname: hostname(),
+                  pid: 999_999_999,
+                }), { mode: 0o600 })
                 throw new Error('simulated crash after anchor-advance')
               }
-              return result
+              return anchor.withDekGenerationMutation(requestedWorkspaceId, mutate)
             },
           }
         : anchor
@@ -323,7 +327,19 @@ describe('Postgres credential rollback protection', () => {
       })
       expect(await durable.getWrappedDek(workspaceId, 1)).toBeUndefined()
       expect(await durable.getWrappedDek(workspaceId, 3)).toBeUndefined()
-      expect(await anchor.read(workspaceId)).toMatchObject({ dekGeneration: 2 })
+      expect(await anchor.read(workspaceId)).toMatchObject({
+        dekGeneration: 2,
+        dekRotationOperationId: operationId,
+      })
+      if (boundary === 'atomic-finalize') {
+        await sql`
+          INSERT INTO workspace_credential_dek_rotation_receipts (
+            workspace_id, operation_id, source_generation, target_generation
+          ) VALUES (${workspaceId}, 'forged-operation', 1, 2)
+        `
+        await expect(restarted.rotateWorkspaceDek(workspaceId, 'forged-operation'))
+          .rejects.toMatchObject({ code: CREDENTIAL_ERROR_CODES.UNREADABLE })
+      }
       const resolved = await restarted.read(workspaceId, providerId, [fieldId])
       if (resolved.kind !== 'field-set') throw new Error('expected rotated field set')
       expect(new TextDecoder().decode(resolved.fields.get(fieldId))).toBe(`secret-${boundary}`)

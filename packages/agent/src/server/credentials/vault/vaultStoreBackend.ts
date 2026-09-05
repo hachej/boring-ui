@@ -644,6 +644,7 @@ function createVaultCredentialStoreBackendInternalV1(
           const records = await locked.listCredentialRecords(workspaceId)
           if (
             !completedAnchor
+            || completedAnchor.dekRotationOperationId !== operationId
             || completedAnchor.dekGeneration < completed.targetGeneration
             || records.some(({ record }) => record.dekGeneration < completed.targetGeneration)
             || await locked.getWrappedDek(workspaceId, completed.sourceGeneration)
@@ -856,7 +857,11 @@ function createVaultCredentialStoreBackendInternalV1(
               if (!current || current.dekGeneration !== rotation!.sourceGeneration) {
                 unreadable('Credential DEK generation anchor changed during rotation')
               }
-              return { nextDekGeneration: rotation!.targetGeneration, result: undefined }
+              return {
+                nextDekGeneration: rotation!.targetGeneration,
+                nextDekRotationOperationId: rotation!.operationId,
+                result: undefined,
+              }
             })
             anchorState = await versionAnchor.read(workspaceId)
           }

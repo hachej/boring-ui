@@ -4,7 +4,8 @@ import {
   randomUUID,
   timingSafeEqual,
 } from 'node:crypto'
-import { open, readFile, rename, unlink } from 'node:fs/promises'
+import { open, readFile, rename, stat, unlink } from 'node:fs/promises'
+import { hostname } from 'node:os'
 import { dirname } from 'node:path'
 import {
   CREDENTIAL_ERROR_CODES,
@@ -22,6 +23,8 @@ export interface WorkspaceCredentialVersionStateV1 {
   readonly cryptoShredGeneration: number
   /** Monotonic workspace-wide fence for replayed wrapped DEKs and records. */
   readonly dekGeneration: number
+  /** Authenticated idempotency key for the most recently completed DEK rotation. */
+  readonly dekRotationOperationId?: string
   readonly credentialVersions: Readonly<Record<string, number>>
   readonly credentialMaterialKinds: Readonly<Record<string, CredentialMaterialKindV1>>
   readonly credentialLifecycleStates: Readonly<Record<string, CredentialLifecycleStateV1>>
@@ -39,6 +42,7 @@ export interface CredentialVersionMutationResultV1<T> {
 
 export interface DekGenerationMutationResultV1<T> {
   readonly nextDekGeneration: number
+  readonly nextDekRotationOperationId: string
   readonly result: T
 }
 
@@ -123,6 +127,7 @@ type MutableAnchorStateV1 = {
     /** Absent only in authenticated v2 files written before the shred fence. */
     cryptoShredGeneration?: number
     dekGeneration: number
+    dekRotationOperationId?: string
     credentialVersions: Record<string, number>
     credentialMaterialKinds: Record<string, CredentialMaterialKindV1>
     credentialLifecycleStates: Record<string, CredentialLifecycleStateV1>
@@ -148,10 +153,70 @@ function backendUnavailable(message: string): never {
   )
 }
 
+const MUTATION_LOCK_STALE_MS = 30_000
+
+type MutationLockOwnerV1 = {
+  readonly token: string
+  readonly hostname: string
+  readonly pid: number
+}
+
+function localProcessIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return Boolean(
+      error
+      && typeof error === 'object'
+      && 'code' in error
+      && (error as { code?: unknown }).code === 'EPERM',
+    )
+  }
+}
+
+async function removeAbandonedMutationLock(lockPath: string): Promise<void> {
+  let encoded: string
+  let modifiedAt: number
+  try {
+    ;[encoded, modifiedAt] = await Promise.all([
+      readFile(lockPath, 'utf8'),
+      stat(lockPath).then((value) => value.mtimeMs),
+    ])
+  } catch {
+    return
+  }
+  let owner: Partial<MutationLockOwnerV1> | undefined
+  try { owner = JSON.parse(encoded) as Partial<MutationLockOwnerV1> } catch { /* incomplete lock */ }
+  const sameHostDead = owner?.hostname === hostname()
+    && Number.isSafeInteger(owner.pid)
+    && !localProcessIsAlive(owner.pid!)
+  const stale = Date.now() - modifiedAt >= MUTATION_LOCK_STALE_MS
+  if (!sameHostDead && !stale) return
+
+  // Two recovery processes may inspect the same abandoned file. Only unlink
+  // the exact owner snapshot we inspected; never remove a newly acquired lock.
+  const current = await readFile(lockPath, 'utf8').catch(() => undefined)
+  if (current === encoded) await unlink(lockPath).catch(() => undefined)
+}
+
 async function acquireMutationLock(lockPath: string) {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     try {
-      return await open(lockPath, 'wx', 0o600)
+      const lock = await open(lockPath, 'wx', 0o600)
+      try {
+        await lock.writeFile(JSON.stringify({
+          token: randomUUID(),
+          hostname: hostname(),
+          pid: process.pid,
+        } satisfies MutationLockOwnerV1), 'utf8')
+        await lock.sync()
+        return lock
+      } catch (error) {
+        await lock.close().catch(() => undefined)
+        await unlink(lockPath).catch(() => undefined)
+        throw error
+      }
     } catch (error) {
       if (
         !error
@@ -159,6 +224,7 @@ async function acquireMutationLock(lockPath: string) {
         || !('code' in error)
         || (error as { code?: unknown }).code !== 'EEXIST'
       ) unreadable('Credential version anchor lock is unavailable')
+      await removeAbandonedMutationLock(lockPath)
       await new Promise((resolve) => setTimeout(resolve, 25))
     }
   }
@@ -183,6 +249,9 @@ function copyWorkspaceState(
     counter: workspace.counter,
     cryptoShredGeneration: workspace.cryptoShredGeneration ?? 0,
     dekGeneration: workspace.dekGeneration,
+    ...(workspace.dekRotationOperationId === undefined
+      ? {}
+      : { dekRotationOperationId: workspace.dekRotationOperationId }),
     credentialVersions: Object.freeze({ ...workspace.credentialVersions }),
     credentialMaterialKinds: Object.freeze({ ...workspace.credentialMaterialKinds }),
     credentialLifecycleStates: Object.freeze({ ...workspace.credentialLifecycleStates }),
@@ -200,6 +269,9 @@ function canonicalState(state: MutableAnchorStateV1): string {
           ? {}
           : { cryptoShredGeneration: workspace.cryptoShredGeneration }),
         dekGeneration: workspace.dekGeneration,
+        ...(workspace.dekRotationOperationId === undefined
+          ? {}
+          : { dekRotationOperationId: workspace.dekRotationOperationId }),
         credentialVersions: Object.fromEntries(
           Object.entries(workspace.credentialVersions)
             .sort(([left], [right]) => left.localeCompare(right)),
@@ -239,6 +311,11 @@ function validateState(value: unknown): MutableAnchorStateV1 {
       ))
       || !Number.isSafeInteger(workspace.dekGeneration)
       || workspace.dekGeneration < 1
+      || (workspace.dekRotationOperationId !== undefined && (
+        typeof workspace.dekRotationOperationId !== 'string'
+        || workspace.dekRotationOperationId.length === 0
+        || workspace.dekRotationOperationId.length > 200
+      ))
       || !workspace.credentialVersions
       || typeof workspace.credentialVersions !== 'object'
       || !workspace.credentialMaterialKinds
@@ -329,6 +406,9 @@ export function createInMemoryCredentialVersionAnchorV1(): WorkspaceCredentialVe
         next.workspaces[workspaceId] = {
           counter: (current?.counter ?? 0) + 1,
           dekGeneration: mutation.nextDekGeneration,
+          ...(current?.dekRotationOperationId === undefined
+            ? {}
+            : { dekRotationOperationId: current.dekRotationOperationId }),
           credentialVersions: {
             ...current?.credentialVersions,
             [providerId]: mutation.nextCredentialVersion,
@@ -402,6 +482,9 @@ export function createInMemoryCredentialVersionAnchorV1(): WorkspaceCredentialVe
             counter: (currentWorkspace?.counter ?? 0) + 1,
             cryptoShredGeneration: 1,
             dekGeneration: currentWorkspace?.dekGeneration ?? 1,
+            ...(currentWorkspace?.dekRotationOperationId === undefined
+              ? {}
+              : { dekRotationOperationId: currentWorkspace.dekRotationOperationId }),
             credentialVersions: { ...currentWorkspace?.credentialVersions },
             credentialMaterialKinds: { ...currentWorkspace?.credentialMaterialKinds },
             credentialLifecycleStates: { ...currentWorkspace?.credentialLifecycleStates },
@@ -433,11 +516,17 @@ export function createInMemoryCredentialVersionAnchorV1(): WorkspaceCredentialVe
         if (mutation.nextDekGeneration !== current.dekGeneration + 1) {
           unreadable('Credential version anchor rejected a stale DEK rotation')
         }
+        if (
+          typeof mutation.nextDekRotationOperationId !== 'string'
+          || mutation.nextDekRotationOperationId.length === 0
+          || mutation.nextDekRotationOperationId.length > 200
+        ) unreadable('Credential version anchor rejected an invalid DEK rotation operation')
         const next = cloneState(state)
         next.workspaces[workspaceId] = {
           ...next.workspaces[workspaceId]!,
           counter: current.counter + 1,
           dekGeneration: mutation.nextDekGeneration,
+          dekRotationOperationId: mutation.nextDekRotationOperationId,
         }
         state = next
         result = mutation.result
@@ -668,6 +757,9 @@ export function createLocalFileCredentialVersionAnchorV1(
         next.workspaces[workspaceId] = {
           counter: (currentWorkspace?.counter ?? 0) + 1,
           dekGeneration: mutation.nextDekGeneration,
+          ...(currentWorkspace?.dekRotationOperationId === undefined
+            ? {}
+            : { dekRotationOperationId: currentWorkspace.dekRotationOperationId }),
           credentialVersions: {
             ...currentWorkspace?.credentialVersions,
             [providerId]: mutation.nextCredentialVersion,
@@ -745,6 +837,9 @@ export function createLocalFileCredentialVersionAnchorV1(
             counter: (currentWorkspace?.counter ?? 0) + 1,
             cryptoShredGeneration: 1,
             dekGeneration: currentWorkspace?.dekGeneration ?? 1,
+            ...(currentWorkspace?.dekRotationOperationId === undefined
+              ? {}
+              : { dekRotationOperationId: currentWorkspace.dekRotationOperationId }),
             credentialVersions: { ...currentWorkspace?.credentialVersions },
             credentialMaterialKinds: { ...currentWorkspace?.credentialMaterialKinds },
             credentialLifecycleStates: { ...currentWorkspace?.credentialLifecycleStates },
@@ -779,11 +874,17 @@ export function createLocalFileCredentialVersionAnchorV1(
         if (mutation.nextDekGeneration !== current.dekGeneration + 1) {
           unreadable('Credential version anchor rejected a stale DEK rotation')
         }
+        if (
+          typeof mutation.nextDekRotationOperationId !== 'string'
+          || mutation.nextDekRotationOperationId.length === 0
+          || mutation.nextDekRotationOperationId.length > 200
+        ) unreadable('Credential version anchor rejected an invalid DEK rotation operation')
         const next = cloneState(state)
         next.workspaces[workspaceId] = {
           ...next.workspaces[workspaceId]!,
           counter: current.counter + 1,
           dekGeneration: mutation.nextDekGeneration,
+          dekRotationOperationId: mutation.nextDekRotationOperationId,
         }
         await replaceSealedState(next, options)
         return mutation.result
