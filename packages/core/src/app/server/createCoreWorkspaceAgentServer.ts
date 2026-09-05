@@ -6,6 +6,7 @@ import path from 'node:path'
 import {
   autoDetectMode,
   createAgentHost,
+  createAgentHostChannelStorage,
   createEnvironmentProvisioningFingerprint,
   createPiResourceDigestFence,
   createPiResourceDigestInput,
@@ -140,6 +141,12 @@ import {
 } from '../../shared/workspaceDefaultAgent.js'
 import { WorkspaceRuntimeSandboxHandleStore } from '../../server/runtime/index.js'
 import { createDatabaseTelemetryFromEnv } from '../../server/telemetry/db.js'
+import {
+  assertCoreWhatsAppAgentAvailable,
+  mountCoreWhatsAppChannel,
+  type CoreWhatsAppChannelOptions,
+  type MountedCoreWhatsAppChannel,
+} from './whatsappChannelComposition.js'
 
 const WORKSPACE_DEFAULT_AGENT_GATED_EFFECTS = new Set<AgentGatewayEffect>([
   'session.create',
@@ -243,6 +250,8 @@ export interface CreateCoreWorkspaceAgentServerOptions {
   piResourceAuthorizedRoots?: string[]
   telemetry?: TelemetrySink
   metering?: AgentMeteringSink
+  /** Trusted, provisioned-only WhatsApp Cloud API mount. Omit to keep the edge disabled. */
+  whatsAppChannel?: CoreWhatsAppChannelOptions
   filterModels?: AgentHostDirectProjectionOptions['filterModels']
   shareEntryStore?: ShareEntryStore
   externalPlugins?: boolean
@@ -1749,6 +1758,10 @@ export async function createCoreWorkspaceAgentServer(
     },
   }
 
+  assertCoreWhatsAppAgentAvailable(options.whatsAppChannel, agentTypeIds)
+  const channelStorage = options.whatsAppChannel
+    ? createAgentHostChannelStorage({ sessionRoot: sessionRoot ?? workspaceRoot })
+    : undefined
   const agentHost = await createAgentHost({
     agents: hostAgents,
     fleetCompiler: createValidatingAgentFleetCompiler({
@@ -1791,6 +1804,7 @@ export async function createCoreWorkspaceAgentServer(
     metering: options.metering,
     harnessFactory: options.harnessFactory,
     effectAdmission: coreEffectAdmission,
+    ...(channelStorage ? { eventStore: channelStorage.events } : {}),
     async resolveAuthorizedEnvironmentScope({ authorizedScope }) {
       return scopeAuthority.resolveEnvironment(authorizedScope)
     },
@@ -1844,10 +1858,28 @@ export async function createCoreWorkspaceAgentServer(
           : runtime.revalidateResourceInputs,
       }
     },
+  }).catch((error: unknown) => {
+    channelStorage?.close()
+    throw error
   })
 
   let hostMounted = false
+  let whatsAppMount: MountedCoreWhatsAppChannel | undefined
   try {
+    if (options.whatsAppChannel && channelStorage) {
+      whatsAppMount = await mountCoreWhatsAppChannel({
+        app,
+        gateway: agentHost.gateway,
+        storage: channelStorage,
+        resolveAuthorizedScope: (binding) => authorizeAgentRequest(undefined, {
+          workspaceId: binding.workspaceId,
+          userId: binding.authSubjectId,
+        }),
+        options: options.whatsAppChannel,
+      })
+      app.addHook('preClose', async () => whatsAppMount?.close())
+    }
+
     await reconcileWorkspaceDefaultAgentTypes({
       workspaceStore,
       appId: config.appId,
@@ -2114,6 +2146,11 @@ export async function createCoreWorkspaceAgentServer(
       } satisfies WorkspaceDefaultAgentState
     })
 
+    if (channelStorage) {
+      // Fastify runs onClose hooks in reverse registration order. Register the
+      // root storage hook before Agent Host so Host shutdown completes first.
+      app.addHook('onClose', async () => channelStorage.close())
+    }
     await registerCoreAgentHostEnvironmentRoutes(app, {
       agentHost,
       authorizeAgentRequest: (request) => authorizeAgentRequest(request),
@@ -2167,8 +2204,12 @@ export async function createCoreWorkspaceAgentServer(
       await registerFrontendFallback(app, appRoot, telemetry, options.frontendRootHandler)
     }
   } catch (error) {
+    await whatsAppMount?.close().catch(() => undefined)
     if (!hostMounted) await agentHost.host.close().catch(() => undefined)
+    // When mounted, app.close runs Agent Host's hooks before the root storage
+    // hook. On partial mounting, close the Host explicitly before storage.
     await app.close().catch(() => undefined)
+    channelStorage?.close()
     throw error
   }
 

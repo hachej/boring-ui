@@ -74,10 +74,13 @@ export type { ToolUiMetadata } from './tool-ui'
 export { isToolUiMetadata, extractToolUiMetadata } from './tool-ui'
 export type { CatalogDeps, ToolCatalog } from './catalog'
 export { SAFE_NATIVE_SESSION_ID, compareSessionOrder } from './session'
+export { CHANNEL_DESCRIPTORS, channelDescriptor } from './channel'
+export type { BuiltinChannelId, ChannelDescriptor, OriginChannel } from './channel'
 export { safeRandomUUID } from './random-id'
 export type {
   SessionOrderTuple,
   SessionStore,
+  SessionCreateInit,
   SessionCtx,
   SessionArchiveFilter,
   SessionListOptions,

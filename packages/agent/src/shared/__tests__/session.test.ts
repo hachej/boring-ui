@@ -6,6 +6,7 @@ import type {
   SessionStore,
   SessionSummary,
   SessionListOptions,
+  SessionCreateInit,
 } from '../session'
 
 test('SessionStore contract', () => {
@@ -19,7 +20,7 @@ test('SessionStore contract', () => {
   expectTypeOf<SessionStore['list']>().parameters.toEqualTypeOf<[ctx: SessionCtx, options?: SessionListOptions]>()
   expectTypeOf<SessionStore['list']>().returns.toEqualTypeOf<Promise<SessionSummary[]>>()
   expectTypeOf<SessionStore['create']>().parameters.toEqualTypeOf<
-    [ctx: SessionCtx, init?: { title?: string }]
+    [ctx: SessionCtx, init?: SessionCreateInit]
   >()
   expectTypeOf<SessionStore['load']>().parameters.toEqualTypeOf<
     [ctx: SessionCtx, sessionId: string]
@@ -49,6 +50,7 @@ test('Session shapes', () => {
     hasAssistantReply?: boolean
     status?: 'idle' | 'running' | 'aborting' | 'error'
     archived?: boolean
+    originChannel?: import('../channel').OriginChannel
   }>()
 
   expectTypeOf<SessionDetail>().toEqualTypeOf<SessionSummary>()

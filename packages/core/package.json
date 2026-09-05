@@ -73,6 +73,7 @@
     "@fastify/rate-limit": "^11.2.0",
     "@hachej/boring-agent": "workspace:*",
     "@hachej/boring-bash": "workspace:*",
+    "@hachej/channel-whatsapp": "workspace:*",
     "@hachej/boring-ui-kit": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
     "@hookform/resolvers": "^5.9.1",

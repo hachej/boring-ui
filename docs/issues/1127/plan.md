@@ -6,6 +6,9 @@ updated: 2026-08-07
 flag: BORING_AGENT_CHANNELS (new; adapter host is dead code when off)
 ---
 
+> **Superseded for the channels lane:** read
+> [`plan-whatsapp.md`](plan-whatsapp.md) r4.1 first; this r2.1 document remains the durable foundation it explicitly revives.
+
 # gh-1127 — external channels: consume agents from WhatsApp and co
 
 Adversarially reviewed 2026-08-07 (3 blockers, 6 majors folded in — r1);

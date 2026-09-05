@@ -167,11 +167,64 @@ export type {
   ShareEntryMcpResourceOptions,
 } from './mcp'
 export { createStandaloneAgentHostApp } from './createStandaloneAgentHostApp'
+export {
+  CHANNEL_DURABLE_STREAM_REQUIRED,
+  CHANNEL_INBOUND_PARKED,
+  CHANNEL_OUTBOUND_PARKED,
+  CHANNEL_TURN_STALLED,
+  CHANNEL_UNKNOWN_BINDING,
+  CHANNELS_ENV_FLAG,
+  ChannelBindingStore,
+  ChannelInboundService,
+  ChannelIntentionService,
+  ChannelMessageRouter,
+  ChannelOutboundService,
+  ChannelSessionCreateTimeoutError,
+  assembleNextTurn,
+  createChannelIntentionRuntime,
+  shapeChannelText,
+  areChannelsEnabled,
+  assertChannelDurability,
+} from './channels'
+export type {
+  ChannelAdapter,
+  ChannelAgentInvocation,
+  ChannelAgentInvoker,
+  ChannelBinding,
+  ChannelInboundAck,
+  ChannelIntentionAck,
+  ChannelIntentionAdapter,
+  ChannelIntentionField,
+  ChannelIntentionOption,
+  ChannelIntentionQuestion,
+  ChannelIntentionRecord,
+  ChannelIntentionRuntime,
+  ChannelIntentionServiceOptions,
+  ChannelIntentionSource,
+  ChannelMessageAck,
+  ChannelOutboundAdapter,
+  ChannelOutboundRuntime,
+  ChannelOutboundServiceOptions,
+  ChannelOutboundTurn,
+  InboundChannelMessage,
+  ProvisionChannelBindingInput,
+  QueuedChannelInbound,
+} from './channels'
 export type { CreateStandaloneAgentHostAppOptions } from './createStandaloneAgentHostApp'
 export { registerAgentHostEnvironmentRoutes } from './agent-host/environmentHttpProjection'
 export type { AgentHostEnvironmentHttpProjectionOptions } from './agent-host/environmentHttpProjection'
 export { createAuthMiddleware as createAgentAuthMiddleware } from './http/middleware'
 export { createAgentHost } from './agent-host/createAgentHost'
+export {
+  CHANNEL_RUNTIME_FILE_NAME,
+  createAgentHostChannelRuntime,
+  createAgentHostChannelStorage,
+} from './agent-host/channelRuntimeComposition'
+export type {
+  AgentHostChannelRuntime,
+  AgentHostChannelStorage,
+  CreateAgentHostChannelRuntimeOptions,
+} from './agent-host/channelRuntimeComposition'
 export { SqliteAgentRequestLedger } from './agent-host/sqliteRequestLedger'
 export { resolveRequestLedgerPath } from './agent-host/requestLedgerPath'
 export type {

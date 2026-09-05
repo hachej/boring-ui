@@ -145,6 +145,8 @@ export interface CreateAgentSessionInput {
   readonly agentTypeId: string
   readonly requestId: string
   readonly title?: string
+  /** Trusted host-originated channel identity; browser callers normally omit it. */
+  readonly originChannel?: import('../channel').OriginChannel
   /** Boot-only intent to resume this exact tab-owned empty session. */
   readonly resumeSessionId?: string
 }

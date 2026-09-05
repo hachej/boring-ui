@@ -10,6 +10,7 @@ COPY packages/workspace/package.json packages/workspace/package.json
 COPY packages/agent/package.json packages/agent/package.json
 COPY packages/boring-bash/package.json packages/boring-bash/package.json
 COPY packages/boring-sandbox/package.json packages/boring-sandbox/package.json
+COPY packages/channels/whatsapp/package.json packages/channels/whatsapp/package.json
 COPY plugins/boring-mcp/package.json plugins/boring-mcp/package.json
 COPY plugins/boring-governance/package.json plugins/boring-governance/package.json
 COPY plugins/boring-automation/package.json plugins/boring-automation/package.json
@@ -42,6 +43,8 @@ RUN pnpm --filter @hachej/boring-sandbox run build
 RUN pnpm --filter @hachej/boring-bash exec tsup
 
 RUN pnpm --filter @hachej/boring-agent run build
+
+RUN pnpm --filter @hachej/channel-whatsapp run build
 
 RUN pnpm --filter @hachej/boring-workspace exec tsup --no-dts \
   && pnpm --filter @hachej/boring-workspace exec vite build \
@@ -104,6 +107,10 @@ COPY --from=build /app/packages/boring-bash/node_modules/ packages/boring-bash/n
 COPY --from=build /app/packages/boring-sandbox/dist/ packages/boring-sandbox/dist/
 COPY --from=build /app/packages/boring-sandbox/package.json packages/boring-sandbox/package.json
 COPY --from=build /app/packages/boring-sandbox/node_modules/ packages/boring-sandbox/node_modules/
+
+COPY --from=build /app/packages/channels/whatsapp/dist/ packages/channels/whatsapp/dist/
+COPY --from=build /app/packages/channels/whatsapp/package.json packages/channels/whatsapp/package.json
+COPY --from=build /app/packages/channels/whatsapp/node_modules/ packages/channels/whatsapp/node_modules/
 
 COPY --from=build /app/packages/workspace/dist/ packages/workspace/dist/
 COPY --from=build /app/packages/workspace/package.json packages/workspace/package.json
