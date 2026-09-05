@@ -178,14 +178,20 @@ function stableLockError(error: unknown): CredentialResolutionError {
     : lockUnavailable('is unavailable')
 }
 
-async function destroyReservedConnection(reserved: postgres.ReservedSql): Promise<void> {
+async function destroyReservedConnection(
+  pool: postgres.Sql,
+  reserved: postgres.ReservedSql,
+  backendPid?: number,
+): Promise<void> {
   // postgres.js has no public destroy method for one reserved connection.
-  // Self-termination drives its connection-close path, which clears the
-  // reservation without ever placing the uncertain socket back in the pool.
-  const terminated = reserved`SELECT pg_terminate_backend(pg_backend_pid())`
-    .then(() => undefined, () => undefined)
+  // Try both an out-of-band termination (works when its query is stalled) and
+  // self-termination (works even when this is a max=1 pool and the connection
+  // is responsive). Either path drives postgres.js's connection-close eviction.
+  const attempts: PromiseLike<unknown>[] = backendPid === undefined
+    ? [reserved`SELECT pg_terminate_backend(pg_backend_pid())`]
+    : [pool`SELECT pg_terminate_backend(${backendPid})`]
   await Promise.race([
-    terminated,
+    ...attempts.map((attempt) => Promise.resolve(attempt).then(() => undefined, () => undefined)),
     new Promise<void>((resolve) => setTimeout(resolve, 250)),
   ])
   // Do not call release(): the connection-close path owns reservation cleanup.
@@ -228,7 +234,8 @@ implements CredentialVaultPersistenceV1 {
       Date.now() + timeoutMs,
       lockOptions.deadlineMs ?? Number.POSITIVE_INFINITY,
     )
-    const reservation = this.sql.reserve()
+    const pool = this.sql
+    const reservation = pool.reserve()
     let reserved: postgres.ReservedSql
     try {
       reserved = await boundedWait(reservation, deadlineMs, lockOptions.signal)
@@ -236,6 +243,16 @@ implements CredentialVaultPersistenceV1 {
       // reserve() itself cannot be cancelled. If a connection becomes available
       // after our caller has stopped waiting, immediately return it to the pool.
       void reservation.then((late) => late.release(), () => undefined)
+      throw stableLockError(error)
+    }
+
+    let backendPid: number | undefined
+    try {
+      const pidQuery = reserved<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`
+      const pidRows = await boundedWait(pidQuery, deadlineMs, lockOptions.signal, () => pidQuery.cancel())
+      if (Number.isSafeInteger(pidRows[0]?.pid)) backendPid = pidRows[0]!.pid
+    } catch (error) {
+      await destroyReservedConnection(pool, reserved)
       throw stableLockError(error)
     }
 
@@ -253,6 +270,8 @@ implements CredentialVaultPersistenceV1 {
         try {
           rows = await boundedWait(query, deadlineMs, lockOptions.signal, () => query.cancel())
         } catch (error) {
+          release = false
+          await destroyReservedConnection(pool, reserved, backendPid)
           throw stableLockError(error)
         }
         acquired = rows[0]?.locked === true
@@ -294,7 +313,7 @@ implements CredentialVaultPersistenceV1 {
         }
         if (!unlocked) {
           release = false
-          await destroyReservedConnection(reserved)
+          await destroyReservedConnection(pool, reserved, backendPid)
           throw lockUnavailable('could not be released')
         }
       }
