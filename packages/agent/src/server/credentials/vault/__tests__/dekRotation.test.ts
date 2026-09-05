@@ -86,7 +86,7 @@ describe('workspace DEK lifecycle', () => {
       kmsBackend: initial.kmsBackend,
       versionAnchor: initial.versionAnchor,
     })
-    await expect(firstAttempt.rotateWorkspaceDek(workspaceId))
+    await expect(firstAttempt.rotateWorkspaceDek(workspaceId, 'rotation-1'))
       .rejects.toThrow('simulated process interruption')
     expect(await durable.getDekRotationState(workspaceId)).toMatchObject({
       sourceGeneration: 1,
@@ -99,7 +99,7 @@ describe('workspace DEK lifecycle', () => {
       kmsBackend: initial.kmsBackend,
       versionAnchor: initial.versionAnchor,
     })
-    await expect(resumed.rotateWorkspaceDek(workspaceId)).resolves.toBe(2)
+    await expect(resumed.rotateWorkspaceDek(workspaceId, 'rotation-1')).resolves.toBe(2)
     expect(await durable.getDekRotationState(workspaceId)).toBeUndefined()
     expect(await durable.getWrappedDek(workspaceId, 1)).toBeUndefined()
 
@@ -141,7 +141,7 @@ describe('workspace DEK lifecycle', () => {
       providerId: providerA,
       fields: new Map([[apiKey, text('first-secret')]]),
     })
-    await backend.rotateWorkspaceDek(workspaceId)
+    await backend.rotateWorkspaceDek(workspaceId, 'rotation-1')
 
     const added = await backend.writeCredentialFields({
       workspaceId,
@@ -149,6 +149,10 @@ describe('workspace DEK lifecycle', () => {
       fields: new Map([[apiKey, text('new-secret')]]),
     })
     expect(added.dekGeneration).toBe(2)
+    await expect(backend.read(workspaceId, providerC, [apiKey]))
+      .resolves.toMatchObject({ kind: 'field-set' })
+    await expect(backend.rotateWorkspaceDek(workspaceId, 'rotation-1')).resolves.toBe(2)
+    await expect(backend.rotateWorkspaceDek(workspaceId, 'rotation-2')).resolves.toBe(3)
     await expect(backend.read(workspaceId, providerC, [apiKey]))
       .resolves.toMatchObject({ kind: 'field-set' })
   })
@@ -176,7 +180,7 @@ describe('workspace DEK lifecycle', () => {
       fields: new Map([[apiKey, text('replayed-secret')]]),
     })
 
-    await expect(current.backend.rotateWorkspaceDek(workspaceId)).resolves.toBe(2)
+    await expect(current.backend.rotateWorkspaceDek(workspaceId, 'rotation-1')).resolves.toBe(2)
     expect(await current.versionAnchor.read(workspaceId)).toMatchObject({ dekGeneration: 2 })
     selected = snapshot
 

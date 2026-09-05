@@ -16,9 +16,11 @@ import {
   createLocalKekWorkspaceKekProviderV1,
   createPostgresCredentialVaultPersistenceV1,
   createVaultCredentialStoreBackendV1,
+  decryptCredentialFieldV1,
   initializeLocalFileCredentialVersionAnchorV1,
   runCredentialVaultPostgresMigrationsV1,
 } from '..'
+import type { CredentialVaultPersistenceV1 } from '../persistence'
 import { runCredentialVaultPersistenceConformanceV1 } from './persistenceConformance'
 import { runVaultCredentialStoreConformanceV1 } from './vaultBackendConformance'
 
@@ -202,6 +204,150 @@ describe('Postgres credential rollback protection', () => {
       .rejects.toMatchObject({
         code: CREDENTIAL_ERROR_CODES.UNREADABLE,
       } satisfies Partial<CredentialResolutionError>)
+  })
+
+  test('recovers the same durable DEK rotation after every database/anchor boundary', async () => {
+    const boundaries = [
+      'intent-marker',
+      'target-key',
+      'record-migration',
+      'verified-marker',
+      'anchor-advance',
+      'anchor-advanced-marker',
+      'atomic-finalize',
+    ] as const
+
+    for (const boundary of boundaries) {
+      const workspaceId = `rotation-${boundary}-${randomUUID()}`
+      const providerId = 'rotation-provider' as ProviderId
+      const fieldId = 'api-key' as CredentialFieldId
+      const operationId = `operation-${boundary}`
+      const anchorFilePath = join(
+        await mkdtemp(join(tmpdir(), 'boring-postgres-rotation-anchor-')),
+        'credential-anchor',
+      )
+      const loadKek = async () => new Uint8Array(32).fill(0xa5)
+      await initializeLocalFileCredentialVersionAnchorV1({ anchorFilePath, loadKek })
+      const kmsBackend = createLocalKekWorkspaceKekProviderV1({
+        keyRef: 'rotation-recovery-test',
+        keyVersion: 1,
+        loadKek,
+      })
+      const durable = createPostgresCredentialVaultPersistenceV1(sql)
+      const anchor = createLocalFileCredentialVersionAnchorV1({ anchorFilePath, loadKek })
+      const initial = createVaultCredentialStoreBackendV1({
+        persistence: durable,
+        versionAnchor: anchor,
+        kmsBackend,
+      })
+      await initial.writeCredentialFields({
+        workspaceId,
+        providerId,
+        fields: new Map([[fieldId, new TextEncoder().encode(`secret-${boundary}`)]]),
+      })
+      const oldWrapped = await durable.getWrappedDek(workspaceId, 1)
+      if (!oldWrapped) throw new Error('missing source DEK')
+      const oldDek = await kmsBackend.unwrapDataKey(
+        { workspaceId, dekGeneration: 1, requestId: `capture-${boundary}` },
+        oldWrapped,
+      )
+
+      let injected = false
+      const wrapPersistence = (
+        target: CredentialVaultPersistenceV1,
+      ): CredentialVaultPersistenceV1 => new Proxy(target, {
+        get(current, property) {
+          if (property === 'withWorkspaceLock') {
+            return async <T>(lockedWorkspaceId: string, mutate: (locked: CredentialVaultPersistenceV1) => Promise<T>) =>
+              current.withWorkspaceLock(lockedWorkspaceId, async (locked) => mutate(wrapPersistence(locked)))
+          }
+          const value = current[property as keyof CredentialVaultPersistenceV1]
+          if (typeof value !== 'function') return value
+          return async (...args: unknown[]) => {
+            const result = await (value as (...callArgs: unknown[]) => Promise<unknown>)
+              .apply(current, args)
+            const state = args[1] as { phase?: string } | undefined
+            const shouldCrash = !injected && (
+              (boundary === 'intent-marker' && property === 'putDekRotationState' && state?.phase === 'reencrypting')
+              || (boundary === 'target-key' && property === 'putWrappedDek' && args[1] === 2)
+              || (boundary === 'record-migration' && property === 'commitDekRotationRecord')
+              || (boundary === 'verified-marker' && property === 'putDekRotationState' && state?.phase === 'verified')
+              || (boundary === 'anchor-advanced-marker' && property === 'putDekRotationState' && state?.phase === 'anchor-advanced')
+              || (boundary === 'atomic-finalize' && property === 'finalizeDekRotation')
+            )
+            if (shouldCrash) {
+              injected = true
+              throw new Error(`simulated crash after ${boundary}`)
+            }
+            return result
+          }
+        },
+      })
+      const faultAnchor = boundary === 'anchor-advance'
+        ? {
+            ...anchor,
+            async withDekGenerationMutation<T>(
+              requestedWorkspaceId: string,
+              mutate: Parameters<typeof anchor.withDekGenerationMutation<T>>[1],
+            ): Promise<T> {
+              const result = await anchor.withDekGenerationMutation(requestedWorkspaceId, mutate)
+              if (!injected) {
+                injected = true
+                throw new Error('simulated crash after anchor-advance')
+              }
+              return result
+            },
+          }
+        : anchor
+      const interrupted = createVaultCredentialStoreBackendV1({
+        persistence: wrapPersistence(durable),
+        versionAnchor: faultAnchor,
+        kmsBackend,
+      })
+      await expect(interrupted.rotateWorkspaceDek(workspaceId, operationId))
+        .rejects.toThrow(`simulated crash after ${boundary}`)
+
+      // A new backend/anchor instance models process restart. The same operation
+      // id resumes N→N+1 and the durable receipt makes even post-finalize retry idempotent.
+      const restarted = createVaultCredentialStoreBackendV1({
+        persistence: createPostgresCredentialVaultPersistenceV1(sql),
+        versionAnchor: createLocalFileCredentialVersionAnchorV1({ anchorFilePath, loadKek }),
+        kmsBackend,
+      })
+      await expect(restarted.rotateWorkspaceDek(workspaceId, operationId)).resolves.toBe(2)
+      await expect(restarted.rotateWorkspaceDek(workspaceId, operationId)).resolves.toBe(2)
+      expect(await durable.getDekRotationState(workspaceId)).toBeUndefined()
+      expect(await durable.getDekRotationReceipt(workspaceId, operationId)).toMatchObject({
+        sourceGeneration: 1,
+        targetGeneration: 2,
+      })
+      expect(await durable.getWrappedDek(workspaceId, 1)).toBeUndefined()
+      expect(await durable.getWrappedDek(workspaceId, 3)).toBeUndefined()
+      expect(await anchor.read(workspaceId)).toMatchObject({ dekGeneration: 2 })
+      const resolved = await restarted.read(workspaceId, providerId, [fieldId])
+      if (resolved.kind !== 'field-set') throw new Error('expected rotated field set')
+      expect(new TextDecoder().decode(resolved.fields.get(fieldId))).toBe(`secret-${boundary}`)
+      const record = await durable.getCredentialRecord(workspaceId, providerId)
+      const envelope = await durable.getField({
+        workspaceId,
+        providerId,
+        credentialVersion: record!.credentialVersion,
+        fieldId,
+      })
+      expect(() => decryptCredentialFieldV1({
+        plaintextDek: oldDek,
+        envelope: envelope!,
+        aadContext: {
+          workspaceId,
+          credentialId: record!.credentialId,
+          providerId,
+          fieldId,
+          credentialVersion: record!.credentialVersion,
+          dekGeneration: 2,
+        },
+      })).toThrow(CredentialResolutionError)
+      oldDek.fill(0)
+    }
   })
 
   test('rejects a complete pre-shred Postgres snapshot after restart', async () => {

@@ -63,6 +63,7 @@ type FieldRow = {
 }
 
 type RotationRow = {
+  operation_id: string
   source_generation: string | number
   target_generation: string | number
   phase: WorkspaceDekRotationStateV1['phase']
@@ -578,11 +579,12 @@ implements CredentialVaultPersistenceV1 {
 
   async getDekRotationState(workspaceId: string) {
     const rows = await this.sql<RotationRow[]>`
-      SELECT source_generation, target_generation, phase
+      SELECT operation_id, source_generation, target_generation, phase
       FROM workspace_credential_dek_rotations WHERE workspace_id = ${workspaceId}
     `
     const row = rows[0]
     return row ? Object.freeze({
+      operationId: row.operation_id,
       sourceGeneration: safeInteger(row.source_generation, 'source DEK generation'),
       targetGeneration: safeInteger(row.target_generation, 'target DEK generation'),
       phase: row.phase,
@@ -592,15 +594,63 @@ implements CredentialVaultPersistenceV1 {
   async putDekRotationState(workspaceId: string, state: WorkspaceDekRotationStateV1) {
     await this.sql`
       INSERT INTO workspace_credential_dek_rotations (
-        workspace_id, source_generation, target_generation, phase
+        workspace_id, operation_id, source_generation, target_generation, phase
       ) VALUES (
-        ${workspaceId}, ${state.sourceGeneration}, ${state.targetGeneration}, ${state.phase}
+        ${workspaceId}, ${state.operationId}, ${state.sourceGeneration},
+        ${state.targetGeneration}, ${state.phase}
       )
       ON CONFLICT (workspace_id) DO UPDATE SET
+        operation_id = EXCLUDED.operation_id,
         source_generation = EXCLUDED.source_generation,
         target_generation = EXCLUDED.target_generation,
         phase = EXCLUDED.phase,
         updated_at = NOW()
+    `
+  }
+
+  async getDekRotationReceipt(workspaceId: string, operationId: string) {
+    const rows = await this.sql<RotationRow[]>`
+      SELECT operation_id, source_generation, target_generation, 'anchor-advanced' AS phase
+      FROM workspace_credential_dek_rotation_receipts
+      WHERE workspace_id = ${workspaceId} AND operation_id = ${operationId}
+    `
+    const row = rows[0]
+    return row ? Object.freeze({
+      operationId: row.operation_id,
+      sourceGeneration: safeInteger(row.source_generation, 'source DEK generation'),
+      targetGeneration: safeInteger(row.target_generation, 'target DEK generation'),
+    }) : undefined
+  }
+
+  async finalizeDekRotation(workspaceId: string, state: WorkspaceDekRotationStateV1) {
+    if ('begin' in this.sql) {
+      await this.sql.begin(async (transaction) => {
+        await new PostgresCredentialVaultPersistenceV1(
+          transaction,
+          this.lockedWorkspaceId ?? workspaceId,
+        ).finalizeDekRotation(workspaceId, state)
+      })
+      return
+    }
+    const rows = await this.sql<RotationRow[]>`
+      DELETE FROM workspace_credential_dek_rotations
+      WHERE workspace_id = ${workspaceId}
+        AND operation_id = ${state.operationId}
+        AND source_generation = ${state.sourceGeneration}
+        AND target_generation = ${state.targetGeneration}
+        AND phase = 'anchor-advanced'
+      RETURNING operation_id, source_generation, target_generation, phase
+    `
+    if (rows.length !== 1) unreadable('Credential DEK rotation finalization state changed')
+    await this.sql`
+      DELETE FROM workspace_credential_keys
+      WHERE workspace_id = ${workspaceId} AND dek_generation = ${state.sourceGeneration}
+    `
+    await this.sql`
+      INSERT INTO workspace_credential_dek_rotation_receipts (
+        workspace_id, operation_id, source_generation, target_generation
+      ) VALUES (${workspaceId}, ${state.operationId}, ${state.sourceGeneration}, ${state.targetGeneration})
+      ON CONFLICT (workspace_id, operation_id) DO NOTHING
     `
   }
 

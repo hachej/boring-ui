@@ -43,6 +43,7 @@ export type {
   StoredCredentialMetadataV1,
   StoredCredentialRecordV1,
   WorkspaceCredentialRecordV1,
+  WorkspaceDekRotationReceiptV1,
   WorkspaceDekRotationStateV1,
 } from './persistence'
 export {

@@ -56,9 +56,17 @@ export type CredentialFieldDeletionReasonV1 =
   | 'crypto-shred'
 
 export interface WorkspaceDekRotationStateV1 {
+  /** Caller-stable idempotency key. A retry must present the same operation id. */
+  readonly operationId: string
   readonly sourceGeneration: number
   readonly targetGeneration: number
-  readonly phase: 'reencrypting' | 'verified'
+  readonly phase: 'reencrypting' | 'verified' | 'anchor-advanced'
+}
+
+export interface WorkspaceDekRotationReceiptV1 {
+  readonly operationId: string
+  readonly sourceGeneration: number
+  readonly targetGeneration: number
 }
 
 export interface WorkspaceCredentialRecordV1 {
@@ -143,6 +151,12 @@ export interface CredentialVaultPersistenceV1 {
   commitDekRotationRecord(input: CommitDekRotationRecordInputV1): Promise<void>
   getDekRotationState(workspaceId: string): Promise<WorkspaceDekRotationStateV1 | undefined>
   putDekRotationState(workspaceId: string, state: WorkspaceDekRotationStateV1): Promise<void>
+  getDekRotationReceipt(
+    workspaceId: string,
+    operationId: string,
+  ): Promise<WorkspaceDekRotationReceiptV1 | undefined>
+  /** Atomically destroys N, clears the active marker, and records the idempotency receipt. */
+  finalizeDekRotation(workspaceId: string, state: WorkspaceDekRotationStateV1): Promise<void>
   clearDekRotationState(workspaceId: string): Promise<void>
   isWorkspaceCryptoShredded(workspaceId: string): Promise<boolean>
   /** Atomically tombstones ciphertext, destroys wrapped DEKs, and records the shred fence. */

@@ -87,7 +87,7 @@ export interface VaultCredentialStoreBackendV1 extends CredentialStoreBackendV1 
   /** Rotates the KEK wrapping for one workspace DEK generation in place. */
   rewrapWorkspaceDek(workspaceId: string, dekGeneration: number): Promise<void>
   /** Re-encrypts all live workspace credentials under a fresh DEK generation. */
-  rotateWorkspaceDek(workspaceId: string): Promise<number>
+  rotateWorkspaceDek(workspaceId: string, operationId: string): Promise<number>
   /** Irreversibly destroys workspace credential key access and fails closed thereafter. */
   cryptoShredWorkspace(workspaceId: string): Promise<void>
 }
@@ -623,109 +623,214 @@ function createVaultCredentialStoreBackendInternalV1(
       })
     },
 
-    async rotateWorkspaceDek(workspaceId: string): Promise<number> {
+    async rotateWorkspaceDek(workspaceId: string, operationId: string): Promise<number> {
       assertWorkspaceId(workspaceId)
+      if (typeof operationId !== 'string' || operationId.length === 0 || operationId.length > 200) {
+        throw new CredentialResolutionError(
+          CREDENTIAL_ERROR_CODES.SCHEMA_MISMATCH,
+          'Credential DEK rotation operation identifier is required',
+        )
+      }
       await requireNotShredded(workspaceId)
       await requireReady()
 
-      return persistence.withWorkspaceLock(workspaceId, async (locked) =>
-        versionAnchor.withDekGenerationMutation(workspaceId, async (anchorState) => {
+      return persistence.withWorkspaceLock(workspaceId, async (locked) => {
         if (await locked.isWorkspaceCryptoShredded(workspaceId)) {
           unreadable('Workspace credential material was crypto-shredded')
         }
-      let rotation = await locked.getDekRotationState(workspaceId)
-      if (!rotation) {
-        const records = await locked.listCredentialRecords(workspaceId)
-        if (records.length === 0) notConfigured('Credential material is not configured')
-        const generations = new Set(records.map(({ record }) => record.dekGeneration))
-        if (generations.size !== 1) {
-          unreadable('Workspace credential DEK generations are inconsistent')
+        const completed = await locked.getDekRotationReceipt(workspaceId, operationId)
+        if (completed) {
+          const completedAnchor = await versionAnchor.read(workspaceId)
+          const records = await locked.listCredentialRecords(workspaceId)
+          if (
+            !completedAnchor
+            || completedAnchor.dekGeneration < completed.targetGeneration
+            || records.some(({ record }) => record.dekGeneration < completed.targetGeneration)
+            || await locked.getWrappedDek(workspaceId, completed.sourceGeneration)
+          ) {
+            unreadable('Credential DEK rotation receipt failed finalization verification')
+          }
+          return completed.targetGeneration
         }
-        const sourceGeneration = records[0]!.record.dekGeneration
-        const targetGeneration = sourceGeneration + 1
-        if (!Number.isSafeInteger(targetGeneration)) {
-          unreadable('Workspace credential DEK generation is exhausted')
-        }
-        const generated = await kmsBackend.generateDataKey(
-          context(workspaceId, targetGeneration),
-        )
-        try {
-          await locked.putWrappedDek(
-            workspaceId,
-            targetGeneration,
-            generated.wrappedDek,
-          )
-        } finally {
-          generated.plaintextDek.fill(0)
-        }
-        rotation = Object.freeze({
-          sourceGeneration,
-          targetGeneration,
-          phase: 'reencrypting' as const,
-        })
-        await locked.putDekRotationState(workspaceId, rotation)
-      }
-      if (!anchorState || rotation.sourceGeneration !== anchorState.dekGeneration) {
-        unreadable('Workspace credential DEK generation failed rollback verification')
-      }
 
-      if (rotation.phase === 'reencrypting') {
-        const targetWrapped = await requireWrappedDek(
-          workspaceId,
-          rotation.targetGeneration,
-          locked,
-        )
-        const records = await locked.listCredentialRecords(workspaceId)
-        const sourceRecords = records.filter(
-          ({ record }) => record.dekGeneration === rotation!.sourceGeneration,
-        )
-        const requiresSourceKey = sourceRecords.some(
-          ({ record }) => record.materialKind === 'field-set',
-        )
-        const sourceWrapped = requiresSourceKey
-          ? await requireWrappedDek(workspaceId, rotation.sourceGeneration, locked)
-          : undefined
-        let sourceDek: Uint8Array | undefined
-        let targetDek: Uint8Array | undefined
-        try {
-          if (sourceWrapped) {
-            sourceDek = await kmsBackend.unwrapDataKey(
-              context(workspaceId, rotation.sourceGeneration),
-              sourceWrapped,
+        let anchorState = await versionAnchor.read(workspaceId)
+        let rotation = await locked.getDekRotationState(workspaceId)
+        if (!rotation) {
+          const records = await locked.listCredentialRecords(workspaceId)
+          if (records.length === 0) notConfigured('Credential material is not configured')
+          const generations = new Set(records.map(({ record }) => record.dekGeneration))
+          if (generations.size !== 1) {
+            unreadable('Workspace credential DEK generations are inconsistent')
+          }
+          const sourceGeneration = records[0]!.record.dekGeneration
+          if (!anchorState || anchorState.dekGeneration !== sourceGeneration) {
+            unreadable('Workspace credential DEK generation failed rollback verification')
+          }
+          const targetGeneration = sourceGeneration + 1
+          if (!Number.isSafeInteger(targetGeneration)) {
+            unreadable('Workspace credential DEK generation is exhausted')
+          }
+          rotation = Object.freeze({
+            operationId,
+            sourceGeneration,
+            targetGeneration,
+            phase: 'reencrypting' as const,
+          })
+          // Persist intent before creating N+1 so every later boundary is resumable.
+          await locked.putDekRotationState(workspaceId, rotation)
+        } else if (rotation.operationId !== operationId) {
+          if (rotation.operationId.startsWith('legacy:')) {
+            // Pre-state-machine migrations had no caller idempotency key. The
+            // first post-upgrade retry durably adopts its key without changing N→N+1.
+            rotation = Object.freeze({ ...rotation, operationId })
+            await locked.putDekRotationState(workspaceId, rotation)
+          } else {
+            throw new CredentialResolutionError(
+              CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
+              'Another credential DEK rotation is already in progress',
+              { retryable: true },
             )
           }
-          targetDek = await kmsBackend.unwrapDataKey(
+        }
+
+        let targetWrapped = await locked.getWrappedDek(workspaceId, rotation.targetGeneration)
+        if (!targetWrapped) {
+          if (rotation.phase !== 'reencrypting') {
+            unreadable('Workspace credential target key generation is missing')
+          }
+          const generated = await kmsBackend.generateDataKey(
             context(workspaceId, rotation.targetGeneration),
-            targetWrapped,
           )
-          for (const { providerId, record } of sourceRecords) {
-            const encryptedFields = new Map<string, ReturnType<typeof encryptCredentialFieldV1>>()
-            const storedFields = await locked.listFields(
+          try {
+            await locked.putWrappedDek(
               workspaceId,
-              providerId,
-              record.credentialVersion,
+              rotation.targetGeneration,
+              generated.wrappedDek,
             )
-            if (record.materialKind === 'field-set' && storedFields.size === 0) {
-              unreadable('Current credential field envelopes are missing')
+            targetWrapped = generated.wrappedDek
+          } finally {
+            generated.plaintextDek.fill(0)
+          }
+        }
+
+        if (!anchorState) unreadable('Credential DEK generation anchor is missing')
+        if (
+          anchorState.dekGeneration !== rotation.sourceGeneration
+          && anchorState.dekGeneration !== rotation.targetGeneration
+        ) {
+          unreadable('Workspace credential DEK generation failed rollback verification')
+        }
+
+        if (rotation.phase === 'reencrypting') {
+          if (anchorState.dekGeneration !== rotation.sourceGeneration) {
+            unreadable('Credential DEK anchor advanced before database verification')
+          }
+          const records = await locked.listCredentialRecords(workspaceId)
+          const sourceRecords = records.filter(
+            ({ record }) => record.dekGeneration === rotation!.sourceGeneration,
+          )
+          const requiresSourceKey = sourceRecords.some(
+            ({ record }) => record.materialKind === 'field-set',
+          )
+          const sourceWrapped = requiresSourceKey
+            ? await requireWrappedDek(workspaceId, rotation.sourceGeneration, locked)
+            : undefined
+          let sourceDek: Uint8Array | undefined
+          let targetDek: Uint8Array | undefined
+          try {
+            if (sourceWrapped) {
+              sourceDek = await kmsBackend.unwrapDataKey(
+                context(workspaceId, rotation.sourceGeneration),
+                sourceWrapped,
+              )
             }
-            for (const [fieldId, envelope] of storedFields) {
-              if (!sourceDek) unreadable('Workspace credential key generation is missing')
-              const plaintext = decryptCredentialFieldV1({
-                plaintextDek: sourceDek,
-                envelope,
-                aadContext: {
-                  workspaceId,
-                  credentialId: record.credentialId,
-                  providerId,
-                  fieldId,
-                  credentialVersion: record.credentialVersion,
-                  dekGeneration: rotation.sourceGeneration,
-                },
+            targetDek = await kmsBackend.unwrapDataKey(
+              context(workspaceId, rotation.targetGeneration),
+              targetWrapped,
+            )
+            for (const { providerId, record } of sourceRecords) {
+              const encryptedFields = new Map<string, ReturnType<typeof encryptCredentialFieldV1>>()
+              const storedFields = await locked.listFields(
+                workspaceId,
+                providerId,
+                record.credentialVersion,
+              )
+              if (record.materialKind === 'field-set' && storedFields.size === 0) {
+                unreadable('Current credential field envelopes are missing')
+              }
+              for (const [fieldId, envelope] of storedFields) {
+                if (!sourceDek) unreadable('Workspace credential key generation is missing')
+                const plaintext = decryptCredentialFieldV1({
+                  plaintextDek: sourceDek,
+                  envelope,
+                  aadContext: {
+                    workspaceId,
+                    credentialId: record.credentialId,
+                    providerId,
+                    fieldId,
+                    credentialVersion: record.credentialVersion,
+                    dekGeneration: rotation.sourceGeneration,
+                  },
+                })
+                try {
+                  encryptedFields.set(fieldId, encryptCredentialFieldV1({
+                    plaintextDek: targetDek,
+                    plaintext,
+                    aadContext: {
+                      workspaceId,
+                      credentialId: record.credentialId,
+                      providerId,
+                      fieldId,
+                      credentialVersion: record.credentialVersion,
+                      dekGeneration: rotation.targetGeneration,
+                    },
+                  }))
+                } finally {
+                  plaintext.fill(0)
+                }
+              }
+              await locked.commitDekRotationRecord({
+                workspaceId,
+                providerId,
+                expectedCredentialVersion: record.credentialVersion,
+                sourceGeneration: rotation.sourceGeneration,
+                targetGeneration: rotation.targetGeneration,
+                fields: encryptedFields,
               })
-              try {
-                encryptedFields.set(fieldId, encryptCredentialFieldV1({
-                  plaintextDek: targetDek,
-                  plaintext,
+            }
+          } finally {
+            sourceDek?.fill(0)
+            targetDek?.fill(0)
+          }
+
+          const migrated = await locked.listCredentialRecords(workspaceId)
+          const verifyWrapped = await requireWrappedDek(
+            workspaceId,
+            rotation.targetGeneration,
+            locked,
+          )
+          let verifyDek: Uint8Array | undefined
+          try {
+            verifyDek = await kmsBackend.unwrapDataKey(
+              context(workspaceId, rotation.targetGeneration),
+              verifyWrapped,
+            )
+            for (const { providerId, record } of migrated) {
+              if (record.dekGeneration !== rotation.targetGeneration) {
+                unreadable('Workspace credential DEK rotation is incomplete')
+              }
+              const fields = await locked.listFields(
+                workspaceId,
+                providerId,
+                record.credentialVersion,
+              )
+              if (record.materialKind === 'field-set' && fields.size === 0) {
+                unreadable('Current credential field envelopes are missing')
+              }
+              for (const [fieldId, envelope] of fields) {
+                const plaintext = decryptCredentialFieldV1({
+                  plaintextDek: verifyDek,
+                  envelope,
                   aadContext: {
                     workspaceId,
                     credentialId: record.credentialId,
@@ -734,80 +839,40 @@ function createVaultCredentialStoreBackendInternalV1(
                     credentialVersion: record.credentialVersion,
                     dekGeneration: rotation.targetGeneration,
                   },
-                }))
-              } finally {
+                })
                 plaintext.fill(0)
               }
             }
-            await locked.commitDekRotationRecord({
-              workspaceId,
-              providerId,
-              expectedCredentialVersion: record.credentialVersion,
-              sourceGeneration: rotation.sourceGeneration,
-              targetGeneration: rotation.targetGeneration,
-              fields: encryptedFields,
+          } finally {
+            verifyDek?.fill(0)
+          }
+          rotation = Object.freeze({ ...rotation, phase: 'verified' as const })
+          await locked.putDekRotationState(workspaceId, rotation)
+        }
+
+        if (rotation.phase === 'verified') {
+          if (anchorState.dekGeneration === rotation.sourceGeneration) {
+            await versionAnchor.withDekGenerationMutation(workspaceId, async (current) => {
+              if (!current || current.dekGeneration !== rotation!.sourceGeneration) {
+                unreadable('Credential DEK generation anchor changed during rotation')
+              }
+              return { nextDekGeneration: rotation!.targetGeneration, result: undefined }
             })
+            anchorState = await versionAnchor.read(workspaceId)
           }
-        } finally {
-          sourceDek?.fill(0)
-          targetDek?.fill(0)
+          if (anchorState?.dekGeneration !== rotation.targetGeneration) {
+            unreadable('Credential DEK generation anchor did not advance')
+          }
+          rotation = Object.freeze({ ...rotation, phase: 'anchor-advanced' as const })
+          await locked.putDekRotationState(workspaceId, rotation)
         }
 
-        // Verify every live envelope under N+1 before making N undecryptable.
-        const migrated = await locked.listCredentialRecords(workspaceId)
-        const verifyWrapped = await requireWrappedDek(
-          workspaceId,
-          rotation.targetGeneration,
-          locked,
-        )
-        let verifyDek: Uint8Array | undefined
-        try {
-          verifyDek = await kmsBackend.unwrapDataKey(
-            context(workspaceId, rotation.targetGeneration),
-            verifyWrapped,
-          )
-          for (const { providerId, record } of migrated) {
-            if (record.dekGeneration !== rotation.targetGeneration) {
-              unreadable('Workspace credential DEK rotation is incomplete')
-            }
-            const fields = await locked.listFields(
-              workspaceId,
-              providerId,
-              record.credentialVersion,
-            )
-            if (record.materialKind === 'field-set' && fields.size === 0) {
-              unreadable('Current credential field envelopes are missing')
-            }
-            for (const [fieldId, envelope] of fields) {
-              const plaintext = decryptCredentialFieldV1({
-                plaintextDek: verifyDek,
-                envelope,
-                aadContext: {
-                  workspaceId,
-                  credentialId: record.credentialId,
-                  providerId,
-                  fieldId,
-                  credentialVersion: record.credentialVersion,
-                  dekGeneration: rotation.targetGeneration,
-                },
-              })
-              plaintext.fill(0)
-            }
-          }
-        } finally {
-          verifyDek?.fill(0)
+        if (rotation.phase !== 'anchor-advanced') {
+          unreadable('Credential DEK rotation finalization state is invalid')
         }
-        rotation = Object.freeze({ ...rotation, phase: 'verified' as const })
-        await locked.putDekRotationState(workspaceId, rotation)
-      }
-
-      await locked.deleteWrappedDek(workspaceId, rotation.sourceGeneration)
-      await locked.clearDekRotationState(workspaceId)
-        return {
-          nextDekGeneration: rotation.targetGeneration,
-          result: rotation.targetGeneration,
-        }
-      }))
+        await locked.finalizeDekRotation(workspaceId, rotation)
+        return rotation.targetGeneration
+      })
     },
 
     async cryptoShredWorkspace(workspaceId: string): Promise<void> {

@@ -84,7 +84,7 @@ export function runVaultCredentialStoreConformanceV1(
         fields: new Map([[fieldId, new TextEncoder().encode('rotate-me')]]),
       })
 
-      await expect(backend.rotateWorkspaceDek(workspaceId)).resolves.toBe(2)
+      await expect(backend.rotateWorkspaceDek(workspaceId, 'rotation-1')).resolves.toBe(2)
       expect(await persistence.getWrappedDek(workspaceId, original.dekGeneration))
         .toBeUndefined()
       const resolved = await backend.read(workspaceId, providerId, [fieldId])

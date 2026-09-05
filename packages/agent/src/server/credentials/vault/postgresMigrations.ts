@@ -166,10 +166,40 @@ export async function runCredentialVaultPostgresMigrationsV1(
   await sql.unsafe(`
     CREATE TABLE IF NOT EXISTS workspace_credential_dek_rotations (
       workspace_id text PRIMARY KEY,
+      operation_id text NOT NULL CHECK (length(operation_id) > 0),
       source_generation bigint NOT NULL CHECK (source_generation > 0),
       target_generation bigint NOT NULL CHECK (target_generation = source_generation + 1),
-      phase text NOT NULL CHECK (phase IN ('reencrypting', 'verified')),
+      phase text NOT NULL,
       updated_at timestamptz NOT NULL DEFAULT NOW()
+    )
+  `)
+  await sql.unsafe(`
+    ALTER TABLE workspace_credential_dek_rotations
+      ADD COLUMN IF NOT EXISTS operation_id text
+  `)
+  await sql.unsafe(`
+    UPDATE workspace_credential_dek_rotations
+    SET operation_id = 'legacy:' || workspace_id || ':' || source_generation || ':' || target_generation
+    WHERE operation_id IS NULL
+  `)
+  await sql.unsafe(`
+    ALTER TABLE workspace_credential_dek_rotations
+      ALTER COLUMN operation_id SET NOT NULL,
+      DROP CONSTRAINT IF EXISTS workspace_credential_dek_rotations_operation_id_check,
+      DROP CONSTRAINT IF EXISTS workspace_credential_dek_rotations_phase_check,
+      ADD CONSTRAINT workspace_credential_dek_rotations_operation_id_check
+        CHECK (length(operation_id) > 0),
+      ADD CONSTRAINT workspace_credential_dek_rotations_phase_check
+        CHECK (phase IN ('reencrypting', 'verified', 'anchor-advanced'))
+  `)
+  await sql.unsafe(`
+    CREATE TABLE IF NOT EXISTS workspace_credential_dek_rotation_receipts (
+      workspace_id text NOT NULL,
+      operation_id text NOT NULL CHECK (length(operation_id) > 0),
+      source_generation bigint NOT NULL CHECK (source_generation > 0),
+      target_generation bigint NOT NULL CHECK (target_generation = source_generation + 1),
+      completed_at timestamptz NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (workspace_id, operation_id)
     )
   `)
   await sql.unsafe(`

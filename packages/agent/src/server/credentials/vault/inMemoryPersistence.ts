@@ -98,6 +98,7 @@ export function createInMemoryCredentialVaultPersistenceV1(): CredentialVaultPer
   const fields = new Map<string, CredentialEnvelopeV1>()
   const tombstones = new Map<string, CredentialFieldTombstoneV1>()
   const rotations = new Map<string, WorkspaceDekRotationStateV1>()
+  const rotationReceipts = new Map<string, WorkspaceDekRotationStateV1>()
   const shreddedWorkspaces = new Set<string>()
   const workspaceQueues = new Map<string, Promise<void>>()
 
@@ -339,6 +340,32 @@ export function createInMemoryCredentialVaultPersistenceV1(): CredentialVaultPer
     },
     async putDekRotationState(workspaceId, state) {
       rotations.set(workspaceId, Object.freeze({ ...state }))
+    },
+    async getDekRotationReceipt(workspaceId, operationId) {
+      const receipt = rotationReceipts.get(JSON.stringify([workspaceId, operationId]))
+      return receipt ? Object.freeze({
+        operationId: receipt.operationId,
+        sourceGeneration: receipt.sourceGeneration,
+        targetGeneration: receipt.targetGeneration,
+      }) : undefined
+    },
+    async finalizeDekRotation(workspaceId, state) {
+      const current = rotations.get(workspaceId)
+      if (
+        !current
+        || current.operationId !== state.operationId
+        || current.sourceGeneration !== state.sourceGeneration
+        || current.targetGeneration !== state.targetGeneration
+        || current.phase !== 'anchor-advanced'
+      ) {
+        throw new CredentialResolutionError(
+          CREDENTIAL_ERROR_CODES.UNREADABLE,
+          'Credential DEK rotation finalization state changed',
+        )
+      }
+      wrappedDeks.delete(dekKey(workspaceId, state.sourceGeneration))
+      rotations.delete(workspaceId)
+      rotationReceipts.set(JSON.stringify([workspaceId, state.operationId]), Object.freeze({ ...state }))
     },
     async clearDekRotationState(workspaceId) {
       rotations.delete(workspaceId)
