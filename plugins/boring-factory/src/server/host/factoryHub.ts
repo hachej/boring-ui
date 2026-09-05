@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises'
 import { basename, isAbsolute, resolve } from 'node:path'
+import { homedir } from 'node:os'
 import { promisify } from 'node:util'
 import { createNodeWorkspace } from '@hachej/boring-sandbox/providers/node-workspace'
 import { createAskUserServerPlugin, FileAskUserStore } from '@hachej/boring-ask-user/server'
@@ -220,9 +221,20 @@ async function importLegacyOrchestratorSession(
   sessionRoot: string | undefined,
   epicKey: string,
   sessionId: string,
+  transcriptPath?: string,
 ): Promise<boolean> {
-  if (!sessionRoot) return false
-  const source = await findTranscript(resolve(stateRoot, 'epics', epicKey, 'sessions'), sessionId)
+  // Pi's default session root when BORING_AGENT_SESSION_ROOT is unset.
+  const effectiveSessionRoot = sessionRoot ?? resolve(homedir(), '.pi/agent/sessions')
+  let source: string | undefined
+  if (transcriptPath) {
+    if (!isAbsolute(transcriptPath) || !transcriptPath.endsWith('.jsonl')) throw new TypeError('transcriptPath must be an absolute .jsonl path')
+    if (basename(transcriptPath) !== `${sessionId}.jsonl` && !basename(transcriptPath).endsWith(`_${sessionId}.jsonl`)) {
+      throw new TypeError(`transcriptPath does not name session ${sessionId}`)
+    }
+    source = transcriptPath
+  } else {
+    source = await findTranscript(resolve(stateRoot, 'epics', epicKey, 'sessions'), sessionId)
+  }
   if (!source) return false
   const content = await readFile(source, 'utf8')
   const lines = content.split('\n')
@@ -236,7 +248,7 @@ async function importLegacyOrchestratorSession(
   header.boringSessionCtx = { workspaceId: FACTORY_WORKSPACE_SCOPE_ID }
   let parsedIndex = 0
   const migrated = lines.map((line) => line ? JSON.stringify(parsed[parsedIndex++]) : '').join('\n')
-  const destinationRoot = sessionNamespaceDirectory(resolve(sessionRoot))
+  const destinationRoot = sessionNamespaceDirectory(resolve(effectiveSessionRoot))
   await mkdir(destinationRoot, { recursive: true })
   const existingDestination = await findTranscript(destinationRoot, sessionId)
   if (existingDestination) {
@@ -505,6 +517,8 @@ export async function createFactoryHost(options: CreateFactoryHostOptions): Prom
         try {
           const key = (request.params as { key?: unknown }).key
           const sessionId = (request.body as { orchestratorSessionId?: unknown } | undefined)?.orchestratorSessionId
+          const transcriptPath = (request.body as { transcriptPath?: unknown } | undefined)?.transcriptPath
+          if (transcriptPath !== undefined && typeof transcriptPath !== 'string') throw new TypeError('transcriptPath must be a string')
           if (typeof key !== 'string' || !key.trim()) throw new TypeError('epic key is required')
           if (typeof sessionId !== 'string' || !sessionId.trim()) throw new TypeError('orchestratorSessionId is required')
           return await withEpicAdoptionLock(key, async () => {
@@ -516,7 +530,7 @@ export async function createFactoryHost(options: CreateFactoryHostOptions): Prom
               throw new FactorySessionBindingError(sessionId, boundEpic ?? registryOwner!.epicKey)
             }
             let stateResponse = await app.inject({ method: 'GET', url: `/api/v1/agents/${FACTORY_ORCHESTRATOR_AGENT_TYPE_ID}/sessions/${sessionId}/state`, headers: { 'x-boring-workspace-id': workspaceScopeId } })
-            if (stateResponse.statusCode === 404 && await importLegacyOrchestratorSession(stateRoot, env.BORING_AGENT_SESSION_ROOT, key, sessionId)) {
+            if (stateResponse.statusCode === 404 && await importLegacyOrchestratorSession(stateRoot, env.BORING_AGENT_SESSION_ROOT, key, sessionId, transcriptPath)) {
               stateResponse = await app.inject({ method: 'GET', url: `/api/v1/agents/${FACTORY_ORCHESTRATOR_AGENT_TYPE_ID}/sessions/${sessionId}/state`, headers: { 'x-boring-workspace-id': workspaceScopeId } })
             }
             if (stateResponse.statusCode !== 200) return reply.code(404).send({ code: 'SESSION_NOT_FOUND', message: `Orchestrator session ${sessionId} was not found` })
