@@ -36,6 +36,7 @@ function authority(role: 'owner' | 'editor' | 'viewer'): VerifiedWorkspaceCreden
 async function setup(
   role: 'owner' | 'editor' | 'viewer' = 'owner',
   backendOverride?: VaultCredentialStoreBackendV1,
+  includeCodex = false,
 ) {
   const providerRegistry = createProviderRegistryV1([{
     contractVersion: 'boring.provider.v1',
@@ -55,7 +56,15 @@ async function setup(
     },
     consumerBindingIds: [],
     sandboxEgressOrigins: [],
-  }])
+  }, ...(includeCodex ? [{
+    contractVersion: 'boring.provider.v1' as const,
+    id: 'openai-codex' as ProviderId,
+    displayName: 'OpenAI Codex',
+    category: 'llm' as const,
+    credential: { type: 'none' as const },
+    consumerBindingIds: [],
+    sandboxEgressOrigins: [],
+  }] : [])])
   const persistence = createInMemoryCredentialVaultPersistenceV1()
   const vaultBackend = backendOverride ?? createVaultCredentialStoreBackendV1({
     persistence,
@@ -115,6 +124,24 @@ describe('owner credential routes', () => {
     expect(response.json()).toEqual({
       error: {
         code: CREDENTIAL_ERROR_CODES.FORBIDDEN,
+        message: 'Credential operation failed',
+      },
+    })
+    await app.close()
+  })
+
+  test('rejects API-key writes for Pi providers that do not advertise api-key auth', async () => {
+    const { app } = await setup('owner', undefined, true)
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/api/v1/credentials/openai-codex',
+      payload: { fields: { 'api-key': 'secret' } },
+    })
+
+    expect(response.statusCode).toBe(400)
+    expect(response.json()).toEqual({
+      error: {
+        code: CREDENTIAL_ERROR_CODES.SCHEMA_MISMATCH,
         message: 'Credential operation failed',
       },
     })

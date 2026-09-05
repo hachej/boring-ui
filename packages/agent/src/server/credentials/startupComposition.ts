@@ -148,6 +148,9 @@ export async function derivePiLlmProviderCatalogV1(): Promise<{
     refreshOnCreate: false,
   })
   const piProviders = modelRuntime.getProviders()
+  const apiKeyProviderIds = new Set<string>(
+    piProviders.filter((provider) => provider.auth.apiKey !== undefined).map((provider) => provider.id),
+  )
   const oauthProviderIds = new Set<string>(
     piProviders.filter((provider) => provider.auth.oauth !== undefined).map((provider) => provider.id),
   )
@@ -165,6 +168,7 @@ export async function derivePiLlmProviderCatalogV1(): Promise<{
 
   const providerIds = [...new Set([
     ...originsByProvider.keys(),
+    ...apiKeyProviderIds,
     ...oauthProviderIds,
   ])].sort()
 
@@ -185,11 +189,10 @@ export async function derivePiLlmProviderCatalogV1(): Promise<{
         modelRuntime.getProvider(rawProviderId)?.name,
         rawProviderId,
       ),
-      authKinds: Object.freeze(
-        oauthProviderIds.has(rawProviderId)
-          ? (['api-key', 'oauth'] as const)
-          : (['api-key'] as const),
-      ) as readonly PiLlmAuthKindV1[],
+      authKinds: Object.freeze([
+        ...(apiKeyProviderIds.has(rawProviderId) ? (['api-key'] as const) : []),
+        ...(oauthProviderIds.has(rawProviderId) ? (['oauth'] as const) : []),
+      ]) as readonly PiLlmAuthKindV1[],
       egressOrigins: Object.freeze(
         [...(originsByProvider.get(rawProviderId) ?? [])].sort(),
       ),
@@ -203,22 +206,25 @@ export async function derivePiLlmProviderCatalogV1(): Promise<{
 }
 
 function toProviderDefinition(provider: PiDerivedLlmProviderV1): ProviderDefinitionV1 {
+  const supportsApiKey = provider.authKinds.includes('api-key')
   return {
     contractVersion: 'boring.provider.v1',
     id: provider.providerId,
     displayName: provider.displayName,
     category: 'llm',
-    credential: {
-      type: 'api-key',
-      fields: [{
-        id: LLM_API_KEY_FIELD_ID_V1,
-        label: 'API key',
-        required: true,
-        sensitivity: 'secret',
-        minBytes: 1,
-        maxBytes: MAX_API_KEY_BYTES_V1,
-      }],
-    },
+    credential: supportsApiKey
+      ? {
+          type: 'api-key',
+          fields: [{
+            id: LLM_API_KEY_FIELD_ID_V1,
+            label: 'API key',
+            required: true,
+            sensitivity: 'secret',
+            minBytes: 1,
+            maxBytes: MAX_API_KEY_BYTES_V1,
+          }],
+        }
+      : { type: 'none' },
     consumerBindingIds: [provider.bindingId],
     sandboxEgressOrigins: provider.egressOrigins,
   }
@@ -235,7 +241,9 @@ function toConsumerBinding(provider: PiDerivedLlmProviderV1): CredentialConsumer
       trust: 'trusted',
     },
     purpose: 'Resolve the workspace LLM credential for pi model calls',
-    allowedFieldIds: [LLM_API_KEY_FIELD_ID_V1],
+    allowedFieldIds: provider.authKinds.includes('api-key')
+      ? [LLM_API_KEY_FIELD_ID_V1]
+      : [],
     delivery: 'host-only',
   }
 }

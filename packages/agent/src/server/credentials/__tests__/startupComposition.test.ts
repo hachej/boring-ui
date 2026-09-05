@@ -91,7 +91,7 @@ describe('pi-derived LLM provider catalog', () => {
     const piProviderIds = new Set<string>([
       ...piRuntime.getModels().map((model) => model.provider),
       ...piRuntime.getProviders()
-        .filter((provider) => provider.auth.oauth !== undefined)
+        .filter((provider) => provider.auth.apiKey !== undefined || provider.auth.oauth !== undefined)
         .map((provider) => provider.id),
     ])
 
@@ -115,6 +115,8 @@ describe('pi-derived LLM provider catalog', () => {
 
     const openai = providers.find((provider) => provider.providerId === 'openai')
     expect(openai?.authKinds).toEqual(['api-key'])
+    expect(providers.find((provider) => provider.providerId === 'openai-codex')?.authKinds)
+      .toEqual(['oauth'])
 
     for (const provider of providers) {
       expect(provider.bindingId).toBe(llmModelCallBindingIdV1(provider.providerId))
@@ -132,11 +134,15 @@ describe('pi-derived LLM provider catalog', () => {
     for (const entry of catalog) {
       const definition = providerRegistry.require(entry.providerId)
       expect(definition.category).toBe('llm')
-      expect(definition.credential.type).toBe('api-key')
+      expect(definition.credential.type).toBe(
+        entry.authKinds.includes('api-key') ? 'api-key' : 'none',
+      )
       const binding = bindingRegistry.require(entry.bindingId)
       expect(binding.providerId).toBe(entry.providerId)
       expect(binding.delivery).toBe('host-only')
-      expect(binding.allowedFieldIds).toEqual([LLM_API_KEY_FIELD_ID_V1])
+      expect(binding.allowedFieldIds).toEqual(
+        entry.authKinds.includes('api-key') ? [LLM_API_KEY_FIELD_ID_V1] : [],
+      )
     }
   })
 })

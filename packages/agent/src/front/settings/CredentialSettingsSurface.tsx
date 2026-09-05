@@ -11,7 +11,6 @@ import { ExternalLink, KeyRound } from 'lucide-react'
 import type { CredentialMetadataV1 } from '../../shared/credentials'
 import {
   createCredentialSettingsClient,
-  type CredentialFundingMethod,
   type CredentialOAuthFlow,
   type CredentialSettingsClient,
 } from './credentialSettingsClient'
@@ -65,7 +64,6 @@ function CredentialSettingsSurfaceForWorkspace({
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
-  const [fundingMethods, setFundingMethods] = useState<Record<string, CredentialFundingMethod>>({})
   const [oauthFlow, setOauthFlow] = useState<CredentialOAuthFlow | null>(null)
   const oauthRequestEpoch = useRef(0)
 
@@ -220,8 +218,6 @@ function CredentialSettingsSurfaceForWorkspace({
             const busy = busyProvider === credential.providerId
             const isCodex = credential.providerId === 'openai-codex'
             const codexPending = isCodex && oauthFlow?.status === 'pending'
-            const method = fundingMethods[credential.providerId]
-              ?? (isCodex && credential.credentialType === 'oauth' ? 'openai-codex' : 'api-key')
             return (
               <section key={credential.providerId} aria-labelledby={`credential-${credential.providerId}`} className="space-y-3 p-4">
                 <div className="flex flex-wrap items-start justify-between gap-2">
@@ -237,23 +233,7 @@ function CredentialSettingsSurfaceForWorkspace({
                   {connected && <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">Workspace funded</span>}
                 </div>
 
-                {isCodex && (
-                  <fieldset className="space-y-1.5">
-                    <legend className="text-[12px] font-medium text-foreground">Workspace funding method</legend>
-                    <div className="flex flex-wrap gap-3 text-[12px]">
-                      <label className="flex items-center gap-1.5">
-                        <input type="radio" name={`funding-${credential.providerId}`} checked={method === 'api-key'} disabled={codexPending} onChange={() => setFundingMethods((value) => ({ ...value, [credential.providerId]: 'api-key' }))} />
-                        API key
-                      </label>
-                      <label className="flex items-center gap-1.5">
-                        <input type="radio" name={`funding-${credential.providerId}`} checked={method === 'openai-codex'} disabled={codexPending} onChange={() => setFundingMethods((value) => ({ ...value, [credential.providerId]: 'openai-codex' }))} />
-                        OpenAI Codex sign-in
-                      </label>
-                    </div>
-                  </fieldset>
-                )}
-
-                {(!isCodex || method === 'api-key') ? (
+                {!isCodex ? (
                   <form className="flex flex-col gap-2 sm:flex-row sm:items-end" onSubmit={(event) => void submitApiKey(event, credential)}>
                     <div className="min-w-0 flex-1 space-y-1.5">
                       <Label htmlFor={`api-key-${credential.providerId}`} className="text-[12px]">API key</Label>
@@ -262,7 +242,8 @@ function CredentialSettingsSurfaceForWorkspace({
                     <Button type="submit" size="sm" disabled={busy || codexPending}>{busy ? 'Saving…' : connected ? 'Replace key' : 'Connect'}</Button>
                   </form>
                 ) : (
-                  <div>
+                  <div className="space-y-1.5">
+                    <p className="text-[12px] font-medium text-foreground">Workspace funding method: OpenAI Codex sign-in</p>
                     <Button type="button" size="sm" onClick={() => void startCodex()} disabled={busy || codexPending}>
                       {oauthFlow?.status === 'pending' ? 'Sign-in pending…' : connected ? 'Sign in again' : 'Sign in with OpenAI Codex'}
                     </Button>

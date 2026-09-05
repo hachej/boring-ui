@@ -21,7 +21,7 @@ const anthropic: CredentialMetadataV1 = {
 const codex: CredentialMetadataV1 = {
   providerId: 'openai-codex',
   displayName: 'OpenAI Codex',
-  credentialType: 'api-key',
+  credentialType: 'none',
   state: 'not_configured',
 }
 
@@ -93,7 +93,7 @@ describe('CredentialSettingsSurface', () => {
     expect(await screen.findByText('Disabled · ends in 1234 · v2')).not.toBeNull()
   })
 
-  test('offers workspace funding selection and safe Codex browser/device/prompt states', async () => {
+  test('offers OAuth-only Codex funding and safe browser/device/prompt states', async () => {
     const pending: CredentialOAuthFlow = {
       flowId: 'flow-codex',
       providerId: 'openai-codex',
@@ -109,9 +109,11 @@ describe('CredentialSettingsSurface', () => {
     const api = client({ startCodexLogin, respondToCodexLogin })
     render(<CredentialSettingsSurface isWorkspaceOwner client={api} />)
 
-    await screen.findByRole('heading', { name: 'OpenAI Codex' })
-    fireEvent.click(screen.getByRole('radio', { name: 'OpenAI Codex sign-in' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Sign in with OpenAI Codex' }))
+    const codexSection = (await screen.findByRole('heading', { name: 'OpenAI Codex' })).closest('section')!
+    expect(within(codexSection).queryByRole('radio')).toBeNull()
+    expect(within(codexSection).queryByLabelText('API key')).toBeNull()
+    expect(within(codexSection).getByText('Workspace funding method: OpenAI Codex sign-in')).not.toBeNull()
+    fireEvent.click(within(codexSection).getByRole('button', { name: 'Sign in with OpenAI Codex' }))
 
     expect((await screen.findByText('Enter code', { exact: false })).textContent).toContain('ABCD-EFGH')
     expect(screen.getByRole('link', { name: /Open authorization page/ }).getAttribute('href')).toBe('https://login.example.test/authorize')
@@ -145,14 +147,14 @@ describe('CredentialSettingsSurface', () => {
     })
     render(<CredentialSettingsSurface isWorkspaceOwner client={api} />)
 
-    const oauthMethod = await screen.findByRole('radio', { name: 'OpenAI Codex sign-in' }) as HTMLInputElement
-    expect(oauthMethod.checked).toBe(true)
+    const codexSection = (await screen.findByRole('heading', { name: 'OpenAI Codex' })).closest('section')!
+    expect(within(codexSection).queryByRole('radio')).toBeNull()
+    expect(within(codexSection).queryByLabelText('API key')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Sign in again' }))
-    await waitFor(() => expect(oauthMethod.disabled).toBe(true))
 
-    const codexSection = screen.getByRole('heading', { name: 'OpenAI Codex' }).closest('section')!
+    const cancel = await screen.findByRole('button', { name: 'Cancel sign-in' })
     expect((within(codexSection).getByRole('button', { name: 'Disable' }) as HTMLButtonElement).disabled).toBe(true)
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel sign-in' }))
+    fireEvent.click(cancel)
     expect(await screen.findByRole('alert')).not.toBeNull()
     expect(screen.getByText('OpenAI Codex sign-in: pending')).not.toBeNull()
     expect(cancelCodexLogin).toHaveBeenCalledWith('flow-pending')
