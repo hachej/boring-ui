@@ -1,6 +1,3 @@
-import { mkdtemp } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import Fastify from 'fastify'
 import { describe, expect, test } from 'vitest'
 import {
@@ -20,6 +17,7 @@ import {
   createVaultCredentialStoreBackendV1,
 } from '../../../credentials'
 import type { VaultCredentialStoreBackendV1 } from '../../../credentials'
+import { createTemporaryCredentialAnchorPath } from '../../../credentials/__tests__/testSupport'
 import { credentialsRoutes } from '../credentials'
 
 const PROVIDER = 'anthropic' as ProviderId
@@ -79,10 +77,7 @@ async function setup(
 
 describe('owner credential routes', () => {
   test('lists registry providers from clean persistence before the anchor is provisioned', async () => {
-    const anchorFilePath = join(
-      await mkdtemp(join(tmpdir(), 'credential-route-clean-anchor-')),
-      'credential-anchor',
-    )
+    const anchorFilePath = await createTemporaryCredentialAnchorPath()
     const loadKek = async () => new Uint8Array(32).fill(7)
     const vaultBackend = createVaultCredentialStoreBackendV1({
       persistence: createInMemoryCredentialVaultPersistenceV1(),
