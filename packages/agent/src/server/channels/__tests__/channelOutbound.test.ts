@@ -2,11 +2,17 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, test, vi } from 'vitest'
+import type { AgentSessionEvent } from '@mariozechner/pi-coding-agent'
+import type { AgentHarness, AgentSendInput, RunContext } from '../../../shared/harness'
 import type { PiChatEvent } from '../../../shared/chat'
+import type { SessionStore } from '../../../shared/session'
 import { ErrorCode } from '../../../shared/error-codes'
 import { openDatabase } from '../../events/sqlStorage'
 import { SqliteEventStreamStore } from '../../events/eventStreamStore'
+import { HarnessPiChatService } from '../../pi-chat/harnessPiChatService'
+import type { PiAgentSessionAdapter } from '../../pi-chat/PiAgentSessionAdapter'
 import { ChannelBindingStore } from '../channelBindingStore'
+import { ChannelInboundService, type ChannelAgentInvoker } from '../channelInboundService'
 import {
   ChannelOutboundService,
   assembleNextTurn,
@@ -201,6 +207,26 @@ describe('durable channel outbound', () => {
     })
   })
 
+  test('reclaims an expired crash lease without requiring another inbound wake', async () => {
+    await withChannel(async ({ bindings, events, path, append }) => {
+      const binding = bindings.provision(bindingInput)
+      bindings.enqueueInbound({
+        channel: 'whatsapp', conversationKey: bindingInput.conversationKey,
+        providerMessageId: 'wamid.crash-lease', text: 'hello', receivedAt: Date.now(),
+      }, 'default')
+      await appendTurn(append, 'turn-crash-lease', 'recovered reply')
+      expect(bindings.claimOutbound(binding, 'crashed-process', 15)).toBe(true)
+      const sent: string[] = []
+      const service = new ChannelOutboundService(bindings, events, runtime(path),
+        new Map([['whatsapp', fakeAdapter(sent)]]), { outboundClaimTtlMs: 15 })
+      service.start()
+      await new Promise((resolve) => setTimeout(resolve, 30))
+      await service.waitForIdle()
+      expect(sent).toEqual(['recovered reply'])
+      await service.dispose()
+    })
+  })
+
   test('documents accepted at-least-once replay after send-before-CAS failure', async () => {
     await withChannel(async ({ bindings, events, path, append }) => {
       bindings.provision(bindingInput)
@@ -376,6 +402,106 @@ describe('durable channel outbound', () => {
   })
 })
 
+describe('fake-channel conformance', () => {
+  test('drives inbound through HarnessPiChatService durable events and resumes from the persisted outbound cursor', async () => {
+    await withChannel(async ({ bindings, events, path }) => {
+      const listeners = new Set<(event: AgentSessionEvent) => void>()
+      const piAdapter = {
+        readSnapshot: () => ({
+          state: {}, messages: [], isStreaming: false, isRetrying: false, retryAttempt: 0,
+          pendingMessageCount: 0, steeringMessages: [], followUpMessages: [],
+          followUpMode: 'one-at-a-time', sessionId: bindingInput.sessionKey,
+        }),
+        subscribe(listener: (event: AgentSessionEvent) => void) {
+          listeners.add(listener)
+          return () => listeners.delete(listener)
+        },
+        prompt: vi.fn(async () => {}),
+        followUp: vi.fn(async () => {}),
+        clearFollowUp: vi.fn(),
+        abort: vi.fn(async () => {}),
+        abortRetry: vi.fn(),
+      } as unknown as PiAgentSessionAdapter
+      const sessions: SessionStore = {
+        list: vi.fn(async () => []),
+        create: vi.fn(async () => ({ id: bindingInput.sessionKey, title: 'Channel', createdAt: '', updatedAt: '', turnCount: 0 })),
+        load: vi.fn(async () => ({ id: bindingInput.sessionKey, title: 'Channel', createdAt: '', updatedAt: '', turnCount: 0 })),
+        delete: vi.fn(async () => {}),
+      }
+      const harness = {
+        id: 'fake-channel-harness',
+        placement: 'server',
+        sessions,
+        hasPiSession: vi.fn(() => false),
+        getPiSessionAdapter: vi.fn(async (_input: AgentSendInput, _ctx: RunContext) => piAdapter),
+      } as AgentHarness & {
+        hasPiSession(sessionId: string): boolean
+        getPiSessionAdapter(input: AgentSendInput, ctx: RunContext): Promise<PiAgentSessionAdapter>
+      }
+      const pi = new HarnessPiChatService({
+        agentTypeId: 'default', harness, sessionStore: sessions, workdir: '/workspace', eventStore: events,
+      })
+      const ctx = {
+        workspaceId: bindingInput.workspaceId,
+        authSubject: bindingInput.authSubjectId,
+        sessionAuthority: 'workspace-scope' as const,
+        requestId: 'channel-conformance',
+      }
+      await pi.subscribe(ctx, bindingInput.sessionKey, 0, () => {})
+      bindings.provision(bindingInput)
+      const sent: string[] = []
+      const outbound = new ChannelOutboundService(bindings, events, {
+        resolveStreamPath: (binding) => pi.resolveSessionStreamPath(ctx, binding.sessionKey!),
+        createSession: async () => bindingInput.sessionKey,
+      }, new Map([['whatsapp', fakeAdapter(sent)]]))
+      outbound.start()
+      const invoker: ChannelAgentInvoker = {
+        createSession: async () => bindingInput.sessionKey,
+        isSessionBusy: async () => false,
+        async prompt(input) {
+          await pi.prompt({ ...ctx, requestId: input.requestId }, input.sessionKey, {
+            message: input.text, clientNonce: input.requestId,
+          })
+          for (const listener of listeners) listener({ type: 'agent_start', turnId: 'turn-conformance' } as AgentSessionEvent)
+          for (const listener of listeners) listener({
+            type: 'agent_end',
+            messages: [{
+              id: 'assistant-conformance', role: 'assistant',
+              content: [{ type: 'text', text: 'CONFORMANCE_OK' }], stopReason: 'stop', timestamp: Date.now(),
+              usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2,
+                cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+            }],
+            willRetry: false,
+          } as unknown as AgentSessionEvent)
+        },
+        followUp: async () => {},
+      }
+      const inbound = new ChannelInboundService(bindings, invoker)
+      expect(inbound.accept({
+        channel: 'whatsapp', conversationKey: bindingInput.conversationKey,
+        providerMessageId: 'wamid.conformance', text: 'hello', receivedAt: Date.now(),
+      }, 'default')).toMatchObject({ accepted: true })
+      await inbound.waitForIdle()
+      await eventually(() => sent.length === 1)
+      await outbound.waitForIdle()
+      expect(sent).toEqual(['CONFORMANCE_OK'])
+      const cursor = bindings.getBinding('whatsapp', bindingInput.conversationKey, 'default')?.outboundCursor
+      expect(cursor).not.toBe('-1')
+
+      await outbound.dispose()
+      const restarted = new ChannelOutboundService(bindings, events, {
+        resolveStreamPath: async () => path,
+        createSession: async () => bindingInput.sessionKey,
+      }, new Map([['whatsapp', fakeAdapter(sent)]]))
+      restarted.start()
+      await restarted.waitForIdle()
+      expect(sent).toEqual(['CONFORMANCE_OK'])
+      await restarted.dispose()
+      await pi.dispose()
+    })
+  })
+})
+
 describe('channel shaping', () => {
   test('uses WhatsApp markdown and closes/reopens fences across bounded chunks', () => {
     const chunks = shapeChannelText(`## Heading\n\n**bold**\n\n\`\`\`ts\n${'x'.repeat(40)}\n\`\`\``, 'whatsapp/markdown', 30)
@@ -386,6 +512,14 @@ describe('channel shaping', () => {
     expect(chunks[2]).toMatch(/^```/)
   })
 })
+
+async function eventually(predicate: () => boolean, timeoutMs = 1_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error('Timed out waiting for channel condition.')
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
+}
 
 function envelope(chunk: PiChatEvent, offset: string) {
   return {

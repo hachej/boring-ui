@@ -51,6 +51,7 @@ export class ChannelOutboundService<Message = unknown> {
   private readonly pendingDrains = new Set<string>()
   private readonly subscriptions = new Map<string, { path: string; unsubscribe: () => void }>()
   private readonly stallTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  private readonly claimTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private disposed = false
 
   constructor(
@@ -81,6 +82,8 @@ export class ChannelOutboundService<Message = unknown> {
     this.subscriptions.clear()
     for (const timer of this.stallTimers.values()) clearTimeout(timer)
     this.stallTimers.clear()
+    for (const timer of this.claimTimers.values()) clearTimeout(timer)
+    this.claimTimers.clear()
     await Promise.allSettled([...this.drains.values()])
   }
 
@@ -108,7 +111,10 @@ export class ChannelOutboundService<Message = unknown> {
     if (!adapter) return
     const claimOwner = randomUUID()
     const claimTtlMs = this.options.outboundClaimTtlMs ?? OUTBOUND_CLAIM_TTL_MS
-    if (!this.store.claimOutbound(binding, claimOwner, claimTtlMs)) return
+    if (!this.store.claimOutbound(binding, claimOwner, claimTtlMs)) {
+      this.scheduleClaimRetry(binding)
+      return
+    }
     let claimLost = false
     const heartbeat = setInterval(() => {
       try {
@@ -144,33 +150,36 @@ export class ChannelOutboundService<Message = unknown> {
         if (binding.sessionResetPending) {
           try {
             if (!this.isInsideServiceWindow(binding, adapter)) {
-              await this.sendWindowTemplate(adapter, binding)
+              await this.sendWindowTemplate(adapter, binding, claimOwner)
               return
             }
             await this.sendWithRetry(adapter, binding, {
               turnId: 'session-reset',
               status: 'error',
               text: 'The previous session is no longer available. I started a new conversation.',
-            })
+            }, claimOwner)
           } catch (error) {
+            if (!this.store.ownsOutboundClaim(claimOwner)) return
             this.store.parkOutboundBinding(binding, stableErrorCode(error))
             return
           }
-          if (claimLost || !this.store.acknowledgeSessionReset(binding)) return
+          if (claimLost || !this.store.ownsOutboundClaim(claimOwner)
+            || !this.store.acknowledgeSessionReset(binding)) return
           binding = this.current(binding) ?? binding
         }
         const unread = await this.readUnreadEvents(streamPath, binding.outboundCursor)
-        const assembled = assembleNextTurn(unread, this.now(), this.stallTimeoutMs())
+        const assembled = unread.assembled
         if (!assembled) {
-          this.scheduleStall(binding, unread)
+          this.scheduleStall(binding, unread.entries)
           return
         }
         this.clearStall(binding)
 
         if (!this.isInsideServiceWindow(binding, adapter)) {
           try {
-            await this.sendWindowTemplate(adapter, binding)
+            await this.sendWindowTemplate(adapter, binding, claimOwner)
           } catch (error) {
+            if (!this.store.ownsOutboundClaim(claimOwner)) return
             this.store.parkOutboundBinding(binding, stableErrorCode(error))
           }
           return
@@ -178,12 +187,13 @@ export class ChannelOutboundService<Message = unknown> {
 
         try {
           if (claimLost) return
-          await this.sendWithRetry(adapter, binding, assembled.turn)
+          await this.sendWithRetry(adapter, binding, assembled.turn, claimOwner)
         } catch (error) {
+          if (!this.store.ownsOutboundClaim(claimOwner)) return
           this.store.parkOutbound(binding, assembled.terminalOffset, stableErrorCode(error))
           continue
         }
-        if (claimLost) return
+        if (claimLost || !this.store.ownsOutboundClaim(claimOwner)) return
         if (assembled.turn.status === 'stalled') {
           if (!this.store.parkOutbound(binding, assembled.terminalOffset, CHANNEL_TURN_STALLED)) return
           continue
@@ -196,15 +206,43 @@ export class ChannelOutboundService<Message = unknown> {
     }
   }
 
-  private async readUnreadEvents(streamPath: string, durableCursor: string): Promise<Array<{ data: unknown; offset: string }>> {
+  private async readUnreadEvents(streamPath: string, durableCursor: string): Promise<{
+    entries: Array<{ data: unknown; offset: string }>
+    assembled?: AssembledTurn
+  }> {
     const entries: Array<{ data: unknown; offset: string }> = []
     let readCursor = durableCursor
+    let lastOffset = durableCursor
     for (;;) {
       const page = await this.events.readEvents(streamPath, { offset: readCursor, limit: 1_000 })
-      entries.push(...page.events)
-      if (page.upToDate || page.nextOffset === readCursor) return entries
+      for (const entry of page.events) {
+        lastOffset = entry.offset
+        if (isAssemblyEvent(entry.data)) entries.push(entry)
+      }
+      const assembled = assembleNextTurn(entries, this.now(), this.stallTimeoutMs())
+      if (assembled) {
+        return {
+          entries,
+          assembled: assembled.turn.status === 'stalled'
+            ? { ...assembled, terminalOffset: lastOffset }
+            : assembled,
+        }
+      }
+      if (page.upToDate || page.nextOffset === readCursor) return { entries }
       readCursor = page.nextOffset
     }
+  }
+
+  private scheduleClaimRetry(binding: ChannelBinding): void {
+    const retryAt = this.store.outboundClaimRetryAt(binding)
+    if (retryAt === undefined || this.disposed) return
+    const key = bindingKey(binding)
+    if (this.claimTimers.has(key)) return
+    this.claimTimers.set(key, setTimeout(() => {
+      this.claimTimers.delete(key)
+      const current = this.current(binding)
+      if (current) this.schedule(current)
+    }, Math.max(1, retryAt - Date.now())))
   }
 
   private ensureSubscription(binding: ChannelBinding, streamPath: string): void {
@@ -240,7 +278,11 @@ export class ChannelOutboundService<Message = unknown> {
     this.stallTimers.delete(key)
   }
 
-  private async sendWindowTemplate(adapter: ChannelOutboundAdapter<Message>, binding: ChannelBinding): Promise<void> {
+  private async sendWindowTemplate(
+    adapter: ChannelOutboundAdapter<Message>,
+    binding: ChannelBinding,
+    claimOwner: string,
+  ): Promise<void> {
     if (binding.templateSentForInboundAt === binding.lastInboundAt) return
     if (!adapter.sendWindowTemplate) {
       throw Object.assign(new Error('Channel adapter has a service window but no fallback template.'), {
@@ -252,7 +294,9 @@ export class ChannelOutboundService<Message = unknown> {
     for (;;) {
       attempt += 1
       try {
+        if (!this.store.ownsOutboundClaim(claimOwner)) throw lostClaimError()
         await adapter.sendWindowTemplate({ conversationKey: binding.conversationKey })
+        if (!this.store.ownsOutboundClaim(claimOwner)) throw lostClaimError()
         this.store.markTemplateSent(binding)
         return
       } catch (error) {
@@ -267,6 +311,7 @@ export class ChannelOutboundService<Message = unknown> {
     adapter: ChannelOutboundAdapter<Message>,
     binding: ChannelBinding,
     turn: ChannelOutboundTurn,
+    claimOwner: string,
   ): Promise<void> {
     const messages = adapter.renderOutbound(turn)
     for (const message of messages) {
@@ -274,6 +319,7 @@ export class ChannelOutboundService<Message = unknown> {
       for (;;) {
         attempt += 1
         try {
+          if (!this.store.ownsOutboundClaim(claimOwner)) throw lostClaimError()
           await adapter.send({ conversationKey: binding.conversationKey, message })
           break
         } catch (error) {
@@ -399,6 +445,14 @@ function displayText(message: { parts: readonly { type: string; text?: string }[
     .join('\n')
 }
 
+function isAssemblyEvent(value: unknown): value is AgentEvent {
+  if (!isAgentEvent(value)) return false
+  return value.chunk.type === 'agent-start'
+    || value.chunk.type === 'message-end'
+    || value.chunk.type === 'agent-end'
+    || value.chunk.type === 'error'
+}
+
 function isAgentEvent(value: unknown): value is AgentEvent {
   if (!value || typeof value !== 'object') return false
   const candidate = value as Partial<AgentEvent>
@@ -418,6 +472,13 @@ function sameBindingGeneration(left: ChannelBinding, right: ChannelBinding): boo
 
 function bindingKey(binding: ChannelBinding): string {
   return JSON.stringify([binding.channel, binding.conversationKey, binding.agentTypeId])
+}
+
+function lostClaimError(): Error {
+  return Object.assign(new Error('Channel outbound delivery lease was lost.'), {
+    code: CHANNEL_OUTBOUND_PARKED,
+    retryable: false,
+  })
 }
 
 function stableErrorCode(error: unknown): string {
