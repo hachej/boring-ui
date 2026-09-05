@@ -151,6 +151,8 @@ All API failures must use the response envelope:
 | `CHANNEL_INBOUND_ACCEPTED` | The provider message was durably deduplicated/enqueued and asynchronous channel processing may begin | 200 | none | info | stable (public API) |
 | `CHANNEL_UNKNOWN_BINDING` | Channel inbound did not match an active provisioned binding; no session or identity was created | 200 | user-fix | warn | stable (public API) |
 | `CHANNEL_INBOUND_PARKED` | Channel inbound exhausted bounded delivery retries and was parked so later messages are not wedged | n/a (worker diagnostic) | retry | warn | stable (public API) |
+| `CHANNEL_OUTBOUND_PARKED` | A completed channel turn exhausted bounded send retries and was parked so later turns are not wedged | n/a (worker diagnostic) | retry | warn | stable (public API) |
+| `CHANNEL_TURN_STALLED` | A channel turn did not reach a terminal event before its configured deadline; a notice was sent and the observed range was parked | n/a (worker diagnostic) | retry | warn | stable (public API) |
 | `CHANNEL_BINDING_REVOKED` | A channel binding was revoked while queued work was being resolved | n/a (worker diagnostic) | user-fix | warn | stable (public API) |
 | `SESSION_CREATE_TIMEOUT` | The owner-token channel session reservation did not reach ready state within bounded reservation cycles | n/a (worker diagnostic) | retry | warn | stable (public API) |
 | `ERR_NOT_IMPLEMENTED_UNTIL_T1` | Headless core method exists but the durable T1 implementation has not landed yet | 501 | retry-after-upgrade | warn | stable (public API) |

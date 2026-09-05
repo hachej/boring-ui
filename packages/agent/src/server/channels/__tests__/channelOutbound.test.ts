@@ -1,0 +1,317 @@
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { describe, expect, test, vi } from 'vitest'
+import type { PiChatEvent } from '../../../shared/chat'
+import { ErrorCode } from '../../../shared/error-codes'
+import { openDatabase } from '../../events/sqlStorage'
+import { SqliteEventStreamStore } from '../../events/eventStreamStore'
+import { ChannelBindingStore } from '../channelBindingStore'
+import {
+  ChannelOutboundService,
+  assembleNextTurn,
+  shapeChannelText,
+  type ChannelOutboundAdapter,
+} from '../channelOutboundService'
+
+const bindingInput = {
+  channel: 'whatsapp',
+  conversationKey: '+41790000000',
+  agentTypeId: 'default',
+  workspaceId: 'workspace-1',
+  authSubjectId: 'user-1',
+  sessionKey: 'session-1',
+} as const
+
+async function withChannel(run: (input: {
+  bindings: ChannelBindingStore
+  events: SqliteEventStreamStore
+  path: string
+  append: (chunk: PiChatEvent, timestamp?: number) => Promise<string>
+}) => Promise<void>) {
+  const dir = await mkdtemp(join(tmpdir(), 'boring-channel-outbound-'))
+  const db = openDatabase(join(dir, 'channel.sqlite'))
+  const bindings = new ChannelBindingStore(db.sql, db.runTransaction)
+  const events = new SqliteEventStreamStore(db.sql, db.runTransaction)
+  const stream = await events.createSessionStream(
+    { workspaceScopeId: bindingInput.workspaceId, sessionId: bindingInput.sessionKey },
+    { agentTypeId: bindingInput.agentTypeId, authSubjectId: bindingInput.authSubjectId },
+  )
+  let key = 0
+  try {
+    await run({
+      bindings,
+      events,
+      path: stream.path,
+      append: (chunk, timestamp) => events.appendEvent(stream.path, {
+        v: 1,
+        eventIndex: key++,
+        timestamp: timestamp ?? Date.now(),
+        sessionId: bindingInput.sessionKey,
+        chunk,
+      }),
+    })
+  } finally {
+    db.db.close()
+    await rm(dir, { recursive: true, force: true })
+  }
+}
+
+function fakeAdapter(sent: string[], templates: string[] = [], serviceWindowMs?: number): ChannelOutboundAdapter<string> {
+  return {
+    ...(serviceWindowMs === undefined ? {} : { serviceWindowMs }),
+    renderOutbound: (turn) => [turn.text],
+    send: async ({ message }) => { sent.push(message) },
+    sendWindowTemplate: async ({ conversationKey }) => { templates.push(conversationKey) },
+  }
+}
+
+function runtime(path: string) {
+  return {
+    resolveStreamPath: vi.fn(async () => path),
+    createSession: vi.fn(async () => 'replacement-session'),
+  }
+}
+
+async function appendTurn(
+  append: (chunk: PiChatEvent, timestamp?: number) => Promise<string>,
+  turnId: string,
+  text: string,
+  status: 'ok' | 'aborted' | 'error' = 'ok',
+  timestamp?: number,
+) {
+  await append({ type: 'agent-start', seq: 1, turnId }, timestamp)
+  await append({
+    type: 'message-end',
+    seq: 2,
+    messageId: `${turnId}-assistant`,
+    final: {
+      id: `${turnId}-assistant`,
+      role: 'assistant',
+      turnId,
+      parts: [
+        { type: 'reasoning', id: 'hidden', text: 'secret', state: 'done' },
+        { type: 'text', text },
+        { type: 'tool-call', id: 'tool', toolName: 'read', state: 'output-available' },
+      ],
+    },
+  }, timestamp)
+  return append({ type: 'agent-end', seq: 3, turnId, status }, timestamp)
+}
+
+describe('durable channel outbound', () => {
+  test('assembles completed assistant text only and ignores retry terminals', () => {
+    const entries = [
+      envelope({ type: 'agent-start', seq: 1, turnId: 'turn-1' }, '0'),
+      envelope({ type: 'tool-call', seq: 2, messageId: 'a', toolCallId: 'x', toolName: 'read', input: {} }, '1'),
+      envelope({
+        type: 'message-end', seq: 3, messageId: 'a',
+        final: { id: 'a', role: 'assistant', turnId: 'turn-1', parts: [{ type: 'text', text: 'done' }] },
+      }, '2'),
+      envelope({ type: 'agent-end', seq: 4, turnId: 'turn-1', status: 'error', willRetry: true }, '3'),
+      envelope({ type: 'agent-end', seq: 5, turnId: 'turn-1', status: 'ok' }, '4'),
+    ]
+    expect(assembleNextTurn(entries)).toEqual({
+      terminalOffset: '4',
+      turn: { turnId: 'turn-1', status: 'ok', text: 'done' },
+    })
+  })
+
+  test('persists the cursor across restart and sends each terminal turn once', async () => {
+    await withChannel(async ({ bindings, events, path, append }) => {
+      bindings.provision(bindingInput)
+      bindings.enqueueInbound({
+        channel: 'whatsapp', conversationKey: bindingInput.conversationKey,
+        providerMessageId: 'wamid.1', text: 'hello', receivedAt: Date.now(),
+      }, 'default')
+      await appendTurn(append, 'turn-1', 'first reply')
+      const sent: string[] = []
+      const first = new ChannelOutboundService(bindings, events, runtime(path),
+        new Map([['whatsapp', fakeAdapter(sent)]]))
+      first.start()
+      await first.waitForIdle()
+      first.dispose()
+      expect(sent).toEqual(['first reply'])
+      expect(bindings.getBinding('whatsapp', bindingInput.conversationKey, 'default')?.outboundCursor).not.toBe('-1')
+
+      const second = new ChannelOutboundService(bindings, events, runtime(path),
+        new Map([['whatsapp', fakeAdapter(sent)]]))
+      second.start()
+      await second.waitForIdle()
+      expect(sent).toEqual(['first reply'])
+      await appendTurn(append, 'turn-2', 'second reply')
+      await second.waitForIdle()
+      expect(sent).toEqual(['first reply', 'second reply'])
+      second.dispose()
+    })
+  })
+
+  test('documents accepted at-least-once replay after send-before-CAS failure', async () => {
+    await withChannel(async ({ bindings, events, path, append }) => {
+      bindings.provision(bindingInput)
+      bindings.enqueueInbound({
+        channel: 'whatsapp', conversationKey: bindingInput.conversationKey,
+        providerMessageId: 'wamid.replay', text: 'hello', receivedAt: Date.now(),
+      }, 'default')
+      await appendTurn(append, 'turn-replay', 'deliver me')
+      const sent: string[] = []
+      const cas = bindings.compareAndSetOutboundCursor.bind(bindings)
+      vi.spyOn(bindings, 'compareAndSetOutboundCursor').mockImplementationOnce(() => false).mockImplementation(cas)
+      const first = new ChannelOutboundService(bindings, events, runtime(path), new Map([['whatsapp', fakeAdapter(sent)]]))
+      first.start()
+      await first.waitForIdle()
+      first.dispose()
+      const second = new ChannelOutboundService(bindings, events, runtime(path), new Map([['whatsapp', fakeAdapter(sent)]]))
+      second.start()
+      await second.waitForIdle()
+      second.dispose()
+      expect(sent).toEqual(['deliver me', 'deliver me'])
+      expect(bindings.getBinding('whatsapp', bindingInput.conversationKey, 'default')?.outboundCursor).not.toBe('-1')
+    })
+  })
+
+  test('holds content outside 24 hours, sends one template, then releases after inbound', async () => {
+    await withChannel(async ({ bindings, events, path, append }) => {
+      let now = 100_000
+      bindings.provision(bindingInput)
+      bindings.enqueueInbound({
+        channel: 'whatsapp', conversationKey: bindingInput.conversationKey,
+        providerMessageId: 'wamid.old', text: 'old', receivedAt: 1,
+      }, 'default')
+      await appendTurn(append, 'turn-window', 'held reply')
+      const sent: string[] = []
+      const templates: string[] = []
+      const service = new ChannelOutboundService(bindings, events, runtime(path),
+        new Map([['whatsapp', fakeAdapter(sent, templates, 10)]]), { now: () => now })
+      service.start()
+      await service.waitForIdle()
+      service.start()
+      await service.waitForIdle()
+      expect(templates).toHaveLength(1)
+      expect(sent).toEqual([])
+      expect(bindings.getBinding('whatsapp', bindingInput.conversationKey, 'default')?.outboundCursor).toBe('-1')
+
+      now += 1
+      const accepted = bindings.enqueueInbound({
+        channel: 'whatsapp', conversationKey: bindingInput.conversationKey,
+        providerMessageId: 'wamid.fresh', text: 'continue', receivedAt: now,
+      }, 'default')
+      if (accepted.disposition !== 'enqueued') throw new Error('expected enqueue')
+      service.notifyInbound(accepted.binding)
+      await service.waitForIdle()
+      expect(sent).toEqual(['held reply'])
+      service.dispose()
+    })
+  })
+
+  test('parks a permanently unsendable turn without wedging the next turn', async () => {
+    await withChannel(async ({ bindings, events, path, append }) => {
+      bindings.provision(bindingInput)
+      bindings.enqueueInbound({
+        channel: 'whatsapp', conversationKey: bindingInput.conversationKey,
+        providerMessageId: 'wamid.park', text: 'hello', receivedAt: Date.now(),
+      }, 'default')
+      await appendTurn(append, 'turn-bad', 'bad reply')
+      await appendTurn(append, 'turn-good', 'good reply')
+      const sent: string[] = []
+      const adapter = fakeAdapter(sent)
+      adapter.send = vi.fn(async ({ message }) => {
+        if (message === 'bad reply') throw Object.assign(new Error('rejected'), { code: ErrorCode.enum.INTERNAL_ERROR, retryable: false })
+        sent.push(message)
+      })
+      const service = new ChannelOutboundService(bindings, events, runtime(path), new Map([['whatsapp', adapter]]))
+      service.start()
+      await service.waitForIdle()
+      expect(adapter.send).toHaveBeenCalledTimes(2)
+      expect(sent).toEqual(['good reply'])
+      service.dispose()
+    })
+  })
+
+  test('bounds fallback-template retries while preserving held content', async () => {
+    await withChannel(async ({ bindings, events, path, append }) => {
+      bindings.provision(bindingInput)
+      bindings.enqueueInbound({
+        channel: 'whatsapp', conversationKey: bindingInput.conversationKey,
+        providerMessageId: 'wamid.template-retry', text: 'old', receivedAt: 1,
+      }, 'default')
+      await appendTurn(append, 'turn-template', 'held reply')
+      const sent: string[] = []
+      const adapter = fakeAdapter(sent, [], 10)
+      adapter.sendWindowTemplate = vi.fn()
+        .mockRejectedValueOnce(Object.assign(new Error('temporary'), { retryable: true }))
+        .mockResolvedValue(undefined)
+      const service = new ChannelOutboundService(bindings, events, runtime(path),
+        new Map([['whatsapp', adapter]]), { retryDelayMs: 1, now: () => 100 })
+      service.start()
+      await service.waitForIdle()
+      expect(adapter.sendWindowTemplate).toHaveBeenCalledTimes(2)
+      expect(sent).toEqual([])
+      expect(bindings.getBinding('whatsapp', bindingInput.conversationKey, 'default')?.outboundCursor).toBe('-1')
+      service.dispose()
+    })
+  })
+
+  test('renders abort and stall notices and parks their offsets', async () => {
+    await withChannel(async ({ bindings, events, path, append }) => {
+      bindings.provision(bindingInput)
+      bindings.enqueueInbound({
+        channel: 'whatsapp', conversationKey: bindingInput.conversationKey,
+        providerMessageId: 'wamid.failure', text: 'hello', receivedAt: 100,
+      }, 'default')
+      await appendTurn(append, 'turn-abort', 'partial secret', 'aborted', 100)
+      await append({ type: 'agent-start', seq: 4, turnId: 'turn-stall' }, 100)
+      const sent: string[] = []
+      const service = new ChannelOutboundService(bindings, events, runtime(path),
+        new Map([['whatsapp', fakeAdapter(sent)]]), { stallTimeoutMs: 5, now: () => 200 })
+      service.start()
+      await service.waitForIdle()
+      expect(sent).toEqual([
+        'That request was stopped before it completed. Please try again.',
+        'That request did not finish in time. Please try again.',
+      ])
+      service.dispose()
+    })
+  })
+
+  test('replaces a gone session and emits one reset greeting', async () => {
+    await withChannel(async ({ bindings, events }) => {
+      bindings.provision(bindingInput)
+      const sent: string[] = []
+      const goneRuntime = {
+        resolveStreamPath: vi.fn()
+          .mockResolvedValueOnce(undefined)
+          .mockResolvedValue('sessions/workspace-1/replacement-session'),
+        createSession: vi.fn(async () => 'replacement-session'),
+      }
+      const service = new ChannelOutboundService(bindings, events, goneRuntime,
+        new Map([['whatsapp', fakeAdapter(sent)]]))
+      service.start()
+      await service.waitForIdle()
+      expect(goneRuntime.createSession).toHaveBeenCalledOnce()
+      expect(bindings.getBinding('whatsapp', bindingInput.conversationKey, 'default')).toMatchObject({
+        sessionKey: 'replacement-session', outboundCursor: '-1', sessionResetPending: false,
+      })
+      expect(sent).toEqual(['The previous session is no longer available. I started a new conversation.'])
+      service.dispose()
+    })
+  })
+})
+
+describe('channel shaping', () => {
+  test('uses WhatsApp markdown and closes/reopens fences across bounded chunks', () => {
+    const chunks = shapeChannelText(`## Heading\n\n**bold**\n\n\`\`\`ts\n${'x'.repeat(40)}\n\`\`\``, 'whatsapp/markdown', 30)
+    expect(chunks.every((chunk) => chunk.length <= 30)).toBe(true)
+    expect(chunks.join('\n')).toContain('Heading')
+    expect(chunks.join('\n')).toContain('*bold*')
+    expect(chunks[1]).toMatch(/```$/)
+    expect(chunks[2]).toMatch(/^```/)
+  })
+})
+
+function envelope(chunk: PiChatEvent, offset: string) {
+  return {
+    offset,
+    data: { v: 1 as const, eventIndex: Number(offset), timestamp: 1, sessionId: 'session-1', chunk },
+  }
+}

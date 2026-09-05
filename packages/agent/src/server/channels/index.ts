@@ -8,6 +8,7 @@ export type {
   ChannelBinding,
   ChannelBindingStatus,
   ChannelInboundStatus,
+  ChannelOutboundStatus,
   EnqueueInboundResult,
   EnsureSessionOptions,
   InboundChannelMessage,
@@ -25,6 +26,20 @@ export type {
   ChannelAgentInvoker,
   ChannelInboundAck,
 } from './channelInboundService'
+export {
+  CHANNEL_OUTBOUND_PARKED,
+  CHANNEL_TURN_STALLED,
+  DEFAULT_WHATSAPP_WINDOW_MS,
+  ChannelOutboundService,
+  assembleNextTurn,
+  shapeChannelText,
+} from './channelOutboundService'
+export type {
+  ChannelOutboundAdapter,
+  ChannelOutboundRuntime,
+  ChannelOutboundServiceOptions,
+  ChannelOutboundTurn,
+} from './channelOutboundService'
 
 import { ErrorCode } from '../../shared/error-codes'
 

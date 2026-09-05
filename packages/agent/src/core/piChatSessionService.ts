@@ -64,6 +64,11 @@ export interface PiChatSessionService {
 }
 
 export interface AgentCoreSessionService extends PiChatSessionService {
+  /** Trusted host-only durable-tail resolver; never exposed as an HTTP route. */
+  resolveSessionStreamPath?(
+    ctx: PiSessionRequestContext,
+    sessionId: string,
+  ): Promise<string>
   /** Trusted host-only validation/binding seam; never exposed as an HTTP route. */
   ensurePiSessionBound?(
     ctx: PiSessionRequestContext,
@@ -109,7 +114,7 @@ export function isObservedSynchronousServiceError(error: unknown): boolean {
     && observedSynchronousServiceErrors.has(error as object)
 }
 
-type AgentEffectMethod = Exclude<keyof AgentCoreSessionService, 'ensurePiSessionBound' | 'listSessions' | 'readAttachment' | 'readState' | 'subscribe' | 'dispose'>
+type AgentEffectMethod = Exclude<keyof AgentCoreSessionService, 'resolveSessionStreamPath' | 'ensurePiSessionBound' | 'listSessions' | 'readAttachment' | 'readState' | 'subscribe' | 'dispose'>
 
 export const AGENT_EFFECT_METHODS = {
   createSession: true,
@@ -126,6 +131,9 @@ export function withAgentEffectAdmission(
   admit: AgentEffectAdmission,
 ): AgentCoreSessionService {
   return {
+    ...(service.resolveSessionStreamPath
+      ? { resolveSessionStreamPath: (ctx, sessionId) => service.resolveSessionStreamPath!(ctx, sessionId) }
+      : {}),
     ...(service.ensurePiSessionBound
       ? { ensurePiSessionBound: (ctx, sessionId) => service.ensurePiSessionBound!(ctx, sessionId) }
       : {}),
