@@ -129,11 +129,14 @@ function createVaultCredentialStoreBackendInternalV1(
   }
   const { kmsBackend, persistence, versionAnchor } = options
 
-  async function requireNotShredded(workspaceId: string): Promise<void> {
+  async function requireNotShredded(
+    workspaceId: string,
+    store: CredentialVaultPersistenceV1 = persistence,
+  ): Promise<void> {
     const anchored = await versionAnchor.read(workspaceId)
     if (
       (anchored?.cryptoShredGeneration ?? 0) > 0
-      || await persistence.isWorkspaceCryptoShredded(workspaceId)
+      || await store.isWorkspaceCryptoShredded(workspaceId)
     ) {
       unreadable('Workspace credential material was crypto-shredded')
     }
@@ -237,6 +240,10 @@ function createVaultCredentialStoreBackendInternalV1(
       allowedFieldIds: readonly CredentialFieldId[],
     ): Promise<ResolvedCredentialMaterialV1 & { credentialVersion: number }> {
       assertWorkspaceId(workspaceId)
+      if (lockedWorkspaceId !== workspaceId) {
+        return this.withWorkspaceLock(workspaceId, (locked) =>
+          locked.read(workspaceId, providerId, allowedFieldIds))
+      }
       await requireNotShredded(workspaceId)
       // The version anchor is authenticated with the same KEK. Check backend
       // readiness first so an unavailable key source keeps its retryable,
@@ -606,9 +613,7 @@ function createVaultCredentialStoreBackendInternalV1(
         )
       }
       await persistence.withWorkspaceLock(workspaceId, async (locked) => {
-        if (await locked.isWorkspaceCryptoShredded(workspaceId)) {
-          unreadable('Workspace credential material was crypto-shredded')
-        }
+        await requireNotShredded(workspaceId, locked)
         const wrapped = await requireWrappedDek(workspaceId, dekGeneration, locked)
         const rewrapped = await rewrapDataKey(
           context(workspaceId, dekGeneration),

@@ -708,6 +708,61 @@ describe('vault credential store backend', () => {
       .toBe(SECRET_VALUE)
   })
 
+  test('makes shred completion a barrier for in-flight credential reads', async () => {
+    const basePersistence = createInMemoryCredentialVaultPersistenceV1()
+    let delayReads = false
+    let releaseRead!: () => void
+    const readGate = new Promise<void>((resolve) => { releaseRead = resolve })
+    let signalReadEntered!: () => void
+    const readEntered = new Promise<void>((resolve) => { signalReadEntered = resolve })
+    const persistence: CredentialVaultPersistenceV1 = {
+      ...basePersistence,
+      async withWorkspaceLock(workspaceId, mutate) {
+        return basePersistence.withWorkspaceLock(workspaceId, () => mutate(persistence))
+      },
+      async getWrappedDek(workspaceId, dekGeneration) {
+        const wrapped = await basePersistence.getWrappedDek(workspaceId, dekGeneration)
+        if (delayReads) {
+          signalReadEntered()
+          await readGate
+        }
+        return wrapped
+      },
+    }
+    const backend = createVaultCredentialStoreBackendV1({
+      persistence,
+      versionAnchor: createInMemoryCredentialVersionAnchorV1(),
+      kmsBackend: kekProvider(KEK_A),
+    })
+    await backend.writeCredentialFields({
+      workspaceId: 'ws-a',
+      providerId: PROVIDER_A,
+      fields: new Map([
+        [FIELD_API_KEY, new Uint8Array(Buffer.from(SECRET_VALUE, 'utf8'))],
+      ]),
+    })
+
+    delayReads = true
+    const inFlightRead = backend.read('ws-a', PROVIDER_A, [FIELD_API_KEY])
+    await readEntered
+    let shredCompleted = false
+    const shred = backend.cryptoShredWorkspace('ws-a').then(() => {
+      shredCompleted = true
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(shredCompleted).toBe(false)
+
+    releaseRead()
+    const resolved = await inFlightRead
+    expect(resolved.kind).toBe('field-set')
+    await shred
+    expect(shredCompleted).toBe(true)
+    await expectCredentialError(
+      () => backend.read('ws-a', PROVIDER_A, [FIELD_API_KEY]),
+      CREDENTIAL_ERROR_CODES.UNREADABLE,
+    )
+  })
+
   test('persists ciphertext only, never plaintext', async () => {
     const { backend, persistence } = vaultStore()
     const record = await backend.writeCredentialFields({
