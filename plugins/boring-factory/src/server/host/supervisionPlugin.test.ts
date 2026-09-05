@@ -74,7 +74,12 @@ interface FakeInjectCall {
 }
 
 /** Minimal fastify-shaped fake: `inject` is scripted, `addHook` just records the onClose callback. */
-function createFakeApp(options: { status: string; gate1Raised?: boolean; gate1AnsweredPage?: 1 | 2 }) {
+function createFakeApp(options: {
+  status: string
+  gate1Raised?: boolean
+  gate1AnsweredPage?: 1 | 2
+  gate1AnsweredStatus?: 'answered' | 'cancelled' | 'abandoned'
+}) {
   const calls: FakeInjectCall[] = []
   const prompts: string[] = []
   let onCloseHook: (() => Promise<void> | void) | undefined
@@ -96,13 +101,18 @@ function createFakeApp(options: { status: string; gate1Raised?: boolean; gate1An
       if (request.method === 'POST' && request.url === '/api/v1/workspace-bridge/call') {
         const op = (request.payload as { op?: string } | undefined)?.op
         const input = (request.payload as { input?: { cursor?: string } } | undefined)?.input
-        const gate1 = [{ sessionId: 'session-restart', title: '[Live Farewell] Plan approval' }]
+        const pendingGate1 = [{ sessionId: 'session-restart', title: '[Live Farewell] Plan approval', status: 'ready' }]
+        const answeredGate1 = [{
+          sessionId: 'session-restart',
+          title: '[Live Farewell] Plan approval',
+          status: options.gate1AnsweredStatus ?? 'answered',
+        }]
         if (op === 'ask-user.v1.pending-all') {
-          return { statusCode: 200, json: <T>() => ({ output: { pending: options.gate1Raised ? gate1 : [] } }) as T }
+          return { statusCode: 200, json: <T>() => ({ output: { pending: options.gate1Raised ? pendingGate1 : [] } }) as T }
         }
         const answered = options.gate1AnsweredPage === 1 || (options.gate1AnsweredPage === 2 && input?.cursor === 'page-2')
-          ? gate1
-          : [{ sessionId: 'someone-else', title: '[Other Feature] Merge approval' }]
+          ? answeredGate1
+          : [{ sessionId: 'someone-else', title: '[Other Feature] Merge approval', status: 'answered' }]
         return {
           statusCode: 200,
           json: <T>() => ({ output: {
@@ -311,6 +321,28 @@ describe('factory supervision plugin', () => {
       && (call.payload as { op?: string } | undefined)?.op === 'ask-user.v1.answered-all'
     ))
     expect(answeredCalls).toHaveLength(2)
+    handle.close()
+  })
+
+  it.each(['cancelled', 'abandoned'] as const)('ignores a %s Gate 1 entry and keeps deadline nudging active', async (gate1AnsweredStatus) => {
+    const stateRoot = await makeStateRoot()
+    await writeSupervisionFile(stateRoot, {
+      'session-restart': {
+        epicKey: 'live-farewell', agentTypeId: 'boring-orchestrator', sessionId: 'session-restart',
+        intervalMs: 50, prompt: 'ordinary nudge', startedAt: '2026-09-05T00:00:00.000Z', ticks: 0,
+      },
+    })
+    const { app, prompts } = createFakeApp({ status: 'idle', gate1AnsweredPage: 1, gate1AnsweredStatus })
+    const handle = createFactorySupervisionPlugin({
+      stateRoot, workspaceScopeId: 'factory-hub',
+      ...epicDeps('session-restart', '2000-01-01T00:00:00.000Z'),
+    })
+    handle.bind(app as never)
+    expect(await handle.rearm()).toBe(1)
+
+    await waitFor(() => prompts.length > 0)
+    expect(prompts[0]).toContain('raise Gate 1 now with what you have')
+    expect(prompts[0]).not.toContain('ordinary nudge')
     handle.close()
   })
 

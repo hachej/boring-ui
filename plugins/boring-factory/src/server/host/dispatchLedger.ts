@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
 export type FactoryDispatchOutcome =
+  | 'reserved'
   | 'created'
   | 'running'
   | 'completed'
@@ -18,10 +19,20 @@ export interface FactoryDispatchRecord {
   readonly id: string
   readonly epicKey: string
   readonly beadId: string
-  readonly childSessionId: string
+  readonly childSessionId?: string
   readonly timestamp: string
   readonly updatedAt: string
   readonly outcome: FactoryDispatchOutcome
+}
+
+export type FactoryDispatchCap = 'worker-concurrency' | 'bead-dispatch'
+
+export interface FactoryCapRefusalMarker {
+  readonly id: string
+  readonly epicKey: string
+  readonly beadId: string
+  readonly cap: FactoryDispatchCap
+  readonly timestamp: string
 }
 
 export interface FactoryReviewRecord {
@@ -42,18 +53,20 @@ export interface FactoryDispatchState {
   readonly version: 1
   readonly dispatches: readonly FactoryDispatchRecord[]
   readonly reviews: readonly FactoryReviewRecord[]
+  readonly refusals: readonly FactoryCapRefusalMarker[]
 }
 
 export interface FactoryDispatchLedger {
   read(): Promise<FactoryDispatchState>
-  appendDispatch(record: Omit<FactoryDispatchRecord, 'id' | 'updatedAt'>): Promise<FactoryDispatchRecord>
+  reserveDispatch(record: Pick<FactoryDispatchRecord, 'epicKey' | 'beadId' | 'timestamp'>): Promise<FactoryDispatchRecord>
+  attachDispatch(id: string, childSessionId: string, outcome: FactoryDispatchOutcome): Promise<FactoryDispatchRecord>
   updateDispatch(id: string, outcome: FactoryDispatchOutcome): Promise<FactoryDispatchRecord>
   appendReview(record: Omit<FactoryReviewRecord, 'id' | 'updatedAt' | 'round'>): Promise<FactoryReviewRecord>
   updateReview(id: string, outcome: FactoryReviewOutcome): Promise<FactoryReviewRecord>
-  reviewTargetFor(epicKey: string, parentSessionId: string | undefined, requestedTarget: string): Promise<string>
+  markRefusal(input: Omit<FactoryCapRefusalMarker, 'id'>): Promise<{ readonly marker: FactoryCapRefusalMarker; readonly created: boolean }>
 }
 
-const EMPTY_STATE: FactoryDispatchState = { version: 1, dispatches: [], reviews: [] }
+const EMPTY_STATE: FactoryDispatchState = { version: 1, dispatches: [], reviews: [], refusals: [] }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
@@ -68,6 +81,7 @@ function parseState(raw: string, path: string): FactoryDispatchState {
     version: 1,
     dispatches: parsed.dispatches as FactoryDispatchRecord[],
     reviews: parsed.reviews as FactoryReviewRecord[],
+    refusals: Array.isArray(parsed.refusals) ? parsed.refusals as FactoryCapRefusalMarker[] : [],
   }
 }
 
@@ -109,10 +123,27 @@ export function createFactoryDispatchLedger(stateRoot: string): FactoryDispatchL
       await mutations
       return await readFileState()
     },
-    async appendDispatch(record) {
+    async reserveDispatch(record) {
       return await mutate((state) => {
-        const stored: FactoryDispatchRecord = { ...record, id: randomUUID(), updatedAt: record.timestamp }
+        const stored: FactoryDispatchRecord = {
+          ...record,
+          id: randomUUID(),
+          updatedAt: record.timestamp,
+          outcome: 'reserved',
+        }
         return { state: { ...state, dispatches: [...state.dispatches, stored] }, result: stored }
+      })
+    },
+    async attachDispatch(id, childSessionId, outcome) {
+      return await mutate((state) => {
+        let updated: FactoryDispatchRecord | undefined
+        const dispatches = state.dispatches.map((record) => {
+          if (record.id !== id) return record
+          updated = { ...record, childSessionId, outcome, updatedAt: new Date().toISOString() }
+          return updated
+        })
+        if (!updated) throw new Error(`dispatch record ${id} was not found`)
+        return { state: { ...state, dispatches }, result: updated }
       })
     },
     async updateDispatch(id, outcome) {
@@ -129,10 +160,18 @@ export function createFactoryDispatchLedger(stateRoot: string): FactoryDispatchL
     },
     async appendReview(record) {
       return await mutate((state) => {
+        const priorTarget = record.beadId === undefined
+          ? state.reviews.find((candidate) => (
+              candidate.epicKey === record.epicKey
+              && candidate.parentSessionId === record.parentSessionId
+              && candidate.beadId === undefined
+            ))?.targetKey
+          : undefined
+        const targetKey = priorTarget ?? record.targetKey
         const round = state.reviews.filter((candidate) => (
-          candidate.epicKey === record.epicKey && candidate.targetKey === record.targetKey
+          candidate.epicKey === record.epicKey && candidate.targetKey === targetKey
         )).length + 1
-        const stored: FactoryReviewRecord = { ...record, id: randomUUID(), round, updatedAt: record.timestamp }
+        const stored: FactoryReviewRecord = { ...record, targetKey, id: randomUUID(), round, updatedAt: record.timestamp }
         return { state: { ...state, reviews: [...state.reviews, stored] }, result: stored }
       })
     },
@@ -148,15 +187,20 @@ export function createFactoryDispatchLedger(stateRoot: string): FactoryDispatchL
         return { state: { ...state, reviews }, result: updated }
       })
     },
-    async reviewTargetFor(epicKey, parentSessionId, requestedTarget) {
-      await mutations
-      const state = await readFileState()
-      const prior = state.reviews.find((record) => (
-        record.epicKey === epicKey
-        && record.parentSessionId === parentSessionId
-        && record.beadId === undefined
-      ))
-      return prior?.targetKey ?? requestedTarget
+    async markRefusal(input) {
+      return await mutate<{ readonly marker: FactoryCapRefusalMarker; readonly created: boolean }>((state) => {
+        const existing = state.refusals.find((marker) => (
+          marker.epicKey === input.epicKey
+          && marker.beadId === input.beadId
+          && marker.cap === input.cap
+        ))
+        if (existing) return { state, result: { marker: existing, created: false } }
+        const marker: FactoryCapRefusalMarker = { ...input, id: randomUUID() }
+        return {
+          state: { ...state, refusals: [...state.refusals, marker] },
+          result: { marker, created: true },
+        }
+      })
     },
   }
 }

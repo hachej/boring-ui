@@ -21,6 +21,7 @@ import {
   isBusySession,
   listWorkerSessions,
   loadEpicBeads,
+  resolveEpicWorkerSessionIds,
   type BrIssue,
   type FactoryBrRunner,
   type FactoryGitStatus,
@@ -30,7 +31,7 @@ import {
 export const FACTORY_DELEGATE_PLUGIN_ID = 'factory-delegate'
 
 /** Bump when this file's delegation behavior changes; hashed into the plugin's contentDigest. */
-const DELEGATE_PLUGIN_VERSION = 'factory-delegate.v2.2026-09-05'
+const DELEGATE_PLUGIN_VERSION = 'factory-delegate.v3.2026-09-05'
 
 const DEFAULT_TIMEOUT_MS = 15 * 60_000
 const POLL_INTERVAL_MS = 1_000
@@ -248,7 +249,7 @@ function capRefusal(
     current,
     maximum,
     blocked: true,
-    message: `Factory host refused dispatch: ${subject} is at the cap (${current}/${maximum}). The Bead was marked blocked. Raise an Inbox question with ask_user describing this blocker; do not retry dispatch_worker.`,
+    message: `Factory host refused dispatch: ${subject} is at the cap (${current}/${maximum}). The Bead is blocked. Raise an Inbox question with ask_user describing this blocker; do not retry dispatch_worker.`,
   }, true)
 }
 
@@ -260,7 +261,7 @@ function createDelegateTool(
   ledger: FactoryDispatchLedger,
   limits: FactoryHostLimits,
   run: FactoryBrRunner,
-  admitDispatch: <T>(operation: () => Promise<T>) => Promise<T>,
+  admitSessionMutation: <T>(operation: () => Promise<T>) => Promise<T>,
 ): AgentTool {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const workspaceHeader = { 'x-boring-workspace-id': options.workspaceScopeId }
@@ -332,11 +333,12 @@ function createDelegateTool(
               options.sessionBindings.load(),
               ledger.read(),
             ])
-            const epicWorkerIds = new Set([
-              ...Object.entries(bindings).filter(([, epicKey]) => epicKey === epic.epicKey).map(([sessionId]) => sessionId),
-              ...beads.map((bead) => bead.assignee).filter((sessionId): sessionId is string => !!sessionId),
-              ...dispatchState.dispatches.filter((record) => record.epicKey === epic.epicKey).map((record) => record.childSessionId),
-            ])
+            const epicWorkerIds = resolveEpicWorkerSessionIds({
+              epicKey: epic.epicKey,
+              bindings,
+              beads,
+              dispatches: dispatchState.dispatches,
+            })
             const busyWorkers = sessions.filter((session) => (
               epicWorkerIds.has(session.sessionId) && isBusySession(session.status)
             )).length
@@ -346,12 +348,24 @@ function createDelegateTool(
             const actor = ctx.sessionId ?? 'factory-host'
             if (busyWorkers >= limits.maxConcurrentWorkers) {
               const message = `Busy Worker concurrency reached ${busyWorkers}/${limits.maxConcurrentWorkers} for epic ${epic.epicKey}.`
-              await markBeadBlockedForCap(run, epic, beadId, actor, message)
+              const refusal = await ledger.markRefusal({
+                epicKey: epic.epicKey,
+                beadId,
+                cap: 'worker-concurrency',
+                timestamp: new Date(options.now?.() ?? Date.now()).toISOString(),
+              })
+              if (refusal.created) await markBeadBlockedForCap(run, epic, beadId, actor, message)
               return capRefusal('WORKER_CONCURRENCY_CAP_REACHED', beadId, busyWorkers, limits.maxConcurrentWorkers)
             }
             if (dispatchCount >= limits.maxDispatchesPerBead) {
               const message = `Dispatch history reached ${dispatchCount}/${limits.maxDispatchesPerBead} for Bead ${beadId}.`
-              await markBeadBlockedForCap(run, epic, beadId, actor, message)
+              const refusal = await ledger.markRefusal({
+                epicKey: epic.epicKey,
+                beadId,
+                cap: 'bead-dispatch',
+                timestamp: new Date(options.now?.() ?? Date.now()).toISOString(),
+              })
+              if (refusal.created) await markBeadBlockedForCap(run, epic, beadId, actor, message)
               return capRefusal('BEAD_DISPATCH_CAP_REACHED', beadId, dispatchCount, limits.maxDispatchesPerBead)
             }
           } else {
@@ -375,11 +389,15 @@ function createDelegateTool(
               reviewTargetKey = `bead:${beadId}`
             } else {
               reviewSha = sha
-              reviewTargetKey = await ledger.reviewTargetFor(epic.epicKey, ctx.sessionId, `sha-lineage:${sha}`)
+              reviewTargetKey = `sha-lineage:${sha}`
             }
           }
 
           const timestamp = new Date(options.now?.() ?? Date.now()).toISOString()
+          let dispatchRecord: FactoryDispatchRecord | undefined
+          if (toolName === 'dispatch_worker') {
+            dispatchRecord = await ledger.reserveDispatch({ epicKey: epic.epicKey, beadId: beadId!, timestamp })
+          }
           const createResponse = await app.inject({
             method: 'POST',
             url: `/api/v1/agents/${targetAgentTypeId}/sessions`,
@@ -387,16 +405,16 @@ function createDelegateTool(
             payload: { requestId: randomUUID(), title: sessionTitle },
           })
           if (createResponse.statusCode !== 201) {
+            if (dispatchRecord) await ledger.updateDispatch(dispatchRecord.id, 'failed')
             return textResult(
               { code: 'CREATE_SESSION_FAILED', status: createResponse.statusCode, body: createResponse.body },
               true,
             )
           }
           const { sessionId } = createResponse.json<{ sessionId: string }>()
-          let dispatchRecord: FactoryDispatchRecord | undefined
           let reviewRecord: FactoryReviewRecord | undefined
           if (toolName === 'dispatch_worker') {
-            dispatchRecord = await ledger.appendDispatch({ epicKey: epic.epicKey, beadId: beadId!, childSessionId: sessionId, timestamp, outcome: 'created' })
+            dispatchRecord = await ledger.attachDispatch(dispatchRecord!.id, sessionId, 'created')
           } else {
             reviewRecord = await ledger.appendReview({
               epicKey: epic.epicKey,
@@ -451,7 +469,7 @@ function createDelegateTool(
         }
 
         const admission = toolName === 'dispatch_worker'
-          ? await admitDispatch(startDelegation)
+          ? await admitSessionMutation(startDelegation)
           : await startDelegation()
         if ('content' in admission) return admission
         started = admission
@@ -540,10 +558,10 @@ export function createFactoryDelegatePlugin(
   const run = options.runBr ?? defaultRunBr
   let boundApp: FastifyInstance | undefined
   const getApp = () => boundApp
-  let dispatchAdmissions = Promise.resolve()
-  async function admitDispatch<T>(operation: () => Promise<T>): Promise<T> {
-    const next = dispatchAdmissions.then(operation)
-    dispatchAdmissions = next.then(() => undefined, () => undefined)
+  let sessionAdmissions = Promise.resolve()
+  async function admitSessionMutation<T>(operation: () => Promise<T>): Promise<T> {
+    const next = sessionAdmissions.then(operation)
+    sessionAdmissions = next.then(() => undefined, () => undefined)
     return await next
   }
 
@@ -555,9 +573,9 @@ export function createFactoryDelegatePlugin(
     agentToolFactory({ agentTypeId }) {
       const tools: AgentTool[] = []
       const grant = DELEGATE_GRANTS[agentTypeId]
-      if (grant) tools.push(createDelegateTool(grant.toolName, grant.targetAgentTypeId, getApp, options, ledger, limits, run, admitDispatch))
+      if (grant) tools.push(createDelegateTool(grant.toolName, grant.targetAgentTypeId, getApp, options, ledger, limits, run, admitSessionMutation))
       if (agentTypeId === FACTORY_STATUS_AGENT_TYPE_ID) {
-        tools.push(...createFactoryStatusTools(getApp, options, ledger, limits, staleIdleMs))
+        tools.push(...createFactoryStatusTools(getApp, options, ledger, limits, staleIdleMs, admitSessionMutation))
       }
       return tools
     },

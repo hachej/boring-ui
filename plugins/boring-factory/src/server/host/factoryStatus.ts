@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import type { FastifyInstance } from 'fastify'
 import type { AgentTool, ToolExecContext, ToolResult } from '@hachej/boring-agent/shared'
-import type { FactoryDispatchLedger, FactoryReviewRecord } from './dispatchLedger'
+import type { FactoryDispatchLedger, FactoryDispatchRecord, FactoryReviewRecord } from './dispatchLedger'
 import type { FactoryEpicRegistry } from './epicRegistry'
 import { FactoryEpicResolutionError, resolveFactoryEpic, type FactorySessionBindings } from './sessionBindings'
 
@@ -176,6 +176,45 @@ export async function listWorkerSessions(app: FastifyInstance, workspaceHeader: 
   return sessions
 }
 
+export function resolveEpicWorkerSessionIds(input: {
+  readonly epicKey: string
+  readonly bindings: Readonly<Record<string, string>>
+  readonly beads: readonly BrIssue[]
+  readonly dispatches: readonly FactoryDispatchRecord[]
+}): Set<string> {
+  const inferredEpicsBySession = new Map<string, Set<string>>()
+  const infer = (sessionId: string, epicKey: string) => {
+    const epicKeys = inferredEpicsBySession.get(sessionId) ?? new Set<string>()
+    epicKeys.add(epicKey)
+    inferredEpicsBySession.set(sessionId, epicKeys)
+  }
+  for (const dispatch of input.dispatches) {
+    if (dispatch.childSessionId) infer(dispatch.childSessionId, dispatch.epicKey)
+  }
+  for (const bead of input.beads) {
+    if (bead.assignee) infer(bead.assignee, input.epicKey)
+  }
+
+  const sessionIds = new Set(
+    Object.entries(input.bindings)
+      .filter(([, epicKey]) => epicKey === input.epicKey)
+      .map(([sessionId]) => sessionId),
+  )
+  for (const [sessionId, inferredEpicKeys] of inferredEpicsBySession) {
+    const binding = input.bindings[sessionId]
+    const conflictingInference = binding && [...inferredEpicKeys].find((epicKey) => epicKey !== binding)
+    if (conflictingInference && (binding === input.epicKey || inferredEpicKeys.has(input.epicKey))) {
+      throw new Error(`Worker session ${sessionId} ownership conflict: bound to ${binding}, inferred for ${conflictingInference}`)
+    }
+    if (!inferredEpicKeys.has(input.epicKey)) continue
+    if (!binding && inferredEpicKeys.size > 1) {
+      throw new Error(`Worker session ${sessionId} ownership conflict: inferred for ${[...inferredEpicKeys].join(', ')}`)
+    }
+    sessionIds.add(sessionId)
+  }
+  return sessionIds
+}
+
 async function collectBeadStatuses(input: {
   readonly beads: readonly BrIssue[]
   readonly worktree: string
@@ -246,6 +285,7 @@ export function createFactoryStatusTools(
   ledger: FactoryDispatchLedger,
   limits: FactoryHostLimits,
   staleIdleMs: number,
+  admitSessionMutation: <T>(operation: () => Promise<T>) => Promise<T>,
 ): AgentTool[] {
   const workspaceHeader = { 'x-boring-workspace-id': options.workspaceScopeId }
   const run = options.runBr ?? defaultRunBr
@@ -266,14 +306,15 @@ export function createFactoryStatusTools(
           ledger.read(),
           loadEpicBeads(epic.worktree, epic.epicKey, run),
         ])
-        const epicSessionIds = new Set([
-          ...Object.entries(bindings).filter(([, epicKey]) => epicKey === epic.epicKey).map(([sessionId]) => sessionId),
-          ...epicBeads.map((bead) => bead.assignee).filter((sessionId): sessionId is string => !!sessionId),
-          ...dispatchState.dispatches.filter((record) => record.epicKey === epic.epicKey).map((record) => record.childSessionId),
-        ])
+        const epicSessionIds = resolveEpicWorkerSessionIds({
+          epicKey: epic.epicKey,
+          bindings,
+          beads: epicBeads,
+          dispatches: dispatchState.dispatches,
+        })
         const workerSessions = allWorkerSessions.filter((session) => epicSessionIds.has(session.sessionId))
         const beads = await collectBeadStatuses({
-          beads: epicBeads, worktree: epic.worktree, workerSessions: allWorkerSessions, staleIdleMs,
+          beads: epicBeads, worktree: epic.worktree, workerSessions, staleIdleMs,
           now: options.now?.() ?? Date.now(), run,
         })
         const openBeads = beads.filter((bead) => bead.status !== 'closed')
@@ -316,49 +357,72 @@ export function createFactoryStatusTools(
       if (!app) return unboundResult('recover_stale_claims')
       let epic
       try { epic = await resolveFactoryEpic(params, ctx, options.registry, options.sessionBindings) } catch (error) { return epicResolutionResult(error) }
-      try {
-        const [allWorkerSessions, epicBeads] = await Promise.all([
-          listWorkerSessions(app, workspaceHeader),
-          loadEpicBeads(epic.worktree, epic.epicKey, run),
-        ])
-        const beads = await collectBeadStatuses({
-          beads: epicBeads, worktree: epic.worktree, workerSessions: allWorkerSessions, staleIdleMs,
-          now: options.now?.() ?? Date.now(), run,
-        })
-        const actor = ctx.sessionId ?? 'factory-host'
-        const recovered: Array<{ beadId: string; deadSessionId: string | null; reason: string }> = []
-        const skipped: Array<{ beadId: string; reason: string }> = []
-        for (const bead of beads.filter((candidate) => candidate.stale)) {
-          const [currentWorkerSessions, currentBeads] = await Promise.all([
+      return await admitSessionMutation(async () => {
+        try {
+          const [allWorkerSessions, epicBeads, bindings, dispatchState] = await Promise.all([
             listWorkerSessions(app, workspaceHeader),
             loadEpicBeads(epic.worktree, epic.epicKey, run),
+            options.sessionBindings.load(),
+            ledger.read(),
           ])
-          const currentIssue = currentBeads.find((issue) => issue.id === bead.id)
-          if (!currentIssue) {
-            skipped.push({ beadId: bead.id, reason: 'Bead no longer exists in the epic' })
-            continue
-          }
-          const [current] = await collectBeadStatuses({
-            beads: [currentIssue], worktree: epic.worktree, workerSessions: currentWorkerSessions, staleIdleMs,
+          const epicSessionIds = resolveEpicWorkerSessionIds({
+            epicKey: epic.epicKey,
+            bindings,
+            beads: epicBeads,
+            dispatches: dispatchState.dispatches,
+          })
+          const workerSessions = allWorkerSessions.filter((session) => epicSessionIds.has(session.sessionId))
+          const beads = await collectBeadStatuses({
+            beads: epicBeads, worktree: epic.worktree, workerSessions, staleIdleMs,
             now: options.now?.() ?? Date.now(), run,
           })
-          if (!current?.stale) {
-            skipped.push({ beadId: bead.id, reason: `claim is now ${current?.sessionLiveness ?? 'unknown'} and is not stale` })
-            continue
+          const actor = ctx.sessionId ?? 'factory-host'
+          const recovered: Array<{ beadId: string; deadSessionId: string | null; reason: string }> = []
+          const skipped: Array<{ beadId: string; reason: string }> = []
+          for (const bead of beads.filter((candidate) => candidate.stale)) {
+            const [currentWorkerSessions, currentBeads, currentBindings, currentDispatchState] = await Promise.all([
+              listWorkerSessions(app, workspaceHeader),
+              loadEpicBeads(epic.worktree, epic.epicKey, run),
+              options.sessionBindings.load(),
+              ledger.read(),
+            ])
+            const currentIssue = currentBeads.find((issue) => issue.id === bead.id)
+            if (!currentIssue) {
+              skipped.push({ beadId: bead.id, reason: 'Bead no longer exists in the epic' })
+              continue
+            }
+            const currentEpicSessionIds = resolveEpicWorkerSessionIds({
+              epicKey: epic.epicKey,
+              bindings: currentBindings,
+              beads: currentBeads,
+              dispatches: currentDispatchState.dispatches,
+            })
+            const [current] = await collectBeadStatuses({
+              beads: [currentIssue],
+              worktree: epic.worktree,
+              workerSessions: currentWorkerSessions.filter((session) => currentEpicSessionIds.has(session.sessionId)),
+              staleIdleMs,
+              now: options.now?.() ?? Date.now(),
+              run,
+            })
+            if (!current?.stale) {
+              skipped.push({ beadId: bead.id, reason: `claim is now ${current?.sessionLiveness ?? 'unknown'} and is not stale` })
+              continue
+            }
+            await run(['update', current.id, '--assignee', '', '--status', 'open', '--actor', actor, '--json', '--no-auto-flush'], epic.worktree)
+            const reason = current.staleReason ?? 'host classified the claim as stale'
+            await run([
+              'comments', 'add', current.id, '-m',
+              `[${epic.featureName}] recovered stale claim from ${current.assignee ?? '(missing assignee)'}: ${reason}.`,
+              '--actor', actor, '--json', '--no-auto-flush',
+            ], epic.worktree)
+            recovered.push({ beadId: current.id, deadSessionId: current.assignee, reason })
           }
-          await run(['update', current.id, '--assignee', '', '--status', 'open', '--actor', actor, '--json', '--no-auto-flush'], epic.worktree)
-          const reason = current.staleReason ?? 'host classified the claim as stale'
-          await run([
-            'comments', 'add', current.id, '-m',
-            `[${epic.featureName}] recovered stale claim from ${current.assignee ?? '(missing assignee)'}: ${reason}.`,
-            '--actor', actor, '--json', '--no-auto-flush',
-          ], epic.worktree)
-          recovered.push({ beadId: current.id, deadSessionId: current.assignee, reason })
+          return textResult({ epicKey: epic.epicKey, recovered, skipped }, false)
+        } catch (error) {
+          return textResult({ code: 'STALE_CLAIM_RECOVERY_FAILED', message: error instanceof Error ? error.message : 'stale claim recovery failed' }, true)
         }
-        return textResult({ epicKey: epic.epicKey, recovered, skipped }, false)
-      } catch (error) {
-        return textResult({ code: 'STALE_CLAIM_RECOVERY_FAILED', message: error instanceof Error ? error.message : 'stale claim recovery failed' }, true)
-      }
+      })
     },
   }
   return [statusTool, recoverTool]

@@ -71,6 +71,7 @@ interface FakeAppOptions {
   readonly workerSessionStatusCode?: number
   readonly repeatWorkerCursor?: boolean
   readonly workerSessionPageCount?: number
+  readonly crashAfterSessionCreation?: boolean
 }
 
 function fakeApp(
@@ -104,7 +105,14 @@ function fakeApp(
         }
         if (request.method === 'POST' && request.url.endsWith('/sessions')) {
           const sessionId = childSessionIds[created++] ?? `child-${created}`
-          return { statusCode: 201, body: '', json: <T>() => ({ sessionId }) as T }
+          return {
+            statusCode: 201,
+            body: '',
+            json: <T>() => {
+              if (options.crashAfterSessionCreation) throw new Error('simulated host crash before ledger attach')
+              return { sessionId } as T
+            },
+          }
         }
         if (request.method === 'POST' && request.url.endsWith('/prompt')) {
           return { statusCode: 202, body: '', json: <T>() => ({}) as T }
@@ -271,6 +279,51 @@ describe('Factory host limits', () => {
     expect(calls.some((args) => args[0] === 'update')).toBe(false)
   })
 
+  it('holds session admission from stale classification through claim release', async () => {
+    const stateRoot = await makeStateRoot()
+    const now = 2_000_000
+    const { registry, sessionBindings } = dependencies({ changing: 'limits-epic' })
+    const baseBr = fakeBr([
+      { id: 'br-changing', status: 'in_progress', assignee: 'changing' },
+      { id: 'br-next', status: 'open' },
+    ])
+    const events: string[] = []
+    let changingCommentReads = 0
+    let dispatchPromise: Promise<unknown> | undefined
+    let dispatchTool: ReturnType<typeof toolNamed> | undefined
+    const runBr = vi.fn(async (args: readonly string[], cwd: string) => {
+      if (args[0] === 'comments' && args[1] === 'list' && args[2] === 'br-changing') {
+        changingCommentReads += 1
+        if (changingCommentReads === 2) {
+          events.push('final-classification')
+          dispatchPromise = dispatchTool!.execute(
+            { beadId: 'br-next', brief: 'Dispatch br-next while stale recovery is releasing.' },
+            context('orch', 'concurrent-dispatch'),
+          )
+          await Promise.resolve()
+        }
+      }
+      if (args[0] === 'update' && args[1] === 'br-changing') events.push('release')
+      return await baseBr.runBr(args, cwd)
+    })
+    const fake = fakeApp([{ sessionId: 'changing', status: 'idle', updatedAt: now - 11 * 60_000 }])
+    const originalInject = fake.app.inject.bind(fake.app)
+    fake.app.inject = async (request) => {
+      if (request.method === 'POST' && request.url.endsWith('/sessions')) events.push('worker-busy')
+      return await originalInject(request)
+    }
+    const handle = createFactoryDelegatePlugin({ stateRoot, workspaceScopeId: 'factory-hub', registry, sessionBindings, runBr, now: () => now })
+    handle.bind(fake.app as never)
+    dispatchTool = toolNamed(handle, 'boring-orchestrator', 'dispatch_worker')
+
+    const recovered = await toolNamed(handle, 'boring-orchestrator', 'recover_stale_claims').execute({}, context('orch', 'recover'))
+    await dispatchPromise
+
+    expect(recovered.details).toMatchObject({ recovered: [expect.objectContaining({ beadId: 'br-changing' })] })
+    expect(events).toEqual(expect.arrayContaining(['final-classification', 'release', 'worker-busy']))
+    expect(events.indexOf('release')).toBeLessThan(events.indexOf('worker-busy'))
+  })
+
   it('fails closed when comment facts or the complete session inventory cannot be read', async () => {
     const stateRoot = await makeStateRoot()
     const { registry, sessionBindings } = dependencies()
@@ -328,6 +381,14 @@ describe('Factory host limits', () => {
     expect(brCalls.map((args) => args.slice(0, 3))).toEqual(expect.arrayContaining([
       ['update', 'br-1', '--status'], ['comments', 'add', 'br-1'],
     ]))
+
+    const restarted = createFactoryDelegatePlugin({ stateRoot, workspaceScopeId: 'factory-hub', registry, sessionBindings, runBr })
+    restarted.bind(app as never)
+    await toolNamed(restarted, 'boring-orchestrator', 'dispatch_worker').execute(
+      { beadId: 'br-1', brief: 'Retry the exact target Bead br-1 again.' }, context('orch', 'retry'),
+    )
+    expect(brCalls.filter((args) => args[0] === 'update')).toHaveLength(1)
+    expect(brCalls.filter((args) => args[0] === 'comments' && args[1] === 'add')).toHaveLength(1)
   })
 
   it('refuses the per-Bead dispatch cap before creating a session and blocks/comments the Bead', async () => {
@@ -370,6 +431,46 @@ describe('Factory host limits', () => {
     expect((second.details as { capInstructions: string }).capInstructions).toContain('Hand off at the current SHA')
   })
 
+  it('serializes SHA-lineage resolution with concurrent review appends that omit beadId', async () => {
+    const stateRoot = await makeStateRoot()
+    const { registry, sessionBindings } = dependencies()
+    const { runBr } = fakeBr()
+    const { app } = fakeApp([], ['review-a', 'review-b'])
+    const handle = createFactoryDelegatePlugin({
+      stateRoot, workspaceScopeId: 'factory-hub', registry, sessionBindings, runBr, timeoutMs: 1_000,
+    })
+    handle.bind(app as never)
+    const tool = toolNamed(handle, 'boring-worker', 'fresh_review')
+
+    const results = await Promise.all([
+      tool.execute({ brief: 'Review the current target at abcdef1 without a Bead id.' }, context('worker', 'r1')),
+      tool.execute({ brief: 'Review the updated target at abcdef2 without a Bead id.' }, context('worker', 'r2')),
+    ])
+
+    expect(results.map((result) => (result.details as { reviewRound: number }).reviewRound).sort()).toEqual([1, 2])
+    expect(new Set(results.map((result) => (result.details as { reviewTarget: string }).reviewTarget)).size).toBe(1)
+  })
+
+  it('fails closed when a Bead or ledger inference conflicts with an authoritative binding', async () => {
+    const stateRoot = await makeStateRoot()
+    const { registry, sessionBindings } = dependencies({ foreign: 'other-epic' })
+    const { runBr } = fakeBr([{ id: 'br-1', status: 'in_progress', assignee: 'foreign' }])
+    const { app, calls } = fakeApp([{ sessionId: 'foreign', status: 'running', updatedAt: 1 }])
+    const handle = createFactoryDelegatePlugin({
+      stateRoot, workspaceScopeId: 'factory-hub', registry, sessionBindings, runBr, readGitStatus: gitStatus,
+    })
+    handle.bind(app as never)
+
+    const status = await toolNamed(handle, 'boring-orchestrator', 'factory_status').execute({}, context('orch', 'status'))
+    const dispatch = await toolNamed(handle, 'boring-orchestrator', 'dispatch_worker').execute(
+      { beadId: 'br-1', brief: 'Dispatch target Bead br-1 despite conflicting ownership.' }, context('orch', 'dispatch'),
+    )
+
+    expect(status).toMatchObject({ isError: true, details: { code: 'FACTORY_STATUS_FAILED', message: expect.stringContaining('ownership conflict') } })
+    expect(dispatch).toMatchObject({ isError: true, details: { code: 'DELEGATE_FAILED', message: expect.stringContaining('ownership conflict') } })
+    expect(calls.some((call) => call.method === 'POST' && call.url.endsWith('/sessions'))).toBe(false)
+  })
+
   it('persists dispatch counters across host restart and enforces them on the next admission', async () => {
     const stateRoot = await makeStateRoot()
     const { registry, sessionBindings } = dependencies()
@@ -397,6 +498,42 @@ describe('Factory host limits', () => {
     expect(status.details).toMatchObject({ counters: { dispatchesPerOpenBead: { 'br-1': 1 } } })
     const refused = await toolNamed(restartedHost, 'boring-orchestrator', 'dispatch_worker').execute(
       { beadId: 'br-1', brief: 'Retry target Bead br-1 after host restart.' }, context('orch', 'second'),
+    )
+    expect(refused.details).toMatchObject({ code: 'BEAD_DISPATCH_CAP_REACHED', current: 1, maximum: 1 })
+    expect(secondApp.calls.some((call) => call.method === 'POST' && call.url.endsWith('/sessions'))).toBe(false)
+  })
+
+  it('persists a dispatch reservation before child attach and enforces it after a crash restart', async () => {
+    const stateRoot = await makeStateRoot()
+    const { registry, sessionBindings } = dependencies()
+    const firstBr = fakeBr()
+    const firstApp = fakeApp([], ['orphan-worker'], { crashAfterSessionCreation: true })
+    const firstHost = createFactoryDelegatePlugin({
+      stateRoot, workspaceScopeId: 'factory-hub', registry, sessionBindings, runBr: firstBr.runBr,
+      env: { BORING_FACTORY_MAX_DISPATCHES_PER_BEAD: '1' }, timeoutMs: 1_000,
+    })
+    firstHost.bind(firstApp.app as never)
+
+    const crashed = await toolNamed(firstHost, 'boring-orchestrator', 'dispatch_worker').execute(
+      { beadId: 'br-1', brief: 'Crash after creating the child for target Bead br-1.' }, context('orch', 'crash'),
+    )
+    expect(crashed).toMatchObject({ isError: true, details: { code: 'DELEGATE_FAILED' } })
+    expect(firstApp.calls.some((call) => call.method === 'POST' && call.url.endsWith('/sessions'))).toBe(true)
+    const persisted = JSON.parse(await readFile(resolve(stateRoot, 'dispatches.json'), 'utf8')) as {
+      dispatches: Array<{ outcome: string; childSessionId?: string }>
+    }
+    expect(persisted.dispatches).toEqual([expect.objectContaining({ outcome: 'reserved' })])
+    expect(persisted.dispatches[0]!.childSessionId).toBeUndefined()
+
+    const secondBr = fakeBr()
+    const secondApp = fakeApp()
+    const restartedHost = createFactoryDelegatePlugin({
+      stateRoot, workspaceScopeId: 'factory-hub', registry, sessionBindings, runBr: secondBr.runBr,
+      env: { BORING_FACTORY_MAX_DISPATCHES_PER_BEAD: '1' }, timeoutMs: 1_000,
+    })
+    restartedHost.bind(secondApp.app as never)
+    const refused = await toolNamed(restartedHost, 'boring-orchestrator', 'dispatch_worker').execute(
+      { beadId: 'br-1', brief: 'Retry target Bead br-1 after the attach crash.' }, context('orch', 'restart'),
     )
     expect(refused.details).toMatchObject({ code: 'BEAD_DISPATCH_CAP_REACHED', current: 1, maximum: 1 })
     expect(secondApp.calls.some((call) => call.method === 'POST' && call.url.endsWith('/sessions'))).toBe(false)

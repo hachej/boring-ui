@@ -134,9 +134,9 @@ async function gate1WasRaised(app: FastifyInstance, workspaceScopeId: string, se
     payload: { op: 'ask-user.v1.pending-all', input: {} },
   })
   if (pendingResponse.statusCode !== 200) throw new Error(`Gate 1 pending lookup failed: HTTP ${pendingResponse.statusCode}`)
-  const pending = pendingResponse.json<{ output?: { pending?: Array<{ sessionId?: string; title?: string }> } }>().output?.pending
+  const pending = pendingResponse.json<{ output?: { pending?: Array<{ sessionId?: string; title?: string; status?: string }> } }>().output?.pending
   if (!Array.isArray(pending)) throw new Error('Gate 1 pending lookup returned an invalid response')
-  if (pending.some(isGate1)) return true
+  if (pending.some((question) => question.status === 'ready' && isGate1(question))) return true
 
   let cursor: string | undefined
   const seenCursors = new Set<string>()
@@ -148,9 +148,9 @@ async function gate1WasRaised(app: FastifyInstance, workspaceScopeId: string, se
       payload: { op: 'ask-user.v1.answered-all', input: { limit: 100, ...(cursor ? { cursor } : {}) } },
     })
     if (answeredResponse.statusCode !== 200) throw new Error(`Gate 1 answered lookup failed: HTTP ${answeredResponse.statusCode}`)
-    const output = answeredResponse.json<{ output?: { answered?: Array<{ sessionId?: string; title?: string }>; nextCursor?: string } }>().output
+    const output = answeredResponse.json<{ output?: { answered?: Array<{ sessionId?: string; title?: string; status?: string }>; nextCursor?: string } }>().output
     if (!output || !Array.isArray(output.answered)) throw new Error('Gate 1 answered lookup returned an invalid response')
-    if (output.answered.some(isGate1)) return true
+    if (output.answered.some((question) => question.status === 'answered' && isGate1(question))) return true
     if (!output.nextCursor) return false
     if (seenCursors.has(output.nextCursor)) throw new Error('Gate 1 answered lookup returned a repeated cursor')
     seenCursors.add(output.nextCursor)
