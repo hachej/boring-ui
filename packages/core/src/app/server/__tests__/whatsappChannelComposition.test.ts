@@ -88,8 +88,31 @@ describe('mountCoreWhatsAppChannel', () => {
     expect(mounted.runtime.bindings.getBinding('whatsapp', '+41790000001', 'default')).toBeUndefined()
     expect(gateway.createSession).not.toHaveBeenCalled()
 
+    const firstVersion = mounted.runtime.bindings.getBinding('whatsapp', '+41790000000', 'default')!.bindingVersion
     await mounted.close()
     await app.close()
+
+    const restartedApp = Fastify()
+    const restarted = await mountCoreWhatsAppChannel({
+      app: restartedApp,
+      gateway,
+      storage,
+      resolveAuthorizedScope: vi.fn(async () => ({}) as AuthorizedAgentScope),
+      options: {
+        withCredentials,
+        agentTypeId: 'default',
+        provisionedBindings: [{
+          conversationKey: '+41790000000',
+          workspaceId: 'workspace-1',
+          authSubjectId: 'user-1',
+          sessionKey: 'session-1',
+        }],
+      },
+    })
+    expect(restarted.runtime.bindings.getBinding('whatsapp', '+41790000000', 'default')?.bindingVersion)
+      .toBe(firstVersion)
+    await restarted.close()
+    await restartedApp.close()
     storage.close()
   })
 })

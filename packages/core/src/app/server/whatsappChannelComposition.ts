@@ -62,43 +62,60 @@ export async function mountCoreWhatsAppChannel(input: {
     resolveAuthorizedScope: input.resolveAuthorizedScope,
     outboundAdapters: new Map([[WHATSAPP_CHANNEL_ID, adapterEdge.adapter]]),
   })
-  for (const binding of input.options.provisionedBindings ?? []) {
-    runtime.provision({
-      ...binding,
-      channel: WHATSAPP_CHANNEL_ID,
-      agentTypeId: input.options.agentTypeId,
-    })
-  }
-
   const webhookPath = input.options.webhookPath ?? CORE_WHATSAPP_WEBHOOK_PATH
   const bodyLimit = input.options.bodyLimit ?? WHATSAPP_WEBHOOK_BODY_LIMIT
-  await input.app.register(async (routes) => {
-    routes.addContentTypeParser('application/json', { parseAs: 'buffer', bodyLimit }, (_request, body, done) => {
-      done(null, body)
+  try {
+    for (const binding of input.options.provisionedBindings ?? []) {
+      const current = runtime.bindings.getBinding(
+        WHATSAPP_CHANNEL_ID,
+        binding.conversationKey,
+        input.options.agentTypeId,
+      )
+      // Startup config is declarative. Re-applying an unchanged binding must not
+      // create a new generation, because acknowledged queue rows retain the old one.
+      if (current
+        && current.workspaceId === binding.workspaceId
+        && current.authSubjectId === binding.authSubjectId
+        && current.sessionKey === binding.sessionKey
+        && current.status === (binding.status ?? 'active')) continue
+      runtime.provision({
+        ...binding,
+        channel: WHATSAPP_CHANNEL_ID,
+        agentTypeId: input.options.agentTypeId,
+      })
+    }
+
+    await input.app.register(async (routes) => {
+      routes.addContentTypeParser('application/json', { parseAs: 'buffer', bodyLimit }, (_request, body, done) => {
+        done(null, body)
+      })
+      routes.route({
+        method: ['GET', 'POST'],
+        url: webhookPath,
+        handler: async (request, reply) => {
+          const method = request.method === 'GET' ? 'GET' : 'POST'
+          const headers = new Headers()
+          for (const [name, value] of Object.entries(request.headers)) {
+            if (value !== undefined) headers.set(name, Array.isArray(value) ? value.join(',') : value)
+          }
+          const body = method === 'POST'
+            ? request.body instanceof Uint8Array
+              ? Uint8Array.from(request.body).buffer
+              : new ArrayBuffer(0)
+            : undefined
+          const response = await adapterEdge.webhook(new Request(
+            new URL(request.raw.url ?? webhookPath, 'http://channel.invalid'),
+            { method, headers, ...(body === undefined ? {} : { body }) },
+          ))
+          reply.code(response.status).type(response.headers.get('content-type') ?? 'text/plain')
+          return await response.text()
+        },
+      })
     })
-    routes.route({
-      method: ['GET', 'POST'],
-      url: webhookPath,
-      handler: async (request, reply) => {
-        const method = request.method === 'GET' ? 'GET' : 'POST'
-        const headers = new Headers()
-        for (const [name, value] of Object.entries(request.headers)) {
-          if (value !== undefined) headers.set(name, Array.isArray(value) ? value.join(',') : value)
-        }
-        const body = method === 'POST'
-          ? request.body instanceof Uint8Array
-            ? Uint8Array.from(request.body).buffer
-            : new ArrayBuffer(0)
-          : undefined
-        const response = await adapterEdge.webhook(new Request(
-          new URL(request.raw.url ?? webhookPath, 'http://channel.invalid'),
-          { method, headers, ...(body === undefined ? {} : { body }) },
-        ))
-        reply.code(response.status).type(response.headers.get('content-type') ?? 'text/plain')
-        return await response.text()
-      },
-    })
-  })
+  } catch (error) {
+    await runtime.close()
+    throw error
+  }
 
   let closed = false
   return {
