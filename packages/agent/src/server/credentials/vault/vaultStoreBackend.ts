@@ -130,7 +130,11 @@ function createVaultCredentialStoreBackendInternalV1(
   const { kmsBackend, persistence, versionAnchor } = options
 
   async function requireNotShredded(workspaceId: string): Promise<void> {
-    if (await persistence.isWorkspaceCryptoShredded(workspaceId)) {
+    const anchored = await versionAnchor.read(workspaceId)
+    if (
+      (anchored?.cryptoShredGeneration ?? 0) > 0
+      || await persistence.isWorkspaceCryptoShredded(workspaceId)
+    ) {
       unreadable('Workspace credential material was crypto-shredded')
     }
   }
@@ -519,6 +523,7 @@ function createVaultCredentialStoreBackendInternalV1(
 
     async getCredentialMetadata(workspaceId: string, providerId: ProviderId) {
       assertWorkspaceId(workspaceId)
+      await requireNotShredded(workspaceId)
       const metadata = await persistence.getCredentialMetadata(workspaceId, providerId)
       await requireCurrentMetadata(workspaceId, providerId, metadata)
       return metadata
@@ -535,6 +540,10 @@ function createVaultCredentialStoreBackendInternalV1(
         // can project `not_configured`. A present anchor is always authenticated
         // and still catches deleted/replayed metadata when the list is empty.
         const anchored = await readLocked({ allowUnprovisioned: !hasArtifacts })
+        if (
+          (anchored?.cryptoShredGeneration ?? 0) > 0
+          || await persistence.isWorkspaceCryptoShredded(workspaceId)
+        ) unreadable('Workspace credential material was crypto-shredded')
         if (hasArtifacts && !anchored) {
           unreadable('Credential workspace state failed rollback verification')
         }
@@ -799,7 +808,10 @@ function createVaultCredentialStoreBackendInternalV1(
     async cryptoShredWorkspace(workspaceId: string): Promise<void> {
       assertWorkspaceId(workspaceId)
       await persistence.withWorkspaceLock(workspaceId, async (locked) => {
-        await locked.cryptoShredWorkspace(workspaceId, new Date().toISOString())
+        await versionAnchor.withCryptoShredMutation(workspaceId, async () => {
+          await locked.cryptoShredWorkspace(workspaceId, new Date().toISOString())
+          return { result: undefined }
+        })
       })
     },
   })

@@ -18,6 +18,8 @@ const ANCHOR_MAC_INFO_V1 = 'boring.credential-version-anchor.mac.v1'
 
 export interface WorkspaceCredentialVersionStateV1 {
   readonly counter: number
+  /** Monotonic irreversible fence; any positive value means the workspace was shredded. */
+  readonly cryptoShredGeneration: number
   /** Monotonic workspace-wide fence for replayed wrapped DEKs and records. */
   readonly dekGeneration: number
   readonly credentialVersions: Readonly<Record<string, number>>
@@ -42,6 +44,10 @@ export interface DekGenerationMutationResultV1<T> {
 
 export interface CredentialLifecycleMutationResultV1<T> {
   readonly nextCredentialLifecycleState: CredentialLifecycleStateV1
+  readonly result: T
+}
+
+export interface CryptoShredMutationResultV1<T> {
   readonly result: T
 }
 
@@ -90,6 +96,17 @@ export interface WorkspaceCredentialVersionAnchorV1 {
       current: WorkspaceCredentialVersionStateV1 | undefined,
     ) => Promise<CredentialLifecycleMutationResultV1<T>>,
   ): Promise<T>
+  /**
+   * Irreversibly advances the authenticated external shred fence before
+   * destructive persistence finalization. Repeated calls retain the fence and
+   * re-run finalization so cleanup is recoverable and idempotent.
+   */
+  withCryptoShredMutation<T>(
+    workspaceId: string,
+    mutate: (
+      current: WorkspaceCredentialVersionStateV1,
+    ) => Promise<CryptoShredMutationResultV1<T>>,
+  ): Promise<T>
   /** Advances the authenticated workspace DEK fence exactly one generation. */
   withDekGenerationMutation<T>(
     workspaceId: string,
@@ -103,6 +120,8 @@ type MutableAnchorStateV1 = {
   format: typeof ANCHOR_FORMAT_V2
   workspaces: Record<string, {
     counter: number
+    /** Absent only in authenticated v2 files written before the shred fence. */
+    cryptoShredGeneration?: number
     dekGeneration: number
     credentialVersions: Record<string, number>
     credentialMaterialKinds: Record<string, CredentialMaterialKindV1>
@@ -162,6 +181,7 @@ function copyWorkspaceState(
   if (!workspace) return undefined
   return Object.freeze({
     counter: workspace.counter,
+    cryptoShredGeneration: workspace.cryptoShredGeneration ?? 0,
     dekGeneration: workspace.dekGeneration,
     credentialVersions: Object.freeze({ ...workspace.credentialVersions }),
     credentialMaterialKinds: Object.freeze({ ...workspace.credentialMaterialKinds }),
@@ -176,6 +196,9 @@ function canonicalState(state: MutableAnchorStateV1): string {
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([workspaceId, workspace]) => [workspaceId, {
         counter: workspace.counter,
+        ...(workspace.cryptoShredGeneration === undefined
+          ? {}
+          : { cryptoShredGeneration: workspace.cryptoShredGeneration }),
         dekGeneration: workspace.dekGeneration,
         credentialVersions: Object.fromEntries(
           Object.entries(workspace.credentialVersions)
@@ -210,6 +233,10 @@ function validateState(value: unknown): MutableAnchorStateV1 {
       || typeof workspace !== 'object'
       || !Number.isSafeInteger(workspace.counter)
       || workspace.counter < 1
+      || (workspace.cryptoShredGeneration !== undefined && (
+        !Number.isSafeInteger(workspace.cryptoShredGeneration)
+        || workspace.cryptoShredGeneration < 1
+      ))
       || !Number.isSafeInteger(workspace.dekGeneration)
       || workspace.dekGeneration < 1
       || !workspace.credentialVersions
@@ -284,7 +311,11 @@ export function createInMemoryCredentialVersionAnchorV1(): WorkspaceCredentialVe
     ): Promise<T> {
       let result!: T
       const operation = queue.then(async () => {
-        const mutation = await mutate(copyWorkspaceState(state, workspaceId))
+        const currentState = copyWorkspaceState(state, workspaceId)
+        if ((currentState?.cryptoShredGeneration ?? 0) > 0) {
+          unreadable('Workspace credential material was crypto-shredded')
+        }
+        const mutation = await mutate(currentState)
         const current = state.workspaces[workspaceId]
         const currentVersion = current?.credentialVersions[providerId] ?? 0
         if (mutation.nextCredentialVersion !== currentVersion + 1) {
@@ -332,6 +363,9 @@ export function createInMemoryCredentialVersionAnchorV1(): WorkspaceCredentialVe
       let result!: T
       const operation = queue.then(async () => {
         const current = copyWorkspaceState(state, workspaceId)
+        if ((current?.cryptoShredGeneration ?? 0) > 0) {
+          unreadable('Workspace credential material was crypto-shredded')
+        }
         if (!current?.credentialVersions[providerId]) {
           unreadable('Credential lifecycle anchor is missing')
         }
@@ -352,6 +386,36 @@ export function createInMemoryCredentialVersionAnchorV1(): WorkspaceCredentialVe
       await operation
       return result
     },
+    async withCryptoShredMutation<T>(
+      workspaceId: string,
+      mutate: (
+        current: WorkspaceCredentialVersionStateV1,
+      ) => Promise<CryptoShredMutationResultV1<T>>,
+    ): Promise<T> {
+      let result!: T
+      const operation = queue.then(async () => {
+        let current = copyWorkspaceState(state, workspaceId)
+        if ((current?.cryptoShredGeneration ?? 0) === 0) {
+          const next = cloneState(state)
+          const currentWorkspace = state.workspaces[workspaceId]
+          next.workspaces[workspaceId] = {
+            counter: (currentWorkspace?.counter ?? 0) + 1,
+            cryptoShredGeneration: 1,
+            dekGeneration: currentWorkspace?.dekGeneration ?? 1,
+            credentialVersions: { ...currentWorkspace?.credentialVersions },
+            credentialMaterialKinds: { ...currentWorkspace?.credentialMaterialKinds },
+            credentialLifecycleStates: { ...currentWorkspace?.credentialLifecycleStates },
+            credentialTypes: { ...currentWorkspace?.credentialTypes },
+          }
+          state = next
+          current = copyWorkspaceState(state, workspaceId)!
+        }
+        result = (await mutate(current!)).result
+      })
+      queue = operation.catch(() => undefined)
+      await operation
+      return result
+    },
     async withDekGenerationMutation<T>(
       workspaceId: string,
       mutate: (
@@ -362,6 +426,9 @@ export function createInMemoryCredentialVersionAnchorV1(): WorkspaceCredentialVe
       const operation = queue.then(async () => {
         const current = copyWorkspaceState(state, workspaceId)
         if (!current) unreadable('Credential DEK generation anchor is missing')
+        if (current.cryptoShredGeneration > 0) {
+          unreadable('Workspace credential material was crypto-shredded')
+        }
         const mutation = await mutate(current)
         if (mutation.nextDekGeneration !== current.dekGeneration + 1) {
           unreadable('Credential version anchor rejected a stale DEK rotation')
@@ -584,6 +651,9 @@ export function createLocalFileCredentialVersionAnchorV1(
         // closed until operator cleanup rather than guessing lock ownership.
         const state = await readSealedState(options)
         const current = copyWorkspaceState(state, workspaceId)
+        if ((current?.cryptoShredGeneration ?? 0) > 0) {
+          unreadable('Workspace credential material was crypto-shredded')
+        }
         const mutation = await mutate(current)
         const currentWorkspace = state.workspaces[workspaceId]
         const currentVersion = currentWorkspace?.credentialVersions[providerId] ?? 0
@@ -634,6 +704,9 @@ export function createLocalFileCredentialVersionAnchorV1(
       try {
         const state = await readSealedState(options)
         const current = copyWorkspaceState(state, workspaceId)
+        if ((current?.cryptoShredGeneration ?? 0) > 0) {
+          unreadable('Workspace credential material was crypto-shredded')
+        }
         if (!current?.credentialVersions[providerId]) {
           unreadable('Credential lifecycle anchor is missing')
         }
@@ -654,6 +727,39 @@ export function createLocalFileCredentialVersionAnchorV1(
         await unlink(lockPath).catch(() => undefined)
       }
     },
+    async withCryptoShredMutation<T>(
+      workspaceId: string,
+      mutate: (
+        current: WorkspaceCredentialVersionStateV1,
+      ) => Promise<CryptoShredMutationResultV1<T>>,
+    ): Promise<T> {
+      const lockPath = `${options.anchorFilePath}.lock`
+      const lock = await acquireMutationLock(lockPath)
+      try {
+        let state = await readSealedState(options)
+        let current = copyWorkspaceState(state, workspaceId)
+        if ((current?.cryptoShredGeneration ?? 0) === 0) {
+          const next = cloneState(state)
+          const currentWorkspace = state.workspaces[workspaceId]
+          next.workspaces[workspaceId] = {
+            counter: (currentWorkspace?.counter ?? 0) + 1,
+            cryptoShredGeneration: 1,
+            dekGeneration: currentWorkspace?.dekGeneration ?? 1,
+            credentialVersions: { ...currentWorkspace?.credentialVersions },
+            credentialMaterialKinds: { ...currentWorkspace?.credentialMaterialKinds },
+            credentialLifecycleStates: { ...currentWorkspace?.credentialLifecycleStates },
+            credentialTypes: { ...currentWorkspace?.credentialTypes },
+          }
+          await replaceSealedState(next, options)
+          state = next
+          current = copyWorkspaceState(state, workspaceId)!
+        }
+        return (await mutate(current!)).result
+      } finally {
+        await lock.close().catch(() => undefined)
+        await unlink(lockPath).catch(() => undefined)
+      }
+    },
     async withDekGenerationMutation<T>(
       workspaceId: string,
       mutate: (
@@ -666,6 +772,9 @@ export function createLocalFileCredentialVersionAnchorV1(
         const state = await readSealedState(options)
         const current = copyWorkspaceState(state, workspaceId)
         if (!current) unreadable('Credential DEK generation anchor is missing')
+        if (current.cryptoShredGeneration > 0) {
+          unreadable('Workspace credential material was crypto-shredded')
+        }
         const mutation = await mutate(current)
         if (mutation.nextDekGeneration !== current.dekGeneration + 1) {
           unreadable('Credential version anchor rejected a stale DEK rotation')

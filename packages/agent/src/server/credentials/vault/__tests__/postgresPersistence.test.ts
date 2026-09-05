@@ -203,4 +203,91 @@ describe('Postgres credential rollback protection', () => {
         code: CREDENTIAL_ERROR_CODES.UNREADABLE,
       } satisfies Partial<CredentialResolutionError>)
   })
+
+  test('rejects a complete pre-shred Postgres snapshot after restart', async () => {
+    const workspaceId = `shred-${randomUUID()}`
+    const providerId = 'shred-snapshot-provider' as ProviderId
+    const fieldId = 'api-key' as CredentialFieldId
+    const anchorFilePath = join(
+      await mkdtemp(join(tmpdir(), 'boring-postgres-shred-anchor-')),
+      'credential-anchor',
+    )
+    const loadKek = async () => new Uint8Array(32).fill(0xa5)
+    await initializeLocalFileCredentialVersionAnchorV1({ anchorFilePath, loadKek })
+    const createBackend = () => createVaultCredentialStoreBackendV1({
+      persistence: createPostgresCredentialVaultPersistenceV1(sql),
+      versionAnchor: createLocalFileCredentialVersionAnchorV1({ anchorFilePath, loadKek }),
+      kmsBackend: createLocalKekWorkspaceKekProviderV1({
+        keyRef: 'shred-snapshot-test',
+        keyVersion: 1,
+        loadKek,
+      }),
+    })
+    const backend = createBackend()
+    await backend.writeCredentialFields({
+      workspaceId,
+      providerId,
+      fields: new Map([[fieldId, new TextEncoder().encode('pre-shred-secret')]]),
+    })
+
+    const keySnapshot = (await sql`
+      SELECT * FROM workspace_credential_keys WHERE workspace_id = ${workspaceId}
+    `)[0]!
+    const fieldSnapshot = (await sql`
+      SELECT * FROM workspace_provider_credential_fields
+      WHERE workspace_id = ${workspaceId} AND provider_id = ${providerId}
+    `)[0]!
+
+    await backend.cryptoShredWorkspace(workspaceId)
+    await backend.cryptoShredWorkspace(workspaceId)
+    await expect(backend.read(workspaceId, providerId, [fieldId]))
+      .rejects.toMatchObject({
+        code: CREDENTIAL_ERROR_CODES.UNREADABLE,
+      } satisfies Partial<CredentialResolutionError>)
+
+    // Simulate restoring a complete pre-shred database snapshot: the live
+    // wrapped DEK and envelope return and the database-local shred row vanishes.
+    await sql`
+      INSERT INTO workspace_credential_keys (
+        workspace_id, dek_generation, kms_provider_id, key_ref, key_version,
+        payload_format, payload_format_id, ciphertext, nonce, auth_tag,
+        aad_context, opaque_authenticated_payload, state, created_at, updated_at
+      ) VALUES (
+        ${keySnapshot.workspace_id}, ${keySnapshot.dek_generation},
+        ${keySnapshot.kms_provider_id}, ${keySnapshot.key_ref}, ${keySnapshot.key_version},
+        ${keySnapshot.payload_format}, ${keySnapshot.payload_format_id},
+        ${keySnapshot.ciphertext}, ${keySnapshot.nonce}, ${keySnapshot.auth_tag},
+        ${keySnapshot.aad_context}, ${keySnapshot.opaque_authenticated_payload},
+        ${keySnapshot.state}, ${keySnapshot.created_at}, ${keySnapshot.updated_at}
+      )
+    `
+    await sql`
+      UPDATE workspace_provider_credential_fields SET
+        dek_generation = ${fieldSnapshot.dek_generation},
+        envelope_version = ${fieldSnapshot.envelope_version},
+        ciphertext = ${fieldSnapshot.ciphertext},
+        nonce = ${fieldSnapshot.nonce},
+        auth_tag = ${fieldSnapshot.auth_tag},
+        aad_context = ${fieldSnapshot.aad_context},
+        deleted_at = NULL,
+        deletion_reason = NULL
+      WHERE workspace_id = ${workspaceId} AND provider_id = ${providerId}
+        AND credential_version = ${fieldSnapshot.credential_version}
+        AND field_id = ${fieldSnapshot.field_id}
+    `
+    await sql`DELETE FROM workspace_credential_shreds WHERE workspace_id = ${workspaceId}`
+
+    const restarted = createBackend()
+    await expect(restarted.read(workspaceId, providerId, [fieldId]))
+      .rejects.toMatchObject({
+        code: CREDENTIAL_ERROR_CODES.UNREADABLE,
+      } satisfies Partial<CredentialResolutionError>)
+    await expect(restarted.writeCredentialFields({
+      workspaceId,
+      providerId,
+      fields: new Map([[fieldId, new TextEncoder().encode('restored-secret')]]),
+    })).rejects.toMatchObject({
+      code: CREDENTIAL_ERROR_CODES.UNREADABLE,
+    } satisfies Partial<CredentialResolutionError>)
+  })
 })

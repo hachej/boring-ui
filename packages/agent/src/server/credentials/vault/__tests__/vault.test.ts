@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, test } from 'vitest'
@@ -367,6 +367,7 @@ describe('local-KEK credential version anchor', () => {
     const reloaded = createLocalFileCredentialVersionAnchorV1(options)
     expect(await reloaded.read('ws-a')).toEqual({
       counter: 2,
+      cryptoShredGeneration: 0,
       dekGeneration: 1,
       credentialVersions: { 'provider-a': 1, 'provider-b': 1 },
       credentialMaterialKinds: {
@@ -382,6 +383,59 @@ describe('local-KEK credential version anchor', () => {
         'provider-b': 'api-key',
       },
     })
+  })
+
+  test('persists an irreversible shred fence before cleanup and keeps retries idempotent', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'boring-shred-anchor-'))
+    const anchorFilePath = join(dir, 'credential-anchor')
+    const options = {
+      anchorFilePath,
+      loadKek: async () => new Uint8Array(KEK_A),
+    }
+    await initializeLocalFileCredentialVersionAnchorV1(options)
+    const anchor = createLocalFileCredentialVersionAnchorV1(options)
+    await anchor.withMutation('ws-a', PROVIDER_A, async () => ({
+      nextCredentialVersion: 1,
+      nextCredentialMaterialKind: 'field-set',
+      nextCredentialLifecycleState: 'active',
+      nextCredentialType: 'api-key',
+      nextDekGeneration: 1,
+      result: undefined,
+    }))
+
+    await expect(anchor.withCryptoShredMutation('ws-a', async (state) => {
+      expect(state.cryptoShredGeneration).toBe(1)
+      throw new Error('simulated cleanup failure')
+    })).rejects.toThrow('simulated cleanup failure')
+    expect((await anchor.read('ws-a'))?.cryptoShredGeneration).toBe(1)
+
+    let retries = 0
+    await anchor.withCryptoShredMutation('ws-a', async (state) => {
+      retries += 1
+      expect(state.cryptoShredGeneration).toBe(1)
+      return { result: undefined }
+    })
+    expect(retries).toBe(1)
+    expect((await anchor.read('ws-a'))?.cryptoShredGeneration).toBe(1)
+    await expectCredentialError(
+      () => anchor.withMutation('ws-a', PROVIDER_A, async () => ({
+        nextCredentialVersion: 2,
+        nextCredentialMaterialKind: 'field-set',
+        nextCredentialLifecycleState: 'active',
+        nextCredentialType: 'api-key',
+        nextDekGeneration: 1,
+        result: undefined,
+      })),
+      CREDENTIAL_ERROR_CODES.UNREADABLE,
+    )
+
+    const sealed = JSON.parse(await readFile(anchorFilePath, 'utf8'))
+    sealed.state.workspaces['ws-a'].cryptoShredGeneration = 2
+    await writeFile(anchorFilePath, `${JSON.stringify(sealed)}\n`)
+    await expectCredentialError(
+      () => anchor.read('ws-a'),
+      CREDENTIAL_ERROR_CODES.UNREADABLE,
+    )
   })
 
   test('fails closed when the sealed anchor is missing or tampered', async () => {
