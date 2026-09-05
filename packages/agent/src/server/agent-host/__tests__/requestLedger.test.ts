@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { AgentGatewayErrorCode } from '../../../shared/index'
 import { InMemoryAgentRequestLedger } from '../requestLedger'
 import { SqliteAgentRequestLedger } from '../sqliteRequestLedger'
-import type { AgentRequestKey } from '../types'
+import type { AgentRequestKey, AgentRequestLedger } from '../types'
 
 const key: AgentRequestKey = {
   workspaceScopeId: 'workspace-a',
@@ -36,7 +36,7 @@ describe('InMemoryAgentRequestLedger', () => {
     })
   })
 
-  it('retains stable strong rejection while retryable admission leaves pending', async () => {
+  it('retains stable strong rejection', async () => {
     const ledger = new InMemoryAgentRequestLedger()
     await ledger.prepare(key, 'digest-a')
     expect((await ledger.read(key))?.state).toBe('pending-admission')
@@ -64,6 +64,48 @@ describe('InMemoryAgentRequestLedger', () => {
   })
 })
 
+describe.each<{ name: string; create(): AgentRequestLedger }>([
+  { name: 'in-memory', create: () => new InMemoryAgentRequestLedger() },
+  { name: 'SQLite', create: () => new SqliteAgentRequestLedger(join(tmpdir(), `agent-request-ledger-${randomUUID()}.sqlite`)) },
+])('$name admission retry ownership', ({ create }) => {
+  it('retains the digest and elects one retry owner before allowing admission', async () => {
+    const ledger = create()
+    try {
+      await ledger.prepare(key, 'digest-a')
+      await ledger.markAdmissionRetryable(key)
+      await expect(ledger.prepare(key, 'digest-b')).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT })
+      await expect(ledger.acceptAdmission(key, 'unclaimed')).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT })
+      const claims = await Promise.all([ledger.prepare(key, 'digest-a'), ledger.prepare(key, 'digest-a')])
+      expect(claims.map(({ ownership }) => ownership)).toEqual(['reclaimed', 'existing'])
+      expect(claims[0]?.record).not.toHaveProperty('retryable')
+      await ledger.acceptAdmission(key, 'admitted')
+      await ledger.beginEffect(key)
+      await ledger.complete(key, { accepted: true })
+      await expect(ledger.prepare(key, 'digest-a')).resolves.toMatchObject({
+        ownership: 'existing', record: { state: 'completed', receipt: { accepted: true } },
+      })
+    } finally {
+      await ledger.close?.()
+    }
+  })
+
+  it('does not release accepted, in-flight, or unknown effects for another attempt', async () => {
+    const ledger = create()
+    try {
+      await ledger.prepare(key, 'digest-a')
+      await ledger.acceptAdmission(key, 'admitted')
+      await expect(ledger.markAdmissionRetryable(key)).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT })
+      await ledger.beginEffect(key)
+      await expect(ledger.markAdmissionRetryable(key)).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT })
+      await ledger.markOutcomeUnknown(key, { code: AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN, message: 'unknown' })
+      await expect(ledger.markAdmissionRetryable(key)).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT })
+      await expect(ledger.prepare(key, 'digest-a')).resolves.toMatchObject({ ownership: 'existing', record: { state: 'outcome-unknown' } })
+    } finally {
+      await ledger.close?.()
+    }
+  })
+})
+
 describe('SqliteAgentRequestLedger', () => {
   it('atomically elects one owner across instances and durably replays the terminal record', async () => {
     const path = join(tmpdir(), `agent-request-ledger-${randomUUID()}.sqlite`)
@@ -76,7 +118,12 @@ describe('SqliteAgentRequestLedger', () => {
 
     expect(prepared.filter(({ ownership }) => ownership === 'created')).toHaveLength(1)
     expect(prepared.filter(({ ownership }) => ownership === 'existing')).toHaveLength(1)
-    const owner = prepared[0]?.ownership === 'created' ? first : second
+    const initialOwner = prepared[0]?.ownership === 'created' ? first : second
+    await initialOwner.markAdmissionRetryable(key)
+    const retried = await Promise.all([first.prepare(key, 'digest-a'), second.prepare(key, 'digest-a')])
+    expect(retried.filter(({ ownership }) => ownership === 'reclaimed')).toHaveLength(1)
+    expect(retried.filter(({ ownership }) => ownership === 'existing')).toHaveLength(1)
+    const owner = retried[0]?.ownership === 'reclaimed' ? first : second
     await owner.acceptAdmission(key, 'admission-a')
     await owner.beginEffect(key)
     await owner.complete(key, { accepted: true })
@@ -93,6 +140,31 @@ describe('SqliteAgentRequestLedger', () => {
     })
     reopened.close()
   })
+
+  it.each(['pending-admission', 'admission-accepted', 'in-flight', 'outcome-unknown'] as const)(
+    'does not reclaim %s after reopen without a proven safe release',
+    async (state) => {
+      const path = join(tmpdir(), `agent-request-ledger-${randomUUID()}.sqlite`)
+      const initial = new SqliteAgentRequestLedger(path)
+      try {
+        await initial.prepare(key, 'digest-a')
+        if (state !== 'pending-admission') await initial.acceptAdmission(key, 'admitted')
+        if (state === 'in-flight' || state === 'outcome-unknown') await initial.beginEffect(key)
+        if (state === 'outcome-unknown') await initial.markOutcomeUnknown(key, {
+          code: AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN, message: 'unknown',
+        })
+      } finally {
+        initial.close()
+      }
+      const reopened = new SqliteAgentRequestLedger(path)
+      try {
+        await expect(reopened.prepare(key, 'digest-a')).resolves.toMatchObject({ ownership: 'existing', record: { state } })
+        await expect(reopened.prepare(key, 'digest-b')).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT })
+      } finally {
+        reopened.close()
+      }
+    },
+  )
 
   it('validates the effect target before claiming durable ownership', async () => {
     const ledger = new SqliteAgentRequestLedger(join(tmpdir(), `agent-request-ledger-${randomUUID()}.sqlite`))

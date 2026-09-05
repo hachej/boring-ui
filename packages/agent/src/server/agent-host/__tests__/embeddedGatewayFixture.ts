@@ -9,7 +9,7 @@ import { EmbeddedAgentGateway } from '../embeddedGateway'
 import { InMemoryAgentRequestLedger } from '../requestLedger'
 import { AgentSessionActivityIndex } from '../sessionInventory'
 import { InMemoryHarnessBackend } from '../testing/inMemoryHarnessBackend'
-import type { AgentGatewayEffect, AgentHostAgentSpec } from '../types'
+import type { AgentGatewayEffect, AgentHostAgentSpec, AgentRequestLedger } from '../types'
 import type { GatewayConformanceFixture } from '../testing/gatewayConformance'
 
 interface EmbeddedGatewayFixture extends GatewayConformanceFixture {
@@ -27,7 +27,7 @@ interface EmbeddedGatewayFixture extends GatewayConformanceFixture {
   }) => Promise<void>): void
 }
 
-export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFixture> {
+export async function createEmbeddedGatewayFixture(options: { requestLedger?: AgentRequestLedger } = {}): Promise<EmbeddedGatewayFixture> {
   const issued = new WeakSet<object>()
   const revoked = new WeakSet<object>()
   const backends = new Map<string, InMemoryHarnessBackend>()
@@ -59,7 +59,7 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
     options: {},
     compiledAgents: agents,
     compiledById: new Map(agents.map((agent) => [agent.agentTypeId, agent])),
-    ledger: new InMemoryAgentRequestLedger(),
+    ledger: options.requestLedger ?? new InMemoryAgentRequestLedger(),
     activity,
     async listSessionSummaries(agentTypeId: string, _scope: AuthorizedAgentScope, claim: { workspaceScopeId: string }, options?: { archived?: 'active' | 'archived' | 'all' }) {
       return await backendFor(claim.workspaceScopeId, agentTypeId).listSessions({

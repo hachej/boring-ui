@@ -865,7 +865,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
         requestId,
       },
     )
-    if (prepared.ownership === 'existing' && !guard) throw requestInProgress()
+    if (prepared.ownership === 'existing') throw requestInProgress()
 
     let effect: Promise<JsonValue>
     try {
@@ -877,7 +877,10 @@ export class EmbeddedAgentGateway implements AgentGateway {
         if (admitted?.state === 'pending-admission') {
           await reauthorizeOrReject()
           const admission = await this.runtime.effectAdmission.admit({ key, digest, scope: claim, operation, target })
-          if (admission.type === 'retryable') throw gatewayError(admission.error)
+          if (admission.type === 'retryable') {
+            await this.runtime.ledger.markAdmissionRetryable(key)
+            throw gatewayError(admission.error)
+          }
           if (admission.type === 'rejected') {
             await this.runtime.ledger.reject(key, { kind: 'gateway', error: admission.error })
             throw gatewayError(admission.error)
@@ -906,7 +909,10 @@ export class EmbeddedAgentGateway implements AgentGateway {
           }
           if (serializedClassify) await this.applyClassification(key, serializedClassify)
           const retryableGuardError = await guard?.()
-          if (retryableGuardError) throw gatewayError(retryableGuardError)
+          if (retryableGuardError) {
+            await this.runtime.ledger.markAdmissionRetryable(key)
+            throw gatewayError(retryableGuardError)
+          }
           await reauthorizeOrReject()
           await this.runtime.ledger.acceptAdmission(key, admissionReceipt)
           if (preflight) {

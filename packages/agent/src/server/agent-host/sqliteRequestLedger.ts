@@ -74,16 +74,31 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
     if (current.digest !== digest) {
       conflict('requestId was already used with a different payload')
     }
+    if (current.state === 'pending-admission' && current.retryable) {
+      const claimed = this.database.prepare(`
+        UPDATE agent_request_ledger SET record_json = ?, updated_at = ?
+        WHERE request_key = ? AND digest = ? AND state = 'pending-admission' AND record_json = ?
+      `).run(JSON.stringify(record), record.updatedAt, id, digest, JSON.stringify(current))
+      if (claimed.changes === 1) return { ownership: 'reclaimed', record }
+      const winner = this.readSync(key)
+      if (!winner) conflict('request ledger ownership claim was not persisted')
+      return { ownership: 'existing', record: winner }
+    }
     return { ownership: inserted.changes === 1 ? 'created' : 'existing', record: current }
   }
 
+  async markAdmissionRetryable(key: AgentRequestKey): Promise<void> {
+    this.transition(key, ['pending-admission'], (record) => {
+      if (record.state !== 'pending-admission' || record.retryable) conflict('request admission is already retryable')
+      return { ...record, retryable: true, updatedAt: Date.now() }
+    })
+  }
+
   async acceptAdmission(key: AgentRequestKey, admissionReceipt: string): Promise<void> {
-    this.transition(key, ['pending-admission'], (record) => ({
-      ...record,
-      state: 'admission-accepted',
-      admissionReceipt,
-      updatedAt: Date.now(),
-    }))
+    this.transition(key, ['pending-admission'], (record) => {
+      if (record.state !== 'pending-admission' || record.retryable) conflict('request admission must be claimed before accepting')
+      return { ...record, state: 'admission-accepted', admissionReceipt, updatedAt: Date.now() }
+    })
   }
 
   async beginEffect(key: AgentRequestKey): Promise<void> {
@@ -160,7 +175,7 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
     const result = this.database.prepare(`
       UPDATE agent_request_ledger
       SET state = ?, record_json = ?, updated_at = ?
-      WHERE request_key = ? AND digest = ? AND state IN (${placeholders})
+      WHERE request_key = ? AND digest = ? AND state IN (${placeholders}) AND record_json = ?
     `).run(
       next.state,
       JSON.stringify(next),
@@ -168,6 +183,7 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
       keyString(key),
       current.digest,
       ...expectedStates,
+      JSON.stringify(current),
     )
     if (result.changes !== 1) conflict('request ledger transition lost its compare-and-swap race')
   }

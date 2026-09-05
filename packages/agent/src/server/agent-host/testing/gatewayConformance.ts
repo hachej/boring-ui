@@ -278,7 +278,16 @@ export function gatewayConformance(options: GatewayConformanceOptions): void {
         scope,
         agentTypeId: 'alpha',
         requestId: 'retryable',
-      }), 'AGENT_REQUEST_IN_PROGRESS')
+        title: 'conflicting retry',
+      }), 'AGENT_REQUEST_CONFLICT')
+      const retry = {
+        scope,
+        agentTypeId: 'alpha',
+        requestId: 'retryable',
+      }
+      const ref = await fixture.gateway.createSession(retry)
+      await expect(fixture.gateway.createSession(retry)).resolves.toEqual(ref)
+      await expect(fixture.gateway.listSessions({ scope })).resolves.toMatchObject({ sessions: [{ ref }] })
     })
 
     it('fails unknown agents and hidden cross-scope sessions with stable errors', async () => {
