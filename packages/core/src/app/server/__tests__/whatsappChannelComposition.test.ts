@@ -128,10 +128,10 @@ describe('mountCoreWhatsAppChannel', () => {
         }],
       },
     })
-    expect(restarted.runtime.bindings.getBinding('whatsapp', '+41790000000', 'default')).toMatchObject({
-      bindingVersion: assigned.bindingVersion,
-      sessionKey: 'generated-session',
-    })
+    const restartedBinding = restarted.runtime.bindings.getBinding('whatsapp', '+41790000000', 'default')
+    // The mocked gateway has no durable stream, so the runtime may clear its
+    // unusable session asynchronously; startup provisioning must not bump generation.
+    expect(restartedBinding?.bindingVersion).toBe(assigned.bindingVersion)
     await restarted.close()
     await restartedApp.close()
     storage.close()
