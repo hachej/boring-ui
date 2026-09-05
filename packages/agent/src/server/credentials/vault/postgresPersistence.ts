@@ -291,7 +291,14 @@ implements CredentialVaultPersistenceV1 {
       const pidRows = await boundedWait(pidQuery, deadlineMs, lockOptions.signal, () => pidQuery.cancel())
       if (Number.isSafeInteger(pidRows[0]?.pid)) backendPid = pidRows[0]!.pid
     } catch (error) {
-      await destroyReservedConnection(this.options.evictionSql, reserved, undefined, probeToken)
+      try {
+        await destroyReservedConnection(this.options.evictionSql, reserved, undefined, probeToken)
+      } catch {
+        // This probe cannot have acquired an advisory lock. If the control pool
+        // is unavailable, deferred release is safe and prevents a permanent pin.
+        reserved.release()
+        throw lockUnavailable('could not evict its connection')
+      }
       throw stableLockError(error)
     }
 
@@ -311,6 +318,7 @@ implements CredentialVaultPersistenceV1 {
         } catch (error) {
           release = false
           await destroyReservedConnection(this.options.evictionSql, reserved, backendPid)
+            .catch(() => { throw lockUnavailable('could not evict its connection') })
           throw stableLockError(error)
         }
         acquired = rows[0]?.locked === true
@@ -353,6 +361,7 @@ implements CredentialVaultPersistenceV1 {
         if (!unlocked) {
           release = false
           await destroyReservedConnection(this.options.evictionSql, reserved, backendPid)
+            .catch(() => { throw lockUnavailable('could not evict its connection') })
           throw lockUnavailable('could not be released')
         }
       }
