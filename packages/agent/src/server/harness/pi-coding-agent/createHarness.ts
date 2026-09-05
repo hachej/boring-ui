@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { extname, join } from "node:path";
+import type { CredentialStore } from "@earendil-works/pi-ai";
 import {
   createAgentSession,
   type AgentSession,
@@ -127,6 +128,8 @@ export interface PiHarnessOptions {
   getHotReloadableResources?: () => HotReloadablePiResources;
   /** Reject an explicit unavailable/unknown model instead of silently falling back. */
   strictModelResolution?: boolean;
+  /** Host-owned, actor-bound credential source. Never projected into the runtime workspace. */
+  credentialStore?: CredentialStore;
 }
 
 /** Pi harness options with the discovery flags resolved to definite booleans. */
@@ -585,10 +588,12 @@ export function createPiCodingAgentHarness(opts: {
     input: AgentSendInput,
     ctx: RunContext,
   ): Promise<PiSessionHandle> {
-    // Auth/model credentials remain Pi-owned. The default runtime reads Pi's
-    // normal environment/settings/auth sources; Boring does not pick a
-    // provider credential itself.
-    const { modelRuntime } = await createConfiguredModelRuntime();
+    // Pi owns auth resolution/login/refresh. When the host supplies an
+    // actor-bound vault store, Pi uses that store instead of auth.json; the
+    // credential object is never projected into browser, logs, or sandbox.
+    const { modelRuntime } = await createConfiguredModelRuntime(
+      pi.credentialStore ? { credentials: pi.credentialStore } : undefined,
+    );
     // Strict model validation must fail before native transcript creation.
     const resolvedModel = resolveRequestedModel(modelRuntime, input, { strict: pi.strictModelResolution });
     // Prefer an explicit available UI selection; otherwise use configured

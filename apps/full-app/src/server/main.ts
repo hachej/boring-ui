@@ -52,6 +52,7 @@ async function main() {
     filterModels: governance.filterModels,
     getFilesystemBindings: governance.getFilesystemBindings(),
     pi: governance.pi,
+    credentials: true,
     getSessionNamespace: ({ workspaceId, request, userId }) => fullAppAgentSessionNamespace({ workspaceId, request, userId }),
     getExtraTools: (ctx) => appRef ? createFullAppBoringMcpAgentToolsForRequest(appRef, ctx) : [],
     onWorkspaceAgentDispatcher: (resolver) => {

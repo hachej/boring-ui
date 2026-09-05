@@ -142,7 +142,10 @@ export function createFactorySupervisionPlugin(
       const stateResponse = await app.inject({
         method: 'GET',
         url: `/api/v1/agents/${entry.agentTypeId}/sessions/${entry.sessionId}/state`,
-        headers: { 'x-boring-workspace-id': workspaceScopeId },
+        headers: {
+          'x-boring-workspace-id': workspaceScopeId,
+          'x-boring-invocation-mode': 'unattended',
+        },
       })
       if (stateResponse.statusCode !== 200) {
         outcome = 'error'
@@ -155,7 +158,10 @@ export function createFactorySupervisionPlugin(
           const promptResponse = await app.inject({
             method: 'POST',
             url: `/api/v1/agents/${entry.agentTypeId}/sessions/${entry.sessionId}/prompt`,
-            headers: { 'x-boring-workspace-id': workspaceScopeId },
+            headers: {
+              'x-boring-workspace-id': workspaceScopeId,
+              'x-boring-invocation-mode': 'unattended',
+            },
             payload: {
               requestId: randomUUID(),
               clientNonce: randomUUID(),

@@ -226,6 +226,23 @@ const workspaceRoutesPlugin: FastifyPluginAsync = async (app) => {
         })
       }
 
+      if (app.shredWorkspaceCredentials) {
+        try {
+          await app.shredWorkspaceCredentials(id)
+          request.log.info({ workspaceId: id }, 'workspace.delete.credentials_shredded')
+        } catch {
+          // Credential errors may originate in a provider/KMS. Never project or
+          // log their body: deletion fails closed with a metadata-only code.
+          request.log.error({ workspaceId: id }, 'workspace.delete.credential_shred_failed')
+          throw new HttpError({
+            status: 500,
+            code: ERROR_CODES.CREDENTIAL_SHRED_FAILED,
+            message: 'Workspace credential destruction failed',
+            requestId: request.id,
+          })
+        }
+      }
+
       if (provisioner) {
         try {
           await provisioner.destroy(id)

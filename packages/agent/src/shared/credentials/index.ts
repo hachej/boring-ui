@@ -1,9 +1,28 @@
 export type {
+  CredentialKeyLifecycleOperationV1,
+  CredentialKeyLifecycleReceiptV1,
+  CredentialLifecycleStateV1,
+  CredentialMetadataListResponseV1,
+  CredentialMetadataV1,
+  CredentialRouteErrorV1,
+  CredentialWriteRequestV1,
+} from './admin'
+export type {
   AuthorizedWorkspaceCredentialScopeV1,
   VerifiedWorkspaceCredentialAuthorityV1,
   VerifiedWorkspaceCredentialPrincipalV1,
   WorkspaceCredentialAuthorityVerifierV1,
 } from './authority'
+export type {
+  CredentialCustodyScopeV1,
+  CredentialCustodySubjectV1,
+} from './custody'
+export {
+  assertCredentialCustodyScopeV1,
+  credentialCustodySubjectKeyV1,
+  userCredentialCustodyScopeV1,
+  workspaceCredentialCustodyScopeV1,
+} from './custody'
 export type {
   CredentialConsumerBindingRegistryV1,
   CredentialConsumerBindingV1,

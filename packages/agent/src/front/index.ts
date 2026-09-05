@@ -29,6 +29,16 @@ export {
 } from './chat/gatewayResponseError'
 export type { GatewayResponseErrorCode } from './chat/gatewayResponseError'
 export { DebugDrawer } from './DebugDrawer'
+export { CredentialSettingsSurface } from './settings/CredentialSettingsSurface'
+export type { CredentialSettingsSurfaceProps } from './settings/CredentialSettingsSurface'
+export { createCredentialSettingsClient } from './settings/credentialSettingsClient'
+export type {
+  CredentialFundingMethod,
+  CredentialOAuthEvent,
+  CredentialOAuthFlow,
+  CredentialOAuthPrompt,
+  CredentialSettingsClient,
+} from './settings/credentialSettingsClient'
 export {
   ArtifactOpenProvider,
   useOpenArtifact,

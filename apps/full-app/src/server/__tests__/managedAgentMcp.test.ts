@@ -116,6 +116,7 @@ describe('full-app managed-agent MCP route', () => {
     expect(((resolver.runWithWorkspaceAgent.mock.calls[0] ?? []) as unknown[])[0]).toMatchObject({
       agentTypeId: 'default',
       context: { workspaceId: WORKSPACE_ID, userId: USER_ID },
+      fundingPolicy: 'api-key-only',
       request: expect.any(Object),
     })
     expect(resolver.resolve).not.toHaveBeenCalled()

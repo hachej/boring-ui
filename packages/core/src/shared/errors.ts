@@ -25,6 +25,7 @@ export const ERROR_CODES = {
   // Provisioning
   PROVISION_FAILED: 'provision_failed',
   DESTROY_FAILED: 'destroy_failed',
+  CREDENTIAL_SHRED_FAILED: 'credential_shred_failed',
   RUNTIME_UNMANAGED: 'runtime_unmanaged',
   INVALID_RETRY_STATE: 'invalid_retry_state',
 

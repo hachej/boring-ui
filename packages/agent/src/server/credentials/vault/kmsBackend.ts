@@ -22,6 +22,8 @@ import type {
   WrappedWorkspaceDekV1,
 } from '../../../shared/credentials'
 import { bytesEqualConstantTimeV1 } from './envelopeCrypto'
+import { createLocalFileCredentialVersionAnchorV1 } from './versionAnchor'
+import type { WorkspaceCredentialVersionAnchorV1 } from './versionAnchor'
 
 /**
  * Local-KEK `KmsBackend` implementation
@@ -50,6 +52,8 @@ const LOCAL_KEK_CIPHER_ALGORITHM_V1 = 'aes-256-gcm' as const
 /** Env keys. Both must be set explicitly; neither has a silent default. */
 export const LOCAL_KEK_BACKEND_ENV_KEY_V1 = 'BORING_CREDENTIAL_KMS_BACKEND'
 export const LOCAL_KEK_FILE_ENV_KEY_V1 = 'BORING_CREDENTIAL_LOCAL_KEK_FILE'
+export const LOCAL_KEK_ANCHOR_FILE_ENV_KEY_V1 =
+  'BORING_CREDENTIAL_LOCAL_KEK_ANCHOR_FILE'
 export const LOCAL_KEK_KEY_REF_ENV_KEY_V1 = 'BORING_CREDENTIAL_LOCAL_KEK_REF'
 export const LOCAL_KEK_KEY_VERSION_ENV_KEY_V1 =
   'BORING_CREDENTIAL_LOCAL_KEK_VERSION'
@@ -73,6 +77,7 @@ export interface LocalKekProviderOptionsV1 {
 export interface LocalKekProviderConfigV1 {
   readonly backend: typeof LOCAL_KEK_PROVIDER_ID_V1
   readonly keyFilePath: string
+  readonly anchorFilePath: string
   readonly keyRef: string
   readonly keyVersion: number
 }
@@ -119,6 +124,15 @@ export function resolveLocalKekProviderConfigV1(
       `Local-KEK credential backend requires ${LOCAL_KEK_FILE_ENV_KEY_V1}`,
     )
   }
+  const anchorFilePath = env[LOCAL_KEK_ANCHOR_FILE_ENV_KEY_V1]?.trim()
+  if (!anchorFilePath) {
+    notConfigured(
+      `Local-KEK credential backend requires ${LOCAL_KEK_ANCHOR_FILE_ENV_KEY_V1}`,
+    )
+  }
+  if (anchorFilePath === keyFilePath) {
+    notConfigured('Local-KEK credential anchor must not overwrite the KEK file')
+  }
   const keyRef = env[LOCAL_KEK_KEY_REF_ENV_KEY_V1]?.trim() || 'default'
   const rawVersion = env[LOCAL_KEK_KEY_VERSION_ENV_KEY_V1]?.trim()
   const keyVersion = rawVersion === undefined || rawVersion === ''
@@ -132,6 +146,7 @@ export function resolveLocalKekProviderConfigV1(
   return Object.freeze({
     backend: LOCAL_KEK_PROVIDER_ID_V1,
     keyFilePath,
+    anchorFilePath,
     keyRef,
     keyVersion,
   })
@@ -457,6 +472,17 @@ export function createLocalKekWorkspaceKekProviderFromEnvV1(
   return createLocalKekWorkspaceKekProviderV1({
     keyRef: config.keyRef,
     keyVersion: config.keyVersion,
+    loadKek: createLocalKekFileSourceV1(config.keyFilePath),
+  })
+}
+
+export function createLocalCredentialVersionAnchorFromEnvV1(
+  env: Readonly<Record<string, string | undefined>>,
+): WorkspaceCredentialVersionAnchorV1 | undefined {
+  const config = resolveLocalKekProviderConfigV1(env)
+  if (!config) return undefined
+  return createLocalFileCredentialVersionAnchorV1({
+    anchorFilePath: config.anchorFilePath,
     loadKek: createLocalKekFileSourceV1(config.keyFilePath),
   })
 }

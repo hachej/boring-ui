@@ -205,6 +205,8 @@ export type {
   AgentHostEnvironmentLease,
   AgentHostEnvironmentScope,
   AgentHostHandle,
+  AgentHostCredentialOptionsV1,
+  WorkspaceCredentialLifecycleV1,
   AgentRequestKey,
   AgentRequestLedger,
   AgentRequestLedgerPrepareResult,
@@ -310,14 +312,32 @@ export {
 export type { RuntimeReadonlyFilesystemPolicy } from './runtime/readonlyFilesystemPolicy'
 export { createUserFilesystemBinding } from './runtime/userFilesystemBinding'
 export {
-  createFakeAuthorityVerifierV1,
   createHostSideCredentialResolverV1,
   createInMemoryCredentialBackendV1,
+  createInMemoryCredentialVaultPersistenceV1,
+  createInMemoryCredentialVersionAnchorV1,
+  createLocalCredentialVersionAnchorFromEnvV1,
+  createLocalFileCredentialVersionAnchorV1,
+  createLocalKekWorkspaceKekProviderFromEnvV1,
+  createPostgresCredentialVaultPersistenceV1,
+  createVaultCredentialStoreBackendV1,
+  createVaultCredentialStoreV1,
+  createOpenAiCodexOAuthBrokerV1,
+  PI_OAUTH_CREDENTIAL_FIELD_ID_V1,
+  initializeLocalFileCredentialVersionAnchorV1,
+  runCredentialVaultPostgresMigrationsV1,
   withResolvedCredential,
 } from './credentials'
 export type {
   CredentialStoreBackendV1,
-  FakeAuthorityVerifierGrantV1,
   HostSideCredentialResolverOptionsV1,
   InMemoryCredentialBackendEntryV1,
+  CredentialVaultPersistenceV1,
+  LocalCredentialVersionAnchorOptionsV1,
+  StoredCredentialRecordV1,
+  OpenAiCodexOAuthBrokerV1,
+  VaultCredentialStoreBackendV1,
+  VaultCredentialStoreOptionsV1,
+  WorkspaceCredentialVersionAnchorV1,
+  WorkspaceCredentialVersionStateV1,
 } from './credentials'

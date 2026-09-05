@@ -113,6 +113,7 @@ export async function runWithWorkspaceAgentLease(input: {
     request.authorizedScope,
     claim,
     resolved,
+    request.fundingPolicy,
   )
   const operationEnvironment = await runtime.acquireResolvedEnvironment(
     claim.workspaceScopeId,

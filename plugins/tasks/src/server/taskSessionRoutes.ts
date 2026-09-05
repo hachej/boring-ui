@@ -137,6 +137,7 @@ export function registerTaskSessionLinkRoutes(
         context: actor,
         requestId: request.id,
         request,
+        fundingPolicy: 'api-key-only',
       }, async (binding) => {
         const workspace: TaskSessionLinkWorkspace = binding.workspace
         result = await run({
