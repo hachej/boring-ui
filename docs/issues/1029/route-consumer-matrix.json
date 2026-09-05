@@ -221,6 +221,7 @@
         "source": "packages/agent/src/server/index.ts",
         "symbols": [
           "AgentHostAgentSpec",
+          "AgentHostCredentialOptionsV1",
           "AgentHostDescription",
           "AgentHostDirectProjectionOptions",
           "AgentHostDispatcherRunInput",
