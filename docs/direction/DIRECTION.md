@@ -543,3 +543,52 @@ The audit's decision filter (buyer / work-unit / feedback / reuse /
 irreversibility / complexity tests) is adopted as reviewer guidance for
 future capability proposals — a filter, not a gate. No premise, bead, or
 queue item changes; P1-A dispatch is unaffected.
+
+## Amendment 2026-09-05 — Workspace Evolution
+
+**Owner-requested; effective on owner merge. Specified, not implemented by
+this PR.** Add Workspace Evolution as a named platform-consumer program:
+direct user requests produce private software revisions that can be previewed,
+activated, reconciled with upstream improvements, and selectively reused.
+Clinic is the first workflow proof; Seneca is the authenticated host for the
+personal-scope proof. Pricing, offer design, and vertical GTM remain tenant-side.
+
+The binding scope is [RECONCILIATION §11](../plans/long-term/ratified/RECONCILIATION.md#11-owner-requested-amendment--2026-09-05-workspace-evolution).
+The [execution plan](../plans/workspace-evolution/README.md) owns milestone
+acceptance, seam ownership, rollout, and proof. This amendment alone owns
+dispatch; the M0–M8 capability crosswalk is not another queue.
+
+| Slice | Dispatch and release dependency |
+|---|---|
+| E0 — request and preview preparation | May run after owner merge, alongside the existing premise lane: capture the named request, existing component/operation catalog, and a fixture-based preview. No production agent-driven activation, new Job Thread, or lookalike saved View contract. |
+| E1 — durable workspace revision | After E0 and [durable-streams] P1-C proves the accepted-work/recovery/paused-human behavior consumed by this loop. Host-owned durable activation and current authorization are release requirements. Any saved semantic composition also waits for [saved-views-kernel]. |
+| E2 — personal scope | After E1 and authenticated membership/scoped-store read, preview, write, and revocation evidence. Require [seat-audit-attribution] for Seat-authored provenance where consumed. Do not substitute a browser key or shared local actor for identity. |
+| E3 — behavior revision | After E1/E2, exact behavior/run attribution and relevant protected evaluation gates. A presentation preference does not authorize changing shared expert or domain policy. |
+| E4 — isolated private module | After E1/E2 and the C4 untrusted tier is admitted/proven for both build and serving; no hosted generated-code preview or install before that gate. |
+| E5 — upgrade and reconciliation | After E1/E2 for configuration. Extend after E3/E4 for their artifact classes. Prove an ordinary upstream upgrade and a real conflict before broadening that class's automatic updates. |
+| E6 — approved reuse and broader autonomy | Starts after E5; completion requires a useful approved contribution adopted by a second private workspace. Broader autonomy additionally needs retained-use and maintenance evidence for that change class. Publishing and customer adoption remain separate authorizations; a public marketplace is not a prerequisite. |
+
+**Priority and explicit supersession.** The merge-queue preflight and
+[durable-streams] keystone priority stand. E0 is an explicit addition to the
+earlier list of runnable preparation/chrome work; it does not relabel E1 as
+substrate-free. Later E-slices are conditional consumers of their named
+premises, not a blanket reopening of the non-chrome shell/engine freeze.
+Wave 4's new-repo implementation gate and the interface-first port doctrine
+remain unchanged. Use existing published package/app seams; the new-repo
+M-labels describe capability relationships only.
+
+Thread-storage shape and the Thread-view joins apply when an E-slice embeds
+in Job Threads. They do not gate a standalone configuration preview that
+consumes none of them. Saved Views still wait for the complete ratified View
+contract. Early product-specific props may select existing components; they
+may not create a replacement ViewDescriptor under an overlay name.
+
+**Next work on adoption:** execute E0 against one real Clinic layout request,
+record its implementation/acceptance boundaries, and prepare E1's scoped
+feature work against the then-current premise evidence. No capability is
+closed by this plan PR, and no calendar estimate substitutes for a gate.
+
+The done-bar is a direct request kept through real use and a supported
+upgrade, followed by approved reuse in another private workspace. Track all
+attempts, including failed builds and repair work; generated-code volume is
+not progress by itself.

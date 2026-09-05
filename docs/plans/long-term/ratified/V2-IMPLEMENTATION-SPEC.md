@@ -161,6 +161,14 @@ tree/editor (→ navigator/document) · UI kit · Dockview (as renderer only).
 (C5-backed — the OLD dead approval states finally get their real producer).
 **Milestones:** M4 (Agent App with views) · M5 (workspace UI, team pane).
 
+**Workspace Evolution extension (2026-09-05, effective on owner merge):**
+AppComposition becomes privately revisable through the product-module release
+contract in [RECONCILIATION §11](RECONCILIATION.md#11-owner-requested-amendment--2026-09-05-workspace-evolution).
+Use the existing View contract as a set for saved semantic compositions;
+early app-specific props do not create another ViewDescriptor. The host owns
+revision activation, current grants, and durable receipts; the Experience
+owns presentation and domain adapters. See the milestone crosswalk below.
+
 ## L5 — Optimization
 
 **Responsibility:** the loop that justifies the company.
@@ -243,6 +251,32 @@ milestone; the kill criteria (handbook Part VII) can stop the line at M2 or M6.
 
 Old repo in parallel, unchanged: P0.6 · A7 (ports into M1's L0) · P0.2 ·
 AR1-003/004 (ports into M2's L2) · result→runId · keep selling.
+
+## Workspace Evolution milestone extension — 2026-09-05
+
+**Specified, unbuilt by this PR; effective on owner merge.** This adds a
+named product proof to the capabilities above without renumbering M0–M8,
+opening the new-repo implementation freeze, or requiring M8 Product extraction
+for a private change. The [execution plan](../../workspace-evolution/README.md#milestones)
+owns E0–E6 acceptance; [DIRECTION](../../../direction/DIRECTION.md#amendment-2026-09-05--workspace-evolution)
+owns dispatch. M-labels below map capability dependencies, not a second queue.
+
+| Extension | Capability relationship | Product proof |
+|---|---|---|
+| E0 — request and preview preparation | Existing app components; no new runtime/storage premise | A direct request can be represented and compared with synthetic inputs. |
+| E1 — durable workspace revision | M1 host/admission/recovery + M4 composition; current-repo P1 gates apply | Request → immutable candidate → checked preview → host activation → undo; stale candidates fail and accepted choices survive restart. |
+| E2 — personal scope | M4 workspace bindings + relevant M5 identity/membership substrate | Two authenticated users keep different allowed settings over shared work. Multi-seat UI is not a prerequisite. |
+| E3 — behavior revision | M1 agent identity/provenance + E1/E2; relevant M6 evaluation machinery where present | Permitted personal behavior survives a shared expert update and is attributable to the work that used it. |
+| E4 — isolated private module | E1/E2 + admitted C4 isolation and capability contracts | A novel component runs with scoped data and can be removed without breaking recovery. |
+| E5 — upgrade and reconciliation | E1/E2 + supported package/state compatibility; run after E3/E4 when those artifact classes are included | A real upstream update preserves local intent; a conflicting change requires resolution. |
+| E6 — approved reuse and broader autonomy | E5 + repeat-use evidence and maintainer/export authority | A second private workspace adopts an optional generalized package and retains its own choices. |
+
+E5's ordinary configuration upgrade proof should run before expanding the
+catalog; it need not wait for E4. Behavior/module upgrades extend that proof
+when those lanes exist. L7 owns reusable distribution and entitlements, while
+private activation belongs to the host and Experience. The first consumer is
+Clinic's workflow; Seneca supplies the authenticated ownership proof. This
+is a platform acceptance choice, not a new commercial-vertical ordering.
 
 # PART D — repo tree (full vision, single package)
 

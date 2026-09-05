@@ -59,6 +59,28 @@ completion, so it indirectly gates every Thread-view slice that consumes P1.
 | Remote/third-party hosts, marketplace | their own frozen gates | DIRECTION Wave 4 |
 | Commercial sequencing | nothing platform-side — it lives in Seneca | tenant repo roadmap |
 
+## Workspace Evolution extension — specified, not shipped
+
+The owner-requested 2026-09-05 amendment adds a named consumer program on
+owner merge. Its [E0–E6 milestones](../plans/workspace-evolution/README.md#milestones)
+prove private adaptation, downstream maintenance, and approved reuse:
+
+| Milestone | Observable result | Key gate |
+|---|---|---|
+| E0 — request/preview preparation | One real request mapped to existing components and a fixture preview | Owner adoption; no production activation |
+| E1 — workspace revision | Request → immutable candidate → preview → activate/undo survives restart | E0 + P1-C accepted-work/recovery; saved semantic Views also need the View contract |
+| E2 — personal scope | Two users keep different settings over shared work | E1 + authenticated scope; Seat attribution where consumed |
+| E3 — behavior revision | Allowed personal behavior remains attributable and survives expert updates | E1/E2 + behavior evaluation and policy boundaries |
+| E4 — generated module | A new private component runs with scoped data and safe removal | E1/E2 + proven build/serving isolation in C4 |
+| E5 — upgrade reconciliation | Local intent survives an upstream update; a conflict stops activation | E1/E2 for configuration; E3/E4 only for their artifact classes |
+| E6 — approved reuse | A second workspace adopts a useful optional package | E5 + export/maintainer authority and reuse evidence |
+
+E5's configuration proof runs before expanding the catalog; it does not wait
+for generated modules. Clinic is the first workflow and Seneca the target
+authenticated host. These are acceptance consumers, not a change to GTM order.
+The [implementation-spec crosswalk](../plans/long-term/ratified/V2-IMPLEMENTATION-SPEC.md#workspace-evolution-milestone-extension--2026-09-05)
+relates E-slices to M0–M8 without reopening the new-repo freeze.
+
 ## Where execution actually happens
 
 DIRECTION's current queue has two parallel waves: **Wave A — Premises** for the
@@ -66,6 +88,9 @@ kernel work above, plus only the explicitly substrate-free shell-layout,
 shell-location, and shell-navigation tranche; and **Wave B — Commercial**, whose
 commercial ordering lives in the Seneca tenant repository while Boring supplies
 only neutral platform substrate. The older numbered waves are historical and
-superseded for dispatch. Read [`../direction/DIRECTION.md`](../direction/DIRECTION.md)
+superseded for dispatch. The
+[2026-09-05 amendment](../direction/DIRECTION.md#amendment-2026-09-05--workspace-evolution)
+adds E0 preparation and the explicitly gated evolution consumers to that
+program; it preserves the premise priority. Read [`../direction/DIRECTION.md`](../direction/DIRECTION.md)
 before dispatching anything; read [`../vision/README.md`](../vision/README.md)
 first if you want the story the queue serves.

@@ -28,6 +28,16 @@ architecture.
 > for every product. The kernel remains the compounding layer; ordinary
 > operate-mode products are not forced into its ontology.
 
+> **Amendment — 2026-09-05 (owner-requested; effective on owner merge;
+> implementation pending):** personal software evolution is an explicit
+> product goal. A user can start with a minimal useful workspace, request
+> changes to its interface and permitted behavior, try an immutable candidate,
+> keep or undo it, and retain local intent through shared upgrades. Useful
+> changes can become optional reusable packages through an authorized export
+> and review. This extends controlled revision to the Experience itself;
+> it does not require an optimization Objective for every preference.
+> Binding scope and amendments: [RECONCILIATION §11](RECONCILIATION.md#11-owner-requested-amendment--2026-09-05-workspace-evolution).
+
 ## 1. The decisive discovery: the three documents describe ONE system
 
 The V2 kernel's 12 nouns map almost entirely onto machinery that is built,
@@ -216,6 +226,17 @@ AR1-003/004 · result → runId + artifacts[] · P0.1–0.6 (RCE first) · P-1 �
 P1 (from reconciliation) interleaves: ViewDescriptor + artifact UX land with K2
 (candidates need Views to be inspected/approved).
 
+**Workspace Evolution milestone extension — 2026-09-05.** Add the E0–E6
+product milestones in the [execution plan](../../workspace-evolution/README.md#milestones):
+request/preview preparation, durable workspace activation, personal scope,
+behavior revision, isolated generated modules, upgrade reconciliation, and
+approved reuse. Clinic is the named proving workflow; Seneca is the target
+authenticated host for the personal-scope proof. This does not replace the
+first-commercial-vertical decision or renumber K1–K9/M0–M8. The
+[implementation-spec crosswalk](V2-IMPLEMENTATION-SPEC.md#workspace-evolution-milestone-extension--2026-09-05)
+maps capabilities; [DIRECTION](../../../direction/DIRECTION.md#amendment-2026-09-05--workspace-evolution)
+alone schedules them and preserves the relevant premise gates.
+
 ## 6. Research program & kill criteria (adopted verbatim from V2)
 
 H1 (label H1; research hypothesis, not a roadmap code) useful candidates · H2 evaluators discriminate · H3 feedback improves
@@ -244,6 +265,14 @@ autonomous trading/ad-budgets, self-modifying production repo, Product DSL,
 BSL rewrite, universal Mount, cross-tenant recursive learning, big package
 reorg **in the old repo** (dissolved into the port — see R-a), arbitrary
 untrusted hosted plugin execution (P0.6).
+
+**Scope amendment — 2026-09-05.** The general-purpose "universal app
+generator" exclusion above does not exclude the bounded personal evolution
+program in §11. Existing-component configuration is the first lane; new
+generated modules require the isolated C4 tier before hosted preview or use.
+Untrusted in-process execution, autonomous production-source rewriting,
+automatic private-data sharing, and a marketplace prerequisite remain
+excluded. Arbitrary code cannot promise conflict-free automatic upgrades.
 
 ## 9. One diagram
 
